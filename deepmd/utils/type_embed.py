@@ -1,5 +1,5 @@
 import numpy as np
-from typing import Tuple, List, Union
+from typing import Optional, Tuple, List, Union
 
 from deepmd.env import tf
 from deepmd.utils.network import one_layer
@@ -61,7 +61,7 @@ class TypeEmbedNet():
             Number of neurons in each hidden layers of the embedding net
     resnet_dt
             Time-step `dt` in the resnet construction:
-            y = x + dt * \phi (Wx + b)
+            y = x + dt * \\phi (Wx + b)
     activation_function
             The activation function in the embedding net. Supported options are |ACTIVATION_FN|
     precision
@@ -82,7 +82,7 @@ class TypeEmbedNet():
             activation_function: Union[str, None] = 'tanh',
             precision: str = 'default',
             trainable: bool = True,
-            seed: int = None,
+            seed: Optional[int] = None,
             uniform_seed: bool = False,
             padding: bool = False,
     )->None:

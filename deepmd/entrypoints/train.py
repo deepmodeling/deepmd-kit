@@ -8,6 +8,7 @@ import logging
 import time
 import os
 from typing import Dict, List, Optional, Any
+import numpy as np
 
 from deepmd.common import data_requirement, expand_sys_str, j_loader, j_must_have
 from deepmd.env import tf, reset_default_tf_session_config, GLOBAL_ENER_FLOAT_PRECISION
@@ -22,6 +23,7 @@ from deepmd.utils.sess import run_sess
 from deepmd.utils.neighbor_stat import NeighborStat
 from deepmd.utils.path import DPPath
 from deepmd.utils.finetune import replace_model_params_with_pretrained_model
+from deepmd.utils.multi_init import replace_model_params_with_frz_multi_model
 
 __all__ = ["train"]
 
@@ -73,7 +75,7 @@ def train(
     Raises
     ------
     RuntimeError
-        if distributed training job nem is wrong
+        if distributed training job name is wrong
     """
     run_opt = RunOptions(
         init_model=init_model,
@@ -94,6 +96,9 @@ def train(
     origin_type_map = None
     if run_opt.finetune is not None:
         jdata, origin_type_map = replace_model_params_with_pretrained_model(jdata, run_opt.finetune)
+
+    if "fitting_net_dict" in jdata["model"] and run_opt.init_frz_model is not None:
+        jdata = replace_model_params_with_frz_multi_model(jdata, run_opt.init_frz_model)
 
     jdata = update_deepmd_input(jdata, warning=True, dump="input_v2_compat.json")
 
@@ -158,16 +163,34 @@ def _do_work(jdata: Dict[str, Any], run_opt: RunOptions, is_compress: bool = Fal
     # setup data modifier
     modifier = get_modifier(jdata["model"].get("modifier", None))
 
+    # check the multi-task mode
+    multi_task_mode = "fitting_net_dict" in jdata["model"]
+
     # decouple the training data from the model compress process
     train_data = None
     valid_data = None
     if not is_compress:
         # init data
-        train_data = get_data(jdata["training"]["training_data"], rcut, ipt_type_map, modifier)
-        train_data.print_summary("training")
-        if jdata["training"].get("validation_data", None) is not None:
-            valid_data = get_data(jdata["training"]["validation_data"], rcut, train_data.type_map, modifier)
-            valid_data.print_summary("validation")
+        if not multi_task_mode:
+            train_data = get_data(jdata["training"]["training_data"], rcut, ipt_type_map, modifier)
+            train_data.print_summary("training")
+            if jdata["training"].get("validation_data", None) is not None:
+                valid_data = get_data(jdata["training"]["validation_data"], rcut, train_data.type_map, modifier)
+                valid_data.print_summary("validation")
+        else:
+            train_data = {}
+            valid_data = {}
+            for data_systems in jdata["training"]["data_dict"]:
+                if jdata["training"]["fitting_weight"][data_systems] > 0.:  # check only the available pair
+                    train_data[data_systems] = get_data(
+                        jdata["training"]["data_dict"][data_systems]["training_data"], rcut,
+                        ipt_type_map, modifier, multi_task_mode)
+                    train_data[data_systems].print_summary("training in {}".format(data_systems))
+                    if jdata["training"]["data_dict"][data_systems].get("validation_data", None) is not None:
+                        valid_data[data_systems] = get_data(
+                            jdata["training"]["data_dict"][data_systems]["validation_data"], rcut,
+                            train_data[data_systems].type_map, modifier, multi_task_mode)
+                        valid_data[data_systems].print_summary("validation in {}".format(data_systems))
 
     # get training info
     stop_batch = j_must_have(jdata["training"], "numb_steps")
@@ -188,10 +211,12 @@ def _do_work(jdata: Dict[str, Any], run_opt: RunOptions, is_compress: bool = Fal
         log.info("finished compressing")
 
 
-def get_data(jdata: Dict[str, Any], rcut, type_map, modifier):
+def get_data(jdata: Dict[str, Any], rcut, type_map, modifier, multi_task_mode=False):
     systems = j_must_have(jdata, "systems")
     if isinstance(systems, str):
         systems = expand_sys_str(systems)
+    elif isinstance(systems, list):
+        systems = systems.copy()
     help_msg = 'Please check your setting for data systems'
     # check length of systems
     if len(systems) == 0:
@@ -213,6 +238,7 @@ def get_data(jdata: Dict[str, Any], rcut, type_map, modifier):
     batch_size = j_must_have(jdata, "batch_size")
     sys_probs = jdata.get("sys_probs", None)
     auto_prob = jdata.get("auto_prob", "prob_sys_size")
+    optional_type_map = not multi_task_mode
 
     data = DeepmdDataSystem(
         systems=systems,
@@ -221,6 +247,7 @@ def get_data(jdata: Dict[str, Any], rcut, type_map, modifier):
         shuffle_test=True,  # to satisfy the old api
         rcut=rcut,
         type_map=type_map,
+        optional_type_map=optional_type_map,
         modifier=modifier,
         trn_all_set=True,    # sample from all sets
         sys_probs=sys_probs,
@@ -270,8 +297,26 @@ def get_nbor_stat(jdata, rcut, one_type: bool = False):
 
     if type_map and len(type_map) == 0:
         type_map = None
-    train_data = get_data(jdata["training"]["training_data"], max_rcut, type_map, None)
-    train_data.get_batch()
+    multi_task_mode = "data_dict" in jdata["training"]
+    if not multi_task_mode:
+        train_data = get_data(jdata["training"]["training_data"], max_rcut, type_map, None)
+        train_data.get_batch()
+    else:
+        assert type_map is not None, 'Data stat in multi-task mode must have available type_map! '
+        train_data = None
+        for systems in jdata["training"]["data_dict"]:
+            tmp_data = get_data(jdata["training"]["data_dict"][systems]["training_data"], max_rcut, type_map, None)
+            tmp_data.get_batch()
+            assert tmp_data.get_type_map(), \
+                "In multi-task mode, 'type_map.raw' must be defined in data systems {}! ".format(systems)
+            if train_data is None:
+                train_data = tmp_data
+            else:
+                train_data.system_dirs += tmp_data.system_dirs
+                train_data.data_systems += tmp_data.data_systems
+                train_data.natoms += tmp_data.natoms
+                train_data.natoms_vec += tmp_data.natoms_vec
+                train_data.default_mesh += tmp_data.default_mesh
     data_ntypes = train_data.get_ntypes()
     if type_map is not None:
         map_ntypes = len(type_map)

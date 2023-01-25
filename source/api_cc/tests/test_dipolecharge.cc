@@ -14,6 +14,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>  
 
+template <class VALUETYPE>
 class TestDipoleCharge : public ::testing::Test
 {  
 protected:  
@@ -87,8 +88,25 @@ _in_vec(const int & value,
   return false;
 }
 
-TEST_F(TestDipoleCharge, cpu_lmp_nlist)
+TYPED_TEST_SUITE(TestDipoleCharge, ValueTypes);
+
+TYPED_TEST(TestDipoleCharge, cpu_lmp_nlist)
 {
+  using VALUETYPE = TypeParam;
+  std::vector<VALUETYPE>& coord = this->coord;
+  std::vector<int>& atype = this->atype;
+  std::vector<VALUETYPE>& box = this->box;
+  std::vector<double>& expected_e = this->expected_e;
+  std::vector<VALUETYPE>& expected_f = this->expected_f;
+  std::vector<VALUETYPE>& expected_v = this->expected_v;
+  std::vector<VALUETYPE>& charge_map = this->charge_map;
+  int& natoms = this->natoms;
+  int& ntypes = this->ntypes;
+  std::vector<int>& type_asso = this->type_asso;
+  double& expected_tot_e = this->expected_tot_e;
+  std::vector<VALUETYPE>&expected_tot_v = this->expected_tot_v;
+  deepmd::DeepTensor& dp = this->dp;
+  deepmd::DipoleChargeModifier& dm = this->dm;
   // build nlist
   // float rc = dp.cutoff();
   float rc = 4.0;
@@ -96,7 +114,7 @@ TEST_F(TestDipoleCharge, cpu_lmp_nlist)
   std::vector<VALUETYPE> coord_cpy;
   std::vector<int> atype_cpy, mapping;  
   std::vector<std::vector<int > > nlist_data;
-  _build_nlist(nlist_data, coord_cpy, atype_cpy, mapping,
+  _build_nlist<VALUETYPE>(nlist_data, coord_cpy, atype_cpy, mapping,
   	       coord, atype, box, rc);
   int nall = coord_cpy.size() / 3;
   int nghost = nall - nloc;
@@ -175,7 +193,7 @@ TEST_F(TestDipoleCharge, cpu_lmp_nlist)
   EXPECT_EQ(evirial.size(), 9);  
 
   // extend the system with virtual atoms, and build nlist
-  _build_nlist(nlist_data, coord_cpy, atype_cpy, mapping,
+  _build_nlist<VALUETYPE>(nlist_data, coord_cpy, atype_cpy, mapping,
   	       coord, atype, box, rc);
   nall = coord_cpy.size() / 3;
   nghost = nall - nloc;
@@ -195,7 +213,7 @@ TEST_F(TestDipoleCharge, cpu_lmp_nlist)
   //   std::cout << force_[ii] << " " ;
   // }
   // std::cout << std::endl;
-  _fold_back(force, force_, mapping, nloc, nall, 3);
+  _fold_back<VALUETYPE>(force, force_, mapping, nloc, nall, 3);
 
   // compare force
   EXPECT_EQ(force.size(), nloc*3);
@@ -227,3 +245,8 @@ TEST_F(TestDipoleCharge, cpu_lmp_nlist)
   }
 }
 
+TYPED_TEST(TestDipoleCharge, print_summary)
+{
+  deepmd::DipoleChargeModifier& dm = this->dm;
+  dm.print_summary("");
+}

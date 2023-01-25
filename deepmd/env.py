@@ -4,8 +4,9 @@ import logging
 import os
 import re
 import platform
+import ctypes
 from configparser import ConfigParser
-from importlib import reload
+from importlib import reload, import_module
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 from packaging.version import Version
@@ -14,6 +15,39 @@ import numpy as np
 
 if TYPE_CHECKING:
     from types import ModuleType
+
+
+def dlopen_library(module: str, filename: str):
+    """Dlopen a library from a module.
+    
+    Parameters
+    ----------
+    module : str
+        The module name.
+    filename : str
+        The library filename pattern.
+    """
+    try:
+        m = import_module(module)
+    except ModuleNotFoundError:
+        pass
+    else:
+        libs = sorted(Path(m.__file__).parent.glob(filename))
+        # hope that there is only one version installed...
+        if len(libs):
+            ctypes.CDLL(str(libs[0].absolute()))
+
+# dlopen pip cuda library before tensorflow
+if platform.system() == "Linux":
+    dlopen_library("nvidia.cuda_runtime.lib", "libcudart.so*")
+    dlopen_library("nvidia.cublas.lib", "libcublasLt.so*")
+    dlopen_library("nvidia.cublas.lib", "libcublas.so*")
+    dlopen_library("nvidia.cufft.lib", "libcufft.so*")
+    dlopen_library("nvidia.curand.lib", "libcurand.so*")
+    dlopen_library("nvidia.cusolver.lib", "libcusolver.so*")
+    dlopen_library("nvidia.cusparse.lib", "libcusparse.so*")
+    dlopen_library("nvidia.cudnn.lib", "libcudnn.so*")
+
 
 # import tensorflow v1 compatability
 try:
@@ -46,6 +80,7 @@ __all__ = [
     "EMBEDDING_NET_PATTERN",
     "TYPE_EMBEDDING_PATTERN",
     "ATTENTION_LAYER_PATTERN",
+    "REMOVE_SUFFIX_DICT",
     "TF_VERSION"
 ]
 
@@ -82,6 +117,13 @@ FITTING_NET_PATTERN = str(
     r"final_layer_type_\d+/matrix|"
     r"final_layer/bias|"
     r"final_layer_type_\d+/bias|"
+    # layer_name 
+    r"share_.+_type_\d/matrix|"
+    r"share_.+_type_\d/bias|"
+    r"share_.+_type_\d/idt|"
+    r"share_.+/matrix|"
+    r"share_.+/bias|"
+    r"share_.+/idt|"
 )
 
 TYPE_EMBEDDING_PATTERN = str(
@@ -119,6 +161,32 @@ TRANSFER_PATTERN = \
         r"model_attr/t_tab_info|"
         r"model_attr/t_tab_data|"
 )
+
+REMOVE_SUFFIX_DICT = {
+    "model_attr/sel_type_{}": "model_attr/sel_type",
+    "model_attr/output_dim_{}": "model_attr/output_dim",
+    "_{}/": "/",
+    # when atom_ener is set
+    "_{}_1/": "_1/",
+    "o_energy_{}": "o_energy",
+    "o_force_{}": "o_force",
+    "o_virial_{}": "o_virial",
+    "o_atom_energy_{}": "o_atom_energy",
+    "o_atom_virial_{}": "o_atom_virial",
+    "o_dipole_{}": "o_dipole",
+    "o_global_dipole_{}": "o_global_dipole",
+    "o_polar_{}": "o_polar",
+    "o_global_polar_{}": "o_global_polar",
+    "o_rmat_{}": "o_rmat",
+    "o_rmat_deriv_{}": "o_rmat_deriv",
+    "o_nlist_{}": "o_nlist",
+    "o_rij_{}": "o_rij",
+    "o_dm_force_{}": "o_dm_force",
+    "o_dm_virial_{}": "o_dm_virial",
+    "o_dm_av_{}": "o_dm_av",
+    "o_wfc_{}": "o_wfc",
+}
+
 
 def set_env_if_empty(key: str, value: str, verbose: bool = True):
     """Set environment variable only if it is empty.
@@ -206,6 +274,8 @@ def get_tf_session_config() -> Any:
     """
     set_tf_default_nthreads()
     intra, inter = get_tf_default_nthreads()
+    if int(os.environ.get("DP_JIT", 0)):
+        set_env_if_empty("TF_XLA_FLAGS", "--tf_xla_auto_jit=2")
     config = tf.ConfigProto(
         gpu_options=tf.GPUOptions(allow_growth=True),
         intra_op_parallelism_threads=intra, inter_op_parallelism_threads=inter
@@ -351,7 +421,7 @@ MODEL_VERSION = GLOBAL_CONFIG["model_version"]
 TF_VERSION = GLOBAL_CONFIG["tf_version"]
 TF_CXX11_ABI_FLAG = int(GLOBAL_CONFIG["tf_cxx11_abi_flag"])
 
-op_module = get_module("op_abi")
+op_module = get_module("deepmd_op")
 op_grads_module = get_module("op_grads")
 
 # FLOAT_PREC

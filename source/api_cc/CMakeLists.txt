@@ -23,6 +23,7 @@ target_include_directories(
   $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
   $<INSTALL_INTERFACE:include>
   )
+target_precompile_headers(${libname} PUBLIC [["common.h"]])
 
 if(Protobuf_LIBRARY)
   target_link_libraries(${libname} PRIVATE ${Protobuf_LIBRARY})
@@ -41,6 +42,12 @@ if (CMAKE_TESTING_ENABLED)
 endif()
 target_compile_features(${libname} PUBLIC cxx_std_11)
 
+if(BUILD_PY_IF)
+  install(
+    TARGETS ${libname}
+    DESTINATION deepmd/op/
+  )
+else(BUILD_PY_IF)
 install(
   TARGETS ${libname}
   EXPORT ${CMAKE_PROJECT_NAME}Targets
@@ -63,3 +70,4 @@ ${CMAKE_INSTALL_PREFIX}/lib/${CMAKE_SHARED_LIBRARY_PREFIX}${libname}${LOW_PREC_V
 if (CMAKE_TESTING_ENABLED)
   add_subdirectory(tests)
 endif()
+endif(BUILD_PY_IF)

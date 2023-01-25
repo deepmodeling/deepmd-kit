@@ -56,11 +56,11 @@ The sections {ref}`training_data <training/training_data>` and {ref}`validation_
 * {ref}`systems <training/training_data/systems>` provide paths of the training data systems. DeePMD-kit allows you to provide multiple systems with different numbers of atoms. This key can be a `list` or a `str`.
     * `list`: {ref}`systems <training/training_data/systems>` gives the training data systems.
     * `str`: {ref}`systems <training/training_data/systems>` should be a valid path. DeePMD-kit will recursively search all data systems in this path.
-* At each training step, DeePMD-kit randomly pick {ref}`batch_size <training/training_data/batch_size>` frame(s) from one of the systems. The probability of using a system is by default in proportion to the number of batches in the system. More optional are available for automatically determining the probability of using systems. One can set the key {ref}`auto_prob <training/training_data/auto_prob>` to
+* At each training step, DeePMD-kit randomly picks {ref}`batch_size <training/training_data/batch_size>` frame(s) from one of the systems. The probability of using a system is by default in proportion to the number of batches in the system. More options are available for automatically determining the probability of using systems. One can set the key {ref}`auto_prob <training/training_data/auto_prob>` to
     * `"prob_uniform"` all systems are used with the same probability.
-    * `"prob_sys_size"` the probability of using a system is in proportional to its size (number of frames).
-    * `"prob_sys_size; sidx_0:eidx_0:w_0; sidx_1:eidx_1:w_1;..."` the `list` of systems are divided into blocks. The block `i` has systems ranging from `sidx_i` to `eidx_i`. The probability of using a system from block `i` is in proportional to `w_i`. Within one block, the probability of using a system is in proportional to its size.
-* An example of using `"auto_prob"` is given as below. The probability of using `systems[2]` is 0.4, and the sum of the probabilities of using `systems[0]` and `systems[1]` is 0.6. If the number of frames in `systems[1]` is twice as `system[0]`, then the probability of using `system[1]` is 0.4 and that of `system[0]` is 0.2.
+    * `"prob_sys_size"` the probability of using a system is proportional to its size (number of frames).
+    * `"prob_sys_size; sidx_0:eidx_0:w_0; sidx_1:eidx_1:w_1;..."` the `list` of systems is divided into blocks. Block `i` has systems ranging from `sidx_i` to `eidx_i`. The probability of using a system from block `i` is proportional to `w_i`. Within one block, the probability of using a system is proportional to its size.
+* An example of using `"auto_prob"` is given below. The probability of using `systems[2]` is 0.4, and the sum of the probabilities of using `systems[0]` and `systems[1]` is 0.6. If the number of frames in `systems[1]` is twice of `system[0]`, then the probability of using `system[1]` is 0.4 and that of `system[0]` is 0.2.
 ```json
  	"training_data": {
 	    "systems":		["../data_water/data_0/", "../data_water/data_1/", "../data_water/data_2/"],
@@ -68,7 +68,7 @@ The sections {ref}`training_data <training/training_data>` and {ref}`validation_
 	    "batch_size":	"auto"
 	}
 ```
-* The probability of using systems can also be specified explicitly with key {ref}`sys_probs <training/training_data/sys_probs>` that is a list having the length of the number of systems. For example
+* The probability of using systems can also be specified explicitly with key {ref}`sys_probs <training/training_data/sys_probs>` which is a list having the length of the number of systems. For example
 ```json
  	"training_data": {
 	    "systems":		["../data_water/data_0/", "../data_water/data_1/", "../data_water/data_2/"],
@@ -83,19 +83,19 @@ The sections {ref}`training_data <training/training_data>` and {ref}`validation_
     * `"auto:N"`: automatically determines the batch size so that the {ref}`batch_size <training/training_data/batch_size>` times the number of atoms in the system is no less than `N`.
 * The key {ref}`numb_batch <training/validation_data/numb_btch>` in {ref}`validate_data <training/validation_data>` gives the number of batches of model validation. Note that the batches may not be from the same system
 
-The section {ref}`mixed_precision <training/mixed_precision>` specifies the mixed precision settings, which will enable the mixed precision training workflow for deepmd-kit. The keys are explained below:
+The section {ref}`mixed_precision <training/mixed_precision>` specifies the mixed precision settings, which will enable the mixed precision training workflow for DeePMD-kit. The keys are explained below:
 * {ref}`output_prec <training/mixed_precision/output_prec>`  precision used in the output tensors, only `float32` is supported currently.
 * {ref}`compute_prec <training/mixed_precision/compute_prec>` precision used in the computing tensors, only `float16` is supported currently.
-Note there are severial limitations about the mixed precision training:
+Note there are several limitations about mixed precision training:
 * Only {ref}`se_e2_a <model/descriptor[se_e2_a]>` type descriptor is supported by the mixed precision training workflow.
-* The precision of embedding net and fitting net are forced to be set to `float32`.
+* The precision of the embedding net and the fitting net are forced to be set to `float32`.
 
 Other keys in the {ref}`training <training>` section are explained below:
 * {ref}`numb_steps <training/numb_steps>` The number of training steps.
 * {ref}`seed <training/seed>` The random seed for getting frames from the training data set.
 * {ref}`disp_file <training/disp_file>` The file for printing learning curve.
 * {ref}`disp_freq <training/disp_freq>` The frequency of printing learning curve. Set in the unit of training steps
-* {ref}`save_freq <training/save_freq>` The frequency of saving check point.
+* {ref}`save_freq <training/save_freq>` The frequency of saving checkpoint.
 
 ## Options and environment variables
 
@@ -129,25 +129,7 @@ optional arguments:
 
 **`--skip-neighbor-stat`** will skip calculating neighbor statistics if one is concerned about performance. Some features will be disabled.
 
-To get the best performance, one should control the number of threads used by DeePMD-kit. This is achieved by three environmental variables: `OMP_NUM_THREADS`, `TF_INTRA_OP_PARALLELISM_THREADS` and `TF_INTER_OP_PARALLELISM_THREADS`. `OMP_NUM_THREADS` controls the multithreading of DeePMD-kit implemented operations. `TF_INTRA_OP_PARALLELISM_THREADS` and `TF_INTER_OP_PARALLELISM_THREADS` controls `intra_op_parallelism_threads` and `inter_op_parallelism_threads`, which are  Tensorflow configurations for multithreading. An explanation is found [here](https://www.intel.com/content/www/us/en/developer/articles/technical/maximize-tensorflow-performance-on-cpu-considerations-and-recommendations-for-inference.html).
-
-For example if you wish to use 3 cores of 2 CPUs on one node, you may set the environmental variables and run DeePMD-kit as follows:
-```bash
-export OMP_NUM_THREADS=3
-export TF_INTRA_OP_PARALLELISM_THREADS=3
-export TF_INTER_OP_PARALLELISM_THREADS=2
-dp train input.json
-```
-
-For a node with 128 cores, it is recommended to start with the following variables:
-
-```bash
-export OMP_NUM_THREADS=16
-export TF_INTRA_OP_PARALLELISM_THREADS=16
-export TF_INTER_OP_PARALLELISM_THREADS=8
-```
-
-It is encouraged to adjust the configurations after empirical testing.
+To maximize the performance, one should follow [FAQ: How to control the parallelism of a job](../troubleshooting/howtoset_num_nodes.md) to control the number of threads.
 
 One can set other environmental variables:
 
@@ -155,11 +137,12 @@ One can set other environmental variables:
 | --------------------- | ---------------------- | ------------- | -------------------------- |
 | DP_INTERFACE_PREC     | `high`, `low`          | `high`        | Control high (double) or low (float) precision of training. |
 | DP_AUTO_PARALLELIZATION | 0, 1                 | 0             | Enable auto parallelization for CPU operators. |
+| DP_JIT                | 0, 1                   | 0             | Enable JIT. Note that this option may either improve or decrease the performance. Requires TensorFlow supports JIT.  |
 
 
 ## Adjust `sel` of a frozen model
 
-One can use `--init-frz-model` features to adjust (increase or decrease) [`sel`](../model/sel.md) of a existing model. Firstly, one need to adjust [`sel`](./train-input.rst) in `input.json`. For example, adjust from `[46, 92]` to `[23, 46]`.
+One can use `--init-frz-model` features to adjust (increase or decrease) [`sel`](../model/sel.md) of a existing model. Firstly, one needs to adjust [`sel`](./train-input.rst) in `input.json`. For example, adjust from `[46, 92]` to `[23, 46]`.
 ```json
 "model": {
 	"descriptor": {
@@ -182,4 +165,4 @@ dp freeze -o frozen_model_adjusted_sel.pb
 
 Two models should give the same result when the input satisfies both constraints.
 
-Note: At this time, this feature is only supported by [`se_e2_a`](../model/train-se-e2-a.md) descriptor with [`set_davg_true`](./train-input.rst) enable, or `hybrid` composed of above descriptors.
+Note: At this time, this feature is only supported by [`se_e2_a`](../model/train-se-e2-a.md) descriptor with [`set_davg_true`](./train-input.rst) enabled, or `hybrid` composed of the above descriptors.

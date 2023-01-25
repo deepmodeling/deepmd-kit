@@ -14,59 +14,38 @@ jobs:
         include:
           # linux-64
           - os: ubuntu-latest
-            python: 37
-            platform_id: manylinux_x86_64
-          - os: ubuntu-latest
-            python: 38
-            platform_id: manylinux_x86_64
-          - os: ubuntu-latest
-            python: 39
-            platform_id: manylinux_x86_64
-          - os: ubuntu-latest
             python: 310
             platform_id: manylinux_x86_64
+            dp_variant: cuda
           # macos-x86-64
           - os: macos-latest
-            python: 37
-            platform_id: macosx_x86_64
-          - os: macos-latest
-            python: 38
-            platform_id: macosx_x86_64
-          - os: macos-latest
-            python: 39
-            platform_id: macosx_x86_64
-          - os: macos-latest
             python: 310
             platform_id: macosx_x86_64
+            dp_variant: cpu
           # win-64
           - os: windows-2019
-            python: 37
-            platform_id: win_amd64
-          - os: windows-2019
-            python: 38
-            platform_id: win_amd64
-          - os: windows-2019
-            python: 39
-            platform_id: win_amd64
-          - os: windows-2019
             python: 310
             platform_id: win_amd64
+            dp_variant: cpu
+          # linux-aarch64
+          - os: ubuntu-latest
+            python: 310
+            platform_id: manylinux_aarch64
+            dp_variant: cpu
     steps:
       - uses: actions/checkout@v2
         with:
           submodules: true
-      - uses: actions/setup-python@v2
-        name: Install Python
-        with:
-          python-version: '3.8'
-
-      - run: python -m pip install cibuildwheel==2.11.2
+      - uses: docker/setup-qemu-action@v2
+        name: Setup QEMU
+        if: matrix.platform_id == 'manylinux_aarch64'
       - name: Build wheels
-        run: python -m cibuildwheel --output-dir wheelhouse
+        uses: pypa/cibuildwheel@v2.11.3
         env:
           CIBW_BUILD_VERBOSITY: 1
           CIBW_ARCHS: all
           CIBW_BUILD: cp${{ matrix.python }}-${{ matrix.platform_id }}
+          DP_VARIANT: ${{ matrix.dp_variant }}
       - uses: actions/upload-artifact@v2
         with:
           path: ./wheelhouse/*.whl
@@ -98,7 +77,18 @@ jobs:
         with:
           name: artifact
           path: dist
-      - uses: pypa/gh-action-pypi-publish@master
+      - uses: pypa/gh-action-pypi-publish@v4
         with:
           user: __token__
           password: ${{ secrets.pypi_password }}
+
+  pass:
+    name: Pass testing build wheels
+    needs: [build_wheels, build_sdist]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+    - name: Decide whether the needed jobs succeeded or failed
+      uses: re-actors/alls-green@release/v1
+      with:
+        jobs: ${{ toJSON(needs) }}

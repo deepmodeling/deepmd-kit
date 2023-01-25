@@ -1,4 +1,4 @@
-# new in 3.16: GET_RUNTIME_DEPENDENCIES
+# new in 3.16: GET_RUNTIME_DEPENDENCIES, target_precompile_headers
 cmake_minimum_required(VERSION 3.16)
 project(DeePMD)
 
@@ -21,7 +21,7 @@ if ((NOT BUILD_PY_IF) AND (NOT BUILD_CPP_IF))
 endif()
 
 if (BUILD_CPP_IF AND BUILD_TESTING)
-  if (NOT DOWNLOAD_TENSORFLOW)
+  if (NOT INSTALL_TENSORFLOW)
     # some errors in conda packages...
     find_package(GTest)
   endif()
@@ -112,7 +112,11 @@ set(DEEPMD_SOURCE_DIR ${PROJECT_SOURCE_DIR}/..)
 
 # setup tensorflow libraries by python
 if (USE_TF_PYTHON_LIBS)
-  find_package (Python COMPONENTS Interpreter Development REQUIRED)
+  if(NOT $ENV{CIBUILDWHEEL} STREQUAL "1")
+    find_package (Python COMPONENTS Interpreter Development REQUIRED)
+  else()
+    set(Python_LIBRARIES ${Python_LIBRARY})
+  endif()
 endif(USE_TF_PYTHON_LIBS)
 
 # find tensorflow, I need tf abi info
@@ -140,10 +144,17 @@ if (OPENMP_FOUND)
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
 endif()
 
+# optimize flags
+option(ENABLE_NATIVE_OPTIMIZATION "Enable native optimization" OFF)
+if (ENABLE_NATIVE_OPTIMIZATION)
+  set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -march=native -mtune=native")
+  set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=native -mtune=native")
+endif()
+
 # define names of libs
 set (LIB_DEEPMD		"deepmd")
+set (LIB_DEEPMD_OP		"deepmd_op")
 if (BUILD_CPP_IF)
-  set (LIB_DEEPMD_OP		"deepmd_op")
   set (LIB_DEEPMD_CC		"deepmd_cc")
   set (LIB_DEEPMD_C     "deepmd_c")
   if (USE_CUDA_TOOLKIT)
@@ -174,8 +185,10 @@ if (BUILD_CPP_IF)
   add_subdirectory (lmp/)
   if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 4.8)
     # add_subdirectory (md/)
+    if(NOT BUILD_PY_IF)
     add_subdirectory (ipi/)
     add_subdirectory (gmx/)
+    endif()
   endif ()
 endif (BUILD_CPP_IF)
 
@@ -198,7 +211,7 @@ add_custom_target(lammps
     COMMAND ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_BINARY_DIR}/cmake_lammps.cmake)
 
 # add configure file
-if(BUILD_CPP_IF)
+if(BUILD_CPP_IF AND NOT BUILD_PY_IF)
   include(CMakePackageConfigHelpers)
   set(targets_export_name ${CMAKE_PROJECT_NAME}Targets CACHE INTERNAL "")
   set(generated_dir "${CMAKE_CURRENT_BINARY_DIR}/generated" CACHE INTERNAL "")
@@ -213,4 +226,4 @@ if(BUILD_CPP_IF)
     "${config_file}" INSTALL_DESTINATION ${cmake_files_install_dir})
   install(FILES ${version_file} ${config_file}
     DESTINATION ${cmake_files_install_dir})
-endif(BUILD_CPP_IF)
+endif(BUILD_CPP_IF AND NOT BUILD_PY_IF)

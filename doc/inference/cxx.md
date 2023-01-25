@@ -1,6 +1,6 @@
 # C/C++ interface
 ## C++ interface
-The C++ interface of DeePMD-kit is also avaiable for model interface, which is considered faster than Python interface. An example `infer_water.cpp` is given below:
+The C++ interface of DeePMD-kit is also available for the model interface, which is considered faster than the Python interface. An example `infer_water.cpp` is given below:
 ```cpp
 #include "deepmd/DeepPot.h"
 
@@ -28,7 +28,7 @@ and then run the program:
 
 ## C interface
 
-Although C is harder to write, C library will not be affected by different versions of C++ compilers.
+Although C is harder to write, the C library will not be affected by different versions of C++ compilers.
 
 An example `infer_water.c` is given below:
 ```cpp
@@ -67,7 +67,7 @@ int main(){
 ```
 
 where `e`, `f` and `v` are predicted energy, force and virial of the system, respectively.
-`ae` and `av` are atomic energy and atomic virial, respectively.
+`ae` and `av` are atomic energy and atomic virials, respectively.
 See {cpp:func}`DP_DeepPotCompute` for details.
 
 You can compile `infer_water.c` using `gcc`:
@@ -82,7 +82,7 @@ and then run the program:
 ## Header-only C++ library interface (recommended)
 
 The header-only C++ library is built based on the C library.
-Thus, it has the same ABI compatibility as the C library, but provides powerful C++ interface.
+Thus, it has the same ABI compatibility as the C library but provides a powerful C++ interface.
 To use it, include `deepmd/deepmd.hpp`.
 
 ```cpp
@@ -110,3 +110,21 @@ and then run the program:
 ```sh
 ./infer_water_hpp
 ```
+
+In some cases, one may want to pass the custom neighbor list instead of the native neighbor list. The above code can be revised as follows:
+
+```cpp
+  // neighbor list
+  std::vector<std::vector<int >> nlist_vec = {
+    {1, 2},
+    {0, 2},
+    {0, 1}
+    };
+  std::vector<int> ilist(3), numneigh(3);
+  std::vector<int*> firstneigh(3);
+  InputNlist nlist(3, &ilist[0], &numneigh[0], &firstneigh[0]);
+  convert_nlist(nlist, nlist_vec);
+  dp.compute (e, f, v, coord, atype, cell, 0, nlist, 0);
+```
+
+Here, `nlist_vec` means the neighbors of atom 0 are atom 1 and atom 2, the neighbors of atom 1 are atom 0 and atom 2, and the neighbors of atom 2 are atom 0 and atom 1.

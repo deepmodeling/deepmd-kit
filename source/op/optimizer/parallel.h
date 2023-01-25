@@ -10,7 +10,7 @@ class DPParallel : public CustomGraphOptimizer {
  public:
   Status Init(
       const tensorflow::RewriterConfig_CustomGraphOptimizer* config) override {
-    return Status::OK();
+    return Status();
   }
   std::string name() const override { return "dpparallel"; };
   bool UsesFunctionLibrary() const override { return false; }

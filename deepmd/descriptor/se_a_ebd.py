@@ -1,8 +1,8 @@
 import numpy as np
-from typing import Tuple, List
+from typing import Optional, Tuple, List
 
 from deepmd.env import tf
-from deepmd.common import ClassArg, get_activation_func, get_precision, add_data_requirement
+from deepmd.common import get_activation_func, get_precision, add_data_requirement
 from deepmd.utils.network import one_layer
 from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
 from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
@@ -31,7 +31,7 @@ class DescrptSeAEbd (DescrptSeA):
             Number of the axis neuron (number of columns of the sub-matrix of the embedding matrix)
     resnet_dt
             Time-step `dt` in the resnet construction:
-            y = x + dt * \phi (Wx + b)
+            y = x + dt * \\phi (Wx + b)
     trainable
             If the weights of embedding net are trainable.
     seed
@@ -62,7 +62,7 @@ class DescrptSeAEbd (DescrptSeA):
                   axis_neuron: int = 8,
                   resnet_dt: bool = False,
                   trainable: bool = True,
-                  seed: int = None,
+                  seed: Optional[int] = None,
                   type_one_side: bool = True,
                   type_nchanl : int = 2,
                   type_nlayer : int = 1,
@@ -75,12 +75,6 @@ class DescrptSeAEbd (DescrptSeA):
         """
         Constructor
         """
-        # args = ClassArg()\
-        #        .add('type_nchanl',      int,    default = 4) \
-        #        .add('type_nlayer',      int,    default = 2) \
-        #        .add('type_one_side',    bool,   default = True) \
-        #        .add('numb_aparam',      int,    default = 0)
-        # class_data = args.parse(jdata)
         DescrptSeA.__init__(self, 
                             rcut,
                             rcut_smth,
@@ -143,9 +137,10 @@ class DescrptSeAEbd (DescrptSeA):
         descriptor
                 The output descriptor
         """
-        nei_type = np.array([])
+        nei_type = []
         for ii in range(self.ntypes):
-            nei_type = np.append(nei_type, ii * np.ones(self.sel_a[ii]))
+            nei_type.append(ii * np.ones(self.sel_a[ii], dtype=int))
+        nei_type = np.concatenate(nei_type)
         self.nei_type = tf.get_variable('t_nei_type', 
                                         [self.nnei],
                                         dtype = GLOBAL_TF_FLOAT_PRECISION,

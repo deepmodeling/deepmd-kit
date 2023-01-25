@@ -1,6 +1,6 @@
 import math
 import numpy as np
-from typing import Tuple, List, Dict, Any
+from typing import Optional, Tuple, List, Dict, Any
 from packaging.version import Version
 
 from deepmd.env import tf
@@ -38,7 +38,7 @@ class DescrptSeAtten(DescrptSeA):
             Number of the axis neuron :math:`M_2` (number of columns of the sub-matrix of the embedding matrix)
     resnet_dt
             Time-step `dt` in the resnet construction:
-            y = x + dt * \phi (Wx + b)
+            y = x + dt * \\phi (Wx + b)
     trainable
             If the weights of embedding net are trainable.
     seed
@@ -64,6 +64,8 @@ class DescrptSeAtten(DescrptSeA):
             Whether to dot the relative coordinates on the attention weights as a gated scheme.
     attn_mask
             Whether to mask the diagonal in the attention weights.
+    multi_task
+            If the model has multi fitting nets to train.
     """
 
     def __init__(self,
@@ -75,7 +77,7 @@ class DescrptSeAtten(DescrptSeA):
                  axis_neuron: int = 8,
                  resnet_dt: bool = False,
                  trainable: bool = True,
-                 seed: int = None,
+                 seed: Optional[int] = None,
                  type_one_side: bool = True,
                  exclude_types: List[List[int]] = [],
                  set_davg_zero: bool = False,
@@ -85,7 +87,8 @@ class DescrptSeAtten(DescrptSeA):
                  attn: int = 128,
                  attn_layer: int = 2,
                  attn_dotr: bool = True,
-                 attn_mask: bool = False
+                 attn_mask: bool = False,
+                 multi_task: bool = False
                  ) -> None:
         DescrptSeA.__init__(self,
                             rcut,
@@ -101,7 +104,8 @@ class DescrptSeAtten(DescrptSeA):
                             set_davg_zero=set_davg_zero,
                             activation_function=activation_function,
                             precision=precision,
-                            uniform_seed=uniform_seed
+                            uniform_seed=uniform_seed,
+                            multi_task=multi_task
                             )
         """
         Constructor
@@ -153,7 +157,7 @@ class DescrptSeAtten(DescrptSeA):
                             mesh: list,
                             input_dict: dict,
                             mixed_type: bool = False,
-                            real_natoms_vec: list = None
+                            real_natoms_vec: Optional[list] = None
                             ) -> None:
         """
         Compute the statisitcs (avg and std) of the training data. The input will be normalized by the statistics.
@@ -180,8 +184,6 @@ class DescrptSeAtten(DescrptSeA):
         real_natoms_vec
                 If mixed_type is True, it takes in the real natoms_vec for each frame.
         """
-        all_davg = []
-        all_dstd = []
         if True:
             sumr = []
             suma = []
@@ -208,26 +210,15 @@ class DescrptSeAtten(DescrptSeA):
                     sumn.append(sysn)
                     sumr2.append(sysr2)
                     suma2.append(sysa2)
-            sumr = np.sum(sumr, axis=0)
-            suma = np.sum(suma, axis=0)
-            sumn = np.sum(sumn, axis=0)
-            sumr2 = np.sum(sumr2, axis=0)
-            suma2 = np.sum(suma2, axis=0)
-            for type_i in range(self.ntypes):
-                davgunit = [sumr[type_i] / (sumn[type_i] + 1e-15), 0, 0, 0]
-                dstdunit = [self._compute_std(sumr2[type_i], sumr[type_i], sumn[type_i]),
-                            self._compute_std(suma2[type_i], suma[type_i], sumn[type_i]),
-                            self._compute_std(suma2[type_i], suma[type_i], sumn[type_i]),
-                            self._compute_std(suma2[type_i], suma[type_i], sumn[type_i])
-                            ]
-                davg = np.tile(davgunit, self.ndescrpt // 4)
-                dstd = np.tile(dstdunit, self.ndescrpt // 4)
-                all_davg.append(davg)
-                all_dstd.append(dstd)
-
-        if not self.set_davg_zero:
-            self.davg = np.array(all_davg)
-        self.dstd = np.array(all_dstd)
+            if not self.multi_task:
+                stat_dict = {'sumr': sumr, 'suma': suma, 'sumn': sumn, 'sumr2': sumr2, 'suma2': suma2}
+                self.merge_input_stats(stat_dict)
+            else:
+                self.stat_dict['sumr'] += sumr
+                self.stat_dict['suma'] += suma
+                self.stat_dict['sumn'] += sumn
+                self.stat_dict['sumr2'] += sumr2
+                self.stat_dict['suma2'] += suma2
 
     def build(self,
               coord_: tf.Tensor,
@@ -236,7 +227,7 @@ class DescrptSeAtten(DescrptSeA):
               box_: tf.Tensor,
               mesh: tf.Tensor,
               input_dict: dict,
-              reuse: bool = None,
+              reuse: Optional[bool] = None,
               suffix: str = ''
               ) -> tf.Tensor:
         """

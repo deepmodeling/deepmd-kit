@@ -12,7 +12,7 @@ add_definitions("-DCUB_IGNORE_DEPRECATED_CPP_DIALECT")
 
 message(STATUS "HIP major version is " ${HIP_VERSION_MAJOR})
 
-set (HIP_HIPCC_FLAGS -fno-gpu-rdc; -fPIC --std=c++14) # --amdgpu-target=gfx906
+set (HIP_HIPCC_FLAGS -fno-gpu-rdc; -fPIC --std=c++14 ${HIP_HIPCC_FLAGS}) # --amdgpu-target=gfx906
 if (HIP_VERSION VERSION_LESS 3.5.1)
   set (HIP_HIPCC_FLAGS -hc; ${HIP_HIPCC_FLAGS})
 endif()
@@ -25,6 +25,7 @@ target_include_directories(
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../include/>
   $<INSTALL_INTERFACE:include>
 )
+target_precompile_headers(deepmd_op_rocm PUBLIC [["device.h"]])
 
 install(TARGETS deepmd_op_rocm DESTINATION lib/)
 if (BUILD_CPP_IF)

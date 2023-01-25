@@ -3,14 +3,14 @@ on:
   pull_request:
 name: Test C++
 jobs:
-  testpython:
+  testcc:
     name: Test C++
     runs-on: ubuntu-latest
     container: ghcr.io/deepmodeling/deepmd-kit-test-cc:latest
     steps:
     - name: work around permission issue
       run: git config --global --add safe.directory /__w/deepmd-kit/deepmd-kit
-    - uses: actions/checkout@master
+    - uses: actions/checkout@v3
     - run: source/install/test_cc_local.sh
       env:
         OMP_NUM_THREADS: 1
@@ -35,3 +35,13 @@ jobs:
     - uses: codecov/codecov-action@v3
       with:
         gcov: true
+  pass:
+    name: Pass testing C++
+    needs: [testcc]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+    - name: Decide whether the needed jobs succeeded or failed
+      uses: re-actors/alls-green@release/v1
+      with:
+        jobs: ${{ toJSON(needs) }}

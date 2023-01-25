@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from deepmd import __version__
+from deepmd.common import clear_session
 from deepmd.entrypoints import (
     compress,
     config,
@@ -238,6 +239,12 @@ def main_parser() -> argparse.ArgumentParser:
         default=None,
         help="the name of weight file (.npy), if set, save the model's weight into the file",
     )
+    parser_frz.add_argument(
+        "--united-model",
+        action="store_true",
+        default=False,
+        help="When in multi-task mode, freeze all nodes into one united model",
+    )
 
     # * test script ********************************************************************
     parser_tst = subparsers.add_parser(
@@ -257,12 +264,20 @@ def main_parser() -> argparse.ArgumentParser:
         type=str,
         help="Frozen model file to import",
     )
-    parser_tst.add_argument(
+    parser_tst_subgroup = parser_tst.add_mutually_exclusive_group()
+    parser_tst_subgroup.add_argument(
         "-s",
         "--system",
         default=".",
         type=str,
         help="The system dir. Recursively detect systems in this directory",
+    )
+    parser_tst_subgroup.add_argument(
+        "-f",
+        "--datafile",
+        default=None,
+        type=str,
+        help="The path to file of test list.",
     )
     parser_tst.add_argument(
         "-S", "--set-prefix", default="set", type=str, help="The set prefix"
@@ -548,15 +563,24 @@ def parse_args(args: Optional[List[str]] = None) -> argparse.Namespace:
     return parsed_args
 
 
-def main():
+def main(args: Optional[List[str]] = None):
     """DeePMD-Kit entry point.
+
+    Parameters
+    ----------
+    args: List[str], optional
+        list of command line arguments, used to avoid calling from the subprocess,
+        as it is quite slow to import tensorflow
 
     Raises
     ------
     RuntimeError
         if no command was input
     """
-    args = parse_args()
+    if args is not None:
+        clear_session()
+
+    args = parse_args(args=args)
 
     # do not set log handles for None, it is useless
     # log handles for train will be set separatelly
@@ -592,3 +616,6 @@ def main():
         pass
     else:
         raise RuntimeError(f"unknown command {args.command}")
+
+    if args is not None:
+        clear_session()

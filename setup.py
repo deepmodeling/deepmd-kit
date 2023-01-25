@@ -4,6 +4,7 @@ import os
 import sys
 
 from skbuild import setup
+from wheel.bdist_wheel import bdist_wheel
 
 topdir = os.path.abspath(os.path.dirname(__file__))
 sys.path.insert(0, os.path.join(topdir, 'backend'))
@@ -31,9 +32,26 @@ else:
 
 if os.environ.get("DP_BUILD_TESTING", "0") == "1":
     cmake_args.append("-DBUILD_TESTING:BOOL=TRUE")
+if os.environ.get("DP_ENABLE_NATIVE_OPTIMIZATION", "0") == "1":
+    cmake_args.append("-DENABLE_NATIVE_OPTIMIZATION:BOOL=TRUE")
+dp_lammps_version = os.environ.get("DP_LAMMPS_VERSION", "")
+if dp_lammps_version != "":
+    cmake_args.append("-DBUILD_CPP_IF:BOOL=TRUE")
+    cmake_args.append("-DUSE_TF_PYTHON_LIBS:BOOL=TRUE")
+    cmake_args.append(f"-DLAMMPS_VERSION={dp_lammps_version}")
+else:
+    cmake_args.append("-DBUILD_CPP_IF:BOOL=FALSE")
 
 tf_install_dir, _ = find_tensorflow()
 tf_version = get_tf_version(tf_install_dir)
+
+
+class bdist_wheel_abi3(bdist_wheel):
+    def get_tag(self):
+        python, abi, plat = super().get_tag()
+        if python.startswith("cp"):
+            return "py37", "none", plat
+        return python, abi, plat
 
 
 # TODO: migrate packages and entry_points to pyproject.toml after scikit-build supports it
@@ -62,7 +80,6 @@ setup(
     cmake_args=[
         f"-DTENSORFLOW_ROOT:PATH={tf_install_dir}",
         "-DBUILD_PY_IF:BOOL=TRUE",
-        "-DBUILD_CPP_IF:BOOL=FALSE",
         *cmake_args,
     ],
     cmake_source_dir="source",
@@ -80,11 +97,40 @@ setup(
             "numpydoc",
             "ase",
             "deepmodeling-sphinx>=0.1.0",
-            "dargs>=0.3.1",
+            "dargs>=0.3.4",
             "sphinx-argparse",
             "pygments-lammps",
             ],
+        "lmp": [
+            "lammps-manylinux-2-28~=2022.6.23.2.2; platform_system=='Linux'",
+            "lammps~=2022.6.23.2.2; platform_system!='Linux'",
+            "find_libpython",
+        ],
         **get_tf_requirement(tf_version),
+        "cu11": [
+            "nvidia-cuda-runtime-cu11",
+            "nvidia-cublas-cu11",
+            "nvidia-cufft-cu11",
+            "nvidia-curand-cu11",
+            "nvidia-cusolver-cu11",
+            "nvidia-cusparse-cu11",
+            "nvidia-cudnn-cu11",
+        ],
+        "cu12": [
+            "nvidia-cuda-runtime-cu12",
+            "nvidia-cublas-cu12",
+            "nvidia-cufft-cu12",
+            "nvidia-curand-cu12",
+            "nvidia-cusolver-cu12",
+            "nvidia-cusparse-cu12",
+            "nvidia-cudnn-cu12",
+        ],
     },
-    entry_points={"console_scripts": ["dp = deepmd.entrypoints.main:main"]},
+    entry_points={
+        "console_scripts": ["dp = deepmd.entrypoints.main:main"],
+        "lammps.plugins": ["deepmd = deepmd.lmp:get_op_dir"],
+    },
+    cmdclass = {
+        "bdist_wheel": bdist_wheel_abi3,
+    },
 )

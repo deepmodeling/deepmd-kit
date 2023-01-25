@@ -7,6 +7,7 @@
 #include "test_utils.h"
 #include "ewald.h"
 
+template <class VALUETYPE>
 class TestInferEwald : public ::testing::Test
 {  
 protected:  
@@ -30,8 +31,14 @@ protected:
   };
 };
 
-TEST_F(TestInferEwald, cpu_numfv)
+TYPED_TEST_SUITE(TestInferEwald, ValueTypes);
+
+TYPED_TEST(TestInferEwald, cpu_numfv)
 {
+  using VALUETYPE = TypeParam;
+  std::vector<VALUETYPE>& coord = this -> coord;
+  std::vector<VALUETYPE>& charge = this -> charge;
+  std::vector<VALUETYPE>& box = this -> box;
   class MyModel : public EnergyModelTest<VALUETYPE>
   {
     const std::vector<VALUETYPE > & charge;

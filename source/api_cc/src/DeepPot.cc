@@ -87,7 +87,7 @@ run_model <double, double> (ENERGYTYPE &			dener,
 	   Session *			session, 
 	   const std::vector<std::pair<std::string, Tensor>> & input_tensors,
 	   const AtomMap&	atommap, 
-	   const int			nghost = 0);
+	   const int			nghost);
 
 template
 void
@@ -97,7 +97,7 @@ run_model <double, float> (ENERGYTYPE &			dener,
      Session *			session, 
      const std::vector<std::pair<std::string, Tensor>> & input_tensors,
      const AtomMap&	atommap, 
-     const int			nghost = 0);
+     const int			nghost);
 
 template
 void
@@ -107,7 +107,7 @@ run_model <float, double> (ENERGYTYPE &			dener,
 	   Session *			session, 
 	   const std::vector<std::pair<std::string, Tensor>> & input_tensors,
 	   const AtomMap&	atommap, 
-	   const int			nghost = 0);
+	   const int			nghost);
 
 template
 void
@@ -117,7 +117,7 @@ run_model <float, float> (ENERGYTYPE &			dener,
      Session *			session, 
      const std::vector<std::pair<std::string, Tensor>> & input_tensors,
      const AtomMap&	atommap, 
-     const int			nghost = 0);
+     const int			nghost);
 
 template <typename MODELTYPE, typename VALUETYPE>
 static void run_model (ENERGYTYPE   &		dener,
@@ -210,7 +210,7 @@ void run_model <double, double> (ENERGYTYPE   &		dener,
     Session*			session, 
     const std::vector<std::pair<std::string, Tensor>> & input_tensors,
     const deepmd::AtomMap &   atommap, 
-    const int&		nghost = 0);
+    const int&		nghost);
 
 template
 void run_model <double, float> (ENERGYTYPE   &		dener,
@@ -221,7 +221,7 @@ void run_model <double, float> (ENERGYTYPE   &		dener,
     Session*			session, 
     const std::vector<std::pair<std::string, Tensor>> & input_tensors,
     const deepmd::AtomMap &   atommap, 
-    const int&		nghost = 0);
+    const int&		nghost);
 
 template
 void run_model <float, double> (ENERGYTYPE   &		dener,
@@ -232,7 +232,7 @@ void run_model <float, double> (ENERGYTYPE   &		dener,
     Session*			session, 
     const std::vector<std::pair<std::string, Tensor>> & input_tensors,
     const deepmd::AtomMap &   atommap, 
-    const int&		nghost = 0);
+    const int&		nghost);
 
 template
 void run_model <float, float> (ENERGYTYPE   &		dener,
@@ -243,7 +243,7 @@ void run_model <float, float> (ENERGYTYPE   &		dener,
     Session*			session, 
     const std::vector<std::pair<std::string, Tensor>> & input_tensors,
     const deepmd::AtomMap &   atommap, 
-    const int&		nghost = 0);
+    const int&		nghost);
 
 DeepPot::
 DeepPot ()
@@ -331,23 +331,7 @@ void
 DeepPot::
 print_summary(const std::string &pre) const
 {
-  std::cout << pre << "installed to:       " + global_install_prefix << std::endl;
-  std::cout << pre << "source:             " + global_git_summ << std::endl;
-  std::cout << pre << "source branch:       " + global_git_branch << std::endl;
-  std::cout << pre << "source commit:      " + global_git_hash << std::endl;
-  std::cout << pre << "source commit at:   " + global_git_date << std::endl;
-  std::cout << pre << "surpport model ver.:" + global_model_version << std::endl;
-#if defined(GOOGLE_CUDA)
-  std::cout << pre << "build variant:      cuda" << std::endl;
-#elif defined(TENSORFLOW_USE_ROCM)
-  std::cout << pre << "build variant:      rocm" << std::endl;
-#else
-  std::cout << pre << "build variant:      cpu" << std::endl;
-#endif
-  std::cout << pre << "build with tf inc:  " + global_tf_include_dir << std::endl;
-  std::cout << pre << "build with tf lib:  " + global_tf_lib << std::endl;
-  std::cout << pre << "set tf intra_op_parallelism_threads: " <<  num_intra_nthreads << std::endl;
-  std::cout << pre << "set tf inter_op_parallelism_threads: " <<  num_inter_nthreads << std::endl;
+  deepmd::print_summary(pre);
 }
 
 template<class VT>
@@ -697,21 +681,20 @@ compute (ENERGYTYPE &			dener,
   int nloc_real = nall_real - nghost_real;
   dcoord.resize(nall_real * 3);
   datype.resize(nall_real);
-  datom_energy.resize(nall_real);
   // fwd map
   select_map<VALUETYPE>(dcoord, dcoord_, fwd_map, 3);
   select_map<int>(datype, datype_, fwd_map, 1);
-  select_map<VALUETYPE>(datom_energy, datom_energy_, fwd_map, 1);
   // aparam
   if (daparam > 0){
     aparam.resize(nloc_real);
     select_map<VALUETYPE>(aparam, aparam_, fwd_map, daparam);
   }
     if (ago == 0) {
-    atommap = AtomMap (datype.begin(), datype.begin() + nloc_real);
+    atommap = deepmd::AtomMap (datype.begin(), datype.begin() + nloc_real);
     assert (nloc_real == atommap.get_type().size());
 
         nlist_data.copy_from_nlist(lmp_list);
+        nlist_data.shuffle_exclude_empty(fwd_map);
         nlist_data.shuffle(atommap);
 	nlist_data.make_inlist(nlist);
     }

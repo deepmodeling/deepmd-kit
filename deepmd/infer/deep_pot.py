@@ -359,9 +359,15 @@ class DeepPot(DeepEval):
         if mixed_type:
             feed_dict_test[self.t_type] = np.reshape(atom_types, [-1])
         else:
-            feed_dict_test[self.t_type] = (np.tile(atom_types, [nframes, 1])).reshape([-1])
-        feed_dict_test[self.t_coord] = coords.reshape([-1])
-        feed_dict_test[self.t_box  ] = cells
+            feed_dict_test[self.t_type] = np.tile(atom_types, [nframes, 1]).reshape([-1])
+        feed_dict_test[self.t_coord] = np.reshape(coords, [-1])
+        
+        if len(self.t_box.shape) == 1:
+            feed_dict_test[self.t_box  ] = np.reshape(cells , [-1])
+        elif len(self.t_box.shape) == 2:
+            feed_dict_test[self.t_box  ] = cells
+        else:
+            raise RuntimeError
         if self.has_efield:
             feed_dict_test[self.t_efield]= efield
         if pbc:

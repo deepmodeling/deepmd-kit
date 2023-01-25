@@ -26,12 +26,12 @@ log = logging.getLogger(__name__)
 
 # http://patorjk.com/software/taag. Font:Big"
 WELCOME = (  # noqa
-    " _____               _____   __  __  _____           _     _  _   ",
-    "|  __ \             |  __ \ |  \/  ||  __ \         | |   (_)| |  ",
-    "| |  | |  ___   ___ | |__) || \  / || |  | | ______ | | __ _ | |_ ",
-    "| |  | | / _ \ / _ \|  ___/ | |\/| || |  | ||______|| |/ /| || __|",
-    "| |__| ||  __/|  __/| |     | |  | || |__| |        |   < | || |_ ",
-    "|_____/  \___| \___||_|     |_|  |_||_____/         |_|\_\|_| \__|",
+    r" _____               _____   __  __  _____           _     _  _   ",
+    r"|  __ \             |  __ \ |  \/  ||  __ \         | |   (_)| |  ",
+    r"| |  | |  ___   ___ | |__) || \  / || |  | | ______ | | __ _ | |_ ",
+    r"| |  | | / _ \ / _ \|  ___/ | |\/| || |  | ||______|| |/ /| || __|",
+    r"| |__| ||  __/|  __/| |     | |  | || |__| |        |   < | || |_ ",
+    r"|_____/  \___| \___||_|     |_|  |_||_____/         |_|\_\|_| \__|",
 )
 
 CITATION = (
@@ -54,7 +54,7 @@ BUILD = (
 
 
 class RunOptions:
-    """Class with inf oon how to run training (cluster, MPI and GPU config).
+    """Class with info on how to run training (cluster, MPI and GPU config).
 
     Attributes
     ----------
@@ -100,6 +100,7 @@ class RunOptions:
         # model init options
         self.restart = restart
         self.init_model = init_model
+        self.init_frz_model = init_frz_model
         self.finetune = finetune
         self.init_mode = "init_from_scratch"
 

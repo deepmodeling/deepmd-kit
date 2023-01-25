@@ -1,6 +1,5 @@
 import numpy as np
 from deepmd.env import tf
-from deepmd.common import ClassArg
 
 class LearningRateExp (object) :
     r"""
@@ -36,12 +35,6 @@ class LearningRateExp (object) :
         """
         Constructor
         """
-        # args = ClassArg()\
-        #        .add('decay_steps',      int,    must = False)\
-        #        .add('decay_rate',       float,  must = False)\
-        #        .add('start_lr',         float,  must = True)\
-        #        .add('stop_lr',          float,  must = False)
-        # self.cd = args.parse(jdata)
         self.cd = {}
         self.cd['start_lr'] = start_lr
         self.cd['stop_lr'] = stop_lr

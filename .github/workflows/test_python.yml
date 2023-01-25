@@ -38,7 +38,7 @@ jobs:
     steps:
     - name: work around permission issue
       run: git config --global --add safe.directory /__w/deepmd-kit/deepmd-kit
-    - uses: actions/checkout@master
+    - uses: actions/checkout@v3
     - run: python -m pip install -U pip>=21.3.1
     - run: pip install -e .[cpu,test]
       env:
@@ -47,7 +47,17 @@ jobs:
         TENSORFLOW_VERSION: ${{ matrix.tf }}
         DP_BUILD_TESTING: 1
     - run: dp --version
-    - run: pytest --cov=deepmd source/tests
+    - run: pytest --cov=deepmd source/tests --durations=0
     - uses: codecov/codecov-action@v3
       with:
         gcov: true
+  pass:
+    name: Pass testing Python
+    needs: [testpython]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+    - name: Decide whether the needed jobs succeeded or failed
+      uses: re-actors/alls-green@release/v1
+      with:
+        jobs: ${{ toJSON(needs) }}

@@ -32,16 +32,19 @@ if (BUILD_CPP_IF AND INSTALL_TENSORFLOW)
 	  )
 endif ()
 
-if (BUILD_CPP_IF AND USE_TF_PYTHON_LIBS)
+if (BUILD_CPP_IF AND USE_TF_PYTHON_LIBS AND NOT SKBUILD)
   # Here we try to install libtensorflow_cc.so as well as libtensorflow_framework.so using libs within the python site-package tensorflow folder.
-
-  if (NOT DEFINED TENSORFLOW_ROOT)
-    set (TENSORFLOW_ROOT ${CMAKE_INSTALL_PREFIX})
-  endif ()
-  # execute install script
   execute_process(
-    COMMAND sh ${DEEPMD_SOURCE_DIR}/source/install/install_tf.sh ${Python_SITELIB} ${TENSORFLOW_ROOT}
-    )
+    COMMAND ${Python_EXECUTABLE} -c "import tensorflow; print(tensorflow.sysconfig.get_lib())"
+    WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+    OUTPUT_VARIABLE TENSORFLOW_ROOT
+    RESULT_VARIABLE TENSORFLOW_ROOT_RESULT_VAR
+    ERROR_VARIABLE TENSORFLOW_ROOT_ERROR_VAR
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+  )
+  if (NOT ${TENSORFLOW_ROOT_RESULT_VAR} EQUAL 0)
+    message(FATAL_ERROR "Cannot determine tensorflow root, error code: ${TENSORFLOW_ROOT_RESULT_VAR}, error message: ${TENSORFLOW_ROOT_ERROR_VAR}")
+  endif()
 endif ()
 
 if(DEFINED TENSORFLOW_ROOT)
@@ -50,12 +53,12 @@ endif(DEFINED TENSORFLOW_ROOT)
 
 # define the search path
 list(APPEND TensorFlow_search_PATHS ${TENSORFLOW_ROOT})
-if(BUILD_CPP_IF)
+if(BUILD_CPP_IF AND NOT USE_TF_PYTHON_LIBS)
 list(APPEND TensorFlow_search_PATHS ${TENSORFLOW_ROOT_NO64})
 list(APPEND TensorFlow_search_PATHS "/usr/")
 list(APPEND TensorFlow_search_PATHS "/usr/local/")
 endif()
-if(BUILD_PY_IF)
+if(BUILD_PY_IF OR USE_TF_PYTHON_LIBS)
 	# here TENSORFLOW_ROOT is path to site-packages/tensorflow
 	# for conda libraries, append extra paths
 	list(APPEND TensorFlow_search_PATHS "${TENSORFLOW_ROOT}/../tensorflow_core")
@@ -80,7 +83,7 @@ if (NOT TensorFlow_INCLUDE_DIRS AND tensorflow_FIND_REQUIRED)
     "You can manually set the tensorflow install path by -DTENSORFLOW_ROOT ")
 endif ()
 
-if (BUILD_CPP_IF)
+if (BUILD_CPP_IF AND NOT USE_TF_PYTHON_LIBS)
   message (STATUS "Enabled cpp interface build, looking for tensorflow_cc and tensorflow_framework")
   # tensorflow_cc and tensorflow_framework
   if (NOT TensorFlow_FIND_COMPONENTS)
@@ -105,9 +108,9 @@ if (BUILD_CPP_IF)
 	"You can manually set the tensorflow install path by -DTENSORFLOW_ROOT ")
     endif ()
   endforeach ()
-else (BUILD_CPP_IF)
+else (BUILD_CPP_IF AND NOT USE_TF_PYTHON_LIBS)
   message (STATUS "Disabled cpp interface build, looking for tensorflow_framework")
-endif (BUILD_CPP_IF)
+endif (BUILD_CPP_IF AND NOT USE_TF_PYTHON_LIBS)
 
 
 # tensorflow_framework
@@ -139,10 +142,36 @@ foreach (module ${TensorFlowFramework_FIND_COMPONENTS})
     list(APPEND TensorFlowFramework_LIBRARY_PATH ${TensorFlowFramework_LIBRARY_PATH_${module}})
   elseif (tensorflow_FIND_REQUIRED)
     message(FATAL_ERROR 
-      "Not found lib/'${module}' in '${TensorFlow_search_PATHS}' "
+      "Not found ${TF_SUFFIX}/${module} in '${TensorFlow_search_PATHS}' "
       "You can manually set the tensorflow install path by -DTENSORFLOW_ROOT ")
   endif ()
 endforeach ()
+
+# find _pywrap_tensorflow_internal and set it as tensorflow_cc
+if (BUILD_CPP_IF AND USE_TF_PYTHON_LIBS)
+  set(TF_SUFFIX python)
+  if(WIN32)
+    set(TensorFlow_FIND_COMPONENTS _pywrap_tensorflow_internal.lib)
+  else ()
+    set(TensorFlow_FIND_COMPONENTS _pywrap_tensorflow_internal${CMAKE_SHARED_MODULE_SUFFIX})
+  endif()
+  foreach (module ${TensorFlow_FIND_COMPONENTS})
+    find_library(TensorFlow_LIBRARY_${module}
+      NAMES ${module}
+      PATHS ${TensorFlow_search_PATHS} PATH_SUFFIXES ${TF_SUFFIX} NO_DEFAULT_PATH
+      )
+    if (TensorFlow_LIBRARY_${module})
+      list(APPEND TensorFlow_LIBRARY ${TensorFlow_LIBRARY_${module}})
+      get_filename_component(TensorFlow_LIBRARY_PATH_${module} ${TensorFlow_LIBRARY_${module}} PATH)
+      list(APPEND TensorFlow_LIBRARY_PATH ${TensorFlow_LIBRARY_PATH_${module}})
+      set (TensorFlow_LIBRARY_tensorflow_cc ${TensorFlow_LIBRARY_${module}})
+    elseif (tensorflow_FIND_REQUIRED)
+      message(FATAL_ERROR 
+        "Not found ${TF_SUFFIX}/${module} in '${TensorFlow_search_PATHS}' ")
+    endif ()
+  endforeach ()
+endif()
+
 
 # find protobuf header
 find_path(TensorFlow_INCLUDE_DIRS_GOOGLE
@@ -313,7 +342,11 @@ add_definitions(-D_GLIBCXX_USE_CXX11_ABI=${OP_CXX_ABI})
 
 add_library(TensorFlow::tensorflow_framework SHARED IMPORTED GLOBAL)
 if(WIN32)
-  string(REGEX REPLACE "[.]lib" ".dll" _DLL_FILE ${TensorFlowFramework_LIBRARY})
+  if(USE_TF_PYTHON_LIBS)
+    string(REGEX REPLACE "[.]lib" ".pyd" _DLL_FILE ${TensorFlowFramework_LIBRARY})
+  else()
+    string(REGEX REPLACE "[.]lib" ".dll" _DLL_FILE ${TensorFlowFramework_LIBRARY})
+  endif()
   set_target_properties(TensorFlow::tensorflow_framework PROPERTIES
                IMPORTED_IMPLIB ${TensorFlowFramework_LIBRARY}
                IMPORTED_LOCATION ${_DLL_FILE})
@@ -331,7 +364,11 @@ target_compile_definitions(TensorFlow::tensorflow_framework INTERFACE
 if(BUILD_CPP_IF)
   add_library(TensorFlow::tensorflow_cc SHARED IMPORTED GLOBAL)
   if(WIN32)
-    string(REGEX REPLACE "[.]lib" ".dll" _DLL_FILE ${TensorFlow_LIBRARY_tensorflow_cc})
+    if(USE_TF_PYTHON_LIBS)
+      string(REGEX REPLACE "[.]lib" ".pyd" _DLL_FILE ${TensorFlow_LIBRARY_tensorflow_cc})
+    else()
+      string(REGEX REPLACE "[.]lib" ".dll" _DLL_FILE ${TensorFlow_LIBRARY_tensorflow_cc})
+    endif()
     set_target_properties(TensorFlow::tensorflow_cc PROPERTIES
                  IMPORTED_IMPLIB ${TensorFlow_LIBRARY_tensorflow_cc}
                  IMPORTED_LOCATION ${_DLL_FILE})

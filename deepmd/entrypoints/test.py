@@ -23,6 +23,7 @@ def test(
     *,
     model: str,
     system: str,
+    datafile: str,
     set_prefix: str,
     numb_test: int,
     rand_seed: Optional[int],
@@ -39,6 +40,8 @@ def test(
         path where model is stored
     system : str
         system directory
+    datafile : str
+        the path to the list of systems to test
     set_prefix : str
         string prefix of set
     numb_test : int
@@ -57,7 +60,13 @@ def test(
     RuntimeError
         if no valid system was found
     """
-    all_sys = expand_sys_str(system)
+    if datafile is not None:
+        datalist = open(datafile, 'r')
+        all_sys = datalist.read().splitlines()
+        datalist.close()
+    else:
+        all_sys = expand_sys_str(system)
+
     if len(all_sys) == 0:
         raise RuntimeError("Did not find valid system")
     err_coll = []
@@ -294,6 +303,7 @@ def test_ener(
             detail_path.with_suffix(".e_peratom.out"),
             pe_atom,
             header = "%s: data_e pred_e" % system,
+            append=append_detail,
         )
         pf = np.concatenate(
             (

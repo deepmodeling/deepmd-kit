@@ -1,8 +1,22 @@
 #include "common.h"
 #include "AtomMap.h"
 #include "device.h"
-#include <dlfcn.h>
 #include <fcntl.h>
+#if defined(_WIN32)
+#if defined(_WIN32_WINNT)
+#undef _WIN32_WINNT
+#endif
+
+// target Windows version is windows 7 and later
+#define _WIN32_WINNT _WIN32_WINNT_WIN7
+#define PSAPI_VERSION 2
+#include <windows.h>
+#include <io.h>
+#define O_RDONLY _O_RDONLY
+#else
+// not windows
+#include <dlfcn.h>
+#endif
 #include "google/protobuf/text_format.h"
 #include "google/protobuf/io/zero_copy_stream_impl.h"
 
@@ -299,10 +313,11 @@ deepmd::
 load_op_library()
 {
   tensorflow::Env* env = tensorflow::Env::Default();
-  std::string dso_path = env->FormatLibraryFileName("deepmd_op", "");
 #if defined(_WIN32)
+  std::string dso_path = "deepmd_op.dll";
   void* dso_handle = LoadLibrary(dso_path.c_str());
 #else
+  std::string dso_path = "libdeepmd_op.so";
   void* dso_handle = dlopen(dso_path.c_str(), RTLD_NOW | RTLD_LOCAL);
 #endif
   if (!dso_handle) {
@@ -1072,3 +1087,28 @@ session_input_tensors<float, float> (std::vector<std::pair<std::string, tensorfl
 		       const int			nghost,
 		       const int			ago,
 		       const std::string		scope);
+
+void
+deepmd::
+print_summary(const std::string &pre)
+{
+  int num_intra_nthreads, num_inter_nthreads;
+  deepmd::get_env_nthreads(num_intra_nthreads, num_inter_nthreads);
+  std::cout << pre << "installed to:       " + global_install_prefix << "\n";
+  std::cout << pre << "source:             " + global_git_summ << "\n";
+  std::cout << pre << "source branch:       " + global_git_branch << "\n";
+  std::cout << pre << "source commit:      " + global_git_hash << "\n";
+  std::cout << pre << "source commit at:   " + global_git_date << "\n";
+  std::cout << pre << "surpport model ver.:" + global_model_version << "\n";
+#if defined(GOOGLE_CUDA)
+  std::cout << pre << "build variant:      cuda" << "\n";
+#elif defined(TENSORFLOW_USE_ROCM)
+  std::cout << pre << "build variant:      rocm" << "\n";
+#else
+  std::cout << pre << "build variant:      cpu" << "\n";
+#endif
+  std::cout << pre << "build with tf inc:  " + global_tf_include_dir << "\n";
+  std::cout << pre << "build with tf lib:  " + global_tf_lib << "\n";
+  std::cout << pre << "set tf intra_op_parallelism_threads: " <<  num_intra_nthreads << "\n";
+  std::cout << pre << "set tf inter_op_parallelism_threads: " <<  num_inter_nthreads << std::endl;
+}

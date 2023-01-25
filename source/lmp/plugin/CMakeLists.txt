@@ -22,7 +22,9 @@ if (DEFINED LAMMPS_SOURCE_ROOT OR DEFINED LAMMPS_VERSION)
   find_package(MPI)
   if(MPI_FOUND)
     set(LAMMPS_MPI_INCLUDE_DIRS ${MPI_CXX_INCLUDE_DIRS})
-    target_link_libraries(lammps_interface INTERFACE MPI::MPI_CXX)
+    # LAMMPS has linked MPI; do not link twice
+    # target_link_libraries(lammps_interface INTERFACE MPI::MPI_CXX)
+    target_include_directories(lammps_interface INTERFACE ${LAMMPS_MPI_INCLUDE_DIRS})
   else()
     # Use LAMMPS serial mpi.h header
     target_include_directories(lammps_interface INTERFACE "${LAMMPS_HEADER_DIR}/STUBS")
@@ -69,14 +71,14 @@ if (DEFINED LAMMPS_SOURCE_ROOT OR DEFINED LAMMPS_VERSION)
   endif()
   if(CMAKE_SYSTEM_NAME STREQUAL Darwin)
     set_target_properties(${libname} PROPERTIES LINK_FLAGS "-Wl,-undefined,dynamic_lookup")
-  endif()
-
+  else()
   set_target_properties(
     ${libname} 
     PROPERTIES 
     INSTALL_RPATH "$ORIGIN;${TensorFlow_LIBRARY_PATH}"
     LINK_FLAGS "-rdynamic"
   )
+  endif()
   target_compile_definitions(${libname}
     PUBLIC ${prec_def}
     PRIVATE "LMPPLUGIN" # fix header path
@@ -87,6 +89,9 @@ if (DEFINED LAMMPS_SOURCE_ROOT OR DEFINED LAMMPS_VERSION)
     target_link_libraries(${libname} PRIVATE coverage_config)
   endif()
 
+  if(BUILD_PY_IF)
+    install(TARGETS ${libname} DESTINATION deepmd/op/)
+  else(BUILD_PY_IF)
   install(TARGETS ${libname} DESTINATION lib/)
 
   if (${LAMMPS_VERSION_NUMBER} GREATER_EQUAL 20220324)
@@ -103,10 +108,15 @@ if (DEFINED LAMMPS_SOURCE_ROOT OR DEFINED LAMMPS_VERSION)
         )"
     )
   endif()
+  endif(BUILD_PY_IF)
 
   endfunction()
+  if(BUILD_PY_IF)
+    _add_lmp_plugin_variant("plugin" "${HIGH_PREC_DEF}")
+  else(BUILD_PY_IF)
   _add_lmp_plugin_variant("${HIGH_PREC_VARIANT}" "${HIGH_PREC_DEF}")
   _add_lmp_plugin_variant("${LOW_PREC_VARIANT}" "${LOW_PREC_DEF}")
+  endif()
 
 else()
   message(STATUS "disable LAMMPS plugin mode")

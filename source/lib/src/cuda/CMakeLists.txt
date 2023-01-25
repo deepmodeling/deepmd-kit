@@ -1,5 +1,5 @@
 # required cmake version
-cmake_minimum_required(VERSION 3.7)
+cmake_minimum_required(VERSION 3.16)
 # project name
 project(deepmd_op_cuda)
 
@@ -34,6 +34,7 @@ if (${CUDA_VERSION_MAJOR} GREATER "11" OR (${CUDA_VERSION_MAJOR} STREQUAL "11" A
     # nvcc flags
     set(CUDA_NVCC_FLAGS -arch=all; # embeds a compiled code image for all supported architectures (sm_*), and a PTX program for the highest major virtual architecture
                         -O3; -Xcompiler -fPIC;
+                        ${CUDA_NVCC_FLAGS}
         )
 elseif (${CUDA_VERSION_MAJOR} STREQUAL "11" AND ${CUDA_VERSION_MINOR} GREATER "0")
     # nvcc flags
@@ -46,6 +47,7 @@ elseif (${CUDA_VERSION_MAJOR} STREQUAL "11" AND ${CUDA_VERSION_MINOR} GREATER "0
                         -gencode arch=compute_80,code=sm_80; # Anpere - A100
                         -gencode arch=compute_86,code=sm_86; # Anpere - RTX 3090
                         -O3; -Xcompiler -fPIC;
+                        ${CUDA_NVCC_FLAGS}
         )
 elseif (${CUDA_VERSION_MAJOR} STREQUAL "11" AND ${CUDA_VERSION_MINOR} STREQUAL "0")
     # nvcc flags
@@ -57,6 +59,7 @@ elseif (${CUDA_VERSION_MAJOR} STREQUAL "11" AND ${CUDA_VERSION_MINOR} STREQUAL "
                         -gencode arch=compute_75,code=sm_75; # Turing - RTX 2080, Titan RTX, Quadro R8000
                         -gencode arch=compute_80,code=sm_80; # Anpere - A100
                         -O3; -Xcompiler -fPIC;
+                        ${CUDA_NVCC_FLAGS}
         )
 elseif (${CUDA_VERSION_MAJOR} STREQUAL "10")
     set(CUDA_NVCC_FLAGS -gencode arch=compute_30,code=sm_30; # Tesla K10, Quadro K600 K420 K410,
@@ -70,6 +73,7 @@ elseif (${CUDA_VERSION_MAJOR} STREQUAL "10")
                         -gencode arch=compute_70,code=sm_70; # Volta  - GV100/Tesla V100, GTX 1180 (GV104)
                         -gencode arch=compute_75,code=sm_75; # Turing - RTX 2080, Titan RTX, Quadro R8000
                         -O3; -Xcompiler -fPIC;
+                        ${CUDA_NVCC_FLAGS}
         )
 elseif (${CUDA_VERSION_MAJOR} STREQUAL "9")
     set(CUDA_NVCC_FLAGS -gencode arch=compute_30,code=sm_30;
@@ -82,6 +86,7 @@ elseif (${CUDA_VERSION_MAJOR} STREQUAL "9")
                         -gencode arch=compute_61,code=sm_61; # Pascal - GTX 1080, GTX 1070, GTX 1060, GTX 1050, GTX 1030, Titan Xp, Tesla P40, Tesla P4, Discrete GPU on the NVIDIA Drive PX2
                         -gencode arch=compute_70,code=sm_70; # Volta  - GV100/Tesla V100, GTX 1180 (GV104)
                         -O3; -Xcompiler -fPIC;
+                        ${CUDA_NVCC_FLAGS}
         )
 elseif (${CUDA_VERSION_MAJOR} STREQUAL "8")
     set(CUDA_NVCC_FLAGS -gencode arch=compute_30,code=sm_30;
@@ -93,6 +98,7 @@ elseif (${CUDA_VERSION_MAJOR} STREQUAL "8")
                         -gencode arch=compute_60,code=sm_60; # Pascal – GP100/Tesla P100 – DGX-1 (Generic Pascal)
                         -gencode arch=compute_61,code=sm_61; # Pascal - GTX 1080, GTX 1070, GTX 1060, GTX 1050, GTX 1030, Titan Xp, Tesla P40, Tesla P4, Discrete GPU on the NVIDIA Drive PX2
                         -O3; -Xcompiler -fPIC;
+                        ${CUDA_NVCC_FLAGS}
         )
 elseif (${CUDA_VERSION_MAJOR} STREQUAL "7")
     set(CUDA_NVCC_FLAGS -gencode arch=compute_30,code=sm_30;
@@ -102,6 +108,7 @@ elseif (${CUDA_VERSION_MAJOR} STREQUAL "7")
                         -gencode arch=compute_52,code=sm_52; # Tesla M40, Tesla M40, Quadro M6000...
                         -gencode arch=compute_53,code=sm_53; 
                         -O3; -Xcompiler -fPIC;
+                        ${CUDA_NVCC_FLAGS}
         )
 else () 
     message(FATAL_ERROR "unsupported CUDA_VERSION " ${CUDA_VERSION} ", please use a newer version (>=7.0) of CUDA toolkit!")
@@ -128,6 +135,7 @@ target_include_directories(
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../include/>
     $<INSTALL_INTERFACE:include>
 )
+target_precompile_headers(deepmd_op_cuda PUBLIC [["device.h"]])
 if(APPLE)
     set_target_properties(
         deepmd_op_cuda 
