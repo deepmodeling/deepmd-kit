@@ -143,6 +143,7 @@ fix		0 all dplr model ener.pb type_associate 1 3 bond_type 1
 fix_modify	0 virial yes
 ```
 The fix command `dplr` calculates the position of WCs by the DW model and back-propagates the long-range interaction on virtual atoms to real toms. 
+At this time, the training parameter {ref}`type_map <model/type_map>` will be mapped to LAMMPS atom types.
 
 ```lammps
 # compute the temperature of real atoms, excluding virtual atom contribution
