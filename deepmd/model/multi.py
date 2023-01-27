@@ -140,6 +140,7 @@ class MultiModel(Model):
               mesh,
               input_dict,
               frz_model=None,
+              ckpt_meta: Optional[str] = None,
               suffix='',
               reuse=None):
 
@@ -199,15 +200,12 @@ class MultiModel(Model):
             input_dict['type_embedding'] = type_embedding
         input_dict['atype'] = atype_
 
-        dout \
-            = self.descrpt.build(coord_,
-                                 atype_,
-                                 natoms,
-                                 box,
-                                 mesh,
-                                 input_dict,
-                                 suffix=suffix,
-                                 reuse=reuse)
+        dout = self.build_descrpt(
+            coord, atype, natoms, box, mesh, input_dict,
+            frz_model=frz_model,
+            ckpt_meta=ckpt_meta,
+            suffix=suffix,
+            reuse=reuse)
         dout = tf.identity(dout, name='o_descriptor')
 
         if self.srtab is not None:
