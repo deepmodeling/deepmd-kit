@@ -29,7 +29,7 @@ pair_style deepmd models ... keyword value ...
 - models = frozen model(s) to compute the interaction. 
 If multiple models are provided, then only the first model serves to provide energy and force prediction for each timestep of molecular dynamics, 
 and the model deviation will be computed among all models every `out_freq` timesteps.
-- keyword = *out_file* or *out_freq* or *fparam* or *atomic* or *relative* or *relative_v* or *aparam* or *ttm*
+- keyword = *out_file* or *out_freq* or *fparam* or *fparam_from_compute* or *atomic* or *relative* or *relative_v* or *aparam* or *ttm*
 <pre>
     <i>out_file</i> value = filename
         filename = The file name for the model deviation output. Default is model_devi.out
@@ -37,6 +37,8 @@ and the model deviation will be computed among all models every `out_freq` times
         freq = Frequency for the model deviation output. Default is 100.
     <i>fparam</i> value = parameters
         parameters = one or more frame parameters required for model evaluation.
+    <i>fparam_from_compute</i> value = id
+        id = compute id used to update the frame parameter.
     <i>atomic</i> = no value is required. 
         If this keyword is set, the model deviation of each atom will be output.
     <i>relative</i> value = level
@@ -55,6 +57,9 @@ pair_style deepmd graph.pb
 pair_style deepmd graph.pb fparam 1.2
 pair_style deepmd graph_0.pb graph_1.pb graph_2.pb out_file md.out out_freq 10 atomic relative 1.0
 pair_coeff * * O H
+
+pair_style deepmd cp.pb fparam_from_compute TEMP
+compute    TEMP all temp
 ```
 
 ### Description
@@ -74,6 +79,7 @@ If the keyword `relative_v` is set, then the relative model deviation of the vir
 $$E_{v_i}=\frac{\left|D_{v_i}\right|}{\left|v_i\right|+l}$$
 
 If the keyword `fparam` is set, the given frame parameter(s) will be fed to the model.
+If the keyword `fparam_from_compute` is set, the global parameter(s) from compute command (e.g., temperature from [compute temp command](https://docs.lammps.org/compute_temp.html)) will be fed to the model as the frame parameter(s).
 If the keyword `aparam` is set, the given atomic parameter(s) will be fed to the model, where each atom is assumed to have the same atomic parameter(s). 
 If the keyword `ttm` is set, electronic temperatures from [fix ttm command](https://docs.lammps.org/fix_ttm.html) will be fed to the model as the atomic parameters.
 
