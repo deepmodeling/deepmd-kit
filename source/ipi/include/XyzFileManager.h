@@ -1,6 +1,7 @@
 #ifndef __XyzFileManager_h_wanghan__
 #define __XyzFileManager_h_wanghan__
 
+#include <string>
 #include <vector>
 // using namespace std;
 
