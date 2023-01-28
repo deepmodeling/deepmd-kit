@@ -54,6 +54,7 @@ and the model deviation will be computed among all models every `out_freq` times
 pair_style deepmd graph.pb
 pair_style deepmd graph.pb fparam 1.2
 pair_style deepmd graph_0.pb graph_1.pb graph_2.pb out_file md.out out_freq 10 atomic relative 1.0
+pair_coeff * * O H
 ```
 
 ### Description
@@ -76,6 +77,10 @@ If the keyword `fparam` is set, the given frame parameter(s) will be fed to the 
 If the keyword `aparam` is set, the given atomic parameter(s) will be fed to the model, where each atom is assumed to have the same atomic parameter(s). 
 If the keyword `ttm` is set, electronic temperatures from [fix ttm command](https://docs.lammps.org/fix_ttm.html) will be fed to the model as the atomic parameters.
 
+Only a single `pair_coeff` command is used with the deepmd style which specifies atom names. These are mapped to LAMMPS atom types (integers from 1 to Ntypes) by specifying Ntypes additional arguments after `* *` in the `pair_coeff` command.
+If atom names are not set in the `pair_coeff` command, the training parameter {ref}`type_map <model/type_map>` will be used by default.
+If the training parameter {ref}`type_map <model/type_map>` is not set, atom names in the `pair_coeff` command cannot be set. In this case, atom type indexes in [`type.raw`](../data/system.md) (integers from 0 to Ntypes-1) will map to LAMMPS atom types.
+
 ### Restrictions
 - The `deepmd` pair style is provided in the USER-DEEPMD package, which is compiled from the DeePMD-kit, visit the [DeePMD-kit website](https://github.com/deepmodeling/deepmd-kit) for more information.
 
@@ -91,6 +96,8 @@ compute ID group-ID deeptensor/atom model_file
 - group-ID: ID of the group of atoms to compute
 - deeptensor/atom: the style of this compute
 - model_file: the name of the binary model file.
+
+At this time, the training parameter {ref}`type_map <model/type_map>` will be mapped to LAMMPS atom types.
 
 ### Examples
 ```lammps

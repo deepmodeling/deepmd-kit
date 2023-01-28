@@ -364,14 +364,12 @@ class DeepmdData() :
             raise RuntimeError('key %s has not been added' % key)
         info = self.data_dict[key]  
         ndof = info['ndof']
-        eners = np.array([])
+        eners = []
         for ii in self.train_dirs:
             data = self._load_set(ii)
             ei = data[key].reshape([-1, ndof])
-            if eners.size  == 0 :
-                eners = ei
-            else :
-                eners = np.concatenate((eners, ei), axis = 0)
+            eners.append(ei)
+        eners = np.concatenate(eners, axis = 0)
         if eners.size == 0 :
             return 0
         else :
@@ -411,7 +409,8 @@ class DeepmdData() :
 
     def _load_batch_set (self,
                          set_name: DPPath) :
-        self.batch_set = self._load_set(set_name)
+        if not hasattr(self, 'batch_set') or self.get_numb_set() > 1:
+            self.batch_set = self._load_set(set_name)
         self.batch_set, _ = self._shuffle_data(self.batch_set)
         self.reset_get_batch()
 

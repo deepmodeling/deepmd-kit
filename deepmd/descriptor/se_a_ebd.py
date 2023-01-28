@@ -137,9 +137,10 @@ class DescrptSeAEbd (DescrptSeA):
         descriptor
                 The output descriptor
         """
-        nei_type = np.array([])
+        nei_type = []
         for ii in range(self.ntypes):
-            nei_type = np.append(nei_type, ii * np.ones(self.sel_a[ii]))
+            nei_type.append(ii * np.ones(self.sel_a[ii], dtype=int))
+        nei_type = np.concatenate(nei_type)
         self.nei_type = tf.get_variable('t_nei_type', 
                                         [self.nnei],
                                         dtype = GLOBAL_TF_FLOAT_PRECISION,

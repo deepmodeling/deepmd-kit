@@ -344,6 +344,7 @@ class DPTrainer (object):
 
         # if init the graph with the frozen model
         self.frz_model = None
+        self.ckpt_meta = None
         self.model_type = None
 
 
@@ -415,8 +416,11 @@ class DPTrainer (object):
             # config the init_frz_model command
             if self.run_opt.init_mode == 'init_from_frz_model':
                 self._init_from_frz_model()
-
-            if self.run_opt.init_mode == 'finetune':
+            elif self.run_opt.init_mode == 'init_model':
+                self.ckpt_meta = self.run_opt.init_model
+            elif self.run_opt.init_mode == 'restart':
+                self.ckpt_meta = self.run_opt.restart
+            elif self.run_opt.init_mode == 'finetune':
                 self._init_from_pretrained_model(data=data, origin_type_map=origin_type_map)
 
             # neighbor_stat is moved to train.py as duplicated
@@ -475,7 +479,8 @@ class DPTrainer (object):
                                 self.place_holders['box'], 
                                 self.place_holders['default_mesh'],
                                 self.place_holders,
-                                self.frz_model,
+                                frz_model = self.frz_model,
+                                ckpt_meta = self.ckpt_meta,
                                 suffix = suffix,
                                 reuse = False)
 

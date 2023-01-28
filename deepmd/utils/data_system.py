@@ -9,6 +9,7 @@ from typing import Tuple, List
 
 from deepmd.utils import random as dp_random
 from deepmd.utils.data import DeepmdData
+from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
 
 log = logging.getLogger(__name__)
 
@@ -100,11 +101,13 @@ class DeepmdDataSystem() :
             self.mixed_type = False
         # batch size
         self.batch_size = batch_size
+        is_auto_bs = False
         if isinstance(self.batch_size, int):
             self.batch_size = self.batch_size * np.ones(self.nsystems, dtype=int)
         elif isinstance(self.batch_size, str):
             words = self.batch_size.split(':')
             if 'auto' == words[0] :
+                is_auto_bs = True
                 rule = 32
                 if len(words) == 2 :
                     rule = int(words[1])
@@ -168,11 +171,11 @@ class DeepmdDataSystem() :
         # check batch and test size
         for ii in range(self.nsystems) :
             chk_ret = self.data_systems[ii].check_batch_size(self.batch_size[ii])
-            if chk_ret is not None :
+            if chk_ret is not None and not is_auto_bs:
                 warnings.warn("system %s required batch size is larger than the size of the dataset %s (%d > %d)" % \
                               (self.system_dirs[ii], chk_ret[0], self.batch_size[ii], chk_ret[1]))
             chk_ret = self.data_systems[ii].check_test_size(self.test_size[ii])
-            if chk_ret is not None :
+            if chk_ret is not None and not is_auto_bs:
                 warnings.warn("system %s required test size is larger than the size of the dataset %s (%d > %d)" % \
                               (self.system_dirs[ii], chk_ret[0], self.test_size[ii], chk_ret[1]))
 
@@ -205,10 +208,11 @@ class DeepmdDataSystem() :
 
 
     def compute_energy_shift(self, rcond = 1e-3, key = 'energy') :
-        sys_ener = np.array([])
+        sys_ener = []
         for ss in self.data_systems :
-            sys_ener = np.append(sys_ener, ss.avg(key))
-        sys_tynatom = np.array(self.natoms_vec, dtype = float)
+            sys_ener.append(ss.avg(key))
+        sys_ener = np.concatenate(sys_ener)
+        sys_tynatom = np.array(self.natoms_vec, dtype=GLOBAL_NP_FLOAT_PRECISION)
         sys_tynatom = np.reshape(sys_tynatom, [self.nsystems,-1])
         sys_tynatom = sys_tynatom[:,2:]
         energy_shift,resd,rank,s_value \

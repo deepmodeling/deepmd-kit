@@ -10,7 +10,7 @@ jobs:
     steps:
     - name: work around permission issue
       run: git config --global --add safe.directory /__w/deepmd-kit/deepmd-kit
-    - uses: actions/checkout@master
+    - uses: actions/checkout@v3
     - run: source/install/test_cc_local.sh
       env:
         OMP_NUM_THREADS: 1

@@ -192,12 +192,10 @@ def set_log_handles(
     os.environ['TF_CPP_MIN_LOG_LEVEL'] = str(int((level / 10) - 1))
 
     # get root logger
-    root_log = logging.getLogger()
+    root_log = logging.getLogger("deepmd")
+    root_log.propagate = False
 
-    # remove all old handlers
     root_log.setLevel(level)
-    for hdlr in root_log.handlers[:]:
-        root_log.removeHandler(hdlr)
 
     # check if arguments are present
     MPI = None

@@ -1,10 +1,8 @@
 import numpy as np
-from typing import Tuple, List
+from typing import Optional, Tuple, List
 
 from deepmd.env import tf
 from deepmd.utils.pair_tab import PairTab
-from deepmd.utils.graph import load_graph_def, get_tensor_by_name_from_graph
-from deepmd.utils.errors import GraphWithoutTensorError
 from deepmd.env import global_cvt_2_ener_float, MODEL_VERSION, GLOBAL_TF_FLOAT_PRECISION
 from deepmd.env import op_module
 from .model import Model
@@ -129,6 +127,7 @@ class EnerModel(Model) :
                mesh,
                input_dict,
                frz_model = None,
+               ckpt_meta: Optional[str] = None,
                suffix = '', 
                reuse = None):
  
@@ -172,31 +171,12 @@ class EnerModel(Model) :
             input_dict['type_embedding'] = type_embedding
         input_dict['atype'] = atype_
 
-        if frz_model == None:
-            dout \
-                = self.descrpt.build(coord_,
-                                     atype_,
-                                     natoms,
-                                     box,
-                                     mesh,
-                                     input_dict,
-                                     suffix = suffix,
-                                     reuse = reuse)
-            dout = tf.identity(dout, name='o_descriptor')
-        else:
-            tf.constant(self.rcut,
-                name = 'descrpt_attr/rcut',
-                dtype = GLOBAL_TF_FLOAT_PRECISION)
-            tf.constant(self.ntypes,
-                name = 'descrpt_attr/ntypes',
-                dtype = tf.int32)
-            feed_dict = self.descrpt.get_feed_dict(coord_, atype_, natoms, box, mesh)
-            return_elements = [*self.descrpt.get_tensor_names(), 'o_descriptor:0']
-            imported_tensors \
-                = self._import_graph_def_from_frz_model(frz_model, feed_dict, return_elements)
-            dout = imported_tensors[-1]
-            self.descrpt.pass_tensors_from_frz_model(*imported_tensors[:-1])
-
+        dout = self.build_descrpt(
+            coord, atype, natoms, box, mesh, input_dict,
+            frz_model=frz_model,
+            ckpt_meta=ckpt_meta,
+            suffix=suffix,
+            reuse=reuse)
 
         if self.srtab is not None :
             nlist, rij, sel_a, sel_r = self.descrpt.get_nlist()
@@ -286,10 +266,6 @@ class EnerModel(Model) :
         model_dict['atype'] = atype
         
         return model_dict
-
-    def _import_graph_def_from_frz_model(self, frz_model, feed_dict, return_elements):
-        graph, graph_def = load_graph_def(frz_model)
-        return tf.import_graph_def(graph_def, input_map = feed_dict, return_elements = return_elements, name = "")
 
     def init_variables(self,
                        graph : tf.Graph,
