@@ -439,10 +439,10 @@ void PairDeepMD::compute(int eflag, int vflag)
   }
   else if (do_ttm) {
 #ifdef USE_TTM
-    if (aparam.size() > 0){
+    if (dim_aparam > 0){
     make_ttm_aparam(daparam);
     }
-    if (dim_fparam > 0){
+    else if (dim_fparam > 0){
     make_ttm_fparam(fparam);
     }
 #endif
@@ -891,7 +891,7 @@ is_key (const string& input)
   keys.push_back("out_file");
   keys.push_back("fparam");
   keys.push_back("aparam");
-  keys.push_back("compute");
+  keys.push_back("fparam_from_compute");
   keys.push_back("ttm");
   keys.push_back("atomic");
   keys.push_back("relative");
@@ -1009,13 +1009,13 @@ void PairDeepMD::settings(int narg, char **arg)
     }
 	  
     ///////////////////////////////////////////////
-    // pair_style     deepmd cp.pb compute TEMP
+    // pair_style     deepmd cp.pb fparam_from_compute TEMP
     // compute        TEMP all temp
     //////////////////////////////////////////////
-    else if (string(arg[iarg]) == string("compute")) {
+    else if (string(arg[iarg]) == string("fparam_from_compute")) {
       for (int ii = 0; ii < 1; ++ii){
         if (iarg+1+ii >= narg || is_key(arg[iarg+1+ii])) {
-          error->all(FLERR, "invalid compute key: should be compute compute_id(str)");
+          error->all(FLERR, "invalid fparam_from_compute key: should be fparam_from_compute compute_id(str)");
         }
       }	
       do_compute = true;
@@ -1051,7 +1051,7 @@ void PairDeepMD::settings(int narg, char **arg)
     error->all(FLERR,"aparam and ttm should NOT be set simultaneously");
   }
   if (do_compute && fparam.size() > 0) {
-    error->all(FLERR,"fparam and compute should NOT be set simultaneously");
+    error->all(FLERR,"fparam and fparam_from_compute should NOT be set simultaneously");
   }
   
   if (comm->me == 0){
@@ -1087,7 +1087,7 @@ void PairDeepMD::settings(int narg, char **arg)
     cout << endl
 	 << pre << "rcut in model:      " << cutoff << endl
 	 << pre << "ntypes in model:    " << numb_types << endl;
-    if (dim_fparam > 0 && do_compute ==0 && do_ttm ==0) {
+    if (fparam.size() > 0) {
       cout << pre << "using fparam(s):    " ;
       for (int ii = 0; ii < dim_fparam; ++ii){
 	cout << fparam[ii] << "  " ;
@@ -1107,7 +1107,13 @@ void PairDeepMD::settings(int narg, char **arg)
     }
     if (do_ttm){
       cout << pre << "using ttm fix:      " ;
-      cout << ttm_fix_id << "  " << endl;
+      cout << ttm_fix_id << "  " ;
+      if (dim_fparam > 0){
+        cout << "(fparam)" << endl;
+      }
+      else if (dim_aparam > 0){
+        cout << "(aparam)" << endl;
+      }
     }  
   }
   
