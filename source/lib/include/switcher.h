@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cmath>
+
 namespace deepmd{
 
 inline double
