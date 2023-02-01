@@ -81,6 +81,13 @@ class DescrptHybrid (Descriptor):
         return sum(all_dim_out)
 
 
+    def get_nlist(
+            self,
+    ) -> Tuple[tf.Tensor, tf.Tensor, List[int], List[int]]:
+        maxr_idx = np.argmax([ii.get_rcut() for ii in self.descrpt_list])
+        return self.get_nlist_i(maxr_idx)
+
+
     def get_nlist_i(self, 
                     ii : int
     ) -> Tuple[tf.Tensor, tf.Tensor, List[int], List[int]]:
