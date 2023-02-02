@@ -72,7 +72,7 @@ def descrpt2r4(inputs, natoms):
         u = tf.reshape(tf.slice(inputs_reshape, [0, 0], [-1, 1]), [-1, 1])
         with tf.variable_scope('u', reuse=True):
             u = op_module.flt_nvnmd(u)
-            log.debug('#u:', u)
+            log.debug('#u: %s', u)
             u = tf.ensure_shape(u, [None, 1])
         u = tf.reshape(u, [-1, natoms[0] * NIDP])
         sh0 = tf.shape(u)[0]
@@ -81,7 +81,7 @@ def descrpt2r4(inputs, natoms):
         with tf.variable_scope('rij', reuse=True):
             rij = op_module.flt_nvnmd(rij)
             rij = tf.ensure_shape(rij, [None, 3])
-            log.debug('#rij:', rij)
+            log.debug('#rij: %s', rij)
         s = []
         h = []
         for type_i in range(ntypes):
@@ -118,12 +118,12 @@ def descrpt2r4(inputs, natoms):
 
         with tf.variable_scope('s', reuse=True):
             s = op_module.flt_nvnmd(s)
-            log.debug('#s:', s)
+            log.debug('#s: %s', s)
             s = tf.ensure_shape(s, [None, 1])
 
         with tf.variable_scope('h', reuse=True):
             h = op_module.flt_nvnmd(h)
-            log.debug('#h:', h)
+            log.debug('#h: %s', h)
             h = tf.ensure_shape(h, [None, 1])
 
 
@@ -134,7 +134,7 @@ def descrpt2r4(inputs, natoms):
         Rxyz = tf.ensure_shape(Rxyz, [None, 3])
         with tf.variable_scope('Rxyz', reuse=True):
             Rxyz = op_module.flt_nvnmd(Rxyz)
-            log.debug('#Rxyz:', Rxyz)
+            log.debug('#Rxyz: %s', Rxyz)
             Rxyz = tf.ensure_shape(Rxyz, [None, 3])
         R4 = tf.concat([Rs, Rxyz], axis=1)
         R4 = tf.reshape(R4, [-1, NIDP, 4])
@@ -190,7 +190,7 @@ def filter_lower_R42GR(
             G = tf.ensure_shape(G, [None, 1, M1])
             G = op_module.flt_nvnmd(G)
             G = tf.ensure_shape(G, [None, 1, M1])
-            log.debug('#g:', G)
+            log.debug('#g: %s', G)
         # G
         xyz_scatter = G
         xyz_scatter = tf.reshape(xyz_scatter, (-1, shape_i[1] // 4, M1))
@@ -254,7 +254,7 @@ def filter_GR2D(xyz_scatter_1):
         
         with tf.variable_scope('gr', reuse=True):
             xyz_scatter_1 = op_module.flt_nvnmd(xyz_scatter_1)
-            log.debug('#gr:', xyz_scatter_1)
+            log.debug('#gr: %s', xyz_scatter_1)
             xyz_scatter_1 = tf.ensure_shape(xyz_scatter_1, [None, 4 * M1])
         xyz_scatter_1 = tf.reshape(xyz_scatter_1, [-1, 4, M1])
 
@@ -280,7 +280,7 @@ def filter_GR2D(xyz_scatter_1):
 
         with tf.variable_scope('d', reuse=True):
             result = op_module.flt_nvnmd(result)
-            log.debug('#d:', result)
+            log.debug('#d: %s', result)
             result = tf.ensure_shape(result, [None, M1*M2])
 
         result = op_module.quantize_nvnmd(result, 0, NBIT_DATA_FL, NBIT_DATA_FL, -1)

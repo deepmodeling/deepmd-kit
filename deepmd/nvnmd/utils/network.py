@@ -71,7 +71,7 @@ def qr(x, nbit):
     return y
 
 def tanh4(x):
-    with tf.name_scope("some_name"):
+    with tf.name_scope("tanh4"):
         sign = tf.sign(x)
         xclp = tf.clip_by_value(x, -2, 2)
         xabs = tf.abs(xclp)
