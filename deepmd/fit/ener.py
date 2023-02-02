@@ -85,6 +85,9 @@ class EnerFitting (Fitting):
             The precision of the embedding net parameters. Supported options are |PRECISION|
     uniform_seed
             Only for the purpose of backward compatibility, retrieves the old behavior of using the random seed
+    layer_name : list[Optional[str]], optional
+            The name of the each layer. If two layers, either in the same fitting or different fittings,
+            have the same name, they will share the same neural network parameters.
     """
     def __init__ (self, 
                   descrpt : tf.Tensor,
@@ -99,7 +102,8 @@ class EnerFitting (Fitting):
                   atom_ener : List[float] = [],
                   activation_function : str = 'tanh',
                   precision : str = 'default',
-                  uniform_seed: bool = False
+                  uniform_seed: bool = False,
+                  layer_name: Optional[List[Optional[str]]] = None,
     ) -> None:
         """
         Constructor
@@ -133,7 +137,7 @@ class EnerFitting (Fitting):
         self.trainable = trainable
         if self.trainable is None:
             self.trainable = [True for ii in range(len(self.n_neuron) + 1)]
-        if type(self.trainable) is bool:
+        if isinstance(self.trainable, bool):
             self.trainable = [self.trainable] * (len(self.n_neuron)+1)
         assert(len(self.trainable) == len(self.n_neuron) + 1), 'length of trainable should be that of n_neuron + 1'
         self.atom_ener = []
@@ -159,6 +163,10 @@ class EnerFitting (Fitting):
 
         self.fitting_net_variables = None
         self.mixed_prec = None
+        self.layer_name = layer_name
+        if self.layer_name is not None:
+            assert isinstance(self.layer_name, list), 'layer_name should be a list'
+            assert len(self.layer_name) == len(self.n_neuron) + 1, 'length of layer_name should be that of n_neuron + 1'
 
     def get_numb_fparam(self) -> int:
         """
@@ -195,15 +203,16 @@ class EnerFitting (Fitting):
     def _compute_output_stats(self, all_stat, rcond=1e-3, mixed_type=False):
         data = all_stat['energy']
         # data[sys_idx][batch_idx][frame_idx]
-        sys_ener = np.array([])
+        sys_ener = []
         for ss in range(len(data)):
             sys_data = []
             for ii in range(len(data[ss])):
                 for jj in range(len(data[ss][ii])):
                     sys_data.append(data[ss][ii][jj])
             sys_data = np.concatenate(sys_data)
-            sys_ener = np.append(sys_ener, np.average(sys_data))
-        sys_tynatom = np.array([])
+            sys_ener.append(np.average(sys_data))
+        sys_ener = np.array(sys_ener)
+        sys_tynatom = []
         if mixed_type:
             data = all_stat['real_natoms_vec']
             nsys = len(data)
@@ -213,12 +222,13 @@ class EnerFitting (Fitting):
                     for jj in range(len(data[ss][ii])):
                         tmp_tynatom.append(data[ss][ii][jj].astype(np.float64))
                 tmp_tynatom = np.average(np.array(tmp_tynatom), axis=0)
-                sys_tynatom = np.append(sys_tynatom, tmp_tynatom)
+                sys_tynatom.append(tmp_tynatom)
         else:
             data = all_stat['natoms_vec']
             nsys = len(data)
             for ss in range(len(data)):
-                sys_tynatom = np.append(sys_tynatom, data[ss][0].astype(np.float64))
+                sys_tynatom.append(data[ss][0].astype(np.float64))
+        sys_tynatom = np.array(sys_tynatom)
         sys_tynatom = np.reshape(sys_tynatom, [nsys,-1])
         sys_tynatom = sys_tynatom[:,2:]
         if len(self.atom_ener) > 0:
@@ -295,6 +305,7 @@ class EnerFitting (Fitting):
             fparam = None,
             aparam = None, 
             bias_atom_e = 0.0,
+            type_suffix = '',
             suffix = '',
             reuse = None
     ):
@@ -322,12 +333,18 @@ class EnerFitting (Fitting):
         else:
             one_layer = one_layer_deepmd
         for ii in range(0,len(self.n_neuron)) :
+            if self.layer_name is not None and self.layer_name[ii] is not None:
+                layer_suffix = 'share_' + self.layer_name[ii] + type_suffix
+                layer_reuse = tf.AUTO_REUSE
+            else:
+                layer_suffix = 'layer_' + str(ii) + type_suffix + suffix
+                layer_reuse = reuse
             if ii >= 1 and self.n_neuron[ii] == self.n_neuron[ii-1]:
                 layer+= one_layer(
                     layer,
                     self.n_neuron[ii],
-                    name='layer_'+str(ii)+suffix,
-                    reuse=reuse,
+                    name=layer_suffix,
+                    reuse=layer_reuse,
                     seed = self.seed,
                     use_timestep = self.resnet_dt,
                     activation_fn = self.fitting_activation_fn,
@@ -340,8 +357,8 @@ class EnerFitting (Fitting):
                 layer = one_layer(
                     layer,
                     self.n_neuron[ii],
-                    name='layer_'+str(ii)+suffix,
-                    reuse=reuse,
+                    name=layer_suffix,
+                    reuse=layer_reuse,
                     seed = self.seed,
                     activation_fn = self.fitting_activation_fn,
                     precision = self.fitting_precision,
@@ -350,13 +367,19 @@ class EnerFitting (Fitting):
                     initial_variables = self.fitting_net_variables,
                     mixed_prec = self.mixed_prec)
             if (not self.uniform_seed) and (self.seed is not None): self.seed += self.seed_shift
+        if self.layer_name is not None and self.layer_name[-1] is not None:
+            layer_suffix = 'share_' + self.layer_name[-1] + type_suffix
+            layer_reuse = tf.AUTO_REUSE
+        else:
+            layer_suffix = 'final_layer' + type_suffix + suffix
+            layer_reuse = reuse
         final_layer = one_layer(
             layer, 
             1, 
             activation_fn = None, 
             bavg = bias_atom_e, 
-            name='final_layer'+suffix, 
-            reuse=reuse, 
+            name=layer_suffix,
+            reuse=layer_reuse,
             seed = self.seed, 
             precision = self.fitting_precision, 
             trainable = self.trainable[-1],
@@ -495,14 +518,20 @@ class EnerFitting (Fitting):
                 final_layer = self._build_lower(
                     start_index, natoms[2+type_i], 
                     inputs, fparam, aparam, 
-                    bias_atom_e=0., suffix='_type_'+str(type_i)+suffix, reuse=reuse
+                    bias_atom_e=0.,
+                    type_suffix='_type_' + str(type_i),
+                    suffix=suffix,
+                    reuse=reuse,
                 )
                 # concat the results
                 if type_i < len(self.atom_ener) and self.atom_ener[type_i] is not None:                
                     zero_layer = self._build_lower(
                         start_index, natoms[2+type_i], 
                         inputs_zero, fparam, aparam, 
-                        bias_atom_e=0., suffix='_type_'+str(type_i)+suffix, reuse=True
+                        bias_atom_e=0.,
+                        type_suffix='_type_' + str(type_i),
+                        suffix=suffix,
+                        reuse=True,
                     )
                     final_layer -= zero_layer
                 final_layer = tf.reshape(final_layer, [tf.shape(inputs)[0], natoms[2+type_i]])
@@ -578,6 +607,10 @@ class EnerFitting (Fitting):
             suffix to name scope
         """
         self.fitting_net_variables = get_fitting_net_variables_from_graph_def(graph_def, suffix=suffix)
+        if self.layer_name is not None:
+            # shared variables have no suffix
+            shared_variables = get_fitting_net_variables_from_graph_def(graph_def, suffix="")
+            self.fitting_net_variables.update(shared_variables)
         if self.numb_fparam > 0:
             self.fparam_avg = get_tensor_by_name_from_graph(graph, 'fitting_attr%s/t_fparam_avg' % suffix)
             self.fparam_inv_std = get_tensor_by_name_from_graph(graph, 'fitting_attr%s/t_fparam_istd' % suffix)

@@ -24,17 +24,6 @@ def _file_delete(file):
         os.remove(file)
 
 
-def _subprocess_run(command):
-    popen = sp.Popen(command.split(), shell=False, stdout=sp.PIPE, stderr=sp.STDOUT)
-    for line in iter(popen.stdout.readline, b''):
-        if hasattr(line, 'decode'):
-            line = line.decode('utf-8')
-        line = line.rstrip()
-        print(line)
-    popen.wait()
-    return popen.returncode
-
-
 def _init_models():
     data_file = str(tests_path / os.path.join("init_frz_model", "data"))
     frozen_model = str(tests_path / "init_frz_se_a_type.pb")
@@ -117,14 +106,14 @@ INPUT, CKPT, FROZEN_MODEL, CKPT_TRAINER, FRZ_TRAINER, VALID_DATA, STOP_BATCH = _
 
 class TestInitFrzModelAType(unittest.TestCase):
     @classmethod
-    def setUpClass(self):
-        self.dp_ckpt = CKPT_TRAINER
-        self.dp_frz = FRZ_TRAINER
-        self.valid_data = VALID_DATA
-        self.stop_batch = STOP_BATCH
+    def setUpClass(cls):
+        cls.dp_ckpt = CKPT_TRAINER
+        cls.dp_frz = FRZ_TRAINER
+        cls.valid_data = VALID_DATA
+        cls.stop_batch = STOP_BATCH
 
     @classmethod
-    def tearDownClass(self):
+    def tearDownClass(cls):
         _file_delete(INPUT)
         _file_delete(FROZEN_MODEL)
         _file_delete("out.json")

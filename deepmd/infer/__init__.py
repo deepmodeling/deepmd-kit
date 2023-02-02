@@ -71,6 +71,6 @@ def DeepPotential(
     elif model_type == "wfc":
         dp = DeepWFC(mf, load_prefix=load_prefix, default_tf_graph=default_tf_graph)
     else:
-        raise RuntimeError(f"unknow model type {model_type}")
+        raise RuntimeError(f"unknown model type {model_type}")
 
     return dp

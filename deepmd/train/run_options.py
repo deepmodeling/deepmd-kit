@@ -54,7 +54,7 @@ BUILD = (
 
 
 class RunOptions:
-    """Class with inf oon how to run training (cluster, MPI and GPU config).
+    """Class with info on how to run training (cluster, MPI and GPU config).
 
     Attributes
     ----------
@@ -100,6 +100,7 @@ class RunOptions:
         # model init options
         self.restart = restart
         self.init_model = init_model
+        self.init_frz_model = init_frz_model
         self.finetune = finetune
         self.init_mode = "init_from_scratch"
 

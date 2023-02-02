@@ -39,14 +39,8 @@ jobs:
       - uses: docker/setup-qemu-action@v2
         name: Setup QEMU
         if: matrix.platform_id == 'manylinux_aarch64'
-      - uses: actions/setup-python@v2
-        name: Install Python
-        with:
-          python-version: '3.8'
-
-      - run: python -m pip install cibuildwheel==2.11.3
       - name: Build wheels
-        run: python -m cibuildwheel --output-dir wheelhouse
+        uses: pypa/cibuildwheel@v2.11.3
         env:
           CIBW_BUILD_VERBOSITY: 1
           CIBW_ARCHS: all
@@ -83,7 +77,7 @@ jobs:
         with:
           name: artifact
           path: dist
-      - uses: pypa/gh-action-pypi-publish@master
+      - uses: pypa/gh-action-pypi-publish@v4
         with:
           user: __token__
           password: ${{ secrets.pypi_password }}

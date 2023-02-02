@@ -27,6 +27,9 @@ elif dp_variant == "rocm":
     rocm_root = os.environ.get("ROCM_ROOT")
     if rocm_root:
         cmake_args.append(f"-DCMAKE_HIP_COMPILER_ROCM_ROOT:STRING={rocm_root}")
+    hipcc_flags = os.environ.get("HIP_HIPCC_FLAGS")
+    if hipcc_flags:
+        cmake_args.append(f"-DHIP_HIPCC_FLAGS:STRING={hipcc_flags}")
 else:
     raise RuntimeError("Unsupported DP_VARIANT option: %s" % dp_variant)
 
@@ -107,6 +110,24 @@ setup(
             "find_libpython",
         ],
         **get_tf_requirement(tf_version),
+        "cu11": [
+            "nvidia-cuda-runtime-cu11",
+            "nvidia-cublas-cu11",
+            "nvidia-cufft-cu11",
+            "nvidia-curand-cu11",
+            "nvidia-cusolver-cu11",
+            "nvidia-cusparse-cu11",
+            "nvidia-cudnn-cu11",
+        ],
+        "cu12": [
+            "nvidia-cuda-runtime-cu12",
+            "nvidia-cublas-cu12",
+            "nvidia-cufft-cu12",
+            "nvidia-curand-cu12",
+            "nvidia-cusolver-cu12",
+            "nvidia-cusparse-cu12",
+            "nvidia-cudnn-cu12",
+        ],
     },
     entry_points={
         "console_scripts": ["dp = deepmd.entrypoints.main:main"],

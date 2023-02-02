@@ -81,6 +81,27 @@ class DescrptHybrid (Descriptor):
         return sum(all_dim_out)
 
 
+    def get_nlist(
+            self,
+    ) -> Tuple[tf.Tensor, tf.Tensor, List[int], List[int]]:
+        """Get the neighbor information of the descriptor, returns the
+        nlist of the descriptor with the largest cut-off radius.
+
+        Returns
+        -------
+        nlist
+                Neighbor list
+        rij
+                The relative distance between the neighbor and the center atom.
+        sel_a
+                The number of neighbors with full information
+        sel_r
+                The number of neighbors with only radial information
+        """
+        maxr_idx = np.argmax([ii.get_rcut() for ii in self.descrpt_list])
+        return self.get_nlist_i(maxr_idx)
+
+
     def get_nlist_i(self, 
                     ii : int
     ) -> Tuple[tf.Tensor, tf.Tensor, List[int], List[int]]:

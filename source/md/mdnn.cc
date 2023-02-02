@@ -88,7 +88,7 @@ int main(int argc, char * argv[])
     resdname = atomname;
   }
   else {
-    cerr << "unknow conf file format: " << conf_format << endl;
+    cerr << "unknown conf file format: " << conf_format << endl;
     return 1;
   }
   map<string, int> name_type_map = jdata["atom_type"];

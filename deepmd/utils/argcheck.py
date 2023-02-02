@@ -132,7 +132,7 @@ def descrpt_se_a_args():
     doc_axis_neuron = 'Size of the submatrix of G (embedding matrix).'
     doc_activation_function = f'The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version.'
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
-    doc_type_one_side = 'Try to build N_types embedding nets. Otherwise, building N_types^2 embedding nets'
+    doc_type_one_side = r'If true, the embedding network parameters vary by types of neighbor atoms only, so there will be $N_\text{types}$ sets of embedding network parameters. Otherwise, the embedding network parameters vary by types of centric atoms and types of neighbor atoms, so there will be $N_\text{types}^2$ sets of embedding network parameters.'
     doc_precision = f'The precision of the embedding net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision.'
     doc_trainable = 'If the parameters in the embedding net is trainable'
     doc_seed = 'Random seed for parameter initialization'
@@ -209,7 +209,7 @@ def descrpt_se_r_args():
     doc_neuron = 'Number of neurons in each hidden layers of the embedding net. When two layers are of the same size or one layer is twice as large as the previous layer, a skip connection is built.'
     doc_activation_function = f'The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version.'
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
-    doc_type_one_side = 'Try to build N_types embedding nets. Otherwise, building N_types^2 embedding nets'
+    doc_type_one_side = r'If true, the embedding network parameters vary by types of neighbor atoms only, so there will be $N_\text{types}$ sets of embedding network parameters. Otherwise, the embedding network parameters vary by types of centric atoms and types of neighbor atoms, so there will be $N_\text{types}^2$ sets of embedding network parameters.'
     doc_precision = f'The precision of the embedding net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision.'
     doc_trainable = 'If the parameters in the embedding net are trainable'
     doc_seed = 'Random seed for parameter initialization'
@@ -253,7 +253,7 @@ def descrpt_se_atten_args():
     doc_axis_neuron = 'Size of the submatrix of G (embedding matrix).'
     doc_activation_function = f'The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version.'
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
-    doc_type_one_side = 'Whether to consider the information from only one side or both sides.'
+    doc_type_one_side = r'If true, the embedding network parameters vary by types of neighbor atoms only, so there will be $N_\text{types}$ sets of embedding network parameters. Otherwise, the embedding network parameters vary by types of centric atoms and types of neighbor atoms, so there will be $N_\text{types}^2$ sets of embedding network parameters.'
     doc_precision = f'The precision of the embedding net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision.'
     doc_trainable = 'If the parameters in the embedding net is trainable'
     doc_seed = 'Random seed for parameter initialization'
@@ -318,6 +318,13 @@ def fitting_ener():
     doc_rcond = 'The condition number used to determine the inital energy shift for each type of atoms.'
     doc_seed = 'Random seed for parameter initialization of the fitting net'
     doc_atom_ener = 'Specify the atomic energy in vacuum for each type'
+    doc_layer_name = (
+        "The name of the each layer. The length of this list should be equal to n_neuron + 1. "
+        "If two layers, either in the same fitting or different fittings, "
+        "have the same name, they will share the same neural network parameters. "
+        "The shape of these layers should be the same. "
+        "If null is given for a layer, parameters will not be shared."
+    )
 
     return [
         Argument("numb_fparam", int, optional = True, default = 0, doc = doc_numb_fparam),
@@ -329,7 +336,8 @@ def fitting_ener():
         Argument("trainable", [list,bool], optional = True, default = True, doc = doc_trainable),
         Argument("rcond", float, optional = True, default = 1e-3, doc = doc_rcond),
         Argument("seed", [int,None], optional = True, doc = doc_seed),
-        Argument("atom_ener", list, optional = True, default = [], doc = doc_atom_ener)
+        Argument("atom_ener", list, optional = True, default = [], doc = doc_atom_ener),
+        Argument("layer_name", list, optional = True, doc = doc_layer_name),
     ]
 
 
@@ -449,7 +457,7 @@ def model_compression_type_args():
 
 
 def model_args ():    
-    doc_type_map = 'A list of strings. Give the name to each type of atoms. It is noted that the number of atom type of training system must be less than 128 in a GPU environment.'
+    doc_type_map = 'A list of strings. Give the name to each type of atoms. It is noted that the number of atom type of training system must be less than 128 in a GPU environment. If not given, type.raw in each system should use the same type indexes, and type_map.raw will take no effect.'
     doc_data_stat_nbatch = 'The model determines the normalization from the statistics of the data. This key specifies the number of `frames` in each `system` used for statistics.'
     doc_data_stat_protect = 'Protect parameter for atomic energy regression.'
     doc_data_bias_nsample = 'The number of training samples in a system to compute and change the energy bias.'
@@ -652,7 +660,7 @@ def validation_data_args():  # ! added by Ziyao: new specification style for dat
     doc_sys_probs = "A list of float if specified. " \
                     "Should be of the same length as `systems`, " \
                     "specifying the probability of each system."
-    doc_numb_btch = "An integer that specifies the number of systems to be sampled for each validation period."
+    doc_numb_btch = "An integer that specifies the number of batches to be sampled for each validation period."
 
     args = [
         Argument("systems", [list, str], optional=False, default=".", doc=doc_systems),
@@ -911,7 +919,7 @@ def normalize_fitting_weight(fitting_keys, data_keys, fitting_weight=None):
                     sum_prob += fitting_weight[item]
                     new_weight[item] = fitting_weight[item]
                 else:
-                    valid_fitting_keys.pop(item)
+                    valid_fitting_keys.remove(item)
                     log.warning("Fitting net '{}' has zero or invalid weight "
                                 "and will not be used in training.".format(item))
                     new_weight[item] = 0.

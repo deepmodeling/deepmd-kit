@@ -105,7 +105,7 @@ class DPTrainer (object):
             #     else:
             #         raise RuntimeError('fitting global_polar only supports descrptors: loc_frame and se_e2_a')
             else:
-                raise RuntimeError('unknow fitting type ' + fitting_type_)
+                raise RuntimeError('unknown fitting type ' + fitting_type_)
 
         if not self.multi_task_mode:
             fitting_type = fitting_param.get('type', 'ener')
@@ -244,7 +244,7 @@ class DPTrainer (object):
                 elif _loss_type == 'ener_dipole':
                     loss = EnerDipoleLoss(**_loss_param)
                 else:
-                    raise RuntimeError('unknow loss type')
+                    raise RuntimeError('unknown loss type')
             elif _fitting_type == 'wfc':
                 loss = TensorLoss(_loss_param,
                                   model=_fitting,
@@ -344,6 +344,7 @@ class DPTrainer (object):
 
         # if init the graph with the frozen model
         self.frz_model = None
+        self.ckpt_meta = None
         self.model_type = None
 
 
@@ -415,8 +416,11 @@ class DPTrainer (object):
             # config the init_frz_model command
             if self.run_opt.init_mode == 'init_from_frz_model':
                 self._init_from_frz_model()
-
-            if self.run_opt.init_mode == 'finetune':
+            elif self.run_opt.init_mode == 'init_model':
+                self.ckpt_meta = self.run_opt.init_model
+            elif self.run_opt.init_mode == 'restart':
+                self.ckpt_meta = self.run_opt.restart
+            elif self.run_opt.init_mode == 'finetune':
                 self._init_from_pretrained_model(data=data, origin_type_map=origin_type_map)
 
             # neighbor_stat is moved to train.py as duplicated
@@ -475,7 +479,8 @@ class DPTrainer (object):
                                 self.place_holders['box'], 
                                 self.place_holders['default_mesh'],
                                 self.place_holders,
-                                self.frz_model,
+                                frz_model = self.frz_model,
+                                ckpt_meta = self.ckpt_meta,
                                 suffix = suffix,
                                 reuse = False)
 
@@ -581,7 +586,7 @@ class DPTrainer (object):
                 fp = open(self.disp_file, "w")
                 fp.close()
             else :
-                raise RuntimeError ("unkown init mode")
+                raise RuntimeError ("unknown init mode")
         else:
             run_sess(self.sess, init_op)
             self.saver = None

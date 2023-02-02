@@ -344,3 +344,21 @@ class TestModelConvert(unittest.TestCase):
         _, _, _, _, _ = dp.eval(self.coords, self.box, self.atype, atomic=True)
         os.remove(old_model)
         os.remove(new_model)
+
+
+class TestTypeEmbed(unittest.TestCase) :
+    @classmethod
+    def setUpClass(cls):
+        convert_pbtxt_to_pb(str(tests_path / os.path.join("infer", "se_e2_a_tebd.pbtxt")), "se_e2_a_tebd.pb")
+        cls.dp = DeepPot("se_e2_a_tebd.pb")
+
+    def test_eval_typeebd(self):
+        expected_typeebd = np.array([
+            [-0.4602908199, -0.9440795817, -0.857044451, -0.3448434537,
+            -0.6310194663, -0.9765837147, -0.3945653821, 0.8973716518],
+            [-0.7239568558, -0.9672733137, -0.420987752, -0.4542931277,
+            -0.79586188, -0.9615886543, -0.6864800369, 0.9477863254],
+            ])
+
+        eval_typeebd = self.dp.eval_typeebd()
+        np.testing.assert_almost_equal(eval_typeebd, expected_typeebd, default_places)

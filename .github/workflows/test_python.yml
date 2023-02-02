@@ -38,8 +38,9 @@ jobs:
     steps:
     - name: work around permission issue
       run: git config --global --add safe.directory /__w/deepmd-kit/deepmd-kit
-    - uses: actions/checkout@master
-    - run: python -m pip install -U pip>=21.3.1
+    - uses: actions/checkout@v3
+    # https://github.com/pypa/pip/issues/11770
+    - run: python -m pip install -U "pip>=21.3.1,<23"
     - run: pip install -e .[cpu,test]
       env:
         CC: gcc-${{ matrix.gcc }}
