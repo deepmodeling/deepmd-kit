@@ -124,6 +124,9 @@ setup(
             "lammps~=2022.6.23.2.2; platform_system!='Linux'",
             "find_libpython",
         ],
+        "ipi": [
+            "i-PI",
+        ],
         **get_tf_requirement(tf_version),
         "cu11": [
             "nvidia-cuda-runtime-cu11",

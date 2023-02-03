@@ -18,6 +18,15 @@ function(_add_ipi_variant variant_name prec_def)
                              PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/)
   if (BUILD_PY_IF)
     set(LIB_DIR op)
+    # ignore undefined reference for libpython
+    if(CMAKE_SYSTEM_NAME STREQUAL Darwin)
+      set_target_properties(
+        ${ipiname} PROPERTIES LINK_FLAGS "-Wl,-undefined,dynamic_lookup")
+    else()
+      set_target_properties(
+        ${ipiname} PROPERTIES INSTALL_RPATH "$ORIGIN;${TensorFlow_LIBRARY_PATH}"
+                              LINK_FLAGS "-rdynamic")
+    endif()
   else (BUILD_PY_IF)
     set(LIB_DIR lib)
   endif(BUILD_PY_IF)
