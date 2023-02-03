@@ -5,6 +5,7 @@ jdata_sys = {
 
 jdata_config = {
     "dscp": {
+        # basic config from deepmd model
         "sel": [60, 60],
         "rcut": 6.0,
         "rcut_smth": 0.5,
@@ -12,25 +13,34 @@ jdata_config = {
         "resnet_dt": False,
         "axis_neuron": 4,
         "type_one_side": True,
-
-        "NI": 128,
+        # rcut range
         "rc_lim": 0.5,
+        "rc_max": 8.0,
+        # embedding net size
         "M1": "neuron[-1]",
         "M2": "axis_neuron",
         "SEL": [60, 60, 0, 0],
         "NNODE_FEAS": "(1, neuron)",
         "nlayer_fea": "len(neuron)",
         "same_net": "type_one_side",
+        # num neighbor
+        "NI": 128,
         "NIDP": "sum(sel)",
         "NIX": "2^ceil(ln2(NIDP/1.5))",
+        # num type
         "ntype": "len(sel)",
         "ntypex": "same_net ? 1: ntype",
         "ntypex_max": 1,
-        "ntype_max": 4
+        "ntype_max": 4,
+        # mapping table
+        "dmin": 0,
+        "smin": -2,
+        "smax": 14
     },
 
     "fitn": {
-        "neuron": [32, 32, 32],
+        # basic config from deepmd model
+        "neuron": [128, 128, 128],
         "resnet_dt": False,
 
         "NNODE_FITS": "(M1*M2, neuron, 1)",
@@ -38,76 +48,82 @@ jdata_config = {
         "NLAYER": "nlayer_fit"
     },
 
+    # other input for generate input file
+    "dpin": {
+        "type_map" : []
+    },
+
     "size": {
-        "NTYPE_MAX": 4,
-        "NSPU": 4096,
-        "MSPU": 32768,
-        "Na": "NSPU",
-        "NaX": "MSPU"
+        # atom system size for simulation
+        "Na": 4096,
+        "NaX": 32768,
+        "NAEXT": "Na:nloc+nglb",
+        # ntype in build model
+        "NTYPE": "ntype_max",
+        "NTYPEX": "ntypex_max",
+        # model size
+        "NH_DATA": [0, 0, 0, 0, 0, 0, 0],
+        "NW_DATA": [0, 0, 0, 0, 0, 0, 0],
+        "NH_SIM": [0, 0, 0, 0, 0, 0, 0, 0, 0]
     },
 
     "ctrl": {
-        "NSTDM": 16,
-        "NSTDM_M1": 16,
-        "NSTDM_M2": 1,
+        # NSTDM
+        "NSTDM": 64,
+        "NSTDM_M1": 32,
+        "NSTDM_M2": 2,
+        "NSTDM_M1X": 8,
+        "NSEL": "NSTDM*NTYPE_MAX",
         "NSADV": "NSTDM+1",
-        "NSEL": "NSTDM*ntype_max",
-        "NSTDM_M1X": 4,
-        "NSTEP_DELAY": 20,
-        "MAX_FANOUT": 30
     },
 
     "nbit": {
-        "NBIT_DATA": 21,
-        "NBIT_DATA_FL": 13,
-        "NBIT_LONG_DATA": 32,
-        "NBIT_LONG_DATA_FL": 24,
-        "NBIT_DIFF_DATA": 24,
-
-        "NBIT_SPE": 2,
-        "NBIT_CRD": "NBIT_DATA*3",
+        # general
+        "NBIT_FLTD": 29,
+        "NBIT_FLTS": 1,
+        "NBIT_FLTE": 8,
+        "NBIT_FLTF": 20,
+        "NBIT_FLTM": "1+NBIT_FLTF",
+        "NBIT_FLTH": "1+NBIT_FLTM",
+        "NBIT_FIXD": 32,
+        "NBIT_FIXD_FL": 23,
+        # atomic data
+        "NBIT_SPE": "ln2(NTYPE_MAX)",
         "NBIT_LST": "ln2(NaX)",
-
+        "NBIT_CRD": 32,
+        "NBIT_CRD_FL": 24,
+        "NBIT_CRD3": "NBIT_CRD*3",
+        "NBIT_ATOM": "NBIT_SPE+NBIT_CRD3",
+        "NBIT_ENE": 32,
+        "NBIT_ENE_FL": "NBIT_FIT_DATA_FL",
+        "NBIT_FRC": 32,
+        "NBIT_FRC_FL": 19,
+        "NBIT_VRL": 32,
+        "NBIT_VRL_FL": 19,
+        # network
+        "NBIT_FIT_DATA": 27,
+        "NBIT_FIT_DATA_FL": 23,
+        "NBIT_FIT_SHORT_FL": 19,
+        "NBIT_FIT_WEIGHT": 18,
+        "NBIT_FIT_DISP": 3,
+        "NBIT_FIT_WXDB": 29,
+        # middle result
+        "NBIT_SEL": "ln2(NSEL)",
+        # communication
         "NBIT_SPE_MAX": 8,
         "NBIT_LST_MAX": 16,
 
-        "NBIT_ATOM": "NBIT_SPE+NBIT_CRD",
-        "NBIT_LONG_ATOM": "NBIT_SPE+NBIT_LONG_DATA*3",
-
-        "NBIT_RIJ": "NBIT_DATA_FL+5",
-        "NBIT_FEA_X": 10,
-        "NBIT_FEA_X_FL": 4,
-        "NBIT_FEA_X2_FL": 6,
-        "NBIT_FEA": 18,
-        "NBIT_FEA_FL": 10,
-        "NBIT_SHIFT": 4,
-
-        "NBIT_DATA2": "NBIT_DATA+NBIT_DATA_FL",
-        "NBIT_DATA2_FL": "2*NBIT_DATA_FL",
-        "NBIT_DATA_FEA": "NBIT_DATA+NBIT_FEA_FL",
-        "NBIT_DATA_FEA_FL": "NBIT_DATA_FL+NBIT_FEA_FL",
-
-        "NBIT_FORCE": 32,
-        "NBIT_FORCE_FL": "2*NBIT_DATA_FL-1",
-
-        "NBIT_SUM": "NBIT_DATA_FL+8",
-        "NBIT_WEIGHT": 18,
-        "NBIT_WEIGHT_FL": 13,
-
-        "NBIT_RAM": 72,
         "NBIT_ADDR": 32,
+        "NBIT_SYS": 32,
 
-        "NBTI_MODEL_HEAD": 32,
-
-        "NBIT_TH_LONG_ADD": 30,
-        "NBIT_ADD": 15,
-
-        "RANGE_B": [-100, 100],
-        "RANGE_W": [-20, 20],
-
-        "NCFG": 35,
-        "NNET": 4920,
-        "NFEA": 8192
+        "NBIT_BYPASS_DATA": 32,
+        "NBIT_CFG": 64,
+        "NBIT_NET": 72,
+        
+        "NBIT_MODEL_HEAD": 32,
+        # nbit for mapt-version
+        "NBIT_IDX_S2G" : 9,
+        "NBIT_NEIB" : 8
     },
 
     "end": ""
@@ -182,10 +198,10 @@ jdata_config_128 = {
     },
 
     "ctrl": {
-        "NSTDM": 32,
+        "NSTDM": 64,
         "NSTDM_M1": 32,
-        "NSTDM_M2": 1,
-        "NSTDM_M1X": 4
+        "NSTDM_M2": 2,
+        "NSTDM_M1X": 8
     }
 }
 

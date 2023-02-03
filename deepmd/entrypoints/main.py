@@ -529,6 +529,13 @@ def main_parser() -> argparse.ArgumentParser:
         "INPUT", help="the input parameter file in json format"
     )
     parser_train_nvnmd.add_argument(
+        "-r",
+        "--restart",
+        type=str,
+        default=None,
+        help="Restart the training from the provided checkpoint.",
+    )
+    parser_train_nvnmd.add_argument(
         "-s",
         "--step",
         default="s1",

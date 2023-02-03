@@ -3,11 +3,12 @@
 
 from deepmd.env import tf
 from deepmd.nvnmd.utils.fio import FioDic
-
+from deepmd.utils.graph import get_tensor_by_name_from_graph
 
 def filter_tensorVariableList(tensorVariableList) -> dict:
     r"""Get the name of variable for NVNMD
 
+    | :code:`train_attr/min_nbor_dist`
     | :code:`descrpt_attr/t_avg:0`
     | :code:`descrpt_attr/t_std:0`
     | :code:`filter_type_{atom i}/matrix_{layer l}_{atomj}:0`
@@ -45,4 +46,10 @@ def save_weight(sess, file_name: str = 'nvnmd/weight.npy'):
     for key in dic_key_tv.keys():
         value = sess.run(dic_key_tv[key])
         dic_key_value[key] = value
+    namelist = [n.name for n in tf.get_default_graph().as_graph_def().node]
+    if 'train_attr/min_nbor_dist' in namelist:
+        min_dist = get_tensor_by_name_from_graph(tf.get_default_graph(), 'train_attr/min_nbor_dist')
+    else:
+        min_dist = 0.0
+    dic_key_value['train_attr.min_nbor_dist'] = min_dist
     FioDic().save(file_name, dic_key_value)

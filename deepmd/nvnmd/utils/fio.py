@@ -172,14 +172,15 @@ class FioBin():
         """
         log.info(f"write binary to {file_name}")
         Fio().create_file_path(file_name)
-
+        # si is H->L
+        # bytearray is L->H
+        # so need '[::-1]'
         buff = []
         for si in data:
-            buff.extend(list(bytearray.fromhex(si)))
-
+            buff.extend(list(bytearray.fromhex(si))[::-1])
+        #
         with open(file_name, 'wb') as fp:
             fp.write(struct.pack('%sB' % len(buff), *buff))
-
 
 class FioTxt():
     r"""Input and output for .txt file with string

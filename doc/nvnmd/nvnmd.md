@@ -172,6 +172,12 @@ dp train-nvnmd train_qnn.json -s s2
 
 After the training process, you will get two folders: `nvnmd_cnn` and `nvnmd_qnn`. The `nvnmd_cnn` contains the model after continuous neural network (CNN) training. The `nvnmd_qnn` contains the model after quantized neural network (QNN) training. The binary file `nvnmd_qnn/model.pb` is the model file that is used to perform NVNMD in the server [http://nvnmd.picp.vip].
 
+You can also restart the CNN training from the checkpoint (`nvnmd_cnn/model.ckpt`) by 
+
+``` bash
+dp train-nvnmd train_cnn.json -r nvnmd_cnn/model.ckpt -s s1
+```
+
 
 # Testing
 

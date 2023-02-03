@@ -258,19 +258,6 @@ _prepare_coord_nlist_cpu(
   }
 }
 
-/*
-//==================================================
-  PARAM
-//==================================================
-*/
-
-template <typename FPTYPE>
-void get_precs(FPTYPE precs[3]){
-  precs[0] = 8192; // NBIT_DATA_FL
-  precs[1] = 1024; // NBIT_FEA_X
-  precs[2] = 16; // NBIT_FEA_X_FL
-}
-
 
 /*
 //==================================================
@@ -313,8 +300,6 @@ public:
     mem_cpy = 256;
     max_nnei_trial = 100;
     mem_nnei = 256;
-
-    get_precs(precs);
   }
 
   void Compute(OpKernelContext* context) override {
@@ -470,7 +455,7 @@ public:
       // launch the cpu compute function
       deepmd::prod_env_mat_a_nvnmd_quantize_cpu(
 	  em, em_deriv, rij, nlist, 
-	  coord, type, inlist, max_nbor_size, avg, std, nloc, frame_nall, rcut_r, rcut_r_smth, sec_a, precs);
+	  coord, type, inlist, max_nbor_size, avg, std, nloc, frame_nall, rcut_r, rcut_r_smth, sec_a);
       // do nlist mapping if coords were copied
       if(b_nlist_map) _map_nlist_cpu(nlist, &idx_mapping[0], nloc, nnei);
     }
@@ -495,7 +480,6 @@ private:
   unsigned long long * array_longlong = NULL;
   deepmd::InputNlist gpu_inlist;
   int * nbor_list_dev = NULL;
-  FPTYPE precs[3];
 };
 
 

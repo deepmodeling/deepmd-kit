@@ -28,6 +28,74 @@ class Encode():
         r"""Quantize value using ceil
         """
         return np.ceil(v * (2**nbit))
+    
+    def split_expo_mant(self, v, min=-1000):
+        vabs = np.abs(v)
+        expo = np.log2(vabs)
+        expo = np.maximum(expo, min)
+        prec = 1.0 / 2.0**expo
+        mant = v * prec
+        return expo, mant
+    
+    def find_max_expo(self, v, expo_min=-1000):
+        vabs = np.abs(v)
+        vmax = np.max(vabs)
+        expo_max = np.log2(vmax+1e-50)
+        expo_max = np.maximum(expo_max, expo_min)
+        expo_max = np.floor(expo_max)
+        return expo_max
+    
+    def norm_expo(self, v, nbit_frac=20, expo_min=-1000):
+        expo_max = self.find_max_expo(v, expo_min)
+        prec_expo = 2 ** (nbit_frac - expo_max)
+        prec = 2**nbit_frac
+        sign = np.sign(v)
+        vabs = np.abs(v)
+        vabs = np.floor(vabs * prec_expo) / prec
+        return sign * vabs, expo_max
+
+    def flt2bin_one(self, v, nbit_expo, nbit_frac):
+        v = float(v) # 64-bit float
+        h = v.hex()
+        n = len(h)
+        st = n
+        for ii in range(n):
+            if h[ii] == 'x':
+                st = ii + 1
+            if h[ii] == 'p':
+                ed = ii+1
+        is_zero = h[st] == '0'
+        #
+        if is_zero:
+            return '0' * (1 + nbit_expo + nbit_frac)
+        else:
+            s = '1' if h[0] == '-' else '0'
+            e = int(h[ed:]) + int(2**(nbit_expo-1) + 2**nbit_expo)
+            e = bin(e)[3:] # 0b1xxxxxxx
+            fh = h[st+2:ed-1]
+            fb = self.hex2bin_str(fh)
+            f = fb[0:nbit_frac]
+            return s+e+f
+    
+    def flt2bin(self, data, nbit_expo, nbit_frac):
+        r"""Convert float into binary string list
+        """
+        data = np.reshape(np.array(data), [-1])
+        return [self.flt2bin_one(d, nbit_expo, nbit_frac) for d in data]
+
+    def byte2hex(self, bs, nbyte):
+        r"""Convert byte into hex 
+        bs: low byte in the first
+        hex: low byte in the right
+        """
+        nl = len(bs) // nbyte
+        hs = []
+        for ii in range(nl):
+            b = bs[nbyte*ii:nbyte*(ii+1)]
+            b = b[::-1]
+            h = b.hex()
+            hs.append(h)
+        return hs
 
     def check_dec(self, idec, nbit, signed=False, name=''):
         r"""Check whether the data (idec) is in the range

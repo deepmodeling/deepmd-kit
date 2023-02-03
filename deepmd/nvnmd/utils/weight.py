@@ -27,15 +27,6 @@ def get_normalize(weights: dict):
     return avg, std
 
 
-def get_rng_s(weights: dict):
-    r"""Guess the range of :math:`s_{ji}`
-    """
-    avg, std = get_normalize(weights)
-    smin = np.min(-avg[:, 0] / std[:, 0])
-    smax = np.max(2.0 / std[:, 0])
-    return smin, smax
-
-
 def get_filter_weight(weights: dict, spe_i: int, spe_j: int, layer_l: int):
     r"""Get weight and bias of embedding network
 
@@ -51,10 +42,8 @@ def get_filter_weight(weights: dict, spe_i: int, spe_j: int, layer_l: int):
         layer order in embedding network
         1~nlayer
     """
-    # key = f"filter_type_{spe_i}.matrix_{layer_l}_{spe_j}" # type_one_side = false
     key = f"filter_type_all.matrix_{layer_l}_{spe_j}"  # type_one_side = true
     weight = get_weight(weights, key)
-    # key = f"filter_type_{spe_i}.bias_{layer_l}_{spe_j}" # type_one_side = false
     key = f"filter_type_all.bias_{layer_l}_{spe_j}"  # type_one_side = true
     bias = get_weight(weights, key)
     return weight, bias

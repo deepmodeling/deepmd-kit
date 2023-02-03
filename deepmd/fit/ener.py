@@ -339,7 +339,7 @@ class EnerFitting (Fitting):
             else:
                 layer_suffix = 'layer_' + str(ii) + type_suffix + suffix
                 layer_reuse = reuse
-            if ii >= 1 and self.n_neuron[ii] == self.n_neuron[ii-1] and (not nvnmd_cfg.enable):
+            if ii >= 1 and self.n_neuron[ii] == self.n_neuron[ii-1]:
                 layer+= one_layer(
                     layer,
                     self.n_neuron[ii],
