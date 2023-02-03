@@ -126,6 +126,7 @@ if(USE_TF_PYTHON_LIBS)
       REQUIRED)
   else()
     set(Python_LIBRARIES ${Python_LIBRARY})
+    set(PYTHON_INCLUDE_DIRS ${PYTHON_INCLUDE_DIR})
   endif()
 endif(USE_TF_PYTHON_LIBS)
 
