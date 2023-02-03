@@ -45,8 +45,8 @@ if os.environ.get("DP_BUILD_TESTING", "0") == "1":
     cmake_args.append("-DBUILD_TESTING:BOOL=TRUE")
 if os.environ.get("DP_ENABLE_NATIVE_OPTIMIZATION", "0") == "1":
     cmake_args.append("-DENABLE_NATIVE_OPTIMIZATION:BOOL=TRUE")
-dp_lammps_version = os.environ.get("DP_LAMMPS_VERSION", "0")
-dp_ipi = os.environ.get("DP_ENABLE_IPI", "")
+dp_lammps_version = os.environ.get("DP_LAMMPS_VERSION", "")
+dp_ipi = os.environ.get("DP_ENABLE_IPI", "0")
 if dp_lammps_version != "" or dp_ipi == "1":
     cmake_args.append("-DBUILD_CPP_IF:BOOL=TRUE")
     cmake_args.append("-DUSE_TF_PYTHON_LIBS:BOOL=TRUE")
