@@ -7,7 +7,7 @@ jobs:
     name: Build C++
     runs-on: ubuntu-latest
     container: ghcr.io/deepmodeling/deepmd-kit-test-cc:latest
-    strategy:  
+    strategy:
       matrix:
         include:
         - variant: cpu
@@ -47,7 +47,7 @@ jobs:
          && apt-get install -y rocm-dev hipcub-dev
       if: matrix.variant == 'rocm'
     - run: apt-get update && apt-get install -y clang
-      if: matrix.variant == 'clang'  
+      if: matrix.variant == 'clang'
     - run: source/install/build_cc.sh
       env:
         DP_VARIANT: ${{ matrix.dp_variant }}
