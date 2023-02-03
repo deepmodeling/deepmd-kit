@@ -119,7 +119,7 @@ set(DEEPMD_SOURCE_DIR ${PROJECT_SOURCE_DIR}/..)
 
 # setup tensorflow libraries by python
 if(USE_TF_PYTHON_LIBS)
-  if(NOT $ENV{CIBUILDWHEEL} STREQUAL "1")
+  if(NOT "$ENV{CIBUILDWHEEL}" STREQUAL "1")
     find_package(
       Python
       COMPONENTS Interpreter Development
