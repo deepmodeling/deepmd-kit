@@ -20,26 +20,25 @@ function(_add_ipi_variant variant_name prec_def)
     set(LIB_DIR op)
     # ignore undefined reference for libpython
     if(CMAKE_SYSTEM_NAME STREQUAL Darwin)
-      set_target_properties(
-        ${ipiname} PROPERTIES LINK_FLAGS "-Wl,-undefined,dynamic_lookup")
+      set(extra_link_flags "-Wl,-undefined,dynamic_lookup")
     else()
-      set_target_properties(
-        ${ipiname} PROPERTIES INSTALL_RPATH "$ORIGIN;${TensorFlow_LIBRARY_PATH}"
-                              LINK_FLAGS "-rdynamic")
+      set(extra_link_flags "-rdynamic")
     endif()
   else (BUILD_PY_IF)
     set(LIB_DIR lib)
+    set(extra_link_flags "")
   endif(BUILD_PY_IF)
 
   if(APPLE)
     set_target_properties(
       ${ipiname}
-      PROPERTIES INSTALL_RPATH "@loader_path/../${LIB_DIR}:${TensorFlow_LIBRARY_PATH}"
+      PROPERTIES LINK_FLAGS "${extra_link_flags}"
+                 INSTALL_RPATH "@loader_path/../${LIB_DIR}:${TensorFlow_LIBRARY_PATH}"
                  COMPILE_DEFINITIONS ${prec_def})
   else()
     set_target_properties(
       ${ipiname}
-      PROPERTIES LINK_FLAGS "-Wl,-rpath,'$ORIGIN'/../${LIB_DIR} -Wl,-z,defs"
+      PROPERTIES LINK_FLAGS "-Wl,-rpath,'$ORIGIN'/../${LIB_DIR} -Wl,-z,defs ${extra_link_flags}"
                  INSTALL_RPATH "$ORIGIN/../${LIB_DIR}:${TensorFlow_LIBRARY_PATH}"
                  COMPILE_DEFINITIONS ${prec_def})
   endif()
