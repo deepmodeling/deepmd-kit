@@ -1,15 +1,16 @@
-
-import numpy as np
 import logging
 
-from deepmd.env import tf
+import numpy as np
+
+from deepmd.env import (
+    tf,
+)
 
 log = logging.getLogger(__name__)
 
 
 def get_weight(weights, key):
-    r"""Get weight value according to key
-    """
+    r"""Get weight value according to key"""
     if key in weights.keys():
         return weights[key]
     else:
@@ -18,8 +19,7 @@ def get_weight(weights, key):
 
 
 def get_normalize(weights: dict):
-    r"""Get normalize parameter (avg and std) of :math:`s_{ji}`
-    """
+    r"""Get normalize parameter (avg and std) of :math:`s_{ji}`"""
     key = "descrpt_attr.t_avg"
     avg = get_weight(weights, key)
     key = "descrpt_attr.t_std"
@@ -76,9 +76,8 @@ def get_fitnet_weight(weights: dict, spe_i: int, layer_l: int, nlayer: int = 10)
 
 
 def get_constant_initializer(weights, name):
-    r"""Get initial value by name and create a initializer
-    """
+    r"""Get initial value by name and create a initializer"""
     scope = tf.get_variable_scope().name
-    name = scope + '.' + name
+    name = scope + "." + name
     value = get_weight(weights, name)
     return tf.constant_initializer(value)

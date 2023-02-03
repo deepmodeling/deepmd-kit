@@ -26,8 +26,8 @@ The DeePMD-kit package provides the pair_style `deepmd`
 pair_style deepmd models ... keyword value ...
 ```
 - deepmd = style of this pair_style
-- models = frozen model(s) to compute the interaction. 
-If multiple models are provided, then only the first model serves to provide energy and force prediction for each timestep of molecular dynamics, 
+- models = frozen model(s) to compute the interaction.
+If multiple models are provided, then only the first model serves to provide energy and force prediction for each timestep of molecular dynamics,
 and the model deviation will be computed among all models every `out_freq` timesteps.
 - keyword = *out_file* or *out_freq* or *fparam* or *fparam_from_compute* or *atomic* or *relative* or *relative_v* or *aparam* or *ttm*
 <pre>
@@ -39,7 +39,7 @@ and the model deviation will be computed among all models every `out_freq` times
         parameters = one or more frame parameters required for model evaluation.
     <i>fparam_from_compute</i> value = id
         id = compute id used to update the frame parameter.
-    <i>atomic</i> = no value is required. 
+    <i>atomic</i> = no value is required.
         If this keyword is set, the model deviation of each atom will be output.
     <i>relative</i> value = level
         level = The level parameter for computing the relative model deviation of the force
@@ -63,7 +63,7 @@ compute    TEMP all temp
 ```
 
 ### Description
-Evaluate the interaction of the system by using [Deep Potential][DP] or [Deep Potential Smooth Edition][DP-SE]. It is noticed that deep potential is not a "pairwise" interaction, but a multi-body interaction. 
+Evaluate the interaction of the system by using [Deep Potential][DP] or [Deep Potential Smooth Edition][DP-SE]. It is noticed that deep potential is not a "pairwise" interaction, but a multi-body interaction.
 
 This pair style takes the deep potential defined in a model file that usually has the .pb extension. The model can be trained and frozen by package [DeePMD-kit](https://github.com/deepmodeling/deepmd-kit).
 
@@ -80,7 +80,7 @@ $$E_{v_i}=\frac{\left|D_{v_i}\right|}{\left|v_i\right|+l}$$
 
 If the keyword `fparam` is set, the given frame parameter(s) will be fed to the model.
 If the keyword `fparam_from_compute` is set, the global parameter(s) from compute command (e.g., temperature from [compute temp command](https://docs.lammps.org/compute_temp.html)) will be fed to the model as the frame parameter(s).
-If the keyword `aparam` is set, the given atomic parameter(s) will be fed to the model, where each atom is assumed to have the same atomic parameter(s). 
+If the keyword `aparam` is set, the given atomic parameter(s) will be fed to the model, where each atom is assumed to have the same atomic parameter(s).
 If the keyword `ttm` is set, electronic temperatures from [fix ttm command](https://docs.lammps.org/fix_ttm.html) will be fed to the model as the atomic parameters.
 
 Only a single `pair_coeff` command is used with the deepmd style which specifies atom names. These are mapped to LAMMPS atom types (integers from 1 to Ntypes) by specifying Ntypes additional arguments after `* *` in the `pair_coeff` command.
@@ -93,7 +93,7 @@ If the training parameter {ref}`type_map <model/type_map>` is not set, atom name
 
 ## Compute tensorial properties
 
-The DeePMD-kit package provides the compute `deeptensor/atom` for computing atomic tensorial properties. 
+The DeePMD-kit package provides the compute `deeptensor/atom` for computing atomic tensorial properties.
 
 ```lammps
 compute ID group-ID deeptensor/atom model_file
@@ -109,9 +109,9 @@ At this time, the training parameter {ref}`type_map <model/type_map>` will be ma
 ```lammps
 compute         dipole all deeptensor/atom dipole.pb
 ```
-The result of the compute can be dumped to trajectory file by 
+The result of the compute can be dumped to trajectory file by
 ```lammps
-dump            1 all custom 100 water.dump id type c_dipole[1] c_dipole[2] c_dipole[3] 
+dump            1 all custom 100 water.dump id type c_dipole[1] c_dipole[2] c_dipole[3]
 ```
 
 ### Restrictions
@@ -119,7 +119,7 @@ dump            1 all custom 100 water.dump id type c_dipole[1] c_dipole[2] c_di
 
 
 ## Long-range interaction
-The reciprocal space part of the long-range interaction can be calculated by LAMMPS command `kspace_style`. To use it with DeePMD-kit, one writes 
+The reciprocal space part of the long-range interaction can be calculated by LAMMPS command `kspace_style`. To use it with DeePMD-kit, one writes
 ```lammps
 pair_style	deepmd graph.pb
 pair_coeff  * *
@@ -128,7 +128,7 @@ kspace_modify	gewald 0.45
 ```
 Please notice that the DeePMD does nothing to the direct space part of the electrostatic interaction, because this part is assumed to be fitted in the DeePMD model (the direct space cut-off is thus the cut-off of the DeePMD model). The splitting parameter `gewald` is modified by the `kspace_modify` command.
 
-## Use of the centroid/stress/atom to get the full 3x3 "atomic-virial" 
+## Use of the centroid/stress/atom to get the full 3x3 "atomic-virial"
 
 The [DeePMD-kit](https://github.com/deepmodeling/deepmd-kit) allows also the computation of per-atom stress tensor defined as:
 
@@ -155,7 +155,7 @@ Using a per-atom stress tensor one can, for example, compute the heat flux defin
 
 $$\mathbf J = \sum_n e_n \mathbf v_n + \sum_{n,m} ( \mathbf r_m- \mathbf r_n) \frac{de_m}{d\mathbf r_n} \mathbf v_n$$
 
-to compute the heat flux with LAMMPS: 
+to compute the heat flux with LAMMPS:
 ```lammps
 compute ke_ID all ke/atom
 compute pe_ID all pe/atom

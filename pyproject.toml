@@ -104,3 +104,7 @@ ignore = "W504"
 # of space, start on the first line
 [tool.pydocstyle]
 ignore = "D413, D416, D203, D107, D213"
+
+[tool.isort]
+profile = "black"
+force_grid_wrap = 1

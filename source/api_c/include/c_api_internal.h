@@ -1,7 +1,7 @@
-#include "neighbor_list.h"
+#include "DataModifier.h"
 #include "DeepPot.h"
 #include "DeepTensor.h"
-#include "DataModifier.h"
+#include "neighbor_list.h"
 
 struct DP_Nlist {
   DP_Nlist(deepmd::InputNlist& nl);

@@ -9,7 +9,7 @@ body:
     attributes:
       label: Summary
       description: "Please provide a clear and concise description of what your request is."
-      placeholder: 
+      placeholder:
       value:
     validations:
       required: true
@@ -18,7 +18,7 @@ body:
     attributes:
       label: Detailed Description
       description: "Please explain how you would like to see deepmd-kit enhanced. Specify your material system, and exactly what behaviors or properties you are looking for, or what specific problems this will solve. If possible, provide references to relevant background information like publications or web pages, and whether you are planning to implement the enhancement yourself or would like to participate in the implementation."
-      placeholder: 
+      placeholder:
       value:
     validations:
       required: true
@@ -27,7 +27,7 @@ body:
     attributes:
       label: Further Information, Files, and Links
       description: Put any additional information here, attach relevant text or image files and URLs to external sites, e.g. relevant publications
-      placeholder: 
+      placeholder:
       value:
     validations:
       required: false

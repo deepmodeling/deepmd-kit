@@ -1,25 +1,33 @@
+from typing import (
+    List,
+    Tuple,
+)
+
 import numpy as np
-from typing import Tuple, List
 
-from deepmd.env import tf
-from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
-from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
-from deepmd.env import GLOBAL_ENER_FLOAT_PRECISION
-from deepmd.env import global_cvt_2_tf_float
-from deepmd.env import global_cvt_2_ener_float
-from deepmd.env import op_module
-from deepmd.env import default_tf_session_config
-from deepmd.utils.sess import run_sess
+from deepmd.env import (
+    GLOBAL_ENER_FLOAT_PRECISION,
+    GLOBAL_NP_FLOAT_PRECISION,
+    GLOBAL_TF_FLOAT_PRECISION,
+    default_tf_session_config,
+    global_cvt_2_ener_float,
+    global_cvt_2_tf_float,
+    op_module,
+    tf,
+)
+from deepmd.utils.sess import (
+    run_sess,
+)
 
-class EwaldRecp () :
+
+class EwaldRecp:
     """
     Evaluate the reciprocal part of the Ewald sum
     """
-    def __init__(self, 
-                 hh,
-                 beta):
+
+    def __init__(self, hh, beta):
         """
-        Constructor 
+        Constructor
 
         Parameters
         ----------
@@ -32,25 +40,31 @@ class EwaldRecp () :
         self.beta = beta
         with tf.Graph().as_default() as graph:
             # place holders
-            self.t_nloc       = tf.placeholder(tf.int32, [1], name = "t_nloc")
-            self.t_coord      = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None], name='t_coord')
-            self.t_charge     = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None], name='t_charge')
-            self.t_box        = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None], name='t_box')
-            # output            
-            self.t_energy, self.t_force, self.t_virial \
-                = op_module.ewald_recp(self.t_coord, self.t_charge, self.t_nloc, self.t_box, 
-                                       ewald_h = self.hh,
-                                       ewald_beta = self.beta)
+            self.t_nloc = tf.placeholder(tf.int32, [1], name="t_nloc")
+            self.t_coord = tf.placeholder(
+                GLOBAL_TF_FLOAT_PRECISION, [None], name="t_coord"
+            )
+            self.t_charge = tf.placeholder(
+                GLOBAL_TF_FLOAT_PRECISION, [None], name="t_charge"
+            )
+            self.t_box = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None], name="t_box")
+            # output
+            self.t_energy, self.t_force, self.t_virial = op_module.ewald_recp(
+                self.t_coord,
+                self.t_charge,
+                self.t_nloc,
+                self.t_box,
+                ewald_h=self.hh,
+                ewald_beta=self.beta,
+            )
         self.sess = tf.Session(graph=graph, config=default_tf_session_config)
 
-    def eval(self, 
-             coord : np.ndarray, 
-             charge : np.ndarray, 
-             box : np.ndarray
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray] :
+    def eval(
+        self, coord: np.ndarray, charge: np.ndarray, box: np.ndarray
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
-        Evaluate 
-        
+        Evaluate
+
         Parameters
         ----------
         coord
@@ -63,11 +77,11 @@ class EwaldRecp () :
         Returns
         -------
         e
-                The energy 
+                The energy
         f
-                The force 
+                The force
         v
-                The virial 
+                The virial
         """
         coord = np.array(coord)
         charge = np.array(charge)
@@ -78,15 +92,15 @@ class EwaldRecp () :
         charge = np.reshape(charge, [nframes * natoms])
         box = np.reshape(box, [nframes * 9])
 
-        [energy, force, virial] \
-            = run_sess(self.sess, [self.t_energy, self.t_force, self.t_virial], 
-                            feed_dict = {
-                                self.t_coord:  coord,
-                                self.t_charge: charge,
-                                self.t_box:    box,
-                                self.t_nloc:   [natoms],
-                            })
+        [energy, force, virial] = run_sess(
+            self.sess,
+            [self.t_energy, self.t_force, self.t_virial],
+            feed_dict={
+                self.t_coord: coord,
+                self.t_charge: charge,
+                self.t_box: box,
+                self.t_nloc: [natoms],
+            },
+        )
 
         return energy, force, virial
-             
-             

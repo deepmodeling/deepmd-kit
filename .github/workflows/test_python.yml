@@ -6,7 +6,7 @@ jobs:
   testpython:
     name: Test Python
     runs-on: ubuntu-latest
-    strategy:  
+    strategy:
       matrix:
         include:
           - python: 3.7

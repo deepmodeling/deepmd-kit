@@ -10,7 +10,7 @@ y = float(float(x) + float(w))
 # float64:
 1 bit sign
 11 bits exponent
-52 bits fraction 
+52 bits fraction
 
 # float29
 1 bit sign
@@ -26,102 +26,95 @@ y = float(float(x) + float(w))
 // --------------------------------------------------------------------
 //
 
-
 //- import the library of tensorflow
-#include "custom_op.h"
 #include <vector>
-#include "math.h"
+
+#include "custom_op.h"
 #include "env_mat_nvnmd.h"
+#include "math.h"
 
 using namespace tensorflow;
 
-template <class T> // float and double
-void add_flt_nvnmd(T &y, T x1, T x2);
+template <class T>  // float and double
+void add_flt_nvnmd(T& y, T x1, T x2);
 
 //- register the operator
 REGISTER_OP("AddFltNvnmd")
-  .Attr("T: {float, double} = DT_DOUBLE")
-  .Input("x: T")
-  .Input("w: T")
-  .Output("y: T");
+    .Attr("T: {float, double} = DT_DOUBLE")
+    .Input("x: T")
+    .Input("w: T")
+    .Output("y: T");
 
 //- create the operator class
 //* the class must inherit the OpKernel Class
 template <typename Device, typename FPTYPE>
 class AddFltNvnmdOp : public OpKernel {
-public:
+ public:
+  /// Constructor.
+  explicit AddFltNvnmdOp(OpKernelConstruction* context) : OpKernel(context){};
 
-/// Constructor.
-explicit AddFltNvnmdOp(OpKernelConstruction* context) : OpKernel(context) {
-};
+  /// Compute the descriptor
+  /// param: context
+  void Compute(OpKernelContext* context) override {
+    // check
+    DCHECK_EQ(2, context->num_inputs());
+    const Tensor& X = context->input(0);
+    const Tensor& W = context->input(1);
 
+    const TensorShape& shX = X.shape();
+    const TensorShape& shW = W.shape();
+    TensorShape shY;
 
-/// Compute the descriptor
-/// param: context
-void Compute(OpKernelContext* context) override {
-  // check
-  DCHECK_EQ(2, context->num_inputs());
-  const Tensor& X = context->input(0);
-  const Tensor& W = context->input(1);
+    DCHECK_EQ(shW.dims(), shX.dims());
 
-  const TensorShape& shX = X.shape();
-  const TensorShape& shW = W.shape();
-  TensorShape shY;
+    int H, N, M;
+    if (shX.dims() == 3) {
+      DCHECK_EQ(shW.dim_size(0), shX.dim_size(0));
+      DCHECK_EQ(shW.dim_size(1), shX.dim_size(1));
+      DCHECK_EQ(shW.dim_size(2), shX.dim_size(2));
 
-  DCHECK_EQ(shW.dims(), shX.dims());
+      H = shX.dim_size(0);
+      N = shX.dim_size(1);
+      M = shX.dim_size(2);
 
-  int H, N, M;
-  if (shX.dims() == 3) {
-    DCHECK_EQ(shW.dim_size(0), shX.dim_size(0));
-    DCHECK_EQ(shW.dim_size(1), shX.dim_size(1));
-    DCHECK_EQ(shW.dim_size(2), shX.dim_size(2));
+      shY.AddDim(H);
+      shY.AddDim(N);
+      shY.AddDim(M);
+    }
+    if (shX.dims() == 2) {
+      DCHECK_EQ(shW.dim_size(0), shX.dim_size(0));
+      DCHECK_EQ(shW.dim_size(1), shX.dim_size(1));
 
-    H = shX.dim_size(0);
-    N = shX.dim_size(1);
-    M = shX.dim_size(2);
+      H = 1;
+      N = shX.dim_size(0);
+      M = shX.dim_size(1);
 
-    shY.AddDim(H);
-    shY.AddDim(N);
-    shY.AddDim(M);
-  }
-  if (shX.dims() == 2) {
-    DCHECK_EQ(shW.dim_size(0), shX.dim_size(0));
-    DCHECK_EQ(shW.dim_size(1), shX.dim_size(1));
+      shY.AddDim(N);
+      shY.AddDim(M);
+    }
 
-    H = 1;
-    N = shX.dim_size(0);
-    M = shX.dim_size(1);
+    // create output
+    Tensor* Y = NULL;
+    OP_REQUIRES_OK(context, context->allocate_output(0, shY, &Y));
 
-    shY.AddDim(N);
-    shY.AddDim(M);
-  }
+    // compute
+    auto x = X.flat<FPTYPE>().data();
+    auto w = W.flat<FPTYPE>().data();
+    auto y = Y->flat<FPTYPE>().data();
 
-  // create output
-  Tensor* Y = NULL;
-  OP_REQUIRES_OK(context, context->allocate_output(0, shY, &Y));
+    int ii;
 
-  // compute
-  auto x = X.flat<FPTYPE>().data();
-  auto w = W.flat<FPTYPE>().data();
-  auto y = Y->flat<FPTYPE>().data();
+    for (ii = 0; ii < H * N * M; ii++) {
+      add_flt_nvnmd(y[ii], x[ii], w[ii]);
+    }
 
-  int ii;
+  }  // Compute
 
-  for (ii=0; ii<H*N*M; ii++) {
-    add_flt_nvnmd(y[ii], x[ii], w[ii]);
-  }
+};  // AddFltNvnmdOp
 
-} // Compute
-
-
-}; // AddFltNvnmdOp
-
-#define REGISTER_CPU(T) \
-REGISTER_KERNEL_BUILDER( \
-    Name("AddFltNvnmd").Device(DEVICE_CPU).TypeConstraint<T>("T"), \
-    AddFltNvnmdOp<CPUDevice, T>);
-REGISTER_CPU(float);                  
+#define REGISTER_CPU(T)                                              \
+  REGISTER_KERNEL_BUILDER(                                           \
+      Name("AddFltNvnmd").Device(DEVICE_CPU).TypeConstraint<T>("T"), \
+      AddFltNvnmdOp<CPUDevice, T>);
+REGISTER_CPU(float);
 REGISTER_CPU(double);
-
-
-
