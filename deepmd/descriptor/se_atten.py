@@ -653,21 +653,24 @@ class DescrptSeAtten(DescrptSeA):
         xyz_scatter = tf.reshape(tf.slice(inputs_reshape, [0, 0], [-1, 1]), [-1, 1])
         assert atype is not None, 'atype must exist!!'
         type_embedding = tf.cast(type_embedding, self.filter_precision)
-        xyz_scatter = self._lookup_type_embedding(
-            xyz_scatter, atype, type_embedding)
+        #xyz_scatter = self._lookup_type_embedding(
+        #    xyz_scatter, atype, type_embedding)
         if self.compress:
             raise RuntimeError('compression of attention descriptor is not supported at the moment')
         # natom x 4 x outputs_size
         if (not is_exclude):
             with tf.variable_scope(name, reuse=reuse):
-                # with (natom x nei_type_i) x out_size
-                xyz_scatter = embedding_net(
+                te_out_dim = type_embedding.get_shape().as_list()[-1]
+                #col_1_embedding_output = tf.nn.embedding_lookup(type_embedding,
+                #                                                self.nei_type_vec)  # shape is [self.nnei, 1+te_out_dim]
+                col_1_suffix = suffix + "col1"
+                col_1_embedding_output = embedding_net(
                     xyz_scatter,
                     self.filter_neuron,
                     self.filter_precision,
                     activation_fn=activation_fn,
                     resnet_dt=self.filter_resnet_dt,
-                    name_suffix=suffix,
+                    name_suffix=col_1_suffix,
                     stddev=stddev,
                     bavg=bavg,
                     seed=self.seed,
@@ -675,7 +678,68 @@ class DescrptSeAtten(DescrptSeA):
                     uniform_seed=self.uniform_seed,
                     initial_variables=self.embedding_net_variables,
                     mixed_prec=self.mixed_prec)
-                if (not self.uniform_seed) and (self.seed is not None): self.seed += self.seed_shift
+
+                nei_embed = tf.nn.embedding_lookup(type_embedding,
+                                                   self.nei_type_vec)  # shape is [self.nnei, te_out_dim]
+                nei_embed = tf.reshape(nei_embed, [-1, te_out_dim])
+                nei_suffix = suffix + "nei"
+                nei_embed_output = embedding_net(
+                    nei_embed,
+                    self.filter_neuron,
+                    self.filter_precision,
+                    activation_fn=activation_fn,
+                    resnet_dt=self.filter_resnet_dt,
+                    name_suffix=nei_suffix,
+                    stddev=stddev,
+                    bavg=bavg,
+                    seed=self.seed,
+                    trainable=trainable,
+                    uniform_seed=self.uniform_seed,
+                    initial_variables=self.embedding_net_variables,
+                    mixed_prec=self.mixed_prec)
+
+                atm_embed_output = None
+                if not self.type_one_side:
+                    atm_embed = tf.nn.embedding_lookup(type_embedding, atype)  # shape is [nframes*natoms[0], te_out_dim]
+                    atm_embed = tf.tile(atm_embed,
+                                        [1, self.nnei])  # shape is [nframes*natoms[0], self.nnei*te_out_dim]
+                    atm_embed = tf.reshape(atm_embed,
+                                           [-1, te_out_dim])  # shape is [nframes*natoms[0]*self.nnei, te_out_dim]
+                    atm_suffix = suffix + "atm"
+                    atm_embed_output = embedding_net(
+                        atm_embed,
+                        self.filter_neuron,
+                        self.filter_precision,
+                        activation_fn=activation_fn,
+                        resnet_dt=self.filter_resnet_dt,
+                        name_suffix=atm_suffix,
+                        stddev=stddev,
+                        bavg=bavg,
+                        seed=self.seed,
+                        trainable=trainable,
+                        uniform_seed=self.uniform_seed,
+                        initial_variables=self.embedding_net_variables,
+                        mixed_prec=self.mixed_prec) 
+                xyz_scatter = col_1_embedding_output + nei_embed_output
+                if atm_embed_output is not None:
+                    xyz_scatter += atm_embed_output
+
+                # with (natom x nei_type_i) x out_size
+                #xyz_scatter = embedding_net(
+                #    xyz_scatter,
+                #    self.filter_neuron,
+                #    self.filter_precision,
+                #    activation_fn=activation_fn,
+                #    resnet_dt=self.filter_resnet_dt,
+                #    name_suffix=suffix,
+                #    stddev=stddev,
+                #    bavg=bavg,
+                #    seed=self.seed,
+                #    trainable=trainable,
+                #    uniform_seed=self.uniform_seed,
+                #    initial_variables=self.embedding_net_variables,
+                #    mixed_prec=self.mixed_prec)
+            if (not self.uniform_seed) and (self.seed is not None): self.seed += self.seed_shift
             input_r = tf.slice(tf.reshape(inputs_i, (-1, shape_i[1] // 4, 4)), [0, 0, 1], [-1, -1, 3])
             input_r = tf.nn.l2_normalize(input_r, -1)
             # natom x nei_type_i x out_size
