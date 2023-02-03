@@ -56,10 +56,10 @@ void normalize_coord(std::vector<double> &coord,
 }
 
 int main(int argc, char *argv[]) {
-  if (argc == 1) {
+  if (argc == 1 || (argc == 2 && argv[1] == "-h")) {
     std::cerr << "usage " << std::endl;
     std::cerr << argv[0] << " input_script " << std::endl;
-    return 1;
+    return 0;
   }
 
   std::ifstream fp(argv[1]);

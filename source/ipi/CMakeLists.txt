@@ -16,27 +16,32 @@ function(_add_ipi_variant variant_name prec_def)
   target_link_libraries(${ipiname} PRIVATE ${libipiname} ${LIB_DEEPMD_CC})
   target_include_directories(${ipiname}
                              PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/)
+  if (BUILD_PY_IF)
+    set(LIB_DIR op)
+  else (BUILD_PY_IF)
+    set(LIB_DIR lib)
+  endif(BUILD_PY_IF)
 
   if(APPLE)
     set_target_properties(
       ${ipiname}
-      PROPERTIES INSTALL_RPATH "@loader_path/../lib:${TensorFlow_LIBRARY_PATH}"
+      PROPERTIES INSTALL_RPATH "@loader_path/../${LIB_DIR}:${TensorFlow_LIBRARY_PATH}"
                  COMPILE_DEFINITIONS ${prec_def})
   else()
     set_target_properties(
       ${ipiname}
-      PROPERTIES LINK_FLAGS "-Wl,-rpath,'$ORIGIN'/../lib -Wl,-z,defs"
-                 INSTALL_RPATH "$ORIGIN/../lib:${TensorFlow_LIBRARY_PATH}"
+      PROPERTIES LINK_FLAGS "-Wl,-rpath,'$ORIGIN'/../${LIB_DIR} -Wl,-z,defs"
+                 INSTALL_RPATH "$ORIGIN/../${LIB_DIR}:${TensorFlow_LIBRARY_PATH}"
                  COMPILE_DEFINITIONS ${prec_def})
   endif()
 
-  if(BUILD_PY_IF)
+  if(NOT BUILD_PY_IF)
     install(TARGETS ${libipiname} DESTINATION lib/)
     install(TARGETS ${ipiname} DESTINATION bin/)
-  else(BUILD_PY_IF)
+  else(NOT BUILD_PY_IF)
     install(TARGETS ${libipiname} DESTINATION deepmd/op/)
     install(TARGETS ${ipiname} DESTINATION deepmd/op/)
-  endif(BUILD_PY_IF)
+  endif(NOT BUILD_PY_IF)
 endfunction()
 _add_ipi_variant("${HIGH_PREC_VARIANT}" "${HIGH_PREC_DEF}")
 _add_ipi_variant("${LOW_PREC_VARIANT}" "${LOW_PREC_DEF}")

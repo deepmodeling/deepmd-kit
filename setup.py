@@ -20,6 +20,7 @@ from find_tensorflow import (
 )
 
 cmake_args = []
+extra_scripts = []
 # get variant option from the environment varibles, available: cpu, cuda, rocm
 dp_variant = os.environ.get("DP_VARIANT", "cpu").lower()
 if dp_variant == "cpu" or dp_variant == "":
@@ -44,13 +45,19 @@ if os.environ.get("DP_BUILD_TESTING", "0") == "1":
     cmake_args.append("-DBUILD_TESTING:BOOL=TRUE")
 if os.environ.get("DP_ENABLE_NATIVE_OPTIMIZATION", "0") == "1":
     cmake_args.append("-DENABLE_NATIVE_OPTIMIZATION:BOOL=TRUE")
-dp_lammps_version = os.environ.get("DP_LAMMPS_VERSION", "")
-if dp_lammps_version != "":
+dp_lammps_version = os.environ.get("DP_LAMMPS_VERSION", "0")
+dp_ipi = os.environ.get("DP_ENABLE_IPI", "")
+if dp_lammps_version != "" or dp_ipi == "1":
     cmake_args.append("-DBUILD_CPP_IF:BOOL=TRUE")
     cmake_args.append("-DUSE_TF_PYTHON_LIBS:BOOL=TRUE")
-    cmake_args.append(f"-DLAMMPS_VERSION={dp_lammps_version}")
 else:
     cmake_args.append("-DBUILD_CPP_IF:BOOL=FALSE")
+
+if dp_lammps_version != "":
+    cmake_args.append(f"-DLAMMPS_VERSION={dp_lammps_version}")
+if dp_ipi == "1":
+    extra_scripts.append("dp_ipi = deepmd.entrypoints.ipi:dp_ipi")
+
 
 tf_install_dir, _ = find_tensorflow()
 tf_version = get_tf_version(tf_install_dir)
@@ -137,7 +144,7 @@ setup(
         ],
     },
     entry_points={
-        "console_scripts": ["dp = deepmd.entrypoints.main:main"],
+        "console_scripts": ["dp = deepmd.entrypoints.main:main", *extra_scripts],
         "lammps.plugins": ["deepmd = deepmd.lmp:get_op_dir"],
     },
     cmdclass={
