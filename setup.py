@@ -56,6 +56,7 @@ else:
 if dp_lammps_version != "":
     cmake_args.append(f"-DLAMMPS_VERSION={dp_lammps_version}")
 if dp_ipi == "1":
+    cmake_args.append("-DENABLE_IPI:BOOL=TRUE")
     extra_scripts.append("dp_ipi = deepmd.entrypoints.ipi:dp_ipi")
 
 
