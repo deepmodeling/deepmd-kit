@@ -56,9 +56,9 @@ def DeepPotential(
 
     Parameters
     ----------
-    model_file: str
+    model_file : str
         The name of the frozen model file.
-    load_prefix: str
+    load_prefix : str
         The prefix in the load computational graph
     default_tf_graph : bool
         If uses the default tf graph, otherwise build a new tf graph for evaluation

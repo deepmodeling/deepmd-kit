@@ -97,9 +97,9 @@ def download_file(url: str, filename: str):
 
     Parameters
     ----------
-    url: str
+    url : str
         The URL that is available to download.
-    filename: str
+    filename : str
         The downloading path of the file.
 
     Raises
@@ -199,11 +199,6 @@ class OnlineResource:
     @property
     def sha256(self) -> str:
         """Get sha256 of the target file.
-
-        Parameters
-        ----------
-        filename : str
-            The filename.
 
         Returns
         -------
@@ -857,7 +852,7 @@ def parse_args(args: Optional[List[str]] = None):
 
     Parameters
     ----------
-    args: List[str]
+    args : List[str]
         list of command line arguments, main purpose is testing default option None
         takes arguments from sys.argv
     """

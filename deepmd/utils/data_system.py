@@ -50,31 +50,31 @@ class DeepmdDataSystem:
         Parameters
         ----------
         systems
-                Specifying the paths to systems
+            Specifying the paths to systems
         batch_size
-                The batch size
+            The batch size
         test_size
-                The size of test data
+            The size of test data
         rcut
-                The cut-off radius
+            The cut-off radius
         set_prefix
-                Prefix for the directories of different sets
+            Prefix for the directories of different sets
         shuffle_test
-                If the test data are shuffled
+            If the test data are shuffled
         type_map
-                Gives the name of different atom types
+            Gives the name of different atom types
         optional_type_map
-                If the type_map.raw in each system is optional
+            If the type_map.raw in each system is optional
         modifier
-                Data modifier that has the method `modify_data`
+            Data modifier that has the method `modify_data`
         trn_all_set
-                Use all sets as training dataset. Otherwise, if the number of sets is more than 1, the last set is left for test.
-        sys_probs: list of float
+            Use all sets as training dataset. Otherwise, if the number of sets is more than 1, the last set is left for test.
+        sys_probs : list of float
             The probabilitis of systems to get the batch.
             Summation of positive elements of this list should be no greater than 1.
             Element of this list can be negative, the probability of the corresponding system is determined
                 automatically by the number of batches in the system.
-        auto_prob_style: str
+        auto_prob_style : str
             Determine the probability of systems automatically. The method is assigned by this key and can be
             - "prob_uniform"  : the probability all the systems are equal, namely 1.0/self.get_nsystems()
             - "prob_sys_size" : the probability of a system is proportional to the number of batches in the system
@@ -290,24 +290,24 @@ class DeepmdDataSystem:
         Parameters
         ----------
         key
-                The key of the item. The corresponding data is stored in `sys_path/set.*/key.npy`
+            The key of the item. The corresponding data is stored in `sys_path/set.*/key.npy`
         ndof
-                The number of dof
+            The number of dof
         atomic
-                The item is an atomic property.
-                If False, the size of the data should be nframes x ndof
-                If True, the size of data should be nframes x natoms x ndof
+            The item is an atomic property.
+            If False, the size of the data should be nframes x ndof
+            If True, the size of data should be nframes x natoms x ndof
         must
-                The data file `sys_path/set.*/key.npy` must exist.
-                If must is False and the data file does not exist, the `data_dict[find_key]` is set to 0.0
+            The data file `sys_path/set.*/key.npy` must exist.
+            If must is False and the data file does not exist, the `data_dict[find_key]` is set to 0.0
         high_prec
-                Load the data and store in float64, otherwise in float32
+            Load the data and store in float64, otherwise in float32
         type_sel
-                Select certain type of atoms
+            Select certain type of atoms
         repeat
-                The data will be repeated `repeat` times.
+            The data will be repeated `repeat` times.
         default, default=0.
-                Default value of data
+            Default value of data
         """
         for ii in self.data_systems:
             ii.add(
@@ -328,9 +328,9 @@ class DeepmdDataSystem:
         Parameters
         ----------
         key_out
-                The name of the reduced item
+            The name of the reduced item
         key_in
-                The name of the data item to be reduced
+            The name of the data item to be reduced
         """
         for ii in self.data_systems:
             ii.reduce(key_out, key_in)
@@ -379,7 +379,7 @@ class DeepmdDataSystem:
 
         Parameters
         ----------
-        sys_idx: int
+        sys_idx : int
             The index of system from which the batch is get.
             If sys_idx is not None, `sys_probs` and `auto_prob_style` are ignored
             If sys_idx is None, automatically determine the system according to `sys_probs` or `auto_prob_style`, see the following.
@@ -406,10 +406,10 @@ class DeepmdDataSystem:
         Parameters
         ----------
         sys_idx
-                The test dat of system with index `sys_idx` will be returned.
-                If is None, the currently selected system will be returned.
+            The test dat of system with index `sys_idx` will be returned.
+            If is None, the currently selected system will be returned.
         n_test
-                Number of test data. If set to -1 all test data will be get.
+            Number of test data. If set to -1 all test data will be get.
         """
         if not hasattr(self, "default_mesh"):
             self._make_default_mesh()

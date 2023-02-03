@@ -184,25 +184,25 @@ class DipoleFittingSeA(Fitting):
         Parameters
         ----------
         input_d
-                The input descriptor
+            The input descriptor
         rot_mat
-                The rotation matrix from the descriptor.
+            The rotation matrix from the descriptor.
         natoms
-                The number of atoms. This tensor has the length of Ntypes + 2
-                natoms[0]: number of local atoms
-                natoms[1]: total number of atoms held by this processor
-                natoms[i]: 2 <= i < Ntypes+2, number of type i atoms
+            The number of atoms. This tensor has the length of Ntypes + 2
+            natoms[0]: number of local atoms
+            natoms[1]: total number of atoms held by this processor
+            natoms[i]: 2 <= i < Ntypes+2, number of type i atoms
         input_dict
-                Additional dict for inputs.
+            Additional dict for inputs.
         reuse
-                The weights in the networks should be reused when get the variable.
+            The weights in the networks should be reused when get the variable.
         suffix
-                Name suffix to identify this descriptor
+            Name suffix to identify this descriptor
 
         Returns
         -------
         dipole
-                The atomic dipole.
+            The atomic dipole.
         """
         if input_dict is None:
             input_dict = {}
@@ -309,7 +309,7 @@ class DipoleFittingSeA(Fitting):
         Parameters
         ----------
         mixed_prec
-                The mixed precision setting used in the embedding net
+            The mixed precision setting used in the embedding net
         """
         self.mixed_prec = mixed_prec
         self.fitting_precision = get_precision(mixed_prec["output_prec"])

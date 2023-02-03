@@ -261,8 +261,6 @@ def _jcopy(src: Dict[str, Any], dst: Dict[str, Any], keys: Sequence[str]):
         destination dictionary, will be modified in place
     keys : Sequence[str]
         list of keys to copy
-    must_have : bool
-        ensure that the source dictionary contains the copyyied keys
     """
     for k in keys:
         dst[k] = src[k]
@@ -273,7 +271,7 @@ def remove_decay_rate(jdata: Dict[str, Any]):
 
     Parameters
     ----------
-    jdata: Dict[str, Any]
+    jdata : Dict[str, Any]
         input data
     """
     lr = jdata["learning_rate"]

@@ -32,9 +32,9 @@ class EwaldRecp:
         Parameters
         ----------
         hh
-                Grid spacing of the reciprocal part of Ewald sum. Unit: A
+            Grid spacing of the reciprocal part of Ewald sum. Unit: A
         beta
-                Splitting parameter of the Ewald sum. Unit: A^{-1}
+            Splitting parameter of the Ewald sum. Unit: A^{-1}
         """
         self.hh = hh
         self.beta = beta
@@ -68,20 +68,20 @@ class EwaldRecp:
         Parameters
         ----------
         coord
-                The coordinates of atoms
+            The coordinates of atoms
         charge
-                The atomic charge
+            The atomic charge
         box
-                The simulation region. PBC is assumed
+            The simulation region. PBC is assumed
 
         Returns
         -------
         e
-                The energy
+            The energy
         f
-                The force
+            The force
         v
-                The virial
+            The virial
         """
         coord = np.array(coord)
         charge = np.array(charge)

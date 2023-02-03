@@ -231,13 +231,13 @@ class EnerFitting(Fitting):
         Parameters
         ----------
         all_stat
-                must have the following components:
-                all_stat['energy'] of shape n_sys x n_batch x n_frame
-                can be prepared by model.make_stat_input
+            must have the following components:
+            all_stat['energy'] of shape n_sys x n_batch x n_frame
+            can be prepared by model.make_stat_input
         mixed_type
-                Whether to perform the mixed_type mode.
-                If True, the input data has the mixed_type format (see doc/model/train_se_atten.md),
-                in which frames in a system may have different natoms_vec(s), with the same nloc.
+            Whether to perform the mixed_type mode.
+            If True, the input data has the mixed_type format (see doc/model/train_se_atten.md),
+            in which frames in a system may have different natoms_vec(s), with the same nloc.
         """
         self.bias_atom_e = self._compute_output_stats(
             all_stat, rcond=self.rcond, mixed_type=mixed_type
@@ -302,11 +302,11 @@ class EnerFitting(Fitting):
         Parameters
         ----------
         all_stat
-                if numb_fparam > 0 must have all_stat['fparam']
-                if numb_aparam > 0 must have all_stat['aparam']
-                can be prepared by model.make_stat_input
+            if numb_fparam > 0 must have all_stat['fparam']
+            if numb_aparam > 0 must have all_stat['aparam']
+            can be prepared by model.make_stat_input
         protection
-                Divided-by-zero protection
+            Divided-by-zero protection
         """
         # stat fparam
         if self.numb_fparam > 0:
@@ -455,25 +455,25 @@ class EnerFitting(Fitting):
         Parameters
         ----------
         inputs
-                The input descriptor
+            The input descriptor
         input_dict
-                Additional dict for inputs.
-                if numb_fparam > 0, should have input_dict['fparam']
-                if numb_aparam > 0, should have input_dict['aparam']
+            Additional dict for inputs.
+            if numb_fparam > 0, should have input_dict['fparam']
+            if numb_aparam > 0, should have input_dict['aparam']
         natoms
-                The number of atoms. This tensor has the length of Ntypes + 2
-                natoms[0]: number of local atoms
-                natoms[1]: total number of atoms held by this processor
-                natoms[i]: 2 <= i < Ntypes+2, number of type i atoms
+            The number of atoms. This tensor has the length of Ntypes + 2
+            natoms[0]: number of local atoms
+            natoms[1]: total number of atoms held by this processor
+            natoms[i]: 2 <= i < Ntypes+2, number of type i atoms
         reuse
-                The weights in the networks should be reused when get the variable.
+            The weights in the networks should be reused when get the variable.
         suffix
-                Name suffix to identify this descriptor
+            Name suffix to identify this descriptor
 
         Returns
         -------
         ener
-                The system energy
+            The system energy
         """
         if input_dict is None:
             input_dict = {}
@@ -833,7 +833,7 @@ class EnerFitting(Fitting):
         Parameters
         ----------
         mixed_prec
-                The mixed precision setting used in the embedding net
+            The mixed precision setting used in the embedding net
         """
         self.mixed_prec = mixed_prec
         self.fitting_precision = get_precision(mixed_prec["output_prec"])

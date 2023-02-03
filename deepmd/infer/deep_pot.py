@@ -226,7 +226,7 @@ class DeepPot(DeepEval):
         ----------
         inner_func : Callable
             the method to be wrapped
-        numb_test: int
+        numb_test : int
             number of tests
         natoms : int
             number of atoms
@@ -306,6 +306,7 @@ class DeepPot(DeepEval):
             Whether to perform the mixed_type mode.
             If True, the input data has the mixed_type format (see doc/model/train_se_atten.md),
             in which frames in a system may have different natoms_vec(s), with the same nloc.
+
         Returns
         -------
         energy

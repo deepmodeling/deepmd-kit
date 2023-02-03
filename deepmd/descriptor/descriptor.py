@@ -220,7 +220,7 @@ class Descriptor(PluginVariant):
             natoms[0]: number of local atoms
             natoms[1]: total number of atoms held by this processor
             natoms[i]: 2 <= i < Ntypes+2, number of type i atoms
-        box : tf.Tensor
+        box_ : tf.Tensor
             The box of frames
         mesh : tf.Tensor
             For historical reasons, only the length of the Tensor matters.
@@ -261,21 +261,21 @@ class Descriptor(PluginVariant):
         Parameters
         ----------
         min_nbor_dist : float
-                The nearest distance between atoms
+            The nearest distance between atoms
         graph : tf.Graph
-                The graph of the model
+            The graph of the model
         graph_def : tf.GraphDef
-                The graph definition of the model
+            The graph definition of the model
         table_extrapolate : float, default: 5.
-                The scale of model extrapolation
+            The scale of model extrapolation
         table_stride_1 : float, default: 0.01
-                The uniform stride of the first table
+            The uniform stride of the first table
         table_stride_2 : float, default: 0.1
-                The uniform stride of the second table
+            The uniform stride of the second table
         check_frequency : int, default: -1
-                The overflow check frequency
+            The overflow check frequency
         suffix : str, optional
-                The suffix of the scope
+            The suffix of the scope
 
         Notes
         -----
@@ -292,7 +292,7 @@ class Descriptor(PluginVariant):
         Parameters
         ----------
         mixed_prec
-                The mixed precision setting used in the embedding net
+            The mixed precision setting used in the embedding net
 
         Notes
         -----

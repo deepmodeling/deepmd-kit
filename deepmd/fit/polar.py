@@ -142,10 +142,10 @@ class PolarFittingSeA(Fitting):
         Parameters
         ----------
         all_stat
-                Dictionary of inputs.
-                can be prepared by model.make_stat_input
+            Dictionary of inputs.
+            can be prepared by model.make_stat_input
         protection
-                Divided-by-zero protection
+            Divided-by-zero protection
         """
         if not ("polarizability" in all_stat.keys()):
             self.avgeig = np.zeros([9])
@@ -350,25 +350,25 @@ class PolarFittingSeA(Fitting):
         Parameters
         ----------
         input_d
-                The input descriptor
+            The input descriptor
         rot_mat
-                The rotation matrix from the descriptor.
+            The rotation matrix from the descriptor.
         natoms
-                The number of atoms. This tensor has the length of Ntypes + 2
-                natoms[0]: number of local atoms
-                natoms[1]: total number of atoms held by this processor
-                natoms[i]: 2 <= i < Ntypes+2, number of type i atoms
+            The number of atoms. This tensor has the length of Ntypes + 2
+            natoms[0]: number of local atoms
+            natoms[1]: total number of atoms held by this processor
+            natoms[i]: 2 <= i < Ntypes+2, number of type i atoms
         input_dict
-                Additional dict for inputs.
+            Additional dict for inputs.
         reuse
-                The weights in the networks should be reused when get the variable.
+            The weights in the networks should be reused when get the variable.
         suffix
-                Name suffix to identify this descriptor
+            Name suffix to identify this descriptor
 
         Returns
         -------
         atomic_polar
-                The atomic polarizability
+            The atomic polarizability
         """
         if input_dict is None:
             input_dict = {}
@@ -500,7 +500,7 @@ class PolarFittingSeA(Fitting):
         Parameters
         ----------
         mixed_prec
-                The mixed precision setting used in the embedding net
+            The mixed precision setting used in the embedding net
         """
         self.mixed_prec = mixed_prec
         self.fitting_precision = get_precision(mixed_prec["output_prec"])
@@ -595,25 +595,25 @@ class GlobalPolarFittingSeA:
         Parameters
         ----------
         input_d
-                The input descriptor
+            The input descriptor
         rot_mat
-                The rotation matrix from the descriptor.
+            The rotation matrix from the descriptor.
         natoms
-                The number of atoms. This tensor has the length of Ntypes + 2
-                natoms[0]: number of local atoms
-                natoms[1]: total number of atoms held by this processor
-                natoms[i]: 2 <= i < Ntypes+2, number of type i atoms
+            The number of atoms. This tensor has the length of Ntypes + 2
+            natoms[0]: number of local atoms
+            natoms[1]: total number of atoms held by this processor
+            natoms[i]: 2 <= i < Ntypes+2, number of type i atoms
         input_dict
-                Additional dict for inputs.
+            Additional dict for inputs.
         reuse
-                The weights in the networks should be reused when get the variable.
+            The weights in the networks should be reused when get the variable.
         suffix
-                Name suffix to identify this descriptor
+            Name suffix to identify this descriptor
 
         Returns
         -------
         polar
-                The system polarizability
+            The system polarizability
         """
         inputs = tf.reshape(input_d, [-1, self.dim_descrpt * natoms[0]])
         outs = self.polar_fitting.build(
@@ -654,6 +654,6 @@ class GlobalPolarFittingSeA:
         Parameters
         ----------
         mixed_prec
-                The mixed precision setting used in the embedding net
+            The mixed precision setting used in the embedding net
         """
         self.polar_fitting.enable_mixed_precision(mixed_prec)

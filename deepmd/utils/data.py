@@ -150,26 +150,26 @@ class DeepmdData:
         Parameters
         ----------
         key
-                The key of the item. The corresponding data is stored in `sys_path/set.*/key.npy`
+            The key of the item. The corresponding data is stored in `sys_path/set.*/key.npy`
         ndof
-                The number of dof
+            The number of dof
         atomic
-                The item is an atomic property.
-                If False, the size of the data should be nframes x ndof
-                If True, the size of data should be nframes x natoms x ndof
+            The item is an atomic property.
+            If False, the size of the data should be nframes x ndof
+            If True, the size of data should be nframes x natoms x ndof
         must
-                The data file `sys_path/set.*/key.npy` must exist.
-                If must is False and the data file does not exist, the `data_dict[find_key]` is set to 0.0
+            The data file `sys_path/set.*/key.npy` must exist.
+            If must is False and the data file does not exist, the `data_dict[find_key]` is set to 0.0
         high_prec
-                Load the data and store in float64, otherwise in float32
+            Load the data and store in float64, otherwise in float32
         type_sel
-                Select certain type of atoms
+            Select certain type of atoms
         repeat
-                The data will be repeated `repeat` times.
+            The data will be repeated `repeat` times.
         default : float, default=0.
-                default value of data
+            default value of data
         dtype : np.dtype, optional
-                the dtype of data, overwrites `high_prec` if provided
+            the dtype of data, overwrites `high_prec` if provided
         """
         self.data_dict[key] = {
             "ndof": ndof,
@@ -191,9 +191,9 @@ class DeepmdData:
         Parameters
         ----------
         key_out
-                The name of the reduced item
+            The name of the reduced item
         key_in
-                The name of the data item to be reduced
+            The name of the data item to be reduced
         """
         assert key_in in self.data_dict, "cannot find input key"
         assert self.data_dict[key_in]["atomic"], "reduced property should be atomic"
@@ -266,7 +266,7 @@ class DeepmdData:
         Parameters
         ----------
         batch_size
-                size of the batch
+            size of the batch
         """
         if hasattr(self, "batch_set"):
             set_size = self.batch_set["coord"].shape[0]
@@ -293,7 +293,7 @@ class DeepmdData:
         Parameters
         ----------
         ntests
-                Size of the test data set. If `ntests` is -1, all test data will be get.
+            Size of the test data set. If `ntests` is -1, all test data will be get.
         """
         if not hasattr(self, "test_set"):
             self._load_test_set(self.test_dir, self.shuffle_test)
@@ -371,14 +371,14 @@ class DeepmdData:
         Parameters
         ----------
         ntypes
-                Number of types (may be larger than the actual number of types in the system).
+            Number of types (may be larger than the actual number of types in the system).
 
         Returns
         -------
         natoms
-                natoms[0]: number of local atoms
-                natoms[1]: total number of atoms held by this processor
-                natoms[i]: 2 <= i < Ntypes+2, number of type i atoms
+            natoms[0]: number of local atoms
+            natoms[1]: total number of atoms held by this processor
+            natoms[i]: 2 <= i < Ntypes+2, number of type i atoms
         """
         natoms, natoms_vec = self._get_natoms_2(ntypes)
         tmp = [natoms, natoms]

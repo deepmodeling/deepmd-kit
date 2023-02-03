@@ -233,22 +233,22 @@ class DipoleChargeModifier(DeepDipole):
         Parameters
         ----------
         coord
-                The coordinates of atoms
+            The coordinates of atoms
         box
-                The simulation region. PBC is assumed
+            The simulation region. PBC is assumed
         atype
-                The atom types
+            The atom types
         eval_fv
-                Evaluate force and virial
+            Evaluate force and virial
 
         Returns
         -------
         tot_e
-                The energy modification
+            The energy modification
         tot_f
-                The force modification
+            The force modification
         tot_v
-                The virial modification
+            The virial modification
         """
         atype = np.array(atype, dtype=int)
         coord, atype, imap = self.sort_input(coord, atype)
@@ -415,17 +415,17 @@ class DipoleChargeModifier(DeepDipole):
         Parameters
         ----------
         data
-                Internal data of DeepmdData.
-                Be a dict, has the following keys
-                - coord         coordinates
-                - box           simulation box
-                - type          atom types
-                - find_energy   tells if data has energy
-                - find_force    tells if data has force
-                - find_virial   tells if data has virial
-                - energy        energy
-                - force         force
-                - virial        virial
+            Internal data of DeepmdData.
+            Be a dict, has the following keys
+            - coord         coordinates
+            - box           simulation box
+            - type          atom types
+            - find_energy   tells if data has energy
+            - find_force    tells if data has force
+            - find_virial   tells if data has virial
+            - energy        energy
+            - force         force
+            - virial        virial
         """
         if (
             "find_energy" not in data

@@ -116,7 +116,7 @@ def calc_model_devi(
     Python interface to calculate model deviation
 
     Parameters
-    -----------
+    ----------
     coord : numpy.ndarray, `n_frames x n_atoms x 3`
         Coordinates of system to calculate
     box : numpy.ndarray or None, `n_frames x 3 x 3`
@@ -183,15 +183,15 @@ def make_model_devi(
 
     Parameters
     ----------
-    models: list
+    models : list
         A list of paths of models to use for making model deviation
-    system: str
+    system : str
         The path of system to make model deviation calculation
-    set_prefix: str
+    set_prefix : str
         The set prefix of the system
-    output: str
+    output : str
         The output file for model deviation results
-    frequency: int
+    frequency : int
         The number of steps that elapse between writing coordinates
         in a trajectory by a MD engine (such as Gromacs / Lammps).
         This paramter is used to determine the index in the output file.

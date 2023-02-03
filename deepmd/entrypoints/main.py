@@ -578,7 +578,7 @@ def parse_args(args: Optional[List[str]] = None) -> argparse.Namespace:
 
     Parameters
     ----------
-    args: List[str]
+    args : List[str]
         list of command line arguments, main purpose is testing default option None
         takes arguments from sys.argv
 
@@ -602,7 +602,7 @@ def main(args: Optional[List[str]] = None):
 
     Parameters
     ----------
-    args: List[str], optional
+    args : List[str], optional
         list of command line arguments, used to avoid calling from the subprocess,
         as it is quite slow to import tensorflow
 
