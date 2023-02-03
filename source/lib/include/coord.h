@@ -62,7 +62,8 @@ void normalize_coord_gpu(FPTYPE* coord,
 //                             cell_map,cell_shift_map,sec_loc_cellnum_map,sec_total_cellnum_map,loc_clist
 // inputs:
 //	in_c, in_t, nloc, mem_nall, loc_cellnum, total_cellnum, cell_info,
-//box_info 	mem_nall is the size of allocated memory for out_c, out_t, mapping
+// box_info 	mem_nall is the size of allocated memory for out_c, out_t,
+// mapping
 // returns
 //	0: succssful
 //	1: the memory is not large enough to hold all copied coords and types.
@@ -102,7 +103,8 @@ void normalize_coord_gpu_rocm(FPTYPE* coord,
 //                             cell_map,cell_shift_map,sec_loc_cellnum_map,sec_total_cellnum_map,loc_clist
 // inputs:
 //	in_c, in_t, nloc, mem_nall, loc_cellnum, total_cellnum, cell_info,
-//box_info 	mem_nall is the size of allocated memory for out_c, out_t, mapping
+// box_info 	mem_nall is the size of allocated memory for out_c, out_t,
+// mapping
 // returns
 //	0: succssful
 //	1: the memory is not large enough to hold all copied coords and types.

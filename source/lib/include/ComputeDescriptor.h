@@ -266,8 +266,8 @@ static void compute_dRdT_2(double (*dRdT)[9],
   }
 }
 
-// output deriv size: n_sel_a_nei x 4 x 12				    + n_sel_r_nei
-// x 12
+// output deriv size: n_sel_a_nei x 4 x 12				    +
+// n_sel_r_nei x 12
 //		      (1./rr, cos_theta, cos_phi, sin_phi)  x 4 x (x, y, z) +
 //(1./rr) x 4 x (x, y, z)
 void compute_descriptor(std::vector<double> &descrpt_a,
