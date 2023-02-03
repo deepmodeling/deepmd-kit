@@ -1,8 +1,14 @@
 #!/usr/bin/env python3
 
-from tensorflow.python.framework import ops
-from deepmd.env import op_module
-from deepmd.env import tf 
+from tensorflow.python.framework import (
+    ops,
+)
+
+from deepmd.env import (
+    op_module,
+    tf,
+)
+
 
 @ops.RegisterGradient("MapFltNvnmd")
 def _MapFltNvnmdGrad(op, grad):
@@ -29,4 +35,3 @@ def _MapFltNvnmdGrad(op, grad):
     d_table_grad = None
     d_table_info = None
     return [dx, d_table, d_table_grad, d_table_info]
-

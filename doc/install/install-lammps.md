@@ -1,6 +1,6 @@
 # Install LAMMPS
 
-There are two ways to install LAMMPS: the built-in mode and the plugin mode. The built-in mode builds LAMMPS along with the DeePMD-kit and DeePMD-kit will be loaded automatically when running LAMMPS. The plugin mode builds LAMMPS and a plugin separately, so one needs to use `plugin load` command to load the DeePMD-kit's LAMMPS plugin library. 
+There are two ways to install LAMMPS: the built-in mode and the plugin mode. The built-in mode builds LAMMPS along with the DeePMD-kit and DeePMD-kit will be loaded automatically when running LAMMPS. The plugin mode builds LAMMPS and a plugin separately, so one needs to use `plugin load` command to load the DeePMD-kit's LAMMPS plugin library.
 
 ## Install LAMMPS's DeePMD-kit module (built-in mode)
 Before following this section, [DeePMD-kit C++ interface](install-from-source.md) should have be installed.
@@ -35,7 +35,7 @@ If everything works fine, you will end up with an executable `lmp_mpi`.
 ./lmp_mpi -h
 ```
 
-The DeePMD-kit module can be removed from the LAMMPS source code by 
+The DeePMD-kit module can be removed from the LAMMPS source code by
 ```bash
 make no-user-deepmd
 ```

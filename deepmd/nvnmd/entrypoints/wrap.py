@@ -1,25 +1,46 @@
+import logging
+from typing import (
+    List,
+    Optional,
+)
 
 import numpy as np
-import logging
 
-from deepmd.env import tf
-from deepmd.env import op_module
-from deepmd.utils.sess import run_sess
-
-from deepmd.nvnmd.utils.fio import FioBin, FioTxt
-from deepmd.nvnmd.utils.config import nvnmd_cfg
-from deepmd.nvnmd.utils.weight import get_fitnet_weight
-from deepmd.nvnmd.utils.encode import Encode
-from deepmd.nvnmd.utils.op import map_nvnmd
-from deepmd.nvnmd.utils.network import get_sess
-
-from deepmd.nvnmd.data.data import jdata_deepmd_input, jdata_sys
-from typing import List, Optional
+from deepmd.env import (
+    op_module,
+    tf,
+)
+from deepmd.nvnmd.data.data import (
+    jdata_deepmd_input,
+    jdata_sys,
+)
+from deepmd.nvnmd.utils.config import (
+    nvnmd_cfg,
+)
+from deepmd.nvnmd.utils.encode import (
+    Encode,
+)
+from deepmd.nvnmd.utils.fio import (
+    FioBin,
+    FioTxt,
+)
+from deepmd.nvnmd.utils.network import (
+    get_sess,
+)
+from deepmd.nvnmd.utils.op import (
+    map_nvnmd,
+)
+from deepmd.nvnmd.utils.weight import (
+    get_fitnet_weight,
+)
+from deepmd.utils.sess import (
+    run_sess,
+)
 
 log = logging.getLogger(__name__)
 
 
-class Wrap():
+class Wrap:
     r"""Generate the binary model file (model.pb)
     the model file can be use to run the NVNMD with lammps
     the pair style need set as:
@@ -50,22 +71,18 @@ class Wrap():
     """
 
     def __init__(
-        self,
-        config_file: str,
-        weight_file: str,
-        map_file: str,
-        model_file: str
+        self, config_file: str, weight_file: str, map_file: str, model_file: str
     ):
         self.config_file = config_file
         self.weight_file = weight_file
         self.map_file = map_file
         self.model_file = model_file
 
-        jdata = jdata_deepmd_input['nvnmd']
-        jdata['config_file'] = config_file
-        jdata['weight_file'] = weight_file
-        jdata['map_file'] = map_file
-        jdata['enable'] = True
+        jdata = jdata_deepmd_input["nvnmd"]
+        jdata["config_file"] = config_file
+        jdata["weight_file"] = weight_file
+        jdata["map_file"] = map_file
+        jdata["enable"] = True
 
         nvnmd_cfg.init_from_jdata(jdata)
 
@@ -73,10 +90,10 @@ class Wrap():
         dscp = nvnmd_cfg.dscp
         ctrl = nvnmd_cfg.ctrl
 
-        M1 = dscp['M1']
-        ntype = dscp['ntype']
-        ntype_max = dscp['ntype_max']
-        NSTDM_M1X = ctrl['NSTDM_M1X']
+        M1 = dscp["M1"]
+        ntype = dscp["ntype"]
+        ntype_max = dscp["ntype_max"]
+        NSTDM_M1X = ctrl["NSTDM_M1X"]
         e = Encode()
 
         bcfg = self.wrap_dscp()
@@ -100,7 +117,7 @@ class Wrap():
         # extend data according to the number of bits per row of BRAM
         nhex = 32
         datas = [hcfg, hfps, hbps, hswt, hdsw, hfea, hgra]
-        keys = 'cfg fps bps swt dsw fea gra'.split()
+        keys = "cfg fps bps swt dsw fea gra".split()
         nhs = []
         nws = []
         for ii in range(len(datas)):
@@ -109,18 +126,18 @@ class Wrap():
             h = len(d)
             w = len(d[0])
             nhs.append(h)
-            nws.append(w) # nhex * 4 // 8 = nbyte
+            nws.append(w)  # nhex * 4 // 8 = nbyte
             #
-            w_full = np.ceil(w*4/nhex) * nhex # 32 bit per data
+            w_full = np.ceil(w * 4 / nhex) * nhex  # 32 bit per data
             d = e.extend_hex(d, w_full)
             # DEVELOP_DEBUG
-            if jdata_sys['debug']:
-                log.info("%s: %d x % d bit" % (k, h, w*4))
-                FioTxt().save('nvnmd/wrap/h%s.txt'%(k), d)
-            datas[ii] = d 
+            if jdata_sys["debug"]:
+                log.info("%s: %d x % d bit" % (k, h, w * 4))
+                FioTxt().save("nvnmd/wrap/h%s.txt" % (k), d)
+            datas[ii] = d
         #
-        nvnmd_cfg.size['NH_DATA'] = nhs
-        nvnmd_cfg.size['NW_DATA'] = nws
+        nvnmd_cfg.size["NH_DATA"] = nhs
+        nvnmd_cfg.size["NW_DATA"] = nws
         nvnmd_cfg.save(nvnmd_cfg.config_file)
         head = self.wrap_head(nhs, nws)
         #
@@ -133,11 +150,11 @@ class Wrap():
 
     def wrap_head(self, nhs, nws):
         nbit = nvnmd_cfg.nbit
-        NBIT_MODEL_HEAD = nbit['NBIT_MODEL_HEAD']
-        NBIT_FIXD_FL = nbit['NBIT_FIXD_FL']
-        rcut = nvnmd_cfg.dscp['rcut']
+        NBIT_MODEL_HEAD = nbit["NBIT_MODEL_HEAD"]
+        NBIT_FIXD_FL = nbit["NBIT_FIXD_FL"]
+        rcut = nvnmd_cfg.dscp["rcut"]
 
-        bs = ''
+        bs = ""
         e = Encode()
         # height
         for n in nhs:
@@ -150,7 +167,7 @@ class Wrap():
         bs = e.dec2bin(RCUT, NBIT_MODEL_HEAD)[0] + bs
         # extend
         hs = e.bin2hex(bs)
-        hs = e.extend_hex(hs, NBIT_MODEL_HEAD*32)
+        hs = e.extend_hex(hs, NBIT_MODEL_HEAD * 32)
         return hs
 
     def wrap_dscp(self):
@@ -165,33 +182,33 @@ class Wrap():
         dscp = nvnmd_cfg.dscp
         nbit = nvnmd_cfg.nbit
         mapt = nvnmd_cfg.map
-        NBIT_IDX_S2G = nbit['NBIT_IDX_S2G']
-        NBIT_NEIB = nbit['NBIT_NEIB']
-        NBIT_FLTE = nbit['NBIT_FLTE']
-        NBIT_FIXD = nbit['NBIT_FIXD']
-        NBIT_FIXD_FL = nbit['NBIT_FIXD_FL']
-        M1 = dscp['M1']
-        ntype = dscp['ntype']
-        ntype_max = dscp['ntype_max']
+        NBIT_IDX_S2G = nbit["NBIT_IDX_S2G"]
+        NBIT_NEIB = nbit["NBIT_NEIB"]
+        NBIT_FLTE = nbit["NBIT_FLTE"]
+        NBIT_FIXD = nbit["NBIT_FIXD"]
+        NBIT_FIXD_FL = nbit["NBIT_FIXD_FL"]
+        M1 = dscp["M1"]
+        ntype = dscp["ntype"]
+        ntype_max = dscp["ntype_max"]
 
-        bs = ''
+        bs = ""
         e = Encode()
         # shift_idx_s2g
-        x_st, x_ed, x_dt, N0, N1 = mapt['cfg_s2g'][0]
-        shift_idx_s2g = int(np.round(- x_st / x_dt))
+        x_st, x_ed, x_dt, N0, N1 = mapt["cfg_s2g"][0]
+        shift_idx_s2g = int(np.round(-x_st / x_dt))
         bs = e.dec2bin(shift_idx_s2g, NBIT_IDX_S2G)[0] + bs
         # sel
-        SEL = dscp['SEL']
+        SEL = dscp["SEL"]
         bs = e.dec2bin(SEL[0], NBIT_NEIB)[0] + bs
         bs = e.dec2bin(SEL[1], NBIT_NEIB)[0] + bs
         bs = e.dec2bin(SEL[2], NBIT_NEIB)[0] + bs
         bs = e.dec2bin(SEL[3], NBIT_NEIB)[0] + bs
         # GS
         tf.reset_default_graph()
-        t_x = tf.placeholder(tf.float64, [None, 1], 't_x')
-        t_table = tf.placeholder(tf.float64, [None, None], 't_table')
-        t_table_grad = tf.placeholder(tf.float64, [None, None], 't_table_grad')
-        t_table_info = tf.placeholder(tf.float64, [None], 't_table_info')
+        t_x = tf.placeholder(tf.float64, [None, 1], "t_x")
+        t_table = tf.placeholder(tf.float64, [None, None], "t_table")
+        t_table_grad = tf.placeholder(tf.float64, [None, None], "t_table_grad")
+        t_table_info = tf.placeholder(tf.float64, [None], "t_table_info")
         t_y = op_module.map_flt_nvnmd(t_x, t_table, t_table_grad, t_table_info)
         sess = get_sess()
         #
@@ -200,26 +217,26 @@ class Wrap():
             for tt2 in range(ntype_max):
                 if (tt < ntype) and (tt2 < ntype):
                     # s
-                    mi = mapt['s'][tt]
-                    cfgs = mapt['cfg_u2s']
+                    mi = mapt["s"][tt]
+                    cfgs = mapt["cfg_u2s"]
                     cfgs = np.array([np.float64(v) for vs in cfgs for v in vs])
                     feed_dict = {
-                        t_x : np.ones([1, 1]) * 0.0,
-                        t_table : mi,
-                        t_table_grad : mi * 0.0,
-                        t_table_info : cfgs
+                        t_x: np.ones([1, 1]) * 0.0,
+                        t_table: mi,
+                        t_table_grad: mi * 0.0,
+                        t_table_info: cfgs,
                     }
                     si = run_sess(sess, t_y, feed_dict=feed_dict)
                     si = np.reshape(si, [-1])[0]
                     # G
-                    mi = mapt['g'][tt2]
-                    cfgs = mapt['cfg_s2g']
+                    mi = mapt["g"][tt2]
+                    cfgs = mapt["cfg_s2g"]
                     cfgs = np.array([np.float64(v) for vs in cfgs for v in vs])
                     feed_dict = {
-                        t_x : np.ones([1, 1]) * si,
-                        t_table : mi,
-                        t_table_grad : mi * 0.0,
-                        t_table_info : cfgs
+                        t_x: np.ones([1, 1]) * si,
+                        t_table: mi,
+                        t_table_grad: mi * 0.0,
+                        t_table_info: cfgs,
                     }
                     gi = run_sess(sess, t_y, feed_dict=feed_dict)
                     gsi = np.reshape(si, [-1]) * np.reshape(gi, [-1])
@@ -227,35 +244,34 @@ class Wrap():
                     gsi = np.zeros(M1)
                 for ii in range(M1):
                     GSs.extend(e.dec2bin(e.qr(gsi[ii], NBIT_FIXD_FL), NBIT_FIXD, True))
-        sGSs = ''.join(GSs[::-1])
+        sGSs = "".join(GSs[::-1])
         bs = sGSs + bs
         #
-        NIX = dscp['NIX']
+        NIX = dscp["NIX"]
         ln2_NIX = -int(np.log2(NIX))
         bs = e.dec2bin(ln2_NIX, NBIT_FLTE, signed=True)[0] + bs
         return bs
 
     def wrap_fitn(self):
-        r"""Wrap the weights of fitting net
-        """
+        r"""Wrap the weights of fitting net"""
         dscp = nvnmd_cfg.dscp
         fitn = nvnmd_cfg.fitn
         weight = nvnmd_cfg.weight
         nbit = nvnmd_cfg.nbit
         ctrl = nvnmd_cfg.ctrl
 
-        ntype = dscp['ntype']
-        ntype_max = dscp['ntype_max']
-        nlayer_fit = fitn['nlayer_fit']
-        NNODE_FITS = fitn['NNODE_FITS']
+        ntype = dscp["ntype"]
+        ntype_max = dscp["ntype_max"]
+        nlayer_fit = fitn["nlayer_fit"]
+        NNODE_FITS = fitn["NNODE_FITS"]
 
-        NBIT_FIT_DATA = nbit['NBIT_FIT_DATA']
-        NBIT_FIT_DATA_FL = nbit['NBIT_FIT_DATA_FL']
-        NBIT_FIT_WEIGHT = nbit['NBIT_FIT_WEIGHT']
-        NBIT_FIT_DISP = nbit['NBIT_FIT_DISP']
-        NBIT_FIT_WXDB = nbit['NBIT_FIT_WXDB']
-        NSTDM = ctrl['NSTDM']
-        NSEL = ctrl['NSEL']
+        NBIT_FIT_DATA = nbit["NBIT_FIT_DATA"]
+        NBIT_FIT_DATA_FL = nbit["NBIT_FIT_DATA_FL"]
+        NBIT_FIT_WEIGHT = nbit["NBIT_FIT_WEIGHT"]
+        NBIT_FIT_DISP = nbit["NBIT_FIT_DISP"]
+        NBIT_FIT_WXDB = nbit["NBIT_FIT_WXDB"]
+        NSTDM = ctrl["NSTDM"]
+        NSEL = ctrl["NSEL"]
 
         # encode all parameters
         bb, bdr, bdc, bwr, bwc = [], [], [], [], []
@@ -263,17 +279,19 @@ class Wrap():
             bbt, bdrt, bdct, bwrt, bwct = [], [], [], [], []
             for tt in range(ntype_max):
                 # get parameters: weight and bias
-                if (tt < ntype):
+                if tt < ntype:
                     w, b = get_fitnet_weight(weight, tt, ll, nlayer_fit)
                 else:
                     w, b = get_fitnet_weight(weight, 0, ll, nlayer_fit)
                     w = w * 0
                     b = b * 0
                 # restrict the shift value of energy
-                if (ll == (nlayer_fit - 1)):
+                if ll == (nlayer_fit - 1):
                     b = b * 0
                 bbi = self.wrap_bias(b, NBIT_FIT_WXDB, NBIT_FIT_DATA_FL)
-                bdri, bdci, bwri, bwci  = self.wrap_weight(w, NBIT_FIT_DISP, NBIT_FIT_WEIGHT)
+                bdri, bdci, bwri, bwci = self.wrap_weight(
+                    w, NBIT_FIT_DISP, NBIT_FIT_WEIGHT
+                )
                 bbt.append(bbi)
                 bdrt.append(bdri)
                 bdct.append(bdci)
@@ -296,26 +314,42 @@ class Wrap():
                 nc = NNODE_FITS[ll + 1]
                 nrs = int(np.ceil(nr / NSTDM))
                 ncs = int(np.ceil(nc / NSTDM))
-                if (nc == 1):
+                if nc == 1:
                     # fp
-                    bfp += [bwc[ll][tt][sr * nrs + rr][cc] for rr in range(nrs) for cc in range(nc)]
+                    bfp += [
+                        bwc[ll][tt][sr * nrs + rr][cc]
+                        for rr in range(nrs)
+                        for cc in range(nc)
+                    ]
                     bfp += [bdc[ll][tt][sc * ncs * 0 + cc] for cc in range(ncs)]
                     bfp += [bb[ll][tt][sc * ncs * 0 + cc] for cc in range(ncs)]
                     # bp
-                    bbp += [bwc[ll][tt][sr * nrs + rr][cc] for rr in range(nrs) for cc in range(nc)]
+                    bbp += [
+                        bwc[ll][tt][sr * nrs + rr][cc]
+                        for rr in range(nrs)
+                        for cc in range(nc)
+                    ]
                     bbp += [bdc[ll][tt][sc * ncs * 0 + cc] for cc in range(ncs)]
                     bbp += [bb[ll][tt][sc * ncs * 0 + cc] for cc in range(ncs)]
                 else:
                     # fp
-                    bfp += [bwc[ll][tt][rr][sc * ncs + cc] for cc in range(ncs) for rr in range(nr)]
+                    bfp += [
+                        bwc[ll][tt][rr][sc * ncs + cc]
+                        for cc in range(ncs)
+                        for rr in range(nr)
+                    ]
                     bfp += [bdc[ll][tt][sc * ncs + cc] for cc in range(ncs)]
                     bfp += [bb[ll][tt][sc * ncs + cc] for cc in range(ncs)]
                     # bp
-                    bbp += [bwr[ll][tt][sr * nrs + rr][cc] for rr in range(nrs) for cc in range(nc)]
+                    bbp += [
+                        bwr[ll][tt][sr * nrs + rr][cc]
+                        for rr in range(nrs)
+                        for cc in range(nc)
+                    ]
                     bbp += [bdr[ll][tt][sc * ncs + cc] for cc in range(ncs)]
                     bbp += [bb[ll][tt][sc * ncs + cc] for cc in range(ncs)]
-            bfps.append(''.join(bfp[::-1]))
-            bbps.append(''.join(bbp[::-1]))
+            bfps.append("".join(bfp[::-1]))
+            bbps.append("".join(bbp[::-1]))
         return bfps, bbps
 
     def wrap_bias(self, bias, NBIT_DATA, NBIT_DATA_FL):
@@ -325,7 +359,7 @@ class Wrap():
         return Bs
 
     def wrap_weight(self, weight, NBIT_DISP, NBIT_WEIGHT):
-        r""" weight: weights of fittingNet
+        r"""weight: weights of fittingNet
         NBIT_DISP: nbits of exponent of weight max value
         NBIT_WEIGHT: nbits of mantissa of weights
         """
@@ -342,7 +376,7 @@ class Wrap():
             wi = weight[ii, :]
             wi, expo_max = e.norm_expo(wi, NBIT_WEIGHT_FL, 0)
             nrs[ii] = expo_max
-            wrs[ii,:] = wi
+            wrs[ii, :] = wi
         # column
         for ii in range(nc):
             wi = weight[:, ii]
@@ -360,19 +394,18 @@ class Wrap():
         return NRs, NCs, WRs, WCs
 
     def wrap_map(self):
-        r"""Wrap the mapping table of embedding network
-        """
+        r"""Wrap the mapping table of embedding network"""
         dscp = nvnmd_cfg.dscp
         maps = nvnmd_cfg.map
         nbit = nvnmd_cfg.nbit
 
-        M1 = dscp['M1']
-        ntype = dscp['ntype']
-        ntype_max = dscp['ntype_max']
+        M1 = dscp["M1"]
+        ntype = dscp["ntype"]
+        ntype_max = dscp["ntype_max"]
 
-        NBIT_FLTD = nbit['NBIT_FLTD']
-        NBIT_FLTE = nbit['NBIT_FLTE']
-        NBIT_FLTF = nbit['NBIT_FLTF']
+        NBIT_FLTD = nbit["NBIT_FLTD"]
+        NBIT_FLTE = nbit["NBIT_FLTE"]
+        NBIT_FLTF = nbit["NBIT_FLTF"]
 
         e = Encode()
         # get mapt
@@ -381,16 +414,16 @@ class Wrap():
         feas = []
         gras = []
         for tt in range(ntype_max):
-            if (tt < ntype):
-                swt = np.concatenate([maps['s'][tt], maps['h'][tt]], axis=1)
-                dsw = np.concatenate([maps['s_grad'][tt], maps['h_grad'][tt]], axis=1)
-                fea = maps['g'][tt]
-                gra = maps['g_grad'][tt]
+            if tt < ntype:
+                swt = np.concatenate([maps["s"][tt], maps["h"][tt]], axis=1)
+                dsw = np.concatenate([maps["s_grad"][tt], maps["h_grad"][tt]], axis=1)
+                fea = maps["g"][tt]
+                gra = maps["g_grad"][tt]
             else:
-                swt = np.concatenate([maps['s'][0], maps['h'][0]], axis=1)
-                dsw = np.concatenate([maps['s_grad'][0], maps['h_grad'][0]], axis=1)
-                fea = maps['g'][0]
-                gra = maps['g_grad'][0]
+                swt = np.concatenate([maps["s"][0], maps["h"][0]], axis=1)
+                dsw = np.concatenate([maps["s_grad"][0], maps["h_grad"][0]], axis=1)
+                fea = maps["g"][0]
+                gra = maps["g_grad"][0]
                 swt *= 0
                 dsw *= 0
                 fea *= 0
@@ -403,16 +436,16 @@ class Wrap():
         # reshape
         opt_uram = True  # for reduce uram resource version
         if opt_uram:
-            nmerges = [2*2, 2*2, 4*2, 4*2]  # n*(4/2)
+            nmerges = [2 * 2, 2 * 2, 4 * 2, 4 * 2]  # n*(4/2)
         else:
-            nmerges = [2*4, 2*4, 4*4, 4*4]  # n*(4)
+            nmerges = [2 * 4, 2 * 4, 4 * 4, 4 * 4]  # n*(4)
         bss = []
         for ii in range(4):
             d = mapts[ii]
             d = np.reshape(d, [ntype_max, -1, 4])
             if opt_uram:
-                d1 = d[:,:,0:2]
-                d2 = d[:,:,2:4]
+                d1 = d[:, :, 0:2]
+                d2 = d[:, :, 2:4]
                 d = np.concatenate([d1, d2])
             #
             bs = e.flt2bin(d, NBIT_FLTE, NBIT_FLTF)
@@ -425,10 +458,10 @@ class Wrap():
 
 def wrap(
     *,
-    nvnmd_config: Optional[str] = 'nvnmd/config.npy',
-    nvnmd_weight: Optional[str] = 'nvnmd/weight.npy',
-    nvnmd_map: Optional[str] = 'nvnmd/map.npy',
-    nvnmd_model: Optional[str] = 'nvnmd/model.pb',
+    nvnmd_config: Optional[str] = "nvnmd/config.npy",
+    nvnmd_weight: Optional[str] = "nvnmd/weight.npy",
+    nvnmd_map: Optional[str] = "nvnmd/map.npy",
+    nvnmd_model: Optional[str] = "nvnmd/model.pb",
     **kwargs
 ):
     wrapObj = Wrap(nvnmd_config, nvnmd_weight, nvnmd_map, nvnmd_model)

@@ -1,13 +1,18 @@
 """This module ensures input in the examples directory
 could pass the argument checking.
 """
-import unittest
 import json
-from pathlib import Path
+import unittest
+from pathlib import (
+    Path,
+)
 
-from deepmd.common import j_loader
-from deepmd.utils.argcheck import normalize
-
+from deepmd.common import (
+    j_loader,
+)
+from deepmd.utils.argcheck import (
+    normalize,
+)
 
 p_examples = Path(__file__).parent.parent.parent / "examples"
 

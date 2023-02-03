@@ -1,8 +1,14 @@
 #!/usr/bin/env python3
 
-from tensorflow.python.framework import ops
-from deepmd.env import op_module
-from deepmd.env import tf 
+from tensorflow.python.framework import (
+    ops,
+)
+
+from deepmd.env import (
+    op_module,
+    tf,
+)
+
 
 @ops.RegisterGradient("DotmulFltNvnmd")
 def _DotmulFltNvnmdGrad(op, grad):

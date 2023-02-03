@@ -1,18 +1,42 @@
 """Test trained DeePMD model."""
 import logging
-from pathlib import Path
-from typing import TYPE_CHECKING, List, Dict, Optional, Tuple
+from pathlib import (
+    Path,
+)
+from typing import (
+    TYPE_CHECKING,
+    Dict,
+    List,
+    Optional,
+    Tuple,
+)
 
 import numpy as np
-from deepmd import DeepPotential
-from deepmd.common import expand_sys_str
+
+from deepmd import (
+    DeepPotential,
+)
+from deepmd.common import (
+    expand_sys_str,
+)
 from deepmd.utils import random as dp_random
-from deepmd.utils.data import DeepmdData
-from deepmd.utils.weight_avg import weighted_average
+from deepmd.utils.data import (
+    DeepmdData,
+)
+from deepmd.utils.weight_avg import (
+    weighted_average,
+)
 
 if TYPE_CHECKING:
-    from deepmd.infer import DeepDipole, DeepPolar, DeepPot, DeepWFC
-    from deepmd.infer.deep_tensor import DeepTensor
+    from deepmd.infer import (
+        DeepDipole,
+        DeepPolar,
+        DeepPot,
+        DeepWFC,
+    )
+    from deepmd.infer.deep_tensor import (
+        DeepTensor,
+    )
 
 __all__ = ["test"]
 
@@ -61,7 +85,7 @@ def test(
         if no valid system was found
     """
     if datafile is not None:
-        datalist = open(datafile, 'r')
+        datalist = open(datafile, "r")
         all_sys = datalist.read().splitlines()
         datalist.close()
     else:
@@ -74,7 +98,7 @@ def test(
 
     # init random seed
     if rand_seed is not None:
-        dp_random.seed(rand_seed % (2 ** 32))
+        dp_random.seed(rand_seed % (2**32))
 
     # init model
     dp = DeepPotential(model)
@@ -101,9 +125,13 @@ def test(
             err = test_dipole(dp, data, numb_test, detail_file, atomic)
         elif dp.model_type == "polar":
             err = test_polar(dp, data, numb_test, detail_file, atomic=atomic)
-        elif dp.model_type == "global_polar":   # should not appear in this new version
-            log.warning("Global polar model is not currently supported. Please directly use the polar mode and change loss parameters.")
-            err = test_polar(dp, data, numb_test, detail_file, atomic=False)    # YWolfeee: downward compatibility
+        elif dp.model_type == "global_polar":  # should not appear in this new version
+            log.warning(
+                "Global polar model is not currently supported. Please directly use the polar mode and change loss parameters."
+            )
+            err = test_polar(
+                dp, data, numb_test, detail_file, atomic=False
+            )  # YWolfeee: downward compatibility
         log.info("# ----------------------------------------------- ")
         err_coll.append(err)
 
@@ -247,7 +275,7 @@ def test_ener(
         aparam=aparam,
         atomic=has_atom_ener,
         efield=efield,
-        mixed_type=mixed_type
+        mixed_type=mixed_type,
     )
     energy = ret[0]
     force = ret[1]
@@ -302,7 +330,7 @@ def test_ener(
         save_txt_file(
             detail_path.with_suffix(".e_peratom.out"),
             pe_atom,
-            header = "%s: data_e pred_e" % system,
+            header="%s: data_e pred_e" % system,
             append=append_detail,
         )
         pf = np.concatenate(
@@ -341,15 +369,15 @@ def test_ener(
             "data_vyz data_vzx data_vzy data_vzz pred_vxx pred_vxy pred_vxz pred_vyx "
             "pred_vyy pred_vyz pred_vzx pred_vzy pred_vzz",
             append=append_detail,
-        )        
+        )
     return {
-        "rmse_ea" : (rmse_ea, energy.size),
-        "rmse_f" : (rmse_f, force.size),
-        "rmse_va" : (rmse_va, virial.size),
+        "rmse_ea": (rmse_ea, energy.size),
+        "rmse_f": (rmse_f, force.size),
+        "rmse_va": (rmse_va, virial.size),
     }
 
 
-def print_ener_sys_avg(avg: Dict[str,float]):
+def print_ener_sys_avg(avg: Dict[str, float]):
     """Print errors summary for energy type potential.
 
     Parameters
@@ -438,9 +466,7 @@ def test_wfc(
             pe,
             header="ref_wfc(12 dofs)   predicted_wfc(12 dofs)",
         )
-    return {
-        'rmse' : (rmse_f, wfc.size)
-    }
+    return {"rmse": (rmse_f, wfc.size)}
 
 
 def print_wfc_sys_avg(avg):
@@ -490,7 +516,7 @@ def test_polar(
         high_prec=False,
         type_sel=dp.get_sel_type(),
     )
-    
+
     test_data = data.get_test()
     polar, numb_test, atype = run_test(dp, test_data, numb_test)
 
@@ -501,13 +527,13 @@ def test_polar(
 
     # YWolfeee: do summation in global polar mode
     if not atomic:
-        polar = np.sum(polar.reshape((polar.shape[0],-1,9)),axis=1)    
+        polar = np.sum(polar.reshape((polar.shape[0], -1, 9)), axis=1)
         rmse_f = rmse(polar - test_data["polarizability"][:numb_test])
         rmse_fs = rmse_f / np.sqrt(sel_natoms)
         rmse_fa = rmse_f / sel_natoms
     else:
         rmse_f = rmse(polar - test_data["atomic_polarizability"][:numb_test])
-    
+
     log.info(f"# number of test data : {numb_test:d} ")
     log.info(f"Polarizability  RMSE       : {rmse_f:e}")
     if not atomic:
@@ -532,9 +558,7 @@ def test_polar(
             "data_pzy data_pzz pred_pxx pred_pxy pred_pxz pred_pyx pred_pyy pred_pyz "
             "pred_pzx pred_pzy pred_pzz",
         )
-    return {
-        "rmse" : (rmse_f, polar.size)
-    }
+    return {"rmse": (rmse_f, polar.size)}
 
 
 def print_polar_sys_avg(avg):
@@ -577,11 +601,11 @@ def test_dipole(
     """
     data.add(
         "dipole" if not atomic else "atomic_dipole",
-        3, 
-        atomic=atomic, 
-        must=True, 
-        high_prec=False, 
-        type_sel=dp.get_sel_type()
+        3,
+        atomic=atomic,
+        must=True,
+        high_prec=False,
+        type_sel=dp.get_sel_type(),
     )
     test_data = data.get_test()
     dipole, numb_test, atype = run_test(dp, test_data, numb_test)
@@ -590,16 +614,16 @@ def test_dipole(
     sel_natoms = 0
     for ii in sel_type:
         sel_natoms += sum(atype == ii)
-    
+
     # do summation in atom dimension
     if not atomic:
-        dipole = np.sum(dipole.reshape((dipole.shape[0], -1, 3)),axis=1)
+        dipole = np.sum(dipole.reshape((dipole.shape[0], -1, 3)), axis=1)
         rmse_f = rmse(dipole - test_data["dipole"][:numb_test])
         rmse_fs = rmse_f / np.sqrt(sel_natoms)
         rmse_fa = rmse_f / sel_natoms
     else:
         rmse_f = rmse(dipole - test_data["atomic_dipole"][:numb_test])
-    
+
     log.info(f"# number of test data : {numb_test:d}")
     log.info(f"Dipole  RMSE       : {rmse_f:e}")
     if not atomic:
@@ -622,9 +646,7 @@ def test_dipole(
             pe,
             header="data_x data_y data_z pred_x pred_y pred_z",
         )
-    return {
-        'rmse' : (rmse_f, dipole.size)
-    }
+    return {"rmse": (rmse_f, dipole.size)}
 
 
 def print_dipole_sys_avg(avg):

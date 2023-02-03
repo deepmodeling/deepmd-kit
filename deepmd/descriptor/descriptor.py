@@ -1,9 +1,25 @@
-from abc import ABC, abstractmethod
-from typing import Optional, Any, Dict, List, Tuple
+from abc import (
+    ABC,
+    abstractmethod,
+)
+from typing import (
+    Any,
+    Dict,
+    List,
+    Optional,
+    Tuple,
+)
 
 import numpy as np
-from deepmd.env import tf, GLOBAL_TF_FLOAT_PRECISION
-from deepmd.utils import Plugin, PluginVariant
+
+from deepmd.env import (
+    GLOBAL_TF_FLOAT_PRECISION,
+    tf,
+)
+from deepmd.utils import (
+    Plugin,
+    PluginVariant,
+)
 
 
 class Descriptor(PluginVariant):
@@ -52,13 +68,13 @@ class Descriptor(PluginVariant):
     def __new__(cls, *args, **kwargs):
         if cls is Descriptor:
             try:
-                descrpt_type = kwargs['type']
+                descrpt_type = kwargs["type"]
             except KeyError:
-                raise KeyError('the type of descriptor should be set by `type`')
+                raise KeyError("the type of descriptor should be set by `type`")
             if descrpt_type in Descriptor.__plugins.plugins:
                 cls = Descriptor.__plugins.plugins[descrpt_type]
             else:
-                raise RuntimeError('Unknown descriptor type: ' + descrpt_type)
+                raise RuntimeError("Unknown descriptor type: " + descrpt_type)
         return super().__new__(cls)
 
     @abstractmethod
@@ -141,14 +157,15 @@ class Descriptor(PluginVariant):
         raise NotImplementedError
 
     @abstractmethod
-    def compute_input_stats(self,
-                            data_coord: List[np.ndarray],
-                            data_box: List[np.ndarray],
-                            data_atype: List[np.ndarray],
-                            natoms_vec: List[np.ndarray],
-                            mesh: List[np.ndarray],
-                            input_dict: Dict[str, List[np.ndarray]]
-                            ) -> None:
+    def compute_input_stats(
+        self,
+        data_coord: List[np.ndarray],
+        data_box: List[np.ndarray],
+        data_atype: List[np.ndarray],
+        natoms_vec: List[np.ndarray],
+        mesh: List[np.ndarray],
+        input_dict: Dict[str, List[np.ndarray]],
+    ) -> None:
         """
         Compute the statisitcs (avg and std) of the training data. The input will be
         normalized by the statistics.
@@ -178,16 +195,17 @@ class Descriptor(PluginVariant):
         """
 
     @abstractmethod
-    def build(self,
-              coord_: tf.Tensor,
-              atype_: tf.Tensor,
-              natoms: tf.Tensor,
-              box_: tf.Tensor,
-              mesh: tf.Tensor,
-              input_dict: Dict[str, Any],
-              reuse: Optional[bool] = None,
-              suffix: str = '',
-              ) -> tf.Tensor:
+    def build(
+        self,
+        coord_: tf.Tensor,
+        atype_: tf.Tensor,
+        natoms: tf.Tensor,
+        box_: tf.Tensor,
+        mesh: tf.Tensor,
+        input_dict: Dict[str, Any],
+        reuse: Optional[bool] = None,
+        suffix: str = "",
+    ) -> tf.Tensor:
         """
         Build the computational graph for the descriptor.
 
@@ -225,16 +243,17 @@ class Descriptor(PluginVariant):
         This method must be implemented, as it's called by other classes.
         """
 
-    def enable_compression(self,
-                           min_nbor_dist: float,
-                           graph: tf.Graph,
-                           graph_def: tf.GraphDef,
-                           table_extrapolate: float = 5.,
-                           table_stride_1: float = 0.01,
-                           table_stride_2: float = 0.1,
-                           check_frequency: int = -1,
-                           suffix: str = "",
-                           ) -> None:
+    def enable_compression(
+        self,
+        min_nbor_dist: float,
+        graph: tf.Graph,
+        graph_def: tf.GraphDef,
+        table_extrapolate: float = 5.0,
+        table_stride_1: float = 0.01,
+        table_stride_2: float = 0.1,
+        check_frequency: int = -1,
+        suffix: str = "",
+    ) -> None:
         """
         Reveive the statisitcs (distance, max_nbor_size and env_mat_range) of the
         training data.
@@ -263,7 +282,8 @@ class Descriptor(PluginVariant):
         This method is called by others when the descriptor supported compression.
         """
         raise NotImplementedError(
-            "Descriptor %s doesn't support compression!" % type(self).__name__)
+            "Descriptor %s doesn't support compression!" % type(self).__name__
+        )
 
     def enable_mixed_precision(self, mixed_prec: Optional[dict] = None) -> None:
         """
@@ -284,10 +304,9 @@ class Descriptor(PluginVariant):
         )
 
     @abstractmethod
-    def prod_force_virial(self,
-                          atom_ener: tf.Tensor,
-                          natoms: tf.Tensor
-                          ) -> Tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
+    def prod_force_virial(
+        self, atom_ener: tf.Tensor, natoms: tf.Tensor
+    ) -> Tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
         """
         Compute force and virial.
 
@@ -311,13 +330,14 @@ class Descriptor(PluginVariant):
             The atomic virial
         """
 
-    def get_feed_dict(self,
-                      coord_: tf.Tensor,
-                      atype_: tf.Tensor,
-                      natoms: tf.Tensor,
-                      box: tf.Tensor,
-                      mesh: tf.Tensor
-                      ) -> Dict[str, tf.Tensor]:
+    def get_feed_dict(
+        self,
+        coord_: tf.Tensor,
+        atype_: tf.Tensor,
+        natoms: tf.Tensor,
+        box: tf.Tensor,
+        mesh: tf.Tensor,
+    ) -> Dict[str, tf.Tensor]:
         """
         Generate the feed_dict for current descriptor
 
@@ -336,8 +356,8 @@ class Descriptor(PluginVariant):
             The box. Can be generated by deepmd.model.make_stat_input
         mesh : tf.Tensor
             For historical reasons, only the length of the Tensor matters.
-            if size of mesh == 6, pbc is assumed. 
-            if size of mesh == 0, no-pbc is assumed. 
+            if size of mesh == 6, pbc is assumed.
+            if size of mesh == 0, no-pbc is assumed.
 
         Returns
         -------
@@ -345,18 +365,19 @@ class Descriptor(PluginVariant):
             The output feed_dict of current descriptor
         """
         feed_dict = {
-            't_coord:0'  :coord_,
-            't_type:0'   :atype_,
-            't_natoms:0' :natoms,
-            't_box:0'    :box,
-            't_mesh:0'   :mesh
+            "t_coord:0": coord_,
+            "t_type:0": atype_,
+            "t_natoms:0": natoms,
+            "t_box:0": box,
+            "t_mesh:0": mesh,
         }
         return feed_dict
 
-    def init_variables(self,
-                       graph: tf.Graph,
-                       graph_def: tf.GraphDef,
-                       suffix : str = "",
+    def init_variables(
+        self,
+        graph: tf.Graph,
+        graph_def: tf.GraphDef,
+        suffix: str = "",
     ) -> None:
         """
         Init the embedding net variables with the given dict
@@ -369,17 +390,19 @@ class Descriptor(PluginVariant):
             The input frozen model graph_def
         suffix : str, optional
             The suffix of the scope
-        
+
         Notes
         -----
         This method is called by others when the descriptor supported initialization from the given variables.
         """
         raise NotImplementedError(
-            "Descriptor %s doesn't support initialization from the given variables!" % type(self).__name__)
+            "Descriptor %s doesn't support initialization from the given variables!"
+            % type(self).__name__
+        )
 
-    def get_tensor_names(self, suffix : str = "") -> Tuple[str]:
+    def get_tensor_names(self, suffix: str = "") -> Tuple[str]:
         """Get names of tensors.
-        
+
         Parameters
         ----------
         suffix : str
@@ -390,10 +413,13 @@ class Descriptor(PluginVariant):
         Tuple[str]
             Names of tensors
         """
-        raise NotImplementedError("Descriptor %s doesn't support this property!" % type(self).__name__)
+        raise NotImplementedError(
+            "Descriptor %s doesn't support this property!" % type(self).__name__
+        )
 
-    def pass_tensors_from_frz_model(self,
-                                    *tensors : tf.Tensor,
+    def pass_tensors_from_frz_model(
+        self,
+        *tensors: tf.Tensor,
     ) -> None:
         """
         Pass the descrpt_reshape tensor as well as descrpt_deriv tensor from the frz graph_def
@@ -402,21 +428,25 @@ class Descriptor(PluginVariant):
         ----------
         *tensors : tf.Tensor
             passed tensors
-        
+
         Notes
         -----
         The number of parameters in the method must be equal to the numbers of returns in
         :meth:`get_tensor_names`.
         """
-        raise NotImplementedError("Descriptor %s doesn't support this method!" % type(self).__name__)
+        raise NotImplementedError(
+            "Descriptor %s doesn't support this method!" % type(self).__name__
+        )
 
-    def build_type_exclude_mask(self,
-                                exclude_types: List[Tuple[int, int]],
-                                ntypes: int,
-                                sel: List[int],
-                                ndescrpt: int,
-                                atype: tf.Tensor,
-                                shape0: tf.Tensor) -> tf.Tensor:
+    def build_type_exclude_mask(
+        self,
+        exclude_types: List[Tuple[int, int]],
+        ntypes: int,
+        sel: List[int],
+        ndescrpt: int,
+        atype: tf.Tensor,
+        shape0: tf.Tensor,
+    ) -> tf.Tensor:
         r"""Build the type exclude mask for the descriptor.
 
         Notes
@@ -470,12 +500,17 @@ class Descriptor(PluginVariant):
            17 (11), 6993-7009.
         """
         # generate a mask
-        type_mask = np.array([
-            [1 if (tt_i, tt_j) not in exclude_types else 0
-            for tt_i in range(ntypes)]
-            for tt_j in range(ntypes)
-        ], dtype = bool)
-        type_mask = tf.convert_to_tensor(type_mask, dtype = GLOBAL_TF_FLOAT_PRECISION)
+        type_mask = np.array(
+            [
+                [
+                    1 if (tt_i, tt_j) not in exclude_types else 0
+                    for tt_i in range(ntypes)
+                ]
+                for tt_j in range(ntypes)
+            ],
+            dtype=bool,
+        )
+        type_mask = tf.convert_to_tensor(type_mask, dtype=GLOBAL_TF_FLOAT_PRECISION)
         type_mask = tf.reshape(type_mask, [-1])
 
         # (nsamples * natoms, 1)
@@ -485,8 +520,10 @@ class Descriptor(PluginVariant):
         ndescrpt_per_neighbor = ndescrpt // np.sum(sel)
         # assume the number of neighbors for each type is the same
         assert ndescrpt_per_neighbor * np.sum(sel) == ndescrpt
-        atype_descrpt = np.repeat(np.arange(ntypes), np.array(sel) * ndescrpt_per_neighbor)
-        atype_descrpt = tf.convert_to_tensor(atype_descrpt, dtype = tf.int32)
+        atype_descrpt = np.repeat(
+            np.arange(ntypes), np.array(sel) * ndescrpt_per_neighbor
+        )
+        atype_descrpt = tf.convert_to_tensor(atype_descrpt, dtype=tf.int32)
         # (1, ndescrpt)
         atype_descrpt = tf.reshape(atype_descrpt, (1, ndescrpt))
         # (nsamples * natoms, ndescrpt)

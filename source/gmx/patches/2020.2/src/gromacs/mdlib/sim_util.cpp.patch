@@ -7,12 +7,12 @@
 +
 +#include <iostream>
  #include "gmxpre.h"
- 
+
  #include "config.h"
 @@ -114,6 +116,8 @@
  #include "gromacs/utility/strconvert.h"
  #include "gromacs/utility/sysinfo.h"
- 
+
 +#include "deepmd/gmx_plugin.h"
 +
  using gmx::AtomLocality;
@@ -21,7 +21,7 @@
 @@ -1838,6 +1842,64 @@
                                 simulationWork.useGpuPmePpCommunication, false, wcycle);
      }
- 
+
 +    /* DeepMD */
 +    double               dener;
 +    std::vector<double > dforce;
@@ -91,7 +91,7 @@
 +        {
 +            enerd->term[F_EPOT] += dener * e_dp2gmx * deepmdPlugin->lmd;
 +        }
- 
+
          if (!EI_TPI(inputrec->eI))
          {
              checkPotentialEnergyValidity(step, *enerd, *inputrec);

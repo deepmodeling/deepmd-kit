@@ -10,7 +10,7 @@ y = float(x)
 # float64:
 1 bit sign
 11 bits exponent
-52 bits fraction 
+52 bits fraction
 
 # float
 1 bit sign
@@ -26,91 +26,83 @@ y = float(x)
 // --------------------------------------------------------------------
 //
 
-
 //- import the library of tensorflow
-#include "custom_op.h"
 #include <vector>
-#include "math.h"
+
+#include "custom_op.h"
 #include "env_mat_nvnmd.h"
+#include "math.h"
 
 using namespace tensorflow;
 
-
 //- register the operator
 REGISTER_OP("FltNvnmd")
-  .Attr("T: {float, double} = DT_DOUBLE")
-  .Input("x: T")
-  .Output("y: T");
+    .Attr("T: {float, double} = DT_DOUBLE")
+    .Input("x: T")
+    .Output("y: T");
 
 //- create the operator class
 //* the class must inherit the OpKernel Class
 template <typename Device, typename FPTYPE>
 class FltNvnmdOp : public OpKernel {
-public:
+ public:
+  /// Constructor.
+  explicit FltNvnmdOp(OpKernelConstruction* context) : OpKernel(context){};
 
-/// Constructor.
-explicit FltNvnmdOp(OpKernelConstruction* context) : OpKernel(context) {
-};
+  /// Compute the descriptor
+  /// param: context
+  void Compute(OpKernelContext* context) override {
+    // check
+    DCHECK_EQ(1, context->num_inputs());
+    const Tensor& X = context->input(0);
 
+    const TensorShape& shX = X.shape();
+    TensorShape shY;
 
-/// Compute the descriptor
-/// param: context
-void Compute(OpKernelContext* context) override {
-  // check
-  DCHECK_EQ(1, context->num_inputs());
-  const Tensor& X = context->input(0);
+    int H, N, M;
+    if (shX.dims() == 3) {
+      H = shX.dim_size(0);
+      N = shX.dim_size(1);
+      M = shX.dim_size(2);
 
-  const TensorShape& shX = X.shape();
-  TensorShape shY;
+      shY.AddDim(H);
+      shY.AddDim(N);
+      shY.AddDim(M);
+    }
+    if (shX.dims() == 2) {
+      // process 2-dimension as 3-dimension
+      H = 1;
+      N = shX.dim_size(0);
+      M = shX.dim_size(1);
 
-  int H, N, M;
-  if (shX.dims() == 3) {
-    H = shX.dim_size(0);
-    N = shX.dim_size(1);
-    M = shX.dim_size(2);
+      shY.AddDim(N);
+      shY.AddDim(M);
+    }
 
-    shY.AddDim(H);
-    shY.AddDim(N);
-    shY.AddDim(M);
-  }
-  if (shX.dims() == 2) {
-    // process 2-dimension as 3-dimension
-    H = 1;
-    N = shX.dim_size(0);
-    M = shX.dim_size(1);
+    // create output
+    Tensor* Y = NULL;
+    OP_REQUIRES_OK(context, context->allocate_output(0, shY, &Y));
 
-    shY.AddDim(N);
-    shY.AddDim(M);
-  }
+    // compute
+    auto x = X.flat<FPTYPE>().data();
+    auto y = Y->flat<FPTYPE>().data();
 
-  // create output
-  Tensor* Y = NULL;
-  OP_REQUIRES_OK(context, context->allocate_output(0, shY, &Y));
+    int ii;
+    U_Flt64_Int64 ufi;
 
-  // compute
-  auto x = X.flat<FPTYPE>().data();
-  auto y = Y->flat<FPTYPE>().data();
+    for (ii = 0; ii < H * N * M; ii++) {
+      ufi.nflt = x[ii];
+      ufi.nint &= FLT_MASK;
+      y[ii] = ufi.nflt;
+    }
 
-  int ii;
-  U_Flt64_Int64 ufi;
+  }  // Compute
 
-  for (ii=0; ii<H*N*M; ii++) {
-    ufi.nflt = x[ii];
-    ufi.nint &= FLT_MASK;
-    y[ii] = ufi.nflt;
-  }
+};  // FltNvnmdOp
 
-} // Compute
-
-
-}; // FltNvnmdOp
-
-#define REGISTER_CPU(T) \
-REGISTER_KERNEL_BUILDER( \
-    Name("FltNvnmd").Device(DEVICE_CPU).TypeConstraint<T>("T"), \
-    FltNvnmdOp<CPUDevice, T>);
-REGISTER_CPU(float);                  
+#define REGISTER_CPU(T)                                           \
+  REGISTER_KERNEL_BUILDER(                                        \
+      Name("FltNvnmd").Device(DEVICE_CPU).TypeConstraint<T>("T"), \
+      FltNvnmdOp<CPUDevice, T>);
+REGISTER_CPU(float);
 REGISTER_CPU(double);
-
-
-

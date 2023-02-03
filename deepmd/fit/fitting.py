@@ -1,5 +1,11 @@
-from deepmd.env import tf
-from deepmd.utils import Plugin, PluginVariant
+from deepmd.env import (
+    tf,
+)
+from deepmd.utils import (
+    Plugin,
+    PluginVariant,
+)
+
 
 class Fitting:
     @property
@@ -7,10 +13,11 @@ class Fitting:
         """Precision of fitting network."""
         return self.fitting_precision
 
-    def init_variables(self,
-                       graph: tf.Graph,
-                       graph_def: tf.GraphDef,
-                       suffix : str = "",
+    def init_variables(
+        self,
+        graph: tf.Graph,
+        graph_def: tf.GraphDef,
+        suffix: str = "",
     ) -> None:
         """
         Init the fitting net variables with the given dict
@@ -23,10 +30,12 @@ class Fitting:
             The input frozen model graph_def
         suffix : str
             suffix to name scope
-        
+
         Notes
         -----
         This method is called by others when the fitting supported initialization from the given variables.
         """
         raise NotImplementedError(
-            "Fitting %s doesn't support initialization from the given variables!" % type(self).__name__)
+            "Fitting %s doesn't support initialization from the given variables!"
+            % type(self).__name__
+        )
