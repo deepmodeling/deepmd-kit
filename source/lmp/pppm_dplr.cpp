@@ -6,7 +6,11 @@
 #include "domain.h"
 #include "error.h"
 #include "force.h"
+#if LAMMPS_VERSION_NUMBER >= 20221222
+#include "grid3d.h"
+#else
 #include "gridcomm.h"
+#endif
 #include "math_const.h"
 #include "memory.h"
 #include "pppm.h"
@@ -109,7 +113,10 @@ void PPPMDPLR::compute(int eflag, int vflag) {
   //   to fully sum contribution in their 3d bricks
   // remap from 3d decomposition to FFT decomposition
 
-#if LAMMPS_VERSION_NUMBER >= 20210831
+#if LAMMPS_VERSION_NUMBER >= 20221222
+  gc->reverse_comm(Grid3d::KSPACE,this,REVERSE_RHO,1,sizeof(FFT_SCALAR),
+                   gc_buf1,gc_buf2,MPI_FFT_SCALAR);
+#elif LAMMPS_VERSION_NUMBER >= 20210831 && LAMMPS_VERSION_NUMBER < 20221222
   gc->reverse_comm(GridComm::KSPACE, this, 1, sizeof(FFT_SCALAR), REVERSE_RHO,
                    gc_buf1, gc_buf2, MPI_FFT_SCALAR);
 #else
@@ -129,7 +136,10 @@ void PPPMDPLR::compute(int eflag, int vflag) {
   // to fill ghost cells surrounding their 3d bricks
 
   if (differentiation_flag == 1)
-#if LAMMPS_VERSION_NUMBER >= 20210831
+#if LAMMPS_VERSION_NUMBER >= 20221222
+    gc->reverse_comm(Grid3d::KSPACE,this,REVERSE_RHO,1,sizeof(FFT_SCALAR),
+                     gc_buf1,gc_buf2,MPI_FFT_SCALAR);
+#elif LAMMPS_VERSION_NUMBER >= 20210831 && LAMMPS_VERSION_NUMBER < 20221222
     gc->forward_comm(GridComm::KSPACE, this, 1, sizeof(FFT_SCALAR), FORWARD_AD,
                      gc_buf1, gc_buf2, MPI_FFT_SCALAR);
 #else
@@ -137,7 +147,10 @@ void PPPMDPLR::compute(int eflag, int vflag) {
                             gc_buf2, MPI_FFT_SCALAR);
 #endif
   else
-#if LAMMPS_VERSION_NUMBER >= 20210831
+#if LAMMPS_VERSION_NUMBER >= 20221222
+    gc->forward_comm(Grid3d::KSPACE,this,FORWARD_IK,3,sizeof(FFT_SCALAR),
+                     gc_buf1,gc_buf2,MPI_FFT_SCALAR);
+#elif LAMMPS_VERSION_NUMBER >= 20210831 && LAMMPS_VERSION_NUMBER < 20221222
     gc->forward_comm(GridComm::KSPACE, this, 3, sizeof(FFT_SCALAR), FORWARD_IK,
                      gc_buf1, gc_buf2, MPI_FFT_SCALAR);
 #else
@@ -149,7 +162,10 @@ void PPPMDPLR::compute(int eflag, int vflag) {
 
   if (evflag_atom) {
     if (differentiation_flag == 1 && vflag_atom)
-#if LAMMPS_VERSION_NUMBER >= 20210831
+#if LAMMPS_VERSION_NUMBER >= 20221222
+      gc->forward_comm(Grid3d::KSPACE,this,FORWARD_AD_PERATOM,6,sizeof(FFT_SCALAR),
+                       gc_buf1,gc_buf2,MPI_FFT_SCALAR);
+#elif LAMMPS_VERSION_NUMBER >= 20210831 && LAMMPS_VERSION_NUMBER < 20221222
       gc->forward_comm(GridComm::KSPACE, this, 6, sizeof(FFT_SCALAR),
                        FORWARD_AD_PERATOM, gc_buf1, gc_buf2, MPI_FFT_SCALAR);
 #else
@@ -157,7 +173,10 @@ void PPPMDPLR::compute(int eflag, int vflag) {
                               gc_buf1, gc_buf2, MPI_FFT_SCALAR);
 #endif
     else if (differentiation_flag == 0)
-#if LAMMPS_VERSION_NUMBER >= 20210831
+#if LAMMPS_VERSION_NUMBER >= 20221222
+      gc->forward_comm(Grid3d::KSPACE,this,FORWARD_IK_PERATOM,7,sizeof(FFT_SCALAR),
+                       gc_buf1,gc_buf2,MPI_FFT_SCALAR);
+#elif LAMMPS_VERSION_NUMBER >= 20210831 && LAMMPS_VERSION_NUMBER < 20221222
       gc->forward_comm(GridComm::KSPACE, this, 7, sizeof(FFT_SCALAR),
                        FORWARD_IK_PERATOM, gc_buf1, gc_buf2, MPI_FFT_SCALAR);
 #else
