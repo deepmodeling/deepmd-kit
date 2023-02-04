@@ -429,7 +429,7 @@ class DeepPot(DeepEval):
         feed_dict_test = {}
         feed_dict_test[self.t_natoms] = natoms_vec
         if mixed_type:
-            feed_dict_test[self.t_type] = np.reshape(atom_types, [-1])
+            feed_dict_test[self.t_type] = atom_types.reshape([-1])
         else:
             feed_dict_test[self.t_type] = np.tile(atom_types, [nframes, 1]).reshape(
                 [-1]
@@ -449,9 +449,9 @@ class DeepPot(DeepEval):
         else:
             feed_dict_test[self.t_mesh] = np.array([], dtype=np.int32)
         if self.has_fparam:
-            feed_dict_test[self.t_fparam] = fparam
+            feed_dict_test[self.t_fparam] = np.reshape(fparam, [-1])
         if self.has_aparam:
-            feed_dict_test[self.t_aparam] = aparam
+            feed_dict_test[self.t_aparam] = np.reshape(aparam, [-1])
         return feed_dict_test, imap
 
     def _eval_inner(
