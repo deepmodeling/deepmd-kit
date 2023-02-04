@@ -3,14 +3,21 @@
 import os
 import sys
 
-from skbuild import setup
-from wheel.bdist_wheel import bdist_wheel
+from skbuild import (
+    setup,
+)
+from wheel.bdist_wheel import (
+    bdist_wheel,
+)
 
 topdir = os.path.abspath(os.path.dirname(__file__))
-sys.path.insert(0, os.path.join(topdir, 'backend'))
+sys.path.insert(0, os.path.join(topdir, "backend"))
 
-from find_tensorflow import find_tensorflow, get_tf_requirement, get_tf_version
-
+from find_tensorflow import (
+    find_tensorflow,
+    get_tf_requirement,
+    get_tf_version,
+)
 
 cmake_args = []
 # get variant option from the environment varibles, available: cpu, cuda, rocm
@@ -27,6 +34,9 @@ elif dp_variant == "rocm":
     rocm_root = os.environ.get("ROCM_ROOT")
     if rocm_root:
         cmake_args.append(f"-DCMAKE_HIP_COMPILER_ROCM_ROOT:STRING={rocm_root}")
+    hipcc_flags = os.environ.get("HIP_HIPCC_FLAGS")
+    if hipcc_flags:
+        cmake_args.append(f"-DHIP_HIPCC_FLAGS:STRING={hipcc_flags}")
 else:
     raise RuntimeError("Unsupported DP_VARIANT option: %s" % dp_variant)
 
@@ -100,7 +110,7 @@ setup(
             "dargs>=0.3.4",
             "sphinx-argparse",
             "pygments-lammps",
-            ],
+        ],
         "lmp": [
             "lammps-manylinux-2-28~=2022.6.23.2.2; platform_system=='Linux'",
             "lammps~=2022.6.23.2.2; platform_system!='Linux'",
@@ -130,7 +140,7 @@ setup(
         "console_scripts": ["dp = deepmd.entrypoints.main:main"],
         "lammps.plugins": ["deepmd = deepmd.lmp:get_op_dir"],
     },
-    cmdclass = {
+    cmdclass={
         "bdist_wheel": bdist_wheel_abi3,
     },
 )

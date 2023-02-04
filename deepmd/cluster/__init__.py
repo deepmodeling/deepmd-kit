@@ -1,9 +1,14 @@
 """Module that reads node resources, auto detects if running local or on SLURM."""
 
+import os
+from typing import (
+    List,
+    Optional,
+    Tuple,
+)
+
 from .local import get_resource as get_local_res
 from .slurm import get_resource as get_slurm_res
-import os
-from typing import List, Tuple, Optional
 
 __all__ = ["get_resource"]
 

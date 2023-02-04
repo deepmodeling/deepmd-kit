@@ -1,22 +1,18 @@
 set -e
 
-if [ "$DP_VARIANT" = "cuda" ]
-then
-  CUDA_ARGS="-DUSE_CUDA_TOOLKIT=TRUE"
-elif [ "$DP_VARIANT" = "rocm" ]
-then
-  CUDA_ARGS="-DUSE_ROCM_TOOLKIT=TRUE"
+if [ "$DP_VARIANT" = "cuda" ]; then
+	CUDA_ARGS="-DUSE_CUDA_TOOLKIT=TRUE"
+elif [ "$DP_VARIANT" = "rocm" ]; then
+	CUDA_ARGS="-DUSE_ROCM_TOOLKIT=TRUE"
 fi
 #------------------
 
 SCRIPT_PATH=$(dirname $(realpath -s $0))
-if [ -z "$INSTALL_PREFIX" ]
-then
-  INSTALL_PREFIX=$(realpath -s ${SCRIPT_PATH}/../../dp)
+if [ -z "$INSTALL_PREFIX" ]; then
+	INSTALL_PREFIX=$(realpath -s ${SCRIPT_PATH}/../../dp)
 fi
-if [ -z "$DOWNLOAD_TENSORFLOW" ]
-then
-  DOWNLOAD_TENSORFLOW=TRUE
+if [ -z "$DOWNLOAD_TENSORFLOW" ]; then
+	DOWNLOAD_TENSORFLOW=TRUE
 fi
 mkdir -p ${INSTALL_PREFIX}
 echo "Installing DeePMD-kit to ${INSTALL_PREFIX}"

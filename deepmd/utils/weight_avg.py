@@ -1,10 +1,15 @@
-from typing import TYPE_CHECKING, List, Dict, Optional, Tuple
+from typing import (
+    TYPE_CHECKING,
+    Dict,
+    List,
+    Optional,
+    Tuple,
+)
+
 import numpy as np
 
 
-def weighted_average(
-    errors: List[Dict[str, Tuple[float, float]]]
-) -> Dict:
+def weighted_average(errors: List[Dict[str, Tuple[float, float]]]) -> Dict:
     """Compute wighted average of prediction errors for model.
 
     Parameters
@@ -26,7 +31,7 @@ def weighted_average(
             if kk in sum_err:
                 sum_err[kk] += ee * ee * ss
                 sum_siz[kk] += ss
-            else :
+            else:
                 sum_err[kk] = ee * ee * ss
                 sum_siz[kk] = ss
     for kk in sum_err.keys():

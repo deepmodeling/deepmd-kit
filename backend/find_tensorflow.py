@@ -1,16 +1,32 @@
-import site
 import os
-from importlib.util import find_spec
-from importlib.machinery import FileFinder
-from sysconfig import get_path
-from pathlib import Path
-from typing import List, Optional, Tuple, Union
-from packaging.specifiers import SpecifierSet
+import site
+from importlib.machinery import (
+    FileFinder,
+)
+from importlib.util import (
+    find_spec,
+)
+from pathlib import (
+    Path,
+)
+from sysconfig import (
+    get_path,
+)
+from typing import (
+    List,
+    Optional,
+    Tuple,
+    Union,
+)
+
+from packaging.specifiers import (
+    SpecifierSet,
+)
 
 
 def find_tensorflow() -> Tuple[Optional[str], List[str]]:
     """Find TensorFlow library.
-    
+
     Tries to find TensorFlow in the order of:
 
     1. Environment variable `TENSORFLOW_ROOT` if set
@@ -62,7 +78,7 @@ def find_tensorflow() -> Tuple[Optional[str], List[str]]:
         # TypeError if submodule_search_locations are None
         # IndexError if submodule_search_locations is an empty list
     except (AttributeError, TypeError, IndexError):
-        requires.extend(get_tf_requirement()['cpu'])
+        requires.extend(get_tf_requirement()["cpu"])
         # setuptools will re-find tensorflow after installing setup_requires
         tf_install_dir = None
     return tf_install_dir, requires
@@ -70,7 +86,7 @@ def find_tensorflow() -> Tuple[Optional[str], List[str]]:
 
 def get_tf_requirement(tf_version: str = "") -> dict:
     """Get TensorFlow requirement (CPU) when TF is not installed.
-    
+
     If tf_version is not given and the environment variable `TENSORFLOW_VERSION` is set, use it as the requirement.
 
     Parameters
@@ -88,24 +104,44 @@ def get_tf_requirement(tf_version: str = "") -> dict:
 
     if tf_version == "":
         return {
-            "cpu": ["tensorflow-cpu; platform_machine!='aarch64'", "tensorflow; platform_machine=='aarch64'"],
-            "gpu": ["tensorflow; platform_machine!='aarch64'", "tensorflow; platform_machine=='aarch64'"],
+            "cpu": [
+                "tensorflow-cpu; platform_machine!='aarch64'",
+                "tensorflow; platform_machine=='aarch64'",
+            ],
+            "gpu": [
+                "tensorflow; platform_machine!='aarch64'",
+                "tensorflow; platform_machine=='aarch64'",
+            ],
         }
-    elif tf_version in SpecifierSet("<1.15") or tf_version in SpecifierSet(">=2.0,<2.1"):
+    elif tf_version in SpecifierSet("<1.15") or tf_version in SpecifierSet(
+        ">=2.0,<2.1"
+    ):
         return {
-            "cpu": [f"tensorflow=={tf_version}; platform_machine!='aarch64'", f"tensorflow=={tf_version}; platform_machine=='aarch64'"],
-            "gpu": [f"tensorflow-gpu=={tf_version}; platform_machine!='aarch64'", f"tensorflow=={tf_version}; platform_machine=='aarch64'"],
+            "cpu": [
+                f"tensorflow=={tf_version}; platform_machine!='aarch64'",
+                f"tensorflow=={tf_version}; platform_machine=='aarch64'",
+            ],
+            "gpu": [
+                f"tensorflow-gpu=={tf_version}; platform_machine!='aarch64'",
+                f"tensorflow=={tf_version}; platform_machine=='aarch64'",
+            ],
         }
     else:
         return {
-            "cpu": [f"tensorflow-cpu=={tf_version}; platform_machine!='aarch64'", f"tensorflow=={tf_version}; platform_machine=='aarch64'"],
-            "gpu": [f"tensorflow=={tf_version}; platform_machine!='aarch64'", f"tensorflow=={tf_version}; platform_machine=='aarch64'"],
+            "cpu": [
+                f"tensorflow-cpu=={tf_version}; platform_machine!='aarch64'",
+                f"tensorflow=={tf_version}; platform_machine=='aarch64'",
+            ],
+            "gpu": [
+                f"tensorflow=={tf_version}; platform_machine!='aarch64'",
+                f"tensorflow=={tf_version}; platform_machine=='aarch64'",
+            ],
         }
 
 
 def get_tf_version(tf_path: Union[str, Path]) -> str:
     """Get TF version from a TF Python library path.
-    
+
     Parameters
     ----------
     tf_path : str or Path
@@ -118,7 +154,9 @@ def get_tf_version(tf_path: Union[str, Path]) -> str:
     """
     if tf_path is None or tf_path == "":
         return ""
-    version_file = Path(tf_path) / "include" / "tensorflow" / "core" / "public" / "version.h"
+    version_file = (
+        Path(tf_path) / "include" / "tensorflow" / "core" / "public" / "version.h"
+    )
     major = minor = patch = None
     with open(version_file) as f:
         for line in f:
