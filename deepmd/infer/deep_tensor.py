@@ -178,9 +178,9 @@ class DeepTensor(DeepEval):
         Returns
         -------
         tensor
-                The returned tensor
-                If atomic == False then of size nframes x output_dim
-                else of size nframes x natoms x output_dim
+            The returned tensor
+            If atomic == False then of size nframes x output_dim
+            else of size nframes x natoms x output_dim
         """
         # standarize the shape of inputs
         if mixed_type:

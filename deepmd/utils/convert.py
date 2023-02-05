@@ -324,7 +324,7 @@ def convert_dp13_to_dp20(fname: str):
 
     Parameters
     ----------
-    file : str
+    fname : str
         filename of the graph text
     """
     with open(fname) as fp:

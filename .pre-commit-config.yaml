@@ -24,6 +24,12 @@ repos:
     hooks:
     - id: isort
     files: \.py$
+# numpydoc
+-   repo: https://github.com/Carreau/velin
+    rev: 0.0.12
+    hooks:
+    - id: velin
+      args: ["--write"]
 # Python inside docs
 -   repo: https://github.com/asottile/blacken-docs
     rev: 1.13.0

@@ -154,23 +154,23 @@ def embedding_net(
     ----------
     xx : Tensor
         Input tensor :math:`\mathbf{x}` of shape [-1,1]
-    network_size: list of int
+    network_size : list of int
         Size of the embedding network. For example [16,32,64]
     precision:
         Precision of network weights. For example, tf.float64
     activation_fn:
         Activation function :math:`\boldsymbol{\phi}`
-    resnet_dt: boolean
+    resnet_dt : boolean
         Using time-step in the ResNet construction
-    name_suffix: str
+    name_suffix : str
         The name suffix append to each variable.
-    stddev: float
+    stddev : float
         Standard deviation of initializing network parameters
-    bavg: float
+    bavg : float
         Mean of network intial bias
-    seed: int
+    seed : int
         Random seed for initializing network parameters
-    trainable: boolean
+    trainable : boolean
         If the network is trainable
     uniform_seed : boolean
         Only for the purpose of backward compatibility, retrieves the old behavior of using the random seed
@@ -178,7 +178,6 @@ def embedding_net(
         The input dict which stores the embedding net variables
     mixed_prec
         The input dict which stores the mixed precision setting for the embedding net
-
 
     References
     ----------

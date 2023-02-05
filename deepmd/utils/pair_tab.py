@@ -38,12 +38,12 @@ class PairTab(object):
         Parameters
         ----------
         filename
-                File name for the short-range tabulated potential.
-                The table is a text data file with (N_t + 1) * N_t / 2 + 1 columes.
-                The first colume is the distance between atoms.
-                The second to the last columes are energies for pairs of certain types.
-                For example we have two atom types, 0 and 1.
-                The columes from 2nd to 4th are for 0-0, 0-1 and 1-1 correspondingly.
+            File name for the short-range tabulated potential.
+            The table is a text data file with (N_t + 1) * N_t / 2 + 1 columes.
+            The first colume is the distance between atoms.
+            The second to the last columes are energies for pairs of certain types.
+            For example we have two atom types, 0 and 1.
+            The columes from 2nd to 4th are for 0-0, 0-1 and 1-1 correspondingly.
         """
         self.vdata = np.loadtxt(filename)
         self.rmin = self.vdata[0][0]

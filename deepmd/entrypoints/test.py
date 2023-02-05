@@ -161,7 +161,7 @@ def rmse(diff: np.ndarray) -> np.ndarray:
 
     Parameters
     ----------
-    diff: np.ndarray
+    diff : np.ndarray
         difference
 
     Returns
@@ -208,7 +208,7 @@ def test_ener(
     ----------
     dp : DeepPot
         instance of deep potential
-    data: DeepmdData
+    data : DeepmdData
         data container object
     system : str
         system directory
@@ -430,7 +430,7 @@ def test_wfc(
     ----------
     dp : DeepPot
         instance of deep potential
-    data: DeepmdData
+    data : DeepmdData
         data container object
     numb_test : int
         munber of tests to do
@@ -494,13 +494,13 @@ def test_polar(
     ----------
     dp : DeepPot
         instance of deep potential
-    data: DeepmdData
+    data : DeepmdData
         data container object
     numb_test : int
         munber of tests to do
     detail_file : Optional[str]
         file where test details will be output
-    global_polar : bool
+    atomic : bool
         wheter to use glovbal version of polar potential
 
     Returns
@@ -585,7 +585,7 @@ def test_dipole(
     ----------
     dp : DeepPot
         instance of deep potential
-    data: DeepmdData
+    data : DeepmdData
         data container object
     numb_test : int
         munber of tests to do

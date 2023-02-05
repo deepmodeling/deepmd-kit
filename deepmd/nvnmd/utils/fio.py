@@ -87,8 +87,8 @@ class FioDic:
     def update(self, jdata, jdata_o):
         r"""Update key-value pair is key in jdata_o.keys()
 
-        Parameter
-        =========
+        Parameters
+        ----------
         jdata
             new jdata
         jdata_o

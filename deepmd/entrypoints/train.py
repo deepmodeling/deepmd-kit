@@ -105,7 +105,7 @@ def train(
         logging level defined by int 0-3
     log_path : Optional[str]
         logging file path or None if logs are to be output only to stdout
-    is_compress: bool
+    is_compress : bool
         indicates whether in the model compress mode
     skip_neighbor_stat : bool, default=False
         skip checking neighbor statistics

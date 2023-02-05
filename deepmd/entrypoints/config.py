@@ -320,7 +320,7 @@ def config(*, output: str, **kwargs):
 
     Parameters
     ----------
-    output: str
+    output : str
         file to write config file
 
     Raises

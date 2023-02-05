@@ -35,11 +35,6 @@ def find_tensorflow() -> Tuple[Optional[str], List[str]]:
     4. system site packages directory (purelib)
     5. add as a requirement (detect TENSORFLOW_VERSION or the latest) and let pip install it
 
-    Parameters
-    ----------
-    config_settings : dict
-        Configuration settings from pip.
-
     Returns
     -------
     str

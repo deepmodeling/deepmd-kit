@@ -44,9 +44,9 @@ def replace_model_params_with_pretrained_model(
 
     Parameters
     ----------
-    jdata: Dict[str, Any]
+    jdata : Dict[str, Any]
         input script
-    pretrained_model: str
+    pretrained_model : str
         filename of the pretrained model
     """
     # Get the input script from the pretrained model

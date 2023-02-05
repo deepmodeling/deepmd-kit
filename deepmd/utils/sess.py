@@ -13,11 +13,12 @@ def run_sess(sess: tf.Session, *args, **kwargs):
 
     Parameters
     ----------
-    sess: tf.Session
+    sess : tf.Session
         TensorFlow Session
 
     Returns
     -------
+    Any
         the result of sess.run()
     """
     try:
