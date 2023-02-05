@@ -6,6 +6,6 @@ pre{
 }
 @media (prefers-color-scheme: dark) {
 	.wy-side-nav-search .wy-dropdown > a img.logo, .wy-side-nav-search > a img.logo {
-		content: url("_static/logo-dark.svg");
+		content: url("../logo-dark.svg");
 	}
 }
