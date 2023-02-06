@@ -216,21 +216,42 @@ class DPTrainer (object):
             )
 
         # learning rate
-        lr_param = j_must_have(jdata, 'learning_rate')
-        scale_by_worker = lr_param.get('scale_by_worker', 'linear')
-        if scale_by_worker == 'linear':
-            self.scale_lr_coef = float(self.run_opt.world_size)
-        elif scale_by_worker == 'sqrt':
-            self.scale_lr_coef = np.sqrt(self.run_opt.world_size).real
+        if not self.multi_task_mode:
+            lr_param = j_must_have(jdata, 'learning_rate')
+            scale_by_worker = lr_param.get('scale_by_worker', 'linear')
+            if scale_by_worker == 'linear':
+                self.scale_lr_coef = float(self.run_opt.world_size)
+            elif scale_by_worker == 'sqrt':
+                self.scale_lr_coef = np.sqrt(self.run_opt.world_size).real
+            else:
+                self.scale_lr_coef = 1.
+            lr_type = lr_param.get('type', 'exp')
+            if lr_type == 'exp':
+                self.lr = LearningRateExp(lr_param['start_lr'],
+                                          lr_param['stop_lr'],
+                                          lr_param['decay_steps'])
+            else :
+                raise RuntimeError('unknown learning_rate type ' + lr_type) 
         else:
-            self.scale_lr_coef = 1.
-        lr_type = lr_param.get('type', 'exp')
-        if lr_type == 'exp':
-            self.lr = LearningRateExp(lr_param['start_lr'],
-                                      lr_param['stop_lr'],
-                                      lr_param['decay_steps'])
-        else :
-            raise RuntimeError('unknown learning_rate type ' + lr_type)        
+            self.lr_dict = {}
+            self.scale_lr_coef_dict = {}
+            lr_param_dict = jdata.get('learning_rate_dict', {})
+            for fitting_key in self.fitting_type_dict:
+                lr_param = lr_param_dict.get(fitting_key, {})
+                scale_by_worker = lr_param.get('scale_by_worker', 'linear')
+                if scale_by_worker == 'linear':
+                    self.scale_lr_coef_dict[fitting_key] = float(self.run_opt.world_size)
+                elif scale_by_worker == 'sqrt':
+                    self.scale_lr_coef_dict[fitting_key] = np.sqrt(self.run_opt.world_size).real
+                else:
+                    self.scale_lr_coef_dict[fitting_key] = 1.
+                lr_type = lr_param.get('type', 'exp')
+                if lr_type == 'exp':
+                    self.lr_dict[fitting_key] = LearningRateExp(lr_param['start_lr'],
+                                                                lr_param['stop_lr'],
+                                                                lr_param['decay_steps'])
+                else :
+                    raise RuntimeError('unknown learning_rate type ' + lr_type)        
 
         # loss
         # infer loss type by fitting_type
@@ -283,7 +304,7 @@ class DPTrainer (object):
             for fitting_key in self.fitting_type_dict:
                 loss_param = loss_param_dict.get(fitting_key, {})
                 self.loss_dict[fitting_key] = loss_init(loss_param, self.fitting_type_dict[fitting_key],
-                                                               self.fitting_dict[fitting_key], self.lr)
+                                                               self.fitting_dict[fitting_key], self.lr_dict[fitting_key])
 
         # training
         tr_data = jdata['training']
@@ -453,7 +474,13 @@ class DPTrainer (object):
     def _build_lr(self):
         self._extra_train_ops   = []
         self.global_step = tf.train.get_or_create_global_step()
-        self.learning_rate = self.lr.build(self.global_step, self.stop_batch)
+        if not self.multi_task_mode:
+            self.learning_rate = self.lr.build(self.global_step, self.stop_batch)
+        else:
+            self.learning_rate_dict = {}
+            for fitting_key in self.fitting_type_dict:
+                self.learning_rate_dict[fitting_key] = self.lr_dict[fitting_key].build(self.global_step, self.stop_batch)
+            
         log.info("built lr")
 
     def _build_network(self, data, suffix=""):
@@ -498,7 +525,7 @@ class DPTrainer (object):
             self.l2_l, self.l2_more = {}, {}
             for fitting_key in self.fitting_type_dict:
                 self.l2_l[fitting_key], self.l2_more[fitting_key]\
-                    = self.loss_dict[fitting_key].build(self.learning_rate,
+                    = self.loss_dict[fitting_key].build(self.learning_rate_dict[fitting_key],
                                                         self.place_holders['natoms_vec'],
                                                         self.model_pred[fitting_key],
                                                         self.place_holders,
@@ -511,25 +538,26 @@ class DPTrainer (object):
 
     def _build_training(self):
         trainable_variables = tf.trainable_variables()
-        if self.run_opt.is_distrib:
-            if self.scale_lr_coef > 1.:
-                log.info('Scale learning rate by coef: %f', self.scale_lr_coef)
-                optimizer = tf.train.AdamOptimizer(self.learning_rate*self.scale_lr_coef)
-            else:
-                optimizer = tf.train.AdamOptimizer(self.learning_rate)
-            optimizer = self.run_opt._HVD.DistributedOptimizer(optimizer)
-        else:
-            optimizer = tf.train.AdamOptimizer(learning_rate = self.learning_rate)
-        if self.mixed_prec is not None:
-            _TF_VERSION = Version(TF_VERSION)
-            # check the TF_VERSION, when TF < 1.12, mixed precision is not allowed 
-            if _TF_VERSION < Version('1.14.0'):
-                raise RuntimeError("TensorFlow version %s is not compatible with the mixed precision setting. Please consider upgrading your TF version!" % TF_VERSION)
-            elif _TF_VERSION < Version('2.4.0'):
-                optimizer = tf.train.experimental.enable_mixed_precision_graph_rewrite(optimizer)
-            else:
-                optimizer = tf.mixed_precision.enable_mixed_precision_graph_rewrite(optimizer)
         if not self.multi_task_mode:
+            if self.run_opt.is_distrib:
+                if self.scale_lr_coef > 1.:
+                    log.info('Scale learning rate by coef: %f', self.scale_lr_coef)
+                    optimizer = tf.train.AdamOptimizer(self.learning_rate*self.scale_lr_coef)
+                else:
+                    optimizer = tf.train.AdamOptimizer(self.learning_rate)
+                optimizer = self.run_opt._HVD.DistributedOptimizer(optimizer)
+            else:
+                optimizer = tf.train.AdamOptimizer(learning_rate = self.learning_rate)
+            if self.mixed_prec is not None:
+                _TF_VERSION = Version(TF_VERSION)
+                # check the TF_VERSION, when TF < 1.12, mixed precision is not allowed 
+                if _TF_VERSION < Version('1.14.0'):
+                    raise RuntimeError("TensorFlow version %s is not compatible with the mixed precision setting. Please consider upgrading your TF version!" % TF_VERSION)
+                elif _TF_VERSION < Version('2.4.0'):
+                    optimizer = tf.train.experimental.enable_mixed_precision_graph_rewrite(optimizer)
+                else:
+                    optimizer = tf.mixed_precision.enable_mixed_precision_graph_rewrite(optimizer)
+
             apply_op = optimizer.minimize(loss=self.l2_l,
                                           global_step=self.global_step,
                                           var_list=trainable_variables,
@@ -538,7 +566,25 @@ class DPTrainer (object):
             self.train_op = tf.group(*train_ops)
         else:
             self.train_op = {}
-            for fitting_key in self.fitting_type_dict:
+            for fitting_key in self.fitting_type_dict:            
+                if self.run_opt.is_distrib:
+                    if self.scale_lr_coef_dict[fitting_key] > 1.:
+                        log.info('Scale learning rate by coef: %f', self.scale_lr_coef_dict[fitting_key])
+                        optimizer = tf.train.AdamOptimizer(self.learning_rate_dict[fitting_key]*self.scale_lr_coef_dict[fitting_key])
+                    else:
+                        optimizer = tf.train.AdamOptimizer(self.learning_rate_dict[fitting_key])
+                    optimizer = self.run_opt._HVD.DistributedOptimizer(optimizer)
+                else:
+                    optimizer = tf.train.AdamOptimizer(learning_rate = self.learning_rate_dict[fitting_key])
+                if self.mixed_prec is not None:
+                    _TF_VERSION = Version(TF_VERSION)
+                    # check the TF_VERSION, when TF < 1.12, mixed precision is not allowed 
+                    if _TF_VERSION < Version('1.14.0'):
+                        raise RuntimeError("TensorFlow version %s is not compatible with the mixed precision setting. Please consider upgrading your TF version!" % TF_VERSION)
+                    elif _TF_VERSION < Version('2.4.0'):
+                        optimizer = tf.train.experimental.enable_mixed_precision_graph_rewrite(optimizer)
+                    else:
+                       optimizer = tf.mixed_precision.enable_mixed_precision_graph_rewrite(optimizer)
                 apply_op = optimizer.minimize(loss=self.l2_l[fitting_key],
                                               global_step=self.global_step,
                                               var_list=trainable_variables,
@@ -617,13 +663,25 @@ class DPTrainer (object):
         cur_batch = run_sess(self.sess, self.global_step)
         is_first_step = True
         self.cur_batch = cur_batch
-        log.info("start training at lr %.2e (== %.2e), decay_step %d, decay_rate %f, final lr will be %.2e" % 
-                 (run_sess(self.sess, self.learning_rate),
-                  self.lr.value(cur_batch), 
-                  self.lr.decay_steps_,
-                  self.lr.decay_rate_,
-                  self.lr.value(stop_batch)) 
-        )
+        if not self.multi_task_mode:
+            log.info("start training at lr %.2e (== %.2e), decay_step %d, decay_rate %f, final lr will be %.2e" % 
+                     (run_sess(self.sess, self.learning_rate),
+                      self.lr.value(cur_batch), 
+                      self.lr.decay_steps_,
+                      self.lr.decay_rate_,
+                      self.lr.value(stop_batch)) 
+            )
+        else:
+            for fitting_key in self.fitting_type_dict:
+                log.info("%s: start training at lr %.2e (== %.2e), decay_step %d, decay_rate %f, final lr will be %.2e" % 
+                         (fitting_key,
+                          run_sess(self.sess, self.learning_rate_dict[fitting_key]),
+                          self.lr_dict[fitting_key].value(cur_batch), 
+                          self.lr_dict[fitting_key].decay_steps_,
+                          self.lr_dict[fitting_key].decay_rate_,
+                          self.lr_dict[fitting_key].value(stop_batch)) 
+                )
+
 
         prf_options = None
         prf_run_metadata = None
@@ -683,7 +741,7 @@ class DPTrainer (object):
                             valid_batches[fitting_key] = [valid_data[fitting_key].get_batch()
                                                           for ii in range(self.valid_numb_batch_dict[fitting_key])] \
                                 if fitting_key in valid_data else None
-                        self.valid_on_the_fly(fp, train_batches, valid_batches, print_header=True)
+                        self.valid_on_the_fly(fp, train_batches, valid_batches, print_header=True, fitting_key=fitting_key)
                 is_first_step = False
 
             if self.timing_in_training: tic = time.time()
@@ -718,7 +776,7 @@ class DPTrainer (object):
                             valid_batches[fitting_key] = [valid_data[fitting_key].get_batch()
                                                           for ii in range(self.valid_numb_batch_dict[fitting_key])] \
                                 if fitting_key in valid_data else None
-                        self.valid_on_the_fly(fp, train_batches, valid_batches)
+                        self.valid_on_the_fly(fp, train_batches, valid_batches, fitting_key=fitting_key)
                 if self.timing_in_training:
                     toc = time.time()
                     test_time = toc - tic
@@ -797,12 +855,17 @@ class DPTrainer (object):
                          fp,
                          train_batches,
                          valid_batches,
-                         print_header=False):
+                         print_header=False,
+                         fitting_key=None):
         train_results = self.get_evaluation_results(train_batches)
         valid_results = self.get_evaluation_results(valid_batches)
 
         cur_batch = self.cur_batch
-        current_lr = run_sess(self.sess, self.learning_rate)
+        if not self.multi_task_mode:
+            current_lr = run_sess(self.sess, self.learning_rate)
+        else:
+            assert fitting_key is not None, "Fitting key must be assigned in validation!"
+            current_lr = run_sess(self.sess, self.learning_rate_dict[fitting_key])
         if print_header:
             self.print_header(fp, train_results, valid_results, self.multi_task_mode)
         self.print_on_training(fp, train_results, valid_results, cur_batch, current_lr, self.multi_task_mode)
