@@ -652,15 +652,16 @@ class DescrptSeAtten(DescrptSeA):
         # with (natom x nei_type_i) x 1
         xyz_scatter = tf.reshape(tf.slice(inputs_reshape, [0, 0], [-1, 1]), [-1, 1])
         assert atype is not None, 'atype must exist!!'
-        type_embedding = tf.cast(type_embedding, self.filter_precision)
-        xyz_scatter = self._lookup_type_embedding(
-            xyz_scatter, atype, type_embedding)
+        type_embedding = tf.cast(type_embedding, self.filter_precision) # ntypes * Y
+        #xyz_scatter = self._lookup_type_embedding(
+        #    xyz_scatter, atype, type_embedding)
         if self.compress:
             raise RuntimeError('compression of attention descriptor is not supported at the moment')
         # natom x 4 x outputs_size
         if (not is_exclude):
             with tf.variable_scope(name, reuse=reuse):
                 # with (natom x nei_type_i) x out_size
+                print(xyz_scatter.shape)
                 xyz_scatter = embedding_net(
                     xyz_scatter,
                     self.filter_neuron,
@@ -675,6 +676,61 @@ class DescrptSeAtten(DescrptSeA):
                     uniform_seed=self.uniform_seed,
                     initial_variables=self.embedding_net_variables,
                     mixed_prec=self.mixed_prec)
+                out_size = xyz_scatter.get_shape().as_list()[-1]
+                xyz_scatter = tf.nn.embedding_lookup(xyz_scatter,
+                                                     self.nei_type_vec)
+                xyz_scatter = tf.reshape(xyz_scatter, [-1, out_size])  # nframes*natoms[0] * nei * out_size
+
+                if self.type_one_side:
+                    embedding_of_embedding_suffix = suffix + "_ebd_of_ebd"
+                    embedding_of_embedding = embedding_net(
+                        type_embedding,
+                        self.filter_neuron,
+                        self.filter_precision,
+                        activation_fn=activation_fn,
+                        resnet_dt=self.filter_resnet_dt,
+                        name_suffix=embedding_of_embedding_suffix,
+                        stddev=stddev,
+                        bavg=bavg,
+                        seed=self.seed,
+                        trainable=trainable,
+                        uniform_seed=self.uniform_seed,
+                        initial_variables=self.embedding_net_variables,
+                        mixed_prec=self.mixed_prec)  # ntypes * out_size
+                    nei_embed = tf.nn.embedding_lookup(embedding_of_embedding, self.nei_type_vec)
+                    #nei_embed = tf.reshape(self.nei_embed, [-1, out_size])  # nframes*natoms[0] * nei * out_size
+
+                    xyz_scatter = xyz_scatter + nei_embed
+                else:
+                    type_embedding_nei = tf.tile(tf.reshape(type_embedding, [1, self.ntypes, -1]),
+                                                 [self.ntypes, 1, 1])  # (ntypes) * ntypes * Y
+                    type_embedding_center = tf.tile(tf.reshape(type_embedding, [self.ntypes, 1, -1]),
+                                                    [1, self.ntypes, 1])  # ntypes * (ntypes) * Y
+                    two_side_type_embedding = tf.concat([type_embedding_nei, type_embedding_center], -1) # ntypes * ntypes * (Y+Y)
+                    two_side_type_embedding = tf.reshape(two_side_type_embedding, [-1, two_side_type_embedding.shape[-1]])
+                    two_side_type_embedding_suffix = suffix + "_two_side_ebd" 
+                    embedding_of_two_side_type_embedding = embedding_net(
+                        two_side_type_embedding,
+                        self.filter_neuron,
+                        self.filter_precision,
+                        activation_fn=activation_fn,
+                        resnet_dt=self.filter_resnet_dt,
+                        name_suffix=two_side_type_embedding_suffix,
+                        stddev=stddev,
+                        bavg=bavg,
+                        seed=self.seed,
+                        trainable=trainable,
+                        uniform_seed=self.uniform_seed,
+                        initial_variables=self.embedding_net_variables,
+                        mixed_prec=self.mixed_prec)
+                    #index_of_two_side = self.nei_type_vec * self.ntypes + tf.tile(atype, [1, self.nnei])
+                    tmpres1 = self.nei_type_vec * self.ntypes
+                    tmpres2 = tf.tile(atype, [self.nnei])
+                    index_of_two_side = tmpres1 + tmpres2
+                    two_embd = tf.nn.embedding_lookup(embedding_of_two_side_type_embedding, index_of_two_side)
+
+                    xyz_scatter = xyz_scatter + two_embd
+
                 if (not self.uniform_seed) and (self.seed is not None): self.seed += self.seed_shift
             input_r = tf.slice(tf.reshape(inputs_i, (-1, shape_i[1] // 4, 4)), [0, 0, 1], [-1, -1, 3])
             input_r = tf.nn.l2_normalize(input_r, -1)
