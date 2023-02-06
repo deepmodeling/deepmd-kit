@@ -110,4 +110,4 @@ profile = "black"
 force_grid_wrap = 1
 
 [tool.ruff]
-ignore = ["E501", "F401", "F841"]
+ignore = ["E501", "F401", "F841", "E741"]
