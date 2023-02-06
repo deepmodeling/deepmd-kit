@@ -109,5 +109,8 @@ ignore = "D413, D416, D203, D107, D213"
 profile = "black"
 force_grid_wrap = 1
 
+[tool.ruff]
+ignore = ["E501"]
+
 [tool.ruff.per-file-ignores]
 "__init__.py" = ["E401"]
