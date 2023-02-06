@@ -87,6 +87,7 @@ class DeepPot(DeepEval):
             {
                 # descrpt attrs
                 "t_ntypes": "descrpt_attr/ntypes:0",
+                "t_ntypes_spin": "descrpt_attr/ntypes_spin:0",
                 "t_rcut": "descrpt_attr/rcut:0",
                 # fitting attrs
                 "t_dfparam": "fitting_attr/dfparam:0",
@@ -190,14 +191,17 @@ class DeepPot(DeepEval):
             )
 
     def _run_default_sess(self):
-        [self.ntypes, self.rcut, self.dfparam, self.daparam, self.tmap] = run_sess(
-            self.sess,
-            [self.t_ntypes, self.t_rcut, self.t_dfparam, self.t_daparam, self.t_tmap],
+        [self.ntypes, self.ntypes_spin, self.rcut, self.dfparam, self.daparam, self.tmap] = run_sess(self.sess, 
+            [self.t_ntypes, self.t_ntypes_spin, self.t_rcut, self.t_dfparam, self.t_daparam, self.t_tmap]
         )
 
     def get_ntypes(self) -> int:
         """Get the number of atom types of this model."""
         return self.ntypes
+
+    def get_ntypes_spin(self) :
+        """Get the number of spin atom types of this model."""
+        return self.ntypes_spin
 
     def get_rcut(self) -> float:
         """Get the cut-off radius of this model."""
@@ -335,16 +339,17 @@ class DeepPot(DeepEval):
             mixed_type=mixed_type,
         )
 
-        if self.modifier_type is not None:
-            if atomic:
-                raise RuntimeError("modifier does not support atomic modification")
-            me, mf, mv = self.dm.eval(coords, cells, atom_types)
-            output = list(output)  # tuple to list
-            e, f, v = output[:3]
-            output[0] += me.reshape(e.shape)
-            output[1] += mf.reshape(f.shape)
-            output[2] += mv.reshape(v.shape)
-            output = tuple(output)
+        if self.ntypes_spin == 0:
+            if self.modifier_type is not None:
+                if atomic:
+                    raise RuntimeError("modifier does not support atomic modification")
+                me, mf, mv = self.dm.eval(coords, cells, atom_types)
+                output = list(output)  # tuple to list
+                e, f, v = output[:3]
+                output[0] += me.reshape(e.shape)
+                output[1] += mf.reshape(f.shape)
+                output[2] += mv.reshape(v.shape)
+                output = tuple(output)
         return output
 
     def _prepare_feed_dict(
@@ -453,7 +458,8 @@ class DeepPot(DeepEval):
             feed_dict_test[self.t_fparam] = np.reshape(fparam, [-1])
         if self.has_aparam:
             feed_dict_test[self.t_aparam] = np.reshape(aparam, [-1])
-        return feed_dict_test, imap
+        return feed_dict_test, imap, natoms_vec
+
 
     def _eval_inner(
         self,
@@ -469,9 +475,10 @@ class DeepPot(DeepEval):
         natoms, nframes = self._get_natoms_and_nframes(
             coords, atom_types, mixed_type=mixed_type
         )
-        feed_dict_test, imap = self._prepare_feed_dict(
+        feed_dict_test, imap, natoms_vec = self._prepare_feed_dict(
             coords, cells, atom_types, fparam, aparam, efield, mixed_type=mixed_type
         )
+
         t_out = [self.t_energy, self.t_force, self.t_virial]
         if atomic:
             t_out += [self.t_ae, self.t_av]
@@ -498,7 +505,10 @@ class DeepPot(DeepEval):
             av = np.reshape(av, [nframes, natoms, 9])
             return energy, force, virial, ae, av
         else:
-            return energy, force, virial
+            if self.ntypes_spin == 0:
+                return energy, force, virial
+            else :
+                return energy, force, virial, natoms_vec
 
     def eval_descriptor(
         self,
@@ -575,7 +585,7 @@ class DeepPot(DeepEval):
         natoms, nframes = self._get_natoms_and_nframes(
             coords, atom_types, mixed_type=mixed_type
         )
-        feed_dict_test, imap = self._prepare_feed_dict(
+        feed_dict_test, imap, natoms_vec = self._prepare_feed_dict(
             coords, cells, atom_types, fparam, aparam, efield, mixed_type=mixed_type
         )
         (descriptor,) = run_sess(

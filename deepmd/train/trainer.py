@@ -45,6 +45,7 @@ from deepmd.fit import (
 from deepmd.loss import (
     EnerDipoleLoss,
     EnerStdLoss,
+    EnerSpinLoss,
     TensorLoss,
 )
 from deepmd.model import (
@@ -114,9 +115,16 @@ class DPTrainer(object):
             else j_must_have(model_param, "fitting_net_dict")
         )
         typeebd_param = model_param.get("type_embedding", None)
+        spin_param = model_param.get('spin', None)
         self.model_param = model_param
         self.descrpt_param = descrpt_param
 
+        # spin
+        if spin_param is not None:
+            self.spin = spin_param
+        else:
+            self.spin = None
+        
         # nvnmd
         self.nvnmd_param = jdata.get("nvnmd", {})
         nvnmd_cfg.init_from_jdata(self.nvnmd_param)
@@ -136,12 +144,18 @@ class DPTrainer(object):
             descrpt_param["ntypes"] = len(model_param["type_map"])
         if self.multi_task_mode:
             descrpt_param["multi_task"] = True
-        self.descrpt = Descriptor(**descrpt_param)
+        if self.spin is not None:
+            self.descrpt = Descriptor(**descrpt_param, **self.spin)
+        else :
+            self.descrpt = Descriptor(**descrpt_param)
 
         # fitting net
         def fitting_net_init(fitting_type_, descrpt_type_, params):
             if fitting_type_ == "ener":
-                return EnerFitting(**params)
+                if self.spin is not None:
+                    return EnerFitting(**fitting_param, **self.spin)
+                else :
+                    return EnerFitting(**params)
             elif fitting_type_ == "dipole":
                 return DipoleFittingSeA(**params)
             elif fitting_type_ == "polar":
@@ -211,6 +225,7 @@ class DPTrainer(object):
                     self.descrpt,
                     self.fitting,
                     self.typeebd,
+                    self.spin,
                     model_param.get("type_map"),
                     model_param.get("data_stat_nbatch", 10),
                     model_param.get("data_stat_protect", 1e-2),
@@ -292,6 +307,9 @@ class DPTrainer(object):
                     loss = EnerStdLoss(**_loss_param)
                 elif _loss_type == "ener_dipole":
                     loss = EnerDipoleLoss(**_loss_param)
+                elif _loss_type == 'ener_spin':
+                    loss = EnerSpinLoss(**loss_param, 
+                                        use_spin = self.spin['use_spin'])
                 else:
                     raise RuntimeError("unknown loss type")
             elif _fitting_type == "wfc":

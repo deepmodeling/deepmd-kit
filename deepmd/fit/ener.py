@@ -138,6 +138,9 @@ class EnerFitting(Fitting):
         precision: str = "default",
         uniform_seed: bool = False,
         layer_name: Optional[List[Optional[str]]] = None,
+        use_spin: List[bool] = None,
+        spin_norm: List[float] = None,
+        virtual_len: List[float] = None,
     ) -> None:
         """
         Constructor
@@ -164,6 +167,10 @@ class EnerFitting(Fitting):
         self.rcond = rcond
         self.seed = seed
         self.uniform_seed = uniform_seed
+        self.use_spin = use_spin
+        self.spin_norm = spin_norm
+        self.virtual_len = virtual_len
+        self.ntypes_spin = descrpt.get_ntypes_spin()
         self.seed_shift = one_layer_rand_seed_shift()
         self.tot_ener_zero = tot_ener_zero
         self.fitting_activation_fn = get_activation_func(activation_function)
@@ -491,6 +498,14 @@ class EnerFitting(Fitting):
             if self.aparam_inv_std is None:
                 self.aparam_inv_std = 1.0
 
+        ntypes_atom = self.ntypes - self.ntypes_spin
+        for type_i in range(self.ntypes):
+            if self.use_spin[type_i]:
+                self.bias_atom_e[type_i] = self.bias_atom_e[type_i] + self.bias_atom_e[type_i + ntypes_atom]
+            else:
+                self.bias_atom_e[type_i] = self.bias_atom_e[type_i]
+        self.bias_atom_e = self.bias_atom_e[:ntypes_atom]
+
         with tf.variable_scope("fitting_attr" + suffix, reuse=reuse):
             t_dfparam = tf.constant(self.numb_fparam, name="dfparam", dtype=tf.int32)
             t_daparam = tf.constant(self.numb_aparam, name="daparam", dtype=tf.int32)
@@ -564,6 +579,9 @@ class EnerFitting(Fitting):
         self.atype_nloc = tf.reshape(
             tf.slice(atype_nall, [0, 0], [-1, natoms[0]]), [-1]
         )  ## lammps will make error
+        self.atype_nloc = tf.reshape(
+            tf.slice(atype_nall, [0, 0], [-1, tf.reduce_sum(natoms[2: 2+ntypes_atom])]), [-1]
+        )  ## spin needed
         if type_embedding is not None:
             atype_embed = tf.nn.embedding_lookup(type_embedding, self.atype_nloc)
         else:
@@ -575,6 +593,8 @@ class EnerFitting(Fitting):
             start_index = 0
             outs_list = []
             for type_i in range(self.ntypes):
+                if type_i >= ntypes_atom:
+                    break
                 final_layer = self._build_lower(
                     start_index,
                     natoms[2 + type_i],
@@ -652,7 +672,7 @@ class EnerFitting(Fitting):
         self.atom_ener_before = outs
         self.add_type = tf.reshape(
             tf.nn.embedding_lookup(self.t_bias_atom_e, self.atype_nloc),
-            [tf.shape(inputs)[0], natoms[0]],
+            [tf.shape(inputs)[0], tf.reduce_sum(natoms[2: 2+ntypes_atom])],
         )
         outs = outs + self.add_type
         self.atom_ener_after = outs

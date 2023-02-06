@@ -288,6 +288,15 @@ def test_ener(
         av = ret[4]
         ae = ae.reshape([numb_test, -1])
         av = av.reshape([numb_test, -1])
+    if dp.get_ntypes_spin() != 0:
+        natoms_vec = ret[3]
+        ntypes_real = dp.get_ntypes() - dp.get_ntypes_spin()
+        nloc = natoms_vec[0]
+        nloc_real = sum(natoms_vec[2 : 2 + ntypes_real])
+        force_r = np.split(force, indices_or_sections=[nloc_real*3, nloc*3], axis=1)[0]
+        force_m = np.split(force, indices_or_sections=[nloc_real*3, nloc*3], axis=1)[1]
+        test_force_r = np.split(test_data["force"][:numb_test], indices_or_sections=[nloc_real*3, nloc*3], axis=1)[0]
+        test_force_m = np.split(test_data["force"][:numb_test], indices_or_sections=[nloc_real*3, nloc*3], axis=1)[1]
 
     rmse_e = rmse(energy - test_data["energy"][:numb_test].reshape([-1, 1]))
     rmse_f = rmse(force - test_data["force"][:numb_test])
@@ -298,12 +307,19 @@ def test_ener(
         rmse_ae = rmse(
             test_data["atom_ener"][:numb_test].reshape([-1]) - ae.reshape([-1])
         )
+    if dp.get_ntypes_spin() != 0:
+        rmse_fr = (rmse(force_r  - test_force_r))
+        rmse_fm = (rmse(force_m  - test_force_m))
 
     # print ("# energies: %s" % energy)
     log.info(f"# number of test data : {numb_test:d} ")
     log.info(f"Energy RMSE        : {rmse_e:e} eV")
     log.info(f"Energy RMSE/Natoms : {rmse_ea:e} eV")
-    log.info(f"Force  RMSE        : {rmse_f:e} eV/A")
+    if dp.get_ntypes_spin() == 0:
+        log.info(f"Force  RMSE        : {rmse_f:e} eV/A")
+    else :
+        log.info(f"Force_real RMSE     : {rmse_fr:e} eV/A")
+        log.info(f"Force_mag  RMSE     : {rmse_fm:e} eV/A")
     if data.pbc:
         log.info(f"Virial RMSE        : {rmse_v:e} eV")
         log.info(f"Virial RMSE/Natoms : {rmse_va:e} eV")
@@ -333,19 +349,31 @@ def test_ener(
             header="%s: data_e pred_e" % system,
             append=append_detail,
         )
-        pf = np.concatenate(
-            (
-                np.reshape(test_data["force"][:numb_test], [-1, 3]),
-                np.reshape(force, [-1, 3]),
-            ),
-            axis=1,
-        )
-        save_txt_file(
-            detail_path.with_suffix(".f.out"),
-            pf,
-            header="%s: data_fx data_fy data_fz pred_fx pred_fy pred_fz" % system,
-            append=append_detail,
-        )
+        if dp.get_ntypes_spin() == 0:
+            pf = np.concatenate(
+                (
+                    np.reshape(test_data["force"][:numb_test], [-1, 3]),
+                    np.reshape(force, [-1, 3]),
+                ),
+                axis=1,
+            )
+            save_txt_file(
+                detail_path.with_suffix(".f.out"),
+                pf,
+                header="%s: data_fx data_fy data_fz pred_fx pred_fy pred_fz" % system,
+                append=append_detail,
+            )
+        else :
+            pf_real = np.concatenate((np.reshape(test_force_r, [-1, 3]),
+                                      np.reshape(force_r, [-1, 3])), axis=1)
+            pf_mag = np.concatenate((np.reshape(test_force_m, [-1, 3]),
+                                     np.reshape(force_m, [-1, 3])), axis=1)
+            save_txt_file(detail_path.with_suffix(".fr.out"), pf_real,
+                          header="%s: data_fx data_fy data_fz pred_fx pred_fy pred_fz" % system,
+                          append=append_detail)
+            save_txt_file(detail_path.with_suffix(".fm.out"), pf_mag,
+                          header="%s: data_fmx data_fmy data_fmz pred_fmx pred_fmy pred_fmz" % system,
+                          append=append_detail)
         pv = np.concatenate(
             (
                 np.reshape(test_data["virial"][:numb_test], [-1, 9]),
@@ -370,11 +398,16 @@ def test_ener(
             "pred_vyy pred_vyz pred_vzx pred_vzy pred_vzz",
             append=append_detail,
         )
-    return {
-        "rmse_ea": (rmse_ea, energy.size),
-        "rmse_f": (rmse_f, force.size),
-        "rmse_va": (rmse_va, virial.size),
-    }
+    if dp.get_ntypes_spin() == 0:
+        return {"rmse_ea" : (rmse_ea, energy.size),
+                "rmse_f" : (rmse_f, force.size),
+                "rmse_va" : (rmse_va, virial.size)}
+    else :
+        return {"rmse_ea" : (rmse_ea, energy.size),
+                "rmse_fr" : (rmse_fr, force_r.size),
+                "rmse_fm" : (rmse_fm, force_m.size),
+                "rmse_va" : (rmse_va, virial.size)}
+
 
 
 def print_ener_sys_avg(avg: Dict[str, float]):
@@ -386,7 +419,11 @@ def print_ener_sys_avg(avg: Dict[str, float]):
         array with summaries
     """
     log.info(f"Energy RMSE/Natoms : {avg['rmse_ea']:e} eV")
-    log.info(f"Force  RMSE        : {avg['rmse_f']:e} eV/A")
+    if 'rmse_f' in avg.keys():
+        log.info(f"Force  RMSE        : {avg['rmse_f']:e} eV/A")
+    else :
+        log.info(f"Force_real RMSE     : {avg['rmse_fr']:e} eV/A")
+        log.info(f"Force_mag  RMSE     : {avg['rmse_fm']:e} eV/A")
     log.info(f"Virial RMSE/Natoms : {avg['rmse_va']:e} eV")
 
 
