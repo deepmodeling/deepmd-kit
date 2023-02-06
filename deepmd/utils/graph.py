@@ -145,7 +145,7 @@ def get_pattern_nodes_from_graph_def(graph_def: tf.GraphDef, pattern: str) -> Di
     nodes = {}
     pattern = re.compile(pattern)
     for node in graph_def.node:
-        if re.fullmatch(pattern, node.name) != None:
+        if re.fullmatch(pattern, node.name) is not None:
             nodes[node.name] = node.attr["value"].tensor
     return nodes
 

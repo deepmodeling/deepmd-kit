@@ -10,7 +10,6 @@ from common import (
     DataSystem,
     gen_data,
     j_loader,
-    tf,
 )
 from packaging.version import parse as parse_version
 

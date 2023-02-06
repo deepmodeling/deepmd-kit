@@ -22,9 +22,6 @@ from deepmd.common import (
     get_precision,
     j_must_have,
 )
-from deepmd.descriptor import (
-    Descriptor,
-)
 from deepmd.descriptor.descriptor import (
     Descriptor,
 )

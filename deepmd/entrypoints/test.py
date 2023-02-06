@@ -539,7 +539,7 @@ def test_polar(
     if not atomic:
         log.info(f"Polarizability  RMSE/sqrtN : {rmse_fs:e}")
         log.info(f"Polarizability  RMSE/N     : {rmse_fa:e}")
-    log.info(f"The unit of error is the same as the unit of provided label.")
+    log.info("The unit of error is the same as the unit of provided label.")
 
     if detail_file is not None:
         detail_path = Path(detail_file)
@@ -629,7 +629,7 @@ def test_dipole(
     if not atomic:
         log.info(f"Dipole  RMSE/sqrtN : {rmse_fs:e}")
         log.info(f"Dipole  RMSE/N     : {rmse_fa:e}")
-    log.info(f"The unit of error is the same as the unit of provided label.")
+    log.info("The unit of error is the same as the unit of provided label.")
 
     if detail_file is not None:
         detail_path = Path(detail_file)
