@@ -113,4 +113,4 @@ force_grid_wrap = 1
 ignore = ["E501"]
 
 [tool.ruff.per-file-ignores]
-"__init__.py" = ["E401"]
+"__init__.py" = ["F401"]
