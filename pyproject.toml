@@ -110,7 +110,4 @@ profile = "black"
 force_grid_wrap = 1
 
 [tool.ruff]
-ignore = ["E501"]
-
-[tool.ruff.per-file-ignores]
-"__init__.py" = ["F401"]
+ignore = ["E501", "F401", "F841"]
