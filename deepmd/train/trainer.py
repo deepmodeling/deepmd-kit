@@ -132,8 +132,15 @@ class DPTrainer(object):
         except KeyError:
             raise KeyError("the type of descriptor should be set by `type`")
 
-        if descrpt_param["type"] in ["se_atten"]:
+        explicit_ntypes_descrpt = ["se_atten"]
+        hybrid_with_tebd = False
+        if descrpt_param["type"] in explicit_ntypes_descrpt:
             descrpt_param["ntypes"] = len(model_param["type_map"])
+        elif descrpt_param["type"] == "hybrid":
+            for descrpt_item in descrpt_param["list"]:
+                if descrpt_item["type"] in explicit_ntypes_descrpt:
+                    descrpt_item["ntypes"] = len(model_param["type_map"])
+                    hybrid_with_tebd = True
         if self.multi_task_mode:
             descrpt_param["multi_task"] = True
         self.descrpt = Descriptor(**descrpt_param)
@@ -176,7 +183,7 @@ class DPTrainer(object):
 
         # type embedding
         padding = False
-        if descrpt_type == "se_atten":
+        if descrpt_type == "se_atten" or hybrid_with_tebd:
             padding = True
         if typeebd_param is not None:
             self.typeebd = TypeEmbedNet(
@@ -188,7 +195,7 @@ class DPTrainer(object):
                 seed=typeebd_param["seed"],
                 padding=padding,
             )
-        elif descrpt_type == "se_atten":
+        elif descrpt_type == "se_atten" or hybrid_with_tebd:
             default_args = type_embedding_args()
             default_args_dict = {i.name: i.default for i in default_args}
             self.typeebd = TypeEmbedNet(
