@@ -301,12 +301,11 @@ int deepmd::session_input_tensors(
     const std::vector<VALUETYPE>& aparam_,
     const deepmd::AtomMap& atommap,
     const std::string scope) {
-  bool b_pbc = (dbox.size() == 9);
-
   int nframes = dcoord_.size() / 3 / datype_.size();
   int nall = datype_.size();
   int nloc = nall;
   assert(nall * 3 * nframes == dcoord_.size());
+  bool b_pbc = (dbox.size() == nframes * 9);
 
   std::vector<int> datype = atommap.get_type();
   std::vector<int> type_count(ntypes, 0);
