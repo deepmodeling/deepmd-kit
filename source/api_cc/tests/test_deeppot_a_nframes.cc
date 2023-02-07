@@ -253,7 +253,7 @@ TYPED_TEST(TestInferDeepPotANFrames, cpu_lmp_nlist) {
   dp.compute(ener, force_, virial, coord_cpy2, atype_cpy, box, nall - nloc,
              inlist, 0);
   std::vector<VALUETYPE> force;
-  _fold_back<VALUETYPE>(force, force_, mapping, nloc, nall, 3);
+  _fold_back<VALUETYPE>(force, force_, mapping, nloc, nall, 3, nframes);
 
   EXPECT_EQ(ener.size(), nframes);
   EXPECT_EQ(force.size(), nframes * natoms * 3);
@@ -274,7 +274,7 @@ TYPED_TEST(TestInferDeepPotANFrames, cpu_lmp_nlist) {
   std::fill(virial.begin(), virial.end(), 0.0);
   dp.compute(ener, force_, virial, coord_cpy2, atype_cpy, box, nall - nloc,
              inlist, 1);
-  _fold_back<VALUETYPE>(force, force_, mapping, nloc, nall, 3);
+  _fold_back<VALUETYPE>(force, force_, mapping, nloc, nall, 3, nframes);
 
   EXPECT_EQ(ener.size(), nframes);
   EXPECT_EQ(force.size(), nframes * natoms * 3);
@@ -317,17 +317,23 @@ TYPED_TEST(TestInferDeepPotANFrames, cpu_lmp_nlist_atomic) {
   std::vector<int*> firstneigh(nloc);
   deepmd::InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]);
   convert_nlist(inlist, nlist_data);
+  std::vector<VALUETYPE> coord_cpy2(nframes * nall * 3);
+  for (int ii = 0; ii < nframes; ++ii) {
+    for (int jj = 0; jj < nall * 3; ++jj) {
+      coord_cpy2[ii * nall * 3 + jj] = coord_cpy[jj];
+    }
+  }
 
   std::vector<double> ener;
   std::vector<VALUETYPE> force_, atom_ener_, atom_vir_, virial;
   std::vector<VALUETYPE> force, atom_ener, atom_vir;
-  dp.compute(ener, force_, virial, atom_ener_, atom_vir_, coord_cpy, atype_cpy,
+  dp.compute(ener, force_, virial, atom_ener_, atom_vir_, coord_cpy2, atype_cpy,
              box, nall - nloc, inlist, 0);
-  _fold_back<VALUETYPE>(force, force_, mapping, nloc, nall, 3);
-  _fold_back<VALUETYPE>(atom_ener, atom_ener_, mapping, nloc, nall, 1);
-  _fold_back<VALUETYPE>(atom_vir, atom_vir_, mapping, nloc, nall, 9);
+  _fold_back<VALUETYPE>(force, force_, mapping, nloc, nall, 3, nframes);
+  _fold_back<VALUETYPE>(atom_ener, atom_ener_, mapping, nloc, nall, 1, nframes);
+  _fold_back<VALUETYPE>(atom_vir, atom_vir_, mapping, nloc, nall, 9, nframes);
 
-  EXPECT_EQ(ener.size(), 1);
+  EXPECT_EQ(ener.size(), nframes);
   EXPECT_EQ(force.size(), nframes * natoms * 3);
   EXPECT_EQ(virial.size(), nframes * 9);
   EXPECT_EQ(atom_ener.size(), nframes * natoms);
@@ -354,11 +360,11 @@ TYPED_TEST(TestInferDeepPotANFrames, cpu_lmp_nlist_atomic) {
   std::fill(virial.begin(), virial.end(), 0.0);
   std::fill(atom_ener_.begin(), atom_ener_.end(), 0.0);
   std::fill(atom_vir_.begin(), atom_vir_.end(), 0.0);
-  dp.compute(ener, force_, virial, atom_ener_, atom_vir_, coord_cpy, atype_cpy,
+  dp.compute(ener, force_, virial, atom_ener_, atom_vir_, coord_cpy2, atype_cpy,
              box, nall - nloc, inlist, 1);
-  _fold_back<VALUETYPE>(force, force_, mapping, nloc, nall, 3);
-  _fold_back<VALUETYPE>(atom_ener, atom_ener_, mapping, nloc, nall, 1);
-  _fold_back<VALUETYPE>(atom_vir, atom_vir_, mapping, nloc, nall, 9);
+  _fold_back<VALUETYPE>(force, force_, mapping, nloc, nall, 3, nframes);
+  _fold_back<VALUETYPE>(atom_ener, atom_ener_, mapping, nloc, nall, 1, nframes);
+  _fold_back<VALUETYPE>(atom_vir, atom_vir_, mapping, nloc, nall, 9, nframes);
 
   EXPECT_EQ(ener.size(), nframes);
   EXPECT_EQ(force.size(), nframes * natoms * 3);
@@ -421,7 +427,7 @@ TYPED_TEST(TestInferDeepPotANFrames, cpu_lmp_nlist_2rc) {
   dp.compute(ener, force_, virial, coord_cpy2, atype_cpy, box, nall - nloc,
              inlist, 0);
   std::vector<VALUETYPE> force;
-  _fold_back<VALUETYPE>(force, force_, mapping, nloc, nall, 3);
+  _fold_back<VALUETYPE>(force, force_, mapping, nloc, nall, 3, nframes);
 
   EXPECT_EQ(ener.size(), nframes);
   EXPECT_EQ(force.size(), nframes * natoms * 3);
@@ -442,7 +448,7 @@ TYPED_TEST(TestInferDeepPotANFrames, cpu_lmp_nlist_2rc) {
   std::fill(virial.begin(), virial.end(), 0.0);
   dp.compute(ener, force_, virial, coord_cpy2, atype_cpy, box, nall - nloc,
              inlist, 1);
-  _fold_back<VALUETYPE>(force, force_, mapping, nloc, nall, 3);
+  _fold_back<VALUETYPE>(force, force_, mapping, nloc, nall, 3, nframes);
 
   EXPECT_EQ(ener.size(), nframes);
   EXPECT_EQ(force.size(), nframes * natoms * 3);
@@ -515,7 +521,7 @@ TYPED_TEST(TestInferDeepPotANFrames, cpu_lmp_nlist_type_sel) {
              inlist, 0);
   // fold back
   std::vector<VALUETYPE> force;
-  _fold_back<VALUETYPE>(force, force_, mapping, nloc, nall, 3);
+  _fold_back<VALUETYPE>(force, force_, mapping, nloc, nall, 3, nframes);
 
   EXPECT_EQ(ener.size(), nframes);
   EXPECT_EQ(force.size(), nframes * natoms * 3);
@@ -589,7 +595,7 @@ TYPED_TEST(TestInferDeepPotANFrames, cpu_lmp_nlist_type_sel_atomic) {
              atype_cpy, box, nall - nloc, inlist, 0);
   // fold back
   std::vector<VALUETYPE> force;
-  _fold_back<VALUETYPE>(force, force_, mapping, nloc, nall, 3);
+  _fold_back<VALUETYPE>(force, force_, mapping, nloc, nall, 3, nframes);
 
   EXPECT_EQ(ener.size(), nframes);
   EXPECT_EQ(force.size(), nframes * natoms * 3);
