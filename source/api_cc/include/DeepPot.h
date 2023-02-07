@@ -40,7 +40,6 @@ class DeepPot {
    **/
   void print_summary(const std::string& pre) const;
 
- public:
   /**
    * @brief Evaluate the energy, force and virial by using this DP.
    * @param[out] ener The system energy.
@@ -61,8 +60,8 @@ class DeepPot {
    *same aparam. dim_aparam. Then all frames and atoms are provided with the
    *same aparam.
    **/
-  template <typename VALUETYPE>
-  void compute(ENERGYTYPE& ener,
+  template <typename VALUETYPE, typename ENERGYVTYPE>
+  void compute(ENERGYVTYPE& ener,
                std::vector<VALUETYPE>& force,
                std::vector<VALUETYPE>& virial,
                const std::vector<VALUETYPE>& coord,
@@ -93,8 +92,8 @@ class DeepPot {
    *same aparam. dim_aparam. Then all frames and atoms are provided with the
    *same aparam.
    **/
-  template <typename VALUETYPE>
-  void compute(ENERGYTYPE& ener,
+  template <typename VALUETYPE, typename ENERGYVTYPE>
+  void compute(ENERGYVTYPE& ener,
                std::vector<VALUETYPE>& force,
                std::vector<VALUETYPE>& virial,
                const std::vector<VALUETYPE>& coord,
@@ -128,8 +127,8 @@ class DeepPot {
    *same aparam. dim_aparam. Then all frames and atoms are provided with the
    *same aparam.
    **/
-  template <typename VALUETYPE>
-  void compute(ENERGYTYPE& ener,
+  template <typename VALUETYPE, typename ENERGYVTYPE>
+  void compute(ENERGYVTYPE& ener,
                std::vector<VALUETYPE>& force,
                std::vector<VALUETYPE>& virial,
                std::vector<VALUETYPE>& atom_energy,
@@ -165,8 +164,8 @@ class DeepPot {
    *same aparam. dim_aparam. Then all frames and atoms are provided with the
    *same aparam.
    **/
-  template <typename VALUETYPE>
-  void compute(ENERGYTYPE& ener,
+  template <typename VALUETYPE, typename ENERGYVTYPE>
+  void compute(ENERGYVTYPE& ener,
                std::vector<VALUETYPE>& force,
                std::vector<VALUETYPE>& virial,
                std::vector<VALUETYPE>& atom_energy,
@@ -238,9 +237,9 @@ class DeepPot {
   void validate_fparam_aparam(const int& nloc,
                               const std::vector<VALUETYPE>& fparam,
                               const std::vector<VALUETYPE>& aparam) const;
-  template <typename VALUETYPE>
+  template <typename VALUETYPE, typename ENERGYVTYPE>
   void compute_inner(
-      ENERGYTYPE& ener,
+      ENERGYVTYPE& ener,
       std::vector<VALUETYPE>& force,
       std::vector<VALUETYPE>& virial,
       const std::vector<VALUETYPE>& coord,
@@ -292,7 +291,6 @@ class DeepPotModelDevi {
             const std::vector<std::string>& file_contents =
                 std::vector<std::string>());
 
- public:
   /**
    * @brief Evaluate the energy, force and virial by using these DP models.
    * @param[out] all_ener The system energies of all models.
