@@ -498,13 +498,16 @@ class EnerFitting(Fitting):
             if self.aparam_inv_std is None:
                 self.aparam_inv_std = 1.0
 
-        ntypes_atom = self.ntypes - self.ntypes_spin
-        for type_i in range(self.ntypes):
-            if self.use_spin[type_i]:
-                self.bias_atom_e[type_i] = self.bias_atom_e[type_i] + self.bias_atom_e[type_i + ntypes_atom]
-            else:
-                self.bias_atom_e[type_i] = self.bias_atom_e[type_i]
-        self.bias_atom_e = self.bias_atom_e[:ntypes_atom]
+        if self.use_spin is not None:
+            ntypes_atom = self.ntypes - self.ntypes_spin
+            for type_i in range(self.ntypes):
+                if type_i >= ntypes_atom:
+                    break
+                if self.use_spin[type_i]:
+                    self.bias_atom_e[type_i] = self.bias_atom_e[type_i] + self.bias_atom_e[type_i + ntypes_atom]
+                else:
+                    self.bias_atom_e[type_i] = self.bias_atom_e[type_i]
+            self.bias_atom_e = self.bias_atom_e[:ntypes_atom]
 
         with tf.variable_scope("fitting_attr" + suffix, reuse=reuse):
             t_dfparam = tf.constant(self.numb_fparam, name="dfparam", dtype=tf.int32)
@@ -579,9 +582,10 @@ class EnerFitting(Fitting):
         self.atype_nloc = tf.reshape(
             tf.slice(atype_nall, [0, 0], [-1, natoms[0]]), [-1]
         )  ## lammps will make error
-        self.atype_nloc = tf.reshape(
-            tf.slice(atype_nall, [0, 0], [-1, tf.reduce_sum(natoms[2: 2+ntypes_atom])]), [-1]
-        )  ## spin needed
+        if self.use_spin is not None:
+            self.atype_nloc = tf.reshape(
+                tf.slice(atype_nall, [0, 0], [-1, tf.reduce_sum(natoms[2: 2+ntypes_atom])]), [-1]
+            )  ## spin needed
         if type_embedding is not None:
             atype_embed = tf.nn.embedding_lookup(type_embedding, self.atype_nloc)
         else:

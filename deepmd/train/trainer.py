@@ -153,8 +153,8 @@ class DPTrainer(object):
         def fitting_net_init(fitting_type_, descrpt_type_, params):
             if fitting_type_ == "ener":
                 if self.spin is not None:
-                    return EnerFitting(**fitting_param, **self.spin)
-                else :
+                    return EnerFitting(**params, **self.spin)
+                else:
                     return EnerFitting(**params)
             elif fitting_type_ == "dipole":
                 return DipoleFittingSeA(**params)
