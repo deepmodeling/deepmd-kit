@@ -482,8 +482,6 @@ TYPED_TEST(TestInferDeepPotANFrames, cpu_lmp_nlist_type_sel) {
   std::vector<VALUETYPE>& expected_tot_v = this->expected_tot_v;
   deepmd::DeepPot& dp = this->dp;
   float rc = dp.cutoff();
-  std::vector<VALUETYPE> coord_first(coord.begin(), coord.begin() + 3 * natoms);
-  std::vector<VALUETYPE> box_first(box.begin(), box.begin() + 9);
 
   // add vir atoms
   int nvir = 2;
@@ -498,6 +496,8 @@ TYPED_TEST(TestInferDeepPotANFrames, cpu_lmp_nlist_type_sel) {
   std::vector<VALUETYPE> expected_f_vir(nvir * 3, 0.0);
   expected_f.insert(expected_f.begin(), expected_f_vir.begin(),
                     expected_f_vir.end());
+  std::vector<VALUETYPE> coord_first(coord.begin(), coord.begin() + 3 * natoms);
+  std::vector<VALUETYPE> box_first(box.begin(), box.begin() + 9);
 
   // build nlist
   int nloc = coord_first.size() / 3;
@@ -556,8 +556,6 @@ TYPED_TEST(TestInferDeepPotANFrames, cpu_lmp_nlist_type_sel_atomic) {
   std::vector<VALUETYPE>& expected_tot_v = this->expected_tot_v;
   deepmd::DeepPot& dp = this->dp;
   float rc = dp.cutoff();
-  std::vector<VALUETYPE> coord_first(coord.begin(), coord.begin() + 3 * natoms);
-  std::vector<VALUETYPE> box_first(box.begin(), box.begin() + 9);
 
   // add vir atoms
   int nvir = 2;
@@ -572,6 +570,8 @@ TYPED_TEST(TestInferDeepPotANFrames, cpu_lmp_nlist_type_sel_atomic) {
   std::vector<VALUETYPE> expected_f_vir(nvir * 3, 0.0);
   expected_f.insert(expected_f.begin(), expected_f_vir.begin(),
                     expected_f_vir.end());
+  std::vector<VALUETYPE> coord_first(coord.begin(), coord.begin() + 3 * natoms);
+  std::vector<VALUETYPE> box_first(box.begin(), box.begin() + 9);
 
   // build nlist
   int nloc = coord_first.size() / 3;

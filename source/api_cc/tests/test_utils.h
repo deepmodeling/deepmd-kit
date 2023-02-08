@@ -19,16 +19,18 @@ inline void _fold_back(typename std::vector<VALUETYPE>::iterator out,
                        const int ndim,
                        const int nframes = 1) {
   // out.resize(nloc*ndim);
-  std::copy(in, in + nloc * ndim, out);
-  for (int kk = 0; kk < nframes; ++kk)
+  for (int kk = 0; kk < nframes; ++kk) {
+    std::copy(in + kk * nall * ndim, in + kk * nall * ndim + nloc * ndim,
+              out + kk * nloc * ndim);
     for (int ii = nloc; ii < nall; ++ii) {
       int in_idx = ii;
       int out_idx = mapping[in_idx];
       for (int dd = 0; dd < ndim; ++dd) {
-        *(out + kk * nall * ndim + out_idx * ndim + dd) +=
+        *(out + kk * nloc * ndim + out_idx * ndim + dd) +=
             *(in + kk * nall * ndim + in_idx * ndim + dd);
       }
     }
+  }
 }
 
 template <typename VALUETYPE>

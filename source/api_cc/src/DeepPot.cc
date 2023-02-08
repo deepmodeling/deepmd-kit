@@ -182,7 +182,7 @@ static void run_model(
   for (int ii = 0; ii < nframes * nall * 3; ++ii) {
     dforce[ii] = of(ii);
   }
-  for (int ii = 0; ii < nframes * nloc; ++ii) {
+  for (int ii = 0; ii < nframes * nall; ++ii) {
     datom_energy[ii] = oae(ii);
   }
   for (int ii = 0; ii < nframes * nall * 9; ++ii) {
