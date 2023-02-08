@@ -230,12 +230,13 @@ TYPED_TEST(TestInferDeepPotANFrames, cpu_lmp_nlist) {
   deepmd::DeepPot& dp = this->dp;
   float rc = dp.cutoff();
   std::vector<VALUETYPE> coord_first(coord.begin(), coord.begin() + 3 * natoms);
+  std::vector<VALUETYPE> box_first(box.begin(), box.begin() + 9);
   int nloc = coord_first.size() / 3;
   std::vector<VALUETYPE> coord_cpy;
   std::vector<int> atype_cpy, mapping;
   std::vector<std::vector<int> > nlist_data;
   _build_nlist<VALUETYPE>(nlist_data, coord_cpy, atype_cpy, mapping,
-                          coord_first, atype, box, rc);
+                          coord_first, atype, box_first, rc);
   int nall = coord_cpy.size() / 3;
   std::vector<int> ilist(nloc), numneigh(nloc);
   std::vector<int*> firstneigh(nloc);
@@ -306,12 +307,13 @@ TYPED_TEST(TestInferDeepPotANFrames, cpu_lmp_nlist_atomic) {
   deepmd::DeepPot& dp = this->dp;
   float rc = dp.cutoff();
   std::vector<VALUETYPE> coord_first(coord.begin(), coord.begin() + 3 * natoms);
+  std::vector<VALUETYPE> box_first(box.begin(), box.begin() + 9);
   int nloc = coord_first.size() / 3;
   std::vector<VALUETYPE> coord_cpy;
   std::vector<int> atype_cpy, mapping;
   std::vector<std::vector<int> > nlist_data;
   _build_nlist<VALUETYPE>(nlist_data, coord_cpy, atype_cpy, mapping,
-                          coord_first, atype, box, rc);
+                          coord_first, atype, box_first, rc);
   int nall = coord_cpy.size() / 3;
   std::vector<int> ilist(nloc), numneigh(nloc);
   std::vector<int*> firstneigh(nloc);
@@ -404,12 +406,13 @@ TYPED_TEST(TestInferDeepPotANFrames, cpu_lmp_nlist_2rc) {
   deepmd::DeepPot& dp = this->dp;
   float rc = dp.cutoff();
   std::vector<VALUETYPE> coord_first(coord.begin(), coord.begin() + 3 * natoms);
+  std::vector<VALUETYPE> box_first(box.begin(), box.begin() + 9);
   int nloc = coord_first.size() / 3;
   std::vector<VALUETYPE> coord_cpy;
   std::vector<int> atype_cpy, mapping;
   std::vector<std::vector<int> > nlist_data;
   _build_nlist<VALUETYPE>(nlist_data, coord_cpy, atype_cpy, mapping,
-                          coord_first, atype, box, rc * 2);
+                          coord_first, atype, box_first, rc * 2);
   int nall = coord_cpy.size() / 3;
   std::vector<int> ilist(nloc), numneigh(nloc);
   std::vector<int*> firstneigh(nloc);
@@ -480,6 +483,7 @@ TYPED_TEST(TestInferDeepPotANFrames, cpu_lmp_nlist_type_sel) {
   deepmd::DeepPot& dp = this->dp;
   float rc = dp.cutoff();
   std::vector<VALUETYPE> coord_first(coord.begin(), coord.begin() + 3 * natoms);
+  std::vector<VALUETYPE> box_first(box.begin(), box.begin() + 9);
 
   // add vir atoms
   int nvir = 2;
@@ -501,7 +505,7 @@ TYPED_TEST(TestInferDeepPotANFrames, cpu_lmp_nlist_type_sel) {
   std::vector<int> atype_cpy, mapping;
   std::vector<std::vector<int> > nlist_data;
   _build_nlist<VALUETYPE>(nlist_data, coord_cpy, atype_cpy, mapping,
-                          coord_first, atype, box, rc);
+                          coord_first, atype, box_first, rc);
   int nall = coord_cpy.size() / 3;
   std::vector<int> ilist(nloc), numneigh(nloc);
   std::vector<int*> firstneigh(nloc);
@@ -553,6 +557,7 @@ TYPED_TEST(TestInferDeepPotANFrames, cpu_lmp_nlist_type_sel_atomic) {
   deepmd::DeepPot& dp = this->dp;
   float rc = dp.cutoff();
   std::vector<VALUETYPE> coord_first(coord.begin(), coord.begin() + 3 * natoms);
+  std::vector<VALUETYPE> box_first(box.begin(), box.begin() + 9);
 
   // add vir atoms
   int nvir = 2;
@@ -574,7 +579,7 @@ TYPED_TEST(TestInferDeepPotANFrames, cpu_lmp_nlist_type_sel_atomic) {
   std::vector<int> atype_cpy, mapping;
   std::vector<std::vector<int> > nlist_data;
   _build_nlist<VALUETYPE>(nlist_data, coord_cpy, atype_cpy, mapping,
-                          coord_first, atype, box, rc);
+                          coord_first, atype, box_first, rc);
   int nall = coord_cpy.size() / 3;
   std::vector<int> ilist(nloc), numneigh(nloc);
   std::vector<int*> firstneigh(nloc);

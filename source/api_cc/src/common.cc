@@ -609,7 +609,8 @@ void deepmd::select_map(std::vector<VT>& out,
                         const std::vector<int>& idx_map,
                         const int& stride,
                         const int& nframes,
-                        const int& nall) {
+                        const int& nall1,
+                        const int& nall2) {
   for (int kk = 0; kk < nframes; ++kk) {
 #ifdef DEBUG
     assert(in.size() / stride * stride == in.size()),
@@ -623,8 +624,8 @@ void deepmd::select_map(std::vector<VT>& out,
       if (idx_map[ii] >= 0) {
         int to_ii = idx_map[ii];
         for (int dd = 0; dd < stride; ++dd) {
-          out[kk * nall * stride + to_ii * stride + dd] =
-              in[kk * nall * stride + ii * stride + dd];
+          out[kk * nall1 * stride + to_ii * stride + dd] =
+              in[kk * nall2 * stride + ii * stride + dd];
         }
       }
     }
@@ -637,14 +638,15 @@ void deepmd::select_map(typename std::vector<VT>::iterator out,
                         const std::vector<int>& idx_map,
                         const int& stride,
                         const int& nframes,
-                        const int& nall) {
+                        const int& nall1,
+                        const int& nall2) {
   for (int kk = 0; kk < nframes; ++kk) {
     for (int ii = 0; ii < idx_map.size(); ++ii) {
       if (idx_map[ii] >= 0) {
         int to_ii = idx_map[ii];
         for (int dd = 0; dd < stride; ++dd) {
-          *(out + kk * nall * stride + to_ii * stride + dd) =
-              *(in + kk * nall * stride + ii * stride + dd);
+          *(out + kk * nall1 * stride + to_ii * stride + dd) =
+              *(in + kk * nall2 * stride + ii * stride + dd);
         }
       }
     }
@@ -704,7 +706,8 @@ template void deepmd::select_map<int>(std::vector<int>& out,
                                       const std::vector<int>& idx_map,
                                       const int& stride,
                                       const int& nframes,
-                                      const int& nall);
+                                      const int& nall1,
+                                      const int& nall2);
 
 template void deepmd::select_map<int>(
     typename std::vector<int>::iterator out,
@@ -712,7 +715,8 @@ template void deepmd::select_map<int>(
     const std::vector<int>& idx_map,
     const int& stride,
     const int& nframes,
-    const int& nall);
+    const int& nall1,
+    const int& nall2);
 
 template void deepmd::select_map_inv<int>(std::vector<int>& out,
                                           const std::vector<int>& in,
@@ -739,7 +743,8 @@ template void deepmd::select_map<float>(std::vector<float>& out,
                                         const std::vector<int>& idx_map,
                                         const int& stride,
                                         const int& nframes,
-                                        const int& nall);
+                                        const int& nall1,
+                                        const int& nall2);
 
 template void deepmd::select_map<float>(
     typename std::vector<float>::iterator out,
@@ -747,7 +752,8 @@ template void deepmd::select_map<float>(
     const std::vector<int>& idx_map,
     const int& stride,
     const int& nframes,
-    const int& nall);
+    const int& nall1,
+    const int& nall2);
 
 template void deepmd::select_map_inv<float>(std::vector<float>& out,
                                             const std::vector<float>& in,
@@ -774,7 +780,8 @@ template void deepmd::select_map<double>(std::vector<double>& out,
                                          const std::vector<int>& idx_map,
                                          const int& stride,
                                          const int& nframes,
-                                         const int& nall);
+                                         const int& nall1,
+                                         const int& nall2);
 
 template void deepmd::select_map<double>(
     typename std::vector<double>::iterator out,
@@ -782,7 +789,8 @@ template void deepmd::select_map<double>(
     const std::vector<int>& idx_map,
     const int& stride,
     const int& nframes,
-    const int& nall);
+    const int& nall1,
+    const int& nall2);
 
 template void deepmd::select_map_inv<double>(std::vector<double>& out,
                                              const std::vector<double>& in,
@@ -810,7 +818,8 @@ template void deepmd::select_map<deepmd::STRINGTYPE>(
     const std::vector<int>& idx_map,
     const int& stride,
     const int& nframes,
-    const int& nall);
+    const int& nall1,
+    const int& nall2);
 
 template void deepmd::select_map<deepmd::STRINGTYPE>(
     typename std::vector<deepmd::STRINGTYPE>::iterator out,
@@ -818,7 +827,8 @@ template void deepmd::select_map<deepmd::STRINGTYPE>(
     const std::vector<int>& idx_map,
     const int& stride,
     const int& nframes,
-    const int& nall);
+    const int& nall1,
+    const int& nall2);
 
 template void deepmd::select_map_inv<deepmd::STRINGTYPE>(
     std::vector<deepmd::STRINGTYPE>& out,

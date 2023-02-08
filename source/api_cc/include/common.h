@@ -69,7 +69,8 @@ void select_map(std::vector<VT>& out,
                 const int& stride,
                 const int& nframes = 1,
                 // nall will not take effect if nframes is 1
-                const int& nall = 0);
+                const int& nall1 = 0,
+                const int& nall2 = 0);
 
 template <typename VT>
 void select_map(typename std::vector<VT>::iterator out,
@@ -77,7 +78,8 @@ void select_map(typename std::vector<VT>::iterator out,
                 const std::vector<int>& fwd_map,
                 const int& stride,
                 const int& nframes = 1,
-                const int& nall = 0);
+                const int& nall1 = 0,
+                const int& nall2 = 0);
 
 template <typename VT>
 void select_map_inv(std::vector<VT>& out,

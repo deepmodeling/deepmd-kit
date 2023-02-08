@@ -663,12 +663,14 @@ void DeepPot::compute(ENERGYVTYPE& dener,
   dcoord.resize(nframes * bkw_map.size() * 3);
   datype.resize(bkw_map.size());
   // fwd map
-  select_map<VALUETYPE>(dcoord, dcoord_, fwd_map, 3, nframes, nall);
-  select_map<int>(datype, datype_, fwd_map, 1, nframes, nall);
+  select_map<VALUETYPE>(dcoord, dcoord_, fwd_map, 3, nframes, bkw_map.size(),
+                        nall);
+  select_map<int>(datype, datype_, fwd_map, 1);
   // aparam
   if (daparam > 0) {
     aparam.resize(nframes * (bkw_map.size() - nghost_real));
-    select_map<VALUETYPE>(aparam, aparam_, fwd_map, daparam, nframes, nall);
+    select_map<VALUETYPE>(aparam, aparam_, fwd_map, daparam, nframes,
+                          bkw_map.size() - nghost_real, nall);
   }
   // internal nlist
   if (ago == 0) {
@@ -679,7 +681,8 @@ void DeepPot::compute(ENERGYVTYPE& dener,
                 fparam, aparam);
   // bkw map
   dforce_.resize(nframes * fwd_map.size() * 3);
-  select_map<VALUETYPE>(dforce_, dforce, bkw_map, 3, nframes, nall);
+  select_map<VALUETYPE>(dforce_, dforce, bkw_map, 3, nframes, fwd_map.size(),
+                        bkw_map.size());
 }
 
 template void DeepPot::compute<double, ENERGYTYPE>(
@@ -935,12 +938,13 @@ void DeepPot::compute(ENERGYVTYPE& dener,
   dcoord.resize(nframes * nall_real * 3);
   datype.resize(nall_real);
   // fwd map
-  select_map<VALUETYPE>(dcoord, dcoord_, fwd_map, 3, nframes, nall);
-  select_map<int>(datype, datype_, fwd_map, 1, nframes, nall);
+  select_map<VALUETYPE>(dcoord, dcoord_, fwd_map, 3, nframes, nall_real, nall);
+  select_map<int>(datype, datype_, fwd_map, 1);
   // aparam
   if (daparam > 0) {
     aparam.resize(nframes * nloc_real);
-    select_map<VALUETYPE>(aparam, aparam_, fwd_map, daparam, nframes, nall);
+    select_map<VALUETYPE>(aparam, aparam_, fwd_map, daparam, nframes, nloc_real,
+                          nall);
   }
   if (ago == 0) {
     atommap = deepmd::AtomMap(datype.begin(), datype.begin() + nloc_real);
@@ -972,9 +976,12 @@ void DeepPot::compute(ENERGYVTYPE& dener,
   dforce_.resize(nframes * fwd_map.size() * 3);
   datom_energy_.resize(nframes * fwd_map.size());
   datom_virial_.resize(nframes * fwd_map.size() * 9);
-  select_map<VALUETYPE>(dforce_, dforce, bkw_map, 3, nframes, nall);
-  select_map<VALUETYPE>(datom_energy_, datom_energy, bkw_map, 1, nframes, nall);
-  select_map<VALUETYPE>(datom_virial_, datom_virial, bkw_map, 9, nframes, nall);
+  select_map<VALUETYPE>(dforce_, dforce, bkw_map, 3, nframes, fwd_map.size(),
+                        nall_real);
+  select_map<VALUETYPE>(datom_energy_, datom_energy, bkw_map, 1, nframes,
+                        fwd_map.size(), nall_real);
+  select_map<VALUETYPE>(datom_virial_, datom_virial, bkw_map, 9, nframes,
+                        fwd_map.size(), nall_real);
 }
 
 template void DeepPot::compute<double, ENERGYTYPE>(
