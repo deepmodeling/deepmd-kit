@@ -494,7 +494,10 @@ TYPED_TEST(TestInferDeepPotANFrames, cpu_lmp_nlist_type_sel) {
   atype.insert(atype.begin(), atype_vir.begin(), atype_vir.end());
   natoms += nvir;
   std::vector<VALUETYPE> expected_f_vir(nvir * 3, 0.0);
+  // two frames
   expected_f.insert(expected_f.begin(), expected_f_vir.begin(),
+                    expected_f_vir.end());
+  expected_f.insert(expected_f.begin() + natoms * 3, expected_f_vir.begin(),
                     expected_f_vir.end());
   std::vector<VALUETYPE> coord_first(coord.begin(), coord.begin() + 3 * natoms);
   std::vector<VALUETYPE> box_first(box.begin(), box.begin() + 9);
@@ -568,7 +571,10 @@ TYPED_TEST(TestInferDeepPotANFrames, cpu_lmp_nlist_type_sel_atomic) {
   atype.insert(atype.begin(), atype_vir.begin(), atype_vir.end());
   natoms += nvir;
   std::vector<VALUETYPE> expected_f_vir(nvir * 3, 0.0);
+  // two frames
   expected_f.insert(expected_f.begin(), expected_f_vir.begin(),
+                    expected_f_vir.end());
+  expected_f.insert(expected_f.begin() + natoms * 3, expected_f_vir.begin(),
                     expected_f_vir.end());
   std::vector<VALUETYPE> coord_first(coord.begin(), coord.begin() + 3 * natoms);
   std::vector<VALUETYPE> box_first(box.begin(), box.begin() + 9);

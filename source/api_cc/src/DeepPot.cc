@@ -182,8 +182,10 @@ static void run_model(
   for (int ii = 0; ii < nframes * nall * 3; ++ii) {
     dforce[ii] = of(ii);
   }
-  for (int ii = 0; ii < nframes * nall; ++ii) {
-    datom_energy[ii] = oae(ii);
+  for (int ii = 0; ii < nframes; ++ii) {
+    for (int jj = 0; jj < nloc; ++jj) {
+      datom_energy[ii * nall + jj] = oae(ii * nloc + jj);
+    }
   }
   for (int ii = 0; ii < nframes * nall * 9; ++ii) {
     datom_virial[ii] = oav(ii);
