@@ -29,13 +29,18 @@ AtomMap::AtomMap(const std::vector<int>::const_iterator in_begin,
 template <typename VALUETYPE>
 void AtomMap::forward(typename std::vector<VALUETYPE>::iterator out,
                       const typename std::vector<VALUETYPE>::const_iterator in,
-                      const int stride) const {
+                      const int stride,
+                      const int nframes,
+                      const int nall) const {
   int natoms = idx_map.size();
-  for (int ii = 0; ii < natoms; ++ii) {
-    int gro_i = idx_map[ii];
-    for (int dd = 0; dd < stride; ++dd) {
-      // out[ii*stride+dd] = in[gro_i*stride+dd];
-      *(out + ii * stride + dd) = *(in + gro_i * stride + dd);
+  for (int kk = 0; kk < nframes; ++kk) {
+    for (int ii = 0; ii < natoms; ++ii) {
+      int gro_i = idx_map[ii];
+      for (int dd = 0; dd < stride; ++dd) {
+        // out[ii*stride+dd] = in[gro_i*stride+dd];
+        *(out + kk * nall * stride + ii * stride + dd) =
+            *(in + kk * nall * stride + gro_i * stride + dd);
+      }
     }
   }
 }
@@ -43,13 +48,18 @@ void AtomMap::forward(typename std::vector<VALUETYPE>::iterator out,
 template <typename VALUETYPE>
 void AtomMap::backward(typename std::vector<VALUETYPE>::iterator out,
                        const typename std::vector<VALUETYPE>::const_iterator in,
-                       const int stride) const {
+                       const int stride,
+                       const int nframes,
+                       const int nall) const {
   int natoms = idx_map.size();
-  for (int ii = 0; ii < natoms; ++ii) {
-    int gro_i = idx_map[ii];
-    for (int dd = 0; dd < stride; ++dd) {
-      // out[gro_i*stride+dd] = in[ii*stride+dd];
-      *(out + gro_i * stride + dd) = *(in + ii * stride + dd);
+  for (int kk = 0; kk < nframes; ++kk) {
+    for (int ii = 0; ii < natoms; ++ii) {
+      int gro_i = idx_map[ii];
+      for (int dd = 0; dd < stride; ++dd) {
+        // out[gro_i*stride+dd] = in[ii*stride+dd];
+        *(out + kk * nall * stride + gro_i * stride + dd) =
+            *(in + kk * nall * stride + ii * stride + dd);
+      }
     }
   }
 }
@@ -57,19 +67,27 @@ void AtomMap::backward(typename std::vector<VALUETYPE>::iterator out,
 template void AtomMap::forward<double>(
     typename std::vector<double>::iterator out,
     const typename std::vector<double>::const_iterator in,
-    const int stride) const;
+    const int stride,
+    const int nframes,
+    const int nall) const;
 
 template void AtomMap::forward<float>(
     typename std::vector<float>::iterator out,
     const typename std::vector<float>::const_iterator in,
-    const int stride) const;
+    const int stride,
+    const int nframes,
+    const int nall) const;
 
 template void AtomMap::backward<double>(
     typename std::vector<double>::iterator out,
     const typename std::vector<double>::const_iterator in,
-    const int stride) const;
+    const int stride,
+    const int nframes,
+    const int nall) const;
 
 template void AtomMap::backward<float>(
     typename std::vector<float>::iterator out,
     const typename std::vector<float>::const_iterator in,
-    const int stride) const;
+    const int stride,
+    const int nframes,
+    const int nall) const;
