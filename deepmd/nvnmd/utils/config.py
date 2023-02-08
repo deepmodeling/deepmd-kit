@@ -230,9 +230,9 @@ class NvnmdConfig:
         # check
         log.info(f"the range of s is [{smin}, {smax}]")
         if smax - smin > 16.0:
-            log.warning(f"the range of s is over the limit (smax - smin) > 16.0")
+            log.warning("the range of s is over the limit (smax - smin) > 16.0")
             log.warning(
-                f"Please reset the rcut_smth as a bigger value to fix this warning"
+                "Please reset the rcut_smth as a bigger value to fix this warning"
             )
 
     def get_dscp_jdata(self):

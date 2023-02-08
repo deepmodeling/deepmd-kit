@@ -306,7 +306,7 @@ class DeepTensor(DeepEval):
             The atomic virial. Only returned when atomic == True
             shape: [nframes x nout x natoms x 9]
         """
-        assert self._support_gfv, f"do not support eval_full with old tensor model"
+        assert self._support_gfv, "do not support eval_full with old tensor model"
 
         # standarize the shape of inputs
         if mixed_type:

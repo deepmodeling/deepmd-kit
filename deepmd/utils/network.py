@@ -72,7 +72,7 @@ def one_layer(
             b = tf.cast(b, get_precision(mixed_prec["compute_prec"]))
 
         hidden = tf.nn.bias_add(tf.matmul(inputs, w), b)
-        if activation_fn != None and use_timestep:
+        if activation_fn is not None and use_timestep:
             idt_initializer = tf.random_normal_initializer(
                 stddev=0.001,
                 mean=0.1,
@@ -86,7 +86,7 @@ def one_layer(
                 "idt", [outputs_size], precision, idt_initializer, trainable=trainable
             )
             variable_summaries(idt, "idt")
-        if activation_fn != None:
+        if activation_fn is not None:
             if useBN:
                 None
                 # hidden_bn = self._batch_norm(hidden, name=name+'_normalization', reuse=reuse)

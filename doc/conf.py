@@ -31,7 +31,7 @@ from deepmd.utils.argcheck import (
 )
 
 sys.path.append(os.path.dirname(__file__))
-import sphinx_contrib_exhale_multiproject as _
+import sphinx_contrib_exhale_multiproject
 
 
 def mkindex(dirname):

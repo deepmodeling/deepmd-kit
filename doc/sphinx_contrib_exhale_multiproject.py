@@ -118,7 +118,7 @@ def exhale_environment_ready(app):
         # Generate the full API!
         try:
             exhale.deploy.explode()
-        except:
+        except Exception:
             exhale.utils.fancyError(
                 "Exhale: could not generate reStructuredText documents :/"
             )
