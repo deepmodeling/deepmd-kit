@@ -677,9 +677,9 @@ class DescrptSeAtten(DescrptSeA):
                     initial_variables=self.embedding_net_variables,
                     mixed_prec=self.mixed_prec)
                 out_size = xyz_scatter.get_shape().as_list()[-1]
-                xyz_scatter = tf.nn.embedding_lookup(xyz_scatter,
-                                                     self.nei_type_vec)
-                xyz_scatter = tf.reshape(xyz_scatter, [-1, out_size])  # nframes*natoms[0] * nei * out_size
+                #xyz_scatter = tf.nn.embedding_lookup(xyz_scatter,
+                #                                     self.nei_type_vec)
+                #xyz_scatter = tf.reshape(xyz_scatter, [-1, out_size])  # nframes*natoms[0] * nei * out_size
 
                 if self.type_one_side:
                     embedding_of_embedding_suffix = suffix + "_ebd_of_ebd"
