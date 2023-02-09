@@ -702,10 +702,11 @@ class DescrptSeAtten(DescrptSeA):
 
                     xyz_scatter = xyz_scatter + nei_embed
                 else:
-                    type_embedding_nei = tf.tile(tf.reshape(type_embedding, [1, self.ntypes, -1]),
-                                                 [self.ntypes, 1, 1])  # (ntypes) * ntypes * Y
-                    type_embedding_center = tf.tile(tf.reshape(type_embedding, [self.ntypes, 1, -1]),
-                                                    [1, self.ntypes, 1])  # ntypes * (ntypes) * Y
+                    type_embedding_shape = type_embedding.get_shape().as_list()
+                    type_embedding_nei = tf.tile(tf.reshape(type_embedding, [1, type_embedding_shape[0], -1]),
+                                                 [type_embedding_shape[0], 1, 1])  # (ntypes) * ntypes * Y
+                    type_embedding_center = tf.tile(tf.reshape(type_embedding, [type_embedding_shape[0], 1, -1]),
+                                                    [1, type_embedding_shape[0], 1])  # ntypes * (ntypes) * Y
                     two_side_type_embedding = tf.concat([type_embedding_nei, type_embedding_center], -1) # ntypes * ntypes * (Y+Y)
                     two_side_type_embedding = tf.reshape(two_side_type_embedding, [-1, two_side_type_embedding.shape[-1]])
                     two_side_type_embedding_suffix = suffix + "_two_side_ebd" 
@@ -724,7 +725,7 @@ class DescrptSeAtten(DescrptSeA):
                         initial_variables=self.embedding_net_variables,
                         mixed_prec=self.mixed_prec)
                     #index_of_two_side = self.nei_type_vec * self.ntypes + tf.tile(atype, [1, self.nnei])
-                    tmpres1 = self.nei_type_vec * self.ntypes
+                    tmpres1 = self.nei_type_vec * type_embedding_shape[0]
                     tmpres2 = tf.tile(atype, [self.nnei])
                     index_of_two_side = tmpres1 + tmpres2
                     two_embd = tf.nn.embedding_lookup(embedding_of_two_side_type_embedding, index_of_two_side)
