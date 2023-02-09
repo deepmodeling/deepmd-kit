@@ -722,7 +722,7 @@ class DPTrainer (object):
                 if self.timing_in_training:
                     toc = time.time()
                     test_time = toc - tic
-                    log.info("batch %7d training time %.2f s, testing time %.2f s"
+                    log.info("model2 batch %7d training time %.2f s, testing time %.2f s"
                                   % (cur_batch, train_time, test_time))
                     train_time = 0
                 if self.save_freq > 0 and cur_batch % self.save_freq == 0 and self.saver is not None:
