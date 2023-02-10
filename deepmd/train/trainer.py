@@ -796,6 +796,7 @@ class DPTrainer(object):
             tfv2.profiler.experimental.start(self.tensorboard_log_dir)
 
         train_time = 0
+        total_train_time = 0.0
 
         while cur_batch < stop_batch:
 
@@ -916,6 +917,9 @@ class DPTrainer(object):
                         "batch %7d training time %.2f s, testing time %.2f s"
                         % (cur_batch, train_time, test_time)
                     )
+                    # the first training time is not accurate
+                    if cur_batch > self.disp_freq or stop_batch < 2 * self.disp_freq:
+                        total_train_time += train_time
                     train_time = 0
                 if (
                     self.save_freq > 0
@@ -929,6 +933,20 @@ class DPTrainer(object):
             self.save_checkpoint(cur_batch)
         if self.run_opt.is_chief:
             fp.close()
+        if self.timing_in_training and stop_batch // self.disp_freq > 0:
+            if stop_batch >= 2 * self.disp_freq:
+                log.info(
+                    "average training time: %.4f s/batch (exclude first %d batches)",
+                    total_train_time
+                    / (stop_batch // self.disp_freq * self.disp_freq - self.disp_freq),
+                    self.disp_freq,
+                )
+            else:
+                log.info(
+                    "average training time: %.4f s/batch",
+                    total_train_time / (stop_batch // self.disp_freq * self.disp_freq),
+                )
+
         if self.profiling and self.run_opt.is_chief:
             fetched_timeline = timeline.Timeline(prf_run_metadata.step_stats)
             chrome_trace = fetched_timeline.generate_chrome_trace_format()
