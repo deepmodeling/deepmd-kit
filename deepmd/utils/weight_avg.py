@@ -1,3 +1,6 @@
+from collections import (
+    defaultdict,
+)
 from typing import (
     TYPE_CHECKING,
     Dict,
@@ -5,7 +8,6 @@ from typing import (
     Optional,
     Tuple,
 )
-from collections import defaultdict
 
 import numpy as np
 

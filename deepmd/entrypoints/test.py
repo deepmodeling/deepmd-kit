@@ -158,12 +158,12 @@ def test(
 
 def mae(diff: np.ndarray) -> float:
     """Calcalte mean absulote error.
-    
+
     Parameters
     ----------
     diff : np.ndarray
         difference
-    
+
     Returns
     -------
     float
