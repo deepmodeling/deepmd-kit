@@ -156,8 +156,24 @@ def test(
         log.info("# ----------------------------------------------- ")
 
 
-def rmse(diff: np.ndarray) -> np.ndarray:
-    """Calculate average root mean square error.
+def mae(diff: np.ndarray) -> float:
+    """Calcalte mean absulote error.
+    
+    Parameters
+    ----------
+    diff : np.ndarray
+        difference
+    
+    Returns
+    -------
+    float
+        mean absulote error
+    """
+    return np.mean(np.abs(diff))
+
+
+def rmse(diff: np.ndarray) -> float:
+    """Calculate root mean square error.
 
     Parameters
     ----------
@@ -166,8 +182,8 @@ def rmse(diff: np.ndarray) -> np.ndarray:
 
     Returns
     -------
-    np.ndarray
-        array with normalized difference
+    float
+        root mean square error
     """
     return np.sqrt(np.average(diff * diff))
 
@@ -289,25 +305,38 @@ def test_ener(
         ae = ae.reshape([numb_test, -1])
         av = av.reshape([numb_test, -1])
 
-    rmse_e = rmse(energy - test_data["energy"][:numb_test].reshape([-1, 1]))
-    rmse_f = rmse(force - test_data["force"][:numb_test])
-    rmse_v = rmse(virial - test_data["virial"][:numb_test])
+    diff_e = energy - test_data["energy"][:numb_test].reshape([-1, 1])
+    mae_e = mae(diff_e)
+    rmse_e = rmse(diff_e)
+    diff_f = force - test_data["force"][:numb_test]
+    mae_f = mae(diff_f)
+    rmse_f = rmse(diff_f)
+    diff_v = virial - test_data["virial"][:numb_test]
+    mae_v = mae(diff_v)
+    rmse_v = rmse(diff_v)
+    mae_ea = mae_e / natoms
     rmse_ea = rmse_e / natoms
+    mae_va = mae_v / natoms
     rmse_va = rmse_v / natoms
     if has_atom_ener:
-        rmse_ae = rmse(
-            test_data["atom_ener"][:numb_test].reshape([-1]) - ae.reshape([-1])
-        )
+        diff_ae = test_data["atom_ener"][:numb_test].reshape([-1]) - ae.reshape([-1])
+        mae_ae = mae(diff_ae)
+        rmse_ae = rmse(diff_ae)
 
-    # print ("# energies: %s" % energy)
     log.info(f"# number of test data : {numb_test:d} ")
+    log.info(f"Energy MAE         : {mae_e:e} eV")
     log.info(f"Energy RMSE        : {rmse_e:e} eV")
+    log.info(f"Energy MAE/Natoms  : {mae_ea:e} eV")
     log.info(f"Energy RMSE/Natoms : {rmse_ea:e} eV")
+    log.info(f"Force  MAE         : {mae_f:e} eV/A")
     log.info(f"Force  RMSE        : {rmse_f:e} eV/A")
     if data.pbc:
+        log.info(f"Virial MAE         : {mae_v:e} eV")
         log.info(f"Virial RMSE        : {rmse_v:e} eV")
+        log.info(f"Virial MAE/Natoms  : {mae_va:e} eV")
         log.info(f"Virial RMSE/Natoms : {rmse_va:e} eV")
     if has_atom_ener:
+        log.info(f"Atomic ener MAE    : {mae_ae:e} eV")
         log.info(f"Atomic ener RMSE   : {rmse_ae:e} eV")
 
     if detail_file is not None:
@@ -371,8 +400,15 @@ def test_ener(
             append=append_detail,
         )
     return {
+        "mae_e": (mae_e, energy.size),
+        "mae_ea": (mae_ea, energy.size),
+        "mae_f": (mae_f, force.size),
+        "mae_v": (mae_v, virial.size),
+        "mae_va": (mae_va, virial.size),
+        "rmse_e": (rmse_e, energy.size),
         "rmse_ea": (rmse_ea, energy.size),
         "rmse_f": (rmse_f, force.size),
+        "rmse_v": (rmse_v, virial.size),
         "rmse_va": (rmse_va, virial.size),
     }
 
@@ -385,8 +421,15 @@ def print_ener_sys_avg(avg: Dict[str, float]):
     avg : np.ndarray
         array with summaries
     """
+    log.info(f"Energy MAE         : {avg['mae_e']:e} eV")
+    log.info(f"Energy RMSE        : {avg['rmse_e']:e} eV")
+    log.info(f"Energy MAE/Natoms  : {avg['mae_ea']:e} eV")
     log.info(f"Energy RMSE/Natoms : {avg['rmse_ea']:e} eV")
+    log.info(f"Force  MAE         : {avg['mae_f']:e} eV/A")
     log.info(f"Force  RMSE        : {avg['rmse_f']:e} eV/A")
+    log.info(f"Virial MAE         : {avg['mae_v']:e} eV")
+    log.info(f"Virial RMSE        : {avg['rmse_v']:e} eV")
+    log.info(f"Virial MAE/Natoms  : {avg['mae_va']:e} eV")
     log.info(f"Virial RMSE/Natoms : {avg['rmse_va']:e} eV")
 
 
