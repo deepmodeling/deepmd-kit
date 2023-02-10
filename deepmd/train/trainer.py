@@ -937,12 +937,14 @@ class DPTrainer(object):
             if stop_batch >= 2 * self.disp_freq:
                 log.info(
                     "average training time: %.4f s/batch (exclude first %d batches)",
-                    total_train_time / (stop_batch // self.disp_freq * self.disp_freq - self.disp_freq),
+                    total_train_time
+                    / (stop_batch // self.disp_freq * self.disp_freq - self.disp_freq),
                     self.disp_freq,
                 )
             else:
                 log.info(
-                    "average training time: %.4f s/batch", total_train_time / (stop_batch // self.disp_freq * self.disp_freq)
+                    "average training time: %.4f s/batch",
+                    total_train_time / (stop_batch // self.disp_freq * self.disp_freq),
                 )
 
         if self.profiling and self.run_opt.is_chief:
