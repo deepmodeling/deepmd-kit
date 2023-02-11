@@ -107,13 +107,13 @@ class EnerStdLoss(Loss):
             atom_ener_coeff = label_dict["atom_ener_coeff"]
             atom_ener_coeff = tf.reshape(atom_ener_coeff, tf.shape(atom_ener))
             energy = tf.reduce_sum(atom_ener_coeff * atom_ener, 1)
-        l2_ener_loss = tf.reduce_mean(
-            tf.square(energy - energy_hat), name="l2_" + suffix
-        )
+        if self.has_e:
+            l2_ener_loss = tf.reduce_mean(
+                tf.square(energy - energy_hat), name="l2_" + suffix
+            )
 
         force_reshape = tf.reshape(force, [-1])
         force_hat_reshape = tf.reshape(force_hat, [-1])
-        atom_pref_reshape = tf.reshape(atom_pref, [-1])
         diff_f = force_hat_reshape - force_reshape
         if self.relative_f is not None:
             force_hat_3 = tf.reshape(force_hat, [-1, 3])
@@ -121,24 +121,31 @@ class EnerStdLoss(Loss):
             diff_f_3 = tf.reshape(diff_f, [-1, 3])
             diff_f_3 = diff_f_3 / norm_f
             diff_f = tf.reshape(diff_f_3, [-1])
-        l2_force_loss = tf.reduce_mean(tf.square(diff_f), name="l2_force_" + suffix)
-        l2_pref_force_loss = tf.reduce_mean(
+
+        if self.has_f:
+            l2_force_loss = tf.reduce_mean(tf.square(diff_f), name="l2_force_" + suffix)
+            
+        if self.has_pf:
+            atom_pref_reshape = tf.reshape(atom_pref, [-1])
+            l2_pref_force_loss = tf.reduce_mean(
             tf.multiply(tf.square(diff_f), atom_pref_reshape),
             name="l2_pref_force_" + suffix,
         )
 
-        virial_reshape = tf.reshape(virial, [-1])
-        virial_hat_reshape = tf.reshape(virial_hat, [-1])
-        l2_virial_loss = tf.reduce_mean(
-            tf.square(virial_hat_reshape - virial_reshape), name="l2_virial_" + suffix
-        )
+        if self.has_v:
+            virial_reshape = tf.reshape(virial, [-1])
+            virial_hat_reshape = tf.reshape(virial_hat, [-1])
+            l2_virial_loss = tf.reduce_mean(
+                tf.square(virial_hat_reshape - virial_reshape), name="l2_virial_" + suffix
+            )
 
-        atom_ener_reshape = tf.reshape(atom_ener, [-1])
-        atom_ener_hat_reshape = tf.reshape(atom_ener_hat, [-1])
-        l2_atom_ener_loss = tf.reduce_mean(
-            tf.square(atom_ener_hat_reshape - atom_ener_reshape),
-            name="l2_atom_ener_" + suffix,
-        )
+        if self.has_ae:
+            atom_ener_reshape = tf.reshape(atom_ener, [-1])
+            atom_ener_hat_reshape = tf.reshape(atom_ener_hat, [-1])
+            l2_atom_ener_loss = tf.reduce_mean(
+                tf.square(atom_ener_hat_reshape - atom_ener_reshape),
+                name="l2_atom_ener_" + suffix,
+            )
 
         atom_norm = 1.0 / global_cvt_2_tf_float(natoms[0])
         atom_norm_ener = 1.0 / global_cvt_2_ener_float(natoms[0])
@@ -192,34 +199,37 @@ class EnerStdLoss(Loss):
         more_loss = {}
         if self.has_e:
             l2_loss += atom_norm_ener * (pref_e * l2_ener_loss)
-        more_loss["l2_ener_loss"] = l2_ener_loss
+            more_loss["l2_ener_loss"] = l2_ener_loss
         if self.has_f:
             l2_loss += global_cvt_2_ener_float(pref_f * l2_force_loss)
-        more_loss["l2_force_loss"] = l2_force_loss
+            more_loss["l2_force_loss"] = l2_force_loss
         if self.has_v:
             l2_loss += global_cvt_2_ener_float(atom_norm * (pref_v * l2_virial_loss))
-        more_loss["l2_virial_loss"] = l2_virial_loss
+            more_loss["l2_virial_loss"] = l2_virial_loss
         if self.has_ae:
             l2_loss += global_cvt_2_ener_float(pref_ae * l2_atom_ener_loss)
-        more_loss["l2_atom_ener_loss"] = l2_atom_ener_loss
+            more_loss["l2_atom_ener_loss"] = l2_atom_ener_loss
         if self.has_pf:
             l2_loss += global_cvt_2_ener_float(pref_pf * l2_pref_force_loss)
-        more_loss["l2_pref_force_loss"] = l2_pref_force_loss
+            more_loss["l2_pref_force_loss"] = l2_pref_force_loss
 
         # only used when tensorboard was set as true
         self.l2_loss_summary = tf.summary.scalar("l2_loss_" + suffix, tf.sqrt(l2_loss))
-        self.l2_loss_ener_summary = tf.summary.scalar(
-            "l2_ener_loss_" + suffix,
-            global_cvt_2_tf_float(tf.sqrt(l2_ener_loss))
-            / global_cvt_2_tf_float(natoms[0]),
-        )
-        self.l2_loss_force_summary = tf.summary.scalar(
-            "l2_force_loss_" + suffix, tf.sqrt(l2_force_loss)
-        )
-        self.l2_loss_virial_summary = tf.summary.scalar(
-            "l2_virial_loss_" + suffix,
-            tf.sqrt(l2_virial_loss) / global_cvt_2_tf_float(natoms[0]),
-        )
+        if self.has_e:
+            self.l2_loss_ener_summary = tf.summary.scalar(
+                "l2_ener_loss_" + suffix,
+                global_cvt_2_tf_float(tf.sqrt(l2_ener_loss))
+                / global_cvt_2_tf_float(natoms[0]),
+            )
+        if self.has_f:
+            self.l2_loss_force_summary = tf.summary.scalar(
+                "l2_force_loss_" + suffix, tf.sqrt(l2_force_loss)
+            )
+        if self.has_v:
+            self.l2_loss_virial_summary = tf.summary.scalar(
+                "l2_virial_loss_" + suffix,
+                tf.sqrt(l2_virial_loss) / global_cvt_2_tf_float(natoms[0]),
+            )
 
         self.l2_l = l2_loss
         self.l2_more = more_loss

@@ -26,3 +26,6 @@ from .se_r import (
 from .se_t import (
     DescrptSeT,
 )
+from .se_a_mask import (
+    DescrptSeAMask,
+)
