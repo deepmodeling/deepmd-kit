@@ -124,19 +124,20 @@ class EnerStdLoss(Loss):
 
         if self.has_f:
             l2_force_loss = tf.reduce_mean(tf.square(diff_f), name="l2_force_" + suffix)
-            
+
         if self.has_pf:
             atom_pref_reshape = tf.reshape(atom_pref, [-1])
             l2_pref_force_loss = tf.reduce_mean(
-            tf.multiply(tf.square(diff_f), atom_pref_reshape),
-            name="l2_pref_force_" + suffix,
-        )
+                tf.multiply(tf.square(diff_f), atom_pref_reshape),
+                name="l2_pref_force_" + suffix,
+            )
 
         if self.has_v:
             virial_reshape = tf.reshape(virial, [-1])
             virial_hat_reshape = tf.reshape(virial_hat, [-1])
             l2_virial_loss = tf.reduce_mean(
-                tf.square(virial_hat_reshape - virial_reshape), name="l2_virial_" + suffix
+                tf.square(virial_hat_reshape - virial_reshape),
+                name="l2_virial_" + suffix,
             )
 
         if self.has_ae:

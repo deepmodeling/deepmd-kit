@@ -17,6 +17,9 @@ from .se_a_ef import (
     DescrptSeAEf,
     DescrptSeAEfLower,
 )
+from .se_a_mask import (
+    DescrptSeAMask,
+)
 from .se_atten import (
     DescrptSeAtten,
 )
@@ -25,7 +28,4 @@ from .se_r import (
 )
 from .se_t import (
     DescrptSeT,
-)
-from .se_a_mask import (
-    DescrptSeAMask,
 )

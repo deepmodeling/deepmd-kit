@@ -373,12 +373,13 @@ def descrpt_se_atten_args():
         Argument("attn_mask", bool, optional=True, default=False, doc=doc_attn_mask),
     ]
 
+
 @descrpt_args_plugin.register("se_a_mask")
 def descrpt_se_a_mask_args():
     doc_sel = 'This parameter set the number of selected neighbors for each type of atom. It can be:\n\n\
     - `List[int]`. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius. It is noted that the total sel value must be less than 4096 in a GPU environment.\n\n\
     - `str`. Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`. In detail it counts the maximal number of neighbors with in the cutoff radius for each type of neighbor, then multiply the maximum by the "factor". Finally the number is wraped up to 4 divisible. The option "auto" is equivalent to "auto:1.1".'
-    
+
     doc_neuron = "Number of neurons in each hidden layers of the embedding net. When two layers are of the same size or one layer is twice as large as the previous layer, a skip connection is built."
     doc_axis_neuron = "Size of the submatrix of G (embedding matrix)."
     doc_activation_function = f'The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version.'
@@ -466,8 +467,8 @@ def fitting_ener():
         "The shape of these layers should be the same. "
         "If null is given for a layer, parameters will not be shared."
     )
-    doc_use_aparam_as_mask = ( 
-        "Whether to use the aparam as a mask in input." 
+    doc_use_aparam_as_mask = (
+        "Whether to use the aparam as a mask in input."
         "If True, the aparam will not be used in fitting net for embedding."
         "When descrpt is se_a_mask, the aparam will be used as a mask to indicate the input atom is real/virtual. And use_aparam_as_mask should be set to True."
     )
@@ -499,7 +500,13 @@ def fitting_ener():
         Argument("seed", [int, None], optional=True, doc=doc_seed),
         Argument("atom_ener", list, optional=True, default=[], doc=doc_atom_ener),
         Argument("layer_name", list, optional=True, doc=doc_layer_name),
-        Argument("use_aparam_as_mask", bool, optional=True, default=False, doc=doc_use_aparam_as_mask),
+        Argument(
+            "use_aparam_as_mask",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_use_aparam_as_mask,
+        ),
     ]
 
 

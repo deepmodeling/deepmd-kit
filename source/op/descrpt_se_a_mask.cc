@@ -15,9 +15,9 @@ REGISTER_OP("DescrptSeAMask")
     .Input("coord: T")
     .Input("type: int32")
     .Input("mask: int32")
-    .Input("box: T") // Not used in practice
-    .Input("natoms: int32") // Not used in practice
-    .Input("mesh: int32") // Not used in practice
+    .Input("box: T")         // Not used in practice
+    .Input("natoms: int32")  // Not used in practice
+    .Input("mesh: int32")    // Not used in practice
     .Attr("total_atom_num: int")
     .Output("descrpt: T")
     .Output("descrpt_deriv: T")
