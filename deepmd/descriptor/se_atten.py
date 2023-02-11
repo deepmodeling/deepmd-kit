@@ -404,7 +404,7 @@ class DescrptSeAtten(DescrptSeA):
         self.nei_type_vec = tf.reshape(self.nei_type_vec, [-1])
         self.nmask = tf.cast(
             tf.reshape(self.nmask, [-1, 1, self.sel_all_a[0]]),
-            GLOBAL_TF_FLOAT_PRECISION,
+            self.filter_precision,
         )
         self.negative_mask = -(2 << 32) * (1.0 - self.nmask)
         # only used when tensorboard was set as true
