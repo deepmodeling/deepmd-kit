@@ -197,7 +197,7 @@ class DeepmdData:
         """
         assert key_in in self.data_dict, "cannot find input key"
         assert self.data_dict[key_in]["atomic"], "reduced property should be atomic"
-        assert not (key_out in self.data_dict), "output key should not have been added"
+        assert key_out not in self.data_dict, "output key should not have been added"
         assert (
             self.data_dict[key_in]["repeat"] == 1
         ), "reduced proerties should not have been repeated"
@@ -462,7 +462,7 @@ class DeepmdData:
                 type(data[kk]) == np.ndarray
                 and len(data[kk].shape) == 2
                 and data[kk].shape[0] == nframes
-                and not ("find_" in kk)
+                and "find_" not in kk
             ):
                 ret[kk] = data[kk][idx]
             else:

@@ -124,7 +124,7 @@ class DeepPot(DeepEval):
             self._get_tensor("t_efield:0", "t_efield")
             self.has_efield = True
         else:
-            log.debug(f"Could not get tensor 't_efield:0'")
+            log.debug("Could not get tensor 't_efield:0'")
             self.t_efield = None
             self.has_efield = False
 
@@ -132,7 +132,7 @@ class DeepPot(DeepEval):
             self.tensors.update({"t_fparam": "t_fparam:0"})
             self.has_fparam = True
         else:
-            log.debug(f"Could not get tensor 't_fparam:0'")
+            log.debug("Could not get tensor 't_fparam:0'")
             self.t_fparam = None
             self.has_fparam = False
 
@@ -140,7 +140,7 @@ class DeepPot(DeepEval):
             self.tensors.update({"t_aparam": "t_aparam:0"})
             self.has_aparam = True
         else:
-            log.debug(f"Could not get tensor 't_aparam:0'")
+            log.debug("Could not get tensor 't_aparam:0'")
             self.t_aparam = None
             self.has_aparam = False
 

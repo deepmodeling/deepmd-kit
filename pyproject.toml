@@ -108,3 +108,6 @@ ignore = "D413, D416, D203, D107, D213"
 [tool.isort]
 profile = "black"
 force_grid_wrap = 1
+
+[tool.ruff]
+ignore = ["E501", "F401", "F841", "E741", "E402"]

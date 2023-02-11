@@ -306,7 +306,7 @@ def descrpt_se_r_args():
 
 @descrpt_args_plugin.register("hybrid")
 def descrpt_hybrid_args():
-    doc_list = f"A list of descriptor definitions"
+    doc_list = "A list of descriptor definitions"
 
     return [Argument("list", list, optional=False, doc=doc_list)]
 
@@ -432,7 +432,7 @@ def descrpt_variant_type_args(exclude_hybrid: bool = False) -> Variant:
     link_se_a_tpe = make_link("se_a_tpe", "model/descriptor[se_a_tpe]")
     link_hybrid = make_link("hybrid", "model/descriptor[hybrid]")
     link_se_atten = make_link("se_atten", "model/descriptor[se_atten]")
-    doc_descrpt_type = f"The type of the descritpor. See explanation below. \n\n\
+    doc_descrpt_type = "The type of the descritpor. See explanation below. \n\n\
 - `loc_frame`: Defines a local frame at each atom, and the compute the descriptor as local coordinates under this frame.\n\n\
 - `se_e2_a`: Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor.\n\n\
 - `se_e2_r`: Used by the smooth edition of Deep Potential. Only the distance between atoms is used to construct the descriptor.\n\n\
@@ -615,7 +615,7 @@ def modifier_dipole_charge():
     doc_model_name = "The name of the frozen dipole model file."
     doc_model_charge_map = f"The charge of the WFCC. The list length should be the same as the {make_link('sel_type', 'model/fitting_net[dipole]/sel_type')}. "
     doc_sys_charge_map = f"The charge of real atoms. The list length should be the same as the {make_link('type_map', 'model/type_map')}"
-    doc_ewald_h = f"The grid spacing of the FFT grid. Unit is A"
+    doc_ewald_h = "The grid spacing of the FFT grid. Unit is A"
     doc_ewald_beta = f"The splitting parameter of Ewald sum. Unit is A^{-1}"
 
     return [
@@ -642,12 +642,10 @@ def modifier_variant_type_args():
 
 #  --- model compression configurations: --- #
 def model_compression():
-    doc_model_file = (
-        f"The input model file, which will be compressed by the DeePMD-kit."
-    )
-    doc_table_config = f"The arguments of model compression, including extrapolate(scale of model extrapolation), stride(uniform stride of tabulation's first and second table), and frequency(frequency of tabulation overflow check)."
+    doc_model_file = "The input model file, which will be compressed by the DeePMD-kit."
+    doc_table_config = "The arguments of model compression, including extrapolate(scale of model extrapolation), stride(uniform stride of tabulation's first and second table), and frequency(frequency of tabulation overflow check)."
     doc_min_nbor_dist = (
-        f"The nearest distance between neighbor atoms saved in the frozen model."
+        "The nearest distance between neighbor atoms saved in the frozen model."
     )
 
     return [

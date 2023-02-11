@@ -147,7 +147,7 @@ class PolarFittingSeA(Fitting):
         protection
             Divided-by-zero protection
         """
-        if not ("polarizability" in all_stat.keys()):
+        if "polarizability" not in all_stat.keys():
             self.avgeig = np.zeros([9])
             warnings.warn(
                 "no polarizability data, cannot do data stat. use zeros as guess"

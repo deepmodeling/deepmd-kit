@@ -72,6 +72,7 @@ DeePMD-kit is a package written in Python/C++, designed to minimize the effort r
 
    license
    credits
+   logo
 
 
 * :ref:`genindex`
