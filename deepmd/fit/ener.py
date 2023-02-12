@@ -558,15 +558,15 @@ class EnerFitting(Fitting):
             fparam = input_dict["fparam"]
             fparam = tf.reshape(fparam, [-1, self.numb_fparam])
             fparam = (fparam - t_fparam_avg) * t_fparam_istd
-
+        
         aparam = None
-        if not self.use_aparam_as_mask:
+        if not self.use_aparam_as_mask:    
             if self.numb_aparam > 0:
                 aparam = input_dict["aparam"]
                 aparam = tf.reshape(aparam, [-1, self.numb_aparam])
                 aparam = (aparam - t_aparam_avg) * t_aparam_istd
                 aparam = tf.reshape(aparam, [-1, self.numb_aparam * natoms[0]])
-
+        
         atype_nall = tf.reshape(atype, [-1, natoms[1]])
         self.atype_nloc = tf.reshape(
             tf.slice(atype_nall, [0, 0], [-1, natoms[0]]), [-1]

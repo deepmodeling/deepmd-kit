@@ -11,7 +11,6 @@ from common import (
 from infer.convert2pb import (
     convert_pbtxt_to_pb,
 )
-
 from deepmd.common import (
     j_must_have,
 )
@@ -35,7 +34,6 @@ GLOBAL_TF_FLOAT_PRECISION = tf.float64
 GLOBAL_NP_FLOAT_PRECISION = np.float64
 
 tests_path = pathlib.Path(__file__).parent.absolute()
-
 
 class TestModel(tf.test.TestCase):
     @classmethod
