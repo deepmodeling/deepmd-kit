@@ -389,7 +389,7 @@ def descrpt_se_a_mask_args():
     doc_precision = f"The precision of the embedding net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
     doc_trainable = "If the parameters in the embedding net is trainable"
     doc_seed = "Random seed for parameter initialization"
-    
+
     return [
         Argument("sel", [list, str], optional=True, default="auto", doc=doc_sel),
         Argument("neuron", list, optional=True, default=[10, 20, 40], doc=doc_neuron),
