@@ -91,17 +91,6 @@ class DescrptSeAMaskOp : public OpKernel {
                 (total_atom_num == mask_matrix_tensor.shape().dim_size(1)),
                 errors::InvalidArgument("number of atoms should match"));
 
-    // Calculate the total_atom_num
-    auto natoms = natoms_tensor.flat<int>();
-    total_atom_num = natoms(1);
-    // check the sizes
-    OP_REQUIRES(context,
-                (total_atom_num * 3 == coord_tensor.shape().dim_size(1)),
-                errors::InvalidArgument("number of atoms should match"));
-    OP_REQUIRES(context,
-                (total_atom_num == mask_matrix_tensor.shape().dim_size(1)),
-                errors::InvalidArgument("number of atoms should match"));
-
     // Create an output tensor
     TensorShape descrpt_shape;
     descrpt_shape.AddDim(nsamples);
