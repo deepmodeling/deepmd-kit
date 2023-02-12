@@ -15,9 +15,10 @@ REGISTER_OP("DescrptSeAMask")
     .Input("coord: T")
     .Input("type: int32")
     .Input("mask: int32")
-    .Input("box: T") // Not used in practice
-    .Input("natoms: int32") // Used to fetch total_atom_num. Check the size of input.
-    .Input("mesh: int32") // Not used in practice
+    .Input("box: T")         // Not used in practice
+    .Input("natoms: int32")  // Used to fetch total_atom_num. Check the size of
+                             // input.
+    .Input("mesh: int32")    // Not used in practice
     .Output("descrpt: T")
     .Output("descrpt_deriv: T")
     .Output("rij: T")
@@ -41,7 +42,7 @@ template <typename Device, typename FPTYPE>
 class DescrptSeAMaskOp : public OpKernel {
  public:
   explicit DescrptSeAMaskOp(OpKernelConstruction *context) : OpKernel(context) {
-    //OP_REQUIRES_OK(context);
+    // OP_REQUIRES_OK(context);
   }
 
   void Compute(OpKernelContext *context) override {
@@ -78,14 +79,16 @@ class DescrptSeAMaskOp : public OpKernel {
 
     // Set n_descrpt for each atom. Include 1/rr, cos(theta), cos(phi), sin(phi)
     int n_descrpt = 4;
-    
+
     // Calculate the total_atom_num
     auto natoms = natoms_tensor.flat<int>();
     total_atom_num = natoms(1);
     // check the sizes
-    OP_REQUIRES(context, (total_atom_num * 3 == coord_tensor.shape().dim_size(1)),
+    OP_REQUIRES(context,
+                (total_atom_num * 3 == coord_tensor.shape().dim_size(1)),
                 errors::InvalidArgument("number of atoms should match"));
-    OP_REQUIRES(context, (total_atom_num == mask_matrix_tensor.shape().dim_size(1)),
+    OP_REQUIRES(context,
+                (total_atom_num == mask_matrix_tensor.shape().dim_size(1)),
                 errors::InvalidArgument("number of atoms should match"));
 
     // Create an output tensor
