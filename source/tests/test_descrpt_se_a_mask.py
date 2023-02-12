@@ -11,7 +11,6 @@ from common import (
 from infer.convert2pb import (
     convert_pbtxt_to_pb,
 )
-
 from deepmd.common import (
     j_must_have,
 )
@@ -35,7 +34,6 @@ GLOBAL_TF_FLOAT_PRECISION = tf.float64
 GLOBAL_NP_FLOAT_PRECISION = np.float64
 
 tests_path = pathlib.Path(__file__).parent.absolute()
-
 
 class TestModel(tf.test.TestCase):
     @classmethod
@@ -232,7 +230,6 @@ class TestModel(tf.test.TestCase):
         # Manually set the aparam to be all zeros. So that all particles are masked as virtual atoms.
         # This is to test the correctness of the mask.
         test_data["aparam"] = np.zeros([numb_test, total_atom_num], dtype=np.int32)
-
         feed_dict_test = {
             t_coord: test_data["coord"][:numb_test, :],
             t_box: test_data["box"][:numb_test, :],
@@ -242,7 +239,6 @@ class TestModel(tf.test.TestCase):
             t_aparam: test_data["aparam"][:numb_test, :],
             is_training: False,
         }
-
         sess = self.test_session().__enter__()
         sess.run(tf.global_variables_initializer())
         [op_dout] = sess.run([dout], feed_dict=feed_dict_test)
