@@ -117,8 +117,6 @@ class DescrptSeAMask(DescrptSeA):
     exclude_types : List[List[int]]
             The excluded pairs of types which have no interaction with each other.
             For example, `[[0, 1]]` means no interaction between type 0 and type 1.
-    set_davg_zero
-            Set the shift of embedding net input to zero.
     activation_function
             The activation function in the embedding net. Supported options are {0}
     precision
@@ -143,7 +141,6 @@ class DescrptSeAMask(DescrptSeA):
         type_one_side: bool = False,
         exclude_types: List[List[int]] = [],
         seed: int = None,
-        set_davg_zero: bool = False,
         activation_function: str = "tanh",
         precision: str = "default",
         uniform_seed: bool = False,
@@ -169,7 +166,7 @@ class DescrptSeAMask(DescrptSeA):
             assert len(tt) == 2
             self.exclude_types.add((tt[0], tt[1]))
             self.exclude_types.add((tt[1], tt[0]))
-        self.set_davg_zero = set_davg_zero
+        self.set_davg_zero = False
         self.type_one_side = type_one_side
         # descrpt config. Not used in se_a_mask
         self.sel_r = [0 for ii in range(len(self.sel_a))]
