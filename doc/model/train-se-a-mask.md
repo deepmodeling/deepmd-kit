@@ -1,20 +1,20 @@
 # Descriptor `"se_a_mask"`
 
 
-Descriptor `se_a_mask` is a concise implementation of the descriptor `se_e2_a`, 
+Descriptor `se_a_mask` is a concise implementation of the descriptor `se_e2_a`,
 but functions slightly differently.
 `se_a_mask` is specially designed for DP/MM simulations where the number of atoms in DP regions is dynamically changed in simulations.
 
 Therefore, the descriptor `se_a_mask` is not supported for training with PBC systems for simplicity.
-Besides, to make the output shape of the descriptor matrix consistent, 
+Besides, to make the output shape of the descriptor matrix consistent,
 the input coordinates are padded with virtual particle coordinates to the maximum number of atoms (specified with `sel` in the descriptor setting) in the system.
 The real/virtual sign of the atoms is specified with the `aparam.npy` ( [ nframes * natoms ] ) file in the input systems set directory.
-The `aparam.npy` can also be seen as the mask of the atoms in the system, 
+The `aparam.npy` can also be seen as the mask of the atoms in the system,
 which is also the origin of the name `se_a_mask`.
 
 In this example, we will train a DP Mask model for zinc protein interactions.
-The input systems are the collection of zinc and its coordinates residues. 
-A sample input system that contains 2 frames is included in the directory. 
+The input systems are the collection of zinc and its coordinates residues.
+A sample input system that contains 2 frames is included in the directory.
 ```bash
 $deepmd_source_dir/examples/zinc_protein/data_dp_mask
 ```
@@ -57,7 +57,7 @@ To make the `aparam.npy` used for descriptor `se_a_mask`, two variables in `fitt
 * {ref}`numb_aparam <model/fitting_net[ener]/numb_aparam>` gives the dimesion of the `aparam.npy` file. In this example, it is set to 1 and stores the real/virtual sign of the atoms. For real/virtual atoms, the corresponding sign in `aparam.npy` is set to 1/0.
 * {ref}`use_aparam_as_mask <model/fitting_net[ener]/use_aparam_as_mask>` is set to `true` to use the `aparam.npy` as the mask of the atoms in the descriptor `se_a_mask`.
 
-Finally, to make a reasonable fitting task with `se_a_mask` descriptor for DP/MM simulations, the loss function with `se_a_mask` is designed to include the atomic forces difference in specific atoms of the input particles only. 
+Finally, to make a reasonable fitting task with `se_a_mask` descriptor for DP/MM simulations, the loss function with `se_a_mask` is designed to include the atomic forces difference in specific atoms of the input particles only.
 More details about the selection of the specific atoms can be found in paper [DP/MM](left to be filled).
 Thus, `atom_pref.npy` ( [ nframes * natoms ] ) is required as the indicator of the specific atoms in the input particles.
 And the `loss` section in the training input script should be set as follows.
