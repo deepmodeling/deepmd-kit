@@ -112,9 +112,11 @@ class EnerStdLoss(Loss):
                 tf.square(energy - energy_hat), name="l2_" + suffix
             )
 
-        force_reshape = tf.reshape(force, [-1])
-        force_hat_reshape = tf.reshape(force_hat, [-1])
-        diff_f = force_hat_reshape - force_reshape
+        if self.has_f or self.has_pf or self.relative_f:
+            force_reshape = tf.reshape(force, [-1])
+            force_hat_reshape = tf.reshape(force_hat, [-1])
+            diff_f = force_hat_reshape - force_reshape
+            
         if self.relative_f is not None:
             force_hat_3 = tf.reshape(force_hat, [-1, 3])
             norm_f = tf.reshape(tf.norm(force_hat_3, axis=1), [-1, 1]) + self.relative_f
