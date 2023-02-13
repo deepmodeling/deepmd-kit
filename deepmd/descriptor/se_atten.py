@@ -1048,11 +1048,12 @@ class DescrptSeAtten(DescrptSeA):
         deepmd.descriptor.descriptor.Descriptor.build_type_exclude_mask
         """
         # generate a mask
+        # op returns ntypes when the neighbor doesn't exist, so we need to add 1
         type_mask = np.array(
             [
                 [
                     1 if (tt_i, tt_j) not in exclude_types else 0
-                    for tt_i in range(ntypes)
+                    for tt_i in range(ntypes + 1)
                 ]
                 for tt_j in range(ntypes)
             ],
@@ -1064,7 +1065,7 @@ class DescrptSeAtten(DescrptSeA):
         # (nsamples * natoms, 1)
         atype_expand = tf.reshape(atype, [-1, 1])
         # (nsamples * natoms, ndescrpt)
-        idx_i = tf.tile(atype_expand * ntypes, (1, ndescrpt))
+        idx_i = tf.tile(atype_expand * (ntypes + 1), (1, ndescrpt))
         # idx_j has been provided by atten op
         # (nsamples * natoms, nnei, 1)
         idx_j = tf.reshape(nei_type_vec, [shape0, sel[0], 1])
