@@ -192,3 +192,78 @@ class TestModel(tf.test.TestCase):
         np.testing.assert_almost_equal(e, refe, places)
         np.testing.assert_almost_equal(f, reff, places)
         np.testing.assert_almost_equal(v, refv, places)
+
+    def test_exclude_types(self):
+        """In this test, we make type 0 has no interaction with type 0 and type 1,
+        so the descriptor should be zero for type 0 atoms.
+        """
+        jfile = "water_se_atten.json"
+        jdata = j_loader(jfile)
+
+        systems = j_must_have(jdata, "systems")
+        set_pfx = j_must_have(jdata, "set_prefix")
+        batch_size = j_must_have(jdata, "batch_size")
+        test_size = j_must_have(jdata, "numb_test")
+        batch_size = 1
+        test_size = 1
+        rcut = j_must_have(jdata["model"]["descriptor"], "rcut")
+        ntypes = 2
+
+        data = DataSystem(systems, set_pfx, batch_size, test_size, rcut, run_opt=None)
+
+        test_data = data.get_test()
+        numb_test = 1
+
+        # set parameters
+        jdata["model"]["descriptor"]["exclude_types"] = [[0, 0], [0, 1]]
+
+        t_prop_c = tf.placeholder(tf.float32, [5], name="t_prop_c")
+        t_coord = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None], name="i_coord")
+        t_type = tf.placeholder(tf.int32, [None], name="i_type")
+        t_natoms = tf.placeholder(tf.int32, [ntypes + 2], name="i_natoms")
+        t_box = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None, 9], name="i_box")
+        t_mesh = tf.placeholder(tf.int32, [None], name="i_mesh")
+        is_training = tf.placeholder(tf.bool)
+
+        # successful
+        descrpt = DescrptSeAtten(ntypes=ntypes, **jdata["model"]["descriptor"])
+        typeebd_param = jdata["model"]["type_embedding"]
+        typeebd = TypeEmbedNet(
+            neuron=typeebd_param["neuron"],
+            activation_function=None,
+            resnet_dt=typeebd_param["resnet_dt"],
+            seed=typeebd_param["seed"],
+            uniform_seed=True,
+            padding=True,
+        )
+        type_embedding = typeebd.build(
+            ntypes,
+        )
+        dout = descrpt.build(
+            t_coord,
+            t_type,
+            t_natoms,
+            t_box,
+            t_mesh,
+            {"type_embedding": type_embedding},
+            reuse=False,
+            suffix="_se_atten_exclude_types",
+        )
+
+        feed_dict_test1 = {
+            t_prop_c: test_data["prop_c"],
+            t_coord: np.reshape(test_data["coord"][:numb_test, :], [-1]),
+            t_box: test_data["box"][:numb_test, :],
+            t_type: np.reshape(test_data["type"][:numb_test, :], [-1]),
+            t_natoms: test_data["natoms_vec"],
+            t_mesh: test_data["default_mesh"],
+            is_training: False,
+        }
+
+        with self.test_session() as sess:
+            sess.run(tf.global_variables_initializer())
+            [des] = sess.run([dout], feed_dict=feed_dict_test1)
+
+        np.testing.assert_almost_equal(des[:, 0:2], 0.0, 10)
+        with self.assertRaises(AssertionError):
+            np.testing.assert_almost_equal(des[:, 2:6], 0.0, 10)
