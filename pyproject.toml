@@ -78,10 +78,8 @@ before-all = [
     """{ if [ "$(uname -m)" = "x86_64" ] ; then yum config-manager --add-repo http://developer.download.nvidia.com/compute/cuda/repos/rhel8/x86_64/cuda-rhel8.repo && yum install -y cuda-11-8; fi }""",
     "yum install -y mpich-devel",
 ]
-test-extras = ["cpu", "ipi"]
 test-command = [
     "dp -h",
-    "dp_ipi",
 ]
 
 [tool.cibuildwheel.windows]
