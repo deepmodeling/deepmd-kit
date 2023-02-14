@@ -223,7 +223,7 @@ def set_env_if_empty(key: str, value: str, verbose: bool = True):
     if os.environ.get(key) is None:
         os.environ[key] = value
         if verbose:
-            logging.warn(
+            logging.warning(
                 f"Environment variable {key} is empty. Use the default value {value}"
             )
 

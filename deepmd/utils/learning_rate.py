@@ -55,14 +55,14 @@ class LearningRateExp(object):
         Parameters
         ----------
         global_step
-                The tf Tensor prividing the global training step
+            The tf Tensor prividing the global training step
         stop_step
-                The stop step. If provided, the decay_rate will be determined automatically and overwritten.
+            The stop step. If provided, the decay_rate will be determined automatically and overwritten.
 
         Returns
         -------
         learning_rate
-                The learning rate
+            The learning rate
         """
         if stop_step is None:
             self.decay_steps_ = (

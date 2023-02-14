@@ -25,7 +25,7 @@ def make_stat_input(data, nbatches, merge_sys=True):
     ----------
     data:
         The data
-    merge_sys: bool (True)
+    merge_sys : bool (True)
         Merge system data
 
     Returns

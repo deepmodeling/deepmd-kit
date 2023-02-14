@@ -128,16 +128,16 @@ class TypeEmbedNet:
         Parameters
         ----------
         ntypes
-                Number of atom types.
+            Number of atom types.
         reuse
-                The weights in the networks should be reused when get the variable.
+            The weights in the networks should be reused when get the variable.
         suffix
-                Name suffix to identify this descriptor
+            Name suffix to identify this descriptor
 
         Returns
         -------
         embedded_types
-                The computational graph for embedded types
+            The computational graph for embedded types
         """
         types = tf.convert_to_tensor([ii for ii in range(ntypes)], dtype=tf.int32)
         ebd_type = tf.cast(

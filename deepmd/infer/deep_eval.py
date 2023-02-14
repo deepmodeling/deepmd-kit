@@ -212,33 +212,33 @@ class DeepEval:
         Parameters
         ----------
         coord
-                The coordinates of atoms.
-                Should be of shape [nframes, natoms, 3]
+            The coordinates of atoms.
+            Should be of shape [nframes, natoms, 3]
         atom_type
-                The type of atoms
-                Should be of shape [natoms]
+            The type of atoms
+            Should be of shape [natoms]
         sel_atoms
-                The selected atoms by type
+            The selected atoms by type
         mixed_type
-                Whether to perform the mixed_type mode.
-                If True, the input data has the mixed_type format (see doc/model/train_se_atten.md),
-                in which frames in a system may have different natoms_vec(s), with the same nloc.
+            Whether to perform the mixed_type mode.
+            If True, the input data has the mixed_type format (see doc/model/train_se_atten.md),
+            in which frames in a system may have different natoms_vec(s), with the same nloc.
 
         Returns
         -------
         coord_out
-                The coordinates after sorting
+            The coordinates after sorting
         atom_type_out
-                The atom types after sorting
+            The atom types after sorting
         idx_map
-                The index mapping from the input to the output.
-                For example coord_out = coord[:,idx_map,:]
+            The index mapping from the input to the output.
+            For example coord_out = coord[:,idx_map,:]
         sel_atom_type
-                Only output if sel_atoms is not None
-                The sorted selected atom types
+            Only output if sel_atoms is not None
+            The sorted selected atom types
         sel_idx_map
-                Only output if sel_atoms is not None
-                The index mapping from the selected atoms to sorted selected atoms.
+            Only output if sel_atoms is not None
+            The index mapping from the selected atoms to sorted selected atoms.
         """
         if mixed_type:
             # mixed_type need not to resort
@@ -273,14 +273,14 @@ class DeepEval:
         Parameters
         ----------
         vec
-                Input vector. Be of shape [nframes, natoms, -1]
+            Input vector. Be of shape [nframes, natoms, -1]
         imap
-                Index map. Be of shape [natoms]
+            Index map. Be of shape [natoms]
 
         Returns
         -------
         vec_out
-                Reverse mapped vector.
+            Reverse mapped vector.
         """
         ret = np.zeros(vec.shape)
         # for idx,ii in enumerate(imap) :
@@ -296,19 +296,19 @@ class DeepEval:
         Parameters
         ----------
         atom_types
-                The type of atoms
+            The type of atoms
         mixed_type
-                Whether to perform the mixed_type mode.
-                If True, the input data has the mixed_type format (see doc/model/train_se_atten.md),
-                in which frames in a system may have different natoms_vec(s), with the same nloc.
+            Whether to perform the mixed_type mode.
+            If True, the input data has the mixed_type format (see doc/model/train_se_atten.md),
+            in which frames in a system may have different natoms_vec(s), with the same nloc.
 
         Returns
         -------
         natoms
-                The number of atoms. This tensor has the length of Ntypes + 2
-                natoms[0]: number of local atoms
-                natoms[1]: total number of atoms held by this processor
-                natoms[i]: 2 <= i < Ntypes+2, number of type i atoms
+            The number of atoms. This tensor has the length of Ntypes + 2
+            natoms[0]: number of local atoms
+            natoms[1]: total number of atoms held by this processor
+            natoms[i]: 2 <= i < Ntypes+2, number of type i atoms
 
         """
         natoms_vec = np.zeros(self.ntypes + 2).astype(int)

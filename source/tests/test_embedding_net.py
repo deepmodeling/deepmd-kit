@@ -103,7 +103,7 @@ class Inter(tf.test.TestCase):
         ]
         np.testing.assert_almost_equal(refout, myout, self.places)
 
-    def test_enlarger_net_2(self):
+    def test_enlarger_net_3(self):
         network_size = [2, 4]
         out = embedding_net(
             self.inputs,
