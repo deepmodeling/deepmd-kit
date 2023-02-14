@@ -14,5 +14,6 @@ Model
    train-energy
    train-fitting-tensor
    train-se-e2-a-tebd
+   train-se-a-mask
    dplr
    dprc

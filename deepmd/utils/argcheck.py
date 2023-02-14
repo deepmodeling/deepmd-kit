@@ -374,6 +374,53 @@ def descrpt_se_atten_args():
     ]
 
 
+@descrpt_args_plugin.register("se_a_mask")
+def descrpt_se_a_mask_args():
+    doc_sel = 'This parameter sets the number of selected neighbors for each type of atom. It can be:\n\n\
+    - `List[int]`. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius. It is noted that the total sel value must be less than 4096 in a GPU environment.\n\n\
+    - `str`. Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`. In detail it counts the maximal number of neighbors with in the cutoff radius for each type of neighbor, then multiply the maximum by the "factor". Finally the number is wraped up to 4 divisible. The option "auto" is equivalent to "auto:1.1".'
+
+    doc_neuron = "Number of neurons in each hidden layers of the embedding net. When two layers are of the same size or one layer is twice as large as the previous layer, a skip connection is built."
+    doc_axis_neuron = "Size of the submatrix of G (embedding matrix)."
+    doc_activation_function = f'The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version.'
+    doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
+    doc_type_one_side = r"If true, the embedding network parameters vary by types of neighbor atoms only, so there will be $N_\text{types}$ sets of embedding network parameters. Otherwise, the embedding network parameters vary by types of centric atoms and types of neighbor atoms, so there will be $N_\text{types}^2$ sets of embedding network parameters."
+    doc_exclude_types = "The excluded pairs of types which have no interaction with each other. For example, `[[0, 1]]` means no interaction between type 0 and type 1."
+    doc_precision = f"The precision of the embedding net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
+    doc_trainable = "If the parameters in the embedding net is trainable"
+    doc_seed = "Random seed for parameter initialization"
+
+    return [
+        Argument("sel", [list, str], optional=True, default="auto", doc=doc_sel),
+        Argument("neuron", list, optional=True, default=[10, 20, 40], doc=doc_neuron),
+        Argument(
+            "axis_neuron",
+            int,
+            optional=True,
+            default=4,
+            alias=["n_axis_neuron"],
+            doc=doc_axis_neuron,
+        ),
+        Argument(
+            "activation_function",
+            str,
+            optional=True,
+            default="tanh",
+            doc=doc_activation_function,
+        ),
+        Argument("resnet_dt", bool, optional=True, default=False, doc=doc_resnet_dt),
+        Argument(
+            "type_one_side", bool, optional=True, default=False, doc=doc_type_one_side
+        ),
+        Argument(
+            "exclude_types", list, optional=True, default=[], doc=doc_exclude_types
+        ),
+        Argument("precision", str, optional=True, default="default", doc=doc_precision),
+        Argument("trainable", bool, optional=True, default=True, doc=doc_trainable),
+        Argument("seed", [int, None], optional=True, doc=doc_seed),
+    ]
+
+
 def descrpt_variant_type_args(exclude_hybrid: bool = False) -> Variant:
     link_lf = make_link("loc_frame", "model/descriptor[loc_frame]")
     link_se_e2_a = make_link("se_e2_a", "model/descriptor[se_e2_a]")
@@ -389,6 +436,7 @@ def descrpt_variant_type_args(exclude_hybrid: bool = False) -> Variant:
 - `se_e3`: Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor. Three-body embedding will be used by this descriptor.\n\n\
 - `se_a_tpe`: Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor. Type embedding will be used by this descriptor.\n\n\
 - `se_atten`: Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor. Attention mechanism will be used by this descriptor.\n\n\
+- `se_a_mask`: Used by the smooth edition of Deep Potential. It can accept a variable number of atoms in a frame (Non-PBC system). *aparam* are required as an indicator matrix for the real/virtual sign of input atoms. \n\n\
 - `hybrid`: Concatenate of a list of descriptors as a new descriptor."
 
     return Variant("type", descrpt_args_plugin.get_all_argument(), doc=doc_descrpt_type)
@@ -414,6 +462,11 @@ def fitting_ener():
         "have the same name, they will share the same neural network parameters. "
         "The shape of these layers should be the same. "
         "If null is given for a layer, parameters will not be shared."
+    )
+    doc_use_aparam_as_mask = (
+        "Whether to use the aparam as a mask in input."
+        "If True, the aparam will not be used in fitting net for embedding."
+        "When descrpt is se_a_mask, the aparam will be used as a mask to indicate the input atom is real/virtual. And use_aparam_as_mask should be set to True."
     )
 
     return [
@@ -443,6 +496,13 @@ def fitting_ener():
         Argument("seed", [int, None], optional=True, doc=doc_seed),
         Argument("atom_ener", list, optional=True, default=[], doc=doc_atom_ener),
         Argument("layer_name", list, optional=True, doc=doc_layer_name),
+        Argument(
+            "use_aparam_as_mask",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_use_aparam_as_mask,
+        ),
     ]
 
 

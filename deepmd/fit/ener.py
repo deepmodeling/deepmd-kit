@@ -120,6 +120,9 @@ class EnerFitting(Fitting):
     layer_name : list[Optional[str]], optional
             The name of the each layer. If two layers, either in the same fitting or different fittings,
             have the same name, they will share the same neural network parameters.
+    use_aparam_as_mask: bool, optional
+            If True, the atomic parameters will be used as a mask that determines the atom is real/virtual.
+            And the aparam will not be used as the atomic parameters for embedding.
     """
 
     def __init__(
@@ -138,6 +141,7 @@ class EnerFitting(Fitting):
         precision: str = "default",
         uniform_seed: bool = False,
         layer_name: Optional[List[Optional[str]]] = None,
+        use_aparam_as_mask: bool = False,
     ) -> None:
         """
         Constructor
@@ -145,6 +149,7 @@ class EnerFitting(Fitting):
         # model param
         self.ntypes = descrpt.get_ntypes()
         self.dim_descrpt = descrpt.get_dim_out()
+        self.use_aparam_as_mask = use_aparam_as_mask
         # args = ()\
         #        .add('numb_fparam',      int,    default = 0)\
         #        .add('numb_aparam',      int,    default = 0)\
@@ -549,16 +554,18 @@ class EnerFitting(Fitting):
             assert len(bias_atom_e) == self.ntypes
 
         fparam = None
-        aparam = None
         if self.numb_fparam > 0:
             fparam = input_dict["fparam"]
             fparam = tf.reshape(fparam, [-1, self.numb_fparam])
             fparam = (fparam - t_fparam_avg) * t_fparam_istd
-        if self.numb_aparam > 0:
-            aparam = input_dict["aparam"]
-            aparam = tf.reshape(aparam, [-1, self.numb_aparam])
-            aparam = (aparam - t_aparam_avg) * t_aparam_istd
-            aparam = tf.reshape(aparam, [-1, self.numb_aparam * natoms[0]])
+
+        aparam = None
+        if not self.use_aparam_as_mask:
+            if self.numb_aparam > 0:
+                aparam = input_dict["aparam"]
+                aparam = tf.reshape(aparam, [-1, self.numb_aparam])
+                aparam = (aparam - t_aparam_avg) * t_aparam_istd
+                aparam = tf.reshape(aparam, [-1, self.numb_aparam * natoms[0]])
 
         atype_nall = tf.reshape(atype, [-1, natoms[1]])
         self.atype_nloc = tf.reshape(

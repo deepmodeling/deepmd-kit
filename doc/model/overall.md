@@ -20,8 +20,9 @@ DeePMD-kit implements the following descriptors:
 1. [`se_e2_a`](train-se-e2-a.md): DeepPot-SE constructed from all information (both angular and radial) of atomic configurations. The embedding takes the distance between atoms as input.
 2. [`se_e2_r`](train-se-e2-r.md): DeepPot-SE constructed from radial information of atomic configurations. The embedding takes the distance between atoms as input.
 3. [`se_e3`](train-se-e3.md): DeepPot-SE constructed from all information (both angular and radial) of atomic configurations. The embedding takes angles between two neighboring atoms as input.
-4. `loc_frame`: Defines a local frame at each atom and compute the descriptor as local coordinates under this frame.
-5. [`hybrid`](train-hybrid.md): Concate a list of descriptors to form a new descriptor.
+4. [`se_a_mask`](train-se-a-mask.md): DeepPot-SE constructed from all information (both angular and radial) of atomic configurations. The input frames in one system can have a varied number of atoms. Input particles are padded with virtual particles of the same length.
+5. `loc_frame`: Defines a local frame at each atom and compute the descriptor as local coordinates under this frame.
+6. [`hybrid`](train-hybrid.md): Concate a list of descriptors to form a new descriptor.
 
 The fitting of the following physical properties is supported
 1. [`ener`](train-energy.md): Fit the energy of the system. The force (derivative with atom positions) and the virial (derivative with the box tensor) can also be trained.
