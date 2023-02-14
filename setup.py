@@ -126,6 +126,7 @@ setup(
         ],
         "ipi": [
             "i-PI",
+            "find_libpython",
         ],
         **get_tf_requirement(tf_version),
         "cu11": [
