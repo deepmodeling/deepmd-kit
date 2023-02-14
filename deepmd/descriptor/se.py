@@ -98,13 +98,13 @@ class DescrptSe(Descriptor):
         Parameters
         ----------
         descrpt_reshape
-                The passed descrpt_reshape tensor
+            The passed descrpt_reshape tensor
         descrpt_deriv
-                The passed descrpt_deriv tensor
+            The passed descrpt_deriv tensor
         rij
-                The passed rij tensor
+            The passed rij tensor
         nlist
-                The passed nlist tensor
+            The passed nlist tensor
         """
         self.rij = rij
         self.nlist = nlist

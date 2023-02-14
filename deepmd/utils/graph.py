@@ -113,7 +113,7 @@ def get_tensor_by_type(node, data_type: np.dtype) -> tf.Tensor:
         The data type of the node
 
     Returns
-    ----------
+    -------
     tf.Tensor
         The tensor value of the given node
     """
@@ -138,14 +138,14 @@ def get_pattern_nodes_from_graph_def(graph_def: tf.GraphDef, pattern: str) -> Di
         The node pattern within the graph_def
 
     Returns
-    ----------
+    -------
     Dict
         The fitting net nodes within the given tf.GraphDef object
     """
     nodes = {}
     pattern = re.compile(pattern)
     for node in graph_def.node:
-        if re.fullmatch(pattern, node.name) != None:
+        if re.fullmatch(pattern, node.name) is not None:
             nodes[node.name] = node.attr["value"].tensor
     return nodes
 
@@ -164,7 +164,7 @@ def get_embedding_net_nodes_from_graph_def(
         The scope suffix
 
     Returns
-    ----------
+    -------
     Dict
         The embedding net nodes within the given tf.GraphDef object
     """
@@ -200,7 +200,7 @@ def get_embedding_net_nodes(model_file: str, suffix: str = "") -> Dict:
         The suffix of the scope
 
     Returns
-    ----------
+    -------
     Dict
         The embedding net nodes with the given frozen model
     """
@@ -222,7 +222,7 @@ def get_embedding_net_variables_from_graph_def(
         The suffix of the scope
 
     Returns
-    ----------
+    -------
     Dict
         The embedding net variables within the given tf.GraphDef object
     """
@@ -256,7 +256,7 @@ def get_embedding_net_variables(model_file: str, suffix: str = "") -> Dict:
         The suffix of the scope
 
     Returns
-    ----------
+    -------
     Dict
         The embedding net variables within the given frozen model
     """
@@ -278,7 +278,7 @@ def get_fitting_net_nodes_from_graph_def(
         suffix of the scope
 
     Returns
-    ----------
+    -------
     Dict
         The fitting net nodes within the given tf.GraphDef object
     """
@@ -308,7 +308,7 @@ def get_fitting_net_nodes(model_file: str) -> Dict:
         The input frozen model path
 
     Returns
-    ----------
+    -------
     Dict
         The fitting net nodes with the given frozen model
     """
@@ -330,7 +330,7 @@ def get_fitting_net_variables_from_graph_def(
         suffix of the scope
 
     Returns
-    ----------
+    -------
     Dict
         The fitting net variables within the given tf.GraphDef object
     """
@@ -362,7 +362,7 @@ def get_fitting_net_variables(model_file: str, suffix: str = "") -> Dict:
         suffix of the scope
 
     Returns
-    ----------
+    -------
     Dict
         The fitting net variables within the given frozen model
     """
@@ -384,7 +384,7 @@ def get_type_embedding_net_nodes_from_graph_def(
         The scope suffix
 
     Returns
-    ----------
+    -------
     Dict
         The type embedding net nodes within the given tf.GraphDef object
     """
@@ -417,7 +417,7 @@ def get_type_embedding_net_variables_from_graph_def(
         The suffix of the scope
 
     Returns
-    ----------
+    -------
     Dict
         The embedding net variables within the given tf.GraphDef object
     """
@@ -453,7 +453,7 @@ def get_attention_layer_nodes_from_graph_def(
         The scope suffix
 
     Returns
-    ----------
+    -------
     Dict
         The attention layer nodes within the given tf.GraphDef object
     """
@@ -488,7 +488,7 @@ def get_attention_layer_variables_from_graph_def(
         The suffix of the scope
 
     Returns
-    ----------
+    -------
     Dict
         The attention layer variables within the given tf.GraphDef object
     """

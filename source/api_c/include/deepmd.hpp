@@ -16,10 +16,13 @@ This header-only library provides a C++ 11 interface to the DeePMD-kit C API.
 
 template <typename FPTYPE>
 inline void _DP_DeepPotCompute(DP_DeepPot *dp,
+                               const int nframes,
                                const int natom,
                                const FPTYPE *coord,
                                const int *atype,
                                const FPTYPE *cell,
+                               const FPTYPE *fparam,
+                               const FPTYPE *aparam,
                                double *energy,
                                FPTYPE *force,
                                FPTYPE *virial,
@@ -28,36 +31,43 @@ inline void _DP_DeepPotCompute(DP_DeepPot *dp,
 
 template <>
 inline void _DP_DeepPotCompute<double>(DP_DeepPot *dp,
+                                       const int nframes,
                                        const int natom,
                                        const double *coord,
                                        const int *atype,
                                        const double *cell,
+                                       const double *fparam,
+                                       const double *aparam,
                                        double *energy,
                                        double *force,
                                        double *virial,
                                        double *atomic_energy,
                                        double *atomic_virial) {
-  DP_DeepPotCompute(dp, natom, coord, atype, cell, energy, force, virial,
-                    atomic_energy, atomic_virial);
+  DP_DeepPotCompute2(dp, nframes, natom, coord, atype, cell, fparam, aparam,
+                     energy, force, virial, atomic_energy, atomic_virial);
 }
 
 template <>
 inline void _DP_DeepPotCompute<float>(DP_DeepPot *dp,
+                                      const int nframes,
                                       const int natom,
                                       const float *coord,
                                       const int *atype,
                                       const float *cell,
+                                      const float *fparam,
+                                      const float *aparam,
                                       double *energy,
                                       float *force,
                                       float *virial,
                                       float *atomic_energy,
                                       float *atomic_virial) {
-  DP_DeepPotComputef(dp, natom, coord, atype, cell, energy, force, virial,
-                     atomic_energy, atomic_virial);
+  DP_DeepPotComputef2(dp, nframes, natom, coord, atype, cell, fparam, aparam,
+                      energy, force, virial, atomic_energy, atomic_virial);
 }
 
 template <typename FPTYPE>
 inline void _DP_DeepPotComputeNList(DP_DeepPot *dp,
+                                    const int nframes,
                                     const int natom,
                                     const FPTYPE *coord,
                                     const int *atype,
@@ -65,6 +75,8 @@ inline void _DP_DeepPotComputeNList(DP_DeepPot *dp,
                                     const int nghost,
                                     const DP_Nlist *nlist,
                                     const int ago,
+                                    const FPTYPE *fparam,
+                                    const FPTYPE *aparam,
                                     double *energy,
                                     FPTYPE *force,
                                     FPTYPE *virial,
@@ -73,6 +85,7 @@ inline void _DP_DeepPotComputeNList(DP_DeepPot *dp,
 
 template <>
 inline void _DP_DeepPotComputeNList<double>(DP_DeepPot *dp,
+                                            const int nframes,
                                             const int natom,
                                             const double *coord,
                                             const int *atype,
@@ -80,17 +93,21 @@ inline void _DP_DeepPotComputeNList<double>(DP_DeepPot *dp,
                                             const int nghost,
                                             const DP_Nlist *nlist,
                                             const int ago,
+                                            const double *fparam,
+                                            const double *aparam,
                                             double *energy,
                                             double *force,
                                             double *virial,
                                             double *atomic_energy,
                                             double *atomic_virial) {
-  DP_DeepPotComputeNList(dp, natom, coord, atype, cell, nghost, nlist, ago,
-                         energy, force, virial, atomic_energy, atomic_virial);
+  DP_DeepPotComputeNList2(dp, nframes, natom, coord, atype, cell, nghost, nlist,
+                          ago, fparam, aparam, energy, force, virial,
+                          atomic_energy, atomic_virial);
 }
 
 template <>
 inline void _DP_DeepPotComputeNList<float>(DP_DeepPot *dp,
+                                           const int nframes,
                                            const int natom,
                                            const float *coord,
                                            const int *atype,
@@ -98,13 +115,16 @@ inline void _DP_DeepPotComputeNList<float>(DP_DeepPot *dp,
                                            const int nghost,
                                            const DP_Nlist *nlist,
                                            const int ago,
+                                           const float *fparam,
+                                           const float *aparam,
                                            double *energy,
                                            float *force,
                                            float *virial,
                                            float *atomic_energy,
                                            float *atomic_virial) {
-  DP_DeepPotComputeNListf(dp, natom, coord, atype, cell, nghost, nlist, ago,
-                          energy, force, virial, atomic_energy, atomic_virial);
+  DP_DeepPotComputeNListf2(dp, nframes, natom, coord, atype, cell, nghost,
+                           nlist, ago, fparam, aparam, energy, force, virial,
+                           atomic_energy, atomic_virial);
 }
 
 template <typename FPTYPE>
@@ -380,6 +400,17 @@ inline void _DP_DipoleChargeModifierComputeNList<float>(
                                        dvcorr_);
 }
 
+inline double *_DP_Get_Energy_Pointer(std::vector<double> &vec,
+                                      const int nframes) {
+  vec.resize(nframes);
+  return &vec[0];
+}
+
+inline double *_DP_Get_Energy_Pointer(double &vec, const int nframes) {
+  assert(nframes == 1);
+  return &vec;
+}
+
 namespace deepmd {
 namespace hpp {
 /**
@@ -486,29 +517,31 @@ class DeepPot {
    * @param[in] box The cell of the region. The array should be of size nframes
    *x 9 (PBC) or empty (no PBC).
    **/
-  template <typename VALUETYPE>
-  void compute(double &ener,
+  template <typename VALUETYPE, typename ENERGYVTYPE>
+  void compute(ENERGYVTYPE &ener,
                std::vector<VALUETYPE> &force,
                std::vector<VALUETYPE> &virial,
                const std::vector<VALUETYPE> &coord,
                const std::vector<int> &atype,
                const std::vector<VALUETYPE> &box) {
     unsigned int natoms = atype.size();
-    assert(natoms * 3 == coord.size());
+    unsigned int nframes = coord.size() / natoms / 3;
+    assert(nframes * natoms * 3 == coord.size());
     if (!box.empty()) {
-      assert(box.size() == 9);
+      assert(box.size() == nframes * 9);
     }
     const VALUETYPE *coord_ = &coord[0];
     const VALUETYPE *box_ = !box.empty() ? &box[0] : nullptr;
     const int *atype_ = &atype[0];
-    double *ener_ = &ener;
-    force.resize(natoms * 3);
-    virial.resize(9);
+    double *ener_ = _DP_Get_Energy_Pointer(ener, nframes);
+    force.resize(nframes * natoms * 3);
+    virial.resize(nframes * 9);
     VALUETYPE *force_ = &force[0];
     VALUETYPE *virial_ = &virial[0];
 
-    _DP_DeepPotCompute<VALUETYPE>(dp, natoms, coord_, atype_, box_, ener_,
-                                  force_, virial_, nullptr, nullptr);
+    _DP_DeepPotCompute<VALUETYPE>(dp, nframes, natoms, coord_, atype_, box_,
+                                  nullptr, nullptr, ener_, force_, virial_,
+                                  nullptr, nullptr);
   };
   /**
    * @brief Evaluate the energy, force, virial, atomic energy, and atomic virial
@@ -524,8 +557,8 @@ class DeepPot {
    * @param[in] box The cell of the region. The array should be of size nframes
    *x 9 (PBC) or empty (no PBC).
    **/
-  template <typename VALUETYPE>
-  void compute(double &ener,
+  template <typename VALUETYPE, typename ENERGYVTYPE>
+  void compute(ENERGYVTYPE &ener,
                std::vector<VALUETYPE> &force,
                std::vector<VALUETYPE> &virial,
                std::vector<VALUETYPE> &atom_energy,
@@ -534,27 +567,28 @@ class DeepPot {
                const std::vector<int> &atype,
                const std::vector<VALUETYPE> &box) {
     unsigned int natoms = atype.size();
-    assert(natoms * 3 == coord.size());
+    unsigned int nframes = coord.size() / natoms / 3;
+    assert(nframes * natoms * 3 == coord.size());
     if (!box.empty()) {
-      assert(box.size() == 9);
+      assert(box.size() == nframes * 9);
     }
     const VALUETYPE *coord_ = &coord[0];
     const VALUETYPE *box_ = !box.empty() ? &box[0] : nullptr;
     const int *atype_ = &atype[0];
 
-    double *ener_ = &ener;
-    force.resize(natoms * 3);
-    virial.resize(9);
-    atom_energy.resize(natoms);
-    atom_virial.resize(natoms * 9);
+    double *ener_ = _DP_Get_Energy_Pointer(ener, nframes);
+    force.resize(nframes * natoms * 3);
+    virial.resize(nframes * 9);
+    atom_energy.resize(nframes * natoms);
+    atom_virial.resize(nframes * natoms * 9);
     VALUETYPE *force_ = &force[0];
     VALUETYPE *virial_ = &virial[0];
     VALUETYPE *atomic_ener_ = &atom_energy[0];
     VALUETYPE *atomic_virial_ = &atom_virial[0];
 
-    _DP_DeepPotCompute<VALUETYPE>(dp, natoms, coord_, atype_, box_, ener_,
-                                  force_, virial_, atomic_ener_,
-                                  atomic_virial_);
+    _DP_DeepPotCompute<VALUETYPE>(dp, nframes, natoms, coord_, atype_, box_,
+                                  nullptr, nullptr, ener_, force_, virial_,
+                                  atomic_ener_, atomic_virial_);
   };
 
   /**
@@ -572,8 +606,8 @@ class DeepPot {
    * @param[in] nlist The neighbor list.
    * @param[in] ago Update the internal neighbour list if ago is 0.
    **/
-  template <typename VALUETYPE>
-  void compute(double &ener,
+  template <typename VALUETYPE, typename ENERGYVTYPE>
+  void compute(ENERGYVTYPE &ener,
                std::vector<VALUETYPE> &force,
                std::vector<VALUETYPE> &virial,
                const std::vector<VALUETYPE> &coord,
@@ -583,22 +617,23 @@ class DeepPot {
                const InputNlist &lmp_list,
                const int &ago) {
     unsigned int natoms = atype.size();
-    assert(natoms * 3 == coord.size());
+    unsigned int nframes = coord.size() / natoms / 3;
+    assert(nframes * natoms * 3 == coord.size());
     if (!box.empty()) {
-      assert(box.size() == 9);
+      assert(box.size() == nframes * 9);
     }
     const VALUETYPE *coord_ = &coord[0];
     const VALUETYPE *box_ = !box.empty() ? &box[0] : nullptr;
     const int *atype_ = &atype[0];
-    double *ener_ = &ener;
-    force.resize(natoms * 3);
-    virial.resize(9);
+    double *ener_ = _DP_Get_Energy_Pointer(ener, nframes);
+    force.resize(nframes * natoms * 3);
+    virial.resize(nframes * 9);
     VALUETYPE *force_ = &force[0];
     VALUETYPE *virial_ = &virial[0];
 
-    _DP_DeepPotComputeNList<VALUETYPE>(dp, natoms, coord_, atype_, box_, nghost,
-                                       lmp_list.nl, ago, ener_, force_, virial_,
-                                       nullptr, nullptr);
+    _DP_DeepPotComputeNList<VALUETYPE>(
+        dp, nframes, natoms, coord_, atype_, box_, nghost, lmp_list.nl, ago,
+        nullptr, nullptr, ener_, force_, virial_, nullptr, nullptr);
   };
   /**
    * @brief Evaluate the energy, force, virial, atomic energy, and atomic virial
@@ -617,8 +652,8 @@ class DeepPot {
    * @param[in] nlist The neighbor list.
    * @param[in] ago Update the internal neighbour list if ago is 0.
    **/
-  template <typename VALUETYPE>
-  void compute(double &ener,
+  template <typename VALUETYPE, typename ENERGYVTYPE>
+  void compute(ENERGYVTYPE &ener,
                std::vector<VALUETYPE> &force,
                std::vector<VALUETYPE> &virial,
                std::vector<VALUETYPE> &atom_energy,
@@ -630,27 +665,28 @@ class DeepPot {
                const InputNlist &lmp_list,
                const int &ago) {
     unsigned int natoms = atype.size();
-    assert(natoms * 3 == coord.size());
+    unsigned int nframes = coord.size() / natoms / 3;
+    assert(nframes * natoms * 3 == coord.size());
     if (!box.empty()) {
-      assert(box.size() == 9);
+      assert(box.size() == nframes * 9);
     }
     const VALUETYPE *coord_ = &coord[0];
     const VALUETYPE *box_ = !box.empty() ? &box[0] : nullptr;
     const int *atype_ = &atype[0];
 
-    double *ener_ = &ener;
-    force.resize(natoms * 3);
-    virial.resize(9);
-    atom_energy.resize(natoms);
-    atom_virial.resize(natoms * 9);
+    double *ener_ = _DP_Get_Energy_Pointer(ener, nframes);
+    force.resize(nframes * natoms * 3);
+    virial.resize(nframes * 9);
+    atom_energy.resize(nframes * natoms);
+    atom_virial.resize(nframes * natoms * 9);
     VALUETYPE *force_ = &force[0];
     VALUETYPE *virial_ = &virial[0];
     VALUETYPE *atomic_ener_ = &atom_energy[0];
     VALUETYPE *atomic_virial_ = &atom_virial[0];
 
-    _DP_DeepPotComputeNList<VALUETYPE>(dp, natoms, coord_, atype_, box_, nghost,
-                                       lmp_list.nl, ago, ener_, force_, virial_,
-                                       atomic_ener_, atomic_virial_);
+    _DP_DeepPotComputeNList<VALUETYPE>(
+        dp, nframes, natoms, coord_, atype_, box_, nghost, lmp_list.nl, ago,
+        nullptr, nullptr, ener_, force_, virial_, atomic_ener_, atomic_virial_);
   };
   /**
    * @brief Get the cutoff radius.

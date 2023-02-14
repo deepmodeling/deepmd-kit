@@ -16,14 +16,19 @@ inline void _fold_back(typename std::vector<VALUETYPE>::iterator out,
                        const std::vector<int> &mapping,
                        const int nloc,
                        const int nall,
-                       const int ndim) {
+                       const int ndim,
+                       const int nframes = 1) {
   // out.resize(nloc*ndim);
-  std::copy(in, in + nloc * ndim, out);
-  for (int ii = nloc; ii < nall; ++ii) {
-    int in_idx = ii;
-    int out_idx = mapping[in_idx];
-    for (int dd = 0; dd < ndim; ++dd) {
-      *(out + out_idx * ndim + dd) += *(in + in_idx * ndim + dd);
+  for (int kk = 0; kk < nframes; ++kk) {
+    std::copy(in + kk * nall * ndim, in + kk * nall * ndim + nloc * ndim,
+              out + kk * nloc * ndim);
+    for (int ii = nloc; ii < nall; ++ii) {
+      int in_idx = ii;
+      int out_idx = mapping[in_idx];
+      for (int dd = 0; dd < ndim; ++dd) {
+        *(out + kk * nloc * ndim + out_idx * ndim + dd) +=
+            *(in + kk * nall * ndim + in_idx * ndim + dd);
+      }
     }
   }
 }
@@ -34,9 +39,11 @@ inline void _fold_back(std::vector<VALUETYPE> &out,
                        const std::vector<int> &mapping,
                        const int nloc,
                        const int nall,
-                       const int ndim) {
-  out.resize(nloc * ndim);
-  _fold_back<VALUETYPE>(out.begin(), in.begin(), mapping, nloc, nall, ndim);
+                       const int ndim,
+                       const int nframes = 1) {
+  out.resize(nframes * nloc * ndim);
+  _fold_back<VALUETYPE>(out.begin(), in.begin(), mapping, nloc, nall, ndim,
+                        nframes);
 }
 
 template <typename VALUETYPE>

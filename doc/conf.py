@@ -31,7 +31,7 @@ from deepmd.utils.argcheck import (
 )
 
 sys.path.append(os.path.dirname(__file__))
-import sphinx_contrib_exhale_multiproject as _
+import sphinx_contrib_exhale_multiproject
 
 
 def mkindex(dirname):
@@ -287,6 +287,7 @@ rst_epilog = """
 # a list of builtin themes.
 #
 html_theme = "sphinx_rtd_theme"
+html_logo = "_static/logo.svg"
 
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,

@@ -135,29 +135,29 @@ class DescrptSeAEbd(DescrptSeA):
         Parameters
         ----------
         coord_
-                The coordinate of atoms
+            The coordinate of atoms
         atype_
-                The type of atoms
+            The type of atoms
         natoms
-                The number of atoms. This tensor has the length of Ntypes + 2
-                natoms[0]: number of local atoms
-                natoms[1]: total number of atoms held by this processor
-                natoms[i]: 2 <= i < Ntypes+2, number of type i atoms
+            The number of atoms. This tensor has the length of Ntypes + 2
+            natoms[0]: number of local atoms
+            natoms[1]: total number of atoms held by this processor
+            natoms[i]: 2 <= i < Ntypes+2, number of type i atoms
         mesh
-                For historical reasons, only the length of the Tensor matters.
-                if size of mesh == 6, pbc is assumed.
-                if size of mesh == 0, no-pbc is assumed.
+            For historical reasons, only the length of the Tensor matters.
+            if size of mesh == 6, pbc is assumed.
+            if size of mesh == 0, no-pbc is assumed.
         input_dict
-                Dictionary for additional inputs
+            Dictionary for additional inputs
         reuse
-                The weights in the networks should be reused when get the variable.
+            The weights in the networks should be reused when get the variable.
         suffix
-                Name suffix to identify this descriptor
+            Name suffix to identify this descriptor
 
         Returns
         -------
         descriptor
-                The output descriptor
+            The output descriptor
         """
         nei_type = []
         for ii in range(self.ntypes):

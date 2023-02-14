@@ -22,9 +22,6 @@ from deepmd.common import (
     get_precision,
     j_must_have,
 )
-from deepmd.descriptor import (
-    Descriptor,
-)
 from deepmd.descriptor.descriptor import (
     Descriptor,
 )
@@ -132,8 +129,15 @@ class DPTrainer(object):
         except KeyError:
             raise KeyError("the type of descriptor should be set by `type`")
 
-        if descrpt_param["type"] in ["se_atten"]:
+        explicit_ntypes_descrpt = ["se_atten"]
+        hybrid_with_tebd = False
+        if descrpt_param["type"] in explicit_ntypes_descrpt:
             descrpt_param["ntypes"] = len(model_param["type_map"])
+        elif descrpt_param["type"] == "hybrid":
+            for descrpt_item in descrpt_param["list"]:
+                if descrpt_item["type"] in explicit_ntypes_descrpt:
+                    descrpt_item["ntypes"] = len(model_param["type_map"])
+                    hybrid_with_tebd = True
         if self.multi_task_mode:
             descrpt_param["multi_task"] = True
         self.descrpt = Descriptor(**descrpt_param)
@@ -176,7 +180,7 @@ class DPTrainer(object):
 
         # type embedding
         padding = False
-        if descrpt_type == "se_atten":
+        if descrpt_type == "se_atten" or hybrid_with_tebd:
             padding = True
         if typeebd_param is not None:
             self.typeebd = TypeEmbedNet(
@@ -188,7 +192,7 @@ class DPTrainer(object):
                 seed=typeebd_param["seed"],
                 padding=padding,
             )
-        elif descrpt_type == "se_atten":
+        elif descrpt_type == "se_atten" or hybrid_with_tebd:
             default_args = type_embedding_args()
             default_args_dict = {i.name: i.default for i in default_args}
             self.typeebd = TypeEmbedNet(
@@ -506,9 +510,9 @@ class DPTrainer(object):
             if self.run_opt.init_mode == "init_from_frz_model":
                 self._init_from_frz_model()
             elif self.run_opt.init_mode == "init_model":
-                self.ckpt_meta = self.run_opt.init_model
+                self._init_from_ckpt(self.run_opt.init_model)
             elif self.run_opt.init_mode == "restart":
-                self.ckpt_meta = self.run_opt.restart
+                self._init_from_ckpt(self.run_opt.restart)
             elif self.run_opt.init_mode == "finetune":
                 self._init_from_pretrained_model(
                     data=data, origin_type_map=origin_type_map
@@ -792,6 +796,7 @@ class DPTrainer(object):
             tfv2.profiler.experimental.start(self.tensorboard_log_dir)
 
         train_time = 0
+        total_train_time = 0.0
 
         while cur_batch < stop_batch:
 
@@ -912,6 +917,9 @@ class DPTrainer(object):
                         "batch %7d training time %.2f s, testing time %.2f s"
                         % (cur_batch, train_time, test_time)
                     )
+                    # the first training time is not accurate
+                    if cur_batch > self.disp_freq or stop_batch < 2 * self.disp_freq:
+                        total_train_time += train_time
                     train_time = 0
                 if (
                     self.save_freq > 0
@@ -925,6 +933,20 @@ class DPTrainer(object):
             self.save_checkpoint(cur_batch)
         if self.run_opt.is_chief:
             fp.close()
+        if self.timing_in_training and stop_batch // self.disp_freq > 0:
+            if stop_batch >= 2 * self.disp_freq:
+                log.info(
+                    "average training time: %.4f s/batch (exclude first %d batches)",
+                    total_train_time
+                    / (stop_batch // self.disp_freq * self.disp_freq - self.disp_freq),
+                    self.disp_freq,
+                )
+            else:
+                log.info(
+                    "average training time: %.4f s/batch",
+                    total_train_time / (stop_batch // self.disp_freq * self.disp_freq),
+                )
+
         if self.profiling and self.run_opt.is_chief:
             fetched_timeline = timeline.Timeline(prf_run_metadata.step_stats)
             chrome_trace = fetched_timeline.generate_chrome_trace_format()
@@ -1158,6 +1180,19 @@ class DPTrainer(object):
         if self.model_type == "compressed_model":
             self.frz_model = self.run_opt.init_frz_model
         self.model.init_variables(graph, graph_def, model_type=self.model_type)
+
+    def _init_from_ckpt(self, ckpt_meta: str):
+        with tf.Graph().as_default() as graph:
+            tf.train.import_meta_graph(f"{ckpt_meta}.meta", clear_devices=True)
+        # get the model type from the model
+        try:
+            t_model_type = get_tensor_by_name_from_graph(graph, "model_type")
+        except GraphWithoutTensorError as e:
+            self.model_type = "original_model"
+        else:
+            self.model_type = bytes.decode(t_model_type)
+        if self.model_type == "compressed_model":
+            self.ckpt_meta = ckpt_meta
 
     def _init_from_pretrained_model(
         self, data, origin_type_map=None, bias_shift="delta"

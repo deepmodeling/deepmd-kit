@@ -174,9 +174,9 @@ class RunOptions:
 
         Parameters
         ----------
-        log_level: int
+        log_level : int
             logging level
-        log_path: Optional[str]
+        log_path : Optional[str]
             path to log file, if None logs will be send only to console. If the parent
             directory does not exist it will be automatically created, by default None
         mpi_log : Optional[str], optional

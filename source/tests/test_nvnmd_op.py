@@ -460,7 +460,7 @@ class TestOpMatmulFltNvnmd(tf.test.TestCase):
         tf.reset_default_graph()
 
 
-class TestOpMatmulFltNvnmd(tf.test.TestCase):
+class TestOpMatmulFltNvnmd2(tf.test.TestCase):
     def setUp(self):
         config = tf.ConfigProto()
         if int(os.environ.get("DP_AUTO_PARALLELIZATION", 0)):

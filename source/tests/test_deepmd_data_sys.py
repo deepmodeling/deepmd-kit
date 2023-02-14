@@ -326,7 +326,7 @@ class TestDataSystem(unittest.TestCase):
             / float(self.nframes[2] * (self.nset - 1) + shift),
         )
 
-    def test_prob_sys_size_1(self):
+    def test_prob_sys_size_2(self):
         batch_size = 1
         test_size = 1
         ds = DeepmdDataSystem(self.sys_name, batch_size, test_size, 2.0)

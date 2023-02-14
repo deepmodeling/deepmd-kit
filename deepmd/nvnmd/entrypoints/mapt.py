@@ -503,7 +503,7 @@ class MapTable:
         log.info(f"the range of s is [{smin}, {smax}]")
         # check
         if (smax - smin) > 16.0:
-            log.warning(f"the range of s is over the limit (smax - smin) > 16.0")
+            log.warning("the range of s is over the limit (smax - smin) > 16.0")
         prec = N / N2
         smin_ = np.floor(smin * prec - 1) / prec
         #

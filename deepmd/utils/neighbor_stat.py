@@ -98,14 +98,14 @@ class NeighborStat:
         Parameters
         ----------
         data
-                Class for manipulating many data systems. It is implemented with the help of DeepmdData.
+            Class for manipulating many data systems. It is implemented with the help of DeepmdData.
 
         Returns
         -------
         min_nbor_dist
-                The nearest distance between neighbor atoms
+            The nearest distance between neighbor atoms
         max_nbor_size
-                A list with ntypes integers, denotes the actual achieved max sel
+            A list with ntypes integers, denotes the actual achieved max sel
         """
         self.min_nbor_dist = 100.0
         self.max_nbor_size = [0]

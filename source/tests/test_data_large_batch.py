@@ -9,12 +9,10 @@ from common import (
     Data,
     gen_data,
     j_loader,
-    tf,
 )
 from packaging.version import parse as parse_version
 
 from deepmd.common import (
-    data_requirement,
     j_must_have,
 )
 from deepmd.descriptor import (
