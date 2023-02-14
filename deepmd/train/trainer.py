@@ -1188,7 +1188,7 @@ class DPTrainer(object):
         try:
             t_model_type = get_tensor_by_name_from_graph(graph, "model_type")
         except GraphWithoutTensorError as e:
-            t_model_type = "original_model"
+            self.model_type = "original_model"
         else:
             self.model_type = bytes.decode(t_model_type)
         if self.model_type == "compressed_model":
