@@ -1188,12 +1188,7 @@ class DPTrainer(object):
         try:
             t_model_type = get_tensor_by_name_from_graph(graph, "model_type")
         except GraphWithoutTensorError as e:
-            # throw runtime error if the frozen_model has no model type information...
-            raise RuntimeError(
-                "The input frozen model: %s has no 'model_type' information, "
-                "which is not supported by the 'dp train init-frz-model' interface. "
-                % self.run_opt.init_frz_model
-            ) from e
+            t_model_type = "original_model"
         else:
             self.model_type = bytes.decode(t_model_type)
         if self.model_type == "compressed_model":
