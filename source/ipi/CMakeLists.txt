@@ -22,11 +22,11 @@ function(_add_ipi_variant variant_name prec_def)
     if(CMAKE_SYSTEM_NAME STREQUAL Darwin)
       set(extra_link_flags "-Wl,-undefined,dynamic_lookup")
     else()
-      set(extra_link_flags "-Wl,--unresolved-symbols=ignore-in-object-files")
+      set(extra_link_flags "")
     endif()
   else (BUILD_PY_IF)
     set(LIB_DIR lib)
-    set(extra_link_flags "")
+    set(extra_link_flags "-Wl,-z,defs")
   endif(BUILD_PY_IF)
 
   if(APPLE)
@@ -38,7 +38,7 @@ function(_add_ipi_variant variant_name prec_def)
   else()
     set_target_properties(
       ${ipiname}
-      PROPERTIES LINK_FLAGS "-Wl,-rpath,'$ORIGIN'/../${LIB_DIR} -Wl,-z,defs ${extra_link_flags}"
+      PROPERTIES LINK_FLAGS "-Wl,-rpath,'$ORIGIN'/../${LIB_DIR} ${extra_link_flags}"
                  INSTALL_RPATH "$ORIGIN/../${LIB_DIR}:${TensorFlow_LIBRARY_PATH}"
                  COMPILE_DEFINITIONS ${prec_def})
   endif()
