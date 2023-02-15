@@ -1,16 +1,21 @@
 """Use dp_ipi inside the Python package."""
-import sys
 import os
 import subprocess
-from typing import List
+import sys
+from typing import (
+    List,
+)
 
-from deepmd.lmp import get_op_dir
+from deepmd.lmp import (
+    get_op_dir,
+)
 
 ROOT_DIR = get_op_dir()
 
+
 def _program(name: str, args: List[str]):
     """Execuate a program.
-    
+
     Parameters
     ----------
     name : str
@@ -23,5 +28,5 @@ def _program(name: str, args: List[str]):
 
 def dp_ipi():
     """dp_ipi"""
-    suffix = '.exe' if os.name == 'nt' else ''
-    raise SystemExit(_program('dp_ipi' + suffix, sys.argv[1:]))
+    suffix = ".exe" if os.name == "nt" else ""
+    raise SystemExit(_program("dp_ipi" + suffix, sys.argv[1:]))

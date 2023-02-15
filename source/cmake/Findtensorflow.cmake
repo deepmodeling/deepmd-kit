@@ -423,6 +423,6 @@ if(BUILD_CPP_IF)
     target_link_libraries(TensorFlow::tensorflow_cc
                           INTERFACE ${Python_LIBRARIES})
     target_include_directories(TensorFlow::tensorflow_cc
-                          INTERFACE ${PYTHON_INCLUDE_DIRS})
+                               INTERFACE ${PYTHON_INCLUDE_DIRS})
   endif()
 endif()
