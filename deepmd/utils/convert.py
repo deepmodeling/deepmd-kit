@@ -9,6 +9,7 @@ from deepmd.env import (
     tf,
 )
 
+
 def detect_model_version(input_model: str):
     """Detect DP graph version.
 
@@ -23,10 +24,13 @@ def detect_model_version(input_model: str):
         file_content = fp.read()
     if file_content.find("DescrptNorot") > -1:
         version = "<= 0.12"
-    elif file_content.find("fitting_attr/dfparam") > -1 and file_content.find("fitting_attr/daparam") == -1:
+    elif (
+        file_content.find("fitting_attr/dfparam") > -1
+        and file_content.find("fitting_attr/daparam") == -1
+    ):
         version = "1.0"
     elif file_content.find("model_attr/model_version") == -1:
-        name_dsea = file_content.find("name: \"DescrptSeA\"")
+        name_dsea = file_content.find('name: "DescrptSeA"')
         post_dsea = file_content[name_dsea:]
         post_dsea2 = post_dsea[:300].find("\}")
         search_double = post_dsea[:post_dsea2]
@@ -34,11 +38,12 @@ def detect_model_version(input_model: str):
             version = "1.2"
         else:
             version = "1.3"
-    elif file_content.find("string_val: \"1.0\"") > -1:
+    elif file_content.find('string_val: "1.0"') > -1:
         version = "2.0"
-    elif file_content.find("string_val: \"1.1\"") > -1:
+    elif file_content.find('string_val: "1.1"') > -1:
         version = ">= 2.1"
     return version
+
 
 def convert_to_21(input_model: str, output_model: str):
     """Convert DP graph to 2.1 graph.
@@ -72,11 +77,15 @@ def convert_to_21(input_model: str, output_model: str):
     elif version == "2.0":
         convert_dp20_to_dp21("frozen_model.pbtxt")
     elif version == "undetected":
-        raise ValueError("The version of the DP graph %s cannot be detected. Please do the conversion manually." % (input_model))
+        raise ValueError(
+            "The version of the DP graph %s cannot be detected. Please do the conversion manually."
+            % (input_model)
+        )
     convert_pbtxt_to_pb("frozen_model.pbtxt", output_model)
     if os.path.isfile("frozen_model.pbtxt"):
         os.remove("frozen_model.pbtxt")
     print("the converted output model (2.1 support) is saved in %s" % output_model)
+
 
 def convert_13_to_21(input_model: str, output_model: str):
     """Convert DP 1.3 graph to 2.1 graph.
