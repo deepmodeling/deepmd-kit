@@ -97,7 +97,7 @@ Or install the CPU version without CUDA supported:
 pip install deepmd-kit[cpu]
 ```
 
-[LAMMPS module](../third-party/lammps-command.md) and [i-Pi](../third-party/ipi.md) are only provided on Linux and macOS. To install LAMMPS and/or i-Pi, add `lmp` and/or `ipi` to extras:
+[The LAMMPS module](../third-party/lammps-command.md) and [the i-Pi driver](../third-party/ipi.md) are only provided on Linux and macOS. To install LAMMPS and/or i-Pi, add `lmp` and/or `ipi` to extras:
 ```bash
 pip install deepmd-kit[gpu,cu11,lmp,ipi]
 ```
