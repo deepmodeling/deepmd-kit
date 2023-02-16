@@ -14,24 +14,23 @@ from infer.convert2pb import (
     convert_pbtxt_to_pb,
 )
 
-from deepmd.utils.convert import (
-    detect_model_version,
-    convert_to_21,
-    convert_pbtxt_to_pb,
-    convert_pb_to_pbtxt,
-    convert_dp012_to_dp10,
-    convert_dp10_to_dp11,
-    convert_dp12_to_dp13,
-    convert_dp13_to_dp20,
-    convert_dp20_to_dp21,
-)
-
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
     MODEL_VERSION,
 )
 from deepmd.infer import (
     DeepPot,
+)
+from deepmd.utils.convert import (
+    convert_dp10_to_dp11,
+    convert_dp012_to_dp10,
+    convert_dp12_to_dp13,
+    convert_dp13_to_dp20,
+    convert_dp20_to_dp21,
+    convert_pb_to_pbtxt,
+    convert_pbtxt_to_pb,
+    convert_to_21,
+    detect_model_version,
 )
 
 if GLOBAL_NP_FLOAT_PRECISION == np.float32:
@@ -787,6 +786,7 @@ class TestModelConvert(unittest.TestCase):
         self.assertEqual(version, "2.1")
         os.remove(new_model_pb)
         os.remove(new_model_txt)
+
 
 class TestTypeEmbed(unittest.TestCase):
     @classmethod
