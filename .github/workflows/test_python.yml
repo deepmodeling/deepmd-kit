@@ -23,16 +23,16 @@ jobs:
             tf: 1.14
           - python: 3.7
             gcc: 5
-            tf: 2.12.0rc0
+            tf:
           - python: 3.7
             gcc: 8
-            tf: 2.12.0rc0
+            tf:
           - python: "3.10"
             gcc: 5
-            tf: 2.12.0rc0
+            tf:
           - python: "3.10"
             gcc: 8
-            tf: 2.12.0rc0
+            tf:
 
     container: ghcr.io/deepmodeling/deepmd-kit-test-environment:py${{ matrix.python }}-gcc${{ matrix.gcc }}-tf${{ matrix.tf }}
     steps:
