@@ -28,9 +28,9 @@ conda activate /path/to/deepmd-kit
 ```
 
 ## Install with conda
-DeePMD-kit is avaiable with [conda](https://github.com/conda/conda). Install [Anaconda](https://www.anaconda.com/distribution/#download-section) or [Miniconda](https://docs.conda.io/en/latest/miniconda.html) first.
+DeePMD-kit is available with [conda](https://github.com/conda/conda). Install [Anaconda](https://www.anaconda.com/distribution/#download-section) or [Miniconda](https://docs.conda.io/en/latest/miniconda.html) first.
 
-### Offical channel
+### Official channel
 
 One may create an environment that contains the CPU version of DeePMD-kit and LAMMPS:
 ```bash
