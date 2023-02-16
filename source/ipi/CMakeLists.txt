@@ -16,17 +16,33 @@ function(_add_ipi_variant variant_name prec_def)
   target_link_libraries(${ipiname} PRIVATE ${libipiname} ${LIB_DEEPMD_CC})
   target_include_directories(${ipiname}
                              PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/)
+  if(BUILD_PY_IF)
+    set(LIB_DIR op)
+    # ignore undefined reference for libpython
+    if(CMAKE_SYSTEM_NAME STREQUAL Darwin)
+      set(extra_link_flags "-Wl,-undefined,dynamic_lookup")
+    else()
+      set(extra_link_flags "-Wl,--unresolved-symbols=ignore-in-shared-libs")
+    endif()
+  else(BUILD_PY_IF)
+    set(LIB_DIR lib)
+    set(extra_link_flags "-Wl,-z,defs")
+  endif(BUILD_PY_IF)
 
   if(APPLE)
     set_target_properties(
       ${ipiname}
-      PROPERTIES INSTALL_RPATH "@loader_path/../lib:${TensorFlow_LIBRARY_PATH}"
+      PROPERTIES LINK_FLAGS "${extra_link_flags}"
+                 INSTALL_RPATH
+                 "@loader_path/../${LIB_DIR}:${TensorFlow_LIBRARY_PATH}"
                  COMPILE_DEFINITIONS ${prec_def})
   else()
     set_target_properties(
       ${ipiname}
-      PROPERTIES LINK_FLAGS "-Wl,-rpath,'$ORIGIN'/../lib -Wl,-z,defs"
-                 INSTALL_RPATH "$ORIGIN/../lib:${TensorFlow_LIBRARY_PATH}"
+      PROPERTIES LINK_FLAGS
+                 "-Wl,-rpath,'$ORIGIN'/../${LIB_DIR} ${extra_link_flags}"
+                 INSTALL_RPATH
+                 "$ORIGIN/../${LIB_DIR}:${TensorFlow_LIBRARY_PATH}"
                  COMPILE_DEFINITIONS ${prec_def})
   endif()
 
