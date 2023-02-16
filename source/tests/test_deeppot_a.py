@@ -769,7 +769,7 @@ class TestModelConvert(unittest.TestCase):
         convert_dp10_to_dp11(new_model_txt)
         convert_pbtxt_to_pb(new_model_txt, new_model_pb)
         version = detect_model_version(new_model_pb)
-        self.assertEqual(version, "1.2")
+        self.assertEqual(version, "1.3")
         os.remove(new_model_pb) 
         convert_dp12_to_dp13(new_model_txt)
         convert_pbtxt_to_pb(new_model_txt, new_model_pb)
