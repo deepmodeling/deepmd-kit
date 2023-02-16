@@ -90,14 +90,8 @@ if(BUILD_CPP_IF)
     set(TensorFlow_FIND_COMPONENTS tensorflow_cc)
   endif()
   # the lib
-  if(WIN32)
-    # pass
-  elseif(APPLE)
-    list(APPEND CMAKE_FIND_LIBRARY_SUFFIXES .2.dylib)
-  else()
-    list(APPEND CMAKE_FIND_LIBRARY_SUFFIXES .so.1)
-    list(APPEND CMAKE_FIND_LIBRARY_SUFFIXES .so.2)
-  endif()
+  list(APPEND CMAKE_FIND_LIBRARY_SUFFIXES .so.1)
+  list(APPEND CMAKE_FIND_LIBRARY_SUFFIXES .so.2)
   set(TensorFlow_LIBRARY_PATH "")
   foreach(module ${TensorFlow_FIND_COMPONENTS})
     find_library(
