@@ -16,20 +16,24 @@ function(_add_ipi_variant variant_name prec_def)
   target_link_libraries(${ipiname} PRIVATE ${libipiname} ${LIB_DEEPMD_CC})
   target_include_directories(${ipiname}
                              PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/)
-  if(TENSORFLOW_LINK_LIBPYTHON)
+  if(BUILD_PY_IF)
     set(LIB_DIR op)
+  else(BUILD_PY_IF)
+    set(LIB_DIR lib)
+  endif(BUILD_PY_IF)
+
+  if(BUILD_PY_IF AND TENSORFLOW_LINK_LIBPYTHON)
     # ignore undefined reference for libpython
     if(CMAKE_SYSTEM_NAME STREQUAL Darwin)
       set(extra_link_flags "-Wl,-undefined,dynamic_lookup")
     else()
       set(extra_link_flags "-Wl,--unresolved-symbols=ignore-in-shared-libs")
     endif()
-  else(TENSORFLOW_LINK_LIBPYTHON)
-    set(LIB_DIR lib)
+  else(BUILD_PY_IF AND TENSORFLOW_LINK_LIBPYTHON)
     if(CMAKE_SYSTEM_NAME STREQUAL Linux)
       set(extra_link_flags "-Wl,-z,defs")
     endif()
-  endif(TENSORFLOW_LINK_LIBPYTHON)
+  endif(BUILD_PY_IF AND TENSORFLOW_LINK_LIBPYTHON)
 
   if(APPLE)
     set_target_properties(
