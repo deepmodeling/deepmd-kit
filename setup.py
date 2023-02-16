@@ -65,7 +65,8 @@ if dp_ipi == "1":
 
 tf_install_dir, _ = find_tensorflow()
 tf_version = get_tf_version(tf_install_dir)
-if Version(tf_version) >= Version("2.12"):
+# TODO: change to "tf_version is None or" after tensorflow 2.12 is released
+if tf_version is not None and Version(tf_version) >= Version("2.12"):
     find_libpython_requires = []
 else:
     find_libpython_requires = ["find_libpython"]
