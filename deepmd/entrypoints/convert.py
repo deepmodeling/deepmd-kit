@@ -1,4 +1,5 @@
 from deepmd.utils.convert import (
+    convert_to_21,
     convert_10_to_21,
     convert_012_to_21,
     convert_12_to_21,
@@ -15,7 +16,9 @@ def convert(
     output_model: str,
     **kwargs,
 ):
-    if FROM == "0.12":
+    if FROM == "auto":
+        convert_to_21(input_model, output_model)
+    elif FROM == "0.12":
         convert_012_to_21(input_model, output_model)
     elif FROM == "1.0":
         convert_10_to_21(input_model, output_model)
