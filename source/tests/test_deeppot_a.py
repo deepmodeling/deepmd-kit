@@ -10,9 +10,6 @@ from common import (
     run_dp,
     tests_path,
 )
-from infer.convert2pb import (
-    convert_pbtxt_to_pb,
-)
 
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
