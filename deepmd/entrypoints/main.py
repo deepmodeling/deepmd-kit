@@ -479,8 +479,10 @@ def main_parser() -> argparse.ArgumentParser:
     )
     parser_transform.add_argument(
         "FROM",
+        nargs="?",
+        default="auto",
         type=str,
-        choices=["0.12", "1.0", "1.1", "1.2", "1.3", "2.0", "pbtxt"],
+        choices=["auto", "0.12", "1.0", "1.1", "1.2", "1.3", "2.0", "pbtxt"],
         help="The original model compatibility",
     )
     parser_transform.add_argument(

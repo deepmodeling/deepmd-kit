@@ -10,9 +10,6 @@ from common import (
     run_dp,
     tests_path,
 )
-from infer.convert2pb import (
-    convert_pbtxt_to_pb,
-)
 
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
@@ -20,6 +17,17 @@ from deepmd.env import (
 )
 from deepmd.infer import (
     DeepPot,
+)
+from deepmd.utils.convert import (
+    convert_dp10_to_dp11,
+    convert_dp012_to_dp10,
+    convert_dp12_to_dp13,
+    convert_dp13_to_dp20,
+    convert_dp20_to_dp21,
+    convert_pb_to_pbtxt,
+    convert_pbtxt_to_pb,
+    convert_to_21,
+    detect_model_version,
 )
 
 if GLOBAL_NP_FLOAT_PRECISION == np.float32:
@@ -729,6 +737,52 @@ class TestModelConvert(unittest.TestCase):
         _, _, _, _, _ = dp.eval(self.coords, self.box, self.atype, atomic=True)
         os.remove(old_model)
         os.remove(new_model)
+
+    def test_convert(self):
+        old_model = "deeppot.pb"
+        new_model = "deeppot.pbtxt"
+        convert_pbtxt_to_pb(str(tests_path / "infer" / "sea_012.pbtxt"), old_model)
+        run_dp(f"dp convert-from -i {old_model} -o {new_model}")
+        dp = DeepPot(new_model)
+        _, _, _, _, _ = dp.eval(self.coords, self.box, self.atype, atomic=True)
+        os.remove(old_model)
+        os.remove(new_model)
+
+    def test_detect(self):
+        old_model = "deeppot.pb"
+        new_model_txt = "deeppot_new.pbtxt"
+        new_model_pb = "deeppot_new.pb"
+        convert_pbtxt_to_pb(str(tests_path / "infer" / "sea_012.pbtxt"), old_model)
+        version = detect_model_version(old_model)
+        self.assertEqual(version, "<= 0.12")
+        os.remove(old_model)
+        shutil.copyfile(str(tests_path / "infer" / "sea_012.pbtxt"), new_model_txt)
+        convert_dp012_to_dp10(new_model_txt)
+        convert_pbtxt_to_pb(new_model_txt, new_model_pb)
+        version = detect_model_version(new_model_pb)
+        self.assertEqual(version, "1.0")
+        os.remove(new_model_pb)
+        convert_dp10_to_dp11(new_model_txt)
+        convert_pbtxt_to_pb(new_model_txt, new_model_pb)
+        version = detect_model_version(new_model_pb)
+        self.assertEqual(version, "1.3")
+        os.remove(new_model_pb)
+        convert_dp12_to_dp13(new_model_txt)
+        convert_pbtxt_to_pb(new_model_txt, new_model_pb)
+        version = detect_model_version(new_model_pb)
+        self.assertEqual(version, "1.3")
+        os.remove(new_model_pb)
+        convert_dp13_to_dp20(new_model_txt)
+        convert_pbtxt_to_pb(new_model_txt, new_model_pb)
+        version = detect_model_version(new_model_pb)
+        self.assertEqual(version, "2.0")
+        os.remove(new_model_pb)
+        convert_dp20_to_dp21(new_model_txt)
+        convert_pbtxt_to_pb(new_model_txt, new_model_pb)
+        version = detect_model_version(new_model_pb)
+        self.assertEqual(version, ">= 2.1")
+        os.remove(new_model_pb)
+        os.remove(new_model_txt)
 
 
 class TestTypeEmbed(unittest.TestCase):
