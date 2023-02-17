@@ -13,9 +13,6 @@ from common import (
     run_dp,
     tests_path,
 )
-from deepmd.utils.convert import (
-    convert_pbtxt_to_pb,
-)
 
 from deepmd.entrypoints.transfer import (
     load_graph,
@@ -27,6 +24,9 @@ from deepmd.env import (
 )
 from deepmd.infer import (
     DeepPot,
+)
+from deepmd.utils.convert import (
+    convert_pbtxt_to_pb,
 )
 
 if GLOBAL_NP_FLOAT_PRECISION == np.float32:

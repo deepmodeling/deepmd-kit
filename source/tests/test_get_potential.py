@@ -5,10 +5,6 @@ from pathlib import (
     Path,
 )
 
-from deepmd.utils.convert import (
-    convert_pbtxt_to_pb,
-)
-
 from deepmd.infer import (
     DeepDipole,
     DeepGlobalPolar,
@@ -16,6 +12,9 @@ from deepmd.infer import (
     DeepPot,
     DeepPotential,
     DeepWFC,
+)
+from deepmd.utils.convert import (
+    convert_pbtxt_to_pb,
 )
 
 

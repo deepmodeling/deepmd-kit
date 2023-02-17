@@ -10,9 +10,6 @@ from common import (
     tests_path,
     tf,
 )
-from deepmd.utils.convert import (
-    convert_pbtxt_to_pb,
-)
 from packaging.version import parse as parse_version
 
 from deepmd.env import (
@@ -20,6 +17,9 @@ from deepmd.env import (
 )
 from deepmd.infer import (
     DeepPolar,
+)
+from deepmd.utils.convert import (
+    convert_pbtxt_to_pb,
 )
 
 if GLOBAL_NP_FLOAT_PRECISION == np.float32:

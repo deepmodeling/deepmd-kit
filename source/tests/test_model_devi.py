@@ -16,6 +16,7 @@ from common import (
     gen_data,
     tests_path,
 )
+
 from deepmd.utils.convert import (
     convert_pbtxt_to_pb,
 )
