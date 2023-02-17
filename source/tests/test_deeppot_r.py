@@ -9,7 +9,7 @@ import numpy as np
 from common import (
     tests_path,
 )
-from infer.convert2pb import (
+from deepmd.utils.convert import (
     convert_pbtxt_to_pb,
 )
 

@@ -12,7 +12,7 @@ from common import (
     tests_path,
     tf,
 )
-from infer.convert2pb import (
+from deepmd.utils.convert import (
     convert_pbtxt_to_pb,
 )
 from packaging.version import parse as parse_version

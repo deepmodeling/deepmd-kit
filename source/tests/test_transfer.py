@@ -13,7 +13,7 @@ from common import (
     run_dp,
     tests_path,
 )
-from infer.convert2pb import (
+from deepmd.utils.convert import (
     convert_pbtxt_to_pb,
 )
 
