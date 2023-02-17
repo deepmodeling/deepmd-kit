@@ -130,6 +130,8 @@ endif()
 # the lib
 if(WIN32)
   list(APPEND TensorFlow_search_PATHS ${TENSORFLOW_ROOT}/python)
+elseif(APPLE)
+  list(APPEND CMAKE_FIND_LIBRARY_SUFFIXES .2.dylib)
 else()
   list(APPEND CMAKE_FIND_LIBRARY_SUFFIXES .so.1)
   list(APPEND CMAKE_FIND_LIBRARY_SUFFIXES .so.2)
