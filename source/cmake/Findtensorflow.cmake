@@ -2,7 +2,8 @@
 #
 # Output: TensorFlow_FOUND TensorFlow_INCLUDE_DIRS TensorFlow_LIBRARY
 # TensorFlow_LIBRARY_PATH TensorFlowFramework_LIBRARY
-# TensorFlowFramework_LIBRARY_PATH
+# TensorFlowFramework_LIBRARY_PATH TENSORFLOW_LINK_LIBPYTHON : whether
+# Tensorflow::tensorflow_cc links libpython
 #
 # Target: TensorFlow::tensorflow_framework TensorFlow::tensorflow_cc
 
@@ -79,14 +80,14 @@ if(NOT TensorFlow_INCLUDE_DIRS AND tensorflow_FIND_REQUIRED)
       "You can manually set the tensorflow install path by -DTENSORFLOW_ROOT ")
 endif()
 
-if(BUILD_CPP_IF AND NOT USE_TF_PYTHON_LIBS)
+if(BUILD_CPP_IF)
   message(
     STATUS
       "Enabled cpp interface build, looking for tensorflow_cc and tensorflow_framework"
   )
   # tensorflow_cc and tensorflow_framework
   if(NOT TensorFlow_FIND_COMPONENTS)
-    set(TensorFlow_FIND_COMPONENTS tensorflow_cc tensorflow_framework)
+    set(TensorFlow_FIND_COMPONENTS tensorflow_cc)
   endif()
   # the lib
   if(WIN32)
@@ -110,7 +111,7 @@ if(BUILD_CPP_IF AND NOT USE_TF_PYTHON_LIBS)
       get_filename_component(TensorFlow_LIBRARY_PATH_${module}
                              ${TensorFlow_LIBRARY_${module}} PATH)
       list(APPEND TensorFlow_LIBRARY_PATH ${TensorFlow_LIBRARY_PATH_${module}})
-    elseif(tensorflow_FIND_REQUIRED)
+    elseif(tensorflow_FIND_REQUIRED AND NOT USE_TF_PYTHON_LIBS)
       message(
         FATAL_ERROR
           "Not found lib/'${module}' in '${TensorFlow_search_PATHS}' "
@@ -166,8 +167,12 @@ foreach(module ${TensorFlowFramework_FIND_COMPONENTS})
   endif()
 endforeach()
 
-# find _pywrap_tensorflow_internal and set it as tensorflow_cc
-if(BUILD_CPP_IF AND USE_TF_PYTHON_LIBS)
+# find _pywrap_tensorflow_internal and set it as tensorflow_cc don't need to
+# find it if tensorflow_cc already found
+set(TENSORFLOW_LINK_LIBPYTHON FALSE)
+if(BUILD_CPP_IF
+   AND USE_TF_PYTHON_LIBS
+   AND NOT TensorFlow_LIBRARY_tensorflow_cc)
   set(TF_SUFFIX python)
   if(WIN32)
     set(TensorFlow_FIND_COMPONENTS _pywrap_tensorflow_internal.lib)
@@ -188,6 +193,7 @@ if(BUILD_CPP_IF AND USE_TF_PYTHON_LIBS)
                              ${TensorFlow_LIBRARY_${module}} PATH)
       list(APPEND TensorFlow_LIBRARY_PATH ${TensorFlow_LIBRARY_PATH_${module}})
       set(TensorFlow_LIBRARY_tensorflow_cc ${TensorFlow_LIBRARY_${module}})
+      set(TENSORFLOW_LINK_LIBPYTHON TRUE)
     elseif(tensorflow_FIND_REQUIRED)
       message(
         FATAL_ERROR
@@ -426,7 +432,7 @@ if(BUILD_CPP_IF)
                              INTERFACE ${TensorFlow_INCLUDE_DIRS})
   target_compile_definitions(TensorFlow::tensorflow_cc
                              INTERFACE -D_GLIBCXX_USE_CXX11_ABI=${OP_CXX_ABI})
-  if(USE_TF_PYTHON_LIBS)
+  if(TENSORFLOW_LINK_LIBPYTHON)
     # link: libpython3.x.so
     target_link_libraries(TensorFlow::tensorflow_cc
                           INTERFACE ${Python_LIBRARIES})
