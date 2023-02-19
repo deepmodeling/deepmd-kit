@@ -21,7 +21,7 @@ from deepmd.env import (
     tf,
 )
 
-if Version(TF_VERSION) >= Version("2.12"):
+if Version(TF_VERSION) < Version("2.12"):
     from find_libpython import (
         find_libpython,
     )
