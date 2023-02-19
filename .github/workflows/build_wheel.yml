@@ -28,7 +28,7 @@ jobs:
             platform_id: win_amd64
             dp_variant: cpu
           # linux-aarch64
-          - os: ${{ "[Linux, ARM64]" if github.repository_owner == 'deepmodeling' else "ubuntu-latest" }}
+          - os: '[Linux, ARM64]'
             python: 310
             platform_id: manylinux_aarch64
             dp_variant: cpu
