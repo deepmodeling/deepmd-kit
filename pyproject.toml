@@ -71,7 +71,7 @@ test-command = [
 ]
 
 [tool.cibuildwheel.linux]
-repair-wheel-command = "auditwheel repair --exclude libtensorflow_framework.so.2 --exclude libtensorflow_framework.so.1 --exclude libtensorflow_framework.so --exclude _pywrap_tensorflow_internal.so -w {dest_dir} {wheel}"
+repair-wheel-command = "auditwheel repair --exclude libtensorflow_framework.so.2 --exclude libtensorflow_framework.so.1 --exclude libtensorflow_framework.so --exclude _pywrap_tensorflow_internal.so --exclude libtensorflow_cc.so.2 -w {dest_dir} {wheel}"
 environment-pass = ["CIBW_BUILD", "DP_VARIANT"]
 environment = { PIP_PREFER_BINARY="1", DP_VARIANT="cuda", DP_LAMMPS_VERSION="stable_23Jun2022_update2", DP_ENABLE_IPI="1", MPI_HOME="/usr/lib64/mpich", PATH="/usr/lib64/mpich/bin:$PATH" }
 before-all = [

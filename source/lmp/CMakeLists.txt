@@ -10,7 +10,7 @@ list(APPEND LMP_INSTALL_FILES ${LMP_SRC})
 list(APPEND LMP_INSTALL_FILES ${LMP_SHSCRIPT})
 
 function(_add_lmp_variant variant_name prec_def)
-  if(USE_TF_PYTHON_LIBS)
+  if(TENSORFLOW_LINK_LIBPYTHON)
     configure_file("env_py.sh.in" "env${variant_name}.sh" @ONLY)
   else()
     configure_file("env.sh.in" "env${variant_name}.sh" @ONLY)

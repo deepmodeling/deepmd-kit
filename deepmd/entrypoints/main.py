@@ -473,6 +473,8 @@ def main_parser() -> argparse.ArgumentParser:
         epilog=textwrap.dedent(
             """\
         examples:
+            dp convert-from -i graph.pb -o graph_new.pb
+            dp convert-from auto -i graph.pb -o graph_new.pb
             dp convert-from 1.0 -i graph.pb -o graph_new.pb
         """
         ),

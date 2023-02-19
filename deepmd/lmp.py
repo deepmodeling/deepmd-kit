@@ -12,13 +12,21 @@ from typing import (
     Optional,
 )
 
-from find_libpython import (
-    find_libpython,
+from packaging.version import (
+    Version,
 )
 
 from deepmd.env import (
+    TF_VERSION,
     tf,
 )
+
+if Version(TF_VERSION) < Version("2.12"):
+    from find_libpython import (
+        find_libpython,
+    )
+else:
+    find_libpython = None
 
 
 def get_env(paths: List[Optional[str]]) -> str:
@@ -84,20 +92,21 @@ os.environ[lib_env] = get_env(
     ]
 )
 
-# preload python library
-libpython = find_libpython()
-if platform.system() == "Linux":
-    preload_env = "LD_PRELOAD"
-elif platform.system() == "Darwin":
-    preload_env = "DYLD_INSERT_LIBRARIES"
-else:
-    raise RuntimeError("Unsupported platform")
-os.environ[preload_env] = get_env(
-    [
-        os.environ.get(preload_env),
-        libpython,
-    ]
-)
+# preload python library, only for TF<2.12
+if find_libpython is not None:
+    libpython = find_libpython()
+    if platform.system() == "Linux":
+        preload_env = "LD_PRELOAD"
+    elif platform.system() == "Darwin":
+        preload_env = "DYLD_INSERT_LIBRARIES"
+    else:
+        raise RuntimeError("Unsupported platform")
+    os.environ[preload_env] = get_env(
+        [
+            os.environ.get(preload_env),
+            libpython,
+        ]
+    )
 
 
 def get_op_dir() -> str:

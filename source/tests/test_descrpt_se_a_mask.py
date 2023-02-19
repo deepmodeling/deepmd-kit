@@ -8,9 +8,6 @@ from common import (
     gen_data,
     j_loader,
 )
-from infer.convert2pb import (
-    convert_pbtxt_to_pb,
-)
 
 from deepmd.common import (
     j_must_have,
@@ -24,6 +21,9 @@ from deepmd.env import (
 )
 from deepmd.infer import (
     DeepPot,
+)
+from deepmd.utils.convert import (
+    convert_pbtxt_to_pb,
 )
 from deepmd.utils.type_embed import (
     TypeEmbedNet,
