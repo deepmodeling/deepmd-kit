@@ -161,6 +161,8 @@ def get_tf_version(tf_path: Union[str, Path]) -> str:
                 minor = line.split()[-1]
             elif line.startswith("#define TF_PATCH_VERSION"):
                 patch = line.split()[-1]
+            elif line.startswith("#define TF_VERSION_SUFFIX"):
+                suffix = line.split()[-1].strip('"')
     if None in (major, minor, patch):
         raise RuntimeError("Failed to read TF version")
-    return ".".join((major, minor, patch))
+    return ".".join((major, minor, patch)) + suffix
