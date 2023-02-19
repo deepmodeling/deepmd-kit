@@ -1,16 +1,37 @@
 """Submodule containing all the implemented potentials."""
 
-from pathlib import Path
-from typing import Union
+from pathlib import (
+    Path,
+)
+from typing import (
+    Union,
+)
 
-from .data_modifier import DipoleChargeModifier
-from .deep_dipole import DeepDipole
-from .deep_eval import DeepEval
-from .deep_polar import DeepGlobalPolar, DeepPolar
-from .deep_pot import DeepPot
-from .deep_wfc import DeepWFC
-from .ewald_recp import EwaldRecp
-from .model_devi import calc_model_devi
+from .data_modifier import (
+    DipoleChargeModifier,
+)
+from .deep_dipole import (
+    DeepDipole,
+)
+from .deep_eval import (
+    DeepEval,
+)
+from .deep_polar import (
+    DeepGlobalPolar,
+    DeepPolar,
+)
+from .deep_pot import (
+    DeepPot,
+)
+from .deep_wfc import (
+    DeepWFC,
+)
+from .ewald_recp import (
+    EwaldRecp,
+)
+from .model_devi import (
+    calc_model_devi,
+)
 
 __all__ = [
     "DeepPotential",
@@ -22,7 +43,7 @@ __all__ = [
     "DeepWFC",
     "DipoleChargeModifier",
     "EwaldRecp",
-    "calc_model_devi"
+    "calc_model_devi",
 ]
 
 
@@ -35,9 +56,9 @@ def DeepPotential(
 
     Parameters
     ----------
-    model_file: str
+    model_file : str
         The name of the frozen model file.
-    load_prefix: str
+    load_prefix : str
         The prefix in the load computational graph
     default_tf_graph : bool
         If uses the default tf graph, otherwise build a new tf graph for evaluation

@@ -23,7 +23,7 @@ mkdir -p data
 cp -r $dataset data
 ```
 
-where `$dataset` is the path to the data set and `$workspace` is the path to the working directory. 
+where `$dataset` is the path to the data set and `$workspace` is the path to the working directory.
 
 ## Input script
 
@@ -32,7 +32,7 @@ Create and go to the training directory.
 
 ```bash
 mkdir train
-cd train 
+cd train
 ```
 
 Then copy the input script `train_cnn.json` and `train_qnn.json` to the directory `train`
@@ -55,7 +55,7 @@ The structure of the input script is as follows
 
 ### nvnmd
 
-The "nvnmd" section is defined as 
+The "nvnmd" section is defined as
 
 ```json
 {
@@ -77,7 +77,7 @@ where items are defined as:
 
 ### learning_rate
 
-The "learning_rate" section is defined as 
+The "learning_rate" section is defined as
 
 ```json
 {
@@ -99,7 +99,7 @@ where items are defined as:
 
 ### loss
 
-The "loss" section is defined as 
+The "loss" section is defined as
 
 ```json
 {
@@ -125,7 +125,7 @@ where items are defined as:
 
 ### training
 
-The "training" section is defined as 
+The "training" section is defined as
 
 ```json
 {
@@ -171,6 +171,12 @@ dp train-nvnmd train_qnn.json -s s2
 ```
 
 After the training process, you will get two folders: `nvnmd_cnn` and `nvnmd_qnn`. The `nvnmd_cnn` contains the model after continuous neural network (CNN) training. The `nvnmd_qnn` contains the model after quantized neural network (QNN) training. The binary file `nvnmd_qnn/model.pb` is the model file that is used to perform NVNMD in the server [http://nvnmd.picp.vip].
+
+You can also restart the CNN training from the checkpoint (`nvnmd_cnn/model.ckpt`) by
+
+``` bash
+dp train-nvnmd train_cnn.json -r nvnmd_cnn/model.ckpt -s s1
+```
 
 
 # Testing

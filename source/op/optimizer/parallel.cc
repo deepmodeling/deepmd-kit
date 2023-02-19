@@ -6,13 +6,12 @@
 
 #if TF_MAJOR_VERSION >= 2 && TF_MINOR_VERSION >= 7
 // breaking change in tf 2.7: Renaming of tensorflow::int64 to int_64_t
-#define TF_INT64 int64_t 
+#define TF_INT64 int64_t
 #else
-#define TF_INT64 tensorflow::int64 
+#define TF_INT64 tensorflow::int64
 #endif
 
 #include "parallel.h"
-
 #include "tensorflow/core/grappler/devices.h"
 #include "tensorflow/core/grappler/graph_view.h"
 #include "tensorflow/core/grappler/grappler_item.h"
@@ -55,18 +54,17 @@ TF_INT64 GetNThreads() {
   return tot;
 }
 
-Status ParallelProdForce(RemapperContext *ctx, int node_index,
+Status ParallelProdForce(RemapperContext *ctx,
+                         int node_index,
                          std::vector<bool> *invalidated_nodes,
                          std::vector<bool> *nodes_to_delete) {
   // skip on GPUs
-  if (GetNumAvailableGPUs() > 0)
-    return Status();
+  if (GetNumAvailableGPUs() > 0) return Status();
 
   const NodeDef *ori_node = ctx->graph_view.GetNode(node_index)->node();
   auto &src_attr = ori_node->attr();
   TF_INT64 tot = GetNThreads();
-  if (tot <= 1)
-    return Status();
+  if (tot <= 1) return Status();
 
   NodeDef sum_node;
   sum_node.set_name(ori_node->name());
@@ -85,8 +83,7 @@ Status ParallelProdForce(RemapperContext *ctx, int node_index,
     sub_node.set_op("ParallelProdForceSeA");
     sub_node.set_device(ori_node->device());
     // copy input
-    for (int jj = 0; jj < 4; ++jj)
-      sub_node.add_input(ori_node->input(jj));
+    for (int jj = 0; jj < 4; ++jj) sub_node.add_input(ori_node->input(jj));
     // set frac
     auto *sub_attr = sub_node.mutable_attr();
     (*sub_attr)["T"] = src_attr.at("T");
@@ -107,7 +104,8 @@ Status ParallelProdForce(RemapperContext *ctx, int node_index,
   return Status();
 }
 
-Status DPParallel::Optimize(Cluster *cluster, const GrapplerItem &item,
+Status DPParallel::Optimize(Cluster *cluster,
+                            const GrapplerItem &item,
                             GraphDef *optimized_graph) {
   GrapplerItem mutable_item = item;
   Status status;
@@ -130,7 +128,6 @@ Status DPParallel::Optimize(Cluster *cluster, const GrapplerItem &item,
       continue;
     }
     if (!item.optimization_options().is_eager_mode) {
-
       // Remap gelu
       std::map<std::string, int> matched_nodes_map;
       std::set<int> remove_node_indices;

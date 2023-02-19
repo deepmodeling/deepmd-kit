@@ -12,8 +12,8 @@ The construction of the fitting net is given by section {ref}`fitting_net <model
 	    "seed":		1
 	},
 ```
-* {ref}`neuron <model/fitting_net[ener]/neuron>` specifies the size of the fitting net. If two neighboring layers are of the same size, then a [ResNet architecture](https://arxiv.org/abs/1512.03385) is built between them. 
-* If the option {ref}`resnet_dt <model/fitting_net[ener]/resnet_dt>` is set to `true`, then a timestep is used in the ResNet. 
+* {ref}`neuron <model/fitting_net[ener]/neuron>` specifies the size of the fitting net. If two neighboring layers are of the same size, then a [ResNet architecture](https://arxiv.org/abs/1512.03385) is built between them.
+* If the option {ref}`resnet_dt <model/fitting_net[ener]/resnet_dt>` is set to `true`, then a timestep is used in the ResNet.
 * {ref}`seed <model/fitting_net[ener]/seed>` gives the random seed that is used to generate random numbers when initializing the model parameters.
 
 ## Loss
@@ -31,7 +31,7 @@ where $\alpha(t)$ denotes the learning rate at step $t$. $p_f^0$ and $p_f^\infty
 pref_f(t) = start_pref_f * ( lr(t) / start_lr ) + limit_pref_f * ( 1 - lr(t) / start_lr )
 ```
 
-The {ref}`loss <loss>` section in the `input.json` is 
+The {ref}`loss <loss>` section in the `input.json` is
 ```json
     "loss" : {
 	"start_pref_e":	0.02,

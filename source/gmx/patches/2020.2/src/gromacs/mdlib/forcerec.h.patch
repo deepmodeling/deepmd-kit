@@ -3,7 +3,7 @@
 @@ -44,6 +44,10 @@
  #include "gromacs/timing/wallcycle.h"
  #include "gromacs/utility/arrayref.h"
- 
+
 +#include "deepmd/gmx_plugin.h"
 +extern deepmd::DeepmdPlugin* deepmdPlugin;
 +extern bool                  useDeepmd;

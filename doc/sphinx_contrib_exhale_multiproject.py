@@ -75,22 +75,24 @@ Example configuration of exhale with multiple projects;
     }
 '''
 
-import exhale
-import exhale.configs
-import exhale.utils
-import exhale.deploy
-
 import os
 import os.path
-from pprint import pprint
+from pprint import (
+    pprint,
+)
+
+import exhale
+import exhale.configs
+import exhale.deploy
+import exhale.utils
 
 
 def exhale_environment_ready(app):
     default_project = app.config.breathe_default_project
     default_exhale_args = dict(app.config.exhale_args)
 
-    exhale_projects_args = dict(app.config._raw_config['exhale_projects_args'])
-    breathe_projects = dict(app.config._raw_config['breathe_projects'])
+    exhale_projects_args = dict(app.config._raw_config["exhale_projects_args"])
+    breathe_projects = dict(app.config._raw_config["breathe_projects"])
 
     for project in breathe_projects:
         app.config.breathe_default_project = project
@@ -100,12 +102,14 @@ def exhale_environment_ready(app):
 
         app.config.exhale_args = dict(default_exhale_args)
         app.config.exhale_args.update(project_exhale_args)
-        app.config.exhale_args["containmentFolder"] = os.path.realpath(app.config.exhale_args["containmentFolder"])
-        print("="*75)
+        app.config.exhale_args["containmentFolder"] = os.path.realpath(
+            app.config.exhale_args["containmentFolder"]
+        )
+        print("=" * 75)
         print(project)
-        print("-"*50)
+        print("-" * 50)
         pprint(app.config.exhale_args)
-        print("="*75)
+        print("=" * 75)
 
         # First, setup the extension and verify all of the configurations.
         exhale.configs.apply_sphinx_configurations(app)
@@ -114,9 +118,12 @@ def exhale_environment_ready(app):
         # Generate the full API!
         try:
             exhale.deploy.explode()
-        except:
-            exhale.utils.fancyError("Exhale: could not generate reStructuredText documents :/")
+        except Exception:
+            exhale.utils.fancyError(
+                "Exhale: could not generate reStructuredText documents :/"
+            )
 
     app.config.breathe_default_project = default_project
+
 
 exhale.environment_ready = exhale_environment_ready

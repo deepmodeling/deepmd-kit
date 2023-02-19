@@ -63,11 +63,11 @@ class PairDeepMD : public Pair {
   int get_node_rank();
   std::string get_file_content(const std::string & model);
   std::vector<std::string> get_file_content(const std::vector<std::string> & models);
- protected:  
+ protected:
   virtual void allocate();
   double **scale;
 
-private:  
+private:
   deepmd::DeepPot deep_pot;
   deepmd::DeepPotModelDevi deep_pot_model_devi;
   unsigned numb_models;
@@ -107,7 +107,7 @@ private:
       );
   bool do_compute;
   std::string compute_id;
-  
+
     void make_ttm_fparam(
 #ifdef HIGH_PREC
       std::vector<double > & fparam
@@ -115,7 +115,7 @@ private:
       std::vector<float > & fparam
 #endif
       );
-      
+
   void make_ttm_aparam(
 #ifdef HIGH_PREC
       std::vector<double > & dparam
