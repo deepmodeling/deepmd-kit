@@ -3,6 +3,9 @@
 import os
 import sys
 
+from packaging.version import (
+    Version,
+)
 from skbuild import (
     setup,
 )
@@ -62,6 +65,11 @@ if dp_ipi == "1":
 
 tf_install_dir, _ = find_tensorflow()
 tf_version = get_tf_version(tf_install_dir)
+# TODO: change to "tf_version == "" or" after tensorflow 2.12 is released
+if tf_version != "" and Version(tf_version) >= Version("2.12"):
+    find_libpython_requires = []
+else:
+    find_libpython_requires = ["find_libpython"]
 
 
 class bdist_wheel_abi3(bdist_wheel):
@@ -122,11 +130,11 @@ setup(
         "lmp": [
             "lammps-manylinux-2-28~=2022.6.23.2.2; platform_system=='Linux'",
             "lammps~=2022.6.23.2.2; platform_system!='Linux'",
-            "find_libpython",
+            *find_libpython_requires,
         ],
         "ipi": [
             "i-PI",
-            "find_libpython",
+            *find_libpython_requires,
         ],
         **get_tf_requirement(tf_version),
         "cu11": [
