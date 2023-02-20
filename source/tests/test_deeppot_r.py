@@ -9,15 +9,15 @@ import numpy as np
 from common import (
     tests_path,
 )
-from infer.convert2pb import (
-    convert_pbtxt_to_pb,
-)
 
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
 )
 from deepmd.infer import (
     DeepPot,
+)
+from deepmd.utils.convert import (
+    convert_pbtxt_to_pb,
 )
 
 if GLOBAL_NP_FLOAT_PRECISION == np.float32:
