@@ -6,10 +6,9 @@
 #include <algorithm>
 #include <cmath>
 #include <fstream>
-#include <vector>
-#include <fstream>
 #include <sstream>
 #include <string>
+#include <vector>
 
 #include "common.h"
 TEST(TestReadFileToString, readfiletostring) {
