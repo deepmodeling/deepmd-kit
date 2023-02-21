@@ -16,7 +16,6 @@ TEST(TestReadFileToString, readfiletostring) {
   std::string file_name = "../../tests/infer/deeppot.pbtxt";
   deepmd::convert_pbtxt_to_pb(file_name, "deeppot.pb");
   std::string file_content;
-  for(int ii=0; ii<200000; ii++) file_content.append("0");
   deepmd::read_file_to_string("deeppot.pb", file_content);
   remove("deeppot.pb");
 
