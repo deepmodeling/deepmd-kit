@@ -20,8 +20,10 @@ class TestSelectMap : public ::testing::Test {
   std::vector<int> fwd_map_0 = {0, -1, -1, 1, -1, -1};
   std::vector<int> fwd_map_1 = {-1, 0, 1, -1, 2, 3};
 
-  std::vector<VALUETYPE> expected_coord_out_0 = {12.83, 2.56, 2.18, 3.36,  3.00, 1.81};
-  std::vector<VALUETYPE> expected_coord_out_1 = {12.09, 2.87, 2.74, 00.25, 3.32, 1.68, 3.51,  2.51, 2.60, 4.27,  3.22, 1.56};
+  std::vector<VALUETYPE> expected_coord_out_0 = {12.83, 2.56, 2.18,
+                                                 3.36,  3.00, 1.81};
+  std::vector<VALUETYPE> expected_coord_out_1 = {
+      12.09, 2.87, 2.74, 00.25, 3.32, 1.68, 3.51, 2.51, 2.60, 4.27, 3.22, 1.56};
 
   std::vector<VALUETYPE> coord_out_0;
   std::vector<VALUETYPE> coord_out_1;
