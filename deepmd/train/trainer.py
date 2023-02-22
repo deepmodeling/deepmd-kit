@@ -772,11 +772,11 @@ class DPTrainer (object):
                     else:
                         train_batches = {}
                         valid_batches = {}
-                        for fitting_key in train_data:
-                            train_batches[fitting_key] = [train_data[fitting_key].get_batch()]
-                            valid_batches[fitting_key] = [valid_data[fitting_key].get_batch()
-                                                          for ii in range(self.valid_numb_batch_dict[fitting_key])] \
-                                if fitting_key in valid_data else None
+                        for fitting_key_ii in train_data:
+                            train_batches[fitting_key_ii] = [train_data[fitting_key_ii].get_batch()]
+                            valid_batches[fitting_key_ii] = [valid_data[fitting_key_ii].get_batch()
+                                                          for ii in range(self.valid_numb_batch_dict[fitting_key_ii])] \
+                                if fitting_key_ii in valid_data else None
                         self.valid_on_the_fly(fp, train_batches, valid_batches, fitting_key=fitting_key)
                 if self.timing_in_training:
                     toc = time.time()
@@ -899,7 +899,7 @@ class DPTrainer (object):
                     prop_fmt = '   %11s'
                     for k in train_results[fitting_key].keys():
                         print_str += prop_fmt % (k + '_trn')
-            print_str += '   %8s\n' % (k + '_lr')
+                print_str += '   %8s\n' % (fitting_key + '_lr')
         fp.write(print_str)
         fp.flush()
 
