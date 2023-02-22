@@ -868,7 +868,11 @@ class DPTrainer (object):
             current_lr = run_sess(self.sess, self.learning_rate_dict[fitting_key])
         if print_header:
             self.print_header(fp, train_results, valid_results, self.multi_task_mode)
-        self.print_on_training(fp, train_results, valid_results, cur_batch, current_lr, self.multi_task_mode)
+        if not self.multi_task_mode:
+            self.print_on_training(fp, train_results, valid_results, cur_batch, current_lr, self.multi_task_mode)
+        else:
+            assert fitting_key is not None, "Fitting key must be assigned when printing learning rate!"
+            self.print_on_training(fp, train_results, valid_results, cur_batch, current_lr, self.multi_task_mode, fitting_key)
 
     @staticmethod
     def print_header(fp, train_results, valid_results, multi_task_mode=False):
@@ -883,6 +887,7 @@ class DPTrainer (object):
                 prop_fmt = '   %11s'
                 for k in train_results.keys():
                     print_str += prop_fmt % (k + '_trn')
+            print_str += '   %8s\n' % (k + '_lr')
         else:
             for fitting_key in train_results:
                 if valid_results[fitting_key] is not None:
@@ -893,12 +898,12 @@ class DPTrainer (object):
                     prop_fmt = '   %11s'
                     for k in train_results[fitting_key].keys():
                         print_str += prop_fmt % (k + '_trn')
-        print_str += '   %8s\n' % 'lr'
+            print_str += '   %8s\n' % (k + '_lr')
         fp.write(print_str)
         fp.flush()
 
     @staticmethod
-    def print_on_training(fp, train_results, valid_results, cur_batch, cur_lr, multi_task_mode=False):
+    def print_on_training(fp, train_results, valid_results, cur_batch, cur_lr, multi_task_mode=False, cur_fitting_key = None):
         print_str = ''
         print_str += "%7d" % cur_batch
         if not multi_task_mode:
@@ -922,7 +927,10 @@ class DPTrainer (object):
                     prop_fmt = "   %11.2e"
                     for k in train_results[fitting_key].keys():
                         print_str += prop_fmt % (train_results[fitting_key][k])
-        print_str += "   %8.1e\n" % cur_lr
+                if fitting_key == cur_fitting_key:
+                    print_str += "   %8.1e\n" % cur_lr
+                else:
+                    print_str += "   %8.1e\n" % 0
         fp.write(print_str)
         fp.flush()
 
