@@ -132,5 +132,8 @@ ignore = [
     "D102", # missing docstring in public method
     "D103", # missing docstring in public function
     "D104", # missing docstring in public package
+    "D105", # missing docstring in magic method
     "D205", # 1 blank line required between summary line and description
+    "D401", # first line should be in imperative mood
+    "D404", # first word of the docstring should not be This
 ]
