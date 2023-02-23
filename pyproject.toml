@@ -111,4 +111,20 @@ profile = "black"
 force_grid_wrap = 1
 
 [tool.ruff]
-ignore = ["E501", "F401", "F841", "E741", "E402"]
+select = [
+    "E", # errors
+    "F", # pyflakes
+    "D", # pydocstyle
+]
+ignore = [
+    "E501",
+    "F401",
+    "F841",
+    "E741",
+    "E402",
+    "D413",
+    "D416",
+    "D203",
+    "D107",
+    "D213",
+]
