@@ -111,10 +111,12 @@ profile = "black"
 force_grid_wrap = 1
 
 [tool.ruff]
+target-version = "py37"
 select = [
     "E", # errors
     "F", # pyflakes
     "D", # pydocstyle
+    "UP", # pyupgrade
 ]
 ignore = [
     "E501", # line too long
