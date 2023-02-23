@@ -31,7 +31,7 @@ else:
 
 def get_env(paths: List[Optional[str]]) -> str:
     """Get the environment variable from given paths."""
-    return ":".join((p for p in paths if p is not None))
+    return ":".join(p for p in paths if p is not None)
 
 
 def get_library_path(module: str) -> List[str]:

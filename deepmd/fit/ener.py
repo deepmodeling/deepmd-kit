@@ -277,7 +277,7 @@ class EnerFitting(Fitting):
             # In this situation, we directly use these assigned energies instead of computing stats.
             # This will make the loss decrease quickly
             assigned_atom_ener = np.array(
-                list((ee for ee in self.atom_ener_v if ee is not None))
+                list(ee for ee in self.atom_ener_v if ee is not None)
             )
             assigned_ener_idx = list(
                 (ii for ii, ee in enumerate(self.atom_ener_v) if ee is not None)

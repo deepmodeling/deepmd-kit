@@ -499,7 +499,7 @@ def run_dp(cmd: str) -> int:
 
 
 # some tests still need this class
-class DataSets(object):
+class DataSets:
     """Outdated class for one data system.
     .. deprecated:: 2.0.0
         This class is not maintained any more.
@@ -769,7 +769,7 @@ class DataSets(object):
         return self.has_aparam
 
 
-class DataSystem(object):
+class DataSystem:
     """Outdated class for the data systems.
     .. deprecated:: 2.0.0
         This class is not maintained any more.
@@ -863,7 +863,7 @@ class DataSystem(object):
                 for idx in range(min_len):
                     if ii[idx] != ret[idx]:
                         raise RuntimeError(
-                            "inconsistent type map: %s %s" % (str(ret), str(ii))
+                            f"inconsistent type map: {str(ret)} {str(ii)}"
                         )
                 if len(ii) > len(ret):
                     ret = ii
@@ -887,7 +887,7 @@ class DataSystem(object):
         tmp_msg += "---Summary of DataSystem-----------------------------------------\n"
         tmp_msg += "find %d system(s):\n" % self.nsystems
         tmp_msg += "%s  " % self.format_name_length("system", sys_width)
-        tmp_msg += "%s  %s  %s\n" % ("natoms", "bch_sz", "n_bch")
+        tmp_msg += "{}  {}  {}\n".format("natoms", "bch_sz", "n_bch")
         for ii in range(self.nsystems):
             tmp_msg += "%s  %6d  %6d  %5d\n" % (
                 self.format_name_length(self.system_dirs[ii], sys_width),

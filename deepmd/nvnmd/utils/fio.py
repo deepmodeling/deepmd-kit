@@ -133,7 +133,7 @@ class FioJsonDic:
         r"""Load .json file into dict."""
         if Fio().exits(file_name):
             log.info(f"load {file_name}")
-            with open(file_name, "r") as fr:
+            with open(file_name) as fr:
                 jdata = fr.read()
             dat = json.loads(jdata)
             return dat
@@ -192,7 +192,7 @@ class FioTxt:
         r"""Load .txt file into string list."""
         if Fio().exits(file_name):
             log.info(f"load {file_name}")
-            with open(file_name, "r", encoding="utf-8") as fr:
+            with open(file_name, encoding="utf-8") as fr:
                 dat = fr.readlines()
             dat = [d.replace("\n", "") for d in dat]
             return dat

@@ -87,7 +87,7 @@ def test(
         if no valid system was found
     """
     if datafile is not None:
-        datalist = open(datafile, "r")
+        datalist = open(datafile)
         all_sys = datalist.read().splitlines()
         datalist.close()
     else:

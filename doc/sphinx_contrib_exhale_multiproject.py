@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 # The initial version of this file comes from
 # https://github.com/mithro/sphinx-contrib-mithro/tree/master/sphinx-contrib-exhale-multiproject
 # under the following license:

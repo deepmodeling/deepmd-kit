@@ -299,10 +299,10 @@ def _make_node_names(
                 or nodes[ind] == "model_attr/sel_type"
                 or nodes[ind] == "model_attr/output_dim"
             ):
-                nodes[ind] += "_{}".format(out_suffix)
+                nodes[ind] += f"_{out_suffix}"
             elif "fitting_attr" in nodes[ind]:
                 content = nodes[ind].split("/")[1]
-                nodes[ind] = "fitting_attr_{}/{}".format(out_suffix, content)
+                nodes[ind] = f"fitting_attr_{out_suffix}/{content}"
     return nodes
 
 
@@ -413,9 +413,9 @@ def freeze_graph_multi(
                 "type"
             ]
             if out_graph_name[-3:] == ".pb":
-                output_graph_item = out_graph_name[:-3] + "_{}.pb".format(fitting_key)
+                output_graph_item = out_graph_name[:-3] + f"_{fitting_key}.pb"
             else:
-                output_graph_item = out_graph_name + "_{}".format(fitting_key)
+                output_graph_item = out_graph_name + f"_{fitting_key}"
             freeze_graph(
                 sess,
                 input_graph,

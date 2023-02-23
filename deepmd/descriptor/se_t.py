@@ -95,7 +95,7 @@ class DescrptSeT(DescrptSe):
         """Constructor."""
         if rcut < rcut_smth:
             raise RuntimeError(
-                "rcut_smth (%f) should be no more than rcut (%f)!" % (rcut_smth, rcut)
+                f"rcut_smth ({rcut_smth:f}) should be no more than rcut ({rcut:f})!"
             )
         self.sel_a = sel
         self.rcut_r = rcut

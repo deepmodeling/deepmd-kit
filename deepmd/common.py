@@ -472,10 +472,8 @@ def cast_precision(func: Callable) -> Callable:
         )
         if isinstance(returned_tensor, tuple):
             return tuple(
-                (
-                    safe_cast_tensor(vv, self.precision, GLOBAL_TF_FLOAT_PRECISION)
-                    for vv in returned_tensor
-                )
+                safe_cast_tensor(vv, self.precision, GLOBAL_TF_FLOAT_PRECISION)
+                for vv in returned_tensor
             )
         else:
             return safe_cast_tensor(

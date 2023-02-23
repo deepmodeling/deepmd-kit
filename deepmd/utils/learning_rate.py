@@ -5,7 +5,7 @@ from deepmd.env import (
 )
 
 
-class LearningRateExp(object):
+class LearningRateExp:
     r"""The exponentially decaying learning rate.
 
     The learning rate at step :math:`t` is given by

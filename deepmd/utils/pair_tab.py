@@ -11,7 +11,7 @@ from scipy.interpolate import (
 )
 
 
-class PairTab(object):
+class PairTab:
     """Parameters
     ----------
     filename

@@ -74,7 +74,7 @@ class DeepmdData:
         self.type_map = self._load_type_map(root)
         assert (
             optional_type_map or self.type_map is not None
-        ), "System {} must have type_map.raw in this mode! ".format(sys_path)
+        ), f"System {sys_path} must have type_map.raw in this mode! "
         if self.type_map is not None:
             assert len(self.type_map) >= max(self.atom_type) + 1
         # check pbc

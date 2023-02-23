@@ -107,7 +107,7 @@ def download_file(url: str, filename: str):
     URLError
         raises for HTTP error
     """
-    dlog.info("Download %s from %s" % (filename, url))
+    dlog.info(f"Download {filename} from {url}")
     with urllib.request.urlopen(url) as response, open(filename, "wb") as out_file:
         shutil.copyfileobj(response, out_file)
 
@@ -796,7 +796,7 @@ class BuildTensorFlow(Build):
     @property
     def built(self):
         return (
-            PREFIX / "lib" / ("libtensorflow_cc%s.%s" % (get_shlib_ext(), self.version))
+            PREFIX / "lib" / (f"libtensorflow_cc{get_shlib_ext()}.{self.version}")
         ).exists()
 
 
@@ -834,7 +834,7 @@ def env() -> Dict[str, str]:
 def pretty_print_env() -> str:
     return "Build configs:\n" + "\n".join(
         [
-            "%s:%s%s" % (kk, " " * (19 - len(kk)), vv)
+            "{}:{}{}".format(kk, " " * (19 - len(kk)), vv)
             for kk, vv in env().items()
             if vv is not None
         ]

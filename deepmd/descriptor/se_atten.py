@@ -704,7 +704,7 @@ class DescrptSeAtten(DescrptSeA):
     ):
         sd_k = tf.sqrt(tf.cast(1.0, dtype=self.filter_precision))
         for i in range(layer_num):
-            name = "attention_layer_{}{}".format(i, suffix)
+            name = f"attention_layer_{i}{suffix}"
             with tf.variable_scope(name, reuse=tf.AUTO_REUSE):
                 # input_xyz_in = tf.nn.l2_normalize(input_xyz, -1)
                 Q_c = one_layer(
@@ -975,10 +975,10 @@ class DescrptSeAtten(DescrptSeA):
         )
         if self.attn_layer > 0:
             self.beta[0] = self.attention_layer_variables[
-                "attention_layer_0{}/layer_normalization/beta".format(suffix)
+                f"attention_layer_0{suffix}/layer_normalization/beta"
             ]
             self.gamma[0] = self.attention_layer_variables[
-                "attention_layer_0{}/layer_normalization/gamma".format(suffix)
+                f"attention_layer_0{suffix}/layer_normalization/gamma"
             ]
             for i in range(1, self.attn_layer):
                 self.beta[i] = self.attention_layer_variables[

@@ -36,7 +36,7 @@ import sphinx_contrib_exhale_multiproject
 
 def mkindex(dirname):
     dirname = dirname + "/"
-    oldfindex = open(dirname + "index.md", "r")
+    oldfindex = open(dirname + "index.md")
     oldlist = oldfindex.readlines()
     oldfindex.close()
 
@@ -51,7 +51,7 @@ def mkindex(dirname):
             name for name in files if "index.md" not in name and name not in oldnames
         ]
         for name in newnames:
-            f = open(dirname + name, "r")
+            f = open(dirname + name)
             _lines = f.readlines()
             for _headline in _lines:
                 _headline = _headline.strip("#")
@@ -68,7 +68,7 @@ def mkindex(dirname):
 
 def classify_index_TS():
     dirname = "troubleshooting/"
-    oldfindex = open(dirname + "index.md", "r")
+    oldfindex = open(dirname + "index.md")
     oldlist = oldfindex.readlines()
     oldfindex.close()
 
@@ -97,7 +97,7 @@ def classify_index_TS():
     for root, dirs, files in os.walk(dirname, topdown=False):
         newnames = [name for name in files if "index.md" not in name]
         for name in newnames:
-            f = open(dirname + name, "r")
+            f = open(dirname + name)
             _lines = f.readlines()
             f.close()
             for _headline in _lines:
@@ -274,9 +274,9 @@ for typing_type in typing.__all__:
     numpydoc_xref_aliases[typing_type] = "typing.%s" % typing_type
 
 rst_epilog = """
-.. |ACTIVATION_FN| replace:: %s
-.. |PRECISION| replace:: %s
-""" % (
+.. |ACTIVATION_FN| replace:: {}
+.. |PRECISION| replace:: {}
+""".format(
     list_to_doc(ACTIVATION_FN_DICT.keys()),
     list_to_doc(PRECISION_DICT.keys()),
 )
