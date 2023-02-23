@@ -127,6 +127,7 @@ ignore = [
     "D203", # 1 blank line required before class docstring
     "D107", # missing docstring in __init__
     "D213", # multi-line docstring summary should start at the second line
+    "D100", # missing docstring in public module
     "D101", # missing docstring in public class
     "D102", # missing docstring in public method
     "D103", # missing docstring in public function
