@@ -131,5 +131,6 @@ ignore = [
     "D101", # missing docstring in public class
     "D102", # missing docstring in public method
     "D103", # missing docstring in public function
+    "D104", # missing docstring in public package
     "D205", # 1 blank line required between summary line and description
 ]
