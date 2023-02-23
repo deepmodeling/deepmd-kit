@@ -35,8 +35,7 @@ from deepmd.utils.network import (
 
 
 class PolarFittingSeA(Fitting):
-    """
-    Fit the atomic polarizability with descriptor se_a
+    r"""Fit the atomic polarizability with descriptor se_a.
 
     Parameters
     ----------
@@ -46,7 +45,7 @@ class PolarFittingSeA(Fitting):
             Number of neurons in each hidden layer of the fitting net
     resnet_dt : bool
             Time-step `dt` in the resnet construction:
-            y = x + dt * \\phi (Wx + b)
+            y = x + dt * \phi (Wx + b)
     sel_type : List[int]
             The atom types selected to have an atomic polarizability prediction. If is None, all atoms are selected.
     fit_diag : bool
@@ -80,9 +79,7 @@ class PolarFittingSeA(Fitting):
         precision: str = "default",
         uniform_seed: bool = False,
     ) -> None:
-        """
-        Constructor
-        """
+        """Constructor."""
         self.ntypes = descrpt.get_ntypes()
         self.dim_descrpt = descrpt.get_dim_out()
         self.n_neuron = neuron
@@ -124,20 +121,15 @@ class PolarFittingSeA(Fitting):
         self.mixed_prec = None
 
     def get_sel_type(self) -> List[int]:
-        """
-        Get selected atom types
-        """
+        """Get selected atom types."""
         return self.sel_type
 
     def get_out_size(self) -> int:
-        """
-        Get the output size. Should be 9
-        """
+        """Get the output size. Should be 9."""
         return 9
 
     def compute_input_stats(self, all_stat, protection=1e-2):
-        """
-        Compute the input statistics
+        """Compute the input statistics.
 
         Parameters
         ----------
@@ -344,8 +336,7 @@ class PolarFittingSeA(Fitting):
         reuse: bool = None,
         suffix: str = "",
     ):
-        """
-        Build the computational graph for fitting net
+        """Build the computational graph for fitting net.
 
         Parameters
         ----------
@@ -477,8 +468,7 @@ class PolarFittingSeA(Fitting):
         graph_def: tf.GraphDef,
         suffix: str = "",
     ) -> None:
-        """
-        Init the fitting net variables with the given dict
+        """Init the fitting net variables with the given dict.
 
         Parameters
         ----------
@@ -494,8 +484,7 @@ class PolarFittingSeA(Fitting):
         )
 
     def enable_mixed_precision(self, mixed_prec: dict = None) -> None:
-        """
-        Reveive the mixed precision setting.
+        """Reveive the mixed precision setting.
 
         Parameters
         ----------
@@ -507,8 +496,7 @@ class PolarFittingSeA(Fitting):
 
 
 class GlobalPolarFittingSeA:
-    """
-    Fit the system polarizability with descriptor se_a
+    r"""Fit the system polarizability with descriptor se_a.
 
     Parameters
     ----------
@@ -518,7 +506,7 @@ class GlobalPolarFittingSeA:
             Number of neurons in each hidden layer of the fitting net
     resnet_dt : bool
             Time-step `dt` in the resnet construction:
-            y = x + dt * \\phi (Wx + b)
+            y = x + dt * \phi (Wx + b)
     sel_type : List[int]
             The atom types selected to have an atomic polarizability prediction
     fit_diag : bool
@@ -548,9 +536,7 @@ class GlobalPolarFittingSeA:
         activation_function: str = "tanh",
         precision: str = "default",
     ) -> None:
-        """
-        Constructor
-        """
+        """Constructor."""
         if not isinstance(descrpt, DescrptSeA):
             raise RuntimeError("GlobalPolarFittingSeA only supports DescrptSeA")
         self.ntypes = descrpt.get_ntypes()
@@ -569,15 +555,11 @@ class GlobalPolarFittingSeA:
         )
 
     def get_sel_type(self) -> int:
-        """
-        Get selected atom types
-        """
+        """Get selected atom types."""
         return self.polar_fitting.get_sel_type()
 
     def get_out_size(self) -> int:
-        """
-        Get the output size. Should be 9
-        """
+        """Get the output size. Should be 9."""
         return self.polar_fitting.get_out_size()
 
     def build(
@@ -589,8 +571,7 @@ class GlobalPolarFittingSeA:
         reuse=None,
         suffix="",
     ) -> tf.Tensor:
-        """
-        Build the computational graph for fitting net
+        """Build the computational graph for fitting net.
 
         Parameters
         ----------
@@ -631,8 +612,7 @@ class GlobalPolarFittingSeA:
         graph_def: tf.GraphDef,
         suffix: str = "",
     ) -> None:
-        """
-        Init the fitting net variables with the given dict
+        """Init the fitting net variables with the given dict.
 
         Parameters
         ----------
@@ -648,8 +628,7 @@ class GlobalPolarFittingSeA:
         )
 
     def enable_mixed_precision(self, mixed_prec: dict = None) -> None:
-        """
-        Reveive the mixed precision setting.
+        """Reveive the mixed precision setting.
 
         Parameters
         ----------

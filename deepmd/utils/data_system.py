@@ -23,8 +23,7 @@ log = logging.getLogger(__name__)
 
 
 class DeepmdDataSystem:
-    """
-    Class for manipulating many data systems.
+    """Class for manipulating many data systems.
 
     It is implemented with the help of DeepmdData
     """
@@ -44,8 +43,7 @@ class DeepmdDataSystem:
         sys_probs=None,
         auto_prob_style="prob_sys_size",
     ):
-        """
-        Constructor
+        """Constructor.
 
         Parameters
         ----------
@@ -82,7 +80,8 @@ class DeepmdDataSystem:
                                 the list of systems is devided into blocks. A block is specified by `stt_idx:end_idx:weight`,
                                 where `stt_idx` is the starting index of the system, `end_idx` is then ending (not including) index of the system,
                                 the probabilities of the systems in this block sums up to `weight`, and the relatively probabilities within this block is proportional
-                                to the number of batches in the system."""
+        to the number of batches in the system.
+        """
         # init data
         self.rcut = rcut
         self.system_dirs = systems
@@ -245,10 +244,9 @@ class DeepmdDataSystem:
         return energy_shift
 
     def add_dict(self, adict: dict) -> None:
-        """
-        Add items to the data system by a `dict`.
+        """Add items to the data system by a `dict`.
         `adict` should have items like
-        .. code-block:: python
+        .. code-block:: python.
 
            adict[key] = {
                "ndof": ndof,
@@ -284,8 +282,7 @@ class DeepmdDataSystem:
         repeat: int = 1,
         default: float = 0.0,
     ):
-        """
-        Add a data item that to be loaded
+        """Add a data item that to be loaded.
 
         Parameters
         ----------
@@ -322,8 +319,7 @@ class DeepmdDataSystem:
             )
 
     def reduce(self, key_out, key_in):
-        """
-        Generate a new item from the reduction of another atom
+        """Generate a new item from the reduction of another atom.
 
         Parameters
         ----------
@@ -374,8 +370,7 @@ class DeepmdDataSystem:
         # via set_sys_prob() function. The sys_probs this function uses is
         # defined as a private variable, self.sys_probs, initialized in __init__().
         # This is to optimize the (vain) efforts in evaluating sys_probs every batch.
-        """
-        Get a batch of data from the data systems
+        """Get a batch of data from the data systems.
 
         Parameters
         ----------
@@ -400,8 +395,7 @@ class DeepmdDataSystem:
 
     # ! altered by Marián Rynik
     def get_test(self, sys_idx: int = None, n_test: int = -1):  # depreciated
-        """
-        Get test data from the the data systems.
+        """Get test data from the the data systems.
 
         Parameters
         ----------
@@ -428,9 +422,8 @@ class DeepmdDataSystem:
         return test_system_data
 
     def get_sys_ntest(self, sys_idx=None):
-        """
-        Get number of tests for the currently selected system,
-            or one defined by sys_idx.
+        """Get number of tests for the currently selected system,
+        or one defined by sys_idx.
         """
         if sys_idx is not None:
             return self.test_size[sys_idx]
@@ -438,39 +431,27 @@ class DeepmdDataSystem:
             return self.test_size[self.pick_idx]
 
     def get_type_map(self) -> List[str]:
-        """
-        Get the type map
-        """
+        """Get the type map."""
         return self.type_map
 
     def get_nbatches(self) -> int:
-        """
-        Get the total number of batches
-        """
+        """Get the total number of batches."""
         return self.nbatches
 
     def get_ntypes(self) -> int:
-        """
-        Get the number of types
-        """
+        """Get the number of types."""
         return self.sys_ntypes
 
     def get_nsystems(self) -> int:
-        """
-        Get the number of data systems
-        """
+        """Get the number of data systems."""
         return self.nsystems
 
     def get_sys(self, idx: int) -> DeepmdData:
-        """
-        Get a certain data system
-        """
+        """Get a certain data system."""
         return self.data_systems[idx]
 
     def get_batch_size(self) -> int:
-        """
-        Get the batch size
-        """
+        """Get the batch size."""
         return self.batch_size
 
     def _format_name_length(self, name, width):

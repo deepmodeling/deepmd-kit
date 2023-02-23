@@ -41,7 +41,8 @@ log = logging.getLogger(__name__)
 
 
 class Wrap:
-    r"""Generate the binary model file (model.pb)
+    r"""Generate the binary model file (model.pb).
+
     the model file can be use to run the NVNMD with lammps
     the pair style need set as:
 
@@ -171,7 +172,7 @@ class Wrap:
         return hs
 
     def wrap_dscp(self):
-        r"""Wrap the configuration of descriptor
+        r"""Wrap the configuration of descriptor.
 
         [NBIT_IDX_S2G-1:0] SHIFT_IDX_S2G
         [NBIT_NEIB*NTYPE-1:0] SELs
@@ -253,7 +254,7 @@ class Wrap:
         return bs
 
     def wrap_fitn(self):
-        r"""Wrap the weights of fitting net"""
+        r"""Wrap the weights of fitting net."""
         dscp = nvnmd_cfg.dscp
         fitn = nvnmd_cfg.fitn
         weight = nvnmd_cfg.weight
@@ -361,7 +362,7 @@ class Wrap:
     def wrap_weight(self, weight, NBIT_DISP, NBIT_WEIGHT):
         r"""weight: weights of fittingNet
         NBIT_DISP: nbits of exponent of weight max value
-        NBIT_WEIGHT: nbits of mantissa of weights
+        NBIT_WEIGHT: nbits of mantissa of weights.
         """
         NBIT_WEIGHT_FL = NBIT_WEIGHT - 2
         sh = weight.shape
@@ -394,7 +395,7 @@ class Wrap:
         return NRs, NCs, WRs, WCs
 
     def wrap_map(self):
-        r"""Wrap the mapping table of embedding network"""
+        r"""Wrap the mapping table of embedding network."""
         dscp = nvnmd_cfg.dscp
         maps = nvnmd_cfg.map
         nbit = nvnmd_cfg.nbit

@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
-"""
-Gradients for tabulate.
-"""
+"""Gradients for tabulate."""
 
 from tensorflow.python.framework import (
     ops,

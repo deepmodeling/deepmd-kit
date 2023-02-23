@@ -78,6 +78,8 @@ def test(
         file where test details will be output
     atomic : bool
         whether per atom quantities should be computed
+    **kwargs
+        additional arguments
 
     Raises
     ------

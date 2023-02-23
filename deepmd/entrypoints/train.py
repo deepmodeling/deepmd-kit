@@ -111,6 +111,8 @@ def train(
         skip checking neighbor statistics
     finetune : Optional[str]
         path to pretrained model or None
+    **kwargs
+        additional arguments
 
     Raises
     ------

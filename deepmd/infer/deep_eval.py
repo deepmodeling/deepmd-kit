@@ -119,7 +119,7 @@ class DeepEval:
         return tf.Session(graph=self.graph, config=default_tf_session_config)
 
     def _graph_compatable(self) -> bool:
-        """Check the model compatability
+        """Check the model compatability.
 
         Returns
         -------
@@ -206,8 +206,7 @@ class DeepEval:
         sel_atoms: List[int] = None,
         mixed_type: bool = False,
     ):
-        """
-        Sort atoms in the system according their types.
+        """Sort atoms in the system according their types.
 
         Parameters
         ----------
@@ -268,7 +267,7 @@ class DeepEval:
 
     @staticmethod
     def reverse_map(vec: np.ndarray, imap: List[int]) -> np.ndarray:
-        """Reverse mapping of a vector according to the index map
+        """Reverse mapping of a vector according to the index map.
 
         Parameters
         ----------

@@ -142,7 +142,7 @@ class TestModel(tf.test.TestCase):
             )
 
     def test_se_r_one_side_exclude_types(self):
-        """se_r"""
+        """se_r."""
         jfile = "water_se_r.json"
         jdata = j_loader(jfile)
 

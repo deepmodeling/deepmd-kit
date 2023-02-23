@@ -32,8 +32,7 @@ def embed_atom_type(
     natoms: tf.Tensor,
     type_embedding: tf.Tensor,
 ):
-    """
-    Make the embedded type for the atoms in system.
+    """Make the embedded type for the atoms in system.
     The atoms are assumed to be sorted according to the type,
     thus their types are described by a `tf.Tensor` natoms, see explanation below.
 
@@ -69,7 +68,7 @@ def embed_atom_type(
 
 
 class TypeEmbedNet:
-    """
+    r"""Type embedding network.
 
     Parameters
     ----------
@@ -77,7 +76,7 @@ class TypeEmbedNet:
             Number of neurons in each hidden layers of the embedding net
     resnet_dt
             Time-step `dt` in the resnet construction:
-            y = x + dt * \\phi (Wx + b)
+            y = x + dt * \phi (Wx + b)
     activation_function
             The activation function in the embedding net. Supported options are |ACTIVATION_FN|
     precision
@@ -103,9 +102,7 @@ class TypeEmbedNet:
         uniform_seed: bool = False,
         padding: bool = False,
     ) -> None:
-        """
-        Constructor
-        """
+        """Constructor."""
         self.neuron = neuron
         self.seed = seed
         self.filter_resnet_dt = resnet_dt
@@ -122,8 +119,7 @@ class TypeEmbedNet:
         reuse=None,
         suffix="",
     ):
-        """
-        Build the computational graph for the descriptor
+        """Build the computational graph for the descriptor.
 
         Parameters
         ----------
@@ -171,8 +167,7 @@ class TypeEmbedNet:
         graph_def: tf.GraphDef,
         suffix="",
     ) -> None:
-        """
-        Init the type embedding net variables with the given dict
+        """Init the type embedding net variables with the given dict.
 
         Parameters
         ----------

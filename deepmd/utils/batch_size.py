@@ -155,6 +155,8 @@ class AutoBatchSize:
             Total size
         natoms : int
             The number of atoms
+        *args
+            Variable length argument list.
         **kwargs
             If 2D np.ndarray, assume the first axis is batch; otherwise do nothing.
         """

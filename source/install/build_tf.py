@@ -271,7 +271,7 @@ class Build(metaclass=ABCMeta):
 
     @property
     def prefix(self):
-        """Tmp prefix"""
+        """Tmp prefix."""
         return self._prefix
 
     def copy_from_tmp_to_prefix(self):
@@ -324,12 +324,12 @@ def get_shlib_ext():
 
 
 def copy3(src: Path, dst: Path, *args, **kwargs):
-    """wrapper to shutil.copy2 to support Pathlib."""
+    """Wrapper to shutil.copy2 to support Pathlib."""
     return copy2(str(src), str(dst), *args, **kwargs)
 
 
 def copytree2(src: Path, dst: Path, *args, **kwargs):
-    """wrapper to copytree and cp to support Pathlib, pattern, and override."""
+    """Wrapper to copytree and cp to support Pathlib, pattern, and override."""
     with tempfile.TemporaryDirectory() as td:
         # hack to support override
         tmpdst = Path(td) / "dst"
@@ -443,7 +443,7 @@ class BuildBazelisk(Build):
 
 
 class BuildNumpy(Build):
-    """Build NumPy"""
+    """Build NumPy."""
 
     @property
     @lru_cache()

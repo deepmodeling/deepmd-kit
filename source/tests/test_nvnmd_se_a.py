@@ -85,12 +85,13 @@ class TestModel(tf.test.TestCase):
         self.mesh = mesh
 
     def test_descriptor_one_side_qnn(self):
-        """: test se_a of NVNMD with quantized value
+        """: test se_a of NVNMD with quantized value.
 
         Reference:
             test_descrpt_se_a_type.py
 
         Note:
+        ----
             The test_nvnmd_se_a.py must be run after test_nvnmd_entrypoints.py.
             Because the data file map.npy ia generated in running test_nvnmd_entrypoints.py.
         """

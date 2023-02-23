@@ -72,6 +72,8 @@ class ParallelOp:
 
         Parameters
         ----------
+        sess : tf.Session
+            TensorFlow session
         feed : Generator[dict, None, None]
             generator which yields feed_dict
 

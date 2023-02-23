@@ -34,12 +34,11 @@ log = logging.getLogger(__name__)
 
 
 class DPTabulate:
-    """
-    Class for tabulation.
+    r"""Class for tabulation.
 
     Compress a model, which including tabulating the embedding-net.
-    The table is composed of fifth-order polynomial coefficients and is assembled from two sub-tables. The first table takes the stride(parameter) as it\'s uniform stride, while the second table takes 10 * stride as it\'s uniform stride
-    The range of the first table is automatically detected by deepmd-kit, while the second table ranges from the first table\'s upper boundary(upper) to the extrapolate(parameter) * upper.
+    The table is composed of fifth-order polynomial coefficients and is assembled from two sub-tables. The first table takes the stride(parameter) as it's uniform stride, while the second table takes 10 * stride as it's uniform stride
+    The range of the first table is automatically detected by deepmd-kit, while the second table ranges from the first table's upper boundary(upper) to the extrapolate(parameter) * upper.
 
     Parameters
     ----------
@@ -73,9 +72,7 @@ class DPTabulate:
         activation_fn: Callable[[tf.Tensor], tf.Tensor] = tf.nn.tanh,
         suffix: str = "",
     ) -> None:
-        """
-        Constructor
-        """
+        """Constructor."""
         self.descrpt = descrpt
         self.neuron = neuron
         self.graph = graph
@@ -156,28 +153,25 @@ class DPTabulate:
     def build(
         self, min_nbor_dist: float, extrapolate: float, stride0: float, stride1: float
     ) -> Tuple[Dict[str, int], Dict[str, int]]:
-        """
-        Build the tables for model compression
+        r"""Build the tables for model compression.
 
         Parameters
         ----------
         min_nbor_dist
-                The nearest distance between neighbor atoms
+            The nearest distance between neighbor atoms
         extrapolate
-                The scale of model extrapolation
+            The scale of model extrapolation
         stride0
-                The uniform stride of the first table
+            The uniform stride of the first table
         stride1
-                The uniform stride of the second table
-        neuron
-            Number of neurons in each hidden layers of the embedding net :math:`\\mathcal{N}`
+            The uniform stride of the second table
 
         Returns
-        ----------
+        -------
         lower : dict[str, int]
-                The lower boundary of environment matrix by net
+            The lower boundary of environment matrix by net
         upper : dict[str, int]
-                The upper boundary of environment matrix by net
+            The upper boundary of environment matrix by net
         """
         # tabulate range [lower, upper] with stride0 'stride0'
         lower, upper = self._get_env_mat_range(min_nbor_dist)

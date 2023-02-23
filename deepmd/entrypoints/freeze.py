@@ -74,7 +74,7 @@ def _transfer_fitting_net_trainable_variables(sess, old_graph_def, raw_graph_def
 
 
 def _remove_fitting_net_suffix(output_graph_def, out_suffix):
-    """Remove fitting net suffix for multi-task mode
+    """Remove fitting net suffix for multi-task mode.
 
     Parameters
     ----------
@@ -468,8 +468,12 @@ def freeze(
         output file name
     node_names : Optional[str], optional
         names of nodes to output, by default None
+    nvnmd_weight : Optional[str], optional
+        nvnmd weight file
     united_model : bool
         when in multi-task mode, freeze all nodes into one unit model
+    **kwargs
+        other arguments
     """
     # We retrieve our checkpoint fullpath
     checkpoint = tf.train.get_checkpoint_state(checkpoint_folder)

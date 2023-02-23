@@ -16,8 +16,7 @@ from .deep_pot import (
 
 
 def calc_model_devi_f(fs: np.ndarray):
-    """
-    Parameters
+    """Parameters
     ----------
     fs : numpy.ndarray
         size of `n_models x n_frames x n_atoms x 3`
@@ -30,8 +29,7 @@ def calc_model_devi_f(fs: np.ndarray):
 
 
 def calc_model_devi_e(es: np.ndarray):
-    """
-    Parameters
+    """Parameters
     ----------
     es : numpy.ndarray
         size of `n_models x n_frames x n_atoms
@@ -44,8 +42,7 @@ def calc_model_devi_e(es: np.ndarray):
 
 
 def calc_model_devi_v(vs: np.ndarray):
-    """
-    Parameters
+    """Parameters
     ----------
     vs : numpy.ndarray
         size of `n_models x n_frames x 9`
@@ -58,8 +55,7 @@ def calc_model_devi_v(vs: np.ndarray):
 
 
 def write_model_devi_out(devi: np.ndarray, fname: str, header: str = ""):
-    """
-    Parameters
+    """Parameters
     ----------
     devi : numpy.ndarray
         the first column is the steps index
@@ -88,9 +84,7 @@ def write_model_devi_out(devi: np.ndarray, fname: str, header: str = ""):
 
 
 def _check_tmaps(tmaps, ref_tmap=None):
-    """
-    Check whether type maps are identical
-    """
+    """Check whether type maps are identical."""
     assert isinstance(tmaps, list)
     if ref_tmap is None:
         ref_tmap = tmaps[0]
@@ -112,8 +106,7 @@ def calc_model_devi(
     fname=None,
     frequency=1,
 ):
-    """
-    Python interface to calculate model deviation
+    """Python interface to calculate model deviation.
 
     Parameters
     ----------
@@ -178,8 +171,7 @@ def calc_model_devi(
 def make_model_devi(
     *, models: list, system: str, set_prefix: str, output: str, frequency: int, **kwargs
 ):
-    """
-    Make model deviation calculation
+    """Make model deviation calculation.
 
     Parameters
     ----------
@@ -195,6 +187,8 @@ def make_model_devi(
         The number of steps that elapse between writing coordinates
         in a trajectory by a MD engine (such as Gromacs / Lammps).
         This paramter is used to determine the index in the output file.
+    **kwargs
+        Arbitrary keyword arguments.
     """
     auto_batch_size = AutoBatchSize()
     # init models

@@ -36,6 +36,8 @@ def neighbor_stat(
         type map
     one_type : bool, optional, default=False
         treat all types as a single type
+    **kwargs
+        additional arguments
 
     Examples
     --------

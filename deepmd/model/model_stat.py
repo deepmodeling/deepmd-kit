@@ -18,13 +18,14 @@ def _make_all_stat_ref(data, nbatches):
 
 
 def make_stat_input(data, nbatches, merge_sys=True):
-    """
-    pack data for statistics
+    """Pack data for statistics.
 
     Parameters
     ----------
-    data:
+    data
         The data
+    nbatches : int
+        The number of batches
     merge_sys : bool (True)
         Merge system data
 

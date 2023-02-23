@@ -63,7 +63,7 @@ class DeepTensor(DeepEval):
         load_prefix: str = "load",
         default_tf_graph: bool = False,
     ) -> None:
-        """Constructor"""
+        """Constructor."""
         DeepEval.__init__(
             self, model_file, load_prefix=load_prefix, default_tf_graph=default_tf_graph
         )

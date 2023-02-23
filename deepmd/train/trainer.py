@@ -1134,9 +1134,7 @@ class DPTrainer(object):
         return avg_results
 
     def save_compressed(self):
-        """
-        Save the compressed graph
-        """
+        """Save the compressed graph."""
         self._init_session()
         if self.is_compress:
             self.saver.save(self.sess, os.path.join(os.getcwd(), self.save_ckpt))
@@ -1197,8 +1195,7 @@ class DPTrainer(object):
     def _init_from_pretrained_model(
         self, data, origin_type_map=None, bias_shift="delta"
     ):
-        """
-        Init the embedding net variables with the given frozen model
+        """Init the embedding net variables with the given frozen model.
 
         Parameters
         ----------

@@ -90,6 +90,8 @@ def compress(
         if speccified log will be written to this file
     log_level : int
         logging level
+    **kwargs
+        additional arguments
     """
     graph, _ = load_graph_def(input)
     try:

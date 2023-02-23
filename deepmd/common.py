@@ -406,7 +406,9 @@ def safe_cast_tensor(
     ----------
     input : tf.Tensor
         input tensor
-    precision : tf.DType
+    from_precision : tf.DType
+        Tensor data type that is casted from
+    to_precision : tf.DType
         Tensor data type that casts to
 
     Returns
