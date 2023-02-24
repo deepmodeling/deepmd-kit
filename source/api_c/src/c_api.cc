@@ -12,17 +12,19 @@
 
 extern "C" {
 
+DP_Nlist::DP_Nlist() {}
 DP_Nlist::DP_Nlist(deepmd::InputNlist& nl) : nl(nl) {}
 
 DP_Nlist* DP_NewNlist(int inum_,
                       int* ilist_,
                       int* numneigh_,
                       int** firstneigh_) {
-  deepmd::InputNlist nl(inum_, ilist_, numneigh_, firstneigh_);
-  DP_Nlist* new_nl = new DP_Nlist(nl);
-  return new_nl;
+  DP_NEW_OK(DP_Nlist,
+            deepmd::InputNlist nl(inum_, ilist_, numneigh_, firstneigh_);
+            DP_Nlist* new_nl = new DP_Nlist(nl); return new_nl;)
 }
 
+DP_DeepPot::DP_DeepPot() {}
 DP_DeepPot::DP_DeepPot(deepmd::DeepPot& dp) : dp(dp) {}
 
 DP_DeepPot* DP_NewDeepPot(const char* c_model) {
@@ -37,29 +39,29 @@ DP_DeepPot* DP_NewDeepPotWithParam(const char* c_model,
                                    const char* c_file_content) {
   std::string model(c_model);
   std::string file_content(c_file_content);
-  deepmd::DeepPot dp(model, gpu_rank, file_content);
-  DP_DeepPot* new_dp = new DP_DeepPot(dp);
-  return new_dp;
+  DP_NEW_OK(DP_DeepPot, deepmd::DeepPot dp(model, gpu_rank, file_content);
+            DP_DeepPot* new_dp = new DP_DeepPot(dp); return new_dp;)
 }
 
+DP_DeepPotModelDevi::DP_DeepPotModelDevi() {}
 DP_DeepPotModelDevi::DP_DeepPotModelDevi(deepmd::DeepPotModelDevi& dp)
     : dp(dp) {}
 
 DP_DeepPotModelDevi* DP_NewDeepPotModelDevi(const char** c_models,
                                             int n_models) {
   std::vector<std::string> model(c_models, c_models + n_models);
-  deepmd::DeepPotModelDevi dp(model);
-  DP_DeepPotModelDevi* new_dp = new DP_DeepPotModelDevi(dp);
-  return new_dp;
+  DP_NEW_OK(DP_DeepPotModelDevi, deepmd::DeepPotModelDevi dp(model);
+            DP_DeepPotModelDevi* new_dp = new DP_DeepPotModelDevi(dp);
+            return new_dp;)
 }
 
+DP_DeepTensor::DP_DeepTensor() {}
 DP_DeepTensor::DP_DeepTensor(deepmd::DeepTensor& dt) : dt(dt) {}
 
 DP_DeepTensor* DP_NewDeepTensor(const char* c_model) {
   std::string model(c_model);
-  deepmd::DeepTensor dt(model);
-  DP_DeepTensor* new_dt = new DP_DeepTensor(dt);
-  return new_dt;
+  DP_NEW_OK(DP_DeepTensor, deepmd::DeepTensor dt(model);
+            DP_DeepTensor* new_dt = new DP_DeepTensor(dt); return new_dt;)
 }
 
 DP_DeepTensor* DP_NewDeepTensorWithParam(const char* c_model,
@@ -67,29 +69,30 @@ DP_DeepTensor* DP_NewDeepTensorWithParam(const char* c_model,
                                          const char* c_name_scope) {
   std::string model(c_model);
   std::string name_scope(c_name_scope);
-  deepmd::DeepTensor dt(model, gpu_rank, name_scope);
-  DP_DeepTensor* new_dt = new DP_DeepTensor(dt);
-  return new_dt;
+  DP_NEW_OK(DP_DeepTensor, deepmd::DeepTensor dt(model, gpu_rank, name_scope);
+            DP_DeepTensor* new_dt = new DP_DeepTensor(dt); return new_dt;)
 }
 
+DP_DipoleChargeModifier::DP_DipoleChargeModifier() {}
 DP_DipoleChargeModifier::DP_DipoleChargeModifier(
     deepmd::DipoleChargeModifier& dcm)
     : dcm(dcm) {}
 
 DP_DipoleChargeModifier* DP_NewDipoleChargeModifier(const char* c_model) {
   std::string model(c_model);
-  deepmd::DipoleChargeModifier dcm(model);
-  DP_DipoleChargeModifier* new_dcm = new DP_DipoleChargeModifier(dcm);
-  return new_dcm;
+  DP_NEW_OK(DP_DipoleChargeModifier, deepmd::DipoleChargeModifier dcm(model);
+            DP_DipoleChargeModifier* new_dcm = new DP_DipoleChargeModifier(dcm);
+            return new_dcm;)
 }
 
 DP_DipoleChargeModifier* DP_NewDipoleChargeModifierWithParam(
     const char* c_model, const int gpu_rank, const char* c_name_scope) {
   std::string model(c_model);
   std::string name_scope(c_name_scope);
-  deepmd::DipoleChargeModifier dcm(model, gpu_rank, name_scope);
-  DP_DipoleChargeModifier* new_dcm = new DP_DipoleChargeModifier(dcm);
-  return new_dcm;
+  DP_NEW_OK(DP_DipoleChargeModifier,
+            deepmd::DipoleChargeModifier dcm(model, gpu_rank, name_scope);
+            DP_DipoleChargeModifier* new_dcm = new DP_DipoleChargeModifier(dcm);
+            return new_dcm;)
 }
 
 }  // extern "C"
@@ -119,7 +122,7 @@ inline void DP_DeepPotCompute_variant(DP_DeepPot* dp,
   std::vector<double> e;
   std::vector<VALUETYPE> f, v, ae, av;
 
-  dp->dp.compute(e, f, v, ae, av, coord_, atype_, cell_);
+  DP_REQUIRES_OK(dp, dp->dp.compute(e, f, v, ae, av, coord_, atype_, cell_));
   // copy from C++ vectors to C arrays, if not NULL pointer
   if (energy) std::copy(e.begin(), e.end(), energy);
   if (force) std::copy(f.begin(), f.end(), force);
@@ -184,8 +187,8 @@ inline void DP_DeepPotComputeNList_variant(DP_DeepPot* dp,
   std::vector<double> e;
   std::vector<VALUETYPE> f, v, ae, av;
 
-  dp->dp.compute(e, f, v, ae, av, coord_, atype_, cell_, nghost, nlist->nl,
-                 ago);
+  DP_REQUIRES_OK(dp, dp->dp.compute(e, f, v, ae, av, coord_, atype_, cell_,
+                                    nghost, nlist->nl, ago));
   // copy from C++ vectors to C arrays, if not NULL pointer
   if (energy) std::copy(e.begin(), e.end(), energy);
   if (force) std::copy(f.begin(), f.end(), force);
@@ -263,8 +266,8 @@ void DP_DeepPotModelDeviComputeNList_variant(DP_DeepPotModelDevi* dp,
   std::vector<double> e;
   std::vector<std::vector<VALUETYPE>> f, v, ae, av;
 
-  dp->dp.compute(e, f, v, ae, av, coord_, atype_, cell_, nghost, nlist->nl,
-                 ago);
+  DP_REQUIRES_OK(dp, dp->dp.compute(e, f, v, ae, av, coord_, atype_, cell_,
+                                    nghost, nlist->nl, ago));
   // 2D vector to 2D array, flatten first
   if (energy) {
     std::copy(e.begin(), e.end(), energy);
@@ -339,7 +342,7 @@ inline void DP_DeepTensorComputeTensor_variant(DP_DeepTensor* dt,
   }
   std::vector<VALUETYPE> t;
 
-  dt->dt.compute(t, coord_, atype_, cell_);
+  DP_REQUIRES_OK(dt, dt->dt.compute(t, coord_, atype_, cell_));
   // do not know the size of tensor in advance...
   *tensor = new VALUETYPE[t.size()];
   std::copy(t.begin(), t.end(), *tensor);
@@ -382,7 +385,8 @@ inline void DP_DeepTensorComputeTensorNList_variant(DP_DeepTensor* dt,
   }
   std::vector<VALUETYPE> t;
 
-  dt->dt.compute(t, coord_, atype_, cell_, nghost, nlist->nl);
+  DP_REQUIRES_OK(dt,
+                 dt->dt.compute(t, coord_, atype_, cell_, nghost, nlist->nl));
   // do not know the size of tensor in advance...
   *tensor = new VALUETYPE[t.size()];
   std::copy(t.begin(), t.end(), *tensor);
@@ -433,7 +437,7 @@ inline void DP_DeepTensorCompute_variant(DP_DeepTensor* dt,
   }
   std::vector<VALUETYPE> t, f, v, at, av;
 
-  dt->dt.compute(t, f, v, at, av, coord_, atype_, cell_);
+  DP_REQUIRES_OK(dt, dt->dt.compute(t, f, v, at, av, coord_, atype_, cell_));
   // copy from C++ vectors to C arrays, if not NULL pointer
   if (global_tensor) std::copy(t.begin(), t.end(), global_tensor);
   if (force) std::copy(f.begin(), f.end(), force);
@@ -495,7 +499,8 @@ inline void DP_DeepTensorComputeNList_variant(DP_DeepTensor* dt,
   }
   std::vector<VALUETYPE> t, f, v, at, av;
 
-  dt->dt.compute(t, f, v, at, av, coord_, atype_, cell_, nghost, nlist->nl);
+  DP_REQUIRES_OK(dt, dt->dt.compute(t, f, v, at, av, coord_, atype_, cell_,
+                                    nghost, nlist->nl));
   // copy from C++ vectors to C arrays, if not NULL pointer
   if (global_tensor) std::copy(t.begin(), t.end(), global_tensor);
   if (force) std::copy(f.begin(), f.end(), force);
@@ -567,8 +572,8 @@ inline void DP_DipoleChargeModifierComputeNList_variant(
   std::vector<VALUETYPE> delef_(delef, delef + natoms * 3);
   std::vector<VALUETYPE> df, dv;
 
-  dcm->dcm.compute(df, dv, coord_, atype_, cell_, pairs_, delef_, nghost,
-                   nlist->nl);
+  DP_REQUIRES_OK(dcm, dcm->dcm.compute(df, dv, coord_, atype_, cell_, pairs_,
+                                       delef_, nghost, nlist->nl));
   // copy from C++ vectors to C arrays, if not NULL pointer
   if (dfcorr_) std::copy(df.begin(), df.end(), dfcorr_);
   if (dvcorr_) std::copy(dv.begin(), dv.end(), dvcorr_);
@@ -602,7 +607,26 @@ template void DP_DipoleChargeModifierComputeNList_variant<float>(
     float* dfcorr_,
     float* dvcorr_);
 
+/**
+ * @brief Convert std::string to const char
+ * @param[in] str std::string to be converted
+ * @return const char*
+ */
+const char* string_to_char(std::string& str) {
+  // copy from string to char*
+  const std::string::size_type size = str.size();
+  // +1 for '\0'
+  char* buffer = new char[size + 1];
+  std::copy(str.begin(), str.end(), buffer);
+  buffer[size] = '\0';
+  return buffer;
+}
+
 extern "C" {
+
+const char* DP_NlistCheckOK(DP_Nlist* nlist) {
+  return string_to_char(nlist->exception);
+}
 
 void DP_DeepPotCompute(DP_DeepPot* dp,
                        const int natoms,
@@ -753,18 +777,16 @@ void DP_DeepPotComputeNListf2(DP_DeepPot* dp,
 const char* DP_DeepPotGetTypeMap(DP_DeepPot* dp) {
   std::string type_map;
   dp->dp.get_type_map(type_map);
-  // copy from string to char*
-  const std::string::size_type size = type_map.size();
-  // +1 for '\0'
-  char* buffer = new char[size + 1];
-  std::copy(type_map.begin(), type_map.end(), buffer);
-  buffer[size] = '\0';
-  return buffer;
+  return string_to_char(type_map);
 }
 
 double DP_DeepPotGetCutoff(DP_DeepPot* dp) { return dp->dp.cutoff(); }
 
 int DP_DeepPotGetNumbTypes(DP_DeepPot* dp) { return dp->dp.numb_types(); }
+
+const char* DP_DeepPotCheckOK(DP_DeepPot* dp) {
+  return string_to_char(dp->exception);
+}
 
 void DP_DeepPotModelDeviComputeNList(DP_DeepPotModelDevi* dp,
                                      const int natoms,
@@ -808,6 +830,10 @@ double DP_DeepPotModelDeviGetCutoff(DP_DeepPotModelDevi* dp) {
 
 int DP_DeepPotModelDeviGetNumbTypes(DP_DeepPotModelDevi* dp) {
   return dp->dp.numb_types();
+}
+
+const char* DP_DeepPotModelDeviCheckOK(DP_DeepPotModelDevi* dp) {
+  return string_to_char(dp->exception);
 }
 
 void DP_DeepTensorComputeTensor(DP_DeepTensor* dt,
@@ -940,6 +966,10 @@ int DP_DeepTensorGetNumbSelTypes(DP_DeepTensor* dt) {
   return dt->dt.sel_types().size();
 }
 
+const char* DP_DeepTensorCheckOK(DP_DeepTensor* dt) {
+  return string_to_char(dt->exception);
+}
+
 void DP_DipoleChargeModifierComputeNList(DP_DipoleChargeModifier* dcm,
                                          const int natom,
                                          const double* coord,
@@ -988,6 +1018,10 @@ int* DP_DipoleChargeModifierGetSelTypes(DP_DipoleChargeModifier* dcm) {
 
 int DP_DipoleChargeModifierGetNumbSelTypes(DP_DipoleChargeModifier* dcm) {
   return dcm->dcm.sel_types().size();
+}
+
+const char* DP_DipoleChargeModifierCheckOK(DP_DipoleChargeModifier* dcm) {
+  return string_to_char(dcm->exception);
 }
 
 void DP_ConvertPbtxtToPb(const char* c_pbtxt, const char* c_pb) {

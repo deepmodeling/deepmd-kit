@@ -9,17 +9,18 @@
 #include <string>
 #include <vector>
 
-#include "DeepPot.h"
-#include "errors.h"
+#include "deepmd.hpp"
+
 TEST(TestDeepmdException, deepmdexception) {
-  std::string expected_error_message = "DeePMD-kit Error: unittest";
+  std::string expected_error_message = "DeePMD-kit C API Error: unittest";
   try {
-    throw deepmd::deepmd_exception("unittest");
-  } catch (deepmd::deepmd_exception &ex) {
+    throw deepmd::hpp::deepmd_exception("unittest");
+  } catch (deepmd::hpp::deepmd_exception &ex) {
     EXPECT_STREQ(expected_error_message.c_str(), ex.what());
   }
 }
 
 TEST(TestDeepmdException, deepmdexception_nofile) {
-  ASSERT_THROW(deepmd::DeepPot("_no_such_file.pb"), deepmd::deepmd_exception);
+  ASSERT_THROW(deepmd::hpp::DeepPot("_no_such_file.pb"),
+               deepmd::hpp::deepmd_exception);
 }
