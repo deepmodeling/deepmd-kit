@@ -27,6 +27,6 @@ def _program(name: str, args: List[str]):
 
 
 def dp_ipi():
-    """dp_ipi"""
+    """dp_ipi."""
     suffix = ".exe" if os.name == "nt" else ""
     raise SystemExit(_program("dp_ipi" + suffix, sys.argv[1:]))

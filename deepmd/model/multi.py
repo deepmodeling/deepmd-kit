@@ -77,9 +77,7 @@ class MultiModel(Model):
         sw_rmin: Optional[float] = None,
         sw_rmax: Optional[float] = None,
     ) -> None:
-        """
-        Constructor
-        """
+        """Constructor."""
         # descriptor
         self.descrpt = descrpt
         self.rcut = self.descrpt.get_rcut()
@@ -215,12 +213,12 @@ class MultiModel(Model):
                     nout[fitting_key] = self.fitting_dict[fitting_key].get_out_size()
                     t_st[fitting_key] = tf.constant(
                         sel_type[fitting_key],
-                        name="sel_type_{}".format(fitting_key),
+                        name=f"sel_type_{fitting_key}",
                         dtype=tf.int32,
                     )
                     t_od[fitting_key] = tf.constant(
                         nout[fitting_key],
-                        name="output_dim_{}".format(fitting_key),
+                        name=f"output_dim_{fitting_key}",
                         dtype=tf.int32,
                     )
 
@@ -311,7 +309,7 @@ class MultiModel(Model):
                     natoms,
                     input_dict,
                     reuse=reuse,
-                    suffix="_{}".format(fitting_key) + suffix,
+                    suffix=f"_{fitting_key}" + suffix,
                 )
                 self.atom_ener[fitting_key] = atom_ener
                 if self.srtab is not None:
@@ -326,12 +324,12 @@ class MultiModel(Model):
                 energy_raw = tf.reshape(
                     energy_raw,
                     [-1, natoms[0]],
-                    name="o_atom_energy_{}".format(fitting_key) + suffix,
+                    name=f"o_atom_energy_{fitting_key}" + suffix,
                 )
                 energy = tf.reduce_sum(
                     global_cvt_2_ener_float(energy_raw),
                     axis=1,
-                    name="o_energy_{}".format(fitting_key) + suffix,
+                    name=f"o_energy_{fitting_key}" + suffix,
                 )
                 force, virial, atom_virial = self.descrpt.prod_force_virial(
                     atom_ener, natoms
@@ -351,7 +349,7 @@ class MultiModel(Model):
                 force = tf.reshape(
                     force,
                     [-1, 3 * natoms[1]],
-                    name="o_force_{}".format(fitting_key) + suffix,
+                    name=f"o_force_{fitting_key}" + suffix,
                 )
 
                 if self.srtab is not None:
@@ -374,12 +372,12 @@ class MultiModel(Model):
                     )
 
                 virial = tf.reshape(
-                    virial, [-1, 9], name="o_virial_{}".format(fitting_key) + suffix
+                    virial, [-1, 9], name=f"o_virial_{fitting_key}" + suffix
                 )
                 atom_virial = tf.reshape(
                     atom_virial,
                     [-1, 9 * natoms[1]],
-                    name="o_atom_virial_{}".format(fitting_key) + suffix,
+                    name=f"o_atom_virial_{fitting_key}" + suffix,
                 )
 
                 model_dict[fitting_key] = {}
@@ -402,7 +400,7 @@ class MultiModel(Model):
                     natoms,
                     input_dict,
                     reuse=reuse,
-                    suffix="_{}".format(fitting_key) + suffix,
+                    suffix=f"_{fitting_key}" + suffix,
                 )
                 framesize = (
                     nout
@@ -412,7 +410,7 @@ class MultiModel(Model):
                 output = tf.reshape(
                     output,
                     [-1, framesize],
-                    name="o_{}_{}".format(tensor_name, fitting_key) + suffix,
+                    name=f"o_{tensor_name}_{fitting_key}" + suffix,
                 )
 
                 model_dict[fitting_key] = {}
@@ -427,7 +425,7 @@ class MultiModel(Model):
                     global_out = tf.reshape(
                         global_out,
                         [-1, nout[fitting_key]],
-                        name="o_{}_{}".format(gname, fitting_key) + suffix,
+                        name=f"o_{gname}_{fitting_key}" + suffix,
                     )
 
                     out_cpnts = tf.split(atom_out, nout[fitting_key], axis=-1)
@@ -451,19 +449,19 @@ class MultiModel(Model):
                     force = tf.concat(
                         force_cpnts,
                         axis=1,
-                        name="o_force_{}".format(fitting_key) + suffix,
+                        name=f"o_force_{fitting_key}" + suffix,
                     )
                     # [nframe x nout x 9]
                     virial = tf.concat(
                         virial_cpnts,
                         axis=1,
-                        name="o_virial_{}".format(fitting_key) + suffix,
+                        name=f"o_virial_{fitting_key}" + suffix,
                     )
                     # [nframe x nout x (natom x 9)]
                     atom_virial = tf.concat(
                         atom_virial_cpnts,
                         axis=1,
-                        name="o_atom_virial_{}".format(fitting_key) + suffix,
+                        name=f"o_atom_virial_{fitting_key}" + suffix,
                     )
 
                     model_dict[fitting_key][gname] = global_out
@@ -480,8 +478,7 @@ class MultiModel(Model):
         model_type: str = "original_model",
         suffix: str = "",
     ) -> None:
-        """
-        Init the embedding net variables with the given frozen model
+        """Init the embedding net variables with the given frozen model.
 
         Parameters
         ----------

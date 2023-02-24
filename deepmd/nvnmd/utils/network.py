@@ -32,7 +32,7 @@ def get_sess():
 
 def matmul2_qq(a, b, nbit):
     r"""Quantized matmul operation for 2d tensor.
-    a and b is input tensor, nbit represent quantification precision
+    a and b is input tensor, nbit represent quantification precision.
     """
     sh_a = a.get_shape().as_list()
     sh_b = b.get_shape().as_list()
@@ -46,7 +46,7 @@ def matmul2_qq(a, b, nbit):
 
 def matmul3_qq(a, b, nbit):
     r"""Quantized matmul operation for 3d tensor.
-    a and b is input tensor, nbit represent quantification precision
+    a and b is input tensor, nbit represent quantification precision.
     """
     sh_a = a.get_shape().as_list()
     sh_b = b.get_shape().as_list()

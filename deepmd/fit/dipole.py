@@ -34,8 +34,7 @@ from deepmd.utils.network import (
 
 
 class DipoleFittingSeA(Fitting):
-    """
-    Fit the atomic dipole with descriptor se_a
+    r"""Fit the atomic dipole with descriptor se_a.
 
     Parameters
     ----------
@@ -45,7 +44,7 @@ class DipoleFittingSeA(Fitting):
             Number of neurons in each hidden layer of the fitting net
     resnet_dt : bool
             Time-step `dt` in the resnet construction:
-            y = x + dt * \\phi (Wx + b)
+            y = x + dt * \phi (Wx + b)
     sel_type : List[int]
             The atom types selected to have an atomic dipole prediction. If is None, all atoms are selected.
     seed : int
@@ -69,9 +68,7 @@ class DipoleFittingSeA(Fitting):
         precision: str = "default",
         uniform_seed: bool = False,
     ) -> None:
-        """
-        Constructor
-        """
+        """Constructor."""
         self.ntypes = descrpt.get_ntypes()
         self.dim_descrpt = descrpt.get_dim_out()
         self.n_neuron = neuron
@@ -94,15 +91,11 @@ class DipoleFittingSeA(Fitting):
         self.mixed_prec = None
 
     def get_sel_type(self) -> int:
-        """
-        Get selected type
-        """
+        """Get selected type."""
         return self.sel_type
 
     def get_out_size(self) -> int:
-        """
-        Get the output size. Should be 3
-        """
+        """Get the output size. Should be 3."""
         return 3
 
     def _build_lower(self, start_index, natoms, inputs, rot_mat, suffix="", reuse=None):
@@ -178,8 +171,7 @@ class DipoleFittingSeA(Fitting):
         reuse: bool = None,
         suffix: str = "",
     ) -> tf.Tensor:
-        """
-        Build the computational graph for fitting net
+        """Build the computational graph for fitting net.
 
         Parameters
         ----------
@@ -286,8 +278,7 @@ class DipoleFittingSeA(Fitting):
         graph_def: tf.GraphDef,
         suffix: str = "",
     ) -> None:
-        """
-        Init the fitting net variables with the given dict
+        """Init the fitting net variables with the given dict.
 
         Parameters
         ----------
@@ -303,8 +294,7 @@ class DipoleFittingSeA(Fitting):
         )
 
     def enable_mixed_precision(self, mixed_prec: dict = None) -> None:
-        """
-        Reveive the mixed precision setting.
+        """Reveive the mixed precision setting.
 
         Parameters
         ----------

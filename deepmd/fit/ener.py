@@ -143,9 +143,7 @@ class EnerFitting(Fitting):
         layer_name: Optional[List[Optional[str]]] = None,
         use_aparam_as_mask: bool = False,
     ) -> None:
-        """
-        Constructor
-        """
+        """Constructor."""
         # model param
         self.ntypes = descrpt.get_ntypes()
         self.dim_descrpt = descrpt.get_dim_out()
@@ -218,20 +216,15 @@ class EnerFitting(Fitting):
             ), "length of layer_name should be that of n_neuron + 1"
 
     def get_numb_fparam(self) -> int:
-        """
-        Get the number of frame parameters
-        """
+        """Get the number of frame parameters."""
         return self.numb_fparam
 
     def get_numb_aparam(self) -> int:
-        """
-        Get the number of atomic parameters
-        """
+        """Get the number of atomic parameters."""
         return self.numb_fparam
 
     def compute_output_stats(self, all_stat: dict, mixed_type: bool = False) -> None:
-        """
-        Compute the ouput statistics
+        """Compute the ouput statistics.
 
         Parameters
         ----------
@@ -284,7 +277,7 @@ class EnerFitting(Fitting):
             # In this situation, we directly use these assigned energies instead of computing stats.
             # This will make the loss decrease quickly
             assigned_atom_ener = np.array(
-                list((ee for ee in self.atom_ener_v if ee is not None))
+                list(ee for ee in self.atom_ener_v if ee is not None)
             )
             assigned_ener_idx = list(
                 (ii for ii, ee in enumerate(self.atom_ener_v) if ee is not None)
@@ -301,8 +294,7 @@ class EnerFitting(Fitting):
         return energy_shift
 
     def compute_input_stats(self, all_stat: dict, protection: float = 1e-2) -> None:
-        """
-        Compute the input statistics
+        """Compute the input statistics.
 
         Parameters
         ----------
@@ -454,8 +446,7 @@ class EnerFitting(Fitting):
         reuse: bool = None,
         suffix: str = "",
     ) -> tf.Tensor:
-        """
-        Build the computational graph for fitting net
+        """Build the computational graph for fitting net.
 
         Parameters
         ----------
@@ -683,8 +674,7 @@ class EnerFitting(Fitting):
         graph_def: tf.GraphDef,
         suffix: str = "",
     ) -> None:
-        """
-        Init the fitting net variables with the given dict
+        """Init the fitting net variables with the given dict.
 
         Parameters
         ----------
@@ -735,8 +725,7 @@ class EnerFitting(Fitting):
         bias_shift="delta",
         ntest=10,
     ) -> None:
-        """
-        Change the energy bias according to the input data and the pretrained model.
+        """Change the energy bias according to the input data and the pretrained model.
 
         Parameters
         ----------
@@ -834,8 +823,7 @@ class EnerFitting(Fitting):
         )
 
     def enable_mixed_precision(self, mixed_prec: Optional[dict] = None) -> None:
-        """
-        Reveive the mixed precision setting.
+        """Reveive the mixed precision setting.
 
         Parameters
         ----------

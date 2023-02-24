@@ -15,6 +15,10 @@ def run_sess(sess: tf.Session, *args, **kwargs):
     ----------
     sess : tf.Session
         TensorFlow Session
+    *args
+        Variable length argument list.
+    **kwargs
+        Arbitrary keyword arguments.
 
     Returns
     -------

@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
-"""
-First-order derivatives and second-order derivatives for gelu function.
-"""
+"""First-order derivatives and second-order derivatives for gelu function."""
 import tensorflow
 from tensorflow.python.framework import (
     ops,

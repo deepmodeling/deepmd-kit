@@ -264,7 +264,7 @@ class TestModel(tf.test.TestCase):
         np.testing.assert_almost_equal(v, refv, places)
 
     def test_model_atom_ener_type_embedding(self):
-        """Test atom ener with type embedding"""
+        """Test atom ener with type embedding."""
         jfile = "water_se_a.json"
         jdata = j_loader(jfile)
         set_atom_ener = [0.02, 0.01]

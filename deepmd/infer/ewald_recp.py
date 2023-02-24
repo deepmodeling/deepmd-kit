@@ -21,13 +21,10 @@ from deepmd.utils.sess import (
 
 
 class EwaldRecp:
-    """
-    Evaluate the reciprocal part of the Ewald sum
-    """
+    """Evaluate the reciprocal part of the Ewald sum."""
 
     def __init__(self, hh, beta):
-        """
-        Constructor
+        """Constructor.
 
         Parameters
         ----------
@@ -62,8 +59,7 @@ class EwaldRecp:
     def eval(
         self, coord: np.ndarray, charge: np.ndarray, box: np.ndarray
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """
-        Evaluate
+        """Evaluate.
 
         Parameters
         ----------

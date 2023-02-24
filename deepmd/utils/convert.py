@@ -20,7 +20,7 @@ def detect_model_version(input_model: str):
     """
     convert_pb_to_pbtxt(input_model, "frozen_model.pbtxt")
     version = "undetected"
-    with open("frozen_model.pbtxt", "r") as fp:
+    with open("frozen_model.pbtxt") as fp:
         file_content = fp.read()
     if file_content.find("DescrptNorot") > -1:
         version = "<= 0.12"
@@ -371,7 +371,7 @@ def convert_dp12_to_dp13(file: str):
         filename of the graph text
     """
     file_data = ""
-    with open(file, "r", encoding="utf-8") as f:
+    with open(file, encoding="utf-8") as f:
         ii = 0
         lines = f.readlines()
         while ii < len(lines):

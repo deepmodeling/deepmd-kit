@@ -25,8 +25,7 @@ log = logging.getLogger(__name__)
 
 
 class DeepmdData:
-    """
-    Class for a data system.
+    """Class for a data system.
 
     It loads data from hard disk, and mantains the data as a `data_dict`
 
@@ -58,9 +57,7 @@ class DeepmdData:
         modifier=None,
         trn_all_set: bool = False,
     ):
-        """
-        Constructor
-        """
+        """Constructor."""
         root = DPPath(sys_path)
         self.dirs = root.glob(set_prefix + ".*")
         self.dirs.sort()
@@ -77,7 +74,7 @@ class DeepmdData:
         self.type_map = self._load_type_map(root)
         assert (
             optional_type_map or self.type_map is not None
-        ), "System {} must have type_map.raw in this mode! ".format(sys_path)
+        ), f"System {sys_path} must have type_map.raw in this mode! "
         if self.type_map is not None:
             assert len(self.type_map) >= max(self.atom_type) + 1
         # check pbc
@@ -144,8 +141,7 @@ class DeepmdData:
         default: float = 0.0,
         dtype: Optional[np.dtype] = None,
     ):
-        """
-        Add a data item that to be loaded
+        """Add a data item that to be loaded.
 
         Parameters
         ----------
@@ -185,8 +181,7 @@ class DeepmdData:
         return self
 
     def reduce(self, key_out: str, key_in: str):
-        """
-        Generate a new item from the reduction of another atom
+        """Generate a new item from the reduction of another atom.
 
         Parameters
         ----------
@@ -214,15 +209,11 @@ class DeepmdData:
         return self
 
     def get_data_dict(self) -> dict:
-        """
-        Get the `data_dict`
-        """
+        """Get the `data_dict`."""
         return self.data_dict
 
     def check_batch_size(self, batch_size):
-        """
-        Check if the system can get a batch of data with `batch_size` frames.
-        """
+        """Check if the system can get a batch of data with `batch_size` frames."""
         for ii in self.train_dirs:
             if self.data_dict["coord"]["high_prec"]:
                 tmpe = (
@@ -237,9 +228,7 @@ class DeepmdData:
         return None
 
     def check_test_size(self, test_size):
-        """
-        Check if the system can get a test dataset with `test_size` frames.
-        """
+        """Check if the system can get a test dataset with `test_size` frames."""
         if self.data_dict["coord"]["high_prec"]:
             tmpe = (
                 (self.test_dir / "coord.npy")
@@ -260,8 +249,7 @@ class DeepmdData:
             return None
 
     def get_batch(self, batch_size: int) -> dict:
-        """
-        Get a batch of data with `batch_size` frames. The frames are randomly picked from the data system.
+        """Get a batch of data with `batch_size` frames. The frames are randomly picked from the data system.
 
         Parameters
         ----------
@@ -287,8 +275,7 @@ class DeepmdData:
         return ret
 
     def get_test(self, ntests: int = -1) -> dict:
-        """
-        Get the test data with `ntests` frames.
+        """Get the test data with `ntests` frames.
 
         Parameters
         ----------
@@ -313,36 +300,26 @@ class DeepmdData:
         return ret
 
     def get_ntypes(self) -> int:
-        """
-        Number of atom types in the system
-        """
+        """Number of atom types in the system."""
         if self.type_map is not None:
             return len(self.type_map)
         else:
             return max(self.get_atom_type()) + 1
 
     def get_type_map(self) -> List[str]:
-        """
-        Get the type map
-        """
+        """Get the type map."""
         return self.type_map
 
     def get_atom_type(self) -> List[int]:
-        """
-        Get atom types
-        """
+        """Get atom types."""
         return self.atom_type
 
     def get_numb_set(self) -> int:
-        """
-        Get number of training sets
-        """
+        """Get number of training sets."""
         return len(self.train_dirs)
 
     def get_numb_batch(self, batch_size: int, set_idx: int) -> int:
-        """
-        Get the number of batches in a set.
-        """
+        """Get the number of batches in a set."""
         data = self._load_set(self.train_dirs[set_idx])
         ret = data["coord"].shape[0] // batch_size
         if ret == 0:
@@ -350,23 +327,18 @@ class DeepmdData:
         return ret
 
     def get_sys_numb_batch(self, batch_size: int) -> int:
-        """
-        Get the number of batches in the data system.
-        """
+        """Get the number of batches in the data system."""
         ret = 0
         for ii in range(len(self.train_dirs)):
             ret += self.get_numb_batch(batch_size, ii)
         return ret
 
     def get_natoms(self):
-        """
-        Get number of atoms
-        """
+        """Get number of atoms."""
         return len(self.atom_type)
 
     def get_natoms_vec(self, ntypes: int):
-        """
-        Get number of atoms and number of atoms in different types
+        """Get number of atoms and number of atoms in different types.
 
         Parameters
         ----------
@@ -386,9 +358,7 @@ class DeepmdData:
         return tmp.astype(np.int32)
 
     def avg(self, key):
-        """
-        Return the average value of an item.
-        """
+        """Return the average value of an item."""
         if key not in self.data_dict.keys():
             raise RuntimeError("key %s has not been added" % key)
         info = self.data_dict[key]

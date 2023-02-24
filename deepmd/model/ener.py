@@ -67,9 +67,7 @@ class EnerModel(Model):
         sw_rmin: float = None,
         sw_rmax: float = None,
     ) -> None:
-        """
-        Constructor
-        """
+        """Constructor."""
         # descriptor
         self.descrpt = descrpt
         self.rcut = self.descrpt.get_rcut()
@@ -310,8 +308,7 @@ class EnerModel(Model):
         model_type: str = "original_model",
         suffix: str = "",
     ) -> None:
-        """
-        Init the embedding net variables with the given frozen model
+        """Init the embedding net variables with the given frozen model.
 
         Parameters
         ----------

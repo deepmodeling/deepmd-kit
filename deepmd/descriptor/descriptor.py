@@ -79,8 +79,7 @@ class Descriptor(PluginVariant):
 
     @abstractmethod
     def get_rcut(self) -> float:
-        """
-        Returns the cut-off radius.
+        """Returns the cut-off radius.
 
         Returns
         -------
@@ -94,8 +93,7 @@ class Descriptor(PluginVariant):
 
     @abstractmethod
     def get_ntypes(self) -> int:
-        """
-        Returns the number of atom types.
+        """Returns the number of atom types.
 
         Returns
         -------
@@ -109,8 +107,7 @@ class Descriptor(PluginVariant):
 
     @abstractmethod
     def get_dim_out(self) -> int:
-        """
-        Returns the output dimension of this descriptor.
+        """Returns the output dimension of this descriptor.
 
         Returns
         -------
@@ -123,9 +120,8 @@ class Descriptor(PluginVariant):
         """
 
     def get_dim_rot_mat_1(self) -> int:
-        """
-        Returns the first dimension of the rotation matrix. The rotation is of shape
-        dim_1 x 3
+        """Returns the first dimension of the rotation matrix. The rotation is of shape
+        dim_1 x 3.
 
         Returns
         -------
@@ -138,8 +134,7 @@ class Descriptor(PluginVariant):
         raise NotImplementedError
 
     def get_nlist(self) -> Tuple[tf.Tensor, tf.Tensor, List[int], List[int]]:
-        """
-        Returns neighbor information.
+        """Returns neighbor information.
 
         Returns
         -------
@@ -166,8 +161,7 @@ class Descriptor(PluginVariant):
         mesh: List[np.ndarray],
         input_dict: Dict[str, List[np.ndarray]],
     ) -> None:
-        """
-        Compute the statisitcs (avg and std) of the training data. The input will be
+        """Compute the statisitcs (avg and std) of the training data. The input will be
         normalized by the statistics.
 
         Parameters
@@ -206,8 +200,7 @@ class Descriptor(PluginVariant):
         reuse: Optional[bool] = None,
         suffix: str = "",
     ) -> tf.Tensor:
-        """
-        Build the computational graph for the descriptor.
+        """Build the computational graph for the descriptor.
 
         Parameters
         ----------
@@ -254,8 +247,7 @@ class Descriptor(PluginVariant):
         check_frequency: int = -1,
         suffix: str = "",
     ) -> None:
-        """
-        Reveive the statisitcs (distance, max_nbor_size and env_mat_range) of the
+        """Reveive the statisitcs (distance, max_nbor_size and env_mat_range) of the
         training data.
 
         Parameters
@@ -286,8 +278,7 @@ class Descriptor(PluginVariant):
         )
 
     def enable_mixed_precision(self, mixed_prec: Optional[dict] = None) -> None:
-        """
-        Reveive the mixed precision setting.
+        """Reveive the mixed precision setting.
 
         Parameters
         ----------
@@ -307,8 +298,7 @@ class Descriptor(PluginVariant):
     def prod_force_virial(
         self, atom_ener: tf.Tensor, natoms: tf.Tensor
     ) -> Tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
-        """
-        Compute force and virial.
+        """Compute force and virial.
 
         Parameters
         ----------
@@ -338,8 +328,7 @@ class Descriptor(PluginVariant):
         box: tf.Tensor,
         mesh: tf.Tensor,
     ) -> Dict[str, tf.Tensor]:
-        """
-        Generate the feed_dict for current descriptor
+        """Generate the feed_dict for current descriptor.
 
         Parameters
         ----------
@@ -379,8 +368,7 @@ class Descriptor(PluginVariant):
         graph_def: tf.GraphDef,
         suffix: str = "",
     ) -> None:
-        """
-        Init the embedding net variables with the given dict
+        """Init the embedding net variables with the given dict.
 
         Parameters
         ----------
@@ -421,8 +409,7 @@ class Descriptor(PluginVariant):
         self,
         *tensors: tf.Tensor,
     ) -> None:
-        """
-        Pass the descrpt_reshape tensor as well as descrpt_deriv tensor from the frz graph_def
+        """Pass the descrpt_reshape tensor as well as descrpt_deriv tensor from the frz graph_def.
 
         Parameters
         ----------

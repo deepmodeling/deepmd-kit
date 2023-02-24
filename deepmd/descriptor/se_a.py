@@ -166,12 +166,10 @@ class DescrptSeA(DescrptSe):
         uniform_seed: bool = False,
         multi_task: bool = False,
     ) -> None:
-        """
-        Constructor
-        """
+        """Constructor."""
         if rcut < rcut_smth:
             raise RuntimeError(
-                "rcut_smth (%f) should be no more than rcut (%f)!" % (rcut_smth, rcut)
+                f"rcut_smth ({rcut_smth:f}) should be no more than rcut ({rcut:f})!"
             )
         self.sel_a = sel
         self.rcut_r = rcut
@@ -264,32 +262,23 @@ class DescrptSeA(DescrptSe):
             }
 
     def get_rcut(self) -> float:
-        """
-        Returns the cut-off radius
-        """
+        """Returns the cut-off radius."""
         return self.rcut_r
 
     def get_ntypes(self) -> int:
-        """
-        Returns the number of atom types
-        """
+        """Returns the number of atom types."""
         return self.ntypes
 
     def get_dim_out(self) -> int:
-        """
-        Returns the output dimension of this descriptor
-        """
+        """Returns the output dimension of this descriptor."""
         return self.filter_neuron[-1] * self.n_axis_neuron
 
     def get_dim_rot_mat_1(self) -> int:
-        """
-        Returns the first dimension of the rotation matrix. The rotation is of shape dim_1 x 3
-        """
+        """Returns the first dimension of the rotation matrix. The rotation is of shape dim_1 x 3."""
         return self.filter_neuron[-1]
 
     def get_nlist(self) -> Tuple[tf.Tensor, tf.Tensor, List[int], List[int]]:
-        """
-        Returns
+        """Returns
         -------
         nlist
             Neighbor list
@@ -311,8 +300,7 @@ class DescrptSeA(DescrptSe):
         mesh: list,
         input_dict: dict,
     ) -> None:
-        """
-        Compute the statisitcs (avg and std) of the training data. The input will be normalized by the statistics.
+        """Compute the statisitcs (avg and std) of the training data. The input will be normalized by the statistics.
 
         Parameters
         ----------
@@ -363,8 +351,7 @@ class DescrptSeA(DescrptSe):
                 self.stat_dict["suma2"] += suma2
 
     def merge_input_stats(self, stat_dict):
-        """
-        Merge the statisitcs computed from compute_input_stats to obtain the self.davg and self.dstd.
+        """Merge the statisitcs computed from compute_input_stats to obtain the self.davg and self.dstd.
 
         Parameters
         ----------
@@ -415,8 +402,7 @@ class DescrptSeA(DescrptSe):
         check_frequency: int = -1,
         suffix: str = "",
     ) -> None:
-        """
-        Reveive the statisitcs (distance, max_nbor_size and env_mat_range) of the training data.
+        """Reveive the statisitcs (distance, max_nbor_size and env_mat_range) of the training data.
 
         Parameters
         ----------
@@ -492,8 +478,7 @@ class DescrptSeA(DescrptSe):
         )
 
     def enable_mixed_precision(self, mixed_prec: dict = None) -> None:
-        """
-        Reveive the mixed precision setting.
+        """Reveive the mixed precision setting.
 
         Parameters
         ----------
@@ -514,8 +499,7 @@ class DescrptSeA(DescrptSe):
         reuse: bool = None,
         suffix: str = "",
     ) -> tf.Tensor:
-        """
-        Build the computational graph for the descriptor
+        """Build the computational graph for the descriptor.
 
         Parameters
         ----------
@@ -528,6 +512,8 @@ class DescrptSeA(DescrptSe):
             natoms[0]: number of local atoms
             natoms[1]: total number of atoms held by this processor
             natoms[i]: 2 <= i < Ntypes+2, number of type i atoms
+        box_ : tf.Tensor
+            The box of the system
         mesh
             For historical reasons, only the length of the Tensor matters.
             if size of mesh == 6, pbc is assumed.
@@ -628,16 +614,13 @@ class DescrptSeA(DescrptSe):
         return self.dout
 
     def get_rot_mat(self) -> tf.Tensor:
-        """
-        Get rotational matrix
-        """
+        """Get rotational matrix."""
         return self.qmat
 
     def prod_force_virial(
         self, atom_ener: tf.Tensor, natoms: tf.Tensor
     ) -> Tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
-        """
-        Compute force and virial
+        """Compute force and virial.
 
         Parameters
         ----------
@@ -888,9 +871,7 @@ class DescrptSeA(DescrptSe):
         trainable=True,
         suffix="",
     ):
-        """
-        input env matrix, returns R.G
-        """
+        """input env matrix, returns R.G."""
         outputs_size = [1] + self.filter_neuron
         # cut-out inputs
         # with natom x (nei_type_i x 4)
@@ -1119,8 +1100,7 @@ class DescrptSeA(DescrptSe):
         graph_def: tf.GraphDef,
         suffix: str = "",
     ) -> None:
-        """
-        Init the embedding net variables with the given dict
+        """Init the embedding net variables with the given dict.
 
         Parameters
         ----------

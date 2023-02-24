@@ -36,7 +36,7 @@ class TestModel(tf.test.TestCase):
         del_data()
 
     def test_model(self):
-        """Two fittings which share the same parameters should give the same result"""
+        """Two fittings which share the same parameters should give the same result."""
         jfile = "water_layer_name.json"
         jdata = j_loader(jfile)
 

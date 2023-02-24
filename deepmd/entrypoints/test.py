@@ -78,6 +78,8 @@ def test(
         file where test details will be output
     atomic : bool
         whether per atom quantities should be computed
+    **kwargs
+        additional arguments
 
     Raises
     ------
@@ -85,7 +87,7 @@ def test(
         if no valid system was found
     """
     if datafile is not None:
-        datalist = open(datafile, "r")
+        datalist = open(datafile)
         all_sys = datalist.read().splitlines()
         datalist.close()
     else:

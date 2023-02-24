@@ -54,9 +54,7 @@ class TensorModel(Model):
         data_stat_nbatch: int = 10,
         data_stat_protect: float = 1e-2,
     ) -> None:
-        """
-        Constructor
-        """
+        """Constructor."""
         self.model_type = tensor_name
         # descriptor
         self.descrpt = descrpt
@@ -219,8 +217,7 @@ class TensorModel(Model):
         model_type: str = "original_model",
         suffix: str = "",
     ) -> None:
-        """
-        Init the embedding net variables with the given frozen model
+        """Init the embedding net variables with the given frozen model.
 
         Parameters
         ----------

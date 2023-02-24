@@ -94,7 +94,7 @@ def _is_subdir(path, directory):
     return not relative.startswith(os.pardir + os.sep)
 
 
-class DPTrainer(object):
+class DPTrainer:
     def __init__(self, jdata, run_opt, is_compress=False):
         self.run_opt = run_opt
         self._init_param(jdata)
@@ -675,7 +675,7 @@ class DPTrainer(object):
                     loss=self.l2_l[fitting_key],
                     global_step=self.global_step,
                     var_list=trainable_variables,
-                    name="train_step_{}".format(fitting_key),
+                    name=f"train_step_{fitting_key}",
                 )
                 train_ops = [apply_op] + self._extra_train_ops
                 self.train_op[fitting_key] = tf.group(*train_ops)
@@ -1129,14 +1129,12 @@ class DPTrainer(object):
                     self.loss_dict[fitting_key],
                     self.sess,
                     self.get_feed_dict,
-                    prefix="{}_".format(fitting_key),
+                    prefix=f"{fitting_key}_",
                 )
         return avg_results
 
     def save_compressed(self):
-        """
-        Save the compressed graph
-        """
+        """Save the compressed graph."""
         self._init_session()
         if self.is_compress:
             self.saver.save(self.sess, os.path.join(os.getcwd(), self.save_ckpt))
@@ -1197,8 +1195,7 @@ class DPTrainer(object):
     def _init_from_pretrained_model(
         self, data, origin_type_map=None, bias_shift="delta"
     ):
-        """
-        Init the embedding net variables with the given frozen model
+        """Init the embedding net variables with the given frozen model.
 
         Parameters
         ----------

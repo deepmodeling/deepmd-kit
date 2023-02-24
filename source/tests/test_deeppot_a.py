@@ -39,7 +39,7 @@ else:
 class TestModelMajorCompatability(unittest.TestCase):
     def setUp(self):
         model_file = str(tests_path / os.path.join("infer", "deeppot.pbtxt"))
-        with open(model_file, "r") as fp:
+        with open(model_file) as fp:
             # data = fp.read().replace('\n', '')
             data = fp.read().split("\n")
             for ii in range(len(data)):
@@ -69,7 +69,7 @@ class TestModelMajorCompatability(unittest.TestCase):
 class TestModelMinorCompatability(unittest.TestCase):
     def setUp(self):
         model_file = str(tests_path / os.path.join("infer", "deeppot.pbtxt"))
-        with open(model_file, "r") as fp:
+        with open(model_file) as fp:
             # data = fp.read().replace('\n', '')
             data = fp.read().split("\n")
             for ii in range(len(data)):

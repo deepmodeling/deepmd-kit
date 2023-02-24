@@ -67,6 +67,8 @@ def transfer(*, old_model: str, raw_model: str, output: str, **kwargs):
         new model that will accept ops from old model
     output : str
         new model with transfered parameters will be saved to this location
+    **kwargs
+        additional arguments
     """
     raw_graph = load_graph(raw_model)
     old_graph = load_graph(old_model)

@@ -59,7 +59,8 @@ from .se_a import (
 
 @Descriptor.register("se_atten")
 class DescrptSeAtten(DescrptSeA):
-    """
+    r"""Smooth version descriptor with attention.
+
     Parameters
     ----------
     rcut
@@ -74,7 +75,7 @@ class DescrptSeAtten(DescrptSeA):
             Number of the axis neuron :math:`M_2` (number of columns of the sub-matrix of the embedding matrix)
     resnet_dt
             Time-step `dt` in the resnet construction:
-            y = x + dt * \\phi (Wx + b)
+            y = x + dt * \phi (Wx + b)
     trainable
             If the weights of embedding net are trainable.
     seed
@@ -223,8 +224,7 @@ class DescrptSeAtten(DescrptSeA):
         mixed_type: bool = False,
         real_natoms_vec: Optional[list] = None,
     ) -> None:
-        """
-        Compute the statisitcs (avg and std) of the training data. The input will be normalized by the statistics.
+        """Compute the statisitcs (avg and std) of the training data. The input will be normalized by the statistics.
 
         Parameters
         ----------
@@ -307,8 +307,7 @@ class DescrptSeAtten(DescrptSeA):
         reuse: Optional[bool] = None,
         suffix: str = "",
     ) -> tf.Tensor:
-        """
-        Build the computational graph for the descriptor
+        """Build the computational graph for the descriptor.
 
         Parameters
         ----------
@@ -321,6 +320,8 @@ class DescrptSeAtten(DescrptSeA):
             natoms[0]: number of local atoms
             natoms[1]: total number of atoms held by this processor
             natoms[i]: 2 <= i < Ntypes+2, number of type i atoms
+        box_ : tf.Tensor
+            The box of the system
         mesh
             For historical reasons, only the length of the Tensor matters.
             if size of mesh == 6, pbc is assumed.
@@ -589,10 +590,8 @@ class DescrptSeAtten(DescrptSeA):
         ----------
         xyz_scatter:
             shape is [nframes*natoms[0]*self.nnei, 1]
-        nframes:
-            shape is []
-        natoms:
-            shape is [1+1+self.ntypes]
+        natype:
+            neighbor atom type
         type_embedding:
             shape is [self.ntypes, Y] where Y=jdata['type_embedding']['neuron'][-1]
 
@@ -705,7 +704,7 @@ class DescrptSeAtten(DescrptSeA):
     ):
         sd_k = tf.sqrt(tf.cast(1.0, dtype=self.filter_precision))
         for i in range(layer_num):
-            name = "attention_layer_{}{}".format(i, suffix)
+            name = f"attention_layer_{i}{suffix}"
             with tf.variable_scope(name, reuse=tf.AUTO_REUSE):
                 # input_xyz_in = tf.nn.l2_normalize(input_xyz, -1)
                 Q_c = one_layer(
@@ -804,9 +803,7 @@ class DescrptSeAtten(DescrptSeA):
         name="filter_",
         reuse=None,
     ):
-        """
-        input env matrix, returns R.G
-        """
+        """input env matrix, returns R.G."""
         outputs_size = [1] + self.filter_neuron
         # cut-out inputs
         # with natom x (nei_type_i x 4)
@@ -961,8 +958,7 @@ class DescrptSeAtten(DescrptSeA):
         graph_def: tf.GraphDef,
         suffix: str = "",
     ) -> None:
-        """
-        Init the embedding net variables with the given dict
+        """Init the embedding net variables with the given dict.
 
         Parameters
         ----------
@@ -979,10 +975,10 @@ class DescrptSeAtten(DescrptSeA):
         )
         if self.attn_layer > 0:
             self.beta[0] = self.attention_layer_variables[
-                "attention_layer_0{}/layer_normalization/beta".format(suffix)
+                f"attention_layer_0{suffix}/layer_normalization/beta"
             ]
             self.gamma[0] = self.attention_layer_variables[
-                "attention_layer_0{}/layer_normalization/gamma".format(suffix)
+                f"attention_layer_0{suffix}/layer_normalization/gamma"
             ]
             for i in range(1, self.attn_layer):
                 self.beta[i] = self.attention_layer_variables[

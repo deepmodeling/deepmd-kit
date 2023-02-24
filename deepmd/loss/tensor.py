@@ -18,9 +18,7 @@ from .loss import (
 
 
 class TensorLoss(Loss):
-    """
-    Loss function for tensorial properties.
-    """
+    """Loss function for tensorial properties."""
 
     def __init__(self, jdata, **kwarg):
         model = kwarg.get("model", None)
