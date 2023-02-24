@@ -98,9 +98,7 @@ class DeepmdData:
                 self.enforce_type_map = True
                 sorter = np.argsort(type_map)
                 self.type_idx_map = np.array(
-                    sorter[
-                        np.searchsorted(type_map, self.type_map, sorter=sorter)
-                    ]
+                    sorter[np.searchsorted(type_map, self.type_map, sorter=sorter)]
                 )
             self.type_map = type_map
         if type_map is None and self.type_map is None and self.mixed_type:
@@ -484,9 +482,7 @@ class DeepmdData:
             atom_type_mix = self._load_type_mix(set_name)
             if self.enforce_type_map:
                 try:
-                    atom_type_mix_ = self.type_idx_map[atom_type_mix].astype(
-                        np.int32
-                    )
+                    atom_type_mix_ = self.type_idx_map[atom_type_mix].astype(np.int32)
                 except RuntimeError as e:
                     raise RuntimeError(
                         "some types in 'real_atom_types.npy' of set {} are not contained in {} types!".format(
