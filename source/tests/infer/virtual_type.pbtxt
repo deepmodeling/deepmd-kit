@@ -827,7 +827,7 @@ node {
             size: 8
           }
         }
-        tensor_content: "s(:\204M\303\262?B\270\324\005\265l\320?_\313^)\357\021\344?\344\215[\004\247\020\253\277Q8\2263-\r\360\277de\256\204\202 \314?\274i\031\000\376\202\302?\342\377\321\264\021\007\322\277\313\'\307G\323\016\303\277\271\325{XO\212\270\277y&\365\312\343y\251\277\253R\031\223\241\204\322?\004p\375{=6\311\277\204&\347\230Q5\340\277\017\200\357\353\337\024\345\277\223\023\227\375\352\234\307\277"
+        tensor_content: "\354o\373?\225\330\320\277\322\177\240\352\344y\347\277XT\243)#v\332?R\337\306\205\025p\243?B\021F\316\377\325\322\277\322t+,\024\331\306?\371\023E\247\200=\347\277\264\343\367W+\323\343\277\321\013\365\317\221\315\335?\212>\357\t\367\031\343\277\024\241G6P\033\325?jl+}2^\323\277\214W\\\266v\334\343?\200\353\340!R\\y\277\037\364\002\034\366\302\350?\331\322W\255[X\334\277"
       }
     }
   }
@@ -870,7 +870,7 @@ node {
             size: 8
           }
         }
-        tensor_content: "\202\004\321B.R\347\277i#\366=\026r\344?\337\267\324i\016\004\372\277a\325\324n\322\225\305?x;\246\227\202\205\000@\365\303FID\022\303\277\302<5\253m\210\345?}8M\016\264Q\326\277"
+        tensor_content: "\"\020\026K\020\377\306?\214@\032E\036y\000\300\"\274\004\317N\234\373\2770\317\3670g2\331?Y\273g\356\240\207d\277\207\244\3746\032C\205\277k\032\"Jb\235\376\277\'\001S\032\331\247\363\277"
       }
     }
   }
@@ -4384,128 +4384,6 @@ node {
   }
 }
 node {
-  name: "GreaterEqual/y"
-  op: "Const"
-  attr {
-    key: "dtype"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "value"
-    value {
-      tensor {
-        dtype: DT_INT32
-        tensor_shape {
-        }
-        int_val: 0
-      }
-    }
-  }
-}
-node {
-  name: "GreaterEqual"
-  op: "GreaterEqual"
-  input: "t_type"
-  input: "GreaterEqual/y"
-  attr {
-    key: "T"
-    value {
-      type: DT_INT32
-    }
-  }
-}
-node {
-  name: "Cast_4"
-  op: "Cast"
-  input: "GreaterEqual"
-  attr {
-    key: "DstT"
-    value {
-      type: DT_DOUBLE
-    }
-  }
-  attr {
-    key: "SrcT"
-    value {
-      type: DT_BOOL
-    }
-  }
-  attr {
-    key: "Truncate"
-    value {
-      b: false
-    }
-  }
-}
-node {
-  name: "clip_by_value_1/Minimum/y"
-  op: "Const"
-  attr {
-    key: "dtype"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "value"
-    value {
-      tensor {
-        dtype: DT_INT32
-        tensor_shape {
-        }
-        int_val: 1
-      }
-    }
-  }
-}
-node {
-  name: "clip_by_value_1/Minimum"
-  op: "Minimum"
-  input: "t_type"
-  input: "clip_by_value_1/Minimum/y"
-  attr {
-    key: "T"
-    value {
-      type: DT_INT32
-    }
-  }
-}
-node {
-  name: "clip_by_value_1/y"
-  op: "Const"
-  attr {
-    key: "dtype"
-    value {
-      type: DT_INT32
-    }
-  }
-  attr {
-    key: "value"
-    value {
-      tensor {
-        dtype: DT_INT32
-        tensor_shape {
-        }
-        int_val: 0
-      }
-    }
-  }
-}
-node {
-  name: "clip_by_value_1"
-  op: "Maximum"
-  input: "clip_by_value_1/Minimum"
-  input: "clip_by_value_1/y"
-  attr {
-    key: "T"
-    value {
-      type: DT_INT32
-    }
-  }
-}
-node {
   name: "strided_slice_15/stack"
   op: "Const"
   attr {
@@ -4675,7 +4553,7 @@ node {
 node {
   name: "Reshape_25"
   op: "Reshape"
-  input: "clip_by_value_1"
+  input: "t_type"
   input: "Reshape_25/shape"
   attr {
     key: "T"
@@ -4685,6 +4563,128 @@ node {
   }
   attr {
     key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "GreaterEqual/y"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: 0
+      }
+    }
+  }
+}
+node {
+  name: "GreaterEqual"
+  op: "GreaterEqual"
+  input: "Reshape_25"
+  input: "GreaterEqual/y"
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "Cast_4"
+  op: "Cast"
+  input: "GreaterEqual"
+  attr {
+    key: "DstT"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "SrcT"
+    value {
+      type: DT_BOOL
+    }
+  }
+  attr {
+    key: "Truncate"
+    value {
+      b: false
+    }
+  }
+}
+node {
+  name: "clip_by_value_1/Minimum/y"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "clip_by_value_1/Minimum"
+  op: "Minimum"
+  input: "Reshape_25"
+  input: "clip_by_value_1/Minimum/y"
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "clip_by_value_1/y"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: 0
+      }
+    }
+  }
+}
+node {
+  name: "clip_by_value_1"
+  op: "Maximum"
+  input: "clip_by_value_1/Minimum"
+  input: "clip_by_value_1/y"
+  attr {
+    key: "T"
     value {
       type: DT_INT32
     }
@@ -4884,7 +4884,7 @@ node {
 node {
   name: "Slice_6"
   op: "Slice"
-  input: "Reshape_25"
+  input: "clip_by_value_1"
   input: "Slice_6/begin"
   input: "Slice_6/size"
   attr {

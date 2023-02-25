@@ -65,8 +65,44 @@ class TestVirtualType(unittest.TestCase):
             self.atype + [-1] * nghost,
             atomic=True,
         )
-        self.assertAlmostEqual(e1, e2)
+        np.testing.assert_almost_equal(e1, e2)
         np.testing.assert_almost_equal(f1, f2[:, :nloc])
         np.testing.assert_almost_equal(v1, v2)
         np.testing.assert_almost_equal(ae1, ae2[:, :nloc])
         np.testing.assert_almost_equal(av1, av2[:, :nloc])
+
+    def test_infer_mixed_type(self):
+        nloc = len(self.atype)
+        nghost = 10
+        e, f, v, ae, av = self.dp.eval(
+            np.concatenate(
+                [
+                    self.coords.reshape([1, -1]),
+                    np.zeros((1, nghost * 3)),
+                    np.zeros((1, nghost * 3)),
+                    self.coords.reshape([1, -1]),
+                ],
+                axis=1,
+            ).reshape(2, -1),
+            None,
+            np.array(self.atype + [-1] * nghost + [-1] * nghost + self.atype).reshape(
+                2, -1
+            ),
+            atomic=True,
+            mixed_type=True,
+        )
+        e1 = e[0]
+        f1 = f[0]
+        v1 = v[0]
+        ae1 = ae[0]
+        av1 = av[0]
+        e2 = e[1]
+        f2 = f[1]
+        v2 = v[1]
+        ae2 = ae[1]
+        av2 = av[1]
+        np.testing.assert_almost_equal(e1, e2)
+        np.testing.assert_almost_equal(f1[:nloc], f2[nghost:])
+        np.testing.assert_almost_equal(v1, v2)
+        np.testing.assert_almost_equal(ae1[:nloc], ae2[nghost:])
+        np.testing.assert_almost_equal(av1[:nloc], av2[nghost:])
