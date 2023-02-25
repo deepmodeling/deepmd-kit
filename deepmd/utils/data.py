@@ -477,9 +477,7 @@ class DeepmdData:
             atom_type_mix = self._load_type_mix(set_name)
             if self.enforce_type_map:
                 try:
-                    atom_type_mix_ = self.type_idx_map[atom_type_mix].astype(
-                        np.int32
-                    )
+                    atom_type_mix_ = self.type_idx_map[atom_type_mix].astype(np.int32)
                 except IndexError as e:
                     raise IndexError(
                         "some types in 'real_atom_types.npy' of set {} are not contained in {} types!".format(
