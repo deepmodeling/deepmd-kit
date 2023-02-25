@@ -559,9 +559,9 @@ class EnerFitting(Fitting):
                 aparam = tf.reshape(aparam, [-1, self.numb_aparam * natoms[0]])
 
         atype_filter = tf.cast(atype >= 0, GLOBAL_TF_FLOAT_PRECISION)
-        # relu to prevent embedding_lookup error,
+        # prevent embedding_lookup error,
         # but the filter will be applied anyway
-        atype = tf.nn.relu(atype)
+        atype = tf.clip_by_value(atype, 0, self.ntypes - 1)
         atype_nall = tf.reshape(atype, [-1, natoms[1]])
         self.atype_nloc = tf.reshape(
             tf.slice(atype_nall, [0, 0], [-1, natoms[0]]), [-1]
