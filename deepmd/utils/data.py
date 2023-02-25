@@ -66,14 +66,9 @@ class DeepmdData:
             "if one of the set is of mixed_type format, "
             "then all of the sets in this system should be of mixed_type format!"
         )
-        if self._check_mode(self.dirs[0]):
-            for set_item in self.dirs[1:]:
-                assert self._check_mode(set_item), error_format_msg
-            self.mixed_type = True
-        else:
-            for set_item in self.dirs[1:]:
-                assert not self._check_mode(set_item), error_format_msg
-            self.mixed_type = False
+        self.mixed_type = self._check_mode(self.dirs[0])
+        for set_item in self.dirs[1:]:
+            assert self._check_mode(set_item) == self.mixed_type, error_format_msg
         # load atom type
         self.atom_type = self._load_type(root)
         self.natoms = len(self.atom_type)
@@ -487,8 +482,8 @@ class DeepmdData:
                     atom_type_mix_ = self.type_idx_map[atom_type_mix].astype(
                         np.int32
                     )
-                except RuntimeError as e:
-                    raise RuntimeError(
+                except IndexError as e:
+                    raise IndexError(
                         "some types in 'real_atom_types.npy' of set {} are not contained in {} types!".format(
                             set_name, self.get_ntypes()
                         )
