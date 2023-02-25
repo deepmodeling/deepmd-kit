@@ -46,6 +46,7 @@ for ep in eps:
     ep.load()
 
 __all__ = [
+    "__version__",
     "descriptor",
     "fit",
     "loss",

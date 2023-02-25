@@ -29,3 +29,17 @@ from .se_r import (
 from .se_t import (
     DescrptSeT,
 )
+
+__all__ = [
+    "Descriptor",
+    "DescrptHybrid",
+    "DescrptLocFrame",
+    "DescrptSeA",
+    "DescrptSeAEbd",
+    "DescrptSeAEf",
+    "DescrptSeAEfLower",
+    "DescrptSeAMask",
+    "DescrptSeAtten",
+    "DescrptSeR",
+    "DescrptSeT",
+]
