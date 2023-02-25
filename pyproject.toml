@@ -120,7 +120,6 @@ select = [
 ]
 ignore = [
     "E501", # line too long
-    "F401", # unused import
     "F841", # local variable is assigned to but never used
     "E741", # ambiguous variable name
     "E402", # module level import not at top of file
