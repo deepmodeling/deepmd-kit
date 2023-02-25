@@ -93,9 +93,7 @@ class DeepmdData:
                 self.enforce_type_map = True
                 sorter = np.argsort(type_map)
                 self.type_idx_map = np.array(
-                    sorter[
-                        np.searchsorted(type_map, self.type_map, sorter=sorter)
-                    ]
+                    sorter[np.searchsorted(type_map, self.type_map, sorter=sorter)]
                 )
             self.type_map = type_map
         if type_map is None and self.type_map is None and self.mixed_type:
