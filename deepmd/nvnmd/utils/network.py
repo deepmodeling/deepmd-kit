@@ -7,9 +7,6 @@ from deepmd.env import (
     op_module,
     tf,
 )
-from deepmd.nvnmd.data.data import (
-    jdata_sys,
-)
 from deepmd.nvnmd.utils.config import (
     nvnmd_cfg,
 )

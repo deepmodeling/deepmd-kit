@@ -1,24 +1,16 @@
-import warnings
 from typing import (
     List,
     Optional,
-    Tuple,
 )
 
 import numpy as np
 
 from deepmd.common import (
-    add_data_requirement,
     cast_precision,
     get_activation_func,
     get_precision,
 )
-from deepmd.descriptor import (
-    DescrptSeA,
-)
 from deepmd.env import (
-    GLOBAL_TF_FLOAT_PRECISION,
-    global_cvt_2_tf_float,
     tf,
 )
 from deepmd.fit.fitting import (

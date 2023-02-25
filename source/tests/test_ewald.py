@@ -1,12 +1,6 @@
-import os
-import platform
-import sys
-import unittest
-
 import numpy as np
 
 from deepmd.env import (
-    GLOBAL_ENER_FLOAT_PRECISION,
     GLOBAL_NP_FLOAT_PRECISION,
     GLOBAL_TF_FLOAT_PRECISION,
     tf,
@@ -166,10 +160,6 @@ class TestEwaldRecp(tf.test.TestCase):
                 self.box: self.dbox.reshape([-1]),
                 self.nloc: [self.natoms],
             },
-        )
-
-        from scipy.stats import (
-            ortho_group,
         )
 
         self.dbox3 = np.reshape(self.dbox, [self.nframes, 3, 3])

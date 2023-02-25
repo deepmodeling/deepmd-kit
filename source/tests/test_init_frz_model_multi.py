@@ -1,19 +1,13 @@
 import json
 import os
-import platform
-import shutil
-import subprocess as sp
-import sys
 import unittest
 
-import dpdata
 import numpy as np
 from common import (
     j_loader,
     run_dp,
     tests_path,
 )
-from packaging.version import parse as parse_version
 
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,

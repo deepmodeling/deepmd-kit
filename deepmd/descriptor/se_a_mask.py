@@ -1,4 +1,3 @@
-import math
 import warnings
 from typing import (
     Any,
@@ -21,25 +20,8 @@ from deepmd.env import (
     op_module,
     tf,
 )
-from deepmd.utils.argcheck import (
-    list_to_doc,
-)
-from deepmd.utils.graph import (
-    get_tensor_by_name_from_graph,
-    load_graph_def,
-)
 from deepmd.utils.network import (
-    embedding_net,
     embedding_net_rand_seed_shift,
-)
-from deepmd.utils.sess import (
-    run_sess,
-)
-from deepmd.utils.tabulate import (
-    DPTabulate,
-)
-from deepmd.utils.type_embed import (
-    embed_atom_type,
 )
 
 from .descriptor import (

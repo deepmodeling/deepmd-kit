@@ -37,9 +37,6 @@ from .train import (
     get_rcut,
     train,
 )
-from .transfer import (
-    transfer,
-)
 
 __all__ = ["compress"]
 

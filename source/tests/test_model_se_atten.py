@@ -1,12 +1,7 @@
-import os
-import pickle
-import sys
 import unittest
 
-import dpdata
 import numpy as np
 from common import (
-    Data,
     DataSystem,
     gen_data,
     j_loader,

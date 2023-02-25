@@ -1,8 +1,3 @@
-import os
-import sys
-import unittest
-
-import dpdata
 import numpy as np
 
 from deepmd.env import (

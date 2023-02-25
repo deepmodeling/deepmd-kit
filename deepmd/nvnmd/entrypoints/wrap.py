@@ -1,6 +1,5 @@
 import logging
 from typing import (
-    List,
     Optional,
 )
 
@@ -26,9 +25,6 @@ from deepmd.nvnmd.utils.fio import (
 )
 from deepmd.nvnmd.utils.network import (
     get_sess,
-)
-from deepmd.nvnmd.utils.op import (
-    map_nvnmd,
 )
 from deepmd.nvnmd.utils.weight import (
     get_fitnet_weight,

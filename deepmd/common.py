@@ -15,7 +15,6 @@ from typing import (
     Dict,
     List,
     Optional,
-    Tuple,
     TypeVar,
     Union,
 )
@@ -33,14 +32,8 @@ from deepmd.env import (
     op_module,
     tf,
 )
-from deepmd.utils.errors import (
-    GraphWithoutTensorError,
-)
 from deepmd.utils.path import (
     DPPath,
-)
-from deepmd.utils.sess import (
-    run_sess,
 )
 
 if TYPE_CHECKING:

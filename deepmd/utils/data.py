@@ -1,13 +1,9 @@
 #!/usr/bin/env python3
 
-import glob
 import logging
-import os.path
-import time
 from typing import (
     List,
     Optional,
-    Tuple,
 )
 
 import numpy as np

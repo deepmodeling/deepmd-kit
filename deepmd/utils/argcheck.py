@@ -12,9 +12,6 @@ from dargs import (
     dargs,
 )
 
-from deepmd import (
-    descriptor,
-)
 from deepmd.common import (
     ACTIVATION_FN_DICT,
     PRECISION_DICT,

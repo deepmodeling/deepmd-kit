@@ -1,7 +1,5 @@
 import logging
 
-import numpy as np
-
 from deepmd.env import (
     tf,
 )

@@ -20,7 +20,6 @@ from typing import (
 import google.protobuf.message
 
 # load grad of force module
-import deepmd.op
 from deepmd.env import (
     FITTING_NET_PATTERN,
     REMOVE_SUFFIX_DICT,
@@ -495,7 +494,7 @@ def freeze(
     # We import the meta graph and retrieve a Saver
     try:
         # In case paralle training
-        import horovod.tensorflow as _
+        pass
     except ImportError:
         pass
     saver = tf.train.import_meta_graph(

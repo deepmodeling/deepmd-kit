@@ -4,7 +4,6 @@ import ctypes
 import logging
 import os
 import platform
-import re
 from configparser import (
     ConfigParser,
 )
@@ -19,8 +18,6 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Dict,
-    List,
-    Optional,
     Tuple,
 )
 

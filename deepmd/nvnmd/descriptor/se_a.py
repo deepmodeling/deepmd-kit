@@ -10,9 +10,6 @@ from deepmd.env import (
 )
 
 #
-from deepmd.nvnmd.data.data import (
-    jdata_sys,
-)
 from deepmd.nvnmd.utils.config import (
     nvnmd_cfg,
 )

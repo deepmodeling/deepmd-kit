@@ -1,32 +1,10 @@
 import json
 import logging
-from functools import (
-    lru_cache,
-)
 from typing import (
     Any,
-    Callable,
     Dict,
-    List,
-    Tuple,
 )
 
-import numpy as np
-from scipy.special import (
-    comb,
-)
-
-import deepmd
-from deepmd.common import (
-    ACTIVATION_FN_DICT,
-)
-from deepmd.descriptor import (
-    Descriptor,
-)
-from deepmd.env import (
-    op_module,
-    tf,
-)
 from deepmd.utils.errors import (
     GraphWithoutTensorError,
 )

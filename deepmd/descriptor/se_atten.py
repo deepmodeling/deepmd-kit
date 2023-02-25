@@ -1,7 +1,4 @@
-import math
 from typing import (
-    Any,
-    Dict,
     List,
     Optional,
     Tuple,
@@ -14,8 +11,6 @@ from packaging.version import (
 
 from deepmd.common import (
     cast_precision,
-    get_activation_func,
-    get_precision,
 )
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
@@ -25,28 +20,15 @@ from deepmd.env import (
     op_module,
     tf,
 )
-from deepmd.utils.errors import (
-    GraphWithoutTensorError,
-)
 from deepmd.utils.graph import (
     get_attention_layer_variables_from_graph_def,
-    get_tensor_by_name,
-    get_tensor_by_name_from_graph,
-    load_graph_def,
 )
 from deepmd.utils.network import (
     embedding_net,
-    embedding_net_rand_seed_shift,
     one_layer,
 )
 from deepmd.utils.sess import (
     run_sess,
-)
-from deepmd.utils.tabulate import (
-    DPTabulate,
-)
-from deepmd.utils.type_embed import (
-    embed_atom_type,
 )
 
 from .descriptor import (

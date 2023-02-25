@@ -2,13 +2,11 @@ import json
 from typing import (
     List,
     Optional,
-    Tuple,
 )
 
 import numpy as np
 
 from deepmd.env import (
-    GLOBAL_TF_FLOAT_PRECISION,
     MODEL_VERSION,
     global_cvt_2_ener_float,
     op_module,
@@ -16,7 +14,6 @@ from deepmd.env import (
 )
 from deepmd.utils.graph import (
     get_tensor_by_name_from_graph,
-    load_graph_def,
 )
 from deepmd.utils.pair_tab import (
     PairTab,

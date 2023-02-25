@@ -2,11 +2,9 @@
 
 import collections
 import logging
-import os
 import warnings
 from typing import (
     List,
-    Tuple,
 )
 
 import numpy as np

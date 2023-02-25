@@ -20,7 +20,6 @@ from deepmd.env import (
 )
 from deepmd.utils.graph import (
     get_tensor_by_name_from_graph,
-    load_graph_def,
 )
 from deepmd.utils.network import (
     embedding_net,

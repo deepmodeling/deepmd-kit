@@ -1,7 +1,4 @@
-import math
 from typing import (
-    Any,
-    Dict,
     List,
     Optional,
     Tuple,
@@ -36,9 +33,7 @@ from deepmd.utils.errors import (
     GraphWithoutTensorError,
 )
 from deepmd.utils.graph import (
-    get_tensor_by_name,
     get_tensor_by_name_from_graph,
-    load_graph_def,
 )
 from deepmd.utils.network import (
     embedding_net,

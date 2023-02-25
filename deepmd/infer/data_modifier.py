@@ -11,11 +11,7 @@ from deepmd.common import (
     select_idx_map,
 )
 from deepmd.env import (
-    GLOBAL_ENER_FLOAT_PRECISION,
-    GLOBAL_NP_FLOAT_PRECISION,
     GLOBAL_TF_FLOAT_PRECISION,
-    global_cvt_2_ener_float,
-    global_cvt_2_tf_float,
     op_module,
     tf,
 )
