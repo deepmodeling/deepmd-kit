@@ -1176,7 +1176,7 @@ class ProdEnvMatAMixOp : public OpKernel {
         fake_type_shape.AddDim(nall);
         OP_REQUIRES_OK(context, context->allocate_temp(
                                     DT_INT32, fake_type_shape, &fake_type));
-        deepmd::memset_device_memory(fake_type.flat<int>().data(), 0, nall);
+        deepmd::filter_ftype_gpu_cuda(fake_type.flat<int>().data(), type, nall);
         const int* f_type = fake_type.flat<int>().data();
         // prepare coord and nlist
         _prepare_coord_nlist_gpu<FPTYPE>(
@@ -1227,7 +1227,7 @@ class ProdEnvMatAMixOp : public OpKernel {
         fake_type_shape.AddDim(nall);
         OP_REQUIRES_OK(context, context->allocate_temp(
                                     DT_INT32, fake_type_shape, &fake_type));
-        deepmd::memset_device_memory(fake_type.flat<int>().data(), 0, nall);
+        deepmd::filter_ftype_gpu_rocm(fake_type.flat<int>().data(), type, nall);
         const int* f_type = fake_type.flat<int>().data();
         // prepare coord and nlist
         _prepare_coord_nlist_gpu_rocm<FPTYPE>(
@@ -1272,6 +1272,11 @@ class ProdEnvMatAMixOp : public OpKernel {
         std::vector<int> type_cpy;
         int frame_nall = nall;
         std::vector<int> fake_type(nall, 0);
+        for (int ii = 0; ii < nall; ii++) {
+          if (type[ii] < 0) {
+            fake_type[ii] = -1;
+          }
+        }
         const int* f_type = &fake_type[0];
         // prepare coord and nlist
         _prepare_coord_nlist_cpu<FPTYPE>(

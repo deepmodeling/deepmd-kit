@@ -558,6 +558,10 @@ class EnerFitting(Fitting):
                 aparam = (aparam - t_aparam_avg) * t_aparam_istd
                 aparam = tf.reshape(aparam, [-1, self.numb_aparam * natoms[0]])
 
+        atype_filter = tf.cast(atype >= 0, GLOBAL_TF_FLOAT_PRECISION)
+        # relu to prevent embedding_lookup error,
+        # but the filter will be applied anyway
+        atype = tf.nn.relu(atype)
         atype_nall = tf.reshape(atype, [-1, natoms[1]])
         self.atype_nloc = tf.reshape(
             tf.slice(atype_nall, [0, 0], [-1, natoms[0]]), [-1]
@@ -647,12 +651,13 @@ class EnerFitting(Fitting):
                 final_layer -= zero_layer
             outs = tf.reshape(final_layer, [tf.shape(inputs)[0], natoms[0]])
         # add bias
-        self.atom_ener_before = outs
+        self.atom_ener_before = outs * atype_filter
         self.add_type = tf.reshape(
             tf.nn.embedding_lookup(self.t_bias_atom_e, self.atype_nloc),
             [tf.shape(inputs)[0], natoms[0]],
         )
         outs = outs + self.add_type
+        outs *= atype_filter
         self.atom_ener_after = outs
 
         if self.tot_ener_zero:

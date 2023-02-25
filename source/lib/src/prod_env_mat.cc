@@ -64,6 +64,7 @@ void deepmd::prod_env_mat_a_cpu(FPTYPE *em,
 
 #pragma omp parallel for
   for (int ii = 0; ii < nloc; ++ii) {
+    if (type[ii] < 0) continue;
     std::vector<int> fmt_nlist_a;
     int ret = format_nlist_i_cpu(fmt_nlist_a, d_coord3, d_f_type, ii,
                                  d_nlist_a[ii], rcut, sec);

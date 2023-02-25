@@ -276,4 +276,21 @@ template int build_nlist_gpu_rocm<double>(InputNlist &nlist,
                                           const int &nall,
                                           const int &mem_size,
                                           const float &rcut);
+__global__ void map_filter_ftype(int *ftype_out,
+                                 const int *ftype_in,
+                                 const int nloc) {
+  int ii = blockIdx.x * blockDim.x + threadIdx.x;
+  if (ii < nloc) {
+    ftype_out[ii] = ftype_in[ii] >= 0 ? 0 : -1;
+  }
+}
+
+void filter_ftype_gpu_rocm(int *ftype_out,
+                           const int *ftype_in,
+                           const int nloc) {
+  int nblock = (nloc + TPB - 1) / TPB;
+  map_filter_ftype<<<nblock, TPB>>>(ftype_out, ftype_in, nloc);
+  DPErrcheck(cudaGetLastError());
+  DPErrcheck(cudaDeviceSynchronize());
+}
 }  // namespace deepmd

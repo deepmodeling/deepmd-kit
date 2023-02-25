@@ -364,6 +364,7 @@ __global__ void compute_env_mat_a(FPTYPE* em,
   // <<<nloc, TPB>>>
   const int_64 bid = blockIdx.x;
   const unsigned int tid = threadIdx.x;
+  if (type[bid] < 0) return;
   if (tid >= nnei) {
     return;
   }
