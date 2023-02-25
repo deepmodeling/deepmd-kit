@@ -290,7 +290,7 @@ void filter_ftype_gpu_rocm(int *ftype_out,
                            const int nloc) {
   int nblock = (nloc + TPB - 1) / TPB;
   map_filter_ftype<<<nblock, TPB>>>(ftype_out, ftype_in, nloc);
-  DPErrcheck(cudaGetLastError());
-  DPErrcheck(cudaDeviceSynchronize());
+  DPErrcheck(hipGetLastError());
+  DPErrcheck(hipDeviceSynchronize());
 }
 }  // namespace deepmd
