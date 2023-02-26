@@ -1,13 +1,29 @@
 """Unittests for argument parser."""
 
-import unittest
-from argparse import Namespace
-from typing import Any, Dict, List, Tuple, Union, TYPE_CHECKING
 import re
-from io import StringIO
-from contextlib import redirect_stderr
+import unittest
+from argparse import (
+    Namespace,
+)
+from contextlib import (
+    redirect_stderr,
+)
+from io import (
+    StringIO,
+)
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Dict,
+    List,
+    Tuple,
+    Union,
+)
 
-from deepmd.entrypoints.main import parse_args, get_ll
+from deepmd.entrypoints.main import (
+    get_ll,
+    parse_args,
+)
 
 if TYPE_CHECKING:
     try:
@@ -326,16 +342,19 @@ class TestParserOutput(unittest.TestCase):
         }
 
         self.run_test(command="doc-train-input", mapping=ARGS)
-    
+
     def test_parser_model_devi(self):
-        """Test model-devi subparser"""
+        """Test model-devi subparser."""
         ARGS = {
-            "--models": dict(type=list, value="GRAPH.000.pb GRAPH.001.pb",
-                             expected=["GRAPH.000.pb", "GRAPH.001.pb"]),
+            "--models": dict(
+                type=list,
+                value="GRAPH.000.pb GRAPH.001.pb",
+                expected=["GRAPH.000.pb", "GRAPH.001.pb"],
+            ),
             "--system": dict(type=str, value="SYSTEM_DIR"),
             "--set-prefix": dict(type=str, value="SET_PREFIX"),
             "--output": dict(type=str, value="OUTFILE"),
-            "--frequency": dict(type=int, value=1)
+            "--frequency": dict(type=int, value=1),
         }
 
         self.run_test(command="model-devi", mapping=ARGS)
@@ -357,5 +376,5 @@ class TestParserOutput(unittest.TestCase):
                 get_ll(input_val),
                 expected_result,
                 msg=f"Expected: {expected_result} result for input value: {input_val} "
-                f"but got {get_ll(input_val)}"
+                f"but got {get_ll(input_val)}",
             )

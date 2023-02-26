@@ -1,12 +1,18 @@
-import os
 import logging
-from typing import Callable, Tuple
+import os
+from typing import (
+    Callable,
+    Tuple,
+)
 
 import numpy as np
 
-from deepmd.env import tf
-from deepmd.utils.errors import OutOfMemoryError
-
+from deepmd.env import (
+    tf,
+)
+from deepmd.utils.errors import (
+    OutOfMemoryError,
+)
 
 log = logging.getLogger(__name__)
 
@@ -36,15 +42,16 @@ class AutoBatchSize:
     current_batch_size : int
         current batch size (number of total atoms)
     maximum_working_batch_size : int
-        maximum working batch size 
+        maximum working batch size
     minimal_not_working_batch_size : int
         minimal not working batch size
     """
-    def __init__(self, initial_batch_size: int = 1024, factor: float = 2.) -> None:
+
+    def __init__(self, initial_batch_size: int = 1024, factor: float = 2.0) -> None:
         # See also PyTorchLightning/pytorch-lightning#1638
         # TODO: discuss a proper initial batch size
         self.current_batch_size = initial_batch_size
-        DP_INFER_BATCH_SIZE = int(os.environ.get('DP_INFER_BATCH_SIZE', 0))
+        DP_INFER_BATCH_SIZE = int(os.environ.get("DP_INFER_BATCH_SIZE", 0))
         if DP_INFER_BATCH_SIZE > 0:
             self.current_batch_size = DP_INFER_BATCH_SIZE
             self.maximum_working_batch_size = DP_INFER_BATCH_SIZE
@@ -54,7 +61,9 @@ class AutoBatchSize:
             if tf.test.is_gpu_available():
                 self.minimal_not_working_batch_size = 2**31
             else:
-                self.minimal_not_working_batch_size = self.maximum_working_batch_size + 1
+                self.minimal_not_working_batch_size = (
+                    self.maximum_working_batch_size + 1
+                )
                 log.warning(
                     "You can use the environment variable DP_INFER_BATCH_SIZE to"
                     "control the inference batch size (nframes * natoms). "
@@ -63,9 +72,11 @@ class AutoBatchSize:
 
         self.factor = factor
 
-    def execute(self, callable: Callable, start_index: int, natoms: int) -> Tuple[int, tuple]:
+    def execute(
+        self, callable: Callable, start_index: int, natoms: int
+    ) -> Tuple[int, tuple]:
         """Excuate a method with given batch size.
-        
+
         Parameters
         ----------
         callable : Callable
@@ -75,7 +86,7 @@ class AutoBatchSize:
             start index
         natoms : int
             natoms
-        
+
         Returns
         -------
         int
@@ -89,34 +100,53 @@ class AutoBatchSize:
             OOM when batch size is 1
         """
         try:
-            n_batch, result = callable(max(self.current_batch_size // natoms, 1), start_index)
+            n_batch, result = callable(
+                max(self.current_batch_size // natoms, 1), start_index
+            )
         except OutOfMemoryError as e:
             # TODO: it's very slow to catch OOM error; I don't know what TF is doing here
             # but luckily we only need to catch once
-            self.minimal_not_working_batch_size = min(self.minimal_not_working_batch_size, self.current_batch_size)
+            self.minimal_not_working_batch_size = min(
+                self.minimal_not_working_batch_size, self.current_batch_size
+            )
             if self.maximum_working_batch_size >= self.minimal_not_working_batch_size:
-                self.maximum_working_batch_size = int(self.minimal_not_working_batch_size / self.factor)
+                self.maximum_working_batch_size = int(
+                    self.minimal_not_working_batch_size / self.factor
+                )
             if self.minimal_not_working_batch_size <= natoms:
-                raise OutOfMemoryError("The callable still throws an out-of-memory (OOM) error even when batch size is 1!") from e
+                raise OutOfMemoryError(
+                    "The callable still throws an out-of-memory (OOM) error even when batch size is 1!"
+                ) from e
             # adjust the next batch size
-            self._adjust_batch_size(1./self.factor)
+            self._adjust_batch_size(1.0 / self.factor)
             return 0, None
         else:
             n_tot = n_batch * natoms
-            self.maximum_working_batch_size = max(self.maximum_working_batch_size, n_tot)
+            self.maximum_working_batch_size = max(
+                self.maximum_working_batch_size, n_tot
+            )
             # adjust the next batch size
-            if n_tot + natoms > self.current_batch_size and self.current_batch_size * self.factor < self.minimal_not_working_batch_size:
+            if (
+                n_tot + natoms > self.current_batch_size
+                and self.current_batch_size * self.factor
+                < self.minimal_not_working_batch_size
+            ):
                 self._adjust_batch_size(self.factor)
             return n_batch, result
 
     def _adjust_batch_size(self, factor: float):
         old_batch_size = self.current_batch_size
         self.current_batch_size = int(self.current_batch_size * factor)
-        log.info("Adjust batch size from %d to %d" % (old_batch_size, self.current_batch_size))
+        log.info(
+            "Adjust batch size from %d to %d"
+            % (old_batch_size, self.current_batch_size)
+        )
 
-    def execute_all(self, callable: Callable, total_size: int, natoms: int, *args, **kwargs) -> Tuple[np.ndarray]:
-        """Excuate a method with all given data. 
-        
+    def execute_all(
+        self, callable: Callable, total_size: int, natoms: int, *args, **kwargs
+    ) -> Tuple[np.ndarray]:
+        """Excuate a method with all given data.
+
         Parameters
         ----------
         callable : Callable
@@ -125,15 +155,34 @@ class AutoBatchSize:
             Total size
         natoms : int
             The number of atoms
+        *args
+            Variable length argument list.
         **kwargs
             If 2D np.ndarray, assume the first axis is batch; otherwise do nothing.
         """
-        def execute_with_batch_size(batch_size: int, start_index: int) -> Tuple[int, Tuple[np.ndarray]]:
+
+        def execute_with_batch_size(
+            batch_size: int, start_index: int
+        ) -> Tuple[int, Tuple[np.ndarray]]:
             end_index = start_index + batch_size
             end_index = min(end_index, total_size)
             return (end_index - start_index), callable(
-                *[(vv[start_index:end_index] if isinstance(vv, np.ndarray) and vv.ndim > 1 else vv) for vv in args],
-                **{kk: (vv[start_index:end_index] if isinstance(vv, np.ndarray) and vv.ndim > 1 else vv) for kk, vv in kwargs.items()},
+                *[
+                    (
+                        vv[start_index:end_index]
+                        if isinstance(vv, np.ndarray) and vv.ndim > 1
+                        else vv
+                    )
+                    for vv in args
+                ],
+                **{
+                    kk: (
+                        vv[start_index:end_index]
+                        if isinstance(vv, np.ndarray) and vv.ndim > 1
+                        else vv
+                    )
+                    for kk, vv in kwargs.items()
+                },
             )
 
         index = 0
@@ -147,7 +196,7 @@ class AutoBatchSize:
                 for rr in result:
                     rr.reshape((n_batch, -1))
                 results.append(result)
-        
+
         r = tuple([np.concatenate(r, axis=0) for r in zip(*results)])
         if len(r) == 1:
             # avoid returning tuple if callable doesn't return tuple

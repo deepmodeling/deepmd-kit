@@ -1,8 +1,12 @@
+[<picture><source media="(prefers-color-scheme: dark)" srcset="./doc/_static/logo-dark.svg"><source media="(prefers-color-scheme: light)" srcset="./doc/_static/logo.svg"><img alt="DeePMD-kit logo" src="./doc/_static/logo.svg"></picture>](./doc/logo.md)
+
+--------------------------------------------------------------------------------
+
 <span style="font-size:larger;">DeePMD-kit Manual</span>
 ========
 [![GitHub release](https://img.shields.io/github/release/deepmodeling/deepmd-kit.svg?maxAge=86400)](https://github.com/deepmodeling/deepmd-kit/releases)
 [![doi:10.1016/j.cpc.2018.03.016](https://img.shields.io/badge/DOI-10.1016%2Fj.cpc.2018.03.016-blue)](https://doi.org/10.1016/j.cpc.2020.107206)
-![Citations](https://citations.njzjz.win/10.1016/j.cpc.2018.03.016)
+[![Citations](https://citations.njzjz.win/10.1016/j.cpc.2018.03.016)](https://badge.dimensions.ai/details/doi/10.1016/j.cpc.2018.03.016)
 [![offline packages](https://img.shields.io/github/downloads/deepmodeling/deepmd-kit/total?label=offline%20packages)](https://github.com/deepmodeling/deepmd-kit/releases)
 [![conda-forge](https://img.shields.io/conda/dn/conda-forge/deepmd-kit?color=red&label=conda-forge&logo=conda-forge)](https://anaconda.org/conda-forge/deepmd-kit)
 [![pip install](https://img.shields.io/pypi/dm/deepmd-kit?label=pip%20install)](https://pypi.org/project/deepmd-kit)
@@ -21,7 +25,7 @@
 - [Troubleshooting](#troubleshooting)
 
 # About DeePMD-kit
-DeePMD-kit is a package written in Python/C++, designed to minimize the effort required to build deep learning-based model of interatomic potential energy and force field and to perform molecular dynamics (MD). This brings new hopes to addressing the accuracy-versus-efficiency dilemma in molecular simulations. Applications of DeePMD-kit span from finite molecules to extended systems and from metallic systems to chemically bonded systems. 
+DeePMD-kit is a package written in Python/C++, designed to minimize the effort required to build deep learning-based model of interatomic potential energy and force field and to perform molecular dynamics (MD). This brings new hopes to addressing the accuracy-versus-efficiency dilemma in molecular simulations. Applications of DeePMD-kit span from finite molecules to extended systems and from metallic systems to chemically bonded systems.
 
 For more information, check the [documentation](https://deepmd.readthedocs.io/).
 
@@ -32,18 +36,18 @@ For more information, check the [documentation](https://deepmd.readthedocs.io/).
 * [Atom type embedding](doc/model/train-se-e2-a-tebd.md). Enable atom-type embedding to decline training complexity and refine performance.
 * Training and inference of the dipole (vector) and polarizability (matrix).
 * Split of training and validation dataset.
-* Optimized training on GPUs. 
+* Optimized training on GPUs.
 
 ## Highlighted features
 * **interfaced with TensorFlow**, one of the most popular deep learning frameworks, making the training process highly automatic and efficient, in addition, Tensorboard can be used to visualize training procedures.
-* **interfaced with high-performance classical MD and quantum (path-integral) MD packages**, i.e., LAMMPS and i-PI, respectively. 
+* **interfaced with high-performance classical MD and quantum (path-integral) MD packages**, i.e., LAMMPS and i-PI, respectively.
 * **implements the Deep Potential series models**, which have been successfully applied to finite and extended systems including organic molecules, metals, semiconductors, insulators, etc.
 * **implements MPI and GPU supports**, making it highly efficient for high-performance parallel and distributed computing.
 * **highly modularized**, easy to adapt to different descriptors for deep learning-based potential energy models.
 
 ## License and credits
 The project DeePMD-kit is licensed under [GNU LGPLv3.0](./LICENSE).
-If you use this code in any future publications, please cite this using 
+If you use this code in any future publications, please cite this using
 ``Han Wang, Linfeng Zhang, Jiequn Han, and Weinan E. "DeePMD-kit: A deep learning package for many-body potential energy representation and molecular dynamics." Computer Physics Communications 228 (2018): 178-184.``
 
 ## Deep Potential in a nutshell
@@ -59,7 +63,7 @@ In addition to building up potential energy models, DeePMD-kit can also be used 
 
 Please follow our [GitHub](https://github.com/deepmodeling/deepmd-kit) webpage to download the [latest released version](https://github.com/deepmodeling/deepmd-kit/tree/master) and [development version](https://github.com/deepmodeling/deepmd-kit/tree/devel).
 
-DeePMD-kit offers multiple installation methods. It is recommended to use easy methods like [offline packages](doc/install/easy-install.md#offline-packages), [conda](doc/install/easy-install.md#with-conda) and [docker](doc/install/easy-install.md#with-docker). 
+DeePMD-kit offers multiple installation methods. It is recommended to use easy methods like [offline packages](doc/install/easy-install.md#offline-packages), [conda](doc/install/easy-install.md#with-conda) and [docker](doc/install/easy-install.md#with-docker).
 
 One may manually install DeePMD-kit by following the instructions on [installing the Python interface](doc/install/install-from-source.md#install-the-python-interface) and [installing the C++ interface](doc/install/install-from-source.md#install-the-c-interface). The C++ interface is necessary when using DeePMD-kit with LAMMPS, i-PI or GROMACS.
 

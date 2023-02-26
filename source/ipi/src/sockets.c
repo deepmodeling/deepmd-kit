@@ -34,21 +34,24 @@ Functions:
    read_buffer_: Reads data from the socket.
 */
 
+#include <netdb.h>
+#include <netinet/in.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
 #include <string.h>
-#include <sys/types.h>
 #include <sys/socket.h>
-#include <netinet/in.h>
+#include <sys/types.h>
 #include <sys/un.h>
-#include <netdb.h>
+#include <unistd.h>
 
 void error(const char *msg)
 // Prints an error message and then exits.
-{   perror(msg);  exit(-1);   }
+{
+  perror(msg);
+  exit(-1);
+}
 
-void open_socket_(int *psockfd, int* inet, int* port, const char* host)
+void open_socket_(int *psockfd, int *inet, int *port, const char *host)
 /* Opens a socket.
 
 Note that fortran passes an extra argument for the string length, but this is
@@ -65,42 +68,46 @@ Args:
 */
 
 {
-   int sockfd, portno, n;
-   struct hostent *server;
+  int sockfd, portno, n;
+  struct hostent *server;
 
-   struct sockaddr * psock; int ssock;
+  struct sockaddr *psock;
+  int ssock;
 
-   if (*inet>0)
-   {  // creates an internet socket
-      struct sockaddr_in serv_addr;      psock=(struct sockaddr *)&serv_addr;     ssock=sizeof(serv_addr);
-      sockfd = socket(AF_INET, SOCK_STREAM, 0);
-      if (sockfd < 0)  error("Error opening socket");
+  if (*inet > 0) {  // creates an internet socket
+    struct sockaddr_in serv_addr;
+    psock = (struct sockaddr *)&serv_addr;
+    ssock = sizeof(serv_addr);
+    sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (sockfd < 0) error("Error opening socket");
 
-      server = gethostbyname(host);
-      if (server == NULL)
-      {
-         fprintf(stderr, "Error opening socket: no such host %s \n", host);
-         exit(-1);
-      }
+    server = gethostbyname(host);
+    if (server == NULL) {
+      fprintf(stderr, "Error opening socket: no such host %s \n", host);
+      exit(-1);
+    }
 
-      bzero((char *) &serv_addr, sizeof(serv_addr));
-      serv_addr.sin_family = AF_INET;
-      bcopy((char *)server->h_addr, (char *)&serv_addr.sin_addr.s_addr, server->h_length);
-      serv_addr.sin_port = htons(*port);
-      if (connect(sockfd, psock, ssock) < 0) error("Error opening socket: wrong host address, or broken connection");
-   }
-   else
-   {  // creates a unix socket
-      struct sockaddr_un serv_addr;      psock=(struct sockaddr *)&serv_addr;     ssock=sizeof(serv_addr);
-      sockfd = socket(AF_UNIX, SOCK_STREAM, 0);
-      bzero((char *) &serv_addr, sizeof(serv_addr));
-      serv_addr.sun_family = AF_UNIX;
-      strcpy(serv_addr.sun_path, "/tmp/ipi_");
-      strcpy(serv_addr.sun_path+9, host);
-      if (connect(sockfd, psock, ssock) < 0) error("Error opening socket: wrong host address, or broken connection");
-   }
+    bzero((char *)&serv_addr, sizeof(serv_addr));
+    serv_addr.sin_family = AF_INET;
+    bcopy((char *)server->h_addr, (char *)&serv_addr.sin_addr.s_addr,
+          server->h_length);
+    serv_addr.sin_port = htons(*port);
+    if (connect(sockfd, psock, ssock) < 0)
+      error("Error opening socket: wrong host address, or broken connection");
+  } else {  // creates a unix socket
+    struct sockaddr_un serv_addr;
+    psock = (struct sockaddr *)&serv_addr;
+    ssock = sizeof(serv_addr);
+    sockfd = socket(AF_UNIX, SOCK_STREAM, 0);
+    bzero((char *)&serv_addr, sizeof(serv_addr));
+    serv_addr.sun_family = AF_UNIX;
+    strcpy(serv_addr.sun_path, "/tmp/ipi_");
+    strcpy(serv_addr.sun_path + 9, host);
+    if (connect(sockfd, psock, ssock) < 0)
+      error("Error opening socket: wrong host address, or broken connection");
+  }
 
-   *psockfd=sockfd;
+  *psockfd = sockfd;
 }
 
 void writebuffer_(int *psockfd, char *data, int len)
@@ -113,13 +120,13 @@ Args:
 */
 
 {
-   int n;
-   int sockfd=*psockfd;
+  int n;
+  int sockfd = *psockfd;
 
-   n = write(sockfd,data,len);
-   if (n < 0) error("Error writing to socket: server has quit or connection broke");
+  n = write(sockfd, data, len);
+  if (n < 0)
+    error("Error writing to socket: server has quit or connection broke");
 }
-
 
 void readbuffer_(int *psockfd, char *data, int len)
 /* Reads from a socket.
@@ -131,15 +138,16 @@ Args:
 */
 
 {
-   int n, nr;
-   int sockfd=*psockfd;
+  int n, nr;
+  int sockfd = *psockfd;
 
-   n = nr = read(sockfd,data,len);
+  n = nr = read(sockfd, data, len);
 
-   while (nr>0 && n<len )
-   {  nr=read(sockfd,&data[n],len-n); n+=nr; }
+  while (nr > 0 && n < len) {
+    nr = read(sockfd, &data[n], len - n);
+    n += nr;
+  }
 
-   if (n == 0) error("Error reading from socket: server has quit or connection broke");
+  if (n == 0)
+    error("Error reading from socket: server has quit or connection broke");
 }
-
-

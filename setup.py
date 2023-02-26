@@ -3,16 +3,27 @@
 import os
 import sys
 
-from skbuild import setup
-from wheel.bdist_wheel import bdist_wheel
+from packaging.version import (
+    Version,
+)
+from skbuild import (
+    setup,
+)
+from wheel.bdist_wheel import (
+    bdist_wheel,
+)
 
 topdir = os.path.abspath(os.path.dirname(__file__))
-sys.path.insert(0, os.path.join(topdir, 'backend'))
+sys.path.insert(0, os.path.join(topdir, "backend"))
 
-from find_tensorflow import find_tensorflow, get_tf_requirement, get_tf_version
-
+from find_tensorflow import (
+    find_tensorflow,
+    get_tf_requirement,
+    get_tf_version,
+)
 
 cmake_args = []
+extra_scripts = []
 # get variant option from the environment varibles, available: cpu, cuda, rocm
 dp_variant = os.environ.get("DP_VARIANT", "cpu").lower()
 if dp_variant == "cpu" or dp_variant == "":
@@ -38,15 +49,27 @@ if os.environ.get("DP_BUILD_TESTING", "0") == "1":
 if os.environ.get("DP_ENABLE_NATIVE_OPTIMIZATION", "0") == "1":
     cmake_args.append("-DENABLE_NATIVE_OPTIMIZATION:BOOL=TRUE")
 dp_lammps_version = os.environ.get("DP_LAMMPS_VERSION", "")
-if dp_lammps_version != "":
+dp_ipi = os.environ.get("DP_ENABLE_IPI", "0")
+if dp_lammps_version != "" or dp_ipi == "1":
     cmake_args.append("-DBUILD_CPP_IF:BOOL=TRUE")
     cmake_args.append("-DUSE_TF_PYTHON_LIBS:BOOL=TRUE")
-    cmake_args.append(f"-DLAMMPS_VERSION={dp_lammps_version}")
 else:
     cmake_args.append("-DBUILD_CPP_IF:BOOL=FALSE")
 
+if dp_lammps_version != "":
+    cmake_args.append(f"-DLAMMPS_VERSION={dp_lammps_version}")
+if dp_ipi == "1":
+    cmake_args.append("-DENABLE_IPI:BOOL=TRUE")
+    extra_scripts.append("dp_ipi = deepmd.entrypoints.ipi:dp_ipi")
+
+
 tf_install_dir, _ = find_tensorflow()
 tf_version = get_tf_version(tf_install_dir)
+# TODO: change to "tf_version == "" or" after tensorflow 2.12 is released
+if tf_version != "" and Version(tf_version) >= Version("2.12"):
+    find_libpython_requires = []
+else:
+    find_libpython_requires = ["find_libpython"]
 
 
 class bdist_wheel_abi3(bdist_wheel):
@@ -103,11 +126,15 @@ setup(
             "dargs>=0.3.4",
             "sphinx-argparse",
             "pygments-lammps",
-            ],
+        ],
         "lmp": [
-            "lammps-manylinux-2-28~=2022.6.23.2.2; platform_system=='Linux'",
-            "lammps~=2022.6.23.2.2; platform_system!='Linux'",
-            "find_libpython",
+            "lammps-manylinux-2-28~=2022.6.23.3.0; platform_system=='Linux'",
+            "lammps~=2022.6.23.3.0; platform_system!='Linux'",
+            *find_libpython_requires,
+        ],
+        "ipi": [
+            "i-PI",
+            *find_libpython_requires,
         ],
         **get_tf_requirement(tf_version),
         "cu11": [
@@ -130,10 +157,10 @@ setup(
         ],
     },
     entry_points={
-        "console_scripts": ["dp = deepmd.entrypoints.main:main"],
+        "console_scripts": ["dp = deepmd.entrypoints.main:main", *extra_scripts],
         "lammps.plugins": ["deepmd = deepmd.lmp:get_op_dir"],
     },
-    cmdclass = {
+    cmdclass={
         "bdist_wheel": bdist_wheel_abi3,
     },
 )

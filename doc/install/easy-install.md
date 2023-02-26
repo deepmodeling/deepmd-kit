@@ -28,9 +28,9 @@ conda activate /path/to/deepmd-kit
 ```
 
 ## Install with conda
-DeePMD-kit is avaiable with [conda](https://github.com/conda/conda). Install [Anaconda](https://www.anaconda.com/distribution/#download-section) or [Miniconda](https://docs.conda.io/en/latest/miniconda.html) first.
+DeePMD-kit is available with [conda](https://github.com/conda/conda). Install [Anaconda](https://www.anaconda.com/distribution/#download-section) or [Miniconda](https://docs.conda.io/en/latest/miniconda.html) first.
 
-### Offical channel
+### Official channel
 
 One may create an environment that contains the CPU version of DeePMD-kit and LAMMPS:
 ```bash
@@ -97,9 +97,9 @@ Or install the CPU version without CUDA supported:
 pip install deepmd-kit[cpu]
 ```
 
-[LAMMPS module](../third-party/lammps-command.md) is only provided on Linux and macOS. To enable it, add `lmp` to extras:
+[The LAMMPS module](../third-party/lammps-command.md) and [the i-Pi driver](../third-party/ipi.md) are only provided on Linux and macOS. To install LAMMPS and/or i-Pi, add `lmp` and/or `ipi` to extras:
 ```bash
-pip install deepmd-kit[gpu,cu11,lmp]
+pip install deepmd-kit[gpu,cu11,lmp,ipi]
 ```
 MPICH is required for parallel running.
 
