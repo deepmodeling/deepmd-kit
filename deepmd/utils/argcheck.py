@@ -1314,7 +1314,6 @@ def normalize_multi_task(data):
     assert not (single_fitting_net and multi_fitting_net), \
         "Single-task mode and multi-task mode can not be performed together. " \
         "Please check your input script and choose just one format! "
-    )
     assert (
         single_fitting_net or multi_fitting_net
     ), "Please define your fitting net and training data! "
