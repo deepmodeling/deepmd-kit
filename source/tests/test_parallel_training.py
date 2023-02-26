@@ -14,7 +14,7 @@ from deepmd.cluster.local import (
 class TestSingleMachine(unittest.TestCase):
     def setUp(self):
         try:
-            pass
+            import horovod  # noqa: F401
         except ImportError:
             raise unittest.SkipTest(
                 "Package horovod is required for parallel-training tests."
