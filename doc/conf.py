@@ -25,6 +25,7 @@ from deepmd.utils.argcheck import (
 )
 
 sys.path.append(os.path.dirname(__file__))
+import sphinx_contrib_exhale_multiproject  # noqa: F401
 
 
 def mkindex(dirname):
