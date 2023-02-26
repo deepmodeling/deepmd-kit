@@ -866,14 +866,18 @@ class DPTrainer (object):
             current_lr = run_sess(self.sess, self.learning_rate)
         else:
             assert fitting_key is not None, "Fitting key must be assigned in validation!"
-            current_lr = run_sess(self.sess, self.learning_rate_dict[fitting_key])
+            current_lr = None
+            # current_lr can be used as the learning rate of descriptor in the future
+            current_lr_dict = {}
+            for fitting_key_ii in train_batches:
+                current_lr_dict[fitting_key_ii] = run_sess(self.sess, self.learning_rate_dict[fitting_key_ii])
         if print_header:
             self.print_header(fp, train_results, valid_results, self.multi_task_mode)
         if not self.multi_task_mode:
             self.print_on_training(fp, train_results, valid_results, cur_batch, current_lr, self.multi_task_mode)
         else:
             assert fitting_key is not None, "Fitting key must be assigned when printing learning rate!"
-            self.print_on_training(fp, train_results, valid_results, cur_batch, current_lr, self.multi_task_mode, fitting_key)
+            self.print_on_training(fp, train_results, valid_results, cur_batch, current_lr, self.multi_task_mode, current_lr_dict)
 
     @staticmethod
     def print_header(fp, train_results, valid_results, multi_task_mode=False):
@@ -904,7 +908,7 @@ class DPTrainer (object):
         fp.flush()
 
     @staticmethod
-    def print_on_training(fp, train_results, valid_results, cur_batch, cur_lr, multi_task_mode=False, cur_fitting_key = None):
+    def print_on_training(fp, train_results, valid_results, cur_batch, cur_lr, multi_task_mode=False, cur_lr_dict=None):
         print_str = ''
         print_str += "%7d" % cur_batch
         if not multi_task_mode:
@@ -928,10 +932,7 @@ class DPTrainer (object):
                     prop_fmt = "   %11.2e"
                     for k in train_results[fitting_key].keys():
                         print_str += prop_fmt % (train_results[fitting_key][k])
-                if fitting_key == cur_fitting_key:
-                    print_str += "   %8.1e\n" % cur_lr
-                else:
-                    print_str += "   %8.1e\n" % 0
+                print_str += "   %8.1e\n" % cur_lr_dict[fitting_key]
         fp.write(print_str)
         fp.flush()
 
