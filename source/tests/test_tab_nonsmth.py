@@ -14,6 +14,7 @@ from test_descrpt_nonsmth import (
 )
 
 # load grad of force module
+import deepmd.op  # noqa: F401
 from deepmd.env import (
     op_module,
     tf,
