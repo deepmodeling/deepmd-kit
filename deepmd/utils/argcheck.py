@@ -789,7 +789,7 @@ def learning_rate_variant_type_args():
 
 def learning_rate_args():
     doc_scale_by_worker = 'When parallel training or batch size scaled, how to alter learning rate. Valid values are `linear`(default), `sqrt` or `none`.'
-    doc_lr = "The definitio of learning rate" 
+    doc_lr = "The definitio of learning rate"
     return Argument("learning_rate", dict,
                     [Argument("scale_by_worker", str, optional=True, default='linear', doc=doc_scale_by_worker)],
                     [learning_rate_variant_type_args()],
