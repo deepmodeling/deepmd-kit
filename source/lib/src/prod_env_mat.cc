@@ -85,8 +85,7 @@ void deepmd::prod_env_mat_a_cpu(FPTYPE *em,
       if (type[ii] >= 0) {
         em[ii * nem + jj] =
             (d_em_a[jj] - avg[type[ii] * nem + jj]) / std[type[ii] * nem + jj];
-      }
-      else {
+      } else {
         em[ii * nem + jj] = 0;
       }
     }
@@ -94,8 +93,7 @@ void deepmd::prod_env_mat_a_cpu(FPTYPE *em,
       if (type[ii] >= 0) {
         em_deriv[ii * nem * 3 + jj] =
             d_em_a_deriv[jj] / std[type[ii] * nem + jj / 3];
-      }
-      else {
+      } else {
         em_deriv[ii * nem * 3 + jj] = 0;
       }
     }
