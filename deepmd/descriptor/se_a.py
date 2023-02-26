@@ -1155,8 +1155,12 @@ class DescrptSeA(DescrptSe):
                         # new size is smaller, copy part of std
                         new_dstd[:, ii : ii + nn] = self.dstd[:, jj : jj + nn]
                     else:
-                        # new size is larger, copy all, the rest remains 1
+                        # new size is larger, copy all, the rest follows the same value
                         new_dstd[:, ii : ii + oo] = self.dstd[:, jj : jj + oo]
+                        if oo >= 4 and nn > oo:
+                            new_dstd[:, ii + oo : ii + nn] = np.repeat(
+                                self.dstd[:, jj : jj + 4], (nn - oo) // 4, axis=1
+                            )
                 self.dstd = new_dstd
                 if self.original_sel is None:
                     self.original_sel = sel
