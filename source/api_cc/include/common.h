@@ -222,6 +222,34 @@ int session_input_tensors(
     const std::string scope = "");
 
 /**
+ * @brief Get input tensors for the mixed type mode.
+ * @param[out] input_tensors Input tensors.
+ * @param[in] nframes Number of frames.
+ * @param[in] dcoord_ Coordinates of atoms.
+ * @param[in] ntypes Number of atom types.
+ * @param[in] datype_ Atom types.
+ * @param[in] dbox Box matrix.
+ * @param[in] cell_size Cell size.
+ * @param[in] fparam_ Frame parameters.
+ * @param[in] aparam_ Atom parameters.
+ * @param[in] atommap Atom map.
+ * @param[in] scope The scope of the tensors.
+ */
+template <typename MODELTYPE, typename VALUETYPE>
+int session_input_tensors_mixed_type(
+    std::vector<std::pair<std::string, tensorflow::Tensor>>& input_tensors,
+    const int& nframes,
+    const std::vector<VALUETYPE>& dcoord_,
+    const int& ntypes,
+    const std::vector<int>& datype_,
+    const std::vector<VALUETYPE>& dbox,
+    const double& cell_size,
+    const std::vector<VALUETYPE>& fparam_,
+    const std::vector<VALUETYPE>& aparam_,
+    const deepmd::AtomMap& atommap,
+    const std::string scope = "");
+
+/**
  * @brief Read model file to a string.
  * @param[in] model Path to the model.
  * @param[out] file_content Content of the model file.

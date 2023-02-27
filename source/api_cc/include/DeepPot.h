@@ -179,6 +179,78 @@ class DeepPot {
                const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
                const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
   /**
+   * @brief Evaluate the energy, force and virial in the mixed type mode by
+   *using this DP.
+   * @param[out] ener The system energy.
+   * @param[out] force The force on each atom.
+   * @param[out] virial The virial.
+   * @param[in] nframes The number of frames.
+   * @param[in] coord The coordinates of atoms. The array should be of size
+   *nframes x natoms x 3.
+   * @param[in] atype The atom types. The array should be of size nframes x
+   *natoms.
+   * @param[in] box The cell of the region. The array should be of size nframes
+   *x 9.
+   * @param[in] fparam The frame parameter. The array can be of size :
+   * nframes x dim_fparam.
+   * dim_fparam. Then all frames are assumed to be provided with the same
+   *fparam.
+   * @param[in] aparam The atomic parameter The array can be of size :
+   * nframes x natoms x dim_aparam.
+   * natoms x dim_aparam. Then all frames are assumed to be provided with the
+   *same aparam. dim_aparam. Then all frames and atoms are provided with the
+   *same aparam.
+   **/
+  template <typename VALUETYPE, typename ENERGYVTYPE>
+  void compute_mixed_type(
+      ENERGYVTYPE& dener,
+      std::vector<VALUETYPE>& dforce_,
+      std::vector<VALUETYPE>& dvirial,
+      const int& nframes,
+      const std::vector<VALUETYPE>& dcoord_,
+      const std::vector<int>& datype_,
+      const std::vector<VALUETYPE>& dbox,
+      const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
+      const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
+  /**
+   * @brief Evaluate the energy, force, virial, atomic energy, and atomic virial
+   *in the mixed type mode by using this DP.
+   * @param[out] ener The system energy.
+   * @param[out] force The force on each atom.
+   * @param[out] virial The virial.
+   * @param[out] atom_energy The atomic energy.
+   * @param[out] atom_virial The atomic virial.
+   * @param[in] nframes The number of frames.
+   * @param[in] coord The coordinates of atoms. The array should be of size
+   *nframes x natoms x 3.
+   * @param[in] atype The atom types. The array should be of size nframes x
+   *natoms.
+   * @param[in] box The cell of the region. The array should be of size nframes
+   *x 9.
+   * @param[in] fparam The frame parameter. The array can be of size :
+   * nframes x dim_fparam.
+   * dim_fparam. Then all frames are assumed to be provided with the same
+   *fparam.
+   * @param[in] aparam The atomic parameter The array can be of size :
+   * nframes x natoms x dim_aparam.
+   * natoms x dim_aparam. Then all frames are assumed to be provided with the
+   *same aparam. dim_aparam. Then all frames and atoms are provided with the
+   *same aparam.
+   **/
+  template <typename VALUETYPE, typename ENERGYVTYPE>
+  void compute_mixed_type(
+      ENERGYVTYPE& ener,
+      std::vector<VALUETYPE>& force,
+      std::vector<VALUETYPE>& virial,
+      std::vector<VALUETYPE>& atom_energy,
+      std::vector<VALUETYPE>& atom_virial,
+      const int& nframes,
+      const std::vector<VALUETYPE>& coord,
+      const std::vector<int>& atype,
+      const std::vector<VALUETYPE>& box,
+      const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
+      const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
+  /**
    * @brief Get the cutoff radius.
    * @return The cutoff radius.
    **/
@@ -234,7 +306,10 @@ class DeepPot {
   int dfparam;
   int daparam;
   template <typename VALUETYPE>
-  void validate_fparam_aparam(const int& nloc,
+  void validate_fparam_aparam(std::vector<VALUETYPE>& out_fparam,
+                              std::vector<VALUETYPE>& out_aparam,
+                              const int& nframes,
+                              const int& nloc,
                               const std::vector<VALUETYPE>& fparam,
                               const std::vector<VALUETYPE>& aparam) const;
   template <typename VALUETYPE, typename ENERGYVTYPE>
