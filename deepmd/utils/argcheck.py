@@ -325,7 +325,6 @@ def descrpt_se_atten_args():
     doc_trainable = "If the parameters in the embedding net is trainable"
     doc_seed = "Random seed for parameter initialization"
     doc_exclude_types = "The excluded pairs of types which have no interaction with each other. For example, `[[0, 1]]` means no interaction between type 0 and type 1."
-    doc_set_davg_zero = "Set the normalization average to zero. This option should be set when `atom_ener` in the energy fitting is used"
     doc_attn = "The length of hidden vectors in attention layers"
     doc_attn_layer = "The number of attention layers"
     doc_attn_dotr = "Whether to do dot product with the normalized relative coordinates"
@@ -360,9 +359,6 @@ def descrpt_se_atten_args():
         Argument("seed", [int, None], optional=True, doc=doc_seed),
         Argument(
             "exclude_types", list, optional=True, default=[], doc=doc_exclude_types
-        ),
-        Argument(
-            "set_davg_zero", bool, optional=True, default=False, doc=doc_set_davg_zero
         ),
         Argument("attn", int, optional=True, default=128, doc=doc_attn),
         Argument("attn_layer", int, optional=True, default=2, doc=doc_attn_layer),
