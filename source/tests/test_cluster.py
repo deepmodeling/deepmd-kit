@@ -7,9 +7,6 @@ from deepmd.cluster import (
     local,
     slurm,
 )
-from deepmd.env import (
-    tf,
-)
 
 kHostName = "compute-b24-1"
 

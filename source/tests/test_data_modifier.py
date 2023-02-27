@@ -1,7 +1,4 @@
 import os
-import platform
-import sys
-import unittest
 
 import numpy as np
 from common import (
@@ -15,16 +12,11 @@ from deepmd.common import (
     j_must_have,
 )
 from deepmd.env import (
-    GLOBAL_ENER_FLOAT_PRECISION,
     GLOBAL_NP_FLOAT_PRECISION,
-    GLOBAL_TF_FLOAT_PRECISION,
     tf,
 )
 from deepmd.infer.data_modifier import (
     DipoleChargeModifier,
-)
-from deepmd.infer.ewald_recp import (
-    EwaldRecp,
 )
 from deepmd.train.run_options import (
     RunOptions,

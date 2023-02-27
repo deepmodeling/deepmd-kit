@@ -1,10 +1,6 @@
 from deepmd.env import (
     tf,
 )
-from deepmd.utils import (
-    Plugin,
-    PluginVariant,
-)
 
 
 class Fitting:

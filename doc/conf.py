@@ -11,15 +11,9 @@
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 #
 import os
-import subprocess
 import sys
 from datetime import (
     date,
-)
-
-import recommonmark
-from recommonmark.transform import (
-    AutoStructify,
 )
 
 from deepmd.common import (
@@ -31,7 +25,7 @@ from deepmd.utils.argcheck import (
 )
 
 sys.path.append(os.path.dirname(__file__))
-import sphinx_contrib_exhale_multiproject
+import sphinx_contrib_exhale_multiproject  # noqa: F401
 
 
 def mkindex(dirname):

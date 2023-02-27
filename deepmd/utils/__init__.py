@@ -15,3 +15,12 @@ from .plugin import (
     Plugin,
     PluginVariant,
 )
+
+__all__ = [
+    "DeepmdData",
+    "DeepmdDataSystem",
+    "LearningRateExp",
+    "PairTab",
+    "Plugin",
+    "PluginVariant",
+]

@@ -10,9 +10,6 @@ from typing import (
 
 import numpy as np
 
-from deepmd.common import (
-    make_default_mesh,
-)
 from deepmd.env import (
     MODEL_VERSION,
     default_tf_session_config,

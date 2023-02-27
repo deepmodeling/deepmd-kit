@@ -16,7 +16,7 @@ from tensorflow.python.client import (
 )
 
 # load grad of force module
-import deepmd.op
+import deepmd.op  # noqa: F401
 from deepmd.common import (
     data_requirement,
     get_precision,
@@ -30,7 +30,6 @@ from deepmd.env import (
     GLOBAL_TF_FLOAT_PRECISION,
     TF_VERSION,
     get_tf_session_config,
-    op_module,
     tf,
     tfv2,
 )
@@ -47,10 +46,8 @@ from deepmd.loss import (
 from deepmd.model import (
     DipoleModel,
     EnerModel,
-    GlobalPolarModel,
     MultiModel,
     PolarModel,
-    WFCModel,
 )
 from deepmd.utils import random as dp_random
 from deepmd.utils.argcheck import (
@@ -66,9 +63,6 @@ from deepmd.utils.graph import (
 )
 from deepmd.utils.learning_rate import (
     LearningRateExp,
-)
-from deepmd.utils.neighbor_stat import (
-    NeighborStat,
 )
 from deepmd.utils.sess import (
     run_sess,

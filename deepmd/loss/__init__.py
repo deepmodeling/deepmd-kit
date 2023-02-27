@@ -5,3 +5,9 @@ from .ener import (
 from .tensor import (
     TensorLoss,
 )
+
+__all__ = [
+    "EnerDipoleLoss",
+    "EnerStdLoss",
+    "TensorLoss",
+]

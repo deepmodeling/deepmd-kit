@@ -1,7 +1,6 @@
 """This module ensures input in the examples directory
 could pass the argument checking.
 """
-import json
 import unittest
 from pathlib import (
     Path,

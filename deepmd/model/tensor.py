@@ -1,15 +1,10 @@
 from typing import (
     List,
     Optional,
-    Tuple,
 )
 
-import numpy as np
-
 from deepmd.env import (
-    GLOBAL_TF_FLOAT_PRECISION,
     MODEL_VERSION,
-    global_cvt_2_ener_float,
     tf,
 )
 

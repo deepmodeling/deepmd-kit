@@ -1,15 +1,10 @@
 import logging
-import warnings
 from typing import (
     List,
     Optional,
-    Tuple,
 )
 
 import numpy as np
-from packaging.version import (
-    Version,
-)
 
 from deepmd.common import (
     add_data_requirement,
@@ -19,7 +14,6 @@ from deepmd.common import (
 )
 from deepmd.env import (
     GLOBAL_TF_FLOAT_PRECISION,
-    TF_VERSION,
     global_cvt_2_tf_float,
     tf,
 )
@@ -41,14 +35,10 @@ from deepmd.utils.errors import (
 from deepmd.utils.graph import (
     get_fitting_net_variables_from_graph_def,
     get_tensor_by_name_from_graph,
-    load_graph_def,
 )
 from deepmd.utils.network import one_layer as one_layer_deepmd
 from deepmd.utils.network import (
     one_layer_rand_seed_shift,
-)
-from deepmd.utils.type_embed import (
-    embed_atom_type,
 )
 
 log = logging.getLogger(__name__)

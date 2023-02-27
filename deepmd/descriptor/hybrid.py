@@ -6,9 +6,7 @@ from typing import (
 import numpy as np
 
 from deepmd.env import (
-    GLOBAL_NP_FLOAT_PRECISION,
     GLOBAL_TF_FLOAT_PRECISION,
-    op_module,
     tf,
 )
 
@@ -20,24 +18,6 @@ from deepmd.env import (
 # from deepmd.descriptor import DescrptSeR
 from .descriptor import (
     Descriptor,
-)
-from .loc_frame import (
-    DescrptLocFrame,
-)
-from .se_a import (
-    DescrptSeA,
-)
-from .se_a_ebd import (
-    DescrptSeAEbd,
-)
-from .se_a_ef import (
-    DescrptSeAEf,
-)
-from .se_r import (
-    DescrptSeR,
-)
-from .se_t import (
-    DescrptSeT,
 )
 
 

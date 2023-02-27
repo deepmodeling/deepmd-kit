@@ -1,20 +1,15 @@
 from typing import (
     List,
     Optional,
-    Tuple,
 )
 
 import numpy as np
 
 from deepmd.common import (
     add_data_requirement,
-    get_activation_func,
-    get_precision,
 )
 from deepmd.env import (
-    GLOBAL_NP_FLOAT_PRECISION,
     GLOBAL_TF_FLOAT_PRECISION,
-    default_tf_session_config,
     op_module,
     tf,
 )

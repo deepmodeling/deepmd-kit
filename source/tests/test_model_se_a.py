@@ -1,10 +1,6 @@
-import os
-import unittest
-
 import dpdata
 import numpy as np
 from common import (
-    Data,
     DataSystem,
     del_data,
     gen_data,

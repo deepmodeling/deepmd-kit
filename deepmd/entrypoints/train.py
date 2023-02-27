@@ -5,16 +5,12 @@ Can handle local or distributed training.
 
 import json
 import logging
-import os
 import time
 from typing import (
     Any,
     Dict,
-    List,
     Optional,
 )
-
-import numpy as np
 
 from deepmd.common import (
     data_requirement,
@@ -60,9 +56,6 @@ from deepmd.utils.neighbor_stat import (
 )
 from deepmd.utils.path import (
     DPPath,
-)
-from deepmd.utils.sess import (
-    run_sess,
 )
 
 __all__ = ["train"]

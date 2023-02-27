@@ -1,17 +1,12 @@
 from typing import (
-    List,
     Tuple,
 )
 
 import numpy as np
 
 from deepmd.env import (
-    GLOBAL_ENER_FLOAT_PRECISION,
-    GLOBAL_NP_FLOAT_PRECISION,
     GLOBAL_TF_FLOAT_PRECISION,
     default_tf_session_config,
-    global_cvt_2_ener_float,
-    global_cvt_2_tf_float,
     op_module,
     tf,
 )

@@ -4,7 +4,6 @@ from deepmd.common import (
     add_data_requirement,
 )
 from deepmd.env import (
-    global_cvt_2_ener_float,
     global_cvt_2_tf_float,
     tf,
 )

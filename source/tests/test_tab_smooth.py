@@ -1,5 +1,4 @@
 import os
-import sys
 import unittest
 
 import numpy as np
@@ -10,15 +9,11 @@ from common import (
     virial_dw_test,
     virial_test,
 )
-from tensorflow.python.framework import (
-    ops,
-)
 from test_descrpt_smooth import (
     Inter,
 )
 
 # load grad of force module
-import deepmd.op
 from deepmd.env import (
     op_module,
     tf,
