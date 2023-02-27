@@ -586,14 +586,14 @@ void DeepPot::tile_fparam_aparam(std::vector<VALUETYPE>& out_param,
   }
 }
 
-template void DeepPot::validate_fparam_aparam<double>(
+template void DeepPot::tile_fparam_aparam<double>(
     std::vector<double>& out_param,
     const int& nframes,
     const int& nloc,
     const int& dparam,
     const std::vector<double>& param) const;
 
-template void DeepPot::validate_fparam_aparam<float>(
+template void DeepPot::tile_fparam_aparam<float>(
     std::vector<float>& out_param,
     const int& nframes,
     const int& nloc,
