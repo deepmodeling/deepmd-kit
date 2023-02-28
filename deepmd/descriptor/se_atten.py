@@ -67,8 +67,6 @@ class DescrptSeAtten(DescrptSeA):
     exclude_types : List[List[int]]
             The excluded pairs of types which have no interaction with each other.
             For example, `[[0, 1]]` means no interaction between type 0 and type 1.
-    set_davg_zero
-            Set the shift of embedding net input to zero.
     activation_function
             The activation function in the embedding net. Supported options are |ACTIVATION_FN|
     precision
@@ -100,7 +98,6 @@ class DescrptSeAtten(DescrptSeA):
         seed: Optional[int] = None,
         type_one_side: bool = True,
         exclude_types: List[List[int]] = [],
-        set_davg_zero: bool = False,
         activation_function: str = "tanh",
         precision: str = "default",
         uniform_seed: bool = False,
@@ -122,7 +119,7 @@ class DescrptSeAtten(DescrptSeA):
             seed=seed,
             type_one_side=type_one_side,
             exclude_types=exclude_types,
-            set_davg_zero=set_davg_zero,
+            set_davg_zero=True,
             activation_function=activation_function,
             precision=precision,
             uniform_seed=uniform_seed,
