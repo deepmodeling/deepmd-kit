@@ -1093,8 +1093,9 @@ void DeepPot::compute_mixed_type(ENERGYVTYPE& dener,
                                  const std::vector<VALUETYPE>& dbox,
                                  const std::vector<VALUETYPE>& fparam_,
                                  const std::vector<VALUETYPE>& aparam_) {
-  atommap = deepmd::AtomMap(datype_.begin(), datype_.end());
   int nloc = datype_.size() / nframes;
+  // here atommap only used to get nloc
+  atommap = deepmd::AtomMap(datype_.begin(), datype_.begin() + nloc);
   std::vector<VALUETYPE> fparam;
   std::vector<VALUETYPE> aparam;
   validate_fparam_aparam(fparam, aparam, nframes, nloc, fparam_, aparam_);
@@ -1174,8 +1175,9 @@ void DeepPot::compute_mixed_type(ENERGYVTYPE& dener,
                                  const std::vector<VALUETYPE>& dbox,
                                  const std::vector<VALUETYPE>& fparam_,
                                  const std::vector<VALUETYPE>& aparam_) {
-  atommap = deepmd::AtomMap(datype_.begin(), datype_.end());
   int nloc = datype_.size() / nframes;
+  // here atommap only used to get nloc
+  atommap = deepmd::AtomMap(datype_.begin(), datype_.begin() + nloc);
   std::vector<VALUETYPE> fparam;
   std::vector<VALUETYPE> aparam;
   validate_fparam_aparam(fparam, aparam, nframes, nloc, fparam_, aparam_);
