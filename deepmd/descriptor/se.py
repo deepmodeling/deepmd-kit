@@ -1,13 +1,23 @@
-from typing import Tuple, List
+from typing import (
+    Tuple,
+)
 
-from deepmd.env import tf
-from deepmd.utils.graph import get_embedding_net_variables_from_graph_def, get_tensor_by_name_from_graph
-from .descriptor import Descriptor
+from deepmd.env import (
+    tf,
+)
+from deepmd.utils.graph import (
+    get_embedding_net_variables_from_graph_def,
+    get_tensor_by_name_from_graph,
+)
+
+from .descriptor import (
+    Descriptor,
+)
 
 
-class DescrptSe (Descriptor):
+class DescrptSe(Descriptor):
     """A base class for smooth version of descriptors.
-    
+
     Notes
     -----
     All of these descriptors have an environmental matrix and an
@@ -26,11 +36,12 @@ class DescrptSe (Descriptor):
         distances between two atoms
     nlist : tf.Tensor
         the neighbor list
-    
+
     """
-    def _identity_tensors(self, suffix : str = "") -> None:
+
+    def _identity_tensors(self, suffix: str = "") -> None:
         """Identify tensors which are expected to be stored and restored.
-        
+
         Notes
         -----
         These tensors will be indentitied:
@@ -46,14 +57,16 @@ class DescrptSe (Descriptor):
         suffix : str
             The suffix of the scope
         """
-        self.descrpt_reshape = tf.identity(self.descrpt_reshape, name = 'o_rmat' + suffix)
-        self.descrpt_deriv = tf.identity(self.descrpt_deriv, name = 'o_rmat_deriv' + suffix)
-        self.rij = tf.identity(self.rij, name = 'o_rij' + suffix)
-        self.nlist = tf.identity(self.nlist, name = 'o_nlist' + suffix)
+        self.descrpt_reshape = tf.identity(self.descrpt_reshape, name="o_rmat" + suffix)
+        self.descrpt_deriv = tf.identity(
+            self.descrpt_deriv, name="o_rmat_deriv" + suffix
+        )
+        self.rij = tf.identity(self.rij, name="o_rij" + suffix)
+        self.nlist = tf.identity(self.nlist, name="o_nlist" + suffix)
 
-    def get_tensor_names(self, suffix : str = "") -> Tuple[str]:
+    def get_tensor_names(self, suffix: str = "") -> Tuple[str]:
         """Get names of tensors.
-        
+
         Parameters
         ----------
         suffix : str
@@ -64,40 +77,45 @@ class DescrptSe (Descriptor):
         Tuple[str]
             Names of tensors
         """
-        return (f'o_rmat{suffix}:0', f'o_rmat_deriv{suffix}:0', f'o_rij{suffix}:0', f'o_nlist{suffix}:0')
+        return (
+            f"o_rmat{suffix}:0",
+            f"o_rmat_deriv{suffix}:0",
+            f"o_rij{suffix}:0",
+            f"o_nlist{suffix}:0",
+        )
 
-    def pass_tensors_from_frz_model(self,
-                                    descrpt_reshape : tf.Tensor,
-                                    descrpt_deriv   : tf.Tensor,
-                                    rij             : tf.Tensor,
-                                    nlist           : tf.Tensor
+    def pass_tensors_from_frz_model(
+        self,
+        descrpt_reshape: tf.Tensor,
+        descrpt_deriv: tf.Tensor,
+        rij: tf.Tensor,
+        nlist: tf.Tensor,
     ):
-        """
-        Pass the descrpt_reshape tensor as well as descrpt_deriv tensor from the frz graph_def
+        """Pass the descrpt_reshape tensor as well as descrpt_deriv tensor from the frz graph_def.
 
         Parameters
         ----------
         descrpt_reshape
-                The passed descrpt_reshape tensor
+            The passed descrpt_reshape tensor
         descrpt_deriv
-                The passed descrpt_deriv tensor
+            The passed descrpt_deriv tensor
         rij
-                The passed rij tensor
+            The passed rij tensor
         nlist
-                The passed nlist tensor
+            The passed nlist tensor
         """
         self.rij = rij
         self.nlist = nlist
         self.descrpt_deriv = descrpt_deriv
         self.descrpt_reshape = descrpt_reshape
 
-    def init_variables(self,
-                       graph: tf.Graph,
-                       graph_def: tf.GraphDef,
-                       suffix : str = "",
+    def init_variables(
+        self,
+        graph: tf.Graph,
+        graph_def: tf.GraphDef,
+        suffix: str = "",
     ) -> None:
-        """
-        Init the embedding net variables with the given dict
+        """Init the embedding net variables with the given dict.
 
         Parameters
         ----------
@@ -108,9 +126,15 @@ class DescrptSe (Descriptor):
         suffix : str, optional
             The suffix of the scope
         """
-        self.embedding_net_variables = get_embedding_net_variables_from_graph_def(graph_def, suffix = suffix)
-        self.davg = get_tensor_by_name_from_graph(graph, 'descrpt_attr%s/t_avg' % suffix)
-        self.dstd = get_tensor_by_name_from_graph(graph, 'descrpt_attr%s/t_std' % suffix)
+        self.embedding_net_variables = get_embedding_net_variables_from_graph_def(
+            graph_def, suffix=suffix
+        )
+        self.davg = get_tensor_by_name_from_graph(
+            graph, "descrpt_attr%s/t_avg" % suffix
+        )
+        self.dstd = get_tensor_by_name_from_graph(
+            graph, "descrpt_attr%s/t_std" % suffix
+        )
 
     @property
     def precision(self) -> tf.DType:

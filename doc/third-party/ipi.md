@@ -16,7 +16,7 @@ It is noted that multiple instances of the client allow for computing, in parall
     "graph_file":	"graph.pb",
     "coord_file":	"conf.xyz",
     "atom_type" : {
-	"OW":		0, 
+	"OW":		0,
 	"HW1":		1,
 	"HW2":		1
     }

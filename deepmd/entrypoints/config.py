@@ -2,11 +2,18 @@
 """Quickly create a configuration file for smooth model."""
 
 import json
-import yaml
-from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from pathlib import (
+    Path,
+)
+from typing import (
+    Any,
+    Dict,
+    List,
+    Tuple,
+)
 
 import numpy as np
+import yaml
 
 __all__ = ["config"]
 
@@ -262,7 +269,7 @@ def suggest_sel(
         [description]
     """
     max_den = get_max_density(all_type, all_box)
-    return [int(ii) for ii in max_den * 4.0 / 3.0 * np.pi * rcut ** 3 * ratio]
+    return [int(ii) for ii in max_den * 4.0 / 3.0 * np.pi * rcut**3 * ratio]
 
 
 def suggest_batch_size(all_type: List[np.ndarray], min_atom: int) -> List[int]:
@@ -313,8 +320,10 @@ def config(*, output: str, **kwargs):
 
     Parameters
     ----------
-    output: str
+    output : str
         file to write config file
+    **kwargs
+        additional arguments
 
     Raises
     ------
@@ -322,6 +331,8 @@ def config(*, output: str, **kwargs):
         if user does not input any systems
     ValueError
         if output file is of wrong type
+    **kwargs
+        additional arguments
     """
     all_sys = get_system_names()
     if len(all_sys) == 0:

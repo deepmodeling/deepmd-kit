@@ -1,7 +1,11 @@
 import os
 
-from deepmd.env import tf
-from deepmd.utils.errors import OutOfMemoryError
+from deepmd.env import (
+    tf,
+)
+from deepmd.utils.errors import (
+    OutOfMemoryError,
+)
 
 
 def run_sess(sess: tf.Session, *args, **kwargs):
@@ -9,11 +13,16 @@ def run_sess(sess: tf.Session, *args, **kwargs):
 
     Parameters
     ----------
-    sess: tf.Session
+    sess : tf.Session
         TensorFlow Session
+    *args
+        Variable length argument list.
+    **kwargs
+        Arbitrary keyword arguments.
 
     Returns
     -------
+    Any
         the result of sess.run()
     """
     try:
@@ -33,7 +42,7 @@ def run_sess(sess: tf.Session, *args, **kwargs):
                 "4. Check if another program is using the same GPU by "
                 "execuating `nvidia-smi`. The usage of GPUs is "
                 "controlled by `CUDA_VISIBLE_DEVICES` environment "
-                "variable (current value: %s).\n" % (
-                    os.getenv("CUDA_VISIBLE_DEVICES", None),
-                ))
+                "variable (current value: %s).\n"
+                % (os.getenv("CUDA_VISIBLE_DEVICES", None),)
+            )
         raise OutOfMemoryError(MESSAGE) from e
