@@ -1082,6 +1082,173 @@ template void DeepPot::compute<float, std::vector<ENERGYTYPE>>(
     const std::vector<float>& fparam,
     const std::vector<float>& aparam_);
 
+// mixed type
+template <typename VALUETYPE, typename ENERGYVTYPE>
+void DeepPot::compute_mixed_type(ENERGYVTYPE& dener,
+                                 std::vector<VALUETYPE>& dforce_,
+                                 std::vector<VALUETYPE>& dvirial,
+                                 const int& nframes,
+                                 const std::vector<VALUETYPE>& dcoord_,
+                                 const std::vector<int>& datype_,
+                                 const std::vector<VALUETYPE>& dbox,
+                                 const std::vector<VALUETYPE>& fparam_,
+                                 const std::vector<VALUETYPE>& aparam_) {
+  atommap = deepmd::AtomMap(datype_.begin(), datype_.end());
+  int nloc = datype_.size() / nframes;
+  std::vector<VALUETYPE> fparam;
+  std::vector<VALUETYPE> aparam;
+  validate_fparam_aparam(fparam, aparam, nframes, nloc, fparam_, aparam_);
+
+  std::vector<std::pair<std::string, Tensor>> input_tensors;
+
+  if (dtype == tensorflow::DT_DOUBLE) {
+    int ret = session_input_tensors_mixed_type<double>(
+        input_tensors, nframes, dcoord_, ntypes, datype_, dbox, cell_size,
+        fparam, aparam, atommap);
+    assert(ret == nloc);
+    run_model<double>(dener, dforce_, dvirial, session, input_tensors, atommap,
+                      nframes);
+  } else {
+    int ret = session_input_tensors_mixed_type<float>(
+        input_tensors, nframes, dcoord_, ntypes, datype_, dbox, cell_size,
+        fparam, aparam, atommap);
+    assert(ret == nloc);
+    run_model<float>(dener, dforce_, dvirial, session, input_tensors, atommap,
+                     nframes);
+  }
+}
+
+template void DeepPot::compute_mixed_type<double, ENERGYTYPE>(
+    ENERGYTYPE& dener,
+    std::vector<double>& dforce_,
+    std::vector<double>& dvirial,
+    const int& nframes,
+    const std::vector<double>& dcoord_,
+    const std::vector<int>& datype_,
+    const std::vector<double>& dbox,
+    const std::vector<double>& fparam,
+    const std::vector<double>& aparam);
+
+template void DeepPot::compute_mixed_type<float, ENERGYTYPE>(
+    ENERGYTYPE& dener,
+    std::vector<float>& dforce_,
+    std::vector<float>& dvirial,
+    const int& nframes,
+    const std::vector<float>& dcoord_,
+    const std::vector<int>& datype_,
+    const std::vector<float>& dbox,
+    const std::vector<float>& fparam,
+    const std::vector<float>& aparam);
+
+template void DeepPot::compute_mixed_type<double, std::vector<ENERGYTYPE>>(
+    std::vector<ENERGYTYPE>& dener,
+    std::vector<double>& dforce_,
+    std::vector<double>& dvirial,
+    const int& nframes,
+    const std::vector<double>& dcoord_,
+    const std::vector<int>& datype_,
+    const std::vector<double>& dbox,
+    const std::vector<double>& fparam,
+    const std::vector<double>& aparam);
+
+template void DeepPot::compute_mixed_type<float, std::vector<ENERGYTYPE>>(
+    std::vector<ENERGYTYPE>& dener,
+    std::vector<float>& dforce_,
+    std::vector<float>& dvirial,
+    const int& nframes,
+    const std::vector<float>& dcoord_,
+    const std::vector<int>& datype_,
+    const std::vector<float>& dbox,
+    const std::vector<float>& fparam,
+    const std::vector<float>& aparam);
+
+template <typename VALUETYPE, typename ENERGYVTYPE>
+void DeepPot::compute_mixed_type(ENERGYVTYPE& dener,
+                                 std::vector<VALUETYPE>& dforce_,
+                                 std::vector<VALUETYPE>& dvirial,
+                                 std::vector<VALUETYPE>& datom_energy_,
+                                 std::vector<VALUETYPE>& datom_virial_,
+                                 const int& nframes,
+                                 const std::vector<VALUETYPE>& dcoord_,
+                                 const std::vector<int>& datype_,
+                                 const std::vector<VALUETYPE>& dbox,
+                                 const std::vector<VALUETYPE>& fparam_,
+                                 const std::vector<VALUETYPE>& aparam_) {
+  atommap = deepmd::AtomMap(datype_.begin(), datype_.end());
+  int nloc = datype_.size() / nframes;
+  std::vector<VALUETYPE> fparam;
+  std::vector<VALUETYPE> aparam;
+  validate_fparam_aparam(fparam, aparam, nframes, nloc, fparam_, aparam_);
+
+  std::vector<std::pair<std::string, Tensor>> input_tensors;
+
+  if (dtype == tensorflow::DT_DOUBLE) {
+    int nloc = session_input_tensors_mixed_type<double>(
+        input_tensors, nframes, dcoord_, ntypes, datype_, dbox, cell_size,
+        fparam, aparam, atommap);
+    run_model<double>(dener, dforce_, dvirial, datom_energy_, datom_virial_,
+                      session, input_tensors, atommap, nframes);
+  } else {
+    int nloc = session_input_tensors_mixed_type<float>(
+        input_tensors, nframes, dcoord_, ntypes, datype_, dbox, cell_size,
+        fparam, aparam, atommap);
+    run_model<float>(dener, dforce_, dvirial, datom_energy_, datom_virial_,
+                     session, input_tensors, atommap, nframes);
+  }
+}
+
+template void DeepPot::compute_mixed_type<double, ENERGYTYPE>(
+    ENERGYTYPE& dener,
+    std::vector<double>& dforce_,
+    std::vector<double>& dvirial,
+    std::vector<double>& datom_energy_,
+    std::vector<double>& datom_virial_,
+    const int& nframes,
+    const std::vector<double>& dcoord_,
+    const std::vector<int>& datype_,
+    const std::vector<double>& dbox,
+    const std::vector<double>& fparam,
+    const std::vector<double>& aparam);
+
+template void DeepPot::compute_mixed_type<float, ENERGYTYPE>(
+    ENERGYTYPE& dener,
+    std::vector<float>& dforce_,
+    std::vector<float>& dvirial,
+    std::vector<float>& datom_energy_,
+    std::vector<float>& datom_virial_,
+    const int& nframes,
+    const std::vector<float>& dcoord_,
+    const std::vector<int>& datype_,
+    const std::vector<float>& dbox,
+    const std::vector<float>& fparam,
+    const std::vector<float>& aparam);
+
+template void DeepPot::compute_mixed_type<double, std::vector<ENERGYTYPE>>(
+    std::vector<ENERGYTYPE>& dener,
+    std::vector<double>& dforce_,
+    std::vector<double>& dvirial,
+    std::vector<double>& datom_energy_,
+    std::vector<double>& datom_virial_,
+    const int& nframes,
+    const std::vector<double>& dcoord_,
+    const std::vector<int>& datype_,
+    const std::vector<double>& dbox,
+    const std::vector<double>& fparam,
+    const std::vector<double>& aparam);
+
+template void DeepPot::compute_mixed_type<float, std::vector<ENERGYTYPE>>(
+    std::vector<ENERGYTYPE>& dener,
+    std::vector<float>& dforce_,
+    std::vector<float>& dvirial,
+    std::vector<float>& datom_energy_,
+    std::vector<float>& datom_virial_,
+    const int& nframes,
+    const std::vector<float>& dcoord_,
+    const std::vector<int>& datype_,
+    const std::vector<float>& dbox,
+    const std::vector<float>& fparam,
+    const std::vector<float>& aparam);
+
 void DeepPot::get_type_map(std::string& type_map) {
   type_map = get_scalar<STRINGTYPE>("model_attr/tmap");
 }
