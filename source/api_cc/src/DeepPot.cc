@@ -614,16 +614,16 @@ void DeepPot::compute(ENERGYVTYPE& dener,
   std::vector<std::pair<std::string, Tensor>> input_tensors;
 
   if (dtype == tensorflow::DT_DOUBLE) {
-    int ret = session_input_tensors<double>(input_tensors, dcoord_, ntypes,
-                                            datype_, dbox, cell_size, fparam_,
-                                            aparam_, atommap);
+    int ret =
+        session_input_tensors<double>(input_tensors, dcoord_, ntypes, datype_,
+                                      dbox, cell_size, fparam, aparam, atommap);
     assert(ret == nloc);
     run_model<double>(dener, dforce_, dvirial, session, input_tensors, atommap,
                       nframes);
   } else {
-    int ret = session_input_tensors<float>(input_tensors, dcoord_, ntypes,
-                                           datype_, dbox, cell_size, fparam_,
-                                           aparam_, atommap);
+    int ret =
+        session_input_tensors<float>(input_tensors, dcoord_, ntypes, datype_,
+                                     dbox, cell_size, fparam, aparam, atommap);
     assert(ret == nloc);
     run_model<float>(dener, dforce_, dvirial, session, input_tensors, atommap,
                      nframes);
@@ -698,12 +698,13 @@ void DeepPot::compute(ENERGYVTYPE& dener,
   select_map<int>(datype, datype_, fwd_map, 1);
   std::vector<VALUETYPE> fparam;
   std::vector<VALUETYPE> aparam_;
-  validate_fparam_aparam(fparam, aparam_, nframes, nall, fparam_, aparam__);
+  validate_fparam_aparam(fparam, aparam_, nframes, nall - nghost, fparam_,
+                         aparam__);
   // aparam
   if (daparam > 0) {
     aparam.resize(nframes * (bkw_map.size() - nghost_real));
     select_map<VALUETYPE>(aparam, aparam_, fwd_map, daparam, nframes,
-                          bkw_map.size() - nghost_real, nall);
+                          bkw_map.size() - nghost_real, nall - nghost);
   }
   // internal nlist
   if (ago == 0) {
@@ -981,7 +982,7 @@ void DeepPot::compute(ENERGYVTYPE& dener,
   if (daparam > 0) {
     aparam.resize(nframes * nloc_real);
     select_map<VALUETYPE>(aparam, aparam_, fwd_map, daparam, nframes, nloc_real,
-                          nall);
+                          nall - nghost);
   }
   if (ago == 0) {
     atommap = deepmd::AtomMap(datype.begin(), datype.begin() + nloc_real);
