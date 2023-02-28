@@ -14,7 +14,6 @@
 TEST(TestReadFileToString, readfiletostring) {
   std::string file_content;
   deepmd::read_file_to_string("../../tests/infer/deeppot.txt", file_content);
-  remove("deeppot.pb");
 
   std::string file_name_2 = "../../tests/infer/deeppot.txt";
   std::stringstream buffer;
