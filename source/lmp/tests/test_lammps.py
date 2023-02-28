@@ -241,7 +241,7 @@ def lammps_type_map():
 
 
 def test_pair_deepmd(lammps):
-    lammps.pair_style("deepmd {}".format(pb_file.resolve()))
+    lammps.pair_style(f"deepmd {pb_file.resolve()}")
     lammps.pair_coeff("* *")
     lammps.run(0)
     assert lammps.eval("pe") == pytest.approx(expected_e)
@@ -251,7 +251,7 @@ def test_pair_deepmd(lammps):
 
 
 def test_pair_deepmd_virial(lammps):
-    lammps.pair_style("deepmd {}".format(pb_file.resolve()))
+    lammps.pair_style(f"deepmd {pb_file.resolve()}")
     lammps.pair_coeff("* *")
     lammps.compute("virial all centroid/stress/atom NULL pair")
     for ii in range(9):
@@ -396,7 +396,7 @@ def test_pair_deepmd_model_devi_atomic_relative_v(lammps):
 
 
 def test_pair_deepmd_type_map(lammps_type_map):
-    lammps_type_map.pair_style("deepmd {}".format(pb_file.resolve()))
+    lammps_type_map.pair_style(f"deepmd {pb_file.resolve()}")
     lammps_type_map.pair_coeff("* * H O")
     lammps_type_map.run(0)
     assert lammps_type_map.eval("pe") == pytest.approx(expected_e)

@@ -9,9 +9,6 @@ from deepmd.env import (
     op_module,
     tf,
 )
-from deepmd.utils.tabulate import (
-    DPTabulate,
-)
 
 # Now just test some OPs utilized by DPTabulate sourced in /opt/deepmd-kit/source/op/unaggregated_grad.cc
 

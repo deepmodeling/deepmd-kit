@@ -18,13 +18,12 @@ from .loss import (
 
 
 class EnerStdLoss(Loss):
-    """
-    Standard loss function for DP models
+    r"""Standard loss function for DP models.
 
     Parameters
     ----------
     enable_atom_ener_coeff : bool
-        if true, the energy will be computed as \\sum_i c_i E_i
+        if true, the energy will be computed as \sum_i c_i E_i
     """
 
     def __init__(

@@ -107,7 +107,7 @@ def download_file(url: str, filename: str):
     URLError
         raises for HTTP error
     """
-    dlog.info("Download %s from %s" % (filename, url))
+    dlog.info(f"Download {filename} from {url}")
     with urllib.request.urlopen(url) as response, open(filename, "wb") as out_file:
         shutil.copyfileobj(response, out_file)
 
@@ -271,7 +271,7 @@ class Build(metaclass=ABCMeta):
 
     @property
     def prefix(self):
-        """Tmp prefix"""
+        """Tmp prefix."""
         return self._prefix
 
     def copy_from_tmp_to_prefix(self):
@@ -324,12 +324,12 @@ def get_shlib_ext():
 
 
 def copy3(src: Path, dst: Path, *args, **kwargs):
-    """wrapper to shutil.copy2 to support Pathlib."""
+    """Wrapper to shutil.copy2 to support Pathlib."""
     return copy2(str(src), str(dst), *args, **kwargs)
 
 
 def copytree2(src: Path, dst: Path, *args, **kwargs):
-    """wrapper to copytree and cp to support Pathlib, pattern, and override."""
+    """Wrapper to copytree and cp to support Pathlib, pattern, and override."""
     with tempfile.TemporaryDirectory() as td:
         # hack to support override
         tmpdst = Path(td) / "dst"
@@ -443,7 +443,7 @@ class BuildBazelisk(Build):
 
 
 class BuildNumpy(Build):
-    """Build NumPy"""
+    """Build NumPy."""
 
     @property
     @lru_cache()
@@ -796,7 +796,7 @@ class BuildTensorFlow(Build):
     @property
     def built(self):
         return (
-            PREFIX / "lib" / ("libtensorflow_cc%s.%s" % (get_shlib_ext(), self.version))
+            PREFIX / "lib" / (f"libtensorflow_cc{get_shlib_ext()}.{self.version}")
         ).exists()
 
 
@@ -834,7 +834,7 @@ def env() -> Dict[str, str]:
 def pretty_print_env() -> str:
     return "Build configs:\n" + "\n".join(
         [
-            "%s:%s%s" % (kk, " " * (19 - len(kk)), vv)
+            "{}:{}{}".format(kk, " " * (19 - len(kk)), vv)
             for kk, vv in env().items()
             if vv is not None
         ]

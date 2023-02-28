@@ -5,9 +5,8 @@ from deepmd.env import (
 )
 
 
-class LearningRateExp(object):
-    r"""
-    The exponentially decaying learning rate.
+class LearningRateExp:
+    r"""The exponentially decaying learning rate.
 
     The learning rate at step :math:`t` is given by
 
@@ -38,9 +37,7 @@ class LearningRateExp(object):
         decay_steps: int = 5000,
         decay_rate: float = 0.95,
     ) -> None:
-        """
-        Constructor
-        """
+        """Constructor."""
         self.cd = {}
         self.cd["start_lr"] = start_lr
         self.cd["stop_lr"] = stop_lr
@@ -49,8 +46,7 @@ class LearningRateExp(object):
         self.start_lr_ = self.cd["start_lr"]
 
     def build(self, global_step: tf.Tensor, stop_step: int = None) -> tf.Tensor:
-        """
-        Build the learning rate
+        """Build the learning rate.
 
         Parameters
         ----------
@@ -96,13 +92,9 @@ class LearningRateExp(object):
         )
 
     def start_lr(self) -> float:
-        """
-        Get the start lr
-        """
+        """Get the start lr."""
         return self.start_lr_
 
     def value(self, step: int) -> float:
-        """
-        Get the lr at a certain step
-        """
+        """Get the lr at a certain step."""
         return self.start_lr_ * np.power(self.decay_rate_, (step // self.decay_steps_))

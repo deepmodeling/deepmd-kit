@@ -10,9 +10,6 @@ from deepmd.env import (
 )
 
 #
-from deepmd.nvnmd.data.data import (
-    jdata_sys,
-)
 from deepmd.nvnmd.utils.config import (
     nvnmd_cfg,
 )
@@ -31,14 +28,14 @@ log = logging.getLogger(__name__)
 
 def build_davg_dstd():
     r"""Get the davg and dstd from the dictionary nvnmd_cfg.
-    The davg and dstd have been obtained by training CNN
+    The davg and dstd have been obtained by training CNN.
     """
     davg, dstd = get_normalize(nvnmd_cfg.weight)
     return davg, dstd
 
 
 def check_switch_range(davg, dstd):
-    r"""Check the range of switch, let it in range [-2, 14]"""
+    r"""Check the range of switch, let it in range [-2, 14]."""
     rmin = nvnmd_cfg.dscp["rcut_smth"]
     #
     namelist = [n.name for n in tf.get_default_graph().as_graph_def().node]
@@ -62,7 +59,7 @@ def check_switch_range(davg, dstd):
 
 
 def build_op_descriptor():
-    r"""Replace se_a.py/DescrptSeA/build"""
+    r"""Replace se_a.py/DescrptSeA/build."""
     if nvnmd_cfg.quantize_descriptor:
         return op_module.prod_env_mat_a_nvnmd_quantize
     else:
@@ -72,7 +69,7 @@ def build_op_descriptor():
 def descrpt2r4(inputs, natoms):
     r"""Replace :math:`r_{ji} \rightarrow r'_{ji}`
     where :math:`r_{ji} = (x_{ji}, y_{ji}, z_{ji})` and
-    :math:`r'_{ji} = (s_{ji}, \frac{s_{ji} x_{ji}}{r_{ji}}, \frac{s_{ji} y_{ji}}{r_{ji}}, \frac{s_{ji} z_{ji}}{r_{ji}})`
+    :math:`r'_{ji} = (s_{ji}, \frac{s_{ji} x_{ji}}{r_{ji}}, \frac{s_{ji} y_{ji}}{r_{ji}}, \frac{s_{ji} z_{ji}}{r_{ji}})`.
     """
     ntypes = nvnmd_cfg.dscp["ntype"]
     NIDP = nvnmd_cfg.dscp["NIDP"]
@@ -181,7 +178,7 @@ def filter_lower_R42GR(
     filter_resnet_dt,
     embedding_net_variables,
 ):
-    r"""Replace se_a.py/DescrptSeA/_filter_lower"""
+    r"""Replace se_a.py/DescrptSeA/_filter_lower."""
     shape_i = inputs_i.get_shape().as_list()
     inputs_reshape = tf.reshape(inputs_i, [-1, 4])
     natom = tf.shape(inputs_i)[0]
@@ -267,7 +264,7 @@ def filter_lower_R42GR(
 
 
 def filter_GR2D(xyz_scatter_1):
-    r"""Replace se_a.py/_filter"""
+    r"""Replace se_a.py/_filter."""
     NIX = nvnmd_cfg.dscp["NIX"]
     M1 = nvnmd_cfg.dscp["M1"]
     M2 = nvnmd_cfg.dscp["M2"]

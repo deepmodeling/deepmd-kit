@@ -6,7 +6,6 @@ from tensorflow.python.framework import (
 
 from deepmd.env import (
     op_module,
-    tf,
 )
 
 

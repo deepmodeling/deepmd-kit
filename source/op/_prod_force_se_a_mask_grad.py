@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
-"""
-Gradients for prod force se_a_mask.
-"""
+"""Gradients for prod force se_a_mask."""
 
 from tensorflow.python.framework import (
     ops,

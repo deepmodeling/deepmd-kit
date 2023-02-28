@@ -91,13 +91,13 @@ Take an example, a `mixed_type` may contain the following files:
 ```
 type.raw
 type_map.raw
-set.000/box.npy
-set.000/coord.npy
-set.000/energy.npy
-set.000/force.npy
-set.000/real_atom_types.npy
+set.*/box.npy
+set.*/coord.npy
+set.*/energy.npy
+set.*/force.npy
+set.*/real_atom_types.npy
 ```
-This system contains `Nframes` frames with the same atom number `Natoms`, the total number of element types contained in all frames is `Ntypes`. Note that we put all the frames in one set `set.000`. Most files are the same as those in [standard formats](../data/system.md), here we only list the distinct ones:
+This system contains `Nframes` frames with the same atom number `Natoms`, the total number of element types contained in all frames is `Ntypes`. Most files are the same as those in [standard formats](../data/system.md), here we only list the distinct ones:
 
 ID             | Property                         | File                | Required/Optional    | Shape                    | Description
 ----------     | -------------------------------- | ------------------- | -------------------- | -----------------------  | -----------

@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
-"""
-Gradients for soft min virial.
-"""
+"""Gradients for soft min virial."""
 
 from tensorflow.python.framework import (
     ops,

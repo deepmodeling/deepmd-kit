@@ -1,18 +1,12 @@
-import os
-import sys
 import unittest
 
 import numpy as np
-from tensorflow.python.framework import (
-    ops,
-)
 
 from deepmd.descriptor import (
     DescrptSeA,
     DescrptSeAEfLower,
 )
 from deepmd.env import (
-    GLOBAL_ENER_FLOAT_PRECISION,
     GLOBAL_NP_FLOAT_PRECISION,
     GLOBAL_TF_FLOAT_PRECISION,
     op_module,

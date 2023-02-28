@@ -1,10 +1,7 @@
 import os
-import platform
 import shutil
-import sys
 import unittest
 
-import dpdata
 import numpy as np
 from common import (
     run_dp,
@@ -24,9 +21,7 @@ from deepmd.utils.convert import (
     convert_dp12_to_dp13,
     convert_dp13_to_dp20,
     convert_dp20_to_dp21,
-    convert_pb_to_pbtxt,
     convert_pbtxt_to_pb,
-    convert_to_21,
     detect_model_version,
 )
 
@@ -39,7 +34,7 @@ else:
 class TestModelMajorCompatability(unittest.TestCase):
     def setUp(self):
         model_file = str(tests_path / os.path.join("infer", "deeppot.pbtxt"))
-        with open(model_file, "r") as fp:
+        with open(model_file) as fp:
             # data = fp.read().replace('\n', '')
             data = fp.read().split("\n")
             for ii in range(len(data)):
@@ -69,7 +64,7 @@ class TestModelMajorCompatability(unittest.TestCase):
 class TestModelMinorCompatability(unittest.TestCase):
     def setUp(self):
         model_file = str(tests_path / os.path.join("infer", "deeppot.pbtxt"))
-        with open(model_file, "r") as fp:
+        with open(model_file) as fp:
             # data = fp.read().replace('\n', '')
             data = fp.read().split("\n")
             for ii in range(len(data)):

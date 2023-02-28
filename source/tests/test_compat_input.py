@@ -1,8 +1,6 @@
 import os
-import sys
 import unittest
 
-import numpy as np
 from common import (
     j_loader,
 )

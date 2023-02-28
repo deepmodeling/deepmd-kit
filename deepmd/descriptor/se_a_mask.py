@@ -1,4 +1,3 @@
-import math
 import warnings
 from typing import (
     Any,
@@ -21,25 +20,8 @@ from deepmd.env import (
     op_module,
     tf,
 )
-from deepmd.utils.argcheck import (
-    list_to_doc,
-)
-from deepmd.utils.graph import (
-    get_tensor_by_name_from_graph,
-    load_graph_def,
-)
 from deepmd.utils.network import (
-    embedding_net,
     embedding_net_rand_seed_shift,
-)
-from deepmd.utils.sess import (
-    run_sess,
-)
-from deepmd.utils.tabulate import (
-    DPTabulate,
-)
-from deepmd.utils.type_embed import (
-    embed_atom_type,
 )
 
 from .descriptor import (
@@ -145,9 +127,7 @@ class DescrptSeAMask(DescrptSeA):
         precision: str = "default",
         uniform_seed: bool = False,
     ) -> None:
-        """
-        Constructor
-        """
+        """Constructor."""
         self.sel_a = sel
         self.total_atom_num = np.cumsum(self.sel_a)[-1]
         self.ntypes = len(self.sel_a)
@@ -231,9 +211,7 @@ class DescrptSeAMask(DescrptSeA):
         self.original_sel = None
 
     def get_rcut(self) -> float:
-        """
-        Returns: the cutoff radius:
-        """
+        """Returns the cutoff radius."""
         warnings.warn("The cutoff radius is not used for this descriptor")
         return -1.0
 
@@ -246,8 +224,7 @@ class DescrptSeAMask(DescrptSeA):
         mesh: list,
         input_dict: dict,
     ) -> None:
-        """
-        Compute the statisitcs (avg and std) of the training data. The input will be normalized by the statistics.
+        """Compute the statisitcs (avg and std) of the training data. The input will be normalized by the statistics.
 
         Parameters
         ----------
@@ -264,7 +241,6 @@ class DescrptSeAMask(DescrptSeA):
         input_dict
             Dictionary for additional input
         """
-
         """
         TODO: Since not all input atoms are real in se_a_mask,
         statistics should be reimplemented for se_a_mask descriptor.
@@ -284,8 +260,7 @@ class DescrptSeAMask(DescrptSeA):
         reuse: Optional[bool] = None,
         suffix: str = "",
     ) -> tf.Tensor:
-        """
-        Build the computational graph for the descriptor
+        """Build the computational graph for the descriptor.
 
         Parameters
         ----------
@@ -298,6 +273,8 @@ class DescrptSeAMask(DescrptSeA):
             natoms[0]: number of local atoms
             natoms[1]: total number of atoms held by this processor
             natoms[i]: 2 <= i < Ntypes+2, number of type i atoms
+        box_ : tf.Tensor
+            The box of the system
         mesh
             For historical reasons, only the length of the Tensor matters.
             if size of mesh == 6, pbc is assumed.
@@ -390,8 +367,7 @@ class DescrptSeAMask(DescrptSeA):
         atom_ener: tf.Tensor,
         natoms: tf.Tensor,
     ) -> Tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
-        """
-        Compute force and virial
+        """Compute force and virial.
 
         Parameters
         ----------

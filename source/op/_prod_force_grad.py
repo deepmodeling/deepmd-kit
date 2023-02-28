@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
-"""
-Gradients for prod force.
-"""
+"""Gradients for prod force."""
 
 from tensorflow.python.framework import (
     ops,

@@ -1,24 +1,14 @@
-import json
 import os
-import platform
 import shutil
-import sys
-import unittest
 
-import dpdata
 import numpy as np
-from common import (
-    Data,
-)
 
 from deepmd.common import (
     data_requirement,
     j_must_have,
 )
 from deepmd.env import (
-    GLOBAL_ENER_FLOAT_PRECISION,
     GLOBAL_NP_FLOAT_PRECISION,
-    GLOBAL_TF_FLOAT_PRECISION,
     tf,
 )
 from deepmd.infer.data_modifier import (
@@ -26,9 +16,6 @@ from deepmd.infer.data_modifier import (
 )
 from deepmd.infer.deep_dipole import (
     DeepDipole,
-)
-from deepmd.infer.ewald_recp import (
-    EwaldRecp,
 )
 from deepmd.train.run_options import (
     RunOptions,

@@ -30,8 +30,8 @@ else:
 
 
 def get_env(paths: List[Optional[str]]) -> str:
-    """Get the environment variable from given paths"""
-    return ":".join((p for p in paths if p is not None))
+    """Get the environment variable from given paths."""
+    return ":".join(p for p in paths if p is not None)
 
 
 def get_library_path(module: str) -> List[str]:
@@ -110,5 +110,5 @@ if find_libpython is not None:
 
 
 def get_op_dir() -> str:
-    """Get the directory of the deepmd-kit OP library"""
+    """Get the directory of the deepmd-kit OP library."""
     return op_dir

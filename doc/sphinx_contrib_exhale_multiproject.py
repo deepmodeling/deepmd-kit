@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 # The initial version of this file comes from
 # https://github.com/mithro/sphinx-contrib-mithro/tree/master/sphinx-contrib-exhale-multiproject
 # under the following license:
@@ -21,8 +19,7 @@
 # Any modification to the initial version still applies LGPL v3 license.
 
 # -- Breathe + Exhale config for C++ API Documentation --------------------
-'''
-Example configuration of exhale with multiple projects;
+'''Example configuration of exhale with multiple projects;
 .. highlight::python
     breathe_projects = {
         "firmware":     "_doxygen/firmware/xml",
@@ -72,7 +69,7 @@ Example configuration of exhale with multiple projects;
             "containmentFolder":    "third_party-libuip-api",
             "rootFileTitle":        "libuip",
         },
-    }
+    }.
 '''
 
 import os

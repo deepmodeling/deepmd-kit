@@ -1,12 +1,8 @@
 import json
 import os
-import platform
-import shutil
 import subprocess as sp
-import sys
 import unittest
 
-import dpdata
 import numpy as np
 
 # from deepmd.entrypoints.compress import compress
@@ -18,7 +14,6 @@ from common import (
 
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
-    MODEL_VERSION,
 )
 from deepmd.infer import (
     DeepPot,

@@ -1,10 +1,6 @@
 import os
-import platform
-import shutil
-import sys
 import unittest
 
-import dpdata
 import numpy as np
 from common import (
     tests_path,
