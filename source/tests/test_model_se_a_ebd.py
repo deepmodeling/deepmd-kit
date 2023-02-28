@@ -19,7 +19,7 @@ class TestModel(tf.test.TestCase):
         gen_data()
 
     def test_model(self):
-        jfile = 'water_se_ebd.json'
+        jfile = 'water_se_a_ebd.json'
         jdata = j_loader(jfile)
 
         systems = j_must_have(jdata, 'systems')
