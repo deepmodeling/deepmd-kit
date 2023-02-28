@@ -166,6 +166,7 @@ extensions = [
 # }
 breathe_projects = {
     "cc": "_build/cc/xml/",
+    "c": "_build/c/xml/",
     "core": "_build/core/xml/",
 }
 breathe_default_project = "cc"
@@ -187,10 +188,16 @@ exhale_projects_args = {
         "rootFileTitle": "C++ API",
         "rootFileName": "api_cc.rst",
     },
+    "c": {
+        "containmentFolder": "./api_c",
+        "exhaleDoxygenStdin": "INPUT = ../source/api_c/include/",
+        "rootFileTitle": "C API",
+        "rootFileName": "api_c.rst",
+    },
     "core": {
         "containmentFolder": "./api_core",
         "exhaleDoxygenStdin": """INPUT = ../source/lib/include/
-                                 PREDEFINED = GOOGLE_CUDA
+                                 PREDEFINED += GOOGLE_CUDA
                                               TENSORFLOW_USE_ROCM
         """,
         "rootFileTitle": "Core API",

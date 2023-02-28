@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from deepmd import __version__
+from deepmd.common import clear_session
 from deepmd.entrypoints import (
     compress,
     config,
@@ -156,19 +157,34 @@ def main_parser() -> argparse.ArgumentParser:
     parser_train.add_argument(
         "INPUT", help="the input parameter file in json or yaml format"
     )
-    parser_train.add_argument(
+    parser_train_subgroup = parser_train.add_mutually_exclusive_group()
+    parser_train_subgroup.add_argument(
         "-i",
         "--init-model",
         type=str,
         default=None,
         help="Initialize the model by the provided checkpoint.",
     )
-    parser_train.add_argument(
+    parser_train_subgroup.add_argument(
         "-r",
         "--restart",
         type=str,
         default=None,
         help="Restart the training from the provided checkpoint.",
+    )
+    parser_train_subgroup.add_argument(
+        "-f",
+        "--init-frz-model",
+        type=str,
+        default=None,
+        help="Initialize the training from the frozen model.",
+    )
+    parser_train_subgroup.add_argument(
+        "-t",
+        "--finetune",
+        type=str,
+        default=None,
+        help="Finetune the frozen pretrained model.",
     )
     parser_train.add_argument(
         "-o",
@@ -176,13 +192,6 @@ def main_parser() -> argparse.ArgumentParser:
         type=str,
         default="out.json",
         help="The output file of the parameters used in training.",
-    )
-    parser_train.add_argument(
-        "-f",
-        "--init-frz-model",
-        type=str,
-        default=None,
-        help="Initialize the training from the frozen model.",
     )
     parser_train.add_argument(
         "--skip-neighbor-stat",
@@ -273,7 +282,7 @@ def main_parser() -> argparse.ArgumentParser:
         "--detail-file",
         type=str,
         default=None,
-        help="File where details of energy force and virial accuracy will be written",
+        help="The prefix to files where details of energy, force and virial accuracy/accuracy per atom will be written",
     )
     parser_tst.add_argument(
         "-a",
@@ -434,7 +443,7 @@ def main_parser() -> argparse.ArgumentParser:
     parser_transform.add_argument(
         'FROM',
         type = str,
-        choices = ['0.12', '1.0', '1.1', '1.2', '1.3', '2.0'],
+        choices = ['0.12', '1.0', '1.1', '1.2', '1.3', '2.0', 'pbtxt'],
         help="The original model compatibility",
     )
     parser_transform.add_argument(
@@ -540,15 +549,24 @@ def parse_args(args: Optional[List[str]] = None) -> argparse.Namespace:
     return parsed_args
 
 
-def main():
+def main(args: Optional[List[str]] = None):
     """DeePMD-Kit entry point.
+
+    Parameters
+    ----------
+    args: List[str], optional
+        list of command line arguments, used to avoid calling from the subprocess,
+        as it is quite slow to import tensorflow
 
     Raises
     ------
     RuntimeError
         if no command was input
     """
-    args = parse_args()
+    if args is not None:
+        clear_session()
+
+    args = parse_args(args=args)
 
     # do not set log handles for None, it is useless
     # log handles for train will be set separatelly
@@ -584,3 +602,6 @@ def main():
         pass
     else:
         raise RuntimeError(f"unknown command {args.command}")
+
+    if args is not None:
+        clear_session()

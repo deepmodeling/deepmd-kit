@@ -1,6 +1,6 @@
 # Prepare data with dpdata
 
-One can use the a convenient tool [`dpdata`](https://github.com/deepmodeling/dpdata) to convert data directly from the output of first principle packages to the DeePMD-kit format.
+One can use a convenient tool [`dpdata`](https://github.com/deepmodeling/dpdata) to convert data directly from the output of first principle packages to the DeePMD-kit format.
 
 To install one can execute 
 ```bash
@@ -23,4 +23,4 @@ dsys.to('deepmd/npy', 'deepmd_data', set_size = dsys.get_nframes())
 
 The data in DeePMD-kit format is stored in the folder `deepmd_data`.
 
-A list of all [supported data format](https://github.com/deepmodeling/dpdata#load-data) and more nice features of `dpdata` can be found at the [official website](https://github.com/deepmodeling/dpdata).
+A list of all [supported data format](https://github.com/deepmodeling/dpdata#load-data) and more nice features of `dpdata` can be found on the [official website](https://github.com/deepmodeling/dpdata).

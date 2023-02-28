@@ -19,7 +19,11 @@ except ImportError:
     from .__about__ import __version__
 
 # load third-party plugins
-for ep in metadata.entry_points().get('deepmd', []):
+try:
+    eps = metadata.entry_points(group='deepmd')
+except TypeError:
+    eps = metadata.entry_points().get('deepmd', [])
+for ep in eps:
     ep.load()
 
 __all__ = [

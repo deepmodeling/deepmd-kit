@@ -33,9 +33,9 @@ class DescrptLocFrame (Descriptor) :
             - axis_rule[i*6+0]: class of the atom defining the first axis of type-i atom. 0 for neighbors with full coordinates and 1 for neighbors only with relative distance.\n\n\
             - axis_rule[i*6+1]: type of the atom defining the first axis of type-i atom.\n\n\
             - axis_rule[i*6+2]: index of the axis atom defining the first axis. Note that the neighbors with the same class and type are sorted according to their relative distance.\n\n\
-            - axis_rule[i*6+3]: class of the atom defining the first axis of type-i atom. 0 for neighbors with full coordinates and 1 for neighbors only with relative distance.\n\n\
+            - axis_rule[i*6+3]: class of the atom defining the second axis of type-i atom. 0 for neighbors with full coordinates and 1 for neighbors only with relative distance.\n\n\
             - axis_rule[i*6+4]: type of the atom defining the second axis of type-i atom.\n\n\
-            - axis_rule[i*6+5]: class of the atom defining the second axis of type-i atom. 0 for neighbors with full coordinates and 1 for neighbors only with relative distance.    
+            - axis_rule[i*6+5]: index of the axis atom defining the second axis. Note that the neighbors with the same class and type are sorted according to their relative distance.
     """
     def __init__(self, 
                  rcut: float,
@@ -46,12 +46,6 @@ class DescrptLocFrame (Descriptor) :
         """
         Constructor    
         """
-        # args = ClassArg()\
-        #        .add('sel_a',    list,   must = True) \
-        #        .add('sel_r',    list,   must = True) \
-        #        .add('rcut',     float,  default = 6.0) \
-        #        .add('axis_rule',list,   must = True)
-        # class_data = args.parse(jdata)
         self.sel_a = sel_a
         self.sel_r = sel_r
         self.axis_rule = axis_rule
@@ -99,7 +93,7 @@ class DescrptLocFrame (Descriptor) :
 
     def get_rcut (self) -> float:
         """
-        Returns the cut-off radisu
+        Returns the cut-off radius
         """
         return self.rcut_r
 

@@ -3,7 +3,7 @@ import numpy as np
 from deepmd.env import tf
 from common import Data,gen_data, j_loader
 
-from deepmd.utils.data_system import DataSystem
+from common import DataSystem
 from deepmd.descriptor import DescrptSeT
 from deepmd.fit import EnerFitting
 from deepmd.model import EnerModel

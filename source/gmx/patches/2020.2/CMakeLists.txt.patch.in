@@ -18,8 +18,8 @@
 +include_directories(${GMX_TENSORFLOW_ROOT}/include)
 +link_directories(${GMX_DEEPMD_ROOT}/lib)
 +link_directories(${GMX_TENSORFLOW_ROOT}/lib)
-+# define high precision, only support high precision now
-+add_definitions("-D HIGH_PREC")
++
++
 +# add link libraries
 +list (APPEND GMX_PUBLIC_LIBRARIES deepmd_gromacs)
 +# DeepMD

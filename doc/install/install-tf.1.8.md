@@ -10,34 +10,34 @@ unzip ../bazel-0.10.0-dist.zip
 export PATH=`pwd`/output:$PATH
 ```
 
-Firstly get the source code of the tensorflow
+Firstly get the source code of the TensorFlow
 ```bash
 cd /some/workspace
 git clone https://github.com/tensorflow/tensorflow tensorflow -b v1.8.0 --depth=1
 cd tensorflow
 ```
 
-DeePMD-kit is compiled by cmake, so we need to compile and integrate tensorflow with cmake projects. The rest of this section basically follows [the instruction provided by Tuatini](http://tuatini.me/building-tensorflow-as-a-standalone-project/). Now execute
+DeePMD-kit is compiled by CMake, so we need to compile and integrate TensorFlow with CMake projects. The rest of this section basically follows [the instruction provided by Tuatini](http://tuatini.me/building-tensorflow-as-a-standalone-project/). Now execute
 ```bash
 ./configure
 ```
-You will answer a list of questions that help configure the building of tensorflow. It is recommended to build for Python3. You may want to answer the question like this (please replace `$tensorflow_venv` by the virtual environment directory):
+You will answer a list of questions that help configure the building of TensorFlow. It is recommended to build for Python3. You may want to answer the question like this (please replace `$tensorflow_venv` with the virtual environment directory):
 ```bash
 Please specify the location of python. [Default is $tensorflow_venv/bin/python]:
 ```
 The library path for Python should be set accordingly.
 
-Now build the shared library of tensorflow:
+Now build the shared library of TensorFlow:
 ```bash
 bazel build -c opt --verbose_failures //tensorflow:libtensorflow_cc.so
 ```
 You may want to add options `--copt=-msse4.2`,  `--copt=-mavx`, `--copt=-mavx2` and `--copt=-mfma` to enable SSE4.2, AVX, AVX2 and FMA SIMD accelerations, respectively. It is noted that these options should be chosen according to the CPU architecture. If the RAM becomes an issue of your machine, you may limit the RAM usage by using `--local_resources 2048,.5,1.0`. 
 
-Now I assume you want to install tensorflow in directory `$tensorflow_root`. Create the directory if it does not exists
+Now I assume you want to install TensorFlow in directory `$tensorflow_root`. Create the directory if it does not exist
 ```bash
 mkdir -p $tensorflow_root
 ```
-Before moving on, we need to compile the dependencies of tensorflow, including Protobuf, Eigen and nsync. Firstly, protobuf
+Before moving on, we need to compile the dependencies of TensorFlow, including Protobuf, Eigen and nsync. Firstly, protobuf
 ```bash
 mkdir /tmp/proto
 tensorflow/contrib/makefile/download_dependencies.sh
@@ -67,7 +67,7 @@ make
 make install
 cd ../../../../../..
 ```
-Now, copy the libraries to the tensorflow's installation directory:
+Now, copy the libraries to the TensorFlow's installation directory:
 ```bash
 mkdir $tensorflow_root/lib
 cp bazel-bin/tensorflow/libtensorflow_cc.so $tensorflow_root/lib/

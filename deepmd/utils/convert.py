@@ -23,25 +23,6 @@ def convert_13_to_21(input_model: str, output_model: str):
     print("the converted output model (2.1 support) is saved in %s" % output_model)
 
 
-def convert_13_to_21(input_model: str, output_model: str):
-    """Convert DP 1.3 graph to 2.1 graph.
-    
-    Parameters
-    ----------
-    input_model : str
-        filename of the input graph
-    output_model : str
-        filename of the output graph
-    """
-    convert_pb_to_pbtxt(input_model, 'frozen_model.pbtxt')
-    convert_dp13_to_dp20('frozen_model.pbtxt')
-    convert_dp20_to_dp21('frozen_model.pbtxt')
-    convert_pbtxt_to_pb('frozen_model.pbtxt', output_model)
-    if os.path.isfile('frozen_model.pbtxt'):
-        os.remove('frozen_model.pbtxt')
-    print("the converted output model (2.1 support) is saved in %s" % output_model)
-
-
 def convert_12_to_21(input_model: str, output_model: str):
     """Convert DP 1.2 graph to 2.1 graph.
     
@@ -157,7 +138,7 @@ def convert_pbtxt_to_pb(pbtxtfile: str, pbfile: str):
 
 
 def convert_dp012_to_dp10(file: str):
-    """Convert DP 1.0 graph text to 1.1 graph text.
+    """Convert DP 0.12 graph text to 1.0 graph text.
     
     Parameters
     ----------
@@ -224,6 +205,29 @@ def convert_dp012_to_dp10(file: str):
           }
         }
       }
+      """)
+    file_content += textwrap.dedent("""\
+      node {
+        name: "model_attr/tmap"
+        op: "Const"
+        attr {
+          key: "dtype"
+          value {
+            type: DT_STRING
+          }
+        }
+        attr {
+          key: "value"
+          value {
+            tensor {
+              dtype: DT_STRING
+              tensor_shape {
+              }
+              string_val: ""
+            }
+          }
+        }
+      }      
       """)
     with open(file, 'w') as fp:
         fp.write(file_content)

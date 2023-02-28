@@ -232,16 +232,56 @@ class TestParserOutput(unittest.TestCase):
 
         self.run_test(command="transfer", mapping=ARGS)
 
-    def test_parser_train(self):
-        """Test train subparser."""
+    def test_parser_train_init_model(self):
+        """Test train init-model subparser."""
+        ARGS = {
+            "INPUT": dict(type=str, value="INFILE"),
+            "--init-model": dict(type=(str, type(None)), value="SYSTEM_DIR"),
+            "--output": dict(type=str, value="OUTPUT"),
+        }
+
+        self.run_test(command="train", mapping=ARGS)
+
+    def test_parser_train_restart(self):
+        """Test train restart subparser."""
+        ARGS = {
+            "INPUT": dict(type=str, value="INFILE"),
+            "--restart": dict(type=(str, type(None)), value="RESTART"),
+            "--output": dict(type=str, value="OUTPUT"),
+        }
+
+        self.run_test(command="train", mapping=ARGS)
+
+    def test_parser_train_init_frz_model(self):
+        """Test train init-frz-model subparser."""
+        ARGS = {
+            "INPUT": dict(type=str, value="INFILE"),
+            "--init-frz-model": dict(type=(str, type(None)), value="INIT_FRZ_MODEL"),
+            "--output": dict(type=str, value="OUTPUT"),
+        }
+
+        self.run_test(command="train", mapping=ARGS)
+
+    def test_parser_train_finetune(self):
+        """Test train finetune subparser."""
+        ARGS = {
+            "INPUT": dict(type=str, value="INFILE"),
+            "--finetune": dict(type=(str, type(None)), value="FINETUNE"),
+            "--output": dict(type=str, value="OUTPUT"),
+        }
+
+        self.run_test(command="train", mapping=ARGS)
+
+    def test_parser_train_wrong_subcommand(self):
+        """Test train with multiple subparsers."""
         ARGS = {
             "INPUT": dict(type=str, value="INFILE"),
             "--init-model": dict(type=(str, type(None)), value="SYSTEM_DIR"),
             "--restart": dict(type=(str, type(None)), value="RESTART"),
             "--output": dict(type=str, value="OUTPUT"),
         }
-
-        self.run_test(command="train", mapping=ARGS)
+        with self.assertRaises(SystemExit):
+            self.run_test(command="train", mapping=ARGS)
 
     def test_parser_freeze(self):
         """Test freeze subparser."""
