@@ -162,7 +162,7 @@ __global__ void tabulate_fusion_se_a_grad_fifth_order_polynomial(
   }
   __syncthreads();
   FPTYPE ago = __shfl(em_x[block_idx * nnei + nnei - 1], 0);
-  for (int ii = 0; ii < nnei; ii += KTILE) {
+  for (int ii = 0; ii < nnei - warp_idx; ii += KTILE) {
     FPTYPE xx = em_x[block_idx * nnei + ii + warp_idx];
     if (ago == xx) {
       unloop = true;
