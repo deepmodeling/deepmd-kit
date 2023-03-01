@@ -8,10 +8,10 @@ This header-only library provides a C++ 11 interface to the DeePMD-kit C API.
 
 #include <algorithm>
 #include <cassert>
+#include <cstring>
 #include <exception>
 #include <iostream>
 #include <string>
-#include <cstring>
 #include <vector>
 
 #include "c_api.h"
@@ -35,7 +35,7 @@ struct deepmd_exception : public std::runtime_error {
  */
 #define DP_CHECK_OK(check_func, dp)     \
   const char *err_msg = check_func(dp); \
-  if (std::strlen(err_msg))                  \
+  if (std::strlen(err_msg))             \
     throw deepmd::hpp::deepmd_exception(std::string(err_msg));
 
 template <typename FPTYPE>
