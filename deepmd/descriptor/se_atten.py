@@ -393,6 +393,8 @@ class DescrptSeAtten(DescrptSeA):
         tf.summary.histogram("nlist", self.nlist)
 
         self.descrpt_reshape = tf.reshape(self.descrpt, [-1, self.ndescrpt])
+        # prevent lookup error; the actual atype already used for nlist
+        atype = tf.clip_by_value(atype, 0, self.ntypes - 1)
         self.atype_nloc = tf.reshape(
             tf.slice(atype, [0, 0], [-1, natoms[0]]), [-1]
         )  ## lammps will have error without this
