@@ -247,15 +247,14 @@ class DeepPot {
    * a single frame of frame or atomic parameters.
    * @param[out] out_param The tiled frame or atomic parameters.
    * @param[in] nframes The number of frames.
-   * @param[in] nloc The number of local atoms.
-   * @param[in] dparam The dimension of the frame or atomic parameters.
+   * @param[in] dparam The dimension of the frame or atomic parameters in a
+   * frame.
    * @param[in] param The frame or atomic parameters.
    * @tparam VALUETYPE The type of the parameters, double or float.
    */
   template <typename VALUETYPE>
   void tile_fparam_aparam(std::vector<VALUETYPE>& out_param,
                           const int& nframes,
-                          const int& nloc,
                           const int& dparam,
                           const std::vector<VALUETYPE>& param) const;
   template <typename VALUETYPE, typename ENERGYVTYPE>
