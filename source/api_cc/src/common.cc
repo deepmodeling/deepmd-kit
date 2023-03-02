@@ -233,7 +233,9 @@ void deepmd::check_status(const tensorflow::Status& status) {
 void throw_env_not_set_warning(std::string env_name) {
   std::cerr << "DeePMD-kit WARNING: Environmental variable " << env_name
             << " is not set. "
-            << "Tune " << env_name << " for the best performance." << std::endl;
+            << "Tune " << env_name << " for the best performance. "
+            << "See https://deepmd.rtfd.io/parallelism/ for more information."
+            << std::endl;
 }
 
 void deepmd::get_env_nthreads(int& num_intra_nthreads,

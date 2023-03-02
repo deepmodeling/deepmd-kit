@@ -263,7 +263,8 @@ def set_tf_default_nthreads():
             "To get the best performance, it is recommended to adjust "
             "the number of threads by setting the environment variables "
             "OMP_NUM_THREADS, TF_INTRA_OP_PARALLELISM_THREADS, and "
-            "TF_INTER_OP_PARALLELISM_THREADS."
+            "TF_INTER_OP_PARALLELISM_THREADS. See "
+            "https://deepmd.rtfd.io/parallelism/ for more information."
         )
     set_env_if_empty("TF_INTRA_OP_PARALLELISM_THREADS", "0", verbose=False)
     set_env_if_empty("TF_INTER_OP_PARALLELISM_THREADS", "0", verbose=False)
