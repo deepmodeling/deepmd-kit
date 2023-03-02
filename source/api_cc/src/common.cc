@@ -333,10 +333,10 @@ int deepmd::session_input_tensors(
   natoms_shape.AddDim(2 + ntypes);
   TensorShape fparam_shape;
   fparam_shape.AddDim(nframes);
-  fparam_shape.AddDim(fparam_.size());
+  fparam_shape.AddDim(fparam_.size() / nframes);
   TensorShape aparam_shape;
   aparam_shape.AddDim(nframes);
-  aparam_shape.AddDim(aparam_.size());
+  aparam_shape.AddDim(aparam_.size() / nframes);
 
   tensorflow::DataType model_type;
   if (std::is_same<MODELTYPE, double>::value) {
@@ -382,11 +382,11 @@ int deepmd::session_input_tensors(
     for (int jj = 0; jj < nall; ++jj) {
       type(ii, jj) = datype[jj];
     }
-    for (int jj = 0; jj < fparam_.size(); ++jj) {
-      fparam(ii, jj) = fparam_[ii * fparam_.size() + jj];
+    for (int jj = 0; jj < fparam_.size() / nframes; ++jj) {
+      fparam(ii, jj) = fparam_[ii * fparam_.size() / nframes + jj];
     }
-    for (int jj = 0; jj < aparam_.size(); ++jj) {
-      aparam(ii, jj) = aparam_[ii * aparam_.size() + jj];
+    for (int jj = 0; jj < aparam_.size() / nframes; ++jj) {
+      aparam(ii, jj) = aparam_[ii * aparam_.size() / nframes + jj];
     }
   }
   if (b_pbc) {
@@ -461,10 +461,10 @@ int deepmd::session_input_tensors(
   natoms_shape.AddDim(2 + ntypes);
   TensorShape fparam_shape;
   fparam_shape.AddDim(nframes);
-  fparam_shape.AddDim(fparam_.size());
+  fparam_shape.AddDim(fparam_.size() / nframes);
   TensorShape aparam_shape;
   aparam_shape.AddDim(nframes);
-  aparam_shape.AddDim(aparam_.size());
+  aparam_shape.AddDim(aparam_.size() / nframes);
 
   tensorflow::DataType model_type;
   if (std::is_same<MODELTYPE, double>::value) {
@@ -504,11 +504,11 @@ int deepmd::session_input_tensors(
     for (int jj = 0; jj < nall; ++jj) {
       type(ii, jj) = datype[jj];
     }
-    for (int jj = 0; jj < fparam_.size(); ++jj) {
-      fparam(ii, jj) = fparam_[ii * fparam_.size() + jj];
+    for (int jj = 0; jj < fparam_.size() / nframes; ++jj) {
+      fparam(ii, jj) = fparam_[ii * fparam_.size() / nframes + jj];
     }
-    for (int jj = 0; jj < aparam_.size(); ++jj) {
-      aparam(ii, jj) = aparam_[ii * aparam_.size() + jj];
+    for (int jj = 0; jj < aparam_.size() / nframes; ++jj) {
+      aparam(ii, jj) = aparam_[ii * aparam_.size() / nframes + jj];
     }
   }
 
