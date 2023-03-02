@@ -16,9 +16,6 @@ from deepmd.utils.data import (
     DeepmdData,
 )
 
-#!/usr/bin/env python3
-
-
 log = logging.getLogger(__name__)
 
 
