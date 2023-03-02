@@ -57,13 +57,13 @@ class EnerModel(Model):
         descrpt,
         fitting,
         typeebd=None,
-        type_map: List[str] = None,
+        type_map: Optional[List[str]] = None,
         data_stat_nbatch: int = 10,
         data_stat_protect: float = 1e-2,
-        use_srtab: str = None,
-        smin_alpha: float = None,
-        sw_rmin: float = None,
-        sw_rmax: float = None,
+        use_srtab: Optional[str] = None,
+        smin_alpha: Optional[float] = None,
+        sw_rmin: Optional[float] = None,
+        sw_rmax: Optional[float] = None,
     ) -> None:
         """Constructor."""
         # descriptor

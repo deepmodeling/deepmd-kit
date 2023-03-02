@@ -3,6 +3,7 @@ import logging
 from typing import (
     Callable,
     List,
+    Optional,
 )
 
 from dargs import (
@@ -77,7 +78,7 @@ class ArgsPlugin:
         self.__plugin = Plugin()
 
     def register(
-        self, name: str, alias: List[str] = None
+        self, name: str, alias: Optional[List[str]] = None
     ) -> Callable[[], List[Argument]]:
         """Regiester a descriptor argument plugin.
 

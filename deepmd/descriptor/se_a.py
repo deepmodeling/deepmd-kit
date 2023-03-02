@@ -472,7 +472,7 @@ class DescrptSeA(DescrptSe):
             graph, "descrpt_attr%s/t_std" % suffix
         )
 
-    def enable_mixed_precision(self, mixed_prec: dict = None) -> None:
+    def enable_mixed_precision(self, mixed_prec: Optional[dict] = None) -> None:
         """Reveive the mixed precision setting.
 
         Parameters
@@ -491,7 +491,7 @@ class DescrptSeA(DescrptSe):
         box_: tf.Tensor,
         mesh: tf.Tensor,
         input_dict: dict,
-        reuse: bool = None,
+        reuse: Optional[bool] = None,
         suffix: str = "",
     ) -> tf.Tensor:
         """Build the computational graph for the descriptor.

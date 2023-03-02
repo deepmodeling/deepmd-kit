@@ -122,7 +122,7 @@ class DescrptSeAMask(DescrptSeA):
         trainable: bool = True,
         type_one_side: bool = False,
         exclude_types: List[List[int]] = [],
-        seed: int = None,
+        seed: Optional[int] = None,
         activation_function: str = "tanh",
         precision: str = "default",
         uniform_seed: bool = False,

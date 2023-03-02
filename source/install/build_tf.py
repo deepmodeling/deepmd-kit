@@ -133,9 +133,9 @@ class OnlineResource:
         self,
         filename: str,
         url: str,
-        sha256: str = None,
+        sha256: Optional[str] = None,
         executable: bool = False,
-        gzip: str = None,
+        gzip: Optional[str] = None,
     ) -> None:
         self.filename = filename
         self.url = url
