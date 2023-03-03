@@ -1,10 +1,9 @@
-#!/usr/bin/env python3
-
 import collections
 import logging
 import warnings
 from typing import (
     List,
+    Optional,
 )
 
 import numpy as np
@@ -34,7 +33,7 @@ class DeepmdDataSystem:
         rcut: float,
         set_prefix: str = "set",
         shuffle_test: bool = True,
-        type_map: List[str] = None,
+        type_map: Optional[List[str]] = None,
         optional_type_map: bool = True,
         modifier=None,
         trn_all_set=False,
@@ -276,7 +275,7 @@ class DeepmdDataSystem:
         atomic: bool = False,
         must: bool = False,
         high_prec: bool = False,
-        type_sel: List[int] = None,
+        type_sel: Optional[List[int]] = None,
         repeat: int = 1,
         default: float = 0.0,
     ):
@@ -362,7 +361,7 @@ class DeepmdDataSystem:
             prob = self._process_sys_probs(sys_probs)
         return prob
 
-    def get_batch(self, sys_idx: int = None):
+    def get_batch(self, sys_idx: Optional[int] = None):
         # batch generation style altered by Ziyao Li:
         # one should specify the "sys_prob" and "auto_prob_style" params
         # via set_sys_prob() function. The sys_probs this function uses is
@@ -392,7 +391,7 @@ class DeepmdDataSystem:
         return b_data
 
     # ! altered by Marián Rynik
-    def get_test(self, sys_idx: int = None, n_test: int = -1):  # depreciated
+    def get_test(self, sys_idx: Optional[int] = None, n_test: int = -1):  # depreciated
         """Get test data from the the data systems.
 
         Parameters

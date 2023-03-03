@@ -1,5 +1,6 @@
 from typing import (
     List,
+    Optional,
     Tuple,
 )
 
@@ -207,7 +208,7 @@ class DescrptLocFrame(Descriptor):
         box_: tf.Tensor,
         mesh: tf.Tensor,
         input_dict: dict,
-        reuse: bool = None,
+        reuse: Optional[bool] = None,
         suffix: str = "",
     ) -> tf.Tensor:
         """Build the computational graph for the descriptor.

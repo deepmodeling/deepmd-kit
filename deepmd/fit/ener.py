@@ -124,8 +124,8 @@ class EnerFitting(Fitting):
         numb_aparam: int = 0,
         rcond: float = 1e-3,
         tot_ener_zero: bool = False,
-        trainable: List[bool] = None,
-        seed: int = None,
+        trainable: Optional[List[bool]] = None,
+        seed: Optional[int] = None,
         atom_ener: List[float] = [],
         activation_function: str = "tanh",
         precision: str = "default",
@@ -432,8 +432,8 @@ class EnerFitting(Fitting):
         self,
         inputs: tf.Tensor,
         natoms: tf.Tensor,
-        input_dict: dict = None,
-        reuse: bool = None,
+        input_dict: Optional[dict] = None,
+        reuse: Optional[bool] = None,
         suffix: str = "",
     ) -> tf.Tensor:
         """Build the computational graph for fitting net.
