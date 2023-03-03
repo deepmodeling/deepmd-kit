@@ -1,6 +1,5 @@
 """Get local GPU resources."""
 
-import os
 import socket
 import subprocess as sp
 import sys

@@ -18,9 +18,6 @@ from packaging.version import (
 from deepmd.env import (
     TF_VERSION,
 )
-from deepmd.infer import (
-    DeepPot,
-)
 
 
 def _file_delete(file):

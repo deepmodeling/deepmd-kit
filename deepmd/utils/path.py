@@ -106,14 +106,14 @@ class DPPath(ABC):
 
     @abstractmethod
     def __lt__(self, other: "DPPath") -> bool:
-        """whether this DPPath is less than other for sorting"""
+        """whether this DPPath is less than other for sorting."""
 
     @abstractmethod
     def __str__(self) -> str:
-        """Represent string"""
+        """Represent string."""
 
     def __repr__(self) -> str:
-        return "%s (%s)" % (type(self), str(self))
+        return f"{type(self)} ({str(self)})"
 
     def __eq__(self, other) -> bool:
         return str(self) == str(other)
@@ -204,11 +204,11 @@ class DPOSPath(DPPath):
         return type(self)(self.path / key)
 
     def __lt__(self, other: "DPOSPath") -> bool:
-        """whether this DPPath is less than other for sorting"""
+        """whether this DPPath is less than other for sorting."""
         return self.path < other.path
 
     def __str__(self) -> str:
-        """Represent string"""
+        """Represent string."""
         return str(self.path)
 
 
@@ -292,7 +292,7 @@ class DPH5Path(DPPath):
         subpaths = [ii for ii in self._keys if ii.startswith(self.name)]
         return list(
             [
-                type(self)("%s#%s" % (self.root_path, pp))
+                type(self)(f"{self.root_path}#{pp}")
                 for pp in globfilter(subpaths, self._connect_path(pattern))
             ]
         )
@@ -315,13 +315,13 @@ class DPH5Path(DPPath):
 
     @property
     def _keys(self) -> List[str]:
-        """Walk all groups and dataset"""
+        """Walk all groups and dataset."""
         return self._file_keys(self.root)
 
     @classmethod
     @lru_cache(None)
     def _file_keys(cls, file: h5py.File) -> List[str]:
-        """Walk all groups and dataset"""
+        """Walk all groups and dataset."""
         l = []
         file.visit(lambda x: l.append("/" + x))
         return l
@@ -340,20 +340,20 @@ class DPH5Path(DPPath):
 
     def __truediv__(self, key: str) -> "DPPath":
         """Used for / operator."""
-        return type(self)("%s#%s" % (self.root_path, self._connect_path(key)))
+        return type(self)(f"{self.root_path}#{self._connect_path(key)}")
 
     def _connect_path(self, path: str) -> str:
-        """Connect self with path"""
+        """Connect self with path."""
         if self.name.endswith("/"):
-            return "%s%s" % (self.name, path)
-        return "%s/%s" % (self.name, path)
+            return f"{self.name}{path}"
+        return f"{self.name}/{path}"
 
     def __lt__(self, other: "DPH5Path") -> bool:
-        """whether this DPPath is less than other for sorting"""
+        """whether this DPPath is less than other for sorting."""
         if self.root_path == other.root_path:
             return self.name < other.name
         return self.root_path < other.root_path
 
     def __str__(self) -> str:
-        """returns path of self"""
-        return "%s#%s" % (self.root_path, self.name)
+        """returns path of self."""
+        return f"{self.root_path}#{self.name}"

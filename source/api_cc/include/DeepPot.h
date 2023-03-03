@@ -57,7 +57,6 @@ class DeepPot {
    * @param[in] aparam The atomic parameter The array can be of size :
    * nframes x natoms x dim_aparam.
    * natoms x dim_aparam. Then all frames are assumed to be provided with the
-   *same aparam. dim_aparam. Then all frames and atoms are provided with the
    *same aparam.
    **/
   template <typename VALUETYPE, typename ENERGYVTYPE>
@@ -89,7 +88,6 @@ class DeepPot {
    * @param[in] aparam The atomic parameter The array can be of size :
    * nframes x natoms x dim_aparam.
    * natoms x dim_aparam. Then all frames are assumed to be provided with the
-   *same aparam. dim_aparam. Then all frames and atoms are provided with the
    *same aparam.
    **/
   template <typename VALUETYPE, typename ENERGYVTYPE>
@@ -124,7 +122,6 @@ class DeepPot {
    * @param[in] aparam The atomic parameter The array can be of size :
    * nframes x natoms x dim_aparam.
    * natoms x dim_aparam. Then all frames are assumed to be provided with the
-   *same aparam. dim_aparam. Then all frames and atoms are provided with the
    *same aparam.
    **/
   template <typename VALUETYPE, typename ENERGYVTYPE>
@@ -161,7 +158,6 @@ class DeepPot {
    * @param[in] aparam The atomic parameter The array can be of size :
    * nframes x natoms x dim_aparam.
    * natoms x dim_aparam. Then all frames are assumed to be provided with the
-   *same aparam. dim_aparam. Then all frames and atoms are provided with the
    *same aparam.
    **/
   template <typename VALUETYPE, typename ENERGYVTYPE>
@@ -233,10 +229,34 @@ class DeepPot {
   int ntypes;
   int dfparam;
   int daparam;
+  /**
+   * @brief Validate the size of frame and atomic parameters.
+   * @param[in] nframes The number of frames.
+   * @param[in] nloc The number of local atoms.
+   * @param[in] fparam The frame parameter.
+   * @param[in] aparam The atomic parameter.
+   * @tparam VALUETYPE The type of the parameters, double or float.
+   */
   template <typename VALUETYPE>
-  void validate_fparam_aparam(const int& nloc,
+  void validate_fparam_aparam(const int& nframes,
+                              const int& nloc,
                               const std::vector<VALUETYPE>& fparam,
                               const std::vector<VALUETYPE>& aparam) const;
+  /**
+   * @brief Tile the frame or atomic parameters if there is only
+   * a single frame of frame or atomic parameters.
+   * @param[out] out_param The tiled frame or atomic parameters.
+   * @param[in] nframes The number of frames.
+   * @param[in] dparam The dimension of the frame or atomic parameters in a
+   * frame.
+   * @param[in] param The frame or atomic parameters.
+   * @tparam VALUETYPE The type of the parameters, double or float.
+   */
+  template <typename VALUETYPE>
+  void tile_fparam_aparam(std::vector<VALUETYPE>& out_param,
+                          const int& nframes,
+                          const int& dparam,
+                          const std::vector<VALUETYPE>& param) const;
   template <typename VALUETYPE, typename ENERGYVTYPE>
   void compute_inner(
       ENERGYVTYPE& ener,

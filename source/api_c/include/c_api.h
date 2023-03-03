@@ -22,6 +22,14 @@ extern DP_Nlist* DP_NewNlist(int inum_,
                              int** firstneigh_);
 
 /**
+ * @brief Check if there is any exceptions throw.
+ *
+ * @param dp The neighbor list to use.
+ * @return const char* error message.
+ */
+const char* DP_NlistCheckOK(DP_Nlist* dp);
+
+/**
  * @brief The deep potential.
  **/
 typedef struct DP_DeepPot DP_DeepPot;
@@ -447,6 +455,14 @@ double DP_DeepPotModelDeviGetCutoff(DP_DeepPotModelDevi* dp);
 int DP_DeepPotModelDeviGetNumbTypes(DP_DeepPotModelDevi* dp);
 
 /**
+ * @brief Check if there is any exceptions throw.
+ *
+ * @param dp The DP model deviation to use.
+ * @return const char* error message.
+ */
+const char* DP_DeepPotModelDeviCheckOK(DP_DeepPotModelDevi* dp);
+
+/**
  * @brief Get the type map of a DP.
  * @param[in] dp The DP to use.
  * @return The cutoff radius.
@@ -471,6 +487,14 @@ const char* DP_DeepPotGetTypeMap(DP_DeepPot* dp);
  * @brief The deep tensor.
  **/
 typedef struct DP_DeepTensor DP_DeepTensor;
+
+/**
+ * @brief Check if there is any exceptions throw.
+ *
+ * @param dp The DP to use.
+ * @return const char* error message.
+ */
+const char* DP_DeepPotCheckOK(DP_DeepPot* dp);
 
 /**
  * @brief Deep Tensor constructor with initialization.
@@ -756,6 +780,14 @@ int* DP_DeepTensorGetSelTypes(DP_DeepTensor* dt);
 int DP_DeepTensorGetNumbSelTypes(DP_DeepTensor* dt);
 
 /**
+ * @brief Check if there is any exceptions throw.
+ *
+ * @param dt The Deep Tensor to use.
+ * @return const char* error message.
+ */
+const char* DP_DeepTensorCheckOK(DP_DeepTensor* dt);
+
+/**
  * @brief The dipole charge modifier.
  **/
 typedef struct DP_DipoleChargeModifier DP_DipoleChargeModifier;
@@ -877,6 +909,14 @@ int* DP_DipoleChargeModifierGetSelTypes(DP_DipoleChargeModifier* dt);
  * @return The number of sel types
  */
 int DP_DipoleChargeModifierGetNumbSelTypes(DP_DipoleChargeModifier* dt);
+
+/**
+ * @brief Check if there is any exceptions throw.
+ *
+ * @param dcm The DipoleChargeModifier to use.
+ * @return const char* error message.
+ */
+const char* DP_DipoleChargeModifierCheckOK(DP_DipoleChargeModifier* dcm);
 
 /**
  * @brief Convert PBtxt to PB.

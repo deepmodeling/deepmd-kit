@@ -1,20 +1,15 @@
 from typing import (
     List,
     Optional,
-    Tuple,
 )
 
 import numpy as np
 
 from deepmd.common import (
     add_data_requirement,
-    get_activation_func,
-    get_precision,
 )
 from deepmd.env import (
-    GLOBAL_NP_FLOAT_PRECISION,
     GLOBAL_TF_FLOAT_PRECISION,
-    default_tf_session_config,
     op_module,
     tf,
 )
@@ -34,7 +29,7 @@ from .se_a import (
 @Descriptor.register("se_a_tpe")
 @Descriptor.register("se_a_ebd")
 class DescrptSeAEbd(DescrptSeA):
-    """DeepPot-SE descriptor with type embedding approach.
+    r"""DeepPot-SE descriptor with type embedding approach.
 
     Parameters
     ----------
@@ -50,7 +45,7 @@ class DescrptSeAEbd(DescrptSeA):
             Number of the axis neuron (number of columns of the sub-matrix of the embedding matrix)
     resnet_dt
             Time-step `dt` in the resnet construction:
-            y = x + dt * \\phi (Wx + b)
+            y = x + dt * \phi (Wx + b)
     trainable
             If the weights of embedding net are trainable.
     seed
@@ -93,9 +88,7 @@ class DescrptSeAEbd(DescrptSeA):
         precision: str = "default",
         exclude_types: List[List[int]] = [],
     ) -> None:
-        """
-        Constructor
-        """
+        """Constructor."""
         DescrptSeA.__init__(
             self,
             rcut,
@@ -129,8 +122,7 @@ class DescrptSeAEbd(DescrptSeA):
         reuse: bool = None,
         suffix: str = "",
     ) -> tf.Tensor:
-        """
-        Build the computational graph for the descriptor
+        """Build the computational graph for the descriptor.
 
         Parameters
         ----------
@@ -143,6 +135,8 @@ class DescrptSeAEbd(DescrptSeA):
             natoms[0]: number of local atoms
             natoms[1]: total number of atoms held by this processor
             natoms[i]: 2 <= i < Ntypes+2, number of type i atoms
+        box_ : tf.Tensor
+            The box of the system
         mesh
             For historical reasons, only the length of the Tensor matters.
             if size of mesh == 6, pbc is assumed.
@@ -228,9 +222,8 @@ class DescrptSeAEbd(DescrptSeA):
         seed=None,
         trainable=True,
     ):
-        """
-        inputs:  nf x na x (nei x 4)
-        outputs: nf x na x nei x output_size
+        """inputs:  nf x na x (nei x 4)
+        outputs: nf x na x nei x output_size.
         """
         # natom x (nei x 4)
         inputs = tf.reshape(inputs, [-1, self.ndescrpt])

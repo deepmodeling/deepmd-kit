@@ -540,15 +540,18 @@ std::vector<int> DeepPot::get_sel_a() const {
 
 template <typename VALUETYPE>
 void DeepPot::validate_fparam_aparam(
+    const int& nframes,
     const int& nloc,
     const std::vector<VALUETYPE>& fparam,
     const std::vector<VALUETYPE>& aparam) const {
-  if (fparam.size() != dfparam) {
+  if (fparam.size() != dfparam && fparam.size() != nframes * dfparam) {
     throw deepmd::deepmd_exception(
         "the dim of frame parameter provided is not consistent with what the "
         "model uses");
   }
-  if (aparam.size() != daparam * nloc) {
+
+  if (aparam.size() != daparam * nloc &&
+      aparam.size() != nframes * daparam * nloc) {
     throw deepmd::deepmd_exception(
         "the dim of atom parameter provided is not consistent with what the "
         "model uses");
@@ -556,14 +559,43 @@ void DeepPot::validate_fparam_aparam(
 }
 
 template void DeepPot::validate_fparam_aparam<double>(
+    const int& nframes,
     const int& nloc,
     const std::vector<double>& fparam,
     const std::vector<double>& aparam) const;
 
 template void DeepPot::validate_fparam_aparam<float>(
+    const int& nframes,
     const int& nloc,
     const std::vector<float>& fparam,
     const std::vector<float>& aparam) const;
+
+template <typename VALUETYPE>
+void DeepPot::tile_fparam_aparam(std::vector<VALUETYPE>& out_param,
+                                 const int& nframes,
+                                 const int& dparam,
+                                 const std::vector<VALUETYPE>& param) const {
+  if (param.size() == dparam) {
+    out_param.resize(nframes * dparam);
+    for (int ii = 0; ii < nframes; ++ii) {
+      std::copy(param.begin(), param.end(), out_param.begin() + ii * dparam);
+    }
+  } else if (param.size() == nframes * dparam) {
+    out_param = param;
+  }
+}
+
+template void DeepPot::tile_fparam_aparam<double>(
+    std::vector<double>& out_param,
+    const int& nframes,
+    const int& dparam,
+    const std::vector<double>& param) const;
+
+template void DeepPot::tile_fparam_aparam<float>(
+    std::vector<float>& out_param,
+    const int& nframes,
+    const int& dparam,
+    const std::vector<float>& param) const;
 
 // ENERGYVTYPE: std::vector<ENERGYTYPE> or ENERGYTYPE
 
@@ -574,14 +606,18 @@ void DeepPot::compute(ENERGYVTYPE& dener,
                       const std::vector<VALUETYPE>& dcoord_,
                       const std::vector<int>& datype_,
                       const std::vector<VALUETYPE>& dbox,
-                      const std::vector<VALUETYPE>& fparam,
-                      const std::vector<VALUETYPE>& aparam) {
+                      const std::vector<VALUETYPE>& fparam_,
+                      const std::vector<VALUETYPE>& aparam_) {
   int nall = datype_.size();
   int nframes = dcoord_.size() / nall / 3;
   int nloc = nall;
   atommap = deepmd::AtomMap(datype_.begin(), datype_.begin() + nloc);
   assert(nloc == atommap.get_type().size());
-  validate_fparam_aparam(nloc, fparam, aparam);
+  std::vector<VALUETYPE> fparam;
+  std::vector<VALUETYPE> aparam;
+  validate_fparam_aparam(nframes, nloc, fparam_, aparam_);
+  tile_fparam_aparam(fparam, nframes, dfparam, fparam_);
+  tile_fparam_aparam(aparam, nframes, nloc * daparam, aparam_);
 
   std::vector<std::pair<std::string, Tensor>> input_tensors;
 
@@ -652,8 +688,8 @@ void DeepPot::compute(ENERGYVTYPE& dener,
                       const int nghost,
                       const InputNlist& lmp_list,
                       const int& ago,
-                      const std::vector<VALUETYPE>& fparam,
-                      const std::vector<VALUETYPE>& aparam_) {
+                      const std::vector<VALUETYPE>& fparam_,
+                      const std::vector<VALUETYPE>& aparam__) {
   int nall = datype_.size();
   int nframes = dcoord_.size() / nall / 3;
   std::vector<VALUETYPE> dcoord, dforce, aparam;
@@ -668,11 +704,16 @@ void DeepPot::compute(ENERGYVTYPE& dener,
   select_map<VALUETYPE>(dcoord, dcoord_, fwd_map, 3, nframes, bkw_map.size(),
                         nall);
   select_map<int>(datype, datype_, fwd_map, 1);
+  std::vector<VALUETYPE> fparam;
+  std::vector<VALUETYPE> aparam_;
+  validate_fparam_aparam(nframes, nall - nghost, fparam_, aparam__);
+  tile_fparam_aparam(fparam, nframes, dfparam, fparam_);
+  tile_fparam_aparam(aparam_, nframes, (nall - nghost) * daparam, aparam__);
   // aparam
   if (daparam > 0) {
     aparam.resize(nframes * (bkw_map.size() - nghost_real));
     select_map<VALUETYPE>(aparam, aparam_, fwd_map, daparam, nframes,
-                          bkw_map.size() - nghost_real, nall);
+                          bkw_map.size() - nghost_real, nall - nghost);
   }
   // internal nlist
   if (ago == 0) {
@@ -754,7 +795,6 @@ void DeepPot::compute_inner(ENERGYVTYPE& dener,
   int nframes = dcoord_.size() / nall / 3;
   int nloc = nall - nghost;
 
-  validate_fparam_aparam(nloc, fparam, aparam);
   std::vector<std::pair<std::string, Tensor>> input_tensors;
 
   // agp == 0 means that the LAMMPS nbor list has been updated
@@ -838,11 +878,16 @@ void DeepPot::compute(ENERGYVTYPE& dener,
                       const std::vector<VALUETYPE>& dcoord_,
                       const std::vector<int>& datype_,
                       const std::vector<VALUETYPE>& dbox,
-                      const std::vector<VALUETYPE>& fparam,
-                      const std::vector<VALUETYPE>& aparam) {
+                      const std::vector<VALUETYPE>& fparam_,
+                      const std::vector<VALUETYPE>& aparam_) {
   int nframes = dcoord_.size() / 3 / datype_.size();
   atommap = deepmd::AtomMap(datype_.begin(), datype_.end());
-  validate_fparam_aparam(atommap.get_type().size(), fparam, aparam);
+  int nloc = datype_.size();
+  std::vector<VALUETYPE> fparam;
+  std::vector<VALUETYPE> aparam;
+  validate_fparam_aparam(nframes, nloc, fparam_, aparam_);
+  tile_fparam_aparam(fparam, nframes, dfparam, fparam_);
+  tile_fparam_aparam(aparam, nframes, nloc * daparam, aparam_);
 
   std::vector<std::pair<std::string, Tensor>> input_tensors;
 
@@ -921,12 +966,16 @@ void DeepPot::compute(ENERGYVTYPE& dener,
                       const int nghost,
                       const InputNlist& lmp_list,
                       const int& ago,
-                      const std::vector<VALUETYPE>& fparam,
-                      const std::vector<VALUETYPE>& aparam_) {
+                      const std::vector<VALUETYPE>& fparam_,
+                      const std::vector<VALUETYPE>& aparam__) {
   int nall = datype_.size();
   int nframes = dcoord_.size() / 3 / nall;
   int nloc = nall - nghost;
-  validate_fparam_aparam(nloc, fparam, aparam_);
+  std::vector<VALUETYPE> fparam;
+  std::vector<VALUETYPE> aparam_;
+  validate_fparam_aparam(nframes, nloc, fparam_, aparam__);
+  tile_fparam_aparam(fparam, nframes, dfparam, fparam_);
+  tile_fparam_aparam(aparam_, nframes, nloc * daparam, aparam__);
   std::vector<std::pair<std::string, Tensor>> input_tensors;
   // select real atoms
   std::vector<VALUETYPE> dcoord, dforce, aparam, datom_energy, datom_virial;
@@ -946,7 +995,7 @@ void DeepPot::compute(ENERGYVTYPE& dener,
   if (daparam > 0) {
     aparam.resize(nframes * nloc_real);
     select_map<VALUETYPE>(aparam, aparam_, fwd_map, daparam, nframes, nloc_real,
-                          nall);
+                          nall - nghost);
   }
   if (ago == 0) {
     atommap = deepmd::AtomMap(datype.begin(), datype.begin() + nloc_real);

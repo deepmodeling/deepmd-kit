@@ -1,13 +1,8 @@
-import fnmatch
-import os
 import shutil
-import sys
 import unittest
 from pathlib import (
     Path,
 )
-
-import numpy as np
 
 from deepmd.common import (
     GLOBAL_TF_FLOAT_PRECISION,

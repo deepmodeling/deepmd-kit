@@ -1,17 +1,12 @@
 from typing import (
-    List,
     Tuple,
 )
 
 import numpy as np
 
 from deepmd.env import (
-    GLOBAL_ENER_FLOAT_PRECISION,
-    GLOBAL_NP_FLOAT_PRECISION,
     GLOBAL_TF_FLOAT_PRECISION,
     default_tf_session_config,
-    global_cvt_2_ener_float,
-    global_cvt_2_tf_float,
     op_module,
     tf,
 )
@@ -21,13 +16,10 @@ from deepmd.utils.sess import (
 
 
 class EwaldRecp:
-    """
-    Evaluate the reciprocal part of the Ewald sum
-    """
+    """Evaluate the reciprocal part of the Ewald sum."""
 
     def __init__(self, hh, beta):
-        """
-        Constructor
+        """Constructor.
 
         Parameters
         ----------
@@ -62,8 +54,7 @@ class EwaldRecp:
     def eval(
         self, coord: np.ndarray, charge: np.ndarray, box: np.ndarray
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """
-        Evaluate
+        """Evaluate.
 
         Parameters
         ----------

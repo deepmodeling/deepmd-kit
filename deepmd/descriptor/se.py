@@ -1,5 +1,4 @@
 from typing import (
-    List,
     Tuple,
 )
 
@@ -92,8 +91,7 @@ class DescrptSe(Descriptor):
         rij: tf.Tensor,
         nlist: tf.Tensor,
     ):
-        """
-        Pass the descrpt_reshape tensor as well as descrpt_deriv tensor from the frz graph_def
+        """Pass the descrpt_reshape tensor as well as descrpt_deriv tensor from the frz graph_def.
 
         Parameters
         ----------
@@ -117,8 +115,7 @@ class DescrptSe(Descriptor):
         graph_def: tf.GraphDef,
         suffix: str = "",
     ) -> None:
-        """
-        Init the embedding net variables with the given dict
+        """Init the embedding net variables with the given dict.
 
         Parameters
         ----------

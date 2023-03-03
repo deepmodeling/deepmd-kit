@@ -1,13 +1,9 @@
 #!/usr/bin/env python3
 
-import glob
 import logging
-import os.path
-import time
 from typing import (
     List,
     Optional,
-    Tuple,
 )
 
 import numpy as np
@@ -25,8 +21,7 @@ log = logging.getLogger(__name__)
 
 
 class DeepmdData:
-    """
-    Class for a data system.
+    """Class for a data system.
 
     It loads data from hard disk, and mantains the data as a `data_dict`
 
@@ -58,31 +53,32 @@ class DeepmdData:
         modifier=None,
         trn_all_set: bool = False,
     ):
-        """
-        Constructor
-        """
+        """Constructor."""
         root = DPPath(sys_path)
         self.dirs = root.glob(set_prefix + ".*")
         self.dirs.sort()
-        self.mixed_type = self._check_mode(
-            self.dirs[0]
-        )  # mixed_type format only has one set
+        # check mix_type format
+        error_format_msg = (
+            "if one of the set is of mixed_type format, "
+            "then all of the sets in this system should be of mixed_type format!"
+        )
+        self.mixed_type = self._check_mode(self.dirs[0])
+        for set_item in self.dirs[1:]:
+            assert self._check_mode(set_item) == self.mixed_type, error_format_msg
         # load atom type
         self.atom_type = self._load_type(root)
         self.natoms = len(self.atom_type)
-        if self.mixed_type:
-            # nframes x natoms
-            self.atom_type_mix = self._load_type_mix(self.dirs[0])
         # load atom type map
         self.type_map = self._load_type_map(root)
         assert (
             optional_type_map or self.type_map is not None
-        ), "System {} must have type_map.raw in this mode! ".format(sys_path)
+        ), f"System {sys_path} must have type_map.raw in this mode! "
         if self.type_map is not None:
             assert len(self.type_map) >= max(self.atom_type) + 1
         # check pbc
         self.pbc = self._check_pbc(root)
         # enforce type_map if necessary
+        self.enforce_type_map = False
         if type_map is not None and self.type_map is not None:
             if not self.mixed_type:
                 atom_type_ = [
@@ -90,21 +86,11 @@ class DeepmdData:
                 ]
                 self.atom_type = np.array(atom_type_, dtype=np.int32)
             else:
+                self.enforce_type_map = True
                 sorter = np.argsort(type_map)
-                type_idx_map = sorter[
-                    np.searchsorted(type_map, self.type_map, sorter=sorter)
-                ]
-                try:
-                    atom_type_mix_ = np.array(type_idx_map)[self.atom_type_mix].astype(
-                        np.int32
-                    )
-                except RuntimeError as e:
-                    raise RuntimeError(
-                        "some types in 'real_atom_types.npy' of sys {} are not contained in {} types!".format(
-                            self.dirs[0], self.get_ntypes()
-                        )
-                    ) from e
-                self.atom_type_mix = atom_type_mix_
+                self.type_idx_map = np.array(
+                    sorter[np.searchsorted(type_map, self.type_map, sorter=sorter)]
+                )
             self.type_map = type_map
         if type_map is None and self.type_map is None and self.mixed_type:
             raise RuntimeError("mixed_type format must have type_map!")
@@ -144,8 +130,7 @@ class DeepmdData:
         default: float = 0.0,
         dtype: Optional[np.dtype] = None,
     ):
-        """
-        Add a data item that to be loaded
+        """Add a data item that to be loaded.
 
         Parameters
         ----------
@@ -185,8 +170,7 @@ class DeepmdData:
         return self
 
     def reduce(self, key_out: str, key_in: str):
-        """
-        Generate a new item from the reduction of another atom
+        """Generate a new item from the reduction of another atom.
 
         Parameters
         ----------
@@ -214,15 +198,11 @@ class DeepmdData:
         return self
 
     def get_data_dict(self) -> dict:
-        """
-        Get the `data_dict`
-        """
+        """Get the `data_dict`."""
         return self.data_dict
 
     def check_batch_size(self, batch_size):
-        """
-        Check if the system can get a batch of data with `batch_size` frames.
-        """
+        """Check if the system can get a batch of data with `batch_size` frames."""
         for ii in self.train_dirs:
             if self.data_dict["coord"]["high_prec"]:
                 tmpe = (
@@ -237,9 +217,7 @@ class DeepmdData:
         return None
 
     def check_test_size(self, test_size):
-        """
-        Check if the system can get a test dataset with `test_size` frames.
-        """
+        """Check if the system can get a test dataset with `test_size` frames."""
         if self.data_dict["coord"]["high_prec"]:
             tmpe = (
                 (self.test_dir / "coord.npy")
@@ -260,8 +238,7 @@ class DeepmdData:
             return None
 
     def get_batch(self, batch_size: int) -> dict:
-        """
-        Get a batch of data with `batch_size` frames. The frames are randomly picked from the data system.
+        """Get a batch of data with `batch_size` frames. The frames are randomly picked from the data system.
 
         Parameters
         ----------
@@ -287,8 +264,7 @@ class DeepmdData:
         return ret
 
     def get_test(self, ntests: int = -1) -> dict:
-        """
-        Get the test data with `ntests` frames.
+        """Get the test data with `ntests` frames.
 
         Parameters
         ----------
@@ -313,36 +289,26 @@ class DeepmdData:
         return ret
 
     def get_ntypes(self) -> int:
-        """
-        Number of atom types in the system
-        """
+        """Number of atom types in the system."""
         if self.type_map is not None:
             return len(self.type_map)
         else:
             return max(self.get_atom_type()) + 1
 
     def get_type_map(self) -> List[str]:
-        """
-        Get the type map
-        """
+        """Get the type map."""
         return self.type_map
 
     def get_atom_type(self) -> List[int]:
-        """
-        Get atom types
-        """
+        """Get atom types."""
         return self.atom_type
 
     def get_numb_set(self) -> int:
-        """
-        Get number of training sets
-        """
+        """Get number of training sets."""
         return len(self.train_dirs)
 
     def get_numb_batch(self, batch_size: int, set_idx: int) -> int:
-        """
-        Get the number of batches in a set.
-        """
+        """Get the number of batches in a set."""
         data = self._load_set(self.train_dirs[set_idx])
         ret = data["coord"].shape[0] // batch_size
         if ret == 0:
@@ -350,23 +316,18 @@ class DeepmdData:
         return ret
 
     def get_sys_numb_batch(self, batch_size: int) -> int:
-        """
-        Get the number of batches in the data system.
-        """
+        """Get the number of batches in the data system."""
         ret = 0
         for ii in range(len(self.train_dirs)):
             ret += self.get_numb_batch(batch_size, ii)
         return ret
 
     def get_natoms(self):
-        """
-        Get number of atoms
-        """
+        """Get number of atoms."""
         return len(self.atom_type)
 
     def get_natoms_vec(self, ntypes: int):
-        """
-        Get number of atoms and number of atoms in different types
+        """Get number of atoms and number of atoms in different types.
 
         Parameters
         ----------
@@ -386,9 +347,7 @@ class DeepmdData:
         return tmp.astype(np.int32)
 
     def avg(self, key):
-        """
-        Return the average value of an item.
-        """
+        """Return the average value of an item."""
         if key not in self.data_dict.keys():
             raise RuntimeError("key %s has not been added" % key)
         info = self.data_dict[key]
@@ -510,7 +469,19 @@ class DeepmdData:
                 )
 
         if self.mixed_type:
-            real_type = self.atom_type_mix.reshape([nframes, self.natoms])
+            # nframes x natoms
+            atom_type_mix = self._load_type_mix(set_name)
+            if self.enforce_type_map:
+                try:
+                    atom_type_mix_ = self.type_idx_map[atom_type_mix].astype(np.int32)
+                except IndexError as e:
+                    raise IndexError(
+                        "some types in 'real_atom_types.npy' of set {} are not contained in {} types!".format(
+                            set_name, self.get_ntypes()
+                        )
+                    ) from e
+                atom_type_mix = atom_type_mix_
+            real_type = atom_type_mix.reshape([nframes, self.natoms])
             data["type"] = real_type
             natoms = data["type"].shape[1]
             # nframes x ntypes
@@ -520,8 +491,8 @@ class DeepmdData:
             ).T
             assert (
                 atom_type_nums.sum(axis=-1) == natoms
-            ).all(), "some types in 'real_atom_types.npy' of sys {} are not contained in {} types!".format(
-                self.dirs[0], self.get_ntypes()
+            ).all(), "some types in 'real_atom_types.npy' of set {} are not contained in {} types!".format(
+                set_name, self.get_ntypes()
             )
             data["real_natoms_vec"] = np.concatenate(
                 (

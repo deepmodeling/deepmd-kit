@@ -499,9 +499,8 @@ def run_dp(cmd: str) -> int:
 
 
 # some tests still need this class
-class DataSets(object):
-    """
-    Outdated class for one data system.
+class DataSets:
+    """Outdated class for one data system.
     .. deprecated:: 2.0.0
         This class is not maintained any more.
     """
@@ -608,9 +607,7 @@ class DataSets(object):
             return np.average(eners)
 
     def load_energy(self, set_name, nframes, nvalues, energy_file, atom_energy_file):
-        """
-        return : coeff_ener, ener, coeff_atom_ener, atom_ener
-        """
+        """return : coeff_ener, ener, coeff_atom_ener, atom_ener."""
         # load atom_energy
         coeff_atom_ener, atom_ener = self.load_data(
             set_name, atom_energy_file, [nframes, nvalues], False
@@ -715,16 +712,14 @@ class DataSets(object):
         return new_data
 
     def get_test(self):
-        """
-        returned property prefector [4] in order:
-        energy, force, virial, atom_ener
+        """returned property prefector [4] in order:
+        energy, force, virial, atom_ener.
         """
         return self.get_set(self.test_set)
 
     def get_batch(self, batch_size):
-        """
-        returned property prefector [4] in order:
-        energy, force, virial, atom_ener
+        """returned property prefector [4] in order:
+        energy, force, virial, atom_ener.
         """
         set_size = self.batch_set["energy"].shape[0]
         # assert (batch_size <= set_size), "batch size should be no more than set size"
@@ -774,9 +769,8 @@ class DataSets(object):
         return self.has_aparam
 
 
-class DataSystem(object):
-    """
-    Outdated class for the data systems.
+class DataSystem:
+    """Outdated class for the data systems.
     .. deprecated:: 2.0.0
         This class is not maintained any more.
     """
@@ -869,7 +863,7 @@ class DataSystem(object):
                 for idx in range(min_len):
                     if ii[idx] != ret[idx]:
                         raise RuntimeError(
-                            "inconsistent type map: %s %s" % (str(ret), str(ii))
+                            f"inconsistent type map: {str(ret)} {str(ii)}"
                         )
                 if len(ii) > len(ret):
                     ret = ii
@@ -893,7 +887,7 @@ class DataSystem(object):
         tmp_msg += "---Summary of DataSystem-----------------------------------------\n"
         tmp_msg += "find %d system(s):\n" % self.nsystems
         tmp_msg += "%s  " % self.format_name_length("system", sys_width)
-        tmp_msg += "%s  %s  %s\n" % ("natoms", "bch_sz", "n_bch")
+        tmp_msg += "{}  {}  {}\n".format("natoms", "bch_sz", "n_bch")
         for ii in range(self.nsystems):
             tmp_msg += "%s  %6d  %6d  %5d\n" % (
                 self.format_name_length(self.system_dirs[ii], sys_width),

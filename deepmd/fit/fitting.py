@@ -1,10 +1,6 @@
 from deepmd.env import (
     tf,
 )
-from deepmd.utils import (
-    Plugin,
-    PluginVariant,
-)
 
 
 class Fitting:
@@ -19,8 +15,7 @@ class Fitting:
         graph_def: tf.GraphDef,
         suffix: str = "",
     ) -> None:
-        """
-        Init the fitting net variables with the given dict
+        """Init the fitting net variables with the given dict.
 
         Parameters
         ----------

@@ -8,11 +8,35 @@ This header-only library provides a C++ 11 interface to the DeePMD-kit C API.
 
 #include <algorithm>
 #include <cassert>
+#include <cstring>
+#include <exception>
 #include <iostream>
 #include <string>
 #include <vector>
 
 #include "c_api.h"
+
+namespace deepmd {
+namespace hpp {
+/**
+ * @brief General DeePMD-kit exception. Throw if anything doesn't work.
+ **/
+struct deepmd_exception : public std::runtime_error {
+ public:
+  deepmd_exception() : runtime_error("DeePMD-kit C API Error!"){};
+  deepmd_exception(const std::string &msg)
+      : runtime_error(std::string("DeePMD-kit C API Error: ") + msg){};
+};
+}  // namespace hpp
+}  // namespace deepmd
+
+/**
+ * @brief Check if any exceptions throw in the C++ API. Throw if possible.
+ */
+#define DP_CHECK_OK(check_func, dp)     \
+  const char *err_msg = check_func(dp); \
+  if (std::strlen(err_msg))             \
+    throw deepmd::hpp::deepmd_exception(std::string(err_msg));
 
 template <typename FPTYPE>
 inline void _DP_DeepPotCompute(DP_DeepPot *dp,
@@ -422,13 +446,17 @@ struct InputNlist {
         ilist(nullptr),
         numneigh(nullptr),
         firstneigh(nullptr),
-        nl(DP_NewNlist(0, nullptr, nullptr, nullptr)){};
+        nl(DP_NewNlist(0, nullptr, nullptr, nullptr)) {
+    DP_CHECK_OK(DP_NlistCheckOK, nl);
+  };
   InputNlist(int inum_, int *ilist_, int *numneigh_, int **firstneigh_)
       : inum(inum_),
         ilist(ilist_),
         numneigh(numneigh_),
         firstneigh(firstneigh_),
-        nl(DP_NewNlist(inum_, ilist_, numneigh_, firstneigh_)){};
+        nl(DP_NewNlist(inum_, ilist_, numneigh_, firstneigh_)) {
+    DP_CHECK_OK(DP_NlistCheckOK, nl);
+  };
   /// @brief C API neighbor list.
   DP_Nlist *nl;
   /// @brief Number of core region atoms
@@ -504,6 +532,7 @@ class DeepPot {
       return;
     }
     dp = DP_NewDeepPotWithParam(model.c_str(), gpu_rank, file_content.c_str());
+    DP_CHECK_OK(DP_DeepPotCheckOK, dp);
   };
 
   /**
@@ -542,6 +571,7 @@ class DeepPot {
     _DP_DeepPotCompute<VALUETYPE>(dp, nframes, natoms, coord_, atype_, box_,
                                   nullptr, nullptr, ener_, force_, virial_,
                                   nullptr, nullptr);
+    DP_CHECK_OK(DP_DeepPotCheckOK, dp);
   };
   /**
    * @brief Evaluate the energy, force, virial, atomic energy, and atomic virial
@@ -589,6 +619,7 @@ class DeepPot {
     _DP_DeepPotCompute<VALUETYPE>(dp, nframes, natoms, coord_, atype_, box_,
                                   nullptr, nullptr, ener_, force_, virial_,
                                   atomic_ener_, atomic_virial_);
+    DP_CHECK_OK(DP_DeepPotCheckOK, dp);
   };
 
   /**
@@ -634,6 +665,7 @@ class DeepPot {
     _DP_DeepPotComputeNList<VALUETYPE>(
         dp, nframes, natoms, coord_, atype_, box_, nghost, lmp_list.nl, ago,
         nullptr, nullptr, ener_, force_, virial_, nullptr, nullptr);
+    DP_CHECK_OK(DP_DeepPotCheckOK, dp);
   };
   /**
    * @brief Evaluate the energy, force, virial, atomic energy, and atomic virial
@@ -687,6 +719,7 @@ class DeepPot {
     _DP_DeepPotComputeNList<VALUETYPE>(
         dp, nframes, natoms, coord_, atype_, box_, nghost, lmp_list.nl, ago,
         nullptr, nullptr, ener_, force_, virial_, atomic_ener_, atomic_virial_);
+    DP_CHECK_OK(DP_DeepPotCheckOK, dp);
   };
   /**
    * @brief Get the cutoff radius.
@@ -759,6 +792,7 @@ class DeepPotModelDevi {
     for (std::string const &str : models) cstrings.push_back(str.data());
 
     dp = DP_NewDeepPotModelDevi(cstrings.data(), cstrings.size());
+    DP_CHECK_OK(DP_DeepPotModelDeviCheckOK, dp);
     numb_models = models.size();
   };
 
@@ -804,6 +838,7 @@ class DeepPotModelDevi {
     _DP_DeepPotModelDeviComputeNList<VALUETYPE>(
         dp, natoms, coord_, atype_, box_, nghost, lmp_list.nl, ago, ener_,
         force_, virial_, nullptr, nullptr);
+    DP_CHECK_OK(DP_DeepPotModelDeviCheckOK, dp);
 
     // reshape
     ener.resize(numb_models);
@@ -867,6 +902,7 @@ class DeepPotModelDevi {
     _DP_DeepPotModelDeviComputeNList<VALUETYPE>(
         dp, natoms, coord_, atype_, box_, nghost, lmp_list.nl, ago, ener_,
         force_, virial_, atomic_ener_, atomic_virial_);
+    DP_CHECK_OK(DP_DeepPotModelDeviCheckOK, dp);
 
     // reshape
     ener.resize(numb_models);
@@ -945,6 +981,7 @@ class DeepTensor {
       return;
     }
     dt = DP_NewDeepTensorWithParam(model.c_str(), gpu_rank, name_scope.c_str());
+    DP_CHECK_OK(DP_DeepTensorCheckOK, dt);
     odim = output_dim();
     nsel_types = DP_DeepTensorGetNumbSelTypes(dt);
   };
@@ -979,6 +1016,7 @@ class DeepTensor {
 
     _DP_DeepTensorComputeTensor<VALUETYPE>(dt, natoms, coord_, atype_, box_,
                                            p_tensor, p_size);
+    DP_CHECK_OK(DP_DeepTensorCheckOK, dt);
 
     tensor.resize(size);
     std::copy(tensor_, tensor_ + size, tensor.begin());
@@ -1021,6 +1059,7 @@ class DeepTensor {
     _DP_DeepTensorComputeTensorNList<VALUETYPE>(dt, natoms, coord_, atype_,
                                                 box_, nghost, lmp_list.nl,
                                                 p_tensor, p_size);
+    DP_CHECK_OK(DP_DeepTensorCheckOK, dt);
 
     tensor.resize(size);
     std::copy(tensor_, tensor_ + size, tensor.begin());
@@ -1064,6 +1103,7 @@ class DeepTensor {
     _DP_DeepTensorCompute<VALUETYPE>(dt, natoms, coord_, atype_, box_,
                                      global_tensor_, force_, virial_, nullptr,
                                      nullptr, nullptr);
+    DP_CHECK_OK(DP_DeepTensorCheckOK, dt);
   };
   /**
    * @brief Evaluate the global tensor, force, virial, atomic tensor, and atomic
@@ -1114,6 +1154,7 @@ class DeepTensor {
     _DP_DeepTensorCompute<VALUETYPE>(
         dt, natoms, coord_, atype_, box_, global_tensor_, force_, virial_,
         p_atomic_tensor, atomic_virial_, p_size_at);
+    DP_CHECK_OK(DP_DeepTensorCheckOK, dt);
 
     atom_tensor.resize(size_at);
     std::copy(atomic_tensor_, atomic_tensor_ + size_at, atom_tensor.begin());
@@ -1161,6 +1202,7 @@ class DeepTensor {
     _DP_DeepTensorComputeNList<VALUETYPE>(
         dt, natoms, coord_, atype_, box_, nghost, lmp_list.nl, global_tensor_,
         force_, virial_, nullptr, nullptr, nullptr);
+    DP_CHECK_OK(DP_DeepTensorCheckOK, dt);
   };
   /**
    * @brief Evaluate the global tensor, force, virial, atomic tensor, and atomic
@@ -1215,6 +1257,7 @@ class DeepTensor {
     _DP_DeepTensorComputeNList<VALUETYPE>(
         dt, natoms, coord_, atype_, box_, nghost, lmp_list.nl, global_tensor_,
         force_, virial_, p_atomic_tensor, atomic_virial_, p_size_at);
+    DP_CHECK_OK(DP_DeepTensorCheckOK, dt);
 
     atom_tensor.resize(size_at);
     std::copy(atomic_tensor_, atomic_tensor_ + size_at, atom_tensor.begin());
@@ -1302,6 +1345,7 @@ class DipoleChargeModifier {
     }
     dcm = DP_NewDipoleChargeModifierWithParam(model.c_str(), gpu_rank,
                                               name_scope.c_str());
+    DP_CHECK_OK(DP_DipoleChargeModifierCheckOK, dcm);
     nsel_types = DP_DipoleChargeModifierGetNumbSelTypes(dcm);
   };
   /**
@@ -1350,6 +1394,7 @@ class DipoleChargeModifier {
     _DP_DipoleChargeModifierComputeNList<VALUETYPE>(
         dcm, natoms, dcoord, datype, dbox_, dpairs, npairs, delef, nghost,
         lmp_list.nl, dfcorr, dvcorr);
+    DP_CHECK_OK(DP_DipoleChargeModifierCheckOK, dcm);
   };
   /**
    * @brief Get the cutoff radius.

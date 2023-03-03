@@ -1,4 +1,3 @@
-import os
 from typing import (
     TYPE_CHECKING,
     List,
@@ -10,10 +9,6 @@ import numpy as np
 
 from deepmd.common import (
     make_default_mesh,
-)
-from deepmd.env import (
-    default_tf_session_config,
-    tf,
 )
 from deepmd.infer.deep_eval import (
     DeepEval,
@@ -63,7 +58,7 @@ class DeepTensor(DeepEval):
         load_prefix: str = "load",
         default_tf_graph: bool = False,
     ) -> None:
-        """Constructor"""
+        """Constructor."""
         DeepEval.__init__(
             self, model_file, load_prefix=load_prefix, default_tf_graph=default_tf_graph
         )
