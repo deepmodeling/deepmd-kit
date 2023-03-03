@@ -547,6 +547,135 @@ int deepmd::session_input_tensors(
   return nloc;
 }
 
+template <typename MODELTYPE, typename VALUETYPE>
+int deepmd::session_input_tensors_mixed_type(
+    std::vector<std::pair<std::string, Tensor>>& input_tensors,
+    const int& nframes,
+    const std::vector<VALUETYPE>& dcoord_,
+    const int& ntypes,
+    const std::vector<int>& datype_,
+    const std::vector<VALUETYPE>& dbox,
+    const double& cell_size,
+    const std::vector<VALUETYPE>& fparam_,
+    const std::vector<VALUETYPE>& aparam_,
+    const deepmd::AtomMap& atommap,
+    const std::string scope) {
+  int nall = datype_.size() / nframes;
+  int nloc = nall;
+  assert(nall * 3 * nframes == dcoord_.size());
+  bool b_pbc = (dbox.size() == nframes * 9);
+
+  std::vector<int> datype(datype_);
+  atommap.forward<int>(datype.begin(), datype_.begin(), 1, nframes, nall);
+
+  TensorShape coord_shape;
+  coord_shape.AddDim(nframes);
+  coord_shape.AddDim(nall * 3);
+  TensorShape type_shape;
+  type_shape.AddDim(nframes);
+  type_shape.AddDim(nall);
+  TensorShape box_shape;
+  box_shape.AddDim(nframes);
+  box_shape.AddDim(9);
+  TensorShape mesh_shape;
+  if (b_pbc) {
+    mesh_shape.AddDim(6);
+  } else {
+    mesh_shape.AddDim(0);
+  }
+  TensorShape natoms_shape;
+  natoms_shape.AddDim(2 + ntypes);
+  TensorShape fparam_shape;
+  fparam_shape.AddDim(nframes);
+  fparam_shape.AddDim(fparam_.size() / nframes);
+  TensorShape aparam_shape;
+  aparam_shape.AddDim(nframes);
+  aparam_shape.AddDim(aparam_.size() / nframes);
+
+  tensorflow::DataType model_type;
+  if (std::is_same<MODELTYPE, double>::value) {
+    model_type = tensorflow::DT_DOUBLE;
+  } else if (std::is_same<MODELTYPE, float>::value) {
+    model_type = tensorflow::DT_FLOAT;
+  } else {
+    throw deepmd::deepmd_exception("unsupported data type");
+  }
+  Tensor coord_tensor(model_type, coord_shape);
+  Tensor box_tensor(model_type, box_shape);
+  Tensor fparam_tensor(model_type, fparam_shape);
+  Tensor aparam_tensor(model_type, aparam_shape);
+
+  Tensor type_tensor(DT_INT32, type_shape);
+  Tensor mesh_tensor(DT_INT32, mesh_shape);
+  Tensor natoms_tensor(DT_INT32, natoms_shape);
+
+  auto coord = coord_tensor.matrix<MODELTYPE>();
+  auto type = type_tensor.matrix<int>();
+  auto box = box_tensor.matrix<MODELTYPE>();
+  auto mesh = mesh_tensor.flat<int>();
+  auto natoms = natoms_tensor.flat<int>();
+  auto fparam = fparam_tensor.matrix<MODELTYPE>();
+  auto aparam = aparam_tensor.matrix<MODELTYPE>();
+
+  std::vector<VALUETYPE> dcoord(dcoord_);
+  atommap.forward<VALUETYPE>(dcoord.begin(), dcoord_.begin(), 3, nframes, nall);
+
+  for (int ii = 0; ii < nframes; ++ii) {
+    for (int jj = 0; jj < nall * 3; ++jj) {
+      coord(ii, jj) = dcoord[ii * nall * 3 + jj];
+    }
+    if (b_pbc) {
+      for (int jj = 0; jj < 9; ++jj) {
+        box(ii, jj) = dbox[ii * 9 + jj];
+      }
+    } else {
+      for (int jj = 0; jj < 9; ++jj) {
+        box(ii, jj) = 0.;
+      }
+    }
+    for (int jj = 0; jj < nall; ++jj) {
+      type(ii, jj) = datype[ii * nall + jj];
+    }
+    for (int jj = 0; jj < fparam_.size() / nframes; ++jj) {
+      fparam(ii, jj) = fparam_[ii * fparam_.size() / nframes + jj];
+    }
+    for (int jj = 0; jj < aparam_.size() / nframes; ++jj) {
+      aparam(ii, jj) = aparam_[ii * aparam_.size() / nframes + jj];
+    }
+  }
+  if (b_pbc) {
+    mesh(1 - 1) = 0;
+    mesh(2 - 1) = 0;
+    mesh(3 - 1) = 0;
+    mesh(4 - 1) = 0;
+    mesh(5 - 1) = 0;
+    mesh(6 - 1) = 0;
+  }
+  natoms(0) = nloc;
+  natoms(1) = nall;
+  natoms(2) = nall;
+  if (ntypes > 1) {
+    for (int ii = 1; ii < ntypes; ++ii) natoms(ii + 2) = 0;
+  }
+
+  std::string prefix = "";
+  if (scope != "") {
+    prefix = scope + "/";
+  }
+  input_tensors = {
+      {prefix + "t_coord", coord_tensor},   {prefix + "t_type", type_tensor},
+      {prefix + "t_box", box_tensor},       {prefix + "t_mesh", mesh_tensor},
+      {prefix + "t_natoms", natoms_tensor},
+  };
+  if (fparam_.size() > 0) {
+    input_tensors.push_back({prefix + "t_fparam", fparam_tensor});
+  }
+  if (aparam_.size() > 0) {
+    input_tensors.push_back({prefix + "t_aparam", aparam_tensor});
+  }
+  return nloc;
+}
+
 template <typename VT>
 VT deepmd::session_get_scalar(Session* session,
                               const std::string name_,
@@ -957,6 +1086,56 @@ template int deepmd::session_input_tensors<float, float>(
     const deepmd::AtomMap& atommap,
     const int nghost,
     const int ago,
+    const std::string scope);
+
+template int deepmd::session_input_tensors_mixed_type<double, double>(
+    std::vector<std::pair<std::string, tensorflow::Tensor>>& input_tensors,
+    const int& nframes,
+    const std::vector<double>& dcoord_,
+    const int& ntypes,
+    const std::vector<int>& datype_,
+    const std::vector<double>& dbox,
+    const double& cell_size,
+    const std::vector<double>& fparam_,
+    const std::vector<double>& aparam_,
+    const deepmd::AtomMap& atommap,
+    const std::string scope);
+template int deepmd::session_input_tensors_mixed_type<float, double>(
+    std::vector<std::pair<std::string, tensorflow::Tensor>>& input_tensors,
+    const int& nframes,
+    const std::vector<double>& dcoord_,
+    const int& ntypes,
+    const std::vector<int>& datype_,
+    const std::vector<double>& dbox,
+    const double& cell_size,
+    const std::vector<double>& fparam_,
+    const std::vector<double>& aparam_,
+    const deepmd::AtomMap& atommap,
+    const std::string scope);
+
+template int deepmd::session_input_tensors_mixed_type<double, float>(
+    std::vector<std::pair<std::string, tensorflow::Tensor>>& input_tensors,
+    const int& nframes,
+    const std::vector<float>& dcoord_,
+    const int& ntypes,
+    const std::vector<int>& datype_,
+    const std::vector<float>& dbox,
+    const double& cell_size,
+    const std::vector<float>& fparam_,
+    const std::vector<float>& aparam_,
+    const deepmd::AtomMap& atommap,
+    const std::string scope);
+template int deepmd::session_input_tensors_mixed_type<float, float>(
+    std::vector<std::pair<std::string, tensorflow::Tensor>>& input_tensors,
+    const int& nframes,
+    const std::vector<float>& dcoord_,
+    const int& ntypes,
+    const std::vector<int>& datype_,
+    const std::vector<float>& dbox,
+    const double& cell_size,
+    const std::vector<float>& fparam_,
+    const std::vector<float>& aparam_,
+    const deepmd::AtomMap& atommap,
     const std::string scope);
 
 void deepmd::print_summary(const std::string& pre) {

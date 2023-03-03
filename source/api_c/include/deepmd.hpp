@@ -152,6 +152,59 @@ inline void _DP_DeepPotComputeNList<float>(DP_DeepPot *dp,
 }
 
 template <typename FPTYPE>
+inline void _DP_DeepPotComputeMixedType(DP_DeepPot *dp,
+                                        const int nframes,
+                                        const int natom,
+                                        const FPTYPE *coord,
+                                        const int *atype,
+                                        const FPTYPE *cell,
+                                        const FPTYPE *fparam,
+                                        const FPTYPE *aparam,
+                                        double *energy,
+                                        FPTYPE *force,
+                                        FPTYPE *virial,
+                                        FPTYPE *atomic_energy,
+                                        FPTYPE *atomic_virial);
+
+template <>
+inline void _DP_DeepPotComputeMixedType<double>(DP_DeepPot *dp,
+                                                const int nframes,
+                                                const int natom,
+                                                const double *coord,
+                                                const int *atype,
+                                                const double *cell,
+                                                const double *fparam,
+                                                const double *aparam,
+                                                double *energy,
+                                                double *force,
+                                                double *virial,
+                                                double *atomic_energy,
+                                                double *atomic_virial) {
+  DP_DeepPotComputeMixedType(dp, nframes, natom, coord, atype, cell, fparam,
+                             aparam, energy, force, virial, atomic_energy,
+                             atomic_virial);
+}
+
+template <>
+inline void _DP_DeepPotComputeMixedType<float>(DP_DeepPot *dp,
+                                               const int nframes,
+                                               const int natom,
+                                               const float *coord,
+                                               const int *atype,
+                                               const float *cell,
+                                               const float *fparam,
+                                               const float *aparam,
+                                               double *energy,
+                                               float *force,
+                                               float *virial,
+                                               float *atomic_energy,
+                                               float *atomic_virial) {
+  DP_DeepPotComputeMixedTypef(dp, nframes, natom, coord, atype, cell, fparam,
+                              aparam, energy, force, virial, atomic_energy,
+                              atomic_virial);
+}
+
+template <typename FPTYPE>
 inline void _DP_DeepPotModelDeviComputeNList(DP_DeepPotModelDevi *dp,
                                              const int natom,
                                              const FPTYPE *coord,
@@ -719,6 +772,95 @@ class DeepPot {
     _DP_DeepPotComputeNList<VALUETYPE>(
         dp, nframes, natoms, coord_, atype_, box_, nghost, lmp_list.nl, ago,
         nullptr, nullptr, ener_, force_, virial_, atomic_ener_, atomic_virial_);
+    DP_CHECK_OK(DP_DeepPotCheckOK, dp);
+  };
+  /**
+   * @brief Evaluate the energy, force and virial by using this DP with the
+   *mixed type.
+   * @param[out] ener The system energy.
+   * @param[out] force The force on each atom.
+   * @param[out] virial The virial.
+   * @param[in] nframes The number of frames.
+   * @param[in] coord The coordinates of atoms. The array should be of size
+   *nframes x natoms x 3.
+   * @param[in] atype The atom types. The list should contain natoms ints.
+   * @param[in] box The cell of the region. The array should be of size nframes
+   *x 9 (PBC) or empty (no PBC).
+   **/
+  template <typename VALUETYPE, typename ENERGYVTYPE>
+  void compute_mixed_type(ENERGYVTYPE &ener,
+                          std::vector<VALUETYPE> &force,
+                          std::vector<VALUETYPE> &virial,
+                          const int &nframes,
+                          const std::vector<VALUETYPE> &coord,
+                          const std::vector<int> &atype,
+                          const std::vector<VALUETYPE> &box) {
+    unsigned int natoms = atype.size() / nframes;
+    assert(nframes * natoms * 3 == coord.size());
+    if (!box.empty()) {
+      assert(box.size() == nframes * 9);
+    }
+    const VALUETYPE *coord_ = &coord[0];
+    const VALUETYPE *box_ = !box.empty() ? &box[0] : nullptr;
+    const int *atype_ = &atype[0];
+    double *ener_ = _DP_Get_Energy_Pointer(ener, nframes);
+    force.resize(nframes * natoms * 3);
+    virial.resize(nframes * 9);
+    VALUETYPE *force_ = &force[0];
+    VALUETYPE *virial_ = &virial[0];
+
+    _DP_DeepPotComputeMixedType<VALUETYPE>(dp, nframes, natoms, coord_, atype_,
+                                           box_, nullptr, nullptr, ener_,
+                                           force_, virial_, nullptr, nullptr);
+    DP_CHECK_OK(DP_DeepPotCheckOK, dp);
+  };
+  /**
+   * @brief Evaluate the energy, force, virial, atomic energy, and atomic virial
+   *by using this DP with the mixed type.
+   * @param[out] ener The system energy.
+   * @param[out] force The force on each atom.
+   * @param[out] virial The virial.
+   * @param[out] atom_energy The atomic energy.
+   * @param[out] atom_virial The atomic virial.
+   * @param[in] nframes The number of frames.
+   * @param[in] coord The coordinates of atoms. The array should be of size
+   *nframes x natoms x 3.
+   * @param[in] atype The atom types. The list should contain natoms ints.
+   * @param[in] box The cell of the region. The array should be of size nframes
+   *x 9 (PBC) or empty (no PBC).
+   **/
+  template <typename VALUETYPE, typename ENERGYVTYPE>
+  void compute_mixed_type(ENERGYVTYPE &ener,
+                          std::vector<VALUETYPE> &force,
+                          std::vector<VALUETYPE> &virial,
+                          std::vector<VALUETYPE> &atom_energy,
+                          std::vector<VALUETYPE> &atom_virial,
+                          const int &nframes,
+                          const std::vector<VALUETYPE> &coord,
+                          const std::vector<int> &atype,
+                          const std::vector<VALUETYPE> &box) {
+    unsigned int natoms = atype.size() / nframes;
+    assert(nframes * natoms * 3 == coord.size());
+    if (!box.empty()) {
+      assert(box.size() == nframes * 9);
+    }
+    const VALUETYPE *coord_ = &coord[0];
+    const VALUETYPE *box_ = !box.empty() ? &box[0] : nullptr;
+    const int *atype_ = &atype[0];
+
+    double *ener_ = _DP_Get_Energy_Pointer(ener, nframes);
+    force.resize(nframes * natoms * 3);
+    virial.resize(nframes * 9);
+    atom_energy.resize(nframes * natoms);
+    atom_virial.resize(nframes * natoms * 9);
+    VALUETYPE *force_ = &force[0];
+    VALUETYPE *virial_ = &virial[0];
+    VALUETYPE *atomic_ener_ = &atom_energy[0];
+    VALUETYPE *atomic_virial_ = &atom_virial[0];
+
+    _DP_DeepPotComputeMixedType<VALUETYPE>(
+        dp, nframes, natoms, coord_, atype_, box_, nullptr, nullptr, ener_,
+        force_, virial_, atomic_ener_, atomic_virial_);
     DP_CHECK_OK(DP_DeepPotCheckOK, dp);
   };
   /**

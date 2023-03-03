@@ -175,6 +175,76 @@ class DeepPot {
                const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
                const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
   /**
+   * @brief Evaluate the energy, force, and virial with the mixed type
+   *by using this DP.
+   * @param[out] ener The system energy.
+   * @param[out] force The force on each atom.
+   * @param[out] virial The virial.
+   * @param[in] nframes The number of frames.
+   * @param[in] coord The coordinates of atoms. The array should be of size
+   *nframes x natoms x 3.
+   * @param[in] atype The atom types. The array should be of size nframes x
+   *natoms.
+   * @param[in] box The cell of the region. The array should be of size nframes
+   *x 9.
+   * @param[in] fparam The frame parameter. The array can be of size :
+   * nframes x dim_fparam.
+   * dim_fparam. Then all frames are assumed to be provided with the same
+   *fparam.
+   * @param[in] aparam The atomic parameter The array can be of size :
+   * nframes x natoms x dim_aparam.
+   * natoms x dim_aparam. Then all frames are assumed to be provided with the
+   *same aparam.
+   **/
+  template <typename VALUETYPE, typename ENERGYVTYPE>
+  void compute_mixed_type(
+      ENERGYVTYPE& ener,
+      std::vector<VALUETYPE>& force,
+      std::vector<VALUETYPE>& virial,
+      const int& nframes,
+      const std::vector<VALUETYPE>& coord,
+      const std::vector<int>& atype,
+      const std::vector<VALUETYPE>& box,
+      const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
+      const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
+  /**
+   * @brief Evaluate the energy, force, and virial with the mixed type
+   *by using this DP.
+   * @param[out] ener The system energy.
+   * @param[out] force The force on each atom.
+   * @param[out] virial The virial.
+   * @param[out] atom_energy The atomic energy.
+   * @param[out] atom_virial The atomic virial.
+   * @param[in] nframes The number of frames.
+   * @param[in] coord The coordinates of atoms. The array should be of size
+   *nframes x natoms x 3.
+   * @param[in] atype The atom types. The array should be of size nframes x
+   *natoms.
+   * @param[in] box The cell of the region. The array should be of size nframes
+   *x 9.
+   * @param[in] fparam The frame parameter. The array can be of size :
+   * nframes x dim_fparam.
+   * dim_fparam. Then all frames are assumed to be provided with the same
+   *fparam.
+   * @param[in] aparam The atomic parameter The array can be of size :
+   * nframes x natoms x dim_aparam.
+   * natoms x dim_aparam. Then all frames are assumed to be provided with the
+   *same aparam.
+   **/
+  template <typename VALUETYPE, typename ENERGYVTYPE>
+  void compute_mixed_type(
+      ENERGYVTYPE& ener,
+      std::vector<VALUETYPE>& force,
+      std::vector<VALUETYPE>& virial,
+      std::vector<VALUETYPE>& atom_energy,
+      std::vector<VALUETYPE>& atom_virial,
+      const int& nframes,
+      const std::vector<VALUETYPE>& coord,
+      const std::vector<int>& atype,
+      const std::vector<VALUETYPE>& box,
+      const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
+      const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
+  /**
    * @brief Get the cutoff radius.
    * @return The cutoff radius.
    **/
