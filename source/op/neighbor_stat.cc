@@ -180,8 +180,10 @@ class NeighborStatOp : public OpKernel {
 
 #pragma omp parallel for
     for (int ii = 0; ii < nloc; ii++) {
+      if (d_type[ii] < 0) continue;  // virtual atom
       for (int jj = 0; jj < d_nlist_r[ii].size(); jj++) {
         int type = d_type[d_nlist_r[ii][jj]];
+        if (type < 0) continue;  // virtual atom
         max_nbor_size[ii * ntypes + type] += 1;
         compute_t rij[3] = {
             d_coord3[d_nlist_r[ii][jj] * 3 + 0] - d_coord3[ii * 3 + 0],
