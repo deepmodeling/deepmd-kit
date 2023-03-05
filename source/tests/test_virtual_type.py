@@ -5,11 +5,11 @@ import unittest
 import numpy as np
 from common import (
     gen_data,
+    j_loader,
     tests_path,
 )
 
 from deepmd.common import (
-    j_loader,
     j_must_have,
 )
 from deepmd.infer import (
