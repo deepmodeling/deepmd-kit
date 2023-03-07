@@ -93,7 +93,7 @@ class TestModel(tf.test.TestCase):
             t_box,
             t_mesh,
             t_fparam,
-            suffix="se_r",
+            suffix="se_a_ebd",
             reuse=False,
         )
         energy = model_pred["energy"]
