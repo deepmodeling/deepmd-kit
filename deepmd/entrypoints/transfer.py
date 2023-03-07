@@ -71,10 +71,9 @@ def transfer(*, old_model: str, raw_model: str, output: str, **kwargs):
     dp_float_prec = os.environ.get("DP_INTERFACE_PREC", "high").lower()
     if kwargs['ascend_graph']:
         const_graph_def = modify_const_op(new_graph_def)
-        if const_graph_def != new_graph_def:
-            with tf.gfile.GFile(kwargs['ascend_graph'], mode="wb") as f:
-                f.write(const_graph_def.SerializeToString())
-            log.info("the dp test model is saved in " + kwargs['ascend_graph'])
+        with tf.gfile.GFile(kwargs['ascend_graph'], mode="wb") as f:
+            f.write(const_graph_def.SerializeToString())
+        log.info("the dp test model is saved in " + kwargs['ascend_graph'])
 
 
 def load_graph(graph_name: str) -> tf.Graph:
@@ -122,7 +121,7 @@ def modify_const_op(new_graph_def: tf.Graph) -> tf.Graph:
                 tf.int32, [shape_val[0]])))
                 log.info(f"{node.name} is passed from a placeholder to a const")
             else:
-                explanation = "natoms_val.txt file is not exist, one shold put padding natoms in it. Values are separated by SPACE." 
+                explanation = "natoms_val.txt file is not exist, one shold put padding natoms in it. Values are separated by SPACE. For example, in WATER exple one can excute 'echo 210 4000 70 140 > natoms_val.txt && dp transfer-to-ascend mix_precision -i model.pb'." 
                 log.warning(explanation)
 
     return new_graph_def
