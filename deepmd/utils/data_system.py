@@ -112,6 +112,7 @@ class DeepmdDataSystem:
         # batch size
         self.batch_size = batch_size
         is_auto_bs = False
+        self.mixed_systems = False
         if isinstance(self.batch_size, int):
             self.batch_size = self.batch_size * np.ones(self.nsystems, dtype=int)
         elif isinstance(self.batch_size, str):
@@ -121,9 +122,16 @@ class DeepmdDataSystem:
                 rule = 32
                 if len(words) == 2:
                     rule = int(words[1])
+                self.batch_size = self._make_auto_bs(rule)
+            elif "mixed" == words[0]:
+                self.mixed_systems = True
+                if len(words) == 2:
+                    rule = int(words[1])
+                else:
+                    raise RuntimeError("batch size must be specified for mixed systems")
+                self.batch_size = rule * np.ones(self.nsystems, dtype=int)
             else:
                 raise RuntimeError("unknown batch_size rule " + words[0])
-            self.batch_size = self._make_auto_bs(rule)
         elif isinstance(self.batch_size, list):
             pass
         else:
@@ -361,7 +369,7 @@ class DeepmdDataSystem:
             prob = self._process_sys_probs(sys_probs)
         return prob
 
-    def get_batch(self, sys_idx: Optional[int] = None):
+    def get_batch(self, sys_idx: Optional[int] = None) -> dict:
         # batch generation style altered by Ziyao Li:
         # one should specify the "sys_prob" and "auto_prob_style" params
         # via set_sys_prob() function. The sys_probs this function uses is
@@ -375,19 +383,88 @@ class DeepmdDataSystem:
             The index of system from which the batch is get.
             If sys_idx is not None, `sys_probs` and `auto_prob_style` are ignored
             If sys_idx is None, automatically determine the system according to `sys_probs` or `auto_prob_style`, see the following.
+            This option does not work for mixed systems.
+
+        Returns
+        -------
+        dict
+            The batch data
         """
         if not hasattr(self, "default_mesh"):
             self._make_default_mesh()
-        if sys_idx is not None:
-            self.pick_idx = sys_idx
+        if not self.mixed_systems:
+            if sys_idx is not None:
+                self.pick_idx = sys_idx
+            else:
+                # prob = self._get_sys_probs(sys_probs, auto_prob_style)
+                self.pick_idx = dp_random.choice(
+                    np.arange(self.nsystems), p=self.sys_probs
+                )
+            b_data = self.data_systems[self.pick_idx].get_batch(
+                self.batch_size[self.pick_idx]
+            )
+            b_data["natoms_vec"] = self.natoms_vec[self.pick_idx]
+            b_data["default_mesh"] = self.default_mesh[self.pick_idx]
         else:
-            # prob = self._get_sys_probs(sys_probs, auto_prob_style)
-            self.pick_idx = dp_random.choice(np.arange(self.nsystems), p=self.sys_probs)
-        b_data = self.data_systems[self.pick_idx].get_batch(
-            self.batch_size[self.pick_idx]
-        )
-        b_data["natoms_vec"] = self.natoms_vec[self.pick_idx]
-        b_data["default_mesh"] = self.default_mesh[self.pick_idx]
+            # mixed systems have a global batch size
+            batch_size = self.batch_size[0]
+            batch_data = []
+            for _ in range(batch_size):
+                self.pick_idx = dp_random.choice(
+                    np.arange(self.nsystems), p=self.sys_probs
+                )
+                bb_data = self.data_systems[self.pick_idx].get_batch(1)
+                bb_data["natoms_vec"] = self.natoms_vec[self.pick_idx]
+                bb_data["default_mesh"] = self.default_mesh[self.pick_idx]
+                batch_data.append(bb_data)
+            b_data = self._merge_batch_data(batch_data)
+        return b_data
+
+    def _merge_batch_data(self, batch_data: List[dict]) -> dict:
+        """Merge batch data from different systems.
+
+        Parameters
+        ----------
+        batch_data : list of dict
+            A list of batch data from different systems.
+
+        Returns
+        -------
+        dict
+            The merged batch data.
+        """
+        b_data = {}
+        max_natoms = max(bb["natoms_vec"][0] for bb in batch_data)
+        # natoms_vec
+        natoms_vec = np.zeros(2 + self.get_ntypes(), dtype=int)
+        natoms_vec[0:3] = max_natoms
+        b_data["natoms_vec"] = natoms_vec
+        # real_natoms_vec
+        real_natoms_vec = np.vstack([bb["natoms_vec"] for bb in batch_data])
+        b_data["real_natoms_vec"] = real_natoms_vec
+        # type
+        type_vec = np.full((len(batch_data), max_natoms), -1, dtype=int)
+        for ii, bb in enumerate(batch_data):
+            type_vec[ii, : bb["type"].shape[1]] = bb["type"][0]
+        b_data["type"] = type_vec
+        # default_mesh
+        default_mesh = np.mean([bb["default_mesh"] for bb in batch_data], axis=0)
+        b_data["default_mesh"] = default_mesh
+        # other data
+        data_dict = self.get_data_dict(0)
+        for kk, vv in data_dict.items():
+            if kk not in batch_data[0]:
+                continue
+            b_data["find_" + kk] = batch_data[0]["find_" + kk]
+            if not vv["atomic"]:
+                b_data[kk] = np.concatenate([bb[kk] for bb in batch_data], axis=0)
+            else:
+                b_data[kk] = np.zeros(
+                    (len(batch_data), max_natoms * vv["ndof"] * vv["repeat"]),
+                    dtype=batch_data[0][kk].dtype,
+                )
+                for ii, bb in enumerate(batch_data):
+                    b_data[kk][ii, : bb[kk].shape[1]] = bb[kk][0]
         return b_data
 
     # ! altered by Marián Rynik
