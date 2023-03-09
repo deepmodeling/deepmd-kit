@@ -66,6 +66,7 @@ from deepmd.utils.graph import (
 )
 from deepmd.utils.learning_rate import (
     LearningRateExp,
+    get_lr_and_coef,
 )
 from deepmd.utils.neighbor_stat import (
     NeighborStat,
@@ -271,46 +272,14 @@ class DPTrainer:
         # learning rate
         if not self.multi_task_mode:
             lr_param = j_must_have(jdata, "learning_rate")
-            scale_by_worker = lr_param.get("scale_by_worker", "linear")
-            if scale_by_worker == "linear":
-                self.scale_lr_coef = float(self.run_opt.world_size)
-            elif scale_by_worker == "sqrt":
-                self.scale_lr_coef = np.sqrt(self.run_opt.world_size).real
-            else:
-                self.scale_lr_coef = 1.0
-            lr_type = lr_param.get("type", "exp")
-            if lr_type == "exp":
-                self.lr = LearningRateExp(
-                    lr_param["start_lr"], lr_param["stop_lr"], lr_param["decay_steps"]
-                )
-            else:
-                raise RuntimeError("unknown learning_rate type " + lr_type)
+            self.lr, self.scale_lr_coef = self.get_lr_and_coef(lr_param)
         else:
             self.lr_dict = {}
             self.scale_lr_coef_dict = {}
             lr_param_dict = jdata.get("learning_rate_dict", {})
             for fitting_key in self.fitting_type_dict:
                 lr_param = lr_param_dict.get(fitting_key, {})
-                scale_by_worker = lr_param.get("scale_by_worker", "linear")
-                if scale_by_worker == "linear":
-                    self.scale_lr_coef_dict[fitting_key] = float(
-                        self.run_opt.world_size
-                    )
-                elif scale_by_worker == "sqrt":
-                    self.scale_lr_coef_dict[fitting_key] = np.sqrt(
-                        self.run_opt.world_size
-                    ).real
-                else:
-                    self.scale_lr_coef_dict[fitting_key] = 1.0
-                lr_type = lr_param.get("type", "exp")
-                if lr_type == "exp":
-                    self.lr_dict[fitting_key] = LearningRateExp(
-                        lr_param["start_lr"],
-                        lr_param["stop_lr"],
-                        lr_param["decay_steps"],
-                    )
-                else:
-                    raise RuntimeError("unknown learning_rate type " + lr_type)
+                self.lr_dict[fitting_key], self.scale_lr_coef_dict[fitting_key] = self.get_lr_and_coef(lr_param)
 
         # loss
         # infer loss type by fitting_type
@@ -597,6 +566,41 @@ class DPTrainer:
 
         log.info("built lr")
 
+    def _build_optimizer(self):
+        if not self.multi_task_mode:
+            l2_l, l2_more = self.loss.build(
+                self.learning_rate, 
+                self.place_holders["natoms_vec"], 
+                self.model_pred, 
+                self.place_holders, 
+                suffix="test"
+            )
+    
+            if self.mixed_prec is not None:
+                l2_l = tf.cast(l2_l, get_precision(self.mixed_prec["output_prec"]))
+        else:
+            l2_l, l2_more = {}, {}
+            for fitting_key in self.fitting_type_dict:
+                lr = self.learning_rate_dict[fitting_key]
+                model = self.model_pred[fitting_key]
+                loss_dict = self.loss_dict[fitting_key]
+    
+                l2_l[fitting_key], l2_more[fitting_key] = loss_dict.build(
+                    lr, 
+                    self.place_holders["natoms_vec"], 
+                    model, 
+                    self.place_holders, 
+                    suffix=fitting_key
+                )
+    
+                if self.mixed_prec is not None:
+                    l2_l[fitting_key] = tf.cast(
+                        l2_l[fitting_key], 
+                        get_precision(self.mixed_prec["output_prec"])
+                    )
+            
+        return l2_l, l2_more
+
     def _build_network(self, data, suffix=""):
         self.place_holders = {}
         if self.is_compress:
@@ -632,36 +636,7 @@ class DPTrainer:
             reuse=False,
         )
 
-        if not self.multi_task_mode:
-            self.l2_l, self.l2_more = self.loss.build(
-                self.learning_rate,
-                self.place_holders["natoms_vec"],
-                self.model_pred,
-                self.place_holders,
-                suffix="test",
-            )
-
-            if self.mixed_prec is not None:
-                self.l2_l = tf.cast(
-                    self.l2_l, get_precision(self.mixed_prec["output_prec"])
-                )
-        else:
-            self.l2_l, self.l2_more = {}, {}
-            for fitting_key in self.fitting_type_dict:
-                self.l2_l[fitting_key], self.l2_more[fitting_key] = self.loss_dict[
-                    fitting_key
-                ].build(
-                    self.learning_rate_dict[fitting_key],
-                    self.place_holders["natoms_vec"],
-                    self.model_pred[fitting_key],
-                    self.place_holders,
-                    suffix=fitting_key,
-                )
-                if self.mixed_prec is not None:
-                    self.l2_l[fitting_key] = tf.cast(
-                        self.l2_l[fitting_key],
-                        get_precision(self.mixed_prec["output_prec"]),
-                    )
+        self.l2_l, self.l2_more = self._build_optimizer()
 
         log.info("built network")
 
