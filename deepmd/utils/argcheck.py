@@ -1279,6 +1279,7 @@ def gen_json(**kwargs):
         (
             model_args(),
             learning_rate_args(),
+            learning_rate_dict_args(),
             loss_args(),
             loss_dict_args(),
             training_args(),
@@ -1292,6 +1293,7 @@ def gen_args(**kwargs):
     return [
         model_args(),
         learning_rate_args(),
+        learning_rate_dict_args(),
         loss_args(),
         loss_dict_args(),
         training_args(),
