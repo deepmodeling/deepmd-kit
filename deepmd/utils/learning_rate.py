@@ -4,6 +4,7 @@ from deepmd.env import (
     tf,
 )
 
+
 class LearningRateExp:
     r"""The exponentially decaying learning rate.
 
