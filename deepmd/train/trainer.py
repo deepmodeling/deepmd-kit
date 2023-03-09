@@ -66,7 +66,6 @@ from deepmd.utils.graph import (
 )
 from deepmd.utils.learning_rate import (
     LearningRateExp,
-    get_lr_and_coef,
 )
 from deepmd.utils.neighbor_stat import (
     NeighborStat,
@@ -269,17 +268,35 @@ class DPTrainer:
                 model_param.get("sw_rmax"),
             )
 
+
+        def get_lr_and_coef(self, lr_param):
+            scale_by_worker = lr_param.get("scale_by_worker", "linear")
+            if scale_by_worker == "linear":
+                scale_lr_coef = float(self.run_opt.world_size)
+            elif scale_by_worker == "sqrt":
+                scale_lr_coef = np.sqrt(self.run_opt.world_size).real
+            else:
+                scale_lr_coef = 1.0
+            lr_type = lr_param.get("type", "exp")
+            if lr_type == "exp":
+                lr = LearningRateExp(
+                    lr_param["start_lr"], lr_param["stop_lr"], lr_param["decay_steps"]
+                )
+            else:
+                raise RuntimeError("unknown learning_rate type " + lr_type)
+            return lr, scale_lr_coef
+        
         # learning rate
         if not self.multi_task_mode:
             lr_param = j_must_have(jdata, "learning_rate")
-            self.lr, self.scale_lr_coef = self.get_lr_and_coef(lr_param)
+            self.lr, self.scale_lr_coef = get_lr_and_coef(lr_param)
         else:
             self.lr_dict = {}
             self.scale_lr_coef_dict = {}
             lr_param_dict = jdata.get("learning_rate_dict", {})
             for fitting_key in self.fitting_type_dict:
                 lr_param = lr_param_dict.get(fitting_key, {})
-                self.lr_dict[fitting_key], self.scale_lr_coef_dict[fitting_key] = self.get_lr_and_coef(lr_param)
+                self.lr_dict[fitting_key], self.scale_lr_coef_dict[fitting_key] = get_lr_and_coef(lr_param)
 
         # loss
         # infer loss type by fitting_type
