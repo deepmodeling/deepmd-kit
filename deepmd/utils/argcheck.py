@@ -1360,10 +1360,8 @@ def normalize_multi_task(data):
             else {}
         )
         if multi_learning_rate:
-            data["learning_rate_dict"] = (
-                normalize_learning_rate_dict(
-                    data["model"]["fitting_net_dict"].keys(), data["learning_rate_dict"]
-                )
+            data["learning_rate_dict"] = normalize_learning_rate_dict(
+                data["model"]["fitting_net_dict"].keys(), data["learning_rate_dict"]
             )
         elif single_learning_rate:
             data["learning_rate_dict"] = (
@@ -1448,6 +1446,7 @@ def normalize_learning_rate_dict(fitting_keys, learning_rate_dict):
         new_dict[item] = data
     return new_dict
 
+
 def normalize_learning_rate_dict_with_single_learning_rate(fitting_keys, learning_rate):
     new_dict = {}
     base = Argument("base", dict, [], [learning_rate_variant_type_args()], doc="")
@@ -1456,6 +1455,7 @@ def normalize_learning_rate_dict_with_single_learning_rate(fitting_keys, learnin
     for fitting_key in fitting_keys:
         new_dict[fitting_key] = data
     return new_dict
+
 
 def normalize_fitting_weight(fitting_keys, data_keys, fitting_weight=None):
     # check the mapping
