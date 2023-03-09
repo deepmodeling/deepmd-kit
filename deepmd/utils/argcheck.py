@@ -1344,9 +1344,6 @@ def normalize_multi_task(data):
             not single_loss
         ), "In multi-task mode, please use 'model/loss_dict' in stead of 'model/loss'! "
         assert (
-            not single_learning_rate
-        ), "In multi-task mode, please use 'model/leaning_rate_dict' in stead of 'model/learning_rate'! "
-        assert (
             "type_map" in data["model"]
         ), "In multi-task mode, 'model/type_map' must be defined! "
         data["model"]["fitting_net_dict"] = normalize_fitting_net_dict(
@@ -1362,13 +1359,18 @@ def normalize_multi_task(data):
             if multi_loss
             else {}
         )
-        data["learning_rate_dict"] = (
-            normalize_learning_rate_dict(
-                data["model"]["fitting_net_dict"].keys(), data["learning_rate_dict"]
+        if multi_learning_rate:
+            data["learning_rate_dict"] = (
+                normalize_learning_rate_dict(
+                    data["model"]["fitting_net_dict"].keys(), data["learning_rate_dict"]
+                )
             )
-            if multi_learning_rate
-            else {}
-        )
+        elif single_learning_rate:
+            data["learning_rate_dict"] = (
+                normalize_learning_rate_dict(
+                    data["model"]["fitting_net_dict"].keys(), data["learning_rate"]
+                )
+            )
         fitting_weight = (
             data["training"]["fitting_weight"] if multi_fitting_weight else None
         )
@@ -1446,6 +1448,14 @@ def normalize_learning_rate_dict(fitting_keys, learning_rate_dict):
         new_dict[item] = data
     return new_dict
 
+def normalize_learning_rate_dict_with_single_learning_rate(fitting_keys, learning_rate):
+    new_dict = {}
+    base = Argument("base", dict, [], [learning_rate_variant_type_args()], doc="")
+    data = base.normalize_value(learning_rate, trim_pattern="_*")
+    base.check_value(data, strict=True)
+    for fitting_key in fitting_keys:
+        new_dict[fitting_key] = data
+    return new_dict
 
 def normalize_fitting_weight(fitting_keys, data_keys, fitting_weight=None):
     # check the mapping
