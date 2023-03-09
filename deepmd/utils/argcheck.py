@@ -1367,7 +1367,7 @@ def normalize_multi_task(data):
             )
         elif single_learning_rate:
             data["learning_rate_dict"] = (
-                normalize_learning_rate_dict(
+                normalize_learning_rate_dict_with_single_learning_rate(
                     data["model"]["fitting_net_dict"].keys(), data["learning_rate"]
                 )
             )
