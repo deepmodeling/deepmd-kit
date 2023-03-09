@@ -1366,10 +1366,10 @@ def normalize_multi_task(data):
                 data["model"]["fitting_net_dict"].keys(), data["learning_rate_dict"]
             )
         elif single_learning_rate:
-            data["learning_rate_dict"] = (
-                normalize_learning_rate_dict_with_single_learning_rate(
-                    data["model"]["fitting_net_dict"].keys(), data["learning_rate"]
-                )
+            data[
+                "learning_rate_dict"
+            ] = normalize_learning_rate_dict_with_single_learning_rate(
+                data["model"]["fitting_net_dict"].keys(), data["learning_rate"]
             )
         fitting_weight = (
             data["training"]["fitting_weight"] if multi_fitting_weight else None
