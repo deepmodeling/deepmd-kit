@@ -730,7 +730,7 @@ class DescrptSeAtten(DescrptSeA):
                     index_of_two_side = tmpres1 + tmpres2
                     two_embd = tf.nn.embedding_lookup(embedding_of_two_side_type_embedding, index_of_two_side)
 
-                    xyz_scatter = xyz_scatter + two_embd
+                    xyz_scatter = xyz_scatter * two_embd + two_embd
 
                 if (not self.uniform_seed) and (self.seed is not None): self.seed += self.seed_shift
             input_r = tf.slice(tf.reshape(inputs_i, (-1, shape_i[1] // 4, 4)), [0, 0, 1], [-1, -1, 3])
