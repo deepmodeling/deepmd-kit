@@ -268,8 +268,8 @@ class DPTrainer:
                 model_param.get("sw_rmax"),
             )
 
-
         def get_lr_and_coef(lr_param):
+
             scale_by_worker = lr_param.get("scale_by_worker", "linear")
             if scale_by_worker == "linear":
                 scale_lr_coef = float(self.run_opt.world_size)
@@ -285,7 +285,7 @@ class DPTrainer:
             else:
                 raise RuntimeError("unknown learning_rate type " + lr_type)
             return lr, scale_lr_coef
-        
+
         # learning rate
         if not self.multi_task_mode:
             lr_param = j_must_have(jdata, "learning_rate")
@@ -296,7 +296,10 @@ class DPTrainer:
             lr_param_dict = jdata.get("learning_rate_dict", {})
             for fitting_key in self.fitting_type_dict:
                 lr_param = lr_param_dict.get(fitting_key, {})
-                self.lr_dict[fitting_key], self.scale_lr_coef_dict[fitting_key] = get_lr_and_coef(lr_param)
+                (
+                    self.lr_dict[fitting_key],
+                    self.scale_lr_coef_dict[fitting_key],
+                ) = get_lr_and_coef(lr_param)
 
         # loss
         # infer loss type by fitting_type
@@ -586,13 +589,13 @@ class DPTrainer:
     def _build_optimizer(self):
         if not self.multi_task_mode:
             l2_l, l2_more = self.loss.build(
-                self.learning_rate, 
-                self.place_holders["natoms_vec"], 
-                self.model_pred, 
-                self.place_holders, 
-                suffix="test"
+                self.learning_rate,
+                self.place_holders["natoms_vec"],
+                self.model_pred,
+                self.place_holders,
+                suffix="test",
             )
-    
+
             if self.mixed_prec is not None:
                 l2_l = tf.cast(l2_l, get_precision(self.mixed_prec["output_prec"]))
         else:
@@ -601,21 +604,20 @@ class DPTrainer:
                 lr = self.learning_rate_dict[fitting_key]
                 model = self.model_pred[fitting_key]
                 loss_dict = self.loss_dict[fitting_key]
-    
+
                 l2_l[fitting_key], l2_more[fitting_key] = loss_dict.build(
-                    lr, 
-                    self.place_holders["natoms_vec"], 
-                    model, 
-                    self.place_holders, 
-                    suffix=fitting_key
+                    lr,
+                    self.place_holders["natoms_vec"],
+                    model,
+                    self.place_holders,
+                    suffix=fitting_key,
                 )
-    
+
                 if self.mixed_prec is not None:
                     l2_l[fitting_key] = tf.cast(
-                        l2_l[fitting_key], 
-                        get_precision(self.mixed_prec["output_prec"])
+                        l2_l[fitting_key], get_precision(self.mixed_prec["output_prec"])
                     )
-            
+
         return l2_l, l2_more
 
     def _build_network(self, data, suffix=""):
