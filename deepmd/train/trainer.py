@@ -269,7 +269,6 @@ class DPTrainer:
             )
 
         def get_lr_and_coef(lr_param):
-
             scale_by_worker = lr_param.get("scale_by_worker", "linear")
             if scale_by_worker == "linear":
                 scale_lr_coef = float(self.run_opt.world_size)

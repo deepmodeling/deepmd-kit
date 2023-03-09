@@ -143,7 +143,7 @@ def replace_model_params_with_frz_multi_model(
 
     # Change other multi-task configurations
     log.info("Change the training configurations according to the pretrained one...")
-    for config_key in ["loss_dict", "training/data_dict"]:
+    for config_key in ["loss_dict", "learning_rate_dict", "training/data_dict"]:
         cur_jdata = jdata
         target_jdata = pretrained_jdata
         for sub_key in config_key.split("/"):
