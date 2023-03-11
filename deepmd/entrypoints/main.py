@@ -3,26 +3,38 @@
 import argparse
 import logging
 import textwrap
-from pathlib import Path
-from typing import Dict, List, Optional
+from pathlib import (
+    Path,
+)
+from typing import (
+    List,
+    Optional,
+)
 
-from deepmd import __version__
-from deepmd.common import clear_session
+from deepmd import (
+    __version__,
+)
+from deepmd.common import (
+    clear_session,
+)
 from deepmd.entrypoints import (
     compress,
     config,
+    convert,
     doc_train_input,
     freeze,
+    make_model_devi,
+    neighbor_stat,
     test,
     train_dp,
     transfer,
-    make_model_devi,
-    convert,
-    neighbor_stat,
 )
-from deepmd.loggers import set_log_handles
-
-from deepmd.nvnmd.entrypoints.train import train_nvnmd
+from deepmd.loggers import (
+    set_log_handles,
+)
+from deepmd.nvnmd.entrypoints.train import (
+    train_nvnmd,
+)
 
 __all__ = ["main", "parse_args", "get_ll", "main_parser"]
 
@@ -46,6 +58,7 @@ def get_ll(log_level: str) -> int:
         int_level = getattr(logging, log_level)
 
     return int_level
+
 
 class RawTextArgumentDefaultsHelpFormatter(
     argparse.RawTextHelpFormatter, argparse.ArgumentDefaultsHelpFormatter
@@ -147,12 +160,14 @@ def main_parser() -> argparse.ArgumentParser:
         parents=[parser_log, parser_mpi_log],
         help="train a model",
         formatter_class=RawTextArgumentDefaultsHelpFormatter,
-        epilog=textwrap.dedent("""\
+        epilog=textwrap.dedent(
+            """\
         examples:
             dp train input.json
             dp train input.json --restart model.ckpt
             dp train input.json --init-model model.ckpt
-        """),
+        """
+        ),
     )
     parser_train.add_argument(
         "INPUT", help="the input parameter file in json or yaml format"
@@ -205,11 +220,13 @@ def main_parser() -> argparse.ArgumentParser:
         parents=[parser_log],
         help="freeze the model",
         formatter_class=RawTextArgumentDefaultsHelpFormatter,
-        epilog=textwrap.dedent("""\
+        epilog=textwrap.dedent(
+            """\
         examples:
             dp freeze
             dp freeze -o graph.pb
-        """),
+        """
+        ),
     )
     parser_frz.add_argument(
         "-c",
@@ -252,10 +269,12 @@ def main_parser() -> argparse.ArgumentParser:
         parents=[parser_log],
         help="test the model",
         formatter_class=RawTextArgumentDefaultsHelpFormatter,
-        epilog=textwrap.dedent("""\
+        epilog=textwrap.dedent(
+            """\
         examples:
             dp test -m graph.pb -s /path/to/system -n 30
-        """),
+        """
+        ),
     )
     parser_tst.add_argument(
         "-m",
@@ -319,11 +338,13 @@ def main_parser() -> argparse.ArgumentParser:
         parents=[parser_log, parser_mpi_log],
         help="compress a model",
         formatter_class=RawTextArgumentDefaultsHelpFormatter,
-        epilog=textwrap.dedent("""\
+        epilog=textwrap.dedent(
+            """\
         examples:
             dp compress
             dp compress -i graph.pb -o compressed.pb
-        """),
+        """
+        ),
     )
     parser_compress.add_argument(
         "-i",
@@ -344,13 +365,13 @@ def main_parser() -> argparse.ArgumentParser:
         "--step",
         default=0.01,
         type=float,
-        help="Model compression uses fifth-order polynomials to interpolate the embedding-net. " 
+        help="Model compression uses fifth-order polynomials to interpolate the embedding-net. "
         "It introduces two tables with different step size to store the parameters of the polynomials. "
         "The first table covers the range of the training data, while the second table is an extrapolation of the training data. "
         "The domain of each table is uniformly divided by a given step size. "
         "And the step(parameter) denotes the step size of the first table and the second table will "
         "use 10 * step as it's step size to save the memory. "
-        "Usually the value ranges from 0.1 to 0.001. " 
+        "Usually the value ranges from 0.1 to 0.001. "
         "Smaller step means higher accuracy and bigger model size",
     )
     parser_compress.add_argument(
@@ -393,10 +414,7 @@ def main_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parsers_doc.add_argument(
-        "--out-type", 
-        default="rst", 
-        type=str, 
-        help="The output type"
+        "--out-type", default="rst", type=str, help="The output type"
     )
 
     # * make model deviation ***********************************************************
@@ -405,10 +423,12 @@ def main_parser() -> argparse.ArgumentParser:
         parents=[parser_log],
         help="calculate model deviation",
         formatter_class=RawTextArgumentDefaultsHelpFormatter,
-        epilog=textwrap.dedent("""\
+        epilog=textwrap.dedent(
+            """\
         examples:
             dp model-devi -m graph.000.pb graph.001.pb graph.002.pb graph.003.pb -s ./data -o model_devi.out
-        """),
+        """
+        ),
     )
     parser_model_devi.add_argument(
         "-m",
@@ -430,61 +450,69 @@ def main_parser() -> argparse.ArgumentParser:
     )
     parser_model_devi.add_argument(
         "-o",
-        "--output", 
-        default="model_devi.out", 
-        type=str, 
-        help="The output file for results of model deviation"
+        "--output",
+        default="model_devi.out",
+        type=str,
+        help="The output file for results of model deviation",
     )
     parser_model_devi.add_argument(
         "-f",
         "--frequency",
         default=1,
         type=int,
-        help="The trajectory frequency of the system"
+        help="The trajectory frequency of the system",
     )
 
     # * convert models
     parser_transform = subparsers.add_parser(
-        'convert-from',
+        "convert-from",
         parents=[parser_log],
-        help='convert lower model version to supported version',
+        help="convert lower model version to supported version",
         formatter_class=RawTextArgumentDefaultsHelpFormatter,
-        epilog=textwrap.dedent("""\
+        epilog=textwrap.dedent(
+            """\
         examples:
+            dp convert-from -i graph.pb -o graph_new.pb
+            dp convert-from auto -i graph.pb -o graph_new.pb
             dp convert-from 1.0 -i graph.pb -o graph_new.pb
-        """),
+        """
+        ),
     )
     parser_transform.add_argument(
-        'FROM',
-        type = str,
-        choices = ['0.12', '1.0', '1.1', '1.2', '1.3', '2.0', 'pbtxt'],
+        "FROM",
+        nargs="?",
+        default="auto",
+        type=str,
+        choices=["auto", "0.12", "1.0", "1.1", "1.2", "1.3", "2.0", "pbtxt"],
         help="The original model compatibility",
     )
     parser_transform.add_argument(
-        '-i',
+        "-i",
         "--input-model",
-        default = "frozen_model.pb",
-        type=str, 
-		help = "the input model",
+        default="frozen_model.pb",
+        type=str,
+        help="the input model",
     )
     parser_transform.add_argument(
         "-o",
         "--output-model",
-        default = "convert_out.pb",
-        type=str, 
-		help='the output model',
+        default="convert_out.pb",
+        type=str,
+        help="the output model",
     )
 
     # neighbor_stat
     parser_neighbor_stat = subparsers.add_parser(
-        'neighbor-stat',
+        "neighbor-stat",
         parents=[parser_log],
-        help='Calculate neighbor statistics',
+        help="Calculate neighbor statistics",
         formatter_class=RawTextArgumentDefaultsHelpFormatter,
-        epilog=textwrap.dedent("""\
+        epilog=textwrap.dedent(
+            """\
         examples:
             dp neighbor-stat -s data -r 6.0 -t O H
-        """),
+        """
+        ),
     )
     parser_neighbor_stat.add_argument(
         "-s",
@@ -504,7 +532,7 @@ def main_parser() -> argparse.ArgumentParser:
         "-t",
         "--type-map",
         type=str,
-        nargs='+',
+        nargs="+",
         required=True,
         help="type map",
     )
@@ -516,7 +544,9 @@ def main_parser() -> argparse.ArgumentParser:
     )
 
     # --version
-    parser.add_argument('--version', action='version', version='DeePMD-kit v%s' % __version__)
+    parser.add_argument(
+        "--version", action="version", version="DeePMD-kit v%s" % __version__
+    )
 
     # * train nvnmd script ******************************************************************
     parser_train_nvnmd = subparsers.add_parser(
@@ -529,12 +559,19 @@ def main_parser() -> argparse.ArgumentParser:
         "INPUT", help="the input parameter file in json format"
     )
     parser_train_nvnmd.add_argument(
+        "-r",
+        "--restart",
+        type=str,
+        default=None,
+        help="Restart the training from the provided checkpoint.",
+    )
+    parser_train_nvnmd.add_argument(
         "-s",
         "--step",
         default="s1",
         type=str,
-        choices=['s1', 's2'],
-        help="steps to train model of NVNMD: s1 (train CNN), s2 (train QNN)"
+        choices=["s1", "s2"],
+        help="steps to train model of NVNMD: s1 (train CNN), s2 (train QNN)",
     )
     return parser
 
@@ -544,7 +581,7 @@ def parse_args(args: Optional[List[str]] = None) -> argparse.Namespace:
 
     Parameters
     ----------
-    args: List[str]
+    args : List[str]
         list of command line arguments, main purpose is testing default option None
         takes arguments from sys.argv
 
@@ -568,7 +605,7 @@ def main(args: Optional[List[str]] = None):
 
     Parameters
     ----------
-    args: List[str], optional
+    args : List[str], optional
         list of command line arguments, used to avoid calling from the subprocess,
         as it is quite slow to import tensorflow
 

@@ -7,11 +7,8 @@
 
 using namespace std;
 
-class Gaussian 
-{
-public:
-  void set_seed (unsigned long seed);
-  void gen (double * vec, const int numb_gen);
+class Gaussian {
+ public:
+  void set_seed(unsigned long seed);
+  void gen(double* vec, const int numb_gen);
 };
-
-

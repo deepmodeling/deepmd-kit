@@ -1,18 +1,42 @@
 """Test trained DeePMD model."""
 import logging
-from pathlib import Path
-from typing import TYPE_CHECKING, List, Dict, Optional, Tuple
+from pathlib import (
+    Path,
+)
+from typing import (
+    TYPE_CHECKING,
+    Dict,
+    List,
+    Optional,
+    Tuple,
+)
 
 import numpy as np
-from deepmd import DeepPotential
-from deepmd.common import expand_sys_str
+
+from deepmd import (
+    DeepPotential,
+)
+from deepmd.common import (
+    expand_sys_str,
+)
 from deepmd.utils import random as dp_random
-from deepmd.utils.data import DeepmdData
-from deepmd.utils.weight_avg import weighted_average
+from deepmd.utils.data import (
+    DeepmdData,
+)
+from deepmd.utils.weight_avg import (
+    weighted_average,
+)
 
 if TYPE_CHECKING:
-    from deepmd.infer import DeepDipole, DeepPolar, DeepPot, DeepWFC
-    from deepmd.infer.deep_tensor import DeepTensor
+    from deepmd.infer import (
+        DeepDipole,
+        DeepPolar,
+        DeepPot,
+        DeepWFC,
+    )
+    from deepmd.infer.deep_tensor import (
+        DeepTensor,
+    )
 
 __all__ = ["test"]
 
@@ -54,6 +78,8 @@ def test(
         file where test details will be output
     atomic : bool
         whether per atom quantities should be computed
+    **kwargs
+        additional arguments
 
     Raises
     ------
@@ -61,7 +87,7 @@ def test(
         if no valid system was found
     """
     if datafile is not None:
-        datalist = open(datafile, 'r')
+        datalist = open(datafile)
         all_sys = datalist.read().splitlines()
         datalist.close()
     else:
@@ -74,7 +100,7 @@ def test(
 
     # init random seed
     if rand_seed is not None:
-        dp_random.seed(rand_seed % (2 ** 32))
+        dp_random.seed(rand_seed % (2**32))
 
     # init model
     dp = DeepPotential(model)
@@ -101,9 +127,13 @@ def test(
             err = test_dipole(dp, data, numb_test, detail_file, atomic)
         elif dp.model_type == "polar":
             err = test_polar(dp, data, numb_test, detail_file, atomic=atomic)
-        elif dp.model_type == "global_polar":   # should not appear in this new version
-            log.warning("Global polar model is not currently supported. Please directly use the polar mode and change loss parameters.")
-            err = test_polar(dp, data, numb_test, detail_file, atomic=False)    # YWolfeee: downward compatibility
+        elif dp.model_type == "global_polar":  # should not appear in this new version
+            log.warning(
+                "Global polar model is not currently supported. Please directly use the polar mode and change loss parameters."
+            )
+            err = test_polar(
+                dp, data, numb_test, detail_file, atomic=False
+            )  # YWolfeee: downward compatibility
         log.info("# ----------------------------------------------- ")
         err_coll.append(err)
 
@@ -128,18 +158,34 @@ def test(
         log.info("# ----------------------------------------------- ")
 
 
-def rmse(diff: np.ndarray) -> np.ndarray:
-    """Calculate average root mean square error.
+def mae(diff: np.ndarray) -> float:
+    """Calcalte mean absulote error.
 
     Parameters
     ----------
-    diff: np.ndarray
+    diff : np.ndarray
         difference
 
     Returns
     -------
-    np.ndarray
-        array with normalized difference
+    float
+        mean absulote error
+    """
+    return np.mean(np.abs(diff))
+
+
+def rmse(diff: np.ndarray) -> float:
+    """Calculate root mean square error.
+
+    Parameters
+    ----------
+    diff : np.ndarray
+        difference
+
+    Returns
+    -------
+    float
+        root mean square error
     """
     return np.sqrt(np.average(diff * diff))
 
@@ -180,7 +226,7 @@ def test_ener(
     ----------
     dp : DeepPot
         instance of deep potential
-    data: DeepmdData
+    data : DeepmdData
         data container object
     system : str
         system directory
@@ -247,7 +293,7 @@ def test_ener(
         aparam=aparam,
         atomic=has_atom_ener,
         efield=efield,
-        mixed_type=mixed_type
+        mixed_type=mixed_type,
     )
     energy = ret[0]
     force = ret[1]
@@ -261,25 +307,38 @@ def test_ener(
         ae = ae.reshape([numb_test, -1])
         av = av.reshape([numb_test, -1])
 
-    rmse_e = rmse(energy - test_data["energy"][:numb_test].reshape([-1, 1]))
-    rmse_f = rmse(force - test_data["force"][:numb_test])
-    rmse_v = rmse(virial - test_data["virial"][:numb_test])
+    diff_e = energy - test_data["energy"][:numb_test].reshape([-1, 1])
+    mae_e = mae(diff_e)
+    rmse_e = rmse(diff_e)
+    diff_f = force - test_data["force"][:numb_test]
+    mae_f = mae(diff_f)
+    rmse_f = rmse(diff_f)
+    diff_v = virial - test_data["virial"][:numb_test]
+    mae_v = mae(diff_v)
+    rmse_v = rmse(diff_v)
+    mae_ea = mae_e / natoms
     rmse_ea = rmse_e / natoms
+    mae_va = mae_v / natoms
     rmse_va = rmse_v / natoms
     if has_atom_ener:
-        rmse_ae = rmse(
-            test_data["atom_ener"][:numb_test].reshape([-1]) - ae.reshape([-1])
-        )
+        diff_ae = test_data["atom_ener"][:numb_test].reshape([-1]) - ae.reshape([-1])
+        mae_ae = mae(diff_ae)
+        rmse_ae = rmse(diff_ae)
 
-    # print ("# energies: %s" % energy)
     log.info(f"# number of test data : {numb_test:d} ")
+    log.info(f"Energy MAE         : {mae_e:e} eV")
     log.info(f"Energy RMSE        : {rmse_e:e} eV")
+    log.info(f"Energy MAE/Natoms  : {mae_ea:e} eV")
     log.info(f"Energy RMSE/Natoms : {rmse_ea:e} eV")
+    log.info(f"Force  MAE         : {mae_f:e} eV/A")
     log.info(f"Force  RMSE        : {rmse_f:e} eV/A")
     if data.pbc:
+        log.info(f"Virial MAE         : {mae_v:e} eV")
         log.info(f"Virial RMSE        : {rmse_v:e} eV")
+        log.info(f"Virial MAE/Natoms  : {mae_va:e} eV")
         log.info(f"Virial RMSE/Natoms : {rmse_va:e} eV")
     if has_atom_ener:
+        log.info(f"Atomic ener MAE    : {mae_ae:e} eV")
         log.info(f"Atomic ener RMSE   : {rmse_ae:e} eV")
 
     if detail_file is not None:
@@ -302,7 +361,7 @@ def test_ener(
         save_txt_file(
             detail_path.with_suffix(".e_peratom.out"),
             pe_atom,
-            header = "%s: data_e pred_e" % system,
+            header="%s: data_e pred_e" % system,
             append=append_detail,
         )
         pf = np.concatenate(
@@ -341,15 +400,22 @@ def test_ener(
             "data_vyz data_vzx data_vzy data_vzz pred_vxx pred_vxy pred_vxz pred_vyx "
             "pred_vyy pred_vyz pred_vzx pred_vzy pred_vzz",
             append=append_detail,
-        )        
+        )
     return {
-        "rmse_ea" : (rmse_ea, energy.size),
-        "rmse_f" : (rmse_f, force.size),
-        "rmse_va" : (rmse_va, virial.size),
+        "mae_e": (mae_e, energy.size),
+        "mae_ea": (mae_ea, energy.size),
+        "mae_f": (mae_f, force.size),
+        "mae_v": (mae_v, virial.size),
+        "mae_va": (mae_va, virial.size),
+        "rmse_e": (rmse_e, energy.size),
+        "rmse_ea": (rmse_ea, energy.size),
+        "rmse_f": (rmse_f, force.size),
+        "rmse_v": (rmse_v, virial.size),
+        "rmse_va": (rmse_va, virial.size),
     }
 
 
-def print_ener_sys_avg(avg: Dict[str,float]):
+def print_ener_sys_avg(avg: Dict[str, float]):
     """Print errors summary for energy type potential.
 
     Parameters
@@ -357,8 +423,15 @@ def print_ener_sys_avg(avg: Dict[str,float]):
     avg : np.ndarray
         array with summaries
     """
+    log.info(f"Energy MAE         : {avg['mae_e']:e} eV")
+    log.info(f"Energy RMSE        : {avg['rmse_e']:e} eV")
+    log.info(f"Energy MAE/Natoms  : {avg['mae_ea']:e} eV")
     log.info(f"Energy RMSE/Natoms : {avg['rmse_ea']:e} eV")
+    log.info(f"Force  MAE         : {avg['mae_f']:e} eV/A")
     log.info(f"Force  RMSE        : {avg['rmse_f']:e} eV/A")
+    log.info(f"Virial MAE         : {avg['mae_v']:e} eV")
+    log.info(f"Virial RMSE        : {avg['rmse_v']:e} eV")
+    log.info(f"Virial MAE/Natoms  : {avg['mae_va']:e} eV")
     log.info(f"Virial RMSE/Natoms : {avg['rmse_va']:e} eV")
 
 
@@ -402,7 +475,7 @@ def test_wfc(
     ----------
     dp : DeepPot
         instance of deep potential
-    data: DeepmdData
+    data : DeepmdData
         data container object
     numb_test : int
         munber of tests to do
@@ -438,9 +511,7 @@ def test_wfc(
             pe,
             header="ref_wfc(12 dofs)   predicted_wfc(12 dofs)",
         )
-    return {
-        'rmse' : (rmse_f, wfc.size)
-    }
+    return {"rmse": (rmse_f, wfc.size)}
 
 
 def print_wfc_sys_avg(avg):
@@ -468,13 +539,13 @@ def test_polar(
     ----------
     dp : DeepPot
         instance of deep potential
-    data: DeepmdData
+    data : DeepmdData
         data container object
     numb_test : int
         munber of tests to do
     detail_file : Optional[str]
         file where test details will be output
-    global_polar : bool
+    atomic : bool
         wheter to use glovbal version of polar potential
 
     Returns
@@ -490,7 +561,7 @@ def test_polar(
         high_prec=False,
         type_sel=dp.get_sel_type(),
     )
-    
+
     test_data = data.get_test()
     polar, numb_test, atype = run_test(dp, test_data, numb_test)
 
@@ -501,19 +572,19 @@ def test_polar(
 
     # YWolfeee: do summation in global polar mode
     if not atomic:
-        polar = np.sum(polar.reshape((polar.shape[0],-1,9)),axis=1)    
+        polar = np.sum(polar.reshape((polar.shape[0], -1, 9)), axis=1)
         rmse_f = rmse(polar - test_data["polarizability"][:numb_test])
         rmse_fs = rmse_f / np.sqrt(sel_natoms)
         rmse_fa = rmse_f / sel_natoms
     else:
         rmse_f = rmse(polar - test_data["atomic_polarizability"][:numb_test])
-    
+
     log.info(f"# number of test data : {numb_test:d} ")
     log.info(f"Polarizability  RMSE       : {rmse_f:e}")
     if not atomic:
         log.info(f"Polarizability  RMSE/sqrtN : {rmse_fs:e}")
         log.info(f"Polarizability  RMSE/N     : {rmse_fa:e}")
-    log.info(f"The unit of error is the same as the unit of provided label.")
+    log.info("The unit of error is the same as the unit of provided label.")
 
     if detail_file is not None:
         detail_path = Path(detail_file)
@@ -532,9 +603,7 @@ def test_polar(
             "data_pzy data_pzz pred_pxx pred_pxy pred_pxz pred_pyx pred_pyy pred_pyz "
             "pred_pzx pred_pzy pred_pzz",
         )
-    return {
-        "rmse" : (rmse_f, polar.size)
-    }
+    return {"rmse": (rmse_f, polar.size)}
 
 
 def print_polar_sys_avg(avg):
@@ -561,7 +630,7 @@ def test_dipole(
     ----------
     dp : DeepPot
         instance of deep potential
-    data: DeepmdData
+    data : DeepmdData
         data container object
     numb_test : int
         munber of tests to do
@@ -577,11 +646,11 @@ def test_dipole(
     """
     data.add(
         "dipole" if not atomic else "atomic_dipole",
-        3, 
-        atomic=atomic, 
-        must=True, 
-        high_prec=False, 
-        type_sel=dp.get_sel_type()
+        3,
+        atomic=atomic,
+        must=True,
+        high_prec=False,
+        type_sel=dp.get_sel_type(),
     )
     test_data = data.get_test()
     dipole, numb_test, atype = run_test(dp, test_data, numb_test)
@@ -590,22 +659,22 @@ def test_dipole(
     sel_natoms = 0
     for ii in sel_type:
         sel_natoms += sum(atype == ii)
-    
+
     # do summation in atom dimension
     if not atomic:
-        dipole = np.sum(dipole.reshape((dipole.shape[0], -1, 3)),axis=1)
+        dipole = np.sum(dipole.reshape((dipole.shape[0], -1, 3)), axis=1)
         rmse_f = rmse(dipole - test_data["dipole"][:numb_test])
         rmse_fs = rmse_f / np.sqrt(sel_natoms)
         rmse_fa = rmse_f / sel_natoms
     else:
         rmse_f = rmse(dipole - test_data["atomic_dipole"][:numb_test])
-    
+
     log.info(f"# number of test data : {numb_test:d}")
     log.info(f"Dipole  RMSE       : {rmse_f:e}")
     if not atomic:
         log.info(f"Dipole  RMSE/sqrtN : {rmse_fs:e}")
         log.info(f"Dipole  RMSE/N     : {rmse_fa:e}")
-    log.info(f"The unit of error is the same as the unit of provided label.")
+    log.info("The unit of error is the same as the unit of provided label.")
 
     if detail_file is not None:
         detail_path = Path(detail_file)
@@ -622,9 +691,7 @@ def test_dipole(
             pe,
             header="data_x data_y data_z pred_x pred_y pred_z",
         )
-    return {
-        'rmse' : (rmse_f, dipole.size)
-    }
+    return {"rmse": (rmse_f, dipole.size)}
 
 
 def print_dipole_sys_avg(avg):

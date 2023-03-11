@@ -1,9 +1,10 @@
-#include "fix_ttm.h"
 #include <vector>
+
+#include "fix_ttm.h"
 
 namespace LAMMPS_NS {
 class FixTTMDP : public FixTTM {
-public:
+ public:
   std::vector<int> get_nodes() const {
     std::vector<int> tmp(3);
     tmp[0] = nxgrid;
@@ -13,4 +14,4 @@ public:
   };
   double ***const get_T_electron() const { return T_electron; };
 };
-} // namespace LAMMPS_NS
+}  // namespace LAMMPS_NS
