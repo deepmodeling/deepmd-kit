@@ -126,6 +126,8 @@ ACTIVATION_FN_DICT = {
     "tanh": tf.nn.tanh,
     "gelu": gelu,
     "gelu_tf": gelu_tf,
+    "None": None,
+    "none": None,
 }
 
 
@@ -306,7 +308,7 @@ def get_activation_func(
     RuntimeError
         if unknown activation function is specified
     """
-    if activation_fn is None or activation_fn in ["none", "None"]:
+    if activation_fn is None:
         return None
     if activation_fn not in ACTIVATION_FN_DICT:
         raise RuntimeError(f"{activation_fn} is not a valid activation function")
