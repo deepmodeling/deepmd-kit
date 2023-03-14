@@ -1,9 +1,8 @@
 set -e
 
 SCRIPT_PATH=$(dirname $(realpath -s $0))
-if [ -z "$INSTALL_PREFIX" ]
-then
-  INSTALL_PREFIX=$(realpath -s ${SCRIPT_PATH}/../../dp)
+if [ -z "$INSTALL_PREFIX" ]; then
+	INSTALL_PREFIX=$(realpath -s ${SCRIPT_PATH}/../../dp)
 fi
 mkdir -p ${INSTALL_PREFIX}
 echo "Installing LAMMPS to ${INSTALL_PREFIX}"
@@ -15,9 +14,8 @@ BUILD_TMP_DIR=${SCRIPT_PATH}/../build_lammps
 mkdir -p ${BUILD_TMP_DIR}
 cd ${BUILD_TMP_DIR}
 # download LAMMMPS
-LAMMPS_VERSION=stable_23Jun2022_update2
-if [ ! -d "lammps-${LAMMPS_VERSION}" ]
-then
+LAMMPS_VERSION=stable_23Jun2022_update3
+if [ ! -d "lammps-${LAMMPS_VERSION}" ]; then
 	curl -L -o lammps.tar.gz https://github.com/lammps/lammps/archive/refs/tags/${LAMMPS_VERSION}.tar.gz
 	tar vxzf lammps.tar.gz
 fi
@@ -33,4 +31,3 @@ make install-python
 
 #------------------
 echo "Congratulations! LAMMPS has been installed at ${INSTALL_PREFIX}"
-

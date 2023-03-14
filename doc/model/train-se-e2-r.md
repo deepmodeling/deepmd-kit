@@ -1,6 +1,6 @@
 # Descriptor `"se_e2_r"`
 
-The notation of `se_e2_r` is short for the Deep Potential Smooth Edition (DeepPot-SE) constructed from the radial information of atomic configurations. The `e2` stands for the embedding with two-atom information. 
+The notation of `se_e2_r` is short for the Deep Potential Smooth Edition (DeepPot-SE) constructed from the radial information of atomic configurations. The `e2` stands for the embedding with two-atom information.
 
 A complete training input script of this example can be found in the directory
 ```bash

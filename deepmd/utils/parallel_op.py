@@ -1,12 +1,23 @@
-from typing import Optional, Callable, Generator, Tuple, Dict, Any
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Generator,
+    Optional,
+    Tuple,
+)
 
-from deepmd.env import tf
-from deepmd.utils.sess import run_sess
+from deepmd.env import (
+    tf,
+)
+from deepmd.utils.sess import (
+    run_sess,
+)
 
 
 class ParallelOp:
     """Run an op with data parallelism.
-    
+
     Parameters
     ----------
     builder : Callable[..., Tuple[Dict[str, tf.Tensor], Tuple[tf.Tensor]]]
@@ -15,7 +26,7 @@ class ParallelOp:
         the number of threads
     config : tf.ConfigProto, optional
         tf.ConfigProto
-    
+
     Examples
     --------
     >>> from deepmd.env import tf
@@ -32,14 +43,20 @@ class ParallelOp:
     >>> print(*p.generate(tf.Session(), feed()))
     [1] [2] [3] [4] [5] [6] [7] [8] [9] [10]
     """
-    def __init__(self, builder: Callable[..., Tuple[Dict[str, tf.Tensor], Tuple[tf.Tensor]]], nthreads: Optional[int] = None, config: Optional[tf.ConfigProto] = None) -> None:
+
+    def __init__(
+        self,
+        builder: Callable[..., Tuple[Dict[str, tf.Tensor], Tuple[tf.Tensor]]],
+        nthreads: Optional[int] = None,
+        config: Optional[tf.ConfigProto] = None,
+    ) -> None:
         if nthreads is not None:
             self.nthreads = nthreads
         elif config is not None:
             self.nthreads = max(config.inter_op_parallelism_threads, 1)
         else:
             self.nthreads = 1
-        
+
         self.placeholders = []
         self.ops = []
         for ii in range(self.nthreads):
@@ -48,14 +65,18 @@ class ParallelOp:
                 self.placeholders.append(placeholder)
                 self.ops.append(op)
 
-    def generate(self, sess: tf.Session, feed: Generator[Dict[str, Any], None, None]) -> Generator[Tuple, None, None]:
+    def generate(
+        self, sess: tf.Session, feed: Generator[Dict[str, Any], None, None]
+    ) -> Generator[Tuple, None, None]:
         """Returns a generator.
 
         Parameters
         ----------
+        sess : tf.Session
+            TensorFlow session
         feed : Generator[dict, None, None]
             generator which yields feed_dict
-        
+
         Yields
         ------
         Generator[Tuple, None, None]
@@ -73,8 +94,6 @@ class ParallelOp:
                     nn = ii
                     break
                 for kk, vv in fd.items():
-                    feed_dict[self.placeholders[ii][kk]] = vv  
-            ops = self.ops[:nn]       
-            for yy in run_sess(sess, ops, feed_dict=feed_dict):
-                yield yy
-        
+                    feed_dict[self.placeholders[ii][kk]] = vv
+            ops = self.ops[:nn]
+            yield from run_sess(sess, ops, feed_dict=feed_dict)

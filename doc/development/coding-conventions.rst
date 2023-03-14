@@ -42,7 +42,7 @@ Conventions`_ and `Typing Conventions`_ PEPs, clarified and extended as follows:
   lines).
 
 * Maximum line length is 88 characters as recommended by
-  `black <https://github.com/psf/black>`_ which is less strict than 
+  `black <https://github.com/psf/black>`_ which is less strict than
   `Docstring Conventions`_ suggests.
 
 * Use "StudlyCaps" for class names.
@@ -63,8 +63,8 @@ Conventions`_ and `Typing Conventions`_ PEPs, clarified and extended as follows:
 
 * Use ``"double quotes"`` for string literals, and ``"""triple double
   quotes"""`` for docstring's. Single quotes are OK for
-  something like 
-  
+  something like
+
   .. code-block:: python
 
      f"something {'this' if x else 'that'}"
@@ -72,7 +72,7 @@ Conventions`_ and `Typing Conventions`_ PEPs, clarified and extended as follows:
 * Use f-strings ``s = f"{x:.2f}"`` instead of old style formating with ``"%f" % x``.
   string format method ``"{x:.2f}".format()`` may be used sparsely where it is more
   convenient than f-strings.
-  
+
 Whitespace
 ==========
 
@@ -87,7 +87,7 @@ Python is not C/C++ so whitespace  should be used sparingly to maintain code rea
 
 * You should have blank spaces after commas, colons, and semi-colons if it isn’t
   trailing next to the end of a bracket, brace, or parentheses.
-  
+
 * With any operators you should use space on both sides of the operator.
 
 * Colons for slicing are considered a binary operator, and should not have any spaces
@@ -118,7 +118,7 @@ General advice
 
 * Get rid of as many ``break`` and ``continue`` statements as possible.
 
-* Write short functions. 
+* Write short functions.
   All functions should fit within a standard screen.
 
 * Use descriptive variable names.

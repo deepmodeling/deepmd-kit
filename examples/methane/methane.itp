@@ -17,10 +17,10 @@
 
 [ bonds ]
 ; i  j  func  b0  kb
- 1  2     5        
- 1  3     5        
- 1  4     5        
- 1  5     5        
+ 1  2     5
+ 1  3     5
+ 1  4     5
+ 1  5     5
 
 [ exclusions ]
 ; ai  aj1  aj2  aj3  aj4

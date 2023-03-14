@@ -16,7 +16,7 @@ DeePMD-kit is a package written in Python/C++, designed to minimize the effort r
 .. toctree::
    :maxdepth: 3
    :caption: Getting Started
-   
+
    getting-started/index
 
 .. _advanced:
@@ -44,7 +44,7 @@ DeePMD-kit is a package written in Python/C++, designed to minimize the effort r
 .. toctree::
    :maxdepth: 2
    :caption: Tutorial
-   :glob:  
+   :glob:
 
    Tutorials <https://tutorials.deepmodeling.com/>
    Publications <https://deepmodeling.com/blog/papers/deepmd-kit/>
@@ -72,11 +72,12 @@ DeePMD-kit is a package written in Python/C++, designed to minimize the effort r
 
    license
    credits
+   logo
 
 
 * :ref:`genindex`
 * :ref:`modindex`
 * :ref:`search`
 
-.. _feedback: 
-.. _affiliated packages: 
+.. _feedback:
+.. _affiliated packages:

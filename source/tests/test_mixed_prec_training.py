@@ -1,36 +1,50 @@
-import os,json
-import numpy as np
-import unittest
+import json
+import os
 import subprocess as sp
-from packaging.version import Version
+import unittest
 
-from deepmd.infer import DeepPot
+import numpy as np
+
 # from deepmd.entrypoints.compress import compress
-from common import j_loader, tests_path, run_dp
-from deepmd.env import TF_VERSION
+from common import (
+    j_loader,
+    run_dp,
+    tests_path,
+)
+from packaging.version import (
+    Version,
+)
+
+from deepmd.env import (
+    TF_VERSION,
+)
 
 
-def _file_delete(file) :
+def _file_delete(file):
     if os.path.isdir(file):
         os.rmdir(file)
     elif os.path.isfile(file):
         os.remove(file)
 
+
 def _subprocess_run(command):
     popen = sp.Popen(command.split(), shell=False, stdout=sp.PIPE, stderr=sp.STDOUT)
-    for line in iter(popen.stdout.readline, b''):
-        if hasattr(line, 'decode'):
-            line = line.decode('utf-8')
+    for line in iter(popen.stdout.readline, b""):
+        if hasattr(line, "decode"):
+            line = line.decode("utf-8")
         line = line.rstrip()
         print(line)
     popen.wait()
     return popen.returncode
 
+
 class TestMixedPrecTraining(unittest.TestCase):
     def setUp(self):
-        data_file  = str(tests_path / os.path.join("model_compression", "data"))
+        data_file = str(tests_path / os.path.join("model_compression", "data"))
         self.INPUT = str(tests_path / "input.json")
-        jdata = j_loader(str(tests_path / os.path.join("model_compression", "input.json")))
+        jdata = j_loader(
+            str(tests_path / os.path.join("model_compression", "input.json"))
+        )
         jdata["training"]["training_data"]["systems"] = data_file
         jdata["training"]["validation_data"]["systems"] = data_file
         jdata["training"]["mixed_precision"] = {}
@@ -41,10 +55,10 @@ class TestMixedPrecTraining(unittest.TestCase):
 
     def test_training(self):
         _TF_VERSION = Version(TF_VERSION)
-        # check the TF_VERSION, when TF < 1.12, mixed precision is not allowed 
-        if _TF_VERSION >= Version('1.14.0'):
+        # check the TF_VERSION, when TF < 1.12, mixed precision is not allowed
+        if _TF_VERSION >= Version("1.14.0"):
             ret = run_dp("dp train " + self.INPUT)
-            np.testing.assert_equal(ret, 0, 'DP train failed!')
+            np.testing.assert_equal(ret, 0, "DP train failed!")
 
     def tearDown(self):
         _file_delete(self.INPUT)
