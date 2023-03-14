@@ -48,7 +48,7 @@ jobs:
           CIBW_ARCHS: all
           CIBW_BUILD: cp${{ matrix.python }}-${{ matrix.platform_id }}
           DP_VARIANT: ${{ matrix.dp_variant }}
-      - uses: actions/upload-artifact@v2
+      - uses: actions/upload-artifact@v3
         with:
           path: ./wheelhouse/*.whl
   build_sdist:
