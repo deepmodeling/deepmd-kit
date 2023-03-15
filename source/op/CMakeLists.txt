@@ -56,6 +56,9 @@ add_library(${LIB_DEEPMD_OP} MODULE ${OP_SRC} ${OP_REMAPPER_SRC})
 # link: libdeepmd libtensorflow_cc libtensorflow_framework
 target_link_libraries(${LIB_DEEPMD_OP} PRIVATE TensorFlow::tensorflow_framework)
 target_link_libraries(${LIB_DEEPMD_OP} PRIVATE ${LIB_DEEPMD})
+if(Protobuf_LIBRARY)
+  target_link_libraries(${LIB_DEEPMD_OP} PRIVATE ${Protobuf_LIBRARY})
+endif()
 if(APPLE)
   set_target_properties(
     ${LIB_DEEPMD_OP} PROPERTIES INSTALL_RPATH
