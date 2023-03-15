@@ -205,7 +205,9 @@ REMOVE_SUFFIX_DICT = {
     "o_wfc_{}": "o_wfc",
 }
 
-TYPE_CHANGE_PATTERN = r"type_embed_net/matrix_1|"  # only the first layer need to be modified
+TYPE_CHANGE_PATTERN = (
+    r"type_embed_net/matrix_1|"  # only the first layer need to be modified
+)
 
 
 def set_env_if_empty(key: str, value: str, verbose: bool = True):
