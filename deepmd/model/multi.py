@@ -473,6 +473,7 @@ class MultiModel(Model):
         graph: tf.Graph,
         graph_def: tf.GraphDef,
         model_type: str = "original_model",
+        extract_frz_map: list = None,
         suffix: str = "",
     ) -> None:
         """Init the embedding net variables with the given frozen model.
@@ -485,6 +486,8 @@ class MultiModel(Model):
             The input frozen model graph_def
         model_type : str
             the type of the model
+        extract_frz_map : list
+            the index of type to extract from graph
         suffix : str
             suffix to name scope
         """
