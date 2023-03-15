@@ -32,6 +32,7 @@ def _file_delete(file):
 
 
 def _init_models():
+    data_file = str(tests_path / os.path.join("change_map", "data"))
     frozen_model = str(tests_path / "change_map_origin.pb")
     ckpt = str(tests_path / "change_map.ckpt")
 
@@ -39,6 +40,8 @@ def _init_models():
     jdata = j_loader(str(tests_path / os.path.join("change_map", "input.json")))
 
     jdata["training"]["save_ckpt"] = ckpt
+    jdata["training"]["training_data"]["systems"] = data_file
+    jdata["training"]["validation_data"]["systems"] = data_file
 
     with open(INPUT, "w") as fp:
         json.dump(jdata, fp, indent=4)
