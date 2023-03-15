@@ -50,7 +50,7 @@ def _init_models():
     ret = run_dp("dp freeze -c " + str(tests_path) + " -o " + frozen_model)
     np.testing.assert_equal(ret, 0, "DP freeze failed!")
 
-    return INPUT, ckpt, frozen_model
+    return INPUT, ckpt, frozen_model, data_file
 
 
 if not parse_version(tf.__version__) < parse_version("1.15"):
@@ -58,6 +58,7 @@ if not parse_version(tf.__version__) < parse_version("1.15"):
         INPUT,
         CKPT,
         FROZEN_MODEL,
+        DATA,
     ) = _init_models()
 
 
@@ -71,7 +72,7 @@ class TestDeepPotChangeMap(unittest.TestCase):
         cls.type_map = ["A", "O", "B", "H", "C"]
         cls.slim_type_map = ["O", "H"]
         cls.dp = DeepPot(FROZEN_MODEL)
-        cls.slim_dp = DeepPot(cls.dp.change_map(cls.slim_type_map))
+        cls.slim_dp = DeepPot(cls.dp.change_map(cls.slim_type_map, data_sys=DATA))
 
     def setUp(self):
         self.coords = np.array(
