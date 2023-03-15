@@ -667,6 +667,7 @@ class EnerFitting(Fitting):
         self,
         graph: tf.Graph,
         graph_def: tf.GraphDef,
+        extract_frz_map: list = None,
         suffix: str = "",
     ) -> None:
         """Init the fitting net variables with the given dict.
@@ -677,6 +678,8 @@ class EnerFitting(Fitting):
             The input frozen model graph
         graph_def : tf.GraphDef
             The input frozen model graph_def
+        extract_frz_map : list
+            the index of type to extract from graph
         suffix : str
             suffix to name scope
         """
@@ -707,6 +710,8 @@ class EnerFitting(Fitting):
             self.bias_atom_e = get_tensor_by_name_from_graph(
                 graph, "fitting_attr%s/t_bias_atom_e" % suffix
             )
+            if extract_frz_map is not None:
+                self.bias_atom_e = self.bias_atom_e[extract_frz_map]
         except GraphWithoutTensorError:
             # for compatibility, old models has no t_bias_atom_e
             pass

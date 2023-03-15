@@ -96,6 +96,7 @@ __all__ = [
     "EMBEDDING_NET_PATTERN",
     "TYPE_EMBEDDING_PATTERN",
     "ATTENTION_LAYER_PATTERN",
+    "TYPE_CHANGE_PATTERN",
     "REMOVE_SUFFIX_DICT",
     "TF_VERSION",
 ]
@@ -203,6 +204,10 @@ REMOVE_SUFFIX_DICT = {
     "o_dm_av_{}": "o_dm_av",
     "o_wfc_{}": "o_wfc",
 }
+
+TYPE_CHANGE_PATTERN = str(
+    r"type_embed_net/matrix_1|"
+)  # only the first layer need to be modified
 
 
 def set_env_if_empty(key: str, value: str, verbose: bool = True):

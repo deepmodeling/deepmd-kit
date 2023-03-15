@@ -937,6 +937,7 @@ class DescrptSeAtten(DescrptSeA):
         self,
         graph: tf.Graph,
         graph_def: tf.GraphDef,
+        extract_frz_map: list = None,
         suffix: str = "",
     ) -> None:
         """Init the embedding net variables with the given dict.
@@ -947,10 +948,12 @@ class DescrptSeAtten(DescrptSeA):
             The input frozen model graph
         graph_def : tf.GraphDef
             The input frozen model graph_def
+        extract_frz_map : list
+            the index of type to extract from graph
         suffix : str, optional
             The suffix of the scope
         """
-        super().init_variables(graph=graph, graph_def=graph_def, suffix=suffix)
+        super().init_variables(graph=graph, graph_def=graph_def, extract_frz_map=extract_frz_map, suffix=suffix)
         self.attention_layer_variables = get_attention_layer_variables_from_graph_def(
             graph_def, suffix=suffix
         )

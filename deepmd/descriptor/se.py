@@ -113,6 +113,7 @@ class DescrptSe(Descriptor):
         self,
         graph: tf.Graph,
         graph_def: tf.GraphDef,
+        extract_frz_map: list = None,
         suffix: str = "",
     ) -> None:
         """Init the embedding net variables with the given dict.
@@ -123,6 +124,8 @@ class DescrptSe(Descriptor):
             The input frozen model graph
         graph_def : tf.GraphDef
             The input frozen model graph_def
+        extract_frz_map : list
+            the index of type to extract from graph
         suffix : str, optional
             The suffix of the scope
         """
@@ -135,6 +138,9 @@ class DescrptSe(Descriptor):
         self.dstd = get_tensor_by_name_from_graph(
             graph, "descrpt_attr%s/t_std" % suffix
         )
+        if extract_frz_map is not None:
+            self.davg = self.davg[extract_frz_map]
+            self.dstd = self.dstd[extract_frz_map]
 
     @property
     def precision(self) -> tf.DType:

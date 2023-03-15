@@ -304,6 +304,7 @@ class EnerModel(Model):
         graph: tf.Graph,
         graph_def: tf.GraphDef,
         model_type: str = "original_model",
+        extract_frz_map: list = None,
         suffix: str = "",
     ) -> None:
         """Init the embedding net variables with the given frozen model.
@@ -316,14 +317,16 @@ class EnerModel(Model):
             The input frozen model graph_def
         model_type : str
             the type of the model
+        extract_frz_map : list
+            the index of type to extract from graph
         suffix : str
             suffix to name scope
         """
         # self.frz_model will control the self.model to import the descriptor from the given frozen model instead of building from scratch...
         # initialize fitting net with the given compressed frozen model
         if model_type == "original_model":
-            self.descrpt.init_variables(graph, graph_def, suffix=suffix)
-            self.fitting.init_variables(graph, graph_def, suffix=suffix)
+            self.descrpt.init_variables(graph, graph_def, extract_frz_map=extract_frz_map, suffix=suffix)
+            self.fitting.init_variables(graph, graph_def, extract_frz_map=extract_frz_map, suffix=suffix)
             tf.constant("original_model", name="model_type", dtype=tf.string)
         elif model_type == "compressed_model":
             self.fitting.init_variables(graph, graph_def, suffix=suffix)

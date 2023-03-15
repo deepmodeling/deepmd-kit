@@ -59,6 +59,7 @@ from deepmd.utils.errors import (
 )
 from deepmd.utils.graph import (
     get_tensor_by_name_from_graph,
+    get_pattern_nodes_from_graph_def,
     load_graph_def,
 )
 from deepmd.utils.learning_rate import (
@@ -419,7 +420,7 @@ class DPTrainer:
         self.ckpt_meta = None
         self.model_type = None
 
-    def build(self, data=None, stop_batch=0, origin_type_map=None, suffix=""):
+    def build(self, data=None, stop_batch=0, origin_type_map=None, extract_frz_map=None, suffix=""):
         self.ntypes = self.model.get_ntypes()
         self.stop_batch = stop_batch
 
@@ -502,7 +503,7 @@ class DPTrainer:
 
             # config the init_frz_model command
             if self.run_opt.init_mode == "init_from_frz_model":
-                self._init_from_frz_model()
+                self._init_from_frz_model(extract_frz_map)
             elif self.run_opt.init_mode == "init_model":
                 self._init_from_ckpt(self.run_opt.init_model)
             elif self.run_opt.init_mode == "restart":
@@ -1145,7 +1146,7 @@ class DPTrainer:
                 tf.float32, name="t_find_" + kk
             )
 
-    def _init_from_frz_model(self):
+    def _init_from_frz_model(self, extract_frz_map=None):
         try:
             graph, graph_def = load_graph_def(self.run_opt.init_frz_model)
         except FileNotFoundError as e:
@@ -1171,7 +1172,21 @@ class DPTrainer:
             self.model_type = bytes.decode(t_model_type)
         if self.model_type == "compressed_model":
             self.frz_model = self.run_opt.init_frz_model
-        self.model.init_variables(graph, graph_def, model_type=self.model_type)
+        if extract_frz_map is not None:
+            from deepmd.env import (
+                TYPE_CHANGE_PATTERN,
+                TYPE_EMBEDDING_PATTERN
+            )
+            tensor_node = get_pattern_nodes_from_graph_def(graph_def, TYPE_CHANGE_PATTERN)
+            for item in tensor_node:
+                node = tensor_node[item]
+                tensor_value = np.frombuffer(
+                    node.tensor_content, dtype=tf.as_dtype(node.dtype).as_numpy_dtype
+                )
+                tensor_value = tensor_value.reshape(node.tensor_shape.dim[0].size, -1)[extract_frz_map].reshape(-1)
+                node.tensor_shape.dim[0].size = len(extract_frz_map)
+                node.tensor_content = bytes(tensor_value)
+        self.model.init_variables(graph, graph_def, model_type=self.model_type, extract_frz_map=extract_frz_map)
 
     def _init_from_ckpt(self, ckpt_meta: str):
         with tf.Graph().as_default() as graph:

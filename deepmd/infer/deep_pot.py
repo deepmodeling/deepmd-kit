@@ -10,6 +10,8 @@ from typing import (
 
 import numpy as np
 
+import os
+
 from deepmd.common import (
     make_default_mesh,
 )
@@ -24,6 +26,9 @@ from deepmd.utils.batch_size import (
 )
 from deepmd.utils.sess import (
     run_sess,
+)
+from deepmd.env import (
+    tf,
 )
 
 if TYPE_CHECKING:
@@ -111,6 +116,7 @@ class DeepPot(DeepEval):
             default_tf_graph=default_tf_graph,
             auto_batch_size=auto_batch_size,
         )
+        self.model_file = model_file
 
         # load optional tensors
         operations = [op.name for op in self.graph.get_operations()]
@@ -184,6 +190,141 @@ class DeepPot(DeepEval):
                 ewald_h=ewald_h,
                 ewald_beta=ewald_beta,
             )
+
+    def change_map(self, type_map, out_file_name='', data_sys=None):
+        from deepmd.train.trainer import (
+            DPTrainer,
+        )
+        from deepmd.utils.graph import (
+            get_tensor_by_name_from_graph,
+        )
+        import json
+        from deepmd.train.run_options import (
+            RunOptions,
+        )
+        from deepmd.utils.data_system import (
+            DeepmdDataSystem,
+        )
+        t_jdata = json.loads(
+            get_tensor_by_name_from_graph(self.graph, f"{self.load_prefix}/train_attr/training_script")
+        )
+        min_nbor_dist = get_tensor_by_name_from_graph(self.graph, f"{self.load_prefix}/train_attr/min_nbor_dist")
+        available_descriptor = ['se_atten']
+        descrpt_type = t_jdata['model']['descriptor']['type']
+        assert descrpt_type in available_descriptor, \
+            f'Descriptor type {descrpt_type} not in supported descriptors {available_descriptor}!'
+        original_map = t_jdata['model']['type_map'].copy()
+        outline_type = [type_i for type_i in type_map if type_i not in original_map]
+        assert not outline_type, f'{outline_type} are not in the original type map!'
+        map_idx = [original_map.index(type_i) for type_i in type_map]
+        ckpt = "tmp_model.ckpt"
+        lcurve = "tmp_lcurve.out"
+        t_jdata['model']['type_map'] = type_map
+        t_jdata['training']['save_ckpt'] = ckpt
+        t_jdata['training']['disp_file'] = lcurve
+        tf.reset_default_graph()
+        tf.constant(
+            json.dumps(t_jdata, separators=(",", ":")),
+            name="train_attr/training_script",
+            dtype=tf.string,
+        )
+        tf.constant(
+            min_nbor_dist,
+            name="train_attr/min_nbor_dist"
+        )
+        run_opt_frz = RunOptions(init_frz_model=self.model_file, log_level=20)
+        model_frz = DPTrainer(t_jdata, run_opt=run_opt_frz)
+        rcut = model_frz.model.get_rcut()
+        data_file = data_sys if data_sys is not None else t_jdata['training']['training_data']['systems'][0]
+        data = DeepmdDataSystem(
+            systems=[data_file],
+            batch_size=1,
+            test_size=1,
+            rcut=rcut,
+            type_map=type_map,
+            trn_all_set=True,
+        )
+        data_requirement = {
+            "energy": {
+                "ndof": 1,
+                "atomic": False,
+                "must": False,
+                "high_prec": True,
+                "type_sel": None,
+                "repeat": 1,
+                "default": 0.0,
+            },
+            "force": {
+                "ndof": 3,
+                "atomic": True,
+                "must": False,
+                "high_prec": False,
+                "type_sel": None,
+                "repeat": 1,
+                "default": 0.0,
+            },
+            "virial": {
+                "ndof": 9,
+                "atomic": False,
+                "must": False,
+                "high_prec": False,
+                "type_sel": None,
+                "repeat": 1,
+                "default": 0.0,
+            },
+            "atom_ener": {
+                "ndof": 1,
+                "atomic": True,
+                "must": False,
+                "high_prec": False,
+                "type_sel": None,
+                "repeat": 1,
+                "default": 0.0,
+            },
+            "atom_pref": {
+                "ndof": 1,
+                "atomic": True,
+                "must": False,
+                "high_prec": False,
+                "type_sel": None,
+                "repeat": 3,
+                "default": 0.0,
+            },
+        }
+        data.add_dict(data_requirement)
+        model_frz.build(data, 0, extract_frz_map=map_idx)
+        model_frz._init_session()
+        model_frz.save_checkpoint(0)
+        from deepmd.entrypoints.main import (
+            main,
+        )
+        if out_file_name != '':
+            frozen_model = out_file_name
+        else:
+            if self.model_file[-3:] == ".pb":
+                frozen_model = str(self.model_file[:-3]) + "_slim.pb"
+            else:
+                frozen_model = str(self.model_file) + "_slim.pb"
+        cmd = "dp freeze -o " + frozen_model
+        log.info(f"Model saved: {frozen_model} with new type_map {type_map}")
+        cmds = cmd.split()[1:]
+        main(cmds)
+
+        def _file_delete(file):
+            if os.path.isdir(file):
+                os.rmdir(file)
+            elif os.path.isfile(file):
+                os.remove(file)
+
+        _file_delete("checkpoint")
+        _file_delete(ckpt + ".meta")
+        _file_delete(ckpt + ".index")
+        _file_delete(ckpt + ".data-00000-of-00001")
+        _file_delete(ckpt + "-0.meta")
+        _file_delete(ckpt + "-0.index")
+        _file_delete(ckpt + "-0.data-00000-of-00001")
+        _file_delete(lcurve)
+        return frozen_model
 
     def _run_default_sess(self):
         [self.ntypes, self.rcut, self.dfparam, self.daparam, self.tmap] = run_sess(
