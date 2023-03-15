@@ -1,23 +1,21 @@
+import json
 import os
 import unittest
 
 import numpy as np
 from common import (
+    j_loader,
     run_dp,
     tests_path,
-    j_loader,
 )
-import json
 from packaging.version import parse as parse_version
 
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
+    tf,
 )
 from deepmd.infer import (
     DeepPot,
-)
-from deepmd.env import (
-    tf,
 )
 
 if GLOBAL_NP_FLOAT_PRECISION == np.float32:
@@ -46,9 +44,7 @@ def _init_models():
         json.dump(jdata, fp, indent=4)
     ret = run_dp("dp train " + INPUT)
     np.testing.assert_equal(ret, 0, "DP train failed!")
-    ret = run_dp(
-        "dp freeze -c " + str(tests_path) + " -o " + frozen_model
-    )
+    ret = run_dp("dp freeze -c " + str(tests_path) + " -o " + frozen_model)
     np.testing.assert_equal(ret, 0, "DP freeze failed!")
 
     return INPUT, ckpt, frozen_model
@@ -122,7 +118,9 @@ class TestDeepPotChangeMap(unittest.TestCase):
 
     def test_equal(self):
         ee, ff, vv = self.dp.eval(self.coords, self.box, self.atype, atomic=False)
-        ee_s, ff_s, vv_s = self.slim_dp.eval(self.coords, self.box, self.slim_atype, atomic=False)
+        ee_s, ff_s, vv_s = self.slim_dp.eval(
+            self.coords, self.box, self.slim_atype, atomic=False
+        )
         # check shape of the returns
         nframes = 1
         natoms = len(self.atype)
@@ -133,8 +131,6 @@ class TestDeepPotChangeMap(unittest.TestCase):
         self.assertEqual(ff_s.shape, (nframes, natoms, 3))
         self.assertEqual(vv_s.shape, (nframes, 9))
         # check values
-        np.testing.assert_almost_equal(
-            ff.ravel(), ff_s.ravel(), default_places
-        )
+        np.testing.assert_almost_equal(ff.ravel(), ff_s.ravel(), default_places)
         np.testing.assert_almost_equal(ee.ravel(), ee_s.ravel(), default_places)
         np.testing.assert_almost_equal(vv.ravel(), vv_s.ravel(), default_places)

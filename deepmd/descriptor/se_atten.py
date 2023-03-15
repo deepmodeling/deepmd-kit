@@ -953,7 +953,12 @@ class DescrptSeAtten(DescrptSeA):
         suffix : str, optional
             The suffix of the scope
         """
-        super().init_variables(graph=graph, graph_def=graph_def, extract_frz_map=extract_frz_map, suffix=suffix)
+        super().init_variables(
+            graph=graph,
+            graph_def=graph_def,
+            extract_frz_map=extract_frz_map,
+            suffix=suffix,
+        )
         self.attention_layer_variables = get_attention_layer_variables_from_graph_def(
             graph_def, suffix=suffix
         )

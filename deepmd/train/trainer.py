@@ -58,8 +58,8 @@ from deepmd.utils.errors import (
     GraphWithoutTensorError,
 )
 from deepmd.utils.graph import (
-    get_tensor_by_name_from_graph,
     get_pattern_nodes_from_graph_def,
+    get_tensor_by_name_from_graph,
     load_graph_def,
 )
 from deepmd.utils.learning_rate import (
@@ -420,7 +420,14 @@ class DPTrainer:
         self.ckpt_meta = None
         self.model_type = None
 
-    def build(self, data=None, stop_batch=0, origin_type_map=None, extract_frz_map=None, suffix=""):
+    def build(
+        self,
+        data=None,
+        stop_batch=0,
+        origin_type_map=None,
+        extract_frz_map=None,
+        suffix="",
+    ):
         self.ntypes = self.model.get_ntypes()
         self.stop_batch = stop_batch
 
@@ -1175,18 +1182,27 @@ class DPTrainer:
         if extract_frz_map is not None:
             from deepmd.env import (
                 TYPE_CHANGE_PATTERN,
-                TYPE_EMBEDDING_PATTERN
             )
-            tensor_node = get_pattern_nodes_from_graph_def(graph_def, TYPE_CHANGE_PATTERN)
+
+            tensor_node = get_pattern_nodes_from_graph_def(
+                graph_def, TYPE_CHANGE_PATTERN
+            )
             for item in tensor_node:
                 node = tensor_node[item]
                 tensor_value = np.frombuffer(
                     node.tensor_content, dtype=tf.as_dtype(node.dtype).as_numpy_dtype
                 )
-                tensor_value = tensor_value.reshape(node.tensor_shape.dim[0].size, -1)[extract_frz_map].reshape(-1)
+                tensor_value = tensor_value.reshape(node.tensor_shape.dim[0].size, -1)[
+                    extract_frz_map
+                ].reshape(-1)
                 node.tensor_shape.dim[0].size = len(extract_frz_map)
                 node.tensor_content = bytes(tensor_value)
-        self.model.init_variables(graph, graph_def, model_type=self.model_type, extract_frz_map=extract_frz_map)
+        self.model.init_variables(
+            graph,
+            graph_def,
+            model_type=self.model_type,
+            extract_frz_map=extract_frz_map,
+        )
 
     def _init_from_ckpt(self, ckpt_meta: str):
         with tf.Graph().as_default() as graph:

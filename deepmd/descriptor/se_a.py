@@ -1109,7 +1109,12 @@ class DescrptSeA(DescrptSe):
         suffix : str, optional
             The suffix of the scope
         """
-        super().init_variables(graph=graph, graph_def=graph_def, extract_frz_map=extract_frz_map, suffix=suffix)
+        super().init_variables(
+            graph=graph,
+            graph_def=graph_def,
+            extract_frz_map=extract_frz_map,
+            suffix=suffix,
+        )
         try:
             self.original_sel = get_tensor_by_name_from_graph(
                 graph, "descrpt_attr%s/original_sel" % suffix
