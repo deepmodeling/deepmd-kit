@@ -9,7 +9,7 @@ jobs:
     name: Build C library
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - name: Package C library
         run: ./source/install/docker_package_c.sh
       - name: Test C library
