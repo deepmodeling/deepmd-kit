@@ -1,3 +1,4 @@
+import warnings
 from typing import (
     List,
     Optional,
@@ -5,7 +6,6 @@ from typing import (
 )
 
 import numpy as np
-import warnings
 from packaging.version import (
     Version,
 )
@@ -112,8 +112,10 @@ class DescrptSeAtten(DescrptSeA):
         multi_task: bool = False,
     ) -> None:
         if not set_davg_zero:
-            warnings.warn("Set 'set_davg_zero' False in descriptor 'se_atten' "
-                          "may cause unexpected incontinuity during model inference!")
+            warnings.warn(
+                "Set 'set_davg_zero' False in descriptor 'se_atten' "
+                "may cause unexpected incontinuity during model inference!"
+            )
         DescrptSeA.__init__(
             self,
             rcut,
