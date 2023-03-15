@@ -393,9 +393,9 @@ class DeepmdDataSystem:
         if not hasattr(self, "default_mesh"):
             self._make_default_mesh()
         if not self.mixed_systems:
-            self.get_batch_standard(sys_idx)
+            b_data = self.get_batch_standard(sys_idx)
         else:
-            self.get_batch_mixed()
+            b_data = self.get_batch_mixed()
         return b_data
 
     def get_batch_standard(self, sys_idx: Optional[int] = None) -> dict:
