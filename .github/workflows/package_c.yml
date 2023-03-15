@@ -16,7 +16,7 @@ jobs:
         run: ./source/install/docker_test_package_c.sh
       # for download and debug
       - name: Upload artifact
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           path: ./libdeepmd_c.tar.gz
       - name: Release
