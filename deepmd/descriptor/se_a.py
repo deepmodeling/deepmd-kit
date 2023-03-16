@@ -96,8 +96,8 @@ class DescrptSeA(DescrptSe):
     .. math::
         (\mathcal{G}^i)_j = \mathcal{N}(s(r_{ji}))
 
-    :math:`\mathcal{G}^i_< \in \mathbb{R}^{N \times M_2}` takes first :math:`M_2`$` columns of
-    :math:`\mathcal{G}^i`$`. The equation of embedding network :math:`\mathcal{N}` can be found at
+    :math:`\mathcal{G}^i_< \in \mathbb{R}^{N \times M_2}` takes first :math:`M_2` columns of
+    :math:`\mathcal{G}^i`. The equation of embedding network :math:`\mathcal{N}` can be found at
     :meth:`deepmd.utils.network.embedding_net`.
 
     Parameters
