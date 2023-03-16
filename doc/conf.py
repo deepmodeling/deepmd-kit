@@ -306,6 +306,10 @@ latex_elements = {
 \usepackage{fontspec}
 \setmainfont{Symbola}
 """,
+    "preamble": r"""
+\usepackage{enumitem}
+\setlistdepth{99}
+""",
 }
 
 # For TF automatic generated OP docs

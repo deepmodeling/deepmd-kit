@@ -59,9 +59,9 @@ class EnerFitting(Fitting):
         \mathbf{y}=\mathcal{L}(\mathbf{x};\mathbf{w},\mathbf{b})=
             \boldsymbol{\phi}(\mathbf{x}^T\mathbf{w}+\mathbf{b})
 
-    where :math:`\mathbf{x} \in \mathbb{R}^{N_1}`$` is the input vector and :math:`\mathbf{y} \in \mathbb{R}^{N_2}`
+    where :math:`\mathbf{x} \in \mathbb{R}^{N_1}` is the input vector and :math:`\mathbf{y} \in \mathbb{R}^{N_2}`
     is the output vector. :math:`\mathbf{w} \in \mathbb{R}^{N_1 \times N_2}` and
-    :math:`\mathbf{b} \in \mathbb{R}^{N_2}`$` are weights and biases, respectively,
+    :math:`\mathbf{b} \in \mathbb{R}^{N_2}` are weights and biases, respectively,
     both of which are trainable if `trainable[i]` is `True`. :math:`\boldsymbol{\phi}`
     is the activation function.
 
@@ -71,9 +71,9 @@ class EnerFitting(Fitting):
         \mathbf{y}=\mathcal{L}^{(n)}(\mathbf{x};\mathbf{w},\mathbf{b})=
             \mathbf{x}^T\mathbf{w}+\mathbf{b}
 
-    where :math:`\mathbf{x} \in \mathbb{R}^{N_{n-1}}`$` is the input vector and :math:`\mathbf{y} \in \mathbb{R}`
+    where :math:`\mathbf{x} \in \mathbb{R}^{N_{n-1}}` is the input vector and :math:`\mathbf{y} \in \mathbb{R}`
     is the output scalar. :math:`\mathbf{w} \in \mathbb{R}^{N_{n-1}}` and
-    :math:`\mathbf{b} \in \mathbb{R}`$` are weights and bias, respectively,
+    :math:`\mathbf{b} \in \mathbb{R}` are weights and bias, respectively,
     both of which are trainable if `trainable[n]` is `True`.
 
     Parameters
