@@ -4,14 +4,25 @@ import unittest
 
 import numpy as np
 from common import (
+    gen_data,
+    j_loader,
     tests_path,
 )
 
+from deepmd.common import (
+    j_must_have,
+)
 from deepmd.infer import (
     DeepPot,
 )
 from deepmd.utils.convert import (
     convert_pbtxt_to_pb,
+)
+from deepmd.utils.data_system import (
+    DeepmdDataSystem,
+)
+from deepmd.utils.neighbor_stat import (
+    NeighborStat,
 )
 
 
@@ -106,3 +117,24 @@ class TestVirtualType(unittest.TestCase):
         np.testing.assert_almost_equal(v1, v2)
         np.testing.assert_almost_equal(ae1[:nloc], ae2[nghost:])
         np.testing.assert_almost_equal(av1[:nloc], av2[nghost:])
+
+
+class TestTrainVirtualType(unittest.TestCase):
+    def setUp(self) -> None:
+        gen_data(mixed_type=True, virtual_type=True)
+
+    def test_data_mixed_type(self):
+        jfile = "water_se_atten_mixed_type.json"
+        jdata = j_loader(jfile)
+
+        systems = j_must_have(jdata, "systems")
+        batch_size = 1
+        test_size = 1
+        rcut = j_must_have(jdata["model"]["descriptor"], "rcut")
+        type_map = j_must_have(jdata["model"], "type_map")
+
+        data = DeepmdDataSystem(systems, batch_size, test_size, rcut, type_map=type_map)
+        data.get_batch()
+        # neighbor stat
+        nei_stat = NeighborStat(len(type_map), rcut, one_type=True)
+        min_nbor_dist, max_nbor_size = nei_stat.get_stat(data)
