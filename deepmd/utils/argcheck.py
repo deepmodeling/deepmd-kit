@@ -80,7 +80,7 @@ class ArgsPlugin:
     def register(
         self, name: str, alias: Optional[List[str]] = None
     ) -> Callable[[], List[Argument]]:
-        """Regiester a descriptor argument plugin.
+        """Register a descriptor argument plugin.
 
         Parameters
         ----------
@@ -92,7 +92,7 @@ class ArgsPlugin:
         Returns
         -------
         Callable[[], List[Argument]]
-            the regiestered descriptor argument method
+            the registered descriptor argument method
 
         Examples
         --------

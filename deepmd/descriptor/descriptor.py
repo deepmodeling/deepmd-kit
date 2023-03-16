@@ -44,7 +44,7 @@ class Descriptor(PluginVariant):
 
     @staticmethod
     def register(key: str) -> "Descriptor":
-        """Regiester a descriptor plugin.
+        """Register a descriptor plugin.
 
         Parameters
         ----------
@@ -54,7 +54,7 @@ class Descriptor(PluginVariant):
         Returns
         -------
         Descriptor
-            the regiestered descriptor
+            the registered descriptor
 
         Examples
         --------
