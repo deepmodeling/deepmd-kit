@@ -9,14 +9,14 @@ jobs:
     name: Build C library
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - name: Package C library
         run: ./source/install/docker_package_c.sh
       - name: Test C library
         run: ./source/install/docker_test_package_c.sh
       # for download and debug
       - name: Upload artifact
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           path: ./libdeepmd_c.tar.gz
       - name: Release

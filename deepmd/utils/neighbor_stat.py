@@ -69,8 +69,8 @@ class NeighborStat:
             t_natoms = place_holders["natoms_vec"]
             if self.one_type:
                 # all types = 0, natoms_vec = [natoms, natoms, natoms]
-                t_type = tf.zeros_like(t_type, dtype=tf.int32)
-                t_natoms = tf.repeat(t_natoms[0], 3)
+                t_type = tf.clip_by_value(t_type, -1, 0)
+                t_natoms = tf.tile(t_natoms[0:1], [3])
 
             _max_nbor_size, _min_nbor_dist = op_module.neighbor_stat(
                 place_holders["coord"],
