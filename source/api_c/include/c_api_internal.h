@@ -38,6 +38,8 @@ struct DP_DeepPot {
 
   deepmd::DeepPot dp;
   std::string exception;
+  int dfparam;
+  int daparam;
 };
 
 struct DP_DeepPotModelDevi {
@@ -46,6 +48,8 @@ struct DP_DeepPotModelDevi {
 
   deepmd::DeepPotModelDevi dp;
   std::string exception;
+  int dfparam;
+  int daparam;
 };
 
 struct DP_DeepTensor {

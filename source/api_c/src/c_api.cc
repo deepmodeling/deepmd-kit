@@ -25,13 +25,15 @@ DP_Nlist* DP_NewNlist(int inum_,
 }
 
 DP_DeepPot::DP_DeepPot() {}
-DP_DeepPot::DP_DeepPot(deepmd::DeepPot& dp) : dp(dp) {}
+DP_DeepPot::DP_DeepPot(deepmd::DeepPot& dp) : dp(dp) {
+  dfparam = dp.dim_aparam();
+  daparam = dp.dim_fparam();
+}
 
 DP_DeepPot* DP_NewDeepPot(const char* c_model) {
   std::string model(c_model);
-  deepmd::DeepPot dp(model);
-  DP_DeepPot* new_dp = new DP_DeepPot(dp);
-  return new_dp;
+  DP_NEW_OK(DP_DeepPot, deepmd::DeepPot dp(model);
+            DP_DeepPot* new_dp = new DP_DeepPot(dp); return new_dp;)
 }
 
 DP_DeepPot* DP_NewDeepPotWithParam(const char* c_model,
@@ -45,7 +47,10 @@ DP_DeepPot* DP_NewDeepPotWithParam(const char* c_model,
 
 DP_DeepPotModelDevi::DP_DeepPotModelDevi() {}
 DP_DeepPotModelDevi::DP_DeepPotModelDevi(deepmd::DeepPotModelDevi& dp)
-    : dp(dp) {}
+    : dp(dp) {
+  dfparam = dp.dim_aparam();
+  daparam = dp.dim_fparam();
+}
 
 DP_DeepPotModelDevi* DP_NewDeepPotModelDevi(const char** c_models,
                                             int n_models) {
@@ -119,10 +124,14 @@ inline void DP_DeepPotCompute_variant(DP_DeepPot* dp,
     // pbc
     cell_.assign(cell, cell + nframes * 9);
   }
+  std::vector<VALUETYPE> fparam_(fparam, fparam + nframes * dp->dfparam);
+  std::vector<VALUETYPE> aparam_(aparam,
+                                 aparam + nframes * natoms * dp->daparam);
   std::vector<double> e;
   std::vector<VALUETYPE> f, v, ae, av;
 
-  DP_REQUIRES_OK(dp, dp->dp.compute(e, f, v, ae, av, coord_, atype_, cell_));
+  DP_REQUIRES_OK(dp, dp->dp.compute(e, f, v, ae, av, coord_, atype_, cell_,
+                                    fparam_, aparam_));
   // copy from C++ vectors to C arrays, if not NULL pointer
   if (energy) std::copy(e.begin(), e.end(), energy);
   if (force) std::copy(f.begin(), f.end(), force);
@@ -184,11 +193,14 @@ inline void DP_DeepPotComputeNList_variant(DP_DeepPot* dp,
     // pbc
     cell_.assign(cell, cell + nframes * 9);
   }
+  std::vector<VALUETYPE> fparam_(fparam, fparam + nframes * dp->dfparam);
+  std::vector<VALUETYPE> aparam_(aparam,
+                                 aparam + nframes * natoms * dp->daparam);
   std::vector<double> e;
   std::vector<VALUETYPE> f, v, ae, av;
 
   DP_REQUIRES_OK(dp, dp->dp.compute(e, f, v, ae, av, coord_, atype_, cell_,
-                                    nghost, nlist->nl, ago));
+                                    nghost, nlist->nl, ago, fparam_, aparam_));
   // copy from C++ vectors to C arrays, if not NULL pointer
   if (energy) std::copy(e.begin(), e.end(), energy);
   if (force) std::copy(f.begin(), f.end(), force);
@@ -253,11 +265,15 @@ inline void DP_DeepPotComputeMixedType_variant(DP_DeepPot* dp,
     // pbc
     cell_.assign(cell, cell + nframes * 9);
   }
+  std::vector<VALUETYPE> fparam_(fparam, fparam + nframes * dp->dfparam);
+  std::vector<VALUETYPE> aparam_(aparam,
+                                 aparam + nframes * natoms * dp->daparam);
   std::vector<double> e;
   std::vector<VALUETYPE> f, v, ae, av;
 
-  DP_REQUIRES_OK(dp, dp->dp.compute_mixed_type(e, f, v, ae, av, nframes, coord_,
-                                               atype_, cell_));
+  DP_REQUIRES_OK(
+      dp, dp->dp.compute_mixed_type(e, f, v, ae, av, nframes, coord_, atype_,
+                                    cell_, fparam_, aparam_));
   // copy from C++ vectors to C arrays, if not NULL pointer
   if (energy) std::copy(e.begin(), e.end(), energy);
   if (force) std::copy(f.begin(), f.end(), force);
@@ -882,6 +898,10 @@ const char* DP_DeepPotGetTypeMap(DP_DeepPot* dp) {
 double DP_DeepPotGetCutoff(DP_DeepPot* dp) { return dp->dp.cutoff(); }
 
 int DP_DeepPotGetNumbTypes(DP_DeepPot* dp) { return dp->dp.numb_types(); }
+
+int DP_DeepPotGetDimFParam(DP_DeepPot* dp) { return dp->dfparam; }
+
+int DP_DeepPotGetDimAParam(DP_DeepPot* dp) { return dp->daparam; }
 
 const char* DP_DeepPotCheckOK(DP_DeepPot* dp) {
   return string_to_char(dp->exception);
