@@ -124,9 +124,14 @@ inline void DP_DeepPotCompute_variant(DP_DeepPot* dp,
     // pbc
     cell_.assign(cell, cell + nframes * 9);
   }
-  std::vector<VALUETYPE> fparam_(fparam, fparam + nframes * dp->dfparam);
-  std::vector<VALUETYPE> aparam_(aparam,
-                                 aparam + nframes * natoms * dp->daparam);
+  std::vector<VALUETYPE> fparam_;
+  if (fparam) {
+    fparam_.assign(fparam, fparam + nframes * dp->dfparam);
+  }
+  std::vector<VALUETYPE> aparam_;
+  if (aparam) {
+    aparam_.assign(aparam, aparam + nframes * dp->daparam);
+  }
   std::vector<double> e;
   std::vector<VALUETYPE> f, v, ae, av;
 
@@ -193,9 +198,14 @@ inline void DP_DeepPotComputeNList_variant(DP_DeepPot* dp,
     // pbc
     cell_.assign(cell, cell + nframes * 9);
   }
-  std::vector<VALUETYPE> fparam_(fparam, fparam + nframes * dp->dfparam);
-  std::vector<VALUETYPE> aparam_(aparam,
-                                 aparam + nframes * natoms * dp->daparam);
+  std::vector<VALUETYPE> fparam_;
+  if (fparam) {
+    fparam_.assign(fparam, fparam + nframes * dp->dfparam);
+  }
+  std::vector<VALUETYPE> aparam_;
+  if (aparam) {
+    aparam_.assign(aparam, aparam + nframes * dp->daparam);
+  }
   std::vector<double> e;
   std::vector<VALUETYPE> f, v, ae, av;
 
@@ -265,9 +275,14 @@ inline void DP_DeepPotComputeMixedType_variant(DP_DeepPot* dp,
     // pbc
     cell_.assign(cell, cell + nframes * 9);
   }
-  std::vector<VALUETYPE> fparam_(fparam, fparam + nframes * dp->dfparam);
-  std::vector<VALUETYPE> aparam_(aparam,
-                                 aparam + nframes * natoms * dp->daparam);
+  std::vector<VALUETYPE> fparam_;
+  if (fparam) {
+    fparam_.assign(fparam, fparam + nframes * dp->dfparam);
+  }
+  std::vector<VALUETYPE> aparam_;
+  if (aparam) {
+    aparam_.assign(aparam, aparam + nframes * dp->daparam);
+  }
   std::vector<double> e;
   std::vector<VALUETYPE> f, v, ae, av;
 

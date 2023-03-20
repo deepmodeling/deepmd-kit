@@ -633,12 +633,15 @@ class DeepPot {
     virial.resize(nframes * 9);
     VALUETYPE *force_ = &force[0];
     VALUETYPE *virial_ = &virial[0];
+    std::vector<VALUETYPE> fparam_, aparam_;
     validate_fparam_aparam(nframes, natoms, fparam, aparam);
     tile_fparam_aparam(fparam_, nframes, dfparam, fparam);
     tile_fparam_aparam(aparam_, nframes, natoms * daparam, aparam);
+    const VALUETYPE *fparam__ = !fparam_.empty() ? &fparam_[0] : nullptr;
+    const VALUETYPE *aparam__ = !aparam_.empty() ? &aparam_[0] : nullptr;
 
     _DP_DeepPotCompute<VALUETYPE>(dp, nframes, natoms, coord_, atype_, box_,
-                                  fparam_, aparam_, ener_, force_, virial_,
+                                  fparam__, aparam__, ener_, force_, virial_,
                                   nullptr, nullptr);
     DP_CHECK_OK(DP_DeepPotCheckOK, dp);
   };
@@ -695,12 +698,15 @@ class DeepPot {
     VALUETYPE *virial_ = &virial[0];
     VALUETYPE *atomic_ener_ = &atom_energy[0];
     VALUETYPE *atomic_virial_ = &atom_virial[0];
+    std::vector<VALUETYPE> fparam_, aparam_;
     validate_fparam_aparam(nframes, natoms, fparam, aparam);
     tile_fparam_aparam(fparam_, nframes, dfparam, fparam);
     tile_fparam_aparam(aparam_, nframes, natoms * daparam, aparam);
+    const VALUETYPE *fparam__ = !fparam_.empty() ? &fparam_[0] : nullptr;
+    const VALUETYPE *aparam__ = !aparam_.empty() ? &aparam_[0] : nullptr;
 
     _DP_DeepPotCompute<VALUETYPE>(dp, nframes, natoms, coord_, atype_, box_,
-                                  fparam_, aparam_, ener_, force_, virial_,
+                                  fparam__, aparam__, ener_, force_, virial_,
                                   atomic_ener_, atomic_virial_);
     DP_CHECK_OK(DP_DeepPotCheckOK, dp);
   };
@@ -755,13 +761,16 @@ class DeepPot {
     virial.resize(nframes * 9);
     VALUETYPE *force_ = &force[0];
     VALUETYPE *virial_ = &virial[0];
+    std::vector<VALUETYPE> fparam_, aparam_;
     validate_fparam_aparam(nframes, natoms - nghost, fparam, aparam);
     tile_fparam_aparam(fparam_, nframes, dfparam, fparam);
     tile_fparam_aparam(aparam_, nframes, (natoms - nghost) * daparam, aparam);
+    const VALUETYPE *fparam__ = !fparam_.empty() ? &fparam_[0] : nullptr;
+    const VALUETYPE *aparam__ = !aparam_.empty() ? &aparam_[0] : nullptr;
 
     _DP_DeepPotComputeNList<VALUETYPE>(
         dp, nframes, natoms, coord_, atype_, box_, nghost, lmp_list.nl, ago,
-        fparam_, aparam_, ener_, force_, virial_, nullptr, nullptr);
+        fparam__, aparam__, ener_, force_, virial_, nullptr, nullptr);
     DP_CHECK_OK(DP_DeepPotCheckOK, dp);
   };
   /**
@@ -823,13 +832,17 @@ class DeepPot {
     VALUETYPE *virial_ = &virial[0];
     VALUETYPE *atomic_ener_ = &atom_energy[0];
     VALUETYPE *atomic_virial_ = &atom_virial[0];
+    std::vector<VALUETYPE> fparam_, aparam_;
     validate_fparam_aparam(nframes, natoms - nghost, fparam, aparam);
     tile_fparam_aparam(fparam_, nframes, dfparam, fparam);
     tile_fparam_aparam(aparam_, nframes, (natoms - nghost) * daparam, aparam);
+    const VALUETYPE *fparam__ = !fparam_.empty() ? &fparam_[0] : nullptr;
+    const VALUETYPE *aparam__ = !aparam_.empty() ? &aparam_[0] : nullptr;
 
-    _DP_DeepPotComputeNList<VALUETYPE>(
-        dp, nframes, natoms, coord_, atype_, box_, nghost, lmp_list.nl, ago,
-        fparam_, aparam_, ener_, force_, virial_, atomic_ener_, atomic_virial_);
+    _DP_DeepPotComputeNList<VALUETYPE>(dp, nframes, natoms, coord_, atype_,
+                                       box_, nghost, lmp_list.nl, ago, fparam__,
+                                       aparam__, ener_, force_, virial_,
+                                       atomic_ener_, atomic_virial_);
     DP_CHECK_OK(DP_DeepPotCheckOK, dp);
   };
   /**
@@ -877,12 +890,15 @@ class DeepPot {
     virial.resize(nframes * 9);
     VALUETYPE *force_ = &force[0];
     VALUETYPE *virial_ = &virial[0];
+    std::vector<VALUETYPE> fparam_, aparam_;
     validate_fparam_aparam(nframes, natoms, fparam, aparam);
     tile_fparam_aparam(fparam_, nframes, dfparam, fparam);
     tile_fparam_aparam(aparam_, nframes, natoms * daparam, aparam);
+    const VALUETYPE *fparam__ = !fparam_.empty() ? &fparam_[0] : nullptr;
+    const VALUETYPE *aparam__ = !aparam_.empty() ? &aparam_[0] : nullptr;
 
     _DP_DeepPotComputeMixedType<VALUETYPE>(dp, nframes, natoms, coord_, atype_,
-                                           box_, fparam_, aparam_, ener_,
+                                           box_, fparam__, aparam__, ener_,
                                            force_, virial_, nullptr, nullptr);
     DP_CHECK_OK(DP_DeepPotCheckOK, dp);
   };
@@ -940,12 +956,15 @@ class DeepPot {
     VALUETYPE *virial_ = &virial[0];
     VALUETYPE *atomic_ener_ = &atom_energy[0];
     VALUETYPE *atomic_virial_ = &atom_virial[0];
+    std::vector<VALUETYPE> fparam_, aparam_;
     validate_fparam_aparam(nframes, natoms, fparam, aparam);
     tile_fparam_aparam(fparam_, nframes, dfparam, fparam);
     tile_fparam_aparam(aparam_, nframes, natoms * daparam, aparam);
+    const VALUETYPE *fparam__ = !fparam_.empty() ? &fparam_[0] : nullptr;
+    const VALUETYPE *aparam__ = !aparam_.empty() ? &aparam_[0] : nullptr;
 
     _DP_DeepPotComputeMixedType<VALUETYPE>(
-        dp, nframes, natoms, coord_, atype_, box_, fparam_, aparam_, ener_,
+        dp, nframes, natoms, coord_, atype_, box_, fparam__, aparam__, ener_,
         force_, virial_, atomic_ener_, atomic_virial_);
     DP_CHECK_OK(DP_DeepPotCheckOK, dp);
   };
