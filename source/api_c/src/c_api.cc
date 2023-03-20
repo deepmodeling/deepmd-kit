@@ -1134,4 +1134,11 @@ void DP_PrintSummary(const char* c_pre) {
   deepmd::print_summary(pre);
 }
 
+const char* DP_ReadFileToChar(const char* c_model) {
+  std::string model(c_model);
+  std::string file_content;
+  deepmd::read_file_to_string(model, file_content);
+  return string_to_char(file_content);
+}
+
 }  // extern "C"

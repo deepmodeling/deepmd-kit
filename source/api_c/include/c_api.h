@@ -1007,6 +1007,13 @@ extern void DP_ConvertPbtxtToPb(const char* c_pbtxt, const char* c_pb);
  */
 extern void DP_PrintSummary(const char* c_pre);
 
+/**
+ * @brief Read a file to a char array.
+ * @param[in] c_model The name of the file.
+ * @return const char* The char array.
+ */
+const char* DP_ReadFileToChar(const char* c_model);
+
 #ifdef __cplusplus
 } /* end extern "C" */
 #endif
