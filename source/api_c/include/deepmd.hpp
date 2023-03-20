@@ -1581,7 +1581,7 @@ class DipoleChargeModifier {
  * @param[in] model Path to the model.
  * @param[out] file_content Content of the model file.
  **/
-void read_file_to_string(std::string model, std::string &file_content) {
+void inline read_file_to_string(std::string model, std::string &file_content) {
   const char *c_file_content = DP_ReadFileToChar(model.c_str());
   file_content = std::string(c_file_content);
 };
