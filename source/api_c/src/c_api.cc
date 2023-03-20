@@ -204,7 +204,7 @@ inline void DP_DeepPotComputeNList_variant(DP_DeepPot* dp,
   }
   std::vector<VALUETYPE> aparam_;
   if (aparam) {
-    aparam_.assign(aparam, aparam + nframes * natoms * dp->daparam);
+    aparam_.assign(aparam, aparam + nframes * (natoms - nghost) * dp->daparam);
   }
   std::vector<double> e;
   std::vector<VALUETYPE> f, v, ae, av;
