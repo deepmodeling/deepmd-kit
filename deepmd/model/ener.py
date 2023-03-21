@@ -151,7 +151,6 @@ class EnerModel(Model):
         suffix="",
         reuse=None,
     ):
-
         if input_dict is None:
             input_dict = {}
         with tf.variable_scope("model_attr" + suffix, reuse=reuse):

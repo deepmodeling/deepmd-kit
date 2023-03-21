@@ -235,7 +235,6 @@ def set_log_handles(
 
     # * add file handler ***************************************************************
     if log_path:
-
         # create directory
         log_path.parent.mkdir(exist_ok=True, parents=True)
 
