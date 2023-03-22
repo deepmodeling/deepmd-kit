@@ -150,7 +150,6 @@ def run_apidoc(_):
 
 
 def setup(app):
-
     # Add hook for building doxygen xml when needed
     app.connect("builder-inited", run_apidoc)
 

@@ -66,7 +66,7 @@ class TestEfRot(tf.test.TestCase):
                     "rcut_smth": 5.5,
                     "seed": 1,
                     "uniform_seed": True,
-                }
+                },
             )
         else:
             descrpt = DescrptSeA(
