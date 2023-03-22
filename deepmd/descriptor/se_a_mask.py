@@ -70,8 +70,8 @@ class DescrptSeAMask(DescrptSeA):
     .. math::
         (\mathcal{G}^i)_j = \mathcal{N}(s(r_{ji}))
 
-    :math:`\mathcal{G}^i_< \in \mathbb{R}^{N \times M_2}` takes first :math:`M_2`$` columns of
-    :math:`\mathcal{G}^i`$`. The equation of embedding network :math:`\mathcal{N}` can be found at
+    :math:`\mathcal{G}^i_< \in \mathbb{R}^{N \times M_2}` takes first :math:`M_2` columns of
+    :math:`\mathcal{G}^i`. The equation of embedding network :math:`\mathcal{N}` can be found at
     :meth:`deepmd.utils.network.embedding_net`.
     Specially for descriptor se_a_mask is a concise implementation of se_a.
     The difference is that se_a_mask only considered a non-pbc system.
@@ -122,7 +122,7 @@ class DescrptSeAMask(DescrptSeA):
         trainable: bool = True,
         type_one_side: bool = False,
         exclude_types: List[List[int]] = [],
-        seed: int = None,
+        seed: Optional[int] = None,
         activation_function: str = "tanh",
         precision: str = "default",
         uniform_seed: bool = False,

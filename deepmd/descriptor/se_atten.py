@@ -1,3 +1,4 @@
+import warnings
 from typing import (
     List,
     Optional,
@@ -67,6 +68,8 @@ class DescrptSeAtten(DescrptSeA):
     exclude_types : List[List[int]]
             The excluded pairs of types which have no interaction with each other.
             For example, `[[0, 1]]` means no interaction between type 0 and type 1.
+    set_davg_zero
+            Set the shift of embedding net input to zero.
     activation_function
             The activation function in the embedding net. Supported options are |ACTIVATION_FN|
     precision
@@ -97,6 +100,7 @@ class DescrptSeAtten(DescrptSeA):
         trainable: bool = True,
         seed: Optional[int] = None,
         type_one_side: bool = True,
+        set_davg_zero: bool = True,
         exclude_types: List[List[int]] = [],
         activation_function: str = "tanh",
         precision: str = "default",
@@ -107,6 +111,11 @@ class DescrptSeAtten(DescrptSeA):
         attn_mask: bool = False,
         multi_task: bool = False,
     ) -> None:
+        if not set_davg_zero:
+            warnings.warn(
+                "Set 'set_davg_zero' False in descriptor 'se_atten' "
+                "may cause unexpected incontinuity during model inference!"
+            )
         DescrptSeA.__init__(
             self,
             rcut,
@@ -119,7 +128,7 @@ class DescrptSeAtten(DescrptSeA):
             seed=seed,
             type_one_side=type_one_side,
             exclude_types=exclude_types,
-            set_davg_zero=True,
+            set_davg_zero=set_davg_zero,
             activation_function=activation_function,
             precision=precision,
             uniform_seed=uniform_seed,
@@ -784,7 +793,7 @@ class DescrptSeAtten(DescrptSeA):
         name="filter_",
         reuse=None,
     ):
-        """input env matrix, returns R.G."""
+        """Input env matrix, returns R.G."""
         outputs_size = [1] + self.filter_neuron
         # cut-out inputs
         # with natom x (nei_type_i x 4)

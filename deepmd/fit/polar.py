@@ -64,12 +64,12 @@ class PolarFittingSeA(Fitting):
         descrpt: tf.Tensor,
         neuron: List[int] = [120, 120, 120],
         resnet_dt: bool = True,
-        sel_type: List[int] = None,
+        sel_type: Optional[List[int]] = None,
         fit_diag: bool = True,
-        scale: List[float] = None,
+        scale: Optional[List[float]] = None,
         shift_diag: bool = True,  # YWolfeee: will support the user to decide whether to use this function
         # diag_shift : List[float] = None, YWolfeee: will not support the user to assign a shift
-        seed: int = None,
+        seed: Optional[int] = None,
         activation_function: str = "tanh",
         precision: str = "default",
         uniform_seed: bool = False,
@@ -328,7 +328,7 @@ class PolarFittingSeA(Fitting):
         rot_mat: tf.Tensor,
         natoms: tf.Tensor,
         input_dict: Optional[dict] = None,
-        reuse: bool = None,
+        reuse: Optional[bool] = None,
         suffix: str = "",
     ):
         """Build the computational graph for fitting net.
@@ -478,7 +478,7 @@ class PolarFittingSeA(Fitting):
             graph_def, suffix=suffix
         )
 
-    def enable_mixed_precision(self, mixed_prec: dict = None) -> None:
+    def enable_mixed_precision(self, mixed_prec: Optional[dict] = None) -> None:
         """Reveive the mixed precision setting.
 
         Parameters
@@ -523,11 +523,11 @@ class GlobalPolarFittingSeA:
         descrpt: tf.Tensor,
         neuron: List[int] = [120, 120, 120],
         resnet_dt: bool = True,
-        sel_type: List[int] = None,
+        sel_type: Optional[List[int]] = None,
         fit_diag: bool = True,
-        scale: List[float] = None,
-        diag_shift: List[float] = None,
-        seed: int = None,
+        scale: Optional[List[float]] = None,
+        diag_shift: Optional[List[float]] = None,
+        seed: Optional[int] = None,
         activation_function: str = "tanh",
         precision: str = "default",
     ) -> None:
@@ -622,7 +622,7 @@ class GlobalPolarFittingSeA:
             graph=graph, graph_def=graph_def, suffix=suffix
         )
 
-    def enable_mixed_precision(self, mixed_prec: dict = None) -> None:
+    def enable_mixed_precision(self, mixed_prec: Optional[dict] = None) -> None:
         """Reveive the mixed precision setting.
 
         Parameters

@@ -78,6 +78,13 @@ template void AtomMap::forward<float>(
     const int nframes,
     const int nall) const;
 
+template void AtomMap::forward<int>(
+    typename std::vector<int>::iterator out,
+    const typename std::vector<int>::const_iterator in,
+    const int stride,
+    const int nframes,
+    const int nall) const;
+
 template void AtomMap::backward<double>(
     typename std::vector<double>::iterator out,
     const typename std::vector<double>::const_iterator in,

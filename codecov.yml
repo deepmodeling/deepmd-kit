@@ -5,6 +5,9 @@ coverage:
     project:
       default:
         threshold: 100%
+    patch:
+      default:
+        threshold: 100%
 component_management:
   default_rules:
     statuses:

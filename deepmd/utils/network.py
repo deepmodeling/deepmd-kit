@@ -144,9 +144,9 @@ def embedding_net(
             \boldsymbol{\phi}(\mathbf{x}^T\mathbf{w}+\mathbf{b}), & \text{otherwise} \\
         \end{cases}
 
-    where :math:`\mathbf{x} \in \mathbb{R}^{N_1}`$` is the input vector and :math:`\mathbf{y} \in \mathbb{R}^{N_2}`
+    where :math:`\mathbf{x} \in \mathbb{R}^{N_1}` is the input vector and :math:`\mathbf{y} \in \mathbb{R}^{N_2}`
     is the output vector. :math:`\mathbf{w} \in \mathbb{R}^{N_1 \times N_2}` and
-    :math:`\mathbf{b} \in \mathbb{R}^{N_2}`$` are weights and biases, respectively,
+    :math:`\mathbf{b} \in \mathbb{R}^{N_2}` are weights and biases, respectively,
     both of which are trainable if `trainable` is `True`. :math:`\boldsymbol{\phi}`
     is the activation function.
 

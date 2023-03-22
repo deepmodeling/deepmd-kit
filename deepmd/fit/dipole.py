@@ -54,8 +54,8 @@ class DipoleFittingSeA(Fitting):
         descrpt: tf.Tensor,
         neuron: List[int] = [120, 120, 120],
         resnet_dt: bool = True,
-        sel_type: List[int] = None,
-        seed: int = None,
+        sel_type: Optional[List[int]] = None,
+        seed: Optional[int] = None,
         activation_function: str = "tanh",
         precision: str = "default",
         uniform_seed: bool = False,
@@ -160,7 +160,7 @@ class DipoleFittingSeA(Fitting):
         rot_mat: tf.Tensor,
         natoms: tf.Tensor,
         input_dict: Optional[dict] = None,
-        reuse: bool = None,
+        reuse: Optional[bool] = None,
         suffix: str = "",
     ) -> tf.Tensor:
         """Build the computational graph for fitting net.
@@ -285,7 +285,7 @@ class DipoleFittingSeA(Fitting):
             graph_def, suffix=suffix
         )
 
-    def enable_mixed_precision(self, mixed_prec: dict = None) -> None:
+    def enable_mixed_precision(self, mixed_prec: Optional[dict] = None) -> None:
         """Reveive the mixed precision setting.
 
         Parameters

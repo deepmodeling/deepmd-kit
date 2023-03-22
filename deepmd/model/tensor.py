@@ -45,7 +45,7 @@ class TensorModel(Model):
         descrpt,
         fitting,
         typeebd=None,
-        type_map: List[str] = None,
+        type_map: Optional[List[str]] = None,
         data_stat_nbatch: int = 10,
         data_stat_protect: float = 1e-2,
     ) -> None:
@@ -117,7 +117,6 @@ class TensorModel(Model):
         suffix="",
         reuse=None,
     ):
-
         if input_dict is None:
             input_dict = {}
         with tf.variable_scope("model_attr" + suffix, reuse=reuse):

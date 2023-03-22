@@ -59,9 +59,9 @@ class EnerFitting(Fitting):
         \mathbf{y}=\mathcal{L}(\mathbf{x};\mathbf{w},\mathbf{b})=
             \boldsymbol{\phi}(\mathbf{x}^T\mathbf{w}+\mathbf{b})
 
-    where :math:`\mathbf{x} \in \mathbb{R}^{N_1}`$` is the input vector and :math:`\mathbf{y} \in \mathbb{R}^{N_2}`
+    where :math:`\mathbf{x} \in \mathbb{R}^{N_1}` is the input vector and :math:`\mathbf{y} \in \mathbb{R}^{N_2}`
     is the output vector. :math:`\mathbf{w} \in \mathbb{R}^{N_1 \times N_2}` and
-    :math:`\mathbf{b} \in \mathbb{R}^{N_2}`$` are weights and biases, respectively,
+    :math:`\mathbf{b} \in \mathbb{R}^{N_2}` are weights and biases, respectively,
     both of which are trainable if `trainable[i]` is `True`. :math:`\boldsymbol{\phi}`
     is the activation function.
 
@@ -71,9 +71,9 @@ class EnerFitting(Fitting):
         \mathbf{y}=\mathcal{L}^{(n)}(\mathbf{x};\mathbf{w},\mathbf{b})=
             \mathbf{x}^T\mathbf{w}+\mathbf{b}
 
-    where :math:`\mathbf{x} \in \mathbb{R}^{N_{n-1}}`$` is the input vector and :math:`\mathbf{y} \in \mathbb{R}`
+    where :math:`\mathbf{x} \in \mathbb{R}^{N_{n-1}}` is the input vector and :math:`\mathbf{y} \in \mathbb{R}`
     is the output scalar. :math:`\mathbf{w} \in \mathbb{R}^{N_{n-1}}` and
-    :math:`\mathbf{b} \in \mathbb{R}`$` are weights and bias, respectively,
+    :math:`\mathbf{b} \in \mathbb{R}` are weights and bias, respectively,
     both of which are trainable if `trainable[n]` is `True`.
 
     Parameters
@@ -124,8 +124,8 @@ class EnerFitting(Fitting):
         numb_aparam: int = 0,
         rcond: float = 1e-3,
         tot_ener_zero: bool = False,
-        trainable: List[bool] = None,
-        seed: int = None,
+        trainable: Optional[List[bool]] = None,
+        seed: Optional[int] = None,
         atom_ener: List[float] = [],
         activation_function: str = "tanh",
         precision: str = "default",
@@ -432,8 +432,8 @@ class EnerFitting(Fitting):
         self,
         inputs: tf.Tensor,
         natoms: tf.Tensor,
-        input_dict: dict = None,
-        reuse: bool = None,
+        input_dict: Optional[dict] = None,
+        reuse: Optional[bool] = None,
         suffix: str = "",
     ) -> tf.Tensor:
         """Build the computational graph for fitting net.
@@ -549,13 +549,14 @@ class EnerFitting(Fitting):
                 aparam = tf.reshape(aparam, [-1, self.numb_aparam * natoms[0]])
 
         atype_nall = tf.reshape(atype, [-1, natoms[1]])
-        atype_filter = tf.cast(atype_nall >= 0, GLOBAL_TF_FLOAT_PRECISION)
+        self.atype_nloc = tf.slice(
+            atype_nall, [0, 0], [-1, natoms[0]]
+        )  ## lammps will make error
+        atype_filter = tf.cast(self.atype_nloc >= 0, GLOBAL_TF_FLOAT_PRECISION)
+        self.atype_nloc = tf.reshape(self.atype_nloc, [-1])
         # prevent embedding_lookup error,
         # but the filter will be applied anyway
-        atype_nall = tf.clip_by_value(atype_nall, 0, self.ntypes - 1)
-        self.atype_nloc = tf.reshape(
-            tf.slice(atype_nall, [0, 0], [-1, natoms[0]]), [-1]
-        )  ## lammps will make error
+        self.atype_nloc = tf.clip_by_value(self.atype_nloc, 0, self.ntypes - 1)
         if type_embedding is not None:
             atype_embed = tf.nn.embedding_lookup(type_embedding, self.atype_nloc)
         else:
