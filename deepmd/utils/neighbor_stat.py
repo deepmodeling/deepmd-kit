@@ -89,7 +89,7 @@ class NeighborStat:
         self.sub_sess = tf.Session(graph=sub_graph, config=default_tf_session_config)
 
     def get_stat(self, data: DeepmdDataSystem) -> Tuple[float, List[int]]:
-        """get the data statistics of the training data, including nearest nbor distance between atoms, max nbor size of atoms.
+        """Get the data statistics of the training data, including nearest nbor distance between atoms, max nbor size of atoms.
 
         Parameters
         ----------

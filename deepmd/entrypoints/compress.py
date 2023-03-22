@@ -55,7 +55,7 @@ def compress(
     mpi_log: str,
     log_path: Optional[str],
     log_level: int,
-    **kwargs
+    **kwargs,
 ):
     """Compress model.
 

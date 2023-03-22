@@ -39,7 +39,6 @@ class TestConvertInput(unittest.TestCase):
                 self.assertAlmostEqual(d1[kk], d2[kk], places=places, msg=msg)
 
     def test_json_yaml_equal(self):
-
         inputs = ("water_v1", "water_se_a_v1")
 
         for i in inputs:

@@ -793,7 +793,7 @@ class DescrptSeAtten(DescrptSeA):
         name="filter_",
         reuse=None,
     ):
-        """input env matrix, returns R.G."""
+        """Input env matrix, returns R.G."""
         outputs_size = [1] + self.filter_neuron
         # cut-out inputs
         # with natom x (nei_type_i x 4)
