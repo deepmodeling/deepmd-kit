@@ -1730,5 +1730,16 @@ class DipoleChargeModifier {
   DP_DipoleChargeModifier *dcm;
   int nsel_types;
 };
+
+/**
+ * @brief Read model file to a string.
+ * @param[in] model Path to the model.
+ * @param[out] file_content Content of the model file.
+ **/
+void inline read_file_to_string(std::string model, std::string &file_content) {
+  const char *c_file_content = DP_ReadFileToChar(model.c_str());
+  file_content = std::string(c_file_content);
+};
+
 }  // namespace hpp
 }  // namespace deepmd
