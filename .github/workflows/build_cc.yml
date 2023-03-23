@@ -30,9 +30,7 @@ jobs:
     - run: sudo apt-get update && sudo apt-get install -y nvidia-cuda-toolkit
       if: matrix.variant == 'cuda'
     - run: |
-         sudo apt-get update \
-         && apt-get -y install wget \
-         && wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.0-1_all.deb \
+         wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.0-1_all.deb \
          && dpkg -i cuda-keyring_1.0-1_all.deb \
          && sudo apt-get update \
          && sudo apt-get -y install cuda-12-0
@@ -40,8 +38,7 @@ jobs:
       env:
         DEBIAN_FRONTEND: noninteractive
     - run: |
-         sudo apt-get update && sudo apt-get install -y gnupg2 \
-         && echo 'deb [arch=amd64] https://repo.radeon.com/rocm/apt/5.3/ jammy main' | tee /etc/apt/sources.list.d/rocm.list \
+         echo 'deb [arch=amd64] https://repo.radeon.com/rocm/apt/5.3/ jammy main' | tee /etc/apt/sources.list.d/rocm.list \
          && printf 'Package: *\nPin: release o=repo.radeon.com\nPin-Priority: 600' | tee /etc/apt/preferences.d/rocm-pin-600 \
          && curl -s https://repo.radeon.com/rocm/rocm.gpg.key | apt-key add - \
          && sudo apt-get update \
