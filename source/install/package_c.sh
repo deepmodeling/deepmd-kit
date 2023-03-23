@@ -26,7 +26,7 @@ make install
 #------------------
 
 # fix runpath
-for ii in ${INSTALL_PREFIX}/lib/*.so*; do
+for ii in ${BUILD_TMP_DIR}/libdeepmd_c/lib/*.so*; do
 	patchelf --set-rpath \$ORIGIN $ii
 done
 
