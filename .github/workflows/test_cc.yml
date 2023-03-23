@@ -6,7 +6,7 @@ jobs:
   testcc:
     name: Test C++
     runs-on: ubuntu-latest
-    container: ghcr.io/deepmodeling/deepmd-kit-test-cc:latest
+    container: ghcr.io/deepmodeling/deepmd-kit-test-environment:py3.11-gcc8-tf
     steps:
     - name: work around permission issue
       run: git config --global --add safe.directory /__w/deepmd-kit/deepmd-kit
