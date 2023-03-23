@@ -26,7 +26,7 @@ make install
 #------------------
 
 # fix runpath
-for ii in ${INSTALL_PREFIX}/lib/*; do
+for ii in ${INSTALL_PREFIX}/lib/*.so*; do
 	patchelf --set-rpath \$ORIGIN $ii
 done
 
