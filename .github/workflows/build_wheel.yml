@@ -29,7 +29,7 @@ jobs:
             dp_variant: cpu
           # linux-aarch64
           - os: ubuntu-latest
-            python: 311
+            python: 310
             platform_id: manylinux_aarch64
             dp_variant: cpu
     steps:
