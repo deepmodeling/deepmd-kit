@@ -25,4 +25,9 @@ make install
 
 #------------------
 
+# fix runpath
+for ii in ${INSTALL_PREFIX}/lib/*; do
+	patchelf --set-rpath \$ORIGIN $ii
+done
+
 tar vczf ${SCRIPT_PATH}/../../libdeepmd_c.tar.gz -C ${BUILD_TMP_DIR} libdeepmd_c
