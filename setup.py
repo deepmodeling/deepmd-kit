@@ -113,7 +113,7 @@ setup(
     extras_require={
         "test": ["dpdata>=0.1.9", "ase", "pytest", "pytest-cov", "pytest-sugar"],
         "docs": [
-            "sphinx<6",
+            "sphinx>=3.1.1",
             "recommonmark",
             "sphinx_rtd_theme>=1.0.0rc1",
             "sphinx_markdown_tables",
