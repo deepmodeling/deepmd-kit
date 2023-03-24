@@ -585,7 +585,7 @@ class DPTrainer:
 
         log.info("built lr")
 
-    def _build_optimizer(self):
+    def _build_loss(self):
         if not self.multi_task_mode:
             l2_l, l2_more = self.loss.build(
                 self.learning_rate,
@@ -654,14 +654,13 @@ class DPTrainer:
             reuse=False,
         )
 
-        self.l2_l, self.l2_more = self._build_optimizer()
+        self.l2_l, self.l2_more = self._build_loss()
 
         log.info("built network")
-
-    def _build_training(self):
-        trainable_variables = tf.trainable_variables()
-        if not self.multi_task_mode:
-            if self.run_opt.is_distrib:
+    
+    def _build_optimizer(self, fitting_key=None):
+        if self.run_opt.is_distrib:
+            if fitting_key is None:
                 if self.scale_lr_coef > 1.0:
                     log.info("Scale learning rate by coef: %f", self.scale_lr_coef)
                     optimizer = tf.train.AdamOptimizer(
@@ -671,26 +670,51 @@ class DPTrainer:
                     optimizer = tf.train.AdamOptimizer(self.learning_rate)
                 optimizer = self.run_opt._HVD.DistributedOptimizer(optimizer)
             else:
-                optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate)
-            if self.mixed_prec is not None:
-                _TF_VERSION = Version(TF_VERSION)
-                # check the TF_VERSION, when TF < 1.12, mixed precision is not allowed
-                if _TF_VERSION < Version("1.14.0"):
-                    raise RuntimeError(
-                        "TensorFlow version %s is not compatible with the mixed precision setting. Please consider upgrading your TF version!"
-                        % TF_VERSION
+                if self.scale_lr_coef_dict[fitting_key] > 1.0:
+                    log.info(
+                        "Scale learning rate by coef: %f",
+                        self.scale_lr_coef_dict[fitting_key],
                     )
-                elif _TF_VERSION < Version("2.4.0"):
-                    optimizer = (
-                        tf.train.experimental.enable_mixed_precision_graph_rewrite(
-                            optimizer
-                        )
+                    optimizer = tf.train.AdamOptimizer(
+                        self.learning_rate_dict[fitting_key]
+                        * self.scale_lr_coef_dict[fitting_key]
                     )
                 else:
-                    optimizer = tf.mixed_precision.enable_mixed_precision_graph_rewrite(
-                        optimizer
+                    optimizer = tf.train.AdamOptimizer(
+                        learning_rate=self.learning_rate_dict[fitting_key]
                     )
+                optimizer = self.run_opt._HVD.DistributedOptimizer(optimizer)
+        else:
+            if fitting_key is None:
+                optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate)
+            else:
+                optimizer = tf.train.AdamOptimizer(
+                    learning_rate=self.learning_rate_dict[fitting_key]
+                )
 
+        if self.mixed_prec is not None:
+            _TF_VERSION = Version(TF_VERSION)
+            if _TF_VERSION < Version("1.14.0"):
+                raise RuntimeError(
+                    "TensorFlow version %s is not compatible with the mixed precision setting. Please consider upgrading your TF version!"
+                    % TF_VERSION
+                )
+            elif _TF_VERSION < Version("2.4.0"):
+                optimizer = tf.train.experimental.enable_mixed_precision_graph_rewrite(
+                    optimizer
+                )
+            else:
+                optimizer = tf.mixed_precision.enable_mixed_precision_graph_rewrite(
+                    optimizer
+                )
+        return optimizer
+
+
+    def _build_training(self):
+        trainable_variables = tf.trainable_variables()
+
+        if not self.multi_task_mode:
+            optimizer = self._build_optimizer()
             apply_op = optimizer.minimize(
                 loss=self.l2_l,
                 global_step=self.global_step,
@@ -702,45 +726,7 @@ class DPTrainer:
         else:
             self.train_op = {}
             for fitting_key in self.fitting_type_dict:
-                if self.run_opt.is_distrib:
-                    if self.scale_lr_coef_dict[fitting_key] > 1.0:
-                        log.info(
-                            "Scale learning rate by coef: %f",
-                            self.scale_lr_coef_dict[fitting_key],
-                        )
-                        optimizer = tf.train.AdamOptimizer(
-                            self.learning_rate_dict[fitting_key]
-                            * self.scale_lr_coef_dict[fitting_key]
-                        )
-                    else:
-                        optimizer = tf.train.AdamOptimizer(
-                            self.learning_rate_dict[fitting_key]
-                        )
-                    optimizer = self.run_opt._HVD.DistributedOptimizer(optimizer)
-                else:
-                    optimizer = tf.train.AdamOptimizer(
-                        learning_rate=self.learning_rate_dict[fitting_key]
-                    )
-                if self.mixed_prec is not None:
-                    _TF_VERSION = Version(TF_VERSION)
-                    # check the TF_VERSION, when TF < 1.12, mixed precision is not allowed
-                    if _TF_VERSION < Version("1.14.0"):
-                        raise RuntimeError(
-                            "TensorFlow version %s is not compatible with the mixed precision setting. Please consider upgrading your TF version!"
-                            % TF_VERSION
-                        )
-                    elif _TF_VERSION < Version("2.4.0"):
-                        optimizer = (
-                            tf.train.experimental.enable_mixed_precision_graph_rewrite(
-                                optimizer
-                            )
-                        )
-                    else:
-                        optimizer = (
-                            tf.mixed_precision.enable_mixed_precision_graph_rewrite(
-                                optimizer
-                            )
-                        )
+                optimizer = self._build_optimizer(fitting_key=fitting_key)
                 apply_op = optimizer.minimize(
                     loss=self.l2_l[fitting_key],
                     global_step=self.global_step,
