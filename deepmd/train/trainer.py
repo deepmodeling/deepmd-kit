@@ -709,7 +709,6 @@ class DPTrainer:
                 )
         return optimizer
 
-
     def _build_training(self):
         trainable_variables = tf.trainable_variables()
 
@@ -1185,6 +1184,7 @@ class DPTrainer:
                 prop_fmt = "   %11.2e"
                 for k in train_results.keys():
                     print_str += prop_fmt % (train_results[k])
+            print_str += "   %8.1e\n" % cur_lr
         else:
             for fitting_key in train_results:
                 if valid_results[fitting_key] is not None:
