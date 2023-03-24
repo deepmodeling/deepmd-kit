@@ -657,7 +657,7 @@ class DPTrainer:
         self.l2_l, self.l2_more = self._build_loss()
 
         log.info("built network")
-    
+
     def _build_optimizer(self, fitting_key=None):
         if self.run_opt.is_distrib:
             if fitting_key is None:
