@@ -119,7 +119,7 @@ setup(
             "sphinx_markdown_tables",
             "myst-parser",
             "breathe",
-            "exhale",
+            "exhale>=0.3.0",
             "numpydoc",
             "ase",
             "deepmodeling-sphinx>=0.1.0",
