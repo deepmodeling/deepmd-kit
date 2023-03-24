@@ -304,7 +304,9 @@ def get_tf_session_config() -> Any:
                 pass
             else:
                 cuda_data_dir = str(Path(m.__file__).parent.absolute())
-                set_env_if_empty("XLA_FLAGS", "--xla_gpu_cuda_data_dir=" + cuda_data_dir)
+                set_env_if_empty(
+                    "XLA_FLAGS", "--xla_gpu_cuda_data_dir=" + cuda_data_dir
+                )
     config = tf.ConfigProto(
         gpu_options=tf.GPUOptions(allow_growth=True),
         intra_op_parallelism_threads=intra,
