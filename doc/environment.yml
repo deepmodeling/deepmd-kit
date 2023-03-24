@@ -8,3 +8,4 @@ dependencies:
   - pip>=20.1
   - pip:
     - ..[docs,cpu]
+    - "exhale @ https://github.com/svenevs/exhale/archive/dad5c7ff22dd3e599e5809a926e09653d8370b9f.zip"
