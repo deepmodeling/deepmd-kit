@@ -314,5 +314,3 @@ latex_elements = {
 # For TF automatic generated OP docs
 napoleon_google_docstring = True
 napoleon_numpy_docstring = False
-
-os.system(sys.executable + " -m pip list")
