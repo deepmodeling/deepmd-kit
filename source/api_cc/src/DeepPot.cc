@@ -342,12 +342,15 @@ init (const int & npu_rank)
   ::tensorflow::AttrValue use_off_line;
   ::tensorflow::AttrValue mix_compile_mode;
   ::tensorflow::AttrValue op_debug_level;
+  ::tensorflow::AttrValue precision_mode;
   use_off_line.set_b(true);
   mix_compile_mode.set_b(false);
   op_debug_level.set_i(0);
+  op_debug_level.set_s("must_keep_origin_dtype");
   params->insert({"use_off_line", use_off_line});
   params->insert({"mix_compile_mode", mix_compile_mode});
   params->insert({"op_debug_level", op_debug_level});
+  params->insert({"precision_mode", precision_mode});
 
   // set visible ascend devices
   char *pathvar;

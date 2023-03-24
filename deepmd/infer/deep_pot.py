@@ -109,6 +109,7 @@ class DeepPot(DeepEval):
             custom_op.parameter_map["use_off_line"].b = True
             custom_op.parameter_map["mix_compile_mode"].b = False
             custom_op.parameter_map["op_debug_level"].i = 0
+            custom_op.parameter_map["precision_mode"].s = tf.compat.as_bytes("must_keep_origin_dtype")
             config.graph_options.rewrite_options.remapping = RewriterConfig.OFF
             self.npu_sess = tf.Session(graph=self.graph, config=config)
             self.ASCEND_NEI_LEN = 1024
