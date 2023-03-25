@@ -21,16 +21,10 @@ jobs:
           - python: 3.7
             gcc: 8
             tf: 1.14
-          - python: 3.7
-            gcc: 5
-            tf:
-          - python: 3.7
+          - python: 3.8
             gcc: 8
             tf:
-          - python: "3.10"
-            gcc: 5
-            tf:
-          - python: "3.10"
+          - python: "3.11"
             gcc: 8
             tf:
 
