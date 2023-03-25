@@ -65,8 +65,7 @@ if dp_ipi == "1":
 
 tf_install_dir, _ = find_tensorflow()
 tf_version = get_tf_version(tf_install_dir)
-# TODO: change to "tf_version == "" or" after tensorflow 2.12 is released
-if tf_version != "" and Version(tf_version) >= Version("2.12"):
+if tf_version == "" or Version(tf_version) >= Version("2.12"):
     find_libpython_requires = []
 else:
     find_libpython_requires = ["find_libpython"]
@@ -76,6 +75,8 @@ class bdist_wheel_abi3(bdist_wheel):
     def get_tag(self):
         python, abi, plat = super().get_tag()
         if python.startswith("cp"):
+            if tf_version == "" or Version(tf_version) >= Version("2.12"):
+                return "py38", "none", plat
             return "py37", "none", plat
         return python, abi, plat
 
