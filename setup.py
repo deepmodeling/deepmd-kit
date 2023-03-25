@@ -146,6 +146,7 @@ setup(
             "nvidia-cusolver-cu11",
             "nvidia-cusparse-cu11",
             "nvidia-cudnn-cu11",
+            "nvidia-cuda-nvcc-cu11",
         ],
         "cu12": [
             "nvidia-cuda-runtime-cu12",
@@ -155,6 +156,7 @@ setup(
             "nvidia-cusolver-cu12",
             "nvidia-cusparse-cu12",
             "nvidia-cudnn-cu12",
+            "nvidia-cuda-nvcc-cu12",
         ],
     },
     entry_points={
