@@ -124,6 +124,7 @@ class DeepmdDataSystem:
                     rule = int(words[1])
                 self.batch_size = self._make_auto_bs(rule)
             elif "mixed" == words[0]:
+                self.mixed_type = True
                 self.mixed_systems = True
                 if len(words) == 2:
                     rule = int(words[1])
