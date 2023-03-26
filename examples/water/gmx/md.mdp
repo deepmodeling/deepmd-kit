@@ -46,4 +46,3 @@ DispCorr                 = AllEnerPres
 pcoupl                   = no
 
 gen-vel                  = yes
-

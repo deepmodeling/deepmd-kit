@@ -1,13 +1,28 @@
-from typing import Optional, Union, List
-from abc import ABC, abstractmethod
-from enum import Enum
+from abc import (
+    ABC,
+    abstractmethod,
+)
+from enum import (
+    Enum,
+)
+from typing import (
+    List,
+    Optional,
+    Union,
+)
 
-from deepmd.env import tf, GLOBAL_TF_FLOAT_PRECISION
-from deepmd.utils.graph import load_graph_def
+from deepmd.env import (
+    GLOBAL_TF_FLOAT_PRECISION,
+    tf,
+)
+from deepmd.utils.graph import (
+    load_graph_def,
+)
+
 
 class Model(ABC):
     @abstractmethod
-    def build (
+    def build(
         self,
         coord_: tf.Tensor,
         atype_: tf.Tensor,
@@ -17,8 +32,8 @@ class Model(ABC):
         input_dict: dict,
         frz_model: Optional[str] = None,
         ckpt_meta: Optional[str] = None,
-        suffix: str = '', 
-        reuse: Optional[Union[bool, Enum]] = None
+        suffix: str = "",
+        reuse: Optional[Union[bool, Enum]] = None,
     ):
         """Build the model.
 
@@ -51,14 +66,14 @@ class Model(ABC):
             The output dict
         """
 
-    def init_variables(self,
-                       graph : tf.Graph,
-                       graph_def : tf.GraphDef,
-                       model_type : str = "original_model",
-                       suffix : str = "",
+    def init_variables(
+        self,
+        graph: tf.Graph,
+        graph_def: tf.GraphDef,
+        model_type: str = "original_model",
+        suffix: str = "",
     ) -> None:
-        """
-        Init the embedding net variables with the given frozen model
+        """Init the embedding net variables with the given frozen model.
 
         Parameters
         ----------
@@ -71,21 +86,23 @@ class Model(ABC):
         suffix : str
             suffix to name scope
         """
-        raise RuntimeError("The 'dp train init-frz-model' command do not support this model!")
+        raise RuntimeError(
+            "The 'dp train init-frz-model' command do not support this model!"
+        )
 
     def build_descrpt(
-            self,
-            coord_: tf.Tensor,
-            atype_: tf.Tensor,
-            natoms: tf.Tensor,
-            box: tf.Tensor,
-            mesh: tf.Tensor,
-            input_dict: dict,
-            frz_model: Optional[str] = None,
-            ckpt_meta: Optional[str] = None,
-            suffix: str = '', 
-            reuse: Optional[Union[bool, Enum]] = None
-        ):
+        self,
+        coord_: tf.Tensor,
+        atype_: tf.Tensor,
+        natoms: tf.Tensor,
+        box: tf.Tensor,
+        mesh: tf.Tensor,
+        input_dict: dict,
+        frz_model: Optional[str] = None,
+        ckpt_meta: Optional[str] = None,
+        suffix: str = "",
+        reuse: Optional[Union[bool, Enum]] = None,
+    ):
         """Build the descriptor part of the model.
 
         Parameters
@@ -117,47 +134,56 @@ class Model(ABC):
             The descriptor tensor
         """
         if frz_model is None and ckpt_meta is None:
-            dout \
-                = self.descrpt.build(coord_,
-                                     atype_,
-                                     natoms,
-                                     box,
-                                     mesh,
-                                     input_dict,
-                                     suffix = suffix,
-                                     reuse = reuse)
-            dout = tf.identity(dout, name='o_descriptor')
+            dout = self.descrpt.build(
+                coord_,
+                atype_,
+                natoms,
+                box,
+                mesh,
+                input_dict,
+                suffix=suffix,
+                reuse=reuse,
+            )
+            dout = tf.identity(dout, name="o_descriptor")
         else:
-            tf.constant(self.rcut,
-                name = 'descrpt_attr/rcut',
-                dtype = GLOBAL_TF_FLOAT_PRECISION)
-            tf.constant(self.ntypes,
-                name = 'descrpt_attr/ntypes',
-                dtype = tf.int32)
+            tf.constant(
+                self.rcut, name="descrpt_attr/rcut", dtype=GLOBAL_TF_FLOAT_PRECISION
+            )
+            tf.constant(self.ntypes, name="descrpt_attr/ntypes", dtype=tf.int32)
             feed_dict = self.descrpt.get_feed_dict(coord_, atype_, natoms, box, mesh)
-            return_elements = [*self.descrpt.get_tensor_names(), 'o_descriptor:0']
+            return_elements = [*self.descrpt.get_tensor_names(), "o_descriptor:0"]
             if frz_model is not None:
-                imported_tensors \
-                    = self._import_graph_def_from_frz_model(frz_model, feed_dict, return_elements)
+                imported_tensors = self._import_graph_def_from_frz_model(
+                    frz_model, feed_dict, return_elements
+                )
             elif ckpt_meta is not None:
-                imported_tensors \
-                    = self._import_graph_def_from_ckpt_meta(ckpt_meta, feed_dict, return_elements)
+                imported_tensors = self._import_graph_def_from_ckpt_meta(
+                    ckpt_meta, feed_dict, return_elements
+                )
             else:
                 raise RuntimeError("should not reach here")  # pragma: no cover
             dout = imported_tensors[-1]
             self.descrpt.pass_tensors_from_frz_model(*imported_tensors[:-1])
         return dout
 
-    def _import_graph_def_from_frz_model(self, frz_model: str, feed_dict: dict, return_elements: List[str]):
+    def _import_graph_def_from_frz_model(
+        self, frz_model: str, feed_dict: dict, return_elements: List[str]
+    ):
         return_nodes = [x[:-2] for x in return_elements]
         graph, graph_def = load_graph_def(frz_model)
         sub_graph_def = tf.graph_util.extract_sub_graph(graph_def, return_nodes)
-        return tf.import_graph_def(sub_graph_def, input_map = feed_dict, return_elements = return_elements, name = "")
+        return tf.import_graph_def(
+            sub_graph_def, input_map=feed_dict, return_elements=return_elements, name=""
+        )
 
-    def _import_graph_def_from_ckpt_meta(self, ckpt_meta: str, feed_dict: dict, return_elements: List[str]):
+    def _import_graph_def_from_ckpt_meta(
+        self, ckpt_meta: str, feed_dict: dict, return_elements: List[str]
+    ):
         return_nodes = [x[:-2] for x in return_elements]
         with tf.Graph().as_default() as graph:
             tf.train.import_meta_graph(f"{ckpt_meta}.meta", clear_devices=True)
             graph_def = graph.as_graph_def()
         sub_graph_def = tf.graph_util.extract_sub_graph(graph_def, return_nodes)
-        return tf.import_graph_def(sub_graph_def, input_map = feed_dict, return_elements = return_elements, name = "")
+        return tf.import_graph_def(
+            sub_graph_def, input_map=feed_dict, return_elements=return_elements, name=""
+        )

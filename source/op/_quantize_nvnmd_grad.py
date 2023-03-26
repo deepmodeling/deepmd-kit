@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
 
-from tensorflow.python.framework import ops
-from deepmd.env import op_module
-from deepmd.env import tf 
+from tensorflow.python.framework import (
+    ops,
+)
+
+from deepmd.env import (
+    op_module,
+)
+
 
 @ops.RegisterGradient("QuantizeNvnmd")
 def _QuantizeNvnmdGrad(op, grad):
