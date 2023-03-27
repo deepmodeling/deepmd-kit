@@ -460,7 +460,9 @@ class TestOpMatmulFlt2fixNvnmd(tf.test.TestCase):
     def setUp(self):
         config = tf.ConfigProto()
         if int(os.environ.get("DP_AUTO_PARALLELIZATION", 0)):
-            config.graph_options.rewrite_options.custom_optimizers.add().name = "dpparallel"
+            config.graph_options.rewrite_options.custom_optimizers.add().name = (
+                "dpparallel"
+            )
         self.sess = self.test_session(config=config).__enter__()
     
     def test_op(self):
@@ -507,7 +509,7 @@ class TestOpMulFltNvnmd(tf.test.TestCase):
                 "dpparallel"
             )
         self.sess = self.test_session(config=config).__enter__()
-    
+
     def test_op(self):
         # graph
         t_x = tf.placeholder(tf.float64, [None, 4], "t_x")
@@ -553,7 +555,7 @@ class TestOpQuantizeNvnmd(tf.test.TestCase):
                 "dpparallel"
             )
         self.sess = self.test_session(config=config).__enter__()
-    
+
     def test_op(self):
         # graph
         t_x = tf.placeholder(tf.float64, [None, 4], "t_x")
