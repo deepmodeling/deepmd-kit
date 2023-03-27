@@ -150,7 +150,6 @@ def run_apidoc(_):
 
 
 def setup(app):
-
     # Add hook for building doxygen xml when needed
     app.connect("builder-inited", run_apidoc)
 
@@ -305,6 +304,10 @@ latex_elements = {
     "fontpkg": r"""
 \usepackage{fontspec}
 \setmainfont{Symbola}
+""",
+    "preamble": r"""
+\usepackage{enumitem}
+\setlistdepth{99}
 """,
 }
 

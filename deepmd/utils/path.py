@@ -106,7 +106,7 @@ class DPPath(ABC):
 
     @abstractmethod
     def __lt__(self, other: "DPPath") -> bool:
-        """whether this DPPath is less than other for sorting."""
+        """Whether this DPPath is less than other for sorting."""
 
     @abstractmethod
     def __str__(self) -> str:
@@ -204,7 +204,7 @@ class DPOSPath(DPPath):
         return type(self)(self.path / key)
 
     def __lt__(self, other: "DPOSPath") -> bool:
-        """whether this DPPath is less than other for sorting."""
+        """Whether this DPPath is less than other for sorting."""
         return self.path < other.path
 
     def __str__(self) -> str:
@@ -349,11 +349,11 @@ class DPH5Path(DPPath):
         return f"{self.name}/{path}"
 
     def __lt__(self, other: "DPH5Path") -> bool:
-        """whether this DPPath is less than other for sorting."""
+        """Whether this DPPath is less than other for sorting."""
         if self.root_path == other.root_path:
             return self.name < other.name
         return self.root_path < other.root_path
 
     def __str__(self) -> str:
-        """returns path of self."""
+        """Returns path of self."""
         return f"{self.root_path}#{self.name}"

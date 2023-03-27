@@ -142,6 +142,15 @@ int build_nlist_gpu(InputNlist& nlist,
                     const int& mem_size,
                     const float& rcut);
 
+/**
+ * @brief Filter the fake atom type.
+ * @details If >=0, set to 0; if <0, set to -1.
+ * @param ftype_out The output filtered atom type.
+ * @param ftype_in The input atom type.
+ * @param nloc The number of atoms.
+ */
+void filter_ftype_gpu_cuda(int* ftype_out, const int* ftype_in, const int nloc);
+
 void use_nei_info_gpu(int* nlist,
                       int* ntype,
                       bool* nmask,
@@ -175,6 +184,14 @@ int build_nlist_gpu_rocm(InputNlist& nlist,
                          const int& nall,
                          const int& mem_size,
                          const float& rcut);
+/**
+ * @brief Filter the fake atom type.
+ * @details If >=0, set to 0; if <0, set to -1.
+ * @param ftype_out The output filtered atom type.
+ * @param ftype_in The input atom type.
+ * @param nloc The number of atoms.
+ */
+void filter_ftype_gpu_rocm(int* ftype_out, const int* ftype_in, const int nloc);
 
 void use_nei_info_gpu_rocm(int* nlist,
                            int* ntype,

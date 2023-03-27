@@ -90,7 +90,6 @@ class TestParserOutput(unittest.TestCase):
         mapping = {**{"command": dict(type=str, value=command)}, **mapping}
 
         for argument, test_data in mapping.items():
-
             # get expected type
             expected_type = test_data["type"]
 

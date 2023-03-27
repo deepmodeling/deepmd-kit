@@ -82,12 +82,20 @@ void deepmd::prod_env_mat_a_cpu(FPTYPE *em,
     assert(fmt_nlist_a.size() == nnei);
     // record outputs
     for (int jj = 0; jj < nem; ++jj) {
-      em[ii * nem + jj] =
-          (d_em_a[jj] - avg[type[ii] * nem + jj]) / std[type[ii] * nem + jj];
+      if (type[ii] >= 0) {
+        em[ii * nem + jj] =
+            (d_em_a[jj] - avg[type[ii] * nem + jj]) / std[type[ii] * nem + jj];
+      } else {
+        em[ii * nem + jj] = 0;
+      }
     }
     for (int jj = 0; jj < nem * 3; ++jj) {
-      em_deriv[ii * nem * 3 + jj] =
-          d_em_a_deriv[jj] / std[type[ii] * nem + jj / 3];
+      if (type[ii] >= 0) {
+        em_deriv[ii * nem * 3 + jj] =
+            d_em_a_deriv[jj] / std[type[ii] * nem + jj / 3];
+      } else {
+        em_deriv[ii * nem * 3 + jj] = 0;
+      }
     }
     for (int jj = 0; jj < nnei * 3; ++jj) {
       rij[ii * nnei * 3 + jj] = d_rij_a[jj];

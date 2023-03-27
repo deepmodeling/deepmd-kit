@@ -119,10 +119,10 @@ if(BUILD_CPP_IF)
       )
     endif()
   endforeach()
-else(BUILD_CPP_IF AND NOT USE_TF_PYTHON_LIBS)
+else(BUILD_CPP_IF)
   message(
     STATUS "Disabled cpp interface build, looking for tensorflow_framework")
-endif(BUILD_CPP_IF AND NOT USE_TF_PYTHON_LIBS)
+endif(BUILD_CPP_IF)
 
 # tensorflow_framework
 if(NOT TensorFlowFramework_FIND_COMPONENTS)
@@ -341,8 +341,18 @@ elseif(NOT DEFINED OP_CXX_ABI)
     elseif(${CPP_CXX_ABI_COMPILE_RESULT_VAR0}
            AND NOT ${CPP_CXX_ABI_COMPILE_RESULT_VAR1})
       set(OP_CXX_ABI 0)
+    elseif(${CPP_CXX_ABI_COMPILE_RESULT_VAR0}
+           AND ${CPP_CXX_ABI_COMPILE_RESULT_VAR1})
+      message(
+        WARNING
+          "Both _GLIBCXX_USE_CXX11_ABI=0 and 1 work. The reason may be that your C++ compiler (e.g. Red Hat Developer Toolset) does not support the custom cxx11 abi flag. For convience, we set _GLIBCXX_USE_CXX11_ABI=1."
+      )
+      set(OP_CXX_ABI 1)
     else()
-      message(FATAL_ERROR "Failed to detect OP_CXX_ABI, please set it manually")
+      message(
+        FATAL_ERROR
+          "Both _GLIBCXX_USE_CXX11_ABI=0 and 1 do not work. The reason may be that your C++ compiler (e.g. Red Hat Developer Toolset) does not support the custom cxx11 abi flag."
+      )
     endif()
   else()
     try_run(

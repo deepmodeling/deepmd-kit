@@ -200,7 +200,7 @@ class DeepEval:
     def sort_input(
         coord: np.ndarray,
         atom_type: np.ndarray,
-        sel_atoms: List[int] = None,
+        sel_atoms: Optional[List[int]] = None,
         mixed_type: bool = False,
     ):
         """Sort atoms in the system according their types.

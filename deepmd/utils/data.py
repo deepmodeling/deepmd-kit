@@ -48,7 +48,7 @@ class DeepmdData:
         sys_path: str,
         set_prefix: str = "set",
         shuffle_test: bool = True,
-        type_map: List[str] = None,
+        type_map: Optional[List[str]] = None,
         optional_type_map: bool = True,
         modifier=None,
         trn_all_set: bool = False,
@@ -91,6 +91,10 @@ class DeepmdData:
                 self.type_idx_map = np.array(
                     sorter[np.searchsorted(type_map, self.type_map, sorter=sorter)]
                 )
+                # padding for virtual atom
+                self.type_idx_map = np.append(
+                    self.type_idx_map, np.array([-1], dtype=np.int32)
+                )
             self.type_map = type_map
         if type_map is None and self.type_map is None and self.mixed_type:
             raise RuntimeError("mixed_type format must have type_map!")
@@ -125,7 +129,7 @@ class DeepmdData:
         atomic: bool = False,
         must: bool = False,
         high_prec: bool = False,
-        type_sel: List[int] = None,
+        type_sel: Optional[List[int]] = None,
         repeat: int = 1,
         default: float = 0.0,
         dtype: Optional[np.dtype] = None,
@@ -489,8 +493,12 @@ class DeepmdData:
                 [(real_type == i).sum(axis=-1) for i in range(self.get_ntypes())],
                 dtype=np.int32,
             ).T
+            ghost_nums = np.array(
+                [(real_type == -1).sum(axis=-1)],
+                dtype=np.int32,
+            ).T
             assert (
-                atom_type_nums.sum(axis=-1) == natoms
+                atom_type_nums.sum(axis=-1) + ghost_nums.sum(axis=-1) == natoms
             ).all(), "some types in 'real_atom_types.npy' of set {} are not contained in {} types!".format(
                 set_name, self.get_ntypes()
             )

@@ -729,7 +729,6 @@ class DPTrainer:
             run_sess(self.sess, bcast_op)
 
     def train(self, train_data=None, valid_data=None):
-
         # if valid_data is None:  # no validation set specified.
         #     valid_data = train_data  # using training set as validation set.
 
@@ -793,7 +792,6 @@ class DPTrainer:
         total_train_time = 0.0
 
         while cur_batch < stop_batch:
-
             # first round validation:
             if not self.multi_task_mode:
                 train_batch = train_data.get_batch()

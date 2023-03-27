@@ -229,11 +229,12 @@ def set_log_handles(
 
     ch.setLevel(level)
     ch.addFilter(_AppFilter())
+    # clean old handlers before adding new one
+    root_log.handlers.clear()
     root_log.addHandler(ch)
 
     # * add file handler ***************************************************************
     if log_path:
-
         # create directory
         log_path.parent.mkdir(exist_ok=True, parents=True)
 

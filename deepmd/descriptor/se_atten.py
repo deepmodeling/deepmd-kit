@@ -1,3 +1,4 @@
+import warnings
 from typing import (
     List,
     Optional,
@@ -67,6 +68,8 @@ class DescrptSeAtten(DescrptSeA):
     exclude_types : List[List[int]]
             The excluded pairs of types which have no interaction with each other.
             For example, `[[0, 1]]` means no interaction between type 0 and type 1.
+    set_davg_zero
+            Set the shift of embedding net input to zero.
     activation_function
             The activation function in the embedding net. Supported options are |ACTIVATION_FN|
     precision
@@ -97,6 +100,7 @@ class DescrptSeAtten(DescrptSeA):
         trainable: bool = True,
         seed: Optional[int] = None,
         type_one_side: bool = True,
+        set_davg_zero: bool = True,
         exclude_types: List[List[int]] = [],
         activation_function: str = "tanh",
         precision: str = "default",
@@ -107,6 +111,11 @@ class DescrptSeAtten(DescrptSeA):
         attn_mask: bool = False,
         multi_task: bool = False,
     ) -> None:
+        if not set_davg_zero:
+            warnings.warn(
+                "Set 'set_davg_zero' False in descriptor 'se_atten' "
+                "may cause unexpected incontinuity during model inference!"
+            )
         DescrptSeA.__init__(
             self,
             rcut,
@@ -119,7 +128,7 @@ class DescrptSeAtten(DescrptSeA):
             seed=seed,
             type_one_side=type_one_side,
             exclude_types=exclude_types,
-            set_davg_zero=True,
+            set_davg_zero=set_davg_zero,
             activation_function=activation_function,
             precision=precision,
             uniform_seed=uniform_seed,
@@ -393,6 +402,8 @@ class DescrptSeAtten(DescrptSeA):
         tf.summary.histogram("nlist", self.nlist)
 
         self.descrpt_reshape = tf.reshape(self.descrpt, [-1, self.ndescrpt])
+        # prevent lookup error; the actual atype already used for nlist
+        atype = tf.clip_by_value(atype, 0, self.ntypes - 1)
         self.atype_nloc = tf.reshape(
             tf.slice(atype, [0, 0], [-1, natoms[0]]), [-1]
         )  ## lammps will have error without this
@@ -497,7 +508,7 @@ class DescrptSeAtten(DescrptSeA):
             sysa2 = [0.0 for i in range(self.ntypes)]
             for ff in range(nframes):
                 natoms = real_natoms_vec[ff]
-                dd_ff = np.reshape(dd_all[ff], [-1, self.ndescrpt * natoms[0]])
+                dd_ff = np.reshape(dd_all[ff], [-1, self.ndescrpt * natoms_vec[0]])
                 start_index = 0
                 for type_i in range(self.ntypes):
                     end_index = (
@@ -782,7 +793,7 @@ class DescrptSeAtten(DescrptSeA):
         name="filter_",
         reuse=None,
     ):
-        """input env matrix, returns R.G."""
+        """Input env matrix, returns R.G."""
         outputs_size = [1] + self.filter_neuron
         # cut-out inputs
         # with natom x (nei_type_i x 4)

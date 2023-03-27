@@ -129,6 +129,7 @@ __global__ void format_nlist_fill_a(uint_64* key,
   uint_64* key_in = key + idx * MAX_NBOR_SIZE;
   FPTYPE diff[3];
   const int& j_idx = nei_idx[idy];
+  if (type[j_idx] < 0) return;
   for (int dd = 0; dd < 3; dd++) {
     diff[dd] = coord[j_idx * 3 + dd] - coord[idx * 3 + dd];
   }
@@ -357,6 +358,7 @@ __global__ void compute_env_mat_a(FPTYPE* em,
   // <<<nloc, TPB>>>
   const int_64 bid = blockIdx.x;
   const unsigned int tid = threadIdx.x;
+  if (type[bid] < 0) return;
   if (tid >= nnei) {
     return;
   }

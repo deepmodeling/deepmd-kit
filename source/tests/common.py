@@ -85,9 +85,62 @@ def gen_data_mixed_type(nframes=1):
     )
 
 
-def gen_data(nframes=1, mixed_type=False):
+def gen_data_virtual_type(nframes=1, nghost=4):
+    tmpdata = Data(rand_pert=0.1, seed=1, nframes=nframes)
+    sys = dpdata.LabeledSystem()
+    real_type_map = ["foo", "bar"]
+    sys.data["atom_names"] = ["X"]
+    sys.data["coords"] = tmpdata.coord
+    sys.data["atom_types"] = np.concatenate(
+        [
+            np.zeros_like(tmpdata.atype),
+            np.zeros([nghost], dtype=np.int32),
+        ],
+        axis=0,
+    )
+    sys.data["cells"] = tmpdata.cell
+    nframes = tmpdata.nframes
+    natoms = tmpdata.natoms
+    sys.data["coords"] = np.concatenate(
+        [
+            sys.data["coords"].reshape([nframes, natoms, 3]),
+            np.zeros([nframes, nghost, 3]),
+        ],
+        axis=1,
+    )
+    sys.data["cells"] = sys.data["cells"].reshape([nframes, 3, 3])
+    sys.data["energies"] = np.zeros([nframes, 1])
+    sys.data["forces"] = np.zeros([nframes, natoms + nghost, 3])
+    sys.to_deepmd_npy("system_mixed_type", prec=np.float64)
+    np.savetxt("system_mixed_type/type_map.raw", real_type_map, fmt="%s")
+    np.save(
+        "system_mixed_type/set.000/real_atom_types.npy",
+        np.concatenate(
+            [
+                tmpdata.atype.reshape(1, -1).repeat(nframes, 0),
+                np.full([nframes, nghost], -1, dtype=np.int32),
+            ],
+            axis=1,
+        ),
+    )
+    np.save("system_mixed_type/set.000/fparam.npy", tmpdata.fparam)
+    np.save(
+        "system_mixed_type/set.000/aparam.npy",
+        np.concatenate(
+            [
+                tmpdata.aparam.reshape([nframes, natoms, 2]),
+                np.zeros([nframes, nghost, 2]),
+            ],
+            axis=1,
+        ),
+    )
+
+
+def gen_data(nframes=1, mixed_type=False, virtual_type=False):
     if not mixed_type:
         gen_data_type_specific(nframes)
+    elif virtual_type:
+        gen_data_virtual_type(nframes)
     else:
         gen_data_mixed_type(nframes)
 
@@ -607,7 +660,7 @@ class DataSets:
             return np.average(eners)
 
     def load_energy(self, set_name, nframes, nvalues, energy_file, atom_energy_file):
-        """return : coeff_ener, ener, coeff_atom_ener, atom_ener."""
+        """Return : coeff_ener, ener, coeff_atom_ener, atom_ener."""
         # load atom_energy
         coeff_atom_ener, atom_ener = self.load_data(
             set_name, atom_energy_file, [nframes, nvalues], False
@@ -712,13 +765,13 @@ class DataSets:
         return new_data
 
     def get_test(self):
-        """returned property prefector [4] in order:
+        """Returned property prefector [4] in order:
         energy, force, virial, atom_ener.
         """
         return self.get_set(self.test_set)
 
     def get_batch(self, batch_size):
-        """returned property prefector [4] in order:
+        """Returned property prefector [4] in order:
         energy, force, virial, atom_ener.
         """
         set_size = self.batch_set["energy"].shape[0]

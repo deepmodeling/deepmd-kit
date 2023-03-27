@@ -96,8 +96,8 @@ class DescrptSeA(DescrptSe):
     .. math::
         (\mathcal{G}^i)_j = \mathcal{N}(s(r_{ji}))
 
-    :math:`\mathcal{G}^i_< \in \mathbb{R}^{N \times M_2}` takes first :math:`M_2`$` columns of
-    :math:`\mathcal{G}^i`$`. The equation of embedding network :math:`\mathcal{N}` can be found at
+    :math:`\mathcal{G}^i_< \in \mathbb{R}^{N \times M_2}` takes first :math:`M_2` columns of
+    :math:`\mathcal{G}^i`. The equation of embedding network :math:`\mathcal{N}` can be found at
     :meth:`deepmd.utils.network.embedding_net`.
 
     Parameters
@@ -472,7 +472,7 @@ class DescrptSeA(DescrptSe):
             graph, "descrpt_attr%s/t_std" % suffix
         )
 
-    def enable_mixed_precision(self, mixed_prec: dict = None) -> None:
+    def enable_mixed_precision(self, mixed_prec: Optional[dict] = None) -> None:
         """Reveive the mixed precision setting.
 
         Parameters
@@ -491,7 +491,7 @@ class DescrptSeA(DescrptSe):
         box_: tf.Tensor,
         mesh: tf.Tensor,
         input_dict: dict,
-        reuse: bool = None,
+        reuse: Optional[bool] = None,
         suffix: str = "",
     ) -> tf.Tensor:
         """Build the computational graph for the descriptor.
@@ -866,7 +866,7 @@ class DescrptSeA(DescrptSe):
         trainable=True,
         suffix="",
     ):
-        """input env matrix, returns R.G."""
+        """Input env matrix, returns R.G."""
         outputs_size = [1] + self.filter_neuron
         # cut-out inputs
         # with natom x (nei_type_i x 4)
