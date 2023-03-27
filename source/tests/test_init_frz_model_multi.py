@@ -99,6 +99,7 @@ def _init_models():
     jdata["loss_dict"] = {}
     jdata["loss_dict"]["water_ener_new"] = loss_config
     jdata["learning_rate_dict"] = {}
+    jdata["learning_rate_dict"]["water_ener"] = learning_rate_config
     jdata["learning_rate_dict"]["water_ener_new"] = learning_rate_config
     jdata["training"]["data_dict"] = {}
     jdata["training"]["data_dict"]["water_ener_new"] = {}
