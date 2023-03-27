@@ -156,14 +156,13 @@ def replace_model_params_with_frz_multi_model(
                 log.info(
                     f"Add '{config_key}/{fitting_key}' configurations from the pretrained frozen model."
                 )
-    
+
     # learning rate dict keep backward compatibility
     config_key = "learning_rate_dict"
     single_config_key = "learning_rate"
     cur_jdata = jdata
     target_jdata = pretrained_jdata
-    if ((single_config_key not in cur_jdata) 
-        and (config_key in cur_jdata)):
+    if (single_config_key not in cur_jdata) and (config_key in cur_jdata):
         cur_jdata = cur_jdata[config_key]
         if config_key in target_jdata:
             target_jdata = target_jdata[config_key]
@@ -174,7 +173,7 @@ def replace_model_params_with_frz_multi_model(
                     log.info(
                         f"Add '{config_key}/{fitting_key}' configurations from the pretrained frozen model."
                     )
-        else :
+        else:
             for fitting_key in reused_fittings:
                 if fitting_key not in cur_jdata:
                     cur_jdata[fitting_key] = {}

@@ -158,7 +158,7 @@ def _modify_model_suffix(output_graph_def, out_suffix, freeze_type):
                 loss_dict = jdata.pop("loss_dict")
                 if out_suffix in loss_dict:
                     jdata["loss"] = loss_dict[out_suffix]
-            #learning_rate
+            # learning_rate
             if "learning_rate_dict" in jdata:
                 learning_rate_dict = jdata.pop("learning_rate_dict")
                 if out_suffix in learning_rate_dict:
