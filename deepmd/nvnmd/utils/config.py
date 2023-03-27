@@ -16,7 +16,6 @@ from deepmd.nvnmd.utils.op import (
     r2s,
 )
 
-
 log = logging.getLogger(__name__)
 
 
@@ -212,7 +211,6 @@ class NvnmdConfig:
             self.save_path = file_name
         self.update_config()
         FioDic().save(file_name, self.config)
-
 
     def get_s_range(self, davg, dstd):
         rmin = nvnmd_cfg.dscp["rcut_smth"]

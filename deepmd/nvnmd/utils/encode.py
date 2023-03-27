@@ -27,7 +27,6 @@ class Encode:
         r"""Quantize value using ceil."""
         return np.ceil(v * (2**nbit))
 
-
     def split_expo_mant(self, v, min=-1000):
         vabs = np.abs(v)
         expo = np.log2(vabs)

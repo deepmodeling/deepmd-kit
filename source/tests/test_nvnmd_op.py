@@ -464,7 +464,7 @@ class TestOpMatmulFlt2fixNvnmd(tf.test.TestCase):
                 "dpparallel"
             )
         self.sess = self.test_session(config=config).__enter__()
-    
+
     def test_op(self):
         # graph
         t_x = tf.placeholder(tf.float64, [None, 4], "t_x")
