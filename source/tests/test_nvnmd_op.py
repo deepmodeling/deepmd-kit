@@ -456,7 +456,7 @@ class TestOpMatmulFltNvnmd(tf.test.TestCase):
         # graph
         t_x = tf.placeholder(tf.float64, [None, 4], 't_x')
         t_w = tf.placeholder(tf.float64, [4, 4], 't_w')
-        t_y = op_module.matmul_flt_nvnmd(t_x, t_w, 0, 0)
+        t_y = op_module.matmul_flt_nvnmd(t_x, t_w, 1, 1)
         # feed_dic
         x = np.reshape(np.arange(0, 16) / 3.0, [-1, 4])
         feed_dict = {

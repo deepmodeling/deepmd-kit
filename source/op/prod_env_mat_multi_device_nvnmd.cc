@@ -235,10 +235,6 @@ static void _prepare_coord_nlist_cpu(OpKernelContext* context,
   }
 }
 
-<<<<<<< HEAD
-
-=======
->>>>>>> upstream/devel
 /*
 //==================================================
   ProdEnvMatANvnmdOp
