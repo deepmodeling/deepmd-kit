@@ -6,7 +6,6 @@
 #include <stdexcept>
 
 #include "errors.h"
-#include <math.h>
 
 inline void make_index_range(int& idx_start,
                              int& idx_end,

@@ -16,7 +16,6 @@ from deepmd.nvnmd.utils.op import (
     r2s,
 )
 
-from deepmd.nvnmd.utils.op import r2s
 
 log = logging.getLogger(__name__)
 
@@ -213,26 +212,6 @@ class NvnmdConfig:
             self.save_path = file_name
         self.update_config()
         FioDic().save(file_name, self.config)
-    
-    def get_s_range(self, davg, dstd):
-        rmin = nvnmd_cfg.dscp['rcut_smth']
-        rmax = nvnmd_cfg.dscp['rcut']
-        ntype = self.dscp['ntype']
-        dmin = self.dscp['dmin']
-        #
-        s0 = r2s(dmin, rmin, rmax)
-        smin_ = -davg[:ntype, 0] / dstd[:ntype, 0]
-        smax_ = (s0 - davg[:ntype, 0]) / dstd[:ntype, 0]
-        smin = np.min(smin_)
-        smax = np.max(smax_)
-        self.dscp['smin'] = smin
-        self.dscp['smax'] = smax
-        nvnmd_cfg.save()
-        # check
-        log.info(f"the range of s is [{smin}, {smax}]")
-        if (smax - smin > 16.0):
-            log.warning(f"the range of s is over the limit (smax - smin) > 16.0")
-            log.warning(f"Please reset the rcut_smth as a bigger value to fix this warning")
 
 
     def get_s_range(self, davg, dstd):

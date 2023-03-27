@@ -25,34 +25,13 @@ from deepmd.utils.network import (
 
 log = logging.getLogger(__name__)
 
+
 def build_davg_dstd():
     r"""Get the davg and dstd from the dictionary nvnmd_cfg.
     The davg and dstd have been obtained by training CNN.
     """
     davg, dstd = get_normalize(nvnmd_cfg.weight)
     return davg, dstd
-
-def check_switch_range(davg, dstd):
-    r"""Check the range of switch, let it in range [-2, 14]
-    """
-    rmin = nvnmd_cfg.dscp['rcut_smth']
-    #
-    namelist = [n.name for n in tf.get_default_graph().as_graph_def().node]
-    if 'train_attr/min_nbor_dist' in namelist:
-        min_dist = get_tensor_by_name_from_graph(tf.get_default_graph(), 'train_attr/min_nbor_dist')
-    elif 'train_attr.min_nbor_dist' in nvnmd_cfg.weight.keys():
-        if nvnmd_cfg.weight['train_attr.min_nbor_dist'] < 1e-6:
-            min_dist = rmin
-        else:
-            min_dist = nvnmd_cfg.weight['train_attr.min_nbor_dist']
-    else:
-        min_dist = rmin
-    
-    # if davg and dstd is None, the model initial mode is in 
-    #  'init_from_model', 'restart', 'init_from_frz_model', 'finetune'
-    if (davg is not None) and (dstd is not None):
-        nvnmd_cfg.dscp['dmin'] = min_dist
-        nvnmd_cfg.get_s_range(davg, dstd)
 
 
 def check_switch_range(davg, dstd):

@@ -418,60 +418,38 @@ class TestOpMatmulFltNvnmd(tf.test.TestCase):
                 "dpparallel"
             )
         self.sess = self.test_session(config=config).__enter__()
-    
+
     def test_op(self):
         # graph
-        t_x = tf.placeholder(tf.float64, [None, 4], 't_x')
-        t_w = tf.placeholder(tf.float64, [4, 4], 't_w')
-        t_y = op_module.matmul_flt_nvnmd(t_x, t_w, 0, 0)
-        # feed_dic
-        x = np.reshape(np.arange(0, 16) / 3.0, [-1, 4])
-        feed_dict = {
-            t_x : x,
-            t_w : x
-        }
-        # get value and test
-        self.sess.run(tf.global_variables_initializer())
-        y_pred = self.sess.run(t_y, feed_dict=feed_dict)
-        y_test = np.array([
-            6.22222,  6.88888,  7.55555,  8.22221, 
-            16.88887, 19.33331, 21.77776, 24.2222 , 
-            27.55553, 31.77774, 35.99997, 40.2222 ,
-            38.22217, 44.22217, 50.22217, 56.22217
-        ])
-        y_pred = np.reshape(y_pred, [-1])
-        y_test = np.reshape(y_test, [-1])
-        np.testing.assert_almost_equal(y_test, y_pred, 5)
-        tf.reset_default_graph()
-
-
-class TestOpMatmulFltNvnmd(tf.test.TestCase):
-    def setUp(self):
-        config = tf.ConfigProto()
-        if int(os.environ.get("DP_AUTO_PARALLELIZATION", 0)):
-            config.graph_options.rewrite_options.custom_optimizers.add().name = "dpparallel"
-        self.sess = self.test_session(config=config).__enter__()
-    
-    def test_op(self):
-        # graph
-        t_x = tf.placeholder(tf.float64, [None, 4], 't_x')
-        t_w = tf.placeholder(tf.float64, [4, 4], 't_w')
+        t_x = tf.placeholder(tf.float64, [None, 4], "t_x")
+        t_w = tf.placeholder(tf.float64, [4, 4], "t_w")
         t_y = op_module.matmul_flt_nvnmd(t_x, t_w, 1, 1)
         # feed_dic
         x = np.reshape(np.arange(0, 16) / 3.0, [-1, 4])
-        feed_dict = {
-            t_x : x,
-            t_w : x
-        }
+        feed_dict = {t_x: x, t_w: x}
         # get value and test
         self.sess.run(tf.global_variables_initializer())
         y_pred = self.sess.run(t_y, feed_dict=feed_dict)
-        y_test = np.array([
-            6.22222,  6.88888,  7.55555,  8.22221, 
-            16.88887, 19.33331, 21.77776, 24.2222 , 
-            27.55553, 31.77774, 35.99997, 40.2222 ,
-            38.22217, 44.22217, 50.22217, 56.22217
-        ])
+        y_test = np.array(
+            [
+                6.22222,
+                6.88888,
+                7.55555,
+                8.22221,
+                16.88887,
+                19.33331,
+                21.77776,
+                24.2222,
+                27.55553,
+                31.77774,
+                35.99997,
+                40.2222,
+                38.22217,
+                44.22217,
+                50.22217,
+                56.22217,
+            ]
+        )
         y_pred = np.reshape(y_pred, [-1])
         y_test = np.reshape(y_test, [-1])
         np.testing.assert_almost_equal(y_test, y_pred, 5)
@@ -487,24 +465,35 @@ class TestOpMatmulFlt2fixNvnmd(tf.test.TestCase):
     
     def test_op(self):
         # graph
-        t_x = tf.placeholder(tf.float64, [None, 4], 't_x')
-        t_w = tf.placeholder(tf.float64, [4, 4], 't_w')
+        t_x = tf.placeholder(tf.float64, [None, 4], "t_x")
+        t_w = tf.placeholder(tf.float64, [4, 4], "t_w")
         t_y = op_module.matmul_flt2fix_nvnmd(t_x, t_w, 23)
         # feed_dic
         x = np.reshape(np.arange(0, 16) / 3.0, [-1, 4])
-        feed_dict = {
-            t_x : x,
-            t_w : x
-        }
+        feed_dict = {t_x: x, t_w: x}
         # get value and test
         self.sess.run(tf.global_variables_initializer())
         y_pred = self.sess.run(t_y, feed_dict=feed_dict)
-        y_test = np.array([
-            6.22222,  6.88888,  7.55555,  8.22221, 
-            16.88887, 19.33331, 21.77776, 24.2222 , 
-            27.55554, 31.77776, 35.99997, 40.2222 ,
-            38.2222 , 44.2222 , 50.22217, 56.2222 
-        ])
+        y_test = np.array(
+            [
+                6.22222,
+                6.88888,
+                7.55555,
+                8.22221,
+                16.88887,
+                19.33331,
+                21.77776,
+                24.2222,
+                27.55553,
+                31.77774,
+                35.99997,
+                40.2222,
+                38.22217,
+                44.22217,
+                50.22217,
+                56.22217,
+            ]
+        )
         y_pred = np.reshape(y_pred, [-1])
         y_test = np.reshape(y_test, [-1])
         np.testing.assert_almost_equal(y_test, y_pred, 5)
@@ -514,29 +503,42 @@ class TestOpMulFltNvnmd(tf.test.TestCase):
     def setUp(self):
         config = tf.ConfigProto()
         if int(os.environ.get("DP_AUTO_PARALLELIZATION", 0)):
-            config.graph_options.rewrite_options.custom_optimizers.add().name = "dpparallel"
+            config.graph_options.rewrite_options.custom_optimizers.add().name = (
+                "dpparallel"
+            )
         self.sess = self.test_session(config=config).__enter__()
     
     def test_op(self):
         # graph
-        t_x = tf.placeholder(tf.float64, [None, 4], 't_x')
-        t_w = tf.placeholder(tf.float64, [4, 4], 't_w')
+        t_x = tf.placeholder(tf.float64, [None, 4], "t_x")
+        t_w = tf.placeholder(tf.float64, [4, 4], "t_w")
         t_y = op_module.mul_flt_nvnmd(t_x, t_w)
         # feed_dic
         x = np.reshape(np.arange(0, 16) / 3.0, [-1, 4])
-        feed_dict = {
-            t_x : x,
-            t_w : x
-        }
+        feed_dict = {t_x: x, t_w: x}
         # get value and test
         self.sess.run(tf.global_variables_initializer())
         y_pred = self.sess.run(t_y, feed_dict=feed_dict)
-        y_test = np.array([
-            0.     ,  0.11111,  0.44444,  1.     ,
-            1.77778,  2.77777, 4.     ,  5.44444,
-            7.11111,  9.     , 11.1111 , 13.44444,
-            16.     , 18.77776, 21.77774, 25.
-        ])
+        y_test = np.array(
+            [
+                0.0,
+                0.11111,
+                0.44444,
+                1.0,
+                1.77778,
+                2.77777,
+                4.0,
+                5.44444,
+                7.11111,
+                9.0,
+                11.1111,
+                13.44444,
+                16.0,
+                18.77776,
+                21.77774,
+                25.0,
+            ]
+        )
         y_pred = np.reshape(y_pred, [-1])
         y_test = np.reshape(y_test, [-1])
         np.testing.assert_almost_equal(y_test, y_pred, 5)
@@ -547,24 +549,22 @@ class TestOpQuantizeNvnmd(tf.test.TestCase):
     def setUp(self):
         config = tf.ConfigProto()
         if int(os.environ.get("DP_AUTO_PARALLELIZATION", 0)):
-            config.graph_options.rewrite_options.custom_optimizers.add().name = "dpparallel"
+            config.graph_options.rewrite_options.custom_optimizers.add().name = (
+                "dpparallel"
+            )
         self.sess = self.test_session(config=config).__enter__()
     
     def test_op(self):
         # graph
-        t_x = tf.placeholder(tf.float64, [None, 4], 't_x')
+        t_x = tf.placeholder(tf.float64, [None, 4], "t_x")
         t_y = op_module.quantize_nvnmd(t_x, 0, 23, 23, -1)
         # feed_dic
         x = np.reshape(np.arange(0, 8) / 3.0, [-1, 4])
-        feed_dict = {
-            t_x : x
-        }
+        feed_dict = {t_x: x}
         # get value and test
         self.sess.run(tf.global_variables_initializer())
         y_pred = self.sess.run(t_y, feed_dict=feed_dict)
-        y_test = np.array([
-            0., 0.33333, 0.66667, 1., 1.33333, 1.66667, 2., 2.33333
-        ])
+        y_test = np.array([0.0, 0.33333, 0.66667, 1.0, 1.33333, 1.66667, 2.0, 2.33333])
         y_pred = np.reshape(y_pred, [-1])
         y_test = np.reshape(y_test, [-1])
         np.testing.assert_almost_equal(y_test, y_pred, 5)

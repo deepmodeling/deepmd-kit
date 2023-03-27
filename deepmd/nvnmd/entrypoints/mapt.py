@@ -254,6 +254,7 @@ class MapTable:
         | b = (3 y1 - dx dy' - 2dx y0' - 3y0) / dx^2
         \ a = (dx y1' - 2 y1 + dx y0' + 2 y0) / dx^3
         """
+
         def cal_coef2(cfg, x, y, dy):
             x = np.reshape(x, [-1])
             coefs = []
@@ -303,6 +304,7 @@ class MapTable:
                 coefs.append(coef)
             coefs = np.concatenate(coefs)
             return coefs
+
         #
         cal_coef = cal_coef4 if (rank == 4) else cal_coef2
         coefs = []

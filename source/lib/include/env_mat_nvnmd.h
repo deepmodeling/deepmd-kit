@@ -23,7 +23,6 @@ date: 2021-12-6
 
 #include "env_mat_nvnmd.h"
 #include "utilities.h"
-#include "env_mat_nvnmd.h"
 
 namespace deepmd {
 
@@ -196,7 +195,3 @@ void add_flt_nvnmd(T &y, T x1, T x2) {
   ufi3.nint &= FLT_MASK;
   y = ufi3.nflt;
 }
-
-
-
-

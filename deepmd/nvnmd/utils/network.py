@@ -1,7 +1,6 @@
 import logging
 
 import numpy as np
-import logging
 
 from deepmd.env import (
     GLOBAL_TF_FLOAT_PRECISION,
@@ -19,6 +18,7 @@ from deepmd.utils.network import (
 )
 
 log = logging.getLogger(__name__)
+
 
 def get_sess():
     init_op = tf.global_variables_initializer()
@@ -74,6 +74,7 @@ def qr(x, nbit):
     y = tf.round(x * prec) / prec
     y = x + tf.stop_gradient(y - x)
     return y
+
 
 def tanh4(x):
     with tf.name_scope("tanh4"):
