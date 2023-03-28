@@ -501,6 +501,7 @@ class TestOpMatmulFlt2fixNvnmd(tf.test.TestCase):
         np.testing.assert_almost_equal(y_test, y_pred, 5)
         tf.reset_default_graph()
 
+
 class TestOpMulFltNvnmd(tf.test.TestCase):
     def setUp(self):
         config = tf.ConfigProto()
