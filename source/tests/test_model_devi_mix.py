@@ -17,13 +17,13 @@ from common import (
 )
 from packaging.version import parse as parse_version
 
+from deepmd.env import (
+    tf,
+)
 from deepmd.utils.convert import (
     convert_pbtxt_to_pb,
 )
 
-from deepmd.env import (
-    tf,
-)
 
 @unittest.skipIf(
     parse_version(tf.__version__) < parse_version("1.15"),
@@ -71,7 +71,7 @@ class TestMakeModelDeviMix(unittest.TestCase):
                     3.80715927e-01,
                     1.88116279e-01,
                     2.76809413e-01,
-                ]
+                ],
             ]
         )
 
@@ -98,7 +98,7 @@ class TestMakeModelDeviMix(unittest.TestCase):
             self.graphs,
             frequency=self.freq,
             fname=self.output,
-            mixed_type=True
+            mixed_type=True,
         )
         self.assertAlmostEqual(model_devi[0][0], 0)
         self.assertAlmostEqual(model_devi[1][0], self.freq)

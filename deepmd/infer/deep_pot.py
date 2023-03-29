@@ -161,6 +161,7 @@ class DeepPot(DeepEval):
             t_jdata = self._get_tensor("train_attr/training_script:0")
             jdata = run_sess(self.sess, t_jdata).decode("UTF-8")
             import json
+
             jdata = json.loads(jdata)
             self.descriptor_type = jdata["model"]["descriptor"]["type"]
         except (ValueError, KeyError):
@@ -329,7 +330,9 @@ class DeepPot(DeepEval):
             The atomic virial. Only returned when atomic == True
         """
         if mixed_type:
-            assert self.descriptor_type in ["se_atten"], "This model does not support mixed_type format input!"
+            assert self.descriptor_type in [
+                "se_atten"
+            ], "This model does not support mixed_type format input!"
         # reshape coords before getting shape
         natoms, numb_test = self._get_natoms_and_nframes(
             coords, atom_types, mixed_type=mixed_type

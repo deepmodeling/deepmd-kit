@@ -155,12 +155,7 @@ def calc_model_devi(
     else:
         natom = atype.shape[-1]
     for dp in models:
-        ret = dp.eval(
-            coord,
-            box,
-            atype,
-            mixed_type=mixed_type
-        )
+        ret = dp.eval(coord, box, atype, mixed_type=mixed_type)
         forces.append(ret[1])
         virials.append(ret[2] / natom)
 
