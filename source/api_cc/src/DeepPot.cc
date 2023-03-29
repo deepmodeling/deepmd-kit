@@ -1527,10 +1527,11 @@ void DeepPotModelDevi::compute(std::vector<ENERGYTYPE>& all_energy,
 
   // agp == 0 means that the LAMMPS nbor list has been updated
   if (ago == 0) {
-    atommap = AtomMap(datype_.begin(), datype_.begin() + nloc);
+    atommap = AtomMap(datype_.begin(), datype_.begin() + nloc_real);
     assert(nloc == atommap.get_type().size());
 
     nlist_data.copy_from_nlist(lmp_list);
+    nlist_data.shuffle_exclude_empty(fwd_map);
     nlist_data.shuffle(atommap);
     nlist_data.make_inlist(nlist);
   }
@@ -1538,11 +1539,11 @@ void DeepPotModelDevi::compute(std::vector<ENERGYTYPE>& all_energy,
   if (dtype == tensorflow::DT_DOUBLE) {
     ret = session_input_tensors<double>(input_tensors, dcoord, ntypes, datype,
                                         dbox, nlist, fparam, aparam, atommap,
-                                        nghost, ago);
+                                        nghost_real, ago);
   } else {
     ret = session_input_tensors<float>(input_tensors, dcoord, ntypes, datype,
                                        dbox, nlist, fparam, aparam, atommap,
-                                       nghost, ago);
+                                       nghost_real, ago);
   }
   all_energy.resize(numb_models);
   all_force.resize(numb_models);
@@ -1551,10 +1552,10 @@ void DeepPotModelDevi::compute(std::vector<ENERGYTYPE>& all_energy,
   for (unsigned ii = 0; ii < numb_models; ++ii) {
     if (dtype == tensorflow::DT_DOUBLE) {
       run_model<double>(all_energy[ii], all_force[ii], all_virial[ii],
-                        sessions[ii], input_tensors, atommap, 1, nghost);
+                        sessions[ii], input_tensors, nghost_real, 1, nghost);
     } else {
       run_model<float>(all_energy[ii], all_force[ii], all_virial[ii],
-                       sessions[ii], input_tensors, atommap, 1, nghost);
+                       sessions[ii], input_tensors, atommap, 1, nghost_real);
     }
   }
 }
@@ -1630,10 +1631,11 @@ void DeepPotModelDevi::compute(
 
   // agp == 0 means that the LAMMPS nbor list has been updated
   if (ago == 0) {
-    atommap = AtomMap(datype_.begin(), datype_.begin() + nloc);
+    atommap = AtomMap(datype_.begin(), datype_.begin() + nloc_real);
     assert(nloc == atommap.get_type().size());
 
     nlist_data.copy_from_nlist(lmp_list);
+    nlist_data.shuffle_exclude_empty(fwd_map);
     nlist_data.shuffle(atommap);
     nlist_data.make_inlist(nlist);
   }
@@ -1641,11 +1643,11 @@ void DeepPotModelDevi::compute(
   if (dtype == tensorflow::DT_DOUBLE) {
     ret = session_input_tensors<double>(input_tensors, dcoord, ntypes, datype,
                                         dbox, nlist, fparam, aparam, atommap,
-                                        nghost, ago);
+                                        nghost_real, ago);
   } else {
     ret = session_input_tensors<float>(input_tensors, dcoord, ntypes, datype,
                                        dbox, nlist, fparam, aparam, atommap,
-                                       nghost, ago);
+                                       nghost_real, ago);
   }
 
   all_energy.resize(numb_models);
@@ -1658,11 +1660,11 @@ void DeepPotModelDevi::compute(
     if (dtype == tensorflow::DT_DOUBLE) {
       run_model<double>(all_energy[ii], all_force[ii], all_virial[ii],
                         all_atom_energy[ii], all_atom_virial[ii], sessions[ii],
-                        input_tensors, atommap, 1, nghost);
+                        input_tensors, atommap, 1, nghost_real);
     } else {
       run_model<float>(all_energy[ii], all_force[ii], all_virial[ii],
                        all_atom_energy[ii], all_atom_virial[ii], sessions[ii],
-                       input_tensors, atommap, 1, nghost);
+                       input_tensors, atommap, 1, nghost_real);
     }
   }
 }
