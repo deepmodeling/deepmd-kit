@@ -1501,7 +1501,7 @@ void DeepPotModelDevi::compute(std::vector<ENERGYTYPE>& all_energy,
   int nall = dcoord_.size() / 3;
   int nframes = 1;
   int nloc = nall - nghost;
-  validate_fparam_aparam(nloc, fparam, aparam);
+  validate_fparam_aparam(nloc, fparam, aparam_);
   std::vector<std::pair<std::string, Tensor>> input_tensors;
 
   // select real atoms
@@ -1604,7 +1604,7 @@ void DeepPotModelDevi::compute(
   int nframes = 1;
   int nall = dcoord_.size() / 3;
   int nloc = nall - nghost;
-  validate_fparam_aparam(nloc, fparam, aparam);
+  validate_fparam_aparam(nloc, fparam, aparam_);
   std::vector<std::pair<std::string, Tensor>> input_tensors;
 
   // select real atoms
