@@ -1552,7 +1552,7 @@ void DeepPotModelDevi::compute(std::vector<ENERGYTYPE>& all_energy,
   for (unsigned ii = 0; ii < numb_models; ++ii) {
     if (dtype == tensorflow::DT_DOUBLE) {
       run_model<double>(all_energy[ii], all_force[ii], all_virial[ii],
-                        sessions[ii], input_tensors, nghost_real, 1, nghost);
+                        sessions[ii], input_tensors, atommap, 1, nghost_real);
     } else {
       run_model<float>(all_energy[ii], all_force[ii], all_virial[ii],
                        sessions[ii], input_tensors, atommap, 1, nghost_real);
