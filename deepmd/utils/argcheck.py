@@ -801,8 +801,20 @@ def learning_rate_args():
             )
         ],
         [learning_rate_variant_type_args()],
+        optional=True,
         doc=doc_lr,
     )
+
+
+def learning_rate_dict_args():
+    doc_learning_rate_dict = (
+        "The dictionary of definitions of learning rates in multi-task mode. "
+        "Each learning_rate_dict[fitting_key], with user-defined name `fitting_key` in `model/fitting_net_dict`, is the single definition of learning rate.\n"
+    )
+    ca = Argument(
+        "learning_rate_dict", dict, [], [], optional=True, doc=doc_learning_rate_dict
+    )
+    return ca
 
 
 #  --- Loss configurations: --- #
@@ -1238,6 +1250,7 @@ def gen_doc(*, make_anchor=True, make_link=True, **kwargs):
         make_anchor = True
     ma = model_args()
     lra = learning_rate_args()
+    lrda = learning_rate_dict_args()
     la = loss_args()
     lda = loss_dict_args()
     ta = training_args()
@@ -1247,6 +1260,7 @@ def gen_doc(*, make_anchor=True, make_link=True, **kwargs):
     ptr.append(la.gen_doc(make_anchor=make_anchor, make_link=make_link, **kwargs))
     ptr.append(lda.gen_doc(make_anchor=make_anchor, make_link=make_link, **kwargs))
     ptr.append(lra.gen_doc(make_anchor=make_anchor, make_link=make_link, **kwargs))
+    ptr.append(lrda.gen_doc(make_anchor=make_anchor, make_link=make_link, **kwargs))
     ptr.append(ta.gen_doc(make_anchor=make_anchor, make_link=make_link, **kwargs))
     ptr.append(nvnmda.gen_doc(make_anchor=make_anchor, make_link=make_link, **kwargs))
 
@@ -1264,6 +1278,7 @@ def gen_json(**kwargs):
         (
             model_args(),
             learning_rate_args(),
+            learning_rate_dict_args(),
             loss_args(),
             loss_dict_args(),
             training_args(),
@@ -1277,6 +1292,7 @@ def gen_args(**kwargs):
     return [
         model_args(),
         learning_rate_args(),
+        learning_rate_dict_args(),
         loss_args(),
         loss_dict_args(),
         training_args(),
@@ -1300,10 +1316,12 @@ def normalize_multi_task(data):
     single_training_data = "training_data" in data["training"].keys()
     single_valid_data = "validation_data" in data["training"].keys()
     single_loss = "loss" in data.keys()
+    single_learning_rate = "learning_rate" in data.keys()
     multi_fitting_net = "fitting_net_dict" in data["model"].keys()
     multi_training_data = "data_dict" in data["training"].keys()
     multi_loss = "loss_dict" in data.keys()
     multi_fitting_weight = "fitting_weight" in data["training"].keys()
+    multi_learning_rate = "learning_rate_dict" in data.keys()
     assert (single_fitting_net == single_training_data) and (
         multi_fitting_net == multi_training_data
     ), (
@@ -1342,6 +1360,16 @@ def normalize_multi_task(data):
             if multi_loss
             else {}
         )
+        if multi_learning_rate:
+            data["learning_rate_dict"] = normalize_learning_rate_dict(
+                data["model"]["fitting_net_dict"].keys(), data["learning_rate_dict"]
+            )
+        elif single_learning_rate:
+            data[
+                "learning_rate_dict"
+            ] = normalize_learning_rate_dict_with_single_learning_rate(
+                data["model"]["fitting_net_dict"].keys(), data["learning_rate"]
+            )
         fitting_weight = (
             data["training"]["fitting_weight"] if multi_fitting_weight else None
         )
@@ -1354,6 +1382,9 @@ def normalize_multi_task(data):
         assert (
             not multi_loss
         ), "In single-task mode, please use 'model/loss' in stead of 'model/loss_dict'! "
+        assert (
+            not multi_learning_rate
+        ), "In single-task mode, please use 'model/learning_rate' in stead of 'model/learning_rate_dict'! "
     return data
 
 
@@ -1395,6 +1426,35 @@ def normalize_loss_dict(fitting_keys, loss_dict):
         data = base.normalize_value(loss_dict[item], trim_pattern="_*")
         base.check_value(data, strict=True)
         new_dict[item] = data
+    return new_dict
+
+
+def normalize_learning_rate_dict(fitting_keys, learning_rate_dict):
+    # check the learning_rate dict
+    failed_learning_rate_keys = [
+        item for item in learning_rate_dict if item not in fitting_keys
+    ]
+    assert (
+        not failed_learning_rate_keys
+    ), "Learning rate dict key(s) {} not have corresponding fitting keys in {}! ".format(
+        str(failed_learning_rate_keys), str(list(fitting_keys))
+    )
+    new_dict = {}
+    base = Argument("base", dict, [], [learning_rate_variant_type_args()], doc="")
+    for item in learning_rate_dict:
+        data = base.normalize_value(learning_rate_dict[item], trim_pattern="_*")
+        base.check_value(data, strict=True)
+        new_dict[item] = data
+    return new_dict
+
+
+def normalize_learning_rate_dict_with_single_learning_rate(fitting_keys, learning_rate):
+    new_dict = {}
+    base = Argument("base", dict, [], [learning_rate_variant_type_args()], doc="")
+    data = base.normalize_value(learning_rate, trim_pattern="_*")
+    base.check_value(data, strict=True)
+    for fitting_key in fitting_keys:
+        new_dict[fitting_key] = data
     return new_dict
 
 
@@ -1472,12 +1532,13 @@ def normalize(data):
     data = normalize_multi_task(data)
     ma = model_args()
     lra = learning_rate_args()
+    lrda = learning_rate_dict_args()
     la = loss_args()
     lda = loss_dict_args()
     ta = training_args()
     nvnmda = nvnmd_args()
 
-    base = Argument("base", dict, [ma, lra, la, lda, ta, nvnmda])
+    base = Argument("base", dict, [ma, lra, lrda, la, lda, ta, nvnmda])
     data = base.normalize_value(data, trim_pattern="_*")
     base.check_value(data, strict=True)
 
