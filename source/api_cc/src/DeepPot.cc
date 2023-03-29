@@ -1527,7 +1527,7 @@ void DeepPotModelDevi::compute(std::vector<ENERGYTYPE>& all_energy,
 
   // agp == 0 means that the LAMMPS nbor list has been updated
   if (ago == 0) {
-    atommap = AtomMap(datype_.begin(), datype_.begin() + nloc_real);
+    atommap = AtomMap(datype.begin(), datype.begin() + nloc_real);
     assert(nloc == atommap.get_type().size());
 
     nlist_data.copy_from_nlist(lmp_list);
@@ -1631,7 +1631,7 @@ void DeepPotModelDevi::compute(
 
   // agp == 0 means that the LAMMPS nbor list has been updated
   if (ago == 0) {
-    atommap = AtomMap(datype_.begin(), datype_.begin() + nloc_real);
+    atommap = AtomMap(datype.begin(), datype.begin() + nloc_real);
     assert(nloc == atommap.get_type().size());
 
     nlist_data.copy_from_nlist(lmp_list);
