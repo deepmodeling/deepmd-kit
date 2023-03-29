@@ -1496,12 +1496,34 @@ void DeepPotModelDevi::compute(std::vector<ENERGYTYPE>& all_energy,
                                const InputNlist& lmp_list,
                                const int& ago,
                                const std::vector<VALUETYPE>& fparam,
-                               const std::vector<VALUETYPE>& aparam) {
+                               const std::vector<VALUETYPE>& aparam_) {
   if (numb_models == 0) return;
   int nall = dcoord_.size() / 3;
+  int nframes = 1;
   int nloc = nall - nghost;
   validate_fparam_aparam(nloc, fparam, aparam);
   std::vector<std::pair<std::string, Tensor>> input_tensors;
+
+  // select real atoms
+  std::vector<VALUETYPE> dcoord, dforce, aparam, datom_energy, datom_virial;
+  std::vector<int> datype, fwd_map, bkw_map;
+  int nghost_real;
+  select_real_atoms(fwd_map, bkw_map, nghost_real, dcoord_, datype_, nghost,
+                    ntypes);
+  // resize to nall_real
+  int nall_real = bkw_map.size();
+  int nloc_real = nall_real - nghost_real;
+  dcoord.resize(nframes * nall_real * 3);
+  datype.resize(nall_real);
+  // fwd map
+  select_map<VALUETYPE>(dcoord, dcoord_, fwd_map, 3, nframes, nall_real, nall);
+  select_map<int>(datype, datype_, fwd_map, 1);
+  // aparam
+  if (daparam > 0) {
+    aparam.resize(nframes * nloc_real);
+    select_map<VALUETYPE>(aparam, aparam_, fwd_map, daparam, nframes, nloc_real,
+                          nall - nghost);
+  }
 
   // agp == 0 means that the LAMMPS nbor list has been updated
   if (ago == 0) {
@@ -1514,11 +1536,11 @@ void DeepPotModelDevi::compute(std::vector<ENERGYTYPE>& all_energy,
   }
   int ret;
   if (dtype == tensorflow::DT_DOUBLE) {
-    ret = session_input_tensors<double>(input_tensors, dcoord_, ntypes, datype_,
+    ret = session_input_tensors<double>(input_tensors, dcoord, ntypes, datype,
                                         dbox, nlist, fparam, aparam, atommap,
                                         nghost, ago);
   } else {
-    ret = session_input_tensors<float>(input_tensors, dcoord_, ntypes, datype_,
+    ret = session_input_tensors<float>(input_tensors, dcoord, ntypes, datype,
                                        dbox, nlist, fparam, aparam, atommap,
                                        nghost, ago);
   }
@@ -1577,12 +1599,34 @@ void DeepPotModelDevi::compute(
     const InputNlist& lmp_list,
     const int& ago,
     const std::vector<VALUETYPE>& fparam,
-    const std::vector<VALUETYPE>& aparam) {
+    const std::vector<VALUETYPE>& aparam_) {
   if (numb_models == 0) return;
+  int nframes = 1;
   int nall = dcoord_.size() / 3;
   int nloc = nall - nghost;
   validate_fparam_aparam(nloc, fparam, aparam);
   std::vector<std::pair<std::string, Tensor>> input_tensors;
+
+  // select real atoms
+  std::vector<VALUETYPE> dcoord, dforce, aparam, datom_energy, datom_virial;
+  std::vector<int> datype, fwd_map, bkw_map;
+  int nghost_real;
+  select_real_atoms(fwd_map, bkw_map, nghost_real, dcoord_, datype_, nghost,
+                    ntypes);
+  // resize to nall_real
+  int nall_real = bkw_map.size();
+  int nloc_real = nall_real - nghost_real;
+  dcoord.resize(nframes * nall_real * 3);
+  datype.resize(nall_real);
+  // fwd map
+  select_map<VALUETYPE>(dcoord, dcoord_, fwd_map, 3, nframes, nall_real, nall);
+  select_map<int>(datype, datype_, fwd_map, 1);
+  // aparam
+  if (daparam > 0) {
+    aparam.resize(nframes * nloc_real);
+    select_map<VALUETYPE>(aparam, aparam_, fwd_map, daparam, nframes, nloc_real,
+                          nall - nghost);
+  }
 
   // agp == 0 means that the LAMMPS nbor list has been updated
   if (ago == 0) {
@@ -1595,11 +1639,11 @@ void DeepPotModelDevi::compute(
   }
   int ret;
   if (dtype == tensorflow::DT_DOUBLE) {
-    ret = session_input_tensors<double>(input_tensors, dcoord_, ntypes, datype_,
+    ret = session_input_tensors<double>(input_tensors, dcoord, ntypes, datype,
                                         dbox, nlist, fparam, aparam, atommap,
                                         nghost, ago);
   } else {
-    ret = session_input_tensors<float>(input_tensors, dcoord_, ntypes, datype_,
+    ret = session_input_tensors<float>(input_tensors, dcoord, ntypes, datype,
                                        dbox, nlist, fparam, aparam, atommap,
                                        nghost, ago);
   }
