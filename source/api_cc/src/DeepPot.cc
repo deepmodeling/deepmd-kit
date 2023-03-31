@@ -56,7 +56,7 @@ static void run_model(
 
   dener = oe(0);
   std::vector<VALUETYPE> dforce(3 * nall);
-  dforce_.resize(nall * 3);
+  // dforce_.resize(nall * 3);
   dvirial.resize(9);
   for (unsigned ii = 0; ii < nall * 3; ++ii) {
     dforce[ii] = of(ii);
@@ -294,7 +294,11 @@ void DeepPot::init(const std::string& model,
   }
   cell_size = rcut;
   ntypes = get_scalar<int>("descrpt_attr/ntypes");
-  ntypes_spin = get_scalar<int>("descrpt_attr/ntypes_spin");
+  try {
+    ntypes_spin = get_scalar<int>("descrpt_attr/ntypes_spin");
+  } catch (deepmd::deepmd_exception){
+    ntypes_spin = 0;
+  }
   dfparam = get_scalar<int>("fitting_attr/dfparam");
   daparam = get_scalar<int>("fitting_attr/daparam");
   if (dfparam < 0) dfparam = 0;
@@ -795,7 +799,11 @@ void DeepPotModelDevi::init(const std::vector<std::string>& models,
   }
   cell_size = rcut;
   ntypes = get_scalar<int>("descrpt_attr/ntypes");
-  ntypes_spin = get_scalar<int>("descrpt_attr/ntypes_spin");
+  try {
+    ntypes_spin = get_scalar<int>("descrpt_attr/ntypes_spin");
+  } catch (deepmd::deepmd_exception){
+    ntypes_spin = 0;
+  }
   dfparam = get_scalar<int>("fitting_attr/dfparam");
   daparam = get_scalar<int>("fitting_attr/daparam");
   if (dfparam < 0) dfparam = 0;

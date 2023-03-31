@@ -146,13 +146,12 @@ static void ana_st(double &max,
                    double &min,
                    double &sum,
                    const vector<double> &vec,
-                   const int & start, 
-                   const int & end) {
-  if ((end - start) == 0) return;
-  max = vec[start];
-  min = vec[start];
-  sum = vec[start];
-  for (unsigned ii = start + 1; ii < end; ++ii){
+                   const int &nloc) {
+  if (nloc == 0) return;
+  max = vec[0];
+  min = vec[0];
+  sum = vec[0];
+  for (unsigned ii = 1; ii < nloc; ++ii) {
     if (vec[ii] > max) max = vec[ii];
     if (vec[ii] < min) min = vec[ii];
     sum += vec[ii];

@@ -51,6 +51,10 @@ from deepmd.utils.type_embed import (
     embed_atom_type,
 )
 
+from deepmd.utils.spin import (
+    Spin
+)
+
 log = logging.getLogger(__name__)
 
 
@@ -138,9 +142,7 @@ class EnerFitting(Fitting):
         precision: str = "default",
         uniform_seed: bool = False,
         layer_name: Optional[List[Optional[str]]] = None,
-        use_spin: List[bool] = None,
-        spin_norm: List[float] = None,
-        virtual_len: List[float] = None,
+        spin: Spin = None,
     ) -> None:
         """
         Constructor
@@ -167,10 +169,8 @@ class EnerFitting(Fitting):
         self.rcond = rcond
         self.seed = seed
         self.uniform_seed = uniform_seed
-        self.use_spin = use_spin
-        self.spin_norm = spin_norm
-        self.virtual_len = virtual_len
-        self.ntypes_spin = descrpt.get_ntypes_spin()
+        self.spin = spin
+        self.ntypes_spin = self.spin.get_ntypes_spin() if self.spin is not None else 0
         self.seed_shift = one_layer_rand_seed_shift()
         self.tot_ener_zero = tot_ener_zero
         self.fitting_activation_fn = get_activation_func(activation_function)
@@ -498,12 +498,12 @@ class EnerFitting(Fitting):
             if self.aparam_inv_std is None:
                 self.aparam_inv_std = 1.0
 
-        if self.use_spin is not None:
-            ntypes_atom = self.ntypes - self.ntypes_spin
+        ntypes_atom = self.ntypes - self.ntypes_spin
+        if self.spin is not None:
             for type_i in range(self.ntypes):
                 if type_i >= ntypes_atom:
                     break
-                if self.use_spin[type_i]:
+                if self.spin.use_spin[type_i]:
                     self.bias_atom_e[type_i] = self.bias_atom_e[type_i] + self.bias_atom_e[type_i + ntypes_atom]
                 else:
                     self.bias_atom_e[type_i] = self.bias_atom_e[type_i]
@@ -582,7 +582,7 @@ class EnerFitting(Fitting):
         self.atype_nloc = tf.reshape(
             tf.slice(atype_nall, [0, 0], [-1, natoms[0]]), [-1]
         )  ## lammps will make error
-        if self.use_spin is not None:
+        if self.spin is not None:
             self.atype_nloc = tf.reshape(
                 tf.slice(atype_nall, [0, 0], [-1, tf.reduce_sum(natoms[2: 2+ntypes_atom])]), [-1]
             )  ## spin needed

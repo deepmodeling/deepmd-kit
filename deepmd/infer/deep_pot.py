@@ -87,7 +87,6 @@ class DeepPot(DeepEval):
             {
                 # descrpt attrs
                 "t_ntypes": "descrpt_attr/ntypes:0",
-                "t_ntypes_spin": "descrpt_attr/ntypes_spin:0",
                 "t_rcut": "descrpt_attr/rcut:0",
                 # fitting attrs
                 "t_dfparam": "fitting_attr/dfparam:0",
@@ -145,6 +144,13 @@ class DeepPot(DeepEval):
             self.t_aparam = None
             self.has_aparam = False
 
+        if "load/descrpt_attr/ntypes_spin" in operations:
+            self.tensors.update({"t_ntypes_spin": "descrpt_attr/ntypes_spin:0"})
+            self.has_spin = True
+        else:
+            self.ntypes_spin = 0
+            self.has_spin = False
+
         # now load tensors to object attributes
         for attr_name, tensor_name in self.tensors.items():
             try:
@@ -191,9 +197,14 @@ class DeepPot(DeepEval):
             )
 
     def _run_default_sess(self):
-        [self.ntypes, self.ntypes_spin, self.rcut, self.dfparam, self.daparam, self.tmap] = run_sess(self.sess, 
-            [self.t_ntypes, self.t_ntypes_spin, self.t_rcut, self.t_dfparam, self.t_daparam, self.t_tmap]
-        )
+        if self.has_spin == True:
+            [self.ntypes, self.ntypes_spin, self.rcut, self.dfparam, self.daparam, self.tmap] = run_sess(self.sess, 
+                [self.t_ntypes, self.t_ntypes_spin, self.t_rcut, self.t_dfparam, self.t_daparam, self.t_tmap]
+            )
+        else:
+            [self.ntypes, self.rcut, self.dfparam, self.daparam, self.tmap] = run_sess(self.sess, 
+                [self.t_ntypes, self.t_rcut, self.t_dfparam, self.t_daparam, self.t_tmap]
+            )
 
     def get_ntypes(self) -> int:
         """Get the number of atom types of this model."""
@@ -339,17 +350,16 @@ class DeepPot(DeepEval):
             mixed_type=mixed_type,
         )
 
-        if self.ntypes_spin == 0:
-            if self.modifier_type is not None:
-                if atomic:
-                    raise RuntimeError("modifier does not support atomic modification")
-                me, mf, mv = self.dm.eval(coords, cells, atom_types)
-                output = list(output)  # tuple to list
-                e, f, v = output[:3]
-                output[0] += me.reshape(e.shape)
-                output[1] += mf.reshape(f.shape)
-                output[2] += mv.reshape(v.shape)
-                output = tuple(output)
+        if self.modifier_type is not None:
+            if atomic:
+                raise RuntimeError("modifier does not support atomic modification")
+            me, mf, mv = self.dm.eval(coords, cells, atom_types)
+            output = list(output)  # tuple to list
+            e, f, v = output[:3]
+            output[0] += me.reshape(e.shape)
+            output[1] += mf.reshape(f.shape)
+            output[2] += mv.reshape(v.shape)
+            output = tuple(output)
         return output
 
     def _prepare_feed_dict(
@@ -505,10 +515,7 @@ class DeepPot(DeepEval):
             av = np.reshape(av, [nframes, natoms, 9])
             return energy, force, virial, ae, av
         else:
-            if self.ntypes_spin == 0:
-                return energy, force, virial
-            else :
-                return energy, force, virial, natoms_vec
+            return energy, force, virial
 
     def eval_descriptor(
         self,

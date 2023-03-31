@@ -61,6 +61,9 @@ from .se import (
     DescrptSe,
 )
 
+from deepmd.utils.spin import (
+    Spin
+)
 
 @Descriptor.register("se_e2_a")
 @Descriptor.register("se_a")
@@ -165,9 +168,7 @@ class DescrptSeA(DescrptSe):
         precision: str = "default",
         uniform_seed: bool = False,
         multi_task: bool = False,
-        use_spin: List[bool] = None,
-        spin_norm: List[float] = None,
-        virtual_len: List[float] = None
+        spin: Spin = None,
     ) -> None:
         """
         Constructor
@@ -196,15 +197,13 @@ class DescrptSeA(DescrptSe):
             self.exclude_types.add((tt[1], tt[0]))
         self.set_davg_zero = set_davg_zero
         self.type_one_side = type_one_side
-        self.use_spin = use_spin
-        self.spin_norm = spin_norm
-        self.virtual_len = virtual_len
+        self.spin = spin
 
         # extend sel_a for spin system
-        if self.use_spin is not None:
-            self.sel_a_spin = self.sel_a[:self.use_spin.count(True)]
+        if self.spin is not None:
+            self.ntypes_spin = self.spin.get_ntypes_spin()
+            self.sel_a_spin = self.sel_a[:self.ntypes_spin]
             self.sel_a.extend(self.sel_a_spin)
-            self.ntypes_spin = len(self.sel_a_spin)
         else:
             self.ntypes_spin = 0
 
@@ -288,30 +287,6 @@ class DescrptSeA(DescrptSe):
         Returns the number of atom types
         """
         return self.ntypes
-
-    def get_ntypes_spin (self) -> int:
-        """
-        Returns the number of atom types which contain spin
-        """
-        return self.ntypes_spin
-
-    def get_use_spin (self) -> List[bool]:
-        """
-        Returns the list of whether to use spin for each atom type
-        """
-        return self.use_spin
-
-    def get_spin_norm (self) -> List[float]:
-        """
-        Returns the list of magnitude of atomic spin for each atom type
-        """
-        return self.spin_norm
-
-    def get_virtual_len (self) -> List[float]:
-        """
-        Returns the list of distance between real atom and virtual atom for each atom type
-        """
-        return self.virtual_len
 
     def get_dim_out(self) -> int:
         """
@@ -602,11 +577,11 @@ class DescrptSeA(DescrptSe):
             t_ntypes_spin = tf.constant(self.ntypes_spin, 
                                         name = 'ntypes_spin', 
                                         dtype = tf.int32)
-            if self.use_spin is not None:
-                t_virtual_len = tf.constant(self.virtual_len, 
+            if self.spin is not None:
+                t_virtual_len = tf.constant(self.spin.virtual_len, 
                                             name = 'virtual_len', 
                                             dtype = GLOBAL_TF_FLOAT_PRECISION)
-                t_spin_norm = tf.constant(self.spin_norm, 
+                t_spin_norm = tf.constant(self.spin.spin_norm, 
                                           name = 'spin_norm', 
                                           dtype = GLOBAL_TF_FLOAT_PRECISION)
             t_ndescrpt = tf.constant(self.ndescrpt, name="ndescrpt", dtype=tf.int32)

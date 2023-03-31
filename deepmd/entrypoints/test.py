@@ -289,10 +289,9 @@ def test_ener(
         ae = ae.reshape([numb_test, -1])
         av = av.reshape([numb_test, -1])
     if dp.get_ntypes_spin() != 0:
-        natoms_vec = ret[3]
         ntypes_real = dp.get_ntypes() - dp.get_ntypes_spin()
-        nloc = natoms_vec[0]
-        nloc_real = sum(natoms_vec[2 : 2 + ntypes_real])
+        nloc = natoms
+        nloc_real = sum([np.count_nonzero(atype == ii) for ii in range(ntypes_real)])
         force_r = np.split(force, indices_or_sections=[nloc_real*3, nloc*3], axis=1)[0]
         force_m = np.split(force, indices_or_sections=[nloc_real*3, nloc*3], axis=1)[1]
         test_force_r = np.split(test_data["force"][:numb_test], indices_or_sections=[nloc_real*3, nloc*3], axis=1)[0]

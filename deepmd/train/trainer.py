@@ -81,6 +81,10 @@ from deepmd.utils.type_embed import (
     TypeEmbedNet,
 )
 
+from deepmd.utils.spin import (
+    Spin
+)
+
 log = logging.getLogger(__name__)
 
 # nvnmd
@@ -121,7 +125,11 @@ class DPTrainer(object):
 
         # spin
         if spin_param is not None:
-            self.spin = spin_param
+            self.spin = Spin(
+                use_spin = spin_param["use_spin"],
+                virtual_len = spin_param["virtual_len"],
+                spin_norm = spin_param["spin_norm"]
+            )
         else:
             self.spin = None
         
@@ -144,18 +152,15 @@ class DPTrainer(object):
             descrpt_param["ntypes"] = len(model_param["type_map"])
         if self.multi_task_mode:
             descrpt_param["multi_task"] = True
-        if self.spin is not None:
-            self.descrpt = Descriptor(**descrpt_param, **self.spin)
-        else :
-            self.descrpt = Descriptor(**descrpt_param)
+        if descrpt_param["type"] in ["se_e2_a", "se_a"]:
+            descrpt_param["spin"] = self.spin
+        self.descrpt = Descriptor(**descrpt_param)
 
         # fitting net
         def fitting_net_init(fitting_type_, descrpt_type_, params):
             if fitting_type_ == "ener":
-                if self.spin is not None:
-                    return EnerFitting(**params, **self.spin)
-                else:
-                    return EnerFitting(**params)
+                params["spin"] = self.spin
+                return EnerFitting(**params)
             elif fitting_type_ == "dipole":
                 return DipoleFittingSeA(**params)
             elif fitting_type_ == "polar":
@@ -225,7 +230,6 @@ class DPTrainer(object):
                     self.descrpt,
                     self.fitting,
                     self.typeebd,
-                    self.spin,
                     model_param.get("type_map"),
                     model_param.get("data_stat_nbatch", 10),
                     model_param.get("data_stat_protect", 1e-2),
@@ -233,6 +237,7 @@ class DPTrainer(object):
                     model_param.get("smin_alpha"),
                     model_param.get("sw_rmin"),
                     model_param.get("sw_rmax"),
+                    self.spin,
                 )
             # elif fitting_type == 'wfc':
             #     self.model = WFCModel(model_param, self.descrpt, self.fitting)
@@ -308,8 +313,8 @@ class DPTrainer(object):
                 elif _loss_type == "ener_dipole":
                     loss = EnerDipoleLoss(**_loss_param)
                 elif _loss_type == 'ener_spin':
-                    loss = EnerSpinLoss(**loss_param, 
-                                        use_spin = self.spin['use_spin'])
+                    loss = EnerSpinLoss(**_loss_param, 
+                                        use_spin = self.spin.use_spin)
                 else:
                     raise RuntimeError("unknown loss type")
             elif _fitting_type == "wfc":
