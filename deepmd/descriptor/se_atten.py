@@ -508,7 +508,7 @@ class DescrptSeAtten(DescrptSeA):
             sysa2 = [0.0 for i in range(self.ntypes)]
             for ff in range(nframes):
                 natoms = real_natoms_vec[ff]
-                dd_ff = np.reshape(dd_all[ff], [-1, self.ndescrpt * natoms[0]])
+                dd_ff = np.reshape(dd_all[ff], [-1, self.ndescrpt * natoms_vec[0]])
                 start_index = 0
                 for type_i in range(self.ntypes):
                     end_index = (
