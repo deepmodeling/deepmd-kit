@@ -10,6 +10,83 @@ from deepmd.env import (
 )
 
 
+def detect_model_version(input_model: str):
+    """Detect DP graph version.
+
+    Parameters
+    ----------
+    input_model : str
+        filename of the input graph
+    """
+    convert_pb_to_pbtxt(input_model, "frozen_model.pbtxt")
+    version = "undetected"
+    with open("frozen_model.pbtxt") as fp:
+        file_content = fp.read()
+    if file_content.find("DescrptNorot") > -1:
+        version = "<= 0.12"
+    elif (
+        file_content.find("fitting_attr/dfparam") > -1
+        and file_content.find("fitting_attr/daparam") == -1
+    ):
+        version = "1.0"
+    elif file_content.find("model_attr/model_version") == -1:
+        name_dsea = file_content.find('name: "DescrptSeA"')
+        post_dsea = file_content[name_dsea:]
+        post_dsea2 = post_dsea[:300].find("\}")
+        search_double = post_dsea[:post_dsea2]
+        if search_double.find("DT_DOUBLE") == -1:
+            version = "1.2"
+        else:
+            version = "1.3"
+    elif file_content.find('string_val: "1.0"') > -1:
+        version = "2.0"
+    elif file_content.find('string_val: "1.1"') > -1:
+        version = ">= 2.1"
+    return version
+
+
+def convert_to_21(input_model: str, output_model: str):
+    """Convert DP graph to 2.1 graph.
+
+    Parameters
+    ----------
+    input_model : str
+        filename of the input graph
+    output_model : str
+        filename of the output graph
+    """
+    version = detect_model_version(input_model)
+    if version == "<= 0.12":
+        convert_dp012_to_dp10("frozen_model.pbtxt")
+        convert_dp10_to_dp11("frozen_model.pbtxt")
+        convert_dp12_to_dp13("frozen_model.pbtxt")
+        convert_dp13_to_dp20("frozen_model.pbtxt")
+        convert_dp20_to_dp21("frozen_model.pbtxt")
+    elif version == "1.0":
+        convert_dp10_to_dp11("frozen_model.pbtxt")
+        convert_dp12_to_dp13("frozen_model.pbtxt")
+        convert_dp13_to_dp20("frozen_model.pbtxt")
+        convert_dp20_to_dp21("frozen_model.pbtxt")
+    elif version == "1.2":
+        convert_dp12_to_dp13("frozen_model.pbtxt")
+        convert_dp13_to_dp20("frozen_model.pbtxt")
+        convert_dp20_to_dp21("frozen_model.pbtxt")
+    elif version == "1.3":
+        convert_dp13_to_dp20("frozen_model.pbtxt")
+        convert_dp20_to_dp21("frozen_model.pbtxt")
+    elif version == "2.0":
+        convert_dp20_to_dp21("frozen_model.pbtxt")
+    elif version == "undetected":
+        raise ValueError(
+            "The version of the DP graph %s cannot be detected. Please do the conversion manually."
+            % (input_model)
+        )
+    convert_pbtxt_to_pb("frozen_model.pbtxt", output_model)
+    if os.path.isfile("frozen_model.pbtxt"):
+        os.remove("frozen_model.pbtxt")
+    print("the converted output model (2.1 support) is saved in %s" % output_model)
+
+
 def convert_13_to_21(input_model: str, output_model: str):
     """Convert DP 1.3 graph to 2.1 graph.
 
@@ -294,7 +371,7 @@ def convert_dp12_to_dp13(file: str):
         filename of the graph text
     """
     file_data = ""
-    with open(file, "r", encoding="utf-8") as f:
+    with open(file, encoding="utf-8") as f:
         ii = 0
         lines = f.readlines()
         while ii < len(lines):

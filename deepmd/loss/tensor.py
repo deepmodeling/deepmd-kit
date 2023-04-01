@@ -4,7 +4,6 @@ from deepmd.common import (
     add_data_requirement,
 )
 from deepmd.env import (
-    global_cvt_2_ener_float,
     global_cvt_2_tf_float,
     tf,
 )
@@ -18,9 +17,7 @@ from .loss import (
 
 
 class TensorLoss(Loss):
-    """
-    Loss function for tensorial properties.
-    """
+    """Loss function for tensorial properties."""
 
     def __init__(self, jdata, **kwarg):
         model = kwarg.get("model", None)

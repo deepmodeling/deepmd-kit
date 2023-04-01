@@ -5,6 +5,7 @@ string(REGEX REPLACE "\n" "" files "${files}")
 foreach (cur_file ${files})
   file (
     INSTALL DESTINATION "${LMP_INSTALL_PREFIX}"
+    USE_SOURCE_PERMISSIONS
     TYPE FILE
     FILES "${cur_file}"
     )

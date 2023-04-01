@@ -1,6 +1,5 @@
-"""
-nvnmd.fit
-=========
+"""nvnmd.fit
+=========.
 
 Provides
     1. continuous fitting network

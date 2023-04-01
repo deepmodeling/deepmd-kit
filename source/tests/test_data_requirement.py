@@ -1,10 +1,4 @@
-import json
-import os
-import sys
 import unittest
-
-import dpdata
-import numpy as np
 
 from deepmd.common import (
     add_data_requirement,

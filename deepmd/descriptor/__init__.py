@@ -17,6 +17,9 @@ from .se_a_ef import (
     DescrptSeAEf,
     DescrptSeAEfLower,
 )
+from .se_a_mask import (
+    DescrptSeAMask,
+)
 from .se_atten import (
     DescrptSeAtten,
 )
@@ -26,3 +29,17 @@ from .se_r import (
 from .se_t import (
     DescrptSeT,
 )
+
+__all__ = [
+    "Descriptor",
+    "DescrptHybrid",
+    "DescrptLocFrame",
+    "DescrptSeA",
+    "DescrptSeAEbd",
+    "DescrptSeAEf",
+    "DescrptSeAEfLower",
+    "DescrptSeAMask",
+    "DescrptSeAtten",
+    "DescrptSeR",
+    "DescrptSeT",
+]

@@ -90,7 +90,6 @@ class TestParserOutput(unittest.TestCase):
         mapping = {**{"command": dict(type=str, value=command)}, **mapping}
 
         for argument, test_data in mapping.items():
-
             # get expected type
             expected_type = test_data["type"]
 
@@ -344,7 +343,7 @@ class TestParserOutput(unittest.TestCase):
         self.run_test(command="doc-train-input", mapping=ARGS)
 
     def test_parser_model_devi(self):
-        """Test model-devi subparser"""
+        """Test model-devi subparser."""
         ARGS = {
             "--models": dict(
                 type=list,

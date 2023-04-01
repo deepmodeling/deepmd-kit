@@ -1,7 +1,5 @@
-import math
+import warnings
 from typing import (
-    Any,
-    Dict,
     List,
     Optional,
     Tuple,
@@ -14,8 +12,6 @@ from packaging.version import (
 
 from deepmd.common import (
     cast_precision,
-    get_activation_func,
-    get_precision,
 )
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
@@ -25,28 +21,15 @@ from deepmd.env import (
     op_module,
     tf,
 )
-from deepmd.utils.errors import (
-    GraphWithoutTensorError,
-)
 from deepmd.utils.graph import (
     get_attention_layer_variables_from_graph_def,
-    get_tensor_by_name,
-    get_tensor_by_name_from_graph,
-    load_graph_def,
 )
 from deepmd.utils.network import (
     embedding_net,
-    embedding_net_rand_seed_shift,
     one_layer,
 )
 from deepmd.utils.sess import (
     run_sess,
-)
-from deepmd.utils.tabulate import (
-    DPTabulate,
-)
-from deepmd.utils.type_embed import (
-    embed_atom_type,
 )
 
 from .descriptor import (
@@ -59,7 +42,8 @@ from .se_a import (
 
 @Descriptor.register("se_atten")
 class DescrptSeAtten(DescrptSeA):
-    """
+    r"""Smooth version descriptor with attention.
+
     Parameters
     ----------
     rcut
@@ -74,7 +58,7 @@ class DescrptSeAtten(DescrptSeA):
             Number of the axis neuron :math:`M_2` (number of columns of the sub-matrix of the embedding matrix)
     resnet_dt
             Time-step `dt` in the resnet construction:
-            y = x + dt * \\phi (Wx + b)
+            y = x + dt * \phi (Wx + b)
     trainable
             If the weights of embedding net are trainable.
     seed
@@ -116,8 +100,8 @@ class DescrptSeAtten(DescrptSeA):
         trainable: bool = True,
         seed: Optional[int] = None,
         type_one_side: bool = True,
+        set_davg_zero: bool = True,
         exclude_types: List[List[int]] = [],
-        set_davg_zero: bool = False,
         activation_function: str = "tanh",
         precision: str = "default",
         uniform_seed: bool = False,
@@ -127,6 +111,11 @@ class DescrptSeAtten(DescrptSeA):
         attn_mask: bool = False,
         multi_task: bool = False,
     ) -> None:
+        if not set_davg_zero:
+            warnings.warn(
+                "Set 'set_davg_zero' False in descriptor 'se_atten' "
+                "may cause unexpected incontinuity during model inference!"
+            )
         DescrptSeA.__init__(
             self,
             rcut,
@@ -223,8 +212,7 @@ class DescrptSeAtten(DescrptSeA):
         mixed_type: bool = False,
         real_natoms_vec: Optional[list] = None,
     ) -> None:
-        """
-        Compute the statisitcs (avg and std) of the training data. The input will be normalized by the statistics.
+        """Compute the statisitcs (avg and std) of the training data. The input will be normalized by the statistics.
 
         Parameters
         ----------
@@ -307,8 +295,7 @@ class DescrptSeAtten(DescrptSeA):
         reuse: Optional[bool] = None,
         suffix: str = "",
     ) -> tf.Tensor:
-        """
-        Build the computational graph for the descriptor
+        """Build the computational graph for the descriptor.
 
         Parameters
         ----------
@@ -321,6 +308,8 @@ class DescrptSeAtten(DescrptSeA):
             natoms[0]: number of local atoms
             natoms[1]: total number of atoms held by this processor
             natoms[i]: 2 <= i < Ntypes+2, number of type i atoms
+        box_ : tf.Tensor
+            The box of the system
         mesh
             For historical reasons, only the length of the Tensor matters.
             if size of mesh == 6, pbc is assumed.
@@ -404,7 +393,7 @@ class DescrptSeAtten(DescrptSeA):
         self.nei_type_vec = tf.reshape(self.nei_type_vec, [-1])
         self.nmask = tf.cast(
             tf.reshape(self.nmask, [-1, 1, self.sel_all_a[0]]),
-            GLOBAL_TF_FLOAT_PRECISION,
+            self.filter_precision,
         )
         self.negative_mask = -(2 << 32) * (1.0 - self.nmask)
         # only used when tensorboard was set as true
@@ -413,6 +402,8 @@ class DescrptSeAtten(DescrptSeA):
         tf.summary.histogram("nlist", self.nlist)
 
         self.descrpt_reshape = tf.reshape(self.descrpt, [-1, self.ndescrpt])
+        # prevent lookup error; the actual atype already used for nlist
+        atype = tf.clip_by_value(atype, 0, self.ntypes - 1)
         self.atype_nloc = tf.reshape(
             tf.slice(atype, [0, 0], [-1, natoms[0]]), [-1]
         )  ## lammps will have error without this
@@ -446,6 +437,18 @@ class DescrptSeAtten(DescrptSeA):
         inputs_i = inputs
         inputs_i = tf.reshape(inputs_i, [-1, self.ndescrpt])
         type_i = -1
+        if len(self.exclude_types):
+            mask = self.build_type_exclude_mask(
+                self.exclude_types,
+                self.ntypes,
+                self.sel_a,
+                self.ndescrpt,
+                atype,
+                tf.shape(inputs_i)[0],
+                self.nei_type_vec,  # extra input for atten
+            )
+            inputs_i *= mask
+
         layer, qmat = self._filter(
             inputs_i,
             type_i,
@@ -505,7 +508,7 @@ class DescrptSeAtten(DescrptSeA):
             sysa2 = [0.0 for i in range(self.ntypes)]
             for ff in range(nframes):
                 natoms = real_natoms_vec[ff]
-                dd_ff = np.reshape(dd_all[ff], [-1, self.ndescrpt * natoms[0]])
+                dd_ff = np.reshape(dd_all[ff], [-1, self.ndescrpt * natoms_vec[0]])
                 start_index = 0
                 for type_i in range(self.ntypes):
                     end_index = (
@@ -577,10 +580,8 @@ class DescrptSeAtten(DescrptSeA):
         ----------
         xyz_scatter:
             shape is [nframes*natoms[0]*self.nnei, 1]
-        nframes:
-            shape is []
-        natoms:
-            shape is [1+1+self.ntypes]
+        natype:
+            neighbor atom type
         type_embedding:
             shape is [self.ntypes, Y] where Y=jdata['type_embedding']['neuron'][-1]
 
@@ -693,7 +694,7 @@ class DescrptSeAtten(DescrptSeA):
     ):
         sd_k = tf.sqrt(tf.cast(1.0, dtype=self.filter_precision))
         for i in range(layer_num):
-            name = "attention_layer_{}{}".format(i, suffix)
+            name = f"attention_layer_{i}{suffix}"
             with tf.variable_scope(name, reuse=tf.AUTO_REUSE):
                 # input_xyz_in = tf.nn.l2_normalize(input_xyz, -1)
                 Q_c = one_layer(
@@ -792,9 +793,7 @@ class DescrptSeAtten(DescrptSeA):
         name="filter_",
         reuse=None,
     ):
-        """
-        input env matrix, returns R.G
-        """
+        """Input env matrix, returns R.G."""
         outputs_size = [1] + self.filter_neuron
         # cut-out inputs
         # with natom x (nei_type_i x 4)
@@ -854,10 +853,7 @@ class DescrptSeAtten(DescrptSeA):
             )
             # xyz_scatter = tf.reshape(xyz_scatter, (-1, shape_i[1] // 4, outputs_size[-1]))
         else:
-            # we can safely return the final xyz_scatter filled with zero directly
-            return tf.cast(
-                tf.fill((natom, 4, outputs_size[-1]), 0.0), self.filter_precision
-            )
+            raise RuntimeError("this should not be touched")
         # When using tf.reshape(inputs_i, [-1, shape_i[1]//4, 4]) below
         # [588 24] -> [588 6 4] correct
         # but if sel is zero
@@ -890,27 +886,6 @@ class DescrptSeAtten(DescrptSeA):
         shape = inputs.get_shape().as_list()
         outputs_size = [1] + self.filter_neuron
         outputs_size_2 = self.n_axis_neuron
-        all_excluded = all(
-            [
-                (type_input, type_i) in self.exclude_types
-                for type_i in range(self.ntypes)
-            ]
-        )
-        if all_excluded:
-            # all types are excluded so result and qmat should be zeros
-            # we can safaly return a zero matrix...
-            # See also https://stackoverflow.com/a/34725458/9567349
-            # result: natom x outputs_size x outputs_size_2
-            # qmat: natom x outputs_size x 3
-            natom = tf.shape(inputs)[0]
-            result = tf.cast(
-                tf.fill((natom, outputs_size_2, outputs_size[-1]), 0.0),
-                GLOBAL_TF_FLOAT_PRECISION,
-            )
-            qmat = tf.cast(
-                tf.fill((natom, outputs_size[-1], 3), 0.0), GLOBAL_TF_FLOAT_PRECISION
-            )
-            return result, qmat
 
         start_index = 0
         type_i = 0
@@ -973,8 +948,7 @@ class DescrptSeAtten(DescrptSeA):
         graph_def: tf.GraphDef,
         suffix: str = "",
     ) -> None:
-        """
-        Init the embedding net variables with the given dict
+        """Init the embedding net variables with the given dict.
 
         Parameters
         ----------
@@ -991,10 +965,10 @@ class DescrptSeAtten(DescrptSeA):
         )
         if self.attn_layer > 0:
             self.beta[0] = self.attention_layer_variables[
-                "attention_layer_0{}/layer_normalization/beta".format(suffix)
+                f"attention_layer_0{suffix}/layer_normalization/beta"
             ]
             self.gamma[0] = self.attention_layer_variables[
-                "attention_layer_0{}/layer_normalization/gamma".format(suffix)
+                f"attention_layer_0{suffix}/layer_normalization/gamma"
             ]
             for i in range(1, self.attn_layer):
                 self.beta[i] = self.attention_layer_variables[
@@ -1007,3 +981,87 @@ class DescrptSeAtten(DescrptSeA):
                         i, suffix, i
                     )
                 ]
+
+    def build_type_exclude_mask(
+        self,
+        exclude_types: List[Tuple[int, int]],
+        ntypes: int,
+        sel: List[int],
+        ndescrpt: int,
+        atype: tf.Tensor,
+        shape0: tf.Tensor,
+        nei_type_vec: tf.Tensor,
+    ) -> tf.Tensor:
+        r"""Build the type exclude mask for the attention descriptor.
+
+        Notes
+        -----
+        This method has the similiar way to build the type exclude mask as
+        :meth:`deepmd.descriptor.descriptor.Descriptor.build_type_exclude_mask`.
+        The mathmatical expression has been explained in that method.
+        The difference is that the attention descriptor has provided the type of
+        the neighbors (idx_j) that is not in order, so we use it from an extra
+        input.
+
+        Parameters
+        ----------
+        exclude_types : List[Tuple[int, int]]
+            The list of excluded types, e.g. [(0, 1), (1, 0)] means the interaction
+            between type 0 and type 1 is excluded.
+        ntypes : int
+            The number of types.
+        sel : List[int]
+            The list of the number of selected neighbors for each type.
+        ndescrpt : int
+            The number of descriptors for each atom.
+        atype : tf.Tensor
+            The type of atoms, with the size of shape0.
+        shape0 : tf.Tensor
+            The shape of the first dimension of the inputs, which is equal to
+            nsamples * natoms.
+        nei_type_vec : tf.Tensor
+            The type of neighbors, with the size of (shape0, nnei).
+
+        Returns
+        -------
+        tf.Tensor
+            The type exclude mask, with the shape of (shape0, ndescrpt), and the
+            precision of GLOBAL_TF_FLOAT_PRECISION. The mask has the value of 1 if the
+            interaction between two types is not excluded, and 0 otherwise.
+
+        See Also
+        --------
+        deepmd.descriptor.descriptor.Descriptor.build_type_exclude_mask
+        """
+        # generate a mask
+        # op returns ntypes when the neighbor doesn't exist, so we need to add 1
+        type_mask = np.array(
+            [
+                [
+                    1 if (tt_i, tt_j) not in exclude_types else 0
+                    for tt_i in range(ntypes + 1)
+                ]
+                for tt_j in range(ntypes)
+            ],
+            dtype=bool,
+        )
+        type_mask = tf.convert_to_tensor(type_mask, dtype=GLOBAL_TF_FLOAT_PRECISION)
+        type_mask = tf.reshape(type_mask, [-1])
+
+        # (nsamples * natoms, 1)
+        atype_expand = tf.reshape(atype, [-1, 1])
+        # (nsamples * natoms, ndescrpt)
+        idx_i = tf.tile(atype_expand * (ntypes + 1), (1, ndescrpt))
+        # idx_j has been provided by atten op
+        # (nsamples * natoms, nnei, 1)
+        idx_j = tf.reshape(nei_type_vec, [shape0, sel[0], 1])
+        # (nsamples * natoms, nnei, ndescrpt // nnei)
+        idx_j = tf.tile(idx_j, (1, 1, ndescrpt // sel[0]))
+        # (nsamples * natoms, ndescrpt)
+        idx_j = tf.reshape(idx_j, [shape0, ndescrpt])
+        idx = idx_i + idx_j
+        idx = tf.reshape(idx, [-1])
+        mask = tf.nn.embedding_lookup(type_mask, idx)
+        # same as inputs_i, (nsamples * natoms, ndescrpt)
+        mask = tf.reshape(mask, [-1, ndescrpt])
+        return mask

@@ -1,5 +1,4 @@
 import os
-import shutil
 import sys
 import unittest
 
@@ -16,7 +15,8 @@ from common import (
     gen_data,
     tests_path,
 )
-from infer.convert2pb import (
+
+from deepmd.utils.convert import (
     convert_pbtxt_to_pb,
 )
 

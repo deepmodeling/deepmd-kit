@@ -24,8 +24,7 @@ log = logging.getLogger(__name__)
 
 
 class NeighborStat:
-    """
-    Class for getting training data information.
+    """Class for getting training data information.
 
     It loads data from DeepmdData object, and measures the data info, including neareest nbor distance between atoms, max nbor size of atoms and the output data range of the environment matrix.
 
@@ -45,9 +44,7 @@ class NeighborStat:
         rcut: float,
         one_type: bool = False,
     ) -> None:
-        """
-        Constructor
-        """
+        """Constructor."""
         self.rcut = rcut
         self.ntypes = ntypes
         self.one_type = one_type
@@ -72,8 +69,8 @@ class NeighborStat:
             t_natoms = place_holders["natoms_vec"]
             if self.one_type:
                 # all types = 0, natoms_vec = [natoms, natoms, natoms]
-                t_type = tf.zeros_like(t_type, dtype=tf.int32)
-                t_natoms = tf.repeat(t_natoms[0], 3)
+                t_type = tf.clip_by_value(t_type, -1, 0)
+                t_natoms = tf.tile(t_natoms[0:1], [3])
 
             _max_nbor_size, _min_nbor_dist = op_module.neighbor_stat(
                 place_holders["coord"],
@@ -92,8 +89,7 @@ class NeighborStat:
         self.sub_sess = tf.Session(graph=sub_graph, config=default_tf_session_config)
 
     def get_stat(self, data: DeepmdDataSystem) -> Tuple[float, List[int]]:
-        """
-        get the data statistics of the training data, including nearest nbor distance between atoms, max nbor size of atoms
+        """Get the data statistics of the training data, including nearest nbor distance between atoms, max nbor size of atoms.
 
         Parameters
         ----------

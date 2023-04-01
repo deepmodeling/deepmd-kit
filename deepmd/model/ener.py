@@ -1,13 +1,11 @@
 from typing import (
     List,
     Optional,
-    Tuple,
 )
 
 import numpy as np
 
 from deepmd.env import (
-    GLOBAL_TF_FLOAT_PRECISION,
     MODEL_VERSION,
     global_cvt_2_ener_float,
     op_module,
@@ -62,18 +60,16 @@ class EnerModel(Model):
         descrpt,
         fitting,
         typeebd=None,
-        type_map: List[str] = None,
+        type_map: Optional[List[str]] = None,
         data_stat_nbatch: int = 10,
         data_stat_protect: float = 1e-2,
-        use_srtab: str = None,
-        smin_alpha: float = None,
-        sw_rmin: float = None,
-        sw_rmax: float = None,
-        spin: Spin = None,
+        use_srtab: Optional[str] = None,
+        smin_alpha: Optional[float] = None,
+        sw_rmin: Optional[float] = None,
+        sw_rmax: Optional[float] = None,
+        spin: Optional[Spin] = None
     ) -> None:
-        """
-        Constructor
-        """
+        """Constructor."""
         # descriptor
         self.descrpt = descrpt
         self.rcut = self.descrpt.get_rcut()
@@ -161,7 +157,6 @@ class EnerModel(Model):
         suffix="",
         reuse=None,
     ):
-
         if input_dict is None:
             input_dict = {}
         with tf.variable_scope("model_attr" + suffix, reuse=reuse):
@@ -334,8 +329,7 @@ class EnerModel(Model):
         model_type: str = "original_model",
         suffix: str = "",
     ) -> None:
-        """
-        Init the embedding net variables with the given frozen model
+        """Init the embedding net variables with the given frozen model.
 
         Parameters
         ----------

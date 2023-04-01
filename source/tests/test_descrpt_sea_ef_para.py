@@ -1,5 +1,3 @@
-import os
-import sys
 import unittest
 
 import numpy as np
@@ -10,14 +8,9 @@ from common import (
     virial_dw_test,
     virial_test,
 )
-from tensorflow.python.framework import (
-    ops,
-)
 
 # load grad of force module
-import deepmd.op
 from deepmd.env import (
-    GLOBAL_ENER_FLOAT_PRECISION,
     GLOBAL_NP_FLOAT_PRECISION,
     GLOBAL_TF_FLOAT_PRECISION,
     op_module,

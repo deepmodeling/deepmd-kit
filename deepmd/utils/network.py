@@ -72,7 +72,7 @@ def one_layer(
             b = tf.cast(b, get_precision(mixed_prec["compute_prec"]))
 
         hidden = tf.nn.bias_add(tf.matmul(inputs, w), b)
-        if activation_fn != None and use_timestep:
+        if activation_fn is not None and use_timestep:
             idt_initializer = tf.random_normal_initializer(
                 stddev=0.001,
                 mean=0.1,
@@ -86,7 +86,7 @@ def one_layer(
                 "idt", [outputs_size], precision, idt_initializer, trainable=trainable
             )
             variable_summaries(idt, "idt")
-        if activation_fn != None:
+        if activation_fn is not None:
             if useBN:
                 None
                 # hidden_bn = self._batch_norm(hidden, name=name+'_normalization', reuse=reuse)
@@ -144,9 +144,9 @@ def embedding_net(
             \boldsymbol{\phi}(\mathbf{x}^T\mathbf{w}+\mathbf{b}), & \text{otherwise} \\
         \end{cases}
 
-    where :math:`\mathbf{x} \in \mathbb{R}^{N_1}`$` is the input vector and :math:`\mathbf{y} \in \mathbb{R}^{N_2}`
+    where :math:`\mathbf{x} \in \mathbb{R}^{N_1}` is the input vector and :math:`\mathbf{y} \in \mathbb{R}^{N_2}`
     is the output vector. :math:`\mathbf{w} \in \mathbb{R}^{N_1 \times N_2}` and
-    :math:`\mathbf{b} \in \mathbb{R}^{N_2}`$` are weights and biases, respectively,
+    :math:`\mathbf{b} \in \mathbb{R}^{N_2}` are weights and biases, respectively,
     both of which are trainable if `trainable` is `True`. :math:`\boldsymbol{\phi}`
     is the activation function.
 

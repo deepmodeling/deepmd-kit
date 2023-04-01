@@ -20,7 +20,6 @@ from deepmd.env import (
 )
 from deepmd.utils.graph import (
     get_tensor_by_name_from_graph,
-    load_graph_def,
 )
 from deepmd.utils.network import (
     embedding_net,
@@ -44,7 +43,7 @@ from .se import (
 @Descriptor.register("se_e2_r")
 @Descriptor.register("se_r")
 class DescrptSeR(DescrptSe):
-    """DeepPot-SE constructed from radial information of atomic configurations.
+    r"""DeepPot-SE constructed from radial information of atomic configurations.
 
     The embedding takes the distance between atoms as input.
 
@@ -60,7 +59,7 @@ class DescrptSeR(DescrptSe):
             Number of neurons in each hidden layers of the embedding net
     resnet_dt
             Time-step `dt` in the resnet construction:
-            y = x + dt * \\phi (Wx + b)
+            y = x + dt * \phi (Wx + b)
     trainable
             If the weights of embedding net are trainable.
     seed
@@ -95,12 +94,10 @@ class DescrptSeR(DescrptSe):
         uniform_seed: bool = False,
         multi_task: bool = False,
     ) -> None:
-        """
-        Constructor
-        """
+        """Constructor."""
         if rcut < rcut_smth:
             raise RuntimeError(
-                "rcut_smth (%f) should be no more than rcut (%f)!" % (rcut_smth, rcut)
+                f"rcut_smth ({rcut_smth:f}) should be no more than rcut ({rcut:f})!"
             )
         self.sel_r = sel
         self.rcut = rcut
@@ -181,26 +178,19 @@ class DescrptSeR(DescrptSe):
             self.stat_dict = {"sumr": [], "sumn": [], "sumr2": []}
 
     def get_rcut(self):
-        """
-        Returns the cut-off radius
-        """
+        """Returns the cut-off radius."""
         return self.rcut
 
     def get_ntypes(self):
-        """
-        Returns the number of atom types
-        """
+        """Returns the number of atom types."""
         return self.ntypes
 
     def get_dim_out(self):
-        """
-        Returns the output dimension of this descriptor
-        """
+        """Returns the output dimension of this descriptor."""
         return self.filter_neuron[-1]
 
     def get_nlist(self):
-        """
-        Returns
+        """Returns
         -------
         nlist
             Neighbor list
@@ -216,8 +206,7 @@ class DescrptSeR(DescrptSe):
     def compute_input_stats(
         self, data_coord, data_box, data_atype, natoms_vec, mesh, input_dict
     ):
-        """
-        Compute the statisitcs (avg and std) of the training data. The input will be normalized by the statistics.
+        """Compute the statisitcs (avg and std) of the training data. The input will be normalized by the statistics.
 
         Parameters
         ----------
@@ -253,8 +242,7 @@ class DescrptSeR(DescrptSe):
             self.stat_dict["sumr2"] += sumr2
 
     def merge_input_stats(self, stat_dict):
-        """
-        Merge the statisitcs computed from compute_input_stats to obtain the self.davg and self.dstd.
+        """Merge the statisitcs computed from compute_input_stats to obtain the self.davg and self.dstd.
 
         Parameters
         ----------
@@ -295,8 +283,7 @@ class DescrptSeR(DescrptSe):
         check_frequency: int = -1,
         suffix: str = "",
     ) -> None:
-        """
-        Reveive the statisitcs (distance, max_nbor_size and env_mat_range) of the training data.
+        """Reveive the statisitcs (distance, max_nbor_size and env_mat_range) of the training data.
 
         Parameters
         ----------
@@ -363,11 +350,10 @@ class DescrptSeR(DescrptSe):
         box_: tf.Tensor,
         mesh: tf.Tensor,
         input_dict: dict,
-        reuse: bool = None,
+        reuse: Optional[bool] = None,
         suffix: str = "",
     ) -> tf.Tensor:
-        """
-        Build the computational graph for the descriptor
+        """Build the computational graph for the descriptor.
 
         Parameters
         ----------
@@ -380,6 +366,8 @@ class DescrptSeR(DescrptSe):
             natoms[0]: number of local atoms
             natoms[1]: total number of atoms held by this processor
             natoms[i]: 2 <= i < Ntypes+2, number of type i atoms
+        box_ : tf.Tensor
+            The box of the system
         mesh
             For historical reasons, only the length of the Tensor matters.
             if size of mesh == 6, pbc is assumed.
@@ -469,8 +457,7 @@ class DescrptSeR(DescrptSe):
     def prod_force_virial(
         self, atom_ener: tf.Tensor, natoms: tf.Tensor
     ) -> Tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
-        """
-        Compute force and virial
+        """Compute force and virial.
 
         Parameters
         ----------

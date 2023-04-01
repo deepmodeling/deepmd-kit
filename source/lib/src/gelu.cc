@@ -6,6 +6,7 @@
 
 template <typename FPTYPE>
 void deepmd::gelu_cpu(FPTYPE* out, const FPTYPE* xx, const int_64 size) {
+#pragma omp parallel for
   for (int ii = 0; ii < size; ii++) {
     out[ii] = xx[ii] * (FPTYPE)0.5 *
               ((FPTYPE)1.0 +
@@ -19,6 +20,7 @@ void deepmd::gelu_grad_cpu(FPTYPE* out,
                            const FPTYPE* xx,
                            const FPTYPE* dy,
                            const int_64 size) {
+#pragma omp parallel for
   for (int ii = 0; ii < size; ii++) {
     const FPTYPE var =
         tanh((FPTYPE)SQRT_2_PI *
@@ -36,6 +38,7 @@ void deepmd::gelu_grad_grad_cpu(FPTYPE* out,
                                 const FPTYPE* dy,
                                 const FPTYPE* dy_2,
                                 const int_64 size) {
+#pragma omp parallel for
   for (int ii = 0; ii < size; ii++) {
     const FPTYPE var1 =
         tanh((FPTYPE)SQRT_2_PI *

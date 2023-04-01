@@ -75,7 +75,7 @@ class DP(Calculator):
         model: Union[str, "Path"],
         label: str = "DP",
         type_dict: Dict[str, int] = None,
-        **kwargs
+        **kwargs,
     ) -> None:
         Calculator.__init__(self, label=label, **kwargs)
         self.dp = DeepPotential(str(Path(model).resolve()))

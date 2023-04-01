@@ -322,6 +322,8 @@ def config(*, output: str, **kwargs):
     ----------
     output : str
         file to write config file
+    **kwargs
+        additional arguments
 
     Raises
     ------
@@ -329,6 +331,8 @@ def config(*, output: str, **kwargs):
         if user does not input any systems
     ValueError
         if output file is of wrong type
+    **kwargs
+        additional arguments
     """
     all_sys = get_system_names()
     if len(all_sys) == 0:

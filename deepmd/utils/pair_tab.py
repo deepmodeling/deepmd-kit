@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 from typing import (
-    List,
     Tuple,
 )
 
@@ -11,10 +10,8 @@ from scipy.interpolate import (
 )
 
 
-class PairTab(object):
-    """
-
-    Parameters
+class PairTab:
+    """Parameters
     ----------
     filename
             File name for the short-range tabulated potential.
@@ -26,14 +23,11 @@ class PairTab(object):
     """
 
     def __init__(self, filename: str) -> None:
-        """
-        Constructor
-        """
+        """Constructor."""
         self.reinit(filename)
 
     def reinit(self, filename: str) -> None:
-        """
-        Initialize the tabulated interaction
+        """Initialize the tabulated interaction.
 
         Parameters
         ----------
@@ -60,9 +54,7 @@ class PairTab(object):
         self.tab_data = self._make_data()
 
     def get(self) -> Tuple[np.array, np.array]:
-        """
-        Get the serialized table.
-        """
+        """Get the serialized table."""
         return self.tab_info, self.tab_data
 
     def _make_data(self):

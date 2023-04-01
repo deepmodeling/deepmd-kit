@@ -22,6 +22,14 @@ extern DP_Nlist* DP_NewNlist(int inum_,
                              int** firstneigh_);
 
 /**
+ * @brief Check if there is any exceptions throw.
+ *
+ * @param dp The neighbor list to use.
+ * @return const char* error message.
+ */
+const char* DP_NlistCheckOK(DP_Nlist* dp);
+
+/**
  * @brief The deep potential.
  **/
 typedef struct DP_DeepPot DP_DeepPot;
@@ -47,6 +55,7 @@ extern DP_DeepPot* DP_NewDeepPotWithParam(const char* c_model,
 
 /**
  * @brief Evaluate the energy, force and virial by using a DP. (double version)
+ * @attention The number of frames is assumed to be 1.
  * @param[in] dp The DP to use.
  * @param[in] natoms The number of atoms.
  * @param[in] coord The coordinates of atoms. The array should be of size natoms
@@ -77,6 +86,7 @@ extern void DP_DeepPotCompute(DP_DeepPot* dp,
 
 /**
  * @brief Evaluate the energy, force and virial by using a DP. (float version)
+ * @attention The number of frames is assumed to be 1.
  * @param[in] dp The DP to use.
  * @param[in] natoms The number of atoms.
  * @param[in] coord The coordinates of atoms. The array should be of size natoms
@@ -108,6 +118,7 @@ extern void DP_DeepPotComputef(DP_DeepPot* dp,
 /**
  * @brief Evaluate the energy, force and virial by using a DP with the neighbor
  *list. (double version)
+ * @attention The number of frames is assumed to be 1.
  * @param[in] dp The DP to use.
  * @param[in] natoms The number of atoms.
  * @param[in] coord The coordinates of atoms. The array should be of size natoms
@@ -145,6 +156,7 @@ extern void DP_DeepPotComputeNList(DP_DeepPot* dp,
 /**
  * @brief Evaluate the energy, force and virial by using a DP with the neighbor
  *list. (float version)
+ * @attention The number of frames is assumed to be 1.
  * @param[in] dp The DP to use.
  * @param[in] natoms The number of atoms.
  * @param[in] coord The coordinates of atoms. The array should be of size natoms
@@ -178,6 +190,255 @@ extern void DP_DeepPotComputeNListf(DP_DeepPot* dp,
                                     float* virial,
                                     float* atomic_energy,
                                     float* atomic_virial);
+
+/**
+ * @brief Evaluate the energy, force and virial by using a DP. (double version)
+ * @version 2
+ * @param[in] dp The DP to use.
+ * @param[in] nframes The number of frames.
+ * @param[in] natoms The number of atoms.
+ * @param[in] coord The coordinates of atoms. The array should be of size natoms
+ *x 3.
+ * @param[in] atype The atom types. The array should contain natoms ints.
+ * @param[in] box The cell of the region. The array should be of size 9. Pass
+ *NULL if pbc is not used.
+ * @param[in] fparam The frame parameters. The array can be of size nframes x
+ *dim_fparam.
+ * @param[in] aparam The atom parameters. The array can be of size nframes x
+ *dim_aparam.
+ * @param[out] energy Output energy.
+ * @param[out] force Output force. The array should be of size natoms x 3.
+ * @param[out] virial Output virial. The array should be of size 9.
+ * @param[out] atomic_energy Output atomic energy. The array should be of size
+ *natoms.
+ * @param[out] atomic_virial Output atomic virial. The array should be of size
+ *natoms x 9.
+ * @warning The output arrays should be allocated before calling this function.
+ *Pass NULL if not required.
+ **/
+extern void DP_DeepPotCompute2(DP_DeepPot* dp,
+                               const int nframes,
+                               const int natom,
+                               const double* coord,
+                               const int* atype,
+                               const double* cell,
+                               const double* fparam,
+                               const double* aparam,
+                               double* energy,
+                               double* force,
+                               double* virial,
+                               double* atomic_energy,
+                               double* atomic_virial);
+
+/**
+ * @brief Evaluate the energy, force and virial by using a DP. (float version)
+ * @version 2
+ * @param[in] dp The DP to use.
+ * @param[in] nframes The number of frames.
+ * @param[in] natoms The number of atoms.
+ * @param[in] coord The coordinates of atoms. The array should be of size natoms
+ *x 3.
+ * @param[in] atype The atom types. The array should contain natoms ints.
+ * @param[in] box The cell of the region. The array should be of size 9. Pass
+ *NULL if pbc is not used.
+ * @param[in] fparam The frame parameters. The array can be of size nframes x
+ *dim_fparam.
+ * @param[in] aparam The atom parameters. The array can be of size nframes x
+ *dim_aparam.
+ * @param[out] energy Output energy.
+ * @param[out] force Output force. The array should be of size natoms x 3.
+ * @param[out] virial Output virial. The array should be of size 9.
+ * @param[out] atomic_energy Output atomic energy. The array should be of size
+ *natoms.
+ * @param[out] atomic_virial Output atomic virial. The array should be of size
+ *natoms x 9.
+ * @warning The output arrays should be allocated before calling this function.
+ *Pass NULL if not required.
+ **/
+extern void DP_DeepPotComputef2(DP_DeepPot* dp,
+                                const int nframes,
+                                const int natom,
+                                const float* coord,
+                                const int* atype,
+                                const float* cell,
+                                const float* fparam,
+                                const float* aparam,
+                                double* energy,
+                                float* force,
+                                float* virial,
+                                float* atomic_energy,
+                                float* atomic_virial);
+
+/**
+ * @brief Evaluate the energy, force and virial by using a DP with the neighbor
+ *list. (double version)
+ * @version 2
+ * @param[in] dp The DP to use.
+ * @param[in] nframes The number of frames.
+ * @param[in] natoms The number of atoms.
+ * @param[in] coord The coordinates of atoms. The array should be of size natoms
+ *x 3.
+ * @param[in] atype The atom types. The array should contain natoms ints.
+ * @param[in] box The cell of the region. The array should be of size 9. Pass
+ *NULL if pbc is not used.
+ * @param[in] nghost The number of ghost atoms.
+ * @param[in] nlist The neighbor list.
+ * @param[in] ago Update the internal neighbour list if ago is 0.
+ * @param[in] fparam The frame parameters. The array can be of size nframes x
+ *dim_fparam.
+ * @param[in] aparam The atom parameters. The array can be of size nframes x
+ *dim_aparam.
+ * @param[out] energy Output energy.
+ * @param[out] force Output force. The array should be of size natoms x 3.
+ * @param[out] virial Output virial. The array should be of size 9.
+ * @param[out] atomic_energy Output atomic energy. The array should be of size
+ *natoms.
+ * @param[out] atomic_virial Output atomic virial. The array should be of size
+ *natoms x 9.
+ * @warning The output arrays should be allocated before calling this function.
+ *Pass NULL if not required.
+ **/
+extern void DP_DeepPotComputeNList2(DP_DeepPot* dp,
+                                    const int nframes,
+                                    const int natom,
+                                    const double* coord,
+                                    const int* atype,
+                                    const double* cell,
+                                    const int nghost,
+                                    const DP_Nlist* nlist,
+                                    const int ago,
+                                    const double* fparam,
+                                    const double* aparam,
+                                    double* energy,
+                                    double* force,
+                                    double* virial,
+                                    double* atomic_energy,
+                                    double* atomic_virial);
+
+/**
+ * @brief Evaluate the energy, force and virial by using a DP with the neighbor
+ *list. (float version)
+ * @version 2
+ * @param[in] dp The DP to use.
+ * @param[in] nframes The number of frames.
+ * @param[in] natoms The number of atoms.
+ * @param[in] coord The coordinates of atoms. The array should be of size natoms
+ *x 3.
+ * @param[in] atype The atom types. The array should contain natoms ints.
+ * @param[in] box The cell of the region. The array should be of size 9. Pass
+ *NULL if pbc is not used.
+ * @param[in] nghost The number of ghost atoms.
+ * @param[in] nlist The neighbor list.
+ * @param[in] ago Update the internal neighbour list if ago is 0.
+ * @param[in] fparam The frame parameters. The array can be of size nframes x
+ *dim_fparam.
+ * @param[in] aparam The atom parameters. The array can be of size nframes x
+ *dim_aparam.
+ * @param[out] energy Output energy.
+ * @param[out] force Output force. The array should be of size natoms x 3.
+ * @param[out] virial Output virial. The array should be of size 9.
+ * @param[out] atomic_energy Output atomic energy. The array should be of size
+ *natoms.
+ * @param[out] atomic_virial Output atomic virial. The array should be of size
+ *natoms x 9.
+ * @warning The output arrays should be allocated before calling this function.
+ *Pass NULL if not required.
+ **/
+extern void DP_DeepPotComputeNListf2(DP_DeepPot* dp,
+                                     const int nframes,
+                                     const int natom,
+                                     const float* coord,
+                                     const int* atype,
+                                     const float* cell,
+                                     const int nghost,
+                                     const DP_Nlist* nlist,
+                                     const int ago,
+                                     const float* fparam,
+                                     const float* aparam,
+                                     double* energy,
+                                     float* force,
+                                     float* virial,
+                                     float* atomic_energy,
+                                     float* atomic_virial);
+
+/**
+ * @brief Evaluate the energy, force and virial by using a DP with the mixed
+ *type. (double version)
+ * @param[in] dp The DP to use.
+ * @param[in] nframes The number of frames.
+ * @param[in] natoms The number of atoms.
+ * @param[in] coord The coordinates of atoms. The array should be of size natoms
+ *x 3.
+ * @param[in] atype The atom types. The array should contain nframes x natoms
+ *ints.
+ * @param[in] box The cell of the region. The array should be of size 9. Pass
+ *NULL if pbc is not used.
+ * @param[in] fparam The frame parameters. The array can be of size nframes x
+ *dim_fparam.
+ * @param[in] aparam The atom parameters. The array can be of size nframes x
+ *dim_aparam.
+ * @param[out] energy Output energy.
+ * @param[out] force Output force. The array should be of size natoms x 3.
+ * @param[out] virial Output virial. The array should be of size 9.
+ * @param[out] atomic_energy Output atomic energy. The array should be of size
+ *natoms.
+ * @param[out] atomic_virial Output atomic virial. The array should be of size
+ *natoms x 9.
+ * @warning The output arrays should be allocated before calling this function.
+ *Pass NULL if not required.
+ **/
+extern void DP_DeepPotComputeMixedType(DP_DeepPot* dp,
+                                       const int nframes,
+                                       const int natoms,
+                                       const double* coord,
+                                       const int* atype,
+                                       const double* cell,
+                                       const double* fparam,
+                                       const double* aparam,
+                                       double* energy,
+                                       double* force,
+                                       double* virial,
+                                       double* atomic_energy,
+                                       double* atomic_virial);
+/**
+ * @brief Evaluate the energy, force and virial by using a DP with the mixed
+ *type. (float version)
+ * @param[in] dp The DP to use.
+ * @param[in] nframes The number of frames.
+ * @param[in] natoms The number of atoms.
+ * @param[in] coord The coordinates of atoms. The array should be of size natoms
+ *x 3.
+ * @param[in] atype The atom types. The array should contain nframes x natoms
+ *ints.
+ * @param[in] box The cell of the region. The array should be of size 9. Pass
+ *NULL if pbc is not used.
+ * @param[in] fparam The frame parameters. The array can be of size nframes x
+ *dim_fparam.
+ * @param[in] aparam The atom parameters. The array can be of size nframes x
+ *dim_aparam.
+ * @param[out] energy Output energy.
+ * @param[out] force Output force. The array should be of size natoms x 3.
+ * @param[out] virial Output virial. The array should be of size 9.
+ * @param[out] atomic_energy Output atomic energy. The array should be of size
+ *natoms.
+ * @param[out] atomic_virial Output atomic virial. The array should be of size
+ *natoms x 9.
+ * @warning The output arrays should be allocated before calling this function.
+ *Pass NULL if not required.
+ **/
+extern void DP_DeepPotComputeMixedTypef(DP_DeepPot* dp,
+                                        const int nframes,
+                                        const int natoms,
+                                        const float* coord,
+                                        const int* atype,
+                                        const float* cell,
+                                        const float* fparam,
+                                        const float* aparam,
+                                        double* energy,
+                                        float* force,
+                                        float* virial,
+                                        float* atomic_energy,
+                                        float* atomic_virial);
 
 /**
  * @brief The deep potential model deviation.
@@ -281,6 +542,14 @@ double DP_DeepPotModelDeviGetCutoff(DP_DeepPotModelDevi* dp);
 int DP_DeepPotModelDeviGetNumbTypes(DP_DeepPotModelDevi* dp);
 
 /**
+ * @brief Check if there is any exceptions throw.
+ *
+ * @param dp The DP model deviation to use.
+ * @return const char* error message.
+ */
+const char* DP_DeepPotModelDeviCheckOK(DP_DeepPotModelDevi* dp);
+
+/**
  * @brief Get the type map of a DP.
  * @param[in] dp The DP to use.
  * @return The cutoff radius.
@@ -295,6 +564,20 @@ double DP_DeepPotGetCutoff(DP_DeepPot* dp);
 int DP_DeepPotGetNumbTypes(DP_DeepPot* dp);
 
 /**
+ * @brief Get the dimension of frame parameters of a DP.
+ * @param[in] dp The DP to use.
+ * @return The dimension of frame parameters of the DP.
+ */
+int DP_DeepPotGetDimFParam(DP_DeepPot* dp);
+
+/**
+ * @brief Get the dimension of atomic parameters of a DP.
+ * @param[in] dp The DP to use.
+ * @return The dimension of atomic parameters of the DP.
+ */
+int DP_DeepPotGetDimAParam(DP_DeepPot* dp);
+
+/**
  * @brief Get the type map of a DP.
  * @param[in] dp The DP to use.
  * @return The type map of the DP.
@@ -305,6 +588,14 @@ const char* DP_DeepPotGetTypeMap(DP_DeepPot* dp);
  * @brief The deep tensor.
  **/
 typedef struct DP_DeepTensor DP_DeepTensor;
+
+/**
+ * @brief Check if there is any exceptions throw.
+ *
+ * @param dp The DP to use.
+ * @return const char* error message.
+ */
+const char* DP_DeepPotCheckOK(DP_DeepPot* dp);
 
 /**
  * @brief Deep Tensor constructor with initialization.
@@ -590,6 +881,14 @@ int* DP_DeepTensorGetSelTypes(DP_DeepTensor* dt);
 int DP_DeepTensorGetNumbSelTypes(DP_DeepTensor* dt);
 
 /**
+ * @brief Check if there is any exceptions throw.
+ *
+ * @param dt The Deep Tensor to use.
+ * @return const char* error message.
+ */
+const char* DP_DeepTensorCheckOK(DP_DeepTensor* dt);
+
+/**
  * @brief The dipole charge modifier.
  **/
 typedef struct DP_DipoleChargeModifier DP_DipoleChargeModifier;
@@ -713,6 +1012,14 @@ int* DP_DipoleChargeModifierGetSelTypes(DP_DipoleChargeModifier* dt);
 int DP_DipoleChargeModifierGetNumbSelTypes(DP_DipoleChargeModifier* dt);
 
 /**
+ * @brief Check if there is any exceptions throw.
+ *
+ * @param dcm The DipoleChargeModifier to use.
+ * @return const char* error message.
+ */
+const char* DP_DipoleChargeModifierCheckOK(DP_DipoleChargeModifier* dcm);
+
+/**
  * @brief Convert PBtxt to PB.
  * @param[in] c_pbtxt The name of the PBtxt file.
  * @param[in] c_pb The name of the PB file.
@@ -725,6 +1032,13 @@ extern void DP_ConvertPbtxtToPb(const char* c_pbtxt, const char* c_pb);
  * @param[in] c_pre The prefix to each line.
  */
 extern void DP_PrintSummary(const char* c_pre);
+
+/**
+ * @brief Read a file to a char array.
+ * @param[in] c_model The name of the file.
+ * @return const char* The char array.
+ */
+const char* DP_ReadFileToChar(const char* c_model);
 
 #ifdef __cplusplus
 } /* end extern "C" */

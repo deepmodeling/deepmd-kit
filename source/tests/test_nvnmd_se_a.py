@@ -1,35 +1,16 @@
 import os
-import pickle
-import sys
 import unittest
 
-import dpdata
 import numpy as np
 from common import (
-    Data,
-    DataSystem,
-    gen_data,
     j_loader,
 )
 
-from deepmd.common import (
-    j_must_have,
-)
 from deepmd.descriptor import (
     DescrptSeA,
 )
 from deepmd.env import (
     tf,
-)
-from deepmd.fit import (
-    EnerFitting,
-)
-from deepmd.model import (
-    EnerModel,
-)
-from deepmd.utils.type_embed import (
-    TypeEmbedNet,
-    embed_atom_type,
 )
 
 GLOBAL_ENER_FLOAT_PRECISION = tf.float64
@@ -85,12 +66,13 @@ class TestModel(tf.test.TestCase):
         self.mesh = mesh
 
     def test_descriptor_one_side_qnn(self):
-        """: test se_a of NVNMD with quantized value
+        """: test se_a of NVNMD with quantized value.
 
         Reference:
             test_descrpt_se_a_type.py
 
         Note:
+        ----
             The test_nvnmd_se_a.py must be run after test_nvnmd_entrypoints.py.
             Because the data file map.npy ia generated in running test_nvnmd_entrypoints.py.
         """
@@ -150,14 +132,14 @@ class TestModel(tf.test.TestCase):
         ref_dout = [
             0.0136348009,
             0.0083287954,
-            -0.0639076233,
-            0.0129181147,
+            -0.0639075041,
+            0.0129179955,
             0.0050876141,
-            -0.0390379429,
+            -0.0390378237,
             0.0078909397,
             0.0022796392,
             0.2995386124,
-            -0.0605480671,
+            -0.0605479479,
         ]
         places = 10
         np.testing.assert_almost_equal(model_dout[0:10], ref_dout, places)

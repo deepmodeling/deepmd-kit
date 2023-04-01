@@ -4,7 +4,6 @@ import ctypes
 import logging
 import os
 import platform
-import re
 from configparser import (
     ConfigParser,
 )
@@ -19,8 +18,6 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Dict,
-    List,
-    Optional,
     Tuple,
 )
 
@@ -266,7 +263,8 @@ def set_tf_default_nthreads():
             "To get the best performance, it is recommended to adjust "
             "the number of threads by setting the environment variables "
             "OMP_NUM_THREADS, TF_INTRA_OP_PARALLELISM_THREADS, and "
-            "TF_INTER_OP_PARALLELISM_THREADS."
+            "TF_INTER_OP_PARALLELISM_THREADS. See "
+            "https://deepmd.rtfd.io/parallelism/ for more information."
         )
     set_env_if_empty("TF_INTRA_OP_PARALLELISM_THREADS", "0", verbose=False)
     set_env_if_empty("TF_INTER_OP_PARALLELISM_THREADS", "0", verbose=False)
@@ -298,6 +296,17 @@ def get_tf_session_config() -> Any:
     intra, inter = get_tf_default_nthreads()
     if int(os.environ.get("DP_JIT", 0)):
         set_env_if_empty("TF_XLA_FLAGS", "--tf_xla_auto_jit=2")
+        # pip cuda package
+        if platform.system() == "Linux":
+            try:
+                m = import_module("nvidia.cuda_nvcc")
+            except ModuleNotFoundError:
+                pass
+            else:
+                cuda_data_dir = str(Path(m.__file__).parent.absolute())
+                set_env_if_empty(
+                    "XLA_FLAGS", "--xla_gpu_cuda_data_dir=" + cuda_data_dir
+                )
     config = tf.ConfigProto(
         gpu_options=tf.GPUOptions(allow_growth=True),
         intra_op_parallelism_threads=intra,
@@ -409,9 +418,9 @@ def get_module(module_name: str) -> "ModuleType":
                 ) from e
             error_message = (
                 "This deepmd-kit package is inconsitent with TensorFlow "
-                "Runtime, thus an error is raised when loading %s. "
+                "Runtime, thus an error is raised when loading {}. "
                 "You need to rebuild deepmd-kit against this TensorFlow "
-                "runtime." % (module_name,)
+                "runtime.".format(module_name)
             )
             if TF_CXX11_ABI_FLAG == 1:
                 # #1791

@@ -5,16 +5,12 @@ Can handle local or distributed training.
 
 import json
 import logging
-import os
 import time
 from typing import (
     Any,
     Dict,
-    List,
     Optional,
 )
-
-import numpy as np
 
 from deepmd.common import (
     data_requirement,
@@ -60,9 +56,6 @@ from deepmd.utils.neighbor_stat import (
 )
 from deepmd.utils.path import (
     DPPath,
-)
-from deepmd.utils.sess import (
-    run_sess,
 )
 
 __all__ = ["train"]
@@ -111,6 +104,8 @@ def train(
         skip checking neighbor statistics
     finetune : Optional[str]
         path to pretrained model or None
+    **kwargs
+        additional arguments
 
     Raises
     ------
@@ -245,7 +240,7 @@ def _do_work(jdata: Dict[str, Any], run_opt: RunOptions, is_compress: bool = Fal
                         multi_task_mode,
                     )
                     train_data[data_systems].print_summary(
-                        "training in {}".format(data_systems)
+                        f"training in {data_systems}"
                     )
                     if (
                         jdata["training"]["data_dict"][data_systems].get(
@@ -263,7 +258,7 @@ def _do_work(jdata: Dict[str, Any], run_opt: RunOptions, is_compress: bool = Fal
                             multi_task_mode,
                         )
                         valid_data[data_systems].print_summary(
-                            "validation in {}".format(data_systems)
+                            f"validation in {data_systems}"
                         )
 
     # get training info
@@ -300,18 +295,18 @@ def get_data(jdata: Dict[str, Any], rcut, type_map, modifier, multi_task_mode=Fa
     if len(systems) == 0:
         msg = "cannot find valid a data system"
         log.fatal(msg)
-        raise IOError(msg, help_msg)
+        raise OSError(msg, help_msg)
     # rougly check all items in systems are valid
     for ii in systems:
         ii = DPPath(ii)
         if not ii.is_dir():
             msg = f"dir {ii} is not a valid dir"
             log.fatal(msg)
-            raise IOError(msg, help_msg)
+            raise OSError(msg, help_msg)
         if not (ii / "type.raw").is_file():
             msg = f"dir {ii} is not a valid data system dir"
             log.fatal(msg)
-            raise IOError(msg, help_msg)
+            raise OSError(msg, help_msg)
 
     batch_size = j_must_have(jdata, "batch_size")
     sys_probs = jdata.get("sys_probs", None)

@@ -5,17 +5,14 @@ from pathlib import (
     Path,
 )
 
-from infer.convert2pb import (
-    convert_pbtxt_to_pb,
-)
-
 from deepmd.infer import (
     DeepDipole,
-    DeepGlobalPolar,
     DeepPolar,
     DeepPot,
     DeepPotential,
-    DeepWFC,
+)
+from deepmd.utils.convert import (
+    convert_pbtxt_to_pb,
 )
 
 
@@ -52,7 +49,6 @@ class TestGetPotential(unittest.TestCase):
             f.unlink()
 
     def test_factory(self):
-
         msg = "Returned wrong type of potential. Expected: {}, got: {}"
 
         dp = DeepPotential(self.work_dir / "deep_dipole.pb")

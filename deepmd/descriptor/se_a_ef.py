@@ -30,7 +30,7 @@ from .se_a import (
 
 @Descriptor.register("se_a_ef")
 class DescrptSeAEf(Descriptor):
-    """
+    r"""Smooth edition descriptor with Ef.
 
     Parameters
     ----------
@@ -46,7 +46,7 @@ class DescrptSeAEf(Descriptor):
             Number of the axis neuron (number of columns of the sub-matrix of the embedding matrix)
     resnet_dt
             Time-step `dt` in the resnet construction:
-            y = x + dt * \\phi (Wx + b)
+            y = x + dt * \phi (Wx + b)
     trainable
             If the weights of embedding net are trainable.
     seed
@@ -83,9 +83,7 @@ class DescrptSeAEf(Descriptor):
         precision: str = "default",
         uniform_seed=False,
     ) -> None:
-        """
-        Constructor
-        """
+        """Constructor."""
         self.descrpt_para = DescrptSeAEfLower(
             op_module.descrpt_se_a_ef_para,
             rcut,
@@ -122,38 +120,27 @@ class DescrptSeAEf(Descriptor):
         )
 
     def get_rcut(self) -> float:
-        """
-        Returns the cut-off radius
-        """
+        """Returns the cut-off radius."""
         return self.descrpt_vert.rcut_r
 
     def get_ntypes(self) -> int:
-        """
-        Returns the number of atom types
-        """
+        """Returns the number of atom types."""
         return self.descrpt_vert.ntypes
 
     def get_dim_out(self) -> int:
-        """
-        Returns the output dimension of this descriptor
-        """
+        """Returns the output dimension of this descriptor."""
         return self.descrpt_vert.get_dim_out() + self.descrpt_para.get_dim_out()
 
     def get_dim_rot_mat_1(self) -> int:
-        """
-        Returns the first dimension of the rotation matrix. The rotation is of shape dim_1 x 3
-        """
+        """Returns the first dimension of the rotation matrix. The rotation is of shape dim_1 x 3."""
         return self.descrpt_vert.filter_neuron[-1]
 
     def get_rot_mat(self) -> tf.Tensor:
-        """
-        Get rotational matrix
-        """
+        """Get rotational matrix."""
         return self.qmat
 
     def get_nlist(self) -> Tuple[tf.Tensor, tf.Tensor, List[int], List[int]]:
-        """
-        Returns
+        """Returns
         -------
         nlist
             Neighbor list
@@ -180,8 +167,7 @@ class DescrptSeAEf(Descriptor):
         mesh: list,
         input_dict: dict,
     ) -> None:
-        """
-        Compute the statisitcs (avg and std) of the training data. The input will be normalized by the statistics.
+        """Compute the statisitcs (avg and std) of the training data. The input will be normalized by the statistics.
 
         Parameters
         ----------
@@ -213,11 +199,10 @@ class DescrptSeAEf(Descriptor):
         box_: tf.Tensor,
         mesh: tf.Tensor,
         input_dict: dict,
-        reuse: bool = None,
+        reuse: Optional[bool] = None,
         suffix: str = "",
     ) -> tf.Tensor:
-        """
-        Build the computational graph for the descriptor
+        """Build the computational graph for the descriptor.
 
         Parameters
         ----------
@@ -230,6 +215,8 @@ class DescrptSeAEf(Descriptor):
             natoms[0]: number of local atoms
             natoms[1]: total number of atoms held by this processor
             natoms[i]: 2 <= i < Ntypes+2, number of type i atoms
+        box_ : tf.Tensor
+            The box of the system
         mesh
             For historical reasons, only the length of the Tensor matters.
             if size of mesh == 6, pbc is assumed.
@@ -271,8 +258,7 @@ class DescrptSeAEf(Descriptor):
     def prod_force_virial(
         self, atom_ener: tf.Tensor, natoms: tf.Tensor
     ) -> Tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
-        """
-        Compute force and virial
+        """Compute force and virial.
 
         Parameters
         ----------
@@ -302,9 +288,7 @@ class DescrptSeAEf(Descriptor):
 
 
 class DescrptSeAEfLower(DescrptSeA):
-    """
-    Helper class for implementing DescrptSeAEf
-    """
+    """Helper class for implementing DescrptSeAEf."""
 
     def __init__(
         self,

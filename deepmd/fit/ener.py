@@ -1,15 +1,10 @@
 import logging
-import warnings
 from typing import (
     List,
     Optional,
-    Tuple,
 )
 
 import numpy as np
-from packaging.version import (
-    Version,
-)
 
 from deepmd.common import (
     add_data_requirement,
@@ -19,7 +14,6 @@ from deepmd.common import (
 )
 from deepmd.env import (
     GLOBAL_TF_FLOAT_PRECISION,
-    TF_VERSION,
     global_cvt_2_tf_float,
     tf,
 )
@@ -41,14 +35,10 @@ from deepmd.utils.errors import (
 from deepmd.utils.graph import (
     get_fitting_net_variables_from_graph_def,
     get_tensor_by_name_from_graph,
-    load_graph_def,
 )
 from deepmd.utils.network import one_layer as one_layer_deepmd
 from deepmd.utils.network import (
     one_layer_rand_seed_shift,
-)
-from deepmd.utils.type_embed import (
-    embed_atom_type,
 )
 
 from deepmd.utils.spin import (
@@ -73,9 +63,9 @@ class EnerFitting(Fitting):
         \mathbf{y}=\mathcal{L}(\mathbf{x};\mathbf{w},\mathbf{b})=
             \boldsymbol{\phi}(\mathbf{x}^T\mathbf{w}+\mathbf{b})
 
-    where :math:`\mathbf{x} \in \mathbb{R}^{N_1}`$` is the input vector and :math:`\mathbf{y} \in \mathbb{R}^{N_2}`
+    where :math:`\mathbf{x} \in \mathbb{R}^{N_1}` is the input vector and :math:`\mathbf{y} \in \mathbb{R}^{N_2}`
     is the output vector. :math:`\mathbf{w} \in \mathbb{R}^{N_1 \times N_2}` and
-    :math:`\mathbf{b} \in \mathbb{R}^{N_2}`$` are weights and biases, respectively,
+    :math:`\mathbf{b} \in \mathbb{R}^{N_2}` are weights and biases, respectively,
     both of which are trainable if `trainable[i]` is `True`. :math:`\boldsymbol{\phi}`
     is the activation function.
 
@@ -85,9 +75,9 @@ class EnerFitting(Fitting):
         \mathbf{y}=\mathcal{L}^{(n)}(\mathbf{x};\mathbf{w},\mathbf{b})=
             \mathbf{x}^T\mathbf{w}+\mathbf{b}
 
-    where :math:`\mathbf{x} \in \mathbb{R}^{N_{n-1}}`$` is the input vector and :math:`\mathbf{y} \in \mathbb{R}`
+    where :math:`\mathbf{x} \in \mathbb{R}^{N_{n-1}}` is the input vector and :math:`\mathbf{y} \in \mathbb{R}`
     is the output scalar. :math:`\mathbf{w} \in \mathbb{R}^{N_{n-1}}` and
-    :math:`\mathbf{b} \in \mathbb{R}`$` are weights and bias, respectively,
+    :math:`\mathbf{b} \in \mathbb{R}` are weights and bias, respectively,
     both of which are trainable if `trainable[n]` is `True`.
 
     Parameters
@@ -124,6 +114,9 @@ class EnerFitting(Fitting):
     layer_name : list[Optional[str]], optional
             The name of the each layer. If two layers, either in the same fitting or different fittings,
             have the same name, they will share the same neural network parameters.
+    use_aparam_as_mask: bool, optional
+            If True, the atomic parameters will be used as a mask that determines the atom is real/virtual.
+            And the aparam will not be used as the atomic parameters for embedding.
     """
 
     def __init__(
@@ -135,21 +128,21 @@ class EnerFitting(Fitting):
         numb_aparam: int = 0,
         rcond: float = 1e-3,
         tot_ener_zero: bool = False,
-        trainable: List[bool] = None,
-        seed: int = None,
+        trainable: Optional[List[bool]] = None,
+        seed: Optional[int] = None,
         atom_ener: List[float] = [],
         activation_function: str = "tanh",
         precision: str = "default",
         uniform_seed: bool = False,
         layer_name: Optional[List[Optional[str]]] = None,
-        spin: Spin = None,
+        use_aparam_as_mask: bool = False,
+        spin: Optional[Spin] = None
     ) -> None:
-        """
-        Constructor
-        """
+        """Constructor."""
         # model param
         self.ntypes = descrpt.get_ntypes()
         self.dim_descrpt = descrpt.get_dim_out()
+        self.use_aparam_as_mask = use_aparam_as_mask
         # args = ()\
         #        .add('numb_fparam',      int,    default = 0)\
         #        .add('numb_aparam',      int,    default = 0)\
@@ -220,20 +213,15 @@ class EnerFitting(Fitting):
             ), "length of layer_name should be that of n_neuron + 1"
 
     def get_numb_fparam(self) -> int:
-        """
-        Get the number of frame parameters
-        """
+        """Get the number of frame parameters."""
         return self.numb_fparam
 
     def get_numb_aparam(self) -> int:
-        """
-        Get the number of atomic parameters
-        """
+        """Get the number of atomic parameters."""
         return self.numb_fparam
 
     def compute_output_stats(self, all_stat: dict, mixed_type: bool = False) -> None:
-        """
-        Compute the ouput statistics
+        """Compute the ouput statistics.
 
         Parameters
         ----------
@@ -286,7 +274,7 @@ class EnerFitting(Fitting):
             # In this situation, we directly use these assigned energies instead of computing stats.
             # This will make the loss decrease quickly
             assigned_atom_ener = np.array(
-                list((ee for ee in self.atom_ener_v if ee is not None))
+                list(ee for ee in self.atom_ener_v if ee is not None)
             )
             assigned_ener_idx = list(
                 (ii for ii, ee in enumerate(self.atom_ener_v) if ee is not None)
@@ -303,8 +291,7 @@ class EnerFitting(Fitting):
         return energy_shift
 
     def compute_input_stats(self, all_stat: dict, protection: float = 1e-2) -> None:
-        """
-        Compute the input statistics
+        """Compute the input statistics.
 
         Parameters
         ----------
@@ -452,12 +439,11 @@ class EnerFitting(Fitting):
         self,
         inputs: tf.Tensor,
         natoms: tf.Tensor,
-        input_dict: dict = None,
-        reuse: bool = None,
+        input_dict: Optional[dict] = None,
+        reuse: Optional[bool] = None,
         suffix: str = "",
     ) -> tf.Tensor:
-        """
-        Build the computational graph for fitting net
+        """Build the computational graph for fitting net.
 
         Parameters
         ----------
@@ -567,25 +553,35 @@ class EnerFitting(Fitting):
             assert len(bias_atom_e) == self.ntypes
 
         fparam = None
-        aparam = None
         if self.numb_fparam > 0:
             fparam = input_dict["fparam"]
             fparam = tf.reshape(fparam, [-1, self.numb_fparam])
             fparam = (fparam - t_fparam_avg) * t_fparam_istd
-        if self.numb_aparam > 0:
-            aparam = input_dict["aparam"]
-            aparam = tf.reshape(aparam, [-1, self.numb_aparam])
-            aparam = (aparam - t_aparam_avg) * t_aparam_istd
-            aparam = tf.reshape(aparam, [-1, self.numb_aparam * natoms[0]])
+
+        aparam = None
+        if not self.use_aparam_as_mask:
+            if self.numb_aparam > 0:
+                aparam = input_dict["aparam"]
+                aparam = tf.reshape(aparam, [-1, self.numb_aparam])
+                aparam = (aparam - t_aparam_avg) * t_aparam_istd
+                aparam = tf.reshape(aparam, [-1, self.numb_aparam * natoms[0]])
 
         atype_nall = tf.reshape(atype, [-1, natoms[1]])
-        self.atype_nloc = tf.reshape(
-            tf.slice(atype_nall, [0, 0], [-1, natoms[0]]), [-1]
+        self.atype_nloc = tf.slice(
+            atype_nall, [0, 0], [-1, natoms[0]]
         )  ## lammps will make error
+        atype_filter = tf.cast(self.atype_nloc >= 0, GLOBAL_TF_FLOAT_PRECISION)
+        self.atype_nloc = tf.reshape(self.atype_nloc, [-1])
+        # prevent embedding_lookup error,
+        # but the filter will be applied anyway
+        self.atype_nloc = tf.clip_by_value(self.atype_nloc, 0, self.ntypes - 1)
+        
+        ## if spin is used
         if self.spin is not None:
             self.atype_nloc = tf.reshape(
                 tf.slice(atype_nall, [0, 0], [-1, tf.reduce_sum(natoms[2: 2+ntypes_atom])]), [-1]
-            )  ## spin needed
+            )
+
         if type_embedding is not None:
             atype_embed = tf.nn.embedding_lookup(type_embedding, self.atype_nloc)
         else:
@@ -673,12 +669,13 @@ class EnerFitting(Fitting):
                 final_layer -= zero_layer
             outs = tf.reshape(final_layer, [tf.shape(inputs)[0], natoms[0]])
         # add bias
-        self.atom_ener_before = outs
+        self.atom_ener_before = outs * atype_filter
         self.add_type = tf.reshape(
             tf.nn.embedding_lookup(self.t_bias_atom_e, self.atype_nloc),
             [tf.shape(inputs)[0], tf.reduce_sum(natoms[2: 2+ntypes_atom])],
         )
         outs = outs + self.add_type
+        outs *= atype_filter
         self.atom_ener_after = outs
 
         if self.tot_ener_zero:
@@ -700,8 +697,7 @@ class EnerFitting(Fitting):
         graph_def: tf.GraphDef,
         suffix: str = "",
     ) -> None:
-        """
-        Init the fitting net variables with the given dict
+        """Init the fitting net variables with the given dict.
 
         Parameters
         ----------
@@ -752,8 +748,7 @@ class EnerFitting(Fitting):
         bias_shift="delta",
         ntest=10,
     ) -> None:
-        """
-        Change the energy bias according to the input data and the pretrained model.
+        """Change the energy bias according to the input data and the pretrained model.
 
         Parameters
         ----------
@@ -851,8 +846,7 @@ class EnerFitting(Fitting):
         )
 
     def enable_mixed_precision(self, mixed_prec: Optional[dict] = None) -> None:
-        """
-        Reveive the mixed precision setting.
+        """Reveive the mixed precision setting.
 
         Parameters
         ----------

@@ -1,6 +1,5 @@
 import logging
 from typing import (
-    List,
     Optional,
 )
 
@@ -155,7 +154,7 @@ class MapTable:
         return self.map
 
     def mapping(self, x, dic_map, cfgs, rank=4):
-        r"""Evaluate value by mapping table operation of tensorflow"""
+        r"""Evaluate value by mapping table operation of tensorflow."""
         n = len(x)
         dic_val = {}
         for key in dic_map.keys():
@@ -194,7 +193,7 @@ class MapTable:
         return dic_val
 
     def mapping2(self, x, dic_map, cfgs, rank=4):
-        r"""Evaluate value by mapping table of numpy"""
+        r"""Evaluate value by mapping table of numpy."""
         tf.reset_default_graph()
         t_x = tf.placeholder(tf.float64, [None, 1], "t_x")
         t_table = tf.placeholder(tf.float64, [None, None], "t_table")
@@ -224,7 +223,7 @@ class MapTable:
         return dic_val
 
     def plot_lines(self, x, dic1, dic2=None):
-        r"""Plot lines to see accuracy"""
+        r"""Plot lines to see accuracy."""
         for key in dic1.keys():
             val1 = dic1[key]
             if dic2 is None:
@@ -241,7 +240,7 @@ class MapTable:
     def build_map_coef(self, cfgs, x, ys, grads, grad_grads, Nr, Nc, rank=4):
         r"""Build mapping table coefficient
         cfgs: cfg list
-        cfg = x0, x1, dx
+        cfg = x0, x1, dx.
 
         coef2:
         a x + b = y
@@ -332,7 +331,7 @@ class MapTable:
         return coefs, coef_grads
 
     def build_grad(self, x, y, Nr, Nc):
-        r""": Build gradient of tensor y of x"""
+        r""": Build gradient of tensor y of x."""
         grads = []
         grad_grads = []
         for ii in range(Nr):
@@ -352,7 +351,7 @@ class MapTable:
         return grads, grad_grads
 
     def build_u2s(self, r2):
-        r"""Build tensor s, s=s(r2)"""
+        r"""Build tensor s, s=s(r2)."""
         rmin = nvnmd_cfg.dscp["rcut_smth"]
         rmax = nvnmd_cfg.dscp["rcut"]
         ntype = nvnmd_cfg.dscp["ntype"]
@@ -386,7 +385,7 @@ class MapTable:
         return sl, hl
 
     def build_u2s_grad(self):
-        r"""Build gradient of s with respect to u (r^2)"""
+        r"""Build gradient of s with respect to u (r^2)."""
         ntype = nvnmd_cfg.dscp["ntype"]
         #
         dic_ph = {}
@@ -401,7 +400,7 @@ class MapTable:
         return dic_ph
 
     def run_u2s(self):
-        r"""Build u->s graph and run it to get value of mapping table"""
+        r"""Build u->s graph and run it to get value of mapping table."""
         # ntypex = nvnmd_cfg.dscp['ntypex']
         ntype = nvnmd_cfg.dscp["ntype"]
         avg, std = get_normalize(nvnmd_cfg.weight)
@@ -449,7 +448,7 @@ class MapTable:
     def build_s2g(self, s):
         r"""Build s->G
         s is switch function
-        G is embedding net output
+        G is embedding net output.
         """
         ntypex = nvnmd_cfg.dscp["ntypex"]
         ntype = nvnmd_cfg.dscp["ntype"]
@@ -476,7 +475,7 @@ class MapTable:
         return xyz_scatters
 
     def build_s2g_grad(self):
-        r"""Build gradient of G with respect to s"""
+        r"""Build gradient of G with respect to s."""
         ntypex = nvnmd_cfg.dscp["ntypex"]
         ntype = nvnmd_cfg.dscp["ntype"]
         M1 = nvnmd_cfg.dscp["M1"]
@@ -490,7 +489,7 @@ class MapTable:
         return dic_ph
 
     def run_s2g(self):
-        r"""Build s-> graph and run it to get value of mapping table"""
+        r"""Build s-> graph and run it to get value of mapping table."""
         smin = nvnmd_cfg.dscp["smin"]
         smax = nvnmd_cfg.dscp["smax"]
 
@@ -503,7 +502,7 @@ class MapTable:
         log.info(f"the range of s is [{smin}, {smax}]")
         # check
         if (smax - smin) > 16.0:
-            log.warning(f"the range of s is over the limit (smax - smin) > 16.0")
+            log.warning("the range of s is over the limit (smax - smin) > 16.0")
         prec = N / N2
         smin_ = np.floor(smin * prec - 1) / prec
         #

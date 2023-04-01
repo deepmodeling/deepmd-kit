@@ -1,16 +1,10 @@
-import os
-import pickle
-import sys
 import unittest
 
-import dpdata
 import numpy as np
 from common import (
-    Data,
     DataSystem,
     gen_data,
     j_loader,
-    tf,
 )
 from packaging.version import parse as parse_version
 
@@ -152,37 +146,37 @@ class TestModel(tf.test.TestCase):
         np.savetxt("f.out", f.reshape([1, -1]), delimiter=",")
         np.savetxt("v.out", v.reshape([1, -1]), delimiter=",")
 
-        refe = [6.12188445792698e01]
+        refe = [6.121172052273667e01]
         reff = [
-            -2.7590100298321299e-03,
-            -2.7392865283639755e-03,
-            8.5672424478673337e-05,
-            7.3154109032780492e-03,
-            7.6754109031673332e-04,
-            -1.0882393042639207e-03,
-            9.8633073531477645e-03,
-            3.6631966083397029e-03,
-            -2.2379079261940034e-04,
-            -4.2393697523149913e-03,
-            4.9491210390296492e-04,
-            1.6970049039709007e-04,
-            -8.9021867696626039e-03,
-            -4.7967452269658322e-03,
-            9.2569990351204447e-04,
-            -1.2781517046160920e-03,
-            2.6103819527704053e-03,
-            1.3095727849551296e-04,
+            1.1546857028815118e-02,
+            1.7560407103242779e-02,
+            7.1301778864729290e-04,
+            2.3682630974376197e-02,
+            1.6842732518204180e-02,
+            -2.2408109608703206e-03,
+            -7.9408568690697776e-03,
+            9.6856119564082792e-03,
+            1.9055514693144326e-05,
+            8.7017502459205160e-03,
+            -2.7153030569749256e-02,
+            -8.8338555421916490e-04,
+            -4.3841165945453904e-02,
+            5.8104108317526765e-03,
+            2.6243178542006552e-03,
+            7.8507845654118558e-03,
+            -2.2746131839858654e-02,
+            -2.3219464245160639e-04,
         ]
         refv = [
-            -1.0171833662757776e-02,
-            -6.7981543912862021e-03,
-            6.1480942994810296e-04,
-            -6.7981543912861942e-03,
-            3.0092645628232335e-03,
-            3.8060849919518031e-04,
-            6.1480942994810383e-04,
-            3.8060849919518036e-04,
-            -5.6890657188056002e-05,
+            -0.10488160947198523,
+            0.016694308932682225,
+            0.003444164500535988,
+            0.016694308932682235,
+            -0.05415326614376374,
+            -0.0010792017166882334,
+            0.003444164500535988,
+            -0.001079201716688233,
+            -0.00020932681975049773,
         ]
 
         refe = np.reshape(refe, [-1])
@@ -193,3 +187,78 @@ class TestModel(tf.test.TestCase):
         np.testing.assert_almost_equal(e, refe, places)
         np.testing.assert_almost_equal(f, reff, places)
         np.testing.assert_almost_equal(v, refv, places)
+
+    def test_exclude_types(self):
+        """In this test, we make type 0 has no interaction with type 0 and type 1,
+        so the descriptor should be zero for type 0 atoms.
+        """
+        jfile = "water_se_atten.json"
+        jdata = j_loader(jfile)
+
+        systems = j_must_have(jdata, "systems")
+        set_pfx = j_must_have(jdata, "set_prefix")
+        batch_size = j_must_have(jdata, "batch_size")
+        test_size = j_must_have(jdata, "numb_test")
+        batch_size = 1
+        test_size = 1
+        rcut = j_must_have(jdata["model"]["descriptor"], "rcut")
+        ntypes = 2
+
+        data = DataSystem(systems, set_pfx, batch_size, test_size, rcut, run_opt=None)
+
+        test_data = data.get_test()
+        numb_test = 1
+
+        # set parameters
+        jdata["model"]["descriptor"]["exclude_types"] = [[0, 0], [0, 1]]
+
+        t_prop_c = tf.placeholder(tf.float32, [5], name="t_prop_c")
+        t_coord = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None], name="i_coord")
+        t_type = tf.placeholder(tf.int32, [None], name="i_type")
+        t_natoms = tf.placeholder(tf.int32, [ntypes + 2], name="i_natoms")
+        t_box = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None, 9], name="i_box")
+        t_mesh = tf.placeholder(tf.int32, [None], name="i_mesh")
+        is_training = tf.placeholder(tf.bool)
+
+        # successful
+        descrpt = DescrptSeAtten(ntypes=ntypes, **jdata["model"]["descriptor"])
+        typeebd_param = jdata["model"]["type_embedding"]
+        typeebd = TypeEmbedNet(
+            neuron=typeebd_param["neuron"],
+            activation_function=None,
+            resnet_dt=typeebd_param["resnet_dt"],
+            seed=typeebd_param["seed"],
+            uniform_seed=True,
+            padding=True,
+        )
+        type_embedding = typeebd.build(
+            ntypes,
+        )
+        dout = descrpt.build(
+            t_coord,
+            t_type,
+            t_natoms,
+            t_box,
+            t_mesh,
+            {"type_embedding": type_embedding},
+            reuse=False,
+            suffix="_se_atten_exclude_types",
+        )
+
+        feed_dict_test1 = {
+            t_prop_c: test_data["prop_c"],
+            t_coord: np.reshape(test_data["coord"][:numb_test, :], [-1]),
+            t_box: test_data["box"][:numb_test, :],
+            t_type: np.reshape(test_data["type"][:numb_test, :], [-1]),
+            t_natoms: test_data["natoms_vec"],
+            t_mesh: test_data["default_mesh"],
+            is_training: False,
+        }
+
+        with self.test_session() as sess:
+            sess.run(tf.global_variables_initializer())
+            [des] = sess.run([dout], feed_dict=feed_dict_test1)
+
+        np.testing.assert_almost_equal(des[:, 0:2], 0.0, 10)
+        with self.assertRaises(AssertionError):
+            np.testing.assert_almost_equal(des[:, 2:6], 0.0, 10)

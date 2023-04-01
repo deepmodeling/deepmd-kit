@@ -1,13 +1,14 @@
-import copy
 import os
 import shutil
-import sys
 import unittest
 
 import numpy as np
 
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
+)
+from deepmd.utils import (
+    random,
 )
 from deepmd.utils.data_system import (
     DeepmdDataSystem,
@@ -326,7 +327,7 @@ class TestDataSystem(unittest.TestCase):
             / float(self.nframes[2] * (self.nset - 1) + shift),
         )
 
-    def test_prob_sys_size_1(self):
+    def test_prob_sys_size_2(self):
         batch_size = 1
         test_size = 1
         ds = DeepmdDataSystem(self.sys_name, batch_size, test_size, 2.0)
@@ -400,3 +401,24 @@ class TestDataSystem(unittest.TestCase):
         ]
         ds = DeepmdDataSystem(self.sys_name, 3, 2, 2.0, sys_probs=sys_probs)
         self.assertEqual(ds.sys_probs.size, len(sys_probs))
+
+    def test_get_mixed_batch(self):
+        """Test get_batch with mixed system."""
+        batch_size = "mixed:3"
+        test_size = 2
+
+        ds = DeepmdDataSystem(self.sys_name, batch_size, test_size, 2.0)
+        ds.add("test", self.test_ndof, atomic=True, must=True)
+        ds.add("null", self.test_ndof, atomic=True, must=False)
+        random.seed(114514)
+        # with this seed, the batch is fixed, with natoms 3, 6, 6
+        data = ds.get_batch()
+        np.testing.assert_equal(data["natoms_vec"], np.array([6, 6, 6, 0, 0]))
+        np.testing.assert_equal(data["real_natoms_vec"][:, 0], np.array([3, 6, 6]))
+        np.testing.assert_equal(data["type"][0, 3:6], np.array([-1, -1, -1]))
+        np.testing.assert_equal(data["coord"][0, 9:18], np.zeros(9))
+        for kk in ("test", "null"):
+            np.testing.assert_equal(
+                data[kk][0, 3 * self.test_ndof : 6 * self.test_ndof],
+                np.zeros(3 * self.test_ndof),
+            )

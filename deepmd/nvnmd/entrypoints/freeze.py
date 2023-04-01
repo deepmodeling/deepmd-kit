@@ -12,7 +12,7 @@ from deepmd.utils.graph import (
 
 
 def filter_tensorVariableList(tensorVariableList) -> dict:
-    r"""Get the name of variable for NVNMD
+    r"""Get the name of variable for NVNMD.
 
     | :code:`train_attr/min_nbor_dist`
     | :code:`descrpt_attr/t_avg:0`
@@ -44,7 +44,7 @@ def filter_tensorVariableList(tensorVariableList) -> dict:
 
 
 def save_weight(sess, file_name: str = "nvnmd/weight.npy"):
-    r"""Save the dictionary of weight to a npy file"""
+    r"""Save the dictionary of weight to a npy file."""
     tvs = tf.global_variables()
     dic_key_tv = filter_tensorVariableList(tvs)
     dic_key_value = {}

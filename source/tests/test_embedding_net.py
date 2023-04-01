@@ -1,16 +1,8 @@
-import os
-import sys
 import unittest
 
 import numpy as np
-from tensorflow.python.framework import (
-    ops,
-)
 
 from deepmd.env import (
-    GLOBAL_ENER_FLOAT_PRECISION,
-    GLOBAL_NP_FLOAT_PRECISION,
-    GLOBAL_TF_FLOAT_PRECISION,
     tf,
 )
 from deepmd.utils.network import (
@@ -103,7 +95,7 @@ class Inter(tf.test.TestCase):
         ]
         np.testing.assert_almost_equal(refout, myout, self.places)
 
-    def test_enlarger_net_2(self):
+    def test_enlarger_net_3(self):
         network_size = [2, 4]
         out = embedding_net(
             self.inputs,

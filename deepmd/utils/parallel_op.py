@@ -72,6 +72,8 @@ class ParallelOp:
 
         Parameters
         ----------
+        sess : tf.Session
+            TensorFlow session
         feed : Generator[dict, None, None]
             generator which yields feed_dict
 
@@ -94,5 +96,4 @@ class ParallelOp:
                 for kk, vv in fd.items():
                     feed_dict[self.placeholders[ii][kk]] = vv
             ops = self.ops[:nn]
-            for yy in run_sess(sess, ops, feed_dict=feed_dict):
-                yield yy
+            yield from run_sess(sess, ops, feed_dict=feed_dict)

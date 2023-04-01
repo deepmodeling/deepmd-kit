@@ -23,9 +23,11 @@ file(
   descrpt_se_a_ef.cc
   descrpt_se_a_ef_para.cc
   descrpt_se_a_ef_vert.cc
+  descrpt_se_a_mask.cc
   pair_tab.cc
   prod_force_multi_device.cc
   prod_virial_multi_device.cc
+  prod_force_se_a_mask.cc
   soft_min.cc
   soft_min_force.cc
   soft_min_virial.cc
@@ -42,6 +44,7 @@ file(
   custom_op.cc
   prod_force_grad.cc
   prod_force_grad_multi_device.cc
+  prod_force_se_a_mask_grad.cc
   prod_virial_grad.cc
   prod_virial_grad_multi_device.cc
   soft_min_force_grad.cc
@@ -53,6 +56,9 @@ add_library(${LIB_DEEPMD_OP} MODULE ${OP_SRC} ${OP_REMAPPER_SRC})
 # link: libdeepmd libtensorflow_cc libtensorflow_framework
 target_link_libraries(${LIB_DEEPMD_OP} PRIVATE TensorFlow::tensorflow_framework)
 target_link_libraries(${LIB_DEEPMD_OP} PRIVATE ${LIB_DEEPMD})
+if(Protobuf_LIBRARY)
+  target_link_libraries(${LIB_DEEPMD_OP} PRIVATE ${Protobuf_LIBRARY})
+endif()
 if(APPLE)
   set_target_properties(
     ${LIB_DEEPMD_OP} PROPERTIES INSTALL_RPATH

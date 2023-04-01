@@ -39,7 +39,6 @@ def convert_input_v0_v1(
     Dict[str, Any]
         converted output
     """
-
     output = {}
     output["model"] = _model(jdata, jdata["use_smooth"])
     output["learning_rate"] = _learning_rate(jdata)
@@ -267,7 +266,7 @@ def _jcopy(src: Dict[str, Any], dst: Dict[str, Any], keys: Sequence[str]):
 
 
 def remove_decay_rate(jdata: Dict[str, Any]):
-    """convert decay_rate to stop_lr.
+    """Convert decay_rate to stop_lr.
 
     Parameters
     ----------
@@ -288,7 +287,6 @@ def remove_decay_rate(jdata: Dict[str, Any]):
 def convert_input_v1_v2(
     jdata: Dict[str, Any], warning: bool = True, dump: Optional[Union[str, Path]] = None
 ) -> Dict[str, Any]:
-
     tr_cfg = jdata["training"]
     tr_data_keys = {
         "systems",

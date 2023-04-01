@@ -37,9 +37,6 @@ from .train import (
     get_rcut,
     train,
 )
-from .transfer import (
-    transfer,
-)
 
 __all__ = ["compress"]
 
@@ -58,7 +55,7 @@ def compress(
     mpi_log: str,
     log_path: Optional[str],
     log_level: int,
-    **kwargs
+    **kwargs,
 ):
     """Compress model.
 
@@ -90,6 +87,8 @@ def compress(
         if speccified log will be written to this file
     log_level : int
         logging level
+    **kwargs
+        additional arguments
     """
     graph, _ = load_graph_def(input)
     try:
@@ -99,7 +98,7 @@ def compress(
         )
         jdata = json.loads(t_jdata)
     except GraphWithoutTensorError as e:
-        if training_script == None:
+        if training_script is None:
             raise RuntimeError(
                 "The input frozen model: %s has no training script or min_nbor_dist information, "
                 "which is not supported by the model compression interface. "
@@ -193,6 +192,5 @@ def _check_compress_type(graph: tf.Graph):
 
     if t_model_type == "compressed_model":
         raise RuntimeError(
-            "The input frozen model %s has already been compressed! Please do not compress the model repeatedly. "
-            % model_file
+            "The input frozen model has already been compressed! Please do not compress the model repeatedly. "
         )

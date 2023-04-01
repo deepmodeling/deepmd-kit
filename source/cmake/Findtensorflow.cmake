@@ -2,7 +2,8 @@
 #
 # Output: TensorFlow_FOUND TensorFlow_INCLUDE_DIRS TensorFlow_LIBRARY
 # TensorFlow_LIBRARY_PATH TensorFlowFramework_LIBRARY
-# TensorFlowFramework_LIBRARY_PATH
+# TensorFlowFramework_LIBRARY_PATH TENSORFLOW_LINK_LIBPYTHON : whether
+# Tensorflow::tensorflow_cc links libpython
 #
 # Target: TensorFlow::tensorflow_framework TensorFlow::tensorflow_cc
 
@@ -79,18 +80,24 @@ if(NOT TensorFlow_INCLUDE_DIRS AND tensorflow_FIND_REQUIRED)
       "You can manually set the tensorflow install path by -DTENSORFLOW_ROOT ")
 endif()
 
-if(BUILD_CPP_IF AND NOT USE_TF_PYTHON_LIBS)
+if(BUILD_CPP_IF)
   message(
     STATUS
       "Enabled cpp interface build, looking for tensorflow_cc and tensorflow_framework"
   )
   # tensorflow_cc and tensorflow_framework
   if(NOT TensorFlow_FIND_COMPONENTS)
-    set(TensorFlow_FIND_COMPONENTS tensorflow_cc tensorflow_framework)
+    set(TensorFlow_FIND_COMPONENTS tensorflow_cc)
   endif()
   # the lib
-  list(APPEND CMAKE_FIND_LIBRARY_SUFFIXES .so.1)
-  list(APPEND CMAKE_FIND_LIBRARY_SUFFIXES .so.2)
+  if(WIN32)
+    # pass
+  elseif(APPLE)
+    list(APPEND CMAKE_FIND_LIBRARY_SUFFIXES .2.dylib)
+  else()
+    list(APPEND CMAKE_FIND_LIBRARY_SUFFIXES .so.1)
+    list(APPEND CMAKE_FIND_LIBRARY_SUFFIXES .so.2)
+  endif()
   set(TensorFlow_LIBRARY_PATH "")
   foreach(module ${TensorFlow_FIND_COMPONENTS})
     find_library(
@@ -104,7 +111,7 @@ if(BUILD_CPP_IF AND NOT USE_TF_PYTHON_LIBS)
       get_filename_component(TensorFlow_LIBRARY_PATH_${module}
                              ${TensorFlow_LIBRARY_${module}} PATH)
       list(APPEND TensorFlow_LIBRARY_PATH ${TensorFlow_LIBRARY_PATH_${module}})
-    elseif(tensorflow_FIND_REQUIRED)
+    elseif(tensorflow_FIND_REQUIRED AND NOT USE_TF_PYTHON_LIBS)
       message(
         FATAL_ERROR
           "Not found lib/'${module}' in '${TensorFlow_search_PATHS}' "
@@ -112,10 +119,10 @@ if(BUILD_CPP_IF AND NOT USE_TF_PYTHON_LIBS)
       )
     endif()
   endforeach()
-else(BUILD_CPP_IF AND NOT USE_TF_PYTHON_LIBS)
+else(BUILD_CPP_IF)
   message(
     STATUS "Disabled cpp interface build, looking for tensorflow_framework")
-endif(BUILD_CPP_IF AND NOT USE_TF_PYTHON_LIBS)
+endif(BUILD_CPP_IF)
 
 # tensorflow_framework
 if(NOT TensorFlowFramework_FIND_COMPONENTS)
@@ -130,6 +137,8 @@ endif()
 # the lib
 if(WIN32)
   list(APPEND TensorFlow_search_PATHS ${TENSORFLOW_ROOT}/python)
+elseif(APPLE)
+  list(APPEND CMAKE_FIND_LIBRARY_SUFFIXES .2.dylib)
 else()
   list(APPEND CMAKE_FIND_LIBRARY_SUFFIXES .so.1)
   list(APPEND CMAKE_FIND_LIBRARY_SUFFIXES .so.2)
@@ -158,8 +167,12 @@ foreach(module ${TensorFlowFramework_FIND_COMPONENTS})
   endif()
 endforeach()
 
-# find _pywrap_tensorflow_internal and set it as tensorflow_cc
-if(BUILD_CPP_IF AND USE_TF_PYTHON_LIBS)
+# find _pywrap_tensorflow_internal and set it as tensorflow_cc don't need to
+# find it if tensorflow_cc already found
+set(TENSORFLOW_LINK_LIBPYTHON FALSE)
+if(BUILD_CPP_IF
+   AND USE_TF_PYTHON_LIBS
+   AND NOT TensorFlow_LIBRARY_tensorflow_cc)
   set(TF_SUFFIX python)
   if(WIN32)
     set(TensorFlow_FIND_COMPONENTS _pywrap_tensorflow_internal.lib)
@@ -180,6 +193,7 @@ if(BUILD_CPP_IF AND USE_TF_PYTHON_LIBS)
                              ${TensorFlow_LIBRARY_${module}} PATH)
       list(APPEND TensorFlow_LIBRARY_PATH ${TensorFlow_LIBRARY_PATH_${module}})
       set(TensorFlow_LIBRARY_tensorflow_cc ${TensorFlow_LIBRARY_${module}})
+      set(TENSORFLOW_LINK_LIBPYTHON TRUE)
     elseif(tensorflow_FIND_REQUIRED)
       message(
         FATAL_ERROR
@@ -327,8 +341,18 @@ elseif(NOT DEFINED OP_CXX_ABI)
     elseif(${CPP_CXX_ABI_COMPILE_RESULT_VAR0}
            AND NOT ${CPP_CXX_ABI_COMPILE_RESULT_VAR1})
       set(OP_CXX_ABI 0)
+    elseif(${CPP_CXX_ABI_COMPILE_RESULT_VAR0}
+           AND ${CPP_CXX_ABI_COMPILE_RESULT_VAR1})
+      message(
+        WARNING
+          "Both _GLIBCXX_USE_CXX11_ABI=0 and 1 work. The reason may be that your C++ compiler (e.g. Red Hat Developer Toolset) does not support the custom cxx11 abi flag. For convience, we set _GLIBCXX_USE_CXX11_ABI=1."
+      )
+      set(OP_CXX_ABI 1)
     else()
-      message(FATAL_ERROR "Failed to detect OP_CXX_ABI, please set it manually")
+      message(
+        FATAL_ERROR
+          "Both _GLIBCXX_USE_CXX11_ABI=0 and 1 do not work. The reason may be that your C++ compiler (e.g. Red Hat Developer Toolset) does not support the custom cxx11 abi flag."
+      )
     endif()
   else()
     try_run(
@@ -418,9 +442,11 @@ if(BUILD_CPP_IF)
                              INTERFACE ${TensorFlow_INCLUDE_DIRS})
   target_compile_definitions(TensorFlow::tensorflow_cc
                              INTERFACE -D_GLIBCXX_USE_CXX11_ABI=${OP_CXX_ABI})
-  if(USE_TF_PYTHON_LIBS)
+  if(TENSORFLOW_LINK_LIBPYTHON)
     # link: libpython3.x.so
     target_link_libraries(TensorFlow::tensorflow_cc
                           INTERFACE ${Python_LIBRARIES})
+    target_include_directories(TensorFlow::tensorflow_cc
+                               INTERFACE ${PYTHON_INCLUDE_DIRS})
   endif()
 endif()

@@ -1,12 +1,5 @@
-import os
-import pickle
-import sys
-import unittest
-
-import dpdata
 import numpy as np
 from common import (
-    Data,
     DataSystem,
     gen_data,
     j_loader,
@@ -23,9 +16,6 @@ from deepmd.env import (
 )
 from deepmd.fit import (
     EnerFitting,
-)
-from deepmd.model import (
-    EnerModel,
 )
 
 GLOBAL_ENER_FLOAT_PRECISION = tf.float64

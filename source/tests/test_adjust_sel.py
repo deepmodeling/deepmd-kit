@@ -14,7 +14,6 @@ from common import (
 
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
-    MODEL_VERSION,
 )
 from deepmd.infer import (
     DeepPot,

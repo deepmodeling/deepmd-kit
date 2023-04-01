@@ -6,7 +6,6 @@ from typing import (
     Dict,
     Optional,
     Sequence,
-    Tuple,
 )
 
 import numpy as np
@@ -67,6 +66,8 @@ def transfer(*, old_model: str, raw_model: str, output: str, **kwargs):
         new model that will accept ops from old model
     output : str
         new model with transfered parameters will be saved to this location
+    **kwargs
+        additional arguments
     """
     raw_graph = load_graph(raw_model)
     old_graph = load_graph(old_model)
@@ -150,7 +151,7 @@ def transform_graph(raw_graph: tf.Graph, old_graph: tf.Graph) -> tf.Graph:
                     cp_attr.from_array(tensor, tf.float16, [1])
 
             elif old_graph_dtype[1] == "float16":
-                tensor = convertMatrix(np.array(old_node.half_val), tensor_shape)
+                tensor = convert_matrix(np.array(old_node.half_val), tensor_shape)
                 cp_attr.from_array(tensor, raw_graph_dtype)
 
         elif raw_graph_dtype == np.float64 or raw_graph_dtype == np.float32:
@@ -167,12 +168,12 @@ def transform_graph(raw_graph: tf.Graph, old_graph: tf.Graph) -> tf.Graph:
 
             elif old_graph_dtype == np.float16:
                 if (len(tensor_shape) != 1) or (tensor_shape[0] != 1):
-                    tensor = convertMatrix(
+                    tensor = convert_matrix(
                         np.array(old_node.half_val), tensor_shape
                     ).astype(raw_graph_dtype)
                     cp_attr.from_str(tensor)
                 else:
-                    tensor = convertMatrix(
+                    tensor = convert_matrix(
                         np.array(old_node.half_val), tensor_shape
                     ).astype(raw_graph_dtype)
                     cp_attr.from_array(tensor, raw_graph_dtype)

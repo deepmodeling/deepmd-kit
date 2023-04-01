@@ -1,15 +1,10 @@
 from typing import (
     List,
     Optional,
-    Tuple,
 )
 
-import numpy as np
-
 from deepmd.env import (
-    GLOBAL_TF_FLOAT_PRECISION,
     MODEL_VERSION,
-    global_cvt_2_ener_float,
     tf,
 )
 
@@ -50,13 +45,11 @@ class TensorModel(Model):
         descrpt,
         fitting,
         typeebd=None,
-        type_map: List[str] = None,
+        type_map: Optional[List[str]] = None,
         data_stat_nbatch: int = 10,
         data_stat_protect: float = 1e-2,
     ) -> None:
-        """
-        Constructor
-        """
+        """Constructor."""
         self.model_type = tensor_name
         # descriptor
         self.descrpt = descrpt
@@ -124,7 +117,6 @@ class TensorModel(Model):
         suffix="",
         reuse=None,
     ):
-
         if input_dict is None:
             input_dict = {}
         with tf.variable_scope("model_attr" + suffix, reuse=reuse):
@@ -219,8 +211,7 @@ class TensorModel(Model):
         model_type: str = "original_model",
         suffix: str = "",
     ) -> None:
-        """
-        Init the embedding net variables with the given frozen model
+        """Init the embedding net variables with the given frozen model.
 
         Parameters
         ----------
