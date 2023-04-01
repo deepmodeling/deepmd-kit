@@ -1192,9 +1192,9 @@ void PairDeepMD::coeff(int narg, char **arg) {
     numb_types = type_idx_map.size();
     if (numb_types < n) {
       type_idx_map.resize(n);
-      for (int ii=numb_types; ii < n; ++ii) {
+      for (int ii = numb_types; ii < n; ++ii) {
         type_idx_map[ii] = -1;
-      }    
+      }
     }
   }
   for (int i = ilo; i <= ihi; i++) {
