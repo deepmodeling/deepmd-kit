@@ -22,7 +22,7 @@ The spin loss function $L$ for training energy is given by
 
 $$L = p_e L_e + p_{fr} L_{fr} + p_{fm} L_{fm} + p_v L_v$$
 
-where $L_e$, $L_{fr}$, $L_{fm}$ and $L_v$ denote the loss in energy, atomic force, magnatic force and virial, respectively. $p_e$, $p_{fr}$, $p_{fm}$ and $p_v$ give the prefactors of the energy, atomic force, magnatic force and virial losses. 
+where $L_e$, $L_{fr}$, $L_{fm}$ and $L_v$ denote the loss in energy, atomic force, magnatic force and virial, respectively. $p_e$, $p_{fr}$, $p_{fm}$ and $p_v$ give the prefactors of the energy, atomic force, magnatic force and virial losses.
 
 The prefectors may not be a constant, rather it changes linearly with the learning rate. Taking the atomic force prefactor for example, at training step $t$, it is given by
 
@@ -33,7 +33,7 @@ where $\alpha(t)$ denotes the learning rate at step $t$. $p_{fr}^0$ and $p_{fr}^
 pref_fr(t) = start_pref_fr * ( lr(t) / start_lr ) + limit_pref_fr * ( 1 - lr(t) / start_lr )
 ```
 
-The {ref}`loss <loss>` section in the `input.json` is 
+The {ref}`loss <loss>` section in the `input.json` is
 ```json
     "loss" :{
 	"type":		        "ener_spin",

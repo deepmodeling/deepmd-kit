@@ -192,20 +192,42 @@ class DeepPot(DeepEval):
             )
 
     def _run_default_sess(self):
-        if self.has_spin == True:
-            [self.ntypes, self.ntypes_spin, self.rcut, self.dfparam, self.daparam, self.tmap] = run_sess(self.sess, 
-                [self.t_ntypes, self.t_ntypes_spin, self.t_rcut, self.t_dfparam, self.t_daparam, self.t_tmap]
+        if self.has_spin is True:
+            [
+                self.ntypes,
+                self.ntypes_spin,
+                self.rcut,
+                self.dfparam,
+                self.daparam,
+                self.tmap,
+            ] = run_sess(
+                self.sess,
+                [
+                    self.t_ntypes,
+                    self.t_ntypes_spin,
+                    self.t_rcut,
+                    self.t_dfparam,
+                    self.t_daparam,
+                    self.t_tmap,
+                ],
             )
         else:
-            [self.ntypes, self.rcut, self.dfparam, self.daparam, self.tmap] = run_sess(self.sess, 
-                [self.t_ntypes, self.t_rcut, self.t_dfparam, self.t_daparam, self.t_tmap]
+            [self.ntypes, self.rcut, self.dfparam, self.daparam, self.tmap] = run_sess(
+                self.sess,
+                [
+                    self.t_ntypes,
+                    self.t_rcut,
+                    self.t_dfparam,
+                    self.t_daparam,
+                    self.t_tmap,
+                ],
             )
 
     def get_ntypes(self) -> int:
         """Get the number of atom types of this model."""
         return self.ntypes
 
-    def get_ntypes_spin(self) :
+    def get_ntypes_spin(self):
         """Get the number of spin atom types of this model."""
         return self.ntypes_spin
 
@@ -464,7 +486,6 @@ class DeepPot(DeepEval):
         if self.has_aparam:
             feed_dict_test[self.t_aparam] = np.reshape(aparam, [-1])
         return feed_dict_test, imap, natoms_vec
-
 
     def _eval_inner(
         self,

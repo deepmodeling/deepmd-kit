@@ -40,8 +40,8 @@ from deepmd.fit import (
 )
 from deepmd.loss import (
     EnerDipoleLoss,
-    EnerStdLoss,
     EnerSpinLoss,
+    EnerStdLoss,
     TensorLoss,
 )
 from deepmd.model import (
@@ -68,12 +68,11 @@ from deepmd.utils.learning_rate import (
 from deepmd.utils.sess import (
     run_sess,
 )
+from deepmd.utils.spin import (
+    Spin,
+)
 from deepmd.utils.type_embed import (
     TypeEmbedNet,
-)
-
-from deepmd.utils.spin import (
-    Spin
 )
 
 log = logging.getLogger(__name__)
@@ -110,20 +109,20 @@ class DPTrainer:
             else j_must_have(model_param, "fitting_net_dict")
         )
         typeebd_param = model_param.get("type_embedding", None)
-        spin_param = model_param.get('spin', None)
+        spin_param = model_param.get("spin", None)
         self.model_param = model_param
         self.descrpt_param = descrpt_param
 
         # spin
         if spin_param is not None:
             self.spin = Spin(
-                use_spin = spin_param["use_spin"],
-                virtual_len = spin_param["virtual_len"],
-                spin_norm = spin_param["spin_norm"]
+                use_spin=spin_param["use_spin"],
+                virtual_len=spin_param["virtual_len"],
+                spin_norm=spin_param["spin_norm"],
             )
         else:
             self.spin = None
-        
+
         # nvnmd
         self.nvnmd_param = jdata.get("nvnmd", {})
         nvnmd_cfg.init_from_jdata(self.nvnmd_param)
@@ -325,9 +324,8 @@ class DPTrainer:
                     loss = EnerStdLoss(**_loss_param)
                 elif _loss_type == "ener_dipole":
                     loss = EnerDipoleLoss(**_loss_param)
-                elif _loss_type == 'ener_spin':
-                    loss = EnerSpinLoss(**_loss_param, 
-                                        use_spin = self.spin.use_spin)
+                elif _loss_type == "ener_spin":
+                    loss = EnerSpinLoss(**_loss_param, use_spin=self.spin.use_spin)
                 else:
                     raise RuntimeError("unknown loss type")
             elif _fitting_type == "wfc":

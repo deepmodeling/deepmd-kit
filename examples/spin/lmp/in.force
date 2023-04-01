@@ -29,7 +29,7 @@ thermo_style      custom step time temp vol etotal ke pe v_emag
 thermo            1
 thermo_modify     line one format float %10.8g
 
-dump              1 all custom 1 *.dump id x y z c_spin[1] c_spin[2] c_spin[3] fx fy fz c_spin[5] c_spin[6] c_spin[7] 
+dump              1 all custom 1 *.dump id x y z c_spin[1] c_spin[2] c_spin[3] fx fy fz c_spin[5] c_spin[6] c_spin[7]
 dump_modify       1 sort id
 dump_modify       1 format float %10.8f
 
@@ -42,6 +42,6 @@ minimize          1.0e-10 1.0e-4 5000 10000
 #min_style       spin/lbfgs
 #min_modify      line spin_cubic discrete_factor 10.0
 #minimize        1.0e-10 1.0e-10 1000 5000
- 
+
 #run              0
 write_data       opt.lmp

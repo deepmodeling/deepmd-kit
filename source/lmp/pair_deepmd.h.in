@@ -110,7 +110,7 @@ private:
   bool is_restart;
   std::vector<double> virtual_len;
   std::vector<double> spin_norm;
-  int extend_inum; 
+  int extend_inum;
   std::vector<int> extend_ilist;
   std::vector<int> extend_numneigh;
   std::vector<std::vector<int> > extend_neigh;

@@ -42,6 +42,9 @@ from deepmd.utils.network import (
 from deepmd.utils.sess import (
     run_sess,
 )
+from deepmd.utils.spin import (
+    Spin,
+)
 from deepmd.utils.tabulate import (
     DPTabulate,
 )
@@ -56,9 +59,6 @@ from .se import (
     DescrptSe,
 )
 
-from deepmd.utils.spin import (
-    Spin
-)
 
 @Descriptor.register("se_e2_a")
 @Descriptor.register("se_a")
@@ -195,7 +195,7 @@ class DescrptSeA(DescrptSe):
         # extend sel_a for spin system
         if self.spin is not None:
             self.ntypes_spin = self.spin.get_ntypes_spin()
-            self.sel_a_spin = self.sel_a[:self.ntypes_spin]
+            self.sel_a_spin = self.sel_a[: self.ntypes_spin]
             self.sel_a.extend(self.sel_a_spin)
         else:
             self.ntypes_spin = 0
@@ -555,16 +555,20 @@ class DescrptSeA(DescrptSe):
                 dtype=GLOBAL_TF_FLOAT_PRECISION,
             )
             t_ntypes = tf.constant(self.ntypes, name="ntypes", dtype=tf.int32)
-            t_ntypes_spin = tf.constant(self.ntypes_spin, 
-                                        name = 'ntypes_spin', 
-                                        dtype = tf.int32)
+            t_ntypes_spin = tf.constant(
+                self.ntypes_spin, name="ntypes_spin", dtype=tf.int32
+            )
             if self.spin is not None:
-                t_virtual_len = tf.constant(self.spin.virtual_len, 
-                                            name = 'virtual_len', 
-                                            dtype = GLOBAL_TF_FLOAT_PRECISION)
-                t_spin_norm = tf.constant(self.spin.spin_norm, 
-                                          name = 'spin_norm', 
-                                          dtype = GLOBAL_TF_FLOAT_PRECISION)
+                t_virtual_len = tf.constant(
+                    self.spin.virtual_len,
+                    name="virtual_len",
+                    dtype=GLOBAL_TF_FLOAT_PRECISION,
+                )
+                t_spin_norm = tf.constant(
+                    self.spin.spin_norm,
+                    name="spin_norm",
+                    dtype=GLOBAL_TF_FLOAT_PRECISION,
+                )
             t_ndescrpt = tf.constant(self.ndescrpt, name="ndescrpt", dtype=tf.int32)
             t_sel = tf.constant(self.sel_a, name="sel", dtype=tf.int32)
             t_original_sel = tf.constant(

@@ -261,10 +261,13 @@ class DeepPot {
     return ntypes;
   };
   /**
-  * @brief Get the number of types with spin.
-  * @return The number of types with spin.
-  **/
-  int numb_types_spin () const {assert(inited); return ntypes_spin;};
+   * @brief Get the number of types with spin.
+   * @return The number of types with spin.
+   **/
+  int numb_types_spin() const {
+    assert(inited);
+    return ntypes_spin;
+  };
   /**
    * @brief Get the dimension of the frame parameter.
    * @return The dimension of the frame parameter.
@@ -479,10 +482,13 @@ class DeepPotModelDevi {
     return ntypes;
   };
   /**
-  * @brief Get the number of types with spin.
-  * @return The number of types with spin.
+   * @brief Get the number of types with spin.
+   * @return The number of types with spin.
    **/
-  int numb_types_spin () const {assert(inited); return ntypes_spin;};
+  int numb_types_spin() const {
+    assert(inited);
+    return ntypes_spin;
+  };
   /**
    * @brief Get the dimension of the frame parameter.
    * @return The dimension of the frame parameter.

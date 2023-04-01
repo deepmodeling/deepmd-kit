@@ -40,9 +40,8 @@ from deepmd.utils.network import one_layer as one_layer_deepmd
 from deepmd.utils.network import (
     one_layer_rand_seed_shift,
 )
-
 from deepmd.utils.spin import (
-    Spin
+    Spin,
 )
 
 log = logging.getLogger(__name__)
@@ -136,7 +135,7 @@ class EnerFitting(Fitting):
         uniform_seed: bool = False,
         layer_name: Optional[List[Optional[str]]] = None,
         use_aparam_as_mask: bool = False,
-        spin: Optional[Spin] = None
+        spin: Optional[Spin] = None,
     ) -> None:
         """Constructor."""
         # model param
@@ -490,7 +489,10 @@ class EnerFitting(Fitting):
                 if type_i >= ntypes_atom:
                     break
                 if self.spin.use_spin[type_i]:
-                    self.bias_atom_e[type_i] = self.bias_atom_e[type_i] + self.bias_atom_e[type_i + ntypes_atom]
+                    self.bias_atom_e[type_i] = (
+                        self.bias_atom_e[type_i]
+                        + self.bias_atom_e[type_i + ntypes_atom]
+                    )
                 else:
                     self.bias_atom_e[type_i] = self.bias_atom_e[type_i]
             self.bias_atom_e = self.bias_atom_e[:ntypes_atom]
@@ -575,11 +577,14 @@ class EnerFitting(Fitting):
         # prevent embedding_lookup error,
         # but the filter will be applied anyway
         self.atype_nloc = tf.clip_by_value(self.atype_nloc, 0, self.ntypes - 1)
-        
+
         ## if spin is used
         if self.spin is not None:
             self.atype_nloc = tf.reshape(
-                tf.slice(atype_nall, [0, 0], [-1, tf.reduce_sum(natoms[2: 2+ntypes_atom])]), [-1]
+                tf.slice(
+                    atype_nall, [0, 0], [-1, tf.reduce_sum(natoms[2 : 2 + ntypes_atom])]
+                ),
+                [-1],
             )
 
         if type_embedding is not None:
@@ -672,7 +677,7 @@ class EnerFitting(Fitting):
         self.atom_ener_before = outs * atype_filter
         self.add_type = tf.reshape(
             tf.nn.embedding_lookup(self.t_bias_atom_e, self.atype_nloc),
-            [tf.shape(inputs)[0], tf.reduce_sum(natoms[2: 2+ntypes_atom])],
+            [tf.shape(inputs)[0], tf.reduce_sum(natoms[2 : 2 + ntypes_atom])],
         )
         outs = outs + self.add_type
         outs *= atype_filter

@@ -1,7 +1,7 @@
 from .ener import (
     EnerDipoleLoss,
-    EnerStdLoss,
     EnerSpinLoss,
+    EnerStdLoss,
 )
 from .tensor import (
     TensorLoss,
