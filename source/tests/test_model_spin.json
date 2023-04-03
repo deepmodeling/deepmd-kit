@@ -66,13 +66,13 @@
   "training": {
     "training_data": {
       "systems": [
-        "./data/"
+        "source/tests/model_spin/"
       ],
       "batch_size": 1
     },
     "validation_data": {
       "systems": [
-        "./data/"
+        "source/tests/model_spin/"
       ],
       "batch_size": 1,
       "numb_btch": 1

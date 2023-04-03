@@ -1,4 +1,3 @@
-#include <malloc.h>
 #include <string.h>
 
 #include <iomanip>
@@ -653,25 +652,13 @@ void PairDeepMD::compute(int eflag, int vflag) {
       vector<double> all_energy;
       vector<vector<double>> all_atom_energy;
       vector<vector<double>> all_atom_virial;
-      if (!atom->sp_flag) {
-        try {
-          deep_pot_model_devi.compute(all_energy, all_force, all_virial,
-                                      all_atom_energy, all_atom_virial, dcoord,
-                                      dtype, dbox, nghost, lmp_list, ago,
-                                      fparam, daparam);
-        } catch (deepmd::deepmd_exception &e) {
-          error->all(FLERR, e.what());
-        }
-      } else {
-        dforce.resize((extend_inum + extend_nghost) * 3);
-        try {
-          deep_pot_model_devi.compute(
-              all_energy, all_force, all_virial, all_atom_energy,
-              all_atom_virial, extend_dcoord, extend_dtype, dbox, extend_nghost,
-              extend_lmp_list, ago, fparam, daparam);
-        } catch (deepmd::deepmd_exception &e) {
-          error->all(FLERR, e.what());
-        }
+      try {
+        deep_pot_model_devi.compute(all_energy, all_force, all_virial,
+                                    all_atom_energy, all_atom_virial, dcoord,
+                                    dtype, dbox, nghost, lmp_list, ago,
+                                    fparam, daparam);
+      } catch (deepmd::deepmd_exception &e) {
+        error->all(FLERR, e.what());
       }
       // deep_pot_model_devi.compute_avg (dener, all_energy);
       // deep_pot_model_devi.compute_avg (dforce, all_force);
@@ -698,26 +685,13 @@ void PairDeepMD::compute(int eflag, int vflag) {
       vector<vector<float>> all_virial_;
       vector<vector<float>> all_atom_energy_;
       vector<vector<float>> all_atom_virial_;
-      if (!atom->sp_flag) {
-        try {
-          deep_pot_model_devi.compute(all_energy_, all_force_, all_virial_,
-                                      all_atom_energy_, all_atom_virial_,
-                                      dcoord_, dtype, dbox_, nghost, lmp_list,
-                                      ago, fparam, daparam);
-        } catch (deepmd::deepmd_exception &e) {
-          error->all(FLERR, e.what());
-        }
-      } else {
-        dforce.resize((extend_inum + extend_nghost) * 3);
-        dforce_.resize((extend_inum + extend_nghost) * 3);
-        try {
-          deep_pot_model_devi.compute(
-              all_energy_, all_force_, all_virial_, all_atom_energy_,
-              all_atom_virial_, extend_dcoord, extend_dtype, dbox_,
-              extend_nghost, extend_lmp_list, ago, fparam, daparam);
-        } catch (deepmd::deepmd_exception &e) {
-          error->all(FLERR, e.what());
-        }
+      try {
+        deep_pot_model_devi.compute(all_energy_, all_force_, all_virial_,
+                                    all_atom_energy_, all_atom_virial_,
+                                    dcoord_, dtype, dbox_, nghost, lmp_list,
+                                    ago, fparam, daparam);
+      } catch (deepmd::deepmd_exception &e) {
+        error->all(FLERR, e.what());
       }
       // deep_pot_model_devi.compute_avg (dener_, all_energy_);
       // deep_pot_model_devi.compute_avg (dforce_, all_force_);
@@ -990,7 +964,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
   if (atom->sp_flag) {
     std::map<int, int>().swap(new_idx_map);
     std::map<int, int>().swap(old_idx_map);
-    malloc_trim(0);
+    // malloc_trim(0);
   }
 
   // accumulate energy and virial

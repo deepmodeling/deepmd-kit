@@ -586,6 +586,7 @@ class EnerFitting(Fitting):
                 ),
                 [-1],
             )
+            atype_filter = tf.cast(self.atype_nloc >= 0, GLOBAL_TF_FLOAT_PRECISION)
 
         if type_embedding is not None:
             atype_embed = tf.nn.embedding_lookup(type_embedding, self.atype_nloc)
