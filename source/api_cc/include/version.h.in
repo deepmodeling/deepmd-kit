@@ -1,8 +1,6 @@
 #pragma once
 
 #include <string>
-// using namespace std;
-
 
 const std::string global_install_prefix="@CMAKE_INSTALL_PREFIX@";
 const std::string global_git_summ="@GIT_SUMM@";
