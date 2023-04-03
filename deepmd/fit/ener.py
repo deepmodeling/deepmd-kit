@@ -580,13 +580,11 @@ class EnerFitting(Fitting):
 
         ## if spin is used
         if self.spin is not None:
-            self.atype_nloc = tf.reshape(
-                tf.slice(
+            self.atype_nloc = tf.slice(
                     atype_nall, [0, 0], [-1, tf.reduce_sum(natoms[2 : 2 + ntypes_atom])]
-                ),
-                [-1],
-            )
+                )
             atype_filter = tf.cast(self.atype_nloc >= 0, GLOBAL_TF_FLOAT_PRECISION)
+            self.atype_nloc = tf.reshape(self.atype_nloc, [-1])
 
         if type_embedding is not None:
             atype_embed = tf.nn.embedding_lookup(type_embedding, self.atype_nloc)

@@ -9,6 +9,7 @@ from .tensor import (
 
 __all__ = [
     "EnerDipoleLoss",
+    "EnerSpinLoss",
     "EnerStdLoss",
     "TensorLoss",
 ]
