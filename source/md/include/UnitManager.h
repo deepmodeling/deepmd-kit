@@ -1,7 +1,6 @@
 #pragma once
 
 #include <string>
-using namespace std;
 
 class UnitManager {
  protected:
@@ -19,8 +18,8 @@ class UnitManager {
   static double DefaultTableUpperLimit;
   static double DefaultTableStep;
   static double DefaultTableExtension;
-  static void set(const string& name_of_system);
+  static void set(const std::string& name_of_system);
 
  private:
-  static string unit_names[];
+  static std::string unit_names[];
 };

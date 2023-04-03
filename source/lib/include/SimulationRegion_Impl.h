@@ -10,8 +10,6 @@
 
 #include "errors.h"
 
-// using namespace std;
-
 template <typename VALUETYPE>
 SimulationRegion<VALUETYPE>::~SimulationRegion() {}
 
