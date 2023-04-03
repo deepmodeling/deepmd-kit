@@ -2,8 +2,6 @@
 
 #include <vector>
 
-// using namespace std;
-
 namespace deepmd {
 class AtomMap {
  public:
