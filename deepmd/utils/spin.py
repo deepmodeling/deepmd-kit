@@ -4,7 +4,9 @@ from typing import (
 
 
 class Spin:
-    """Parameters
+    """Class for spin.
+
+    Parameters
     ----------
     use_spin
                 Whether to use atomic spin model for each atom type

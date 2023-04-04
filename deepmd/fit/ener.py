@@ -596,9 +596,7 @@ class EnerFitting(Fitting):
         if atype_embed is None:
             start_index = 0
             outs_list = []
-            for type_i in range(self.ntypes):
-                if type_i >= ntypes_atom:
-                    break
+            for type_i in range(ntypes_atom):
                 final_layer = self._build_lower(
                     start_index,
                     natoms[2 + type_i],
@@ -684,11 +682,11 @@ class EnerFitting(Fitting):
 
         if self.tot_ener_zero:
             force_tot_ener = 0.0
-            outs = tf.reshape(outs, [-1, natoms[0]])
+            outs = tf.reshape(outs, [-1, tf.reduce_sum(natoms[2 : 2 + ntypes_atom])])
             outs_mean = tf.reshape(tf.reduce_mean(outs, axis=1), [-1, 1])
             outs_mean = outs_mean - tf.ones_like(
                 outs_mean, dtype=GLOBAL_TF_FLOAT_PRECISION
-            ) * (force_tot_ener / global_cvt_2_tf_float(natoms[0]))
+            ) * (force_tot_ener / global_cvt_2_tf_float(tf.reduce_sum(natoms[2 : 2 + ntypes_atom])))
             outs = outs - outs_mean
             outs = tf.reshape(outs, [-1])
 

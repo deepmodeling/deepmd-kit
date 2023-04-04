@@ -1,4 +1,3 @@
-#!/bin/sh
 units             metal
 dimension         3
 boundary          p p p
