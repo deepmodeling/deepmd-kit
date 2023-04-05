@@ -2,12 +2,19 @@
 
 import logging
 import os
-from typing import TYPE_CHECKING, Optional
+from typing import (
+    TYPE_CHECKING,
+    Optional,
+)
 
 if TYPE_CHECKING:
-    from pathlib import Path
+    from pathlib import (
+        Path,
+    )
 
-    from mpi4py import MPI
+    from mpi4py import (
+        MPI,
+    )
 
     _MPI_APPEND_MODE = MPI.MODE_CREATE | MPI.MODE_APPEND
 
@@ -20,14 +27,14 @@ FFORMATTER = logging.Formatter(
     "[%(asctime)s] %(app_name)s %(levelname)-7s %(name)-45s %(message)s"
 )
 CFORMATTER = logging.Formatter(
-#    "%(app_name)s %(levelname)-7s |-> %(name)-45s %(message)s"
+    #    "%(app_name)s %(levelname)-7s |-> %(name)-45s %(message)s"
     "%(app_name)s %(levelname)-7s %(message)s"
 )
 FFORMATTER_MPI = logging.Formatter(
     "[%(asctime)s] %(app_name)s rank:%(rank)-2s %(levelname)-7s %(name)-45s %(message)s"
 )
 CFORMATTER_MPI = logging.Formatter(
-#    "%(app_name)s rank:%(rank)-2s %(levelname)-7s |-> %(name)-45s %(message)s"
+    #    "%(app_name)s rank:%(rank)-2s %(levelname)-7s |-> %(name)-45s %(message)s"
     "%(app_name)s rank:%(rank)-2s %(levelname)-7s %(message)s"
 )
 
@@ -135,17 +142,15 @@ class _MPIHandler(logging.FileHandler):
 
 
 def set_log_handles(
-    level: int,
-    log_path: Optional["Path"] = None,
-    mpi_log: Optional[str] = None
+    level: int, log_path: Optional["Path"] = None, mpi_log: Optional[str] = None
 ):
     """Set desired level for package loggers and add file handlers.
 
     Parameters
     ----------
-    level: int
+    level : int
         logging level
-    log_path: Optional[str]
+    log_path : Optional[str]
         path to log file, if None logs will be send only to console. If the parent
         directory does not exist it will be automatically created, by default None
     mpi_log : Optional[str], optional
@@ -189,23 +194,25 @@ def set_log_handles(
         os.environ["KMP_WARNINGS"] = "FALSE"
 
     # set TF cpp internal logging level
-    os.environ['TF_CPP_MIN_LOG_LEVEL'] = str(int((level / 10) - 1))
+    os.environ["TF_CPP_MIN_LOG_LEVEL"] = str(int((level / 10) - 1))
 
     # get root logger
-    root_log = logging.getLogger()
+    root_log = logging.getLogger("deepmd")
+    root_log.propagate = False
 
-    # remove all old handlers
     root_log.setLevel(level)
-    for hdlr in root_log.handlers[:]:
-        root_log.removeHandler(hdlr)
 
     # check if arguments are present
     MPI = None
     if mpi_log:
         try:
-            from mpi4py import MPI
+            from mpi4py import (
+                MPI,
+            )
         except ImportError as e:
-            raise RuntimeError("You cannot specify 'mpi_log' when mpi4py not installed") from e
+            raise RuntimeError(
+                "You cannot specify 'mpi_log' when mpi4py not installed"
+            ) from e
 
     # * add console handler ************************************************************
     ch = logging.StreamHandler()
@@ -222,11 +229,12 @@ def set_log_handles(
 
     ch.setLevel(level)
     ch.addFilter(_AppFilter())
+    # clean old handlers before adding new one
+    root_log.handlers.clear()
     root_log.addHandler(ch)
 
     # * add file handler ***************************************************************
     if log_path:
-
         # create directory
         log_path.parent.mkdir(exist_ok=True, parents=True)
 

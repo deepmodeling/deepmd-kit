@@ -1,6 +1,5 @@
-"""
-nvnmd.se_a
-==========
+"""nvnmd.se_a
+==========.
 
 Provides
     1. building descriptor with continuous embedding network

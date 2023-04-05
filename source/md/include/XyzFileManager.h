@@ -2,22 +2,18 @@
 #define __XyzFileManager_h_wanghan__
 
 #include <vector>
-using namespace std;
 
-namespace XyzFileManager{
+namespace XyzFileManager {
 
-  void
-  read (const string & file,
-	vector<string > & atom_name,
-	vector<vector<double > > & posi,
-	vector<vector<double > > & velo,
-	vector<vector<double > > & forc,
-	vector<double > & boxsize);
+void read(const std::string& file,
+          std::vector<std::string>& atom_name,
+          std::vector<std::vector<double> >& posi,
+          std::vector<std::vector<double> >& velo,
+          std::vector<std::vector<double> >& forc,
+          std::vector<double>& boxsize);
 
-  void
-  getBoxSize (const string & name,
-	      vector<double > & boxsize);
+void getBoxSize(const std::string& name, std::vector<double>& boxsize);
 
-};
+};  // namespace XyzFileManager
 
 #endif

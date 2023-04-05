@@ -1,67 +1,84 @@
 {
-    "_comment": " model parameters",
-    "model":{
-	"type_map":		["O", "H"],
-	"descriptor" :{
-	    "type":		"se_e2_a",
-	    "sel":		[46, 92],
-	    "rcut_smth":	0.50,
-	    "rcut":		6.00,
-	    "neuron":		[16, 32, 64],
-	    "resnet_dt":	false,
-	    "axis_neuron":	8,
-	    "seed":		1,
-	    "_comment":		" that's all"
-	},
-	"fitting_net": {
-	    "type":		"dipole",
-	    "dipole_type":	[0],
-	    "neuron":		[128, 128, 128],
-	    "resnet_dt":	true,
-	    "seed":		1,
-	    "_comment":		" that's all"
-	},
-	"_comment":	" that's all"
+  "_comment": " model parameters",
+  "model": {
+    "type_map": [
+      "O",
+      "H"
+    ],
+    "descriptor": {
+      "type": "se_e2_a",
+      "sel": [
+        46,
+        92
+      ],
+      "rcut_smth": 0.50,
+      "rcut": 6.00,
+      "neuron": [
+        16,
+        32,
+        64
+      ],
+      "resnet_dt": false,
+      "axis_neuron": 8,
+      "seed": 1,
+      "_comment": " that's all"
     },
-    
-    "learning_rate" :{
-	"type":		"exp",
-	"start_lr":	0.01,
-	"stop_lr":	1e-7,
-	"decay_steps":	5000,
-	"_comment":	"that's all"
+    "fitting_net": {
+      "type": "dipole",
+      "dipole_type": [
+        0
+      ],
+      "neuron": [
+        128,
+        128,
+        128
+      ],
+      "resnet_dt": true,
+      "seed": 1,
+      "_comment": " that's all"
+    },
+    "_comment": " that's all"
+  },
+
+  "learning_rate": {
+    "type": "exp",
+    "start_lr": 0.01,
+    "stop_lr": 1e-7,
+    "decay_steps": 5000,
+    "_comment": "that's all"
+  },
+
+  "loss": {
+    "type": "tensor",
+    "pref": 0.0,
+    "pref_atomic": 1.0,
+    "_comment": " that's all"
+  },
+
+  "_comment": " traing controls",
+  "training": {
+    "training_data": {
+      "systems": [
+        "data"
+      ],
+      "batch_size": "auto",
+      "set_prefix": "set",
+      "_comment": "that's all"
     },
 
-    "loss": {
-	"type":		"tensor",
-	"pref":		0.0,
-	"pref_atomic":	1.0,
-	"_comment": " that's all"
-    },
+    "numb_steps": 2000,
+    "seed": 1,
 
-    "_comment": " traing controls",
-    "training": {
-	"training_data": {
-	    "systems":		["data"],
-	    "batch_size":	"auto",
-	    "set_prefix":	"set",    
-	    "_comment":		"that's all"
-	},
+    "_comment": " display and restart",
+    "_comment": " frequencies counted in batch",
+    "disp_file": "lcurve.out",
+    "disp_freq": 100,
+    "save_freq": 500,
+    "save_ckpt": "model.ckpt",
+    "disp_training": true,
+    "time_training": true,
+    "_comment": "that's all"
+  },
 
-	"numb_steps":	2000,
-	"seed":		1,
-
-	"_comment": " display and restart",
-	"_comment": " frequencies counted in batch",
-	"disp_file":	"lcurve.out",
-	"disp_freq":	100,
-	"save_freq":	500,
-	"save_ckpt":	"model.ckpt",
-	"disp_training":true,
-	"time_training":true,
-	"_comment":	"that's all"
-    },
-
-    "_comment":		"that's all"
+  "_comment": "that's all"
 }
-

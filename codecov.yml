@@ -1,2 +1,41 @@
 ignore:
   - "source/**/tests"
+coverage:
+  status:
+    project:
+      default:
+        threshold: 100%
+    patch:
+      default:
+        threshold: 100%
+component_management:
+  default_rules:
+    statuses:
+      - type: project
+        target: auto
+        threshold: 100%
+  individual_components:
+    - component_id: module_python
+      name: Python
+      paths:
+        - deepmd/**
+    - component_id: module_op
+      name: OP
+      paths:
+        - source/op/**
+    - component_id: module_core
+      name: Core
+      paths:
+        - source/lib/**
+    - component_id: module_cpp
+      name: C++ API
+      paths:
+        - source/api_cc/**
+    - component_id: module_c
+      name: C API
+      paths:
+        - source/api_c/**
+    - component_id: module_lammps
+      name: LAMMPS
+      paths:
+        - source/lmp/**

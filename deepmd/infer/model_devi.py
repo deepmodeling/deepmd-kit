@@ -1,52 +1,61 @@
 import numpy as np
-from .deep_pot import DeepPot
-from ..utils.data import DeepmdData
-from ..utils.batch_size import AutoBatchSize
-from deepmd.common import expand_sys_str
-        
+
+from deepmd.common import (
+    expand_sys_str,
+)
+
+from ..utils.batch_size import (
+    AutoBatchSize,
+)
+from ..utils.data import (
+    DeepmdData,
+)
+from .deep_pot import (
+    DeepPot,
+)
+
 
 def calc_model_devi_f(fs: np.ndarray):
-    '''
-    Parameters
+    """Parameters
     ----------
     fs : numpy.ndarray
         size of `n_models x n_frames x n_atoms x 3`
-    '''
+    """
     fs_devi = np.linalg.norm(np.std(fs, axis=0), axis=-1)
     max_devi_f = np.max(fs_devi, axis=-1)
     min_devi_f = np.min(fs_devi, axis=-1)
     avg_devi_f = np.mean(fs_devi, axis=-1)
     return max_devi_f, min_devi_f, avg_devi_f
 
+
 def calc_model_devi_e(es: np.ndarray):
-    '''
-    Parameters
+    """Parameters
     ----------
     es : numpy.ndarray
         size of `n_models x n_frames x n_atoms
-    '''
+    """
     es_devi = np.std(es, axis=0)
     max_devi_e = np.max(es_devi, axis=1)
     min_devi_e = np.min(es_devi, axis=1)
     avg_devi_e = np.mean(es_devi, axis=1)
     return max_devi_e, min_devi_e, avg_devi_e
 
+
 def calc_model_devi_v(vs: np.ndarray):
-    '''
-    Parameters
+    """Parameters
     ----------
     vs : numpy.ndarray
         size of `n_models x n_frames x 9`
-    '''
+    """
     vs_devi = np.std(vs, axis=0)
     max_devi_v = np.max(vs_devi, axis=-1)
     min_devi_v = np.min(vs_devi, axis=-1)
     avg_devi_v = np.linalg.norm(vs_devi, axis=-1) / 3
     return max_devi_v, min_devi_v, avg_devi_v
 
-def write_model_devi_out(devi: np.ndarray, fname: str, header: str=""):
-    '''
-    Parameters
+
+def write_model_devi_out(devi: np.ndarray, fname: str, header: str = ""):
+    """Parameters
     ----------
     devi : numpy.ndarray
         the first column is the steps index
@@ -54,23 +63,28 @@ def write_model_devi_out(devi: np.ndarray, fname: str, header: str=""):
         the file name to dump
     header : str, default=""
         the header to dump
-    '''
+    """
     assert devi.shape[1] == 7
     header = "%s\n%10s" % (header, "step")
-    for item in 'vf':
-        header += "%19s%19s%19s" % (f"max_devi_{item}", f"min_devi_{item}", f"avg_devi_{item}")
+    for item in "vf":
+        header += "%19s%19s%19s" % (
+            f"max_devi_{item}",
+            f"min_devi_{item}",
+            f"avg_devi_{item}",
+        )
     with open(fname, "ab") as fp:
-        np.savetxt(fp,
-                   devi,
-                   fmt=['%12d'] + ['%19.6e' for _ in range(6)],
-                   delimiter='',
-                   header=header)
+        np.savetxt(
+            fp,
+            devi,
+            fmt=["%12d"] + ["%19.6e" for _ in range(6)],
+            delimiter="",
+            header=header,
+        )
     return devi
 
+
 def _check_tmaps(tmaps, ref_tmap=None):
-    '''
-    Check whether type maps are identical
-    '''
+    """Check whether type maps are identical."""
     assert isinstance(tmaps, list)
     if ref_tmap is None:
         ref_tmap = tmaps[0]
@@ -83,18 +97,19 @@ def _check_tmaps(tmaps, ref_tmap=None):
             break
     return flag
 
-def calc_model_devi(coord,
-                    box,
-                    atype,
-                    models,
-                    fname=None,
-                    frequency=1, 
-                    ):
-    '''
-    Python interface to calculate model deviation
+
+def calc_model_devi(
+    coord,
+    box,
+    atype,
+    models,
+    fname=None,
+    frequency=1,
+):
+    """Python interface to calculate model deviation.
 
     Parameters
-    -----------
+    ----------
     coord : numpy.ndarray, `n_frames x n_atoms x 3`
         Coordinates of system to calculate
     box : numpy.ndarray or None, `n_frames x 3 x 3`
@@ -107,13 +122,13 @@ def calc_model_devi(coord,
         File to dump results, default None
     frequency : int
         Steps between frames (if the system is given by molecular dynamics engine), default 1
-    
+
     Returns
     -------
     model_devi : numpy.ndarray, `n_frames x 7`
         Model deviation results. The first column is index of steps, the other 6 columns are
         max_devi_v, min_devi_v, avg_devi_v, max_devi_f, min_devi_f, avg_devi_f.
-    
+
     Examples
     --------
     >>> from deepmd.infer import calc_model_devi
@@ -124,7 +139,7 @@ def calc_model_devi(coord,
     >>> atype = [1,0,1]
     >>> graphs = [DP("graph.000.pb"), DP("graph.001.pb")]
     >>> model_devi = calc_model_devi(coord, cell, atype, graphs)
-    '''
+    """
     if box is not None:
         nopbc = True
     else:
@@ -140,10 +155,10 @@ def calc_model_devi(coord,
         )
         forces.append(ret[1])
         virials.append(ret[2] / len(atype))
-    
+
     forces = np.array(forces)
     virials = np.array(virials)
-    
+
     devi = [np.arange(coord.shape[0]) * frequency]
     devi += list(calc_model_devi_v(virials))
     devi += list(calc_model_devi_f(forces))
@@ -151,34 +166,30 @@ def calc_model_devi(coord,
     if fname:
         write_model_devi_out(devi, fname)
     return devi
-    
+
+
 def make_model_devi(
-    *,
-    models: list,
-    system: str,
-    set_prefix: str,
-    output: str,
-    frequency: int,
-    **kwargs
+    *, models: list, system: str, set_prefix: str, output: str, frequency: int, **kwargs
 ):
-    '''
-    Make model deviation calculation
+    """Make model deviation calculation.
 
     Parameters
     ----------
-    models: list
+    models : list
         A list of paths of models to use for making model deviation
-    system: str
+    system : str
         The path of system to make model deviation calculation
-    set_prefix: str
+    set_prefix : str
         The set prefix of the system
-    output: str
+    output : str
         The output file for model deviation results
-    frequency: int
-        The number of steps that elapse between writing coordinates 
+    frequency : int
+        The number of steps that elapse between writing coordinates
         in a trajectory by a MD engine (such as Gromacs / Lammps).
         This paramter is used to determine the index in the output file.
-    '''
+    **kwargs
+        Arbitrary keyword arguments.
+    """
     auto_batch_size = AutoBatchSize()
     # init models
     dp_models = [DeepPot(model, auto_batch_size=auto_batch_size) for model in models]
@@ -204,7 +215,7 @@ def make_model_devi(
         for data in data_sets:
             coord = data["coord"]
             box = data["box"]
-            atype = data["type"][0] 
+            atype = data["type"][0]
             if not dp_data.pbc:
                 box = None
             devi = calc_model_devi(coord, box, atype, dp_models)

@@ -15,7 +15,7 @@ The {ref}`learning_rate <learning_rate>` section in `input.json` is given as fol
     }
 ```
 * {ref}`start_lr <learning_rate[exp]/start_lr>` gives the learning rate at the beginning of the training.
-* {ref}`stop_lr <learning_rate[exp]/stop_lr>` gives the learning rate at the end of the training. It should be small enough to ensure that the network parameters satisfactorily converge. 
+* {ref}`stop_lr <learning_rate[exp]/stop_lr>` gives the learning rate at the end of the training. It should be small enough to ensure that the network parameters satisfactorily converge.
 * During the training, the learning rate decays exponentially from {ref}`start_lr <learning_rate[exp]/start_lr>` to {ref}`stop_lr <learning_rate[exp]/stop_lr>` following the formula:
 
 $$ \alpha(t) = \alpha_0 \lambda ^ { t / \tau } $$
@@ -110,12 +110,12 @@ positional arguments:
 
 optional arguments:
   -h, --help            show this help message and exit
- 
+
   --init-model INIT_MODEL
                         Initialize a model by the provided checkpoint
 
   --restart RESTART     Restart the training from the provided checkpoint
- 
+
   --init-frz-model INIT_FRZ_MODEL
                         Initialize the training from the frozen model.
   --skip-neighbor-stat  Skip calculating neighbor statistics. Sel checking, automatic sel, and model compression will be disabled. (default: False)
@@ -137,6 +137,7 @@ One can set other environmental variables:
 | --------------------- | ---------------------- | ------------- | -------------------------- |
 | DP_INTERFACE_PREC     | `high`, `low`          | `high`        | Control high (double) or low (float) precision of training. |
 | DP_AUTO_PARALLELIZATION | 0, 1                 | 0             | Enable auto parallelization for CPU operators. |
+| DP_JIT                | 0, 1                   | 0             | Enable JIT. Note that this option may either improve or decrease the performance. Requires TensorFlow supports JIT.  |
 
 
 ## Adjust `sel` of a frozen model

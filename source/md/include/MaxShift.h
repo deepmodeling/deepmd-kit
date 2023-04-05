@@ -1,30 +1,27 @@
 #pragma once
 
-#include "SimulationRegion.h"
-#include <vector> 
+#include <vector>
 
-using namespace std;
+#include "SimulationRegion.h"
 
 #ifdef HIGH_PREC
 typedef double VALUETYPE;
-#else 
-typedef float  VALUETYPE;
+#else
+typedef float VALUETYPE;
 #endif
 
-class MaxShift 
-{
-public:
-  MaxShift (const vector<VALUETYPE> & dcoord, 
-	    const VALUETYPE & shell);
-  
-  bool rebuild (const vector<VALUETYPE> & coord, 
-		const SimulationRegion<VALUETYPE> & region) ;
-private:
+class MaxShift {
+ public:
+  MaxShift(const std::vector<VALUETYPE>& dcoord, const VALUETYPE& shell);
+
+  bool rebuild(const std::vector<VALUETYPE>& coord,
+               const SimulationRegion<VALUETYPE>& region);
+
+ private:
   VALUETYPE
-  max_shift2 (const vector<VALUETYPE> & coord, 
-	      const SimulationRegion<VALUETYPE> & region) ;
-  vector<VALUETYPE> record;
+  max_shift2(const std::vector<VALUETYPE>& coord,
+             const SimulationRegion<VALUETYPE>& region);
+  std::vector<VALUETYPE> record;
   VALUETYPE shell;
   VALUETYPE max_allow2;
 };
-

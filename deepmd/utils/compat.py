@@ -2,11 +2,22 @@
 
 import json
 import warnings
-from pathlib import Path
-from typing import Any, Dict, Optional, Sequence, Union
+from pathlib import (
+    Path,
+)
+from typing import (
+    Any,
+    Dict,
+    Optional,
+    Sequence,
+    Union,
+)
 
 import numpy as np
-from deepmd.common import j_must_have
+
+from deepmd.common import (
+    j_must_have,
+)
 
 
 def convert_input_v0_v1(
@@ -28,7 +39,6 @@ def convert_input_v0_v1(
     Dict[str, Any]
         converted output
     """
-
     output = {}
     output["model"] = _model(jdata, jdata["use_smooth"])
     output["learning_rate"] = _learning_rate(jdata)
@@ -43,8 +53,10 @@ def convert_input_v0_v1(
 
 
 def _warning_input_v0_v1(fname: Optional[Union[str, Path]]):
-    msg = "It seems that you are using a deepmd-kit input of version 0.x.x, " \
-          "which is deprecated. we have converted the input to >2.0.0 compatible"
+    msg = (
+        "It seems that you are using a deepmd-kit input of version 0.x.x, "
+        "which is deprecated. we have converted the input to >2.0.0 compatible"
+    )
     if fname is not None:
         msg += f", and output it to file {fname}"
     warnings.warn(msg)
@@ -112,7 +124,7 @@ def _smth_descriptor(jdata: Dict[str, Any]) -> Dict[str, Any]:
         descriptor["seed"] = seed
     descriptor["type"] = "se_a"
     descriptor["sel"] = jdata["sel_a"]
-    _jcopy(jdata, descriptor, ("rcut", ))
+    _jcopy(jdata, descriptor, ("rcut",))
     descriptor["rcut_smth"] = jdata.get("rcut_smth", descriptor["rcut"])
     descriptor["neuron"] = j_must_have(jdata, "filter_neuron")
     descriptor["axis_neuron"] = j_must_have(jdata, "axis_neuron", ["n_axis_neuron"])
@@ -248,19 +260,17 @@ def _jcopy(src: Dict[str, Any], dst: Dict[str, Any], keys: Sequence[str]):
         destination dictionary, will be modified in place
     keys : Sequence[str]
         list of keys to copy
-    must_have : bool
-        ensure that the source dictionary contains the copyyied keys
     """
     for k in keys:
         dst[k] = src[k]
 
 
 def remove_decay_rate(jdata: Dict[str, Any]):
-    """convert decay_rate to stop_lr.
-    
+    """Convert decay_rate to stop_lr.
+
     Parameters
     ----------
-    jdata: Dict[str, Any]
+    jdata : Dict[str, Any]
         input data
     """
     lr = jdata["learning_rate"]
@@ -274,10 +284,9 @@ def remove_decay_rate(jdata: Dict[str, Any]):
         lr.pop("decay_rate")
 
 
-def convert_input_v1_v2(jdata: Dict[str, Any],
-                        warning: bool = True,
-                        dump: Optional[Union[str, Path]] = None) -> Dict[str, Any]:
-
+def convert_input_v1_v2(
+    jdata: Dict[str, Any], warning: bool = True, dump: Optional[Union[str, Path]] = None
+) -> Dict[str, Any]:
     tr_cfg = jdata["training"]
     tr_data_keys = {
         "systems",
@@ -287,7 +296,7 @@ def convert_input_v1_v2(jdata: Dict[str, Any],
         "auto_prob",
         # alias included
         "sys_weights",
-        "auto_prob_style"
+        "auto_prob_style",
     }
 
     tr_data_cfg = {k: v for k, v in tr_cfg.items() if k in tr_data_keys}
@@ -309,20 +318,22 @@ def convert_input_v1_v2(jdata: Dict[str, Any],
 
 
 def _warning_input_v1_v2(fname: Optional[Union[str, Path]]):
-    msg = "It seems that you are using a deepmd-kit input of version 1.x.x, " \
-          "which is deprecated. we have converted the input to >2.0.0 compatible"
+    msg = (
+        "It seems that you are using a deepmd-kit input of version 1.x.x, "
+        "which is deprecated. we have converted the input to >2.0.0 compatible"
+    )
     if fname is not None:
         msg += f", and output it to file {fname}"
     warnings.warn(msg)
 
 
-def deprecate_numb_test(jdata: Dict[str, Any],
-                        warning: bool = True,
-                        dump: Optional[Union[str, Path]] = None) -> Dict[str, Any]:
+def deprecate_numb_test(
+    jdata: Dict[str, Any], warning: bool = True, dump: Optional[Union[str, Path]] = None
+) -> Dict[str, Any]:
     """Deprecate `numb_test` since v2.1. It has taken no effect since v2.0.
-    
+
     See `#1243 <https://github.com/deepmodeling/deepmd-kit/discussions/1243>`_.
-    
+
     Parameters
     ----------
     jdata : Dict[str, Any]
@@ -354,9 +365,9 @@ def deprecate_numb_test(jdata: Dict[str, Any],
     return jdata
 
 
-def update_deepmd_input(jdata: Dict[str, Any],
-                        warning: bool = True,
-                        dump: Optional[Union[str, Path]] = None) -> Dict[str, Any]:
+def update_deepmd_input(
+    jdata: Dict[str, Any], warning: bool = True, dump: Optional[Union[str, Path]] = None
+) -> Dict[str, Any]:
     def is_deepmd_v0_input(jdata):
         return "model" not in jdata.keys()
 

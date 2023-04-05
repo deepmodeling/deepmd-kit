@@ -2,13 +2,27 @@
 
 import logging
 import os
-from pathlib import Path
-from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
+from pathlib import (
+    Path,
+)
+from typing import (
+    TYPE_CHECKING,
+    List,
+    Optional,
+)
 
-import numpy as np
-from deepmd.cluster import get_resource
-from deepmd.env import get_tf_default_nthreads, tf, GLOBAL_CONFIG, global_float_prec
-from deepmd.loggers import set_log_handles
+from deepmd.cluster import (
+    get_resource,
+)
+from deepmd.env import (
+    GLOBAL_CONFIG,
+    get_tf_default_nthreads,
+    global_float_prec,
+    tf,
+)
+from deepmd.loggers import (
+    set_log_handles,
+)
 
 if TYPE_CHECKING:
     import horovod.tensorflow as HVD
@@ -49,7 +63,7 @@ BUILD = (
     f"build float prec:     {global_float_prec}",
     f"build variant:        {GLOBAL_CONFIG['dp_variant']}",
     f"build with tf inc:    {GLOBAL_CONFIG['tf_include_dir']}",
-    f"build with tf lib:    {GLOBAL_CONFIG['tf_libs'].replace(';', _sep)}"  # noqa
+    f"build with tf lib:    {GLOBAL_CONFIG['tf_libs'].replace(';', _sep)}",  # noqa
 )
 
 
@@ -93,7 +107,7 @@ class RunOptions:
         restart: Optional[str] = None,
         log_path: Optional[str] = None,
         log_level: int = 0,
-        mpi_log: str = "master"
+        mpi_log: str = "master",
     ):
         self._try_init_distrib()
 
@@ -135,10 +149,10 @@ class RunOptions:
         log.info(f"running on:           {self.nodename}")
         log.info(f"computing device:     {self.my_device}")
         if tf.test.is_built_with_cuda():
-            env_value = os.environ.get('CUDA_VISIBLE_DEVICES', 'unset')
+            env_value = os.environ.get("CUDA_VISIBLE_DEVICES", "unset")
             log.info(f"CUDA_VISIBLE_DEVICES: {env_value}")
-        if hasattr(tf.test, 'is_built_with_rocm') and tf.test.is_built_with_rocm():
-            env_value = os.environ.get('HIP_VISIBLE_DEVICES', 'unset')
+        if hasattr(tf.test, "is_built_with_rocm") and tf.test.is_built_with_rocm():
+            env_value = os.environ.get("HIP_VISIBLE_DEVICES", "unset")
             log.info(f"HIP_VISIBLE_DEVICES:  {env_value}")
         log.info(f"Count of visible GPU: {len(self.gpus or [])}")
         intra, inter = get_tf_default_nthreads()
@@ -156,9 +170,9 @@ class RunOptions:
 
         Parameters
         ----------
-        log_level: int
+        log_level : int
             logging level
-        log_path: Optional[str]
+        log_path : Optional[str]
             path to log file, if None logs will be send only to console. If the parent
             directory does not exist it will be automatically created, by default None
         mpi_log : Optional[str], optional
@@ -183,6 +197,7 @@ class RunOptions:
     def _try_init_distrib(self):
         try:
             import horovod.tensorflow as HVD
+
             HVD.init()
             self.is_distrib = HVD.size() > 1
         except ImportError:
@@ -215,7 +230,9 @@ class RunOptions:
         if gpus is not None:
             gpu_idx = HVD.local_rank()
             if gpu_idx >= len(gpus):
-                raise RuntimeError('Count of local processes is larger than that of available GPUs!')
+                raise RuntimeError(
+                    "Count of local processes is larger than that of available GPUs!"
+                )
             self.my_device = f"gpu:{gpu_idx:d}"
         else:
             self.my_device = "cpu:0"

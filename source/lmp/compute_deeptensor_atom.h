@@ -1,6 +1,6 @@
 #ifdef COMPUTE_CLASS
 
-ComputeStyle(deeptensor/atom,ComputeDeeptensorAtom)
+ComputeStyle(deeptensor / atom, ComputeDeeptensorAtom)
 
 #else
 
@@ -32,11 +32,10 @@ class ComputeDeeptensorAtom : public Compute {
   PairDeepMD dp;
   class NeighList *list;
   deepmd::DeepTensor dt;
-  std::vector<int > sel_types;
+  std::vector<int> sel_types;
 };
 
-}
+}  // namespace LAMMPS_NS
 
 #endif
 #endif
-
