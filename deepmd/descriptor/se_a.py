@@ -274,7 +274,7 @@ class DescrptSeA(DescrptSe):
 
     def get_nlist(self) -> Tuple[tf.Tensor, tf.Tensor, List[int], List[int]]:
         """Returns neighbor information.
-        
+
         Returns
         -------
         nlist
