@@ -686,7 +686,10 @@ class EnerFitting(Fitting):
             outs_mean = tf.reshape(tf.reduce_mean(outs, axis=1), [-1, 1])
             outs_mean = outs_mean - tf.ones_like(
                 outs_mean, dtype=GLOBAL_TF_FLOAT_PRECISION
-            ) * (force_tot_ener / global_cvt_2_tf_float(tf.reduce_sum(natoms[2 : 2 + ntypes_atom])))
+            ) * (
+                force_tot_ener
+                / global_cvt_2_tf_float(tf.reduce_sum(natoms[2 : 2 + ntypes_atom]))
+            )
             outs = outs - outs_mean
             outs = tf.reshape(outs, [-1])
 
