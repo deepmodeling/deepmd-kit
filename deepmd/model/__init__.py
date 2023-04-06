@@ -11,8 +11,13 @@ from .tensor import (
     WFCModel,
 )
 
+from .dos import (
+    DOSModel,
+)
+
 __all__ = [
     "EnerModel",
+    "DOSModel",
     "MultiModel",
     "DipoleModel",
     "GlobalPolarModel",

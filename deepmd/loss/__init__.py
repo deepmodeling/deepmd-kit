@@ -6,8 +6,13 @@ from .tensor import (
     TensorLoss,
 )
 
+from .dos import (
+    DOSLoss,
+)
+
 __all__ = [
     "EnerDipoleLoss",
     "EnerStdLoss",
+    "DOSLoss",
     "TensorLoss",
 ]

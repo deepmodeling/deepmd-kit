@@ -503,6 +503,34 @@ def fitting_ener():
         ),
     ]
 
+def fitting_dos():
+    doc_numb_fparam = 'The dimension of the frame parameter. If set to >0, file `fparam.npy` should be included to provided the input fparams.'
+    doc_numb_aparam = 'The dimension of the atomic parameter. If set to >0, file `aparam.npy` should be included to provided the input aparams.'
+    doc_neuron = 'The number of neurons in each hidden layers of the fitting net. When two hidden layers are of the same size, a skip connection is built.'
+    doc_activation_function = f'The activation function in the fitting net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version. If you set "None" or "none" here, no activation function will be used.'
+    doc_precision = f'The precision of the fitting net parameters, supported options are {list_to_doc(precision_dict.keys())}'
+    doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
+    doc_trainable = 'Whether the parameters in the fitting net are trainable. This option can be\n\n\
+- bool: True if all parameters of the fitting net are trainable, False otherwise.\n\n\
+- list of bool: Specifies if each layer is trainable. Since the fitting net is composed by hidden layers followed by a output layer, the length of tihs list should be equal to len(`neuron`)+1.'
+    doc_rcond = "The condition number used to determine the inital energy shift for each type of atoms."
+    doc_seed = 'Random seed for parameter initialization of the fitting net'
+    doc_numb_dos = 'The number of gridpoints on which the DOS is evaluated (NEDOS in VASP)'
+    
+
+    return [
+        Argument("numb_fparam", int, optional = True, default = 0, doc = doc_numb_fparam),
+        Argument("numb_aparam", int, optional = True, default = 0, doc = doc_numb_aparam),
+        Argument("neuron", list, optional = True, default = [120,120,120], doc = doc_neuron),
+        Argument("activation_function", str, optional = True, default = 'tanh', doc = doc_activation_function),
+        Argument("precision", str, optional = True, default = 'float64', doc = doc_precision),
+        Argument("resnet_dt", bool, optional = True, default = True, doc = doc_resnet_dt),
+        Argument("trainable", [list,bool], optional = True, default = True, doc = doc_trainable),
+        Argument("rcond", float, optional=True, default=1e-3, doc=doc_rcond),
+        Argument("seed", [int,None], optional = True, doc = doc_seed),
+        Argument("numb_dos",int, optional= True, default = 500, doc = doc_numb_dos)
+    ]
+
 
 def fitting_polar():
     doc_neuron = "The number of neurons in each hidden layers of the fitting net. When two hidden layers are of the same size, a skip connection is built."
@@ -920,6 +948,26 @@ def loss_ener():
         ),
     ]
 
+def loss_dos():
+    doc_start_pref_dos = start_pref("Density of State (DOS)")
+    doc_limit_pref_dos = limit_pref("Density of State (DOS)")
+    doc_start_pref_cdf = start_pref("Cumulative Distribution Function (cumulative intergral of DOS)")
+    doc_limit_pref_cdf = limit_pref("Cumulative Distribution Function (cumulative intergral of DOS)")
+    doc_start_pref_ados = start_pref("atomic DOS (site-projected DOS)")
+    doc_limit_pref_ados = limit_pref("atomic DOS (site-projected DOS)")
+    doc_start_pref_acdf = start_pref("Cumulative integral of atomic DOS")
+    doc_limit_pref_acf = limit_pref("Cumulative integral of atomic DOS")
+    return [
+        Argument("start_pref_dos",[float, int], optional=True,default=0.00, doc=doc_start_pref_dos,),
+        Argument("limit_pref_dos",[float, int], optional=True,default=0.00, doc=doc_limit_pref_dos,),
+        Argument("start_pref_cdf",[float, int], optional=True,default=0.00, doc=doc_start_pref_cdf,),
+        Argument("limit_pref_cdf",[float, int], optional=True,default=0.00, doc=doc_limit_pref_cdf,),
+        Argument("start_pref_ados",[float, int], optional=True,default=1.00, doc=doc_start_pref_ados,),
+        Argument("limit_pref_ados",[float, int], optional=True,default=1.00, doc=doc_limit_pref_ados,),
+        Argument("start_pref_acdf",[float, int], optional=True,default=0.00, doc=doc_start_pref_acdf,),
+        Argument("limit_pref_acdf",[float, int], optional=True,default=0.00, doc=doc_limit_pref_acdf,),
+
+    ]
 
 # YWolfeee: Modified to support tensor type of loss args.
 def loss_tensor():
@@ -948,6 +996,7 @@ def loss_variant_type_args():
         "type",
         [
             Argument("ener", dict, loss_ener()),
+            Argument("dos", dict, loss_dos()),
             Argument("tensor", dict, loss_tensor()),
             # Argument("polar", dict, loss_tensor()),
             # Argument("global_polar", dict, loss_tensor("global"))

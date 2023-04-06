@@ -9,9 +9,14 @@ from .polar import (
     PolarFittingSeA,
 )
 
+from .dos import(
+    DOSFitting,
+)
+
 __all__ = [
     "DipoleFittingSeA",
     "EnerFitting",
+    "DOSFitting",
     "GlobalPolarFittingSeA",
     "PolarFittingSeA",
 ]

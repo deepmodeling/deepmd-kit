@@ -26,6 +26,9 @@ from .deep_pot import (
 from .deep_wfc import (
     DeepWFC,
 )
+from .deep_dos import (
+    DeepDOS,
+)
 from .ewald_recp import (
     EwaldRecp,
 )
@@ -40,6 +43,7 @@ __all__ = [
     "DeepGlobalPolar",
     "DeepPolar",
     "DeepPot",
+    "DeepDOS",
     "DeepWFC",
     "DipoleChargeModifier",
     "EwaldRecp",
@@ -51,7 +55,7 @@ def DeepPotential(
     model_file: Union[str, Path],
     load_prefix: str = "load",
     default_tf_graph: bool = False,
-) -> Union[DeepDipole, DeepGlobalPolar, DeepPolar, DeepPot, DeepWFC]:
+) -> Union[DeepDipole, DeepGlobalPolar, DeepPolar, DeepPot, DeepDOS, DeepWFC]:
     """Factory function that will inialize appropriate potential read from `model_file`.
 
     Parameters
@@ -81,6 +85,8 @@ def DeepPotential(
 
     if model_type == "ener":
         dp = DeepPot(mf, load_prefix=load_prefix, default_tf_graph=default_tf_graph)
+    elif model_type == "dos":
+        dp = DeepDOS(mf, load_prefix=load_prefix, default_tf_graph=default_tf_graph)
     elif model_type == "dipole":
         dp = DeepDipole(mf, load_prefix=load_prefix, default_tf_graph=default_tf_graph)
     elif model_type == "polar":
