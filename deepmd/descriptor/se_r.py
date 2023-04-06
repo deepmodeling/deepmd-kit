@@ -190,7 +190,9 @@ class DescrptSeR(DescrptSe):
         return self.filter_neuron[-1]
 
     def get_nlist(self):
-        """Returns
+        """Returns neighbor information.
+
+        Returns
         -------
         nlist
             Neighbor list
