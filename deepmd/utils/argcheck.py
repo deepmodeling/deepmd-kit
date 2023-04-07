@@ -956,7 +956,7 @@ def loss_dos():
     doc_start_pref_ados = start_pref("atomic DOS (site-projected DOS)")
     doc_limit_pref_ados = limit_pref("atomic DOS (site-projected DOS)")
     doc_start_pref_acdf = start_pref("Cumulative integral of atomic DOS")
-    doc_limit_pref_acf = limit_pref("Cumulative integral of atomic DOS")
+    doc_limit_pref_acdf = limit_pref("Cumulative integral of atomic DOS")
     return [
         Argument("start_pref_dos",[float, int], optional=True,default=0.00, doc=doc_start_pref_dos,),
         Argument("limit_pref_dos",[float, int], optional=True,default=0.00, doc=doc_limit_pref_dos,),
