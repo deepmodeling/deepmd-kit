@@ -623,6 +623,7 @@ def fitting_dipole():
 def fitting_variant_type_args():
     doc_descrpt_type = "The type of the fitting. See explanation below. \n\n\
 - `ener`: Fit an energy model (potential energy surface).\n\n\
+- `dos` : Fit a density of states model. The total density of states / site-projected density of states labels should be provided by `dos.npy` or `atom_dos.npy` in each data system. The file has number of frames lines and number of energy grid columns (times number of atoms in `atom_dos.npy`). See `loss` parameter. \n\n\
 - `dipole`: Fit an atomic dipole model. Global dipole labels or atomic dipole labels for all the selected atoms (see `sel_type`) should be provided by `dipole.npy` in each data system. The file either has number of frames lines and 3 times of number of selected atoms columns, or has number of frames lines and 3 columns. See `loss` parameter.\n\n\
 - `polar`: Fit an atomic polarizability model. Global polarizazbility labels or atomic polarizability labels for all the selected atoms (see `sel_type`) should be provided by `polarizability.npy` in each data system. The file eith has number of frames lines and 9 times of number of selected atoms columns, or has number of frames lines and 9 columns. See `loss` parameter.\n\n"
 
@@ -630,6 +631,7 @@ def fitting_variant_type_args():
         "type",
         [
             Argument("ener", dict, fitting_ener()),
+            Argument("dos", dict, fitting_dos()),
             Argument("dipole", dict, fitting_dipole()),
             Argument("polar", dict, fitting_polar()),
         ],
