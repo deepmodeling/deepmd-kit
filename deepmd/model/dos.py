@@ -191,7 +191,7 @@ class DOSModel(Model):
 
         model_dict = {}
         model_dict["dos"] = dos
-        model_dict["ados"] = dos_raw
+        model_dict["atom_dos"] = dos_raw
         model_dict["coord"] = coord
         model_dict["atype"] = atype
 

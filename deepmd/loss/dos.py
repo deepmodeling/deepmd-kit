@@ -58,7 +58,7 @@ class DOSLoss(Loss):
         self.has_acdf = self.start_pref_acdf != 0.0 or self.limit_pref_acdf != 0.0
         # data required
         add_data_requirement("dos", self.numb_dos, atomic=False, must=True, high_prec=True)
-        add_data_requirement("ados", self.numb_dos, atomic=True, must=False, high_prec=True)
+        add_data_requirement("atom_dos", self.numb_dos, atomic=True, must=False, high_prec=True)
         
 
     def build(self, learning_rate, natoms, model_dict, label_dict, suffix):

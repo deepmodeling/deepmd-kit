@@ -90,7 +90,7 @@ class DeepDOS(DeepEval):
                 "t_mesh": "t_mesh:0",
                 # add output tensors
                 "t_dos": "o_dos:0",
-                "t_ados": "o_ados:0",
+                "t_atom_dos": "o_atom_dos:0",
                 "t_descriptor": "o_descriptor:0",
             },
         )
@@ -143,7 +143,7 @@ class DeepDOS(DeepEval):
     def _run_default_sess(self):
         [self.ntypes, self.rcut, self.numb_dos, self.dfparam, self.daparam, self.tmap] = run_sess(
             self.sess,
-            [self.t_ntypes, self.t_rcut, self.numb_dos, self.t_dfparam, self.t_daparam, self.t_tmap],
+            [self.t_ntypes, self.t_rcut, self.t_numb_dos, self.t_dfparam, self.t_daparam, self.t_tmap],
         )
 
     def get_ntypes(self) -> int:
@@ -228,7 +228,7 @@ class DeepDOS(DeepEval):
         aparam: Optional[np.ndarray] = None,
         mixed_type: bool = False,
     ) -> Tuple[np.ndarray, ...]:
-        """Evaluate the dos, ados by using this model.
+        """Evaluate the dos, atom_dos by using this model.
 
         Parameters
         ----------
@@ -267,7 +267,7 @@ class DeepDOS(DeepEval):
         -------
         dos
             The electron density of state.
-        ados
+        atom_dos
             The atom-sited density of state. Only returned when atomic == True
         """
         # reshape coords before getting shape
@@ -410,21 +410,21 @@ class DeepDOS(DeepEval):
         )
         t_out = [self.t_dos]
         if atomic:
-            t_out += [self.t_ados]
+            t_out += [self.t_atom_dos]
 
         v_out = run_sess(self.sess, t_out, feed_dict=feed_dict_test)
         dos = v_out[0]
         if atomic:
-            ados = v_out[1]
+            atom_dos = v_out[1]
 
         # reverse map of the outputs
         if atomic:
-            ados = self.reverse_map(np.reshape(ados, [nframes, -1, self.numb_dos]), imap)
+            atom_dos = self.reverse_map(np.reshape(atom_dos, [nframes, -1, self.numb_dos]), imap)
 
         dos = np.reshape(dos, [nframes, self.numb_dos])
         if atomic:
-            ados = np.reshape(ados, [nframes, natoms, self.numb_dos])
-            return dos, ados
+            atom_dos = np.reshape(atom_dos, [nframes, natoms, self.numb_dos])
+            return dos, atom_dos
         else:
             return dos
 

@@ -523,7 +523,7 @@ def test_dos(
 
     if has_atom_dos:
         ados = ret[1]
-        ados = ados.reshape([numb_test, dp.numb_dos])
+        ados = ados.reshape([numb_test, natoms * dp.numb_dos])
 
     diff_dos = dos - test_data["dos"][:numb_test]
     mae_dos = mae(diff_dos)
