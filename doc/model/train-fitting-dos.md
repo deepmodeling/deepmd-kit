@@ -2,6 +2,8 @@
 
 Here we present an API to DeepDOS model, which can be used to fit electronic density of state (DOS) (which is a vector).
 
+See the [PRB paper](https://doi.org/10.1103/PhysRevB.105.174109) for details.
+
 In this example, we will show you how to train a model to fit a silicon system. A complete training input script of the examples can be found in
 
 ```bash
