@@ -3,7 +3,6 @@ from typing import (
     Optional,
 )
 
-
 from deepmd.env import (
     MODEL_VERSION,
     global_cvt_2_ener_float,
