@@ -30,9 +30,9 @@ from deepmd.utils.weight_avg import (
 if TYPE_CHECKING:
     from deepmd.infer import (
         DeepDipole,
+        DeepDOS,
         DeepPolar,
         DeepPot,
-        DeepDOS,
         DeepWFC,
     )
     from deepmd.infer.deep_tensor import (
@@ -125,7 +125,15 @@ def test(
                 append_detail=(cc != 0),
             )
         elif dp.model_type == "dos":
-            err = test_dos(dp, data, system, numb_test, detail_file, atomic, append_detail=(cc != 0))
+            err = test_dos(
+                dp,
+                data,
+                system,
+                numb_test,
+                detail_file,
+                atomic,
+                append_detail=(cc != 0),
+            )
         elif dp.model_type == "dipole":
             err = test_dipole(dp, data, numb_test, detail_file, atomic)
         elif dp.model_type == "polar":
@@ -439,6 +447,7 @@ def print_ener_sys_avg(avg: Dict[str, float]):
     log.info(f"Virial MAE/Natoms  : {avg['mae_va']:e} eV")
     log.info(f"Virial RMSE/Natoms : {avg['rmse_va']:e} eV")
 
+
 def test_dos(
     dp: "DeepDOS",
     data: DeepmdData,
@@ -472,7 +481,6 @@ def test_dos(
     Tuple[List[np.ndarray], List[int]]
         arrays with results and their shapes
     """
-    
     data.add("dos", dp.numb_dos, atomic=False, must=True, high_prec=True)
     if has_atom_dos:
         data.add("atom_dos", dp.numb_dos, atomic=True, must=False, high_prec=True)
@@ -492,7 +500,7 @@ def test_dos(
 
     coord = test_data["coord"][:numb_test].reshape([numb_test, -1])
     box = test_data["box"][:numb_test]
-    
+
     if not data.pbc:
         box = None
     if mixed_type:
@@ -552,31 +560,29 @@ def test_dos(
         detail_path = Path(detail_file)
 
         for ii in range(numb_test):
-
             test_out = test_data["dos"][ii].reshape(-1, 1)
             pred_out = dos[ii].reshape(-1, 1)
 
             frame_output = np.hstack((test_out, pred_out))
 
             save_txt_file(
-                detail_path.with_suffix(".dos.out.%.d"%ii),
+                detail_path.with_suffix(".dos.out.%.d" % ii),
                 frame_output,
-                header="%s - %.d: data_dos pred_dos" % (system,ii),
+                header="%s - %.d: data_dos pred_dos" % (system, ii),
                 append=append_detail,
             )
 
         if has_atom_dos:
             for ii in range(numb_test):
-
                 test_out = test_data["atom_dos"][ii].reshape(-1, 1)
                 pred_out = ados[ii].reshape(-1, 1)
 
                 frame_output = np.hstack((test_out, pred_out))
 
                 save_txt_file(
-                    detail_path.with_suffix(".ados.out.%.d"%ii),
+                    detail_path.with_suffix(".ados.out.%.d" % ii),
                     frame_output,
-                    header="%s - %.d: data_ados pred_ados" % (system,ii),
+                    header="%s - %.d: data_ados pred_ados" % (system, ii),
                     append=append_detail,
                 )
 
@@ -586,6 +592,7 @@ def test_dos(
         "rmse_dos": (rmse_dos, dos.size),
         "rmse_dosa": (rmse_dosa, dos.size),
     }
+
 
 def print_dos_sys_avg(avg: Dict[str, float]):
     """Print errors summary for DOS type potential.

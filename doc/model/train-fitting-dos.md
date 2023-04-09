@@ -32,7 +32,7 @@ The JSON of `dos` type should be provided like
 	},
 ```
 
--   `type` specifies which type of fitting net should be used. It should be `dos`. 
+-   `type` specifies which type of fitting net should be used. It should be `dos`.
 -   `numb_dos` specifies the length of output vector (density of states), which the same as the `NEDOS` set in VASP software, this argument defines the output length of the neural network. We note that the length of `dos` provided in training set should be the same.
 -   The rest arguments have the same meaning as they do in `ener` mode.
 
@@ -64,7 +64,7 @@ The loss section should be provided like
 
 -   {ref}`type <loss/type>` should be written as `dos` as a distinction from `ener` mode.
 -   `pref_dos` and `pref_ados`, respectively specify the weight of global and atomic loss. If set to 0, the corresponding label will not be included in the training process.
--   We also provides a combination training of vector and its cumulative distribution function `cdf`, which can be defined as 
+-   We also provides a combination training of vector and its cumulative distribution function `cdf`, which can be defined as
 
 $$D(\epsilon) = \int_{e_{min}}^{\epsilon} g(\epsilon')d\epsilon'$$
 
@@ -116,7 +116,7 @@ In this earlier version, we can use `dp test` to infer the electronic density of
 
 ```bash
 
-$DP freeze -o frozen_model.pb 
+$DP freeze -o frozen_model.pb
 
 $DP test -m frozen_model.pb -s ../data/111/$k -d ${output_prefix} -a -n 100
 ```
@@ -124,8 +124,8 @@ $DP test -m frozen_model.pb -s ../data/111/$k -d ${output_prefix} -a -n 100
 if `dp test -d ${output_prefix} -a` is specified, the predicted DOS and atomic DOS for each frame is output in the working directory
 
 ```
-${output_prefix}.ados.out.0   ${output_prefix}.ados.out.1  ${output_prefix}.ados.out.2  ${output_prefix}.ados.out.3 
-${output_prefix}.dos.out.0   ${output_prefix}.dos.out.1  ${output_prefix}.dos.out.2  ${output_prefix}.dos.out.3 
+${output_prefix}.ados.out.0   ${output_prefix}.ados.out.1  ${output_prefix}.ados.out.2  ${output_prefix}.ados.out.3
+${output_prefix}.dos.out.0   ${output_prefix}.dos.out.1  ${output_prefix}.dos.out.2  ${output_prefix}.dos.out.3
 ```
 
 for `*.dos.out.*`, it contains matrix with shape of `(2, numb_dos)`,
@@ -143,7 +143,3 @@ for `*.ados.out.*`, it contains matrix with shape of `(2, natom x numb_dos)`,
 0.000000000000000000e+00 1.829848459515726056e-03
 0.000000000000000000e+00 1.905156512419792225e-03
 ```
-
-
-
-

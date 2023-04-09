@@ -18,14 +18,12 @@ from .loss import (
 
 
 class DOSLoss(Loss):
-    """
-    Loss function for DeepDOS models
-    """
+    """Loss function for DeepDOS models."""
 
     def __init__(
         self,
         starter_learning_rate: float,
-        numb_dos : int = 500,
+        numb_dos: int = 500,
         start_pref_dos: float = 1.00,
         limit_pref_dos: float = 1.00,
         start_pref_cdf: float = 1000,
@@ -35,7 +33,7 @@ class DOSLoss(Loss):
         start_pref_acdf: float = 0.0,
         limit_pref_acdf: float = 0.0,
         protect_value: float = 1e-8,
-        log_fit : bool = False
+        log_fit: bool = False,
     ) -> None:
         self.starter_learning_rate = starter_learning_rate
         self.numb_dos = numb_dos
@@ -57,33 +55,33 @@ class DOSLoss(Loss):
         self.has_ados = self.start_pref_ados != 0.0 or self.limit_pref_ados != 0.0
         self.has_acdf = self.start_pref_acdf != 0.0 or self.limit_pref_acdf != 0.0
         # data required
-        add_data_requirement("dos", self.numb_dos, atomic=False, must=True, high_prec=True)
-        add_data_requirement("atom_dos", self.numb_dos, atomic=True, must=False, high_prec=True)
-        
+        add_data_requirement(
+            "dos", self.numb_dos, atomic=False, must=True, high_prec=True
+        )
+        add_data_requirement(
+            "atom_dos", self.numb_dos, atomic=True, must=False, high_prec=True
+        )
 
     def build(self, learning_rate, natoms, model_dict, label_dict, suffix):
         dos = model_dict["dos"]
         atom_dos = model_dict["atom_dos"]
- 
+
         dos_hat = label_dict["dos"]
         atom_dos_hat = label_dict["atom_dos"]
 
         find_dos = label_dict["find_dos"]
         find_atom_dos = label_dict["find_atom_dos"]
-        
+
         dos_reshape = tf.reshape(dos, [-1, self.numb_dos])
         dos_hat_reshape = tf.reshape(dos_hat, [-1, self.numb_dos])
         diff_dos = dos_hat_reshape - dos_reshape
-        if self.has_dos:    
-            l2_dos_loss = tf.reduce_mean(
-                tf.square(diff_dos), name="l2_dos_" + suffix
-            )
+        if self.has_dos:
+            l2_dos_loss = tf.reduce_mean(tf.square(diff_dos), name="l2_dos_" + suffix)
         if self.has_cdf:
             cdf = tf.cumsum(dos_reshape, axis=1)
             cdf_hat = tf.cumsum(dos_hat_reshape, axis=1)
             diff_cdf = cdf_hat - cdf
             l2_cdf_loss = tf.reduce_mean(tf.square(diff_cdf), name="l2_cdf_" + suffix)
-        
 
         atom_dos_reshape = tf.reshape(atom_dos, [-1, self.numb_dos])
         atom_dos_hat_reshape = tf.reshape(atom_dos_hat, [-1, self.numb_dos])
@@ -113,7 +111,7 @@ class DOSLoss(Loss):
         )
         pref_cdf = global_cvt_2_tf_float(
             find_dos
-            *(
+            * (
                 self.limit_pref_cdf
                 + (self.start_pref_cdf - self.limit_pref_cdf)
                 * learning_rate
@@ -164,7 +162,7 @@ class DOSLoss(Loss):
             )
         if self.has_cdf:
             self.l2_loss_cdf_summary = tf.summary.scalar(
-                "l2_cdf_loss_" + suffix, 
+                "l2_cdf_loss_" + suffix,
                 global_cvt_2_tf_float(tf.sqrt(l2_cdf_loss))
                 / global_cvt_2_tf_float(natoms[0]),
             )
@@ -205,6 +203,6 @@ class DOSLoss(Loss):
         if self.has_cdf:
             results["rmse_cdf"] = np.sqrt(error_cdf) / natoms[0]
         if self.has_acdf:
-            results["rmse_acdf"] = np.sqrt(error_acdf) 
+            results["rmse_acdf"] = np.sqrt(error_acdf)
 
         return results

@@ -1,15 +1,10 @@
 import logging
-import warnings
 from typing import (
     List,
     Optional,
-    Tuple,
 )
 
 import numpy as np
-from packaging.version import (
-    Version,
-)
 
 from deepmd.common import (
     add_data_requirement,
@@ -19,15 +14,10 @@ from deepmd.common import (
 )
 from deepmd.env import (
     GLOBAL_TF_FLOAT_PRECISION,
-    TF_VERSION,
-    global_cvt_2_tf_float,
     tf,
 )
 from deepmd.fit.fitting import (
     Fitting,
-)
-from deepmd.infer import (
-    DeepPotential,
 )
 from deepmd.nvnmd.fit.ener import (
     one_layer_nvnmd,
@@ -41,21 +31,17 @@ from deepmd.utils.errors import (
 from deepmd.utils.graph import (
     get_fitting_net_variables_from_graph_def,
     get_tensor_by_name_from_graph,
-    load_graph_def,
 )
 from deepmd.utils.network import one_layer as one_layer_deepmd
 from deepmd.utils.network import (
     one_layer_rand_seed_shift,
-)
-from deepmd.utils.type_embed import (
-    embed_atom_type,
 )
 
 log = logging.getLogger(__name__)
 
 
 class DOSFitting(Fitting):
-    r"""Fitting the density of states (DOS) of the system. 
+    r"""Fitting the density of states (DOS) of the system.
     The energy should be shifted by the fermi level.
 
     Parameters
@@ -118,9 +104,7 @@ class DOSFitting(Fitting):
         layer_name: Optional[List[Optional[str]]] = None,
         use_aparam_as_mask: bool = False,
     ) -> None:
-        """
-        Constructor
-        """
+        """Constructor."""
         # model param
         self.ntypes = descrpt.get_ntypes()
         self.dim_descrpt = descrpt.get_dim_out()
@@ -140,7 +124,7 @@ class DOSFitting(Fitting):
 
         self.numb_dos = numb_dos
         self.ener_min = ener_min
-        self.ener_max = ener_max    
+        self.ener_max = ener_max
 
         self.n_neuron = neuron
         self.resnet_dt = resnet_dt
@@ -158,9 +142,9 @@ class DOSFitting(Fitting):
         assert (
             len(self.trainable) == len(self.n_neuron) + 1
         ), "length of trainable should be that of n_neuron + 1"
-        
+
         self.useBN = False
-        self.bias_dos = np.zeros((self.ntypes,self.numb_dos), dtype=np.float64)
+        self.bias_dos = np.zeros((self.ntypes, self.numb_dos), dtype=np.float64)
         # data requirement
         if self.numb_fparam > 0:
             add_data_requirement(
@@ -187,39 +171,28 @@ class DOSFitting(Fitting):
             ), "length of layer_name should be that of n_neuron + 1"
 
     def get_numb_fparam(self) -> int:
-        """
-        Get the number of frame parameters
-        """
+        """Get the number of frame parameters."""
         return self.numb_fparam
 
     def get_numb_aparam(self) -> int:
-        """
-        Get the number of atomic parameters
-        """
+        """Get the number of atomic parameters."""
         return self.numb_fparam
-    
+
     def get_numb_dos(self) -> int:
-        """
-        Get the number of gridpoints in energy space
-        """
+        """Get the number of gridpoints in energy space."""
         return self.numb_dos
 
     def get_ener_min(self) -> float:
-        """
-        Get the lower boundary of the energy range
-        """
+        """Get the lower boundary of the energy range."""
         return self.ener_min
 
     def get_ener_max(self) -> float:
-        """
-        Get the upper boundary of the energy range
-        """
-        return self.ener_max            
-            
+        """Get the upper boundary of the energy range."""
+        return self.ener_max
+
     # not used
     def compute_output_stats(self, all_stat: dict, mixed_type: bool = False) -> None:
-        """
-        Compute the ouput statistics
+        """Compute the ouput statistics.
 
         Parameters
         ----------
@@ -245,8 +218,8 @@ class DOSFitting(Fitting):
             for ii in range(len(data[ss])):
                 for jj in range(len(data[ss][ii])):
                     sys_data.append(data[ss][ii][jj])
-            sys_data = np.concatenate(sys_data).reshape(-1, self.numb_dos)  
-            sys_dos.append(np.average(sys_data, axis=0))  
+            sys_data = np.concatenate(sys_data).reshape(-1, self.numb_dos)
+            sys_dos.append(np.average(sys_data, axis=0))
         sys_dos = np.array(sys_dos).reshape(-1, self.numb_dos)
         sys_tynatom = []
         if mixed_type:
@@ -271,12 +244,11 @@ class DOSFitting(Fitting):
         dos_shift, resd, rank, s_value = np.linalg.lstsq(
             sys_tynatom, sys_dos, rcond=rcond
         )
-        
+
         return dos_shift
 
     def compute_input_stats(self, all_stat: dict, protection: float = 1e-2) -> None:
-        """
-        Compute the input statistics
+        """Compute the input statistics.
 
         Parameters
         ----------
@@ -328,7 +300,7 @@ class DOSFitting(Fitting):
         inputs,
         fparam=None,
         aparam=None,
-        bias_dos=0.0,         
+        bias_dos=0.0,
         type_suffix="",
         suffix="",
         reuse=None,
@@ -402,7 +374,7 @@ class DOSFitting(Fitting):
             layer_reuse = reuse
         final_layer = one_layer(
             layer,
-            self.numb_dos,                   # TODO: output a vector
+            self.numb_dos,  # TODO: output a vector
             activation_fn=None,
             bavg=bias_dos,
             name=layer_suffix,
@@ -428,8 +400,7 @@ class DOSFitting(Fitting):
         reuse: bool = None,
         suffix: str = "",
     ) -> tf.Tensor:
-        """
-        Build the computational graph for fitting net
+        """Build the computational graph for fitting net.
 
         Parameters
         ----------
@@ -515,7 +486,7 @@ class DOSFitting(Fitting):
 
         inputs = tf.reshape(inputs, [-1, natoms[0], self.dim_descrpt])
 
-        if bias_dos is not None: 
+        if bias_dos is not None:
             assert len(bias_dos) == self.ntypes
 
         fparam = None
@@ -607,8 +578,7 @@ class DOSFitting(Fitting):
         graph_def: tf.GraphDef,
         suffix: str = "",
     ) -> None:
-        """
-        Init the fitting net variables with the given dict
+        """Init the fitting net variables with the given dict.
 
         Parameters
         ----------
@@ -650,10 +620,8 @@ class DOSFitting(Fitting):
             # for compatibility, old models has no t_bias_dos
             pass
 
-
     def enable_mixed_precision(self, mixed_prec: Optional[dict] = None) -> None:
-        """
-        Reveive the mixed precision setting.
+        """Reveive the mixed precision setting.
 
         Parameters
         ----------

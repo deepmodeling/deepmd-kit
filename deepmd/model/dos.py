@@ -1,20 +1,13 @@
 from typing import (
     List,
     Optional,
-    Tuple,
 )
 
-import numpy as np
 
 from deepmd.env import (
-    GLOBAL_TF_FLOAT_PRECISION,
     MODEL_VERSION,
     global_cvt_2_ener_float,
-    op_module,
     tf,
-)
-from deepmd.utils.pair_tab import (
-    PairTab,
 )
 
 from .model import (
@@ -53,11 +46,9 @@ class DOSModel(Model):
         typeebd=None,
         type_map: List[str] = None,
         data_stat_nbatch: int = 10,
-        data_stat_protect: float = 1e-2
+        data_stat_protect: float = 1e-2,
     ) -> None:
-        """
-        Constructor
-        """
+        """Constructor."""
         # descriptor
         self.descrpt = descrpt
         self.rcut = self.descrpt.get_rcut()
@@ -139,14 +130,13 @@ class DOSModel(Model):
         suffix="",
         reuse=None,
     ):
-
         if input_dict is None:
             input_dict = {}
         with tf.variable_scope("model_attr" + suffix, reuse=reuse):
             t_tmap = tf.constant(" ".join(self.type_map), name="tmap", dtype=tf.string)
             t_mt = tf.constant(self.model_type, name="model_type", dtype=tf.string)
             t_ver = tf.constant(MODEL_VERSION, name="model_version", dtype=tf.string)
-            t_od = tf.constant(self.numb_dos, name="output_dim", dtype=tf.int32) 
+            t_od = tf.constant(self.numb_dos, name="output_dim", dtype=tf.int32)
 
         coord = tf.reshape(coord_, [-1, natoms[1] * 3])
         atype = tf.reshape(atype_, [-1, natoms[1]])
@@ -182,9 +172,7 @@ class DOSModel(Model):
 
         dos_raw = atom_dos
 
-        dos_raw = tf.reshape(
-            dos_raw, [natoms[0],-1], name="o_atom_dos" + suffix
-        )
+        dos_raw = tf.reshape(dos_raw, [natoms[0], -1], name="o_atom_dos" + suffix)
         dos = tf.reduce_sum(
             global_cvt_2_ener_float(dos_raw), axis=0, name="o_dos" + suffix
         )
@@ -204,8 +192,7 @@ class DOSModel(Model):
         model_type: str = "original_model",
         suffix: str = "",
     ) -> None:
-        """
-        Init the embedding net variables with the given frozen model
+        """Init the embedding net variables with the given frozen model.
 
         Parameters
         ----------

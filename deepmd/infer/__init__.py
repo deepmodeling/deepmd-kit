@@ -13,6 +13,9 @@ from .data_modifier import (
 from .deep_dipole import (
     DeepDipole,
 )
+from .deep_dos import (
+    DeepDOS,
+)
 from .deep_eval import (
     DeepEval,
 )
@@ -25,9 +28,6 @@ from .deep_pot import (
 )
 from .deep_wfc import (
     DeepWFC,
-)
-from .deep_dos import (
-    DeepDOS,
 )
 from .ewald_recp import (
     EwaldRecp,

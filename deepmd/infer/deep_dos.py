@@ -13,13 +13,6 @@ import numpy as np
 from deepmd.common import (
     make_default_mesh,
 )
-from deepmd.env import (
-    default_tf_session_config,
-    tf,
-)
-from deepmd.infer.data_modifier import (
-    DipoleChargeModifier,
-)
 from deepmd.infer.deep_eval import (
     DeepEval,
 )
@@ -67,7 +60,6 @@ class DeepDOS(DeepEval):
         default_tf_graph: bool = False,
         auto_batch_size: Union[bool, int, AutoBatchSize] = True,
     ) -> None:
-
         # add these tensors on top of what is defined by DeepTensor Class
         # use this in favor of dict update to move attribute from class to
         # instance namespace
@@ -141,9 +133,23 @@ class DeepDOS(DeepEval):
             self.modifier_type = None
 
     def _run_default_sess(self):
-        [self.ntypes, self.rcut, self.numb_dos, self.dfparam, self.daparam, self.tmap] = run_sess(
+        [
+            self.ntypes,
+            self.rcut,
+            self.numb_dos,
+            self.dfparam,
+            self.daparam,
+            self.tmap,
+        ] = run_sess(
             self.sess,
-            [self.t_ntypes, self.t_rcut, self.t_numb_dos, self.t_dfparam, self.t_daparam, self.t_tmap],
+            [
+                self.t_ntypes,
+                self.t_rcut,
+                self.t_numb_dos,
+                self.t_dfparam,
+                self.t_daparam,
+                self.t_tmap,
+            ],
         )
 
     def get_ntypes(self) -> int:
@@ -153,13 +159,11 @@ class DeepDOS(DeepEval):
     def get_rcut(self) -> float:
         """Get the cut-off radius of this model."""
         return self.rcut
-    
+
     def get_numb_dos(self) -> int:
-        """
-        Get the length of DOS output of this DP model
-        """
+        """Get the length of DOS output of this DP model."""
         return self.numb_dos
-    
+
     def get_type_map(self) -> List[str]:
         """Get the type map (element name of the atom types) of this model."""
         return self.tmap
@@ -255,9 +259,6 @@ class DeepDOS(DeepEval):
             - nframes x natoms x dim_aparam.
             - natoms x dim_aparam. Then all frames are assumed to be provided with the same aparam.
             - dim_aparam. Then all frames and atoms are provided with the same aparam.
-        efield
-            The external field on atoms.
-            The array should be of size nframes x natoms x 3
         mixed_type
             Whether to perform the mixed_type mode.
             If True, the input data has the mixed_type format (see doc/model/train_se_atten.md),
@@ -419,7 +420,9 @@ class DeepDOS(DeepEval):
 
         # reverse map of the outputs
         if atomic:
-            atom_dos = self.reverse_map(np.reshape(atom_dos, [nframes, -1, self.numb_dos]), imap)
+            atom_dos = self.reverse_map(
+                np.reshape(atom_dos, [nframes, -1, self.numb_dos]), imap
+            )
 
         dos = np.reshape(dos, [nframes, self.numb_dos])
         if atomic:
