@@ -1,14 +1,12 @@
 import argparse
 import glob
-import json
 import os
 import shutil
 
 import dpdata
 import numpy as np
 from pathlib import Path
-from pathlib import PurePath
-from typing import Dict, List, Optional
+from typing import List, Optional
 from tqdm import tqdm
 
 def parse_args(args: Optional[List[str]] = None):
