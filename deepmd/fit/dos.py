@@ -59,10 +59,6 @@ class DOSFitting(Fitting):
             Number of atomic parameter
     ! numb_dos (added)
             Number of gridpoints on which the DOS is evaluated (NEDOS in VASP)
-    ! ener_min (added)
-            Lower boundary of the energy range for the evaluation of the DOS
-    ! ener_max (added)
-            Upper boundary of the energy range for the evaluation of the DOS
     rcond
             The condition number for the regression of atomic energy.
     trainable
@@ -93,8 +89,6 @@ class DOSFitting(Fitting):
         numb_fparam: int = 0,
         numb_aparam: int = 0,
         numb_dos: int = 300,
-        ener_min: float = -10.0,
-        ener_max: float = 10.0,
         rcond: float = 1e-3,
         trainable: List[bool] = None,
         seed: int = None,
@@ -109,22 +103,11 @@ class DOSFitting(Fitting):
         self.ntypes = descrpt.get_ntypes()
         self.dim_descrpt = descrpt.get_dim_out()
         self.use_aparam_as_mask = use_aparam_as_mask
-        # args = ()\
-        #        .add('numb_fparam',      int,    default = 0)\
-        #        .add('numb_aparam',      int,    default = 0)\
-        #        .add('neuron',           list,   default = [120,120,120], alias = 'n_neuron')\
-        #        .add('resnet_dt',        bool,   default = True)\
-        #        .add('rcond',            float,  default = 1e-3) \
-        #        .add('seed',             int)               \
-        #        .add("activation_function", str,    default = "tanh")\
-        #        .add("precision",           str, default = "default")\
-        #        .add("trainable",        [list, bool], default = True)
+
         self.numb_fparam = numb_fparam
         self.numb_aparam = numb_aparam
 
         self.numb_dos = numb_dos
-        self.ener_min = ener_min
-        self.ener_max = ener_max
 
         self.n_neuron = neuron
         self.resnet_dt = resnet_dt
@@ -181,14 +164,6 @@ class DOSFitting(Fitting):
     def get_numb_dos(self) -> int:
         """Get the number of gridpoints in energy space."""
         return self.numb_dos
-
-    def get_ener_min(self) -> float:
-        """Get the lower boundary of the energy range."""
-        return self.ener_min
-
-    def get_ener_max(self) -> float:
-        """Get the upper boundary of the energy range."""
-        return self.ener_max
 
     # not used
     def compute_output_stats(self, all_stat: dict, mixed_type: bool = False) -> None:

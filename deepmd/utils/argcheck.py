@@ -519,8 +519,6 @@ def fitting_dos():
     doc_numb_dos = (
         "The number of gridpoints on which the DOS is evaluated (NEDOS in VASP)"
     )
-    doc_ener_min = "Lower boundary of the energy range for the evaluation of the DOS"
-    doc_ener_max = "Upper boundary of the energy range for the evaluation of the DOS"
 
     return [
         Argument("numb_fparam", int, optional=True, default=0, doc=doc_numb_fparam),
@@ -542,9 +540,7 @@ def fitting_dos():
         ),
         Argument("rcond", float, optional=True, default=1e-3, doc=doc_rcond),
         Argument("seed", [int, None], optional=True, doc=doc_seed),
-        Argument("numb_dos", int, optional=True, default=300, doc=doc_numb_dos),
-        Argument("ener_min", float, optional=True, default=-10.0, doc=doc_ener_min),
-        Argument("ener_max", float, optional=True, default=10.0, doc=doc_ener_max),
+        Argument("numb_dos", int, optional=True, default=300, doc=doc_numb_dos)
     ]
 
 

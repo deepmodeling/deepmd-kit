@@ -285,16 +285,6 @@ class DeepDOS(DeepEval):
             mixed_type=mixed_type,
         )
 
-        if self.modifier_type is not None:
-            if atomic:
-                raise RuntimeError("modifier does not support atomic modification")
-            me, mf, mv = self.dm.eval(coords, cells, atom_types)
-            output = list(output)  # tuple to list
-            e, f, v = output[:3]
-            output[0] += me.reshape(e.shape)
-            output[1] += mf.reshape(f.shape)
-            output[2] += mv.reshape(v.shape)
-            output = tuple(output)
         return output
 
     def _prepare_feed_dict(
