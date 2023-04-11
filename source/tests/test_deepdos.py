@@ -16,8 +16,6 @@ from deepmd.utils.convert import (
     convert_pbtxt_to_pb,
 )
 
-GLOBAL_NP_FLOAT_PRECISION = np.float32
-
 if GLOBAL_NP_FLOAT_PRECISION == np.float32:
     default_places = 4
 else:
@@ -339,7 +337,7 @@ class TestDeepDOS(unittest.TestCase):
         numb_dos = 250
         self.assertEqual(dd.shape, (nframes, numb_dos))
         # check values
-        np.testing.assert_almost_equal(dd.ravel(), self.expected_dos, default_places)
+        np.testing.assert_almost_equal(dd.ravel(), self.expected_dos, 4)
 
     def test_2frame(self):
         coords2 = np.concatenate((self.coords, self.coords))
@@ -351,5 +349,5 @@ class TestDeepDOS(unittest.TestCase):
         numb_dos = 250
         self.assertEqual(dd.shape, (nframes, numb_dos))
         # check values
-        # expected_dos2 = np.concatenate((self.expected_dos, self.expected_dos))
-        # np.testing.assert_almost_equal(dd.ravel(), expected_dos2, default_places)
+        expected_dos2 = np.concatenate((self.expected_dos, self.expected_dos))
+        np.testing.assert_almost_equal(dd.ravel(), expected_dos2, 4)
