@@ -11,6 +11,7 @@ read_data	water.lmp
 mass 		1 16
 mass		2 2
 
+# See https://deepmd.rtfd.io/lammps/ for usage
 pair_style	deepmd frozen_model.pb
 pair_coeff  * *	O H
 

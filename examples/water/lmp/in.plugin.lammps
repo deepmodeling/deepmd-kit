@@ -14,6 +14,7 @@ mass		2 2
 # load the deepmd plugin
 plugin load libdeepmd_lmp.so
 
+# See https://deepmd.rtfd.io/lammps/ for usage
 pair_style	deepmd frozen_model.pb
 pair_coeff  * *	O H
 
