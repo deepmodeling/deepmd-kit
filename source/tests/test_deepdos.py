@@ -16,6 +16,8 @@ from deepmd.utils.convert import (
     convert_pbtxt_to_pb,
 )
 
+GLOBAL_NP_FLOAT_PRECISION = np.float32
+
 if GLOBAL_NP_FLOAT_PRECISION == np.float32:
     default_places = 4
 else:
@@ -28,7 +30,7 @@ class TestDeepDOS(unittest.TestCase):
         convert_pbtxt_to_pb(
             str(tests_path / os.path.join("infer", "deepdos.pbtxt")), "deepdos.pb"
         )
-        cls.dp = DeepDOS(os.path.join("infer", "deepdos.pb"))
+        cls.dp = DeepDOS("deepdos.pb")
 
     def setUp(self):
         self.coords = np.array(
