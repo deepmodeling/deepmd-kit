@@ -540,7 +540,7 @@ def fitting_dos():
         ),
         Argument("rcond", float, optional=True, default=1e-3, doc=doc_rcond),
         Argument("seed", [int, None], optional=True, doc=doc_seed),
-        Argument("numb_dos", int, optional=True, default=300, doc=doc_numb_dos)
+        Argument("numb_dos", int, optional=True, default=300, doc=doc_numb_dos),
     ]
 
 
