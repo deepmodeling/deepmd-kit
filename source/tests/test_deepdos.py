@@ -63,7 +63,7 @@ class TestDeepDOS(unittest.TestCase):
         self.box = np.array(
             [5.184978, 0.0, 0.0, 0.0, 5.184978, 0.0, 0.0, 0.0, 5.184978]
         )
-        self.expected_d = np.array(
+        self.expected_dos = np.array(
             [
                 -1.39605350e-03,
                 -1.92391490e-03,
