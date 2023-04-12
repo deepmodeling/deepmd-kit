@@ -97,7 +97,7 @@ def convert_13_to_21(input_model: str, output_model: str):
     output_model : str
         filename of the output graph
     """
-    convert_pb_to_pbtxt(input_model, "frozen_model.pbtxt")
+    convert_pb_to_pbtxt(input_model, "frozen_model.pbtxt", incompat_from_v1_to_v2=True)
     convert_dp13_to_dp20("frozen_model.pbtxt")
     convert_dp20_to_dp21("frozen_model.pbtxt")
     convert_pbtxt_to_pb("frozen_model.pbtxt", output_model)
@@ -116,7 +116,7 @@ def convert_12_to_21(input_model: str, output_model: str):
     output_model : str
         filename of the output graph
     """
-    convert_pb_to_pbtxt(input_model, "frozen_model.pbtxt")
+    convert_pb_to_pbtxt(input_model, "frozen_model.pbtxt", incompat_from_v1_to_v2=True)
     convert_dp12_to_dp13("frozen_model.pbtxt")
     convert_dp13_to_dp20("frozen_model.pbtxt")
     convert_dp20_to_dp21("frozen_model.pbtxt")
@@ -136,7 +136,7 @@ def convert_10_to_21(input_model: str, output_model: str):
     output_model : str
         filename of the output graph
     """
-    convert_pb_to_pbtxt(input_model, "frozen_model.pbtxt")
+    convert_pb_to_pbtxt(input_model, "frozen_model.pbtxt", incompat_from_v1_to_v2=True)
     convert_dp10_to_dp11("frozen_model.pbtxt")
     convert_dp12_to_dp13("frozen_model.pbtxt")
     convert_dp13_to_dp20("frozen_model.pbtxt")
@@ -157,7 +157,7 @@ def convert_012_to_21(input_model: str, output_model: str):
     output_model : str
         filename of the output graph
     """
-    convert_pb_to_pbtxt(input_model, "frozen_model.pbtxt")
+    convert_pb_to_pbtxt(input_model, "frozen_model.pbtxt", incompat_from_v1_to_v2=True)
     convert_dp012_to_dp10("frozen_model.pbtxt")
     convert_dp10_to_dp11("frozen_model.pbtxt")
     convert_dp12_to_dp13("frozen_model.pbtxt")
@@ -187,7 +187,7 @@ def convert_20_to_21(input_model: str, output_model: str):
     print("the converted output model (2.1 support) is saved in %s" % output_model)
 
 
-def convert_pb_to_pbtxt(pbfile: str, pbtxtfile: str):
+def convert_pb_to_pbtxt(pbfile: str, pbtxtfile: str, incompat_from_v1_to_v2: bool=False):
     """Convert DP graph to graph text.
 
     Parameters
@@ -196,7 +196,14 @@ def convert_pb_to_pbtxt(pbfile: str, pbtxtfile: str):
         filename of the input graph
     pbtxtfile : str
         filename of the output graph text
+    incompat_from_v1_to_v2: bool
+        model_attr/model_version of TF incompatible when convert from TF1.x to TF2.x
     """
+    with tf.gfile.GFile(pbfile, "rb") as f:
+        graph_def = tf.GraphDef()
+        graph_def.ParseFromString(f.read())
+        tf.import_graph_def(graph_def, name="")
+        tf.train.write_graph(graph_def, "./", pbtxtfile, as_text=True)
     with tf.gfile.GFile(pbfile, "rb") as f:
         graph_def = tf.GraphDef()
         graph_def.ParseFromString(f.read())
