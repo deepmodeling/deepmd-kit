@@ -806,8 +806,7 @@ class DescrptSeAtten(DescrptSeA):
         xyz_scatter = tf.reshape(tf.slice(inputs_reshape, [0, 0], [-1, 1]), [-1, 1])
         assert atype is not None, 'atype must exist!!'
         type_embedding = tf.cast(type_embedding, self.filter_precision) # ntypes * Y
-        #xyz_scatter = self._lookup_type_embedding(
-        #    xyz_scatter, atype, type_embedding)
+        #xyz_scatter = self._lookup_type_embedding(xyz_scatter, atype, type_embedding)
         if self.compress:
             raise RuntimeError(
                 "compression of attention descriptor is not supported at the moment"
@@ -816,7 +815,6 @@ class DescrptSeAtten(DescrptSeA):
         if not is_exclude:
             with tf.variable_scope(name, reuse=reuse):
                 # with (natom x nei_type_i) x out_size
-                print(xyz_scatter.shape)
                 xyz_scatter = embedding_net(
                     xyz_scatter,
                     self.filter_neuron,
