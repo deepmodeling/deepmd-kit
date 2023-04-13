@@ -165,7 +165,7 @@ class TestModel(tf.test.TestCase):
                 "atype": tf.convert_to_tensor(atype),
             },
             reuse=False,
-            suffix="se_a_type_fit_",
+            suffix="se_a_dos_fit_",
         )
 
         feed_dict_test = {

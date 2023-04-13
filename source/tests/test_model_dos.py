@@ -97,7 +97,7 @@ class TestModel(tf.test.TestCase):
             t_box,
             t_mesh,
             t_fparam,
-            suffix="se_a",
+            suffix="se_a_dos",
             reuse=False,
         )
         dos = model_pred["dos"]
