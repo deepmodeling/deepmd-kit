@@ -187,7 +187,9 @@ def convert_20_to_21(input_model: str, output_model: str):
     print("the converted output model (2.1 support) is saved in %s" % output_model)
 
 
-def convert_pb_to_pbtxt(pbfile: str, pbtxtfile: str, incompat_from_v1_to_v2: bool=False):
+def convert_pb_to_pbtxt(
+    pbfile: str, pbtxtfile: str, incompat_from_v1_to_v2: bool = False
+):
     """Convert DP graph to graph text.
 
     Parameters
@@ -196,11 +198,11 @@ def convert_pb_to_pbtxt(pbfile: str, pbtxtfile: str, incompat_from_v1_to_v2: boo
         filename of the input graph
     pbtxtfile : str
         filename of the output graph text
-    incompat_from_v1_to_v2: bool
+    incompat_from_v1_to_v2 : bool
         model_attr/model_version of TF incompatible when convert from TF1.x to TF2.x
     """
     if incompat_from_v1_to_v2:
-        with tf.compat.v1.gfile.GFile(pbfile, 'rb') as f:
+        with tf.compat.v1.gfile.GFile(pbfile, "rb") as f:
             graph_def = tf.compat.v1.GraphDef()
             graph_def.ParseFromString(f.read())
             tf.import_graph_def(graph_def, name="")
