@@ -506,7 +506,7 @@ class DOSFitting(Fitting):
                 )
 
                 final_layer = tf.reshape(
-                    final_layer, [tf.shape(inputs)[0], natoms[2 + type_i]]
+                    final_layer, [tf.shape(inputs)[0] * self.numb_dos, natoms[2 + type_i]]
                 )
                 outs_list.append(final_layer)
                 start_index += natoms[2 + type_i]
@@ -534,7 +534,7 @@ class DOSFitting(Fitting):
                 reuse=reuse,
             )
 
-            outs = tf.reshape(final_layer, [tf.shape(inputs)[0], natoms[0]])
+            outs = tf.reshape(final_layer, [tf.shape(inputs)[0] * self.numb_dos, natoms[0]])
         # add bias
         # self.atom_ener_before = outs
         # self.add_type = tf.reshape(
