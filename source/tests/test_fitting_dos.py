@@ -46,7 +46,7 @@ class TestModel(tf.test.TestCase):
 
         test_data = data.get_test()
         numb_test = 1
-        numb_dos  = 100
+        numb_dos = 100
 
         jdata["model"]["fitting_net"]["numb_dos"] = numb_dos
 
@@ -70,7 +70,7 @@ class TestModel(tf.test.TestCase):
         }
 
         t_prop_c = tf.placeholder(tf.float32, [5], name="t_prop_c")
-        
+
         t_atom_dos = tf.placeholder(
             GLOBAL_TF_FLOAT_PRECISION, [None], name="t_atom_dos"
         )
@@ -158,7 +158,6 @@ class TestModel(tf.test.TestCase):
         test_data["dos"] = tmp_dos
         test_data["atom_dos"] = tmp_atom_dos
 
-
         atom_dos = fitting.build(
             tf.convert_to_tensor(dout),
             t_natoms,
@@ -187,23 +186,22 @@ class TestModel(tf.test.TestCase):
         pred_atom_dos = pred_atom_dos.reshape(-1, numb_dos)
 
         ref_atom_dos_1 = [
-            -0.32495014, 
-            -0.87979356, 
-            -0.26630668, 
-            -0.32495882, 
+            -0.32495014,
+            -0.87979356,
+            -0.26630668,
+            -0.32495882,
             -0.87979767,
-            -0.2663072 
+            -0.2663072,
         ]
         ref_atom_dos_2 = [
-            -0.26630917,  
-            0.21549911, 
-            -0.87979638, 
-            -0.26630564,  
+            -0.26630917,
+            0.21549911,
+            -0.87979638,
+            -0.26630564,
             0.21550413,
-            -0.87979585
+            -0.87979585,
         ]
         places = 4
 
-        np.testing.assert_almost_equal(pred_atom_dos[:,0], ref_atom_dos_1, places)
-        np.testing.assert_almost_equal(pred_atom_dos[:,50], ref_atom_dos_2, places)
-
+        np.testing.assert_almost_equal(pred_atom_dos[:, 0], ref_atom_dos_1, places)
+        np.testing.assert_almost_equal(pred_atom_dos[:, 50], ref_atom_dos_2, places)
