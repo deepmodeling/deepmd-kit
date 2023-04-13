@@ -199,16 +199,18 @@ def convert_pb_to_pbtxt(pbfile: str, pbtxtfile: str, incompat_from_v1_to_v2: boo
     incompat_from_v1_to_v2: bool
         model_attr/model_version of TF incompatible when convert from TF1.x to TF2.x
     """
-    with tf.gfile.GFile(pbfile, "rb") as f:
-        graph_def = tf.GraphDef()
-        graph_def.ParseFromString(f.read())
-        tf.import_graph_def(graph_def, name="")
-        tf.train.write_graph(graph_def, "./", pbtxtfile, as_text=True)
-    with tf.gfile.GFile(pbfile, "rb") as f:
-        graph_def = tf.GraphDef()
-        graph_def.ParseFromString(f.read())
-        tf.import_graph_def(graph_def, name="")
-        tf.train.write_graph(graph_def, "./", pbtxtfile, as_text=True)
+    if incompat_from_v1_to_v2:
+        with tf.compat.v1.gfile.GFile(pbfile, 'rb') as f:
+            graph_def = tf.compat.v1.GraphDef()
+            graph_def.ParseFromString(f.read())
+            tf.import_graph_def(graph_def, name="")
+            tf.train.write_graph(graph_def, "./", pbtxtfile, as_text=True)
+    else:
+        with tf.gfile.GFile(pbfile, "rb") as f:
+            graph_def = tf.GraphDef()
+            graph_def.ParseFromString(f.read())
+            tf.import_graph_def(graph_def, name="")
+            tf.train.write_graph(graph_def, "./", pbtxtfile, as_text=True)
 
 
 def convert_pbtxt_to_pb(pbtxtfile: str, pbfile: str):
