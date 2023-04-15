@@ -1496,44 +1496,72 @@ void DeepPotModelDevi::compute(std::vector<ENERGYTYPE>& all_energy,
                                const InputNlist& lmp_list,
                                const int& ago,
                                const std::vector<VALUETYPE>& fparam,
-                               const std::vector<VALUETYPE>& aparam) {
+                               const std::vector<VALUETYPE>& aparam_) {
   if (numb_models == 0) return;
   int nall = dcoord_.size() / 3;
+  int nframes = 1;
   int nloc = nall - nghost;
-  validate_fparam_aparam(nloc, fparam, aparam);
+  validate_fparam_aparam(nloc, fparam, aparam_);
   std::vector<std::pair<std::string, Tensor>> input_tensors;
+
+  // select real atoms
+  std::vector<VALUETYPE> dcoord, dforce, aparam, datom_energy, datom_virial;
+  std::vector<int> datype, fwd_map, bkw_map;
+  int nghost_real;
+  select_real_atoms(fwd_map, bkw_map, nghost_real, dcoord_, datype_, nghost,
+                    ntypes);
+  // resize to nall_real
+  int nall_real = bkw_map.size();
+  int nloc_real = nall_real - nghost_real;
+  dcoord.resize(nframes * nall_real * 3);
+  datype.resize(nall_real);
+  // fwd map
+  select_map<VALUETYPE>(dcoord, dcoord_, fwd_map, 3, nframes, nall_real, nall);
+  select_map<int>(datype, datype_, fwd_map, 1);
+  // aparam
+  if (daparam > 0) {
+    aparam.resize(nframes * nloc_real);
+    select_map<VALUETYPE>(aparam, aparam_, fwd_map, daparam, nframes, nloc_real,
+                          nall - nghost);
+  }
 
   // agp == 0 means that the LAMMPS nbor list has been updated
   if (ago == 0) {
-    atommap = AtomMap(datype_.begin(), datype_.begin() + nloc);
+    atommap = AtomMap(datype.begin(), datype.begin() + nloc_real);
     assert(nloc == atommap.get_type().size());
 
     nlist_data.copy_from_nlist(lmp_list);
+    nlist_data.shuffle_exclude_empty(fwd_map);
     nlist_data.shuffle(atommap);
     nlist_data.make_inlist(nlist);
   }
   int ret;
   if (dtype == tensorflow::DT_DOUBLE) {
-    ret = session_input_tensors<double>(input_tensors, dcoord_, ntypes, datype_,
+    ret = session_input_tensors<double>(input_tensors, dcoord, ntypes, datype,
                                         dbox, nlist, fparam, aparam, atommap,
-                                        nghost, ago);
+                                        nghost_real, ago);
   } else {
-    ret = session_input_tensors<float>(input_tensors, dcoord_, ntypes, datype_,
+    ret = session_input_tensors<float>(input_tensors, dcoord, ntypes, datype,
                                        dbox, nlist, fparam, aparam, atommap,
-                                       nghost, ago);
+                                       nghost_real, ago);
   }
   all_energy.resize(numb_models);
   all_force.resize(numb_models);
   all_virial.resize(numb_models);
   assert(nloc == ret);
   for (unsigned ii = 0; ii < numb_models; ++ii) {
+    std::vector<VALUETYPE> dforce;
     if (dtype == tensorflow::DT_DOUBLE) {
-      run_model<double>(all_energy[ii], all_force[ii], all_virial[ii],
-                        sessions[ii], input_tensors, atommap, 1, nghost);
+      run_model<double>(all_energy[ii], dforce, all_virial[ii], sessions[ii],
+                        input_tensors, atommap, 1, nghost_real);
     } else {
-      run_model<float>(all_energy[ii], all_force[ii], all_virial[ii],
-                       sessions[ii], input_tensors, atommap, 1, nghost);
+      run_model<float>(all_energy[ii], dforce, all_virial[ii], sessions[ii],
+                       input_tensors, atommap, 1, nghost_real);
     }
+    // bkw map
+    all_force[ii].resize(nframes * fwd_map.size() * 3);
+    select_map<VALUETYPE>(all_force[ii], dforce, bkw_map, 3, nframes,
+                          fwd_map.size(), nall_real);
   }
 }
 
@@ -1577,31 +1605,54 @@ void DeepPotModelDevi::compute(
     const InputNlist& lmp_list,
     const int& ago,
     const std::vector<VALUETYPE>& fparam,
-    const std::vector<VALUETYPE>& aparam) {
+    const std::vector<VALUETYPE>& aparam_) {
   if (numb_models == 0) return;
+  int nframes = 1;
   int nall = dcoord_.size() / 3;
   int nloc = nall - nghost;
-  validate_fparam_aparam(nloc, fparam, aparam);
+  validate_fparam_aparam(nloc, fparam, aparam_);
   std::vector<std::pair<std::string, Tensor>> input_tensors;
+
+  // select real atoms
+  std::vector<VALUETYPE> dcoord, dforce, aparam, datom_energy, datom_virial;
+  std::vector<int> datype, fwd_map, bkw_map;
+  int nghost_real;
+  select_real_atoms(fwd_map, bkw_map, nghost_real, dcoord_, datype_, nghost,
+                    ntypes);
+  // resize to nall_real
+  int nall_real = bkw_map.size();
+  int nloc_real = nall_real - nghost_real;
+  dcoord.resize(nframes * nall_real * 3);
+  datype.resize(nall_real);
+  // fwd map
+  select_map<VALUETYPE>(dcoord, dcoord_, fwd_map, 3, nframes, nall_real, nall);
+  select_map<int>(datype, datype_, fwd_map, 1);
+  // aparam
+  if (daparam > 0) {
+    aparam.resize(nframes * nloc_real);
+    select_map<VALUETYPE>(aparam, aparam_, fwd_map, daparam, nframes, nloc_real,
+                          nall - nghost);
+  }
 
   // agp == 0 means that the LAMMPS nbor list has been updated
   if (ago == 0) {
-    atommap = AtomMap(datype_.begin(), datype_.begin() + nloc);
+    atommap = AtomMap(datype.begin(), datype.begin() + nloc_real);
     assert(nloc == atommap.get_type().size());
 
     nlist_data.copy_from_nlist(lmp_list);
+    nlist_data.shuffle_exclude_empty(fwd_map);
     nlist_data.shuffle(atommap);
     nlist_data.make_inlist(nlist);
   }
   int ret;
   if (dtype == tensorflow::DT_DOUBLE) {
-    ret = session_input_tensors<double>(input_tensors, dcoord_, ntypes, datype_,
+    ret = session_input_tensors<double>(input_tensors, dcoord, ntypes, datype,
                                         dbox, nlist, fparam, aparam, atommap,
-                                        nghost, ago);
+                                        nghost_real, ago);
   } else {
-    ret = session_input_tensors<float>(input_tensors, dcoord_, ntypes, datype_,
+    ret = session_input_tensors<float>(input_tensors, dcoord, ntypes, datype,
                                        dbox, nlist, fparam, aparam, atommap,
-                                       nghost, ago);
+                                       nghost_real, ago);
   }
 
   all_energy.resize(numb_models);
@@ -1611,15 +1662,26 @@ void DeepPotModelDevi::compute(
   all_atom_virial.resize(numb_models);
   assert(nloc == ret);
   for (unsigned ii = 0; ii < numb_models; ++ii) {
+    std::vector<VALUETYPE> dforce, datom_energy, datom_virial;
     if (dtype == tensorflow::DT_DOUBLE) {
-      run_model<double>(all_energy[ii], all_force[ii], all_virial[ii],
-                        all_atom_energy[ii], all_atom_virial[ii], sessions[ii],
-                        input_tensors, atommap, 1, nghost);
+      run_model<double>(all_energy[ii], dforce, all_virial[ii], datom_energy,
+                        datom_virial, sessions[ii], input_tensors, atommap, 1,
+                        nghost_real);
     } else {
-      run_model<float>(all_energy[ii], all_force[ii], all_virial[ii],
-                       all_atom_energy[ii], all_atom_virial[ii], sessions[ii],
-                       input_tensors, atommap, 1, nghost);
+      run_model<float>(all_energy[ii], dforce, all_virial[ii], datom_energy,
+                       datom_virial, sessions[ii], input_tensors, atommap, 1,
+                       nghost_real);
     }
+    // bkw map
+    all_force[ii].resize(nframes * fwd_map.size() * 3);
+    all_atom_energy[ii].resize(nframes * fwd_map.size());
+    all_atom_virial[ii].resize(nframes * fwd_map.size() * 9);
+    select_map<VALUETYPE>(all_force[ii], dforce, bkw_map, 3, nframes,
+                          fwd_map.size(), nall_real);
+    select_map<VALUETYPE>(all_atom_energy[ii], datom_energy, bkw_map, 1,
+                          nframes, fwd_map.size(), nall_real);
+    select_map<VALUETYPE>(all_atom_virial[ii], datom_virial, bkw_map, 9,
+                          nframes, fwd_map.size(), nall_real);
   }
 }
 

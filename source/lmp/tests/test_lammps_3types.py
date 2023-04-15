@@ -438,7 +438,7 @@ def test_pair_deepmd_model_devi_atomic_relative_v(lammps):
         np.abs(
             np.mean([np.sum(expected_v, axis=0), np.sum(expected_v2, axis=0)], axis=0)
         )
-        / 6
+        / 7
     )
     expected_md_v /= norm + relative
     assert md[1] == pytest.approx(np.max(expected_md_v))
