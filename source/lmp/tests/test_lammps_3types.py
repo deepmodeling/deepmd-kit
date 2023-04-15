@@ -1,5 +1,6 @@
 import subprocess as sp
 import sys
+import os
 from pathlib import (
     Path,
 )
@@ -10,6 +11,8 @@ from lammps import (
     PyLammps,
 )
 
+from write_lmp_data import write_lmp_data
+
 pbtxt_file = Path(__file__).parent.parent.parent / "tests" / "infer" / "deeppot.pbtxt"
 pbtxt_file2 = (
     Path(__file__).parent.parent.parent / "tests" / "infer" / "deeppot-1.pbtxt"
@@ -17,8 +20,8 @@ pbtxt_file2 = (
 pb_file = Path(__file__).parent / "graph.pb"
 pb_file2 = Path(__file__).parent / "graph2.pb"
 system_file = Path(__file__).parent.parent.parent / "tests"
-data_file = Path(__file__).parent / "data2.lmp"
-data_type_map_file = Path(__file__).parent / "data_type_map2.lmp"
+data_file = Path(__file__).parent / "data.lmp"
+data_type_map_file = Path(__file__).parent / "data_type_map.lmp"
 md_file = Path(__file__).parent / "md.out"
 
 # this is as the same as python and c++ tests, test_deeppot_a.py
@@ -221,6 +224,21 @@ expected_v2 = np.array(
     ]
 ).reshape(7, 9)
 
+box = np.array([0, 13, 0, 13, 0, 13, 0, 0, 0])
+coord = np.array(
+    [
+        [12.83, 2.56, 2.18],
+        [12.09, 2.87, 2.74],
+        [0.25, 3.32, 1.68],
+        [3.36, 3.00, 1.81],
+        [3.51, 2.51, 2.60],
+        [4.27, 3.22, 1.56],
+        [3.46, 3.00, 1.81]
+    ]
+)
+type_OH = np.array([1, 2, 2, 1, 2, 2, 3])
+type_HO = np.array([2, 1, 1, 2, 1, 1, 3])
+
 # https://github.com/lammps/lammps/blob/1e1311cf401c5fc2614b5d6d0ff3230642b76597/src/update.cpp#L193
 nktv2p = 1.6021765e6
 
@@ -239,6 +257,13 @@ sp.check_output(
     ).split()
 )
 
+def setup_module():
+    write_lmp_data(box, coord, type_OH, data_file)
+    write_lmp_data(box, coord, type_HO, data_type_map_file)
+
+def teardown_module():
+    os.remove(data_file)
+    os.remove(data_type_map_file)
 
 def _lammps(data_file) -> PyLammps:
     lammps = PyLammps()
