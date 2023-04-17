@@ -273,7 +273,9 @@ class DescrptSeA(DescrptSe):
         return self.filter_neuron[-1]
 
     def get_nlist(self) -> Tuple[tf.Tensor, tf.Tensor, List[int], List[int]]:
-        """Returns
+        """Returns neighbor information.
+
+        Returns
         -------
         nlist
             Neighbor list

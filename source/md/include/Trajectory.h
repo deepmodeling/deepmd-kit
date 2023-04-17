@@ -8,8 +8,6 @@
 #include "xdrfile/xdrfile_trr.h"
 #include "xdrfile/xdrfile_xtc.h"
 
-using namespace std;
-
 class XtcSaver {
  public:
   XtcSaver() : inited(false), prec(1000){};
@@ -20,8 +18,8 @@ class XtcSaver {
  public:
   void save(const int &step,
             const double &time,
-            const vector<vector<double> > &frame,
-            const vector<double> &box);
+            const std::vector<std::vector<double> > &frame,
+            const std::vector<double> &box);
 
  private:
   XDRFILE *xd;
@@ -42,10 +40,10 @@ class TrrSaver {
  public:
   void save(const int &step,
             const double &time,
-            const vector<vector<double> > &ixx,
-            const vector<vector<double> > &ivv,
-            const vector<vector<double> > &iff,
-            const vector<double> &box);
+            const std::vector<std::vector<double> > &ixx,
+            const std::vector<std::vector<double> > &ivv,
+            const std::vector<std::vector<double> > &iff,
+            const std::vector<double> &box);
 
  private:
   XDRFILE *xd;
