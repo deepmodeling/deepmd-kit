@@ -1161,7 +1161,7 @@ class DPTrainer:
                 prop_fmt = "   %11s"
                 for k in train_results.keys():
                     print_str += prop_fmt % (k + "_trn")
-            print_str += "   %8s\n" % (k + "_lr")
+            print_str += "   %8s\n" % ("_lr")
         else:
             for fitting_key in train_results:
                 if valid_results[fitting_key] is not None:
