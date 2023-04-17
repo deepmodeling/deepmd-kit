@@ -629,7 +629,10 @@ def run_test(dp: "DeepTensor", test_data: dict, numb_test: int):
     numb_test = min(nframes, numb_test)
 
     coord = test_data["coord"][:numb_test].reshape([numb_test, -1])
-    box = test_data["box"][:numb_test]
+    if test_data["pbc"]:
+        box = test_data["box"][:numb_test]
+    else:
+        box = None
     atype = test_data["type"][0]
     prediction = dp.eval(coord, box, atype)
 

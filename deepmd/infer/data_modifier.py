@@ -424,7 +424,10 @@ class DipoleChargeModifier(DeepDipole):
 
         get_nframes = None
         coord = data["coord"][:get_nframes, :]
-        box = data["box"][:get_nframes, :]
+        if data["pbc"]:
+            box = data["box"][:get_nframes, :]
+        else:
+            box = None
         atype = data["type"][:get_nframes, :]
         atype = atype[0]
         nframes = coord.shape[0]

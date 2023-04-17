@@ -397,6 +397,7 @@ class DeepmdData:
                     new_data[ii] = dd[idx]
                 else:
                     new_data[ii] = dd
+        new_data["pbc"] = self.pbc
         return new_data
 
     def _load_batch_set(self, set_name: DPPath):
