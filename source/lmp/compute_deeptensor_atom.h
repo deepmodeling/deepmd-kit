@@ -1,7 +1,7 @@
 #ifdef COMPUTE_CLASS
-
-ComputeStyle(deeptensor / atom, ComputeDeeptensorAtom)
-
+// clang-format off
+ComputeStyle(deeptensor/atom, ComputeDeeptensorAtom)
+// clang-format on
 #else
 
 #ifndef LMP_COMPUTE_DEEPTENSOR_ATOM_H

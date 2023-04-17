@@ -1152,8 +1152,8 @@ void PairDeepMD::coeff(int narg, char **arg) {
     }
   }
   if (narg <= 2) {
-    type_idx_map.resize(numb_types);
-    for (int ii = 0; ii < numb_types; ++ii) {
+    type_idx_map.resize(n);
+    for (int ii = 0; ii < n; ++ii) {
       type_idx_map[ii] = ii;
     }
   } else {
@@ -1190,11 +1190,12 @@ void PairDeepMD::coeff(int narg, char **arg) {
       iarg += 1;
     }
     numb_types = type_idx_map.size();
-  }
-  if (numb_types < n) {
-    error->all(FLERR,
-               "number of types assigned by pair_coeff or in the model is less "
-               "than the number of types in the system");
+    if (numb_types < n) {
+      type_idx_map.resize(n);
+      for (int ii = numb_types; ii < n; ++ii) {
+        type_idx_map[ii] = -1;
+      }
+    }
   }
   for (int i = ilo; i <= ihi; i++) {
     for (int j = MAX(jlo, i); j <= jhi; j++) {
