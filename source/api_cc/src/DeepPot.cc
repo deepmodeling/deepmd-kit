@@ -692,29 +692,18 @@ void DeepPot::compute(ENERGYVTYPE& dener,
                       const std::vector<VALUETYPE>& aparam__) {
   int nall = datype_.size();
   int nframes = dcoord_.size() / nall / 3;
-  std::vector<VALUETYPE> dcoord, dforce, aparam;
-  std::vector<int> datype, fwd_map, bkw_map;
-  int nghost_real;
-  select_real_atoms(fwd_map, bkw_map, nghost_real, dcoord_, datype_, nghost,
-                    ntypes);
-  // resize to nall_real
-  dcoord.resize(nframes * bkw_map.size() * 3);
-  datype.resize(bkw_map.size());
-  // fwd map
-  select_map<VALUETYPE>(dcoord, dcoord_, fwd_map, 3, nframes, bkw_map.size(),
-                        nall);
-  select_map<int>(datype, datype_, fwd_map, 1);
   std::vector<VALUETYPE> fparam;
   std::vector<VALUETYPE> aparam_;
   validate_fparam_aparam(nframes, nall - nghost, fparam_, aparam__);
   tile_fparam_aparam(fparam, nframes, dfparam, fparam_);
   tile_fparam_aparam(aparam_, nframes, (nall - nghost) * daparam, aparam__);
-  // aparam
-  if (daparam > 0) {
-    aparam.resize(nframes * (bkw_map.size() - nghost_real));
-    select_map<VALUETYPE>(aparam, aparam_, fwd_map, daparam, nframes,
-                          bkw_map.size() - nghost_real, nall - nghost);
-  }
+
+  // select real atoms
+  std::vector<VALUETYPE> dcoord, dforce, aparam;
+  std::vector<int> datype, fwd_map, bkw_map;
+  int nghost_real, nall_real, nloc_real;
+  select_real_atoms_coord(dcoord, datype, aparam, nghost_real, fwd_map, bkw_map, nall_real, nloc_real, dcoord_, datype_, aparam_, nghost, ntypes, nframes, daparam, nall);
+
   // internal nlist
   if (ago == 0) {
     nlist_data.copy_from_nlist(lmp_list);
@@ -980,23 +969,9 @@ void DeepPot::compute(ENERGYVTYPE& dener,
   // select real atoms
   std::vector<VALUETYPE> dcoord, dforce, aparam, datom_energy, datom_virial;
   std::vector<int> datype, fwd_map, bkw_map;
-  int nghost_real;
-  select_real_atoms(fwd_map, bkw_map, nghost_real, dcoord_, datype_, nghost,
-                    ntypes);
-  // resize to nall_real
-  int nall_real = bkw_map.size();
-  int nloc_real = nall_real - nghost_real;
-  dcoord.resize(nframes * nall_real * 3);
-  datype.resize(nall_real);
-  // fwd map
-  select_map<VALUETYPE>(dcoord, dcoord_, fwd_map, 3, nframes, nall_real, nall);
-  select_map<int>(datype, datype_, fwd_map, 1);
-  // aparam
-  if (daparam > 0) {
-    aparam.resize(nframes * nloc_real);
-    select_map<VALUETYPE>(aparam, aparam_, fwd_map, daparam, nframes, nloc_real,
-                          nall - nghost);
-  }
+  int nghost_real, nall_real, nloc_real;
+  select_real_atoms_coord(dcoord, datype, aparam, nghost_real, fwd_map, bkw_map, nall_real, nloc_real, dcoord_, datype_, aparam_, nghost, ntypes, nframes, daparam, nall);
+
   if (ago == 0) {
     atommap = deepmd::AtomMap(datype.begin(), datype.begin() + nloc_real);
     assert(nloc_real == atommap.get_type().size());
@@ -1507,23 +1482,8 @@ void DeepPotModelDevi::compute(std::vector<ENERGYTYPE>& all_energy,
   // select real atoms
   std::vector<VALUETYPE> dcoord, dforce, aparam, datom_energy, datom_virial;
   std::vector<int> datype, fwd_map, bkw_map;
-  int nghost_real;
-  select_real_atoms(fwd_map, bkw_map, nghost_real, dcoord_, datype_, nghost,
-                    ntypes);
-  // resize to nall_real
-  int nall_real = bkw_map.size();
-  int nloc_real = nall_real - nghost_real;
-  dcoord.resize(nframes * nall_real * 3);
-  datype.resize(nall_real);
-  // fwd map
-  select_map<VALUETYPE>(dcoord, dcoord_, fwd_map, 3, nframes, nall_real, nall);
-  select_map<int>(datype, datype_, fwd_map, 1);
-  // aparam
-  if (daparam > 0) {
-    aparam.resize(nframes * nloc_real);
-    select_map<VALUETYPE>(aparam, aparam_, fwd_map, daparam, nframes, nloc_real,
-                          nall - nghost);
-  }
+  int nghost_real, nall_real, nloc_real;
+  select_real_atoms_coord(dcoord, datype, aparam, nghost_real, fwd_map, bkw_map, nall_real, nloc_real, dcoord_, datype_, aparam_, nghost, ntypes, nframes, daparam, nall);
 
   // agp == 0 means that the LAMMPS nbor list has been updated
   if (ago == 0) {
@@ -1616,25 +1576,10 @@ void DeepPotModelDevi::compute(
   // select real atoms
   std::vector<VALUETYPE> dcoord, dforce, aparam, datom_energy, datom_virial;
   std::vector<int> datype, fwd_map, bkw_map;
-  int nghost_real;
-  select_real_atoms(fwd_map, bkw_map, nghost_real, dcoord_, datype_, nghost,
-                    ntypes);
-  // resize to nall_real
-  int nall_real = bkw_map.size();
-  int nloc_real = nall_real - nghost_real;
-  dcoord.resize(nframes * nall_real * 3);
-  datype.resize(nall_real);
-  // fwd map
-  select_map<VALUETYPE>(dcoord, dcoord_, fwd_map, 3, nframes, nall_real, nall);
-  select_map<int>(datype, datype_, fwd_map, 1);
-  // aparam
-  if (daparam > 0) {
-    aparam.resize(nframes * nloc_real);
-    select_map<VALUETYPE>(aparam, aparam_, fwd_map, daparam, nframes, nloc_real,
-                          nall - nghost);
-  }
-
+  int nghost_real, nall_real, nloc_real;
+  select_real_atoms_coord(dcoord, datype, aparam, nghost_real, fwd_map, bkw_map, nall_real, nloc_real, dcoord_, datype_, aparam_, nghost, ntypes, nframes, daparam, nall);
   // agp == 0 means that the LAMMPS nbor list has been updated
+
   if (ago == 0) {
     atommap = AtomMap(datype.begin(), datype.begin() + nloc_real);
     assert(nloc == atommap.get_type().size());
