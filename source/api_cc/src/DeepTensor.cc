@@ -431,9 +431,9 @@ void DeepTensor::compute(std::vector<VALUETYPE> &dglobal_tensor_,
                          const std::vector<VALUETYPE> &dcoord_,
                          const std::vector<int> &datype_,
                          const std::vector<VALUETYPE> &dbox) {
+  int nall = datype_.size();
   std::vector<VALUETYPE> dcoord, dforce, datom_virial, aparam, aparam_;
   std::vector<int> datype, fwd_map, bkw_map;
-  int nghost_real;
   int nghost_real, nall_real, nloc_real;
   select_real_atoms_coord(dcoord, datype, aparam, nghost_real, fwd_map, bkw_map,
                           nall_real, nloc_real, dcoord_, datype_, aparam_, 0,
