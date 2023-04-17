@@ -311,7 +311,9 @@ void DeepTensor::compute(std::vector<VALUETYPE> &dtensor_,
   std::vector<VALUETYPE> dcoord, aparam, aparam_;
   std::vector<int> datype, fwd_map, bkw_map;
   int nghost_real, nall_real, nloc_real;
-  select_real_atoms_coord(dcoord, datype, aparam, nghost_real, fwd_map, bkw_map, nall_real, nloc_real, dcoord_, datype_, aparam_, 0, ntypes, 1, 0, nall);
+  select_real_atoms_coord(dcoord, datype, aparam, nghost_real, fwd_map, bkw_map,
+                          nall_real, nloc_real, dcoord_, datype_, aparam_, 0,
+                          ntypes, 1, 0, nall);
   compute_inner(dtensor_, dcoord, datype, dbox);
 }
 
@@ -336,7 +338,9 @@ void DeepTensor::compute(std::vector<VALUETYPE> &dtensor_,
   std::vector<VALUETYPE> dcoord, dforce, datom_virial, aparam, aparam_;
   std::vector<int> datype, fwd_map, bkw_map;
   int nghost_real, nall_real, nloc_real;
-  select_real_atoms_coord(dcoord, datype, aparam, nghost_real, fwd_map, bkw_map, nall_real, nloc_real, dcoord_, datype_, aparam_, nghost, ntypes, 1, 0, nall);
+  select_real_atoms_coord(dcoord, datype, aparam, nghost_real, fwd_map, bkw_map,
+                          nall_real, nloc_real, dcoord_, datype_, aparam_,
+                          nghost, ntypes, 1, 0, nall);
   // internal nlist
   NeighborListData nlist_data;
   nlist_data.copy_from_nlist(lmp_list);
@@ -431,7 +435,9 @@ void DeepTensor::compute(std::vector<VALUETYPE> &dglobal_tensor_,
   std::vector<int> datype, fwd_map, bkw_map;
   int nghost_real;
   int nghost_real, nall_real, nloc_real;
-  select_real_atoms_coord(dcoord, datype, aparam, nghost_real, fwd_map, bkw_map, nall_real, nloc_real, dcoord_, datype_, aparam_, 0, ntypes, 1, 0, nall);
+  select_real_atoms_coord(dcoord, datype, aparam, nghost_real, fwd_map, bkw_map,
+                          nall_real, nloc_real, dcoord_, datype_, aparam_, 0,
+                          ntypes, 1, 0, nall);
   assert(nghost_real == 0);
   // resize to nall_real
   dcoord.resize(bkw_map.size() * 3);
@@ -488,7 +494,9 @@ void DeepTensor::compute(std::vector<VALUETYPE> &dglobal_tensor_,
   std::vector<VALUETYPE> dcoord, dforce, datom_virial, aparam, aparam_;
   std::vector<int> datype, fwd_map, bkw_map;
   int nghost_real, nall_real, nloc_real;
-  select_real_atoms_coord(dcoord, datype, aparam, nghost_real, fwd_map, bkw_map, nall_real, nloc_real, dcoord_, datype_, aparam_, nghost, ntypes, 1, 0, nall);
+  select_real_atoms_coord(dcoord, datype, aparam, nghost_real, fwd_map, bkw_map,
+                          nall_real, nloc_real, dcoord_, datype_, aparam_,
+                          nghost, ntypes, 1, 0, nall);
   // internal nlist
   NeighborListData nlist_data;
   nlist_data.copy_from_nlist(lmp_list);
