@@ -485,9 +485,7 @@ class EnerFitting(Fitting):
 
         ntypes_atom = self.ntypes - self.ntypes_spin
         if self.spin is not None:
-            for type_i in range(self.ntypes):
-                if type_i >= ntypes_atom:
-                    break
+            for type_i in range(ntypes_atom):
                 if self.spin.use_spin[type_i]:
                     self.bias_atom_e[type_i] = (
                         self.bias_atom_e[type_i]
