@@ -1087,6 +1087,7 @@ def loss_ener_spin():
         ),
     ]
 
+
 def loss_dos():
     doc_start_pref_dos = start_pref("Density of State (DOS)")
     doc_limit_pref_dos = limit_pref("Density of State (DOS)")
