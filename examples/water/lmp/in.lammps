@@ -11,7 +11,9 @@ read_data	water.lmp
 mass 		1 16
 mass		2 2
 
+# See https://deepmd.rtfd.io/lammps/ for usage
 pair_style	deepmd frozen_model.pb
+# If atom names (O H in this example) are not set in the pair_coeff command, the type_map defined by the training parameter will be used by default.
 pair_coeff  * *	O H
 
 velocity        all create 330.0 23456789
