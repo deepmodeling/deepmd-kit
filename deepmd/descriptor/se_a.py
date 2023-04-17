@@ -163,7 +163,7 @@ class DescrptSeA(DescrptSe):
         precision: str = "default",
         uniform_seed: bool = False,
         multi_task: bool = False,
-        spin: Spin = None,
+        spin: Optional[Spin] = None,
     ) -> None:
         """Constructor."""
         if rcut < rcut_smth:
