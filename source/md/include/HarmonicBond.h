@@ -4,8 +4,6 @@
 
 #include "SimulationRegion.h"
 
-using namespace std;
-
 #ifdef HIGH_PREC
 typedef double VALUETYPE;
 #else
@@ -18,12 +16,12 @@ class HarmonicBond {
 
  public:
   void compute(VALUETYPE& ener,
-               vector<VALUETYPE>& force,
-               vector<VALUETYPE>& virial,
-               const vector<VALUETYPE>& coord,
-               const vector<int>& atype,
+               std::vector<VALUETYPE>& force,
+               std::vector<VALUETYPE>& virial,
+               const std::vector<VALUETYPE>& coord,
+               const std::vector<int>& atype,
                const SimulationRegion<VALUETYPE>& region,
-               const vector<int>& blist);
+               const std::vector<int>& blist);
 
  private:
   VALUETYPE kk, bb;

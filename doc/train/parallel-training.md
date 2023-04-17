@@ -37,7 +37,7 @@ CUDA_VISIBLE_DEVICES=4,5,6,7 horovodrun -np 4 \
     dp train --mpi-log=workers input.json
 ```
 
-Need to mention, the environment variable `CUDA_VISIBLE_DEVICES`` must be set to control parallelism on the occupied host where one process is bound to one GPU card.
+Need to mention, the environment variable `CUDA_VISIBLE_DEVICES` must be set to control parallelism on the occupied host where one process is bound to one GPU card.
 
 To maximize the performance, one should follow [FAQ: How to control the parallelism of a job](../troubleshooting/howtoset_num_nodes.md) to control the number of threads.
 

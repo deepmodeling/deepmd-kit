@@ -35,10 +35,12 @@ from deepmd.env import (
 )
 from deepmd.fit import (
     DipoleFittingSeA,
+    DOSFitting,
     EnerFitting,
     PolarFittingSeA,
 )
 from deepmd.loss import (
+    DOSLoss,
     EnerDipoleLoss,
     EnerSpinLoss,
     EnerStdLoss,
@@ -46,6 +48,7 @@ from deepmd.loss import (
 )
 from deepmd.model import (
     DipoleModel,
+    DOSModel,
     EnerModel,
     MultiModel,
     PolarModel,
@@ -158,6 +161,8 @@ class DPTrainer:
             if fitting_type_ == "ener":
                 params["spin"] = self.spin
                 return EnerFitting(**params)
+            elif fitting_type_ == "dos":
+                return DOSFitting(**params)
             elif fitting_type_ == "dipole":
                 return DipoleFittingSeA(**params)
             elif fitting_type_ == "polar":
@@ -238,6 +243,16 @@ class DPTrainer:
                 )
             # elif fitting_type == 'wfc':
             #     self.model = WFCModel(model_param, self.descrpt, self.fitting)
+            elif self.fitting_type == "dos":
+                self.model = DOSModel(
+                    self.descrpt,
+                    self.fitting,
+                    self.typeebd,
+                    model_param.get("type_map"),
+                    model_param.get("data_stat_nbatch", 10),
+                    model_param.get("data_stat_protect", 1e-2),
+                )
+
             elif self.fitting_type == "dipole":
                 self.model = DipoleModel(
                     self.descrpt,
@@ -328,6 +343,11 @@ class DPTrainer:
                     loss = EnerSpinLoss(**_loss_param, use_spin=self.spin.use_spin)
                 else:
                     raise RuntimeError("unknown loss type")
+            elif _fitting_type == "dos":
+                _loss_param.pop("type", None)
+                _loss_param["starter_learning_rate"] = _lr.start_lr()
+                _loss_param["numb_dos"] = self.fitting.get_numb_dos()
+                loss = DOSLoss(**_loss_param)
             elif _fitting_type == "wfc":
                 loss = TensorLoss(
                     _loss_param,
@@ -419,7 +439,9 @@ class DPTrainer:
         # self.auto_prob_style = tr_data['auto_prob']
         self.useBN = False
         if not self.multi_task_mode:
-            if self.fitting_type == "ener" and self.fitting.get_numb_fparam() > 0:
+            if (
+                self.fitting_type == "ener" or self.fitting_type == "dos"
+            ) and self.fitting.get_numb_fparam() > 0:
                 self.numb_fparam = self.fitting.get_numb_fparam()
             else:
                 self.numb_fparam = 0

@@ -30,6 +30,7 @@ from deepmd.utils.weight_avg import (
 if TYPE_CHECKING:
     from deepmd.infer import (
         DeepDipole,
+        DeepDOS,
         DeepPolar,
         DeepPot,
         DeepWFC,
@@ -123,6 +124,16 @@ def test(
                 atomic,
                 append_detail=(cc != 0),
             )
+        elif dp.model_type == "dos":
+            err = test_dos(
+                dp,
+                data,
+                system,
+                numb_test,
+                detail_file,
+                atomic,
+                append_detail=(cc != 0),
+            )
         elif dp.model_type == "dipole":
             err = test_dipole(dp, data, numb_test, detail_file, atomic)
         elif dp.model_type == "polar":
@@ -147,6 +158,8 @@ def test(
         log.info(f"# number of systems : {len(all_sys)}")
         if dp.model_type == "ener":
             print_ener_sys_avg(avg_err)
+        elif dp.model_type == "dos":
+            print_dos_sys_avg(avg_err)
         elif dp.model_type == "dipole":
             print_dipole_sys_avg(avg_err)
         elif dp.model_type == "polar":
@@ -510,6 +523,166 @@ def print_ener_sys_avg(avg: Dict[str, float]):
     log.info(f"Virial RMSE        : {avg['rmse_v']:e} eV")
     log.info(f"Virial MAE/Natoms  : {avg['mae_va']:e} eV")
     log.info(f"Virial RMSE/Natoms : {avg['rmse_va']:e} eV")
+
+
+def test_dos(
+    dp: "DeepDOS",
+    data: DeepmdData,
+    system: str,
+    numb_test: int,
+    detail_file: Optional[str],
+    has_atom_dos: bool,
+    append_detail: bool = False,
+) -> Tuple[List[np.ndarray], List[int]]:
+    """Test DOS type model.
+
+    Parameters
+    ----------
+    dp : DeepDOS
+        instance of deep potential
+    data : DeepmdData
+        data container object
+    system : str
+        system directory
+    numb_test : int
+        munber of tests to do
+    detail_file : Optional[str]
+        file where test details will be output
+    has_atom_dos : bool
+        whether per atom quantities should be computed
+    append_detail : bool, optional
+        if true append output detail file, by default False
+
+    Returns
+    -------
+    Tuple[List[np.ndarray], List[int]]
+        arrays with results and their shapes
+    """
+    data.add("dos", dp.numb_dos, atomic=False, must=True, high_prec=True)
+    if has_atom_dos:
+        data.add("atom_dos", dp.numb_dos, atomic=True, must=False, high_prec=True)
+
+    if dp.get_dim_fparam() > 0:
+        data.add(
+            "fparam", dp.get_dim_fparam(), atomic=False, must=True, high_prec=False
+        )
+    if dp.get_dim_aparam() > 0:
+        data.add("aparam", dp.get_dim_aparam(), atomic=True, must=True, high_prec=False)
+
+    test_data = data.get_test()
+    mixed_type = data.mixed_type
+    natoms = len(test_data["type"][0])
+    nframes = test_data["box"].shape[0]
+    numb_test = min(nframes, numb_test)
+
+    coord = test_data["coord"][:numb_test].reshape([numb_test, -1])
+    box = test_data["box"][:numb_test]
+
+    if not data.pbc:
+        box = None
+    if mixed_type:
+        atype = test_data["type"][:numb_test].reshape([numb_test, -1])
+    else:
+        atype = test_data["type"][0]
+    if dp.get_dim_fparam() > 0:
+        fparam = test_data["fparam"][:numb_test]
+    else:
+        fparam = None
+    if dp.get_dim_aparam() > 0:
+        aparam = test_data["aparam"][:numb_test]
+    else:
+        aparam = None
+
+    ret = dp.eval(
+        coord,
+        box,
+        atype,
+        fparam=fparam,
+        aparam=aparam,
+        atomic=has_atom_dos,
+        mixed_type=mixed_type,
+    )
+    dos = ret[0]
+
+    dos = dos.reshape([numb_test, dp.numb_dos])
+
+    if has_atom_dos:
+        ados = ret[1]
+        ados = ados.reshape([numb_test, natoms * dp.numb_dos])
+
+    diff_dos = dos - test_data["dos"][:numb_test]
+    mae_dos = mae(diff_dos)
+    rmse_dos = rmse(diff_dos)
+
+    mae_dosa = mae_dos / natoms
+    rmse_dosa = rmse_dos / natoms
+
+    if has_atom_dos:
+        diff_ados = ados - test_data["atom_dos"][:numb_test]
+        mae_ados = mae(diff_ados)
+        rmse_ados = rmse(diff_ados)
+
+    log.info(f"# number of test data : {numb_test:d} ")
+
+    log.info(f"DOS MAE            : {mae_dos:e} Occupation/eV")
+    log.info(f"DOS RMSE           : {rmse_dos:e} Occupation/eV")
+    log.info(f"DOS MAE/Natoms     : {mae_dosa:e} Occupation/eV")
+    log.info(f"DOS RMSE/Natoms    : {rmse_dosa:e} Occupation/eV")
+
+    if has_atom_dos:
+        log.info(f"Atomic DOS MAE     : {mae_ados:e} Occupation/eV")
+        log.info(f"Atomic DOS RMSE    : {rmse_ados:e} Occupation/eV")
+
+    if detail_file is not None:
+        detail_path = Path(detail_file)
+
+        for ii in range(numb_test):
+            test_out = test_data["dos"][ii].reshape(-1, 1)
+            pred_out = dos[ii].reshape(-1, 1)
+
+            frame_output = np.hstack((test_out, pred_out))
+
+            save_txt_file(
+                detail_path.with_suffix(".dos.out.%.d" % ii),
+                frame_output,
+                header="%s - %.d: data_dos pred_dos" % (system, ii),
+                append=append_detail,
+            )
+
+        if has_atom_dos:
+            for ii in range(numb_test):
+                test_out = test_data["atom_dos"][ii].reshape(-1, 1)
+                pred_out = ados[ii].reshape(-1, 1)
+
+                frame_output = np.hstack((test_out, pred_out))
+
+                save_txt_file(
+                    detail_path.with_suffix(".ados.out.%.d" % ii),
+                    frame_output,
+                    header="%s - %.d: data_ados pred_ados" % (system, ii),
+                    append=append_detail,
+                )
+
+    return {
+        "mae_dos": (mae_dos, dos.size),
+        "mae_dosa": (mae_dosa, dos.size),
+        "rmse_dos": (rmse_dos, dos.size),
+        "rmse_dosa": (rmse_dosa, dos.size),
+    }
+
+
+def print_dos_sys_avg(avg: Dict[str, float]):
+    """Print errors summary for DOS type potential.
+
+    Parameters
+    ----------
+    avg : np.ndarray
+        array with summaries
+    """
+    log.info(f"DOS MAE            : {avg['mae_dos']:e} Occupation/eV")
+    log.info(f"DOS RMSE           : {avg['rmse_dos']:e} Occupation/eV")
+    log.info(f"DOS MAE/Natoms     : {avg['mae_dosa']:e} Occupation/eV")
+    log.info(f"DOS RMSE/Natoms    : {avg['rmse_dosa']:e} Occupation/eV")
 
 
 def run_test(dp: "DeepTensor", test_data: dict, numb_test: int):
