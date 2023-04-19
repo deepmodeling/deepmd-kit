@@ -429,10 +429,9 @@ class DipoleChargeModifier(DeepDipole):
 
         get_nframes = None
         coord = data["coord"][:get_nframes, :]
-        if data_sys.pbc:
-            box = data["box"][:get_nframes, :]
-        else:
-            box = None
+        if not data_sys.pbc:
+            raise RuntimeError("Open systems (nopbc) are not supported")
+        box = data["box"][:get_nframes, :]
         atype = data["type"][:get_nframes, :]
         atype = atype[0]
         nframes = coord.shape[0]
