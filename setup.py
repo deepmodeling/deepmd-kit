@@ -118,7 +118,7 @@ setup(
             "recommonmark",
             "sphinx_rtd_theme>=1.0.0rc1",
             "sphinx_markdown_tables",
-            "myst-parser",
+            "myst-nb",
             "breathe",
             "exhale",
             "numpydoc",

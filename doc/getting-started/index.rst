@@ -8,8 +8,4 @@ In this text, we will call the deep neural network that is used to represent the
    :numbered:
 
    install
-   data
-   training
-   freeze
-   test
-   lammps
+   quick_start
