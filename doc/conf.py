@@ -239,7 +239,7 @@ exhale_projects_args = {
 
 #
 myst_heading_anchors = 4
-execution_mode = "off"
+nb_execution_mode = "off"
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ["_templates"]
