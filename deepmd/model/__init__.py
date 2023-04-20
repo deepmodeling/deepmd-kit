@@ -1,3 +1,6 @@
+from .dos import (
+    DOSModel,
+)
 from .ener import (
     EnerModel,
 )
@@ -13,6 +16,7 @@ from .tensor import (
 
 __all__ = [
     "EnerModel",
+    "DOSModel",
     "MultiModel",
     "DipoleModel",
     "GlobalPolarModel",

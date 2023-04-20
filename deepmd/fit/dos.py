@@ -14,14 +14,10 @@ from deepmd.common import (
 )
 from deepmd.env import (
     GLOBAL_TF_FLOAT_PRECISION,
-    global_cvt_2_tf_float,
     tf,
 )
 from deepmd.fit.fitting import (
     Fitting,
-)
-from deepmd.infer import (
-    DeepPotential,
 )
 from deepmd.nvnmd.fit.ener import (
     one_layer_nvnmd,
@@ -44,37 +40,9 @@ from deepmd.utils.network import (
 log = logging.getLogger(__name__)
 
 
-class EnerFitting(Fitting):
-    r"""Fitting the energy of the system. The force and the virial can also be trained.
-
-    The potential energy :math:`E` is a fitting network function of the descriptor :math:`\mathcal{D}`:
-
-    .. math::
-        E(\mathcal{D}) = \mathcal{L}^{(n)} \circ \mathcal{L}^{(n-1)}
-        \circ \cdots \circ \mathcal{L}^{(1)} \circ \mathcal{L}^{(0)}
-
-    The first :math:`n` hidden layers :math:`\mathcal{L}^{(0)}, \cdots, \mathcal{L}^{(n-1)}` are given by
-
-    .. math::
-        \mathbf{y}=\mathcal{L}(\mathbf{x};\mathbf{w},\mathbf{b})=
-            \boldsymbol{\phi}(\mathbf{x}^T\mathbf{w}+\mathbf{b})
-
-    where :math:`\mathbf{x} \in \mathbb{R}^{N_1}` is the input vector and :math:`\mathbf{y} \in \mathbb{R}^{N_2}`
-    is the output vector. :math:`\mathbf{w} \in \mathbb{R}^{N_1 \times N_2}` and
-    :math:`\mathbf{b} \in \mathbb{R}^{N_2}` are weights and biases, respectively,
-    both of which are trainable if `trainable[i]` is `True`. :math:`\boldsymbol{\phi}`
-    is the activation function.
-
-    The output layer :math:`\mathcal{L}^{(n)}` is given by
-
-    .. math::
-        \mathbf{y}=\mathcal{L}^{(n)}(\mathbf{x};\mathbf{w},\mathbf{b})=
-            \mathbf{x}^T\mathbf{w}+\mathbf{b}
-
-    where :math:`\mathbf{x} \in \mathbb{R}^{N_{n-1}}` is the input vector and :math:`\mathbf{y} \in \mathbb{R}`
-    is the output scalar. :math:`\mathbf{w} \in \mathbb{R}^{N_{n-1}}` and
-    :math:`\mathbf{b} \in \mathbb{R}` are weights and bias, respectively,
-    both of which are trainable if `trainable[n]` is `True`.
+class DOSFitting(Fitting):
+    r"""Fitting the density of states (DOS) of the system.
+    The energy should be shifted by the fermi level.
 
     Parameters
     ----------
@@ -89,18 +57,16 @@ class EnerFitting(Fitting):
             Number of frame parameter
     numb_aparam
             Number of atomic parameter
+    ! numb_dos (added)
+            Number of gridpoints on which the DOS is evaluated (NEDOS in VASP)
     rcond
             The condition number for the regression of atomic energy.
-    tot_ener_zero
-            Force the total energy to zero. Useful for the charge fitting.
     trainable
             If the weights of fitting net are trainable.
             Suppose that we have :math:`N_l` hidden layers in the fitting net,
             this list is of length :math:`N_l + 1`, specifying if the hidden layers and the output layer are trainable.
     seed
             Random seed for initializing the network parameters.
-    atom_ener
-            Specifying atomic energy contribution in vacuum. The `set_davg_zero` key in the descrptor should be set.
     activation_function
             The activation function :math:`\boldsymbol{\phi}` in the embedding net. Supported options are |ACTIVATION_FN|
     precision
@@ -122,11 +88,10 @@ class EnerFitting(Fitting):
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
+        numb_dos: int = 300,
         rcond: float = 1e-3,
-        tot_ener_zero: bool = False,
-        trainable: Optional[List[bool]] = None,
-        seed: Optional[int] = None,
-        atom_ener: List[float] = [],
+        trainable: List[bool] = None,
+        seed: int = None,
         activation_function: str = "tanh",
         precision: str = "default",
         uniform_seed: bool = False,
@@ -138,27 +103,18 @@ class EnerFitting(Fitting):
         self.ntypes = descrpt.get_ntypes()
         self.dim_descrpt = descrpt.get_dim_out()
         self.use_aparam_as_mask = use_aparam_as_mask
-        # args = ()\
-        #        .add('numb_fparam',      int,    default = 0)\
-        #        .add('numb_aparam',      int,    default = 0)\
-        #        .add('neuron',           list,   default = [120,120,120], alias = 'n_neuron')\
-        #        .add('resnet_dt',        bool,   default = True)\
-        #        .add('rcond',            float,  default = 1e-3) \
-        #        .add('tot_ener_zero',    bool,   default = False) \
-        #        .add('seed',             int)               \
-        #        .add('atom_ener',        list,   default = [])\
-        #        .add("activation_function", str,    default = "tanh")\
-        #        .add("precision",           str, default = "default")\
-        #        .add("trainable",        [list, bool], default = True)
+
         self.numb_fparam = numb_fparam
         self.numb_aparam = numb_aparam
+
+        self.numb_dos = numb_dos
+
         self.n_neuron = neuron
         self.resnet_dt = resnet_dt
         self.rcond = rcond
         self.seed = seed
         self.uniform_seed = uniform_seed
         self.seed_shift = one_layer_rand_seed_shift()
-        self.tot_ener_zero = tot_ener_zero
         self.fitting_activation_fn = get_activation_func(activation_function)
         self.fitting_precision = get_precision(precision)
         self.trainable = trainable
@@ -169,17 +125,9 @@ class EnerFitting(Fitting):
         assert (
             len(self.trainable) == len(self.n_neuron) + 1
         ), "length of trainable should be that of n_neuron + 1"
-        self.atom_ener = []
-        self.atom_ener_v = atom_ener
-        for at, ae in enumerate(atom_ener):
-            if ae is not None:
-                self.atom_ener.append(
-                    tf.constant(ae, GLOBAL_TF_FLOAT_PRECISION, name="atom_%d_ener" % at)
-                )
-            else:
-                self.atom_ener.append(None)
+
         self.useBN = False
-        self.bias_atom_e = np.zeros(self.ntypes, dtype=np.float64)
+        self.bias_dos = np.zeros((self.ntypes, self.numb_dos), dtype=np.float64)
         # data requirement
         if self.numb_fparam > 0:
             add_data_requirement(
@@ -213,6 +161,11 @@ class EnerFitting(Fitting):
         """Get the number of atomic parameters."""
         return self.numb_fparam
 
+    def get_numb_dos(self) -> int:
+        """Get the number of gridpoints in energy space."""
+        return self.numb_dos
+
+    # not used
     def compute_output_stats(self, all_stat: dict, mixed_type: bool = False) -> None:
         """Compute the ouput statistics.
 
@@ -220,29 +173,29 @@ class EnerFitting(Fitting):
         ----------
         all_stat
             must have the following components:
-            all_stat['energy'] of shape n_sys x n_batch x n_frame
+            all_stat['dos'] of shape n_sys x n_batch x n_frame x numb_dos
             can be prepared by model.make_stat_input
         mixed_type
             Whether to perform the mixed_type mode.
             If True, the input data has the mixed_type format (see doc/model/train_se_atten.md),
             in which frames in a system may have different natoms_vec(s), with the same nloc.
         """
-        self.bias_atom_e = self._compute_output_stats(
+        self.bias_dos = self._compute_output_stats(
             all_stat, rcond=self.rcond, mixed_type=mixed_type
         )
 
     def _compute_output_stats(self, all_stat, rcond=1e-3, mixed_type=False):
-        data = all_stat["energy"]
+        data = all_stat["dos"]
         # data[sys_idx][batch_idx][frame_idx]
-        sys_ener = []
+        sys_dos = []
         for ss in range(len(data)):
             sys_data = []
             for ii in range(len(data[ss])):
                 for jj in range(len(data[ss][ii])):
                     sys_data.append(data[ss][ii][jj])
-            sys_data = np.concatenate(sys_data)
-            sys_ener.append(np.average(sys_data))
-        sys_ener = np.array(sys_ener)
+            sys_data = np.concatenate(sys_data).reshape(-1, self.numb_dos)
+            sys_dos.append(np.average(sys_data, axis=0))
+        sys_dos = np.array(sys_dos).reshape(-1, self.numb_dos)
         sys_tynatom = []
         if mixed_type:
             data = all_stat["real_natoms_vec"]
@@ -262,26 +215,12 @@ class EnerFitting(Fitting):
         sys_tynatom = np.array(sys_tynatom)
         sys_tynatom = np.reshape(sys_tynatom, [nsys, -1])
         sys_tynatom = sys_tynatom[:, 2:]
-        if len(self.atom_ener) > 0:
-            # Atomic energies stats are incorrect if atomic energies are assigned.
-            # In this situation, we directly use these assigned energies instead of computing stats.
-            # This will make the loss decrease quickly
-            assigned_atom_ener = np.array(
-                list(ee for ee in self.atom_ener_v if ee is not None)
-            )
-            assigned_ener_idx = list(
-                (ii for ii, ee in enumerate(self.atom_ener_v) if ee is not None)
-            )
-            # np.dot out size: nframe
-            sys_ener -= np.dot(sys_tynatom[:, assigned_ener_idx], assigned_atom_ener)
-            sys_tynatom[:, assigned_ener_idx] = 0.0
-        energy_shift, resd, rank, s_value = np.linalg.lstsq(
-            sys_tynatom, sys_ener, rcond=rcond
+
+        dos_shift, resd, rank, s_value = np.linalg.lstsq(
+            sys_tynatom, sys_dos, rcond=rcond
         )
-        if len(self.atom_ener) > 0:
-            for ii in assigned_ener_idx:
-                energy_shift[ii] = self.atom_ener_v[ii]
-        return energy_shift
+
+        return dos_shift
 
     def compute_input_stats(self, all_stat: dict, protection: float = 1e-2) -> None:
         """Compute the input statistics.
@@ -336,7 +275,7 @@ class EnerFitting(Fitting):
         inputs,
         fparam=None,
         aparam=None,
-        bias_atom_e=0.0,
+        bias_dos=0.0,
         type_suffix="",
         suffix="",
         reuse=None,
@@ -410,9 +349,9 @@ class EnerFitting(Fitting):
             layer_reuse = reuse
         final_layer = one_layer(
             layer,
-            1,
+            self.numb_dos,  # TODO: output a vector
             activation_fn=None,
-            bavg=bias_atom_e,
+            bavg=bias_dos,
             name=layer_suffix,
             reuse=layer_reuse,
             seed=self.seed,
@@ -432,8 +371,8 @@ class EnerFitting(Fitting):
         self,
         inputs: tf.Tensor,
         natoms: tf.Tensor,
-        input_dict: Optional[dict] = None,
-        reuse: Optional[bool] = None,
+        input_dict: dict = None,
+        reuse: bool = None,
         suffix: str = "",
     ) -> tf.Tensor:
         """Build the computational graph for fitting net.
@@ -463,7 +402,7 @@ class EnerFitting(Fitting):
         """
         if input_dict is None:
             input_dict = {}
-        bias_atom_e = self.bias_atom_e
+        bias_dos = self.bias_dos
         type_embedding = input_dict.get("type_embedding", None)
         atype = input_dict.get("atype", None)
         if self.numb_fparam > 0:
@@ -480,12 +419,14 @@ class EnerFitting(Fitting):
         with tf.variable_scope("fitting_attr" + suffix, reuse=reuse):
             t_dfparam = tf.constant(self.numb_fparam, name="dfparam", dtype=tf.int32)
             t_daparam = tf.constant(self.numb_aparam, name="daparam", dtype=tf.int32)
-            self.t_bias_atom_e = tf.get_variable(
-                "t_bias_atom_e",
-                self.bias_atom_e.shape,
+            t_numb_dos = tf.constant(self.numb_dos, name="numb_dos", dtype=tf.int32)
+
+            self.t_bias_dos = tf.get_variable(
+                "t_bias_dos",
+                self.bias_dos.shape,
                 dtype=GLOBAL_TF_FLOAT_PRECISION,
                 trainable=False,
-                initializer=tf.constant_initializer(self.bias_atom_e),
+                initializer=tf.constant_initializer(self.bias_dos),
             )
             if self.numb_fparam > 0:
                 t_fparam_avg = tf.get_variable(
@@ -519,20 +460,9 @@ class EnerFitting(Fitting):
                 )
 
         inputs = tf.reshape(inputs, [-1, natoms[0], self.dim_descrpt])
-        if len(self.atom_ener):
-            # only for atom_ener
-            nframes = input_dict.get("nframes")
-            if nframes is not None:
-                # like inputs, but we don't want to add a dependency on inputs
-                inputs_zero = tf.zeros(
-                    (nframes, natoms[0], self.dim_descrpt),
-                    dtype=GLOBAL_TF_FLOAT_PRECISION,
-                )
-            else:
-                inputs_zero = tf.zeros_like(inputs, dtype=GLOBAL_TF_FLOAT_PRECISION)
 
-        if bias_atom_e is not None:
-            assert len(bias_atom_e) == self.ntypes
+        if bias_dos is not None:
+            assert len(bias_dos) == self.ntypes
 
         fparam = None
         if self.numb_fparam > 0:
@@ -549,14 +479,9 @@ class EnerFitting(Fitting):
                 aparam = tf.reshape(aparam, [-1, self.numb_aparam * natoms[0]])
 
         atype_nall = tf.reshape(atype, [-1, natoms[1]])
-        self.atype_nloc = tf.slice(
-            atype_nall, [0, 0], [-1, natoms[0]]
+        self.atype_nloc = tf.reshape(
+            tf.slice(atype_nall, [0, 0], [-1, natoms[0]]), [-1]
         )  ## lammps will make error
-        atype_filter = tf.cast(self.atype_nloc >= 0, GLOBAL_TF_FLOAT_PRECISION)
-        self.atype_nloc = tf.reshape(self.atype_nloc, [-1])
-        # prevent embedding_lookup error,
-        # but the filter will be applied anyway
-        self.atype_nloc = tf.clip_by_value(self.atype_nloc, 0, self.ntypes - 1)
         if type_embedding is not None:
             atype_embed = tf.nn.embedding_lookup(type_embedding, self.atype_nloc)
         else:
@@ -574,27 +499,15 @@ class EnerFitting(Fitting):
                     inputs,
                     fparam,
                     aparam,
-                    bias_atom_e=0.0,
+                    bias_dos=0.0,
                     type_suffix="_type_" + str(type_i),
                     suffix=suffix,
                     reuse=reuse,
                 )
-                # concat the results
-                if type_i < len(self.atom_ener) and self.atom_ener[type_i] is not None:
-                    zero_layer = self._build_lower(
-                        start_index,
-                        natoms[2 + type_i],
-                        inputs_zero,
-                        fparam,
-                        aparam,
-                        bias_atom_e=0.0,
-                        type_suffix="_type_" + str(type_i),
-                        suffix=suffix,
-                        reuse=True,
-                    )
-                    final_layer -= zero_layer
+
                 final_layer = tf.reshape(
-                    final_layer, [tf.shape(inputs)[0], natoms[2 + type_i]]
+                    final_layer,
+                    [tf.shape(inputs)[0] * self.numb_dos, natoms[2 + type_i]],
                 )
                 outs_list.append(final_layer)
                 start_index += natoms[2 + type_i]
@@ -617,49 +530,22 @@ class EnerFitting(Fitting):
                 inputs,
                 fparam,
                 aparam,
-                bias_atom_e=0.0,
+                bias_dos=0.0,
                 suffix=suffix,
                 reuse=reuse,
             )
-            if len(self.atom_ener):
-                # remove contribution in vacuum
-                inputs_zero = tf.concat(
-                    [tf.reshape(inputs_zero, [-1, original_dim_descrpt]), atype_embed],
-                    axis=1,
-                )
-                inputs_zero = tf.reshape(inputs_zero, [-1, natoms[0], self.dim_descrpt])
-                zero_layer = self._build_lower(
-                    0,
-                    natoms[0],
-                    inputs_zero,
-                    fparam,
-                    aparam,
-                    bias_atom_e=0.0,
-                    suffix=suffix,
-                    reuse=True,
-                )
-                # atomic energy will be stored in `self.t_bias_atom_e` which is not trainable
-                final_layer -= zero_layer
-            outs = tf.reshape(final_layer, [tf.shape(inputs)[0], natoms[0]])
-        # add bias
-        self.atom_ener_before = outs * atype_filter
-        self.add_type = tf.reshape(
-            tf.nn.embedding_lookup(self.t_bias_atom_e, self.atype_nloc),
-            [tf.shape(inputs)[0], natoms[0]],
-        )
-        outs = outs + self.add_type
-        outs *= atype_filter
-        self.atom_ener_after = outs
 
-        if self.tot_ener_zero:
-            force_tot_ener = 0.0
-            outs = tf.reshape(outs, [-1, natoms[0]])
-            outs_mean = tf.reshape(tf.reduce_mean(outs, axis=1), [-1, 1])
-            outs_mean = outs_mean - tf.ones_like(
-                outs_mean, dtype=GLOBAL_TF_FLOAT_PRECISION
-            ) * (force_tot_ener / global_cvt_2_tf_float(natoms[0]))
-            outs = outs - outs_mean
-            outs = tf.reshape(outs, [-1])
+            outs = tf.reshape(
+                final_layer, [tf.shape(inputs)[0] * self.numb_dos, natoms[0]]
+            )
+        # add bias
+        # self.atom_ener_before = outs
+        # self.add_type = tf.reshape(
+        #     tf.nn.embedding_lookup(self.t_bias_dos, self.atype_nloc),
+        #     [tf.shape(inputs)[0], natoms[0]],
+        # )
+        # outs = outs + self.add_type
+        # self.atom_ener_after = outs
 
         tf.summary.histogram("fitting_net_output", outs)
         return tf.reshape(outs, [-1])
@@ -705,121 +591,12 @@ class EnerFitting(Fitting):
                 graph, "fitting_attr%s/t_aparam_istd" % suffix
             )
         try:
-            self.bias_atom_e = get_tensor_by_name_from_graph(
-                graph, "fitting_attr%s/t_bias_atom_e" % suffix
+            self.bias_dos = get_tensor_by_name_from_graph(
+                graph, "fitting_attr%s/t_bias_dos" % suffix
             )
         except GraphWithoutTensorError:
-            # for compatibility, old models has no t_bias_atom_e
+            # for compatibility, old models has no t_bias_dos
             pass
-
-    def change_energy_bias(
-        self,
-        data,
-        frozen_model,
-        origin_type_map,
-        full_type_map,
-        bias_shift="delta",
-        ntest=10,
-    ) -> None:
-        """Change the energy bias according to the input data and the pretrained model.
-
-        Parameters
-        ----------
-        data : DeepmdDataSystem
-            The training data.
-        frozen_model : str
-            The path file of frozen model.
-        origin_type_map : list
-            The original type_map in dataset, they are targets to change the energy bias.
-        full_type_map : str
-            The full type_map in pretrained model
-        bias_shift : str
-            The mode for changing energy bias : ['delta', 'statistic']
-            'delta' : perform predictions on energies of target dataset,
-                    and do least sqaure on the errors to obtain the target shift as bias.
-            'statistic' : directly use the statistic energy bias in the target dataset.
-        ntest : int
-            The number of test samples in a system to change the energy bias.
-        """
-        type_numbs = []
-        energy_ground_truth = []
-        energy_predict = []
-        sorter = np.argsort(full_type_map)
-        idx_type_map = sorter[
-            np.searchsorted(full_type_map, origin_type_map, sorter=sorter)
-        ]
-        mixed_type = data.mixed_type
-        numb_type = len(full_type_map)
-        dp = None
-        if bias_shift == "delta":
-            # init model
-            dp = DeepPotential(frozen_model)
-        for sys in data.data_systems:
-            test_data = sys.get_test()
-            nframes = test_data["box"].shape[0]
-            numb_test = min(nframes, ntest)
-            if mixed_type:
-                atype = test_data["type"][:numb_test].reshape([numb_test, -1])
-            else:
-                atype = test_data["type"][0]
-            assert np.array(
-                [i in idx_type_map for i in list(set(atype.reshape(-1)))]
-            ).all(), "Some types are not in 'type_map'!"
-            energy_ground_truth.append(
-                test_data["energy"][:numb_test].reshape([numb_test, 1])
-            )
-            if mixed_type:
-                type_numbs.append(
-                    np.array(
-                        [(atype == i).sum(axis=-1) for i in idx_type_map],
-                        dtype=np.int32,
-                    ).T
-                )
-            else:
-                type_numbs.append(
-                    np.tile(
-                        np.bincount(atype, minlength=numb_type)[idx_type_map],
-                        (numb_test, 1),
-                    )
-                )
-            if bias_shift == "delta":
-                coord = test_data["coord"][:numb_test].reshape([numb_test, -1])
-                if sys.pbc:
-                    box = test_data["box"][:numb_test]
-                else:
-                    box = None
-                ret = dp.eval(coord, box, atype, mixed_type=mixed_type)
-                energy_predict.append(ret[0].reshape([numb_test, 1]))
-        type_numbs = np.concatenate(type_numbs)
-        energy_ground_truth = np.concatenate(energy_ground_truth)
-        old_bias = self.bias_atom_e[idx_type_map]
-        if bias_shift == "delta":
-            energy_predict = np.concatenate(energy_predict)
-            bias_diff = energy_ground_truth - energy_predict
-            delta_bias = np.linalg.lstsq(type_numbs, bias_diff, rcond=None)[0]
-            unbias_e = energy_predict + type_numbs @ delta_bias
-            atom_numbs = type_numbs.sum(-1)
-            rmse_ae = (
-                np.sqrt(np.square(unbias_e - energy_ground_truth)) / atom_numbs
-            ).mean()
-            self.bias_atom_e[idx_type_map] += delta_bias.reshape(-1)
-            log.info(
-                "RMSE of atomic energy after linear regression is: {} eV/atom.".format(
-                    rmse_ae
-                )
-            )
-        elif bias_shift == "statistic":
-            statistic_bias = np.linalg.lstsq(
-                type_numbs, energy_ground_truth, rcond=None
-            )[0]
-            self.bias_atom_e[idx_type_map] = statistic_bias.reshape(-1)
-        else:
-            raise RuntimeError("Unknown bias_shift mode: " + bias_shift)
-        log.info(
-            "Change energy bias of {} from {} to {}.".format(
-                str(origin_type_map), str(old_bias), str(self.bias_atom_e[idx_type_map])
-            )
-        )
 
     def enable_mixed_precision(self, mixed_prec: Optional[dict] = None) -> None:
         """Reveive the mixed precision setting.
