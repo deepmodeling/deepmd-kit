@@ -685,7 +685,7 @@ def print_dos_sys_avg(avg: Dict[str, float]):
     log.info(f"DOS RMSE/Natoms    : {avg['rmse_dosa']:e} Occupation/eV")
 
 
-def run_test(dp: "DeepTensor", test_data: dict, numb_test: int):
+def run_test(dp: "DeepTensor", test_data: dict, numb_test: int, test_sys: DeepmdData):
     """Run tests.
 
     Parameters
@@ -696,6 +696,8 @@ def run_test(dp: "DeepTensor", test_data: dict, numb_test: int):
         dictionary with test data
     numb_test : int
         munber of tests to do
+    test_sys : DeepmdData
+        test system
 
     Returns
     -------
@@ -706,7 +708,10 @@ def run_test(dp: "DeepTensor", test_data: dict, numb_test: int):
     numb_test = min(nframes, numb_test)
 
     coord = test_data["coord"][:numb_test].reshape([numb_test, -1])
-    box = test_data["box"][:numb_test]
+    if test_sys.pbc:
+        box = test_data["box"][:numb_test]
+    else:
+        box = None
     atype = test_data["type"][0]
     prediction = dp.eval(coord, box, atype)
 
@@ -741,7 +746,7 @@ def test_wfc(
         "wfc", 12, atomic=True, must=True, high_prec=False, type_sel=dp.get_sel_type()
     )
     test_data = data.get_test()
-    wfc, numb_test, _ = run_test(dp, test_data, numb_test)
+    wfc, numb_test, _ = run_test(dp, test_data, numb_test, data)
     rmse_f = rmse(wfc - test_data["wfc"][:numb_test])
 
     log.info("# number of test data : {numb_test:d} ")
@@ -813,7 +818,7 @@ def test_polar(
     )
 
     test_data = data.get_test()
-    polar, numb_test, atype = run_test(dp, test_data, numb_test)
+    polar, numb_test, atype = run_test(dp, test_data, numb_test, data)
 
     sel_type = dp.get_sel_type()
     sel_natoms = 0
@@ -903,7 +908,7 @@ def test_dipole(
         type_sel=dp.get_sel_type(),
     )
     test_data = data.get_test()
-    dipole, numb_test, atype = run_test(dp, test_data, numb_test)
+    dipole, numb_test, atype = run_test(dp, test_data, numb_test, data)
 
     sel_type = dp.get_sel_type()
     sel_natoms = 0

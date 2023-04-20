@@ -822,7 +822,10 @@ class EnerFitting(Fitting):
                 )
             if bias_shift == "delta":
                 coord = test_data["coord"][:numb_test].reshape([numb_test, -1])
-                box = test_data["box"][:numb_test]
+                if sys.pbc:
+                    box = test_data["box"][:numb_test]
+                else:
+                    box = None
                 ret = dp.eval(coord, box, atype, mixed_type=mixed_type)
                 energy_predict.append(ret[0].reshape([numb_test, 1]))
         type_numbs = np.concatenate(type_numbs)
