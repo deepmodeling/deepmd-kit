@@ -21,6 +21,9 @@ from deepmd.infer.deep_dipole import (
 from deepmd.infer.ewald_recp import (
     EwaldRecp,
 )
+from deepmd.utils.data import (
+    DeepmdData,
+)
 from deepmd.utils.sess import (
     run_sess,
 )
@@ -397,7 +400,7 @@ class DipoleChargeModifier(DeepDipole):
 
         return all_coord, all_charge, dipole
 
-    def modify_data(self, data: dict) -> None:
+    def modify_data(self, data: dict, data_sys: DeepmdData) -> None:
         """Modify data.
 
         Parameters
@@ -414,6 +417,8 @@ class DipoleChargeModifier(DeepDipole):
             - energy        energy
             - force         force
             - virial        virial
+        data_sys : DeepmdData
+            The data system.
         """
         if (
             "find_energy" not in data
@@ -424,6 +429,8 @@ class DipoleChargeModifier(DeepDipole):
 
         get_nframes = None
         coord = data["coord"][:get_nframes, :]
+        if not data_sys.pbc:
+            raise RuntimeError("Open systems (nopbc) are not supported")
         box = data["box"][:get_nframes, :]
         atype = data["type"][:get_nframes, :]
         atype = atype[0]
