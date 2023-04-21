@@ -1,1 +1,0 @@
-../third-party/lammps.md
