@@ -490,8 +490,8 @@ class EnerFitting(Fitting):
                     self.bias_atom_e = np.pad(
                         self.bias_atom_e,
                         (0, self.ntypes_spin),
-                        'constant',
-                        constant_values=(0,0)
+                        "constant",
+                        constant_values=(0, 0),
                     )
                     bias_atom_e = self.bias_atom_e
                 if self.spin.use_spin[type_i]:

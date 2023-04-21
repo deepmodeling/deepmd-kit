@@ -13,6 +13,7 @@ from deepmd.env import (
 from deepmd.utils.spin import (
     Spin,
 )
+
 # from deepmd.descriptor import DescrptLocFrame
 # from deepmd.descriptor import DescrptSeA
 # from deepmd.descriptor import DescrptSeT
@@ -51,8 +52,8 @@ class DescrptHybrid(Descriptor):
                 if multi_task:
                     ii["multi_task"] = True
                 if spin is not None:
-                    if ii['type'] in ["se_e2_a", "se_a", "se_e2_r", "se_r"]:
-                        ii['spin'] = spin
+                    if ii["type"] in ["se_e2_a", "se_a", "se_e2_r", "se_r"]:
+                        ii["spin"] = spin
                 formatted_descript_list.append(Descriptor(**ii))
             else:
                 raise NotImplementedError

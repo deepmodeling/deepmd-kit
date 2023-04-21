@@ -519,7 +519,12 @@ class DeepPot(DeepEval):
 
         if self.has_spin:
             ntypes_real = self.ntypes - self.ntypes_spin
-            natoms_real = sum([np.count_nonzero(np.array(atom_types) == ii) for ii in range(ntypes_real)])
+            natoms_real = sum(
+                [
+                    np.count_nonzero(np.array(atom_types) == ii)
+                    for ii in range(ntypes_real)
+                ]
+            )
         else:
             natoms_real = natoms
 

@@ -1,10 +1,13 @@
 from typing import (
     List,
 )
+
 from deepmd.env import (
     GLOBAL_TF_FLOAT_PRECISION,
     tf,
 )
+
+
 class Spin:
     """Class for spin.
 

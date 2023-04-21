@@ -52,7 +52,7 @@ def _init_models():
     jdata = j_loader("test_model_spin.json")
 
     jdata["training"]["save_ckpt"] = ckpt
-    del(jdata["training"]["set_prefix"])
+    del jdata["training"]["set_prefix"]
     with open(INPUT, "w") as fp:
         json.dump(jdata, fp, indent=4)
     ret = run_dp("dp train " + INPUT)
@@ -65,8 +65,8 @@ def _init_models():
 
     jdata = j_loader("test_model_spin.json")
     jdata["training"]["save_ckpt"] = ckpt
-    del(jdata["training"]["set_prefix"])
-    jdata['loss']['type'] = 'ener_spin'
+    del jdata["training"]["set_prefix"]
+    jdata["loss"]["type"] = "ener_spin"
     jdata = update_deepmd_input(jdata, warning=True, dump="input_v2_compat.json")
     jdata = normalize(jdata)
     model_frz = DPTrainer(jdata, run_opt=run_opt_frz)
