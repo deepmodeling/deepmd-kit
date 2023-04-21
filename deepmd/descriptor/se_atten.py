@@ -31,6 +31,12 @@ from deepmd.utils.network import (
 from deepmd.utils.sess import (
     run_sess,
 )
+from deepmd.utils.tabulate import (
+    DPTabulate,
+)
+from deepmd.utils.graph import (
+    get_tensor_by_name_from_graph,
+)
 
 from .descriptor import (
     Descriptor,
@@ -283,6 +289,93 @@ class DescrptSeAtten(DescrptSeA):
                 self.stat_dict["sumn"] += sumn
                 self.stat_dict["sumr2"] += sumr2
                 self.stat_dict["suma2"] += suma2
+ 
+    def enable_compression(
+        self,
+        min_nbor_dist: float,
+        graph: tf.Graph,
+        graph_def: tf.GraphDef,
+        table_extrapolate: float = 5,
+        table_stride_1: float = 0.01,
+        table_stride_2: float = 0.1,
+        check_frequency: int = -1,
+        suffix: str = "",
+    ) -> None:
+        """Reveive the statisitcs (distance, max_nbor_size and env_mat_range) of the training data.
+
+        Parameters
+        ----------
+        min_nbor_dist
+            The nearest distance between atoms
+        graph : tf.Graph
+            The graph of the model
+        graph_def : tf.GraphDef
+            The graph_def of the model
+        table_extrapolate
+            The scale of model extrapolation
+        table_stride_1
+            The uniform stride of the first table
+        table_stride_2
+            The uniform stride of the second table
+        check_frequency
+            The overflow check frequency
+        suffix : str, optional
+            The suffix of the scope
+        """
+        # do some checks before the mocel compression process
+        assert (
+            not self.filter_resnet_dt
+        ), "Model compression error: descriptor resnet_dt must be false!"
+        for tt in self.exclude_types:
+            if (tt[0] not in range(self.ntypes)) or (tt[1] not in range(self.ntypes)):
+                raise RuntimeError(
+                    "exclude types"
+                    + str(tt)
+                    + " must within the number of atomic types "
+                    + str(self.ntypes)
+                    + "!"
+                )
+        if self.ntypes * self.ntypes - len(self.exclude_types) == 0:
+            raise RuntimeError(
+                "empty embedding-net are not supported in model compression!"
+            )
+
+        for ii in range(len(self.filter_neuron) - 1):
+            if self.filter_neuron[ii] * 2 != self.filter_neuron[ii + 1]:
+                raise NotImplementedError(
+                    "Model Compression error: descriptor neuron [%s] is not supported by model compression! "
+                    "The size of the next layer of the neural network must be twice the size of the previous layer."
+                    % ",".join([str(item) for item in self.filter_neuron])
+                )
+
+        self.compress = True
+        self.table = DPTabulate(
+            self,
+            self.filter_neuron,
+            graph,
+            graph_def,
+            self.type_one_side,
+            self.exclude_types,
+            self.compress_activation_fn,
+            suffix=suffix,
+        )
+        self.table_config = [
+            table_extrapolate,
+            table_stride_1,
+            table_stride_2,
+            check_frequency,
+        ]
+        self.lower, self.upper = self.table.build(
+            min_nbor_dist, table_extrapolate, table_stride_1, table_stride_2
+        )
+
+        self.davg = get_tensor_by_name_from_graph(
+            graph, "descrpt_attr%s/t_avg" % suffix
+        )
+        self.dstd = get_tensor_by_name_from_graph(
+            graph, "descrpt_attr%s/t_std" % suffix
+        )
+
 
     def build(
         self,
@@ -806,70 +899,18 @@ class DescrptSeAtten(DescrptSeA):
         xyz_scatter = tf.reshape(tf.slice(inputs_reshape, [0, 0], [-1, 1]), [-1, 1])
         assert atype is not None, 'atype must exist!!'
         type_embedding = tf.cast(type_embedding, self.filter_precision) # ntypes * Y
-        #xyz_scatter = self._lookup_type_embedding(xyz_scatter, atype, type_embedding)
-        if self.compress:
-            raise RuntimeError(
-                "compression of attention descriptor is not supported at the moment"
-            )
         # natom x 4 x outputs_size
         if not is_exclude:
             with tf.variable_scope(name, reuse=reuse):
                 # with (natom x nei_type_i) x out_size
-                xyz_scatter = embedding_net(
-                    xyz_scatter,
-                    self.filter_neuron,
-                    self.filter_precision,
-                    activation_fn=activation_fn,
-                    resnet_dt=self.filter_resnet_dt,
-                    name_suffix=suffix,
-                    stddev=stddev,
-                    bavg=bavg,
-                    seed=self.seed,
-                    trainable=trainable,
-                    uniform_seed=self.uniform_seed,
-                    initial_variables=self.embedding_net_variables,
-                    mixed_prec=self.mixed_prec)
-                out_size = xyz_scatter.get_shape().as_list()[-1]
-                #xyz_scatter = tf.nn.embedding_lookup(xyz_scatter,
-                #                                     self.nei_type_vec)
-                #xyz_scatter = tf.reshape(xyz_scatter, [-1, out_size])  # nframes*natoms[0] * nei * out_size
-
-                if self.type_one_side:
-                    embedding_of_embedding_suffix = suffix + "_ebd_of_ebd"
-                    embedding_of_embedding = embedding_net(
-                        type_embedding,
+                if not self.compress:
+                    xyz_scatter = embedding_net(
+                        xyz_scatter,
                         self.filter_neuron,
                         self.filter_precision,
                         activation_fn=activation_fn,
                         resnet_dt=self.filter_resnet_dt,
-                        name_suffix=embedding_of_embedding_suffix,
-                        stddev=stddev,
-                        bavg=bavg,
-                        seed=self.seed,
-                        trainable=trainable,
-                        uniform_seed=self.uniform_seed,
-                        initial_variables=self.embedding_net_variables,
-                        mixed_prec=self.mixed_prec)  # ntypes * out_size
-                    nei_embed = tf.nn.embedding_lookup(embedding_of_embedding, self.nei_type_vec)
-                    #nei_embed = tf.reshape(self.nei_embed, [-1, out_size])  # nframes*natoms[0] * nei * out_size
-
-                    xyz_scatter = xyz_scatter + nei_embed
-                else:
-                    type_embedding_shape = type_embedding.get_shape().as_list()
-                    type_embedding_nei = tf.tile(tf.reshape(type_embedding, [1, type_embedding_shape[0], -1]),
-                                                 [type_embedding_shape[0], 1, 1])  # (ntypes) * ntypes * Y
-                    type_embedding_center = tf.tile(tf.reshape(type_embedding, [type_embedding_shape[0], 1, -1]),
-                                                    [1, type_embedding_shape[0], 1])  # ntypes * (ntypes) * Y
-                    two_side_type_embedding = tf.concat([type_embedding_nei, type_embedding_center], -1) # ntypes * ntypes * (Y+Y)
-                    two_side_type_embedding = tf.reshape(two_side_type_embedding, [-1, two_side_type_embedding.shape[-1]])
-                    two_side_type_embedding_suffix = suffix + "_two_side_ebd" 
-                    embedding_of_two_side_type_embedding = embedding_net(
-                        two_side_type_embedding,
-                        self.filter_neuron,
-                        self.filter_precision,
-                        activation_fn=activation_fn,
-                        resnet_dt=self.filter_resnet_dt,
-                        name_suffix=two_side_type_embedding_suffix,
+                        name_suffix=suffix,
                         stddev=stddev,
                         bavg=bavg,
                         seed=self.seed,
@@ -877,13 +918,53 @@ class DescrptSeAtten(DescrptSeA):
                         uniform_seed=self.uniform_seed,
                         initial_variables=self.embedding_net_variables,
                         mixed_prec=self.mixed_prec)
-                    #index_of_two_side = self.nei_type_vec * self.ntypes + tf.tile(atype, [1, self.nnei])
-                    tmpres1 = self.nei_type_vec * type_embedding_shape[0]
-                    tmpres2 = tf.tile(atype, [self.nnei])
-                    index_of_two_side = tmpres1 + tmpres2
-                    two_embd = tf.nn.embedding_lookup(embedding_of_two_side_type_embedding, index_of_two_side)
+                else:
+                    net = 'filter_net'
+                    info = [
+                        self.lower[net],
+                        self.upper[net],
+                        self.upper[net] * self.table_config[0],
+                        self.table_config[1],
+                        self.table_config[2],
+                        self.table_config[3],
+                    ]
+                    return op_module.tabulate_fusion_se_a(
+                        tf.cast(self.table.data[net], self.filter_precision),
+                        info,
+                        xyz_scatter,
+                        tf.reshape(inputs_i, [natom, shape_i[1] // 4, 4]),
+                        last_layer_size=outputs_size[-1],
+                    )
 
-                    xyz_scatter = xyz_scatter * two_embd + two_embd
+                type_embedding_shape = type_embedding.get_shape().as_list()
+                type_embedding_nei = tf.tile(tf.reshape(type_embedding, [1, type_embedding_shape[0], -1]),
+                                                [type_embedding_shape[0], 1, 1])  # (ntypes) * ntypes * Y
+                type_embedding_center = tf.tile(tf.reshape(type_embedding, [type_embedding_shape[0], 1, -1]),
+                                                [1, type_embedding_shape[0], 1])  # ntypes * (ntypes) * Y
+                two_side_type_embedding = tf.concat([type_embedding_nei, type_embedding_center], -1) # ntypes * ntypes * (Y+Y)
+                two_side_type_embedding = tf.reshape(two_side_type_embedding, [-1, two_side_type_embedding.shape[-1]])
+                two_side_type_embedding_suffix = suffix + "_two_side_ebd" 
+                embedding_of_two_side_type_embedding = embedding_net(
+                    two_side_type_embedding,
+                    self.filter_neuron,
+                    self.filter_precision,
+                    activation_fn=activation_fn,
+                    resnet_dt=self.filter_resnet_dt,
+                    name_suffix=two_side_type_embedding_suffix,
+                    stddev=stddev,
+                    bavg=bavg,
+                    seed=self.seed,
+                    trainable=trainable,
+                    uniform_seed=self.uniform_seed,
+                    initial_variables=self.embedding_net_variables,
+                    mixed_prec=self.mixed_prec)
+                #index_of_two_side = self.nei_type_vec * self.ntypes + tf.tile(atype, [1, self.nnei])
+                tmpres1 = self.nei_type_vec * type_embedding_shape[0]
+                tmpres2 = tf.tile(atype, [self.nnei])
+                index_of_two_side = tmpres1 + tmpres2
+                two_embd = tf.nn.embedding_lookup(embedding_of_two_side_type_embedding, index_of_two_side)
+
+                #xyz_scatter = xyz_scatter * two_embd + two_embd
 
                 if (not self.uniform_seed) and (self.seed is not None):
                     self.seed += self.seed_shift
