@@ -1,8 +1,10 @@
 from typing import (
     List,
 )
-
-
+from deepmd.env import (
+    GLOBAL_TF_FLOAT_PRECISION,
+    tf,
+)
 class Spin:
     """Class for spin.
 
@@ -27,6 +29,41 @@ class Spin:
         self.spin_norm = spin_norm
         self.virtual_len = virtual_len
         self.ntypes_spin = self.use_spin.count(True)
+
+    def build(
+        self,
+        reuse=None,
+        suffix="",
+    ):
+        """Build the computational graph for the spin.
+
+        Parameters
+        ----------
+        reuse
+            The weights in the networks should be reused when get the variable.
+        suffix
+            Name suffix to identify this descriptor
+
+        Returns
+        -------
+        embedded_types
+            The computational graph for embedded types
+        """
+        name = "spin_attr" + suffix
+        with tf.variable_scope(name, reuse=reuse):
+            t_ntypes_spin = tf.constant(
+                self.ntypes_spin, name="ntypes_spin", dtype=tf.int32
+            )
+            t_virtual_len = tf.constant(
+                self.virtual_len,
+                name="virtual_len",
+                dtype=GLOBAL_TF_FLOAT_PRECISION,
+            )
+            t_spin_norm = tf.constant(
+                self.spin_norm,
+                name="spin_norm",
+                dtype=GLOBAL_TF_FLOAT_PRECISION,
+            )
 
     def get_ntypes_spin(self) -> int:
         """Returns the number of atom types which contain spin."""

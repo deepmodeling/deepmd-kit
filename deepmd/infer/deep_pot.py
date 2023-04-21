@@ -139,8 +139,8 @@ class DeepPot(DeepEval):
             self.t_aparam = None
             self.has_aparam = False
 
-        if "load/descrpt_attr/ntypes_spin" in operations:
-            self.tensors.update({"t_ntypes_spin": "descrpt_attr/ntypes_spin:0"})
+        if "load/spin_attr/ntypes_spin" in operations:
+            self.tensors.update({"t_ntypes_spin": "spin_attr/ntypes_spin:0"})
             self.has_spin = True
         else:
             self.ntypes_spin = 0
@@ -517,17 +517,23 @@ class DeepPot(DeepEval):
             ae = v_out[3]
             av = v_out[4]
 
+        if self.has_spin:
+            ntypes_real = self.ntypes - self.ntypes_spin
+            natoms_real = sum([np.count_nonzero(np.array(atom_types) == ii) for ii in range(ntypes_real)])
+        else:
+            natoms_real = natoms
+
         # reverse map of the outputs
         force = self.reverse_map(np.reshape(force, [nframes, -1, 3]), imap)
         if atomic:
-            ae = self.reverse_map(np.reshape(ae, [nframes, -1, 1]), imap)
+            ae = self.reverse_map(np.reshape(ae, [nframes, -1, 1]), imap[:natoms_real])
             av = self.reverse_map(np.reshape(av, [nframes, -1, 9]), imap)
 
         energy = np.reshape(energy, [nframes, 1])
         force = np.reshape(force, [nframes, natoms, 3])
         virial = np.reshape(virial, [nframes, 9])
         if atomic:
-            ae = np.reshape(ae, [nframes, natoms, 1])
+            ae = np.reshape(ae, [nframes, natoms_real, 1])
             av = np.reshape(av, [nframes, natoms, 9])
             return energy, force, virial, ae, av
         else:

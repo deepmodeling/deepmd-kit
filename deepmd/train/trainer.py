@@ -152,7 +152,7 @@ class DPTrainer:
                     hybrid_with_tebd = True
         if self.multi_task_mode:
             descrpt_param["multi_task"] = True
-        if descrpt_param["type"] in ["se_e2_a", "se_a"]:
+        if descrpt_param["type"] in ["se_e2_a", "se_a", "se_e2_r", "se_r", "hybrid"]:
             descrpt_param["spin"] = self.spin
         self.descrpt = Descriptor(**descrpt_param)
 

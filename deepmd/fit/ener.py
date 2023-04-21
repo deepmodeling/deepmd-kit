@@ -486,6 +486,14 @@ class EnerFitting(Fitting):
         ntypes_atom = self.ntypes - self.ntypes_spin
         if self.spin is not None:
             for type_i in range(ntypes_atom):
+                if self.bias_atom_e.shape[0] != self.ntypes:
+                    self.bias_atom_e = np.pad(
+                        self.bias_atom_e,
+                        (0, self.ntypes_spin),
+                        'constant',
+                        constant_values=(0,0)
+                    )
+                    bias_atom_e = self.bias_atom_e
                 if self.spin.use_spin[type_i]:
                     self.bias_atom_e[type_i] = (
                         self.bias_atom_e[type_i]

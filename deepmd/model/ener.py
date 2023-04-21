@@ -193,6 +193,12 @@ class EnerModel(Model):
                 suffix=suffix,
             )
             input_dict["type_embedding"] = type_embedding
+        # spin if any
+        if self.spin is not None:
+            type_spin = self.spin.build(
+                reuse=reuse,
+                suffix=suffix,
+            )
         input_dict["atype"] = atype_
 
         # # spin if any

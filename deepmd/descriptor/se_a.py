@@ -557,20 +557,6 @@ class DescrptSeA(DescrptSe):
                 dtype=GLOBAL_TF_FLOAT_PRECISION,
             )
             t_ntypes = tf.constant(self.ntypes, name="ntypes", dtype=tf.int32)
-            t_ntypes_spin = tf.constant(
-                self.ntypes_spin, name="ntypes_spin", dtype=tf.int32
-            )
-            if self.spin is not None:
-                t_virtual_len = tf.constant(
-                    self.spin.virtual_len,
-                    name="virtual_len",
-                    dtype=GLOBAL_TF_FLOAT_PRECISION,
-                )
-                t_spin_norm = tf.constant(
-                    self.spin.spin_norm,
-                    name="spin_norm",
-                    dtype=GLOBAL_TF_FLOAT_PRECISION,
-                )
             t_ndescrpt = tf.constant(self.ndescrpt, name="ndescrpt", dtype=tf.int32)
             t_sel = tf.constant(self.sel_a, name="sel", dtype=tf.int32)
             t_original_sel = tf.constant(
