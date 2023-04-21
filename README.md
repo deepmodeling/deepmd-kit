@@ -70,13 +70,7 @@ One may manually install DeePMD-kit by following the instructions on [installing
 
 # Use DeePMD-kit
 
-A quick start on using DeePMD-kit can be found as follows:
-
-- [Prepare data with dpdata](doc/data/dpdata.md)
-- [Training a model](doc/train/training.md)
-- [Freeze a model](doc/freeze/freeze.md)
-- [Test a model](doc/test/test.md)
-- [Run MD with LAMMPS](doc/third-party/lammps.md)
+A quick start on using DeePMD-kit can be found [here](doc/getting-started/quick_start.ipynb).
 
 A full [document](doc/train/train-input-auto.rst) on options in the training input script is available.
 
