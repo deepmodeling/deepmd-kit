@@ -928,13 +928,6 @@ class DescrptSeAtten(DescrptSeA):
                         self.table_config[2],
                         self.table_config[3],
                     ]
-                    return op_module.tabulate_fusion_se_a(
-                        tf.cast(self.table.data[net], self.filter_precision),
-                        info,
-                        xyz_scatter,
-                        tf.reshape(inputs_i, [natom, shape_i[1] // 4, 4]),
-                        last_layer_size=outputs_size[-1],
-                    )
 
                 type_embedding_shape = type_embedding.get_shape().as_list()
                 type_embedding_nei = tf.tile(tf.reshape(type_embedding, [1, type_embedding_shape[0], -1]),
@@ -962,9 +955,20 @@ class DescrptSeAtten(DescrptSeA):
                 tmpres1 = self.nei_type_vec * type_embedding_shape[0]
                 tmpres2 = tf.tile(atype, [self.nnei])
                 index_of_two_side = tmpres1 + tmpres2
-                two_embd = tf.nn.embedding_lookup(embedding_of_two_side_type_embedding, index_of_two_side)
+                # two_embd = tf.nn.embedding_lookup(embedding_of_two_side_type_embedding, index_of_two_side)
 
-                #xyz_scatter = xyz_scatter * two_embd + two_embd
+                if not self.compress:
+                    #xyz_scatter = xyz_scatter * two_embd + two_embd
+                    pass
+                else:
+                    return op_module.tabulate_fusion_se_atten(
+                        tf.cast(self.table.data[net], self.filter_precision),
+                        info,
+                        xyz_scatter,
+                        tf.reshape(inputs_i, [natom, shape_i[1] // 4, 4]),
+                        tf.zeros([1, 1], dtype=tf.float64),
+                        last_layer_size=outputs_size[-1],
+                    )
 
                 if (not self.uniform_seed) and (self.seed is not None):
                     self.seed += self.seed_shift

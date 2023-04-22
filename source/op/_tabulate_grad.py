@@ -30,6 +30,44 @@ def _tabulate_fusion_se_a_grad_grad_cc(op, dy, dy_):
     return [None, None, None, None, dz_dy, None]
 
 
+@ops.RegisterGradient("TabulateFusionSeAtten")
+def _tabulate_fusion_se_atten_grad_cc(op, dy):
+    dy_dx, dy_df, dy_dtwo = op_module.tabulate_fusion_se_atten_grad(
+        op.inputs[0],  # table
+        op.inputs[1],  # table_info
+        op.inputs[2],  # em_x
+        op.inputs[3],  # em
+        op.inputs[4],  # two_embed
+        dy,            # dy
+        op.outputs[0]  # descriptor
+    )
+    return [None,      # table
+            None,      # table_info
+            dy_dx,     # em_x
+            dy_df,     # em
+            None]   # two_embed
+
+@ops.RegisterGradient("TabulateFusionSeAttenGrad")
+def _tabulate_fusion_se_atten_grad_grad_cc(op, dy, dy_, dy_dtwo):
+    dz_dy = op_module.tabulate_fusion_se_atten_grad_grad(
+        op.inputs[0],  # table
+        op.inputs[1],  # table_info
+        op.inputs[2],  # em_x
+        op.inputs[3],  # em
+        op.inputs[4],  # two_embed
+        dy,            # dz_dy_dem_x
+        dy_,           # dz_dy_dem
+        op.inputs[6]   # descriptor
+    )
+    return [None,      # table
+            None,      # table_info
+            None,      # em_x
+            None,      # em
+            None,      # two_embed
+            dz_dy,     # dy
+            None]      # descriptor
+
+
 @ops.RegisterGradient("TabulateFusionSeT")
 def _tabulate_fusion_se_t_grad_cc(op, dy):
     dy_dx, dy_df = op_module.tabulate_fusion_se_t_grad(
