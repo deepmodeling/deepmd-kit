@@ -354,7 +354,7 @@ class DescrptSeAtten(DescrptSeA):
             self.filter_neuron,
             graph,
             graph_def,
-            self.type_one_side,
+            True,
             self.exclude_types,
             self.compress_activation_fn,
             suffix=suffix,

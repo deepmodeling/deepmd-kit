@@ -176,9 +176,8 @@ class DPTabulate:
         # tabulate range [lower, upper] with stride0 'stride0'
         lower, upper = self._get_env_mat_range(min_nbor_dist)
         if isinstance(self.descrpt, deepmd.descriptor.DescrptSeAtten):
-            uu = np.min(upper)
+            uu = np.max(upper)
             ll = np.min(lower)
-            print('lower = ', ll, ', upper = ', uu)
             xx = np.arange(ll, uu, stride0, dtype=self.data_type)
             xx = np.append(
                 xx,
@@ -742,7 +741,7 @@ class DPTabulate:
     def _get_table_size(self):
         table_size = 0
         if isinstance(self.descrpt, deepmd.descriptor.DescrptSeAtten):
-            table_size = self.ntypes
+            table_size = 1
         elif isinstance(self.descrpt, deepmd.descriptor.DescrptSeA):
             table_size = self.ntypes * self.ntypes
             if self.type_one_side:
