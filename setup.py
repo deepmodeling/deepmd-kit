@@ -127,6 +127,7 @@ setup(
             "dargs>=0.3.4",
             "sphinx-argparse",
             "pygments-lammps",
+            "sphinxcontrib-bibtex",
         ],
         "lmp": [
             "lammps-manylinux-2-28~=2022.6.23.3.0; platform_system=='Linux'",

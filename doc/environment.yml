@@ -9,3 +9,4 @@ dependencies:
   - pip:
     - ..[docs,cpu]
     - "exhale @ https://github.com/svenevs/exhale/archive/2759a394268307b88f5440487ae0920ee4ebf81e.zip"
+    - "docutils @ https://github.com/docutils/docutils/archive/17f69f54bc9872602b07320ad94ca4860556fae3.zip#egg=docutils&subdirectory=docutils"
