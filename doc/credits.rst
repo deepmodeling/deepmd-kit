@@ -42,6 +42,13 @@ Cite DeePMD-kit and methods
 
    Wang_NuclFusion_2022_v62_p126013
 
+- If attention-based descriptor (`se_atten`) is used,
+
+.. bibliography::
+   :filter: False
+
+   Zhang_2022_DPA1
+
 - If fitting dipole,
 
 .. bibliography::
