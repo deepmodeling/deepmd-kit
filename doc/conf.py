@@ -317,4 +317,4 @@ latex_elements = {
 napoleon_google_docstring = True
 napoleon_numpy_docstring = False
 
-bibtex_bibfiles = ["refs.bib"]
+bibtex_bibfiles = ["../CITATIONS.bib"]
