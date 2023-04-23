@@ -14,7 +14,7 @@ Cite DeePMD-kit and methods
    Wang_ComputPhysCommun_2018_v228_p178
    Zeng_arXiv_2023
 
-- If GPU version is used, 
+- If GPU version is used,
 
 .. bibliography::
    :filter: False
