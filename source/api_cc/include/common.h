@@ -73,6 +73,24 @@ void select_real_atoms(std::vector<int>& fwd_map,
                        const int& nghost,
                        const int& ntypes);
 
+template <typename VALUETYPE>
+void select_real_atoms_coord(std::vector<VALUETYPE>& dcoord,
+                             std::vector<int>& datype,
+                             std::vector<VALUETYPE>& aparam,
+                             int& nghost_real,
+                             std::vector<int>& fwd_map,
+                             std::vector<int>& bkw_map,
+                             int& nall_real,
+                             int& nloc_real,
+                             const std::vector<VALUETYPE>& dcoord_,
+                             const std::vector<int>& datype_,
+                             const std::vector<VALUETYPE>& aparam_,
+                             const int& nghost,
+                             const int& ntypes,
+                             const int& nframes,
+                             const int& daparam,
+                             const int& nall);
+
 /**
  * @brief Apply the given map to a vector.
  * @param[out] out The output vector.

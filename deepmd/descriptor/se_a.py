@@ -273,7 +273,9 @@ class DescrptSeA(DescrptSe):
         return self.filter_neuron[-1]
 
     def get_nlist(self) -> Tuple[tf.Tensor, tf.Tensor, List[int], List[int]]:
-        """Returns
+        """Returns neighbor information.
+
+        Returns
         -------
         nlist
             Neighbor list
@@ -866,7 +868,7 @@ class DescrptSeA(DescrptSe):
         trainable=True,
         suffix="",
     ):
-        """input env matrix, returns R.G."""
+        """Input env matrix, returns R.G."""
         outputs_size = [1] + self.filter_neuron
         # cut-out inputs
         # with natom x (nei_type_i x 4)

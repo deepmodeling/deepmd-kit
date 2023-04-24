@@ -55,6 +55,7 @@ def _init_models():
     jdata = j_loader(str(tests_path / os.path.join("init_frz_model", "input.json")))
     fitting_config = jdata["model"].pop("fitting_net")
     loss_config = jdata.pop("loss")
+    learning_rate_config = jdata.pop("learning_rate")
     training_data_config = jdata["training"].pop("training_data")
     validation_data_config = jdata["training"].pop("validation_data")
     jdata["training"]["data_dict"] = {}
@@ -72,6 +73,8 @@ def _init_models():
     jdata["model"]["fitting_net_dict"]["water_ener"] = fitting_config
     jdata["loss_dict"] = {}
     jdata["loss_dict"]["water_ener"] = loss_config
+    jdata["learning_rate_dict"] = {}
+    jdata["learning_rate_dict"]["water_ener"] = learning_rate_config
     with open(INPUT, "w") as fp:
         json.dump(jdata, fp, indent=4)
     ret = run_dp("dp train " + INPUT)
@@ -89,6 +92,8 @@ def _init_models():
     jdata["model"]["fitting_net_dict"]["water_ener_new"] = fitting_config
     jdata["loss_dict"] = {}
     jdata["loss_dict"]["water_ener_new"] = loss_config
+    jdata["learning_rate_dict"] = {}
+    jdata["learning_rate_dict"]["water_ener_new"] = learning_rate_config
     jdata["training"]["data_dict"] = {}
     jdata["training"]["data_dict"]["water_ener_new"] = {}
     jdata["training"]["data_dict"]["water_ener_new"][

@@ -459,7 +459,7 @@ def wrap(
     nvnmd_weight: Optional[str] = "nvnmd/weight.npy",
     nvnmd_map: Optional[str] = "nvnmd/map.npy",
     nvnmd_model: Optional[str] = "nvnmd/model.pb",
-    **kwargs
+    **kwargs,
 ):
     wrapObj = Wrap(nvnmd_config, nvnmd_weight, nvnmd_map, nvnmd_model)
     wrapObj.wrap()

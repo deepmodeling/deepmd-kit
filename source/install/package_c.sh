@@ -17,12 +17,17 @@ mkdir -p ${BUILD_TMP_DIR}
 cd ${BUILD_TMP_DIR}
 cmake -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX} \
 	-DUSE_CUDA_TOOLKIT=TRUE \
-	-DOP_CXX_ABI=0 \
 	-DPACKAGE_C=TRUE \
+	-DUSE_TF_PYTHON_LIBS=TRUE \
 	..
 make -j${NPROC}
 make install
 
 #------------------
+
+# fix runpath
+for ii in ${BUILD_TMP_DIR}/libdeepmd_c/lib/*.so*; do
+	patchelf --set-rpath \$ORIGIN $ii
+done
 
 tar vczf ${SCRIPT_PATH}/../../libdeepmd_c.tar.gz -C ${BUILD_TMP_DIR} libdeepmd_c
