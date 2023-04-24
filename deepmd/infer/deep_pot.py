@@ -444,6 +444,10 @@ class DeepPot(DeepEval):
             feed_dict_test[self.t_mesh] = make_default_mesh(cells)
         else:
             feed_dict_test[self.t_mesh] = np.array([], dtype=np.int32)
+        if mixed_type:
+            feed_dict_test[self.t_mesh] = np.pad(
+                feed_dict_test[self.t_mesh], (0, 1), "constant"
+            )
         if self.has_fparam:
             feed_dict_test[self.t_fparam] = np.reshape(fparam, [-1])
         if self.has_aparam:

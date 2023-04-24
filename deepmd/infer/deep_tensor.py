@@ -217,6 +217,10 @@ class DeepTensor(DeepEval):
             feed_dict_test[self.t_mesh] = make_default_mesh(cells)
         else:
             feed_dict_test[self.t_mesh] = np.array([], dtype=np.int32)
+        if mixed_type:
+            feed_dict_test[self.t_mesh] = np.pad(
+                feed_dict_test[self.t_mesh], (0, 1), "constant"
+            )
 
         if atomic:
             assert (
@@ -344,6 +348,10 @@ class DeepTensor(DeepEval):
             feed_dict_test[self.t_mesh] = make_default_mesh(cells)
         else:
             feed_dict_test[self.t_mesh] = np.array([], dtype=np.int32)
+        if mixed_type:
+            feed_dict_test[self.t_mesh] = np.pad(
+                feed_dict_test[self.t_mesh], (0, 1), "constant"
+            )
 
         t_out = [self.t_global_tensor, self.t_force, self.t_virial]
         if atomic:
