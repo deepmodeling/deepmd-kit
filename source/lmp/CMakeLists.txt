@@ -19,5 +19,5 @@ endfunction()
 _add_lmp_variant("${HIGH_PREC_VARIANT}" "${HIGH_PREC_DEF}")
 _add_lmp_variant("${LOW_PREC_VARIANT}" "${LOW_PREC_DEF}")
 
-configure_file("pair_deepmd.h.in" "pair_deepmd.h" @ONLY)
+configure_file("deepmd_version.h.in" "deepmd_version.h" @ONLY)
 configure_file("lammps_install_list.txt.in" "lammps_install_list.txt" @ONLY)

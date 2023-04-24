@@ -26,6 +26,7 @@
 #include "fix_ttm_dp.h"
 #endif
 
+#include "deepmd_version.h"
 #include "pair_deepmd.h"
 
 using namespace LAMMPS_NS;
