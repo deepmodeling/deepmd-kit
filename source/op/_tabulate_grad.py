@@ -8,6 +8,7 @@ from tensorflow.python.framework import (
 from deepmd.env import (
     op_module,
 )
+import tensorflow.compat.v1 as tf
 
 # from deepmd.DescrptSeATabulate import last_layer_size
 
@@ -45,7 +46,7 @@ def _tabulate_fusion_se_atten_grad_cc(op, dy):
             None,      # table_info
             dy_dx,     # em_x
             dy_df,     # em
-            None]   # two_embed
+            dy_dtwo]   # two_embed
 
 @ops.RegisterGradient("TabulateFusionSeAttenGrad")
 def _tabulate_fusion_se_atten_grad_grad_cc(op, dy, dy_, dy_dtwo):
@@ -63,7 +64,7 @@ def _tabulate_fusion_se_atten_grad_grad_cc(op, dy, dy_, dy_dtwo):
             None,      # table_info
             None,      # em_x
             None,      # em
-            None,      # two_embed
+            tf.zeros_like(op.inputs[4]),      # two_embed
             dz_dy,     # dy
             None]      # descriptor
 

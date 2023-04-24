@@ -418,10 +418,10 @@ class TabulateFusionSeAttenOp : public OpKernel {
       //                                      em, nloc, nnei, last_layer_size);
 #endif  // TENSORFLOW_USE_ROCM
     } else if (device == "CPU") {
-        //deepmd::tabulate_fusion_se_atten_cpu(descriptor, table, table_info, em_x, em, two_embed,
-        //                                     nloc, nnei, last_layer_size);
-      deepmd::tabulate_fusion_se_a_cpu(descriptor, table, table_info, em_x, em,
-                                       nloc, nnei, last_layer_size);
+        deepmd::tabulate_fusion_se_atten_cpu(descriptor, table, table_info, em_x, em, two_embed,
+                                             nloc, nnei, last_layer_size);
+      //deepmd::tabulate_fusion_se_a_cpu(descriptor, table, table_info, em_x, em,
+      //                                 nloc, nnei, last_layer_size);
     }
   }
 
@@ -497,12 +497,12 @@ class TabulateFusionSeAttenGradOp : public OpKernel {
       //                                           nnei, last_layer_size);
 #endif  // TENSORFLOW_USE_ROCM
     } else if (device == "CPU") {
-       //deepmd::tabulate_fusion_se_atten_grad_cpu(dy_dem_x, dy_dem, dy_dtwo, table, table_info,
-       //        em_x, em, two_embed, dy, nloc, nnei,
-       //        last_layer_size);
-      deepmd::tabulate_fusion_se_a_grad_cpu(dy_dem_x, dy_dem, table, table_info,
-                                            em_x, em, dy, nloc, nnei,
-                                            last_layer_size);
+       deepmd::tabulate_fusion_se_atten_grad_cpu(dy_dem_x, dy_dem, table, table_info,
+               em_x, em, two_embed, dy, nloc, nnei,
+               last_layer_size);
+      //deepmd::tabulate_fusion_se_a_grad_cpu(dy_dem_x, dy_dem, table, table_info,
+      //                                      em_x, em, dy, nloc, nnei,
+      //                                      last_layer_size);
     }
   }
 
@@ -567,12 +567,12 @@ class TabulateFusionSeAttenGradGradOp : public OpKernel {
                       "In the process of model compression, the size of the "
                       "last layer of embedding net must be less than 1024!"));
     } else if (device == "CPU") {
-      deepmd::tabulate_fusion_se_a_grad_grad_cpu(dz_dy, table, table_info, em_x,
-                                                 em, dz_dy_dem_x, dz_dy_dem,
-                                                 nloc, nnei, last_layer_size);
-        //deepmd::tabulate_fusion_se_atten_grad_grad_cpu(dz_dy, table, table_info, em_x,
-        //        em, two_embed, dz_dy_dem_x, dz_dy_dem,
-        //        nloc, nnei, last_layer_size);
+      //deepmd::tabulate_fusion_se_a_grad_grad_cpu(dz_dy, table, table_info, em_x,
+      //                                           em, dz_dy_dem_x, dz_dy_dem,
+      //                                           nloc, nnei, last_layer_size);
+        deepmd::tabulate_fusion_se_atten_grad_grad_cpu(dz_dy, table, table_info, em_x,
+                em, two_embed, dz_dy_dem_x, dz_dy_dem,
+                nloc, nnei, last_layer_size);
     }
   }
 
