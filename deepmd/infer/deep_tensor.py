@@ -213,14 +213,7 @@ class DeepTensor(DeepEval):
             )
         feed_dict_test[self.t_coord] = np.reshape(coords, [-1])
         feed_dict_test[self.t_box] = np.reshape(cells, [-1])
-        if pbc:
-            feed_dict_test[self.t_mesh] = make_default_mesh(cells)
-        else:
-            feed_dict_test[self.t_mesh] = np.array([], dtype=np.int32)
-        if mixed_type:
-            feed_dict_test[self.t_mesh] = np.pad(
-                feed_dict_test[self.t_mesh], (0, 1), "constant"
-            )
+        feed_dict_test[self.t_mesh] = make_default_mesh(pbc, mixed_type)
 
         if atomic:
             assert (
