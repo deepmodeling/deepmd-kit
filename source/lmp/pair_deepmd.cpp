@@ -930,7 +930,7 @@ void PairDeepMD::settings(int narg, char **arg) {
     try {
       deep_pot.init(arg[0], get_node_rank(), get_file_content(arg[0]));
     } catch (deepmd::deepmd_exception &e) {
-      error->all(FLERR, e.what());
+      error->one(FLERR, e.what());
     }
     cutoff = deep_pot.cutoff();
     numb_types = deep_pot.numb_types();
@@ -942,7 +942,7 @@ void PairDeepMD::settings(int narg, char **arg) {
       deep_pot_model_devi.init(models, get_node_rank(),
                                get_file_content(models));
     } catch (deepmd::deepmd_exception &e) {
-      error->all(FLERR, e.what());
+      error->one(FLERR, e.what());
     }
     cutoff = deep_pot_model_devi.cutoff();
     numb_types = deep_pot_model_devi.numb_types();
