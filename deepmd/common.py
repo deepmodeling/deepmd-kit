@@ -208,6 +208,12 @@ def select_idx_map(atom_types: np.ndarray, select_types: np.ndarray) -> np.ndarr
 def make_default_mesh(pbc: bool, mixed_type: bool) -> np.ndarray:
     """Make mesh.
 
+    Only the size of mesh matters, not the values:
+    * 6 for PBC, no mixed types
+    * 0 for no PBC, no mixed types
+    * 7 for PBC, mixed types
+    * 1 for no PBC, mixed types
+
     Parameters
     ----------
     pbc : bool

@@ -412,6 +412,11 @@ class TestDataSystem(unittest.TestCase):
         ds.add("null", self.test_ndof, atomic=True, must=False)
         random.seed(114514)
         # with this seed, the batch is fixed, with natoms 3, 6, 6
+        # keep the random behavior before #2481
+        for ii in range(ds.nsystems):
+            if ds.data_systems[ii].pbc:
+                ds.data_systems[ii].get_batch(ds.batch_size[ii])
+                ds.data_systems[ii].reset_get_batch()
         data = ds.get_batch()
         np.testing.assert_equal(data["natoms_vec"], np.array([6, 6, 6, 0, 0]))
         np.testing.assert_equal(data["real_natoms_vec"][:, 0], np.array([3, 6, 6]))
