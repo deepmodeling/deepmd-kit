@@ -411,7 +411,9 @@ class DPTrainer:
             ):
                 raise RuntimeError(
                     "Unsupported mixed precision option [output_prec, compute_prec]: [{}, {}], "
-                    " Supported: [float32, float16/bfloat16], Please set mixed precision option correctly!".format(self.mixed_prec["output_prec"], self.mixed_prec["compute_prec"])
+                    " Supported: [float32, float16/bfloat16], Please set mixed precision option correctly!".format(
+                        self.mixed_prec["output_prec"], self.mixed_prec["compute_prec"]
+                    )
                 )
         # self.sys_probs = tr_data['sys_probs']
         # self.auto_prob_style = tr_data['auto_prob']
@@ -1339,7 +1341,9 @@ class DPTrainer:
             # throw runtime error if there's no frozen model
             raise RuntimeError(
                 "The input frozen pretrained model {} ({}) does not exist! "
-                "Please check the path of the frozen pretrained model. ".format(self.run_opt.finetune, os.path.abspath(self.run_opt.finetune))
+                "Please check the path of the frozen pretrained model. ".format(
+                    self.run_opt.finetune, os.path.abspath(self.run_opt.finetune)
+                )
             ) from e
         # get the model type from the frozen model(self.run_opt.finetune)
         try:
