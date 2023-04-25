@@ -2,6 +2,7 @@
  * See https://docs.lammps.org/Developer_plugins.html
  */
 #include "compute_deeptensor_atom.h"
+#include "deepmd_version.h"
 #include "fix_dplr.h"
 #include "lammpsplugin.h"
 #include "pair_deepmd.h"
