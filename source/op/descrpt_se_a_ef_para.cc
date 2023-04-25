@@ -143,6 +143,11 @@ class DescrptSeAEfParaOp : public OpKernel {
     } else {
       throw deepmd::deepmd_exception("invalid mesh tensor");
     }
+    else if (mesh_tensor.shape().dim_size(0) == 7 ||
+             mesh_tensor.shape().dim_size(0) == 1) {
+      throw deepmd::deepmd_exception(
+          "Mixed types are not supported by this OP.")
+    }
     bool b_pbc = true;
     // if region is given extended, do not use pbc
     if (nei_mode >= 1 || nei_mode == -1) {

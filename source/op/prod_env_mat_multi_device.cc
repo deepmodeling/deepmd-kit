@@ -506,6 +506,10 @@ class ProdEnvMatAOp : public OpKernel {
       // no pbc
       assert(nloc == nall);
       nei_mode = -1;
+    } else if (mesh_tensor.shape().dim_size(0) == 7 ||
+               mesh_tensor.shape().dim_size(0) == 1) {
+      throw deepmd::deepmd_exception(
+          "Mixed types are not supported by this OP.")
     } else {
       throw deepmd::deepmd_exception("invalid mesh tensor");
     }
@@ -788,6 +792,10 @@ class ProdEnvMatROp : public OpKernel {
       // no pbc
       assert(nloc == nall);
       nei_mode = -1;
+    } else if (mesh_tensor.shape().dim_size(0) == 7 ||
+               mesh_tensor.shape().dim_size(0) == 1) {
+      throw deepmd::deepmd_exception(
+          "Mixed types are not supported by this OP.")
     } else {
       throw deepmd::deepmd_exception("invalid mesh tensor");
     }
