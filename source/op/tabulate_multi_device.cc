@@ -409,8 +409,8 @@ class TabulateFusionSeAttenOp : public OpKernel {
 
     if (device == "GPU") {
 #if GOOGLE_CUDA
-      //deepmd::tabulate_fusion_se_atten_gpu_cuda(descriptor, table, table_info, em_x, two_embed,
-                                                //em, nloc, nnei, last_layer_size);
+      deepmd::tabulate_fusion_se_atten_gpu_cuda(descriptor, table, table_info, em_x, em,
+                                                two_embed, nloc, nnei, last_layer_size);
 #endif  // GOOGLE_CUDA
 
 #if TENSORFLOW_USE_ROCM
@@ -486,9 +486,9 @@ class TabulateFusionSeAttenGradOp : public OpKernel {
 
     if (device == "GPU") {
 #if GOOGLE_CUDA
-      //deepmd::tabulate_fusion_se_atten_grad_gpu_cuda(dy_dem_x, dy_dem, table,
-      //                                           table_info, em_x, em, dy, nloc,
-      //                                           nnei, last_layer_size);
+      deepmd::tabulate_fusion_se_atten_grad_gpu_cuda(dy_dem_x, dy_dem, table,
+                                                     table_info, em_x, em, two_embed, dy, nloc,
+                                                     nnei, last_layer_size);
 #endif  // GOOGLE_CUDA
 
 #if TENSORFLOW_USE_ROCM
