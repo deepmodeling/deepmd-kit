@@ -336,6 +336,7 @@ inline void flatten_vector(std::vector<VALUETYPE>& onedv,
 
 template <typename VALUETYPE>
 void DP_DeepPotModelDeviComputeNList_variant(DP_DeepPotModelDevi* dp,
+                                             const int nframes,
                                              const int natoms,
                                              const VALUETYPE* coord,
                                              const int* atype,
@@ -343,11 +344,14 @@ void DP_DeepPotModelDeviComputeNList_variant(DP_DeepPotModelDevi* dp,
                                              const int nghost,
                                              const DP_Nlist* nlist,
                                              const int ago,
+                                             const VALUETYPE* fparam,
+                                             const VALUETYPE* aparam,
                                              double* energy,
                                              VALUETYPE* force,
                                              VALUETYPE* virial,
                                              VALUETYPE* atomic_energy,
                                              VALUETYPE* atomic_virial) {
+  if (nframes > 1) throw std::runtime_error("nframes > 1 not supported yet");
   // init C++ vectors from C arrays
   std::vector<VALUETYPE> coord_(coord, coord + natoms * 3);
   std::vector<int> atype_(atype, atype + natoms);
@@ -356,12 +360,20 @@ void DP_DeepPotModelDeviComputeNList_variant(DP_DeepPotModelDevi* dp,
     // pbc
     cell_.assign(cell, cell + 9);
   }
+  std::vector<VALUETYPE> fparam_;
+  if (fparam) {
+    fparam_.assign(fparam, fparam + dp->dfparam);
+  }
+  std::vector<VALUETYPE> aparam_;
+  if (aparam) {
+    aparam_.assign(aparam, aparam + (natoms - nghost) * dp->daparam);
+  }
   // different from DeepPot
   std::vector<double> e;
   std::vector<std::vector<VALUETYPE>> f, v, ae, av;
 
   DP_REQUIRES_OK(dp, dp->dp.compute(e, f, v, ae, av, coord_, atype_, cell_,
-                                    nghost, nlist->nl, ago));
+                                    nghost, nlist->nl, ago, fparam_, aparam_));
   // 2D vector to 2D array, flatten first
   if (energy) {
     std::copy(e.begin(), e.end(), energy);
@@ -390,6 +402,7 @@ void DP_DeepPotModelDeviComputeNList_variant(DP_DeepPotModelDevi* dp,
 
 template void DP_DeepPotModelDeviComputeNList_variant<double>(
     DP_DeepPotModelDevi* dp,
+    const int nframes,
     const int natoms,
     const double* coord,
     const int* atype,
@@ -397,6 +410,8 @@ template void DP_DeepPotModelDeviComputeNList_variant<double>(
     const int nghost,
     const DP_Nlist* nlist,
     const int ago,
+    const double* fparam,
+    const double* aparam,
     double* energy,
     double* force,
     double* virial,
@@ -405,6 +420,7 @@ template void DP_DeepPotModelDeviComputeNList_variant<double>(
 
 template void DP_DeepPotModelDeviComputeNList_variant<float>(
     DP_DeepPotModelDevi* dp,
+    const int nframes,
     const int natoms,
     const float* coord,
     const int* atype,
@@ -412,6 +428,8 @@ template void DP_DeepPotModelDeviComputeNList_variant<float>(
     const int nghost,
     const DP_Nlist* nlist,
     const int ago,
+    const float* fparam,
+    const float* aparam,
     double* energy,
     float* force,
     float* virial,
@@ -936,8 +954,8 @@ void DP_DeepPotModelDeviComputeNList(DP_DeepPotModelDevi* dp,
                                      double* atomic_energy,
                                      double* atomic_virial) {
   DP_DeepPotModelDeviComputeNList_variant<double>(
-      dp, natoms, coord, atype, cell, nghost, nlist, ago, energy, force, virial,
-      atomic_energy, atomic_virial);
+      dp, 1, natoms, coord, atype, cell, nghost, nlist, ago, NULL, NULL, energy,
+      force, virial, atomic_energy, atomic_virial);
 }
 
 void DP_DeepPotModelDeviComputeNListf(DP_DeepPotModelDevi* dp,
@@ -954,8 +972,50 @@ void DP_DeepPotModelDeviComputeNListf(DP_DeepPotModelDevi* dp,
                                       float* atomic_energy,
                                       float* atomic_virial) {
   DP_DeepPotModelDeviComputeNList_variant<float>(
-      dp, natoms, coord, atype, cell, nghost, nlist, ago, energy, force, virial,
-      atomic_energy, atomic_virial);
+      dp, 1, natoms, coord, atype, cell, nghost, nlist, ago, NULL, NULL, energy,
+      force, virial, atomic_energy, atomic_virial);
+}
+
+void DP_DeepPotModelDeviComputeNList2(DP_DeepPotModelDevi* dp,
+                                      const int nframes,
+                                      const int natoms,
+                                      const double* coord,
+                                      const int* atype,
+                                      const double* cell,
+                                      const int nghost,
+                                      const DP_Nlist* nlist,
+                                      const int ago,
+                                      const double* fparam,
+                                      const double* aparam,
+                                      double* energy,
+                                      double* force,
+                                      double* virial,
+                                      double* atomic_energy,
+                                      double* atomic_virial) {
+  DP_DeepPotModelDeviComputeNList_variant<double>(
+      dp, nframes, natoms, coord, atype, cell, nghost, nlist, ago, fparam,
+      aparam, energy, force, virial, atomic_energy, atomic_virial);
+}
+
+void DP_DeepPotModelDeviComputeNListf2(DP_DeepPotModelDevi* dp,
+                                       const int nframes,
+                                       const int natoms,
+                                       const float* coord,
+                                       const int* atype,
+                                       const float* cell,
+                                       const int nghost,
+                                       const DP_Nlist* nlist,
+                                       const int ago,
+                                       const float* fparam,
+                                       const float* aparam,
+                                       double* energy,
+                                       float* force,
+                                       float* virial,
+                                       float* atomic_energy,
+                                       float* atomic_virial) {
+  DP_DeepPotModelDeviComputeNList_variant<float>(
+      dp, nframes, natoms, coord, atype, cell, nghost, nlist, ago, fparam,
+      aparam, energy, force, virial, atomic_energy, atomic_virial);
 }
 
 double DP_DeepPotModelDeviGetCutoff(DP_DeepPotModelDevi* dp) {
@@ -964,6 +1024,14 @@ double DP_DeepPotModelDeviGetCutoff(DP_DeepPotModelDevi* dp) {
 
 int DP_DeepPotModelDeviGetNumbTypes(DP_DeepPotModelDevi* dp) {
   return dp->dp.numb_types();
+}
+
+int DP_DeepPotModelDeviGetDimFParam(DP_DeepPotModelDevi* dp) {
+  return dp->dfparam;
+}
+
+int DP_DeepPotModelDeviGetDimAParam(DP_DeepPotModelDevi* dp) {
+  return dp->daparam;
 }
 
 const char* DP_DeepPotModelDeviCheckOK(DP_DeepPotModelDevi* dp) {
