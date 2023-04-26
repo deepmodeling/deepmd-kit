@@ -306,7 +306,18 @@ def descrpt_se_r_args():
 def descrpt_hybrid_args():
     doc_list = "A list of descriptor definitions"
 
-    return [Argument("list", list, optional=False, doc=doc_list)]
+    return [
+        Argument(
+            "list",
+            list,
+            optional=False,
+            doc=doc_list,
+            repeat=True,
+            sub_fields=[],
+            sub_variants=[descrpt_variant_type_args(exclude_hybrid=True)],
+            fold_subdoc=True,
+        )
+    ]
 
 
 @descrpt_args_plugin.register("se_atten")
@@ -437,7 +448,11 @@ def descrpt_variant_type_args(exclude_hybrid: bool = False) -> Variant:
 - `se_a_mask`: Used by the smooth edition of Deep Potential. It can accept a variable number of atoms in a frame (Non-PBC system). *aparam* are required as an indicator matrix for the real/virtual sign of input atoms. \n\n\
 - `hybrid`: Concatenate of a list of descriptors as a new descriptor."
 
-    return Variant("type", descrpt_args_plugin.get_all_argument(), doc=doc_descrpt_type)
+    return Variant(
+        "type",
+        descrpt_args_plugin.get_all_argument(exclude_hybrid=exclude_hybrid),
+        doc=doc_descrpt_type,
+    )
 
 
 #  --- Fitting net configurations: --- #
@@ -1364,21 +1379,9 @@ def make_index(keys):
 def gen_doc(*, make_anchor=True, make_link=True, **kwargs):
     if make_link:
         make_anchor = True
-    ma = model_args()
-    lra = learning_rate_args()
-    lrda = learning_rate_dict_args()
-    la = loss_args()
-    lda = loss_dict_args()
-    ta = training_args()
-    nvnmda = nvnmd_args()
     ptr = []
-    ptr.append(ma.gen_doc(make_anchor=make_anchor, make_link=make_link, **kwargs))
-    ptr.append(la.gen_doc(make_anchor=make_anchor, make_link=make_link, **kwargs))
-    ptr.append(lda.gen_doc(make_anchor=make_anchor, make_link=make_link, **kwargs))
-    ptr.append(lra.gen_doc(make_anchor=make_anchor, make_link=make_link, **kwargs))
-    ptr.append(lrda.gen_doc(make_anchor=make_anchor, make_link=make_link, **kwargs))
-    ptr.append(ta.gen_doc(make_anchor=make_anchor, make_link=make_link, **kwargs))
-    ptr.append(nvnmda.gen_doc(make_anchor=make_anchor, make_link=make_link, **kwargs))
+    for ii in gen_args():
+        ptr.append(ii.gen_doc(make_anchor=make_anchor, make_link=make_link, **kwargs))
 
     key_words = []
     for ii in "\n\n".join(ptr).split("\n"):
@@ -1391,20 +1394,12 @@ def gen_doc(*, make_anchor=True, make_link=True, **kwargs):
 
 def gen_json(**kwargs):
     return json.dumps(
-        (
-            model_args(),
-            learning_rate_args(),
-            learning_rate_dict_args(),
-            loss_args(),
-            loss_dict_args(),
-            training_args(),
-            nvnmd_args(),
-        ),
+        tuple(gen_args()),
         cls=ArgumentEncoder,
     )
 
 
-def gen_args(**kwargs):
+def gen_args(**kwargs) -> List[Argument]:
     return [
         model_args(),
         learning_rate_args(),
@@ -1414,16 +1409,6 @@ def gen_args(**kwargs):
         training_args(),
         nvnmd_args(),
     ]
-
-
-def normalize_hybrid_list(hy_list):
-    new_list = []
-    base = Argument("base", dict, [], [descrpt_variant_type_args()], doc="")
-    for ii in range(len(hy_list)):
-        data = base.normalize_value(hy_list[ii], trim_pattern="_*")
-        base.check_value(data, strict=True)
-        new_list.append(data)
-    return new_list
 
 
 def normalize_multi_task(data):
@@ -1640,21 +1625,9 @@ def normalize_fitting_weight(fitting_keys, data_keys, fitting_weight=None):
 
 
 def normalize(data):
-    if "hybrid" == data["model"]["descriptor"]["type"]:
-        data["model"]["descriptor"]["list"] = normalize_hybrid_list(
-            data["model"]["descriptor"]["list"]
-        )
-
     data = normalize_multi_task(data)
-    ma = model_args()
-    lra = learning_rate_args()
-    lrda = learning_rate_dict_args()
-    la = loss_args()
-    lda = loss_dict_args()
-    ta = training_args()
-    nvnmda = nvnmd_args()
 
-    base = Argument("base", dict, [ma, lra, lrda, la, lda, ta, nvnmda])
+    base = Argument("base", dict, gen_args())
     data = base.normalize_value(data, trim_pattern="_*")
     base.check_value(data, strict=True)
 
