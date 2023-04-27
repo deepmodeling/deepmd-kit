@@ -32,6 +32,7 @@ input_files = (
     p_examples / "fparam" / "train" / "input.json",
     p_examples / "fparam" / "train" / "input_aparam.json",
     p_examples / "zinc_protein" / "zinc_se_a_mask.json",
+    p_examples / "dos" / "train" / "input.json",
 )
 
 
