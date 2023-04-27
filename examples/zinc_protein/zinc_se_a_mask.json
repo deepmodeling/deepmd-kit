@@ -64,9 +64,17 @@
     "_comment": " that's all"
   },
   "training": {
+    "training_data": {
+      "systems": [
+        "example/zinc_protein/train_data_dp_mask/"
+      ],
+      "batch_size": 2,
+      "numb_btch": 1,
+      "_comment": "that's all"
+    },
     "validation_data": {
       "systems": [
-        "example/zinc_protein/data_dp_mask/"
+        "example/zinc_protein/val_data_dp_mask/"
       ],
       "batch_size": 2,
       "numb_btch": 1,
