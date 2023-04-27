@@ -1167,6 +1167,22 @@ void DP_SelectByType(const int natoms,
                      int* bkw_map,
                      int* nghost_real);
 
+/**
+ * @brief Apply the given map to a vector. Assume nframes is 1.
+ * @param[in] in The input vector.
+ * @param[in] fwd_map The map.
+ * @param[in] stride The stride of the input vector.
+ * @param[in] nall1 The number of atoms in the input vector.
+ * @param[out] nall2 The number of atoms in the output vector.
+ * @param[out] out The output vector.
+ */
+void DP_SelectMapInt(const int* in,
+                     const int* fwd_map,
+                     const int stride,
+                     const int nall1,
+                     const int nall2,
+                     int* out);
+
 #ifdef __cplusplus
 } /* end extern "C" */
 #endif

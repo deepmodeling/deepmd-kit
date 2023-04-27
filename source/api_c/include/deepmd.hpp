@@ -1932,5 +1932,30 @@ void select_by_type(std::vector<int> &fwd_map,
   bkw_map.resize(nreal);
 };
 
+/**
+ * @brief Apply the given map to a vector. Assume nframes is 1.
+ * @tparam VT The value type of the vector. Only support int.
+ * @param[out] out The output vector.
+ * @param[in] in The input vector.
+ * @param[in] fwd_map The map.
+ * @param[in] stride The stride of the input vector.
+ * @param[in] nall1 The number of atoms in the input vector.
+ * @param[in] nall2 The number of atoms in the output vector.
+ */
+template <typename VT>
+void select_map(std::vector<VT> &out,
+                const std::vector<VT> &in,
+                const std::vector<int> &fwd_map,
+                const int &stride) {
+  static_assert(std::is_same<int, VT>(), "only support int");
+  const int nall1 = in.size() / stride;
+  int nall2;
+  for (unsigned int ii = 0; ii < nall1; ++ii) {
+    if (fwd_map[ii] >= 0) nall2++;
+  }
+  out.resize(nall2 * stride);
+  DP_SelectMapInt(&in[0], &fwd_map[0], stride, nall1, nall2, &out[0]);
+};
+
 }  // namespace hpp
 }  // namespace deepmd

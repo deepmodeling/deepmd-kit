@@ -8,7 +8,7 @@
 #include <fstream>
 #include <vector>
 
-#include "common.h"
+#include "deepmd.hpp"
 template <class VALUETYPE>
 class TestSelectByType : public ::testing::Test {
  protected:
