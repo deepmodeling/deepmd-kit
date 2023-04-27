@@ -1283,15 +1283,6 @@ class DeepPotModelDevi {
     return daparam;
   }
   /**
-   * @brief Compute the average energy.
-   * @param[out] dener The average energy.
-   * @param[in] all_energy The energies of all models.
-   **/
-  template <typename VALUETYPE>
-  void compute_avg(VALUETYPE &dener, const std::vector<VALUETYPE> &all_energy) {
-    throw deepmd::hpp::deepmd_exception("TODO: not implemented yet");
-  };
-  /**
    * @brief Compute the average of vectors.
    * @param[out] avg The average of vectors.
    * @param[in] xx The vectors of all models.
@@ -1299,7 +1290,21 @@ class DeepPotModelDevi {
   template <typename VALUETYPE>
   void compute_avg(std::vector<VALUETYPE> &avg,
                    const std::vector<std::vector<VALUETYPE>> &xx) {
-    throw deepmd::hpp::deepmd_exception("TODO: not implemented yet");
+    assert(xx.size() == numb_models);
+    if (numb_models == 0) return;
+
+    avg.resize(xx[0].size());
+    fill(avg.begin(), avg.end(), VALUETYPE(0.));
+
+    for (unsigned ii = 0; ii < numb_models; ++ii) {
+      for (unsigned jj = 0; jj < avg.size(); ++jj) {
+        avg[jj] += xx[ii][jj];
+      }
+    }
+
+    for (unsigned jj = 0; jj < avg.size(); ++jj) {
+      avg[jj] /= VALUETYPE(numb_models);
+    }
   };
   /**
    * @brief Compute the standard deviation of vectors.
@@ -1313,7 +1318,30 @@ class DeepPotModelDevi {
                    const std::vector<VALUETYPE> &avg,
                    const std::vector<std::vector<VALUETYPE>> &xx,
                    const int &stride) {
-    throw deepmd::hpp::deepmd_exception("TODO: not implemented yet");
+    assert(xx.size() == numb_models);
+    if (numb_models == 0) return;
+
+    unsigned ndof = avg.size();
+    unsigned nloc = ndof / stride;
+    assert(nloc * stride == ndof);
+
+    std.resize(nloc);
+    fill(std.begin(), std.end(), VALUETYPE(0.));
+
+    for (unsigned ii = 0; ii < numb_models; ++ii) {
+      for (unsigned jj = 0; jj < nloc; ++jj) {
+        const VALUETYPE *tmp_f = &(xx[ii][jj * stride]);
+        const VALUETYPE *tmp_avg = &(avg[jj * stride]);
+        for (unsigned dd = 0; dd < stride; ++dd) {
+          VALUETYPE vdiff = tmp_f[dd] - tmp_avg[dd];
+          std[jj] += vdiff * vdiff;
+        }
+      }
+    }
+
+    for (unsigned jj = 0; jj < nloc; ++jj) {
+      std[jj] = sqrt(std[jj] / VALUETYPE(numb_models));
+    }
   };
   /**
    * @brief Compute the relative standard deviation of vectors.
@@ -1327,19 +1355,19 @@ class DeepPotModelDevi {
                             const std::vector<VALUETYPE> &avg,
                             const VALUETYPE eps,
                             const int &stride) {
-    throw deepmd::hpp::deepmd_exception("TODO: not implemented yet");
-  };
-  /**
-   * @brief Compute the standard deviation of atomic energies.
-   * @param[out] std The standard deviation of atomic energies.
-   * @param[in] avg The average of atomic energies.
-   * @param[in] xx The vectors of all atomic energies.
-   **/
-  template <typename VALUETYPE>
-  void compute_std_e(std::vector<VALUETYPE> &std,
-                     const std::vector<VALUETYPE> &avg,
-                     const std::vector<std::vector<VALUETYPE>> &xx) {
-    throw deepmd::hpp::deepmd_exception("TODO: not implemented yet");
+    unsigned ndof = avg.size();
+    unsigned nloc = std.size();
+    assert(nloc * stride == ndof);
+
+    for (unsigned ii = 0; ii < nloc; ++ii) {
+      const VALUETYPE *tmp_avg = &(avg[ii * stride]);
+      VALUETYPE f_norm = 0.0;
+      for (unsigned dd = 0; dd < stride; ++dd) {
+        f_norm += tmp_avg[dd] * tmp_avg[dd];
+      }
+      f_norm = sqrt(f_norm);
+      std[ii] /= f_norm + eps;
+    }
   };
   /**
    * @brief Compute the standard deviation of forces.
@@ -1351,7 +1379,7 @@ class DeepPotModelDevi {
   void compute_std_f(std::vector<VALUETYPE> &std,
                      const std::vector<VALUETYPE> &avg,
                      const std::vector<std::vector<VALUETYPE>> &xx) {
-    throw deepmd::hpp::deepmd_exception("TODO: not implemented yet");
+    compute_std(std, avg, xx, 3);
   };
   /**
    * @brief Compute the relative standard deviation of forces.
@@ -1363,7 +1391,7 @@ class DeepPotModelDevi {
   void compute_relative_std_f(std::vector<VALUETYPE> &std,
                               const std::vector<VALUETYPE> &avg,
                               const VALUETYPE eps) {
-    throw deepmd::hpp::deepmd_exception("TODO: not implemented yet");
+    compute_relative_std(std, avg, eps, 3);
   };
 
  private:
