@@ -48,9 +48,9 @@ class TestSelectByType : public ::testing::Test {
 TYPED_TEST_SUITE(TestSelectByType, ValueTypes);
 
 TYPED_TEST(TestSelectByType, selectbytype0) {
-  deepmd::select_by_type(this->fwd_map_0, this->bkw_map_0, this->nghost_real_0,
-                         this->coord, this->atype, this->nghost,
-                         this->sel_type_0);
+  deepmd::hpp::select_by_type(this->fwd_map_0, this->bkw_map_0,
+                              this->nghost_real_0, this->coord, this->atype,
+                              this->nghost, this->sel_type_0);
   EXPECT_EQ(this->natoms, this->fwd_map_0.size());
   EXPECT_EQ(2, this->bkw_map_0.size());
   EXPECT_EQ(this->expected_nghost_real_0, this->nghost_real_0);
@@ -63,9 +63,9 @@ TYPED_TEST(TestSelectByType, selectbytype0) {
 }
 
 TYPED_TEST(TestSelectByType, selectbytype1) {
-  deepmd::select_by_type(this->fwd_map_1, this->bkw_map_1, this->nghost_real_1,
-                         this->coord, this->atype, this->nghost,
-                         this->sel_type_1);
+  deepmd::hpp::select_by_type(this->fwd_map_1, this->bkw_map_1,
+                              this->nghost_real_1, this->coord, this->atype,
+                              this->nghost, this->sel_type_1);
   EXPECT_EQ(this->natoms, this->fwd_map_1.size());
   EXPECT_EQ(4, this->bkw_map_1.size());
   EXPECT_EQ(this->expected_nghost_real_1, this->nghost_real_1);

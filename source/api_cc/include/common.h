@@ -47,10 +47,10 @@ bool model_compatable(std::string& model_version);
 /**
  * @brief Get forward and backward map of selected atoms by
  * atom types.
- * @param[out] fwd_map The forward map.
- * @param[out] bkw_map The backward map.
+ * @param[out] fwd_map The forward map with size natoms.
+ * @param[out] bkw_map The backward map with size nreal.
  * @param[out] nghost_real The number of selected ghost atoms.
- * @param[in] dcoord_ The coordinates of all atoms.
+ * @param[in] dcoord_ The coordinates of all atoms. Reserved for compatibility.
  * @param[in] datype_ The atom types of all atoms.
  * @param[in] nghost The number of ghost atoms.
  * @param[in] sel_type_ The selected atom types.
