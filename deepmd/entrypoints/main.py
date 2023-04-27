@@ -414,7 +414,11 @@ def main_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parsers_doc.add_argument(
-        "--out-type", default="rst", type=str, help="The output type"
+        "--out-type",
+        default="rst",
+        choices=["rst", "json"],
+        type=str,
+        help="The output type",
     )
 
     # * make model deviation ***********************************************************
