@@ -5,7 +5,6 @@
 #include <fstream>
 #include <vector>
 
-#include "common.h"
 #include "deepmd.hpp"
 #include "ewald.h"
 #include "region.h"
