@@ -22,8 +22,6 @@
     "fitting_net": {
       "type": "dos",
       "numb_dos": 250,
-      "ener_min": -15.0,
-      "ener_max": 10.0,
       "neuron": [
         120,
         120,
