@@ -1939,8 +1939,6 @@ void select_by_type(std::vector<int> &fwd_map,
  * @param[in] in The input vector.
  * @param[in] fwd_map The map.
  * @param[in] stride The stride of the input vector.
- * @param[in] nall1 The number of atoms in the input vector.
- * @param[in] nall2 The number of atoms in the output vector.
  */
 template <typename VT>
 void select_map(std::vector<VT> &out,
@@ -1949,7 +1947,7 @@ void select_map(std::vector<VT> &out,
                 const int &stride) {
   static_assert(std::is_same<int, VT>(), "only support int");
   const int nall1 = in.size() / stride;
-  int nall2;
+  int nall2 = 0;
   for (int ii = 0; ii < nall1; ++ii) {
     if (fwd_map[ii] >= 0) nall2++;
   }
