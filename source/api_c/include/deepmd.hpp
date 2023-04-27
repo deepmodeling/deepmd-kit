@@ -1950,7 +1950,7 @@ void select_map(std::vector<VT> &out,
   static_assert(std::is_same<int, VT>(), "only support int");
   const int nall1 = in.size() / stride;
   int nall2;
-  for (unsigned int ii = 0; ii < nall1; ++ii) {
+  for (int ii = 0; ii < nall1; ++ii) {
     if (fwd_map[ii] >= 0) nall2++;
   }
   out.resize(nall2 * stride);
