@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
-"""
-Gradients for prod virial.
-"""
+"""Gradients for prod virial."""
 
 from tensorflow.python.framework import (
     ops,

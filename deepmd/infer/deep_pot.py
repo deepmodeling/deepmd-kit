@@ -13,10 +13,6 @@ import numpy as np
 from deepmd.common import (
     make_default_mesh,
 )
-from deepmd.env import (
-    default_tf_session_config,
-    tf,
-)
 from deepmd.infer.data_modifier import (
     DipoleChargeModifier,
 )
@@ -79,7 +75,6 @@ class DeepPot(DeepEval):
         default_tf_graph: bool = False,
         auto_batch_size: Union[bool, int, AutoBatchSize] = True,
     ) -> None:
-
         # add these tensors on top of what is defined by DeepTensor Class
         # use this in favor of dict update to move attribute from class to
         # instance namespace

@@ -15,7 +15,6 @@ from typing import (
     Dict,
     List,
     Optional,
-    Tuple,
     TypeVar,
     Union,
 )
@@ -33,14 +32,8 @@ from deepmd.env import (
     op_module,
     tf,
 )
-from deepmd.utils.errors import (
-    GraphWithoutTensorError,
-)
 from deepmd.utils.path import (
     DPPath,
-)
-from deepmd.utils.sess import (
-    run_sess,
 )
 
 if TYPE_CHECKING:
@@ -133,6 +126,8 @@ ACTIVATION_FN_DICT = {
     "tanh": tf.nn.tanh,
     "gelu": gelu,
     "gelu_tf": gelu_tf,
+    "None": None,
+    "none": None,
 }
 
 
@@ -313,7 +308,7 @@ def get_activation_func(
     RuntimeError
         if unknown activation function is specified
     """
-    if activation_fn is None or activation_fn in ["none", "None"]:
+    if activation_fn is None:
         return None
     if activation_fn not in ACTIVATION_FN_DICT:
         raise RuntimeError(f"{activation_fn} is not a valid activation function")
@@ -406,7 +401,9 @@ def safe_cast_tensor(
     ----------
     input : tf.Tensor
         input tensor
-    precision : tf.DType
+    from_precision : tf.DType
+        Tensor data type that is casted from
+    to_precision : tf.DType
         Tensor data type that casts to
 
     Returns
@@ -470,10 +467,8 @@ def cast_precision(func: Callable) -> Callable:
         )
         if isinstance(returned_tensor, tuple):
             return tuple(
-                (
-                    safe_cast_tensor(vv, self.precision, GLOBAL_TF_FLOAT_PRECISION)
-                    for vv in returned_tensor
-                )
+                safe_cast_tensor(vv, self.precision, GLOBAL_TF_FLOAT_PRECISION)
+                for vv in returned_tensor
             )
         else:
             return safe_cast_tensor(

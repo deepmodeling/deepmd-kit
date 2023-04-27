@@ -1,10 +1,8 @@
 import unittest
 from unittest.mock import (
-    MagicMock,
     patch,
 )
 
-import deepmd
 from deepmd.entrypoints.train import (
     parse_auto_sel,
     parse_auto_sel_ratio,

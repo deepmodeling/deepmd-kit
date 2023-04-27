@@ -1,11 +1,7 @@
-import os
-import sys
 import unittest
 
-import dpdata
 import numpy as np
 from common import (
-    Data,
     DataSystem,
     finite_difference,
     gen_data,

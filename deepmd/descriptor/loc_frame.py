@@ -1,5 +1,6 @@
 from typing import (
     List,
+    Optional,
     Tuple,
 )
 
@@ -44,20 +45,18 @@ class DescrptLocFrame(Descriptor):
             sel_a[i] + sel_r[i] is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius.
     axis_rule: list[int]
             The length should be 6 times of the number of types.
-            - axis_rule[i*6+0]: class of the atom defining the first axis of type-i atom. 0 for neighbors with full coordinates and 1 for neighbors only with relative distance.\n\n\
-            - axis_rule[i*6+1]: type of the atom defining the first axis of type-i atom.\n\n\
-            - axis_rule[i*6+2]: index of the axis atom defining the first axis. Note that the neighbors with the same class and type are sorted according to their relative distance.\n\n\
-            - axis_rule[i*6+3]: class of the atom defining the second axis of type-i atom. 0 for neighbors with full coordinates and 1 for neighbors only with relative distance.\n\n\
-            - axis_rule[i*6+4]: type of the atom defining the second axis of type-i atom.\n\n\
+            - axis_rule[i*6+0]: class of the atom defining the first axis of type-i atom. 0 for neighbors with full coordinates and 1 for neighbors only with relative distance.
+            - axis_rule[i*6+1]: type of the atom defining the first axis of type-i atom.
+            - axis_rule[i*6+2]: index of the axis atom defining the first axis. Note that the neighbors with the same class and type are sorted according to their relative distance.
+            - axis_rule[i*6+3]: class of the atom defining the second axis of type-i atom. 0 for neighbors with full coordinates and 1 for neighbors only with relative distance.
+            - axis_rule[i*6+4]: type of the atom defining the second axis of type-i atom.
             - axis_rule[i*6+5]: index of the axis atom defining the second axis. Note that the neighbors with the same class and type are sorted according to their relative distance.
     """
 
     def __init__(
         self, rcut: float, sel_a: List[int], sel_r: List[int], axis_rule: List[int]
     ) -> None:
-        """
-        Constructor
-        """
+        """Constructor."""
         self.sel_a = sel_a
         self.sel_r = sel_r
         self.axis_rule = axis_rule
@@ -123,26 +122,19 @@ class DescrptLocFrame(Descriptor):
         self.sub_sess = tf.Session(graph=sub_graph, config=default_tf_session_config)
 
     def get_rcut(self) -> float:
-        """
-        Returns the cut-off radius
-        """
+        """Returns the cut-off radius."""
         return self.rcut_r
 
     def get_ntypes(self) -> int:
-        """
-        Returns the number of atom types
-        """
+        """Returns the number of atom types."""
         return self.ntypes
 
     def get_dim_out(self) -> int:
-        """
-        Returns the output dimension of this descriptor
-        """
+        """Returns the output dimension of this descriptor."""
         return self.ndescrpt
 
     def get_nlist(self) -> Tuple[tf.Tensor, tf.Tensor, List[int], List[int]]:
-        """
-        Returns
+        """Returns
         -------
         nlist
             Neighbor list
@@ -164,8 +156,7 @@ class DescrptLocFrame(Descriptor):
         mesh: list,
         input_dict: dict,
     ) -> None:
-        """
-        Compute the statisitcs (avg and std) of the training data. The input will be normalized by the statistics.
+        """Compute the statisitcs (avg and std) of the training data. The input will be normalized by the statistics.
 
         Parameters
         ----------
@@ -217,11 +208,10 @@ class DescrptLocFrame(Descriptor):
         box_: tf.Tensor,
         mesh: tf.Tensor,
         input_dict: dict,
-        reuse: bool = None,
+        reuse: Optional[bool] = None,
         suffix: str = "",
     ) -> tf.Tensor:
-        """
-        Build the computational graph for the descriptor
+        """Build the computational graph for the descriptor.
 
         Parameters
         ----------
@@ -234,6 +224,8 @@ class DescrptLocFrame(Descriptor):
             natoms[0]: number of local atoms
             natoms[1]: total number of atoms held by this processor
             natoms[i]: 2 <= i < Ntypes+2, number of type i atoms
+        box_ : tf.Tensor
+            The box of the system
         mesh
             For historical reasons, only the length of the Tensor matters.
             if size of mesh == 6, pbc is assumed.
@@ -311,16 +303,13 @@ class DescrptLocFrame(Descriptor):
         return self.descrpt
 
     def get_rot_mat(self) -> tf.Tensor:
-        """
-        Get rotational matrix
-        """
+        """Get rotational matrix."""
         return self.rot_mat
 
     def prod_force_virial(
         self, atom_ener: tf.Tensor, natoms: tf.Tensor
     ) -> Tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
-        """
-        Compute force and virial
+        """Compute force and virial.
 
         Parameters
         ----------
@@ -415,8 +404,7 @@ class DescrptLocFrame(Descriptor):
         graph_def: tf.GraphDef,
         suffix: str = "",
     ) -> None:
-        """
-        Init the embedding net variables with the given dict
+        """Init the embedding net variables with the given dict.
 
         Parameters
         ----------

@@ -1,3 +1,6 @@
+from .dos import (
+    DOSLoss,
+)
 from .ener import (
     EnerDipoleLoss,
     EnerStdLoss,
@@ -5,3 +8,10 @@ from .ener import (
 from .tensor import (
     TensorLoss,
 )
+
+__all__ = [
+    "EnerDipoleLoss",
+    "EnerStdLoss",
+    "DOSLoss",
+    "TensorLoss",
+]

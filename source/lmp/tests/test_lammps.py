@@ -1,3 +1,4 @@
+import os
 import subprocess as sp
 import sys
 from pathlib import (
@@ -8,6 +9,9 @@ import numpy as np
 import pytest
 from lammps import (
     PyLammps,
+)
+from write_lmp_data import (
+    write_lmp_data,
 )
 
 pbtxt_file = Path(__file__).parent.parent.parent / "tests" / "infer" / "deeppot.pbtxt"
@@ -196,6 +200,20 @@ expected_v2 = np.array(
     ]
 ).reshape(6, 9)
 
+box = np.array([0, 13, 0, 13, 0, 13, 0, 0, 0])
+coord = np.array(
+    [
+        [12.83, 2.56, 2.18],
+        [12.09, 2.87, 2.74],
+        [0.25, 3.32, 1.68],
+        [3.36, 3.00, 1.81],
+        [3.51, 2.51, 2.60],
+        [4.27, 3.22, 1.56],
+    ]
+)
+type_OH = np.array([1, 2, 2, 1, 2, 2])
+type_HO = np.array([2, 1, 1, 2, 1, 1])
+
 # https://github.com/lammps/lammps/blob/1e1311cf401c5fc2614b5d6d0ff3230642b76597/src/update.cpp#L193
 nktv2p = 1.6021765e6
 
@@ -213,6 +231,16 @@ sp.check_output(
         pb_file2.resolve(),
     ).split()
 )
+
+
+def setup_module():
+    write_lmp_data(box, coord, type_OH, data_file)
+    write_lmp_data(box, coord, type_HO, data_type_map_file)
+
+
+def teardown_module():
+    os.remove(data_file)
+    os.remove(data_type_map_file)
 
 
 def _lammps(data_file) -> PyLammps:
@@ -241,7 +269,7 @@ def lammps_type_map():
 
 
 def test_pair_deepmd(lammps):
-    lammps.pair_style("deepmd {}".format(pb_file.resolve()))
+    lammps.pair_style(f"deepmd {pb_file.resolve()}")
     lammps.pair_coeff("* *")
     lammps.run(0)
     assert lammps.eval("pe") == pytest.approx(expected_e)
@@ -251,7 +279,7 @@ def test_pair_deepmd(lammps):
 
 
 def test_pair_deepmd_virial(lammps):
-    lammps.pair_style("deepmd {}".format(pb_file.resolve()))
+    lammps.pair_style(f"deepmd {pb_file.resolve()}")
     lammps.pair_coeff("* *")
     lammps.compute("virial all centroid/stress/atom NULL pair")
     for ii in range(9):
@@ -396,7 +424,7 @@ def test_pair_deepmd_model_devi_atomic_relative_v(lammps):
 
 
 def test_pair_deepmd_type_map(lammps_type_map):
-    lammps_type_map.pair_style("deepmd {}".format(pb_file.resolve()))
+    lammps_type_map.pair_style(f"deepmd {pb_file.resolve()}")
     lammps_type_map.pair_coeff("* * H O")
     lammps_type_map.run(0)
     assert lammps_type_map.eval("pe") == pytest.approx(expected_e)

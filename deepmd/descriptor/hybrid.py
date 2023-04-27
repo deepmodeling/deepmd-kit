@@ -1,14 +1,13 @@
 from typing import (
     List,
+    Optional,
     Tuple,
 )
 
 import numpy as np
 
 from deepmd.env import (
-    GLOBAL_NP_FLOAT_PRECISION,
     GLOBAL_TF_FLOAT_PRECISION,
-    op_module,
     tf,
 )
 
@@ -20,24 +19,6 @@ from deepmd.env import (
 # from deepmd.descriptor import DescrptSeR
 from .descriptor import (
     Descriptor,
-)
-from .loc_frame import (
-    DescrptLocFrame,
-)
-from .se_a import (
-    DescrptSeA,
-)
-from .se_a_ebd import (
-    DescrptSeAEbd,
-)
-from .se_a_ef import (
-    DescrptSeAEf,
-)
-from .se_r import (
-    DescrptSeR,
-)
-from .se_t import (
-    DescrptSeT,
 )
 
 
@@ -52,9 +33,7 @@ class DescrptHybrid(Descriptor):
     """
 
     def __init__(self, list: list, multi_task: bool = False) -> None:
-        """
-        Constructor
-        """
+        """Constructor."""
         # warning: list is conflict with built-in list
         descrpt_list = list
         if descrpt_list == [] or descrpt_list is None:
@@ -80,22 +59,16 @@ class DescrptHybrid(Descriptor):
             ), f"number of atom types in {ii}th descrptor does not match others"
 
     def get_rcut(self) -> float:
-        """
-        Returns the cut-off radius
-        """
+        """Returns the cut-off radius."""
         all_rcut = [ii.get_rcut() for ii in self.descrpt_list]
         return np.max(all_rcut)
 
     def get_ntypes(self) -> int:
-        """
-        Returns the number of atom types
-        """
+        """Returns the number of atom types."""
         return self.descrpt_list[0].get_ntypes()
 
     def get_dim_out(self) -> int:
-        """
-        Returns the output dimension of this descriptor
-        """
+        """Returns the output dimension of this descriptor."""
         all_dim_out = [ii.get_dim_out() for ii in self.descrpt_list]
         return sum(all_dim_out)
 
@@ -120,7 +93,7 @@ class DescrptHybrid(Descriptor):
         return self.get_nlist_i(maxr_idx)
 
     def get_nlist_i(self, ii: int) -> Tuple[tf.Tensor, tf.Tensor, List[int], List[int]]:
-        """Get the neighbor information of the ii-th descriptor
+        """Get the neighbor information of the ii-th descriptor.
 
         Parameters
         ----------
@@ -154,8 +127,7 @@ class DescrptHybrid(Descriptor):
         mesh: list,
         input_dict: dict,
     ) -> None:
-        """
-        Compute the statisitcs (avg and std) of the training data. The input will be normalized by the statistics.
+        """Compute the statisitcs (avg and std) of the training data. The input will be normalized by the statistics.
 
         Parameters
         ----------
@@ -178,8 +150,7 @@ class DescrptHybrid(Descriptor):
             )
 
     def merge_input_stats(self, stat_dict):
-        """
-        Merge the statisitcs computed from compute_input_stats to obtain the self.davg and self.dstd.
+        """Merge the statisitcs computed from compute_input_stats to obtain the self.davg and self.dstd.
 
         Parameters
         ----------
@@ -207,11 +178,10 @@ class DescrptHybrid(Descriptor):
         box_: tf.Tensor,
         mesh: tf.Tensor,
         input_dict: dict,
-        reuse: bool = None,
+        reuse: Optional[bool] = None,
         suffix: str = "",
     ) -> tf.Tensor:
-        """
-        Build the computational graph for the descriptor
+        """Build the computational graph for the descriptor.
 
         Parameters
         ----------
@@ -224,6 +194,8 @@ class DescrptHybrid(Descriptor):
             natoms[0]: number of local atoms
             natoms[1]: total number of atoms held by this processor
             natoms[i]: 2 <= i < Ntypes+2, number of type i atoms
+        box_ : tf.Tensor
+            The box of the system
         mesh
             For historical reasons, only the length of the Tensor matters.
             if size of mesh == 6, pbc is assumed.
@@ -266,8 +238,7 @@ class DescrptHybrid(Descriptor):
     def prod_force_virial(
         self, atom_ener: tf.Tensor, natoms: tf.Tensor
     ) -> Tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
-        """
-        Compute force and virial
+        """Compute force and virial.
 
         Parameters
         ----------
@@ -311,8 +282,7 @@ class DescrptHybrid(Descriptor):
         check_frequency: int = -1,
         suffix: str = "",
     ) -> None:
-        """
-        Reveive the statisitcs (distance, max_nbor_size and env_mat_range) of the
+        """Reveive the statisitcs (distance, max_nbor_size and env_mat_range) of the
         training data.
 
         Parameters
@@ -346,9 +316,8 @@ class DescrptHybrid(Descriptor):
                 suffix=f"{suffix}_{idx}",
             )
 
-    def enable_mixed_precision(self, mixed_prec: dict = None) -> None:
-        """
-        Reveive the mixed precision setting.
+    def enable_mixed_precision(self, mixed_prec: Optional[dict] = None) -> None:
+        """Reveive the mixed precision setting.
 
         Parameters
         ----------
@@ -364,8 +333,7 @@ class DescrptHybrid(Descriptor):
         graph_def: tf.GraphDef,
         suffix: str = "",
     ) -> None:
-        """
-        Init the embedding net variables with the given dict
+        """Init the embedding net variables with the given dict.
 
         Parameters
         ----------
@@ -401,8 +369,7 @@ class DescrptHybrid(Descriptor):
         self,
         *tensors: tf.Tensor,
     ) -> None:
-        """
-        Pass the descrpt_reshape tensor as well as descrpt_deriv tensor from the frz graph_def
+        """Pass the descrpt_reshape tensor as well as descrpt_deriv tensor from the frz graph_def.
 
         Parameters
         ----------

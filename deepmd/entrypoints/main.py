@@ -7,7 +7,6 @@ from pathlib import (
     Path,
 )
 from typing import (
-    Dict,
     List,
     Optional,
 )
@@ -415,7 +414,11 @@ def main_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parsers_doc.add_argument(
-        "--out-type", default="rst", type=str, help="The output type"
+        "--out-type",
+        default="rst",
+        choices=["rst", "json"],
+        type=str,
+        help="The output type",
     )
 
     # * make model deviation ***********************************************************
@@ -473,6 +476,8 @@ def main_parser() -> argparse.ArgumentParser:
         epilog=textwrap.dedent(
             """\
         examples:
+            dp convert-from -i graph.pb -o graph_new.pb
+            dp convert-from auto -i graph.pb -o graph_new.pb
             dp convert-from 1.0 -i graph.pb -o graph_new.pb
         """
         ),

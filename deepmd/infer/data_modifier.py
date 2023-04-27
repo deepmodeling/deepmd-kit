@@ -11,11 +11,7 @@ from deepmd.common import (
     select_idx_map,
 )
 from deepmd.env import (
-    GLOBAL_ENER_FLOAT_PRECISION,
-    GLOBAL_NP_FLOAT_PRECISION,
     GLOBAL_TF_FLOAT_PRECISION,
-    global_cvt_2_ener_float,
-    global_cvt_2_tf_float,
     op_module,
     tf,
 )
@@ -25,15 +21,16 @@ from deepmd.infer.deep_dipole import (
 from deepmd.infer.ewald_recp import (
     EwaldRecp,
 )
+from deepmd.utils.data import (
+    DeepmdData,
+)
 from deepmd.utils.sess import (
     run_sess,
 )
 
 
 class DipoleChargeModifier(DeepDipole):
-    """
-
-    Parameters
+    """Parameters
     ----------
     model_name
             The model file for the DeepDipole model
@@ -55,9 +52,7 @@ class DipoleChargeModifier(DeepDipole):
         ewald_h: float = 1,
         ewald_beta: float = 1,
     ) -> None:
-        """
-        Constructor
-        """
+        """Constructor."""
         # the dipole model is loaded with prefix 'dipole_charge'
         self.modifier_prefix = "dipole_charge"
         # init dipole model
@@ -92,9 +87,7 @@ class DipoleChargeModifier(DeepDipole):
         self.ntypes = len(self.sel_a)
 
     def build_fv_graph(self) -> tf.Tensor:
-        """
-        Build the computational graph for the force and virial inference.
-        """
+        """Build the computational graph for the force and virial inference."""
         with tf.variable_scope("modifier_attr"):
             t_mdl_name = tf.constant(self.model_name, name="mdl_name", dtype=tf.string)
             t_modi_type = tf.constant(
@@ -227,8 +220,7 @@ class DipoleChargeModifier(DeepDipole):
         atype: np.ndarray,
         eval_fv: bool = True,
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """
-        Evaluate the modification
+        """Evaluate the modification.
 
         Parameters
         ----------
@@ -408,9 +400,8 @@ class DipoleChargeModifier(DeepDipole):
 
         return all_coord, all_charge, dipole
 
-    def modify_data(self, data: dict) -> None:
-        """
-        Modify data.
+    def modify_data(self, data: dict, data_sys: DeepmdData) -> None:
+        """Modify data.
 
         Parameters
         ----------
@@ -426,6 +417,8 @@ class DipoleChargeModifier(DeepDipole):
             - energy        energy
             - force         force
             - virial        virial
+        data_sys : DeepmdData
+            The data system.
         """
         if (
             "find_energy" not in data
@@ -436,6 +429,8 @@ class DipoleChargeModifier(DeepDipole):
 
         get_nframes = None
         coord = data["coord"][:get_nframes, :]
+        if not data_sys.pbc:
+            raise RuntimeError("Open systems (nopbc) are not supported")
         box = data["box"][:get_nframes, :]
         atype = data["type"][:get_nframes, :]
         atype = atype[0]

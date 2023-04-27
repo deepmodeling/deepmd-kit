@@ -114,6 +114,7 @@ int format_nlist_i_cpu(std::vector<int> &fmt_nei_idx_a,
     // rcut is float in this function, so float rr is enough
     float diff[3];
     const int &j_idx = nei_idx[kk];
+    if (type[j_idx] < 0) continue;
     for (int dd = 0; dd < 3; ++dd) {
       diff[dd] = (float)posi[j_idx * 3 + dd] - (float)posi[i_idx * 3 + dd];
     }

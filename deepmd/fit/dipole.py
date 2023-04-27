@@ -1,24 +1,16 @@
-import warnings
 from typing import (
     List,
     Optional,
-    Tuple,
 )
 
 import numpy as np
 
 from deepmd.common import (
-    add_data_requirement,
     cast_precision,
     get_activation_func,
     get_precision,
 )
-from deepmd.descriptor import (
-    DescrptSeA,
-)
 from deepmd.env import (
-    GLOBAL_TF_FLOAT_PRECISION,
-    global_cvt_2_tf_float,
     tf,
 )
 from deepmd.fit.fitting import (
@@ -34,8 +26,7 @@ from deepmd.utils.network import (
 
 
 class DipoleFittingSeA(Fitting):
-    """
-    Fit the atomic dipole with descriptor se_a
+    r"""Fit the atomic dipole with descriptor se_a.
 
     Parameters
     ----------
@@ -45,7 +36,7 @@ class DipoleFittingSeA(Fitting):
             Number of neurons in each hidden layer of the fitting net
     resnet_dt : bool
             Time-step `dt` in the resnet construction:
-            y = x + dt * \\phi (Wx + b)
+            y = x + dt * \phi (Wx + b)
     sel_type : List[int]
             The atom types selected to have an atomic dipole prediction. If is None, all atoms are selected.
     seed : int
@@ -63,15 +54,13 @@ class DipoleFittingSeA(Fitting):
         descrpt: tf.Tensor,
         neuron: List[int] = [120, 120, 120],
         resnet_dt: bool = True,
-        sel_type: List[int] = None,
-        seed: int = None,
+        sel_type: Optional[List[int]] = None,
+        seed: Optional[int] = None,
         activation_function: str = "tanh",
         precision: str = "default",
         uniform_seed: bool = False,
     ) -> None:
-        """
-        Constructor
-        """
+        """Constructor."""
         self.ntypes = descrpt.get_ntypes()
         self.dim_descrpt = descrpt.get_dim_out()
         self.n_neuron = neuron
@@ -94,15 +83,11 @@ class DipoleFittingSeA(Fitting):
         self.mixed_prec = None
 
     def get_sel_type(self) -> int:
-        """
-        Get selected type
-        """
+        """Get selected type."""
         return self.sel_type
 
     def get_out_size(self) -> int:
-        """
-        Get the output size. Should be 3
-        """
+        """Get the output size. Should be 3."""
         return 3
 
     def _build_lower(self, start_index, natoms, inputs, rot_mat, suffix="", reuse=None):
@@ -175,11 +160,10 @@ class DipoleFittingSeA(Fitting):
         rot_mat: tf.Tensor,
         natoms: tf.Tensor,
         input_dict: Optional[dict] = None,
-        reuse: bool = None,
+        reuse: Optional[bool] = None,
         suffix: str = "",
     ) -> tf.Tensor:
-        """
-        Build the computational graph for fitting net
+        """Build the computational graph for fitting net.
 
         Parameters
         ----------
@@ -286,8 +270,7 @@ class DipoleFittingSeA(Fitting):
         graph_def: tf.GraphDef,
         suffix: str = "",
     ) -> None:
-        """
-        Init the fitting net variables with the given dict
+        """Init the fitting net variables with the given dict.
 
         Parameters
         ----------
@@ -302,9 +285,8 @@ class DipoleFittingSeA(Fitting):
             graph_def, suffix=suffix
         )
 
-    def enable_mixed_precision(self, mixed_prec: dict = None) -> None:
-        """
-        Reveive the mixed precision setting.
+    def enable_mixed_precision(self, mixed_prec: Optional[dict] = None) -> None:
+        """Reveive the mixed precision setting.
 
         Parameters
         ----------

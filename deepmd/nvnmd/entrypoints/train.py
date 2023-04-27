@@ -1,9 +1,6 @@
 import logging
 import os
 from typing import (
-    Any,
-    Dict,
-    List,
     Optional,
 )
 
@@ -55,7 +52,7 @@ jdata_cmd_freeze = {
 
 
 def normalized_input(fn, PATH_CNN, CONFIG_CNN):
-    r"""Normalize a input script file for continuous neural network"""
+    r"""Normalize a input script file for continuous neural network."""
     f = FioDic()
     jdata = f.load(fn, jdata_deepmd_input)
     # nvnmd
@@ -97,7 +94,7 @@ def normalized_input(fn, PATH_CNN, CONFIG_CNN):
 
 
 def normalized_input_qnn(jdata, PATH_QNN, CONFIG_CNN, WEIGHT_CNN, MAP_CNN):
-    r"""Normalize a input script file for quantize neural network"""
+    r"""Normalize a input script file for quantize neural network."""
     #
     jdata_nvnmd = jdata_deepmd_input["nvnmd"]
     jdata_nvnmd["enable"] = True

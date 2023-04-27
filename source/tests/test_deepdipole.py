@@ -1,19 +1,12 @@
 import os
-import platform
-import shutil
-import sys
 import unittest
 
-import dpdata
 import numpy as np
 from common import (
     finite_difference,
     strerch_box,
     tests_path,
     tf,
-)
-from infer.convert2pb import (
-    convert_pbtxt_to_pb,
 )
 from packaging.version import parse as parse_version
 
@@ -22,6 +15,9 @@ from deepmd.env import (
 )
 from deepmd.infer import (
     DeepDipole,
+)
+from deepmd.utils.convert import (
+    convert_pbtxt_to_pb,
 )
 
 if GLOBAL_NP_FLOAT_PRECISION == np.float32:

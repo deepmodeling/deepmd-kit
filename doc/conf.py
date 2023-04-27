@@ -11,15 +11,9 @@
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 #
 import os
-import subprocess
 import sys
 from datetime import (
     date,
-)
-
-import recommonmark
-from recommonmark.transform import (
-    AutoStructify,
 )
 
 from deepmd.common import (
@@ -31,12 +25,12 @@ from deepmd.utils.argcheck import (
 )
 
 sys.path.append(os.path.dirname(__file__))
-import sphinx_contrib_exhale_multiproject
+import sphinx_contrib_exhale_multiproject  # noqa: F401
 
 
 def mkindex(dirname):
     dirname = dirname + "/"
-    oldfindex = open(dirname + "index.md", "r")
+    oldfindex = open(dirname + "index.md")
     oldlist = oldfindex.readlines()
     oldfindex.close()
 
@@ -51,7 +45,7 @@ def mkindex(dirname):
             name for name in files if "index.md" not in name and name not in oldnames
         ]
         for name in newnames:
-            f = open(dirname + name, "r")
+            f = open(dirname + name)
             _lines = f.readlines()
             for _headline in _lines:
                 _headline = _headline.strip("#")
@@ -68,7 +62,7 @@ def mkindex(dirname):
 
 def classify_index_TS():
     dirname = "troubleshooting/"
-    oldfindex = open(dirname + "index.md", "r")
+    oldfindex = open(dirname + "index.md")
     oldlist = oldfindex.readlines()
     oldfindex.close()
 
@@ -97,7 +91,7 @@ def classify_index_TS():
     for root, dirs, files in os.walk(dirname, topdown=False):
         newnames = [name for name in files if "index.md" not in name]
         for name in newnames:
-            f = open(dirname + name, "r")
+            f = open(dirname + name)
             _lines = f.readlines()
             f.close()
             for _headline in _lines:
@@ -156,7 +150,6 @@ def run_apidoc(_):
 
 
 def setup(app):
-
     # Add hook for building doxygen xml when needed
     app.connect("builder-inited", run_apidoc)
 
@@ -182,7 +175,7 @@ extensions = [
     "deepmodeling_sphinx",
     "dargs.sphinx",
     "sphinx_rtd_theme",
-    "myst_parser",
+    "myst_nb",
     "sphinx.ext.autosummary",
     "sphinx.ext.mathjax",
     "sphinx.ext.viewcode",
@@ -192,6 +185,7 @@ extensions = [
     "numpydoc",
     "breathe",
     "exhale",
+    "sphinxcontrib.bibtex",
 ]
 
 # breathe_domain_by_extension = {
@@ -246,6 +240,7 @@ exhale_projects_args = {
 
 #
 myst_heading_anchors = 4
+nb_execution_mode = "off"
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ["_templates"]
@@ -274,9 +269,9 @@ for typing_type in typing.__all__:
     numpydoc_xref_aliases[typing_type] = "typing.%s" % typing_type
 
 rst_epilog = """
-.. |ACTIVATION_FN| replace:: %s
-.. |PRECISION| replace:: %s
-""" % (
+.. |ACTIVATION_FN| replace:: {}
+.. |PRECISION| replace:: {}
+""".format(
     list_to_doc(ACTIVATION_FN_DICT.keys()),
     list_to_doc(PRECISION_DICT.keys()),
 )
@@ -312,8 +307,14 @@ latex_elements = {
 \usepackage{fontspec}
 \setmainfont{Symbola}
 """,
+    "preamble": r"""
+\usepackage{enumitem}
+\setlistdepth{99}
+""",
 }
 
 # For TF automatic generated OP docs
 napoleon_google_docstring = True
 napoleon_numpy_docstring = False
+
+bibtex_bibfiles = ["../CITATIONS.bib"]

@@ -20,7 +20,7 @@ from typing import (
 import google.protobuf.message
 
 # load grad of force module
-import deepmd.op
+import deepmd.op  # noqa: F401
 from deepmd.env import (
     FITTING_NET_PATTERN,
     REMOVE_SUFFIX_DICT,
@@ -74,7 +74,7 @@ def _transfer_fitting_net_trainable_variables(sess, old_graph_def, raw_graph_def
 
 
 def _remove_fitting_net_suffix(output_graph_def, out_suffix):
-    """Remove fitting net suffix for multi-task mode
+    """Remove fitting net suffix for multi-task mode.
 
     Parameters
     ----------
@@ -158,6 +158,11 @@ def _modify_model_suffix(output_graph_def, out_suffix, freeze_type):
                 loss_dict = jdata.pop("loss_dict")
                 if out_suffix in loss_dict:
                     jdata["loss"] = loss_dict[out_suffix]
+            # learning_rate
+            if "learning_rate_dict" in jdata:
+                learning_rate_dict = jdata.pop("learning_rate_dict")
+                if out_suffix in learning_rate_dict:
+                    jdata["learning_rate"] = learning_rate_dict[out_suffix]
             # fitting weight
             if "fitting_weight" in jdata["training"]:
                 jdata["training"].pop("fitting_weight")
@@ -214,6 +219,13 @@ def _make_node_names(
             "o_virial",
             "o_atom_energy",
             "o_atom_virial",
+            "fitting_attr/dfparam",
+            "fitting_attr/daparam",
+        ]
+    elif model_type == "dos":
+        nodes += [
+            "o_dos",
+            "fitting_attr/numb_dos",
             "fitting_attr/dfparam",
             "fitting_attr/daparam",
         ]
@@ -299,10 +311,10 @@ def _make_node_names(
                 or nodes[ind] == "model_attr/sel_type"
                 or nodes[ind] == "model_attr/output_dim"
             ):
-                nodes[ind] += "_{}".format(out_suffix)
+                nodes[ind] += f"_{out_suffix}"
             elif "fitting_attr" in nodes[ind]:
                 content = nodes[ind].split("/")[1]
-                nodes[ind] = "fitting_attr_{}/{}".format(out_suffix, content)
+                nodes[ind] = f"fitting_attr_{out_suffix}/{content}"
     return nodes
 
 
@@ -413,9 +425,9 @@ def freeze_graph_multi(
                 "type"
             ]
             if out_graph_name[-3:] == ".pb":
-                output_graph_item = out_graph_name[:-3] + "_{}.pb".format(fitting_key)
+                output_graph_item = out_graph_name[:-3] + f"_{fitting_key}.pb"
             else:
-                output_graph_item = out_graph_name + "_{}".format(fitting_key)
+                output_graph_item = out_graph_name + f"_{fitting_key}"
             freeze_graph(
                 sess,
                 input_graph,
@@ -468,8 +480,12 @@ def freeze(
         output file name
     node_names : Optional[str], optional
         names of nodes to output, by default None
+    nvnmd_weight : Optional[str], optional
+        nvnmd weight file
     united_model : bool
         when in multi-task mode, freeze all nodes into one unit model
+    **kwargs
+        other arguments
     """
     # We retrieve our checkpoint fullpath
     checkpoint = tf.train.get_checkpoint_state(checkpoint_folder)
@@ -491,7 +507,7 @@ def freeze(
     # We import the meta graph and retrieve a Saver
     try:
         # In case paralle training
-        import horovod.tensorflow as _
+        import horovod.tensorflow as _  # noqa: F401
     except ImportError:
         pass
     saver = tf.train.import_meta_graph(

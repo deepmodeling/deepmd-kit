@@ -1,6 +1,5 @@
-"""
-nvnmd.data
-==========
+"""nvnmd.data
+==========.
 
 Provides
     1. hardware configuration

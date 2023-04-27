@@ -3,6 +3,7 @@ import logging
 from typing import (
     Callable,
     List,
+    Optional,
 )
 
 from dargs import (
@@ -12,9 +13,6 @@ from dargs import (
     dargs,
 )
 
-from deepmd import (
-    descriptor,
-)
 from deepmd.common import (
     ACTIVATION_FN_DICT,
     PRECISION_DICT,
@@ -52,7 +50,7 @@ def type_embedding_args():
     doc_neuron = "Number of neurons in each hidden layers of the embedding net. When two layers are of the same size or one layer is twice as large as the previous layer, a skip connection is built."
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
     doc_seed = "Random seed for parameter initialization"
-    doc_activation_function = f'The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version.'
+    doc_activation_function = f'The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version. If you set "None" or "none" here, no activation function will be used.'
     doc_precision = f"The precision of the embedding net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
     doc_trainable = "If the parameters in the embedding net are trainable"
 
@@ -80,9 +78,9 @@ class ArgsPlugin:
         self.__plugin = Plugin()
 
     def register(
-        self, name: str, alias: List[str] = None
+        self, name: str, alias: Optional[List[str]] = None
     ) -> Callable[[], List[Argument]]:
-        """Regiester a descriptor argument plugin.
+        """Register a descriptor argument plugin.
 
         Parameters
         ----------
@@ -94,7 +92,7 @@ class ArgsPlugin:
         Returns
         -------
         Callable[[], List[Argument]]
-            the regiestered descriptor argument method
+            the registered descriptor argument method
 
         Examples
         --------
@@ -164,7 +162,7 @@ def descrpt_se_a_args():
     doc_rcut_smth = "Where to start smoothing. For example the 1/r term is smoothed from `rcut` to `rcut_smth`"
     doc_neuron = "Number of neurons in each hidden layers of the embedding net. When two layers are of the same size or one layer is twice as large as the previous layer, a skip connection is built."
     doc_axis_neuron = "Size of the submatrix of G (embedding matrix)."
-    doc_activation_function = f'The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version.'
+    doc_activation_function = f'The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version. If you set "None" or "none" here, no activation function will be used.'
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
     doc_type_one_side = r"If true, the embedding network parameters vary by types of neighbor atoms only, so there will be $N_\text{types}$ sets of embedding network parameters. Otherwise, the embedding network parameters vary by types of centric atoms and types of neighbor atoms, so there will be $N_\text{types}^2$ sets of embedding network parameters."
     doc_precision = f"The precision of the embedding net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
@@ -217,7 +215,7 @@ def descrpt_se_t_args():
     doc_rcut = "The cut-off radius."
     doc_rcut_smth = "Where to start smoothing. For example the 1/r term is smoothed from `rcut` to `rcut_smth`"
     doc_neuron = "Number of neurons in each hidden layers of the embedding net. When two layers are of the same size or one layer is twice as large as the previous layer, a skip connection is built."
-    doc_activation_function = f'The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version.'
+    doc_activation_function = f'The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version. If you set "None" or "none" here, no activation function will be used.'
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
     doc_precision = f"The precision of the embedding net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
     doc_trainable = "If the parameters in the embedding net are trainable"
@@ -267,7 +265,7 @@ def descrpt_se_r_args():
     doc_rcut = "The cut-off radius."
     doc_rcut_smth = "Where to start smoothing. For example the 1/r term is smoothed from `rcut` to `rcut_smth`"
     doc_neuron = "Number of neurons in each hidden layers of the embedding net. When two layers are of the same size or one layer is twice as large as the previous layer, a skip connection is built."
-    doc_activation_function = f'The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version.'
+    doc_activation_function = f'The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version. If you set "None" or "none" here, no activation function will be used.'
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
     doc_type_one_side = r"If true, the embedding network parameters vary by types of neighbor atoms only, so there will be $N_\text{types}$ sets of embedding network parameters. Otherwise, the embedding network parameters vary by types of centric atoms and types of neighbor atoms, so there will be $N_\text{types}^2$ sets of embedding network parameters."
     doc_precision = f"The precision of the embedding net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
@@ -308,7 +306,18 @@ def descrpt_se_r_args():
 def descrpt_hybrid_args():
     doc_list = "A list of descriptor definitions"
 
-    return [Argument("list", list, optional=False, doc=doc_list)]
+    return [
+        Argument(
+            "list",
+            list,
+            optional=False,
+            doc=doc_list,
+            repeat=True,
+            sub_fields=[],
+            sub_variants=[descrpt_variant_type_args(exclude_hybrid=True)],
+            fold_subdoc=True,
+        )
+    ]
 
 
 @descrpt_args_plugin.register("se_atten")
@@ -321,14 +330,14 @@ def descrpt_se_atten_args():
     doc_rcut_smth = "Where to start smoothing. For example the 1/r term is smoothed from `rcut` to `rcut_smth`"
     doc_neuron = "Number of neurons in each hidden layers of the embedding net. When two layers are of the same size or one layer is twice as large as the previous layer, a skip connection is built."
     doc_axis_neuron = "Size of the submatrix of G (embedding matrix)."
-    doc_activation_function = f'The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version.'
+    doc_activation_function = f'The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version. If you set "None" or "none" here, no activation function will be used.'
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
     doc_type_one_side = r"If true, the embedding network parameters vary by types of neighbor atoms only, so there will be $N_\text{types}$ sets of embedding network parameters. Otherwise, the embedding network parameters vary by types of centric atoms and types of neighbor atoms, so there will be $N_\text{types}^2$ sets of embedding network parameters."
     doc_precision = f"The precision of the embedding net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
     doc_trainable = "If the parameters in the embedding net is trainable"
     doc_seed = "Random seed for parameter initialization"
+    doc_set_davg_zero = "Set the normalization average to zero. This option should be set when `se_atten` descriptor or `atom_ener` in the energy fitting is used"
     doc_exclude_types = "The excluded pairs of types which have no interaction with each other. For example, `[[0, 1]]` means no interaction between type 0 and type 1."
-    doc_set_davg_zero = "Set the normalization average to zero. This option should be set when `atom_ener` in the energy fitting is used"
     doc_attn = "The length of hidden vectors in attention layers"
     doc_attn_layer = "The number of attention layers"
     doc_attn_dotr = "Whether to do dot product with the normalized relative coordinates"
@@ -365,7 +374,7 @@ def descrpt_se_atten_args():
             "exclude_types", list, optional=True, default=[], doc=doc_exclude_types
         ),
         Argument(
-            "set_davg_zero", bool, optional=True, default=False, doc=doc_set_davg_zero
+            "set_davg_zero", bool, optional=True, default=True, doc=doc_set_davg_zero
         ),
         Argument("attn", int, optional=True, default=128, doc=doc_attn),
         Argument("attn_layer", int, optional=True, default=2, doc=doc_attn_layer),
@@ -382,7 +391,7 @@ def descrpt_se_a_mask_args():
 
     doc_neuron = "Number of neurons in each hidden layers of the embedding net. When two layers are of the same size or one layer is twice as large as the previous layer, a skip connection is built."
     doc_axis_neuron = "Size of the submatrix of G (embedding matrix)."
-    doc_activation_function = f'The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version.'
+    doc_activation_function = f'The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version. If you set "None" or "none" here, no activation function will be used.'
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
     doc_type_one_side = r"If true, the embedding network parameters vary by types of neighbor atoms only, so there will be $N_\text{types}$ sets of embedding network parameters. Otherwise, the embedding network parameters vary by types of centric atoms and types of neighbor atoms, so there will be $N_\text{types}^2$ sets of embedding network parameters."
     doc_exclude_types = "The excluded pairs of types which have no interaction with each other. For example, `[[0, 1]]` means no interaction between type 0 and type 1."
@@ -439,7 +448,11 @@ def descrpt_variant_type_args(exclude_hybrid: bool = False) -> Variant:
 - `se_a_mask`: Used by the smooth edition of Deep Potential. It can accept a variable number of atoms in a frame (Non-PBC system). *aparam* are required as an indicator matrix for the real/virtual sign of input atoms. \n\n\
 - `hybrid`: Concatenate of a list of descriptors as a new descriptor."
 
-    return Variant("type", descrpt_args_plugin.get_all_argument(), doc=doc_descrpt_type)
+    return Variant(
+        "type",
+        descrpt_args_plugin.get_all_argument(exclude_hybrid=exclude_hybrid),
+        doc=doc_descrpt_type,
+    )
 
 
 #  --- Fitting net configurations: --- #
@@ -447,7 +460,7 @@ def fitting_ener():
     doc_numb_fparam = "The dimension of the frame parameter. If set to >0, file `fparam.npy` should be included to provided the input fparams."
     doc_numb_aparam = "The dimension of the atomic parameter. If set to >0, file `aparam.npy` should be included to provided the input aparams."
     doc_neuron = "The number of neurons in each hidden layers of the fitting net. When two hidden layers are of the same size, a skip connection is built."
-    doc_activation_function = f'The activation function in the fitting net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version.'
+    doc_activation_function = f'The activation function in the fitting net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version. If you set "None" or "none" here, no activation function will be used.'
     doc_precision = f"The precision of the fitting net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
     doc_trainable = "Whether the parameters in the fitting net are trainable. This option can be\n\n\
@@ -506,9 +519,49 @@ def fitting_ener():
     ]
 
 
+def fitting_dos():
+    doc_numb_fparam = "The dimension of the frame parameter. If set to >0, file `fparam.npy` should be included to provided the input fparams."
+    doc_numb_aparam = "The dimension of the atomic parameter. If set to >0, file `aparam.npy` should be included to provided the input aparams."
+    doc_neuron = "The number of neurons in each hidden layers of the fitting net. When two hidden layers are of the same size, a skip connection is built."
+    doc_activation_function = f'The activation function in the fitting net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version. If you set "None" or "none" here, no activation function will be used.'
+    doc_precision = f"The precision of the fitting net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
+    doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
+    doc_trainable = "Whether the parameters in the fitting net are trainable. This option can be\n\n\
+- bool: True if all parameters of the fitting net are trainable, False otherwise.\n\n\
+- list of bool: Specifies if each layer is trainable. Since the fitting net is composed by hidden layers followed by a output layer, the length of tihs list should be equal to len(`neuron`)+1."
+    doc_rcond = "The condition number used to determine the inital energy shift for each type of atoms."
+    doc_seed = "Random seed for parameter initialization of the fitting net"
+    doc_numb_dos = (
+        "The number of gridpoints on which the DOS is evaluated (NEDOS in VASP)"
+    )
+
+    return [
+        Argument("numb_fparam", int, optional=True, default=0, doc=doc_numb_fparam),
+        Argument("numb_aparam", int, optional=True, default=0, doc=doc_numb_aparam),
+        Argument(
+            "neuron", list, optional=True, default=[120, 120, 120], doc=doc_neuron
+        ),
+        Argument(
+            "activation_function",
+            str,
+            optional=True,
+            default="tanh",
+            doc=doc_activation_function,
+        ),
+        Argument("precision", str, optional=True, default="float64", doc=doc_precision),
+        Argument("resnet_dt", bool, optional=True, default=True, doc=doc_resnet_dt),
+        Argument(
+            "trainable", [list, bool], optional=True, default=True, doc=doc_trainable
+        ),
+        Argument("rcond", float, optional=True, default=1e-3, doc=doc_rcond),
+        Argument("seed", [int, None], optional=True, doc=doc_seed),
+        Argument("numb_dos", int, optional=True, default=300, doc=doc_numb_dos),
+    ]
+
+
 def fitting_polar():
     doc_neuron = "The number of neurons in each hidden layers of the fitting net. When two hidden layers are of the same size, a skip connection is built."
-    doc_activation_function = f'The activation function in the fitting net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version.'
+    doc_activation_function = f'The activation function in the fitting net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version. If you set "None" or "none" here, no activation function will be used.'
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
     doc_precision = f"The precision of the fitting net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
     doc_scale = "The output of the fitting net (polarizability matrix) will be scaled by ``scale``"
@@ -559,7 +612,7 @@ def fitting_polar():
 
 def fitting_dipole():
     doc_neuron = "The number of neurons in each hidden layers of the fitting net. When two hidden layers are of the same size, a skip connection is built."
-    doc_activation_function = f'The activation function in the fitting net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version.'
+    doc_activation_function = f'The activation function in the fitting net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version. If you set "None" or "none" here, no activation function will be used.'
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
     doc_precision = f"The precision of the fitting net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
     doc_sel_type = "The atom types for which the atomic dipole will be provided. If not set, all types will be selected."
@@ -597,6 +650,7 @@ def fitting_dipole():
 def fitting_variant_type_args():
     doc_descrpt_type = "The type of the fitting. See explanation below. \n\n\
 - `ener`: Fit an energy model (potential energy surface).\n\n\
+- `dos` : Fit a density of states model. The total density of states / site-projected density of states labels should be provided by `dos.npy` or `atom_dos.npy` in each data system. The file has number of frames lines and number of energy grid columns (times number of atoms in `atom_dos.npy`). See `loss` parameter. \n\n\
 - `dipole`: Fit an atomic dipole model. Global dipole labels or atomic dipole labels for all the selected atoms (see `sel_type`) should be provided by `dipole.npy` in each data system. The file either has number of frames lines and 3 times of number of selected atoms columns, or has number of frames lines and 3 columns. See `loss` parameter.\n\n\
 - `polar`: Fit an atomic polarizability model. Global polarizazbility labels or atomic polarizability labels for all the selected atoms (see `sel_type`) should be provided by `polarizability.npy` in each data system. The file eith has number of frames lines and 9 times of number of selected atoms columns, or has number of frames lines and 9 columns. See `loss` parameter.\n\n"
 
@@ -604,6 +658,7 @@ def fitting_variant_type_args():
         "type",
         [
             Argument("ener", dict, fitting_ener()),
+            Argument("dos", dict, fitting_dos()),
             Argument("dipole", dict, fitting_dipole()),
             Argument("polar", dict, fitting_polar()),
         ],
@@ -803,8 +858,20 @@ def learning_rate_args():
             )
         ],
         [learning_rate_variant_type_args()],
+        optional=True,
         doc=doc_lr,
     )
+
+
+def learning_rate_dict_args():
+    doc_learning_rate_dict = (
+        "The dictionary of definitions of learning rates in multi-task mode. "
+        "Each learning_rate_dict[fitting_key], with user-defined name `fitting_key` in `model/fitting_net_dict`, is the single definition of learning rate.\n"
+    )
+    ca = Argument(
+        "learning_rate_dict", dict, [], [], optional=True, doc=doc_learning_rate_dict
+    )
+    return ca
 
 
 #  --- Loss configurations: --- #
@@ -911,6 +978,79 @@ def loss_ener():
     ]
 
 
+def loss_dos():
+    doc_start_pref_dos = start_pref("Density of State (DOS)")
+    doc_limit_pref_dos = limit_pref("Density of State (DOS)")
+    doc_start_pref_cdf = start_pref(
+        "Cumulative Distribution Function (cumulative intergral of DOS)"
+    )
+    doc_limit_pref_cdf = limit_pref(
+        "Cumulative Distribution Function (cumulative intergral of DOS)"
+    )
+    doc_start_pref_ados = start_pref("atomic DOS (site-projected DOS)")
+    doc_limit_pref_ados = limit_pref("atomic DOS (site-projected DOS)")
+    doc_start_pref_acdf = start_pref("Cumulative integral of atomic DOS")
+    doc_limit_pref_acdf = limit_pref("Cumulative integral of atomic DOS")
+    return [
+        Argument(
+            "start_pref_dos",
+            [float, int],
+            optional=True,
+            default=0.00,
+            doc=doc_start_pref_dos,
+        ),
+        Argument(
+            "limit_pref_dos",
+            [float, int],
+            optional=True,
+            default=0.00,
+            doc=doc_limit_pref_dos,
+        ),
+        Argument(
+            "start_pref_cdf",
+            [float, int],
+            optional=True,
+            default=0.00,
+            doc=doc_start_pref_cdf,
+        ),
+        Argument(
+            "limit_pref_cdf",
+            [float, int],
+            optional=True,
+            default=0.00,
+            doc=doc_limit_pref_cdf,
+        ),
+        Argument(
+            "start_pref_ados",
+            [float, int],
+            optional=True,
+            default=1.00,
+            doc=doc_start_pref_ados,
+        ),
+        Argument(
+            "limit_pref_ados",
+            [float, int],
+            optional=True,
+            default=1.00,
+            doc=doc_limit_pref_ados,
+        ),
+        Argument(
+            "start_pref_acdf",
+            [float, int],
+            optional=True,
+            default=0.00,
+            doc=doc_start_pref_acdf,
+        ),
+        Argument(
+            "limit_pref_acdf",
+            [float, int],
+            optional=True,
+            default=0.00,
+            doc=doc_limit_pref_acdf,
+        ),
+    ]
+
+
 # YWolfeee: Modified to support tensor type of loss args.
 def loss_tensor():
     # doc_global_weight = "The prefactor of the weight of global loss. It should be larger than or equal to 0. If only `pref` is provided or both are not provided, training will be global mode, i.e. the shape of 'polarizability.npy` or `dipole.npy` should be #frams x [9 or 3]."
@@ -938,6 +1078,7 @@ def loss_variant_type_args():
         "type",
         [
             Argument("ener", dict, loss_ener()),
+            Argument("dos", dict, loss_dos()),
             Argument("tensor", dict, loss_tensor()),
             # Argument("polar", dict, loss_tensor()),
             # Argument("global_polar", dict, loss_tensor("global"))
@@ -978,7 +1119,8 @@ def training_data_args():  # ! added by Ziyao: new specification style for data 
 - list: the length of which is the same as the {link_sys}. The batch size of each system is given by the elements of the list.\n\n\
 - int: all {link_sys} use the same batch size.\n\n\
 - string "auto": automatically determines the batch size so that the batch_size times the number of atoms in the system is no less than 32.\n\n\
-- string "auto:N": automatically determines the batch size so that the batch_size times the number of atoms in the system is no less than N.'
+- string "auto:N": automatically determines the batch size so that the batch_size times the number of atoms in the system is no less than N.\n\n\
+- string "mixed:N": the batch data will be sampled from all systems and merged into a mixed system with the batch size N. Only support the se_atten descriptor.'
     doc_auto_prob_style = 'Determine the probability of systems automatically. The method is assigned by this key and can be\n\n\
 - "prob_uniform"  : the probability all the systems are equal, namely 1.0/self.get_nsystems()\n\n\
 - "prob_sys_size" : the probability of a system is proportional to the number of batches in the system\n\n\
@@ -1237,19 +1379,9 @@ def make_index(keys):
 def gen_doc(*, make_anchor=True, make_link=True, **kwargs):
     if make_link:
         make_anchor = True
-    ma = model_args()
-    lra = learning_rate_args()
-    la = loss_args()
-    lda = loss_dict_args()
-    ta = training_args()
-    nvnmda = nvnmd_args()
     ptr = []
-    ptr.append(ma.gen_doc(make_anchor=make_anchor, make_link=make_link, **kwargs))
-    ptr.append(la.gen_doc(make_anchor=make_anchor, make_link=make_link, **kwargs))
-    ptr.append(lda.gen_doc(make_anchor=make_anchor, make_link=make_link, **kwargs))
-    ptr.append(lra.gen_doc(make_anchor=make_anchor, make_link=make_link, **kwargs))
-    ptr.append(ta.gen_doc(make_anchor=make_anchor, make_link=make_link, **kwargs))
-    ptr.append(nvnmda.gen_doc(make_anchor=make_anchor, make_link=make_link, **kwargs))
+    for ii in gen_args():
+        ptr.append(ii.gen_doc(make_anchor=make_anchor, make_link=make_link, **kwargs))
 
     key_words = []
     for ii in "\n\n".join(ptr).split("\n"):
@@ -1262,37 +1394,21 @@ def gen_doc(*, make_anchor=True, make_link=True, **kwargs):
 
 def gen_json(**kwargs):
     return json.dumps(
-        (
-            model_args(),
-            learning_rate_args(),
-            loss_args(),
-            loss_dict_args(),
-            training_args(),
-            nvnmd_args(),
-        ),
+        tuple(gen_args()),
         cls=ArgumentEncoder,
     )
 
 
-def gen_args(**kwargs):
+def gen_args(**kwargs) -> List[Argument]:
     return [
         model_args(),
         learning_rate_args(),
+        learning_rate_dict_args(),
         loss_args(),
         loss_dict_args(),
         training_args(),
         nvnmd_args(),
     ]
-
-
-def normalize_hybrid_list(hy_list):
-    new_list = []
-    base = Argument("base", dict, [], [descrpt_variant_type_args()], doc="")
-    for ii in range(len(hy_list)):
-        data = base.normalize_value(hy_list[ii], trim_pattern="_*")
-        base.check_value(data, strict=True)
-        new_list.append(data)
-    return new_list
 
 
 def normalize_multi_task(data):
@@ -1301,10 +1417,12 @@ def normalize_multi_task(data):
     single_training_data = "training_data" in data["training"].keys()
     single_valid_data = "validation_data" in data["training"].keys()
     single_loss = "loss" in data.keys()
+    single_learning_rate = "learning_rate" in data.keys()
     multi_fitting_net = "fitting_net_dict" in data["model"].keys()
     multi_training_data = "data_dict" in data["training"].keys()
     multi_loss = "loss_dict" in data.keys()
     multi_fitting_weight = "fitting_weight" in data["training"].keys()
+    multi_learning_rate = "learning_rate_dict" in data.keys()
     assert (single_fitting_net == single_training_data) and (
         multi_fitting_net == multi_training_data
     ), (
@@ -1343,6 +1461,16 @@ def normalize_multi_task(data):
             if multi_loss
             else {}
         )
+        if multi_learning_rate:
+            data["learning_rate_dict"] = normalize_learning_rate_dict(
+                data["model"]["fitting_net_dict"].keys(), data["learning_rate_dict"]
+            )
+        elif single_learning_rate:
+            data[
+                "learning_rate_dict"
+            ] = normalize_learning_rate_dict_with_single_learning_rate(
+                data["model"]["fitting_net_dict"].keys(), data["learning_rate"]
+            )
         fitting_weight = (
             data["training"]["fitting_weight"] if multi_fitting_weight else None
         )
@@ -1355,6 +1483,9 @@ def normalize_multi_task(data):
         assert (
             not multi_loss
         ), "In single-task mode, please use 'model/loss' in stead of 'model/loss_dict'! "
+        assert (
+            not multi_learning_rate
+        ), "In single-task mode, please use 'model/learning_rate' in stead of 'model/learning_rate_dict'! "
     return data
 
 
@@ -1396,6 +1527,35 @@ def normalize_loss_dict(fitting_keys, loss_dict):
         data = base.normalize_value(loss_dict[item], trim_pattern="_*")
         base.check_value(data, strict=True)
         new_dict[item] = data
+    return new_dict
+
+
+def normalize_learning_rate_dict(fitting_keys, learning_rate_dict):
+    # check the learning_rate dict
+    failed_learning_rate_keys = [
+        item for item in learning_rate_dict if item not in fitting_keys
+    ]
+    assert (
+        not failed_learning_rate_keys
+    ), "Learning rate dict key(s) {} not have corresponding fitting keys in {}! ".format(
+        str(failed_learning_rate_keys), str(list(fitting_keys))
+    )
+    new_dict = {}
+    base = Argument("base", dict, [], [learning_rate_variant_type_args()], doc="")
+    for item in learning_rate_dict:
+        data = base.normalize_value(learning_rate_dict[item], trim_pattern="_*")
+        base.check_value(data, strict=True)
+        new_dict[item] = data
+    return new_dict
+
+
+def normalize_learning_rate_dict_with_single_learning_rate(fitting_keys, learning_rate):
+    new_dict = {}
+    base = Argument("base", dict, [], [learning_rate_variant_type_args()], doc="")
+    data = base.normalize_value(learning_rate, trim_pattern="_*")
+    base.check_value(data, strict=True)
+    for fitting_key in fitting_keys:
+        new_dict[fitting_key] = data
     return new_dict
 
 
@@ -1465,20 +1625,9 @@ def normalize_fitting_weight(fitting_keys, data_keys, fitting_weight=None):
 
 
 def normalize(data):
-    if "hybrid" == data["model"]["descriptor"]["type"]:
-        data["model"]["descriptor"]["list"] = normalize_hybrid_list(
-            data["model"]["descriptor"]["list"]
-        )
-
     data = normalize_multi_task(data)
-    ma = model_args()
-    lra = learning_rate_args()
-    la = loss_args()
-    lda = loss_dict_args()
-    ta = training_args()
-    nvnmda = nvnmd_args()
 
-    base = Argument("base", dict, [ma, lra, la, lda, ta, nvnmda])
+    base = Argument("base", dict, gen_args())
     data = base.normalize_value(data, trim_pattern="_*")
     base.check_value(data, strict=True)
 

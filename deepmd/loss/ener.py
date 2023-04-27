@@ -1,3 +1,7 @@
+from typing import (
+    Optional,
+)
+
 import numpy as np
 
 from deepmd.common import (
@@ -18,13 +22,12 @@ from .loss import (
 
 
 class EnerStdLoss(Loss):
-    """
-    Standard loss function for DP models
+    r"""Standard loss function for DP models.
 
     Parameters
     ----------
     enable_atom_ener_coeff : bool
-        if true, the energy will be computed as \\sum_i c_i E_i
+        if true, the energy will be computed as \sum_i c_i E_i
     """
 
     def __init__(
@@ -40,7 +43,7 @@ class EnerStdLoss(Loss):
         limit_pref_ae: float = 0.0,
         start_pref_pf: float = 0.0,
         limit_pref_pf: float = 0.0,
-        relative_f: float = None,
+        relative_f: Optional[float] = None,
         enable_atom_ener_coeff: bool = False,
     ) -> None:
         self.starter_learning_rate = starter_learning_rate

@@ -37,9 +37,6 @@ from .train import (
     get_rcut,
     train,
 )
-from .transfer import (
-    transfer,
-)
 
 __all__ = ["compress"]
 
@@ -58,7 +55,7 @@ def compress(
     mpi_log: str,
     log_path: Optional[str],
     log_level: int,
-    **kwargs
+    **kwargs,
 ):
     """Compress model.
 
@@ -90,6 +87,8 @@ def compress(
         if speccified log will be written to this file
     log_level : int
         logging level
+    **kwargs
+        additional arguments
     """
     graph, _ = load_graph_def(input)
     try:
@@ -109,8 +108,7 @@ def compress(
             ) from e
         elif not os.path.exists(training_script):
             raise RuntimeError(
-                "The input training script %s (%s) does not exist! Please check the path of the training script. "
-                % (input, os.path.abspath(input))
+                f"The input training script {input} ({os.path.abspath(input)}) does not exist! Please check the path of the training script. "
             ) from e
         else:
             log.info("stage 0: compute the min_nbor_dist")

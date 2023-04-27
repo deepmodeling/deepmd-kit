@@ -7,14 +7,11 @@ from deepmd.cluster import (
     local,
     slurm,
 )
-from deepmd.env import (
-    tf,
-)
 
 kHostName = "compute-b24-1"
 
 
-class FakePopen(object):
+class FakePopen:
     def __init__(self, stdout=b"", stderr=b"", returncode=0):
         self._stdout = stdout
         self._stderr = stderr

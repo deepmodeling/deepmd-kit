@@ -3,16 +3,15 @@
 #include <vector>
 
 #include "SimulationRegion.h"
-using namespace std;
 
 template <typename VALUETYPE>
 class Statistics {
  public:
   Statistics(const VALUETYPE e_corr = 0, const VALUETYPE p_corr = 0);
   void record(const VALUETYPE& ener,
-              const vector<VALUETYPE>& virial,
-              const vector<VALUETYPE>& veloc,
-              const vector<VALUETYPE>& mass,
+              const std::vector<VALUETYPE>& virial,
+              const std::vector<VALUETYPE>& veloc,
+              const std::vector<VALUETYPE>& mass,
               const SimulationRegion<VALUETYPE>& region);
 
  public:
@@ -24,17 +23,17 @@ class Statistics {
   double get_epot() const { return r_pot_ener + e_corr; }
 
  public:
-  void print(ostream& os, const int& step, const double time) const;
-  void print_head(ostream& os) const;
+  void print(std::ostream& os, const int& step, const double time) const;
+  void print_head(std::ostream& os) const;
 
  private:
   int natoms;
   double r_ener;
   double r_pot_ener;
   double r_kin_ener;
-  // vector<double> r_box;
+  // std::vector<double> r_box;
   SimulationRegion<double> region;
-  vector<double> r_vir;
+  std::vector<double> r_vir;
   double e_corr;
   double p_corr;
 };

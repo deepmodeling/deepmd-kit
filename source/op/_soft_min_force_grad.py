@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
-"""
-Gradients for soft min force
-"""
+"""Gradients for soft min force."""
 
 from tensorflow.python.framework import (
     ops,

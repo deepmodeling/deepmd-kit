@@ -23,8 +23,7 @@ from deepmd.utils.sess import (
 
 # TODO (JZ): I think in this file we can merge some duplicated lines into one method...
 def load_graph_def(model_file: str) -> Tuple[tf.Graph, tf.GraphDef]:
-    """
-    Load graph as well as the graph_def from the frozen model(model_file)
+    """Load graph as well as the graph_def from the frozen model(model_file).
 
     Parameters
     ----------
@@ -47,8 +46,7 @@ def load_graph_def(model_file: str) -> Tuple[tf.Graph, tf.GraphDef]:
 
 
 def get_tensor_by_name_from_graph(graph: tf.Graph, tensor_name: str) -> tf.Tensor:
-    """
-    Load tensor value from the given tf.Graph object
+    """Load tensor value from the given tf.Graph object.
 
     Parameters
     ----------
@@ -77,8 +75,7 @@ def get_tensor_by_name_from_graph(graph: tf.Graph, tensor_name: str) -> tf.Tenso
 
 
 def get_tensor_by_name(model_file: str, tensor_name: str) -> tf.Tensor:
-    """
-    Load tensor value from the frozen model(model_file)
+    """Load tensor value from the frozen model(model_file).
 
     Parameters
     ----------
@@ -102,8 +99,7 @@ def get_tensor_by_name(model_file: str, tensor_name: str) -> tf.Tensor:
 
 
 def get_tensor_by_type(node, data_type: np.dtype) -> tf.Tensor:
-    """
-    Get the tensor value within the given node according to the input data_type
+    """Get the tensor value within the given node according to the input data_type.
 
     Parameters
     ----------
@@ -127,8 +123,7 @@ def get_tensor_by_type(node, data_type: np.dtype) -> tf.Tensor:
 
 
 def get_pattern_nodes_from_graph_def(graph_def: tf.GraphDef, pattern: str) -> Dict:
-    """
-    Get the pattern nodes with the given tf.GraphDef object
+    """Get the pattern nodes with the given tf.GraphDef object.
 
     Parameters
     ----------
@@ -153,8 +148,7 @@ def get_pattern_nodes_from_graph_def(graph_def: tf.GraphDef, pattern: str) -> Di
 def get_embedding_net_nodes_from_graph_def(
     graph_def: tf.GraphDef, suffix: str = ""
 ) -> Dict:
-    """
-    Get the embedding net nodes with the given tf.GraphDef object
+    """Get the embedding net nodes with the given tf.GraphDef object.
 
     Parameters
     ----------
@@ -189,8 +183,7 @@ def get_embedding_net_nodes_from_graph_def(
 
 
 def get_embedding_net_nodes(model_file: str, suffix: str = "") -> Dict:
-    """
-    Get the embedding net nodes with the given frozen model(model_file)
+    """Get the embedding net nodes with the given frozen model(model_file).
 
     Parameters
     ----------
@@ -211,8 +204,7 @@ def get_embedding_net_nodes(model_file: str, suffix: str = "") -> Dict:
 def get_embedding_net_variables_from_graph_def(
     graph_def: tf.GraphDef, suffix: str = ""
 ) -> Dict:
-    """
-    Get the embedding net variables with the given tf.GraphDef object
+    """Get the embedding net variables with the given tf.GraphDef object.
 
     Parameters
     ----------
@@ -245,8 +237,7 @@ def get_embedding_net_variables_from_graph_def(
 
 
 def get_embedding_net_variables(model_file: str, suffix: str = "") -> Dict:
-    """
-    Get the embedding net variables with the given frozen model(model_file)
+    """Get the embedding net variables with the given frozen model(model_file).
 
     Parameters
     ----------
@@ -267,8 +258,7 @@ def get_embedding_net_variables(model_file: str, suffix: str = "") -> Dict:
 def get_fitting_net_nodes_from_graph_def(
     graph_def: tf.GraphDef, suffix: str = ""
 ) -> Dict:
-    """
-    Get the fitting net nodes with the given tf.GraphDef object
+    """Get the fitting net nodes with the given tf.GraphDef object.
 
     Parameters
     ----------
@@ -299,8 +289,7 @@ def get_fitting_net_nodes_from_graph_def(
 
 
 def get_fitting_net_nodes(model_file: str) -> Dict:
-    """
-    Get the fitting net nodes with the given frozen model(model_file)
+    """Get the fitting net nodes with the given frozen model(model_file).
 
     Parameters
     ----------
@@ -319,8 +308,7 @@ def get_fitting_net_nodes(model_file: str) -> Dict:
 def get_fitting_net_variables_from_graph_def(
     graph_def: tf.GraphDef, suffix: str = ""
 ) -> Dict:
-    """
-    Get the fitting net variables with the given tf.GraphDef object
+    """Get the fitting net variables with the given tf.GraphDef object.
 
     Parameters
     ----------
@@ -351,8 +339,7 @@ def get_fitting_net_variables_from_graph_def(
 
 
 def get_fitting_net_variables(model_file: str, suffix: str = "") -> Dict:
-    """
-    Get the fitting net variables with the given frozen model(model_file)
+    """Get the fitting net variables with the given frozen model(model_file).
 
     Parameters
     ----------
@@ -373,8 +360,7 @@ def get_fitting_net_variables(model_file: str, suffix: str = "") -> Dict:
 def get_type_embedding_net_nodes_from_graph_def(
     graph_def: tf.GraphDef, suffix: str = ""
 ) -> Dict:
-    """
-    Get the type embedding net nodes with the given tf.GraphDef object
+    """Get the type embedding net nodes with the given tf.GraphDef object.
 
     Parameters
     ----------
@@ -406,8 +392,7 @@ def get_type_embedding_net_nodes_from_graph_def(
 def get_type_embedding_net_variables_from_graph_def(
     graph_def: tf.GraphDef, suffix: str = ""
 ) -> Dict:
-    """
-    Get the type embedding net variables with the given tf.GraphDef object
+    """Get the type embedding net variables with the given tf.GraphDef object.
 
     Parameters
     ----------
@@ -442,8 +427,7 @@ def get_type_embedding_net_variables_from_graph_def(
 def get_attention_layer_nodes_from_graph_def(
     graph_def: tf.GraphDef, suffix: str = ""
 ) -> Dict:
-    """
-    Get the attention layer nodes with the given tf.GraphDef object
+    """Get the attention layer nodes with the given tf.GraphDef object.
 
     Parameters
     ----------
@@ -477,8 +461,7 @@ def get_attention_layer_nodes_from_graph_def(
 def get_attention_layer_variables_from_graph_def(
     graph_def: tf.GraphDef, suffix: str = ""
 ) -> Dict:
-    """
-    Get the attention layer variables with the given tf.GraphDef object
+    """Get the attention layer variables with the given tf.GraphDef object.
 
     Parameters
     ----------
