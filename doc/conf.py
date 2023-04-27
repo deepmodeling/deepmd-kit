@@ -185,6 +185,7 @@ extensions = [
     "numpydoc",
     "breathe",
     "exhale",
+    "sphinxcontrib.bibtex",
 ]
 
 # breathe_domain_by_extension = {
@@ -315,3 +316,5 @@ latex_elements = {
 # For TF automatic generated OP docs
 napoleon_google_docstring = True
 napoleon_numpy_docstring = False
+
+bibtex_bibfiles = ["../CITATIONS.bib"]
