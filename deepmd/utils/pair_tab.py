@@ -9,15 +9,9 @@ from scipy.interpolate import (
     CubicSpline,
 )
 
-from deepmd.env import (
-    GLOBAL_NP_FLOAT_PRECISION,
-)
-
 
 class PairTab:
-    """Pairwise tabulated potential.
-
-    Parameters
+    """Parameters
     ----------
     filename
             File name for the short-range tabulated potential.
@@ -45,7 +39,7 @@ class PairTab:
             For example we have two atom types, 0 and 1.
             The columes from 2nd to 4th are for 0-0, 0-1 and 1-1 correspondingly.
         """
-        self.vdata = np.loadtxt(filename, dtype=GLOBAL_NP_FLOAT_PRECISION)
+        self.vdata = np.loadtxt(filename)
         self.rmin = self.vdata[0][0]
         self.hh = self.vdata[1][0] - self.vdata[0][0]
         self.nspline = self.vdata.shape[0] - 1
@@ -56,10 +50,7 @@ class PairTab:
             "number of volumes provided in %s does not match guessed number of types %d"
             % (filename, self.ntypes)
         )
-        self.tab_info = np.array(
-            [self.rmin, self.hh, self.nspline, self.ntypes],
-            dtype=GLOBAL_NP_FLOAT_PRECISION,
-        )
+        self.tab_info = np.array([self.rmin, self.hh, self.nspline, self.ntypes])
         self.tab_data = self._make_data()
 
     def get(self) -> Tuple[np.array, np.array]:
@@ -67,10 +58,7 @@ class PairTab:
         return self.tab_info, self.tab_data
 
     def _make_data(self):
-        data = np.zeros(
-            [self.ntypes * self.ntypes * 4 * self.nspline],
-            dtype=GLOBAL_NP_FLOAT_PRECISION,
-        )
+        data = np.zeros([self.ntypes * self.ntypes * 4 * self.nspline])
         stride = 4 * self.nspline
         idx_iter = 0
         xx = self.vdata[:, 0]
@@ -80,7 +68,7 @@ class PairTab:
                 cs = CubicSpline(xx, vv)
                 dd = cs(xx, 1)
                 dd *= self.hh
-                dtmp = np.zeros(stride, dtype=GLOBAL_NP_FLOAT_PRECISION)
+                dtmp = np.zeros(stride)
                 for ii in range(self.nspline):
                     dtmp[ii * 4 + 0] = 2 * vv[ii] - 2 * vv[ii + 1] + dd[ii] + dd[ii + 1]
                     dtmp[ii * 4 + 1] = (
