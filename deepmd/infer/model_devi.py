@@ -1,3 +1,7 @@
+from typing import (
+    Tuple,
+)
+
 import numpy as np
 
 from deepmd.common import (
@@ -15,11 +19,22 @@ from .deep_pot import (
 )
 
 
-def calc_model_devi_f(fs: np.ndarray):
-    """Parameters
+def calc_model_devi_f(fs: np.ndarray) -> Tuple[np.ndarray]:
+    """Calculate model deviation of force.
+
+    Parameters
     ----------
     fs : numpy.ndarray
         size of `n_models x n_frames x n_atoms x 3`
+
+    Returns
+    -------
+    max_devi_f : numpy.ndarray
+        maximum deviation of force in all atoms
+    min_devi_f : numpy.ndarray
+        minimum deviation of force in all atoms
+    avg_devi_f : numpy.ndarray
+        average deviation of force in all atoms
     """
     fs_devi = np.linalg.norm(np.std(fs, axis=0), axis=-1)
     max_devi_f = np.max(fs_devi, axis=-1)
@@ -28,24 +43,44 @@ def calc_model_devi_f(fs: np.ndarray):
     return max_devi_f, min_devi_f, avg_devi_f
 
 
-def calc_model_devi_e(es: np.ndarray):
-    """Parameters
+def calc_model_devi_e(es: np.ndarray) -> np.ndarray:
+    """Calculate model deviation of total energy per atom.
+
+    Here we don't use the atomic energy, as the decomposition
+    of energy is arbitrary and not unique. There is no fitting
+    target for atomic energy.
+
+    Parameters
     ----------
     es : numpy.ndarray
-        size of `n_models x n_frames x n_atoms
+        size of `n_models x n_frames x 1
+
+    Returns
+    -------
+    max_devi_e : numpy.ndarray
+        maximum deviation of energy
     """
     es_devi = np.std(es, axis=0)
-    max_devi_e = np.max(es_devi, axis=1)
-    min_devi_e = np.min(es_devi, axis=1)
-    avg_devi_e = np.mean(es_devi, axis=1)
-    return max_devi_e, min_devi_e, avg_devi_e
+    es_devi = np.squeeze(es_devi, axis=-1)
+    return es_devi
 
 
-def calc_model_devi_v(vs: np.ndarray):
-    """Parameters
+def calc_model_devi_v(vs: np.ndarray) -> Tuple[np.ndarray]:
+    """Calculate model deviation of virial.
+
+    Parameters
     ----------
     vs : numpy.ndarray
         size of `n_models x n_frames x 9`
+
+    Returns
+    -------
+    max_devi_v : numpy.ndarray
+        maximum deviation of virial in 9 elements
+    min_devi_v : numpy.ndarray
+        minimum deviation of virial in 9 elements
+    avg_devi_v : numpy.ndarray
+        average deviation of virial in 9 elements
     """
     vs_devi = np.std(vs, axis=0)
     max_devi_v = np.max(vs_devi, axis=-1)
@@ -55,7 +90,9 @@ def calc_model_devi_v(vs: np.ndarray):
 
 
 def write_model_devi_out(devi: np.ndarray, fname: str, header: str = ""):
-    """Parameters
+    """Write output of model deviation.
+
+    Parameters
     ----------
     devi : numpy.ndarray
         the first column is the steps index
@@ -64,7 +101,7 @@ def write_model_devi_out(devi: np.ndarray, fname: str, header: str = ""):
     header : str, default=""
         the header to dump
     """
-    assert devi.shape[1] == 7
+    assert devi.shape[1] == 8
     header = "%s\n%10s" % (header, "step")
     for item in "vf":
         header += "%19s%19s%19s" % (
@@ -72,11 +109,12 @@ def write_model_devi_out(devi: np.ndarray, fname: str, header: str = ""):
             f"min_devi_{item}",
             f"avg_devi_{item}",
         )
+    header += "%19s" % "devi_e"
     with open(fname, "ab") as fp:
         np.savetxt(
             fp,
             devi,
-            fmt=["%12d"] + ["%19.6e" for _ in range(6)],
+            fmt=["%12d"] + ["%19.6e" for _ in range(7)],
             delimiter="",
             header=header,
         )
@@ -125,9 +163,9 @@ def calc_model_devi(
 
     Returns
     -------
-    model_devi : numpy.ndarray, `n_frames x 7`
-        Model deviation results. The first column is index of steps, the other 6 columns are
-        max_devi_v, min_devi_v, avg_devi_v, max_devi_f, min_devi_f, avg_devi_f.
+    model_devi : numpy.ndarray, `n_frames x 8`
+        Model deviation results. The first column is index of steps, the other 7 columns are
+        max_devi_v, min_devi_v, avg_devi_v, max_devi_f, min_devi_f, avg_devi_f, devi_e.
 
     Examples
     --------
@@ -140,11 +178,7 @@ def calc_model_devi(
     >>> graphs = [DP("graph.000.pb"), DP("graph.001.pb")]
     >>> model_devi = calc_model_devi(coord, cell, atype, graphs)
     """
-    if box is not None:
-        nopbc = True
-    else:
-        nopbc = False
-
+    energies = []
     forces = []
     virials = []
     for dp in models:
@@ -153,15 +187,18 @@ def calc_model_devi(
             box,
             atype,
         )
+        energies.append(ret[0] / len(atype))
         forces.append(ret[1])
         virials.append(ret[2] / len(atype))
 
+    energies = np.array(energies)
     forces = np.array(forces)
     virials = np.array(virials)
 
     devi = [np.arange(coord.shape[0]) * frequency]
     devi += list(calc_model_devi_v(virials))
     devi += list(calc_model_devi_f(forces))
+    devi.append(calc_model_devi_e(energies))
     devi = np.vstack(devi).T
     if fname:
         write_model_devi_out(devi, fname)
