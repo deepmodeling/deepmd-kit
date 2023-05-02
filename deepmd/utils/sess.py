@@ -28,7 +28,7 @@ def run_sess(sess: tf.Session, *args, **kwargs):
     try:
         # https://www.tensorflow.org/api_docs/python/tf/compat/v1/Session#run
         return sess.run(*args, **kwargs)
-    except tf.errors.ResourceExhaustedError as e:
+    except (tf.errors.ResourceExhaustedError, tf.errors.CancelledError) as e:
         MESSAGE = (
             "Your memory may be not enough, thus an error has been raised "
             "above. You need to take the following actions:\n"
