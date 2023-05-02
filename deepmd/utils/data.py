@@ -57,7 +57,7 @@ class DeepmdData:
         root = DPPath(sys_path)
         self.dirs = root.glob(set_prefix + ".*")
         if not len(self.dirs):
-            raise FileNotFoundError("No %s.* is found in %s" % (set_prefix, sys_path))
+            raise FileNotFoundError(f"No {set_prefix}.* is found in {sys_path}")
         self.dirs.sort()
         # check mix_type format
         error_format_msg = (
