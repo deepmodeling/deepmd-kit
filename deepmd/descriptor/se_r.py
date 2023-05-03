@@ -530,12 +530,15 @@ class DescrptSeR(DescrptSe):
             inputs_i = tf.reshape(inputs_i, [-1, self.ndescrpt])
             type_i = -1
             if len(self.exclude_types):
+                atype_nloc = tf.reshape(
+                    tf.slice(atype, [0, 0], [-1, natoms[0]]), [-1]
+                )  # when nloc != nall, pass nloc to mask
                 mask = self.build_type_exclude_mask(
                     self.exclude_types,
                     self.ntypes,
                     self.sel_r,
                     self.ndescrpt,
-                    atype,
+                    atype_nloc,
                     tf.shape(inputs_i)[0],
                 )
                 inputs_i *= mask

@@ -715,12 +715,15 @@ class DescrptSeA(DescrptSe):
             if nvnmd_cfg.enable and nvnmd_cfg.quantize_descriptor:
                 inputs_i = descrpt2r4(inputs_i, natoms)
             if len(self.exclude_types):
+                atype_nloc = tf.reshape(
+                    tf.slice(atype, [0, 0], [-1, natoms[0]]), [-1]
+                )  # when nloc != nall, pass nloc to mask
                 mask = self.build_type_exclude_mask(
                     self.exclude_types,
                     self.ntypes,
                     self.sel_a,
                     self.ndescrpt,
-                    atype,
+                    atype_nloc,
                     tf.shape(inputs_i)[0],
                 )
                 inputs_i *= mask
