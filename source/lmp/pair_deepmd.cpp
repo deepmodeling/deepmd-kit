@@ -729,27 +729,6 @@ void PairDeepMD::compute(int eflag, int vflag) {
         MPI_Reduce(&max, &all_f_max, 1, MPI_DOUBLE, MPI_MAX, 0, world);
         MPI_Reduce(&avg, &all_f_avg, 1, MPI_DOUBLE, MPI_SUM, 0, world);
         all_f_avg /= double(all_nlocal);
-        // std energy
-        vector<double> std_e;
-#ifdef HIGH_PREC
-        vector<double> tmp_avg_e;
-        deep_pot_model_devi.compute_avg(tmp_avg_e, all_atom_energy);
-        deep_pot_model_devi.compute_std_e(std_e, tmp_avg_e, all_atom_energy);
-#else
-        vector<float> tmp_avg_e_, std_e_;
-        deep_pot_model_devi.compute_avg(tmp_avg_e_, all_atom_energy_);
-        deep_pot_model_devi.compute_std_e(std_e_, tmp_avg_e_, all_atom_energy_);
-        std_e.resize(std_e_.size());
-        for (int dd = 0; dd < std_e_.size(); ++dd) std_e[dd] = std_e_[dd];
-#endif
-        max = avg = 0;
-        min = numeric_limits<double>::max();
-        ana_st(max, min, avg, std_e, nlocal);
-        double all_e_min = 0, all_e_max = 0, all_e_avg = 0;
-        MPI_Reduce(&min, &all_e_min, 1, MPI_DOUBLE, MPI_MIN, 0, world);
-        MPI_Reduce(&max, &all_e_max, 1, MPI_DOUBLE, MPI_MAX, 0, world);
-        MPI_Reduce(&avg, &all_e_avg, 1, MPI_DOUBLE, MPI_SUM, 0, world);
-        all_e_avg /= double(all_nlocal);
         // std v
         std::vector<double> send_v(9 * numb_models);
         std::vector<double> recv_v(9 * numb_models);
@@ -794,21 +773,11 @@ void PairDeepMD::compute(int eflag, int vflag) {
           }
           all_v_avg = sqrt(all_v_avg / 9);
         }
-        // // total e
-        // vector<double > sum_e(numb_models, 0.);
-        // MPI_Reduce (&all_energy[0], &sum_e[0], numb_models, MPI_DOUBLE,
-        // MPI_SUM, 0, world);
         if (rank == 0) {
-          // double avg_e = 0;
-          // deep_pot_model_devi.compute_avg(avg_e, sum_e);
-          // double std_e_1 = 0;
-          // deep_pot_model_devi.compute_std(std_e_1, avg_e, sum_e);
           fp << setw(12) << update->ntimestep << " " << setw(18) << all_v_max
              << " " << setw(18) << all_v_min << " " << setw(18) << all_v_avg
              << " " << setw(18) << all_f_max << " " << setw(18) << all_f_min
              << " " << setw(18) << all_f_avg;
-          // << " " << setw(18) << avg_e
-          // << " " << setw(18) << std_e_1 / all_nlocal
         }
         if (out_each == 1) {
           vector<double> std_f_all(all_nlocal);
