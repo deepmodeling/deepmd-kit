@@ -1144,6 +1144,45 @@ extern void DP_PrintSummary(const char* c_pre);
  */
 const char* DP_ReadFileToChar(const char* c_model);
 
+/**
+ * @brief Get forward and backward map of selected atoms by
+ * atom types.
+ * @param[in] natoms The number of atoms.
+ * @param[in] atype The atom types of all atoms.
+ * @param[in] nghost The number of ghost atoms.
+ * @param[in] nsel_type The number of selected atom types.
+ * @param[in] sel_type The selected atom types.
+ * @param[out] fwd_map The forward map with size natoms.
+ * @param[out] nreal The number of selected real atoms.
+ * @param[out] bkw_map The backward map with size nreal.
+ * @param[out] nghost_real The number of selected ghost atoms.
+ */
+void DP_SelectByType(const int natoms,
+                     const int* atype,
+                     const int nghost,
+                     const int nsel_type,
+                     const int* sel_type,
+                     int* fwd_map,
+                     int* nreal,
+                     int* bkw_map,
+                     int* nghost_real);
+
+/**
+ * @brief Apply the given map to a vector. Assume nframes is 1.
+ * @param[in] in The input vector.
+ * @param[in] fwd_map The map.
+ * @param[in] stride The stride of the input vector.
+ * @param[in] nall1 The number of atoms in the input vector.
+ * @param[out] nall2 The number of atoms in the output vector.
+ * @param[out] out The output vector.
+ */
+void DP_SelectMapInt(const int* in,
+                     const int* fwd_map,
+                     const int stride,
+                     const int nall1,
+                     const int nall2,
+                     int* out);
+
 #ifdef __cplusplus
 } /* end extern "C" */
 #endif

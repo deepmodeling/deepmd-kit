@@ -44,6 +44,17 @@ struct NeighborListData {
  **/
 bool model_compatable(std::string& model_version);
 
+/**
+ * @brief Get forward and backward map of selected atoms by
+ * atom types.
+ * @param[out] fwd_map The forward map with size natoms.
+ * @param[out] bkw_map The backward map with size nreal.
+ * @param[out] nghost_real The number of selected ghost atoms.
+ * @param[in] dcoord_ The coordinates of all atoms. Reserved for compatibility.
+ * @param[in] datype_ The atom types of all atoms.
+ * @param[in] nghost The number of ghost atoms.
+ * @param[in] sel_type_ The selected atom types.
+ */
 template <typename VALUETYPE>
 void select_by_type(std::vector<int>& fwd_map,
                     std::vector<int>& bkw_map,
@@ -80,6 +91,16 @@ void select_real_atoms_coord(std::vector<VALUETYPE>& dcoord,
                              const int& daparam,
                              const int& nall);
 
+/**
+ * @brief Apply the given map to a vector.
+ * @param[out] out The output vector.
+ * @param[in] in The input vector.
+ * @param[in] fwd_map The map.
+ * @param[in] stride The stride of the input vector.
+ * @param[in] nframes The number of frames.
+ * @param[in] nall1 The number of atoms in the input vector.
+ * @param[in] nall2 The number of atoms in the output vector.
+ */
 template <typename VT>
 void select_map(std::vector<VT>& out,
                 const std::vector<VT>& in,
@@ -90,6 +111,16 @@ void select_map(std::vector<VT>& out,
                 const int& nall1 = 0,
                 const int& nall2 = 0);
 
+/**
+ * @brief Apply the given map to a vector.
+ * @param[out] out The output vector.
+ * @param[in] in The input vector.
+ * @param[in] fwd_map The map.
+ * @param[in] stride The stride of the input vector.
+ * @param[in] nframes The number of frames.
+ * @param[in] nall1 The number of atoms in the input vector.
+ * @param[in] nall2 The number of atoms in the output vector.
+ */
 template <typename VT>
 void select_map(typename std::vector<VT>::iterator out,
                 const typename std::vector<VT>::const_iterator in,

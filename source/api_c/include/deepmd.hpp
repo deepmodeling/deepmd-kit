@@ -1930,5 +1930,58 @@ void inline read_file_to_string(std::string model, std::string &file_content) {
   file_content = std::string(c_file_content);
 };
 
+/**
+ * @brief Get forward and backward map of selected atoms by
+ * atom types.
+ * @param[out] fwd_map The forward map with size natoms.
+ * @param[out] bkw_map The backward map with size nreal.
+ * @param[out] nghost_real The number of selected ghost atoms.
+ * @param[in] dcoord_ The coordinates of all atoms. Reserved for compatibility.
+ * @param[in] datype_ The atom types of all atoms.
+ * @param[in] nghost The number of ghost atoms.
+ * @param[in] sel_type_ The selected atom types.
+ */
+template <typename VALUETYPE>
+void select_by_type(std::vector<int> &fwd_map,
+                    std::vector<int> &bkw_map,
+                    int &nghost_real,
+                    const std::vector<VALUETYPE> &dcoord_,
+                    const std::vector<int> &datype_,
+                    const int &nghost,
+                    const std::vector<int> &sel_type_) {
+  const int natoms = datype_.size();
+  const int nsel_type = sel_type_.size();
+  fwd_map.resize(natoms);
+  // do not know nghost_real at this time
+  bkw_map.resize(natoms);
+  int nreal;
+  DP_SelectByType(natoms, &datype_[0], nghost, nsel_type, &sel_type_[0],
+                  &fwd_map[0], &nreal, &bkw_map[0], &nghost_real);
+  bkw_map.resize(nreal);
+};
+
+/**
+ * @brief Apply the given map to a vector. Assume nframes is 1.
+ * @tparam VT The value type of the vector. Only support int.
+ * @param[out] out The output vector.
+ * @param[in] in The input vector.
+ * @param[in] fwd_map The map.
+ * @param[in] stride The stride of the input vector.
+ */
+template <typename VT>
+void select_map(std::vector<VT> &out,
+                const std::vector<VT> &in,
+                const std::vector<int> &fwd_map,
+                const int &stride) {
+  static_assert(std::is_same<int, VT>(), "only support int");
+  const int nall1 = in.size() / stride;
+  int nall2 = 0;
+  for (int ii = 0; ii < nall1; ++ii) {
+    if (fwd_map[ii] >= 0) nall2++;
+  }
+  out.resize(nall2 * stride);
+  DP_SelectMapInt(&in[0], &fwd_map[0], stride, nall1, nall2, &out[0]);
+};
+
 }  // namespace hpp
 }  // namespace deepmd

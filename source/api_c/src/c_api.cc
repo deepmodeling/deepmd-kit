@@ -1244,4 +1244,38 @@ const char* DP_ReadFileToChar(const char* c_model) {
   return string_to_char(file_content);
 }
 
+void DP_SelectByType(const int natoms,
+                     const int* atype,
+                     const int nghost,
+                     const int nsel_type,
+                     const int* sel_type,
+                     int* fwd_map,
+                     int* nreal,
+                     int* bkw_map,
+                     int* nghost_real) {
+  std::vector<int> atype_(atype, atype + natoms);
+  std::vector<int> sel_type_(sel_type, sel_type + nsel_type);
+  std::vector<int> fwd_map_, bkw_map_;
+  int nghost_real_;
+  deepmd::select_by_type(fwd_map_, bkw_map_, nghost_real_,
+                         std::vector<double>(), atype_, nghost, sel_type_);
+  if (fwd_map) std::copy(fwd_map_.begin(), fwd_map_.end(), fwd_map);
+  if (bkw_map) std::copy(bkw_map_.begin(), bkw_map_.end(), bkw_map);
+  if (nreal) *nreal = bkw_map_.size();
+  if (nghost_real) *nghost_real = nghost_real_;
+}
+
+void DP_SelectMapInt(const int* in,
+                     const int* fwd_map,
+                     const int stride,
+                     const int nall1,
+                     const int nall2,
+                     int* out) {
+  std::vector<int> in_(in, in + stride * nall1);
+  std::vector<int> fwd_map_(fwd_map, fwd_map + nall1);
+  std::vector<int> out_(stride * nall2);
+  deepmd::select_map(out_, in_, fwd_map_, stride);
+  if (out) std::copy(out_.begin(), out_.end(), out);
+}
+
 }  // extern "C"
