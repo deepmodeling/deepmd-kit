@@ -45,7 +45,6 @@ class PairDeepMD : public Pair {
   void unpack_reverse_comm(int, int *, double *) override;
   void print_summary(const std::string pre) const;
   int get_node_rank();
-<<<<<<< HEAD:source/lmp/pair_deepmd.h.in
   void extend(int &extend_inum,
               std::vector<int> &extend_ilist,
               std::vector<int> &extend_numneigh,
@@ -69,12 +68,6 @@ class PairDeepMD : public Pair {
   std::string get_file_content(const std::string &model);
   std::vector<std::string> get_file_content(
       const std::vector<std::string> &models);
-=======
-  std::string get_file_content(const std::string &model);
-  std::vector<std::string> get_file_content(
-      const std::vector<std::string> &models);
-
->>>>>>> devel:source/lmp/pair_deepmd.h
 
  protected:
   virtual void allocate();
@@ -86,12 +79,8 @@ class PairDeepMD : public Pair {
   unsigned numb_models;
   double cutoff;
   int numb_types;
-<<<<<<< HEAD:source/lmp/pair_deepmd.h.in
   int numb_types_spin;
   std::vector<std::vector<double> > all_force;
-=======
-  std::vector<std::vector<double> > all_force;
->>>>>>> devel:source/lmp/pair_deepmd.h
   std::ofstream fp;
   int out_freq;
   std::string out_file;
