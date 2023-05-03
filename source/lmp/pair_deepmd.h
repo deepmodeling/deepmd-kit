@@ -18,8 +18,8 @@ PairStyle(deepmd, PairDeepMD)
 #include "deepmd/DeepPot.h"
 #endif
 #include <fstream>
-#include <map>
 #include <iostream>
+#include <map>
 
 #ifdef HIGH_PREC
 #define FLOAT_PREC double
@@ -46,34 +46,36 @@ class PairDeepMD : public Pair {
   void print_summary(const std::string pre) const;
   int get_node_rank();
 <<<<<<< HEAD:source/lmp/pair_deepmd.h.in
-  void extend(int &                             extend_inum,
-                std::vector<int> &                extend_ilist,
-                std::vector<int> &                extend_numneigh,
-                std::vector<std::vector<int>> &   extend_neigh,
-                std::vector<int *> &              extend_firstneigh,
-                std::vector<double> &	            extend_coord,
-                std::vector<int> &		        extend_atype,
-                int &			                    extend_nghost,
-                std::map<int, int> &              new_idx_map,
-                std::map<int, int> &              old_idx_map,
-                const deepmd::InputNlist &	    lmp_list,
-                const std::vector<double> &	    coord,
-                const std::vector<int> &		    atype,
-                const int			                nghost,
-                const std::vector<double> &	    spin,
-                const int                         numb_types,
-                const int                         numb_types_spin,
-                const std::vector<double> &       virtual_len);
-  void cum_sum (std::map<int, int> &, std::map<int, int> &);
+  void extend(int &extend_inum,
+              std::vector<int> &extend_ilist,
+              std::vector<int> &extend_numneigh,
+              std::vector<std::vector<int> > &extend_neigh,
+              std::vector<int *> &extend_firstneigh,
+              std::vector<double> &extend_coord,
+              std::vector<int> &extend_atype,
+              int &extend_nghost,
+              std::map<int, int> &new_idx_map,
+              std::map<int, int> &old_idx_map,
+              const deepmd::InputNlist &lmp_list,
+              const std::vector<double> &coord,
+              const std::vector<int> &atype,
+              const int nghost,
+              const std::vector<double> &spin,
+              const int numb_types,
+              const int numb_types_spin,
+              const std::vector<double> &virtual_len);
+  void cum_sum(std::map<int, int> &, std::map<int, int> &);
 
-  std::string get_file_content(const std::string & model);
-  std::vector<std::string> get_file_content(const std::vector<std::string> & models);
+  std::string get_file_content(const std::string &model);
+  std::vector<std::string> get_file_content(
+      const std::vector<std::string> &models);
 =======
   std::string get_file_content(const std::string &model);
   std::vector<std::string> get_file_content(
       const std::vector<std::string> &models);
 
 >>>>>>> devel:source/lmp/pair_deepmd.h
+
  protected:
   virtual void allocate();
   double **scale;
@@ -86,7 +88,7 @@ class PairDeepMD : public Pair {
   int numb_types;
 <<<<<<< HEAD:source/lmp/pair_deepmd.h.in
   int numb_types_spin;
-  std::vector<std::vector<double > > all_force;
+  std::vector<std::vector<double> > all_force;
 =======
   std::vector<std::vector<double> > all_force;
 >>>>>>> devel:source/lmp/pair_deepmd.h
