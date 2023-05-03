@@ -27,6 +27,7 @@
 #include "fix_ttm_dp.h"
 #endif
 
+#include "deepmd_version.h"
 #include "pair_deepmd.h"
 
 using namespace LAMMPS_NS;
@@ -46,6 +47,31 @@ static const char cite_user_deepmd_package[] =
     "  title = {{DeePMD-kit: A deep learning package for many-body potential "
     "energy representation and molecular dynamics}},\n"
     "  pages = {178--184}\n"
+    "}\n"
+    "@misc{Zeng_arXiv_2023,\n"
+    "    title = {DeePMD-kit v2: A software package for Deep Potential "
+    "models},\n"
+    "    author = {Jinzhe Zeng and Duo Zhang and Denghui Lu and Pinghui Mo "
+    "and\n"
+    "            Zeyu Li and Yixiao Chen and Marián Rynik and Li'ang Huang "
+    "and\n"
+    "            Ziyao Li and Shaochen Shi and Yingze Wang and Haotian Ye and\n"
+    "            Ping Tuo and Jiabin Yang and Ye Ding and Yifan Li and Davide\n"
+    "            Tisi and Qiyu Zeng and Han Bao and Yu Xia and Jiameng Huang\n"
+    "            and Koki Muraoka and Yibo Wang and Junhan Chang and Fengbo\n"
+    "            Yuan and Sigbjørn Løland Bore and Chun Cai and Yinnian Lin\n"
+    "            and Bo Wang and Jiayan Xu and Jia-Xin Zhu and Chenxing Luo "
+    "and\n"
+    "            Yuzhi Zhang and Rhys E. A. Goodall and Wenshuo Liang and "
+    "Anurag\n"
+    "            Kumar Singh and Sikai Yao and Jingchao Zhang and Renata\n"
+    "            Wentzcovitch and Jiequn Han and Jie Liu and Weile Jia and\n"
+    "            Darrin M. York and Weinan E and Roberto Car and Linfeng "
+    "Zhang\n"
+    "            and Han Wang},\n"
+    "    year = {2023},\n"
+    "    archivePrefix = {arXiv},\n"
+    "    doi = {10.48550/arXiv.2304.09409}\n"
     "}\n\n";
 
 static int stringCmp(const void *a, const void *b) {
@@ -1043,7 +1069,7 @@ void PairDeepMD::settings(int narg, char **arg) {
     try {
       deep_pot.init(arg[0], get_node_rank(), get_file_content(arg[0]));
     } catch (deepmd::deepmd_exception &e) {
-      error->all(FLERR, e.what());
+      error->one(FLERR, e.what());
     }
     cutoff = deep_pot.cutoff();
     numb_types = deep_pot.numb_types();
@@ -1056,7 +1082,7 @@ void PairDeepMD::settings(int narg, char **arg) {
       deep_pot_model_devi.init(models, get_node_rank(),
                                get_file_content(models));
     } catch (deepmd::deepmd_exception &e) {
-      error->all(FLERR, e.what());
+      error->one(FLERR, e.what());
     }
     cutoff = deep_pot_model_devi.cutoff();
     numb_types = deep_pot_model_devi.numb_types();

@@ -4,7 +4,7 @@
 
 #ifdef PAIR_CLASS
 
-PairStyle(deepmd,PairDeepMD)
+PairStyle(deepmd, PairDeepMD)
 
 #else
 
@@ -17,32 +17,15 @@ PairStyle(deepmd,PairDeepMD)
 #else
 #include "deepmd/DeepPot.h"
 #endif
-#include <iostream>
 #include <fstream>
 #include <map>
+#include <iostream>
 
-#define GIT_SUMM @GIT_SUMM@
-#define GIT_HASH @GIT_HASH@
-#define GIT_BRANCH @GIT_BRANCH@
-#define GIT_DATE @GIT_DATE@
 #ifdef HIGH_PREC
 #define FLOAT_PREC double
 #else
 #define FLOAT_PREC float
 #endif
-#define DEEPMD_ROOT @CMAKE_INSTALL_PREFIX@
-#define TensorFlow_INCLUDE_DIRS @TensorFlow_INCLUDE_DIRS@
-#define TensorFlow_LIBRARY @TensorFlow_LIBRARY@
-#define DPMD_CVT_STR(x) #x
-#define DPMD_CVT_ASSTR(X) DPMD_CVT_STR(X)
-#define STR_GIT_SUMM DPMD_CVT_ASSTR(GIT_SUMM)
-#define STR_GIT_HASH DPMD_CVT_ASSTR(GIT_HASH)
-#define STR_GIT_BRANCH DPMD_CVT_ASSTR(GIT_BRANCH)
-#define STR_GIT_DATE DPMD_CVT_ASSTR(GIT_DATE)
-#define STR_FLOAT_PREC DPMD_CVT_ASSTR(FLOAT_PREC)
-#define STR_DEEPMD_ROOT DPMD_CVT_ASSTR(DEEPMD_ROOT)
-#define STR_TensorFlow_INCLUDE_DIRS DPMD_CVT_ASSTR(TensorFlow_INCLUDE_DIRS)
-#define STR_TensorFlow_LIBRARY DPMD_CVT_ASSTR(TensorFlow_LIBRARY)
 
 namespace LAMMPS_NS {
 
@@ -62,6 +45,7 @@ class PairDeepMD : public Pair {
   void unpack_reverse_comm(int, int *, double *) override;
   void print_summary(const std::string pre) const;
   int get_node_rank();
+<<<<<<< HEAD:source/lmp/pair_deepmd.h.in
   void extend(int &                             extend_inum,
                 std::vector<int> &                extend_ilist,
                 std::vector<int> &                extend_numneigh,
@@ -84,18 +68,28 @@ class PairDeepMD : public Pair {
 
   std::string get_file_content(const std::string & model);
   std::vector<std::string> get_file_content(const std::vector<std::string> & models);
+=======
+  std::string get_file_content(const std::string &model);
+  std::vector<std::string> get_file_content(
+      const std::vector<std::string> &models);
+
+>>>>>>> devel:source/lmp/pair_deepmd.h
  protected:
   virtual void allocate();
   double **scale;
 
-private:
+ private:
   deepmd::DeepPot deep_pot;
   deepmd::DeepPotModelDevi deep_pot_model_devi;
   unsigned numb_models;
   double cutoff;
   int numb_types;
+<<<<<<< HEAD:source/lmp/pair_deepmd.h.in
   int numb_types_spin;
   std::vector<std::vector<double > > all_force;
+=======
+  std::vector<std::vector<double> > all_force;
+>>>>>>> devel:source/lmp/pair_deepmd.h
   std::ofstream fp;
   int out_freq;
   std::string out_file;
@@ -122,51 +116,51 @@ private:
   std::map<int, int> new_idx_map;
   std::map<int, int> old_idx_map;
 #ifdef HIGH_PREC
-  std::vector<double > fparam;
-  std::vector<double > aparam;
+  std::vector<double> fparam;
+  std::vector<double> aparam;
   double eps;
   double eps_v;
 #else
-  std::vector<float > fparam;
-  std::vector<float > aparam;
+  std::vector<float> fparam;
+  std::vector<float> aparam;
   float eps;
   float eps_v;
 #endif
 
   void make_fparam_from_compute(
 #ifdef HIGH_PREC
-      std::vector<double > & fparam
+      std::vector<double> &fparam
 #else
-      std::vector<float > & fparam
+      std::vector<float> &fparam
 #endif
-      );
+  );
   bool do_compute;
   std::string compute_id;
 
-    void make_ttm_fparam(
+  void make_ttm_fparam(
 #ifdef HIGH_PREC
-      std::vector<double > & fparam
+      std::vector<double> &fparam
 #else
-      std::vector<float > & fparam
+      std::vector<float> &fparam
 #endif
-      );
+  );
 
   void make_ttm_aparam(
 #ifdef HIGH_PREC
-      std::vector<double > & dparam
+      std::vector<double> &dparam
 #else
-      std::vector<float > & dparam
+      std::vector<float> &dparam
 #endif
-      );
+  );
   bool do_ttm;
   std::string ttm_fix_id;
-  int *counts,*displacements;
+  int *counts, *displacements;
   tagint *tagsend, *tagrecv;
   double *stdfsend, *stdfrecv;
   std::vector<int> type_idx_map;
 };
 
-}
+}  // namespace LAMMPS_NS
 
 #endif
 #endif

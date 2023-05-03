@@ -213,6 +213,8 @@ inline void _DP_DeepPotModelDeviComputeNList(DP_DeepPotModelDevi *dp,
                                              const int nghost,
                                              const DP_Nlist *nlist,
                                              const int ago,
+                                             const FPTYPE *fparam,
+                                             const FPTYPE *aparam,
                                              double *energy,
                                              FPTYPE *force,
                                              FPTYPE *virial,
@@ -228,14 +230,16 @@ inline void _DP_DeepPotModelDeviComputeNList<double>(DP_DeepPotModelDevi *dp,
                                                      const int nghost,
                                                      const DP_Nlist *nlist,
                                                      const int ago,
+                                                     const double *fparam,
+                                                     const double *aparam,
                                                      double *energy,
                                                      double *force,
                                                      double *virial,
                                                      double *atomic_energy,
                                                      double *atomic_virial) {
-  DP_DeepPotModelDeviComputeNList(dp, natom, coord, atype, cell, nghost, nlist,
-                                  ago, energy, force, virial, atomic_energy,
-                                  atomic_virial);
+  DP_DeepPotModelDeviComputeNList2(dp, 1, natom, coord, atype, cell, nghost,
+                                   nlist, ago, fparam, aparam, energy, force,
+                                   virial, atomic_energy, atomic_virial);
 }
 
 template <>
@@ -247,14 +251,16 @@ inline void _DP_DeepPotModelDeviComputeNList<float>(DP_DeepPotModelDevi *dp,
                                                     const int nghost,
                                                     const DP_Nlist *nlist,
                                                     const int ago,
+                                                    const float *fparam,
+                                                    const float *aparam,
                                                     double *energy,
                                                     float *force,
                                                     float *virial,
                                                     float *atomic_energy,
                                                     float *atomic_virial) {
-  DP_DeepPotModelDeviComputeNListf(dp, natom, coord, atype, cell, nghost, nlist,
-                                   ago, energy, force, virial, atomic_energy,
-                                   atomic_virial);
+  DP_DeepPotModelDeviComputeNListf2(dp, 1, natom, coord, atype, cell, nghost,
+                                    nlist, ago, fparam, aparam, energy, force,
+                                    virial, atomic_energy, atomic_virial);
 }
 
 template <typename FPTYPE>
@@ -1091,6 +1097,8 @@ class DeepPotModelDevi {
     dp = DP_NewDeepPotModelDevi(cstrings.data(), cstrings.size());
     DP_CHECK_OK(DP_DeepPotModelDeviCheckOK, dp);
     numb_models = models.size();
+    dfparam = DP_DeepPotModelDeviGetDimFParam(dp);
+    daparam = DP_DeepPotModelDeviGetDimAParam(dp);
   };
 
   /**
@@ -1106,16 +1114,20 @@ class DeepPotModelDevi {
    *x 9 (PBC) or empty (no PBC).
    **/
   template <typename VALUETYPE>
-  void compute(std::vector<double> &ener,
-               std::vector<std::vector<VALUETYPE>> &force,
-               std::vector<std::vector<VALUETYPE>> &virial,
-               const std::vector<VALUETYPE> &coord,
-               const std::vector<int> &atype,
-               const std::vector<VALUETYPE> &box,
-               const int nghost,
-               const InputNlist &lmp_list,
-               const int &ago) {
+  void compute(
+      std::vector<double> &ener,
+      std::vector<std::vector<VALUETYPE>> &force,
+      std::vector<std::vector<VALUETYPE>> &virial,
+      const std::vector<VALUETYPE> &coord,
+      const std::vector<int> &atype,
+      const std::vector<VALUETYPE> &box,
+      const int nghost,
+      const InputNlist &lmp_list,
+      const int &ago,
+      const std::vector<VALUETYPE> &fparam = std::vector<VALUETYPE>(),
+      const std::vector<VALUETYPE> &aparam = std::vector<VALUETYPE>()) {
     unsigned int natoms = atype.size();
+    unsigned int nframes = 1;
     assert(natoms * 3 == coord.size());
     if (!box.empty()) {
       assert(box.size() == 9);
@@ -1131,10 +1143,16 @@ class DeepPotModelDevi {
     double *ener_ = &energy_flat[0];
     VALUETYPE *force_ = &force_flat[0];
     VALUETYPE *virial_ = &virial_flat[0];
+    std::vector<VALUETYPE> fparam_, aparam_;
+    validate_fparam_aparam(nframes, natoms - nghost, fparam, aparam);
+    tile_fparam_aparam(fparam_, nframes, dfparam, fparam);
+    tile_fparam_aparam(aparam_, nframes, (natoms - nghost) * daparam, aparam);
+    const VALUETYPE *fparam__ = !fparam_.empty() ? &fparam_[0] : nullptr;
+    const VALUETYPE *aparam__ = !aparam_.empty() ? &aparam_[0] : nullptr;
 
     _DP_DeepPotModelDeviComputeNList<VALUETYPE>(
-        dp, natoms, coord_, atype_, box_, nghost, lmp_list.nl, ago, ener_,
-        force_, virial_, nullptr, nullptr);
+        dp, natoms, coord_, atype_, box_, nghost, lmp_list.nl, ago, fparam__,
+        aparam__, ener_, force_, virial_, nullptr, nullptr);
     DP_CHECK_OK(DP_DeepPotModelDeviCheckOK, dp);
 
     // reshape
@@ -1165,18 +1183,22 @@ class DeepPotModelDevi {
    *x 9 (PBC) or empty (no PBC).
    **/
   template <typename VALUETYPE>
-  void compute(std::vector<double> &ener,
-               std::vector<std::vector<VALUETYPE>> &force,
-               std::vector<std::vector<VALUETYPE>> &virial,
-               std::vector<std::vector<VALUETYPE>> &atom_energy,
-               std::vector<std::vector<VALUETYPE>> &atom_virial,
-               const std::vector<VALUETYPE> &coord,
-               const std::vector<int> &atype,
-               const std::vector<VALUETYPE> &box,
-               const int nghost,
-               const InputNlist &lmp_list,
-               const int &ago) {
+  void compute(
+      std::vector<double> &ener,
+      std::vector<std::vector<VALUETYPE>> &force,
+      std::vector<std::vector<VALUETYPE>> &virial,
+      std::vector<std::vector<VALUETYPE>> &atom_energy,
+      std::vector<std::vector<VALUETYPE>> &atom_virial,
+      const std::vector<VALUETYPE> &coord,
+      const std::vector<int> &atype,
+      const std::vector<VALUETYPE> &box,
+      const int nghost,
+      const InputNlist &lmp_list,
+      const int &ago,
+      const std::vector<VALUETYPE> &fparam = std::vector<VALUETYPE>(),
+      const std::vector<VALUETYPE> &aparam = std::vector<VALUETYPE>()) {
     unsigned int natoms = atype.size();
+    unsigned int nframes = 1;
     assert(natoms * 3 == coord.size());
     if (!box.empty()) {
       assert(box.size() == 9);
@@ -1195,10 +1217,16 @@ class DeepPotModelDevi {
     VALUETYPE *virial_ = &virial_flat[0];
     VALUETYPE *atomic_ener_ = &atom_energy_flat[0];
     VALUETYPE *atomic_virial_ = &atom_virial_flat[0];
+    std::vector<VALUETYPE> fparam_, aparam_;
+    validate_fparam_aparam(nframes, natoms - nghost, fparam, aparam);
+    tile_fparam_aparam(fparam_, nframes, dfparam, fparam);
+    tile_fparam_aparam(aparam_, nframes, (natoms - nghost) * daparam, aparam);
+    const VALUETYPE *fparam__ = !fparam_.empty() ? &fparam_[0] : nullptr;
+    const VALUETYPE *aparam__ = !aparam_.empty() ? &aparam_[0] : nullptr;
 
     _DP_DeepPotModelDeviComputeNList<VALUETYPE>(
-        dp, natoms, coord_, atype_, box_, nghost, lmp_list.nl, ago, ener_,
-        force_, virial_, atomic_ener_, atomic_virial_);
+        dp, natoms, coord_, atype_, box_, nghost, lmp_list.nl, ago, fparam__,
+        aparam__, ener_, force_, virial_, atomic_ener_, atomic_virial_);
     DP_CHECK_OK(DP_DeepPotModelDeviCheckOK, dp);
 
     // reshape
@@ -1238,10 +1266,143 @@ class DeepPotModelDevi {
     assert(dp);
     return DP_DeepPotModelDeviGetNumbTypes(dp);
   };
+  /**
+   * @brief Get the dimension of the frame parameter.
+   * @return The dimension of the frame parameter.
+   **/
+  int dim_fparam() const {
+    assert(dp);
+    return dfparam;
+  }
+  /**
+   * @brief Get the dimension of the atomic parameter.
+   * @return The dimension of the atomic parameter.
+   **/
+  int dim_aparam() const {
+    assert(dp);
+    return daparam;
+  }
+  /**
+   * @brief Compute the average energy.
+   * @param[out] dener The average energy.
+   * @param[in] all_energy The energies of all models.
+   **/
+  template <typename VALUETYPE>
+  void compute_avg(VALUETYPE &dener, const std::vector<VALUETYPE> &all_energy) {
+    throw deepmd::hpp::deepmd_exception("TODO: not implemented yet");
+  };
+  /**
+   * @brief Compute the average of vectors.
+   * @param[out] avg The average of vectors.
+   * @param[in] xx The vectors of all models.
+   **/
+  template <typename VALUETYPE>
+  void compute_avg(std::vector<VALUETYPE> &avg,
+                   const std::vector<std::vector<VALUETYPE>> &xx) {
+    throw deepmd::hpp::deepmd_exception("TODO: not implemented yet");
+  };
+  /**
+   * @brief Compute the standard deviation of vectors.
+   * @param[out] std The standard deviation of vectors.
+   * @param[in] avg The average of vectors.
+   * @param[in] xx The vectors of all models.
+   * @param[in] stride The stride to compute the deviation.
+   **/
+  template <typename VALUETYPE>
+  void compute_std(std::vector<VALUETYPE> &std,
+                   const std::vector<VALUETYPE> &avg,
+                   const std::vector<std::vector<VALUETYPE>> &xx,
+                   const int &stride) {
+    throw deepmd::hpp::deepmd_exception("TODO: not implemented yet");
+  };
+  /**
+   * @brief Compute the relative standard deviation of vectors.
+   * @param[out] std The standard deviation of vectors.
+   * @param[in] avg The average of vectors.
+   * @param[in] eps The level parameter for computing the deviation.
+   * @param[in] stride The stride to compute the deviation.
+   **/
+  template <typename VALUETYPE>
+  void compute_relative_std(std::vector<VALUETYPE> &std,
+                            const std::vector<VALUETYPE> &avg,
+                            const VALUETYPE eps,
+                            const int &stride) {
+    throw deepmd::hpp::deepmd_exception("TODO: not implemented yet");
+  };
+  /**
+   * @brief Compute the standard deviation of atomic energies.
+   * @param[out] std The standard deviation of atomic energies.
+   * @param[in] avg The average of atomic energies.
+   * @param[in] xx The vectors of all atomic energies.
+   **/
+  template <typename VALUETYPE>
+  void compute_std_e(std::vector<VALUETYPE> &std,
+                     const std::vector<VALUETYPE> &avg,
+                     const std::vector<std::vector<VALUETYPE>> &xx) {
+    throw deepmd::hpp::deepmd_exception("TODO: not implemented yet");
+  };
+  /**
+   * @brief Compute the standard deviation of forces.
+   * @param[out] std The standard deviation of forces.
+   * @param[in] avg The average of forces.
+   * @param[in] xx The vectors of all forces.
+   **/
+  template <typename VALUETYPE>
+  void compute_std_f(std::vector<VALUETYPE> &std,
+                     const std::vector<VALUETYPE> &avg,
+                     const std::vector<std::vector<VALUETYPE>> &xx) {
+    throw deepmd::hpp::deepmd_exception("TODO: not implemented yet");
+  };
+  /**
+   * @brief Compute the relative standard deviation of forces.
+   * @param[out] std The relative standard deviation of forces.
+   * @param[in] avg The relative average of forces.
+   * @param[in] eps The level parameter for computing the deviation.
+   **/
+  template <typename VALUETYPE>
+  void compute_relative_std_f(std::vector<VALUETYPE> &std,
+                              const std::vector<VALUETYPE> &avg,
+                              const VALUETYPE eps) {
+    throw deepmd::hpp::deepmd_exception("TODO: not implemented yet");
+  };
 
  private:
   DP_DeepPotModelDevi *dp;
   int numb_models;
+  int dfparam;
+  int daparam;
+  template <typename VALUETYPE>
+  void validate_fparam_aparam(const int &nframes,
+                              const int &nloc,
+                              const std::vector<VALUETYPE> &fparam,
+                              const std::vector<VALUETYPE> &aparam) const {
+    if (fparam.size() != dfparam && fparam.size() != nframes * dfparam) {
+      throw deepmd::hpp::deepmd_exception(
+          "the dim of frame parameter provided is not consistent with what the "
+          "model uses");
+    }
+
+    if (aparam.size() != daparam * nloc &&
+        aparam.size() != nframes * daparam * nloc) {
+      throw deepmd::hpp::deepmd_exception(
+          "the dim of atom parameter provided is not consistent with what the "
+          "model uses");
+    }
+  }
+  template <typename VALUETYPE>
+  void tile_fparam_aparam(std::vector<VALUETYPE> &out_param,
+                          const int &nframes,
+                          const int &dparam,
+                          const std::vector<VALUETYPE> &param) const {
+    if (param.size() == dparam) {
+      out_param.resize(nframes * dparam);
+      for (int ii = 0; ii < nframes; ++ii) {
+        std::copy(param.begin(), param.end(), out_param.begin() + ii * dparam);
+      }
+    } else if (param.size() == nframes * dparam) {
+      out_param = param;
+    }
+  }
 };
 
 /**

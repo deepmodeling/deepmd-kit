@@ -42,7 +42,8 @@ def run_sess(sess: tf.Session, *args, **kwargs):
                 "4. Check if another program is using the same GPU by "
                 "execuating `nvidia-smi`. The usage of GPUs is "
                 "controlled by `CUDA_VISIBLE_DEVICES` environment "
-                "variable (current value: %s).\n"
-                % (os.getenv("CUDA_VISIBLE_DEVICES", None),)
+                "variable (current value: {}).\n".format(
+                    os.getenv("CUDA_VISIBLE_DEVICES", None)
+                )
             )
         raise OutOfMemoryError(MESSAGE) from e
