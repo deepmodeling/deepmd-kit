@@ -8,16 +8,6 @@
 using namespace tensorflow;
 using namespace deepmd;
 
-static std::vector<int> cum_sum(const std::vector<int32>& n_sel) {
-  std::vector<int> sec;
-  sec.resize(n_sel.size() + 1);
-  sec[0] = 0;
-  for (int ii = 1; ii < sec.size(); ++ii) {
-    sec[ii] = sec[ii - 1] + n_sel[ii - 1];
-  }
-  return sec;
-}
-
 // start multiple frames
 
 template <typename MODELTYPE, typename VALUETYPE>
@@ -489,53 +479,6 @@ void DeepPot::print_summary(const std::string& pre) const {
 template <class VT>
 VT DeepPot::get_scalar(const std::string& name) const {
   return session_get_scalar<VT>(session, name);
-}
-
-std::string graph_info(const GraphDef& graph_def) {
-  // std::stringstream buffer;
-  // std::streambuf * old = std::cout.rdbuf(buffer.rdbuf());
-  std::string str = "";
-  for (int ii = 0; ii < graph_def.node_size(); ii++) {
-    if (graph_def.node(ii).name() == "DescrptSeA") {
-      // str = graph_def.node(ii).PrintDebugString();
-      str = graph_def.node(ii).DebugString();
-      return str;
-      // std::cout << str << std::endl;
-    }
-    if (graph_def.node(ii).name() == "DescrptSeR") {
-      // str = graph_def.node(ii).PrintDebugString();
-      str = graph_def.node(ii).DebugString();
-      return str;
-      // std::cout << str << std::endl;
-    }
-  }
-  return str;
-}
-
-// init the tmp array data
-std::vector<int> DeepPot::get_sel_a() const {
-  std::vector<int> sel_a;
-  std::istringstream is(graph_info(*graph_def));
-  std::string line = "";
-  while (is >> line) {
-    if (line.find("sel_a") != line.npos) {
-      while (std::getline(is, line) && line != "}") {
-        if (line.find("i:") != line.npos) {
-          sel_a.push_back(atoi((line.substr(line.find("i:") + 2)).c_str()));
-        }
-      }
-      break;
-    }
-    if (line.find("sel") != line.npos) {
-      while (std::getline(is, line) && line != "}") {
-        if (line.find("i:") != line.npos) {
-          sel_a.push_back(atoi((line.substr(line.find("i:") + 2)).c_str()));
-        }
-      }
-      break;
-    }
-  }
-  return sel_a;
 }
 
 template <typename VALUETYPE>
@@ -1355,36 +1298,6 @@ VT DeepPotModelDevi::get_scalar(const std::string name) const {
     }
   }
   return myrcut;
-}
-
-// init the tmp array data
-std::vector<std::vector<int>> DeepPotModelDevi::get_sel() const {
-  std::vector<std::vector<int>> sec;
-  for (int ii = 0; ii < numb_models; ii++) {
-    std::vector<int> sel;
-    std::istringstream is(graph_info(*graph_defs[ii]));
-    std::string line = "";
-    while (is >> line) {
-      if (line.find("sel") != line.npos) {
-        while (std::getline(is, line) && line != "}") {
-          if (line.find("i:") != line.npos) {
-            sel.push_back(atoi((line.substr(line.find("i:") + 2)).c_str()));
-          }
-        }
-        break;
-      }
-      if (line.find("sel_a") != line.npos) {
-        while (std::getline(is, line) && line != "}") {
-          if (line.find("i:") != line.npos) {
-            sel.push_back(atoi((line.substr(line.find("i:") + 2)).c_str()));
-          }
-        }
-        break;
-      }
-    }
-    sec.push_back(sel);
-  }
-  return sec;
 }
 
 template <typename VALUETYPE>

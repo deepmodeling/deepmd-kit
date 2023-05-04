@@ -346,9 +346,6 @@ class DeepPot {
   NeighborListData nlist_data;
   InputNlist nlist;
   AtomMap atommap;
-
-  // function used for neighbor list copy
-  std::vector<int> get_sel_a() const;
 };
 
 class DeepPotModelDevi {
@@ -587,8 +584,5 @@ class DeepPotModelDevi {
   deepmd::AtomMap atommap;
   NeighborListData nlist_data;
   InputNlist nlist;
-
-  // function used for nborlist copy
-  std::vector<std::vector<int> > get_sel() const;
 };
 }  // namespace deepmd
