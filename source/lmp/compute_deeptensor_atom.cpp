@@ -121,8 +121,8 @@ void ComputeDeeptensorAtom::compute_peratom() {
 
   // invoke full neighbor list (will copy or build if necessary)
   neighbor->build_one(list);
-  deepmd::InputNlist lmp_list(list->inum, list->ilist, list->numneigh,
-                              list->firstneigh);
+  deepmd_compat::InputNlist lmp_list(list->inum, list->ilist, list->numneigh,
+                                     list->firstneigh);
 
   // declare outputs
   std::vector<VALUETYPE> gtensor, force, virial, atensor, avirial;

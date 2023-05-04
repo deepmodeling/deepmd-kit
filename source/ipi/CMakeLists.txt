@@ -13,7 +13,15 @@ function(_add_ipi_variant variant_name prec_def)
   set(DRIVER_SOURCE_FILES driver.cc)
   add_executable(${ipiname} ${DRIVER_SOURCE_FILES})
   # link: libdeepmd_cc
-  target_link_libraries(${ipiname} PRIVATE ${libipiname} ${LIB_DEEPMD_CC})
+  if(DP_USING_C_API)
+    # SimulationRegion.h
+    target_link_libraries(${ipiname} PRIVATE ${LIB_DEEPMD_C} ${LIB_DEEPMD})
+    target_precompile_headers(${ipiname} PRIVATE [["deepmd.hpp"]])
+  else()
+    target_link_libraries(${ipiname} PRIVATE ${LIB_DEEPMD_CC})
+    target_compile_definitions(${ipiname} PRIVATE "DP_USE_CXX_API")
+  endif()
+  target_link_libraries(${ipiname} PRIVATE ${libipiname})
   target_include_directories(${ipiname}
                              PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/)
   if(BUILD_PY_IF)

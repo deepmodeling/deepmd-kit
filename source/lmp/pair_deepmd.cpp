@@ -140,7 +140,7 @@ std::string PairDeepMD::get_file_content(const std::string &model) {
   int nchar = 0;
   std::string file_content;
   if (myrank == root) {
-    deepmd::read_file_to_string(model, file_content);
+    deepmd_compat::read_file_to_string(model, file_content);
     nchar = file_content.size();
   }
   MPI_Bcast(&nchar, 1, MPI_INT, root, MPI_COMM_WORLD);
@@ -484,8 +484,8 @@ void PairDeepMD::compute(int eflag, int vflag) {
   multi_models_mod_devi =
       (numb_models > 1 && (out_freq > 0 && update->ntimestep % out_freq == 0));
   if (do_ghost) {
-    deepmd::InputNlist lmp_list(list->inum, list->ilist, list->numneigh,
-                                list->firstneigh);
+    deepmd_compat::InputNlist lmp_list(list->inum, list->ilist, list->numneigh,
+                                       list->firstneigh);
     if (single_model || multi_models_no_mod_devi) {
       // cvflag_atom is the right flag for the cvatom matrix
       if (!(eflag_atom || cvflag_atom)) {
@@ -493,7 +493,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
         try {
           deep_pot.compute(dener, dforce, dvirial, dcoord, dtype, dbox, nghost,
                            lmp_list, ago, fparam, daparam);
-        } catch (deepmd::deepmd_exception &e) {
+        } catch (deepmd_compat::deepmd_exception &e) {
           error->all(FLERR, e.what());
         }
 #else
@@ -508,7 +508,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
         try {
           deep_pot.compute(dener_, dforce_, dvirial_, dcoord_, dtype, dbox_,
                            nghost, lmp_list, ago, fparam, daparam);
-        } catch (deepmd::deepmd_exception &e) {
+        } catch (deepmd_compat::deepmd_exception &e) {
           error->all(FLERR, e.what());
         }
         for (unsigned dd = 0; dd < dforce.size(); ++dd)
@@ -526,7 +526,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
         try {
           deep_pot.compute(dener, dforce, dvirial, deatom, dvatom, dcoord,
                            dtype, dbox, nghost, lmp_list, ago, fparam, daparam);
-        } catch (deepmd::deepmd_exception &e) {
+        } catch (deepmd_compat::deepmd_exception &e) {
           error->all(FLERR, e.what());
         }
 #else
@@ -544,7 +544,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
           deep_pot.compute(dener_, dforce_, dvirial_, deatom_, dvatom_, dcoord_,
                            dtype, dbox_, nghost, lmp_list, ago, fparam,
                            daparam);
-        } catch (deepmd::deepmd_exception &e) {
+        } catch (deepmd_compat::deepmd_exception &e) {
           error->all(FLERR, e.what());
         }
         for (unsigned dd = 0; dd < dforce.size(); ++dd)
@@ -595,7 +595,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
         deep_pot_model_devi.compute(
             all_energy, all_force, all_virial, all_atom_energy, all_atom_virial,
             dcoord, dtype, dbox, nghost, lmp_list, ago, fparam, daparam);
-      } catch (deepmd::deepmd_exception &e) {
+      } catch (deepmd_compat::deepmd_exception &e) {
         error->all(FLERR, e.what());
       }
       // deep_pot_model_devi.compute_avg (dener, all_energy);
@@ -628,7 +628,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
                                     all_atom_energy_, all_atom_virial_, dcoord_,
                                     dtype, dbox_, nghost, lmp_list, ago, fparam,
                                     daparam);
-      } catch (deepmd::deepmd_exception &e) {
+      } catch (deepmd_compat::deepmd_exception &e) {
         error->all(FLERR, e.what());
       }
       // deep_pot_model_devi.compute_avg (dener_, all_energy_);
@@ -817,7 +817,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
 #ifdef HIGH_PREC
       try {
         deep_pot.compute(dener, dforce, dvirial, dcoord, dtype, dbox);
-      } catch (deepmd::deepmd_exception &e) {
+      } catch (deepmd_compat::deepmd_exception &e) {
         error->all(FLERR, e.what());
       }
 #else
@@ -830,7 +830,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
       double dener_ = 0;
       try {
         deep_pot.compute(dener_, dforce_, dvirial_, dcoord_, dtype, dbox_);
-      } catch (deepmd::deepmd_exception &e) {
+      } catch (deepmd_compat::deepmd_exception &e) {
         error->all(FLERR, e.what());
       }
       for (unsigned dd = 0; dd < dforce.size(); ++dd) dforce[dd] = dforce_[dd];
@@ -924,7 +924,7 @@ void PairDeepMD::settings(int narg, char **arg) {
   if (numb_models == 1) {
     try {
       deep_pot.init(arg[0], get_node_rank(), get_file_content(arg[0]));
-    } catch (deepmd::deepmd_exception &e) {
+    } catch (deepmd_compat::deepmd_exception &e) {
       error->one(FLERR, e.what());
     }
     cutoff = deep_pot.cutoff();
@@ -936,7 +936,7 @@ void PairDeepMD::settings(int narg, char **arg) {
       deep_pot.init(arg[0], get_node_rank(), get_file_content(arg[0]));
       deep_pot_model_devi.init(models, get_node_rank(),
                                get_file_content(models));
-    } catch (deepmd::deepmd_exception &e) {
+    } catch (deepmd_compat::deepmd_exception &e) {
       error->one(FLERR, e.what());
     }
     cutoff = deep_pot_model_devi.cutoff();

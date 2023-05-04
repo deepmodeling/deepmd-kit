@@ -187,6 +187,8 @@ if(BUILD_CPP_IF)
   endif()
 endif(BUILD_CPP_IF)
 
+option(DP_USING_C_API "Build third-party interface with C API" ON)
+
 add_subdirectory(op/)
 add_subdirectory(lib/)
 if(BUILD_PY_IF)

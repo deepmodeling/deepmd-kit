@@ -8,6 +8,7 @@ This header-only library provides a C++ 11 interface to the DeePMD-kit C API.
 
 #include <algorithm>
 #include <cassert>
+#include <cmath>
 #include <cstring>
 #include <exception>
 #include <iostream>
@@ -1082,8 +1083,13 @@ class DeepPotModelDevi {
   /**
    * @brief Initialize the DP model deviation.
    * @param[in] model The name of the frozen model file.
+   * @param[in] gpu_rank The GPU rank.
+   * @param[in] file_content The content of the frozen model file.
    **/
-  void init(const std::vector<std::string> &models) {
+  void init(const std::vector<std::string> &models,
+            const int &gpu_rank = 0,
+            const std::vector<std::string> &file_content =
+                std::vector<std::string>()) {
     if (dp) {
       std::cerr << "WARNING: deepmd-kit should not be initialized twice, do "
                    "nothing at the second call of initializer"
@@ -1094,7 +1100,13 @@ class DeepPotModelDevi {
     cstrings.reserve(models.size());
     for (std::string const &str : models) cstrings.push_back(str.data());
 
-    dp = DP_NewDeepPotModelDevi(cstrings.data(), cstrings.size());
+    std::vector<const char *> c_file_contents;
+    c_file_contents.reserve(file_content.size());
+    for (std::string const &str : file_content)
+      c_file_contents.push_back(str.data());
+
+    dp = DP_NewDeepPotModelDeviWithParam(cstrings.data(), cstrings.size(),
+                                         gpu_rank, c_file_contents.data());
     DP_CHECK_OK(DP_DeepPotModelDeviCheckOK, dp);
     numb_models = models.size();
     dfparam = DP_DeepPotModelDeviGetDimFParam(dp);

@@ -6,12 +6,12 @@
 
 #include "json.hpp"
 
-using namespace deepmd;
+using deepmd::DeepmdPlugin;
 
-DeepmdPlugin::DeepmdPlugin() { nnp = new deepmd::DeepPot; }
+DeepmdPlugin::DeepmdPlugin() { nnp = new deepmd_compat::DeepPot; }
 
 DeepmdPlugin::DeepmdPlugin(char* json_file) {
-  nnp = new deepmd::DeepPot;
+  nnp = new deepmd_compat::DeepPot;
   DeepmdPlugin::init_from_json(json_file);
 }
 
