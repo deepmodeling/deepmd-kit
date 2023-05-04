@@ -201,10 +201,6 @@ class EnerModel(Model):
             )
         input_dict["atype"] = atype_
 
-        # # spin if any
-        # if self.spin is not None:
-        #     input_dict['spin'] = self.spin
-
         dout = self.build_descrpt(
             coord,
             atype,
