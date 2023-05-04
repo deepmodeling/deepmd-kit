@@ -1278,6 +1278,14 @@ const char* DP_ReadFileToChar(const char* c_model) {
   return string_to_char(file_content);
 }
 
+const char* DP_ReadFileToChar2(const char* c_model, int* size) {
+  std::string model(c_model);
+  std::string file_content;
+  deepmd::read_file_to_string(model, file_content);
+  *size = file_content.size();
+  return string_to_char(file_content);
+}
+
 void DP_SelectByType(const int natoms,
                      const int* atype,
                      const int nghost,

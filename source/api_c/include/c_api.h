@@ -1179,6 +1179,15 @@ extern void DP_PrintSummary(const char* c_pre);
 const char* DP_ReadFileToChar(const char* c_model);
 
 /**
+ * @brief Read a file to a char array. This version can handle string with '\0'
+ * @version 2
+ * @param[in] c_model The name of the file.
+ * @param[out] size The size of the char array.
+ * @return const char* The char array.
+ */
+const char* DP_ReadFileToChar2(const char* c_model, int* size);
+
+/**
  * @brief Get forward and backward map of selected atoms by
  * atom types.
  * @param[in] natoms The number of atoms.
