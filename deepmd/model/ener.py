@@ -264,7 +264,11 @@ class EnerModel(Model):
         else:
             energy_raw = atom_ener
 
-        nloc_atom = natoms[0] if self.spin is None else tf.reduce_sum(natoms[2 : 2 + len(self.spin.use_spin)]) 
+        nloc_atom = (
+            natoms[0]
+            if self.spin is None
+            else tf.reduce_sum(natoms[2 : 2 + len(self.spin.use_spin)])
+        )
         energy_raw = tf.reshape(
             energy_raw, [-1, nloc_atom], name="o_atom_energy" + suffix
         )
