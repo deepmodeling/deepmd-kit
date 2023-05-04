@@ -118,8 +118,8 @@ class PairTabOp : public OpKernel {
                                                      &virial_tensor));
 
     // flat the tensors
-    auto table_info = table_info_tensor.flat<FPTYPE>();
-    auto table_data = table_data_tensor.flat<FPTYPE>();
+    auto table_info = table_info_tensor.flat<double>();
+    auto table_data = table_data_tensor.flat<double>();
     auto type = type_tensor.matrix<int>();
     auto rij = rij_tensor.matrix<FPTYPE>();
     auto nlist = nlist_tensor.matrix<int>();
