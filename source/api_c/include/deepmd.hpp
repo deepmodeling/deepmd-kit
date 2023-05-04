@@ -591,7 +591,8 @@ class DeepPot {
                 << std::endl;
       return;
     }
-    dp = DP_NewDeepPotWithParam(model.c_str(), gpu_rank, file_content.c_str());
+    dp = DP_NewDeepPotWithParam2(model.c_str(), gpu_rank, file_content.c_str(),
+                                 file_content.size());
     DP_CHECK_OK(DP_DeepPotCheckOK, dp);
     dfparam = DP_DeepPotGetDimFParam(dp);
     daparam = DP_DeepPotGetDimAParam(dp);
@@ -1101,13 +1102,17 @@ class DeepPotModelDevi {
     for (std::string const &str : models) cstrings.push_back(str.data());
 
     std::vector<const char *> c_file_contents;
+    std::vector<int> size_file_contents;
     c_file_contents.reserve(file_content.size());
-    for (std::string const &str : file_content)
+    size_file_contents.reserve(file_content.size());
+    for (std::string const &str : file_content) {
       c_file_contents.push_back(str.data());
+      size_file_contents.push_back(str.size());
+    }
 
-    dp = DP_NewDeepPotModelDeviWithParam(cstrings.data(), cstrings.size(),
-                                         gpu_rank, c_file_contents.data(),
-                                         c_file_contents.size());
+    dp = DP_NewDeepPotModelDeviWithParam(
+        cstrings.data(), cstrings.size(), gpu_rank, c_file_contents.data(),
+        c_file_contents.size(), size_file_contents.data());
     DP_CHECK_OK(DP_DeepPotModelDeviCheckOK, dp);
     numb_models = models.size();
     dfparam = DP_DeepPotModelDeviGetDimFParam(dp);

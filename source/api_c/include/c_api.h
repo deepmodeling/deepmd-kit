@@ -46,12 +46,27 @@ extern DP_DeepPot* DP_NewDeepPot(const char* c_model);
  *
  * @param c_model The name of the frozen model file.
  * @param gpu_rank The rank of the GPU.
- * @param c_file_content The content of the model file.
+ * @param c_file_content Broken implementation. Use
+ * DP_NewDeepPotWithParam2 instead.
  * @return DP_DeepPot* A pointer to the deep potential.
  */
 extern DP_DeepPot* DP_NewDeepPotWithParam(const char* c_model,
                                           const int gpu_rank,
                                           const char* c_file_content);
+
+/**
+ * @brief DP constructor with initialization.
+ * @version 2
+ * @param c_model The name of the frozen model file.
+ * @param gpu_rank The rank of the GPU.
+ * @param c_file_content The content of the model file.
+ * @param size_file_content The size of the model file.
+ * @return DP_DeepPot* A pointer to the deep potential.
+ */
+extern DP_DeepPot* DP_NewDeepPotWithParam2(const char* c_model,
+                                           const int gpu_rank,
+                                           const char* c_file_content,
+                                           const int size_file_content);
 
 /**
  * @brief Evaluate the energy, force and virial by using a DP. (double version)
@@ -461,6 +476,7 @@ extern DP_DeepPotModelDevi* DP_NewDeepPotModelDevi(const char** c_models,
  * @param[in] gpu_rank The rank of the GPU.
  * @param[in] c_file_contents The contents of the model file.
  * @param[in] n_file_contents The number of the contents of the model file.
+ * @param[in] size_file_contents The sizes of the contents of the model file.
  * @return DP_DeepPotModelDevi* A pointer to the deep potential model deviation.
  */
 extern DP_DeepPotModelDevi* DP_NewDeepPotModelDeviWithParam(
@@ -468,7 +484,8 @@ extern DP_DeepPotModelDevi* DP_NewDeepPotModelDeviWithParam(
     const int n_models,
     const int gpu_rank,
     const char** c_file_contents,
-    const int n_file_contents);
+    const int n_file_contents,
+    const int* size_file_contents);
 
 /**
  * @brief Evaluate the energy, force and virial by using a DP model deviation

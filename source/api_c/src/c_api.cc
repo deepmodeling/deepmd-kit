@@ -41,6 +41,20 @@ DP_DeepPot* DP_NewDeepPotWithParam(const char* c_model,
                                    const char* c_file_content) {
   std::string model(c_model);
   std::string file_content(c_file_content);
+  DP_NEW_OK(DP_DeepPot,
+            if (file_content.size() > 0) throw deepmd::deepmd_exception(
+                "file_content is broken in DP_NewDeepPotWithParam. Use "
+                "DP_NewDeepPotWithParam2 instead.");
+            deepmd::DeepPot dp(model, gpu_rank, file_content);
+            DP_DeepPot* new_dp = new DP_DeepPot(dp); return new_dp;)
+}
+
+DP_DeepPot* DP_NewDeepPotWithParam2(const char* c_model,
+                                    const int gpu_rank,
+                                    const char* c_file_content,
+                                    const int size_file_content) {
+  std::string model(c_model);
+  std::string file_content(c_file_content, c_file_content + size_file_content);
   DP_NEW_OK(DP_DeepPot, deepmd::DeepPot dp(model, gpu_rank, file_content);
             DP_DeepPot* new_dp = new DP_DeepPot(dp); return new_dp;)
 }
@@ -65,10 +79,15 @@ DP_DeepPotModelDevi* DP_NewDeepPotModelDeviWithParam(
     const int n_models,
     const int gpu_rank,
     const char** c_file_contents,
-    const int n_file_contents) {
+    const int n_file_contents,
+    const int* size_file_contents) {
   std::vector<std::string> model(c_models, c_models + n_models);
-  std::vector<std::string> file_content(c_file_contents,
-                                        c_file_contents + n_file_contents);
+  std::vector<std::string> file_content;
+  file_content.reserve(n_file_contents);
+  for (int ii = 0; ii < n_file_contents; ++ii) {
+    file_content.push_back(std::string(
+        c_file_contents[ii], c_file_contents[ii] + size_file_contents[ii]));
+  }
   DP_NEW_OK(DP_DeepPotModelDevi,
             deepmd::DeepPotModelDevi dp(model, gpu_rank, file_content);
             DP_DeepPotModelDevi* new_dp = new DP_DeepPotModelDevi(dp);
