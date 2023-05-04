@@ -1106,7 +1106,8 @@ class DeepPotModelDevi {
       c_file_contents.push_back(str.data());
 
     dp = DP_NewDeepPotModelDeviWithParam(cstrings.data(), cstrings.size(),
-                                         gpu_rank, c_file_contents.data());
+                                         gpu_rank, c_file_contents.data(),
+                                         c_file_contents.size());
     DP_CHECK_OK(DP_DeepPotModelDeviCheckOK, dp);
     numb_models = models.size();
     dfparam = DP_DeepPotModelDeviGetDimFParam(dp);

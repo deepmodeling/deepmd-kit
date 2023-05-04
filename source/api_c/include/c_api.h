@@ -460,13 +460,15 @@ extern DP_DeepPotModelDevi* DP_NewDeepPotModelDevi(const char** c_models,
  * @param[in] nmodels The number of models.
  * @param[in] gpu_rank The rank of the GPU.
  * @param[in] c_file_contents The contents of the model file.
+ * @param[in] n_file_contents The number of the contents of the model file.
  * @return DP_DeepPotModelDevi* A pointer to the deep potential model deviation.
  */
 extern DP_DeepPotModelDevi* DP_NewDeepPotModelDeviWithParam(
     const char** c_model,
     const int n_models,
     const int gpu_rank,
-    const char** c_file_contents);
+    const char** c_file_contents,
+    const int n_file_contents);
 
 /**
  * @brief Evaluate the energy, force and virial by using a DP model deviation

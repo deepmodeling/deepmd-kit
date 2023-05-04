@@ -64,10 +64,11 @@ DP_DeepPotModelDevi* DP_NewDeepPotModelDeviWithParam(
     const char** c_models,
     const int n_models,
     const int gpu_rank,
-    const char** c_file_contents) {
+    const char** c_file_contents,
+    const int n_file_contents) {
   std::vector<std::string> model(c_models, c_models + n_models);
   std::vector<std::string> file_content(c_file_contents,
-                                        c_file_contents + n_models);
+                                        c_file_contents + n_file_contents);
   DP_NEW_OK(DP_DeepPotModelDevi,
             deepmd::DeepPotModelDevi dp(model, gpu_rank, file_content);
             DP_DeepPotModelDevi* new_dp = new DP_DeepPotModelDevi(dp);
