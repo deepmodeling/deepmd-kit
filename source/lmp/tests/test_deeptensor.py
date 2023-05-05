@@ -108,6 +108,6 @@ def test_compute_deeptensor_atom(lammps):
     lammps.pair_style(f"deepmd {pb_file.resolve()}")
     lammps.pair_coeff("* *")
     lammps.compute(f"tensor all deeptensor/atom {pb_file2.resolve()}")
-    lammps.variable("tensor atom c_tensor")
+    lammps.variable("tensor atom c_tensor[1]")
     lammps.run(0)
     assert np.array(lammps.variables["tensor"].value) == pytest.approx(expected_d)
