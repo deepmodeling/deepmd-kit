@@ -17,24 +17,26 @@ from write_lmp_data import (
 pbtxt_file = Path(__file__).parent.parent.parent / "tests" / "infer" / "deeppot.pbtxt"
 pb_file = Path(__file__).parent / "graph.pb"
 pbtxt_file2 = (
-    Path(__file__).parent.parent.parent / "tests" / "infer" / "deepdipole.pbtxt"
+    Path(__file__).parent.parent.parent / "tests" / "infer" / "deepdipole_new.pbtxt"
 )
-pb_file2 = Path(__file__).parent / "deepdipole.pb"
+pb_file2 = Path(__file__).parent / "deepdipole_new.pb"
 system_file = Path(__file__).parent.parent.parent / "tests"
 data_file = Path(__file__).parent / "data.lmp"
 data_type_map_file = Path(__file__).parent / "data_type_map.lmp"
 
-# this is as the same as python and c++ tests, test_deeppot_a.py
+# this is as the same as python and c++ tests, test_deepdipole.py
 expected_d = np.array(
     [
-        -9.274180565967479195e-01,
-        2.698028341272042496e00,
-        2.521268387140979117e-01,
-        2.927260638453461628e00,
-        -8.571926301526779923e-01,
-        1.667785136187720063e00,
+        -1.128427726201255282e-01,
+        2.654103846999197880e-01,
+        2.625816377288122533e-02,
+        3.027556488877700680e-01,
+        -7.475444785689989990e-02,
+        1.526291164572509684e-01,
     ]
 )
+# sel_type is 0, it seems that it works here
+expected_d[[1, 2, 4, 5]] = 0.0
 box = np.array([0, 13, 0, 13, 0, 13, 0, 0, 0])
 coord = np.array(
     [
