@@ -1199,28 +1199,24 @@ template void tabulate_fusion_se_a_grad_grad_gpu_rocm<double>(
     const int nnei,
     const int last_layer_size);
 
-template void tabulate_fusion_se_atten_gpu_rocm<float>(
-    float* out,
-    const float* table,
-    const float* table_info,
-    const float* em_x,
-    const float* em,
-    const float* two_embed,
-    const int nloc,
-    const int nnei_i,
-    const int nnei_j,
-    const int last_layer_size);
-template void tabulate_fusion_se_atten_gpu_rocm<double>(
-    double* out,
-    const double* table,
-    const double* table_info,
-    const double* em_x,
-    const double* em,
-    const double* two_embed,
-    const int nloc,
-    const int nnei_i,
-    const int nnei_j,
-    const int last_layer_size);
+template void tabulate_fusion_se_atten_gpu_rocm<float>(float* out,
+                                                       const float* table,
+                                                       const float* table_info,
+                                                       const float* em_x,
+                                                       const float* em,
+                                                       const float* two_embed,
+                                                       const int nloc,
+                                                       const int nnei,
+                                                       const int last_layer_size);
+template void tabulate_fusion_se_atten_gpu_rocm<double>(double* out,
+                                                        const double* table,
+                                                        const double* table_info,
+                                                        const double* em_x,
+                                                        const double* em,
+                                                        const double* two_embed,
+                                                        const int nloc,
+                                                        const int nnei,
+                                                        const int last_layer_size);
 template void tabulate_fusion_se_atten_grad_gpu_rocm<float>(
     float* dy_dem_x,
     float* dy_dem,
