@@ -40,6 +40,9 @@ from deepmd.utils.network import one_layer as one_layer_deepmd
 from deepmd.utils.network import (
     one_layer_rand_seed_shift,
 )
+from deepmd.utils.spin import (
+    Spin,
+)
 
 log = logging.getLogger(__name__)
 
@@ -132,6 +135,7 @@ class EnerFitting(Fitting):
         uniform_seed: bool = False,
         layer_name: Optional[List[Optional[str]]] = None,
         use_aparam_as_mask: bool = False,
+        spin: Optional[Spin] = None,
     ) -> None:
         """Constructor."""
         # model param
@@ -157,6 +161,8 @@ class EnerFitting(Fitting):
         self.rcond = rcond
         self.seed = seed
         self.uniform_seed = uniform_seed
+        self.spin = spin
+        self.ntypes_spin = self.spin.get_ntypes_spin() if self.spin is not None else 0
         self.seed_shift = one_layer_rand_seed_shift()
         self.tot_ener_zero = tot_ener_zero
         self.fitting_activation_fn = get_activation_func(activation_function)
@@ -477,6 +483,26 @@ class EnerFitting(Fitting):
             if self.aparam_inv_std is None:
                 self.aparam_inv_std = 1.0
 
+        ntypes_atom = self.ntypes - self.ntypes_spin
+        if self.spin is not None:
+            for type_i in range(ntypes_atom):
+                if self.bias_atom_e.shape[0] != self.ntypes:
+                    self.bias_atom_e = np.pad(
+                        self.bias_atom_e,
+                        (0, self.ntypes_spin),
+                        "constant",
+                        constant_values=(0, 0),
+                    )
+                    bias_atom_e = self.bias_atom_e
+                if self.spin.use_spin[type_i]:
+                    self.bias_atom_e[type_i] = (
+                        self.bias_atom_e[type_i]
+                        + self.bias_atom_e[type_i + ntypes_atom]
+                    )
+                else:
+                    self.bias_atom_e[type_i] = self.bias_atom_e[type_i]
+            self.bias_atom_e = self.bias_atom_e[:ntypes_atom]
+
         with tf.variable_scope("fitting_attr" + suffix, reuse=reuse):
             t_dfparam = tf.constant(self.numb_fparam, name="dfparam", dtype=tf.int32)
             t_daparam = tf.constant(self.numb_aparam, name="daparam", dtype=tf.int32)
@@ -557,6 +583,15 @@ class EnerFitting(Fitting):
         # prevent embedding_lookup error,
         # but the filter will be applied anyway
         self.atype_nloc = tf.clip_by_value(self.atype_nloc, 0, self.ntypes - 1)
+
+        ## if spin is used
+        if self.spin is not None:
+            self.atype_nloc = tf.slice(
+                atype_nall, [0, 0], [-1, tf.reduce_sum(natoms[2 : 2 + ntypes_atom])]
+            )
+            atype_filter = tf.cast(self.atype_nloc >= 0, GLOBAL_TF_FLOAT_PRECISION)
+            self.atype_nloc = tf.reshape(self.atype_nloc, [-1])
+
         if type_embedding is not None:
             atype_embed = tf.nn.embedding_lookup(type_embedding, self.atype_nloc)
         else:
@@ -567,7 +602,7 @@ class EnerFitting(Fitting):
         if atype_embed is None:
             start_index = 0
             outs_list = []
-            for type_i in range(self.ntypes):
+            for type_i in range(ntypes_atom):
                 final_layer = self._build_lower(
                     start_index,
                     natoms[2 + type_i],
@@ -645,7 +680,7 @@ class EnerFitting(Fitting):
         self.atom_ener_before = outs * atype_filter
         self.add_type = tf.reshape(
             tf.nn.embedding_lookup(self.t_bias_atom_e, self.atype_nloc),
-            [tf.shape(inputs)[0], natoms[0]],
+            [tf.shape(inputs)[0], tf.reduce_sum(natoms[2 : 2 + ntypes_atom])],
         )
         outs = outs + self.add_type
         outs *= atype_filter
@@ -653,11 +688,14 @@ class EnerFitting(Fitting):
 
         if self.tot_ener_zero:
             force_tot_ener = 0.0
-            outs = tf.reshape(outs, [-1, natoms[0]])
+            outs = tf.reshape(outs, [-1, tf.reduce_sum(natoms[2 : 2 + ntypes_atom])])
             outs_mean = tf.reshape(tf.reduce_mean(outs, axis=1), [-1, 1])
             outs_mean = outs_mean - tf.ones_like(
                 outs_mean, dtype=GLOBAL_TF_FLOAT_PRECISION
-            ) * (force_tot_ener / global_cvt_2_tf_float(natoms[0]))
+            ) * (
+                force_tot_ener
+                / global_cvt_2_tf_float(tf.reduce_sum(natoms[2 : 2 + ntypes_atom]))
+            )
             outs = outs - outs_mean
             outs = tf.reshape(outs, [-1])
 

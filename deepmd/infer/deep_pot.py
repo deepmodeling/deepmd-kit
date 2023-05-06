@@ -139,6 +139,13 @@ class DeepPot(DeepEval):
             self.t_aparam = None
             self.has_aparam = False
 
+        if "load/spin_attr/ntypes_spin" in operations:
+            self.tensors.update({"t_ntypes_spin": "spin_attr/ntypes_spin:0"})
+            self.has_spin = True
+        else:
+            self.ntypes_spin = 0
+            self.has_spin = False
+
         # now load tensors to object attributes
         for attr_name, tensor_name in self.tensors.items():
             try:
@@ -185,14 +192,44 @@ class DeepPot(DeepEval):
             )
 
     def _run_default_sess(self):
-        [self.ntypes, self.rcut, self.dfparam, self.daparam, self.tmap] = run_sess(
-            self.sess,
-            [self.t_ntypes, self.t_rcut, self.t_dfparam, self.t_daparam, self.t_tmap],
-        )
+        if self.has_spin is True:
+            [
+                self.ntypes,
+                self.ntypes_spin,
+                self.rcut,
+                self.dfparam,
+                self.daparam,
+                self.tmap,
+            ] = run_sess(
+                self.sess,
+                [
+                    self.t_ntypes,
+                    self.t_ntypes_spin,
+                    self.t_rcut,
+                    self.t_dfparam,
+                    self.t_daparam,
+                    self.t_tmap,
+                ],
+            )
+        else:
+            [self.ntypes, self.rcut, self.dfparam, self.daparam, self.tmap] = run_sess(
+                self.sess,
+                [
+                    self.t_ntypes,
+                    self.t_rcut,
+                    self.t_dfparam,
+                    self.t_daparam,
+                    self.t_tmap,
+                ],
+            )
 
     def get_ntypes(self) -> int:
         """Get the number of atom types of this model."""
         return self.ntypes
+
+    def get_ntypes_spin(self):
+        """Get the number of spin atom types of this model."""
+        return self.ntypes_spin
 
     def get_rcut(self) -> float:
         """Get the cut-off radius of this model."""
@@ -448,7 +485,7 @@ class DeepPot(DeepEval):
             feed_dict_test[self.t_fparam] = np.reshape(fparam, [-1])
         if self.has_aparam:
             feed_dict_test[self.t_aparam] = np.reshape(aparam, [-1])
-        return feed_dict_test, imap
+        return feed_dict_test, imap, natoms_vec
 
     def _eval_inner(
         self,
@@ -464,9 +501,10 @@ class DeepPot(DeepEval):
         natoms, nframes = self._get_natoms_and_nframes(
             coords, atom_types, mixed_type=mixed_type
         )
-        feed_dict_test, imap = self._prepare_feed_dict(
+        feed_dict_test, imap, natoms_vec = self._prepare_feed_dict(
             coords, cells, atom_types, fparam, aparam, efield, mixed_type=mixed_type
         )
+
         t_out = [self.t_energy, self.t_force, self.t_virial]
         if atomic:
             t_out += [self.t_ae, self.t_av]
@@ -479,17 +517,28 @@ class DeepPot(DeepEval):
             ae = v_out[3]
             av = v_out[4]
 
+        if self.has_spin:
+            ntypes_real = self.ntypes - self.ntypes_spin
+            natoms_real = sum(
+                [
+                    np.count_nonzero(np.array(atom_types) == ii)
+                    for ii in range(ntypes_real)
+                ]
+            )
+        else:
+            natoms_real = natoms
+
         # reverse map of the outputs
         force = self.reverse_map(np.reshape(force, [nframes, -1, 3]), imap)
         if atomic:
-            ae = self.reverse_map(np.reshape(ae, [nframes, -1, 1]), imap)
+            ae = self.reverse_map(np.reshape(ae, [nframes, -1, 1]), imap[:natoms_real])
             av = self.reverse_map(np.reshape(av, [nframes, -1, 9]), imap)
 
         energy = np.reshape(energy, [nframes, 1])
         force = np.reshape(force, [nframes, natoms, 3])
         virial = np.reshape(virial, [nframes, 9])
         if atomic:
-            ae = np.reshape(ae, [nframes, natoms, 1])
+            ae = np.reshape(ae, [nframes, natoms_real, 1])
             av = np.reshape(av, [nframes, natoms, 9])
             return energy, force, virial, ae, av
         else:
@@ -570,7 +619,7 @@ class DeepPot(DeepEval):
         natoms, nframes = self._get_natoms_and_nframes(
             coords, atom_types, mixed_type=mixed_type
         )
-        feed_dict_test, imap = self._prepare_feed_dict(
+        feed_dict_test, imap, natoms_vec = self._prepare_feed_dict(
             coords, cells, atom_types, fparam, aparam, efield, mixed_type=mixed_type
         )
         (descriptor,) = run_sess(

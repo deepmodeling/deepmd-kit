@@ -70,6 +70,18 @@ def type_embedding_args():
     ]
 
 
+def spin_args():
+    doc_use_spin = "Whether to use atomic spin model for each atom type"
+    doc_spin_norm = "The magnitude of atomic spin for each atom type with spin"
+    doc_virtual_len = "The distance between virtual atom representing spin and its corresponding real atom for each atom type with spin"
+
+    return [
+        Argument("use_spin", list, doc=doc_use_spin),
+        Argument("spin_norm", list, doc=doc_spin_norm),
+        Argument("virtual_len", list, doc=doc_virtual_len),
+    ]
+
+
 #  --- Descriptor configurations: --- #
 
 
@@ -741,6 +753,7 @@ def model_args():
     doc_sw_rmin = "The lower boundary of the interpolation between short-range tabulated interaction and DP. It is only required when `use_srtab` is provided."
     doc_sw_rmax = "The upper boundary of the interpolation between short-range tabulated interaction and DP. It is only required when `use_srtab` is provided."
     doc_compress_config = "Model compression configurations"
+    doc_spin = "The settings for systems with spin."
 
     ca = Argument(
         "model",
@@ -808,6 +821,7 @@ def model_args():
                 optional=True,
                 doc=doc_compress_config,
             ),
+            Argument("spin", dict, spin_args(), [], optional=True, doc=doc_spin),
         ],
     )
     # print(ca.gen_doc())
@@ -978,6 +992,117 @@ def loss_ener():
     ]
 
 
+def loss_ener_spin():
+    doc_start_pref_e = start_pref("energy")
+    doc_limit_pref_e = limit_pref("energy")
+    doc_start_pref_fr = start_pref("force_real_atom")
+    doc_limit_pref_fr = limit_pref("force_real_atom")
+    doc_start_pref_fm = start_pref("force_magnetic")
+    doc_limit_pref_fm = limit_pref("force_magnetic")
+    doc_start_pref_v = start_pref("virial")
+    doc_limit_pref_v = limit_pref("virial")
+    doc_start_pref_ae = start_pref("atom_ener")
+    doc_limit_pref_ae = limit_pref("atom_ener")
+    doc_start_pref_pf = start_pref("atom_pref")
+    doc_limit_pref_pf = limit_pref("atom_pref")
+    doc_relative_f = "If provided, relative force error will be used in the loss. The difference of force will be normalized by the magnitude of the force in the label with a shift given by `relative_f`, i.e. DF_i / ( || F || + relative_f ) with DF denoting the difference between prediction and label and || F || denoting the L2 norm of the label."
+    doc_enable_atom_ener_coeff = "If true, the energy will be computed as \sum_i c_i E_i. c_i should be provided by file atom_ener_coeff.npy in each data system, otherwise it's 1."
+    return [
+        Argument(
+            "start_pref_e",
+            [float, int],
+            optional=True,
+            default=0.02,
+            doc=doc_start_pref_e,
+        ),
+        Argument(
+            "limit_pref_e",
+            [float, int],
+            optional=True,
+            default=1.00,
+            doc=doc_limit_pref_e,
+        ),
+        Argument(
+            "start_pref_fr",
+            [float, int],
+            optional=True,
+            default=1000,
+            doc=doc_start_pref_fr,
+        ),
+        Argument(
+            "limit_pref_fr",
+            [float, int],
+            optional=True,
+            default=1.00,
+            doc=doc_limit_pref_fr,
+        ),
+        Argument(
+            "start_pref_fm",
+            [float, int],
+            optional=True,
+            default=10000,
+            doc=doc_start_pref_fm,
+        ),
+        Argument(
+            "limit_pref_fm",
+            [float, int],
+            optional=True,
+            default=10.0,
+            doc=doc_limit_pref_fm,
+        ),
+        Argument(
+            "start_pref_v",
+            [float, int],
+            optional=True,
+            default=0.00,
+            doc=doc_start_pref_v,
+        ),
+        Argument(
+            "limit_pref_v",
+            [float, int],
+            optional=True,
+            default=0.00,
+            doc=doc_limit_pref_v,
+        ),
+        Argument(
+            "start_pref_ae",
+            [float, int],
+            optional=True,
+            default=0.00,
+            doc=doc_start_pref_ae,
+        ),
+        Argument(
+            "limit_pref_ae",
+            [float, int],
+            optional=True,
+            default=0.00,
+            doc=doc_limit_pref_ae,
+        ),
+        Argument(
+            "start_pref_pf",
+            [float, int],
+            optional=True,
+            default=0.00,
+            doc=doc_start_pref_pf,
+        ),
+        Argument(
+            "limit_pref_pf",
+            [float, int],
+            optional=True,
+            default=0.00,
+            doc=doc_limit_pref_pf,
+        ),
+        Argument("relative_f", [float, None], optional=True, doc=doc_relative_f),
+        Argument(
+            "enable_atom_ener_coeff",
+            [bool],
+            optional=True,
+            default=False,
+            doc=doc_enable_atom_ener_coeff,
+        ),
+    ]
+
+
 def loss_dos():
     doc_start_pref_dos = start_pref("Density of State (DOS)")
     doc_limit_pref_dos = limit_pref("Density of State (DOS)")
@@ -1080,6 +1205,7 @@ def loss_variant_type_args():
             Argument("ener", dict, loss_ener()),
             Argument("dos", dict, loss_dos()),
             Argument("tensor", dict, loss_tensor()),
+            Argument("ener_spin", dict, loss_ener_spin()),
             # Argument("polar", dict, loss_tensor()),
             # Argument("global_polar", dict, loss_tensor("global"))
         ],
