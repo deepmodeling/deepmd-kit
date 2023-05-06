@@ -42,6 +42,9 @@ from deepmd.utils.network import (
 from deepmd.utils.sess import (
     run_sess,
 )
+from deepmd.utils.spin import (
+    Spin,
+)
 from deepmd.utils.tabulate import (
     DPTabulate,
 )
@@ -160,6 +163,7 @@ class DescrptSeA(DescrptSe):
         precision: str = "default",
         uniform_seed: bool = False,
         multi_task: bool = False,
+        spin: Optional[Spin] = None,
     ) -> None:
         """Constructor."""
         if rcut < rcut_smth:
@@ -186,6 +190,15 @@ class DescrptSeA(DescrptSe):
             self.exclude_types.add((tt[1], tt[0]))
         self.set_davg_zero = set_davg_zero
         self.type_one_side = type_one_side
+        self.spin = spin
+
+        # extend sel_a for spin system
+        if self.spin is not None:
+            self.ntypes_spin = self.spin.get_ntypes_spin()
+            self.sel_a_spin = self.sel_a[: self.ntypes_spin]
+            self.sel_a.extend(self.sel_a_spin)
+        else:
+            self.ntypes_spin = 0
 
         # descrpt config
         self.sel_r = [0 for ii in range(len(self.sel_a))]

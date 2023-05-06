@@ -3,6 +3,7 @@
 #include <iomanip>
 #include <iostream>
 #include <limits>
+#include <map>
 #include <sstream>
 
 #include "atom.h"
@@ -320,6 +321,13 @@ void PairDeepMD::make_ttm_aparam(
 }
 #endif
 
+void PairDeepMD::cum_sum(std::map<int, int> &sum, std::map<int, int> &vec) {
+  sum[0] = 0;
+  for (int ii = 1; ii < vec.size(); ++ii) {
+    sum[ii] = sum[ii - 1] + vec[ii - 1];
+  }
+}
+
 PairDeepMD::PairDeepMD(LAMMPS *lmp)
     : Pair(lmp)
 
@@ -344,6 +352,7 @@ PairDeepMD::PairDeepMD(LAMMPS *lmp)
   writedata = 0;
   cutoff = 0.;
   numb_types = 0;
+  numb_types_spin = 0;
   numb_models = 0;
   out_freq = 0;
   out_each = 0;
@@ -418,6 +427,20 @@ void PairDeepMD::compute(int eflag, int vflag) {
   int nall = nlocal + nghost;
   int newton_pair = force->newton_pair;
 
+  vector<double> dspin(nall * 3, 0.);
+  vector<double> dfm(nall * 3, 0.);
+  double **sp = atom->sp;
+  double **fm = atom->fm;
+  // spin initialize
+  if (atom->sp_flag) {
+    // get spin
+    for (int ii = 0; ii < nall; ++ii) {
+      for (int dd = 0; dd < 3; ++dd) {
+        dspin[ii * 3 + dd] = sp[ii][dd];
+      }
+    }
+  }
+
   vector<int> dtype(nall);
   for (int ii = 0; ii < nall; ++ii) {
     dtype[ii] = type_idx_map[type[ii] - 1];
@@ -486,15 +509,36 @@ void PairDeepMD::compute(int eflag, int vflag) {
   if (do_ghost) {
     deepmd_compat::InputNlist lmp_list(list->inum, list->ilist, list->numneigh,
                                        list->firstneigh);
+    deepmd_compat::InputNlist extend_lmp_list;
+    if (atom->sp_flag) {
+      extend(extend_inum, extend_ilist, extend_numneigh, extend_neigh,
+             extend_firstneigh, extend_dcoord, extend_dtype, extend_nghost,
+             new_idx_map, old_idx_map, lmp_list, dcoord, dtype, nghost, dspin,
+             numb_types, numb_types_spin, virtual_len);
+      extend_lmp_list =
+          deepmd_compat::InputNlist(extend_inum, &extend_ilist[0],
+                                    &extend_numneigh[0], &extend_firstneigh[0]);
+    }
     if (single_model || multi_models_no_mod_devi) {
       // cvflag_atom is the right flag for the cvatom matrix
       if (!(eflag_atom || cvflag_atom)) {
 #ifdef HIGH_PREC
-        try {
-          deep_pot.compute(dener, dforce, dvirial, dcoord, dtype, dbox, nghost,
-                           lmp_list, ago, fparam, daparam);
-        } catch (deepmd_compat::deepmd_exception &e) {
-          error->all(FLERR, e.what());
+        if (!atom->sp_flag) {
+          try {
+            deep_pot.compute(dener, dforce, dvirial, dcoord, dtype, dbox,
+                             nghost, lmp_list, ago, fparam, daparam);
+          } catch (deepmd_compat::deepmd_exception &e) {
+            error->all(FLERR, e.what());
+          }
+        } else {
+          dforce.resize((extend_inum + extend_nghost) * 3);
+          try {
+            deep_pot.compute(dener, dforce, dvirial, extend_dcoord,
+                             extend_dtype, dbox, extend_nghost, extend_lmp_list,
+                             ago, fparam, daparam);
+          } catch (deepmd_compat::deepmd_exception &e) {
+            error->all(FLERR, e.what());
+          }
         }
 #else
         vector<float> dcoord_(dcoord.size());
@@ -505,11 +549,26 @@ void PairDeepMD::compute(int eflag, int vflag) {
         vector<float> dforce_(dforce.size(), 0);
         vector<float> dvirial_(dvirial.size(), 0);
         double dener_ = 0;
-        try {
-          deep_pot.compute(dener_, dforce_, dvirial_, dcoord_, dtype, dbox_,
-                           nghost, lmp_list, ago, fparam, daparam);
-        } catch (deepmd_compat::deepmd_exception &e) {
-          error->all(FLERR, e.what());
+        if (!atom->sp_flag) {
+          try {
+            deep_pot.compute(dener_, dforce_, dvirial_, dcoord_, dtype, dbox_,
+                             nghost, lmp_list, ago, fparam, daparam);
+          } catch (deepmd_compat::deepmd_exception &e) {
+            error->all(FLERR, e.what());
+          }
+        } else {
+          vector<float> extend_dcoord_(extend_dcoord.size());
+          for (unsigned dd = 0; dd < extend_dcoord.size(); ++dd)
+            extend_dcoord_[dd] = extend_dcoord[dd];
+          dforce.resize((extend_inum + extend_nghost) * 3);
+          dforce_.resize((extend_inum + extend_nghost) * 3);
+          try {
+            deep_pot.compute(dener_, dforce_, dvirial_, extend_dcoord_,
+                             extend_dtype, dbox_, extend_nghost,
+                             extend_lmp_list, ago, fparam, daparam);
+          } catch (deepmd_compat::deepmd_exception &e) {
+            error->all(FLERR, e.what());
+          }
         }
         for (unsigned dd = 0; dd < dforce.size(); ++dd)
           dforce[dd] = dforce_[dd];
@@ -523,11 +582,23 @@ void PairDeepMD::compute(int eflag, int vflag) {
         vector<double> deatom(nall * 1, 0);
         vector<double> dvatom(nall * 9, 0);
 #ifdef HIGH_PREC
-        try {
-          deep_pot.compute(dener, dforce, dvirial, deatom, dvatom, dcoord,
-                           dtype, dbox, nghost, lmp_list, ago, fparam, daparam);
-        } catch (deepmd_compat::deepmd_exception &e) {
-          error->all(FLERR, e.what());
+        if (!atom->sp_flag) {
+          try {
+            deep_pot.compute(dener, dforce, dvirial, deatom, dvatom, dcoord,
+                             dtype, dbox, nghost, lmp_list, ago, fparam,
+                             daparam);
+          } catch (deepmd_compat::deepmd_exception &e) {
+            error->all(FLERR, e.what());
+          }
+        } else {
+          dforce.resize((extend_inum + extend_nghost) * 3);
+          try {
+            deep_pot.compute(dener, dforce, dvirial, extend_dcoord,
+                             extend_dtype, dbox, extend_nghost, extend_lmp_list,
+                             ago, fparam, daparam);
+          } catch (deepmd_compat::deepmd_exception &e) {
+            error->all(FLERR, e.what());
+          }
         }
 #else
         vector<float> dcoord_(dcoord.size());
@@ -540,12 +611,27 @@ void PairDeepMD::compute(int eflag, int vflag) {
         vector<float> deatom_(dforce.size(), 0);
         vector<float> dvatom_(dforce.size(), 0);
         double dener_ = 0;
-        try {
-          deep_pot.compute(dener_, dforce_, dvirial_, deatom_, dvatom_, dcoord_,
-                           dtype, dbox_, nghost, lmp_list, ago, fparam,
-                           daparam);
-        } catch (deepmd_compat::deepmd_exception &e) {
-          error->all(FLERR, e.what());
+        if (!atom->sp_flag) {
+          try {
+            deep_pot.compute(dener_, dforce_, dvirial_, deatom_, dvatom_,
+                             dcoord_, dtype, dbox_, nghost, lmp_list, ago,
+                             fparam, daparam);
+          } catch (deepmd_compat::deepmd_exception &e) {
+            error->all(FLERR, e.what());
+          }
+        } else {
+          vector<float> extend_dcoord_(extend_dcoord.size());
+          for (unsigned dd = 0; dd < extend_dcoord.size(); ++dd)
+            extend_dcoord_[dd] = extend_dcoord[dd];
+          dforce.resize((extend_inum + extend_nghost) * 3);
+          dforce_.resize((extend_inum + extend_nghost) * 3);
+          try {
+            deep_pot.compute(dener_, dforce_, dvirial_, deatom_, dvatom_,
+                             extend_dcoord_, extend_dtype, dbox_, extend_nghost,
+                             extend_lmp_list, ago, fparam, daparam);
+          } catch (deepmd_compat::deepmd_exception &e) {
+            error->all(FLERR, e.what());
+          }
         }
         for (unsigned dd = 0; dd < dforce.size(); ++dd)
           dforce[dd] = dforce_[dd];
@@ -844,10 +930,34 @@ void PairDeepMD::compute(int eflag, int vflag) {
   }
 
   // get force
-  for (int ii = 0; ii < nall; ++ii) {
-    for (int dd = 0; dd < 3; ++dd) {
-      f[ii][dd] += scale[1][1] * dforce[3 * ii + dd];
+  if (!atom->sp_flag) {
+    for (int ii = 0; ii < nall; ++ii) {
+      for (int dd = 0; dd < 3; ++dd) {
+        f[ii][dd] += scale[1][1] * dforce[3 * ii + dd];
+      }
     }
+  } else {
+    // unit_factor = hbar / spin_norm;
+    const double hbar = 6.5821191e-04;
+    for (int ii = 0; ii < nall; ++ii) {
+      for (int dd = 0; dd < 3; ++dd) {
+        int new_idx = new_idx_map[ii];
+        f[ii][dd] += scale[1][1] * dforce[3 * new_idx + dd];
+        if (dtype[ii] < numb_types_spin && ii < nlocal) {
+          fm[ii][dd] += scale[1][1] * dforce[3 * (new_idx + nlocal) + dd] /
+                        (hbar / spin_norm[dtype[ii]]);
+        } else if (dtype[ii] < numb_types_spin) {
+          fm[ii][dd] += scale[1][1] * dforce[3 * (new_idx + nghost) + dd] /
+                        (hbar / spin_norm[dtype[ii]]);
+        }
+      }
+    }
+  }
+
+  if (atom->sp_flag) {
+    std::map<int, int>().swap(new_idx_map);
+    std::map<int, int>().swap(old_idx_map);
+    // malloc_trim(0);
   }
 
   // accumulate energy and virial
@@ -897,6 +1007,8 @@ static bool is_key(const string &input) {
   keys.push_back("atomic");
   keys.push_back("relative");
   keys.push_back("relative_v");
+  keys.push_back("virtual_len");
+  keys.push_back("spin_norm");
 
   for (int ii = 0; ii < keys.size(); ++ii) {
     if (input == keys[ii]) {
@@ -929,6 +1041,7 @@ void PairDeepMD::settings(int narg, char **arg) {
     }
     cutoff = deep_pot.cutoff();
     numb_types = deep_pot.numb_types();
+    numb_types_spin = deep_pot.numb_types_spin();
     dim_fparam = deep_pot.dim_fparam();
     dim_aparam = deep_pot.dim_aparam();
   } else {
@@ -941,10 +1054,12 @@ void PairDeepMD::settings(int narg, char **arg) {
     }
     cutoff = deep_pot_model_devi.cutoff();
     numb_types = deep_pot_model_devi.numb_types();
+    numb_types_spin = deep_pot_model_devi.numb_types_spin();
     dim_fparam = deep_pot_model_devi.dim_fparam();
     dim_aparam = deep_pot_model_devi.dim_aparam();
     assert(cutoff == deep_pot.cutoff());
     assert(numb_types == deep_pot.numb_types());
+    assert(numb_types_spin == deep_pot.numb_types_spin());
     assert(dim_fparam == deep_pot.dim_fparam());
     assert(dim_aparam == deep_pot.dim_aparam());
   }
@@ -1044,8 +1159,21 @@ void PairDeepMD::settings(int narg, char **arg) {
       eps_v = strtof(arg[iarg + 1], NULL);
 #endif
       iarg += 2;
+    } else if (string(arg[iarg]) == string("virtual_len")) {
+      virtual_len.resize(numb_types_spin);
+      for (int ii = 0; ii < numb_types_spin; ++ii) {
+        virtual_len[ii] = atof(arg[iarg + ii + 1]);
+      }
+      iarg += numb_types_spin + 1;
+    } else if (string(arg[iarg]) == string("spin_norm")) {
+      spin_norm.resize(numb_types_spin);
+      for (int ii = 0; ii < numb_types_spin; ++ii) {
+        spin_norm[ii] = atof(arg[iarg + ii + 1]);
+      }
+      iarg += numb_types_spin + 1;
     }
   }
+
   if (out_freq < 0) error->all(FLERR, "Illegal out_freq, should be >= 0");
   if (do_ttm && aparam.size() > 0) {
     error->all(FLERR, "aparam and ttm should NOT be set simultaneously");
@@ -1290,4 +1418,168 @@ void *PairDeepMD::extract(const char *str, int &dim) {
     return (void *)scale;
   }
   return NULL;
+}
+
+void PairDeepMD::extend(int &extend_inum,
+                        std::vector<int> &extend_ilist,
+                        std::vector<int> &extend_numneigh,
+                        std::vector<vector<int>> &extend_neigh,
+                        std::vector<int *> &extend_firstneigh,
+                        std::vector<double> &extend_dcoord,
+                        std::vector<int> &extend_atype,
+                        int &extend_nghost,
+                        std::map<int, int> &new_idx_map,
+                        std::map<int, int> &old_idx_map,
+                        const deepmd_compat::InputNlist &lmp_list,
+                        const std::vector<double> &dcoord,
+                        const std::vector<int> &atype,
+                        const int nghost,
+                        const std::vector<double> &spin,
+                        const int numb_types,
+                        const int numb_types_spin,
+                        const std::vector<double> &virtual_len) {
+  extend_ilist.clear();
+  extend_numneigh.clear();
+  extend_neigh.clear();
+  extend_firstneigh.clear();
+  extend_dcoord.clear();
+  extend_atype.clear();
+
+  int nall = dcoord.size() / 3;
+  int nloc = nall - nghost;
+  assert(nloc == lmp_list.inum);
+
+  // record numb_types_real and nloc_virt
+  int numb_types_real = numb_types - numb_types_spin;
+  std::map<int, int> loc_type_count;
+  std::map<int, int>::iterator iter = loc_type_count.begin();
+  for (int i = 0; i < nloc; i++) {
+    iter = loc_type_count.find(atype[i]);
+    if (iter != loc_type_count.end())
+      iter->second += 1;
+    else
+      loc_type_count.insert(pair<int, int>(atype[i], 1));
+  }
+  assert(numb_types_real - 1 == loc_type_count.rbegin()->first);
+  int nloc_virt = 0;
+  for (int i = 0; i < numb_types_spin; i++) {
+    nloc_virt += loc_type_count[i];
+  }
+
+  // record nghost_virt
+  std::map<int, int> ghost_type_count;
+  for (int i = nloc; i < nall; i++) {
+    iter = ghost_type_count.find(atype[i]);
+    if (iter != ghost_type_count.end())
+      iter->second += 1;
+    else
+      ghost_type_count.insert(pair<int, int>(atype[i], 1));
+  }
+  int nghost_virt = 0;
+  for (int i = 0; i < numb_types_spin; i++) {
+    nghost_virt += ghost_type_count[i];
+  }
+
+  // for extended system, search new index by old index, and vice versa
+  extend_nghost = nghost + nghost_virt;
+  int extend_nloc = nloc + nloc_virt;
+  int extend_nall = extend_nloc + extend_nghost;
+  std::map<int, int> cum_loc_type_count;
+  std::map<int, int> cum_ghost_type_count;
+  cum_sum(cum_loc_type_count, loc_type_count);
+  cum_sum(cum_ghost_type_count, ghost_type_count);
+  std::vector<int> loc_type_reset(numb_types_real, 0);
+  std::vector<int> ghost_type_reset(numb_types_real, 0);
+
+  new_idx_map.clear();
+  old_idx_map.clear();
+  for (int ii = 0; ii < nloc; ii++) {
+    int new_idx = cum_loc_type_count[atype[ii]] + loc_type_reset[atype[ii]];
+    new_idx_map[ii] = new_idx;
+    old_idx_map[new_idx] = ii;
+    loc_type_reset[atype[ii]]++;
+  }
+  for (int ii = nloc; ii < nall; ii++) {
+    int new_idx = cum_ghost_type_count[atype[ii]] +
+                  ghost_type_reset[atype[ii]] + extend_nloc;
+    new_idx_map[ii] = new_idx;
+    old_idx_map[new_idx] = ii;
+    ghost_type_reset[atype[ii]]++;
+  }
+
+  // extend lmp_list
+  extend_inum = extend_nloc;
+
+  extend_ilist.resize(extend_nloc);
+  for (int ii = 0; ii < extend_nloc; ii++) {
+    extend_ilist[ii] = ii;
+  }
+
+  extend_neigh.resize(extend_nloc);
+  for (int ii = 0; ii < nloc; ii++) {
+    int jnum = lmp_list.numneigh[old_idx_map[ii]];
+    const int *jlist = lmp_list.firstneigh[old_idx_map[ii]];
+    if (atype[old_idx_map[ii]] < numb_types_spin) {
+      extend_neigh[ii].push_back(ii + nloc);
+    }
+    for (int jj = 0; jj < jnum; jj++) {
+      int new_idx = new_idx_map[jlist[jj]];
+      extend_neigh[ii].push_back(new_idx);
+      if (atype[jlist[jj]] < numb_types_spin && jlist[jj] < nloc) {
+        extend_neigh[ii].push_back(new_idx + nloc);
+      } else if (atype[jlist[jj]] < numb_types_spin && jlist[jj] < nall) {
+        extend_neigh[ii].push_back(new_idx + nghost);
+      }
+    }
+  }
+  for (int ii = nloc; ii < extend_nloc; ii++) {
+    extend_neigh[ii].assign(extend_neigh[ii - nloc].begin(),
+                            extend_neigh[ii - nloc].end());
+    std::vector<int>::iterator it =
+        find(extend_neigh[ii].begin(), extend_neigh[ii].end(), ii);
+    *it = ii - nloc;
+  }
+
+  extend_firstneigh.resize(extend_nloc);
+  extend_numneigh.resize(extend_nloc);
+  for (int ii = 0; ii < extend_nloc; ii++) {
+    extend_firstneigh[ii] = &extend_neigh[ii][0];
+    extend_numneigh[ii] = extend_neigh[ii].size();
+  }
+
+  // extend coord
+  extend_dcoord.resize(extend_nall * 3);
+  for (int ii = 0; ii < nloc; ii++) {
+    for (int jj = 0; jj < 3; jj++) {
+      extend_dcoord[new_idx_map[ii] * 3 + jj] = dcoord[ii * 3 + jj];
+      if (atype[ii] < numb_types_spin) {
+        double temp_dcoord =
+            dcoord[ii * 3 + jj] + spin[ii * 3 + jj] * virtual_len[atype[ii]];
+        extend_dcoord[(new_idx_map[ii] + nloc) * 3 + jj] = temp_dcoord;
+      }
+    }
+  }
+  for (int ii = nloc; ii < nall; ii++) {
+    for (int jj = 0; jj < 3; jj++) {
+      extend_dcoord[new_idx_map[ii] * 3 + jj] = dcoord[ii * 3 + jj];
+      if (atype[ii] < numb_types_spin) {
+        double temp_dcoord =
+            dcoord[ii * 3 + jj] + spin[ii * 3 + jj] * virtual_len[atype[ii]];
+        extend_dcoord[(new_idx_map[ii] + nghost) * 3 + jj] = temp_dcoord;
+      }
+    }
+  }
+
+  // extend atype
+  extend_atype.resize(extend_nall);
+  for (int ii = 0; ii < nall; ii++) {
+    extend_atype[new_idx_map[ii]] = atype[ii];
+    if (atype[ii] < numb_types_spin) {
+      if (ii < nloc) {
+        extend_atype[new_idx_map[ii] + nloc] = atype[ii] + numb_types_real;
+      } else {
+        extend_atype[new_idx_map[ii] + nghost] = atype[ii] + numb_types_real;
+      }
+    }
+  }
 }

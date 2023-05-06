@@ -29,6 +29,7 @@ namespace deepmd_compat = deepmd::hpp;
 #endif
 #include <fstream>
 #include <iostream>
+#include <map>
 
 #ifdef HIGH_PREC
 #define FLOAT_PREC double
@@ -54,6 +55,26 @@ class PairDeepMD : public Pair {
   void unpack_reverse_comm(int, int *, double *) override;
   void print_summary(const std::string pre) const;
   int get_node_rank();
+  void extend(int &extend_inum,
+              std::vector<int> &extend_ilist,
+              std::vector<int> &extend_numneigh,
+              std::vector<std::vector<int> > &extend_neigh,
+              std::vector<int *> &extend_firstneigh,
+              std::vector<double> &extend_coord,
+              std::vector<int> &extend_atype,
+              int &extend_nghost,
+              std::map<int, int> &new_idx_map,
+              std::map<int, int> &old_idx_map,
+              const deepmd_compat::InputNlist &lmp_list,
+              const std::vector<double> &coord,
+              const std::vector<int> &atype,
+              const int nghost,
+              const std::vector<double> &spin,
+              const int numb_types,
+              const int numb_types_spin,
+              const std::vector<double> &virtual_len);
+  void cum_sum(std::map<int, int> &, std::map<int, int> &);
+
   std::string get_file_content(const std::string &model);
   std::vector<std::string> get_file_content(
       const std::vector<std::string> &models);
@@ -68,6 +89,7 @@ class PairDeepMD : public Pair {
   unsigned numb_models;
   double cutoff;
   int numb_types;
+  int numb_types_spin;
   std::vector<std::vector<double> > all_force;
   std::ofstream fp;
   int out_freq;
@@ -81,6 +103,19 @@ class PairDeepMD : public Pair {
   bool multi_models_mod_devi;
   bool multi_models_no_mod_devi;
   bool is_restart;
+  std::vector<double> virtual_len;
+  std::vector<double> spin_norm;
+  int extend_inum;
+  std::vector<int> extend_ilist;
+  std::vector<int> extend_numneigh;
+  std::vector<std::vector<int> > extend_neigh;
+  std::vector<int *> extend_firstneigh;
+  std::vector<double> extend_dcoord;
+  std::vector<int> extend_dtype;
+  int extend_nghost;
+  // for spin systems, search new index of atoms by their old index
+  std::map<int, int> new_idx_map;
+  std::map<int, int> old_idx_map;
 #ifdef HIGH_PREC
   std::vector<double> fparam;
   std::vector<double> aparam;

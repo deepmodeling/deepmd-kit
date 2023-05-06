@@ -451,6 +451,11 @@ void DeepPot::init(const std::string& model,
   }
   cell_size = rcut;
   ntypes = get_scalar<int>("descrpt_attr/ntypes");
+  try {
+    ntypes_spin = get_scalar<int>("spin_attr/ntypes_spin");
+  } catch (deepmd::deepmd_exception) {
+    ntypes_spin = 0;
+  }
   dfparam = get_scalar<int>("fitting_attr/dfparam");
   daparam = get_scalar<int>("fitting_attr/daparam");
   if (dfparam < 0) dfparam = 0;
@@ -1267,6 +1272,11 @@ void DeepPotModelDevi::init(const std::vector<std::string>& models,
   }
   cell_size = rcut;
   ntypes = get_scalar<int>("descrpt_attr/ntypes");
+  try {
+    ntypes_spin = get_scalar<int>("spin_attr/ntypes_spin");
+  } catch (deepmd::deepmd_exception) {
+    ntypes_spin = 0;
+  }
   dfparam = get_scalar<int>("fitting_attr/dfparam");
   daparam = get_scalar<int>("fitting_attr/daparam");
   if (dfparam < 0) dfparam = 0;
