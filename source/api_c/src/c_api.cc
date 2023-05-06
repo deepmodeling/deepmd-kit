@@ -966,6 +966,10 @@ double DP_DeepPotGetCutoff(DP_DeepPot* dp) { return dp->dp.cutoff(); }
 
 int DP_DeepPotGetNumbTypes(DP_DeepPot* dp) { return dp->dp.numb_types(); }
 
+int DP_DeepPotGetNumbTypesSpin(DP_DeepPot* dp) {
+  return dp->dp.numb_types_spin();
+}
+
 int DP_DeepPotGetDimFParam(DP_DeepPot* dp) { return dp->dfparam; }
 
 int DP_DeepPotGetDimAParam(DP_DeepPot* dp) { return dp->daparam; }
@@ -1058,6 +1062,10 @@ double DP_DeepPotModelDeviGetCutoff(DP_DeepPotModelDevi* dp) {
 
 int DP_DeepPotModelDeviGetNumbTypes(DP_DeepPotModelDevi* dp) {
   return dp->dp.numb_types();
+}
+
+int DP_DeepPotModelDeviGetNumbTypesSpin(DP_DeepPotModelDevi* dp) {
+  return dp->dp.numb_types_spin();
 }
 
 int DP_DeepPotModelDeviGetDimFParam(DP_DeepPotModelDevi* dp) {

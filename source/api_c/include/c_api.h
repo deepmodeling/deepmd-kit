@@ -660,11 +660,18 @@ void DP_DeepPotModelDeviComputeNListf2(DP_DeepPotModelDevi* dp,
 double DP_DeepPotModelDeviGetCutoff(DP_DeepPotModelDevi* dp);
 
 /**
- * @brief Get the type map of a DP model deviation.
+ * @brief Get the number of types of a DP model deviation.
  * @param[in] dp The DP model deviation to use.
  * @return The number of types of the DP model deviation.
  */
 int DP_DeepPotModelDeviGetNumbTypes(DP_DeepPotModelDevi* dp);
+
+/**
+ * @brief Get the number of types with spin of a DP model deviation.
+ * @param[in] dp The DP model deviation to use.
+ * @return The number of types with spin of the DP model deviation.
+ */
+int DP_DeepPotModelDeviGetNumbTypesSpin(DP_DeepPotModelDevi* dp);
 
 /**
  * @brief Check if there is any exceptions throw.
@@ -682,11 +689,18 @@ const char* DP_DeepPotModelDeviCheckOK(DP_DeepPotModelDevi* dp);
 double DP_DeepPotGetCutoff(DP_DeepPot* dp);
 
 /**
- * @brief Get the type map of a DP.
+ * @brief Get the number of types of a DP.
  * @param[in] dp The DP to use.
  * @return The number of types of the DP.
  */
 int DP_DeepPotGetNumbTypes(DP_DeepPot* dp);
+
+/**
+ * @brief Get the number of types with spin of a DP.
+ * @param[in] dp The DP to use.
+ * @return The number of types with spin of the DP.
+ */
+int DP_DeepPotGetNumbTypesSpin(DP_DeepPot* dp);
 
 /**
  * @brief Get the dimension of frame parameters of a DP.

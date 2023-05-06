@@ -993,6 +993,14 @@ class DeepPot {
     return DP_DeepPotGetNumbTypes(dp);
   };
   /**
+   * @brief Get the number of types with spin.
+   * @return The number of types with spin.
+   **/
+  int numb_types_spin() const {
+    assert(dp);
+    return DP_DeepPotGetNumbTypesSpin(dp);
+  };
+  /**
    * @brief Get the type map (element name of the atom types) of this model.
    * @param[out] type_map The type map of this model.
    **/
@@ -1283,6 +1291,14 @@ class DeepPotModelDevi {
   int numb_types() const {
     assert(dp);
     return DP_DeepPotModelDeviGetNumbTypes(dp);
+  };
+  /**
+   * @brief Get the number of types with spin.
+   * @return The number of types with spin.
+   **/
+  int numb_types_spin() const {
+    assert(dp);
+    return DP_DeepPotModelDeviGetNumbTypesSpin(dp);
   };
   /**
    * @brief Get the dimension of the frame parameter.
