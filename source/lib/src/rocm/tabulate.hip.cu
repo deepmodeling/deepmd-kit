@@ -927,9 +927,9 @@ void tabulate_fusion_se_atten_gpu_rocm(FPTYPE* out,
   }
   hipLaunchKernelGGL(
       HIP_KERNEL_NAME(
-          tabulate_fusion_se_a_fifth_order_polynomial<FPTYPE, MM, KK>),
+          tabulate_fusion_se_atten_fifth_order_polynomial<FPTYPE, MM, KK>),
       nloc, last_layer_size, sizeof(FPTYPE) * MM * last_layer_size, 0, out,
-      table, em_x, em, table_info[0], table_info[1], table_info[2],
+      table, em_x, em, two_embed, table_info[0], table_info[1], table_info[2],
       table_info[3], table_info[4], nnei, last_layer_size);
   DPErrcheck(hipGetLastError());
   DPErrcheck(hipDeviceSynchronize());
@@ -955,9 +955,9 @@ void tabulate_fusion_se_atten_grad_gpu_rocm(FPTYPE* dy_dem_x,
 
   hipLaunchKernelGGL(
       HIP_KERNEL_NAME(
-          tabulate_fusion_se_a_grad_fifth_order_polynomial<FPTYPE, MM, KK>),
+          tabulate_fusion_se_atten_grad_fifth_order_polynomial<FPTYPE, MM, KK>),
       nloc, KK * WARP_SIZE, sizeof(FPTYPE) * MM * last_layer_size, 0, dy_dem_x,
-      dy_dem, table, em_x, em, dy, table_info[0], table_info[1], table_info[2],
+      dy_dem, table, em_x, em, two_embed, dy, table_info[0], table_info[1], table_info[2],
       table_info[3], table_info[4], nnei, last_layer_size);
   DPErrcheck(hipGetLastError());
   DPErrcheck(hipDeviceSynchronize());
@@ -981,10 +981,10 @@ void tabulate_fusion_se_atten_grad_grad_gpu_rocm(FPTYPE* dz_dy,
   DPErrcheck(hipMemset(dz_dy, 0, sizeof(FPTYPE) * nloc * 4 * last_layer_size));
   hipLaunchKernelGGL(
       HIP_KERNEL_NAME(
-          tabulate_fusion_se_a_grad_grad_fifth_order_polynomial<FPTYPE, MM,
-                                                                KK>),
+          tabulate_fusion_se_atten_grad_grad_fifth_order_polynomial<FPTYPE, MM,
+                                                                    KK>),
       nloc, last_layer_size, sizeof(FPTYPE) * MM * last_layer_size, 0, dz_dy,
-      table, em_x, em, dz_dy_dem_x, dz_dy_dem, table_info[0], table_info[1],
+      table, em_x, em, two_embed, dz_dy_dem_x, dz_dy_dem, table_info[0], table_info[1],
       table_info[2], table_info[3], table_info[4], nnei, last_layer_size);
   DPErrcheck(hipGetLastError());
   DPErrcheck(hipDeviceSynchronize());
