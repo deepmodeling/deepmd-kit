@@ -383,9 +383,9 @@ class DescrptSeAtten(DescrptSeA):
         # two_side_type_embedding = np.concatenate([type_embedding_nei, type_embedding_center], -1) # ntypes * ntypes * (Y+Y)
         # two_side_type_embedding = np.reshape(two_side_type_embedding, [-1, two_side_type_embedding.shape[-1]])
         # self.final_type_embedding = two_side_type_embedding
-        self.final_type_embedding = self._get_two_embed(graph)
-        self.matrix = self._get_two_side_embedding_variable(graph_def, 'matrix')
-        self.bias = self._get_two_side_embedding_variable(graph_def, 'bias')
+        self.final_type_embedding = self._get_two_side_type_embedding(graph)
+        self.matrix = self._get_two_side_embedding_net_variable(graph_def, 'matrix')
+        self.bias = self._get_two_side_embedding_net_variable(graph_def, 'bias')
         self.two_embd = self._make_data(self.final_type_embedding)
 
         self.davg = get_tensor_by_name_from_graph(
@@ -395,7 +395,7 @@ class DescrptSeAtten(DescrptSeA):
             graph, "descrpt_attr%s/t_std" % suffix
         )
 
-    def _get_two_embed(self, graph):
+    def _get_two_side_type_embedding(self, graph):
         type_embedding = get_tensor_by_name_from_graph(graph, 't_typeebd')
         type_embedding = type_embedding.astype(self.filter_np_precision)
         type_embedding_shape = type_embedding.shape
@@ -408,7 +408,7 @@ class DescrptSeAtten(DescrptSeA):
         return two_side_type_embedding
 
 
-    def _get_two_side_embedding_variable(self, graph_def, varialbe_name):
+    def _get_two_side_embedding_net_variable(self, graph_def, varialbe_name):
         ret = {}
         for i in range(1, self.layer_size + 1):
             node = get_pattern_nodes_from_graph_def(graph_def,
