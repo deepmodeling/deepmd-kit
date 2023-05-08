@@ -46,12 +46,27 @@ extern DP_DeepPot* DP_NewDeepPot(const char* c_model);
  *
  * @param c_model The name of the frozen model file.
  * @param gpu_rank The rank of the GPU.
- * @param c_file_content The content of the model file.
+ * @param c_file_content Broken implementation. Use
+ * DP_NewDeepPotWithParam2 instead.
  * @return DP_DeepPot* A pointer to the deep potential.
  */
 extern DP_DeepPot* DP_NewDeepPotWithParam(const char* c_model,
                                           const int gpu_rank,
                                           const char* c_file_content);
+
+/**
+ * @brief DP constructor with initialization.
+ * @version 2
+ * @param c_model The name of the frozen model file.
+ * @param gpu_rank The rank of the GPU.
+ * @param c_file_content The content of the model file.
+ * @param size_file_content The size of the model file.
+ * @return DP_DeepPot* A pointer to the deep potential.
+ */
+extern DP_DeepPot* DP_NewDeepPotWithParam2(const char* c_model,
+                                           const int gpu_rank,
+                                           const char* c_file_content,
+                                           const int size_file_content);
 
 /**
  * @brief Evaluate the energy, force and virial by using a DP. (double version)
@@ -454,6 +469,25 @@ extern DP_DeepPotModelDevi* DP_NewDeepPotModelDevi(const char** c_models,
                                                    int n_models);
 
 /**
+ * @brief DP model deviation constructor with initialization.
+ *
+ * @param[in] c_models The array of the name of the frozen model file.
+ * @param[in] nmodels The number of models.
+ * @param[in] gpu_rank The rank of the GPU.
+ * @param[in] c_file_contents The contents of the model file.
+ * @param[in] n_file_contents The number of the contents of the model file.
+ * @param[in] size_file_contents The sizes of the contents of the model file.
+ * @return DP_DeepPotModelDevi* A pointer to the deep potential model deviation.
+ */
+extern DP_DeepPotModelDevi* DP_NewDeepPotModelDeviWithParam(
+    const char** c_model,
+    const int n_models,
+    const int gpu_rank,
+    const char** c_file_contents,
+    const int n_file_contents,
+    const int* size_file_contents);
+
+/**
  * @brief Evaluate the energy, force and virial by using a DP model deviation
  *with neighbor list. (double version)
  * @param[in] dp The DP model deviation to use.
@@ -626,11 +660,18 @@ void DP_DeepPotModelDeviComputeNListf2(DP_DeepPotModelDevi* dp,
 double DP_DeepPotModelDeviGetCutoff(DP_DeepPotModelDevi* dp);
 
 /**
- * @brief Get the type map of a DP model deviation.
+ * @brief Get the number of types of a DP model deviation.
  * @param[in] dp The DP model deviation to use.
  * @return The number of types of the DP model deviation.
  */
 int DP_DeepPotModelDeviGetNumbTypes(DP_DeepPotModelDevi* dp);
+
+/**
+ * @brief Get the number of types with spin of a DP model deviation.
+ * @param[in] dp The DP model deviation to use.
+ * @return The number of types with spin of the DP model deviation.
+ */
+int DP_DeepPotModelDeviGetNumbTypesSpin(DP_DeepPotModelDevi* dp);
 
 /**
  * @brief Check if there is any exceptions throw.
@@ -648,11 +689,18 @@ const char* DP_DeepPotModelDeviCheckOK(DP_DeepPotModelDevi* dp);
 double DP_DeepPotGetCutoff(DP_DeepPot* dp);
 
 /**
- * @brief Get the type map of a DP.
+ * @brief Get the number of types of a DP.
  * @param[in] dp The DP to use.
  * @return The number of types of the DP.
  */
 int DP_DeepPotGetNumbTypes(DP_DeepPot* dp);
+
+/**
+ * @brief Get the number of types with spin of a DP.
+ * @param[in] dp The DP to use.
+ * @return The number of types with spin of the DP.
+ */
+int DP_DeepPotGetNumbTypesSpin(DP_DeepPot* dp);
 
 /**
  * @brief Get the dimension of frame parameters of a DP.
@@ -1143,6 +1191,15 @@ extern void DP_PrintSummary(const char* c_pre);
  * @return const char* The char array.
  */
 const char* DP_ReadFileToChar(const char* c_model);
+
+/**
+ * @brief Read a file to a char array. This version can handle string with '\0'
+ * @version 2
+ * @param[in] c_model The name of the file.
+ * @param[out] size The size of the char array.
+ * @return const char* The char array.
+ */
+const char* DP_ReadFileToChar2(const char* c_model, int* size);
 
 /**
  * @brief Get forward and backward map of selected atoms by

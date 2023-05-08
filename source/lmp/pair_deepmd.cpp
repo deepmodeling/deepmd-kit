@@ -141,7 +141,7 @@ std::string PairDeepMD::get_file_content(const std::string &model) {
   int nchar = 0;
   std::string file_content;
   if (myrank == root) {
-    deepmd::read_file_to_string(model, file_content);
+    deepmd_compat::read_file_to_string(model, file_content);
     nchar = file_content.size();
   }
   MPI_Bcast(&nchar, 1, MPI_INT, root, MPI_COMM_WORLD);
@@ -507,18 +507,17 @@ void PairDeepMD::compute(int eflag, int vflag) {
   multi_models_mod_devi =
       (numb_models > 1 && (out_freq > 0 && update->ntimestep % out_freq == 0));
   if (do_ghost) {
-    deepmd::InputNlist lmp_list(list->inum, list->ilist, list->numneigh,
-                                list->firstneigh);
-    deepmd::InputNlist extend_lmp_list;
+    deepmd_compat::InputNlist lmp_list(list->inum, list->ilist, list->numneigh,
+                                       list->firstneigh);
+    deepmd_compat::InputNlist extend_lmp_list;
     if (atom->sp_flag) {
       extend(extend_inum, extend_ilist, extend_numneigh, extend_neigh,
              extend_firstneigh, extend_dcoord, extend_dtype, extend_nghost,
              new_idx_map, old_idx_map, lmp_list, dcoord, dtype, nghost, dspin,
              numb_types, numb_types_spin, virtual_len);
-      extend_lmp_list.inum = extend_inum;
-      extend_lmp_list.ilist = &extend_ilist[0];
-      extend_lmp_list.numneigh = &extend_numneigh[0];
-      extend_lmp_list.firstneigh = &extend_firstneigh[0];
+      extend_lmp_list =
+          deepmd_compat::InputNlist(extend_inum, &extend_ilist[0],
+                                    &extend_numneigh[0], &extend_firstneigh[0]);
     }
     if (single_model || multi_models_no_mod_devi) {
       // cvflag_atom is the right flag for the cvatom matrix
@@ -528,7 +527,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
           try {
             deep_pot.compute(dener, dforce, dvirial, dcoord, dtype, dbox,
                              nghost, lmp_list, ago, fparam, daparam);
-          } catch (deepmd::deepmd_exception &e) {
+          } catch (deepmd_compat::deepmd_exception &e) {
             error->all(FLERR, e.what());
           }
         } else {
@@ -537,7 +536,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
             deep_pot.compute(dener, dforce, dvirial, extend_dcoord,
                              extend_dtype, dbox, extend_nghost, extend_lmp_list,
                              ago, fparam, daparam);
-          } catch (deepmd::deepmd_exception &e) {
+          } catch (deepmd_compat::deepmd_exception &e) {
             error->all(FLERR, e.what());
           }
         }
@@ -554,7 +553,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
           try {
             deep_pot.compute(dener_, dforce_, dvirial_, dcoord_, dtype, dbox_,
                              nghost, lmp_list, ago, fparam, daparam);
-          } catch (deepmd::deepmd_exception &e) {
+          } catch (deepmd_compat::deepmd_exception &e) {
             error->all(FLERR, e.what());
           }
         } else {
@@ -567,7 +566,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
             deep_pot.compute(dener_, dforce_, dvirial_, extend_dcoord_,
                              extend_dtype, dbox_, extend_nghost,
                              extend_lmp_list, ago, fparam, daparam);
-          } catch (deepmd::deepmd_exception &e) {
+          } catch (deepmd_compat::deepmd_exception &e) {
             error->all(FLERR, e.what());
           }
         }
@@ -588,7 +587,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
             deep_pot.compute(dener, dforce, dvirial, deatom, dvatom, dcoord,
                              dtype, dbox, nghost, lmp_list, ago, fparam,
                              daparam);
-          } catch (deepmd::deepmd_exception &e) {
+          } catch (deepmd_compat::deepmd_exception &e) {
             error->all(FLERR, e.what());
           }
         } else {
@@ -597,7 +596,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
             deep_pot.compute(dener, dforce, dvirial, extend_dcoord,
                              extend_dtype, dbox, extend_nghost, extend_lmp_list,
                              ago, fparam, daparam);
-          } catch (deepmd::deepmd_exception &e) {
+          } catch (deepmd_compat::deepmd_exception &e) {
             error->all(FLERR, e.what());
           }
         }
@@ -617,7 +616,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
             deep_pot.compute(dener_, dforce_, dvirial_, deatom_, dvatom_,
                              dcoord_, dtype, dbox_, nghost, lmp_list, ago,
                              fparam, daparam);
-          } catch (deepmd::deepmd_exception &e) {
+          } catch (deepmd_compat::deepmd_exception &e) {
             error->all(FLERR, e.what());
           }
         } else {
@@ -630,7 +629,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
             deep_pot.compute(dener_, dforce_, dvirial_, deatom_, dvatom_,
                              extend_dcoord_, extend_dtype, dbox_, extend_nghost,
                              extend_lmp_list, ago, fparam, daparam);
-          } catch (deepmd::deepmd_exception &e) {
+          } catch (deepmd_compat::deepmd_exception &e) {
             error->all(FLERR, e.what());
           }
         }
@@ -682,7 +681,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
         deep_pot_model_devi.compute(
             all_energy, all_force, all_virial, all_atom_energy, all_atom_virial,
             dcoord, dtype, dbox, nghost, lmp_list, ago, fparam, daparam);
-      } catch (deepmd::deepmd_exception &e) {
+      } catch (deepmd_compat::deepmd_exception &e) {
         error->all(FLERR, e.what());
       }
       // deep_pot_model_devi.compute_avg (dener, all_energy);
@@ -715,7 +714,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
                                     all_atom_energy_, all_atom_virial_, dcoord_,
                                     dtype, dbox_, nghost, lmp_list, ago, fparam,
                                     daparam);
-      } catch (deepmd::deepmd_exception &e) {
+      } catch (deepmd_compat::deepmd_exception &e) {
         error->all(FLERR, e.what());
       }
       // deep_pot_model_devi.compute_avg (dener_, all_energy_);
@@ -904,7 +903,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
 #ifdef HIGH_PREC
       try {
         deep_pot.compute(dener, dforce, dvirial, dcoord, dtype, dbox);
-      } catch (deepmd::deepmd_exception &e) {
+      } catch (deepmd_compat::deepmd_exception &e) {
         error->all(FLERR, e.what());
       }
 #else
@@ -917,7 +916,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
       double dener_ = 0;
       try {
         deep_pot.compute(dener_, dforce_, dvirial_, dcoord_, dtype, dbox_);
-      } catch (deepmd::deepmd_exception &e) {
+      } catch (deepmd_compat::deepmd_exception &e) {
         error->all(FLERR, e.what());
       }
       for (unsigned dd = 0; dd < dforce.size(); ++dd) dforce[dd] = dforce_[dd];
@@ -1037,7 +1036,7 @@ void PairDeepMD::settings(int narg, char **arg) {
   if (numb_models == 1) {
     try {
       deep_pot.init(arg[0], get_node_rank(), get_file_content(arg[0]));
-    } catch (deepmd::deepmd_exception &e) {
+    } catch (deepmd_compat::deepmd_exception &e) {
       error->one(FLERR, e.what());
     }
     cutoff = deep_pot.cutoff();
@@ -1050,7 +1049,7 @@ void PairDeepMD::settings(int narg, char **arg) {
       deep_pot.init(arg[0], get_node_rank(), get_file_content(arg[0]));
       deep_pot_model_devi.init(models, get_node_rank(),
                                get_file_content(models));
-    } catch (deepmd::deepmd_exception &e) {
+    } catch (deepmd_compat::deepmd_exception &e) {
       error->one(FLERR, e.what());
     }
     cutoff = deep_pot_model_devi.cutoff();
@@ -1431,7 +1430,7 @@ void PairDeepMD::extend(int &extend_inum,
                         int &extend_nghost,
                         std::map<int, int> &new_idx_map,
                         std::map<int, int> &old_idx_map,
-                        const deepmd::InputNlist &lmp_list,
+                        const deepmd_compat::InputNlist &lmp_list,
                         const std::vector<double> &dcoord,
                         const std::vector<int> &atype,
                         const int nghost,

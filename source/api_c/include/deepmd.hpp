@@ -8,6 +8,7 @@ This header-only library provides a C++ 11 interface to the DeePMD-kit C API.
 
 #include <algorithm>
 #include <cassert>
+#include <cmath>
 #include <cstring>
 #include <exception>
 #include <iostream>
@@ -590,7 +591,8 @@ class DeepPot {
                 << std::endl;
       return;
     }
-    dp = DP_NewDeepPotWithParam(model.c_str(), gpu_rank, file_content.c_str());
+    dp = DP_NewDeepPotWithParam2(model.c_str(), gpu_rank, file_content.c_str(),
+                                 file_content.size());
     DP_CHECK_OK(DP_DeepPotCheckOK, dp);
     dfparam = DP_DeepPotGetDimFParam(dp);
     daparam = DP_DeepPotGetDimAParam(dp);
@@ -991,6 +993,14 @@ class DeepPot {
     return DP_DeepPotGetNumbTypes(dp);
   };
   /**
+   * @brief Get the number of types with spin.
+   * @return The number of types with spin.
+   **/
+  int numb_types_spin() const {
+    assert(dp);
+    return DP_DeepPotGetNumbTypesSpin(dp);
+  };
+  /**
    * @brief Get the type map (element name of the atom types) of this model.
    * @param[out] type_map The type map of this model.
    **/
@@ -1082,8 +1092,13 @@ class DeepPotModelDevi {
   /**
    * @brief Initialize the DP model deviation.
    * @param[in] model The name of the frozen model file.
+   * @param[in] gpu_rank The GPU rank.
+   * @param[in] file_content The content of the frozen model file.
    **/
-  void init(const std::vector<std::string> &models) {
+  void init(const std::vector<std::string> &models,
+            const int &gpu_rank = 0,
+            const std::vector<std::string> &file_content =
+                std::vector<std::string>()) {
     if (dp) {
       std::cerr << "WARNING: deepmd-kit should not be initialized twice, do "
                    "nothing at the second call of initializer"
@@ -1094,7 +1109,18 @@ class DeepPotModelDevi {
     cstrings.reserve(models.size());
     for (std::string const &str : models) cstrings.push_back(str.data());
 
-    dp = DP_NewDeepPotModelDevi(cstrings.data(), cstrings.size());
+    std::vector<const char *> c_file_contents;
+    std::vector<int> size_file_contents;
+    c_file_contents.reserve(file_content.size());
+    size_file_contents.reserve(file_content.size());
+    for (std::string const &str : file_content) {
+      c_file_contents.push_back(str.data());
+      size_file_contents.push_back(str.size());
+    }
+
+    dp = DP_NewDeepPotModelDeviWithParam(
+        cstrings.data(), cstrings.size(), gpu_rank, c_file_contents.data(),
+        c_file_contents.size(), size_file_contents.data());
     DP_CHECK_OK(DP_DeepPotModelDeviCheckOK, dp);
     numb_models = models.size();
     dfparam = DP_DeepPotModelDeviGetDimFParam(dp);
@@ -1265,6 +1291,14 @@ class DeepPotModelDevi {
   int numb_types() const {
     assert(dp);
     return DP_DeepPotModelDeviGetNumbTypes(dp);
+  };
+  /**
+   * @brief Get the number of types with spin.
+   * @return The number of types with spin.
+   **/
+  int numb_types_spin() const {
+    assert(dp);
+    return DP_DeepPotModelDeviGetNumbTypesSpin(dp);
   };
   /**
    * @brief Get the dimension of the frame parameter.
@@ -1926,8 +1960,9 @@ class DipoleChargeModifier {
  * @param[out] file_content Content of the model file.
  **/
 void inline read_file_to_string(std::string model, std::string &file_content) {
-  const char *c_file_content = DP_ReadFileToChar(model.c_str());
-  file_content = std::string(c_file_content);
+  int size;
+  const char *c_file_content = DP_ReadFileToChar2(model.c_str(), &size);
+  file_content = std::string(c_file_content, size);
 };
 
 /**

@@ -6,6 +6,6 @@ TF_INCLUDE_DIRS=`echo $TENSORFLOW_INCLUDE_DIRS | sed "s/;/ -I/g"`
 TF_LIBRARY_PATH=`echo $TENSORFLOW_LIBRARY_PATH | sed "s/;/ -L/g"`
 TF_RPATH=`echo $TENSORFLOW_LIBRARY_PATH | sed "s/;/ -Wl,-rpath=/g"`
 
-NNP_INC=" -D_GLIBCXX_USE_CXX11_ABI=@OP_CXX_ABI@ -std=c++@CMAKE_CXX_STANDARD@ -D@prec_def@ -DLAMMPS_VERSION_NUMBER=$(./lmp_version.sh) -I$DEEPMD_ROOT/include/ "
+NNP_INC=" -D@prec_def@ -DLAMMPS_VERSION_NUMBER=$(./lmp_version.sh) -I$DEEPMD_ROOT/include/ "
 NNP_PATH=" -L$TF_LIBRARY_PATH -L$DEEPMD_ROOT/lib"
-NNP_LIB=" -Wl,--no-as-needed -l@LIB_DEEPMD_CC@ -Wl,-rpath=$TF_RPATH -Wl,-rpath=$DEEPMD_ROOT/lib"
+NNP_LIB=" -Wl,--no-as-needed -l@LIB_DEEPMD_C@ -Wl,-rpath=$TF_RPATH -Wl,-rpath=$DEEPMD_ROOT/lib"

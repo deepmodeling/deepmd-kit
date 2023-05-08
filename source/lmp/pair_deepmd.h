@@ -12,10 +12,20 @@ PairStyle(deepmd, PairDeepMD)
 #define LMP_PAIR_NNP_H
 
 #include "pair.h"
+#ifdef DP_USE_CXX_API
 #ifdef LMPPLUGIN
 #include "DeepPot.h"
 #else
 #include "deepmd/DeepPot.h"
+#endif
+namespace deepmd_compat = deepmd;
+#else
+#ifdef LMPPLUGIN
+#include "deepmd.hpp"
+#else
+#include "deepmd/deepmd.hpp"
+#endif
+namespace deepmd_compat = deepmd::hpp;
 #endif
 #include <fstream>
 #include <iostream>
@@ -55,7 +65,7 @@ class PairDeepMD : public Pair {
               int &extend_nghost,
               std::map<int, int> &new_idx_map,
               std::map<int, int> &old_idx_map,
-              const deepmd::InputNlist &lmp_list,
+              const deepmd_compat::InputNlist &lmp_list,
               const std::vector<double> &coord,
               const std::vector<int> &atype,
               const int nghost,
@@ -74,8 +84,8 @@ class PairDeepMD : public Pair {
   double **scale;
 
  private:
-  deepmd::DeepPot deep_pot;
-  deepmd::DeepPotModelDevi deep_pot_model_devi;
+  deepmd_compat::DeepPot deep_pot;
+  deepmd_compat::DeepPotModelDevi deep_pot_model_devi;
   unsigned numb_models;
   double cutoff;
   int numb_types;
