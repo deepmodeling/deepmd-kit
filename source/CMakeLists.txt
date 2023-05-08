@@ -301,4 +301,7 @@ if(BUILD_CPP_IF
     INSTALL_DESTINATION ${cmake_files_install_dir})
   install(FILES ${version_file} ${config_file}
           DESTINATION ${cmake_files_install_dir})
-endif(BUILD_CPP_IF AND NOT BUILD_PY_IF)
+endif(
+  BUILD_CPP_IF
+  AND NOT BUILD_PY_IF
+  AND NOT DEEPMD_C_ROOT)
