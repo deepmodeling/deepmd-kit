@@ -35,7 +35,6 @@ jobs:
         uses: actions/download-artifact@v3
         with:
           name: libdeepmd_c
-          path: ./libdeepmd_c.tar.gz
       - run: tar -vxzf ./libdeepmd_c.tar.gz -C ${{ github.workspace }}/libdeepmd_c
       - name: Test C library
         run: ./source/install/build_from_c.sh
