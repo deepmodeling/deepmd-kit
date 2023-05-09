@@ -13,12 +13,22 @@ FixStyle(dplr, FixDPLR)
 
 #include "fix.h"
 #include "pair_deepmd.h"
+#ifdef DP_USE_CXX_API
 #ifdef LMPPLUGIN
 #include "DataModifier.h"
 #include "DeepTensor.h"
 #else
 #include "deepmd/DataModifier.h"
 #include "deepmd/DeepTensor.h"
+#endif
+namespace deepmd_compat = deepmd;
+#else
+#ifdef LMPPLUGIN
+#include "deepmd.hpp"
+#else
+#include "deepmd/deepmd.hpp"
+#endif
+namespace deepmd_compat = deepmd::hpp;
 #endif
 
 #ifdef HIGH_PREC
@@ -45,8 +55,8 @@ class FixDPLR : public Fix {
 
  private:
   PairDeepMD *pair_deepmd;
-  deepmd::DeepTensor dpt;
-  deepmd::DipoleChargeModifier dtm;
+  deepmd_compat::DeepTensor dpt;
+  deepmd_compat::DipoleChargeModifier dtm;
   std::string model;
   int ntypes;
   std::vector<int> sel_type;

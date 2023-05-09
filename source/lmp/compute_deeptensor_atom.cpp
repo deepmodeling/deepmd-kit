@@ -121,15 +121,19 @@ void ComputeDeeptensorAtom::compute_peratom() {
 
   // invoke full neighbor list (will copy or build if necessary)
   neighbor->build_one(list);
-  deepmd::InputNlist lmp_list(list->inum, list->ilist, list->numneigh,
-                              list->firstneigh);
+  deepmd_compat::InputNlist lmp_list(list->inum, list->ilist, list->numneigh,
+                                     list->firstneigh);
 
   // declare outputs
   std::vector<VALUETYPE> gtensor, force, virial, atensor, avirial;
 
   // compute tensors
-  dt.compute(gtensor, force, virial, atensor, avirial, dcoord, dtype, dbox,
-             nghost, lmp_list);
+  try {
+    dt.compute(gtensor, force, virial, atensor, avirial, dcoord, dtype, dbox,
+               nghost, lmp_list);
+  } catch (deepmd_compat::deepmd_exception &e) {
+    error->all(FLERR, e.what());
+  }
 
   // store the result in tensor
   int iter_tensor = 0;

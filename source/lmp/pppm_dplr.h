@@ -1,7 +1,7 @@
 #ifdef KSPACE_CLASS
-
-KSpaceStyle(pppm / dplr, PPPMDPLR)
-
+// clang-format off
+KSpaceStyle(pppm/dplr, PPPMDPLR)
+// clang-format on
 #else
 
 #ifndef LMP_PPPM_DPLR_H

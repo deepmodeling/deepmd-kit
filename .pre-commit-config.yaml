@@ -16,7 +16,7 @@ repos:
     -   id: check-toml
 # Python
 -   repo: https://github.com/psf/black
-    rev: 23.1.0
+    rev: 23.3.0
     hooks:
     -   id: black-jupyter
 -   repo: https://github.com/PyCQA/isort
@@ -26,7 +26,7 @@ repos:
       files: \.py$
 -   repo: https://github.com/charliermarsh/ruff-pre-commit
     # Ruff version.
-    rev: v0.0.259
+    rev: v0.0.263
     hooks:
     - id: ruff
       args: ["--fix"]
@@ -43,7 +43,7 @@ repos:
     -   id: blacken-docs
 # C++
 -   repo: https://github.com/pre-commit/mirrors-clang-format
-    rev: v16.0.0
+    rev: v16.0.2
     hooks:
     -   id: clang-format
         exclude: ^source/3rdparty|source/lib/src/cuda/cudart/.+\.inc

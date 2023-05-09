@@ -4,8 +4,6 @@
 #include <string>
 #include <vector>
 
-// using namespace std;
-
 template <typename VALUETYPE>
 class Convert {
  public:

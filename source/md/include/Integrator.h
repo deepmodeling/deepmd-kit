@@ -4,7 +4,6 @@
 
 #include "Gaussian.h"
 #include "UnitManager.h"
-using namespace std;
 
 template <typename VALUETYPE>
 class Integrator {
@@ -12,13 +11,13 @@ class Integrator {
   Integrator() : massConst(UnitManager::IntegratorMassConstant){};
 
  public:
-  void stepVeloc(vector<VALUETYPE>& vv,
-                 const vector<VALUETYPE>& ff,
-                 const vector<VALUETYPE>& mass,
+  void stepVeloc(std::vector<VALUETYPE>& vv,
+                 const std::vector<VALUETYPE>& ff,
+                 const std::vector<VALUETYPE>& mass,
                  const double& dt,
-                 const vector<int>& freez = vector<int>()) const;
-  void stepCoord(vector<VALUETYPE>& rr,
-                 const vector<VALUETYPE>& vv,
+                 const std::vector<int>& freez = std::vector<int>()) const;
+  void stepCoord(std::vector<VALUETYPE>& rr,
+                 const std::vector<VALUETYPE>& vv,
                  const double& dt) const;
 
  private:
@@ -34,14 +33,14 @@ class ThermostatLangevin {
   void reinit(const VALUETYPE T = 300.,
               const VALUETYPE tau = 1.,
               const long long int seed = 0);
-  void stepOU(vector<VALUETYPE>& vv,
-              const vector<VALUETYPE>& mass,
+  void stepOU(std::vector<VALUETYPE>& vv,
+              const std::vector<VALUETYPE>& mass,
               const double& dt,
-              const vector<int>& freez = vector<int>()) const;
+              const std::vector<int>& freez = std::vector<int>()) const;
 
  private:
   mutable Gaussian gaussian;
-  string scheme;
+  std::string scheme;
   VALUETYPE temperature;
   VALUETYPE gamma;
   VALUETYPE sigma;

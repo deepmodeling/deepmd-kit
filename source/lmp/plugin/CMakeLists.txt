@@ -41,8 +41,8 @@ if(DEFINED LAMMPS_SOURCE_ROOT OR DEFINED LAMMPS_VERSION)
       PARENT_SCOPE)
   message(STATUS "LAMMPS version is ${LAMMPS_VERSION_NUMBER}")
 
-  configure_file("../pair_deepmd.h.in"
-                 "${CMAKE_CURRENT_BINARY_DIR}/pair_deepmd.h" @ONLY)
+  configure_file("../deepmd_version.h.in"
+                 "${CMAKE_CURRENT_BINARY_DIR}/deepmd_version.h" @ONLY)
 
   file(GLOB LMP_SRC deepmdplugin.cpp ../*.cpp
        ${LAMMPS_SOURCE_ROOT}/src/kspace.cpp # for pppm_dplr
@@ -58,7 +58,14 @@ if(DEFINED LAMMPS_SOURCE_ROOT OR DEFINED LAMMPS_VERSION)
     add_library(${libname} MODULE ${LMP_SRC})
 
     # link: libdeepmd
-    target_link_libraries(${libname} PUBLIC lammps_interface ${LIB_DEEPMD_CC})
+    if(DP_USING_C_API)
+      target_link_libraries(${libname} PUBLIC ${LIB_DEEPMD_C})
+      target_precompile_headers(${libname} PUBLIC [["deepmd.hpp"]])
+    else()
+      target_link_libraries(${libname} PUBLIC ${LIB_DEEPMD_CC})
+      target_compile_definitions(${libname} PUBLIC "DP_USE_CXX_API")
+    endif()
+    target_link_libraries(${libname} PUBLIC lammps_interface)
     target_include_directories(
       ${libname}
       PRIVATE ${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/..

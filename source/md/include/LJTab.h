@@ -4,8 +4,6 @@
 
 #include "Tabulated.h"
 
-using namespace std;
-
 #ifdef HIGH_PREC
 typedef double VALUETYPE;
 #else
@@ -18,12 +16,12 @@ class LJTab {
 
  public:
   void compute(VALUETYPE& ener,
-               vector<VALUETYPE>& force,
-               vector<VALUETYPE>& virial,
-               const vector<VALUETYPE>& coord,
-               const vector<int>& atype,
+               std::vector<VALUETYPE>& force,
+               std::vector<VALUETYPE>& virial,
+               const std::vector<VALUETYPE>& coord,
+               const std::vector<int>& atype,
                const SimulationRegion<VALUETYPE>& region,
-               const vector<vector<int> >& nlist) {
+               const std::vector<std::vector<int> >& nlist) {
     lj_tab.compute(ener, force, virial, coord, atype, region, nlist);
   };
 

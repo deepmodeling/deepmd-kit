@@ -30,6 +30,7 @@ from deepmd.utils.weight_avg import (
 if TYPE_CHECKING:
     from deepmd.infer import (
         DeepDipole,
+        DeepDOS,
         DeepPolar,
         DeepPot,
         DeepWFC,
@@ -123,6 +124,16 @@ def test(
                 atomic,
                 append_detail=(cc != 0),
             )
+        elif dp.model_type == "dos":
+            err = test_dos(
+                dp,
+                data,
+                system,
+                numb_test,
+                detail_file,
+                atomic,
+                append_detail=(cc != 0),
+            )
         elif dp.model_type == "dipole":
             err = test_dipole(dp, data, numb_test, detail_file, atomic)
         elif dp.model_type == "polar":
@@ -147,6 +158,8 @@ def test(
         log.info(f"# number of systems : {len(all_sys)}")
         if dp.model_type == "ener":
             print_ener_sys_avg(avg_err)
+        elif dp.model_type == "dos":
+            print_dos_sys_avg(avg_err)
         elif dp.model_type == "dipole":
             print_dipole_sys_avg(avg_err)
         elif dp.model_type == "polar":
@@ -306,6 +319,26 @@ def test_ener(
         av = ret[4]
         ae = ae.reshape([numb_test, -1])
         av = av.reshape([numb_test, -1])
+    if dp.get_ntypes_spin() != 0:
+        ntypes_real = dp.get_ntypes() - dp.get_ntypes_spin()
+        nloc = natoms
+        nloc_real = sum([np.count_nonzero(atype == ii) for ii in range(ntypes_real)])
+        force_r = np.split(
+            force, indices_or_sections=[nloc_real * 3, nloc * 3], axis=1
+        )[0]
+        force_m = np.split(
+            force, indices_or_sections=[nloc_real * 3, nloc * 3], axis=1
+        )[1]
+        test_force_r = np.split(
+            test_data["force"][:numb_test],
+            indices_or_sections=[nloc_real * 3, nloc * 3],
+            axis=1,
+        )[0]
+        test_force_m = np.split(
+            test_data["force"][:numb_test],
+            indices_or_sections=[nloc_real * 3, nloc * 3],
+            axis=1,
+        )[1]
 
     diff_e = energy - test_data["energy"][:numb_test].reshape([-1, 1])
     mae_e = mae(diff_e)
@@ -324,14 +357,26 @@ def test_ener(
         diff_ae = test_data["atom_ener"][:numb_test].reshape([-1]) - ae.reshape([-1])
         mae_ae = mae(diff_ae)
         rmse_ae = rmse(diff_ae)
+    if dp.get_ntypes_spin() != 0:
+        mae_fr = mae(force_r - test_force_r)
+        mae_fm = mae(force_m - test_force_m)
+        rmse_fr = rmse(force_r - test_force_r)
+        rmse_fm = rmse(force_m - test_force_m)
 
     log.info(f"# number of test data : {numb_test:d} ")
     log.info(f"Energy MAE         : {mae_e:e} eV")
     log.info(f"Energy RMSE        : {rmse_e:e} eV")
     log.info(f"Energy MAE/Natoms  : {mae_ea:e} eV")
     log.info(f"Energy RMSE/Natoms : {rmse_ea:e} eV")
-    log.info(f"Force  MAE         : {mae_f:e} eV/A")
-    log.info(f"Force  RMSE        : {rmse_f:e} eV/A")
+    if dp.get_ntypes_spin() == 0:
+        log.info(f"Force  MAE         : {mae_f:e} eV/A")
+        log.info(f"Force  RMSE        : {rmse_f:e} eV/A")
+    else:
+        log.info(f"Force atom MAE      : {mae_fr:e} eV/A")
+        log.info(f"Force spin MAE      : {mae_fm:e} eV/uB")
+        log.info(f"Force atom RMSE     : {rmse_fr:e} eV/A")
+        log.info(f"Force spin RMSE     : {rmse_fm:e} eV/uB")
+
     if data.pbc:
         log.info(f"Virial MAE         : {mae_v:e} eV")
         log.info(f"Virial RMSE        : {rmse_v:e} eV")
@@ -364,19 +409,42 @@ def test_ener(
             header="%s: data_e pred_e" % system,
             append=append_detail,
         )
-        pf = np.concatenate(
-            (
-                np.reshape(test_data["force"][:numb_test], [-1, 3]),
-                np.reshape(force, [-1, 3]),
-            ),
-            axis=1,
-        )
-        save_txt_file(
-            detail_path.with_suffix(".f.out"),
-            pf,
-            header="%s: data_fx data_fy data_fz pred_fx pred_fy pred_fz" % system,
-            append=append_detail,
-        )
+        if dp.get_ntypes_spin() == 0:
+            pf = np.concatenate(
+                (
+                    np.reshape(test_data["force"][:numb_test], [-1, 3]),
+                    np.reshape(force, [-1, 3]),
+                ),
+                axis=1,
+            )
+            save_txt_file(
+                detail_path.with_suffix(".f.out"),
+                pf,
+                header="%s: data_fx data_fy data_fz pred_fx pred_fy pred_fz" % system,
+                append=append_detail,
+            )
+        else:
+            pf_real = np.concatenate(
+                (np.reshape(test_force_r, [-1, 3]), np.reshape(force_r, [-1, 3])),
+                axis=1,
+            )
+            pf_mag = np.concatenate(
+                (np.reshape(test_force_m, [-1, 3]), np.reshape(force_m, [-1, 3])),
+                axis=1,
+            )
+            save_txt_file(
+                detail_path.with_suffix(".fr.out"),
+                pf_real,
+                header="%s: data_fx data_fy data_fz pred_fx pred_fy pred_fz" % system,
+                append=append_detail,
+            )
+            save_txt_file(
+                detail_path.with_suffix(".fm.out"),
+                pf_mag,
+                header="%s: data_fmx data_fmy data_fmz pred_fmx pred_fmy pred_fmz"
+                % system,
+                append=append_detail,
+            )
         pv = np.concatenate(
             (
                 np.reshape(test_data["virial"][:numb_test], [-1, 9]),
@@ -401,18 +469,34 @@ def test_ener(
             "pred_vyy pred_vyz pred_vzx pred_vzy pred_vzz",
             append=append_detail,
         )
-    return {
-        "mae_e": (mae_e, energy.size),
-        "mae_ea": (mae_ea, energy.size),
-        "mae_f": (mae_f, force.size),
-        "mae_v": (mae_v, virial.size),
-        "mae_va": (mae_va, virial.size),
-        "rmse_e": (rmse_e, energy.size),
-        "rmse_ea": (rmse_ea, energy.size),
-        "rmse_f": (rmse_f, force.size),
-        "rmse_v": (rmse_v, virial.size),
-        "rmse_va": (rmse_va, virial.size),
-    }
+    if dp.get_ntypes_spin() == 0:
+        return {
+            "mae_e": (mae_e, energy.size),
+            "mae_ea": (mae_ea, energy.size),
+            "mae_f": (mae_f, force.size),
+            "mae_v": (mae_v, virial.size),
+            "mae_va": (mae_va, virial.size),
+            "rmse_e": (rmse_e, energy.size),
+            "rmse_ea": (rmse_ea, energy.size),
+            "rmse_f": (rmse_f, force.size),
+            "rmse_v": (rmse_v, virial.size),
+            "rmse_va": (rmse_va, virial.size),
+        }
+    else:
+        return {
+            "mae_e": (mae_e, energy.size),
+            "mae_ea": (mae_ea, energy.size),
+            "mae_fr": (mae_fr, force_r.size),
+            "mae_fm": (mae_fm, force_m.size),
+            "mae_v": (mae_v, virial.size),
+            "mae_va": (mae_va, virial.size),
+            "rmse_e": (rmse_e, energy.size),
+            "rmse_ea": (rmse_ea, energy.size),
+            "rmse_fr": (rmse_fr, force_r.size),
+            "rmse_fm": (rmse_fm, force_m.size),
+            "rmse_v": (rmse_v, virial.size),
+            "rmse_va": (rmse_va, virial.size),
+        }
 
 
 def print_ener_sys_avg(avg: Dict[str, float]):
@@ -427,15 +511,181 @@ def print_ener_sys_avg(avg: Dict[str, float]):
     log.info(f"Energy RMSE        : {avg['rmse_e']:e} eV")
     log.info(f"Energy MAE/Natoms  : {avg['mae_ea']:e} eV")
     log.info(f"Energy RMSE/Natoms : {avg['rmse_ea']:e} eV")
-    log.info(f"Force  MAE         : {avg['mae_f']:e} eV/A")
-    log.info(f"Force  RMSE        : {avg['rmse_f']:e} eV/A")
+    if "rmse_f" in avg.keys():
+        log.info(f"Force  MAE         : {avg['mae_f']:e} eV/A")
+        log.info(f"Force  RMSE        : {avg['rmse_f']:e} eV/A")
+    else:
+        log.info(f"Force atom MAE      : {avg['mae_fr']:e} eV/A")
+        log.info(f"Force spin MAE      : {avg['mae_fm']:e} eV/uB")
+        log.info(f"Force atom RMSE     : {avg['rmse_fr']:e} eV/A")
+        log.info(f"Force spin RMSE     : {avg['rmse_fm']:e} eV/uB")
     log.info(f"Virial MAE         : {avg['mae_v']:e} eV")
     log.info(f"Virial RMSE        : {avg['rmse_v']:e} eV")
     log.info(f"Virial MAE/Natoms  : {avg['mae_va']:e} eV")
     log.info(f"Virial RMSE/Natoms : {avg['rmse_va']:e} eV")
 
 
-def run_test(dp: "DeepTensor", test_data: dict, numb_test: int):
+def test_dos(
+    dp: "DeepDOS",
+    data: DeepmdData,
+    system: str,
+    numb_test: int,
+    detail_file: Optional[str],
+    has_atom_dos: bool,
+    append_detail: bool = False,
+) -> Tuple[List[np.ndarray], List[int]]:
+    """Test DOS type model.
+
+    Parameters
+    ----------
+    dp : DeepDOS
+        instance of deep potential
+    data : DeepmdData
+        data container object
+    system : str
+        system directory
+    numb_test : int
+        munber of tests to do
+    detail_file : Optional[str]
+        file where test details will be output
+    has_atom_dos : bool
+        whether per atom quantities should be computed
+    append_detail : bool, optional
+        if true append output detail file, by default False
+
+    Returns
+    -------
+    Tuple[List[np.ndarray], List[int]]
+        arrays with results and their shapes
+    """
+    data.add("dos", dp.numb_dos, atomic=False, must=True, high_prec=True)
+    if has_atom_dos:
+        data.add("atom_dos", dp.numb_dos, atomic=True, must=False, high_prec=True)
+
+    if dp.get_dim_fparam() > 0:
+        data.add(
+            "fparam", dp.get_dim_fparam(), atomic=False, must=True, high_prec=False
+        )
+    if dp.get_dim_aparam() > 0:
+        data.add("aparam", dp.get_dim_aparam(), atomic=True, must=True, high_prec=False)
+
+    test_data = data.get_test()
+    mixed_type = data.mixed_type
+    natoms = len(test_data["type"][0])
+    nframes = test_data["box"].shape[0]
+    numb_test = min(nframes, numb_test)
+
+    coord = test_data["coord"][:numb_test].reshape([numb_test, -1])
+    box = test_data["box"][:numb_test]
+
+    if not data.pbc:
+        box = None
+    if mixed_type:
+        atype = test_data["type"][:numb_test].reshape([numb_test, -1])
+    else:
+        atype = test_data["type"][0]
+    if dp.get_dim_fparam() > 0:
+        fparam = test_data["fparam"][:numb_test]
+    else:
+        fparam = None
+    if dp.get_dim_aparam() > 0:
+        aparam = test_data["aparam"][:numb_test]
+    else:
+        aparam = None
+
+    ret = dp.eval(
+        coord,
+        box,
+        atype,
+        fparam=fparam,
+        aparam=aparam,
+        atomic=has_atom_dos,
+        mixed_type=mixed_type,
+    )
+    dos = ret[0]
+
+    dos = dos.reshape([numb_test, dp.numb_dos])
+
+    if has_atom_dos:
+        ados = ret[1]
+        ados = ados.reshape([numb_test, natoms * dp.numb_dos])
+
+    diff_dos = dos - test_data["dos"][:numb_test]
+    mae_dos = mae(diff_dos)
+    rmse_dos = rmse(diff_dos)
+
+    mae_dosa = mae_dos / natoms
+    rmse_dosa = rmse_dos / natoms
+
+    if has_atom_dos:
+        diff_ados = ados - test_data["atom_dos"][:numb_test]
+        mae_ados = mae(diff_ados)
+        rmse_ados = rmse(diff_ados)
+
+    log.info(f"# number of test data : {numb_test:d} ")
+
+    log.info(f"DOS MAE            : {mae_dos:e} Occupation/eV")
+    log.info(f"DOS RMSE           : {rmse_dos:e} Occupation/eV")
+    log.info(f"DOS MAE/Natoms     : {mae_dosa:e} Occupation/eV")
+    log.info(f"DOS RMSE/Natoms    : {rmse_dosa:e} Occupation/eV")
+
+    if has_atom_dos:
+        log.info(f"Atomic DOS MAE     : {mae_ados:e} Occupation/eV")
+        log.info(f"Atomic DOS RMSE    : {rmse_ados:e} Occupation/eV")
+
+    if detail_file is not None:
+        detail_path = Path(detail_file)
+
+        for ii in range(numb_test):
+            test_out = test_data["dos"][ii].reshape(-1, 1)
+            pred_out = dos[ii].reshape(-1, 1)
+
+            frame_output = np.hstack((test_out, pred_out))
+
+            save_txt_file(
+                detail_path.with_suffix(".dos.out.%.d" % ii),
+                frame_output,
+                header="%s - %.d: data_dos pred_dos" % (system, ii),
+                append=append_detail,
+            )
+
+        if has_atom_dos:
+            for ii in range(numb_test):
+                test_out = test_data["atom_dos"][ii].reshape(-1, 1)
+                pred_out = ados[ii].reshape(-1, 1)
+
+                frame_output = np.hstack((test_out, pred_out))
+
+                save_txt_file(
+                    detail_path.with_suffix(".ados.out.%.d" % ii),
+                    frame_output,
+                    header="%s - %.d: data_ados pred_ados" % (system, ii),
+                    append=append_detail,
+                )
+
+    return {
+        "mae_dos": (mae_dos, dos.size),
+        "mae_dosa": (mae_dosa, dos.size),
+        "rmse_dos": (rmse_dos, dos.size),
+        "rmse_dosa": (rmse_dosa, dos.size),
+    }
+
+
+def print_dos_sys_avg(avg: Dict[str, float]):
+    """Print errors summary for DOS type potential.
+
+    Parameters
+    ----------
+    avg : np.ndarray
+        array with summaries
+    """
+    log.info(f"DOS MAE            : {avg['mae_dos']:e} Occupation/eV")
+    log.info(f"DOS RMSE           : {avg['rmse_dos']:e} Occupation/eV")
+    log.info(f"DOS MAE/Natoms     : {avg['mae_dosa']:e} Occupation/eV")
+    log.info(f"DOS RMSE/Natoms    : {avg['rmse_dosa']:e} Occupation/eV")
+
+
+def run_test(dp: "DeepTensor", test_data: dict, numb_test: int, test_sys: DeepmdData):
     """Run tests.
 
     Parameters
@@ -446,6 +696,8 @@ def run_test(dp: "DeepTensor", test_data: dict, numb_test: int):
         dictionary with test data
     numb_test : int
         munber of tests to do
+    test_sys : DeepmdData
+        test system
 
     Returns
     -------
@@ -456,7 +708,10 @@ def run_test(dp: "DeepTensor", test_data: dict, numb_test: int):
     numb_test = min(nframes, numb_test)
 
     coord = test_data["coord"][:numb_test].reshape([numb_test, -1])
-    box = test_data["box"][:numb_test]
+    if test_sys.pbc:
+        box = test_data["box"][:numb_test]
+    else:
+        box = None
     atype = test_data["type"][0]
     prediction = dp.eval(coord, box, atype)
 
@@ -491,7 +746,7 @@ def test_wfc(
         "wfc", 12, atomic=True, must=True, high_prec=False, type_sel=dp.get_sel_type()
     )
     test_data = data.get_test()
-    wfc, numb_test, _ = run_test(dp, test_data, numb_test)
+    wfc, numb_test, _ = run_test(dp, test_data, numb_test, data)
     rmse_f = rmse(wfc - test_data["wfc"][:numb_test])
 
     log.info("# number of test data : {numb_test:d} ")
@@ -563,7 +818,7 @@ def test_polar(
     )
 
     test_data = data.get_test()
-    polar, numb_test, atype = run_test(dp, test_data, numb_test)
+    polar, numb_test, atype = run_test(dp, test_data, numb_test, data)
 
     sel_type = dp.get_sel_type()
     sel_natoms = 0
@@ -653,7 +908,7 @@ def test_dipole(
         type_sel=dp.get_sel_type(),
     )
     test_data = data.get_test()
-    dipole, numb_test, atype = run_test(dp, test_data, numb_test)
+    dipole, numb_test, atype = run_test(dp, test_data, numb_test, data)
 
     sel_type = dp.get_sel_type()
     sel_natoms = 0

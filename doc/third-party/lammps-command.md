@@ -87,6 +87,8 @@ Only a single `pair_coeff` command is used with the deepmd style which specifies
 If atom names are not set in the `pair_coeff` command, the training parameter {ref}`type_map <model/type_map>` will be used by default.
 If the training parameter {ref}`type_map <model/type_map>` is not set, atom names in the `pair_coeff` command cannot be set. In this case, atom type indexes in [`type.raw`](../data/system.md) (integers from 0 to Ntypes-1) will map to LAMMPS atom types.
 
+Spin is specified by keywords `virtual_len` and `spin_norm`. If the keyword `virtual_len` is set, the distance between virtual atom and its corresponding real atom for each type of magnetic atoms will be fed to the model as the spin parameters. If the keyword `spin_norm` is set, the magnitude of the magnetic moment for each type of magnetic atoms will be fed to the model as the spin parameters.
+
 ### Restrictions
 - The `deepmd` pair style is provided in the USER-DEEPMD package, which is compiled from the DeePMD-kit, visit the [DeePMD-kit website](https://github.com/deepmodeling/deepmd-kit) for more information.
 

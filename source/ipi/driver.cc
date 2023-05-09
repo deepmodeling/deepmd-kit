@@ -4,7 +4,13 @@
 #include <iostream>
 
 #include "Convert.h"
+#ifdef DP_USE_CXX_API
 #include "DeepPot.h"
+namespace deepmd_compat = deepmd;
+#else
+#include "deepmd.hpp"
+namespace deepmd_compat = deepmd::hpp;
+#endif
 #include "SimulationRegion.h"
 #include "XyzFileManager.h"
 #include "json.hpp"
@@ -90,7 +96,7 @@ int main(int argc, char *argv[]) {
   }
 
   Convert<double> cvt(atom_name, name_type_map);
-  deepmd::DeepPot nnp_inter(graph_file);
+  deepmd_compat::DeepPot nnp_inter(graph_file);
 
   enum { _MSGLEN = 12 };
   int MSGLEN = _MSGLEN;

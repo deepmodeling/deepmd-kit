@@ -266,8 +266,8 @@ void FixDPLR::pre_force(int vflag) {
   }
   // get lammps nlist
   NeighList *list = pair_deepmd->list;
-  deepmd::InputNlist lmp_list(list->inum, list->ilist, list->numneigh,
-                              list->firstneigh);
+  deepmd_compat::InputNlist lmp_list(list->inum, list->ilist, list->numneigh,
+                                     list->firstneigh);
   // declear output
   vector<FLOAT_PREC> tensor;
   // compute
@@ -303,15 +303,15 @@ void FixDPLR::pre_force(int vflag) {
   }
   vector<int> sel_fwd, sel_bwd;
   int sel_nghost;
-  deepmd::select_by_type(sel_fwd, sel_bwd, sel_nghost, dcoord, dtype, nghost,
-                         sel_type);
+  deepmd_compat::select_by_type(sel_fwd, sel_bwd, sel_nghost, dcoord, dtype,
+                                nghost, sel_type);
   int sel_nall = sel_bwd.size();
   int sel_nloc = sel_nall - sel_nghost;
   vector<int> sel_type(sel_bwd.size());
-  deepmd::select_map<int>(sel_type, dtype, sel_fwd, 1);
+  deepmd_compat::select_map<int>(sel_type, dtype, sel_fwd, 1);
 
   // Yixiao: because the deeptensor already return the correct order, the
-  // following map is no longer needed deepmd::AtomMap<FLOAT_PREC>
+  // following map is no longer needed deepmd_compat::AtomMap<FLOAT_PREC>
   // atom_map(sel_type.begin(), sel_type.begin() + sel_nloc); const vector<int>
   // & sort_fwd_map(atom_map.get_fwd_map());
 
@@ -426,8 +426,8 @@ void FixDPLR::post_force(int vflag) {
   }
   // lmp nlist
   NeighList *list = pair_deepmd->list;
-  deepmd::InputNlist lmp_list(list->inum, list->ilist, list->numneigh,
-                              list->firstneigh);
+  deepmd_compat::InputNlist lmp_list(list->inum, list->ilist, list->numneigh,
+                                     list->firstneigh);
   // bonded pairs
   vector<pair<int, int> > valid_pairs;
   get_valid_pairs(valid_pairs);
