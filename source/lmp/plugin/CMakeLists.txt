@@ -53,6 +53,9 @@ if(DEFINED LAMMPS_SOURCE_ROOT OR DEFINED LAMMPS_VERSION)
   endif()
 
   set(libname "deepmd_lmp")
+  if(BUILD_PY_IF)
+    set(libname "${libname}plugin")
+  endif()
 
   add_library(${libname} MODULE ${LMP_SRC})
 
