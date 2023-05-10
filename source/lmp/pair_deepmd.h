@@ -31,11 +31,7 @@ namespace deepmd_compat = deepmd::hpp;
 #include <iostream>
 #include <map>
 
-#ifdef HIGH_PREC
 #define FLOAT_PREC double
-#else
-#define FLOAT_PREC float
-#endif
 
 namespace LAMMPS_NS {
 
@@ -116,43 +112,18 @@ class PairDeepMD : public Pair {
   // for spin systems, search new index of atoms by their old index
   std::map<int, int> new_idx_map;
   std::map<int, int> old_idx_map;
-#ifdef HIGH_PREC
   std::vector<double> fparam;
   std::vector<double> aparam;
   double eps;
   double eps_v;
-#else
-  std::vector<float> fparam;
-  std::vector<float> aparam;
-  float eps;
-  float eps_v;
-#endif
 
-  void make_fparam_from_compute(
-#ifdef HIGH_PREC
-      std::vector<double> &fparam
-#else
-      std::vector<float> &fparam
-#endif
-  );
+  void make_fparam_from_compute(std::vector<double> &fparam);
   bool do_compute;
   std::string compute_id;
 
-  void make_ttm_fparam(
-#ifdef HIGH_PREC
-      std::vector<double> &fparam
-#else
-      std::vector<float> &fparam
-#endif
-  );
+  void make_ttm_fparam(std::vector<double> &fparam);
 
-  void make_ttm_aparam(
-#ifdef HIGH_PREC
-      std::vector<double> &dparam
-#else
-      std::vector<float> &dparam
-#endif
-  );
+  void make_ttm_aparam(std::vector<double> &dparam);
   bool do_ttm;
   std::string ttm_fix_id;
   int *counts, *displacements;

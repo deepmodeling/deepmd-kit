@@ -194,11 +194,8 @@ make install
 ```
 Option `-j4` means using 4 processes in parallel. You may want to use a different number according to your hardware.
 
-If everything works fine, you will have the following executable and libraries installed in `$deepmd_root/bin` and `$deepmd_root/lib`
+If everything works fine, you will have the executable and libraries installed in `$deepmd_root/bin` and `$deepmd_root/lib`
 ```bash
 $ ls $deepmd_root/bin
-dp_ipi      dp_ipi_low
 $ ls $deepmd_root/lib
-libdeepmd_cc_low.so  libdeepmd_ipi_low.so  libdeepmd_lmp_low.so  libdeepmd_low.so          libdeepmd_op_cuda.so  libdeepmd_op.so
-libdeepmd_cc.so      libdeepmd_ipi.so      libdeepmd_lmp.so      libdeepmd_op_cuda_low.so  libdeepmd_op_low.so   libdeepmd.so
 ```

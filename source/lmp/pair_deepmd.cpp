@@ -183,13 +183,9 @@ static void ana_st(double &max,
   }
 }
 
-static void make_uniform_aparam(
-#ifdef HIGH_PREC
-    vector<double> &daparam, const vector<double> &aparam, const int &nlocal
-#else
-    vector<float> &daparam, const vector<float> &aparam, const int &nlocal
-#endif
-) {
+static void make_uniform_aparam(vector<double> &daparam,
+                                const vector<double> &aparam,
+                                const int &nlocal) {
   unsigned dim_aparam = aparam.size();
   daparam.resize(dim_aparam * nlocal);
   for (int ii = 0; ii < nlocal; ++ii) {
@@ -199,13 +195,7 @@ static void make_uniform_aparam(
   }
 }
 
-void PairDeepMD::make_fparam_from_compute(
-#ifdef HIGH_PREC
-    vector<double> &fparam
-#else
-    vector<float> &fparam
-#endif
-) {
+void PairDeepMD::make_fparam_from_compute(vector<double> &fparam) {
   assert(do_compute);
 
   int icompute = modify->find_compute(compute_id);
@@ -227,13 +217,7 @@ void PairDeepMD::make_fparam_from_compute(
 }
 
 #ifdef USE_TTM
-void PairDeepMD::make_ttm_fparam(
-#ifdef HIGH_PREC
-    vector<double> &fparam
-#else
-    vector<float> &fparam
-#endif
-) {
+void PairDeepMD::make_ttm_fparam(vector<double> &fparam) {
   assert(do_ttm);
   // get ttm_fix
   const FixTTMDP *ttm_fix = NULL;
@@ -270,13 +254,7 @@ void PairDeepMD::make_ttm_fparam(
 #endif
 
 #ifdef USE_TTM
-void PairDeepMD::make_ttm_aparam(
-#ifdef HIGH_PREC
-    vector<double> &daparam
-#else
-    vector<float> &daparam
-#endif
-) {
+void PairDeepMD::make_ttm_aparam(vector<double> &daparam) {
   assert(do_ttm);
   // get ttm_fix
   const FixTTMDP *ttm_fix = NULL;
@@ -451,11 +429,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
   vector<double> dvirial(9, 0);
   vector<double> dcoord(nall * 3, 0.);
   vector<double> dbox(9, 0);
-#ifdef HIGH_PREC
   vector<double> daparam;
-#else
-  vector<float> daparam;
-#endif
 
   // get box
   dbox[0] = domain->h[0];  // xx
@@ -522,7 +496,6 @@ void PairDeepMD::compute(int eflag, int vflag) {
     if (single_model || multi_models_no_mod_devi) {
       // cvflag_atom is the right flag for the cvatom matrix
       if (!(eflag_atom || cvflag_atom)) {
-#ifdef HIGH_PREC
         if (!atom->sp_flag) {
           try {
             deep_pot.compute(dener, dforce, dvirial, dcoord, dtype, dbox,
@@ -540,48 +513,11 @@ void PairDeepMD::compute(int eflag, int vflag) {
             error->all(FLERR, e.what());
           }
         }
-#else
-        vector<float> dcoord_(dcoord.size());
-        vector<float> dbox_(dbox.size());
-        for (unsigned dd = 0; dd < dcoord.size(); ++dd)
-          dcoord_[dd] = dcoord[dd];
-        for (unsigned dd = 0; dd < dbox.size(); ++dd) dbox_[dd] = dbox[dd];
-        vector<float> dforce_(dforce.size(), 0);
-        vector<float> dvirial_(dvirial.size(), 0);
-        double dener_ = 0;
-        if (!atom->sp_flag) {
-          try {
-            deep_pot.compute(dener_, dforce_, dvirial_, dcoord_, dtype, dbox_,
-                             nghost, lmp_list, ago, fparam, daparam);
-          } catch (deepmd_compat::deepmd_exception &e) {
-            error->all(FLERR, e.what());
-          }
-        } else {
-          vector<float> extend_dcoord_(extend_dcoord.size());
-          for (unsigned dd = 0; dd < extend_dcoord.size(); ++dd)
-            extend_dcoord_[dd] = extend_dcoord[dd];
-          dforce.resize((extend_inum + extend_nghost) * 3);
-          dforce_.resize((extend_inum + extend_nghost) * 3);
-          try {
-            deep_pot.compute(dener_, dforce_, dvirial_, extend_dcoord_,
-                             extend_dtype, dbox_, extend_nghost,
-                             extend_lmp_list, ago, fparam, daparam);
-          } catch (deepmd_compat::deepmd_exception &e) {
-            error->all(FLERR, e.what());
-          }
-        }
-        for (unsigned dd = 0; dd < dforce.size(); ++dd)
-          dforce[dd] = dforce_[dd];
-        for (unsigned dd = 0; dd < dvirial.size(); ++dd)
-          dvirial[dd] = dvirial_[dd];
-        dener = dener_;
-#endif
       }
       // do atomic energy and virial
       else {
         vector<double> deatom(nall * 1, 0);
         vector<double> dvatom(nall * 9, 0);
-#ifdef HIGH_PREC
         if (!atom->sp_flag) {
           try {
             deep_pot.compute(dener, dforce, dvirial, deatom, dvatom, dcoord,
@@ -600,49 +536,6 @@ void PairDeepMD::compute(int eflag, int vflag) {
             error->all(FLERR, e.what());
           }
         }
-#else
-        vector<float> dcoord_(dcoord.size());
-        vector<float> dbox_(dbox.size());
-        for (unsigned dd = 0; dd < dcoord.size(); ++dd)
-          dcoord_[dd] = dcoord[dd];
-        for (unsigned dd = 0; dd < dbox.size(); ++dd) dbox_[dd] = dbox[dd];
-        vector<float> dforce_(dforce.size(), 0);
-        vector<float> dvirial_(dvirial.size(), 0);
-        vector<float> deatom_(dforce.size(), 0);
-        vector<float> dvatom_(dforce.size(), 0);
-        double dener_ = 0;
-        if (!atom->sp_flag) {
-          try {
-            deep_pot.compute(dener_, dforce_, dvirial_, deatom_, dvatom_,
-                             dcoord_, dtype, dbox_, nghost, lmp_list, ago,
-                             fparam, daparam);
-          } catch (deepmd_compat::deepmd_exception &e) {
-            error->all(FLERR, e.what());
-          }
-        } else {
-          vector<float> extend_dcoord_(extend_dcoord.size());
-          for (unsigned dd = 0; dd < extend_dcoord.size(); ++dd)
-            extend_dcoord_[dd] = extend_dcoord[dd];
-          dforce.resize((extend_inum + extend_nghost) * 3);
-          dforce_.resize((extend_inum + extend_nghost) * 3);
-          try {
-            deep_pot.compute(dener_, dforce_, dvirial_, deatom_, dvatom_,
-                             extend_dcoord_, extend_dtype, dbox_, extend_nghost,
-                             extend_lmp_list, ago, fparam, daparam);
-          } catch (deepmd_compat::deepmd_exception &e) {
-            error->all(FLERR, e.what());
-          }
-        }
-        for (unsigned dd = 0; dd < dforce.size(); ++dd)
-          dforce[dd] = dforce_[dd];
-        for (unsigned dd = 0; dd < dvirial.size(); ++dd)
-          dvirial[dd] = dvirial_[dd];
-        for (unsigned dd = 0; dd < deatom.size(); ++dd)
-          deatom[dd] = deatom_[dd];
-        for (unsigned dd = 0; dd < dvatom.size(); ++dd)
-          dvatom[dd] = dvatom_[dd];
-        dener = dener_;
-#endif
         if (eflag_atom) {
           for (int ii = 0; ii < nlocal; ++ii) eatom[ii] += deatom[ii];
         }
@@ -673,7 +566,6 @@ void PairDeepMD::compute(int eflag, int vflag) {
       vector<double> deatom(nall * 1, 0);
       vector<double> dvatom(nall * 9, 0);
       vector<vector<double>> all_virial;
-#ifdef HIGH_PREC
       vector<double> all_energy;
       vector<vector<double>> all_atom_energy;
       vector<vector<double>> all_atom_virial;
@@ -694,60 +586,6 @@ void PairDeepMD::compute(int eflag, int vflag) {
       dvirial = all_virial[0];
       deatom = all_atom_energy[0];
       dvatom = all_atom_virial[0];
-#else
-      vector<float> dcoord_(dcoord.size());
-      vector<float> dbox_(dbox.size());
-      for (unsigned dd = 0; dd < dcoord.size(); ++dd) dcoord_[dd] = dcoord[dd];
-      for (unsigned dd = 0; dd < dbox.size(); ++dd) dbox_[dd] = dbox[dd];
-      vector<float> dforce_(dforce.size(), 0);
-      vector<float> dvirial_(dvirial.size(), 0);
-      vector<float> deatom_(dforce.size(), 0);
-      vector<float> dvatom_(dforce.size(), 0);
-      double dener_ = 0;
-      vector<double> all_energy_;
-      vector<vector<float>> all_force_;
-      vector<vector<float>> all_virial_;
-      vector<vector<float>> all_atom_energy_;
-      vector<vector<float>> all_atom_virial_;
-      try {
-        deep_pot_model_devi.compute(all_energy_, all_force_, all_virial_,
-                                    all_atom_energy_, all_atom_virial_, dcoord_,
-                                    dtype, dbox_, nghost, lmp_list, ago, fparam,
-                                    daparam);
-      } catch (deepmd_compat::deepmd_exception &e) {
-        error->all(FLERR, e.what());
-      }
-      // deep_pot_model_devi.compute_avg (dener_, all_energy_);
-      // deep_pot_model_devi.compute_avg (dforce_, all_force_);
-      // deep_pot_model_devi.compute_avg (dvirial_, all_virial_);
-      // deep_pot_model_devi.compute_avg (deatom_, all_atom_energy_);
-      // deep_pot_model_devi.compute_avg (dvatom_, all_atom_virial_);
-      dener_ = all_energy_[0];
-      dforce_ = all_force_[0];
-      dvirial_ = all_virial_[0];
-      deatom_ = all_atom_energy_[0];
-      dvatom_ = all_atom_virial_[0];
-      dener = dener_;
-      for (unsigned dd = 0; dd < dforce.size(); ++dd) dforce[dd] = dforce_[dd];
-      for (unsigned dd = 0; dd < dvirial.size(); ++dd)
-        dvirial[dd] = dvirial_[dd];
-      for (unsigned dd = 0; dd < deatom.size(); ++dd) deatom[dd] = deatom_[dd];
-      for (unsigned dd = 0; dd < dvatom.size(); ++dd) dvatom[dd] = dvatom_[dd];
-      all_force.resize(all_force_.size());
-      for (unsigned ii = 0; ii < all_force_.size(); ++ii) {
-        all_force[ii].resize(all_force_[ii].size());
-        for (unsigned jj = 0; jj < all_force_[ii].size(); ++jj) {
-          all_force[ii][jj] = all_force_[ii][jj];
-        }
-      }
-      all_virial.resize(all_virial_.size());
-      for (unsigned ii = 0; ii < all_virial_.size(); ++ii) {
-        all_virial[ii].resize(all_virial_[ii].size());
-        for (unsigned jj = 0; jj < all_virial_[ii].size(); ++jj) {
-          all_virial[ii][jj] = all_virial_[ii][jj];
-        }
-      }
-#endif
       if (eflag_atom) {
         for (int ii = 0; ii < nlocal; ++ii) eatom[ii] += deatom[ii];
       }
@@ -784,28 +622,12 @@ void PairDeepMD::compute(int eflag, int vflag) {
 #endif
         }
         vector<double> std_f;
-#ifdef HIGH_PREC
         vector<double> tmp_avg_f;
         deep_pot_model_devi.compute_avg(tmp_avg_f, all_force);
         deep_pot_model_devi.compute_std_f(std_f, tmp_avg_f, all_force);
         if (out_rel == 1) {
           deep_pot_model_devi.compute_relative_std_f(std_f, tmp_avg_f, eps);
         }
-#else
-        vector<float> tmp_avg_f_, std_f_;
-        for (unsigned ii = 0; ii < all_force_.size(); ++ii) {
-          for (unsigned jj = 0; jj < all_force_[ii].size(); ++jj) {
-            all_force_[ii][jj] = all_force[ii][jj];
-          }
-        }
-        deep_pot_model_devi.compute_avg(tmp_avg_f_, all_force_);
-        deep_pot_model_devi.compute_std_f(std_f_, tmp_avg_f_, all_force_);
-        std_f.resize(std_f_.size());
-        if (out_rel == 1) {
-          deep_pot_model_devi.compute_relative_std_f(std_f_, tmp_avg_f_, eps);
-        }
-        for (int dd = 0; dd < std_f_.size(); ++dd) std_f[dd] = std_f_[dd];
-#endif
         double min = numeric_limits<double>::max(), max = 0, avg = 0;
         ana_st(max, min, avg, std_f, nlocal);
         int all_nlocal = 0;
@@ -825,13 +647,8 @@ void PairDeepMD::compute(int eflag, int vflag) {
         }
         MPI_Reduce(&send_v[0], &recv_v[0], 9 * numb_models, MPI_DOUBLE, MPI_SUM,
                    0, world);
-#ifdef HIGH_PREC
         std::vector<std::vector<double>> all_virial_1(numb_models);
         std::vector<double> avg_virial, std_virial;
-#else
-        std::vector<std::vector<float>> all_virial_1(numb_models);
-        std::vector<float> avg_virial, std_virial;
-#endif
         for (int kk = 0; kk < numb_models; ++kk) {
           all_virial_1[kk].resize(9);
           for (int ii = 0; ii < 9; ++ii) {
@@ -900,30 +717,11 @@ void PairDeepMD::compute(int eflag, int vflag) {
     }
   } else {
     if (numb_models == 1) {
-#ifdef HIGH_PREC
       try {
         deep_pot.compute(dener, dforce, dvirial, dcoord, dtype, dbox);
       } catch (deepmd_compat::deepmd_exception &e) {
         error->all(FLERR, e.what());
       }
-#else
-      vector<float> dcoord_(dcoord.size());
-      vector<float> dbox_(dbox.size());
-      for (unsigned dd = 0; dd < dcoord.size(); ++dd) dcoord_[dd] = dcoord[dd];
-      for (unsigned dd = 0; dd < dbox.size(); ++dd) dbox_[dd] = dbox[dd];
-      vector<float> dforce_(dforce.size(), 0);
-      vector<float> dvirial_(dvirial.size(), 0);
-      double dener_ = 0;
-      try {
-        deep_pot.compute(dener_, dforce_, dvirial_, dcoord_, dtype, dbox_);
-      } catch (deepmd_compat::deepmd_exception &e) {
-        error->all(FLERR, e.what());
-      }
-      for (unsigned dd = 0; dd < dforce.size(); ++dd) dforce[dd] = dforce_[dd];
-      for (unsigned dd = 0; dd < dvirial.size(); ++dd)
-        dvirial[dd] = dvirial_[dd];
-      dener = dener_;
-#endif
     } else {
       error->all(FLERR, "Serial version does not support model devi");
     }
@@ -1145,19 +943,11 @@ void PairDeepMD::settings(int narg, char **arg) {
       iarg += 1;
     } else if (string(arg[iarg]) == string("relative")) {
       out_rel = 1;
-#ifdef HIGH_PREC
       eps = atof(arg[iarg + 1]);
-#else
-      eps = strtof(arg[iarg + 1], NULL);
-#endif
       iarg += 2;
     } else if (string(arg[iarg]) == string("relative_v")) {
       out_rel_v = 1;
-#ifdef HIGH_PREC
       eps_v = atof(arg[iarg + 1]);
-#else
-      eps_v = strtof(arg[iarg + 1], NULL);
-#endif
       iarg += 2;
     } else if (string(arg[iarg]) == string("virtual_len")) {
       virtual_len.resize(numb_types_spin);
