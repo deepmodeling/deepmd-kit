@@ -63,6 +63,7 @@ class DeepEval:
             raise RuntimeError(
                 f"model in graph (version {self.model_version}) is incompatible"
                 f"with the model (version {MODEL_VERSION}) supported by the current code."
+                "See https://deepmd.rtfd.io/compatability/ for details."
             )
 
         # set default to False, as subclasses may not support

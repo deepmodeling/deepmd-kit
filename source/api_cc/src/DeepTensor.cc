@@ -32,6 +32,18 @@ void DeepTensor::init(const std::string &model,
   deepmd::check_status(NewSession(options, &session));
   deepmd::check_status(ReadBinaryProto(Env::Default(), model, graph_def));
   deepmd::check_status(session->Create(*graph_def));
+  try {
+    model_version = get_scalar<STRINGTYPE>("model_attr/model_version");
+  } catch (deepmd::tf_exception& e) {
+    // no model version defined in old models
+    model_version = "0.0";
+  }
+  if (!model_compatable(model_version)) {
+    throw deepmd::deepmd_exception("incompatable model: version " +
+                                   model_version + " in graph, but version " +
+                                   global_model_version + " supported "
+                                   "See https://deepmd.rtfd.io/compatability/ for details.");
+  }
   dtype = session_get_dtype(session, "descrpt_attr/rcut");
   if (dtype == tensorflow::DT_DOUBLE) {
     rcut = get_scalar<double>("descrpt_attr/rcut");
@@ -43,12 +55,6 @@ void DeepTensor::init(const std::string &model,
   odim = get_scalar<int>("model_attr/output_dim");
   get_vector<int>(sel_type, "model_attr/sel_type");
   model_type = get_scalar<STRINGTYPE>("model_attr/model_type");
-  model_version = get_scalar<STRINGTYPE>("model_attr/model_version");
-  if (!model_compatable(model_version)) {
-    throw deepmd::deepmd_exception("incompatable model: version " +
-                                   model_version + " in graph, but version " +
-                                   global_model_version + " supported ");
-  }
   inited = true;
 }
 

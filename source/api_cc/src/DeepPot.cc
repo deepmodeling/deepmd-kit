@@ -443,6 +443,18 @@ void DeepPot::init(const std::string& model,
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
   check_status(NewSession(options, &session));
   check_status(session->Create(*graph_def));
+  try {
+    model_version = get_scalar<STRINGTYPE>("model_attr/model_version");
+  } catch (deepmd::tf_exception& e) {
+    // no model version defined in old models
+    model_version = "0.0";
+  }
+  if (!model_compatable(model_version)) {
+    throw deepmd::deepmd_exception("incompatable model: version " +
+                                   model_version + " in graph, but version " +
+                                   global_model_version + " supported "
+                                   "See https://deepmd.rtfd.io/compatability/ for details.");
+  }
   dtype = session_get_dtype(session, "descrpt_attr/rcut");
   if (dtype == tensorflow::DT_DOUBLE) {
     rcut = get_scalar<double>("descrpt_attr/rcut");
@@ -461,17 +473,6 @@ void DeepPot::init(const std::string& model,
   if (dfparam < 0) dfparam = 0;
   if (daparam < 0) daparam = 0;
   model_type = get_scalar<STRINGTYPE>("model_attr/model_type");
-  try {
-    model_version = get_scalar<STRINGTYPE>("model_attr/model_version");
-  } catch (deepmd::tf_exception& e) {
-    // no model version defined in old models
-    model_version = "0.0";
-  }
-  if (!model_compatable(model_version)) {
-    throw deepmd::deepmd_exception("incompatable model: version " +
-                                   model_version + " in graph, but version " +
-                                   global_model_version + " supported ");
-  }
   inited = true;
 
   init_nbor = false;
@@ -1264,6 +1265,18 @@ void DeepPotModelDevi::init(const std::vector<std::string>& models,
     check_status(NewSession(options, &(sessions[ii])));
     check_status(sessions[ii]->Create(*graph_defs[ii]));
   }
+  try {
+    model_version = get_scalar<STRINGTYPE>("model_attr/model_version");
+  } catch (deepmd::tf_exception& e) {
+    // no model version defined in old models
+    model_version = "0.0";
+  }
+  if (!model_compatable(model_version)) {
+    throw deepmd::deepmd_exception("incompatable model: version " +
+                                   model_version + " in graph, but version " +
+                                   global_model_version + " supported. "
+                                   "See https://deepmd.rtfd.io/compatability/ for details.");
+  }
   dtype = session_get_dtype(sessions[0], "descrpt_attr/rcut");
   if (dtype == tensorflow::DT_DOUBLE) {
     rcut = get_scalar<double>("descrpt_attr/rcut");
@@ -1282,12 +1295,6 @@ void DeepPotModelDevi::init(const std::vector<std::string>& models,
   if (dfparam < 0) dfparam = 0;
   if (daparam < 0) daparam = 0;
   model_type = get_scalar<STRINGTYPE>("model_attr/model_type");
-  model_version = get_scalar<STRINGTYPE>("model_attr/model_version");
-  if (!model_compatable(model_version)) {
-    throw deepmd::deepmd_exception("incompatable model: version " +
-                                   model_version + " in graph, but version " +
-                                   global_model_version + " supported ");
-  }
   // rcut = get_rcut();
   // cell_size = rcut;
   // ntypes = get_ntypes();
