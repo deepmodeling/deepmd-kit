@@ -84,6 +84,7 @@ A full [document](doc/train/train-input-auto.rst) on options in the training inp
 - [Installation](doc/install/index.md)
     - [Easy install](doc/install/easy-install.md)
     - [Install from source code](doc/install/install-from-source.md)
+    - [Install from pre-compiled C library](doc/install/install-from-c-library.md)
     - [Install LAMMPS](doc/install/install-lammps.md)
     - [Install i-PI](doc/install/install-ipi.md)
     - [Install GROMACS](doc/install/install-gromacs.md)
