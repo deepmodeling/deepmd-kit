@@ -19,11 +19,7 @@
 
 using namespace LAMMPS_NS;
 
-#ifdef HIGH_PREC
 #define VALUETYPE double
-#else
-#define VALUETYPE float
-#endif
 
 /* ---------------------------------------------------------------------- */
 

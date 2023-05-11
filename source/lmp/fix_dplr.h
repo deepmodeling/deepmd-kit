@@ -31,11 +31,7 @@ namespace deepmd_compat = deepmd;
 namespace deepmd_compat = deepmd::hpp;
 #endif
 
-#ifdef HIGH_PREC
 #define FLOAT_PREC double
-#else
-#define FLOAT_PREC float
-#endif
 
 namespace LAMMPS_NS {
 class FixDPLR : public Fix {
