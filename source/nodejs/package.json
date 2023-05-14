@@ -5,11 +5,13 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
+    "prepublishOnly": "python prepublish.py",
     "install": "node-gyp rebuild"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/deepmodeling/deepmd-kit.git"
+    "url": "git+https://github.com/deepmodeling/deepmd-kit.git",
+    "directory": "source/nodejs"
   },
   "keywords": [
     "deepmd"
