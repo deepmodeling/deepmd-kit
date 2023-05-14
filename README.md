@@ -47,8 +47,11 @@ For more information, check the [documentation](https://deepmd.readthedocs.io/).
 
 ## License and credits
 The project DeePMD-kit is licensed under [GNU LGPLv3.0](./LICENSE).
-If you use this code in any future publications, please cite this using
-``Han Wang, Linfeng Zhang, Jiequn Han, and Weinan E. "DeePMD-kit: A deep learning package for many-body potential energy representation and molecular dynamics." Computer Physics Communications 228 (2018): 178-184.``
+If you use this code in any future publications, please cite the following publications for general purpose:
+- Han Wang, Linfeng Zhang, Jiequn Han, and Weinan E. "DeePMD-kit: A deep learning package for many-body potential energy representation and molecular dynamics." Computer Physics Communications 228 (2018): 178-184.
+- Jinzhe Zeng, Duo Zhang, Denghui Lu, Pinghui Mo, Zeyu Li, Yixiao Chen, Marián Rynik, Li'ang Huang, Ziyao Li, Shaochen Shi, Yingze Wang, Haotian Ye, Ping Tuo, Jiabin Yang, Ye Ding, Yifan Li, Davide Tisi, Qiyu Zeng, Han Bao, Yu Xia, Jiameng Huang, Koki Muraoka, Yibo Wang, Junhan Chang, Fengbo Yuan, Sigbjørn Løland Bore, Chun Cai, Yinnian Lin, Bo Wang, Jiayan Xu, Jia-Xin Zhu, Chenxing Luo, Yuzhi Zhang, Rhys E. A. Goodall, Wenshuo Liang, Anurag Kumar Singh, Sikai Yao, Jingchao Zhang, Renata Wentzcovitch, Jiequn Han, Jie Liu, Weile Jia, Darrin M. York, Weinan E, Roberto Car, Linfeng Zhang, Han Wang. "DeePMD-kit v2: A software package for Deep Potential models." [arXiv:2304.09409](https://doi.org/10.48550/arXiv.2304.09409).
+
+In addition, please follow [the bib file](CITATIONS.bib) to cite the methods you used.
 
 ## Deep Potential in a nutshell
 The goal of Deep Potential is to employ deep learning techniques and realize an inter-atomic potential energy model that is general, accurate, computationally efficient and scalable. The key component is to respect the extensive and symmetry-invariant properties of a potential energy model by assigning a local reference frame and a local environment to each atom. Each environment contains a finite number of atoms, whose local coordinates are arranged in a symmetry-preserving way. These local coordinates are then transformed, through a sub-network, to so-called *atomic energy*. Summing up all the atomic energies gives the potential energy of the system.
@@ -58,6 +61,8 @@ The initial proof of concept is in the [Deep Potential][1] paper, which employed
 Although highly efficient, the original Deep Potential model satisfies the extensive and symmetry-invariant properties of a potential energy model at the price of introducing discontinuities in the model. This has negligible influence on a trajectory from canonical sampling but might not be sufficient for calculations of dynamical and mechanical properties. These points motivated us to develop the Deep Potential-Smooth Edition ([DeepPot-SE][3]) model, which replaces the non-smooth local frame with a smooth and adaptive embedding network. DeepPot-SE shows great ability in modeling many kinds of systems that are of interest in the fields of physics, chemistry, biology, and materials science.
 
 In addition to building up potential energy models, DeePMD-kit can also be used to build up coarse-grained models. In these models, the quantity that we want to parameterize is the free energy, or the coarse-grained potential, of the coarse-grained particles. See the [DeePCG paper][4] for more details.
+
+See [our latest paper](https://doi.org/10.48550/arXiv.2304.09409) for details of all features.
 
 # Download and install
 
@@ -70,13 +75,7 @@ One may manually install DeePMD-kit by following the instructions on [installing
 
 # Use DeePMD-kit
 
-A quick start on using DeePMD-kit can be found as follows:
-
-- [Prepare data with dpdata](doc/data/dpdata.md)
-- [Training a model](doc/train/training.md)
-- [Freeze a model](doc/freeze/freeze.md)
-- [Test a model](doc/test/test.md)
-- [Run MD with LAMMPS](doc/third-party/lammps.md)
+A quick start on using DeePMD-kit can be found [here](doc/getting-started/quick_start.ipynb).
 
 A full [document](doc/train/train-input-auto.rst) on options in the training input script is available.
 
@@ -85,6 +84,7 @@ A full [document](doc/train/train-input-auto.rst) on options in the training inp
 - [Installation](doc/install/index.md)
     - [Easy install](doc/install/easy-install.md)
     - [Install from source code](doc/install/install-from-source.md)
+    - [Install from pre-compiled C library](doc/install/install-from-c-library.md)
     - [Install LAMMPS](doc/install/install-lammps.md)
     - [Install i-PI](doc/install/install-ipi.md)
     - [Install GROMACS](doc/install/install-gromacs.md)

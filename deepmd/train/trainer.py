@@ -35,16 +35,20 @@ from deepmd.env import (
 )
 from deepmd.fit import (
     DipoleFittingSeA,
+    DOSFitting,
     EnerFitting,
     PolarFittingSeA,
 )
 from deepmd.loss import (
+    DOSLoss,
     EnerDipoleLoss,
+    EnerSpinLoss,
     EnerStdLoss,
     TensorLoss,
 )
 from deepmd.model import (
     DipoleModel,
+    DOSModel,
     EnerModel,
     MultiModel,
     PolarModel,
@@ -66,6 +70,9 @@ from deepmd.utils.learning_rate import (
 )
 from deepmd.utils.sess import (
     run_sess,
+)
+from deepmd.utils.spin import (
+    Spin,
 )
 from deepmd.utils.type_embed import (
     TypeEmbedNet,
@@ -105,8 +112,19 @@ class DPTrainer:
             else j_must_have(model_param, "fitting_net_dict")
         )
         typeebd_param = model_param.get("type_embedding", None)
+        spin_param = model_param.get("spin", None)
         self.model_param = model_param
         self.descrpt_param = descrpt_param
+
+        # spin
+        if spin_param is not None:
+            self.spin = Spin(
+                use_spin=spin_param["use_spin"],
+                virtual_len=spin_param["virtual_len"],
+                spin_norm=spin_param["spin_norm"],
+            )
+        else:
+            self.spin = None
 
         # nvnmd
         self.nvnmd_param = jdata.get("nvnmd", {})
@@ -134,12 +152,17 @@ class DPTrainer:
                     hybrid_with_tebd = True
         if self.multi_task_mode:
             descrpt_param["multi_task"] = True
+        if descrpt_param["type"] in ["se_e2_a", "se_a", "se_e2_r", "se_r", "hybrid"]:
+            descrpt_param["spin"] = self.spin
         self.descrpt = Descriptor(**descrpt_param)
 
         # fitting net
         def fitting_net_init(fitting_type_, descrpt_type_, params):
             if fitting_type_ == "ener":
+                params["spin"] = self.spin
                 return EnerFitting(**params)
+            elif fitting_type_ == "dos":
+                return DOSFitting(**params)
             elif fitting_type_ == "dipole":
                 return DipoleFittingSeA(**params)
             elif fitting_type_ == "polar":
@@ -217,9 +240,20 @@ class DPTrainer:
                     model_param.get("smin_alpha"),
                     model_param.get("sw_rmin"),
                     model_param.get("sw_rmax"),
+                    self.spin,
                 )
             # elif fitting_type == 'wfc':
             #     self.model = WFCModel(model_param, self.descrpt, self.fitting)
+            elif self.fitting_type == "dos":
+                self.model = DOSModel(
+                    self.descrpt,
+                    self.fitting,
+                    self.typeebd,
+                    model_param.get("type_map"),
+                    model_param.get("data_stat_nbatch", 10),
+                    model_param.get("data_stat_protect", 1e-2),
+                )
+
             elif self.fitting_type == "dipole":
                 self.model = DipoleModel(
                     self.descrpt,
@@ -306,8 +340,15 @@ class DPTrainer:
                     loss = EnerStdLoss(**_loss_param)
                 elif _loss_type == "ener_dipole":
                     loss = EnerDipoleLoss(**_loss_param)
+                elif _loss_type == "ener_spin":
+                    loss = EnerSpinLoss(**_loss_param, use_spin=self.spin.use_spin)
                 else:
                     raise RuntimeError("unknown loss type")
+            elif _fitting_type == "dos":
+                _loss_param.pop("type", None)
+                _loss_param["starter_learning_rate"] = _lr.start_lr()
+                _loss_param["numb_dos"] = self.fitting.get_numb_dos()
+                loss = DOSLoss(**_loss_param)
             elif _fitting_type == "wfc":
                 loss = TensorLoss(
                     _loss_param,
@@ -391,15 +432,18 @@ class DPTrainer:
                 or self.mixed_prec["output_prec"] != "float32"
             ):
                 raise RuntimeError(
-                    "Unsupported mixed precision option [output_prec, compute_prec]: [%s, %s], "
-                    " Supported: [float32, float16/bfloat16], Please set mixed precision option correctly!"
-                    % (self.mixed_prec["output_prec"], self.mixed_prec["compute_prec"])
+                    "Unsupported mixed precision option [output_prec, compute_prec]: [{}, {}], "
+                    " Supported: [float32, float16/bfloat16], Please set mixed precision option correctly!".format(
+                        self.mixed_prec["output_prec"], self.mixed_prec["compute_prec"]
+                    )
                 )
         # self.sys_probs = tr_data['sys_probs']
         # self.auto_prob_style = tr_data['auto_prob']
         self.useBN = False
         if not self.multi_task_mode:
-            if self.fitting_type == "ener" and self.fitting.get_numb_fparam() > 0:
+            if (
+                self.fitting_type == "ener" or self.fitting_type == "dos"
+            ) and self.fitting.get_numb_fparam() > 0:
                 self.numb_fparam = self.fitting.get_numb_fparam()
             else:
                 self.numb_fparam = 0
@@ -1140,7 +1184,7 @@ class DPTrainer:
                 prop_fmt = "   %11s"
                 for k in train_results.keys():
                     print_str += prop_fmt % (k + "_trn")
-            print_str += "   %8s\n" % (k + "_lr")
+            print_str += "   %8s\n" % "lr"
         else:
             for fitting_key in train_results:
                 if valid_results[fitting_key] is not None:
@@ -1262,8 +1306,7 @@ class DPTrainer:
         except FileNotFoundError as e:
             # throw runtime error if there's no frozen model
             raise RuntimeError(
-                "The input frozen model %s (%s) does not exist! Please check the path of the frozen model. "
-                % (
+                "The input frozen model {} ({}) does not exist! Please check the path of the frozen model. ".format(
                     self.run_opt.init_frz_model,
                     os.path.abspath(self.run_opt.init_frz_model),
                 )
@@ -1319,9 +1362,10 @@ class DPTrainer:
         except FileNotFoundError as e:
             # throw runtime error if there's no frozen model
             raise RuntimeError(
-                "The input frozen pretrained model %s (%s) does not exist! "
-                "Please check the path of the frozen pretrained model. "
-                % (self.run_opt.finetune, os.path.abspath(self.run_opt.finetune))
+                "The input frozen pretrained model {} ({}) does not exist! "
+                "Please check the path of the frozen pretrained model. ".format(
+                    self.run_opt.finetune, os.path.abspath(self.run_opt.finetune)
+                )
             ) from e
         # get the model type from the frozen model(self.run_opt.finetune)
         try:

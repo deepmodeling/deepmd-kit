@@ -51,6 +51,8 @@ WELCOME = (  # noqa
 CITATION = (
     "Please read and cite:",
     "Wang, Zhang, Han and E, Comput.Phys.Comm. 228, 178-184 (2018)",
+    "Zeng et al, arXiv:2304.09409",
+    "See https://deepmd.rtfd.io/credits/ for details.",
 )
 
 _sep = "\n                      "

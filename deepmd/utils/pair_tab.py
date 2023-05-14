@@ -11,7 +11,9 @@ from scipy.interpolate import (
 
 
 class PairTab:
-    """Parameters
+    """Pairwise tabulated potential.
+
+    Parameters
     ----------
     filename
             File name for the short-range tabulated potential.

@@ -56,6 +56,8 @@ class DeepmdData:
         """Constructor."""
         root = DPPath(sys_path)
         self.dirs = root.glob(set_prefix + ".*")
+        if not len(self.dirs):
+            raise FileNotFoundError(f"No {set_prefix}.* is found in {sys_path}")
         self.dirs.sort()
         # check mix_type format
         error_format_msg = (
@@ -258,7 +260,7 @@ class DeepmdData:
             self.set_count += 1
             set_size = self.batch_set["coord"].shape[0]
             if self.modifier is not None:
-                self.modifier.modify_data(self.batch_set)
+                self.modifier.modify_data(self.batch_set, self)
         iterator_1 = self.iterator + batch_size
         if iterator_1 >= set_size:
             iterator_1 = set_size
@@ -289,7 +291,7 @@ class DeepmdData:
             idx = np.arange(ntests_)
         ret = self._get_subdata(self.test_set, idx=idx)
         if self.modifier is not None:
-            self.modifier.modify_data(ret)
+            self.modifier.modify_data(ret, self)
         return ret
 
     def get_ntypes(self) -> int:

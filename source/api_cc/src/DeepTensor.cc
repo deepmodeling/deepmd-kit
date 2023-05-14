@@ -32,6 +32,19 @@ void DeepTensor::init(const std::string &model,
   deepmd::check_status(NewSession(options, &session));
   deepmd::check_status(ReadBinaryProto(Env::Default(), model, graph_def));
   deepmd::check_status(session->Create(*graph_def));
+  try {
+    model_version = get_scalar<STRINGTYPE>("model_attr/model_version");
+  } catch (deepmd::tf_exception &e) {
+    // no model version defined in old models
+    model_version = "0.0";
+  }
+  if (!model_compatable(model_version)) {
+    throw deepmd::deepmd_exception(
+        "incompatable model: version " + model_version +
+        " in graph, but version " + global_model_version +
+        " supported "
+        "See https://deepmd.rtfd.io/compatability/ for details.");
+  }
   dtype = session_get_dtype(session, "descrpt_attr/rcut");
   if (dtype == tensorflow::DT_DOUBLE) {
     rcut = get_scalar<double>("descrpt_attr/rcut");
@@ -43,12 +56,6 @@ void DeepTensor::init(const std::string &model,
   odim = get_scalar<int>("model_attr/output_dim");
   get_vector<int>(sel_type, "model_attr/sel_type");
   model_type = get_scalar<STRINGTYPE>("model_attr/model_type");
-  model_version = get_scalar<STRINGTYPE>("model_attr/model_version");
-  if (!model_compatable(model_version)) {
-    throw deepmd::deepmd_exception("incompatable model: version " +
-                                   model_version + " in graph, but version " +
-                                   global_model_version + " supported ");
-  }
   inited = true;
 }
 
@@ -307,17 +314,13 @@ void DeepTensor::compute(std::vector<VALUETYPE> &dtensor_,
                          const std::vector<VALUETYPE> &dcoord_,
                          const std::vector<int> &datype_,
                          const std::vector<VALUETYPE> &dbox) {
-  std::vector<VALUETYPE> dcoord;
+  int nall = datype_.size();
+  std::vector<VALUETYPE> dcoord, aparam, aparam_;
   std::vector<int> datype, fwd_map, bkw_map;
-  int nghost_real;
-  select_real_atoms(fwd_map, bkw_map, nghost_real, dcoord_, datype_, 0, ntypes);
-  assert(nghost_real == 0);
-  // resize to nall_real
-  dcoord.resize(bkw_map.size() * 3);
-  datype.resize(bkw_map.size());
-  // fwd map
-  select_map<VALUETYPE>(dcoord, dcoord_, fwd_map, 3);
-  select_map<int>(datype, datype_, fwd_map, 1);
+  int nghost_real, nall_real, nloc_real;
+  select_real_atoms_coord(dcoord, datype, aparam, nghost_real, fwd_map, bkw_map,
+                          nall_real, nloc_real, dcoord_, datype_, aparam_, 0,
+                          ntypes, 1, 0, nall);
   compute_inner(dtensor_, dcoord, datype, dbox);
 }
 
@@ -338,17 +341,13 @@ void DeepTensor::compute(std::vector<VALUETYPE> &dtensor_,
                          const std::vector<VALUETYPE> &dbox,
                          const int nghost,
                          const InputNlist &lmp_list) {
-  std::vector<VALUETYPE> dcoord;
+  int nall = datype_.size();
+  std::vector<VALUETYPE> dcoord, dforce, datom_virial, aparam, aparam_;
   std::vector<int> datype, fwd_map, bkw_map;
-  int nghost_real;
-  select_real_atoms(fwd_map, bkw_map, nghost_real, dcoord_, datype_, nghost,
-                    ntypes);
-  // resize to nall_real
-  dcoord.resize(bkw_map.size() * 3);
-  datype.resize(bkw_map.size());
-  // fwd map
-  select_map<VALUETYPE>(dcoord, dcoord_, fwd_map, 3);
-  select_map<int>(datype, datype_, fwd_map, 1);
+  int nghost_real, nall_real, nloc_real;
+  select_real_atoms_coord(dcoord, datype, aparam, nghost_real, fwd_map, bkw_map,
+                          nall_real, nloc_real, dcoord_, datype_, aparam_,
+                          nghost, ntypes, 1, 0, nall);
   // internal nlist
   NeighborListData nlist_data;
   nlist_data.copy_from_nlist(lmp_list);
@@ -439,10 +438,13 @@ void DeepTensor::compute(std::vector<VALUETYPE> &dglobal_tensor_,
                          const std::vector<VALUETYPE> &dcoord_,
                          const std::vector<int> &datype_,
                          const std::vector<VALUETYPE> &dbox) {
-  std::vector<VALUETYPE> dcoord, dforce, datom_virial;
+  int nall = datype_.size();
+  std::vector<VALUETYPE> dcoord, dforce, datom_virial, aparam, aparam_;
   std::vector<int> datype, fwd_map, bkw_map;
-  int nghost_real;
-  select_real_atoms(fwd_map, bkw_map, nghost_real, dcoord_, datype_, 0, ntypes);
+  int nghost_real, nall_real, nloc_real;
+  select_real_atoms_coord(dcoord, datype, aparam, nghost_real, fwd_map, bkw_map,
+                          nall_real, nloc_real, dcoord_, datype_, aparam_, 0,
+                          ntypes, 1, 0, nall);
   assert(nghost_real == 0);
   // resize to nall_real
   dcoord.resize(bkw_map.size() * 3);
@@ -495,17 +497,13 @@ void DeepTensor::compute(std::vector<VALUETYPE> &dglobal_tensor_,
                          const std::vector<VALUETYPE> &dbox,
                          const int nghost,
                          const InputNlist &lmp_list) {
-  std::vector<VALUETYPE> dcoord, dforce, datom_virial;
+  int nall = datype_.size();
+  std::vector<VALUETYPE> dcoord, dforce, datom_virial, aparam, aparam_;
   std::vector<int> datype, fwd_map, bkw_map;
-  int nghost_real;
-  select_real_atoms(fwd_map, bkw_map, nghost_real, dcoord_, datype_, nghost,
-                    ntypes);
-  // resize to nall_real
-  dcoord.resize(bkw_map.size() * 3);
-  datype.resize(bkw_map.size());
-  // fwd map
-  select_map<VALUETYPE>(dcoord, dcoord_, fwd_map, 3);
-  select_map<int>(datype, datype_, fwd_map, 1);
+  int nghost_real, nall_real, nloc_real;
+  select_real_atoms_coord(dcoord, datype, aparam, nghost_real, fwd_map, bkw_map,
+                          nall_real, nloc_real, dcoord_, datype_, aparam_,
+                          nghost, ntypes, 1, 0, nall);
   // internal nlist
   NeighborListData nlist_data;
   nlist_data.copy_from_nlist(lmp_list);

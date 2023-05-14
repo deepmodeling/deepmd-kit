@@ -46,12 +46,27 @@ extern DP_DeepPot* DP_NewDeepPot(const char* c_model);
  *
  * @param c_model The name of the frozen model file.
  * @param gpu_rank The rank of the GPU.
- * @param c_file_content The content of the model file.
+ * @param c_file_content Broken implementation. Use
+ * DP_NewDeepPotWithParam2 instead.
  * @return DP_DeepPot* A pointer to the deep potential.
  */
 extern DP_DeepPot* DP_NewDeepPotWithParam(const char* c_model,
                                           const int gpu_rank,
                                           const char* c_file_content);
+
+/**
+ * @brief DP constructor with initialization.
+ * @version 2
+ * @param c_model The name of the frozen model file.
+ * @param gpu_rank The rank of the GPU.
+ * @param c_file_content The content of the model file.
+ * @param size_file_content The size of the model file.
+ * @return DP_DeepPot* A pointer to the deep potential.
+ */
+extern DP_DeepPot* DP_NewDeepPotWithParam2(const char* c_model,
+                                           const int gpu_rank,
+                                           const char* c_file_content,
+                                           const int size_file_content);
 
 /**
  * @brief Evaluate the energy, force and virial by using a DP. (double version)
@@ -454,6 +469,25 @@ extern DP_DeepPotModelDevi* DP_NewDeepPotModelDevi(const char** c_models,
                                                    int n_models);
 
 /**
+ * @brief DP model deviation constructor with initialization.
+ *
+ * @param[in] c_models The array of the name of the frozen model file.
+ * @param[in] nmodels The number of models.
+ * @param[in] gpu_rank The rank of the GPU.
+ * @param[in] c_file_contents The contents of the model file.
+ * @param[in] n_file_contents The number of the contents of the model file.
+ * @param[in] size_file_contents The sizes of the contents of the model file.
+ * @return DP_DeepPotModelDevi* A pointer to the deep potential model deviation.
+ */
+extern DP_DeepPotModelDevi* DP_NewDeepPotModelDeviWithParam(
+    const char** c_model,
+    const int n_models,
+    const int gpu_rank,
+    const char** c_file_contents,
+    const int n_file_contents,
+    const int* size_file_contents);
+
+/**
  * @brief Evaluate the energy, force and virial by using a DP model deviation
  *with neighbor list. (double version)
  * @param[in] dp The DP model deviation to use.
@@ -528,6 +562,97 @@ extern void DP_DeepPotModelDeviComputeNListf(DP_DeepPotModelDevi* dp,
                                              float* atomic_virial);
 
 /**
+ * @brief Evaluate the energy, force and virial by using a DP model deviation
+ *with neighbor list. (double version)
+ * @version 2
+ * @param[in] dp The DP model deviation to use.
+ * @param[in] nframes The number of frames. Only support 1 for now.
+ * @param[in] natoms The number of atoms.
+ * @param[in] coord The coordinates of atoms. The array should be of size natoms
+ *x 3.
+ * @param[in] atype The atom types. The array should contain natoms ints.
+ * @param[in] box The cell of the region. The array should be of size 9. Pass
+ *NULL if pbc is not used.
+ * @param[in] nghost The number of ghost atoms.
+ * @param[in] nlist The neighbor list.
+ * @param[in] ago Update the internal neighbour list if ago is 0.
+ * @param[in] fparam The frame parameters. The array can be of size nframes x
+ *dim_fparam.
+ * @param[in] aparam The atom parameters. The array can be of size nframes x
+ *natoms x dim_aparam.
+ * @param[out] energy Output energy.
+ * @param[out] force Output force. The array should be of size natoms x 3.
+ * @param[out] virial Output virial. The array should be of size 9.
+ * @param[out] atomic_energy Output atomic energy. The array should be of size
+ *natoms.
+ * @param[out] atomic_virial Output atomic virial. The array should be of size
+ *natoms x 9.
+ * @warning The output arrays should be allocated before calling this function.
+ *Pass NULL if not required.
+ **/
+void DP_DeepPotModelDeviComputeNList2(DP_DeepPotModelDevi* dp,
+                                      const int nframes,
+                                      const int natoms,
+                                      const double* coord,
+                                      const int* atype,
+                                      const double* cell,
+                                      const int nghost,
+                                      const DP_Nlist* nlist,
+                                      const int ago,
+                                      const double* fparam,
+                                      const double* aparam,
+                                      double* energy,
+                                      double* force,
+                                      double* virial,
+                                      double* atomic_energy,
+                                      double* atomic_virial);
+/**
+ * @brief Evaluate the energy, force and virial by using a DP model deviation
+ *with neighbor list. (float version)
+ * @version 2
+ * @param[in] dp The DP model deviation to use.
+ * @param[in] nframes The number of frames. Only support 1 for now.
+ * @param[in] natoms The number of atoms.
+ * @param[in] coord The coordinates of atoms. The array should be of size natoms
+ *x 3.
+ * @param[in] atype The atom types. The array should contain natoms ints.
+ * @param[in] box The cell of the region. The array should be of size 9. Pass
+ *NULL if pbc is not used.
+ * @param[in] nghost The number of ghost atoms.
+ * @param[in] nlist The neighbor list.
+ * @param[in] ago Update the internal neighbour list if ago is 0.
+ * @param[in] fparam The frame parameters. The array can be of size nframes x
+ *dim_fparam.
+ * @param[in] aparam The atom parameters. The array can be of size nframes x
+ *natoms x dim_aparam.
+ * @param[out] energy Output energy.
+ * @param[out] force Output force. The array should be of size natoms x 3.
+ * @param[out] virial Output virial. The array should be of size 9.
+ * @param[out] atomic_energy Output atomic energy. The array should be of size
+ *natoms.
+ * @param[out] atomic_virial Output atomic virial. The array should be of size
+ *natoms x 9.
+ * @warning The output arrays should be allocated before calling this function.
+ *Pass NULL if not required.
+ **/
+void DP_DeepPotModelDeviComputeNListf2(DP_DeepPotModelDevi* dp,
+                                       const int nframes,
+                                       const int natoms,
+                                       const float* coord,
+                                       const int* atype,
+                                       const float* cell,
+                                       const int nghost,
+                                       const DP_Nlist* nlist,
+                                       const int ago,
+                                       const float* fparam,
+                                       const float* aparam,
+                                       double* energy,
+                                       float* force,
+                                       float* virial,
+                                       float* atomic_energy,
+                                       float* atomic_virial);
+
+/**
  * @brief Get the type map of a DP model deviation.
  * @param[in] dp The DP model deviation to use.
  * @return The cutoff radius.
@@ -535,11 +660,18 @@ extern void DP_DeepPotModelDeviComputeNListf(DP_DeepPotModelDevi* dp,
 double DP_DeepPotModelDeviGetCutoff(DP_DeepPotModelDevi* dp);
 
 /**
- * @brief Get the type map of a DP model deviation.
+ * @brief Get the number of types of a DP model deviation.
  * @param[in] dp The DP model deviation to use.
  * @return The number of types of the DP model deviation.
  */
 int DP_DeepPotModelDeviGetNumbTypes(DP_DeepPotModelDevi* dp);
+
+/**
+ * @brief Get the number of types with spin of a DP model deviation.
+ * @param[in] dp The DP model deviation to use.
+ * @return The number of types with spin of the DP model deviation.
+ */
+int DP_DeepPotModelDeviGetNumbTypesSpin(DP_DeepPotModelDevi* dp);
 
 /**
  * @brief Check if there is any exceptions throw.
@@ -557,11 +689,18 @@ const char* DP_DeepPotModelDeviCheckOK(DP_DeepPotModelDevi* dp);
 double DP_DeepPotGetCutoff(DP_DeepPot* dp);
 
 /**
- * @brief Get the type map of a DP.
+ * @brief Get the number of types of a DP.
  * @param[in] dp The DP to use.
  * @return The number of types of the DP.
  */
 int DP_DeepPotGetNumbTypes(DP_DeepPot* dp);
+
+/**
+ * @brief Get the number of types with spin of a DP.
+ * @param[in] dp The DP to use.
+ * @return The number of types with spin of the DP.
+ */
+int DP_DeepPotGetNumbTypesSpin(DP_DeepPot* dp);
 
 /**
  * @brief Get the dimension of frame parameters of a DP.
@@ -583,6 +722,19 @@ int DP_DeepPotGetDimAParam(DP_DeepPot* dp);
  * @return The type map of the DP.
  */
 const char* DP_DeepPotGetTypeMap(DP_DeepPot* dp);
+
+/**
+ * @brief Get the dimension of frame parameters of a DP Model Deviation.
+ * @param[in] dp The DP Model Deviation to use.
+ * @return The dimension of frame parameters of the DP Model Deviation.
+ */
+int DP_DeepPotModelDeviGetDimFParam(DP_DeepPotModelDevi* dp);
+/**
+ * @brief Get the dimension of atomic parameters of a DP Model Deviation.
+ * @param[in] dp The DP Model Deviation to use.
+ * @return The dimension of atomic parameters of the DP Model Deviation.
+ */
+int DP_DeepPotModelDeviGetDimAParam(DP_DeepPotModelDevi* dp);
 
 /**
  * @brief The deep tensor.
@@ -1039,6 +1191,54 @@ extern void DP_PrintSummary(const char* c_pre);
  * @return const char* The char array.
  */
 const char* DP_ReadFileToChar(const char* c_model);
+
+/**
+ * @brief Read a file to a char array. This version can handle string with '\0'
+ * @version 2
+ * @param[in] c_model The name of the file.
+ * @param[out] size The size of the char array.
+ * @return const char* The char array.
+ */
+const char* DP_ReadFileToChar2(const char* c_model, int* size);
+
+/**
+ * @brief Get forward and backward map of selected atoms by
+ * atom types.
+ * @param[in] natoms The number of atoms.
+ * @param[in] atype The atom types of all atoms.
+ * @param[in] nghost The number of ghost atoms.
+ * @param[in] nsel_type The number of selected atom types.
+ * @param[in] sel_type The selected atom types.
+ * @param[out] fwd_map The forward map with size natoms.
+ * @param[out] nreal The number of selected real atoms.
+ * @param[out] bkw_map The backward map with size nreal.
+ * @param[out] nghost_real The number of selected ghost atoms.
+ */
+void DP_SelectByType(const int natoms,
+                     const int* atype,
+                     const int nghost,
+                     const int nsel_type,
+                     const int* sel_type,
+                     int* fwd_map,
+                     int* nreal,
+                     int* bkw_map,
+                     int* nghost_real);
+
+/**
+ * @brief Apply the given map to a vector. Assume nframes is 1.
+ * @param[in] in The input vector.
+ * @param[in] fwd_map The map.
+ * @param[in] stride The stride of the input vector.
+ * @param[in] nall1 The number of atoms in the input vector.
+ * @param[out] nall2 The number of atoms in the output vector.
+ * @param[out] out The output vector.
+ */
+void DP_SelectMapInt(const int* in,
+                     const int* fwd_map,
+                     const int stride,
+                     const int nall1,
+                     const int nall2,
+                     int* out);
 
 #ifdef __cplusplus
 } /* end extern "C" */
