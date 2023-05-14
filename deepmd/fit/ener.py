@@ -6,6 +6,7 @@ from typing import (
 
 import numpy as np
 
+import deepmd
 from deepmd.common import (
     add_data_requirement,
     cast_precision,
@@ -132,12 +133,15 @@ class EnerFitting(Fitting):
         uniform_seed: bool = False,
         layer_name: Optional[List[Optional[str]]] = None,
         use_aparam_as_mask: bool = False,
+        compress: bool = False
     ) -> None:
         """Constructor."""
         # model param
         self.ntypes = descrpt.get_ntypes()
         self.dim_descrpt = descrpt.get_dim_out()
+        self.descrpt = descrpt
         self.use_aparam_as_mask = use_aparam_as_mask
+        self.compress = compress
         # args = ()\
         #        .add('numb_fparam',      int,    default = 0)\
         #        .add('numb_aparam',      int,    default = 0)\
@@ -464,7 +468,10 @@ class EnerFitting(Fitting):
         if input_dict is None:
             input_dict = {}
         bias_atom_e = self.bias_atom_e
-        type_embedding = input_dict.get("type_embedding", None)
+        if self.compress and isinstance(self.descrpt, deepmd.descriptor.DescrptSeAtten):
+            type_embedding = self.compress_type_embedding
+        else:
+            type_embedding = input_dict.get("type_embedding", None)
         atype = input_dict.get("atype", None)
         if self.numb_fparam > 0:
             if self.fparam_avg is None:
@@ -684,6 +691,9 @@ class EnerFitting(Fitting):
         self.fitting_net_variables = get_fitting_net_variables_from_graph_def(
             graph_def, suffix=suffix
         )
+        if isinstance(self.descrpt, deepmd.descriptor.DescrptSeAtten):
+            type_embedding = get_tensor_by_name_from_graph(graph, 't_typeebd')
+            self.compress_type_embedding = tf.convert_to_tensor(type_embedding)
         if self.layer_name is not None:
             # shared variables have no suffix
             shared_variables = get_fitting_net_variables_from_graph_def(
