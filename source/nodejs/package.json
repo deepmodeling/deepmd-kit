@@ -20,5 +20,8 @@
   "bugs": {
     "url": "https://github.com/deepmodeling/deepmd-kit/issues"
   },
-  "homepage": "https://github.com/deepmodeling/deepmd-kit#readme"
+  "homepage": "https://github.com/deepmodeling/deepmd-kit#readme",
+  "devDependencies": {
+    "node-gyp": "^9.3.1"
+  }
 }
