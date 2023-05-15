@@ -7,3 +7,4 @@
 - [Install i-PI](install-ipi.md)
 - [Install GROMACS](install-gromacs.md)
 - [Building conda packages](build-conda.md)
+- [Install Node.js interface](install-nodejs.md)

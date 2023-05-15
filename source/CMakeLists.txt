@@ -255,6 +255,9 @@ if(BUILD_CPP_IF)
       add_subdirectory(gmx/)
     endif()
   endif()
+  if(BUILD_NODEJS_IF)
+    add_subdirectory(nodejs/)
+  endif()
 endif(BUILD_CPP_IF)
 
 # uninstall target

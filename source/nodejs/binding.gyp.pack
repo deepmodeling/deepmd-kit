@@ -1,0 +1,17 @@
+{
+  "targets": [
+    {
+      "target_name": "deepmd-kit",
+      "sources": [ "deepmdJAVASCRIPT_wrap.cxx" ],
+      "cflags_cc!" : [ "-fno-exceptions" ],
+      "include_dirs":[
+        "./libdeepmd_c/include/deepmd"
+      ],
+      "libraries": [
+        "-ldeepmd_c",
+        "-L<(module_root_dir)/libdeepmd_c/lib",
+        "-Wl,-rpath='$$ORIGIN'/../../libdeepmd_c/lib"
+      ]
+    }
+  ]
+}
