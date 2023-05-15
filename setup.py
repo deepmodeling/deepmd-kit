@@ -129,7 +129,7 @@ setup(
             "sphinxcontrib-bibtex",
         ],
         "lmp": [
-            "lammps-manylinux-2-28~=2022.6.23.4.0; platform_system=='Linux'",
+            "lammps~=2022.6.23.4.0; platform_system=='Linux'",
             "lammps~=2022.6.23.4.0; platform_system!='Linux'",
             *find_libpython_requires,
         ],

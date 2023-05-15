@@ -16,6 +16,7 @@ if(DP_USING_C_API)
   # SimulationRegion.h
   target_link_libraries(${ipiname} PRIVATE ${LIB_DEEPMD_C} ${LIB_DEEPMD})
   target_precompile_headers(${ipiname} PRIVATE [["deepmd.hpp"]])
+  remove_definitions(-D_GLIBCXX_USE_CXX11_ABI=${OP_CXX_ABI})
 else()
   target_link_libraries(${ipiname} PRIVATE ${LIB_DEEPMD_CC})
   target_compile_definitions(${ipiname} PRIVATE "DP_USE_CXX_API")
