@@ -373,16 +373,6 @@ class DescrptSeAtten(DescrptSeA):
         )
 
         self.layer_size = self.table.layer_size
-        # type_embedding = get_tensor_by_name_from_graph(graph, 't_typeebd')
-        # type_embedding = type_embedding.astype(self.filter_np_precision)
-        # type_embedding_shape = type_embedding.shape
-        # type_embedding_nei = np.tile(np.reshape(type_embedding, [1, type_embedding_shape[0], -1]),
-        #                                 [type_embedding_shape[0], 1, 1])  # (ntypes) * ntypes * Y
-        # type_embedding_center = np.tile(np.reshape(type_embedding, [type_embedding_shape[0], 1, -1]),
-        #                                 [1, type_embedding_shape[0], 1])  # ntypes * (ntypes) * Y
-        # two_side_type_embedding = np.concatenate([type_embedding_nei, type_embedding_center], -1) # ntypes * ntypes * (Y+Y)
-        # two_side_type_embedding = np.reshape(two_side_type_embedding, [-1, two_side_type_embedding.shape[-1]])
-        # self.final_type_embedding = two_side_type_embedding
         self.final_type_embedding = self._get_two_side_type_embedding(graph)
         self.matrix = self._get_two_side_embedding_net_variable(graph_def, 'matrix')
         self.bias = self._get_two_side_embedding_net_variable(graph_def, 'bias')
@@ -745,55 +735,6 @@ class DescrptSeAtten(DescrptSeA):
                 sysa2.append(suma2)
         return sysr, sysr2, sysa, sysa2, sysn
 
-    def _lookup_type_embedding(
-        self,
-        xyz_scatter,
-        natype,
-        type_embedding,
-    ):
-        """Concatenate `type_embedding` of neighbors and `xyz_scatter`.
-        If not self.type_one_side, concatenate `type_embedding` of center atoms as well.
-
-        Parameters
-        ----------
-        xyz_scatter:
-            shape is [nframes*natoms[0]*self.nnei, 1]
-        natype:
-            neighbor atom type
-        type_embedding:
-            shape is [self.ntypes, Y] where Y=jdata['type_embedding']['neuron'][-1]
-
-        Returns
-        -------
-        embedding:
-            environment of each atom represented by embedding.
-        """
-        te_out_dim = type_embedding.get_shape().as_list()[-1]
-        self.test_type_embedding = type_embedding
-        self.test_nei_embed = tf.nn.embedding_lookup(
-            type_embedding, self.nei_type_vec
-        )  # shape is [self.nnei, 1+te_out_dim]
-        # nei_embed = tf.tile(nei_embed, (nframes * natoms[0], 1))  # shape is [nframes*natoms[0]*self.nnei, te_out_dim]
-        nei_embed = tf.reshape(self.test_nei_embed, [-1, te_out_dim])
-        self.embedding_input = tf.concat(
-            [xyz_scatter, nei_embed], 1
-        )  # shape is [nframes*natoms[0]*self.nnei, 1+te_out_dim]
-        if not self.type_one_side:
-            self.atm_embed = tf.nn.embedding_lookup(
-                type_embedding, natype
-            )  # shape is [nframes*natoms[0], te_out_dim]
-            self.atm_embed = tf.tile(
-                self.atm_embed, [1, self.nnei]
-            )  # shape is [nframes*natoms[0], self.nnei*te_out_dim]
-            self.atm_embed = tf.reshape(
-                self.atm_embed, [-1, te_out_dim]
-            )  # shape is [nframes*natoms[0]*self.nnei, te_out_dim]
-            self.embedding_input_2 = tf.concat(
-                [self.embedding_input, self.atm_embed], 1
-            )  # shape is [nframes*natoms[0]*self.nnei, 1+te_out_dim+te_out_dim]
-            return self.embedding_input_2
-        return self.embedding_input
-
     def _feedforward(self, input_xyz, d_in, d_mid):
         residual = input_xyz
         input_xyz = tf.nn.relu(
@@ -1015,10 +956,7 @@ class DescrptSeAtten(DescrptSeA):
                     ]
 
                 type_embedding_shape = type_embedding.get_shape().as_list()
-                #index_of_two_side = self.nei_type_vec * self.ntypes + tf.tile(atype, [1, self.nnei])
-                tmpres1 = self.nei_type_vec * type_embedding_shape[0]
-                tmpres2 = tf.tile(atype, [self.nnei])
-                index_of_two_side = tmpres1 + tmpres2
+                index_of_two_side = self.nei_type_vec * type_embedding_shape[0] + tf.tile(atype, [self.nnei])
 
                 if self.compress:
                     two_embd = tf.nn.embedding_lookup(self.two_embd, index_of_two_side)
@@ -1045,18 +983,10 @@ class DescrptSeAtten(DescrptSeA):
                         initial_variables=self.embedding_net_variables,
                         mixed_prec=self.mixed_prec)
                     two_embd = tf.nn.embedding_lookup(embedding_of_two_side_type_embedding, index_of_two_side)
-                # two_embd = tf.nn.embedding_lookup(embedding_of_two_side_type_embedding, index_of_two_side)
 
                 if not self.compress:
                     xyz_scatter = xyz_scatter * two_embd + two_embd
                 else:
-                    # return op_module.tabulate_fusion_se_a(
-                    #     tf.cast(self.table.data[net], self.filter_precision),
-                    #     info,
-                    #     xyz_scatter,
-                    #     tf.reshape(inputs_i, [natom, shape_i[1] // 4, 4]),
-                    #     last_layer_size=outputs_size[-1],
-                    # )
                     return op_module.tabulate_fusion_se_atten(
                         tf.cast(self.table.data[net], self.filter_precision),
                         info,
