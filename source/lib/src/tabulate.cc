@@ -502,14 +502,12 @@ void deepmd::tabulate_fusion_se_atten_grad_grad_cpu(FPTYPE* dz_dy,
         FPTYPE a5 = table[table_idx * last_layer_size * 6 + 6 * kk + 5];
         FPTYPE var =
             a0 + (a1 + (a2 + (a3 + (a4 + a5 * xx) * xx) * xx) * xx) * xx;
-        FPTYPE t = two_embed[ii * nnei*last_layer_size + jj * last_layer_size + kk];
         FPTYPE var_grad =
             a1 +
             ((FPTYPE)2. * a2 +
              ((FPTYPE)3. * a3 + ((FPTYPE)4. * a4 + (FPTYPE)5. * a5 * xx) * xx) *
                  xx) *
                 xx;
-        var_grad = var_grad * t;
         if (unloop) {
           dz_dy[ii * last_layer_size * 4 + 0 * last_layer_size + kk] +=
               (nnei - jj) * (var * hh[0] + dz_xx * var_grad * ll[0]);

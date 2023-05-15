@@ -418,10 +418,8 @@ class TabulateFusionSeAttenOp : public OpKernel {
                                             em, two_embed, nloc, nnei, last_layer_size);
 #endif  // TENSORFLOW_USE_ROCM
     } else if (device == "CPU") {
-        deepmd::tabulate_fusion_se_atten_cpu(descriptor, table, table_info, em_x, em, two_embed,
-                                             nloc, nnei, last_layer_size);
-      //deepmd::tabulate_fusion_se_a_cpu(descriptor, table, table_info, em_x, em,
-      //                                 nloc, nnei, last_layer_size);
+      deepmd::tabulate_fusion_se_atten_cpu(descriptor, table, table_info, em_x, em, two_embed,
+                                           nloc, nnei, last_layer_size);
     }
   }
 
@@ -497,12 +495,8 @@ class TabulateFusionSeAttenGradOp : public OpKernel {
                                                  nnei, last_layer_size);
 #endif  // TENSORFLOW_USE_ROCM
     } else if (device == "CPU") {
-       deepmd::tabulate_fusion_se_atten_grad_cpu(dy_dem_x, dy_dem, table, table_info,
-               em_x, em, two_embed, dy, nloc, nnei,
-               last_layer_size);
-      //deepmd::tabulate_fusion_se_a_grad_cpu(dy_dem_x, dy_dem, table, table_info,
-      //                                      em_x, em, dy, nloc, nnei,
-      //                                      last_layer_size);
+      deepmd::tabulate_fusion_se_atten_grad_cpu(dy_dem_x, dy_dem, table, table_info,
+              em_x, em, two_embed, dy, nloc, nnei, last_layer_size);
     }
   }
 
@@ -553,26 +547,22 @@ class TabulateFusionSeAttenGradGradOp : public OpKernel {
 
     if (device == "GPU") {
 #if GOOGLE_CUDA
-      //deepmd::tabulate_fusion_se_atten_grad_grad_gpu_cuda(
-      //    dz_dy, table, table_info, em_x, em, dz_dy_dem_x, dz_dy_dem, nloc,
-      //    nnei, last_layer_size);
+      deepmd::tabulate_fusion_se_atten_grad_grad_gpu_cuda(
+          dz_dy, table, table_info, em_x, em, two_embed, dz_dy_dem_x, dz_dy_dem, nloc,
+          nnei, last_layer_size);
 #endif  // GOOGLE_CUDA
 #if TENSORFLOW_USE_ROCM
-      //deepmd::tabulate_fusion_se_atten_grad_grad_gpu_rocm(
-      //    dz_dy, table, table_info, em_x, em, dz_dy_dem_x, dz_dy_dem, nloc,
-      //    nnei, last_layer_size);
+      deepmd::tabulate_fusion_se_atten_grad_grad_gpu_rocm(
+          dz_dy, table, table_info, em_x, em, two_embed, dz_dy_dem_x, dz_dy_dem, nloc,
+          nnei, last_layer_size);
 #endif  // TENSORFLOW_USE_ROCM
       OP_REQUIRES(context, (last_layer_size <= 1024),
                   errors::InvalidArgument(
                       "In the process of model compression, the size of the "
                       "last layer of embedding net must be less than 1024!"));
     } else if (device == "CPU") {
-      //deepmd::tabulate_fusion_se_a_grad_grad_cpu(dz_dy, table, table_info, em_x,
-      //                                           em, dz_dy_dem_x, dz_dy_dem,
-      //                                           nloc, nnei, last_layer_size);
-        deepmd::tabulate_fusion_se_atten_grad_grad_cpu(dz_dy, table, table_info, em_x,
-                em, two_embed, dz_dy_dem_x, dz_dy_dem,
-                nloc, nnei, last_layer_size);
+      deepmd::tabulate_fusion_se_atten_grad_grad_cpu(dz_dy, table, table_info, em_x,
+              em, two_embed, dz_dy_dem_x, dz_dy_dem, nloc, nnei, last_layer_size);
     }
   }
 
@@ -987,14 +977,14 @@ class TabulateFusionSeRGradGradOp : public OpKernel {
                           TabulateFusionSeAGradGradOp<CPUDevice, T>);          \
   REGISTER_KERNEL_BUILDER(                                                     \
       Name("TabulateFusionSeAtten").Device(DEVICE_CPU).TypeConstraint<T>("T"), \
-      TabulateFusionSeAttenOp<CPUDevice, T>);                                      \
+      TabulateFusionSeAttenOp<CPUDevice, T>);                                  \
   REGISTER_KERNEL_BUILDER(                                                     \
-      Name("TabulateFusionSeAttenGrad").Device(DEVICE_CPU).TypeConstraint<T>("T"), \
-      TabulateFusionSeAttenGradOp<CPUDevice, T>);                                  \
-  REGISTER_KERNEL_BUILDER(Name("TabulateFusionSeAttenGradGrad")                    \
+      Name("TabulateFusionSeAttenGrad").Device(DEVICE_CPU).TypeConstraint<T>("T"),\
+      TabulateFusionSeAttenGradOp<CPUDevice, T>);                              \
+  REGISTER_KERNEL_BUILDER(Name("TabulateFusionSeAttenGradGrad")                \
                               .Device(DEVICE_CPU)                              \
                               .TypeConstraint<T>("T"),                         \
-                          TabulateFusionSeAttenGradGradOp<CPUDevice, T>);          \
+                          TabulateFusionSeAttenGradGradOp<CPUDevice, T>);      \
   REGISTER_KERNEL_BUILDER(                                                     \
       Name("TabulateFusionSeT").Device(DEVICE_CPU).TypeConstraint<T>("T"),     \
       TabulateFusionSeTOp<CPUDevice, T>);                                      \

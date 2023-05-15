@@ -513,8 +513,6 @@ __global__ void tabulate_fusion_se_atten_grad_grad_fifth_order_polynomial(
         var[1] +
         (2 * var[2] + (3 * var[3] + (4 * var[4] + 5 * var[5] * xx) * xx) * xx) *
             xx;
-    FPTYPE t = two_embed[block_idx * nnei*last_layer_size + ii * last_layer_size + thread_idx];
-    res_grad = res_grad * t;
 
     for (int kk = 0; kk < MTILE; kk++) {
       int em_index = block_idx * nnei * MTILE + ii * MTILE + kk;

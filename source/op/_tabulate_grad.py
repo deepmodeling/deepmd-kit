@@ -55,7 +55,7 @@ def _tabulate_fusion_se_atten_grad_grad_cc(op, dy, dy_, dy_dtwo):
         op.inputs[1],  # table_info
         op.inputs[2],  # em_x
         op.inputs[3],  # em
-        op.inputs[4],  # two_embed
+        dy_dtwo,       # two_embed
         dy,            # dz_dy_dem_x
         dy_,           # dz_dy_dem
         op.inputs[6]   # descriptor
@@ -64,7 +64,7 @@ def _tabulate_fusion_se_atten_grad_grad_cc(op, dy, dy_, dy_dtwo):
             None,      # table_info
             None,      # em_x
             None,      # em
-            tf.zeros_like(op.inputs[4]),      # two_embed
+            None,      # two_embed
             dz_dy,     # dy
             None]      # descriptor
 
