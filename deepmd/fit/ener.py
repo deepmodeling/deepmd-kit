@@ -475,7 +475,7 @@ class EnerFitting(Fitting):
             input_dict = {}
         bias_atom_e = self.bias_atom_e
         if self.compress and isinstance(self.descrpt, deepmd.descriptor.DescrptSeAtten):
-            type_embedding = self.compress_type_embedding
+            type_embedding = input_dict.get("type_embedding_from_graph", None)
         else:
             type_embedding = input_dict.get("type_embedding", None)
         atype = input_dict.get("atype", None)
@@ -729,9 +729,6 @@ class EnerFitting(Fitting):
         self.fitting_net_variables = get_fitting_net_variables_from_graph_def(
             graph_def, suffix=suffix
         )
-        if isinstance(self.descrpt, deepmd.descriptor.DescrptSeAtten):
-            type_embedding = get_tensor_by_name_from_graph(graph, 't_typeebd')
-            self.compress_type_embedding = tf.convert_to_tensor(type_embedding)
         if self.layer_name is not None:
             # shared variables have no suffix
             shared_variables = get_fitting_net_variables_from_graph_def(

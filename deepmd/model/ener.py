@@ -193,6 +193,7 @@ class EnerModel(Model):
                 suffix=suffix,
             )
             input_dict["type_embedding"] = type_embedding
+            input_dict["type_embedding_from_graph"] = self.typeebd.type_embedding_from_graph
         # spin if any
         if self.spin is not None:
             type_spin = self.spin.build(

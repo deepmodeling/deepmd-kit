@@ -13,6 +13,7 @@ from deepmd.env import (
 )
 from deepmd.utils.graph import (
     get_type_embedding_net_variables_from_graph_def,
+    get_tensor_by_name_from_graph
 )
 from deepmd.utils.network import (
     embedding_net,
@@ -103,6 +104,7 @@ class TypeEmbedNet:
         self.trainable = trainable
         self.uniform_seed = uniform_seed
         self.type_embedding_net_variables = None
+        self.type_embedding_from_graph = None
         self.padding = padding
 
     def build(
@@ -173,3 +175,5 @@ class TypeEmbedNet:
         self.type_embedding_net_variables = (
             get_type_embedding_net_variables_from_graph_def(graph_def, suffix=suffix)
         )
+        type_embedding = get_tensor_by_name_from_graph(graph, 't_typeebd')
+        self.type_embedding_from_graph = tf.convert_to_tensor(type_embedding)

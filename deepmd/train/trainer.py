@@ -581,6 +581,8 @@ class DPTrainer:
             graph, graph_def = load_graph_def(
                 self.model_param["compress"]["model_file"]
             )
+            if self.typeebd is not None:
+                self.typeebd.init_variables(graph, graph_def)
             self.descrpt.enable_compression(
                 self.model_param["compress"]["min_nbor_dist"],
                 graph,
