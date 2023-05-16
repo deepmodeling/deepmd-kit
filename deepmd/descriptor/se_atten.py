@@ -24,7 +24,9 @@ from deepmd.env import (
 )
 from deepmd.utils.graph import (
     get_attention_layer_variables_from_graph_def,
-    get_pattern_nodes_from_graph_def
+    get_pattern_nodes_from_graph_def,
+    get_embedding_net_variables_from_graph_def,
+    get_tensor_by_type
 )
 from deepmd.utils.network import (
     embedding_net,
@@ -154,6 +156,8 @@ class DescrptSeAtten(DescrptSeA):
         self.attn_mask = attn_mask
         self.attn_dotr = attn_dotr
         self.filter_np_precision = get_np_precision(precision)
+        self.two_side_embeeding_net_variables = None
+        self.layer_size = len(neuron)
 
         # descrpt config
         self.sel_all_a = [sel]
@@ -980,7 +984,7 @@ class DescrptSeAtten(DescrptSeA):
                         seed=self.seed,
                         trainable=trainable,
                         uniform_seed=self.uniform_seed,
-                        initial_variables=self.embedding_net_variables,
+                        initial_variables=self.two_side_embeeding_net_variables,
                         mixed_prec=self.mixed_prec)
                     two_embd = tf.nn.embedding_lookup(embedding_of_two_side_type_embedding, index_of_two_side)
 
@@ -1126,6 +1130,35 @@ class DescrptSeAtten(DescrptSeA):
             The suffix of the scope
         """
         super().init_variables(graph=graph, graph_def=graph_def, suffix=suffix)
+        self.two_side_embeeding_net_variables = {}
+
+        for i in range(1, self.layer_size + 1):
+            node = get_pattern_nodes_from_graph_def(graph_def,
+                                                    f'filter_type_all/matrix_{i}_two_side_ebd') \
+            [f'filter_type_all/matrix_{i}_two_side_ebd']
+            dtype = tf.as_dtype(node.dtype).as_numpy_dtype
+            tensor_shape = tf.TensorShape(node.tensor_shape).as_list()
+            if (len(tensor_shape) != 1) or (tensor_shape[0] != 1):
+                tensor_value = np.frombuffer(
+                    node.tensor_content, dtype=tf.as_dtype(node.dtype).as_numpy_dtype
+                )
+            else:
+                tensor_value = get_tensor_by_type(node, dtype)
+            self.two_side_embeeding_net_variables[f'filter_type_all/matrix_{i}_two_side_ebd'] = np.reshape(tensor_value, tensor_shape)
+
+            node = get_pattern_nodes_from_graph_def(graph_def,
+                                                    f'filter_type_all/bias_{i}_two_side_ebd') \
+            [f'filter_type_all/bias_{i}_two_side_ebd']
+            dtype = tf.as_dtype(node.dtype).as_numpy_dtype
+            tensor_shape = tf.TensorShape(node.tensor_shape).as_list()
+            if (len(tensor_shape) != 1) or (tensor_shape[0] != 1):
+                tensor_value = np.frombuffer(
+                    node.tensor_content, dtype=tf.as_dtype(node.dtype).as_numpy_dtype
+                )
+            else:
+                tensor_value = get_tensor_by_type(node, dtype)
+            self.two_side_embeeding_net_variables[f'filter_type_all/bias_{i}_two_side_ebd'] = np.reshape(tensor_value, tensor_shape)
+
         self.attention_layer_variables = get_attention_layer_variables_from_graph_def(
             graph_def, suffix=suffix
         )
