@@ -181,8 +181,6 @@ class DPTrainer:
             fitting_param.pop("type", None)
             fitting_param["descrpt"] = self.descrpt
             fitting_param["compress"] = self.is_compress
-            if self.is_compress and fitting_type != "ener":
-                raise RuntimeError("compression can only be performed in energy model, but " + fitting_type + " is given")
             self.fitting = fitting_net_init(fitting_type, descrpt_type, fitting_param)
         else:
             self.fitting_dict = {}
