@@ -959,16 +959,20 @@ class DescrptSeAtten(DescrptSeA):
                         self.table_config[3],
                     ]
 
-                type_embedding_shape = type_embedding.get_shape().as_list()
-                index_of_two_side = self.nei_type_vec * type_embedding_shape[0] + tf.tile(atype, [self.nnei])
+                padding_ntypes = type_embedding.shape[0]
+                atype_expand = tf.reshape(atype, [-1, 1])
+                idx_i = tf.tile(atype_expand * (self.ntypes + 1), [1, self.nnei])
+                idx_j = tf.reshape(self.nei_type_vec, [-1, self.nnei])
+                idx = idx_i + idx_j
+                index_of_two_side = tf.reshape(idx, [-1])
 
                 if self.compress:
                     two_embd = tf.nn.embedding_lookup(self.two_embd, index_of_two_side)
                 else:
-                    type_embedding_nei = tf.tile(tf.reshape(type_embedding, [1, type_embedding_shape[0], -1]),
-                                                    [type_embedding_shape[0], 1, 1])  # (ntypes) * ntypes * Y
-                    type_embedding_center = tf.tile(tf.reshape(type_embedding, [type_embedding_shape[0], 1, -1]),
-                                                    [1, type_embedding_shape[0], 1])  # ntypes * (ntypes) * Y
+                    type_embedding_nei = tf.tile(tf.reshape(type_embedding, [1, padding_ntypes, -1]),
+                                                    [padding_ntypes, 1, 1])  # (ntypes) * ntypes * Y
+                    type_embedding_center = tf.tile(tf.reshape(type_embedding, [padding_ntypes, 1, -1]),
+                                                    [1, padding_ntypes, 1])  # ntypes * (ntypes) * Y
                     two_side_type_embedding = tf.concat([type_embedding_nei, type_embedding_center], -1) # ntypes * ntypes * (Y+Y)
                     two_side_type_embedding = tf.reshape(two_side_type_embedding, [-1, two_side_type_embedding.shape[-1]])
                     two_side_type_embedding_suffix = suffix + "_two_side_ebd" 
