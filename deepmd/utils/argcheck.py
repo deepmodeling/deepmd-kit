@@ -357,7 +357,7 @@ def descrpt_se_atten_args():
     doc_attn_mask = "Whether to do mask on the diagonal in the attention matrix"
 
     return [
-        Argument("compressible", bool, optional=True, default=True, doc=doc_compressible),
+        Argument("compressible", bool, optional=True, default=False, doc=doc_compressible),
         Argument("sel", [int, list, str], optional=True, default="auto", doc=doc_sel),
         Argument("rcut", float, optional=True, default=6.0, doc=doc_rcut),
         Argument("rcut_smth", float, optional=True, default=0.5, doc=doc_rcut_smth),
