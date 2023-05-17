@@ -6,6 +6,7 @@ import platform
 import shutil
 import time
 from typing import (
+    Dict,
     List,
 )
 
@@ -941,12 +942,7 @@ class DPTrainer:
                     train_batch = train_data[fitting_key].get_batch()
                     batch_train_op = self.train_op[fitting_key]
             else:
-                train_batch = {
-                    kk: vv
-                    for kk, vv in zip(
-                        next_datasetloader.data_keys, next_train_batch_list
-                    )
-                }
+                train_batch = next_datasetloader.get_data_dict(next_train_batch_list)
                 batch_train_op = next_batch_train_op
                 fitting_key = next_fitting_key
             # for next round
@@ -1457,6 +1453,25 @@ class DPTrainer:
 
 
 class DatasetLoader:
+    """Generate an OP that loads the training data from the given DeepmdDataSystem.
+
+    It can be used to load the training data in the training process, so there is
+    no waiting time between training steps.
+
+    Parameters
+    ----------
+    train_data : DeepmdDataSystem
+        The training data.
+
+    Examples
+    --------
+    >>> loader = DatasetLoader(train_data)
+    >>> data_op = loader.build()
+    >>> with tf.Session() as sess:
+    >>>     data_list = sess.run(data_op)
+    >>> data_dict = loader.get_data_dict(data_list)
+    """
+
     def __init__(self, train_data: DeepmdDataSystem):
         self.train_data = train_data
         # get the keys of the data
@@ -1465,6 +1480,13 @@ class DatasetLoader:
         self.data_types = [tf.as_dtype(x.dtype) for x in batch_data.values()]
 
     def build(self) -> List[tf.Tensor]:
+        """Build the OP that loads the training data.
+
+        Returns
+        -------
+        List[tf.Tensor]
+            Tensor of the loaded data.
+        """
         train_data = self.train_data
 
         def get_train_batch() -> List[np.ndarray]:
@@ -1474,3 +1496,18 @@ class DatasetLoader:
             return batch_data
 
         return tf.py_func(get_train_batch, [], self.data_types, name="train_data")
+
+    def get_data_dict(self, batch_list: List[np.ndarray]) -> Dict[str, np.ndarray]:
+        """Generate a dict of the loaded data.
+
+        Parameters
+        ----------
+        batch_list : List[np.ndarray]
+            The loaded data.
+
+        Returns
+        -------
+        Dict[str, np.ndarray]
+            The dict of the loaded data.
+        """
+        return {kk: vv for kk, vv in zip(self.data_keys, batch_list)}
