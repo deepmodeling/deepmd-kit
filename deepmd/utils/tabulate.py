@@ -422,7 +422,7 @@ class DPTabulate:
             bias["layer_" + str(layer)] = []
             if isinstance(self.descrpt, deepmd.descriptor.DescrptSeAtten):
                 node = self.embedding_net_nodes[
-                    f"filter_type_all/bias_{layer}"
+                    f"filter_type_all{self.suffix}/bias_{layer}"
                 ]
                 bias["layer_" + str(layer)].append(tf.make_ndarray(node))
             elif isinstance(self.descrpt, deepmd.descriptor.DescrptSeA):
@@ -486,7 +486,7 @@ class DPTabulate:
             matrix["layer_" + str(layer)] = []
             if isinstance(self.descrpt, deepmd.descriptor.DescrptSeAtten):
                 node = self.embedding_net_nodes[
-                    f"filter_type_all/matrix_{layer}"
+                    f"filter_type_all{self.suffix}/matrix_{layer}"
                 ]
                 matrix["layer_" + str(layer)].append(tf.make_ndarray(node))
             elif isinstance(self.descrpt, deepmd.descriptor.DescrptSeA):

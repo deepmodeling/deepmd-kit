@@ -378,8 +378,8 @@ class DescrptSeAtten(DescrptSeA):
 
         self.layer_size = self.table.layer_size
         self.final_type_embedding = self._get_two_side_type_embedding(graph)
-        self.matrix = self._get_two_side_embedding_net_variable(graph_def, 'matrix')
-        self.bias = self._get_two_side_embedding_net_variable(graph_def, 'bias')
+        self.matrix = self._get_two_side_embedding_net_variable(graph_def, 'matrix', suffix)
+        self.bias = self._get_two_side_embedding_net_variable(graph_def, 'bias', suffix)
         self.two_embd = self._make_data(self.final_type_embedding)
 
         self.davg = get_tensor_by_name_from_graph(
@@ -402,12 +402,12 @@ class DescrptSeAtten(DescrptSeA):
         return two_side_type_embedding
 
 
-    def _get_two_side_embedding_net_variable(self, graph_def, varialbe_name):
+    def _get_two_side_embedding_net_variable(self, graph_def, varialbe_name, suffix):
         ret = {}
         for i in range(1, self.layer_size + 1):
             node = get_pattern_nodes_from_graph_def(graph_def,
-                                                    f'filter_type_all/{varialbe_name}_{i}_two_side_ebd') \
-            [f'filter_type_all/{varialbe_name}_{i}_two_side_ebd']
+                                                    f'filter_type_all{suffix}/{varialbe_name}_{i}_two_side_ebd') \
+            [f'filter_type_all{suffix}/{varialbe_name}_{i}_two_side_ebd']
             ret['layer_' + str(i)] = node
         return ret
 
@@ -1138,8 +1138,8 @@ class DescrptSeAtten(DescrptSeA):
 
         for i in range(1, self.layer_size + 1):
             node = get_pattern_nodes_from_graph_def(graph_def,
-                                                    f'filter_type_all/matrix_{i}_two_side_ebd') \
-            [f'filter_type_all/matrix_{i}_two_side_ebd']
+                                                    f'filter_type_all{suffix}/matrix_{i}_two_side_ebd') \
+            [f'filter_type_all{suffix}/matrix_{i}_two_side_ebd']
             dtype = tf.as_dtype(node.dtype).as_numpy_dtype
             tensor_shape = tf.TensorShape(node.tensor_shape).as_list()
             if (len(tensor_shape) != 1) or (tensor_shape[0] != 1):
@@ -1148,11 +1148,11 @@ class DescrptSeAtten(DescrptSeA):
                 )
             else:
                 tensor_value = get_tensor_by_type(node, dtype)
-            self.two_side_embeeding_net_variables[f'filter_type_all/matrix_{i}_two_side_ebd'] = np.reshape(tensor_value, tensor_shape)
+            self.two_side_embeeding_net_variables[f'filter_type_all{suffix}/matrix_{i}_two_side_ebd'] = np.reshape(tensor_value, tensor_shape)
 
             node = get_pattern_nodes_from_graph_def(graph_def,
-                                                    f'filter_type_all/bias_{i}_two_side_ebd') \
-            [f'filter_type_all/bias_{i}_two_side_ebd']
+                                                    f'filter_type_all{suffix}/bias_{i}_two_side_ebd') \
+            [f'filter_type_all{suffix}/bias_{i}_two_side_ebd']
             dtype = tf.as_dtype(node.dtype).as_numpy_dtype
             tensor_shape = tf.TensorShape(node.tensor_shape).as_list()
             if (len(tensor_shape) != 1) or (tensor_shape[0] != 1):
@@ -1161,7 +1161,7 @@ class DescrptSeAtten(DescrptSeA):
                 )
             else:
                 tensor_value = get_tensor_by_type(node, dtype)
-            self.two_side_embeeding_net_variables[f'filter_type_all/bias_{i}_two_side_ebd'] = np.reshape(tensor_value, tensor_shape)
+            self.two_side_embeeding_net_variables[f'filter_type_all{suffix}/bias_{i}_two_side_ebd'] = np.reshape(tensor_value, tensor_shape)
 
         self.attention_layer_variables = get_attention_layer_variables_from_graph_def(
             graph_def, suffix=suffix
