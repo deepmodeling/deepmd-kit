@@ -474,10 +474,7 @@ class EnerFitting(Fitting):
         if input_dict is None:
             input_dict = {}
         bias_atom_e = self.bias_atom_e
-        if self.compress and isinstance(self.descrpt, deepmd.descriptor.DescrptSeAtten):
-            type_embedding = input_dict.get("type_embedding_from_graph", None)
-        else:
-            type_embedding = input_dict.get("type_embedding", None)
+        type_embedding = input_dict.get("type_embedding", None)
         atype = input_dict.get("atype", None)
         if self.numb_fparam > 0:
             if self.fparam_avg is None:

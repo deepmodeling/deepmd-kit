@@ -129,6 +129,8 @@ class TypeEmbedNet:
         embedded_types
             The computational graph for embedded types
         """
+        if self.type_embedding_net_variables is not None:
+            return self.type_embedding_from_graph
         types = tf.convert_to_tensor([ii for ii in range(ntypes)], dtype=tf.int32)
         ebd_type = tf.cast(
             tf.one_hot(tf.cast(types, dtype=tf.int32), int(ntypes)),
