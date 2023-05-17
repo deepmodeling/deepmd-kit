@@ -161,6 +161,9 @@ class DescrptSeAtten(DescrptSeA):
         self.two_side_embeeding_net_variables = None
         self.layer_size = len(neuron)
 
+        if self.compressible and self.attn_layer != 0:
+            raise RuntimeError('attention layer must be set to 0 when compression of se_atten is enabled')
+
         # descrpt config
         self.sel_all_a = [sel]
         self.sel_all_r = [0]
@@ -357,6 +360,10 @@ class DescrptSeAtten(DescrptSeA):
                     % ",".join([str(item) for item in self.filter_neuron])
                 )
 
+        ret = get_pattern_nodes_from_graph_def(graph_def, f'filter_type_all{suffix}/.+_two_side_ebd')
+        if len(ret) == 0:
+            raise RuntimeError(f"can not find variables of embedding net `*_two_side_ebd` from graph_def, maybe it is not a compressible model.")
+
         self.compress = True
         self.table = DPTabulate(
             self,
@@ -407,9 +414,8 @@ class DescrptSeAtten(DescrptSeA):
     def _get_two_side_embedding_net_variable(self, graph_def, varialbe_name, suffix):
         ret = {}
         for i in range(1, self.layer_size + 1):
-            node = get_pattern_nodes_from_graph_def(graph_def,
-                                                    f'filter_type_all{suffix}/{varialbe_name}_{i}_two_side_ebd') \
-            [f'filter_type_all{suffix}/{varialbe_name}_{i}_two_side_ebd']
+            target = get_pattern_nodes_from_graph_def(graph_def, f'filter_type_all{suffix}/{varialbe_name}_{i}_two_side_ebd')
+            node = target[f'filter_type_all{suffix}/{varialbe_name}_{i}_two_side_ebd']
             ret['layer_' + str(i)] = node
         return ret
 
