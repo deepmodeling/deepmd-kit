@@ -90,6 +90,7 @@ class DescrptSeT(DescrptSe):
         precision: str = "default",
         uniform_seed: bool = False,
         multi_task: bool = False,
+        compressible: bool = True,
     ) -> None:
         """Constructor."""
         if rcut < rcut_smth:

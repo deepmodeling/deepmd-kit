@@ -120,6 +120,7 @@ class DescrptSeAtten(DescrptSeA):
         attn_dotr: bool = True,
         attn_mask: bool = False,
         multi_task: bool = False,
+        compressible: bool = True,
     ) -> None:
         if not set_davg_zero:
             warnings.warn(
@@ -150,6 +151,7 @@ class DescrptSeAtten(DescrptSeA):
         assert Version(TF_VERSION) > Version(
             "2"
         ), "se_atten only support tensorflow version 2.0 or higher."
+        self.compressible = compressible
         self.ntypes = ntypes
         self.att_n = attn
         self.attn_layer = attn_layer
@@ -739,6 +741,55 @@ class DescrptSeAtten(DescrptSeA):
                 sysa2.append(suma2)
         return sysr, sysr2, sysa, sysa2, sysn
 
+    def _lookup_type_embedding(
+        self,
+        xyz_scatter,
+        natype,
+        type_embedding,
+    ):
+        """Concatenate `type_embedding` of neighbors and `xyz_scatter`.
+        If not self.type_one_side, concatenate `type_embedding` of center atoms as well.
+
+        Parameters
+        ----------
+        xyz_scatter:
+            shape is [nframes*natoms[0]*self.nnei, 1]
+        natype:
+            neighbor atom type
+        type_embedding:
+            shape is [self.ntypes, Y] where Y=jdata['type_embedding']['neuron'][-1]
+
+        Returns
+        -------
+        embedding:
+            environment of each atom represented by embedding.
+        """
+        te_out_dim = type_embedding.get_shape().as_list()[-1]
+        self.test_type_embedding = type_embedding
+        self.test_nei_embed = tf.nn.embedding_lookup(
+            type_embedding, self.nei_type_vec
+        )  # shape is [self.nnei, 1+te_out_dim]
+        # nei_embed = tf.tile(nei_embed, (nframes * natoms[0], 1))  # shape is [nframes*natoms[0]*self.nnei, te_out_dim]
+        nei_embed = tf.reshape(self.test_nei_embed, [-1, te_out_dim])
+        self.embedding_input = tf.concat(
+            [xyz_scatter, nei_embed], 1
+        )  # shape is [nframes*natoms[0]*self.nnei, 1+te_out_dim]
+        if not self.type_one_side:
+            self.atm_embed = tf.nn.embedding_lookup(
+                type_embedding, natype
+            )  # shape is [nframes*natoms[0], te_out_dim]
+            self.atm_embed = tf.tile(
+                self.atm_embed, [1, self.nnei]
+            )  # shape is [nframes*natoms[0], self.nnei*te_out_dim]
+            self.atm_embed = tf.reshape(
+                self.atm_embed, [-1, te_out_dim]
+            )  # shape is [nframes*natoms[0]*self.nnei, te_out_dim]
+            self.embedding_input_2 = tf.concat(
+                [self.embedding_input, self.atm_embed], 1
+            )  # shape is [nframes*natoms[0]*self.nnei, 1+te_out_dim+te_out_dim]
+            return self.embedding_input_2
+        return self.embedding_input
+
     def _feedforward(self, input_xyz, d_in, d_mid):
         residual = input_xyz
         input_xyz = tf.nn.relu(
@@ -933,7 +984,9 @@ class DescrptSeAtten(DescrptSeA):
         if not is_exclude:
             with tf.variable_scope(name, reuse=reuse):
                 # with (natom x nei_type_i) x out_size
-                if not self.compress:
+                if not self.compressible:
+                    print('==========> not compress')
+                    xyz_scatter = self._lookup_type_embedding(xyz_scatter, atype, type_embedding)
                     xyz_scatter = embedding_net(
                         xyz_scatter,
                         self.filter_neuron,
@@ -947,62 +1000,80 @@ class DescrptSeAtten(DescrptSeA):
                         trainable=trainable,
                         uniform_seed=self.uniform_seed,
                         initial_variables=self.embedding_net_variables,
-                        mixed_prec=self.mixed_prec)
-                else:
-                    net = 'filter_net'
-                    info = [
-                        self.lower[net],
-                        self.upper[net],
-                        self.upper[net] * self.table_config[0],
-                        self.table_config[1],
-                        self.table_config[2],
-                        self.table_config[3],
-                    ]
-
-                padding_ntypes = type_embedding.shape[0]
-                atype_expand = tf.reshape(atype, [-1, 1])
-                idx_i = tf.tile(atype_expand * (self.ntypes + 1), [1, self.nnei])
-                idx_j = tf.reshape(self.nei_type_vec, [-1, self.nnei])
-                idx = idx_i + idx_j
-                index_of_two_side = tf.reshape(idx, [-1])
-
-                if self.compress:
-                    two_embd = tf.nn.embedding_lookup(self.two_embd, index_of_two_side)
-                else:
-                    type_embedding_nei = tf.tile(tf.reshape(type_embedding, [1, padding_ntypes, -1]),
-                                                    [padding_ntypes, 1, 1])  # (ntypes) * ntypes * Y
-                    type_embedding_center = tf.tile(tf.reshape(type_embedding, [padding_ntypes, 1, -1]),
-                                                    [1, padding_ntypes, 1])  # ntypes * (ntypes) * Y
-                    two_side_type_embedding = tf.concat([type_embedding_nei, type_embedding_center], -1) # ntypes * ntypes * (Y+Y)
-                    two_side_type_embedding = tf.reshape(two_side_type_embedding, [-1, two_side_type_embedding.shape[-1]])
-                    two_side_type_embedding_suffix = suffix + "_two_side_ebd" 
-                    embedding_of_two_side_type_embedding = embedding_net(
-                        two_side_type_embedding,
-                        self.filter_neuron,
-                        self.filter_precision,
-                        activation_fn=activation_fn,
-                        resnet_dt=self.filter_resnet_dt,
-                        name_suffix=two_side_type_embedding_suffix,
-                        stddev=stddev,
-                        bavg=bavg,
-                        seed=self.seed,
-                        trainable=trainable,
-                        uniform_seed=self.uniform_seed,
-                        initial_variables=self.two_side_embeeding_net_variables,
-                        mixed_prec=self.mixed_prec)
-                    two_embd = tf.nn.embedding_lookup(embedding_of_two_side_type_embedding, index_of_two_side)
-
-                if not self.compress:
-                    xyz_scatter = xyz_scatter * two_embd + two_embd
-                else:
-                    return op_module.tabulate_fusion_se_atten(
-                        tf.cast(self.table.data[net], self.filter_precision),
-                        info,
-                        xyz_scatter,
-                        tf.reshape(inputs_i, [natom, shape_i[1] // 4, 4]),
-                        two_embd,
-                        last_layer_size=outputs_size[-1],
+                        mixed_prec=self.mixed_prec,
                     )
+                else:
+                    print('==========> compress')
+                    if not self.compress:
+                        xyz_scatter = embedding_net(
+                            xyz_scatter,
+                            self.filter_neuron,
+                            self.filter_precision,
+                            activation_fn=activation_fn,
+                            resnet_dt=self.filter_resnet_dt,
+                            name_suffix=suffix,
+                            stddev=stddev,
+                            bavg=bavg,
+                            seed=self.seed,
+                            trainable=trainable,
+                            uniform_seed=self.uniform_seed,
+                            initial_variables=self.embedding_net_variables,
+                            mixed_prec=self.mixed_prec)
+                    else:
+                        net = 'filter_net'
+                        info = [
+                            self.lower[net],
+                            self.upper[net],
+                            self.upper[net] * self.table_config[0],
+                            self.table_config[1],
+                            self.table_config[2],
+                            self.table_config[3],
+                        ]
+
+                    padding_ntypes = type_embedding.shape[0]
+                    atype_expand = tf.reshape(atype, [-1, 1])
+                    idx_i = tf.tile(atype_expand * (self.ntypes + 1), [1, self.nnei])
+                    idx_j = tf.reshape(self.nei_type_vec, [-1, self.nnei])
+                    idx = idx_i + idx_j
+                    index_of_two_side = tf.reshape(idx, [-1])
+
+                    if self.compress:
+                        two_embd = tf.nn.embedding_lookup(self.two_embd, index_of_two_side)
+                    else:
+                        type_embedding_nei = tf.tile(tf.reshape(type_embedding, [1, padding_ntypes, -1]),
+                                                        [padding_ntypes, 1, 1])  # (ntypes) * ntypes * Y
+                        type_embedding_center = tf.tile(tf.reshape(type_embedding, [padding_ntypes, 1, -1]),
+                                                        [1, padding_ntypes, 1])  # ntypes * (ntypes) * Y
+                        two_side_type_embedding = tf.concat([type_embedding_nei, type_embedding_center], -1) # ntypes * ntypes * (Y+Y)
+                        two_side_type_embedding = tf.reshape(two_side_type_embedding, [-1, two_side_type_embedding.shape[-1]])
+                        two_side_type_embedding_suffix = suffix + "_two_side_ebd" 
+                        embedding_of_two_side_type_embedding = embedding_net(
+                            two_side_type_embedding,
+                            self.filter_neuron,
+                            self.filter_precision,
+                            activation_fn=activation_fn,
+                            resnet_dt=self.filter_resnet_dt,
+                            name_suffix=two_side_type_embedding_suffix,
+                            stddev=stddev,
+                            bavg=bavg,
+                            seed=self.seed,
+                            trainable=trainable,
+                            uniform_seed=self.uniform_seed,
+                            initial_variables=self.two_side_embeeding_net_variables,
+                            mixed_prec=self.mixed_prec)
+                        two_embd = tf.nn.embedding_lookup(embedding_of_two_side_type_embedding, index_of_two_side)
+
+                    if not self.compress:
+                        xyz_scatter = xyz_scatter * two_embd + two_embd
+                    else:
+                        return op_module.tabulate_fusion_se_atten(
+                            tf.cast(self.table.data[net], self.filter_precision),
+                            info,
+                            xyz_scatter,
+                            tf.reshape(inputs_i, [natom, shape_i[1] // 4, 4]),
+                            two_embd,
+                            last_layer_size=outputs_size[-1],
+                        )
 
                 if (not self.uniform_seed) and (self.seed is not None):
                     self.seed += self.seed_shift
