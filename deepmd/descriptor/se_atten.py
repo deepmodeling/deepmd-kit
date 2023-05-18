@@ -120,7 +120,7 @@ class DescrptSeAtten(DescrptSeA):
         attn_dotr: bool = True,
         attn_mask: bool = False,
         multi_task: bool = False,
-        compressible: bool = True,
+        compressible: bool = False,
     ) -> None:
         if not set_davg_zero:
             warnings.warn(
@@ -1211,34 +1211,36 @@ class DescrptSeAtten(DescrptSeA):
             The suffix of the scope
         """
         super().init_variables(graph=graph, graph_def=graph_def, suffix=suffix)
-        self.two_side_embeeding_net_variables = {}
 
-        for i in range(1, self.layer_size + 1):
-            node = get_pattern_nodes_from_graph_def(graph_def,
-                                                    f'filter_type_all{suffix}/matrix_{i}_two_side_ebd') \
-            [f'filter_type_all{suffix}/matrix_{i}_two_side_ebd']
-            dtype = tf.as_dtype(node.dtype).as_numpy_dtype
-            tensor_shape = tf.TensorShape(node.tensor_shape).as_list()
-            if (len(tensor_shape) != 1) or (tensor_shape[0] != 1):
-                tensor_value = np.frombuffer(
-                    node.tensor_content, dtype=tf.as_dtype(node.dtype).as_numpy_dtype
-                )
-            else:
-                tensor_value = get_tensor_by_type(node, dtype)
-            self.two_side_embeeding_net_variables[f'filter_type_all{suffix}/matrix_{i}_two_side_ebd'] = np.reshape(tensor_value, tensor_shape)
+        if self.compressible:
+            self.two_side_embeeding_net_variables = {}
 
-            node = get_pattern_nodes_from_graph_def(graph_def,
-                                                    f'filter_type_all{suffix}/bias_{i}_two_side_ebd') \
-            [f'filter_type_all{suffix}/bias_{i}_two_side_ebd']
-            dtype = tf.as_dtype(node.dtype).as_numpy_dtype
-            tensor_shape = tf.TensorShape(node.tensor_shape).as_list()
-            if (len(tensor_shape) != 1) or (tensor_shape[0] != 1):
-                tensor_value = np.frombuffer(
-                    node.tensor_content, dtype=tf.as_dtype(node.dtype).as_numpy_dtype
-                )
-            else:
-                tensor_value = get_tensor_by_type(node, dtype)
-            self.two_side_embeeding_net_variables[f'filter_type_all{suffix}/bias_{i}_two_side_ebd'] = np.reshape(tensor_value, tensor_shape)
+            for i in range(1, self.layer_size + 1):
+                node = get_pattern_nodes_from_graph_def(graph_def,
+                                                        f'filter_type_all{suffix}/matrix_{i}_two_side_ebd') \
+                [f'filter_type_all{suffix}/matrix_{i}_two_side_ebd']
+                dtype = tf.as_dtype(node.dtype).as_numpy_dtype
+                tensor_shape = tf.TensorShape(node.tensor_shape).as_list()
+                if (len(tensor_shape) != 1) or (tensor_shape[0] != 1):
+                    tensor_value = np.frombuffer(
+                        node.tensor_content, dtype=tf.as_dtype(node.dtype).as_numpy_dtype
+                    )
+                else:
+                    tensor_value = get_tensor_by_type(node, dtype)
+                self.two_side_embeeding_net_variables[f'filter_type_all{suffix}/matrix_{i}_two_side_ebd'] = np.reshape(tensor_value, tensor_shape)
+
+                node = get_pattern_nodes_from_graph_def(graph_def,
+                                                        f'filter_type_all{suffix}/bias_{i}_two_side_ebd') \
+                [f'filter_type_all{suffix}/bias_{i}_two_side_ebd']
+                dtype = tf.as_dtype(node.dtype).as_numpy_dtype
+                tensor_shape = tf.TensorShape(node.tensor_shape).as_list()
+                if (len(tensor_shape) != 1) or (tensor_shape[0] != 1):
+                    tensor_value = np.frombuffer(
+                        node.tensor_content, dtype=tf.as_dtype(node.dtype).as_numpy_dtype
+                    )
+                else:
+                    tensor_value = get_tensor_by_type(node, dtype)
+                self.two_side_embeeding_net_variables[f'filter_type_all{suffix}/bias_{i}_two_side_ebd'] = np.reshape(tensor_value, tensor_shape)
 
         self.attention_layer_variables = get_attention_layer_variables_from_graph_def(
             graph_def, suffix=suffix

@@ -126,7 +126,7 @@ class DescrptSeAMask(DescrptSeA):
         activation_function: str = "tanh",
         precision: str = "default",
         uniform_seed: bool = False,
-        compressible: bool = True,
+        compressible: bool = False,
     ) -> None:
         """Constructor."""
         self.sel_a = sel

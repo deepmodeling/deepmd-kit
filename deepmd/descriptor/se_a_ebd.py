@@ -87,7 +87,7 @@ class DescrptSeAEbd(DescrptSeA):
         activation_function: str = "tanh",
         precision: str = "default",
         exclude_types: List[List[int]] = [],
-        compressible: bool = True,
+        compressible: bool = False,
     ) -> None:
         """Constructor."""
         DescrptSeA.__init__(
