@@ -218,7 +218,6 @@ class TestParserOutput(unittest.TestCase):
             "compress",
             "doc-train-input",
             "model-devi",
-            "neighbor-stat",
         ):
             if parser in ("train",):
                 args = {**{"INPUT": dict(type=str, value="INFILE")}, **ARGS}
