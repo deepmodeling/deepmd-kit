@@ -1,4 +1,5 @@
 import warnings
+import logging
 from typing import (
     List,
     Optional,
@@ -48,6 +49,7 @@ from .descriptor import (
 from .se_a import (
     DescrptSeA,
 )
+log = logging.getLogger(__name__)
 
 
 @Descriptor.register("se_atten")
@@ -162,7 +164,8 @@ class DescrptSeAtten(DescrptSeA):
         self.layer_size = len(neuron)
 
         if self.compressible and self.attn_layer != 0:
-            raise RuntimeError('attention layer must be set to 0 when compression of se_atten is enabled')
+            pass
+            #raise RuntimeError('attention layer must be set to 0 when compression of se_atten is enabled')
 
         # descrpt config
         self.sel_all_a = [sel]
@@ -991,7 +994,7 @@ class DescrptSeAtten(DescrptSeA):
             with tf.variable_scope(name, reuse=reuse):
                 # with (natom x nei_type_i) x out_size
                 if not self.compressible:
-                    print('==========> not compress')
+                    log.info("use a non compressible model")
                     xyz_scatter = self._lookup_type_embedding(xyz_scatter, atype, type_embedding)
                     xyz_scatter = embedding_net(
                         xyz_scatter,
@@ -1009,7 +1012,7 @@ class DescrptSeAtten(DescrptSeA):
                         mixed_prec=self.mixed_prec,
                     )
                 else:
-                    print('==========> compress')
+                    log.info("use a compressible model")
                     if not self.compress:
                         xyz_scatter = embedding_net(
                             xyz_scatter,
