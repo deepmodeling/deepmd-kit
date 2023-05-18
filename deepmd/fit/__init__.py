@@ -7,6 +7,9 @@ from .dos import (
 from .ener import (
     EnerFitting,
 )
+from .fitting import (
+    Fitting,
+)
 from .polar import (
     GlobalPolarFittingSeA,
     PolarFittingSeA,
@@ -18,4 +21,5 @@ __all__ = [
     "DOSFitting",
     "GlobalPolarFittingSeA",
     "PolarFittingSeA",
+    "Fitting",
 ]
