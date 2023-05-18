@@ -210,7 +210,16 @@ class TestParserOutput(unittest.TestCase):
             "--log-path": dict(type=(str, type(None)), value="LOGFILE"),
         }
 
-        for parser in ("transfer", "train", "freeze", "test", "compress", "doc-train-input", "model-devi", "neighbor-stat"):
+        for parser in (
+            "transfer",
+            "train",
+            "freeze",
+            "test",
+            "compress",
+            "doc-train-input",
+            "model-devi",
+            "neighbor-stat",
+        ):
             if parser in ("train",):
                 args = {**{"INPUT": dict(type=str, value="INFILE")}, **ARGS}
             else:
