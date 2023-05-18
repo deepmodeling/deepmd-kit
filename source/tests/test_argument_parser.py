@@ -210,8 +210,8 @@ class TestParserOutput(unittest.TestCase):
             "--log-path": dict(type=(str, type(None)), value="LOGFILE"),
         }
 
-        for parser in ("config", "transfer", "train", "freeze", "test", "compress"):
-            if parser in ("train"):
+        for parser in ("transfer", "train", "freeze", "test", "compress", "doc-train-input", "model-devi", "neighbor-stat"):
+            if parser in ("train",):
                 args = {**{"INPUT": dict(type=str, value="INFILE")}, **ARGS}
             else:
                 args = ARGS
@@ -228,14 +228,6 @@ class TestParserOutput(unittest.TestCase):
             else:
                 args = ARGS
             self.run_test(command=parser, mapping=args)
-
-    def test_parser_config(self):
-        """Test config subparser."""
-        ARGS = {
-            "--output": dict(type=str, value="OUTPUT"),
-        }
-
-        self.run_test(command="config", mapping=ARGS)
 
     def test_parser_transfer(self):
         """Test transfer subparser."""
