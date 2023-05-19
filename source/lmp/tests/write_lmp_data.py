@@ -21,7 +21,10 @@ def write_lmp_data(box, coord, type_list, file_name):
             )
         f.write("\n")
 
-def write_lmp_data_full(box, coord, mol_list, type_list, charge, file_name, bond_list, mass_list):
+
+def write_lmp_data_full(
+    box, coord, mol_list, type_list, charge, file_name, bond_list, mass_list
+):
     natom = coord.shape[0]
     ntype = np.unique(type_list).shape[0]
     nbond_type = len(bond_list)
@@ -45,12 +48,23 @@ def write_lmp_data_full(box, coord, mol_list, type_list, charge, file_name, bond
         for i in range(natom):
             f.write(
                 "%d %d %d %d %.2f %.2f %.2f\n"
-                % (i + 1, mol_list[i], type_list[i], charge[i], coord[i][0], coord[i][1], coord[i][2])
+                % (
+                    i + 1,
+                    mol_list[i],
+                    type_list[i],
+                    charge[i],
+                    coord[i][0],
+                    coord[i][1],
+                    coord[i][2],
+                )
             )
         f.write("\nBonds\n\n")
         bond_count = 0
         for i in range(nbond_type):
             for j in range(nbond_list[i]):
                 bond_count += 1
-                f.write("%d %d %d %d\n"%(bond_count, i+1, bond_list[i][j][0], bond_list[i][j][1]))
+                f.write(
+                    "%d %d %d %d\n"
+                    % (bond_count, i + 1, bond_list[i][j][0], bond_list[i][j][1])
+                )
         f.write("\n")

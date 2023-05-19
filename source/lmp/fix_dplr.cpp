@@ -148,9 +148,7 @@ void FixDPLR::init() {
   // }
 }
 
-void FixDPLR::setup_pre_force(int vflag) {
-  pre_force(vflag);
-}
+void FixDPLR::setup_pre_force(int vflag) { pre_force(vflag); }
 
 void FixDPLR::setup(int vflag) {
   // if (strstr(update->integrate_style,"verlet"))

@@ -11,7 +11,6 @@ from lammps import (
     PyLammps,
 )
 from write_lmp_data import (
-    write_lmp_data,
     write_lmp_data_full,
 )
 
@@ -22,11 +21,7 @@ dipole_pb_file = Path(__file__).parent / "lrdipole.pb"
 data_file = Path(__file__).parent / "data.lmp"
 
 # this is as the same as python and c++ tests, test_deeppot_a.py
-expected_e_sr = np.array(
-    [
-        -28.27186179
-    ]
-)
+expected_e_sr = np.array([-28.27186179])
 expected_f_sr = np.array(
     [
         [0.17101694, -0.33151456, -0.48810198],
@@ -40,26 +35,78 @@ expected_f_sr = np.array(
 
 expected_v_sr = np.array(
     [
-        [-1.08360048, 0.28561092, 1.12787306, -0.27800706, -2.22370058, -0.60250734, 1.08392293, -0.91343020, -1.69211612],
-        [-2.67885180, 0.45057804, -0.59798385, -0.03229647, -1.74227093, 1.32518278, -0.60602871, 0.71486893, -0.58607102],
-        [0.80158098, -0.64019999, -1.07255047, 1.23622085, 1.77181377, -1.21983559, -0.81543862, 1.05632482, 1.30333566],
-        [0.44888053, 0.47838603, -0.44712259, -0.80436553, 1.19194100, 1.28550021, -0.73434597, -0.53774522, 0.80885901],
-        [1.61424595, -0.83680788, 0.73008361, 1.70236397, 1.37033017, -0.11448440, 0.10876112, -0.44403200, 0.26187153],
-        [1.08938933, 1.09903360, -0.24784609, -0.98731504, 0.68084248, -0.45950359, 0.45558292, 0.33836575, -0.05030076],
-       ]
+        [
+            -1.08360048,
+            0.28561092,
+            1.12787306,
+            -0.27800706,
+            -2.22370058,
+            -0.60250734,
+            1.08392293,
+            -0.91343020,
+            -1.69211612,
+        ],
+        [
+            -2.67885180,
+            0.45057804,
+            -0.59798385,
+            -0.03229647,
+            -1.74227093,
+            1.32518278,
+            -0.60602871,
+            0.71486893,
+            -0.58607102,
+        ],
+        [
+            0.80158098,
+            -0.64019999,
+            -1.07255047,
+            1.23622085,
+            1.77181377,
+            -1.21983559,
+            -0.81543862,
+            1.05632482,
+            1.30333566,
+        ],
+        [
+            0.44888053,
+            0.47838603,
+            -0.44712259,
+            -0.80436553,
+            1.19194100,
+            1.28550021,
+            -0.73434597,
+            -0.53774522,
+            0.80885901,
+        ],
+        [
+            1.61424595,
+            -0.83680788,
+            0.73008361,
+            1.70236397,
+            1.37033017,
+            -0.11448440,
+            0.10876112,
+            -0.44403200,
+            0.26187153,
+        ],
+        [
+            1.08938933,
+            1.09903360,
+            -0.24784609,
+            -0.98731504,
+            0.68084248,
+            -0.45950359,
+            0.45558292,
+            0.33836575,
+            -0.05030076,
+        ],
+    ]
 ).reshape(6, 9)
 
-expected_e_lr = np.array(
-    [
-        -28.03317069
-    ]
-)
+expected_e_lr = np.array([-28.03317069])
 
-expected_e_kspace = np.array(
-    [
-        0.23869110
-    ]
-)
+expected_e_kspace = np.array([0.23869110])
 
 expected_f_lr = np.array(
     [
@@ -95,7 +142,7 @@ coord = np.array(
 mol_list = np.array([1, 2, 1, 1, 2, 2, 1, 2])
 type_OH = np.array([1, 1, 2, 2, 2, 2, 3, 3])
 charge = np.array([6, 6, 1, 1, 1, 1, -8, -8])
-bond_list=(((1, 7), (2, 8)),)
+bond_list = (((1, 7), (2, 8)),)
 mass_list = np.array([15.99940, 1.00794, 15.99940])
 beta = 0.4
 mesh = 10
@@ -121,7 +168,9 @@ sp.check_output(
 
 
 def setup_module():
-    write_lmp_data_full(box, coord, mol_list, type_OH, charge, data_file, bond_list, mass_list)
+    write_lmp_data_full(
+        box, coord, mol_list, type_OH, charge, data_file, bond_list, mass_list
+    )
 
 
 def teardown_module():
@@ -175,6 +224,7 @@ def test_pair_deepmd_sr_virial(lammps):
             lammps.variables[f"virial{ii}"].value
         ) / nktv2p == pytest.approx(expected_v_sr[:, ii])
 
+
 def test_pair_deepmd_lr(lammps):
     lammps.pair_style(f"deepmd {pb_file.resolve()}")
     lammps.pair_coeff("* *")
@@ -191,5 +241,5 @@ def test_pair_deepmd_lr(lammps):
     for ii in range(6):
         assert lammps.atoms[ii].force == pytest.approx(expected_f_lr[ii])
     for ii in range(2):
-        assert lammps.atoms[6+ii].position == pytest.approx(expected_WC[ii])
+        assert lammps.atoms[6 + ii].position == pytest.approx(expected_WC[ii])
     lammps.run(1)
