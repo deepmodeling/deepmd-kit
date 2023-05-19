@@ -29,6 +29,7 @@ from deepmd.utils.network import (
 )
 
 
+@Fitting.register("polar")
 class PolarFittingSeA(Fitting):
     r"""Fit the atomic polarizability with descriptor se_a.
 

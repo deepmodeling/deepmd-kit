@@ -38,10 +38,7 @@ from deepmd.env import (
     tfv2,
 )
 from deepmd.fit import (
-    DipoleFittingSeA,
-    DOSFitting,
-    EnerFitting,
-    PolarFittingSeA,
+    Fitting,
 )
 from deepmd.loss import (
     DOSLoss,
@@ -164,30 +161,13 @@ class DPTrainer:
         self.descrpt = Descriptor(**descrpt_param)
 
         # fitting net
-        def fitting_net_init(fitting_type_, descrpt_type_, params):
-            if fitting_type_ == "ener":
-                params["spin"] = self.spin
-                return EnerFitting(**params)
-            elif fitting_type_ == "dos":
-                return DOSFitting(**params)
-            elif fitting_type_ == "dipole":
-                return DipoleFittingSeA(**params)
-            elif fitting_type_ == "polar":
-                return PolarFittingSeA(**params)
-            # elif fitting_type_ == 'global_polar':
-            #     if descrpt_type_ == 'se_e2_a':
-            #         return GlobalPolarFittingSeA(**params)
-            #     else:
-            #         raise RuntimeError('fitting global_polar only supports descrptors: loc_frame and se_e2_a')
-            else:
-                raise RuntimeError("unknown fitting type " + fitting_type_)
-
         if not self.multi_task_mode:
             fitting_type = fitting_param.get("type", "ener")
             self.fitting_type = fitting_type
-            fitting_param.pop("type", None)
             fitting_param["descrpt"] = self.descrpt
-            self.fitting = fitting_net_init(fitting_type, descrpt_type, fitting_param)
+            if fitting_type == "ener":
+                fitting_param["spin"] = self.spin
+            self.fitting = Fitting(**fitting_param)
         else:
             self.fitting_dict = {}
             self.fitting_type_dict = {}
@@ -196,11 +176,10 @@ class DPTrainer:
                 item_fitting_param = fitting_param[item]
                 item_fitting_type = item_fitting_param.get("type", "ener")
                 self.fitting_type_dict[item] = item_fitting_type
-                item_fitting_param.pop("type", None)
                 item_fitting_param["descrpt"] = self.descrpt
-                self.fitting_dict[item] = fitting_net_init(
-                    item_fitting_type, descrpt_type, item_fitting_param
-                )
+                if item_fitting_type == "ener":
+                    item_fitting_param["spin"] = self.spin
+                self.fitting_dict[item] = Fitting(**item_fitting_param)
 
         # type embedding
         padding = False
