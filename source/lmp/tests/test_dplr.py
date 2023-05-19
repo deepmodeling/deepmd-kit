@@ -111,13 +111,6 @@ sp.check_output(
         pb_file.resolve(),
     ).split()
 )
-sp.check_output(
-    "{} -m deepmd convert-from pbtxt -i {} -o {}".format(
-        sys.executable,
-        dipole_pbtxt_file.resolve(),
-        dipole_pb_file.resolve(),
-    ).split()
-)
 
 
 def setup_module():
