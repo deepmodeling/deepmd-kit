@@ -202,7 +202,7 @@ def test_pair_deepmd_sr_virial(lammps):
     lammps.group("real_atom type 1 2")
     lammps.pair_style(f"deepmd {pb_file.resolve()}")
     lammps.pair_coeff("* *")
-    lammps.compute("virial all centroid/stress/atom NULL pair")
+    lammps.compute("virial real_atom centroid/stress/atom NULL pair")
     for ii in range(9):
         jj = [0, 4, 8, 3, 6, 7, 1, 2, 5][ii]
         lammps.variable(f"virial{jj} atom c_virial[{ii+1}]")
@@ -215,7 +215,7 @@ def test_pair_deepmd_sr_virial(lammps):
         assert lammps.atoms[ii].force == pytest.approx(expected_f_sr[ii])
     for ii in range(9):
         assert np.array(
-            lammps.variables[f"virial{ii}"].value
+            lammps.variables[f"virial{ii}"].value[:6]
         ) / nktv2p == pytest.approx(expected_v_sr[:, ii])
 
 
@@ -226,7 +226,7 @@ def test_pair_deepmd_lr(lammps):
     lammps.bond_coeff("*")
     lammps.special_bonds("lj/coul 1 1 1 angle no")
     lammps.kspace_style("pppm/dplr 1e-5")
-    lammps.kspace_modify("gewald beta diff ik mesh mesh mesh mesh")
+    lammps.kspace_modify(f"gewald {beta:.2f} diff ik mesh {mesh:d} {mesh:d} {mesh:d}")
     lammps.fix(f"0 all dplr model {pb_file.resolve()} type_associate 1 3 bond_type 1")
     lammps.fix_modify("0 virial yes")
     lammps.run(0)
