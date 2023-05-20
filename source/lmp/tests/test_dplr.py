@@ -202,12 +202,12 @@ def test_pair_deepmd_sr_virial(lammps):
     lammps.group("real_atom type 1 2")
     lammps.pair_style(f"deepmd {pb_file.resolve()}")
     lammps.pair_coeff("* *")
-    lammps.compute("virial real_atom centroid/stress/atom NULL pair")
+    lammps.compute("virial all centroid/stress/atom NULL pair")
     for ii in range(9):
         jj = [0, 4, 8, 3, 6, 7, 1, 2, 5][ii]
         lammps.variable(f"virial{jj} atom c_virial[{ii+1}]")
     lammps.dump(
-        "1 all custom 1 dump id " + " ".join([f"v_virial{ii}" for ii in range(9)])
+        "1 real_atom custom 1 dump id " + " ".join([f"v_virial{ii}" for ii in range(9)])
     )
     lammps.run(0)
     assert lammps.eval("pe") == pytest.approx(expected_e_sr)
