@@ -21,7 +21,7 @@ dipole_pb_file = Path(__file__).parent / "lrdipole.pb"
 data_file = Path(__file__).parent / "data.lmp"
 
 # this is as the same as python and c++ tests, test_deeppot_a.py
-expected_e_sr = np.array([-28.27186179])
+expected_e_sr = -28.27186179
 expected_f_sr = np.array(
     [
         [0.17101694, -0.33151456, -0.48810198],
@@ -104,9 +104,9 @@ expected_v_sr = np.array(
     ]
 ).reshape(6, 9)
 
-expected_e_lr = np.array([-28.03317069])
+expected_e_lr = -28.03317069
 
-expected_e_kspace = np.array([0.23869110])
+expected_e_kspace = 0.23869110
 
 expected_f_lr = np.array(
     [
