@@ -558,3 +558,25 @@ class TestDeepPotAPBCExcludeTypes(unittest.TestCase):
         np.testing.assert_almost_equal(av0, av1, default_places)
         np.testing.assert_almost_equal(ee0, ee1, default_places)
         np.testing.assert_almost_equal(vv0, vv1, default_places)
+
+
+class TestDeepPotAPBC2(TestDeepPotAPBC):
+    @classmethod
+    def setUpClass(self):
+        self.dp_original = DeepPot(FROZEN_MODEL)
+        self.dp_compressed = DeepPot(COMPRESSED_MODEL)
+        self.coords = np.array(
+            [
+                0.0,
+                0.0,
+                0.0,
+                2.0,
+                0.0,
+                0.0,
+                0.0,
+                2.0,
+                0.0,
+            ]
+        )
+        self.atype = [0, 0, 0]
+        self.box = np.array([13.0, 0.0, 0.0, 0.0, 13.0, 0.0, 0.0, 0.0, 13.0])
