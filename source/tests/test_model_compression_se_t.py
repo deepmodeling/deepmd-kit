@@ -74,6 +74,28 @@ def _init_models():
 INPUT, FROZEN_MODEL, COMPRESSED_MODEL = _init_models()
 
 
+def tearDownModule():
+    _file_delete(INPUT)
+    _file_delete(FROZEN_MODEL)
+    _file_delete(COMPRESSED_MODEL)
+    _file_delete("out.json")
+    _file_delete("compress.json")
+    _file_delete("checkpoint")
+    _file_delete("model.ckpt.meta")
+    _file_delete("model.ckpt.index")
+    _file_delete("model.ckpt.data-00000-of-00001")
+    _file_delete("model.ckpt-100.meta")
+    _file_delete("model.ckpt-100.index")
+    _file_delete("model.ckpt-100.data-00000-of-00001")
+    _file_delete("model-compression/checkpoint")
+    _file_delete("model-compression/model.ckpt.meta")
+    _file_delete("model-compression/model.ckpt.index")
+    _file_delete("model-compression/model.ckpt.data-00000-of-00001")
+    _file_delete("model-compression")
+    _file_delete("input_v2_compat.json")
+    _file_delete("lcurve.out")
+
+
 class TestDeepPotAPBC(unittest.TestCase):
     @classmethod
     def setUpClass(self):
@@ -443,28 +465,6 @@ class TestDeepPotAPBCExcludeTypes(unittest.TestCase):
         )
         self.atype = [0, 1, 1, 0, 1, 1]
         self.box = np.array([13.0, 0.0, 0.0, 0.0, 13.0, 0.0, 0.0, 0.0, 13.0])
-
-    @classmethod
-    def tearDownClass(self):
-        _file_delete(INPUT)
-        _file_delete(FROZEN_MODEL)
-        _file_delete(COMPRESSED_MODEL)
-        _file_delete("out.json")
-        _file_delete("compress.json")
-        _file_delete("checkpoint")
-        _file_delete("model.ckpt.meta")
-        _file_delete("model.ckpt.index")
-        _file_delete("model.ckpt.data-00000-of-00001")
-        _file_delete("model.ckpt-100.meta")
-        _file_delete("model.ckpt-100.index")
-        _file_delete("model.ckpt-100.data-00000-of-00001")
-        _file_delete("model-compression/checkpoint")
-        _file_delete("model-compression/model.ckpt.meta")
-        _file_delete("model-compression/model.ckpt.index")
-        _file_delete("model-compression/model.ckpt.data-00000-of-00001")
-        _file_delete("model-compression")
-        _file_delete("input_v2_compat.json")
-        _file_delete("lcurve.out")
 
     def test_attrs(self):
         self.assertEqual(self.dp_original.get_ntypes(), 2)
