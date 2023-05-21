@@ -11,16 +11,97 @@ from typing import (
     Union,
 )
 
+from deepmd.descriptor.descriptor import (
+    Descriptor,
+)
 from deepmd.env import (
     GLOBAL_TF_FLOAT_PRECISION,
     tf,
 )
+from deepmd.fit.fitting import (
+    Fitting,
+)
+from deepmd.loss.loss import (
+    Loss,
+)
+from deepmd.utils.argcheck import (
+    type_embedding_args,
+)
+from deepmd.utils.data_system import (
+    DeepmdDataSystem,
+)
 from deepmd.utils.graph import (
     load_graph_def,
+)
+from deepmd.utils.pair_tab import (
+    PairTab,
+)
+from deepmd.utils.spin import (
+    Spin,
+)
+from deepmd.utils.type_embed import (
+    TypeEmbedNet,
 )
 
 
 class Model(ABC):
+    def __new__(cls, *args, **kwargs):
+        if cls is Model:
+            # init model
+            # infer model type by fitting_type
+            from deepmd.model.multi import (
+                MultiModel,
+            )
+
+            model_type = kwargs.get("type", "standard")
+            if model_type == "standard":
+                cls = StandardModel
+            elif model_type == "multi":
+                cls = MultiModel
+            else:
+                raise ValueError(f"unknown model type: {model_type}")
+            return cls.__new__(cls, *args, **kwargs)
+        return super().__new__(cls)
+
+    def __init__(
+        self,
+        type_embedding: Optional[dict] = None,
+        type_map: Optional[List[str]] = None,
+        data_stat_nbatch: int = 10,
+        data_stat_nsample: int = 10,
+        data_stat_protect: float = 1e-2,
+        use_srtab: Optional[str] = None,
+        smin_alpha: Optional[float] = None,
+        sw_rmin: Optional[float] = None,
+        sw_rmax: Optional[float] = None,
+        spin: Optional[Spin] = None,
+        compress: dict = None,
+        **kwargs,
+    ) -> None:
+        super().__init__()
+        # spin
+        if spin is not None:
+            self.spin = Spin(**spin)
+        else:
+            self.spin = None
+        self.compress = compress
+        # other inputs
+        if type_map is None:
+            self.type_map = []
+        else:
+            self.type_map = type_map
+        self.data_stat_nbatch = data_stat_nbatch
+        self.data_stat_nsample = data_stat_nsample
+        self.data_stat_protect = data_stat_protect
+        self.srtab_name = use_srtab
+        if self.srtab_name is not None:
+            self.srtab = PairTab(self.srtab_name)
+            self.smin_alpha = smin_alpha
+            self.sw_rmin = sw_rmin
+            self.sw_rmax = sw_rmax
+        else:
+            self.srtab = None
+
     @abstractmethod
     def build(
         self,
@@ -187,3 +268,184 @@ class Model(ABC):
         return tf.import_graph_def(
             sub_graph_def, input_map=feed_dict, return_elements=return_elements, name=""
         )
+
+    def enable_mixed_precision(self, mixed_prec: dict):
+        """Enable mixed precision for the model.
+
+        Parameters
+        ----------
+        mixed_prec : dict
+            The mixed precision config
+        """
+        raise RuntimeError("Not supported")
+
+    def change_energy_bias(
+        self,
+        data: DeepmdDataSystem,
+        frozen_model: str,
+        origin_type_map: list,
+        full_type_map: str,
+        bias_shift: str = "delta",
+    ) -> None:
+        """Change the energy bias according to the input data and the pretrained model.
+
+        Parameters
+        ----------
+        data : DeepmdDataSystem
+            The training data.
+        frozen_model : str
+            The path file of frozen model.
+        origin_type_map : list
+            The original type_map in dataset, they are targets to change the energy bias.
+        full_type_map : str
+            The full type_map in pretrained model
+        bias_shift : str
+            The mode for changing energy bias : ['delta', 'statistic']
+            'delta' : perform predictions on energies of target dataset,
+                    and do least sqaure on the errors to obtain the target shift as bias.
+            'statistic' : directly use the statistic energy bias in the target dataset.
+        """
+        raise RuntimeError("Not supported")
+
+    def enable_compression(self):
+        """Enable compression."""
+        raise RuntimeError("Not supported")
+
+    def get_numb_fparam(self) -> Union[int, dict]:
+        """Get the number of frame parameters."""
+        return 0
+
+    def get_numb_aparam(self) -> Union[int, dict]:
+        """Get the number of atomic parameters."""
+        return 0
+
+    def get_numb_dos(self) -> Union[int, dict]:
+        """Get the number of gridpoints in energy space."""
+        return 0
+
+    @abstractmethod
+    def get_fitting(self) -> Union[str, dict]:
+        """Get the fitting(s)."""
+
+    @abstractmethod
+    def get_loss(self, loss: dict, lr) -> Union[Loss, dict]:
+        """Get the loss function(s)."""
+
+
+class StandardModel(Model):
+    """Standard model, which must a descriptor and a fitting."""
+
+    def __new__(cls, *args, **kwargs):
+        from .dos import (
+            DOSModel,
+        )
+        from .ener import (
+            EnerModel,
+        )
+        from .tensor import (
+            DipoleModel,
+            PolarModel,
+        )
+
+        if cls is StandardModel:
+            fitting_type = kwargs["fitting_net"]["type"]
+            # init model
+            # infer model type by fitting_type
+            if fitting_type == "ener":
+                cls = EnerModel
+            elif fitting_type == "dos":
+                cls = DOSModel
+            elif fitting_type == "dipole":
+                cls = DipoleModel
+            elif fitting_type == "polar":
+                cls = PolarModel
+            else:
+                raise RuntimeError("get unknown fitting type when building model")
+            return cls.__new__(cls)
+        return super().__new__(cls)
+
+    def __init__(
+        self,
+        descriptor: Union[dict, Descriptor],
+        fitting_net: Union[dict, Fitting],
+        type_embedding: Optional[dict] = None,
+        type_map: Optional[List[str]] = None,
+        **kwargs,
+    ) -> None:
+        super().__init__(
+            descriptor=descriptor, fitting=fitting_net, type_map=type_map, **kwargs
+        )
+        if self.spin is not None and descriptor["type"] in [
+            "se_e2_a",
+            "se_a",
+            "se_e2_r",
+            "se_r",
+            "hybrid",
+        ]:
+            descriptor["spin"] = self.spin
+        if isinstance(descriptor, Descriptor):
+            self.descrpt = descriptor
+        else:
+            self.descrpt = Descriptor(**descriptor, ntypes=len(type_map))
+
+        if isinstance(fitting_net, Fitting):
+            self.fitting = fitting_net
+        else:
+            self.fitting = Fitting(**fitting_net, descrpt=self.descrpt, spin=self.spin)
+        self.rcut = self.descrpt.get_rcut()
+        self.ntypes = self.descrpt.get_ntypes()
+
+        # type embedding
+        if type_embedding is not None and isinstance(type_embedding, TypeEmbedNet):
+            self.typeebd = type_embedding
+        elif type_embedding is not None:
+            self.typeebd = TypeEmbedNet(
+                **type_embedding,
+                padding=self.descrpt.explicit_ntypes,
+            )
+        elif self.descrpt.explicit_ntypes:
+            default_args = type_embedding_args()
+            default_args_dict = {i.name: i.default for i in default_args}
+            default_args_dict["activation_function"] = None
+            self.typeebd = TypeEmbedNet(
+                **default_args_dict,
+                padding=True,
+            )
+        else:
+            self.typeebd = None
+
+    def enable_mixed_precision(self, mixed_prec: dict):
+        """Enable mixed precision for the model.
+
+        Parameters
+        ----------
+        mixed_prec : dict
+            The mixed precision config
+        """
+        self.descrpt.enable_mixed_precision(mixed_prec)
+        self.fitting.enable_mixed_precision(mixed_prec)
+
+    def enable_compression(self):
+        """Enable compression."""
+        graph, graph_def = load_graph_def(self.compress["model_file"])
+        self.descrpt.enable_compression(
+            self.compress["min_nbor_dist"],
+            graph,
+            graph_def,
+            self.compress["table_config"][0],
+            self.compress["table_config"][1],
+            self.compress["table_config"][2],
+            self.compress["table_config"][3],
+        )
+        # for fparam or aparam settings in 'ener' type fitting net
+        self.fitting.init_variables(graph, graph_def)
+        if self.typeebd is not None:
+            self.typeebd.init_variables(graph, graph_def)
+
+    def get_fitting(self) -> Union[Fitting, dict]:
+        """Get the fitting(s)."""
+        return self.fitting
+
+    def get_loss(self, loss: dict, lr) -> Union[Loss, dict]:
+        """Get the loss function(s)."""
+        return self.fitting.get_loss(loss, lr)

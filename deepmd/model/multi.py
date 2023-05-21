@@ -1,22 +1,48 @@
 import json
 from typing import (
+    Dict,
     List,
     Optional,
 )
 
 import numpy as np
 
+from deepmd.descriptor.descriptor import (
+    Descriptor,
+)
 from deepmd.env import (
     MODEL_VERSION,
     global_cvt_2_ener_float,
     op_module,
     tf,
 )
+from deepmd.fit import (
+    DipoleFittingSeA,
+    DOSFitting,
+    EnerFitting,
+    GlobalPolarFittingSeA,
+    PolarFittingSeA,
+)
+from deepmd.fit.fitting import (
+    Fitting,
+)
+from deepmd.loss.loss import (
+    Loss,
+)
+from deepmd.utils.argcheck import (
+    type_embedding_args,
+)
 from deepmd.utils.graph import (
     get_tensor_by_name_from_graph,
 )
 from deepmd.utils.pair_tab import (
     PairTab,
+)
+from deepmd.utils.spin import (
+    Spin,
+)
+from deepmd.utils.type_embed import (
+    TypeEmbedNet,
 )
 
 from .model import (
@@ -35,10 +61,8 @@ class MultiModel(Model):
     ----------
     descrpt
             Descriptor
-    fitting_dict
+    fitting_net_dict
             Dictionary of fitting nets
-    fitting_type_dict
-            Dictionary of types of fitting nets
     typeebd
             Type embedding net
     type_map
@@ -62,10 +86,10 @@ class MultiModel(Model):
 
     def __init__(
         self,
-        descrpt,
-        fitting_dict,
-        fitting_type_dict,
-        typeebd=None,
+        descriptor: dict,
+        fitting_net_dict: dict,
+        fitting_type_dict: Optional[dict] = None,  # deprecated
+        type_embedding=None,
         type_map: Optional[List[str]] = None,
         data_stat_nbatch: int = 10,
         data_stat_protect: float = 1e-2,
@@ -73,22 +97,75 @@ class MultiModel(Model):
         smin_alpha: Optional[float] = None,
         sw_rmin: Optional[float] = None,
         sw_rmax: Optional[float] = None,
+        **kwargs,
     ) -> None:
         """Constructor."""
+        super().__init__(
+            descriptor=descriptor,
+            fitting_net_dict=fitting_net_dict,
+            type_embedding=type_embedding,
+            type_map=type_map,
+            data_stat_nbatch=data_stat_nbatch,
+            data_stat_protect=data_stat_protect,
+            use_srtab=use_srtab,
+            smin_alpha=smin_alpha,
+            sw_rmin=sw_rmin,
+            sw_rmax=sw_rmax,
+        )
+        if self.spin is not None and descriptor["type"] in [
+            "se_e2_a",
+            "se_a",
+            "se_e2_r",
+            "se_r",
+            "hybrid",
+        ]:
+            descriptor["spin"] = Spin(**self.spin)
+        if isinstance(descriptor, Descriptor):
+            self.descrpt = descriptor
+        else:
+            self.descrpt = Descriptor(
+                **descriptor, ntypes=len(type_map), multi_task=True
+            )
+
+        fitting_dict = {}
+        for item in fitting_net_dict:
+            item_fitting_param = fitting_net_dict[item]
+            if isinstance(item_fitting_param, Fitting):
+                fitting_dict[item] = item_fitting_param
+            else:
+                fitting_dict[item] = Fitting(
+                    **item_fitting_param, descrpt=self.descrpt, spin=self.spin
+                )
+
+        # type embedding
+        if type_embedding is not None and isinstance(type_embedding, TypeEmbedNet):
+            self.typeebd = type_embedding
+        elif type_embedding is not None:
+            self.typeebd = TypeEmbedNet(
+                **type_embedding,
+                padding=self.descrpt.explicit_ntypes,
+            )
+        elif self.descrpt.explicit_ntypes:
+            default_args = type_embedding_args()
+            default_args_dict = {i.name: i.default for i in default_args}
+            default_args_dict["activation_function"] = None
+            self.typeebd = TypeEmbedNet(
+                **default_args_dict,
+                padding=True,
+            )
+        else:
+            self.typeebd = None
+
         # descriptor
-        self.descrpt = descrpt
         self.rcut = self.descrpt.get_rcut()
         self.ntypes = self.descrpt.get_ntypes()
         # fitting
         self.fitting_dict = fitting_dict
-        self.fitting_type_dict = fitting_type_dict
         self.numb_fparam_dict = {
             item: self.fitting_dict[item].get_numb_fparam()
             for item in self.fitting_dict
-            if self.fitting_type_dict[item] == "ener"
+            if isinstance(self.fitting_dict[item], EnerFitting)
         }
-        # type embedding
-        self.typeebd = typeebd
         # other inputs
         if type_map is None:
             self.type_map = []
@@ -195,11 +272,10 @@ class MultiModel(Model):
             natomsel = {}
             nout = {}
             for fitting_key in self.fitting_dict:
-                if self.fitting_type_dict[fitting_key] in [
-                    "dipole",
-                    "polar",
-                    "global_polar",
-                ]:
+                if isinstance(
+                    self.fitting_dict[fitting_key],
+                    (DipoleFittingSeA, PolarFittingSeA, GlobalPolarFittingSeA),
+                ):
                     sel_type[fitting_key] = self.fitting_dict[
                         fitting_key
                     ].get_sel_type()
@@ -299,7 +375,7 @@ class MultiModel(Model):
         self.atom_ener = {}
         model_dict = {}
         for fitting_key in self.fitting_dict:
-            if self.fitting_type_dict[fitting_key] == "ener":
+            if isinstance(self.fitting_dict[fitting_key], EnerFitting):
                 atom_ener = self.fitting_dict[fitting_key].build(
                     dout,
                     natoms,
@@ -384,12 +460,15 @@ class MultiModel(Model):
                 model_dict[fitting_key]["atom_virial"] = atom_virial
                 model_dict[fitting_key]["coord"] = coord
                 model_dict[fitting_key]["atype"] = atype
-            elif self.fitting_type_dict[fitting_key] in [
-                "dipole",
-                "polar",
-                "global_polar",
-            ]:
-                tensor_name = self.fitting_type_dict[fitting_key]
+            elif isinstance(
+                self.fitting_dict[fitting_key],
+                (DipoleFittingSeA, PolarFittingSeA, GlobalPolarFittingSeA),
+            ):
+                tensor_name = {
+                    DipoleFittingSeA: "dipole",
+                    PolarFittingSeA: "polar",
+                    GlobalPolarFittingSeA: "global_polar",
+                }[type(self.fitting_dict[fitting_key])]
                 output = self.fitting_dict[fitting_key].build(
                     dout,
                     rot_mat,
@@ -464,7 +543,6 @@ class MultiModel(Model):
                     model_dict[fitting_key]["force"] = force
                     model_dict[fitting_key]["virial"] = virial
                     model_dict[fitting_key]["atom_virial"] = atom_virial
-
         return model_dict
 
     def init_variables(
@@ -506,3 +584,64 @@ class MultiModel(Model):
         tf.constant("original_model", name="model_type", dtype=tf.string)
         if self.typeebd is not None:
             self.typeebd.init_variables(graph, graph_def, suffix=suffix)
+
+    def enable_mixed_precision(self, mixed_prec: dict):
+        """Enable mixed precision for the model.
+
+        Parameters
+        ----------
+        mixed_prec : dict
+            The mixed precision config
+        """
+        self.descrpt.enable_mixed_precision(mixed_prec)
+        for fitting_key in self.fitting_dict:
+            self.fitting_dict[fitting_key].enable_mixed_precision(self.mixed_prec)
+
+    def get_numb_fparam(self) -> dict:
+        """Get the number of frame parameters."""
+        numb_fparam_dict = {}
+        for fitting_key in self.fitting_dict:
+            if isinstance(self.fitting_dict[fitting_key], (EnerFitting, DOSFitting)):
+                numb_fparam_dict[fitting_key] = self.fitting_dict[
+                    fitting_key
+                ].get_numb_fparam()
+            else:
+                numb_fparam_dict[fitting_key] = 0
+        return numb_fparam_dict
+
+    def get_numb_aparam(self) -> dict:
+        """Get the number of atomic parameters."""
+        numb_aparam_dict = {}
+        for fitting_key in self.fitting_dict:
+            if isinstance(self.fitting_dict[fitting_key], (EnerFitting, DOSFitting)):
+                numb_aparam_dict[fitting_key] = self.fitting_dict[
+                    fitting_key
+                ].get_numb_aparam()
+            else:
+                numb_aparam_dict[fitting_key] = 0
+        return numb_aparam_dict
+
+    def get_numb_dos(self) -> dict:
+        """Get the number of gridpoints in energy space."""
+        numb_dos_dict = {}
+        for fitting_key in self.fitting_dict:
+            if isinstance(self.fitting_dict[fitting_key], DOSFitting):
+                numb_dos_dict[fitting_key] = self.fitting_dict[
+                    fitting_key
+                ].get_numb_dos()
+            else:
+                numb_dos_dict[fitting_key] = 0
+        return numb_dos_dict
+
+    def get_fitting(self) -> dict:
+        """Get the fitting(s)."""
+        return self.fitting_dict.copy()
+
+    def get_loss(self, loss: dict, lr: dict) -> Dict[str, Loss]:
+        loss_dict = {}
+        for fitting_key in self.fitting_dict:
+            loss_param = loss.get(fitting_key, {})
+            loss_dict[fitting_key] = self.fitting_dict[fitting_key].get_loss(
+                loss_param, lr[fitting_key]
+            )
+        return loss_dict

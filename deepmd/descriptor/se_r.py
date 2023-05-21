@@ -97,6 +97,7 @@ class DescrptSeR(DescrptSe):
         uniform_seed: bool = False,
         multi_task: bool = False,
         spin: Optional[Spin] = None,
+        **kwargs,
     ) -> None:
         """Constructor."""
         if rcut < rcut_smth:

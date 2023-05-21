@@ -10,7 +10,7 @@ from deepmd.env import (
 )
 
 from .model import (
-    Model,
+    StandardModel,
 )
 from .model_stat import (
     make_stat_input,
@@ -18,14 +18,14 @@ from .model_stat import (
 )
 
 
-class DOSModel(Model):
+class DOSModel(StandardModel):
     """DOS model.
 
     Parameters
     ----------
     descrpt
             Descriptor
-    fitting
+    fitting_net
             Fitting net
     type_map
             Mapping atom type to the name (str) of the type.
@@ -40,31 +40,28 @@ class DOSModel(Model):
 
     def __init__(
         self,
-        descrpt,
-        fitting,
-        typeebd=None,
+        descriptor: dict,
+        fitting_net: dict,
+        type_embedding: Optional[dict] = None,
         type_map: List[str] = None,
         data_stat_nbatch: int = 10,
         data_stat_protect: float = 1e-2,
+        **kwargs,
     ) -> None:
         """Constructor."""
-        # descriptor
-        self.descrpt = descrpt
-        self.rcut = self.descrpt.get_rcut()
-        self.ntypes = self.descrpt.get_ntypes()
+        super().__init__(
+            descriptor=descriptor,
+            fitting_net=fitting_net,
+            type_embedding=type_embedding,
+            type_map=type_map,
+            data_stat_nbatch=data_stat_nbatch,
+            data_stat_protect=data_stat_protect,
+            **kwargs,
+        )
         # fitting
-        self.fitting = fitting
         self.numb_dos = self.fitting.get_numb_dos()
         self.numb_fparam = self.fitting.get_numb_fparam()
-        # type embedding
-        self.typeebd = typeebd
-        # other inputs
-        if type_map is None:
-            self.type_map = []
-        else:
-            self.type_map = type_map
-        self.data_stat_nbatch = data_stat_nbatch
-        self.data_stat_protect = data_stat_protect
+        self.numb_aparam = self.fitting.get_numb_aparam()
 
     def get_numb_dos(self):
         return self.numb_dos
@@ -77,6 +74,14 @@ class DOSModel(Model):
 
     def get_type_map(self):
         return self.type_map
+
+    def get_numb_fparam(self) -> int:
+        """Get the number of frame parameters."""
+        return self.numb_fparam
+
+    def get_numb_aparam(self) -> int:
+        """Get the number of atomic parameters."""
+        return self.numb_fparam
 
     def data_stat(self, data):
         all_stat = make_stat_input(data, self.data_stat_nbatch, merge_sys=False)

@@ -19,6 +19,12 @@ from deepmd.env import (
 from deepmd.fit.fitting import (
     Fitting,
 )
+from deepmd.loss.dos import (
+    DOSLoss,
+)
+from deepmd.loss.loss import (
+    Loss,
+)
 from deepmd.nvnmd.fit.ener import (
     one_layer_nvnmd,
 )
@@ -98,6 +104,7 @@ class DOSFitting(Fitting):
         uniform_seed: bool = False,
         layer_name: Optional[List[Optional[str]]] = None,
         use_aparam_as_mask: bool = False,
+        **kwargs,
     ) -> None:
         """Constructor."""
         # model param
@@ -609,3 +616,9 @@ class DOSFitting(Fitting):
         """
         self.mixed_prec = mixed_prec
         self.fitting_precision = get_precision(mixed_prec["output_prec"])
+
+    def get_loss(self, loss: dict, lr) -> Loss:
+        loss.pop("type", None)
+        loss["starter_learning_rate"] = lr.start_lr()
+        loss["numb_dos"] = self.get_numb_dos()
+        return DOSLoss(**loss)
