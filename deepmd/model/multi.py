@@ -59,11 +59,13 @@ class MultiModel(Model):
 
     Parameters
     ----------
-    descrpt
+    descriptor
             Descriptor
     fitting_net_dict
             Dictionary of fitting nets
-    typeebd
+    fitting_type_dict
+        deprecated argument
+    type_embedding
             Type embedding net
     type_map
             Mapping atom type to the name (str) of the type.

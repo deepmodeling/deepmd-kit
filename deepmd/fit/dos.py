@@ -618,7 +618,20 @@ class DOSFitting(Fitting):
         self.fitting_precision = get_precision(mixed_prec["output_prec"])
 
     def get_loss(self, loss: dict, lr) -> Loss:
-        loss.pop("type", None)
-        loss["starter_learning_rate"] = lr.start_lr()
-        loss["numb_dos"] = self.get_numb_dos()
-        return DOSLoss(**loss)
+        """Get the loss function.
+
+        Parameters
+        ----------
+        loss : dict
+            the loss dict
+        lr : LearningRateExp
+            the learning rate
+
+        Returns
+        -------
+        Loss
+            the loss function
+        """
+        return DOSLoss(
+            **loss, starter_learning_rate=lr.start_lr(), numb_dos=self.get_numb_dos()
+        )

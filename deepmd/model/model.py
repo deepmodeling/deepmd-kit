@@ -45,6 +45,35 @@ from deepmd.utils.type_embed import (
 
 
 class Model(ABC):
+    """Abstract base model.
+
+    Parameters
+    ----------
+    type_embedding
+        Type embedding net
+    type_map
+        Mapping atom type to the name (str) of the type.
+        For example `type_map[1]` gives the name of the type 1.
+    data_stat_nbatch
+        Number of frames used for data statistic
+    data_stat_nsample
+        The number of training samples in a system to compute and change the energy bias.
+    data_stat_protect
+        Protect parameter for atomic energy regression
+    use_srtab
+        The table for the short-range pairwise interaction added on top of DP. The table is a text data file with (N_t + 1) * N_t / 2 + 1 columes. The first colume is the distance between atoms. The second to the last columes are energies for pairs of certain types. For example we have two atom types, 0 and 1. The columes from 2nd to 4th are for 0-0, 0-1 and 1-1 correspondingly.
+    smin_alpha
+        The short-range tabulated interaction will be swithed according to the distance of the nearest neighbor. This distance is calculated by softmin. This parameter is the decaying parameter in the softmin. It is only required when `use_srtab` is provided.
+    sw_rmin
+        The lower boundary of the interpolation between short-range tabulated interaction and DP. It is only required when `use_srtab` is provided.
+    sw_rmin
+        The upper boundary of the interpolation between short-range tabulated interaction and DP. It is only required when `use_srtab` is provided.
+    spin
+        spin
+    compress
+        Compression information for internal use
+    """
+
     def __new__(cls, *args, **kwargs):
         if cls is Model:
             # init model
@@ -335,7 +364,19 @@ class Model(ABC):
 
 
 class StandardModel(Model):
-    """Standard model, which must a descriptor and a fitting."""
+    """Standard model, which must contain a descriptor and a fitting.
+
+    Parameters
+    ----------
+    descriptor : Union[dict, Descriptor]
+        The descriptor
+    fitting_net : Union[dict, Fitting]
+        The fitting network
+    type_embedding : dict, optional
+        The type embedding
+    type_map : list of dict, optional
+        The type map
+    """
 
     def __new__(cls, *args, **kwargs):
         from .dos import (

@@ -23,10 +23,12 @@ class DOSModel(StandardModel):
 
     Parameters
     ----------
-    descrpt
+    descriptor
             Descriptor
     fitting_net
             Fitting net
+    type_embedding
+        Type embedding net
     type_map
             Mapping atom type to the name (str) of the type.
             For example `type_map[1]` gives the name of the type 1.

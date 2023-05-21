@@ -651,7 +651,20 @@ class GlobalPolarFittingSeA:
         self.polar_fitting.enable_mixed_precision(mixed_prec)
 
     def get_loss(self, loss: dict, lr) -> Loss:
-        """Get the loss function."""
+        """Get the loss function.
+
+        Parameters
+        ----------
+        loss : dict
+            the loss dict
+        lr : LearningRateExp
+            the learning rate
+
+        Returns
+        -------
+        Loss
+            the loss function
+        """
         return TensorLoss(
             loss,
             model=self,

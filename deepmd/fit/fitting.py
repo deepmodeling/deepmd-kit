@@ -87,4 +87,17 @@ class Fitting(PluginVariant):
 
     @abstractmethod
     def get_loss(self, loss: dict, lr) -> Loss:
-        """Get the loss function."""
+        """Get the loss function.
+
+        Parameters
+        ----------
+        loss : dict
+            the loss dict
+        lr : LearningRateExp
+            the learning rate
+
+        Returns
+        -------
+        Loss
+            the loss function
+        """

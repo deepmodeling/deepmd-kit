@@ -24,11 +24,11 @@ class TensorModel(StandardModel):
     ----------
     tensor_name
             Name of the tensor.
-    descrpt
+    descriptor
             Descriptor
     fitting_net
             Fitting net
-    typeebd
+    type_embedding
             Type embedding net
     type_map
             Mapping atom type to the name (str) of the type.

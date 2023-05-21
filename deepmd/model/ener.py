@@ -32,10 +32,12 @@ class EnerModel(StandardModel):
 
     Parameters
     ----------
-    descrpt
+    descriptor
             Descriptor
-    fitting
+    fitting_net
             Fitting net
+    type_embedding
+        Type embedding net
     type_map
             Mapping atom type to the name (str) of the type.
             For example `type_map[1]` gives the name of the type 1.
@@ -51,6 +53,8 @@ class EnerModel(StandardModel):
             The lower boundary of the interpolation between short-range tabulated interaction and DP. It is only required when `use_srtab` is provided.
     sw_rmin
             The upper boundary of the interpolation between short-range tabulated interaction and DP. It is only required when `use_srtab` is provided.
+    spin
+        spin
     data_stat_nsample
         The number of training samples in a system to compute and change the energy bias.
     """
