@@ -80,7 +80,9 @@ class Model(ABC):
     ) -> None:
         super().__init__()
         # spin
-        if spin is not None:
+        if isinstance(spin, Spin):
+            self.spin = spin
+        elif spin is not None:
             self.spin = Spin(**spin)
         else:
             self.spin = None
@@ -375,18 +377,12 @@ class StandardModel(Model):
         super().__init__(
             descriptor=descriptor, fitting=fitting_net, type_map=type_map, **kwargs
         )
-        if self.spin is not None and descriptor["type"] in [
-            "se_e2_a",
-            "se_a",
-            "se_e2_r",
-            "se_r",
-            "hybrid",
-        ]:
-            descriptor["spin"] = self.spin
         if isinstance(descriptor, Descriptor):
             self.descrpt = descriptor
         else:
-            self.descrpt = Descriptor(**descriptor, ntypes=len(type_map))
+            self.descrpt = Descriptor(
+                **descriptor, ntypes=len(type_map), spin=self.spin
+            )
 
         if isinstance(fitting_net, Fitting):
             self.fitting = fitting_net

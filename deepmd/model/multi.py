@@ -112,19 +112,16 @@ class MultiModel(Model):
             sw_rmin=sw_rmin,
             sw_rmax=sw_rmax,
         )
-        if self.spin is not None and descriptor["type"] in [
-            "se_e2_a",
-            "se_a",
-            "se_e2_r",
-            "se_r",
-            "hybrid",
-        ]:
-            descriptor["spin"] = Spin(**self.spin)
+        if self.spin is not None and not isinstance(self.spin, Spin):
+            self.spin = Spin(**self.spin)
         if isinstance(descriptor, Descriptor):
             self.descrpt = descriptor
         else:
             self.descrpt = Descriptor(
-                **descriptor, ntypes=len(type_map), multi_task=True
+                **descriptor,
+                ntypes=len(type_map),
+                multi_task=True,
+                spin=self.spin,
             )
 
         fitting_dict = {}
