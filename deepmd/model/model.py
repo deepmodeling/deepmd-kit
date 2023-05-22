@@ -104,7 +104,7 @@ class Model(ABC):
         sw_rmin: Optional[float] = None,
         sw_rmax: Optional[float] = None,
         spin: Optional[Spin] = None,
-        compress: dict = None,
+        compress: Optional[dict] = None,
         **kwargs,
     ) -> None:
         super().__init__()
