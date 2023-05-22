@@ -8,6 +8,7 @@ This header-only library provides a C++ 11 interface to the DeePMD-kit C API.
 
 #include <algorithm>
 #include <cassert>
+#include <cmath>
 #include <cstring>
 #include <exception>
 #include <iostream>
@@ -590,7 +591,8 @@ class DeepPot {
                 << std::endl;
       return;
     }
-    dp = DP_NewDeepPotWithParam(model.c_str(), gpu_rank, file_content.c_str());
+    dp = DP_NewDeepPotWithParam2(model.c_str(), gpu_rank, file_content.c_str(),
+                                 file_content.size());
     DP_CHECK_OK(DP_DeepPotCheckOK, dp);
     dfparam = DP_DeepPotGetDimFParam(dp);
     daparam = DP_DeepPotGetDimAParam(dp);
@@ -991,6 +993,14 @@ class DeepPot {
     return DP_DeepPotGetNumbTypes(dp);
   };
   /**
+   * @brief Get the number of types with spin.
+   * @return The number of types with spin.
+   **/
+  int numb_types_spin() const {
+    assert(dp);
+    return DP_DeepPotGetNumbTypesSpin(dp);
+  };
+  /**
    * @brief Get the type map (element name of the atom types) of this model.
    * @param[out] type_map The type map of this model.
    **/
@@ -1082,8 +1092,13 @@ class DeepPotModelDevi {
   /**
    * @brief Initialize the DP model deviation.
    * @param[in] model The name of the frozen model file.
+   * @param[in] gpu_rank The GPU rank.
+   * @param[in] file_content The content of the frozen model file.
    **/
-  void init(const std::vector<std::string> &models) {
+  void init(const std::vector<std::string> &models,
+            const int &gpu_rank = 0,
+            const std::vector<std::string> &file_content =
+                std::vector<std::string>()) {
     if (dp) {
       std::cerr << "WARNING: deepmd-kit should not be initialized twice, do "
                    "nothing at the second call of initializer"
@@ -1094,7 +1109,18 @@ class DeepPotModelDevi {
     cstrings.reserve(models.size());
     for (std::string const &str : models) cstrings.push_back(str.data());
 
-    dp = DP_NewDeepPotModelDevi(cstrings.data(), cstrings.size());
+    std::vector<const char *> c_file_contents;
+    std::vector<int> size_file_contents;
+    c_file_contents.reserve(file_content.size());
+    size_file_contents.reserve(file_content.size());
+    for (std::string const &str : file_content) {
+      c_file_contents.push_back(str.data());
+      size_file_contents.push_back(str.size());
+    }
+
+    dp = DP_NewDeepPotModelDeviWithParam(
+        cstrings.data(), cstrings.size(), gpu_rank, c_file_contents.data(),
+        c_file_contents.size(), size_file_contents.data());
     DP_CHECK_OK(DP_DeepPotModelDeviCheckOK, dp);
     numb_models = models.size();
     dfparam = DP_DeepPotModelDeviGetDimFParam(dp);
@@ -1267,6 +1293,14 @@ class DeepPotModelDevi {
     return DP_DeepPotModelDeviGetNumbTypes(dp);
   };
   /**
+   * @brief Get the number of types with spin.
+   * @return The number of types with spin.
+   **/
+  int numb_types_spin() const {
+    assert(dp);
+    return DP_DeepPotModelDeviGetNumbTypesSpin(dp);
+  };
+  /**
    * @brief Get the dimension of the frame parameter.
    * @return The dimension of the frame parameter.
    **/
@@ -1283,15 +1317,6 @@ class DeepPotModelDevi {
     return daparam;
   }
   /**
-   * @brief Compute the average energy.
-   * @param[out] dener The average energy.
-   * @param[in] all_energy The energies of all models.
-   **/
-  template <typename VALUETYPE>
-  void compute_avg(VALUETYPE &dener, const std::vector<VALUETYPE> &all_energy) {
-    throw deepmd::hpp::deepmd_exception("TODO: not implemented yet");
-  };
-  /**
    * @brief Compute the average of vectors.
    * @param[out] avg The average of vectors.
    * @param[in] xx The vectors of all models.
@@ -1299,7 +1324,21 @@ class DeepPotModelDevi {
   template <typename VALUETYPE>
   void compute_avg(std::vector<VALUETYPE> &avg,
                    const std::vector<std::vector<VALUETYPE>> &xx) {
-    throw deepmd::hpp::deepmd_exception("TODO: not implemented yet");
+    assert(xx.size() == numb_models);
+    if (numb_models == 0) return;
+
+    avg.resize(xx[0].size());
+    fill(avg.begin(), avg.end(), VALUETYPE(0.));
+
+    for (unsigned ii = 0; ii < numb_models; ++ii) {
+      for (unsigned jj = 0; jj < avg.size(); ++jj) {
+        avg[jj] += xx[ii][jj];
+      }
+    }
+
+    for (unsigned jj = 0; jj < avg.size(); ++jj) {
+      avg[jj] /= VALUETYPE(numb_models);
+    }
   };
   /**
    * @brief Compute the standard deviation of vectors.
@@ -1313,7 +1352,30 @@ class DeepPotModelDevi {
                    const std::vector<VALUETYPE> &avg,
                    const std::vector<std::vector<VALUETYPE>> &xx,
                    const int &stride) {
-    throw deepmd::hpp::deepmd_exception("TODO: not implemented yet");
+    assert(xx.size() == numb_models);
+    if (numb_models == 0) return;
+
+    unsigned ndof = avg.size();
+    unsigned nloc = ndof / stride;
+    assert(nloc * stride == ndof);
+
+    std.resize(nloc);
+    fill(std.begin(), std.end(), VALUETYPE(0.));
+
+    for (unsigned ii = 0; ii < numb_models; ++ii) {
+      for (unsigned jj = 0; jj < nloc; ++jj) {
+        const VALUETYPE *tmp_f = &(xx[ii][jj * stride]);
+        const VALUETYPE *tmp_avg = &(avg[jj * stride]);
+        for (unsigned dd = 0; dd < stride; ++dd) {
+          VALUETYPE vdiff = tmp_f[dd] - tmp_avg[dd];
+          std[jj] += vdiff * vdiff;
+        }
+      }
+    }
+
+    for (unsigned jj = 0; jj < nloc; ++jj) {
+      std[jj] = sqrt(std[jj] / VALUETYPE(numb_models));
+    }
   };
   /**
    * @brief Compute the relative standard deviation of vectors.
@@ -1327,19 +1389,19 @@ class DeepPotModelDevi {
                             const std::vector<VALUETYPE> &avg,
                             const VALUETYPE eps,
                             const int &stride) {
-    throw deepmd::hpp::deepmd_exception("TODO: not implemented yet");
-  };
-  /**
-   * @brief Compute the standard deviation of atomic energies.
-   * @param[out] std The standard deviation of atomic energies.
-   * @param[in] avg The average of atomic energies.
-   * @param[in] xx The vectors of all atomic energies.
-   **/
-  template <typename VALUETYPE>
-  void compute_std_e(std::vector<VALUETYPE> &std,
-                     const std::vector<VALUETYPE> &avg,
-                     const std::vector<std::vector<VALUETYPE>> &xx) {
-    throw deepmd::hpp::deepmd_exception("TODO: not implemented yet");
+    unsigned ndof = avg.size();
+    unsigned nloc = std.size();
+    assert(nloc * stride == ndof);
+
+    for (unsigned ii = 0; ii < nloc; ++ii) {
+      const VALUETYPE *tmp_avg = &(avg[ii * stride]);
+      VALUETYPE f_norm = 0.0;
+      for (unsigned dd = 0; dd < stride; ++dd) {
+        f_norm += tmp_avg[dd] * tmp_avg[dd];
+      }
+      f_norm = sqrt(f_norm);
+      std[ii] /= f_norm + eps;
+    }
   };
   /**
    * @brief Compute the standard deviation of forces.
@@ -1351,7 +1413,7 @@ class DeepPotModelDevi {
   void compute_std_f(std::vector<VALUETYPE> &std,
                      const std::vector<VALUETYPE> &avg,
                      const std::vector<std::vector<VALUETYPE>> &xx) {
-    throw deepmd::hpp::deepmd_exception("TODO: not implemented yet");
+    compute_std(std, avg, xx, 3);
   };
   /**
    * @brief Compute the relative standard deviation of forces.
@@ -1363,7 +1425,7 @@ class DeepPotModelDevi {
   void compute_relative_std_f(std::vector<VALUETYPE> &std,
                               const std::vector<VALUETYPE> &avg,
                               const VALUETYPE eps) {
-    throw deepmd::hpp::deepmd_exception("TODO: not implemented yet");
+    compute_relative_std(std, avg, eps, 3);
   };
 
  private:
@@ -1898,8 +1960,62 @@ class DipoleChargeModifier {
  * @param[out] file_content Content of the model file.
  **/
 void inline read_file_to_string(std::string model, std::string &file_content) {
-  const char *c_file_content = DP_ReadFileToChar(model.c_str());
-  file_content = std::string(c_file_content);
+  int size;
+  const char *c_file_content = DP_ReadFileToChar2(model.c_str(), &size);
+  file_content = std::string(c_file_content, size);
+};
+
+/**
+ * @brief Get forward and backward map of selected atoms by
+ * atom types.
+ * @param[out] fwd_map The forward map with size natoms.
+ * @param[out] bkw_map The backward map with size nreal.
+ * @param[out] nghost_real The number of selected ghost atoms.
+ * @param[in] dcoord_ The coordinates of all atoms. Reserved for compatibility.
+ * @param[in] datype_ The atom types of all atoms.
+ * @param[in] nghost The number of ghost atoms.
+ * @param[in] sel_type_ The selected atom types.
+ */
+template <typename VALUETYPE>
+void select_by_type(std::vector<int> &fwd_map,
+                    std::vector<int> &bkw_map,
+                    int &nghost_real,
+                    const std::vector<VALUETYPE> &dcoord_,
+                    const std::vector<int> &datype_,
+                    const int &nghost,
+                    const std::vector<int> &sel_type_) {
+  const int natoms = datype_.size();
+  const int nsel_type = sel_type_.size();
+  fwd_map.resize(natoms);
+  // do not know nghost_real at this time
+  bkw_map.resize(natoms);
+  int nreal;
+  DP_SelectByType(natoms, &datype_[0], nghost, nsel_type, &sel_type_[0],
+                  &fwd_map[0], &nreal, &bkw_map[0], &nghost_real);
+  bkw_map.resize(nreal);
+};
+
+/**
+ * @brief Apply the given map to a vector. Assume nframes is 1.
+ * @tparam VT The value type of the vector. Only support int.
+ * @param[out] out The output vector.
+ * @param[in] in The input vector.
+ * @param[in] fwd_map The map.
+ * @param[in] stride The stride of the input vector.
+ */
+template <typename VT>
+void select_map(std::vector<VT> &out,
+                const std::vector<VT> &in,
+                const std::vector<int> &fwd_map,
+                const int &stride) {
+  static_assert(std::is_same<int, VT>(), "only support int");
+  const int nall1 = in.size() / stride;
+  int nall2 = 0;
+  for (int ii = 0; ii < nall1; ++ii) {
+    if (fwd_map[ii] >= 0) nall2++;
+  }
+  out.resize(nall2 * stride);
+  DP_SelectMapInt(&in[0], &fwd_map[0], stride, nall1, nall2, &out[0]);
 };
 
 }  // namespace hpp

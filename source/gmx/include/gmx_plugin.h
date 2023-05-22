@@ -1,6 +1,12 @@
 #ifndef _GMX_PLUGIN_H_
 #define _GMX_PLUGIN_H_
+#ifdef DP_USE_CXX_API
 #include "DeepPot.h"
+namespace deepmd_compat = deepmd;
+#else
+#include "deepmd.hpp"
+namespace deepmd_compat = deepmd::hpp;
+#endif
 
 namespace deepmd {
 
@@ -10,7 +16,7 @@ class DeepmdPlugin {
   DeepmdPlugin(char*);
   ~DeepmdPlugin();
   void init_from_json(char*);
-  deepmd::DeepPot* nnp;
+  deepmd_compat::DeepPot* nnp;
   std::vector<int> dtype;
   std::vector<int> dindex;
   bool pbc;

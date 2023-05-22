@@ -8,16 +8,6 @@
 using namespace tensorflow;
 using namespace deepmd;
 
-static std::vector<int> cum_sum(const std::vector<int32>& n_sel) {
-  std::vector<int> sec;
-  sec.resize(n_sel.size() + 1);
-  sec[0] = 0;
-  for (int ii = 1; ii < sec.size(); ++ii) {
-    sec[ii] = sec[ii - 1] + n_sel[ii - 1];
-  }
-  return sec;
-}
-
 // start multiple frames
 
 template <typename MODELTYPE, typename VALUETYPE>
@@ -453,6 +443,19 @@ void DeepPot::init(const std::string& model,
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
   check_status(NewSession(options, &session));
   check_status(session->Create(*graph_def));
+  try {
+    model_version = get_scalar<STRINGTYPE>("model_attr/model_version");
+  } catch (deepmd::tf_exception& e) {
+    // no model version defined in old models
+    model_version = "0.0";
+  }
+  if (!model_compatable(model_version)) {
+    throw deepmd::deepmd_exception(
+        "incompatable model: version " + model_version +
+        " in graph, but version " + global_model_version +
+        " supported "
+        "See https://deepmd.rtfd.io/compatability/ for details.");
+  }
   dtype = session_get_dtype(session, "descrpt_attr/rcut");
   if (dtype == tensorflow::DT_DOUBLE) {
     rcut = get_scalar<double>("descrpt_attr/rcut");
@@ -461,22 +464,16 @@ void DeepPot::init(const std::string& model,
   }
   cell_size = rcut;
   ntypes = get_scalar<int>("descrpt_attr/ntypes");
+  try {
+    ntypes_spin = get_scalar<int>("spin_attr/ntypes_spin");
+  } catch (deepmd::deepmd_exception) {
+    ntypes_spin = 0;
+  }
   dfparam = get_scalar<int>("fitting_attr/dfparam");
   daparam = get_scalar<int>("fitting_attr/daparam");
   if (dfparam < 0) dfparam = 0;
   if (daparam < 0) daparam = 0;
   model_type = get_scalar<STRINGTYPE>("model_attr/model_type");
-  try {
-    model_version = get_scalar<STRINGTYPE>("model_attr/model_version");
-  } catch (deepmd::tf_exception& e) {
-    // no model version defined in old models
-    model_version = "0.0";
-  }
-  if (!model_compatable(model_version)) {
-    throw deepmd::deepmd_exception("incompatable model: version " +
-                                   model_version + " in graph, but version " +
-                                   global_model_version + " supported ");
-  }
   inited = true;
 
   init_nbor = false;
@@ -489,53 +486,6 @@ void DeepPot::print_summary(const std::string& pre) const {
 template <class VT>
 VT DeepPot::get_scalar(const std::string& name) const {
   return session_get_scalar<VT>(session, name);
-}
-
-std::string graph_info(const GraphDef& graph_def) {
-  // std::stringstream buffer;
-  // std::streambuf * old = std::cout.rdbuf(buffer.rdbuf());
-  std::string str = "";
-  for (int ii = 0; ii < graph_def.node_size(); ii++) {
-    if (graph_def.node(ii).name() == "DescrptSeA") {
-      // str = graph_def.node(ii).PrintDebugString();
-      str = graph_def.node(ii).DebugString();
-      return str;
-      // std::cout << str << std::endl;
-    }
-    if (graph_def.node(ii).name() == "DescrptSeR") {
-      // str = graph_def.node(ii).PrintDebugString();
-      str = graph_def.node(ii).DebugString();
-      return str;
-      // std::cout << str << std::endl;
-    }
-  }
-  return str;
-}
-
-// init the tmp array data
-std::vector<int> DeepPot::get_sel_a() const {
-  std::vector<int> sel_a;
-  std::istringstream is(graph_info(*graph_def));
-  std::string line = "";
-  while (is >> line) {
-    if (line.find("sel_a") != line.npos) {
-      while (std::getline(is, line) && line != "}") {
-        if (line.find("i:") != line.npos) {
-          sel_a.push_back(atoi((line.substr(line.find("i:") + 2)).c_str()));
-        }
-      }
-      break;
-    }
-    if (line.find("sel") != line.npos) {
-      while (std::getline(is, line) && line != "}") {
-        if (line.find("i:") != line.npos) {
-          sel_a.push_back(atoi((line.substr(line.find("i:") + 2)).c_str()));
-        }
-      }
-      break;
-    }
-  }
-  return sel_a;
 }
 
 template <typename VALUETYPE>
@@ -1316,6 +1266,19 @@ void DeepPotModelDevi::init(const std::vector<std::string>& models,
     check_status(NewSession(options, &(sessions[ii])));
     check_status(sessions[ii]->Create(*graph_defs[ii]));
   }
+  try {
+    model_version = get_scalar<STRINGTYPE>("model_attr/model_version");
+  } catch (deepmd::tf_exception& e) {
+    // no model version defined in old models
+    model_version = "0.0";
+  }
+  if (!model_compatable(model_version)) {
+    throw deepmd::deepmd_exception(
+        "incompatable model: version " + model_version +
+        " in graph, but version " + global_model_version +
+        " supported. "
+        "See https://deepmd.rtfd.io/compatability/ for details.");
+  }
   dtype = session_get_dtype(sessions[0], "descrpt_attr/rcut");
   if (dtype == tensorflow::DT_DOUBLE) {
     rcut = get_scalar<double>("descrpt_attr/rcut");
@@ -1324,17 +1287,16 @@ void DeepPotModelDevi::init(const std::vector<std::string>& models,
   }
   cell_size = rcut;
   ntypes = get_scalar<int>("descrpt_attr/ntypes");
+  try {
+    ntypes_spin = get_scalar<int>("spin_attr/ntypes_spin");
+  } catch (deepmd::deepmd_exception) {
+    ntypes_spin = 0;
+  }
   dfparam = get_scalar<int>("fitting_attr/dfparam");
   daparam = get_scalar<int>("fitting_attr/daparam");
   if (dfparam < 0) dfparam = 0;
   if (daparam < 0) daparam = 0;
   model_type = get_scalar<STRINGTYPE>("model_attr/model_type");
-  model_version = get_scalar<STRINGTYPE>("model_attr/model_version");
-  if (!model_compatable(model_version)) {
-    throw deepmd::deepmd_exception("incompatable model: version " +
-                                   model_version + " in graph, but version " +
-                                   global_model_version + " supported ");
-  }
   // rcut = get_rcut();
   // cell_size = rcut;
   // ntypes = get_ntypes();
@@ -1355,36 +1317,6 @@ VT DeepPotModelDevi::get_scalar(const std::string name) const {
     }
   }
   return myrcut;
-}
-
-// init the tmp array data
-std::vector<std::vector<int>> DeepPotModelDevi::get_sel() const {
-  std::vector<std::vector<int>> sec;
-  for (int ii = 0; ii < numb_models; ii++) {
-    std::vector<int> sel;
-    std::istringstream is(graph_info(*graph_defs[ii]));
-    std::string line = "";
-    while (is >> line) {
-      if (line.find("sel") != line.npos) {
-        while (std::getline(is, line) && line != "}") {
-          if (line.find("i:") != line.npos) {
-            sel.push_back(atoi((line.substr(line.find("i:") + 2)).c_str()));
-          }
-        }
-        break;
-      }
-      if (line.find("sel_a") != line.npos) {
-        while (std::getline(is, line) && line != "}") {
-          if (line.find("i:") != line.npos) {
-            sel.push_back(atoi((line.substr(line.find("i:") + 2)).c_str()));
-          }
-        }
-        break;
-      }
-    }
-    sec.push_back(sel);
-  }
-  return sec;
 }
 
 template <typename VALUETYPE>

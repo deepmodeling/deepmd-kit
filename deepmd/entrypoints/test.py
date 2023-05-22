@@ -319,6 +319,26 @@ def test_ener(
         av = ret[4]
         ae = ae.reshape([numb_test, -1])
         av = av.reshape([numb_test, -1])
+    if dp.get_ntypes_spin() != 0:
+        ntypes_real = dp.get_ntypes() - dp.get_ntypes_spin()
+        nloc = natoms
+        nloc_real = sum([np.count_nonzero(atype == ii) for ii in range(ntypes_real)])
+        force_r = np.split(
+            force, indices_or_sections=[nloc_real * 3, nloc * 3], axis=1
+        )[0]
+        force_m = np.split(
+            force, indices_or_sections=[nloc_real * 3, nloc * 3], axis=1
+        )[1]
+        test_force_r = np.split(
+            test_data["force"][:numb_test],
+            indices_or_sections=[nloc_real * 3, nloc * 3],
+            axis=1,
+        )[0]
+        test_force_m = np.split(
+            test_data["force"][:numb_test],
+            indices_or_sections=[nloc_real * 3, nloc * 3],
+            axis=1,
+        )[1]
 
     diff_e = energy - test_data["energy"][:numb_test].reshape([-1, 1])
     mae_e = mae(diff_e)
@@ -337,14 +357,26 @@ def test_ener(
         diff_ae = test_data["atom_ener"][:numb_test].reshape([-1]) - ae.reshape([-1])
         mae_ae = mae(diff_ae)
         rmse_ae = rmse(diff_ae)
+    if dp.get_ntypes_spin() != 0:
+        mae_fr = mae(force_r - test_force_r)
+        mae_fm = mae(force_m - test_force_m)
+        rmse_fr = rmse(force_r - test_force_r)
+        rmse_fm = rmse(force_m - test_force_m)
 
     log.info(f"# number of test data : {numb_test:d} ")
     log.info(f"Energy MAE         : {mae_e:e} eV")
     log.info(f"Energy RMSE        : {rmse_e:e} eV")
     log.info(f"Energy MAE/Natoms  : {mae_ea:e} eV")
     log.info(f"Energy RMSE/Natoms : {rmse_ea:e} eV")
-    log.info(f"Force  MAE         : {mae_f:e} eV/A")
-    log.info(f"Force  RMSE        : {rmse_f:e} eV/A")
+    if dp.get_ntypes_spin() == 0:
+        log.info(f"Force  MAE         : {mae_f:e} eV/A")
+        log.info(f"Force  RMSE        : {rmse_f:e} eV/A")
+    else:
+        log.info(f"Force atom MAE      : {mae_fr:e} eV/A")
+        log.info(f"Force spin MAE      : {mae_fm:e} eV/uB")
+        log.info(f"Force atom RMSE     : {rmse_fr:e} eV/A")
+        log.info(f"Force spin RMSE     : {rmse_fm:e} eV/uB")
+
     if data.pbc:
         log.info(f"Virial MAE         : {mae_v:e} eV")
         log.info(f"Virial RMSE        : {rmse_v:e} eV")
@@ -377,19 +409,42 @@ def test_ener(
             header="%s: data_e pred_e" % system,
             append=append_detail,
         )
-        pf = np.concatenate(
-            (
-                np.reshape(test_data["force"][:numb_test], [-1, 3]),
-                np.reshape(force, [-1, 3]),
-            ),
-            axis=1,
-        )
-        save_txt_file(
-            detail_path.with_suffix(".f.out"),
-            pf,
-            header="%s: data_fx data_fy data_fz pred_fx pred_fy pred_fz" % system,
-            append=append_detail,
-        )
+        if dp.get_ntypes_spin() == 0:
+            pf = np.concatenate(
+                (
+                    np.reshape(test_data["force"][:numb_test], [-1, 3]),
+                    np.reshape(force, [-1, 3]),
+                ),
+                axis=1,
+            )
+            save_txt_file(
+                detail_path.with_suffix(".f.out"),
+                pf,
+                header="%s: data_fx data_fy data_fz pred_fx pred_fy pred_fz" % system,
+                append=append_detail,
+            )
+        else:
+            pf_real = np.concatenate(
+                (np.reshape(test_force_r, [-1, 3]), np.reshape(force_r, [-1, 3])),
+                axis=1,
+            )
+            pf_mag = np.concatenate(
+                (np.reshape(test_force_m, [-1, 3]), np.reshape(force_m, [-1, 3])),
+                axis=1,
+            )
+            save_txt_file(
+                detail_path.with_suffix(".fr.out"),
+                pf_real,
+                header="%s: data_fx data_fy data_fz pred_fx pred_fy pred_fz" % system,
+                append=append_detail,
+            )
+            save_txt_file(
+                detail_path.with_suffix(".fm.out"),
+                pf_mag,
+                header="%s: data_fmx data_fmy data_fmz pred_fmx pred_fmy pred_fmz"
+                % system,
+                append=append_detail,
+            )
         pv = np.concatenate(
             (
                 np.reshape(test_data["virial"][:numb_test], [-1, 9]),
@@ -414,18 +469,34 @@ def test_ener(
             "pred_vyy pred_vyz pred_vzx pred_vzy pred_vzz",
             append=append_detail,
         )
-    return {
-        "mae_e": (mae_e, energy.size),
-        "mae_ea": (mae_ea, energy.size),
-        "mae_f": (mae_f, force.size),
-        "mae_v": (mae_v, virial.size),
-        "mae_va": (mae_va, virial.size),
-        "rmse_e": (rmse_e, energy.size),
-        "rmse_ea": (rmse_ea, energy.size),
-        "rmse_f": (rmse_f, force.size),
-        "rmse_v": (rmse_v, virial.size),
-        "rmse_va": (rmse_va, virial.size),
-    }
+    if dp.get_ntypes_spin() == 0:
+        return {
+            "mae_e": (mae_e, energy.size),
+            "mae_ea": (mae_ea, energy.size),
+            "mae_f": (mae_f, force.size),
+            "mae_v": (mae_v, virial.size),
+            "mae_va": (mae_va, virial.size),
+            "rmse_e": (rmse_e, energy.size),
+            "rmse_ea": (rmse_ea, energy.size),
+            "rmse_f": (rmse_f, force.size),
+            "rmse_v": (rmse_v, virial.size),
+            "rmse_va": (rmse_va, virial.size),
+        }
+    else:
+        return {
+            "mae_e": (mae_e, energy.size),
+            "mae_ea": (mae_ea, energy.size),
+            "mae_fr": (mae_fr, force_r.size),
+            "mae_fm": (mae_fm, force_m.size),
+            "mae_v": (mae_v, virial.size),
+            "mae_va": (mae_va, virial.size),
+            "rmse_e": (rmse_e, energy.size),
+            "rmse_ea": (rmse_ea, energy.size),
+            "rmse_fr": (rmse_fr, force_r.size),
+            "rmse_fm": (rmse_fm, force_m.size),
+            "rmse_v": (rmse_v, virial.size),
+            "rmse_va": (rmse_va, virial.size),
+        }
 
 
 def print_ener_sys_avg(avg: Dict[str, float]):
@@ -440,8 +511,14 @@ def print_ener_sys_avg(avg: Dict[str, float]):
     log.info(f"Energy RMSE        : {avg['rmse_e']:e} eV")
     log.info(f"Energy MAE/Natoms  : {avg['mae_ea']:e} eV")
     log.info(f"Energy RMSE/Natoms : {avg['rmse_ea']:e} eV")
-    log.info(f"Force  MAE         : {avg['mae_f']:e} eV/A")
-    log.info(f"Force  RMSE        : {avg['rmse_f']:e} eV/A")
+    if "rmse_f" in avg.keys():
+        log.info(f"Force  MAE         : {avg['mae_f']:e} eV/A")
+        log.info(f"Force  RMSE        : {avg['rmse_f']:e} eV/A")
+    else:
+        log.info(f"Force atom MAE      : {avg['mae_fr']:e} eV/A")
+        log.info(f"Force spin MAE      : {avg['mae_fm']:e} eV/uB")
+        log.info(f"Force atom RMSE     : {avg['rmse_fr']:e} eV/A")
+        log.info(f"Force spin RMSE     : {avg['rmse_fm']:e} eV/uB")
     log.info(f"Virial MAE         : {avg['mae_v']:e} eV")
     log.info(f"Virial RMSE        : {avg['rmse_v']:e} eV")
     log.info(f"Virial MAE/Natoms  : {avg['mae_va']:e} eV")

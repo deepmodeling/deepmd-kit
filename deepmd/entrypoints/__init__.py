@@ -6,9 +6,6 @@ from ..infer.model_devi import (
 from .compress import (
     compress,
 )
-from .config import (
-    config,
-)
 from .convert import (
     convert,
 )
@@ -33,7 +30,6 @@ from .transfer import (
 )
 
 __all__ = [
-    "config",
     "doc_train_input",
     "freeze",
     "test",

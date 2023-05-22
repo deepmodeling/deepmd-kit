@@ -1,0 +1,29 @@
+{
+  "name": "deepmd-kit",
+  "version": "0.0.0",
+  "description": "DeePMD-kit: A deep learning package for many-body potential energy representation and molecular dynamics",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "prepublishOnly": "python prepublish.py",
+    "install": "node-gyp rebuild"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deepmodeling/deepmd-kit.git",
+    "directory": "source/nodejs"
+  },
+  "keywords": [
+    "deepmd"
+  ],
+  "author": "DeepModeling",
+  "license": "LGPL-3.0",
+  "gypfile": true,
+  "bugs": {
+    "url": "https://github.com/deepmodeling/deepmd-kit/issues"
+  },
+  "homepage": "https://github.com/deepmodeling/deepmd-kit#readme",
+  "devDependencies": {
+    "node-gyp": "^9.3.1"
+  }
+}
