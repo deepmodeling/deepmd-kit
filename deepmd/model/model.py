@@ -94,7 +94,7 @@ class Model(ABC):
 
     def __init__(
         self,
-        type_embedding: Optional[dict] = None,
+        type_embedding: Optional[Union[dict, TypeEmbedNet]] = None,
         type_map: Optional[List[str]] = None,
         data_stat_nbatch: int = 10,
         data_stat_nsample: int = 10,
@@ -411,7 +411,7 @@ class StandardModel(Model):
         self,
         descriptor: Union[dict, Descriptor],
         fitting_net: Union[dict, Fitting],
-        type_embedding: Optional[dict] = None,
+        type_embedding: Optional[Union[dict, TypeEmbedNet]] = None,
         type_map: Optional[List[str]] = None,
         **kwargs,
     ) -> None:

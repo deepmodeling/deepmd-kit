@@ -1,12 +1,16 @@
 from typing import (
     List,
     Optional,
+    Union,
 )
 
 from deepmd.env import (
     MODEL_VERSION,
     global_cvt_2_ener_float,
     tf,
+)
+from deepmd.utils.type_embed import (
+    TypeEmbedNet,
 )
 
 from .model import (
@@ -44,8 +48,8 @@ class DOSModel(StandardModel):
         self,
         descriptor: dict,
         fitting_net: dict,
-        type_embedding: Optional[dict] = None,
-        type_map: List[str] = None,
+        type_embedding: Optional[Union[dict, TypeEmbedNet]] = None,
+        type_map: Optional[List[str]] = None,
         data_stat_nbatch: int = 10,
         data_stat_protect: float = 1e-2,
         **kwargs,

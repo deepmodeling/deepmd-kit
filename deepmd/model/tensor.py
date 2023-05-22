@@ -1,11 +1,15 @@
 from typing import (
     List,
     Optional,
+    Union,
 )
 
 from deepmd.env import (
     MODEL_VERSION,
     tf,
+)
+from deepmd.utils.type_embed import (
+    TypeEmbedNet,
 )
 
 from .model import (
@@ -44,7 +48,7 @@ class TensorModel(StandardModel):
         tensor_name: str,
         descriptor: dict,
         fitting_net: dict,
-        type_embedding: Optional[dict] = None,
+        type_embedding: Optional[Union[dict, TypeEmbedNet]] = None,
         type_map: Optional[List[str]] = None,
         data_stat_nbatch: int = 10,
         data_stat_protect: float = 1e-2,
