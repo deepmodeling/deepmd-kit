@@ -133,6 +133,10 @@ class Model(ABC):
         else:
             self.srtab = None
 
+    def get_type_map(self) -> list:
+        """Get the type map."""
+        return self.type_map
+
     @abstractmethod
     def build(
         self,
@@ -362,6 +366,18 @@ class Model(ABC):
     def get_loss(self, loss: dict, lr) -> Union[Loss, dict]:
         """Get the loss function(s)."""
 
+    @abstractmethod
+    def get_rcut(self) -> float:
+        """Get cutoff radius of the model."""
+
+    @abstractmethod
+    def get_ntypes(self) -> int:
+        """Get the number of types."""
+
+    @abstractmethod
+    def data_stat(self, data: dict):
+        """Data staticis."""
+
 
 class StandardModel(Model):
     """Standard model, which must contain a descriptor and a fitting.
@@ -486,3 +502,11 @@ class StandardModel(Model):
     def get_loss(self, loss: dict, lr) -> Union[Loss, dict]:
         """Get the loss function(s)."""
         return self.fitting.get_loss(loss, lr)
+
+    def get_rcut(self) -> float:
+        """Get cutoff radius of the model."""
+        return self.rcut
+
+    def get_ntypes(self) -> int:
+        """Get the number of types."""
+        return self.ntypes
