@@ -1,7 +1,7 @@
 find_package(SWIG REQUIRED)
 include(${SWIG_USE_FILE})
 
-set_property(SOURCE deepmd.i PROPERTY CPLUSPLUS ON)
+set_property(SOURCE ../swig/deepmd.i PROPERTY CPLUSPLUS ON)
 swig_add_library(
   deepmd_nodejs
   LANGUAGE javascript
