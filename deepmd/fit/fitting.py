@@ -1,9 +1,53 @@
+from typing import (
+    Callable,
+)
+
 from deepmd.env import (
     tf,
 )
+from deepmd.utils import (
+    Plugin,
+    PluginVariant,
+)
 
 
-class Fitting:
+class Fitting(PluginVariant):
+    __plugins = Plugin()
+
+    @staticmethod
+    def register(key: str) -> Callable:
+        """Register a Fitting plugin.
+
+        Parameters
+        ----------
+        key : str
+            the key of a Fitting
+
+        Returns
+        -------
+        Fitting
+            the registered Fitting
+
+        Examples
+        --------
+        >>> @Fitting.register("some_fitting")
+            class SomeFitting(Fitting):
+                pass
+        """
+        return Fitting.__plugins.register(key)
+
+    def __new__(cls, *args, **kwargs):
+        if cls is Fitting:
+            try:
+                fitting_type = kwargs["type"]
+            except KeyError:
+                raise KeyError("the type of fitting should be set by `type`")
+            if fitting_type in Fitting.__plugins.plugins:
+                cls = Fitting.__plugins.plugins[fitting_type]
+            else:
+                raise RuntimeError("Unknown descriptor type: " + fitting_type)
+        return super().__new__(cls)
+
     @property
     def precision(self) -> tf.DType:
         """Precision of fitting network."""

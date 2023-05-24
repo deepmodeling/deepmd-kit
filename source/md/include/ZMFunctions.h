@@ -2,7 +2,6 @@
 #define __Functions_h_ZM_wanghan__
 
 #include <vector>
-using namespace std;
 
 namespace ZeroMultipole {
 double funcV(const double& alpha, const double& r);
@@ -14,12 +13,12 @@ double funcD4V(const double& alpha, const double& r);
 void calCoefficients(const int& ll,
                      const double& alpha,
                      const double& rc,
-                     vector<double>& coeff);
+                     std::vector<double>& coeff);
 
 class Potential {
   double alpha, rc;
   int ll;
-  vector<double> coeff;
+  std::vector<double> coeff;
 
  public:
   Potential();
@@ -31,7 +30,7 @@ class Potential {
   double mulpotp(const double& rr);
 
  public:
-  double energyCorr(const vector<double>& charges) const;
+  double energyCorr(const std::vector<double>& charges) const;
 };
 }  // namespace ZeroMultipole
 

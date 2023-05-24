@@ -261,6 +261,14 @@ class DeepPot {
     return ntypes;
   };
   /**
+   * @brief Get the number of types with spin.
+   * @return The number of types with spin.
+   **/
+  int numb_types_spin() const {
+    assert(inited);
+    return ntypes_spin;
+  };
+  /**
    * @brief Get the dimension of the frame parameter.
    * @return The dimension of the frame parameter.
    **/
@@ -297,6 +305,7 @@ class DeepPot {
   std::string model_type;
   std::string model_version;
   int ntypes;
+  int ntypes_spin;
   int dfparam;
   int daparam;
   /**
@@ -346,9 +355,6 @@ class DeepPot {
   NeighborListData nlist_data;
   InputNlist nlist;
   AtomMap atommap;
-
-  // function used for neighbor list copy
-  std::vector<int> get_sel_a() const;
 };
 
 class DeepPotModelDevi {
@@ -473,6 +479,14 @@ class DeepPotModelDevi {
     return ntypes;
   };
   /**
+   * @brief Get the number of types with spin.
+   * @return The number of types with spin.
+   **/
+  int numb_types_spin() const {
+    assert(inited);
+    return ntypes_spin;
+  };
+  /**
    * @brief Get the dimension of the frame parameter.
    * @return The dimension of the frame parameter.
    **/
@@ -574,6 +588,7 @@ class DeepPotModelDevi {
   std::string model_type;
   std::string model_version;
   int ntypes;
+  int ntypes_spin;
   int dfparam;
   int daparam;
   template <typename VALUETYPE>
@@ -587,8 +602,5 @@ class DeepPotModelDevi {
   deepmd::AtomMap atommap;
   NeighborListData nlist_data;
   InputNlist nlist;
-
-  // function used for nborlist copy
-  std::vector<std::vector<int> > get_sel() const;
 };
 }  // namespace deepmd

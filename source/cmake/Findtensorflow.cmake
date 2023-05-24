@@ -7,6 +7,17 @@
 #
 # Target: TensorFlow::tensorflow_framework TensorFlow::tensorflow_cc
 
+if(SKBUILD)
+  # clean cmake caches for skbuild, as TF directories may be changed due to
+  # PEP-517
+  set(TensorFlowFramework_LIBRARY_tensorflow_framework
+      "TensorFlowFramework_LIBRARY_tensorflow_framework-NOTFOUND")
+  set(TensorFlow_LIBRARY_tensorflow_cc
+      "TensorFlow_LIBRARY_tensorflow_cc-NOTFOUND")
+  set(TensorFlow_INCLUDE_DIRS "TensorFlow_INCLUDE_DIRS-NOTFOUND")
+  set(TensorFlow_INCLUDE_DIRS_GOOGLE "TensorFlow_INCLUDE_DIRS_GOOGLE-NOTFOUND")
+endif(SKBUILD)
+
 if(BUILD_CPP_IF AND INSTALL_TENSORFLOW)
   # Here we try to install libtensorflow_cc using conda install.
 

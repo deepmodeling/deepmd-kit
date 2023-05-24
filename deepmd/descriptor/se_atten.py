@@ -443,7 +443,7 @@ class DescrptSeAtten(DescrptSeA):
                 self.ntypes,
                 self.sel_a,
                 self.ndescrpt,
-                atype,
+                self.atype_nloc,  # when nloc != nall, pass nloc to mask
                 tf.shape(inputs_i)[0],
                 self.nei_type_vec,  # extra input for atten
             )

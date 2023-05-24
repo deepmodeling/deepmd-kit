@@ -115,10 +115,9 @@ setup(
         "test": ["dpdata>=0.1.9", "ase", "pytest", "pytest-cov", "pytest-sugar"],
         "docs": [
             "sphinx>=3.1.1",
-            "recommonmark",
             "sphinx_rtd_theme>=1.0.0rc1",
             "sphinx_markdown_tables",
-            "myst-parser",
+            "myst-nb",
             "breathe",
             "exhale",
             "numpydoc",
@@ -127,10 +126,11 @@ setup(
             "dargs>=0.3.4",
             "sphinx-argparse",
             "pygments-lammps",
+            "sphinxcontrib-bibtex",
         ],
         "lmp": [
-            "lammps-manylinux-2-28~=2022.6.23.3.0; platform_system=='Linux'",
-            "lammps~=2022.6.23.3.0; platform_system!='Linux'",
+            "lammps~=2022.6.23.4.0; platform_system=='Linux'",
+            "lammps~=2022.6.23.4.0; platform_system!='Linux'",
             *find_libpython_requires,
         ],
         "ipi": [
