@@ -8,6 +8,9 @@ from deepmd.infer import (
     DeepPotential,
     calc_model_devi,
 )
+from deepmd.infer.model_devi import (
+    make_model_devi,
+)
 
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 from common import (
@@ -33,6 +36,8 @@ class TestMakeModelDeviMix(unittest.TestCase):
     def setUp(self):
         gen_data()
         self.data_dir = "system"
+        with open(os.path.join(self.data_dir, "type_map.raw"), "w") as f:
+            f.write("O\nH")
         coord = np.load(os.path.join(self.data_dir, "set.000/coord.npy"))
         box = np.load(os.path.join(self.data_dir, "set.000/box.npy"))
         self.atype = np.loadtxt(os.path.join(self.data_dir, "type.raw"))
@@ -42,6 +47,12 @@ class TestMakeModelDeviMix(unittest.TestCase):
         self.coord = np.vstack([coord, coord])
         self.box = np.vstack([box, box])
         self.freq = 10
+
+        np.save(os.path.join(self.data_dir, "set.000/coord.npy"), self.coord)
+        np.save(os.path.join(self.data_dir, "set.000/box.npy"), self.box)
+        np.save(
+            os.path.join(self.data_dir, "set.000/real_atom_types.npy"), self.mixed_atype
+        )
 
         self.pbtxts = [
             os.path.join(tests_path, "infer/se_atten_no_atten_1.pbtxt"),
@@ -62,6 +73,7 @@ class TestMakeModelDeviMix(unittest.TestCase):
                     2.60789586e-01,
                     8.95047307e-02,
                     1.88914900e-01,
+                    2.194880e-01,
                 ],
                 [
                     self.freq,
@@ -71,6 +83,7 @@ class TestMakeModelDeviMix(unittest.TestCase):
                     3.80715927e-01,
                     1.88116279e-01,
                     2.76809413e-01,
+                    2.045956e-01,
                 ],
             ]
         )
@@ -86,8 +99,8 @@ class TestMakeModelDeviMix(unittest.TestCase):
         )
         self.assertAlmostEqual(model_devi[0][0], 0)
         self.assertAlmostEqual(model_devi[1][0], self.freq)
-        np.testing.assert_almost_equal(model_devi[0][1:7], self.expect[0][1:7], 6)
-        np.testing.assert_almost_equal(model_devi[0][1:7], model_devi[1][1:7], 6)
+        np.testing.assert_almost_equal(model_devi[0][1:8], self.expect[0][1:8], 6)
+        np.testing.assert_almost_equal(model_devi[0][1:8], model_devi[1][1:8], 6)
         self.assertTrue(os.path.isfile(self.output))
 
     def test_calc_model_devi_mixed(self):
@@ -102,9 +115,20 @@ class TestMakeModelDeviMix(unittest.TestCase):
         )
         self.assertAlmostEqual(model_devi[0][0], 0)
         self.assertAlmostEqual(model_devi[1][0], self.freq)
-        np.testing.assert_almost_equal(model_devi[0][1:7], self.expect[0][1:7], 6)
-        np.testing.assert_almost_equal(model_devi[1][1:7], self.expect[1][1:7], 6)
+        np.testing.assert_almost_equal(model_devi[0][1:8], self.expect[0][1:8], 6)
+        np.testing.assert_almost_equal(model_devi[1][1:8], self.expect[1][1:8], 6)
         self.assertTrue(os.path.isfile(self.output))
+
+    def test_make_model_devi_mixed(self):
+        make_model_devi(
+            models=self.graph_dirs,
+            system=self.data_dir,
+            set_prefix="set",
+            output=self.output,
+            frequency=self.freq,
+        )
+        x = np.loadtxt(self.output)
+        np.testing.assert_allclose(x, self.expect, 6)
 
     def tearDown(self):
         for pb in self.graph_dirs:

@@ -366,10 +366,6 @@ class DeepPot(DeepEval):
         atom_virial
             The atomic virial. Only returned when atomic == True
         """
-        if mixed_type:
-            assert self.descriptor_type in [
-                "se_atten"
-            ], "This model does not support mixed_type format input!"
         # reshape coords before getting shape
         natoms, numb_test = self._get_natoms_and_nframes(
             coords, atom_types, mixed_type=mixed_type
