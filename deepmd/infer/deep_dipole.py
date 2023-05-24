@@ -37,7 +37,6 @@ class DeepDipole(DeepTensor):
         load_prefix: str = "load",
         default_tf_graph: bool = False,
     ) -> None:
-
         # use this in favor of dict update to move attribute from class to
         # instance namespace
         self.tensors = dict(
@@ -45,7 +44,7 @@ class DeepDipole(DeepTensor):
                 # output tensor
                 "t_tensor": "o_dipole:0",
             },
-            **self.tensors
+            **self.tensors,
         )
 
         DeepTensor.__init__(

@@ -3,6 +3,7 @@ from abc import (
 )
 from typing import (
     Any,
+    Callable,
     Dict,
     List,
     Optional,
@@ -43,8 +44,8 @@ class Descriptor(PluginVariant):
     __plugins = Plugin()
 
     @staticmethod
-    def register(key: str) -> "Descriptor":
-        """Regiester a descriptor plugin.
+    def register(key: str) -> Callable:
+        """Register a descriptor plugin.
 
         Parameters
         ----------
@@ -54,7 +55,7 @@ class Descriptor(PluginVariant):
         Returns
         -------
         Descriptor
-            the regiestered descriptor
+            the registered descriptor
 
         Examples
         --------

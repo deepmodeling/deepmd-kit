@@ -5,8 +5,6 @@
 
 #include "RandomGenerator.h"
 
-using namespace std;
-
 class Gaussian {
  public:
   void set_seed(unsigned long seed);

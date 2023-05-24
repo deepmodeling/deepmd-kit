@@ -296,6 +296,17 @@ def get_tf_session_config() -> Any:
     intra, inter = get_tf_default_nthreads()
     if int(os.environ.get("DP_JIT", 0)):
         set_env_if_empty("TF_XLA_FLAGS", "--tf_xla_auto_jit=2")
+        # pip cuda package
+        if platform.system() == "Linux":
+            try:
+                m = import_module("nvidia.cuda_nvcc")
+            except ModuleNotFoundError:
+                pass
+            else:
+                cuda_data_dir = str(Path(m.__file__).parent.absolute())
+                set_env_if_empty(
+                    "XLA_FLAGS", "--xla_gpu_cuda_data_dir=" + cuda_data_dir
+                )
     config = tf.ConfigProto(
         gpu_options=tf.GPUOptions(allow_growth=True),
         intra_op_parallelism_threads=intra,
@@ -389,15 +400,14 @@ def get_module(module_name: str) -> "ModuleType":
             if TF_VERSION != tf_py_version:
                 raise RuntimeError(
                     "The version of TensorFlow used to compile this "
-                    "deepmd-kit package is %s, but the version of TensorFlow "
-                    "runtime you are using is %s. These two versions are "
-                    "incompatible and thus an error is raised when loading %s. "
-                    "You need to install TensorFlow %s, or rebuild deepmd-kit "
-                    "against TensorFlow %s.\nIf you are using a wheel from "
+                    "deepmd-kit package is {}, but the version of TensorFlow "
+                    "runtime you are using is {}. These two versions are "
+                    "incompatible and thus an error is raised when loading {}. "
+                    "You need to install TensorFlow {}, or rebuild deepmd-kit "
+                    "against TensorFlow {}.\nIf you are using a wheel from "
                     "pypi, you may consider to install deepmd-kit execuating "
                     "`pip install deepmd-kit --no-binary deepmd-kit` "
-                    "instead."
-                    % (
+                    "instead.".format(
                         TF_VERSION,
                         tf_py_version,
                         module_name,

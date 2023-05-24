@@ -403,7 +403,7 @@ class TestDataSystem(unittest.TestCase):
         self.assertEqual(ds.sys_probs.size, len(sys_probs))
 
     def test_get_mixed_batch(self):
-        """test get_batch with mixed system."""
+        """Test get_batch with mixed system."""
         batch_size = "mixed:3"
         test_size = 2
 

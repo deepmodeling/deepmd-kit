@@ -4,8 +4,6 @@
 
 #include "SimulationRegion.h"
 
-using namespace std;
-
 #ifdef HIGH_PREC
 typedef double VALUETYPE;
 #else
@@ -17,31 +15,31 @@ class Tabulated {
   Tabulated(){};
   Tabulated(const VALUETYPE rc,
             const VALUETYPE hh,
-            const vector<VALUETYPE>& tab);
+            const std::vector<VALUETYPE>& tab);
   void reinit(const VALUETYPE rc,
               const VALUETYPE hh,
-              const vector<VALUETYPE>& tab);
+              const std::vector<VALUETYPE>& tab);
 
  public:
   void compute(VALUETYPE& ener,
-               vector<VALUETYPE>& force,
-               vector<VALUETYPE>& virial,
-               const vector<VALUETYPE>& coord,
-               const vector<int>& atype,
+               std::vector<VALUETYPE>& force,
+               std::vector<VALUETYPE>& virial,
+               const std::vector<VALUETYPE>& coord,
+               const std::vector<int>& atype,
                const SimulationRegion<VALUETYPE>& region,
-               const vector<vector<int> >& nlist);
+               const std::vector<std::vector<int> >& nlist);
   void compute(VALUETYPE& ener,
-               vector<VALUETYPE>& force,
-               vector<VALUETYPE>& virial,
-               const vector<VALUETYPE>& coord,
-               const vector<VALUETYPE>& charge,
-               const vector<int>& atype,
+               std::vector<VALUETYPE>& force,
+               std::vector<VALUETYPE>& virial,
+               const std::vector<VALUETYPE>& coord,
+               const std::vector<VALUETYPE>& charge,
+               const std::vector<int>& atype,
                const SimulationRegion<VALUETYPE>& region,
-               const vector<vector<int> >& nlist);
+               const std::vector<std::vector<int> >& nlist);
   void tb_inner(VALUETYPE& ae, VALUETYPE& af, const VALUETYPE& r2);
 
  private:
   VALUETYPE rc2, hi;
-  vector<VALUETYPE> data;
+  std::vector<VALUETYPE> data;
   void compute_posi(int& idx, VALUETYPE& eps, const VALUETYPE& rr);
 };

@@ -45,13 +45,23 @@
       }
     }
   },
-  "learning_rate": {
-    "type": "exp",
-    "start_lr": 0.001,
-    "decay_steps": 5000,
-    "decay_rate": 0.95,
-    "_comment": "that's all"
-  },
+  "learning_rate_dict":
+      {
+        "water_ener": {
+          "type": "exp",
+          "start_lr": 0.001,
+          "decay_steps": 5000,
+          "decay_rate": 0.95,
+          "_comment": "that's all"
+        },
+        "water_dipole": {
+          "type": "exp",
+          "start_lr": 0.001,
+          "decay_steps": 5000,
+          "decay_rate": 0.95,
+          "_comment": "that's all"
+        }
+      },
 
   "loss_dict": {
     "water_ener": {

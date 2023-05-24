@@ -124,6 +124,7 @@ class DeepmdDataSystem:
                     rule = int(words[1])
                 self.batch_size = self._make_auto_bs(rule)
             elif "mixed" == words[0]:
+                self.mixed_type = True
                 self.mixed_systems = True
                 if len(words) == 2:
                     rule = int(words[1])
@@ -193,7 +194,7 @@ class DeepmdDataSystem:
         # check batch and test size
         for ii in range(self.nsystems):
             chk_ret = self.data_systems[ii].check_batch_size(self.batch_size[ii])
-            if chk_ret is not None and not is_auto_bs:
+            if chk_ret is not None and not is_auto_bs and not self.mixed_systems:
                 warnings.warn(
                     "system %s required batch size is larger than the size of the dataset %s (%d > %d)"
                     % (
@@ -204,7 +205,7 @@ class DeepmdDataSystem:
                     )
                 )
             chk_ret = self.data_systems[ii].check_test_size(self.test_size[ii])
-            if chk_ret is not None and not is_auto_bs:
+            if chk_ret is not None and not is_auto_bs and not self.mixed_systems:
                 warnings.warn(
                     "system %s required test size is larger than the size of the dataset %s (%d > %d)"
                     % (self.system_dirs[ii], chk_ret[0], self.test_size[ii], chk_ret[1])

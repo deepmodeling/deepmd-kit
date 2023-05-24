@@ -28,6 +28,9 @@ from deepmd.utils.network import (
 from deepmd.utils.sess import (
     run_sess,
 )
+from deepmd.utils.spin import (
+    Spin,
+)
 from deepmd.utils.tabulate import (
     DPTabulate,
 )
@@ -93,6 +96,7 @@ class DescrptSeR(DescrptSe):
         precision: str = "default",
         uniform_seed: bool = False,
         multi_task: bool = False,
+        spin: Optional[Spin] = None,
     ) -> None:
         """Constructor."""
         if rcut < rcut_smth:
@@ -118,6 +122,15 @@ class DescrptSeR(DescrptSe):
             self.exclude_types.add((tt[1], tt[0]))
         self.set_davg_zero = set_davg_zero
         self.type_one_side = type_one_side
+        self.spin = spin
+
+        # extend sel_r for spin system
+        if self.spin is not None:
+            self.ntypes_spin = self.spin.get_ntypes_spin()
+            self.sel_r_spin = self.sel_r[: self.ntypes_spin]
+            self.sel_r.extend(self.sel_r_spin)
+        else:
+            self.ntypes_spin = 0
 
         # descrpt config
         self.sel_a = [0 for ii in range(len(self.sel_r))]
@@ -190,7 +203,9 @@ class DescrptSeR(DescrptSe):
         return self.filter_neuron[-1]
 
     def get_nlist(self):
-        """Returns
+        """Returns neighbor information.
+
+        Returns
         -------
         nlist
             Neighbor list
@@ -528,12 +543,15 @@ class DescrptSeR(DescrptSe):
             inputs_i = tf.reshape(inputs_i, [-1, self.ndescrpt])
             type_i = -1
             if len(self.exclude_types):
+                atype_nloc = tf.reshape(
+                    tf.slice(atype, [0, 0], [-1, natoms[0]]), [-1]
+                )  # when nloc != nall, pass nloc to mask
                 mask = self.build_type_exclude_mask(
                     self.exclude_types,
                     self.ntypes,
                     self.sel_r,
                     self.ndescrpt,
-                    atype,
+                    atype_nloc,
                     tf.shape(inputs_i)[0],
                 )
                 inputs_i *= mask

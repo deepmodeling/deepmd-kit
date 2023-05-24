@@ -6,4 +6,4 @@ version_line=$(grep LAMMPS_VERSION ../version.h)
 tmp=${version_line#*\"} # remove prefix ending in "
 version=${tmp%\"*}      # remove suffix starting with "
 # string to int
-date --date="$(printf $version)" +"%Y%m%d"
+date --date="$(printf "$version")" +"%Y%m%d"

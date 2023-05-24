@@ -5,6 +5,10 @@ import os
 import platform
 import shutil
 import time
+from typing import (
+    Dict,
+    List,
+)
 
 import google.protobuf.message
 import numpy as np
@@ -34,17 +38,18 @@ from deepmd.env import (
     tfv2,
 )
 from deepmd.fit import (
-    DipoleFittingSeA,
-    EnerFitting,
-    PolarFittingSeA,
+    Fitting,
 )
 from deepmd.loss import (
+    DOSLoss,
     EnerDipoleLoss,
+    EnerSpinLoss,
     EnerStdLoss,
     TensorLoss,
 )
 from deepmd.model import (
     DipoleModel,
+    DOSModel,
     EnerModel,
     MultiModel,
     PolarModel,
@@ -52,6 +57,9 @@ from deepmd.model import (
 from deepmd.utils import random as dp_random
 from deepmd.utils.argcheck import (
     type_embedding_args,
+)
+from deepmd.utils.data_system import (
+    DeepmdDataSystem,
 )
 from deepmd.utils.errors import (
     GraphTooLargeError,
@@ -66,6 +74,9 @@ from deepmd.utils.learning_rate import (
 )
 from deepmd.utils.sess import (
     run_sess,
+)
+from deepmd.utils.spin import (
+    Spin,
 )
 from deepmd.utils.type_embed import (
     TypeEmbedNet,
@@ -105,8 +116,19 @@ class DPTrainer:
             else j_must_have(model_param, "fitting_net_dict")
         )
         typeebd_param = model_param.get("type_embedding", None)
+        spin_param = model_param.get("spin", None)
         self.model_param = model_param
         self.descrpt_param = descrpt_param
+
+        # spin
+        if spin_param is not None:
+            self.spin = Spin(
+                use_spin=spin_param["use_spin"],
+                virtual_len=spin_param["virtual_len"],
+                spin_norm=spin_param["spin_norm"],
+            )
+        else:
+            self.spin = None
 
         # nvnmd
         self.nvnmd_param = jdata.get("nvnmd", {})
@@ -134,30 +156,18 @@ class DPTrainer:
                     hybrid_with_tebd = True
         if self.multi_task_mode:
             descrpt_param["multi_task"] = True
+        if descrpt_param["type"] in ["se_e2_a", "se_a", "se_e2_r", "se_r", "hybrid"]:
+            descrpt_param["spin"] = self.spin
         self.descrpt = Descriptor(**descrpt_param)
 
         # fitting net
-        def fitting_net_init(fitting_type_, descrpt_type_, params):
-            if fitting_type_ == "ener":
-                return EnerFitting(**params)
-            elif fitting_type_ == "dipole":
-                return DipoleFittingSeA(**params)
-            elif fitting_type_ == "polar":
-                return PolarFittingSeA(**params)
-            # elif fitting_type_ == 'global_polar':
-            #     if descrpt_type_ == 'se_e2_a':
-            #         return GlobalPolarFittingSeA(**params)
-            #     else:
-            #         raise RuntimeError('fitting global_polar only supports descrptors: loc_frame and se_e2_a')
-            else:
-                raise RuntimeError("unknown fitting type " + fitting_type_)
-
         if not self.multi_task_mode:
             fitting_type = fitting_param.get("type", "ener")
             self.fitting_type = fitting_type
-            fitting_param.pop("type", None)
             fitting_param["descrpt"] = self.descrpt
-            self.fitting = fitting_net_init(fitting_type, descrpt_type, fitting_param)
+            if fitting_type == "ener":
+                fitting_param["spin"] = self.spin
+            self.fitting = Fitting(**fitting_param)
         else:
             self.fitting_dict = {}
             self.fitting_type_dict = {}
@@ -166,11 +176,10 @@ class DPTrainer:
                 item_fitting_param = fitting_param[item]
                 item_fitting_type = item_fitting_param.get("type", "ener")
                 self.fitting_type_dict[item] = item_fitting_type
-                item_fitting_param.pop("type", None)
                 item_fitting_param["descrpt"] = self.descrpt
-                self.fitting_dict[item] = fitting_net_init(
-                    item_fitting_type, descrpt_type, item_fitting_param
-                )
+                if item_fitting_type == "ener":
+                    item_fitting_param["spin"] = self.spin
+                self.fitting_dict[item] = Fitting(**item_fitting_param)
 
         # type embedding
         padding = False
@@ -216,9 +225,20 @@ class DPTrainer:
                     model_param.get("smin_alpha"),
                     model_param.get("sw_rmin"),
                     model_param.get("sw_rmax"),
+                    self.spin,
                 )
             # elif fitting_type == 'wfc':
             #     self.model = WFCModel(model_param, self.descrpt, self.fitting)
+            elif self.fitting_type == "dos":
+                self.model = DOSModel(
+                    self.descrpt,
+                    self.fitting,
+                    self.typeebd,
+                    model_param.get("type_map"),
+                    model_param.get("data_stat_nbatch", 10),
+                    model_param.get("data_stat_protect", 1e-2),
+                )
+
             elif self.fitting_type == "dipole":
                 self.model = DipoleModel(
                     self.descrpt,
@@ -262,22 +282,37 @@ class DPTrainer:
                 model_param.get("sw_rmax"),
             )
 
+        def get_lr_and_coef(lr_param):
+            scale_by_worker = lr_param.get("scale_by_worker", "linear")
+            if scale_by_worker == "linear":
+                scale_lr_coef = float(self.run_opt.world_size)
+            elif scale_by_worker == "sqrt":
+                scale_lr_coef = np.sqrt(self.run_opt.world_size).real
+            else:
+                scale_lr_coef = 1.0
+            lr_type = lr_param.get("type", "exp")
+            if lr_type == "exp":
+                lr = LearningRateExp(
+                    lr_param["start_lr"], lr_param["stop_lr"], lr_param["decay_steps"]
+                )
+            else:
+                raise RuntimeError("unknown learning_rate type " + lr_type)
+            return lr, scale_lr_coef
+
         # learning rate
-        lr_param = j_must_have(jdata, "learning_rate")
-        scale_by_worker = lr_param.get("scale_by_worker", "linear")
-        if scale_by_worker == "linear":
-            self.scale_lr_coef = float(self.run_opt.world_size)
-        elif scale_by_worker == "sqrt":
-            self.scale_lr_coef = np.sqrt(self.run_opt.world_size).real
+        if not self.multi_task_mode:
+            lr_param = j_must_have(jdata, "learning_rate")
+            self.lr, self.scale_lr_coef = get_lr_and_coef(lr_param)
         else:
-            self.scale_lr_coef = 1.0
-        lr_type = lr_param.get("type", "exp")
-        if lr_type == "exp":
-            self.lr = LearningRateExp(
-                lr_param["start_lr"], lr_param["stop_lr"], lr_param["decay_steps"]
-            )
-        else:
-            raise RuntimeError("unknown learning_rate type " + lr_type)
+            self.lr_dict = {}
+            self.scale_lr_coef_dict = {}
+            lr_param_dict = jdata.get("learning_rate_dict", {})
+            for fitting_key in self.fitting_type_dict:
+                lr_param = lr_param_dict.get(fitting_key, {})
+                (
+                    self.lr_dict[fitting_key],
+                    self.scale_lr_coef_dict[fitting_key],
+                ) = get_lr_and_coef(lr_param)
 
         # loss
         # infer loss type by fitting_type
@@ -290,8 +325,15 @@ class DPTrainer:
                     loss = EnerStdLoss(**_loss_param)
                 elif _loss_type == "ener_dipole":
                     loss = EnerDipoleLoss(**_loss_param)
+                elif _loss_type == "ener_spin":
+                    loss = EnerSpinLoss(**_loss_param, use_spin=self.spin.use_spin)
                 else:
                     raise RuntimeError("unknown loss type")
+            elif _fitting_type == "dos":
+                _loss_param.pop("type", None)
+                _loss_param["starter_learning_rate"] = _lr.start_lr()
+                _loss_param["numb_dos"] = self.fitting.get_numb_dos()
+                loss = DOSLoss(**_loss_param)
             elif _fitting_type == "wfc":
                 loss = TensorLoss(
                     _loss_param,
@@ -343,7 +385,7 @@ class DPTrainer:
                     loss_param,
                     self.fitting_type_dict[fitting_key],
                     self.fitting_dict[fitting_key],
-                    self.lr,
+                    self.lr_dict[fitting_key],
                 )
 
         # training
@@ -375,15 +417,18 @@ class DPTrainer:
                 or self.mixed_prec["output_prec"] != "float32"
             ):
                 raise RuntimeError(
-                    "Unsupported mixed precision option [output_prec, compute_prec]: [%s, %s], "
-                    " Supported: [float32, float16/bfloat16], Please set mixed precision option correctly!"
-                    % (self.mixed_prec["output_prec"], self.mixed_prec["compute_prec"])
+                    "Unsupported mixed precision option [output_prec, compute_prec]: [{}, {}], "
+                    " Supported: [float32, float16/bfloat16], Please set mixed precision option correctly!".format(
+                        self.mixed_prec["output_prec"], self.mixed_prec["compute_prec"]
+                    )
                 )
         # self.sys_probs = tr_data['sys_probs']
         # self.auto_prob_style = tr_data['auto_prob']
         self.useBN = False
         if not self.multi_task_mode:
-            if self.fitting_type == "ener" and self.fitting.get_numb_fparam() > 0:
+            if (
+                self.fitting_type == "ener" or self.fitting_type == "dos"
+            ) and self.fitting.get_numb_fparam() > 0:
                 self.numb_fparam = self.fitting.get_numb_fparam()
             else:
                 self.numb_fparam = 0
@@ -553,8 +598,50 @@ class DPTrainer:
     def _build_lr(self):
         self._extra_train_ops = []
         self.global_step = tf.train.get_or_create_global_step()
-        self.learning_rate = self.lr.build(self.global_step, self.stop_batch)
+        if not self.multi_task_mode:
+            self.learning_rate = self.lr.build(self.global_step, self.stop_batch)
+        else:
+            self.learning_rate_dict = {}
+            for fitting_key in self.fitting_type_dict:
+                self.learning_rate_dict[fitting_key] = self.lr_dict[fitting_key].build(
+                    self.global_step, self.stop_batch
+                )
+
         log.info("built lr")
+
+    def _build_loss(self):
+        if not self.multi_task_mode:
+            l2_l, l2_more = self.loss.build(
+                self.learning_rate,
+                self.place_holders["natoms_vec"],
+                self.model_pred,
+                self.place_holders,
+                suffix="test",
+            )
+
+            if self.mixed_prec is not None:
+                l2_l = tf.cast(l2_l, get_precision(self.mixed_prec["output_prec"]))
+        else:
+            l2_l, l2_more = {}, {}
+            for fitting_key in self.fitting_type_dict:
+                lr = self.learning_rate_dict[fitting_key]
+                model = self.model_pred[fitting_key]
+                loss_dict = self.loss_dict[fitting_key]
+
+                l2_l[fitting_key], l2_more[fitting_key] = loss_dict.build(
+                    lr,
+                    self.place_holders["natoms_vec"],
+                    model,
+                    self.place_holders,
+                    suffix=fitting_key,
+                )
+
+                if self.mixed_prec is not None:
+                    l2_l[fitting_key] = tf.cast(
+                        l2_l[fitting_key], get_precision(self.mixed_prec["output_prec"])
+                    )
+
+        return l2_l, l2_more
 
     def _build_network(self, data, suffix=""):
         self.place_holders = {}
@@ -591,55 +678,46 @@ class DPTrainer:
             reuse=False,
         )
 
-        if not self.multi_task_mode:
-            self.l2_l, self.l2_more = self.loss.build(
-                self.learning_rate,
-                self.place_holders["natoms_vec"],
-                self.model_pred,
-                self.place_holders,
-                suffix="test",
-            )
-
-            if self.mixed_prec is not None:
-                self.l2_l = tf.cast(
-                    self.l2_l, get_precision(self.mixed_prec["output_prec"])
-                )
-        else:
-            self.l2_l, self.l2_more = {}, {}
-            for fitting_key in self.fitting_type_dict:
-                self.l2_l[fitting_key], self.l2_more[fitting_key] = self.loss_dict[
-                    fitting_key
-                ].build(
-                    self.learning_rate,
-                    self.place_holders["natoms_vec"],
-                    self.model_pred[fitting_key],
-                    self.place_holders,
-                    suffix=fitting_key,
-                )
-                if self.mixed_prec is not None:
-                    self.l2_l[fitting_key] = tf.cast(
-                        self.l2_l[fitting_key],
-                        get_precision(self.mixed_prec["output_prec"]),
-                    )
+        self.l2_l, self.l2_more = self._build_loss()
 
         log.info("built network")
 
-    def _build_training(self):
-        trainable_variables = tf.trainable_variables()
+    def _build_optimizer(self, fitting_key=None):
         if self.run_opt.is_distrib:
-            if self.scale_lr_coef > 1.0:
-                log.info("Scale learning rate by coef: %f", self.scale_lr_coef)
-                optimizer = tf.train.AdamOptimizer(
-                    self.learning_rate * self.scale_lr_coef
-                )
+            if fitting_key is None:
+                if self.scale_lr_coef > 1.0:
+                    log.info("Scale learning rate by coef: %f", self.scale_lr_coef)
+                    optimizer = tf.train.AdamOptimizer(
+                        self.learning_rate * self.scale_lr_coef
+                    )
+                else:
+                    optimizer = tf.train.AdamOptimizer(self.learning_rate)
+                optimizer = self.run_opt._HVD.DistributedOptimizer(optimizer)
             else:
-                optimizer = tf.train.AdamOptimizer(self.learning_rate)
-            optimizer = self.run_opt._HVD.DistributedOptimizer(optimizer)
+                if self.scale_lr_coef_dict[fitting_key] > 1.0:
+                    log.info(
+                        "Scale learning rate by coef: %f",
+                        self.scale_lr_coef_dict[fitting_key],
+                    )
+                    optimizer = tf.train.AdamOptimizer(
+                        self.learning_rate_dict[fitting_key]
+                        * self.scale_lr_coef_dict[fitting_key]
+                    )
+                else:
+                    optimizer = tf.train.AdamOptimizer(
+                        learning_rate=self.learning_rate_dict[fitting_key]
+                    )
+                optimizer = self.run_opt._HVD.DistributedOptimizer(optimizer)
         else:
-            optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate)
+            if fitting_key is None:
+                optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate)
+            else:
+                optimizer = tf.train.AdamOptimizer(
+                    learning_rate=self.learning_rate_dict[fitting_key]
+                )
+
         if self.mixed_prec is not None:
             _TF_VERSION = Version(TF_VERSION)
-            # check the TF_VERSION, when TF < 1.12, mixed precision is not allowed
             if _TF_VERSION < Version("1.14.0"):
                 raise RuntimeError(
                     "TensorFlow version %s is not compatible with the mixed precision setting. Please consider upgrading your TF version!"
@@ -653,7 +731,13 @@ class DPTrainer:
                 optimizer = tf.mixed_precision.enable_mixed_precision_graph_rewrite(
                     optimizer
                 )
+        return optimizer
+
+    def _build_training(self):
+        trainable_variables = tf.trainable_variables()
+
         if not self.multi_task_mode:
+            optimizer = self._build_optimizer()
             apply_op = optimizer.minimize(
                 loss=self.l2_l,
                 global_step=self.global_step,
@@ -665,6 +749,7 @@ class DPTrainer:
         else:
             self.train_op = {}
             for fitting_key in self.fitting_type_dict:
+                optimizer = self._build_optimizer(fitting_key=fitting_key)
                 apply_op = optimizer.minimize(
                     loss=self.l2_l[fitting_key],
                     global_step=self.global_step,
@@ -729,7 +814,6 @@ class DPTrainer:
             run_sess(self.sess, bcast_op)
 
     def train(self, train_data=None, valid_data=None):
-
         # if valid_data is None:  # no validation set specified.
         #     valid_data = train_data  # using training set as validation set.
 
@@ -745,16 +829,30 @@ class DPTrainer:
         cur_batch = run_sess(self.sess, self.global_step)
         is_first_step = True
         self.cur_batch = cur_batch
-        log.info(
-            "start training at lr %.2e (== %.2e), decay_step %d, decay_rate %f, final lr will be %.2e"
-            % (
-                run_sess(self.sess, self.learning_rate),
-                self.lr.value(cur_batch),
-                self.lr.decay_steps_,
-                self.lr.decay_rate_,
-                self.lr.value(stop_batch),
+        if not self.multi_task_mode:
+            log.info(
+                "start training at lr %.2e (== %.2e), decay_step %d, decay_rate %f, final lr will be %.2e"
+                % (
+                    run_sess(self.sess, self.learning_rate),
+                    self.lr.value(cur_batch),
+                    self.lr.decay_steps_,
+                    self.lr.decay_rate_,
+                    self.lr.value(stop_batch),
+                )
             )
-        )
+        else:
+            for fitting_key in self.fitting_type_dict:
+                log.info(
+                    "%s: start training at lr %.2e (== %.2e), decay_step %d, decay_rate %f, final lr will be %.2e"
+                    % (
+                        fitting_key,
+                        run_sess(self.sess, self.learning_rate_dict[fitting_key]),
+                        self.lr_dict[fitting_key].value(cur_batch),
+                        self.lr_dict[fitting_key].decay_steps_,
+                        self.lr_dict[fitting_key].decay_rate_,
+                        self.lr_dict[fitting_key].value(stop_batch),
+                    )
+                )
 
         prf_options = None
         prf_run_metadata = None
@@ -791,20 +889,55 @@ class DPTrainer:
 
         train_time = 0
         total_train_time = 0.0
+        wall_time_tic = time.time()
+
+        next_batch_train_op = None
+        next_fitting_key = None
+        next_train_batch_list = None
+        next_datasetloader = None
+
+        # dataset loader op
+        if not self.multi_task_mode:
+            datasetloader = DatasetLoader(train_data)
+            data_op = datasetloader.build()
+        else:
+            datasetloader = {}
+            data_op = {}
+            for fitting_key in self.fitting_type_dict:
+                datasetloader[fitting_key] = DatasetLoader(train_data[fitting_key])
+                data_op[fitting_key] = datasetloader[fitting_key].build()
 
         while cur_batch < stop_batch:
-
             # first round validation:
+            if is_first_step:
+                if not self.multi_task_mode:
+                    train_batch = train_data.get_batch()
+                    batch_train_op = self.train_op
+                else:
+                    fitting_idx = dp_random.choice(
+                        np.arange(self.nfitting), p=np.array(self.fitting_prob)
+                    )
+                    fitting_key = self.fitting_key_list[fitting_idx]
+                    train_batch = train_data[fitting_key].get_batch()
+                    batch_train_op = self.train_op[fitting_key]
+            else:
+                train_batch = next_datasetloader.get_data_dict(next_train_batch_list)
+                batch_train_op = next_batch_train_op
+                fitting_key = next_fitting_key
+            # for next round
             if not self.multi_task_mode:
-                train_batch = train_data.get_batch()
-                batch_train_op = self.train_op
+                next_datasetloader = datasetloader
+                next_batch_train_op = self.train_op
+                next_train_batch_op = data_op
             else:
                 fitting_idx = dp_random.choice(
                     np.arange(self.nfitting), p=np.array(self.fitting_prob)
                 )
-                fitting_key = self.fitting_key_list[fitting_idx]
-                train_batch = train_data[fitting_key].get_batch()
-                batch_train_op = self.train_op[fitting_key]
+                next_fitting_key = self.fitting_key_list[fitting_idx]
+                next_datasetloader = datasetloader[next_fitting_key]
+                next_batch_train_op = self.train_op[fitting_key]
+                next_train_batch_op = data_op[fitting_key]
+
             if self.display_in_training and is_first_step:
                 if self.run_opt.is_chief:
                     if not self.multi_task_mode:
@@ -823,22 +956,27 @@ class DPTrainer:
                         train_batches = {}
                         valid_batches = {}
                         # valid_numb_batch_dict
-                        for fitting_key in train_data:
-                            train_batches[fitting_key] = [
-                                train_data[fitting_key].get_batch()
+                        for fitting_key_ii in train_data:
+                            # enumerate fitting key as fitting_key_ii
+                            train_batches[fitting_key_ii] = [
+                                train_data[fitting_key_ii].get_batch()
                             ]
-                            valid_batches[fitting_key] = (
+                            valid_batches[fitting_key_ii] = (
                                 [
-                                    valid_data[fitting_key].get_batch()
+                                    valid_data[fitting_key_ii].get_batch()
                                     for ii in range(
-                                        self.valid_numb_batch_dict[fitting_key]
+                                        self.valid_numb_batch_dict[fitting_key_ii]
                                     )
                                 ]
-                                if fitting_key in valid_data
+                                if fitting_key_ii in valid_data
                                 else None
                             )
                         self.valid_on_the_fly(
-                            fp, train_batches, valid_batches, print_header=True
+                            fp,
+                            train_batches,
+                            valid_batches,
+                            print_header=True,
+                            fitting_key=fitting_key,
                         )
                 is_first_step = False
 
@@ -848,18 +986,18 @@ class DPTrainer:
             # use tensorboard to visualize the training of deepmd-kit
             # it will takes some extra execution time to generate the tensorboard data
             if self.tensorboard and (cur_batch % self.tensorboard_freq == 0):
-                summary, _ = run_sess(
+                summary, _, next_train_batch_list = run_sess(
                     self.sess,
-                    [summary_merged_op, batch_train_op],
+                    [summary_merged_op, batch_train_op, next_train_batch_op],
                     feed_dict=train_feed_dict,
                     options=prf_options,
                     run_metadata=prf_run_metadata,
                 )
                 tb_train_writer.add_summary(summary, cur_batch)
             else:
-                run_sess(
+                _, next_train_batch_list = run_sess(
                     self.sess,
-                    [batch_train_op],
+                    [batch_train_op, next_train_batch_op],
                     feed_dict=train_feed_dict,
                     options=prf_options,
                     run_metadata=prf_run_metadata,
@@ -889,32 +1027,36 @@ class DPTrainer:
                     else:
                         train_batches = {}
                         valid_batches = {}
-                        for fitting_key in train_data:
-                            train_batches[fitting_key] = [
-                                train_data[fitting_key].get_batch()
+                        for fitting_key_ii in train_data:
+                            train_batches[fitting_key_ii] = [
+                                train_data[fitting_key_ii].get_batch()
                             ]
-                            valid_batches[fitting_key] = (
+                            valid_batches[fitting_key_ii] = (
                                 [
-                                    valid_data[fitting_key].get_batch()
+                                    valid_data[fitting_key_ii].get_batch()
                                     for ii in range(
-                                        self.valid_numb_batch_dict[fitting_key]
+                                        self.valid_numb_batch_dict[fitting_key_ii]
                                     )
                                 ]
-                                if fitting_key in valid_data
+                                if fitting_key_ii in valid_data
                                 else None
                             )
-                        self.valid_on_the_fly(fp, train_batches, valid_batches)
+                        self.valid_on_the_fly(
+                            fp, train_batches, valid_batches, fitting_key=fitting_key
+                        )
                 if self.timing_in_training:
                     toc = time.time()
                     test_time = toc - tic
+                    wall_time = toc - wall_time_tic
                     log.info(
-                        "batch %7d training time %.2f s, testing time %.2f s"
-                        % (cur_batch, train_time, test_time)
+                        "batch %7d training time %.2f s, testing time %.2f s, total wall time %.2f s"
+                        % (cur_batch, train_time, test_time, wall_time)
                     )
                     # the first training time is not accurate
                     if cur_batch > self.disp_freq or stop_batch < 2 * self.disp_freq:
                         total_train_time += train_time
                     train_time = 0
+                    wall_time_tic = toc
                 if (
                     self.save_freq > 0
                     and cur_batch % self.save_freq == 0
@@ -1007,22 +1149,50 @@ class DPTrainer:
     #         fp.write(print_str)
     #         fp.close ()
 
-    def valid_on_the_fly(self, fp, train_batches, valid_batches, print_header=False):
+    def valid_on_the_fly(
+        self, fp, train_batches, valid_batches, print_header=False, fitting_key=None
+    ):
         train_results = self.get_evaluation_results(train_batches)
         valid_results = self.get_evaluation_results(valid_batches)
 
         cur_batch = self.cur_batch
-        current_lr = run_sess(self.sess, self.learning_rate)
+        if not self.multi_task_mode:
+            current_lr = run_sess(self.sess, self.learning_rate)
+        else:
+            assert (
+                fitting_key is not None
+            ), "Fitting key must be assigned in validation!"
+            current_lr = None
+            # current_lr can be used as the learning rate of descriptor in the future
+            current_lr_dict = {}
+            for fitting_key_ii in train_batches:
+                current_lr_dict[fitting_key_ii] = run_sess(
+                    self.sess, self.learning_rate_dict[fitting_key_ii]
+                )
         if print_header:
             self.print_header(fp, train_results, valid_results, self.multi_task_mode)
-        self.print_on_training(
-            fp,
-            train_results,
-            valid_results,
-            cur_batch,
-            current_lr,
-            self.multi_task_mode,
-        )
+        if not self.multi_task_mode:
+            self.print_on_training(
+                fp,
+                train_results,
+                valid_results,
+                cur_batch,
+                current_lr,
+                self.multi_task_mode,
+            )
+        else:
+            assert (
+                fitting_key is not None
+            ), "Fitting key must be assigned when printing learning rate!"
+            self.print_on_training(
+                fp,
+                train_results,
+                valid_results,
+                cur_batch,
+                current_lr,
+                self.multi_task_mode,
+                current_lr_dict,
+            )
 
     @staticmethod
     def print_header(fp, train_results, valid_results, multi_task_mode=False):
@@ -1037,6 +1207,7 @@ class DPTrainer:
                 prop_fmt = "   %11s"
                 for k in train_results.keys():
                     print_str += prop_fmt % (k + "_trn")
+            print_str += "   %8s\n" % "lr"
         else:
             for fitting_key in train_results:
                 if valid_results[fitting_key] is not None:
@@ -1047,13 +1218,19 @@ class DPTrainer:
                     prop_fmt = "   %11s"
                     for k in train_results[fitting_key].keys():
                         print_str += prop_fmt % (k + "_trn")
-        print_str += "   %8s\n" % "lr"
+                print_str += "   %8s\n" % (fitting_key + "_lr")
         fp.write(print_str)
         fp.flush()
 
     @staticmethod
     def print_on_training(
-        fp, train_results, valid_results, cur_batch, cur_lr, multi_task_mode=False
+        fp,
+        train_results,
+        valid_results,
+        cur_batch,
+        cur_lr,
+        multi_task_mode=False,
+        cur_lr_dict=None,
     ):
         print_str = ""
         print_str += "%7d" % cur_batch
@@ -1067,6 +1244,7 @@ class DPTrainer:
                 prop_fmt = "   %11.2e"
                 for k in train_results.keys():
                     print_str += prop_fmt % (train_results[k])
+            print_str += "   %8.1e\n" % cur_lr
         else:
             for fitting_key in train_results:
                 if valid_results[fitting_key] is not None:
@@ -1081,7 +1259,7 @@ class DPTrainer:
                     prop_fmt = "   %11.2e"
                     for k in train_results[fitting_key].keys():
                         print_str += prop_fmt % (train_results[fitting_key][k])
-        print_str += "   %8.1e\n" % cur_lr
+                print_str += "   %8.1e\n" % cur_lr_dict[fitting_key]
         fp.write(print_str)
         fp.flush()
 
@@ -1151,8 +1329,7 @@ class DPTrainer:
         except FileNotFoundError as e:
             # throw runtime error if there's no frozen model
             raise RuntimeError(
-                "The input frozen model %s (%s) does not exist! Please check the path of the frozen model. "
-                % (
+                "The input frozen model {} ({}) does not exist! Please check the path of the frozen model. ".format(
                     self.run_opt.init_frz_model,
                     os.path.abspath(self.run_opt.init_frz_model),
                 )
@@ -1208,9 +1385,10 @@ class DPTrainer:
         except FileNotFoundError as e:
             # throw runtime error if there's no frozen model
             raise RuntimeError(
-                "The input frozen pretrained model %s (%s) does not exist! "
-                "Please check the path of the frozen pretrained model. "
-                % (self.run_opt.finetune, os.path.abspath(self.run_opt.finetune))
+                "The input frozen pretrained model {} ({}) does not exist! "
+                "Please check the path of the frozen pretrained model. ".format(
+                    self.run_opt.finetune, os.path.abspath(self.run_opt.finetune)
+                )
             ) from e
         # get the model type from the frozen model(self.run_opt.finetune)
         try:
@@ -1251,3 +1429,64 @@ class DPTrainer:
             bias_shift=bias_shift,
             ntest=self.model_param.get("data_bias_nsample", 10),
         )
+
+
+class DatasetLoader:
+    """Generate an OP that loads the training data from the given DeepmdDataSystem.
+
+    It can be used to load the training data in the training process, so there is
+    no waiting time between training steps.
+
+    Parameters
+    ----------
+    train_data : DeepmdDataSystem
+        The training data.
+
+    Examples
+    --------
+    >>> loader = DatasetLoader(train_data)
+    >>> data_op = loader.build()
+    >>> with tf.Session() as sess:
+    >>>     data_list = sess.run(data_op)
+    >>> data_dict = loader.get_data_dict(data_list)
+    """
+
+    def __init__(self, train_data: DeepmdDataSystem):
+        self.train_data = train_data
+        # get the keys of the data
+        batch_data = self.train_data.get_batch()
+        self.data_keys = batch_data.keys()
+        self.data_types = [tf.as_dtype(x.dtype) for x in batch_data.values()]
+
+    def build(self) -> List[tf.Tensor]:
+        """Build the OP that loads the training data.
+
+        Returns
+        -------
+        List[tf.Tensor]
+            Tensor of the loaded data.
+        """
+        train_data = self.train_data
+
+        def get_train_batch() -> List[np.ndarray]:
+            batch_data = train_data.get_batch()
+            # convert dict to list of arryas
+            batch_data = tuple([batch_data[kk] for kk in self.data_keys])
+            return batch_data
+
+        return tf.py_func(get_train_batch, [], self.data_types, name="train_data")
+
+    def get_data_dict(self, batch_list: List[np.ndarray]) -> Dict[str, np.ndarray]:
+        """Generate a dict of the loaded data.
+
+        Parameters
+        ----------
+        batch_list : List[np.ndarray]
+            The loaded data.
+
+        Returns
+        -------
+        Dict[str, np.ndarray]
+            The dict of the loaded data.
+        """
+        return {kk: vv for kk, vv in zip(self.data_keys, batch_list)}

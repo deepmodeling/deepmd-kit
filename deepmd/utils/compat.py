@@ -287,7 +287,6 @@ def remove_decay_rate(jdata: Dict[str, Any]):
 def convert_input_v1_v2(
     jdata: Dict[str, Any], warning: bool = True, dump: Optional[Union[str, Path]] = None
 ) -> Dict[str, Any]:
-
     tr_cfg = jdata["training"]
     tr_data_keys = {
         "systems",

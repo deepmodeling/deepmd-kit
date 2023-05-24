@@ -163,7 +163,7 @@ class NvnmdConfig:
         return jdata
 
     def init_dpin(self, jdata: dict, jdata_parent: dict = {}) -> dict:
-        r"""initial members about other deepmd input."""
+        r"""Initial members about other deepmd input."""
         return jdata
 
     def init_size(self, jdata: dict, jdata_parent: dict = {}) -> dict:

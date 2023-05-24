@@ -65,8 +65,7 @@ if dp_ipi == "1":
 
 tf_install_dir, _ = find_tensorflow()
 tf_version = get_tf_version(tf_install_dir)
-# TODO: change to "tf_version == "" or" after tensorflow 2.12 is released
-if tf_version != "" and Version(tf_version) >= Version("2.12"):
+if tf_version == "" or Version(tf_version) >= Version("2.12"):
     find_libpython_requires = []
 else:
     find_libpython_requires = ["find_libpython"]
@@ -76,6 +75,8 @@ class bdist_wheel_abi3(bdist_wheel):
     def get_tag(self):
         python, abi, plat = super().get_tag()
         if python.startswith("cp"):
+            if tf_version == "" or Version(tf_version) >= Version("2.12"):
+                return "py38", "none", plat
             return "py37", "none", plat
         return python, abi, plat
 
@@ -114,10 +115,9 @@ setup(
         "test": ["dpdata>=0.1.9", "ase", "pytest", "pytest-cov", "pytest-sugar"],
         "docs": [
             "sphinx>=3.1.1",
-            "recommonmark",
             "sphinx_rtd_theme>=1.0.0rc1",
             "sphinx_markdown_tables",
-            "myst-parser",
+            "myst-nb",
             "breathe",
             "exhale",
             "numpydoc",
@@ -126,10 +126,11 @@ setup(
             "dargs>=0.3.4",
             "sphinx-argparse",
             "pygments-lammps",
+            "sphinxcontrib-bibtex",
         ],
         "lmp": [
-            "lammps-manylinux-2-28~=2022.6.23.3.0; platform_system=='Linux'",
-            "lammps~=2022.6.23.3.0; platform_system!='Linux'",
+            "lammps~=2022.6.23.4.0; platform_system=='Linux'",
+            "lammps~=2022.6.23.4.0; platform_system!='Linux'",
             *find_libpython_requires,
         ],
         "ipi": [
@@ -145,6 +146,7 @@ setup(
             "nvidia-cusolver-cu11",
             "nvidia-cusparse-cu11",
             "nvidia-cudnn-cu11",
+            "nvidia-cuda-nvcc-cu11",
         ],
         "cu12": [
             "nvidia-cuda-runtime-cu12",
@@ -154,6 +156,7 @@ setup(
             "nvidia-cusolver-cu12",
             "nvidia-cusparse-cu12",
             "nvidia-cudnn-cu12",
+            "nvidia-cuda-nvcc-cu12",
         ],
     },
     entry_points={

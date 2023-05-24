@@ -4,7 +4,13 @@
 #include <iostream>
 
 #include "Convert.h"
+#ifdef DP_USE_CXX_API
 #include "DeepPot.h"
+namespace deepmd_compat = deepmd;
+#else
+#include "deepmd.hpp"
+namespace deepmd_compat = deepmd::hpp;
+#endif
 #include "SimulationRegion.h"
 #include "XyzFileManager.h"
 #include "json.hpp"
@@ -90,7 +96,7 @@ int main(int argc, char *argv[]) {
   }
 
   Convert<double> cvt(atom_name, name_type_map);
-  deepmd::DeepPot nnp_inter(graph_file);
+  deepmd_compat::DeepPot nnp_inter(graph_file);
 
   enum { _MSGLEN = 12 };
   int MSGLEN = _MSGLEN;
@@ -186,24 +192,7 @@ int main(int argc, char *argv[]) {
       normalize_coord(dcoord, region);
 
       // nnp over writes ener, force and virial
-#ifdef HIGH_PREC
       nnp_inter.compute(dener, dforce_tmp, dvirial, dcoord, dtype, dbox);
-#else
-      // model in float prec
-      std::vector<float> dcoord_(dcoord.size());
-      std::vector<float> dbox_(dbox.size());
-      for (unsigned dd = 0; dd < dcoord.size(); ++dd) dcoord_[dd] = dcoord[dd];
-      for (unsigned dd = 0; dd < dbox.size(); ++dd) dbox_[dd] = dbox[dd];
-      std::vector<float> dforce_(dforce.size(), 0);
-      std::vector<float> dvirial_(dvirial.size(), 0);
-      double dener_ = 0;
-      nnp_inter.compute(dener_, dforce_, dvirial_, dcoord_, dtype, dbox_);
-      for (unsigned dd = 0; dd < dforce.size(); ++dd)
-        dforce_tmp[dd] = dforce_[dd];
-      for (unsigned dd = 0; dd < dvirial.size(); ++dd)
-        dvirial[dd] = dvirial_[dd];
-      dener = dener_;
-#endif
       cvt.backward(dforce, dforce_tmp, 3);
       hasdata = true;
     } else if (header_str == "GETFORCE") {

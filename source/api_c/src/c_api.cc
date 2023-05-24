@@ -25,13 +25,15 @@ DP_Nlist* DP_NewNlist(int inum_,
 }
 
 DP_DeepPot::DP_DeepPot() {}
-DP_DeepPot::DP_DeepPot(deepmd::DeepPot& dp) : dp(dp) {}
+DP_DeepPot::DP_DeepPot(deepmd::DeepPot& dp) : dp(dp) {
+  dfparam = dp.dim_aparam();
+  daparam = dp.dim_fparam();
+}
 
 DP_DeepPot* DP_NewDeepPot(const char* c_model) {
   std::string model(c_model);
-  deepmd::DeepPot dp(model);
-  DP_DeepPot* new_dp = new DP_DeepPot(dp);
-  return new_dp;
+  DP_NEW_OK(DP_DeepPot, deepmd::DeepPot dp(model);
+            DP_DeepPot* new_dp = new DP_DeepPot(dp); return new_dp;)
 }
 
 DP_DeepPot* DP_NewDeepPotWithParam(const char* c_model,
@@ -39,18 +41,55 @@ DP_DeepPot* DP_NewDeepPotWithParam(const char* c_model,
                                    const char* c_file_content) {
   std::string model(c_model);
   std::string file_content(c_file_content);
+  DP_NEW_OK(DP_DeepPot,
+            if (file_content.size() > 0) throw deepmd::deepmd_exception(
+                "file_content is broken in DP_NewDeepPotWithParam. Use "
+                "DP_NewDeepPotWithParam2 instead.");
+            deepmd::DeepPot dp(model, gpu_rank, file_content);
+            DP_DeepPot* new_dp = new DP_DeepPot(dp); return new_dp;)
+}
+
+DP_DeepPot* DP_NewDeepPotWithParam2(const char* c_model,
+                                    const int gpu_rank,
+                                    const char* c_file_content,
+                                    const int size_file_content) {
+  std::string model(c_model);
+  std::string file_content(c_file_content, c_file_content + size_file_content);
   DP_NEW_OK(DP_DeepPot, deepmd::DeepPot dp(model, gpu_rank, file_content);
             DP_DeepPot* new_dp = new DP_DeepPot(dp); return new_dp;)
 }
 
 DP_DeepPotModelDevi::DP_DeepPotModelDevi() {}
 DP_DeepPotModelDevi::DP_DeepPotModelDevi(deepmd::DeepPotModelDevi& dp)
-    : dp(dp) {}
+    : dp(dp) {
+  dfparam = dp.dim_aparam();
+  daparam = dp.dim_fparam();
+}
 
 DP_DeepPotModelDevi* DP_NewDeepPotModelDevi(const char** c_models,
                                             int n_models) {
   std::vector<std::string> model(c_models, c_models + n_models);
   DP_NEW_OK(DP_DeepPotModelDevi, deepmd::DeepPotModelDevi dp(model);
+            DP_DeepPotModelDevi* new_dp = new DP_DeepPotModelDevi(dp);
+            return new_dp;)
+}
+
+DP_DeepPotModelDevi* DP_NewDeepPotModelDeviWithParam(
+    const char** c_models,
+    const int n_models,
+    const int gpu_rank,
+    const char** c_file_contents,
+    const int n_file_contents,
+    const int* size_file_contents) {
+  std::vector<std::string> model(c_models, c_models + n_models);
+  std::vector<std::string> file_content;
+  file_content.reserve(n_file_contents);
+  for (int ii = 0; ii < n_file_contents; ++ii) {
+    file_content.push_back(std::string(
+        c_file_contents[ii], c_file_contents[ii] + size_file_contents[ii]));
+  }
+  DP_NEW_OK(DP_DeepPotModelDevi,
+            deepmd::DeepPotModelDevi dp(model, gpu_rank, file_content);
             DP_DeepPotModelDevi* new_dp = new DP_DeepPotModelDevi(dp);
             return new_dp;)
 }
@@ -119,10 +158,19 @@ inline void DP_DeepPotCompute_variant(DP_DeepPot* dp,
     // pbc
     cell_.assign(cell, cell + nframes * 9);
   }
+  std::vector<VALUETYPE> fparam_;
+  if (fparam) {
+    fparam_.assign(fparam, fparam + nframes * dp->dfparam);
+  }
+  std::vector<VALUETYPE> aparam_;
+  if (aparam) {
+    aparam_.assign(aparam, aparam + nframes * natoms * dp->daparam);
+  }
   std::vector<double> e;
   std::vector<VALUETYPE> f, v, ae, av;
 
-  DP_REQUIRES_OK(dp, dp->dp.compute(e, f, v, ae, av, coord_, atype_, cell_));
+  DP_REQUIRES_OK(dp, dp->dp.compute(e, f, v, ae, av, coord_, atype_, cell_,
+                                    fparam_, aparam_));
   // copy from C++ vectors to C arrays, if not NULL pointer
   if (energy) std::copy(e.begin(), e.end(), energy);
   if (force) std::copy(f.begin(), f.end(), force);
@@ -184,11 +232,19 @@ inline void DP_DeepPotComputeNList_variant(DP_DeepPot* dp,
     // pbc
     cell_.assign(cell, cell + nframes * 9);
   }
+  std::vector<VALUETYPE> fparam_;
+  if (fparam) {
+    fparam_.assign(fparam, fparam + nframes * dp->dfparam);
+  }
+  std::vector<VALUETYPE> aparam_;
+  if (aparam) {
+    aparam_.assign(aparam, aparam + nframes * (natoms - nghost) * dp->daparam);
+  }
   std::vector<double> e;
   std::vector<VALUETYPE> f, v, ae, av;
 
   DP_REQUIRES_OK(dp, dp->dp.compute(e, f, v, ae, av, coord_, atype_, cell_,
-                                    nghost, nlist->nl, ago));
+                                    nghost, nlist->nl, ago, fparam_, aparam_));
   // copy from C++ vectors to C arrays, if not NULL pointer
   if (energy) std::copy(e.begin(), e.end(), energy);
   if (force) std::copy(f.begin(), f.end(), force);
@@ -253,11 +309,20 @@ inline void DP_DeepPotComputeMixedType_variant(DP_DeepPot* dp,
     // pbc
     cell_.assign(cell, cell + nframes * 9);
   }
+  std::vector<VALUETYPE> fparam_;
+  if (fparam) {
+    fparam_.assign(fparam, fparam + nframes * dp->dfparam);
+  }
+  std::vector<VALUETYPE> aparam_;
+  if (aparam) {
+    aparam_.assign(aparam, aparam + nframes * natoms * dp->daparam);
+  }
   std::vector<double> e;
   std::vector<VALUETYPE> f, v, ae, av;
 
-  DP_REQUIRES_OK(dp, dp->dp.compute_mixed_type(e, f, v, ae, av, nframes, coord_,
-                                               atype_, cell_));
+  DP_REQUIRES_OK(
+      dp, dp->dp.compute_mixed_type(e, f, v, ae, av, nframes, coord_, atype_,
+                                    cell_, fparam_, aparam_));
   // copy from C++ vectors to C arrays, if not NULL pointer
   if (energy) std::copy(e.begin(), e.end(), energy);
   if (force) std::copy(f.begin(), f.end(), force);
@@ -305,6 +370,7 @@ inline void flatten_vector(std::vector<VALUETYPE>& onedv,
 
 template <typename VALUETYPE>
 void DP_DeepPotModelDeviComputeNList_variant(DP_DeepPotModelDevi* dp,
+                                             const int nframes,
                                              const int natoms,
                                              const VALUETYPE* coord,
                                              const int* atype,
@@ -312,11 +378,14 @@ void DP_DeepPotModelDeviComputeNList_variant(DP_DeepPotModelDevi* dp,
                                              const int nghost,
                                              const DP_Nlist* nlist,
                                              const int ago,
+                                             const VALUETYPE* fparam,
+                                             const VALUETYPE* aparam,
                                              double* energy,
                                              VALUETYPE* force,
                                              VALUETYPE* virial,
                                              VALUETYPE* atomic_energy,
                                              VALUETYPE* atomic_virial) {
+  if (nframes > 1) throw std::runtime_error("nframes > 1 not supported yet");
   // init C++ vectors from C arrays
   std::vector<VALUETYPE> coord_(coord, coord + natoms * 3);
   std::vector<int> atype_(atype, atype + natoms);
@@ -325,12 +394,20 @@ void DP_DeepPotModelDeviComputeNList_variant(DP_DeepPotModelDevi* dp,
     // pbc
     cell_.assign(cell, cell + 9);
   }
+  std::vector<VALUETYPE> fparam_;
+  if (fparam) {
+    fparam_.assign(fparam, fparam + dp->dfparam);
+  }
+  std::vector<VALUETYPE> aparam_;
+  if (aparam) {
+    aparam_.assign(aparam, aparam + (natoms - nghost) * dp->daparam);
+  }
   // different from DeepPot
   std::vector<double> e;
   std::vector<std::vector<VALUETYPE>> f, v, ae, av;
 
   DP_REQUIRES_OK(dp, dp->dp.compute(e, f, v, ae, av, coord_, atype_, cell_,
-                                    nghost, nlist->nl, ago));
+                                    nghost, nlist->nl, ago, fparam_, aparam_));
   // 2D vector to 2D array, flatten first
   if (energy) {
     std::copy(e.begin(), e.end(), energy);
@@ -359,6 +436,7 @@ void DP_DeepPotModelDeviComputeNList_variant(DP_DeepPotModelDevi* dp,
 
 template void DP_DeepPotModelDeviComputeNList_variant<double>(
     DP_DeepPotModelDevi* dp,
+    const int nframes,
     const int natoms,
     const double* coord,
     const int* atype,
@@ -366,6 +444,8 @@ template void DP_DeepPotModelDeviComputeNList_variant<double>(
     const int nghost,
     const DP_Nlist* nlist,
     const int ago,
+    const double* fparam,
+    const double* aparam,
     double* energy,
     double* force,
     double* virial,
@@ -374,6 +454,7 @@ template void DP_DeepPotModelDeviComputeNList_variant<double>(
 
 template void DP_DeepPotModelDeviComputeNList_variant<float>(
     DP_DeepPotModelDevi* dp,
+    const int nframes,
     const int natoms,
     const float* coord,
     const int* atype,
@@ -381,6 +462,8 @@ template void DP_DeepPotModelDeviComputeNList_variant<float>(
     const int nghost,
     const DP_Nlist* nlist,
     const int ago,
+    const float* fparam,
+    const float* aparam,
     double* energy,
     float* force,
     float* virial,
@@ -883,6 +966,14 @@ double DP_DeepPotGetCutoff(DP_DeepPot* dp) { return dp->dp.cutoff(); }
 
 int DP_DeepPotGetNumbTypes(DP_DeepPot* dp) { return dp->dp.numb_types(); }
 
+int DP_DeepPotGetNumbTypesSpin(DP_DeepPot* dp) {
+  return dp->dp.numb_types_spin();
+}
+
+int DP_DeepPotGetDimFParam(DP_DeepPot* dp) { return dp->dfparam; }
+
+int DP_DeepPotGetDimAParam(DP_DeepPot* dp) { return dp->daparam; }
+
 const char* DP_DeepPotCheckOK(DP_DeepPot* dp) {
   return string_to_char(dp->exception);
 }
@@ -901,8 +992,8 @@ void DP_DeepPotModelDeviComputeNList(DP_DeepPotModelDevi* dp,
                                      double* atomic_energy,
                                      double* atomic_virial) {
   DP_DeepPotModelDeviComputeNList_variant<double>(
-      dp, natoms, coord, atype, cell, nghost, nlist, ago, energy, force, virial,
-      atomic_energy, atomic_virial);
+      dp, 1, natoms, coord, atype, cell, nghost, nlist, ago, NULL, NULL, energy,
+      force, virial, atomic_energy, atomic_virial);
 }
 
 void DP_DeepPotModelDeviComputeNListf(DP_DeepPotModelDevi* dp,
@@ -919,8 +1010,50 @@ void DP_DeepPotModelDeviComputeNListf(DP_DeepPotModelDevi* dp,
                                       float* atomic_energy,
                                       float* atomic_virial) {
   DP_DeepPotModelDeviComputeNList_variant<float>(
-      dp, natoms, coord, atype, cell, nghost, nlist, ago, energy, force, virial,
-      atomic_energy, atomic_virial);
+      dp, 1, natoms, coord, atype, cell, nghost, nlist, ago, NULL, NULL, energy,
+      force, virial, atomic_energy, atomic_virial);
+}
+
+void DP_DeepPotModelDeviComputeNList2(DP_DeepPotModelDevi* dp,
+                                      const int nframes,
+                                      const int natoms,
+                                      const double* coord,
+                                      const int* atype,
+                                      const double* cell,
+                                      const int nghost,
+                                      const DP_Nlist* nlist,
+                                      const int ago,
+                                      const double* fparam,
+                                      const double* aparam,
+                                      double* energy,
+                                      double* force,
+                                      double* virial,
+                                      double* atomic_energy,
+                                      double* atomic_virial) {
+  DP_DeepPotModelDeviComputeNList_variant<double>(
+      dp, nframes, natoms, coord, atype, cell, nghost, nlist, ago, fparam,
+      aparam, energy, force, virial, atomic_energy, atomic_virial);
+}
+
+void DP_DeepPotModelDeviComputeNListf2(DP_DeepPotModelDevi* dp,
+                                       const int nframes,
+                                       const int natoms,
+                                       const float* coord,
+                                       const int* atype,
+                                       const float* cell,
+                                       const int nghost,
+                                       const DP_Nlist* nlist,
+                                       const int ago,
+                                       const float* fparam,
+                                       const float* aparam,
+                                       double* energy,
+                                       float* force,
+                                       float* virial,
+                                       float* atomic_energy,
+                                       float* atomic_virial) {
+  DP_DeepPotModelDeviComputeNList_variant<float>(
+      dp, nframes, natoms, coord, atype, cell, nghost, nlist, ago, fparam,
+      aparam, energy, force, virial, atomic_energy, atomic_virial);
 }
 
 double DP_DeepPotModelDeviGetCutoff(DP_DeepPotModelDevi* dp) {
@@ -929,6 +1062,18 @@ double DP_DeepPotModelDeviGetCutoff(DP_DeepPotModelDevi* dp) {
 
 int DP_DeepPotModelDeviGetNumbTypes(DP_DeepPotModelDevi* dp) {
   return dp->dp.numb_types();
+}
+
+int DP_DeepPotModelDeviGetNumbTypesSpin(DP_DeepPotModelDevi* dp) {
+  return dp->dp.numb_types_spin();
+}
+
+int DP_DeepPotModelDeviGetDimFParam(DP_DeepPotModelDevi* dp) {
+  return dp->dfparam;
+}
+
+int DP_DeepPotModelDeviGetDimAParam(DP_DeepPotModelDevi* dp) {
+  return dp->daparam;
 }
 
 const char* DP_DeepPotModelDeviCheckOK(DP_DeepPotModelDevi* dp) {
@@ -1132,6 +1277,62 @@ void DP_ConvertPbtxtToPb(const char* c_pbtxt, const char* c_pb) {
 void DP_PrintSummary(const char* c_pre) {
   std::string pre(c_pre);
   deepmd::print_summary(pre);
+}
+
+const char* DP_ReadFileToChar(const char* c_model) {
+  std::string model(c_model);
+  std::string file_content;
+  deepmd::read_file_to_string(model, file_content);
+  return string_to_char(file_content);
+}
+
+const char* DP_ReadFileToChar2(const char* c_model, int* size) {
+  std::string model(c_model);
+  std::string file_content;
+  try {
+    deepmd::read_file_to_string(model, file_content);
+  } catch (deepmd::deepmd_exception& ex) {
+    // use negtive size to indicate error
+    std::string error_message = std::string(ex.what());
+    *size = -error_message.size();
+    return string_to_char(error_message);
+  }
+  *size = file_content.size();
+  return string_to_char(file_content);
+}
+
+void DP_SelectByType(const int natoms,
+                     const int* atype,
+                     const int nghost,
+                     const int nsel_type,
+                     const int* sel_type,
+                     int* fwd_map,
+                     int* nreal,
+                     int* bkw_map,
+                     int* nghost_real) {
+  std::vector<int> atype_(atype, atype + natoms);
+  std::vector<int> sel_type_(sel_type, sel_type + nsel_type);
+  std::vector<int> fwd_map_, bkw_map_;
+  int nghost_real_;
+  deepmd::select_by_type(fwd_map_, bkw_map_, nghost_real_,
+                         std::vector<double>(), atype_, nghost, sel_type_);
+  if (fwd_map) std::copy(fwd_map_.begin(), fwd_map_.end(), fwd_map);
+  if (bkw_map) std::copy(bkw_map_.begin(), bkw_map_.end(), bkw_map);
+  if (nreal) *nreal = bkw_map_.size();
+  if (nghost_real) *nghost_real = nghost_real_;
+}
+
+void DP_SelectMapInt(const int* in,
+                     const int* fwd_map,
+                     const int stride,
+                     const int nall1,
+                     const int nall2,
+                     int* out) {
+  std::vector<int> in_(in, in + stride * nall1);
+  std::vector<int> fwd_map_(fwd_map, fwd_map + nall1);
+  std::vector<int> out_(stride * nall2);
+  deepmd::select_map(out_, in_, fwd_map_, stride);
+  if (out) std::copy(out_.begin(), out_.end(), out);
 }
 
 }  // extern "C"

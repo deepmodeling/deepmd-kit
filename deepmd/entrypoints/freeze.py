@@ -158,6 +158,11 @@ def _modify_model_suffix(output_graph_def, out_suffix, freeze_type):
                 loss_dict = jdata.pop("loss_dict")
                 if out_suffix in loss_dict:
                     jdata["loss"] = loss_dict[out_suffix]
+            # learning_rate
+            if "learning_rate_dict" in jdata:
+                learning_rate_dict = jdata.pop("learning_rate_dict")
+                if out_suffix in learning_rate_dict:
+                    jdata["learning_rate"] = learning_rate_dict[out_suffix]
             # fitting weight
             if "fitting_weight" in jdata["training"]:
                 jdata["training"].pop("fitting_weight")
@@ -214,6 +219,14 @@ def _make_node_names(
             "o_virial",
             "o_atom_energy",
             "o_atom_virial",
+            "spin_attr/ntypes_spin",
+            "fitting_attr/dfparam",
+            "fitting_attr/daparam",
+        ]
+    elif model_type == "dos":
+        nodes += [
+            "o_dos",
+            "fitting_attr/numb_dos",
             "fitting_attr/dfparam",
             "fitting_attr/daparam",
         ]

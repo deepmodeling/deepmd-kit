@@ -49,7 +49,6 @@ class TestGetPotential(unittest.TestCase):
             f.unlink()
 
     def test_factory(self):
-
         msg = "Returned wrong type of potential. Expected: {}, got: {}"
 
         dp = DeepPotential(self.work_dir / "deep_dipole.pb")

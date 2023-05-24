@@ -42,6 +42,9 @@ from deepmd.utils.network import (
 from deepmd.utils.sess import (
     run_sess,
 )
+from deepmd.utils.spin import (
+    Spin,
+)
 from deepmd.utils.tabulate import (
     DPTabulate,
 )
@@ -160,6 +163,7 @@ class DescrptSeA(DescrptSe):
         precision: str = "default",
         uniform_seed: bool = False,
         multi_task: bool = False,
+        spin: Optional[Spin] = None,
     ) -> None:
         """Constructor."""
         if rcut < rcut_smth:
@@ -186,6 +190,15 @@ class DescrptSeA(DescrptSe):
             self.exclude_types.add((tt[1], tt[0]))
         self.set_davg_zero = set_davg_zero
         self.type_one_side = type_one_side
+        self.spin = spin
+
+        # extend sel_a for spin system
+        if self.spin is not None:
+            self.ntypes_spin = self.spin.get_ntypes_spin()
+            self.sel_a_spin = self.sel_a[: self.ntypes_spin]
+            self.sel_a.extend(self.sel_a_spin)
+        else:
+            self.ntypes_spin = 0
 
         # descrpt config
         self.sel_r = [0 for ii in range(len(self.sel_a))]
@@ -273,7 +286,9 @@ class DescrptSeA(DescrptSe):
         return self.filter_neuron[-1]
 
     def get_nlist(self) -> Tuple[tf.Tensor, tf.Tensor, List[int], List[int]]:
-        """Returns
+        """Returns neighbor information.
+
+        Returns
         -------
         nlist
             Neighbor list
@@ -713,12 +728,15 @@ class DescrptSeA(DescrptSe):
             if nvnmd_cfg.enable and nvnmd_cfg.quantize_descriptor:
                 inputs_i = descrpt2r4(inputs_i, natoms)
             if len(self.exclude_types):
+                atype_nloc = tf.reshape(
+                    tf.slice(atype, [0, 0], [-1, natoms[0]]), [-1]
+                )  # when nloc != nall, pass nloc to mask
                 mask = self.build_type_exclude_mask(
                     self.exclude_types,
                     self.ntypes,
                     self.sel_a,
                     self.ndescrpt,
-                    atype,
+                    atype_nloc,
                     tf.shape(inputs_i)[0],
                 )
                 inputs_i *= mask
@@ -866,7 +884,7 @@ class DescrptSeA(DescrptSe):
         trainable=True,
         suffix="",
     ):
-        """input env matrix, returns R.G."""
+        """Input env matrix, returns R.G."""
         outputs_size = [1] + self.filter_neuron
         # cut-out inputs
         # with natom x (nei_type_i x 4)

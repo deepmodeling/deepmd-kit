@@ -660,7 +660,7 @@ class DataSets:
             return np.average(eners)
 
     def load_energy(self, set_name, nframes, nvalues, energy_file, atom_energy_file):
-        """return : coeff_ener, ener, coeff_atom_ener, atom_ener."""
+        """Return : coeff_ener, ener, coeff_atom_ener, atom_ener."""
         # load atom_energy
         coeff_atom_ener, atom_ener = self.load_data(
             set_name, atom_energy_file, [nframes, nvalues], False
@@ -765,13 +765,13 @@ class DataSets:
         return new_data
 
     def get_test(self):
-        """returned property prefector [4] in order:
+        """Returned property prefector [4] in order:
         energy, force, virial, atom_ener.
         """
         return self.get_set(self.test_set)
 
     def get_batch(self, batch_size):
-        """returned property prefector [4] in order:
+        """Returned property prefector [4] in order:
         energy, force, virial, atom_ener.
         """
         set_size = self.batch_set["energy"].shape[0]

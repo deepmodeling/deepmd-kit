@@ -147,6 +147,77 @@ template void deepmd::select_real_atoms<float>(
     const int& nghost,
     const int& ntypes);
 
+template <typename VALUETYPE>
+void deepmd::select_real_atoms_coord(std::vector<VALUETYPE>& dcoord,
+                                     std::vector<int>& datype,
+                                     std::vector<VALUETYPE>& aparam,
+                                     int& nghost_real,
+                                     std::vector<int>& fwd_map,
+                                     std::vector<int>& bkw_map,
+                                     int& nall_real,
+                                     int& nloc_real,
+                                     const std::vector<VALUETYPE>& dcoord_,
+                                     const std::vector<int>& datype_,
+                                     const std::vector<VALUETYPE>& aparam_,
+                                     const int& nghost,
+                                     const int& ntypes,
+                                     const int& nframes,
+                                     const int& daparam,
+                                     const int& nall) {
+  select_real_atoms(fwd_map, bkw_map, nghost_real, dcoord_, datype_, nghost,
+                    ntypes);
+  // resize to nall_real
+  nall_real = bkw_map.size();
+  nloc_real = nall_real - nghost_real;
+  dcoord.resize(nframes * nall_real * 3);
+  datype.resize(nall_real);
+  // fwd map
+  select_map<VALUETYPE>(dcoord, dcoord_, fwd_map, 3, nframes, nall_real, nall);
+  select_map<int>(datype, datype_, fwd_map, 1);
+  // aparam
+  if (daparam > 0) {
+    aparam.resize(nframes * nloc_real);
+    select_map<VALUETYPE>(aparam, aparam_, fwd_map, daparam, nframes, nloc_real,
+                          nall - nghost);
+  }
+}
+
+template void deepmd::select_real_atoms_coord<double>(
+    std::vector<double>& dcoord,
+    std::vector<int>& datype,
+    std::vector<double>& aparam,
+    int& nghost_real,
+    std::vector<int>& fwd_map,
+    std::vector<int>& bkw_map,
+    int& nall_real,
+    int& nloc_real,
+    const std::vector<double>& dcoord_,
+    const std::vector<int>& datype_,
+    const std::vector<double>& aparam_,
+    const int& nghost,
+    const int& ntypes,
+    const int& nframes,
+    const int& daparam,
+    const int& nall);
+
+template void deepmd::select_real_atoms_coord<float>(
+    std::vector<float>& dcoord,
+    std::vector<int>& datype,
+    std::vector<float>& aparam,
+    int& nghost_real,
+    std::vector<int>& fwd_map,
+    std::vector<int>& bkw_map,
+    int& nall_real,
+    int& nloc_real,
+    const std::vector<float>& dcoord_,
+    const std::vector<int>& datype_,
+    const std::vector<float>& aparam_,
+    const int& nghost,
+    const int& ntypes,
+    const int& nframes,
+    const int& daparam,
+    const int& nall);
+
 void deepmd::NeighborListData::copy_from_nlist(const InputNlist& inlist) {
   int inum = inlist.inum;
   ilist.resize(inum);

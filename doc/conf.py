@@ -150,7 +150,6 @@ def run_apidoc(_):
 
 
 def setup(app):
-
     # Add hook for building doxygen xml when needed
     app.connect("builder-inited", run_apidoc)
 
@@ -176,7 +175,7 @@ extensions = [
     "deepmodeling_sphinx",
     "dargs.sphinx",
     "sphinx_rtd_theme",
-    "myst_parser",
+    "myst_nb",
     "sphinx.ext.autosummary",
     "sphinx.ext.mathjax",
     "sphinx.ext.viewcode",
@@ -186,6 +185,7 @@ extensions = [
     "numpydoc",
     "breathe",
     "exhale",
+    "sphinxcontrib.bibtex",
 ]
 
 # breathe_domain_by_extension = {
@@ -240,6 +240,7 @@ exhale_projects_args = {
 
 #
 myst_heading_anchors = 4
+nb_execution_mode = "off"
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ["_templates"]
@@ -315,3 +316,5 @@ latex_elements = {
 # For TF automatic generated OP docs
 napoleon_google_docstring = True
 napoleon_numpy_docstring = False
+
+bibtex_bibfiles = ["../CITATIONS.bib"]

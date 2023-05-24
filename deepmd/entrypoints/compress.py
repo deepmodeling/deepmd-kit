@@ -55,7 +55,7 @@ def compress(
     mpi_log: str,
     log_path: Optional[str],
     log_level: int,
-    **kwargs
+    **kwargs,
 ):
     """Compress model.
 
@@ -108,8 +108,7 @@ def compress(
             ) from e
         elif not os.path.exists(training_script):
             raise RuntimeError(
-                "The input training script %s (%s) does not exist! Please check the path of the training script. "
-                % (input, os.path.abspath(input))
+                f"The input training script {input} ({os.path.abspath(input)}) does not exist! Please check the path of the training script. "
             ) from e
         else:
             log.info("stage 0: compute the min_nbor_dist")
