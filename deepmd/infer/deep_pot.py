@@ -164,6 +164,16 @@ class DeepPot(DeepEval):
         except (ValueError, KeyError):
             self.modifier_type = None
 
+        try:
+            t_jdata = self._get_tensor("train_attr/training_script:0")
+            jdata = run_sess(self.sess, t_jdata).decode("UTF-8")
+            import json
+
+            jdata = json.loads(jdata)
+            self.descriptor_type = jdata["model"]["descriptor"]["type"]
+        except (ValueError, KeyError):
+            self.descriptor_type = None
+
         if self.modifier_type == "dipole_charge":
             t_mdl_name = self._get_tensor("modifier_attr/mdl_name:0")
             t_mdl_charge_map = self._get_tensor("modifier_attr/mdl_charge_map:0")
@@ -242,6 +252,10 @@ class DeepPot(DeepEval):
     def get_sel_type(self) -> List[int]:
         """Unsupported in this model."""
         raise NotImplementedError("This model type does not support this attribute")
+
+    def get_descriptor_type(self) -> List[int]:
+        """Get the descriptor type of this model."""
+        return self.descriptor_type
 
     def get_dim_fparam(self) -> int:
         """Get the number (dimension) of frame parameters of this DP."""
