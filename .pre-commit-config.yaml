@@ -11,6 +11,7 @@ repos:
     -   id: check-yaml
     #-   id: check-json
     -   id: check-added-large-files
+        args: ['--maxkb=1024', '--enforce-all']
     -   id: check-merge-conflict
     -   id: check-symlinks
     -   id: check-toml
