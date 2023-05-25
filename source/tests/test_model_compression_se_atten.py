@@ -45,6 +45,10 @@ def _subprocess_run(command):
     return popen.returncode
 
 
+@unittest.skipIf(
+    parse_version(tf.__version__) < parse_version("2"),
+    f"The current tf version {tf.__version__} is too low to run the new testing model.",
+)
 def _init_models():
     data_file = str(tests_path / os.path.join("model_compression", "data"))
     frozen_model = str(tests_path / "dp-original-se-atten.pb")
