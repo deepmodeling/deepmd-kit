@@ -47,6 +47,7 @@ from deepmd.utils.spin import (
 log = logging.getLogger(__name__)
 
 
+@Fitting.register("ener")
 class EnerFitting(Fitting):
     r"""Fitting the energy of the system. The force and the virial can also be trained.
 

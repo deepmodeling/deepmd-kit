@@ -556,14 +556,10 @@ void deepmd::tabulate_fusion_se_t_cpu(FPTYPE* out,
 #pragma omp parallel for
   for (int ii = 0; ii < nloc; ii++) {
     for (int jj = 0; jj < nnei_i; jj++) {
-      FPTYPE ago = em_x[ii * nnei_i * nnei_j + jj * nnei_j + nnei_j - 1];
-      bool unloop = false;
+      // unloop not work as em_x is not sorted
       for (int kk = 0; kk < nnei_j; kk++) {
         FPTYPE xx = em_x[ii * nnei_i * nnei_j + jj * nnei_j + kk];
         FPTYPE ll = xx;
-        if (ago == xx) {
-          unloop = true;
-        }
         int table_idx = 0;
         locate_xx_se_t(lower, upper, -_max, _max, stride0, stride1, xx,
                        table_idx);
@@ -576,13 +572,8 @@ void deepmd::tabulate_fusion_se_t_cpu(FPTYPE* out,
           FPTYPE a5 = table[table_idx * last_layer_size * 6 + 6 * mm + 5];
           FPTYPE var =
               a0 + (a1 + (a2 + (a3 + (a4 + a5 * xx) * xx) * xx) * xx) * xx;
-          if (unloop) {
-            out[ii * last_layer_size + mm] += (nnei_j - kk) * var * ll;
-          } else {
-            out[ii * last_layer_size + mm] += var * ll;
-          }
+          out[ii * last_layer_size + mm] += var * ll;
         }
-        if (unloop) break;
       }
     }
   }
@@ -614,15 +605,10 @@ void deepmd::tabulate_fusion_se_t_grad_cpu(FPTYPE* dy_dem_x,
     FPTYPE ll = (FPTYPE)0.;
     FPTYPE rr = (FPTYPE)0.;
     for (int jj = 0; jj < nnei_i; jj++) {
-      FPTYPE ago = em_x[ii * nnei_i * nnei_j + jj * nnei_j + nnei_j - 1];
-      bool unloop = false;
       for (int kk = 0; kk < nnei_j; kk++) {
         // construct the dy/dx
         FPTYPE xx = em_x[ii * nnei_i * nnei_j + jj * nnei_j + kk];
         ll = xx;
-        if (ago == xx) {
-          unloop = true;
-        }
         int table_idx = 0;
         locate_xx_se_t(lower, upper, -_max, _max, stride0, stride1, xx,
                        table_idx);
@@ -638,27 +624,15 @@ void deepmd::tabulate_fusion_se_t_grad_cpu(FPTYPE* dy_dem_x,
           FPTYPE res =
               a0 + (a1 + (a2 + (a3 + (a4 + a5 * xx) * xx) * xx) * xx) * xx;
 
-          if (unloop) {
-            grad += (a1 + ((FPTYPE)2. * a2 +
-                           ((FPTYPE)3. * a3 +
-                            ((FPTYPE)4. * a4 + (FPTYPE)5. * a5 * xx) * xx) *
-                               xx) *
-                              xx) *
-                    ll * rr * (nnei_j - kk);
-            dy_dem[ii * nnei_i * nnei_j + jj * nnei_j + kk] +=
-                res * rr * (nnei_j - kk);
-          } else {
-            grad += (a1 + ((FPTYPE)2. * a2 +
-                           ((FPTYPE)3. * a3 +
-                            ((FPTYPE)4. * a4 + (FPTYPE)5. * a5 * xx) * xx) *
-                               xx) *
-                              xx) *
-                    ll * rr;
-            dy_dem[ii * nnei_i * nnei_j + jj * nnei_j + kk] += res * rr;
-          }
+          grad += (a1 + ((FPTYPE)2. * a2 +
+                         ((FPTYPE)3. * a3 +
+                          ((FPTYPE)4. * a4 + (FPTYPE)5. * a5 * xx) * xx) *
+                             xx) *
+                            xx) *
+                  ll * rr;
+          dy_dem[ii * nnei_i * nnei_j + jj * nnei_j + kk] += res * rr;
         }
         dy_dem_x[ii * nnei_i * nnei_j + jj * nnei_j + kk] = grad;
-        if (unloop) break;
       }
     }
   }
@@ -687,17 +661,12 @@ void deepmd::tabulate_fusion_se_t_grad_grad_cpu(FPTYPE* dz_dy,
 #pragma omp parallel for
   for (int ii = 0; ii < nloc; ii++) {
     for (int jj = 0; jj < nnei_i; jj++) {
-      FPTYPE ago = em_x[ii * nnei_i * nnei_j + jj * nnei_j + nnei_j - 1];
-      bool unloop = false;
       for (int kk = 0; kk < nnei_j; kk++) {
         FPTYPE xx = em_x[ii * nnei_i * nnei_j + jj * nnei_j + kk];
         FPTYPE tmp = xx;
         FPTYPE dz_em = dz_dy_dem[ii * nnei_i * nnei_j + jj * nnei_j + kk];
         FPTYPE dz_xx = dz_dy_dem_x[ii * nnei_i * nnei_j + jj * nnei_j + kk];
 
-        if (ago == xx) {
-          unloop = true;
-        }
         int table_idx = 0;
         locate_xx_se_t(lower, upper, -_max, _max, stride0, stride1, xx,
                        table_idx);
@@ -720,7 +689,6 @@ void deepmd::tabulate_fusion_se_t_grad_grad_cpu(FPTYPE* dz_dy,
           dz_dy[ii * last_layer_size + mm] +=
               var * dz_em + dz_xx * var_grad * tmp;
         }
-        if (unloop) break;
       }
     }
   }

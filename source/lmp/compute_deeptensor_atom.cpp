@@ -32,8 +32,11 @@ ComputeDeeptensorAtom::ComputeDeeptensorAtom(LAMMPS *lmp, int narg, char **arg)
 
   // initialize deeptensor
   int gpu_rank = dp.get_node_rank();
-  std::string model_file_content = dp.get_file_content(model_file);
-  dt.init(model_file, gpu_rank);
+  try {
+    dt.init(model_file, gpu_rank);
+  } catch (deepmd_compat::deepmd_exception &e) {
+    error->one(FLERR, e.what());
+  }
   sel_types = dt.sel_types();
   std::sort(sel_types.begin(), sel_types.end());
 
@@ -128,7 +131,7 @@ void ComputeDeeptensorAtom::compute_peratom() {
     dt.compute(gtensor, force, virial, atensor, avirial, dcoord, dtype, dbox,
                nghost, lmp_list);
   } catch (deepmd_compat::deepmd_exception &e) {
-    error->all(FLERR, e.what());
+    error->one(FLERR, e.what());
   }
 
   // store the result in tensor

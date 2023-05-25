@@ -25,6 +25,7 @@ from deepmd.utils.network import (
 )
 
 
+@Fitting.register("dipole")
 class DipoleFittingSeA(Fitting):
     r"""Fit the atomic dipole with descriptor se_a.
 

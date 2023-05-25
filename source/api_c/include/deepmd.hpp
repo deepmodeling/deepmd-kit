@@ -1962,6 +1962,11 @@ class DipoleChargeModifier {
 void inline read_file_to_string(std::string model, std::string &file_content) {
   int size;
   const char *c_file_content = DP_ReadFileToChar2(model.c_str(), &size);
+  if (size < 0) {
+    // negtive size indicates error
+    std::string error_message = std::string(c_file_content, -size);
+    throw deepmd::hpp::deepmd_exception(error_message);
+  }
   file_content = std::string(c_file_content, size);
 };
 

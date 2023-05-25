@@ -1289,7 +1289,14 @@ const char* DP_ReadFileToChar(const char* c_model) {
 const char* DP_ReadFileToChar2(const char* c_model, int* size) {
   std::string model(c_model);
   std::string file_content;
-  deepmd::read_file_to_string(model, file_content);
+  try {
+    deepmd::read_file_to_string(model, file_content);
+  } catch (deepmd::deepmd_exception& ex) {
+    // use negtive size to indicate error
+    std::string error_message = std::string(ex.what());
+    *size = -error_message.size();
+    return string_to_char(error_message);
+  }
   *size = file_content.size();
   return string_to_char(file_content);
 }

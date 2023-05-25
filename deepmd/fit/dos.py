@@ -40,6 +40,7 @@ from deepmd.utils.network import (
 log = logging.getLogger(__name__)
 
 
+@Fitting.register("dos")
 class DOSFitting(Fitting):
     r"""Fitting the density of states (DOS) of the system.
     The energy should be shifted by the fermi level.

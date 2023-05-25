@@ -102,8 +102,12 @@ FixDPLR::FixDPLR(LAMMPS *lmp, int narg, char **arg)
 
   // dpt.init(model);
   // dtm.init("frozen_model.pb");
-  dpt.init(model, 0, "dipole_charge");
-  dtm.init(model, 0, "dipole_charge");
+  try {
+    dpt.init(model, 0, "dipole_charge");
+    dtm.init(model, 0, "dipole_charge");
+  } catch (deepmd_compat::deepmd_exception &e) {
+    error->one(FLERR, e.what());
+  }
 
   sel_type = dpt.sel_types();
   sort(sel_type.begin(), sel_type.end());
@@ -148,9 +152,11 @@ void FixDPLR::init() {
   // }
 }
 
+void FixDPLR::setup_pre_force(int vflag) { pre_force(vflag); }
+
 void FixDPLR::setup(int vflag) {
   // if (strstr(update->integrate_style,"verlet"))
-  //   post_force(vflag);
+  post_force(vflag);
   // else {
   //   error->all(FLERR, "respa is not supported by this fix");
   // }
@@ -271,7 +277,11 @@ void FixDPLR::pre_force(int vflag) {
   // declear output
   vector<FLOAT_PREC> tensor;
   // compute
-  dpt.compute(tensor, dcoord, dtype, dbox, nghost, lmp_list);
+  try {
+    dpt.compute(tensor, dcoord, dtype, dbox, nghost, lmp_list);
+  } catch (deepmd_compat::deepmd_exception &e) {
+    error->one(FLERR, e.what());
+  }
   // cout << "tensor of size " << tensor.size() << endl;
   // cout << "nghost " << nghost << endl;
   // cout << "nall " << dtype.size() << endl;
@@ -434,8 +444,12 @@ void FixDPLR::post_force(int vflag) {
   // output vects
   vector<FLOAT_PREC> dfcorr, dvcorr;
   // compute
-  dtm.compute(dfcorr, dvcorr, dcoord, dtype, dbox, valid_pairs, dfele, nghost,
-              lmp_list);
+  try {
+    dtm.compute(dfcorr, dvcorr, dcoord, dtype, dbox, valid_pairs, dfele, nghost,
+                lmp_list);
+  } catch (deepmd_compat::deepmd_exception &e) {
+    error->one(FLERR, e.what());
+  }
   assert(dfcorr.size() == dcoord.size());
   assert(dfcorr.size() == nall * 3);
   // backward communication of fcorr

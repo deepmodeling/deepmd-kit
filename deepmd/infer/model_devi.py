@@ -143,6 +143,7 @@ def calc_model_devi(
     models,
     fname=None,
     frequency=1,
+    mixed_type=False,
 ):
     """Python interface to calculate model deviation.
 
@@ -160,6 +161,8 @@ def calc_model_devi(
         File to dump results, default None
     frequency : int
         Steps between frames (if the system is given by molecular dynamics engine), default 1
+    mixed_type : bool
+        Whether the input atype is in mixed_type format or not
 
     Returns
     -------
@@ -187,6 +190,7 @@ def calc_model_devi(
             coord,
             box,
             atype,
+            mixed_type=mixed_type,
         )
         energies.append(ret[0] / natom)
         forces.append(ret[1])
@@ -246,6 +250,7 @@ def make_model_devi(
     for system in all_sys:
         # create data-system
         dp_data = DeepmdData(system, set_prefix, shuffle_test=False, type_map=tmap)
+        mixed_type = dp_data.mixed_type
 
         data_sets = [dp_data._load_set(set_name) for set_name in dp_data.dirs]
         nframes_tot = 0
@@ -253,10 +258,13 @@ def make_model_devi(
         for data in data_sets:
             coord = data["coord"]
             box = data["box"]
-            atype = data["type"][0]
+            if mixed_type:
+                atype = data["type"]
+            else:
+                atype = data["type"][0]
             if not dp_data.pbc:
                 box = None
-            devi = calc_model_devi(coord, box, atype, dp_models)
+            devi = calc_model_devi(coord, box, atype, dp_models, mixed_type=mixed_type)
             nframes_tot += coord.shape[0]
             devis.append(devi)
         devis = np.vstack(devis)

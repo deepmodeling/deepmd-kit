@@ -8,6 +8,9 @@ from deepmd.infer import (
     DeepPotential,
     calc_model_devi,
 )
+from deepmd.infer.model_devi import (
+    make_model_devi,
+)
 
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 from common import (
@@ -25,6 +28,8 @@ class TestMakeModelDevi(unittest.TestCase):
     def setUp(self):
         gen_data()
         self.data_dir = "system"
+        with open(os.path.join(self.data_dir, "type_map.raw"), "w") as f:
+            f.write("O\nH")
         coord = np.load(os.path.join(self.data_dir, "set.000/coord.npy"))
         box = np.load(os.path.join(self.data_dir, "set.000/box.npy"))
         self.atype = np.loadtxt(os.path.join(self.data_dir, "type.raw"))
@@ -68,6 +73,17 @@ class TestMakeModelDevi(unittest.TestCase):
         np.testing.assert_almost_equal(model_devi[0][1:8], self.expect[1:8], 6)
         np.testing.assert_almost_equal(model_devi[0][1:8], model_devi[1][1:8], 6)
         self.assertTrue(os.path.isfile(self.output))
+
+    def test_make_model_devi(self):
+        make_model_devi(
+            models=self.graph_dirs,
+            system=self.data_dir,
+            set_prefix="set",
+            output=self.output,
+            frequency=self.freq,
+        )
+        x = np.loadtxt(self.output)
+        np.testing.assert_allclose(x, self.expect, 6)
 
     def tearDown(self):
         for pb in self.graph_dirs:

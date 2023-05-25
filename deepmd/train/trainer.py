@@ -5,6 +5,10 @@ import os
 import platform
 import shutil
 import time
+from typing import (
+    Dict,
+    List,
+)
 
 import google.protobuf.message
 import numpy as np
@@ -34,10 +38,7 @@ from deepmd.env import (
     tfv2,
 )
 from deepmd.fit import (
-    DipoleFittingSeA,
-    DOSFitting,
-    EnerFitting,
-    PolarFittingSeA,
+    Fitting,
 )
 from deepmd.loss import (
     DOSLoss,
@@ -56,6 +57,9 @@ from deepmd.model import (
 from deepmd.utils import random as dp_random
 from deepmd.utils.argcheck import (
     type_embedding_args,
+)
+from deepmd.utils.data_system import (
+    DeepmdDataSystem,
 )
 from deepmd.utils.errors import (
     GraphTooLargeError,
@@ -157,31 +161,14 @@ class DPTrainer:
         self.descrpt = Descriptor(**descrpt_param)
 
         # fitting net
-        def fitting_net_init(fitting_type_, descrpt_type_, params):
-            if fitting_type_ == "ener":
-                params["spin"] = self.spin
-                return EnerFitting(**params)
-            elif fitting_type_ == "dos":
-                return DOSFitting(**params)
-            elif fitting_type_ == "dipole":
-                return DipoleFittingSeA(**params)
-            elif fitting_type_ == "polar":
-                return PolarFittingSeA(**params)
-            # elif fitting_type_ == 'global_polar':
-            #     if descrpt_type_ == 'se_e2_a':
-            #         return GlobalPolarFittingSeA(**params)
-            #     else:
-            #         raise RuntimeError('fitting global_polar only supports descrptors: loc_frame and se_e2_a')
-            else:
-                raise RuntimeError("unknown fitting type " + fitting_type_)
-
         if not self.multi_task_mode:
             fitting_type = fitting_param.get("type", "ener")
             self.fitting_type = fitting_type
-            fitting_param.pop("type", None)
             fitting_param["descrpt"] = self.descrpt
+            if fitting_type == "ener":
+                fitting_param["spin"] = self.spin
             fitting_param["compress"] = self.is_compress
-            self.fitting = fitting_net_init(fitting_type, descrpt_type, fitting_param)
+            self.fitting = Fitting(**fitting_param)
         else:
             self.fitting_dict = {}
             self.fitting_type_dict = {}
@@ -190,11 +177,10 @@ class DPTrainer:
                 item_fitting_param = fitting_param[item]
                 item_fitting_type = item_fitting_param.get("type", "ener")
                 self.fitting_type_dict[item] = item_fitting_type
-                item_fitting_param.pop("type", None)
                 item_fitting_param["descrpt"] = self.descrpt
-                self.fitting_dict[item] = fitting_net_init(
-                    item_fitting_type, descrpt_type, item_fitting_param
-                )
+                if item_fitting_type == "ener":
+                    item_fitting_param["spin"] = self.spin
+                self.fitting_dict[item] = Fitting(**item_fitting_param)
 
         # type embedding
         padding = False
@@ -906,19 +892,55 @@ class DPTrainer:
 
         train_time = 0
         total_train_time = 0.0
+        wall_time_tic = time.time()
+
+        next_batch_train_op = None
+        next_fitting_key = None
+        next_train_batch_list = None
+        next_datasetloader = None
+
+        # dataset loader op
+        if not self.multi_task_mode:
+            datasetloader = DatasetLoader(train_data)
+            data_op = datasetloader.build()
+        else:
+            datasetloader = {}
+            data_op = {}
+            for fitting_key in self.fitting_type_dict:
+                datasetloader[fitting_key] = DatasetLoader(train_data[fitting_key])
+                data_op[fitting_key] = datasetloader[fitting_key].build()
 
         while cur_batch < stop_batch:
             # first round validation:
+            if is_first_step:
+                if not self.multi_task_mode:
+                    train_batch = train_data.get_batch()
+                    batch_train_op = self.train_op
+                else:
+                    fitting_idx = dp_random.choice(
+                        np.arange(self.nfitting), p=np.array(self.fitting_prob)
+                    )
+                    fitting_key = self.fitting_key_list[fitting_idx]
+                    train_batch = train_data[fitting_key].get_batch()
+                    batch_train_op = self.train_op[fitting_key]
+            else:
+                train_batch = next_datasetloader.get_data_dict(next_train_batch_list)
+                batch_train_op = next_batch_train_op
+                fitting_key = next_fitting_key
+            # for next round
             if not self.multi_task_mode:
-                train_batch = train_data.get_batch()
-                batch_train_op = self.train_op
+                next_datasetloader = datasetloader
+                next_batch_train_op = self.train_op
+                next_train_batch_op = data_op
             else:
                 fitting_idx = dp_random.choice(
                     np.arange(self.nfitting), p=np.array(self.fitting_prob)
                 )
-                fitting_key = self.fitting_key_list[fitting_idx]
-                train_batch = train_data[fitting_key].get_batch()
-                batch_train_op = self.train_op[fitting_key]
+                next_fitting_key = self.fitting_key_list[fitting_idx]
+                next_datasetloader = datasetloader[next_fitting_key]
+                next_batch_train_op = self.train_op[fitting_key]
+                next_train_batch_op = data_op[fitting_key]
+
             if self.display_in_training and is_first_step:
                 if self.run_opt.is_chief:
                     if not self.multi_task_mode:
@@ -967,18 +989,18 @@ class DPTrainer:
             # use tensorboard to visualize the training of deepmd-kit
             # it will takes some extra execution time to generate the tensorboard data
             if self.tensorboard and (cur_batch % self.tensorboard_freq == 0):
-                summary, _ = run_sess(
+                summary, _, next_train_batch_list = run_sess(
                     self.sess,
-                    [summary_merged_op, batch_train_op],
+                    [summary_merged_op, batch_train_op, next_train_batch_op],
                     feed_dict=train_feed_dict,
                     options=prf_options,
                     run_metadata=prf_run_metadata,
                 )
                 tb_train_writer.add_summary(summary, cur_batch)
             else:
-                run_sess(
+                _, next_train_batch_list = run_sess(
                     self.sess,
-                    [batch_train_op],
+                    [batch_train_op, next_train_batch_op],
                     feed_dict=train_feed_dict,
                     options=prf_options,
                     run_metadata=prf_run_metadata,
@@ -1028,14 +1050,16 @@ class DPTrainer:
                 if self.timing_in_training:
                     toc = time.time()
                     test_time = toc - tic
+                    wall_time = toc - wall_time_tic
                     log.info(
-                        "batch %7d training time %.2f s, testing time %.2f s"
-                        % (cur_batch, train_time, test_time)
+                        "batch %7d training time %.2f s, testing time %.2f s, total wall time %.2f s"
+                        % (cur_batch, train_time, test_time, wall_time)
                     )
                     # the first training time is not accurate
                     if cur_batch > self.disp_freq or stop_batch < 2 * self.disp_freq:
                         total_train_time += train_time
                     train_time = 0
+                    wall_time_tic = toc
                 if (
                     self.save_freq > 0
                     and cur_batch % self.save_freq == 0
@@ -1408,3 +1432,64 @@ class DPTrainer:
             bias_shift=bias_shift,
             ntest=self.model_param.get("data_bias_nsample", 10),
         )
+
+
+class DatasetLoader:
+    """Generate an OP that loads the training data from the given DeepmdDataSystem.
+
+    It can be used to load the training data in the training process, so there is
+    no waiting time between training steps.
+
+    Parameters
+    ----------
+    train_data : DeepmdDataSystem
+        The training data.
+
+    Examples
+    --------
+    >>> loader = DatasetLoader(train_data)
+    >>> data_op = loader.build()
+    >>> with tf.Session() as sess:
+    >>>     data_list = sess.run(data_op)
+    >>> data_dict = loader.get_data_dict(data_list)
+    """
+
+    def __init__(self, train_data: DeepmdDataSystem):
+        self.train_data = train_data
+        # get the keys of the data
+        batch_data = self.train_data.get_batch()
+        self.data_keys = batch_data.keys()
+        self.data_types = [tf.as_dtype(x.dtype) for x in batch_data.values()]
+
+    def build(self) -> List[tf.Tensor]:
+        """Build the OP that loads the training data.
+
+        Returns
+        -------
+        List[tf.Tensor]
+            Tensor of the loaded data.
+        """
+        train_data = self.train_data
+
+        def get_train_batch() -> List[np.ndarray]:
+            batch_data = train_data.get_batch()
+            # convert dict to list of arryas
+            batch_data = tuple([batch_data[kk] for kk in self.data_keys])
+            return batch_data
+
+        return tf.py_func(get_train_batch, [], self.data_types, name="train_data")
+
+    def get_data_dict(self, batch_list: List[np.ndarray]) -> Dict[str, np.ndarray]:
+        """Generate a dict of the loaded data.
+
+        Parameters
+        ----------
+        batch_list : List[np.ndarray]
+            The loaded data.
+
+        Returns
+        -------
+        Dict[str, np.ndarray]
+            The dict of the loaded data.
+        """
+        return {kk: vv for kk, vv in zip(self.data_keys, batch_list)}

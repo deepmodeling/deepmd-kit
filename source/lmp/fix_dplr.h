@@ -40,6 +40,7 @@ class FixDPLR : public Fix {
   ~FixDPLR() override{};
   int setmask() override;
   void init() override;
+  void setup_pre_force(int) override;
   void setup(int) override;
   void post_integrate() override;
   void pre_force(int) override;

@@ -539,17 +539,9 @@ __global__ void tabulate_fusion_se_t_fifth_order_polynomial(
 
   FPTYPE sum = (FPTYPE)0.;
   for (int ii = 0; ii < nnei_i; ii++) {
-    FPTYPE ago =
-        __shfl(em_x[block_idx * nnei_i * nnei_j + ii * nnei_j + nnei_j - 1], 0);
-    int breakpoint = nnei_j - 1;
-    bool unloop = false;
     for (int jj = 0; jj < nnei_j; jj++) {
       FPTYPE xx = em_x[block_idx * nnei_i * nnei_j + ii * nnei_j + jj];
       FPTYPE tmp = xx;
-      if (xx == ago) {
-        unloop = true;
-        breakpoint = jj;
-      }
       int table_idx = 0;
       locate_xx_se_t(xx, table_idx, lower, upper, -max, max, stride0, stride1);
       FPTYPE var[6];
@@ -565,8 +557,7 @@ __global__ void tabulate_fusion_se_t_fifth_order_polynomial(
            (var[2] + (var[3] + (var[4] + var[5] * xx) * xx) * xx) * xx) *
               xx;
 
-      sum += (nnei_j - breakpoint) * tmp * res;
-      if (unloop) break;
+      sum += tmp * res;
     }
   }
   out[block_idx * last_layer_size + thread_idx] = sum;
@@ -602,13 +593,9 @@ __global__ void tabulate_fusion_se_t_grad_fifth_order_polynomial(
   for (int ii = 0; ii < nnei_i; ii++) {
     FPTYPE ago =
         __shfl(em_x[block_idx * nnei_i * nnei_j + ii * nnei_j + nnei_j - 1], 0);
-    bool unloop = false;
     for (int jj = warp_idx; jj < nnei_j; jj += KTILE) {
       FPTYPE xx = em_x[block_idx * nnei_i * nnei_j + ii * nnei_j + jj];
       FPTYPE tmp = xx;
-      if (ago == xx) {
-        unloop = true;
-      }
       int table_idx = 0;
       locate_xx_se_t(xx, table_idx, lower, upper, -max, max, stride0, stride1);
       FPTYPE sum = (FPTYPE)0.;
@@ -644,7 +631,6 @@ __global__ void tabulate_fusion_se_t_grad_fifth_order_polynomial(
         dy_dem[block_idx * nnei_i * nnei_j + ii * nnei_j + jj] = sum;
         dy_dem_x[block_idx * nnei_i * nnei_j + ii * nnei_j + jj] = Csub;
       }
-      if (unloop) break;
     }
   }
 }
@@ -672,7 +658,6 @@ __global__ void tabulate_fusion_se_t_grad_grad_fifth_order_polynomial(
   for (int ii = 0; ii < nnei_i; ii++) {
     FPTYPE ago =
         __shfl(em_x[block_idx * nnei_i * nnei_j + ii * nnei_j + nnei_j - 1], 0);
-    bool unloop = false;
     for (int jj = 0; ii < nnei_j; jj++) {
       FPTYPE xx = em_x[block_idx * nnei_i * nnei_j + ii * nnei_j + jj];
       FPTYPE tmp = xx;
@@ -680,9 +665,6 @@ __global__ void tabulate_fusion_se_t_grad_grad_fifth_order_polynomial(
           dz_dy_dem_x[block_idx * nnei_i * nnei_j + ii * nnei_j + jj];
       FPTYPE dz_em = dz_dy_dem[block_idx * nnei_i * nnei_j + ii * nnei_j + jj];
       FPTYPE var[6];
-      if (ago == xx) {
-        unloop = true;
-      }
 
       int table_idx = 0;
       locate_xx_se_t(xx, table_idx, lower, upper, -max, max, stride0, stride1);
@@ -705,7 +687,6 @@ __global__ void tabulate_fusion_se_t_grad_grad_fifth_order_polynomial(
                        xx;
 
       sum += (tmp * res_grad * dz_xx + dz_em * res);
-      if (unloop) break;
     }
   }
   dz_dy[block_idx * last_layer_size + thread_idx] = sum;
