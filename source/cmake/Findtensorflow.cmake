@@ -363,8 +363,10 @@ elseif(NOT DEFINED OP_CXX_ABI)
       set(OP_CXX_ABI 1)
     else()
       # print results of try_compile
-      message(WARNING "Output with _GLIBCXX_USE_CXX11_ABI=0:" ${CPP_CXX_ABI_COMPILE_OUTPUT_VAR0})
-      message(WARNING "Output with _GLIBCXX_USE_CXX11_ABI=1:" ${CPP_CXX_ABI_COMPILE_OUTPUT_VAR1})
+      message(WARNING "Output with _GLIBCXX_USE_CXX11_ABI=0:"
+                      ${CPP_CXX_ABI_COMPILE_OUTPUT_VAR0})
+      message(WARNING "Output with _GLIBCXX_USE_CXX11_ABI=1:"
+                      ${CPP_CXX_ABI_COMPILE_OUTPUT_VAR1})
       message(
         FATAL_ERROR
           "Both _GLIBCXX_USE_CXX11_ABI=0 and 1 do not work. The reason may be that your C++ compiler (e.g. Red Hat Developer Toolset) does not support the custom cxx11 abi flag. Please check the above outputs."
