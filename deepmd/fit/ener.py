@@ -6,7 +6,6 @@ from typing import (
 
 import numpy as np
 
-import deepmd
 from deepmd.common import (
     add_data_requirement,
     cast_precision,
@@ -137,7 +136,7 @@ class EnerFitting(Fitting):
         layer_name: Optional[List[Optional[str]]] = None,
         use_aparam_as_mask: bool = False,
         spin: Optional[Spin] = None,
-        compress: bool = False
+        compress: bool = False,
     ) -> None:
         """Constructor."""
         # model param

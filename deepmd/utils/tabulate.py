@@ -183,14 +183,12 @@ class DPTabulate:
                 xx,
                 np.arange(uu, extrapolate * uu, stride1, dtype=self.data_type),
             )
-            xx = np.append(
-                xx, np.array([extrapolate * uu], dtype=self.data_type)
+            xx = np.append(xx, np.array([extrapolate * uu], dtype=self.data_type))
+            nspline = ((uu - ll) / stride0 + (extrapolate * uu - uu) / stride1).astype(
+                int
             )
-            nspline = (
-                (uu - ll) / stride0 + (extrapolate * uu - uu) / stride1
-            ).astype(int)
             self._build_lower(
-                'filter_net', xx, 0, uu, ll, stride0, stride1, extrapolate, nspline
+                "filter_net", xx, 0, uu, ll, stride0, stride1, extrapolate, nspline
             )
         elif isinstance(self.descrpt, deepmd.descriptor.DescrptSeA):
             for ii in range(self.table_size):

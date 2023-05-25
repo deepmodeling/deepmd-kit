@@ -17,7 +17,6 @@ from deepmd.utils.pair_tab import (
 from deepmd.utils.spin import (
     Spin,
 )
-from deepmd.descriptor import DescrptSeAtten
 
 from .model import (
     Model,

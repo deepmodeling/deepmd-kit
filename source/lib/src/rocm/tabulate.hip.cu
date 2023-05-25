@@ -336,7 +336,8 @@ __global__ void tabulate_fusion_se_atten_fifth_order_polynomial(
         var[0] +
         (var[1] + (var[2] + (var[3] + (var[4] + var[5] * xx) * xx) * xx) * xx) *
             xx;
-    FPTYPE t = two_embed[block_idx * nnei*last_layer_size + ii * last_layer_size + thread_idx];
+    FPTYPE t = two_embed[block_idx * nnei * last_layer_size +
+                         ii * last_layer_size + thread_idx];
     res = res * t + t;
 
     for (int kk = 0; kk < MTILE; kk++) {
@@ -409,7 +410,8 @@ __global__ void tabulate_fusion_se_atten_grad_fifth_order_polynomial(
           (var[1] +
            (var[2] + (var[3] + (var[4] + var[5] * xx) * xx) * xx) * xx) *
               xx;
-      FPTYPE t = two_embed[block_idx * nnei*last_layer_size + ii * last_layer_size + jj];
+      FPTYPE t = two_embed[block_idx * nnei * last_layer_size +
+                           ii * last_layer_size + jj];
       res = res * t + t;
 
       for (int kk = 0; kk < KTILE; kk++) {
@@ -957,8 +959,8 @@ void tabulate_fusion_se_atten_grad_gpu_rocm(FPTYPE* dy_dem_x,
       HIP_KERNEL_NAME(
           tabulate_fusion_se_atten_grad_fifth_order_polynomial<FPTYPE, MM, KK>),
       nloc, KK * WARP_SIZE, sizeof(FPTYPE) * MM * last_layer_size, 0, dy_dem_x,
-      dy_dem, table, em_x, em, two_embed, dy, table_info[0], table_info[1], table_info[2],
-      table_info[3], table_info[4], nnei, last_layer_size);
+      dy_dem, table, em_x, em, two_embed, dy, table_info[0], table_info[1],
+      table_info[2], table_info[3], table_info[4], nnei, last_layer_size);
   DPErrcheck(hipGetLastError());
   DPErrcheck(hipDeviceSynchronize());
 }
@@ -984,8 +986,9 @@ void tabulate_fusion_se_atten_grad_grad_gpu_rocm(FPTYPE* dz_dy,
           tabulate_fusion_se_atten_grad_grad_fifth_order_polynomial<FPTYPE, MM,
                                                                     KK>),
       nloc, last_layer_size, sizeof(FPTYPE) * MM * last_layer_size, 0, dz_dy,
-      table, em_x, em, two_embed, dz_dy_dem_x, dz_dy_dem, table_info[0], table_info[1],
-      table_info[2], table_info[3], table_info[4], nnei, last_layer_size);
+      table, em_x, em, two_embed, dz_dy_dem_x, dz_dy_dem, table_info[0],
+      table_info[1], table_info[2], table_info[3], table_info[4], nnei,
+      last_layer_size);
   DPErrcheck(hipGetLastError());
   DPErrcheck(hipDeviceSynchronize());
 }
@@ -1199,24 +1202,26 @@ template void tabulate_fusion_se_a_grad_grad_gpu_rocm<double>(
     const int nnei,
     const int last_layer_size);
 
-template void tabulate_fusion_se_atten_gpu_rocm<float>(float* out,
-                                                       const float* table,
-                                                       const float* table_info,
-                                                       const float* em_x,
-                                                       const float* em,
-                                                       const float* two_embed,
-                                                       const int nloc,
-                                                       const int nnei,
-                                                       const int last_layer_size);
-template void tabulate_fusion_se_atten_gpu_rocm<double>(double* out,
-                                                        const double* table,
-                                                        const double* table_info,
-                                                        const double* em_x,
-                                                        const double* em,
-                                                        const double* two_embed,
-                                                        const int nloc,
-                                                        const int nnei,
-                                                        const int last_layer_size);
+template void tabulate_fusion_se_atten_gpu_rocm<float>(
+    float* out,
+    const float* table,
+    const float* table_info,
+    const float* em_x,
+    const float* em,
+    const float* two_embed,
+    const int nloc,
+    const int nnei,
+    const int last_layer_size);
+template void tabulate_fusion_se_atten_gpu_rocm<double>(
+    double* out,
+    const double* table,
+    const double* table_info,
+    const double* em_x,
+    const double* em,
+    const double* two_embed,
+    const int nloc,
+    const int nnei,
+    const int last_layer_size);
 template void tabulate_fusion_se_atten_grad_gpu_rocm<float>(
     float* dy_dem_x,
     float* dy_dem,

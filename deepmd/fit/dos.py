@@ -97,7 +97,7 @@ class DOSFitting(Fitting):
         uniform_seed: bool = False,
         layer_name: Optional[List[Optional[str]]] = None,
         use_aparam_as_mask: bool = False,
-        compress: bool = False
+        compress: bool = False,
     ) -> None:
         """Constructor."""
         # model param

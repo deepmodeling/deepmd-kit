@@ -344,7 +344,8 @@ void deepmd::tabulate_fusion_se_atten_cpu(FPTYPE* out,
         FPTYPE a5 = table[table_idx * last_layer_size * 6 + 6 * kk + 5];
         FPTYPE var =
             a0 + (a1 + (a2 + (a3 + (a4 + a5 * xx) * xx) * xx) * xx) * xx;
-        FPTYPE t = two_embed[ii * nnei*last_layer_size + jj * last_layer_size + kk];
+        FPTYPE t =
+            two_embed[ii * nnei * last_layer_size + jj * last_layer_size + kk];
         var = var * t + t;
         if (unloop) {
           out[ii * last_layer_size * 4 + 0 * last_layer_size + kk] +=
@@ -424,11 +425,12 @@ void deepmd::tabulate_fusion_se_atten_grad_cpu(FPTYPE* dy_dem_x,
         FPTYPE a5 = table[table_idx * last_layer_size * 6 + 6 * kk + 5];
         FPTYPE res =
             a0 + (a1 + (a2 + (a3 + (a4 + a5 * xx) * xx) * xx) * xx) * xx;
-        FPTYPE t = two_embed[ii * nnei*last_layer_size + jj * last_layer_size + kk];
+        FPTYPE t =
+            two_embed[ii * nnei * last_layer_size + jj * last_layer_size + kk];
 
         FPTYPE res1 = res * t + t;
-        FPTYPE g = (a1 + (2 * a2 + (3 * a3 + (4 * a4 + 5 * a5 * xx) * xx) * xx) *
-                            xx);
+        FPTYPE g =
+            (a1 + (2 * a2 + (3 * a3 + (4 * a4 + 5 * a5 * xx) * xx) * xx) * xx);
         FPTYPE deriv = t * g;
 
         if (unloop) {
@@ -978,7 +980,6 @@ template void deepmd::tabulate_fusion_se_atten_grad_grad_cpu<double>(
     const int nloc,
     const int nnei,
     const int last_layer_size);
-
 
 template void deepmd::tabulate_fusion_se_t_cpu<float>(
     float* out,
