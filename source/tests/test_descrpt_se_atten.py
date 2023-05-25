@@ -1,5 +1,5 @@
-import unittest
 import inspect
+import unittest
 
 import numpy as np
 from common import (
@@ -104,7 +104,13 @@ class TestModel(tf.test.TestCase):
         is_training = tf.placeholder(tf.bool)
         t_fparam = None
 
-        type_embedding = typeebd.build(ntypes, suffix=self.filename + '-' + inspect.stack()[0][3] + "_se_atten_type_des_ebd_2sdies")
+        type_embedding = typeebd.build(
+            ntypes,
+            suffix=self.filename
+            + "-"
+            + inspect.stack()[0][3]
+            + "_se_atten_type_des_ebd_2sdies",
+        )
 
         dout = descrpt.build(
             t_coord,
@@ -114,7 +120,10 @@ class TestModel(tf.test.TestCase):
             t_mesh,
             {"type_embedding": type_embedding},
             reuse=False,
-            suffix=self.filename + '-' + inspect.stack()[0][3] + "_se_atten_type_des_2sides",
+            suffix=self.filename
+            + "-"
+            + inspect.stack()[0][3]
+            + "_se_atten_type_des_2sides",
         )
 
         feed_dict_test = {
@@ -272,7 +281,13 @@ class TestModel(tf.test.TestCase):
         is_training = tf.placeholder(tf.bool)
         t_fparam = None
 
-        type_embedding = typeebd.build(ntypes, suffix=self.filename + '-' + inspect.stack()[0][3] + "_se_atten_type_des_ebd_1side")
+        type_embedding = typeebd.build(
+            ntypes,
+            suffix=self.filename
+            + "-"
+            + inspect.stack()[0][3]
+            + "_se_atten_type_des_ebd_1side",
+        )
 
         dout = descrpt.build(
             t_coord,
@@ -282,7 +297,10 @@ class TestModel(tf.test.TestCase):
             t_mesh,
             {"type_embedding": type_embedding},
             reuse=False,
-            suffix=self.filename + '-' + inspect.stack()[0][3] + "_se_atten_type_des_1side",
+            suffix=self.filename
+            + "-"
+            + inspect.stack()[0][3]
+            + "_se_atten_type_des_1side",
         )
 
         feed_dict_test = {
@@ -439,7 +457,13 @@ class TestModel(tf.test.TestCase):
         is_training = tf.placeholder(tf.bool)
         t_fparam = None
 
-        type_embedding = typeebd.build(ntypes, suffix=self.filename + '-' + inspect.stack()[0][3] + "_se_atten_type_des_ebd_2sdies")
+        type_embedding = typeebd.build(
+            ntypes,
+            suffix=self.filename
+            + "-"
+            + inspect.stack()[0][3]
+            + "_se_atten_type_des_ebd_2sdies",
+        )
 
         dout = descrpt.build(
             t_coord,
@@ -449,7 +473,10 @@ class TestModel(tf.test.TestCase):
             t_mesh,
             {"type_embedding": type_embedding},
             reuse=False,
-            suffix=self.filename + '-' + inspect.stack()[0][3] + "_se_atten_type_des_2sides",
+            suffix=self.filename
+            + "-"
+            + inspect.stack()[0][3]
+            + "_se_atten_type_des_2sides",
         )
 
         feed_dict_test = {
@@ -532,7 +559,7 @@ class TestModel(tf.test.TestCase):
             4.359946655901846685e-03,
             3.606316239946267860e-04,
             2.762742703322493970e-02,
-            2.285540100738304818e-03
+            2.285540100738304818e-03,
         ]
 
         places = 10
