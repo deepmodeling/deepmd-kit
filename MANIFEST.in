@@ -1,0 +1,9 @@
+prune source/tests
+prune source/api_c/tests
+prune source/api_cc/tests
+prune source/lib/tests
+prune source/lmp/tests
+prune doc
+prune examples
+prune data
+prune .github
