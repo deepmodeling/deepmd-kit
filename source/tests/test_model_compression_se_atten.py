@@ -11,9 +11,11 @@ from common import (
     run_dp,
     tests_path,
 )
+from packaging.version import parse as parse_version
 
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
+    tf,
 )
 from deepmd.infer import (
     DeepPot,
@@ -68,6 +70,10 @@ def _init_models():
 INPUT, FROZEN_MODEL, COMPRESSED_MODEL = _init_models()
 
 
+@unittest.skipIf(
+    parse_version(tf.__version__) < parse_version("2"),
+    f"The current tf version {tf.__version__} is too low to run the new testing model.",
+)
 class TestDeepPotAPBC(unittest.TestCase):
     @classmethod
     def setUpClass(self):
@@ -192,6 +198,10 @@ class TestDeepPotAPBC(unittest.TestCase):
         np.testing.assert_almost_equal(vv0, vv1, default_places)
 
 
+@unittest.skipIf(
+    parse_version(tf.__version__) < parse_version("2"),
+    f"The current tf version {tf.__version__} is too low to run the new testing model.",
+)
 class TestDeepPotANoPBC(unittest.TestCase):
     @classmethod
     def setUpClass(self):
@@ -300,6 +310,10 @@ class TestDeepPotANoPBC(unittest.TestCase):
         np.testing.assert_almost_equal(vv0, vv1, default_places)
 
 
+@unittest.skipIf(
+    parse_version(tf.__version__) < parse_version("2"),
+    f"The current tf version {tf.__version__} is too low to run the new testing model.",
+)
 class TestDeepPotALargeBoxNoPBC(unittest.TestCase):
     @classmethod
     def setUpClass(self):
@@ -408,6 +422,10 @@ class TestDeepPotALargeBoxNoPBC(unittest.TestCase):
         np.testing.assert_almost_equal(ee0, ee1, default_places)
 
 
+@unittest.skipIf(
+    parse_version(tf.__version__) < parse_version("2"),
+    f"The current tf version {tf.__version__} is too low to run the new testing model.",
+)
 class TestDeepPotAPBCExcludeTypes(unittest.TestCase):
     @classmethod
     def setUpClass(self):
