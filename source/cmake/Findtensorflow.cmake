@@ -337,12 +337,14 @@ elseif(NOT DEFINED OP_CXX_ABI)
     try_compile(
       CPP_CXX_ABI_COMPILE_RESULT_VAR0 ${CMAKE_CURRENT_BINARY_DIR}/tf_cxx_abi0
       "${CMAKE_CURRENT_LIST_DIR}/test_cxx_abi.cpp"
+      OUTPUT_VARIABLE CPP_CXX_ABI_COMPILE_OUTPUT_VAR0
       LINK_LIBRARIES ${TensorFlowFramework_LIBRARY}
       CMAKE_FLAGS "-DINCLUDE_DIRECTORIES:STRING=${TensorFlow_INCLUDE_DIRS}"
       COMPILE_DEFINITIONS -D_GLIBCXX_USE_CXX11_ABI=0)
     try_compile(
       CPP_CXX_ABI_COMPILE_RESULT_VAR1 ${CMAKE_CURRENT_BINARY_DIR}/tf_cxx_abi1
       "${CMAKE_CURRENT_LIST_DIR}/test_cxx_abi.cpp"
+      OUTPUT_VARIABLE CPP_CXX_ABI_COMPILE_OUTPUT_VAR1
       LINK_LIBRARIES ${TensorFlowFramework_LIBRARY}
       CMAKE_FLAGS "-DINCLUDE_DIRECTORIES:STRING=${TensorFlow_INCLUDE_DIRS}"
       COMPILE_DEFINITIONS -D_GLIBCXX_USE_CXX11_ABI=1)
@@ -360,9 +362,12 @@ elseif(NOT DEFINED OP_CXX_ABI)
       )
       set(OP_CXX_ABI 1)
     else()
+      # print results of try_compile
+      message(WARNING "Output with _GLIBCXX_USE_CXX11_ABI=0:" ${CPP_CXX_ABI_COMPILE_OUTPUT_VAR0})
+      message(WARNING "Output with _GLIBCXX_USE_CXX11_ABI=1:" ${CPP_CXX_ABI_COMPILE_OUTPUT_VAR1})
       message(
         FATAL_ERROR
-          "Both _GLIBCXX_USE_CXX11_ABI=0 and 1 do not work. The reason may be that your C++ compiler (e.g. Red Hat Developer Toolset) does not support the custom cxx11 abi flag."
+          "Both _GLIBCXX_USE_CXX11_ABI=0 and 1 do not work. The reason may be that your C++ compiler (e.g. Red Hat Developer Toolset) does not support the custom cxx11 abi flag. Please check the above outputs."
       )
     endif()
   else()

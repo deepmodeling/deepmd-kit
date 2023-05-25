@@ -410,6 +410,13 @@ RESOURCES = {
         "b5a1bb04c84b6fe1538377e5a1f649bb5d5f0b2e3625a3c526ff3a8af88633e8",
         gzip="tensorflow",
     ),
+    "tensorflow-2.12.0": OnlineResource(
+        "tensorflow-2.12.0.tar.gz",
+        "https://github.com/tensorflow/tensorflow/archive/refs/tags/v2.12.0.tar.gz",
+        "c030cb1905bff1d2446615992aad8d8d85cbe90c4fb625cee458c63bf466bc8e",
+        gzip="tensorflow",
+    ),
+
 }
 
 
@@ -583,7 +590,7 @@ class BuildTensorFlow(Build):
 
     def __init__(
         self,
-        version: str = "2.9.1",
+        version: str = "2.12.0",
         enable_mkl: bool = True,
         enable_cuda: bool = False,
         enable_rocm: bool = False,
@@ -666,6 +673,12 @@ class BuildTensorFlow(Build):
             include_dst / "tensorflow" / "core",
             ignore=include_patterns("*.h", "*.inc"),
         )
+        if tuple([int(x) for x in self.version.split(".")[:2]]) >= (2, 11):
+            copytree2(
+                src / "tensorflow" / "tsl",
+                include_dst / "tensorflow" / "core",
+                ignore=include_patterns("*.h", "*.inc"),
+            )
         # bazel-bin includes generated headers like version, pb.h, ..
         copytree2(
             src / "bazel-bin", include_dst, ignore=include_patterns("*.h", "*.inc")
