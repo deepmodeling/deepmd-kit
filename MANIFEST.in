@@ -1,0 +1,6 @@
+# all "tests" file/directory under "source" directory
+exclude source tests
+prune doc
+prune examples
+prune data
+prune .github
