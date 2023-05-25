@@ -162,8 +162,7 @@ class DescrptSeAtten(DescrptSeA):
         self.layer_size = len(neuron)
 
         if self.compressible and self.attn_layer != 0:
-            pass
-            # raise RuntimeError('attention layer must be set to 0 when compression of se_atten is enabled')
+            raise RuntimeError('attention layer must be set to 0 when compression of se_atten is enabled')
 
         # descrpt config
         self.sel_all_a = [sel]
