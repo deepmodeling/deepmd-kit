@@ -1009,10 +1009,7 @@ class TabulateFusionSeRGradGradOp : public OpKernel {
   REGISTER_KERNEL_BUILDER(Name("TabulateFusionSeRGradGrad")                    \
                               .Device(DEVICE_CPU)                              \
                               .TypeConstraint<T>("T"),                         \
-                          TabulateFusionSeRGradGradOp<CPUDevice, T>);          \
-  REGISTER_KERNEL_BUILDER(                                                     \
-      Name("PrintIdentity").Device(DEVICE_CPU).TypeConstraint<T>("T"),         \
-      PrintIdentityOp<CPUDevice, T>);
+                          TabulateFusionSeRGradGradOp<CPUDevice, T>);
 REGISTER_CPU(float);
 REGISTER_CPU(double);
 
