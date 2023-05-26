@@ -81,12 +81,17 @@ class Model(ABC):
             from deepmd.model.multi import (
                 MultiModel,
             )
+            from deepmd.model.pairwise_dprc import (
+                PairwiseDPRc,
+            )
 
             model_type = kwargs.get("type", "standard")
             if model_type == "standard":
                 cls = StandardModel
             elif model_type == "multi":
                 cls = MultiModel
+            elif model_type == "pairwise_dprc":
+                cls = PairwiseDPRc
             else:
                 raise ValueError(f"unknown model type: {model_type}")
             return cls.__new__(cls, *args, **kwargs)

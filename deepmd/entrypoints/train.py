@@ -492,6 +492,8 @@ def update_one_sel(jdata, descriptor):
 
 
 def update_sel(jdata):
+    if "descriptor" not in jdata["model"]:
+        return jdata
     log.info(
         "Calculate neighbor statistics... (add --skip-neighbor-stat to skip this step)"
     )
