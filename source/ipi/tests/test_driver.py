@@ -175,7 +175,7 @@ class TestDeepPotALargeBoxNoPBC(unittest.TestCase):
         cls.dp = None
 
     def test_ase(self):
-        with SocketIOCalculator(DPiPICalculator(self.model_file), log=sys.stdout) as calc:
+        with SocketIOCalculator(DPiPICalculator(self.model_file), log=sys.stdout, unixsocket="localhost") as calc:
             water = Atoms(
                 "OHHOHH",
                 positions=self.coords.reshape((-1, 3)),
