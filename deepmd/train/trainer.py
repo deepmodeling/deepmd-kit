@@ -102,8 +102,8 @@ def _is_subdir(path, directory):
 class DPTrainer:
     def __init__(self, jdata, run_opt, is_compress=False):
         self.run_opt = run_opt
-        self.is_compress = is_compress
         self._init_param(jdata)
+        self.is_compress = is_compress
 
     def _init_param(self, jdata):
         # model config
@@ -167,7 +167,6 @@ class DPTrainer:
             fitting_param["descrpt"] = self.descrpt
             if fitting_type == "ener":
                 fitting_param["spin"] = self.spin
-            fitting_param["compress"] = self.is_compress
             self.fitting = Fitting(**fitting_param)
         else:
             self.fitting_dict = {}

@@ -137,7 +137,6 @@ class EnerFitting(Fitting):
         layer_name: Optional[List[Optional[str]]] = None,
         use_aparam_as_mask: bool = False,
         spin: Optional[Spin] = None,
-        compress: bool = False,
     ) -> None:
         """Constructor."""
         # model param
@@ -145,7 +144,6 @@ class EnerFitting(Fitting):
         self.dim_descrpt = descrpt.get_dim_out()
         self.descrpt = descrpt
         self.use_aparam_as_mask = use_aparam_as_mask
-        self.compress = compress
         # args = ()\
         #        .add('numb_fparam',      int,    default = 0)\
         #        .add('numb_aparam',      int,    default = 0)\
