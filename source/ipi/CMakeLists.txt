@@ -57,6 +57,11 @@ else()
                INSTALL_RPATH "$ORIGIN/../${LIB_DIR}:${TensorFlow_LIBRARY_PATH}")
 endif()
 
+if(CMAKE_TESTING_ENABLED)
+  target_link_libraries(${ipiname} PRIVATE coverage_config)
+  target_link_libraries(${libipiname} PRIVATE coverage_config)
+endif()
+
 if(BUILD_PY_IF)
   install(TARGETS ${libipiname} DESTINATION deepmd/op/)
   install(TARGETS ${ipiname} DESTINATION deepmd/op/)

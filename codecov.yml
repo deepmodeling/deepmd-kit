@@ -39,3 +39,7 @@ component_management:
       name: LAMMPS
       paths:
         - source/lmp/**
+    - component_id: module_ipi
+      name: i-Pi
+      paths:
+        - source/ipi/**
