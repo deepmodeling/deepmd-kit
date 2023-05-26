@@ -164,7 +164,6 @@ class DescrptSeA(DescrptSe):
         uniform_seed: bool = False,
         multi_task: bool = False,
         spin: Optional[Spin] = None,
-        compressible: bool = True,
     ) -> None:
         """Constructor."""
         if rcut < rcut_smth:

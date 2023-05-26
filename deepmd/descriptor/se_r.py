@@ -97,7 +97,6 @@ class DescrptSeR(DescrptSe):
         uniform_seed: bool = False,
         multi_task: bool = False,
         spin: Optional[Spin] = None,
-        compressible: bool = False,
     ) -> None:
         """Constructor."""
         if rcut < rcut_smth:

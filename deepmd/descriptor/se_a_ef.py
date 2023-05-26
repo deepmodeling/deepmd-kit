@@ -82,7 +82,6 @@ class DescrptSeAEf(Descriptor):
         activation_function: str = "tanh",
         precision: str = "default",
         uniform_seed=False,
-        compressible: bool = False,
     ) -> None:
         """Constructor."""
         self.descrpt_para = DescrptSeAEfLower(
