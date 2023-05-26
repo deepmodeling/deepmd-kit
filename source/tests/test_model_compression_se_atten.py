@@ -53,10 +53,13 @@ def _init_models():
     data_file = str(tests_path / os.path.join("model_compression", "data"))
     frozen_model = str(tests_path / "dp-original-se-atten.pb")
     compressed_model = str(tests_path / "dp-compressed-se-atten.pb")
-    INPUT = str(tests_path / "input-se-atten.json")
-    jdata = j_loader(
-        str(tests_path / os.path.join("model_compression", "input-se-atten.json"))
-    )
+    INPUT = str(tests_path / "input.json")
+    jdata = j_loader(str(tests_path / os.path.join("model_compression", "input.json")))
+    jdata["model"]["descriptor"] = {}
+    jdata["model"]["descriptor"]["type"] = "se_atten"
+    jdata["model"]["descriptor"]["compressible"] = True
+    jdata["model"]["descriptor"]["sel"] = 120
+    jdata["model"]["descriptor"]["attn_layer"] = 0
     jdata["training"]["training_data"]["systems"] = data_file
     jdata["training"]["validation_data"]["systems"] = data_file
     with open(INPUT, "w") as fp:
