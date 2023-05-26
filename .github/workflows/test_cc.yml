@@ -41,6 +41,7 @@ jobs:
         OMP_NUM_THREADS: 1
         TF_INTRA_OP_PARALLELISM_THREADS: 1
         TF_INTER_OP_PARALLELISM_THREADS: 1
+        PATH: ${{ github.workspace }}/dp_test/bin:$PATH
         LD_LIBRARY_PATH: ${{ github.workspace }}/dp_test/lib
     - uses: codecov/codecov-action@v3
       with:
