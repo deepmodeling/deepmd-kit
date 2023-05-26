@@ -60,7 +60,6 @@ class DipoleFittingSeA(Fitting):
         activation_function: str = "tanh",
         precision: str = "default",
         uniform_seed: bool = False,
-        compress: bool = False,
     ) -> None:
         """Constructor."""
         self.ntypes = descrpt.get_ntypes()
