@@ -106,6 +106,7 @@ class TypeEmbedNet:
         self.type_embedding_net_variables = None
         self.type_embedding_from_graph = None
         self.padding = padding
+        self.model_type = None
 
     def build(
         self,
@@ -129,7 +130,7 @@ class TypeEmbedNet:
         embedded_types
             The computational graph for embedded types
         """
-        if self.type_embedding_from_graph is not None:
+        if self.model_type != None and self.model_type == "compressed_model":
             return self.type_embedding_from_graph
         types = tf.convert_to_tensor([ii for ii in range(ntypes)], dtype=tf.int32)
         ebd_type = tf.cast(
@@ -162,6 +163,7 @@ class TypeEmbedNet:
         graph: tf.Graph,
         graph_def: tf.GraphDef,
         suffix="",
+        model_type="original_model",
     ) -> None:
         """Init the type embedding net variables with the given dict.
 
@@ -174,6 +176,7 @@ class TypeEmbedNet:
         suffix
             Name suffix to identify this descriptor
         """
+        self.model_type = model_type
         self.type_embedding_net_variables = (
             get_type_embedding_net_variables_from_graph_def(graph_def, suffix=suffix)
         )
