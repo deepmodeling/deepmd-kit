@@ -1055,7 +1055,9 @@ class DescrptSeAtten(DescrptSeA):
                             self.table_config[3],
                         ]
 
-                    padding_ntypes = type_embedding.shape[0] # this must be self.ntypes + 1
+                    padding_ntypes = type_embedding.shape[
+                        0
+                    ]  # this must be self.ntypes + 1
                     atype_expand = tf.reshape(atype, [-1, 1])
                     idx_i = tf.tile(atype_expand * padding_ntypes, [1, self.nnei])
                     idx_j = tf.reshape(self.nei_type_vec, [-1, self.nnei])
