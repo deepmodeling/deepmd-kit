@@ -1007,7 +1007,7 @@ class DescrptSeAtten(DescrptSeA):
             with tf.variable_scope(name, reuse=reuse):
                 # with (natom x nei_type_i) x out_size
                 if not self.compressible:
-                    log.info("use a non compressible model")
+                    log.info("use the non compressible model")
                     xyz_scatter = self._lookup_type_embedding(
                         xyz_scatter, atype, type_embedding
                     )
@@ -1027,7 +1027,7 @@ class DescrptSeAtten(DescrptSeA):
                         mixed_prec=self.mixed_prec,
                     )
                 else:
-                    log.info("use a compressible model")
+                    log.info("use the compressible model")
                     if not self.compress:
                         xyz_scatter = embedding_net(
                             xyz_scatter,
