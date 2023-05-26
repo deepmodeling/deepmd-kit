@@ -15,8 +15,6 @@ repos:
         # TODO: remove the following after resolved
         exclude: |
             (?x)^(
-                source/lmp/tests/lrmodel.pbtxt|
-                source/tests/infer/deepspin.pbtxt|
                 source/tests/infer/dp4mask.pbtxt|
                 source/tests/infer/dipolecharge_e.pbtxt|
                 source/tests/nvnmd/map.npy|
