@@ -130,7 +130,7 @@ class TypeEmbedNet:
         embedded_types
             The computational graph for embedded types
         """
-        if self.model_type != None and self.model_type == "compressed_model":
+        if self.model_type is not None and self.model_type == "compressed_model":
             return self.type_embedding_from_graph
         types = tf.convert_to_tensor([ii for ii in range(ntypes)], dtype=tf.int32)
         ebd_type = tf.cast(
@@ -175,6 +175,8 @@ class TypeEmbedNet:
             The input frozen model graph_def
         suffix
             Name suffix to identify this descriptor
+        model_type
+            Indicator of whether this model is a compressed model
         """
         self.model_type = model_type
         self.type_embedding_net_variables = (
