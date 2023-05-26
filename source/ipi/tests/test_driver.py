@@ -26,12 +26,12 @@ default_places = 6
 
 
 class DPiPICalculator(FileIOCalculator):
-    def __init__(self, model: str, **kwargs):
+    def __init__(self, model: str, use_unix: bool = True, **kwargs):
         self.xyz_file = "test_ipi.xyz"
         self.config_file = "config.json"
         config = {
             "verbose": False,
-            "use_unix": True,
+            "use_unix": use_unix,
             "port": 31415,
             "host": "localhost",
             "graph_file": model,
@@ -182,9 +182,28 @@ class TestDeepPotALargeBoxNoPBC(unittest.TestCase):
         os.remove("deeppot.pb")
         cls.dp = None
 
-    def test_ase(self):
+    def test_ase_unix(self):
         with SocketIOCalculator(
             DPiPICalculator(self.model_file), log=sys.stdout, unixsocket="localhost"
+        ) as calc:
+            water = Atoms(
+                "OHHOHH",
+                positions=self.coords.reshape((-1, 3)),
+                cell=self.box.reshape((3, 3)),
+                calculator=calc,
+            )
+        ee = water.get_potential_energy()
+        ff = water.get_forces()
+        nframes = 1
+        np.testing.assert_almost_equal(
+            ff.ravel(), self.expected_f.ravel(), default_places
+        )
+        expected_se = np.sum(self.expected_e.reshape([nframes, -1]), axis=1)
+        np.testing.assert_almost_equal(ee.ravel(), expected_se.ravel(), default_places)
+
+    def test_ase_nounix(self):
+        with SocketIOCalculator(
+            DPiPICalculator(self.model_file), log=sys.stdout,
         ) as calc:
             water = Atoms(
                 "OHHOHH",
