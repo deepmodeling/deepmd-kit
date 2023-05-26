@@ -391,7 +391,6 @@ class DescrptSeAtten(DescrptSeA):
             min_nbor_dist, table_extrapolate, table_stride_1, table_stride_2
         )
 
-        self.layer_size = self.table.layer_size
         self.final_type_embedding = self._get_two_side_type_embedding(graph)
         self.matrix = self._get_two_side_embedding_net_variable(
             graph_def, "matrix", suffix
@@ -1056,9 +1055,9 @@ class DescrptSeAtten(DescrptSeA):
                             self.table_config[3],
                         ]
 
-                    padding_ntypes = type_embedding.shape[0]
+                    padding_ntypes = type_embedding.shape[0] # this must be self.ntypes + 1
                     atype_expand = tf.reshape(atype, [-1, 1])
-                    idx_i = tf.tile(atype_expand * (self.ntypes + 1), [1, self.nnei])
+                    idx_i = tf.tile(atype_expand * padding_ntypes, [1, self.nnei])
                     idx_j = tf.reshape(self.nei_type_vec, [-1, self.nnei])
                     idx = idx_i + idx_j
                     index_of_two_side = tf.reshape(idx, [-1])
