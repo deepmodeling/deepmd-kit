@@ -1,18 +1,25 @@
-
 import json
 import os
 import sys
 import unittest
-from ase.calculators.socketio import SocketIOCalculator
-from pathlib import Path
+from pathlib import (
+    Path,
+)
 
 import numpy as np
 from ase import (
     Atoms,
 )
-from ase.calculators.calculator import FileIOCalculator
+from ase.calculators.calculator import (
+    FileIOCalculator,
+)
+from ase.calculators.socketio import (
+    SocketIOCalculator,
+)
 
-from deepmd.utils.convert import convert_pbtxt_to_pb
+from deepmd.utils.convert import (
+    convert_pbtxt_to_pb,
+)
 
 tests_path = Path(__file__).parent.parent.parent / "tests"
 default_places = 6
@@ -32,12 +39,14 @@ class DPiPICalculator(FileIOCalculator):
             "atom_type": {
                 "O": 0,
                 "H": 1,
-            }
+            },
         }
         with open(self.config_file, "w") as f:
             json.dump(config, f)
         command = "dp_ipi " + self.config_file
-        FileIOCalculator.__init__(self, command=command, label=self.config_file, **kwargs)
+        FileIOCalculator.__init__(
+            self, command=command, label=self.config_file, **kwargs
+        )
 
     def write_input(self, atoms, **kwargs):
         atoms.write(self.xyz_file, format="xyz")
@@ -51,7 +60,6 @@ class TestDeepPotALargeBoxNoPBC(unittest.TestCase):
         convert_pbtxt_to_pb(
             str(tests_path / os.path.join("infer", "deeppot.pbtxt")), "deeppot.pb"
         )
-        
 
     def setUp(self):
         self.coords = np.array(
@@ -175,7 +183,9 @@ class TestDeepPotALargeBoxNoPBC(unittest.TestCase):
         cls.dp = None
 
     def test_ase(self):
-        with SocketIOCalculator(DPiPICalculator(self.model_file), log=sys.stdout, unixsocket="localhost") as calc:
+        with SocketIOCalculator(
+            DPiPICalculator(self.model_file), log=sys.stdout, unixsocket="localhost"
+        ) as calc:
             water = Atoms(
                 "OHHOHH",
                 positions=self.coords.reshape((-1, 3)),
@@ -190,4 +200,3 @@ class TestDeepPotALargeBoxNoPBC(unittest.TestCase):
         )
         expected_se = np.sum(self.expected_e.reshape([nframes, -1]), axis=1)
         np.testing.assert_almost_equal(ee.ravel(), expected_se.ravel(), default_places)
-
