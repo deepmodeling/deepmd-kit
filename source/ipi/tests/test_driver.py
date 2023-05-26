@@ -203,7 +203,8 @@ class TestDeepPotALargeBoxNoPBC(unittest.TestCase):
 
     def test_ase_nounix(self):
         with SocketIOCalculator(
-            DPiPICalculator(self.model_file), log=sys.stdout,
+            DPiPICalculator(self.model_file),
+            log=sys.stdout,
         ) as calc:
             water = Atoms(
                 "OHHOHH",
