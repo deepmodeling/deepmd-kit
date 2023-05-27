@@ -1,5 +1,6 @@
 ignore:
   - "source/**/tests"
+  - "source/3rdparty"
 coverage:
   status:
     project:
