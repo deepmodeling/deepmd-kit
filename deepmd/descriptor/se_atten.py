@@ -429,9 +429,9 @@ class DescrptSeAtten(DescrptSeA):
         ret = {}
         for i in range(1, self.layer_size + 1):
             target = get_pattern_nodes_from_graph_def(
-                graph_def, f"filter_type_all{suffix}/{varialbe_name}_{i}_two_side_ebd"
+                graph_def, f"filter_type_all{suffix}/{varialbe_name}_{i}{suffix}_two_side_ebd"
             )
-            node = target[f"filter_type_all{suffix}/{varialbe_name}_{i}_two_side_ebd"]
+            node = target[f"filter_type_all{suffix}/{varialbe_name}_{i}{suffix}_two_side_ebd"]
             ret["layer_" + str(i)] = node
         return ret
 
