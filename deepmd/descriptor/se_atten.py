@@ -27,7 +27,7 @@ from deepmd.utils.graph import (
     get_attention_layer_variables_from_graph_def,
     get_pattern_nodes_from_graph_def,
     get_tensor_by_name_from_graph,
-    get_tensor_by_type, get_embedding_net_nodes_from_graph_def,
+    get_tensor_by_type,
 )
 from deepmd.utils.network import (
     embedding_net,
@@ -1254,9 +1254,13 @@ class DescrptSeAtten(DescrptSeA):
             self.two_side_embeeding_net_variables = {}
             for i in range(1, self.layer_size + 1):
                 matrix_pattern = f"filter_type_all{suffix}/matrix_{i}_two_side_ebd"
-                self.two_side_embeeding_net_variables[matrix_pattern] = self._get_two_embed_variables(graph_def, matrix_pattern)
+                self.two_side_embeeding_net_variables[
+                    matrix_pattern
+                ] = self._get_two_embed_variables(graph_def, matrix_pattern)
                 bias_pattern = f"filter_type_all{suffix}/bias_{i}_two_side_ebd"
-                self.two_side_embeeding_net_variables[bias_pattern] = self._get_two_embed_variables(graph_def, bias_pattern)
+                self.two_side_embeeding_net_variables[
+                    bias_pattern
+                ] = self._get_two_embed_variables(graph_def, bias_pattern)
 
         self.attention_layer_variables = get_attention_layer_variables_from_graph_def(
             graph_def, suffix=suffix
@@ -1281,9 +1285,7 @@ class DescrptSeAtten(DescrptSeA):
                 ]
 
     def _get_two_embed_variables(self, graph_def, pattern: str):
-        node = get_pattern_nodes_from_graph_def(
-            graph_def, pattern
-        )[pattern]
+        node = get_pattern_nodes_from_graph_def(graph_def, pattern)[pattern]
         dtype = tf.as_dtype(node.dtype).as_numpy_dtype
         tensor_shape = tf.TensorShape(node.tensor_shape).as_list()
         if (len(tensor_shape) != 1) or (tensor_shape[0] != 1):
