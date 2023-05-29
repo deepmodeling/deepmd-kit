@@ -613,8 +613,8 @@ class TestTabulateSeA : public ::testing::Test {
 TEST_F(TestTabulateSeA, tabulate_fusion_se_a_cpu) {
   std::vector<double> xyz_scatter(nloc * nnei * last_layer_size);
   deepmd::tabulate_fusion_se_a_cpu<double>(&xyz_scatter[0], &table[0], &info[0],
-                                           &em_x[0], &em[0], nullptr, nloc, nnei,
-                                           last_layer_size);
+                                           &em_x[0], &em[0], nullptr, nloc,
+                                           nnei, last_layer_size);
   EXPECT_EQ(xyz_scatter.size(), nloc * nnei * last_layer_size);
   EXPECT_EQ(xyz_scatter.size(), expected_xyz_scatter.size());
   for (int jj = 0; jj < xyz_scatter.size(); ++jj) {
@@ -627,8 +627,8 @@ TEST_F(TestTabulateSeA, tabulate_fusion_se_a_grad_cpu) {
   std::vector<double> dy_dem(em.size());
   std::vector<double> dy(nloc * nnei * last_layer_size, 1.0);
   deepmd::tabulate_fusion_se_a_grad_cpu<double>(
-      &dy_dem_x[0], &dy_dem[0], &table[0], &info[0], &em_x[0], &em[0], nullptr, &dy[0],
-      nloc, nnei, last_layer_size);
+      &dy_dem_x[0], &dy_dem[0], &table[0], &info[0], &em_x[0], &em[0], nullptr,
+      &dy[0], nloc, nnei, last_layer_size);
   EXPECT_EQ(dy_dem_x.size(), nloc * nnei);
   EXPECT_EQ(dy_dem.size(), nloc * nnei * 4);
   EXPECT_EQ(dy_dem_x.size(), expected_dy_dem_x.size());
