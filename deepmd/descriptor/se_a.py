@@ -941,6 +941,7 @@ class DescrptSeA(DescrptSe):
                 info,
                 xyz_scatter,
                 tf.reshape(inputs_i, [natom, shape_i[1] // 4, 4]),
+                tf.constant([], dtype=self.filter_precision),
                 last_layer_size=outputs_size[-1],
             )
         else:

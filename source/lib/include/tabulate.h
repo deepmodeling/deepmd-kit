@@ -8,6 +8,7 @@ void tabulate_fusion_se_a_cpu(FPTYPE* out,
                               const FPTYPE* table_info,
                               const FPTYPE* em_x,
                               const FPTYPE* em,
+                              const FPTYPE* two_embed,
                               const int nloc,
                               const int nnei,
                               const int last_layer_size);
@@ -19,6 +20,7 @@ void tabulate_fusion_se_a_grad_cpu(FPTYPE* dy_dem_x,
                                    const FPTYPE* table_info,
                                    const FPTYPE* em_x,
                                    const FPTYPE* em,
+                                   const FPTYPE* two_embed,
                                    const FPTYPE* dy,
                                    const int nloc,
                                    const int nnei,
@@ -35,43 +37,6 @@ void tabulate_fusion_se_a_grad_grad_cpu(FPTYPE* dz_dy,
                                         const int nloc,
                                         const int nnei,
                                         const int last_layer_size);
-
-template <typename FPTYPE>
-void tabulate_fusion_se_atten_cpu(FPTYPE* out,
-                                  const FPTYPE* table,
-                                  const FPTYPE* table_info,
-                                  const FPTYPE* em_x,
-                                  const FPTYPE* em,
-                                  const FPTYPE* two_embed,
-                                  const int nloc,
-                                  const int nnei,
-                                  const int last_layer_size);
-
-template <typename FPTYPE>
-void tabulate_fusion_se_atten_grad_cpu(FPTYPE* dy_dem_x,
-                                       FPTYPE* dy_dem,
-                                       const FPTYPE* table,
-                                       const FPTYPE* table_info,
-                                       const FPTYPE* em_x,
-                                       const FPTYPE* em,
-                                       const FPTYPE* two_embed,
-                                       const FPTYPE* dy,
-                                       const int nloc,
-                                       const int nnei,
-                                       const int last_layer_size);
-
-template <typename FPTYPE>
-void tabulate_fusion_se_atten_grad_grad_cpu(FPTYPE* dz_dy,
-                                            const FPTYPE* table,
-                                            const FPTYPE* table_info,
-                                            const FPTYPE* em_x,
-                                            const FPTYPE* em,
-                                            const FPTYPE* two_embed,
-                                            const FPTYPE* dz_dy_dem_x,
-                                            const FPTYPE* dz_dy_dem,
-                                            const int nloc,
-                                            const int nnei,
-                                            const int last_layer_size);
 
 template <typename FPTYPE>
 void tabulate_fusion_se_t_cpu(FPTYPE* out,
@@ -146,6 +111,7 @@ void tabulate_fusion_se_a_gpu_cuda(FPTYPE* out,
                                    const FPTYPE* table_info,
                                    const FPTYPE* em_x,
                                    const FPTYPE* em,
+                                   const FPTYPE* two_embed,
                                    const int nloc,
                                    const int nnei,
                                    const int last_layer_size);
@@ -157,6 +123,7 @@ void tabulate_fusion_se_a_grad_gpu_cuda(FPTYPE* dy_dem_x,
                                         const FPTYPE* table_info,
                                         const FPTYPE* em_x,
                                         const FPTYPE* em,
+                                        const FPTYPE* two_embed,
                                         const FPTYPE* dy,
                                         const int nloc,
                                         const int nnei,
@@ -173,43 +140,6 @@ void tabulate_fusion_se_a_grad_grad_gpu_cuda(FPTYPE* dz_dy,
                                              const int nloc,
                                              const int nnei,
                                              const int last_layer_size);
-
-template <typename FPTYPE>
-void tabulate_fusion_se_atten_gpu_cuda(FPTYPE* out,
-                                       const FPTYPE* table,
-                                       const FPTYPE* table_info,
-                                       const FPTYPE* em_x,
-                                       const FPTYPE* em,
-                                       const FPTYPE* two_embed,
-                                       const int nloc,
-                                       const int nnei,
-                                       const int last_layer_size);
-
-template <typename FPTYPE>
-void tabulate_fusion_se_atten_grad_gpu_cuda(FPTYPE* dy_dem_x,
-                                            FPTYPE* dy_dem,
-                                            const FPTYPE* table,
-                                            const FPTYPE* table_info,
-                                            const FPTYPE* em_x,
-                                            const FPTYPE* em,
-                                            const FPTYPE* two_embed,
-                                            const FPTYPE* dy,
-                                            const int nloc,
-                                            const int nnei,
-                                            const int last_layer_size);
-
-template <typename FPTYPE>
-void tabulate_fusion_se_atten_grad_grad_gpu_cuda(FPTYPE* dz_dy,
-                                                 const FPTYPE* table,
-                                                 const FPTYPE* table_info,
-                                                 const FPTYPE* em_x,
-                                                 const FPTYPE* em,
-                                                 const FPTYPE* two_embed,
-                                                 const FPTYPE* dz_dy_dem_x,
-                                                 const FPTYPE* dz_dy_dem,
-                                                 const int nloc,
-                                                 const int nnei,
-                                                 const int last_layer_size);
 
 template <typename FPTYPE>
 void tabulate_fusion_se_t_gpu_cuda(FPTYPE* out,
@@ -285,6 +215,7 @@ void tabulate_fusion_se_a_gpu_rocm(FPTYPE* out,
                                    const FPTYPE* table_info,
                                    const FPTYPE* em_x,
                                    const FPTYPE* em,
+                                   const FPTYPE* two_embed,
                                    const int nloc,
                                    const int nnei,
                                    const int last_layer_size);
@@ -296,6 +227,7 @@ void tabulate_fusion_se_a_grad_gpu_rocm(FPTYPE* dy_dem_x,
                                         const FPTYPE* table_info,
                                         const FPTYPE* em_x,
                                         const FPTYPE* em,
+                                        const FPTYPE* two_embed,
                                         const FPTYPE* dy,
                                         const int nloc,
                                         const int nnei,
@@ -312,43 +244,6 @@ void tabulate_fusion_se_a_grad_grad_gpu_rocm(FPTYPE* dz_dy,
                                              const int nloc,
                                              const int nnei,
                                              const int last_layer_size);
-
-template <typename FPTYPE>
-void tabulate_fusion_se_atten_gpu_rocm(FPTYPE* out,
-                                       const FPTYPE* table,
-                                       const FPTYPE* table_info,
-                                       const FPTYPE* em_x,
-                                       const FPTYPE* em,
-                                       const FPTYPE* two_embed,
-                                       const int nloc,
-                                       const int nnei,
-                                       const int last_layer_size);
-
-template <typename FPTYPE>
-void tabulate_fusion_se_atten_grad_gpu_rocm(FPTYPE* dy_dem_x,
-                                            FPTYPE* dy_dem,
-                                            const FPTYPE* table,
-                                            const FPTYPE* table_info,
-                                            const FPTYPE* em_x,
-                                            const FPTYPE* em,
-                                            const FPTYPE* two_embed,
-                                            const FPTYPE* dy,
-                                            const int nloc,
-                                            const int nnei,
-                                            const int last_layer_size);
-
-template <typename FPTYPE>
-void tabulate_fusion_se_atten_grad_grad_gpu_rocm(FPTYPE* dz_dy,
-                                                 const FPTYPE* table,
-                                                 const FPTYPE* table_info,
-                                                 const FPTYPE* em_x,
-                                                 const FPTYPE* em,
-                                                 const FPTYPE* two_embed,
-                                                 const FPTYPE* dz_dy_dem_x,
-                                                 const FPTYPE* dz_dy_dem,
-                                                 const int nloc,
-                                                 const int nnei,
-                                                 const int last_layer_size);
 
 template <typename FPTYPE>
 void tabulate_fusion_se_t_gpu_rocm(FPTYPE* out,
