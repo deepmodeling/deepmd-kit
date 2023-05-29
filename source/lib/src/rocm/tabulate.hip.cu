@@ -625,7 +625,7 @@ void tabulate_fusion_se_a_gpu_rocm(FPTYPE* out,
       HIP_KERNEL_NAME(
           tabulate_fusion_se_a_fifth_order_polynomial<FPTYPE, MM, KK>),
       nloc, last_layer_size, sizeof(FPTYPE) * MM * last_layer_size, 0, out,
-      table, em_x, em, table_info[0], table_info[1], table_info[2],
+      table, em_x, em, two_embed, table_info[0], table_info[1], table_info[2],
       table_info[3], table_info[4], nnei, last_layer_size);
   DPErrcheck(hipGetLastError());
   DPErrcheck(hipDeviceSynchronize());
