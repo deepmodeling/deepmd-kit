@@ -14,12 +14,12 @@ from common import (
 from packaging.version import parse as parse_version
 
 from deepmd.env import (
-    GLOBAL_NP_FLOAT_PRECISION,
     tf,
 )
 from deepmd.infer import (
     DeepPot,
 )
+
 
 def _file_delete(file):
     if os.path.isdir(file):
@@ -52,16 +52,18 @@ def _init_models():
     # - type embedding FP32, se_atten FP64
     # - type embedding FP32, se_atten FP32
     tests = [
-            {'se_atten precision': "float64", 'type embedding precision': "float64"},
-            {'se_atten precision': "float64", 'type embedding precision': "float32"},
-            {'se_atten precision': "float32", 'type embedding precision': "float64"},
-            {'se_atten precision': "float32", 'type embedding precision': "float32"},
-            ]
+        {"se_atten precision": "float64", "type embedding precision": "float64"},
+        {"se_atten precision": "float64", "type embedding precision": "float32"},
+        {"se_atten precision": "float32", "type embedding precision": "float64"},
+        {"se_atten precision": "float32", "type embedding precision": "float32"},
+    ]
     for i in range(4):
         INPUT = str(tests_path / f"input{i}.json")
         frozen_model = str(tests_path / f"dp-original-se-atten{i}.pb")
         compressed_model = str(tests_path / f"dp-compressed-se-atten{i}.pb")
-        jdata = j_loader(str(tests_path / os.path.join("model_compression", "input.json")))
+        jdata = j_loader(
+            str(tests_path / os.path.join("model_compression", "input.json"))
+        )
         jdata["model"]["descriptor"] = {}
         jdata["model"]["descriptor"]["type"] = "se_atten"
         jdata["model"]["descriptor"]["precision"] = tests[i]["se_atten precision"]
@@ -69,7 +71,9 @@ def _init_models():
         jdata["model"]["descriptor"]["sel"] = 120
         jdata["model"]["descriptor"]["attn_layer"] = 0
         jdata["model"]["type_embedding"] = {}
-        jdata["model"]["type_embedding"]["precision"] = tests[i]["type embedding precision"]
+        jdata["model"]["type_embedding"]["precision"] = tests[i][
+            "type embedding precision"
+        ]
         jdata["training"]["training_data"]["systems"] = data_file
         jdata["training"]["validation_data"]["systems"] = data_file
         with open(INPUT, "w") as fp:
@@ -90,6 +94,7 @@ def _init_models():
 
 
 INPUTS, FROZEN_MODELS, COMPRESSED_MODELS = _init_models()
+
 
 def _get_default_places(nth_test):
     return 10 if nth_test == 0 else 4
@@ -142,9 +147,7 @@ class TestDeepPotAPBC(unittest.TestCase):
             self.assertEqual(dp_original.get_dim_aparam(), 0)
 
             self.assertEqual(dp_compressed.get_ntypes(), 2)
-            self.assertAlmostEqual(
-                dp_compressed.get_rcut(), 6.0, places=default_places
-            )
+            self.assertAlmostEqual(dp_compressed.get_rcut(), 6.0, places=default_places)
             self.assertEqual(dp_compressed.get_type_map(), ["O", "H"])
             self.assertEqual(dp_compressed.get_dim_fparam(), 0)
             self.assertEqual(dp_compressed.get_dim_aparam(), 0)
@@ -564,9 +567,7 @@ class TestDeepPotAPBCExcludeTypes(unittest.TestCase):
             self.assertEqual(dp_original.get_dim_aparam(), 0)
 
             self.assertEqual(dp_compressed.get_ntypes(), 2)
-            self.assertAlmostEqual(
-                dp_compressed.get_rcut(), 6.0, places=default_places
-            )
+            self.assertAlmostEqual(dp_compressed.get_rcut(), 6.0, places=default_places)
             self.assertEqual(dp_compressed.get_type_map(), ["O", "H"])
             self.assertEqual(dp_compressed.get_dim_fparam(), 0)
             self.assertEqual(dp_compressed.get_dim_aparam(), 0)
