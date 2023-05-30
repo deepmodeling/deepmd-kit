@@ -844,6 +844,7 @@ TEST_F(TestTabulateSeA, tabulate_fusion_se_a_grad_gpu_cuda) {
   deepmd::delete_device_memory(em_x_dev);
   deepmd::delete_device_memory(em_dev);
   deepmd::delete_device_memory(dy_dev);
+  deepmd::delete_device_memory(two_embed_dev);
 }
 #endif  // GOOGLE_CUDA
 
@@ -937,5 +938,6 @@ TEST_F(TestTabulateSeA, tabulate_fusion_se_a_grad_gpu_rocm) {
   deepmd::delete_device_memory(em_x_dev);
   deepmd::delete_device_memory(em_dev);
   deepmd::delete_device_memory(dy_dev);
+  deepmd::delete_device_memory(two_embed_dev);
 }
 #endif  // TENSORFLOW_USE_ROCM
