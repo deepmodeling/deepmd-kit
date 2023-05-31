@@ -364,16 +364,21 @@ void FixDPLR::post_force(int vflag) {
                "atomic virial calculation is not supported by this fix\n");
   }
 
-  PPPMDPLR *pppm_dplr = (PPPMDPLR *)force->kspace_match("pppm/dplr", 1);
-  if (!pppm_dplr) {
-    error->all(FLERR, "kspace_style pppm/dplr should be set before this fix\n");
-  }
-  const vector<double> &dfele_(pppm_dplr->get_fele());
   int nlocal = atom->nlocal;
+
+  PPPMDPLR *pppm_dplr = (PPPMDPLR *)force->kspace_match("pppm/dplr", 1);
+  if (pppm_dplr) {
+    const vector<double> &dfele_(pppm_dplr->get_fele());
+    assert(dfele_.size() == nlocal * 3);    
+  }
+
   int nghost = atom->nghost;
   int nall = nlocal + nghost;
   vector<FLOAT_PREC> dcoord(nall * 3, 0.0), dbox(9, 0.0),
       dfele(nlocal * 3, 0.0);
+  for (int ii = 0; ii < nlocal * 3; ++ii) {
+    dfele.push_back(0.0);
+  }
   vector<int> dtype(nall, 0);
   // set values for dcoord, dbox, dfele
   {
@@ -394,10 +399,11 @@ void FixDPLR::post_force(int vflag) {
         dcoord[ii * 3 + dd] = x[ii][dd] - domain->boxlo[dd];
       }
     }
-    assert(dfele_.size() == nlocal * 3);
     // revise force according to efield
-    for (int ii = 0; ii < nlocal * 3; ++ii) {
-      dfele[ii] = dfele_[ii];
+    if (pppm_dplr) {
+      for (int ii = 0; ii < nlocal * 3; ++ii) {
+        dfele[ii] += dfele_[ii];
+     }
     }
     // revise force and virial according to efield
     double *q = atom->q;
