@@ -308,7 +308,6 @@ void FixDPLR::pre_force(int vflag) {
   //   }
   // }
 
-
   vector<int> sel_fwd, sel_bwd;
   int sel_nghost;
   deepmd_compat::select_by_type(sel_fwd, sel_bwd, sel_nghost, dcoord, dtype,
