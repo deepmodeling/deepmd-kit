@@ -370,9 +370,6 @@ void FixDPLR::post_force(int vflag) {
   int nall = nlocal + nghost;
   vector<FLOAT_PREC> dcoord(nall * 3, 0.0), dbox(9, 0.0),
       dfele(nlocal * 3, 0.0);
-  for (int ii = 0; ii < nlocal * 3; ++ii) {
-    dfele.push_back(0.0);
-  }
   vector<int> dtype(nall, 0);
   // set values for dcoord, dbox, dfele
 
