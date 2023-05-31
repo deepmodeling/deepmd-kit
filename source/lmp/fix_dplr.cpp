@@ -308,11 +308,7 @@ void FixDPLR::pre_force(int vflag) {
   //   }
   // }
 
-  // selected type
-  vector<int> dpl_type;
-  for (int ii = 0; ii < sel_type.size(); ++ii) {
-    dpl_type.push_back(type_asso[sel_type[ii]]);
-  }
+
   vector<int> sel_fwd, sel_bwd;
   int sel_nghost;
   deepmd_compat::select_by_type(sel_fwd, sel_bwd, sel_nghost, dcoord, dtype,
