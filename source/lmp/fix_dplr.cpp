@@ -395,12 +395,12 @@ void FixDPLR::post_force(int vflag) {
   }
   // revise force according to efield
   if (pppm_dplr) {
-  const vector<double> &dfele_(pppm_dplr->get_fele());
-  assert(dfele_.size() == nlocal * 3);    
-  for (int ii = 0; ii < nlocal * 3; ++ii) {
-    dfele[ii] += dfele_[ii];
+    const vector<double> &dfele_(pppm_dplr->get_fele());
+    assert(dfele_.size() == nlocal * 3);
+    for (int ii = 0; ii < nlocal * 3; ++ii) {
+      dfele[ii] += dfele_[ii];
+    }
   }
-}
   // revise force and virial according to efield
   double *q = atom->q;
   imageint *image = atom->image;
@@ -432,7 +432,7 @@ void FixDPLR::post_force(int vflag) {
       v_tally(ii, v);
     }
   }
-  
+
   // lmp nlist
   NeighList *list = pair_deepmd->list;
   deepmd_compat::InputNlist lmp_list(list->inum, list->ilist, list->numneigh,
