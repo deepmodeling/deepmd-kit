@@ -364,14 +364,8 @@ void FixDPLR::post_force(int vflag) {
                "atomic virial calculation is not supported by this fix\n");
   }
 
-  int nlocal = atom->nlocal;
-
   PPPMDPLR *pppm_dplr = (PPPMDPLR *)force->kspace_match("pppm/dplr", 1);
-  if (pppm_dplr) {
-    const vector<double> &dfele_(pppm_dplr->get_fele());
-    assert(dfele_.size() == nlocal * 3);    
-  }
-
+  int nlocal = atom->nlocal;
   int nghost = atom->nghost;
   int nall = nlocal + nghost;
   vector<FLOAT_PREC> dcoord(nall * 3, 0.0), dbox(9, 0.0),
@@ -381,62 +375,64 @@ void FixDPLR::post_force(int vflag) {
   }
   vector<int> dtype(nall, 0);
   // set values for dcoord, dbox, dfele
-  {
-    int *type = atom->type;
-    for (int ii = 0; ii < nall; ++ii) {
-      dtype[ii] = type[ii] - 1;
-    }
-    dbox[0] = domain->h[0];  // xx
-    dbox[4] = domain->h[1];  // yy
-    dbox[8] = domain->h[2];  // zz
-    dbox[7] = domain->h[3];  // zy
-    dbox[6] = domain->h[4];  // zx
-    dbox[3] = domain->h[5];  // yx
-    // get coord
-    double **x = atom->x;
-    for (int ii = 0; ii < nall; ++ii) {
-      for (int dd = 0; dd < 3; ++dd) {
-        dcoord[ii * 3 + dd] = x[ii][dd] - domain->boxlo[dd];
-      }
-    }
-    // revise force according to efield
-    if (pppm_dplr) {
-      for (int ii = 0; ii < nlocal * 3; ++ii) {
-        dfele[ii] += dfele_[ii];
-     }
-    }
-    // revise force and virial according to efield
-    double *q = atom->q;
-    imageint *image = atom->image;
-    double unwrap[3];
-    double v[6];
-    efield_fsum[0] = efield_fsum[1] = efield_fsum[2] = efield_fsum[3] = 0.0;
-    efield_force_flag = 0;
-    for (int ii = 0; ii < nlocal; ++ii) {
-      double tmpf[3];
-      for (int dd = 0; dd < 3; ++dd) {
-        tmpf[dd] = q[ii] * efield[dd];
-      }
-      for (int dd = 0; dd < 3; ++dd) {
-        dfele[ii * 3 + dd] += tmpf[dd];
-      }
-      domain->unmap(x[ii], image[ii], unwrap);
-      efield_fsum[0] -=
-          tmpf[0] * unwrap[0] + tmpf[1] * unwrap[1] + tmpf[2] * unwrap[2];
-      efield_fsum[1] += tmpf[0];
-      efield_fsum[2] += tmpf[1];
-      efield_fsum[3] += tmpf[2];
-      if (evflag) {
-        v[0] = tmpf[0] * unwrap[0];
-        v[1] = tmpf[1] * unwrap[1];
-        v[2] = tmpf[2] * unwrap[2];
-        v[3] = tmpf[0] * unwrap[1];
-        v[4] = tmpf[0] * unwrap[2];
-        v[5] = tmpf[1] * unwrap[2];
-        v_tally(ii, v);
-      }
+
+  int *type = atom->type;
+  for (int ii = 0; ii < nall; ++ii) {
+    dtype[ii] = type[ii] - 1;
+  }
+  dbox[0] = domain->h[0];  // xx
+  dbox[4] = domain->h[1];  // yy
+  dbox[8] = domain->h[2];  // zz
+  dbox[7] = domain->h[3];  // zy
+  dbox[6] = domain->h[4];  // zx
+  dbox[3] = domain->h[5];  // yx
+  // get coord
+  double **x = atom->x;
+  for (int ii = 0; ii < nall; ++ii) {
+    for (int dd = 0; dd < 3; ++dd) {
+      dcoord[ii * 3 + dd] = x[ii][dd] - domain->boxlo[dd];
     }
   }
+  // revise force according to efield
+  if (pppm_dplr) {
+  const vector<double> &dfele_(pppm_dplr->get_fele());
+  assert(dfele_.size() == nlocal * 3);    
+  for (int ii = 0; ii < nlocal * 3; ++ii) {
+    dfele[ii] += dfele_[ii];
+  }
+}
+  // revise force and virial according to efield
+  double *q = atom->q;
+  imageint *image = atom->image;
+  double unwrap[3];
+  double v[6];
+  efield_fsum[0] = efield_fsum[1] = efield_fsum[2] = efield_fsum[3] = 0.0;
+  efield_force_flag = 0;
+  for (int ii = 0; ii < nlocal; ++ii) {
+    double tmpf[3];
+    for (int dd = 0; dd < 3; ++dd) {
+      tmpf[dd] = q[ii] * efield[dd];
+    }
+    for (int dd = 0; dd < 3; ++dd) {
+      dfele[ii * 3 + dd] += tmpf[dd];
+    }
+    domain->unmap(x[ii], image[ii], unwrap);
+    efield_fsum[0] -=
+        tmpf[0] * unwrap[0] + tmpf[1] * unwrap[1] + tmpf[2] * unwrap[2];
+    efield_fsum[1] += tmpf[0];
+    efield_fsum[2] += tmpf[1];
+    efield_fsum[3] += tmpf[2];
+    if (evflag) {
+      v[0] = tmpf[0] * unwrap[0];
+      v[1] = tmpf[1] * unwrap[1];
+      v[2] = tmpf[2] * unwrap[2];
+      v[3] = tmpf[0] * unwrap[1];
+      v[4] = tmpf[0] * unwrap[2];
+      v[5] = tmpf[1] * unwrap[2];
+      v_tally(ii, v);
+    }
+  }
+  
   // lmp nlist
   NeighList *list = pair_deepmd->list;
   deepmd_compat::InputNlist lmp_list(list->inum, list->ilist, list->numneigh,
