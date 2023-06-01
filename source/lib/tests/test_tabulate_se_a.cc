@@ -776,9 +776,10 @@ TEST_F(TestTabulateSeA, tabulate_fusion_se_a_gpu_cuda) {
   }
 
   double *two_embed_dev = nullptr;
-  deepmd::malloc_device_memory_sync(two_embed_dev, em);
+  deepmd::malloc_device_memory_sync(two_embed_dev, two_embed);
+  deepmd::malloc_device_memory_sync(xyz_scatter_dev, xyz_scatter);
   deepmd::tabulate_fusion_se_a_gpu_cuda<double>(
-      xyz_scatter_dev, table_dev, &info[0], em_x_dev, em_dev, nullptr, nloc,
+      xyz_scatter_dev, table_dev, &info[0], em_x_dev, em_dev, two_embed_dev, nloc,
       nnei, last_layer_size);
   deepmd::memcpy_device_to_host(xyz_scatter_dev, xyz_scatter);
 
@@ -828,9 +829,13 @@ TEST_F(TestTabulateSeA, tabulate_fusion_se_a_grad_gpu_cuda) {
 
   double *two_embed_dev = nullptr;
   deepmd::malloc_device_memory_sync(two_embed_dev, two_embed);
+  deepmd::malloc_device_memory_sync(dy_dem_x_dev, dy_dem_x);
+  deepmd::malloc_device_memory_sync(dy_dem_dev, dy_dem);
   deepmd::tabulate_fusion_se_a_grad_gpu_cuda<double>(
       dy_dem_x_dev, dy_dem_dev, table_dev, &info[0], em_x_dev, em_dev,
       two_embed_dev, dy_dev, nloc, nnei, last_layer_size);
+  deepmd::memcpy_device_to_host(dy_dem_x_dev, dy_dem_x);
+  deepmd::memcpy_device_to_host(dy_dem_dev, dy_dem);
   for (int jj = 0; jj < dy_dem_x.size(); ++jj) {
     EXPECT_LT(fabs(dy_dem_x[jj] - expected_dy_dem_x_with_two_embed[jj]), 1e-5);
   }
@@ -870,9 +875,10 @@ TEST_F(TestTabulateSeA, tabulate_fusion_se_a_gpu_rocm) {
   }
 
   double *two_embed_dev = nullptr;
-  deepmd::malloc_device_memory_sync(two_embed_dev, em);
+  deepmd::malloc_device_memory_sync(two_embed_dev, two_embed);
+  deepmd::malloc_device_memory_sync(xyz_scatter_dev, xyz_scatter);
   deepmd::tabulate_fusion_se_a_gpu_rocm<double>(
-      xyz_scatter_dev, table_dev, &info[0], em_x_dev, em_dev, nullptr, nloc,
+      xyz_scatter_dev, table_dev, &info[0], em_x_dev, em_dev, two_embed_dev, nloc,
       nnei, last_layer_size);
   deepmd::memcpy_device_to_host(xyz_scatter_dev, xyz_scatter);
 
@@ -922,9 +928,13 @@ TEST_F(TestTabulateSeA, tabulate_fusion_se_a_grad_gpu_rocm) {
 
   double *two_embed_dev = nullptr;
   deepmd::malloc_device_memory_sync(two_embed_dev, two_embed);
+  deepmd::malloc_device_memory_sync(dy_dem_x_dev, dy_dem_x);
+  deepmd::malloc_device_memory_sync(dy_dem_dev, dy_dem);
   deepmd::tabulate_fusion_se_a_grad_gpu_rocm<double>(
       dy_dem_x_dev, dy_dem_dev, table_dev, &info[0], em_x_dev, em_dev,
       two_embed_dev, dy_dev, nloc, nnei, last_layer_size);
+  deepmd::memcpy_device_to_host(dy_dem_x_dev, dy_dem_x);
+  deepmd::memcpy_device_to_host(dy_dem_dev, dy_dem);
   for (int jj = 0; jj < dy_dem_x.size(); ++jj) {
     EXPECT_LT(fabs(dy_dem_x[jj] - expected_dy_dem_x_with_two_embed[jj]), 1e-5);
   }
