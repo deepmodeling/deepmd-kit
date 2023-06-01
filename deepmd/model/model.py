@@ -56,7 +56,7 @@ class Model(ABC):
         For example `type_map[1]` gives the name of the type 1.
     data_stat_nbatch
         Number of frames used for data statistic
-    data_stat_nsample
+    data_bias_nsample
         The number of training samples in a system to compute and change the energy bias.
     data_stat_protect
         Protect parameter for atomic energy regression
@@ -97,7 +97,7 @@ class Model(ABC):
         type_embedding: Optional[Union[dict, TypeEmbedNet]] = None,
         type_map: Optional[List[str]] = None,
         data_stat_nbatch: int = 10,
-        data_stat_nsample: int = 10,
+        data_bias_nsample: int = 10,
         data_stat_protect: float = 1e-2,
         use_srtab: Optional[str] = None,
         smin_alpha: Optional[float] = None,
@@ -122,7 +122,7 @@ class Model(ABC):
         else:
             self.type_map = type_map
         self.data_stat_nbatch = data_stat_nbatch
-        self.data_stat_nsample = data_stat_nsample
+        self.data_bias_nsample = data_bias_nsample
         self.data_stat_protect = data_stat_protect
         self.srtab_name = use_srtab
         if self.srtab_name is not None:
