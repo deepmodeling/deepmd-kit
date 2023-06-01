@@ -498,5 +498,5 @@ class EnerModel(StandardModel):
             origin_type_map,
             full_type_map,
             bias_shift,
-            self.data_stat_nbatch,
+            self.data_bias_nsample,
         )
