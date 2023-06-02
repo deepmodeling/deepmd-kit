@@ -171,9 +171,7 @@ void FixDPLR::setup(int vflag) {
 
 /* ---------------------------------------------------------------------- */
 
-void FixDPLR::min_setup(int vflag) {
-  setup(vflag);
-}
+void FixDPLR::min_setup(int vflag) { setup(vflag); }
 
 /* ---------------------------------------------------------------------- */
 
@@ -219,12 +217,12 @@ void FixDPLR::get_valid_pairs(vector<pair<int, int> > &pairs) {
     if (!(idx0 < nlocal && idx1 < nlocal)) {
       int idx0_ = atom->map(atom->tag[idx0]);
       int idx1_ = atom->map(atom->tag[idx1]);
-      if (!(idx0_ > 0 && idx0_ < nlocal && idx1_ >0 && idx1_ < nlocal)) {
-      error->all(FLERR,
-                 "find a bonded pair that is not on the same processor, "
-                 "something should not happen");
-    }
-    pairs.push_back(pair<int, int>(idx0, idx1));
+      if (!(idx0_ > 0 && idx0_ < nlocal && idx1_ > 0 && idx1_ < nlocal)) {
+        error->all(FLERR,
+                   "find a bonded pair that is not on the same processor, "
+                   "something should not happen");
+      }
+      pairs.push_back(pair<int, int>(idx0, idx1));
     }
   }
 }
@@ -533,15 +531,11 @@ void FixDPLR::post_force(int vflag) {
 
 /* ---------------------------------------------------------------------- */
 
-void FixDPLR::min_pre_force(int vflag) {
-  pre_force(vflag);
-}
+void FixDPLR::min_pre_force(int vflag) { pre_force(vflag); }
 
 /* ---------------------------------------------------------------------- */
 
-void FixDPLR::min_post_force(int vflag) {
-  post_force(vflag);
-}
+void FixDPLR::min_post_force(int vflag) { post_force(vflag); }
 
 /* ---------------------------------------------------------------------- */
 
