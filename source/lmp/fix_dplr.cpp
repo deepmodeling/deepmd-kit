@@ -115,8 +115,7 @@ FixDPLR::FixDPLR(LAMMPS *lmp, int narg, char **arg)
   for (int ii = 0; ii < sel_type.size(); ++ii) {
     dpl_type.push_back(type_asso[sel_type[ii]]);
   }
-  dpl_type_sorted = dpl_type;
-  sort(dpl_type_sorted.begin(), dpl_type_sorted.end());
+  sort(dpl_type.begin(), dpl_type.end());
 
   pair_deepmd = (PairDeepMD *)force->pair_match("deepmd", 1);
   if (!pair_deepmd) {
@@ -194,13 +193,13 @@ void FixDPLR::get_valid_pairs(vector<pair<int, int> > &pairs) {
     }
     if (binary_search(sel_type.begin(), sel_type.end(),
                       dtype[bondlist[ii][0]]) &&
-        binary_search(dpl_type_sorted.begin(), dpl_type_sorted.end(),
+        binary_search(dpl_type.begin(), dpl_type.end(),
                       dtype[bondlist[ii][1]])) {
       idx0 = bondlist[ii][0];
       idx1 = bondlist[ii][1];
     } else if (binary_search(sel_type.begin(), sel_type.end(),
                              dtype[bondlist[ii][1]]) &&
-               binary_search(dpl_type_sorted.begin(), dpl_type_sorted.end(),
+               binary_search(dpl_type.begin(), dpl_type.end(),
                              dtype[bondlist[ii][0]])) {
       idx0 = bondlist[ii][1];
       idx1 = bondlist[ii][0];
