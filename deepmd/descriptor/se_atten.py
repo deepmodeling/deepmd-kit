@@ -447,8 +447,6 @@ class DescrptSeAtten(DescrptSeA):
 
     def _make_data(self, xx):
         with tf.Session() as sess:
-            # xx = tf.reshape(xx, [xx.size, -1])
-            # pdb.set_trace()
             for layer in range(self.layer_size):
                 if layer == 0:
                     if self.filter_neuron[0] == 1:
@@ -480,7 +478,6 @@ class DescrptSeAtten(DescrptSeA):
                     )
                     yy = zz
             vv = sess.run(zz)
-            # vv = zz.eval()
         return vv
 
     def build(
