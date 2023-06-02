@@ -40,11 +40,14 @@ class FixDPLR : public Fix {
   ~FixDPLR() override{};
   int setmask() override;
   void init() override;
-  void setup_pre_force(int) override;
   void setup(int) override;
+  void setup_pre_force(int) override;
+  void min_setup(int) override;
   void post_integrate() override;
   void pre_force(int) override;
   void post_force(int) override;
+  void min_pre_force(int) override;
+  void min_post_force(int) override;
   int pack_reverse_comm(int, int, double *) override;
   void unpack_reverse_comm(int, int *, double *) override;
   double compute_scalar(void) override;

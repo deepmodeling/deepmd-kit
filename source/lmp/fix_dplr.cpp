@@ -134,6 +134,8 @@ int FixDPLR::setmask() {
   mask |= POST_INTEGRATE;
   mask |= PRE_FORCE;
   mask |= POST_FORCE;
+  mask |= MIN_PRE_FORCE;
+  mask |= MIN_POST_FORCE;
   return mask;
 }
 
@@ -166,6 +168,14 @@ void FixDPLR::setup(int vflag) {
     evflag = 0;
   }
 }
+
+/* ---------------------------------------------------------------------- */
+
+void FixDPLR::min_setup(int vflag) {
+  setup(vflag);
+}
+
+/* ---------------------------------------------------------------------- */
 
 void FixDPLR::get_valid_pairs(vector<pair<int, int> > &pairs) {
   pairs.clear();
@@ -356,6 +366,8 @@ void FixDPLR::pre_force(int vflag) {
   // }
 }
 
+/* ---------------------------------------------------------------------- */
+
 void FixDPLR::post_force(int vflag) {
   if (vflag) {
     v_setup(vflag);
@@ -514,6 +526,20 @@ void FixDPLR::post_force(int vflag) {
     v_tally(0, vv);
   }
 }
+
+/* ---------------------------------------------------------------------- */
+
+void FixDPLR::min_pre_force(int vflag) {
+  pre_force(vflag);
+}
+
+/* ---------------------------------------------------------------------- */
+
+void FixDPLR::min_post_force(int vflag) {
+  post_force(vflag);
+}
+
+/* ---------------------------------------------------------------------- */
 
 int FixDPLR::pack_reverse_comm(int n, int first, double *buf) {
   int m = 0;
