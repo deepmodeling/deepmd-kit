@@ -182,6 +182,7 @@ class PairwiseIdxOp : public OpKernel {
         for (int jj = 0; jj < nall; ++jj) {
           m_backward_qmmm_map(nn, jj) = backward_qmmm_maps[ii][kk * nall + jj];
         }
+        m_qmmm_frame_idx(nn) = ii;
         nn++;
       }
     }

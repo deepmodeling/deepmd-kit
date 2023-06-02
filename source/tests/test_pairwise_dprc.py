@@ -31,9 +31,10 @@ class TestPairwiseOP(tf.test.TestCase):
                 natoms_qmmm,
                 qmmm_frame_idx,
             ) = run_sess(sess, t_outputs)
-        np.testing.assert_array_equal(forward_qm_map, np.array([[3, 4, 10]]))
+        np.testing.assert_array_equal(forward_qm_map, np.array([[3, 4, 10]], dtype=int))
         np.testing.assert_array_equal(
-            backward_qm_map, np.array([[-1, -1, -1, 0, 1, -1, -1, -1, -1, -1, 2, -1]])
+            backward_qm_map,
+            np.array([[-1, -1, -1, 0, 1, -1, -1, -1, -1, -1, 2, -1]], dtype=int),
         )
         np.testing.assert_array_equal(
             forward_qmmm_map,
@@ -42,7 +43,8 @@ class TestPairwiseOP(tf.test.TestCase):
                     [3, 4, 0, 1, 2, 10, 11],
                     [3, 4, 5, 6, 7, 10, -1],
                     [3, 4, 8, 9, -1, 10, -1],
-                ]
+                ],
+                dtype=int,
             ),
         )
         np.testing.assert_array_equal(
@@ -52,9 +54,10 @@ class TestPairwiseOP(tf.test.TestCase):
                     [2, 3, 4, 0, 1, -1, -1, -1, -1, -1, 5, 6],
                     [-1, -1, -1, 0, 1, 2, 3, 4, -1, -1, 5, -1],
                     [-1, -1, -1, 0, 1, -1, -1, -1, 2, 3, 5, -1],
-                ]
+                ],
+                dtype=int,
             ),
         )
-        np.testing.assert_array_equal(natoms_qm, [2, 3, 2])
-        np.testing.assert_array_equal(natoms_qmmm, [5, 7, 5])
-        np.testing.assert_array_equal(qmmm_frame_idx, np.array([0, 0, 0]))
+        np.testing.assert_array_equal(natoms_qm, np.array([2, 3, 2], dtype=int))
+        np.testing.assert_array_equal(natoms_qmmm, np.array([5, 7, 5], dtype=int))
+        np.testing.assert_array_equal(qmmm_frame_idx, np.array([0, 0, 0], dtype=int))
