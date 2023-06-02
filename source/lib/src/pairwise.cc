@@ -60,7 +60,7 @@ void deepmd::dprc_pairwise_map_cpu(
   // 10, 11 is ghost atoms
   // (3, 4, 10)
   forward_qm_map = fragments[0];
-  // (-1, -1, -1, 0, 1, -1, -1, -1, -1, -1, 0, -1)
+  // (-1, -1, -1, 0, 1, -1, -1, -1, -1, -1, 2, -1)
   backward_qm_map.resize(nall);
   std::fill(backward_qm_map.begin(), backward_qm_map.end(), -1);
   for (int ii = 0; ii < forward_qm_map.size(); ++ii) {
@@ -99,33 +99,33 @@ void deepmd::dprc_pairwise_map_cpu(
     // real
     int kk = 0;
     for (int jj = 0; jj < nqm; ++jj) {
-      if (fragments[0][kk] < nloc) {
-        forward_qmmm_map[ii * map_size + kk] = fragments[0][kk];
+      if (fragments[0][jj] < nloc) {
+        forward_qmmm_map[ii * map_size + kk] = fragments[0][jj];
         kk++;
       }
     }
     nqm_real = kk;
     kk = 0;
-    for (int jj = nqm; jj < fragments[ii + 1].size(); ++jj) {
-      if (fragments[ii + 1][kk] < nloc) {
-        forward_qmmm_map[ii * map_size + nqm_real + kk] = fragments[ii + 1][kk];
+    for (int jj = 0; jj < fragments[ii + 1].size(); ++jj) {
+      if (fragments[ii + 1][jj] < nloc) {
+        forward_qmmm_map[ii * map_size + nqm_real + kk] = fragments[ii + 1][jj];
         kk++;
       }
     }
     // ghost
     kk = 0;
     for (int jj = 0; jj < nqm; ++jj) {
-      if (fragments[0][kk] >= nloc) {
+      if (fragments[0][jj] >= nloc) {
         forward_qmmm_map[ii * map_size + nqm_real + max_fragment_real_size +
-                         kk] = fragments[0][kk];
+                         kk] = fragments[0][jj];
         kk++;
       }
     }
     kk = 0;
-    for (int jj = nqm; jj < fragments[ii + 1].size(); ++jj) {
-      if (fragments[ii + 1][kk] >= nloc) {
+    for (int jj = 0; jj < fragments[ii + 1].size(); ++jj) {
+      if (fragments[ii + 1][jj] >= nloc) {
         forward_qmmm_map[ii * map_size + nqm + max_fragment_real_size + kk] =
-            fragments[ii + 1][kk];
+            fragments[ii + 1][jj];
         kk++;
       }
     }
@@ -137,7 +137,7 @@ void deepmd::dprc_pairwise_map_cpu(
   backward_qmmm_map.resize((nfragments - 1) * nall);
   std::fill(backward_qmmm_map.begin(), backward_qmmm_map.end(), -1);
   for (int ii = 0; ii < nfragments - 1; ++ii) {
-    for (int jj = 0; jj < fragments[ii + 1].size(); ++jj) {
+    for (int jj = 0; jj < map_size; ++jj) {
       if (forward_qmmm_map[ii * map_size + jj] != -1) {
         backward_qmmm_map[ii * nall + forward_qmmm_map[ii * map_size + jj]] =
             jj;
