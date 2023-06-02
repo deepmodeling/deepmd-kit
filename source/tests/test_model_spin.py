@@ -6,6 +6,7 @@ from common import (
     del_data,
     gen_data,
     j_loader,
+    tests_path,
 )
 
 from deepmd.common import (
@@ -51,6 +52,12 @@ class TestModelSpin(tf.test.TestCase):
         test_size = j_must_have(jdata["training"]["validation_data"], "numb_btch")
         stop_batch = j_must_have(jdata["training"], "numb_steps")
         rcut = j_must_have(jdata["model"]["descriptor"], "rcut")
+        jdata["training"]["training_data"]["systems"] = [
+            str(tests_path / "model_spin/")
+        ]
+        jdata["training"]["validation_data"]["systems"] = [
+            str(tests_path / "model_spin/")
+        ]
         data = DataSystem(systems, set_pfx, batch_size, test_size, rcut, run_opt=None)
         test_data = data.get_test()
 

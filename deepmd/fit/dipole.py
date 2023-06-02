@@ -16,6 +16,12 @@ from deepmd.env import (
 from deepmd.fit.fitting import (
     Fitting,
 )
+from deepmd.loss.loss import (
+    Loss,
+)
+from deepmd.loss.tensor import (
+    TensorLoss,
+)
 from deepmd.utils.graph import (
     get_fitting_net_variables_from_graph_def,
 )
@@ -60,6 +66,7 @@ class DipoleFittingSeA(Fitting):
         activation_function: str = "tanh",
         precision: str = "default",
         uniform_seed: bool = False,
+        **kwargs,
     ) -> None:
         """Constructor."""
         self.ntypes = descrpt.get_ntypes()
@@ -296,3 +303,26 @@ class DipoleFittingSeA(Fitting):
         """
         self.mixed_prec = mixed_prec
         self.fitting_precision = get_precision(mixed_prec["output_prec"])
+
+    def get_loss(self, loss: dict, lr) -> Loss:
+        """Get the loss function.
+
+        Parameters
+        ----------
+        loss : dict
+            the loss dict
+        lr : LearningRateExp
+            the learning rate
+
+        Returns
+        -------
+        Loss
+            the loss function
+        """
+        return TensorLoss(
+            loss,
+            model=self,
+            tensor_name="dipole",
+            tensor_size=3,
+            label_name="dipole",
+        )
