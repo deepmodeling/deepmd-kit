@@ -750,9 +750,6 @@ def model_args():
     doc_data_stat_protect = "Protect parameter for atomic energy regression."
     doc_data_bias_nsample = "The number of training samples in a system to compute and change the energy bias."
     doc_type_embedding = "The type embedding."
-    doc_descrpt = "The descriptor of atomic environment."
-    doc_fitting = "The fitting of physical properties."
-    doc_fitting_net_dict = "The dictionary of multiple fitting nets in multi-task mode. Each fitting_net_dict[fitting_key] is the single definition of fitting of physical properties with user-defined name `fitting_key`."
     doc_modifier = "The modifier of model output."
     doc_use_srtab = "The table for the short-range pairwise interaction added on top of DP. The table is a text data file with (N_t + 1) * N_t / 2 + 1 columes. The first colume is the distance between atoms. The second to the last columes are energies for pairs of certain types. For example we have two atom types, 0 and 1. The columes from 2nd to 4th are for 0-0, 0-1 and 1-1 correspondingly."
     doc_smin_alpha = "The short-range tabulated interaction will be swithed according to the distance of the nearest neighbor. This distance is calculated by softmin. This parameter is the decaying parameter in the softmin. It is only required when `use_srtab` is provided."
@@ -760,8 +757,7 @@ def model_args():
     doc_sw_rmax = "The upper boundary of the interpolation between short-range tabulated interaction and DP. It is only required when `use_srtab` is provided."
     doc_compress_config = "Model compression configurations"
     doc_spin = "The settings for systems with spin."
-
-    ca = Argument(
+    return Argument(
         "model",
         dict,
         [
@@ -800,18 +796,6 @@ def model_args():
                 doc=doc_type_embedding,
             ),
             Argument(
-                "descriptor", dict, [], [descrpt_variant_type_args()], doc=doc_descrpt
-            ),
-            Argument(
-                "fitting_net",
-                dict,
-                [],
-                [fitting_variant_type_args()],
-                optional=True,
-                doc=doc_fitting,
-            ),
-            Argument("fitting_net_dict", dict, optional=True, doc=doc_fitting_net_dict),
-            Argument(
                 "modifier",
                 dict,
                 [],
@@ -826,11 +810,68 @@ def model_args():
                 [model_compression_type_args()],
                 optional=True,
                 doc=doc_compress_config,
+                fold_subdoc=True,
             ),
             Argument("spin", dict, spin_args(), [], optional=True, doc=doc_spin),
         ],
+        [
+            Variant(
+                "type",
+                [
+                    standard_model_args(),
+                    multi_model_args(),
+                ],
+                optional=True,
+                default_tag="standard",
+            ),
+        ],
     )
-    # print(ca.gen_doc())
+
+
+def standard_model_args() -> Argument:
+    doc_descrpt = "The descriptor of atomic environment."
+    doc_fitting = "The fitting of physical properties."
+
+    ca = Argument(
+        "standard",
+        dict,
+        [
+            Argument(
+                "descriptor", dict, [], [descrpt_variant_type_args()], doc=doc_descrpt
+            ),
+            Argument(
+                "fitting_net",
+                dict,
+                [],
+                [fitting_variant_type_args()],
+                doc=doc_fitting,
+            ),
+        ],
+        doc="Stardard model, which contains a descriptor and a fitting.",
+    )
+    return ca
+
+
+def multi_model_args() -> Argument:
+    doc_descrpt = "The descriptor of atomic environment. See model[standard]/descriptor for details."
+    doc_fitting_net_dict = "The dictionary of multiple fitting nets in multi-task mode. Each fitting_net_dict[fitting_key] is the single definition of fitting of physical properties with user-defined name `fitting_key`."
+
+    ca = Argument(
+        "multi",
+        dict,
+        [
+            Argument(
+                "descriptor",
+                dict,
+                [],
+                [descrpt_variant_type_args()],
+                doc=doc_descrpt,
+                fold_subdoc=True,
+            ),
+            Argument("fitting_net_dict", dict, doc=doc_fitting_net_dict),
+        ],
+        doc="Multiple-task model.",
+    )
     return ca
 
 
@@ -1580,6 +1621,7 @@ def normalize_multi_task(data):
         assert (
             "type_map" in data["model"]
         ), "In multi-task mode, 'model/type_map' must be defined! "
+        data["model"]["type"] = "multi"
         data["model"]["fitting_net_dict"] = normalize_fitting_net_dict(
             data["model"]["fitting_net_dict"]
         )

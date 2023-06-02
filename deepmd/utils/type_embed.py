@@ -94,6 +94,7 @@ class TypeEmbedNet:
         seed: Optional[int] = None,
         uniform_seed: bool = False,
         padding: bool = False,
+        **kwargs,
     ) -> None:
         """Constructor."""
         self.neuron = neuron
