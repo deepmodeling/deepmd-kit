@@ -46,6 +46,7 @@ class FixDPLR : public Fix {
   void post_integrate() override;
   void pre_force(int) override;
   void post_force(int) override;
+  void min_pre_exchange() override;
   void min_pre_force(int) override;
   void min_post_force(int) override;
   int pack_reverse_comm(int, int, double *) override;
