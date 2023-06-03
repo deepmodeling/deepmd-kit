@@ -125,6 +125,8 @@ FixDPLR::FixDPLR(LAMMPS *lmp, int narg, char **arg)
   comm_reverse = 3;
 }
 
+/* ---------------------------------------------------------------------- */
+
 int FixDPLR::setmask() {
   int mask = 0;
 #if LAMMPS_VERSION_NUMBER < 20210210
@@ -134,10 +136,13 @@ int FixDPLR::setmask() {
   mask |= POST_INTEGRATE;
   mask |= PRE_FORCE;
   mask |= POST_FORCE;
+  mask |= MIN_PRE_EXCHANGE;
   mask |= MIN_PRE_FORCE;
   mask |= MIN_POST_FORCE;
   return mask;
 }
+
+/* ---------------------------------------------------------------------- */
 
 void FixDPLR::init() {
   // double **xx = atom->x;
@@ -154,7 +159,11 @@ void FixDPLR::init() {
   // }
 }
 
+/* ---------------------------------------------------------------------- */
+
 void FixDPLR::setup_pre_force(int vflag) { pre_force(vflag); }
+
+/* ---------------------------------------------------------------------- */
 
 void FixDPLR::setup(int vflag) {
   // if (strstr(update->integrate_style,"verlet"))
@@ -223,6 +232,8 @@ void FixDPLR::get_valid_pairs(vector<pair<int, int> > &pairs) {
   }
 }
 
+/* ---------------------------------------------------------------------- */
+
 void FixDPLR::post_integrate() {
   double **x = atom->x;
   double **v = atom->v;
@@ -244,6 +255,8 @@ void FixDPLR::post_integrate() {
     }
   }
 }
+
+/* ---------------------------------------------------------------------- */
 
 void FixDPLR::pre_force(int vflag) {
   double **x = atom->x;
@@ -524,6 +537,10 @@ void FixDPLR::post_force(int vflag) {
     v_tally(0, vv);
   }
 }
+
+/* ---------------------------------------------------------------------- */
+
+void FixDPLR::min_pre_exchange() { post_integrate(); }
 
 /* ---------------------------------------------------------------------- */
 
