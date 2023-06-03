@@ -217,7 +217,7 @@ void FixDPLR::get_valid_pairs(vector<pair<int, int> > &pairs) {
     if (!(idx0 < nlocal && idx1 < nlocal)) {
       int idx0_ = atom->map(atom->tag[idx0]);
       int idx1_ = atom->map(atom->tag[idx1]);
-      if (!(idx0_ > 0 && idx0_ < nlocal && idx1_ > 0 && idx1_ < nlocal)) {
+      if (!(idx0_ >= 0 && idx0_ < nlocal && idx1_ >= 0 && idx1_ < nlocal)) {
         error->all(FLERR,
                    "find a bonded pair that is not on the same processor, "
                    "something should not happen");
