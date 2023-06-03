@@ -223,7 +223,7 @@ void FixDPLR::get_valid_pairs(vector<pair<int, int> > &pairs) {
                    "something should not happen");
       }
     }
-      pairs.push_back(pair<int, int>(idx0, idx1));
+    pairs.push_back(pair<int, int>(idx0, idx1));
   }
 }
 
