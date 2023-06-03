@@ -268,6 +268,7 @@ def test_pair_deepmd_lr(lammps):
         assert lammps.atoms[ii].force == pytest.approx(expected_f_lr[ii])
     lammps.run(1)
 
+
 def test_min_dplr(lammps):
     lammps.pair_style(f"deepmd {pb_file.resolve()}")
     lammps.pair_coeff("* *")
