@@ -5,7 +5,6 @@
 #include <fstream>
 #include <vector>
 
-#include "common.h"
 #include "deepmd.hpp"
 #include "ewald.h"
 #include "region.h"
@@ -124,12 +123,12 @@ TYPED_TEST(TestDipoleCharge, cpu_lmp_nlist) {
   std::vector<int> sel_types = dp.sel_types();
   std::vector<int> sel_fwd, sel_bwd;
   int sel_nghost;
-  deepmd::select_by_type(sel_fwd, sel_bwd, sel_nghost, coord_cpy, atype_cpy,
-                         nghost, sel_types);
+  deepmd::hpp::select_by_type(sel_fwd, sel_bwd, sel_nghost, coord_cpy,
+                              atype_cpy, nghost, sel_types);
   int sel_nall = sel_bwd.size();
   int sel_nloc = sel_nall - sel_nghost;
   std::vector<int> sel_atype(sel_bwd.size());
-  deepmd::select_map<int>(sel_atype, atype, sel_fwd, 1);
+  deepmd::hpp::select_map<int>(sel_atype, atype, sel_fwd, 1);
   // Yixiao: because the deeptensor already return the correct order, the
   // following map is no longer needed deepmd::AtomMap<double>
   // nnp_map(sel_atype.begin(), sel_atype.begin() + sel_nloc); const

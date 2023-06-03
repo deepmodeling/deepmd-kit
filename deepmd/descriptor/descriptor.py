@@ -3,6 +3,7 @@ from abc import (
 )
 from typing import (
     Any,
+    Callable,
     Dict,
     List,
     Optional,
@@ -43,7 +44,7 @@ class Descriptor(PluginVariant):
     __plugins = Plugin()
 
     @staticmethod
-    def register(key: str) -> "Descriptor":
+    def register(key: str) -> Callable:
         """Register a descriptor plugin.
 
         Parameters
@@ -521,3 +522,8 @@ class Descriptor(PluginVariant):
         # same as inputs_i, (nsamples * natoms, ndescrpt)
         mask = tf.reshape(mask, [-1, ndescrpt])
         return mask
+
+    @property
+    def explicit_ntypes(self) -> bool:
+        """Explicit ntypes with type embedding."""
+        return False

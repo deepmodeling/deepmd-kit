@@ -10,6 +10,9 @@ from deepmd.env import (
     GLOBAL_TF_FLOAT_PRECISION,
     tf,
 )
+from deepmd.utils.spin import (
+    Spin,
+)
 
 # from deepmd.descriptor import DescrptLocFrame
 # from deepmd.descriptor import DescrptSeA
@@ -32,7 +35,9 @@ class DescrptHybrid(Descriptor):
             Build a descriptor from the concatenation of the list of descriptors.
     """
 
-    def __init__(self, list: list, multi_task: bool = False) -> None:
+    def __init__(
+        self, list: list, multi_task: bool = False, spin: Spin = None, **kwargs
+    ) -> None:
         """Constructor."""
         # warning: list is conflict with built-in list
         descrpt_list = list
@@ -48,6 +53,9 @@ class DescrptHybrid(Descriptor):
             elif isinstance(ii, dict):
                 if multi_task:
                     ii["multi_task"] = True
+                if spin is not None:
+                    if ii["type"] in ["se_e2_a", "se_a", "se_e2_r", "se_r"]:
+                        ii["spin"] = spin
                 formatted_descript_list.append(Descriptor(**ii))
             else:
                 raise NotImplementedError
@@ -381,3 +389,8 @@ class DescrptHybrid(Descriptor):
             n_tensors = len(ii.get_tensor_names())
             ii.pass_tensors_from_frz_model(*tensors[jj : jj + n_tensors])
             jj += n_tensors
+
+    @property
+    def explicit_ntypes(self) -> bool:
+        """Explicit ntypes with type embedding."""
+        return any(ii.explicit_ntypes for ii in self.descrpt_list)

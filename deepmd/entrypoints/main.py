@@ -19,7 +19,6 @@ from deepmd.common import (
 )
 from deepmd.entrypoints import (
     compress,
-    config,
     convert,
     doc_train_input,
     freeze,
@@ -115,17 +114,6 @@ def main_parser() -> argparse.ArgumentParser:
         help="Set the manner of logging when running with MPI. 'master' logs only on "
         "main process, 'collect' broadcasts logs from workers to master and 'workers' "
         "means each process will output its own log",
-    )
-
-    # * config script ******************************************************************
-    parser_cfig = subparsers.add_parser(
-        "config",
-        parents=[parser_log],
-        help="fast configuration of parameter file for smooth model",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-    )
-    parser_cfig.add_argument(
-        "-o", "--output", type=str, default="input.json", help="the output json file"
     )
 
     # * transfer script ****************************************************************
@@ -635,8 +623,6 @@ def main(args: Optional[List[str]] = None):
         train_dp(**dict_args)
     elif args.command == "freeze":
         freeze(**dict_args)
-    elif args.command == "config":
-        config(**dict_args)
     elif args.command == "test":
         test(**dict_args)
     elif args.command == "transfer":

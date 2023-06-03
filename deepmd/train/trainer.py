@@ -5,6 +5,10 @@ import os
 import platform
 import shutil
 import time
+from typing import (
+    Dict,
+    List,
+)
 
 import google.protobuf.message
 import numpy as np
@@ -22,9 +26,6 @@ from deepmd.common import (
     get_precision,
     j_must_have,
 )
-from deepmd.descriptor.descriptor import (
-    Descriptor,
-)
 from deepmd.env import (
     GLOBAL_ENER_FLOAT_PRECISION,
     GLOBAL_TF_FLOAT_PRECISION,
@@ -33,28 +34,18 @@ from deepmd.env import (
     tf,
     tfv2,
 )
-from deepmd.fit import (
-    DipoleFittingSeA,
-    DOSFitting,
+from deepmd.fit.ener import (
     EnerFitting,
-    PolarFittingSeA,
-)
-from deepmd.loss import (
-    DOSLoss,
-    EnerDipoleLoss,
-    EnerStdLoss,
-    TensorLoss,
 )
 from deepmd.model import (
-    DipoleModel,
-    DOSModel,
-    EnerModel,
     MultiModel,
-    PolarModel,
+)
+from deepmd.model.model import (
+    Model,
 )
 from deepmd.utils import random as dp_random
-from deepmd.utils.argcheck import (
-    type_embedding_args,
+from deepmd.utils.data_system import (
+    DeepmdDataSystem,
 )
 from deepmd.utils.errors import (
     GraphTooLargeError,
@@ -69,9 +60,6 @@ from deepmd.utils.learning_rate import (
 )
 from deepmd.utils.sess import (
     run_sess,
-)
-from deepmd.utils.type_embed import (
-    TypeEmbedNet,
 )
 
 log = logging.getLogger(__name__)
@@ -100,16 +88,8 @@ class DPTrainer:
     def _init_param(self, jdata):
         # model config
         model_param = j_must_have(jdata, "model")
-        self.multi_task_mode = "fitting_net_dict" in model_param
-        descrpt_param = j_must_have(model_param, "descriptor")
-        fitting_param = (
-            j_must_have(model_param, "fitting_net")
-            if not self.multi_task_mode
-            else j_must_have(model_param, "fitting_net_dict")
-        )
-        typeebd_param = model_param.get("type_embedding", None)
-        self.model_param = model_param
-        self.descrpt_param = descrpt_param
+        if "fitting_key" in model_param:
+            model_param["type"] = "multi"
 
         # nvnmd
         self.nvnmd_param = jdata.get("nvnmd", {})
@@ -119,163 +99,10 @@ class DPTrainer:
             nvnmd_cfg.disp_message()
             nvnmd_cfg.save()
 
-        # descriptor
-        try:
-            descrpt_type = descrpt_param["type"]
-            self.descrpt_type = descrpt_type
-        except KeyError:
-            raise KeyError("the type of descriptor should be set by `type`")
-
-        explicit_ntypes_descrpt = ["se_atten"]
-        hybrid_with_tebd = False
-        if descrpt_param["type"] in explicit_ntypes_descrpt:
-            descrpt_param["ntypes"] = len(model_param["type_map"])
-        elif descrpt_param["type"] == "hybrid":
-            for descrpt_item in descrpt_param["list"]:
-                if descrpt_item["type"] in explicit_ntypes_descrpt:
-                    descrpt_item["ntypes"] = len(model_param["type_map"])
-                    hybrid_with_tebd = True
-        if self.multi_task_mode:
-            descrpt_param["multi_task"] = True
-        self.descrpt = Descriptor(**descrpt_param)
-
-        # fitting net
-        def fitting_net_init(fitting_type_, descrpt_type_, params):
-            if fitting_type_ == "ener":
-                return EnerFitting(**params)
-            elif fitting_type_ == "dos":
-                return DOSFitting(**params)
-            elif fitting_type_ == "dipole":
-                return DipoleFittingSeA(**params)
-            elif fitting_type_ == "polar":
-                return PolarFittingSeA(**params)
-            # elif fitting_type_ == 'global_polar':
-            #     if descrpt_type_ == 'se_e2_a':
-            #         return GlobalPolarFittingSeA(**params)
-            #     else:
-            #         raise RuntimeError('fitting global_polar only supports descrptors: loc_frame and se_e2_a')
-            else:
-                raise RuntimeError("unknown fitting type " + fitting_type_)
-
-        if not self.multi_task_mode:
-            fitting_type = fitting_param.get("type", "ener")
-            self.fitting_type = fitting_type
-            fitting_param.pop("type", None)
-            fitting_param["descrpt"] = self.descrpt
-            self.fitting = fitting_net_init(fitting_type, descrpt_type, fitting_param)
-        else:
-            self.fitting_dict = {}
-            self.fitting_type_dict = {}
-            self.nfitting = len(fitting_param)
-            for item in fitting_param:
-                item_fitting_param = fitting_param[item]
-                item_fitting_type = item_fitting_param.get("type", "ener")
-                self.fitting_type_dict[item] = item_fitting_type
-                item_fitting_param.pop("type", None)
-                item_fitting_param["descrpt"] = self.descrpt
-                self.fitting_dict[item] = fitting_net_init(
-                    item_fitting_type, descrpt_type, item_fitting_param
-                )
-
-        # type embedding
-        padding = False
-        if descrpt_type == "se_atten" or hybrid_with_tebd:
-            padding = True
-        if typeebd_param is not None:
-            self.typeebd = TypeEmbedNet(
-                neuron=typeebd_param["neuron"],
-                resnet_dt=typeebd_param["resnet_dt"],
-                activation_function=typeebd_param["activation_function"],
-                precision=typeebd_param["precision"],
-                trainable=typeebd_param["trainable"],
-                seed=typeebd_param["seed"],
-                padding=padding,
-            )
-        elif descrpt_type == "se_atten" or hybrid_with_tebd:
-            default_args = type_embedding_args()
-            default_args_dict = {i.name: i.default for i in default_args}
-            self.typeebd = TypeEmbedNet(
-                neuron=default_args_dict["neuron"],
-                resnet_dt=default_args_dict["resnet_dt"],
-                activation_function=None,
-                precision=default_args_dict["precision"],
-                trainable=default_args_dict["trainable"],
-                seed=default_args_dict["seed"],
-                padding=padding,
-            )
-        else:
-            self.typeebd = None
-
         # init model
-        # infer model type by fitting_type
-        if not self.multi_task_mode:
-            if self.fitting_type == "ener":
-                self.model = EnerModel(
-                    self.descrpt,
-                    self.fitting,
-                    self.typeebd,
-                    model_param.get("type_map"),
-                    model_param.get("data_stat_nbatch", 10),
-                    model_param.get("data_stat_protect", 1e-2),
-                    model_param.get("use_srtab"),
-                    model_param.get("smin_alpha"),
-                    model_param.get("sw_rmin"),
-                    model_param.get("sw_rmax"),
-                )
-            # elif fitting_type == 'wfc':
-            #     self.model = WFCModel(model_param, self.descrpt, self.fitting)
-            elif self.fitting_type == "dos":
-                self.model = DOSModel(
-                    self.descrpt,
-                    self.fitting,
-                    self.typeebd,
-                    model_param.get("type_map"),
-                    model_param.get("data_stat_nbatch", 10),
-                    model_param.get("data_stat_protect", 1e-2),
-                )
-
-            elif self.fitting_type == "dipole":
-                self.model = DipoleModel(
-                    self.descrpt,
-                    self.fitting,
-                    self.typeebd,
-                    model_param.get("type_map"),
-                    model_param.get("data_stat_nbatch", 10),
-                    model_param.get("data_stat_protect", 1e-2),
-                )
-            elif self.fitting_type == "polar":
-                self.model = PolarModel(
-                    self.descrpt,
-                    self.fitting,
-                    self.typeebd,
-                    model_param.get("type_map"),
-                    model_param.get("data_stat_nbatch", 10),
-                    model_param.get("data_stat_protect", 1e-2),
-                )
-            # elif self.fitting_type == 'global_polar':
-            #     self.model = GlobalPolarModel(
-            #         self.descrpt,
-            #         self.fitting,
-            #         model_param.get('type_map'),
-            #         model_param.get('data_stat_nbatch', 10),
-            #         model_param.get('data_stat_protect', 1e-2)
-            #     )
-            else:
-                raise RuntimeError("get unknown fitting type when building model")
-        else:  # multi-task mode
-            self.model = MultiModel(
-                self.descrpt,
-                self.fitting_dict,
-                self.fitting_type_dict,
-                self.typeebd,
-                model_param.get("type_map"),
-                model_param.get("data_stat_nbatch", 10),
-                model_param.get("data_stat_protect", 1e-2),
-                model_param.get("use_srtab"),
-                model_param.get("smin_alpha"),
-                model_param.get("sw_rmin"),
-                model_param.get("sw_rmax"),
-            )
+        self.model = Model(**model_param)
+        self.multi_task_mode = isinstance(self.model, MultiModel)
+        self.fitting = self.model.get_fitting()
 
         def get_lr_and_coef(lr_param):
             scale_by_worker = lr_param.get("scale_by_worker", "linear")
@@ -302,84 +129,20 @@ class DPTrainer:
             self.lr_dict = {}
             self.scale_lr_coef_dict = {}
             lr_param_dict = jdata.get("learning_rate_dict", {})
-            for fitting_key in self.fitting_type_dict:
+            for fitting_key in self.fitting:
                 lr_param = lr_param_dict.get(fitting_key, {})
                 (
                     self.lr_dict[fitting_key],
                     self.scale_lr_coef_dict[fitting_key],
                 ) = get_lr_and_coef(lr_param)
-
         # loss
         # infer loss type by fitting_type
-        def loss_init(_loss_param, _fitting_type, _fitting, _lr):
-            _loss_type = _loss_param.get("type", "ener")
-            if _fitting_type == "ener":
-                _loss_param.pop("type", None)
-                _loss_param["starter_learning_rate"] = _lr.start_lr()
-                if _loss_type == "ener":
-                    loss = EnerStdLoss(**_loss_param)
-                elif _loss_type == "ener_dipole":
-                    loss = EnerDipoleLoss(**_loss_param)
-                else:
-                    raise RuntimeError("unknown loss type")
-            elif _fitting_type == "dos":
-                _loss_param.pop("type", None)
-                _loss_param["starter_learning_rate"] = _lr.start_lr()
-                _loss_param["numb_dos"] = self.fitting.get_numb_dos()
-                loss = DOSLoss(**_loss_param)
-            elif _fitting_type == "wfc":
-                loss = TensorLoss(
-                    _loss_param,
-                    model=_fitting,
-                    tensor_name="wfc",
-                    tensor_size=_fitting.get_out_size(),
-                    label_name="wfc",
-                )
-            elif _fitting_type == "dipole":
-                loss = TensorLoss(
-                    _loss_param,
-                    model=_fitting,
-                    tensor_name="dipole",
-                    tensor_size=3,
-                    label_name="dipole",
-                )
-            elif _fitting_type == "polar":
-                loss = TensorLoss(
-                    _loss_param,
-                    model=_fitting,
-                    tensor_name="polar",
-                    tensor_size=9,
-                    label_name="polarizability",
-                )
-            elif _fitting_type == "global_polar":
-                loss = TensorLoss(
-                    _loss_param,
-                    model=_fitting,
-                    tensor_name="global_polar",
-                    tensor_size=9,
-                    atomic=False,
-                    label_name="polarizability",
-                )
-            else:
-                raise RuntimeError(
-                    "get unknown fitting type when building loss function"
-                )
-            return loss
-
         if not self.multi_task_mode:
             loss_param = jdata.get("loss", {})
-            self.loss = loss_init(loss_param, self.fitting_type, self.fitting, self.lr)
+            self.loss = self.model.get_loss(loss_param, self.lr)
         else:
-            self.loss_dict = {}
-            loss_param_dict = jdata.get("loss_dict", {})
-            for fitting_key in self.fitting_type_dict:
-                loss_param = loss_param_dict.get(fitting_key, {})
-                self.loss_dict[fitting_key] = loss_init(
-                    loss_param,
-                    self.fitting_type_dict[fitting_key],
-                    self.fitting_dict[fitting_key],
-                    self.lr_dict[fitting_key],
-                )
+            loss_param = jdata.get("loss_dict", {})
+            self.loss_dict = self.model.get_loss(loss_param, self.lr_dict)
 
         # training
         tr_data = jdata["training"]
@@ -387,7 +150,7 @@ class DPTrainer:
         if self.multi_task_mode:
             self.fitting_key_list = []
             self.fitting_prob = []
-            for fitting_key in self.fitting_type_dict:
+            for fitting_key in self.fitting:
                 self.fitting_key_list.append(fitting_key)
                 # multi-task mode must have self.fitting_weight
                 self.fitting_prob.append(self.fitting_weight[fitting_key])
@@ -419,30 +182,15 @@ class DPTrainer:
         # self.auto_prob_style = tr_data['auto_prob']
         self.useBN = False
         if not self.multi_task_mode:
-            if (
-                self.fitting_type == "ener" or self.fitting_type == "dos"
-            ) and self.fitting.get_numb_fparam() > 0:
-                self.numb_fparam = self.fitting.get_numb_fparam()
-            else:
-                self.numb_fparam = 0
+            self.numb_fparam = self.model.get_numb_fparam()
 
             if tr_data.get("validation_data", None) is not None:
                 self.valid_numb_batch = tr_data["validation_data"].get("numb_btch", 1)
             else:
                 self.valid_numb_batch = 1
         else:
-            self.numb_fparam_dict = {}
+            self.numb_fparam_dict = self.model.get_numb_fparam()
             self.valid_numb_batch_dict = {}
-            for fitting_key in self.fitting_type_dict:
-                if (
-                    self.fitting_type_dict[fitting_key] == "ener"
-                    and self.fitting_dict[fitting_key].get_numb_fparam() > 0
-                ):
-                    self.numb_fparam_dict[fitting_key] = self.fitting_dict[
-                        fitting_key
-                    ].get_numb_fparam()
-                else:
-                    self.numb_fparam_dict[fitting_key] = 0
             data_dict = tr_data.get("data_dict", None)
             for systems in data_dict:
                 if data_dict[systems].get("validation_data", None) is not None:
@@ -463,12 +211,9 @@ class DPTrainer:
 
         if not self.multi_task_mode:
             if not self.is_compress and data.mixed_type:
-                assert self.descrpt_type in [
-                    "se_atten"
-                ], "Data in mixed_type format must use attention descriptor!"
-                assert self.fitting_type in [
-                    "ener"
-                ], "Data in mixed_type format must use ener fitting!"
+                assert isinstance(
+                    self.fitting, EnerFitting
+                ), "Data in mixed_type format must use ener fitting!"
 
             if self.numb_fparam > 0:
                 log.info("training with %d frame parameter(s)" % self.numb_fparam)
@@ -482,16 +227,11 @@ class DPTrainer:
             for fitting_key in data:
                 self.valid_fitting_key.append(fitting_key)
                 if data[fitting_key].mixed_type:
-                    assert self.descrpt_type in ["se_atten"], (
-                        "Data for fitting net {} in mixed_type format "
-                        "must use attention descriptor!".format(fitting_key)
-                    )
-                    assert self.fitting_type_dict[fitting_key] in [
-                        "ener"
-                    ], "Data for fitting net {} in mixed_type format must use ener fitting!".format(
+                    assert isinstance(
+                        self.fitting[fitting_key], EnerFitting
+                    ), "Data for fitting net {} in mixed_type format must use ener fitting!".format(
                         fitting_key
                     )
-
                 if self.numb_fparam_dict[fitting_key] > 0:
                     log.info(
                         "fitting net %s training with %d frame parameter(s)"
@@ -554,20 +294,7 @@ class DPTrainer:
             # TODO: this is a simple fix but we should have a clear
             #       architecture to call neighbor stat
         else:
-            graph, graph_def = load_graph_def(
-                self.model_param["compress"]["model_file"]
-            )
-            self.descrpt.enable_compression(
-                self.model_param["compress"]["min_nbor_dist"],
-                graph,
-                graph_def,
-                self.model_param["compress"]["table_config"][0],
-                self.model_param["compress"]["table_config"][1],
-                self.model_param["compress"]["table_config"][2],
-                self.model_param["compress"]["table_config"][3],
-            )
-            # for fparam or aparam settings in 'ener' type fitting net
-            self.fitting.init_variables(graph, graph_def)
+            self.model.enable_compression()
 
         if self.is_compress or self.model_type == "compressed_model":
             tf.constant("compressed_model", name="model_type", dtype=tf.string)
@@ -575,14 +302,7 @@ class DPTrainer:
             tf.constant("original_model", name="model_type", dtype=tf.string)
 
         if self.mixed_prec is not None:
-            self.descrpt.enable_mixed_precision(self.mixed_prec)
-            if not self.multi_task_mode:
-                self.fitting.enable_mixed_precision(self.mixed_prec)
-            else:
-                for fitting_key in self.fitting_dict:
-                    self.fitting_dict[fitting_key].enable_mixed_precision(
-                        self.mixed_prec
-                    )
+            self.model.enable_mixed_precision(self.mixed_prec)
 
         self._build_lr()
         self._build_network(data, suffix)
@@ -595,7 +315,8 @@ class DPTrainer:
             self.learning_rate = self.lr.build(self.global_step, self.stop_batch)
         else:
             self.learning_rate_dict = {}
-            for fitting_key in self.fitting_type_dict:
+
+            for fitting_key in self.fitting:
                 self.learning_rate_dict[fitting_key] = self.lr_dict[fitting_key].build(
                     self.global_step, self.stop_batch
                 )
@@ -616,7 +337,7 @@ class DPTrainer:
                 l2_l = tf.cast(l2_l, get_precision(self.mixed_prec["output_prec"]))
         else:
             l2_l, l2_more = {}, {}
-            for fitting_key in self.fitting_type_dict:
+            for fitting_key in self.fitting:
                 lr = self.learning_rate_dict[fitting_key]
                 model = self.model_pred[fitting_key]
                 loss_dict = self.loss_dict[fitting_key]
@@ -741,7 +462,7 @@ class DPTrainer:
             self.train_op = tf.group(*train_ops)
         else:
             self.train_op = {}
-            for fitting_key in self.fitting_type_dict:
+            for fitting_key in self.fitting:
                 optimizer = self._build_optimizer(fitting_key=fitting_key)
                 apply_op = optimizer.minimize(
                     loss=self.l2_l[fitting_key],
@@ -834,7 +555,7 @@ class DPTrainer:
                 )
             )
         else:
-            for fitting_key in self.fitting_type_dict:
+            for fitting_key in self.fitting:
                 log.info(
                     "%s: start training at lr %.2e (== %.2e), decay_step %d, decay_rate %f, final lr will be %.2e"
                     % (
@@ -882,19 +603,56 @@ class DPTrainer:
 
         train_time = 0
         total_train_time = 0.0
+        wall_time_tic = time.time()
+
+        next_batch_train_op = None
+        next_fitting_key = None
+        next_train_batch_list = None
+        next_datasetloader = None
+
+        # dataset loader op
+        if not self.multi_task_mode:
+            datasetloader = DatasetLoader(train_data)
+            data_op = datasetloader.build()
+        else:
+            datasetloader = {}
+            data_op = {}
+            for fitting_key in self.fitting:
+                datasetloader[fitting_key] = DatasetLoader(train_data[fitting_key])
+                data_op[fitting_key] = datasetloader[fitting_key].build()
 
         while cur_batch < stop_batch:
             # first round validation:
+            if is_first_step:
+                if not self.multi_task_mode:
+                    train_batch = train_data.get_batch()
+                    batch_train_op = self.train_op
+                else:
+                    fitting_idx = dp_random.choice(
+                        np.arange(len(self.fitting_key_list)),
+                        p=np.array(self.fitting_prob),
+                    )
+                    fitting_key = self.fitting_key_list[fitting_idx]
+                    train_batch = train_data[fitting_key].get_batch()
+                    batch_train_op = self.train_op[fitting_key]
+            else:
+                train_batch = next_datasetloader.get_data_dict(next_train_batch_list)
+                batch_train_op = next_batch_train_op
+                fitting_key = next_fitting_key
+            # for next round
             if not self.multi_task_mode:
-                train_batch = train_data.get_batch()
-                batch_train_op = self.train_op
+                next_datasetloader = datasetloader
+                next_batch_train_op = self.train_op
+                next_train_batch_op = data_op
             else:
                 fitting_idx = dp_random.choice(
-                    np.arange(self.nfitting), p=np.array(self.fitting_prob)
+                    np.arange(len(self.fitting_key_list)), p=np.array(self.fitting_prob)
                 )
-                fitting_key = self.fitting_key_list[fitting_idx]
-                train_batch = train_data[fitting_key].get_batch()
-                batch_train_op = self.train_op[fitting_key]
+                next_fitting_key = self.fitting_key_list[fitting_idx]
+                next_datasetloader = datasetloader[next_fitting_key]
+                next_batch_train_op = self.train_op[fitting_key]
+                next_train_batch_op = data_op[fitting_key]
+
             if self.display_in_training and is_first_step:
                 if self.run_opt.is_chief:
                     if not self.multi_task_mode:
@@ -943,18 +701,18 @@ class DPTrainer:
             # use tensorboard to visualize the training of deepmd-kit
             # it will takes some extra execution time to generate the tensorboard data
             if self.tensorboard and (cur_batch % self.tensorboard_freq == 0):
-                summary, _ = run_sess(
+                summary, _, next_train_batch_list = run_sess(
                     self.sess,
-                    [summary_merged_op, batch_train_op],
+                    [summary_merged_op, batch_train_op, next_train_batch_op],
                     feed_dict=train_feed_dict,
                     options=prf_options,
                     run_metadata=prf_run_metadata,
                 )
                 tb_train_writer.add_summary(summary, cur_batch)
             else:
-                run_sess(
+                _, next_train_batch_list = run_sess(
                     self.sess,
-                    [batch_train_op],
+                    [batch_train_op, next_train_batch_op],
                     feed_dict=train_feed_dict,
                     options=prf_options,
                     run_metadata=prf_run_metadata,
@@ -1004,14 +762,16 @@ class DPTrainer:
                 if self.timing_in_training:
                     toc = time.time()
                     test_time = toc - tic
+                    wall_time = toc - wall_time_tic
                     log.info(
-                        "batch %7d training time %.2f s, testing time %.2f s"
-                        % (cur_batch, train_time, test_time)
+                        "batch %7d training time %.2f s, testing time %.2f s, total wall time %.2f s"
+                        % (cur_batch, train_time, test_time, wall_time)
                     )
                     # the first training time is not accurate
                     if cur_batch > self.disp_freq or stop_batch < 2 * self.disp_freq:
                         total_train_time += train_time
                     train_time = 0
+                    wall_time_tic = toc
                 if (
                     self.save_freq > 0
                     and cur_batch % self.save_freq == 0
@@ -1373,14 +1133,71 @@ class DPTrainer:
         self, data, frozen_model, origin_type_map, bias_shift="delta"
     ):
         full_type_map = data.get_type_map()
-        assert (
-            self.fitting_type == "ener"
-        ), "energy bias changing only supports 'ener' fitting net!"
-        self.model.fitting.change_energy_bias(
+        self.model.change_energy_bias(
             data,
             frozen_model,
             origin_type_map,
             full_type_map,
             bias_shift=bias_shift,
-            ntest=self.model_param.get("data_bias_nsample", 10),
         )
+
+
+class DatasetLoader:
+    """Generate an OP that loads the training data from the given DeepmdDataSystem.
+
+    It can be used to load the training data in the training process, so there is
+    no waiting time between training steps.
+
+    Parameters
+    ----------
+    train_data : DeepmdDataSystem
+        The training data.
+
+    Examples
+    --------
+    >>> loader = DatasetLoader(train_data)
+    >>> data_op = loader.build()
+    >>> with tf.Session() as sess:
+    >>>     data_list = sess.run(data_op)
+    >>> data_dict = loader.get_data_dict(data_list)
+    """
+
+    def __init__(self, train_data: DeepmdDataSystem):
+        self.train_data = train_data
+        # get the keys of the data
+        batch_data = self.train_data.get_batch()
+        self.data_keys = batch_data.keys()
+        self.data_types = [tf.as_dtype(x.dtype) for x in batch_data.values()]
+
+    def build(self) -> List[tf.Tensor]:
+        """Build the OP that loads the training data.
+
+        Returns
+        -------
+        List[tf.Tensor]
+            Tensor of the loaded data.
+        """
+        train_data = self.train_data
+
+        def get_train_batch() -> List[np.ndarray]:
+            batch_data = train_data.get_batch()
+            # convert dict to list of arryas
+            batch_data = tuple([batch_data[kk] for kk in self.data_keys])
+            return batch_data
+
+        return tf.py_func(get_train_batch, [], self.data_types, name="train_data")
+
+    def get_data_dict(self, batch_list: List[np.ndarray]) -> Dict[str, np.ndarray]:
+        """Generate a dict of the loaded data.
+
+        Parameters
+        ----------
+        batch_list : List[np.ndarray]
+            The loaded data.
+
+        Returns
+        -------
+        Dict[str, np.ndarray]
+            The dict of the loaded data.
+        """
+        return {kk: vv for kk, vv in zip(self.data_keys, batch_list)}

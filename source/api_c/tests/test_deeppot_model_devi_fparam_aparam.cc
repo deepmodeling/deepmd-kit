@@ -202,7 +202,6 @@ TYPED_TEST(TestInferDeepPotModeDeviFparamAparam, cpu_lmp_list_atomic) {
 }
 
 TYPED_TEST(TestInferDeepPotModeDeviFparamAparam, cpu_lmp_list_std) {
-  GTEST_SKIP() << "Skip until compute_avg implemented";
   using VALUETYPE = TypeParam;
   std::vector<VALUETYPE>& coord = this->coord;
   std::vector<int>& atype = this->atype;
@@ -245,34 +244,6 @@ TYPED_TEST(TestInferDeepPotModeDeviFparamAparam, cpu_lmp_list_std) {
     for (int ii = 0; ii < nloc; ++ii) {
       aemd[kk][ii] = aemd_[kk][ii];
     }
-  }
-
-  // dp compute std e
-  std::vector<VALUETYPE> avg_e, std_e;
-  dp_md.compute_avg(avg_e, aemd);
-  dp_md.compute_std_e(std_e, avg_e, aemd);
-
-  // manual compute std e
-  std::vector<double> manual_avg_e(nloc);
-  std::vector<double> manual_std_e(nloc);
-  for (int ii = 0; ii < nloc; ++ii) {
-    double avg_e(0.0);
-    for (int kk = 0; kk < nmodel; ++kk) {
-      avg_e += aemd[kk][ii];
-    }
-    avg_e /= nmodel;
-    manual_avg_e[ii] = avg_e;
-    double std = 0;
-    for (int kk = 0; kk < nmodel; ++kk) {
-      std += (aemd[kk][ii] - avg_e) * (aemd[kk][ii] - avg_e);
-    }
-    std = sqrt(std / nmodel);
-    manual_std_e[ii] = std;
-  }
-  EXPECT_EQ(manual_std_e.size(), std_e.size());
-  for (int ii = 0; ii < std_e.size(); ++ii) {
-    EXPECT_LT(fabs(manual_avg_e[ii] - avg_e[ii]), EPSILON);
-    EXPECT_LT(fabs(manual_std_e[ii] - std_e[ii]), EPSILON);
   }
 
   // dp compute std f
