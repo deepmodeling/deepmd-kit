@@ -26,8 +26,8 @@ DP_Nlist* DP_NewNlist(int inum_,
 
 DP_DeepPot::DP_DeepPot() {}
 DP_DeepPot::DP_DeepPot(deepmd::DeepPot& dp) : dp(dp) {
-  dfparam = dp.dim_aparam();
-  daparam = dp.dim_fparam();
+  dfparam = dp.dim_fparam();
+  daparam = dp.dim_aparam();
 }
 
 DP_DeepPot* DP_NewDeepPot(const char* c_model) {
@@ -62,8 +62,8 @@ DP_DeepPot* DP_NewDeepPotWithParam2(const char* c_model,
 DP_DeepPotModelDevi::DP_DeepPotModelDevi() {}
 DP_DeepPotModelDevi::DP_DeepPotModelDevi(deepmd::DeepPotModelDevi& dp)
     : dp(dp) {
-  dfparam = dp.dim_aparam();
-  daparam = dp.dim_fparam();
+  dfparam = dp.dim_fparam();
+  daparam = dp.dim_aparam();
 }
 
 DP_DeepPotModelDevi* DP_NewDeepPotModelDevi(const char** c_models,
