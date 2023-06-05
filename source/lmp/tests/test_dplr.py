@@ -126,6 +126,36 @@ expected_WC = np.array(
     ]
 )
 
+expected_x_min_step1 = np.array(
+    [
+        [1.26321372, 1.28623039, 0.97992808],
+        [0.94931355, 3.25164736, 1.32847644],
+        [0.64743204, 1.32472127, 1.76763885],
+        [1.30026330, 0.31505758, 0.71705476],
+        [1.91176075, 3.50957943, 1.43047464],
+        [0.50553664, 4.04638297, 0.90796723],
+        [1.22952996, 1.15353755, 1.01171484],
+        [0.97744342, 3.38790804, 1.31885315],
+    ]
+)
+
+expected_e_min_step1 = -40.46708779
+
+expected_e_kspace_min_step1 = 0.16209504
+
+expected_f_min_step1 = np.array(
+    [
+        [-0.04230911, -0.09057170, -0.00644688],
+        [0.03377777, 0.01767955, -0.18004346],
+        [-0.10280108, 0.22936656, 0.17841170],
+        [0.13239183, 0.02472290, -0.12924794],
+        [0.11956397, -0.13352759, 0.08242015],
+        [-0.14062339, -0.04766971, 0.05490644],
+        [0.00000000, 0.00000000, 0.00000000],
+        [0.00000000, 0.00000000, 0.00000000],
+    ]
+)
+
 box = np.array([0, 20, 0, 20, 0, 20, 0, 0, 0])
 coord = np.array(
     [
@@ -230,10 +260,30 @@ def test_pair_deepmd_lr(lammps):
     lammps.fix(f"0 all dplr model {pb_file.resolve()} type_associate 1 3 bond_type 1")
     lammps.fix_modify("0 virial yes")
     lammps.run(0)
-    assert lammps.eval("pe") == pytest.approx(expected_e_lr)
-    assert lammps.eval("elong") == pytest.approx(expected_e_kspace)
-    for ii in range(6):
-        assert lammps.atoms[ii].force == pytest.approx(expected_f_lr[ii])
     for ii in range(2):
         assert lammps.atoms[6 + ii].position == pytest.approx(expected_WC[ii])
+    assert lammps.eval("elong") == pytest.approx(expected_e_kspace)
+    assert lammps.eval("pe") == pytest.approx(expected_e_lr)
+    for ii in range(6):
+        assert lammps.atoms[ii].force == pytest.approx(expected_f_lr[ii])
     lammps.run(1)
+
+
+def test_min_dplr(lammps):
+    lammps.pair_style(f"deepmd {pb_file.resolve()}")
+    lammps.pair_coeff("* *")
+    lammps.bond_style("zero")
+    lammps.bond_coeff("*")
+    lammps.special_bonds("lj/coul 1 1 1 angle no")
+    lammps.kspace_style("pppm/dplr 1e-5")
+    lammps.kspace_modify(f"gewald {beta:.2f} diff ik mesh {mesh:d} {mesh:d} {mesh:d}")
+    lammps.fix(f"0 all dplr model {pb_file.resolve()} type_associate 1 3 bond_type 1")
+    lammps.fix_modify("0 virial yes")
+    lammps.min_style("cg")
+    lammps.minimize("0 1.0e-6 2 2")
+    for ii in range(8):
+        assert lammps.atoms[ii].position == pytest.approx(expected_x_min_step1[ii])
+    assert lammps.eval("pe") == pytest.approx(expected_e_min_step1)
+    assert lammps.eval("elong") == pytest.approx(expected_e_kspace_min_step1)
+    for ii in range(8):
+        assert lammps.atoms[ii].force == pytest.approx(expected_f_min_step1[ii])
