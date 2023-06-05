@@ -188,7 +188,7 @@ void FixDPLR::get_valid_pairs(vector<pair<int, int> > &pairs) {
     if (!binary_search(bond_type.begin(), bond_type.end(), bd_type)) {
       continue;
     }
-    it = find(sel_type.begin(), sel_type.end(), dtype[bondlist[ii][0]]);
+    std::vector<int>::iterator it = find(sel_type.begin(), sel_type.end(), dtype[bondlist[ii][0]]);
     if (it != sel_type.end()) {
       int idx_type = distance(sel_type.begin(), it);
       if (dtype[bondlist[ii][1]] == dpl_type[idx_type]) {
