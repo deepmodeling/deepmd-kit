@@ -194,30 +194,43 @@ void FixDPLR::get_valid_pairs(vector<pair<int, int> > &pairs) {
       if (dtype[bondlist[ii][1]] == dpl_type[idx_type]) {
         idx0 = bondlist[ii][0];
         idx1 = bondlist[ii][1];
-      }
-      else {
+      } else {
         char str[300];
-        sprintf(str, "The type of virtual atom associated to atom %d is not consistent with the type you provided from \"type_associate\".\n       A virtual atom of type %d is expected, but the type of atom %d is %d.\n       Please check your data file carefully.\n", atom->tag[bondlist[ii][0]], dpl_type[idx_type]+1, atom->tag[bondlist[ii][1]], type[bondlist[ii][1]]);
+        sprintf(
+            str,
+            "The type of virtual atom associated to atom %d is not consistent "
+            "with the type you provided from \"type_associate\".\n       A "
+            "virtual atom of type %d is expected, but the type of atom %d is "
+            "%d.\n       Please check your data file carefully.\n",
+            atom->tag[bondlist[ii][0]], dpl_type[idx_type] + 1,
+            atom->tag[bondlist[ii][1]], type[bondlist[ii][1]]);
         error->all(FLERR, str);
       }
-    }
-    else {
+    } else {
       it = find(sel_type.begin(), sel_type.end(), dtype[bondlist[ii][1]]);
       if (it != sel_type.end()) {
         int idx_type = distance(sel_type.begin(), it);
         if (dtype[bondlist[ii][0]] == dpl_type[idx_type]) {
           idx0 = bondlist[ii][1];
           idx1 = bondlist[ii][0];
-        }
-        else {
+        } else {
           char str[300];
-          sprintf(str, "The type of virtual atom associated to atom %d is not consistent with the type you provided from \"type_associate\".\n       A virtual atom of type %d is expected, but the type of atom %d is %d.\n       Please check your data file carefully.\n", atom->tag[bondlist[ii][1]], dpl_type[idx_type]+1, atom->tag[bondlist[ii][0]], type[bondlist[ii][0]]);
-          error->all(FLERR, str);          
+          sprintf(str,
+                  "The type of virtual atom associated to atom %d is not "
+                  "consistent with the type you provided from "
+                  "\"type_associate\".\n       A virtual atom of type %d is "
+                  "expected, but the type of atom %d is %d.\n       Please "
+                  "check your data file carefully.\n",
+                  atom->tag[bondlist[ii][1]], dpl_type[idx_type] + 1,
+                  atom->tag[bondlist[ii][0]], type[bondlist[ii][0]]);
+          error->all(FLERR, str);
         }
-      }
-      else {
+      } else {
         char str[300];
-        sprintf(str, "Atoms %d and %d are not expected to have Wannier centroids\n       Please check your data file carefully.\n", atom->tag[bondlist[ii][0]], atom->tag[bondlist[ii][1]]);
+        sprintf(str,
+                "Atoms %d and %d are not expected to have Wannier centroids\n  "
+                "     Please check your data file carefully.\n",
+                atom->tag[bondlist[ii][0]], atom->tag[bondlist[ii][1]]);
         error->all(FLERR, str);
       }
     }
