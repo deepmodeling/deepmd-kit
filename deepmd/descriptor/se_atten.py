@@ -110,6 +110,7 @@ class DescrptSeAtten(DescrptSeA):
         attn_dotr: bool = True,
         attn_mask: bool = False,
         multi_task: bool = False,
+        **kwargs,
     ) -> None:
         if not set_davg_zero:
             warnings.warn(
@@ -1065,3 +1066,8 @@ class DescrptSeAtten(DescrptSeA):
         # same as inputs_i, (nsamples * natoms, ndescrpt)
         mask = tf.reshape(mask, [-1, ndescrpt])
         return mask
+
+    @property
+    def explicit_ntypes(self) -> bool:
+        """Explicit ntypes with type embedding."""
+        return True
