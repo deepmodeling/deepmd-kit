@@ -34,7 +34,8 @@ class TestModel(tf.test.TestCase):
     @classmethod
     def setUpClass(cls):
         convert_pbtxt_to_pb(
-            str(tests_path / os.path.join("infer", "dp4mask.pbtxt")), str(tests_path / os.path.join("infer", "dp4mask.pb"))
+            str(tests_path / os.path.join("infer", "dp4mask.pbtxt")),
+            str(tests_path / os.path.join("infer", "dp4mask.pb")),
         )
         cls.dp = DeepPot(str(tests_path / os.path.join("infer", "dp4mask.pb")))
 
