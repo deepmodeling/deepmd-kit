@@ -60,17 +60,15 @@
             "_comment": "that's all"
         },
         "validation_data": {
-            "systems": "source/tests/data_dp_mask/",
+            "systems": [ 
+                "source/tests/data_dp_mask/"
+        ],
             "batch_size": 4,
             "numb_btch": 1,
             "_comment": "that's all"
         },
         "numb_steps": 1,
         "seed": 10,
-        "disp_file": "loss.sample.out",
-        "disp_freq": 1,
-        "save_freq": 10,
-        "save_ckpt": "./ckpt.dp4mask_sample/model.ckpt",
         "tensorboard": true,
         "tensorboard_log_dir": "log4tensorboard",
         "tensorboard_freq": 100,
