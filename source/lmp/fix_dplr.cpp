@@ -198,11 +198,9 @@ void FixDPLR::get_valid_pairs(vector<pair<int, int> > &pairs) {
         char str[300];
         sprintf(
             str,
-            "The type of virtual atom associated to atom %d is not consistent "
-            "with the type you provided from \"type_associate\".\n       A "
-            "virtual atom of type %d is expected, but the type of atom %d is "
+            "Invalid pair: %d %d \n       A virtual atom of type %d is expected, but the type of atom %d is "
             "%d.\n       Please check your data file carefully.\n",
-            atom->tag[bondlist[ii][0]], dpl_type[idx_type] + 1,
+            atom->tag[bondlist[ii][0]], atom->tag[bondlist[ii][1]], dpl_type[idx_type] + 1,
             atom->tag[bondlist[ii][1]], type[bondlist[ii][1]]);
         error->all(FLERR, str);
       }
@@ -216,20 +214,17 @@ void FixDPLR::get_valid_pairs(vector<pair<int, int> > &pairs) {
         } else {
           char str[300];
           sprintf(str,
-                  "The type of virtual atom associated to atom %d is not "
-                  "consistent with the type you provided from "
-                  "\"type_associate\".\n       A virtual atom of type %d is "
+                  "Invalid pair: %d %d \n       A virtual atom of type %d is "
                   "expected, but the type of atom %d is %d.\n       Please "
                   "check your data file carefully.\n",
-                  atom->tag[bondlist[ii][1]], dpl_type[idx_type] + 1,
+                  atom->tag[bondlist[ii][0]], atom->tag[bondlist[ii][1]], dpl_type[idx_type] + 1,
                   atom->tag[bondlist[ii][0]], type[bondlist[ii][0]]);
           error->all(FLERR, str);
         }
       } else {
         char str[300];
         sprintf(str,
-                "Atoms %d and %d are not expected to have Wannier centroids.\n  "
-                "     Please check your data file carefully.\n",
+                "Invalid pair: %d %d \n       They are not expected to have Wannier centroid.\n       Please check your data file carefully.\n",
                 atom->tag[bondlist[ii][0]], atom->tag[bondlist[ii][1]]);
         error->all(FLERR, str);
       }
