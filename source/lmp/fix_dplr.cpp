@@ -115,7 +115,6 @@ FixDPLR::FixDPLR(LAMMPS *lmp, int narg, char **arg)
   for (int ii = 0; ii < sel_type.size(); ++ii) {
     dpl_type.push_back(type_asso[sel_type[ii]]);
   }
-  sort(dpl_type.begin(), dpl_type.end());
 
   pair_deepmd = (PairDeepMD *)force->pair_match("deepmd", 1);
   if (!pair_deepmd) {
@@ -176,11 +175,9 @@ void FixDPLR::get_valid_pairs(vector<pair<int, int> > &pairs) {
   int nall = nlocal + nghost;
   vector<int> dtype(nall);
   // get type
-  {
-    int *type = atom->type;
-    for (int ii = 0; ii < nall; ++ii) {
-      dtype[ii] = type[ii] - 1;
-    }
+  int *type = atom->type;
+  for (int ii = 0; ii < nall; ++ii) {
+    dtype[ii] = type[ii] - 1;
   }
 
   int **bondlist = neighbor->bondlist;
@@ -191,21 +188,38 @@ void FixDPLR::get_valid_pairs(vector<pair<int, int> > &pairs) {
     if (!binary_search(bond_type.begin(), bond_type.end(), bd_type)) {
       continue;
     }
-    if (binary_search(sel_type.begin(), sel_type.end(),
-                      dtype[bondlist[ii][0]]) &&
-        binary_search(dpl_type.begin(), dpl_type.end(),
-                      dtype[bondlist[ii][1]])) {
-      idx0 = bondlist[ii][0];
-      idx1 = bondlist[ii][1];
-    } else if (binary_search(sel_type.begin(), sel_type.end(),
-                             dtype[bondlist[ii][1]]) &&
-               binary_search(dpl_type.begin(), dpl_type.end(),
-                             dtype[bondlist[ii][0]])) {
-      idx0 = bondlist[ii][1];
-      idx1 = bondlist[ii][0];
-    } else {
-      error->all(FLERR,
-                 "find a bonded pair the types of which are not associated");
+    it = find(sel_type.begin(), sel_type.end(), dtype[bondlist[ii][0]]);
+    if (it != sel_type.end()) {
+      int idx_type = distance(sel_type.begin(), it);
+      if (dtype[bondlist[ii][1]] == dpl_type[idx_type]) {
+        idx0 = bondlist[ii][0];
+        idx1 = bondlist[ii][1];
+      }
+      else {
+        char str[300];
+        sprintf(str, "The type of virtual atom associated to atom %d is not consistent with the type you provided from \"type_associate\".\n       A virtual atom of type %d is expected, but the type of atom %d is %d.\n       Please check your data file carefully.\n", atom->tag[bondlist[ii][0]], dpl_type[idx_type]+1, atom->tag[bondlist[ii][1]], type[bondlist[ii][1]]);
+        error->all(FLERR, str);
+      }
+    }
+    else {
+      it = find(sel_type.begin(), sel_type.end(), dtype[bondlist[ii][1]]);
+      if (it != sel_type.end()) {
+        int idx_type = distance(sel_type.begin(), it);
+        if (dtype[bondlist[ii][0]] == dpl_type[idx_type]) {
+          idx0 = bondlist[ii][1];
+          idx1 = bondlist[ii][0];
+        }
+        else {
+          char str[300];
+          sprintf(str, "The type of virtual atom associated to atom %d is not consistent with the type you provided from \"type_associate\".\n       A virtual atom of type %d is expected, but the type of atom %d is %d.\n       Please check your data file carefully.\n", atom->tag[bondlist[ii][1]], dpl_type[idx_type]+1, atom->tag[bondlist[ii][0]], type[bondlist[ii][0]]);
+          error->all(FLERR, str);          
+        }
+      }
+      else {
+        char str[300];
+        sprintf(str, "Atoms %d and %d are not expected to have Wannier centroids\n       Please check your data file carefully.\n", atom->tag[bondlist[ii][0]], atom->tag[bondlist[ii][1]]);
+        error->all(FLERR, str);
+      }
     }
     if (!(idx0 < nlocal && idx1 < nlocal)) {
       error->all(FLERR,

@@ -58,6 +58,7 @@ class FixDPLR : public Fix {
   int ntypes;
   std::vector<int> sel_type;
   std::vector<int> dpl_type;
+  std::vector<int>::iterator it;
   std::vector<int> bond_type;
   std::map<int, int> type_asso;
   std::map<int, int> bk_type_asso;
