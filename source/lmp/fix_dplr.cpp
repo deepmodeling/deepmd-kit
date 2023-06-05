@@ -125,6 +125,8 @@ FixDPLR::FixDPLR(LAMMPS *lmp, int narg, char **arg)
   comm_reverse = 3;
 }
 
+/* ---------------------------------------------------------------------- */
+
 int FixDPLR::setmask() {
   int mask = 0;
 #if LAMMPS_VERSION_NUMBER < 20210210
@@ -134,8 +136,13 @@ int FixDPLR::setmask() {
   mask |= POST_INTEGRATE;
   mask |= PRE_FORCE;
   mask |= POST_FORCE;
+  mask |= MIN_PRE_EXCHANGE;
+  mask |= MIN_PRE_FORCE;
+  mask |= MIN_POST_FORCE;
   return mask;
 }
+
+/* ---------------------------------------------------------------------- */
 
 void FixDPLR::init() {
   // double **xx = atom->x;
@@ -152,7 +159,11 @@ void FixDPLR::init() {
   // }
 }
 
+/* ---------------------------------------------------------------------- */
+
 void FixDPLR::setup_pre_force(int vflag) { pre_force(vflag); }
+
+/* ---------------------------------------------------------------------- */
 
 void FixDPLR::setup(int vflag) {
   // if (strstr(update->integrate_style,"verlet"))
@@ -167,6 +178,12 @@ void FixDPLR::setup(int vflag) {
   }
 }
 
+/* ---------------------------------------------------------------------- */
+
+void FixDPLR::min_setup(int vflag) { setup(vflag); }
+
+/* ---------------------------------------------------------------------- */
+
 void FixDPLR::get_valid_pairs(vector<pair<int, int> > &pairs) {
   pairs.clear();
 
@@ -175,11 +192,9 @@ void FixDPLR::get_valid_pairs(vector<pair<int, int> > &pairs) {
   int nall = nlocal + nghost;
   vector<int> dtype(nall);
   // get type
-  {
-    int *type = atom->type;
-    for (int ii = 0; ii < nall; ++ii) {
-      dtype[ii] = type[ii] - 1;
-    }
+  int *type = atom->type;
+  for (int ii = 0; ii < nall; ++ii) {
+    dtype[ii] = type[ii] - 1;
   }
 
   int **bondlist = neighbor->bondlist;
@@ -190,21 +205,51 @@ void FixDPLR::get_valid_pairs(vector<pair<int, int> > &pairs) {
     if (!binary_search(bond_type.begin(), bond_type.end(), bd_type)) {
       continue;
     }
-    if (binary_search(sel_type.begin(), sel_type.end(),
-                      dtype[bondlist[ii][0]]) &&
-        binary_search(dpl_type.begin(), dpl_type.end(),
-                      dtype[bondlist[ii][1]])) {
-      idx0 = bondlist[ii][0];
-      idx1 = bondlist[ii][1];
-    } else if (binary_search(sel_type.begin(), sel_type.end(),
-                             dtype[bondlist[ii][1]]) &&
-               binary_search(dpl_type.begin(), dpl_type.end(),
-                             dtype[bondlist[ii][0]])) {
-      idx0 = bondlist[ii][1];
-      idx1 = bondlist[ii][0];
+    std::vector<int>::iterator it =
+        find(sel_type.begin(), sel_type.end(), dtype[bondlist[ii][0]]);
+    if (it != sel_type.end()) {
+      int idx_type = distance(sel_type.begin(), it);
+      if (dtype[bondlist[ii][1]] == dpl_type[idx_type]) {
+        idx0 = bondlist[ii][0];
+        idx1 = bondlist[ii][1];
+      } else {
+        char str[300];
+        sprintf(str,
+                "Invalid pair: %d %d \n       A virtual atom of type %d is "
+                "expected, but the type of atom %d is "
+                "%d.\n       Please check your data file carefully.\n",
+                atom->tag[bondlist[ii][0]], atom->tag[bondlist[ii][1]],
+                dpl_type[idx_type] + 1, atom->tag[bondlist[ii][1]],
+                type[bondlist[ii][1]]);
+        error->all(FLERR, str);
+      }
     } else {
-      error->all(FLERR,
-                 "find a bonded pair the types of which are not associated");
+      it = find(sel_type.begin(), sel_type.end(), dtype[bondlist[ii][1]]);
+      if (it != sel_type.end()) {
+        int idx_type = distance(sel_type.begin(), it);
+        if (dtype[bondlist[ii][0]] == dpl_type[idx_type]) {
+          idx0 = bondlist[ii][1];
+          idx1 = bondlist[ii][0];
+        } else {
+          char str[300];
+          sprintf(str,
+                  "Invalid pair: %d %d \n       A virtual atom of type %d is "
+                  "expected, but the type of atom %d is %d.\n       Please "
+                  "check your data file carefully.\n",
+                  atom->tag[bondlist[ii][0]], atom->tag[bondlist[ii][1]],
+                  dpl_type[idx_type] + 1, atom->tag[bondlist[ii][0]],
+                  type[bondlist[ii][0]]);
+          error->all(FLERR, str);
+        }
+      } else {
+        char str[300];
+        sprintf(str,
+                "Invalid pair: %d %d \n       They are not expected to have "
+                "Wannier centroid.\n       Please check your data file "
+                "carefully.\n",
+                atom->tag[bondlist[ii][0]], atom->tag[bondlist[ii][1]]);
+        error->all(FLERR, str);
+      }
     }
     if (!(idx0 < nlocal && idx1 < nlocal)) {
       error->all(FLERR,
@@ -214,6 +259,8 @@ void FixDPLR::get_valid_pairs(vector<pair<int, int> > &pairs) {
     pairs.push_back(pair<int, int>(idx0, idx1));
   }
 }
+
+/* ---------------------------------------------------------------------- */
 
 void FixDPLR::post_integrate() {
   double **x = atom->x;
@@ -236,6 +283,8 @@ void FixDPLR::post_integrate() {
     }
   }
 }
+
+/* ---------------------------------------------------------------------- */
 
 void FixDPLR::pre_force(int vflag) {
   double **x = atom->x;
@@ -306,11 +355,6 @@ void FixDPLR::pre_force(int vflag) {
   //   }
   // }
 
-  // selected type
-  vector<int> dpl_type;
-  for (int ii = 0; ii < sel_type.size(); ++ii) {
-    dpl_type.push_back(type_asso[sel_type[ii]]);
-  }
   vector<int> sel_fwd, sel_bwd;
   int sel_nghost;
   deepmd_compat::select_by_type(sel_fwd, sel_bwd, sel_nghost, dcoord, dtype,
@@ -355,6 +399,8 @@ void FixDPLR::pre_force(int vflag) {
   //   cout << endl;
   // }
 }
+
+/* ---------------------------------------------------------------------- */
 
 void FixDPLR::post_force(int vflag) {
   if (vflag) {
@@ -514,6 +560,20 @@ void FixDPLR::post_force(int vflag) {
     v_tally(0, vv);
   }
 }
+
+/* ---------------------------------------------------------------------- */
+
+void FixDPLR::min_pre_exchange() { post_integrate(); }
+
+/* ---------------------------------------------------------------------- */
+
+void FixDPLR::min_pre_force(int vflag) { pre_force(vflag); }
+
+/* ---------------------------------------------------------------------- */
+
+void FixDPLR::min_post_force(int vflag) { post_force(vflag); }
+
+/* ---------------------------------------------------------------------- */
 
 int FixDPLR::pack_reverse_comm(int n, int first, double *buf) {
   int m = 0;
