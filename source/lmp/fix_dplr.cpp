@@ -228,7 +228,7 @@ void FixDPLR::get_valid_pairs(vector<pair<int, int> > &pairs) {
       } else {
         char str[300];
         sprintf(str,
-                "Atoms %d and %d are not expected to have Wannier centroids\n  "
+                "Atoms %d and %d are not expected to have Wannier centroids.\n  "
                 "     Please check your data file carefully.\n",
                 atom->tag[bondlist[ii][0]], atom->tag[bondlist[ii][1]]);
         error->all(FLERR, str);
