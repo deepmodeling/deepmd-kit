@@ -59,25 +59,19 @@
       "batch_size": 4,
       "_comment": "that's all"
     },
-    "training": {
-        "training_data": {
-            "systems": "source/tests/data_dp_mask/",
-            "batch_size": 4,
-            "_comment": "that's all"
-        },
-        "validation_data": {
-            "systems": [ 
-                "source/tests/data_dp_mask/"
-        ],
-            "batch_size": 4,
-            "numb_btch": 1,
-            "_comment": "that's all"
-        },
-        "numb_steps": 1,
-        "seed": 10,
-        "tensorboard": true,
-        "tensorboard_log_dir": "log4tensorboard",
-        "tensorboard_freq": 100,
-        "_comment": "that's all"
-    }
+    "validation_data": {
+      "systems": [
+        "source/tests/data_dp_mask/"
+      ],
+      "batch_size": 4,
+      "numb_btch": 1,
+      "_comment": "that's all"
+    },
+    "numb_steps": 1,
+    "seed": 10,
+    "tensorboard": true,
+    "tensorboard_log_dir": "log4tensorboard",
+    "tensorboard_freq": 100,
+    "_comment": "that's all"
+  }
 }
