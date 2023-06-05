@@ -196,12 +196,13 @@ void FixDPLR::get_valid_pairs(vector<pair<int, int> > &pairs) {
         idx1 = bondlist[ii][1];
       } else {
         char str[300];
-        sprintf(
-            str,
-            "Invalid pair: %d %d \n       A virtual atom of type %d is expected, but the type of atom %d is "
-            "%d.\n       Please check your data file carefully.\n",
-            atom->tag[bondlist[ii][0]], atom->tag[bondlist[ii][1]], dpl_type[idx_type] + 1,
-            atom->tag[bondlist[ii][1]], type[bondlist[ii][1]]);
+        sprintf(str,
+                "Invalid pair: %d %d \n       A virtual atom of type %d is "
+                "expected, but the type of atom %d is "
+                "%d.\n       Please check your data file carefully.\n",
+                atom->tag[bondlist[ii][0]], atom->tag[bondlist[ii][1]],
+                dpl_type[idx_type] + 1, atom->tag[bondlist[ii][1]],
+                type[bondlist[ii][1]]);
         error->all(FLERR, str);
       }
     } else {
@@ -217,14 +218,17 @@ void FixDPLR::get_valid_pairs(vector<pair<int, int> > &pairs) {
                   "Invalid pair: %d %d \n       A virtual atom of type %d is "
                   "expected, but the type of atom %d is %d.\n       Please "
                   "check your data file carefully.\n",
-                  atom->tag[bondlist[ii][0]], atom->tag[bondlist[ii][1]], dpl_type[idx_type] + 1,
-                  atom->tag[bondlist[ii][0]], type[bondlist[ii][0]]);
+                  atom->tag[bondlist[ii][0]], atom->tag[bondlist[ii][1]],
+                  dpl_type[idx_type] + 1, atom->tag[bondlist[ii][0]],
+                  type[bondlist[ii][0]]);
           error->all(FLERR, str);
         }
       } else {
         char str[300];
         sprintf(str,
-                "Invalid pair: %d %d \n       They are not expected to have Wannier centroid.\n       Please check your data file carefully.\n",
+                "Invalid pair: %d %d \n       They are not expected to have "
+                "Wannier centroid.\n       Please check your data file "
+                "carefully.\n",
                 atom->tag[bondlist[ii][0]], atom->tag[bondlist[ii][1]]);
         error->all(FLERR, str);
       }
