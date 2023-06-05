@@ -522,3 +522,8 @@ class Descriptor(PluginVariant):
         # same as inputs_i, (nsamples * natoms, ndescrpt)
         mask = tf.reshape(mask, [-1, ndescrpt])
         return mask
+
+    @property
+    def explicit_ntypes(self) -> bool:
+        """Explicit ntypes with type embedding."""
+        return False

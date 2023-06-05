@@ -54,7 +54,12 @@ class DescrptLocFrame(Descriptor):
     """
 
     def __init__(
-        self, rcut: float, sel_a: List[int], sel_r: List[int], axis_rule: List[int]
+        self,
+        rcut: float,
+        sel_a: List[int],
+        sel_r: List[int],
+        axis_rule: List[int],
+        **kwargs,
     ) -> None:
         """Constructor."""
         self.sel_a = sel_a
