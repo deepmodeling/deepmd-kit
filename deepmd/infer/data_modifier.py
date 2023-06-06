@@ -6,7 +6,6 @@ from typing import (
 
 import numpy as np
 
-import deepmd.op
 from deepmd.common import (
     make_default_mesh,
     select_idx_map,
