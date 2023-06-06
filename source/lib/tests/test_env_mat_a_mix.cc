@@ -553,7 +553,7 @@ TEST_F(TestEnvMatAMix, prod_cpu) {
       EXPECT_EQ(nmask[ii * nnei + jj], expected_nmask[ii * nnei + jj]);
     }
   }
-  free(nmask);
+  del[] nmask;
 }
 
 TEST_F(TestEnvMatAMix, prod_cpu_equal_cpu) {
