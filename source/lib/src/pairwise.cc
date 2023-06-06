@@ -75,9 +75,9 @@ void deepmd::dprc_pairwise_map_cpu(
     int fragment_ghost_size = 0;
     for (int jj = 0; jj < fragments[ii].size(); ++jj) {
       if (fragments[ii][jj] >= nloc) {
-        fragment_ghost_size += 1;
+        fragment_ghost_size++;
       } else {
-        fragment_real_size += 1;
+        fragment_real_size++;
       }
     }
     if (fragment_real_size > max_fragment_real_size) {
@@ -97,32 +97,30 @@ void deepmd::dprc_pairwise_map_cpu(
   int nqm_real;
   for (int ii = 0; ii < nfragments - 1; ++ii) {
     // real
-    int kk = 0;
-    for (int jj = 0; jj < nqm; ++jj) {
+    for (int jj = 0, kk = 0; jj < nqm; ++jj) {
       if (fragments[0][jj] < nloc) {
         forward_qmmm_map[ii * map_size + kk] = fragments[0][jj];
         kk++;
       }
+      if (jj == nqm - 1) {
+        nqm_real = kk;
+      }
     }
-    nqm_real = kk;
-    kk = 0;
-    for (int jj = 0; jj < fragments[ii + 1].size(); ++jj) {
+    for (int jj = 0, kk = 0; jj < fragments[ii + 1].size(); ++jj) {
       if (fragments[ii + 1][jj] < nloc) {
         forward_qmmm_map[ii * map_size + nqm_real + kk] = fragments[ii + 1][jj];
         kk++;
       }
     }
     // ghost
-    kk = 0;
-    for (int jj = 0; jj < nqm; ++jj) {
+    for (int jj = 0, kk = 0; jj < nqm; ++jj) {
       if (fragments[0][jj] >= nloc) {
         forward_qmmm_map[ii * map_size + nqm_real + max_fragment_real_size +
                          kk] = fragments[0][jj];
         kk++;
       }
     }
-    kk = 0;
-    for (int jj = 0; jj < fragments[ii + 1].size(); ++jj) {
+    for (int jj = 0, kk = 0; jj < fragments[ii + 1].size(); ++jj) {
       if (fragments[ii + 1][jj] >= nloc) {
         forward_qmmm_map[ii * map_size + nqm + max_fragment_real_size + kk] =
             fragments[ii + 1][jj];

@@ -77,11 +77,14 @@ class PairwiseIdxOp : public OpKernel {
       nghost_qmmm.push_back(nghost_qmmm_ii);
       nframes_qmmm.push_back(backward_qmmm_map.size() / nall);
     }
-    int max_nloc_qm = *std::max_element(nloc_qm.begin(), nloc_qm.end());
-    int max_nloc_qmmm = *std::max_element(nloc_qmmm.begin(), nloc_qmmm.end());
-    int max_nghost_qm = *std::max_element(nghost_qm.begin(), nghost_qm.end());
-    int max_nghost_qmmm =
-        *std::max_element(nghost_qmmm.begin(), nghost_qmmm.end());
+    int max_nloc_qm = 0, max_nloc_qmmm = 0, max_nghost_qm = 0,
+        max_nghost_qmmm = 0;
+    for (int ii = 0; ii < nframes; ++ii) {
+      max_nloc_qm = std::max(max_nloc_qm, nloc_qm[ii]);
+      max_nloc_qmmm = std::max(max_nloc_qmmm, nloc_qmmm[ii]);
+      max_nghost_qm = std::max(max_nghost_qm, nghost_qm[ii]);
+      max_nghost_qmmm = std::max(max_nghost_qmmm, nghost_qmmm[ii]);
+    }
     int nframes_qmmm_tot =
         std::accumulate(nframes_qmmm.begin(), nframes_qmmm.end(), 0);
     // Create an output tensor
@@ -97,6 +100,10 @@ class PairwiseIdxOp : public OpKernel {
     TensorShape backward_qmmm_map_shape;
     backward_qmmm_map_shape.AddDim(nframes_qmmm_tot);
     backward_qmmm_map_shape.AddDim(nall);
+    TensorShape natoms_qm_shape;
+    natoms_qm_shape.AddDim(natoms_tensor.shape().dim_size(0));
+    TensorShape natoms_qmmm_shape;
+    natoms_qmmm_shape.AddDim(natoms_tensor.shape().dim_size(0));
     TensorShape qmmm_frame_idx_shape;
     qmmm_frame_idx_shape.AddDim(nframes_qmmm_tot);
 
@@ -121,11 +128,10 @@ class PairwiseIdxOp : public OpKernel {
     OP_REQUIRES_OK(context,
                    context->allocate_output(tmp_idx++, backward_qmmm_map_shape,
                                             &backward_qmmm_map_tensor));
+    OP_REQUIRES_OK(context, context->allocate_output(tmp_idx++, natoms_qm_shape,
+                                                     &natoms_qm_tensor));
     OP_REQUIRES_OK(context,
-                   context->allocate_output(tmp_idx++, natoms_tensor.shape(),
-                                            &natoms_qm_tensor));
-    OP_REQUIRES_OK(context,
-                   context->allocate_output(tmp_idx++, natoms_tensor.shape(),
+                   context->allocate_output(tmp_idx++, natoms_qmmm_shape,
                                             &natoms_qmmm_tensor));
     OP_REQUIRES_OK(context,
                    context->allocate_output(tmp_idx++, qmmm_frame_idx_shape,
@@ -138,48 +144,40 @@ class PairwiseIdxOp : public OpKernel {
     auto m_natoms_qm = natoms_qm_tensor->vec<int>();
     auto m_natoms_qmmm = natoms_qmmm_tensor->vec<int>();
     auto m_qmmm_frame_idx = qmmm_frame_idx_tensor->vec<int>();
-    for (int ii = 0; ii < nframes; ++ii) {
-      for (int jj = 0; jj < nloc_qm[ii]; ++jj) {
-        m_forward_qm_map(ii, jj) = forward_qm_maps[ii][jj];
-      }
-      for (int jj = nloc_qm[ii]; jj < max_nloc_qm; ++jj) {
-        m_forward_qm_map(ii, jj) = -1;
-      }
-      for (int jj = max_nloc_qm; jj < max_nloc_qm + nghost_qm[ii]; ++jj) {
-        m_forward_qm_map(ii, jj) =
-            forward_qm_maps[ii][jj - (max_nloc_qm - nloc_qm[ii])];
-      }
-      for (int jj = max_nloc_qm + nghost_qm[ii]; jj < nall; ++jj) {
-        m_forward_qm_map(ii, jj) = -1;
+    for (int ii = 0, nn = 0; ii < nframes; ++ii) {
+      for (int jj = 0; jj < max_nloc_qm + max_nghost_qm; ++jj) {
+        if (jj < nloc_qm[ii]) {
+          m_forward_qm_map(ii, jj) = forward_qm_maps[ii][jj];
+        } else if (jj < max_nloc_qm) {
+          m_forward_qm_map(ii, jj) = -1;
+        } else if (jj < max_nloc_qm + nghost_qm[ii]) {
+          m_forward_qm_map(ii, jj) =
+              forward_qm_maps[ii][jj - (max_nloc_qm - nloc_qm[ii])];
+        } else {
+          m_forward_qm_map(ii, jj) = -1;
+        }
       }
       for (int jj = 0; jj < nall; ++jj) {
         m_backward_qm_map(ii, jj) = backward_qm_maps[ii][jj];
       }
-    }
-    int nn = 0;
-    for (int ii = 0; ii < nframes; ++ii) {
       for (int kk = 0; kk < nframes_qmmm[ii]; ++kk) {
-        for (int jj = 0; jj < nloc_qmmm[ii]; ++jj) {
-          m_forward_qmmm_map(nn, jj) =
-              forward_qmmm_maps[ii]
-                               [kk * (nloc_qmmm[ii] + nghost_qmmm[ii]) + jj];
+        for (int jj = 0; jj < max_nloc_qmmm + max_nghost_qmmm; ++jj) {
+          if (jj < nloc_qmmm[ii]) {
+            m_forward_qmmm_map(nn, jj) =
+                forward_qmmm_maps[ii]
+                                 [kk * (nloc_qmmm[ii] + nghost_qmmm[ii]) + jj];
+          } else if (jj < max_nloc_qmmm) {
+            m_forward_qmmm_map(nn, jj) = -1;
+          } else if (jj < max_nloc_qmmm + nghost_qmmm[ii]) {
+            m_forward_qmmm_map(nn, jj) =
+                forward_qmmm_maps[ii][kk * (nloc_qmmm[ii] + nghost_qmmm[ii]) +
+                                      jj - (max_nloc_qmmm - nloc_qmmm[ii])];
+          } else {
+            m_forward_qmmm_map(nn, jj) = -1;
+          }
         }
-        for (int jj = nloc_qmmm[ii]; jj < max_nloc_qmmm; ++jj) {
-          m_forward_qmmm_map(nn, jj) = -1;
-        }
-        for (int jj = max_nloc_qmmm; jj < max_nloc_qmmm + nghost_qmmm[ii];
-             ++jj) {
-          m_forward_qmmm_map(nn, jj) =
-              forward_qmmm_maps[ii][kk * (nloc_qmmm[ii] + nghost_qmmm[ii]) +
-                                    jj - (max_nloc_qmmm - nloc_qmmm[ii])];
-        }
-        for (int jj = max_nloc_qmmm + nghost_qmmm[ii];
-             jj < max_nloc_qmmm + max_nghost_qmmm; ++jj) {
-          m_forward_qmmm_map(nn, jj) = -1;
-        }
-
-        // max_nloc_qmmm + max_nghost_qmmm
         for (int jj = 0; jj < nall; ++jj) {
+          // max_nloc_qmmm + max_nghost_qmmm
           m_backward_qmmm_map(nn, jj) = backward_qmmm_maps[ii][kk * nall + jj];
         }
         m_qmmm_frame_idx(nn) = ii;
