@@ -1,6 +1,11 @@
 """Test pairwise DPRc features."""
+import unittest
+
 import dpdata
 import numpy as np
+from pkg_resources import (
+    parse_version,
+)
 
 from deepmd.common import (
     j_loader,
@@ -79,6 +84,10 @@ class TestPairwiseOP(tf.test.TestCase):
         np.testing.assert_array_equal(qmmm_frame_idx, np.array([0, 0, 0], dtype=int))
 
 
+@unittest.skipIf(
+    parse_version(tf.__version__) < parse_version("1.15"),
+    f"The current tf version {tf.__version__} is too low to run the new testing model.",
+)
 class TestPairwiseModel(tf.test.TestCase):
     def test_gather_placeholder(self):
         coord = np.arange(12 * 3, dtype=np.float64).reshape(1, 12, 3)
