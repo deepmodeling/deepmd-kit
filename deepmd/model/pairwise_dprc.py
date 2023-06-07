@@ -88,7 +88,7 @@ class PairwiseDPRc(Model):
         coord_: tf.Tensor,
         atype_: tf.Tensor,
         natoms: tf.Tensor,
-        box: tf.Tensor,
+        box_: tf.Tensor,
         mesh: tf.Tensor,
         input_dict: dict,
         frz_model=None,
@@ -100,7 +100,10 @@ class PairwiseDPRc(Model):
             t_dfparam = tf.constant(0, name="dfparam", dtype=tf.int32)
             t_daparam = tf.constant(1, name="daparam", dtype=tf.int32)
         # convert X-frame to X-Y-frame coordinates
-        idxs = input_dict["aparam"].astype(tf.int32)
+        box = tf.reshape(box_, [-1, 9])
+        nframes = tf.shape(box)[0]
+        idxs = tf.cast(input_dict["aparam"], tf.int32)
+        idxs = tf.reshape(idxs, (nframes, natoms[1]))
 
         (
             forward_qm_map,
@@ -112,12 +115,19 @@ class PairwiseDPRc(Model):
             qmmm_frame_idx,
         ) = op_module.dprc_pairwise_idx(idxs, natoms)
 
-        coord_qm = gather_placeholder(coord_, forward_qm_map)
-        atype_qm = gather_placeholder(atype_, forward_qm_map, placeholder=-1)
-        coord_qmmm = gather_placeholder(coord_, forward_qmmm_map)
-        atype_qmmm = gather_placeholder(atype_, forward_qmmm_map, placeholder=-1)
-        box_qm = tf.gather(box, forward_qm_map)
-        box_qmmm = tf.gather(box, forward_qmmm_map)
+        coord = tf.reshape(coord_, [nframes, natoms[1], 3])
+        atype = tf.reshape(atype_, [nframes, natoms[1], 1])
+
+        coord_qm = gather_placeholder(coord, forward_qm_map)
+        atype_qm = gather_placeholder(atype, forward_qm_map, placeholder=-1)
+        coord_qmmm = gather_placeholder(
+            tf.gather(coord, qmmm_frame_idx), forward_qmmm_map
+        )
+        atype_qmmm = gather_placeholder(
+            tf.gather(atype, qmmm_frame_idx), forward_qmmm_map, placeholder=-1
+        )
+        box_qm = box
+        box_qmmm = tf.gather(box, qmmm_frame_idx)
 
         # TODO: after #2481 is merged, change the mesh to mixed_type specific
 
@@ -221,9 +231,11 @@ def gather_placeholder(
     params: tf.Tensor, indices: tf.Tensor, placeholder: float = 0.0, **kwargs
 ) -> tf.Tensor:
     """Call tf.gather but allow indices to contain placeholders (-1)."""
-    # (x, 2, 3) -> (1, 2, 3)
-    placeholder_shape = tf.concat([[1], tf.shape(params)[1:]], axis=0)
-    params = tf.concat(
-        [tf.cast(tf.fill(placeholder_shape, placeholder), params.dtype), params], axis=0
+    # (nframes, x, 2, 3) -> (nframes, 1, 2, 3)
+    placeholder_shape = tf.concat(
+        [[tf.shape(params)[0], 1], tf.shape(params)[2:]], axis=0
     )
-    return tf.gather(params, indices + 1, **kwargs)
+    params = tf.concat(
+        [tf.cast(tf.fill(placeholder_shape, placeholder), params.dtype), params], axis=1
+    )
+    return tf.gather(params, indices + 1, batch_dims=1, **kwargs)
