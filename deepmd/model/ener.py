@@ -197,7 +197,7 @@ class EnerModel(StandardModel):
         input_dict["nframes"] = tf.shape(coord)[0]
 
         # type embedding if any
-        if self.typeebd is not None:
+        if self.typeebd is not None and "type_embedding" not in input_dict:
             type_embedding = self.typeebd.build(
                 self.ntypes,
                 reuse=reuse,

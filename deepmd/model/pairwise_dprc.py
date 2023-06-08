@@ -97,8 +97,8 @@ class PairwiseDPRc(Model):
         suffix: str = "",
         reuse: Optional[bool] = None,
     ):
-        if input_dict is None:
-            input_dict = {}
+        input_dict_qm = {}
+        input_dict_qmmm = {}
         with tf.variable_scope("model_attr" + suffix, reuse=reuse):
             t_tmap = tf.constant(" ".join(self.type_map), name="tmap", dtype=tf.string)
             t_mt = tf.constant(self.model_type, name="model_type", dtype=tf.string)
@@ -138,6 +138,14 @@ class PairwiseDPRc(Model):
         box_qm = box
         box_qmmm = tf.gather(box, qmmm_frame_idx)
 
+        type_embedding = self.typeebd.build(
+            self.ntypes,
+            reuse=reuse,
+            suffix=suffix,
+        )
+        input_dict_qm["type_embedding"] = type_embedding
+        input_dict_qmmm["type_embedding"] = type_embedding
+
         # TODO: after #2481 is merged, change the mesh to mixed_type specific
 
         qm_dict = self.qm_model.build(
@@ -146,7 +154,7 @@ class PairwiseDPRc(Model):
             natoms_qm,
             box_qm,
             mesh,
-            input_dict,
+            input_dict_qm,
             frz_model=frz_model,
             ckpt_meta=ckpt_meta,
             suffix="_qm" + suffix,
@@ -158,7 +166,7 @@ class PairwiseDPRc(Model):
             natoms_qmmm,
             box_qmmm,
             mesh,
-            input_dict,
+            input_dict_qmmm,
             frz_model=frz_model,
             ckpt_meta=ckpt_meta,
             suffix="_qmmm" + suffix,
