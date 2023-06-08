@@ -83,6 +83,7 @@ class PairwiseDPRc(Model):
             **qmmm_model, type_map=type_map, type_embedding=self.typeebd
         )
         add_data_requirement("aparam", 1, atomic=True, must=True, high_prec=False)
+        self.ntypes = len(type_map)
 
     def build(
         self,
