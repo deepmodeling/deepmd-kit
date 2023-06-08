@@ -8,6 +8,7 @@ from deepmd.common import (
     add_data_requirement,
 )
 from deepmd.env import (
+    MODEL_VERSION,
     op_module,
     tf,
 )
@@ -32,7 +33,7 @@ from .ener import (
 class PairwiseDPRc(Model):
     """Pairwise Deep Potential - Range Correction."""
 
-    model_type = "pairwise_dprc"
+    model_type = "ener"
 
     def __init__(
         self,
@@ -96,6 +97,13 @@ class PairwiseDPRc(Model):
         suffix: str = "",
         reuse: Optional[bool] = None,
     ):
+        if input_dict is None:
+            input_dict = {}
+        with tf.variable_scope("model_attr" + suffix, reuse=reuse):
+            t_tmap = tf.constant(" ".join(self.type_map), name="tmap", dtype=tf.string)
+            t_mt = tf.constant(self.model_type, name="model_type", dtype=tf.string)
+            t_ver = tf.constant(MODEL_VERSION, name="model_version", dtype=tf.string)
+
         with tf.variable_scope("fitting_attr" + suffix, reuse=reuse):
             t_dfparam = tf.constant(0, name="dfparam", dtype=tf.int32)
             t_daparam = tf.constant(1, name="daparam", dtype=tf.int32)
@@ -117,6 +125,7 @@ class PairwiseDPRc(Model):
 
         coord = tf.reshape(coord_, [nframes, natoms[1], 3])
         atype = tf.reshape(atype_, [nframes, natoms[1], 1])
+        nframes_qmmm = tf.shape(qmmm_frame_idx)[0]
 
         coord_qm = gather_placeholder(coord, forward_qm_map)
         atype_qm = gather_placeholder(atype, forward_qm_map, placeholder=-1)
@@ -159,19 +168,28 @@ class PairwiseDPRc(Model):
         energy_qm = qm_dict["energy"]
         energy_qmmm = tf.math.segment_sum(qmmm_dict["energy"], qmmm_frame_idx)
         energy = energy_qm + energy_qmmm
+        energy = tf.identity(energy, name="o_energy" + suffix)
 
         force_qm = gather_placeholder(
-            qm_dict["force"], backward_qm_map, placeholder=0.0
+            tf.reshape(qm_dict["force"], (nframes, natoms_qm[1], 3)),
+            backward_qm_map,
+            placeholder=0.0,
         )
         force_qmmm = tf.math.segment_sum(
-            gather_placeholder(qmmm_dict["force"], backward_qmmm_map, placeholder=0.0),
+            gather_placeholder(
+                tf.reshape(qmmm_dict["force"], (nframes_qmmm, natoms_qmmm[1], 3)),
+                backward_qmmm_map,
+                placeholder=0.0,
+            ),
             qmmm_frame_idx,
         )
         force = force_qm + force_qmmm
+        force = tf.reshape(force, (nframes, 3 * natoms[1]), name="o_force" + suffix)
 
         virial_qm = qm_dict["virial"]
         virial_qmmm = tf.math.segment_sum(qmmm_dict["virial"], qmmm_frame_idx)
         virial = virial_qm + virial_qmmm
+        virial = tf.identity(virial, name="o_virial" + suffix)
 
         atom_ener_qm = gather_placeholder(
             qm_dict["atom_ener"], backward_qm_map, placeholder=0.0
@@ -183,17 +201,25 @@ class PairwiseDPRc(Model):
             qmmm_frame_idx,
         )
         atom_ener = atom_ener_qm + atom_ener_qmmm
+        atom_ener = tf.identity(atom_ener, name="o_atom_ener" + suffix)
 
         atom_virial_qm = gather_placeholder(
-            qm_dict["atom_virial"], backward_qm_map, placeholder=0.0
+            tf.reshape(qm_dict["atom_virial"], (nframes, natoms_qm[1], 9)),
+            backward_qm_map,
+            placeholder=0.0,
         )
         atom_virial_qmmm = tf.math.segment_sum(
             gather_placeholder(
-                qmmm_dict["atom_virial"], backward_qmmm_map, placeholder=0.0
+                tf.reshape(qmmm_dict["atom_virial"], (nframes, natoms_qm[1], 9)),
+                backward_qmmm_map,
+                placeholder=0.0,
             ),
             qmmm_frame_idx,
         )
         atom_virial = atom_virial_qm + atom_virial_qmmm
+        atom_virial = tf.reshape(
+            atom_virial, (nframes, 9 * natoms[1]), name="o_atom_virial" + suffix
+        )
 
         model_dict = {}
         model_dict["energy"] = energy

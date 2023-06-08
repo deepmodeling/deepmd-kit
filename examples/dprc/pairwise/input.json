@@ -4,7 +4,7 @@
     "type": "pairwise_dprc",
     "type_map": [
       "C",
-      "N",
+      "P",
       "O",
       "H",
       "OW",
@@ -12,15 +12,17 @@
     ],
     "type_embedding": {
       "neuron": [
-        2
-      ]
+        8
+      ],
+      "precision": "float32"
     },
     "qm_model": {
       "descriptor": {
         "type": "se_atten",
-        "sel": 100,
+        "sel": 24,
         "rcut_smth": 5.80,
         "rcut": 6.00,
+        "attn_layer": 0,
         "neuron": [
           25,
           50,
@@ -28,7 +30,7 @@
         ],
         "resnet_dt": false,
         "axis_neuron": 16,
-        "attn_layer": 0,
+        "precision": "float32",
         "seed": 1
       },
       "fitting_net": {
@@ -39,15 +41,17 @@
           240
         ],
         "resnet_dt": true,
+        "precision": "float32",
         "seed": 1
       }
     },
     "qmmm_model": {
       "descriptor": {
         "type": "se_atten",
-        "sel": 100,
+        "sel": 27,
         "rcut_smth": 5.80,
         "rcut": 6.00,
+        "attn_layer": 0,
         "neuron": [
           25,
           50,
@@ -56,7 +60,6 @@
         "resnet_dt": false,
         "axis_neuron": 16,
         "set_davg_zero": true,
-        "attn_layer": 0,
         "exclude_types": [
           [
             0,
@@ -111,6 +114,7 @@
             5
           ]
         ],
+        "precision": "float32",
         "seed": 1
       },
       "fitting_net": {
@@ -122,6 +126,7 @@
         ],
         "resnet_dt": true,
         "seed": 1,
+        "precision": "float32",
         "atom_ener": [
           0.0,
           0.0,
@@ -133,38 +138,40 @@
       }
     }
   },
+  "learning_rate": {
+    "type": "exp",
+    "decay_steps": 5000,
+    "start_lr": 0.001,
+    "stop_lr": 3.51e-8,
+    "_comment": "that's all"
+  },
 
-  "systems": [
-    "system"
-  ],
-  "set_prefix": "set",
-  "stop_batch": 1000000,
-  "batch_size": 1,
-  "start_lr": 0.005,
-  "decay_steps": 5000,
-  "decay_rate": 0.95,
+  "loss": {
+    "type": "ener",
+    "start_pref_e": 0.02,
+    "limit_pref_e": 1,
+    "start_pref_f": 1000,
+    "limit_pref_f": 1,
+    "start_pref_v": 0,
+    "limit_pref_v": 0,
+    "_comment": " that's all"
+  },
 
-  "start_pref_e": 0.02,
-  "limit_pref_e": 1,
-  "start_pref_f": 1000,
-  "limit_pref_f": 1,
-  "start_pref_v": 0,
-  "limit_pref_v": 0,
-
-  "seed": 1,
-
-  "_comment": " display and restart",
-  "_comment": " frequencies counted in batch",
-  "disp_file": "lcurve.out",
-  "disp_freq": 100,
-  "numb_test": 1,
-  "save_freq": 1000,
-  "save_ckpt": "model.ckpt",
-  "load_ckpt": "model.ckpt",
-  "disp_training": true,
-  "time_training": true,
-  "profiling": false,
-  "profiling_file": "timeline.json",
+  "training": {
+    "training_data": {
+      "systems": [
+        "../data"
+      ],
+      "batch_size": "auto",
+      "_comment": "that's all"
+    },
+    "numb_steps": 100,
+    "seed": 10,
+    "disp_file": "lcurve.out",
+    "disp_freq": 100,
+    "save_freq": 1000,
+    "_comment": "that's all"
+  },
 
   "_comment": "that's all"
 }
