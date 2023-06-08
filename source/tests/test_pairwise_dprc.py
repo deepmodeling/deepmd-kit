@@ -3,6 +3,9 @@ import unittest
 
 import dpdata
 import numpy as np
+from common import (
+    tests_path,
+)
 from pkg_resources import (
     parse_version,
 )
@@ -164,7 +167,7 @@ class TestPairwiseModel(tf.test.TestCase):
         )
 
     def test_model_ener(self):
-        jfile = "pairwise_dprc.json"
+        jfile = tests_path / "pairwise_dprc.json"
         jdata = j_loader(jfile)
         model = Model(**jdata["model"])
 
