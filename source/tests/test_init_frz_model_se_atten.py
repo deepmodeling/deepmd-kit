@@ -43,10 +43,10 @@ def _file_delete(file):
         os.remove(file)
 
 
-def _init_models():
+def _init_models(model_setup, i):
     data_file = str(tests_path / os.path.join("init_frz_model", "data"))
-    frozen_model = str(tests_path / "init_frz_se_atten.pb")
-    ckpt = str(tests_path / "init_frz_se_atten.ckpt")
+    frozen_model = str(tests_path / f"init_frz_se_atten{i}.pb")
+    ckpt = str(tests_path / f"init_frz_se_atten{i}.ckpt")
     run_opt_ckpt = RunOptions(init_model=ckpt, log_level=20)
     run_opt_frz = RunOptions(init_frz_model=frozen_model, log_level=20)
     INPUT = str(tests_path / "input.json")
@@ -56,6 +56,7 @@ def _init_models():
     jdata["training"]["save_ckpt"] = ckpt
     jdata["model"]["descriptor"]["type"] = "se_atten"
     jdata["model"]["descriptor"]["sel"] = 120
+    model_setup(jdata)
     with open(INPUT, "w") as fp:
         json.dump(jdata, fp, indent=4)
     ret = run_dp("dp train " + INPUT)
@@ -63,7 +64,7 @@ def _init_models():
     ret = run_dp("dp freeze -c " + str(tests_path) + " -o " + frozen_model)
     np.testing.assert_equal(ret, 0, "DP freeze failed!")
 
-    jdata = update_deepmd_input(jdata, warning=True, dump="input_v2_compat.json")
+    jdata = update_deepmd_input(jdata, warning=True, dump=f"input_v2_compat{i}.json")
     jdata = normalize(jdata)
     model_ckpt = DPTrainer(jdata, run_opt=run_opt_ckpt)
     model_frz = DPTrainer(jdata, run_opt=run_opt_frz)
@@ -131,15 +132,47 @@ def _init_models():
 
 
 if not parse_version(tf.__version__) < parse_version("1.15"):
-    (
-        INPUT,
-        CKPT,
-        FROZEN_MODEL,
-        CKPT_TRAINER,
-        FRZ_TRAINER,
-        VALID_DATA,
-        STOP_BATCH,
-    ) = _init_models()
+
+    def previous_se_atten(jdata):
+        jdata["model"]["descriptor"]["compressible"] = False
+        jdata["model"]["descriptor"]["stripped_type_embedding"] = False
+        jdata["model"]["descriptor"]["attn_layer"] = 2
+
+    def stripped_model(jdata):
+        jdata["model"]["descriptor"]["compressible"] = False
+        jdata["model"]["descriptor"]["stripped_type_embedding"] = True
+        jdata["model"]["descriptor"]["attn_layer"] = 2
+
+    def compressible_model(jdata):
+        jdata["model"]["descriptor"]["compressible"] = True
+        jdata["model"]["descriptor"]["stripped_type_embedding"] = True
+        jdata["model"]["descriptor"]["attn_layer"] = 0
+
+    models = [previous_se_atten, stripped_model, compressible_model]
+    INPUTS = []
+    CKPTS = []
+    FROZEN_MODELS = []
+    CKPT_TRAINERS = []
+    FRZ_TRAINERS = []
+    VALID_DATAS = []
+    STOP_BATCHS = []
+    for i, model in enumerate(models):
+        (
+            INPUT,
+            CKPT,
+            FROZEN_MODEL,
+            CKPT_TRAINER,
+            FRZ_TRAINER,
+            VALID_DATA,
+            STOP_BATCH,
+        ) = _init_models(model, i)
+        INPUTS.append(INPUT)
+        CKPTS.append(CKPT)
+        FROZEN_MODELS.append(FROZEN_MODEL)
+        CKPT_TRAINERS.append(CKPT_TRAINER)
+        FRZ_TRAINERS.append(FRZ_TRAINER)
+        VALID_DATAS.append(VALID_DATA)
+        STOP_BATCHS.append(STOP_BATCH)
 
 
 @unittest.skipIf(
@@ -149,54 +182,63 @@ if not parse_version(tf.__version__) < parse_version("1.15"):
 class TestInitFrzModelAtten(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.dp_ckpt = CKPT_TRAINER
-        cls.dp_frz = FRZ_TRAINER
-        cls.valid_data = VALID_DATA
-        cls.stop_batch = STOP_BATCH
+        cls.dp_ckpts = CKPT_TRAINERS
+        cls.dp_frzs = FRZ_TRAINERS
+        cls.valid_datas = VALID_DATAS
+        cls.stop_batchs = STOP_BATCHS
 
     @classmethod
     def tearDownClass(cls):
-        _file_delete(INPUT)
-        _file_delete(FROZEN_MODEL)
-        _file_delete("out.json")
-        _file_delete(str(tests_path / "checkpoint"))
-        _file_delete(CKPT + ".meta")
-        _file_delete(CKPT + ".index")
-        _file_delete(CKPT + ".data-00000-of-00001")
-        _file_delete(CKPT + "-0.meta")
-        _file_delete(CKPT + "-0.index")
-        _file_delete(CKPT + "-0.data-00000-of-00001")
-        _file_delete(CKPT + "-1.meta")
-        _file_delete(CKPT + "-1.index")
-        _file_delete(CKPT + "-1.data-00000-of-00001")
-        _file_delete("input_v2_compat.json")
-        _file_delete("lcurve.out")
+        for i in range(len(cls.dp_ckpts)):
+            _file_delete(INPUTS[i])
+            _file_delete(FROZEN_MODELS[i])
+            _file_delete("out.json")
+            _file_delete(str(tests_path / "checkpoint"))
+            _file_delete(CKPT[i] + ".meta")
+            _file_delete(CKPT[i] + ".index")
+            _file_delete(CKPT[i] + ".data-00000-of-00001")
+            _file_delete(CKPT[i] + "-0.meta")
+            _file_delete(CKPT[i] + "-0.index")
+            _file_delete(CKPT[i] + "-0.data-00000-of-00001")
+            _file_delete(CKPT[i] + "-1.meta")
+            _file_delete(CKPT[i] + "-1.index")
+            _file_delete(CKPT[i] + "-1.data-00000-of-00001")
+            _file_delete(f"input_v2_compat{i}.json")
+            _file_delete("lcurve.out")
 
     def test_single_frame(self):
-        valid_batch = self.valid_data.get_batch()
-        natoms = valid_batch["natoms_vec"]
-        tf.reset_default_graph()
-        self.dp_ckpt.build(self.valid_data, self.stop_batch)
-        self.dp_ckpt._init_session()
-        feed_dict_ckpt = self.dp_ckpt.get_feed_dict(valid_batch, is_training=False)
-        ckpt_rmse_ckpt = self.dp_ckpt.loss.eval(
-            self.dp_ckpt.sess, feed_dict_ckpt, natoms
-        )
-        tf.reset_default_graph()
+        for i in range(len(self.dp_ckpts)):
+            self.dp_ckpt = CKPT_TRAINERS[i]
+            self.dp_frz = FRZ_TRAINERS[i]
+            self.valid_data = VALID_DATAS[i]
+            self.stop_batch = STOP_BATCHS[i]
 
-        self.dp_frz.build(self.valid_data, self.stop_batch)
-        self.dp_frz._init_session()
-        feed_dict_frz = self.dp_frz.get_feed_dict(valid_batch, is_training=False)
-        ckpt_rmse_frz = self.dp_frz.loss.eval(self.dp_frz.sess, feed_dict_frz, natoms)
-        tf.reset_default_graph()
+            valid_batch = self.valid_data.get_batch()
+            natoms = valid_batch["natoms_vec"]
+            tf.reset_default_graph()
+            self.dp_ckpt.build(self.valid_data, self.stop_batch)
+            self.dp_ckpt._init_session()
+            feed_dict_ckpt = self.dp_ckpt.get_feed_dict(valid_batch, is_training=False)
+            ckpt_rmse_ckpt = self.dp_ckpt.loss.eval(
+                self.dp_ckpt.sess, feed_dict_ckpt, natoms
+            )
+            tf.reset_default_graph()
 
-        # check values
-        np.testing.assert_almost_equal(
-            ckpt_rmse_ckpt["rmse_e"], ckpt_rmse_frz["rmse_e"], default_places
-        )
-        np.testing.assert_almost_equal(
-            ckpt_rmse_ckpt["rmse_f"], ckpt_rmse_frz["rmse_f"], default_places
-        )
-        np.testing.assert_almost_equal(
-            ckpt_rmse_ckpt["rmse_v"], ckpt_rmse_frz["rmse_v"], default_places
-        )
+            self.dp_frz.build(self.valid_data, self.stop_batch)
+            self.dp_frz._init_session()
+            feed_dict_frz = self.dp_frz.get_feed_dict(valid_batch, is_training=False)
+            ckpt_rmse_frz = self.dp_frz.loss.eval(
+                self.dp_frz.sess, feed_dict_frz, natoms
+            )
+            tf.reset_default_graph()
+
+            # check values
+            np.testing.assert_almost_equal(
+                ckpt_rmse_ckpt["rmse_e"], ckpt_rmse_frz["rmse_e"], default_places
+            )
+            np.testing.assert_almost_equal(
+                ckpt_rmse_ckpt["rmse_f"], ckpt_rmse_frz["rmse_f"], default_places
+            )
+            np.testing.assert_almost_equal(
+                ckpt_rmse_ckpt["rmse_v"], ckpt_rmse_frz["rmse_v"], default_places
+            )

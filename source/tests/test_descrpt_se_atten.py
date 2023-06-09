@@ -389,6 +389,177 @@ class TestModel(tf.test.TestCase):
         places = 10
         np.testing.assert_almost_equal(model_dout, ref_dout, places)
 
+    def test_stripped_type_embedding_descriptor_two_sides(self):
+        jfile = "water_se_atten.json"
+        jdata = j_loader(jfile)
+
+        systems = j_must_have(jdata, "systems")
+        set_pfx = j_must_have(jdata, "set_prefix")
+        batch_size = j_must_have(jdata, "batch_size")
+        test_size = j_must_have(jdata, "numb_test")
+        batch_size = 2
+        test_size = 1
+        stop_batch = j_must_have(jdata, "stop_batch")
+        rcut = j_must_have(jdata["model"]["descriptor"], "rcut")
+        sel = j_must_have(jdata["model"]["descriptor"], "sel")
+        ntypes = len(jdata["model"]["type_map"])
+
+        data = DataSystem(systems, set_pfx, batch_size, test_size, rcut, run_opt=None)
+
+        test_data = data.get_test()
+        numb_test = 1
+
+        # set parameters
+        jdata["model"]["descriptor"]["neuron"] = [5, 5, 5]
+        jdata["model"]["descriptor"]["axis_neuron"] = 2
+        typeebd_param = {
+            "neuron": [5],
+            "resnet_dt": False,
+            "seed": 1,
+        }
+        jdata["model"]["descriptor"]["compressible"] = False
+        jdata["model"]["descriptor"]["stripped_type_embedding"] = True
+
+        # init models
+        typeebd = TypeEmbedNet(
+            neuron=typeebd_param["neuron"],
+            activation_function=None,
+            resnet_dt=typeebd_param["resnet_dt"],
+            seed=typeebd_param["seed"],
+            uniform_seed=True,
+            padding=True,
+        )
+
+        jdata["model"]["descriptor"].pop("type", None)
+        jdata["model"]["descriptor"]["ntypes"] = ntypes
+        descrpt = DescrptSeAtten(**jdata["model"]["descriptor"], uniform_seed=True)
+
+        # model._compute_dstats([test_data['coord']], [test_data['box']], [test_data['type']], [test_data['natoms_vec']], [test_data['default_mesh']])
+        input_data = {
+            "coord": [test_data["coord"]],
+            "box": [test_data["box"]],
+            "type": [test_data["type"]],
+            "natoms_vec": [test_data["natoms_vec"]],
+            "default_mesh": [test_data["default_mesh"]],
+        }
+        descrpt.bias_atom_e = data.compute_energy_shift()
+
+        t_prop_c = tf.placeholder(tf.float32, [5], name="t_prop_c")
+        t_energy = tf.placeholder(GLOBAL_ENER_FLOAT_PRECISION, [None], name="t_energy")
+        t_force = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None], name="t_force")
+        t_virial = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None], name="t_virial")
+        t_atom_ener = tf.placeholder(
+            GLOBAL_TF_FLOAT_PRECISION, [None], name="t_atom_ener"
+        )
+        t_coord = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None], name="i_coord")
+        t_type = tf.placeholder(tf.int32, [None], name="i_type")
+        t_natoms = tf.placeholder(tf.int32, [ntypes + 2], name="i_natoms")
+        t_box = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None, 9], name="i_box")
+        t_mesh = tf.placeholder(tf.int32, [None], name="i_mesh")
+        is_training = tf.placeholder(tf.bool)
+        t_fparam = None
+
+        type_embedding = typeebd.build(
+            ntypes, suffix=self.filename + "-" + inspect.stack()[0][3]
+        )
+
+        dout = descrpt.build(
+            t_coord,
+            t_type,
+            t_natoms,
+            t_box,
+            t_mesh,
+            {"type_embedding": type_embedding},
+            reuse=False,
+            suffix=self.filename + "-" + inspect.stack()[0][3],
+        )
+
+        feed_dict_test = {
+            t_prop_c: test_data["prop_c"],
+            t_energy: test_data["energy"][:numb_test],
+            t_force: np.reshape(test_data["force"][:numb_test, :], [-1]),
+            t_virial: np.reshape(test_data["virial"][:numb_test, :], [-1]),
+            t_atom_ener: np.reshape(test_data["atom_ener"][:numb_test, :], [-1]),
+            t_coord: np.reshape(test_data["coord"][:numb_test, :], [-1]),
+            t_box: test_data["box"][:numb_test, :],
+            t_type: np.reshape(test_data["type"][:numb_test, :], [-1]),
+            t_natoms: test_data["natoms_vec"],
+            t_mesh: test_data["default_mesh"],
+            is_training: False,
+        }
+
+        sess = self.test_session().__enter__()
+        sess.run(tf.global_variables_initializer())
+        [model_dout] = sess.run([dout], feed_dict=feed_dict_test)
+        model_dout = model_dout.reshape([-1])
+        np.savetxt("two1.out", model_dout.reshape([1, -1]), delimiter=",")
+
+        ref_dout = [
+            6.383405295803018563e-06,
+            -4.970443805148654732e-05,
+            -4.970443805148654732e-05,
+            3.915685888463831281e-04,
+            -4.475044754350870549e-05,
+            3.524944903606048942e-04,
+            -3.724785876580149628e-05,
+            2.922698210610697768e-04,
+            1.253193390649937305e-04,
+            -9.866284622165712517e-04,
+            2.746706080574298427e-06,
+            -2.936129326691491197e-05,
+            -2.936129326691491197e-05,
+            3.361216906441433726e-04,
+            -2.672646322529656884e-05,
+            3.054685398038972568e-04,
+            -1.987664884734486549e-05,
+            2.233066336404597018e-04,
+            7.321769925898204405e-05,
+            -8.355355708215854091e-04,
+            2.577054933601801410e-06,
+            -2.596197919081208680e-05,
+            -2.596197919081208680e-05,
+            2.634209681343336554e-04,
+            -2.437422597229959228e-05,
+            2.471257526952611570e-04,
+            -1.804241933402407212e-05,
+            1.824137020231941916e-04,
+            6.580156956353395276e-05,
+            -6.669984436619770833e-04,
+            7.430461358270195101e-06,
+            -4.911199551777768784e-05,
+            -4.911199551777768784e-05,
+            3.246586591299433010e-04,
+            -4.545306022962886084e-05,
+            3.004976436904362321e-04,
+            -3.943764170159576608e-05,
+            2.607633588556588491e-04,
+            1.265722360907320951e-04,
+            -8.368076661582606740e-04,
+            1.006529590251595632e-05,
+            -5.947201651377735437e-05,
+            -5.947201651377735437e-05,
+            3.519072130827992253e-04,
+            -5.475453207501003249e-05,
+            3.240000254870917815e-04,
+            -5.001544285922251417e-05,
+            2.958951751684798311e-04,
+            1.541766955454939312e-04,
+            -9.123303972245934293e-04,
+            5.302564262473944598e-06,
+            -4.087818220772074430e-05,
+            -4.087818220772074430e-05,
+            3.170373643181760982e-04,
+            -3.805426060094593870e-05,
+            2.950399422301473447e-04,
+            -3.093771463791340635e-05,
+            2.394374838886431352e-04,
+            1.045675931841061270e-04,
+            -8.106366082292457186e-04,
+        ]
+
+        places = 10
+        np.testing.assert_almost_equal(model_dout, ref_dout, places)
+
     def test_compressible_descriptor_two_sides(self):
         jfile = "water_se_atten.json"
         jdata = j_loader(jfile)
