@@ -390,7 +390,7 @@ class TestModel(tf.test.TestCase):
         np.testing.assert_almost_equal(model_dout, ref_dout, places)
 
     def test_compressible_descriptor_two_sides(self):
-        jfile = "water_compressible_se_atten.json"
+        jfile = "water_se_atten.json"
         jdata = j_loader(jfile)
 
         systems = j_must_have(jdata, "systems")
@@ -412,6 +412,9 @@ class TestModel(tf.test.TestCase):
         # set parameters
         jdata["model"]["descriptor"]["neuron"] = [5, 5, 5]
         jdata["model"]["descriptor"]["axis_neuron"] = 2
+        jdata["model"]["descriptor"]["compressible"] = True
+        jdata["model"]["descriptor"]["attn_layer"] = 0
+        jdata["model"]["descriptor"]["stripped_type_embedding"] = True
         typeebd_param = {
             "neuron": [5],
             "resnet_dt": False,
