@@ -121,6 +121,7 @@ class DescrptSeAtten(DescrptSeA):
         attn_mask: bool = False,
         multi_task: bool = False,
         compressible: bool = False,
+        stripped_type_embedding: bool = False,
         **kwargs,
     ) -> None:
         if not set_davg_zero:
@@ -153,6 +154,7 @@ class DescrptSeAtten(DescrptSeA):
             "2"
         ), "se_atten only support tensorflow version 2.0 or higher."
         self.compressible = compressible
+        self.stripped_type_embedding = stripped_type_embedding
         self.ntypes = ntypes
         self.att_n = attn
         self.attn_layer = attn_layer
@@ -162,9 +164,13 @@ class DescrptSeAtten(DescrptSeA):
         self.two_side_embeeding_net_variables = None
         self.layer_size = len(neuron)
 
-        if self.compressible and self.attn_layer != 0:
+        if not self.stripped_type_embedding and self.compressible:
             raise RuntimeError(
-                "attention layer must be set to 0 when compression of se_atten is enabled"
+                "compression is not supported when using a non-stripped type embedding"
+            )
+        if self.stripped_type_embedding and self.compressible and self.attn_layer != 0:
+            raise RuntimeError(
+                "attention layer must be 0 when using a compressible se_atten with stripped type embedding"
             )
 
         # descrpt config
@@ -1007,8 +1013,8 @@ class DescrptSeAtten(DescrptSeA):
         if not is_exclude:
             with tf.variable_scope(name, reuse=reuse):
                 # with (natom x nei_type_i) x out_size
-                if not self.compressible:
-                    log.info("use the non compressible model")
+                if not self.stripped_type_embedding:
+                    log.info("use the previous se_atten model")
                     xyz_scatter = self._lookup_type_embedding(
                         xyz_scatter, atype, type_embedding
                     )
@@ -1028,7 +1034,14 @@ class DescrptSeAtten(DescrptSeA):
                         mixed_prec=self.mixed_prec,
                     )
                 else:
-                    log.info("use the compressible model")
+                    if self.compressible:
+                        log.info(
+                            "use the compressible model with stripped type embedding"
+                        )
+                    else:
+                        log.info(
+                            "use the non-compressible model with stripped type embedding"
+                        )
                     if not self.compress:
                         xyz_scatter = embedding_net(
                             xyz_scatter,
