@@ -266,7 +266,7 @@ class TestModel(tf.test.TestCase):
             np.testing.assert_almost_equal(des[:, 2:6], 0.0, 10)
 
     def test_compressible_model(self):
-        jfile = "water_compressible_se_atten.json"
+        jfile = "water_se_atten.json"
         jdata = j_loader(jfile)
 
         systems = j_must_have(jdata, "systems")
@@ -285,6 +285,9 @@ class TestModel(tf.test.TestCase):
 
         jdata["model"]["descriptor"].pop("type", None)
         jdata["model"]["descriptor"]["ntypes"] = 2
+        jdata["model"]["descriptor"]["compressible"] = True
+        jdata["model"]["descriptor"]["stripped_type_embedding"] = True
+        jdata["model"]["descriptor"]["attn_layer"] = 0
         descrpt = DescrptSeAtten(**jdata["model"]["descriptor"], uniform_seed=True)
         jdata["model"]["fitting_net"]["descrpt"] = descrpt
         fitting = EnerFitting(**jdata["model"]["fitting_net"], uniform_seed=True)
@@ -417,7 +420,7 @@ class TestModel(tf.test.TestCase):
         """In this test, we make type 0 has no interaction with type 0 and type 1,
         so the descriptor should be zero for type 0 atoms.
         """
-        jfile = "water_compressible_se_atten.json"
+        jfile = "water_se_atten.json"
         jdata = j_loader(jfile)
 
         systems = j_must_have(jdata, "systems")
@@ -448,6 +451,9 @@ class TestModel(tf.test.TestCase):
         # successful
         descrpt = DescrptSeAtten(ntypes=ntypes, **jdata["model"]["descriptor"])
         typeebd_param = jdata["model"]["type_embedding"]
+        jdata["model"]["descriptor"]["compressible"] = True
+        jdata["model"]["descriptor"]["stripped_type_embedding"] = True
+        jdata["model"]["descriptor"]["attn_layer"] = 0
         typeebd = TypeEmbedNet(
             neuron=typeebd_param["neuron"],
             activation_function=None,
