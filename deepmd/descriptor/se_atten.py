@@ -1261,7 +1261,7 @@ class DescrptSeAtten(DescrptSeA):
         """
         super().init_variables(graph=graph, graph_def=graph_def, suffix=suffix)
 
-        if self.compressible:
+        if self.stripped_type_embedding:
             self.two_side_embeeding_net_variables = {}
             for i in range(1, self.layer_size + 1):
                 matrix_pattern = f"filter_type_all{suffix}/matrix_{i}_two_side_ebd"
