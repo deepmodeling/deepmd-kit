@@ -10,12 +10,7 @@
 
 template <typename T>
 inline void double_vec(std::vector<T>& v) {
-  size_t size = v.size();
-  v.resize(size * 2);
-  for (size_t i = 0; i < size; ++i) {
-    v[size + i] = v[i];
-  }
-  // v.insert(std::end(v), std::begin(v), std::end(v));
+  v.insert(std::end(v), std::begin(v), std::end(v));
 }
 
 class TestProdForceR : public ::testing::Test {
