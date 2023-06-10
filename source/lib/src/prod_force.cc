@@ -35,7 +35,7 @@ void deepmd::prod_force_a_cpu(FPTYPE* force,
   memset(force, 0, sizeof(FPTYPE) * nframes * nall * 3);
   // compute force of a frame
   for (int i_idx = nframes * start_index;
-       i_idx < nframes * (start_index * nloc_nloc); ++i_idx) {
+       i_idx < nframes * (start_index + nloc_nloc); ++i_idx) {
     int kk = i_idx / nloc;  // frame index
     int ll = i_idx % nloc;  // atom index
     int i_idx_nall = kk * nall + ll;
