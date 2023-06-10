@@ -147,8 +147,8 @@ class ProdForceSeAOp : public OpKernel {
                                     nloc, nall, nnei, nframes);
 #endif  // TENSORFLOW_USE_ROCM
     } else if (device == "CPU") {
-      deepmd::prod_force_a_cpu(p_force, p_net_deriv, p_in_deriv, p_nlist,
-                               nloc_loc, nall, nnei, nframes,
+      deepmd::prod_force_a_cpu(p_force, p_net_deriv, p_in_deriv, p_nlist, nloc,
+                               nall, nnei, nframes, nloc_loc,
                                start_index = start_index);
     }
   }

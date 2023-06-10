@@ -28,12 +28,14 @@ void deepmd::prod_force_a_cpu(FPTYPE* force,
                               const int nall,
                               const int nnei,
                               const int nframes,
+                              const int nloc_nloc,
                               const int start_index) {
   const int ndescrpt = 4 * nnei;
 
   memset(force, 0, sizeof(FPTYPE) * nframes * nall * 3);
   // compute force of a frame
-  for (int i_idx = start_index; i_idx < start_index + nframes * nloc; ++i_idx) {
+  for (int i_idx = start_index; i_idx < start_index + nframes * nloc_nloc;
+       ++i_idx) {
     int kk = i_idx / nloc;  // frame index
     int ll = i_idx % nloc;  // atom index
     int i_idx_nall = kk * nall + ll;
@@ -75,6 +77,7 @@ template void deepmd::prod_force_a_cpu<double>(double* force,
                                                const int nall,
                                                const int nnei,
                                                const int nframes,
+                                               const int nloc_nloc,
                                                const int start_index);
 
 template void deepmd::prod_force_a_cpu<float>(float* force,
@@ -85,6 +88,7 @@ template void deepmd::prod_force_a_cpu<float>(float* force,
                                               const int nall,
                                               const int nnei,
                                               const int nframes,
+                                              const int nloc_nloc,
                                               const int start_index);
 
 template <typename FPTYPE>

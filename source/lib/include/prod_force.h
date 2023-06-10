@@ -11,6 +11,7 @@ void prod_force_a_cpu(FPTYPE* force,
                       const int nall,
                       const int nnei,
                       const int nframes,
+                      const int nloc_nloc,
                       const int start_index = 0);
 
 template <typename FPTYPE>
