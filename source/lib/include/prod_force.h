@@ -10,6 +10,7 @@ void prod_force_a_cpu(FPTYPE* force,
                       const int nloc,
                       const int nall,
                       const int nnei,
+                      const int nframes,
                       const int start_index = 0);
 
 template <typename FPTYPE>
@@ -19,7 +20,8 @@ void prod_force_r_cpu(FPTYPE* force,
                       const int* nlist,
                       const int nloc,
                       const int nall,
-                      const int nnei);
+                      const int nnei,
+                      const int nframes);
 
 #if GOOGLE_CUDA
 template <typename FPTYPE>
@@ -29,7 +31,8 @@ void prod_force_a_gpu_cuda(FPTYPE* force,
                            const int* nlist,
                            const int nloc,
                            const int nall,
-                           const int nnei);
+                           const int nnei,
+                           const int nframes);
 
 template <typename FPTYPE>
 void prod_force_r_gpu_cuda(FPTYPE* force,
@@ -38,7 +41,8 @@ void prod_force_r_gpu_cuda(FPTYPE* force,
                            const int* nlist,
                            const int nloc,
                            const int nall,
-                           const int nnei);
+                           const int nnei,
+                           const int nframes);
 #endif  // GOOGLE_CUDA
 
 #if TENSORFLOW_USE_ROCM
@@ -49,7 +53,8 @@ void prod_force_a_gpu_rocm(FPTYPE* force,
                            const int* nlist,
                            const int nloc,
                            const int nall,
-                           const int nnei);
+                           const int nnei,
+                           const int nframes);
 
 template <typename FPTYPE>
 void prod_force_r_gpu_rocm(FPTYPE* force,
@@ -58,7 +63,8 @@ void prod_force_r_gpu_rocm(FPTYPE* force,
                            const int* nlist,
                            const int nloc,
                            const int nall,
-                           const int nnei);
+                           const int nnei,
+                           const int nframes);
 #endif  // TENSORFLOW_USE_ROCM
 
 }  // namespace deepmd
