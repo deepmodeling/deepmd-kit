@@ -120,7 +120,7 @@ TEST_F(TestProdForceA, cpu) {
   std::vector<double> force(nframes * nall * 3);
   int n_a_sel = nnei;
   deepmd::prod_force_a_cpu<double>(&force[0], &net_deriv[0], &env_deriv[0],
-                                   &nlist[0], nloc, nall, nnei, nframes, nloc);
+                                   &nlist[0], nloc, nall, nnei, nframes);
   EXPECT_EQ(force.size(), nframes * nall * 3);
   EXPECT_EQ(force.size(), expected_force.size());
   for (int jj = 0; jj < force.size(); ++jj) {
