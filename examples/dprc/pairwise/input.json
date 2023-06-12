@@ -20,8 +20,8 @@
       "descriptor": {
         "type": "se_atten",
         "sel": 24,
-        "rcut_smth": 5.80,
-        "rcut": 6.00,
+        "rcut_smth": 0.50,
+        "rcut": 9.00,
         "attn_layer": 0,
         "neuron": [
           25,
@@ -29,7 +29,7 @@
           100
         ],
         "resnet_dt": false,
-        "axis_neuron": 16,
+        "axis_neuron": 12,
         "precision": "float32",
         "seed": 1
       },
@@ -49,7 +49,7 @@
       "descriptor": {
         "type": "se_atten",
         "sel": 27,
-        "rcut_smth": 5.80,
+        "rcut_smth": 0.50,
         "rcut": 6.00,
         "attn_layer": 0,
         "neuron": [
@@ -58,7 +58,7 @@
           100
         ],
         "resnet_dt": false,
-        "axis_neuron": 16,
+        "axis_neuron": 12,
         "set_davg_zero": true,
         "exclude_types": [
           [
@@ -165,7 +165,7 @@
       "batch_size": "auto",
       "_comment": "that's all"
     },
-    "numb_steps": 100,
+    "numb_steps": 1000,
     "seed": 10,
     "disp_file": "lcurve.out",
     "disp_freq": 100,
