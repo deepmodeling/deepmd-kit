@@ -120,7 +120,6 @@ class DescrptSeAtten(DescrptSeA):
         attn_dotr: bool = True,
         attn_mask: bool = False,
         multi_task: bool = False,
-        compressible: bool = False,
         stripped_type_embedding: bool = False,
         **kwargs,
     ) -> None:
@@ -153,7 +152,6 @@ class DescrptSeAtten(DescrptSeA):
         assert Version(TF_VERSION) > Version(
             "2"
         ), "se_atten only support tensorflow version 2.0 or higher."
-        self.compressible = compressible
         self.stripped_type_embedding = stripped_type_embedding
         self.ntypes = ntypes
         self.att_n = attn
@@ -163,15 +161,6 @@ class DescrptSeAtten(DescrptSeA):
         self.filter_np_precision = get_np_precision(precision)
         self.two_side_embeeding_net_variables = None
         self.layer_size = len(neuron)
-
-        if not self.stripped_type_embedding and self.compressible:
-            raise RuntimeError(
-                "compression is not supported when using a non-stripped type embedding"
-            )
-        if self.stripped_type_embedding and self.compressible and self.attn_layer != 0:
-            raise RuntimeError(
-                "attention layer must be 0 when using a compressible se_atten with stripped type embedding"
-            )
 
         # descrpt config
         self.sel_all_a = [sel]
@@ -368,6 +357,9 @@ class DescrptSeAtten(DescrptSeA):
                     "The size of the next layer of the neural network must be twice the size of the previous layer."
                     % ",".join([str(item) for item in self.filter_neuron])
                 )
+
+        if self.attn_layer != 0:
+            raise RuntimeError("can not compress model when attention layer is not 0.")
 
         ret = get_pattern_nodes_from_graph_def(
             graph_def, f"filter_type_all{suffix}/.+_two_side_ebd"
@@ -1034,7 +1026,7 @@ class DescrptSeAtten(DescrptSeA):
                         mixed_prec=self.mixed_prec,
                     )
                 else:
-                    if self.compressible:
+                    if self.attn_layer == 0:
                         log.info(
                             "use the compressible model with stripped type embedding"
                         )

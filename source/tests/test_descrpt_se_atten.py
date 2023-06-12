@@ -417,7 +417,6 @@ class TestModel(tf.test.TestCase):
             "resnet_dt": False,
             "seed": 1,
         }
-        jdata["model"]["descriptor"]["compressible"] = False
         jdata["model"]["descriptor"]["stripped_type_embedding"] = True
 
         # init models
@@ -583,7 +582,6 @@ class TestModel(tf.test.TestCase):
         # set parameters
         jdata["model"]["descriptor"]["neuron"] = [5, 5, 5]
         jdata["model"]["descriptor"]["axis_neuron"] = 2
-        jdata["model"]["descriptor"]["compressible"] = True
         jdata["model"]["descriptor"]["attn_layer"] = 0
         jdata["model"]["descriptor"]["stripped_type_embedding"] = True
         typeebd_param = {

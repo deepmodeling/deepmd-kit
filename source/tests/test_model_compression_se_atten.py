@@ -67,7 +67,6 @@ def _init_models():
         jdata["model"]["descriptor"] = {}
         jdata["model"]["descriptor"]["type"] = "se_atten"
         jdata["model"]["descriptor"]["precision"] = tests[i]["se_atten precision"]
-        jdata["model"]["descriptor"]["compressible"] = True
         jdata["model"]["descriptor"]["stripped_type_embedding"] = True
         jdata["model"]["descriptor"]["sel"] = 120
         jdata["model"]["descriptor"]["attn_layer"] = 0

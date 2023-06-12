@@ -285,7 +285,6 @@ class TestModel(tf.test.TestCase):
 
         jdata["model"]["descriptor"].pop("type", None)
         jdata["model"]["descriptor"]["ntypes"] = 2
-        jdata["model"]["descriptor"]["compressible"] = True
         jdata["model"]["descriptor"]["stripped_type_embedding"] = True
         jdata["model"]["descriptor"]["attn_layer"] = 0
         descrpt = DescrptSeAtten(**jdata["model"]["descriptor"], uniform_seed=True)
@@ -451,7 +450,6 @@ class TestModel(tf.test.TestCase):
         # successful
         descrpt = DescrptSeAtten(ntypes=ntypes, **jdata["model"]["descriptor"])
         typeebd_param = jdata["model"]["type_embedding"]
-        jdata["model"]["descriptor"]["compressible"] = True
         jdata["model"]["descriptor"]["stripped_type_embedding"] = True
         jdata["model"]["descriptor"]["attn_layer"] = 0
         typeebd = TypeEmbedNet(
@@ -514,7 +512,6 @@ class TestModel(tf.test.TestCase):
 
         jdata["model"]["descriptor"].pop("type", None)
         jdata["model"]["descriptor"]["ntypes"] = 2
-        jdata["model"]["descriptor"]["compressible"] = False
         jdata["model"]["descriptor"]["stripped_type_embedding"] = True
         jdata["model"]["descriptor"]["attn_layer"] = 2
         descrpt = DescrptSeAtten(**jdata["model"]["descriptor"], uniform_seed=True)
@@ -683,7 +680,6 @@ class TestModel(tf.test.TestCase):
         # successful
         descrpt = DescrptSeAtten(ntypes=ntypes, **jdata["model"]["descriptor"])
         typeebd_param = jdata["model"]["type_embedding"]
-        jdata["model"]["descriptor"]["compressible"] = False
         jdata["model"]["descriptor"]["stripped_type_embedding"] = True
         jdata["model"]["descriptor"]["attn_layer"] = 2
         typeebd = TypeEmbedNet(

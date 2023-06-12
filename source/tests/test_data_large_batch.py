@@ -304,7 +304,6 @@ class TestDataLargeBatch(tf.test.TestCase):
 
         jdata["model"]["descriptor"].pop("type", None)
         jdata["model"]["descriptor"]["ntypes"] = 2
-        jdata["model"]["descriptor"]["compressible"] = False
         jdata["model"]["descriptor"]["stripped_type_embedding"] = True
         descrpt = DescrptSeAtten(**jdata["model"]["descriptor"], uniform_seed=True)
         jdata["model"]["fitting_net"]["descrpt"] = descrpt
@@ -500,7 +499,6 @@ class TestDataLargeBatch(tf.test.TestCase):
 
         jdata["model"]["descriptor"].pop("type", None)
         jdata["model"]["descriptor"]["ntypes"] = 2
-        jdata["model"]["descriptor"]["compressible"] = True
         jdata["model"]["descriptor"]["stripped_type_embedding"] = True
         jdata["model"]["descriptor"]["attn_layer"] = 0
         descrpt = DescrptSeAtten(**jdata["model"]["descriptor"], uniform_seed=True)

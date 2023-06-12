@@ -7,7 +7,6 @@
     ],
     "descriptor": {
       "type": "se_atten",
-      "compressible": true,
       "stripped_type_embedding": true,
       "sel": 120,
       "rcut_smth": 0.50,
