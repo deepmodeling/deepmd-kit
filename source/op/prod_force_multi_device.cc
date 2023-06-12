@@ -136,25 +136,20 @@ class ProdForceSeAOp : public OpKernel {
       nloc_loc = end_index - start_index;
     }
 
-    for (int_64 kk = 0; kk < nframes; ++kk) {
-      FPTYPE* force = p_force + kk * nall * 3;
-      const FPTYPE* net_deriv = p_net_deriv + kk * nloc * ndescrpt;
-      const FPTYPE* in_deriv = p_in_deriv + kk * nloc * ndescrpt * 3;
-      const int* nlist = p_nlist + kk * nloc * nnei;
-      if (device == "GPU") {
+    if (device == "GPU") {
 #if GOOGLE_CUDA
-        deepmd::prod_force_a_gpu_cuda(force, net_deriv, in_deriv, nlist, nloc,
-                                      nall, nnei);
+      deepmd::prod_force_a_gpu_cuda(p_force, p_net_deriv, p_in_deriv, p_nlist,
+                                    nloc, nall, nnei, nframes);
 #endif  // GOOGLE_CUDA
 
 #if TENSORFLOW_USE_ROCM
-        deepmd::prod_force_a_gpu_rocm(force, net_deriv, in_deriv, nlist, nloc,
-                                      nall, nnei);
+      deepmd::prod_force_a_gpu_rocm(p_force, p_net_deriv, p_in_deriv, p_nlist,
+                                    nloc, nall, nnei, nframes);
 #endif  // TENSORFLOW_USE_ROCM
-      } else if (device == "CPU") {
-        deepmd::prod_force_a_cpu(force, net_deriv, in_deriv, nlist, nloc_loc,
-                                 nall, nnei, start_index = start_index);
-      }
+    } else if (device == "CPU") {
+      deepmd::prod_force_a_cpu(p_force, p_net_deriv, p_in_deriv, p_nlist, nloc,
+                               nall, nnei, nframes, nloc_loc,
+                               start_index = start_index);
     }
   }
 
@@ -227,25 +222,19 @@ class ProdForceSeROp : public OpKernel {
     const FPTYPE* p_in_deriv = in_deriv_tensor.flat<FPTYPE>().data();
     const int* p_nlist = nlist_tensor.flat<int>().data();
 
-    for (int_64 kk = 0; kk < nframes; ++kk) {
-      FPTYPE* force = p_force + kk * nall * 3;
-      const FPTYPE* net_deriv = p_net_deriv + kk * nloc * ndescrpt;
-      const FPTYPE* in_deriv = p_in_deriv + kk * nloc * ndescrpt * 3;
-      const int* nlist = p_nlist + kk * nloc * nnei;
-      if (device == "GPU") {
+    if (device == "GPU") {
 #if GOOGLE_CUDA
-        deepmd::prod_force_r_gpu_cuda(force, net_deriv, in_deriv, nlist, nloc,
-                                      nall, nnei);
+      deepmd::prod_force_r_gpu_cuda(p_force, p_net_deriv, p_in_deriv, p_nlist,
+                                    nloc, nall, nnei, nframes);
 #endif  // GOOGLE_CUDA
 
 #if TENSORFLOW_USE_ROCM
-        deepmd::prod_force_r_gpu_rocm(force, net_deriv, in_deriv, nlist, nloc,
-                                      nall, nnei);
+      deepmd::prod_force_r_gpu_rocm(p_force, p_net_deriv, p_in_deriv, p_nlist,
+                                    nloc, nall, nnei, nframes);
 #endif  // TENSORFLOW_USE_ROCM
-      } else if (device == "CPU") {
-        deepmd::prod_force_r_cpu(force, net_deriv, in_deriv, nlist, nloc, nall,
-                                 nnei);
-      }
+    } else if (device == "CPU") {
+      deepmd::prod_force_r_cpu(p_force, p_net_deriv, p_in_deriv, p_nlist, nloc,
+                               nall, nnei, nframes);
     }
   }
 
