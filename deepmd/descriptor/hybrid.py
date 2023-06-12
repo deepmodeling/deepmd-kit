@@ -36,7 +36,12 @@ class DescrptHybrid(Descriptor):
     """
 
     def __init__(
-        self, list: list, multi_task: bool = False, spin: Spin = None, **kwargs
+        self,
+        list: list,
+        multi_task: bool = False,
+        ntypes: Optional[int] = None,
+        spin: Optional[Spin] = None,
+        **kwargs,
     ) -> None:
         """Constructor."""
         # warning: list is conflict with built-in list
@@ -51,12 +56,9 @@ class DescrptHybrid(Descriptor):
             if isinstance(ii, Descriptor):
                 formatted_descript_list.append(ii)
             elif isinstance(ii, dict):
-                if multi_task:
-                    ii["multi_task"] = True
-                if spin is not None:
-                    if ii["type"] in ["se_e2_a", "se_a", "se_e2_r", "se_r"]:
-                        ii["spin"] = spin
-                formatted_descript_list.append(Descriptor(**ii))
+                formatted_descript_list.append(
+                    Descriptor(**ii, ntypes=ntypes, spin=spin, multi_task=multi_task)
+                )
             else:
                 raise NotImplementedError
         self.descrpt_list = formatted_descript_list
