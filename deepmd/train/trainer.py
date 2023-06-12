@@ -1200,4 +1200,4 @@ class DatasetLoader:
         Dict[str, np.ndarray]
             The dict of the loaded data.
         """
-        return {kk: vv for kk, vv in zip(self.data_keys, batch_list)}
+        return dict(zip(self.data_keys, batch_list))

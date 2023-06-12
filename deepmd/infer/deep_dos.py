@@ -63,8 +63,7 @@ class DeepDOS(DeepEval):
         # add these tensors on top of what is defined by DeepTensor Class
         # use this in favor of dict update to move attribute from class to
         # instance namespace
-        self.tensors = dict(
-            {
+        self.tensors = {
                 # descrpt attrs
                 "t_ntypes": "descrpt_attr/ntypes:0",
                 "t_rcut": "descrpt_attr/rcut:0",
@@ -84,8 +83,7 @@ class DeepDOS(DeepEval):
                 "t_dos": "o_dos:0",
                 "t_atom_dos": "o_atom_dos:0",
                 "t_descriptor": "o_descriptor:0",
-            },
-        )
+            }
         DeepEval.__init__(
             self,
             model_file,
