@@ -1005,8 +1005,7 @@ class DescrptSeA(DescrptSe):
         outputs_size = [1] + self.filter_neuron
         outputs_size_2 = self.n_axis_neuron
         all_excluded = all(
-            (type_input, type_i) in self.exclude_types
-                for type_i in range(self.ntypes)
+            (type_input, type_i) in self.exclude_types for type_i in range(self.ntypes)
         )
         if all_excluded:
             # all types are excluded so result and qmat should be zeros

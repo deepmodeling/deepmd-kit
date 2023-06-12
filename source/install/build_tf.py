@@ -351,9 +351,7 @@ def include_patterns(*include_patterns):
     """
 
     def _ignore_patterns(path, names):
-        keep = {
-            name for pattern in include_patterns for name in filter(names, pattern)
-        }
+        keep = {name for pattern in include_patterns for name in filter(names, pattern)}
         removed_dir = any(x.startswith("_") for x in path.split(os.path.sep))
         ignore = {
             name

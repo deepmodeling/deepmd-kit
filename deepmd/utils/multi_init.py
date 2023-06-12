@@ -66,7 +66,8 @@ def replace_model_params_with_frz_multi_model(
 
     # Change model configurations
     pretrained_fitting_keys = sorted(
-        pretrained_jdata["model"]["fitting_net_dict"].keys())
+        pretrained_jdata["model"]["fitting_net_dict"].keys()
+    )
     cur_fitting_keys = sorted(jdata["model"]["fitting_net_dict"].keys())
     newly_added_fittings = set(cur_fitting_keys) - set(pretrained_fitting_keys)
     reused_fittings = set(cur_fitting_keys) - newly_added_fittings
