@@ -42,7 +42,7 @@ jobs:
         name: Setup QEMU
         if: matrix.platform_id == 'manylinux_aarch64'
       - name: Build wheels
-        uses: pypa/cibuildwheel@v2.13.0
+        uses: pypa/cibuildwheel@v2.13.1
         env:
           CIBW_BUILD_VERBOSITY: 1
           CIBW_ARCHS: all
