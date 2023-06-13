@@ -160,6 +160,7 @@ class Descriptor(PluginVariant):
         natoms_vec: List[np.ndarray],
         mesh: List[np.ndarray],
         input_dict: Dict[str, List[np.ndarray]],
+        **kwargs,
     ) -> None:
         """Compute the statisitcs (avg and std) of the training data. The input will be
         normalized by the statistics.

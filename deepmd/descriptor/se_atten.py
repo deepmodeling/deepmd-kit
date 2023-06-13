@@ -212,6 +212,7 @@ class DescrptSeAtten(DescrptSeA):
         input_dict: dict,
         mixed_type: bool = False,
         real_natoms_vec: Optional[list] = None,
+        **kwargs,
     ) -> None:
         """Compute the statisitcs (avg and std) of the training data. The input will be normalized by the statistics.
 

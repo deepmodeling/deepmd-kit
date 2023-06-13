@@ -217,6 +217,7 @@ class DescrptSeT(DescrptSe):
         natoms_vec: list,
         mesh: list,
         input_dict: dict,
+        **kwargs,
     ) -> None:
         """Compute the statisitcs (avg and std) of the training data. The input will be normalized by the statistics.
 
