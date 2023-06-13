@@ -165,8 +165,15 @@ class DescrptHybrid(Descriptor):
         """
         for ii in self.descrpt_list:
             ii.compute_input_stats(
-                data_coord, data_box, data_atype, natoms_vec, mesh, input_dict,
-                mixed_type=mixed_type, real_natoms_vec=real_natoms_vec, **kwargs,
+                data_coord,
+                data_box,
+                data_atype,
+                natoms_vec,
+                mesh,
+                input_dict,
+                mixed_type=mixed_type,
+                real_natoms_vec=real_natoms_vec,
+                **kwargs,
             )
 
     def merge_input_stats(self, stat_dict):

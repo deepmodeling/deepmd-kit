@@ -401,7 +401,14 @@ class DescrptSeAEfLower(DescrptSeA):
         self.sub_sess = tf.Session(graph=sub_graph, config=default_tf_session_config)
 
     def compute_input_stats(
-        self, data_coord, data_box, data_atype, natoms_vec, mesh, input_dict, **kwargs,
+        self,
+        data_coord,
+        data_box,
+        data_atype,
+        natoms_vec,
+        mesh,
+        input_dict,
+        **kwargs,
     ):
         data_efield = input_dict["efield"]
         all_davg = []
