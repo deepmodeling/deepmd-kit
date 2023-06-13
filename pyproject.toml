@@ -129,6 +129,7 @@ select = [
     "F", # pyflakes
     "D", # pydocstyle
     "UP", # pyupgrade
+    "C4", # flake8-comprehensions
 ]
 ignore = [
     "E501", # line too long
