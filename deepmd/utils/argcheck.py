@@ -352,7 +352,7 @@ def descrpt_se_atten_args():
     doc_set_davg_zero = "Set the normalization average to zero. This option should be set when `se_atten` descriptor or `atom_ener` in the energy fitting is used"
     doc_exclude_types = "The excluded pairs of types which have no interaction with each other. For example, `[[0, 1]]` means no interaction between type 0 and type 1."
     doc_attn = "The length of hidden vectors in attention layers"
-    doc_attn_layer = "The number of attention layers. Note that model compression of `se_atten` is only enabled when attn_layer=0"
+    doc_attn_layer = "The number of attention layers. Note that model compression of `se_atten` is only enabled when attn_layer==0 and stripped_type_embedding is True"
     doc_attn_dotr = "Whether to do dot product with the normalized relative coordinates"
     doc_attn_mask = "Whether to do mask on the diagonal in the attention matrix"
 
