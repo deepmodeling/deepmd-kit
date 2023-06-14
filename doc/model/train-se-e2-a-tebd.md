@@ -1,8 +1,8 @@
 # Type embedding approach
- 
-We generate specific a type embedding vector for each atom type so that we can share one descriptor embedding net and one fitting net in total, which decline training complexity largely. 
 
-The training input script is similar to that of [`se_e2_a`](train-se-e2-a.md), but different by adding the {ref}`type_embedding <model/type_embedding>` section. 
+We generate specific a type embedding vector for each atom type so that we can share one descriptor embedding net and one fitting net in total, which decline training complexity largely.
+
+The training input script is similar to that of [`se_e2_a`](train-se-e2-a.md), but different by adding the {ref}`type_embedding <model/type_embedding>` section.
 
 ## Type embedding net
 The {ref}`model <model>` defines how the model is constructed, adding a section of type embedding net:
@@ -11,7 +11,7 @@ The {ref}`model <model>` defines how the model is constructed, adding a section 
 	"type_map":	["O", "H"],
 	"type_embedding":{
 			...
-	},	    
+	},
 	"descriptor" :{
             ...
 	},
@@ -35,7 +35,7 @@ The construction of type embedding net is given by {ref}`type_embedding <model/t
 * {ref}`seed <model/type_embedding/seed>` gives the random seed that is used to generate random numbers when initializing the model parameters.
 
 
-A complete training input script of this example can be found in the directory. 
+A complete training input script of this example can be found in the directory.
 ```bash
 $deepmd_source_dir/examples/water/se_e2_a_tebd/input.json
 ```

@@ -67,5 +67,3 @@ velocity        real_atom zero linear
 
 run             ${NSTEPS}
 write_data	out.lmp nocoeff
-
-

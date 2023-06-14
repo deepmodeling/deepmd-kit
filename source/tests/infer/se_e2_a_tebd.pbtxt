@@ -1,0 +1,9639 @@
+node {
+  name: "train_attr/min_nbor_dist"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_DOUBLE
+        tensor_shape {
+        }
+        double_val: 0.8854385688525511
+      }
+    }
+  }
+}
+node {
+  name: "train_attr/training_script"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_STRING
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_STRING
+        tensor_shape {
+        }
+        string_val: "{\"model\":{\"type_map\":[\"O\",\"H\"],\"type_embedding\":{\"neuron\":[8],\"resnet_dt\":false,\"seed\":1,\"activation_function\":\"tanh\",\"precision\":\"default\",\"trainable\":true},\"descriptor\":{\"type\":\"se_e2_a\",\"sel\":[2,2],\"rcut_smth\":0.5,\"rcut\":6.0,\"neuron\":[8],\"resnet_dt\":false,\"axis_neuron\":4,\"type_one_side\":true,\"seed\":1,\"activation_function\":\"tanh\",\"precision\":\"default\",\"trainable\":true,\"exclude_types\":[],\"set_davg_zero\":false},\"fitting_net\":{\"neuron\":[],\"resnet_dt\":true,\"seed\":1,\"type\":\"ener\",\"numb_fparam\":0,\"numb_aparam\":0,\"activation_function\":\"tanh\",\"precision\":\"default\",\"trainable\":true,\"rcond\":0.001,\"atom_ener\":[]},\"data_stat_nbatch\":10,\"data_stat_protect\":0.01,\"data_bias_nsample\":10},\"learning_rate\":{\"type\":\"exp\",\"decay_steps\":5000,\"start_lr\":0.001,\"stop_lr\":3.51e-08,\"scale_by_worker\":\"linear\"},\"loss\":{\"type\":\"ener\",\"start_pref_e\":0.02,\"limit_pref_e\":1,\"start_pref_f\":1000,\"limit_pref_f\":1,\"start_pref_v\":0,\"limit_pref_v\":0,\"start_pref_ae\":0.0,\"limit_pref_ae\":0.0,\"start_pref_pf\":0.0,\"limit_pref_pf\":0.0,\"enable_atom_ener_coeff\":false},\"training\":{\"training_data\":{\"systems\":[\"../data/data_0/\",\"../data/data_1/\",\"../data/data_2/\"],\"batch_size\":\"auto\",\"set_prefix\":\"set\",\"auto_prob\":\"prob_sys_size\",\"sys_probs\":null},\"validation_data\":{\"systems\":[\"../data/data_3\"],\"batch_size\":1,\"numb_btch\":3,\"set_prefix\":\"set\",\"auto_prob\":\"prob_sys_size\",\"sys_probs\":null},\"numb_steps\":0,\"seed\":10,\"disp_file\":\"lcurve.out\",\"disp_freq\":100,\"save_freq\":1000,\"save_ckpt\":\"model.ckpt\",\"disp_training\":true,\"time_training\":true,\"profiling\":false,\"profiling_file\":\"timeline.json\",\"enable_profiler\":false,\"tensorboard\":false,\"tensorboard_log_dir\":\"log\",\"tensorboard_freq\":1}}"
+      }
+    }
+  }
+}
+node {
+  name: "model_type"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_STRING
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_STRING
+        tensor_shape {
+        }
+        string_val: "original_model"
+      }
+    }
+  }
+}
+node {
+  name: "t_box"
+  op: "Placeholder"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "shape"
+    value {
+      shape {
+        dim {
+          size: -1
+        }
+      }
+    }
+  }
+}
+node {
+  name: "t_coord"
+  op: "Placeholder"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "shape"
+    value {
+      shape {
+        dim {
+          size: -1
+        }
+      }
+    }
+  }
+}
+node {
+  name: "t_type"
+  op: "Placeholder"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "shape"
+    value {
+      shape {
+        dim {
+          size: -1
+        }
+      }
+    }
+  }
+}
+node {
+  name: "t_natoms"
+  op: "Placeholder"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "shape"
+    value {
+      shape {
+        dim {
+          size: 4
+        }
+      }
+    }
+  }
+}
+node {
+  name: "t_mesh"
+  op: "Placeholder"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "shape"
+    value {
+      shape {
+        dim {
+          size: -1
+        }
+      }
+    }
+  }
+}
+node {
+  name: "model_attr/tmap"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_STRING
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_STRING
+        tensor_shape {
+        }
+        string_val: "O H"
+      }
+    }
+  }
+}
+node {
+  name: "model_attr/model_type"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_STRING
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_STRING
+        tensor_shape {
+        }
+        string_val: "ener"
+      }
+    }
+  }
+}
+node {
+  name: "model_attr/model_version"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_STRING
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_STRING
+        tensor_shape {
+        }
+        string_val: "1.1"
+      }
+    }
+  }
+}
+node {
+  name: "Const"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 2
+          }
+        }
+        tensor_content: "\000\000\000\000\001\000\000\000"
+      }
+    }
+  }
+}
+node {
+  name: "one_hot/on_value"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_FLOAT
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_FLOAT
+        tensor_shape {
+        }
+        float_val: 1.0
+      }
+    }
+  }
+}
+node {
+  name: "one_hot/off_value"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_FLOAT
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_FLOAT
+        tensor_shape {
+        }
+        float_val: 0.0
+      }
+    }
+  }
+}
+node {
+  name: "one_hot/depth"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: 2
+      }
+    }
+  }
+}
+node {
+  name: "one_hot"
+  op: "OneHot"
+  input: "Const"
+  input: "one_hot/depth"
+  input: "one_hot/on_value"
+  input: "one_hot/off_value"
+  attr {
+    key: "T"
+    value {
+      type: DT_FLOAT
+    }
+  }
+  attr {
+    key: "TI"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "axis"
+    value {
+      i: -1
+    }
+  }
+}
+node {
+  name: "Cast"
+  op: "Cast"
+  input: "one_hot"
+  attr {
+    key: "DstT"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "SrcT"
+    value {
+      type: DT_FLOAT
+    }
+  }
+  attr {
+    key: "Truncate"
+    value {
+      b: false
+    }
+  }
+}
+node {
+  name: "Reshape_2/shape"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 2
+          }
+        }
+        tensor_content: "\377\377\377\377\002\000\000\000"
+      }
+    }
+  }
+}
+node {
+  name: "Reshape_2"
+  op: "Reshape"
+  input: "Cast"
+  input: "Reshape_2/shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "type_embed_net/matrix_1"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_DOUBLE
+        tensor_shape {
+          dim {
+            size: 2
+          }
+          dim {
+            size: 8
+          }
+        }
+        tensor_content: "\224\022nG\316\205\240\277\222n\201\346\002\225\322?\267\207(lm\016\341\277\352%\333c\235\244\204?tP\257\016\374t\323?\\\317\256G\242J\303\277[\240\311m\375h\331?x\241\223?\\\223\303?\210\013\037#\001\325\334\277\004\371\355LW\361\220?Qj\222V}6\323?n\206m$\001\325\276\277\333,\330`\302\207\244\277\371\307]v\330\275\271?\241\233\032? \260\233\277\270\304\312\3134 \340?"
+      }
+    }
+  }
+}
+node {
+  name: "type_embed_net/matrix_1/read"
+  op: "Identity"
+  input: "type_embed_net/matrix_1"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "_class"
+    value {
+      list {
+        s: "loc:@type_embed_net/matrix_1"
+      }
+    }
+  }
+}
+node {
+  name: "type_embed_net/bias_1"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_DOUBLE
+        tensor_shape {
+          dim {
+            size: 8
+          }
+        }
+        tensor_content: "8\326>^D\311\335\277W\373)Rh\204\000\300\325\262\342K\221\370\347\277A\2130\376}\250\327\277\237\216\254\221\004\301\360\277\177\306\210K|\211\000\300\364\005\255\241)\016\352\277\nV\t\227\322\343\364?"
+      }
+    }
+  }
+}
+node {
+  name: "type_embed_net/bias_1/read"
+  op: "Identity"
+  input: "type_embed_net/bias_1"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "_class"
+    value {
+      list {
+        s: "loc:@type_embed_net/bias_1"
+      }
+    }
+  }
+}
+node {
+  name: "type_embed_net/MatMul"
+  op: "MatMul"
+  input: "Reshape_2"
+  input: "type_embed_net/matrix_1/read"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "transpose_a"
+    value {
+      b: false
+    }
+  }
+  attr {
+    key: "transpose_b"
+    value {
+      b: false
+    }
+  }
+}
+node {
+  name: "type_embed_net/BiasAdd"
+  op: "BiasAdd"
+  input: "type_embed_net/MatMul"
+  input: "type_embed_net/bias_1/read"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "data_format"
+    value {
+      s: "NHWC"
+    }
+  }
+}
+node {
+  name: "type_embed_net/Tanh"
+  op: "Tanh"
+  input: "type_embed_net/BiasAdd"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+}
+node {
+  name: "type_embed_net/Reshape/shape"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 2
+          }
+        }
+        tensor_content: "\377\377\377\377\010\000\000\000"
+      }
+    }
+  }
+}
+node {
+  name: "type_embed_net/Reshape"
+  op: "Reshape"
+  input: "type_embed_net/Tanh"
+  input: "type_embed_net/Reshape/shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "Reshape_3/shape"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 2
+          }
+        }
+        tensor_content: "\377\377\377\377\010\000\000\000"
+      }
+    }
+  }
+}
+node {
+  name: "Reshape_3"
+  op: "Reshape"
+  input: "type_embed_net/Reshape"
+  input: "Reshape_3/shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "t_typeebd"
+  op: "Identity"
+  input: "Reshape_3"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+}
+node {
+  name: "descrpt_attr/rcut"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_DOUBLE
+        tensor_shape {
+        }
+        double_val: 6.0
+      }
+    }
+  }
+}
+node {
+  name: "descrpt_attr/ntypes"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: 2
+      }
+    }
+  }
+}
+node {
+  name: "descrpt_attr/sel"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 2
+          }
+        }
+        tensor_content: "\002\000\000\000\002\000\000\000"
+      }
+    }
+  }
+}
+node {
+  name: "descrpt_attr/original_sel"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 2
+          }
+        }
+        tensor_content: "\002\000\000\000\002\000\000\000"
+      }
+    }
+  }
+}
+node {
+  name: "descrpt_attr/t_avg"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_DOUBLE
+        tensor_shape {
+          dim {
+            size: 2
+          }
+          dim {
+            size: 16
+          }
+        }
+        tensor_content: "\303\222\367\300\2330\344?\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\303\222\367\300\2330\344?\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\303\222\367\300\2330\344?\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\303\222\367\300\2330\344?\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000o\364\343\350\210\273\343?\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000o\364\343\350\210\273\343?\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000o\364\343\350\210\273\343?\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000o\364\343\350\210\273\343?\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000"
+      }
+    }
+  }
+}
+node {
+  name: "descrpt_attr/t_avg/read"
+  op: "Identity"
+  input: "descrpt_attr/t_avg"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "_class"
+    value {
+      list {
+        s: "loc:@descrpt_attr/t_avg"
+      }
+    }
+  }
+}
+node {
+  name: "descrpt_attr/t_std"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_DOUBLE
+        tensor_shape {
+          dim {
+            size: 2
+          }
+          dim {
+            size: 16
+          }
+        }
+        tensor_content: "\354\315\tV\261\233\330?\274T\336\350\275F\333?\274T\336\350\275F\333?\274T\336\350\275F\333?\354\315\tV\261\233\330?\274T\336\350\275F\333?\274T\336\350\275F\333?\274T\336\350\275F\333?\354\315\tV\261\233\330?\274T\336\350\275F\333?\274T\336\350\275F\333?\274T\336\350\275F\333?\354\315\tV\261\233\330?\274T\336\350\275F\333?\274T\336\350\275F\333?\274T\336\350\275F\333?\300}\230\317?\342\317?y\264\307\361C\222\330?y\264\307\361C\222\330?y\264\307\361C\222\330?\300}\230\317?\342\317?y\264\307\361C\222\330?y\264\307\361C\222\330?y\264\307\361C\222\330?\300}\230\317?\342\317?y\264\307\361C\222\330?y\264\307\361C\222\330?y\264\307\361C\222\330?\300}\230\317?\342\317?y\264\307\361C\222\330?y\264\307\361C\222\330?y\264\307\361C\222\330?"
+      }
+    }
+  }
+}
+node {
+  name: "descrpt_attr/t_std/read"
+  op: "Identity"
+  input: "descrpt_attr/t_std"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "_class"
+    value {
+      list {
+        s: "loc:@descrpt_attr/t_std"
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_3/stack"
+  op: "Const"
+  input: "^descrpt_attr/original_sel"
+  input: "^descrpt_attr/sel"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_3/stack_1"
+  op: "Const"
+  input: "^descrpt_attr/original_sel"
+  input: "^descrpt_attr/sel"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 2
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_3/stack_2"
+  op: "Const"
+  input: "^descrpt_attr/original_sel"
+  input: "^descrpt_attr/sel"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_3"
+  op: "StridedSlice"
+  input: "t_natoms"
+  input: "strided_slice_3/stack"
+  input: "strided_slice_3/stack_1"
+  input: "strided_slice_3/stack_2"
+  attr {
+    key: "Index"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "begin_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "ellipsis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "end_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "new_axis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "shrink_axis_mask"
+    value {
+      i: 1
+    }
+  }
+}
+node {
+  name: "mul_1/y"
+  op: "Const"
+  input: "^descrpt_attr/original_sel"
+  input: "^descrpt_attr/sel"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: 3
+      }
+    }
+  }
+}
+node {
+  name: "mul_1"
+  op: "Mul"
+  input: "strided_slice_3"
+  input: "mul_1/y"
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "Reshape_4/shape/0"
+  op: "Const"
+  input: "^descrpt_attr/original_sel"
+  input: "^descrpt_attr/sel"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: -1
+      }
+    }
+  }
+}
+node {
+  name: "Reshape_4/shape"
+  op: "Pack"
+  input: "Reshape_4/shape/0"
+  input: "mul_1"
+  attr {
+    key: "N"
+    value {
+      i: 2
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "axis"
+    value {
+      i: 0
+    }
+  }
+}
+node {
+  name: "Reshape_4"
+  op: "Reshape"
+  input: "t_coord"
+  input: "Reshape_4/shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "Reshape_5/shape"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 2
+          }
+        }
+        tensor_content: "\377\377\377\377\t\000\000\000"
+      }
+    }
+  }
+}
+node {
+  name: "Reshape_5"
+  op: "Reshape"
+  input: "t_box"
+  input: "Reshape_5/shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "strided_slice_4/stack"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_4/stack_1"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 2
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_4/stack_2"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_4"
+  op: "StridedSlice"
+  input: "t_natoms"
+  input: "strided_slice_4/stack"
+  input: "strided_slice_4/stack_1"
+  input: "strided_slice_4/stack_2"
+  attr {
+    key: "Index"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "begin_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "ellipsis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "end_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "new_axis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "shrink_axis_mask"
+    value {
+      i: 1
+    }
+  }
+}
+node {
+  name: "Reshape_6/shape/0"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: -1
+      }
+    }
+  }
+}
+node {
+  name: "Reshape_6/shape"
+  op: "Pack"
+  input: "Reshape_6/shape/0"
+  input: "strided_slice_4"
+  attr {
+    key: "N"
+    value {
+      i: 2
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "axis"
+    value {
+      i: 0
+    }
+  }
+}
+node {
+  name: "Reshape_6"
+  op: "Reshape"
+  input: "t_type"
+  input: "Reshape_6/shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "ProdEnvMatA"
+  op: "ProdEnvMatA"
+  input: "Reshape_4"
+  input: "Reshape_6"
+  input: "t_natoms"
+  input: "Reshape_5"
+  input: "t_mesh"
+  input: "descrpt_attr/t_avg/read"
+  input: "descrpt_attr/t_std/read"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "rcut_a"
+    value {
+      f: -1.0
+    }
+  }
+  attr {
+    key: "rcut_r"
+    value {
+      f: 6.0
+    }
+  }
+  attr {
+    key: "rcut_r_smth"
+    value {
+      f: 0.5
+    }
+  }
+  attr {
+    key: "sel_a"
+    value {
+      list {
+        i: 2
+        i: 2
+      }
+    }
+  }
+  attr {
+    key: "sel_r"
+    value {
+      list {
+        i: 0
+        i: 0
+      }
+    }
+  }
+}
+node {
+  name: "Reshape_7/shape"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 2
+          }
+        }
+        tensor_content: "\377\377\377\377\020\000\000\000"
+      }
+    }
+  }
+}
+node {
+  name: "Reshape_7"
+  op: "Reshape"
+  input: "ProdEnvMatA"
+  input: "Reshape_7/shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "o_rmat"
+  op: "Identity"
+  input: "Reshape_7"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+}
+node {
+  name: "o_rmat_deriv"
+  op: "Identity"
+  input: "ProdEnvMatA:1"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+}
+node {
+  name: "o_rij"
+  op: "Identity"
+  input: "ProdEnvMatA:2"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+}
+node {
+  name: "o_nlist"
+  op: "Identity"
+  input: "ProdEnvMatA:3"
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "strided_slice_5/stack"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 0
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_5/stack_1"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_5/stack_2"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_5"
+  op: "StridedSlice"
+  input: "t_natoms"
+  input: "strided_slice_5/stack"
+  input: "strided_slice_5/stack_1"
+  input: "strided_slice_5/stack_2"
+  attr {
+    key: "Index"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "begin_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "ellipsis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "end_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "new_axis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "shrink_axis_mask"
+    value {
+      i: 1
+    }
+  }
+}
+node {
+  name: "Reshape_8/shape/0"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: -1
+      }
+    }
+  }
+}
+node {
+  name: "Reshape_8/shape/2"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: 16
+      }
+    }
+  }
+}
+node {
+  name: "Reshape_8/shape"
+  op: "Pack"
+  input: "Reshape_8/shape/0"
+  input: "strided_slice_5"
+  input: "Reshape_8/shape/2"
+  attr {
+    key: "N"
+    value {
+      i: 3
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "axis"
+    value {
+      i: 0
+    }
+  }
+}
+node {
+  name: "Reshape_8"
+  op: "Reshape"
+  input: "o_rmat"
+  input: "Reshape_8/shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "Reshape_9/shape"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 2
+          }
+        }
+        tensor_content: "\377\377\377\377\020\000\000\000"
+      }
+    }
+  }
+}
+node {
+  name: "Reshape_9"
+  op: "Reshape"
+  input: "Reshape_8"
+  input: "Reshape_9/shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "strided_slice_6/stack"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 0
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_6/stack_1"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_6/stack_2"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_6"
+  op: "StridedSlice"
+  input: "t_natoms"
+  input: "strided_slice_6/stack"
+  input: "strided_slice_6/stack_1"
+  input: "strided_slice_6/stack_2"
+  attr {
+    key: "Index"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "begin_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "ellipsis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "end_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "new_axis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "shrink_axis_mask"
+    value {
+      i: 1
+    }
+  }
+}
+node {
+  name: "Reshape_10/shape/0"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: -1
+      }
+    }
+  }
+}
+node {
+  name: "Reshape_10/shape/2"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: 16
+      }
+    }
+  }
+}
+node {
+  name: "Reshape_10/shape"
+  op: "Pack"
+  input: "Reshape_10/shape/0"
+  input: "strided_slice_6"
+  input: "Reshape_10/shape/2"
+  attr {
+    key: "N"
+    value {
+      i: 3
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "axis"
+    value {
+      i: 0
+    }
+  }
+}
+node {
+  name: "Reshape_10"
+  op: "Reshape"
+  input: "Reshape_9"
+  input: "Reshape_10/shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "Shape_1"
+  op: "Shape"
+  input: "Reshape_10"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "out_type"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "strided_slice_7/stack"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 0
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_7/stack_1"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_7/stack_2"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_7"
+  op: "StridedSlice"
+  input: "Shape_1"
+  input: "strided_slice_7/stack"
+  input: "strided_slice_7/stack_1"
+  input: "strided_slice_7/stack_2"
+  attr {
+    key: "Index"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "begin_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "ellipsis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "end_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "new_axis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "shrink_axis_mask"
+    value {
+      i: 1
+    }
+  }
+}
+node {
+  name: "filter_type_all/Slice/begin"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 2
+          }
+        }
+        tensor_content: "\000\000\000\000\000\000\000\000"
+      }
+    }
+  }
+}
+node {
+  name: "filter_type_all/Slice/size"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 2
+          }
+        }
+        tensor_content: "\377\377\377\377\020\000\000\000"
+      }
+    }
+  }
+}
+node {
+  name: "filter_type_all/Slice"
+  op: "Slice"
+  input: "Reshape_9"
+  input: "filter_type_all/Slice/begin"
+  input: "filter_type_all/Slice/size"
+  attr {
+    key: "Index"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+}
+node {
+  name: "filter_type_all/Shape"
+  op: "Shape"
+  input: "filter_type_all/Slice"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "out_type"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "filter_type_all/strided_slice/stack"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 0
+      }
+    }
+  }
+}
+node {
+  name: "filter_type_all/strided_slice/stack_1"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "filter_type_all/strided_slice/stack_2"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "filter_type_all/strided_slice"
+  op: "StridedSlice"
+  input: "filter_type_all/Shape"
+  input: "filter_type_all/strided_slice/stack"
+  input: "filter_type_all/strided_slice/stack_1"
+  input: "filter_type_all/strided_slice/stack_2"
+  attr {
+    key: "Index"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "begin_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "ellipsis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "end_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "new_axis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "shrink_axis_mask"
+    value {
+      i: 1
+    }
+  }
+}
+node {
+  name: "filter_type_all/Reshape/shape"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 2
+          }
+        }
+        tensor_content: "\377\377\377\377\004\000\000\000"
+      }
+    }
+  }
+}
+node {
+  name: "filter_type_all/Reshape"
+  op: "Reshape"
+  input: "filter_type_all/Slice"
+  input: "filter_type_all/Reshape/shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "filter_type_all/Slice_1/begin"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 2
+          }
+        }
+        tensor_content: "\000\000\000\000\000\000\000\000"
+      }
+    }
+  }
+}
+node {
+  name: "filter_type_all/Slice_1/size"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 2
+          }
+        }
+        tensor_content: "\377\377\377\377\001\000\000\000"
+      }
+    }
+  }
+}
+node {
+  name: "filter_type_all/Slice_1"
+  op: "Slice"
+  input: "filter_type_all/Reshape"
+  input: "filter_type_all/Slice_1/begin"
+  input: "filter_type_all/Slice_1/size"
+  attr {
+    key: "Index"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+}
+node {
+  name: "filter_type_all/Reshape_1/shape"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 2
+          }
+        }
+        tensor_content: "\377\377\377\377\001\000\000\000"
+      }
+    }
+  }
+}
+node {
+  name: "filter_type_all/Reshape_1"
+  op: "Reshape"
+  input: "filter_type_all/Slice_1"
+  input: "filter_type_all/Reshape_1/shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "filter_type_all/Const"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 4
+          }
+        }
+        tensor_content: "\000\000\000\000\000\000\000\000\001\000\000\000\001\000\000\000"
+      }
+    }
+  }
+}
+node {
+  name: "filter_type_all/embedding_lookup/axis"
+  op: "Const"
+  attr {
+    key: "_class"
+    value {
+      list {
+        s: "loc:@t_typeebd"
+      }
+    }
+  }
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: 0
+      }
+    }
+  }
+}
+node {
+  name: "filter_type_all/embedding_lookup"
+  op: "GatherV2"
+  input: "t_typeebd"
+  input: "filter_type_all/Const"
+  input: "filter_type_all/embedding_lookup/axis"
+  attr {
+    key: "Taxis"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "Tindices"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "Tparams"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "_class"
+    value {
+      list {
+        s: "loc:@t_typeebd"
+      }
+    }
+  }
+  attr {
+    key: "batch_dims"
+    value {
+      i: 0
+    }
+  }
+}
+node {
+  name: "filter_type_all/embedding_lookup/Identity"
+  op: "Identity"
+  input: "filter_type_all/embedding_lookup"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+}
+node {
+  name: "filter_type_all/strided_slice_1/stack"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 0
+      }
+    }
+  }
+}
+node {
+  name: "filter_type_all/strided_slice_1/stack_1"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "filter_type_all/strided_slice_1/stack_2"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "filter_type_all/strided_slice_1"
+  op: "StridedSlice"
+  input: "t_natoms"
+  input: "filter_type_all/strided_slice_1/stack"
+  input: "filter_type_all/strided_slice_1/stack_1"
+  input: "filter_type_all/strided_slice_1/stack_2"
+  attr {
+    key: "Index"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "begin_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "ellipsis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "end_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "new_axis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "shrink_axis_mask"
+    value {
+      i: 1
+    }
+  }
+}
+node {
+  name: "filter_type_all/mul"
+  op: "Mul"
+  input: "strided_slice_7"
+  input: "filter_type_all/strided_slice_1"
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "filter_type_all/Tile/multiples/1"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "filter_type_all/Tile/multiples"
+  op: "Pack"
+  input: "filter_type_all/mul"
+  input: "filter_type_all/Tile/multiples/1"
+  attr {
+    key: "N"
+    value {
+      i: 2
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "axis"
+    value {
+      i: 0
+    }
+  }
+}
+node {
+  name: "filter_type_all/Tile"
+  op: "Tile"
+  input: "filter_type_all/embedding_lookup/Identity"
+  input: "filter_type_all/Tile/multiples"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tmultiples"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "filter_type_all/Reshape_2/shape"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 2
+          }
+        }
+        tensor_content: "\377\377\377\377\010\000\000\000"
+      }
+    }
+  }
+}
+node {
+  name: "filter_type_all/Reshape_2"
+  op: "Reshape"
+  input: "filter_type_all/Tile"
+  input: "filter_type_all/Reshape_2/shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "filter_type_all/concat/axis"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "filter_type_all/concat"
+  op: "ConcatV2"
+  input: "filter_type_all/Reshape_1"
+  input: "filter_type_all/Reshape_2"
+  input: "filter_type_all/concat/axis"
+  attr {
+    key: "N"
+    value {
+      i: 2
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tidx"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "filter_type_all/matrix_1"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_DOUBLE
+        tensor_shape {
+          dim {
+            size: 9
+          }
+          dim {
+            size: 8
+          }
+        }
+        tensor_content: "\256Pd\3239X\231\277\213\261\273\032\354\200\314?\316\311-?\313)\332\277\220pR\244:\252\177?5\216\316I{\330\315?W\005\322\302\204\227\275\277\223\"\022|\031}\323?.\234\267k\023\007\276?\356\202P\324\370\034\326\277\372Y\304j-\375\211?\265\367\222_\236x\315?O\231\341w\250\245\267\277\033\361\253{\367}\237\277SBrJ.\276\263?_U\341-X<\225\277\022>\242\031a\274\330?\231\213\307\236\177v\250\277\201\273\r\r\242\"\322?\300\226H\331Tq\307?\353\261&e\375\333\315\277\324\357`\317\320C\306?\034\017\371e\255E\276\277\217\t\300y\335\354\336\277\033v}\310\260C\321?\203N\350G5\022p\277\375\261x/\006h\261\277\254\033o\177y3\246?gi^K\343w\322\277&P\335\376,z\341?\306\\=\370\351C\330?\201s\024\267<o\323?\315\210\261\371\316/\242?\352vv\023\027I\317?\237w\347\004\203\252\326\277i\205\003\0329\334\326\277\234;\340\0177\237\325\277Gg\240\220\'\303\277?^\227\002g\326_\300?\306\200\345\354\272Z\317\277l\0018\351\210\000\265\277\273\017h\251\237\370\253\277\177\262\376\245\347p\222?\024\363t\010(y\233?B\365\232\371\270.\271?T@\264\2255\014\327?\375\336m\310\365\206\312?\'\236\223\035\374[\315?6\315&\266\212P\307\277@Bpt\264C\327?\212im{\025\322\320?)\362\274T&Q\327?\251\006\r\215\243\207\300\277\217]\372<,\207\316\2778r$\220\031I\314\277\036\307\003\030\366\365\243\277>f<U\305\030e?\314\336\376\361O\261\303?6/\025\306z\232\306\277j\345\344_\344\352\256\2772\025\357/\322y\314?B\344W&A\221\332\277\252W\342\342\t\234\317\277>\322\022\312-Y\274\277\332[\034`\230<\270\277\272\363\371v\016\352\247?x@w\332\360i\335?\243V\207\335\003\277\273?C:\347\027=\215\323?\360\362H\242\370\304\255\277\304l\223\311\310@\313?\345\371\343\032VT\304\277E\344\347\305\335\370\322\277"
+      }
+    }
+  }
+}
+node {
+  name: "filter_type_all/matrix_1/read"
+  op: "Identity"
+  input: "filter_type_all/matrix_1"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "_class"
+    value {
+      list {
+        s: "loc:@filter_type_all/matrix_1"
+      }
+    }
+  }
+}
+node {
+  name: "filter_type_all/bias_1"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_DOUBLE
+        tensor_shape {
+          dim {
+            size: 8
+          }
+        }
+        tensor_content: "8\326>^D\311\335\277W\373)Rh\204\000\300\325\262\342K\221\370\347\277A\2130\376}\250\327\277\237\216\254\221\004\301\360\277\177\306\210K|\211\000\300\364\005\255\241)\016\352\277\nV\t\227\322\343\364?"
+      }
+    }
+  }
+}
+node {
+  name: "filter_type_all/bias_1/read"
+  op: "Identity"
+  input: "filter_type_all/bias_1"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "_class"
+    value {
+      list {
+        s: "loc:@filter_type_all/bias_1"
+      }
+    }
+  }
+}
+node {
+  name: "filter_type_all/MatMul"
+  op: "MatMul"
+  input: "filter_type_all/concat"
+  input: "filter_type_all/matrix_1/read"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "transpose_a"
+    value {
+      b: false
+    }
+  }
+  attr {
+    key: "transpose_b"
+    value {
+      b: false
+    }
+  }
+}
+node {
+  name: "filter_type_all/BiasAdd"
+  op: "BiasAdd"
+  input: "filter_type_all/MatMul"
+  input: "filter_type_all/bias_1/read"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "data_format"
+    value {
+      s: "NHWC"
+    }
+  }
+}
+node {
+  name: "filter_type_all/Tanh"
+  op: "Tanh"
+  input: "filter_type_all/BiasAdd"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+}
+node {
+  name: "filter_type_all/Reshape_3/shape"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 2
+          }
+        }
+        tensor_content: "\377\377\377\377\010\000\000\000"
+      }
+    }
+  }
+}
+node {
+  name: "filter_type_all/Reshape_3"
+  op: "Reshape"
+  input: "filter_type_all/Tanh"
+  input: "filter_type_all/Reshape_3/shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "filter_type_all/Reshape_4/shape"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 3
+          }
+        }
+        tensor_content: "\377\377\377\377\004\000\000\000\010\000\000\000"
+      }
+    }
+  }
+}
+node {
+  name: "filter_type_all/Reshape_4"
+  op: "Reshape"
+  input: "filter_type_all/Reshape_3"
+  input: "filter_type_all/Reshape_4/shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "filter_type_all/Reshape_5/shape/1"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: 4
+      }
+    }
+  }
+}
+node {
+  name: "filter_type_all/Reshape_5/shape/2"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: 4
+      }
+    }
+  }
+}
+node {
+  name: "filter_type_all/Reshape_5/shape"
+  op: "Pack"
+  input: "filter_type_all/strided_slice"
+  input: "filter_type_all/Reshape_5/shape/1"
+  input: "filter_type_all/Reshape_5/shape/2"
+  attr {
+    key: "N"
+    value {
+      i: 3
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "axis"
+    value {
+      i: 0
+    }
+  }
+}
+node {
+  name: "filter_type_all/Reshape_5"
+  op: "Reshape"
+  input: "filter_type_all/Slice"
+  input: "filter_type_all/Reshape_5/shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "filter_type_all/MatMul_1"
+  op: "BatchMatMulV2"
+  input: "filter_type_all/Reshape_5"
+  input: "filter_type_all/Reshape_4"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "adj_x"
+    value {
+      b: true
+    }
+  }
+  attr {
+    key: "adj_y"
+    value {
+      b: false
+    }
+  }
+}
+node {
+  name: "filter_type_all/truediv/y"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_DOUBLE
+        tensor_shape {
+        }
+        double_val: 4.0
+      }
+    }
+  }
+}
+node {
+  name: "filter_type_all/truediv"
+  op: "RealDiv"
+  input: "filter_type_all/MatMul_1"
+  input: "filter_type_all/truediv/y"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+}
+node {
+  name: "filter_type_all/Slice_2/begin"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 3
+          }
+        }
+        tensor_content: "\000\000\000\000\000\000\000\000\000\000\000\000"
+      }
+    }
+  }
+}
+node {
+  name: "filter_type_all/Slice_2/size"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 3
+          }
+        }
+        tensor_content: "\377\377\377\377\377\377\377\377\004\000\000\000"
+      }
+    }
+  }
+}
+node {
+  name: "filter_type_all/Slice_2"
+  op: "Slice"
+  input: "filter_type_all/truediv"
+  input: "filter_type_all/Slice_2/begin"
+  input: "filter_type_all/Slice_2/size"
+  attr {
+    key: "Index"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+}
+node {
+  name: "filter_type_all/MatMul_2"
+  op: "BatchMatMulV2"
+  input: "filter_type_all/truediv"
+  input: "filter_type_all/Slice_2"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "adj_x"
+    value {
+      b: true
+    }
+  }
+  attr {
+    key: "adj_y"
+    value {
+      b: false
+    }
+  }
+}
+node {
+  name: "filter_type_all/Reshape_6/shape"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 2
+          }
+        }
+        tensor_content: "\377\377\377\377 \000\000\000"
+      }
+    }
+  }
+}
+node {
+  name: "filter_type_all/Reshape_6"
+  op: "Reshape"
+  input: "filter_type_all/MatMul_2"
+  input: "filter_type_all/Reshape_6/shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "Shape_2"
+  op: "Shape"
+  input: "Reshape_8"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "out_type"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "strided_slice_8/stack"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 0
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_8/stack_1"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_8/stack_2"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_8"
+  op: "StridedSlice"
+  input: "Shape_2"
+  input: "strided_slice_8/stack"
+  input: "strided_slice_8/stack_1"
+  input: "strided_slice_8/stack_2"
+  attr {
+    key: "Index"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "begin_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "ellipsis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "end_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "new_axis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "shrink_axis_mask"
+    value {
+      i: 1
+    }
+  }
+}
+node {
+  name: "strided_slice_9/stack"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 0
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_9/stack_1"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_9/stack_2"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_9"
+  op: "StridedSlice"
+  input: "t_natoms"
+  input: "strided_slice_9/stack"
+  input: "strided_slice_9/stack_1"
+  input: "strided_slice_9/stack_2"
+  attr {
+    key: "Index"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "begin_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "ellipsis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "end_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "new_axis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "shrink_axis_mask"
+    value {
+      i: 1
+    }
+  }
+}
+node {
+  name: "Reshape_11/shape/2"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: 32
+      }
+    }
+  }
+}
+node {
+  name: "Reshape_11/shape"
+  op: "Pack"
+  input: "strided_slice_8"
+  input: "strided_slice_9"
+  input: "Reshape_11/shape/2"
+  attr {
+    key: "N"
+    value {
+      i: 3
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "axis"
+    value {
+      i: 0
+    }
+  }
+}
+node {
+  name: "Reshape_11"
+  op: "Reshape"
+  input: "filter_type_all/Reshape_6"
+  input: "Reshape_11/shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "concat/concat"
+  op: "Identity"
+  input: "Reshape_11"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+}
+node {
+  name: "o_descriptor"
+  op: "Identity"
+  input: "concat/concat"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+}
+node {
+  name: "fitting_attr/dfparam"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: 0
+      }
+    }
+  }
+}
+node {
+  name: "fitting_attr/daparam"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: 0
+      }
+    }
+  }
+}
+node {
+  name: "fitting_attr/t_bias_atom_e"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_DOUBLE
+        tensor_shape {
+          dim {
+            size: 2
+          }
+        }
+        tensor_content: "\014\327\243\260\272dW\300\014\327\243\260\272dg\300"
+      }
+    }
+  }
+}
+node {
+  name: "fitting_attr/t_bias_atom_e/read"
+  op: "Identity"
+  input: "fitting_attr/t_bias_atom_e"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "_class"
+    value {
+      list {
+        s: "loc:@fitting_attr/t_bias_atom_e"
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_12/stack"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 0
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_12/stack_1"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_12/stack_2"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_12"
+  op: "StridedSlice"
+  input: "t_natoms"
+  input: "strided_slice_12/stack"
+  input: "strided_slice_12/stack_1"
+  input: "strided_slice_12/stack_2"
+  attr {
+    key: "Index"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "begin_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "ellipsis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "end_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "new_axis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "shrink_axis_mask"
+    value {
+      i: 1
+    }
+  }
+}
+node {
+  name: "Reshape_13/shape/0"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: -1
+      }
+    }
+  }
+}
+node {
+  name: "Reshape_13/shape/2"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: 32
+      }
+    }
+  }
+}
+node {
+  name: "Reshape_13/shape"
+  op: "Pack"
+  input: "Reshape_13/shape/0"
+  input: "strided_slice_12"
+  input: "Reshape_13/shape/2"
+  attr {
+    key: "N"
+    value {
+      i: 3
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "axis"
+    value {
+      i: 0
+    }
+  }
+}
+node {
+  name: "Reshape_13"
+  op: "Reshape"
+  input: "o_descriptor"
+  input: "Reshape_13/shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "strided_slice_13/stack"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_13/stack_1"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 2
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_13/stack_2"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_13"
+  op: "StridedSlice"
+  input: "t_natoms"
+  input: "strided_slice_13/stack"
+  input: "strided_slice_13/stack_1"
+  input: "strided_slice_13/stack_2"
+  attr {
+    key: "Index"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "begin_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "ellipsis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "end_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "new_axis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "shrink_axis_mask"
+    value {
+      i: 1
+    }
+  }
+}
+node {
+  name: "Reshape_14/shape/0"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: -1
+      }
+    }
+  }
+}
+node {
+  name: "Reshape_14/shape"
+  op: "Pack"
+  input: "Reshape_14/shape/0"
+  input: "strided_slice_13"
+  attr {
+    key: "N"
+    value {
+      i: 2
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "axis"
+    value {
+      i: 0
+    }
+  }
+}
+node {
+  name: "Reshape_14"
+  op: "Reshape"
+  input: "t_type"
+  input: "Reshape_14/shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "strided_slice_14/stack"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 0
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_14/stack_1"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_14/stack_2"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_14"
+  op: "StridedSlice"
+  input: "t_natoms"
+  input: "strided_slice_14/stack"
+  input: "strided_slice_14/stack_1"
+  input: "strided_slice_14/stack_2"
+  attr {
+    key: "Index"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "begin_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "ellipsis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "end_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "new_axis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "shrink_axis_mask"
+    value {
+      i: 1
+    }
+  }
+}
+node {
+  name: "Slice/begin"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 2
+          }
+        }
+        tensor_content: "\000\000\000\000\000\000\000\000"
+      }
+    }
+  }
+}
+node {
+  name: "Slice/size/0"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: -1
+      }
+    }
+  }
+}
+node {
+  name: "Slice/size"
+  op: "Pack"
+  input: "Slice/size/0"
+  input: "strided_slice_14"
+  attr {
+    key: "N"
+    value {
+      i: 2
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "axis"
+    value {
+      i: 0
+    }
+  }
+}
+node {
+  name: "Slice"
+  op: "Slice"
+  input: "Reshape_14"
+  input: "Slice/begin"
+  input: "Slice/size"
+  attr {
+    key: "Index"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "Reshape_15/shape"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: -1
+      }
+    }
+  }
+}
+node {
+  name: "Reshape_15"
+  op: "Reshape"
+  input: "Slice"
+  input: "Reshape_15/shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "embedding_lookup/axis"
+  op: "Const"
+  attr {
+    key: "_class"
+    value {
+      list {
+        s: "loc:@t_typeebd"
+      }
+    }
+  }
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: 0
+      }
+    }
+  }
+}
+node {
+  name: "embedding_lookup"
+  op: "GatherV2"
+  input: "t_typeebd"
+  input: "Reshape_15"
+  input: "embedding_lookup/axis"
+  attr {
+    key: "Taxis"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "Tindices"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "Tparams"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "_class"
+    value {
+      list {
+        s: "loc:@t_typeebd"
+      }
+    }
+  }
+  attr {
+    key: "batch_dims"
+    value {
+      i: 0
+    }
+  }
+}
+node {
+  name: "embedding_lookup/Identity"
+  op: "Identity"
+  input: "embedding_lookup"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+}
+node {
+  name: "Reshape_16/shape"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 2
+          }
+        }
+        tensor_content: "\377\377\377\377 \000\000\000"
+      }
+    }
+  }
+}
+node {
+  name: "Reshape_16"
+  op: "Reshape"
+  input: "Reshape_13"
+  input: "Reshape_16/shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "concat_2/axis"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "concat_2"
+  op: "ConcatV2"
+  input: "Reshape_16"
+  input: "embedding_lookup/Identity"
+  input: "concat_2/axis"
+  attr {
+    key: "N"
+    value {
+      i: 2
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tidx"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "strided_slice_15/stack"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 0
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_15/stack_1"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_15/stack_2"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_15"
+  op: "StridedSlice"
+  input: "t_natoms"
+  input: "strided_slice_15/stack"
+  input: "strided_slice_15/stack_1"
+  input: "strided_slice_15/stack_2"
+  attr {
+    key: "Index"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "begin_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "ellipsis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "end_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "new_axis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "shrink_axis_mask"
+    value {
+      i: 1
+    }
+  }
+}
+node {
+  name: "Reshape_17/shape/0"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: -1
+      }
+    }
+  }
+}
+node {
+  name: "Reshape_17/shape/2"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: 40
+      }
+    }
+  }
+}
+node {
+  name: "Reshape_17/shape"
+  op: "Pack"
+  input: "Reshape_17/shape/0"
+  input: "strided_slice_15"
+  input: "Reshape_17/shape/2"
+  attr {
+    key: "N"
+    value {
+      i: 3
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "axis"
+    value {
+      i: 0
+    }
+  }
+}
+node {
+  name: "Reshape_17"
+  op: "Reshape"
+  input: "concat_2"
+  input: "Reshape_17/shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "strided_slice_16/stack"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 0
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_16/stack_1"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_16/stack_2"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_16"
+  op: "StridedSlice"
+  input: "t_natoms"
+  input: "strided_slice_16/stack"
+  input: "strided_slice_16/stack_1"
+  input: "strided_slice_16/stack_2"
+  attr {
+    key: "Index"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "begin_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "ellipsis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "end_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "new_axis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "shrink_axis_mask"
+    value {
+      i: 1
+    }
+  }
+}
+node {
+  name: "Slice_1/begin"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 3
+          }
+        }
+        tensor_content: "\000\000\000\000\000\000\000\000\000\000\000\000"
+      }
+    }
+  }
+}
+node {
+  name: "Slice_1/size/0"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: -1
+      }
+    }
+  }
+}
+node {
+  name: "Slice_1/size/2"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: -1
+      }
+    }
+  }
+}
+node {
+  name: "Slice_1/size"
+  op: "Pack"
+  input: "Slice_1/size/0"
+  input: "strided_slice_16"
+  input: "Slice_1/size/2"
+  attr {
+    key: "N"
+    value {
+      i: 3
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "axis"
+    value {
+      i: 0
+    }
+  }
+}
+node {
+  name: "Slice_1"
+  op: "Slice"
+  input: "Reshape_17"
+  input: "Slice_1/begin"
+  input: "Slice_1/size"
+  attr {
+    key: "Index"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+}
+node {
+  name: "Reshape_18/shape"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 2
+          }
+        }
+        tensor_content: "\377\377\377\377(\000\000\000"
+      }
+    }
+  }
+}
+node {
+  name: "Reshape_18"
+  op: "Reshape"
+  input: "Slice_1"
+  input: "Reshape_18/shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "final_layer/matrix"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_DOUBLE
+        tensor_shape {
+          dim {
+            size: 40
+          }
+          dim {
+            size: 1
+          }
+        }
+        tensor_content: "xc.\200\256j\243?\270\350\235H\3409\254\2773\327\356\204\324\270\300\277P\332\313\017\334y\243\277\327yt\224c\027\323?b\351K\\\204\207\255\277{\021\330!\311\312\254?\0041\276MT\'\321\277:\000\270w\267,\272?\232E\346!\023\035\276\277\270\337{\034\262U\232?\342\311\354v}9\304\277\177\200\\\202\223\213\210?\326\016\212\3548`\316?\317\t\242\315Sm\276?\245\313\324\251(\204\261\277\273\006W\232\356\371\304\2770cY\"\214_\330? \311\234\276\017{\253\277O\243rK\037a\264?\005K^\004/q\273?\004k\t\324K\342\267?\023D\t`8\"\241?\377!W\346\354\330\254\277\006|\312Fg\301\260\277\"[\202\317\273f\237?F\265\217H\321\256w?j-5\227\024\004\325\277PZ,E!\250\305\277\217\325\366\371\310q\264\277v\014Y\004/W\300\277{\245\010\361B\242\264\277u\335\n\231p\207\231\2772\003\031\320l7\305\277\224\005\036\215\321\036\300\277k\315\301\303\354\352\247\277\257\303X\204m\"\305?\247\376N\342\352p\244?\250%\301.1q\215\277\352\200\306\307\312\020\300\277"
+      }
+    }
+  }
+}
+node {
+  name: "final_layer/matrix/read"
+  op: "Identity"
+  input: "final_layer/matrix"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "_class"
+    value {
+      list {
+        s: "loc:@final_layer/matrix"
+      }
+    }
+  }
+}
+node {
+  name: "final_layer/bias"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_DOUBLE
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        double_val: -1.2973864969841682
+      }
+    }
+  }
+}
+node {
+  name: "final_layer/bias/read"
+  op: "Identity"
+  input: "final_layer/bias"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "_class"
+    value {
+      list {
+        s: "loc:@final_layer/bias"
+      }
+    }
+  }
+}
+node {
+  name: "final_layer/MatMul"
+  op: "MatMul"
+  input: "Reshape_18"
+  input: "final_layer/matrix/read"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "transpose_a"
+    value {
+      b: false
+    }
+  }
+  attr {
+    key: "transpose_b"
+    value {
+      b: false
+    }
+  }
+}
+node {
+  name: "final_layer/BiasAdd"
+  op: "BiasAdd"
+  input: "final_layer/MatMul"
+  input: "final_layer/bias/read"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "data_format"
+    value {
+      s: "NHWC"
+    }
+  }
+}
+node {
+  name: "Shape_4"
+  op: "Shape"
+  input: "Reshape_17"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "out_type"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "strided_slice_17/stack"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 0
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_17/stack_1"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_17/stack_2"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_17"
+  op: "StridedSlice"
+  input: "Shape_4"
+  input: "strided_slice_17/stack"
+  input: "strided_slice_17/stack_1"
+  input: "strided_slice_17/stack_2"
+  attr {
+    key: "Index"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "begin_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "ellipsis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "end_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "new_axis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "shrink_axis_mask"
+    value {
+      i: 1
+    }
+  }
+}
+node {
+  name: "strided_slice_18/stack"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 0
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_18/stack_1"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_18/stack_2"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_18"
+  op: "StridedSlice"
+  input: "t_natoms"
+  input: "strided_slice_18/stack"
+  input: "strided_slice_18/stack_1"
+  input: "strided_slice_18/stack_2"
+  attr {
+    key: "Index"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "begin_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "ellipsis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "end_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "new_axis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "shrink_axis_mask"
+    value {
+      i: 1
+    }
+  }
+}
+node {
+  name: "Reshape_19/shape"
+  op: "Pack"
+  input: "strided_slice_17"
+  input: "strided_slice_18"
+  attr {
+    key: "N"
+    value {
+      i: 2
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "axis"
+    value {
+      i: 0
+    }
+  }
+}
+node {
+  name: "Reshape_19"
+  op: "Reshape"
+  input: "final_layer/BiasAdd"
+  input: "Reshape_19/shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "embedding_lookup_1/axis"
+  op: "Const"
+  attr {
+    key: "_class"
+    value {
+      list {
+        s: "loc:@fitting_attr/t_bias_atom_e"
+      }
+    }
+  }
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: 0
+      }
+    }
+  }
+}
+node {
+  name: "embedding_lookup_1"
+  op: "GatherV2"
+  input: "fitting_attr/t_bias_atom_e/read"
+  input: "Reshape_15"
+  input: "embedding_lookup_1/axis"
+  attr {
+    key: "Taxis"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "Tindices"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "Tparams"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "_class"
+    value {
+      list {
+        s: "loc:@fitting_attr/t_bias_atom_e"
+      }
+    }
+  }
+  attr {
+    key: "batch_dims"
+    value {
+      i: 0
+    }
+  }
+}
+node {
+  name: "embedding_lookup_1/Identity"
+  op: "Identity"
+  input: "embedding_lookup_1"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+}
+node {
+  name: "Shape_5"
+  op: "Shape"
+  input: "Reshape_17"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "out_type"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "strided_slice_19/stack"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 0
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_19/stack_1"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_19/stack_2"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_19"
+  op: "StridedSlice"
+  input: "Shape_5"
+  input: "strided_slice_19/stack"
+  input: "strided_slice_19/stack_1"
+  input: "strided_slice_19/stack_2"
+  attr {
+    key: "Index"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "begin_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "ellipsis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "end_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "new_axis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "shrink_axis_mask"
+    value {
+      i: 1
+    }
+  }
+}
+node {
+  name: "strided_slice_20/stack"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 0
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_20/stack_1"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_20/stack_2"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_20"
+  op: "StridedSlice"
+  input: "t_natoms"
+  input: "strided_slice_20/stack"
+  input: "strided_slice_20/stack_1"
+  input: "strided_slice_20/stack_2"
+  attr {
+    key: "Index"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "begin_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "ellipsis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "end_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "new_axis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "shrink_axis_mask"
+    value {
+      i: 1
+    }
+  }
+}
+node {
+  name: "Reshape_20/shape"
+  op: "Pack"
+  input: "strided_slice_19"
+  input: "strided_slice_20"
+  attr {
+    key: "N"
+    value {
+      i: 2
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "axis"
+    value {
+      i: 0
+    }
+  }
+}
+node {
+  name: "Reshape_20"
+  op: "Reshape"
+  input: "embedding_lookup_1/Identity"
+  input: "Reshape_20/shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "add"
+  op: "AddV2"
+  input: "Reshape_19"
+  input: "Reshape_20"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+}
+node {
+  name: "Reshape_21/shape"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: -1
+      }
+    }
+  }
+}
+node {
+  name: "Reshape_21"
+  op: "Reshape"
+  input: "add"
+  input: "Reshape_21/shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "strided_slice_21/stack"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 0
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_21/stack_1"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_21/stack_2"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_21"
+  op: "StridedSlice"
+  input: "t_natoms"
+  input: "strided_slice_21/stack"
+  input: "strided_slice_21/stack_1"
+  input: "strided_slice_21/stack_2"
+  attr {
+    key: "Index"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "begin_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "ellipsis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "end_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "new_axis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "shrink_axis_mask"
+    value {
+      i: 1
+    }
+  }
+}
+node {
+  name: "o_atom_energy/shape/0"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: -1
+      }
+    }
+  }
+}
+node {
+  name: "o_atom_energy/shape"
+  op: "Pack"
+  input: "o_atom_energy/shape/0"
+  input: "strided_slice_21"
+  attr {
+    key: "N"
+    value {
+      i: 2
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "axis"
+    value {
+      i: 0
+    }
+  }
+}
+node {
+  name: "o_atom_energy"
+  op: "Reshape"
+  input: "Reshape_21"
+  input: "o_atom_energy/shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "o_energy/reduction_indices"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "o_energy"
+  op: "Sum"
+  input: "o_atom_energy"
+  input: "o_energy/reduction_indices"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tidx"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "keep_dims"
+    value {
+      b: false
+    }
+  }
+}
+node {
+  name: "gradients/Shape"
+  op: "Shape"
+  input: "Reshape_21"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "out_type"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/grad_ys_0/Const"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_DOUBLE
+        tensor_shape {
+        }
+        double_val: 1.0
+      }
+    }
+  }
+}
+node {
+  name: "gradients/grad_ys_0"
+  op: "Fill"
+  input: "gradients/Shape"
+  input: "gradients/grad_ys_0/Const"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "index_type"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/Reshape_21_grad/Shape"
+  op: "Shape"
+  input: "add"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "out_type"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/Reshape_21_grad/Reshape"
+  op: "Reshape"
+  input: "gradients/grad_ys_0"
+  input: "gradients/Reshape_21_grad/Shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/add_grad/Shape"
+  op: "Shape"
+  input: "Reshape_19"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "out_type"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/add_grad/Shape_1"
+  op: "Shape"
+  input: "Reshape_20"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "out_type"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/add_grad/BroadcastGradientArgs"
+  op: "BroadcastGradientArgs"
+  input: "gradients/add_grad/Shape"
+  input: "gradients/add_grad/Shape_1"
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/add_grad/Sum"
+  op: "Sum"
+  input: "gradients/Reshape_21_grad/Reshape"
+  input: "gradients/add_grad/BroadcastGradientArgs"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tidx"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "keep_dims"
+    value {
+      b: false
+    }
+  }
+}
+node {
+  name: "gradients/add_grad/Reshape"
+  op: "Reshape"
+  input: "gradients/add_grad/Sum"
+  input: "gradients/add_grad/Shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/Reshape_19_grad/Shape"
+  op: "Shape"
+  input: "final_layer/BiasAdd"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "out_type"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/Reshape_19_grad/Reshape"
+  op: "Reshape"
+  input: "gradients/add_grad/Reshape"
+  input: "gradients/Reshape_19_grad/Shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/final_layer/MatMul_grad/MatMul"
+  op: "MatMul"
+  input: "gradients/Reshape_19_grad/Reshape"
+  input: "final_layer/matrix/read"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "transpose_a"
+    value {
+      b: false
+    }
+  }
+  attr {
+    key: "transpose_b"
+    value {
+      b: true
+    }
+  }
+}
+node {
+  name: "gradients/Reshape_18_grad/Shape"
+  op: "Shape"
+  input: "Slice_1"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "out_type"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/Reshape_18_grad/Reshape"
+  op: "Reshape"
+  input: "gradients/final_layer/MatMul_grad/MatMul"
+  input: "gradients/Reshape_18_grad/Shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/Slice_1_grad/Rank"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: 3
+      }
+    }
+  }
+}
+node {
+  name: "gradients/Slice_1_grad/Shape"
+  op: "Shape"
+  input: "Slice_1"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "out_type"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/Slice_1_grad/stack/1"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "gradients/Slice_1_grad/stack"
+  op: "Pack"
+  input: "gradients/Slice_1_grad/Rank"
+  input: "gradients/Slice_1_grad/stack/1"
+  attr {
+    key: "N"
+    value {
+      i: 2
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "axis"
+    value {
+      i: 0
+    }
+  }
+}
+node {
+  name: "gradients/Slice_1_grad/Reshape"
+  op: "Reshape"
+  input: "Slice_1/begin"
+  input: "gradients/Slice_1_grad/stack"
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/Slice_1_grad/Shape_1"
+  op: "Shape"
+  input: "Reshape_17"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "out_type"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/Slice_1_grad/sub"
+  op: "Sub"
+  input: "gradients/Slice_1_grad/Shape_1"
+  input: "gradients/Slice_1_grad/Shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/Slice_1_grad/sub_1"
+  op: "Sub"
+  input: "gradients/Slice_1_grad/sub"
+  input: "Slice_1/begin"
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/Slice_1_grad/Reshape_1"
+  op: "Reshape"
+  input: "gradients/Slice_1_grad/sub_1"
+  input: "gradients/Slice_1_grad/stack"
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/Slice_1_grad/concat/axis"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "gradients/Slice_1_grad/concat"
+  op: "ConcatV2"
+  input: "gradients/Slice_1_grad/Reshape"
+  input: "gradients/Slice_1_grad/Reshape_1"
+  input: "gradients/Slice_1_grad/concat/axis"
+  attr {
+    key: "N"
+    value {
+      i: 2
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "Tidx"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/Slice_1_grad/Pad"
+  op: "Pad"
+  input: "gradients/Reshape_18_grad/Reshape"
+  input: "gradients/Slice_1_grad/concat"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tpaddings"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/Reshape_17_grad/Shape"
+  op: "Shape"
+  input: "concat_2"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "out_type"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/Reshape_17_grad/Reshape"
+  op: "Reshape"
+  input: "gradients/Slice_1_grad/Pad"
+  input: "gradients/Reshape_17_grad/Shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/concat_2_grad/Rank"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: 2
+      }
+    }
+  }
+}
+node {
+  name: "gradients/concat_2_grad/mod"
+  op: "FloorMod"
+  input: "concat_2/axis"
+  input: "gradients/concat_2_grad/Rank"
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/concat_2_grad/ShapeN"
+  op: "ShapeN"
+  input: "Reshape_16"
+  input: "embedding_lookup/Identity"
+  attr {
+    key: "N"
+    value {
+      i: 2
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "out_type"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/concat_2_grad/ConcatOffset"
+  op: "ConcatOffset"
+  input: "gradients/concat_2_grad/mod"
+  input: "gradients/concat_2_grad/ShapeN"
+  input: "gradients/concat_2_grad/ShapeN:1"
+  attr {
+    key: "N"
+    value {
+      i: 2
+    }
+  }
+}
+node {
+  name: "gradients/concat_2_grad/Slice"
+  op: "Slice"
+  input: "gradients/Reshape_17_grad/Reshape"
+  input: "gradients/concat_2_grad/ConcatOffset"
+  input: "gradients/concat_2_grad/ShapeN"
+  attr {
+    key: "Index"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+}
+node {
+  name: "gradients/Reshape_16_grad/Shape"
+  op: "Shape"
+  input: "Reshape_13"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "out_type"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/Reshape_16_grad/Reshape"
+  op: "Reshape"
+  input: "gradients/concat_2_grad/Slice"
+  input: "gradients/Reshape_16_grad/Shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/Reshape_13_grad/Shape"
+  op: "Shape"
+  input: "o_descriptor"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "out_type"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/Reshape_13_grad/Reshape"
+  op: "Reshape"
+  input: "gradients/Reshape_16_grad/Reshape"
+  input: "gradients/Reshape_13_grad/Shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/Reshape_11_grad/Shape"
+  op: "Shape"
+  input: "filter_type_all/Reshape_6"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "out_type"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/Reshape_11_grad/Reshape"
+  op: "Reshape"
+  input: "gradients/Reshape_13_grad/Reshape"
+  input: "gradients/Reshape_11_grad/Shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/Reshape_6_grad/Shape"
+  op: "Shape"
+  input: "filter_type_all/MatMul_2"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "out_type"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/Reshape_6_grad/Reshape"
+  op: "Reshape"
+  input: "gradients/Reshape_11_grad/Reshape"
+  input: "gradients/filter_type_all/Reshape_6_grad/Shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/MatMul_2_grad/MatMul"
+  op: "BatchMatMulV2"
+  input: "filter_type_all/Slice_2"
+  input: "gradients/filter_type_all/Reshape_6_grad/Reshape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "adj_x"
+    value {
+      b: false
+    }
+  }
+  attr {
+    key: "adj_y"
+    value {
+      b: true
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/MatMul_2_grad/MatMul_1"
+  op: "BatchMatMulV2"
+  input: "filter_type_all/truediv"
+  input: "gradients/filter_type_all/Reshape_6_grad/Reshape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "adj_x"
+    value {
+      b: false
+    }
+  }
+  attr {
+    key: "adj_y"
+    value {
+      b: false
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/MatMul_2_grad/Shape"
+  op: "Shape"
+  input: "filter_type_all/truediv"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "out_type"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/MatMul_2_grad/Shape_1"
+  op: "Shape"
+  input: "filter_type_all/Slice_2"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "out_type"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/MatMul_2_grad/strided_slice/stack"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 0
+      }
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/MatMul_2_grad/strided_slice/stack_1"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: -2
+      }
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/MatMul_2_grad/strided_slice/stack_2"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/MatMul_2_grad/strided_slice"
+  op: "StridedSlice"
+  input: "gradients/filter_type_all/MatMul_2_grad/Shape"
+  input: "gradients/filter_type_all/MatMul_2_grad/strided_slice/stack"
+  input: "gradients/filter_type_all/MatMul_2_grad/strided_slice/stack_1"
+  input: "gradients/filter_type_all/MatMul_2_grad/strided_slice/stack_2"
+  attr {
+    key: "Index"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "begin_mask"
+    value {
+      i: 1
+    }
+  }
+  attr {
+    key: "ellipsis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "end_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "new_axis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "shrink_axis_mask"
+    value {
+      i: 0
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/MatMul_2_grad/strided_slice_1/stack"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 0
+      }
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/MatMul_2_grad/strided_slice_1/stack_1"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: -2
+      }
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/MatMul_2_grad/strided_slice_1/stack_2"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/MatMul_2_grad/strided_slice_1"
+  op: "StridedSlice"
+  input: "gradients/filter_type_all/MatMul_2_grad/Shape_1"
+  input: "gradients/filter_type_all/MatMul_2_grad/strided_slice_1/stack"
+  input: "gradients/filter_type_all/MatMul_2_grad/strided_slice_1/stack_1"
+  input: "gradients/filter_type_all/MatMul_2_grad/strided_slice_1/stack_2"
+  attr {
+    key: "Index"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "begin_mask"
+    value {
+      i: 1
+    }
+  }
+  attr {
+    key: "ellipsis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "end_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "new_axis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "shrink_axis_mask"
+    value {
+      i: 0
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/MatMul_2_grad/BroadcastGradientArgs"
+  op: "BroadcastGradientArgs"
+  input: "gradients/filter_type_all/MatMul_2_grad/strided_slice"
+  input: "gradients/filter_type_all/MatMul_2_grad/strided_slice_1"
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/MatMul_2_grad/Sum"
+  op: "Sum"
+  input: "gradients/filter_type_all/MatMul_2_grad/MatMul"
+  input: "gradients/filter_type_all/MatMul_2_grad/BroadcastGradientArgs"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tidx"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "keep_dims"
+    value {
+      b: false
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/MatMul_2_grad/Reshape"
+  op: "Reshape"
+  input: "gradients/filter_type_all/MatMul_2_grad/Sum"
+  input: "gradients/filter_type_all/MatMul_2_grad/Shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/MatMul_2_grad/Sum_1"
+  op: "Sum"
+  input: "gradients/filter_type_all/MatMul_2_grad/MatMul_1"
+  input: "gradients/filter_type_all/MatMul_2_grad/BroadcastGradientArgs:1"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tidx"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "keep_dims"
+    value {
+      b: false
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/MatMul_2_grad/Reshape_1"
+  op: "Reshape"
+  input: "gradients/filter_type_all/MatMul_2_grad/Sum_1"
+  input: "gradients/filter_type_all/MatMul_2_grad/Shape_1"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/Slice_2_grad/Rank"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: 3
+      }
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/Slice_2_grad/Shape"
+  op: "Shape"
+  input: "filter_type_all/Slice_2"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "out_type"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/Slice_2_grad/stack/1"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/Slice_2_grad/stack"
+  op: "Pack"
+  input: "gradients/filter_type_all/Slice_2_grad/Rank"
+  input: "gradients/filter_type_all/Slice_2_grad/stack/1"
+  attr {
+    key: "N"
+    value {
+      i: 2
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "axis"
+    value {
+      i: 0
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/Slice_2_grad/Reshape"
+  op: "Reshape"
+  input: "filter_type_all/Slice_2/begin"
+  input: "gradients/filter_type_all/Slice_2_grad/stack"
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/Slice_2_grad/Shape_1"
+  op: "Shape"
+  input: "filter_type_all/truediv"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "out_type"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/Slice_2_grad/sub"
+  op: "Sub"
+  input: "gradients/filter_type_all/Slice_2_grad/Shape_1"
+  input: "gradients/filter_type_all/Slice_2_grad/Shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/Slice_2_grad/sub_1"
+  op: "Sub"
+  input: "gradients/filter_type_all/Slice_2_grad/sub"
+  input: "filter_type_all/Slice_2/begin"
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/Slice_2_grad/Reshape_1"
+  op: "Reshape"
+  input: "gradients/filter_type_all/Slice_2_grad/sub_1"
+  input: "gradients/filter_type_all/Slice_2_grad/stack"
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/Slice_2_grad/concat/axis"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/Slice_2_grad/concat"
+  op: "ConcatV2"
+  input: "gradients/filter_type_all/Slice_2_grad/Reshape"
+  input: "gradients/filter_type_all/Slice_2_grad/Reshape_1"
+  input: "gradients/filter_type_all/Slice_2_grad/concat/axis"
+  attr {
+    key: "N"
+    value {
+      i: 2
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "Tidx"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/Slice_2_grad/Pad"
+  op: "Pad"
+  input: "gradients/filter_type_all/MatMul_2_grad/Reshape_1"
+  input: "gradients/filter_type_all/Slice_2_grad/concat"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tpaddings"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/AddN"
+  op: "AddN"
+  input: "gradients/filter_type_all/MatMul_2_grad/Reshape"
+  input: "gradients/filter_type_all/Slice_2_grad/Pad"
+  attr {
+    key: "N"
+    value {
+      i: 2
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "_class"
+    value {
+      list {
+        s: "loc:@gradients/filter_type_all/MatMul_2_grad/Reshape"
+      }
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/truediv_grad/Shape"
+  op: "Shape"
+  input: "filter_type_all/MatMul_1"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "out_type"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/truediv_grad/Shape_1"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+          }
+        }
+      }
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/truediv_grad/BroadcastGradientArgs"
+  op: "BroadcastGradientArgs"
+  input: "gradients/filter_type_all/truediv_grad/Shape"
+  input: "gradients/filter_type_all/truediv_grad/Shape_1"
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/truediv_grad/RealDiv"
+  op: "RealDiv"
+  input: "gradients/AddN"
+  input: "filter_type_all/truediv/y"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/truediv_grad/Sum"
+  op: "Sum"
+  input: "gradients/filter_type_all/truediv_grad/RealDiv"
+  input: "gradients/filter_type_all/truediv_grad/BroadcastGradientArgs"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tidx"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "keep_dims"
+    value {
+      b: false
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/truediv_grad/Reshape"
+  op: "Reshape"
+  input: "gradients/filter_type_all/truediv_grad/Sum"
+  input: "gradients/filter_type_all/truediv_grad/Shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/MatMul_1_grad/MatMul"
+  op: "BatchMatMulV2"
+  input: "filter_type_all/Reshape_4"
+  input: "gradients/filter_type_all/truediv_grad/Reshape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "adj_x"
+    value {
+      b: false
+    }
+  }
+  attr {
+    key: "adj_y"
+    value {
+      b: true
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/MatMul_1_grad/MatMul_1"
+  op: "BatchMatMulV2"
+  input: "filter_type_all/Reshape_5"
+  input: "gradients/filter_type_all/truediv_grad/Reshape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "adj_x"
+    value {
+      b: false
+    }
+  }
+  attr {
+    key: "adj_y"
+    value {
+      b: false
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/MatMul_1_grad/Shape"
+  op: "Shape"
+  input: "filter_type_all/Reshape_5"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "out_type"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/MatMul_1_grad/Shape_1"
+  op: "Shape"
+  input: "filter_type_all/Reshape_4"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "out_type"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/MatMul_1_grad/strided_slice/stack"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 0
+      }
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/MatMul_1_grad/strided_slice/stack_1"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: -2
+      }
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/MatMul_1_grad/strided_slice/stack_2"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/MatMul_1_grad/strided_slice"
+  op: "StridedSlice"
+  input: "gradients/filter_type_all/MatMul_1_grad/Shape"
+  input: "gradients/filter_type_all/MatMul_1_grad/strided_slice/stack"
+  input: "gradients/filter_type_all/MatMul_1_grad/strided_slice/stack_1"
+  input: "gradients/filter_type_all/MatMul_1_grad/strided_slice/stack_2"
+  attr {
+    key: "Index"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "begin_mask"
+    value {
+      i: 1
+    }
+  }
+  attr {
+    key: "ellipsis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "end_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "new_axis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "shrink_axis_mask"
+    value {
+      i: 0
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/MatMul_1_grad/strided_slice_1/stack"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 0
+      }
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/MatMul_1_grad/strided_slice_1/stack_1"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: -2
+      }
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/MatMul_1_grad/strided_slice_1/stack_2"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/MatMul_1_grad/strided_slice_1"
+  op: "StridedSlice"
+  input: "gradients/filter_type_all/MatMul_1_grad/Shape_1"
+  input: "gradients/filter_type_all/MatMul_1_grad/strided_slice_1/stack"
+  input: "gradients/filter_type_all/MatMul_1_grad/strided_slice_1/stack_1"
+  input: "gradients/filter_type_all/MatMul_1_grad/strided_slice_1/stack_2"
+  attr {
+    key: "Index"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "begin_mask"
+    value {
+      i: 1
+    }
+  }
+  attr {
+    key: "ellipsis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "end_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "new_axis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "shrink_axis_mask"
+    value {
+      i: 0
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/MatMul_1_grad/BroadcastGradientArgs"
+  op: "BroadcastGradientArgs"
+  input: "gradients/filter_type_all/MatMul_1_grad/strided_slice"
+  input: "gradients/filter_type_all/MatMul_1_grad/strided_slice_1"
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/MatMul_1_grad/Sum"
+  op: "Sum"
+  input: "gradients/filter_type_all/MatMul_1_grad/MatMul"
+  input: "gradients/filter_type_all/MatMul_1_grad/BroadcastGradientArgs"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tidx"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "keep_dims"
+    value {
+      b: false
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/MatMul_1_grad/Reshape"
+  op: "Reshape"
+  input: "gradients/filter_type_all/MatMul_1_grad/Sum"
+  input: "gradients/filter_type_all/MatMul_1_grad/Shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/MatMul_1_grad/Sum_1"
+  op: "Sum"
+  input: "gradients/filter_type_all/MatMul_1_grad/MatMul_1"
+  input: "gradients/filter_type_all/MatMul_1_grad/BroadcastGradientArgs:1"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tidx"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "keep_dims"
+    value {
+      b: false
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/MatMul_1_grad/Reshape_1"
+  op: "Reshape"
+  input: "gradients/filter_type_all/MatMul_1_grad/Sum_1"
+  input: "gradients/filter_type_all/MatMul_1_grad/Shape_1"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/Reshape_5_grad/Shape"
+  op: "Shape"
+  input: "filter_type_all/Slice"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "out_type"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/Reshape_5_grad/Reshape"
+  op: "Reshape"
+  input: "gradients/filter_type_all/MatMul_1_grad/Reshape"
+  input: "gradients/filter_type_all/Reshape_5_grad/Shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/Reshape_4_grad/Shape"
+  op: "Shape"
+  input: "filter_type_all/Reshape_3"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "out_type"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/Reshape_4_grad/Reshape"
+  op: "Reshape"
+  input: "gradients/filter_type_all/MatMul_1_grad/Reshape_1"
+  input: "gradients/filter_type_all/Reshape_4_grad/Shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/Reshape_3_grad/Shape"
+  op: "Shape"
+  input: "filter_type_all/Tanh"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "out_type"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/Reshape_3_grad/Reshape"
+  op: "Reshape"
+  input: "gradients/filter_type_all/Reshape_4_grad/Reshape"
+  input: "gradients/filter_type_all/Reshape_3_grad/Shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/Tanh_grad/TanhGrad"
+  op: "TanhGrad"
+  input: "filter_type_all/Tanh"
+  input: "gradients/filter_type_all/Reshape_3_grad/Reshape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/MatMul_grad/MatMul"
+  op: "MatMul"
+  input: "gradients/filter_type_all/Tanh_grad/TanhGrad"
+  input: "filter_type_all/matrix_1/read"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "transpose_a"
+    value {
+      b: false
+    }
+  }
+  attr {
+    key: "transpose_b"
+    value {
+      b: true
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/concat_grad/Rank"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: 2
+      }
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/concat_grad/mod"
+  op: "FloorMod"
+  input: "filter_type_all/concat/axis"
+  input: "gradients/filter_type_all/concat_grad/Rank"
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/concat_grad/ShapeN"
+  op: "ShapeN"
+  input: "filter_type_all/Reshape_1"
+  input: "filter_type_all/Reshape_2"
+  attr {
+    key: "N"
+    value {
+      i: 2
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "out_type"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/concat_grad/ConcatOffset"
+  op: "ConcatOffset"
+  input: "gradients/filter_type_all/concat_grad/mod"
+  input: "gradients/filter_type_all/concat_grad/ShapeN"
+  input: "gradients/filter_type_all/concat_grad/ShapeN:1"
+  attr {
+    key: "N"
+    value {
+      i: 2
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/concat_grad/Slice"
+  op: "Slice"
+  input: "gradients/filter_type_all/MatMul_grad/MatMul"
+  input: "gradients/filter_type_all/concat_grad/ConcatOffset"
+  input: "gradients/filter_type_all/concat_grad/ShapeN"
+  attr {
+    key: "Index"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/Reshape_1_grad/Shape"
+  op: "Shape"
+  input: "filter_type_all/Slice_1"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "out_type"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/Reshape_1_grad/Reshape"
+  op: "Reshape"
+  input: "gradients/filter_type_all/concat_grad/Slice"
+  input: "gradients/filter_type_all/Reshape_1_grad/Shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/Slice_1_grad/Rank"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: 2
+      }
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/Slice_1_grad/Shape"
+  op: "Shape"
+  input: "filter_type_all/Slice_1"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "out_type"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/Slice_1_grad/stack/1"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/Slice_1_grad/stack"
+  op: "Pack"
+  input: "gradients/filter_type_all/Slice_1_grad/Rank"
+  input: "gradients/filter_type_all/Slice_1_grad/stack/1"
+  attr {
+    key: "N"
+    value {
+      i: 2
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "axis"
+    value {
+      i: 0
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/Slice_1_grad/Reshape"
+  op: "Reshape"
+  input: "filter_type_all/Slice_1/begin"
+  input: "gradients/filter_type_all/Slice_1_grad/stack"
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/Slice_1_grad/Shape_1"
+  op: "Shape"
+  input: "filter_type_all/Reshape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "out_type"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/Slice_1_grad/sub"
+  op: "Sub"
+  input: "gradients/filter_type_all/Slice_1_grad/Shape_1"
+  input: "gradients/filter_type_all/Slice_1_grad/Shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/Slice_1_grad/sub_1"
+  op: "Sub"
+  input: "gradients/filter_type_all/Slice_1_grad/sub"
+  input: "filter_type_all/Slice_1/begin"
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/Slice_1_grad/Reshape_1"
+  op: "Reshape"
+  input: "gradients/filter_type_all/Slice_1_grad/sub_1"
+  input: "gradients/filter_type_all/Slice_1_grad/stack"
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/Slice_1_grad/concat/axis"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/Slice_1_grad/concat"
+  op: "ConcatV2"
+  input: "gradients/filter_type_all/Slice_1_grad/Reshape"
+  input: "gradients/filter_type_all/Slice_1_grad/Reshape_1"
+  input: "gradients/filter_type_all/Slice_1_grad/concat/axis"
+  attr {
+    key: "N"
+    value {
+      i: 2
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "Tidx"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/Slice_1_grad/Pad"
+  op: "Pad"
+  input: "gradients/filter_type_all/Reshape_1_grad/Reshape"
+  input: "gradients/filter_type_all/Slice_1_grad/concat"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tpaddings"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/Reshape_grad/Shape"
+  op: "Shape"
+  input: "filter_type_all/Slice"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "out_type"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/Reshape_grad/Reshape"
+  op: "Reshape"
+  input: "gradients/filter_type_all/Slice_1_grad/Pad"
+  input: "gradients/filter_type_all/Reshape_grad/Shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/AddN_1"
+  op: "AddN"
+  input: "gradients/filter_type_all/Reshape_5_grad/Reshape"
+  input: "gradients/filter_type_all/Reshape_grad/Reshape"
+  attr {
+    key: "N"
+    value {
+      i: 2
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "_class"
+    value {
+      list {
+        s: "loc:@gradients/filter_type_all/Reshape_5_grad/Reshape"
+      }
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/Slice_grad/Rank"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: 2
+      }
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/Slice_grad/Shape"
+  op: "Shape"
+  input: "filter_type_all/Slice"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "out_type"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/Slice_grad/stack/1"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/Slice_grad/stack"
+  op: "Pack"
+  input: "gradients/filter_type_all/Slice_grad/Rank"
+  input: "gradients/filter_type_all/Slice_grad/stack/1"
+  attr {
+    key: "N"
+    value {
+      i: 2
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "axis"
+    value {
+      i: 0
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/Slice_grad/Reshape"
+  op: "Reshape"
+  input: "filter_type_all/Slice/begin"
+  input: "gradients/filter_type_all/Slice_grad/stack"
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/Slice_grad/Shape_1"
+  op: "Shape"
+  input: "Reshape_9"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "out_type"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/Slice_grad/sub"
+  op: "Sub"
+  input: "gradients/filter_type_all/Slice_grad/Shape_1"
+  input: "gradients/filter_type_all/Slice_grad/Shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/Slice_grad/sub_1"
+  op: "Sub"
+  input: "gradients/filter_type_all/Slice_grad/sub"
+  input: "filter_type_all/Slice/begin"
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/Slice_grad/Reshape_1"
+  op: "Reshape"
+  input: "gradients/filter_type_all/Slice_grad/sub_1"
+  input: "gradients/filter_type_all/Slice_grad/stack"
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/Slice_grad/concat/axis"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/Slice_grad/concat"
+  op: "ConcatV2"
+  input: "gradients/filter_type_all/Slice_grad/Reshape"
+  input: "gradients/filter_type_all/Slice_grad/Reshape_1"
+  input: "gradients/filter_type_all/Slice_grad/concat/axis"
+  attr {
+    key: "N"
+    value {
+      i: 2
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "Tidx"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/filter_type_all/Slice_grad/Pad"
+  op: "Pad"
+  input: "gradients/AddN_1"
+  input: "gradients/filter_type_all/Slice_grad/concat"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tpaddings"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/Reshape_9_grad/Shape"
+  op: "Shape"
+  input: "Reshape_8"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "out_type"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/Reshape_9_grad/Reshape"
+  op: "Reshape"
+  input: "gradients/filter_type_all/Slice_grad/Pad"
+  input: "gradients/Reshape_9_grad/Shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/Reshape_8_grad/Shape"
+  op: "Shape"
+  input: "o_rmat"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "out_type"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "gradients/Reshape_8_grad/Reshape"
+  op: "Reshape"
+  input: "gradients/Reshape_9_grad/Reshape"
+  input: "gradients/Reshape_8_grad/Shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "strided_slice_22/stack"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 0
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_22/stack_1"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_22/stack_2"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_22"
+  op: "StridedSlice"
+  input: "t_natoms"
+  input: "strided_slice_22/stack"
+  input: "strided_slice_22/stack_1"
+  input: "strided_slice_22/stack_2"
+  attr {
+    key: "Index"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "begin_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "ellipsis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "end_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "new_axis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "shrink_axis_mask"
+    value {
+      i: 1
+    }
+  }
+}
+node {
+  name: "mul_2/y"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: 16
+      }
+    }
+  }
+}
+node {
+  name: "mul_2"
+  op: "Mul"
+  input: "strided_slice_22"
+  input: "mul_2/y"
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "Reshape_22/shape/0"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: -1
+      }
+    }
+  }
+}
+node {
+  name: "Reshape_22/shape"
+  op: "Pack"
+  input: "Reshape_22/shape/0"
+  input: "mul_2"
+  attr {
+    key: "N"
+    value {
+      i: 2
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "axis"
+    value {
+      i: 0
+    }
+  }
+}
+node {
+  name: "Reshape_22"
+  op: "Reshape"
+  input: "gradients/Reshape_8_grad/Reshape"
+  input: "Reshape_22/shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "ProdForceSeA"
+  op: "ProdForceSeA"
+  input: "Reshape_22"
+  input: "o_rmat_deriv"
+  input: "o_nlist"
+  input: "t_natoms"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "n_a_sel"
+    value {
+      i: 4
+    }
+  }
+  attr {
+    key: "n_r_sel"
+    value {
+      i: 0
+    }
+  }
+}
+node {
+  name: "ProdVirialSeA"
+  op: "ProdVirialSeA"
+  input: "Reshape_22"
+  input: "o_rmat_deriv"
+  input: "o_rij"
+  input: "o_nlist"
+  input: "t_natoms"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "n_a_sel"
+    value {
+      i: 4
+    }
+  }
+  attr {
+    key: "n_r_sel"
+    value {
+      i: 0
+    }
+  }
+}
+node {
+  name: "strided_slice_23/stack"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_23/stack_1"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 2
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_23/stack_2"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_23"
+  op: "StridedSlice"
+  input: "t_natoms"
+  input: "strided_slice_23/stack"
+  input: "strided_slice_23/stack_1"
+  input: "strided_slice_23/stack_2"
+  attr {
+    key: "Index"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "begin_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "ellipsis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "end_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "new_axis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "shrink_axis_mask"
+    value {
+      i: 1
+    }
+  }
+}
+node {
+  name: "mul_3/x"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: 3
+      }
+    }
+  }
+}
+node {
+  name: "mul_3"
+  op: "Mul"
+  input: "mul_3/x"
+  input: "strided_slice_23"
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "o_force/shape/0"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: -1
+      }
+    }
+  }
+}
+node {
+  name: "o_force/shape"
+  op: "Pack"
+  input: "o_force/shape/0"
+  input: "mul_3"
+  attr {
+    key: "N"
+    value {
+      i: 2
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "axis"
+    value {
+      i: 0
+    }
+  }
+}
+node {
+  name: "o_force"
+  op: "Reshape"
+  input: "ProdForceSeA"
+  input: "o_force/shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "o_virial/shape"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 2
+          }
+        }
+        tensor_content: "\377\377\377\377\t\000\000\000"
+      }
+    }
+  }
+}
+node {
+  name: "o_virial"
+  op: "Reshape"
+  input: "ProdVirialSeA"
+  input: "o_virial/shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "strided_slice_24/stack"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_24/stack_1"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 2
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_24/stack_2"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+          dim {
+            size: 1
+          }
+        }
+        int_val: 1
+      }
+    }
+  }
+}
+node {
+  name: "strided_slice_24"
+  op: "StridedSlice"
+  input: "t_natoms"
+  input: "strided_slice_24/stack"
+  input: "strided_slice_24/stack_1"
+  input: "strided_slice_24/stack_2"
+  attr {
+    key: "Index"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "begin_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "ellipsis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "end_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "new_axis_mask"
+    value {
+      i: 0
+    }
+  }
+  attr {
+    key: "shrink_axis_mask"
+    value {
+      i: 1
+    }
+  }
+}
+node {
+  name: "mul_4/x"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: 9
+      }
+    }
+  }
+}
+node {
+  name: "mul_4"
+  op: "Mul"
+  input: "mul_4/x"
+  input: "strided_slice_24"
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+node {
+  name: "o_atom_virial/shape/0"
+  op: "Const"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_INT32
+        tensor_shape {
+        }
+        int_val: -1
+      }
+    }
+  }
+}
+node {
+  name: "o_atom_virial/shape"
+  op: "Pack"
+  input: "o_atom_virial/shape/0"
+  input: "mul_4"
+  attr {
+    key: "N"
+    value {
+      i: 2
+    }
+  }
+  attr {
+    key: "T"
+    value {
+      type: DT_INT32
+    }
+  }
+  attr {
+    key: "axis"
+    value {
+      i: 0
+    }
+  }
+}
+node {
+  name: "o_atom_virial"
+  op: "Reshape"
+  input: "ProdVirialSeA:1"
+  input: "o_atom_virial/shape"
+  attr {
+    key: "T"
+    value {
+      type: DT_DOUBLE
+    }
+  }
+  attr {
+    key: "Tshape"
+    value {
+      type: DT_INT32
+    }
+  }
+}
+library {
+}
+versions {
+}

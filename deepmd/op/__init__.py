@@ -1,8 +1,10 @@
 """This module will house cust Tf OPs after CMake installation."""
 
-from pathlib import Path
 import importlib
 import logging
+from pathlib import (
+    Path,
+)
 
 NOT_LOADABLE = ("__init__.py",)
 PACKAGE_BASE = "deepmd.op"

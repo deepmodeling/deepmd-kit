@@ -1,35 +1,29 @@
 #pragma once
 
-#include "SimulationRegion.h"
 #include <vector>
 
-using namespace std;
+#include "SimulationRegion.h"
 
 #ifdef HIGH_PREC
 typedef double VALUETYPE;
-#else 
-typedef float  VALUETYPE;
+#else
+typedef float VALUETYPE;
 #endif
 
-class HarmonicBond 
-{
-public:
-  HarmonicBond (const VALUETYPE & kk,
-		const VALUETYPE & bb);
-public:
-  void compute (VALUETYPE &			ener,
-		vector<VALUETYPE> &		force,
-		vector<VALUETYPE> &		virial,
-		const vector<VALUETYPE> &	coord,
-		const vector<int> &		atype,
-		const SimulationRegion<VALUETYPE> &	region, 
-		const vector<int > &		blist);
-private:
-  VALUETYPE kk, bb;
-  void 
-  hb_inner (VALUETYPE & ae,
-	    VALUETYPE & af,
-	    const VALUETYPE & r2);
-}
-    ;
+class HarmonicBond {
+ public:
+  HarmonicBond(const VALUETYPE& kk, const VALUETYPE& bb);
 
+ public:
+  void compute(VALUETYPE& ener,
+               std::vector<VALUETYPE>& force,
+               std::vector<VALUETYPE>& virial,
+               const std::vector<VALUETYPE>& coord,
+               const std::vector<int>& atype,
+               const SimulationRegion<VALUETYPE>& region,
+               const std::vector<int>& blist);
+
+ private:
+  VALUETYPE kk, bb;
+  void hb_inner(VALUETYPE& ae, VALUETYPE& af, const VALUETYPE& r2);
+};

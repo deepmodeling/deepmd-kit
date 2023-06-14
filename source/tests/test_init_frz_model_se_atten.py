@@ -1,16 +1,34 @@
-import os, sys, platform, shutil, dpdata, json
-import numpy as np
+import json
+import os
 import unittest
-import subprocess as sp
-from common import j_loader, tests_path, run_dp
-from deepmd.train.trainer import DPTrainer
-from deepmd.train.run_options import RunOptions
-from deepmd.utils.argcheck import normalize
-from deepmd.utils.compat import update_deepmd_input
-from deepmd.utils.data_system import DeepmdDataSystem
 
-from deepmd.env import GLOBAL_NP_FLOAT_PRECISION, tf
+import numpy as np
+from common import (
+    j_loader,
+    run_dp,
+    tests_path,
+)
 from packaging.version import parse as parse_version
+
+from deepmd.env import (
+    GLOBAL_NP_FLOAT_PRECISION,
+    tf,
+)
+from deepmd.train.run_options import (
+    RunOptions,
+)
+from deepmd.train.trainer import (
+    DPTrainer,
+)
+from deepmd.utils.argcheck import (
+    normalize,
+)
+from deepmd.utils.compat import (
+    update_deepmd_input,
+)
+from deepmd.utils.data_system import (
+    DeepmdDataSystem,
+)
 
 if GLOBAL_NP_FLOAT_PRECISION == np.float32:
     default_places = 4
@@ -25,17 +43,6 @@ def _file_delete(file):
         os.remove(file)
 
 
-def _subprocess_run(command):
-    popen = sp.Popen(command.split(), shell=False, stdout=sp.PIPE, stderr=sp.STDOUT)
-    for line in iter(popen.stdout.readline, b''):
-        if hasattr(line, 'decode'):
-            line = line.decode('utf-8')
-        line = line.rstrip()
-        print(line)
-    popen.wait()
-    return popen.returncode
-
-
 def _init_models():
     data_file = str(tests_path / os.path.join("init_frz_model", "data"))
     frozen_model = str(tests_path / "init_frz_se_atten.pb")
@@ -47,14 +54,14 @@ def _init_models():
     jdata["training"]["training_data"]["systems"] = data_file
     jdata["training"]["validation_data"]["systems"] = data_file
     jdata["training"]["save_ckpt"] = ckpt
-    jdata['model']["descriptor"]['type'] = 'se_atten'
-    jdata['model']["descriptor"]['sel'] = 120
+    jdata["model"]["descriptor"]["type"] = "se_atten"
+    jdata["model"]["descriptor"]["sel"] = 120
     with open(INPUT, "w") as fp:
         json.dump(jdata, fp, indent=4)
     ret = run_dp("dp train " + INPUT)
-    np.testing.assert_equal(ret, 0, 'DP train failed!')
+    np.testing.assert_equal(ret, 0, "DP train failed!")
     ret = run_dp("dp freeze -c " + str(tests_path) + " -o " + frozen_model)
-    np.testing.assert_equal(ret, 0, 'DP freeze failed!')
+    np.testing.assert_equal(ret, 0, "DP freeze failed!")
 
     jdata = update_deepmd_input(jdata, warning=True, dump="input_v2_compat.json")
     jdata = normalize(jdata)
@@ -68,43 +75,55 @@ def _init_models():
         test_size=1,
         rcut=rcut,
         type_map=type_map,
-        trn_all_set=True
+        trn_all_set=True,
     )
-    data_requirement = {'energy': {'ndof': 1,
-                                   'atomic': False,
-                                   'must': False,
-                                   'high_prec': True,
-                                   'type_sel': None,
-                                   'repeat': 1,
-                                   'default': 0.0},
-                        'force': {'ndof': 3,
-                                  'atomic': True,
-                                  'must': False,
-                                  'high_prec': False,
-                                  'type_sel': None,
-                                  'repeat': 1,
-                                  'default': 0.0},
-                        'virial': {'ndof': 9,
-                                   'atomic': False,
-                                   'must': False,
-                                   'high_prec': False,
-                                   'type_sel': None,
-                                   'repeat': 1,
-                                   'default': 0.0},
-                        'atom_ener': {'ndof': 1,
-                                      'atomic': True,
-                                      'must': False,
-                                      'high_prec': False,
-                                      'type_sel': None,
-                                      'repeat': 1,
-                                      'default': 0.0},
-                        'atom_pref': {'ndof': 1,
-                                      'atomic': True,
-                                      'must': False,
-                                      'high_prec': False,
-                                      'type_sel': None,
-                                      'repeat': 3,
-                                      'default': 0.0}}
+    data_requirement = {
+        "energy": {
+            "ndof": 1,
+            "atomic": False,
+            "must": False,
+            "high_prec": True,
+            "type_sel": None,
+            "repeat": 1,
+            "default": 0.0,
+        },
+        "force": {
+            "ndof": 3,
+            "atomic": True,
+            "must": False,
+            "high_prec": False,
+            "type_sel": None,
+            "repeat": 1,
+            "default": 0.0,
+        },
+        "virial": {
+            "ndof": 9,
+            "atomic": False,
+            "must": False,
+            "high_prec": False,
+            "type_sel": None,
+            "repeat": 1,
+            "default": 0.0,
+        },
+        "atom_ener": {
+            "ndof": 1,
+            "atomic": True,
+            "must": False,
+            "high_prec": False,
+            "type_sel": None,
+            "repeat": 1,
+            "default": 0.0,
+        },
+        "atom_pref": {
+            "ndof": 1,
+            "atomic": True,
+            "must": False,
+            "high_prec": False,
+            "type_sel": None,
+            "repeat": 3,
+            "default": 0.0,
+        },
+    }
     data.add_dict(data_requirement)
     stop_batch = jdata["training"]["numb_steps"]
 
@@ -112,45 +131,57 @@ def _init_models():
 
 
 if not parse_version(tf.__version__) < parse_version("1.15"):
-    INPUT, CKPT, FROZEN_MODEL, CKPT_TRAINER, FRZ_TRAINER, VALID_DATA, STOP_BATCH = _init_models()
+    (
+        INPUT,
+        CKPT,
+        FROZEN_MODEL,
+        CKPT_TRAINER,
+        FRZ_TRAINER,
+        VALID_DATA,
+        STOP_BATCH,
+    ) = _init_models()
 
 
-@unittest.skipIf(parse_version(tf.__version__) < parse_version("1.15"),
-    f"The current tf version {tf.__version__} is too low to run the new testing model.")
+@unittest.skipIf(
+    parse_version(tf.__version__) < parse_version("1.15"),
+    f"The current tf version {tf.__version__} is too low to run the new testing model.",
+)
 class TestInitFrzModelAtten(unittest.TestCase):
     @classmethod
-    def setUpClass(self):
-        self.dp_ckpt = CKPT_TRAINER
-        self.dp_frz = FRZ_TRAINER
-        self.valid_data = VALID_DATA
-        self.stop_batch = STOP_BATCH
+    def setUpClass(cls):
+        cls.dp_ckpt = CKPT_TRAINER
+        cls.dp_frz = FRZ_TRAINER
+        cls.valid_data = VALID_DATA
+        cls.stop_batch = STOP_BATCH
 
     @classmethod
-    def tearDownClass(self):
+    def tearDownClass(cls):
         _file_delete(INPUT)
         _file_delete(FROZEN_MODEL)
         _file_delete("out.json")
         _file_delete(str(tests_path / "checkpoint"))
-        _file_delete(CKPT+".meta")
-        _file_delete(CKPT+".index")
-        _file_delete(CKPT+".data-00000-of-00001")
-        _file_delete(CKPT+"-0.meta")
-        _file_delete(CKPT+"-0.index")
-        _file_delete(CKPT+"-0.data-00000-of-00001")
-        _file_delete(CKPT+"-1.meta")
-        _file_delete(CKPT+"-1.index")
-        _file_delete(CKPT+"-1.data-00000-of-00001")
+        _file_delete(CKPT + ".meta")
+        _file_delete(CKPT + ".index")
+        _file_delete(CKPT + ".data-00000-of-00001")
+        _file_delete(CKPT + "-0.meta")
+        _file_delete(CKPT + "-0.index")
+        _file_delete(CKPT + "-0.data-00000-of-00001")
+        _file_delete(CKPT + "-1.meta")
+        _file_delete(CKPT + "-1.index")
+        _file_delete(CKPT + "-1.data-00000-of-00001")
         _file_delete("input_v2_compat.json")
         _file_delete("lcurve.out")
 
     def test_single_frame(self):
         valid_batch = self.valid_data.get_batch()
-        natoms = valid_batch['natoms_vec']
+        natoms = valid_batch["natoms_vec"]
         tf.reset_default_graph()
         self.dp_ckpt.build(self.valid_data, self.stop_batch)
         self.dp_ckpt._init_session()
         feed_dict_ckpt = self.dp_ckpt.get_feed_dict(valid_batch, is_training=False)
-        ckpt_rmse_ckpt = self.dp_ckpt.loss.eval(self.dp_ckpt.sess, feed_dict_ckpt, natoms)
+        ckpt_rmse_ckpt = self.dp_ckpt.loss.eval(
+            self.dp_ckpt.sess, feed_dict_ckpt, natoms
+        )
         tf.reset_default_graph()
 
         self.dp_frz.build(self.valid_data, self.stop_batch)
@@ -160,8 +191,12 @@ class TestInitFrzModelAtten(unittest.TestCase):
         tf.reset_default_graph()
 
         # check values
-        np.testing.assert_almost_equal(ckpt_rmse_ckpt['rmse_e'], ckpt_rmse_frz['rmse_e'], default_places)
-        np.testing.assert_almost_equal(ckpt_rmse_ckpt['rmse_f'], ckpt_rmse_frz['rmse_f'], default_places)
-        np.testing.assert_almost_equal(ckpt_rmse_ckpt['rmse_v'], ckpt_rmse_frz['rmse_v'], default_places)
-
-
+        np.testing.assert_almost_equal(
+            ckpt_rmse_ckpt["rmse_e"], ckpt_rmse_frz["rmse_e"], default_places
+        )
+        np.testing.assert_almost_equal(
+            ckpt_rmse_ckpt["rmse_f"], ckpt_rmse_frz["rmse_f"], default_places
+        )
+        np.testing.assert_almost_equal(
+            ckpt_rmse_ckpt["rmse_v"], ckpt_rmse_frz["rmse_v"], default_places
+        )

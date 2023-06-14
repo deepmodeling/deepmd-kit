@@ -1,13 +1,12 @@
 #pragma once
 
 #include <string>
-using namespace std;
 
-class UnitManager
-{
-protected:
-  UnitManager () {};
-public:
+class UnitManager {
+ protected:
+  UnitManager(){};
+
+ public:
   static double Degree2Radian;
   static double Radian2Degree;
 
@@ -19,7 +18,8 @@ public:
   static double DefaultTableUpperLimit;
   static double DefaultTableStep;
   static double DefaultTableExtension;
-  static void set (const string & name_of_system);
-private :
-  static string	unit_names[];
+  static void set(const std::string& name_of_system);
+
+ private:
+  static std::string unit_names[];
 };

@@ -2,9 +2,12 @@
 
 import json
 import warnings
-import tensorflow
-from functools import wraps
-from pathlib import Path
+from functools import (
+    wraps,
+)
+from pathlib import (
+    Path,
+)
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -12,20 +15,26 @@ from typing import (
     Dict,
     List,
     Optional,
-    Tuple,
     TypeVar,
     Union,
 )
 
 import numpy as np
+import tensorflow
 import yaml
+from tensorflow.python.framework import (
+    tensor_util,
+)
 
-from deepmd.env import op_module, tf
-from tensorflow.python.framework import tensor_util
-from deepmd.env import GLOBAL_TF_FLOAT_PRECISION, GLOBAL_NP_FLOAT_PRECISION
-from deepmd.utils.sess import run_sess
-from deepmd.utils.errors import GraphWithoutTensorError
-from deepmd.utils.path import DPPath
+from deepmd.env import (
+    GLOBAL_NP_FLOAT_PRECISION,
+    GLOBAL_TF_FLOAT_PRECISION,
+    op_module,
+    tf,
+)
+from deepmd.utils.path import (
+    DPPath,
+)
 
 if TYPE_CHECKING:
     _DICT_VAL = TypeVar("_DICT_VAL")
@@ -34,7 +43,9 @@ if TYPE_CHECKING:
         from typing import Literal  # python >3.6
     except ImportError:
         from typing_extensions import Literal  # type: ignore
-    _ACTIVATION = Literal["relu", "relu6", "softplus", "sigmoid", "tanh", "gelu", "gelu_tf"]
+    _ACTIVATION = Literal[
+        "relu", "relu6", "softplus", "sigmoid", "tanh", "gelu", "gelu_tf"
+    ]
     _PRECISION = Literal["default", "float16", "float32", "float64"]
 
 # define constants
@@ -90,13 +101,18 @@ def gelu_tf(x: tf.Tensor) -> tf.Tensor:
     Original paper
     https://arxiv.org/abs/1606.08415
     """
+
     def gelu_wrapper(x):
         try:
             return tensorflow.nn.gelu(x, approximate=True)
         except AttributeError:
-            warnings.warn("TensorFlow does not provide an implementation of gelu, please upgrade your TensorFlow version. Fallback to the custom gelu operator.")
+            warnings.warn(
+                "TensorFlow does not provide an implementation of gelu, please upgrade your TensorFlow version. Fallback to the custom gelu operator."
+            )
             return op_module.gelu_custom(x)
+
     return (lambda x: gelu_wrapper(x))(x)
+
 
 # TODO this is not a good way to do things. This is some global variable to which
 # TODO anyone can write and there is no good way to keep track of the changes
@@ -110,6 +126,8 @@ ACTIVATION_FN_DICT = {
     "tanh": tf.nn.tanh,
     "gelu": gelu,
     "gelu_tf": gelu_tf,
+    "None": None,
+    "none": None,
 }
 
 
@@ -121,7 +139,8 @@ def add_data_requirement(
     high_prec: bool = False,
     type_sel: Optional[bool] = None,
     repeat: int = 1,
-    default: float = 0.,
+    default: float = 0.0,
+    dtype: Optional[np.dtype] = None,
 ):
     """Specify data requirements for training.
 
@@ -145,6 +164,8 @@ def add_data_requirement(
         if specify repaeat data `repeat` times, by default 1
     default : float, optional, default=0.
         default value of data
+    dtype : np.dtype, optional
+        the dtype of data, overwrites `high_prec` if provided
     """
     data_requirement[key] = {
         "ndof": ndof,
@@ -154,12 +175,11 @@ def add_data_requirement(
         "type_sel": type_sel,
         "repeat": repeat,
         "default": default,
+        "dtype": dtype,
     }
 
 
-def select_idx_map(
-    atom_types: np.ndarray, select_types: np.ndarray
-) -> np.ndarray:
+def select_idx_map(atom_types: np.ndarray, select_types: np.ndarray) -> np.ndarray:
     """Build map of indices for element supplied element types from all atoms list.
 
     Parameters
@@ -179,16 +199,14 @@ def select_idx_map(
     `select_types` array will be sorted before finding indices in `atom_types`
     """
     sort_select_types = np.sort(select_types)
-    idx_map = np.array([], dtype=int)
+    idx_map = []
     for ii in sort_select_types:
-        idx_map = np.append(idx_map, np.where(atom_types == ii))
-    return idx_map
+        idx_map.append(np.where(atom_types == ii)[0])
+    return np.concatenate(idx_map)
 
 
 # TODO not really sure if the docstring is right the purpose of this is a bit unclear
-def make_default_mesh(
-    test_box: np.ndarray, cell_size: float = 3.0
-) -> np.ndarray:
+def make_default_mesh(test_box: np.ndarray, cell_size: float = 3.0) -> np.ndarray:
     """Get number of cells of size=`cell_size` fit into average box.
 
     Parameters
@@ -290,7 +308,7 @@ def get_activation_func(
     RuntimeError
         if unknown activation function is specified
     """
-    if activation_fn is None or activation_fn in ['none', 'None']:
+    if activation_fn is None:
         return None
     if activation_fn not in ACTIVATION_FN_DICT:
         raise RuntimeError(f"{activation_fn} is not a valid activation function")
@@ -371,9 +389,9 @@ def get_np_precision(precision: "_PRECISION") -> np.dtype:
         raise RuntimeError(f"{precision} is not a valid precision")
 
 
-def safe_cast_tensor(input: tf.Tensor,
-                     from_precision: tf.DType,
-                     to_precision: tf.DType) -> tf.Tensor:
+def safe_cast_tensor(
+    input: tf.Tensor, from_precision: tf.DType, to_precision: tf.DType
+) -> tf.Tensor:
     """Convert a Tensor from a precision to another precision.
 
     If input is not a Tensor or without the specific precision, the method will not
@@ -381,9 +399,11 @@ def safe_cast_tensor(input: tf.Tensor,
 
     Parameters
     ----------
-    input: tf.Tensor
+    input : tf.Tensor
         input tensor
-    precision : tf.DType
+    from_precision : tf.DType
+        Tensor data type that is casted from
+    to_precision : tf.DType
         Tensor data type that casts to
 
     Returns
@@ -430,18 +450,31 @@ def cast_precision(func: Callable) -> Callable:
     ...   def f(x: tf.Tensor, y: tf.Tensor) -> tf.Tensor:
     ...     return x ** 2 + y
     """
+
     @wraps(func)
     def wrapper(self, *args, **kwargs):
         # only convert tensors
         returned_tensor = func(
             self,
-            *[safe_cast_tensor(vv, GLOBAL_TF_FLOAT_PRECISION, self.precision) for vv in args],
-            **{kk: safe_cast_tensor(vv, GLOBAL_TF_FLOAT_PRECISION, self.precision) for kk, vv in kwargs.items()},
+            *[
+                safe_cast_tensor(vv, GLOBAL_TF_FLOAT_PRECISION, self.precision)
+                for vv in args
+            ],
+            **{
+                kk: safe_cast_tensor(vv, GLOBAL_TF_FLOAT_PRECISION, self.precision)
+                for kk, vv in kwargs.items()
+            },
         )
         if isinstance(returned_tensor, tuple):
-            return tuple((safe_cast_tensor(vv, self.precision, GLOBAL_TF_FLOAT_PRECISION) for vv in returned_tensor))
+            return tuple(
+                safe_cast_tensor(vv, self.precision, GLOBAL_TF_FLOAT_PRECISION)
+                for vv in returned_tensor
+            )
         else:
-            return safe_cast_tensor(returned_tensor, self.precision, GLOBAL_TF_FLOAT_PRECISION)
+            return safe_cast_tensor(
+                returned_tensor, self.precision, GLOBAL_TF_FLOAT_PRECISION
+            )
+
     return wrapper
 
 

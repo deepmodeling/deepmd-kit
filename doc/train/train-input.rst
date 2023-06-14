@@ -6,4 +6,3 @@ Training Parameters
 .. dargs::
    :module: deepmd.utils.argcheck
    :func: gen_args
-

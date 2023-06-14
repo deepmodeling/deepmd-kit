@@ -1,4 +1,25 @@
-from .ener      import EnerFitting
-from .dipole    import DipoleFittingSeA
-from .polar     import PolarFittingSeA
-from .polar     import GlobalPolarFittingSeA
+from .dipole import (
+    DipoleFittingSeA,
+)
+from .dos import (
+    DOSFitting,
+)
+from .ener import (
+    EnerFitting,
+)
+from .fitting import (
+    Fitting,
+)
+from .polar import (
+    GlobalPolarFittingSeA,
+    PolarFittingSeA,
+)
+
+__all__ = [
+    "DipoleFittingSeA",
+    "EnerFitting",
+    "DOSFitting",
+    "GlobalPolarFittingSeA",
+    "PolarFittingSeA",
+    "Fitting",
+]

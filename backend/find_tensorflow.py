@@ -1,16 +1,32 @@
-import site
 import os
-from importlib.util import find_spec
-from importlib.machinery import FileFinder
-from sysconfig import get_path
-from pathlib import Path
-from typing import List, Optional, Tuple, Union
-from packaging.specifiers import SpecifierSet
+import site
+from importlib.machinery import (
+    FileFinder,
+)
+from importlib.util import (
+    find_spec,
+)
+from pathlib import (
+    Path,
+)
+from sysconfig import (
+    get_path,
+)
+from typing import (
+    List,
+    Optional,
+    Tuple,
+    Union,
+)
+
+from packaging.specifiers import (
+    SpecifierSet,
+)
 
 
 def find_tensorflow() -> Tuple[Optional[str], List[str]]:
     """Find TensorFlow library.
-    
+
     Tries to find TensorFlow in the order of:
 
     1. Environment variable `TENSORFLOW_ROOT` if set
@@ -18,11 +34,6 @@ def find_tensorflow() -> Tuple[Optional[str], List[str]]:
     3. user site packages directory if enabled
     4. system site packages directory (purelib)
     5. add as a requirement (detect TENSORFLOW_VERSION or the latest) and let pip install it
-
-    Parameters
-    ----------
-    config_settings : dict
-        Configuration settings from pip.
 
     Returns
     -------
@@ -62,7 +73,7 @@ def find_tensorflow() -> Tuple[Optional[str], List[str]]:
         # TypeError if submodule_search_locations are None
         # IndexError if submodule_search_locations is an empty list
     except (AttributeError, TypeError, IndexError):
-        requires.extend(get_tf_requirement()['cpu'])
+        requires.extend(get_tf_requirement()["cpu"])
         # setuptools will re-find tensorflow after installing setup_requires
         tf_install_dir = None
     return tf_install_dir, requires
@@ -70,7 +81,7 @@ def find_tensorflow() -> Tuple[Optional[str], List[str]]:
 
 def get_tf_requirement(tf_version: str = "") -> dict:
     """Get TensorFlow requirement (CPU) when TF is not installed.
-    
+
     If tf_version is not given and the environment variable `TENSORFLOW_VERSION` is set, use it as the requirement.
 
     Parameters
@@ -89,50 +100,42 @@ def get_tf_requirement(tf_version: str = "") -> dict:
     if tf_version == "":
         return {
             "cpu": [
-                "tensorflow-cpu; platform_machine!='aarch64'",
-                "tensorflow; platform_machine=='aarch64'",
-                "tensorflow-macos; platform_machine == 'arm64' and platform_system == 'Darwin'",
+                "tensorflow-cpu; platform_machine!='aarch64' and (platform_machine!='arm64' or platform_system != 'Darwin')",
+                "tensorflow; platform_machine=='aarch64' or (platform_machine=='arm64' and platform_system == 'Darwin')",
             ],
             "gpu": [
-                "tensorflow; platform_machine!='aarch64' and (platform_machine != 'arm64' or platform_system != 'Darwin')",
-                "tensorflow; platform_machine=='aarch64'",
-                "tensorflow-macos; platform_machine=='arm64' and platform_system == 'Darwin'",
+                "tensorflow",
                 "tensorflow-metal; platform_machine=='arm64' and platform_system == 'Darwin'",
             ],
         }
-    elif tf_version in SpecifierSet("<1.15") or tf_version in SpecifierSet(">=2.0,<2.1"):
+    elif tf_version in SpecifierSet("<1.15") or tf_version in SpecifierSet(
+        ">=2.0,<2.1"
+    ):
         return {
             "cpu": [
-                f"tensorflow=={tf_version}; platform_machine!='aarch64' and (platform_machine != 'arm64' or platform_system != 'Darwin')",
-                f"tensorflow=={tf_version}; platform_machine=='aarch64'",
-                f"tensorflow-macos=={tf_version}; platform_machine == 'arm64' and platform_system == 'Darwin'",
+                f"tensorflow=={tf_version}",
             ],
             "gpu": [
-                f"tensorflow-gpu=={tf_version}; platform_machine!='aarch64' and (platform_machine != 'arm64' or platform_system != 'Darwin')",
+                f"tensorflow-gpu=={tf_version}; platform_machine!='aarch64'",
                 f"tensorflow=={tf_version}; platform_machine=='aarch64'",
-                f"tensorflow-macos=={tf_version}; platform_machine=='arm64' and platform_system == 'Darwin'",
-                f"tensorflow-metal; platform_machine=='arm64' and platform_system == 'Darwin'",
             ],
         }
     else:
         return {
             "cpu": [
-                f"tensorflow-cpu=={tf_version}; platform_machine!='aarch64' and (platform_machine != 'arm64' or platform_system != 'Darwin')",
-                f"tensorflow=={tf_version}; platform_machine=='aarch64'",
-                f"tensorflow-macos=={tf_version}; platform_machine == 'arm64' and platform_system == 'Darwin'",
+                f"tensorflow-cpu=={tf_version}; platform_machine!='aarch64' and (platform_machine!='arm64' or platform_system != 'Darwin')",
+                f"tensorflow=={tf_version}; platform_machine=='aarch64'  or (platform_machine=='arm64' and platform_system == 'Darwin')",
             ],
             "gpu": [
-                f"tensorflow=={tf_version}; platform_machine!='aarch64' and (platform_machine != 'arm64' or platform_system != 'Darwin')",
-                f"tensorflow=={tf_version}; platform_machine=='aarch64'",
-                f"tensorflow-macos=={tf_version}; platform_machine=='arm64' and platform_system == 'Darwin'",
-                f"tensorflow-metal; platform_machine=='arm64' and platform_system == 'Darwin'",
+                f"tensorflow=={tf_version}",
+                "tensorflow-metal; platform_machine=='arm64' and platform_system == 'Darwin'",
             ],
         }
 
 
 def get_tf_version(tf_path: Union[str, Path]) -> str:
     """Get TF version from a TF Python library path.
-    
+
     Parameters
     ----------
     tf_path : str or Path
@@ -145,7 +148,9 @@ def get_tf_version(tf_path: Union[str, Path]) -> str:
     """
     if tf_path is None or tf_path == "":
         return ""
-    version_file = Path(tf_path) / "include" / "tensorflow" / "core" / "public" / "version.h"
+    version_file = (
+        Path(tf_path) / "include" / "tensorflow" / "core" / "public" / "version.h"
+    )
     major = minor = patch = None
     with open(version_file) as f:
         for line in f:
@@ -155,6 +160,8 @@ def get_tf_version(tf_path: Union[str, Path]) -> str:
                 minor = line.split()[-1]
             elif line.startswith("#define TF_PATCH_VERSION"):
                 patch = line.split()[-1]
+            elif line.startswith("#define TF_VERSION_SUFFIX"):
+                suffix = line.split()[-1].strip('"')
     if None in (major, minor, patch):
         raise RuntimeError("Failed to read TF version")
-    return ".".join((major, minor, patch))
+    return ".".join((major, minor, patch)) + suffix

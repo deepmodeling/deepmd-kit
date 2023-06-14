@@ -1,0 +1,77 @@
+{
+  "_comment": "that's all",
+  "model": {
+    "type_map": [
+      "C",
+      "ZN"
+    ],
+    "descriptor": {
+      "type": "se_a_mask",
+      "sel": [
+        20,
+        1
+      ],
+      "neuron": [
+        2,
+        2,
+        2,
+        2
+      ],
+      "resnet_dt": true,
+      "axis_neuron": 2,
+      "seed": 1,
+      "_comment": " that's all"
+    },
+    "fitting_net": {
+      "neuron": [
+        2,
+        2,
+        2
+      ],
+      "resnet_dt": true,
+      "seed": 1,
+      "numb_aparam": 1,
+      "use_aparam_as_mask": true,
+      "_comment": " that's all"
+    },
+    "_comment": " that's all"
+  },
+  "learning_rate": {
+    "type": "exp",
+    "decay_steps": 20000,
+    "start_lr": 0.001,
+    "stop_lr": 3.51e-08,
+    "_comment": "that's all"
+  },
+  "loss": {
+    "type": "ener",
+    "start_pref_e": 0.0,
+    "limit_pref_e": 0.0,
+    "start_pref_f": 0.0,
+    "limit_pref_f": 0.0,
+    "start_pref_pf": 1.0,
+    "limit_pref_pf": 1.0,
+    "_comment": " that's all"
+  },
+  "training": {
+    "training_data": {
+      "systems": "source/tests/data_dp_mask/",
+      "batch_size": 4,
+      "_comment": "that's all"
+    },
+    "validation_data": {
+      "systems": [
+        "source/tests/data_dp_mask/"
+      ],
+      "batch_size": 4,
+      "numb_btch": 1,
+      "_comment": "that's all"
+    },
+    "numb_steps": 1,
+    "seed": 10,
+    "tensorboard": true,
+    "tensorboard_log_dir": "log4tensorboard",
+    "tensorboard_freq": 100,
+    "_comment": "that's all"
+  }
+}

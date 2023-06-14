@@ -1,20 +1,20 @@
 #pragma once
 
+#include <netdb.h>
+#include <netinet/in.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
 #include <string.h>
-#include <sys/types.h>
 #include <sys/socket.h>
-#include <netinet/in.h>
+#include <sys/types.h>
 #include <sys/un.h>
-#include <netdb.h>
+#include <unistd.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-    void error (const char *msg);
+void error(const char *msg);
 
 /* Opens a socket.
    Note that fortran passes an extra argument for the string length, but this is
@@ -28,7 +28,7 @@ extern "C" {
       recommended.
    host: The name of the host server.
 */
-    void open_socket_(int *psockfd, int* inet, int* port, const char* host);
+void open_socket_(int *psockfd, int *inet, int *port, const char *host);
 
 /* Writes to a socket.
    Args:
@@ -36,7 +36,7 @@ extern "C" {
    data: The data to be written to the socket.
    plen: The length of the data in bytes.
 */
-    void writebuffer_(int *psockfd, char *data, int len);    
+void writebuffer_(int *psockfd, char *data, int len);
 
 /* Reads from a socket.
    Args:
@@ -44,8 +44,8 @@ extern "C" {
    data: The storage array for data read from the socket.
    plen: The length of the data in bytes.
 */
-    void readbuffer_(int *psockfd, char *data, int len);    
-    
+void readbuffer_(int *psockfd, char *data, int len);
+
 #ifdef __cplusplus
 }
 #endif

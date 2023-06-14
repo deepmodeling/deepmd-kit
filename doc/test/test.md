@@ -1,6 +1,6 @@
 # Test a model
 
-The frozen model can be used in many ways. The most straightforward test can be performed using `dp test`. A typical usage of `dp test` is 
+The frozen model can be used in many ways. The most straightforward test can be performed using `dp test`. A typical usage of `dp test` is
 ```bash
 dp test -m graph.pb -s /path/to/system -n 30
 ```

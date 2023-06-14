@@ -1,19 +1,31 @@
-from abc import ABCMeta, abstractmethod
-from typing import Tuple, Dict
-from deepmd.env import tf
+from abc import (
+    ABCMeta,
+    abstractmethod,
+)
+from typing import (
+    Dict,
+    Tuple,
+)
+
+from deepmd.env import (
+    tf,
+)
 
 
 class Loss(metaclass=ABCMeta):
     """The abstract class for the loss function."""
+
     @abstractmethod
-    def build(self, 
-            learning_rate: tf.Tensor,
-            natoms: tf.Tensor,
-            model_dict: Dict[str, tf.Tensor],
-            label_dict: Dict[str, tf.Tensor],
-            suffix: str) -> Tuple[tf.Tensor, Dict[str, tf.Tensor]]:
+    def build(
+        self,
+        learning_rate: tf.Tensor,
+        natoms: tf.Tensor,
+        model_dict: Dict[str, tf.Tensor],
+        label_dict: Dict[str, tf.Tensor],
+        suffix: str,
+    ) -> Tuple[tf.Tensor, Dict[str, tf.Tensor]]:
         """Build the loss function graph.
-        
+
         Parameters
         ----------
         learning_rate : tf.Tensor
@@ -36,10 +48,12 @@ class Loss(metaclass=ABCMeta):
         """
 
     @abstractmethod
-    def eval(self,
-             sess: tf.Session,
-             feed_dict: Dict[tf.placeholder, tf.Tensor],
-             natoms: tf.Tensor) -> dict:
+    def eval(
+        self,
+        sess: tf.Session,
+        feed_dict: Dict[tf.placeholder, tf.Tensor],
+        natoms: tf.Tensor,
+    ) -> dict:
         """Eval the loss function.
 
         Parameters

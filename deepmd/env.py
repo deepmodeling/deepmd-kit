@@ -1,19 +1,69 @@
 """Module that sets tensorflow working environment and exports inportant constants."""
 
+import ctypes
 import logging
 import os
-import re
 import platform
-from configparser import ConfigParser
-from importlib import reload
-from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
-from packaging.version import Version
+from configparser import (
+    ConfigParser,
+)
+from importlib import (
+    import_module,
+    reload,
+)
+from pathlib import (
+    Path,
+)
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Dict,
+    Tuple,
+)
 
 import numpy as np
+from packaging.version import (
+    Version,
+)
 
 if TYPE_CHECKING:
-    from types import ModuleType
+    from types import (
+        ModuleType,
+    )
+
+
+def dlopen_library(module: str, filename: str):
+    """Dlopen a library from a module.
+
+    Parameters
+    ----------
+    module : str
+        The module name.
+    filename : str
+        The library filename pattern.
+    """
+    try:
+        m = import_module(module)
+    except ModuleNotFoundError:
+        pass
+    else:
+        libs = sorted(Path(m.__file__).parent.glob(filename))
+        # hope that there is only one version installed...
+        if len(libs):
+            ctypes.CDLL(str(libs[0].absolute()))
+
+
+# dlopen pip cuda library before tensorflow
+if platform.system() == "Linux":
+    dlopen_library("nvidia.cuda_runtime.lib", "libcudart.so*")
+    dlopen_library("nvidia.cublas.lib", "libcublasLt.so*")
+    dlopen_library("nvidia.cublas.lib", "libcublas.so*")
+    dlopen_library("nvidia.cufft.lib", "libcufft.so*")
+    dlopen_library("nvidia.curand.lib", "libcurand.so*")
+    dlopen_library("nvidia.cusolver.lib", "libcusolver.so*")
+    dlopen_library("nvidia.cusparse.lib", "libcusparse.so*")
+    dlopen_library("nvidia.cudnn.lib", "libcudnn.so*")
+
 
 # import tensorflow v1 compatability
 try:
@@ -47,7 +97,7 @@ __all__ = [
     "TYPE_EMBEDDING_PATTERN",
     "ATTENTION_LAYER_PATTERN",
     "REMOVE_SUFFIX_DICT",
-    "TF_VERSION"
+    "TF_VERSION",
 ]
 
 SHARED_LIB_MODULE = "op"
@@ -83,6 +133,13 @@ FITTING_NET_PATTERN = str(
     r"final_layer_type_\d+/matrix|"
     r"final_layer/bias|"
     r"final_layer_type_\d+/bias|"
+    # layer_name
+    r"share_.+_type_\d/matrix|"
+    r"share_.+_type_\d/bias|"
+    r"share_.+_type_\d/idt|"
+    r"share_.+/matrix|"
+    r"share_.+/bias|"
+    r"share_.+/idt|"
 )
 
 TYPE_EMBEDDING_PATTERN = str(
@@ -106,11 +163,11 @@ ATTENTION_LAYER_PATTERN = str(
     r"attention_layer_\d+/layer_normalization_\d+/gamma|"
 )
 
-TRANSFER_PATTERN = \
-    EMBEDDING_NET_PATTERN + \
-    FITTING_NET_PATTERN + \
-    TYPE_EMBEDDING_PATTERN + \
-    str(
+TRANSFER_PATTERN = (
+    EMBEDDING_NET_PATTERN
+    + FITTING_NET_PATTERN
+    + TYPE_EMBEDDING_PATTERN
+    + str(
         r"descrpt_attr/t_avg|"
         r"descrpt_attr/t_std|"
         r"fitting_attr/t_fparam_avg|"
@@ -119,12 +176,15 @@ TRANSFER_PATTERN = \
         r"fitting_attr/t_aparam_istd|"
         r"model_attr/t_tab_info|"
         r"model_attr/t_tab_data|"
+    )
 )
 
 REMOVE_SUFFIX_DICT = {
     "model_attr/sel_type_{}": "model_attr/sel_type",
     "model_attr/output_dim_{}": "model_attr/output_dim",
     "_{}/": "/",
+    # when atom_ener is set
+    "_{}_1/": "_1/",
     "o_energy_{}": "o_energy",
     "o_force_{}": "o_force",
     "o_virial_{}": "o_virial",
@@ -160,7 +220,7 @@ def set_env_if_empty(key: str, value: str, verbose: bool = True):
     if os.environ.get(key) is None:
         os.environ[key] = value
         if verbose:
-            logging.warn(
+            logging.warning(
                 f"Environment variable {key} is empty. Use the default value {value}"
             )
 
@@ -182,8 +242,7 @@ def set_mkl():
     """
     if "mkl_rt" in np.__config__.get_info("blas_mkl_info").get("libraries", []):
         set_env_if_empty("KMP_BLOCKTIME", "0")
-        set_env_if_empty(
-            "KMP_AFFINITY", "granularity=fine,verbose,compact,1,0")
+        set_env_if_empty("KMP_AFFINITY", "granularity=fine,verbose,compact,1,0")
         reload(np)
 
 
@@ -195,14 +254,18 @@ def set_tf_default_nthreads():
     `TF_INTRA_OP_PARALLELISM_THREADS` and `TF_INTER_OP_PARALLELISM_THREADS`
     control TF configuration of multithreading.
     """
-    if "OMP_NUM_THREADS" not in os.environ or \
-       "TF_INTRA_OP_PARALLELISM_THREADS" not in os.environ or \
-       "TF_INTER_OP_PARALLELISM_THREADS" not in os.environ:
+    if (
+        "OMP_NUM_THREADS" not in os.environ
+        or "TF_INTRA_OP_PARALLELISM_THREADS" not in os.environ
+        or "TF_INTER_OP_PARALLELISM_THREADS" not in os.environ
+    ):
         logging.warning(
             "To get the best performance, it is recommended to adjust "
             "the number of threads by setting the environment variables "
             "OMP_NUM_THREADS, TF_INTRA_OP_PARALLELISM_THREADS, and "
-            "TF_INTER_OP_PARALLELISM_THREADS.")
+            "TF_INTER_OP_PARALLELISM_THREADS. See "
+            "https://deepmd.rtfd.io/parallelism/ for more information."
+        )
     set_env_if_empty("TF_INTRA_OP_PARALLELISM_THREADS", "0", verbose=False)
     set_env_if_empty("TF_INTER_OP_PARALLELISM_THREADS", "0", verbose=False)
 
@@ -231,11 +294,27 @@ def get_tf_session_config() -> Any:
     """
     set_tf_default_nthreads()
     intra, inter = get_tf_default_nthreads()
+    if int(os.environ.get("DP_JIT", 0)):
+        set_env_if_empty("TF_XLA_FLAGS", "--tf_xla_auto_jit=2")
+        # pip cuda package
+        if platform.system() == "Linux":
+            try:
+                m = import_module("nvidia.cuda_nvcc")
+            except ModuleNotFoundError:
+                pass
+            else:
+                cuda_data_dir = str(Path(m.__file__).parent.absolute())
+                set_env_if_empty(
+                    "XLA_FLAGS", "--xla_gpu_cuda_data_dir=" + cuda_data_dir
+                )
     config = tf.ConfigProto(
         gpu_options=tf.GPUOptions(allow_growth=True),
-        intra_op_parallelism_threads=intra, inter_op_parallelism_threads=inter
+        intra_op_parallelism_threads=intra,
+        inter_op_parallelism_threads=inter,
     )
-    if Version(tf_py_version) >= Version('1.15') and int(os.environ.get("DP_AUTO_PARALLELIZATION", 0)):
+    if Version(tf_py_version) >= Version("1.15") and int(
+        os.environ.get("DP_AUTO_PARALLELIZATION", 0)
+    ):
         config.graph_options.rewrite_options.custom_optimizers.add().name = "dpparallel"
     return config
 
@@ -253,10 +332,10 @@ def reset_default_tf_session_config(cpu_only: bool):
     """
     global default_tf_session_config
     if cpu_only:
-        default_tf_session_config.device_count['GPU'] = 0
+        default_tf_session_config.device_count["GPU"] = 0
     else:
-        if 'GPU' in default_tf_session_config.device_count:
-            del default_tf_session_config.device_count['GPU']
+        if "GPU" in default_tf_session_config.device_count:
+            del default_tf_session_config.device_count["GPU"]
 
 
 def get_module(module_name: str) -> "ModuleType":
@@ -275,7 +354,7 @@ def get_module(module_name: str) -> "ModuleType":
     if platform.system() == "Windows":
         ext = ".dll"
         prefix = ""
-    #elif platform.system() == "Darwin":
+    # elif platform.system() == "Darwin":
     #    ext = ".dylib"
     else:
         ext = ".so"
@@ -296,7 +375,7 @@ def get_module(module_name: str) -> "ModuleType":
             # check CXX11_ABI_FLAG is compatiblity
             # see https://gcc.gnu.org/onlinedocs/libstdc++/manual/using_dual_abi.html
             # ABI should be the same
-            if 'CXX11_ABI_FLAG' in tf.__dict__:
+            if "CXX11_ABI_FLAG" in tf.__dict__:
                 tf_cxx11_abi_flag = tf.CXX11_ABI_FLAG
             else:
                 tf_cxx11_abi_flag = tf.sysconfig.CXX11_ABI_FLAG
@@ -307,11 +386,13 @@ def get_module(module_name: str) -> "ModuleType":
                     "with CXX11_ABI_FLAG=%d. These two library ABIs are "
                     "incompatible and thus an error is raised when loading %s. "
                     "You need to rebuild deepmd-kit against this TensorFlow "
-                    "runtime." % (
+                    "runtime."
+                    % (
                         TF_CXX11_ABI_FLAG,
                         tf_cxx11_abi_flag,
                         module_name,
-                    )) from e
+                    )
+                ) from e
 
             # different versions may cause incompatibility
             # see #406, #447, #557, #774, and #796 for example
@@ -319,27 +400,26 @@ def get_module(module_name: str) -> "ModuleType":
             if TF_VERSION != tf_py_version:
                 raise RuntimeError(
                     "The version of TensorFlow used to compile this "
-                    "deepmd-kit package is %s, but the version of TensorFlow "
-                    "runtime you are using is %s. These two versions are "
-                    "incompatible and thus an error is raised when loading %s. "
-                    "You need to install TensorFlow %s, or rebuild deepmd-kit "
-                    "against TensorFlow %s.\nIf you are using a wheel from "
+                    "deepmd-kit package is {}, but the version of TensorFlow "
+                    "runtime you are using is {}. These two versions are "
+                    "incompatible and thus an error is raised when loading {}. "
+                    "You need to install TensorFlow {}, or rebuild deepmd-kit "
+                    "against TensorFlow {}.\nIf you are using a wheel from "
                     "pypi, you may consider to install deepmd-kit execuating "
                     "`pip install deepmd-kit --no-binary deepmd-kit` "
-                    "instead." % (
+                    "instead.".format(
                         TF_VERSION,
                         tf_py_version,
                         module_name,
                         TF_VERSION,
                         tf_py_version,
-                    )) from e
+                    )
+                ) from e
             error_message = (
                 "This deepmd-kit package is inconsitent with TensorFlow "
-                "Runtime, thus an error is raised when loading %s. "
+                "Runtime, thus an error is raised when loading {}. "
                 "You need to rebuild deepmd-kit against this TensorFlow "
-                "runtime." % (
-                    module_name,
-                )
+                "runtime.".format(module_name)
             )
             if TF_CXX11_ABI_FLAG == 1:
                 # #1791

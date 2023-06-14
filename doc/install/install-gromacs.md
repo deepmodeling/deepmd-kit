@@ -2,7 +2,7 @@
 
 Before following this section, [DeePMD-kit C++ interface](install-from-source.md) should have be installed.
 
-## Patch source code of GROMACS 
+## Patch source code of GROMACS
 Download the source code of a supported GROMACS version (2020.2) from https://manual.gromacs.org/2020.2/download.html. Run the following command:
 ```bash
 export PATH=$PATH:$deepmd_kit_root/bin

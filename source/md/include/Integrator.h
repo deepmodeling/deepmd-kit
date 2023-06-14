@@ -1,50 +1,49 @@
 #pragma once
 
+#include <vector>
+
 #include "Gaussian.h"
 #include "UnitManager.h"
 
-#include <vector>
-using namespace std;
-
 template <typename VALUETYPE>
-class Integrator
-{
-public:
-  Integrator () 
-      : massConst (UnitManager::IntegratorMassConstant) {};
-public:
-  void stepVeloc (vector<VALUETYPE > & vv,
-		  const vector<VALUETYPE > & ff,
-		  const vector<VALUETYPE > & mass, 
-		  const double & dt, 
-		  const vector<int > & freez = vector<int> ()) const;
-  void stepCoord (vector<VALUETYPE > & rr,
-		  const vector<VALUETYPE > & vv, 
-		  const double & dt) const;
-private:
+class Integrator {
+ public:
+  Integrator() : massConst(UnitManager::IntegratorMassConstant){};
+
+ public:
+  void stepVeloc(std::vector<VALUETYPE>& vv,
+                 const std::vector<VALUETYPE>& ff,
+                 const std::vector<VALUETYPE>& mass,
+                 const double& dt,
+                 const std::vector<int>& freez = std::vector<int>()) const;
+  void stepCoord(std::vector<VALUETYPE>& rr,
+                 const std::vector<VALUETYPE>& vv,
+                 const double& dt) const;
+
+ private:
   VALUETYPE massConst;
 };
 
-template <typename VALUETYPE> 
-class ThermostatLangevin 
-{
-public:
-  ThermostatLangevin (const VALUETYPE		T = 300.,
-		      const VALUETYPE		tau = 1.,
-		      const long long int	seed = 0);
-  void reinit (const VALUETYPE		T = 300.,
-	       const VALUETYPE		tau = 1.,
-	       const long long int	seed = 0);
-  void stepOU (vector<VALUETYPE> & vv,
-	       const vector<VALUETYPE > & mass,
-	       const double & dt, 
-	       const vector<int > & freez = vector<int> ()) const;
-private:
-  mutable Gaussian	gaussian;
-  string	scheme;
-  VALUETYPE	temperature;
-  VALUETYPE	gamma;
-  VALUETYPE	sigma;
-  VALUETYPE	kT;
-  VALUETYPE	sigmainvsqrt2gamma;
+template <typename VALUETYPE>
+class ThermostatLangevin {
+ public:
+  ThermostatLangevin(const VALUETYPE T = 300.,
+                     const VALUETYPE tau = 1.,
+                     const long long int seed = 0);
+  void reinit(const VALUETYPE T = 300.,
+              const VALUETYPE tau = 1.,
+              const long long int seed = 0);
+  void stepOU(std::vector<VALUETYPE>& vv,
+              const std::vector<VALUETYPE>& mass,
+              const double& dt,
+              const std::vector<int>& freez = std::vector<int>()) const;
+
+ private:
+  mutable Gaussian gaussian;
+  std::string scheme;
+  VALUETYPE temperature;
+  VALUETYPE gamma;
+  VALUETYPE sigma;
+  VALUETYPE kT;
+  VALUETYPE sigmainvsqrt2gamma;
 };

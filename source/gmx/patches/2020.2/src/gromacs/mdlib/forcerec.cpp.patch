@@ -3,7 +3,7 @@
 @@ -98,6 +98,11 @@
  #include "gromacs/utility/smalloc.h"
  #include "gromacs/utility/strconvert.h"
- 
+
 +// Deepmd
 +// #include "deepmd/gmx_plugin.h"
 +deepmd::DeepmdPlugin* deepmdPlugin;
@@ -29,5 +29,5 @@
 +        useDeepmd = true;
 +    }
  }
- 
+
  t_forcerec::t_forcerec() = default;

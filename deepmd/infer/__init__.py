@@ -1,16 +1,40 @@
 """Submodule containing all the implemented potentials."""
 
-from pathlib import Path
-from typing import Union
+from pathlib import (
+    Path,
+)
+from typing import (
+    Union,
+)
 
-from .data_modifier import DipoleChargeModifier
-from .deep_dipole import DeepDipole
-from .deep_eval import DeepEval
-from .deep_polar import DeepGlobalPolar, DeepPolar
-from .deep_pot import DeepPot
-from .deep_wfc import DeepWFC
-from .ewald_recp import EwaldRecp
-from .model_devi import calc_model_devi
+from .data_modifier import (
+    DipoleChargeModifier,
+)
+from .deep_dipole import (
+    DeepDipole,
+)
+from .deep_dos import (
+    DeepDOS,
+)
+from .deep_eval import (
+    DeepEval,
+)
+from .deep_polar import (
+    DeepGlobalPolar,
+    DeepPolar,
+)
+from .deep_pot import (
+    DeepPot,
+)
+from .deep_wfc import (
+    DeepWFC,
+)
+from .ewald_recp import (
+    EwaldRecp,
+)
+from .model_devi import (
+    calc_model_devi,
+)
 
 __all__ = [
     "DeepPotential",
@@ -19,10 +43,11 @@ __all__ = [
     "DeepGlobalPolar",
     "DeepPolar",
     "DeepPot",
+    "DeepDOS",
     "DeepWFC",
     "DipoleChargeModifier",
     "EwaldRecp",
-    "calc_model_devi"
+    "calc_model_devi",
 ]
 
 
@@ -30,14 +55,14 @@ def DeepPotential(
     model_file: Union[str, Path],
     load_prefix: str = "load",
     default_tf_graph: bool = False,
-) -> Union[DeepDipole, DeepGlobalPolar, DeepPolar, DeepPot, DeepWFC]:
+) -> Union[DeepDipole, DeepGlobalPolar, DeepPolar, DeepPot, DeepDOS, DeepWFC]:
     """Factory function that will inialize appropriate potential read from `model_file`.
 
     Parameters
     ----------
-    model_file: str
+    model_file : str
         The name of the frozen model file.
-    load_prefix: str
+    load_prefix : str
         The prefix in the load computational graph
     default_tf_graph : bool
         If uses the default tf graph, otherwise build a new tf graph for evaluation
@@ -60,6 +85,8 @@ def DeepPotential(
 
     if model_type == "ener":
         dp = DeepPot(mf, load_prefix=load_prefix, default_tf_graph=default_tf_graph)
+    elif model_type == "dos":
+        dp = DeepDOS(mf, load_prefix=load_prefix, default_tf_graph=default_tf_graph)
     elif model_type == "dipole":
         dp = DeepDipole(mf, load_prefix=load_prefix, default_tf_graph=default_tf_graph)
     elif model_type == "polar":
@@ -71,6 +98,6 @@ def DeepPotential(
     elif model_type == "wfc":
         dp = DeepWFC(mf, load_prefix=load_prefix, default_tf_graph=default_tf_graph)
     else:
-        raise RuntimeError(f"unknow model type {model_type}")
+        raise RuntimeError(f"unknown model type {model_type}")
 
     return dp

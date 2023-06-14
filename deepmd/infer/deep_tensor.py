@@ -1,14 +1,27 @@
-import os
-from typing import List, Optional, TYPE_CHECKING, Tuple
+from typing import (
+    TYPE_CHECKING,
+    List,
+    Optional,
+    Tuple,
+)
 
 import numpy as np
-from deepmd.common import make_default_mesh
-from deepmd.env import default_tf_session_config, tf
-from deepmd.infer.deep_eval import DeepEval
-from deepmd.utils.sess import run_sess
+
+from deepmd.common import (
+    make_default_mesh,
+)
+from deepmd.infer.deep_eval import (
+    DeepEval,
+)
+from deepmd.utils.sess import (
+    run_sess,
+)
 
 if TYPE_CHECKING:
-    from pathlib import Path
+    from pathlib import (
+        Path,
+    )
+
 
 class DeepTensor(DeepEval):
     """Evaluates a tensor model.
@@ -42,31 +55,29 @@ class DeepTensor(DeepEval):
     def __init__(
         self,
         model_file: "Path",
-        load_prefix: str = 'load',
-        default_tf_graph: bool = False
+        load_prefix: str = "load",
+        default_tf_graph: bool = False,
     ) -> None:
-        """Constructor"""
+        """Constructor."""
         DeepEval.__init__(
-            self,
-            model_file,
-            load_prefix=load_prefix,
-            default_tf_graph=default_tf_graph
+            self, model_file, load_prefix=load_prefix, default_tf_graph=default_tf_graph
         )
         # check model type
         model_type = self.tensors["t_tensor"][2:-2]
-        assert self.model_type == model_type, \
-            f"expect {model_type} model but got {self.model_type}"
+        assert (
+            self.model_type == model_type
+        ), f"expect {model_type} model but got {self.model_type}"
 
         # now load tensors to object attributes
         for attr_name, tensor_name in self.tensors.items():
             self._get_tensor(tensor_name, attr_name)
-        
+
         # load optional tensors if possible
         optional_tensors = {
             "t_global_tensor": f"o_global_{model_type}:0",
             "t_force": "o_force:0",
             "t_virial": "o_virial:0",
-            "t_atom_virial": "o_atom_virial:0"
+            "t_atom_virial": "o_atom_virial:0",
         }
         try:
             # first make sure these tensor all exists (but do not modify self attr)
@@ -80,15 +91,21 @@ class DeepTensor(DeepEval):
         else:
             self.tensors.update(optional_tensors)
             self._support_gfv = True
-            
+
         self._run_default_sess()
-        self.tmap = self.tmap.decode('UTF-8').split()
+        self.tmap = self.tmap.decode("UTF-8").split()
 
     def _run_default_sess(self):
-        [self.ntypes, self.rcut, self.tmap, self.tselt, self.output_dim] \
-            = run_sess(self.sess, 
-                [self.t_ntypes, self.t_rcut, self.t_tmap, self.t_sel_type, self.t_ouput_dim]
-            )
+        [self.ntypes, self.rcut, self.tmap, self.tselt, self.output_dim] = run_sess(
+            self.sess,
+            [
+                self.t_ntypes,
+                self.t_rcut,
+                self.t_tmap,
+                self.t_sel_type,
+                self.t_ouput_dim,
+            ],
+        )
 
     def get_ntypes(self) -> int:
         """Get the number of atom types of this model."""
@@ -103,7 +120,7 @@ class DeepTensor(DeepEval):
         return self.tmap
 
     def get_sel_type(self) -> List[int]:
-        """Get the selected atom types of this model."""        
+        """Get the selected atom types of this model."""
         return self.tselt
 
     def get_dim_fparam(self) -> int:
@@ -130,11 +147,11 @@ class DeepTensor(DeepEval):
         Parameters
         ----------
         coords
-            The coordinates of atoms. 
+            The coordinates of atoms.
             The array should be of size nframes x natoms x 3
         cells
-            The cell of the region. 
-            If None then non-PBC is assumed, otherwise using PBC. 
+            The cell of the region.
+            If None then non-PBC is assumed, otherwise using PBC.
             The array should be of size nframes x 9
         atom_types
             The atom types
@@ -156,16 +173,16 @@ class DeepTensor(DeepEval):
         Returns
         -------
         tensor
-                The returned tensor
-                If atomic == False then of size nframes x output_dim
-                else of size nframes x natoms x output_dim
+            The returned tensor
+            If atomic == False then of size nframes x output_dim
+            else of size nframes x natoms x output_dim
         """
         # standarize the shape of inputs
         if mixed_type:
             natoms = atom_types[0].size
             atom_types = np.array(atom_types, dtype=int).reshape([-1, natoms])
         else:
-            atom_types = np.array(atom_types, dtype = int).reshape([-1])
+            atom_types = np.array(atom_types, dtype=int).reshape([-1])
             natoms = atom_types.size
         coords = np.reshape(np.array(coords), [-1, natoms * 3])
         nframes = coords.shape[0]
@@ -177,12 +194,13 @@ class DeepTensor(DeepEval):
             cells = np.array(cells).reshape([nframes, 9])
 
         # sort inputs
-        coords, atom_types, imap, sel_at, sel_imap = \
-            self.sort_input(coords, atom_types, sel_atoms=self.get_sel_type(), mixed_type=mixed_type)
+        coords, atom_types, imap, sel_at, sel_imap = self.sort_input(
+            coords, atom_types, sel_atoms=self.get_sel_type(), mixed_type=mixed_type
+        )
 
         # make natoms_vec and default_mesh
         natoms_vec = self.make_natoms_vec(atom_types, mixed_type=mixed_type)
-        assert(natoms_vec[0] == natoms)
+        assert natoms_vec[0] == natoms
 
         # evaluate
         feed_dict_test = {}
@@ -190,33 +208,39 @@ class DeepTensor(DeepEval):
         if mixed_type:
             feed_dict_test[self.t_type] = atom_types.reshape([-1])
         else:
-            feed_dict_test[self.t_type] = np.tile(atom_types, [nframes, 1]).reshape([-1])
+            feed_dict_test[self.t_type] = np.tile(atom_types, [nframes, 1]).reshape(
+                [-1]
+            )
         feed_dict_test[self.t_coord] = np.reshape(coords, [-1])
-        feed_dict_test[self.t_box  ] = np.reshape(cells , [-1])
+        feed_dict_test[self.t_box] = np.reshape(cells, [-1])
         if pbc:
-            feed_dict_test[self.t_mesh ] = make_default_mesh(cells)
+            feed_dict_test[self.t_mesh] = make_default_mesh(cells)
         else:
-            feed_dict_test[self.t_mesh ] = np.array([], dtype = np.int32)
+            feed_dict_test[self.t_mesh] = np.array([], dtype=np.int32)
 
         if atomic:
-            assert "global" not in self.model_type, \
-                f"cannot do atomic evaluation with model type {self.model_type}"
+            assert (
+                "global" not in self.model_type
+            ), f"cannot do atomic evaluation with model type {self.model_type}"
             t_out = [self.t_tensor]
         else:
-            assert self._support_gfv or "global" in self.model_type, \
-                f"do not support global tensor evaluation with old {self.model_type} model"
+            assert (
+                self._support_gfv or "global" in self.model_type
+            ), f"do not support global tensor evaluation with old {self.model_type} model"
             t_out = [self.t_global_tensor if self._support_gfv else self.t_tensor]
-        v_out = self.sess.run (t_out, feed_dict = feed_dict_test)
+        v_out = self.sess.run(t_out, feed_dict=feed_dict_test)
         tensor = v_out[0]
 
         # reverse map of the outputs
         if atomic:
             tensor = np.array(tensor)
-            tensor = self.reverse_map(np.reshape(tensor, [nframes,-1,self.output_dim]), sel_imap)
+            tensor = self.reverse_map(
+                np.reshape(tensor, [nframes, -1, self.output_dim]), sel_imap
+            )
             tensor = np.reshape(tensor, [nframes, len(sel_at), self.output_dim])
         else:
             tensor = np.reshape(tensor, [nframes, self.output_dim])
-        
+
         return tensor
 
     def eval_full(
@@ -237,11 +261,11 @@ class DeepTensor(DeepEval):
         Parameters
         ----------
         coords
-            The coordinates of atoms. 
+            The coordinates of atoms.
             The array should be of size nframes x natoms x 3
         cells
-            The cell of the region. 
-            If None then non-PBC is assumed, otherwise using PBC. 
+            The cell of the region.
+            If None then non-PBC is assumed, otherwise using PBC.
             The array should be of size nframes x 9
         atom_types
             The atom types
@@ -262,7 +286,7 @@ class DeepTensor(DeepEval):
         Returns
         -------
         tensor
-            The global tensor. 
+            The global tensor.
             shape: [nframes x nout]
         force
             The component-wise force (negative derivative) on each atom.
@@ -277,13 +301,12 @@ class DeepTensor(DeepEval):
             The atomic virial. Only returned when atomic == True
             shape: [nframes x nout x natoms x 9]
         """
-        assert self._support_gfv, \
-            f"do not support eval_full with old tensor model"
+        assert self._support_gfv, "do not support eval_full with old tensor model"
 
         # standarize the shape of inputs
         if mixed_type:
             natoms = atom_types[0].size
-            atom_types = np.array(atom_types, dtype =int).reshape([-1, natoms])
+            atom_types = np.array(atom_types, dtype=int).reshape([-1, natoms])
         else:
             atom_types = np.array(atom_types, dtype=int).reshape([-1])
             natoms = atom_types.size
@@ -299,11 +322,12 @@ class DeepTensor(DeepEval):
 
         # sort inputs
         coords, atom_types, imap, sel_at, sel_imap = self.sort_input(
-            coords, atom_types, sel_atoms=self.get_sel_type(), mixed_type=mixed_type)
+            coords, atom_types, sel_atoms=self.get_sel_type(), mixed_type=mixed_type
+        )
 
         # make natoms_vec and default_mesh
         natoms_vec = self.make_natoms_vec(atom_types, mixed_type=mixed_type)
-        assert(natoms_vec[0] == natoms)
+        assert natoms_vec[0] == natoms
 
         # evaluate
         feed_dict_test = {}
@@ -311,38 +335,39 @@ class DeepTensor(DeepEval):
         if mixed_type:
             feed_dict_test[self.t_type] = atom_types.reshape([-1])
         else:
-            feed_dict_test[self.t_type] = np.tile(atom_types, [nframes, 1]).reshape([-1])
+            feed_dict_test[self.t_type] = np.tile(atom_types, [nframes, 1]).reshape(
+                [-1]
+            )
         feed_dict_test[self.t_coord] = np.reshape(coords, [-1])
-        feed_dict_test[self.t_box  ] = np.reshape(cells , [-1])
+        feed_dict_test[self.t_box] = np.reshape(cells, [-1])
         if pbc:
-            feed_dict_test[self.t_mesh ] = make_default_mesh(cells)
+            feed_dict_test[self.t_mesh] = make_default_mesh(cells)
         else:
-            feed_dict_test[self.t_mesh ] = np.array([], dtype = np.int32)
-        
-        t_out = [self.t_global_tensor, 
-                 self.t_force, 
-                 self.t_virial]
-        if atomic :
-            t_out += [self.t_tensor, 
-                      self.t_atom_virial]
-        
-        v_out = self.sess.run (t_out, feed_dict = feed_dict_test)
-        gt     = v_out[0] # global tensor
-        force  = v_out[1]
+            feed_dict_test[self.t_mesh] = np.array([], dtype=np.int32)
+
+        t_out = [self.t_global_tensor, self.t_force, self.t_virial]
+        if atomic:
+            t_out += [self.t_tensor, self.t_atom_virial]
+
+        v_out = self.sess.run(t_out, feed_dict=feed_dict_test)
+        gt = v_out[0]  # global tensor
+        force = v_out[1]
         virial = v_out[2]
         if atomic:
-            at = v_out[3] # atom tensor
-            av = v_out[4] # atom virial
+            at = v_out[3]  # atom tensor
+            av = v_out[4]  # atom virial
 
         # please note here the shape are wrong!
-        force  = self.reverse_map(np.reshape(force, [nframes*nout, natoms ,3]), imap)
+        force = self.reverse_map(np.reshape(force, [nframes * nout, natoms, 3]), imap)
         if atomic:
-            at = self.reverse_map(np.reshape(at, [nframes, len(sel_at), nout]), sel_imap)
-            av = self.reverse_map(np.reshape(av, [nframes*nout, natoms, 9]), imap)
-        
+            at = self.reverse_map(
+                np.reshape(at, [nframes, len(sel_at), nout]), sel_imap
+            )
+            av = self.reverse_map(np.reshape(av, [nframes * nout, natoms, 9]), imap)
+
         # make sure the shapes are correct here
-        gt     = np.reshape(gt, [nframes, nout])
-        force  = np.reshape(force, [nframes, nout, natoms, 3])
+        gt = np.reshape(gt, [nframes, nout])
+        force = np.reshape(force, [nframes, nout, natoms, 3])
         virial = np.reshape(virial, [nframes, nout, 9])
         if atomic:
             at = np.reshape(at, [nframes, len(sel_at), self.output_dim])

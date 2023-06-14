@@ -12,7 +12,10 @@ Model
    train-hybrid
    sel
    train-energy
+   train-energy-spin
    train-fitting-tensor
+   train-fitting-dos
    train-se-e2-a-tebd
+   train-se-a-mask
    dplr
    dprc

@@ -3,8 +3,10 @@
 */
 #include <dlfcn.h>
 #include <fcntl.h>
-#include <string>
+
 #include <iostream>
+#include <string>
+
 #include "cuda_runtime_api.h"
 
 // wraps cuda runtime with dso loader
@@ -20,9 +22,9 @@ void *GetDsoHandle() {
     std::string libname = "cudart.dll";
 #endif
 #if defined(_WIN32)
-    void* dso_handle = LoadLibrary(libname.c_str());
+    void *dso_handle = LoadLibrary(libname.c_str());
 #else
-    void* dso_handle = dlopen(libname.c_str(), RTLD_NOW | RTLD_LOCAL);
+    void *dso_handle = dlopen(libname.c_str(), RTLD_NOW | RTLD_LOCAL);
 #endif
     if (!dso_handle) {
       std::cerr << "DeePMD-kit: Cannot find " << libname << std::endl;
@@ -75,8 +77,12 @@ cudaError_t GetSymbolNotFoundError() {
 #include "cuda_runtime_10_2.inc"
 #elif CUDART_VERSION < 11020
 #include "cuda_runtime_11_0.inc"
-#else
+#elif CUDART_VERSION < 11080
 #include "cuda_runtime_11_2.inc"
+#elif CUDART_VERSION < 12000
+#include "cuda_runtime_11_8.inc"
+#else
+#include "cuda_runtime_12_0.inc"
 #endif
 #undef __dv
 #undef __CUDA_DEPRECATED
@@ -84,10 +90,16 @@ cudaError_t GetSymbolNotFoundError() {
 extern "C" {
 
 // Following are private symbols in libcudart that got inserted by nvcc.
-extern void CUDARTAPI __cudaRegisterFunction(
-    void **fatCubinHandle, const char *hostFun, char *deviceFun,
-    const char *deviceName, int thread_limit, uint3 *tid, uint3 *bid,
-    dim3 *bDim, dim3 *gDim, int *wSize) {
+extern void CUDARTAPI __cudaRegisterFunction(void **fatCubinHandle,
+                                             const char *hostFun,
+                                             char *deviceFun,
+                                             const char *deviceName,
+                                             int thread_limit,
+                                             uint3 *tid,
+                                             uint3 *bid,
+                                             dim3 *bDim,
+                                             dim3 *gDim,
+                                             int *wSize) {
   using FuncPtr = void(CUDARTAPI *)(void **fatCubinHandle, const char *hostFun,
                                     char *deviceFun, const char *deviceName,
                                     int thread_limit, uint3 *tid, uint3 *bid,
@@ -105,10 +117,14 @@ extern void CUDARTAPI __cudaUnregisterFatBinary(void **fatCubinHandle) {
   func_ptr(fatCubinHandle);
 }
 
-extern void CUDARTAPI __cudaRegisterVar(void **fatCubinHandle, char *hostVar,
+extern void CUDARTAPI __cudaRegisterVar(void **fatCubinHandle,
+                                        char *hostVar,
                                         char *deviceAddress,
-                                        const char *deviceName, int ext,
-                                        size_t size, int constant, int global) {
+                                        const char *deviceName,
+                                        int ext,
+                                        size_t size,
+                                        int constant,
+                                        int global) {
   using FuncPtr = void(CUDARTAPI *)(
       void **fatCubinHandle, char *hostVar, char *deviceAddress,
       const char *deviceName, int ext, size_t size, int constant, int global);

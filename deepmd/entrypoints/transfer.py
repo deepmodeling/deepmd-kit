@@ -1,10 +1,19 @@
 """Module used for transfering parameters between models."""
 
-from typing import Dict, Optional, Sequence, Tuple
-from deepmd.env import tf, TRANSFER_PATTERN
-import re
-import numpy as np
 import logging
+import re
+from typing import (
+    Dict,
+    Optional,
+    Sequence,
+)
+
+import numpy as np
+
+from deepmd.env import (
+    TRANSFER_PATTERN,
+    tf,
+)
 
 __all__ = ["transfer"]
 
@@ -16,7 +25,7 @@ def convert_number(number: int) -> float:
     binary = bin(number).replace("0b", "").zfill(16)
     sign = int(binary[0]) * -2 + 1
     exp = int(binary[1:6], 2)
-    frac = (int(binary[6:], 2) + 2 ** 10) * (2 ** -10)
+    frac = (int(binary[6:], 2) + 2**10) * (2**-10)
     return sign * (2 ** (exp - 15)) * frac
 
 
@@ -57,6 +66,8 @@ def transfer(*, old_model: str, raw_model: str, output: str, **kwargs):
         new model that will accept ops from old model
     output : str
         new model with transfered parameters will be saved to this location
+    **kwargs
+        additional arguments
     """
     raw_graph = load_graph(raw_model)
     old_graph = load_graph(old_model)
@@ -130,7 +141,9 @@ def transform_graph(raw_graph: tf.Graph, old_graph: tf.Graph) -> tf.Graph:
         if raw_graph_dtype == np.float16:
             if old_graph_dtype == np.float64 or old_graph_dtype == np.float32:
                 if (len(tensor_shape) != 1) or (tensor_shape[0] != 1):
-                    tensor = np.frombuffer(old_node.tensor_content, dtype = old_graph_dtype)
+                    tensor = np.frombuffer(
+                        old_node.tensor_content, dtype=old_graph_dtype
+                    )
                     tensor = tensor.astype(raw_graph_dtype)
                     cp_attr.from_str(tensor)
                 else:
@@ -138,13 +151,15 @@ def transform_graph(raw_graph: tf.Graph, old_graph: tf.Graph) -> tf.Graph:
                     cp_attr.from_array(tensor, tf.float16, [1])
 
             elif old_graph_dtype[1] == "float16":
-                tensor = convertMatrix(np.array(old_node.half_val), tensor_shape)
+                tensor = convert_matrix(np.array(old_node.half_val), tensor_shape)
                 cp_attr.from_array(tensor, raw_graph_dtype)
 
         elif raw_graph_dtype == np.float64 or raw_graph_dtype == np.float32:
             if old_graph_dtype == np.float64 or old_graph_dtype == np.float32:
                 if (len(tensor_shape) != 1) or (tensor_shape[0] != 1):
-                    tensor = np.frombuffer(old_node.tensor_content, dtype = old_graph_dtype)
+                    tensor = np.frombuffer(
+                        old_node.tensor_content, dtype=old_graph_dtype
+                    )
                     tensor = tensor.astype(raw_graph_dtype)
                     cp_attr.from_str(tensor)
                 else:
@@ -153,10 +168,14 @@ def transform_graph(raw_graph: tf.Graph, old_graph: tf.Graph) -> tf.Graph:
 
             elif old_graph_dtype == np.float16:
                 if (len(tensor_shape) != 1) or (tensor_shape[0] != 1):
-                    tensor = convertMatrix(np.array(old_node.half_val), tensor_shape).astype(raw_graph_dtype)
+                    tensor = convert_matrix(
+                        np.array(old_node.half_val), tensor_shape
+                    ).astype(raw_graph_dtype)
                     cp_attr.from_str(tensor)
                 else:
-                    tensor = convertMatrix(np.array(old_node.half_val), tensor_shape).astype(raw_graph_dtype)
+                    tensor = convert_matrix(
+                        np.array(old_node.half_val), tensor_shape
+                    ).astype(raw_graph_dtype)
                     cp_attr.from_array(tensor, raw_graph_dtype)
 
     return raw_graph_def

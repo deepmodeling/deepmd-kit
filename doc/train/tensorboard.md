@@ -12,7 +12,7 @@ DeePMD-kit can now use most of the interesting features enabled by TensorBoard!
 * **Visualizing the model graph** (ops and layers)
 * **Viewing histograms of weights, biases, or other tensors as they change over time.**
 * **Viewing summaries of trainable variables**
-  
+
 <!-- * **Projecting embeddings to a lower dimensional space.**
 * **Precision curves.** -->
 
@@ -24,7 +24,7 @@ directory by modifying the input script, setting {ref}`tensorboard <training/ten
 ```json
     "training" : {
 	"systems":	["../data/"],
-	"set_prefix":	"set",    
+	"set_prefix":	"set",
 	"stop_batch":	1000000,
 	"batch_size":	1,
 

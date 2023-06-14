@@ -6,35 +6,49 @@ jobs:
   buildcc:
     name: Build C++
     runs-on: ubuntu-latest
-    container: ghcr.io/deepmodeling/deepmd-kit-test-cc:latest
-    strategy:  
+    strategy:
       matrix:
         include:
         - variant: cpu
+          dp_variant: cpu
         - variant: cuda
+          dp_variant: cuda
+        - variant: cuda120
+          dp_variant: cuda
         - variant: rocm
+          dp_variant: rocm
         - variant: clang
+          dp_variant: clang
     steps:
-    - name: work around permission issue
-      run: git config --global --add safe.directory /__w/deepmd-kit/deepmd-kit
-    - uses: actions/checkout@master
+    - uses: actions/checkout@v3
       with:
         submodules: true
-    - run: apt-get update && apt-get install -y nvidia-cuda-toolkit
+    - uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    - run: python -m pip install tensorflow
+    - run: sudo apt-get update && sudo apt-get install -y nvidia-cuda-toolkit
       if: matrix.variant == 'cuda'
     - run: |
-         apt-get update && apt-get install -y gnupg2 \
-         && echo 'deb [arch=amd64] https://repo.radeon.com/rocm/apt/5.3/ jammy main' | tee /etc/apt/sources.list.d/rocm.list \
-         && printf 'Package: *\nPin: release o=repo.radeon.com\nPin-Priority: 600' | tee /etc/apt/preferences.d/rocm-pin-600 \
-         && curl -s https://repo.radeon.com/rocm/rocm.gpg.key | apt-key add - \
-         && apt-get update \
-         && apt-get install -y rocm-dev hipcub-dev
+         wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.0-1_all.deb \
+         && sudo dpkg -i cuda-keyring_1.0-1_all.deb \
+         && sudo apt-get update \
+         && sudo apt-get -y install cuda-12-0
+      if: matrix.variant == 'cuda120'
+      env:
+        DEBIAN_FRONTEND: noninteractive
+    - run: |
+         echo 'deb [arch=amd64] https://repo.radeon.com/rocm/apt/5.3/ jammy main' | sudo tee /etc/apt/sources.list.d/rocm.list \
+         && printf 'Package: *\nPin: release o=repo.radeon.com\nPin-Priority: 600' | sudo tee /etc/apt/preferences.d/rocm-pin-600 \
+         && curl -s https://repo.radeon.com/rocm/rocm.gpg.key | sudo apt-key add - \
+         && sudo apt-get update \
+         && sudo apt-get install -y rocm-dev hipcub-dev
       if: matrix.variant == 'rocm'
-    - run: apt-get update && apt-get install -y clang
-      if: matrix.variant == 'clang'  
+    - run: sudo apt-get update && sudo apt-get install -y clang
+      if: matrix.variant == 'clang'
     - run: source/install/build_cc.sh
       env:
-        DP_VARIANT: ${{ matrix.variant }}
+        DP_VARIANT: ${{ matrix.dp_variant }}
         DOWNLOAD_TENSORFLOW: "FALSE"
       if: matrix.variant != 'clang'
     - run: source/install/build_cc.sh
@@ -44,6 +58,15 @@ jobs:
         CC: clang
         CXX: clang++
       if: matrix.variant == 'clang'
+    - name: Test files exist
+      run: |
+        test -f dp/bin/dp_ipi &&
+        test -f dp/lib/libdeepmd_cc.so &&
+        test -f dp/lib/libdeepmd_c.so &&
+        test -f dp/lib/libdeepmd_op.so &&
+        test -f dp/lib/libdeepmd_ipi.so &&
+        test -f dp/lib/libdeepmd_lmp.so &&
+        test -f dp/lib/libdeepmd.so
   pass:
     name: Pass building C++
     needs: [buildcc]

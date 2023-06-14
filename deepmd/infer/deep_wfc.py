@@ -1,9 +1,15 @@
-from deepmd.infer.deep_tensor import DeepTensor
+from typing import (
+    TYPE_CHECKING,
+)
 
-from typing import TYPE_CHECKING
+from deepmd.infer.deep_tensor import (
+    DeepTensor,
+)
 
 if TYPE_CHECKING:
-    from pathlib import Path
+    from pathlib import (
+        Path,
+    )
 
 
 class DeepWFC(DeepTensor):
@@ -26,9 +32,11 @@ class DeepWFC(DeepTensor):
     """
 
     def __init__(
-        self, model_file: "Path", load_prefix: str = "load", default_tf_graph: bool = False
+        self,
+        model_file: "Path",
+        load_prefix: str = "load",
+        default_tf_graph: bool = False,
     ) -> None:
-
         # use this in favor of dict update to move attribute from class to
         # instance namespace
         self.tensors = dict(
@@ -36,7 +44,7 @@ class DeepWFC(DeepTensor):
                 # output tensor
                 "t_tensor": "o_wfc:0",
             },
-            **self.tensors
+            **self.tensors,
         )
         DeepTensor.__init__(
             self,

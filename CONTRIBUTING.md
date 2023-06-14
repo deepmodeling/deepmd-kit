@@ -13,7 +13,7 @@ You can start from any one of the following items to help improve deepmd-kit
 - Implement a feature or add a patch, whatever you think deepmd-kit is missing
 - Browse [issues](https://github.com/deepmodeling/deepmd-kit/issues), find an issue labeled enhancement or bug, and help to solve it.
 
-See [here](#before-you-contribute) for some before-hand heads-up. 
+See [here](#before-you-contribute) for some before-hand heads-up.
 
 See [here](#how-to-contribute) to learn how to contribute.
 
@@ -54,7 +54,7 @@ Please perform the following steps to create your Pull Request to this repositor
     ```bash
     git clone https://github.com/$username/deepmd-kit.git
     # Replace `$username` with your GitHub ID
-    
+
     git checkout devel
     ```
 
@@ -62,9 +62,9 @@ Please perform the following steps to create your Pull Request to this repositor
     ```bash
     git remote add upstream https://github.com/deepmodeling/deepmd-kit.git
     # After you add a remote repo, your local repo will be automatically named "origin".
-    
+
     git fetch upstream
-    
+
     # If your current codes are behind the latest codes, you should merge latest codes first.
     # Notice you should merge from "devel"!
     git merge upstream/devel
@@ -78,10 +78,10 @@ Please perform the following steps to create your Pull Request to this repositor
     git add <file> ... # Adds the file(s) you want to commit. If you want to commit all changes, you can directly use `git add.`
     git commit -m "commit-message: update the xx"
     ```
-    
-5. Push the changed codes to your original repo on github. 
+
+5. Push the changed codes to your original repo on github.
     ```bash
-    git push origin devel 
+    git push origin devel
     ```
 
 ### Alternatively: Create a new branch

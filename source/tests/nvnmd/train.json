@@ -1,0 +1,43 @@
+{
+  "nvnmd": {
+    "net_size": 128,
+    "sel": [
+      60,
+      60
+    ],
+    "rcut": 6.0,
+    "rcut_smth": 0.5
+  },
+  "learning_rate": {
+    "type": "exp",
+    "start_lr": 1e-3,
+    "stop_lr": 3e-8,
+    "decay_steps": 5000
+  },
+  "loss": {
+    "start_pref_e": 0.02,
+    "limit_pref_e": 1,
+    "start_pref_f": 1000,
+    "limit_pref_f": 1,
+    "start_pref_v": 0,
+    "limit_pref_v": 0
+  },
+  "training": {
+    "seed": 1,
+    "stop_batch": 200000,
+    "numb_test": 1,
+    "disp_file": "lcurve.out",
+    "disp_freq": 1000,
+    "save_ckpt": "model.ckpt",
+    "save_freq": 10000,
+    "training_data": {
+      "systems": [
+        "../data"
+      ],
+      "set_prefix": "set",
+      "batch_size": [
+        1
+      ]
+    }
+  }
+}

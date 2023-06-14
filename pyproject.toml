@@ -21,14 +21,27 @@ authors = [
 ]
 license = {file = "LICENSE"}
 classifiers = [
+    "Natural Language :: English",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: Microsoft :: Windows",
+    "Development Status :: 5 - Production/Stable",
+    "Programming Language :: C",
+    "Programming Language :: C++",
+    "Programming Language :: Python :: 3 :: Only",
+    "Environment :: GPU :: NVIDIA CUDA :: 11.8",
+    "Intended Audience :: Science/Research",
     "Programming Language :: Python :: 3.7",
     "License :: OSI Approved :: GNU Lesser General Public License v3 (LGPLv3)",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Scientific/Engineering :: Physics",
+    "Topic :: Scientific/Engineering :: Chemistry",
+    "Environment :: Console",
 ]
 dependencies = [
     'numpy',
     'scipy',
     'pyyaml',
-    'dargs >= 0.2.6',
+    'dargs >= 0.2.9',
     'python-hostlist >= 1.21',
     'typing_extensions; python_version < "3.7"',
     'importlib_metadata>=1.4; python_version < "3.8"',
@@ -51,8 +64,10 @@ write_to = "deepmd/_version.py"
 [tool.cibuildwheel]
 test-command = [
     "dp -h",
+    "dp_ipi",
+    "pytest {project}/source/tests/test_lammps.py"
 ]
-test-extras = ["cpu"]
+test-extras = ["cpu", "test", "lmp", "ipi"]
 build = ["cp310-*"]
 skip = ["*-win32", "*-manylinux_i686", "*-musllinux*"]
 # TODO: bump to "latest" tag when CUDA supports GCC 12
@@ -60,27 +75,28 @@ manylinux-x86_64-image = "quay.io/pypa/manylinux_2_28_x86_64:2022-11-19-1b19e81"
 manylinux-aarch64-image = "quay.io/pypa/manylinux_2_28_aarch64:2022-11-19-1b19e81"
 
 [tool.cibuildwheel.macos]
-environment = { DP_LAMMPS_VERSION="stable_23Jun2022_update2" }
+environment = { PIP_PREFER_BINARY="1", DP_LAMMPS_VERSION="stable_23Jun2022_update4", DP_ENABLE_IPI="1" }
 before-all = [
     """if [[ "$CIBW_BUILD" != *macosx_arm64* ]]; then brew install mpich; fi""",
-    """if [[ "$CIBW_BUILD" == *macosx_arm64* ]]; then pip install tensorflow-macos --platform macosx_12_0_arm64 --no-deps --target $RUNNER_TEMP/tensorflow; export TENSORFLOW_ROOT=$RUNNER_TEMP/tensorflow/tensorflow; fi""",
+    """if [[ "$CIBW_BUILD" == *macosx_arm64* ]]; then pip install tensorflow --platform macosx_12_0_arm64 --no-deps --target $RUNNER_TEMP/tensorflow; export TENSORFLOW_ROOT=$RUNNER_TEMP/tensorflow/tensorflow; fi""",
 ]
 repair-wheel-command = "delocate-wheel --require-archs {delocate_archs} -w {dest_dir} -v {wheel} --ignore-missing-dependencies"
-test-extras = ["cpu", "test", "lmp"]
-test-command = [
-    "dp -h",
-    "pytest {project}/source/tests/test_lammps.py"
-]
 
 [tool.cibuildwheel.linux]
-repair-wheel-command = "auditwheel repair --exclude libtensorflow_framework.so.2 --exclude libtensorflow_framework.so.1 --exclude libtensorflow_framework.so --exclude _pywrap_tensorflow_internal.so -w {dest_dir} {wheel}"
+repair-wheel-command = "auditwheel repair --exclude libtensorflow_framework.so.2 --exclude libtensorflow_framework.so.1 --exclude libtensorflow_framework.so --exclude _pywrap_tensorflow_internal.so --exclude libtensorflow_cc.so.2 -w {dest_dir} {wheel}"
 environment-pass = ["CIBW_BUILD", "DP_VARIANT"]
-environment = { DP_VARIANT="cuda", DP_LAMMPS_VERSION="stable_23Jun2022_update2", MPI_HOME="/usr/lib64/mpich", PATH="/usr/lib64/mpich/bin:$PATH" }
+environment = { PIP_PREFER_BINARY="1", DP_VARIANT="cuda", DP_LAMMPS_VERSION="stable_23Jun2022_update4", DP_ENABLE_IPI="1", MPI_HOME="/usr/lib64/mpich", PATH="/usr/lib64/mpich/bin:$PATH" }
 before-all = [
-    """{ if [ "$(uname -m)" = "x86_64" ] ; then yum config-manager --add-repo http://developer.download.nvidia.com/compute/cuda/repos/rhel8/x86_64/cuda-rhel8.repo && yum install -y cuda-11-8; fi }""",
+    """{ if [ "$(uname -m)" = "x86_64" ] ; then curl https://developer.download.nvidia.com/compute/cuda/11.8.0/local_installers/cuda_11.8.0_520.61.05_linux.run -O && bash cuda_11.8.0_520.61.05_linux.run --silent --toolkit; fi }""",
     "yum install -y mpich-devel",
 ]
 
+[tool.cibuildwheel.windows]
+environment = { PIP_PREFER_BINARY="1" }
+test-extras = ["cpu"]
+test-command = [
+    "dp -h",
+]
 
 # selectively turn of lintner warnings, always include reasoning why any warning should
 # be silenced
@@ -104,3 +120,38 @@ ignore = "W504"
 # of space, start on the first line
 [tool.pydocstyle]
 ignore = "D413, D416, D203, D107, D213"
+
+[tool.isort]
+profile = "black"
+force_grid_wrap = 1
+
+[tool.ruff]
+target-version = "py37"
+select = [
+    "E", # errors
+    "F", # pyflakes
+    "D", # pydocstyle
+    "UP", # pyupgrade
+    "C4", # flake8-comprehensions
+]
+ignore = [
+    "E501", # line too long
+    "F841", # local variable is assigned to but never used
+    "E741", # ambiguous variable name
+    "E402", # module level import not at top of file
+    "D413", # missing blank line after last section
+    "D416", # section name should end with a colon
+    "D203", # 1 blank line required before class docstring
+    "D107", # missing docstring in __init__
+    "D213", # multi-line docstring summary should start at the second line
+    "D100", # TODO: missing docstring in public module
+    "D101", # TODO: missing docstring in public class
+    "D102", # TODO: missing docstring in public method
+    "D103", # TODO: missing docstring in public function
+    "D104", # TODO: missing docstring in public package
+    "D105", # TODO: missing docstring in magic method
+    "D205", # 1 blank line required between summary line and description
+    "D401", # TODO: first line should be in imperative mood
+    "D404", # TODO: first word of the docstring should not be This
+]
+ignore-init-module-imports = true

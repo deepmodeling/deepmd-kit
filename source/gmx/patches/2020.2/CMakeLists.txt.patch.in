@@ -3,7 +3,7 @@
 @@ -134,6 +134,26 @@
  #    (i.e., something that is exposed in installed headers).
  set(GMX_PUBLIC_LIBRARIES "")
- 
+
 +# DeepMD
 +message(STATUS "Compling with DeepMD...")
 +add_definitions(-w) # close warning

@@ -4,6 +4,6 @@ Running an MD simulation with LAMMPS is simpler. In the LAMMPS input file, one n
 
 ```lammps
 pair_style     deepmd graph.pb
-pair_coeff     * *
+pair_coeff     * * O H
 ```
-where `graph.pb` is the file name of the frozen model. It should be noted that LAMMPS counts atom types starting from 1, therefore, all LAMMPS atom types will be firstly subtracted by 1, and then passed into the DeePMD-kit engine to compute the interactions. 
+where `graph.pb` is the file name of the frozen model. `pair_coeff` maps atom names (`O H`) with LAMMPS atom types (integers from 1 to Ntypes, i.e. `1 2`).

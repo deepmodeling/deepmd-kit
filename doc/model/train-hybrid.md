@@ -9,7 +9,7 @@ To use the descriptor in DeePMD-kit, one firstly set the {ref}`type <model/descr
             "list" : [
                 {
 		    "type" : "se_e2_a",
-		    ...		    
+		    ...
                 },
                 {
 		    "type" : "se_e2_r",

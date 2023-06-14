@@ -1,7 +1,7 @@
 #ifdef COMPUTE_CLASS
-
-ComputeStyle(deeptensor/atom,ComputeDeeptensorAtom)
-
+// clang-format off
+ComputeStyle(deeptensor/atom, ComputeDeeptensorAtom)
+// clang-format on
 #else
 
 #ifndef LMP_COMPUTE_DEEPTENSOR_ATOM_H
@@ -9,10 +9,20 @@ ComputeStyle(deeptensor/atom,ComputeDeeptensorAtom)
 
 #include "compute.h"
 #include "pair_deepmd.h"
+#ifdef DP_USE_CXX_API
 #ifdef LMPPLUGIN
 #include "DeepTensor.h"
 #else
 #include "deepmd/DeepTensor.h"
+#endif
+namespace deepmd_compat = deepmd;
+#else
+#ifdef LMPPLUGIN
+#include "deepmd.hpp"
+#else
+#include "deepmd/deepmd.hpp"
+#endif
+namespace deepmd_compat = deepmd::hpp;
 #endif
 
 namespace LAMMPS_NS {
@@ -31,12 +41,11 @@ class ComputeDeeptensorAtom : public Compute {
   double **tensor;
   PairDeepMD dp;
   class NeighList *list;
-  deepmd::DeepTensor dt;
-  std::vector<int > sel_types;
+  deepmd_compat::DeepTensor dt;
+  std::vector<int> sel_types;
 };
 
-}
+}  // namespace LAMMPS_NS
 
 #endif
 #endif
-

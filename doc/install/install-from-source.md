@@ -15,9 +15,9 @@ cd deepmd-kit
 deepmd_source_dir=`pwd`
 ```
 
-## Install the python interface 
+## Install the python interface
 ### Install Tensorflow's python interface
-First, check the python version on your machine 
+First, check the python version on your machine
 ```bash
 python --version
 ```
@@ -29,7 +29,7 @@ source $tensorflow_venv/bin/activate
 pip install --upgrade pip
 pip install --upgrade tensorflow
 ```
-It is important that every time a new shell is started and one wants to use `DeePMD-kit`, the virtual environment should be activated by 
+It is important that every time a new shell is started and one wants to use `DeePMD-kit`, the virtual environment should be activated by
 ```bash
 source $tensorflow_venv/bin/activate
 ```
@@ -39,10 +39,10 @@ deactivate
 ```
 If one has multiple python interpreters named something like python3.x, it can be specified by, for example
 ```bash
-virtualenv -p python3.7 $tensorflow_venv
+virtualenv -p python3.8 $tensorflow_venv
 ```
-If one does not need the GPU support of DeePMD-kit and is concerned about package size, the CPU-only version of TensorFlow should be installed by 
-```bash 
+If one does not need the GPU support of DeePMD-kit and is concerned about package size, the CPU-only version of TensorFlow should be installed by
+```bash
 pip install --upgrade tensorflow-cpu
 ```
 To verify the installation, run
@@ -142,33 +142,36 @@ Available Tensor Operations:
     [X] Gloo
 ```
 
-From version 2.0.1, Horovod and mpi4py with MPICH support are shipped with the installer.
+Since version 2.0.1, Horovod and mpi4py with MPICH support are shipped with the installer.
 
 If you don't install Horovod, DeePMD-kit will fall back to serial mode.
 
-## Install the C++ interface 
+## Install the C++ interface
 
-If one does not need to use DeePMD-kit with Lammps or I-Pi, then the python interface installed in the previous section does everything and he/she can safely skip this section. 
+If one does not need to use DeePMD-kit with Lammps or I-Pi, then the python interface installed in the previous section does everything and he/she can safely skip this section.
 
-### Install Tensorflow's C++ interface
+### Install Tensorflow's C++ interface (optional)
+
+Since TensorFlow 2.12, TensorFlow C++ library (`libtensorflow_cc`) is packaged inside the Python library. Thus, you can skip building TensorFlow C++ library manually. If that does not work for you, you can still build it manually.
 
 The C++ interface of DeePMD-kit was tested with compiler GCC >= 4.8. It is noticed that the I-Pi support is only compiled with GCC >= 4.8. Note that TensorFlow may have specific requirements for the compiler version.
 
-First, the C++ interface of Tensorflow should be installed. It is noted that the version of Tensorflow should be consistent with the python interface. You may follow [the instruction](install-tf.2.8.md) or run the script `$deepmd_source_dir/source/install/build_tf.py` to install the corresponding C++ interface.
+First, the C++ interface of Tensorflow should be installed. It is noted that the version of Tensorflow should be consistent with the python interface. You may follow [the instruction](install-tf.2.12.md) or run the script `$deepmd_source_dir/source/install/build_tf.py` to install the corresponding C++ interface.
 
 ### Install DeePMD-kit's C++ interface
 
 Now go to the source code directory of DeePMD-kit and make a building place.
 ```bash
 cd $deepmd_source_dir/source
-mkdir build 
+mkdir build
 cd build
 ```
-I assume you want to install DeePMD-kit into path `$deepmd_root`, then execute CMake
+I assume you have activated the TensorFlow Python environment and want to install DeePMD-kit into path `$deepmd_root`, then execute CMake
 ```bash
-cmake -DTENSORFLOW_ROOT=$tensorflow_root -DCMAKE_INSTALL_PREFIX=$deepmd_root ..
+cmake -DUSE_TF_PYTHON_LIBS=TRUE -DCMAKE_INSTALL_PREFIX=$deepmd_root ..
 ```
-where the variable `tensorflow_root` stores the location where TensorFlow's C++ interface is installed. 
+
+If you specify `-DUSE_TF_PYTHON_LIBS=FALSE`, you need to give the location where TensorFlow's C++ interface is installed to `-DTENSORFLOW_ROOT=${tensorflow_root}`.
 
 One may add the following arguments to `cmake`:
 
@@ -184,18 +187,15 @@ One may add the following arguments to `cmake`:
 | -DUSE_TF_PYTHON_LIBS=&lt;value&gt; | `TRUE` or `FALSE` | `FALSE`       | If `TRUE`, Build C++ interface with TensorFlow's Python libraries(TensorFlow's Python Interface is required). And there's no need for building TensorFlow's C++ interface.|
 | -DENABLE_NATIVE_OPTIMIZATION       | `TRUE` or `FALSE` | `FALSE`       | Enable compilation optimization for the native machine's CPU type. Do not enable it if generated code will run on different CPUs. |
 
-If the CMake has been executed successfully, then run the following make commands to build the package:  
+If the CMake has been executed successfully, then run the following make commands to build the package:
 ```bash
 make -j4
 make install
 ```
-Option `-j4` means using 4 processes in parallel. You may want to use a different number according to your hardware. 
+Option `-j4` means using 4 processes in parallel. You may want to use a different number according to your hardware.
 
-If everything works fine, you will have the following executable and libraries installed in `$deepmd_root/bin` and `$deepmd_root/lib`
+If everything works fine, you will have the executable and libraries installed in `$deepmd_root/bin` and `$deepmd_root/lib`
 ```bash
 $ ls $deepmd_root/bin
-dp_ipi      dp_ipi_low
 $ ls $deepmd_root/lib
-libdeepmd_cc_low.so  libdeepmd_ipi_low.so  libdeepmd_lmp_low.so  libdeepmd_low.so          libdeepmd_op_cuda.so  libdeepmd_op.so
-libdeepmd_cc.so      libdeepmd_ipi.so      libdeepmd_lmp.so      libdeepmd_op_cuda_low.so  libdeepmd_op_low.so   libdeepmd.so
 ```

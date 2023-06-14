@@ -1,10 +1,10 @@
 /*
 //==================================================
- _   _  __     __  _   _   __  __   ____  
-| \ | | \ \   / / | \ | | |  \/  | |  _ \ 
+ _   _  __     __  _   _   __  __   ____
+| \ | | \ \   / / | \ | | |  \/  | |  _ \
 |  \| |  \ \ / /  |  \| | | |\/| | | | | |
 | |\  |   \ V /   | |\  | | |  | | | |_| |
-|_| \_|    \_/    |_| \_| |_|  |_| |____/ 
+|_| \_|    \_/    |_| \_| |_|  |_| |____/
 
 //==================================================
 
@@ -17,40 +17,38 @@ date: 2021-12-6
 
 #pragma once
 #include <vector>
+
 #include "device.h"
 #include "neighbor_list.h"
 
-namespace deepmd{
+namespace deepmd {
 
 // prod_env_mat_a_nvnmd_cpu
 // have been remove for the same function
 
-template<typename FPTYPE>
-void prod_env_mat_a_nvnmd_quantize_cpu(
-    FPTYPE * em, 
-    FPTYPE * em_deriv, 
-    FPTYPE * rij, 
-    int * nlist, 
-    const FPTYPE * coord, 
-    const int * type, 
-    const InputNlist & inlist,
-    const int max_nbor_size,
-    const FPTYPE * avg, 
-    const FPTYPE * std, 
-    const int nloc, 
-    const int nall, 
-    const float rcut, 
-    const float rcut_smth, 
-    const std::vector<int> sec,
-    const FPTYPE precs[3]);
+template <typename FPTYPE>
+void prod_env_mat_a_nvnmd_quantize_cpu(FPTYPE* em,
+                                       FPTYPE* em_deriv,
+                                       FPTYPE* rij,
+                                       int* nlist,
+                                       const FPTYPE* coord,
+                                       const int* type,
+                                       const InputNlist& inlist,
+                                       const int max_nbor_size,
+                                       const FPTYPE* avg,
+                                       const FPTYPE* std,
+                                       const int nloc,
+                                       const int nall,
+                                       const float rcut,
+                                       const float rcut_smth,
+                                       const std::vector<int> sec);
 
 #if GOOGLE_CUDA
 // UNDEFINE
-#endif // GOOGLE_CUDA
+#endif  // GOOGLE_CUDA
 
 #if TENSORFLOW_USE_ROCM
 // UNDEFINE
-#endif // TENSORFLOW_USE_ROCM
+#endif  // TENSORFLOW_USE_ROCM
 
-}
-
+}  // namespace deepmd

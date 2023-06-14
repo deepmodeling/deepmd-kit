@@ -14,12 +14,12 @@ jobs:
         include:
           # linux-64
           - os: ubuntu-latest
-            python: 310
+            python: 311
             platform_id: manylinux_x86_64
             dp_variant: cuda
           # macos-x86-64
           - os: macos-latest
-            python: 310
+            python: 311
             platform_id: macosx_x86_64
             dp_variant: cpu
           # macos-arm64
@@ -29,7 +29,7 @@ jobs:
             dp_variant: cpu
           # win-64
           - os: windows-2019
-            python: 310
+            python: 311
             platform_id: win_amd64
             dp_variant: cpu
           # linux-aarch64
@@ -38,26 +38,22 @@ jobs:
             platform_id: manylinux_aarch64
             dp_variant: cpu
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
         with:
           submodules: true
+          # https://github.com/pypa/setuptools_scm/issues/480
+          fetch-depth: 0
       - uses: docker/setup-qemu-action@v2
         name: Setup QEMU
         if: matrix.platform_id == 'manylinux_aarch64'
-      - uses: actions/setup-python@v2
-        name: Install Python
-        with:
-          python-version: '3.8'
-
-      - run: python -m pip install cibuildwheel==2.11.3
       - name: Build wheels
-        run: python -m cibuildwheel --output-dir wheelhouse
+        uses: pypa/cibuildwheel@v2.13.1
         env:
           CIBW_BUILD_VERBOSITY: 1
           CIBW_ARCHS: all
           CIBW_BUILD: cp${{ matrix.python }}-${{ matrix.platform_id }}
           DP_VARIANT: ${{ matrix.dp_variant }}
-      - uses: actions/upload-artifact@v2
+      - uses: actions/upload-artifact@v3
         with:
           path: ./wheelhouse/*.whl
   build_sdist:
@@ -70,7 +66,7 @@ jobs:
       - uses: actions/setup-python@v4
         name: Install Python
         with:
-          python-version: '3.10'
+          python-version: '3.11'
       - run: python -m pip install build
       - name: Build sdist
         run: python -m build --sdist
@@ -82,16 +78,47 @@ jobs:
   upload_pypi:
     needs: [build_wheels, build_sdist]
     runs-on: ubuntu-latest
+    permissions:
+      # IMPORTANT: this permission is mandatory for trusted publishing
+      id-token: write
     if: github.event_name == 'push' && startsWith(github.event.ref, 'refs/tags/v')
     steps:
       - uses: actions/download-artifact@v3
         with:
           name: artifact
           path: dist
-      - uses: pypa/gh-action-pypi-publish@master
+      - uses: pypa/gh-action-pypi-publish@release/v1
+
+  build_docker:
+    # use the already built wheels to build docker
+    needs: [build_wheels]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/download-artifact@v3
         with:
-          user: __token__
-          password: ${{ secrets.pypi_password }}
+          name: artifact
+          path: source/install/docker/dist
+      - name: Log in to the Container registry
+        uses: docker/login-action@465a07811f14bebb1938fbed4728c6a1ff8901fc
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@2c0bd771b40637d97bf205cbccdd294a32112176
+        with:
+          images: ghcr.io/deepmodeling/deepmd-kit
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@44ea916f6c540f9302d50c2b1e5a8dc071f15cdf
+        with:
+          context: source/install/docker
+          push: ${{ github.repository_owner == 'deepmodeling' && github.event_name == 'push' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
 
   pass:
     name: Pass testing build wheels

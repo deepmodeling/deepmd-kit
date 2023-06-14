@@ -1,7 +1,8 @@
-from typing import Optional
+from typing import (
+    Optional,
+)
 
 import numpy as np
-
 
 _RANDOM_GENERATOR = np.random.RandomState()
 
@@ -62,4 +63,4 @@ def shuffle(x: np.ndarray):
     _RANDOM_GENERATOR.shuffle(x)
 
 
-__all__ = ['choice', 'random', 'seed', 'shuffle']
+__all__ = ["choice", "random", "seed", "shuffle"]

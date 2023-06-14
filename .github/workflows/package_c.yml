@@ -9,18 +9,44 @@ jobs:
     name: Build C library
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - name: Package C library
         run: ./source/install/docker_package_c.sh
-      - name: Test C library
-        run: ./source/install/docker_test_package_c.sh
       # for download and debug
       - name: Upload artifact
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
+          name: libdeepmd_c
           path: ./libdeepmd_c.tar.gz
+      - name: Test C library
+        run: ./source/install/docker_test_package_c.sh
       - name: Release
         uses: softprops/action-gh-release@v1
         if: startsWith(github.ref, 'refs/tags/')
         with:
           files: libdeepmd_c.tar.gz
+  test_c:
+    name: Test building from C library
+    needs: [build_c]
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v3
+      - name: Download artifact
+        uses: actions/download-artifact@v3
+        with:
+          name: libdeepmd_c
+      - run: tar -vxzf ./libdeepmd_c.tar.gz
+      - name: Test C library
+        run: ./source/install/build_from_c.sh
+        env:
+          DEEPMD_C_ROOT: ${{ github.workspace }}/libdeepmd_c
+  pass:
+    name: Pass building c library
+    needs: [build_c, test_c]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+    - name: Decide whether the needed jobs succeeded or failed
+      uses: re-actors/alls-green@release/v1
+      with:
+        jobs: ${{ toJSON(needs) }}

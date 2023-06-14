@@ -14,31 +14,51 @@ For CUDA only:
 # make sure Python 3 is used
 # https://stackoverflow.com/a/41901923/9567349
 import sys
+
 if sys.version_info[0] < 3:
     raise Exception("Python 3 or a more recent version is required.")
 
 # The script should only rely on the stardard Python libraries.
 
-from contextlib import contextmanager
 import argparse
+import hashlib
 import importlib.util
+import logging
 import os
 import re
+import shutil
 import stat
 import subprocess as sp
-import hashlib
-import logging
-import urllib.request
 import tarfile
-import shutil
 import tempfile
-from pathlib import Path
-from typing import List, Dict, Optional
-from abc import ABCMeta, abstractmethod, abstractproperty
-from functools import lru_cache
-from shutil import copytree, ignore_patterns, copy2
-from fnmatch import filter
-
+import urllib.request
+from abc import (
+    ABCMeta,
+    abstractmethod,
+    abstractproperty,
+)
+from contextlib import (
+    contextmanager,
+)
+from fnmatch import (
+    filter,
+)
+from functools import (
+    lru_cache,
+)
+from pathlib import (
+    Path,
+)
+from shutil import (
+    copy2,
+    copytree,
+    ignore_patterns,
+)
+from typing import (
+    Dict,
+    List,
+    Optional,
+)
 
 # default config
 FILE = Path(__file__).parent.absolute()
@@ -64,22 +84,22 @@ dlog = logging.getLogger("TensorFlow C++ Library installer")
 dlog.setLevel(logging.INFO)
 handler = logging.StreamHandler(sys.stdout)
 handler.setLevel(logging.DEBUG)
-formatter = logging.Formatter(
-    '%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 handler.setFormatter(formatter)
 dlog.addHandler(handler)
 
 
 # Common utils
 
+
 def download_file(url: str, filename: str):
     """Download files from remote URL.
 
     Parameters
     ----------
-    url: str
+    url : str
         The URL that is available to download.
-    filename: str
+    filename : str
         The downloading path of the file.
 
     Raises
@@ -87,8 +107,8 @@ def download_file(url: str, filename: str):
     URLError
         raises for HTTP error
     """
-    dlog.info("Download %s from %s" % (filename, url))
-    with urllib.request.urlopen(url) as response, open(filename, 'wb') as out_file:
+    dlog.info(f"Download {filename} from {url}")
+    with urllib.request.urlopen(url) as response, open(filename, "wb") as out_file:
         shutil.copyfileobj(response, out_file)
 
 
@@ -109,13 +129,14 @@ class OnlineResource:
         if not None, decompress to a directory
     """
 
-    def __init__(self,
-                 filename: str,
-                 url: str,
-                 sha256: str = None,
-                 executable: bool = False,
-                 gzip: str = None,
-                 ) -> None:
+    def __init__(
+        self,
+        filename: str,
+        url: str,
+        sha256: Optional[str] = None,
+        executable: bool = False,
+        gzip: Optional[str] = None,
+    ) -> None:
         self.filename = filename
         self.url = url
         self.reference_sha256 = sha256
@@ -130,9 +151,8 @@ class OnlineResource:
                 raise RuntimeError(
                     "Download {} from {} failed! "
                     "You can manually download it to {} and "
-                    "retry the script.".format(
-                        self.filename, self.url, str(self.path)
-                    ))
+                    "retry the script.".format(self.filename, self.url, str(self.path))
+                )
         self.post_process()
 
     def post_process(self):
@@ -140,25 +160,23 @@ class OnlineResource:
             self.path.chmod(self.path.stat().st_mode | stat.S_IEXEC)
         if self.gzip is not None:
             with tarfile.open(self.path) as tar:
+
                 def is_within_directory(directory, target):
-                    
                     abs_directory = os.path.abspath(directory)
                     abs_target = os.path.abspath(target)
-                
+
                     prefix = os.path.commonprefix([abs_directory, abs_target])
-                    
+
                     return prefix == abs_directory
-                
+
                 def safe_extract(tar, path=".", members=None, *, numeric_owner=False):
-                
                     for member in tar.getmembers():
                         member_path = os.path.join(path, member.name)
                         if not is_within_directory(path, member_path):
                             raise Exception("Attempted Path Traversal in Tar File")
-                
-                    tar.extractall(path, members, numeric_owner=numeric_owner) 
-                    
-                
+
+                    tar.extractall(path, members, numeric_owner=numeric_owner)
+
                 safe_extract(tar, path=self.gzip_path)
 
     def download(self):
@@ -180,11 +198,6 @@ class OnlineResource:
     def sha256(self) -> str:
         """Get sha256 of the target file.
 
-        Parameters
-        ----------
-        filename : str
-            The filename.
-
         Returns
         -------
         sha256 : str
@@ -192,9 +205,9 @@ class OnlineResource:
         """
         h = hashlib.sha256()
         # buffer size: 128 kB
-        b = bytearray(128*1024)
+        b = bytearray(128 * 1024)
         mv = memoryview(b)
-        with open(self.path, 'rb', buffering=0) as f:
+        with open(self.path, "rb", buffering=0) as f:
             for n in iter(lambda: f.readinto(mv), 0):
                 h.update(mv[:n])
         return h.hexdigest()
@@ -202,11 +215,14 @@ class OnlineResource:
     @property
     def exists(self) -> bool:
         """Check if target file exists."""
-        return self.path.exists() and (self.sha256 == self.reference_sha256 or self.reference_sha256 is None)
+        return self.path.exists() and (
+            self.sha256 == self.reference_sha256 or self.reference_sha256 is None
+        )
 
 
 class Build(metaclass=ABCMeta):
     """Build process."""
+
     @abstractproperty
     def resources(self) -> Dict[str, OnlineResource]:
         """Required resources."""
@@ -239,7 +255,10 @@ class Build(metaclass=ABCMeta):
                 if not dd.built:
                     dd()
                 else:
-                    dlog.info("Skip installing %s, which has been already installed" % dd.__class__.__name__)
+                    dlog.info(
+                        "Skip installing %s, which has been already installed"
+                        % dd.__class__.__name__
+                    )
             dlog.info("Start installing %s..." % self.__class__.__name__)
             with tempfile.TemporaryDirectory() as tmpdirname:
                 self._prefix = Path(tmpdirname)
@@ -250,7 +269,7 @@ class Build(metaclass=ABCMeta):
 
     @property
     def prefix(self):
-        """Tmp prefix"""
+        """Tmp prefix."""
         return self._prefix
 
     def copy_from_tmp_to_prefix(self):
@@ -286,41 +305,43 @@ def set_directory(path: Path):
 
 
 def list2env(l: list) -> str:
-    return ':'.join(map(str, l))
+    return ":".join(map(str, l))
 
 
 def get_shlib_ext():
     """Return the shared library extension."""
     plat = sys.platform
-    if plat.startswith('win'):
-        return '.dll'
-    elif plat in ['osx', 'darwin']:
-        return '.dylib'
-    elif plat.startswith('linux'):
-        return '.so'
+    if plat.startswith("win"):
+        return ".dll"
+    elif plat in ["osx", "darwin"]:
+        return ".dylib"
+    elif plat.startswith("linux"):
+        return ".so"
     else:
         raise NotImplementedError(plat)
 
 
 def copy3(src: Path, dst: Path, *args, **kwargs):
-    """wrapper to shutil.copy2 to support Pathlib."""
+    """Wrapper to shutil.copy2 to support Pathlib."""
     return copy2(str(src), str(dst), *args, **kwargs)
 
 
 def copytree2(src: Path, dst: Path, *args, **kwargs):
-    """wrapper to copytree and cp to support Pathlib, pattern, and override."""
+    """Wrapper to copytree and cp to support Pathlib, pattern, and override."""
     with tempfile.TemporaryDirectory() as td:
         # hack to support override
         tmpdst = Path(td) / "dst"
         copytree(str(src), str(tmpdst), *args, **kwargs)
-        call([
-            "/bin/cp",
-            # archieve, recursive, force, do not create one inside
-            # https://stackoverflow.com/a/24486142/9567349
-            "-arfT",
-            str(tmpdst),
-            str(dst),
-        ])
+        call(
+            [
+                "/bin/cp",
+                # archieve, recursive, force, do not create one inside
+                # https://stackoverflow.com/a/24486142/9567349
+                "-arfT",
+                str(tmpdst),
+                str(dst),
+            ]
+        )
 
 
 def include_patterns(*include_patterns):
@@ -328,13 +349,18 @@ def include_patterns(*include_patterns):
 
     Remove directory starts with _.
     """
+
     def _ignore_patterns(path, names):
-        keep = set(name for pattern in include_patterns
-                   for name in filter(names, pattern))
-        removed_dir = any([x.startswith("_") for x in path.split(os.path.sep)])
-        ignore = set(name for name in names
-                     if (name not in keep or removed_dir) and not os.path.isdir(os.path.join(path, name)))
+        keep = {name for pattern in include_patterns for name in filter(names, pattern)}
+        removed_dir = any(x.startswith("_") for x in path.split(os.path.sep))
+        ignore = {
+            name
+            for name in names
+            if (name not in keep or removed_dir)
+            and not os.path.isdir(os.path.join(path, name))
+        }
         return ignore
+
     return _ignore_patterns
 
 
@@ -346,13 +372,16 @@ def call(commands: List[str], env={}, **kwargs):
     RuntimeError
         returned code is not zero
     """
-    with sp.Popen(commands, stdout=sys.stdout, stderr=sys.stderr, env=env, **kwargs) as p:
+    with sp.Popen(
+        commands, stdout=sys.stdout, stderr=sys.stderr, env=env, **kwargs
+    ) as p:
         p.communicate()
         exit_code = p.wait()
 
         if exit_code:
-            raise RuntimeError("Run %s failed, return code: %d" %
-                               (" ".join(commands), exit_code))
+            raise RuntimeError(
+                "Run %s failed, return code: %d" % (" ".join(commands), exit_code)
+            )
 
 
 # the detailed step to build DeePMD-kit
@@ -379,6 +408,12 @@ RESOURCES = {
         "b5a1bb04c84b6fe1538377e5a1f649bb5d5f0b2e3625a3c526ff3a8af88633e8",
         gzip="tensorflow",
     ),
+    "tensorflow-2.12.0": OnlineResource(
+        "tensorflow-2.12.0.tar.gz",
+        "https://github.com/tensorflow/tensorflow/archive/refs/tags/v2.12.0.tar.gz",
+        "c030cb1905bff1d2446615992aad8d8d85cbe90c4fb625cee458c63bf466bc8e",
+        gzip="tensorflow",
+    ),
 }
 
 
@@ -399,7 +434,7 @@ class BuildBazelisk(Build):
         return {}
 
     def build(self):
-        bazel_res = self.resources['bazelisk']
+        bazel_res = self.resources["bazelisk"]
         bin_dst = self.prefix / "bin"
         bin_dst.mkdir(exist_ok=True)
         copy3(bazel_res.path, bin_dst / "bazelisk")
@@ -410,7 +445,8 @@ class BuildBazelisk(Build):
 
 
 class BuildNumpy(Build):
-    """Build NumPy"""
+    """Build NumPy."""
+
     @property
     @lru_cache()
     def resources(self) -> Dict[str, OnlineResource]:
@@ -427,19 +463,22 @@ class BuildNumpy(Build):
 
     def build(self):
         try:
-            call([
-                sys.executable,
-                "-m",
-                "pip",
-                "install",
-                "numpy",
-            ])
+            call(
+                [
+                    sys.executable,
+                    "-m",
+                    "pip",
+                    "install",
+                    "numpy",
+                ]
+            )
         except RuntimeError as e:
             raise RuntimeError("Please manually install numpy!") from e
 
 
 class BuildCUDA(Build):
     """Find CUDA."""
+
     @property
     @lru_cache()
     def resources(self) -> Dict[str, OnlineResource]:
@@ -455,7 +494,8 @@ class BuildCUDA(Build):
             "NVCC is not found. Please manually install CUDA"
             "Toolkit and cuDNN!\n"
             "CUDA Toolkit: https://developer.nvidia.com/cuda-toolkit-archive\n"
-            "cuDNN: https://developer.nvidia.com/rdp/cudnn-archive")
+            "cuDNN: https://developer.nvidia.com/rdp/cudnn-archive"
+        )
 
     @property
     def built(self):
@@ -463,9 +503,11 @@ class BuildCUDA(Build):
 
     @property
     def cuda_version(self):
-        nvcc_bin = CUDA_PATH / 'bin' / 'nvcc'
-        output = sp.check_output([str(nvcc_bin), '--version'], env={}, encoding='utf8').split('\n')
-        pattern = re.compile('V[0-9]*\\.[0-9]*\\.[0-9]*')
+        nvcc_bin = CUDA_PATH / "bin" / "nvcc"
+        output = sp.check_output(
+            [str(nvcc_bin), "--version"], env={}, encoding="utf8"
+        ).split("\n")
+        pattern = re.compile("V[0-9]*\\.[0-9]*\\.[0-9]*")
         for x in output:
             search = pattern.search(x)
             if search is not None:
@@ -477,12 +519,12 @@ class BuildCUDA(Build):
 
     @property
     def cudnn_version(self):
-        cudnn_header = CUDNN_PATH / 'include' / 'cudnn.h'
+        cudnn_header = CUDNN_PATH / "include" / "cudnn.h"
         with open(cudnn_header) as f:
             for line in f:
                 if line.startswith("#define CUDNN_MAJOR "):
                     return line.split()[-1]
-        cudnn_header = CUDNN_PATH / 'include' / 'cudnn_version.h'
+        cudnn_header = CUDNN_PATH / "include" / "cudnn_version.h"
         with open(cudnn_header) as f:
             for line in f:
                 if line.startswith("#define CUDNN_MAJOR "):
@@ -490,7 +532,7 @@ class BuildCUDA(Build):
         raise RuntimeError(
             "cuDNN version is not found!\n"
             "Download from: https://developer.nvidia.com/rdp/cudnn-archive"
-            )
+        )
 
     @property
     @lru_cache()
@@ -509,6 +551,7 @@ class BuildCUDA(Build):
 
 class BuildROCM(Build):
     """Find ROCm."""
+
     @property
     @lru_cache()
     def resources(self) -> Dict[str, OnlineResource]:
@@ -542,7 +585,13 @@ class BuildTensorFlow(Build):
         Enable ROCm build
     """
 
-    def __init__(self, version: str ="2.9.1", enable_mkl: bool=True, enable_cuda: bool=False, enable_rocm: bool = False) -> None:
+    def __init__(
+        self,
+        version: str = "2.12.0",
+        enable_mkl: bool = True,
+        enable_cuda: bool = False,
+        enable_rocm: bool = False,
+    ) -> None:
         self.version = version
         self.enable_mkl = enable_mkl
         self.enable_cuda = enable_cuda
@@ -560,9 +609,9 @@ class BuildTensorFlow(Build):
     def dependencies(self) -> Dict[str, Build]:
         optional_dep = {}
         if self.enable_cuda:
-            optional_dep['cuda'] = BuildCUDA()
+            optional_dep["cuda"] = BuildCUDA()
         if self.enable_rocm:
-            optional_dep['rocm'] = BuildROCM()
+            optional_dep["rocm"] = BuildROCM()
         return {
             "bazelisk": BuildBazelisk(),
             "numpy": BuildNumpy(),
@@ -570,31 +619,37 @@ class BuildTensorFlow(Build):
         }
 
     def build(self):
-        tf_res = self.resources['tensorflow']
+        tf_res = self.resources["tensorflow"]
         src = tf_res.gzip_path / ("tensorflow-%s" % self.version)
         with set_directory(src):
             # configure -- need bazelisk in PATH
-            call([str(src / "configure")], env={
-                "PATH": list2env([PREFIX / "bin", "/usr/bin", "/bin"]),
-                "LD_LIBRARY_PATH": os.environ.get("LD_LIBRARY_PATH", ""),
-                **self._environments,
-            })
+            call(
+                [str(src / "configure")],
+                env={
+                    "PATH": list2env([PREFIX / "bin", "/usr/bin", "/bin"]),
+                    "LD_LIBRARY_PATH": os.environ.get("LD_LIBRARY_PATH", ""),
+                    **self._environments,
+                },
+            )
             # bazel build
-            call([
-                str(PREFIX / "bin" / "bazelisk"),
-                *self._bazel_opts,
-                "build",
-                *self._build_opts,
-                *self._build_targets,
-            ], env={
-                "PATH": list2env(["/usr/bin", "/bin"]),
-                "HOME": os.environ.get("HOME"),
-                "TEST_TMPDIR": str(PACKAGE_DIR / "bazelcache"),
-                # for libstdc++
-                "LD_LIBRARY_PATH": os.environ.get("LD_LIBRARY_PATH", ""),
-                "CC": str(Path(GCC).resolve()),
-                "CXX": str(Path(GXX).resolve()),
-            })
+            call(
+                [
+                    str(PREFIX / "bin" / "bazelisk"),
+                    *self._bazel_opts,
+                    "build",
+                    *self._build_opts,
+                    *self._build_targets,
+                ],
+                env={
+                    "PATH": list2env(["/usr/bin", "/bin"]),
+                    "HOME": os.environ.get("HOME"),
+                    "TEST_TMPDIR": str(PACKAGE_DIR / "bazelcache"),
+                    # for libstdc++
+                    "LD_LIBRARY_PATH": os.environ.get("LD_LIBRARY_PATH", ""),
+                    "CC": str(Path(GCC).resolve()),
+                    "CXX": str(Path(GXX).resolve()),
+                },
+            )
 
         # copy libraries and directories
         ext = get_shlib_ext()
@@ -605,30 +660,62 @@ class BuildTensorFlow(Build):
 
         # 1. copy headers
         (include_dst / "tensorflow").mkdir(exist_ok=True)
-        copytree2(src / "tensorflow" / "cc", include_dst /
-                  "tensorflow" / "cc", ignore=include_patterns('*.h', '*.inc'))
-        copytree2(src / "tensorflow" / "core", include_dst /
-                  "tensorflow" / "core", ignore=include_patterns('*.h', '*.inc'))
+        copytree2(
+            src / "tensorflow" / "cc",
+            include_dst / "tensorflow" / "cc",
+            ignore=include_patterns("*.h", "*.inc"),
+        )
+        copytree2(
+            src / "tensorflow" / "core",
+            include_dst / "tensorflow" / "core",
+            ignore=include_patterns("*.h", "*.inc"),
+        )
+        if tuple([int(x) for x in self.version.split(".")[:2]]) >= (2, 11):
+            copytree2(
+                src / "tensorflow" / "tsl",
+                include_dst / "tensorflow" / "core",
+                ignore=include_patterns("*.h", "*.inc"),
+            )
         # bazel-bin includes generated headers like version, pb.h, ..
-        copytree2(src / "bazel-bin", include_dst,
-                  ignore=include_patterns('*.h', '*.inc'))
+        copytree2(
+            src / "bazel-bin", include_dst, ignore=include_patterns("*.h", "*.inc")
+        )
 
-        copytree2(src / "third_party", include_dst /
-                  "third_party", ignore=ignore_patterns('*.cc'))
+        copytree2(
+            src / "third_party",
+            include_dst / "third_party",
+            ignore=ignore_patterns("*.cc"),
+        )
         bazel_tensorflow = src / ("bazel-" + src.name)
-        copytree2(bazel_tensorflow / "external" /
-                  "eigen_archive" / "Eigen", include_dst / "Eigen")
-        copytree2(bazel_tensorflow / "external" / "eigen_archive" /
-                  "unsupported", include_dst / "unsupported")
-        copytree2(bazel_tensorflow / "external" / "com_google_protobuf" /
-                  "src" / "google", include_dst / "google")
-        copytree2(bazel_tensorflow / "external" /
-                  "com_google_absl" / "absl", include_dst / "absl")
+        copytree2(
+            bazel_tensorflow / "external" / "eigen_archive" / "Eigen",
+            include_dst / "Eigen",
+        )
+        copytree2(
+            bazel_tensorflow / "external" / "eigen_archive" / "unsupported",
+            include_dst / "unsupported",
+        )
+        copytree2(
+            bazel_tensorflow / "external" / "com_google_protobuf" / "src" / "google",
+            include_dst / "google",
+        )
+        copytree2(
+            bazel_tensorflow / "external" / "com_google_absl" / "absl",
+            include_dst / "absl",
+        )
 
         # 2. copy libraries
         if self.enable_mkl:
-            copy3(src / "bazel-out" / "k8-opt" / "bin" / "external" /
-                "llvm_openmp" / ("libiomp5" + ext), lib_dst)
+            copy3(
+                src
+                / "bazel-out"
+                / "k8-opt"
+                / "bin"
+                / "external"
+                / "llvm_openmp"
+                / ("libiomp5" + ext),
+                lib_dst,
+            )
         lib_src = src / "bazel-bin" / "tensorflow"
         self.copy_lib("libtensorflow_framework" + ext, lib_src, lib_dst)
         self.copy_lib("libtensorflow_cc" + ext, lib_src, lib_dst)
@@ -637,8 +724,7 @@ class BuildTensorFlow(Build):
         """Copy library and make symlink."""
         copy3(src / (libname + "." + self.version), dst)
         libname_v = libname + "." + self.version
-        (dst / (libname + "." + self.version.split(".")
-         [0])).symlink_to(libname_v)
+        (dst / (libname + "." + self.version.split(".")[0])).symlink_to(libname_v)
         (dst / libname).symlink_to(libname_v)
 
     @property
@@ -648,10 +734,12 @@ class BuildTensorFlow(Build):
                 "TF_NEED_CUDA": "1",
                 # /usr is path to driver
                 "TF_CUDA_PATHS": ",".join((str(CUDA_PATH), str(CUDNN_PATH), "/usr")),
-                "TF_CUDA_VERSION": str(self.dependencies['cuda'].cuda_version),
-                "TF_CUDNN_VERSION": str(self.dependencies['cuda'].cudnn_version),
+                "TF_CUDA_VERSION": str(self.dependencies["cuda"].cuda_version),
+                "TF_CUDNN_VERSION": str(self.dependencies["cuda"].cudnn_version),
                 "TF_NCCL_VERSION": "",
-                "TF_CUDA_COMPUTE_CAPABILITIES": self.dependencies['cuda'].cuda_compute_capabilities,
+                "TF_CUDA_COMPUTE_CAPABILITIES": self.dependencies[
+                    "cuda"
+                ].cuda_compute_capabilities,
                 "GCC_HOST_COMPILER_PATH": str(Path(GCC).resolve()),
                 "GCC_HOST_COMPILER_PREFIX": str(Path(GCC).resolve().parent.parent),
             }
@@ -685,8 +773,8 @@ class BuildTensorFlow(Build):
             "TF_DOWNLOAD_CLANG": "0",
             "TF_SET_ANDROID_WORKSPACE": "0",
             "TF_CONFIGURE_IOS": "0",
-            ** cuda_env,
-            ** rocm_env,
+            **cuda_env,
+            **rocm_env,
         }
 
     @property
@@ -715,7 +803,9 @@ class BuildTensorFlow(Build):
 
     @property
     def built(self):
-        return (PREFIX / "lib" / ("libtensorflow_cc%s.%s" % (get_shlib_ext(), self.version))).exists()
+        return (
+            PREFIX / "lib" / (f"libtensorflow_cc{get_shlib_ext()}.{self.version}")
+        ).exists()
 
 
 def clean_package():
@@ -735,6 +825,7 @@ def clean_package():
 
 # interface
 
+
 def env() -> Dict[str, str]:
     return {
         "Python": sys.executable,
@@ -749,11 +840,18 @@ def env() -> Dict[str, str]:
 
 
 def pretty_print_env() -> str:
-    return ("Build configs:\n" +
-            "\n".join(["%s:%s%s" % (kk, " "*(19-len(kk)), vv) for kk, vv in env().items() if vv is not None]))
+    return "Build configs:\n" + "\n".join(
+        [
+            "{}:{}{}".format(kk, " " * (19 - len(kk)), vv)
+            for kk, vv in env().items()
+            if vv is not None
+        ]
+    )
 
 
-class RawTextArgumentDefaultsHelpFormatter(argparse.RawTextHelpFormatter, argparse.ArgumentDefaultsHelpFormatter):
+class RawTextArgumentDefaultsHelpFormatter(
+    argparse.RawTextHelpFormatter, argparse.ArgumentDefaultsHelpFormatter
+):
     pass
 
 
@@ -762,7 +860,7 @@ def parse_args(args: Optional[List[str]] = None):
 
     Parameters
     ----------
-    args: List[str]
+    args : List[str]
         list of command line arguments, main purpose is testing default option None
         takes arguments from sys.argv
     """
@@ -785,7 +883,7 @@ def parse_args(args: Optional[List[str]] = None):
     parser_variant = parser.add_mutually_exclusive_group()
     parser_variant.add_argument(
         "--cuda",
-        action='store_true',
+        action="store_true",
         help="Enable CUDA for TensorFlow",
     )
     parser.add_argument(
@@ -802,7 +900,7 @@ def parse_args(args: Optional[List[str]] = None):
     )
     parser_variant.add_argument(
         "--rocm",
-        action='store_true',
+        action="store_true",
         help="Enable ROCm for TensorFlow",
     )
     parser.add_argument(
@@ -830,9 +928,9 @@ def parse_args(args: Optional[List[str]] = None):
         help="Number of CPU cores used to build.",
     )
     parser.add_argument(
-        '--clean',
-        action='store_true',
-        help='Clean files after build.',
+        "--clean",
+        action="store_true",
+        help="Clean files after build.",
     )
     parsed_args = parser.parse_args(args=args)
 
@@ -872,4 +970,3 @@ if __name__ == "__main__":
     # clean
     if args.clean:
         clean_package()
-

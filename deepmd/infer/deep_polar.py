@@ -1,10 +1,19 @@
-from deepmd.infer.deep_tensor import DeepTensor
+from typing import (
+    TYPE_CHECKING,
+    List,
+    Optional,
+)
+
 import numpy as np
 
-from typing import TYPE_CHECKING, List, Optional
+from deepmd.infer.deep_tensor import (
+    DeepTensor,
+)
 
 if TYPE_CHECKING:
-    from pathlib import Path
+    from pathlib import (
+        Path,
+    )
 
 
 class DeepPolar(DeepTensor):
@@ -27,9 +36,11 @@ class DeepPolar(DeepTensor):
     """
 
     def __init__(
-        self, model_file: "Path", load_prefix: str = "load", default_tf_graph: bool = False
+        self,
+        model_file: "Path",
+        load_prefix: str = "load",
+        default_tf_graph: bool = False,
     ) -> None:
-
         # use this in favor of dict update to move attribute from class to
         # instance namespace
         self.tensors = dict(
@@ -37,7 +48,7 @@ class DeepPolar(DeepTensor):
                 # output tensor
                 "t_tensor": "o_polar:0",
             },
-            **self.tensors
+            **self.tensors,
         )
 
         DeepTensor.__init__(
@@ -72,7 +83,6 @@ class DeepGlobalPolar(DeepTensor):
     def __init__(
         self, model_file: str, load_prefix: str = "load", default_tf_graph: bool = False
     ) -> None:
-
         self.tensors.update(
             {
                 "t_sel_type": "model_attr/sel_type:0",

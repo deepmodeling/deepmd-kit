@@ -1,6 +1,6 @@
 # Fit `tensor` like `Dipole` and `Polarizability`
 
-Unlike `energy`, which is a scalar, one may want to fit some high dimensional physical quantity, like `dipole` (vector) and `polarizability` (matrix, shorted as `polar`). Deep Potential has provided different APIs to do this. In this example, we will show you how to train a model to fit a water system. A complete training input script of the examples can be found in 
+Unlike `energy`, which is a scalar, one may want to fit some high dimensional physical quantity, like `dipole` (vector) and `polarizability` (matrix, shorted as `polar`). Deep Potential has provided different APIs to do this. In this example, we will show you how to train a model to fit a water system. A complete training input script of the examples can be found in
 
 ```bash
 $deepmd_source_dir/examples/water_tensor/dipole/dipole_input.json
@@ -53,7 +53,7 @@ The {ref}`loss <loss>` section tells DP the weight of these two kinds of loss, i
 loss = pref * global_loss + pref_atomic * atomic_loss
 ```
 
-The loss section should be provided like 
+The loss section should be provided like
 
 ```json
 	"loss" : {
@@ -120,6 +120,4 @@ One may notice that in each step, some of the local loss and global loss will be
 		>atomic_system
 		>global_system
 ```
-During training, at each step when the `lcurve.out` is printed, the system used for evaluating the training (validation) error may be either with only global or only atomic labels, thus the corresponding atomic or global errors are missing and are printed as zeros. 
-
-
+During training, at each step when the `lcurve.out` is printed, the system used for evaluating the training (validation) error may be either with only global or only atomic labels, thus the corresponding atomic or global errors are missing and are printed as zeros.

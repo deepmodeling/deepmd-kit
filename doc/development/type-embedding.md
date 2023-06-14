@@ -1,6 +1,6 @@
 # Atom Type Embedding
 ## Overview
-Here is an overview of the DeePMD-kit algorithm. Given a specific centric atom, we can obtain the matrix describing its local environment, named $\mathcal R$. It is consist of the distance between the centric atom and its neighbors, as well as a direction vector. We can embed each distance into a vector of $M_1$ dimension by an `embedding net`, so the environment matrix $\mathcal R$ can be embedded into matrix $\mathcal G$. We can thus extract a descriptor vector (of $M_1 \times M_2$ dim) of the centric atom from the $\mathcal G$ by some matrix multiplication, and put the descriptor into `fitting net` to get predicted energy $E$. The vanilla version of DeePMD-kit builds `embedding net` and `fitting net` relying on the atom type, resulting in $O(N)$ memory usage. After applying atom type embedding, in DeePMD-kit v2.0, we can share one `embedding net` and one `fitting net` in total, which decline training complexity largely. 
+Here is an overview of the DeePMD-kit algorithm. Given a specific centric atom, we can obtain the matrix describing its local environment, named $\mathcal R$. It is consist of the distance between the centric atom and its neighbors, as well as a direction vector. We can embed each distance into a vector of $M_1$ dimension by an `embedding net`, so the environment matrix $\mathcal R$ can be embedded into matrix $\mathcal G$. We can thus extract a descriptor vector (of $M_1 \times M_2$ dim) of the centric atom from the $\mathcal G$ by some matrix multiplication, and put the descriptor into `fitting net` to get predicted energy $E$. The vanilla version of DeePMD-kit builds `embedding net` and `fitting net` relying on the atom type, resulting in $O(N)$ memory usage. After applying atom type embedding, in DeePMD-kit v2.0, we can share one `embedding net` and one `fitting net` in total, which decline training complexity largely.
 
 ## Preliminary
 In the following chart, you can find the meaning of symbols used to clarify the atom-type embedding algorithm.
@@ -33,7 +33,7 @@ DeePMD-kit applying atom type embedding:
 
 $$E = F( [ \text{Multi}( \mathcal G( [s_{ij}, A(i), A(j)] ) ), A(j)] )$$
 
-or 
+or
 
 $$E = F( [ \text{Multi}( \mathcal G( [s_{ij}, A(j)] ) ), A(j)] )$$
 
@@ -59,9 +59,9 @@ In trainer.py, it will parse the parameter from the input JSON file. If a `type_
 ### model (model/ener.py)
 When building the operation graph of the `model` in `model.build`. If a `TypeEmbedNet` is detected, it will build the operation graph of `type embed net`, `embedding net` and `fitting net` by order. The building process of `type embed net` can be found in `TypeEmbedNet.build`, which output the type embedding vector of each atom type (of [$\text{ntypes} \times \text{nchanl}$] dimensions). We then save the type embedding vector into `input_dict`, so that they can be fetched later in `embedding net` and `fitting net`.
 ### embedding net (descriptor/se*.py)
-In `embedding net`, we shall take local environment $\mathcal R$ as input and output matrix $\mathcal G$. Functions called in this process by the order is 
+In `embedding net`, we shall take local environment $\mathcal R$ as input and output matrix $\mathcal G$. Functions called in this process by the order is
 ```
-build -> _pass_filter -> _filter -> _filter_lower 
+build -> _pass_filter -> _filter -> _filter_lower
 ```
 `_pass_filter`: It will first detect whether an atom type embedding exists, if so, it will apply atom type embedding algorithm and doesn't divide the input by type.
 

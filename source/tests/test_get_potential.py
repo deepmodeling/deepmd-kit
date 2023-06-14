@@ -1,32 +1,36 @@
 """Test if `DeepPotential` facto function returns the right type of potential."""
 
 import unittest
-from pathlib import Path
+from pathlib import (
+    Path,
+)
 
-from deepmd.infer import (DeepDipole, DeepGlobalPolar, DeepPolar, DeepPot,
-                          DeepPotential, DeepWFC)
-
-from infer.convert2pb import convert_pbtxt_to_pb
+from deepmd.infer import (
+    DeepDipole,
+    DeepPolar,
+    DeepPot,
+    DeepPotential,
+)
+from deepmd.utils.convert import (
+    convert_pbtxt_to_pb,
+)
 
 
 class TestGetPotential(unittest.TestCase):
-
     def setUp(self):
         self.work_dir = Path(__file__).parent / "infer"
 
         convert_pbtxt_to_pb(
-            str(self.work_dir / "deeppot.pbtxt"),
-            str(self.work_dir / "deep_pot.pb")
+            str(self.work_dir / "deeppot.pbtxt"), str(self.work_dir / "deep_pot.pb")
         )
 
         convert_pbtxt_to_pb(
             str(self.work_dir / "deepdipole.pbtxt"),
-            str(self.work_dir / "deep_dipole.pb")
+            str(self.work_dir / "deep_dipole.pb"),
         )
 
         convert_pbtxt_to_pb(
-            str(self.work_dir / "deeppolar.pbtxt"),
-            str(self.work_dir / "deep_polar.pb")
+            str(self.work_dir / "deeppolar.pbtxt"), str(self.work_dir / "deep_polar.pb")
         )
 
         # TODO add model files for globalpolar and WFC
@@ -45,7 +49,6 @@ class TestGetPotential(unittest.TestCase):
             f.unlink()
 
     def test_factory(self):
-
         msg = "Returned wrong type of potential. Expected: {}, got: {}"
 
         dp = DeepPotential(self.work_dir / "deep_dipole.pb")

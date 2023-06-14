@@ -1,3 +1,11 @@
 pre{
 	overflow: auto;
 }
+.wy-side-nav-search .wy-dropdown > a img.logo, .wy-side-nav-search > a img.logo {
+    width: 275px;
+}
+@media (prefers-color-scheme: dark) {
+	.wy-side-nav-search .wy-dropdown > a img.logo, .wy-side-nav-search > a img.logo {
+		content: url("../logo-dark.svg");
+	}
+}

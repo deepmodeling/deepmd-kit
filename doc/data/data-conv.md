@@ -55,9 +55,9 @@ $ cat force.raw
 ```
 This `force.raw` contains 3 frames with each frame having the forces of 2 atoms, thus it has 3 lines and 6 columns. Each line provides all the 3 force components of 2 atoms in 1 frame. The first three numbers are the 3 force components of the first atom, while the second three numbers are the 3 force components of the second atom. Other files are organized similarly. The number of lines of all raw files should be identical.
 
-One can use the script `$deepmd_source_dir/data/raw/raw_to_set.sh` to convert the prepared raw files to the NumPy format. For example, if we have a raw file that contains 6000 frames, 
+One can use the script `$deepmd_source_dir/data/raw/raw_to_set.sh` to convert the prepared raw files to the NumPy format. For example, if we have a raw file that contains 6000 frames,
 ```bash
-$ ls 
+$ ls
 box.raw  coord.raw  energy.raw  force.raw  type.raw  virial.raw
 $ $deepmd_source_dir/data/raw/raw_to_set.sh 2000
 nframe is 6000
@@ -66,7 +66,7 @@ will make 3 sets
 making set 0 ...
 making set 1 ...
 making set 2 ...
-$ ls 
+$ ls
 box.raw  coord.raw  energy.raw  force.raw  set.000  set.001  set.002  type.raw  virial.raw
 ```
 It generates three sets `set.000`, `set.001` and `set.002`, with each set containing 2000 frames in the Numpy format.

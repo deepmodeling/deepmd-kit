@@ -1,52 +1,64 @@
 {
-	"_comment": " model parameters",
-	"model": {
-"type_embedding": {"trainable":  false},
-"type_map":	["O", "H"],
-"descriptor" :{"_comment":		" that's all"},
-"fitting_net" : {"_comment":		" that's all"},
-"_comment":	" that's all"
-	},
+  "_comment": " model parameters",
+  "model": {
+    "type_embedding": {
+      "trainable": false
+    },
+    "type_map": [
+      "O",
+      "H"
+    ],
+    "descriptor": {
+      "_comment": " that's all"
+    },
+    "fitting_net": {
+      "_comment": " that's all"
+    },
+    "_comment": " that's all"
+  },
 
-	"learning_rate" :{
-"type":		"exp",
-"decay_steps":	5000,
-"start_lr":	0.001,	
-"stop_lr":	3.51e-8,
-"_comment":	"that's all"
-	},
+  "learning_rate": {
+    "type": "exp",
+    "decay_steps": 5000,
+    "start_lr": 0.001,
+    "stop_lr": 3.51e-8,
+    "_comment": "that's all"
+  },
 
-	"loss" :{
-"type":		"ener",
-"start_pref_e":	0.02,
-"limit_pref_e":	1,
-"start_pref_f":	1000,
-"limit_pref_f":	1,
-"start_pref_v":	1,
-"limit_pref_v":	1,
-"_comment":	" that's all"
-	},
+  "loss": {
+    "type": "ener",
+    "start_pref_e": 0.02,
+    "limit_pref_e": 1,
+    "start_pref_f": 1000,
+    "limit_pref_f": 1,
+    "start_pref_v": 1,
+    "limit_pref_v": 1,
+    "_comment": " that's all"
+  },
 
-	"training" : {
-"training_data": {
-		"systems":		["finetune/data"],
-		"batch_size":	"auto",
-		"_comment":		"that's all"
-},
-"validation_data":{
-		"systems":		["finetune/data"],
-		"batch_size":	1,
-		"numb_btch":	3,
-		"_comment":		"that's all"
-},
-"numb_steps":	0,
-"seed":		10,
-"disp_file":	"lcurve.out",
-"disp_freq":	1,
-"save_freq":	1,
-"_comment":	"that's all"
-	},    
+  "training": {
+    "training_data": {
+      "systems": [
+        "finetune/data"
+      ],
+      "batch_size": "auto",
+      "_comment": "that's all"
+    },
+    "validation_data": {
+      "systems": [
+        "finetune/data"
+      ],
+      "batch_size": 1,
+      "numb_btch": 3,
+      "_comment": "that's all"
+    },
+    "numb_steps": 0,
+    "seed": 10,
+    "disp_file": "lcurve.out",
+    "disp_freq": 1,
+    "save_freq": 1,
+    "_comment": "that's all"
+  },
 
-	"_comment":		"that's all"
+  "_comment": "that's all"
 }
-
