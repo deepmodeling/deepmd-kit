@@ -45,6 +45,11 @@ def find_tensorflow() -> Tuple[Optional[str], List[str]]:
     requires = []
 
     tf_spec = None
+    if os.environ.get("CIBUILDWHEEL", "0") == "1" and os.environ.get("CIBW_BUILD", "").endswith("macosx_arm64"):
+        # cibuildwheel cross build
+        site_packages = Path(os.environ.get("RUNNER_TEMP")) / "tensorflow" / "tensorflow"
+        tf_spec = FileFinder(str(site_packages)).find_spec("tensorflow")
+
     if os.environ.get("TENSORFLOW_ROOT") is not None:
         site_packages = Path(os.environ.get("TENSORFLOW_ROOT")).parent.absolute()
         tf_spec = FileFinder(str(site_packages)).find_spec("tensorflow")
