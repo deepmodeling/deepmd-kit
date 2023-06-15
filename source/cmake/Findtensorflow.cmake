@@ -280,7 +280,7 @@ else(BUILD_CPP_IF)
 endif(BUILD_CPP_IF)
 
 # detect TensorFlow version
-if (NOT CMAKE_CROSSCOMPILING)
+if (NOT DEFINED TENSORFLOW_VERSION)
   try_run(
     TENSORFLOW_VERSION_RUN_RESULT_VAR TENSORFLOW_VERSION_COMPILE_RESULT_VAR
     ${CMAKE_CURRENT_BINARY_DIR}/tf_version
@@ -295,10 +295,6 @@ if (NOT CMAKE_CROSSCOMPILING)
   endif()
   if(NOT ${TENSORFLOW_VERSION_RUN_RESULT_VAR} EQUAL "0")
     message(FATAL_ERROR "Failed to run, return code: ${TENSORFLOW_VERSION}")
-  endif()
-else()
-  if (NOT DEFINED TENSORFLOW_VERSION)
-    message(FATAL_ERROR "The cmake variable TENSORFLOW_VERSION should be given for cross compiling.")
   endif()
 endif()
 

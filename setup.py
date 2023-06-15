@@ -69,14 +69,7 @@ if tf_version == "" or Version(tf_version) >= Version("2.12"):
     find_libpython_requires = []
 else:
     find_libpython_requires = ["find_libpython"]
-
-if os.environ.get("CIBUILDWHEEL", "0") == "1" and os.environ.get("CIBW_BUILD", "").endswith("macosx_arm64"):
-    cmake_args.extend([
-        # enable cross build for cmake
-        # https://gitlab.kitware.com/cmake/cmake/-/issues/21885
-        "-DCMAKE_SYSTEM_NAME=Darwin",
-        f"-DTENSORFLOW_VERSION={tf_version}",
-    ])
+cmake_args.append(f"-DTENSORFLOW_VERSION={tf_version}")
 
 
 class bdist_wheel_abi3(bdist_wheel):
