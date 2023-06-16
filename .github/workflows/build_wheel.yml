@@ -22,6 +22,11 @@ jobs:
             python: 311
             platform_id: macosx_x86_64
             dp_variant: cpu
+          # macos-arm64
+          - os: macos-latest
+            python: 311
+            platform_id: macosx_arm64
+            dp_variant: cpu
           # win-64
           - os: windows-2019
             python: 311
