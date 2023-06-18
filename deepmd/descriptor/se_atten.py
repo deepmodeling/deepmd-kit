@@ -1113,7 +1113,7 @@ class DescrptSeAtten(DescrptSeA):
                     if not self.compress:
                         xyz_scatter = xyz_scatter * two_embd + two_embd
                     else:
-                        return op_module.tabulate_fusion_se_a(
+                        return op_module.tabulate_fusion_se_atten(
                             tf.cast(self.table.data[net], self.filter_precision),
                             info,
                             xyz_scatter,

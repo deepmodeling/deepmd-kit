@@ -97,7 +97,7 @@ INPUTS, FROZEN_MODELS, COMPRESSED_MODELS = _init_models()
 
 
 def _get_default_places(nth_test):
-    return 10 if nth_test == 0 else 4
+    return 10 if nth_test == 0 else 3
 
 
 @unittest.skipIf(

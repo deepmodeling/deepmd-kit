@@ -15,21 +15,29 @@ from deepmd.env import (
 @ops.RegisterGradient("TabulateFusion")
 @ops.RegisterGradient("TabulateFusionSeA")
 def _tabulate_fusion_se_a_grad_cc(op, dy):
-    dy_dx, dy_df, dy_dtwo = op_module.tabulate_fusion_se_a_grad(
-        op.inputs[0],
-        op.inputs[1],
-        op.inputs[2],
-        op.inputs[3],
-        op.inputs[4],
-        dy,
-        op.outputs[0],
+    dy_dx, dy_df = op_module.tabulate_fusion_se_a_grad(
+        op.inputs[0], op.inputs[1], op.inputs[2], op.inputs[3], dy, op.outputs[0],
     )
-    return [None, None, dy_dx, dy_df, dy_dtwo]
+    return [None, None, dy_dx, dy_df]
 
 
 @ops.RegisterGradient("TabulateFusionGrad")
 @ops.RegisterGradient("TabulateFusionSeAGrad")
-def _tabulate_fusion_se_a_grad_grad_cc(op, dy, dy_, dy_dtwo):
+def _tabulate_fusion_se_a_grad_grad_cc(op, dy, dy_):
+    dz_dy = op_module.tabulate_fusion_se_a_grad_grad(
+        op.inputs[0], op.inputs[1], op.inputs[2], op.inputs[3], dy, dy_, op.inputs[5]
+    )
+    return [None, None, None, None, dz_dy, None]
+
+@ops.RegisterGradient("TabulateFusionSeAtten")
+def _tabulate_fusion_se_atten_grad_cc(op, dy):
+    dy_dx, dy_df, dy_dtwo = op_module.tabulate_fusion_se_atten_grad(
+        op.inputs[0], op.inputs[1], op.inputs[2], op.inputs[3], op.inputs[4], dy, op.outputs[0],
+    )
+    return [None, None, dy_dx, dy_df, dy_dtwo]
+
+@ops.RegisterGradient("TabulateFusionSeAttenGrad")
+def _tabulate_fusion_se_atten_grad_grad_cc(op, dy, dy_, dy_dtwo):
     dz_dy = op_module.tabulate_fusion_se_a_grad_grad(
         op.inputs[0], op.inputs[1], op.inputs[2], op.inputs[3], dy, dy_, op.inputs[6]
     )
