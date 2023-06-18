@@ -19,7 +19,7 @@ def _main():
     )
 
     # get all json files in dir
-    jsons = [p for p in Path.cwd().glob("*.json")]
+    jsons = list(Path.cwd().glob("*.json"))
     # use the newest as autosuggestion
     jsons.sort(key=lambda x: x.stat().st_mtime, reverse=True)
     jfile = jsons[0]

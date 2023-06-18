@@ -8,6 +8,11 @@
 #include "neighbor_list.h"
 #include "prod_force.h"
 
+template <typename T>
+inline void double_vec(std::vector<T>& v) {
+  v.insert(std::end(v), std::begin(v), std::end(v));
+}
+
 class TestProdForceA : public ::testing::Test {
  protected:
   std::vector<double> posi = {12.83, 2.56, 2.18, 12.09, 2.87, 2.74,
@@ -16,6 +21,7 @@ class TestProdForceA : public ::testing::Test {
   std::vector<int> atype = {0, 1, 1, 0, 1, 1};
   std::vector<double> posi_cpy;
   std::vector<int> atype_cpy;
+  int nframes = 2;
   int ntypes = 2;
   int nloc, nall, nnei, ndescrpt;
   double rc = 6;
@@ -102,16 +108,20 @@ class TestProdForceA : public ::testing::Test {
     for (int ii = 0; ii < nloc * ndescrpt; ++ii) {
       net_deriv[ii] = 10 - ii * 0.01;
     }
+    double_vec(nlist);
+    double_vec(net_deriv);
+    double_vec(env_deriv);
+    double_vec(expected_force);
   }
   void TearDown() override {}
 };
 
 TEST_F(TestProdForceA, cpu) {
-  std::vector<double> force(nall * 3);
+  std::vector<double> force(nframes * nall * 3);
   int n_a_sel = nnei;
   deepmd::prod_force_a_cpu<double>(&force[0], &net_deriv[0], &env_deriv[0],
-                                   &nlist[0], nloc, nall, nnei);
-  EXPECT_EQ(force.size(), nall * 3);
+                                   &nlist[0], nloc, nall, nnei, nframes);
+  EXPECT_EQ(force.size(), nframes * nall * 3);
   EXPECT_EQ(force.size(), expected_force.size());
   for (int jj = 0; jj < force.size(); ++jj) {
     EXPECT_LT(fabs(force[jj] - expected_force[jj]), 1e-5);
@@ -124,7 +134,7 @@ TEST_F(TestProdForceA, cpu) {
 
 #if GOOGLE_CUDA
 TEST_F(TestProdForceA, gpu_cuda) {
-  std::vector<double> force(nall * 3, 0.0);
+  std::vector<double> force(nframes * nall * 3, 0.0);
   int n_a_sel = nnei;
 
   int* nlist_dev = NULL;
@@ -136,7 +146,7 @@ TEST_F(TestProdForceA, gpu_cuda) {
   deepmd::malloc_device_memory_sync(env_deriv_dev, env_deriv);
 
   deepmd::prod_force_a_gpu_cuda<double>(force_dev, net_deriv_dev, env_deriv_dev,
-                                        nlist_dev, nloc, nall, nnei);
+                                        nlist_dev, nloc, nall, nnei, nframes);
 
   deepmd::memcpy_device_to_host(force_dev, force);
   deepmd::delete_device_memory(nlist_dev);
@@ -144,7 +154,7 @@ TEST_F(TestProdForceA, gpu_cuda) {
   deepmd::delete_device_memory(net_deriv_dev);
   deepmd::delete_device_memory(env_deriv_dev);
 
-  EXPECT_EQ(force.size(), nall * 3);
+  EXPECT_EQ(force.size(), nframes * nall * 3);
   EXPECT_EQ(force.size(), expected_force.size());
   for (int jj = 0; jj < force.size(); ++jj) {
     EXPECT_LT(fabs(force[jj] - expected_force[jj]), 1e-5);
@@ -154,7 +164,7 @@ TEST_F(TestProdForceA, gpu_cuda) {
 
 #if TENSORFLOW_USE_ROCM
 TEST_F(TestProdForceA, gpu_rocm) {
-  std::vector<double> force(nall * 3, 0.0);
+  std::vector<double> force(nframes * nall * 3, 0.0);
   int n_a_sel = nnei;
 
   int* nlist_dev = NULL;
@@ -166,7 +176,7 @@ TEST_F(TestProdForceA, gpu_rocm) {
   deepmd::malloc_device_memory_sync(env_deriv_dev, env_deriv);
 
   deepmd::prod_force_a_gpu_rocm<double>(force_dev, net_deriv_dev, env_deriv_dev,
-                                        nlist_dev, nloc, nall, nnei);
+                                        nlist_dev, nloc, nall, nnei, nframes);
 
   deepmd::memcpy_device_to_host(force_dev, force);
   deepmd::delete_device_memory(nlist_dev);
@@ -174,7 +184,7 @@ TEST_F(TestProdForceA, gpu_rocm) {
   deepmd::delete_device_memory(net_deriv_dev);
   deepmd::delete_device_memory(env_deriv_dev);
 
-  EXPECT_EQ(force.size(), nall * 3);
+  EXPECT_EQ(force.size(), nframes * nall * 3);
   EXPECT_EQ(force.size(), expected_force.size());
   for (int jj = 0; jj < force.size(); ++jj) {
     EXPECT_LT(fabs(force[jj] - expected_force[jj]), 1e-5);

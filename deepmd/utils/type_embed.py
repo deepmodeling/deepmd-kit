@@ -133,7 +133,7 @@ class TypeEmbedNet:
         """
         if self.model_type is not None and self.model_type == "compressed_model":
             return self.type_embedding_from_graph
-        types = tf.convert_to_tensor([ii for ii in range(ntypes)], dtype=tf.int32)
+        types = tf.convert_to_tensor(list(range(ntypes)), dtype=tf.int32)
         ebd_type = tf.cast(
             tf.one_hot(tf.cast(types, dtype=tf.int32), int(ntypes)),
             self.filter_precision,
