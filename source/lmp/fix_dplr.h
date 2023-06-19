@@ -37,7 +37,7 @@ namespace LAMMPS_NS {
 class FixDPLR : public Fix {
  public:
   FixDPLR(class LAMMPS *, int, char **);
-  ~FixDPLR() override{};
+  ~FixDPLR() override;
   int setmask() override;
   void init() override;
   void setup(int) override;
@@ -53,6 +53,8 @@ class FixDPLR : public Fix {
   void unpack_reverse_comm(int, int *, double *) override;
   double compute_scalar(void) override;
   double compute_vector(int) override;
+
+  enum { NONE, CONSTANT, EQUAL };
 
  private:
   PairDeepMD *pair_deepmd;
@@ -71,6 +73,11 @@ class FixDPLR : public Fix {
   std::vector<double> efield_fsum, efield_fsum_all;
   int efield_force_flag;
   void get_valid_pairs(std::vector<std::pair<int, int> > &pairs);
+  int varflag;
+  char *xstr, *ystr, *zstr, *estr, *pstr;
+  int xvar, yvar, zvar, xstyle, ystyle, zstyle;
+  double qe2f;
+  void update_efield_variables();
 };
 }  // namespace LAMMPS_NS
 
