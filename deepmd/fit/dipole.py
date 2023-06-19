@@ -75,7 +75,7 @@ class DipoleFittingSeA(Fitting):
         self.resnet_dt = resnet_dt
         self.sel_type = sel_type
         if self.sel_type is None:
-            self.sel_type = [ii for ii in range(self.ntypes)]
+            self.sel_type = list(range(self.ntypes))
         self.sel_mask = np.array(
             [ii in self.sel_type for ii in range(self.ntypes)], dtype=bool
         )

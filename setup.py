@@ -69,6 +69,7 @@ if tf_version == "" or Version(tf_version) >= Version("2.12"):
     find_libpython_requires = []
 else:
     find_libpython_requires = ["find_libpython"]
+cmake_args.append(f"-DTENSORFLOW_VERSION={tf_version}")
 
 
 class bdist_wheel_abi3(bdist_wheel):

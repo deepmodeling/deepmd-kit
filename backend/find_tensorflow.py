@@ -45,7 +45,16 @@ def find_tensorflow() -> Tuple[Optional[str], List[str]]:
     requires = []
 
     tf_spec = None
-    if os.environ.get("TENSORFLOW_ROOT") is not None:
+    if os.environ.get("CIBUILDWHEEL", "0") == "1" and os.environ.get(
+        "CIBW_BUILD", ""
+    ).endswith("macosx_arm64"):
+        # cibuildwheel cross build
+        site_packages = Path(os.environ.get("RUNNER_TEMP")) / "tensorflow"
+        tf_spec = FileFinder(str(site_packages)).find_spec("tensorflow")
+
+    if (tf_spec is None or not tf_spec) and os.environ.get(
+        "TENSORFLOW_ROOT"
+    ) is not None:
         site_packages = Path(os.environ.get("TENSORFLOW_ROOT")).parent.absolute()
         tf_spec = FileFinder(str(site_packages)).find_spec("tensorflow")
 
@@ -100,12 +109,12 @@ def get_tf_requirement(tf_version: str = "") -> dict:
     if tf_version == "":
         return {
             "cpu": [
-                "tensorflow-cpu; platform_machine!='aarch64'",
-                "tensorflow; platform_machine=='aarch64'",
+                "tensorflow-cpu; platform_machine!='aarch64' and (platform_machine!='arm64' or platform_system != 'Darwin')",
+                "tensorflow; platform_machine=='aarch64' or (platform_machine=='arm64' and platform_system == 'Darwin')",
             ],
             "gpu": [
-                "tensorflow; platform_machine!='aarch64'",
-                "tensorflow; platform_machine=='aarch64'",
+                "tensorflow",
+                "tensorflow-metal; platform_machine=='arm64' and platform_system == 'Darwin'",
             ],
         }
     elif tf_version in SpecifierSet("<1.15") or tf_version in SpecifierSet(
@@ -113,8 +122,7 @@ def get_tf_requirement(tf_version: str = "") -> dict:
     ):
         return {
             "cpu": [
-                f"tensorflow=={tf_version}; platform_machine!='aarch64'",
-                f"tensorflow=={tf_version}; platform_machine=='aarch64'",
+                f"tensorflow=={tf_version}",
             ],
             "gpu": [
                 f"tensorflow-gpu=={tf_version}; platform_machine!='aarch64'",
@@ -124,12 +132,12 @@ def get_tf_requirement(tf_version: str = "") -> dict:
     else:
         return {
             "cpu": [
-                f"tensorflow-cpu=={tf_version}; platform_machine!='aarch64'",
-                f"tensorflow=={tf_version}; platform_machine=='aarch64'",
+                f"tensorflow-cpu=={tf_version}; platform_machine!='aarch64' and (platform_machine!='arm64' or platform_system != 'Darwin')",
+                f"tensorflow=={tf_version}; platform_machine=='aarch64'  or (platform_machine=='arm64' and platform_system == 'Darwin')",
             ],
             "gpu": [
-                f"tensorflow=={tf_version}; platform_machine!='aarch64'",
-                f"tensorflow=={tf_version}; platform_machine=='aarch64'",
+                f"tensorflow=={tf_version}",
+                "tensorflow-metal; platform_machine=='arm64' and platform_system == 'Darwin'",
             ],
         }
 
