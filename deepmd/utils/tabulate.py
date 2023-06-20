@@ -175,7 +175,22 @@ class DPTabulate:
         """
         # tabulate range [lower, upper] with stride0 'stride0'
         lower, upper = self._get_env_mat_range(min_nbor_dist)
-        if isinstance(self.descrpt, deepmd.descriptor.DescrptSeA):
+        if isinstance(self.descrpt, deepmd.descriptor.DescrptSeAtten):
+            uu = np.max(upper)
+            ll = np.min(lower)
+            xx = np.arange(ll, uu, stride0, dtype=self.data_type)
+            xx = np.append(
+                xx,
+                np.arange(uu, extrapolate * uu, stride1, dtype=self.data_type),
+            )
+            xx = np.append(xx, np.array([extrapolate * uu], dtype=self.data_type))
+            nspline = ((uu - ll) / stride0 + (extrapolate * uu - uu) / stride1).astype(
+                int
+            )
+            self._build_lower(
+                "filter_net", xx, 0, uu, ll, stride0, stride1, extrapolate, nspline
+            )
+        elif isinstance(self.descrpt, deepmd.descriptor.DescrptSeA):
             for ii in range(self.table_size):
                 if (self.type_one_side and not self._all_excluded(ii)) or (
                     not self.type_one_side
@@ -403,7 +418,12 @@ class DPTabulate:
         bias = {}
         for layer in range(1, self.layer_size + 1):
             bias["layer_" + str(layer)] = []
-            if isinstance(self.descrpt, deepmd.descriptor.DescrptSeA):
+            if isinstance(self.descrpt, deepmd.descriptor.DescrptSeAtten):
+                node = self.embedding_net_nodes[
+                    f"filter_type_all{self.suffix}/bias_{layer}{self.suffix}"
+                ]
+                bias["layer_" + str(layer)].append(tf.make_ndarray(node))
+            elif isinstance(self.descrpt, deepmd.descriptor.DescrptSeA):
                 if self.type_one_side:
                     for ii in range(0, self.ntypes):
                         if not self._all_excluded(ii):
@@ -462,7 +482,12 @@ class DPTabulate:
         matrix = {}
         for layer in range(1, self.layer_size + 1):
             matrix["layer_" + str(layer)] = []
-            if isinstance(self.descrpt, deepmd.descriptor.DescrptSeA):
+            if isinstance(self.descrpt, deepmd.descriptor.DescrptSeAtten):
+                node = self.embedding_net_nodes[
+                    f"filter_type_all{self.suffix}/matrix_{layer}{self.suffix}"
+                ]
+                matrix["layer_" + str(layer)].append(tf.make_ndarray(node))
+            elif isinstance(self.descrpt, deepmd.descriptor.DescrptSeA):
                 if self.type_one_side:
                     for ii in range(0, self.ntypes):
                         if not self._all_excluded(ii):
@@ -661,7 +686,9 @@ class DPTabulate:
 
     def _get_layer_size(self):
         layer_size = 0
-        if isinstance(self.descrpt, deepmd.descriptor.DescrptSeA):
+        if isinstance(self.descrpt, deepmd.descriptor.DescrptSeAtten):
+            layer_size = len(self.embedding_net_nodes) // 2
+        elif isinstance(self.descrpt, deepmd.descriptor.DescrptSeA):
             layer_size = len(self.embedding_net_nodes) // (
                 (self.ntypes * self.ntypes - len(self.exclude_types)) * 2
             )
@@ -709,7 +736,9 @@ class DPTabulate:
 
     def _get_table_size(self):
         table_size = 0
-        if isinstance(self.descrpt, deepmd.descriptor.DescrptSeA):
+        if isinstance(self.descrpt, deepmd.descriptor.DescrptSeAtten):
+            table_size = 1
+        elif isinstance(self.descrpt, deepmd.descriptor.DescrptSeA):
             table_size = self.ntypes * self.ntypes
             if self.type_one_side:
                 table_size = self.ntypes
