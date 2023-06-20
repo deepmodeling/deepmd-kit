@@ -219,6 +219,11 @@ void FixDPLR::init() {
     else
       error->all(FLERR, "Variable {} for z-field in fix {} is invalid style", zstr, style);
   }
+
+  if (xstyle == EQUAL || ystyle == EQUAL || zstyle == EQUAL)
+    varflag = EQUAL;
+  else
+    varflag = CONSTANT;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -475,7 +480,7 @@ void FixDPLR::post_force(int vflag) {
                "atomic virial calculation is not supported by this fix\n");
   }
 
-  if (!varflag == CONSTANT) {
+  if (!(varflag == CONSTANT)) {
     update_efield_variables();
   }
 
