@@ -55,11 +55,13 @@ def _subprocess_run(command):
     return popen.returncode
 
 
-def _init_models():
+def _init_models(setup_model, i):
     data_file = str(tests_path / os.path.join("finetune", "data"))
     data_file_mixed_type = str(tests_path / os.path.join("finetune", "data_mixed_type"))
     pretrained_model = str(tests_path / "pretrained_model_se_atten.pb")
     finetuned_model = str(tests_path / "finetuned_model_se_atten.pb")
+    # ckpt_pretrain = str(tests_path / f"pretrain{i}.ckpt")
+    # ckpt_finetune = str(tests_path / f"finetune{i}.ckpt")
     finetuned_model_mixed_type = str(
         tests_path / "finetuned_model_se_atten_mixed_type.pb"
     )
@@ -74,8 +76,13 @@ def _init_models():
     )
     jdata_pre["training"]["training_data"]["systems"] = data_file
     jdata_pre["training"]["validation_data"]["systems"] = data_file
+    # jdata_pre["training"]["save_ckpt"] = ckpt_pretrain
+    setup_model(jdata_pre)
+
     jdata_finetune["training"]["training_data"]["systems"] = data_file
     jdata_finetune["training"]["validation_data"]["systems"] = data_file
+    # jdata_finetune["training"]["save_ckpt"] = ckpt_finetune
+    setup_model(jdata_finetune)
     type_map_pre = jdata_pre["model"]["type_map"]
     type_map_finetune = jdata_finetune["model"]["type_map"]
     with open(INPUT_PRE, "w") as fp:
@@ -140,17 +147,50 @@ def _init_models():
 
 
 if not parse_version(tf.__version__) < parse_version("1.15"):
-    (
-        INPUT_PRE,
-        INPUT_FINETUNE,
-        INPUT_FINETUNE_MIX,
-        PRE_MODEL,
-        FINETUNED_MODEL,
-        FINETUNED_MODEL_MIX,
-        PRE_MAP,
-        FINETUNED_MAP,
-        VALID_DATA,
-    ) = _init_models()
+
+    def previous_se_atten(jdata):
+        jdata["model"]["descriptor"]["stripped_type_embedding"] = False
+        jdata["model"]["descriptor"]["attn_layer"] = 2
+
+    def stripped_model(jdata):
+        jdata["model"]["descriptor"]["stripped_type_embedding"] = True
+        jdata["model"]["descriptor"]["attn_layer"] = 2
+
+    def compressible_model(jdata):
+        jdata["model"]["descriptor"]["stripped_type_embedding"] = True
+        jdata["model"]["descriptor"]["attn_layer"] = 0
+
+    models = [previous_se_atten, stripped_model, compressible_model]
+    INPUT_PRES = []
+    INPUT_FINETUNES = []
+    INPUT_FINETUNE_MIXS = []
+    PRE_MODELS = []
+    FINETUNED_MODELS = []
+    FINETUNED_MODEL_MIXS = []
+    PRE_MAPS = []
+    FINETUNED_MAPS = []
+    VALID_DATAS = []
+    for i, model in enumerate(models):
+        (
+            INPUT_PRE,
+            INPUT_FINETUNE,
+            INPUT_FINETUNE_MIX,
+            PRE_MODEL,
+            FINETUNED_MODEL,
+            FINETUNED_MODEL_MIX,
+            PRE_MAP,
+            FINETUNED_MAP,
+            VALID_DATA,
+        ) = _init_models(model, i)
+        INPUT_PRES.append(INPUT_PRE)
+        INPUT_FINETUNES.append(INPUT_FINETUNE)
+        INPUT_FINETUNE_MIXS.append(INPUT_FINETUNE_MIX)
+        PRE_MODELS.append(PRE_MODEL)
+        FINETUNED_MODELS.append(FINETUNED_MODEL)
+        FINETUNED_MODEL_MIXS.append(FINETUNED_MODEL_MIX)
+        PRE_MAPS.append(PRE_MAP)
+        FINETUNED_MAPS.append(FINETUNED_MAP)
+        VALID_DATAS.append(VALID_DATA)
 
 
 @unittest.skipIf(
@@ -159,95 +199,110 @@ if not parse_version(tf.__version__) < parse_version("1.15"):
 )
 class TestFinetuneSeAtten(unittest.TestCase):
     @classmethod
-    def setUpClass(self):
-        self.valid_data = VALID_DATA
-
-    @classmethod
     def tearDownClass(self):
-        _file_delete(INPUT_PRE)
-        _file_delete(INPUT_FINETUNE)
-        _file_delete(INPUT_FINETUNE_MIX)
-        _file_delete(PRE_MODEL)
-        _file_delete(FINETUNED_MODEL)
-        _file_delete(FINETUNED_MODEL_MIX)
-        _file_delete("out.json")
-        _file_delete(str(tests_path / "checkpoint"))
-        _file_delete("model.ckpt.meta")
-        _file_delete("model.ckpt.index")
-        _file_delete("model.ckpt.data-00000-of-00001")
-        _file_delete("model.ckpt-0.meta")
-        _file_delete("model.ckpt-0.index")
-        _file_delete("model.ckpt-0.data-00000-of-00001")
-        _file_delete("model.ckpt-1.meta")
-        _file_delete("model.ckpt-1.index")
-        _file_delete("model.ckpt-1.data-00000-of-00001")
-        _file_delete("input_v2_compat.json")
-        _file_delete("lcurve.out")
+        for i in range(len(INPUT_PRES)):
+            _file_delete(INPUT_PRES[i])
+            _file_delete(INPUT_FINETUNES[i])
+            _file_delete(INPUT_FINETUNE_MIXS[i])
+            _file_delete(PRE_MODELS[i])
+            _file_delete(FINETUNED_MODELS[i])
+            _file_delete(FINETUNED_MODEL_MIXS[i])
+            _file_delete("out.json")
+            _file_delete("model.ckpt.meta")
+            _file_delete("model.ckpt.index")
+            _file_delete("model.ckpt.data-00000-of-00001")
+            _file_delete("model.ckpt-0.meta")
+            _file_delete("model.ckpt-0.index")
+            _file_delete("model.ckpt-0.data-00000-of-00001")
+            _file_delete("model.ckpt-1.meta")
+            _file_delete("model.ckpt-1.index")
+            _file_delete("model.ckpt-1.data-00000-of-00001")
+            _file_delete(str(tests_path / "checkpoint"))
+            _file_delete("input_v2_compat.json")
+            _file_delete("lcurve.out")
 
     def test_finetune_standard(self):
-        pretrained_bias = get_tensor_by_name(PRE_MODEL, "fitting_attr/t_bias_atom_e")
-        finetuned_bias = get_tensor_by_name(
-            FINETUNED_MODEL, "fitting_attr/t_bias_atom_e"
-        )
-        sorter = np.argsort(PRE_MAP)
-        idx_type_map = sorter[np.searchsorted(PRE_MAP, FINETUNED_MAP, sorter=sorter)]
-        test_data = self.valid_data.get_test()
-        atom_nums = np.tile(np.bincount(test_data["type"][0])[idx_type_map], (4, 1))
+        for i in range(len(INPUT_PRES)):
+            self.valid_data = VALID_DATAS[i]
+            pretrained_bias = get_tensor_by_name(
+                PRE_MODELS[i], "fitting_attr/t_bias_atom_e"
+            )
+            finetuned_bias = get_tensor_by_name(
+                FINETUNED_MODELS[i], "fitting_attr/t_bias_atom_e"
+            )
+            sorter = np.argsort(PRE_MAPS[i])
+            idx_type_map = sorter[
+                np.searchsorted(PRE_MAPS[i], FINETUNED_MAPS[i], sorter=sorter)
+            ]
+            test_data = self.valid_data.get_test()
+            atom_nums = np.tile(np.bincount(test_data["type"][0])[idx_type_map], (4, 1))
 
-        dp = DeepPotential(PRE_MODEL)
-        energy = dp.eval(test_data["coord"], test_data["box"], test_data["type"][0])[0]
-        energy_diff = test_data["energy"] - energy
-        finetune_shift = finetuned_bias[idx_type_map] - pretrained_bias[idx_type_map]
-        ground_truth_shift = np.linalg.lstsq(atom_nums, energy_diff, rcond=None)[
-            0
-        ].reshape(-1)
+            dp = DeepPotential(PRE_MODELS[i])
+            energy = dp.eval(
+                test_data["coord"], test_data["box"], test_data["type"][0]
+            )[0]
+            energy_diff = test_data["energy"] - energy
+            finetune_shift = (
+                finetuned_bias[idx_type_map] - pretrained_bias[idx_type_map]
+            )
+            ground_truth_shift = np.linalg.lstsq(atom_nums, energy_diff, rcond=None)[
+                0
+            ].reshape(-1)
 
-        dp_finetuned = DeepPotential(FINETUNED_MODEL)
-        energy_finetuned = dp_finetuned.eval(
-            test_data["coord"], test_data["box"], test_data["type"][0]
-        )[0]
-        energy_diff_finetuned = test_data["energy"] - energy_finetuned
-        finetune_results = np.linalg.lstsq(
-            atom_nums, energy_diff_finetuned, rcond=None
-        )[0].reshape(-1)
+            dp_finetuned = DeepPotential(FINETUNED_MODELS[i])
+            energy_finetuned = dp_finetuned.eval(
+                test_data["coord"], test_data["box"], test_data["type"][0]
+            )[0]
+            energy_diff_finetuned = test_data["energy"] - energy_finetuned
+            finetune_results = np.linalg.lstsq(
+                atom_nums, energy_diff_finetuned, rcond=None
+            )[0].reshape(-1)
 
-        # check values
-        np.testing.assert_almost_equal(
-            finetune_shift, ground_truth_shift, default_places
-        )
-        np.testing.assert_almost_equal(finetune_results, 0.0, default_places)
+            # check values
+            np.testing.assert_almost_equal(
+                finetune_shift, ground_truth_shift, default_places
+            )
+            np.testing.assert_almost_equal(finetune_results, 0.0, default_places)
 
     def test_finetune_mixed_type(self):
-        pretrained_bias = get_tensor_by_name(PRE_MODEL, "fitting_attr/t_bias_atom_e")
-        finetuned_bias_mixed_type = get_tensor_by_name(
-            FINETUNED_MODEL_MIX, "fitting_attr/t_bias_atom_e"
-        )
-        sorter = np.argsort(PRE_MAP)
-        idx_type_map = sorter[np.searchsorted(PRE_MAP, FINETUNED_MAP, sorter=sorter)]
-        test_data = self.valid_data.get_test()
-        atom_nums = np.tile(np.bincount(test_data["type"][0])[idx_type_map], (4, 1))
+        for i in range(len(INPUT_PRES)):
+            self.valid_data = VALID_DATAS[i]
+            pretrained_bias = get_tensor_by_name(
+                PRE_MODELS[i], "fitting_attr/t_bias_atom_e"
+            )
+            finetuned_bias_mixed_type = get_tensor_by_name(
+                FINETUNED_MODEL_MIXS[i], "fitting_attr/t_bias_atom_e"
+            )
+            sorter = np.argsort(PRE_MAPS[i])
+            idx_type_map = sorter[
+                np.searchsorted(PRE_MAPS[i], FINETUNED_MAPS[i], sorter=sorter)
+            ]
+            test_data = self.valid_data.get_test()
+            atom_nums = np.tile(np.bincount(test_data["type"][0])[idx_type_map], (4, 1))
 
-        dp = DeepPotential(PRE_MODEL)
-        energy = dp.eval(test_data["coord"], test_data["box"], test_data["type"][0])[0]
-        energy_diff = test_data["energy"] - energy
-        finetune_shift = (
-            finetuned_bias_mixed_type[idx_type_map] - pretrained_bias[idx_type_map]
-        )
-        ground_truth_shift = np.linalg.lstsq(atom_nums, energy_diff, rcond=None)[
-            0
-        ].reshape(-1)
+            dp = DeepPotential(PRE_MODELS[i])
+            energy = dp.eval(
+                test_data["coord"], test_data["box"], test_data["type"][0]
+            )[0]
+            energy_diff = test_data["energy"] - energy
+            finetune_shift = (
+                finetuned_bias_mixed_type[idx_type_map] - pretrained_bias[idx_type_map]
+            )
+            ground_truth_shift = np.linalg.lstsq(atom_nums, energy_diff, rcond=None)[
+                0
+            ].reshape(-1)
 
-        dp_finetuned_mixed_type = DeepPotential(FINETUNED_MODEL_MIX)
-        energy_finetuned = dp_finetuned_mixed_type.eval(
-            test_data["coord"], test_data["box"], test_data["type"][0]
-        )[0]
-        energy_diff_finetuned = test_data["energy"] - energy_finetuned
-        finetune_results = np.linalg.lstsq(
-            atom_nums, energy_diff_finetuned, rcond=None
-        )[0].reshape(-1)
+            dp_finetuned_mixed_type = DeepPotential(FINETUNED_MODEL_MIXS[i])
+            energy_finetuned = dp_finetuned_mixed_type.eval(
+                test_data["coord"], test_data["box"], test_data["type"][0]
+            )[0]
+            energy_diff_finetuned = test_data["energy"] - energy_finetuned
+            finetune_results = np.linalg.lstsq(
+                atom_nums, energy_diff_finetuned, rcond=None
+            )[0].reshape(-1)
 
-        # check values
-        np.testing.assert_almost_equal(
-            finetune_shift, ground_truth_shift, default_places
-        )
-        np.testing.assert_almost_equal(finetune_results, 0.0, default_places)
+            # check values
+            np.testing.assert_almost_equal(
+                finetune_shift, ground_truth_shift, default_places
+            )
+            np.testing.assert_almost_equal(finetune_results, 0.0, default_places)
