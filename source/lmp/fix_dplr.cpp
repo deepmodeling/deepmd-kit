@@ -38,7 +38,9 @@ static bool is_key(const string &input) {
 
 FixDPLR::FixDPLR(LAMMPS *lmp, int narg, char **arg)
     : Fix(lmp, narg, arg),
-      xstr(nullptr), ystr(nullptr), zstr(nullptr),
+      xstr(nullptr),
+      ystr(nullptr),
+      zstr(nullptr),
       efield(3, 0.0),
       efield_fsum(4, 0.0),
       efield_fsum_all(4, 0.0),
@@ -77,25 +79,25 @@ FixDPLR::FixDPLR(LAMMPS *lmp, int narg, char **arg)
         error->all(FLERR,
                    "Illegal fix adapt command, efield should be provided 3 "
                    "float numbers");
-        
-      if (utils::strmatch(arg[iarg+1], "^v_")) {
-        xstr = utils::strdup(arg[iarg+1] + 2);
+
+      if (utils::strmatch(arg[iarg + 1], "^v_")) {
+        xstr = utils::strdup(arg[iarg + 1] + 2);
       } else {
-        efield[0] = qe2f * utils::numeric(FLERR, arg[iarg+1], false, lmp);
+        efield[0] = qe2f * utils::numeric(FLERR, arg[iarg + 1], false, lmp);
         xstyle = CONSTANT;
       }
 
-      if (utils::strmatch(arg[iarg+2], "^v_")) {
-        ystr = utils::strdup(arg[iarg+2] + 2);
+      if (utils::strmatch(arg[iarg + 2], "^v_")) {
+        ystr = utils::strdup(arg[iarg + 2] + 2);
       } else {
-        efield[1] = qe2f * utils::numeric(FLERR, arg[iarg+2], false, lmp);
+        efield[1] = qe2f * utils::numeric(FLERR, arg[iarg + 2], false, lmp);
         ystyle = CONSTANT;
       }
 
-      if (utils::strmatch(arg[iarg+3], "^v_")) {
-        zstr = utils::strdup(arg[iarg+3] + 2);
+      if (utils::strmatch(arg[iarg + 3], "^v_")) {
+        zstr = utils::strdup(arg[iarg + 3] + 2);
       } else {
-        efield[2] = qe2f * utils::numeric(FLERR, arg[iarg+3], false, lmp);
+        efield[2] = qe2f * utils::numeric(FLERR, arg[iarg + 3], false, lmp);
         zstyle = CONSTANT;
       }
       iarg += 4;
@@ -152,8 +154,7 @@ FixDPLR::FixDPLR(LAMMPS *lmp, int narg, char **arg)
 
 /* ---------------------------------------------------------------------- */
 
-FixDPLR::~FixDPLR()
-{
+FixDPLR::~FixDPLR() {
   delete[] xstr;
   delete[] ystr;
   delete[] zstr;
@@ -195,29 +196,38 @@ void FixDPLR::init() {
 
   if (xstr) {
     xvar = input->variable->find(xstr);
-    if (xvar < 0) error->all(FLERR, "Variable {} for x-field in fix {} does not exist", xstr, style);
+    if (xvar < 0)
+      error->all(FLERR, "Variable {} for x-field in fix {} does not exist",
+                 xstr, style);
     if (input->variable->equalstyle(xvar))
       xstyle = EQUAL;
     else
-      error->all(FLERR, "Variable {} for x-field in fix {} is invalid style", xstr, style);
+      error->all(FLERR, "Variable {} for x-field in fix {} is invalid style",
+                 xstr, style);
   }
 
   if (ystr) {
     yvar = input->variable->find(ystr);
-    if (yvar < 0) error->all(FLERR, "Variable {} for y-field in fix {} does not exist", ystr, style);
+    if (yvar < 0)
+      error->all(FLERR, "Variable {} for y-field in fix {} does not exist",
+                 ystr, style);
     if (input->variable->equalstyle(yvar))
       ystyle = EQUAL;
     else
-      error->all(FLERR, "Variable {} for y-field in fix {} is invalid style", ystr, style);
+      error->all(FLERR, "Variable {} for y-field in fix {} is invalid style",
+                 ystr, style);
   }
 
   if (zstr) {
     zvar = input->variable->find(zstr);
-    if (zvar < 0) error->all(FLERR, "Variable {} for z-field in fix {} does not exist", zstr, style);
+    if (zvar < 0)
+      error->all(FLERR, "Variable {} for z-field in fix {} does not exist",
+                 zstr, style);
     if (input->variable->equalstyle(zvar))
       zstyle = EQUAL;
     else
-      error->all(FLERR, "Variable {} for z-field in fix {} is invalid style", zstr, style);
+      error->all(FLERR, "Variable {} for z-field in fix {} is invalid style",
+                 zstr, style);
   }
 
   if (xstyle == EQUAL || ystyle == EQUAL || zstyle == EQUAL)
@@ -698,8 +708,7 @@ double FixDPLR::compute_vector(int n) {
    update efield variables without doing anything else
 ------------------------------------------------------------------------- */
 
-void FixDPLR::update_efield_variables()
-{
+void FixDPLR::update_efield_variables() {
   modify->clearstep_compute();
 
   if (xstyle == EQUAL) {
