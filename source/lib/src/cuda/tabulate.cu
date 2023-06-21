@@ -120,6 +120,7 @@ __global__ void tabulate_fusion_se_a_fifth_order_polynomial(
     const FPTYPE* table,
     const FPTYPE* em_x,
     const FPTYPE* em,
+    const FPTYPE* two_embed,
     const FPTYPE lower,
     const FPTYPE upper,
     const FPTYPE max,
@@ -127,6 +128,7 @@ __global__ void tabulate_fusion_se_a_fifth_order_polynomial(
     const FPTYPE stride1,
     const int nnei,
     const int last_layer_size) {
+  bool enable_se_atten = two_embed != nullptr;
   const int_64 block_idx = blockIdx.x;  // nloc
   const int thread_idx = threadIdx.x;   // last_layer_size
   FPTYPE ago = __shfl_sync(0xffffffff, em_x[block_idx * nnei + nnei - 1], 0);
@@ -152,6 +154,11 @@ __global__ void tabulate_fusion_se_a_fifth_order_polynomial(
         var[0] +
         (var[1] + (var[2] + (var[3] + (var[4] + var[5] * xx) * xx) * xx) * xx) *
             xx;
+    if (enable_se_atten) {
+      FPTYPE t = two_embed[block_idx * nnei * last_layer_size +
+                           ii * last_layer_size + thread_idx];
+      res = res * t + t;
+    }
 
     for (int kk = 0; kk < MTILE; kk++) {
       sum[kk] += (nnei - breakpoint) *
@@ -173,6 +180,7 @@ __global__ void tabulate_fusion_se_a_grad_fifth_order_polynomial(
     const FPTYPE* table,
     const FPTYPE* em_x,
     const FPTYPE* em,
+    const FPTYPE* two_embed,
     const FPTYPE* dy,
     const FPTYPE lower,
     const FPTYPE upper,
@@ -181,6 +189,7 @@ __global__ void tabulate_fusion_se_a_grad_fifth_order_polynomial(
     const FPTYPE stride1,
     const int nnei,
     const int last_layer_size) {
+  bool enable_se_atten = two_embed != nullptr;
   extern __shared__ int _data[];
   const int_64 block_idx = blockIdx.x;  // nloc
   const int thread_idx = threadIdx.x;   // KTILE * WARP_SIZE, usally 128 here~
@@ -221,6 +230,12 @@ __global__ void tabulate_fusion_se_a_grad_fifth_order_polynomial(
           (var[1] +
            (var[2] + (var[3] + (var[4] + var[5] * xx) * xx) * xx) * xx) *
               xx;
+      FPTYPE t;
+      if (enable_se_atten) {
+        t = two_embed[block_idx * nnei * last_layer_size +
+                      ii * last_layer_size + jj];
+        res = res * t + t;
+      }
 
       for (int kk = 0; kk < MTILE; kk++) {
         sum[kk] +=
@@ -235,7 +250,7 @@ __global__ void tabulate_fusion_se_a_grad_fifth_order_polynomial(
           (var[1] + (2 * var[2] +
                      (3 * var[3] + (4 * var[4] + 5 * var[5] * xx) * xx) * xx) *
                         xx) *
-          res;
+          (enable_se_atten ? res * t : res);
     }
     __syncwarp();
     for (int kk = 0; kk < MTILE; kk++) {
@@ -600,6 +615,7 @@ void tabulate_fusion_se_a_gpu_cuda(FPTYPE* out,
                                    const FPTYPE* table_info,
                                    const FPTYPE* em_x,
                                    const FPTYPE* em,
+                                   const FPTYPE* two_embed,
                                    const int nloc,
                                    const int nnei,
                                    const int last_layer_size) {
@@ -607,9 +623,9 @@ void tabulate_fusion_se_a_gpu_cuda(FPTYPE* out,
     return;
   }
   tabulate_fusion_se_a_fifth_order_polynomial<FPTYPE, MM, KK>
-      <<<nloc, last_layer_size>>>(out, table, em_x, em, table_info[0],
-                                  table_info[1], table_info[2], table_info[3],
-                                  table_info[4], nnei, last_layer_size);
+      <<<nloc, last_layer_size>>>(
+          out, table, em_x, em, two_embed, table_info[0], table_info[1],
+          table_info[2], table_info[3], table_info[4], nnei, last_layer_size);
   DPErrcheck(cudaGetLastError());
   DPErrcheck(cudaDeviceSynchronize());
 }
@@ -621,6 +637,7 @@ void tabulate_fusion_se_a_grad_gpu_cuda(FPTYPE* dy_dem_x,
                                         const FPTYPE* table_info,
                                         const FPTYPE* em_x,
                                         const FPTYPE* em,
+                                        const FPTYPE* two_embed,
                                         const FPTYPE* dy,
                                         const int nloc,
                                         const int nnei,
@@ -633,8 +650,9 @@ void tabulate_fusion_se_a_grad_gpu_cuda(FPTYPE* dy_dem_x,
 
   tabulate_fusion_se_a_grad_fifth_order_polynomial<FPTYPE, MM, KK>
       <<<nloc, KK * WARP_SIZE, sizeof(FPTYPE) * MM * last_layer_size>>>(
-          dy_dem_x, dy_dem, table, em_x, em, dy, table_info[0], table_info[1],
-          table_info[2], table_info[3], table_info[4], nnei, last_layer_size);
+          dy_dem_x, dy_dem, table, em_x, em, two_embed, dy, table_info[0],
+          table_info[1], table_info[2], table_info[3], table_info[4], nnei,
+          last_layer_size);
   DPErrcheck(cudaGetLastError());
   DPErrcheck(cudaDeviceSynchronize());
 }
@@ -805,6 +823,7 @@ template void tabulate_fusion_se_a_gpu_cuda<float>(float* out,
                                                    const float* table_info,
                                                    const float* em_x,
                                                    const float* em,
+                                                   const float* two_embed,
                                                    const int nloc,
                                                    const int nnei,
                                                    const int last_layer_size);
@@ -813,6 +832,7 @@ template void tabulate_fusion_se_a_gpu_cuda<double>(double* out,
                                                     const double* table_info,
                                                     const double* em_x,
                                                     const double* em,
+                                                    const double* two_embed,
                                                     const int nloc,
                                                     const int nnei,
                                                     const int last_layer_size);
@@ -823,6 +843,7 @@ template void tabulate_fusion_se_a_grad_gpu_cuda<float>(
     const float* table_info,
     const float* em_x,
     const float* em,
+    const float* two_embed,
     const float* dy,
     const int nloc,
     const int nnei,
@@ -834,6 +855,7 @@ template void tabulate_fusion_se_a_grad_gpu_cuda<double>(
     const double* table_info,
     const double* em_x,
     const double* em,
+    const double* two_embed,
     const double* dy,
     const int nloc,
     const int nnei,
