@@ -17,7 +17,9 @@ void deepmd::normalize_coord_cpu(FPTYPE* coord,
     convert_to_inter_cpu(ri, region, coord + 3 * ii);
     for (int dd = 0; dd < 3; ++dd) {
       ri[dd] = fmod(ri[dd], (FPTYPE)1.);
-      if (ri[dd] < (FPTYPE)0.) ri[dd] += (FPTYPE)1.;
+      if (ri[dd] < (FPTYPE)0.) {
+        ri[dd] += (FPTYPE)1.;
+      }
     }
     convert_to_phys_cpu(coord + 3 * ii, region, ri);
   }
@@ -77,14 +79,18 @@ void deepmd::compute_cell_info(
   for (int dd = 0; dd < 3; ++dd) {
     cell_info[dd] = 0;                       // nat_stt
     cell_info[3 + dd] = to_face[dd] / rcut;  // ncell
-    if (cell_info[3 + dd] == 0) cell_info[3 + dd] = 1;
+    if (cell_info[3 + dd] == 0) {
+      cell_info[3 + dd] = 1;
+    }
     cell_size[dd] = to_face[dd] / cell_info[3 + dd];
     cell_info[12 + dd] = int(rcut / cell_size[dd]) + 1;          // ngcell
     cell_info[6 + dd] = -cell_info[12 + dd];                     // ext_stt
     cell_info[9 + dd] = cell_info[3 + dd] + cell_info[12 + dd];  // ext_end
     cell_info[15 + dd] = cell_info[12 + dd];                     // cell_shift
     cell_info[18 + dd] = rcut / cell_size[dd];                   // cell_iter
-    if (cell_info[18 + dd] * cell_size[dd] < rcut) cell_info[18 + dd] += 1;
+    if (cell_info[18 + dd] * cell_size[dd] < rcut) {
+      cell_info[18 + dd] += 1;
+    }
   }
   cell_info[21] = (cell_info[3 + 0]) * (cell_info[3 + 1]) *
                   (cell_info[3 + 2]);  // loc_cellnum

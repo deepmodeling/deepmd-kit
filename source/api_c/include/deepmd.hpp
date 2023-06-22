@@ -1107,7 +1107,9 @@ class DeepPotModelDevi {
     }
     std::vector<const char *> cstrings;
     cstrings.reserve(models.size());
-    for (std::string const &str : models) cstrings.push_back(str.data());
+    for (std::string const &str : models) {
+      cstrings.push_back(str.data());
+    }
 
     std::vector<const char *> c_file_contents;
     std::vector<int> size_file_contents;
@@ -1189,9 +1191,12 @@ class DeepPotModelDevi {
       ener[i] = energy_flat[i];
       force[i].resize(natoms * 3);
       virial[i].resize(9);
-      for (int j = 0; j < natoms * 3; j++)
+      for (int j = 0; j < natoms * 3; j++) {
         force[i][j] = force_flat[i * natoms * 3 + j];
-      for (int j = 0; j < 9; j++) virial[i][j] = virial_flat[i * 9 + j];
+      }
+      for (int j = 0; j < 9; j++) {
+        virial[i][j] = virial_flat[i * 9 + j];
+      }
     }
   };
   /**
@@ -1267,13 +1272,18 @@ class DeepPotModelDevi {
       virial[i].resize(9);
       atom_energy[i].resize(natoms);
       atom_virial[i].resize(natoms * 9);
-      for (int j = 0; j < natoms * 3; j++)
+      for (int j = 0; j < natoms * 3; j++) {
         force[i][j] = force_flat[i * natoms * 3 + j];
-      for (int j = 0; j < 9; j++) virial[i][j] = virial_flat[i * 9 + j];
-      for (int j = 0; j < natoms; j++)
+      }
+      for (int j = 0; j < 9; j++) {
+        virial[i][j] = virial_flat[i * 9 + j];
+      }
+      for (int j = 0; j < natoms; j++) {
         atom_energy[i][j] = atom_energy_flat[i * natoms + j];
-      for (int j = 0; j < natoms * 9; j++)
+      }
+      for (int j = 0; j < natoms * 9; j++) {
         atom_virial[i][j] = atom_virial_flat[i * natoms * 9 + j];
+      }
     }
   };
   /**
@@ -1325,7 +1335,9 @@ class DeepPotModelDevi {
   void compute_avg(std::vector<VALUETYPE> &avg,
                    const std::vector<std::vector<VALUETYPE>> &xx) {
     assert(xx.size() == numb_models);
-    if (numb_models == 0) return;
+    if (numb_models == 0) {
+      return;
+    }
 
     avg.resize(xx[0].size());
     fill(avg.begin(), avg.end(), VALUETYPE(0.));
@@ -1353,7 +1365,9 @@ class DeepPotModelDevi {
                    const std::vector<std::vector<VALUETYPE>> &xx,
                    const int &stride) {
     assert(xx.size() == numb_models);
-    if (numb_models == 0) return;
+    if (numb_models == 0) {
+      return;
+    }
 
     unsigned ndof = avg.size();
     unsigned nloc = ndof / stride;
@@ -2017,7 +2031,9 @@ void select_map(std::vector<VT> &out,
   const int nall1 = in.size() / stride;
   int nall2 = 0;
   for (int ii = 0; ii < nall1; ++ii) {
-    if (fwd_map[ii] >= 0) nall2++;
+    if (fwd_map[ii] >= 0) {
+      nall2++;
+    }
   }
   out.resize(nall2 * stride);
   DP_SelectMapInt(&in[0], &fwd_map[0], stride, nall1, nall2, &out[0]);

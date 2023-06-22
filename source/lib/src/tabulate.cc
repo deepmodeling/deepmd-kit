@@ -146,7 +146,9 @@ void deepmd::tabulate_fusion_se_a_cpu(FPTYPE* out,
               var * ll[3];
         }
       }
-      if (unloop) break;
+      if (unloop) {
+        break;
+      }
     }
   }
 }
@@ -229,7 +231,9 @@ void deepmd::tabulate_fusion_se_a_grad_cpu(FPTYPE* dy_dem_x,
         }
       }
       dy_dem_x[ii * nnei + jj] = grad;
-      if (unloop) break;
+      if (unloop) {
+        break;
+      }
     }
   }
 }
@@ -310,7 +314,9 @@ void deepmd::tabulate_fusion_se_a_grad_grad_cpu(FPTYPE* dz_dy,
               var * hh[3] + dz_xx * var_grad * ll[3];
         }
       }
-      if (unloop) break;
+      if (unloop) {
+        break;
+      }
     }
   }
 }

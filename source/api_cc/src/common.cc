@@ -472,7 +472,9 @@ int deepmd::session_input_tensors(
   }
   natoms(0) = nloc;
   natoms(1) = nall;
-  for (int ii = 0; ii < ntypes; ++ii) natoms(ii + 2) = type_count[ii];
+  for (int ii = 0; ii < ntypes; ++ii) {
+    natoms(ii + 2) = type_count[ii];
+  }
 
   std::string prefix = "";
   if (scope != "") {
@@ -585,7 +587,9 @@ int deepmd::session_input_tensors(
     }
   }
 
-  for (int ii = 0; ii < 16; ++ii) mesh(ii) = 0;
+  for (int ii = 0; ii < 16; ++ii) {
+    mesh(ii) = 0;
+  }
 
   const int stride = sizeof(int*) / sizeof(int);
   assert(stride * sizeof(int) == sizeof(int*));
@@ -600,7 +604,9 @@ int deepmd::session_input_tensors(
 
   natoms(0) = nloc;
   natoms(1) = nall;
-  for (int ii = 0; ii < ntypes; ++ii) natoms(ii + 2) = type_count[ii];
+  for (int ii = 0; ii < ntypes; ++ii) {
+    natoms(ii + 2) = type_count[ii];
+  }
 
   std::string prefix = "";
   if (scope != "") {
@@ -728,7 +734,9 @@ int deepmd::session_input_tensors_mixed_type(
   natoms(1) = nall;
   natoms(2) = nall;
   if (ntypes > 1) {
-    for (int ii = 1; ii < ntypes; ++ii) natoms(ii + 2) = 0;
+    for (int ii = 1; ii < ntypes; ++ii) {
+      natoms(ii + 2) = 0;
+    }
   }
 
   std::string prefix = "";

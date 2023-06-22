@@ -601,7 +601,9 @@ class ProdEnvMatAOp : public OpKernel {
                                         gpu_inlist, array_int, array_longlong,
                                         max_nbor_size, avg, std, nloc,
                                         frame_nall, rcut_r, rcut_r_smth, sec_a);
-        if (b_nlist_map) _map_nlist_gpu(nlist, idx_mapping, nloc, nnei);
+        if (b_nlist_map) {
+          _map_nlist_gpu(nlist, idx_mapping, nloc, nnei);
+        }
         deepmd::delete_device_memory(firstneigh);
 #endif  // GOOGLE_CUDA
 
@@ -644,7 +646,9 @@ class ProdEnvMatAOp : public OpKernel {
                                         gpu_inlist, array_int, array_longlong,
                                         max_nbor_size, avg, std, nloc,
                                         frame_nall, rcut_r, rcut_r_smth, sec_a);
-        if (b_nlist_map) _map_nlist_gpu_rocm(nlist, idx_mapping, nloc, nnei);
+        if (b_nlist_map) {
+          _map_nlist_gpu_rocm(nlist, idx_mapping, nloc, nnei);
+        }
         deepmd::delete_device_memory(firstneigh);
 #endif  // TENSORFLOW_USE_ROCM
       } else if (device == "CPU") {
@@ -668,7 +672,9 @@ class ProdEnvMatAOp : public OpKernel {
                                    inlist, max_nbor_size, avg, std, nloc,
                                    frame_nall, rcut_r, rcut_r_smth, sec_a);
         // do nlist mapping if coords were copied
-        if (b_nlist_map) _map_nlist_cpu(nlist, &idx_mapping[0], nloc, nnei);
+        if (b_nlist_map) {
+          _map_nlist_cpu(nlist, &idx_mapping[0], nloc, nnei);
+        }
       }
     }
   }
@@ -883,7 +889,9 @@ class ProdEnvMatROp : public OpKernel {
                                         gpu_inlist, array_int, array_longlong,
                                         max_nbor_size, avg, std, nloc,
                                         frame_nall, rcut, rcut_smth, sec);
-        if (b_nlist_map) _map_nlist_gpu(nlist, idx_mapping, nloc, nnei);
+        if (b_nlist_map) {
+          _map_nlist_gpu(nlist, idx_mapping, nloc, nnei);
+        }
         deepmd::delete_device_memory(firstneigh);
 #endif  // GOOGLE_CUDA
 
@@ -926,7 +934,9 @@ class ProdEnvMatROp : public OpKernel {
                                         gpu_inlist, array_int, array_longlong,
                                         max_nbor_size, avg, std, nloc,
                                         frame_nall, rcut, rcut_smth, sec);
-        if (b_nlist_map) _map_nlist_gpu_rocm(nlist, idx_mapping, nloc, nnei);
+        if (b_nlist_map) {
+          _map_nlist_gpu_rocm(nlist, idx_mapping, nloc, nnei);
+        }
         deepmd::delete_device_memory(firstneigh);
 #endif  // TENSORFLOW_USE_ROCM
       } else if (device == "CPU") {
@@ -949,7 +959,9 @@ class ProdEnvMatROp : public OpKernel {
         deepmd::prod_env_mat_r_cpu(em, em_deriv, rij, nlist, coord, type,
                                    inlist, max_nbor_size, avg, std, nloc,
                                    frame_nall, rcut, rcut_smth, sec);
-        if (b_nlist_map) _map_nlist_cpu(nlist, &idx_mapping[0], nloc, nnei);
+        if (b_nlist_map) {
+          _map_nlist_cpu(nlist, &idx_mapping[0], nloc, nnei);
+        }
       }
     }
   }

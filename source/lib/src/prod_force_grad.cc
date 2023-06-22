@@ -52,8 +52,12 @@ void deepmd::prod_force_grad_a_cpu(FPTYPE* grad_net,
     // loop over neighbors
     for (int jj = 0; jj < nnei; ++jj) {
       int j_idx = nlist[i_idx * nnei + jj];
-      if (j_idx >= nloc) j_idx = j_idx % nloc;
-      if (j_idx < 0) continue;
+      if (j_idx >= nloc) {
+        j_idx = j_idx % nloc;
+      }
+      if (j_idx < 0) {
+        continue;
+      }
       int aa_start, aa_end;
       make_index_range(aa_start, aa_end, jj, nnei);
       const int kk = i_idx / nloc;  // frame index
@@ -125,8 +129,12 @@ void deepmd::prod_force_grad_r_cpu(FPTYPE* grad_net,
     // loop over neighbors
     for (int jj = 0; jj < nnei; ++jj) {
       int j_idx = nlist[i_idx * nnei + jj];
-      if (j_idx >= nloc) j_idx = j_idx % nloc;
-      if (j_idx < 0) continue;
+      if (j_idx >= nloc) {
+        j_idx = j_idx % nloc;
+      }
+      if (j_idx < 0) {
+        continue;
+      }
       int kk = i_idx / nloc;  // frame index
       for (int dd = 0; dd < 3; ++dd) {
         grad_net[i_idx * ndescrpt + jj] +=
