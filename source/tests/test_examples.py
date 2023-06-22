@@ -22,6 +22,7 @@ input_files = (
     p_examples / "water" / "se_e2_a_tebd" / "input.json",
     p_examples / "water" / "se_e2_a_mixed_prec" / "input.json",
     p_examples / "water" / "se_atten" / "input.json",
+    p_examples / "water" / "se_atten_non_compressible" / "input.json",
     p_examples / "water" / "hybrid" / "input.json",
     p_examples / "water" / "dplr" / "train" / "dw.json",
     p_examples / "water" / "dplr" / "train" / "ener.json",
