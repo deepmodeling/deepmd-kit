@@ -133,35 +133,32 @@ kspace_modify	gewald ${BETA} diff ik mesh ${KMESH} ${KMESH} ${KMESH}
 ```
 The long-range part is calculated by the `kspace` support of LAMMPS. The `kspace_style` `pppm/dplr` is required. The spread parameter set by variable `BETA` should be set the same as that used in training. The `KMESH` should be set dense enough so the long-range calculation is converged.
 
-fix dplr command
-=========================
+### fix dplr command
 
-Syntax
-""""""
+**Syntax**
+
 
 ```
-
-   fix ID group-ID style_name keyword value ...
+fix ID group-ID style_name keyword value ...
 ```
 * ID, group-ID are documented in :doc:`fix <fix>` command
 * style_name = *dplr*
 * three or more keyword/value pairs may be appended
 
 ```
-
-     keyword = *model* or *type_associate* or *bond_type* or *efield*
-       *model* value = name
-         name = name of DPLR model file (e.g. frozen_model.pb) (not DW model)
-       *type_associate* values = NR1 NW1 NR2 NW2 ...
-         NRi = type of real atom in i-th (real atom, Wannier centroid) pair
-         NWi = type of Wannier in i-th (real atom, Wannier centroid) pair
-       *bond_type* values = NB1 NB2 ...
-         NBi = bond type of i-th (real atom, Wannier centroid) pair
-       *efield* (optional) values = Ex Ey Ez
-         Ex/Ey/Ez = electric field along x/y/z direction
+keyword = *model* or *type_associate* or *bond_type* or *efield*
+  *model* value = name
+    name = name of DPLR model file (e.g. frozen_model.pb) (not DW model)
+  *type_associate* values = NR1 NW1 NR2 NW2 ...
+    NRi = type of real atom in i-th (real atom, Wannier centroid) pair
+    NWi = type of Wannier in i-th (real atom, Wannier centroid) pair
+  *bond_type* values = NB1 NB2 ...
+    NBi = bond type of i-th (real atom, Wannier centroid) pair
+  *efield* (optional) values = Ex Ey Ez
+    Ex/Ey/Ez = electric field along x/y/z direction
 ```
-Examples
-""""""""
+
+**Examples**
 
 ```lammps
 # "fix dplr" set the position of the virtual atom, and spread the
@@ -172,20 +169,22 @@ Examples
 fix		0 all dplr model ener.pb type_associate 1 3 bond_type 1
 fix_modify	0 virial yes
 ```
+
 The fix command `dplr` calculates the position of WCs by the DW model and back-propagates the long-range interaction on virtual atoms to real toms.
 At this time, the training parameter {ref}`type_map <model/type_map>` will be mapped to LAMMPS atom types.
 
-```lammps
 
 To use a time-dependent electric field, LAMMPS's `variable` feature can be utilized:
 ```lammps
 variable EFIELD_Z equal 2*sin(2*PI*time/0.006)
 fix 0 all dplr model ener.pb type_associate 1 3 bond_type 1 efield 0 0 v_EFIELD_Z
 fix_modify 0 energy yes virial yes
-```lammps
+```
+
 The `efield` feature of `fix dplr` behaves similarly to LAMMPS's [fix efield](https://docs.lammps.org/fix_efield.html). Note that the atomic energy or potential in `fix efield` is not yet supported in `fix dplr`. For a detailed description on how a time-dependent variable can be defined, refer to [LAMMPS's document of variable](https://docs.lammps.org/variable.html).
 
 # compute the temperature of real atoms, excluding virtual atom contribution
+```lammps
 compute		real_temp real_atom temp
 compute		real_press all pressure real_temp
 fix		1 real_atom nvt temp ${TEMP} ${TEMP} ${TAU_T}
