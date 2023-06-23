@@ -159,7 +159,7 @@ Syntax
          NBi = bond type of i-th (real atom, Wannier centroid) pair
        *efield* (optional) values = Ex Ey Ez
          Ex/Ey/Ez = electric field along x/y/z direction
-         
+
 Examples
 """"""""
 
