@@ -88,6 +88,7 @@
         },
         {
           "type": "se_atten",
+          "stripped_type_embedding": true,
           "sel": 150,
           "rcut_smth": 5.80,
           "rcut": 6.00,
