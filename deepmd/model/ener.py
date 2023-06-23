@@ -368,7 +368,9 @@ class EnerModel(StandardModel):
         else:
             raise RuntimeError("Unknown model type %s" % model_type)
         if self.typeebd is not None:
-            self.typeebd.init_variables(graph, graph_def, suffix=suffix)
+            self.typeebd.init_variables(
+                graph, graph_def, suffix=suffix, model_type=model_type
+            )
 
     def natoms_match(self, force, natoms):
         use_spin = self.spin.use_spin

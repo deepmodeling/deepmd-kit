@@ -54,8 +54,6 @@ class FixDPLR : public Fix {
   double compute_scalar(void) override;
   double compute_vector(int) override;
 
-  enum { NONE, CONSTANT, EQUAL };
-
  private:
   PairDeepMD *pair_deepmd;
   deepmd_compat::DeepTensor dpt;
@@ -78,6 +76,7 @@ class FixDPLR : public Fix {
   int xvar, yvar, zvar, xstyle, ystyle, zstyle;
   double qe2f;
   void update_efield_variables();
+  enum { NONE, CONSTANT, EQUAL };
 };
 }  // namespace LAMMPS_NS
 
