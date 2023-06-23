@@ -378,17 +378,20 @@ def test_pair_deepmd_lr_efield_constant(lammps):
             expected_f_lr_efield_constant[ii]
         )
     lammps.run(1)
-    assert lammps.eval("evdwl") == pytest.approx(expected_evdwl_lr_efield_constant_step1)
+    assert lammps.eval("evdwl") == pytest.approx(
+        expected_evdwl_lr_efield_constant_step1
+    )
     assert lammps.eval("f_0") == pytest.approx(expected_e_efield_constant_step1)
     assert lammps.eval("pe") == pytest.approx(expected_e_lr_efield_constant_step1)
     for ii in range(8):
-        assert lammps.atoms[np.where(id_list == (ii + 1))[0][0]].position == pytest.approx(
-            expected_x_lr_efield_constant_step1[ii]
-        )
+        assert lammps.atoms[
+            np.where(id_list == (ii + 1))[0][0]
+        ].position == pytest.approx(expected_x_lr_efield_constant_step1[ii])
     for ii in range(6):
         assert lammps.atoms[np.where(id_list == (ii + 1))[0][0]].force == pytest.approx(
             expected_f_lr_efield_constant_step1[ii]
         )
+
 
 def test_pair_deepmd_lr_efield_variable(lammps):
     lammps.variable("EFIELD_Z equal 2*sin(2*PI*time/0.006)")
@@ -411,17 +414,20 @@ def test_pair_deepmd_lr_efield_variable(lammps):
             expected_f_lr_efield_variable[ii]
         )
     lammps.run(1)
-    assert lammps.eval("evdwl") == pytest.approx(expected_evdwl_lr_efield_variable_step1)
+    assert lammps.eval("evdwl") == pytest.approx(
+        expected_evdwl_lr_efield_variable_step1
+    )
     assert lammps.eval("f_0") == pytest.approx(expected_e_efield_variable_step1)
     assert lammps.eval("pe") == pytest.approx(expected_e_lr_efield_variable_step1)
     for ii in range(8):
-        assert lammps.atoms[np.where(id_list == (ii + 1))[0][0]].position == pytest.approx(
-            expected_x_lr_efield_variable_step1[ii]
-        )
+        assert lammps.atoms[
+            np.where(id_list == (ii + 1))[0][0]
+        ].position == pytest.approx(expected_x_lr_efield_variable_step1[ii])
     for ii in range(6):
         assert lammps.atoms[np.where(id_list == (ii + 1))[0][0]].force == pytest.approx(
             expected_f_lr_efield_variable_step1[ii]
         )
+
 
 def test_min_dplr(lammps):
     lammps.pair_style(f"deepmd {pb_file.resolve()}")
