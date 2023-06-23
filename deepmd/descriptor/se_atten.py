@@ -649,7 +649,7 @@ class DescrptSeAtten(DescrptSeA):
             type_i,
             natoms,
             name="filter_type_all" + suffix,
-            suffix=suffix
+            suffix=suffix,
             reuse=reuse,
             trainable=trainable,
             activation_fn=self.filter_activation_fn,
