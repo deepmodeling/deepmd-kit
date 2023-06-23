@@ -139,15 +139,15 @@ fix dplr command
 Syntax
 """"""
 
-.. parsed-literal::
+```
 
    fix ID group-ID style_name keyword value ...
-
+```
 * ID, group-ID are documented in :doc:`fix <fix>` command
 * style_name = *dplr*
 * three or more keyword/value pairs may be appended
 
-  .. parsed-literal::
+```
 
      keyword = *model* or *type_associate* or *bond_type* or *efield*
        *model* value = name
@@ -159,7 +159,7 @@ Syntax
          NBi = bond type of i-th (real atom, Wannier centroid) pair
        *efield* (optional) values = Ex Ey Ez
          Ex/Ey/Ez = electric field along x/y/z direction
-
+```
 Examples
 """"""""
 
