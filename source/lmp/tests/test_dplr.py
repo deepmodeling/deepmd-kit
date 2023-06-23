@@ -119,8 +119,9 @@ expected_f_lr = np.array(
     ]
 )
 
-expected_e_lr_efield_constant = -40.56538550
-
+expected_evdwl_lr_efield_constant = -40.56538550
+expected_e_efield_constant = -0.00813751
+expected_e_lr_efield_constant = -40.57352302
 expected_f_lr_efield_constant = np.array(
     [
         [0.47635071, 0.15088380, -1.20378471],
@@ -129,6 +130,72 @@ expected_f_lr_efield_constant = np.array(
         [0.20500683, -0.50210283, -0.04263579],
         [0.82463041, 0.04231172, 0.47856560],
         [-0.27521024, 0.02902140, 0.27184004],
+    ]
+)
+
+expected_evdwl_lr_efield_constant_step1 = -40.56855711
+expected_e_efield_constant_step1 = -0.00924204
+expected_e_lr_efield_constant_step1 = -40.57779915
+expected_x_lr_efield_constant_step1 = np.array(
+    [
+        [1.25548591, 1.27563337, 0.98863926],
+        [0.96097023, 3.25749911, 1.33488514],
+        [0.66332860, 1.31188606, 1.74500430],
+        [1.29211530, 0.33375920, 0.73079898],
+        [1.88983672, 3.51135063, 1.42501264],
+        [0.51584069, 4.04333473, 0.90936527],
+        [1.22151773, 1.14543776, 1.01968264],
+        [0.98890877, 3.39167719, 1.32307805],
+    ]
+)
+expected_f_lr_efield_constant_step1 = np.array(
+    [
+        [0.47169787, 0.14277839, -1.20084613],
+        [-0.51870331, -0.00742992, -0.72827444],
+        [-0.69568128, 0.28776665, 1.21423596],
+        [0.20225942, -0.48947283, -0.03600238],
+        [0.81231903, 0.04010359, 0.47727588],
+        [-0.27189173, 0.02625411, 0.27361111],
+    ]
+)
+
+expected_evdwl_lr_efield_variable = -40.56538550
+expected_e_efield_variable = 0
+expected_e_lr_efield_variable = -40.56538550
+expected_f_lr_efield_variable = np.array(
+    [
+        [0.35019748, 0.27802691, -0.38443156],
+        [-0.42115581, -0.20474826, -0.02701100],
+        [-0.56357653, 0.34154004, 0.78389512],
+        [0.21023870, -0.60684635, -0.39875165],
+        [0.78732106, 0.00610023, 0.17197636],
+        [-0.36302488, 0.18592742, -0.14567727],
+    ]
+)
+
+expected_evdwl_lr_efield_variable_step1 = -40.56834245
+expected_e_efield_variable_step1 = -0.00835811
+expected_e_lr_efield_variable_step1 = -40.57670056
+expected_x_lr_efield_variable_step1 = np.array(
+    [
+        [1.25547640, 1.27564296, 0.98870102],
+        [0.96097825, 3.25748457, 1.33493796],
+        [0.66349564, 1.31194568, 1.74447798],
+        [1.29212156, 0.33363387, 0.73037287],
+        [1.88979208, 3.51130730, 1.42464578],
+        [0.51573562, 4.04352247, 0.90886569],
+        [1.22151260, 1.14544923, 1.01967090],
+        [0.98891853, 3.39165617, 1.32305887],
+    ]
+)
+expected_f_lr_efield_variable_step1 = np.array(
+    [
+        [0.472961703581, 0.139180609625, -1.202763462854],
+        [-0.522013780229, -0.002650184425, -0.730891801410],
+        [-0.697058457903, 0.288298050924, 1.215594205400],
+        [0.202354938967, -0.486587189234, -0.035481805009],
+        [0.811998296976, 0.040625078957, 0.476748222312],
+        [-0.268242701392, 0.021133634152, 0.276794641561],
     ]
 )
 
@@ -211,7 +278,6 @@ def setup_module():
 
 def teardown_module():
     os.remove(data_file)
-    os.remove("dump")
 
 
 def _lammps(data_file) -> PyLammps:
@@ -269,6 +335,7 @@ def test_pair_deepmd_sr_virial(lammps):
         assert np.array(lammps.variables[f"virial{ii}"].value)[
             idx_list
         ] / nktv2p == pytest.approx(expected_v_sr[:, ii])
+    os.remove("dump")
 
 
 def test_pair_deepmd_lr(lammps):
@@ -300,15 +367,61 @@ def test_pair_deepmd_lr_efield_constant(lammps):
     lammps.fix(
         f"0 all dplr model {pb_file.resolve()} type_associate 1 3 bond_type 1 efield 0 0 1"
     )
-    lammps.fix_modify("0 virial yes")
+    lammps.fix_modify("0 energy yes virial yes")
     lammps.run(0)
+    id_list = lammps.lmp.numpy.extract_atom("id")
+    assert lammps.eval("evdwl") == pytest.approx(expected_evdwl_lr_efield_constant)
+    assert lammps.eval("f_0") == pytest.approx(expected_e_efield_constant)
     assert lammps.eval("pe") == pytest.approx(expected_e_lr_efield_constant)
     for ii in range(6):
-        assert lammps.atoms[ii].force == pytest.approx(
+        assert lammps.atoms[np.where(id_list == (ii + 1))[0][0]].force == pytest.approx(
             expected_f_lr_efield_constant[ii]
         )
     lammps.run(1)
+    assert lammps.eval("evdwl") == pytest.approx(expected_evdwl_lr_efield_constant_step1)
+    assert lammps.eval("f_0") == pytest.approx(expected_e_efield_constant_step1)
+    assert lammps.eval("pe") == pytest.approx(expected_e_lr_efield_constant_step1)
+    for ii in range(8):
+        assert lammps.atoms[np.where(id_list == (ii + 1))[0][0]].position == pytest.approx(
+            expected_x_lr_efield_constant_step1[ii]
+        )
+    for ii in range(6):
+        assert lammps.atoms[np.where(id_list == (ii + 1))[0][0]].force == pytest.approx(
+            expected_f_lr_efield_constant_step1[ii]
+        )
 
+def test_pair_deepmd_lr_efield_variable(lammps):
+    lammps.variable("EFIELD_Z equal 2*sin(2*PI*time/0.006)")
+    lammps.pair_style(f"deepmd {pb_file.resolve()}")
+    lammps.pair_coeff("* *")
+    lammps.bond_style("zero")
+    lammps.bond_coeff("*")
+    lammps.special_bonds("lj/coul 1 1 1 angle no")
+    lammps.fix(
+        f"0 all dplr model {pb_file.resolve()} type_associate 1 3 bond_type 1 efield 0 0 v_EFIELD_Z"
+    )
+    lammps.fix_modify("0 energy yes virial yes")
+    lammps.run(0)
+    id_list = lammps.lmp.numpy.extract_atom("id")
+    assert lammps.eval("evdwl") == pytest.approx(expected_evdwl_lr_efield_variable)
+    assert lammps.eval("f_0") == pytest.approx(expected_e_efield_variable)
+    assert lammps.eval("pe") == pytest.approx(expected_e_lr_efield_variable)
+    for ii in range(6):
+        assert lammps.atoms[np.where(id_list == (ii + 1))[0][0]].force == pytest.approx(
+            expected_f_lr_efield_variable[ii]
+        )
+    lammps.run(1)
+    assert lammps.eval("evdwl") == pytest.approx(expected_evdwl_lr_efield_variable_step1)
+    assert lammps.eval("f_0") == pytest.approx(expected_e_efield_variable_step1)
+    assert lammps.eval("pe") == pytest.approx(expected_e_lr_efield_variable_step1)
+    for ii in range(8):
+        assert lammps.atoms[np.where(id_list == (ii + 1))[0][0]].position == pytest.approx(
+            expected_x_lr_efield_variable_step1[ii]
+        )
+    for ii in range(6):
+        assert lammps.atoms[np.where(id_list == (ii + 1))[0][0]].force == pytest.approx(
+            expected_f_lr_efield_variable_step1[ii]
+        )
 
 def test_min_dplr(lammps):
     lammps.pair_style(f"deepmd {pb_file.resolve()}")
