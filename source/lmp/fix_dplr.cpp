@@ -53,6 +53,9 @@ FixDPLR::FixDPLR(LAMMPS *lmp, int narg, char **arg)
   virial_flag = 1;
 #endif
 
+  scalar_flag = 1;
+  vector_flag = 1;
+  size_vector = 3;
   qe2f = force->qe2f;
   xstyle = ystyle = zstyle = NONE;
 
@@ -196,44 +199,44 @@ void FixDPLR::init() {
 
   if (xstr) {
     xvar = input->variable->find(xstr);
-    if (xvar < 0)
+    if (xvar < 0){
       error->all(FLERR, "Variable {} for x-field in fix {} does not exist",
-                 xstr, style);
+                 xstr, style);}
     if (input->variable->equalstyle(xvar))
-      xstyle = EQUAL;
+      {xstyle = EQUAL;}
     else
-      error->all(FLERR, "Variable {} for x-field in fix {} is invalid style",
-                 xstr, style);
+      {error->all(FLERR, "Variable {} for x-field in fix {} is invalid style",
+                 xstr, style);}
   }
 
   if (ystr) {
     yvar = input->variable->find(ystr);
     if (yvar < 0)
-      error->all(FLERR, "Variable {} for y-field in fix {} does not exist",
-                 ystr, style);
+      {error->all(FLERR, "Variable {} for y-field in fix {} does not exist",
+                 ystr, style);}
     if (input->variable->equalstyle(yvar))
-      ystyle = EQUAL;
+      {ystyle = EQUAL;}
     else
-      error->all(FLERR, "Variable {} for y-field in fix {} is invalid style",
-                 ystr, style);
+      {error->all(FLERR, "Variable {} for y-field in fix {} is invalid style",
+                 ystr, style);}
   }
 
   if (zstr) {
     zvar = input->variable->find(zstr);
     if (zvar < 0)
-      error->all(FLERR, "Variable {} for z-field in fix {} does not exist",
-                 zstr, style);
+      {error->all(FLERR, "Variable {} for z-field in fix {} does not exist",
+                 zstr, style);}
     if (input->variable->equalstyle(zvar))
-      zstyle = EQUAL;
+      {zstyle = EQUAL;}
     else
-      error->all(FLERR, "Variable {} for z-field in fix {} is invalid style",
-                 zstr, style);
+      {error->all(FLERR, "Variable {} for z-field in fix {} is invalid style",
+                 zstr, style);}
   }
 
   if (xstyle == EQUAL || ystyle == EQUAL || zstyle == EQUAL)
-    varflag = EQUAL;
+    {varflag = EQUAL;}
   else
-    varflag = CONSTANT;
+    {varflag = CONSTANT;}
 }
 
 /* ---------------------------------------------------------------------- */
