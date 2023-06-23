@@ -119,6 +119,19 @@ expected_f_lr = np.array(
     ]
 )
 
+expected_e_lr_efield_constant = -40.56538550
+
+expected_f_lr_efield_constant = np.array(
+    [
+        [0.47635071, 0.15088380, -1.20378471],
+        [-0.52759976, -0.01182856, -0.72773815],
+        [-0.70317794, 0.29171446, 1.22375302],
+        [0.20500683, -0.50210283, -0.04263579],
+        [0.82463041, 0.04231172, 0.47856560],
+        [-0.27521024, 0.02902140, 0.27184004],
+    ]
+)
+
 expected_WC = np.array(
     [
         [1.22149689, 1.14543417, 1.01968026],
@@ -198,6 +211,7 @@ def setup_module():
 
 def teardown_module():
     os.remove(data_file)
+    os.remove("dump")
 
 
 def _lammps(data_file) -> PyLammps:
@@ -223,8 +237,9 @@ def test_pair_deepmd_sr(lammps):
     lammps.pair_coeff("* *")
     lammps.run(0)
     assert lammps.eval("pe") == pytest.approx(expected_e_sr)
+    id_list = lammps.lmp.numpy.extract_atom("id")
     for ii in range(6):
-        assert lammps.atoms[ii].force == pytest.approx(expected_f_sr[ii])
+        assert lammps.atoms[np.where(id_list==(ii+1))[0][0]].force == pytest.approx(expected_f_sr[ii])
     lammps.run(1)
 
 
@@ -239,14 +254,16 @@ def test_pair_deepmd_sr_virial(lammps):
     lammps.dump(
         "1 real_atom custom 1 dump id " + " ".join([f"v_virial{ii}" for ii in range(9)])
     )
+    lammps.dump_modify("1 sort id")
     lammps.run(0)
+    id_list = lammps.lmp.numpy.extract_atom("id")
+    idx_list = [np.where(id_list == i)[0][0] for i in range(1, 7)]
     assert lammps.eval("pe") == pytest.approx(expected_e_sr)
     for ii in range(6):
-        assert lammps.atoms[ii].force == pytest.approx(expected_f_sr[ii])
+        assert lammps.atoms[np.where(id_list==(ii+1))[0][0]].force == pytest.approx(expected_f_sr[ii])
     for ii in range(9):
         assert np.array(
-            lammps.variables[f"virial{ii}"].value[:6]
-        ) / nktv2p == pytest.approx(expected_v_sr[:, ii])
+            lammps.variables[f"virial{ii}"].value)[idx_list] / nktv2p == pytest.approx(expected_v_sr[:, ii])
 
 
 def test_pair_deepmd_lr(lammps):
@@ -266,6 +283,20 @@ def test_pair_deepmd_lr(lammps):
     assert lammps.eval("pe") == pytest.approx(expected_e_lr)
     for ii in range(6):
         assert lammps.atoms[ii].force == pytest.approx(expected_f_lr[ii])
+    lammps.run(1)
+
+def test_pair_deepmd_lr_efield_constant(lammps):
+    lammps.pair_style(f"deepmd {pb_file.resolve()}")
+    lammps.pair_coeff("* *")
+    lammps.bond_style("zero")
+    lammps.bond_coeff("*")
+    lammps.special_bonds("lj/coul 1 1 1 angle no")
+    lammps.fix(f"0 all dplr model {pb_file.resolve()} type_associate 1 3 bond_type 1 efield 0 0 1")
+    lammps.fix_modify("0 virial yes")
+    lammps.run(0)
+    assert lammps.eval("pe") == pytest.approx(expected_e_lr_efield_constant)
+    for ii in range(6):
+        assert lammps.atoms[ii].force == pytest.approx(expected_f_lr_efield_constant[ii])
     lammps.run(1)
 
 
