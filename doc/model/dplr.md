@@ -183,8 +183,8 @@ fix_modify 0 energy yes virial yes
 
 The `efield` feature of `fix dplr` behaves similarly to LAMMPS's [fix efield](https://docs.lammps.org/fix_efield.html). Note that the atomic energy or potential in `fix efield` is not yet supported in `fix dplr`. For a detailed description on how a time-dependent variable can be defined, refer to [LAMMPS's document of variable](https://docs.lammps.org/variable.html).
 
-# compute the temperature of real atoms, excluding virtual atom contribution
 ```lammps
+# compute the temperature of real atoms, excluding virtual atom contribution
 compute		real_temp real_atom temp
 compute		real_press all pressure real_temp
 fix		1 real_atom nvt temp ${TEMP} ${TEMP} ${TAU_T}
