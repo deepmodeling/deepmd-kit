@@ -1016,7 +1016,7 @@ class DescrptSeAtten(DescrptSeA):
                         self.filter_precision,
                         activation_fn=activation_fn,
                         resnet_dt=self.filter_resnet_dt,
-                        name_suffix=suffix,
+                        name_suffix="",
                         stddev=stddev,
                         bavg=bavg,
                         seed=self.seed,
@@ -1041,7 +1041,7 @@ class DescrptSeAtten(DescrptSeA):
                             self.filter_precision,
                             activation_fn=activation_fn,
                             resnet_dt=self.filter_resnet_dt,
-                            name_suffix=suffix,
+                            name_suffix="",
                             stddev=stddev,
                             bavg=bavg,
                             seed=self.seed,
@@ -1090,7 +1090,7 @@ class DescrptSeAtten(DescrptSeA):
                             two_side_type_embedding,
                             [-1, two_side_type_embedding.shape[-1]],
                         )
-                        two_side_type_embedding_suffix = suffix + "_two_side_ebd"
+                        two_side_type_embedding_suffix = "_two_side_ebd"
                         embedding_of_two_side_type_embedding = embedding_net(
                             two_side_type_embedding,
                             self.filter_neuron,
