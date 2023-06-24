@@ -84,6 +84,7 @@ class PairwiseDPRc(Model):
         )
         add_data_requirement("aparam", 1, atomic=True, must=True, high_prec=False)
         self.ntypes = len(type_map)
+        self.rcut = max(self.qm_model.get_rcut(), self.qmmm_model.get_rcut())
 
     def build(
         self,
@@ -108,6 +109,9 @@ class PairwiseDPRc(Model):
         with tf.variable_scope("fitting_attr" + suffix, reuse=reuse):
             t_dfparam = tf.constant(0, name="dfparam", dtype=tf.int32)
             t_daparam = tf.constant(1, name="daparam", dtype=tf.int32)
+        with tf.variable_scope("descrpt_attr" + suffix, reuse=reuse):
+            t_ntypes = tf.constant(self.ntypes, name="ntypes", dtype=tf.int32)
+            t_rcut = tf.constant(self.rcut, name="rcut", dtype=tf.float32)
         # convert X-frame to X-Y-frame coordinates
         box = tf.reshape(box_, [-1, 9])
         nframes = tf.shape(box)[0]
@@ -210,7 +214,7 @@ class PairwiseDPRc(Model):
             qmmm_frame_idx,
         )
         atom_ener = atom_ener_qm + atom_ener_qmmm
-        atom_ener = tf.identity(atom_ener, name="o_atom_ener" + suffix)
+        atom_ener = tf.identity(atom_ener, name="o_atom_energy" + suffix)
 
         atom_virial_qm = gather_placeholder(
             tf.reshape(qm_dict["atom_virial"], (nframes, natoms_qm[1], 9)),
@@ -260,6 +264,34 @@ class PairwiseDPRc(Model):
     def data_stat(self, data):
         self.qm_model.data_stat(data)
         self.qmmm_model.data_stat(data)
+
+    def init_variables(
+        self,
+        graph: tf.Graph,
+        graph_def: tf.GraphDef,
+        model_type: str = "original_model",
+        suffix: str = "",
+    ) -> None:
+        """Init the embedding net variables with the given frozen model.
+
+        Parameters
+        ----------
+        graph : tf.Graph
+            The input frozen model graph
+        graph_def : tf.GraphDef
+            The input frozen model graph_def
+        model_type : str
+            the type of the model
+        suffix : str
+            suffix to name scope
+        """
+        self.typeebd.init_variables(graph, graph_def, model_type=model_type)
+        self.qm_model.init_variables(
+            graph, graph_def, model_type=model_type, suffix="_qm" + suffix
+        )
+        self.qmmm_model.init_variables(
+            graph, graph_def, model_type=model_type, suffix="_qmmm" + suffix
+        )
 
 
 def gather_placeholder(
