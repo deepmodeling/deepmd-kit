@@ -20,7 +20,7 @@ cmake -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX} \
 	-DPACKAGE_C=TRUE \
 	-DUSE_TF_PYTHON_LIBS=TRUE \
 	..
-make -j${NPROC}
+make -j${NPROC} VERBOSE=1
 make install
 
 #------------------
