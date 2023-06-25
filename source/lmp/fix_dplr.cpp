@@ -84,6 +84,7 @@ FixDPLR::FixDPLR(LAMMPS *lmp, int narg, char **arg)
         error->all(FLERR,
                    "Illegal fix adapt command, efield should be provided 3 "
                    "float numbers");
+      }
         if (utils::strmatch(arg[iarg + 1], "^v_")) {
           xstr = utils::strdup(arg[iarg + 1] + 2);
         } else {
