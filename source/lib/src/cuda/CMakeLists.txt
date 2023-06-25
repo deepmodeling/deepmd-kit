@@ -16,9 +16,6 @@ find_package(CUDAToolkit REQUIRED)
 # when using CPUs
 add_subdirectory(cudart)
 
-# set c++ version c++11
-set(CMAKE_CXX_STANDARD 11)
-set(CMAKE_CUDA_STANDARD 11)
 # nvcc -o libdeepmd_op_cuda.so -I/usr/local/cub-1.8.0 -rdc=true -DHIGH_PREC=true
 # -gencode arch=compute_61,code=sm_61 -shared -Xcompiler -fPIC deepmd_op.cu
 # -L/usr/local/cuda/lib64 -lcudadevrt very important here! Include path to cub.
