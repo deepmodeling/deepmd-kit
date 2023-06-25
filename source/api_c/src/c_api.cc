@@ -172,11 +172,21 @@ inline void DP_DeepPotCompute_variant(DP_DeepPot* dp,
   DP_REQUIRES_OK(dp, dp->dp.compute(e, f, v, ae, av, coord_, atype_, cell_,
                                     fparam_, aparam_));
   // copy from C++ vectors to C arrays, if not NULL pointer
-  if (energy) std::copy(e.begin(), e.end(), energy);
-  if (force) std::copy(f.begin(), f.end(), force);
-  if (virial) std::copy(v.begin(), v.end(), virial);
-  if (atomic_energy) std::copy(ae.begin(), ae.end(), atomic_energy);
-  if (atomic_virial) std::copy(av.begin(), av.end(), atomic_virial);
+  if (energy) {
+    std::copy(e.begin(), e.end(), energy);
+  }
+  if (force) {
+    std::copy(f.begin(), f.end(), force);
+  }
+  if (virial) {
+    std::copy(v.begin(), v.end(), virial);
+  }
+  if (atomic_energy) {
+    std::copy(ae.begin(), ae.end(), atomic_energy);
+  }
+  if (atomic_virial) {
+    std::copy(av.begin(), av.end(), atomic_virial);
+  }
 }
 
 template void DP_DeepPotCompute_variant<double>(DP_DeepPot* dp,
@@ -246,11 +256,21 @@ inline void DP_DeepPotComputeNList_variant(DP_DeepPot* dp,
   DP_REQUIRES_OK(dp, dp->dp.compute(e, f, v, ae, av, coord_, atype_, cell_,
                                     nghost, nlist->nl, ago, fparam_, aparam_));
   // copy from C++ vectors to C arrays, if not NULL pointer
-  if (energy) std::copy(e.begin(), e.end(), energy);
-  if (force) std::copy(f.begin(), f.end(), force);
-  if (virial) std::copy(v.begin(), v.end(), virial);
-  if (atomic_energy) std::copy(ae.begin(), ae.end(), atomic_energy);
-  if (atomic_virial) std::copy(av.begin(), av.end(), atomic_virial);
+  if (energy) {
+    std::copy(e.begin(), e.end(), energy);
+  }
+  if (force) {
+    std::copy(f.begin(), f.end(), force);
+  }
+  if (virial) {
+    std::copy(v.begin(), v.end(), virial);
+  }
+  if (atomic_energy) {
+    std::copy(ae.begin(), ae.end(), atomic_energy);
+  }
+  if (atomic_virial) {
+    std::copy(av.begin(), av.end(), atomic_virial);
+  }
 }
 
 template void DP_DeepPotComputeNList_variant<double>(DP_DeepPot* dp,
@@ -324,11 +344,21 @@ inline void DP_DeepPotComputeMixedType_variant(DP_DeepPot* dp,
       dp, dp->dp.compute_mixed_type(e, f, v, ae, av, nframes, coord_, atype_,
                                     cell_, fparam_, aparam_));
   // copy from C++ vectors to C arrays, if not NULL pointer
-  if (energy) std::copy(e.begin(), e.end(), energy);
-  if (force) std::copy(f.begin(), f.end(), force);
-  if (virial) std::copy(v.begin(), v.end(), virial);
-  if (atomic_energy) std::copy(ae.begin(), ae.end(), atomic_energy);
-  if (atomic_virial) std::copy(av.begin(), av.end(), atomic_virial);
+  if (energy) {
+    std::copy(e.begin(), e.end(), energy);
+  }
+  if (force) {
+    std::copy(f.begin(), f.end(), force);
+  }
+  if (virial) {
+    std::copy(v.begin(), v.end(), virial);
+  }
+  if (atomic_energy) {
+    std::copy(ae.begin(), ae.end(), atomic_energy);
+  }
+  if (atomic_virial) {
+    std::copy(av.begin(), av.end(), atomic_virial);
+  }
 }
 
 template void DP_DeepPotComputeMixedType_variant<double>(DP_DeepPot* dp,
@@ -385,7 +415,9 @@ void DP_DeepPotModelDeviComputeNList_variant(DP_DeepPotModelDevi* dp,
                                              VALUETYPE* virial,
                                              VALUETYPE* atomic_energy,
                                              VALUETYPE* atomic_virial) {
-  if (nframes > 1) throw std::runtime_error("nframes > 1 not supported yet");
+  if (nframes > 1) {
+    throw std::runtime_error("nframes > 1 not supported yet");
+  }
   // init C++ vectors from C arrays
   std::vector<VALUETYPE> coord_(coord, coord + natoms * 3);
   std::vector<int> atype_(atype, atype + natoms);
@@ -585,16 +617,26 @@ inline void DP_DeepTensorCompute_variant(DP_DeepTensor* dt,
 
   DP_REQUIRES_OK(dt, dt->dt.compute(t, f, v, at, av, coord_, atype_, cell_));
   // copy from C++ vectors to C arrays, if not NULL pointer
-  if (global_tensor) std::copy(t.begin(), t.end(), global_tensor);
-  if (force) std::copy(f.begin(), f.end(), force);
-  if (virial) std::copy(v.begin(), v.end(), virial);
-  if (atomic_virial) std::copy(av.begin(), av.end(), atomic_virial);
+  if (global_tensor) {
+    std::copy(t.begin(), t.end(), global_tensor);
+  }
+  if (force) {
+    std::copy(f.begin(), f.end(), force);
+  }
+  if (virial) {
+    std::copy(v.begin(), v.end(), virial);
+  }
+  if (atomic_virial) {
+    std::copy(av.begin(), av.end(), atomic_virial);
+  }
   // do not know the size of atomic tensor in advance...
   if (atomic_tensor) {
     *atomic_tensor = new VALUETYPE[at.size()];
     std::copy(at.begin(), at.end(), *atomic_tensor);
   }
-  if (size_at) *size_at = at.size();
+  if (size_at) {
+    *size_at = at.size();
+  }
 }
 
 template void DP_DeepTensorCompute_variant<double>(DP_DeepTensor* dt,
@@ -648,16 +690,26 @@ inline void DP_DeepTensorComputeNList_variant(DP_DeepTensor* dt,
   DP_REQUIRES_OK(dt, dt->dt.compute(t, f, v, at, av, coord_, atype_, cell_,
                                     nghost, nlist->nl));
   // copy from C++ vectors to C arrays, if not NULL pointer
-  if (global_tensor) std::copy(t.begin(), t.end(), global_tensor);
-  if (force) std::copy(f.begin(), f.end(), force);
-  if (virial) std::copy(v.begin(), v.end(), virial);
-  if (atomic_virial) std::copy(av.begin(), av.end(), atomic_virial);
+  if (global_tensor) {
+    std::copy(t.begin(), t.end(), global_tensor);
+  }
+  if (force) {
+    std::copy(f.begin(), f.end(), force);
+  }
+  if (virial) {
+    std::copy(v.begin(), v.end(), virial);
+  }
+  if (atomic_virial) {
+    std::copy(av.begin(), av.end(), atomic_virial);
+  }
   // do not know the size of atomic tensor in advance...
   if (atomic_tensor) {
     *atomic_tensor = new VALUETYPE[at.size()];
     std::copy(at.begin(), at.end(), *atomic_tensor);
   }
-  if (size_at) *size_at = at.size();
+  if (size_at) {
+    *size_at = at.size();
+  }
 }
 
 template void DP_DeepTensorComputeNList_variant<double>(DP_DeepTensor* dt,
@@ -721,8 +773,12 @@ inline void DP_DipoleChargeModifierComputeNList_variant(
   DP_REQUIRES_OK(dcm, dcm->dcm.compute(df, dv, coord_, atype_, cell_, pairs_,
                                        delef_, nghost, nlist->nl));
   // copy from C++ vectors to C arrays, if not NULL pointer
-  if (dfcorr_) std::copy(df.begin(), df.end(), dfcorr_);
-  if (dvcorr_) std::copy(dv.begin(), dv.end(), dvcorr_);
+  if (dfcorr_) {
+    std::copy(df.begin(), df.end(), dfcorr_);
+  }
+  if (dvcorr_) {
+    std::copy(dv.begin(), dv.end(), dvcorr_);
+  }
 }
 
 template void DP_DipoleChargeModifierComputeNList_variant<double>(
@@ -1316,10 +1372,18 @@ void DP_SelectByType(const int natoms,
   int nghost_real_;
   deepmd::select_by_type(fwd_map_, bkw_map_, nghost_real_,
                          std::vector<double>(), atype_, nghost, sel_type_);
-  if (fwd_map) std::copy(fwd_map_.begin(), fwd_map_.end(), fwd_map);
-  if (bkw_map) std::copy(bkw_map_.begin(), bkw_map_.end(), bkw_map);
-  if (nreal) *nreal = bkw_map_.size();
-  if (nghost_real) *nghost_real = nghost_real_;
+  if (fwd_map) {
+    std::copy(fwd_map_.begin(), fwd_map_.end(), fwd_map);
+  }
+  if (bkw_map) {
+    std::copy(bkw_map_.begin(), bkw_map_.end(), bkw_map);
+  }
+  if (nreal) {
+    *nreal = bkw_map_.size();
+  }
+  if (nghost_real) {
+    *nghost_real = nghost_real_;
+  }
 }
 
 void DP_SelectMapInt(const int* in,
@@ -1332,7 +1396,9 @@ void DP_SelectMapInt(const int* in,
   std::vector<int> fwd_map_(fwd_map, fwd_map + nall1);
   std::vector<int> out_(stride * nall2);
   deepmd::select_map(out_, in_, fwd_map_, stride);
-  if (out) std::copy(out_.begin(), out_.end(), out);
+  if (out) {
+    std::copy(out_.begin(), out_.end(), out);
+  }
 }
 
 }  // extern "C"

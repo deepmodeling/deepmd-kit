@@ -79,13 +79,14 @@ static int stringCmp(const void *a, const void *b) {
   char *n = (char *)b;
   int i, sum = 0;
 
-  for (i = 0; i < MPI_MAX_PROCESSOR_NAME; i++)
-    if (m[i] == n[i])
+  for (i = 0; i < MPI_MAX_PROCESSOR_NAME; i++) {
+    if (m[i] == n[i]) {
       continue;
-    else {
+    } else {
       sum = m[i] - n[i];
       break;
     }
+  }
   return sum;
 }
 
@@ -109,9 +110,10 @@ int PairDeepMD::get_node_rank() {
 
   strcpy(host_names[rank], host_name);
 
-  for (n = 0; n < nprocs; n++)
+  for (n = 0; n < nprocs; n++) {
     MPI_Bcast(&(host_names[n]), MPI_MAX_PROCESSOR_NAME, MPI_CHAR, n,
               MPI_COMM_WORLD);
+  }
   qsort(host_names, nprocs, sizeof(char[MPI_MAX_PROCESSOR_NAME]), stringCmp);
 
   color = 0;
@@ -172,13 +174,19 @@ static void ana_st(double &max,
                    double &sum,
                    const vector<double> &vec,
                    const int &nloc) {
-  if (nloc == 0) return;
+  if (nloc == 0) {
+    return;
+  }
   max = vec[0];
   min = vec[0];
   sum = vec[0];
   for (unsigned ii = 1; ii < nloc; ++ii) {
-    if (vec[ii] > max) max = vec[ii];
-    if (vec[ii] < min) min = vec[ii];
+    if (vec[ii] > max) {
+      max = vec[ii];
+    }
+    if (vec[ii] < min) {
+      min = vec[ii];
+    }
     sum += vec[ii];
   }
 }
@@ -240,14 +248,16 @@ void PairDeepMD::make_ttm_fparam(vector<double> &fparam) {
   double total_Te = 0;
 
   // loop over grids to get average electron temperature
-  for (int ixnode = 0; ixnode < nxnodes; ixnode++)
-    for (int iynode = 0; iynode < nynodes; iynode++)
+  for (int ixnode = 0; ixnode < nxnodes; ixnode++) {
+    for (int iynode = 0; iynode < nynodes; iynode++) {
       for (int iznode = 0; iznode < nznodes; iznode++) {
         if (T_electron[ixnode][iynode][iznode] != 0) {
           numb_effective_nodes += 1;
           total_Te += T_electron[ixnode][iynode][iznode];
         }
       }
+    }
+  }
 
   fparam[0] = total_Te / numb_effective_nodes;
 }
@@ -287,12 +297,24 @@ void PairDeepMD::make_ttm_aparam(vector<double> &daparam) {
       int ixnode = static_cast<int>(xscale * nxnodes);
       int iynode = static_cast<int>(yscale * nynodes);
       int iznode = static_cast<int>(zscale * nznodes);
-      while (ixnode > nxnodes - 1) ixnode -= nxnodes;
-      while (iynode > nynodes - 1) iynode -= nynodes;
-      while (iznode > nznodes - 1) iznode -= nznodes;
-      while (ixnode < 0) ixnode += nxnodes;
-      while (iynode < 0) iynode += nynodes;
-      while (iznode < 0) iznode += nznodes;
+      while (ixnode > nxnodes - 1) {
+        ixnode -= nxnodes;
+      }
+      while (iynode > nynodes - 1) {
+        iynode -= nynodes;
+      }
+      while (iznode > nznodes - 1) {
+        iznode -= nznodes;
+      }
+      while (ixnode < 0) {
+        ixnode += nxnodes;
+      }
+      while (iynode < 0) {
+        iynode += nynodes;
+      }
+      while (iznode < 0) {
+        iznode += nznodes;
+      }
       daparam[ii] = T_electron[ixnode][iynode][iznode];
     }
   }
@@ -310,7 +332,9 @@ PairDeepMD::PairDeepMD(LAMMPS *lmp)
     : Pair(lmp)
 
 {
-  if (lmp->citeme) lmp->citeme->add(cite_user_deepmd_package);
+  if (lmp->citeme) {
+    lmp->citeme->add(cite_user_deepmd_package);
+  }
   if (strcmp(update->unit_style, "metal") != 0) {
     error->all(
         FLERR,
@@ -386,12 +410,17 @@ PairDeepMD::~PairDeepMD() {
 }
 
 void PairDeepMD::compute(int eflag, int vflag) {
-  if (numb_models == 0) return;
-  if (eflag || vflag) ev_setup(eflag, vflag);
-  if (vflag_atom)
+  if (numb_models == 0) {
+    return;
+  }
+  if (eflag || vflag) {
+    ev_setup(eflag, vflag);
+  }
+  if (vflag_atom) {
     error->all(FLERR,
                "6-element atomic virial is not supported. Use compute "
                "centroid/stress/atom command for 9-element atomic virial.");
+  }
   bool do_ghost = true;
 
   double **x = atom->x;
@@ -537,7 +566,9 @@ void PairDeepMD::compute(int eflag, int vflag) {
           }
         }
         if (eflag_atom) {
-          for (int ii = 0; ii < nlocal; ++ii) eatom[ii] += deatom[ii];
+          for (int ii = 0; ii < nlocal; ++ii) {
+            eatom[ii] += deatom[ii];
+          }
         }
         // Added by Davide Tisi 2020
         // interface the atomic virial computed by DeepMD
@@ -587,7 +618,9 @@ void PairDeepMD::compute(int eflag, int vflag) {
       deatom = all_atom_energy[0];
       dvatom = all_atom_virial[0];
       if (eflag_atom) {
-        for (int ii = 0; ii < nlocal; ++ii) eatom[ii] += deatom[ii];
+        for (int ii = 0; ii < nlocal; ++ii) {
+          eatom[ii] += deatom[ii];
+        }
       }
       // Added by Davide Tisi 2020
       // interface the atomic virial computed by DeepMD
@@ -693,8 +726,9 @@ void PairDeepMD::compute(int eflag, int vflag) {
           }
           MPI_Gather(&nlocal, 1, MPI_INT, counts, 1, MPI_INT, 0, world);
           displacements[0] = 0;
-          for (int ii = 0; ii < nprocs - 1; ii++)
+          for (int ii = 0; ii < nprocs - 1; ii++) {
             displacements[ii + 1] = displacements[ii] + counts[ii];
+          }
           MPI_Gatherv(tagsend, nlocal, MPI_LMP_TAGINT, tagrecv, counts,
                       displacements, MPI_LMP_TAGINT, 0, world);
           MPI_Gatherv(stdfsend, nlocal, MPI_DOUBLE, stdfrecv, counts,
@@ -759,7 +793,9 @@ void PairDeepMD::compute(int eflag, int vflag) {
   }
 
   // accumulate energy and virial
-  if (eflag) eng_vdwl += scale[1][1] * dener;
+  if (eflag) {
+    eng_vdwl += scale[1][1] * dener;
+  }
   if (vflag) {
     virial[0] += 1.0 * dvirial[0] * scale[1][1];
     virial[1] += 1.0 * dvirial[4] * scale[1][1];
@@ -785,9 +821,13 @@ void PairDeepMD::allocate() {
     }
   }
   for (int i = 1; i <= numb_types; ++i) {
-    if (i > n) continue;
+    if (i > n) {
+      continue;
+    }
     for (int j = i; j <= numb_types; ++j) {
-      if (j > n) continue;
+      if (j > n) {
+        continue;
+      }
       setflag[i][j] = 1;
       scale[i][j] = 1;
     }
@@ -817,7 +857,9 @@ static bool is_key(const string &input) {
 }
 
 void PairDeepMD::settings(int narg, char **arg) {
-  if (narg <= 0) error->all(FLERR, "Illegal pair_style command");
+  if (narg <= 0) {
+    error->all(FLERR, "Illegal pair_style command");
+  }
 
   vector<string> models;
   int iarg = 0;
@@ -875,11 +917,15 @@ void PairDeepMD::settings(int narg, char **arg) {
                  "Illegal pair_style command\nwrong number of parameters\n");
     }
     if (string(arg[iarg]) == string("out_freq")) {
-      if (iarg + 1 >= narg) error->all(FLERR, "Illegal out_freq, not provided");
+      if (iarg + 1 >= narg) {
+        error->all(FLERR, "Illegal out_freq, not provided");
+      }
       out_freq = atoi(arg[iarg + 1]);
       iarg += 2;
     } else if (string(arg[iarg]) == string("out_file")) {
-      if (iarg + 1 >= narg) error->all(FLERR, "Illegal out_file, not provided");
+      if (iarg + 1 >= narg) {
+        error->all(FLERR, "Illegal out_file, not provided");
+      }
       out_file = string(arg[iarg + 1]);
       iarg += 2;
     } else if (string(arg[iarg]) == string("fparam")) {
@@ -964,7 +1010,9 @@ void PairDeepMD::settings(int narg, char **arg) {
     }
   }
 
-  if (out_freq < 0) error->all(FLERR, "Illegal out_freq, should be >= 0");
+  if (out_freq < 0) {
+    error->all(FLERR, "Illegal out_freq, should be >= 0");
+  }
   if (do_ttm && aparam.size() > 0) {
     error->all(FLERR, "aparam and ttm should NOT be set simultaneously");
   }
@@ -1159,7 +1207,9 @@ double PairDeepMD::init_one(int i, int j) {
     error->warning(FLERR, warning_msg);
   }
 
-  if (setflag[i][j] == 0) scale[i][j] = 1.0;
+  if (setflag[i][j] == 0) {
+    scale[i][j] = 1.0;
+  }
   scale[j][i] = scale[i][j];
 
   return cutoff;
@@ -1245,10 +1295,11 @@ void PairDeepMD::extend(int &extend_inum,
   std::map<int, int>::iterator iter = loc_type_count.begin();
   for (int i = 0; i < nloc; i++) {
     iter = loc_type_count.find(atype[i]);
-    if (iter != loc_type_count.end())
+    if (iter != loc_type_count.end()) {
       iter->second += 1;
-    else
+    } else {
       loc_type_count.insert(pair<int, int>(atype[i], 1));
+    }
   }
   assert(numb_types_real - 1 == loc_type_count.rbegin()->first);
   int nloc_virt = 0;
@@ -1260,10 +1311,11 @@ void PairDeepMD::extend(int &extend_inum,
   std::map<int, int> ghost_type_count;
   for (int i = nloc; i < nall; i++) {
     iter = ghost_type_count.find(atype[i]);
-    if (iter != ghost_type_count.end())
+    if (iter != ghost_type_count.end()) {
       iter->second += 1;
-    else
+    } else {
       ghost_type_count.insert(pair<int, int>(atype[i], 1));
+    }
   }
   int nghost_virt = 0;
   for (int i = 0; i < numb_types_spin; i++) {

@@ -24,7 +24,9 @@ Convert<VALUETYPE>::Convert(const vector<string>& atomname,
     sorting[ii] = pair<int, pair<int, VALUETYPE> >(
         atype[ii], pair<int, VALUETYPE>(ii, amass[ii]));
   }
-  if (sort_) sort(sorting.begin(), sorting.end());
+  if (sort_) {
+    sort(sorting.begin(), sorting.end());
+  }
   idx_map_nnp2gro.resize(natoms);
   idx_map_gro2nnp.resize(natoms);
   for (unsigned ii = 0; ii < idx_map_nnp2gro.size(); ++ii) {

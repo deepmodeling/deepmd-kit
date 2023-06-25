@@ -53,7 +53,9 @@ void XtcSaver::save(const int &step,
     tmpBox[dd][dd] = box[3 * dd + dd];
   }
   for (int ii = 0; ii < frame.size(); ++ii) {
-    for (int dd = 0; dd < 3; ++dd) xx[ii][dd] = frame[ii][dd];
+    for (int dd = 0; dd < 3; ++dd) {
+      xx[ii][dd] = frame[ii][dd];
+    }
   }
   write_xtc(xd, natoms, step, time, tmpBox, xx, prec);
 }
@@ -114,7 +116,9 @@ void TrrSaver::save(const int &step,
     }
   }
   for (int ii = 0; ii < ixx.size(); ++ii) {
-    for (int dd = 0; dd < 3; ++dd) xx[ii][dd] = ixx[ii][dd];
+    for (int dd = 0; dd < 3; ++dd) {
+      xx[ii][dd] = ixx[ii][dd];
+    }
   }
   for (int ii = 0; ii < natoms; ++ii) {
     for (int dd = 0; dd < 3; ++dd) {
@@ -123,10 +127,14 @@ void TrrSaver::save(const int &step,
     }
   }
   for (int ii = 0; ii < ivv.size(); ++ii) {
-    for (int dd = 0; dd < 3; ++dd) vv[ii][dd] = ivv[ii][dd];
+    for (int dd = 0; dd < 3; ++dd) {
+      vv[ii][dd] = ivv[ii][dd];
+    }
   }
   for (int ii = 0; ii < iff.size(); ++ii) {
-    for (int dd = 0; dd < 3; ++dd) ff[ii][dd] = iff[ii][dd];
+    for (int dd = 0; dd < 3; ++dd) {
+      ff[ii][dd] = iff[ii][dd];
+    }
   }
   write_trr(xd, natoms, step, time, lambda, tmpBox, xx, vv, ff);
 }

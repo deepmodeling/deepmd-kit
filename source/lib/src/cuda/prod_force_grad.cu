@@ -44,7 +44,9 @@ __global__ void force_grad_wrt_neighbors_a(FPTYPE* grad_net,
   if (j_idx < 0) {
     return;
   }
-  if (j_idx >= nloc) j_idx = j_idx % nloc;
+  if (j_idx >= nloc) {
+    j_idx = j_idx % nloc;
+  }
   const int kk = idx / nloc;  // frame index
   grad_net[idx * nnei * 4 + idy * 4 + idw] +=
       dev_dot(grad + kk * nloc * 3 + j_idx * 3,
@@ -69,7 +71,9 @@ __global__ void force_grad_wrt_neighbors_r(FPTYPE* grad_net,
   if (j_idx < 0) {
     return;
   }
-  if (j_idx >= nloc) j_idx = j_idx % nloc;
+  if (j_idx >= nloc) {
+    j_idx = j_idx % nloc;
+  }
   const int kk = idx / nloc;  // frame index
   grad_net[idx * nnei + idy] += dev_dot(grad + kk * nloc * 3 + j_idx * 3,
                                         env_deriv + idx * nnei * 3 + idy * 3);

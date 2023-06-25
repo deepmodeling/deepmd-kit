@@ -31,8 +31,12 @@ class TestSelectMap : public ::testing::Test {
     EXPECT_EQ(natoms, fwd_map_1.size());
     EXPECT_EQ(4, expected_atype_out_1.size());
 
-    for (int ii = 0; ii < 2; ii++) atype_out_0.push_back(0);
-    for (int ii = 0; ii < 4; ii++) atype_out_1.push_back(0);
+    for (int ii = 0; ii < 2; ii++) {
+      atype_out_0.push_back(0);
+    }
+    for (int ii = 0; ii < 4; ii++) {
+      atype_out_1.push_back(0);
+    }
   }
 };
 

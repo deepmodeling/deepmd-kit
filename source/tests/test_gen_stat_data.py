@@ -28,7 +28,7 @@ def gen_sys(nframes, atom_types):
     data["forces"] = np.random.random([nframes, natoms, 3])
     data["cells"] = np.random.random([nframes, 9])
     data["energies"] = np.random.random([nframes, 1])
-    types = list(set(list(atom_types)))
+    types = list(set(atom_types))
     types.sort()
     data["atom_names"] = []
     data["atom_numbs"] = []

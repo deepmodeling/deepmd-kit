@@ -62,14 +62,17 @@ FixDPLR::FixDPLR(LAMMPS *lmp, int narg, char **arg)
                  "Illegal pair_style command\nwrong number of parameters\n");
     }
     if (string(arg[iarg]) == string("model")) {
-      if (iarg + 1 > narg) error->all(FLERR, "Illegal fix adapt command");
+      if (iarg + 1 > narg) {
+        error->all(FLERR, "Illegal fix adapt command");
+      }
       model = string(arg[iarg + 1]);
       iarg += 2;
     } else if (string(arg[iarg]) == string("efield")) {
-      if (iarg + 3 > narg)
+      if (iarg + 3 > narg) {
         error->all(FLERR,
                    "Illegal fix adapt command, efield should be provided 3 "
                    "float numbers");
+      }
       efield[0] = atof(arg[iarg + 1]);
       efield[1] = atof(arg[iarg + 2]);
       efield[2] = atof(arg[iarg + 3]);
