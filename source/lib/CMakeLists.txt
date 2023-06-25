@@ -16,7 +16,7 @@ if(USE_CUDA_TOOLKIT)
   target_link_libraries(${libname} INTERFACE deepmd_dyn_cudart ${EXTRA_LIBS})
   # gpu_cuda.h
   target_include_directories(
-    ${libname} PUBLIC $<BUILD_INTERFACE:${CUDA_INCLUDE_DIRS}>
+    ${libname} PUBLIC $<BUILD_INTERFACE:${CUDAToolkit_INCLUDE_DIRS}>
                       $<INSTALL_INTERFACE:include>)
 endif()
 

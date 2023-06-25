@@ -97,12 +97,10 @@ set(DP_VARIANT "cpu")
 
 # define USE_CUDA_TOOLKIT
 if(USE_CUDA_TOOLKIT)
-  set(CUDA_USE_STATIC_CUDA_RUNTIME
-      OFF
-      CACHE INTERNAL "")
-  find_package(CUDA REQUIRED)
+  find_package(CUDAToolkit REQUIRED)
+  set(CMAKE_CUDA_COMPILER ${CUDAToolkit_NVCC_EXECUTABLE})
   add_definitions("-DGOOGLE_CUDA")
-  message(STATUS "Found CUDA in ${CUDA_TOOLKIT_ROOT_DIR}, build nv GPU support")
+  message(STATUS "Found CUDA in ${CUDAToolkit_BIN_DIR}, build nv GPU support")
   set(DP_VARIANT "cuda")
 else()
   message(STATUS "Will not build nv GPU support")
