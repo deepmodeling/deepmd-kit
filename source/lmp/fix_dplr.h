@@ -72,7 +72,7 @@ class FixDPLR : public Fix {
   int efield_force_flag;
   void get_valid_pairs(std::vector<std::pair<int, int> > &pairs);
   int varflag;
-  char *xstr, *ystr, *zstr, *estr, *pstr;
+  char *xstr, *ystr, *zstr;
   int xvar, yvar, zvar, xstyle, ystyle, zstyle;
   double qe2f;
   void update_efield_variables();
