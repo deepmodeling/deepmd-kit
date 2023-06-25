@@ -5,8 +5,7 @@ project(deepmd_op_cuda)
 
 set(CMAKE_CUDA_ARCHITECTURES all)
 enable_language(CUDA)
-set(CMAKE_CUDA_STANDARD 11)
-set(CMAKE_CUDA_STANDARD_REQUIRED ON)
+set(CMAKE_CUDA_STANDARD ${CMAKE_CXX_STANDARD})
 add_compile_definitions(
   "$<$<COMPILE_LANGUAGE:CUDA>:_GLIBCXX_USE_CXX11_ABI=${OP_CXX_ABI}>")
 
