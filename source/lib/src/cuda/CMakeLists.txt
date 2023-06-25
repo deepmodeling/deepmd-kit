@@ -5,11 +5,8 @@ project(deepmd_op_cuda)
 
 set(CMAKE_CUDA_ARCHITECTURES all)
 enable_language(CUDA)
-if(NOT DEFINED CMAKE_CUDA_STANDARD)
-  # cub recommends c++14
-  set(CMAKE_CUDA_STANDARD 14)
-  set(CMAKE_CUDA_STANDARD_REQUIRED OFF)
-endif()
+set(CMAKE_CUDA_STANDARD 11)
+set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 
 find_package(CUDAToolkit REQUIRED)
 
