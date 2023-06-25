@@ -33,5 +33,7 @@ void StringOperation::split(const std::string& in,
     out.push_back(token);
     s.erase(0, pos + len);
   }
-  if (!s.empty()) out.push_back(s);
+  if (!s.empty()) {
+    out.push_back(s);
+  }
 }

@@ -19,8 +19,12 @@ int main() {
   DP_DeepPotCompute(dp, 3, coord, atype, cell, e, f, v, ae, av);
   // print results
   printf("energy: %f\n", *e);
-  for (int ii = 0; ii < 9; ++ii) printf("force[%d]: %f\n", ii, f[ii]);
-  for (int ii = 0; ii < 9; ++ii) printf("force[%d]: %f\n", ii, v[ii]);
+  for (int ii = 0; ii < 9; ++ii) {
+    printf("force[%d]: %f\n", ii, f[ii]);
+  }
+  for (int ii = 0; ii < 9; ++ii) {
+    printf("force[%d]: %f\n", ii, v[ii]);
+  }
   // free memory
   free(e);
   free(f);

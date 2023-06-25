@@ -30,9 +30,13 @@ inline void DPAssert(cudaError_t code,
               "`nvidia-smi`. "
               "The usage of GPUs is controlled by `CUDA_VISIBLE_DEVICES` "
               "environment variable.\n");
-      if (abort) throw deepmd::deepmd_exception_oom("CUDA Assert");
+      if (abort) {
+        throw deepmd::deepmd_exception_oom("CUDA Assert");
+      }
     }
-    if (abort) throw deepmd::deepmd_exception("CUDA Assert");
+    if (abort) {
+      throw deepmd::deepmd_exception("CUDA Assert");
+    }
   }
 }
 
@@ -58,9 +62,13 @@ inline void nborAssert(cudaError_t code,
               "`nvidia-smi`. "
               "The usage of GPUs is controlled by `CUDA_VISIBLE_DEVICES` "
               "environment variable.\n");
-      if (abort) throw deepmd::deepmd_exception_oom("CUDA Assert");
+      if (abort) {
+        throw deepmd::deepmd_exception_oom("CUDA Assert");
+      }
     }
-    if (abort) throw deepmd::deepmd_exception("CUDA Assert");
+    if (abort) {
+      throw deepmd::deepmd_exception("CUDA Assert");
+    }
   }
 }
 

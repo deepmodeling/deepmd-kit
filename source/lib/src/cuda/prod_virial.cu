@@ -21,7 +21,9 @@ __global__ void atom_virial_reduction(FPTYPE* virial,
     __syncthreads();
   }
   // write result for this block to global memory
-  if (tid == 0) virial[bid] = data[0];
+  if (tid == 0) {
+    virial[bid] = data[0];
+  }
 }
 
 template <typename FPTYPE>

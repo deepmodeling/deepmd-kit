@@ -92,10 +92,13 @@ void XyzFileManager::getBoxSize(const string& file, vector<double>& boxsize) {
   boxsize.resize(9);
   fill(boxsize.begin(), boxsize.end(), 0.);
   if (words.size() == 3) {
-    for (int ii = 0; ii < 3; ++ii)
+    for (int ii = 0; ii < 3; ++ii) {
       boxsize[3 * ii + ii] = atof(words[ii].c_str());
+    }
   } else if (words.size() == 9) {
-    for (int ii = 0; ii < 9; ++ii) boxsize[ii] = atof(words[ii].c_str());
+    for (int ii = 0; ii < 9; ++ii) {
+      boxsize[ii] = atof(words[ii].c_str());
+    }
   } else {
     cerr << "XyzFileManager::getBoxSize: wrong format, line has "
          << words.size() << " words" << endl;

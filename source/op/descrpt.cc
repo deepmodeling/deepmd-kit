@@ -221,10 +221,11 @@ class DescrptOp : public OpKernel {
           compute_t inter[3];
           region.phys2Inter(inter, &d_coord3[3 * ii]);
           for (int dd = 0; dd < 3; ++dd) {
-            if (inter[dd] < 0)
+            if (inter[dd] < 0) {
               inter[dd] += 1.;
-            else if (inter[dd] >= 1)
+            } else if (inter[dd] >= 1) {
               inter[dd] -= 1.;
+            }
           }
           region.inter2Phys(&d_coord3[3 * ii], inter);
         }
@@ -232,7 +233,9 @@ class DescrptOp : public OpKernel {
 
       // set type
       std::vector<int> d_type(nall);
-      for (int ii = 0; ii < nall; ++ii) d_type[ii] = type(kk, ii);
+      for (int ii = 0; ii < nall; ++ii) {
+        d_type[ii] = type(kk, ii);
+      }
 
       // build nlist
       std::vector<std::vector<int> > d_nlist_a;
@@ -262,8 +265,9 @@ class DescrptOp : public OpKernel {
         std::vector<int> ext_stt = {mesh(7 - 1), mesh(8 - 1), mesh(9 - 1)};
         std::vector<int> ext_end = {mesh(10 - 1), mesh(11 - 1), mesh(12 - 1)};
         std::vector<int> global_grid(3);
-        for (int dd = 0; dd < 3; ++dd)
+        for (int dd = 0; dd < 3; ++dd) {
           global_grid[dd] = nat_end[dd] - nat_stt[dd];
+        }
         ::build_nlist(d_nlist_a, d_nlist_r, d_coord3, nloc, rcut_a, rcut_r,
                       nat_stt, nat_end, ext_stt, ext_end, region, global_grid);
       } else if (nei_mode == 1) {
@@ -493,15 +497,21 @@ class DescrptOp : public OpKernel {
       int excl_type = -(*(info_i + 1) + 1);
       int ntypes = sel_a.size();
       for (unsigned ii = 0; ii < ntypes; ++ii) {
-        if (ii == excl_type) continue;
+        if (ii == excl_type) {
+          continue;
+        }
         compute_t diff[3];
         int list_idx, jd;
         // push axis candidates into sort_info
         for (int count = 0; count < 3; ++count) {
           list_idx = sec_a[ii] + count;
-          if (list_idx >= sec_a[ii + 1]) continue;
+          if (list_idx >= sec_a[ii + 1]) {
+            continue;
+          }
           jd = nlist_a[list_idx];
-          if (jd < 0) continue;
+          if (jd < 0) {
+            continue;
+          }
           if (b_pbc) {
             region.diffNearestNeighbor(coord3[3 * id + 0], coord3[3 * id + 1],
                                        coord3[3 * id + 2], coord3[3 * jd + 0],
@@ -524,15 +534,21 @@ class DescrptOp : public OpKernel {
       int excl_type = -*(info_i + 1);
       int ntypes = sel_r.size();
       for (unsigned ii = 0; ii < ntypes; ++ii) {
-        if (ii == excl_type) continue;
+        if (ii == excl_type) {
+          continue;
+        }
         compute_t diff[3];
         int list_idx, jd;
         // push axis candidates for sort_info
         for (int count = 0; count < 3; ++count) {
           list_idx = sec_r[ii] + count;
-          if (list_idx >= sec_r[ii + 1]) continue;
+          if (list_idx >= sec_r[ii + 1]) {
+            continue;
+          }
           jd = nlist_r[list_idx];
-          if (jd < 0) continue;
+          if (jd < 0) {
+            continue;
+          }
           if (b_pbc) {
             region.diffNearestNeighbor(coord3[3 * id + 0], coord3[3 * id + 1],
                                        coord3[3 * id + 2], coord3[3 * jd + 0],
