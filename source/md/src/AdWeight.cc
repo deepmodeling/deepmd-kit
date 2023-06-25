@@ -131,7 +131,9 @@ void AdWeight::force_intpl(vector<VALUETYPE>& of,
   for (int ii = 0; ii < nall; ++ii) {
     for (int dd = 0; dd < 3; ++dd) {
       double pref = (1 - weight[ii]);
-      if (fabs(pref) < protect_level) pref = protect_level;
+      if (fabs(pref) < protect_level) {
+        pref = protect_level;
+      }
       of[ii * 3 + dd] += pref * ff_bd_force[ii * 3 + dd];
       // if (fabs(ff_bd_force[ii*3+dd]) > 1e6) {
       // 	cout << " ii " << ii

@@ -26,10 +26,14 @@ __device__ inline int compute_pbc_shift(int idx, int ncell) {
   int shift = 0;
   if (idx < 0) {
     shift = 1;
-    while (idx + shift * ncell < 0) shift++;
+    while (idx + shift * ncell < 0) {
+      shift++;
+    }
   } else if (idx >= ncell) {
     shift = -1;
-    while (idx + shift * ncell >= ncell) shift--;
+    while (idx + shift * ncell >= ncell) {
+      shift--;
+    }
   }
   return shift;
 }
@@ -51,7 +55,9 @@ __global__ void normalize_one(FPTYPE *out_c,
   phys2Inter(inter, out_c + idy * 3, rec_boxt);
   for (int dd = 0; dd < 3; ++dd) {
     inter[dd] = _fmod(inter[dd], (FPTYPE)1.);
-    if (inter[dd] < (FPTYPE)0.) inter[dd] += (FPTYPE)1.;
+    if (inter[dd] < (FPTYPE)0.) {
+      inter[dd] += (FPTYPE)1.;
+    }
   }
   inter2Phys(out_c + idy * 3, inter, boxt);
 }
@@ -86,7 +92,9 @@ __global__ void _fill_idx_cellmap(int *idx_cellmap,
     phys2Inter(inter, in_c + idy * 3, rec_boxt);
     for (int dd = 0; dd < 3; ++dd) {
       idx_noshift[dd] = (inter[dd] - nat_orig[dd]) / cell_size[dd];
-      if (inter[dd] - nat_orig[dd] < 0.) idx_noshift[dd]--;
+      if (inter[dd] - nat_orig[dd] < 0.) {
+        idx_noshift[dd]--;
+      }
       if (idx_noshift[dd] < nat_stt[dd]) {
         idx_noshift[dd] = nat_stt[dd];
       } else if (idx_noshift[dd] >= nat_end[dd]) {
@@ -145,14 +153,18 @@ __global__ void _fill_total_cellnum_map(int *total_cellnum_map,
     shift[1] = compute_pbc_shift(idx[1], global_grid[1]);
     shift[2] = compute_pbc_shift(idx[2], global_grid[2]);
     bool loc = false;
-    if (shift[0] == 0 && shift[1] == 0 && shift[2] == 0) loc = true;
+    if (shift[0] == 0 && shift[1] == 0 && shift[2] == 0) {
+      loc = true;
+    }
     for (int dd = 0; dd < 3; dd++) {
       idx[dd] += shift[dd] * global_grid[dd];
     }
     int orig_idy = collapse_index(idx, global_grid);
     mask_cellnum_map[idy] = loc_cellnum_map[orig_idy];
     total_cellnum_map[idy] = mask_cellnum_map[idy];
-    if (loc) mask_cellnum_map[idy] = 0;
+    if (loc) {
+      mask_cellnum_map[idy] = 0;
+    }
     cell_map[idy] = orig_idy;
   }
 }
@@ -205,10 +217,11 @@ __global__ void _copy_coord(FPTYPE *out_c,
     int shift[3];
     FPTYPE d_shift[3];
     for (int ii = 0; ii < total_cellnum; ii++) {
-      if (idy >= sec_total_cellnum_map[ii + 1])
+      if (idy >= sec_total_cellnum_map[ii + 1]) {
         cell_idx++;
-      else
+      } else {
         break;
+      }
     }
     for (int dd = 0; dd < 3; dd++) {
       shift[dd] = cell_shift_map[cell_idx * 3 + dd];

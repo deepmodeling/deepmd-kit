@@ -152,7 +152,9 @@ TEST_F(TestEnvMatR, orig_cpy_num_deriv) {
 
     for (int jj = 0; jj < sec_a[2]; ++jj) {
       int j_idx = fmt_nlist_a[jj];
-      if (j_idx < 0) continue;
+      if (j_idx < 0) {
+        continue;
+      }
       for (int dd = 0; dd < 3; ++dd) {
         std::vector<double> posi_0 = posi_cpy;
         std::vector<double> posi_1 = posi_cpy;
@@ -239,7 +241,9 @@ TEST_F(TestEnvMatR, cpu_num_deriv) {
 
     for (int jj = 0; jj < sec_a[2]; ++jj) {
       int j_idx = fmt_nlist_a[jj];
-      if (j_idx < 0) continue;
+      if (j_idx < 0) {
+        continue;
+      }
       for (int dd = 0; dd < 3; ++dd) {
         std::vector<double> posi_0 = posi_cpy;
         std::vector<double> posi_1 = posi_cpy;

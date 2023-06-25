@@ -51,7 +51,9 @@ void deepmd::prod_force_a_cpu(FPTYPE* force,
     // deriv wrt neighbors
     for (int jj = 0; jj < nnei; ++jj) {
       int j_idx = nlist[i_idx * nnei + jj];
-      if (j_idx < 0) continue;
+      if (j_idx < 0) {
+        continue;
+      }
       int aa_start, aa_end;
       make_index_range(aa_start, aa_end, jj, nnei);
       for (int aa = aa_start; aa < aa_end; ++aa) {
@@ -160,7 +162,9 @@ void deepmd::prod_force_r_cpu(FPTYPE* force,
     for (int jj = 0; jj < nnei; ++jj) {
       int j_idx = nlist[i_idx * nnei + jj];
       // if (j_idx > nloc) j_idx = j_idx % nloc;
-      if (j_idx < 0) continue;
+      if (j_idx < 0) {
+        continue;
+      }
       force[kk * nall * 3 + j_idx * 3 + 0] +=
           net_deriv[i_idx * ndescrpt + jj] *
           env_deriv[i_idx * ndescrpt * 3 + jj * 3 + 0];

@@ -27,8 +27,12 @@ void deepmd::soft_min_switch_force_grad_cpu(FPTYPE* grad_net,
     // deriv wrt center atom
     for (int jj = 0; jj < nnei; ++jj) {
       int j_idx = nlist[i_idx * nnei + jj];
-      if (j_idx >= nloc) j_idx = j_idx % nloc;
-      if (j_idx < 0) continue;
+      if (j_idx >= nloc) {
+        j_idx = j_idx % nloc;
+      }
+      if (j_idx < 0) {
+        continue;
+      }
       int rij_idx_shift = (ii * nnei + jj) * 3;
       grad_net[i_idx] += grad[i_idx * 3 + 0] * sw_deriv[rij_idx_shift + 0];
       grad_net[i_idx] += grad[i_idx * 3 + 1] * sw_deriv[rij_idx_shift + 1];
