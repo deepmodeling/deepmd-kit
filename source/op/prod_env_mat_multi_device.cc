@@ -1147,6 +1147,12 @@ class ProdEnvMatAMixOp : public OpKernel {
                    context->allocate_output(context_output_index++, nmask_shape,
                                             &nmask_tensor));
 
+    Tensor fake_type_tensor;  // all zeros
+    TensorShape fake_type_shape;
+    fake_type_shape.AddDim(nsamples * nall);
+    OP_REQUIRES_OK(context, context->allocate_temp(DT_INT32, fake_type_shape,
+                                                   &fake_type_tensor));
+
     FPTYPE* p_em = descrpt_tensor->flat<FPTYPE>().data();
     FPTYPE* p_em_deriv = descrpt_deriv_tensor->flat<FPTYPE>().data();
     FPTYPE* p_rij = rij_tensor->flat<FPTYPE>().data();
@@ -1158,6 +1164,20 @@ class ProdEnvMatAMixOp : public OpKernel {
     const FPTYPE* avg = avg_tensor.flat<FPTYPE>().data();
     const FPTYPE* std = std_tensor.flat<FPTYPE>().data();
     const int* p_type = type_tensor.flat<int>().data();
+    int* p_f_type = fake_type_tensor.flat<int>().data();
+
+    if (device == "GPU") {
+#if GOOGLE_CUDA
+      deepmd::filter_ftype_gpu_cuda(p_f_type, p_type, nsamples * nall);
+#endif
+#if TENSORFLOW_USE_ROCM
+      deepmd::filter_ftype_gpu_rocm(p_f_type, p_type, nsamples * nall);
+#endif
+    } else if (device == "CPU") {
+      for (int ii = 0; ii < nsamples * nall; ii++) {
+        p_f_type[ii] = (p_type[ii] < 0) ? -1 : 0;
+      }
+    }
 
     // loop over samples
     for (int_64 ff = 0; ff < nsamples; ++ff) {
@@ -1170,6 +1190,7 @@ class ProdEnvMatAMixOp : public OpKernel {
       const FPTYPE* coord = p_coord + ff * nall * 3;
       const FPTYPE* box = p_box + ff * 9;
       const int* type = p_type + ff * nall;
+      const int* f_type = p_f_type + ff * nall;
 
       if (device == "GPU") {
 #if GOOGLE_CUDA
@@ -1183,13 +1204,6 @@ class ProdEnvMatAMixOp : public OpKernel {
         int frame_nall = nall;
         int mesh_tensor_size = static_cast<int>(mesh_tensor.NumElements());
         std::vector<Tensor> tensor_list(7);
-        Tensor fake_type;  // all zeros
-        TensorShape fake_type_shape;
-        fake_type_shape.AddDim(nall);
-        OP_REQUIRES_OK(context, context->allocate_temp(
-                                    DT_INT32, fake_type_shape, &fake_type));
-        deepmd::filter_ftype_gpu_cuda(fake_type.flat<int>().data(), type, nall);
-        const int* f_type = fake_type.flat<int>().data();
         // prepare coord and nlist
         _prepare_coord_nlist_gpu<FPTYPE>(
             context, &tensor_list[0], &coord, coord_cpy, &f_type, type_cpy,
@@ -1234,13 +1248,6 @@ class ProdEnvMatAMixOp : public OpKernel {
         int frame_nall = nall;
         int mesh_tensor_size = static_cast<int>(mesh_tensor.NumElements());
         std::vector<Tensor> tensor_list(7);
-        Tensor fake_type;  // all zeros
-        TensorShape fake_type_shape;
-        fake_type_shape.AddDim(nall);
-        OP_REQUIRES_OK(context, context->allocate_temp(
-                                    DT_INT32, fake_type_shape, &fake_type));
-        deepmd::filter_ftype_gpu_rocm(fake_type.flat<int>().data(), type, nall);
-        const int* f_type = fake_type.flat<int>().data();
         // prepare coord and nlist
         _prepare_coord_nlist_gpu_rocm<FPTYPE>(
             context, &tensor_list[0], &coord, coord_cpy, &f_type, type_cpy,
@@ -1283,13 +1290,6 @@ class ProdEnvMatAMixOp : public OpKernel {
         std::vector<FPTYPE> coord_cpy;
         std::vector<int> type_cpy;
         int frame_nall = nall;
-        std::vector<int> fake_type(nall, 0);
-        for (int ii = 0; ii < nall; ii++) {
-          if (type[ii] < 0) {
-            fake_type[ii] = -1;
-          }
-        }
-        const int* f_type = &fake_type[0];
         // prepare coord and nlist
         _prepare_coord_nlist_cpu<FPTYPE>(
             context, &coord, coord_cpy, &f_type, type_cpy, idx_mapping, inlist,
