@@ -22,7 +22,9 @@ MaxShift::max_shift2(const vector<VALUETYPE>& coord,
     VALUETYPE diff[3];
     region.diffNearestNeighbor(&coord[ii * 3], &record[ii * 3], diff);
     VALUETYPE r2 = diff[0] * diff[0] + diff[1] * diff[1] + diff[2] * diff[2];
-    if (r2 > maxv) maxv = r2;
+    if (r2 > maxv) {
+      maxv = r2;
+    }
   }
 
   return maxv;

@@ -136,13 +136,19 @@ class ProdVirialOp : public OpKernel {
         int axis1_type = axis(axis_iter + i_idx * 4 + 2);
         int axis_0 = axis(axis_iter + i_idx * 4 + 1);
         int axis_1 = axis(axis_iter + i_idx * 4 + 3);
-        if (axis0_type == 1) axis_0 += n_a_sel;
-        if (axis1_type == 1) axis_1 += n_a_sel;
+        if (axis0_type == 1) {
+          axis_0 += n_a_sel;
+        }
+        if (axis1_type == 1) {
+          axis_1 += n_a_sel;
+        }
 
         // deriv wrt neighbors
         for (int jj = 0; jj < nnei; ++jj) {
           int j_idx = nlist(nlist_iter + i_idx * nnei + jj);
-          if (j_idx < 0) continue;
+          if (j_idx < 0) {
+            continue;
+          }
           if (jj == axis_0) {
             for (int aa = 0; aa < ndescrpt; ++aa) {
               FPTYPE pref = -1.0 * net_deriv(net_iter + i_idx * ndescrpt + aa);

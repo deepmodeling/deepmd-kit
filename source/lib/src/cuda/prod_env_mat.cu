@@ -129,7 +129,9 @@ __global__ void format_nlist_fill_a(uint_64* key,
   uint_64* key_in = key + idx * MAX_NBOR_SIZE;
   FPTYPE diff[3];
   const int& j_idx = nei_idx[idy];
-  if (type[j_idx] < 0) return;
+  if (type[j_idx] < 0) {
+    return;
+  }
   for (int dd = 0; dd < 3; dd++) {
     diff[dd] = coord[j_idx * 3 + dd] - coord[idx * 3 + dd];
   }
@@ -151,8 +153,9 @@ __global__ void fill_nei_iter(int* nei_iter_dev,
   int nei_type_cur = -1, nbor_idx_cur = 0;
   int nei_type_pre = -1, nbor_idx_pre = 0;
   if (col < max_nbor_size && key_out[col] != key_out[max_nbor_size - 1]) {
-    if (col >= 1)
+    if (col >= 1) {
       decoding_nbor_info(nei_type_pre, nbor_idx_pre, key_out[col - 1]);
+    }
     decoding_nbor_info(nei_type_cur, nbor_idx_cur, key_out[col]);
   }
   if (nei_type_cur != nei_type_pre) {
@@ -358,7 +361,9 @@ __global__ void compute_env_mat_a(FPTYPE* em,
   // <<<nloc, TPB>>>
   const int_64 bid = blockIdx.x;
   const unsigned int tid = threadIdx.x;
-  if (type[bid] < 0) return;
+  if (type[bid] < 0) {
+    return;
+  }
   if (tid >= nnei) {
     return;
   }

@@ -27,10 +27,11 @@ TF::meas(const VALUETYPE& xx) const {
     ff = 0;
   } else {
     int posi = int(xx / hh);
-    if (posi < 0)
+    if (posi < 0) {
       posi = 0;
-    else if (posi >= data.size() - 1)
+    } else if (posi >= data.size() - 1) {
       posi = data.size() - 2;
+    }
     Poly p;
     Interpolation::pieceLinearInterpol(posi * hh, (posi + 1) * hh, data[posi],
                                        data[posi + 1], p);

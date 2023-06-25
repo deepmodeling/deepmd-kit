@@ -119,10 +119,11 @@ class NeighborStatOp : public OpKernel {
         compute_t inter[3];
         region.phys2Inter(inter, &d_coord3[3 * ii]);
         for (int dd = 0; dd < 3; ++dd) {
-          if (inter[dd] < 0)
+          if (inter[dd] < 0) {
             inter[dd] += 1.;
-          else if (inter[dd] >= 1)
+          } else if (inter[dd] >= 1) {
             inter[dd] -= 1.;
+          }
         }
         region.inter2Phys(&d_coord3[3 * ii], inter);
       }
@@ -130,7 +131,9 @@ class NeighborStatOp : public OpKernel {
 
     // set type
     std::vector<int> d_type(nall);
-    for (int ii = 0; ii < nall; ++ii) d_type[ii] = type[ii];
+    for (int ii = 0; ii < nall; ++ii) {
+      d_type[ii] = type[ii];
+    }
 
     // build nlist
     std::vector<std::vector<int> > d_nlist_a;
@@ -180,10 +183,14 @@ class NeighborStatOp : public OpKernel {
 
 #pragma omp parallel for
     for (int ii = 0; ii < nloc; ii++) {
-      if (d_type[ii] < 0) continue;  // virtual atom
+      if (d_type[ii] < 0) {
+        continue;  // virtual atom
+      }
       for (int jj = 0; jj < d_nlist_r[ii].size(); jj++) {
         int type = d_type[d_nlist_r[ii][jj]];
-        if (type < 0) continue;  // virtual atom
+        if (type < 0) {
+          continue;  // virtual atom
+        }
         max_nbor_size[ii * ntypes + type] += 1;
         compute_t rij[3] = {
             d_coord3[d_nlist_r[ii][jj] * 3 + 0] - d_coord3[ii * 3 + 0],

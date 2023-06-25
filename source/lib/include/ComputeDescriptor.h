@@ -113,7 +113,9 @@ static void compute_dRdT(double (*dRdT)[9],
   for (int ii = 0; ii < 3; ++ii) {
     for (int jj = 0; jj < 3; ++jj) {
       dRdT0[ii * 3 + jj] = r1[ii] * r1[jj] / nr13;
-      if (ii == jj) dRdT0[ii * 3 + jj] -= 1. / nr1;
+      if (ii == jj) {
+        dRdT0[ii * 3 + jj] -= 1. / nr1;
+      }
     }
   }
 
@@ -129,7 +131,9 @@ static void compute_dRdT(double (*dRdT)[9],
     }
   }
   double tmpy[3];
-  for (int dd = 0; dd < 3; ++dd) tmpy[dd] = r2[dd] - r1dr2 / nr12 * r1[dd];
+  for (int dd = 0; dd < 3; ++dd) {
+    tmpy[dd] = r2[dd] - r1dr2 / nr12 * r1[dd];
+  }
   double ntmpy = sqrt(deepmd::dot3(tmpy, tmpy));
   double ydRdy[3] = {0};
   for (int ii = 0; ii < 3; ++ii) {
@@ -148,7 +152,9 @@ static void compute_dRdT(double (*dRdT)[9],
     double res[3];
     deepmd::cprod(dRdT0 + ii * 3, yy, dRdT2 + ii * 3);
     deepmd::cprod(xx, dRdT1 + ii * 3, res);
-    for (int dd = 0; dd < 3; ++dd) dRdT2[ii * 3 + dd] += res[dd];
+    for (int dd = 0; dd < 3; ++dd) {
+      dRdT2[ii * 3 + dd] += res[dd];
+    }
   }
 }
 
@@ -172,7 +178,9 @@ static void compute_dRdT_1(double (*dRdT)[9],
   for (int ii = 0; ii < 3; ++ii) {
     for (int jj = 0; jj < 3; ++jj) {
       dRdT0[ii * 3 + jj] = -r1[ii] * r1[jj] / nr13;
-      if (ii == jj) dRdT0[ii * 3 + jj] += 1. / nr1;
+      if (ii == jj) {
+        dRdT0[ii * 3 + jj] += 1. / nr1;
+      }
     }
   }
 
@@ -188,7 +196,9 @@ static void compute_dRdT_1(double (*dRdT)[9],
     }
   }
   double tmpy[3];
-  for (int dd = 0; dd < 3; ++dd) tmpy[dd] = r2[dd] - r1dr2 / nr12 * r1[dd];
+  for (int dd = 0; dd < 3; ++dd) {
+    tmpy[dd] = r2[dd] - r1dr2 / nr12 * r1[dd];
+  }
   double ntmpy = sqrt(deepmd::dot3(tmpy, tmpy));
   double ydRdy[3] = {0};
   for (int ii = 0; ii < 3; ++ii) {
@@ -207,7 +217,9 @@ static void compute_dRdT_1(double (*dRdT)[9],
     double res[3];
     deepmd::cprod(dRdT0 + ii * 3, yy, dRdT2 + ii * 3);
     deepmd::cprod(xx, dRdT1 + ii * 3, res);
-    for (int dd = 0; dd < 3; ++dd) dRdT2[ii * 3 + dd] += res[dd];
+    for (int dd = 0; dd < 3; ++dd) {
+      dRdT2[ii * 3 + dd] += res[dd];
+    }
   }
 }
 
@@ -243,7 +255,9 @@ static void compute_dRdT_2(double (*dRdT)[9],
     }
   }
   double tmpy[3];
-  for (int dd = 0; dd < 3; ++dd) tmpy[dd] = r2[dd] - r1dr2 / nr12 * r1[dd];
+  for (int dd = 0; dd < 3; ++dd) {
+    tmpy[dd] = r2[dd] - r1dr2 / nr12 * r1[dd];
+  }
   double ntmpy = sqrt(deepmd::dot3(tmpy, tmpy));
   double ydRdy[3] = {0};
   for (int ii = 0; ii < 3; ++ii) {
@@ -262,7 +276,9 @@ static void compute_dRdT_2(double (*dRdT)[9],
     double res[3];
     deepmd::cprod(dRdT0 + ii * 3, yy, dRdT2 + ii * 3);
     deepmd::cprod(xx, dRdT1 + ii * 3, res);
-    for (int dd = 0; dd < 3; ++dd) dRdT2[ii * 3 + dd] += res[dd];
+    for (int dd = 0; dd < 3; ++dd) {
+      dRdT2[ii * 3 + dd] += res[dd];
+    }
   }
 }
 
@@ -297,7 +313,9 @@ void compute_descriptor(std::vector<double> &descrpt_a,
   fill(rij_a.begin(), rij_a.end(), 0.0);
   for (int ii = 0; ii < int(sec_a.size()) - 1; ++ii) {
     for (int jj = sec_a[ii]; jj < sec_a[ii + 1]; ++jj) {
-      if (fmt_nlist_a[jj] < 0) break;
+      if (fmt_nlist_a[jj] < 0) {
+        break;
+      }
       sel_a_diff[jj].resize(3);
       const int &j_idx = fmt_nlist_a[jj];
       if (b_pbc) {
@@ -306,10 +324,13 @@ void compute_descriptor(std::vector<double> &descrpt_a,
             posi[i_idx * 3 + 0], posi[i_idx * 3 + 1], posi[i_idx * 3 + 2],
             sel_a_diff[jj][0], sel_a_diff[jj][1], sel_a_diff[jj][2]);
       } else {
-        for (int dd = 0; dd < 3; ++dd)
+        for (int dd = 0; dd < 3; ++dd) {
           sel_a_diff[jj][dd] = posi[j_idx * 3 + dd] - posi[i_idx * 3 + dd];
+        }
       }
-      for (int dd = 0; dd < 3; ++dd) rij_a[jj * 3 + dd] = sel_a_diff[jj][dd];
+      for (int dd = 0; dd < 3; ++dd) {
+        rij_a[jj * 3 + dd] = sel_a_diff[jj][dd];
+      }
     }
   }
 
@@ -318,7 +339,9 @@ void compute_descriptor(std::vector<double> &descrpt_a,
   fill(rij_r.begin(), rij_r.end(), 0.0);
   for (int ii = 0; ii < int(sec_r.size()) - 1; ++ii) {
     for (int jj = sec_r[ii]; jj < sec_r[ii + 1]; ++jj) {
-      if (fmt_nlist_r[jj] < 0) break;
+      if (fmt_nlist_r[jj] < 0) {
+        break;
+      }
       sel_r_diff[jj].resize(3);
       const int &j_idx = fmt_nlist_r[jj];
       if (b_pbc) {
@@ -327,10 +350,13 @@ void compute_descriptor(std::vector<double> &descrpt_a,
             posi[i_idx * 3 + 0], posi[i_idx * 3 + 1], posi[i_idx * 3 + 2],
             sel_r_diff[jj][0], sel_r_diff[jj][1], sel_r_diff[jj][2]);
       } else {
-        for (int dd = 0; dd < 3; ++dd)
+        for (int dd = 0; dd < 3; ++dd) {
           sel_r_diff[jj][dd] = posi[j_idx * 3 + dd] - posi[i_idx * 3 + dd];
+        }
       }
-      for (int dd = 0; dd < 3; ++dd) rij_r[jj * 3 + dd] = sel_r_diff[jj][dd];
+      for (int dd = 0; dd < 3; ++dd) {
+        rij_r[jj * 3 + dd] = sel_r_diff[jj][dd];
+      }
     }
   }
 
@@ -392,21 +418,31 @@ void compute_descriptor(std::vector<double> &descrpt_a,
     yy[dd] = r2[dd];
   }
   double norm_xx = sqrt(deepmd::dot3(xx, xx));
-  for (unsigned dd = 0; dd < 3; ++dd) xx[dd] /= norm_xx;
+  for (unsigned dd = 0; dd < 3; ++dd) {
+    xx[dd] /= norm_xx;
+  }
   double dxy = deepmd::dot3(xx, yy);
-  for (unsigned dd = 0; dd < 3; ++dd) yy[dd] -= dxy * xx[dd];
+  for (unsigned dd = 0; dd < 3; ++dd) {
+    yy[dd] -= dxy * xx[dd];
+  }
   double norm_yy = sqrt(deepmd::dot3(yy, yy));
-  for (unsigned dd = 0; dd < 3; ++dd) yy[dd] /= norm_yy;
+  for (unsigned dd = 0; dd < 3; ++dd) {
+    yy[dd] /= norm_yy;
+  }
   deepmd::cprod(xx, yy, zz);
   rot_mat.resize(9);
-  for (int dd = 0; dd < 9; ++dd) rot_mat[dd] = rot[dd];
+  for (int dd = 0; dd < 9; ++dd) {
+    rot_mat[dd] = rot[dd];
+  }
 
   // 1./rr, cos(theta), cos(phi), sin(phi)
   descrpt_a.resize(sec_a.back() * 4);
   fill(descrpt_a.begin(), descrpt_a.end(), 0.0);
   for (int ii = 0; ii < int(sec_a.size()) - 1; ++ii) {
     for (int jj = sec_a[ii]; jj < sec_a[ii + 1]; ++jj) {
-      if (fmt_nlist_a[jj] < 0) break;
+      if (fmt_nlist_a[jj] < 0) {
+        break;
+      }
       double rdiff[3];
       deepmd::dotmv3(rdiff, rot, &sel_a_diff[jj][0]);
       double rr2 = deepmd::dot3(rdiff, rdiff);
@@ -432,7 +468,9 @@ void compute_descriptor(std::vector<double> &descrpt_a,
   fill(descrpt_r.begin(), descrpt_r.end(), 0.0);
   for (int ii = 0; ii < int(sec_r.size()) - 1; ++ii) {
     for (int jj = sec_r[ii]; jj < sec_r[ii + 1]; ++jj) {
-      if (fmt_nlist_r[jj] < 0) break;
+      if (fmt_nlist_r[jj] < 0) {
+        break;
+      }
       const double *rdiff = &sel_r_diff[jj][0];
       double rr = sqrt(deepmd::dot3(rdiff, rdiff));
       descrpt_r[jj] = 1. / rr;
@@ -459,7 +497,9 @@ void compute_descriptor(std::vector<double> &descrpt_a,
   for (int sec_iter = 0; sec_iter < int(sec_a.size()) - 1; ++sec_iter) {
     for (int nei_iter = sec_a[sec_iter]; nei_iter < sec_a[sec_iter + 1];
          ++nei_iter) {
-      if (fmt_nlist_a[nei_iter] < 0) break;
+      if (fmt_nlist_a[nei_iter] < 0) {
+        break;
+      }
       // drdS, stored in tranposed form
       double dtrdST[4][3];
       double *rr = &sel_a_diff[nei_iter][0];
@@ -514,8 +554,9 @@ void compute_descriptor(std::vector<double> &descrpt_a,
           for (int ll = 0; ll < 3; ++ll) {
             dRdTr_1[ii][jj] += dRdT_1[jj][ii * 3 + ll] * rr[ll];
           }
-          if (axis0_type == 0 && nei_iter == axis0_idx)
+          if (axis0_type == 0 && nei_iter == axis0_idx) {
             dRdTr_1[ii][jj] += rot[jj * 3 + ii];
+          }
         }
       }
       // dRdTr_2
@@ -526,8 +567,9 @@ void compute_descriptor(std::vector<double> &descrpt_a,
           for (int ll = 0; ll < 3; ++ll) {
             dRdTr_2[ii][jj] += dRdT_2[jj][ii * 3 + ll] * rr[ll];
           }
-          if (axis1_type == 0 && nei_iter == axis1_idx)
+          if (axis1_type == 0 && nei_iter == axis1_idx) {
             dRdTr_2[ii][jj] += rot[jj * 3 + ii];
+          }
         }
       }
       // dRdTr_k
@@ -591,7 +633,9 @@ void compute_descriptor(std::vector<double> &descrpt_a,
   for (int sec_iter = 0; sec_iter < int(sec_r.size()) - 1; ++sec_iter) {
     for (int nei_iter = sec_r[sec_iter]; nei_iter < sec_r[sec_iter + 1];
          ++nei_iter) {
-      if (fmt_nlist_r[nei_iter] < 0) break;
+      if (fmt_nlist_r[nei_iter] < 0) {
+        break;
+      }
 
       const double *rr = &sel_r_diff[nei_iter][0];
       double nr = sqrt(deepmd::dot3(rr, rr));
@@ -634,7 +678,9 @@ void compute_descriptor(std::vector<double> &descrpt_a,
   std::vector<std::vector<double> > sel_a_diff(sec_a.back());
   for (int ii = 0; ii < int(sec_a.size()) - 1; ++ii) {
     for (int jj = sec_a[ii]; jj < sec_a[ii + 1]; ++jj) {
-      if (fmt_nlist_a[jj] < 0) break;
+      if (fmt_nlist_a[jj] < 0) {
+        break;
+      }
       sel_a_diff[jj].resize(3);
       const int &j_idx = fmt_nlist_a[jj];
       if (b_pbc) {
@@ -643,15 +689,18 @@ void compute_descriptor(std::vector<double> &descrpt_a,
             posi[i_idx * 3 + 0], posi[i_idx * 3 + 1], posi[i_idx * 3 + 2],
             sel_a_diff[jj][0], sel_a_diff[jj][1], sel_a_diff[jj][2]);
       } else {
-        for (int dd = 0; dd < 3; ++dd)
+        for (int dd = 0; dd < 3; ++dd) {
           sel_a_diff[jj][dd] = posi[j_idx * 3 + dd] - posi[i_idx * 3 + dd];
+        }
       }
     }
   }
   std::vector<std::vector<double> > sel_r_diff(sec_r.back());
   for (int ii = 0; ii < int(sec_r.size()) - 1; ++ii) {
     for (int jj = sec_r[ii]; jj < sec_r[ii + 1]; ++jj) {
-      if (fmt_nlist_r[jj] < 0) break;
+      if (fmt_nlist_r[jj] < 0) {
+        break;
+      }
       sel_r_diff[jj].resize(3);
       const int &j_idx = fmt_nlist_r[jj];
       if (b_pbc) {
@@ -660,8 +709,9 @@ void compute_descriptor(std::vector<double> &descrpt_a,
             posi[i_idx * 3 + 0], posi[i_idx * 3 + 1], posi[i_idx * 3 + 2],
             sel_r_diff[jj][0], sel_r_diff[jj][1], sel_r_diff[jj][2]);
       } else {
-        for (int dd = 0; dd < 3; ++dd)
+        for (int dd = 0; dd < 3; ++dd) {
           sel_r_diff[jj][dd] = posi[j_idx * 3 + dd] - posi[i_idx * 3 + dd];
+        }
       }
     }
   }
@@ -691,21 +741,31 @@ void compute_descriptor(std::vector<double> &descrpt_a,
     yy[dd] = r2[dd];
   }
   double norm_xx = sqrt(deepmd::dot3(xx, xx));
-  for (unsigned dd = 0; dd < 3; ++dd) xx[dd] /= norm_xx;
+  for (unsigned dd = 0; dd < 3; ++dd) {
+    xx[dd] /= norm_xx;
+  }
   double dxy = deepmd::dot3(xx, yy);
-  for (unsigned dd = 0; dd < 3; ++dd) yy[dd] -= dxy * xx[dd];
+  for (unsigned dd = 0; dd < 3; ++dd) {
+    yy[dd] -= dxy * xx[dd];
+  }
   double norm_yy = sqrt(deepmd::dot3(yy, yy));
-  for (unsigned dd = 0; dd < 3; ++dd) yy[dd] /= norm_yy;
+  for (unsigned dd = 0; dd < 3; ++dd) {
+    yy[dd] /= norm_yy;
+  }
   deepmd::cprod(xx, yy, zz);
   rot_mat.resize(9);
-  for (int dd = 0; dd < 9; ++dd) rot_mat[dd] = rot[dd];
+  for (int dd = 0; dd < 9; ++dd) {
+    rot_mat[dd] = rot[dd];
+  }
 
   // 1./rr, cos(theta), cos(phi), sin(phi)
   descrpt_a.resize(sec_a.back() * 4);
   fill(descrpt_a.begin(), descrpt_a.end(), 0.0);
   for (int ii = 0; ii < int(sec_a.size()) - 1; ++ii) {
     for (int jj = sec_a[ii]; jj < sec_a[ii + 1]; ++jj) {
-      if (fmt_nlist_a[jj] < 0) break;
+      if (fmt_nlist_a[jj] < 0) {
+        break;
+      }
       double rdiff[3];
       deepmd::dotmv3(rdiff, rot, &sel_a_diff[jj][0]);
       double rr2 = deepmd::dot3(rdiff, rdiff);
@@ -731,7 +791,9 @@ void compute_descriptor(std::vector<double> &descrpt_a,
   fill(descrpt_r.begin(), descrpt_r.end(), 0.0);
   for (int ii = 0; ii < int(sec_r.size()) - 1; ++ii) {
     for (int jj = sec_r[ii]; jj < sec_r[ii + 1]; ++jj) {
-      if (fmt_nlist_r[jj] < 0) break;
+      if (fmt_nlist_r[jj] < 0) {
+        break;
+      }
       double rdiff[3];
       deepmd::dotmv3(rdiff, rot, &sel_r_diff[jj][0]);
       double rr = sqrt(deepmd::dot3(rdiff, rdiff));
@@ -775,7 +837,9 @@ void compute_descriptor_se_a_extf(std::vector<double> &descrpt_a,
   fill(rij_a.begin(), rij_a.end(), 0.0);
   for (int ii = 0; ii < int(sec_a.size()) - 1; ++ii) {
     for (int jj = sec_a[ii]; jj < sec_a[ii + 1]; ++jj) {
-      if (fmt_nlist_a[jj] < 0) break;
+      if (fmt_nlist_a[jj] < 0) {
+        break;
+      }
       sel_a_diff[jj].resize(3);
       const int &j_idx = fmt_nlist_a[jj];
       if (b_pbc) {
@@ -784,10 +848,13 @@ void compute_descriptor_se_a_extf(std::vector<double> &descrpt_a,
             posi[i_idx * 3 + 0], posi[i_idx * 3 + 1], posi[i_idx * 3 + 2],
             sel_a_diff[jj][0], sel_a_diff[jj][1], sel_a_diff[jj][2]);
       } else {
-        for (int dd = 0; dd < 3; ++dd)
+        for (int dd = 0; dd < 3; ++dd) {
           sel_a_diff[jj][dd] = posi[j_idx * 3 + dd] - posi[i_idx * 3 + dd];
+        }
       }
-      for (int dd = 0; dd < 3; ++dd) rij_a[jj * 3 + dd] = sel_a_diff[jj][dd];
+      for (int dd = 0; dd < 3; ++dd) {
+        rij_a[jj * 3 + dd] = sel_a_diff[jj][dd];
+      }
     }
   }
 
@@ -801,7 +868,9 @@ void compute_descriptor_se_a_extf(std::vector<double> &descrpt_a,
   for (int sec_iter = 0; sec_iter < int(sec_a.size()) - 1; ++sec_iter) {
     for (int nei_iter = sec_a[sec_iter]; nei_iter < sec_a[sec_iter + 1];
          ++nei_iter) {
-      if (fmt_nlist_a[nei_iter] < 0) break;
+      if (fmt_nlist_a[nei_iter] < 0) {
+        break;
+      }
       const double *rr = &sel_a_diff[nei_iter][0];
       // check validity of ef
       double nr2 = deepmd::dot3(rr, rr);
@@ -909,7 +978,9 @@ void compute_descriptor_se_a_ef_para(std::vector<double> &descrpt_a,
   fill(rij_a.begin(), rij_a.end(), 0.0);
   for (int ii = 0; ii < int(sec_a.size()) - 1; ++ii) {
     for (int jj = sec_a[ii]; jj < sec_a[ii + 1]; ++jj) {
-      if (fmt_nlist_a[jj] < 0) break;
+      if (fmt_nlist_a[jj] < 0) {
+        break;
+      }
       sel_a_diff[jj].resize(3);
       const int &j_idx = fmt_nlist_a[jj];
       if (b_pbc) {
@@ -918,10 +989,13 @@ void compute_descriptor_se_a_ef_para(std::vector<double> &descrpt_a,
             posi[i_idx * 3 + 0], posi[i_idx * 3 + 1], posi[i_idx * 3 + 2],
             sel_a_diff[jj][0], sel_a_diff[jj][1], sel_a_diff[jj][2]);
       } else {
-        for (int dd = 0; dd < 3; ++dd)
+        for (int dd = 0; dd < 3; ++dd) {
           sel_a_diff[jj][dd] = posi[j_idx * 3 + dd] - posi[i_idx * 3 + dd];
+        }
       }
-      for (int dd = 0; dd < 3; ++dd) rij_a[jj * 3 + dd] = sel_a_diff[jj][dd];
+      for (int dd = 0; dd < 3; ++dd) {
+        rij_a[jj * 3 + dd] = sel_a_diff[jj][dd];
+      }
     }
   }
 
@@ -935,7 +1009,9 @@ void compute_descriptor_se_a_ef_para(std::vector<double> &descrpt_a,
   for (int sec_iter = 0; sec_iter < int(sec_a.size()) - 1; ++sec_iter) {
     for (int nei_iter = sec_a[sec_iter]; nei_iter < sec_a[sec_iter + 1];
          ++nei_iter) {
-      if (fmt_nlist_a[nei_iter] < 0) break;
+      if (fmt_nlist_a[nei_iter] < 0) {
+        break;
+      }
       const double *rr = &sel_a_diff[nei_iter][0];
       // check validity of ef
       double nr2 = deepmd::dot3(rr, rr);
@@ -1039,7 +1115,9 @@ void compute_descriptor_se_a_ef_vert(std::vector<double> &descrpt_a,
   fill(rij_a.begin(), rij_a.end(), 0.0);
   for (int ii = 0; ii < int(sec_a.size()) - 1; ++ii) {
     for (int jj = sec_a[ii]; jj < sec_a[ii + 1]; ++jj) {
-      if (fmt_nlist_a[jj] < 0) break;
+      if (fmt_nlist_a[jj] < 0) {
+        break;
+      }
       sel_a_diff[jj].resize(3);
       const int &j_idx = fmt_nlist_a[jj];
       if (b_pbc) {
@@ -1048,10 +1126,13 @@ void compute_descriptor_se_a_ef_vert(std::vector<double> &descrpt_a,
             posi[i_idx * 3 + 0], posi[i_idx * 3 + 1], posi[i_idx * 3 + 2],
             sel_a_diff[jj][0], sel_a_diff[jj][1], sel_a_diff[jj][2]);
       } else {
-        for (int dd = 0; dd < 3; ++dd)
+        for (int dd = 0; dd < 3; ++dd) {
           sel_a_diff[jj][dd] = posi[j_idx * 3 + dd] - posi[i_idx * 3 + dd];
+        }
       }
-      for (int dd = 0; dd < 3; ++dd) rij_a[jj * 3 + dd] = sel_a_diff[jj][dd];
+      for (int dd = 0; dd < 3; ++dd) {
+        rij_a[jj * 3 + dd] = sel_a_diff[jj][dd];
+      }
     }
   }
 
@@ -1065,7 +1146,9 @@ void compute_descriptor_se_a_ef_vert(std::vector<double> &descrpt_a,
   for (int sec_iter = 0; sec_iter < int(sec_a.size()) - 1; ++sec_iter) {
     for (int nei_iter = sec_a[sec_iter]; nei_iter < sec_a[sec_iter + 1];
          ++nei_iter) {
-      if (fmt_nlist_a[nei_iter] < 0) break;
+      if (fmt_nlist_a[nei_iter] < 0) {
+        break;
+      }
       const double *rr = &sel_a_diff[nei_iter][0];
       // check validity of ef
       double nr2 = deepmd::dot3(rr, rr);
