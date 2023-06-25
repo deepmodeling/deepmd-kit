@@ -18,6 +18,9 @@ from deepmd.loss.loss import (
 from deepmd.model.model import (
     Model,
 )
+from deepmd.utils.graph import (
+    load_graph_def,
+)
 from deepmd.utils.spin import (
     Spin,
 )
@@ -77,10 +80,16 @@ class PairwiseDPRc(Model):
             )
 
         self.qm_model = EnerModel(
-            **qm_model, type_map=type_map, type_embedding=self.typeebd
+            **qm_model,
+            type_map=type_map,
+            type_embedding=self.typeebd,
+            compress=compress,
         )
         self.qmmm_model = EnerModel(
-            **qmmm_model, type_map=type_map, type_embedding=self.typeebd
+            **qmmm_model,
+            type_map=type_map,
+            type_embedding=self.typeebd,
+            compress=compress,
         )
         add_data_requirement("aparam", 1, atomic=True, must=True, high_prec=False)
         self.ntypes = len(type_map)
@@ -292,6 +301,19 @@ class PairwiseDPRc(Model):
         self.qmmm_model.init_variables(
             graph, graph_def, model_type=model_type, suffix="_qmmm" + suffix
         )
+
+    def enable_compression(self, suffix: str = "") -> None:
+        """Enable compression.
+
+        Parameters
+        ----------
+        suffix : str
+            suffix to name scope
+        """
+        graph, graph_def = load_graph_def(self.compress["model_file"])
+        self.typeebd.init_variables(graph, graph_def)
+        self.qm_model.enable_compression(suffix="_qm" + suffix)
+        self.qmmm_model.enable_compression(suffix="_qmmm" + suffix)
 
 
 def gather_placeholder(

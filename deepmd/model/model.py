@@ -347,8 +347,14 @@ class Model(ABC):
         """
         raise RuntimeError("Not supported")
 
-    def enable_compression(self):
-        """Enable compression."""
+    def enable_compression(self, suffix: str = ""):
+        """Enable compression.
+
+        Parameters
+        ----------
+        suffix : str
+            suffix to name scope
+        """
         raise RuntimeError("Not supported")
 
     def get_numb_fparam(self) -> Union[int, dict]:
@@ -483,8 +489,14 @@ class StandardModel(Model):
         self.descrpt.enable_mixed_precision(mixed_prec)
         self.fitting.enable_mixed_precision(mixed_prec)
 
-    def enable_compression(self):
-        """Enable compression."""
+    def enable_compression(self, suffix: str = ""):
+        """Enable compression.
+
+        Parameters
+        ----------
+        suffix : str
+            suffix to name scope
+        """
         graph, graph_def = load_graph_def(self.compress["model_file"])
         self.descrpt.enable_compression(
             self.compress["min_nbor_dist"],
@@ -494,11 +506,15 @@ class StandardModel(Model):
             self.compress["table_config"][1],
             self.compress["table_config"][2],
             self.compress["table_config"][3],
+            suffix=suffix,
         )
         # for fparam or aparam settings in 'ener' type fitting net
-        self.fitting.init_variables(graph, graph_def)
-        if self.typeebd is not None:
-            self.typeebd.init_variables(graph, graph_def)
+        self.fitting.init_variables(graph, graph_def, suffix=suffix)
+        if (
+            self.typeebd is not None
+            and self.typeebd.type_embedding_net_variables is None
+        ):
+            self.typeebd.init_variables(graph, graph_def, suffix=suffix)
 
     def get_fitting(self) -> Union[Fitting, dict]:
         """Get the fitting(s)."""
