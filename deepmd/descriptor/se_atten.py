@@ -237,6 +237,8 @@ class DescrptSeAtten(DescrptSeA):
             in which frames in a system may have different natoms_vec(s), with the same nloc.
         real_natoms_vec
             If mixed_type is True, it takes in the real natoms_vec for each frame.
+        **kwargs
+            Additional keyword arguments.
         """
         if True:
             sumr = []

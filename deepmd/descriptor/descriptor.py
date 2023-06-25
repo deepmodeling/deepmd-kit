@@ -183,6 +183,8 @@ class Descriptor(PluginVariant):
             :meth:`deepmd.model.model_stat.make_stat_input`
         input_dict : dict[str, list[np.ndarray]]
             Dictionary for additional input
+        **kwargs
+            Additional keyword arguments which may contain `mixed_type` and `real_natoms_vec`.
 
         Notes
         -----
