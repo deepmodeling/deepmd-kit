@@ -6,6 +6,7 @@ from typing import (
 
 from deepmd.common import (
     add_data_requirement,
+    make_default_mesh,
 )
 from deepmd.env import (
     MODEL_VERSION,
@@ -160,14 +161,14 @@ class PairwiseDPRc(Model):
         input_dict_qm["type_embedding"] = type_embedding
         input_dict_qmmm["type_embedding"] = type_embedding
 
-        # TODO: after #2481 is merged, change the mesh to mixed_type specific
+        mesh_mixed_type = make_default_mesh(False, True)
 
         qm_dict = self.qm_model.build(
             coord_qm,
             atype_qm,
             natoms_qm,
             box_qm,
-            mesh,
+            mesh_mixed_type,
             input_dict_qm,
             frz_model=frz_model,
             ckpt_meta=ckpt_meta,
@@ -179,7 +180,7 @@ class PairwiseDPRc(Model):
             atype_qmmm,
             natoms_qmmm,
             box_qmmm,
-            mesh,
+            mesh_mixed_type,
             input_dict_qmmm,
             frz_model=frz_model,
             ckpt_meta=ckpt_meta,
