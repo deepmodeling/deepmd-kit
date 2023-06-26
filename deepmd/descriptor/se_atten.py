@@ -227,6 +227,7 @@ class DescrptSeAtten(DescrptSeA):
         input_dict: dict,
         mixed_type: bool = False,
         real_natoms_vec: Optional[list] = None,
+        **kwargs,
     ) -> None:
         """Compute the statisitcs (avg and std) of the training data. The input will be normalized by the statistics.
 
@@ -251,6 +252,8 @@ class DescrptSeAtten(DescrptSeA):
             in which frames in a system may have different natoms_vec(s), with the same nloc.
         real_natoms_vec
             If mixed_type is True, it takes in the real natoms_vec for each frame.
+        **kwargs
+            Additional keyword arguments.
         """
         if True:
             sumr = []
