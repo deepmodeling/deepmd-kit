@@ -472,7 +472,9 @@ int deepmd::session_input_tensors(
   }
   natoms(0) = nloc;
   natoms(1) = nall;
-  for (int ii = 0; ii < ntypes; ++ii) natoms(ii + 2) = type_count[ii];
+  for (int ii = 0; ii < ntypes; ++ii) {
+    natoms(ii + 2) = type_count[ii];
+  }
 
   std::string prefix = "";
   if (scope != "") {
@@ -585,7 +587,9 @@ int deepmd::session_input_tensors(
     }
   }
 
-  for (int ii = 0; ii < 16; ++ii) mesh(ii) = 0;
+  for (int ii = 0; ii < 16; ++ii) {
+    mesh(ii) = 0;
+  }
 
   const int stride = sizeof(int*) / sizeof(int);
   assert(stride * sizeof(int) == sizeof(int*));
@@ -600,7 +604,9 @@ int deepmd::session_input_tensors(
 
   natoms(0) = nloc;
   natoms(1) = nall;
-  for (int ii = 0; ii < ntypes; ++ii) natoms(ii + 2) = type_count[ii];
+  for (int ii = 0; ii < ntypes; ++ii) {
+    natoms(ii + 2) = type_count[ii];
+  }
 
   std::string prefix = "";
   if (scope != "") {
@@ -652,9 +658,9 @@ int deepmd::session_input_tensors_mixed_type(
   box_shape.AddDim(9);
   TensorShape mesh_shape;
   if (b_pbc) {
-    mesh_shape.AddDim(6);
+    mesh_shape.AddDim(7);
   } else {
-    mesh_shape.AddDim(0);
+    mesh_shape.AddDim(1);
   }
   TensorShape natoms_shape;
   natoms_shape.AddDim(2 + ntypes);
@@ -723,12 +729,17 @@ int deepmd::session_input_tensors_mixed_type(
     mesh(4 - 1) = 0;
     mesh(5 - 1) = 0;
     mesh(6 - 1) = 0;
+    mesh(7 - 1) = 0;
+  } else {
+    mesh(1 - 1) = 0;
   }
   natoms(0) = nloc;
   natoms(1) = nall;
   natoms(2) = nall;
   if (ntypes > 1) {
-    for (int ii = 1; ii < ntypes; ++ii) natoms(ii + 2) = 0;
+    for (int ii = 1; ii < ntypes; ++ii) {
+      natoms(ii + 2) = 0;
+    }
   }
 
   std::string prefix = "";

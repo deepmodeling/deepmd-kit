@@ -110,8 +110,9 @@ __forceinline__ __device__ FPTYPE dot(FPTYPE ll[4], FPTYPE rr[4]) {
 
 template <typename FPTYPE>
 __forceinline__ __device__ void warp_reduce(FPTYPE& val) {
-  for (int offset = 16; offset > 0; offset >>= 1)
+  for (int offset = 16; offset > 0; offset >>= 1) {
     val += __shfl_down_sync(FULL_MASK, val, offset);
+  }
 }
 
 template <typename FPTYPE, int MTILE, int KTILE>
@@ -164,7 +165,9 @@ __global__ void tabulate_fusion_se_a_fifth_order_polynomial(
       sum[kk] += (nnei - breakpoint) *
                  em[block_idx * nnei * MTILE + ii * MTILE + kk] * res;
     }
-    if (unloop) break;
+    if (unloop) {
+      break;
+    }
     mark_table_idx = table_idx;
   }
   for (int ii = 0; ii < MTILE; ii++) {
@@ -263,7 +266,9 @@ __global__ void tabulate_fusion_se_a_grad_fifth_order_polynomial(
       }
       dy_dem_x[block_idx * nnei + ii] = Csub;
     }
-    if (unloop) break;
+    if (unloop) {
+      break;
+    }
   }
 }
 
@@ -289,8 +294,9 @@ __global__ void tabulate_fusion_se_a_grad_grad_fifth_order_polynomial(
   bool unloop = false;
   int breakpoint = nnei - 1;
   FPTYPE* iteratorC = (FPTYPE*)&_data[0];
-  for (int kk = 0; kk < MTILE; kk++)
+  for (int kk = 0; kk < MTILE; kk++) {
     iteratorC[kk * last_layer_size + thread_idx] = (FPTYPE)0.;
+  }
   __syncthreads();
 
   int mark_table_idx = -1;
@@ -325,7 +331,9 @@ __global__ void tabulate_fusion_se_a_grad_grad_fifth_order_polynomial(
           (em[em_index] * res_grad * dz_xx + dz_dy_dem[em_index] * res);
     }
     mark_table_idx = table_idx;
-    if (unloop) break;
+    if (unloop) {
+      break;
+    }
   }
   for (int ii = 0; ii < MTILE; ii++) {
     dz_dy[block_idx * MTILE * last_layer_size + ii * last_layer_size +

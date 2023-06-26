@@ -10,10 +10,13 @@
 #include "error.h"
 #include "fix.h"
 #include "force.h"
+#include "input.h"
+#include "modify.h"
 #include "neigh_list.h"
 #include "neighbor.h"
 #include "pppm_dplr.h"
 #include "update.h"
+#include "variable.h"
 
 using namespace LAMMPS_NS;
 using namespace FixConst;
@@ -35,6 +38,9 @@ static bool is_key(const string &input) {
 
 FixDPLR::FixDPLR(LAMMPS *lmp, int narg, char **arg)
     : Fix(lmp, narg, arg),
+      xstr(nullptr),
+      ystr(nullptr),
+      zstr(nullptr),
       efield(3, 0.0),
       efield_fsum(4, 0.0),
       efield_fsum_all(4, 0.0),
@@ -46,6 +52,12 @@ FixDPLR::FixDPLR(LAMMPS *lmp, int narg, char **arg)
 #else
   virial_flag = 1;
 #endif
+
+  scalar_flag = 1;
+  vector_flag = 1;
+  size_vector = 3;
+  qe2f = force->qe2f;
+  xstyle = ystyle = zstyle = NONE;
 
   if (strcmp(update->unit_style, "metal") != 0) {
     error->all(
@@ -62,17 +74,37 @@ FixDPLR::FixDPLR(LAMMPS *lmp, int narg, char **arg)
                  "Illegal pair_style command\nwrong number of parameters\n");
     }
     if (string(arg[iarg]) == string("model")) {
-      if (iarg + 1 > narg) error->all(FLERR, "Illegal fix adapt command");
+      if (iarg + 1 > narg) {
+        error->all(FLERR, "Illegal fix adapt command");
+      }
       model = string(arg[iarg + 1]);
       iarg += 2;
     } else if (string(arg[iarg]) == string("efield")) {
-      if (iarg + 3 > narg)
+      if (iarg + 3 > narg) {
         error->all(FLERR,
                    "Illegal fix adapt command, efield should be provided 3 "
                    "float numbers");
-      efield[0] = atof(arg[iarg + 1]);
-      efield[1] = atof(arg[iarg + 2]);
-      efield[2] = atof(arg[iarg + 3]);
+      }
+      if (utils::strmatch(arg[iarg + 1], "^v_")) {
+        xstr = utils::strdup(arg[iarg + 1] + 2);
+      } else {
+        efield[0] = qe2f * utils::numeric(FLERR, arg[iarg + 1], false, lmp);
+        xstyle = CONSTANT;
+      }
+
+      if (utils::strmatch(arg[iarg + 2], "^v_")) {
+        ystr = utils::strdup(arg[iarg + 2] + 2);
+      } else {
+        efield[1] = qe2f * utils::numeric(FLERR, arg[iarg + 2], false, lmp);
+        ystyle = CONSTANT;
+      }
+
+      if (utils::strmatch(arg[iarg + 3], "^v_")) {
+        zstr = utils::strdup(arg[iarg + 3] + 2);
+      } else {
+        efield[2] = qe2f * utils::numeric(FLERR, arg[iarg + 3], false, lmp);
+        zstyle = CONSTANT;
+      }
       iarg += 4;
     } else if (string(arg[iarg]) == string("type_associate")) {
       int iend = iarg + 1;
@@ -127,6 +159,14 @@ FixDPLR::FixDPLR(LAMMPS *lmp, int narg, char **arg)
 
 /* ---------------------------------------------------------------------- */
 
+FixDPLR::~FixDPLR() {
+  delete[] xstr;
+  delete[] ystr;
+  delete[] zstr;
+}
+
+/* ---------------------------------------------------------------------- */
+
 int FixDPLR::setmask() {
   int mask = 0;
 #if LAMMPS_VERSION_NUMBER < 20210210
@@ -157,6 +197,55 @@ void FixDPLR::init() {
   // 	 << vv[ii][2] << " "
   // 	 << endl;
   // }
+  // check variables
+
+  if (xstr) {
+    xvar = input->variable->find(xstr);
+    if (xvar < 0) {
+      error->all(FLERR, "Variable {} for x-field in fix {} does not exist",
+                 xstr, style);
+    }
+    if (input->variable->equalstyle(xvar)) {
+      xstyle = EQUAL;
+    } else {
+      error->all(FLERR, "Variable {} for x-field in fix {} is invalid style",
+                 xstr, style);
+    }
+  }
+
+  if (ystr) {
+    yvar = input->variable->find(ystr);
+    if (yvar < 0) {
+      error->all(FLERR, "Variable {} for y-field in fix {} does not exist",
+                 ystr, style);
+    }
+    if (input->variable->equalstyle(yvar)) {
+      ystyle = EQUAL;
+    } else {
+      error->all(FLERR, "Variable {} for y-field in fix {} is invalid style",
+                 ystr, style);
+    }
+  }
+
+  if (zstr) {
+    zvar = input->variable->find(zstr);
+    if (zvar < 0) {
+      error->all(FLERR, "Variable {} for z-field in fix {} does not exist",
+                 zstr, style);
+    }
+    if (input->variable->equalstyle(zvar)) {
+      zstyle = EQUAL;
+    } else {
+      error->all(FLERR, "Variable {} for z-field in fix {} is invalid style",
+                 zstr, style);
+    }
+  }
+
+  if (xstyle == EQUAL || ystyle == EQUAL || zstyle == EQUAL) {
+    varflag = EQUAL;
+  } else {
+    varflag = CONSTANT;
+  }
 }
 
 /* ---------------------------------------------------------------------- */
@@ -366,8 +455,8 @@ void FixDPLR::pre_force(int vflag) {
 
   // Yixiao: because the deeptensor already return the correct order, the
   // following map is no longer needed deepmd_compat::AtomMap<FLOAT_PREC>
-  // atom_map(sel_type.begin(), sel_type.begin() + sel_nloc); const vector<int>
-  // & sort_fwd_map(atom_map.get_fwd_map());
+  // atom_map(sel_type.begin(), sel_type.begin() + sel_nloc); const
+  // vector<int> & sort_fwd_map(atom_map.get_fwd_map());
 
   vector<pair<int, int> > valid_pairs;
   get_valid_pairs(valid_pairs);
@@ -411,6 +500,10 @@ void FixDPLR::post_force(int vflag) {
   if (vflag_atom) {
     error->all(FLERR,
                "atomic virial calculation is not supported by this fix\n");
+  }
+
+  if (!(varflag == CONSTANT)) {
+    update_efield_variables();
   }
 
   PPPMDPLR *pppm_dplr = (PPPMDPLR *)force->kspace_match("pppm/dplr", 1);
@@ -621,4 +714,24 @@ double FixDPLR::compute_vector(int n) {
     efield_force_flag = 1;
   }
   return efield_fsum_all[n + 1];
+}
+
+/* ----------------------------------------------------------------------
+   update efield variables without doing anything else
+------------------------------------------------------------------------- */
+
+void FixDPLR::update_efield_variables() {
+  modify->clearstep_compute();
+
+  if (xstyle == EQUAL) {
+    efield[0] = qe2f * input->variable->compute_equal(xvar);
+  }
+  if (ystyle == EQUAL) {
+    efield[1] = qe2f * input->variable->compute_equal(yvar);
+  }
+  if (zstyle == EQUAL) {
+    efield[2] = qe2f * input->variable->compute_equal(zvar);
+  }
+
+  modify->addstep_compute(update->ntimestep + 1);
 }

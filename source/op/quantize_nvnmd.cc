@@ -113,14 +113,15 @@ class QuantizeNvnmdOp : public OpKernel {
     else {
       prec = 1 << this->nbit1;
 
-      if (this->isround)
+      if (this->isround) {
         for (ii = 0; ii < N; ii++) {
           y[ii] = round(x[ii] * prec) / prec;
         }
-      else
+      } else {
         for (ii = 0; ii < N; ii++) {
           y[ii] = floor(x[ii] * prec) / prec;
         }
+      }
     }
   }  // Compute
 

@@ -28,7 +28,9 @@ void deepmd::soft_min_switch_force_cpu(FPTYPE* force,
     int i_idx = ii;
     for (int jj = 0; jj < nnei; ++jj) {
       int j_idx = nlist[i_idx * nnei + jj];
-      if (j_idx < 0) continue;
+      if (j_idx < 0) {
+        continue;
+      }
       int rij_idx_shift = (ii * nnei + jj) * 3;
       force[i_idx * 3 + 0] += du[i_idx] * sw_deriv[rij_idx_shift + 0];
       force[i_idx * 3 + 1] += du[i_idx] * sw_deriv[rij_idx_shift + 1];

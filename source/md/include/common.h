@@ -28,10 +28,11 @@ void normalize_coord(std::vector<VALUETYPE>& coord,
     double inter[3];
     region.phys2Inter(inter, phys);
     for (int dd = 0; dd < 3; ++dd) {
-      if (inter[dd] < 0)
+      if (inter[dd] < 0) {
         inter[dd] += 1.;
-      else if (inter[dd] >= 1)
+      } else if (inter[dd] >= 1) {
         inter[dd] -= 1.;
+      }
     }
     region.inter2Phys(phys, inter);
     for (int dd = 0; dd < 3; ++dd) {

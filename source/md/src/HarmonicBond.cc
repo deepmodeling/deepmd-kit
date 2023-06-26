@@ -33,8 +33,12 @@ void HarmonicBond::compute(VALUETYPE& ener,
     VALUETYPE r1 = sqrt(r2);
     VALUETYPE ae, af;
     hb_inner(ae, af, r1);
-    for (int dd = 0; dd < 3; ++dd) force[ii * 3 + dd] += af * diff[dd];
-    for (int dd = 0; dd < 3; ++dd) force[jj * 3 + dd] -= af * diff[dd];
+    for (int dd = 0; dd < 3; ++dd) {
+      force[ii * 3 + dd] += af * diff[dd];
+    }
+    for (int dd = 0; dd < 3; ++dd) {
+      force[jj * 3 + dd] -= af * diff[dd];
+    }
     ener += ae;
     for (int dd0 = 0; dd0 < 3; ++dd0) {
       for (int dd1 = 0; dd1 < 3; ++dd1) {

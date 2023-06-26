@@ -423,10 +423,11 @@ void DeepPot::init(const std::string& model,
   options.config.set_intra_op_parallelism_threads(num_intra_nthreads);
   deepmd::load_op_library();
 
-  if (file_content.size() == 0)
+  if (file_content.size() == 0) {
     check_status(ReadBinaryProto(Env::Default(), model, graph_def));
-  else
+  } else {
     (*graph_def).ParseFromString(file_content);
+  }
   int gpu_num = -1;
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
   DPGetDeviceCount(gpu_num);  // check current device environment
@@ -471,8 +472,12 @@ void DeepPot::init(const std::string& model,
   }
   dfparam = get_scalar<int>("fitting_attr/dfparam");
   daparam = get_scalar<int>("fitting_attr/daparam");
-  if (dfparam < 0) dfparam = 0;
-  if (daparam < 0) daparam = 0;
+  if (dfparam < 0) {
+    dfparam = 0;
+  }
+  if (daparam < 0) {
+    daparam = 0;
+  }
   model_type = get_scalar<STRINGTYPE>("model_attr/model_type");
   inited = true;
 
@@ -1242,10 +1247,11 @@ void DeepPotModelDevi::init(const std::vector<std::string>& models,
   options.config.set_intra_op_parallelism_threads(num_intra_nthreads);
   for (unsigned ii = 0; ii < numb_models; ++ii) {
     graph_defs[ii] = new GraphDef();
-    if (file_contents.size() == 0)
+    if (file_contents.size() == 0) {
       check_status(ReadBinaryProto(Env::Default(), models[ii], graph_defs[ii]));
-    else
+    } else {
       (*graph_defs[ii]).ParseFromString(file_contents[ii]);
+    }
   }
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
   if (gpu_num > 0) {
@@ -1294,8 +1300,12 @@ void DeepPotModelDevi::init(const std::vector<std::string>& models,
   }
   dfparam = get_scalar<int>("fitting_attr/dfparam");
   daparam = get_scalar<int>("fitting_attr/daparam");
-  if (dfparam < 0) dfparam = 0;
-  if (daparam < 0) daparam = 0;
+  if (dfparam < 0) {
+    dfparam = 0;
+  }
+  if (daparam < 0) {
+    daparam = 0;
+  }
   model_type = get_scalar<STRINGTYPE>("model_attr/model_type");
   // rcut = get_rcut();
   // cell_size = rcut;
@@ -1408,7 +1418,9 @@ void DeepPotModelDevi::compute(std::vector<ENERGYTYPE>& all_energy,
                                const int& ago,
                                const std::vector<VALUETYPE>& fparam,
                                const std::vector<VALUETYPE>& aparam_) {
-  if (numb_models == 0) return;
+  if (numb_models == 0) {
+    return;
+  }
   int nall = dcoord_.size() / 3;
   int nframes = 1;
   int nloc = nall - nghost;
@@ -1504,7 +1516,9 @@ void DeepPotModelDevi::compute(
     const int& ago,
     const std::vector<VALUETYPE>& fparam,
     const std::vector<VALUETYPE>& aparam_) {
-  if (numb_models == 0) return;
+  if (numb_models == 0) {
+    return;
+  }
   int nframes = 1;
   int nall = dcoord_.size() / 3;
   int nloc = nall - nghost;
@@ -1604,7 +1618,9 @@ template <typename VALUETYPE>
 void DeepPotModelDevi::compute_avg(VALUETYPE& dener,
                                    const std::vector<VALUETYPE>& all_energy) {
   assert(all_energy.size() == numb_models);
-  if (numb_models == 0) return;
+  if (numb_models == 0) {
+    return;
+  }
 
   dener = 0;
   for (unsigned ii = 0; ii < numb_models; ++ii) {
@@ -1624,7 +1640,9 @@ void DeepPotModelDevi::compute_avg(
     std::vector<VALUETYPE>& avg,
     const std::vector<std::vector<VALUETYPE>>& xx) {
   assert(xx.size() == numb_models);
-  if (numb_models == 0) return;
+  if (numb_models == 0) {
+    return;
+  }
 
   avg.resize(xx[0].size());
   fill(avg.begin(), avg.end(), VALUETYPE(0.));
@@ -1653,7 +1671,9 @@ void DeepPotModelDevi::compute_std(
     const std::vector<std::vector<VALUETYPE>>& xx,
     const int& stride) {
   assert(xx.size() == numb_models);
-  if (numb_models == 0) return;
+  if (numb_models == 0) {
+    return;
+  }
 
   unsigned ndof = avg.size();
   unsigned nloc = ndof / stride;

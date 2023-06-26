@@ -310,7 +310,9 @@ TEST_F(TestEnvMatAMix, orig_cpy_num_deriv) {
 
     for (int jj = 0; jj < sec_a.back(); ++jj) {
       int j_idx = fmt_nlist_a[jj];
-      if (j_idx < 0) continue;
+      if (j_idx < 0) {
+        continue;
+      }
       for (int kk = 0; kk < 4; ++kk) {
         for (int dd = 0; dd < 3; ++dd) {
           std::vector<double> posi_0 = posi_cpy;
@@ -411,7 +413,9 @@ TEST_F(TestEnvMatAMix, cpu_num_deriv) {
 
     for (int jj = 0; jj < sec_a.back(); ++jj) {
       int j_idx = fmt_nlist_a[jj];
-      if (j_idx < 0) continue;
+      if (j_idx < 0) {
+        continue;
+      }
       for (int kk = 0; kk < 4; ++kk) {
         for (int dd = 0; dd < 3; ++dd) {
           std::vector<double> posi_0 = posi_cpy;

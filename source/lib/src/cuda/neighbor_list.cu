@@ -216,7 +216,9 @@ int build_nlist_gpu(InputNlist &nlist,
                         cudaMemcpyDeviceToHost));
   int max_nei = 0;
   for (int ii = 0; ii < nloc; ii++) {
-    if (numneigh_host[ii] > max_nei) max_nei = numneigh_host[ii];
+    if (numneigh_host[ii] > max_nei) {
+      max_nei = numneigh_host[ii];
+    }
   }
   *max_list_size = max_nei;
   delete[] numneigh_host;

@@ -1,14 +1,20 @@
 {
   "_comment": " model parameters",
   "model": {
+    "use_srtab": "H2O_tab_potential.txt",
+    "smin_alpha": 0.1,
+    "sw_rmin": 0.8,
+    "sw_rmax": 1.0,
     "type_map": [
       "O",
       "H"
     ],
     "descriptor": {
-      "type": "se_atten",
-      "stripped_type_embedding": true,
-      "sel": 120,
+      "type": "se_e2_a",
+      "sel": [
+        46,
+        92
+      ],
       "rcut_smth": 0.50,
       "rcut": 6.00,
       "neuron": [
@@ -19,10 +25,6 @@
       "resnet_dt": false,
       "axis_neuron": 16,
       "seed": 1,
-      "attn": 128,
-      "attn_layer": 2,
-      "attn_dotr": true,
-      "attn_mask": false,
       "_comment": " that's all"
     },
     "fitting_net": {

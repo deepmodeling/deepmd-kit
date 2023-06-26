@@ -489,10 +489,7 @@ class DeepPot(DeepEval):
             raise RuntimeError
         if self.has_efield:
             feed_dict_test[self.t_efield] = np.reshape(efield, [-1])
-        if pbc:
-            feed_dict_test[self.t_mesh] = make_default_mesh(cells)
-        else:
-            feed_dict_test[self.t_mesh] = np.array([], dtype=np.int32)
+        feed_dict_test[self.t_mesh] = make_default_mesh(pbc, mixed_type)
         if self.has_fparam:
             feed_dict_test[self.t_fparam] = np.reshape(fparam, [-1])
         if self.has_aparam:
