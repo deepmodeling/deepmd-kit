@@ -371,10 +371,7 @@ class DeepDOS(DeepEval):
             feed_dict_test[self.t_box] = cells
         else:
             raise RuntimeError
-        if pbc:
-            feed_dict_test[self.t_mesh] = make_default_mesh(cells)
-        else:
-            feed_dict_test[self.t_mesh] = np.array([], dtype=np.int32)
+        feed_dict_test[self.t_mesh] = make_default_mesh(pbc, mixed_type)
         if self.has_fparam:
             feed_dict_test[self.t_fparam] = np.reshape(fparam, [-1])
         if self.has_aparam:

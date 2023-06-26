@@ -658,9 +658,9 @@ int deepmd::session_input_tensors_mixed_type(
   box_shape.AddDim(9);
   TensorShape mesh_shape;
   if (b_pbc) {
-    mesh_shape.AddDim(6);
+    mesh_shape.AddDim(7);
   } else {
-    mesh_shape.AddDim(0);
+    mesh_shape.AddDim(1);
   }
   TensorShape natoms_shape;
   natoms_shape.AddDim(2 + ntypes);
@@ -729,6 +729,9 @@ int deepmd::session_input_tensors_mixed_type(
     mesh(4 - 1) = 0;
     mesh(5 - 1) = 0;
     mesh(6 - 1) = 0;
+    mesh(7 - 1) = 0;
+  } else {
+    mesh(1 - 1) = 0;
   }
   natoms(0) = nloc;
   natoms(1) = nall;

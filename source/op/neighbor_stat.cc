@@ -67,11 +67,13 @@ class NeighborStatOp : public OpKernel {
                 errors::InvalidArgument("number of box should be 9"));
 
     int nei_mode = 0;
-    if (mesh_tensor.shape().dim_size(0) == 6) {
+    if (mesh_tensor.shape().dim_size(0) == 6 ||
+        mesh_tensor.shape().dim_size(0) == 7) {
       // manual copied pbc
       assert(nloc == nall);
       nei_mode = 1;
-    } else if (mesh_tensor.shape().dim_size(0) == 0) {
+    } else if (mesh_tensor.shape().dim_size(0) == 0 ||
+               mesh_tensor.shape().dim_size(0) == 1) {
       // no pbc
       nei_mode = -1;
     } else {

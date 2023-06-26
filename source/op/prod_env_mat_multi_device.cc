@@ -506,6 +506,10 @@ class ProdEnvMatAOp : public OpKernel {
       // no pbc
       assert(nloc == nall);
       nei_mode = -1;
+    } else if (mesh_tensor.shape().dim_size(0) == 7 ||
+               mesh_tensor.shape().dim_size(0) == 1) {
+      throw deepmd::deepmd_exception(
+          "Mixed types are not supported by this OP.");
     } else {
       throw deepmd::deepmd_exception("invalid mesh tensor");
     }
@@ -794,6 +798,10 @@ class ProdEnvMatROp : public OpKernel {
       // no pbc
       assert(nloc == nall);
       nei_mode = -1;
+    } else if (mesh_tensor.shape().dim_size(0) == 7 ||
+               mesh_tensor.shape().dim_size(0) == 1) {
+      throw deepmd::deepmd_exception(
+          "Mixed types are not supported by this OP.");
     } else {
       throw deepmd::deepmd_exception("invalid mesh tensor");
     }
@@ -1089,12 +1097,14 @@ class ProdEnvMatAMixOp : public OpKernel {
     if (mesh_tensor.shape().dim_size(0) == 16) {
       // lammps neighbor list
       nei_mode = 3;
-    } else if (mesh_tensor.shape().dim_size(0) == 6) {
+    } else if (mesh_tensor.shape().dim_size(0) == 6 ||
+               mesh_tensor.shape().dim_size(0) == 7) {
       // manual copied pbc
       assert(nloc == nall);
       nei_mode = 1;
       b_nlist_map = true;
-    } else if (mesh_tensor.shape().dim_size(0) == 0) {
+    } else if (mesh_tensor.shape().dim_size(0) == 0 ||
+               mesh_tensor.shape().dim_size(0) == 1) {
       // no pbc
       assert(nloc == nall);
       nei_mode = -1;
