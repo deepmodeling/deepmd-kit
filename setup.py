@@ -27,13 +27,15 @@ extra_scripts = []
 # get variant option from the environment varibles, available: cpu, cuda, rocm
 dp_variant = os.environ.get("DP_VARIANT", "cpu").lower()
 if dp_variant == "cpu" or dp_variant == "":
-    pass
+    cmake_minimum_required_version = "3.16"
 elif dp_variant == "cuda":
+    cmake_minimum_required_version = "3.23"
     cmake_args.append("-DUSE_CUDA_TOOLKIT:BOOL=TRUE")
-    cuda_root = os.environ.get("CUDA_TOOLKIT_ROOT_DIR")
+    cuda_root = os.environ.get("CUDAToolkit_ROOT")
     if cuda_root:
-        cmake_args.append(f"-DCUDA_TOOLKIT_ROOT_DIR:STRING={cuda_root}")
+        cmake_args.append(f"-DCUDAToolkit_ROOT:STRING={cuda_root}")
 elif dp_variant == "rocm":
+    cmake_minimum_required_version = "3.21"
     cmake_args.append("-DUSE_ROCM_TOOLKIT:BOOL=TRUE")
     rocm_root = os.environ.get("ROCM_ROOT")
     if rocm_root:
@@ -111,7 +113,7 @@ setup(
         *cmake_args,
     ],
     cmake_source_dir="source",
-    cmake_minimum_required_version="3.16",
+    cmake_minimum_required_version=cmake_minimum_required_version,
     extras_require={
         "test": ["dpdata>=0.1.9", "ase", "pytest", "pytest-cov", "pytest-sugar"],
         "docs": [

@@ -74,7 +74,7 @@ One may set the following environment variables before executing `pip`:
 | Environment variables | Allowed value          | Default value | Usage                      |
 | --------------------- | ---------------------- | ------------- | -------------------------- |
 | DP_VARIANT            | `cpu`, `cuda`, `rocm`  | `cpu`         | Build CPU variant or GPU variant with CUDA or ROCM support. |
-| CUDA_TOOLKIT_ROOT_DIR | Path                   | Detected automatically | The path to the CUDA toolkit directory. CUDA 7.0 or later is supported. NVCC is required. |
+| CUDAToolkit_ROOT | Path                   | Detected automatically | The path to the CUDA toolkit directory. CUDA 7.0 or later is supported. NVCC is required. |
 | ROCM_ROOT             | Path                   | Detected automatically | The path to the ROCM toolkit directory. |
 | TENSORFLOW_ROOT       | Path                   | Detected automatically | The path to TensorFlow Python library. By default the installer only finds TensorFlow under user site-package directory (`site.getusersitepackages()`) or system site-package directory (`sysconfig.get_path("purelib")`) due to limitation of [PEP-517](https://peps.python.org/pep-0517/). If not found, the latest TensorFlow (or the environment variable `TENSORFLOW_VERSION` if given) from PyPI will be built against.|
 | DP_ENABLE_NATIVE_OPTIMIZATION | 0, 1           | 0             | Enable compilation optimization for the native machine's CPU type. Do not enable it if generated code will run on different CPUs. |
@@ -180,7 +180,7 @@ One may add the following arguments to `cmake`:
 | -DTENSORFLOW_ROOT=&lt;value&gt;  | Path              | -             | The Path to TensorFlow's C++ interface. |
 | -DCMAKE_INSTALL_PREFIX=&lt;value&gt; | Path          | -             | The Path where DeePMD-kit will be installed. |
 | -DUSE_CUDA_TOOLKIT=&lt;value&gt; | `TRUE` or `FALSE` | `FALSE`       | If `TRUE`, Build GPU support with CUDA toolkit. |
-| -DCUDA_TOOLKIT_ROOT_DIR=&lt;value&gt; | Path         | Detected automatically | The path to the CUDA toolkit directory. CUDA 7.0 or later is supported. NVCC is required. |
+| -DCUDAToolkit_ROOT=&lt;value&gt; | Path         | Detected automatically | The path to the CUDA toolkit directory. CUDA 7.0 or later is supported. NVCC is required. |
 | -DUSE_ROCM_TOOLKIT=&lt;value&gt; | `TRUE` or `FALSE` | `FALSE`       | If `TRUE`, Build GPU support with ROCM toolkit. |
 | -DCMAKE_HIP_COMPILER_ROCM_ROOT=&lt;value&gt; | Path         | Detected automatically | The path to the ROCM toolkit directory. |
 | -DLAMMPS_SOURCE_ROOT=&lt;value&gt; | Path         | - | Only neccessary for LAMMPS plugin mode. The path to the [LAMMPS source code](install-lammps.md). LAMMPS 8Apr2021 or later is supported. If not assigned, the plugin mode will not be enabled. |
