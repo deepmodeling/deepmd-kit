@@ -19,25 +19,26 @@
 
 using namespace LAMMPS_NS;
 
-#ifdef HIGH_PREC
 #define VALUETYPE double
-#else
-#define VALUETYPE float
-#endif
 
 /* ---------------------------------------------------------------------- */
 
 ComputeDeeptensorAtom::ComputeDeeptensorAtom(LAMMPS *lmp, int narg, char **arg)
     : Compute(lmp, narg, arg), dp(lmp), tensor(nullptr) {
-  if (narg < 4) error->all(FLERR, "Illegal compute deeptensor/atom command");
+  if (narg < 4) {
+    error->all(FLERR, "Illegal compute deeptensor/atom command");
+  }
 
   // parse args
   std::string model_file = std::string(arg[3]);
 
   // initialize deeptensor
   int gpu_rank = dp.get_node_rank();
-  std::string model_file_content = dp.get_file_content(model_file);
-  dt.init(model_file, gpu_rank);
+  try {
+    dt.init(model_file, gpu_rank);
+  } catch (deepmd_compat::deepmd_exception &e) {
+    error->one(FLERR, e.what());
+  }
   sel_types = dt.sel_types();
   std::sort(sel_types.begin(), sel_types.end());
 
@@ -121,15 +122,19 @@ void ComputeDeeptensorAtom::compute_peratom() {
 
   // invoke full neighbor list (will copy or build if necessary)
   neighbor->build_one(list);
-  deepmd::InputNlist lmp_list(list->inum, list->ilist, list->numneigh,
-                              list->firstneigh);
+  deepmd_compat::InputNlist lmp_list(list->inum, list->ilist, list->numneigh,
+                                     list->firstneigh);
 
   // declare outputs
   std::vector<VALUETYPE> gtensor, force, virial, atensor, avirial;
 
   // compute tensors
-  dt.compute(gtensor, force, virial, atensor, avirial, dcoord, dtype, dbox,
-             nghost, lmp_list);
+  try {
+    dt.compute(gtensor, force, virial, atensor, avirial, dcoord, dtype, dbox,
+               nghost, lmp_list);
+  } catch (deepmd_compat::deepmd_exception &e) {
+    error->one(FLERR, e.what());
+  }
 
   // store the result in tensor
   int iter_tensor = 0;

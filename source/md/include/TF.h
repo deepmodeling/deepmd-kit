@@ -6,8 +6,6 @@
 #include "AdWeight.h"
 #include "common.h"
 
-using namespace std;
-
 #ifdef HIGH_PREC
 typedef double VALUETYPE;
 #else
@@ -16,16 +14,16 @@ typedef float VALUETYPE;
 
 class TF {
  public:
-  TF(const string& filename);
+  TF(const std::string& filename);
 
  public:
-  void apply(vector<VALUETYPE>& force,
-             const vector<VALUETYPE>& coord,
+  void apply(std::vector<VALUETYPE>& force,
+             const std::vector<VALUETYPE>& coord,
              const AdWeight& weight) const;
 
  private:
   VALUETYPE meas(const VALUETYPE& xx) const;
-  vector<double> data;
+  std::vector<double> data;
   double hh;
   double xup;
 };

@@ -3,6 +3,10 @@ cmake_minimum_required(VERSION 3.16)
 project(DeePMD)
 
 option(BUILD_TESTING "Build test and enable converage" OFF)
+set(DEEPMD_C_ROOT
+    ""
+    CACHE PATH "Path to imported DeePMD-kit C library")
+
 if(BUILD_TESTING)
   enable_testing()
   add_subdirectory(${CMAKE_SOURCE_DIR}/cmake/coverage_config coverage_config)
@@ -93,12 +97,15 @@ set(DP_VARIANT "cpu")
 
 # define USE_CUDA_TOOLKIT
 if(USE_CUDA_TOOLKIT)
-  set(CUDA_USE_STATIC_CUDA_RUNTIME
-      OFF
-      CACHE INTERNAL "")
-  find_package(CUDA REQUIRED)
+  find_package(CUDAToolkit REQUIRED)
+  if(NOT DEFINED CMAKE_CUDA_COMPILER)
+    set(CMAKE_CUDA_COMPILER ${CUDAToolkit_NVCC_EXECUTABLE})
+  endif()
+  if(NOT DEFINED CMAKE_CUDA_HOST_COMPILER)
+    set(CMAKE_CUDA_HOST_COMPILER ${CMAKE_CXX_COMPILER})
+  endif()
   add_definitions("-DGOOGLE_CUDA")
-  message(STATUS "Found CUDA in ${CUDA_TOOLKIT_ROOT_DIR}, build nv GPU support")
+  message(STATUS "Found CUDA in ${CUDAToolkit_BIN_DIR}, build nv GPU support")
   set(DP_VARIANT "cuda")
 else()
   message(STATUS "Will not build nv GPU support")
@@ -131,7 +138,9 @@ if(USE_TF_PYTHON_LIBS)
 endif(USE_TF_PYTHON_LIBS)
 
 # find tensorflow, I need tf abi info
-find_package(tensorflow REQUIRED)
+if(NOT DEEPMD_C_ROOT)
+  find_package(tensorflow REQUIRED)
+endif()
 
 # find threads
 find_package(Threads)
@@ -187,26 +196,70 @@ if(BUILD_CPP_IF)
   endif()
 endif(BUILD_CPP_IF)
 
-add_subdirectory(op/)
-add_subdirectory(lib/)
+option(DP_USING_C_API "Build third-party interface with C API" ON)
+
+if(DEEPMD_C_ROOT)
+  # find c library
+  find_path(
+    DEEPMD_INCLUDE_C_DIR deepmd/deepmd.hpp deepmd/c_api.h
+    HINTS ${DEEPMD_C_ROOT}
+    PATH_SUFFIXES "include")
+  find_library(
+    deepmd_c
+    NAMES deepmd_c
+    HINTS ${DEEPMD_C_ROOT}
+    PATH_SUFFIXES "lib")
+  include(FindPackageHandleStandardArgs)
+  find_package_handle_standard_args(DEEPMD_C DEFAULT_MSG deepmd_c
+                                    DEEPMD_INCLUDE_C_DIR)
+  if(NOT DEEPMD_C_FOUND)
+    message(
+      FATAL_ERROR
+        "DeePMD-kit C library not found. Download from https://github.com/deepmodeling/deepmd-kit/releases"
+    )
+  endif()
+
+  add_library(${LIB_DEEPMD_C} SHARED IMPORTED GLOBAL)
+  set_target_properties(
+    ${LIB_DEEPMD_C}
+    PROPERTIES IMPORTED_LINK_INTERFACE_LANGUAGES "C"
+               IMPORTED_LOCATION "${deepmd_c}"
+               INTERFACE_INCLUDE_DIRECTORIES "${DEEPMD_INCLUDE_C_DIR}/deepmd")
+  # use variable for TF path to set deepmd_c path
+  set(TensorFlow_LIBRARY_PATH "${DEEPMD_C_ROOT}/lib")
+  set(TENSORFLOW_INCLUDE_DIRS "${DEEPMD_C_ROOT}/include")
+endif()
+
+if(NOT DEEPMD_C_ROOT)
+  add_subdirectory(op/)
+  add_subdirectory(lib/)
+endif()
 if(BUILD_PY_IF)
   add_subdirectory(config/)
   # add_subdirectory (tests/)
 endif(BUILD_PY_IF)
 if(BUILD_CPP_IF)
-  add_subdirectory(api_cc/)
-  add_subdirectory(api_c/)
+  if(NOT DEEPMD_C_ROOT)
+    add_subdirectory(api_cc/)
+    add_subdirectory(api_c/)
+  endif()
   if(LAMMPS_VERSION OR NOT BUILD_PY_IF)
     add_subdirectory(lmp/)
   endif()
   if(CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 4.8)
     # add_subdirectory (md/)
-    if(ENABLE_IPI OR NOT BUILD_PY_IF)
+    if(ENABLE_IPI
+       OR NOT BUILD_PY_IF
+       AND NOT DEEPMD_C_ROOT)
+      # ipi has a dependency on libdeepmd
       add_subdirectory(ipi/)
     endif()
     if(NOT BUILD_PY_IF)
       add_subdirectory(gmx/)
     endif()
+  endif()
+  if(BUILD_NODEJS_IF)
+    add_subdirectory(nodejs/)
   endif()
 endif(BUILD_CPP_IF)
 
@@ -227,7 +280,9 @@ add_custom_target(lammps COMMAND ${CMAKE_COMMAND} -P
                                  ${CMAKE_CURRENT_BINARY_DIR}/cmake_lammps.cmake)
 
 # add configure file
-if(BUILD_CPP_IF AND NOT BUILD_PY_IF)
+if(BUILD_CPP_IF
+   AND NOT BUILD_PY_IF
+   AND NOT DEEPMD_C_ROOT)
   include(CMakePackageConfigHelpers)
   set(targets_export_name
       ${CMAKE_PROJECT_NAME}Targets
@@ -252,4 +307,7 @@ if(BUILD_CPP_IF AND NOT BUILD_PY_IF)
     INSTALL_DESTINATION ${cmake_files_install_dir})
   install(FILES ${version_file} ${config_file}
           DESTINATION ${cmake_files_install_dir})
-endif(BUILD_CPP_IF AND NOT BUILD_PY_IF)
+endif(
+  BUILD_CPP_IF
+  AND NOT BUILD_PY_IF
+  AND NOT DEEPMD_C_ROOT)

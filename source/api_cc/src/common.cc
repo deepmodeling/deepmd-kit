@@ -147,6 +147,77 @@ template void deepmd::select_real_atoms<float>(
     const int& nghost,
     const int& ntypes);
 
+template <typename VALUETYPE>
+void deepmd::select_real_atoms_coord(std::vector<VALUETYPE>& dcoord,
+                                     std::vector<int>& datype,
+                                     std::vector<VALUETYPE>& aparam,
+                                     int& nghost_real,
+                                     std::vector<int>& fwd_map,
+                                     std::vector<int>& bkw_map,
+                                     int& nall_real,
+                                     int& nloc_real,
+                                     const std::vector<VALUETYPE>& dcoord_,
+                                     const std::vector<int>& datype_,
+                                     const std::vector<VALUETYPE>& aparam_,
+                                     const int& nghost,
+                                     const int& ntypes,
+                                     const int& nframes,
+                                     const int& daparam,
+                                     const int& nall) {
+  select_real_atoms(fwd_map, bkw_map, nghost_real, dcoord_, datype_, nghost,
+                    ntypes);
+  // resize to nall_real
+  nall_real = bkw_map.size();
+  nloc_real = nall_real - nghost_real;
+  dcoord.resize(nframes * nall_real * 3);
+  datype.resize(nall_real);
+  // fwd map
+  select_map<VALUETYPE>(dcoord, dcoord_, fwd_map, 3, nframes, nall_real, nall);
+  select_map<int>(datype, datype_, fwd_map, 1);
+  // aparam
+  if (daparam > 0) {
+    aparam.resize(nframes * nloc_real);
+    select_map<VALUETYPE>(aparam, aparam_, fwd_map, daparam, nframes, nloc_real,
+                          nall - nghost);
+  }
+}
+
+template void deepmd::select_real_atoms_coord<double>(
+    std::vector<double>& dcoord,
+    std::vector<int>& datype,
+    std::vector<double>& aparam,
+    int& nghost_real,
+    std::vector<int>& fwd_map,
+    std::vector<int>& bkw_map,
+    int& nall_real,
+    int& nloc_real,
+    const std::vector<double>& dcoord_,
+    const std::vector<int>& datype_,
+    const std::vector<double>& aparam_,
+    const int& nghost,
+    const int& ntypes,
+    const int& nframes,
+    const int& daparam,
+    const int& nall);
+
+template void deepmd::select_real_atoms_coord<float>(
+    std::vector<float>& dcoord,
+    std::vector<int>& datype,
+    std::vector<float>& aparam,
+    int& nghost_real,
+    std::vector<int>& fwd_map,
+    std::vector<int>& bkw_map,
+    int& nall_real,
+    int& nloc_real,
+    const std::vector<float>& dcoord_,
+    const std::vector<int>& datype_,
+    const std::vector<float>& aparam_,
+    const int& nghost,
+    const int& ntypes,
+    const int& nframes,
+    const int& daparam,
+    const int& nall);
+
 void deepmd::NeighborListData::copy_from_nlist(const InputNlist& inlist) {
   int inum = inlist.inum;
   ilist.resize(inum);
@@ -401,7 +472,9 @@ int deepmd::session_input_tensors(
   }
   natoms(0) = nloc;
   natoms(1) = nall;
-  for (int ii = 0; ii < ntypes; ++ii) natoms(ii + 2) = type_count[ii];
+  for (int ii = 0; ii < ntypes; ++ii) {
+    natoms(ii + 2) = type_count[ii];
+  }
 
   std::string prefix = "";
   if (scope != "") {
@@ -514,7 +587,9 @@ int deepmd::session_input_tensors(
     }
   }
 
-  for (int ii = 0; ii < 16; ++ii) mesh(ii) = 0;
+  for (int ii = 0; ii < 16; ++ii) {
+    mesh(ii) = 0;
+  }
 
   const int stride = sizeof(int*) / sizeof(int);
   assert(stride * sizeof(int) == sizeof(int*));
@@ -529,7 +604,9 @@ int deepmd::session_input_tensors(
 
   natoms(0) = nloc;
   natoms(1) = nall;
-  for (int ii = 0; ii < ntypes; ++ii) natoms(ii + 2) = type_count[ii];
+  for (int ii = 0; ii < ntypes; ++ii) {
+    natoms(ii + 2) = type_count[ii];
+  }
 
   std::string prefix = "";
   if (scope != "") {
@@ -581,9 +658,9 @@ int deepmd::session_input_tensors_mixed_type(
   box_shape.AddDim(9);
   TensorShape mesh_shape;
   if (b_pbc) {
-    mesh_shape.AddDim(6);
+    mesh_shape.AddDim(7);
   } else {
-    mesh_shape.AddDim(0);
+    mesh_shape.AddDim(1);
   }
   TensorShape natoms_shape;
   natoms_shape.AddDim(2 + ntypes);
@@ -652,12 +729,17 @@ int deepmd::session_input_tensors_mixed_type(
     mesh(4 - 1) = 0;
     mesh(5 - 1) = 0;
     mesh(6 - 1) = 0;
+    mesh(7 - 1) = 0;
+  } else {
+    mesh(1 - 1) = 0;
   }
   natoms(0) = nloc;
   natoms(1) = nall;
   natoms(2) = nall;
   if (ntypes > 1) {
-    for (int ii = 1; ii < ntypes; ++ii) natoms(ii + 2) = 0;
+    for (int ii = 1; ii < ntypes; ++ii) {
+      natoms(ii + 2) = 0;
+    }
   }
 
   std::string prefix = "";

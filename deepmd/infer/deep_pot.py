@@ -78,31 +78,29 @@ class DeepPot(DeepEval):
         # add these tensors on top of what is defined by DeepTensor Class
         # use this in favor of dict update to move attribute from class to
         # instance namespace
-        self.tensors = dict(
-            {
-                # descrpt attrs
-                "t_ntypes": "descrpt_attr/ntypes:0",
-                "t_rcut": "descrpt_attr/rcut:0",
-                # fitting attrs
-                "t_dfparam": "fitting_attr/dfparam:0",
-                "t_daparam": "fitting_attr/daparam:0",
-                # model attrs
-                "t_tmap": "model_attr/tmap:0",
-                # inputs
-                "t_coord": "t_coord:0",
-                "t_type": "t_type:0",
-                "t_natoms": "t_natoms:0",
-                "t_box": "t_box:0",
-                "t_mesh": "t_mesh:0",
-                # add output tensors
-                "t_energy": "o_energy:0",
-                "t_force": "o_force:0",
-                "t_virial": "o_virial:0",
-                "t_ae": "o_atom_energy:0",
-                "t_av": "o_atom_virial:0",
-                "t_descriptor": "o_descriptor:0",
-            },
-        )
+        self.tensors = {
+            # descrpt attrs
+            "t_ntypes": "descrpt_attr/ntypes:0",
+            "t_rcut": "descrpt_attr/rcut:0",
+            # fitting attrs
+            "t_dfparam": "fitting_attr/dfparam:0",
+            "t_daparam": "fitting_attr/daparam:0",
+            # model attrs
+            "t_tmap": "model_attr/tmap:0",
+            # inputs
+            "t_coord": "t_coord:0",
+            "t_type": "t_type:0",
+            "t_natoms": "t_natoms:0",
+            "t_box": "t_box:0",
+            "t_mesh": "t_mesh:0",
+            # add output tensors
+            "t_energy": "o_energy:0",
+            "t_force": "o_force:0",
+            "t_virial": "o_virial:0",
+            "t_ae": "o_atom_energy:0",
+            "t_av": "o_atom_virial:0",
+            "t_descriptor": "o_descriptor:0",
+        }
         DeepEval.__init__(
             self,
             model_file,
@@ -139,6 +137,13 @@ class DeepPot(DeepEval):
             self.t_aparam = None
             self.has_aparam = False
 
+        if "load/spin_attr/ntypes_spin" in operations:
+            self.tensors.update({"t_ntypes_spin": "spin_attr/ntypes_spin:0"})
+            self.has_spin = True
+        else:
+            self.ntypes_spin = 0
+            self.has_spin = False
+
         # now load tensors to object attributes
         for attr_name, tensor_name in self.tensors.items():
             try:
@@ -156,6 +161,16 @@ class DeepPot(DeepEval):
             self.modifier_type = run_sess(self.sess, t_modifier_type).decode("UTF-8")
         except (ValueError, KeyError):
             self.modifier_type = None
+
+        try:
+            t_jdata = self._get_tensor("train_attr/training_script:0")
+            jdata = run_sess(self.sess, t_jdata).decode("UTF-8")
+            import json
+
+            jdata = json.loads(jdata)
+            self.descriptor_type = jdata["model"]["descriptor"]["type"]
+        except (ValueError, KeyError):
+            self.descriptor_type = None
 
         if self.modifier_type == "dipole_charge":
             t_mdl_name = self._get_tensor("modifier_attr/mdl_name:0")
@@ -185,14 +200,44 @@ class DeepPot(DeepEval):
             )
 
     def _run_default_sess(self):
-        [self.ntypes, self.rcut, self.dfparam, self.daparam, self.tmap] = run_sess(
-            self.sess,
-            [self.t_ntypes, self.t_rcut, self.t_dfparam, self.t_daparam, self.t_tmap],
-        )
+        if self.has_spin is True:
+            [
+                self.ntypes,
+                self.ntypes_spin,
+                self.rcut,
+                self.dfparam,
+                self.daparam,
+                self.tmap,
+            ] = run_sess(
+                self.sess,
+                [
+                    self.t_ntypes,
+                    self.t_ntypes_spin,
+                    self.t_rcut,
+                    self.t_dfparam,
+                    self.t_daparam,
+                    self.t_tmap,
+                ],
+            )
+        else:
+            [self.ntypes, self.rcut, self.dfparam, self.daparam, self.tmap] = run_sess(
+                self.sess,
+                [
+                    self.t_ntypes,
+                    self.t_rcut,
+                    self.t_dfparam,
+                    self.t_daparam,
+                    self.t_tmap,
+                ],
+            )
 
     def get_ntypes(self) -> int:
         """Get the number of atom types of this model."""
         return self.ntypes
+
+    def get_ntypes_spin(self):
+        """Get the number of spin atom types of this model."""
+        return self.ntypes_spin
 
     def get_rcut(self) -> float:
         """Get the cut-off radius of this model."""
@@ -205,6 +250,10 @@ class DeepPot(DeepEval):
     def get_sel_type(self) -> List[int]:
         """Unsupported in this model."""
         raise NotImplementedError("This model type does not support this attribute")
+
+    def get_descriptor_type(self) -> List[int]:
+        """Get the descriptor type of this model."""
+        return self.descriptor_type
 
     def get_dim_fparam(self) -> int:
         """Get the number (dimension) of frame parameters of this DP."""
@@ -440,15 +489,12 @@ class DeepPot(DeepEval):
             raise RuntimeError
         if self.has_efield:
             feed_dict_test[self.t_efield] = np.reshape(efield, [-1])
-        if pbc:
-            feed_dict_test[self.t_mesh] = make_default_mesh(cells)
-        else:
-            feed_dict_test[self.t_mesh] = np.array([], dtype=np.int32)
+        feed_dict_test[self.t_mesh] = make_default_mesh(pbc, mixed_type)
         if self.has_fparam:
             feed_dict_test[self.t_fparam] = np.reshape(fparam, [-1])
         if self.has_aparam:
             feed_dict_test[self.t_aparam] = np.reshape(aparam, [-1])
-        return feed_dict_test, imap
+        return feed_dict_test, imap, natoms_vec
 
     def _eval_inner(
         self,
@@ -464,9 +510,10 @@ class DeepPot(DeepEval):
         natoms, nframes = self._get_natoms_and_nframes(
             coords, atom_types, mixed_type=mixed_type
         )
-        feed_dict_test, imap = self._prepare_feed_dict(
+        feed_dict_test, imap, natoms_vec = self._prepare_feed_dict(
             coords, cells, atom_types, fparam, aparam, efield, mixed_type=mixed_type
         )
+
         t_out = [self.t_energy, self.t_force, self.t_virial]
         if atomic:
             t_out += [self.t_ae, self.t_av]
@@ -479,17 +526,28 @@ class DeepPot(DeepEval):
             ae = v_out[3]
             av = v_out[4]
 
+        if self.has_spin:
+            ntypes_real = self.ntypes - self.ntypes_spin
+            natoms_real = sum(
+                [
+                    np.count_nonzero(np.array(atom_types) == ii)
+                    for ii in range(ntypes_real)
+                ]
+            )
+        else:
+            natoms_real = natoms
+
         # reverse map of the outputs
         force = self.reverse_map(np.reshape(force, [nframes, -1, 3]), imap)
         if atomic:
-            ae = self.reverse_map(np.reshape(ae, [nframes, -1, 1]), imap)
+            ae = self.reverse_map(np.reshape(ae, [nframes, -1, 1]), imap[:natoms_real])
             av = self.reverse_map(np.reshape(av, [nframes, -1, 9]), imap)
 
         energy = np.reshape(energy, [nframes, 1])
         force = np.reshape(force, [nframes, natoms, 3])
         virial = np.reshape(virial, [nframes, 9])
         if atomic:
-            ae = np.reshape(ae, [nframes, natoms, 1])
+            ae = np.reshape(ae, [nframes, natoms_real, 1])
             av = np.reshape(av, [nframes, natoms, 9])
             return energy, force, virial, ae, av
         else:
@@ -570,7 +628,7 @@ class DeepPot(DeepEval):
         natoms, nframes = self._get_natoms_and_nframes(
             coords, atom_types, mixed_type=mixed_type
         )
-        feed_dict_test, imap = self._prepare_feed_dict(
+        feed_dict_test, imap, natoms_vec = self._prepare_feed_dict(
             coords, cells, atom_types, fparam, aparam, efield, mixed_type=mixed_type
         )
         (descriptor,) = run_sess(

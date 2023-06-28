@@ -8,6 +8,11 @@
 #include "neighbor_list.h"
 #include "prod_force_grad.h"
 
+template <typename T>
+inline void double_vec(std::vector<T>& v) {
+  v.insert(std::end(v), std::begin(v), std::end(v));
+}
+
 class TestProdForceGradR : public ::testing::Test {
  protected:
   std::vector<double> posi = {12.83, 2.56, 2.18, 12.09, 2.87, 2.74,
@@ -16,6 +21,7 @@ class TestProdForceGradR : public ::testing::Test {
   std::vector<int> atype = {0, 1, 1, 0, 1, 1};
   std::vector<double> posi_cpy;
   std::vector<int> atype_cpy;
+  int nframes = 2;
   int ntypes = 2;
   int nloc, nall, nnei, ndescrpt;
   double rc = 6;
@@ -87,15 +93,19 @@ class TestProdForceGradR : public ::testing::Test {
     for (int ii = 0; ii < nloc * 3; ++ii) {
       grad[ii] = 10 - ii * 0.1;
     }
+    double_vec(grad);
+    double_vec(nlist);
+    double_vec(env_deriv);
+    double_vec(expected_grad_net);
   }
   void TearDown() override {}
 };
 
 TEST_F(TestProdForceGradR, cpu) {
-  std::vector<double> grad_net(nloc * ndescrpt);
+  std::vector<double> grad_net(nframes * nloc * ndescrpt);
   deepmd::prod_force_grad_r_cpu<double>(&grad_net[0], &grad[0], &env_deriv[0],
-                                        &nlist[0], nloc, nnei);
-  EXPECT_EQ(grad_net.size(), nloc * ndescrpt);
+                                        &nlist[0], nloc, nnei, nframes);
+  EXPECT_EQ(grad_net.size(), nframes * nloc * ndescrpt);
   EXPECT_EQ(grad_net.size(), expected_grad_net.size());
   for (int jj = 0; jj < grad_net.size(); ++jj) {
     EXPECT_LT(fabs(grad_net[jj] - expected_grad_net[jj]), 1e-5);
@@ -108,23 +118,23 @@ TEST_F(TestProdForceGradR, cpu) {
 
 #if GOOGLE_CUDA
 TEST_F(TestProdForceGradR, gpu) {
-  std::vector<double> grad_net(nloc * ndescrpt);
+  std::vector<double> grad_net(nframes * nloc * ndescrpt);
   int* nlist_dev = NULL;
   double *grad_net_dev = NULL, *grad_dev = NULL, *env_deriv_dev = NULL;
 
   deepmd::malloc_device_memory_sync(nlist_dev, nlist);
   deepmd::malloc_device_memory_sync(grad_dev, grad);
   deepmd::malloc_device_memory_sync(env_deriv_dev, env_deriv);
-  deepmd::malloc_device_memory(grad_net_dev, nloc * ndescrpt);
+  deepmd::malloc_device_memory(grad_net_dev, nframes * nloc * ndescrpt);
   deepmd::prod_force_grad_r_gpu_cuda<double>(
-      grad_net_dev, grad_dev, env_deriv_dev, nlist_dev, nloc, nnei);
+      grad_net_dev, grad_dev, env_deriv_dev, nlist_dev, nloc, nnei, nframes);
   deepmd::memcpy_device_to_host(grad_net_dev, grad_net);
   deepmd::delete_device_memory(nlist_dev);
   deepmd::delete_device_memory(grad_dev);
   deepmd::delete_device_memory(env_deriv_dev);
   deepmd::delete_device_memory(grad_net_dev);
 
-  EXPECT_EQ(grad_net.size(), nloc * ndescrpt);
+  EXPECT_EQ(grad_net.size(), nframes * nloc * ndescrpt);
   EXPECT_EQ(grad_net.size(), expected_grad_net.size());
   for (int jj = 0; jj < grad_net.size(); ++jj) {
     EXPECT_LT(fabs(grad_net[jj] - expected_grad_net[jj]), 1e-5);
@@ -138,23 +148,23 @@ TEST_F(TestProdForceGradR, gpu) {
 
 #if TENSORFLOW_USE_ROCM
 TEST_F(TestProdForceGradR, gpu) {
-  std::vector<double> grad_net(nloc * ndescrpt);
+  std::vector<double> grad_net(nframes * nloc * ndescrpt);
   int* nlist_dev = NULL;
   double *grad_net_dev = NULL, *grad_dev = NULL, *env_deriv_dev = NULL;
 
   deepmd::malloc_device_memory_sync(nlist_dev, nlist);
   deepmd::malloc_device_memory_sync(grad_dev, grad);
   deepmd::malloc_device_memory_sync(env_deriv_dev, env_deriv);
-  deepmd::malloc_device_memory(grad_net_dev, nloc * ndescrpt);
+  deepmd::malloc_device_memory(grad_net_dev, nframes * nloc * ndescrpt);
   deepmd::prod_force_grad_r_gpu_rocm<double>(
-      grad_net_dev, grad_dev, env_deriv_dev, nlist_dev, nloc, nnei);
+      grad_net_dev, grad_dev, env_deriv_dev, nlist_dev, nloc, nnei, nframes);
   deepmd::memcpy_device_to_host(grad_net_dev, grad_net);
   deepmd::delete_device_memory(nlist_dev);
   deepmd::delete_device_memory(grad_dev);
   deepmd::delete_device_memory(env_deriv_dev);
   deepmd::delete_device_memory(grad_net_dev);
 
-  EXPECT_EQ(grad_net.size(), nloc * ndescrpt);
+  EXPECT_EQ(grad_net.size(), nframes * nloc * ndescrpt);
   EXPECT_EQ(grad_net.size(), expected_grad_net.size());
   for (int jj = 0; jj < grad_net.size(); ++jj) {
     EXPECT_LT(fabs(grad_net[jj] - expected_grad_net[jj]), 1e-5);

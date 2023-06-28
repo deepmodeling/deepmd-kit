@@ -20,6 +20,12 @@ from deepmd.env import (
 from deepmd.fit.fitting import (
     Fitting,
 )
+from deepmd.loss.loss import (
+    Loss,
+)
+from deepmd.loss.tensor import (
+    TensorLoss,
+)
 from deepmd.utils.graph import (
     get_fitting_net_variables_from_graph_def,
 )
@@ -29,6 +35,7 @@ from deepmd.utils.network import (
 )
 
 
+@Fitting.register("polar")
 class PolarFittingSeA(Fitting):
     r"""Fit the atomic polarizability with descriptor se_a.
 
@@ -73,6 +80,7 @@ class PolarFittingSeA(Fitting):
         activation_function: str = "tanh",
         precision: str = "default",
         uniform_seed: bool = False,
+        **kwargs,
     ) -> None:
         """Constructor."""
         self.ntypes = descrpt.get_ntypes()
@@ -90,7 +98,7 @@ class PolarFittingSeA(Fitting):
         self.fitting_activation_fn = get_activation_func(activation_function)
         self.fitting_precision = get_precision(precision)
         if self.sel_type is None:
-            self.sel_type = [ii for ii in range(self.ntypes)]
+            self.sel_type = list(range(self.ntypes))
         self.sel_mask = np.array(
             [ii in self.sel_type for ii in range(self.ntypes)], dtype=bool
         )
@@ -489,6 +497,16 @@ class PolarFittingSeA(Fitting):
         self.mixed_prec = mixed_prec
         self.fitting_precision = get_precision(mixed_prec["output_prec"])
 
+    def get_loss(self, loss: dict, lr) -> Loss:
+        """Get the loss function."""
+        return TensorLoss(
+            loss,
+            model=self,
+            tensor_name="polar",
+            tensor_size=9,
+            label_name="polarizability",
+        )
+
 
 class GlobalPolarFittingSeA:
     r"""Fit the system polarizability with descriptor se_a.
@@ -631,3 +649,27 @@ class GlobalPolarFittingSeA:
             The mixed precision setting used in the embedding net
         """
         self.polar_fitting.enable_mixed_precision(mixed_prec)
+
+    def get_loss(self, loss: dict, lr) -> Loss:
+        """Get the loss function.
+
+        Parameters
+        ----------
+        loss : dict
+            the loss dict
+        lr : LearningRateExp
+            the learning rate
+
+        Returns
+        -------
+        Loss
+            the loss function
+        """
+        return TensorLoss(
+            loss,
+            model=self,
+            tensor_name="global_polar",
+            tensor_size=9,
+            atomic=False,
+            label_name="polarizability",
+        )

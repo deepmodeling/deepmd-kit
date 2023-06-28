@@ -1,5 +1,5 @@
 # Run path-integral MD with i-PI
-The i-PI works in a client-server model. The i-PI provides the server for integrating the replica positions of atoms, while the DeePMD-kit provides a client named `dp_ipi` (or `dp_ipi_low` for low precision) that computes the interactions (including energy, forces and virials). The server and client communicate via the Unix domain socket or the Internet socket. Installation instructions for i-PI can be found [here](../install/install-ipi.md). The client can be started by
+The i-PI works in a client-server model. The i-PI provides the server for integrating the replica positions of atoms, while the DeePMD-kit provides a client named `dp_ipi` that computes the interactions (including energy, forces and virials). The server and client communicate via the Unix domain socket or the Internet socket. Installation instructions for i-PI can be found [here](../install/install-ipi.md). The client can be started by
 ```bash
 i-pi input.xml &
 dp_ipi water.json
@@ -29,6 +29,6 @@ The option **`port`** should be the same as that in input.xml:
 <port>31415</port>
 ```
 
-The option **`graph_file`** provides the file name of the frozen model.
+The option **`graph_file`** provides the file name of the frozen model. The model can have either double or single float precision interface.
 
 The `dp_ipi` gets the atom names from an [XYZ file](https://en.wikipedia.org/wiki/XYZ_file_format) provided by **`coord_file`** (meanwhile ignores all coordinates in it) and translates the names to atom types by rules provided by **`atom_type`**.

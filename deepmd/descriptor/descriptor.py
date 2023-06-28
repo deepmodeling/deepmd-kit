@@ -3,6 +3,7 @@ from abc import (
 )
 from typing import (
     Any,
+    Callable,
     Dict,
     List,
     Optional,
@@ -43,7 +44,7 @@ class Descriptor(PluginVariant):
     __plugins = Plugin()
 
     @staticmethod
-    def register(key: str) -> "Descriptor":
+    def register(key: str) -> Callable:
         """Register a descriptor plugin.
 
         Parameters
@@ -159,6 +160,7 @@ class Descriptor(PluginVariant):
         natoms_vec: List[np.ndarray],
         mesh: List[np.ndarray],
         input_dict: Dict[str, List[np.ndarray]],
+        **kwargs,
     ) -> None:
         """Compute the statisitcs (avg and std) of the training data. The input will be
         normalized by the statistics.
@@ -181,6 +183,8 @@ class Descriptor(PluginVariant):
             :meth:`deepmd.model.model_stat.make_stat_input`
         input_dict : dict[str, list[np.ndarray]]
             Dictionary for additional input
+        **kwargs
+            Additional keyword arguments which may contain `mixed_type` and `real_natoms_vec`.
 
         Notes
         -----
@@ -521,3 +525,8 @@ class Descriptor(PluginVariant):
         # same as inputs_i, (nsamples * natoms, ndescrpt)
         mask = tf.reshape(mask, [-1, ndescrpt])
         return mask
+
+    @property
+    def explicit_ntypes(self) -> bool:
+        """Explicit ntypes with type embedding."""
+        return False

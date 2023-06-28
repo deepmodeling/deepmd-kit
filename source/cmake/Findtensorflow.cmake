@@ -7,6 +7,17 @@
 #
 # Target: TensorFlow::tensorflow_framework TensorFlow::tensorflow_cc
 
+if(SKBUILD)
+  # clean cmake caches for skbuild, as TF directories may be changed due to
+  # PEP-517
+  set(TensorFlowFramework_LIBRARY_tensorflow_framework
+      "TensorFlowFramework_LIBRARY_tensorflow_framework-NOTFOUND")
+  set(TensorFlow_LIBRARY_tensorflow_cc
+      "TensorFlow_LIBRARY_tensorflow_cc-NOTFOUND")
+  set(TensorFlow_INCLUDE_DIRS "TensorFlow_INCLUDE_DIRS-NOTFOUND")
+  set(TensorFlow_INCLUDE_DIRS_GOOGLE "TensorFlow_INCLUDE_DIRS_GOOGLE-NOTFOUND")
+endif(SKBUILD)
+
 if(BUILD_CPP_IF AND INSTALL_TENSORFLOW)
   # Here we try to install libtensorflow_cc using conda install.
 
@@ -269,20 +280,22 @@ else(BUILD_CPP_IF)
 endif(BUILD_CPP_IF)
 
 # detect TensorFlow version
-try_run(
-  TENSORFLOW_VERSION_RUN_RESULT_VAR TENSORFLOW_VERSION_COMPILE_RESULT_VAR
-  ${CMAKE_CURRENT_BINARY_DIR}/tf_version
-  "${CMAKE_CURRENT_LIST_DIR}/tf_version.cpp"
-  CMAKE_FLAGS "-DINCLUDE_DIRECTORIES:STRING=${TensorFlow_INCLUDE_DIRS}"
-  RUN_OUTPUT_VARIABLE TENSORFLOW_VERSION
-  COMPILE_OUTPUT_VARIABLE TENSORFLOW_VERSION_COMPILE_OUTPUT_VAR)
-if(NOT ${TENSORFLOW_VERSION_COMPILE_RESULT_VAR})
-  message(
-    FATAL_ERROR "Failed to compile: \n ${TENSORFLOW_VERSION_COMPILE_OUTPUT_VAR}"
-  )
-endif()
-if(NOT ${TENSORFLOW_VERSION_RUN_RESULT_VAR} EQUAL "0")
-  message(FATAL_ERROR "Failed to run, return code: ${TENSORFLOW_VERSION}")
+if(NOT DEFINED TENSORFLOW_VERSION)
+  try_run(
+    TENSORFLOW_VERSION_RUN_RESULT_VAR TENSORFLOW_VERSION_COMPILE_RESULT_VAR
+    ${CMAKE_CURRENT_BINARY_DIR}/tf_version
+    "${CMAKE_CURRENT_LIST_DIR}/tf_version.cpp"
+    CMAKE_FLAGS "-DINCLUDE_DIRECTORIES:STRING=${TensorFlow_INCLUDE_DIRS}"
+    RUN_OUTPUT_VARIABLE TENSORFLOW_VERSION
+    COMPILE_OUTPUT_VARIABLE TENSORFLOW_VERSION_COMPILE_OUTPUT_VAR)
+  if(NOT ${TENSORFLOW_VERSION_COMPILE_RESULT_VAR})
+    message(
+      FATAL_ERROR
+        "Failed to compile: \n ${TENSORFLOW_VERSION_COMPILE_OUTPUT_VAR}")
+  endif()
+  if(NOT ${TENSORFLOW_VERSION_RUN_RESULT_VAR} EQUAL "0")
+    message(FATAL_ERROR "Failed to run, return code: ${TENSORFLOW_VERSION}")
+  endif()
 endif()
 
 # print message
@@ -326,12 +339,14 @@ elseif(NOT DEFINED OP_CXX_ABI)
     try_compile(
       CPP_CXX_ABI_COMPILE_RESULT_VAR0 ${CMAKE_CURRENT_BINARY_DIR}/tf_cxx_abi0
       "${CMAKE_CURRENT_LIST_DIR}/test_cxx_abi.cpp"
+      OUTPUT_VARIABLE CPP_CXX_ABI_COMPILE_OUTPUT_VAR0
       LINK_LIBRARIES ${TensorFlowFramework_LIBRARY}
       CMAKE_FLAGS "-DINCLUDE_DIRECTORIES:STRING=${TensorFlow_INCLUDE_DIRS}"
       COMPILE_DEFINITIONS -D_GLIBCXX_USE_CXX11_ABI=0)
     try_compile(
       CPP_CXX_ABI_COMPILE_RESULT_VAR1 ${CMAKE_CURRENT_BINARY_DIR}/tf_cxx_abi1
       "${CMAKE_CURRENT_LIST_DIR}/test_cxx_abi.cpp"
+      OUTPUT_VARIABLE CPP_CXX_ABI_COMPILE_OUTPUT_VAR1
       LINK_LIBRARIES ${TensorFlowFramework_LIBRARY}
       CMAKE_FLAGS "-DINCLUDE_DIRECTORIES:STRING=${TensorFlow_INCLUDE_DIRS}"
       COMPILE_DEFINITIONS -D_GLIBCXX_USE_CXX11_ABI=1)
@@ -349,9 +364,14 @@ elseif(NOT DEFINED OP_CXX_ABI)
       )
       set(OP_CXX_ABI 1)
     else()
+      # print results of try_compile
+      message(WARNING "Output with _GLIBCXX_USE_CXX11_ABI=0:"
+                      ${CPP_CXX_ABI_COMPILE_OUTPUT_VAR0})
+      message(WARNING "Output with _GLIBCXX_USE_CXX11_ABI=1:"
+                      ${CPP_CXX_ABI_COMPILE_OUTPUT_VAR1})
       message(
         FATAL_ERROR
-          "Both _GLIBCXX_USE_CXX11_ABI=0 and 1 do not work. The reason may be that your C++ compiler (e.g. Red Hat Developer Toolset) does not support the custom cxx11 abi flag."
+          "Both _GLIBCXX_USE_CXX11_ABI=0 and 1 do not work. The reason may be that your C++ compiler (e.g. Red Hat Developer Toolset) does not support the custom cxx11 abi flag. Please check the above outputs."
       )
     endif()
   else()

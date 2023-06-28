@@ -79,7 +79,9 @@ Args:
     psock = (struct sockaddr *)&serv_addr;
     ssock = sizeof(serv_addr);
     sockfd = socket(AF_INET, SOCK_STREAM, 0);
-    if (sockfd < 0) error("Error opening socket");
+    if (sockfd < 0) {
+      error("Error opening socket");
+    }
 
     server = gethostbyname(host);
     if (server == NULL) {
@@ -92,8 +94,9 @@ Args:
     bcopy((char *)server->h_addr, (char *)&serv_addr.sin_addr.s_addr,
           server->h_length);
     serv_addr.sin_port = htons(*port);
-    if (connect(sockfd, psock, ssock) < 0)
+    if (connect(sockfd, psock, ssock) < 0) {
       error("Error opening socket: wrong host address, or broken connection");
+    }
   } else {  // creates a unix socket
     struct sockaddr_un serv_addr;
     psock = (struct sockaddr *)&serv_addr;
@@ -103,8 +106,9 @@ Args:
     serv_addr.sun_family = AF_UNIX;
     strcpy(serv_addr.sun_path, "/tmp/ipi_");
     strcpy(serv_addr.sun_path + 9, host);
-    if (connect(sockfd, psock, ssock) < 0)
+    if (connect(sockfd, psock, ssock) < 0) {
       error("Error opening socket: wrong host address, or broken connection");
+    }
   }
 
   *psockfd = sockfd;
@@ -124,8 +128,9 @@ Args:
   int sockfd = *psockfd;
 
   n = write(sockfd, data, len);
-  if (n < 0)
+  if (n < 0) {
     error("Error writing to socket: server has quit or connection broke");
+  }
 }
 
 void readbuffer_(int *psockfd, char *data, int len)
@@ -148,6 +153,7 @@ Args:
     n += nr;
   }
 
-  if (n == 0)
+  if (n == 0) {
     error("Error reading from socket: server has quit or connection broke");
+  }
 }

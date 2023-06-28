@@ -1,3 +1,4 @@
+import logging
 import warnings
 from typing import (
     List,
@@ -12,6 +13,7 @@ from packaging.version import (
 
 from deepmd.common import (
     cast_precision,
+    get_np_precision,
 )
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
@@ -23,6 +25,9 @@ from deepmd.env import (
 )
 from deepmd.utils.graph import (
     get_attention_layer_variables_from_graph_def,
+    get_pattern_nodes_from_graph_def,
+    get_tensor_by_name_from_graph,
+    get_tensor_by_type,
 )
 from deepmd.utils.network import (
     embedding_net,
@@ -31,6 +36,9 @@ from deepmd.utils.network import (
 from deepmd.utils.sess import (
     run_sess,
 )
+from deepmd.utils.tabulate import (
+    DPTabulate,
+)
 
 from .descriptor import (
     Descriptor,
@@ -38,6 +46,8 @@ from .descriptor import (
 from .se_a import (
     DescrptSeA,
 )
+
+log = logging.getLogger(__name__)
 
 
 @Descriptor.register("se_atten")
@@ -110,6 +120,8 @@ class DescrptSeAtten(DescrptSeA):
         attn_dotr: bool = True,
         attn_mask: bool = False,
         multi_task: bool = False,
+        stripped_type_embedding: bool = False,
+        **kwargs,
     ) -> None:
         if not set_davg_zero:
             warnings.warn(
@@ -140,11 +152,15 @@ class DescrptSeAtten(DescrptSeA):
         assert Version(TF_VERSION) > Version(
             "2"
         ), "se_atten only support tensorflow version 2.0 or higher."
+        self.stripped_type_embedding = stripped_type_embedding
         self.ntypes = ntypes
         self.att_n = attn
         self.attn_layer = attn_layer
         self.attn_mask = attn_mask
         self.attn_dotr = attn_dotr
+        self.filter_np_precision = get_np_precision(precision)
+        self.two_side_embeeding_net_variables = None
+        self.layer_size = len(neuron)
 
         # descrpt config
         self.sel_all_a = [sel]
@@ -211,6 +227,7 @@ class DescrptSeAtten(DescrptSeA):
         input_dict: dict,
         mixed_type: bool = False,
         real_natoms_vec: Optional[list] = None,
+        **kwargs,
     ) -> None:
         """Compute the statisitcs (avg and std) of the training data. The input will be normalized by the statistics.
 
@@ -235,6 +252,8 @@ class DescrptSeAtten(DescrptSeA):
             in which frames in a system may have different natoms_vec(s), with the same nloc.
         real_natoms_vec
             If mixed_type is True, it takes in the real natoms_vec for each frame.
+        **kwargs
+            Additional keyword arguments.
         """
         if True:
             sumr = []
@@ -283,6 +302,183 @@ class DescrptSeAtten(DescrptSeA):
                 self.stat_dict["sumn"] += sumn
                 self.stat_dict["sumr2"] += sumr2
                 self.stat_dict["suma2"] += suma2
+
+    def enable_compression(
+        self,
+        min_nbor_dist: float,
+        graph: tf.Graph,
+        graph_def: tf.GraphDef,
+        table_extrapolate: float = 5,
+        table_stride_1: float = 0.01,
+        table_stride_2: float = 0.1,
+        check_frequency: int = -1,
+        suffix: str = "",
+    ) -> None:
+        """Reveive the statisitcs (distance, max_nbor_size and env_mat_range) of the training data.
+
+        Parameters
+        ----------
+        min_nbor_dist
+            The nearest distance between atoms
+        graph : tf.Graph
+            The graph of the model
+        graph_def : tf.GraphDef
+            The graph_def of the model
+        table_extrapolate
+            The scale of model extrapolation
+        table_stride_1
+            The uniform stride of the first table
+        table_stride_2
+            The uniform stride of the second table
+        check_frequency
+            The overflow check frequency
+        suffix : str, optional
+            The suffix of the scope
+        """
+        # do some checks before the mocel compression process
+        assert (
+            not self.filter_resnet_dt
+        ), "Model compression error: descriptor resnet_dt must be false!"
+        for tt in self.exclude_types:
+            if (tt[0] not in range(self.ntypes)) or (tt[1] not in range(self.ntypes)):
+                raise RuntimeError(
+                    "exclude types"
+                    + str(tt)
+                    + " must within the number of atomic types "
+                    + str(self.ntypes)
+                    + "!"
+                )
+        if self.ntypes * self.ntypes - len(self.exclude_types) == 0:
+            raise RuntimeError(
+                "empty embedding-net are not supported in model compression!"
+            )
+
+        for ii in range(len(self.filter_neuron) - 1):
+            if self.filter_neuron[ii] * 2 != self.filter_neuron[ii + 1]:
+                raise NotImplementedError(
+                    "Model Compression error: descriptor neuron [%s] is not supported by model compression! "
+                    "The size of the next layer of the neural network must be twice the size of the previous layer."
+                    % ",".join([str(item) for item in self.filter_neuron])
+                )
+
+        if self.attn_layer != 0:
+            raise RuntimeError("can not compress model when attention layer is not 0.")
+
+        ret = get_pattern_nodes_from_graph_def(
+            graph_def, f"filter_type_all{suffix}/.+_two_side_ebd"
+        )
+        if len(ret) == 0:
+            raise RuntimeError(
+                "can not find variables of embedding net `*_two_side_ebd` from graph_def, maybe it is not a compressible model."
+            )
+
+        self.compress = True
+        self.table = DPTabulate(
+            self,
+            self.filter_neuron,
+            graph,
+            graph_def,
+            True,
+            self.exclude_types,
+            self.compress_activation_fn,
+            suffix=suffix,
+        )
+        self.table_config = [
+            table_extrapolate,
+            table_stride_1,
+            table_stride_2,
+            check_frequency,
+        ]
+        self.lower, self.upper = self.table.build(
+            min_nbor_dist, table_extrapolate, table_stride_1, table_stride_2
+        )
+
+        self.final_type_embedding = self._get_two_side_type_embedding(graph)
+        self.matrix = self._get_two_side_embedding_net_variable(
+            graph_def, "matrix", suffix
+        )
+        self.bias = self._get_two_side_embedding_net_variable(graph_def, "bias", suffix)
+        self.two_embd = self._make_data(self.final_type_embedding)
+
+        self.davg = get_tensor_by_name_from_graph(
+            graph, "descrpt_attr%s/t_avg" % suffix
+        )
+        self.dstd = get_tensor_by_name_from_graph(
+            graph, "descrpt_attr%s/t_std" % suffix
+        )
+
+    def _get_two_side_type_embedding(self, graph):
+        type_embedding = get_tensor_by_name_from_graph(graph, "t_typeebd")
+        type_embedding = type_embedding.astype(self.filter_np_precision)
+        type_embedding_shape = type_embedding.shape
+        type_embedding_nei = np.tile(
+            np.reshape(type_embedding, [1, type_embedding_shape[0], -1]),
+            [type_embedding_shape[0], 1, 1],
+        )  # (ntypes) * ntypes * Y
+        type_embedding_center = np.tile(
+            np.reshape(type_embedding, [type_embedding_shape[0], 1, -1]),
+            [1, type_embedding_shape[0], 1],
+        )  # ntypes * (ntypes) * Y
+        two_side_type_embedding = np.concatenate(
+            [type_embedding_nei, type_embedding_center], -1
+        )  # ntypes * ntypes * (Y+Y)
+        two_side_type_embedding = np.reshape(
+            two_side_type_embedding, [-1, two_side_type_embedding.shape[-1]]
+        )
+        return two_side_type_embedding
+
+    def _get_two_side_embedding_net_variable(self, graph_def, varialbe_name, suffix):
+        ret = {}
+        for i in range(1, self.layer_size + 1):
+            target = get_pattern_nodes_from_graph_def(
+                graph_def,
+                f"filter_type_all{suffix}/{varialbe_name}_{i}_two_side_ebd",
+            )
+            node = target[f"filter_type_all{suffix}/{varialbe_name}_{i}_two_side_ebd"]
+            ret["layer_" + str(i)] = node
+        return ret
+
+    def _layer_0(self, x, w, b):
+        return self.filter_activation_fn(tf.matmul(x, w) + b)
+
+    def _layer_1(self, x, w, b):
+        t = tf.concat([x, x], axis=1)
+        return t, self.filter_activation_fn(tf.matmul(x, w) + b) + t
+
+    def _make_data(self, xx):
+        with tf.Session() as sess:
+            for layer in range(self.layer_size):
+                if layer == 0:
+                    if self.filter_neuron[0] == 1:
+                        yy = (
+                            self._layer_0(
+                                xx,
+                                self.matrix["layer_" + str(layer + 1)],
+                                self.bias["layer_" + str(layer + 1)],
+                            )
+                            + xx
+                        )
+                    elif self.filter_neuron[0] == 2:
+                        tt, yy = self._layer_1(
+                            xx,
+                            self.matrix["layer_" + str(layer + 1)],
+                            self.bias["layer_" + str(layer + 1)],
+                        )
+                    else:
+                        yy = self._layer_0(
+                            xx,
+                            self.matrix["layer_" + str(layer + 1)],
+                            self.bias["layer_" + str(layer + 1)],
+                        )
+                else:
+                    tt, zz = self._layer_1(
+                        yy,
+                        self.matrix["layer_" + str(layer + 1)],
+                        self.bias["layer_" + str(layer + 1)],
+                    )
+                    yy = zz
+            vv = sess.run(zz)
+        return vv
 
     def build(
         self,
@@ -443,7 +639,7 @@ class DescrptSeAtten(DescrptSeA):
                 self.ntypes,
                 self.sel_a,
                 self.ndescrpt,
-                atype,
+                self.atype_nloc,  # when nloc != nall, pass nloc to mask
                 tf.shape(inputs_i)[0],
                 self.nei_type_vec,  # extra input for atten
             )
@@ -805,31 +1001,128 @@ class DescrptSeAtten(DescrptSeA):
         # with (natom x nei_type_i) x 1
         xyz_scatter = tf.reshape(tf.slice(inputs_reshape, [0, 0], [-1, 1]), [-1, 1])
         assert atype is not None, "atype must exist!!"
-        type_embedding = tf.cast(type_embedding, self.filter_precision)
-        xyz_scatter = self._lookup_type_embedding(xyz_scatter, atype, type_embedding)
-        if self.compress:
-            raise RuntimeError(
-                "compression of attention descriptor is not supported at the moment"
-            )
+        type_embedding = tf.cast(type_embedding, self.filter_precision)  # ntypes * Y
         # natom x 4 x outputs_size
         if not is_exclude:
             with tf.variable_scope(name, reuse=reuse):
                 # with (natom x nei_type_i) x out_size
-                xyz_scatter = embedding_net(
-                    xyz_scatter,
-                    self.filter_neuron,
-                    self.filter_precision,
-                    activation_fn=activation_fn,
-                    resnet_dt=self.filter_resnet_dt,
-                    name_suffix=suffix,
-                    stddev=stddev,
-                    bavg=bavg,
-                    seed=self.seed,
-                    trainable=trainable,
-                    uniform_seed=self.uniform_seed,
-                    initial_variables=self.embedding_net_variables,
-                    mixed_prec=self.mixed_prec,
-                )
+                if not self.stripped_type_embedding:
+                    log.info("use the previous se_atten model")
+                    xyz_scatter = self._lookup_type_embedding(
+                        xyz_scatter, atype, type_embedding
+                    )
+                    xyz_scatter = embedding_net(
+                        xyz_scatter,
+                        self.filter_neuron,
+                        self.filter_precision,
+                        activation_fn=activation_fn,
+                        resnet_dt=self.filter_resnet_dt,
+                        name_suffix="",
+                        stddev=stddev,
+                        bavg=bavg,
+                        seed=self.seed,
+                        trainable=trainable,
+                        uniform_seed=self.uniform_seed,
+                        initial_variables=self.embedding_net_variables,
+                        mixed_prec=self.mixed_prec,
+                    )
+                else:
+                    if self.attn_layer == 0:
+                        log.info(
+                            "use the compressible model with stripped type embedding"
+                        )
+                    else:
+                        log.info(
+                            "use the non-compressible model with stripped type embedding"
+                        )
+                    if not self.compress:
+                        xyz_scatter = embedding_net(
+                            xyz_scatter,
+                            self.filter_neuron,
+                            self.filter_precision,
+                            activation_fn=activation_fn,
+                            resnet_dt=self.filter_resnet_dt,
+                            name_suffix="",
+                            stddev=stddev,
+                            bavg=bavg,
+                            seed=self.seed,
+                            trainable=trainable,
+                            uniform_seed=self.uniform_seed,
+                            initial_variables=self.embedding_net_variables,
+                            mixed_prec=self.mixed_prec,
+                        )
+                    else:
+                        net = "filter_net"
+                        info = [
+                            self.lower[net],
+                            self.upper[net],
+                            self.upper[net] * self.table_config[0],
+                            self.table_config[1],
+                            self.table_config[2],
+                            self.table_config[3],
+                        ]
+
+                    padding_ntypes = type_embedding.shape[
+                        0
+                    ]  # this must be self.ntypes + 1
+                    atype_expand = tf.reshape(atype, [-1, 1])
+                    idx_i = tf.tile(atype_expand * padding_ntypes, [1, self.nnei])
+                    idx_j = tf.reshape(self.nei_type_vec, [-1, self.nnei])
+                    idx = idx_i + idx_j
+                    index_of_two_side = tf.reshape(idx, [-1])
+
+                    if self.compress:
+                        two_embd = tf.nn.embedding_lookup(
+                            self.two_embd, index_of_two_side
+                        )
+                    else:
+                        type_embedding_nei = tf.tile(
+                            tf.reshape(type_embedding, [1, padding_ntypes, -1]),
+                            [padding_ntypes, 1, 1],
+                        )  # (ntypes) * ntypes * Y
+                        type_embedding_center = tf.tile(
+                            tf.reshape(type_embedding, [padding_ntypes, 1, -1]),
+                            [1, padding_ntypes, 1],
+                        )  # ntypes * (ntypes) * Y
+                        two_side_type_embedding = tf.concat(
+                            [type_embedding_nei, type_embedding_center], -1
+                        )  # ntypes * ntypes * (Y+Y)
+                        two_side_type_embedding = tf.reshape(
+                            two_side_type_embedding,
+                            [-1, two_side_type_embedding.shape[-1]],
+                        )
+                        two_side_type_embedding_suffix = "_two_side_ebd"
+                        embedding_of_two_side_type_embedding = embedding_net(
+                            two_side_type_embedding,
+                            self.filter_neuron,
+                            self.filter_precision,
+                            activation_fn=activation_fn,
+                            resnet_dt=self.filter_resnet_dt,
+                            name_suffix=two_side_type_embedding_suffix,
+                            stddev=stddev,
+                            bavg=bavg,
+                            seed=self.seed,
+                            trainable=trainable,
+                            uniform_seed=self.uniform_seed,
+                            initial_variables=self.two_side_embeeding_net_variables,
+                            mixed_prec=self.mixed_prec,
+                        )
+                        two_embd = tf.nn.embedding_lookup(
+                            embedding_of_two_side_type_embedding, index_of_two_side
+                        )
+
+                    if not self.compress:
+                        xyz_scatter = xyz_scatter * two_embd + two_embd
+                    else:
+                        return op_module.tabulate_fusion_se_atten(
+                            tf.cast(self.table.data[net], self.filter_precision),
+                            info,
+                            xyz_scatter,
+                            tf.reshape(inputs_i, [natom, shape_i[1] // 4, 4]),
+                            two_embd,
+                            last_layer_size=outputs_size[-1],
+                        )
+
                 if (not self.uniform_seed) and (self.seed is not None):
                     self.seed += self.seed_shift
             input_r = tf.slice(
@@ -960,6 +1253,19 @@ class DescrptSeAtten(DescrptSeA):
             The suffix of the scope
         """
         super().init_variables(graph=graph, graph_def=graph_def, suffix=suffix)
+
+        if self.stripped_type_embedding:
+            self.two_side_embeeding_net_variables = {}
+            for i in range(1, self.layer_size + 1):
+                matrix_pattern = f"filter_type_all{suffix}/matrix_{i}_two_side_ebd"
+                self.two_side_embeeding_net_variables[
+                    matrix_pattern
+                ] = self._get_two_embed_variables(graph_def, matrix_pattern)
+                bias_pattern = f"filter_type_all{suffix}/bias_{i}_two_side_ebd"
+                self.two_side_embeeding_net_variables[
+                    bias_pattern
+                ] = self._get_two_embed_variables(graph_def, bias_pattern)
+
         self.attention_layer_variables = get_attention_layer_variables_from_graph_def(
             graph_def, suffix=suffix
         )
@@ -981,6 +1287,19 @@ class DescrptSeAtten(DescrptSeA):
                         i, suffix, i
                     )
                 ]
+
+    def _get_two_embed_variables(self, graph_def, pattern: str):
+        node = get_pattern_nodes_from_graph_def(graph_def, pattern)[pattern]
+        dtype = tf.as_dtype(node.dtype).as_numpy_dtype
+        tensor_shape = tf.TensorShape(node.tensor_shape).as_list()
+        if (len(tensor_shape) != 1) or (tensor_shape[0] != 1):
+            tensor_value = np.frombuffer(
+                node.tensor_content,
+                dtype=tf.as_dtype(node.dtype).as_numpy_dtype,
+            )
+        else:
+            tensor_value = get_tensor_by_type(node, dtype)
+        return np.reshape(tensor_value, tensor_shape)
 
     def build_type_exclude_mask(
         self,
@@ -1065,3 +1384,8 @@ class DescrptSeAtten(DescrptSeA):
         # same as inputs_i, (nsamples * natoms, ndescrpt)
         mask = tf.reshape(mask, [-1, ndescrpt])
         return mask
+
+    @property
+    def explicit_ntypes(self) -> bool:
+        """Explicit ntypes with type embedding."""
+        return True

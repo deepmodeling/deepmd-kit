@@ -11,18 +11,23 @@ jobs:
     - uses: actions/setup-python@v4
       with:
         python-version: '3.11'
+    - name: Setup MPI
+      uses: mpi4py/setup-mpi@v1
+      with:
+        mpi: mpich
     - run: python -m pip install tensorflow
     - run: source/install/test_cc_local.sh
       env:
         OMP_NUM_THREADS: 1
         TF_INTRA_OP_PARALLELISM_THREADS: 1
         TF_INTER_OP_PARALLELISM_THREADS: 1
-        tensorflow_root: /usr/local
+        LMP_CXX11_ABI_0: 1
     # test lammps
-    - run: source/install/build_lammps.sh
+    # ASE issue: https://gitlab.com/ase/ase/-/merge_requests/2843
+    # TODO: remove ase version when ase has new release
     - run: |
         python -m pip install -U pip
-        python -m pip install -e .[cpu,test]
+        python -m pip install -e .[cpu,test,lmp] "ase @ https://github.com/rosswhitfield/ase/archive/edd03571aff6944b77b4a4b055239f3c3e4eeb66.zip"
       env:
         DP_BUILD_TESTING: 1
     - run: pytest --cov=deepmd source/lmp/tests
@@ -31,6 +36,14 @@ jobs:
         TF_INTRA_OP_PARALLELISM_THREADS: 1
         TF_INTER_OP_PARALLELISM_THREADS: 1
         LAMMPS_PLUGIN_PATH: ${{ github.workspace }}/dp_test/lib/deepmd_lmp
+        LD_LIBRARY_PATH: ${{ github.workspace }}/dp_test/lib
+    # test ipi
+    - run: pytest --cov=deepmd source/ipi/tests
+      env:
+        OMP_NUM_THREADS: 1
+        TF_INTRA_OP_PARALLELISM_THREADS: 1
+        TF_INTER_OP_PARALLELISM_THREADS: 1
+        PATH: ${{ github.workspace }}/dp_test/bin:$PATH
         LD_LIBRARY_PATH: ${{ github.workspace }}/dp_test/lib
     - uses: codecov/codecov-action@v3
       with:

@@ -22,6 +22,10 @@ input_files = (
     p_examples / "water" / "se_e2_a_tebd" / "input.json",
     p_examples / "water" / "se_e2_a_mixed_prec" / "input.json",
     p_examples / "water" / "se_atten" / "input.json",
+    p_examples / "water" / "se_atten_compressible" / "input.json",
+    p_examples / "water" / "se_atten_dpa1_compat" / "input.json",
+    p_examples / "water" / "zbl" / "input.json",
+    p_examples / "water" / "hybrid" / "input.json",
     p_examples / "water" / "dplr" / "train" / "dw.json",
     p_examples / "water" / "dplr" / "train" / "ener.json",
     p_examples / "nopbc" / "train" / "input.json",
@@ -30,6 +34,9 @@ input_files = (
     p_examples / "water_multi_task" / "ener_dipole" / "input.json",
     p_examples / "fparam" / "train" / "input.json",
     p_examples / "fparam" / "train" / "input_aparam.json",
+    p_examples / "zinc_protein" / "zinc_se_a_mask.json",
+    p_examples / "dos" / "train" / "input.json",
+    p_examples / "spin" / "se_e2_a" / "input.json",
 )
 
 

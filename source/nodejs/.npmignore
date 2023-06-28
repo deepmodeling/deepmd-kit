@@ -1,0 +1,8 @@
+tests/
+build/
+binding.gyp.in
+libdeepmd_c.tar.gz
+libdeepmd_c/
+CMakeLists.txt
+binding.gyp.pack
+prepublish.py
