@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 // only support v1.15 or v2
 #include "tensorflow/core/public/version.h"
 // skip windows
