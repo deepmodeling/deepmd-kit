@@ -32,7 +32,9 @@ if TYPE_CHECKING:
     except ImportError:
         from typing_extensions import TypedDict  # python<=3.7
 
-    DATA = TypedDict("DATA", {"type": Union[type, Tuple[type]], "value": Any})
+    class DATA(TypedDict):
+        type: Union[type, Tuple[type]]
+        value: Any
     TEST_DICT = Dict[str, DATA]
 
 
