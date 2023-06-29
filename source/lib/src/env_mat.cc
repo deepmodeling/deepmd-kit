@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 #include "env_mat.h"
 
 #include "switcher.h"

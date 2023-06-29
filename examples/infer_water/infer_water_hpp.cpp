@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 /* header only C++ library
  */
 #include "deepmd/deepmd.hpp"

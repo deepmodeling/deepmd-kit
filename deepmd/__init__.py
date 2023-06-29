@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 """Root of the deepmd package, exposes all public classes and submodules."""
 
 try:

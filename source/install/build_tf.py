@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: LGPL-3.0-or-later
 """The easy script to build TensorFlow C++ Library.
 
 Required dependencies:

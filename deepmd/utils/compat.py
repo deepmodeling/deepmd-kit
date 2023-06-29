@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 """Module providing compatibility between `0.x.x` and `1.x.x` input versions."""
 
 import json
