@@ -71,5 +71,45 @@ repos:
   hooks:
     - id: cmake-format
     #- id: cmake-lint
+# license header
+- repo: https://github.com/Lucas-C/pre-commit-hooks
+  rev: v1.5.1
+  hooks:
+    # C++, js
+    -   id: insert-license
+        files: \.(c|cc|cpp|js|ts)$
+        args:
+        - --license-filepath
+        - .license-header.txt
+        - --comment-style
+        - //
+        - --no-extra-eol
+    # CSS
+    -   id: insert-license
+        files: \.(css|scss)$
+        args:
+        - --license-filepath
+        - .license-header.txt
+        - --comment-style
+        - /*| *| */
+        - --no-extra-eol
+    # Python
+    -   id: insert-license
+        files: \.(py|pyx)$
+        args:
+        - --license-filepath
+        - .license-header.txt
+        - --comment-style
+        - "#"
+        - --no-extra-eol
+    # HTML
+    -   id: insert-license
+        files: \.(html|vue|xml)$
+        args:
+        - --license-filepath
+        - .license-header.txt
+        - --comment-style
+        - <!--|  ~|  -->
+        - --no-extra-eol
 ci:
   autoupdate_branch: devel
