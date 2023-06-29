@@ -35,6 +35,7 @@ if TYPE_CHECKING:
     class DATA(TypedDict):
         type: Union[type, Tuple[type]]
         value: Any
+
     TEST_DICT = Dict[str, DATA]
 
 
