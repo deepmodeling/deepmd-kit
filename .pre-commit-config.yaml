@@ -84,6 +84,7 @@ repos:
         - --comment-style
         - //
         - --no-extra-eol
+        exclude: ^source/3rdparty|source/lib/src/cuda/cudart/.+\.inc
     # CSS
     -   id: insert-license
         files: \.(css|scss)$
