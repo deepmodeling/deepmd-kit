@@ -105,7 +105,7 @@ A full [document](doc/train/train-input-auto.rst) on options in the training inp
     - [Fit energy](doc/model/train-energy.md)
     - [Fit spin energy](doc/model/train-energy-spin.md)
     - [Fit `tensor` like `Dipole` and `Polarizability`](doc/model/train-fitting-tensor.md)
-- [Fit electronic density of states (DOS)](doc/model/train-fitting-dos.md)
+    - [Fit electronic density of states (DOS)](doc/model/train-fitting-dos.md)
     - [Train a Deep Potential model using `type embedding` approach](doc/model/train-se-e2-a-tebd.md)
     - [Deep potential long-range](doc/model/dplr.md)
     - [Deep Potential - Range Correction (DPRc)](doc/model/dprc.md)
