@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: LGPL-3.0-or-later
 /*
     __ _____ _____ _____
  __|  |   __|     |   | |  JSON for Modern C++
