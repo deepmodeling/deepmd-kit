@@ -19,3 +19,4 @@ Model
    train-se-a-mask
    dplr
    dprc
+   pairwise-dprc

@@ -1,5 +1,16 @@
+# Pairwise DPRc
+
+In a pairwise DPRc model, the total energy is divided into QM internal energy and the sum of QM/MM energy for each MM residue:
+
+$$ E = E_\text{QM} + \sum_{l} E_\text{QM/MM,l} $$
+
+Thus, the pairwise DPRc model is divided into two sub-[DPRc models](./dprc.md).
+`qm_model` is for the QM internal interaction and `qmmm_model` is for the QM/MM interaction.
+The configuration for these two models is similar to [the non-pairwise DPRc model](./dprc.md).
+It is noted that the [`se_atten` descriptor](./train-se-atten.md) should be used, as it is the only descriptor to support the mixed type.
+
+```json
 {
-  "_comment": " model parameters",
   "model": {
     "type": "pairwise_dprc",
     "type_map": [
@@ -147,41 +158,11 @@
         ]
       }
     }
-  },
-  "learning_rate": {
-    "type": "exp",
-    "decay_steps": 5000,
-    "start_lr": 0.001,
-    "stop_lr": 3.51e-8,
-    "_comment": "that's all"
-  },
-
-  "loss": {
-    "type": "ener",
-    "start_pref_e": 0.02,
-    "limit_pref_e": 1,
-    "start_pref_f": 1000,
-    "limit_pref_f": 1,
-    "start_pref_v": 0,
-    "limit_pref_v": 0,
-    "_comment": " that's all"
-  },
-
-  "training": {
-    "training_data": {
-      "systems": [
-        "../data"
-      ],
-      "batch_size": "auto",
-      "_comment": "that's all"
-    },
-    "numb_steps": 1000,
-    "seed": 10,
-    "disp_file": "lcurve.out",
-    "disp_freq": 100,
-    "save_freq": 1000,
-    "_comment": "that's all"
-  },
-
-  "_comment": "that's all"
+  }
 }
+```
+
+The pairwise model needs information for MM residues.
+The model uses [`aparam`](../data/system.md) with the shape of `nframes x natoms` to get the residue index.
+The QM residue should always use `0` as the index.
+For example, `0 0 0 1 1 1 2 2 2` means these 9 atoms are grouped into one QM residue and two MM residues.
