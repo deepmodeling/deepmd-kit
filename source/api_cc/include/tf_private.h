@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 /**
  * @file tf_private.h
  * @brief This file includes TensorFlow headers used for compilation.

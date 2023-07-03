@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 #ifndef __wanghan_Poly_h__
 #define __wanghan_Poly_h__
 
