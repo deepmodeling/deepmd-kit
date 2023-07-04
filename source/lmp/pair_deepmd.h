@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 #ifndef LAMMPS_VERSION_NUMBER
 #error Please define LAMMPS_VERSION_NUMBER to yyyymmdd
 #endif

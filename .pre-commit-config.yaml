@@ -77,13 +77,14 @@ repos:
   hooks:
     # C++, js
     -   id: insert-license
-        files: \.(c|cc|cpp|js|ts)$
+        files: \.(c|cc|cpp|js|ts|h|hpp)$
         args:
         - --license-filepath
         - .license-header.txt
         - --comment-style
         - //
         - --no-extra-eol
+        exclude: ^source/3rdparty|source/lib/src/cuda/cudart/.+\.inc
     # CSS
     -   id: insert-license
         files: \.(css|scss)$
