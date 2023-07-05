@@ -1,8 +1,8 @@
 # Pairwise DPRc
 
-In a pairwise DPRc model, the total energy is divided into QM internal energy and the sum of QM/MM energy for each MM residue:
+In a pairwise DPRc model, the total energy is divided into QM internal energy and the sum of QM/MM energy for each MM residue $l$:
 
-$$ E = E_\text{QM} + \sum_{l} E_\text{QM/MM,l} $$
+$$ E = E_\text{QM} + \sum_{l} E_{\text{QM/MM},l} $$
 
 Thus, the pairwise DPRc model is divided into two sub-[DPRc models](./dprc.md).
 `qm_model` is for the QM internal interaction and `qmmm_model` is for the QM/MM interaction.
