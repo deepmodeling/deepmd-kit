@@ -106,6 +106,7 @@ class DescrptSeAMask(DescrptSeA):
             The precision of the embedding net parameters. Supported options are {1}
     uniform_seed
             Only for the purpose of backward compatibility, retrieves the old behavior of using the random seed
+
     References
     ----------
     .. [1] Linfeng Zhang, Jiequn Han, Han Wang, Wissam A. Saidi, Roberto Car, and E. Weinan. 2018.
