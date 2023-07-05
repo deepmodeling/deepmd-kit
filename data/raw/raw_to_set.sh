@@ -41,69 +41,69 @@ for ii in $(seq 0 $nset_1); do
 	test -f atomic_polarizability.raw$pi && mv atomic_polarizability.raw$pi set.$pi/atomic_polarizability.raw
 
 	cd set.$pi
-	python -c 'import numpy as np; data = np.loadtxt("box.raw"   , ndmin = 2); data = data.astype (np.float32); np.save ("box",    data)'
-	python -c 'import numpy as np; data = np.loadtxt("coord.raw" , ndmin = 2); data = data.astype (np.float32); np.save ("coord",  data)'
+	python -c 'import numpy as np; data = np.loadtxt("box.raw"   , ndmin = 2); data = data.astype (np.float64); np.save ("box",    data)'
+	python -c 'import numpy as np; data = np.loadtxt("coord.raw" , ndmin = 2); data = data.astype (np.float64); np.save ("coord",  data)'
 	python -c \
 		'import numpy as np; import os.path;
 if os.path.isfile("energy.raw"):
    data = np.loadtxt("energy.raw");
-   data = data.astype (np.float32);
+   data = data.astype (np.float64);
    np.save ("energy", data)
 '
 	python -c \
 		'import numpy as np; import os.path;
 if os.path.isfile("force.raw" ):
    data = np.loadtxt("force.raw", ndmin = 2);
-   data = data.astype (np.float32);
+   data = data.astype (np.float64);
    np.save ("force",  data)
 '
 	python -c \
 		'import numpy as np; import os.path;
 if os.path.isfile("virial.raw"):
    data = np.loadtxt("virial.raw", ndmin = 2);
-   data = data.astype (np.float32);
+   data = data.astype (np.float64);
    np.save ("virial", data)
 '
 	python -c \
 		'import numpy as np; import os.path;
 if os.path.isfile("atom_ener.raw"):
    data = np.loadtxt("atom_ener.raw", ndmin = 2);
-   data = data.astype (np.float32);
+   data = data.astype (np.float64);
    np.save ("atom_ener", data)
 '
 	python -c \
 		'import numpy as np; import os.path;
 if os.path.isfile("fparam.raw"):
    data = np.loadtxt("fparam.raw", ndmin = 2);
-   data = data.astype (np.float32);
+   data = data.astype (np.float64);
    np.save ("fparam", data)
 '
 	python -c \
 		'import numpy as np; import os.path;
 if os.path.isfile("dipole.raw"):
    data = np.loadtxt("dipole.raw", ndmin = 2);
-   data = data.astype (np.float32);
+   data = data.astype (np.float64);
    np.save ("dipole", data)
 '
 	python -c \
 		'import numpy as np; import os.path;
 if os.path.isfile("polarizability.raw"):
    data = np.loadtxt("polarizability.raw", ndmin = 2);
-   data = data.astype (np.float32);
+   data = data.astype (np.float64);
    np.save ("polarizability", data)
 '
 	python -c \
 		'import numpy as np; import os.path;
 if os.path.isfile("atomic_dipole.raw"):
    data = np.loadtxt("atomic_dipole.raw", ndmin = 2);
-   data = data.astype (np.float32);
+   data = data.astype (np.float64);
    np.save ("atomic_dipole", data)
 '
 	python -c \
 		'import numpy as np; import os.path;
 if os.path.isfile("atomic_polarizability.raw"):
    data = np.loadtxt("atomic_polarizability.raw", ndmin = 2);
-   data = data.astype (np.float32);
+   data = data.astype (np.float64);
    np.save ("atomic_polarizability", data)
 '
 	rm *.raw
