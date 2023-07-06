@@ -12,6 +12,7 @@
         8
       ],
       "resnet_dt": false,
+      "precision": "float32",
       "seed": 1
     },
     "descriptor": {
@@ -30,6 +31,7 @@
       "resnet_dt": false,
       "axis_neuron": 16,
       "type_one_side": true,
+      "precision": "float32",
       "seed": 1,
       "_comment": " that's all"
     },
@@ -40,6 +42,7 @@
         240
       ],
       "resnet_dt": true,
+      "precision": "float32",
       "seed": 1,
       "_comment": " that's all"
     },

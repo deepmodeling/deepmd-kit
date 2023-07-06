@@ -24,6 +24,7 @@
       ],
       "resnet_dt": false,
       "axis_neuron": 16,
+      "precision": "float32",
       "seed": 1,
       "_comment": " that's all"
     },
@@ -34,6 +35,7 @@
         240
       ],
       "resnet_dt": true,
+      "precision": "float32",
       "seed": 1,
       "_comment": " that's all"
     },

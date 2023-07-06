@@ -16,6 +16,7 @@
       ],
       "resnet_dt": false,
       "axis_neuron": 8,
+      "precision": "float32",
       "seed": 1
     },
     "fitting_net": {
@@ -26,6 +27,7 @@
       ],
       "resnet_dt": true,
       "numb_aparam": 1,
+      "precision": "float32",
       "seed": 1
     }
   },
