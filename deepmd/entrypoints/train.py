@@ -500,11 +500,14 @@ def update_one_sel(jdata, descriptor):
 
 
 def update_sel(jdata):
-    if "descriptor" not in jdata["model"]:
-        return jdata
     log.info(
         "Calculate neighbor statistics... (add --skip-neighbor-stat to skip this step)"
     )
+    if jdata["model"].get("type") == "pairwise_dprc":
+        # do not update sel; only find min distance
+        rcut = get_rcut(jdata)
+        get_min_nbor_dist(jdata, rcut)
+        return jdata
     descrpt_data = jdata["model"]["descriptor"]
     if descrpt_data["type"] == "hybrid":
         for ii in range(len(descrpt_data["list"])):
