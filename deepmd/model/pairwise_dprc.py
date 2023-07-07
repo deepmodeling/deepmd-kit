@@ -10,6 +10,7 @@ from deepmd.common import (
     make_default_mesh,
 )
 from deepmd.env import (
+    GLOBAL_TF_FLOAT_PRECISION,
     MODEL_VERSION,
     op_module,
     tf,
@@ -122,7 +123,9 @@ class PairwiseDPRc(Model):
             t_daparam = tf.constant(1, name="daparam", dtype=tf.int32)
         with tf.variable_scope("descrpt_attr" + suffix, reuse=reuse):
             t_ntypes = tf.constant(self.ntypes, name="ntypes", dtype=tf.int32)
-            t_rcut = tf.constant(self.rcut, name="rcut", dtype=tf.float32)
+            t_rcut = tf.constant(
+                self.rcut, name="rcut", dtype=GLOBAL_TF_FLOAT_PRECISION
+            )
         # convert X-frame to X-Y-frame coordinates
         box = tf.reshape(box_, [-1, 9])
         nframes = tf.shape(box)[0]
