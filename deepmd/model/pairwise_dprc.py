@@ -237,7 +237,7 @@ class PairwiseDPRc(Model):
         )
         atom_virial_qmmm = tf.math.segment_sum(
             gather_placeholder(
-                tf.reshape(qmmm_dict["atom_virial"], (nframes, natoms_qm[1], 9)),
+                tf.reshape(qmmm_dict["atom_virial"], (nframes_qmmm, natoms_qm[1], 9)),
                 backward_qmmm_map,
                 placeholder=0.0,
             ),
