@@ -36,6 +36,7 @@ class NvnmdConfig:
 
     def __init__(self, jdata: dict):
         self.version = 0
+        self.enable = False
         self.map = {}
         self.config = jdata_config_v0.copy()
         self.save_path = "nvnmd/config.npy"
@@ -118,6 +119,7 @@ class NvnmdConfig:
     def init_config_by_version(self, version):
         r"""Initialize version-dependent parameters."""
         self.version = version
+        log.debug("#Set nvnmd version as %d " % self.version)
         if self.version == 0:
             self.jdata_deepmd_input = jdata_deepmd_input_v0.copy()
             self.config = jdata_config_v0.copy()

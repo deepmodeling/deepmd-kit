@@ -601,7 +601,7 @@ class EnerFitting(Fitting):
             )
             atype_filter = tf.cast(self.atype_nloc >= 0, GLOBAL_TF_FLOAT_PRECISION)
             self.atype_nloc = tf.reshape(self.atype_nloc, [-1])
-        if nvnmd_cfg.enable and nvnmd_cfg.restore_fitting_net:
+        if nvnmd_cfg.enable and nvnmd_cfg.quantize_descriptor and nvnmd_cfg.restore_descriptor and (nvnmd_cfg.version == 1):
             type_embedding = nvnmd_cfg.map["t_ebd"]
         if type_embedding is not None:
             atype_embed = tf.nn.embedding_lookup(type_embedding, self.atype_nloc)

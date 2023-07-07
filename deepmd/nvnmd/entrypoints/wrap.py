@@ -10,7 +10,7 @@ from deepmd.env import (
     tf,
 )
 from deepmd.nvnmd.data.data import (
-    jdata_deepmd_input,
+    jdata_deepmd_input_v0,
     jdata_sys,
 )
 from deepmd.nvnmd.utils.config import (
@@ -76,7 +76,7 @@ class Wrap:
         self.map_file = map_file
         self.model_file = model_file
 
-        jdata = jdata_deepmd_input["nvnmd"]
+        jdata = jdata_deepmd_input_v0["nvnmd"]
         jdata["config_file"] = config_file
         jdata["weight_file"] = weight_file
         jdata["map_file"] = map_file

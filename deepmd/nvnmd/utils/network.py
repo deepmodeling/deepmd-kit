@@ -188,7 +188,7 @@ def one_layer(
     is_layer = (nvnmd_cfg.version == 1) and ("layer_0" in name)
     with tf.variable_scope(name, reuse=reuse):
         if is_layer:
-            t = one_layer_t(shape,
+            t = one_layer_t(None,
             outputs_size,
             bavg,
             stddev,
@@ -198,7 +198,6 @@ def one_layer(
             seed,
             uniform_seed,
             name)
-            shape = [shape[0], shape[1]-NTAVC]
             #
             NTAVC = nvnmd_cfg.fitn["NTAVC"]
             nd = inputs.get_shape().as_list()[1] - NTAVC

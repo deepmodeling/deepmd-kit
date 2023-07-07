@@ -101,12 +101,12 @@ def descrpt2r4(inputs, atype):
     u = tf.reshape(u, [-1, 1])
     table = GLOBAL_NP_FLOAT_PRECISION(
         np.concatenate(
-            [nvnmd_cfg.map["s"], nvnmd_cfg.map["h"]], axis=1
+            [nvnmd_cfg.map["s"][0], nvnmd_cfg.map["h"][0]], axis=1
         )
     )
     table_grad = GLOBAL_NP_FLOAT_PRECISION(
         np.concatenate(
-            [nvnmd_cfg.map["s_grad"], nvnmd_cfg.map["h_grad"]],
+            [nvnmd_cfg.map["s_grad"][0], nvnmd_cfg.map["h_grad"][0]],
             axis=1,
         )
     )
@@ -192,8 +192,8 @@ def filter_lower_R42GR(
     inputs_reshape2 = tf.ensure_shape(inputs_reshape2, [None, 4])
     # s2G
     s = tf.reshape(tf.slice(inputs_reshape, [0, 0], [-1, 1]), [-1, 1])
-    table = GLOBAL_NP_FLOAT_PRECISION(nvnmd_cfg.map["g"])
-    table_grad = GLOBAL_NP_FLOAT_PRECISION(nvnmd_cfg.map["g_grad"])
+    table = GLOBAL_NP_FLOAT_PRECISION(nvnmd_cfg.map["g"][0])
+    table_grad = GLOBAL_NP_FLOAT_PRECISION(nvnmd_cfg.map["g_grad"][0])
     table_info = nvnmd_cfg.map["cfg_s2g"]
     table_info = np.array([np.float64(v) for vs in table_info for v in vs])
     table_info = GLOBAL_NP_FLOAT_PRECISION(table_info)

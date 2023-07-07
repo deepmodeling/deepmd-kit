@@ -10,7 +10,7 @@ from deepmd.env import (
     tf,
 )
 from deepmd.nvnmd.data.data import (
-    jdata_deepmd_input,
+    jdata_deepmd_input_v0,
     jdata_sys,
 )
 from deepmd.nvnmd.utils.config import (
@@ -81,7 +81,7 @@ class MapTable:
         self.weight_file = weight_file
         self.map_file = map_file
 
-        jdata = jdata_deepmd_input["nvnmd"]
+        jdata = jdata_deepmd_input_v0["nvnmd"]
         jdata["config_file"] = config_file
         jdata["weight_file"] = weight_file
         jdata["enable"] = True
@@ -485,7 +485,7 @@ class MapTable:
         #
         dic_ph = {}
         dic_ph["s"] = tf.placeholder(tf.float64, [None, 1], "t_s")
-        dic_ph["g"] = self.build_s2g(dic_ph["s"]) + shift
+        dic_ph["g"] = [g + shift for g in self.build_s2g(dic_ph["s"])]
         dic_ph["g_grad"], dic_ph["g_grad_grad"] = self.build_grad(
             dic_ph["s"], dic_ph["g"], ndim, M1
         )
@@ -587,7 +587,6 @@ class MapTable:
         return res_dic
 
     def build_embedding_net(self, xx, wbs, activation_fn = tf.tanh):
-        print(xx)
         for ll in range(len(wbs)):
             # weight and bias
             w, b, t = wbs[ll]
@@ -603,17 +602,13 @@ class MapTable:
             shw = w.shape
             if shw[1] == shw[0]:
                 if t is None:
-                    # print("resnet 1.1", ll)
                     xx += hidden
                 else:
-                    # print("resnet 1.2", ll)
                     xx += hidden * t
             elif shw[1] == shw[0] * 2:
                 if t is None:
-                    # print("resnet 2.1", ll)
                     xx = tf.concat([xx, xx], 1) + hidden
                 else:
-                    # print("resnet 2.2", ll)
                     xx = tf.concat([xx, xx], 1) + hidden * t
             else:
                 xx = hidden

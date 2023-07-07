@@ -14,8 +14,10 @@ def get_weight(weights, key):
     r"""Get weight value according to key."""
     if key in weights.keys():
         return weights[key]
+    elif key + "_1" in weights.keys():
+        return weights[key + "_1"]
     else:
-        log.warning(f"There is not {key} in weights.")
+        # log.warning(f"There is not {key} in weights.")
         return None
 
 
@@ -68,13 +70,33 @@ def get_filter_weight(weights: int, spe_j: int, layer_l: int):
         return weight, bias, None
 
     if nvnmd_cfg.version == 1:
-        key = f"filter_type_all.matrix_{layer_l}_two_side_ebd"
+        key = f"filter_type_all.matrix_{layer_l}"
         weight = get_weight(weights, key)
-        key = f"filter_type_all.bias_{layer_l}_two_side_ebd"
+        key = f"filter_type_all.bias_{layer_l}"
         bias = get_weight(weights, key)
-        key = f"filter_type_all.idt_{layer_l}_two_side_ebd"
+        key = f"filter_type_all.idt_{layer_l}"
         idt = get_weight(weights, key)
         return weight, bias, idt
+
+
+def get_filter_type_weight(weights: dict, layer_l: int):
+    r"""Get weight and bias of two_side_type_embedding network.
+
+    Parameters
+    ----------
+    weights : dict
+        weights
+    layer_l
+        layer order in embedding network
+        1~nlayer
+    """
+    key = f"filter_type_all.matrix_{layer_l}_two_side_ebd"
+    weight = get_weight(weights, key)
+    key = f"filter_type_all.bias_{layer_l}_two_side_ebd"
+    bias = get_weight(weights, key)
+    key = f"filter_type_all.idt_{layer_l}_two_side_ebd"
+    idt = get_weight(weights, key)
+    return weight, bias, idt
 
 
 def get_fitnet_weight(weights: dict, spe_i: int, layer_l: int, nlayer: int = 10):

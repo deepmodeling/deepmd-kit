@@ -1055,16 +1055,14 @@ class DescrptSeAtten(DescrptSeA):
                         log.info(
                             "use the non-compressible model with stripped type embedding"
                         )
-					if nvnmd_cfg.enable:
+                    if nvnmd_cfg.enable:
                         if nvnmd_cfg.quantize_descriptor:
-                            print("#filter_lower_R42GR")
                             return filter_lower_R42GR(
                                 inputs_i,
                                 atype,
                                 self.nei_type_vec,
                             )
                         elif nvnmd_cfg.restore_descriptor:
-                            two_embd_value = nvnmd_cfg.map["gt"]
                             self.embedding_net_variables = nvnmd_cfg.get_dp_init_weights()
                             self.two_side_embeeding_net_variables = nvnmd_cfg.get_dp_init_weights()
                     if not self.compress:
