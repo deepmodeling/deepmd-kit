@@ -27,6 +27,8 @@ template <typename FPTYPE>
 void convert_to_inter_gpu(FPTYPE *ri,
                           const Region<FPTYPE> &region,
                           const FPTYPE *rp) {
+  DPErrcheck(cudaGetLastError());
+  DPErrcheck(cudaDeviceSynchronize());
   _phys2Inter<<<1, 1>>>(ri, rp, region.rec_boxt);
   DPErrcheck(cudaGetLastError());
   DPErrcheck(cudaDeviceSynchronize());
@@ -36,6 +38,8 @@ template <typename FPTYPE>
 void convert_to_phys_gpu(FPTYPE *rp,
                          const Region<FPTYPE> &region,
                          const FPTYPE *ri) {
+  DPErrcheck(cudaGetLastError());
+  DPErrcheck(cudaDeviceSynchronize());
   _inter2Phys<<<1, 1>>>(rp, ri, region.boxt);
   DPErrcheck(cudaGetLastError());
   DPErrcheck(cudaDeviceSynchronize());
@@ -43,6 +47,8 @@ void convert_to_phys_gpu(FPTYPE *rp,
 
 template <typename FPTYPE>
 void volume_gpu(FPTYPE *volume, const Region<FPTYPE> &region) {
+  DPErrcheck(cudaGetLastError());
+  DPErrcheck(cudaDeviceSynchronize());
   _compute_volume<<<1, 1>>>(volume, region.boxt);
   DPErrcheck(cudaGetLastError());
   DPErrcheck(cudaDeviceSynchronize());
