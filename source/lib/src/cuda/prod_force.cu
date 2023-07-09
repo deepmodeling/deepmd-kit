@@ -110,6 +110,8 @@ void prod_force_a_gpu_cuda(FPTYPE* force,
                            const int nall,
                            const int nnei,
                            const int nframes) {
+  DPErrcheck(cudaGetLastError());
+  DPErrcheck(cudaDeviceSynchronize());
   const int ndescrpt = nnei * 4;
   DPErrcheck(cudaMemset(force, 0, sizeof(FPTYPE) * nframes * nall * 3));
 
@@ -137,6 +139,8 @@ void prod_force_r_gpu_cuda(FPTYPE* force,
                            const int nall,
                            const int nnei,
                            const int nframes) {
+  DPErrcheck(cudaGetLastError());
+  DPErrcheck(cudaDeviceSynchronize());
   const int ndescrpt = nnei * 1;
   DPErrcheck(cudaMemset(force, 0, sizeof(FPTYPE) * nframes * nall * 3));
 

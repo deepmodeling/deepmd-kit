@@ -569,6 +569,8 @@ void format_nbor_list_gpu_cuda(int* nlist,
                                const int nall,
                                const float rcut,
                                const std::vector<int> sec) {
+  DPErrcheck(cudaGetLastError());
+  DPErrcheck(cudaDeviceSynchronize());
   const int LEN = 256;
   const int nnei = sec.back();
   const int nblock = (nloc + LEN - 1) / LEN;
@@ -629,6 +631,8 @@ void prod_env_mat_a_gpu_cuda(FPTYPE* em,
                              const float rcut_smth,
                              const std::vector<int> sec,
                              const int* f_type) {
+  DPErrcheck(cudaGetLastError());
+  DPErrcheck(cudaDeviceSynchronize());
   if (f_type == NULL) {
     f_type = type;
   }
@@ -669,6 +673,8 @@ void prod_env_mat_r_gpu_cuda(FPTYPE* em,
                              const float rcut,
                              const float rcut_smth,
                              const std::vector<int> sec) {
+  DPErrcheck(cudaGetLastError());
+  DPErrcheck(cudaDeviceSynchronize());
   const int nnei = sec.back();
   const int ndescrpt = nnei * 1;
   DPErrcheck(cudaMemset(em, 0, sizeof(FPTYPE) * int_64(nloc) * ndescrpt));

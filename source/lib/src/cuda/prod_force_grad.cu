@@ -88,6 +88,8 @@ void prod_force_grad_a_gpu_cuda(FPTYPE* grad_net,
                                 const int nloc,
                                 const int nnei,
                                 const int nframes) {
+  DPErrcheck(cudaGetLastError());
+  DPErrcheck(cudaDeviceSynchronize());
   const int ndescrpt = nnei * 4;
   DPErrcheck(
       cudaMemset(grad_net, 0, sizeof(FPTYPE) * nframes * nloc * ndescrpt));
@@ -117,6 +119,8 @@ void prod_force_grad_r_gpu_cuda(FPTYPE* grad_net,
                                 const int nloc,
                                 const int nnei,
                                 const int nframes) {
+  DPErrcheck(cudaGetLastError());
+  DPErrcheck(cudaDeviceSynchronize());
   const int ndescrpt = nnei * 1;
   DPErrcheck(
       cudaMemset(grad_net, 0, sizeof(FPTYPE) * nframes * nloc * ndescrpt));
