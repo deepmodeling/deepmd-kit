@@ -23,7 +23,7 @@
       "attn_layer": 2,
       "attn_dotr": true,
       "attn_mask": false,
-      "precision": "float32",
+      "precision": "float64",
       "_comment": " that's all"
     },
     "fitting_net": {
@@ -33,7 +33,7 @@
         240
       ],
       "resnet_dt": true,
-      "precision": "float32",
+      "precision": "float64",
       "seed": 1,
       "_comment": " that's all"
     },

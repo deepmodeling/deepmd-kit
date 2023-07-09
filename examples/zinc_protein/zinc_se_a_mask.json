@@ -27,7 +27,7 @@
       ],
       "resnet_dt": true,
       "axis_neuron": 16,
-      "precision": "float32",
+      "precision": "float64",
       "seed": 1,
       "_comment": " that's all"
     },
@@ -38,7 +38,7 @@
         240
       ],
       "resnet_dt": true,
-      "precision": "float32",
+      "precision": "float64",
       "seed": 1,
       "numb_aparam": 1,
       "use_aparam_as_mask": true,
