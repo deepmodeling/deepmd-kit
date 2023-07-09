@@ -56,7 +56,10 @@ def gen_data_type_specific(nframes=1, dim_fparam=2):
     sys.data["forces"] = np.zeros([nframes, natoms, 3])
     sys.to_deepmd_npy("system", prec=np.float64)
     np.save("system/set.000/fparam.npy", tmpdata.fparam)
-    np.save("system/set.000/aparam.npy", tmpdata.aparam.reshape([nframes, natoms, dim_fparam]))
+    np.save(
+        "system/set.000/aparam.npy",
+        tmpdata.aparam.reshape([nframes, natoms, dim_fparam]),
+    )
 
 
 def gen_data_mixed_type(nframes=1, dim_fparam=2):

@@ -128,7 +128,9 @@ class TestMakeModelDeviFparamAparam(unittest.TestCase):
         self.expect = np.zeros(8)
         nframes = self.box.size // 9
         self.fparam = np.repeat([0.25852028], nframes).reshape((nframes, 1))
-        self.aparam = np.repeat(self.fparam, self.atype.size).reshape((nframes, self.atype.size, 1))
+        self.aparam = np.repeat(self.fparam, self.atype.size).reshape(
+            (nframes, self.atype.size, 1)
+        )
 
     def test_calc_model_devi(self):
         model_devi = calc_model_devi(
