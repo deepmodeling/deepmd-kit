@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
-    Tuple,
     Optional,
+    Tuple,
 )
 
 import numpy as np
@@ -146,8 +146,8 @@ def calc_model_devi(
     fname=None,
     frequency=1,
     mixed_type=False,
-    fparam : Optional[np.ndarray] = None,
-    aparam : Optional[np.ndarray] = None,
+    fparam: Optional[np.ndarray] = None,
+    aparam: Optional[np.ndarray] = None,
 ):
     """Python interface to calculate model deviation.
 
@@ -265,10 +265,20 @@ def make_model_devi(
         dp_data = DeepmdData(system, set_prefix, shuffle_test=False, type_map=tmap)
         if first_dp.get_dim_fparam() > 0:
             dp_data.add(
-                    "fparam", first_dp.get_dim_fparam(), atomic=False, must=True, high_prec=False
-                    )
+                "fparam",
+                first_dp.get_dim_fparam(),
+                atomic=False,
+                must=True,
+                high_prec=False,
+            )
         if first_dp.get_dim_aparam() > 0:
-            dp_data.add("aparam", first_dp.get_dim_aparam(), atomic=True, must=True, high_prec=False)
+            dp_data.add(
+                "aparam",
+                first_dp.get_dim_aparam(),
+                atomic=True,
+                must=True,
+                high_prec=False,
+            )
         mixed_type = dp_data.mixed_type
 
         data_sets = [dp_data._load_set(set_name) for set_name in dp_data.dirs]
@@ -291,7 +301,15 @@ def make_model_devi(
                 aparam = data["aparam"]
             else:
                 aparam = None
-            devi = calc_model_devi(coord, box, atype, dp_models, mixed_type=mixed_type, fparam=fparam, aparam=aparam)
+            devi = calc_model_devi(
+                coord,
+                box,
+                atype,
+                dp_models,
+                mixed_type=mixed_type,
+                fparam=fparam,
+                aparam=aparam,
+            )
             nframes_tot += coord.shape[0]
             devis.append(devi)
         devis = np.vstack(devis)

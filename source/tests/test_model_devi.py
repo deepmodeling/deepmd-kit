@@ -12,7 +12,6 @@ from deepmd.infer import (
 from deepmd.infer.model_devi import (
     make_model_devi,
 )
-from deepmd.common import data_requirement
 
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 from common import (
@@ -96,6 +95,7 @@ class TestMakeModelDevi(unittest.TestCase):
 
 class TestMakeModelDeviFparamAparam(unittest.TestCase):
     """Ensure dp model_devi accepts fparam and aparam."""
+
     @classmethod
     def setUpClass(cls):
         cls.pbtxts = [
@@ -112,7 +112,6 @@ class TestMakeModelDeviFparamAparam(unittest.TestCase):
             os.remove(pb)
         cls.graphs = None
 
-
     def setUp(self):
         gen_data()
         self.data_dir = "system_fparam_aparam"
@@ -127,7 +126,6 @@ class TestMakeModelDeviFparamAparam(unittest.TestCase):
         self.expect = np.zeros(8)
         self.fparam = np.repeat([0.25852028], self.box.size / 9)
         self.aparam = np.repeat(self.fparam, self.atype.size)
-
 
     def test_calc_model_devi(self):
         model_devi = calc_model_devi(
