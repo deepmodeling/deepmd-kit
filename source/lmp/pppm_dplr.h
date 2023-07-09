@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 #ifdef KSPACE_CLASS
 // clang-format off
 KSpaceStyle(pppm/dplr, PPPMDPLR)

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 """Setup script for DeePMD-kit package."""
 
 import os

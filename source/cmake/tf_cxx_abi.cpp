@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 #include <iostream>
 
 #include "tensorflow/core/public/version.h"

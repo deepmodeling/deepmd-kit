@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 /*
 Header-only DeePMD-kit C++ 11 library
 

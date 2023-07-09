@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 #include "soft_min_switch_force.h"
 
 #include <iostream>

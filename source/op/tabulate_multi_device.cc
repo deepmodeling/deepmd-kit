@@ -1,4 +1,5 @@
 
+// SPDX-License-Identifier: LGPL-3.0-or-later
 #include "custom_op.h"
 #include "tabulate.h"
 

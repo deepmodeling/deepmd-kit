@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 """This module ensures input in the examples directory
 could pass the argument checking.
 """

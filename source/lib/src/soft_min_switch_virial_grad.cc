@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 #include "soft_min_switch_virial_grad.h"
 
 template <typename FPTYPE>

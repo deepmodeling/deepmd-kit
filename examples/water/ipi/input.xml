@@ -1,3 +1,6 @@
+<!--
+  ~ SPDX-License-Identifier: LGPL-3.0-or-later
+  -->
 <simulation verbosity='high'>
   <output prefix='simulation'>
     <properties stride='50' filename='out'>  [ step, time{picosecond}, conserved{electronvolt}, temperature{kelvin}, kinetic_cv{electronvolt}, potential{electronvolt}, pressure_cv{megapascal}, pressure_md{megapascal}, density{g/cm3} ] </properties>

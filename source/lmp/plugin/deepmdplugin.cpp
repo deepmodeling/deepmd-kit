@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 /**
  * See https://docs.lammps.org/Developer_plugins.html
  */

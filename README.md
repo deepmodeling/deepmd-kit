@@ -5,7 +5,7 @@
 <span style="font-size:larger;">DeePMD-kit Manual</span>
 ========
 [![GitHub release](https://img.shields.io/github/release/deepmodeling/deepmd-kit.svg?maxAge=86400)](https://github.com/deepmodeling/deepmd-kit/releases)
-[![doi:10.1016/j.cpc.2018.03.016](https://img.shields.io/badge/DOI-10.1016%2Fj.cpc.2018.03.016-blue)](https://doi.org/10.1016/j.cpc.2020.107206)
+[![doi:10.1016/j.cpc.2018.03.016](https://img.shields.io/badge/DOI-10.1016%2Fj.cpc.2018.03.016-blue)](https://doi.org/10.1016/j.cpc.2018.03.016)
 [![Citations](https://citations.njzjz.win/10.1016/j.cpc.2018.03.016)](https://badge.dimensions.ai/details/doi/10.1016/j.cpc.2018.03.016)
 [![offline packages](https://img.shields.io/github/downloads/deepmodeling/deepmd-kit/total?label=offline%20packages)](https://github.com/deepmodeling/deepmd-kit/releases)
 [![conda-forge](https://img.shields.io/conda/dn/conda-forge/deepmd-kit?color=red&label=conda-forge&logo=conda-forge)](https://anaconda.org/conda-forge/deepmd-kit)
@@ -105,7 +105,7 @@ A full [document](doc/train/train-input-auto.rst) on options in the training inp
     - [Fit energy](doc/model/train-energy.md)
     - [Fit spin energy](doc/model/train-energy-spin.md)
     - [Fit `tensor` like `Dipole` and `Polarizability`](doc/model/train-fitting-tensor.md)
-- [Fit electronic density of states (DOS)](doc/model/train-fitting-dos.md)
+    - [Fit electronic density of states (DOS)](doc/model/train-fitting-dos.md)
     - [Train a Deep Potential model using `type embedding` approach](doc/model/train-se-e2-a-tebd.md)
     - [Deep potential long-range](doc/model/dplr.md)
     - [Deep Potential - Range Correction (DPRc)](doc/model/dprc.md)

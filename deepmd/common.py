@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 """Collection of functions and classes used throughout the whole package."""
 
 import json

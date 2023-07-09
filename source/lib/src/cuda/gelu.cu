@@ -67,6 +67,8 @@ void gelu_gpu_cuda(FPTYPE* out, const FPTYPE* xx, const int_64 size) {
   if (size <= 0) {
     return;
   }
+  DPErrcheck(cudaGetLastError());
+  DPErrcheck(cudaDeviceSynchronize());
   const int THREAD_ITEMS = 1024;
   const int BLOCK_NUMS = (size + THREAD_ITEMS - 1) / THREAD_ITEMS;
 
@@ -83,6 +85,8 @@ void gelu_grad_gpu_cuda(FPTYPE* out,
   if (size <= 0) {
     return;
   }
+  DPErrcheck(cudaGetLastError());
+  DPErrcheck(cudaDeviceSynchronize());
   const int THREAD_ITEMS = 1024;
   const int BLOCK_NUMS = (size + THREAD_ITEMS - 1) / THREAD_ITEMS;
 
@@ -100,6 +104,8 @@ void gelu_grad_grad_gpu_cuda(FPTYPE* out,
   if (size <= 0) {
     return;
   }
+  DPErrcheck(cudaGetLastError());
+  DPErrcheck(cudaDeviceSynchronize());
   const int THREAD_ITEMS = 1024;
   const int BLOCK_NUMS = (size + THREAD_ITEMS - 1) / THREAD_ITEMS;
 

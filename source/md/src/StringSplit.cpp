@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 #include "StringSplit.h"
 
 void StringOperation::split(const std::string& in,
