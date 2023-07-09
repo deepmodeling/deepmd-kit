@@ -12,6 +12,7 @@ from deepmd.infer import (
 from deepmd.infer.model_devi import (
     make_model_devi,
 )
+from deepmd.common import data_requirement
 
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 from common import (
@@ -89,5 +90,73 @@ class TestMakeModelDevi(unittest.TestCase):
     def tearDown(self):
         for pb in self.graph_dirs:
             os.remove(pb)
+        os.remove(self.output)
+        del_data()
+
+
+class TestMakeModelDeviFparamAparam(unittest.TestCase):
+    """Ensure dp model_devi accepts fparam and aparam."""
+    @classmethod
+    def setUpClass(cls):
+        cls.pbtxts = [
+            os.path.join(tests_path, "infer/fparam_aparam.pbtxt"),
+        ]
+        cls.graph_dirs = [pbtxt.replace("pbtxt", "pb") for pbtxt in cls.pbtxts]
+        for pbtxt, pb in zip(cls.pbtxts, cls.graph_dirs):
+            convert_pbtxt_to_pb(pbtxt, pb)
+        cls.graphs = [DeepPotential(pb) for pb in cls.graph_dirs]
+
+    @classmethod
+    def tearDownClass(cls):
+        for pb in cls.graph_dirs:
+            os.remove(pb)
+        cls.graphs = None
+
+
+    def setUp(self):
+        gen_data()
+        self.data_dir = "system_fparam_aparam"
+        coord = np.load(os.path.join(self.data_dir, "set.000/coord.npy"))
+        box = np.load(os.path.join(self.data_dir, "set.000/box.npy"))
+        self.atype = np.loadtxt(os.path.join(self.data_dir, "type.raw"))
+        self.coord = np.vstack([coord, coord])
+        self.box = np.vstack([box, box])
+        self.freq = 10
+
+        self.output = os.path.join(tests_path, "model_devi.out")
+        self.expect = np.zeros(8)
+        self.fparam = np.repeat([0.25852028], self.box.size / 9)
+        self.aparam = np.repeat(self.fparam, self.atype.size)
+
+
+    def test_calc_model_devi(self):
+        model_devi = calc_model_devi(
+            self.coord,
+            None,
+            self.atype,
+            self.graphs,
+            frequency=self.freq,
+            fname=self.output,
+            fparam=self.fparam,
+            aparam=self.aparam,
+        )
+        self.assertAlmostEqual(model_devi[0][0], 0)
+        self.assertAlmostEqual(model_devi[1][0], self.freq)
+        np.testing.assert_almost_equal(model_devi[0][1:8], self.expect[1:8], 6)
+        np.testing.assert_almost_equal(model_devi[0][1:8], model_devi[1][1:8], 6)
+        self.assertTrue(os.path.isfile(self.output))
+
+    def test_make_model_devi(self):
+        make_model_devi(
+            models=self.graph_dirs,
+            system=self.data_dir,
+            set_prefix="set",
+            output=self.output,
+            frequency=self.freq,
+        )
+        x = np.loadtxt(self.output)
+        np.testing.assert_allclose(x, self.expect, 6)
+
+    def tearDown(self):
         os.remove(self.output)
         del_data()
