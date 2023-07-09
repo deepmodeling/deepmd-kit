@@ -113,19 +113,22 @@ class TestMakeModelDeviFparamAparam(unittest.TestCase):
         cls.graphs = None
 
     def setUp(self):
-        gen_data()
-        self.data_dir = "system_fparam_aparam"
+        gen_data(dim_fparam=1)
+        self.data_dir = "system"
         coord = np.load(os.path.join(self.data_dir, "set.000/coord.npy"))
         box = np.load(os.path.join(self.data_dir, "set.000/box.npy"))
-        self.atype = np.loadtxt(os.path.join(self.data_dir, "type.raw"))
+        atype_ = np.loadtxt(os.path.join(self.data_dir, "type.raw"))
+        self.atype = np.zeros_like(atype_)
+        np.savetxt(os.path.join(self.data_dir, "type.raw"), self.atype)
         self.coord = np.vstack([coord, coord])
         self.box = np.vstack([box, box])
         self.freq = 10
 
         self.output = os.path.join(tests_path, "model_devi.out")
         self.expect = np.zeros(8)
-        self.fparam = np.repeat([0.25852028], self.box.size / 9)
-        self.aparam = np.repeat(self.fparam, self.atype.size)
+        nframes = self.box.size // 9
+        self.fparam = np.repeat([0.25852028], nframes).reshape((nframes, 1))
+        self.aparam = np.repeat(self.fparam, self.atype.size).reshape((nframes, self.atype.size, 1))
 
     def test_calc_model_devi(self):
         model_devi = calc_model_devi(
