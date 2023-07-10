@@ -440,7 +440,7 @@ int deepmd::session_input_tensors(
   std::vector<VALUETYPE> dcoord(dcoord_);
   atommap.forward<VALUETYPE>(dcoord.begin(), dcoord_.begin(), 3, nframes, nall);
   std::vector<VALUETYPE> aparam_(aparam__);
-  atommap.forward<VALUETYPE>(aparam_.begin(), aparam_.begin(),
+  atommap.forward<VALUETYPE>(aparam_.begin(), aparam__.begin(),
                              aparam__.size() / nframes / nloc, nframes, nloc);
 
   for (int ii = 0; ii < nframes; ++ii) {
@@ -573,7 +573,7 @@ int deepmd::session_input_tensors(
   std::vector<VALUETYPE> dcoord(dcoord_);
   atommap.forward<VALUETYPE>(dcoord.begin(), dcoord_.begin(), 3, nframes, nall);
   std::vector<VALUETYPE> aparam_(aparam__);
-  atommap.forward<VALUETYPE>(aparam_.begin(), aparam_.begin(),
+  atommap.forward<VALUETYPE>(aparam_.begin(), aparam__.begin(),
                              aparam__.size() / nframes / nloc, nframes, nloc);
 
   for (int ii = 0; ii < nframes; ++ii) {
@@ -706,7 +706,7 @@ int deepmd::session_input_tensors_mixed_type(
   std::vector<VALUETYPE> dcoord(dcoord_);
   atommap.forward<VALUETYPE>(dcoord.begin(), dcoord_.begin(), 3, nframes, nall);
   std::vector<VALUETYPE> aparam_(aparam__);
-  atommap.forward<VALUETYPE>(aparam_.begin(), aparam_.begin(),
+  atommap.forward<VALUETYPE>(aparam_.begin(), aparam__.begin(),
                              aparam__.size() / nframes / nloc, nframes, nloc);
 
   for (int ii = 0; ii < nframes; ++ii) {
