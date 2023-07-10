@@ -466,6 +466,10 @@ class DeepPot(DeepEval):
             efield = np.reshape(efield, [nframes, natoms, 3])
             efield = efield[:, imap, :]
             efield = np.reshape(efield, [nframes, natoms * 3])
+        if self.has_aparam:
+            aparam = np.reshape(aparam, [nframes, natoms, fdim])
+            aparam = aparam[:, imap, :]
+            aparam = np.reshape(aparam, [nframes, natoms * fdim])
 
         # make natoms_vec and default_mesh
         natoms_vec = self.make_natoms_vec(atom_types, mixed_type=mixed_type)
