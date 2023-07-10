@@ -82,7 +82,7 @@ class DeepmdData:
         self.pbc = self._check_pbc(root)
         # enforce type_map if necessary
         self.enforce_type_map = False
-        if type_map is not None and self.type_map is not None:
+        if type_map is not None and self.type_map is not None and len(type_map):
             if not self.mixed_type:
                 atom_type_ = [
                     type_map.index(self.type_map[ii]) for ii in self.atom_type
