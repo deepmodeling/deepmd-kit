@@ -265,7 +265,7 @@ class EnerModel(StandardModel):
             )
             energy_diff = tab_atom_ener - tf.reshape(atom_ener, [-1, natoms[0]])
             tab_atom_ener = tf.reshape(sw_lambda, [-1]) * tf.reshape(
-                tab_atom_ener, [-1]
+                tab_atom_ener + self.fitting.add_type, [-1]
             )
             atom_ener = tf.reshape(inv_sw_lambda, [-1]) * atom_ener
             energy_raw = tab_atom_ener + atom_ener
