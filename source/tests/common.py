@@ -41,8 +41,8 @@ def del_data():
         shutil.rmtree("system_mixed_type")
 
 
-def gen_data_type_specific(nframes=1):
-    tmpdata = Data(rand_pert=0.1, seed=1, nframes=nframes)
+def gen_data_type_specific(nframes=1, dim_fparam=2):
+    tmpdata = Data(rand_pert=0.1, seed=1, nframes=nframes, dim_fparam=dim_fparam)
     sys = dpdata.LabeledSystem()
     sys.data["atom_names"] = ["foo", "bar"]
     sys.data["coords"] = tmpdata.coord
@@ -56,11 +56,14 @@ def gen_data_type_specific(nframes=1):
     sys.data["forces"] = np.zeros([nframes, natoms, 3])
     sys.to_deepmd_npy("system", prec=np.float64)
     np.save("system/set.000/fparam.npy", tmpdata.fparam)
-    np.save("system/set.000/aparam.npy", tmpdata.aparam.reshape([nframes, natoms, 2]))
+    np.save(
+        "system/set.000/aparam.npy",
+        tmpdata.aparam.reshape([nframes, natoms, dim_fparam]),
+    )
 
 
-def gen_data_mixed_type(nframes=1):
-    tmpdata = Data(rand_pert=0.1, seed=1, nframes=nframes)
+def gen_data_mixed_type(nframes=1, dim_fparam=2):
+    tmpdata = Data(rand_pert=0.1, seed=1, nframes=nframes, dim_fparam=dim_fparam)
     sys = dpdata.LabeledSystem()
     real_type_map = ["foo", "bar"]
     sys.data["atom_names"] = ["X"]
@@ -82,12 +85,12 @@ def gen_data_mixed_type(nframes=1):
     np.save("system_mixed_type/set.000/fparam.npy", tmpdata.fparam)
     np.save(
         "system_mixed_type/set.000/aparam.npy",
-        tmpdata.aparam.reshape([nframes, natoms, 2]),
+        tmpdata.aparam.reshape([nframes, natoms, dim_fparam]),
     )
 
 
-def gen_data_virtual_type(nframes=1, nghost=4):
-    tmpdata = Data(rand_pert=0.1, seed=1, nframes=nframes)
+def gen_data_virtual_type(nframes=1, nghost=4, dim_fparam=2):
+    tmpdata = Data(rand_pert=0.1, seed=1, nframes=nframes, dim_fparam=dim_fparam)
     sys = dpdata.LabeledSystem()
     real_type_map = ["foo", "bar"]
     sys.data["atom_names"] = ["X"]
@@ -129,25 +132,25 @@ def gen_data_virtual_type(nframes=1, nghost=4):
         "system_mixed_type/set.000/aparam.npy",
         np.concatenate(
             [
-                tmpdata.aparam.reshape([nframes, natoms, 2]),
-                np.zeros([nframes, nghost, 2]),
+                tmpdata.aparam.reshape([nframes, natoms, dim_fparam]),
+                np.zeros([nframes, nghost, dim_fparam]),
             ],
             axis=1,
         ),
     )
 
 
-def gen_data(nframes=1, mixed_type=False, virtual_type=False):
+def gen_data(nframes=1, mixed_type=False, virtual_type=False, dim_fparam=2):
     if not mixed_type:
-        gen_data_type_specific(nframes)
+        gen_data_type_specific(nframes, dim_fparam=dim_fparam)
     elif virtual_type:
-        gen_data_virtual_type(nframes)
+        gen_data_virtual_type(nframes, dim_fparam=dim_fparam)
     else:
-        gen_data_mixed_type(nframes)
+        gen_data_mixed_type(nframes, dim_fparam=dim_fparam)
 
 
 class Data:
-    def __init__(self, rand_pert=0.1, seed=1, box_scale=20, nframes=1):
+    def __init__(self, rand_pert=0.1, seed=1, box_scale=20, nframes=1, dim_fparam=2):
         coord = [
             [0.0, 0.0, 0.1],
             [1.1, 0.0, 0.1],
@@ -161,7 +164,7 @@ class Data:
         self.coord = self._copy_nframes(self.coord)
         dp_random.seed(seed)
         self.coord += rand_pert * dp_random.random(self.coord.shape)
-        self.fparam = np.array([[0.1, 0.2]])
+        self.fparam = ((np.arange(dim_fparam) + 1) * 0.1).reshape(1, dim_fparam)
         self.aparam = np.tile(self.fparam, [1, 6])
         self.fparam = self._copy_nframes(self.fparam)
         self.aparam = self._copy_nframes(self.aparam)
