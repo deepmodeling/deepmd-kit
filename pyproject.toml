@@ -128,7 +128,7 @@ profile = "black"
 force_grid_wrap = 1
 
 [tool.ruff]
-include = ["*.py", "*.pyi", "**/pyproject.toml", "*.ipynb"]
+include = ["**/*.py", "**/pyproject.toml", "**/*.ipynb"]
 select = [
     "E", # errors
     "F", # pyflakes
