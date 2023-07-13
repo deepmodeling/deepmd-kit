@@ -630,7 +630,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
       dvatom = all_atom_virial[0];
       if (eflag_atom) {
         for (int ii = 0; ii < nlocal; ++ii) {
-          eatom[ii] += eatom * deatom[ii];
+          eatom[ii] += scale[1][1] * deatom[ii];
         }
       }
       // Added by Davide Tisi 2020
