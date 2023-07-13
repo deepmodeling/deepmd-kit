@@ -1172,7 +1172,7 @@ void PairDeepMD::coeff(int narg, char **arg) {
   for (int i = ilo; i <= ihi; i++) {
     for (int j = MAX(jlo, i); j <= jhi; j++) {
       setflag[i][j] = 1;
-      scale[i][j] = 1.0;
+      scale[i][j] = conversion_factor;
       if (i > numb_types || j > numb_types) {
         char warning_msg[1024];
         sprintf(warning_msg,
@@ -1219,7 +1219,7 @@ double PairDeepMD::init_one(int i, int j) {
   }
 
   if (setflag[i][j] == 0) {
-    scale[i][j] = 1.0;
+    scale[i][j] = conversion_factor;
   }
   scale[j][i] = scale[i][j];
 
