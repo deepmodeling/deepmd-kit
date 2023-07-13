@@ -336,11 +336,19 @@ PairDeepMD::PairDeepMD(LAMMPS *lmp)
   if (lmp->citeme) {
     lmp->citeme->add(cite_user_deepmd_package);
   }
-  if (strcmp(update->unit_style, "metal") != 0) {
+  int unit_convert;
+  if (strcmp(update->unit_style, "metal") == 0) {
+    unit_convert == utils::NOCONVERT;
+  }
+  else if (strcmp(update->unit_style, "real") == 0) {
+    unit_convert == utils::METAL2REAL;
+  } else {
     error->all(
         FLERR,
-        "Pair deepmd requires metal unit, please set it by \"units metal\"");
+        "Pair deepmd requires metal or real unit, please set it by \"units metal\" or \"units real\"");
   }
+  double conversion_factor = utils::get_conversion_factor(utils::ENERGY,
+                                                          unit_convert);
   restartinfo = 1;
 #if LAMMPS_VERSION_NUMBER >= 20201130
   centroidstressflag =
@@ -353,6 +361,8 @@ PairDeepMD::PairDeepMD(LAMMPS *lmp)
   pppmflag = 1;
   respa_enable = 0;
   writedata = 0;
+  unit_convert_flag = utils::get_supported_conversions(utils::ENERGY);
+
   cutoff = 0.;
   numb_types = 0;
   numb_types_spin = 0;
@@ -568,7 +578,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
         }
         if (eflag_atom) {
           for (int ii = 0; ii < nlocal; ++ii) {
-            eatom[ii] += deatom[ii];
+            eatom[ii] += scale[1][1] * deatom[ii];
           }
         }
         // Added by Davide Tisi 2020
@@ -582,15 +592,15 @@ void PairDeepMD::compute(int eflag, int vflag) {
             // vatom[ii][3] += 1.0 * dvatom[9*ii+3];
             // vatom[ii][4] += 1.0 * dvatom[9*ii+6];
             // vatom[ii][5] += 1.0 * dvatom[9*ii+7];
-            cvatom[ii][0] += -1.0 * dvatom[9 * ii + 0];  // xx
-            cvatom[ii][1] += -1.0 * dvatom[9 * ii + 4];  // yy
-            cvatom[ii][2] += -1.0 * dvatom[9 * ii + 8];  // zz
-            cvatom[ii][3] += -1.0 * dvatom[9 * ii + 3];  // xy
-            cvatom[ii][4] += -1.0 * dvatom[9 * ii + 6];  // xz
-            cvatom[ii][5] += -1.0 * dvatom[9 * ii + 7];  // yz
-            cvatom[ii][6] += -1.0 * dvatom[9 * ii + 1];  // yx
-            cvatom[ii][7] += -1.0 * dvatom[9 * ii + 2];  // zx
-            cvatom[ii][8] += -1.0 * dvatom[9 * ii + 5];  // zy
+            cvatom[ii][0] += -scale[1][1] * dvatom[9 * ii + 0];  // xx
+            cvatom[ii][1] += -scale[1][1] * dvatom[9 * ii + 4];  // yy
+            cvatom[ii][2] += -scale[1][1] * dvatom[9 * ii + 8];  // zz
+            cvatom[ii][3] += -scale[1][1] * dvatom[9 * ii + 3];  // xy
+            cvatom[ii][4] += -scale[1][1] * dvatom[9 * ii + 6];  // xz
+            cvatom[ii][5] += -scale[1][1] * dvatom[9 * ii + 7];  // yz
+            cvatom[ii][6] += -scale[1][1] * dvatom[9 * ii + 1];  // yx
+            cvatom[ii][7] += -scale[1][1] * dvatom[9 * ii + 2];  // zx
+            cvatom[ii][8] += -scale[1][1] * dvatom[9 * ii + 5];  // zy
           }
         }
       }
@@ -620,7 +630,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
       dvatom = all_atom_virial[0];
       if (eflag_atom) {
         for (int ii = 0; ii < nlocal; ++ii) {
-          eatom[ii] += deatom[ii];
+          eatom[ii] += eatom * deatom[ii];
         }
       }
       // Added by Davide Tisi 2020
@@ -634,15 +644,15 @@ void PairDeepMD::compute(int eflag, int vflag) {
           // vatom[ii][3] += 1.0 * dvatom[9*ii+3];
           // vatom[ii][4] += 1.0 * dvatom[9*ii+6];
           // vatom[ii][5] += 1.0 * dvatom[9*ii+7];
-          cvatom[ii][0] += -1.0 * dvatom[9 * ii + 0];  // xx
-          cvatom[ii][1] += -1.0 * dvatom[9 * ii + 4];  // yy
-          cvatom[ii][2] += -1.0 * dvatom[9 * ii + 8];  // zz
-          cvatom[ii][3] += -1.0 * dvatom[9 * ii + 3];  // xy
-          cvatom[ii][4] += -1.0 * dvatom[9 * ii + 6];  // xz
-          cvatom[ii][5] += -1.0 * dvatom[9 * ii + 7];  // yz
-          cvatom[ii][6] += -1.0 * dvatom[9 * ii + 1];  // yx
-          cvatom[ii][7] += -1.0 * dvatom[9 * ii + 2];  // zx
-          cvatom[ii][8] += -1.0 * dvatom[9 * ii + 5];  // zy
+          cvatom[ii][0] += -scale[1][1] * dvatom[9 * ii + 0];  // xx
+          cvatom[ii][1] += -scale[1][1] * dvatom[9 * ii + 4];  // yy
+          cvatom[ii][2] += -scale[1][1] * dvatom[9 * ii + 8];  // zz
+          cvatom[ii][3] += -scale[1][1] * dvatom[9 * ii + 3];  // xy
+          cvatom[ii][4] += -scale[1][1] * dvatom[9 * ii + 6];  // xz
+          cvatom[ii][5] += -scale[1][1] * dvatom[9 * ii + 7];  // yz
+          cvatom[ii][6] += -scale[1][1] * dvatom[9 * ii + 1];  // yx
+          cvatom[ii][7] += -scale[1][1] * dvatom[9 * ii + 2];  // zx
+          cvatom[ii][8] += -scale[1][1] * dvatom[9 * ii + 5];  // zy
         }
       }
       if (out_freq > 0 && update->ntimestep % out_freq == 0) {
@@ -830,7 +840,7 @@ void PairDeepMD::allocate() {
         continue;
       }
       setflag[i][j] = 1;
-      scale[i][j] = 1;
+      scale[i][j] = conversion_factor;
     }
   }
 }

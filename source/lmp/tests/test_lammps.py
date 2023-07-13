@@ -217,6 +217,7 @@ type_HO = np.array([2, 1, 1, 2, 1, 1])
 
 # https://github.com/lammps/lammps/blob/1e1311cf401c5fc2614b5d6d0ff3230642b76597/src/update.cpp#L193
 nktv2p = 1.6021765e6
+metal2real = 23.060549
 
 sp.check_output(
     "{} -m deepmd convert-from pbtxt -i {} -o {}".format(
@@ -244,9 +245,9 @@ def teardown_module():
     os.remove(data_type_map_file)
 
 
-def _lammps(data_file) -> PyLammps:
+def _lammps(data_file, units="metal") -> PyLammps:
     lammps = PyLammps()
-    lammps.units("metal")
+    lammps.units(units)
     lammps.boundary("p p p")
     lammps.atom_style("atomic")
     lammps.neighbor("2.0 bin")
@@ -267,6 +268,10 @@ def lammps():
 @pytest.fixture
 def lammps_type_map():
     yield _lammps(data_file=data_type_map_file)
+
+@pytest.fixture
+def lammps_real():
+    yield _lammps(data_file=data_file, units="real")
 
 
 def test_pair_deepmd(lammps):
@@ -432,3 +437,34 @@ def test_pair_deepmd_type_map(lammps_type_map):
     for ii in range(6):
         assert lammps_type_map.atoms[ii].force == pytest.approx(expected_f[ii])
     lammps_type_map.run(1)
+
+
+
+def test_pair_deepmd_real(lammps_real):
+    lammps.pair_style(f"deepmd {pb_file.resolve()}")
+    lammps.pair_coeff("* *")
+    lammps.run(0)
+    assert lammps.eval("pe") == pytest.approx(expected_e * metal2real)
+    for ii in range(6):
+        assert lammps.atoms[ii].force == pytest.approx(expected_f[ii] * metal2real)
+    lammps.run(1)
+
+
+def test_pair_deepmd_virial_real(lammps_real):
+    lammps.pair_style(f"deepmd {pb_file.resolve()}")
+    lammps.pair_coeff("* *")
+    lammps.compute("virial all centroid/stress/atom NULL pair")
+    for ii in range(9):
+        jj = [0, 4, 8, 3, 6, 7, 1, 2, 5][ii]
+        lammps.variable(f"virial{jj} atom c_virial[{ii+1}]")
+    lammps.dump(
+        "1 all custom 1 dump id " + " ".join([f"v_virial{ii}" for ii in range(9)])
+    )
+    lammps.run(0)
+    assert lammps.eval("pe") == pytest.approx(expected_e * metal2real)
+    for ii in range(6):
+        assert lammps.atoms[ii].force == pytest.approx(expected_f[ii] * metal2real)
+    for ii in range(9):
+        assert np.array(
+            lammps.variables[f"virial{ii}"].value
+        ) / nktv2p == pytest.approx(expected_v[:, ii] * metal2real)

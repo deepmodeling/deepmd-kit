@@ -131,6 +131,7 @@ class PairDeepMD : public Pair {
   tagint *tagsend, *tagrecv;
   double *stdfsend, *stdfrecv;
   std::vector<int> type_idx_map;
+  double conversion_factor;
 };
 
 }  // namespace LAMMPS_NS
