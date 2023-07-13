@@ -441,30 +441,30 @@ def test_pair_deepmd_type_map(lammps_type_map):
 
 
 def test_pair_deepmd_real(lammps_real):
-    lammps.pair_style(f"deepmd {pb_file.resolve()}")
-    lammps.pair_coeff("* *")
-    lammps.run(0)
-    assert lammps.eval("pe") == pytest.approx(expected_e * metal2real)
+    lammps_real.pair_style(f"deepmd {pb_file.resolve()}")
+    lammps_real.pair_coeff("* *")
+    lammps_real.run(0)
+    assert lammps_real.eval("pe") == pytest.approx(expected_e * metal2real)
     for ii in range(6):
-        assert lammps.atoms[ii].force == pytest.approx(expected_f[ii] * metal2real)
-    lammps.run(1)
+        assert lammps_real.atoms[ii].force == pytest.approx(expected_f[ii] * metal2real)
+    lammps_real.run(1)
 
 
 def test_pair_deepmd_virial_real(lammps_real):
-    lammps.pair_style(f"deepmd {pb_file.resolve()}")
-    lammps.pair_coeff("* *")
-    lammps.compute("virial all centroid/stress/atom NULL pair")
+    lammps_real.pair_style(f"deepmd {pb_file.resolve()}")
+    lammps_real.pair_coeff("* *")
+    lammps_real.compute("virial all centroid/stress/atom NULL pair")
     for ii in range(9):
         jj = [0, 4, 8, 3, 6, 7, 1, 2, 5][ii]
-        lammps.variable(f"virial{jj} atom c_virial[{ii+1}]")
-    lammps.dump(
+        lammps_real.variable(f"virial{jj} atom c_virial[{ii+1}]")
+    lammps_real.dump(
         "1 all custom 1 dump id " + " ".join([f"v_virial{ii}" for ii in range(9)])
     )
-    lammps.run(0)
-    assert lammps.eval("pe") == pytest.approx(expected_e * metal2real)
+    lammps_real.run(0)
+    assert lammps_real.eval("pe") == pytest.approx(expected_e * metal2real)
     for ii in range(6):
-        assert lammps.atoms[ii].force == pytest.approx(expected_f[ii] * metal2real)
+        assert lammps_real.atoms[ii].force == pytest.approx(expected_f[ii] * metal2real)
     for ii in range(9):
         assert np.array(
-            lammps.variables[f"virial{ii}"].value
+            lammps_real.variables[f"virial{ii}"].value
         ) / nktv2p == pytest.approx(expected_v[:, ii] * metal2real)
