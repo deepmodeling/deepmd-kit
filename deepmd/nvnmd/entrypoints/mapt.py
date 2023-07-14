@@ -240,7 +240,7 @@ class MapTable:
         r"""Plot lines to see accuracy."""
         pass
 
-    def build_map_coef(self, cfgs, x, ys, grads, grad_grads, Nr, Nc, rank=4):
+    def build_map_coef(self, cfgs, x, ys, grads, grad_grads, Nr, Nc):
         r"""Build mapping table coefficient
         cfgs: cfg list
         cfg = x0, x1, dx.
@@ -299,7 +299,7 @@ class MapTable:
             x0, x1, dx, N0, N1 = cfg
             Nd = N1 - N0
             diff_x = np.abs((x - x0) - np.round((x - x0) / dx) * dx)
-            idx = np.logical_and(np.logical_and(x >= x0, x <= x1), diff_x < 1.0e-4)
+            idx = np.logical_and(np.logical_and(x >= x0, x <= x1), diff_x < 1.0e-6)
             y0 = y[idx][:-1]
             y1 = y[idx][1:]
             dy0 = dy[idx][:-1]

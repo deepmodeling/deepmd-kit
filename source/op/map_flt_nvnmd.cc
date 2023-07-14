@@ -97,52 +97,49 @@ class MapFltNvnmdOp : public OpKernel {
     FPTYPE xi, x0, x1, dx;
     FPTYPE xx, id;
     int idx;
-    int N0, N1;
+    int N0, N1, dN;
 
     U_Flt64_Int64 ufi;
 
     FPTYPE ytmp;
-    for (ii = 0; ii < N * D; ii++) {
-      // cal idx and xx
-      xi = x[ii];
-      for (ss = 0; ss < S; ss++) {
-        x1 = info[ss * 5 + 1];
-        if (xi <= x1) {
-          x0 = info[ss * 5 + 0];
-          dx = info[ss * 5 + 2];
-          N0 = int(info[ss * 5 + 3]);
-          N1 = int(info[ss * 5 + 4]);
-          break;
-        }
-      }
-      //
-      xx = xi - x0;
-      id = floor(xx / dx);
-      xx -= id * dx;
-      idx = id + N0;
-      if (idx >= N1) {
-        idx = N1 - 1;
-        xx = dx;
-      }
-      //
-      ufi.nflt = xx;
-      ufi.nint &= 0xfffffff000000000;  // 52 - 16 = 36 = 9 * 4
-      xx = ufi.nflt;
-      for (jj = 0; jj < M; jj++) {
-        FPTYPE a = table[idx * M * 4 + jj * 4 + 0];
-        FPTYPE b = table[idx * M * 4 + jj * 4 + 1];
-        FPTYPE c = table[idx * M * 4 + jj * 4 + 2];
-        FPTYPE d = table[idx * M * 4 + jj * 4 + 3];
-        mul_flt_nvnmd(ytmp, a, xx);
-        add_flt_nvnmd(ytmp, b, ytmp);
-        mul_flt_nvnmd(ytmp, ytmp, xx);
-        add_flt_nvnmd(ytmp, c, ytmp);
-        mul_flt_nvnmd(ytmp, ytmp, xx);
-        add_flt_nvnmd(ytmp, d, ytmp);
-        y[ii * M + jj] = ytmp;
-      }
-    }
-
+    FPTYPE ytmp2;
+    for (ss = S-1; ss >= 0; ss--) {
+      x0 = info[ss * 5 + 0];
+      x1 = info[ss * 5 + 1];
+      dx = info[ss * 5 + 2];
+      N0 = int(info[ss * 5 + 3]);
+      N1 = int(info[ss * 5 + 4]);
+      dN = N1 - N0;
+      for (ii = 0; ii < N * D; ii++) {
+        // cal idx and xx
+        xi = x[ii];
+        if ((xi < x0) || (xi >= x1)) continue;
+        //
+        xx = xi - x0;
+        id = floor(xx / dx);
+        id = (id < 0) ? 0 : id;
+        id = (id >= dN) ? (dN - 1) : id;
+        xx -= id * dx;
+        idx = id + N0;
+        //
+        ufi.nflt = xx;
+        ufi.nint &= 0xfffffff000000000;  // 52 - 16 = 36 = 9 * 4
+        xx = ufi.nflt;
+        for (jj = 0; jj < M; jj++) {
+          FPTYPE a = table[idx * M * 4 + jj * 4 + 0];
+          FPTYPE b = table[idx * M * 4 + jj * 4 + 1];
+          FPTYPE c = table[idx * M * 4 + jj * 4 + 2];
+          FPTYPE d = table[idx * M * 4 + jj * 4 + 3];
+          mul_flt_nvnmd(ytmp, a, xx);
+          add_flt_nvnmd(ytmp, b, ytmp);
+          mul_flt_nvnmd(ytmp, ytmp, xx);
+          add_flt_nvnmd(ytmp, c, ytmp);
+          mul_flt_nvnmd(ytmp, ytmp, xx);
+          add_flt_nvnmd(ytmp, d, ytmp);
+          y[ii * M + jj] = ytmp;
+        } // jj
+      } // ii
+    } // ss
   }  // Compute
 };   // MapFltNvnmdOp
 

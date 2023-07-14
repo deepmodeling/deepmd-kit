@@ -160,9 +160,10 @@ class DescrptSeAtten(DescrptSeA):
         """
         Constructor
         """
-        assert Version(TF_VERSION) > Version(
-            "2"
-        ), "se_atten only support tensorflow version 2.0 or higher."
+        if not (nvnmd_cfg.enable and (nvnmd_cfg.version == 1)):
+            assert Version(TF_VERSION) > Version(
+                "2"
+            ), "se_atten only support tensorflow version 2.0 or higher."
         self.stripped_type_embedding = stripped_type_embedding
         self.ntypes = ntypes
         self.att_n = attn
