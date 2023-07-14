@@ -144,7 +144,7 @@ compute ID group-ID centroid/stress/atom NULL virial
 ```
 see [LAMMPS doc page](https://docs.lammps.org/compute_stress_atom.html#thompson2) for more details on the meaning of the keywords.
 
-:::{versionchanged}v2.2.3
+:::{versionchanged} v2.2.3
 v2.2.2 or previous versions passed per-atom stress (`cvatom`) with the per-atom pressure tensor, which is inconsistent with [LAMMPS's definition](https://docs.lammps.org/compute_stress_atom.html). LAMMPS defines per-atom stress as the negative of the per-atom pressure tensor. Such behavior is corrected in v2.2.3.
 :::
 
