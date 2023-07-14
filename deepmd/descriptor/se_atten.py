@@ -1122,6 +1122,7 @@ class DescrptSeAtten(DescrptSeA):
                             tf.reshape(inputs_i, [natom, shape_i[1] // 4, 4]),
                             two_embd,
                             last_layer_size=outputs_size[-1],
+                            is_sorted=len(self.exclude_types) == 0,
                         )
 
                 if (not self.uniform_seed) and (self.seed is not None):
