@@ -1,22 +1,28 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Test pairwise DPRc features."""
+import json
 import unittest
 
 import dpdata
 import numpy as np
 from common import (
+    run_dp,
     tests_path,
 )
 from pkg_resources import (
     parse_version,
 )
 
+from deepmd import (
+    DeepPotential,
+)
 from deepmd.common import (
     j_loader,
     j_must_have,
 )
 from deepmd.env import (
     GLOBAL_ENER_FLOAT_PRECISION,
+    GLOBAL_NP_FLOAT_PRECISION,
     GLOBAL_TF_FLOAT_PRECISION,
     op_module,
     tf,
@@ -33,6 +39,11 @@ from deepmd.utils.data_system import (
 from deepmd.utils.sess import (
     run_sess,
 )
+
+if GLOBAL_NP_FLOAT_PRECISION == np.float32:
+    default_places = 4
+else:
+    default_places = 10
 
 
 class TestPairwiseOP(tf.test.TestCase):
@@ -260,8 +271,7 @@ class TestPairwiseModel(tf.test.TestCase):
         idxs = np.array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3])
         np.save("system/set.000/aparam.npy", idxs)
 
-        systems = j_must_have(jdata, "systems")
-        set_pfx = j_must_have(jdata, "set_prefix")
+        systems = j_must_have(jdata["training"]["training_data"], "systems")
         batch_size = 1
         test_size = 1
         rcut = model.get_rcut()
@@ -346,3 +356,311 @@ class TestPairwiseModel(tf.test.TestCase):
         # the model is pairwise!
         self.assertAllClose(e[1] + e[2] + e[3] - 3 * e[0], e[4] - e[0])
         self.assertAllClose(f[1] + f[2] + f[3] - 3 * f[0], f[4] - f[0])
+
+
+def _init_models():
+    system = dpdata.LabeledSystem()
+    system.data["atom_names"] = ["C", "N", "O", "H", "OW", "HW"]
+    system.data["coords"] = np.array(
+        [
+            2.48693,
+            -0.12642,
+            0.45320,
+            3.86292,
+            -0.00082,
+            0.07286,
+            4.19135,
+            0.35148,
+            -1.21253,
+            3.35886,
+            0.58875,
+            -2.08423,
+            5.67422,
+            0.44076,
+            -1.45160,
+            2.40712,
+            -0.32538,
+            1.52137,
+            2.04219,
+            -0.93912,
+            -0.12445,
+            1.98680,
+            0.81574,
+            0.21261,
+            4.57186,
+            -0.33026,
+            0.71127,
+            6.24532,
+            0.18814,
+            -0.55212,
+            5.92647,
+            1.46447,
+            -1.74069,
+            5.95030,
+            -0.25321,
+            -2.24804,
+            -0.32794,
+            1.50468,
+            0.83176,
+            0.23662,
+            2.24068,
+            1.13166,
+            -0.24528,
+            1.59132,
+            -0.14907,
+            -0.50371,
+            -1.24800,
+            -0.05601,
+            -0.28305,
+            -1.84629,
+            0.67555,
+            -0.68673,
+            -0.40535,
+            0.41384,
+            0.38397,
+            0.80987,
+            -1.90358,
+            1.30191,
+            0.68503,
+            -2.22909,
+            0.11626,
+            -0.11276,
+            -1.70506,
+        ]
+    ).reshape(1, 21, 3)
+    system.data["atom_types"] = np.array(
+        [0, 1, 0, 2, 0, 3, 3, 3, 3, 3, 3, 3, 4, 5, 5, 4, 5, 5, 4, 5, 5]
+    )
+    system.data["cells"] = np.array([np.eye(3) * 30])
+    nframes = 1
+    natoms = 21
+    system.data["coords"] = system.data["coords"].reshape([nframes, natoms, 3])
+    system.data["cells"] = system.data["cells"].reshape([nframes, 3, 3])
+    system.data["energies"] = np.ones(
+        [
+            nframes,
+        ]
+    )
+    system.data["forces"] = np.zeros([nframes, natoms, 3])
+    system.data["nopbc"] = True
+    system.to_deepmd_npy("pairwise_system", prec=np.float64)
+    idxs = np.array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3])
+    np.save("pairwise_system/set.000/aparam.npy", idxs)
+
+    data_file = str(tests_path / "pairwise_system")
+    frozen_model = str(tests_path / "dp-original-se-t.pb")
+    compressed_model = str(tests_path / "dp-compressed-se-t.pb")
+    INPUT = str(tests_path / "input.json")
+    jdata = j_loader(str(tests_path / "pairwise_dprc.json"))
+    jdata["training"]["training_data"]["systems"] = data_file
+    with open(INPUT, "w") as fp:
+        json.dump(jdata, fp, indent=4)
+
+    ret = run_dp("dp train " + INPUT)
+    np.testing.assert_equal(ret, 0, "DP train failed!")
+    ret = run_dp("dp freeze -o " + frozen_model)
+    np.testing.assert_equal(ret, 0, "DP freeze failed!")
+    ret = run_dp("dp compress " + " -i " + frozen_model + " -o " + compressed_model)
+    np.testing.assert_equal(ret, 0, "DP model compression failed!")
+    return INPUT, frozen_model, compressed_model
+
+
+class TestPairwiseCompress(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        INPUT, FROZEN_MODEL, COMPRESSED_MODEL = _init_models()
+        cls.dp_original = DeepPotential(FROZEN_MODEL)
+        cls.dp_compressed = DeepPotential(COMPRESSED_MODEL)
+
+    def setUp(self) -> None:
+        self.coords = np.array(
+            [
+                2.48693,
+                -0.12642,
+                0.45320,
+                3.86292,
+                -0.00082,
+                0.07286,
+                4.19135,
+                0.35148,
+                -1.21253,
+                3.35886,
+                0.58875,
+                -2.08423,
+                5.67422,
+                0.44076,
+                -1.45160,
+                2.40712,
+                -0.32538,
+                1.52137,
+                2.04219,
+                -0.93912,
+                -0.12445,
+                1.98680,
+                0.81574,
+                0.21261,
+                4.57186,
+                -0.33026,
+                0.71127,
+                6.24532,
+                0.18814,
+                -0.55212,
+                5.92647,
+                1.46447,
+                -1.74069,
+                5.95030,
+                -0.25321,
+                -2.24804,
+                -0.32794,
+                1.50468,
+                0.83176,
+                0.23662,
+                2.24068,
+                1.13166,
+                -0.24528,
+                1.59132,
+                -0.14907,
+                -0.50371,
+                -1.24800,
+                -0.05601,
+                -0.28305,
+                -1.84629,
+                0.67555,
+                -0.68673,
+                -0.40535,
+                0.41384,
+                0.38397,
+                0.80987,
+                -1.90358,
+                1.30191,
+                0.68503,
+                -2.22909,
+                0.11626,
+                -0.11276,
+                -1.70506,
+            ]
+        ).reshape(1, 21, 3)
+        self.atype = [0, 1, 0, 2, 0, 3, 3, 3, 3, 3, 3, 3, 4, 5, 5, 4, 5, 5, 4, 5, 5]
+        self.box = None
+        self.idxs = np.array(
+            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3]
+        ).astype(np.float64)
+        # self.idxs = np.array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,0,0,0,0,0,0,0,0]).astype(np.float64)
+        self.type_map = ["C", "N", "O", "H", "OW", "HW"]
+
+    def test_attrs(self):
+        self.assertEqual(self.dp_original.get_ntypes(), len(self.type_map))
+        self.assertAlmostEqual(self.dp_original.get_rcut(), 6.0, places=default_places)
+        self.assertEqual(self.dp_original.get_type_map(), self.type_map)
+        self.assertEqual(self.dp_original.get_dim_fparam(), 0)
+        self.assertEqual(self.dp_original.get_dim_aparam(), 1)
+
+        self.assertEqual(self.dp_compressed.get_ntypes(), len(self.type_map))
+        self.assertAlmostEqual(
+            self.dp_compressed.get_rcut(), 6.0, places=default_places
+        )
+        self.assertEqual(self.dp_compressed.get_type_map(), self.type_map)
+        self.assertEqual(self.dp_compressed.get_dim_fparam(), 0)
+        self.assertEqual(self.dp_compressed.get_dim_aparam(), 1)
+
+    def test_1frame(self):
+        ee0, ff0, vv0 = self.dp_original.eval(
+            self.coords,
+            self.box,
+            self.atype,
+            atomic=False,
+            aparam=self.idxs,
+        )
+        ee1, ff1, vv1 = self.dp_compressed.eval(
+            self.coords,
+            self.box,
+            self.atype,
+            atomic=False,
+            aparam=self.idxs,
+        )
+        # check shape of the returns
+        nframes = 1
+        natoms = len(self.atype)
+        self.assertEqual(ee0.shape, (nframes, 1))
+        self.assertEqual(ff0.shape, (nframes, natoms, 3))
+        self.assertEqual(vv0.shape, (nframes, 9))
+        self.assertEqual(ee1.shape, (nframes, 1))
+        self.assertEqual(ff1.shape, (nframes, natoms, 3))
+        self.assertEqual(vv1.shape, (nframes, 9))
+        # check values
+        np.testing.assert_almost_equal(ff0, ff1, default_places)
+        np.testing.assert_almost_equal(ee0, ee1, default_places)
+        np.testing.assert_almost_equal(vv0, vv1, default_places)
+
+    def test_1frame_atm(self):
+        ee0, ff0, vv0, ae0, av0 = self.dp_original.eval(
+            self.coords,
+            self.box,
+            self.atype,
+            atomic=True,
+            aparam=self.idxs,
+        )
+        ee1, ff1, vv1, ae1, av1 = self.dp_compressed.eval(
+            self.coords,
+            self.box,
+            self.atype,
+            atomic=True,
+            aparam=self.idxs,
+        )
+        # check shape of the returns
+        nframes = 1
+        natoms = len(self.atype)
+        self.assertEqual(ee0.shape, (nframes, 1))
+        self.assertEqual(ff0.shape, (nframes, natoms, 3))
+        self.assertEqual(vv0.shape, (nframes, 9))
+        self.assertEqual(ae0.shape, (nframes, natoms, 1))
+        self.assertEqual(av0.shape, (nframes, natoms, 9))
+        self.assertEqual(ee1.shape, (nframes, 1))
+        self.assertEqual(ff1.shape, (nframes, natoms, 3))
+        self.assertEqual(vv1.shape, (nframes, 9))
+        self.assertEqual(ae1.shape, (nframes, natoms, 1))
+        self.assertEqual(av1.shape, (nframes, natoms, 9))
+        # check values
+        np.testing.assert_almost_equal(ff0, ff1, default_places)
+        np.testing.assert_almost_equal(ae0, ae1, default_places)
+        np.testing.assert_almost_equal(av0, av1, default_places)
+        np.testing.assert_almost_equal(ee0, ee1, default_places)
+        np.testing.assert_almost_equal(vv0, vv1, default_places)
+
+    def test_2frame_atm(self):
+        coords2 = np.concatenate((self.coords, self.coords))
+        box2 = None
+        ee0, ff0, vv0, ae0, av0 = self.dp_original.eval(
+            coords2,
+            box2,
+            self.atype,
+            atomic=True,
+            aparam=self.idxs,
+        )
+        ee1, ff1, vv1, ae1, av1 = self.dp_compressed.eval(
+            coords2,
+            box2,
+            self.atype,
+            atomic=True,
+            aparam=self.idxs,
+        )
+        # check shape of the returns
+        nframes = 2
+        natoms = len(self.atype)
+        self.assertEqual(ee0.shape, (nframes, 1))
+        self.assertEqual(ff0.shape, (nframes, natoms, 3))
+        self.assertEqual(vv0.shape, (nframes, 9))
+        self.assertEqual(ae0.shape, (nframes, natoms, 1))
+        self.assertEqual(av0.shape, (nframes, natoms, 9))
+        self.assertEqual(ee1.shape, (nframes, 1))
+        self.assertEqual(ff1.shape, (nframes, natoms, 3))
+        self.assertEqual(vv1.shape, (nframes, 9))
+        self.assertEqual(ae1.shape, (nframes, natoms, 1))
+        self.assertEqual(av1.shape, (nframes, natoms, 9))
+
+        # check values
+        np.testing.assert_almost_equal(ff0, ff1, default_places)
+        np.testing.assert_almost_equal(ae0, ae1, default_places)
+        np.testing.assert_almost_equal(av0, av1, default_places)
+        np.testing.assert_almost_equal(ee0, ee1, default_places)
+        np.testing.assert_almost_equal(vv0, vv1, default_places)
