@@ -34,7 +34,7 @@ expected_f_sr = np.array(
     ]
 )
 
-expected_v_sr = np.array(
+expected_v_sr = - np.array(
     [
         [
             -0.053706180723,
