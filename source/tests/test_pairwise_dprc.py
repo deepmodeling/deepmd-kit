@@ -443,9 +443,9 @@ def _init_models():
     )
     system.data["forces"] = np.zeros([nframes, natoms, 3])
     system.data["nopbc"] = True
-    system.to_deepmd_npy("pairwise_system", prec=np.float64)
+    system.to_deepmd_npy(str(tests_path / "pairwise_system"), prec=np.float64)
     idxs = np.array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3])
-    np.save("pairwise_system/set.000/aparam.npy", idxs)
+    np.save(str(tests_path / "pairwise_system/set.000/aparam.npy"), idxs)
 
     data_file = str(tests_path / "pairwise_system")
     frozen_model = str(tests_path / "dp-original-se-t.pb")
