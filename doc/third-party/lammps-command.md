@@ -132,9 +132,9 @@ Please notice that the DeePMD does nothing to the direct space part of the elect
 
 ## Use of the centroid/stress/atom to get the full 3x3 "atomic-virial"
 
-The [DeePMD-kit](https://github.com/deepmodeling/deepmd-kit) allows also the computation of per-atom stress tensor defined as:
+The [DeePMD-kit](https://github.com/deepmodeling/deepmd-kit) also allows the computation of per-atom stress tensor defined as:
 
-$$dvatom=\sum_{m}( \mathbf{r}_n- \mathbf{r}_m) \frac{de_m}{d\mathbf{r}_n}$$
+$$dvatom=-\sum_{m}( \mathbf{r}_n- \mathbf{r}_m) \frac{de_m}{d\mathbf{r}_n}$$
 
 Where $\mathbf{r}_n$ is the atomic position of nth atom, $\mathbf{v}_n$ velocity of the atom and $\frac{de_m}{d\mathbf{r}_n}$ the derivative of the atomic energy.
 
@@ -143,6 +143,11 @@ In LAMMPS one can get the per-atom stress using the command `centroid/stress/ato
 compute ID group-ID centroid/stress/atom NULL virial
 ```
 see [LAMMPS doc page](https://docs.lammps.org/compute_stress_atom.html#thompson2) for more details on the meaning of the keywords.
+
+:::{versionchanged}v2.2.3
+v2.2.2 or previous versions passed per-atom stress (`cvatom`) with the per-atom pressure tensor, which is inconsistent with [LAMMPS's definition](https://docs.lammps.org/compute_stress_atom.html). LAMMPS defines per-atom stress as the negative of the per-atom pressure tensor. Such behavior is corrected in v2.2.3.
+:::
+
 ### Examples
 In order of computing the 9-component per-atom stress
 ```lammps
