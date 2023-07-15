@@ -115,7 +115,9 @@ def _init_models_exclude_types():
     for i in range(4):
         INPUT = str(tests_path / f"input{i}.json")
         frozen_model = str(tests_path / f"dp-original-se-atten{i}-exclude-types.pb")
-        compressed_model = str(tests_path / f"dp-compressed-se-atten{i}-exclude-types.pb")
+        compressed_model = str(
+            tests_path / f"dp-compressed-se-atten{i}-exclude-types.pb"
+        )
         jdata = j_loader(
             str(tests_path / os.path.join("model_compression", "input.json"))
         )
