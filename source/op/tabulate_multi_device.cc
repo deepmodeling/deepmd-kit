@@ -333,12 +333,12 @@ class TabulateFusionSeAGradGradOp : public OpKernel {
 #if GOOGLE_CUDA
       deepmd::tabulate_fusion_se_a_grad_grad_gpu_cuda(
           dz_dy, table, table_info, em_x, em, dz_dy_dem_x, dz_dy_dem, nloc,
-          nnei, last_layer_size);
+          nnei, last_layer_size, is_sorted);
 #endif  // GOOGLE_CUDA
 #if TENSORFLOW_USE_ROCM
       deepmd::tabulate_fusion_se_a_grad_grad_gpu_rocm(
           dz_dy, table, table_info, em_x, em, dz_dy_dem_x, dz_dy_dem, nloc,
-          nnei, last_layer_size);
+          nnei, last_layer_size, is_sorted);
 #endif  // TENSORFLOW_USE_ROCM
       OP_REQUIRES(context, (last_layer_size <= 1024),
                   errors::InvalidArgument(
@@ -347,7 +347,7 @@ class TabulateFusionSeAGradGradOp : public OpKernel {
     } else if (device == "CPU") {
       deepmd::tabulate_fusion_se_a_grad_grad_cpu(dz_dy, table, table_info, em_x,
                                                  em, dz_dy_dem_x, dz_dy_dem,
-                                                 nloc, nnei, last_layer_size);
+                                                 nloc, nnei, last_layer_size, is_sorted);
     }
   }
 
