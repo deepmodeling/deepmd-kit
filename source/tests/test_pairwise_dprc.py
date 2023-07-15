@@ -448,8 +448,8 @@ def _init_models():
     np.save(str(tests_path / "pairwise_system/set.000/aparam.npy"), idxs)
 
     data_file = str(tests_path / "pairwise_system")
-    frozen_model = str(tests_path / "dp-original-se-t.pb")
-    compressed_model = str(tests_path / "dp-compressed-se-t.pb")
+    frozen_model = str(tests_path / "dp-original-pairwise-dprc.pb")
+    compressed_model = str(tests_path / "dp-compressed-pairwise-dprc.pb")
     INPUT = str(tests_path / "input.json")
     jdata = j_loader(str(tests_path / "pairwise_dprc.json"))
     jdata["training"]["training_data"]["systems"] = data_file
