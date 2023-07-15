@@ -294,7 +294,9 @@ template <typename Device, typename FPTYPE>
 class TabulateFusionSeAGradGradOp : public OpKernel {
  public:
   explicit TabulateFusionSeAGradGradOp(OpKernelConstruction* context)
-      : OpKernel(context) {}
+      : OpKernel(context) {
+    OP_REQUIRES_OK(context, context->GetAttr("is_sorted", &is_sorted));
+  }
   void Compute(OpKernelContext* context) override {
     // Grab the input tensor
     int context_input_index = 0;
@@ -363,6 +365,7 @@ class TabulateFusionSeAttenOp : public OpKernel {
       : OpKernel(context) {
     OP_REQUIRES_OK(context,
                    context->GetAttr("last_layer_size", &last_layer_size));
+    OP_REQUIRES_OK(context, context->GetAttr("is_sorted", &is_sorted));
   }
   void Compute(OpKernelContext* context) override {
     deepmd::safe_compute(
@@ -435,7 +438,9 @@ template <typename Device, typename FPTYPE>
 class TabulateFusionSeAttenGradOp : public OpKernel {
  public:
   explicit TabulateFusionSeAttenGradOp(OpKernelConstruction* context)
-      : OpKernel(context) {}
+      : OpKernel(context) {
+    OP_REQUIRES_OK(context, context->GetAttr("is_sorted", &is_sorted));
+  }
   void Compute(OpKernelContext* context) override {
     deepmd::safe_compute(
         context, [this](OpKernelContext* context) { this->_Compute(context); });
