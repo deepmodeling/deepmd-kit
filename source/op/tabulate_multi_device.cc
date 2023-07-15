@@ -345,9 +345,9 @@ class TabulateFusionSeAGradGradOp : public OpKernel {
                       "In the process of model compression, the size of the "
                       "last layer of embedding net must be less than 1024!"));
     } else if (device == "CPU") {
-      deepmd::tabulate_fusion_se_a_grad_grad_cpu(dz_dy, table, table_info, em_x,
-                                                 em, dz_dy_dem_x, dz_dy_dem,
-                                                 nloc, nnei, last_layer_size, is_sorted);
+      deepmd::tabulate_fusion_se_a_grad_grad_cpu(
+          dz_dy, table, table_info, em_x, em, dz_dy_dem_x, dz_dy_dem, nloc,
+          nnei, last_layer_size, is_sorted);
     }
   }
 
