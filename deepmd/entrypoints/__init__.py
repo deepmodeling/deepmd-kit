@@ -12,6 +12,7 @@ from .transfer import transfer
 from ..infer.model_devi import make_model_devi
 from .convert import convert
 from .neighbor_stat import neighbor_stat
+from .transfer_to_ascend import transfer_to_ascend
 
 __all__ = [
     "config",
@@ -25,4 +26,5 @@ __all__ = [
     "make_model_devi",
     "convert",
     "neighbor_stat",
+    "transfer_to_ascend",
 ]

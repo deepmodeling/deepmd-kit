@@ -2,6 +2,7 @@
 #include "AtomMap.h"
 #include <stdexcept>	
 #include "device.h"
+#include <dlfcn.h>
 
 using namespace tensorflow;
 using namespace deepmd;
@@ -16,7 +17,6 @@ std::vector<int> cum_sum (const std::vector<int32> & n_sel) {
     }
     return sec;
 }
-
 
 static void 
 run_model (ENERGYTYPE &			dener,
@@ -77,6 +77,88 @@ run_model (ENERGYTYPE &			dener,
   dforce_ = dforce;
   atommap.backward (dforce_.begin(), dforce.begin(), 3);
 }
+
+#if HUAWEI_ASCEND
+static void 
+run_model (ENERGYTYPE &			dener,
+	   std::vector<VALUETYPE> &	dforce_,
+	   std::vector<VALUETYPE> &	dvirial,
+	   Session *			session, 
+	   std::vector<std::pair<std::string, Tensor>> & input_tensors,
+	   const AtomMap<VALUETYPE>&	atommap, 
+	   const int			nghost = 0)
+{
+  unsigned nloc = atommap.get_type().size();
+  unsigned nall = nloc + nghost;
+  if (nloc == 0) {
+    dener = 0;
+    // no backward map needed
+    // dforce of size nall * 3
+    dforce_.resize(nall * 3);
+    fill(dforce_.begin(), dforce_.end(), (VALUETYPE)0.0);
+    // dvirial of size 9
+    dvirial.resize(9);
+    fill(dvirial.begin(), dvirial.end(), (VALUETYPE)0.0);
+    return;
+  }
+
+  std::vector<Tensor> output_tensors;
+  if (input_tensors.size() == 4) {
+      std::vector<std::pair<std::string, Tensor>> temp_input_tensors;
+      temp_input_tensors.push_back(input_tensors[3]);
+      std::vector<Tensor> tmp_output_tensor;
+      check_status(session->Run(temp_input_tensors,
+                                {},
+                                {"Variable_mesh/Assign"},
+                                &tmp_output_tensor));
+      input_tensors.pop_back();
+  }
+  check_status (session->Run(input_tensors,
+			    {"o_force", "o_atom_energy", "o_atom_virial"},
+			    {},
+			    &output_tensors));
+  Tensor output_f = output_tensors[0];
+  Tensor output_ae = output_tensors[1];
+  Tensor output_av = output_tensors[2];
+
+  auto of = output_f.flat <VALUETYPE> ();
+  auto oae = output_ae.flat <VALUETYPE> ();
+  auto oav = output_av.flat <VALUETYPE> ();
+
+  //de-offset coord
+  Tensor type = input_tensors[1].second;
+  auto type_val = type.flat <int> ();
+  int oae_idx = 0;
+  double oae_sum = 0.0;
+  std::vector<VALUETYPE> dforce (3 * nall);
+  dvirial.resize (9);
+  // set dvirial to zero, prevent input vector is not zero (#1123)
+  std::fill(dvirial.begin(), dvirial.end(), (VALUETYPE)0.);
+  for (int ii = 0; ii < type_val.size(); ++ii) {
+      if (type_val(ii) != -1) {
+          if (oae_idx < nloc) {
+              oae_sum += static_cast<double>(oae(ii));
+          }
+          dforce[oae_idx*3] = of(ii*3);
+          dforce[oae_idx*3 + 1] = of(ii*3 + 1);
+          dforce[oae_idx*3 + 2] = of(ii*3 + 2);
+          dvirial[0] += 1.0 * oav(9*ii+0);
+          dvirial[1] += 1.0 * oav(9*ii+1);
+          dvirial[2] += 1.0 * oav(9*ii+2);
+          dvirial[3] += 1.0 * oav(9*ii+3);
+          dvirial[4] += 1.0 * oav(9*ii+4);
+          dvirial[5] += 1.0 * oav(9*ii+5);
+          dvirial[6] += 1.0 * oav(9*ii+6);
+          dvirial[7] += 1.0 * oav(9*ii+7);
+          dvirial[8] += 1.0 * oav(9*ii+8);
+          oae_idx += 1;
+      }
+  }
+  dener = oae_sum;
+  dforce_ = dforce;
+  atommap.backward (dforce_.begin(), dforce.begin(), 3);
+}
+#endif
 
 static void run_model (ENERGYTYPE   &		dener,
 		       std::vector<VALUETYPE>&	dforce_,
@@ -177,6 +259,7 @@ DeepPot (const std::string & model, const int & gpu_rank, const std::string & fi
 
 DeepPot::~DeepPot() {
   delete graph_def;
+  delete session;
 }
 
 void
@@ -236,6 +319,204 @@ init (const std::string & model, const int & gpu_rank, const std::string & file_
   
   init_nbor = false;
 }
+
+#if HUAWEI_ASCEND
+void
+DeepPot::
+init (const int & npu_rank)
+{
+  if (inited){
+    std::cerr << "WARNING: deepmd-kit should not be initialized twice, do nothing at the second call of initializer" << std::endl;
+    return ;
+  }
+  SessionOptions options;
+  get_env_nthreads(num_intra_nthreads, num_inter_nthreads);
+  options.config.set_inter_op_parallelism_threads(num_inter_nthreads);
+  options.config.set_intra_op_parallelism_threads(num_intra_nthreads);
+  deepmd::load_op_library();
+
+  // init NPU session 
+  auto* custom_op = options.config.mutable_graph_options()->mutable_rewrite_options()->add_custom_optimizers();
+  custom_op->set_name("NpuOptimizer");
+  auto* params = custom_op->mutable_parameter_map();
+  ::tensorflow::AttrValue use_off_line;
+  ::tensorflow::AttrValue mix_compile_mode;
+  ::tensorflow::AttrValue op_debug_level;
+  ::tensorflow::AttrValue precision_mode;
+  use_off_line.set_b(true);
+  mix_compile_mode.set_b(false);
+  op_debug_level.set_i(0);
+  precision_mode.set_s("must_keep_origin_dtype");
+  params->insert({"use_off_line", use_off_line});
+  params->insert({"mix_compile_mode", mix_compile_mode});
+  params->insert({"op_debug_level", op_debug_level});
+  params->insert({"precision_mode", precision_mode});
+
+  // set visible ascend devices
+  char *pathvar;
+  pathvar = getenv("ASCEND_VISIBLE_DEVICES");
+  std::string space_delimiter = ",";
+  std::vector<string> words{};
+  if (pathvar && *pathvar != '\0') {
+    std::string pathvar_str = pathvar;
+    size_t pos = 0;
+    while ((pos = pathvar_str.find(space_delimiter)) != string::npos) {
+        words.push_back(pathvar_str.substr(0, pos));
+        pathvar_str = pathvar_str.substr(pos + space_delimiter.length());
+    }
+    words.push_back(pathvar_str.substr(0, pathvar_str.size()));
+    ::tensorflow::AttrValue session_device_id;
+    int dev_id = std::stoi(words[npu_rank % words.size()]);
+    session_device_id.set_i(dev_id);
+    params->insert({"session_device_id", session_device_id});
+  } else {
+    std::cout << "CAN NOT GET ASCEND_VISIBLE_DEVICES!" << std::endl;
+    ::tensorflow::AttrValue session_device_id;
+    session_device_id.set_i(npu_rank);
+    params->insert({"session_device_id", session_device_id});
+  }
+  options.config.mutable_graph_options()->mutable_rewrite_options()->set_remapping(::tensorflow::RewriterConfig_Toggle::RewriterConfig_Toggle_OFF);
+  check_status (NewSession(options, &session));
+  check_status (session->Create(*graph_def));
+  rcut = get_scalar<VALUETYPE>("descrpt_attr/rcut");
+  cell_size = rcut;
+  ntypes = get_scalar<int>("descrpt_attr/ntypes");
+  dfparam = get_scalar<int>("fitting_attr/dfparam");
+  daparam = get_scalar<int>("fitting_attr/daparam");
+  if (dfparam < 0) dfparam = 0;
+  if (daparam < 0) daparam = 0;
+  model_type = get_scalar<STRINGTYPE>("model_attr/model_type");
+  try{
+  model_version = get_scalar<STRINGTYPE>("model_attr/model_version");
+  } catch (deepmd::tf_exception& e){
+    // no model version defined in old models
+    model_version = "0.0";
+  }
+  if(! model_compatable(model_version)){
+    throw deepmd::deepmd_exception(
+	"incompatable model: version " + model_version 
+	+ " in graph, but version " + global_model_version 
+	+ " supported ");
+  }
+  inited = true;
+  
+  init_nbor = false;
+}
+
+void
+DeepPot::
+init_graph (const std::string & model, const std::vector<int > & type_count, const std::string & file_content)
+{
+  
+  void *handler = dlopen("_tf_adapter.so", RTLD_NOW | RTLD_GLOBAL);
+  if (handler == nullptr) {
+      printf("%s\n", dlerror());
+      std::cout << "_tf_adapter.so open failed!" << std::endl;
+      return;
+  }
+  if(file_content.size() == 0){
+    check_status (ReadBinaryProto(Env::Default(), model, graph_def));
+  }
+  else
+    (*graph_def).ParseFromString(file_content);
+  int nloc_padding = 0;
+  int nall_padding;
+  char *nallVar;
+  nallVar = getenv("NALLVAL");
+  if (nallVar && *nallVar != '\0') {
+    std::string nall_string = nallVar;
+    nall_padding = std::stoi(nall_string);
+  } else {
+    std::cout << "CAN NOT GET NALLVAL! USE DEFAULT VALUE: 30000" << std::endl;
+    nall_padding = 30000;
+  }
+  natoms_padding = {nloc_padding, nall_padding};
+  for (int i = 0; i < type_count.size(); i++) {
+    int type_i_padding = type_count[i] * 1.1;
+    natoms_padding.push_back(type_i_padding);
+    nloc_padding += type_i_padding;
+  }
+  natoms_padding[0] = nloc_padding;
+  int natoms_padding_dim = natoms_padding.size();
+  for (uint32_t i = 0; i < (*graph_def).node_size(); i++) {
+      // transfer the natoms placeholder op to a const op
+      auto* node = (*graph_def).mutable_node(i);
+      if (node->name() == "t_natoms") {
+          node->set_op("Const");
+          auto* natoms_attr = node->mutable_attr();
+          ::tensorflow::AttrValue natoms_V;
+          auto *natoms_tensor = natoms_V.mutable_tensor();
+          natoms_tensor->set_dtype(DataType::DT_INT32);
+          ::tensorflow::TensorShapeProto tensorShapeProto;
+          ::tensorflow::TensorShapeProto_Dim* dim_0 = tensorShapeProto.add_dim();
+          dim_0->set_size(natoms_padding_dim);
+          *natoms_tensor->mutable_tensor_shape() = tensorShapeProto;
+          port::CopyFromArray(natoms_tensor->mutable_tensor_content(), reinterpret_cast<const char*> \
+          (natoms_padding.data()), natoms_padding_dim*sizeof(int));
+          natoms_attr->insert({"value", natoms_V});
+      }
+      
+      // transfer the mesh placeholder op to a assign op
+      if (node->name() == "t_mesh") {
+          // add Variablve node
+          auto *mesh_var = (*graph_def).add_node();
+          mesh_var->set_op("VariableV2");
+          mesh_var->set_name("Variable_mesh");
+          auto* mesh_var_attr = mesh_var->mutable_attr();
+          ::tensorflow::AttrValue container;
+          ::tensorflow::AttrValue shared_name;
+          ::tensorflow::AttrValue var_dtype;
+          container.set_s("");
+          shared_name.set_s("");
+          var_dtype.set_type(DataType::DT_INT32);
+          mesh_var_attr->insert({"container", container});
+          mesh_var_attr->insert({"shared_name", shared_name});
+          mesh_var_attr->insert({"dtype", var_dtype});
+          mesh_var_attr->insert({"shape", node->attr().at("shape")});
+          mesh_var_attr->at("shape").mutable_shape()->mutable_dim(0)->set_size(natoms_padding[0]*1026+1); 
+
+          // add Variable Assign node
+          auto *mesh_var_assgin = (*graph_def).add_node();
+          mesh_var_assgin->set_op("Assign");
+          mesh_var_assgin->set_name("Variable_mesh/Assign");
+          auto* mesh_var_assgin_attr = mesh_var_assgin->mutable_attr();
+          ::tensorflow::AttrValue assign_T;
+          ::tensorflow::AttrValue assign_class;
+          ::tensorflow::AttrValue assign_locking;
+          ::tensorflow::AttrValue assign_validate;
+          assign_T.set_type(DataType::DT_INT32);
+          auto *assign_lv = assign_class.mutable_list();
+          assign_lv->add_s("loc:@Variable");
+          assign_locking.set_b(true);
+          assign_validate.set_b(false);
+          mesh_var_assgin_attr->insert({"T", assign_T});
+          mesh_var_assgin_attr->insert({"_class", assign_class});
+          mesh_var_assgin_attr->insert({"use_locking", assign_locking});
+          mesh_var_assgin_attr->insert({"validate_shape", assign_validate});
+          mesh_var_assgin->add_input("Variable_mesh");
+          mesh_var_assgin->add_input("t_mesh");
+
+          // add Variable Read node
+          auto *mesh_var_read = (*graph_def).add_node();
+          mesh_var_read->set_op("Identity");
+          mesh_var_read->set_name("Variable_mesh/Read");
+          auto* mesh_var_read_attr = mesh_var_read->mutable_attr();
+          ::tensorflow::AttrValue read_T;
+          ::tensorflow::AttrValue read_class;
+          read_T.set_type(DataType::DT_INT32);
+          auto *read_lv = read_class.mutable_list();
+          read_lv->add_s("loc:@Variable");
+          mesh_var_read_attr->insert({"T", read_T});
+          mesh_var_read_attr->insert({"_class", read_class});
+          mesh_var_read->add_input("Variable_mesh");
+      }
+      // modify ProdEnvMatA input
+      if (node->name() == "ProdEnvMatA") {
+          node->set_input(4, "Variable_mesh/Read");
+      }
+  }
+}
+#endif //HUAWEI_ASCEND
 
 void 
 DeepPot::
@@ -418,7 +699,11 @@ compute_inner (ENERGYTYPE &			dener,
       nlist_data.shuffle(atommap);
       nlist_data.make_inlist(nlist);
     }
+    #if HUAWEI_ASCEND
+    int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, atommap, nghost, ago, natoms_padding);
+    #else
     int ret = session_input_tensors (input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam, atommap, nghost, ago);
+    #endif //HUAWEI_ASCEND
     assert (nloc == ret);
     run_model (dener, dforce_, dvirial, session, input_tensors, atommap, nghost);
 }

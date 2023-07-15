@@ -5,6 +5,9 @@
 #include <fcntl.h>
 #include "google/protobuf/text_format.h"
 #include "google/protobuf/io/zero_copy_stream_impl.h"
+#if (defined __ARM_ARCH) || (defined PLATFORM_AARCH64)
+#include <arm_neon.h>
+#endif
 
 using namespace tensorflow;
 
@@ -539,6 +542,250 @@ session_input_tensors (
   }
   return nloc;
 }
+
+#if HUAWEI_ASCEND
+int
+deepmd::
+session_input_tensors (
+    std::vector<std::pair<std::string, Tensor>> & input_tensors,
+    const std::vector<deepmd::VALUETYPE> &	dcoord_,
+    const int &					ntypes,
+    const std::vector<int> &			datype_,
+    const std::vector<deepmd::VALUETYPE> &	dbox,		    
+    InputNlist &				dlist, 
+    const std::vector<deepmd::VALUETYPE> &	fparam_,
+    const std::vector<deepmd::VALUETYPE> &	aparam_,
+    const deepmd::AtomMap<deepmd::VALUETYPE>&	atommap,
+    const int					nghost,
+    const int					ago,
+    const std::vector<int > &		natoms_padding,
+    const std::string				scope)
+{
+  assert (dbox.size() == 9);
+
+  int nframes = 1;
+  int nall = dcoord_.size() / 3;
+  int nloc = nall - nghost;
+  assert (nall == datype_.size());  
+
+  std::vector<int > datype = atommap.get_type();
+  std::vector<int > type_count (ntypes, 0);
+  for (unsigned ii = 0; ii < datype.size(); ++ii){
+    type_count[datype[ii]] ++;
+  }
+  datype.insert (datype.end(), datype_.begin() + nloc, datype_.end());
+
+  TensorShape box_shape ;
+  box_shape.AddDim (nframes);
+  box_shape.AddDim (9);
+  TensorShape mesh_shape ;
+  mesh_shape.AddDim (nloc * 1026 + 1);
+  TensorShape natoms_shape ;
+  natoms_shape.AddDim (2 + ntypes);
+  TensorShape fparam_shape ;
+  fparam_shape.AddDim (nframes);
+  fparam_shape.AddDim (fparam_.size());
+  TensorShape aparam_shape ;
+  aparam_shape.AddDim (nframes);
+  aparam_shape.AddDim (aparam_.size());
+  
+#ifdef HIGH_PREC
+  Tensor box_tensor	(DT_DOUBLE, box_shape);
+  Tensor fparam_tensor  (DT_DOUBLE, fparam_shape);
+  Tensor aparam_tensor  (DT_DOUBLE, aparam_shape);
+#else
+  Tensor box_tensor	(DT_FLOAT, box_shape);
+  Tensor fparam_tensor  (DT_FLOAT, fparam_shape);
+  Tensor aparam_tensor  (DT_FLOAT, aparam_shape);
+#endif
+  Tensor mesh_tensor	(DT_INT32, mesh_shape);
+  Tensor natoms_tensor	(DT_INT32, natoms_shape);
+
+  auto box = box_tensor.matrix<deepmd::VALUETYPE> ();
+  auto natoms = natoms_tensor.flat<int> ();
+  auto fparam = fparam_tensor.matrix<deepmd::VALUETYPE> ();
+  auto aparam = aparam_tensor.matrix<deepmd::VALUETYPE> ();
+
+  std::vector<deepmd::VALUETYPE> dcoord (dcoord_);
+  atommap.forward (dcoord.begin(), dcoord_.begin(), 3);
+
+  for (int ii = 0; ii < nframes; ++ii){
+    for (int jj = 0; jj < 9; ++jj){
+      box(ii, jj) = dbox[jj];
+    }
+    for (int jj = 0; jj < fparam_.size(); ++jj){
+      fparam(ii, jj) = fparam_[jj];
+    }
+    for (int jj = 0; jj < aparam_.size(); ++jj){
+      aparam(ii, jj) = aparam_[jj];
+    }
+  }
+
+  int nall_padding = natoms_padding[1];
+  int nloc_padding = natoms_padding[0];
+  std::vector<int> type_count_padding;
+  type_count_padding.assign(natoms_padding.begin()+2, natoms_padding.end());
+  TensorShape coord_padding_shape ;
+  coord_padding_shape.AddDim (nframes);
+  coord_padding_shape.AddDim (nall_padding * 3);
+  TensorShape type_padding_shape ;
+  type_padding_shape.AddDim (nframes);
+  type_padding_shape.AddDim (nall_padding);
+  Tensor coord_padding_tensor	(DT_FLOAT, coord_padding_shape);
+  Tensor type_padding_tensor	(DT_INT32, type_padding_shape);
+  
+  // padding coord and type
+  auto coord_padding = coord_padding_tensor.flat<float> ();
+  auto type_padding = type_padding_tensor.flat<int> ();
+#if (defined __ARM_ARCH) || (defined PLATFORM_AARCH64)
+  float32x4_t temp_coord = vdupq_n_f32(0.0f);
+  int32x4_t temp_type = vdupq_n_s32(-1);
+  #pragma omp parallel for
+  for (uint jj = 0; jj < nall_padding - 4; jj += 4) {
+      vst1q_s32(type_padding.data() + jj, temp_type);
+      vst1q_f32(coord_padding.data() + jj*3, temp_coord);
+      vst1q_f32(coord_padding.data() + jj*3 + 1, temp_coord);
+      vst1q_f32(coord_padding.data() + jj*3 + 2, temp_coord);
+  }
+  int curr_type = (nall_padding - 4)/4;
+  for (uint jj = curr_type * 4; jj < nall_padding; jj += 1) {
+      type_padding.data()[jj] = -1;
+      coord_padding.data()[jj*3] = 0.0;
+      coord_padding.data()[jj*3 + 1] = 0.0;
+      coord_padding.data()[jj*3 + 2] = 0.0;
+  }
+#else
+    #pragma omp parallel for
+    for (int jj = 0; jj < nall_padding; ++jj){
+        type_padding(jj) = -1;
+        coord_padding(jj*3) = 0.0;
+        coord_padding(jj*3 + 1) = 0.0;
+        coord_padding(jj*3 + 2) = 0.0;
+    }
+#endif
+
+  auto *coord_padding_p = coord_padding_tensor.flat<float> ().data();
+  auto *type_padding_p = type_padding_tensor.flat<int> ().data();
+  int offset1 = 0;
+  int offset2 = 0;
+  for (long int jj = 0; jj < type_count.size(); jj += 1){
+    #pragma omp parallel sections
+    {
+      #pragma omp section
+      {
+        memcpy (coord_padding_p+offset1*3,  dcoord.data()+offset2*3, type_count[jj]*3*sizeof(float));
+      }
+      #pragma omp section
+      {
+        memcpy (type_padding_p+offset1,  datype.data()+offset2, type_count[jj]*sizeof(int));
+      }
+    }
+    offset1 += type_count_padding[jj];
+    offset2 += type_count[jj];
+  }
+  #pragma omp parallel sections
+    {
+      #pragma omp section
+      {
+        memcpy (coord_padding_p+offset1*3,  dcoord.data()+offset2*3, (nall-nloc)*3*sizeof(float));
+      }
+      #pragma omp section
+      {
+        memcpy (type_padding_p+offset1,  datype.data()+offset2, (nall-nloc)*sizeof(int));
+      }
+    }
+
+  const int stride = sizeof(int *) / sizeof(int);
+  assert (stride * sizeof(int) == sizeof(int *));
+  assert (stride <= 4);
+
+  std::string prefix = "";
+  if (scope != ""){
+    prefix = scope + "/";
+  }
+  input_tensors = {
+    {prefix+"t_coord",	coord_padding_tensor},
+    {prefix+"t_type",	type_padding_tensor},
+    {prefix+"t_box",	box_tensor},
+  };
+  if (ago == 0) {
+      // padding mesh data and add offset
+      int _max_nbor_size = deepmd::max_numneigh(dlist);
+      int neigh_len;
+      if (_max_nbor_size < 1024) {
+          neigh_len = 1024;
+      }
+      else if (_max_nbor_size < 2048) {
+          neigh_len = 2048;
+      }
+      else {
+          neigh_len = 4096;
+      }
+      // Current max neigh_len is set as 1024 in Assign op
+      assert (neigh_len == 1024);
+      // generate offset mapping
+      std::vector<int > offset_mapping (nall, 0);
+      int offset_padding = 0;
+      int offset = 0;
+      for (unsigned jj = 0; jj < type_count.size(); jj += 1){
+          for (int kk = 0; kk < type_count[jj]; kk += 1){
+              offset_mapping[offset + kk] = offset_padding + kk;
+          }
+          offset += type_count[jj];
+          offset_padding += type_count_padding[jj];
+      }
+      assert (nloc == offset);
+      for (int kk = 0; kk < (nall-nloc); kk += 1){
+          offset_mapping[offset + kk] = offset_padding + kk;
+      }
+      TensorShape mesh_padding_shape;
+      int mesh_dim = nloc_padding * (neigh_len + 2 )+ 1;
+      mesh_padding_shape.AddDim (mesh_dim);
+      Tensor mesh_padding_tensor	(DT_INT32, mesh_padding_shape);
+      auto mesh_padding = mesh_padding_tensor.flat<int> ();
+#if (defined __ARM_ARCH) || (defined PLATFORM_AARCH64)
+      int32x4_t temp = vdupq_n_s32(-1);
+      #pragma omp parallel for
+      for (uint i = 0; i < mesh_dim - 4; i += 4) {
+          vst1q_s32(mesh_padding.data() + i, temp);
+      }
+      int curr_mesh = mesh_dim / 4;
+      #pragma omp parallel for
+      for (uint i = curr_mesh * 4; i < mesh_dim; i += 1) {
+          mesh_padding.data()[i] = -1;
+      }
+#else
+      #pragma omp parallel for
+      for (int atom_i = 0; atom_i < mesh_dim; ++atom_i) {
+          mesh_padding(atom_i) = -1;
+      }
+#endif
+      mesh_padding(0) = nloc_padding;
+      #pragma omp parallel for
+      for (int atom_i = 0; atom_i < nloc_padding; atom_i++) {
+          mesh_padding(atom_i + 1) = atom_i;
+      }
+      #pragma omp parallel for
+      for (int atom_i = 0; atom_i < dlist.inum; atom_i++) {
+          int offset_atom = offset_mapping[dlist.ilist[atom_i]];
+          mesh_padding(nloc_padding + offset_atom + 1) = dlist.numneigh[atom_i];
+          int offset_mesh = 2*nloc_padding + offset_atom*neigh_len;
+          for (int nei_i = 0; nei_i < dlist.numneigh[atom_i]; ++nei_i) {
+              int offset_idx = offset_mapping[dlist.firstneigh[atom_i][nei_i]];
+              mesh_padding(offset_mesh + nei_i + 1) = offset_idx;
+          }
+      }
+      input_tensors.push_back({prefix+"t_mesh",	mesh_padding_tensor});
+  }
+  if (fparam_.size() > 0) {
+    input_tensors.push_back({prefix+"t_fparam", fparam_tensor});
+  }
+  if (aparam_.size() > 0) {
+    input_tensors.push_back({prefix+"t_aparam", aparam_tensor});
+  }
+  return nloc;
+}
+#endif //HUAWEI_ASCEND
 
 template<typename VT>
 VT

@@ -32,6 +32,7 @@ __all__ = [
     "GLOBAL_TF_FLOAT_PRECISION",
     "GLOBAL_NP_FLOAT_PRECISION",
     "GLOBAL_ENER_FLOAT_PRECISION",
+    "GLOBAL_ASCEND_OUT_PRECISION",
     "global_float_prec",
     "global_cvt_2_tf_float",
     "global_cvt_2_ener_float",
@@ -367,10 +368,15 @@ elif dp_float_prec == "low":
     GLOBAL_NP_FLOAT_PRECISION = np.float32
     GLOBAL_ENER_FLOAT_PRECISION = np.float64
     global_float_prec = "float"
+elif dp_float_prec == "ascend_mix":
+    GLOBAL_TF_FLOAT_PRECISION = tf.float32
+    GLOBAL_NP_FLOAT_PRECISION = np.float32
+    GLOBAL_ENER_FLOAT_PRECISION = np.float64
+    global_float_prec = "float"
 else:
     raise RuntimeError(
         "Unsupported float precision option: %s. Supported: high,"
-        "low. Please set precision with environmental variable "
+        "low and ascend_mix. Please set precision with environmental variable "
         "DP_INTERFACE_PREC." % dp_float_prec
     )
 

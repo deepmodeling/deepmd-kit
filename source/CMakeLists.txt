@@ -77,15 +77,56 @@ else()
   message(STATUS "Will not build AMD GPU support")  
 endif (USE_ROCM_TOOLKIT)
 
-set(DEEPMD_SOURCE_DIR ${PROJECT_SOURCE_DIR}/..)
-
 # setup tensorflow libraries by python
 if (USE_TF_PYTHON_LIBS)
   find_package (Python COMPONENTS Interpreter Development REQUIRED)
 endif(USE_TF_PYTHON_LIBS)
 
-# find tensorflow, I need tf abi info
-find_package(tensorflow REQUIRED)
+#define USE_ASCEND, find tensorflow abi info
+if (USE_ASCEND)
+  add_definitions("-DHUAWEI_ASCEND")
+  set(DP_VARIANT "ascend")
+endif(USE_ASCEND)
+if (USE_ASCEND AND BUILD_CPP_IF)
+  if (NOT DEFINED ${PYTHON_EXECUTABLE})
+    set(PYTHON_EXECUTABLE "python3.7")
+  endif()
+  set(FIND_TENSORFLOW_INC "import tensorflow as tf; print(tf.sysconfig.get_compile_flags()[0],end='')")
+  execute_process(
+    COMMAND ${PYTHON_EXECUTABLE} "-c" "${FIND_TENSORFLOW_INC}"
+    WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+    OUTPUT_VARIABLE OUTPUT_VAR
+    RESULT_VARIABLE RESULT_VAR
+    ERROR_VARIABLE ERROR_VAR
+  )
+  string(REPLACE "-I" "" TensorFlow_INCLUDE_DIRS ${OUTPUT_VAR})
+  if (NOT ${RESULT_VAR} EQUAL 0)
+    message(FATAL_ERROR "Cannot determine tensorflow include dir, error message: ${ERROR_VAR}")
+  endif()
+
+  set(FIND_TENSORFLOW_LINK "import tensorflow as tf; print(tf.sysconfig.get_link_flags()[0],end='')")
+  execute_process(
+    COMMAND ${PYTHON_EXECUTABLE} "-c" "${FIND_TENSORFLOW_LINK}"
+    WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+    OUTPUT_VARIABLE OUTPUT_VAR
+    RESULT_VARIABLE RESULT_VAR
+    ERROR_VARIABLE ERROR_VAR
+  )
+  string(REPLACE "-L" "" TensorFlow_LIBRARY_PATH ${OUTPUT_VAR})
+  set (TensorFlowFramework_LIBRARY "${TensorFlow_LIBRARY_PATH}/libtensorflow_framework.so.1")
+  set (TensorFlow_LIBRARY "${TensorFlow_LIBRARY_PATH}/python/_pywrap_tensorflow_internal.so")
+  if (NOT ${RESULT_VAR} EQUAL 0)
+    message(FATAL_ERROR "Cannot determine tensorflow link dir, error message: ${ERROR_VAR}")
+  endif()
+
+  find_package(Python REQUIRED COMPONENTS Interpreter Development)
+else()
+  message(STATUS "Will not build Ascend NPU support")
+  # find tensorflow, I need tf abi info
+  find_package(tensorflow REQUIRED)
+endif(USE_ASCEND AND BUILD_CPP_IF)
+
+set(DEEPMD_SOURCE_DIR ${PROJECT_SOURCE_DIR}/..)
 
 if (TENSORFLOW_VERSION VERSION_GREATER_EQUAL 2.10)
   set (CMAKE_CXX_STANDARD 17)

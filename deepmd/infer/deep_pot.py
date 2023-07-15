@@ -1,5 +1,7 @@
 import logging
 from typing import TYPE_CHECKING, List, Optional, Tuple, Union, Callable
+import os
+import json
 
 import numpy as np
 from deepmd.common import make_default_mesh
@@ -8,6 +10,13 @@ from deepmd.infer.data_modifier import DipoleChargeModifier
 from deepmd.infer.deep_eval import DeepEval
 from deepmd.utils.sess import run_sess
 from deepmd.utils.batch_size import AutoBatchSize
+from deepmd.env import op_module, GLOBAL_CONFIG
+
+# import Ascend npu ops
+dp_variant = GLOBAL_CONFIG.get("dp_variant", "cpu")
+if dp_variant == "ascend":
+    from npu_bridge.estimator import npu_ops
+    from tensorflow.core.protobuf.rewriter_config_pb2 import RewriterConfig
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -92,6 +101,18 @@ class DeepPot(DeepEval):
             default_tf_graph=default_tf_graph,
             auto_batch_size=auto_batch_size,
         )
+
+        if dp_variant == "ascend":
+            config = tf.ConfigProto()
+            custom_op = config.graph_options.rewrite_options.custom_optimizers.add()
+            custom_op.name = "NpuOptimizer"
+            custom_op.parameter_map["use_off_line"].b = True
+            custom_op.parameter_map["mix_compile_mode"].b = False
+            custom_op.parameter_map["op_debug_level"].i = 0
+            custom_op.parameter_map["precision_mode"].s = tf.compat.as_bytes("must_keep_origin_dtype")
+            config.graph_options.rewrite_options.remapping = RewriterConfig.OFF
+            self.npu_sess = tf.Session(graph=self.graph, config=config)
+            self.ASCEND_NEI_LEN = 1024
 
         # load optional tensors
         operations = [op.name for op in self.graph.get_operations()]
@@ -204,6 +225,265 @@ class DeepPot(DeepEval):
         coords = np.reshape(np.array(coords), [-1, natoms * 3])
         nframes = coords.shape[0]
         return natoms, nframes
+
+    def _get_neigh(
+        self,
+        natoms_vec: np.ndarray,
+        feed_dict: dict
+        ) -> Tuple[list, list]: 
+        """get neighbor list for Ascend prod_env_mat op, which does not support generate neighbor list in current version.
+
+        Parameters
+        ----------
+        natoms_vec : np.ndarray of int
+            Data natoms.
+            The array should be of size type size + 2
+        feed_dict : dict
+            Session original feed_dict includes coord, type, box, mesh, natoms.
+        
+        Returns
+        -------
+        neighbor : list of np.array
+            Neighbor list data.
+        graph_para : list of np.array
+            Graph_para is the parameters of graph, used by the following operations.
+        """
+        t_natoms = natoms_vec.astype(np.int32)
+        avg_tensor = self.sess.graph.get_tensor_by_name('load/descrpt_attr/t_avg/read:0')
+        std_tensor = self.sess.graph.get_tensor_by_name('load/descrpt_attr/t_std/read:0')
+        script_tensor = self.sess.graph.get_tensor_by_name('load/train_attr/training_script:0')
+        natoms_tensor = self.sess.graph.get_tensor_by_name('load/t_natoms:0')
+        coord_tensor = feed_dict[self.sess.graph.get_tensor_by_name('load/t_coord:0')]
+        type_tensor = feed_dict[self.sess.graph.get_tensor_by_name('load/t_type:0')]
+        box_tensor = feed_dict[self.sess.graph.get_tensor_by_name('load/t_box:0')]
+        mesh_tensor = feed_dict[self.sess.graph.get_tensor_by_name('load/t_mesh:0')]
+
+        coord_tensor = np.reshape(coord_tensor, [-1, natoms_vec[1] * 3])
+        type_tensor = np.reshape(np.array(type_tensor, dtype=np.int32), [-1, natoms_vec[1]])
+        box_tensor = np.reshape(box_tensor, [-1, 9])
+        graph_para = run_sess(self.sess, [avg_tensor, std_tensor, script_tensor, natoms_tensor], feed_dict={})
+        script_val = json.loads(graph_para[2].decode("utf-8"))["model"]['descriptor']
+        rcut_a_default = -1.0
+        sel_r_default = [0 for ii in range(len(script_val['sel']))]
+        with tf.Graph().as_default() as sub_graph:
+            coord_sub = np.reshape(feed_dict[self.sess.graph.get_tensor_by_name('load/t_coord:0')],
+                                   [-1, natoms_vec[1] * 3])
+            temp_type = feed_dict[self.sess.graph.get_tensor_by_name('load/t_type:0')]
+            type_sub = np.reshape(np.array(temp_type, dtype=np.int32), [-1, natoms_vec[1]])
+            box_sub = np.reshape(feed_dict[self.sess.graph.get_tensor_by_name('load/t_box:0')], [-1, 9])
+            coord_new, type_new, idx_mapping, nlist_new \
+                = op_module.ProdEnvMatAMesh(coord=tf.constant(coord_tensor),
+                                            type=tf.constant(type_tensor),
+                                            natoms=tf.constant(t_natoms),
+                                            box=tf.constant(box_tensor),
+                                            mesh=tf.constant(mesh_tensor),
+                                            davg=tf.constant(graph_para[0]),
+                                            dstd=tf.constant(graph_para[1]),
+                                            rcut_a=rcut_a_default,
+                                            rcut_r=script_val['rcut'],
+                                            rcut_r_smth=script_val['rcut_smth'],
+                                            sel_a=script_val['sel'],
+                                            sel_r=sel_r_default)
+
+        with tf.Session(graph=sub_graph, config=default_tf_session_config) as sub_sess:
+            neighbor = run_sess(sub_sess, [sub_graph.get_tensor_by_name('ProdEnvMatAMesh:0'),
+                                           sub_graph.get_tensor_by_name('ProdEnvMatAMesh:1'),
+                                           sub_graph.get_tensor_by_name('ProdEnvMatAMesh:2'),
+                                           sub_graph.get_tensor_by_name('ProdEnvMatAMesh:3')])
+
+        return neighbor, graph_para
+
+    def _init_padding_input(
+        self,
+        nloc_padding: int,
+        nall_padding: int
+        ) -> Tuple:
+        """init padding input for Ascend inference.
+
+        Parameters
+        ----------
+        nloc_padding : int
+            Number of N local atoms after padding. The value is provided by the Ascend transfered model.
+        nall_padding : int
+            Number of N all atoms after padding. The value is provided by the Ascend transfered model.
+        
+        Returns
+        -------
+        Tuple
+            init inputs consists of coord, type, map, and neighbor list. The first value in the neighbor
+            list is the number of N local atoms after padding, followed by the index of the N local atoms.
+        """
+        coords_init = np.array([-1.0] * nall_padding * 3, dtype=np.float32)
+        type_init = np.array([-1] * nall_padding)
+        map_init = np.array([-1] * nall_padding)
+        nlist_init = np.array([-1] * (nloc_padding * (self.ASCEND_NEI_LEN + 2) + 1))
+        nlist_init[0] = nloc_padding
+        nlist_init[1 : nloc_padding + 1] = [ii for ii in range(nloc_padding)]
+        return (coords_init, type_init, map_init, nlist_init)
+
+    def _prepare_padding_feed_dict(
+        self,
+        init_input: tuple,
+        graph_para: list, 
+        natoms_vec: np.ndarray,
+        coords_i: np.ndarray,
+        ntypes_i: np.ndarray,
+        idx_mapping_i: np.ndarray,
+        nlist_i: np.ndarray,
+        box_i: np.ndarray
+        ) -> Tuple[dict, np.ndarray]:
+        """init padding input for Ascend inference.
+
+        Parameters
+        ----------
+        init_input : tuple of np.array
+            Initialized input generated by _init_padding_input function.
+        graph_para : list of np.array
+            Parameters of graph.
+        natoms_vec : np.ndarray
+            The number of atoms in datasets. This tensor has the length of Ntypes + 2.
+        coords_i : np.ndarray
+            Coordinates of the i-th data.
+        ntypes_i : np.ndarray
+            Types of the i-th data.
+        idx_mapping_i : np.ndarray
+            Idx_mapping of the i-th data, which include the mapping of nall atom indexes.
+        nlist_i : np.ndarray
+            Neighbor list
+        box_i : np.ndarray
+            Box of the i-th data, it is one of inputs of ProdEnvMatA op.
+        
+        Returns
+        -------
+        feed_dict_padding : dict
+            feed_dict with padding.
+        offset_mapping : np.ndarray
+            The map is used to transform the atom indexes after padding to the original indexes.
+        """
+        natoms = natoms_vec.astype(np.int32)[0]
+        nloc_padding = graph_para[3][0]
+        type_count = natoms_vec.astype(np.int32)[2:]
+        type_count_padding = graph_para[3][2:]
+        nall_new = int(idx_mapping_i[0])
+        coords_padding = init_input[0]
+        type_padding = init_input[1]
+        map_padding = init_input[2]
+        nlist_padding = init_input[3]
+        neigh_len = self.ASCEND_NEI_LEN
+        feed_dict_padding = {}
+
+        # generate offset mapping
+        offset_mapping = np.array([0 for ii in range(nall_new)])
+        offset_padding = 0
+        offset = 0
+        assert nloc_padding >= natoms
+        for type_i in range(len(type_count)):
+            offset_mapping[offset : offset + type_count[type_i]] = np.arange(type_count[type_i]) + offset_padding
+            offset += type_count[type_i]
+            offset_padding += type_count_padding[type_i]
+        assert offset == natoms
+        offset_mapping[offset : offset + nall_new - natoms] = np.arange(nall_new - natoms) + offset_padding
+        offset_mapping = np.append(offset_mapping, -1)
+
+        # one frame padding begin
+        coords_padding[3 * offset_mapping[:-1]] = coords_i[np.arange(nall_new) * 3]
+        coords_padding[3 * offset_mapping[:-1] + 1] = coords_i[np.arange(nall_new) * 3 + 1]
+        coords_padding[3 * offset_mapping[:-1] + 2] = coords_i[np.arange(nall_new) * 3 + 2]
+        type_padding[offset_mapping[:-1]] = ntypes_i[np.arange(nall_new)]
+        map_padding[offset_mapping[:nall_new]] = offset_mapping[idx_mapping_i[1:nall_new+1].astype(int)]
+        nlist_padding[nloc_padding + offset_mapping[:natoms] + 1] = nlist_i[natoms + np.arange(natoms) + 1]
+        for ii in range(natoms):
+            nlist_padding[2 * nloc_padding + offset_mapping[ii] * neigh_len + 1: 2 * nloc_padding + (
+                            offset_mapping[ii] + 1) * neigh_len + 1] = offset_mapping[nlist_i[
+                            2 * natoms + ii * neigh_len + 1 : 2 * natoms + (ii + 1) * neigh_len + 1]]
+        mesh = np.append(nlist_padding, map_padding)
+        feed_dict_padding[self.t_coord] = np.reshape(coords_padding, [-1])
+        feed_dict_padding[self.t_type] = np.reshape(type_padding, [-1])
+        feed_dict_padding[self.t_mesh] = np.reshape(mesh, [-1])
+        feed_dict_padding[self.t_box] = np.reshape(box_i, [-1])
+        return feed_dict_padding, offset_mapping
+
+
+    def _run_with_padding(
+        self,
+        t_out: tf.Tensor,
+        feed_dict: dict,
+        nframes: int,
+        atomic: bool
+        ) -> List:
+        """Evaluate the energy, force and virial, Ascend platform needs padding inputs.
+
+        Parameters
+        ----------
+        t_out : list of tensor
+            Output tensor includes energy, force, virial, atom_force, atom_virial.
+        feed_dict : dict of tensor
+            Session original feed_dict includes coord, type, box, mesh.
+        nframes : int
+            Number of samples in one dataset.
+        atomic : bool
+            Calculate the atomic energy and virial.
+
+        Returns
+        -------
+        energy : np.ndarray
+            The system energy.
+        force : np.ndarray
+            The force on each atom. 
+        virial : np.ndarray
+            The virial on each atom. 
+        atom_energy : np.ndarray
+            The atomic energy. Only returned when atomic == True.
+        atom_virial : np.ndarray
+            The atomic virial. Only returned when atomic == True.
+        """
+        if not atomic:
+            t_out += [self.t_ae, 
+                        self.t_av]
+        # initialize input and output
+        natoms_vec = feed_dict[self.t_natoms]
+        natoms = natoms_vec[0]
+        del feed_dict[self.t_natoms]
+        energy, force, virial, ae, av = [], [], [], [], []
+        coord_nlist, graph_para = self._get_neigh(natoms_vec, feed_dict)
+        nloc_padding = graph_para[3][0]
+        nall_padding = graph_para[3][1]
+        init_input = self._init_padding_input(nloc_padding, nall_padding)
+        box_all = np.reshape(feed_dict[self.sess.graph.get_tensor_by_name('load/t_box:0')], [-1, 9])
+
+        for i in range(0, nframes):
+            coords_i = coord_nlist[0][i]
+            type_i = coord_nlist[1][i]
+            idx_mapping_i = coord_nlist[2][i]
+            nlist_i = coord_nlist[3][i]
+            box_i = box_all[i]
+            feed_dict_padding, offset_mapping = self._prepare_padding_feed_dict(init_input=init_input,
+                                                                                graph_para=graph_para, 
+                                                                                natoms_vec=natoms_vec,
+                                                                                coords_i=coords_i,
+                                                                                ntypes_i=type_i,
+                                                                                idx_mapping_i=idx_mapping_i,
+                                                                                nlist_i=nlist_i,
+                                                                                box_i=box_i)
+
+            sess_out = self.npu_sess.run(t_out, feed_dict=feed_dict_padding)
+            force_i = sess_out[1]
+            virial_i = sess_out[2]
+            ae_padding = sess_out[3]
+            av_padding = sess_out[4]
+            force_i = np.reshape(force_i, [nall_padding, 3])
+            av_padding = np.reshape(av_padding, [nall_padding, 9])
+            ae_i = ae_padding[0, offset_mapping[:natoms]]
+            av_i = av_padding[offset_mapping[:natoms], :]
+            energy.append(np.sum(ae_i, dtype=np.float64))
+            force.append(force_i[offset_mapping[:natoms], :])
+            virial.append(virial_i)
+            av.append(av_i)
+            ae.append(ae_i)
+
+        if atomic:
+            return energy, force, virial, ae, av
+        return energy, force, virial
 
     def eval(
         self,
@@ -375,7 +655,10 @@ class DeepPot(DeepEval):
             t_out += [self.t_ae, 
                       self.t_av]
 
-        v_out = run_sess(self.sess, t_out, feed_dict = feed_dict_test)
+        if dp_variant == "ascend":
+            v_out = self._run_with_padding(t_out, feed_dict=feed_dict_test, nframes=nframes, atomic=atomic)
+        else:
+            v_out = run_sess(self.sess, t_out, feed_dict = feed_dict_test)
         energy = v_out[0]
         force = v_out[1]
         virial = v_out[2]

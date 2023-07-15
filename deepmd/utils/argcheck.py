@@ -459,6 +459,7 @@ def model_args ():
     doc_sw_rmin = 'The lower boundary of the interpolation between short-range tabulated interaction and DP. It is only required when `use_srtab` is provided.'
     doc_sw_rmax = 'The upper boundary of the interpolation between short-range tabulated interaction and DP. It is only required when `use_srtab` is provided.'
     doc_compress_config = 'Model compression configurations'
+    doc_ascend_transfer = 'Model transfer to ascend mix-precision model'
 
     ca = Argument("model", dict, 
                   [Argument("type_map", list, optional = True, doc = doc_type_map),
@@ -472,7 +473,8 @@ def model_args ():
                    Argument("descriptor", dict, [], [descrpt_variant_type_args()], doc = doc_descrpt),
                    Argument("fitting_net", dict, [], [fitting_variant_type_args()], doc = doc_fitting),
                    Argument("modifier", dict, [], [modifier_variant_type_args()], optional = True, doc = doc_modifier),
-                   Argument("compress", dict, [], [model_compression_type_args()], optional = True, doc = doc_compress_config)
+                   Argument("compress", dict, [], [model_compression_type_args()], optional = True, doc = doc_compress_config),
+                   Argument("transfered_from_model", bool, optional = True, doc = doc_ascend_transfer)
                   ])
     # print(ca.gen_doc())
     return ca

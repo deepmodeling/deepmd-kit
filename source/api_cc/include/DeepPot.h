@@ -29,6 +29,20 @@ public:
   * @param[in] file_content The content of the model file. If it is not empty, DP will read from the string instead of the file.
   **/
   void init (const std::string & model, const int & gpu_rank = 0, const std::string & file_content = "");
+  #if HUAWEI_ASCEND
+  /**
+  * @brief Initialize the DP on Ascend platform.
+  * @param[in] npu_rank The NPU rank. Default is 0.
+  **/
+  void init (const int & npu_rank = 0);
+  /**
+  * @brief Initialize and modify the graph excute on the Ascend platform.
+  * @param[in] model The name of the frozen model file.
+  * @param[in] type_count The number of atoms of each type.
+  * @param[in] file_content The content of the model file. If it is not empty, DP will read from the string instead of the file.
+  **/
+  void init_graph (const std::string & model, const std::vector<int > & type_count, const std::string & file_content = "");
+  #endif //HUAWEI_ASCEND
   /**
   * @brief Print the DP summary to the screen.
   * @param[in] pre The prefix to each line.
@@ -208,6 +222,7 @@ private:
   // copy neighbor list info from host
   bool init_nbor;
   std::vector<int> sec_a;
+  std::vector<int> natoms_padding;
   NeighborListData nlist_data;
   InputNlist nlist;
   AtomMap<VALUETYPE> atommap;

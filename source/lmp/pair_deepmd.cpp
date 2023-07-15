@@ -835,7 +835,20 @@ void PairDeepMD::settings(int narg, char **arg)
   numb_models = models.size();
   if (numb_models == 1) {
     try {
-    deep_pot.init (arg[0], get_node_rank(), get_file_content(arg[0]));
+      #if HUAWEI_ASCEND
+      //get nloc_padding
+      int nlocal = atom->nlocal;
+      int *type = atom->type;
+      int n = atom->ntypes;
+      std::vector<int > type_count (n, 0);
+      for (unsigned ii = 0; ii < nlocal; ++ii){
+        type_count[type[ii]-1] ++;
+      }
+      deep_pot.init_graph (arg[0], type_count, get_file_content(arg[0]));
+      deep_pot.init (get_node_rank());
+      #else
+      deep_pot.init (arg[0], get_node_rank(), get_file_content(arg[0]));
+      #endif //HUAWEI_ASCEND
     } catch(deepmd::deepmd_exception& e) {
       error->all(FLERR, e.what());
     }

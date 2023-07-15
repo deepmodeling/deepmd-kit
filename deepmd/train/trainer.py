@@ -66,6 +66,7 @@ class DPTrainer (object):
         typeebd_param = model_param.get('type_embedding', None)
         self.model_param    = model_param
         self.descrpt_param  = descrpt_param
+        self.is_ascend_transfer = model_param.get('transfered_from_model', None)
         
         # nvnmd
         self.nvnmd_param = jdata.get('nvnmd', {})
@@ -293,7 +294,7 @@ class DPTrainer (object):
         self.ntypes = self.model.get_ntypes()
         self.stop_batch = stop_batch
 
-        if not self.is_compress and data.mixed_type:
+        if not self.is_compress and data and data.mixed_type:
             assert self.descrpt_type in ['se_atten'], 'Data in mixed_type format must use attention descriptor!'
             assert self.fitting_type in ['ener'], 'Data in mixed_type format must use ener fitting!'
 
@@ -302,7 +303,18 @@ class DPTrainer (object):
         else:
             log.info("training without frame parameter")
 
-        if not self.is_compress:
+        if self.is_ascend_transfer:
+            try:
+                graph, graph_def = load_graph_def(self.run_opt.init_frz_model)
+            except FileNotFoundError as e:
+                # throw runtime error if there's no frozen model
+                raise RuntimeError(
+                    "The input frozen model %s (%s) does not exist! Please check the path of the frozen model. " \
+                    % (self.run_opt.init_frz_model, os.path.abspath(self.run_opt.init_frz_model))
+                ) from e
+            self.model_type = 'ascend_transfer_model'
+            self.model.init_variables(graph, graph_def, model_type=self.model_type)
+        elif not self.is_compress:
             # Usually, the type number of the model should be equal to that of the data
             # However, nt_model > nt_data should be allowed, since users may only want to 
             # train using a dataset that only have some of elements 
@@ -361,7 +373,7 @@ class DPTrainer (object):
 
     def _build_network(self, data, suffix=""):
         self.place_holders = {}
-        if self.is_compress :
+        if self.is_compress or self.is_ascend_transfer :
             for kk in ['coord', 'box']:
                 self.place_holders[kk] = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None], 't_' + kk)
             self._get_place_horders(data_requirement)
@@ -709,6 +721,13 @@ class DPTrainer (object):
         self._init_session()
         if self.is_compress:
             self.saver.save (self.sess, os.path.join(os.getcwd(), self.save_ckpt))
+
+    def save_transfered(self):
+        """
+        Save the transfered graph
+        """
+        self._init_session()
+        self.saver.save (self.sess, os.path.join(os.getcwd(), self.save_ckpt))
 
     def _get_place_horders(self, data_dict):
         for kk in data_dict.keys():

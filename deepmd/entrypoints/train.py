@@ -146,11 +146,14 @@ def _do_work(jdata: Dict[str, Any], run_opt: RunOptions, is_compress: bool = Fal
 
     # setup data modifier
     modifier = get_modifier(jdata["model"].get("modifier", None))
+    
+    # get transfer info
+    is_ascend_transfer = jdata["model"].get("transfered_from_model", None)
 
     # decouple the training data from the model compress process
     train_data = None
     valid_data = None
-    if not is_compress:
+    if not is_compress and not is_ascend_transfer:
         # init data
         train_data = get_data(jdata["training"]["training_data"], rcut, ipt_type_map, modifier)
         train_data.print_summary("training")
@@ -162,7 +165,10 @@ def _do_work(jdata: Dict[str, Any], run_opt: RunOptions, is_compress: bool = Fal
     stop_batch = j_must_have(jdata["training"], "numb_steps")
     model.build(train_data, stop_batch)
 
-    if not is_compress:
+    if is_ascend_transfer:
+        model.save_transfered()
+        log.info("finished transfering")
+    elif not is_compress:
         # train the model with the provided systems in a cyclic way
         start_time = time.time()
         model.train(train_data, valid_data)

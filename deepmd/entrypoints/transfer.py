@@ -5,6 +5,7 @@ from deepmd.env import tf, TRANSFER_PATTERN
 import re
 import numpy as np
 import logging
+import os
 
 __all__ = ["transfer"]
 
@@ -67,6 +68,12 @@ def transfer(*, old_model: str, raw_model: str, output: str, **kwargs):
     with tf.gfile.GFile(output, mode="wb") as f:
         f.write(new_graph_def.SerializeToString())
     log.info("the output model is saved in " + output)
+    dp_float_prec = os.environ.get("DP_INTERFACE_PREC", "high").lower()
+    if kwargs['ascend_graph']:
+        const_graph_def = modify_const_op(new_graph_def)
+        with tf.gfile.GFile(kwargs['ascend_graph'], mode="wb") as f:
+            f.write(const_graph_def.SerializeToString())
+        log.info("the dp test model is saved in " + kwargs['ascend_graph'])
 
 
 def load_graph(graph_name: str) -> tf.Graph:
@@ -89,6 +96,35 @@ def load_graph(graph_name: str) -> tf.Graph:
         tf.import_graph_def(graph_def, name="")
         return graph
 
+def modify_const_op(new_graph_def: tf.Graph) -> tf.Graph:
+    """modify natoms to constant.
+
+    Parameters
+    ----------
+    new_graph : tf.Graph 
+        orginal new graph
+    Returns
+    -------
+    tf.Graph
+        natoms transfer to a const op for Ascend platform
+    """
+    for node in new_graph_def.node:
+        if "t_natoms" in node.name:
+            node.op = "Const"
+            natoms_shape = node.attr["shape"]
+            shape_val = [dim.size for dim in natoms_shape.shape.dim]
+            if os.path.exists("natoms_val.txt"):
+                natoms_list = np.loadtxt("natoms_val.txt")
+                assert shape_val[0] == len(natoms_list)
+                del node.attr["shape"]
+                node.attr["value"].CopyFrom(tf.AttrValue(tensor=tf.make_tensor_proto([int(i) for i in natoms_list],
+                tf.int32, [shape_val[0]])))
+                log.info(f"{node.name} is passed from a placeholder to a const")
+            else:
+                explanation = "natoms_val.txt file is not exist, one shold put padding natoms in it. Values are separated by SPACE. For example, in WATER exple one can excute 'echo 210 4000 70 140 > natoms_val.txt && dp transfer-to-ascend mix_precision -i model.pb'." 
+                log.warning(explanation)
+
+    return new_graph_def
 
 def transform_graph(raw_graph: tf.Graph, old_graph: tf.Graph) -> tf.Graph:
     """Trasform old graph into new.
@@ -131,15 +167,16 @@ def transform_graph(raw_graph: tf.Graph, old_graph: tf.Graph) -> tf.Graph:
             if old_graph_dtype == np.float64 or old_graph_dtype == np.float32:
                 if (len(tensor_shape) != 1) or (tensor_shape[0] != 1):
                     tensor = np.frombuffer(old_node.tensor_content, dtype = old_graph_dtype)
-                    tensor = tensor.astype(raw_graph_dtype)
-                    cp_attr.from_str(tensor)
                 else:
                     tensor = load_tensor(old_node, old_graph_dtype, raw_graph_dtype)
-                    cp_attr.from_array(tensor, tf.float16, [1])
 
-            elif old_graph_dtype[1] == "float16":
-                tensor = convertMatrix(np.array(old_node.half_val), tensor_shape)
-                cp_attr.from_array(tensor, raw_graph_dtype)
+                tensor = tf.make_tensor_proto(tensor, raw_graph_dtype, tensor_shape)
+                for i in range(len(tensor.half_val)):
+                    raw_node.half_val[i] = tensor.half_val[i]
+
+            elif old_graph_dtype == np.float16:
+                for i in range(len(old_node.half_val)):
+                    raw_node.half_val[i] = old_node.half_val[i]
 
         elif raw_graph_dtype == np.float64 or raw_graph_dtype == np.float32:
             if old_graph_dtype == np.float64 or old_graph_dtype == np.float32:
@@ -153,10 +190,10 @@ def transform_graph(raw_graph: tf.Graph, old_graph: tf.Graph) -> tf.Graph:
 
             elif old_graph_dtype == np.float16:
                 if (len(tensor_shape) != 1) or (tensor_shape[0] != 1):
-                    tensor = convertMatrix(np.array(old_node.half_val), tensor_shape).astype(raw_graph_dtype)
+                    tensor = convert_matrix(np.array(old_node.half_val), tensor_shape).astype(raw_graph_dtype)
                     cp_attr.from_str(tensor)
                 else:
-                    tensor = convertMatrix(np.array(old_node.half_val), tensor_shape).astype(raw_graph_dtype)
+                    tensor = convert_matrix(np.array(old_node.half_val), tensor_shape).astype(raw_graph_dtype)
                     cp_attr.from_array(tensor, raw_graph_dtype)
 
     return raw_graph_def
