@@ -853,9 +853,7 @@ class EnerFitting(Fitting):
             ).mean()
             self.bias_atom_e[idx_type_map] += delta_bias.reshape(-1)
             log.info(
-                "RMSE of atomic energy after linear regression is: {} eV/atom.".format(
-                    rmse_ae
-                )
+                f"RMSE of atomic energy after linear regression is: {rmse_ae} eV/atom."
             )
         elif bias_shift == "statistic":
             statistic_bias = np.linalg.lstsq(
