@@ -216,7 +216,7 @@ class PolarFittingSeA(Fitting):
             matrix, bias = np.concatenate(sys_matrix, axis=0), np.concatenate(
                 polar_bias, axis=0
             )
-            atom_polar, _, _, _ = np.linalg.lstsq(matrix, bias, rcond=1e-3)
+            atom_polar, _, _, _ = np.linalg.lstsq(matrix, bias, rcond=None)
             for itype in range(len(self.sel_type)):
                 self.constant_matrix[self.sel_type[itype]] = np.mean(
                     np.diagonal(atom_polar[itype].reshape((3, 3)))

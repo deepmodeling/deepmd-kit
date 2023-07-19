@@ -135,7 +135,7 @@ class EnerFitting(Fitting):
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
-        rcond: float = 1e-3,
+        rcond: Optional[float] = None,
         tot_ener_zero: bool = False,
         trainable: Optional[List[bool]] = None,
         seed: Optional[int] = None,
