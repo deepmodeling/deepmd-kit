@@ -526,7 +526,9 @@ def fitting_ener():
         Argument(
             "trainable", [list, bool], optional=True, default=True, doc=doc_trainable
         ),
-        Argument("rcond", [float, type(None)], optional=True, default=None, doc=doc_rcond),
+        Argument(
+            "rcond", [float, type(None)], optional=True, default=None, doc=doc_rcond
+        ),
         Argument("seed", [int, None], optional=True, doc=doc_seed),
         Argument("atom_ener", list, optional=True, default=[], doc=doc_atom_ener),
         Argument("layer_name", list, optional=True, doc=doc_layer_name),
@@ -574,7 +576,9 @@ def fitting_dos():
         Argument(
             "trainable", [list, bool], optional=True, default=True, doc=doc_trainable
         ),
-        Argument("rcond", [float, type(None)], optional=True, default=None, doc=doc_rcond),
+        Argument(
+            "rcond", [float, type(None)], optional=True, default=None, doc=doc_rcond
+        ),
         Argument("seed", [int, None], optional=True, doc=doc_seed),
         Argument("numb_dos", int, optional=True, default=300, doc=doc_numb_dos),
     ]
