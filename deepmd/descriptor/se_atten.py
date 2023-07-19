@@ -1280,14 +1280,10 @@ class DescrptSeAtten(DescrptSeA):
             ]
             for i in range(1, self.attn_layer):
                 self.beta[i] = self.attention_layer_variables[
-                    "attention_layer_{}{}/layer_normalization_{}/beta".format(
-                        i, suffix, i
-                    )
+                    f"attention_layer_{i}{suffix}/layer_normalization_{i}/beta"
                 ]
                 self.gamma[i] = self.attention_layer_variables[
-                    "attention_layer_{}{}/layer_normalization_{}/gamma".format(
-                        i, suffix, i
-                    )
+                    f"attention_layer_{i}{suffix}/layer_normalization_{i}/gamma"
                 ]
 
     def _get_two_embed_variables(self, graph_def, pattern: str):
