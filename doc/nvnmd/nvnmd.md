@@ -208,15 +208,13 @@ Click [here](https://bohrium.dp.tech/login) to register a Bohrium account. If yo
 
 ## Top-up and create a project
 
-After entering the homepage, you can click on the `User Center` in the lower left corner to top-up by yourself (Figure.1).
+After entering the homepage, you can click on the `User Center` in the lower left corner to top-up by yourself.
 
-![ALT](./bohrium_top-up.png)
-<center>Figure.1 Top-up</center>
+![bohrium top up](./bohrium_top-up.png)
 
-After completing the top-up, click on the `Projects`, and then click `New Project` in the upper right corner of the page (Figure.2). Give the project a name that is easy for you to recognize and click `OK`. If the project has other collaborators, you can refer to [Project Collaboration](https://bohrium-doc.dp.tech/en/docs/userguide/coorperation/) for more information.
+After completing the top-up, click on the `Projects`, and then click `New Project` in the upper right corner of the page. Give the project a name that is easy for you to recognize and click `OK`. If the project has other collaborators, you can refer to [Project Collaboration](https://bohrium-doc.dp.tech/en/docs/userguide/coorperation/) for more information.
 
-![ALT](bohrium_project.png)
-<center>Figure.2 Create project</center>
+![bohrium project](bohrium_project.png)
 
 ## Run job
 
@@ -284,17 +282,15 @@ lbg job submit -i job.json -p ./
 
 where the configuration file for the job is given via the `-i` command line flag, the directory where the input files are located is given via the `-p` command line flag. Bohrium will package and upload the specified directory, and after decompressing it on the computing node, it will switch the working directory to that directory.
 
-After the job is submitted successfully, the JOB ID and JOB GROUP ID will be output (Figure.3).
+After the job is submitted successfully, the JOB ID and JOB GROUP ID will be output.
 
-![ALT](bohrium_submit.png#pic_center)
-<center>Figure.3 Submit job</center>
+![bohrium submit](bohrium_submit.png#pic_center)
 
 ## Check job status
 
-After successfully submitting the job, you can view the progress and related logs of the submitted jobs on the `Jobs` page (Figure.4).
+After successfully submitting the job, you can view the progress and related logs of the submitted jobs on the `Jobs` page.
 
-![ALT](bohrium_status.png)
-<center>Figure.4 Status in bohrium</center>
+![bohrium status](bohrium_status.png)
 
 ## Terminate and delete jobs
 
@@ -306,11 +302,9 @@ You can choose between `terminate` and `delete` operations.
 
 The Jobs page provides buttons to end jobs and job groups
 
-![ALT](bohrium_group.png)
-<center>Figure.5 Groups in bohrium</center>
+![bohrium group](bohrium_group.png)
 
-![ALT](bohrium_job.png)
-<center>Figure.6 Jobs in bohrium</center>
+![bohrium job](bohrium_job.png)
 
 You can also use the Lebesgue Utility tool to end jobs
 
@@ -332,10 +326,9 @@ lbg job rm <JOB ID>
 
 ## Download Results
 
-After the calculation is completed, you can download the results on the `Jobs` page, or save them to the data disk (Figure.7).
+After the calculation is completed, you can download the results on the `Jobs` page, or save them to the data disk.
 
-![ALT](bohrium_download.png)
-<center>Figure.7 Download results</center>
+![bohrium download](bohrium_download.png)
 
 You can also download it using the commands of Lebesgue Utility
 
@@ -355,24 +348,21 @@ After CNN and QNN training, you can upload the ML model to our online NVNMD syst
 
 ## Account application
 
-The server website of NVNMD is available at http://nvnmd.picp.vip. You can visit the URL and enter the login interface (Figure.8).
+The server website of NVNMD is available at http://nvnmd.picp.vip. You can visit the URL and enter the login interface.
 
-![ALT](./figure_1.png "The login interface")
-<center>Figure.8 The login interface</center>
+![login interface](./figure_1.png)
 
 To obtain an account, please send your application to the email (jie_liu@hnu.edu.cn, liujie@uw.edu). The username and password will be sent to you by email.
 
 ## Adding task
 
-After successfully obtaining the account, enter the username and password in the login interface, and click "Login" to enter the homepage (Figure.9).
+After successfully obtaining the account, enter the username and password in the login interface, and click "Login" to enter the homepage.
 
-![ALT](./figure_2.png "The homepage")
-<center>Figure.9 The homepage</center>
+![homepage](./figure_2.png)
 
-The homepage displays the remaining calculation time and all calculation records not deleted. Click `Add a new task` to enter the interface for adding a new task (Figure.10).
+The homepage displays the remaining calculation time and all calculation records not deleted. Click `Add a new task` to enter the interface for adding a new task.
 
-![ALT](./figure_3.png "The interface for adding a new task")
-<center>Figure.10 The interface for adding a new task</center>
+![add task](./figure_3.png)
 
 - Task name: name of the task
 - Upload mode: two modes of uploading results to online data storage, including `Manual upload` and `Automatic upload`. Results need to be uploaded manually to online data storage with `Manual upload` mode and will be uploaded automatically with `Automatic upload` mode.
@@ -388,33 +378,29 @@ pair_coeff * *
 - Model file: the ML model named `model.pb` obtained by QNN training.
 - Data files: data files containing the information required for running an MD simulation (e.g., `coord.lmp` containing initial atom coordinates).
 
-Next, you can click `Submit` to submit the task and then automatically return to the homepage (Figure.11).
+Next, you can click `Submit` to submit the task and then automatically return to the homepage.
 
-![ALT](./figure_4.png "The homepage with a new record")
-<center>Figure.11 The homepage with a new record</center>
+![record](./figure_4.png "The homepage with a new record")
 
 Then, click `Refresh` to view the latest status of all calculation tasks.
 
 ## Cancelling calculation
 
-For the task whose calculation status is `Pending` and `Running`, you can click the corresponding `Cancel` on the homepage to stop the calculation (Figure.12).
+For the task whose calculation status is `Pending` and `Running`, you can click the corresponding `Cancel` on the homepage to stop the calculation.
 
-![ALT](./figure_5.png "The homepage with a cancelled task")
-<center>Figure.12 The homepage with a canceled task</center>
+![cancelled task](./figure_5.png "The homepage with a cancelled task")
 
 ## Downloading results
 
 For the task whose calculation status is `Completed`, `Failed` and `Cancelled`, you can click the corresponding `Package` or `Separate files` in the `Download results` bar on the homepage to download results.
 
-Click `Package` to download a zipped package of all files including input files and output results (Figure.13).
+Click `Package` to download a zipped package of all files including input files and output results.
 
-![ALT](./figure_6.png "The interface for downloading a zipped package")
-<center>Figure.13 The interface for downloading a zipped package</center>
+![download zipped package](./figure_6.png)
 
-Click `Separate files` to download the required separate files (Figure.14).
+Click `Separate files` to download the required separate files.
 
-![ALT](./figure_7.png "The interface for downloading separate files")
-<center>Figure.14 The interface for downloading separate files</center>
+![download separate files](./figure_7.png "The interface for downloading separate files")
 
 If `Manual upload` mode is selected or the file has expired, click `Upload` on the download interface to upload manually.
 
