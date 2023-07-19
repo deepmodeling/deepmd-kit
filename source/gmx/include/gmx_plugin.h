@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 #ifndef _GMX_PLUGIN_H_
 #define _GMX_PLUGIN_H_
 #ifdef DP_USE_CXX_API

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 import json
 import os
 import subprocess as sp
@@ -93,7 +94,65 @@ def _init_models():
     return inputs, frozen_models, compressed_models
 
 
+@unittest.skipIf(
+    parse_version(tf.__version__) < parse_version("2"),
+    f"The current tf version {tf.__version__} is too low to run the new testing model.",
+)
+def _init_models_exclude_types():
+    data_file = str(tests_path / os.path.join("model_compression", "data"))
+    inputs, frozen_models, compressed_models = [], [], []
+    # 4 tests:
+    # - type embedding FP64, se_atten FP64
+    # - type embedding FP64, se_atten FP32
+    # - type embedding FP32, se_atten FP64
+    # - type embedding FP32, se_atten FP32
+    tests = [
+        {"se_atten precision": "float64", "type embedding precision": "float64"},
+        {"se_atten precision": "float64", "type embedding precision": "float32"},
+        {"se_atten precision": "float32", "type embedding precision": "float64"},
+        {"se_atten precision": "float32", "type embedding precision": "float32"},
+    ]
+    for i in range(4):
+        INPUT = str(tests_path / f"input{i}.json")
+        frozen_model = str(tests_path / f"dp-original-se-atten{i}-exclude-types.pb")
+        compressed_model = str(
+            tests_path / f"dp-compressed-se-atten{i}-exclude-types.pb"
+        )
+        jdata = j_loader(
+            str(tests_path / os.path.join("model_compression", "input.json"))
+        )
+        jdata["model"]["descriptor"] = {}
+        jdata["model"]["descriptor"]["type"] = "se_atten"
+        jdata["model"]["descriptor"]["exclude_types"] = [[0, 1]]
+        jdata["model"]["descriptor"]["precision"] = tests[i]["se_atten precision"]
+        jdata["model"]["descriptor"]["stripped_type_embedding"] = True
+        jdata["model"]["descriptor"]["sel"] = 120
+        jdata["model"]["descriptor"]["attn_layer"] = 0
+        jdata["model"]["type_embedding"] = {}
+        jdata["model"]["type_embedding"]["precision"] = tests[i][
+            "type embedding precision"
+        ]
+        jdata["training"]["training_data"]["systems"] = data_file
+        jdata["training"]["validation_data"]["systems"] = data_file
+        with open(INPUT, "w") as fp:
+            json.dump(jdata, fp, indent=4)
+
+        ret = run_dp("dp train " + INPUT)
+        np.testing.assert_equal(ret, 0, "DP train failed!")
+        ret = run_dp("dp freeze -o " + frozen_model)
+        np.testing.assert_equal(ret, 0, "DP freeze failed!")
+        ret = run_dp("dp compress " + " -i " + frozen_model + " -o " + compressed_model)
+        np.testing.assert_equal(ret, 0, "DP model compression failed!")
+
+        inputs.append(INPUT)
+        frozen_models.append(frozen_model)
+        compressed_models.append(compressed_model)
+
+    return inputs, frozen_models, compressed_models
+
+
 INPUTS, FROZEN_MODELS, COMPRESSED_MODELS = _init_models()
+INPUTS_ET, FROZEN_MODELS_ET, COMPRESSED_MODELS_ET = _init_models_exclude_types()
 
 
 def _get_default_places(nth_test):
@@ -504,8 +563,8 @@ class TestDeepPotALargeBoxNoPBC(unittest.TestCase):
 class TestDeepPotAPBCExcludeTypes(unittest.TestCase):
     @classmethod
     def setUpClass(self):
-        self.dp_originals = [DeepPot(FROZEN_MODELS[i]) for i in range(4)]
-        self.dp_compresseds = [DeepPot(COMPRESSED_MODELS[i]) for i in range(4)]
+        self.dp_originals = [DeepPot(FROZEN_MODELS_ET[i]) for i in range(4)]
+        self.dp_compresseds = [DeepPot(COMPRESSED_MODELS_ET[i]) for i in range(4)]
         self.coords = np.array(
             [
                 12.83,
@@ -534,9 +593,9 @@ class TestDeepPotAPBCExcludeTypes(unittest.TestCase):
     @classmethod
     def tearDownClass(self):
         for i in range(4):
-            _file_delete(INPUTS[i])
-            _file_delete(FROZEN_MODELS[i])
-            _file_delete(COMPRESSED_MODELS[i])
+            _file_delete(INPUTS_ET[i])
+            _file_delete(FROZEN_MODELS_ET[i])
+            _file_delete(COMPRESSED_MODELS_ET[i])
         _file_delete("out.json")
         _file_delete("compress.json")
         _file_delete("checkpoint")

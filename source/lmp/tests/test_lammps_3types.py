@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 import os
 import subprocess as sp
 import sys
@@ -76,7 +77,7 @@ expected_f2 = np.array(
     ]
 )
 
-expected_v = np.array(
+expected_v = -np.array(
     [
         -2.912234126853306959e-01,
         -3.800610846612756388e-02,
@@ -143,7 +144,7 @@ expected_v = np.array(
         0,
     ]
 ).reshape(7, 9)
-expected_v2 = np.array(
+expected_v2 = -np.array(
     [
         [
             -0.70008436,

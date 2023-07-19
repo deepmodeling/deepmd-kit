@@ -113,6 +113,8 @@ void prod_virial_a_gpu_cuda(FPTYPE* virial,
                             const int nloc,
                             const int nall,
                             const int nnei) {
+  DPErrcheck(cudaGetLastError());
+  DPErrcheck(cudaDeviceSynchronize());
   DPErrcheck(cudaMemset(virial, 0, sizeof(FPTYPE) * 9));
   DPErrcheck(cudaMemset(atom_virial, 0, sizeof(FPTYPE) * 9 * nall));
 
@@ -141,6 +143,8 @@ void prod_virial_r_gpu_cuda(FPTYPE* virial,
                             const int nloc,
                             const int nall,
                             const int nnei) {
+  DPErrcheck(cudaGetLastError());
+  DPErrcheck(cudaDeviceSynchronize());
   DPErrcheck(cudaMemset(virial, 0, sizeof(FPTYPE) * 9));
   DPErrcheck(cudaMemset(atom_virial, 0, sizeof(FPTYPE) * 9 * nall));
 

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 #ifndef __GroFileManager_wanghan__
 #define __GroFileManager_wanghan__
 

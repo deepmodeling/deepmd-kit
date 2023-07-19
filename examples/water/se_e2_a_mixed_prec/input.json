@@ -75,7 +75,7 @@
     },
     "mixed_precision": {
       "compute_prec": "float16",
-      "output_prec": "float32"
+      "output_prec": "float64"
     },
     "numb_steps": 1000000,
     "seed": 10,

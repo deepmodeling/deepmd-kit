@@ -1,4 +1,5 @@
 
+// SPDX-License-Identifier: LGPL-3.0-or-later
 #include "custom_op.h"
 #include "tabulate.h"
 
@@ -62,7 +63,8 @@ REGISTER_OP("TabulateFusionSeAGradGrad")
     .Input("dz_dy_dem_x: T")
     .Input("dz_dy_dem: T")
     .Input("descriptor: T")
-    .Output("dz_dy: T");
+    .Output("dz_dy: T")
+    .Attr("is_sorted: bool = true");
 
 REGISTER_OP("TabulateFusionSeAtten")
     .Attr("T: {float, double} = DT_DOUBLE")
@@ -72,6 +74,7 @@ REGISTER_OP("TabulateFusionSeAtten")
     .Input("em: T")
     .Input("two_embed: T")
     .Attr("last_layer_size: int")
+    .Attr("is_sorted: bool = true")
     .Output("descriptor: T");
 
 REGISTER_OP("TabulateFusionSeAttenGrad")
@@ -85,7 +88,8 @@ REGISTER_OP("TabulateFusionSeAttenGrad")
     .Input("descriptor: T")
     .Output("dy_dem_x: T")
     .Output("dy_dem: T")
-    .Output("dy_dtwo: T");
+    .Output("dy_dtwo: T")
+    .Attr("is_sorted: bool = true");
 
 REGISTER_OP("TabulateFusionSeT")
     .Attr("T: {float, double} = DT_DOUBLE")
@@ -290,7 +294,9 @@ template <typename Device, typename FPTYPE>
 class TabulateFusionSeAGradGradOp : public OpKernel {
  public:
   explicit TabulateFusionSeAGradGradOp(OpKernelConstruction* context)
-      : OpKernel(context) {}
+      : OpKernel(context) {
+    OP_REQUIRES_OK(context, context->GetAttr("is_sorted", &is_sorted));
+  }
   void Compute(OpKernelContext* context) override {
     // Grab the input tensor
     int context_input_index = 0;
@@ -329,25 +335,26 @@ class TabulateFusionSeAGradGradOp : public OpKernel {
 #if GOOGLE_CUDA
       deepmd::tabulate_fusion_se_a_grad_grad_gpu_cuda(
           dz_dy, table, table_info, em_x, em, dz_dy_dem_x, dz_dy_dem, nloc,
-          nnei, last_layer_size);
+          nnei, last_layer_size, is_sorted);
 #endif  // GOOGLE_CUDA
 #if TENSORFLOW_USE_ROCM
       deepmd::tabulate_fusion_se_a_grad_grad_gpu_rocm(
           dz_dy, table, table_info, em_x, em, dz_dy_dem_x, dz_dy_dem, nloc,
-          nnei, last_layer_size);
+          nnei, last_layer_size, is_sorted);
 #endif  // TENSORFLOW_USE_ROCM
       OP_REQUIRES(context, (last_layer_size <= 1024),
                   errors::InvalidArgument(
                       "In the process of model compression, the size of the "
                       "last layer of embedding net must be less than 1024!"));
     } else if (device == "CPU") {
-      deepmd::tabulate_fusion_se_a_grad_grad_cpu(dz_dy, table, table_info, em_x,
-                                                 em, dz_dy_dem_x, dz_dy_dem,
-                                                 nloc, nnei, last_layer_size);
+      deepmd::tabulate_fusion_se_a_grad_grad_cpu(
+          dz_dy, table, table_info, em_x, em, dz_dy_dem_x, dz_dy_dem, nloc,
+          nnei, last_layer_size, is_sorted);
     }
   }
 
  private:
+  bool is_sorted;
   std::string device;
 };
 
@@ -358,6 +365,7 @@ class TabulateFusionSeAttenOp : public OpKernel {
       : OpKernel(context) {
     OP_REQUIRES_OK(context,
                    context->GetAttr("last_layer_size", &last_layer_size));
+    OP_REQUIRES_OK(context, context->GetAttr("is_sorted", &is_sorted));
   }
   void Compute(OpKernelContext* context) override {
     deepmd::safe_compute(
@@ -405,22 +413,24 @@ class TabulateFusionSeAttenOp : public OpKernel {
 #if GOOGLE_CUDA
       deepmd::tabulate_fusion_se_a_gpu_cuda(descriptor, table, table_info, em_x,
                                             em, two_embed, nloc, nnei,
-                                            last_layer_size);
+                                            last_layer_size, is_sorted);
 #endif  // GOOGLE_CUDA
 
 #if TENSORFLOW_USE_ROCM
       deepmd::tabulate_fusion_se_a_gpu_rocm(descriptor, table, table_info, em_x,
                                             em, two_embed, nloc, nnei,
-                                            last_layer_size);
+                                            last_layer_size, is_sorted);
 #endif  // TENSORFLOW_USE_ROCM
     } else if (device == "CPU") {
       deepmd::tabulate_fusion_se_a_cpu(descriptor, table, table_info, em_x, em,
-                                       two_embed, nloc, nnei, last_layer_size);
+                                       two_embed, nloc, nnei, last_layer_size,
+                                       is_sorted);
     }
   }
 
  private:
   int last_layer_size;
+  bool is_sorted;
   std::string device;
 };
 
@@ -428,7 +438,9 @@ template <typename Device, typename FPTYPE>
 class TabulateFusionSeAttenGradOp : public OpKernel {
  public:
   explicit TabulateFusionSeAttenGradOp(OpKernelConstruction* context)
-      : OpKernel(context) {}
+      : OpKernel(context) {
+    OP_REQUIRES_OK(context, context->GetAttr("is_sorted", &is_sorted));
+  }
   void Compute(OpKernelContext* context) override {
     deepmd::safe_compute(
         context, [this](OpKernelContext* context) { this->_Compute(context); });
@@ -482,22 +494,23 @@ class TabulateFusionSeAttenGradOp : public OpKernel {
 #if GOOGLE_CUDA
       deepmd::tabulate_fusion_se_a_grad_gpu_cuda(
           dy_dem_x, dy_dem, table, table_info, em_x, em, two_embed, dy, nloc,
-          nnei, last_layer_size);
+          nnei, last_layer_size, is_sorted);
 #endif  // GOOGLE_CUDA
 
 #if TENSORFLOW_USE_ROCM
       deepmd::tabulate_fusion_se_a_grad_gpu_rocm(
           dy_dem_x, dy_dem, table, table_info, em_x, em, two_embed, dy, nloc,
-          nnei, last_layer_size);
+          nnei, last_layer_size, is_sorted);
 #endif  // TENSORFLOW_USE_ROCM
     } else if (device == "CPU") {
       deepmd::tabulate_fusion_se_a_grad_cpu(dy_dem_x, dy_dem, table, table_info,
                                             em_x, em, two_embed, dy, nloc, nnei,
-                                            last_layer_size);
+                                            last_layer_size, is_sorted);
     }
   }
 
  private:
+  bool is_sorted;
   std::string device;
 };
 

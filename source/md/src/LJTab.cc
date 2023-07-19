@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 #include "LJTab.h"
 
 LJTab::LJTab(const VALUETYPE& c6, const VALUETYPE& c12, const VALUETYPE& rc) {

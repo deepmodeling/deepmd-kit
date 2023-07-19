@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 jdata_sys = {"debug": False}
 
 jdata_config_v0 = {

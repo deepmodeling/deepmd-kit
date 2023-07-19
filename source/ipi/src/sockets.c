@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 /* A minimal wrapper for socket communication.
 
 Copyright (C) 2013, Joshua More and Michele Ceriotti

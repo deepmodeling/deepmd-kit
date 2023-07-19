@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 """Use dp_ipi inside the Python package."""
 import os
 import subprocess

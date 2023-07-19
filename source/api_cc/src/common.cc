@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 #include "common.h"
 
 #include <fcntl.h>
@@ -371,7 +372,7 @@ int deepmd::session_input_tensors(
     const std::vector<VALUETYPE>& dbox,
     const double& cell_size,
     const std::vector<VALUETYPE>& fparam_,
-    const std::vector<VALUETYPE>& aparam_,
+    const std::vector<VALUETYPE>& aparam__,
     const deepmd::AtomMap& atommap,
     const std::string scope) {
   int nframes = dcoord_.size() / 3 / datype_.size();
@@ -409,7 +410,7 @@ int deepmd::session_input_tensors(
   fparam_shape.AddDim(fparam_.size() / nframes);
   TensorShape aparam_shape;
   aparam_shape.AddDim(nframes);
-  aparam_shape.AddDim(aparam_.size() / nframes);
+  aparam_shape.AddDim(aparam__.size() / nframes);
 
   tensorflow::DataType model_type;
   if (std::is_same<MODELTYPE, double>::value) {
@@ -438,6 +439,9 @@ int deepmd::session_input_tensors(
 
   std::vector<VALUETYPE> dcoord(dcoord_);
   atommap.forward<VALUETYPE>(dcoord.begin(), dcoord_.begin(), 3, nframes, nall);
+  std::vector<VALUETYPE> aparam_(aparam__);
+  atommap.forward<VALUETYPE>(aparam_.begin(), aparam__.begin(),
+                             aparam__.size() / nframes / nloc, nframes, nloc);
 
   for (int ii = 0; ii < nframes; ++ii) {
     for (int jj = 0; jj < nall * 3; ++jj) {
@@ -503,7 +507,7 @@ int deepmd::session_input_tensors(
     const std::vector<VALUETYPE>& dbox,
     InputNlist& dlist,
     const std::vector<VALUETYPE>& fparam_,
-    const std::vector<VALUETYPE>& aparam_,
+    const std::vector<VALUETYPE>& aparam__,
     const deepmd::AtomMap& atommap,
     const int nghost,
     const int ago,
@@ -539,7 +543,7 @@ int deepmd::session_input_tensors(
   fparam_shape.AddDim(fparam_.size() / nframes);
   TensorShape aparam_shape;
   aparam_shape.AddDim(nframes);
-  aparam_shape.AddDim(aparam_.size() / nframes);
+  aparam_shape.AddDim(aparam__.size() / nframes);
 
   tensorflow::DataType model_type;
   if (std::is_same<MODELTYPE, double>::value) {
@@ -568,6 +572,9 @@ int deepmd::session_input_tensors(
 
   std::vector<VALUETYPE> dcoord(dcoord_);
   atommap.forward<VALUETYPE>(dcoord.begin(), dcoord_.begin(), 3, nframes, nall);
+  std::vector<VALUETYPE> aparam_(aparam__);
+  atommap.forward<VALUETYPE>(aparam_.begin(), aparam__.begin(),
+                             aparam__.size() / nframes / nloc, nframes, nloc);
 
   for (int ii = 0; ii < nframes; ++ii) {
     for (int jj = 0; jj < nall * 3; ++jj) {
@@ -636,7 +643,7 @@ int deepmd::session_input_tensors_mixed_type(
     const std::vector<VALUETYPE>& dbox,
     const double& cell_size,
     const std::vector<VALUETYPE>& fparam_,
-    const std::vector<VALUETYPE>& aparam_,
+    const std::vector<VALUETYPE>& aparam__,
     const deepmd::AtomMap& atommap,
     const std::string scope) {
   int nall = datype_.size() / nframes;
@@ -669,7 +676,7 @@ int deepmd::session_input_tensors_mixed_type(
   fparam_shape.AddDim(fparam_.size() / nframes);
   TensorShape aparam_shape;
   aparam_shape.AddDim(nframes);
-  aparam_shape.AddDim(aparam_.size() / nframes);
+  aparam_shape.AddDim(aparam__.size() / nframes);
 
   tensorflow::DataType model_type;
   if (std::is_same<MODELTYPE, double>::value) {
@@ -698,6 +705,9 @@ int deepmd::session_input_tensors_mixed_type(
 
   std::vector<VALUETYPE> dcoord(dcoord_);
   atommap.forward<VALUETYPE>(dcoord.begin(), dcoord_.begin(), 3, nframes, nall);
+  std::vector<VALUETYPE> aparam_(aparam__);
+  atommap.forward<VALUETYPE>(aparam_.begin(), aparam__.begin(),
+                             aparam__.size() / nframes / nloc, nframes, nloc);
 
   for (int ii = 0; ii < nframes; ++ii) {
     for (int jj = 0; jj < nall * 3; ++jj) {

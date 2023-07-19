@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 #include "compute_deeptensor_atom.h"
 
 #include <algorithm>

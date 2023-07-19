@@ -335,6 +335,8 @@ template <typename FPTYPE>
 void normalize_coord_gpu(FPTYPE *coord,
                          const int natom,
                          const Region<FPTYPE> &region) {
+  DPErrcheck(cudaGetLastError());
+  DPErrcheck(cudaDeviceSynchronize());
   const FPTYPE *boxt = region.boxt;
   const FPTYPE *rec_boxt = region.rec_boxt;
   const int nblock = (natom + TPB - 1) / TPB;
@@ -360,6 +362,8 @@ int copy_coord_gpu(FPTYPE *out_c,
                    const int &total_cellnum,
                    const int *cell_info,
                    const Region<FPTYPE> &region) {
+  DPErrcheck(cudaGetLastError());
+  DPErrcheck(cudaDeviceSynchronize());
   compute_int_data(int_data, in_c, cell_info, region, nloc, loc_cellnum,
                    total_cellnum);
   int *int_data_cpu = new int

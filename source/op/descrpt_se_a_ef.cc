@@ -1,4 +1,5 @@
 
+// SPDX-License-Identifier: LGPL-3.0-or-later
 #include "ComputeDescriptor.h"
 #include "custom_op.h"
 #include "errors.h"

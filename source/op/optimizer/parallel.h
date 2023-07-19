@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 #ifndef DP_REMAPPER_H_
 #define DP_REMAPPER_H_
 

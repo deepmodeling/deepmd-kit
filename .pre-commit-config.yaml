@@ -24,7 +24,7 @@ repos:
     -   id: check-toml
 # Python
 -   repo: https://github.com/psf/black
-    rev: 23.3.0
+    rev: 23.7.0
     hooks:
     -   id: black-jupyter
 -   repo: https://github.com/PyCQA/isort
@@ -32,9 +32,9 @@ repos:
     hooks:
     - id: isort
       files: \.py$
--   repo: https://github.com/charliermarsh/ruff-pre-commit
+-   repo: https://github.com/astral-sh/ruff-pre-commit
     # Ruff version.
-    rev: v0.0.275
+    rev: v0.0.278
     hooks:
     - id: ruff
       args: ["--fix"]
@@ -46,7 +46,7 @@ repos:
       args: ["--write"]
 # Python inside docs
 -   repo: https://github.com/asottile/blacken-docs
-    rev: 1.14.0
+    rev: 1.15.0
     hooks:
     -   id: blacken-docs
 # C++
@@ -71,5 +71,46 @@ repos:
   hooks:
     - id: cmake-format
     #- id: cmake-lint
+# license header
+- repo: https://github.com/Lucas-C/pre-commit-hooks
+  rev: v1.5.1
+  hooks:
+    # C++, js
+    -   id: insert-license
+        files: \.(c|cc|cpp|js|ts|h|hpp)$
+        args:
+        - --license-filepath
+        - .license-header.txt
+        - --comment-style
+        - //
+        - --no-extra-eol
+        exclude: ^source/3rdparty|source/lib/src/cuda/cudart/.+\.inc
+    # CSS
+    -   id: insert-license
+        files: \.(css|scss)$
+        args:
+        - --license-filepath
+        - .license-header.txt
+        - --comment-style
+        - /*| *| */
+        - --no-extra-eol
+    # Python
+    -   id: insert-license
+        files: \.(py|pyx)$
+        args:
+        - --license-filepath
+        - .license-header.txt
+        - --comment-style
+        - "#"
+        - --no-extra-eol
+    # HTML
+    -   id: insert-license
+        files: \.(html|vue|xml)$
+        args:
+        - --license-filepath
+        - .license-header.txt
+        - --comment-style
+        - <!--|  ~|  -->
+        - --no-extra-eol
 ci:
   autoupdate_branch: devel

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 #ifdef FIX_CLASS
 
 FixStyle(dplr, FixDPLR)

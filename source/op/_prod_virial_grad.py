@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: LGPL-3.0-or-later
 """Gradients for prod virial."""
 
 from tensorflow.python.framework import (
