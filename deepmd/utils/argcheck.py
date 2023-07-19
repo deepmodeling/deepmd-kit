@@ -487,7 +487,7 @@ def fitting_ener():
     doc_trainable = "Whether the parameters in the fitting net are trainable. This option can be\n\n\
 - bool: True if all parameters of the fitting net are trainable, False otherwise.\n\n\
 - list of bool: Specifies if each layer is trainable. Since the fitting net is composed by hidden layers followed by a output layer, the length of tihs list should be equal to len(`neuron`)+1."
-    doc_rcond = "The condition number used to determine the inital energy shift for each type of atoms."
+    doc_rcond = "The condition number used to determine the inital energy shift for each type of atoms. See `rcond` in :py:meth:`numpy.linalg.lstsq` for more details."
     doc_seed = "Random seed for parameter initialization of the fitting net"
     doc_atom_ener = "Specify the atomic energy in vacuum for each type"
     doc_layer_name = (
@@ -526,7 +526,7 @@ def fitting_ener():
         Argument(
             "trainable", [list, bool], optional=True, default=True, doc=doc_trainable
         ),
-        Argument("rcond", float, optional=True, default=1e-3, doc=doc_rcond),
+        Argument("rcond", [float, type(None)], optional=True, default=None, doc=doc_rcond),
         Argument("seed", [int, None], optional=True, doc=doc_seed),
         Argument("atom_ener", list, optional=True, default=[], doc=doc_atom_ener),
         Argument("layer_name", list, optional=True, doc=doc_layer_name),
