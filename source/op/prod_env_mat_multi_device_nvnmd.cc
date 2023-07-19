@@ -526,7 +526,6 @@ class ProdEnvMatANvnmdQuantizeOp : public OpKernel {
   int* nbor_list_dev = NULL;
 };
 
-
 /*
 //==================================================
   ProdEnvMatAMixNvnmdQuantizeOp
@@ -536,7 +535,8 @@ class ProdEnvMatANvnmdQuantizeOp : public OpKernel {
 template <typename Device, typename FPTYPE>
 class ProdEnvMatAMixNvnmdQuantizeOp : public OpKernel {
  public:
-  explicit ProdEnvMatAMixNvnmdQuantizeOp(OpKernelConstruction* context) : OpKernel(context) {
+  explicit ProdEnvMatAMixNvnmdQuantizeOp(OpKernelConstruction* context)
+      : OpKernel(context) {
     float nloc_f, nall_f;
     OP_REQUIRES_OK(context, context->GetAttr("rcut_a", &rcut_a));
     OP_REQUIRES_OK(context, context->GetAttr("rcut_r", &rcut_r));
@@ -783,15 +783,15 @@ class ProdEnvMatAMixNvnmdQuantizeOp : public OpKernel {
 
 // Register the CPU kernels.
 // Compatible with v1.3
-#define REGISTER_CPU(T)                                       \
-  REGISTER_KERNEL_BUILDER(Name("ProdEnvMatANvnmdQuantize")    \
-                              .Device(DEVICE_CPU)             \
-                              .TypeConstraint<T>("T"),        \
-                ProdEnvMatANvnmdQuantizeOp<CPUDevice, T>);    \
-  REGISTER_KERNEL_BUILDER(Name("ProdEnvMatAMixNvnmdQuantize") \
-                              .Device(DEVICE_CPU)             \
-                              .TypeConstraint<T>("T"),        \
-                ProdEnvMatAMixNvnmdQuantizeOp<CPUDevice, T>);
+#define REGISTER_CPU(T)                                              \
+  REGISTER_KERNEL_BUILDER(Name("ProdEnvMatANvnmdQuantize")           \
+                              .Device(DEVICE_CPU)                    \
+                              .TypeConstraint<T>("T"),               \
+                          ProdEnvMatANvnmdQuantizeOp<CPUDevice, T>); \
+  REGISTER_KERNEL_BUILDER(Name("ProdEnvMatAMixNvnmdQuantize")        \
+                              .Device(DEVICE_CPU)                    \
+                              .TypeConstraint<T>("T"),               \
+                          ProdEnvMatAMixNvnmdQuantizeOp<CPUDevice, T>);
 
 REGISTER_CPU(float);
 REGISTER_CPU(double);

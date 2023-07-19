@@ -221,7 +221,7 @@ After completing the top-up, click on the `Projects`, and then click `New Projec
 We will use Utility to submit jobs, you can install it with the following command
 
 ```bash
-pip install lbg 
+pip install lbg
 ```
 
 When using the Lebesgue Utility for the first time, you need to configure your account by

@@ -48,7 +48,7 @@ class NvnmdConfig:
         r"""Initialize this class with `jdata` loaded from input script."""
         if jdata == {}:
             return None
-        
+
         self.version = jdata["version"]
         self.net_size = jdata["net_size"]
         self.map_file = jdata["map_file"]
@@ -149,7 +149,6 @@ class NvnmdConfig:
 
     def init_dscp(self, jdata: dict, jdata_parent: dict = {}) -> dict:
         r"""Initialize members about descriptor."""
-        
         if self.version == 0:
             # embedding
             jdata["M1"] = jdata["neuron"][-1]
@@ -343,7 +342,7 @@ class NvnmdConfig:
         r"""Build the weight dict for initialization of net."""
         dic = {}
         for key in self.weight.keys():
-            key2 = key.replace('.', '/')
+            key2 = key.replace(".", "/")
             dic[key2] = self.weight[key]
         return dic
 

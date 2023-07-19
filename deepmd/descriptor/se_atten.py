@@ -1065,8 +1065,12 @@ class DescrptSeAtten(DescrptSeA):
                                 self.nei_type_vec,
                             )
                         elif nvnmd_cfg.restore_descriptor:
-                            self.embedding_net_variables = nvnmd_cfg.get_dp_init_weights()
-                            self.two_side_embeeding_net_variables = nvnmd_cfg.get_dp_init_weights()
+                            self.embedding_net_variables = (
+                                nvnmd_cfg.get_dp_init_weights()
+                            )
+                            self.two_side_embeeding_net_variables = (
+                                nvnmd_cfg.get_dp_init_weights()
+                            )
                     if not self.compress:
                         xyz_scatter = embedding_net(
                             xyz_scatter,

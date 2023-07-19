@@ -104,7 +104,7 @@ class MapFltNvnmdOp : public OpKernel {
 
     FPTYPE ytmp;
     FPTYPE ytmp2;
-    for (ss = S-1; ss >= 0; ss--) {
+    for (ss = S - 1; ss >= 0; ss--) {
       x0 = info[ss * 5 + 0];
       x1 = info[ss * 5 + 1];
       dx = info[ss * 5 + 2];
@@ -114,7 +114,9 @@ class MapFltNvnmdOp : public OpKernel {
       for (ii = 0; ii < N * D; ii++) {
         // cal idx and xx
         xi = x[ii];
-        if ((xi < x0) || (xi >= x1)) continue;
+        if ((xi < x0) || (xi >= x1)) {
+          continue;
+        }
         //
         xx = xi - x0;
         id = floor(xx / dx);
@@ -138,11 +140,11 @@ class MapFltNvnmdOp : public OpKernel {
           mul_flt_nvnmd(ytmp, ytmp, xx);
           add_flt_nvnmd(ytmp, d, ytmp);
           y[ii * M + jj] = ytmp;
-        } // jj
-      } // ii
-    } // ss
-  }  // Compute
-};   // MapFltNvnmdOp
+        }  // jj
+      }    // ii
+    }      // ss
+  }        // Compute
+};         // MapFltNvnmdOp
 
 #define REGISTER_CPU(T)                                              \
   REGISTER_KERNEL_BUILDER(                                           \

@@ -16,7 +16,6 @@ from deepmd.env import (
 )
 from deepmd.nvnmd.data.data import (
     jdata_deepmd_input_v0,
-    jdata_deepmd_input_v1,
 )
 from deepmd.nvnmd.entrypoints.mapt import (
     mapt,

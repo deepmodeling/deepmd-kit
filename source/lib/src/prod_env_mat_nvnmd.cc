@@ -43,16 +43,16 @@ using namespace deepmd;
 */
 
 template <typename FPTYPE>
-void deepmd::prod_env_mat_a_nvnmd_quantize_cpu(FPTYPE* em,
-                                               FPTYPE* em_deriv,
-                                               FPTYPE* rij,
-                                               int* nlist,
-                                               const FPTYPE* coord,
-                                               const int* type,
-                                               const InputNlist& inlist,
+void deepmd::prod_env_mat_a_nvnmd_quantize_cpu(FPTYPE *em,
+                                               FPTYPE *em_deriv,
+                                               FPTYPE *rij,
+                                               int *nlist,
+                                               const FPTYPE *coord,
+                                               const int *type,
+                                               const InputNlist &inlist,
                                                const int max_nbor_size,
-                                               const FPTYPE* avg,
-                                               const FPTYPE* std,
+                                               const FPTYPE *avg,
+                                               const FPTYPE *std,
                                                const int nloc,
                                                const int nall,
                                                const float rcut,
@@ -104,8 +104,9 @@ void deepmd::prod_env_mat_a_nvnmd_quantize_cpu(FPTYPE* em,
     std::vector<FPTYPE> d_em_r;
     std::vector<FPTYPE> d_em_r_deriv;
     std::vector<FPTYPE> d_rij_a;
-    env_mat_a_nvnmd_quantize_cpu(d_em_a, d_em_a_deriv, d_rij_a, d_coord3, d_f_type, ii,
-                  fmt_nlist_a, sec, rcut_smth, rcut);
+    env_mat_a_nvnmd_quantize_cpu(d_em_a, d_em_a_deriv, d_rij_a, d_coord3,
+                                 d_f_type, ii, fmt_nlist_a, sec, rcut_smth,
+                                 rcut);
 
     // check sizes
     assert(d_em_a.size() == nem);
@@ -116,7 +117,8 @@ void deepmd::prod_env_mat_a_nvnmd_quantize_cpu(FPTYPE* em,
     for (int jj = 0; jj < nem; ++jj) {
       if (type[ii] >= 0) {
         // em[ii * nem + jj] =
-        //     (d_em_a[jj] - avg[type[ii] * nem + jj]) / std[type[ii] * nem + jj];
+        //     (d_em_a[jj] - avg[type[ii] * nem + jj]) / std[type[ii] * nem +
+        //     jj];
         em[ii * nem + jj] = d_em_a[jj];
       } else {
         em[ii * nem + jj] = 0;
@@ -140,39 +142,41 @@ void deepmd::prod_env_mat_a_nvnmd_quantize_cpu(FPTYPE* em,
   }
 }
 
-template void deepmd::prod_env_mat_a_nvnmd_quantize_cpu<double>(double *em,
-                                                                double *em_deriv,
-                                                                double *rij,
-                                                                int *nlist,
-                                                                const double *coord,
-                                                                const int *type,
-                                                                const InputNlist &inlist,
-                                                                const int max_nbor_size,
-                                                                const double *avg,
-                                                                const double *std,
-                                                                const int nloc,
-                                                                const int nall,
-                                                                const float rcut,
-                                                                const float rcut_smth,
-                                                                const std::vector<int> sec,
-                                                                const int *f_type);
+template void deepmd::prod_env_mat_a_nvnmd_quantize_cpu<double>(
+    double *em,
+    double *em_deriv,
+    double *rij,
+    int *nlist,
+    const double *coord,
+    const int *type,
+    const InputNlist &inlist,
+    const int max_nbor_size,
+    const double *avg,
+    const double *std,
+    const int nloc,
+    const int nall,
+    const float rcut,
+    const float rcut_smth,
+    const std::vector<int> sec,
+    const int *f_type);
 
-template void deepmd::prod_env_mat_a_nvnmd_quantize_cpu<float>(float *em,
-                                                               float *em_deriv,
-                                                               float *rij,
-                                                               int *nlist,
-                                                               const float *coord,
-                                                               const int *type,
-                                                               const InputNlist &inlist,
-                                                               const int max_nbor_size,
-                                                               const float *avg,
-                                                               const float *std,
-                                                               const int nloc,
-                                                               const int nall,
-                                                               const float rcut,
-                                                               const float rcut_smth,
-                                                               const std::vector<int> sec,
-                                                               const int *f_type);
+template void deepmd::prod_env_mat_a_nvnmd_quantize_cpu<float>(
+    float *em,
+    float *em_deriv,
+    float *rij,
+    int *nlist,
+    const float *coord,
+    const int *type,
+    const InputNlist &inlist,
+    const int max_nbor_size,
+    const float *avg,
+    const float *std,
+    const int nloc,
+    const int nall,
+    const float rcut,
+    const float rcut_smth,
+    const std::vector<int> sec,
+    const int *f_type);
 
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 // UNDEFINE

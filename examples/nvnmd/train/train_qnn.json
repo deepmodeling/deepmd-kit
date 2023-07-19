@@ -8,7 +8,10 @@
     ],
     "rcut": 6.0,
     "rcut_smth": 0.5,
-    "type_map": ["Ge", "Te"]
+    "type_map": [
+      "Ge",
+      "Te"
+    ]
   },
   "learning_rate": {
     "type": "exp",

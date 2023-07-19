@@ -29,7 +29,7 @@ from deepmd.nvnmd.utils.network import (
 )
 from deepmd.nvnmd.utils.weight import (
     get_fitnet_weight,
-    get_type_weight
+    get_type_weight,
 )
 from deepmd.utils.sess import (
     run_sess,
@@ -154,7 +154,7 @@ class Wrap:
 
     def wrap_head(self, nhs, nws):
         r"""Wrap the head information.
-        
+
         version
         nheight
         nweight
@@ -187,23 +187,23 @@ class Wrap:
 
     def wrap_dscp(self):
         r"""Wrap the configuration of descriptor.
-		
-		version 0:
-		[NBIT_IDX_S2G-1:0] SHIFT_IDX_S2G
+
+                version 0:
+                [NBIT_IDX_S2G-1:0] SHIFT_IDX_S2G
         [NBIT_NEIB*NTYPE-1:0] SELs
         [NBIT_FIXD*M1*NTYPE*NTYPE-1:0] GSs
         [NBIT_FLTE-1:0] NEXPO_DIV_NI
-		
-		version 1:
+
+                version 1:
         [NBIT_FLTE-1:0] NEXPO_DIV_NI
         """
         dscp = nvnmd_cfg.dscp
         nbit = nvnmd_cfg.nbit
         mapt = nvnmd_cfg.map
-		
+
         bs = ""
         e = Encode()
-        
+
         if nvnmd_cfg.version == 0:
             NBIT_IDX_S2G = nbit["NBIT_IDX_S2G"]
             NBIT_NEIB = nbit["NBIT_NEIB"]
@@ -264,7 +264,9 @@ class Wrap:
                     else:
                         gsi = np.zeros(M1)
                     for ii in range(M1):
-                        GSs.extend(e.dec2bin(e.qr(gsi[ii], NBIT_FIXD_FL), NBIT_FIXD, True))
+                        GSs.extend(
+                            e.dec2bin(e.qr(gsi[ii], NBIT_FIXD_FL), NBIT_FIXD, True)
+                        )
             sGSs = "".join(GSs[::-1])
             bs = sGSs + bs
             #
@@ -280,7 +282,7 @@ class Wrap:
 
     def wrap_fitn(self):
         r"""Wrap the weights of fitting net.
-        
+
         w weight
         b bias
         """
@@ -289,7 +291,7 @@ class Wrap:
         weight = nvnmd_cfg.weight
         nbit = nvnmd_cfg.nbit
         ctrl = nvnmd_cfg.ctrl
-		
+
         if nvnmd_cfg.version == 0:
             ntype = dscp["ntype"]
             ntype_max = dscp["ntype_max"]
@@ -437,7 +439,7 @@ class Wrap:
         M1 = dscp["M1"]
         NBIT_FLTE = nbit["NBIT_FLTE"]
         NBIT_FLTF = nbit["NBIT_FLTF"]
-        
+
         if nvnmd_cfg.version == 0:
             ntype = dscp["ntype"]
             ntype_max = dscp["ntype_max"]
@@ -493,8 +495,8 @@ class Wrap:
                 nd = ndim[ii]
                 d = mapts[ii]
                 d = np.reshape(d, [-1, nd, 4])
-                d1 = np.reshape(d[:, :, 0:2], [-1, nd*2])
-                d2 = np.reshape(d[:, :, 2:4], [-1, nd*2])
+                d1 = np.reshape(d[:, :, 0:2], [-1, nd * 2])
+                d2 = np.reshape(d[:, :, 2:4], [-1, nd * 2])
                 d = np.concatenate([d1, d2], axis=1)
                 #
                 bs = e.flt2bin(d, NBIT_FLTE, NBIT_FLTF)
@@ -526,7 +528,7 @@ class Wrap:
         for ii in range(ntype):
             _d = d[ii, :2]
             _d = np.reshape(_d, [-1, 2])
-            _d = np.concatenate([_d[:,0], _d[:,1]], axis=0)
+            _d = np.concatenate([_d[:, 0], _d[:, 1]], axis=0)
             d2[ii] = _d
         bstd = e.flt2bin(d2, NBIT_FLTE, NBIT_FLTF)
         # gtt
@@ -534,10 +536,10 @@ class Wrap:
         d2 = np.zeros([ntype_max**2, M1])
         for ii in range(ntype):
             for jj in range(ntype):
-                _d = d[ii*(ntype+1)+jj]
+                _d = d[ii * (ntype + 1) + jj]
                 _d = np.reshape(_d, [-1, 2])
-                _d = np.concatenate([_d[:,0], _d[:,1]], axis=0)
-                d2[ii*ntype_max+jj] = _d
+                _d = np.concatenate([_d[:, 0], _d[:, 1]], axis=0)
+                d2[ii * ntype_max + jj] = _d
         bgtt = e.flt2bin(d2, NBIT_FLTE, NBIT_FLTF)
         # avc
         d = maps["t_ebd"]

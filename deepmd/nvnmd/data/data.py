@@ -155,7 +155,7 @@ jdata_config_v1 = {
         "NNODE_FITS": "(M1*M2, neuron, 1)",
         "nlayer_fit": "len(neuron)+1",
         "NLAYER": "nlayer_fit",
-        "NTAVC": 8
+        "NTAVC": 8,
     },
     # other input for generate input file
     "dpin": {"type_map": []},
@@ -243,10 +243,7 @@ jdata_deepmd_input_v0 = {
             "axis_neuron": 4,
             "resnet_dt": False,
         },
-        "fitting_net": {
-            "seed": 1, "neuron": [128, 128, 128],
-            "resnet_dt": False
-        },
+        "fitting_net": {"seed": 1, "neuron": [128, 128, 128], "resnet_dt": False},
     },
     "nvnmd": {
         "version": 0,
@@ -307,10 +304,7 @@ jdata_deepmd_input_v1 = {
             "attn_dotr": True,
             "attn_mask": False,
         },
-        "fitting_net": {
-            "seed": 1, "neuron": [128, 128, 128],
-            "resnet_dt": False
-        },
+        "fitting_net": {"seed": 1, "neuron": [128, 128, 128], "resnet_dt": False},
     },
     "nvnmd": {
         "version": 1,

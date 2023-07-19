@@ -43,7 +43,7 @@ void prod_env_mat_a_nvnmd_quantize_cpu(FPTYPE* em,
                                        const float rcut,
                                        const float rcut_smth,
                                        const std::vector<int> sec,
-                                       const int *f_type = NULL);
+                                       const int* f_type = NULL);
 
 #if GOOGLE_CUDA
 // UNDEFINE
