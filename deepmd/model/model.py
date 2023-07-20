@@ -70,6 +70,8 @@ class Model(ABC):
         The lower boundary of the interpolation between short-range tabulated interaction and DP. It is only required when `use_srtab` is provided.
     sw_rmin
         The upper boundary of the interpolation between short-range tabulated interaction and DP. It is only required when `use_srtab` is provided.
+    srtab_add_bias : bool
+        Whether add energy bias from the statistics of the data to short-range tabulated atomic energy. It only takes effect when `use_srtab` is provided.
     spin
         spin
     compress
@@ -110,6 +112,7 @@ class Model(ABC):
         smin_alpha: Optional[float] = None,
         sw_rmin: Optional[float] = None,
         sw_rmax: Optional[float] = None,
+        srtab_add_bias: bool = True,
         spin: Optional[Spin] = None,
         compress: Optional[dict] = None,
         **kwargs,
@@ -137,6 +140,7 @@ class Model(ABC):
             self.smin_alpha = smin_alpha
             self.sw_rmin = sw_rmin
             self.sw_rmax = sw_rmax
+            self.srtab_add_bias = srtab_add_bias
         else:
             self.srtab = None
 
