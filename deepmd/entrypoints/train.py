@@ -354,6 +354,11 @@ def get_modifier(modi_data=None):
 
 
 def get_rcut(jdata):
+    if jdata["model"].get("type") == "pairwise_dprc":
+        return max(
+            jdata["model"]["qm_model"]["descriptor"]["rcut"],
+            jdata["model"]["qmmm_model"]["descriptor"]["rcut"],
+        )
     descrpt_data = jdata["model"]["descriptor"]
     rcut_list = []
     if descrpt_data["type"] == "hybrid":
@@ -499,6 +504,11 @@ def update_sel(jdata):
     log.info(
         "Calculate neighbor statistics... (add --skip-neighbor-stat to skip this step)"
     )
+    if jdata["model"].get("type") == "pairwise_dprc":
+        # do not update sel; only find min distance
+        rcut = get_rcut(jdata)
+        get_min_nbor_dist(jdata, rcut)
+        return jdata
     descrpt_data = jdata["model"]["descriptor"]
     if descrpt_data["type"] == "hybrid":
         for ii in range(len(descrpt_data["list"])):

@@ -198,7 +198,7 @@ class EnerModel(StandardModel):
         input_dict["nframes"] = tf.shape(coord)[0]
 
         # type embedding if any
-        if self.typeebd is not None:
+        if self.typeebd is not None and "type_embedding" not in input_dict:
             type_embedding = self.typeebd.build(
                 self.ntypes,
                 reuse=reuse,
@@ -368,7 +368,10 @@ class EnerModel(StandardModel):
             tf.constant("compressed_model", name="model_type", dtype=tf.string)
         else:
             raise RuntimeError("Unknown model type %s" % model_type)
-        if self.typeebd is not None:
+        if (
+            self.typeebd is not None
+            and self.typeebd.type_embedding_net_variables is None
+        ):
             self.typeebd.init_variables(
                 graph, graph_def, suffix=suffix, model_type=model_type
             )

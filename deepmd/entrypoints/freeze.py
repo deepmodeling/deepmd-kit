@@ -211,6 +211,7 @@ def _make_node_names(
         "model_attr/model_version",
         "train_attr/min_nbor_dist",
         "train_attr/training_script",
+        "t_mesh",
     ]
 
     if model_type == "ener":

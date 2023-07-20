@@ -747,7 +747,7 @@ def model_compression_type_args():
     )
 
 
-def model_args():
+def model_args(exclude_hybrid=False):
     doc_type_map = "A list of strings. Give the name to each type of atoms. It is noted that the number of atom type of training system must be less than 128 in a GPU environment. If not given, type.raw in each system should use the same type indexes, and type_map.raw will take no effect."
     doc_data_stat_nbatch = "The model determines the normalization from the statistics of the data. This key specifies the number of `frames` in each `system` used for statistics."
     doc_data_stat_protect = "Protect parameter for atomic energy regression."
@@ -760,6 +760,13 @@ def model_args():
     doc_sw_rmax = "The upper boundary of the interpolation between short-range tabulated interaction and DP. It is only required when `use_srtab` is provided."
     doc_compress_config = "Model compression configurations"
     doc_spin = "The settings for systems with spin."
+    hybrid_models = []
+    if not exclude_hybrid:
+        hybrid_models.extend(
+            [
+                pairwise_dprc(),
+            ]
+        )
     return Argument(
         "model",
         dict,
@@ -823,6 +830,7 @@ def model_args():
                 [
                     standard_model_args(),
                     multi_model_args(),
+                    *hybrid_models,
                 ],
                 optional=True,
                 default_tag="standard",
@@ -874,6 +882,24 @@ def multi_model_args() -> Argument:
             Argument("fitting_net_dict", dict, doc=doc_fitting_net_dict),
         ],
         doc="Multiple-task model.",
+    )
+    return ca
+
+
+def pairwise_dprc() -> Argument:
+    qm_model_args = model_args(exclude_hybrid=True)
+    qm_model_args.name = "qm_model"
+    qm_model_args.fold_subdoc = True
+    qmmm_model_args = model_args(exclude_hybrid=True)
+    qmmm_model_args.name = "qmmm_model"
+    qmmm_model_args.fold_subdoc = True
+    ca = Argument(
+        "pairwise_dprc",
+        dict,
+        [
+            qm_model_args,
+            qmmm_model_args,
+        ],
     )
     return ca
 
@@ -1590,6 +1616,8 @@ def gen_args(**kwargs) -> List[Argument]:
 
 def normalize_multi_task(data):
     # single-task or multi-task mode
+    if data["model"].get("type", "standard") not in ("standard", "multi"):
+        return data
     single_fitting_net = "fitting_net" in data["model"].keys()
     single_training_data = "training_data" in data["training"].keys()
     single_valid_data = "validation_data" in data["training"].keys()
