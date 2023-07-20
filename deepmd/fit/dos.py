@@ -97,7 +97,7 @@ class DOSFitting(Fitting):
         numb_fparam: int = 0,
         numb_aparam: int = 0,
         numb_dos: int = 300,
-        rcond: float = 1e-3,
+        rcond: Optional[float] = None,
         trainable: List[bool] = None,
         seed: int = None,
         activation_function: str = "tanh",

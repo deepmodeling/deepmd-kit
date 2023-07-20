@@ -236,7 +236,7 @@ class DeepmdDataSystem:
             for ii in range(self.nsystems)
         ]
 
-    def compute_energy_shift(self, rcond=1e-3, key="energy"):
+    def compute_energy_shift(self, rcond=None, key="energy"):
         sys_ener = []
         for ss in self.data_systems:
             sys_ener.append(ss.avg(key))
