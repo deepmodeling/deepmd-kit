@@ -918,7 +918,7 @@ def pairwise_dprc() -> Argument:
 
 #  --- Learning rate configurations: --- #
 def learning_rate_exp():
-    doc_start_lr = "The learning rate the start of the training."
+    doc_start_lr = "The learning rate at the start of the training."
     doc_stop_lr = "The desired learning rate at the end of the training."
     doc_decay_steps = (
         "The learning rate is decaying every this number of training steps."
@@ -977,8 +977,12 @@ def learning_rate_dict_args():
 
 
 #  --- Loss configurations: --- #
-def start_pref(item):
-    return f"The prefactor of {item} loss at the start of the training. Should be larger than or equal to 0. If set to none-zero value, the {item} label should be provided by file {item}.npy in each data system. If both start_pref_{item} and limit_pref_{item} are set to 0, then the {item} will be ignored."
+def start_pref(item, label=None, abbr=None):
+    if label is None:
+        label = item
+    if abbr is None:
+        abbr = item
+    return f"The prefactor of {item} loss at the start of the training. Should be larger than or equal to 0. If set to none-zero value, the {label} label should be provided by file {label}.npy in each data system. If both start_pref_{abbr} and limit_pref_{abbr} are set to 0, then the {item} will be ignored."
 
 
 def limit_pref(item):
@@ -986,16 +990,21 @@ def limit_pref(item):
 
 
 def loss_ener():
-    doc_start_pref_e = start_pref("energy")
+    doc_start_pref_e = start_pref("energy", abbr="e")
     doc_limit_pref_e = limit_pref("energy")
-    doc_start_pref_f = start_pref("force")
+    doc_start_pref_f = start_pref("force", abbr="f")
     doc_limit_pref_f = limit_pref("force")
-    doc_start_pref_v = start_pref("virial")
+    doc_start_pref_v = start_pref("virial", abbr="v")
     doc_limit_pref_v = limit_pref("virial")
-    doc_start_pref_ae = start_pref("atom_ener")
-    doc_limit_pref_ae = limit_pref("atom_ener")
-    doc_start_pref_pf = start_pref("atom_pref")
-    doc_limit_pref_pf = limit_pref("atom_pref")
+    doc_start_pref_ae = start_pref("atomic energy", label="atom_ener", abbr="ae")
+    doc_limit_pref_ae = limit_pref("atomic energy")
+    doc_start_pref_pf = start_pref(
+        "atomic prefactor force", label="atom_pref", abbr="pf"
+    )
+    doc_limit_pref_pf = limit_pref("atomic prefactor force")
+    doc_start_pref_gf = start_pref("generalized force", label="drdq", abbr="gf")
+    doc_limit_pref_gf = limit_pref("generalized force")
+    doc_numb_generalized_coord = "The dimension of generalized coordinates. Required when generalized force loss is used."
     doc_relative_f = "If provided, relative force error will be used in the loss. The difference of force will be normalized by the magnitude of the force in the label with a shift given by `relative_f`, i.e. DF_i / ( || F || + relative_f ) with DF denoting the difference between prediction and label and || F || denoting the L2 norm of the label."
     doc_enable_atom_ener_coeff = "If true, the energy will be computed as \\sum_i c_i E_i. c_i should be provided by file atom_ener_coeff.npy in each data system, otherwise it's 1."
     return [
@@ -1076,6 +1085,27 @@ def loss_ener():
             optional=True,
             default=False,
             doc=doc_enable_atom_ener_coeff,
+        ),
+        Argument(
+            "start_pref_gf",
+            float,
+            optional=True,
+            default=0.0,
+            doc=doc_start_pref_gf,
+        ),
+        Argument(
+            "limit_pref_gf",
+            float,
+            optional=True,
+            default=0.0,
+            doc=doc_start_pref_gf,
+        ),
+        Argument(
+            "numb_generalized_coord",
+            int,
+            optional=True,
+            default=0,
+            doc=doc_numb_generalized_coord,
         ),
     ]
 
