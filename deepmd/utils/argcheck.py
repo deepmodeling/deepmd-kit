@@ -795,7 +795,7 @@ def model_args():
                 "srtab_add_bias",
                 bool,
                 optional=True,
-                defualt=True,
+                default=True,
                 doc=doc_srtab_add_bias,
             ),
             Argument(
