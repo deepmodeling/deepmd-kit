@@ -3,12 +3,8 @@ import os
 import unittest
 
 import numpy as np
-from common import (
-    tests_path,
-)
 
 from deepmd.env import (
-    GLOBAL_NP_FLOAT_PRECISION,
     op_module,
     tf,
 )

@@ -1,10 +1,10 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
 
 import numpy as np
 
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
-    GLOBAL_TF_FLOAT_PRECISION,
     op_module,
     tf,
 )
@@ -18,9 +18,6 @@ from deepmd.nvnmd.utils.weight import (
 )
 from deepmd.utils.graph import (
     get_tensor_by_name_from_graph,
-)
-from deepmd.utils.network import (
-    embedding_net,
 )
 
 log = logging.getLogger(__name__)
@@ -100,9 +97,7 @@ def descrpt2r4(inputs, atype):
     # s & h
     u = tf.reshape(u, [-1, 1])
     table = GLOBAL_NP_FLOAT_PRECISION(
-        np.concatenate(
-            [nvnmd_cfg.map["s"][0], nvnmd_cfg.map["h"][0]], axis=1
-        )
+        np.concatenate([nvnmd_cfg.map["s"][0], nvnmd_cfg.map["h"][0]], axis=1)
     )
     table_grad = GLOBAL_NP_FLOAT_PRECISION(
         np.concatenate(
@@ -169,11 +164,7 @@ def descrpt2r4(inputs, atype):
     return inputs_reshape
 
 
-def filter_lower_R42GR(
-    inputs_i,
-    atype,
-    nei_type_vec
-):
+def filter_lower_R42GR(inputs_i, atype, nei_type_vec):
     r"""Replace se_a.py/DescrptSeA/_filter_lower."""
     shape_i = inputs_i.get_shape().as_list()
     inputs_reshape = tf.reshape(inputs_i, [-1, 4])
@@ -182,7 +173,7 @@ def filter_lower_R42GR(
     NIDP = nvnmd_cfg.dscp["NIDP"]
     two_embd_value = nvnmd_cfg.map["gt"]
     # print(two_embd_value)
-    
+
     # copy
     inputs_reshape = op_module.flt_nvnmd(inputs_reshape)
     inputs_reshape = tf.ensure_shape(inputs_reshape, [None, 4])
@@ -209,9 +200,7 @@ def filter_lower_R42GR(
     idx_j = tf.reshape(nei_type_vec, [-1, NIDP])
     idx = idx_i + idx_j
     index_of_two_side = tf.reshape(idx, [-1])
-    two_embd = tf.nn.embedding_lookup(
-                two_embd_value, index_of_two_side
-                )
+    two_embd = tf.nn.embedding_lookup(two_embd_value, index_of_two_side)
     # two_embd = tf.reshape(two_embd, (-1, shape_i[1] // 4, M1))
     two_embd = tf.reshape(two_embd, (-1, M1))
     with tf.variable_scope("g_t", reuse=True):

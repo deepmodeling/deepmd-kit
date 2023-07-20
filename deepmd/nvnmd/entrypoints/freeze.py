@@ -20,17 +20,17 @@ def filter_tensorVariableList(tensorVariableList) -> dict:
     | :code:`descrpt_attr/t_std:0`
     | :code:`type_embed_net/matrix_{layer l}:0`
     | :code:`type_embed_net/bias_{layer l}:0`
-	
-	version 0:
-	| :code:`filter_type_{atom i}/matrix_{layer l}_{atomj}:0`
+
+        version 0:
+        | :code:`filter_type_{atom i}/matrix_{layer l}_{atomj}:0`
     | :code:`filter_type_{atom i}/bias_{layer l}_{atomj}:0`
     | :code:`layer_{layer l}_type_{atom i}/matrix:0`
     | :code:`layer_{layer l}_type_{atom i}/bias:0`
     | :code:`final_layer_type_{atom i}/matrix:0`
     | :code:`final_layer_type_{atom i}/bias:0`
-	
-	version 1:
-	| :code:`filter_type_all/matrix_{layer l}:0`
+
+        version 1:
+        | :code:`filter_type_all/matrix_{layer l}:0`
     | :code:`filter_type_all/bias_{layer l}:0`
     | :code:`filter_type_all/matrix_{layer l}_two_side_ebd:0`
     | :code:`filter_type_all/bias_{layer l}_two_side_ebd:0`

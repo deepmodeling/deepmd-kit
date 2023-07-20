@@ -30,6 +30,7 @@ def get_normalize(weights: dict):
     std = get_weight(weights, key)
     return avg, std
 
+
 def get_type_embedding_weight(weights: dict, layer_l: int):
     r"""Get weight and bias of type_embedding network.
 
@@ -48,6 +49,7 @@ def get_type_embedding_weight(weights: dict, layer_l: int):
     key = f"type_embed_net.idt_{layer_l}"
     idt = get_weight(weights, key)
     return weight, bias, idt
+
 
 def get_filter_weight(weights: int, spe_j: int, layer_l: int):
     r"""Get weight and bias of embedding network.
@@ -131,11 +133,11 @@ def get_fitnet_weight(weights: dict, spe_i: int, layer_l: int, nlayer: int = 10)
 
     if nvnmd_cfg.version == 1:
         if layer_l == nlayer - 1:
-            key = f"final_layer.matrix"
+            key = "final_layer.matrix"
             weight = get_weight(weights, key)
-            key = f"final_layer.bias"
+            key = "final_layer.bias"
             bias = get_weight(weights, key)
-            key = f"final_layer.idt"
+            key = "final_layer.idt"
             idt = get_weight(weights, key)
         else:
             key = f"layer_{layer_l}.matrix"
@@ -157,12 +159,11 @@ def get_type_weight(weights: dict, layer_l: int):
     layer_l : int
         layer order in embedding network
         0~nlayer-1
-    nlayer : int
-        number of layers
     """
     key = f"layer_{layer_l}.tweight"
     weight = get_weight(weights, key)
     return weight
+
 
 def get_constant_initializer(weights, name):
     r"""Get initial value by name and create a initializer."""

@@ -24,10 +24,10 @@ from deepmd.nvnmd.utils.network import (
     get_sess,
 )
 from deepmd.nvnmd.utils.weight import (
-    get_type_embedding_weight,
-    get_filter_weight,
     get_filter_type_weight,
+    get_filter_weight,
     get_normalize,
+    get_type_embedding_weight,
 )
 from deepmd.utils.sess import (
     run_sess,
@@ -292,7 +292,7 @@ class MapTable:
         / d = y0
         | c = y0'
         | b = (3 y1 - dx dy' - 2dx y0' - 3y0) / dx^2
-        \ a = (dx y1' - 2 y1 + dx y0' + 2 y0) / dx^3
+        \ a = (dx y1' - 2 y1 + dx y0' + 2 y0) / dx^3.
         """
         x = np.reshape(x, [-1])
         coefs = []
@@ -362,7 +362,7 @@ class MapTable:
         r__ = tf.clip_by_value(r, min_dist, rmax)
         uu = (r_ - rmin) / (rmax - rmin)
         vv = uu * uu * uu * (-6 * uu * uu + 15 * uu - 10) + 1
-		
+
         if nvnmd_cfg.version == 0:
             ntype = nvnmd_cfg.dscp["ntype"]
             avg, std = get_normalize(nvnmd_cfg.weight)
@@ -472,7 +472,7 @@ class MapTable:
         return xyz_scatters
 
     def build_s2g_grad(self):
-        r"""Build gradient of G with respect to s."""   
+        r"""Build gradient of G with respect to s."""
         M1 = nvnmd_cfg.dscp["M1"]
         #
         if nvnmd_cfg.version == 0:
@@ -508,7 +508,7 @@ class MapTable:
         if (smax - smin) > 16.0:
             log.warning("the range of s is over the limit (smax - smin) > 16.0")
         prec = N / N2
-		# the lower limit of switch function
+        # the lower limit of switch function
         if nvnmd_cfg.version == 0:
             smin_ = np.floor(smin * prec - 1) / prec
         if nvnmd_cfg.version == 1:
@@ -531,11 +531,11 @@ class MapTable:
     def build_t2g(self):
         r"""Build t->G
         t is chemical species of center atom and neighbor atom
-        G is embedding net output of type
+        G is embedding net output of type.
         """
         ntype = nvnmd_cfg.dscp["ntype"]
         filter_precision = tf.float64
-        types = tf.convert_to_tensor([ii for ii in range(ntype)], dtype=tf.int32)
+        types = tf.convert_to_tensor(list(range(ntype)), dtype=tf.int32)
         ebd_type = tf.cast(
             tf.one_hot(tf.cast(types, dtype=tf.int32), int(ntype)),
             filter_precision,
@@ -553,9 +553,9 @@ class MapTable:
         type_embedding = dic_ph["t_ebd"]
         padding_ntypes = type_embedding.shape[0]
         type_embedding_nei = tf.tile(
-                            tf.reshape(type_embedding, [1, padding_ntypes, -1]),
-                            [padding_ntypes, 1, 1],
-                        )  # (ntypes) * ntypes * Y
+            tf.reshape(type_embedding, [1, padding_ntypes, -1]),
+            [padding_ntypes, 1, 1],
+        )  # (ntypes) * ntypes * Y
         type_embedding_center = tf.tile(
             tf.reshape(type_embedding, [padding_ntypes, 1, -1]),
             [1, padding_ntypes, 1],
@@ -587,7 +587,7 @@ class MapTable:
         sess.close()
         return res_dic
 
-    def build_embedding_net(self, xx, wbs, activation_fn = tf.tanh):
+    def build_embedding_net(self, xx, wbs, activation_fn=tf.tanh):
         for ll in range(len(wbs)):
             # weight and bias
             w, b, t = wbs[ll]
@@ -621,8 +621,9 @@ class MapTable:
         #
         res_dic = {}
         res_dic["davg_opp"] = np.array([-davg[tt, 0:4] for tt in range(ntype)])
-        res_dic["dstd_inv"] = np.array([1.0/dstd[tt, 0:4] for tt in range(ntype)])
+        res_dic["dstd_inv"] = np.array([1.0 / dstd[tt, 0:4] for tt in range(ntype)])
         return res_dic
+
 
 def mapt(
     *,

@@ -169,7 +169,5 @@ def _change_sub_config(jdata: Dict[str, Any], src_jdata: Dict[str, Any], sub_key
     # keep some params that are irrelevant to model structures (need to discuss) TODO
     if "trainable" in cur_para.keys():
         target_para["trainable"] = cur_para["trainable"]
-    log.info(
-        f"Change the '{sub_key}' from {str(cur_para)} to {str(target_para)}."
-    )
+    log.info(f"Change the '{sub_key}' from {str(cur_para)} to {str(target_para)}.")
     jdata[sub_key] = target_para
