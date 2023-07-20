@@ -148,13 +148,14 @@ class EnerStdLoss(Loss):
         virial_hat = label_dict["virial"]
         atom_ener_hat = label_dict["atom_ener"]
         atom_pref = label_dict["atom_pref"]
-        drdq = label_dict["drdq"]
         find_energy = label_dict["find_energy"]
         find_force = label_dict["find_force"]
         find_virial = label_dict["find_virial"]
         find_atom_ener = label_dict["find_atom_ener"]
         find_atom_pref = label_dict["find_atom_pref"]
-        find_drdq = label_dict["find_drdq"]
+        if self.has_gf:
+            drdq = label_dict["drdq"]
+            find_drdq = label_dict["find_drdq"]
 
         if self.enable_atom_ener_coeff:
             # when ener_coeff (\nu) is defined, the energy is defined as
@@ -268,15 +269,16 @@ class EnerStdLoss(Loss):
                 / self.starter_learning_rate
             )
         )
-        pref_gf = global_cvt_2_tf_float(
-            find_drdq
-            * (
-                self.limit_pref_gf
-                + (self.start_pref_gf - self.limit_pref_gf)
-                * learning_rate
-                / self.starter_learning_rate
+        if self.has_gf:
+            pref_gf = global_cvt_2_tf_float(
+                find_drdq
+                * (
+                    self.limit_pref_gf
+                    + (self.start_pref_gf - self.limit_pref_gf)
+                    * learning_rate
+                    / self.starter_learning_rate
+                )
             )
-        )
 
         l2_loss = 0
         more_loss = {}
