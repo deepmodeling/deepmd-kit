@@ -58,6 +58,8 @@ class EnerModel(StandardModel):
             The lower boundary of the interpolation between short-range tabulated interaction and DP. It is only required when `use_srtab` is provided.
     sw_rmin
             The upper boundary of the interpolation between short-range tabulated interaction and DP. It is only required when `use_srtab` is provided.
+    srtab_add_bias : bool
+        Whether add energy bias from the statistics of the data to short-range tabulated atomic energy. It only takes effect when `use_srtab` is provided.
     spin
         spin
     data_stat_nsample
@@ -78,6 +80,7 @@ class EnerModel(StandardModel):
         smin_alpha: Optional[float] = None,
         sw_rmin: Optional[float] = None,
         sw_rmax: Optional[float] = None,
+        srtab_add_bias: bool = True,
         spin: Optional[Spin] = None,
         data_bias_nsample: int = 10,
         **kwargs,
@@ -96,6 +99,7 @@ class EnerModel(StandardModel):
             sw_rmin=sw_rmin,
             sw_rmax=sw_rmax,
             spin=spin,
+            srtab_add_bias=srtab_add_bias,
             **kwargs,
         )
         self.numb_fparam = self.fitting.get_numb_fparam()
@@ -263,7 +267,8 @@ class EnerModel(StandardModel):
                 sel_a=sel_a,
                 sel_r=sel_r,
             )
-            tab_atom_ener += self.fitting.add_type
+            if self.srtab_add_bias:
+                tab_atom_ener += self.fitting.atom_bias_ener
             energy_diff = tab_atom_ener - tf.reshape(atom_ener, [-1, natoms[0]])
             tab_atom_ener = tf.reshape(sw_lambda, [-1]) * tf.reshape(
                 tab_atom_ener, [-1]

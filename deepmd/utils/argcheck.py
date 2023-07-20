@@ -758,6 +758,7 @@ def model_args():
     doc_smin_alpha = "The short-range tabulated interaction will be swithed according to the distance of the nearest neighbor. This distance is calculated by softmin. This parameter is the decaying parameter in the softmin. It is only required when `use_srtab` is provided."
     doc_sw_rmin = "The lower boundary of the interpolation between short-range tabulated interaction and DP. It is only required when `use_srtab` is provided."
     doc_sw_rmax = "The upper boundary of the interpolation between short-range tabulated interaction and DP. It is only required when `use_srtab` is provided."
+    doc_srtab_add_bias = "Whether add energy bias from the statistics of the data to short-range tabulated atomic energy. It only takes effect when `use_srtab` is provided."
     doc_compress_config = "Model compression configurations"
     doc_spin = "The settings for systems with spin."
     return Argument(
@@ -790,6 +791,13 @@ def model_args():
             Argument("smin_alpha", float, optional=True, doc=doc_smin_alpha),
             Argument("sw_rmin", float, optional=True, doc=doc_sw_rmin),
             Argument("sw_rmax", float, optional=True, doc=doc_sw_rmax),
+            Argument(
+                "srtab_add_bias",
+                bool,
+                optional=True,
+                defualt=True,
+                doc=doc_srtab_add_bias,
+            ),
             Argument(
                 "type_embedding",
                 dict,

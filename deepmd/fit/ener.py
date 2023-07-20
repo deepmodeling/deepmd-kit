@@ -689,14 +689,14 @@ class EnerFitting(Fitting):
             outs = tf.reshape(final_layer, [tf.shape(inputs)[0], natoms[0]])
         # add bias
         self.atom_ener_before = outs * atype_filter
-        # atomic energy in a vacuum
-        self.add_type = tf.reshape(
+        # atomic bias energy from data statistics
+        self.atom_bias_ener = tf.reshape(
             tf.nn.embedding_lookup(self.t_bias_atom_e, self.atype_nloc),
             [tf.shape(inputs)[0], tf.reduce_sum(natoms[2 : 2 + ntypes_atom])],
         )
-        outs = outs + self.add_type
+        outs = outs + self.atom_bias_ener
         outs *= atype_filter
-        self.add_type *= atype_filter
+        self.atom_bias_ener *= atype_filter
         self.atom_ener_after = outs
 
         if self.tot_ener_zero:
