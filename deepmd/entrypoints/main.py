@@ -566,6 +566,11 @@ def main_parser() -> argparse.ArgumentParser:
         choices=["s1", "s2"],
         help="steps to train model of NVNMD: s1 (train CNN), s2 (train QNN)",
     )
+    parser_train_nvnmd.add_argument(
+        "--skip-neighbor-stat",
+        action="store_true",
+        help="Skip calculating neighbor statistics. Sel checking, automatic sel, and model compression will be disabled.",
+    )
     return parser
 
 

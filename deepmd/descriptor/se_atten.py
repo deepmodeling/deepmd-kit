@@ -24,6 +24,17 @@ from deepmd.env import (
     op_module,
     tf,
 )
+from deepmd.nvnmd.descriptor.se_atten import (
+    build_davg_dstd,
+    build_op_descriptor,
+    check_switch_range,
+    descrpt2r4,
+    filter_GR2D,
+    filter_lower_R42GR,
+)
+from deepmd.nvnmd.utils.config import (
+    nvnmd_cfg,
+)
 from deepmd.utils.graph import (
     get_attention_layer_variables_from_graph_def,
     get_pattern_nodes_from_graph_def,
@@ -150,9 +161,10 @@ class DescrptSeAtten(DescrptSeA):
         """
         Constructor
         """
-        assert Version(TF_VERSION) > Version(
-            "2"
-        ), "se_atten only support tensorflow version 2.0 or higher."
+        if not (nvnmd_cfg.enable and (nvnmd_cfg.version == 1)):
+            assert Version(TF_VERSION) > Version(
+                "2"
+            ), "se_atten only support tensorflow version 2.0 or higher."
         self.stripped_type_embedding = stripped_type_embedding
         self.ntypes = ntypes
         self.att_n = attn
@@ -525,6 +537,11 @@ class DescrptSeAtten(DescrptSeA):
         """
         davg = self.davg
         dstd = self.dstd
+        if nvnmd_cfg.enable:
+            nvnmd_cfg.set_ntype(self.ntypes)
+            if nvnmd_cfg.restore_descriptor:
+                davg, dstd = build_davg_dstd()
+            check_switch_range(davg, dstd)
         with tf.variable_scope("descrpt_attr" + suffix, reuse=reuse):
             if davg is None:
                 davg = np.zeros([self.ntypes, self.ndescrpt])
@@ -566,6 +583,9 @@ class DescrptSeAtten(DescrptSeA):
         self.angular_weight = [None for i in range(self.attn_layer)]
         self.attn_weight_final = [None for i in range(self.attn_layer)]
 
+        op_descriptor = (
+            build_op_descriptor() if nvnmd_cfg.enable else op_module.prod_env_mat_a_mix
+        )
         (
             self.descrpt,
             self.descrpt_deriv,
@@ -573,7 +593,7 @@ class DescrptSeAtten(DescrptSeA):
             self.nlist,
             self.nei_type_vec,
             self.nmask,
-        ) = op_module.prod_env_mat_a_mix(
+        ) = op_descriptor(
             coord,
             atype,
             natoms,
@@ -645,7 +665,8 @@ class DescrptSeAtten(DescrptSeA):
                 self.nei_type_vec,  # extra input for atten
             )
             inputs_i *= mask
-
+        if nvnmd_cfg.enable and nvnmd_cfg.quantize_descriptor:
+            inputs_i = descrpt2r4(inputs_i, atype)
         layer, qmat = self._filter(
             inputs_i,
             type_i,
@@ -1036,6 +1057,20 @@ class DescrptSeAtten(DescrptSeA):
                         log.info(
                             "use the non-compressible model with stripped type embedding"
                         )
+                    if nvnmd_cfg.enable:
+                        if nvnmd_cfg.quantize_descriptor:
+                            return filter_lower_R42GR(
+                                inputs_i,
+                                atype,
+                                self.nei_type_vec,
+                            )
+                        elif nvnmd_cfg.restore_descriptor:
+                            self.embedding_net_variables = (
+                                nvnmd_cfg.get_dp_init_weights()
+                            )
+                            self.two_side_embeeding_net_variables = (
+                                nvnmd_cfg.get_dp_init_weights()
+                            )
                     if not self.compress:
                         xyz_scatter = embedding_net(
                             xyz_scatter,
@@ -1202,6 +1237,8 @@ class DescrptSeAtten(DescrptSeA):
             reuse=reuse,
             atype=atype,
         )
+        if nvnmd_cfg.enable:
+            return filter_GR2D(xyz_scatter_1)
         # natom x nei x outputs_size
         # xyz_scatter = tf.concat(xyz_scatter_total, axis=1)
         # natom x nei x 4
