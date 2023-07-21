@@ -82,7 +82,7 @@ class EnerStdLoss(Loss):
         enable_atom_ener_coeff: bool = False,
         start_pref_gf: float = 0.0,
         limit_pref_gf: float = 0.0,
-        numb_generalized_coord=0,
+        numb_generalized_coord: int = 0,
         **kwargs,
     ) -> None:
         self.starter_learning_rate = starter_learning_rate
@@ -198,9 +198,15 @@ class EnerStdLoss(Loss):
 
         if self.has_gf:
             drdq = label_dict["drdq"]
-            drdq_reshape = tf.reshape(drdq, [-1])
-            gen_force_hat = tf.einsum("bij,bi->bj", drdq_reshape, force_hat_reshape)
-            gen_force = tf.einsum("bij,bi->bj", drdq_reshape, force_reshape)
+            force_reshape_nframes = tf.reshape(force, [-1, natoms[0] * 3])
+            force_hat_reshape_nframes = tf.reshape(force_hat, [-1, natoms[0] * 3])
+            drdq_reshape = tf.reshape(
+                drdq, [-1, natoms[0] * 3, self.numb_generalized_coord]
+            )
+            gen_force_hat = tf.einsum(
+                "bij,bi->bj", drdq_reshape, force_hat_reshape_nframes
+            )
+            gen_force = tf.einsum("bij,bi->bj", drdq_reshape, force_reshape_nframes)
             diff_gen_force = gen_force_hat - gen_force
             l2_gen_force_loss = tf.reduce_mean(
                 tf.square(diff_gen_force), name="l2_gen_force_" + suffix
@@ -344,7 +350,7 @@ class EnerStdLoss(Loss):
             self.l2_more["l2_virial_loss"] if self.has_v else placeholder,
             self.l2_more["l2_atom_ener_loss"] if self.has_ae else placeholder,
             self.l2_more["l2_pref_force_loss"] if self.has_pf else placeholder,
-            self.l2_more["l2_gf_loss"] if self.has_gf else placeholder,
+            self.l2_more["l2_gen_force_loss"] if self.has_gf else placeholder,
         ]
         error, error_e, error_f, error_v, error_ae, error_pf, error_gf = run_sess(
             sess, run_data, feed_dict=feed_dict

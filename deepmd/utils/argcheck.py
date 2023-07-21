@@ -1098,7 +1098,7 @@ def loss_ener():
             float,
             optional=True,
             default=0.0,
-            doc=doc_start_pref_gf,
+            doc=doc_limit_pref_gf,
         ),
         Argument(
             "numb_generalized_coord",
