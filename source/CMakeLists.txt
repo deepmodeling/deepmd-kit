@@ -97,6 +97,7 @@ set(DP_VARIANT "cpu")
 
 # define USE_CUDA_TOOLKIT
 if(USE_CUDA_TOOLKIT)
+  cmake_minimum_required(VERSION 3.23)
   find_package(CUDAToolkit REQUIRED)
   if(NOT DEFINED CMAKE_CUDA_COMPILER)
     set(CMAKE_CUDA_COMPILER ${CUDAToolkit_NVCC_EXECUTABLE})
@@ -113,6 +114,7 @@ endif(USE_CUDA_TOOLKIT)
 
 # define USE_ROCM_TOOLKIT
 if(USE_ROCM_TOOLKIT)
+  cmake_minimum_required(VERSION 3.21)
   find_package(ROCM REQUIRED)
   add_definitions("-DTENSORFLOW_USE_ROCM")
   add_compile_definitions(__HIP_PLATFORM_HCC__)
