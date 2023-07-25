@@ -45,9 +45,10 @@ def main(args: Optional[Union[List[str], argparse.Namespace]] = None):
 
     Parameters
     ----------
-    args : List[str], optional
+    args : List[str] or argparse.Namespace, optional
         list of command line arguments, used to avoid calling from the subprocess,
-        as it is quite slow to import tensorflow
+        as it is quite slow to import tensorflow; if Namespace is given, it will
+        be used directly
 
     Raises
     ------
