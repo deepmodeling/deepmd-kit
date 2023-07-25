@@ -38,7 +38,9 @@ input_files = (
     p_examples / "zinc_protein" / "zinc_se_a_mask.json",
     p_examples / "dos" / "train" / "input.json",
     p_examples / "spin" / "se_e2_a" / "input.json",
+    p_examples / "dprc" / "normal" / "input.json",
     p_examples / "dprc" / "pairwise" / "input.json",
+    p_examples / "dprc" / "generalized_force" / "input.json",
 )
 
 

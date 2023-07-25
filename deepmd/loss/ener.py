@@ -27,8 +27,42 @@ class EnerStdLoss(Loss):
 
     Parameters
     ----------
+    starter_learning_rate : float
+        The learning rate at the start of the training.
+    start_pref_e : float
+        The prefactor of energy loss at the start of the training.
+    limit_pref_e : float
+        The prefactor of energy loss at the end of the training.
+    start_pref_f : float
+        The prefactor of force loss at the start of the training.
+    limit_pref_f : float
+        The prefactor of force loss at the end of the training.
+    start_pref_v : float
+        The prefactor of virial loss at the start of the training.
+    limit_pref_v : float
+        The prefactor of virial loss at the end of the training.
+    start_pref_ae : float
+        The prefactor of atomic energy loss at the start of the training.
+    limit_pref_ae : float
+        The prefactor of atomic energy loss at the end of the training.
+    start_pref_pf : float
+        The prefactor of atomic prefactor force loss at the start of the training.
+    limit_pref_pf : float
+        The prefactor of atomic prefactor force loss at the end of the training.
+    relative_f : float
+        If provided, relative force error will be used in the loss. The difference
+        of force will be normalized by the magnitude of the force in the label with
+        a shift given by relative_f
     enable_atom_ener_coeff : bool
         if true, the energy will be computed as \sum_i c_i E_i
+    start_pref_gf : float
+        The prefactor of generalized force loss at the start of the training.
+    limit_pref_gf : float
+        The prefactor of generalized force loss at the end of the training.
+    numb_generalized_coord : int
+        The dimension of generalized coordinates.
+    **kwargs
+        Other keyword arguments.
     """
 
     def __init__(
@@ -46,6 +80,9 @@ class EnerStdLoss(Loss):
         limit_pref_pf: float = 0.0,
         relative_f: Optional[float] = None,
         enable_atom_ener_coeff: bool = False,
+        start_pref_gf: float = 0.0,
+        limit_pref_gf: float = 0.0,
+        numb_generalized_coord: int = 0,
         **kwargs,
     ) -> None:
         self.starter_learning_rate = starter_learning_rate
@@ -61,11 +98,19 @@ class EnerStdLoss(Loss):
         self.limit_pref_pf = limit_pref_pf
         self.relative_f = relative_f
         self.enable_atom_ener_coeff = enable_atom_ener_coeff
+        self.start_pref_gf = start_pref_gf
+        self.limit_pref_gf = limit_pref_gf
+        self.numb_generalized_coord = numb_generalized_coord
         self.has_e = self.start_pref_e != 0.0 or self.limit_pref_e != 0.0
         self.has_f = self.start_pref_f != 0.0 or self.limit_pref_f != 0.0
         self.has_v = self.start_pref_v != 0.0 or self.limit_pref_v != 0.0
         self.has_ae = self.start_pref_ae != 0.0 or self.limit_pref_ae != 0.0
         self.has_pf = self.start_pref_pf != 0.0 or self.limit_pref_pf != 0.0
+        self.has_gf = self.start_pref_gf != 0.0 or self.limit_pref_gf != 0.0
+        if self.has_gf and self.numb_generalized_coord < 1:
+            raise RuntimeError(
+                "When generalized force loss is used, the dimension of generalized coordinates should be larger than 0"
+            )
         # data required
         add_data_requirement("energy", 1, atomic=False, must=False, high_prec=True)
         add_data_requirement("force", 3, atomic=True, must=False, high_prec=False)
@@ -73,6 +118,15 @@ class EnerStdLoss(Loss):
         add_data_requirement("atom_ener", 1, atomic=True, must=False, high_prec=False)
         add_data_requirement(
             "atom_pref", 1, atomic=True, must=False, high_prec=False, repeat=3
+        )
+        # drdq: the partial derivative of atomic coordinates w.r.t. generalized coordinates
+        # TODO: could numb_generalized_coord decided from the training data?
+        add_data_requirement(
+            "drdq",
+            self.numb_generalized_coord * 3,
+            atomic=True,
+            must=False,
+            high_prec=False,
         )
         if self.enable_atom_ener_coeff:
             add_data_requirement(
@@ -99,6 +153,9 @@ class EnerStdLoss(Loss):
         find_virial = label_dict["find_virial"]
         find_atom_ener = label_dict["find_atom_ener"]
         find_atom_pref = label_dict["find_atom_pref"]
+        if self.has_gf:
+            drdq = label_dict["drdq"]
+            find_drdq = label_dict["find_drdq"]
 
         if self.enable_atom_ener_coeff:
             # when ener_coeff (\nu) is defined, the energy is defined as
@@ -117,7 +174,7 @@ class EnerStdLoss(Loss):
                 tf.square(energy - energy_hat), name="l2_" + suffix
             )
 
-        if self.has_f or self.has_pf or self.relative_f:
+        if self.has_f or self.has_pf or self.relative_f or self.has_gf:
             force_reshape = tf.reshape(force, [-1])
             force_hat_reshape = tf.reshape(force_hat, [-1])
             diff_f = force_hat_reshape - force_reshape
@@ -137,6 +194,22 @@ class EnerStdLoss(Loss):
             l2_pref_force_loss = tf.reduce_mean(
                 tf.multiply(tf.square(diff_f), atom_pref_reshape),
                 name="l2_pref_force_" + suffix,
+            )
+
+        if self.has_gf:
+            drdq = label_dict["drdq"]
+            force_reshape_nframes = tf.reshape(force, [-1, natoms[0] * 3])
+            force_hat_reshape_nframes = tf.reshape(force_hat, [-1, natoms[0] * 3])
+            drdq_reshape = tf.reshape(
+                drdq, [-1, natoms[0] * 3, self.numb_generalized_coord]
+            )
+            gen_force_hat = tf.einsum(
+                "bij,bi->bj", drdq_reshape, force_hat_reshape_nframes
+            )
+            gen_force = tf.einsum("bij,bi->bj", drdq_reshape, force_reshape_nframes)
+            diff_gen_force = gen_force_hat - gen_force
+            l2_gen_force_loss = tf.reduce_mean(
+                tf.square(diff_gen_force), name="l2_gen_force_" + suffix
             )
 
         if self.has_v:
@@ -202,6 +275,16 @@ class EnerStdLoss(Loss):
                 / self.starter_learning_rate
             )
         )
+        if self.has_gf:
+            pref_gf = global_cvt_2_tf_float(
+                find_drdq
+                * (
+                    self.limit_pref_gf
+                    + (self.start_pref_gf - self.limit_pref_gf)
+                    * learning_rate
+                    / self.starter_learning_rate
+                )
+            )
 
         l2_loss = 0
         more_loss = {}
@@ -220,6 +303,9 @@ class EnerStdLoss(Loss):
         if self.has_pf:
             l2_loss += global_cvt_2_ener_float(pref_pf * l2_pref_force_loss)
             more_loss["l2_pref_force_loss"] = l2_pref_force_loss
+        if self.has_gf:
+            l2_loss += global_cvt_2_ener_float(pref_gf * l2_gen_force_loss)
+            more_loss["l2_gen_force_loss"] = l2_gen_force_loss
 
         # only used when tensorboard was set as true
         self.l2_loss_summary = tf.summary.scalar("l2_loss_" + suffix, tf.sqrt(l2_loss))
@@ -238,6 +324,18 @@ class EnerStdLoss(Loss):
                 "l2_virial_loss_" + suffix,
                 tf.sqrt(l2_virial_loss) / global_cvt_2_tf_float(natoms[0]),
             )
+        if self.has_ae:
+            self.l2_loss_atom_ener_summary = tf.summary.scalar(
+                "l2_atom_ener_loss_" + suffix, tf.sqrt(l2_atom_ener_loss)
+            )
+        if self.has_pf:
+            self.l2_loss_pref_force_summary = tf.summary.scalar(
+                "l2_pref_force_loss_" + suffix, tf.sqrt(l2_pref_force_loss)
+            )
+        if self.has_gf:
+            self.l2_loss_gf_summary = tf.summary.scalar(
+                "l2_gen_force_loss_" + suffix, tf.sqrt(l2_gen_force_loss)
+            )
 
         self.l2_l = l2_loss
         self.l2_more = more_loss
@@ -252,8 +350,9 @@ class EnerStdLoss(Loss):
             self.l2_more["l2_virial_loss"] if self.has_v else placeholder,
             self.l2_more["l2_atom_ener_loss"] if self.has_ae else placeholder,
             self.l2_more["l2_pref_force_loss"] if self.has_pf else placeholder,
+            self.l2_more["l2_gen_force_loss"] if self.has_gf else placeholder,
         ]
-        error, error_e, error_f, error_v, error_ae, error_pf = run_sess(
+        error, error_e, error_f, error_v, error_ae, error_pf, error_gf = run_sess(
             sess, run_data, feed_dict=feed_dict
         )
         results = {"natoms": natoms[0], "rmse": np.sqrt(error)}
@@ -267,6 +366,8 @@ class EnerStdLoss(Loss):
             results["rmse_v"] = np.sqrt(error_v) / natoms[0]
         if self.has_pf:
             results["rmse_pf"] = np.sqrt(error_pf)
+        if self.has_gf:
+            results["rmse_gf"] = np.sqrt(error_gf)
         return results
 
 
