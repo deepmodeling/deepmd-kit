@@ -107,6 +107,7 @@ setup(
         "deepmd/nvnmd/entrypoints",
         "deepmd/nvnmd/fit",
         "deepmd/nvnmd/utils",
+        "deepmd_cli",
     ],
     cmake_args=[
         f"-DTENSORFLOW_ROOT:PATH={tf_install_dir}",
@@ -164,7 +165,7 @@ setup(
         ],
     },
     entry_points={
-        "console_scripts": ["dp = deepmd.entrypoints.main:main", *extra_scripts],
+        "console_scripts": ["dp = deepmd_cli.main:main", *extra_scripts],
         "lammps.plugins": ["deepmd = deepmd.lmp:get_op_dir"],
     },
     cmdclass={
