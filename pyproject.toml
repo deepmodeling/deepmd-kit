@@ -62,6 +62,7 @@ repository = "https://github.com/deepmodeling/deepmd-kit"
 write_to = "deepmd/_version.py"
 
 [tool.cibuildwheel]
+test-requires = "deepmd"
 test-command = [
     "dp -h",
     "dp_ipi",
