@@ -1,5 +1,6 @@
 Python:
 - deepmd/**/*
+- deepmd_cli/**/*
 - source/tests/**/*
 Docs: doc/**/*
 Examples: examples/**/*

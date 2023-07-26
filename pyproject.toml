@@ -63,6 +63,7 @@ write_to = "deepmd/_version.py"
 
 [tool.cibuildwheel]
 test-command = [
+    "python -m deepmd -h",
     "dp -h",
     "dp_ipi",
     "pytest {project}/source/tests/test_lammps.py"
@@ -97,6 +98,7 @@ before-all = [
 environment = { PIP_PREFER_BINARY="1" }
 test-extras = ["cpu"]
 test-command = [
+    "python -m deepmd -h",
     "dp -h",
 ]
 
