@@ -477,6 +477,9 @@ def descrpt_variant_type_args(exclude_hybrid: bool = False) -> Variant:
 
 
 #  --- Fitting net configurations: --- #
+fitting_args_plugin = ArgsPlugin()
+
+@fitting_args_plugin.register("ener")
 def fitting_ener():
     doc_numb_fparam = "The dimension of the frame parameter. If set to >0, file `fparam.npy` should be included to provided the input fparams."
     doc_numb_aparam = "The dimension of the atomic parameter. If set to >0, file `aparam.npy` should be included to provided the input aparams."
@@ -542,6 +545,7 @@ def fitting_ener():
     ]
 
 
+@fitting_args_plugin.register("dos")
 def fitting_dos():
     doc_numb_fparam = "The dimension of the frame parameter. If set to >0, file `fparam.npy` should be included to provided the input fparams."
     doc_numb_aparam = "The dimension of the atomic parameter. If set to >0, file `aparam.npy` should be included to provided the input aparams."
@@ -584,6 +588,7 @@ def fitting_dos():
     ]
 
 
+@fitting_args_plugin.register("polar")
 def fitting_polar():
     doc_neuron = "The number of neurons in each hidden layers of the fitting net. When two hidden layers are of the same size, a skip connection is built."
     doc_activation_function = f'The activation function in the fitting net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version. If you set "None" or "none" here, no activation function will be used.'
@@ -635,6 +640,8 @@ def fitting_polar():
 #    return fitting_polar()
 
 
+
+@fitting_args_plugin.register("dipole")
 def fitting_dipole():
     doc_neuron = "The number of neurons in each hidden layers of the fitting net. When two hidden layers are of the same size, a skip connection is built."
     doc_activation_function = f'The activation function in the fitting net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version. If you set "None" or "none" here, no activation function will be used.'
@@ -681,12 +688,7 @@ def fitting_variant_type_args():
 
     return Variant(
         "type",
-        [
-            Argument("ener", dict, fitting_ener()),
-            Argument("dos", dict, fitting_dos()),
-            Argument("dipole", dict, fitting_dipole()),
-            Argument("polar", dict, fitting_polar()),
-        ],
+        fitting_args_plugin.get_all_argument(),
         optional=True,
         default_tag="ener",
         doc=doc_descrpt_type,
@@ -988,7 +990,10 @@ def start_pref(item, label=None, abbr=None):
 def limit_pref(item):
     return f"The prefactor of {item} loss at the limit of the training, Should be larger than or equal to 0. i.e. the training step goes to infinity."
 
+loss_args_plugin = ArgsPlugin()
 
+
+@loss_args_plugin.register('ener')
 def loss_ener():
     doc_start_pref_e = start_pref("energy", abbr="e")
     doc_limit_pref_e = limit_pref("energy")
@@ -1110,6 +1115,7 @@ def loss_ener():
     ]
 
 
+@loss_args_plugin.register('ener_spin')
 def loss_ener_spin():
     doc_start_pref_e = start_pref("energy")
     doc_limit_pref_e = limit_pref("energy")
@@ -1221,6 +1227,7 @@ def loss_ener_spin():
     ]
 
 
+@loss_args_plugin.register('dos')
 def loss_dos():
     doc_start_pref_dos = start_pref("Density of State (DOS)")
     doc_limit_pref_dos = limit_pref("Density of State (DOS)")
@@ -1295,6 +1302,7 @@ def loss_dos():
 
 
 # YWolfeee: Modified to support tensor type of loss args.
+@loss_args_plugin.register('tensor')
 def loss_tensor():
     # doc_global_weight = "The prefactor of the weight of global loss. It should be larger than or equal to 0. If only `pref` is provided or both are not provided, training will be global mode, i.e. the shape of 'polarizability.npy` or `dipole.npy` should be #frams x [9 or 3]."
     # doc_local_weight =  "The prefactor of the weight of atomic loss. It should be larger than or equal to 0. If only `pref_atomic` is provided, training will be atomic mode, i.e. the shape of `polarizability.npy` or `dipole.npy` should be #frames x ([9 or 3] x #selected atoms). If both `pref` and `pref_atomic` are provided, training will be combined mode, and atomic label should be provided as well."
@@ -1319,14 +1327,7 @@ def loss_variant_type_args():
 
     return Variant(
         "type",
-        [
-            Argument("ener", dict, loss_ener()),
-            Argument("dos", dict, loss_dos()),
-            Argument("tensor", dict, loss_tensor()),
-            Argument("ener_spin", dict, loss_ener_spin()),
-            # Argument("polar", dict, loss_tensor()),
-            # Argument("global_polar", dict, loss_tensor("global"))
-        ],
+        loss_args_plugin.get_all_argument(),
         optional=True,
         default_tag="ener",
         doc=doc_loss,
