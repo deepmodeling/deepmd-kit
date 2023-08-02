@@ -304,7 +304,7 @@ def convert_input_v1_v2(
     new_tr_cfg = {k: v for k, v in tr_cfg.items() if k not in tr_data_keys}
     new_tr_cfg["training_data"] = tr_data_cfg
     if "training_data" in tr_cfg:
-        raise RuntimeError("Both v1 and v2 parameters are given.")
+        raise RuntimeError("Both v1 (training/systems) and v2 (training/training_data) parameters are given.")
 
     jdata["training"] = new_tr_cfg
 
