@@ -4,6 +4,70 @@ The notation of `se_e2_a` is short for the Deep Potential Smooth Edition (DeepPo
 
 Note that it is sometimes called a "two-atom embedding descriptor" which means the input of the embedding net is atomic distances. The descriptor **does** encode multi-body information (both angular and radial information of neighboring atoms).
 
+## Theory
+
+The two-body embedding smooth edition of the DP descriptor $\mathcal{D}^i \in \mathbb{R}^{M \times M_{<}}$, is usually named DeepPot-SE descriptor.
+It is noted that the descriptor is a multi-body representation of the local environment of the atom $i$. 
+We call it ``two-body embedding'' because the embedding network takes only the distance between atoms $i$ and $j$ (see below), but it is not implied that the descriptor takes only the pairwise information between $i$ and its neighbors. 
+The descriptor, using either full information or radial-only information, is given by
+
+$$
+    \mathcal{D}^i = 
+    \begin{cases}
+    \frac{1}{N_c^2} (\mathcal{G}^i)^T \mathcal{R}^i (\mathcal{R}^i)^T \mathcal{G}^i_<, &\text{full}, \\
+    \frac{1}{N_c} \sum_j (\mathcal{G}^i)_{jk}, &\text{radial-only}, 
+    \end{cases}
+$$
+
+where $\mathcal{R}^i \in \mathbb{R}^{N_c \times \{1,4\}}$ is the coordinate matrix, and each row of $\mathcal{R}^i$ can be constructed as
+
+$$
+    (\mathcal{R}^i)_j =
+    \begin{cases}
+    \{
+    \begin{array}{cccc}
+    s(r_{ij}) & \frac{s(r_{ij})x_{ij}}{r_{ij}} & \frac{s(r_{ij})y_{ij}}{r_{ij}} & \frac{s(r_{ij})z_{ij}}{r_{ij}} 
+    \end{array}
+    \}, &\text{full},  \\
+    \{
+    \begin{array}{c}
+    s(r_{ij})
+    \end{array}
+    \}, &\text{radial-only}, 
+    \end{cases}
+    \label{eq:rij}
+$$
+
+where $\bm{r}_{ij}=\bm{r}_j-\bm{r}_i = (x_{ij}, y_{ij}, z_{ij})$ is the relative coordinate and $r_{ij}=\lVert \bm{r}_{ij} \lVert$ is its norm. The switching function $s(r)$ is defined as
+
+$$
+    s(r)=
+    \begin{cases}
+    \frac{1}{r}, & r<r_s, \\
+    \frac{1}{r} \big[ x^3 (-6 x^2 +15 x -10) +1 \big], & r_s \leq r<r_c, \\
+    0, & r \geq r_c,
+    \end{cases}
+$$
+
+where $x=\frac{r - r_s}{ r_c - r_s}$  switches from 1 at $r_s$ to 0 at the cutoff radius $r_c$. 
+The switching function $s(r)$ is smooth in the sense that the second-order derivative is continuous.
+
+Each row of the embedding matrix  $\mathcal{G}^i \in \mathbb{R}^{N_c \times M}$ consists of $M$ nodes from the output layer of an NN function $\mathcal{N}_g$ of $s(r_{ij})$:
+
+$$
+    (\mathcal{G}^i)_j = \mathcal{N}_{e,2}(s(r_{ij})),
+$$
+
+where the subscript ``$e,2$'' is used to distinguish the NN from other NNs used in the DP model.
+In the above equation, the network parameters are not explicitly written.
+$\mathcal{G}^i_< \in \mathbb{R}^{N_c \times M_<}$ only takes first $M_<$ columns of $\mathcal{G}^i$ to reduce the size of $\mathcal D^i$.
+$r_s$, $r_c$, $M$ and $M_<$ are hyperparameters provided by the user.
+Compared to the local frame descriptor, the DeepPot-SE is continuous up to the second-order derivative in its domain.[^1]
+
+[^1]: This section is built upon Jinzhe Zeng, Duo Zhang, Denghui Lu, Pinghui Mo, Zeyu Li, Yixiao Chen,  Marián Rynik, Li'ang Huang, Ziyao Li, Shaochen Shi, Yingze Wang, Haotian Ye, Ping Tuo, Jiabin Yang, Ye Ding, Yifan Li, Davide Tisi, Qiyu Zeng, Han Bao, Yu Xia, Jiameng Huang, Koki Muraoka, Yibo Wang, Junhan Chang, Fengbo Yuan, Sigbjørn Løland Bore, Chun Cai, Yinnian Lin, Bo Wang, Jiayan Xu, Jia-Xin Zhu, Chenxing Luo, Yuzhi Zhang, Rhys E. A. Goodall, Wenshuo Liang, Anurag Kumar Singh, Sikai Yao, Jingchao Zhang, Renata Wentzcovitch, Jiequn Han, Jie Liu, Weile Jia, Darrin M. York, Weinan E, Roberto Car, Linfeng Zhang, Han Wang, [J. Chem. Phys. 159, 054801 (2023)](https://doi.org/10.1063/5.0155600) licensed under a [Creative Commons Attribution (CC BY) license](http://creativecommons.org/licenses/by/4.0/).
+
+## Example
+
 In this example, we will train a DeepPot-SE model for a water system.  A complete training input script of this example can be found in the directory.
 ```bash
 $deepmd_source_dir/examples/water/se_e2_a/input.json
