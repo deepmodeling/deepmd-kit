@@ -123,6 +123,7 @@ setup(
             "sphinx_rtd_theme>=1.0.0rc1",
             "sphinx_markdown_tables",
             "myst-nb",
+            "myst-parser>=0.19.2",
             "breathe",
             "exhale",
             "numpydoc",
