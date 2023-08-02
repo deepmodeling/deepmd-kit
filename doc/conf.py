@@ -298,6 +298,7 @@ myst_enable_extensions = [
     "dollarmath",
     "colon_fence",
 ]
+myst_fence_as_directive = ("math",)
 # fix emoji issue in pdf
 latex_engine = "xelatex"
 latex_elements = {

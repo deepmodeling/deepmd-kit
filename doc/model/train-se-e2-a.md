@@ -11,17 +11,17 @@ It is noted that the descriptor is a multi-body representation of the local envi
 We call it ``two-body embedding'' because the embedding network takes only the distance between atoms $i$ and $j$ (see below), but it is not implied that the descriptor takes only the pairwise information between $i$ and its neighbors. 
 The descriptor, using either full information or radial-only information, is given by
 
-$$
+```math
     \mathcal{D}^i = 
     \begin{cases}
     \frac{1}{N_c^2} (\mathcal{G}^i)^T \mathcal{R}^i (\mathcal{R}^i)^T \mathcal{G}^i_<, &\text{full}, \\
     \frac{1}{N_c} \sum_j (\mathcal{G}^i)_{jk}, &\text{radial-only}, 
     \end{cases}
-$$
+```
 
 where $\mathcal{R}^i \in \mathbb{R}^{N_c \times \{1,4\}}$ is the coordinate matrix, and each row of $\mathcal{R}^i$ can be constructed as
 
-$$
+```
     (\mathcal{R}^i)_j =
     \begin{cases}
     \{
@@ -36,27 +36,27 @@ $$
     \}, &\text{radial-only}, 
     \end{cases}
     \label{eq:rij}
-$$
+```
 
 where $\bm{r}_{ij}=\bm{r}_j-\bm{r}_i = (x_{ij}, y_{ij}, z_{ij})$ is the relative coordinate and $r_{ij}=\lVert \bm{r}_{ij} \lVert$ is its norm. The switching function $s(r)$ is defined as
 
-$$
+```
     s(r)=
     \begin{cases}
     \frac{1}{r}, & r<r_s, \\
     \frac{1}{r} \big[ x^3 (-6 x^2 +15 x -10) +1 \big], & r_s \leq r<r_c, \\
     0, & r \geq r_c,
     \end{cases}
-$$
+```
 
 where $x=\frac{r - r_s}{ r_c - r_s}$  switches from 1 at $r_s$ to 0 at the cutoff radius $r_c$. 
 The switching function $s(r)$ is smooth in the sense that the second-order derivative is continuous.
 
 Each row of the embedding matrix  $\mathcal{G}^i \in \mathbb{R}^{N_c \times M}$ consists of $M$ nodes from the output layer of an NN function $\mathcal{N}_g$ of $s(r_{ij})$:
 
-$$
+```
     (\mathcal{G}^i)_j = \mathcal{N}_{e,2}(s(r_{ij})),
-$$
+```
 
 where the subscript ``$e,2$'' is used to distinguish the NN from other NNs used in the DP model.
 In the above equation, the network parameters are not explicitly written.
