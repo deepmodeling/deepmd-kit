@@ -7,15 +7,15 @@ Note that it is sometimes called a "two-atom embedding descriptor" which means t
 ## Theory
 
 The two-body embedding smooth edition of the DP descriptor $\mathcal{D}^i \in \mathbb{R}^{M \times M_{<}}$, is usually named DeepPot-SE descriptor.
-It is noted that the descriptor is a multi-body representation of the local environment of the atom $i$. 
-We call it ``two-body embedding'' because the embedding network takes only the distance between atoms $i$ and $j$ (see below), but it is not implied that the descriptor takes only the pairwise information between $i$ and its neighbors. 
+It is noted that the descriptor is a multi-body representation of the local environment of the atom $i$.
+We call it ``two-body embedding'' because the embedding network takes only the distance between atoms $i$ and $j$ (see below), but it is not implied that the descriptor takes only the pairwise information between $i$ and its neighbors.
 The descriptor, using either full information or radial-only information, is given by
 
 ```math
-    \mathcal{D}^i = 
+    \mathcal{D}^i =
     \begin{cases}
     \frac{1}{N_c^2} (\mathcal{G}^i)^T \mathcal{R}^i (\mathcal{R}^i)^T \mathcal{G}^i_<, &\text{full}, \\
-    \frac{1}{N_c} \sum_j (\mathcal{G}^i)_{jk}, &\text{radial-only}, 
+    \frac{1}{N_c} \sum_j (\mathcal{G}^i)_{jk}, &\text{radial-only},
     \end{cases}
 ```
 
@@ -26,14 +26,14 @@ where $\mathcal{R}^i \in \mathbb{R}^{N_c \times \{1,4\}}$ is the coordinate matr
     \begin{cases}
     \{
     \begin{array}{cccc}
-    s(r_{ij}) & \frac{s(r_{ij})x_{ij}}{r_{ij}} & \frac{s(r_{ij})y_{ij}}{r_{ij}} & \frac{s(r_{ij})z_{ij}}{r_{ij}} 
+    s(r_{ij}) & \frac{s(r_{ij})x_{ij}}{r_{ij}} & \frac{s(r_{ij})y_{ij}}{r_{ij}} & \frac{s(r_{ij})z_{ij}}{r_{ij}}
     \end{array}
     \}, &\text{full},  \\
     \{
     \begin{array}{c}
     s(r_{ij})
     \end{array}
-    \}, &\text{radial-only}, 
+    \}, &\text{radial-only},
     \end{cases}
     \label{eq:rij}
 ```
@@ -49,7 +49,7 @@ where $\bm{r}_{ij}=\bm{r}_j-\bm{r}_i = (x_{ij}, y_{ij}, z_{ij})$ is the relative
     \end{cases}
 ```
 
-where $x=\frac{r - r_s}{ r_c - r_s}$  switches from 1 at $r_s$ to 0 at the cutoff radius $r_c$. 
+where $x=\frac{r - r_s}{ r_c - r_s}$  switches from 1 at $r_s$ to 0 at the cutoff radius $r_c$.
 The switching function $s(r)$ is smooth in the sense that the second-order derivative is continuous.
 
 Each row of the embedding matrix  $\mathcal{G}^i \in \mathbb{R}^{N_c \times M}$ consists of $M$ nodes from the output layer of an NN function $\mathcal{N}_g$ of $s(r_{ij})$:
