@@ -12,11 +12,16 @@ from typing import (
     Optional,
 )
 
+from packaging.version import (
+    Version,
+)
+
 from deepmd.cluster import (
     get_resource,
 )
 from deepmd.env import (
     GLOBAL_CONFIG,
+    TF_VERSION,
     get_tf_default_nthreads,
     global_float_prec,
     tf,
@@ -237,6 +242,11 @@ class RunOptions:
                     "Count of local processes is larger than that of available GPUs!"
                 )
             self.my_device = f"gpu:{gpu_idx:d}"
+            if Version(TF_VERSION) >= Version("1.14"):
+                physical_devices = tf.config.experimental.list_physical_devices("GPU")
+                tf.config.experimental.set_visible_devices(
+                    physical_devices[gpu_idx], "GPU"
+                )
         else:
             self.my_device = "cpu:0"
 
