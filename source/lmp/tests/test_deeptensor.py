@@ -114,7 +114,7 @@ def test_compute_deeptensor_atom(lammps):
     lammps.variable("tensor atom c_tensor[1]")
     lammps.dump("1 all custom 1 dump id c_tensor[1]")
     lammps.run(0)
-    idx_map = lammps.lmp.numpy.extract_atom("id")
+    idx_map = lammps.lmp.numpy.extract_atom("id") - 1
     assert np.array(lammps.variables["tensor"].value) == pytest.approx(
         expected_d[idx_map]
     )

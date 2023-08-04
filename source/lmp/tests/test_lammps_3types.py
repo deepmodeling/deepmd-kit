@@ -302,7 +302,7 @@ def test_pair_deepmd(lammps):
     lammps.run(0)
     assert lammps.eval("pe") == pytest.approx(expected_e)
     for ii in range(7):
-        assert lammps.atoms[ii].force == pytest.approx(expected_f[lammps.atoms[ii].id])
+        assert lammps.atoms[ii].force == pytest.approx(expected_f[lammps.atoms[ii].id - 1])
     lammps.run(1)
 
 
@@ -319,8 +319,8 @@ def test_pair_deepmd_virial(lammps):
     lammps.run(0)
     assert lammps.eval("pe") == pytest.approx(expected_e)
     for ii in range(7):
-        assert lammps.atoms[ii].force == pytest.approx(expected_f[lammps.atoms[ii].id])
-    idx_map = lammps.lmp.numpy.extract_atom("id")
+        assert lammps.atoms[ii].force == pytest.approx(expected_f[lammps.atoms[ii].id - 1])
+    idx_map = lammps.lmp.numpy.extract_atom("id") - 1
     for ii in range(9):
         assert np.array(
             lammps.variables[f"virial{ii}"].value
@@ -337,7 +337,7 @@ def test_pair_deepmd_model_devi(lammps):
     lammps.run(0)
     assert lammps.eval("pe") == pytest.approx(expected_e)
     for ii in range(7):
-        assert lammps.atoms[ii].force == pytest.approx(expected_f[lammps.atoms[ii].id])
+        assert lammps.atoms[ii].force == pytest.approx(expected_f[lammps.atoms[ii].id - 1])
     # load model devi
     md = np.loadtxt(md_file.resolve())
     expected_md_f = np.linalg.norm(np.std([expected_f, expected_f2], axis=0), axis=1)
@@ -370,8 +370,8 @@ def test_pair_deepmd_model_devi_virial(lammps):
     lammps.run(0)
     assert lammps.eval("pe") == pytest.approx(expected_e)
     for ii in range(7):
-        assert lammps.atoms[ii].force == pytest.approx(expected_f[lammps.atoms[ii].id])
-    idx_map = lammps.lmp.numpy.extract_atom("id")
+        assert lammps.atoms[ii].force == pytest.approx(expected_f[lammps.atoms[ii].id - 1])
+    idx_map = lammps.lmp.numpy.extract_atom("id") - 1
     for ii in range(9):
         assert np.array(
             lammps.variables[f"virial{ii}"].value
@@ -402,7 +402,7 @@ def test_pair_deepmd_model_devi_atomic_relative(lammps):
     lammps.run(0)
     assert lammps.eval("pe") == pytest.approx(expected_e)
     for ii in range(7):
-        assert lammps.atoms[ii].force == pytest.approx(expected_f[lammps.atoms[ii].id])
+        assert lammps.atoms[ii].force == pytest.approx(expected_f[lammps.atoms[ii].id - 1])
     # load model devi
     md = np.loadtxt(md_file.resolve())
     norm = np.linalg.norm(np.mean([expected_f, expected_f2], axis=0), axis=1)
@@ -431,7 +431,7 @@ def test_pair_deepmd_model_devi_atomic_relative_v(lammps):
     lammps.run(0)
     assert lammps.eval("pe") == pytest.approx(expected_e)
     for ii in range(7):
-        assert lammps.atoms[ii].force == pytest.approx(expected_f[lammps.atoms[ii].id])
+        assert lammps.atoms[ii].force == pytest.approx(expected_f[lammps.atoms[ii].id - 1])
     md = np.loadtxt(md_file.resolve())
     expected_md_f = np.linalg.norm(np.std([expected_f, expected_f2], axis=0), axis=1)
     assert md[7:] == pytest.approx(expected_md_f)
@@ -460,6 +460,6 @@ def test_pair_deepmd_type_map(lammps_type_map):
     assert lammps_type_map.eval("pe") == pytest.approx(expected_e)
     for ii in range(7):
         assert lammps_type_map.atoms[ii].force == pytest.approx(
-            expected_f[lammps.atoms[ii].id]
+            expected_f[lammps.atoms[ii].id - 1]
         )
     lammps_type_map.run(1)
