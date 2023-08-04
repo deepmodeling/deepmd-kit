@@ -459,5 +459,7 @@ def test_pair_deepmd_type_map(lammps_type_map):
     lammps_type_map.run(0)
     assert lammps_type_map.eval("pe") == pytest.approx(expected_e)
     for ii in range(7):
-        assert lammps_type_map.atoms[ii].force == pytest.approx(expected_f[lammps.atoms[ii].id])
+        assert lammps_type_map.atoms[ii].force == pytest.approx(
+            expected_f[lammps.atoms[ii].id]
+        )
     lammps_type_map.run(1)
