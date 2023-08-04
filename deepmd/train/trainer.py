@@ -811,7 +811,7 @@ class DPTrainer:
         try:
             ckpt_prefix = self.saver.save(
                 self.sess,
-                self.save_ckpt,
+                os.path.join(os.getcwd(), self.save_ckpt),
                 global_step=cur_batch,
             )
         except google.protobuf.message.DecodeError as e:
