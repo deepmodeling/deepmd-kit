@@ -357,10 +357,11 @@ def test_pair_deepmd_lr(lammps):
             )
     assert lammps.eval("elong") == pytest.approx(expected_e_kspace)
     assert lammps.eval("pe") == pytest.approx(expected_e_lr)
-    for ii in range(6):
-        assert lammps.atoms[ii].force == pytest.approx(
-            expected_f_lr[lammps.atoms[ii].id - 1]
-        )
+    for ii in range(8):
+        if lammps.atoms[ii].id <= 6:
+            assert lammps.atoms[ii].force == pytest.approx(
+                expected_f_lr[lammps.atoms[ii].id - 1]
+            )
     lammps.run(1)
 
 
