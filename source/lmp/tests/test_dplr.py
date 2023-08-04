@@ -351,11 +351,11 @@ def test_pair_deepmd_lr(lammps):
     lammps.fix_modify("0 virial yes")
     lammps.run(0)
     for ii in range(2):
-        assert lammps.atoms[6 + ii].position == pytest.approx(expected_WC[ii])
+        assert lammps.atoms[6 + ii].position == pytest.approx(expected_WC[lammps.atoms[ii].id - 6])
     assert lammps.eval("elong") == pytest.approx(expected_e_kspace)
     assert lammps.eval("pe") == pytest.approx(expected_e_lr)
     for ii in range(6):
-        assert lammps.atoms[ii].force == pytest.approx(expected_f_lr[ii])
+        assert lammps.atoms[ii].force == pytest.approx(expected_f_lr[lammps.atoms[ii].id])
     lammps.run(1)
 
 
@@ -443,8 +443,8 @@ def test_min_dplr(lammps):
     lammps.min_style("cg")
     lammps.minimize("0 1.0e-6 2 2")
     for ii in range(8):
-        assert lammps.atoms[ii].position == pytest.approx(expected_x_min_step1[ii])
+        assert lammps.atoms[ii].position == pytest.approx(expected_x_min_step1[lammps.atoms[ii].id])
     assert lammps.eval("pe") == pytest.approx(expected_e_min_step1)
     assert lammps.eval("elong") == pytest.approx(expected_e_kspace_min_step1)
     for ii in range(8):
-        assert lammps.atoms[ii].force == pytest.approx(expected_f_min_step1[ii])
+        assert lammps.atoms[ii].force == pytest.approx(expected_f_min_step1[lammps.atoms[ii].id])
