@@ -275,7 +275,9 @@ def test_pair_deepmd(lammps):
     lammps.run(0)
     assert lammps.eval("pe") == pytest.approx(expected_e)
     for ii in range(6):
-        assert lammps.atoms[ii].force == pytest.approx(expected_f[ii])
+        assert lammps.atoms[ii].force == pytest.approx(
+            expected_f[lammps.atoms[ii].id - 1]
+        )
     lammps.run(1)
 
 
