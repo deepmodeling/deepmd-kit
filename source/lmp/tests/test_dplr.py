@@ -296,7 +296,9 @@ def _lammps(data_file) -> PyLammps:
 
 @pytest.fixture
 def lammps():
-    yield _lammps(data_file=data_file)
+    lmp = _lammps(data_file=data_file)
+    yield lmp
+    lmp.close()
 
 
 def test_pair_deepmd_sr(lammps):
