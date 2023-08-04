@@ -350,10 +350,11 @@ def test_pair_deepmd_lr(lammps):
     lammps.fix(f"0 all dplr model {pb_file.resolve()} type_associate 1 3 bond_type 1")
     lammps.fix_modify("0 virial yes")
     lammps.run(0)
-    for ii in range(2):
-        assert lammps.atoms[6 + ii].position == pytest.approx(
-            expected_WC[lammps.atoms[6 + ii].id - 7]
-        )
+    for ii in range(8):
+        if lammps.atoms[ii].id > 6:
+            assert lammps.atoms[ii].position == pytest.approx(
+                expected_WC[lammps.atoms[ii].id - 7]
+            )
     assert lammps.eval("elong") == pytest.approx(expected_e_kspace)
     assert lammps.eval("pe") == pytest.approx(expected_e_lr)
     for ii in range(6):
