@@ -832,7 +832,7 @@ class DPTrainer:
                 pass
             if platform.system() != "Windows":
                 # by default one does not have access to create symlink on Windows
-                os.symlink(ori_ff, new_ff)
+                os.symlink(os.path.relpath(ori_ff, os.path.dirname(new_ff)), new_ff)
             else:
                 shutil.copyfile(ori_ff, new_ff)
         log.info("saved checkpoint %s" % self.save_ckpt)
