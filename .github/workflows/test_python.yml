@@ -42,7 +42,7 @@ jobs:
         TENSORFLOW_VERSION: ${{ matrix.tf }}
         DP_BUILD_TESTING: 1
     - run: dp --version
-    - run: pytest --cov=deepmd source/tests --durations=0
+    - run: pytest --cov=deepmd --cov=deepmd_cli source/tests --durations=0
     - uses: codecov/codecov-action@v3
       with:
         gcov: true
