@@ -12,7 +12,7 @@ Cite DeePMD-kit and methods
    :filter: False
 
    Wang_ComputPhysCommun_2018_v228_p178
-   Zeng_arXiv_2023
+   Zeng_JChemPhys_2023_v159_p054801
 
 - If GPU version is used,
 
