@@ -134,8 +134,8 @@ setup(
             "sphinxcontrib-bibtex",
         ],
         "lmp": [
-            "lammps~=2022.6.23.4.0; platform_system=='Linux'",
-            "lammps~=2022.6.23.4.0; platform_system!='Linux'",
+            "lammps~=2023.8.2.0.0; platform_system=='Linux'",
+            "lammps~=2023.8.2.0.0; platform_system!='Linux'",
             *find_libpython_requires,
         ],
         "ipi": [
