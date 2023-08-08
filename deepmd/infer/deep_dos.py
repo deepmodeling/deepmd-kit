@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
 from typing import (
     TYPE_CHECKING,
@@ -63,29 +64,27 @@ class DeepDOS(DeepEval):
         # add these tensors on top of what is defined by DeepTensor Class
         # use this in favor of dict update to move attribute from class to
         # instance namespace
-        self.tensors = dict(
-            {
-                # descrpt attrs
-                "t_ntypes": "descrpt_attr/ntypes:0",
-                "t_rcut": "descrpt_attr/rcut:0",
-                # fitting attrs
-                "t_dfparam": "fitting_attr/dfparam:0",
-                "t_daparam": "fitting_attr/daparam:0",
-                "t_numb_dos": "fitting_attr/numb_dos:0",
-                # model attrs
-                "t_tmap": "model_attr/tmap:0",
-                # inputs
-                "t_coord": "t_coord:0",
-                "t_type": "t_type:0",
-                "t_natoms": "t_natoms:0",
-                "t_box": "t_box:0",
-                "t_mesh": "t_mesh:0",
-                # add output tensors
-                "t_dos": "o_dos:0",
-                "t_atom_dos": "o_atom_dos:0",
-                "t_descriptor": "o_descriptor:0",
-            },
-        )
+        self.tensors = {
+            # descrpt attrs
+            "t_ntypes": "descrpt_attr/ntypes:0",
+            "t_rcut": "descrpt_attr/rcut:0",
+            # fitting attrs
+            "t_dfparam": "fitting_attr/dfparam:0",
+            "t_daparam": "fitting_attr/daparam:0",
+            "t_numb_dos": "fitting_attr/numb_dos:0",
+            # model attrs
+            "t_tmap": "model_attr/tmap:0",
+            # inputs
+            "t_coord": "t_coord:0",
+            "t_type": "t_type:0",
+            "t_natoms": "t_natoms:0",
+            "t_box": "t_box:0",
+            "t_mesh": "t_mesh:0",
+            # add output tensors
+            "t_dos": "o_dos:0",
+            "t_atom_dos": "o_atom_dos:0",
+            "t_descriptor": "o_descriptor:0",
+        }
         DeepEval.__init__(
             self,
             model_file,
@@ -373,10 +372,7 @@ class DeepDOS(DeepEval):
             feed_dict_test[self.t_box] = cells
         else:
             raise RuntimeError
-        if pbc:
-            feed_dict_test[self.t_mesh] = make_default_mesh(cells)
-        else:
-            feed_dict_test[self.t_mesh] = np.array([], dtype=np.int32)
+        feed_dict_test[self.t_mesh] = make_default_mesh(pbc, mixed_type)
         if self.has_fparam:
             feed_dict_test[self.t_fparam] = np.reshape(fparam, [-1])
         if self.has_aparam:

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 import os
 import subprocess as sp
 import sys
@@ -98,7 +99,9 @@ def _lammps(data_file) -> PyLammps:
 
 @pytest.fixture
 def lammps():
-    yield _lammps(data_file=data_file)
+    lmp = _lammps(data_file=data_file)
+    yield lmp
+    lmp.close()
 
 
 # @pytest.fixture
@@ -113,4 +116,7 @@ def test_compute_deeptensor_atom(lammps):
     lammps.variable("tensor atom c_tensor[1]")
     lammps.dump("1 all custom 1 dump id c_tensor[1]")
     lammps.run(0)
-    assert np.array(lammps.variables["tensor"].value) == pytest.approx(expected_d)
+    idx_map = lammps.lmp.numpy.extract_atom("id") - 1
+    assert np.array(lammps.variables["tensor"].value) == pytest.approx(
+        expected_d[idx_map]
+    )

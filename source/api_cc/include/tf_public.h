@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 /**
  * @file tf_public.h
  * @brief This file declares incompleted TensorFlow class used for public

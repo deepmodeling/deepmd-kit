@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 #ifndef __wanghan__Interpolation_h__
 #define __wanghan__Interpolation_h__
 

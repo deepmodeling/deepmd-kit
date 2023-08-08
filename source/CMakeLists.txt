@@ -97,12 +97,16 @@ set(DP_VARIANT "cpu")
 
 # define USE_CUDA_TOOLKIT
 if(USE_CUDA_TOOLKIT)
-  set(CUDA_USE_STATIC_CUDA_RUNTIME
-      OFF
-      CACHE INTERNAL "")
-  find_package(CUDA REQUIRED)
+  cmake_minimum_required(VERSION 3.23)
+  find_package(CUDAToolkit REQUIRED)
+  if(NOT DEFINED CMAKE_CUDA_COMPILER)
+    set(CMAKE_CUDA_COMPILER ${CUDAToolkit_NVCC_EXECUTABLE})
+  endif()
+  if(NOT DEFINED CMAKE_CUDA_HOST_COMPILER)
+    set(CMAKE_CUDA_HOST_COMPILER ${CMAKE_CXX_COMPILER})
+  endif()
   add_definitions("-DGOOGLE_CUDA")
-  message(STATUS "Found CUDA in ${CUDA_TOOLKIT_ROOT_DIR}, build nv GPU support")
+  message(STATUS "Found CUDA in ${CUDAToolkit_BIN_DIR}, build nv GPU support")
   set(DP_VARIANT "cuda")
 else()
   message(STATUS "Will not build nv GPU support")
@@ -110,6 +114,7 @@ endif(USE_CUDA_TOOLKIT)
 
 # define USE_ROCM_TOOLKIT
 if(USE_ROCM_TOOLKIT)
+  cmake_minimum_required(VERSION 3.21)
   find_package(ROCM REQUIRED)
   add_definitions("-DTENSORFLOW_USE_ROCM")
   add_compile_definitions(__HIP_PLATFORM_HCC__)

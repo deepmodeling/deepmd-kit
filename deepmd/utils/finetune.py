@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 import json
 import logging
 from typing import (
@@ -102,9 +103,7 @@ def replace_model_params_with_pretrained_model(
             if "trainable" in cur_para.keys():
                 target_para["trainable"] = cur_para["trainable"]
             log.info(
-                "Change the '{}' from {} to {}.".format(
-                    config_key, str(cur_para), str(target_para)
-                )
+                f"Change the '{config_key}' from {str(cur_para)} to {str(target_para)}."
             )
             jdata["model"][config_key] = target_para
 

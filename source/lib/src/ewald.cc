@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 #include "ewald.h"
 
 #include "SimulationRegion.h"
@@ -38,8 +39,9 @@ VALUETYPE rec_err_esti(const VALUETYPE& test_q,
       for (mm[2] = -BD[2]; mm[2] <= BD[2]; ++mm[2]) {
         if (mm[0] >= -int(KK[0]) / 2 && mm[0] <= int(KK[0]) / 2 &&
             mm[1] >= -int(KK[1]) / 2 && mm[1] <= int(KK[1]) / 2 &&
-            mm[2] >= -int(KK[2]) / 2 && mm[2] <= int(KK[2]) / 2)
+            mm[2] >= -int(KK[2]) / 2 && mm[2] <= int(KK[2]) / 2) {
           continue;
+        }
         VALUETYPE rm[3] = {0, 0, 0};
         for (int dd = 0; dd < 3; ++dd) {
           rm[0] += mm[dd] * rec_box[dd * 3 + 0];
@@ -70,10 +72,14 @@ void cmpt_k(std::vector<int>& KK,
     VALUETYPE ll = sqrt(deepmd::dot3(boxt + dd * 3, boxt + dd * 3));
     KK[dd] = ll / param.spacing;
     // KK[dd] should be large enough
-    if (KK[dd] * param.spacing < ll) KK[dd] += 1;
+    if (KK[dd] * param.spacing < ll) {
+      KK[dd] += 1;
+    }
     assert(KK[dd] * param.spacing >= ll);
     // KK[dd] should be even
-    if ((KK[dd] / 2) * 2 != KK[dd]) KK[dd] += 1;
+    if ((KK[dd] / 2) * 2 != KK[dd]) {
+      KK[dd] += 1;
+    }
     assert((KK[dd] / 2) * 2 == KK[dd]);
   }
 }
@@ -115,7 +121,9 @@ void deepmd::ewald_recp(VALUETYPE& ener,
     totK *= (KK[dd] + 1);
   }
   int stride[3];
-  for (int dd = 0; dd < 3; ++dd) stride[dd] = KK[dd] + 1;
+  for (int dd = 0; dd < 3; ++dd) {
+    stride[dd] = KK[dd] + 1;
+  }
 
   // compute the sq
   std::vector<std::vector<VALUETYPE> > thread_sqr(nthreads),
@@ -141,7 +149,9 @@ void deepmd::ewald_recp(VALUETYPE& ener,
         mr[1] = ir[1] * mm1;
         int shift1 = (mm1 + KK[1] / 2) * stride[2];
         for (int mm2 = -KK[2] / 2; mm2 <= KK[2] / 2; ++mm2) {
-          if (mm0 == 0 && mm1 == 0 && mm2 == 0) continue;
+          if (mm0 == 0 && mm1 == 0 && mm2 == 0) {
+            continue;
+          }
           int mc = shift0 + shift1 + mm2 + KK[2] / 2;
           mr[2] = ir[2] * mm2;
           VALUETYPE mdotr = 2. * M_PI * (mr[0] + mr[1] + mr[2]);
@@ -190,7 +200,9 @@ void deepmd::ewald_recp(VALUETYPE& ener,
     //     int shift1 = (mm1 + KK[1]/2) * stride[2];
     //     for (int mm2 = -KK[2]/2; mm2 <= KK[2]/2; ++mm2){
     // 	int mc = shift0 + shift1 + mm2 + KK[2]/2;
-    if (mm0 == 0 && mm1 == 0 && mm2 == 0) continue;
+    if (mm0 == 0 && mm1 == 0 && mm2 == 0) {
+      continue;
+    }
     // \bm m and \vert m \vert^2
     VALUETYPE rm[3] = {0, 0, 0};
     rm[0] += mm0 * rec_box[0 * 3 + 0];
@@ -215,7 +227,9 @@ void deepmd::ewald_recp(VALUETYPE& ener,
     for (int dd0 = 0; dd0 < 3; ++dd0) {
       for (int dd1 = 0; dd1 < 3; ++dd1) {
         VALUETYPE tmp = vpref * rm[dd0] * rm[dd1];
-        if (dd0 == dd1) tmp += 1;
+        if (dd0 == dd1) {
+          tmp += 1;
+        }
         thread_virial[thread_id][dd0 * 3 + dd1] += eincr * tmp;
       }
     }

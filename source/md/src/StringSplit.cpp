@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 #include "StringSplit.h"
 
 void StringOperation::split(const std::string& in,
@@ -33,5 +34,7 @@ void StringOperation::split(const std::string& in,
     out.push_back(token);
     s.erase(0, pos + len);
   }
-  if (!s.empty()) out.push_back(s);
+  if (!s.empty()) {
+    out.push_back(s);
+  }
 }

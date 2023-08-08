@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 #include "Tabulated.h"
 
 #include <cmath>
@@ -104,15 +105,21 @@ void Tabulated::compute(VALUETYPE &ener,
   for (unsigned ii = 0; ii < nlist.size(); ++ii) {
     for (unsigned _ = 0; _ < nlist[ii].size(); ++_) {
       int jj = nlist[ii][_];
-      if (jj < ii) continue;
+      if (jj < ii) {
+        continue;
+      }
       VALUETYPE diff[3];
       region.diffNearestNeighbor(&coord[ii * 3], &coord[jj * 3], diff);
       VALUETYPE r2 = diff[0] * diff[0] + diff[1] * diff[1] + diff[2] * diff[2];
       if (r2 < rc2) {
         VALUETYPE ae, af;
         tb_inner(ae, af, r2);
-        for (int dd = 0; dd < 3; ++dd) force[ii * 3 + dd] += af * diff[dd];
-        for (int dd = 0; dd < 3; ++dd) force[jj * 3 + dd] -= af * diff[dd];
+        for (int dd = 0; dd < 3; ++dd) {
+          force[ii * 3 + dd] += af * diff[dd];
+        }
+        for (int dd = 0; dd < 3; ++dd) {
+          force[jj * 3 + dd] -= af * diff[dd];
+        }
         ener += ae;
         for (int dd0 = 0; dd0 < 3; ++dd0) {
           for (int dd1 = 0; dd1 < 3; ++dd1) {
@@ -135,7 +142,9 @@ void Tabulated::compute(VALUETYPE &ener,
   for (unsigned ii = 0; ii < nlist.size(); ++ii) {
     for (unsigned _ = 0; _ < nlist[ii].size(); ++_) {
       int jj = nlist[ii][_];
-      if (jj < ii) continue;
+      if (jj < ii) {
+        continue;
+      }
       VALUETYPE diff[3];
       region.diffNearestNeighbor(&coord[ii * 3], &coord[jj * 3], diff);
       VALUETYPE r2 = diff[0] * diff[0] + diff[1] * diff[1] + diff[2] * diff[2];
@@ -148,8 +157,12 @@ void Tabulated::compute(VALUETYPE &ener,
           ae *= qiqj;
           af *= qiqj;
         }
-        for (int dd = 0; dd < 3; ++dd) force[ii * 3 + dd] += af * diff[dd];
-        for (int dd = 0; dd < 3; ++dd) force[jj * 3 + dd] -= af * diff[dd];
+        for (int dd = 0; dd < 3; ++dd) {
+          force[ii * 3 + dd] += af * diff[dd];
+        }
+        for (int dd = 0; dd < 3; ++dd) {
+          force[jj * 3 + dd] -= af * diff[dd];
+        }
         ener += ae;
         for (int dd0 = 0; dd0 < 3; ++dd0) {
           for (int dd1 = 0; dd1 < 3; ++dd1) {

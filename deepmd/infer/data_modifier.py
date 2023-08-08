@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 import os
 from typing import (
     List,
@@ -6,6 +7,7 @@ from typing import (
 
 import numpy as np
 
+import deepmd.op  # noqa: F401
 from deepmd.common import (
     make_default_mesh,
     select_idx_map,
@@ -343,7 +345,7 @@ class DipoleChargeModifier(DeepDipole):
         # make natoms_vec and default_mesh
         natoms_vec = self.make_natoms_vec(atom_types)
         assert natoms_vec[0] == natoms
-        default_mesh = make_default_mesh(cells)
+        default_mesh = make_default_mesh(True, False)
 
         # evaluate
         tensor = []

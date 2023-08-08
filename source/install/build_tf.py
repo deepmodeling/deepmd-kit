@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: LGPL-3.0-or-later
 """The easy script to build TensorFlow C++ Library.
 
 Required dependencies:
@@ -351,16 +352,14 @@ def include_patterns(*include_patterns):
     """
 
     def _ignore_patterns(path, names):
-        keep = set(
-            name for pattern in include_patterns for name in filter(names, pattern)
-        )
-        removed_dir = any([x.startswith("_") for x in path.split(os.path.sep)])
-        ignore = set(
+        keep = {name for pattern in include_patterns for name in filter(names, pattern)}
+        removed_dir = any(x.startswith("_") for x in path.split(os.path.sep))
+        ignore = {
             name
             for name in names
             if (name not in keep or removed_dir)
             and not os.path.isdir(os.path.join(path, name))
-        )
+        }
         return ignore
 
     return _ignore_patterns
@@ -408,6 +407,12 @@ RESOURCES = {
         "tensorflow-2.10.0.tar.gz",
         "https://github.com/tensorflow/tensorflow/archive/refs/tags/v2.10.0.tar.gz",
         "b5a1bb04c84b6fe1538377e5a1f649bb5d5f0b2e3625a3c526ff3a8af88633e8",
+        gzip="tensorflow",
+    ),
+    "tensorflow-2.12.0": OnlineResource(
+        "tensorflow-2.12.0.tar.gz",
+        "https://github.com/tensorflow/tensorflow/archive/refs/tags/v2.12.0.tar.gz",
+        "c030cb1905bff1d2446615992aad8d8d85cbe90c4fb625cee458c63bf466bc8e",
         gzip="tensorflow",
     ),
 }
@@ -583,7 +588,7 @@ class BuildTensorFlow(Build):
 
     def __init__(
         self,
-        version: str = "2.9.1",
+        version: str = "2.12.0",
         enable_mkl: bool = True,
         enable_cuda: bool = False,
         enable_rocm: bool = False,
@@ -666,6 +671,12 @@ class BuildTensorFlow(Build):
             include_dst / "tensorflow" / "core",
             ignore=include_patterns("*.h", "*.inc"),
         )
+        if tuple([int(x) for x in self.version.split(".")[:2]]) >= (2, 11):
+            copytree2(
+                src / "tensorflow" / "tsl",
+                include_dst / "tensorflow" / "core",
+                ignore=include_patterns("*.h", "*.inc"),
+            )
         # bazel-bin includes generated headers like version, pb.h, ..
         copytree2(
             src / "bazel-bin", include_dst, ignore=include_patterns("*.h", "*.inc")

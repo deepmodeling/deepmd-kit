@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 #include <cmath>
 
 #include "RandomGenerator.h"
@@ -92,7 +93,9 @@ void RandomGenerator_MT19937::init_by_array(unsigned long init_key[],
       mt[0] = mt[N - 1];
       i = 1;
     }
-    if (j >= key_length) j = 0;
+    if (j >= key_length) {
+      j = 0;
+    }
   }
   for (k = N - 1; k; k--) {
     mt[i] = (mt[i] ^ ((mt[i - 1] ^ (mt[i - 1] >> 30)) * 1566083941UL)) -
@@ -117,8 +120,9 @@ unsigned long RandomGenerator_MT19937::genrand_int32(void) {
   if (mti >= N) { /* generate N words at one time */
     int kk;
 
-    if (mti == N + 1)       /* if init_genrand() has not been called, */
+    if (mti == N + 1) {     /* if init_genrand() has not been called, */
       init_genrand(5489UL); /* a default initial seed is used */
+    }
 
     for (kk = 0; kk < N - M; kk++) {
       y = (mt[kk] & UPPER_MASK) | (mt[kk + 1] & LOWER_MASK);

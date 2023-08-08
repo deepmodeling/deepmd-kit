@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 #include <cstdint>
 #include <fstream>
 #include <iomanip>
@@ -32,12 +33,17 @@ const double icvt_f = 1. / cvt_f;
 char *trimwhitespace(char *str) {
   char *end;
   // Trim leading space
-  while (isspace((unsigned char)*str)) str++;
-  if (*str == 0)  // All spaces?
+  while (isspace((unsigned char)*str)) {
+    str++;
+  }
+  if (*str == 0) {  // All spaces?
     return str;
+  }
   // Trim trailing space
   end = str + strlen(str) - 1;
-  while (end > str && isspace((unsigned char)*end)) end--;
+  while (end > str && isspace((unsigned char)*end)) {
+    end--;
+  }
   // Write new null terminator
   *(end + 1) = 0;
   return str;
@@ -52,10 +58,11 @@ void normalize_coord(std::vector<double> &coord,
     region.phys2Inter(inter, &coord[3 * ii]);
     for (int dd = 0; dd < 3; ++dd) {
       inter[dd] -= int(floor(inter[dd]));
-      if (inter[dd] < 0)
+      if (inter[dd] < 0) {
         inter[dd] += 1.;
-      else if (inter[dd] >= 1)
+      } else if (inter[dd] >= 1) {
         inter[dd] -= 1.;
+      }
     }
     region.inter2Phys(&coord[3 * ii], inter);
   }
@@ -132,31 +139,37 @@ int main(int argc, char *argv[]) {
   while (true) {
     readbuffer_(&socket, header, MSGLEN);
     std::string header_str(trimwhitespace(header));
-    if (b_verb) std::cout << "# get header " << header_str << std::endl;
+    if (b_verb) {
+      std::cout << "# get header " << header_str << std::endl;
+    }
 
     if (header_str == "STATUS") {
       if (!isinit) {
         writebuffer_(&socket, msg_needinit, MSGLEN);
-        if (b_verb)
+        if (b_verb) {
           std::cout << "# send back  "
                     << "NEEDINIT" << std::endl;
+        }
       } else if (hasdata) {
         writebuffer_(&socket, msg_havedata, MSGLEN);
-        if (b_verb)
+        if (b_verb) {
           std::cout << "# send back  "
                     << "HAVEDATA" << std::endl;
+        }
       } else {
         writebuffer_(&socket, msg_ready, MSGLEN);
-        if (b_verb)
+        if (b_verb) {
           std::cout << "# send back  "
                     << "READY" << std::endl;
+        }
       }
     } else if (header_str == "INIT") {
       assert(4 == sizeof(int32_t));
       readbuffer_(&socket, (char *)(&cbuf), sizeof(int32_t));
       readbuffer_(&socket, initbuffer, cbuf);
-      if (b_verb)
+      if (b_verb) {
         std::cout << "Init sys from wrapper, using " << initbuffer << std::endl;
+      }
     } else if (header_str == "POSDATA") {
       assert(8 == sizeof(double));
 
@@ -172,9 +185,10 @@ int main(int argc, char *argv[]) {
       readbuffer_(&socket, (char *)(&cbuf), sizeof(int32_t));
       if (natoms < 0) {
         natoms = cbuf;
-        if (b_verb)
+        if (b_verb) {
           std::cout << "# get number of atoms in system: " << natoms
                     << std::endl;
+        }
 
         dcoord.resize(3 * natoms);
         dforce.resize(3 * natoms, 0);
@@ -203,9 +217,10 @@ int main(int argc, char *argv[]) {
       for (int ii = 0; ii < 9; ++ii) {
         virial[ii] = dvirial[(ii % 3) * 3 + (ii / 3)] * icvt_ener * (1.0);
       }
-      if (b_verb)
+      if (b_verb) {
         std::cout << "# energy of sys. : " << std::scientific
                   << std::setprecision(10) << dener << std::endl;
+      }
       writebuffer_(&socket, msg_forceready, MSGLEN);
       writebuffer_(&socket, (char *)(&ener), sizeof(double));
       writebuffer_(&socket, (char *)(&natoms), sizeof(int32_t));

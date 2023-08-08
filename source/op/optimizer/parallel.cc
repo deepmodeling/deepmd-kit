@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 // only support v1.15 or v2
 #include "tensorflow/core/public/version.h"
 // skip windows
@@ -59,12 +60,16 @@ Status ParallelProdForce(RemapperContext *ctx,
                          std::vector<bool> *invalidated_nodes,
                          std::vector<bool> *nodes_to_delete) {
   // skip on GPUs
-  if (GetNumAvailableGPUs() > 0) return Status();
+  if (GetNumAvailableGPUs() > 0) {
+    return Status();
+  }
 
   const NodeDef *ori_node = ctx->graph_view.GetNode(node_index)->node();
   auto &src_attr = ori_node->attr();
   TF_INT64 tot = GetNThreads();
-  if (tot <= 1) return Status();
+  if (tot <= 1) {
+    return Status();
+  }
 
   NodeDef sum_node;
   sum_node.set_name(ori_node->name());
@@ -83,7 +88,9 @@ Status ParallelProdForce(RemapperContext *ctx,
     sub_node.set_op("ParallelProdForceSeA");
     sub_node.set_device(ori_node->device());
     // copy input
-    for (int jj = 0; jj < 4; ++jj) sub_node.add_input(ori_node->input(jj));
+    for (int jj = 0; jj < 4; ++jj) {
+      sub_node.add_input(ori_node->input(jj));
+    }
     // set frac
     auto *sub_attr = sub_node.mutable_attr();
     (*sub_attr)["T"] = src_attr.at("T");

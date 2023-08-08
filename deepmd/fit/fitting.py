@@ -1,9 +1,16 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
+from abc import (
+    abstractmethod,
+)
 from typing import (
     Callable,
 )
 
 from deepmd.env import (
     tf,
+)
+from deepmd.loss.loss import (
+    Loss,
 )
 from deepmd.utils import (
     Plugin,
@@ -78,3 +85,20 @@ class Fitting(PluginVariant):
             "Fitting %s doesn't support initialization from the given variables!"
             % type(self).__name__
         )
+
+    @abstractmethod
+    def get_loss(self, loss: dict, lr) -> Loss:
+        """Get the loss function.
+
+        Parameters
+        ----------
+        loss : dict
+            the loss dict
+        lr : LearningRateExp
+            the learning rate
+
+        Returns
+        -------
+        Loss
+            the loss function
+        """

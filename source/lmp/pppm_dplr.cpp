@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 #include "pppm_dplr.h"
 
 #include <math.h>
@@ -50,8 +51,9 @@ PPPMDPLR::PPPMDPLR(LAMMPS *lmp)
 void PPPMDPLR::init() {
   // DPLR PPPM requires newton on, b/c it computes forces on ghost atoms
 
-  if (force->newton == 0)
+  if (force->newton == 0) {
     error->all(FLERR, "Kspace style pppm/dplr requires newton on");
+  }
 
   PPPM::init();
 
@@ -73,7 +75,9 @@ void PPPMDPLR::compute(int eflag, int vflag) {
 
   ev_init(eflag, vflag);
 
-  if (evflag_atom && !peratom_allocate_flag) allocate_peratom();
+  if (evflag_atom && !peratom_allocate_flag) {
+    allocate_peratom();
+  }
 
   // if atom count has changed, update qsum and qsqsum
 
@@ -84,13 +88,15 @@ void PPPMDPLR::compute(int eflag, int vflag) {
 
   // return if there are no charges
 
-  if (qsqsum == 0.0) return;
+  if (qsqsum == 0.0) {
+    return;
+  }
 
   // convert atoms from box to lamda coords
 
-  if (triclinic == 0)
+  if (triclinic == 0) {
     boxlo = domain->boxlo;
-  else {
+  } else {
     boxlo = domain->boxlo_lamda;
     domain->x2lamda(atom->nlocal);
   }
@@ -191,7 +197,9 @@ void PPPMDPLR::compute(int eflag, int vflag) {
 
   // extra per-atom energy/virial communication
 
-  if (evflag_atom) fieldforce_peratom();
+  if (evflag_atom) {
+    fieldforce_peratom();
+  }
 
   // sum global energy across procs and add in volume-dependent term
 
@@ -214,7 +222,9 @@ void PPPMDPLR::compute(int eflag, int vflag) {
   if (vflag_global) {
     double virial_all[6];
     MPI_Allreduce(virial, virial_all, 6, MPI_DOUBLE, MPI_SUM, world);
-    for (i = 0; i < 6; i++) virial[i] = 0.5 * qscale * volume * virial_all[i];
+    for (i = 0; i < 6; i++) {
+      virial[i] = 0.5 * qscale * volume * virial_all[i];
+    }
   }
 
   // per-atom energy/virial
@@ -225,7 +235,9 @@ void PPPMDPLR::compute(int eflag, int vflag) {
     double *q = atom->q;
     int nlocal = atom->nlocal;
     int ntotal = nlocal;
-    if (tip4pflag) ntotal += atom->nghost;
+    if (tip4pflag) {
+      ntotal += atom->nghost;
+    }
 
     if (eflag_atom) {
       for (i = 0; i < nlocal; i++) {
@@ -234,22 +246,31 @@ void PPPMDPLR::compute(int eflag, int vflag) {
                     MY_PI2 * q[i] * qsum / (g_ewald * g_ewald * volume);
         eatom[i] *= qscale;
       }
-      for (i = nlocal; i < ntotal; i++) eatom[i] *= 0.5 * qscale;
+      for (i = nlocal; i < ntotal; i++) {
+        eatom[i] *= 0.5 * qscale;
+      }
     }
 
     if (vflag_atom) {
-      for (i = 0; i < ntotal; i++)
-        for (j = 0; j < 6; j++) vatom[i][j] *= 0.5 * qscale;
+      for (i = 0; i < ntotal; i++) {
+        for (j = 0; j < 6; j++) {
+          vatom[i][j] *= 0.5 * qscale;
+        }
+      }
     }
   }
 
   // 2d slab correction
 
-  if (slabflag == 1) slabcorr();
+  if (slabflag == 1) {
+    slabcorr();
+  }
 
   // convert atoms back from lamda to box coords
 
-  if (triclinic) domain->lamda2x(atom->nlocal);
+  if (triclinic) {
+    domain->lamda2x(atom->nlocal);
+  }
 }
 
 /* ----------------------------------------------------------------------
@@ -310,7 +331,9 @@ void PPPMDPLR::fieldforce_ik() {
     const double qfactor = qqrd2e * scale * q[i];
     fele[i * 3 + 0] += qfactor * ekx;
     fele[i * 3 + 1] += qfactor * eky;
-    if (slabflag != 2) fele[i * 3 + 2] += qfactor * ekz;
+    if (slabflag != 2) {
+      fele[i * 3 + 2] += qfactor * ekz;
+    }
   }
 }
 
@@ -400,6 +423,8 @@ void PPPMDPLR::fieldforce_ad() {
     sf = sf_coeff[4] * sin(2 * MY_PI * s3);
     sf += sf_coeff[5] * sin(4 * MY_PI * s3);
     sf *= 2 * q[i] * q[i];
-    if (slabflag != 2) fele[i * 3 + 2] += qfactor * (ekz * q[i] - sf);
+    if (slabflag != 2) {
+      fele[i * 3 + 2] += qfactor * (ekz * q[i] - sf);
+    }
   }
 }

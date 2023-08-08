@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 #include <gtest/gtest.h>
 
 #include <iostream>
@@ -119,7 +120,9 @@ TEST_F(TestSoftMinSwitch, cpu_num_deriv) {
     int i_idx = ii;
     for (int jj = 0; jj < nnei; ++jj) {
       int j_idx = nlist[ii * nnei + jj];
-      if (j_idx < 0) continue;
+      if (j_idx < 0) {
+        continue;
+      }
       for (int dd = 0; dd < 3; ++dd) {
         std::vector<double> posi_0 = posi_cpy;
         std::vector<double> posi_1 = posi_cpy;

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 #include "compute_deeptensor_atom.h"
 
 #include <algorithm>
@@ -25,7 +26,9 @@ using namespace LAMMPS_NS;
 
 ComputeDeeptensorAtom::ComputeDeeptensorAtom(LAMMPS *lmp, int narg, char **arg)
     : Compute(lmp, narg, arg), dp(lmp), tensor(nullptr) {
-  if (narg < 4) error->all(FLERR, "Illegal compute deeptensor/atom command");
+  if (narg < 4) {
+    error->all(FLERR, "Illegal compute deeptensor/atom command");
+  }
 
   // parse args
   std::string model_file = std::string(arg[3]);

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
 import os
 from typing import (
@@ -14,7 +15,7 @@ from deepmd.env import (
     tf,
 )
 from deepmd.nvnmd.data.data import (
-    jdata_deepmd_input,
+    jdata_deepmd_input_v0,
 )
 from deepmd.nvnmd.entrypoints.mapt import (
     mapt,
@@ -54,9 +55,9 @@ jdata_cmd_freeze = {
 def normalized_input(fn, PATH_CNN, CONFIG_CNN):
     r"""Normalize a input script file for continuous neural network."""
     f = FioDic()
-    jdata = f.load(fn, jdata_deepmd_input)
+    jdata = f.load(fn, jdata_deepmd_input_v0)
     # nvnmd
-    jdata_nvnmd = jdata_deepmd_input["nvnmd"]
+    jdata_nvnmd = jdata_deepmd_input_v0["nvnmd"]
     jdata_nvnmd["enable"] = True
     jdata_nvnmd["config_file"] = CONFIG_CNN
     jdata_nvnmd_ = f.get(jdata, "nvnmd", jdata_nvnmd)
@@ -96,8 +97,9 @@ def normalized_input(fn, PATH_CNN, CONFIG_CNN):
 def normalized_input_qnn(jdata, PATH_QNN, CONFIG_CNN, WEIGHT_CNN, MAP_CNN):
     r"""Normalize a input script file for quantize neural network."""
     #
-    jdata_nvnmd = jdata_deepmd_input["nvnmd"]
+    jdata_nvnmd = jdata_deepmd_input_v0["nvnmd"]
     jdata_nvnmd["enable"] = True
+    jdata_nvnmd["version"] = nvnmd_cfg.version
     jdata_nvnmd["config_file"] = CONFIG_CNN
     jdata_nvnmd["weight_file"] = WEIGHT_CNN
     jdata_nvnmd["map_file"] = MAP_CNN
@@ -117,6 +119,7 @@ def train_nvnmd(
     INPUT: str,
     restart: Optional[str],
     step: str,
+    skip_neighbor_stat: bool = False,
     **kwargs,
 ):
     # test input
@@ -140,6 +143,7 @@ def train_nvnmd(
         jdata["INPUT"] = INPUT_CNN
         jdata["log_path"] = LOG_CNN
         jdata["restart"] = restart
+        jdata["skip_neighbor_stat"] = skip_neighbor_stat
         train(**jdata)
         tf.reset_default_graph()
         # freeze
@@ -176,6 +180,7 @@ def train_nvnmd(
         jdata = jdata_cmd_train.copy()
         jdata["INPUT"] = INPUT_QNN
         jdata["log_path"] = LOG_QNN
+        jdata["skip_neighbor_stat"] = skip_neighbor_stat
         train(**jdata)
         tf.reset_default_graph()
         # freeze

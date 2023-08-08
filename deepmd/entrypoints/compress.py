@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 """Compress a model, which including tabulating the embedding-net."""
 
 import json

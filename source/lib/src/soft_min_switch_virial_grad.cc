@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 #include "soft_min_switch_virial_grad.h"
 
 template <typename FPTYPE>
@@ -27,7 +28,9 @@ void deepmd::soft_min_switch_virial_grad_cpu(FPTYPE* grad_net,
     // loop over neighbors
     for (int jj = 0; jj < nnei; ++jj) {
       int j_idx = nlist[i_idx * nnei + jj];
-      if (j_idx < 0) continue;
+      if (j_idx < 0) {
+        continue;
+      }
       int rij_idx_shift = (ii * nnei + jj) * 3;
       for (int dd0 = 0; dd0 < 3; ++dd0) {
         for (int dd1 = 0; dd1 < 3; ++dd1) {

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 #include "fmt_nlist.h"
 
 #include <algorithm>
@@ -63,8 +64,9 @@ int format_nlist_i_fill_a(std::vector<int> &fmt_nei_idx_a,
                                  posi[i_idx * 3 + 1], posi[i_idx * 3 + 2],
                                  diff[0], diff[1], diff[2]);
     } else {
-      for (int dd = 0; dd < 3; ++dd)
+      for (int dd = 0; dd < 3; ++dd) {
         diff[dd] = posi[j_idx * 3 + dd] - posi[i_idx * 3 + dd];
+      }
     }
     double rr = sqrt(deepmd::dot3(diff, diff));
     if (rr <= rcut) {
@@ -114,7 +116,9 @@ int format_nlist_i_cpu(std::vector<int> &fmt_nei_idx_a,
     // rcut is float in this function, so float rr is enough
     float diff[3];
     const int &j_idx = nei_idx[kk];
-    if (type[j_idx] < 0) continue;
+    if (type[j_idx] < 0) {
+      continue;
+    }
     for (int dd = 0; dd < 3; ++dd) {
       diff[dd] = (float)posi[j_idx * 3 + dd] - (float)posi[i_idx * 3 + dd];
     }
