@@ -1,3 +1,5 @@
+
+// SPDX-License-Identifier: LGPL-3.0-or-later
 #include "custom_op.h"
 #include "tabulate.h"
 
@@ -61,7 +63,33 @@ REGISTER_OP("TabulateFusionSeAGradGrad")
     .Input("dz_dy_dem_x: T")
     .Input("dz_dy_dem: T")
     .Input("descriptor: T")
-    .Output("dz_dy: T");
+    .Output("dz_dy: T")
+    .Attr("is_sorted: bool = true");
+
+REGISTER_OP("TabulateFusionSeAtten")
+    .Attr("T: {float, double} = DT_DOUBLE")
+    .Input("table: T")
+    .Input("table_info: T")
+    .Input("em_x: T")
+    .Input("em: T")
+    .Input("two_embed: T")
+    .Attr("last_layer_size: int")
+    .Attr("is_sorted: bool = true")
+    .Output("descriptor: T");
+
+REGISTER_OP("TabulateFusionSeAttenGrad")
+    .Attr("T: {float, double} = DT_DOUBLE")
+    .Input("table: T")
+    .Input("table_info: T")
+    .Input("em_x: T")
+    .Input("em: T")
+    .Input("two_embed: T")
+    .Input("dy: T")
+    .Input("descriptor: T")
+    .Output("dy_dem_x: T")
+    .Output("dy_dem: T")
+    .Output("dy_dtwo: T")
+    .Attr("is_sorted: bool = true");
 
 REGISTER_OP("TabulateFusionSeT")
     .Attr("T: {float, double} = DT_DOUBLE")
@@ -163,22 +191,25 @@ class TabulateFusionSeAOp : public OpKernel {
     const FPTYPE* table_info = table_info_tensor.flat<FPTYPE>().data();
     const FPTYPE* em_x = em_x_tensor.flat<FPTYPE>().data();
     const FPTYPE* em = em_tensor.flat<FPTYPE>().data();
+    const FPTYPE* two_embed = nullptr;
     const int nloc = em_tensor.shape().dim_size(0);
     const int nnei = em_tensor.shape().dim_size(1);
 
     if (device == "GPU") {
 #if GOOGLE_CUDA
       deepmd::tabulate_fusion_se_a_gpu_cuda(descriptor, table, table_info, em_x,
-                                            em, nloc, nnei, last_layer_size);
+                                            em, two_embed, nloc, nnei,
+                                            last_layer_size);
 #endif  // GOOGLE_CUDA
 
 #if TENSORFLOW_USE_ROCM
       deepmd::tabulate_fusion_se_a_gpu_rocm(descriptor, table, table_info, em_x,
-                                            em, nloc, nnei, last_layer_size);
+                                            em, two_embed, nloc, nnei,
+                                            last_layer_size);
 #endif  // TENSORFLOW_USE_ROCM
     } else if (device == "CPU") {
       deepmd::tabulate_fusion_se_a_cpu(descriptor, table, table_info, em_x, em,
-                                       nloc, nnei, last_layer_size);
+                                       two_embed, nloc, nnei, last_layer_size);
     }
   }
 
@@ -204,6 +235,7 @@ class TabulateFusionSeAGradOp : public OpKernel {
     const Tensor& table_info_tensor = context->input(context_input_index++);
     const Tensor& em_x_tensor = context->input(context_input_index++);
     const Tensor& em_tensor = context->input(context_input_index++);
+
     const Tensor& dy_tensor = context->input(context_input_index++);
     const Tensor& descriptor_tensor = context->input(context_input_index++);
     // set size of the sample
@@ -223,11 +255,13 @@ class TabulateFusionSeAGradOp : public OpKernel {
     // flat the tensors
     FPTYPE* dy_dem_x = dy_dem_x_tensor->flat<FPTYPE>().data();
     FPTYPE* dy_dem = dy_dem_tensor->flat<FPTYPE>().data();
+
     const FPTYPE* descriptor = descriptor_tensor.flat<FPTYPE>().data();
     const FPTYPE* table = table_tensor.flat<FPTYPE>().data();
     const FPTYPE* table_info = table_info_tensor.flat<FPTYPE>().data();
     const FPTYPE* em_x = em_x_tensor.flat<FPTYPE>().data();
     const FPTYPE* em = em_tensor.flat<FPTYPE>().data();
+    const FPTYPE* two_embed = nullptr;
     const FPTYPE* dy = dy_tensor.flat<FPTYPE>().data();
     const int nloc = em_tensor.shape().dim_size(0);
     const int nnei = em_tensor.shape().dim_size(1);
@@ -235,19 +269,19 @@ class TabulateFusionSeAGradOp : public OpKernel {
 
     if (device == "GPU") {
 #if GOOGLE_CUDA
-      deepmd::tabulate_fusion_se_a_grad_gpu_cuda(dy_dem_x, dy_dem, table,
-                                                 table_info, em_x, em, dy, nloc,
-                                                 nnei, last_layer_size);
+      deepmd::tabulate_fusion_se_a_grad_gpu_cuda(
+          dy_dem_x, dy_dem, table, table_info, em_x, em, two_embed, dy, nloc,
+          nnei, last_layer_size);
 #endif  // GOOGLE_CUDA
 
 #if TENSORFLOW_USE_ROCM
-      deepmd::tabulate_fusion_se_a_grad_gpu_rocm(dy_dem_x, dy_dem, table,
-                                                 table_info, em_x, em, dy, nloc,
-                                                 nnei, last_layer_size);
+      deepmd::tabulate_fusion_se_a_grad_gpu_rocm(
+          dy_dem_x, dy_dem, table, table_info, em_x, em, two_embed, dy, nloc,
+          nnei, last_layer_size);
 #endif  // TENSORFLOW_USE_ROCM
     } else if (device == "CPU") {
       deepmd::tabulate_fusion_se_a_grad_cpu(dy_dem_x, dy_dem, table, table_info,
-                                            em_x, em, dy, nloc, nnei,
+                                            em_x, em, two_embed, dy, nloc, nnei,
                                             last_layer_size);
     }
   }
@@ -260,7 +294,9 @@ template <typename Device, typename FPTYPE>
 class TabulateFusionSeAGradGradOp : public OpKernel {
  public:
   explicit TabulateFusionSeAGradGradOp(OpKernelConstruction* context)
-      : OpKernel(context) {}
+      : OpKernel(context) {
+    OP_REQUIRES_OK(context, context->GetAttr("is_sorted", &is_sorted));
+  }
   void Compute(OpKernelContext* context) override {
     // Grab the input tensor
     int context_input_index = 0;
@@ -299,25 +335,182 @@ class TabulateFusionSeAGradGradOp : public OpKernel {
 #if GOOGLE_CUDA
       deepmd::tabulate_fusion_se_a_grad_grad_gpu_cuda(
           dz_dy, table, table_info, em_x, em, dz_dy_dem_x, dz_dy_dem, nloc,
-          nnei, last_layer_size);
+          nnei, last_layer_size, is_sorted);
 #endif  // GOOGLE_CUDA
 #if TENSORFLOW_USE_ROCM
       deepmd::tabulate_fusion_se_a_grad_grad_gpu_rocm(
           dz_dy, table, table_info, em_x, em, dz_dy_dem_x, dz_dy_dem, nloc,
-          nnei, last_layer_size);
+          nnei, last_layer_size, is_sorted);
 #endif  // TENSORFLOW_USE_ROCM
       OP_REQUIRES(context, (last_layer_size <= 1024),
                   errors::InvalidArgument(
                       "In the process of model compression, the size of the "
                       "last layer of embedding net must be less than 1024!"));
     } else if (device == "CPU") {
-      deepmd::tabulate_fusion_se_a_grad_grad_cpu(dz_dy, table, table_info, em_x,
-                                                 em, dz_dy_dem_x, dz_dy_dem,
-                                                 nloc, nnei, last_layer_size);
+      deepmd::tabulate_fusion_se_a_grad_grad_cpu(
+          dz_dy, table, table_info, em_x, em, dz_dy_dem_x, dz_dy_dem, nloc,
+          nnei, last_layer_size, is_sorted);
     }
   }
 
  private:
+  bool is_sorted;
+  std::string device;
+};
+
+template <typename Device, typename FPTYPE>
+class TabulateFusionSeAttenOp : public OpKernel {
+ public:
+  explicit TabulateFusionSeAttenOp(OpKernelConstruction* context)
+      : OpKernel(context) {
+    OP_REQUIRES_OK(context,
+                   context->GetAttr("last_layer_size", &last_layer_size));
+    OP_REQUIRES_OK(context, context->GetAttr("is_sorted", &is_sorted));
+  }
+  void Compute(OpKernelContext* context) override {
+    deepmd::safe_compute(
+        context, [this](OpKernelContext* context) { this->_Compute(context); });
+  }
+
+  void _Compute(OpKernelContext* context) {
+    // Grab the input tensor
+    int context_input_index = 0;
+    const Tensor& table_tensor = context->input(context_input_index++);
+    const Tensor& table_info_tensor = context->input(context_input_index++);
+    const Tensor& em_x_tensor = context->input(context_input_index++);
+    const Tensor& em_tensor = context->input(context_input_index++);
+    const Tensor& two_embed_tensor = context->input(context_input_index++);
+    // set size of the sample
+    OP_REQUIRES(context, (table_tensor.shape().dims() == 2),
+                errors::InvalidArgument("Dim of table should be 2"));
+    OP_REQUIRES(context, (em_x_tensor.shape().dims() == 2),
+                errors::InvalidArgument("Dim of input should be 2"));
+    OP_REQUIRES(context, (em_tensor.shape().dims() == 3),
+                errors::InvalidArgument("Dim of input should be 3"));
+    OP_REQUIRES(context, (two_embed_tensor.shape().dims() == 2),
+                errors::InvalidArgument("Dim of input should be 2"));
+    TensorShape descriptor_shape;
+    descriptor_shape.AddDim(em_tensor.shape().dim_size(0));
+    descriptor_shape.AddDim(4);  // TODO: be careful here;
+    descriptor_shape.AddDim(last_layer_size);
+    int context_output_index = 0;
+    Tensor* descriptor_tensor = NULL;
+    OP_REQUIRES_OK(context, context->allocate_output(context_output_index++,
+                                                     descriptor_shape,
+                                                     &descriptor_tensor));
+    DeviceFunctor()(device, context->eigen_device<Device>());
+    // flat the tensors
+    FPTYPE* descriptor = descriptor_tensor->flat<FPTYPE>().data();
+    const FPTYPE* table = table_tensor.flat<FPTYPE>().data();
+    const FPTYPE* table_info = table_info_tensor.flat<FPTYPE>().data();
+    const FPTYPE* em_x = em_x_tensor.flat<FPTYPE>().data();
+    const FPTYPE* em = em_tensor.flat<FPTYPE>().data();
+    const FPTYPE* two_embed = two_embed_tensor.flat<FPTYPE>().data();
+    const int nloc = em_tensor.shape().dim_size(0);
+    const int nnei = em_tensor.shape().dim_size(1);
+
+    if (device == "GPU") {
+#if GOOGLE_CUDA
+      deepmd::tabulate_fusion_se_a_gpu_cuda(descriptor, table, table_info, em_x,
+                                            em, two_embed, nloc, nnei,
+                                            last_layer_size, is_sorted);
+#endif  // GOOGLE_CUDA
+
+#if TENSORFLOW_USE_ROCM
+      deepmd::tabulate_fusion_se_a_gpu_rocm(descriptor, table, table_info, em_x,
+                                            em, two_embed, nloc, nnei,
+                                            last_layer_size, is_sorted);
+#endif  // TENSORFLOW_USE_ROCM
+    } else if (device == "CPU") {
+      deepmd::tabulate_fusion_se_a_cpu(descriptor, table, table_info, em_x, em,
+                                       two_embed, nloc, nnei, last_layer_size,
+                                       is_sorted);
+    }
+  }
+
+ private:
+  int last_layer_size;
+  bool is_sorted;
+  std::string device;
+};
+
+template <typename Device, typename FPTYPE>
+class TabulateFusionSeAttenGradOp : public OpKernel {
+ public:
+  explicit TabulateFusionSeAttenGradOp(OpKernelConstruction* context)
+      : OpKernel(context) {
+    OP_REQUIRES_OK(context, context->GetAttr("is_sorted", &is_sorted));
+  }
+  void Compute(OpKernelContext* context) override {
+    deepmd::safe_compute(
+        context, [this](OpKernelContext* context) { this->_Compute(context); });
+  }
+
+  void _Compute(OpKernelContext* context) {
+    // Grab the input tensor
+    int context_input_index = 0;
+    const Tensor& table_tensor = context->input(context_input_index++);
+    const Tensor& table_info_tensor = context->input(context_input_index++);
+    const Tensor& em_x_tensor = context->input(context_input_index++);
+    const Tensor& em_tensor = context->input(context_input_index++);
+    const Tensor& two_embed_tensor = context->input(context_input_index++);
+
+    const Tensor& dy_tensor = context->input(context_input_index++);
+    const Tensor& descriptor_tensor = context->input(context_input_index++);
+    // set size of the sample
+    OP_REQUIRES(context, (dy_tensor.shape().dims() == 3),
+                errors::InvalidArgument("Dim of table should be 3"));
+    int context_output_index = 0;
+    Tensor* dy_dem_x_tensor = NULL;
+    OP_REQUIRES_OK(context, context->allocate_output(context_output_index++,
+                                                     em_x_tensor.shape(),
+                                                     &dy_dem_x_tensor));
+    Tensor* dy_dem_tensor = NULL;
+    OP_REQUIRES_OK(context,
+                   context->allocate_output(context_output_index++,
+                                            em_tensor.shape(), &dy_dem_tensor));
+    Tensor* dy_dtwo_tensor = NULL;
+    OP_REQUIRES_OK(context, context->allocate_output(context_output_index++,
+                                                     two_embed_tensor.shape(),
+                                                     &dy_dtwo_tensor));
+    DeviceFunctor()(device, context->eigen_device<Device>());
+
+    // flat the tensors
+    FPTYPE* dy_dem_x = dy_dem_x_tensor->flat<FPTYPE>().data();
+    FPTYPE* dy_dem = dy_dem_tensor->flat<FPTYPE>().data();
+
+    const FPTYPE* descriptor = descriptor_tensor.flat<FPTYPE>().data();
+    const FPTYPE* table = table_tensor.flat<FPTYPE>().data();
+    const FPTYPE* table_info = table_info_tensor.flat<FPTYPE>().data();
+    const FPTYPE* em_x = em_x_tensor.flat<FPTYPE>().data();
+    const FPTYPE* em = em_tensor.flat<FPTYPE>().data();
+    const FPTYPE* two_embed = two_embed_tensor.flat<FPTYPE>().data();
+    const FPTYPE* dy = dy_tensor.flat<FPTYPE>().data();
+    const int nloc = em_tensor.shape().dim_size(0);
+    const int nnei = em_tensor.shape().dim_size(1);
+    const int last_layer_size = descriptor_tensor.shape().dim_size(2);
+
+    if (device == "GPU") {
+#if GOOGLE_CUDA
+      deepmd::tabulate_fusion_se_a_grad_gpu_cuda(
+          dy_dem_x, dy_dem, table, table_info, em_x, em, two_embed, dy, nloc,
+          nnei, last_layer_size, is_sorted);
+#endif  // GOOGLE_CUDA
+
+#if TENSORFLOW_USE_ROCM
+      deepmd::tabulate_fusion_se_a_grad_gpu_rocm(
+          dy_dem_x, dy_dem, table, table_info, em_x, em, two_embed, dy, nloc,
+          nnei, last_layer_size, is_sorted);
+#endif  // TENSORFLOW_USE_ROCM
+    } else if (device == "CPU") {
+      deepmd::tabulate_fusion_se_a_grad_cpu(dy_dem_x, dy_dem, table, table_info,
+                                            em_x, em, two_embed, dy, nloc, nnei,
+                                            last_layer_size, is_sorted);
+    }
+  }
+
+ private:
+  bool is_sorted;
   std::string device;
 };
 
@@ -726,6 +919,13 @@ class TabulateFusionSeRGradGradOp : public OpKernel {
                               .TypeConstraint<T>("T"),                         \
                           TabulateFusionSeAGradGradOp<CPUDevice, T>);          \
   REGISTER_KERNEL_BUILDER(                                                     \
+      Name("TabulateFusionSeAtten").Device(DEVICE_CPU).TypeConstraint<T>("T"), \
+      TabulateFusionSeAttenOp<CPUDevice, T>);                                  \
+  REGISTER_KERNEL_BUILDER(Name("TabulateFusionSeAttenGrad")                    \
+                              .Device(DEVICE_CPU)                              \
+                              .TypeConstraint<T>("T"),                         \
+                          TabulateFusionSeAttenGradOp<CPUDevice, T>);          \
+  REGISTER_KERNEL_BUILDER(                                                     \
       Name("TabulateFusionSeT").Device(DEVICE_CPU).TypeConstraint<T>("T"),     \
       TabulateFusionSeTOp<CPUDevice, T>);                                      \
   REGISTER_KERNEL_BUILDER(                                                     \
@@ -780,6 +980,16 @@ REGISTER_CPU(double);
                               .TypeConstraint<T>("T")                 \
                               .HostMemory("table_info"),              \
                           TabulateFusionSeAGradGradOp<GPUDevice, T>); \
+  REGISTER_KERNEL_BUILDER(Name("TabulateFusionSeAtten")               \
+                              .Device(DEVICE_GPU)                     \
+                              .TypeConstraint<T>("T")                 \
+                              .HostMemory("table_info"),              \
+                          TabulateFusionSeAttenOp<GPUDevice, T>);     \
+  REGISTER_KERNEL_BUILDER(Name("TabulateFusionSeAttenGrad")           \
+                              .Device(DEVICE_GPU)                     \
+                              .TypeConstraint<T>("T")                 \
+                              .HostMemory("table_info"),              \
+                          TabulateFusionSeAttenGradOp<GPUDevice, T>); \
   REGISTER_KERNEL_BUILDER(Name("TabulateFusionSeT")                   \
                               .Device(DEVICE_GPU)                     \
                               .TypeConstraint<T>("T")                 \

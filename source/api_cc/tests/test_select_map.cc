@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 #include <fcntl.h>
 #include <gtest/gtest.h>
 #include <sys/stat.h>
@@ -45,10 +46,18 @@ class TestSelectMap : public ::testing::Test {
     EXPECT_EQ(4, expected_atype_out_1.size());
     EXPECT_EQ(12, expected_coord_out_1.size());
 
-    for (int ii = 0; ii < 6; ++ii) coord_out_0.push_back(0.0);
-    for (int ii = 0; ii < 12; ii++) coord_out_1.push_back(0.0);
-    for (int ii = 0; ii < 2; ii++) atype_out_0.push_back(0);
-    for (int ii = 0; ii < 4; ii++) atype_out_1.push_back(0);
+    for (int ii = 0; ii < 6; ++ii) {
+      coord_out_0.push_back(0.0);
+    }
+    for (int ii = 0; ii < 12; ii++) {
+      coord_out_1.push_back(0.0);
+    }
+    for (int ii = 0; ii < 2; ii++) {
+      atype_out_0.push_back(0);
+    }
+    for (int ii = 0; ii < 4; ii++) {
+      atype_out_1.push_back(0);
+    }
   }
 };
 

@@ -92,6 +92,8 @@ void prod_virial_grad_a_gpu_cuda(FPTYPE* grad_net,
                                  const int* nlist,
                                  const int nloc,
                                  const int nnei) {
+  DPErrcheck(cudaGetLastError());
+  DPErrcheck(cudaDeviceSynchronize());
   const int ndescrpt = nnei * 4;
   DPErrcheck(cudaMemset(grad_net, 0, sizeof(FPTYPE) * nloc * ndescrpt));
   const int LEN = 128;
@@ -112,6 +114,8 @@ void prod_virial_grad_r_gpu_cuda(FPTYPE* grad_net,
                                  const int* nlist,
                                  const int nloc,
                                  const int nnei) {
+  DPErrcheck(cudaGetLastError());
+  DPErrcheck(cudaDeviceSynchronize());
   const int ndescrpt = nnei;
   DPErrcheck(cudaMemset(grad_net, 0, sizeof(FPTYPE) * nloc * ndescrpt));
   const int LEN = 128;

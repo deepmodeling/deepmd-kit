@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+# SPDX-License-Identifier: LGPL-3.0-or-later
 from deepmd.env import (
     tf,
 )
@@ -17,12 +18,26 @@ def filter_tensorVariableList(tensorVariableList) -> dict:
     | :code:`train_attr/min_nbor_dist`
     | :code:`descrpt_attr/t_avg:0`
     | :code:`descrpt_attr/t_std:0`
-    | :code:`filter_type_{atom i}/matrix_{layer l}_{atomj}:0`
+    | :code:`type_embed_net/matrix_{layer l}:0`
+    | :code:`type_embed_net/bias_{layer l}:0`
+
+        version 0:
+        | :code:`filter_type_{atom i}/matrix_{layer l}_{atomj}:0`
     | :code:`filter_type_{atom i}/bias_{layer l}_{atomj}:0`
     | :code:`layer_{layer l}_type_{atom i}/matrix:0`
     | :code:`layer_{layer l}_type_{atom i}/bias:0`
     | :code:`final_layer_type_{atom i}/matrix:0`
     | :code:`final_layer_type_{atom i}/bias:0`
+
+        version 1:
+        | :code:`filter_type_all/matrix_{layer l}:0`
+    | :code:`filter_type_all/bias_{layer l}:0`
+    | :code:`filter_type_all/matrix_{layer l}_two_side_ebd:0`
+    | :code:`filter_type_all/bias_{layer l}_two_side_ebd:0`
+    | :code:`layer_{layer l}/matrix:0`
+    | :code:`layer_{layer l}/bias:0`
+    | :code:`final_layer/matrix:0`
+    | :code:`final_layer/bias:0`
     """
     nameList = [tv.name for tv in tensorVariableList]
     nameList = [name.replace(":0", "") for name in nameList]
@@ -33,9 +48,10 @@ def filter_tensorVariableList(tensorVariableList) -> dict:
         name = nameList[ii]
         tv = tensorVariableList[ii]
         p1 = name.startswith("descrpt_attr")
+        p1 = p1 or name.startswith("type_embed_net")
         p1 = p1 or name.startswith("filter_type_")
         p1 = p1 or name.startswith("layer_")
-        p1 = p1 or name.startswith("final_layer_type_")
+        p1 = p1 or name.startswith("final_layer")
         p2 = "Adam" not in name
         p3 = "XXX" not in name
         if p1 and p2 and p3:

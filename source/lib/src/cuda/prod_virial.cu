@@ -21,7 +21,9 @@ __global__ void atom_virial_reduction(FPTYPE* virial,
     __syncthreads();
   }
   // write result for this block to global memory
-  if (tid == 0) virial[bid] = data[0];
+  if (tid == 0) {
+    virial[bid] = data[0];
+  }
 }
 
 template <typename FPTYPE>
@@ -111,6 +113,8 @@ void prod_virial_a_gpu_cuda(FPTYPE* virial,
                             const int nloc,
                             const int nall,
                             const int nnei) {
+  DPErrcheck(cudaGetLastError());
+  DPErrcheck(cudaDeviceSynchronize());
   DPErrcheck(cudaMemset(virial, 0, sizeof(FPTYPE) * 9));
   DPErrcheck(cudaMemset(atom_virial, 0, sizeof(FPTYPE) * 9 * nall));
 
@@ -139,6 +143,8 @@ void prod_virial_r_gpu_cuda(FPTYPE* virial,
                             const int nloc,
                             const int nall,
                             const int nnei) {
+  DPErrcheck(cudaGetLastError());
+  DPErrcheck(cudaDeviceSynchronize());
   DPErrcheck(cudaMemset(virial, 0, sizeof(FPTYPE) * 9));
   DPErrcheck(cudaMemset(atom_virial, 0, sizeof(FPTYPE) * 9 * nall));
 

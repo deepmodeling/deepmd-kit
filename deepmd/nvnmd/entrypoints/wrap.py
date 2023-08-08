@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
 from typing import (
     Optional,
@@ -10,7 +11,7 @@ from deepmd.env import (
     tf,
 )
 from deepmd.nvnmd.data.data import (
-    jdata_deepmd_input,
+    jdata_deepmd_input_v0,
     jdata_sys,
 )
 from deepmd.nvnmd.utils.config import (
@@ -28,6 +29,7 @@ from deepmd.nvnmd.utils.network import (
 )
 from deepmd.nvnmd.utils.weight import (
     get_fitnet_weight,
+    get_type_weight,
 )
 from deepmd.utils.sess import (
     run_sess,
@@ -75,7 +77,7 @@ class Wrap:
         self.map_file = map_file
         self.model_file = model_file
 
-        jdata = jdata_deepmd_input["nvnmd"]
+        jdata = jdata_deepmd_input_v0["nvnmd"]
         jdata["config_file"] = config_file
         jdata["weight_file"] = weight_file
         jdata["map_file"] = map_file
@@ -84,60 +86,65 @@ class Wrap:
         nvnmd_cfg.init_from_jdata(jdata)
 
     def wrap(self):
-        dscp = nvnmd_cfg.dscp
-        ctrl = nvnmd_cfg.ctrl
-
-        M1 = dscp["M1"]
-        ntype = dscp["ntype"]
-        ntype_max = dscp["ntype_max"]
-        NSTDM_M1X = ctrl["NSTDM_M1X"]
         e = Encode()
-
+        # cfg
         bcfg = self.wrap_dscp()
-        bfps, bbps = self.wrap_fitn()
-        bswt, bdsw, bfea, bgra = self.wrap_map()
-
         # split data with {nbit} bits per row
         hcfg = e.bin2hex(e.split_bin(bcfg, 72))
         # the data must bigger than 128
         hcfg = e.extend_list(hcfg, 128 if len(hcfg) < 128 else len(hcfg))
 
-        # network weight
+        # bfps & bbps
+        bfps, bbps = self.wrap_fitn()
         hfps = e.bin2hex(e.split_bin(bfps, 72))
         hbps = e.bin2hex(e.split_bin(bbps, 72))
 
-        # extend the data from ntype into ntype_max
+        # bswt, bdsw, bfea, bgra
+        bswt, bdsw, bfea, bgra = self.wrap_map()
         hswt = e.bin2hex(bswt)
         hdsw = e.bin2hex(bdsw)
         hfea = e.bin2hex(bfea)
         hgra = e.bin2hex(bgra)
+
+        # bstd, bgtt, bavc
+        if nvnmd_cfg.version == 1:
+            bstd, bgtt, bavc = self.wrap_lut()
+            hstd = e.bin2hex(bstd)
+            hgtt = e.bin2hex(bgtt)
+            havc = e.bin2hex(bavc)
+
         # extend data according to the number of bits per row of BRAM
-        nhex = 32
-        datas = [hcfg, hfps, hbps, hswt, hdsw, hfea, hgra]
-        keys = "cfg fps bps swt dsw fea gra".split()
+        nbit = 32
+        if nvnmd_cfg.version == 0:
+            datas = [hcfg, hfps, hbps, hswt, hdsw, hfea, hgra]
+            keys = "cfg fps bps swt dsw fea gra".split()
+        if nvnmd_cfg.version == 1:
+            keys = "cfg fps bps swt dsw std fea gra gtt avc".split()
+            datas = [hcfg, hfps, hbps, hswt, hdsw, hstd, hfea, hgra, hgtt, havc]
         nhs = []
         nws = []
         for ii in range(len(datas)):
             k = keys[ii]
             d = datas[ii]
             h = len(d)
-            w = len(d[0])
+            w = len(d[0])  # nhex
+            w4 = w * 4  # nbit
             nhs.append(h)
-            nws.append(w)  # nhex * 4 // 8 = nbyte
+            nws.append(w)
             #
-            w_full = np.ceil(w * 4 / nhex) * nhex  # 32 bit per data
+            w_full = np.ceil(w4 / nbit) * nbit
             d = e.extend_hex(d, w_full)
             # DEVELOP_DEBUG
             if jdata_sys["debug"]:
                 log.info("%s: %d x % d bit" % (k, h, w * 4))
                 FioTxt().save("nvnmd/wrap/h%s.txt" % (k), d)
             datas[ii] = d
-        #
+        # update h & w of nvnmd_cfg
         nvnmd_cfg.size["NH_DATA"] = nhs
         nvnmd_cfg.size["NW_DATA"] = nws
         nvnmd_cfg.save(nvnmd_cfg.config_file)
         head = self.wrap_head(nhs, nws)
-        #
+        # output model
         hs = [] + head
         for d in datas:
             hs.extend(d)
@@ -146,13 +153,24 @@ class Wrap:
         log.info("NVNMD: finish wrapping model file")
 
     def wrap_head(self, nhs, nws):
+        r"""Wrap the head information.
+
+        version
+        nheight
+        nweight
+        rcut
+        """
         nbit = nvnmd_cfg.nbit
+        ctrl = nvnmd_cfg.ctrl
+        VERSION = ctrl["VERSION"]
         NBIT_MODEL_HEAD = nbit["NBIT_MODEL_HEAD"]
         NBIT_FIXD_FL = nbit["NBIT_FIXD_FL"]
         rcut = nvnmd_cfg.dscp["rcut"]
 
         bs = ""
         e = Encode()
+        # version
+        bs = e.dec2bin(VERSION, NBIT_MODEL_HEAD)[0] + bs
         # height
         for n in nhs:
             bs = e.dec2bin(n, NBIT_MODEL_HEAD)[0] + bs
@@ -170,95 +188,117 @@ class Wrap:
     def wrap_dscp(self):
         r"""Wrap the configuration of descriptor.
 
-        [NBIT_IDX_S2G-1:0] SHIFT_IDX_S2G
+                version 0:
+                [NBIT_IDX_S2G-1:0] SHIFT_IDX_S2G
         [NBIT_NEIB*NTYPE-1:0] SELs
         [NBIT_FIXD*M1*NTYPE*NTYPE-1:0] GSs
         [NBIT_FLTE-1:0] NEXPO_DIV_NI
 
+                version 1:
+        [NBIT_FLTE-1:0] NEXPO_DIV_NI
         """
         dscp = nvnmd_cfg.dscp
         nbit = nvnmd_cfg.nbit
         mapt = nvnmd_cfg.map
-        NBIT_IDX_S2G = nbit["NBIT_IDX_S2G"]
-        NBIT_NEIB = nbit["NBIT_NEIB"]
-        NBIT_FLTE = nbit["NBIT_FLTE"]
-        NBIT_FIXD = nbit["NBIT_FIXD"]
-        NBIT_FIXD_FL = nbit["NBIT_FIXD_FL"]
-        M1 = dscp["M1"]
-        ntype = dscp["ntype"]
-        ntype_max = dscp["ntype_max"]
 
         bs = ""
         e = Encode()
-        # shift_idx_s2g
-        x_st, x_ed, x_dt, N0, N1 = mapt["cfg_s2g"][0]
-        shift_idx_s2g = int(np.round(-x_st / x_dt))
-        bs = e.dec2bin(shift_idx_s2g, NBIT_IDX_S2G)[0] + bs
-        # sel
-        SEL = dscp["SEL"]
-        bs = e.dec2bin(SEL[0], NBIT_NEIB)[0] + bs
-        bs = e.dec2bin(SEL[1], NBIT_NEIB)[0] + bs
-        bs = e.dec2bin(SEL[2], NBIT_NEIB)[0] + bs
-        bs = e.dec2bin(SEL[3], NBIT_NEIB)[0] + bs
-        # GS
-        tf.reset_default_graph()
-        t_x = tf.placeholder(tf.float64, [None, 1], "t_x")
-        t_table = tf.placeholder(tf.float64, [None, None], "t_table")
-        t_table_grad = tf.placeholder(tf.float64, [None, None], "t_table_grad")
-        t_table_info = tf.placeholder(tf.float64, [None], "t_table_info")
-        t_y = op_module.map_flt_nvnmd(t_x, t_table, t_table_grad, t_table_info)
-        sess = get_sess()
-        #
-        GSs = []
-        for tt in range(ntype_max):
-            for tt2 in range(ntype_max):
-                if (tt < ntype) and (tt2 < ntype):
-                    # s
-                    mi = mapt["s"][tt]
-                    cfgs = mapt["cfg_u2s"]
-                    cfgs = np.array([np.float64(v) for vs in cfgs for v in vs])
-                    feed_dict = {
-                        t_x: np.ones([1, 1]) * 0.0,
-                        t_table: mi,
-                        t_table_grad: mi * 0.0,
-                        t_table_info: cfgs,
-                    }
-                    si = run_sess(sess, t_y, feed_dict=feed_dict)
-                    si = np.reshape(si, [-1])[0]
-                    # G
-                    mi = mapt["g"][tt2]
-                    cfgs = mapt["cfg_s2g"]
-                    cfgs = np.array([np.float64(v) for vs in cfgs for v in vs])
-                    feed_dict = {
-                        t_x: np.ones([1, 1]) * si,
-                        t_table: mi,
-                        t_table_grad: mi * 0.0,
-                        t_table_info: cfgs,
-                    }
-                    gi = run_sess(sess, t_y, feed_dict=feed_dict)
-                    gsi = np.reshape(si, [-1]) * np.reshape(gi, [-1])
-                else:
-                    gsi = np.zeros(M1)
-                for ii in range(M1):
-                    GSs.extend(e.dec2bin(e.qr(gsi[ii], NBIT_FIXD_FL), NBIT_FIXD, True))
-        sGSs = "".join(GSs[::-1])
-        bs = sGSs + bs
-        #
-        NIX = dscp["NIX"]
-        ln2_NIX = -int(np.log2(NIX))
-        bs = e.dec2bin(ln2_NIX, NBIT_FLTE, signed=True)[0] + bs
+
+        if nvnmd_cfg.version == 0:
+            NBIT_IDX_S2G = nbit["NBIT_IDX_S2G"]
+            NBIT_NEIB = nbit["NBIT_NEIB"]
+            NBIT_FLTE = nbit["NBIT_FLTE"]
+            NBIT_FIXD = nbit["NBIT_FIXD"]
+            NBIT_FIXD_FL = nbit["NBIT_FIXD_FL"]
+            M1 = dscp["M1"]
+            ntype = dscp["ntype"]
+            ntype_max = dscp["ntype_max"]
+
+            # shift_idx_s2g
+            x_st, x_ed, x_dt, N0, N1 = mapt["cfg_s2g"][0]
+            shift_idx_s2g = int(np.round(-x_st / x_dt))
+            bs = e.dec2bin(shift_idx_s2g, NBIT_IDX_S2G)[0] + bs
+            # sel
+            SEL = dscp["SEL"]
+            bs = e.dec2bin(SEL[0], NBIT_NEIB)[0] + bs
+            bs = e.dec2bin(SEL[1], NBIT_NEIB)[0] + bs
+            bs = e.dec2bin(SEL[2], NBIT_NEIB)[0] + bs
+            bs = e.dec2bin(SEL[3], NBIT_NEIB)[0] + bs
+            # GS
+            tf.reset_default_graph()
+            t_x = tf.placeholder(tf.float64, [None, 1], "t_x")
+            t_table = tf.placeholder(tf.float64, [None, None], "t_table")
+            t_table_grad = tf.placeholder(tf.float64, [None, None], "t_table_grad")
+            t_table_info = tf.placeholder(tf.float64, [None], "t_table_info")
+            t_y = op_module.map_flt_nvnmd(t_x, t_table, t_table_grad, t_table_info)
+            sess = get_sess()
+            # GS, when r = 0
+            GSs = []
+            for tt in range(ntype_max):
+                for tt2 in range(ntype_max):
+                    if (tt < ntype) and (tt2 < ntype):
+                        # s
+                        mi = mapt["s"][tt]
+                        cfgs = mapt["cfg_u2s"]
+                        cfgs = np.array([np.float64(v) for vs in cfgs for v in vs])
+                        feed_dict = {
+                            t_x: np.ones([1, 1]) * 0.0,
+                            t_table: mi,
+                            t_table_grad: mi * 0.0,
+                            t_table_info: cfgs,
+                        }
+                        si = run_sess(sess, t_y, feed_dict=feed_dict)
+                        si = np.reshape(si, [-1])[0]
+                        # G
+                        mi = mapt["g"][tt2]
+                        cfgs = mapt["cfg_s2g"]
+                        cfgs = np.array([np.float64(v) for vs in cfgs for v in vs])
+                        feed_dict = {
+                            t_x: np.ones([1, 1]) * si,
+                            t_table: mi,
+                            t_table_grad: mi * 0.0,
+                            t_table_info: cfgs,
+                        }
+                        gi = run_sess(sess, t_y, feed_dict=feed_dict)
+                        gsi = np.reshape(si, [-1]) * np.reshape(gi, [-1])
+                    else:
+                        gsi = np.zeros(M1)
+                    for ii in range(M1):
+                        GSs.extend(
+                            e.dec2bin(e.qr(gsi[ii], NBIT_FIXD_FL), NBIT_FIXD, True)
+                        )
+            sGSs = "".join(GSs[::-1])
+            bs = sGSs + bs
+            #
+            NIX = dscp["NIX"]
+            ln2_NIX = -int(np.log2(NIX))
+            bs = e.dec2bin(ln2_NIX, NBIT_FLTE, signed=True)[0] + bs
+        if nvnmd_cfg.version == 1:
+            NBIT_FLTE = nbit["NBIT_FLTE"]
+            NIX = dscp["NIX"]
+            ln2_NIX = -int(np.log2(NIX))
+            bs = e.dec2bin(ln2_NIX, NBIT_FLTE, signed=True)[0] + bs
         return bs
 
     def wrap_fitn(self):
-        r"""Wrap the weights of fitting net."""
+        r"""Wrap the weights of fitting net.
+
+        w weight
+        b bias
+        """
         dscp = nvnmd_cfg.dscp
         fitn = nvnmd_cfg.fitn
         weight = nvnmd_cfg.weight
         nbit = nvnmd_cfg.nbit
         ctrl = nvnmd_cfg.ctrl
 
-        ntype = dscp["ntype"]
-        ntype_max = dscp["ntype_max"]
+        if nvnmd_cfg.version == 0:
+            ntype = dscp["ntype"]
+            ntype_max = dscp["ntype_max"]
+        if nvnmd_cfg.version == 1:
+            ntype = 1
+            ntype_max = 1
+
         nlayer_fit = fitn["nlayer_fit"]
         NNODE_FITS = fitn["NNODE_FITS"]
 
@@ -277,9 +317,9 @@ class Wrap:
             for tt in range(ntype_max):
                 # get parameters: weight and bias
                 if tt < ntype:
-                    w, b = get_fitnet_weight(weight, tt, ll, nlayer_fit)
+                    w, b, _idt = get_fitnet_weight(weight, tt, ll, nlayer_fit)
                 else:
-                    w, b = get_fitnet_weight(weight, 0, ll, nlayer_fit)
+                    w, b, _idt = get_fitnet_weight(weight, 0, ll, nlayer_fit)
                     w = w * 0
                     b = b * 0
                 # restrict the shift value of energy
@@ -397,12 +437,15 @@ class Wrap:
         nbit = nvnmd_cfg.nbit
 
         M1 = dscp["M1"]
-        ntype = dscp["ntype"]
-        ntype_max = dscp["ntype_max"]
-
-        NBIT_FLTD = nbit["NBIT_FLTD"]
         NBIT_FLTE = nbit["NBIT_FLTE"]
         NBIT_FLTF = nbit["NBIT_FLTF"]
+
+        if nvnmd_cfg.version == 0:
+            ntype = dscp["ntype"]
+            ntype_max = dscp["ntype_max"]
+        if nvnmd_cfg.version == 1:
+            ntype = 1
+            ntype_max = 1
 
         e = Encode()
         # get mapt
@@ -431,26 +474,88 @@ class Wrap:
             gras.append(gra.copy())
         mapts = [swts, dsws, feas, gras]
         # reshape
-        opt_uram = True  # for reduce uram resource version
-        if opt_uram:
-            nmerges = [2 * 2, 2 * 2, 4 * 2, 4 * 2]  # n*(4/2)
-        else:
-            nmerges = [2 * 4, 2 * 4, 4 * 4, 4 * 4]  # n*(4)
-        bss = []
-        for ii in range(4):
-            d = mapts[ii]
-            d = np.reshape(d, [ntype_max, -1, 4])
-            if opt_uram:
+        if nvnmd_cfg.version == 0:
+            nmerges = [2 * 2, 2 * 2, 4 * 2, 4 * 2]
+            bss = []
+            for ii in range(len(mapts)):
+                d = mapts[ii]
+                d = np.reshape(d, [ntype_max, -1, 4])
                 d1 = d[:, :, 0:2]
                 d2 = d[:, :, 2:4]
                 d = np.concatenate([d1, d2])
-            #
-            bs = e.flt2bin(d, NBIT_FLTE, NBIT_FLTF)
-            bs = e.reverse_bin(bs, nmerges[ii])
-            bs = e.merge_bin(bs, nmerges[ii])
-            bss.append(bs)
+                #
+                bs = e.flt2bin(d, NBIT_FLTE, NBIT_FLTF)
+                bs = e.reverse_bin(bs, nmerges[ii])
+                bs = e.merge_bin(bs, nmerges[ii])
+                bss.append(bs)
+        if nvnmd_cfg.version == 1:
+            ndim = [2, 2, M1, M1]
+            bss = []
+            for ii in range(len(mapts)):
+                nd = ndim[ii]
+                d = mapts[ii]
+                d = np.reshape(d, [-1, nd, 4])
+                d1 = np.reshape(d[:, :, 0:2], [-1, nd * 2])
+                d2 = np.reshape(d[:, :, 2:4], [-1, nd * 2])
+                d = np.concatenate([d1, d2], axis=1)
+                #
+                bs = e.flt2bin(d, NBIT_FLTE, NBIT_FLTF)
+                bss.append(bs)
         bswt, bdsw, bfea, bgra = bss
         return bswt, bdsw, bfea, bgra
+
+    def wrap_lut(self):
+        r"""Wrap the LUT."""
+        dscp = nvnmd_cfg.dscp
+        fitn = nvnmd_cfg.fitn
+        maps = nvnmd_cfg.map
+        nbit = nvnmd_cfg.nbit
+        weight = nvnmd_cfg.weight
+
+        M1 = dscp["M1"]
+        ntype = dscp["ntype"]
+        ntype_max = dscp["ntype_max"]
+        NBIT_FLTE = nbit["NBIT_FLTE"]
+        NBIT_FLTF = nbit["NBIT_FLTF"]
+        NBIT_DATA = nvnmd_cfg.nbit["NBIT_FIT_DATA"]
+        NBIT_WXDB = nvnmd_cfg.nbit["NBIT_FIT_WXDB"]
+        NBIT_DATA_FL = nvnmd_cfg.nbit["NBIT_FIT_DATA_FL"]
+
+        e = Encode()
+        # std
+        d = maps["dstd_inv"]
+        d2 = np.zeros([ntype_max, 2])
+        for ii in range(ntype):
+            _d = d[ii, :2]
+            _d = np.reshape(_d, [-1, 2])
+            _d = np.concatenate([_d[:, 0], _d[:, 1]], axis=0)
+            d2[ii] = _d
+        bstd = e.flt2bin(d2, NBIT_FLTE, NBIT_FLTF)
+        # gtt
+        d = maps["gt"]
+        d2 = np.zeros([ntype_max**2, M1])
+        for ii in range(ntype):
+            for jj in range(ntype):
+                _d = d[ii * (ntype + 1) + jj]
+                _d = np.reshape(_d, [-1, 2])
+                _d = np.concatenate([_d[:, 0], _d[:, 1]], axis=0)
+                d2[ii * ntype_max + jj] = _d
+        bgtt = e.flt2bin(d2, NBIT_FLTE, NBIT_FLTF)
+        # avc
+        d = maps["t_ebd"]
+        w = get_type_weight(weight, 0)
+        nd = w.shape[1]
+        d2 = np.zeros([ntype_max, nd])
+        for ii in range(ntype):
+            _d = d[ii]
+            _d = np.reshape(_d, [1, -1])
+            _d = np.matmul(_d, w)
+            # _d = np.reshape(_d, [-1, 2])
+            # _d = np.concatenate([_d[:,0], _d[:,1]], axis=0)
+            d2[ii] = _d
+        d2 = e.qr(d2, NBIT_DATA_FL)
+        bavc = e.dec2bin(d2, NBIT_WXDB, True)
+        return bstd, bgtt, bavc
 
 
 def wrap(

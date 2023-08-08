@@ -1,4 +1,6 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    Optional,
     Tuple,
 )
 
@@ -144,6 +146,8 @@ def calc_model_devi(
     fname=None,
     frequency=1,
     mixed_type=False,
+    fparam: Optional[np.ndarray] = None,
+    aparam: Optional[np.ndarray] = None,
 ):
     """Python interface to calculate model deviation.
 
@@ -163,6 +167,10 @@ def calc_model_devi(
         Steps between frames (if the system is given by molecular dynamics engine), default 1
     mixed_type : bool
         Whether the input atype is in mixed_type format or not
+    fparam : numpy.ndarray
+        frame specific parameters
+    aparam : numpy.ndarray
+        atomic specific parameters
 
     Returns
     -------
@@ -190,6 +198,8 @@ def calc_model_devi(
             coord,
             box,
             atype,
+            fparam=fparam,
+            aparam=aparam,
             mixed_type=mixed_type,
         )
         energies.append(ret[0] / natom)
@@ -247,9 +257,28 @@ def make_model_devi(
     if len(all_sys) == 0:
         raise RuntimeError("Did not find valid system")
     devis_coll = []
+
+    first_dp = dp_models[0]
+
     for system in all_sys:
         # create data-system
         dp_data = DeepmdData(system, set_prefix, shuffle_test=False, type_map=tmap)
+        if first_dp.get_dim_fparam() > 0:
+            dp_data.add(
+                "fparam",
+                first_dp.get_dim_fparam(),
+                atomic=False,
+                must=True,
+                high_prec=False,
+            )
+        if first_dp.get_dim_aparam() > 0:
+            dp_data.add(
+                "aparam",
+                first_dp.get_dim_aparam(),
+                atomic=True,
+                must=True,
+                high_prec=False,
+            )
         mixed_type = dp_data.mixed_type
 
         data_sets = [dp_data._load_set(set_name) for set_name in dp_data.dirs]
@@ -264,7 +293,23 @@ def make_model_devi(
                 atype = data["type"][0]
             if not dp_data.pbc:
                 box = None
-            devi = calc_model_devi(coord, box, atype, dp_models, mixed_type=mixed_type)
+            if first_dp.get_dim_fparam() > 0:
+                fparam = data["fparam"]
+            else:
+                fparam = None
+            if first_dp.get_dim_aparam() > 0:
+                aparam = data["aparam"]
+            else:
+                aparam = None
+            devi = calc_model_devi(
+                coord,
+                box,
+                atype,
+                dp_models,
+                mixed_type=mixed_type,
+                fparam=fparam,
+                aparam=aparam,
+            )
             nframes_tot += coord.shape[0]
             devis.append(devi)
         devis = np.vstack(devis)

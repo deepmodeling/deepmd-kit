@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 """Module providing compatibility between `0.x.x` and `1.x.x` input versions."""
 
 import json
@@ -302,6 +303,10 @@ def convert_input_v1_v2(
     tr_data_cfg = {k: v for k, v in tr_cfg.items() if k in tr_data_keys}
     new_tr_cfg = {k: v for k, v in tr_cfg.items() if k not in tr_data_keys}
     new_tr_cfg["training_data"] = tr_data_cfg
+    if "training_data" in tr_cfg:
+        raise RuntimeError(
+            "Both v1 (training/systems) and v2 (training/training_data) parameters are given."
+        )
 
     jdata["training"] = new_tr_cfg
 

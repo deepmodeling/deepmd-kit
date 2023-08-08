@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+# SPDX-License-Identifier: LGPL-3.0-or-later
 import argparse
 import json
 from pathlib import (
@@ -19,7 +20,7 @@ def _main():
     )
 
     # get all json files in dir
-    jsons = [p for p in Path.cwd().glob("*.json")]
+    jsons = list(Path.cwd().glob("*.json"))
     # use the newest as autosuggestion
     jsons.sort(key=lambda x: x.stat().st_mtime, reverse=True)
     jfile = jsons[0]

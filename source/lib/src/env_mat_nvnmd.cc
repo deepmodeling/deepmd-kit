@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 /*
 //==================================================
  _   _  __     __  _   _   __  __   ____
@@ -41,10 +42,12 @@ void deepmd::env_mat_a_nvnmd_quantize_cpu(std::vector<FPTYPE>& descrpt_a,
                                           const float& rmax) {
   // compute the diff of the neighbors
   rij_a.resize(sec_a.back() * 3);
-  fill(rij_a.begin(), rij_a.end(), 0.0);
+  fill(rij_a.begin(), rij_a.end(), (FPTYPE)0.0);
   for (int ii = 0; ii < int(sec_a.size()) - 1; ++ii) {
     for (int jj = sec_a[ii]; jj < sec_a[ii + 1]; ++jj) {
-      if (fmt_nlist_a[jj] < 0) break;
+      if (fmt_nlist_a[jj] < 0) {
+        break;
+      }
       const int& j_idx = fmt_nlist_a[jj];
       for (int dd = 0; dd < 3; ++dd) {
         rij_a[jj * 3 + dd] = posi[j_idx * 3 + dd] - posi[i_idx * 3 + dd];
@@ -53,17 +56,19 @@ void deepmd::env_mat_a_nvnmd_quantize_cpu(std::vector<FPTYPE>& descrpt_a,
   }
   // 1./rr, cos(theta), cos(phi), sin(phi)
   descrpt_a.resize(sec_a.back() * 4);
-  fill(descrpt_a.begin(), descrpt_a.end(), 0.0);
+  fill(descrpt_a.begin(), descrpt_a.end(), (FPTYPE)0.0);
   // deriv wrt center: 3
   descrpt_a_deriv.resize(sec_a.back() * 4 * 3);
-  fill(descrpt_a_deriv.begin(), descrpt_a_deriv.end(), 0.0);
+  fill(descrpt_a_deriv.begin(), descrpt_a_deriv.end(), (FPTYPE)0.0);
   U_Flt64_Int64 ufi;
   int64_t expo_max;
 
   for (int sec_iter = 0; sec_iter < int(sec_a.size()) - 1; ++sec_iter) {
     for (int nei_iter = sec_a[sec_iter]; nei_iter < sec_a[sec_iter + 1];
          ++nei_iter) {
-      if (fmt_nlist_a[nei_iter] < 0) break;
+      if (fmt_nlist_a[nei_iter] < 0) {
+        break;
+      }
       const FPTYPE* rr = &rij_a[nei_iter * 3];
 
       // NVNMD

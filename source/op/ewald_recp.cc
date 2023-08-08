@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 #include "custom_op.h"
 #include "ewald.h"
 
@@ -106,17 +107,20 @@ class EwaldRecpOp : public OpKernel {
         FPTYPE inter[3];
         convert_to_inter_cpu(inter, region, &coord(coord_iter + ii * 3));
         for (int dd = 0; dd < 3; ++dd) {
-          if (inter[dd] < 0)
+          if (inter[dd] < 0) {
             inter[dd] += 1.;
-          else if (inter[dd] >= 1)
+          } else if (inter[dd] >= 1) {
             inter[dd] -= 1.;
+          }
         }
         convert_to_phys_cpu(&d_coord3[ii * 3], region, inter);
       }
 
       // set charge
       std::vector<FPTYPE> d_charge(nloc);
-      for (int ii = 0; ii < nloc; ++ii) d_charge[ii] = charge(charge_iter + ii);
+      for (int ii = 0; ii < nloc; ++ii) {
+        d_charge[ii] = charge(charge_iter + ii);
+      }
 
       // prepare outputs std::vectors
       FPTYPE d_ener;

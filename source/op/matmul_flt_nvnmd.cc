@@ -1,5 +1,6 @@
 
 
+// SPDX-License-Identifier: LGPL-3.0-or-later
 //
 // --------------------------------------------------------------------
 /*
@@ -130,7 +131,9 @@ class MatmulFltNvnmdOp : public OpKernel {
       // find x max exponnet
       if ((normx & 0x0f) == 0) {  // normalize x[:,:]
         find_max_expo(expo_max1, (FPTYPE *)&x[hh * N * M], N * M);
-        for (ii = 0; ii < N; ii++) expo_max1s[ii] = expo_max1;
+        for (ii = 0; ii < N; ii++) {
+          expo_max1s[ii] = expo_max1;
+        }
 
       } else {  // normalize x[ii,:]
         for (ii = 0; ii < N; ii++) {
@@ -142,7 +145,9 @@ class MatmulFltNvnmdOp : public OpKernel {
       // find w max exponnet
       if ((normw & 0x0f) == 0) {  // normalize w[:,:]
         find_max_expo(expo_max2, (FPTYPE *)&w[hh * M * K], M * K);
-        for (kk = 0; kk < K; kk++) expo_max2s[kk] = expo_max2;
+        for (kk = 0; kk < K; kk++) {
+          expo_max2s[kk] = expo_max2;
+        }
 
       } else {  // normalize w[:,kk]
         for (kk = 0; kk < K; kk++) {

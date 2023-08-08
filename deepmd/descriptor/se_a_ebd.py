@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     List,
     Optional,
@@ -87,6 +88,7 @@ class DescrptSeAEbd(DescrptSeA):
         activation_function: str = "tanh",
         precision: str = "default",
         exclude_types: List[List[int]] = [],
+        **kwargs,
     ) -> None:
         """Constructor."""
         DescrptSeA.__init__(

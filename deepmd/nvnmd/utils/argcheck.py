@@ -1,9 +1,13 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 from dargs import (
     Argument,
 )
 
 
 def nvnmd_args():
+    doc_version = (
+        "configuration the nvnmd version (0 | 1), 0 for 4 types, 1 for 32 types"
+    )
     doc_net_size_file = (
         "configuration the number of nodes of fitting_net, just can be set as 128"
     )
@@ -20,6 +24,7 @@ def nvnmd_args():
     doc_quantize_descriptor = "enable the quantizatioin of descriptor"
     doc_quantize_fitting_net = "enable the quantizatioin of fitting_net"
     args = [
+        Argument("version", int, optional=False, default=0, doc=doc_version),
         Argument("net_size", int, optional=False, default=128, doc=doc_net_size_file),
         Argument("map_file", str, optional=False, default="none", doc=doc_map_file),
         Argument(

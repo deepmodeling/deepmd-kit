@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 #include "Interpolation.h"
 
 #include <iterator>
@@ -346,7 +347,9 @@ bool Interpolation::splinePeriodic(const std::vector<double>& x,
 
   bool tag = solverForSplinePeriodic(lambda.begin(), lambda.end(), mu.begin(),
                                      mu.end());
-  if (!tag) return false;
+  if (!tag) {
+    return false;
+  }
 
   ps.get_x() = x;
   ps.get_p().clear();
@@ -448,7 +451,9 @@ bool Interpolation::spline(const std::vector<double>::const_iterator xbegin,
                            PiecewisePoly& ps) {
   int xsize = 0;
   std::vector<double>::const_iterator itmp = xbegin;
-  while (itmp++ != xend) ++xsize;
+  while (itmp++ != xend) {
+    ++xsize;
+  }
 
   std::vector<double> lambda(xsize);
   std::vector<double> mu(xsize);

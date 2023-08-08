@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 #include "GroFileManager.h"
 
 #include <cassert>
@@ -88,10 +89,11 @@ bool GroFileManager::writePotenFile(const double &rmin,
 
   double upper = rcut + 1;
   double nx;
-  if (int(upper / interval) != upper / interval)
+  if (int(upper / interval) != upper / interval) {
     nx = int(upper / interval) + 1;
-  else
+  } else {
     nx = int(upper / interval);
+  }
   upper = interval * nx;
 
   int i = 0;

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 import json
 import os
 import unittest
@@ -52,6 +53,9 @@ def _init_models():
     jdata = j_loader("test_model_spin.json")
 
     jdata["training"]["save_ckpt"] = ckpt
+    jdata["training"]["training_data"]["systems"] = [str(tests_path / "model_spin/")]
+    jdata["training"]["validation_data"]["systems"] = [str(tests_path / "model_spin/")]
+
     del jdata["training"]["set_prefix"]
     with open(INPUT, "w") as fp:
         json.dump(jdata, fp, indent=4)
@@ -65,6 +69,8 @@ def _init_models():
 
     jdata = j_loader("test_model_spin.json")
     jdata["training"]["save_ckpt"] = ckpt
+    jdata["training"]["training_data"]["systems"] = [str(tests_path / "model_spin/")]
+    jdata["training"]["validation_data"]["systems"] = [str(tests_path / "model_spin/")]
     del jdata["training"]["set_prefix"]
     jdata["loss"]["type"] = "ener_spin"
     jdata = update_deepmd_input(jdata, warning=True, dump="input_v2_compat.json")

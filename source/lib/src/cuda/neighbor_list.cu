@@ -187,6 +187,8 @@ int build_nlist_gpu(InputNlist &nlist,
   if (mem_size < nall) {
     return 1;
   }
+  DPErrcheck(cudaGetLastError());
+  DPErrcheck(cudaDeviceSynchronize());
   const int nblock = (nall + TPB - 1) / TPB;
   int *ilist = nlist.ilist;
   int *numneigh = nlist.numneigh;
@@ -216,7 +218,9 @@ int build_nlist_gpu(InputNlist &nlist,
                         cudaMemcpyDeviceToHost));
   int max_nei = 0;
   for (int ii = 0; ii < nloc; ii++) {
-    if (numneigh_host[ii] > max_nei) max_nei = numneigh_host[ii];
+    if (numneigh_host[ii] > max_nei) {
+      max_nei = numneigh_host[ii];
+    }
   }
   *max_list_size = max_nei;
   delete[] numneigh_host;
@@ -227,6 +231,8 @@ void use_nlist_map(int *nlist,
                    const int *nlist_map,
                    const int nloc,
                    const int nnei) {
+  DPErrcheck(cudaGetLastError());
+  DPErrcheck(cudaDeviceSynchronize());
   int nblock = (nnei + TPB - 1) / TPB;
   dim3 block_grid(nloc, nblock);
   dim3 thread_grid(1, TPB);
@@ -244,6 +250,8 @@ void use_nei_info_gpu(int *nlist,
                       const int nnei,
                       const int ntypes,
                       const bool b_nlist_map) {
+  DPErrcheck(cudaGetLastError());
+  DPErrcheck(cudaDeviceSynchronize());
   int nblock = (nnei + TPB - 1) / TPB;
   dim3 block_grid(nloc, nblock);
   dim3 thread_grid(1, TPB);
@@ -289,6 +297,8 @@ __global__ void map_filter_ftype(int *ftype_out,
 void filter_ftype_gpu_cuda(int *ftype_out,
                            const int *ftype_in,
                            const int nloc) {
+  DPErrcheck(cudaGetLastError());
+  DPErrcheck(cudaDeviceSynchronize());
   int nblock = (nloc + TPB - 1) / TPB;
   map_filter_ftype<<<nblock, TPB>>>(ftype_out, ftype_in, nloc);
   DPErrcheck(cudaGetLastError());

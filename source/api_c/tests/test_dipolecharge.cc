@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 #include <gtest/gtest.h>
 
 #include <algorithm>
@@ -75,7 +76,9 @@ class TestDipoleCharge : public ::testing::Test {
 static bool _in_vec(const int& value, const std::vector<int>& vec) {
   // naive impl.
   for (int ii = 0; ii < vec.size(); ++ii) {
-    if (value == vec[ii]) return true;
+    if (value == vec[ii]) {
+      return true;
+    }
   }
   return false;
 }

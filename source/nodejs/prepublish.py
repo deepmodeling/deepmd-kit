@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 """Prepublish script for nodejs package.
 
 The NPM package downloads the C library binary from GitHub releases.

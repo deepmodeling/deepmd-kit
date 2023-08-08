@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 #include "ZMFunctions.h"
 
 #include <cmath>
@@ -169,7 +170,9 @@ void ZeroMultipole::Potential::reinit(const int& ll_,
 }
 
 double ZeroMultipole::Potential::pot(const double& rr) {
-  if (rr > rc) return 0.;
+  if (rr > rc) {
+    return 0.;
+  }
   double tmp0 = funcV(alpha, rr);
   // double tmp0 = 0.;
   double tmp1 = coeff.back();
@@ -184,7 +187,9 @@ double ZeroMultipole::Potential::ulpot(const double& rr) {
 }
 
 double ZeroMultipole::Potential::mpotp(const double& rr) {
-  if (rr > rc) return 0.;
+  if (rr > rc) {
+    return 0.;
+  }
   double tmp0 = -funcD1V(alpha, rr);
   double tmp1 = 2 * ll * coeff[ll];
   for (int ii = ll - 1; ii >= 1; --ii) {

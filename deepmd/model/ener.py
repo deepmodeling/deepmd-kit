@@ -1,6 +1,8 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     List,
     Optional,
+    Union,
 )
 
 import numpy as np
@@ -11,15 +13,18 @@ from deepmd.env import (
     op_module,
     tf,
 )
-from deepmd.utils.pair_tab import (
-    PairTab,
+from deepmd.utils.data_system import (
+    DeepmdDataSystem,
 )
 from deepmd.utils.spin import (
     Spin,
 )
+from deepmd.utils.type_embed import (
+    TypeEmbedNet,
+)
 
 from .model import (
-    Model,
+    StandardModel,
 )
 from .model_stat import (
     make_stat_input,
@@ -27,15 +32,17 @@ from .model_stat import (
 )
 
 
-class EnerModel(Model):
+class EnerModel(StandardModel):
     """Energy model.
 
     Parameters
     ----------
-    descrpt
+    descriptor
             Descriptor
-    fitting
+    fitting_net
             Fitting net
+    type_embedding
+        Type embedding net
     type_map
             Mapping atom type to the name (str) of the type.
             For example `type_map[1]` gives the name of the type 1.
@@ -51,15 +58,21 @@ class EnerModel(Model):
             The lower boundary of the interpolation between short-range tabulated interaction and DP. It is only required when `use_srtab` is provided.
     sw_rmin
             The upper boundary of the interpolation between short-range tabulated interaction and DP. It is only required when `use_srtab` is provided.
+    srtab_add_bias : bool
+        Whether add energy bias from the statistics of the data to short-range tabulated atomic energy. It only takes effect when `use_srtab` is provided.
+    spin
+        spin
+    data_stat_nsample
+        The number of training samples in a system to compute and change the energy bias.
     """
 
     model_type = "ener"
 
     def __init__(
         self,
-        descrpt,
-        fitting,
-        typeebd=None,
+        descriptor: dict,
+        fitting_net: dict,
+        type_embedding: Optional[Union[dict, TypeEmbedNet]] = None,
         type_map: Optional[List[str]] = None,
         data_stat_nbatch: int = 10,
         data_stat_protect: float = 1e-2,
@@ -67,35 +80,30 @@ class EnerModel(Model):
         smin_alpha: Optional[float] = None,
         sw_rmin: Optional[float] = None,
         sw_rmax: Optional[float] = None,
+        srtab_add_bias: bool = True,
         spin: Optional[Spin] = None,
+        data_bias_nsample: int = 10,
+        **kwargs,
     ) -> None:
         """Constructor."""
-        # descriptor
-        self.descrpt = descrpt
-        self.rcut = self.descrpt.get_rcut()
-        self.ntypes = self.descrpt.get_ntypes()
-        # fitting
-        self.fitting = fitting
+        super().__init__(
+            descriptor=descriptor,
+            fitting_net=fitting_net,
+            type_embedding=type_embedding,
+            type_map=type_map,
+            data_stat_nbatch=data_stat_nbatch,
+            data_bias_nsample=data_bias_nsample,
+            data_stat_protect=data_stat_protect,
+            use_srtab=use_srtab,
+            smin_alpha=smin_alpha,
+            sw_rmin=sw_rmin,
+            sw_rmax=sw_rmax,
+            spin=spin,
+            srtab_add_bias=srtab_add_bias,
+            **kwargs,
+        )
         self.numb_fparam = self.fitting.get_numb_fparam()
-        # type embedding
-        self.typeebd = typeebd
-        # spin
-        self.spin = spin
-        # other inputs
-        if type_map is None:
-            self.type_map = []
-        else:
-            self.type_map = type_map
-        self.data_stat_nbatch = data_stat_nbatch
-        self.data_stat_protect = data_stat_protect
-        self.srtab_name = use_srtab
-        if self.srtab_name is not None:
-            self.srtab = PairTab(self.srtab_name)
-            self.smin_alpha = smin_alpha
-            self.sw_rmin = sw_rmin
-            self.sw_rmax = sw_rmax
-        else:
-            self.srtab = None
+        self.numb_aparam = self.fitting.get_numb_aparam()
 
     def get_rcut(self):
         return self.rcut
@@ -105,6 +113,14 @@ class EnerModel(Model):
 
     def get_type_map(self):
         return self.type_map
+
+    def get_numb_fparam(self) -> int:
+        """Get the number of frame parameters."""
+        return self.numb_fparam
+
+    def get_numb_aparam(self) -> int:
+        """Get the number of atomic parameters."""
+        return self.numb_fparam
 
     def data_stat(self, data):
         all_stat = make_stat_input(data, self.data_stat_nbatch, merge_sys=False)
@@ -186,7 +202,7 @@ class EnerModel(Model):
         input_dict["nframes"] = tf.shape(coord)[0]
 
         # type embedding if any
-        if self.typeebd is not None:
+        if self.typeebd is not None and "type_embedding" not in input_dict:
             type_embedding = self.typeebd.build(
                 self.ntypes,
                 reuse=reuse,
@@ -251,6 +267,8 @@ class EnerModel(Model):
                 sel_a=sel_a,
                 sel_r=sel_r,
             )
+            if self.srtab_add_bias:
+                tab_atom_ener += self.fitting.atom_bias_ener
             energy_diff = tab_atom_ener - tf.reshape(atom_ener, [-1, natoms[0]])
             tab_atom_ener = tf.reshape(sw_lambda, [-1]) * tf.reshape(
                 tab_atom_ener, [-1]
@@ -356,8 +374,13 @@ class EnerModel(Model):
             tf.constant("compressed_model", name="model_type", dtype=tf.string)
         else:
             raise RuntimeError("Unknown model type %s" % model_type)
-        if self.typeebd is not None:
-            self.typeebd.init_variables(graph, graph_def, suffix=suffix)
+        if (
+            self.typeebd is not None
+            and self.typeebd.type_embedding_net_variables is None
+        ):
+            self.typeebd.init_variables(
+                graph, graph_def, suffix=suffix, model_type=model_type
+            )
 
     def natoms_match(self, force, natoms):
         use_spin = self.spin.use_spin
@@ -454,3 +477,38 @@ class EnerModel(Model):
         ghost_force = tf.concat([ghost_force_real, ghost_force_mag], axis=1)
         force = tf.concat([loc_force, ghost_force], axis=1)
         return force
+
+    def change_energy_bias(
+        self,
+        data: DeepmdDataSystem,
+        frozen_model: str,
+        origin_type_map: list,
+        full_type_map: str,
+        bias_shift: str = "delta",
+    ) -> None:
+        """Change the energy bias according to the input data and the pretrained model.
+
+        Parameters
+        ----------
+        data : DeepmdDataSystem
+            The training data.
+        frozen_model : str
+            The path file of frozen model.
+        origin_type_map : list
+            The original type_map in dataset, they are targets to change the energy bias.
+        full_type_map : str
+            The full type_map in pretrained model
+        bias_shift : str
+            The mode for changing energy bias : ['delta', 'statistic']
+            'delta' : perform predictions on energies of target dataset,
+                    and do least sqaure on the errors to obtain the target shift as bias.
+            'statistic' : directly use the statistic energy bias in the target dataset.
+        """
+        self.fitting.change_energy_bias(
+            data,
+            frozen_model,
+            origin_type_map,
+            full_type_map,
+            bias_shift,
+            self.data_bias_nsample,
+        )

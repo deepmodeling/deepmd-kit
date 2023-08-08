@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: LGPL-3.0-or-later
 """Script for freezing TF trained graph so it can be used with LAMMPS and i-PI.
 
 References
@@ -210,6 +211,7 @@ def _make_node_names(
         "model_attr/model_version",
         "train_attr/min_nbor_dist",
         "train_attr/training_script",
+        "t_mesh",
     ]
 
     if model_type == "ener":

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 #include "env_mat.h"
 
 #include "switcher.h"
@@ -23,7 +24,9 @@ void env_mat_a(std::vector<double>& descrpt_a,
   fill(rij_a.begin(), rij_a.end(), 0.0);
   for (int ii = 0; ii < int(sec_a.size()) - 1; ++ii) {
     for (int jj = sec_a[ii]; jj < sec_a[ii + 1]; ++jj) {
-      if (fmt_nlist_a[jj] < 0) break;
+      if (fmt_nlist_a[jj] < 0) {
+        break;
+      }
       sel_a_diff[jj].resize(3);
       const int& j_idx = fmt_nlist_a[jj];
       if (b_pbc) {
@@ -32,10 +35,13 @@ void env_mat_a(std::vector<double>& descrpt_a,
             posi[i_idx * 3 + 0], posi[i_idx * 3 + 1], posi[i_idx * 3 + 2],
             sel_a_diff[jj][0], sel_a_diff[jj][1], sel_a_diff[jj][2]);
       } else {
-        for (int dd = 0; dd < 3; ++dd)
+        for (int dd = 0; dd < 3; ++dd) {
           sel_a_diff[jj][dd] = posi[j_idx * 3 + dd] - posi[i_idx * 3 + dd];
+        }
       }
-      for (int dd = 0; dd < 3; ++dd) rij_a[jj * 3 + dd] = sel_a_diff[jj][dd];
+      for (int dd = 0; dd < 3; ++dd) {
+        rij_a[jj * 3 + dd] = sel_a_diff[jj][dd];
+      }
     }
   }
 
@@ -49,7 +55,9 @@ void env_mat_a(std::vector<double>& descrpt_a,
   for (int sec_iter = 0; sec_iter < int(sec_a.size()) - 1; ++sec_iter) {
     for (int nei_iter = sec_a[sec_iter]; nei_iter < sec_a[sec_iter + 1];
          ++nei_iter) {
-      if (fmt_nlist_a[nei_iter] < 0) break;
+      if (fmt_nlist_a[nei_iter] < 0) {
+        break;
+      }
       const double* rr = &sel_a_diff[nei_iter][0];
       double nr2 = deepmd::dot3(rr, rr);
       double inr = 1. / sqrt(nr2);
@@ -128,7 +136,9 @@ void deepmd::env_mat_a_cpu(std::vector<FPTYPE>& descrpt_a,
   fill(rij_a.begin(), rij_a.end(), (FPTYPE)0.0);
   for (int ii = 0; ii < int(sec_a.size()) - 1; ++ii) {
     for (int jj = sec_a[ii]; jj < sec_a[ii + 1]; ++jj) {
-      if (fmt_nlist_a[jj] < 0) break;
+      if (fmt_nlist_a[jj] < 0) {
+        break;
+      }
       const int& j_idx = fmt_nlist_a[jj];
       for (int dd = 0; dd < 3; ++dd) {
         rij_a[jj * 3 + dd] = posi[j_idx * 3 + dd] - posi[i_idx * 3 + dd];
@@ -145,7 +155,9 @@ void deepmd::env_mat_a_cpu(std::vector<FPTYPE>& descrpt_a,
   for (int sec_iter = 0; sec_iter < int(sec_a.size()) - 1; ++sec_iter) {
     for (int nei_iter = sec_a[sec_iter]; nei_iter < sec_a[sec_iter + 1];
          ++nei_iter) {
-      if (fmt_nlist_a[nei_iter] < 0) break;
+      if (fmt_nlist_a[nei_iter] < 0) {
+        break;
+      }
       const FPTYPE* rr = &rij_a[nei_iter * 3];
       FPTYPE nr2 = deepmd::dot3(rr, rr);
       FPTYPE inr = (FPTYPE)1. / sqrt(nr2);
@@ -227,7 +239,9 @@ void env_mat_r(std::vector<double>& descrpt,
   fill(rij.begin(), rij.end(), 0.0);
   for (int ii = 0; ii < int(sec.size()) - 1; ++ii) {
     for (int jj = sec[ii]; jj < sec[ii + 1]; ++jj) {
-      if (fmt_nlist[jj] < 0) break;
+      if (fmt_nlist[jj] < 0) {
+        break;
+      }
       sel_diff[jj].resize(3);
       const int& j_idx = fmt_nlist[jj];
       if (b_pbc) {
@@ -236,10 +250,13 @@ void env_mat_r(std::vector<double>& descrpt,
             posi[i_idx * 3 + 0], posi[i_idx * 3 + 1], posi[i_idx * 3 + 2],
             sel_diff[jj][0], sel_diff[jj][1], sel_diff[jj][2]);
       } else {
-        for (int dd = 0; dd < 3; ++dd)
+        for (int dd = 0; dd < 3; ++dd) {
           sel_diff[jj][dd] = posi[j_idx * 3 + dd] - posi[i_idx * 3 + dd];
+        }
       }
-      for (int dd = 0; dd < 3; ++dd) rij[jj * 3 + dd] = sel_diff[jj][dd];
+      for (int dd = 0; dd < 3; ++dd) {
+        rij[jj * 3 + dd] = sel_diff[jj][dd];
+      }
     }
   }
 
@@ -253,7 +270,9 @@ void env_mat_r(std::vector<double>& descrpt,
   for (int sec_iter = 0; sec_iter < int(sec.size()) - 1; ++sec_iter) {
     for (int nei_iter = sec[sec_iter]; nei_iter < sec[sec_iter + 1];
          ++nei_iter) {
-      if (fmt_nlist[nei_iter] < 0) break;
+      if (fmt_nlist[nei_iter] < 0) {
+        break;
+      }
       const double* rr = &sel_diff[nei_iter][0];
       double nr2 = deepmd::dot3(rr, rr);
       double inr = 1. / sqrt(nr2);
@@ -296,7 +315,9 @@ void deepmd::env_mat_r_cpu(std::vector<FPTYPE>& descrpt_a,
   fill(rij_a.begin(), rij_a.end(), (FPTYPE)0.0);
   for (int ii = 0; ii < int(sec.size()) - 1; ++ii) {
     for (int jj = sec[ii]; jj < sec[ii + 1]; ++jj) {
-      if (fmt_nlist[jj] < 0) break;
+      if (fmt_nlist[jj] < 0) {
+        break;
+      }
       const int& j_idx = fmt_nlist[jj];
 
       for (int dd = 0; dd < 3; ++dd) {
@@ -314,7 +335,9 @@ void deepmd::env_mat_r_cpu(std::vector<FPTYPE>& descrpt_a,
   for (int sec_iter = 0; sec_iter < int(sec.size()) - 1; ++sec_iter) {
     for (int nei_iter = sec[sec_iter]; nei_iter < sec[sec_iter + 1];
          ++nei_iter) {
-      if (fmt_nlist[nei_iter] < 0) break;
+      if (fmt_nlist[nei_iter] < 0) {
+        break;
+      }
       const FPTYPE* rr = &rij_a[nei_iter * 3];
       FPTYPE nr2 = deepmd::dot3(rr, rr);
       FPTYPE inr = (FPTYPE)1. / sqrt(nr2);
