@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
-import os
 from typing import (
     TYPE_CHECKING,
     Callable,
@@ -115,7 +114,7 @@ class DeepPot(DeepEval):
         operations = [op.name for op in self.graph.get_operations()]
         # check if the graph has these operations:
         # if yes add them
-        
+
         if ("%s/t_efield" % load_prefix) in operations:
             self.tensors.update({"t_efield": "t_efield:0"})
             self.has_efield = True
