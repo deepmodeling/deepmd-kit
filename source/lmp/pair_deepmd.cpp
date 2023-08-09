@@ -1146,13 +1146,19 @@ void PairDeepMD::coeff(int narg, char **arg) {
     while (iarg < narg) {
       std::string type_name = arg[iarg];
       bool found_element = false;
-      for (int ii = 0; ii < type_map.size(); ++ii) {
-        if (type_map[ii] == type_name) {
-          type_idx_map.push_back(ii);
-          found_element = true;
-          break;
+      if ("-" == type_name) {
+        type_index_map.push_back(type_map.size());  // ghost type
+        found_element = true;
+      } else {
+        for (int ii = 0; ii < type_map.size(); ++ii) {
+          if (type_map[ii] == type_name) {
+            type_idx_map.push_back(ii);
+            found_element = true;
+            break;
+          }
         }
       }
+
       if (!found_element) {
         error->all(FLERR, "pair_coeff: element " + type_name +
                               " not found in the model");
