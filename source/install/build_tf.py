@@ -150,9 +150,9 @@ class OnlineResource:
             self.download()
             if not self.exists:
                 raise RuntimeError(
-                    "Download {} from {} failed! "
-                    "You can manually download it to {} and "
-                    "retry the script.".format(self.filename, self.url, str(self.path))
+                    f"Download {self.filename} from {self.url} failed! "
+                    f"You can manually download it to {str(self.path)} and "
+                    "retry the script."
                 )
         self.post_process()
 

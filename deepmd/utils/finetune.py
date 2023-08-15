@@ -55,8 +55,8 @@ def replace_model_params_with_pretrained_model(
         if i not in pretrained_type_map:
             out_line_type.append(i)
     assert not out_line_type, (
-        "{} type(s) not contained in the pretrained model! "
-        "Please choose another suitable one.".format(str(out_line_type))
+        f"{str(out_line_type)} type(s) not contained in the pretrained model! "
+        "Please choose another suitable one."
     )
     if cur_type_map != pretrained_type_map:
         log.info(
