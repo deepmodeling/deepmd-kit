@@ -33,7 +33,7 @@ repos:
       files: \.py$
 -   repo: https://github.com/astral-sh/ruff-pre-commit
     # Ruff version.
-    rev: v0.0.282
+    rev: v0.0.284
     hooks:
     - id: ruff
       args: ["--fix"]
@@ -72,7 +72,7 @@ repos:
     #- id: cmake-lint
 # license header
 - repo: https://github.com/Lucas-C/pre-commit-hooks
-  rev: v1.5.3
+  rev: v1.5.4
   hooks:
     # C++, js
     -   id: insert-license
