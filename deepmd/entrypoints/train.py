@@ -445,7 +445,7 @@ def get_min_nbor_dist(jdata, rcut):
 
 
 def parse_auto_sel(sel):
-    if type(sel) is not str:
+    if not isinstance(sel, str):
         return False
     words = sel.split(":")
     if words[0] == "auto":
