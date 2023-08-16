@@ -1861,8 +1861,8 @@ def normalize_fitting_weight(fitting_keys, data_keys, fitting_weight=None):
                 else:
                     valid_fitting_keys.remove(item)
                     log.warning(
-                        "Fitting net '{}' has zero or invalid weight "
-                        "and will not be used in training.".format(item)
+                        f"Fitting net '{item}' has zero or invalid weight "
+                        "and will not be used in training."
                     )
                     new_weight[item] = 0.0
             else:

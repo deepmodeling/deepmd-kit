@@ -418,9 +418,9 @@ def get_module(module_name: str) -> "ModuleType":
                 ) from e
             error_message = (
                 "This deepmd-kit package is inconsitent with TensorFlow "
-                "Runtime, thus an error is raised when loading {}. "
+                f"Runtime, thus an error is raised when loading {module_name}. "
                 "You need to rebuild deepmd-kit against this TensorFlow "
-                "runtime.".format(module_name)
+                "runtime."
             )
             if TF_CXX11_ABI_FLAG == 1:
                 # #1791
