@@ -55,7 +55,7 @@ keywords = ["deepmd"]
 
 [project.urls]
 Homepage = "https://github.com/deepmodeling/deepmd-kit"
-documentation = "https://docs.deepmodeling.com/projects/deepmd-kit"
+documentation = "https://docs.deepmodeling.com/projects/deepmd"
 repository = "https://github.com/deepmodeling/deepmd-kit"
 
 [tool.setuptools_scm]
