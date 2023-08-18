@@ -933,20 +933,37 @@ def test_dipole(
     log.info("The unit of error is the same as the unit of provided label.")
 
     if detail_file is not None:
-        detail_path = Path(detail_file)
+        if not atomic:
+            detail_path = Path(detail_file)
 
-        pe = np.concatenate(
+            pe = np.concatenate(
             (
                 np.reshape(test_data["dipole"][:numb_test], [-1, 3]),
                 np.reshape(dipole, [-1, 3]),
             ),
             axis=1,
-        )
-        np.savetxt(
+            )
+
+            np.savetxt(
             detail_path.with_suffix(".out"),
             pe,
             header="data_x data_y data_z pred_x pred_y pred_z",
-        )
+            )
+        else:
+            detail_path = Path(detail_file)
+
+            pe = np.concatenate(
+            (
+                test_data["atomic_dipole"][:numb_test],
+                dipole,
+            ),
+            axis=1,
+            )
+
+            np.savetxt(
+            detail_path.with_suffix(".out"),
+            pe,
+            )
     return {"rmse": (rmse_f, dipole.size)}
 
 
