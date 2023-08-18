@@ -537,7 +537,6 @@ class DescrptSeAtten(DescrptSeA):
         descriptor
             The output descriptor
         """
-        # self.debug_dict = {}
         davg = self.davg
         dstd = self.dstd
         if nvnmd_cfg.enable:
@@ -1160,9 +1159,8 @@ class DescrptSeAtten(DescrptSeA):
                         two_embd = tf.nn.embedding_lookup(
                             embedding_of_two_side_type_embedding, index_of_two_side
                         )
-
-                    two_embd = two_embd * tf.reshape(self.recovered_switch, [-1, 1])
-
+                    if self.smooth:
+                        two_embd = two_embd * tf.reshape(self.recovered_switch, [-1, 1])
                     if not self.compress:
                         xyz_scatter = xyz_scatter * two_embd + xyz_scatter
                     else:
@@ -1275,7 +1273,6 @@ class DescrptSeAtten(DescrptSeA):
                 self.filter_precision,
             )
         xyz_scatter_1 = xyz_scatter_1 / nnei
-        # self.debug_dict['xyz_scatter_1'] = xyz_scatter_1
         # natom x 4 x outputs_size_2
         xyz_scatter_2 = tf.slice(xyz_scatter_1, [0, 0, 0], [-1, -1, outputs_size_2])
         # # natom x 3 x outputs_size_2
