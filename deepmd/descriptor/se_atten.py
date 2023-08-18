@@ -133,6 +133,7 @@ class DescrptSeAtten(DescrptSeA):
         attn_mask: bool = False,
         multi_task: bool = False,
         stripped_type_embedding: bool = False,
+        smooth_type_embdding: bool = True,
         **kwargs,
     ) -> None:
         if not set_davg_zero:
@@ -166,6 +167,7 @@ class DescrptSeAtten(DescrptSeA):
                 "2"
             ), "se_atten only support tensorflow version 2.0 or higher."
         self.stripped_type_embedding = stripped_type_embedding
+        self.smooth = smooth_type_embdding
         self.ntypes = ntypes
         self.att_n = attn
         self.attn_layer = attn_layer
@@ -608,66 +610,16 @@ class DescrptSeAtten(DescrptSeA):
             sel_a=self.sel_all_a,
             sel_r=self.sel_all_r,
         )
-        #
-        # self.debug_dict["coord"] = coord
-        # self.debug_dict["atype"] = atype
-        #
-        # self.debug_dict["descrpt"] = self.descrpt
-        # self.debug_dict["descrpt_deriv"] = self.descrpt_deriv
-        # self.debug_dict["rij"] = self.rij
-        # self.debug_dict["nlist"] = self.nlist
-        # self.debug_dict["nei_type_vec"] = self.nei_type_vec
-        # self.debug_dict["nmask"] = self.nmask
-        # self.debug_dict["t_avg"] = self.t_avg
-        # self.debug_dict["t_std"] = self.t_std
-        self.smooth = True
         if self.smooth:
-            # (
-            #     self.descrpt_zero,
-            #     self.descrpt_deriv_zero,
-            #     self.rij_zero,
-            #     self.nlist_zero,
-            #     self.nei_type_vec_zero,
-            #     self.nmask_zero,
-            # ) = op_descriptor(
-            #     coord,
-            #     atype,
-            #     natoms,
-            #     box,
-            #     mesh,
-            #     tf.zeros_like(self.t_avg),
-            #     tf.ones_like(self.t_std),
-            #     rcut_a=self.rcut_a,
-            #     rcut_r=self.rcut_r,
-            #     rcut_r_smth=self.rcut_r_smth,
-            #     sel_a=self.sel_all_a,
-            #     sel_r=self.sel_all_r,
-            # )
-            # self.debug_dict["descrpt_zero"] = self.descrpt_zero
-            # self.debug_dict["descrpt_deriv_zero"] = self.descrpt_deriv_zero
-            # self.debug_dict["rij_zero"] = self.rij_zero
-            # self.debug_dict["nlist_zero"] = self.nlist_zero
-            # self.debug_dict["nei_type_vec_zero"] = self.nei_type_vec_zero
-            # self.debug_dict["nmask_zero"] = self.nmask_zero
             self.sliced_avg = tf.reshape(tf.slice(tf.reshape(self.t_avg, [self.ntypes, -1, 4]), [0, 0, 0], [-1, 1, 1]), [self.ntypes, 1])
             self.sliced_std = tf.reshape(tf.slice(tf.reshape(self.t_std, [self.ntypes, -1, 4]), [0, 0, 0], [-1, 1, 1]), [self.ntypes, 1])
-
             self.avg_looked_up = tf.reshape(tf.nn.embedding_lookup(self.sliced_avg, atype), [-1, natoms[0], 1])
             self.std_looked_up = tf.reshape(tf.nn.embedding_lookup(self.sliced_std, atype), [-1, natoms[0], 1])
             self.recovered_r = tf.reshape(tf.slice(tf.reshape(self.descrpt, [-1, 4]), [0, 0], [-1, 1]), [-1, natoms[0], self.sel_all_a[0]])\
                                     * self.std_looked_up + self.avg_looked_up
-            # self.std_r = tf.reshape(tf.slice(tf.reshape(self.descrpt_zero, [-1, 4]), [0, 0], [-1, 1]), [-1, natoms[0], self.sel_all_a[0]])
-            # self.debug_dict["avg_looked_up"] = self.avg_looked_up
-            # self.debug_dict["std_looked_up"] = self.std_looked_up
-            # self.debug_dict["recovered_r"] = self.recovered_r
-            # self.debug_dict["std_r"] = self.std_r
-            self.factor_1 = 1 / self.rcut_r
-            self.factor_2 = (self.rcut_r - self.rcut_r_smth) * self.factor_1
-            self.recovered_switch = self.recovered_r / (self.factor_1 + self.recovered_r * self.factor_2)
-            # self.factor_3 = 1 / self.rcut_r_smth
-            # self.recovered_switch = tf.where(self.recovered_r > self.factor_3, tf.ones_like(self.recovered_switch), self.recovered_switch)
+            uu = 1 - self.rcut_r_smth * self.recovered_r
+            self.recovered_switch = -uu * uu * uu + 1
             self.recovered_switch = tf.clip_by_value(self.recovered_switch, 0.0, 1.0)
-            # self.debug_dict["recovered_switch"] = self.recovered_switch
 
         self.nei_type_vec = tf.reshape(self.nei_type_vec, [-1])
         self.nmask = tf.cast(
@@ -1209,9 +1161,7 @@ class DescrptSeAtten(DescrptSeA):
                             embedding_of_two_side_type_embedding, index_of_two_side
                         )
 
-                    # self.debug_dict['two_embd_before'] = two_embd
                     two_embd = two_embd * tf.reshape(self.recovered_switch, [-1, 1])
-                    # self.debug_dict['two_embd_after'] = two_embd
 
                     if not self.compress:
                         xyz_scatter = xyz_scatter * two_embd + xyz_scatter
