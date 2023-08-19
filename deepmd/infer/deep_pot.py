@@ -114,15 +114,16 @@ class DeepPot(DeepEval):
         operations = [op.name for op in self.graph.get_operations()]
         # check if the graph has these operations:
         # if yes add them
-        if "t_efield" in operations:
-            self._get_tensor("t_efield:0", "t_efield")
+
+        if ("%s/t_efield" % load_prefix) in operations:
+            self.tensors.update({"t_efield": "t_efield:0"})
             self.has_efield = True
         else:
             log.debug("Could not get tensor 't_efield:0'")
             self.t_efield = None
             self.has_efield = False
 
-        if "load/t_fparam" in operations:
+        if ("%s/t_fparam" % load_prefix) in operations:
             self.tensors.update({"t_fparam": "t_fparam:0"})
             self.has_fparam = True
         else:
@@ -130,7 +131,7 @@ class DeepPot(DeepEval):
             self.t_fparam = None
             self.has_fparam = False
 
-        if "load/t_aparam" in operations:
+        if ("%s/t_aparam" % load_prefix) in operations:
             self.tensors.update({"t_aparam": "t_aparam:0"})
             self.has_aparam = True
         else:
@@ -138,7 +139,7 @@ class DeepPot(DeepEval):
             self.t_aparam = None
             self.has_aparam = False
 
-        if "load/spin_attr/ntypes_spin" in operations:
+        if ("%s/spin_attr/ntypes_spin" % load_prefix) in operations:
             self.tensors.update({"t_ntypes_spin": "spin_attr/ntypes_spin:0"})
             self.has_spin = True
         else:
@@ -399,7 +400,6 @@ class DeepPot(DeepEval):
         atom_types,
         fparam=None,
         aparam=None,
-        atomic=False,
         efield=None,
         mixed_type=False,
     ):
