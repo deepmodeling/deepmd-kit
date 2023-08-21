@@ -39,6 +39,7 @@ def _subprocess_run(command):
     popen.wait()
     return popen.returncode
 
+
 # 4 tests:
 # - type embedding FP64, se_atten FP64
 # - type embedding FP64, se_atten FP32
@@ -50,6 +51,7 @@ tests = [
     # {"se_atten precision": "float32", "type embedding precision": "float64"},
     # {"se_atten precision": "float32", "type embedding precision": "float32"},
 ]
+
 
 @unittest.skipIf(
     parse_version(tf.__version__) < parse_version("2"),
@@ -553,7 +555,9 @@ class TestDeepPotAPBCExcludeTypes(unittest.TestCase):
     @classmethod
     def setUpClass(self):
         self.dp_originals = [DeepPot(FROZEN_MODELS_ET[i]) for i in range(len(tests))]
-        self.dp_compresseds = [DeepPot(COMPRESSED_MODELS_ET[i]) for i in range(len(tests))]
+        self.dp_compresseds = [
+            DeepPot(COMPRESSED_MODELS_ET[i]) for i in range(len(tests))
+        ]
         self.coords = np.array(
             [
                 12.83,
