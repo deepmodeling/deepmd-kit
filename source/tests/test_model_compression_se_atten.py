@@ -39,6 +39,17 @@ def _subprocess_run(command):
     popen.wait()
     return popen.returncode
 
+# 4 tests:
+# - type embedding FP64, se_atten FP64
+# - type embedding FP64, se_atten FP32
+# - type embedding FP32, se_atten FP64
+# - type embedding FP32, se_atten FP32
+tests = [
+    {"se_atten precision": "float64", "type embedding precision": "float64"},
+    {"se_atten precision": "float64", "type embedding precision": "float32"},
+    # {"se_atten precision": "float32", "type embedding precision": "float64"},
+    # {"se_atten precision": "float32", "type embedding precision": "float32"},
+]
 
 @unittest.skipIf(
     parse_version(tf.__version__) < parse_version("2"),
@@ -47,18 +58,7 @@ def _subprocess_run(command):
 def _init_models():
     data_file = str(tests_path / os.path.join("model_compression", "data"))
     inputs, frozen_models, compressed_models = [], [], []
-    # 4 tests:
-    # - type embedding FP64, se_atten FP64
-    # - type embedding FP64, se_atten FP32
-    # - type embedding FP32, se_atten FP64
-    # - type embedding FP32, se_atten FP32
-    tests = [
-        {"se_atten precision": "float64", "type embedding precision": "float64"},
-        {"se_atten precision": "float64", "type embedding precision": "float32"},
-        {"se_atten precision": "float32", "type embedding precision": "float64"},
-        {"se_atten precision": "float32", "type embedding precision": "float32"},
-    ]
-    for i in range(4):
+    for i in range(len(tests)):
         INPUT = str(tests_path / f"input{i}.json")
         frozen_model = str(tests_path / f"dp-original-se-atten{i}.pb")
         compressed_model = str(tests_path / f"dp-compressed-se-atten{i}.pb")
@@ -101,18 +101,7 @@ def _init_models():
 def _init_models_exclude_types():
     data_file = str(tests_path / os.path.join("model_compression", "data"))
     inputs, frozen_models, compressed_models = [], [], []
-    # 4 tests:
-    # - type embedding FP64, se_atten FP64
-    # - type embedding FP64, se_atten FP32
-    # - type embedding FP32, se_atten FP64
-    # - type embedding FP32, se_atten FP32
-    tests = [
-        {"se_atten precision": "float64", "type embedding precision": "float64"},
-        {"se_atten precision": "float64", "type embedding precision": "float32"},
-        {"se_atten precision": "float32", "type embedding precision": "float64"},
-        {"se_atten precision": "float32", "type embedding precision": "float32"},
-    ]
-    for i in range(4):
+    for i in range(len(tests)):
         INPUT = str(tests_path / f"input{i}.json")
         frozen_model = str(tests_path / f"dp-original-se-atten{i}-exclude-types.pb")
         compressed_model = str(
@@ -166,8 +155,8 @@ def _get_default_places(nth_test):
 class TestDeepPotAPBC(unittest.TestCase):
     @classmethod
     def setUpClass(self):
-        self.dp_originals = [DeepPot(FROZEN_MODELS[i]) for i in range(4)]
-        self.dp_compresseds = [DeepPot(COMPRESSED_MODELS[i]) for i in range(4)]
+        self.dp_originals = [DeepPot(FROZEN_MODELS[i]) for i in range(len(tests))]
+        self.dp_compresseds = [DeepPot(COMPRESSED_MODELS[i]) for i in range(len(tests))]
         self.coords = np.array(
             [
                 12.83,
@@ -194,7 +183,7 @@ class TestDeepPotAPBC(unittest.TestCase):
         self.box = np.array([13.0, 0.0, 0.0, 0.0, 13.0, 0.0, 0.0, 0.0, 13.0])
 
     def test_attrs(self):
-        for i in range(4):
+        for i in range(len(tests)):
             dp_original = self.dp_originals[i]
             dp_compressed = self.dp_compresseds[i]
             default_places = _get_default_places(i)
@@ -212,7 +201,7 @@ class TestDeepPotAPBC(unittest.TestCase):
             self.assertEqual(dp_compressed.get_dim_aparam(), 0)
 
     def test_1frame(self):
-        for i in range(4):
+        for i in range(len(tests)):
             dp_original = self.dp_originals[i]
             dp_compressed = self.dp_compresseds[i]
             default_places = _get_default_places(i)
@@ -238,7 +227,7 @@ class TestDeepPotAPBC(unittest.TestCase):
             np.testing.assert_almost_equal(vv0, vv1, default_places)
 
     def test_1frame_atm(self):
-        for i in range(4):
+        for i in range(len(tests)):
             dp_original = self.dp_originals[i]
             dp_compressed = self.dp_compresseds[i]
             default_places = _get_default_places(i)
@@ -270,7 +259,7 @@ class TestDeepPotAPBC(unittest.TestCase):
             np.testing.assert_almost_equal(vv0, vv1, default_places)
 
     def test_2frame_atm(self):
-        for i in range(4):
+        for i in range(len(tests)):
             dp_original = self.dp_originals[i]
             dp_compressed = self.dp_compresseds[i]
             default_places = _get_default_places(i)
@@ -312,8 +301,8 @@ class TestDeepPotAPBC(unittest.TestCase):
 class TestDeepPotANoPBC(unittest.TestCase):
     @classmethod
     def setUpClass(self):
-        self.dp_originals = [DeepPot(FROZEN_MODELS[i]) for i in range(4)]
-        self.dp_compresseds = [DeepPot(COMPRESSED_MODELS[i]) for i in range(4)]
+        self.dp_originals = [DeepPot(FROZEN_MODELS[i]) for i in range(len(tests))]
+        self.dp_compresseds = [DeepPot(COMPRESSED_MODELS[i]) for i in range(len(tests))]
         self.coords = np.array(
             [
                 12.83,
@@ -340,7 +329,7 @@ class TestDeepPotANoPBC(unittest.TestCase):
         self.box = None
 
     def test_1frame(self):
-        for i in range(4):
+        for i in range(len(tests)):
             dp_original = self.dp_originals[i]
             dp_compressed = self.dp_compresseds[i]
             default_places = _get_default_places(i)
@@ -366,7 +355,7 @@ class TestDeepPotANoPBC(unittest.TestCase):
             np.testing.assert_almost_equal(vv0, vv1, default_places)
 
     def test_1frame_atm(self):
-        for i in range(4):
+        for i in range(len(tests)):
             dp_original = self.dp_originals[i]
             dp_compressed = self.dp_compresseds[i]
             default_places = _get_default_places(i)
@@ -398,7 +387,7 @@ class TestDeepPotANoPBC(unittest.TestCase):
             np.testing.assert_almost_equal(vv0, vv1, default_places)
 
     def test_2frame_atm(self):
-        for i in range(4):
+        for i in range(len(tests)):
             dp_original = self.dp_originals[i]
             dp_compressed = self.dp_compresseds[i]
             default_places = _get_default_places(i)
@@ -439,8 +428,8 @@ class TestDeepPotANoPBC(unittest.TestCase):
 class TestDeepPotALargeBoxNoPBC(unittest.TestCase):
     @classmethod
     def setUpClass(self):
-        self.dp_originals = [DeepPot(FROZEN_MODELS[i]) for i in range(4)]
-        self.dp_compresseds = [DeepPot(COMPRESSED_MODELS[i]) for i in range(4)]
+        self.dp_originals = [DeepPot(FROZEN_MODELS[i]) for i in range(len(tests))]
+        self.dp_compresseds = [DeepPot(COMPRESSED_MODELS[i]) for i in range(len(tests))]
         self.coords = np.array(
             [
                 12.83,
@@ -467,7 +456,7 @@ class TestDeepPotALargeBoxNoPBC(unittest.TestCase):
         self.box = np.array([19.0, 0.0, 0.0, 0.0, 13.0, 0.0, 0.0, 0.0, 13.0])
 
     def test_1frame(self):
-        for i in range(4):
+        for i in range(len(tests)):
             dp_original = self.dp_originals[i]
             dp_compressed = self.dp_compresseds[i]
             default_places = _get_default_places(i)
@@ -493,7 +482,7 @@ class TestDeepPotALargeBoxNoPBC(unittest.TestCase):
             np.testing.assert_almost_equal(vv0, vv1, default_places)
 
     def test_1frame_atm(self):
-        for i in range(4):
+        for i in range(len(tests)):
             dp_original = self.dp_originals[i]
             dp_compressed = self.dp_compresseds[i]
             default_places = _get_default_places(i)
@@ -525,7 +514,7 @@ class TestDeepPotALargeBoxNoPBC(unittest.TestCase):
             np.testing.assert_almost_equal(vv0, vv1, default_places)
 
     def test_ase(self):
-        for i in range(4):
+        for i in range(len(tests)):
             default_places = _get_default_places(i)
             from ase import (
                 Atoms,
@@ -563,8 +552,8 @@ class TestDeepPotALargeBoxNoPBC(unittest.TestCase):
 class TestDeepPotAPBCExcludeTypes(unittest.TestCase):
     @classmethod
     def setUpClass(self):
-        self.dp_originals = [DeepPot(FROZEN_MODELS_ET[i]) for i in range(4)]
-        self.dp_compresseds = [DeepPot(COMPRESSED_MODELS_ET[i]) for i in range(4)]
+        self.dp_originals = [DeepPot(FROZEN_MODELS_ET[i]) for i in range(len(tests))]
+        self.dp_compresseds = [DeepPot(COMPRESSED_MODELS_ET[i]) for i in range(len(tests))]
         self.coords = np.array(
             [
                 12.83,
@@ -592,7 +581,7 @@ class TestDeepPotAPBCExcludeTypes(unittest.TestCase):
 
     @classmethod
     def tearDownClass(self):
-        for i in range(4):
+        for i in range(len(tests)):
             _file_delete(INPUTS_ET[i])
             _file_delete(FROZEN_MODELS_ET[i])
             _file_delete(COMPRESSED_MODELS_ET[i])
@@ -614,7 +603,7 @@ class TestDeepPotAPBCExcludeTypes(unittest.TestCase):
         _file_delete("lcurve.out")
 
     def test_attrs(self):
-        for i in range(4):
+        for i in range(len(tests)):
             dp_original = self.dp_originals[i]
             dp_compressed = self.dp_compresseds[i]
             default_places = _get_default_places(i)
@@ -632,7 +621,7 @@ class TestDeepPotAPBCExcludeTypes(unittest.TestCase):
             self.assertEqual(dp_compressed.get_dim_aparam(), 0)
 
     def test_1frame(self):
-        for i in range(4):
+        for i in range(len(tests)):
             dp_original = self.dp_originals[i]
             dp_compressed = self.dp_compresseds[i]
             default_places = _get_default_places(i)
@@ -658,7 +647,7 @@ class TestDeepPotAPBCExcludeTypes(unittest.TestCase):
             np.testing.assert_almost_equal(vv0, vv1, default_places)
 
     def test_1frame_atm(self):
-        for i in range(4):
+        for i in range(len(tests)):
             dp_original = self.dp_originals[i]
             dp_compressed = self.dp_compresseds[i]
             default_places = _get_default_places(i)
@@ -690,7 +679,7 @@ class TestDeepPotAPBCExcludeTypes(unittest.TestCase):
             np.testing.assert_almost_equal(vv0, vv1, default_places)
 
     def test_2frame_atm(self):
-        for i in range(4):
+        for i in range(len(tests)):
             dp_original = self.dp_originals[i]
             dp_compressed = self.dp_compresseds[i]
             default_places = _get_default_places(i)
