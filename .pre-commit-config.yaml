@@ -9,7 +9,7 @@ repos:
     -   id: end-of-file-fixer
         exclude: "^.+\\.pbtxt$"
     -   id: check-yaml
-    #-   id: check-json
+    -   id: check-json
     -   id: check-added-large-files
         args: ['--maxkb=1024', '--enforce-all']
         # TODO: remove the following after resolved
