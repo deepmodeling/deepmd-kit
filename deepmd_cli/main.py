@@ -438,6 +438,12 @@ def main_parser() -> argparse.ArgumentParser:
         type=int,
         help="The trajectory frequency of the system",
     )
+    parser_model_devi.add_argument(
+        "--real_error",
+        action="store_true",
+        default=False,
+        help="Calculate the RMS real error of the model. The real data should be given in the systems.",
+    )
 
     # * convert models
     parser_transform = subparsers.add_parser(
