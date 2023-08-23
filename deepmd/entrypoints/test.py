@@ -71,7 +71,7 @@ def test(
     set_prefix : str
         string prefix of set
     numb_test : int
-        munber of tests to do
+        munber of tests to do. 0 means all data.
     rand_seed : Optional[int]
         seed for random generator
     shuffle_test : bool
@@ -88,6 +88,9 @@ def test(
     RuntimeError
         if no valid system was found
     """
+    if numb_test == 0:
+        # only float has inf, but should work for min
+        numb_test = float("inf")
     if datafile is not None:
         datalist = open(datafile)
         all_sys = datalist.read().splitlines()
