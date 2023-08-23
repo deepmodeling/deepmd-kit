@@ -125,7 +125,7 @@ void deepmd::tabulate_fusion_se_a_cpu(FPTYPE* out,
         if (enable_se_atten) {
           FPTYPE t = two_embed[ii * nnei * last_layer_size +
                                jj * last_layer_size + kk];
-          var = var * t + t;
+          var = var * t + var;
         }
 
         if (unloop) {
@@ -215,8 +215,8 @@ void deepmd::tabulate_fusion_se_a_grad_cpu(FPTYPE* dy_dem_x,
         if (enable_se_atten) {
           FPTYPE t = two_embed[ii * nnei * last_layer_size +
                                jj * last_layer_size + kk];
-          res = res * t + t;
-          g = t * g;
+          res = res * t + res;
+          g += t * g;
         }
 
         if (unloop) {
