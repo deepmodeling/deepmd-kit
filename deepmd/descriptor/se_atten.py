@@ -609,16 +609,6 @@ class DescrptSeAtten(DescrptSeA):
             sel_a=self.sel_all_a,
             sel_r=self.sel_all_r,
         )
-        if self.smooth:
-            self.sliced_avg = tf.reshape(tf.slice(tf.reshape(self.t_avg, [self.ntypes, -1, 4]), [0, 0, 0], [-1, 1, 1]), [self.ntypes, 1])
-            self.sliced_std = tf.reshape(tf.slice(tf.reshape(self.t_std, [self.ntypes, -1, 4]), [0, 0, 0], [-1, 1, 1]), [self.ntypes, 1])
-            self.avg_looked_up = tf.reshape(tf.nn.embedding_lookup(self.sliced_avg, atype), [-1, natoms[0], 1])
-            self.std_looked_up = tf.reshape(tf.nn.embedding_lookup(self.sliced_std, atype), [-1, natoms[0], 1])
-            self.recovered_r = tf.reshape(tf.slice(tf.reshape(self.descrpt, [-1, 4]), [0, 0], [-1, 1]), [-1, natoms[0], self.sel_all_a[0]])\
-                                    * self.std_looked_up + self.avg_looked_up
-            uu = 1 - self.rcut_r_smth * self.recovered_r
-            self.recovered_switch = -uu * uu * uu + 1
-            self.recovered_switch = tf.clip_by_value(self.recovered_switch, 0.0, 1.0)
 
         self.nei_type_vec = tf.reshape(self.nei_type_vec, [-1])
         self.nmask = tf.cast(
@@ -638,6 +628,16 @@ class DescrptSeAtten(DescrptSeA):
             tf.slice(atype, [0, 0], [-1, natoms[0]]), [-1]
         )  ## lammps will have error without this
         self._identity_tensors(suffix=suffix)
+        if self.smooth:
+            self.sliced_avg = tf.reshape(tf.slice(tf.reshape(self.t_avg, [self.ntypes, -1, 4]), [0, 0, 0], [-1, 1, 1]), [self.ntypes, 1])
+            self.sliced_std = tf.reshape(tf.slice(tf.reshape(self.t_std, [self.ntypes, -1, 4]), [0, 0, 0], [-1, 1, 1]), [self.ntypes, 1])
+            self.avg_looked_up = tf.reshape(tf.nn.embedding_lookup(self.sliced_avg, self.atype_nloc), [-1, natoms[0], 1])
+            self.std_looked_up = tf.reshape(tf.nn.embedding_lookup(self.sliced_std, self.atype_nloc), [-1, natoms[0], 1])
+            self.recovered_r = tf.reshape(tf.slice(tf.reshape(self.descrpt, [-1, 4]), [0, 0], [-1, 1]), [-1, natoms[0], self.sel_all_a[0]])\
+                                    * self.std_looked_up + self.avg_looked_up
+            uu = 1 - self.rcut_r_smth * self.recovered_r
+            self.recovered_switch = -uu * uu * uu + 1
+            self.recovered_switch = tf.clip_by_value(self.recovered_switch, 0.0, 1.0)
 
         self.dout, self.qmat = self._pass_filter(
             self.descrpt_reshape,
