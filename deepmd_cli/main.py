@@ -276,7 +276,7 @@ def main_parser() -> argparse.ArgumentParser:
     parser_tst.add_argument(
         "-n",
         "--numb-test",
-        default=100,
+        default=0,
         type=int,
         help="The number of data for test. 0 means all data.",
     )
