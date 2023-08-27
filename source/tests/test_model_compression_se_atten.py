@@ -48,8 +48,8 @@ def _subprocess_run(command):
 tests = [
     {"se_atten precision": "float64", "type embedding precision": "float64"},
     {"se_atten precision": "float64", "type embedding precision": "float32"},
-    # {"se_atten precision": "float32", "type embedding precision": "float64"},
-    # {"se_atten precision": "float32", "type embedding precision": "float32"},
+    {"se_atten precision": "float32", "type embedding precision": "float64"},
+    {"se_atten precision": "float32", "type embedding precision": "float32"},
 ]
 
 
