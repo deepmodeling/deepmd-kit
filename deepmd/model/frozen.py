@@ -113,14 +113,14 @@ class FrozenModel(Model):
             t_rcut = tf.constant(
                 self.get_rcut(), name="rcut", dtype=GLOBAL_TF_FLOAT_PRECISION
             )
+        with tf.variable_scope("fitting_attr" + suffix, reuse=reuse):
+            t_dfparam = tf.constant(
+                self.model.get_dim_fparam(), name="dfparam", dtype=tf.int32
+            )
+            t_daparam = tf.constant(
+                self.model.get_dim_aparam(), name="daparam", dtype=tf.int32
+            )
         if self.model_type == "ener":
-            with tf.variable_scope("fitting_attr" + suffix, reuse=reuse):
-                t_dfparam = tf.constant(
-                    self.model.get_dim_fparam(), name="dfparam", dtype=tf.int32
-                )
-                t_daparam = tf.constant(
-                    self.model.get_dim_aparam(), name="daparam", dtype=tf.int32
-                )
             return {
                 "energy": tf.identity(self.model.t_energy, name="o_energy" + suffix),
                 "force": tf.identity(self.model.t_force, name="o_force" + suffix),
