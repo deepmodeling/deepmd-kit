@@ -520,6 +520,8 @@ def update_sel(jdata):
         rcut = get_rcut(jdata)
         get_min_nbor_dist(jdata, rcut)
         return jdata
+    elif jdata["model"].get("type") in ("linear_ener", "frozen"):
+        return jdata
     descrpt_data = jdata["model"]["descriptor"]
     if descrpt_data["type"] == "hybrid":
         for ii in range(len(descrpt_data["list"])):

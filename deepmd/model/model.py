@@ -82,6 +82,12 @@ class Model(ABC):
         if cls is Model:
             # init model
             # infer model type by fitting_type
+            from deepmd.model.frozen import (
+                FrozenModel,
+            )
+            from deepmd.model.linear import (
+                LinearEnergyModel,
+            )
             from deepmd.model.multi import (
                 MultiModel,
             )
@@ -96,6 +102,10 @@ class Model(ABC):
                 cls = MultiModel
             elif model_type == "pairwise_dprc":
                 cls = PairwiseDPRc
+            elif model_type == "frozen":
+                cls = FrozenModel
+            elif model_type == "linear_ener":
+                cls = LinearEnergyModel
             else:
                 raise ValueError(f"unknown model type: {model_type}")
             return cls.__new__(cls, *args, **kwargs)
@@ -393,11 +403,11 @@ class Model(ABC):
         return 0
 
     @abstractmethod
-    def get_fitting(self) -> Union[str, dict]:
+    def get_fitting(self) -> Union[Fitting, dict]:
         """Get the fitting(s)."""
 
     @abstractmethod
-    def get_loss(self, loss: dict, lr) -> Union[Loss, dict]:
+    def get_loss(self, loss: dict, lr) -> Optional[Union[Loss, dict]]:
         """Get the loss function(s)."""
 
     @abstractmethod

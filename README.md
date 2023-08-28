@@ -112,6 +112,7 @@ A full [document](doc/train/train-input-auto.rst) on options in the training inp
     - [Train a Deep Potential model using `type embedding` approach](doc/model/train-se-e2-a-tebd.md)
     - [Deep potential long-range](doc/model/dplr.md)
     - [Deep Potential - Range Correction (DPRc)](doc/model/dprc.md)
+    - [Linear model](doc/model/linear.md)
 - [Training](doc/train/index.md)
     - [Training a model](doc/train/training.md)
     - [Advanced options](doc/train/training-advanced.md)

@@ -799,6 +799,7 @@ def model_args(exclude_hybrid=False):
         hybrid_models.extend(
             [
                 pairwise_dprc(),
+                linear_ener_model_args(),
             ]
         )
     return Argument(
@@ -871,6 +872,7 @@ def model_args(exclude_hybrid=False):
                 [
                     standard_model_args(),
                     multi_model_args(),
+                    frozen_model_args(),
                     *hybrid_models,
                 ],
                 optional=True,
@@ -940,6 +942,46 @@ def pairwise_dprc() -> Argument:
         [
             qm_model_args,
             qmmm_model_args,
+        ],
+    )
+    return ca
+
+
+def frozen_model_args() -> Argument:
+    doc_model_file = "Path to the frozen model file."
+    ca = Argument(
+        "frozen",
+        dict,
+        [
+            Argument("model_file", str, optional=False, doc=doc_model_file),
+        ],
+    )
+    return ca
+
+
+def linear_ener_model_args() -> Argument:
+    doc_weights = (
+        "If the type is list of float, a list of weights for each model. "
+        'If "mean", the weights are set to be 1 / len(models). '
+        'If "sum", the weights are set to be 1.'
+    )
+    models_args = model_args(exclude_hybrid=True)
+    models_args.name = "models"
+    models_args.fold_subdoc = True
+    models_args.set_dtype(list)
+    models_args.set_repeat(True)
+    models_args.doc = "The sub-models."
+    ca = Argument(
+        "linear_ener",
+        dict,
+        [
+            models_args,
+            Argument(
+                "weights",
+                [list, str],
+                optional=False,
+                doc=doc_weights,
+            ),
         ],
     )
     return ca
