@@ -203,17 +203,6 @@ class TestDPTestEner(unittest.TestCase, TestDPTest):
             pred_v_peratom, pred_v / len(self.atype), decimal=default_places
         )
 
-        self.expected_d = np.array(
-            [
-                -9.274180565967479195e-01,
-                2.698028341272042496e00,
-                2.521268387140979117e-01,
-                2.927260638453461628e00,
-                -8.571926301526779923e-01,
-                1.667785136187720063e00,
-            ]
-        )
-
 
 class TestDPTestDipole(unittest.TestCase, TestDPTest):
     @classmethod
@@ -235,7 +224,9 @@ class TestDPTestDipole(unittest.TestCase, TestDPTest):
                 1.667785136187720063e00,
             ]
         )
+        self.expected_global_d = np.sum(self.expected_d.reshape(1, -1, 3), axis=1)
         np.save(Path(self.test_data) / "set.000" / "atomic_dipole.npy", self.expected_d)
+        np.save(Path(self.test_data) / "set.000" / "dipole.npy", self.expected_global_d)
 
     def test_1frame(self):
         detail_file = "test_dp_test_dipole_detail"
@@ -252,6 +243,24 @@ class TestDPTestDipole(unittest.TestCase, TestDPTest):
         )
         dipole = np.loadtxt(detail_file + ".out", ndmin=2)[0, 6:12]
         np.testing.assert_almost_equal(dipole, self.expected_d, decimal=default_places)
+
+    def test_1frame_global(self):
+        detail_file = "test_dp_test_global_dipole_detail"
+        dp_test(
+            model=self.model_name,
+            system=self.test_data,
+            datafile=None,
+            set_prefix="set",
+            numb_test=0,
+            rand_seed=None,
+            shuffle_test=False,
+            detail_file=detail_file,
+            atomic=False,
+        )
+        dipole = np.loadtxt(detail_file + ".out", ndmin=2)[:, 3:6]
+        np.testing.assert_almost_equal(
+            dipole, self.expected_global_d, decimal=default_places
+        )
 
 
 class TestDPTestPolar(unittest.TestCase, TestDPTest):
@@ -286,9 +295,14 @@ class TestDPTestPolar(unittest.TestCase, TestDPTest):
                 4.448255365635306879e-01,
             ]
         )
+        self.expected_global_d = np.sum(self.expected_d.reshape(1, -1, 9), axis=1)
         np.save(
             Path(self.test_data) / "set.000" / "atomic_polarizability.npy",
             self.expected_d,
+        )
+        np.save(
+            Path(self.test_data) / "set.000" / "polarizability.npy",
+            self.expected_global_d,
         )
 
     def test_1frame(self):
@@ -304,5 +318,23 @@ class TestDPTestPolar(unittest.TestCase, TestDPTest):
             detail_file=detail_file,
             atomic=True,
         )
-        dipole = np.loadtxt(detail_file + ".out", ndmin=2)[0, 18:36]
-        np.testing.assert_almost_equal(dipole, self.expected_d, decimal=default_places)
+        polar = np.loadtxt(detail_file + ".out", ndmin=2)[0, 18:36]
+        np.testing.assert_almost_equal(polar, self.expected_d, decimal=default_places)
+
+    def test_1frame_global(self):
+        detail_file = "test_dp_test_global_polar_detail"
+        dp_test(
+            model=self.model_name,
+            system=self.test_data,
+            datafile=None,
+            set_prefix="set",
+            numb_test=0,
+            rand_seed=None,
+            shuffle_test=False,
+            detail_file=detail_file,
+            atomic=False,
+        )
+        polar = np.loadtxt(detail_file + ".out", ndmin=2)[:, 9:18]
+        np.testing.assert_almost_equal(
+            polar, self.expected_global_d, decimal=default_places
+        )

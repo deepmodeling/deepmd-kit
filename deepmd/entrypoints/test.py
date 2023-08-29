@@ -858,9 +858,9 @@ def test_polar(
             )
             header_text = (
                 "data_pxx data_pxy data_pxz data_pyx data_pyy data_pyz data_pzx "
+                "data_pzy data_pzz pred_pxx pred_pxy pred_pxz pred_pyx pred_pyy "
+                "pred_pyz pred_pzx pred_pzy pred_pzz"
             )
-            "data_pzy data_pzz pred_pxx pred_pxy pred_pxz pred_pyx pred_pyy pred_pyz "
-            "pred_pzx pred_pzy pred_pzz"
         else:
             pe = np.concatenate(
                 (
