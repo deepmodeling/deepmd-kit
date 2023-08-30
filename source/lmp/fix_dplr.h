@@ -78,6 +78,7 @@ class FixDPLR : public Fix {
   double qe2f;
   void update_efield_variables();
   enum { NONE, CONSTANT, EQUAL };
+  std::vector<int> type_idx_map;
 };
 }  // namespace LAMMPS_NS
 

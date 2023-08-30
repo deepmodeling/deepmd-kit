@@ -75,6 +75,7 @@ class PairDeepMD : public Pair {
   std::string get_file_content(const std::string &model);
   std::vector<std::string> get_file_content(
       const std::vector<std::string> &models);
+  std::vector<std::string> type_names;
 
  protected:
   virtual void allocate();

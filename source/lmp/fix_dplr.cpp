@@ -63,7 +63,7 @@ FixDPLR::FixDPLR(LAMMPS *lmp, int narg, char **arg)
   if (strcmp(update->unit_style, "metal") != 0) {
     error->all(
         FLERR,
-        "Pair deepmd requires metal unit, please set it by \"units metal\"");
+        "Fix dplr requires metal unit, please set it by \"units metal\"");
   }
 
   int iarg = 3;
@@ -72,7 +72,7 @@ FixDPLR::FixDPLR(LAMMPS *lmp, int narg, char **arg)
   while (iarg < narg) {
     if (!is_key(arg[iarg])) {
       error->all(FLERR,
-                 "Illegal pair_style command\nwrong number of parameters\n");
+                 "Illegal fix command\nwrong number of parameters\n");
     }
     if (string(arg[iarg]) == string("model")) {
       if (iarg + 1 > narg) {
@@ -152,6 +152,53 @@ FixDPLR::FixDPLR(LAMMPS *lmp, int narg, char **arg)
   pair_deepmd = (PairDeepMD *)force->pair_match("deepmd", 1);
   if (!pair_deepmd) {
     error->all(FLERR, "pair_style deepmd should be set before this fix\n");
+  }
+
+  int n = atom->ntypes;
+  std::vector<std::string> type_names = pair_deepmd->type_names;
+  if (type_names.size() == 0){
+    type_idx_map.resize(n);
+    for (int ii = 0; ii < n; ++ii) {
+      type_idx_map[ii] = ii;
+    }
+  } else {
+    std::vector<std::string> type_map;
+    std::string type_map_str;
+    deep_pot.get_type_map(type_map_str);
+    // convert the string to a vector of strings
+    std::istringstream iss(type_map_str);
+    std::string type_name;
+    while (iss >> type_name) {
+      type_map.push_back(type_name);
+    }
+
+    type_idx_map.clear();
+    for (std::string type_name: type_names) {
+      bool found_element = false;
+      for (int ii = 0; ii < type_map.size(); ++ii) {
+        if (type_map[ii] == type_name) {
+          type_idx_map.push_back(ii);
+          found_element = true;
+          break;
+        }
+      }
+      if (!found_element && "NULL" == type_name) {
+        type_idx_map.push_back(type_map.size());  // ghost type
+        found_element = true;
+      }
+      if (!found_element) {
+        error->all(FLERR, "pair_coeff: element " + type_name +
+                          " not found in the DPLR model");
+      }
+      iarg += 1;
+    }
+    numb_types = type_idx_map.size();
+    if (numb_types < n) {
+      type_idx_map.resize(n);
+      for (int ii = numb_types; ii < n; ++ii) {
+        type_idx_map[ii] = -1;
+      }
+    }
   }
 
   // set comm size needed by this fix

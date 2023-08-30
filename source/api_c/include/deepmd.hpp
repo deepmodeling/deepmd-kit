@@ -1837,6 +1837,15 @@ class DeepTensor {
   void print_summary(const std::string &pre) const {
     DP_PrintSummary(pre.c_str());
   }
+  /**
+   * @brief Get the type map (element name of the atom types) of this model.
+   * @param[out] type_map The type map of this model.
+   **/
+  void get_type_map(std::string &type_map) {
+    const char *type_map_c = DP_DeepTensorGetTypeMap(dp);
+    type_map.assign(type_map_c);
+    delete[] type_map_c;
+  };
 
  private:
   DP_DeepTensor *dt;
