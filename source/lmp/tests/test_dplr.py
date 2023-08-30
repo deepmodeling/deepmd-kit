@@ -469,7 +469,8 @@ def test_min_dplr(lammps):
             expected_f_min_step1[lammps.atoms[ii].id - 1]
         )
 
-def test_pair_deepmd_lr_type_map(lammps):
+def test_pair_deepmd_lr_type_map(lammps_type_map):
+    lammps = lammps_type_map
     lammps.pair_style(f"deepmd {pb_file.resolve()}")
     lammps.pair_coeff("* * H O")
     lammps.bond_style("zero")
