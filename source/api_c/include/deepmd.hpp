@@ -1842,7 +1842,7 @@ class DeepTensor {
    * @param[out] type_map The type map of this model.
    **/
   void get_type_map(std::string &type_map) {
-    const char *type_map_c = DP_DeepTensorGetTypeMap(dp);
+    const char *type_map_c = DP_DeepTensorGetTypeMap(dt);
     type_map.assign(type_map_c);
     delete[] type_map_c;
   };
