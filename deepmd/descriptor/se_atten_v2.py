@@ -111,5 +111,5 @@ class DescrptSeAttenV2(DescrptSeAtten):
             multi_task=multi_task,
             stripped_type_embedding=True,
             smooth_type_embdding=True,
-            **kwargs
+            **kwargs,
         )
