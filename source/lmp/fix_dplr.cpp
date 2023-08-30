@@ -156,22 +156,21 @@ FixDPLR::FixDPLR(LAMMPS *lmp, int narg, char **arg)
 
   int n = atom->ntypes;
   std::vector<std::string> type_names = pair_deepmd->type_names;
-  if (type_names.size() == 0){
+  std::vector<std::string> type_map;
+  std::string type_map_str;
+  dpt.get_type_map(type_map_str);
+  // convert the string to a vector of strings
+  std::istringstream iss(type_map_str);
+  std::string type_name;
+  while (iss >> type_name) {
+    type_map.push_back(type_name);
+  }
+  if (type_names.size() == 0 || type_map.size() == 0){
     type_idx_map.resize(n);
     for (int ii = 0; ii < n; ++ii) {
       type_idx_map[ii] = ii;
     }
   } else {
-    std::vector<std::string> type_map;
-    std::string type_map_str;
-    deep_pot.get_type_map(type_map_str);
-    // convert the string to a vector of strings
-    std::istringstream iss(type_map_str);
-    std::string type_name;
-    while (iss >> type_name) {
-      type_map.push_back(type_name);
-    }
-
     type_idx_map.clear();
     for (std::string type_name: type_names) {
       bool found_element = false;
@@ -192,7 +191,7 @@ FixDPLR::FixDPLR(LAMMPS *lmp, int narg, char **arg)
       }
       iarg += 1;
     }
-    numb_types = type_idx_map.size();
+    int numb_types = type_idx_map.size();
     if (numb_types < n) {
       type_idx_map.resize(n);
       for (int ii = numb_types; ii < n; ++ii) {
