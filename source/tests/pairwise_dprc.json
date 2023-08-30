@@ -45,7 +45,6 @@
     "qmmm_model": {
       "descriptor": {
         "type": "se_atten_v2",
-        "stripped_type_embedding": true,
         "sel": 100,
         "rcut_smth": 5.80,
         "rcut": 6.00,
