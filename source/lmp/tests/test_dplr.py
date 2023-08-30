@@ -277,7 +277,7 @@ def setup_module():
     write_lmp_data_full(
         box, coord, mol_list, type_OH, charge, data_file, bond_list, mass_list
     )
-    write_lmp_data(box, coord, mol_list, type_HO, charge, data_type_map_file, bond_list, mass_list)
+    write_lmp_data_full(box, coord, mol_list, type_HO, charge, data_type_map_file, bond_list, mass_list)
 
 
 def teardown_module():
