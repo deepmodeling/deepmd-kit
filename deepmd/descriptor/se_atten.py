@@ -110,11 +110,11 @@ class DescrptSeAtten(DescrptSeA):
             If the model has multi fitting nets to train.
     stripped_type_embedding
             Whether to strip the type embedding into a separated embedding network.
-            Default value will be False in this descriptor.
+            Default value will be True in `se_atten_v2` descriptor.
     smooth_type_embdding
             When using stripped type embedding, whether to dot smooth factor on the network output of type embedding
             to keep the network smooth, instead of setting `set_davg_zero` to be True.
-            Default value will be False in this descriptor.
+            Default value will be True in `se_atten_v2` descriptor.
     """
 
     def __init__(
