@@ -332,6 +332,7 @@ def descrpt_hybrid_args():
         )
     ]
 
+
 def descrpt_se_atten_common_args():
     doc_sel = 'This parameter set the number of selected neighbors. Note that this parameter is a little different from that in other descriptors. Instead of separating each type of atoms, only the summation matters. And this number is highly related with the efficiency, thus one should not make it too large. Usually 200 or less is enough, far away from the GPU limitation 4096. It can be:\n\n\
     - `int`. The maximum number of neighbor atoms to be considered. We recommend it to be less than 200. \n\n\
@@ -389,6 +390,7 @@ def descrpt_se_atten_common_args():
         Argument("attn_mask", bool, optional=True, default=False, doc=doc_attn_mask),
     ]
 
+
 @descrpt_args_plugin.register("se_atten")
 def descrpt_se_atten_args():
     doc_stripped_type_embedding = "Whether to strip the type embedding into a separated embedding network. Setting it to `False` will fall back to the previous version of `se_atten` which is non-compressible."
@@ -414,6 +416,7 @@ def descrpt_se_atten_args():
             "set_davg_zero", bool, optional=True, default=True, doc=doc_set_davg_zero
         ),
     ]
+
 
 @descrpt_args_plugin.register("se_atten_v2")
 def descrpt_se_atten_v2_args():

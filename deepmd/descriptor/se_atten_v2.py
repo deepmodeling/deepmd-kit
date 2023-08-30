@@ -1,10 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
-import warnings
 from typing import (
     List,
     Optional,
-    Tuple,
 )
 
 from .descriptor import (
@@ -122,5 +120,5 @@ class DescrptSeAttenV2(DescrptSeAtten):
             multi_task=multi_task,
             stripped_type_embedding=stripped_type_embedding,
             smooth_type_embdding=smooth_type_embdding,
-            **kwargs
+            **kwargs,
         )
