@@ -56,7 +56,7 @@ An example of the DPA-1 descriptor is provided as follows
 * {ref}`attn_dotr <model/descriptor[se_atten]/attn_dotr>` determines whether to dot the relative coordinates on the attention weights as a gated scheme, True is recommended.
 
 ### Descriptor `"se_atten_v2"`
-We highly recommend using the version 2.0 of the attention-based descriptor `"se_atten_v2"`, which is inherited from `"se_atten"` but with the following parameter modifications: 
+We highly recommend using the version 2.0 of the attention-based descriptor `"se_atten_v2"`, which is inherited from `"se_atten"` but with the following parameter modifications:
 ```json
       "stripped_type_embedding": true,
       "smooth_type_embdding": true,
