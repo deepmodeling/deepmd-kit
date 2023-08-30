@@ -4,6 +4,7 @@
 #include <iomanip>
 #include <iostream>
 #include <limits>
+#include <sstream>
 
 #include "atom.h"
 #include "comm.h"
