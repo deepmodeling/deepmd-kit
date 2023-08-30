@@ -112,8 +112,7 @@ It is noted that the [`se_atten` descriptor](./train-se-atten.md) should be used
     },
     "qm_model": {
       "descriptor": {
-        "type": "se_atten",
-        "stripped_type_embedding": true,
+        "type": "se_atten_v2",
         "sel": 24,
         "rcut_smth": 0.50,
         "rcut": 9.00,
@@ -150,8 +149,7 @@ It is noted that the [`se_atten` descriptor](./train-se-atten.md) should be used
     },
     "qmmm_model": {
       "descriptor": {
-        "type": "se_atten",
-        "stripped_type_embedding": true,
+        "type": "se_atten_v2",
         "sel": 27,
         "rcut_smth": 0.50,
         "rcut": 6.00,

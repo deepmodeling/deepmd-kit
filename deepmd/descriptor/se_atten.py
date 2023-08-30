@@ -108,6 +108,13 @@ class DescrptSeAtten(DescrptSeA):
             Whether to mask the diagonal in the attention weights.
     multi_task
             If the model has multi fitting nets to train.
+    stripped_type_embedding
+            Whether to strip the type embedding into a separated embedding network.
+            Default value will be False in this descriptor.
+    smooth_type_embdding
+            When using stripped type embedding, whether to dot smooth factor on the network output of type embedding
+            to keep the network smooth, instead of setting `set_davg_zero` to be True.
+            Default value will be False in this descriptor.
     """
 
     def __init__(
@@ -133,10 +140,10 @@ class DescrptSeAtten(DescrptSeA):
         attn_mask: bool = False,
         multi_task: bool = False,
         stripped_type_embedding: bool = False,
-        smooth_type_embdding: bool = True,
+        smooth_type_embdding: bool = False,
         **kwargs,
     ) -> None:
-        if not set_davg_zero:
+        if not set_davg_zero and not (stripped_type_embedding and smooth_type_embdding):
             warnings.warn(
                 "Set 'set_davg_zero' False in descriptor 'se_atten' "
                 "may cause unexpected incontinuity during model inference!"

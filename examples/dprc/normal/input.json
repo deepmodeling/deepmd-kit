@@ -87,8 +87,7 @@
           "seed": 1
         },
         {
-          "type": "se_atten",
-          "stripped_type_embedding": true,
+          "type": "se_atten_v2",
           "sel": 150,
           "rcut_smth": 5.80,
           "rcut": 6.00,
