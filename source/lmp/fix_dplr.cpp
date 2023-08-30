@@ -330,7 +330,7 @@ void FixDPLR::get_valid_pairs(vector<pair<int, int> > &pairs) {
   // get type
   int *type = atom->type;
   for (int ii = 0; ii < nall; ++ii) {
-    dtype[ii] = type[ii] - 1;
+    dtype[ii] = type_idx_map[type[ii] - 1];
   }
 
   int **bondlist = neighbor->bondlist;
@@ -440,7 +440,7 @@ void FixDPLR::pre_force(int vflag) {
   vector<FLOAT_PREC> dcoord(nall * 3, 0.);
   // get type
   for (int ii = 0; ii < nall; ++ii) {
-    dtype[ii] = type[ii] - 1;
+    dtype[ii] = type_idx_map[type[ii] - 1];
   }
   // get box
   dbox[0] = domain->h[0];  // xx
@@ -564,7 +564,7 @@ void FixDPLR::post_force(int vflag) {
   {
     int *type = atom->type;
     for (int ii = 0; ii < nall; ++ii) {
-      dtype[ii] = type[ii] - 1;
+      dtype[ii] = type_idx_map[type[ii] - 1];
     }
     dbox[0] = domain->h[0];  // xx
     dbox[4] = domain->h[1];  // yy
