@@ -255,7 +255,12 @@ def _lammps(data_file, units="metal") -> PyLammps:
     lammps.read_data(data_file.resolve())
     lammps.mass("1 16")
     lammps.mass("2 2")
-    lammps.timestep(0.0005)
+    if units == "metal":
+        lammps.timestep(0.0005)
+    elif units == "real":
+        lammps.timestep(0.5)
+    else:
+        raise ValueError("units should be metal or real")
     lammps.fix("1 all nve")
     return lammps
 
@@ -276,7 +281,9 @@ def lammps_type_map():
 
 @pytest.fixture
 def lammps_real():
-    yield _lammps(data_file=data_file, units="real")
+    lmp = _lammps(data_file=data_file, units="real")
+    yield lmp
+    lmp.close()
 
 
 def test_pair_deepmd(lammps):
@@ -466,7 +473,9 @@ def test_pair_deepmd_real(lammps_real):
     lammps_real.run(0)
     assert lammps_real.eval("pe") == pytest.approx(expected_e * metal2real)
     for ii in range(6):
-        assert lammps_real.atoms[ii].force == pytest.approx(expected_f[ii] * metal2real)
+        assert lammps_type_map.atoms[ii].force == pytest.approx(
+            expected_f[lammps_type_map.atoms[ii].id - 1] * metal2real
+        )
     lammps_real.run(1)
 
 
@@ -483,8 +492,11 @@ def test_pair_deepmd_virial_real(lammps_real):
     lammps_real.run(0)
     assert lammps_real.eval("pe") == pytest.approx(expected_e * metal2real)
     for ii in range(6):
-        assert lammps_real.atoms[ii].force == pytest.approx(expected_f[ii] * metal2real)
+        assert lammps_type_map.atoms[ii].force == pytest.approx(
+            expected_f[lammps_type_map.atoms[ii].id - 1] * metal2real
+        )
+    idx_map = lammps.lmp.numpy.extract_atom("id") - 1
     for ii in range(9):
         assert np.array(
             lammps_real.variables[f"virial{ii}"].value
-        ) / nktv2p == pytest.approx(expected_v[:, ii] * metal2real)
+        ) / nktv2p == pytest.approx(expected_v[idx_map, ii] * metal2real)
