@@ -108,6 +108,13 @@ class DescrptSeAtten(DescrptSeA):
             Whether to mask the diagonal in the attention weights.
     multi_task
             If the model has multi fitting nets to train.
+    stripped_type_embedding
+            Whether to strip the type embedding into a separated embedding network.
+            Default value will be True in `se_atten_v2` descriptor.
+    smooth_type_embdding
+            When using stripped type embedding, whether to dot smooth factor on the network output of type embedding
+            to keep the network smooth, instead of setting `set_davg_zero` to be True.
+            Default value will be True in `se_atten_v2` descriptor.
     """
 
     def __init__(
@@ -133,9 +140,10 @@ class DescrptSeAtten(DescrptSeA):
         attn_mask: bool = False,
         multi_task: bool = False,
         stripped_type_embedding: bool = False,
+        smooth_type_embdding: bool = False,
         **kwargs,
     ) -> None:
-        if not set_davg_zero:
+        if not set_davg_zero and not (stripped_type_embedding and smooth_type_embdding):
             warnings.warn(
                 "Set 'set_davg_zero' False in descriptor 'se_atten' "
                 "may cause unexpected incontinuity during model inference!"
@@ -166,6 +174,7 @@ class DescrptSeAtten(DescrptSeA):
                 "2"
             ), "se_atten only support tensorflow version 2.0 or higher."
         self.stripped_type_embedding = stripped_type_embedding
+        self.smooth = smooth_type_embdding
         self.ntypes = ntypes
         self.att_n = attn
         self.attn_layer = attn_layer
@@ -607,6 +616,7 @@ class DescrptSeAtten(DescrptSeA):
             sel_a=self.sel_all_a,
             sel_r=self.sel_all_r,
         )
+
         self.nei_type_vec = tf.reshape(self.nei_type_vec, [-1])
         self.nmask = tf.cast(
             tf.reshape(self.nmask, [-1, 1, self.sel_all_a[0]]),
@@ -625,6 +635,41 @@ class DescrptSeAtten(DescrptSeA):
             tf.slice(atype, [0, 0], [-1, natoms[0]]), [-1]
         )  ## lammps will have error without this
         self._identity_tensors(suffix=suffix)
+        if self.smooth:
+            self.sliced_avg = tf.reshape(
+                tf.slice(
+                    tf.reshape(self.t_avg, [self.ntypes, -1, 4]), [0, 0, 0], [-1, 1, 1]
+                ),
+                [self.ntypes, 1],
+            )
+            self.sliced_std = tf.reshape(
+                tf.slice(
+                    tf.reshape(self.t_std, [self.ntypes, -1, 4]), [0, 0, 0], [-1, 1, 1]
+                ),
+                [self.ntypes, 1],
+            )
+            self.avg_looked_up = tf.reshape(
+                tf.nn.embedding_lookup(self.sliced_avg, self.atype_nloc),
+                [-1, natoms[0], 1],
+            )
+            self.std_looked_up = tf.reshape(
+                tf.nn.embedding_lookup(self.sliced_std, self.atype_nloc),
+                [-1, natoms[0], 1],
+            )
+            self.recovered_r = (
+                tf.reshape(
+                    tf.slice(tf.reshape(self.descrpt, [-1, 4]), [0, 0], [-1, 1]),
+                    [-1, natoms[0], self.sel_all_a[0]],
+                )
+                * self.std_looked_up
+                + self.avg_looked_up
+            )
+            uu = 1 - self.rcut_r_smth * self.recovered_r
+            self.recovered_switch = -uu * uu * uu + 1
+            self.recovered_switch = tf.clip_by_value(self.recovered_switch, 0.0, 1.0)
+            self.recovered_switch = tf.cast(
+                self.recovered_switch, self.filter_precision
+            )
 
         self.dout, self.qmat = self._pass_filter(
             self.descrpt_reshape,
@@ -1146,9 +1191,10 @@ class DescrptSeAtten(DescrptSeA):
                         two_embd = tf.nn.embedding_lookup(
                             embedding_of_two_side_type_embedding, index_of_two_side
                         )
-
+                    if self.smooth:
+                        two_embd = two_embd * tf.reshape(self.recovered_switch, [-1, 1])
                     if not self.compress:
-                        xyz_scatter = xyz_scatter * two_embd + two_embd
+                        xyz_scatter = xyz_scatter * two_embd + xyz_scatter
                     else:
                         return op_module.tabulate_fusion_se_atten(
                             tf.cast(self.table.data[net], self.filter_precision),

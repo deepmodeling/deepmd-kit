@@ -8,7 +8,8 @@ The codes of the following interfaces are not a part of the DeePMD-kit package a
 
 ```py
 import dpdata
-dsys = dpdata.LabeledSystem('OUTCAR')
+
+dsys = dpdata.LabeledSystem("OUTCAR")
 dp_sys = dsys.predict("frozen_model_compressed.pb")
 ```
 

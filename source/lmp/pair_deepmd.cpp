@@ -1153,6 +1153,10 @@ void PairDeepMD::coeff(int narg, char **arg) {
           break;
         }
       }
+      if (!found_element && "NULL" == type_name) {
+        type_idx_map.push_back(type_map.size());  // ghost type
+        found_element = true;
+      }
       if (!found_element) {
         error->all(FLERR, "pair_coeff: element " + type_name +
                               " not found in the model");

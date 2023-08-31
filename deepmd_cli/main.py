@@ -274,7 +274,11 @@ def main_parser() -> argparse.ArgumentParser:
         "-S", "--set-prefix", default="set", type=str, help="The set prefix"
     )
     parser_tst.add_argument(
-        "-n", "--numb-test", default=100, type=int, help="The number of data for test"
+        "-n",
+        "--numb-test",
+        default=0,
+        type=int,
+        help="The number of data for test. 0 means all data.",
     )
     parser_tst.add_argument(
         "-r", "--rand-seed", type=int, default=None, help="The random seed"
@@ -437,6 +441,12 @@ def main_parser() -> argparse.ArgumentParser:
         default=1,
         type=int,
         help="The trajectory frequency of the system",
+    )
+    parser_model_devi.add_argument(
+        "--real_error",
+        action="store_true",
+        default=False,
+        help="Calculate the RMS real error of the model. The real data should be given in the systems.",
     )
 
     # * convert models

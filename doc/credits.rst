@@ -42,7 +42,7 @@ Cite DeePMD-kit and methods
 
    Wang_NuclFusion_2022_v62_p126013
 
-- If attention-based descriptor (`se_atten`) is used,
+- If attention-based descriptor (`se_atten`, `se_atten_v2`) is used,
 
 .. bibliography::
    :filter: False

@@ -1,5 +1,5 @@
 {
-  "_comment": "layer_name",
+  "_comment1": "layer_name",
   "model": {
     "descriptor": {
       "type": "se_a",
@@ -58,7 +58,7 @@
     "start_lr": 0.001,
     "decay_steps": 5000,
     "decay_rate": 0.95,
-    "_comment": "that's all"
+    "_comment2": "that's all"
   },
 
   "loss_dict": {
@@ -82,7 +82,7 @@
     }
   },
 
-  "_comment": " traing controls",
+  "_comment3": " traing controls",
   "systems": [
     "system"
   ],
@@ -102,5 +102,5 @@
   "profiling": false,
   "profiling_file": "timeline.json",
 
-  "_comment": "that's all"
+  "_comment4": "that's all"
 }

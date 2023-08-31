@@ -156,7 +156,7 @@ class NvnmdConfig:
             jdata["SEL"] = (jdata["sel"] + [0, 0, 0, 0])[0:4]
             jdata["NNODE_FEAS"] = [1] + jdata["neuron"]
             jdata["nlayer_fea"] = len(jdata["neuron"])
-            jdata["same_net"] = int(1) if jdata["type_one_side"] else int(0)
+            jdata["same_net"] = 1 if jdata["type_one_side"] else 0
             # neighbor
             jdata["NIDP"] = int(np.sum(jdata["sel"]))
             jdata["NIX"] = 2 ** int(np.ceil(np.log2(jdata["NIDP"] / 1.5)))
@@ -170,7 +170,7 @@ class NvnmdConfig:
             jdata["SEL"] = jdata["sel"]
             jdata["NNODE_FEAS"] = [1] + jdata["neuron"]
             jdata["nlayer_fea"] = len(jdata["neuron"])
-            jdata["same_net"] = int(1) if jdata["type_one_side"] else int(0)
+            jdata["same_net"] = 1 if jdata["type_one_side"] else 0
             # neighbor
             jdata["NIDP"] = int(jdata["sel"])
             jdata["NIX"] = 2 ** int(np.ceil(np.log2(jdata["NIDP"] / 1.5)))

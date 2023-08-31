@@ -445,7 +445,7 @@ def get_min_nbor_dist(jdata, rcut):
 
 
 def parse_auto_sel(sel):
-    if type(sel) is not str:
+    if not isinstance(sel, str):
         return False
     words = sel.split(":")
     if words[0] == "auto":
@@ -476,7 +476,15 @@ def update_one_sel(jdata, descriptor):
     if descriptor["type"] == "loc_frame":
         return descriptor
     rcut = descriptor["rcut"]
-    tmp_sel = get_sel(jdata, rcut, one_type=descriptor["type"] in ("se_atten",))
+    tmp_sel = get_sel(
+        jdata,
+        rcut,
+        one_type=descriptor["type"]
+        in (
+            "se_atten",
+            "se_atten_v2",
+        ),
+    )
     sel = descriptor["sel"]
     if isinstance(sel, int):
         # convert to list and finnally convert back to int
@@ -495,7 +503,10 @@ def update_one_sel(jdata, descriptor):
                     "not less than %d, but you set it to %d. The accuracy"
                     " of your model may get worse." % (ii, tt, dd)
                 )
-    if descriptor["type"] in ("se_atten",):
+    if descriptor["type"] in (
+        "se_atten",
+        "se_atten_v2",
+    ):
         descriptor["sel"] = sel = sum(sel)
     return descriptor
 

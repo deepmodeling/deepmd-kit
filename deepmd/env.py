@@ -48,7 +48,7 @@ def dlopen_library(module: str, filename: str):
     except ModuleNotFoundError:
         pass
     else:
-        libs = sorted(Path(m.__file__).parent.glob(filename))
+        libs = sorted(Path(m.__path__[0]).glob(filename))
         # hope that there is only one version installed...
         if len(libs):
             ctypes.CDLL(str(libs[0].absolute()))
@@ -418,9 +418,9 @@ def get_module(module_name: str) -> "ModuleType":
                 ) from e
             error_message = (
                 "This deepmd-kit package is inconsitent with TensorFlow "
-                "Runtime, thus an error is raised when loading {}. "
+                f"Runtime, thus an error is raised when loading {module_name}. "
                 "You need to rebuild deepmd-kit against this TensorFlow "
-                "runtime.".format(module_name)
+                "runtime."
             )
             if TF_CXX11_ABI_FLAG == 1:
                 # #1791

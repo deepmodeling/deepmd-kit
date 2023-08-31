@@ -1,5 +1,5 @@
 {
-  "_comment": " model parameters",
+  "_comment1": " model parameters",
   "model": {
     "descriptor": {
       "type": "loc_frame",
@@ -26,12 +26,12 @@
         1,
         0
       ],
-      "_comment": " default rule: []",
-      "_comment": " user defined rule: for each type provides two axes, ",
-      "_comment": "                    for each axis: (a_or_r, type, idx)",
-      "_comment": "                    if type < 0, exclude type -(type+1)",
-      "_comment": "                    for water (O:0, H:1) it can be",
-      "_comment": "                    [0, 1, 0, 0, 1, 1, 0, 0, 0, 0, 1, 0]"
+      "_comment2": " default rule: []",
+      "_comment3": " user defined rule: for each type provides two axes, ",
+      "_comment4": "                    for each axis: (a_or_r, type, idx)",
+      "_comment5": "                    if type < 0, exclude type -(type+1)",
+      "_comment6": "                    for water (O:0, H:1) it can be",
+      "_comment7": "                    [0, 1, 0, 0, 1, 1, 0, 0, 0, 0, 1, 0]"
     },
     "fitting_net": {
       "neuron": [
@@ -45,7 +45,7 @@
     }
   },
 
-  "_comment": " traing controls",
+  "_comment8": " traing controls",
   "systems": [
     "system"
   ],
@@ -65,8 +65,8 @@
 
   "seed": 1,
 
-  "_comment": " display and restart",
-  "_comment": " frequencies counted in batch",
+  "_comment9": " display and restart",
+  "_comment10": " frequencies counted in batch",
   "disp_file": "lcurve.out",
   "disp_freq": 100,
   "numb_test": 1,
@@ -76,5 +76,5 @@
   "disp_training": true,
   "time_training": true,
 
-  "_comment": "that's all"
+  "_comment11": "that's all"
 }
