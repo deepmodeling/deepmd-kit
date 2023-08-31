@@ -354,8 +354,7 @@ PairDeepMD::PairDeepMD(LAMMPS *lmp)
                "Pair deepmd requires metal or real unit, please set it by "
                "\"units metal\" or \"units real\"");
   }
-  double conversion_factor =
-      utils::get_conversion_factor(utils::ENERGY, unit_convert);
+  conversion_factor = utils::get_conversion_factor(utils::ENERGY, unit_convert);
   restartinfo = 1;
 #if LAMMPS_VERSION_NUMBER >= 20201130
   centroidstressflag =
