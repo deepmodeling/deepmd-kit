@@ -72,8 +72,7 @@ FixDPLR::FixDPLR(LAMMPS *lmp, int narg, char **arg)
   bond_type.clear();
   while (iarg < narg) {
     if (!is_key(arg[iarg])) {
-      error->all(FLERR,
-                 "Illegal fix command\nwrong number of parameters\n");
+      error->all(FLERR, "Illegal fix command\nwrong number of parameters\n");
     }
     if (string(arg[iarg]) == string("model")) {
       if (iarg + 1 > narg) {
@@ -129,10 +128,6 @@ FixDPLR::FixDPLR(LAMMPS *lmp, int narg, char **arg)
   }
   assert(map_vec.size() % 2 == 0),
       "number of ints provided by type_associate should be even";
-  for (int ii = 0; ii < map_vec.size() / 2; ++ii) {
-    type_asso[map_vec[ii * 2 + 0]] = map_vec[ii * 2 + 1];
-    bk_type_asso[map_vec[ii * 2 + 1]] = map_vec[ii * 2 + 0];
-  }
 
   // dpt.init(model);
   // dtm.init("frozen_model.pb");
@@ -141,13 +136,6 @@ FixDPLR::FixDPLR(LAMMPS *lmp, int narg, char **arg)
     dtm.init(model, 0, "dipole_charge");
   } catch (deepmd_compat::deepmd_exception &e) {
     error->one(FLERR, e.what());
-  }
-
-  sel_type = dpt.sel_types();
-  sort(sel_type.begin(), sel_type.end());
-  dpl_type.clear();
-  for (int ii = 0; ii < sel_type.size(); ++ii) {
-    dpl_type.push_back(type_asso[sel_type[ii]]);
   }
 
   pair_deepmd = (PairDeepMD *)force->pair_match("deepmd", 1);
@@ -166,14 +154,14 @@ FixDPLR::FixDPLR(LAMMPS *lmp, int narg, char **arg)
   while (iss >> type_name) {
     type_map.push_back(type_name);
   }
-  if (type_names.size() == 0 || type_map.size() == 0){
+  if (type_names.size() == 0 || type_map.size() == 0) {
     type_idx_map.resize(n);
     for (int ii = 0; ii < n; ++ii) {
       type_idx_map[ii] = ii;
     }
   } else {
     type_idx_map.clear();
-    for (std::string type_name: type_names) {
+    for (std::string type_name : type_names) {
       bool found_element = false;
       for (int ii = 0; ii < type_map.size(); ++ii) {
         if (type_map[ii] == type_name) {
@@ -188,7 +176,7 @@ FixDPLR::FixDPLR(LAMMPS *lmp, int narg, char **arg)
       }
       if (!found_element) {
         error->all(FLERR, "pair_coeff: element " + type_name +
-                          " not found in the DPLR model");
+                              " not found in the DPLR model");
       }
     }
     int numb_types = type_idx_map.size();
@@ -198,6 +186,19 @@ FixDPLR::FixDPLR(LAMMPS *lmp, int narg, char **arg)
         type_idx_map[ii] = ii;
       }
     }
+  }
+
+  for (int ii = 0; ii < map_vec.size() / 2; ++ii) {
+    type_asso[type_idx_map[map_vec[ii * 2 + 0]]] =
+        type_idx_map[map_vec[ii * 2 + 1]];
+    bk_type_asso[type_idx_mapmap_vec[ii * 2 + 1]]] = type_idx_map[map_vec[ii * 2 + 0]];
+  }
+
+  sel_type = dpt.sel_types();
+  sort(sel_type.begin(), sel_type.end());
+  dpl_type.clear();
+  for (int ii = 0; ii < sel_type.size(); ++ii) {
+    dpl_type.push_back(type_asso[sel_type[ii]]);
   }
 
   // set comm size needed by this fix

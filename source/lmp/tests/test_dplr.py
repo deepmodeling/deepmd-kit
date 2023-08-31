@@ -277,7 +277,9 @@ def setup_module():
     write_lmp_data_full(
         box, coord, mol_list, type_OH, charge, data_file, bond_list, mass_list
     )
-    write_lmp_data_full(box, coord, mol_list, type_HO, charge, data_type_map_file, bond_list, mass_list)
+    write_lmp_data_full(
+        box, coord, mol_list, type_HO, charge, data_type_map_file, bond_list, mass_list
+    )
 
 
 def teardown_module():
@@ -303,11 +305,13 @@ def lammps():
     yield lmp
     lmp.close()
 
+
 @pytest.fixture
 def lammps_type_map():
     lmp = _lammps(data_file=data_type_map_file)
     yield lmp
     lmp.close()
+
 
 def test_pair_deepmd_sr(lammps):
     lammps.pair_style(f"deepmd {pb_file.resolve()}")
@@ -469,6 +473,7 @@ def test_min_dplr(lammps):
             expected_f_min_step1[lammps.atoms[ii].id - 1]
         )
 
+
 def test_pair_deepmd_lr_type_map(lammps_type_map):
     lammps_type_map.pair_style(f"deepmd {pb_file.resolve()}")
     lammps_type_map.pair_coeff("* * H O")
@@ -476,8 +481,12 @@ def test_pair_deepmd_lr_type_map(lammps_type_map):
     lammps_type_map.bond_coeff("*")
     lammps_type_map.special_bonds("lj/coul 1 1 1 angle no")
     lammps_type_map.kspace_style("pppm/dplr 1e-5")
-    lammps_type_map.kspace_modify(f"gewald {beta:.2f} diff ik mesh {mesh:d} {mesh:d} {mesh:d}")
-    lammps_type_map.fix(f"0 all dplr model {pb_file.resolve()} type_associate 2 3 bond_type 2")
+    lammps_type_map.kspace_modify(
+        f"gewald {beta:.2f} diff ik mesh {mesh:d} {mesh:d} {mesh:d}"
+    )
+    lammps_type_map.fix(
+        f"0 all dplr model {pb_file.resolve()} type_associate 2 3 bond_type 1"
+    )
     lammps_type_map.fix_modify("0 virial yes")
     lammps_type_map.run(0)
     for ii in range(8):
