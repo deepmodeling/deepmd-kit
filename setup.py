@@ -107,6 +107,7 @@ setup(
         "deepmd/nvnmd/entrypoints",
         "deepmd/nvnmd/fit",
         "deepmd/nvnmd/utils",
+        "deepmd_cli",
     ],
     cmake_args=[
         f"-DTENSORFLOW_ROOT:PATH={tf_install_dir}",
@@ -133,8 +134,8 @@ setup(
             "sphinxcontrib-bibtex",
         ],
         "lmp": [
-            "lammps~=2022.6.23.4.0; platform_system=='Linux'",
-            "lammps~=2022.6.23.4.0; platform_system!='Linux'",
+            "lammps~=2023.8.2.0.0; platform_system=='Linux'",
+            "lammps~=2023.8.2.0.0; platform_system!='Linux'",
             *find_libpython_requires,
         ],
         "ipi": [
@@ -164,7 +165,7 @@ setup(
         ],
     },
     entry_points={
-        "console_scripts": ["dp = deepmd.entrypoints.main:main", *extra_scripts],
+        "console_scripts": ["dp = deepmd_cli.main:main", *extra_scripts],
         "lammps.plugins": ["deepmd = deepmd.lmp:get_op_dir"],
     },
     cmdclass={

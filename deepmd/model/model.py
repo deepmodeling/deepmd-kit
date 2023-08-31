@@ -7,6 +7,7 @@ from enum import (
     Enum,
 )
 from typing import (
+    Dict,
     List,
     Optional,
     Union,
@@ -69,6 +70,8 @@ class Model(ABC):
         The lower boundary of the interpolation between short-range tabulated interaction and DP. It is only required when `use_srtab` is provided.
     sw_rmin
         The upper boundary of the interpolation between short-range tabulated interaction and DP. It is only required when `use_srtab` is provided.
+    srtab_add_bias : bool
+        Whether add energy bias from the statistics of the data to short-range tabulated atomic energy. It only takes effect when `use_srtab` is provided.
     spin
         spin
     compress
@@ -82,12 +85,17 @@ class Model(ABC):
             from deepmd.model.multi import (
                 MultiModel,
             )
+            from deepmd.model.pairwise_dprc import (
+                PairwiseDPRc,
+            )
 
             model_type = kwargs.get("type", "standard")
             if model_type == "standard":
                 cls = StandardModel
             elif model_type == "multi":
                 cls = MultiModel
+            elif model_type == "pairwise_dprc":
+                cls = PairwiseDPRc
             else:
                 raise ValueError(f"unknown model type: {model_type}")
             return cls.__new__(cls, *args, **kwargs)
@@ -104,6 +112,7 @@ class Model(ABC):
         smin_alpha: Optional[float] = None,
         sw_rmin: Optional[float] = None,
         sw_rmax: Optional[float] = None,
+        srtab_add_bias: bool = True,
         spin: Optional[Spin] = None,
         compress: Optional[dict] = None,
         **kwargs,
@@ -131,6 +140,7 @@ class Model(ABC):
             self.smin_alpha = smin_alpha
             self.sw_rmin = sw_rmin
             self.sw_rmax = sw_rmax
+            self.srtab_add_bias = srtab_add_bias
         else:
             self.srtab = None
 
@@ -261,14 +271,31 @@ class Model(ABC):
                 suffix=suffix,
                 reuse=reuse,
             )
-            dout = tf.identity(dout, name="o_descriptor")
+            dout = tf.identity(dout, name="o_descriptor" + suffix)
         else:
             tf.constant(
-                self.rcut, name="descrpt_attr/rcut", dtype=GLOBAL_TF_FLOAT_PRECISION
+                self.rcut,
+                name="descrpt_attr%s/rcut" % suffix,
+                dtype=GLOBAL_TF_FLOAT_PRECISION,
             )
-            tf.constant(self.ntypes, name="descrpt_attr/ntypes", dtype=tf.int32)
-            feed_dict = self.descrpt.get_feed_dict(coord_, atype_, natoms, box, mesh)
-            return_elements = [*self.descrpt.get_tensor_names(), "o_descriptor:0"]
+            tf.constant(
+                self.ntypes, name="descrpt_attr%s/ntypes" % suffix, dtype=tf.int32
+            )
+            if "global_feed_dict" in input_dict:
+                feed_dict = input_dict["global_feed_dict"]
+            else:
+                extra_feed_dict = {}
+                if "fparam" in input_dict:
+                    extra_feed_dict["fparam"] = input_dict["fparam"]
+                if "aparam" in input_dict:
+                    extra_feed_dict["aparam"] = input_dict["aparam"]
+                feed_dict = self.get_feed_dict(
+                    coord_, atype_, natoms, box, mesh, **extra_feed_dict
+                )
+            return_elements = [
+                *self.descrpt.get_tensor_names(suffix=suffix),
+                "o_descriptor%s:0" % suffix,
+            ]
             if frz_model is not None:
                 imported_tensors = self._import_graph_def_from_frz_model(
                     frz_model, feed_dict, return_elements
@@ -343,8 +370,14 @@ class Model(ABC):
         """
         raise RuntimeError("Not supported")
 
-    def enable_compression(self):
-        """Enable compression."""
+    def enable_compression(self, suffix: str = ""):
+        """Enable compression.
+
+        Parameters
+        ----------
+        suffix : str
+            suffix to name scope
+        """
         raise RuntimeError("Not supported")
 
     def get_numb_fparam(self) -> Union[int, dict]:
@@ -378,6 +411,55 @@ class Model(ABC):
     @abstractmethod
     def data_stat(self, data: dict):
         """Data staticis."""
+
+    def get_feed_dict(
+        self,
+        coord_: tf.Tensor,
+        atype_: tf.Tensor,
+        natoms: tf.Tensor,
+        box: tf.Tensor,
+        mesh: tf.Tensor,
+        **kwargs,
+    ) -> Dict[str, tf.Tensor]:
+        """Generate the feed_dict for current descriptor.
+
+        Parameters
+        ----------
+        coord_ : tf.Tensor
+            The coordinate of atoms
+        atype_ : tf.Tensor
+            The type of atoms
+        natoms : tf.Tensor
+            The number of atoms. This tensor has the length of Ntypes + 2
+            natoms[0]: number of local atoms
+            natoms[1]: total number of atoms held by this processor
+            natoms[i]: 2 <= i < Ntypes+2, number of type i atoms
+        box : tf.Tensor
+            The box. Can be generated by deepmd.model.make_stat_input
+        mesh : tf.Tensor
+            For historical reasons, only the length of the Tensor matters.
+            if size of mesh == 6, pbc is assumed.
+            if size of mesh == 0, no-pbc is assumed.
+        **kwargs : dict
+            The additional arguments
+
+        Returns
+        -------
+        feed_dict : dict[str, tf.Tensor]
+            The output feed_dict of current descriptor
+        """
+        feed_dict = {
+            "t_coord:0": coord_,
+            "t_type:0": atype_,
+            "t_natoms:0": natoms,
+            "t_box:0": box,
+            "t_mesh:0": mesh,
+        }
+        if kwargs.get("fparam") is not None:
+            feed_dict["t_fparam:0"] = kwargs["fparam"]
+        if kwargs.get("aparam") is not None:
+            feed_dict["t_aparam:0"] = kwargs["aparam"]
+        return feed_dict
 
 
 class StandardModel(Model):
@@ -479,8 +561,14 @@ class StandardModel(Model):
         self.descrpt.enable_mixed_precision(mixed_prec)
         self.fitting.enable_mixed_precision(mixed_prec)
 
-    def enable_compression(self):
-        """Enable compression."""
+    def enable_compression(self, suffix: str = ""):
+        """Enable compression.
+
+        Parameters
+        ----------
+        suffix : str
+            suffix to name scope
+        """
         graph, graph_def = load_graph_def(self.compress["model_file"])
         self.descrpt.enable_compression(
             self.compress["min_nbor_dist"],
@@ -490,11 +578,15 @@ class StandardModel(Model):
             self.compress["table_config"][1],
             self.compress["table_config"][2],
             self.compress["table_config"][3],
+            suffix=suffix,
         )
         # for fparam or aparam settings in 'ener' type fitting net
-        self.fitting.init_variables(graph, graph_def)
-        if self.typeebd is not None:
-            self.typeebd.init_variables(graph, graph_def)
+        self.fitting.init_variables(graph, graph_def, suffix=suffix)
+        if (
+            self.typeebd is not None
+            and self.typeebd.type_embedding_net_variables is None
+        ):
+            self.typeebd.init_variables(graph, graph_def, suffix=suffix)
 
     def get_fitting(self) -> Union[Fitting, dict]:
         """Get the fitting(s)."""

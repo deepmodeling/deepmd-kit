@@ -135,7 +135,7 @@ class EnerFitting(Fitting):
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
-        rcond: float = 1e-3,
+        rcond: Optional[float] = None,
         tot_ener_zero: bool = False,
         trainable: Optional[List[bool]] = None,
         seed: Optional[int] = None,
@@ -602,7 +602,13 @@ class EnerFitting(Fitting):
             )
             atype_filter = tf.cast(self.atype_nloc >= 0, GLOBAL_TF_FLOAT_PRECISION)
             self.atype_nloc = tf.reshape(self.atype_nloc, [-1])
-
+        if (
+            nvnmd_cfg.enable
+            and nvnmd_cfg.quantize_descriptor
+            and nvnmd_cfg.restore_descriptor
+            and (nvnmd_cfg.version == 1)
+        ):
+            type_embedding = nvnmd_cfg.map["t_ebd"]
         if type_embedding is not None:
             atype_embed = tf.nn.embedding_lookup(type_embedding, self.atype_nloc)
         else:
@@ -689,12 +695,14 @@ class EnerFitting(Fitting):
             outs = tf.reshape(final_layer, [tf.shape(inputs)[0], natoms[0]])
         # add bias
         self.atom_ener_before = outs * atype_filter
-        self.add_type = tf.reshape(
+        # atomic bias energy from data statistics
+        self.atom_bias_ener = tf.reshape(
             tf.nn.embedding_lookup(self.t_bias_atom_e, self.atype_nloc),
             [tf.shape(inputs)[0], tf.reduce_sum(natoms[2 : 2 + ntypes_atom])],
         )
-        outs = outs + self.add_type
+        outs = outs + self.atom_bias_ener
         outs *= atype_filter
+        self.atom_bias_ener *= atype_filter
         self.atom_ener_after = outs
 
         if self.tot_ener_zero:
@@ -853,9 +861,7 @@ class EnerFitting(Fitting):
             ).mean()
             self.bias_atom_e[idx_type_map] += delta_bias.reshape(-1)
             log.info(
-                "RMSE of atomic energy after linear regression is: {} eV/atom.".format(
-                    rmse_ae
-                )
+                f"RMSE of atomic energy after linear regression is: {rmse_ae} eV/atom."
             )
         elif bias_shift == "statistic":
             statistic_bias = np.linalg.lstsq(

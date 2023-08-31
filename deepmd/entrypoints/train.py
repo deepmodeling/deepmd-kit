@@ -354,6 +354,11 @@ def get_modifier(modi_data=None):
 
 
 def get_rcut(jdata):
+    if jdata["model"].get("type") == "pairwise_dprc":
+        return max(
+            jdata["model"]["qm_model"]["descriptor"]["rcut"],
+            jdata["model"]["qmmm_model"]["descriptor"]["rcut"],
+        )
     descrpt_data = jdata["model"]["descriptor"]
     rcut_list = []
     if descrpt_data["type"] == "hybrid":
@@ -440,7 +445,7 @@ def get_min_nbor_dist(jdata, rcut):
 
 
 def parse_auto_sel(sel):
-    if type(sel) is not str:
+    if not isinstance(sel, str):
         return False
     words = sel.split(":")
     if words[0] == "auto":
@@ -471,7 +476,15 @@ def update_one_sel(jdata, descriptor):
     if descriptor["type"] == "loc_frame":
         return descriptor
     rcut = descriptor["rcut"]
-    tmp_sel = get_sel(jdata, rcut, one_type=descriptor["type"] in ("se_atten",))
+    tmp_sel = get_sel(
+        jdata,
+        rcut,
+        one_type=descriptor["type"]
+        in (
+            "se_atten",
+            "se_atten_v2",
+        ),
+    )
     sel = descriptor["sel"]
     if isinstance(sel, int):
         # convert to list and finnally convert back to int
@@ -490,7 +503,10 @@ def update_one_sel(jdata, descriptor):
                     "not less than %d, but you set it to %d. The accuracy"
                     " of your model may get worse." % (ii, tt, dd)
                 )
-    if descriptor["type"] in ("se_atten",):
+    if descriptor["type"] in (
+        "se_atten",
+        "se_atten_v2",
+    ):
         descriptor["sel"] = sel = sum(sel)
     return descriptor
 
@@ -499,6 +515,11 @@ def update_sel(jdata):
     log.info(
         "Calculate neighbor statistics... (add --skip-neighbor-stat to skip this step)"
     )
+    if jdata["model"].get("type") == "pairwise_dprc":
+        # do not update sel; only find min distance
+        rcut = get_rcut(jdata)
+        get_min_nbor_dist(jdata, rcut)
+        return jdata
     descrpt_data = jdata["model"]["descriptor"]
     if descrpt_data["type"] == "hybrid":
         for ii in range(len(descrpt_data["list"])):

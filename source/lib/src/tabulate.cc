@@ -86,7 +86,8 @@ void deepmd::tabulate_fusion_se_a_cpu(FPTYPE* out,
                                       const FPTYPE* two_embed,
                                       const int nloc,
                                       const int nnei,
-                                      const int last_layer_size) {
+                                      const int last_layer_size,
+                                      const bool is_sorted) {
   bool enable_se_atten = two_embed != nullptr;
   memset(out, 0, sizeof(FPTYPE) * nloc * 4 * last_layer_size);
   const FPTYPE lower = table_info[0];
@@ -107,7 +108,7 @@ void deepmd::tabulate_fusion_se_a_cpu(FPTYPE* out,
       ll[2] = em[ii * nnei * 4 + jj * 4 + 2];
       ll[3] = em[ii * nnei * 4 + jj * 4 + 3];
       FPTYPE xx = em_x[ii * nnei + jj];
-      if (ago == xx) {
+      if (ago == xx && is_sorted) {
         unloop = true;
       }
       int table_idx = 0;
@@ -124,7 +125,7 @@ void deepmd::tabulate_fusion_se_a_cpu(FPTYPE* out,
         if (enable_se_atten) {
           FPTYPE t = two_embed[ii * nnei * last_layer_size +
                                jj * last_layer_size + kk];
-          var = var * t + t;
+          var = var * t + var;
         }
 
         if (unloop) {
@@ -165,7 +166,8 @@ void deepmd::tabulate_fusion_se_a_grad_cpu(FPTYPE* dy_dem_x,
                                            const FPTYPE* dy,
                                            const int nloc,
                                            const int nnei,
-                                           const int last_layer_size) {
+                                           const int last_layer_size,
+                                           const bool is_sorted) {
   bool enable_se_atten = two_embed != nullptr;
   memset(dy_dem_x, 0, sizeof(FPTYPE) * nloc * nnei);
   memset(dy_dem, 0, sizeof(FPTYPE) * nloc * nnei * 4);
@@ -189,7 +191,7 @@ void deepmd::tabulate_fusion_se_a_grad_cpu(FPTYPE* dy_dem_x,
       ll[2] = em[ii * nnei * 4 + jj * 4 + 2];
       ll[3] = em[ii * nnei * 4 + jj * 4 + 3];
       FPTYPE xx = em_x[ii * nnei + jj];
-      if (ago == xx) {
+      if (ago == xx && is_sorted) {
         unloop = true;
       }
       int table_idx = 0;
@@ -213,8 +215,8 @@ void deepmd::tabulate_fusion_se_a_grad_cpu(FPTYPE* dy_dem_x,
         if (enable_se_atten) {
           FPTYPE t = two_embed[ii * nnei * last_layer_size +
                                jj * last_layer_size + kk];
-          res = res * t + t;
-          g = t * g;
+          res = res * t + res;
+          g += t * g;
         }
 
         if (unloop) {
@@ -249,7 +251,8 @@ void deepmd::tabulate_fusion_se_a_grad_grad_cpu(FPTYPE* dz_dy,
                                                 const FPTYPE* dz_dy_dem,
                                                 const int nloc,
                                                 const int nnei,
-                                                const int last_layer_size) {
+                                                const int last_layer_size,
+                                                const bool is_sorted) {
   memset(dz_dy, 0, sizeof(FPTYPE) * nloc * 4 * last_layer_size);
   const FPTYPE lower = table_info[0];
   const FPTYPE upper = table_info[1];
@@ -275,7 +278,7 @@ void deepmd::tabulate_fusion_se_a_grad_grad_cpu(FPTYPE* dz_dy,
       hh[3] = dz_dy_dem[ii * nnei * 4 + jj * 4 + 3];
       FPTYPE xx = em_x[ii * nnei + jj];
       FPTYPE dz_xx = dz_dy_dem_x[ii * nnei + jj];
-      if (ago == xx) {
+      if (ago == xx && is_sorted) {
         unloop = true;
       }
       int table_idx = 0;
@@ -604,16 +607,16 @@ void deepmd::tabulate_fusion_se_r_grad_grad_cpu(FPTYPE* dz_dy,
   }
 }
 
-template void deepmd::tabulate_fusion_se_a_cpu<float>(
-    float* out,
-    const float* table,
-    const float* table_info,
-    const float* em_x,
-    const float* em,
-    const float* two_embed,
-    const int nloc,
-    const int nnei,
-    const int last_layer_size);
+template void deepmd::tabulate_fusion_se_a_cpu<float>(float* out,
+                                                      const float* table,
+                                                      const float* table_info,
+                                                      const float* em_x,
+                                                      const float* em,
+                                                      const float* two_embed,
+                                                      const int nloc,
+                                                      const int nnei,
+                                                      const int last_layer_size,
+                                                      const bool is_sorted);
 template void deepmd::tabulate_fusion_se_a_cpu<double>(
     double* out,
     const double* table,
@@ -623,7 +626,8 @@ template void deepmd::tabulate_fusion_se_a_cpu<double>(
     const double* two_embed,
     const int nloc,
     const int nnei,
-    const int last_layer_size);
+    const int last_layer_size,
+    const bool is_sorted);
 template void deepmd::tabulate_fusion_se_a_grad_cpu<float>(
     float* dy_dem_x,
     float* dy_dem,
@@ -635,7 +639,8 @@ template void deepmd::tabulate_fusion_se_a_grad_cpu<float>(
     const float* dy,
     const int nloc,
     const int nnei,
-    const int last_layer_size);
+    const int last_layer_size,
+    const bool is_sorted);
 template void deepmd::tabulate_fusion_se_a_grad_cpu<double>(
     double* dy_dem_x,
     double* dy_dem,
@@ -647,7 +652,8 @@ template void deepmd::tabulate_fusion_se_a_grad_cpu<double>(
     const double* dy,
     const int nloc,
     const int nnei,
-    const int last_layer_size);
+    const int last_layer_size,
+    const bool is_sorted);
 template void deepmd::tabulate_fusion_se_a_grad_grad_cpu<float>(
     float* dz_dy,
     const float* table,
@@ -658,7 +664,8 @@ template void deepmd::tabulate_fusion_se_a_grad_grad_cpu<float>(
     const float* dz_dy_dem,
     const int nloc,
     const int nnei,
-    const int last_layer_size);
+    const int last_layer_size,
+    const bool is_sorted);
 template void deepmd::tabulate_fusion_se_a_grad_grad_cpu<double>(
     double* dz_dy,
     const double* table,
@@ -669,7 +676,8 @@ template void deepmd::tabulate_fusion_se_a_grad_grad_cpu<double>(
     const double* dz_dy_dem,
     const int nloc,
     const int nnei,
-    const int last_layer_size);
+    const int last_layer_size,
+    const bool is_sorted);
 
 template void deepmd::tabulate_fusion_se_t_cpu<float>(
     float* out,

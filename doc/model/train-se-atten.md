@@ -55,6 +55,16 @@ An example of the DPA-1 descriptor is provided as follows
 * {ref}`attn_mask <model/descriptor[se_atten]/attn_mask>` determines whether to mask the diagonal in the attention weights and False is recommended.
 * {ref}`attn_dotr <model/descriptor[se_atten]/attn_dotr>` determines whether to dot the relative coordinates on the attention weights as a gated scheme, True is recommended.
 
+### Descriptor `"se_atten_v2"`
+We highly recommend using the version 2.0 of the attention-based descriptor `"se_atten_v2"`, which is inherited from `"se_atten"` but with the following parameter modifications:
+```json
+      "stripped_type_embedding": true,
+      "smooth_type_embdding": true,
+      "set_davg_zero": false
+```
+Practical evidence demonstrates that `"se_atten_v2"` offers better and more stable performance compared to `"se_atten"`.
+
+
 ### Fitting `"ener"`
 DPA-1 only supports `"ener"` fitting type, and you can refer [here](train-energy.md) for detailed information.
 

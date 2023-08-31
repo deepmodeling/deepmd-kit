@@ -269,13 +269,10 @@ import typing
 for typing_type in typing.__all__:
     numpydoc_xref_aliases[typing_type] = "typing.%s" % typing_type
 
-rst_epilog = """
-.. |ACTIVATION_FN| replace:: {}
-.. |PRECISION| replace:: {}
-""".format(
-    list_to_doc(ACTIVATION_FN_DICT.keys()),
-    list_to_doc(PRECISION_DICT.keys()),
-)
+rst_epilog = f"""
+.. |ACTIVATION_FN| replace:: {list_to_doc(ACTIVATION_FN_DICT.keys())}
+.. |PRECISION| replace:: {list_to_doc(PRECISION_DICT.keys())}
+"""
 
 # -- Options for HTML output -------------------------------------------------
 

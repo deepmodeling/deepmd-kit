@@ -49,30 +49,38 @@ static const char cite_user_deepmd_package[] =
     "energy representation and molecular dynamics}},\n"
     "  pages = {178--184}\n"
     "}\n"
-    "@misc{Zeng_arXiv_2023,\n"
-    "    title = {DeePMD-kit v2: A software package for Deep Potential "
-    "models},\n"
-    "    author = {Jinzhe Zeng and Duo Zhang and Denghui Lu and Pinghui Mo "
-    "and\n"
-    "            Zeyu Li and Yixiao Chen and Marián Rynik and Li'ang Huang "
-    "and\n"
-    "            Ziyao Li and Shaochen Shi and Yingze Wang and Haotian Ye and\n"
-    "            Ping Tuo and Jiabin Yang and Ye Ding and Yifan Li and Davide\n"
-    "            Tisi and Qiyu Zeng and Han Bao and Yu Xia and Jiameng Huang\n"
-    "            and Koki Muraoka and Yibo Wang and Junhan Chang and Fengbo\n"
-    "            Yuan and Sigbjørn Løland Bore and Chun Cai and Yinnian Lin\n"
-    "            and Bo Wang and Jiayan Xu and Jia-Xin Zhu and Chenxing Luo "
-    "and\n"
-    "            Yuzhi Zhang and Rhys E. A. Goodall and Wenshuo Liang and "
-    "Anurag\n"
-    "            Kumar Singh and Sikai Yao and Jingchao Zhang and Renata\n"
-    "            Wentzcovitch and Jiequn Han and Jie Liu and Weile Jia and\n"
-    "            Darrin M. York and Weinan E and Roberto Car and Linfeng "
-    "Zhang\n"
-    "            and Han Wang},\n"
-    "    year = {2023},\n"
-    "    archivePrefix = {arXiv},\n"
-    "    doi = {10.48550/arXiv.2304.09409}\n"
+    "@misc{Zeng_JChemPhys_2023_v159_p054801,\n"
+    "  title  = {{DeePMD-kit v2: A software package for deep potential "
+    "models}},\n"
+    "  author =   {Jinzhe Zeng and Duo Zhang and Denghui Lu and Pinghui Mo and "
+    "Zeyu Li\n"
+    "         and Yixiao Chen and Mari{\\'a}n Rynik and Li'ang Huang and Ziyao "
+    "Li and \n"
+    "         Shaochen Shi and Yingze Wang and Haotian Ye and Ping Tuo and "
+    "Jiabin\n"
+    "         Yang and Ye Ding and Yifan Li and Davide Tisi and Qiyu Zeng and "
+    "Han \n"
+    "         Bao and Yu Xia and Jiameng Huang and Koki Muraoka and Yibo Wang "
+    "and \n"
+    "         Junhan Chang and Fengbo Yuan and Sigbj{\\o}rn L{\\o}land Bore "
+    "and "
+    "Chun\n"
+    "         Cai and Yinnian Lin and Bo Wang and Jiayan Xu and Jia-Xin Zhu "
+    "and \n"
+    "         Chenxing Luo and Yuzhi Zhang and Rhys E A Goodall and Wenshuo "
+    "Liang\n"
+    "         and Anurag Kumar Singh and Sikai Yao and Jingchao Zhang and "
+    "Renata\n"
+    "         Wentzcovitch and Jiequn Han and Jie Liu and Weile Jia and Darrin "
+    "M\n"
+    "         York and Weinan E and Roberto Car and Linfeng Zhang and Han "
+    "Wang},\n"
+    "  journal =  {J. Chem. Phys.},\n"
+    "  volume =   159,\n"
+    "  issue =    5,  \n"
+    "  year =    2023,\n"
+    "  pages  =   054801,\n"
+    "  doi =      {10.1063/5.0155600},\n"
     "}\n\n";
 
 static int stringCmp(const void *a, const void *b) {
@@ -339,16 +347,15 @@ PairDeepMD::PairDeepMD(LAMMPS *lmp)
   int unit_convert;
   if (strcmp(update->unit_style, "metal") == 0) {
     unit_convert == utils::NOCONVERT;
-  }
-  else if (strcmp(update->unit_style, "real") == 0) {
+  } else if (strcmp(update->unit_style, "real") == 0) {
     unit_convert == utils::METAL2REAL;
   } else {
-    error->all(
-        FLERR,
-        "Pair deepmd requires metal or real unit, please set it by \"units metal\" or \"units real\"");
+    error->all(FLERR,
+               "Pair deepmd requires metal or real unit, please set it by "
+               "\"units metal\" or \"units real\"");
   }
-  double conversion_factor = utils::get_conversion_factor(utils::ENERGY,
-                                                          unit_convert);
+  double conversion_factor =
+      utils::get_conversion_factor(utils::ENERGY, unit_convert);
   restartinfo = 1;
 #if LAMMPS_VERSION_NUMBER >= 20201130
   centroidstressflag =
@@ -592,15 +599,15 @@ void PairDeepMD::compute(int eflag, int vflag) {
             // vatom[ii][3] += 1.0 * dvatom[9*ii+3];
             // vatom[ii][4] += 1.0 * dvatom[9*ii+6];
             // vatom[ii][5] += 1.0 * dvatom[9*ii+7];
-            cvatom[ii][0] += -scale[1][1] * dvatom[9 * ii + 0];  // xx
-            cvatom[ii][1] += -scale[1][1] * dvatom[9 * ii + 4];  // yy
-            cvatom[ii][2] += -scale[1][1] * dvatom[9 * ii + 8];  // zz
-            cvatom[ii][3] += -scale[1][1] * dvatom[9 * ii + 3];  // xy
-            cvatom[ii][4] += -scale[1][1] * dvatom[9 * ii + 6];  // xz
-            cvatom[ii][5] += -scale[1][1] * dvatom[9 * ii + 7];  // yz
-            cvatom[ii][6] += -scale[1][1] * dvatom[9 * ii + 1];  // yx
-            cvatom[ii][7] += -scale[1][1] * dvatom[9 * ii + 2];  // zx
-            cvatom[ii][8] += -scale[1][1] * dvatom[9 * ii + 5];  // zy
+            cvatom[ii][0] += scale[1][1] * dvatom[9 * ii + 0];  // xx
+            cvatom[ii][1] += scale[1][1] * dvatom[9 * ii + 4];  // yy
+            cvatom[ii][2] += scale[1][1] * dvatom[9 * ii + 8];  // zz
+            cvatom[ii][3] += scale[1][1] * dvatom[9 * ii + 3];  // xy
+            cvatom[ii][4] += scale[1][1] * dvatom[9 * ii + 6];  // xz
+            cvatom[ii][5] += scale[1][1] * dvatom[9 * ii + 7];  // yz
+            cvatom[ii][6] += scale[1][1] * dvatom[9 * ii + 1];  // yx
+            cvatom[ii][7] += scale[1][1] * dvatom[9 * ii + 2];  // zx
+            cvatom[ii][8] += scale[1][1] * dvatom[9 * ii + 5];  // zy
           }
         }
       }
@@ -644,15 +651,15 @@ void PairDeepMD::compute(int eflag, int vflag) {
           // vatom[ii][3] += 1.0 * dvatom[9*ii+3];
           // vatom[ii][4] += 1.0 * dvatom[9*ii+6];
           // vatom[ii][5] += 1.0 * dvatom[9*ii+7];
-          cvatom[ii][0] += -scale[1][1] * dvatom[9 * ii + 0];  // xx
-          cvatom[ii][1] += -scale[1][1] * dvatom[9 * ii + 4];  // yy
-          cvatom[ii][2] += -scale[1][1] * dvatom[9 * ii + 8];  // zz
-          cvatom[ii][3] += -scale[1][1] * dvatom[9 * ii + 3];  // xy
-          cvatom[ii][4] += -scale[1][1] * dvatom[9 * ii + 6];  // xz
-          cvatom[ii][5] += -scale[1][1] * dvatom[9 * ii + 7];  // yz
-          cvatom[ii][6] += -scale[1][1] * dvatom[9 * ii + 1];  // yx
-          cvatom[ii][7] += -scale[1][1] * dvatom[9 * ii + 2];  // zx
-          cvatom[ii][8] += -scale[1][1] * dvatom[9 * ii + 5];  // zy
+          cvatom[ii][0] += scale[1][1] * dvatom[9 * ii + 0];  // xx
+          cvatom[ii][1] += scale[1][1] * dvatom[9 * ii + 4];  // yy
+          cvatom[ii][2] += scale[1][1] * dvatom[9 * ii + 8];  // zz
+          cvatom[ii][3] += scale[1][1] * dvatom[9 * ii + 3];  // xy
+          cvatom[ii][4] += scale[1][1] * dvatom[9 * ii + 6];  // xz
+          cvatom[ii][5] += scale[1][1] * dvatom[9 * ii + 7];  // yz
+          cvatom[ii][6] += scale[1][1] * dvatom[9 * ii + 1];  // yx
+          cvatom[ii][7] += scale[1][1] * dvatom[9 * ii + 2];  // zx
+          cvatom[ii][8] += scale[1][1] * dvatom[9 * ii + 5];  // zy
         }
       }
       if (out_freq > 0 && update->ntimestep % out_freq == 0) {
@@ -1154,6 +1161,10 @@ void PairDeepMD::coeff(int narg, char **arg) {
           found_element = true;
           break;
         }
+      }
+      if (!found_element && "NULL" == type_name) {
+        type_idx_map.push_back(type_map.size());  // ghost type
+        found_element = true;
       }
       if (!found_element) {
         error->all(FLERR, "pair_coeff: element " + type_name +

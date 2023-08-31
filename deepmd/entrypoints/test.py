@@ -71,7 +71,7 @@ def test(
     set_prefix : str
         string prefix of set
     numb_test : int
-        munber of tests to do
+        munber of tests to do. 0 means all data.
     rand_seed : Optional[int]
         seed for random generator
     shuffle_test : bool
@@ -88,6 +88,9 @@ def test(
     RuntimeError
         if no valid system was found
     """
+    if numb_test == 0:
+        # only float has inf, but should work for min
+        numb_test = float("inf")
     if datafile is not None:
         datalist = open(datafile)
         all_sys = datalist.read().splitlines()
@@ -934,18 +937,40 @@ def test_dipole(
 
     if detail_file is not None:
         detail_path = Path(detail_file)
+        if not atomic:
+            pe = np.concatenate(
+                (
+                    np.reshape(test_data["dipole"][:numb_test], [-1, 3]),
+                    np.reshape(dipole, [-1, 3]),
+                ),
+                axis=1,
+            )
+            header_text = "data_x data_y data_z pred_x pred_y pred_z"
+        else:
+            pe = np.concatenate(
+                (
+                    np.reshape(
+                        test_data["atomic_dipole"][:numb_test], [-1, 3 * sel_natoms]
+                    ),
+                    np.reshape(dipole, [-1, 3 * sel_natoms]),
+                ),
+                axis=1,
+            )
+            header_text = [
+                f"{letter}{number}"
+                for number in range(1, sel_natoms + 1)
+                for letter in ["data_x", "data_y", "data_z"]
+            ] + [
+                f"{letter}{number}"
+                for number in range(1, sel_natoms + 1)
+                for letter in ["pred_x", "pred_y", "pred_z"]
+            ]
+            header_text = " ".join(header_text)
 
-        pe = np.concatenate(
-            (
-                np.reshape(test_data["dipole"][:numb_test], [-1, 3]),
-                np.reshape(dipole, [-1, 3]),
-            ),
-            axis=1,
-        )
         np.savetxt(
             detail_path.with_suffix(".out"),
             pe,
-            header="data_x data_y data_z pred_x pred_y pred_z",
+            header=header_text,
         )
     return {"rmse": (rmse_f, dipole.size)}
 

@@ -86,6 +86,33 @@ class TestMakeModelDevi(unittest.TestCase):
         x = np.loadtxt(self.output)
         np.testing.assert_allclose(x, self.expect, 6)
 
+    def test_make_model_devi_real_erorr(self):
+        make_model_devi(
+            models=self.graph_dirs,
+            system=self.data_dir,
+            set_prefix="set",
+            output=self.output,
+            frequency=self.freq,
+            real_error=True,
+        )
+        x = np.loadtxt(self.output)
+        np.testing.assert_allclose(
+            x,
+            np.array(
+                [
+                    0.000000e00,
+                    6.709021e-01,
+                    1.634359e-03,
+                    3.219720e-01,
+                    2.018684e00,
+                    1.829748e00,
+                    1.956474e00,
+                    1.550898e02,
+                ]
+            ),
+            6,
+        )
+
     def tearDown(self):
         for pb in self.graph_dirs:
             os.remove(pb)

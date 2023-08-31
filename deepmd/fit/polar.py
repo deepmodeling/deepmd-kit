@@ -107,7 +107,7 @@ class PolarFittingSeA(Fitting):
             self.scale = [1.0 for ii in range(self.ntypes)]
         # if self.diag_shift is None:
         #    self.diag_shift = [0.0 for ii in range(self.ntypes)]
-        if type(self.sel_type) is not list:
+        if not isinstance(self.sel_type, list):
             self.sel_type = [self.sel_type]
         self.sel_type = sorted(self.sel_type)
         self.constant_matrix = np.zeros(
@@ -115,7 +115,7 @@ class PolarFittingSeA(Fitting):
         )  # self.ntypes x 1, store the average diagonal value
         # if type(self.diag_shift) is not list:
         #    self.diag_shift = [self.diag_shift]
-        if type(self.scale) is not list:
+        if not isinstance(self.scale, list):
             self.scale = [self.scale for ii in range(self.ntypes)]
         self.scale = np.array(self.scale)
         self.dim_rot_mat_1 = descrpt.get_dim_rot_mat_1()
@@ -216,7 +216,7 @@ class PolarFittingSeA(Fitting):
             matrix, bias = np.concatenate(sys_matrix, axis=0), np.concatenate(
                 polar_bias, axis=0
             )
-            atom_polar, _, _, _ = np.linalg.lstsq(matrix, bias, rcond=1e-3)
+            atom_polar, _, _, _ = np.linalg.lstsq(matrix, bias, rcond=None)
             for itype in range(len(self.sel_type)):
                 self.constant_matrix[self.sel_type[itype]] = np.mean(
                     np.diagonal(atom_polar[itype].reshape((3, 3)))

@@ -133,6 +133,41 @@ def one_layer_wb(
     return w, b
 
 
+def one_layer_t(
+    shape,
+    outputs_size,
+    bavg,
+    stddev,
+    precision,
+    trainable,
+    initial_variables,
+    seed,
+    uniform_seed,
+    name,
+):
+    NTAVC = nvnmd_cfg.fitn["NTAVC"]
+    if nvnmd_cfg.restore_fitting_net:
+        t_initializer = get_constant_initializer(nvnmd_cfg.weight, "tweight")
+    else:
+        t_initializer = tf.random_normal_initializer(
+            stddev=stddev / np.sqrt(NTAVC + outputs_size),
+            seed=seed if (seed is None or uniform_seed) else seed + 0,
+        )
+        if initial_variables is not None:
+            t_initializer = tf.constant_initializer(
+                initial_variables[name + "/tweight"]
+            )
+    t = tf.get_variable(
+        "tweight",
+        [NTAVC, outputs_size],
+        precision,
+        t_initializer,
+        trainable=trainable,
+    )
+    variable_summaries(t, "matrix")
+    return t
+
+
 def one_layer(
     inputs,
     outputs_size,
@@ -155,7 +190,27 @@ def one_layer(
     Its weight and bias can be initialed with random or constant value.
     """
     # USE FOR NEW FITTINGNET
+    is_layer = (nvnmd_cfg.version == 1) and ("layer_0" in name)
     with tf.variable_scope(name, reuse=reuse):
+        if is_layer:
+            t = one_layer_t(
+                None,
+                outputs_size,
+                bavg,
+                stddev,
+                precision,
+                trainable,
+                initial_variables,
+                seed,
+                uniform_seed,
+                name,
+            )
+            #
+            NTAVC = nvnmd_cfg.fitn["NTAVC"]
+            nd = inputs.get_shape().as_list()[1] - NTAVC
+            inputs2 = tf.slice(inputs, [0, nd], [-1, NTAVC])
+            inputs = tf.slice(inputs, [0, 0], [-1, nd])
+        # w & b
         shape = inputs.get_shape().as_list()
         w, b = one_layer_wb(
             shape,
@@ -194,6 +249,15 @@ def one_layer(
             with tf.variable_scope("wx", reuse=reuse):
                 wx = op_module.quantize_nvnmd(wx, 1, NBIT_DATA_FL, NBIT_DATA_FL - 2, -1)
                 wx = tf.ensure_shape(wx, [None, outputs_size])
+
+            if is_layer:
+                wx2 = tf.matmul(inputs2, t)
+                with tf.variable_scope("wx2", reuse=reuse):
+                    wx2 = op_module.quantize_nvnmd(
+                        wx2, 1, NBIT_DATA_FL, NBIT_DATA_FL, -1
+                    )
+                    wx2 = tf.ensure_shape(wx2, [None, outputs_size])
+                wx = wx + wx2
             # wxb
             wxb = wx + b
 
@@ -211,7 +275,10 @@ def one_layer(
                 y = op_module.quantize_nvnmd(y, 1, NBIT_DATA_FL, NBIT_DATA_FL, -1)
                 y = tf.ensure_shape(y, [None, outputs_size])
         else:
-            hidden = tf.matmul(inputs, w) + b
+            if is_layer:
+                hidden = tf.matmul(inputs, w) + tf.matmul(inputs2, t) + b
+            else:
+                hidden = tf.matmul(inputs, w) + b
             # set activation function as tanh4
             y = tanh4(hidden) if (activation_fn is not None) else hidden
     # 'reshape' is necessary

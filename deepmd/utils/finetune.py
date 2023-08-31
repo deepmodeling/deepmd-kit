@@ -42,10 +42,11 @@ def replace_model_params_with_pretrained_model(
 
     # Check the model type
     assert pretrained_jdata["model"]["descriptor"]["type"] in [
-        "se_atten"
+        "se_atten",
+        "se_atten_v2",
     ] and pretrained_jdata["model"]["fitting_net"]["type"] in [
         "ener"
-    ], "The finetune process only supports models pretrained with 'se_atten' descriptor and 'ener' fitting_net!"
+    ], "The finetune process only supports models pretrained with 'se_atten' or 'se_atten_v2' descriptor and 'ener' fitting_net!"
 
     # Check the type map
     pretrained_type_map = pretrained_jdata["model"]["type_map"]
@@ -55,8 +56,8 @@ def replace_model_params_with_pretrained_model(
         if i not in pretrained_type_map:
             out_line_type.append(i)
     assert not out_line_type, (
-        "{} type(s) not contained in the pretrained model! "
-        "Please choose another suitable one.".format(str(out_line_type))
+        f"{str(out_line_type)} type(s) not contained in the pretrained model! "
+        "Please choose another suitable one."
     )
     if cur_type_map != pretrained_type_map:
         log.info(
@@ -103,9 +104,7 @@ def replace_model_params_with_pretrained_model(
             if "trainable" in cur_para.keys():
                 target_para["trainable"] = cur_para["trainable"]
             log.info(
-                "Change the '{}' from {} to {}.".format(
-                    config_key, str(cur_para), str(target_para)
-                )
+                f"Change the '{config_key}' from {str(cur_para)} to {str(target_para)}."
             )
             jdata["model"][config_key] = target_para
 
