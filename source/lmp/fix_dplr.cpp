@@ -191,7 +191,8 @@ FixDPLR::FixDPLR(LAMMPS *lmp, int narg, char **arg)
   for (int ii = 0; ii < map_vec.size() / 2; ++ii) {
     type_asso[type_idx_map[map_vec[ii * 2 + 0]]] =
         type_idx_map[map_vec[ii * 2 + 1]];
-    bk_type_asso[type_idx_mapmap_vec[ii * 2 + 1]]] = type_idx_map[map_vec[ii * 2 + 0]];
+    bk_type_asso[type_idx_map[map_vec[ii * 2 + 1]]] =
+        type_idx_map[map_vec[ii * 2 + 0]];
   }
 
   sel_type = dpt.sel_types();
