@@ -48,7 +48,7 @@ def dlopen_library(module: str, filename: str):
     except ModuleNotFoundError:
         pass
     else:
-        libs = sorted(Path(m.__file__).parent.glob(filename))
+        libs = sorted(Path(m.__path__[0]).glob(filename))
         # hope that there is only one version installed...
         if len(libs):
             ctypes.CDLL(str(libs[0].absolute()))
