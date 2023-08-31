@@ -6,8 +6,7 @@
       "H"
     ],
     "descriptor": {
-      "type": "se_atten",
-      "stripped_type_embedding": true,
+      "type": "se_atten_v2",
       "sel": 120,
       "rcut_smth": 0.50,
       "rcut": 6.00,

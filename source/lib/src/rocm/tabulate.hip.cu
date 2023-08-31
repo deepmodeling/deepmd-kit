@@ -125,7 +125,7 @@ __global__ void tabulate_fusion_se_a_fifth_order_polynomial(
     if (enable_se_atten) {
       FPTYPE t = two_embed[block_idx * nnei * last_layer_size +
                            ii * last_layer_size + thread_idx];
-      res = res * t + t;
+      res = res * t + res;
     }
 
     for (int kk = 0; kk < MTILE; kk++) {
@@ -206,7 +206,7 @@ __global__ void tabulate_fusion_se_a_grad_fifth_order_polynomial(
       if (enable_se_atten) {
         t = two_embed[block_idx * nnei * last_layer_size +
                       ii * last_layer_size + jj];
-        res = res * t + t;
+        res = res * t + res;
       }
 
       for (int kk = 0; kk < KTILE; kk++) {
@@ -228,7 +228,7 @@ __global__ void tabulate_fusion_se_a_grad_fifth_order_polynomial(
                       ((FPTYPE)4. * var[4] + (FPTYPE)5. * var[5] * xx) * xx) *
                          xx) *
                         xx) *
-          (enable_se_atten ? res * t : res);
+          (enable_se_atten ? res * t + res : res);
     }
     //__syncwarp();->syncwrap
     __syncthreads();

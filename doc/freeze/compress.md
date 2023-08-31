@@ -82,7 +82,7 @@ The model compression interface requires the version of DeePMD-kit used in the o
 
 **Acceptable descriptor type**
 
-Descriptors with `se_e2_a`, `se_e3`, `se_e2_r` and `se_atten` types are supported by the model compression feature. `Hybrid` mixed with the above descriptors is also supported.
+Descriptors with `se_e2_a`, `se_e3`, `se_e2_r` and `se_atten_v2` types are supported by the model compression feature. `Hybrid` mixed with the above descriptors is also supported.
 
 
 **Available activation functions for descriptor:**
