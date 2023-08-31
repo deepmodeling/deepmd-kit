@@ -190,13 +190,12 @@ FixDPLR::FixDPLR(LAMMPS *lmp, int narg, char **arg)
         error->all(FLERR, "pair_coeff: element " + type_name +
                           " not found in the DPLR model");
       }
-      iarg += 1;
     }
     int numb_types = type_idx_map.size();
     if (numb_types < n) {
       type_idx_map.resize(n);
       for (int ii = numb_types; ii < n; ++ii) {
-        type_idx_map[ii] = -1;
+        type_idx_map[ii] = ii;
       }
     }
   }
