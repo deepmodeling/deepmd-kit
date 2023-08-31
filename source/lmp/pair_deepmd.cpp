@@ -1143,6 +1143,7 @@ void PairDeepMD::coeff(int narg, char **arg) {
     }
 
     type_idx_map.clear();
+    type_names.clear();
     while (iarg < narg) {
       std::string type_name = arg[iarg];
       type_names.push_back(type_name);
