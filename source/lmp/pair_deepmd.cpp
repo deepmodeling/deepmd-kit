@@ -346,9 +346,9 @@ PairDeepMD::PairDeepMD(LAMMPS *lmp)
   }
   int unit_convert;
   if (strcmp(update->unit_style, "metal") == 0) {
-    unit_convert == utils::NOCONVERT;
+    unit_convert = utils::NOCONVERT;
   } else if (strcmp(update->unit_style, "real") == 0) {
-    unit_convert == utils::METAL2REAL;
+    unit_convert = utils::METAL2REAL;
   } else {
     error->all(FLERR,
                "Pair deepmd requires metal or real unit, please set it by "
