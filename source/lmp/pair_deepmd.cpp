@@ -354,7 +354,7 @@ PairDeepMD::PairDeepMD(LAMMPS *lmp)
                "Pair deepmd requires metal or real unit, please set it by "
                "\"units metal\" or \"units real\"");
   }
-  conversion_factor = utils::get_conversion_factor(utils::ENERGY, unit_convert);
+  ener_unit_cvt_factor = utils::get_conversion_factor(utils::ENERGY, unit_convert);
   restartinfo = 1;
 #if LAMMPS_VERSION_NUMBER >= 20201130
   centroidstressflag =
@@ -584,7 +584,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
         }
         if (eflag_atom) {
           for (int ii = 0; ii < nlocal; ++ii) {
-            eatom[ii] += conversion_factor * deatom[ii];
+            eatom[ii] += scale[1][1] * deatom[ii];
           }
         }
         // Added by Davide Tisi 2020
@@ -598,15 +598,15 @@ void PairDeepMD::compute(int eflag, int vflag) {
             // vatom[ii][3] += 1.0 * dvatom[9*ii+3];
             // vatom[ii][4] += 1.0 * dvatom[9*ii+6];
             // vatom[ii][5] += 1.0 * dvatom[9*ii+7];
-            cvatom[ii][0] += conversion_factor * dvatom[9 * ii + 0];  // xx
-            cvatom[ii][1] += conversion_factor * dvatom[9 * ii + 4];  // yy
-            cvatom[ii][2] += conversion_factor * dvatom[9 * ii + 8];  // zz
-            cvatom[ii][3] += conversion_factor * dvatom[9 * ii + 3];  // xy
-            cvatom[ii][4] += conversion_factor * dvatom[9 * ii + 6];  // xz
-            cvatom[ii][5] += conversion_factor * dvatom[9 * ii + 7];  // yz
-            cvatom[ii][6] += conversion_factor * dvatom[9 * ii + 1];  // yx
-            cvatom[ii][7] += conversion_factor * dvatom[9 * ii + 2];  // zx
-            cvatom[ii][8] += conversion_factor * dvatom[9 * ii + 5];  // zy
+            cvatom[ii][0] += scale[1][1] * dvatom[9 * ii + 0];  // xx
+            cvatom[ii][1] += scale[1][1] * dvatom[9 * ii + 4];  // yy
+            cvatom[ii][2] += scale[1][1] * dvatom[9 * ii + 8];  // zz
+            cvatom[ii][3] += scale[1][1] * dvatom[9 * ii + 3];  // xy
+            cvatom[ii][4] += scale[1][1] * dvatom[9 * ii + 6];  // xz
+            cvatom[ii][5] += scale[1][1] * dvatom[9 * ii + 7];  // yz
+            cvatom[ii][6] += scale[1][1] * dvatom[9 * ii + 1];  // yx
+            cvatom[ii][7] += scale[1][1] * dvatom[9 * ii + 2];  // zx
+            cvatom[ii][8] += scale[1][1] * dvatom[9 * ii + 5];  // zy
           }
         }
       }
@@ -636,7 +636,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
       dvatom = all_atom_virial[0];
       if (eflag_atom) {
         for (int ii = 0; ii < nlocal; ++ii) {
-          eatom[ii] += conversion_factor * deatom[ii];
+          eatom[ii] += scale[1][1] * deatom[ii];
         }
       }
       // Added by Davide Tisi 2020
@@ -650,15 +650,15 @@ void PairDeepMD::compute(int eflag, int vflag) {
           // vatom[ii][3] += 1.0 * dvatom[9*ii+3];
           // vatom[ii][4] += 1.0 * dvatom[9*ii+6];
           // vatom[ii][5] += 1.0 * dvatom[9*ii+7];
-          cvatom[ii][0] += conversion_factor * dvatom[9 * ii + 0];  // xx
-          cvatom[ii][1] += conversion_factor * dvatom[9 * ii + 4];  // yy
-          cvatom[ii][2] += conversion_factor * dvatom[9 * ii + 8];  // zz
-          cvatom[ii][3] += conversion_factor * dvatom[9 * ii + 3];  // xy
-          cvatom[ii][4] += conversion_factor * dvatom[9 * ii + 6];  // xz
-          cvatom[ii][5] += conversion_factor * dvatom[9 * ii + 7];  // yz
-          cvatom[ii][6] += conversion_factor * dvatom[9 * ii + 1];  // yx
-          cvatom[ii][7] += conversion_factor * dvatom[9 * ii + 2];  // zx
-          cvatom[ii][8] += conversion_factor * dvatom[9 * ii + 5];  // zy
+          cvatom[ii][0] += scale[1][1] * dvatom[9 * ii + 0];  // xx
+          cvatom[ii][1] += scale[1][1] * dvatom[9 * ii + 4];  // yy
+          cvatom[ii][2] += scale[1][1] * dvatom[9 * ii + 8];  // zz
+          cvatom[ii][3] += scale[1][1] * dvatom[9 * ii + 3];  // xy
+          cvatom[ii][4] += scale[1][1] * dvatom[9 * ii + 6];  // xz
+          cvatom[ii][5] += scale[1][1] * dvatom[9 * ii + 7];  // yz
+          cvatom[ii][6] += scale[1][1] * dvatom[9 * ii + 1];  // yx
+          cvatom[ii][7] += scale[1][1] * dvatom[9 * ii + 2];  // zx
+          cvatom[ii][8] += scale[1][1] * dvatom[9 * ii + 5];  // zy
         }
       }
       if (out_freq > 0 && update->ntimestep % out_freq == 0) {
@@ -782,7 +782,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
   if (!atom->sp_flag) {
     for (int ii = 0; ii < nall; ++ii) {
       for (int dd = 0; dd < 3; ++dd) {
-        f[ii][dd] += conversion_factor * dforce[3 * ii + dd];
+        f[ii][dd] += scale[1][1] * dforce[3 * ii + dd];
       }
     }
   } else {
@@ -791,13 +791,13 @@ void PairDeepMD::compute(int eflag, int vflag) {
     for (int ii = 0; ii < nall; ++ii) {
       for (int dd = 0; dd < 3; ++dd) {
         int new_idx = new_idx_map[ii];
-        f[ii][dd] += conversion_factor * dforce[3 * new_idx + dd];
+        f[ii][dd] += scale[1][1] * dforce[3 * new_idx + dd];
         if (dtype[ii] < numb_types_spin && ii < nlocal) {
-          fm[ii][dd] += conversion_factor *
+          fm[ii][dd] += scale[1][1] *
                         dforce[3 * (new_idx + nlocal) + dd] /
                         (hbar / spin_norm[dtype[ii]]);
         } else if (dtype[ii] < numb_types_spin) {
-          fm[ii][dd] += conversion_factor *
+          fm[ii][dd] += scale[1][1] *
                         dforce[3 * (new_idx + nghost) + dd] /
                         (hbar / spin_norm[dtype[ii]]);
         }
@@ -813,15 +813,15 @@ void PairDeepMD::compute(int eflag, int vflag) {
 
   // accumulate energy and virial
   if (eflag) {
-    eng_vdwl += conversion_factor * dener;
+    eng_vdwl += scale[1][1] * dener;
   }
   if (vflag) {
-    virial[0] += 1.0 * dvirial[0] * conversion_factor;
-    virial[1] += 1.0 * dvirial[4] * conversion_factor;
-    virial[2] += 1.0 * dvirial[8] * conversion_factor;
-    virial[3] += 1.0 * dvirial[3] * conversion_factor;
-    virial[4] += 1.0 * dvirial[6] * conversion_factor;
-    virial[5] += 1.0 * dvirial[7] * conversion_factor;
+    virial[0] += 1.0 * dvirial[0] * scale[1][1];
+    virial[1] += 1.0 * dvirial[4] * scale[1][1];
+    virial[2] += 1.0 * dvirial[8] * scale[1][1];
+    virial[3] += 1.0 * dvirial[3] * scale[1][1];
+    virial[4] += 1.0 * dvirial[6] * scale[1][1];
+    virial[5] += 1.0 * dvirial[7] * scale[1][1];
   }
 }
 
@@ -848,7 +848,7 @@ void PairDeepMD::allocate() {
         continue;
       }
       setflag[i][j] = 1;
-      scale[i][j] = 1;
+      scale[i][j] = 1.0 * ener_unit_cvt_factor;
     }
   }
 }
@@ -1184,7 +1184,7 @@ void PairDeepMD::coeff(int narg, char **arg) {
   for (int i = ilo; i <= ihi; i++) {
     for (int j = MAX(jlo, i); j <= jhi; j++) {
       setflag[i][j] = 1;
-      scale[i][j] = 1.0;
+      scale[i][j] = 1.0 * ener_unit_cvt_factor;
       if (i > numb_types || j > numb_types) {
         char warning_msg[1024];
         sprintf(warning_msg,
@@ -1231,7 +1231,7 @@ double PairDeepMD::init_one(int i, int j) {
   }
 
   if (setflag[i][j] == 0) {
-    scale[i][j] = 1.0;
+    scale[i][j] = 1.0 * ener_unit_cvt_factor;
   }
   scale[j][i] = scale[i][j];
 
