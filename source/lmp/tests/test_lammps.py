@@ -217,6 +217,7 @@ type_HO = np.array([2, 1, 1, 2, 1, 1])
 
 # https://github.com/lammps/lammps/blob/1e1311cf401c5fc2614b5d6d0ff3230642b76597/src/update.cpp#L193
 nktv2p = 1.6021765e6
+nktv2p_real = 68568.415
 metal2real = 23.060549
 
 sp.check_output(
@@ -499,4 +500,4 @@ def test_pair_deepmd_virial_real(lammps_real):
     for ii in range(9):
         assert np.array(
             lammps_real.variables[f"virial{ii}"].value
-        ) / nktv2p == pytest.approx(expected_v[idx_map, ii] * metal2real)
+        ) / nktv2p_real == pytest.approx(expected_v[idx_map, ii] * metal2real)
