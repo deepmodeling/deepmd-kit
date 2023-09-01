@@ -1041,8 +1041,8 @@ void PairDeepMD::settings(int narg, char **arg) {
            << setw(18 + 1) << "max_devi_f" << setw(18 + 1) << "min_devi_f"
            << setw(18 + 1) << "avg_devi_f";
         if (out_each) {
-            // at this time, we don't know how many atoms
-            fp << setw(18 + 1) << "atm_devi_f(N)";
+          // at this time, we don't know how many atoms
+          fp << setw(18 + 1) << "atm_devi_f(N)";
         }
         fp << endl;
       } else {
