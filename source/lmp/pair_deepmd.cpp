@@ -354,7 +354,8 @@ PairDeepMD::PairDeepMD(LAMMPS *lmp)
                "Pair deepmd requires metal or real unit, please set it by "
                "\"units metal\" or \"units real\"");
   }
-  ener_unit_cvt_factor = utils::get_conversion_factor(utils::ENERGY, unit_convert);
+  ener_unit_cvt_factor =
+      utils::get_conversion_factor(utils::ENERGY, unit_convert);
   restartinfo = 1;
 #if LAMMPS_VERSION_NUMBER >= 20201130
   centroidstressflag =
@@ -793,12 +794,10 @@ void PairDeepMD::compute(int eflag, int vflag) {
         int new_idx = new_idx_map[ii];
         f[ii][dd] += scale[1][1] * dforce[3 * new_idx + dd];
         if (dtype[ii] < numb_types_spin && ii < nlocal) {
-          fm[ii][dd] += scale[1][1] *
-                        dforce[3 * (new_idx + nlocal) + dd] /
+          fm[ii][dd] += scale[1][1] * dforce[3 * (new_idx + nlocal) + dd] /
                         (hbar / spin_norm[dtype[ii]]);
         } else if (dtype[ii] < numb_types_spin) {
-          fm[ii][dd] += scale[1][1] *
-                        dforce[3 * (new_idx + nghost) + dd] /
+          fm[ii][dd] += scale[1][1] * dforce[3 * (new_idx + nghost) + dd] /
                         (hbar / spin_norm[dtype[ii]]);
         }
       }
