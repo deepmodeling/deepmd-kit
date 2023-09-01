@@ -501,3 +501,137 @@ def test_pair_deepmd_virial_real(lammps_real):
         assert np.array(
             lammps_real.variables[f"virial{ii}"].value
         ) / nktv2p_real == pytest.approx(expected_v[idx_map, ii] * metal2real)
+
+
+def test_pair_deepmd_model_devi_real(lammps_real):
+    lammps_real.pair_style(
+        "deepmd {} {} out_file {} out_freq 1 atomic".format(
+            pb_file.resolve(), pb_file2.resolve(), md_file.resolve()
+        )
+    )
+    lammps_real.pair_coeff("* *")
+    lammps_real.run(0)
+    assert lammps_real.eval("pe") == pytest.approx(expected_e * metal2real)
+    for ii in range(6):
+        assert lammps_real.atoms[ii].force == pytest.approx(
+            expected_f[lammps_real.atoms[ii].id - 1] * metal2real
+        )
+    # load model devi
+    md = np.loadtxt(md_file.resolve())
+    expected_md_f = np.linalg.norm(np.std([expected_f, expected_f2], axis=0), axis=1)
+    assert md[7:] == pytest.approx(expected_md_f * metal2real)
+    assert md[4] == pytest.approx(np.max(expected_md_f) * metal2real)
+    assert md[5] == pytest.approx(np.min(expected_md_f) * metal2real)
+    assert md[6] == pytest.approx(np.mean(expected_md_f) * metal2real)
+    expected_md_v = (
+        np.std([np.sum(expected_v, axis=0), np.sum(expected_v2, axis=0)], axis=0) / 6
+    )
+    assert md[1] == pytest.approx(np.max(expected_md_v) * metal2real)
+    assert md[2] == pytest.approx(np.min(expected_md_v) * metal2real)
+    assert md[3] == pytest.approx(np.sqrt(np.mean(np.square(expected_md_v))) * metal2real)
+
+
+def test_pair_deepmd_model_devi_virial_real(lammps_real):
+    lammps_real.pair_style(
+        "deepmd {} {} out_file {} out_freq 1 atomic".format(
+            pb_file.resolve(), pb_file2.resolve(), md_file.resolve()
+        )
+    )
+    lammps_real.pair_coeff("* *")
+    lammps_real.compute("virial all centroid/stress/atom NULL pair")
+    for ii in range(9):
+        jj = [0, 4, 8, 3, 6, 7, 1, 2, 5][ii]
+        lammps_real.variable(f"virial{jj} atom c_virial[{ii+1}]")
+    lammps_real.dump(
+        "1 all custom 1 dump id " + " ".join([f"v_virial{ii}" for ii in range(9)])
+    )
+    lammps_real.run(0)
+    assert lammps_real.eval("pe") == pytest.approx(expected_e * metal2real)
+    for ii in range(6):
+        assert lammps_real.atoms[ii].force == pytest.approx(
+            expected_f[lammps_real.atoms[ii].id - 1] * metal2real
+        )
+    idx_map = lammps_real.lmp.numpy.extract_atom("id") - 1
+    for ii in range(9):
+        assert np.array(
+            lammps_real.variables[f"virial{ii}"].value
+        ) / nktv2p_real == pytest.approx(expected_v[idx_map, ii] * metal2real)
+    # load model devi
+    md = np.loadtxt(md_file.resolve())
+    expected_md_f = np.linalg.norm(np.std([expected_f, expected_f2], axis=0), axis=1)
+    assert md[7:] == pytest.approx(expected_md_f * metal2real)
+    assert md[4] == pytest.approx(np.max(expected_md_f) * metal2real)
+    assert md[5] == pytest.approx(np.min(expected_md_f) * metal2real)
+    assert md[6] == pytest.approx(np.mean(expected_md_f) * metal2real)
+    expected_md_v = (
+        np.std([np.sum(expected_v, axis=0), np.sum(expected_v2, axis=0)], axis=0) / 6
+    )
+    assert md[1] == pytest.approx(np.max(expected_md_v) * metal2real)
+    assert md[2] == pytest.approx(np.min(expected_md_v) * metal2real)
+    assert md[3] == pytest.approx(np.sqrt(np.mean(np.square(expected_md_v))) * metal2real)
+
+
+def test_pair_deepmd_model_devi_atomic_relative_real(lammps_real):
+    relative = 1.0
+    lammps_real.pair_style(
+        "deepmd {} {} out_file {} out_freq 1 atomic relative {}".format(
+            pb_file.resolve(), pb_file2.resolve(), md_file.resolve(), relative * metal2real
+        )
+    )
+    lammps_real.pair_coeff("* *")
+    lammps_real.run(0)
+    assert lammps_real.eval("pe") == pytest.approx(expected_e * metal2real)
+    for ii in range(6):
+        assert lammps_real.atoms[ii].force == pytest.approx(
+            expected_f[lammps_real.atoms[ii].id - 1] * metal2real
+        )
+    # load model devi
+    md = np.loadtxt(md_file.resolve())
+    norm = np.linalg.norm(np.mean([expected_f, expected_f2], axis=0), axis=1)
+    expected_md_f = np.linalg.norm(np.std([expected_f, expected_f2], axis=0), axis=1)
+    expected_md_f /= norm + relative
+    assert md[7:] == pytest.approx(expected_md_f * metal2real)
+    assert md[4] == pytest.approx(np.max(expected_md_f) * metal2real)
+    assert md[5] == pytest.approx(np.min(expected_md_f) * metal2real)
+    assert md[6] == pytest.approx(np.mean(expected_md_f) * metal2real)
+    expected_md_v = (
+        np.std([np.sum(expected_v, axis=0), np.sum(expected_v2, axis=0)], axis=0) / 6
+    )
+    assert md[1] == pytest.approx(np.max(expected_md_v) * metal2real)
+    assert md[2] == pytest.approx(np.min(expected_md_v) * metal2real)
+    assert md[3] == pytest.approx(np.sqrt(np.mean(np.square(expected_md_v))) * metal2real)
+
+
+def test_pair_deepmd_model_devi_atomic_relative_v_real(lammps_real):
+    relative = 1.0
+    lammps_real.pair_style(
+        "deepmd {} {} out_file {} out_freq 1 atomic relative_v {}".format(
+            pb_file.resolve(), pb_file2.resolve(), md_file.resolve(), relative * metal2real
+        )
+    )
+    lammps_real.pair_coeff("* *")
+    lammps_real.run(0)
+    assert lammps_real.eval("pe") == pytest.approx(expected_e * metal2real)
+    for ii in range(6):
+        assert lammps_real.atoms[ii].force == pytest.approx(
+            expected_f[lammps_real.atoms[ii].id - 1] * metal2real
+        )
+    md = np.loadtxt(md_file.resolve())
+    expected_md_f = np.linalg.norm(np.std([expected_f, expected_f2], axis=0), axis=1)
+    assert md[7:] == pytest.approx(expected_md_f * metal2real)
+    assert md[4] == pytest.approx(np.max(expected_md_f) * metal2real)
+    assert md[5] == pytest.approx(np.min(expected_md_f) * metal2real)
+    assert md[6] == pytest.approx(np.mean(expected_md_f) * metal2real)
+    expected_md_v = (
+        np.std([np.sum(expected_v, axis=0), np.sum(expected_v2, axis=0)], axis=0) / 6
+    )
+    norm = (
+        np.abs(
+            np.mean([np.sum(expected_v, axis=0), np.sum(expected_v2, axis=0)], axis=0)
+        )
+        / 6
+    )
+    expected_md_v /= norm + relative
+    assert md[1] == pytest.approx(np.max(expected_md_v) * metal2real)
+    assert md[2] == pytest.approx(np.min(expected_md_v) * metal2real)
+    assert md[3] == pytest.approx(np.sqrt(np.mean(np.square(expected_md_v))) * metal2real)

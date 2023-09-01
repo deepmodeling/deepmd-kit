@@ -728,6 +728,12 @@ void PairDeepMD::compute(int eflag, int vflag) {
           all_v_avg = sqrt(all_v_avg / 9);
         }
         if (rank == 0) {
+          all_v_max *= scale[1][1];
+          all_v_min *= scale[1][1];
+          all_v_avg *= scale[1][1];
+          all_f_max *= scale[1][1];
+          all_f_min *= scale[1][1];
+          all_f_avg *= scale[1][1];
           fp << setw(12) << update->ntimestep << " " << setw(18) << all_v_max
              << " " << setw(18) << all_v_min << " " << setw(18) << all_v_avg
              << " " << setw(18) << all_f_max << " " << setw(18) << all_f_min
@@ -753,7 +759,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
                       displacements, MPI_DOUBLE, 0, world);
           if (rank == 0) {
             for (int dd = 0; dd < all_nlocal; ++dd) {
-              std_f_all[tagrecv[dd] - 1] = stdfrecv[dd];
+              std_f_all[tagrecv[dd] - 1] = stdfrecv[dd] * scale[1][1];
             }
             for (int dd = 0; dd < all_nlocal; ++dd) {
               fp << " " << setw(18) << std_f_all[dd];
@@ -1007,11 +1013,11 @@ void PairDeepMD::settings(int narg, char **arg) {
       iarg += 1;
     } else if (string(arg[iarg]) == string("relative")) {
       out_rel = 1;
-      eps = atof(arg[iarg + 1]);
+      eps = atof(arg[iarg + 1]) / ener_unit_cvt_factor;
       iarg += 2;
     } else if (string(arg[iarg]) == string("relative_v")) {
       out_rel_v = 1;
-      eps_v = atof(arg[iarg + 1]);
+      eps_v = atof(arg[iarg + 1]) / ener_unit_cvt_factor;
       iarg += 2;
     } else if (string(arg[iarg]) == string("virtual_len")) {
       virtual_len.resize(numb_types_spin);
