@@ -528,7 +528,9 @@ def test_pair_deepmd_model_devi_real(lammps_real):
     )
     assert md[1] == pytest.approx(np.max(expected_md_v) * metal2real)
     assert md[2] == pytest.approx(np.min(expected_md_v) * metal2real)
-    assert md[3] == pytest.approx(np.sqrt(np.mean(np.square(expected_md_v))) * metal2real)
+    assert md[3] == pytest.approx(
+        np.sqrt(np.mean(np.square(expected_md_v))) * metal2real
+    )
 
 
 def test_pair_deepmd_model_devi_virial_real(lammps_real):
@@ -568,14 +570,19 @@ def test_pair_deepmd_model_devi_virial_real(lammps_real):
     )
     assert md[1] == pytest.approx(np.max(expected_md_v) * metal2real)
     assert md[2] == pytest.approx(np.min(expected_md_v) * metal2real)
-    assert md[3] == pytest.approx(np.sqrt(np.mean(np.square(expected_md_v))) * metal2real)
+    assert md[3] == pytest.approx(
+        np.sqrt(np.mean(np.square(expected_md_v))) * metal2real
+    )
 
 
 def test_pair_deepmd_model_devi_atomic_relative_real(lammps_real):
     relative = 1.0
     lammps_real.pair_style(
         "deepmd {} {} out_file {} out_freq 1 atomic relative {}".format(
-            pb_file.resolve(), pb_file2.resolve(), md_file.resolve(), relative * metal2real
+            pb_file.resolve(),
+            pb_file2.resolve(),
+            md_file.resolve(),
+            relative * metal2real,
         )
     )
     lammps_real.pair_coeff("* *")
@@ -599,14 +606,19 @@ def test_pair_deepmd_model_devi_atomic_relative_real(lammps_real):
     )
     assert md[1] == pytest.approx(np.max(expected_md_v) * metal2real)
     assert md[2] == pytest.approx(np.min(expected_md_v) * metal2real)
-    assert md[3] == pytest.approx(np.sqrt(np.mean(np.square(expected_md_v))) * metal2real)
+    assert md[3] == pytest.approx(
+        np.sqrt(np.mean(np.square(expected_md_v))) * metal2real
+    )
 
 
 def test_pair_deepmd_model_devi_atomic_relative_v_real(lammps_real):
     relative = 1.0
     lammps_real.pair_style(
         "deepmd {} {} out_file {} out_freq 1 atomic relative_v {}".format(
-            pb_file.resolve(), pb_file2.resolve(), md_file.resolve(), relative * metal2real
+            pb_file.resolve(),
+            pb_file2.resolve(),
+            md_file.resolve(),
+            relative * metal2real,
         )
     )
     lammps_real.pair_coeff("* *")
@@ -634,4 +646,6 @@ def test_pair_deepmd_model_devi_atomic_relative_v_real(lammps_real):
     expected_md_v /= norm + relative
     assert md[1] == pytest.approx(np.max(expected_md_v) * metal2real)
     assert md[2] == pytest.approx(np.min(expected_md_v) * metal2real)
-    assert md[3] == pytest.approx(np.sqrt(np.mean(np.square(expected_md_v))) * metal2real)
+    assert md[3] == pytest.approx(
+        np.sqrt(np.mean(np.square(expected_md_v))) * metal2real
+    )
