@@ -286,13 +286,13 @@ def teardown_module():
     os.remove(data_file)
 
 
-def _lammps(data_file) -> PyLammps:
+def _lammps(data_file, exclude_type="1 3") -> PyLammps:
     lammps = PyLammps()
     lammps.units("metal")
     lammps.boundary("p p p")
     lammps.atom_style("full")
     lammps.neighbor("0.2 bin")
-    lammps.neigh_modify("every 1 delay 0 check no exclude type 1 3")
+    lammps.neigh_modify("every 1 delay 0 check no exclude type " + exclude_type)
     lammps.read_data(data_file.resolve())
     lammps.timestep(0.0005)
     lammps.fix("1 all nve")
@@ -308,7 +308,7 @@ def lammps():
 
 @pytest.fixture
 def lammps_type_map():
-    lmp = _lammps(data_file=data_type_map_file)
+    lmp = _lammps(data_file=data_type_map_file, exclude_type="2 3")
     yield lmp
     lmp.close()
 
