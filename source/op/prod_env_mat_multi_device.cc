@@ -1522,8 +1522,8 @@ static int _norm_copy_coord_gpu(OpKernelContext* context,
   // Tensor double_temp;
   TensorShape double_shape;
   double_shape.AddDim(18);
-  tensorflow::Status status = context->allocate_temp(
-      DataTypeToEnum<FPTYPE>::value, double_shape, tensor_list + 1);
+  status = context->allocate_temp(DataTypeToEnum<FPTYPE>::value, double_shape,
+                                  tensor_list + 1);
   if (!status.ok()) {
     return false;
   }
@@ -1604,8 +1604,7 @@ static int _build_nlist_gpu(OpKernelContext* context,
   for (tt = 0; tt < max_nnei_trial; ++tt) {
     TensorShape jlist_shape;
     jlist_shape.AddDim(3 * int_64(nloc) * mem_nnei);
-    tensorflow::Status status =
-        context->allocate_temp(DT_INT32, jlist_shape, tensor_list + 1);
+    status = context->allocate_temp(DT_INT32, jlist_shape, tensor_list + 1);
     if (!status.ok()) {
       return false;
     }
@@ -1838,8 +1837,7 @@ static int _build_nlist_gpu_rocm(OpKernelContext* context,
   for (tt = 0; tt < max_nnei_trial; ++tt) {
     TensorShape jlist_shape;
     jlist_shape.AddDim(3 * int_64(nloc) * mem_nnei);
-    tensorflow::Status status =
-        context->allocate_temp(DT_INT32, jlist_shape, tensor_list + 1);
+    status = context->allocate_temp(DT_INT32, jlist_shape, tensor_list + 1);
     if (!status.ok()) {
       return false;
     }
