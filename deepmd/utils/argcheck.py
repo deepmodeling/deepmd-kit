@@ -1601,7 +1601,7 @@ def training_args():  # ! modified by Ziyao: data configuration isolated.
     doc_disp_file = "The file for printing learning curve."
     doc_disp_freq = "The frequency of printing learning curve."
     doc_save_freq = "The frequency of saving check point."
-    doc_save_ckpt = "The file name of saving check point."
+    doc_save_ckpt = "The path prefix of saving check point files."
     doc_disp_training = "Displaying verbose information during training."
     doc_time_training = "Timing durining training."
     doc_profiling = "Profiling during training."

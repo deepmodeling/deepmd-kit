@@ -150,14 +150,14 @@ def main_parser() -> argparse.ArgumentParser:
         "--init-model",
         type=str,
         default=None,
-        help="Initialize the model by the provided checkpoint.",
+        help="Initialize the model by the provided path prefix of checkpoint files.",
     )
     parser_train_subgroup.add_argument(
         "-r",
         "--restart",
         type=str,
         default=None,
-        help="Restart the training from the provided checkpoint.",
+        help="Restart the training from the provided path prefix of checkpoint files.",
     )
     parser_train_subgroup.add_argument(
         "-f",
@@ -549,7 +549,7 @@ def main_parser() -> argparse.ArgumentParser:
         "--restart",
         type=str,
         default=None,
-        help="Restart the training from the provided checkpoint.",
+        help="Restart the training from the provided prefix of checkpoint files.",
     )
     parser_train_nvnmd.add_argument(
         "-s",

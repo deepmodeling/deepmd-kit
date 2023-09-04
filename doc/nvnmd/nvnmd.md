@@ -162,7 +162,7 @@ where items are defined as:
 | numb_test  | the accuracy is test by using {numb_test} sample    | a positive integer |
 | disp_file  | the log file where the training message display     | a string           |
 | disp_freq  | display frequency                                   | a positive integer |
-| save_ckpt  | check point file                                    | a string           |
+| save_ckpt  | path prefix of check point files                    | a string           |
 | save_freq  | save frequency                                      | a positive integer |
 | systems    | a list of data directory which contains the dataset | string list        |
 | set_prefix | the prefix of dataset                               | a string           |
@@ -181,7 +181,7 @@ dp train-nvnmd train_qnn.json -s s2
 
 After the training process, you will get two folders: `nvnmd_cnn` and `nvnmd_qnn`. The `nvnmd_cnn` contains the model after continuous neural network (CNN) training. The `nvnmd_qnn` contains the model after quantized neural network (QNN) training. The binary file `nvnmd_qnn/model.pb` is the model file that is used to perform NVNMD in the server [http://nvnmd.picp.vip].
 
-You can also restart the CNN training from the checkpoint (`nvnmd_cnn/model.ckpt`) by
+You can also restart the CNN training from the path prefix of checkpoint files (`nvnmd_cnn/model.ckpt`) by
 
 ``` bash
 dp train-nvnmd train_cnn.json -r nvnmd_cnn/model.ckpt -s s1
