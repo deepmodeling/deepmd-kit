@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     TYPE_CHECKING,
+    Optional,
 )
 
 from deepmd.infer.deep_tensor import (
@@ -24,6 +25,8 @@ class DeepDipole(DeepTensor):
         The prefix in the load computational graph
     default_tf_graph : bool
         If uses the default tf graph, otherwise build a new tf graph for evaluation
+    input_map : dict, optional
+        The input map for tf.import_graph_def. Only work with default tf graph
 
     Warnings
     --------
@@ -37,6 +40,7 @@ class DeepDipole(DeepTensor):
         model_file: "Path",
         load_prefix: str = "load",
         default_tf_graph: bool = False,
+        input_map: Optional[dict] = None,
     ) -> None:
         # use this in favor of dict update to move attribute from class to
         # instance namespace
@@ -53,6 +57,7 @@ class DeepDipole(DeepTensor):
             model_file,
             load_prefix=load_prefix,
             default_tf_graph=default_tf_graph,
+            input_map=input_map,
         )
 
     def get_dim_fparam(self) -> int:

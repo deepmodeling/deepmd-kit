@@ -49,6 +49,8 @@ class DeepPot(DeepEval):
     auto_batch_size : bool or int or AutomaticBatchSize, default: True
         If True, automatic batch size will be used. If int, it will be used
         as the initial batch size.
+    input_map : dict, optional
+        The input map for tf.import_graph_def. Only work with default tf graph
 
     Examples
     --------
@@ -75,6 +77,7 @@ class DeepPot(DeepEval):
         load_prefix: str = "load",
         default_tf_graph: bool = False,
         auto_batch_size: Union[bool, int, AutoBatchSize] = True,
+        input_map: Optional[dict] = None,
     ) -> None:
         # add these tensors on top of what is defined by DeepTensor Class
         # use this in favor of dict update to move attribute from class to
@@ -108,6 +111,7 @@ class DeepPot(DeepEval):
             load_prefix=load_prefix,
             default_tf_graph=default_tf_graph,
             auto_batch_size=auto_batch_size,
+            input_map=input_map,
         )
 
         # load optional tensors

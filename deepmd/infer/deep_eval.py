@@ -43,6 +43,8 @@ class DeepEval:
     auto_batch_size : bool or int or AutomaticBatchSize, default: False
         If True, automatic batch size will be used. If int, it will be used
         as the initial batch size.
+    input_map : dict, optional
+        The input map for tf.import_graph_def. Only work with default tf graph
     """
 
     load_prefix: str  # set by subclass
@@ -53,9 +55,13 @@ class DeepEval:
         load_prefix: str = "load",
         default_tf_graph: bool = False,
         auto_batch_size: Union[bool, int, AutoBatchSize] = False,
+        input_map: Optional[dict] = None,
     ):
         self.graph = self._load_graph(
-            model_file, prefix=load_prefix, default_tf_graph=default_tf_graph
+            model_file,
+            prefix=load_prefix,
+            default_tf_graph=default_tf_graph,
+            input_map=input_map,
         )
         self.load_prefix = load_prefix
 
@@ -168,6 +174,7 @@ class DeepEval:
         frozen_graph_filename: "Path",
         prefix: str = "load",
         default_tf_graph: bool = False,
+        input_map: Optional[dict] = None,
     ):
         # We load the protobuf file from the disk and parse it to retrieve the
         # unserialized graph_def
@@ -178,7 +185,7 @@ class DeepEval:
             if default_tf_graph:
                 tf.import_graph_def(
                     graph_def,
-                    input_map=None,
+                    input_map=input_map,
                     return_elements=None,
                     name=prefix,
                     producer_op_list=None,

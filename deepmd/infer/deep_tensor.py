@@ -35,6 +35,8 @@ class DeepTensor(DeepEval):
         The prefix in the load computational graph
     default_tf_graph : bool
         If uses the default tf graph, otherwise build a new tf graph for evaluation
+    input_map : dict, optional
+        The input map for tf.import_graph_def. Only work with default tf graph
     """
 
     tensors = {
@@ -58,10 +60,15 @@ class DeepTensor(DeepEval):
         model_file: "Path",
         load_prefix: str = "load",
         default_tf_graph: bool = False,
+        input_map: Optional[dict] = None,
     ) -> None:
         """Constructor."""
         DeepEval.__init__(
-            self, model_file, load_prefix=load_prefix, default_tf_graph=default_tf_graph
+            self,
+            model_file,
+            load_prefix=load_prefix,
+            default_tf_graph=default_tf_graph,
+            input_map=input_map,
         )
         # check model type
         model_type = self.tensors["t_tensor"][2:-2]

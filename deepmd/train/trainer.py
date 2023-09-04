@@ -325,6 +325,9 @@ class DPTrainer:
         log.info("built lr")
 
     def _build_loss(self):
+        if self.stop_batch == 0:
+            # l2 is not used if stop_batch is zero
+            return None, None
         if not self.multi_task_mode:
             l2_l, l2_more = self.loss.build(
                 self.learning_rate,
@@ -449,6 +452,11 @@ class DPTrainer:
         return optimizer
 
     def _build_training(self):
+        if self.stop_batch == 0:
+            # self.train_op is not used if stop_batch is zero
+            self.train_op = None
+            return
+
         trainable_variables = tf.trainable_variables()
 
         if not self.multi_task_mode:
