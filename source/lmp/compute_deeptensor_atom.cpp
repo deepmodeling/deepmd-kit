@@ -26,10 +26,12 @@ using namespace LAMMPS_NS;
 
 ComputeDeeptensorAtom::ComputeDeeptensorAtom(LAMMPS *lmp, int narg, char **arg)
     : Compute(lmp, narg, arg), dp(lmp), tensor(nullptr) {
-  if (!(strcmp(update->unit_style, "metal") == 0 || strcmp(update->unit_style, "real") == 0)) {
-    error->all(FLERR,
-               "Compute deeptensor/atom requires metal or real unit; please set it by "
-               "\"units metal\" or \"units real\"");
+  if (!(strcmp(update->unit_style, "metal") == 0 ||
+        strcmp(update->unit_style, "real") == 0)) {
+    error->all(
+        FLERR,
+        "Compute deeptensor/atom requires metal or real unit; please set it by "
+        "\"units metal\" or \"units real\"");
   }
 
   if (narg < 4) {
