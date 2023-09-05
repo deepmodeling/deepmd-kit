@@ -852,7 +852,7 @@ def test_polar(
             pe = np.concatenate(
                 (
                     np.reshape(test_data["polarizability"][:numb_test], [-1, 9]),
-                    np.reshape(polar, [-1, 3]),
+                    np.reshape(polar, [-1, 9]),
                 ),
                 axis=1,
             )
