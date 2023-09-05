@@ -86,9 +86,9 @@ def train(
     INPUT : str
         json/yaml control file
     init_model : Optional[str]
-        path to checkpoint folder or None
+        path prefix of checkpoint files or None
     restart : Optional[str]
-        path to checkpoint folder or None
+        path prefix of checkpoint files or None
     output : str
         path for dump file with arguments
     init_frz_model : str

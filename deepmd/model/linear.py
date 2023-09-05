@@ -166,7 +166,7 @@ class LinearEnergyModel(LinearModel):
         frz_model : str, optional
             The path to the frozen model
         ckpt_meta : str, optional
-            The path to the checkpoint and meta file
+            The path prefix of the checkpoint and meta files
         suffix : str, optional
             The suffix of the scope
         reuse : bool or tf.AUTO_REUSE, optional
