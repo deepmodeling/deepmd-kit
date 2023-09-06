@@ -24,11 +24,7 @@ endif()
 target_link_libraries(${ipiname} PRIVATE ${libipiname})
 target_include_directories(${ipiname}
                            PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/)
-if(BUILD_PY_IF)
-  set(LIB_DIR op)
-else(BUILD_PY_IF)
-  set(LIB_DIR lib)
-endif(BUILD_PY_IF)
+set(LIB_DIR lib)
 
 if(BUILD_PY_IF AND TENSORFLOW_LINK_LIBPYTHON)
   # ignore undefined reference for libpython
