@@ -50,7 +50,7 @@ requires-python = ">=3.7"
 readme = "README.md"
 keywords = ["deepmd"]
 
-[project.entry-points."lammps.plugin"]
+[project.entry-points."lammps.plugins"]
 deepmd = "deepmd.lmp:get_op_dir"
 
 [project.urls]
