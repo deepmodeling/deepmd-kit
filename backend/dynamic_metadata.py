@@ -2,6 +2,7 @@
 from typing import (
     Dict,
     List,
+    Optional,
 )
 
 from .find_tensorflow import (
@@ -20,7 +21,7 @@ def __dir__() -> List[str]:
 
 def dynamic_metadata(
     field: str,
-    settings: Dict[str, object] | None = None,
+    settings: Optional[Dict[str, object]] = None,
 ) -> str:
     assert field in ["optional-dependencies", "entry-points", "scripts"]
     _, _, find_libpython_requires, extra_scripts, tf_version = get_argument_from_env()
