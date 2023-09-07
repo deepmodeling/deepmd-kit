@@ -66,18 +66,18 @@ experimental = true
 minimum-version = "0.5"
 cmake.source-dir = "source"
 sdist.include = [
-    "deepmd/_version.py",
+    "/deepmd/_version.py",
 ]
 sdist.exclude = [
-    "source/tests",
-    "source/api_c/tests",
-    "source/api_cc/tests",
-    "source/lib/tests",
-    "source/lmp/tests",
-    "doc",
-    "examples",
-    "data",
-    ".github",
+    "/source/tests",
+    "/source/api_c/tests",
+    "/source/api_cc/tests",
+    "/source/lib/tests",
+    "/source/lmp/tests",
+    "/doc",
+    "/examples",
+    "/data",
+    "/.github",
 ]
 wheel.packages = [
     "deepmd",
