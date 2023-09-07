@@ -28,7 +28,7 @@ from packaging.specifiers import (
 )
 
 
-@lru_cache
+@lru_cache()
 def find_tensorflow() -> Tuple[Optional[str], List[str]]:
     """Find TensorFlow library.
 
@@ -93,7 +93,7 @@ def find_tensorflow() -> Tuple[Optional[str], List[str]]:
     return tf_install_dir, requires
 
 
-@lru_cache
+@lru_cache()
 def get_tf_requirement(tf_version: str = "") -> dict:
     """Get TensorFlow requirement (CPU) when TF is not installed.
 
@@ -148,7 +148,7 @@ def get_tf_requirement(tf_version: str = "") -> dict:
         }
 
 
-@lru_cache
+@lru_cache()
 def get_tf_version(tf_path: Union[str, Path]) -> str:
     """Get TF version from a TF Python library path.
 

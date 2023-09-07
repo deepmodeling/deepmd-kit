@@ -19,7 +19,7 @@ from .find_tensorflow import (
 )
 
 
-@lru_cache
+@lru_cache()
 def get_argument_from_env() -> Tuple[str, list, list, dict, str]:
     """Get the arguments from environment variables.
 
