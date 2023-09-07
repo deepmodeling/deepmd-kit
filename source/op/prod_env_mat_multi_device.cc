@@ -1549,8 +1549,11 @@ static int _norm_copy_coord_gpu(OpKernelContext* context,
     // Tensor cpy_temp;
     TensorShape cpy_shape;
     cpy_shape.AddDim(mem_cpy * 3);
-    context->allocate_temp(DataTypeToEnum<FPTYPE>::value, cpy_shape,
-                           tensor_list + 3);
+    status = context->allocate_temp(DataTypeToEnum<FPTYPE>::value, cpy_shape,
+                                    tensor_list + 3);
+    if (!status.ok()) {
+      return false;
+    }
     // Tensor t_temp;
     TensorShape t_shape;
     t_shape.AddDim(mem_cpy * 2);
