@@ -1,19 +1,16 @@
 [build-system]
 requires = [
-    "setuptools>=61",
-    "setuptools_scm[toml]>=6.2",
-    "wheel",
-    "scikit-build",
-    "cmake",
-    # see https://github.com/scikit-build/scikit-build/releases/tag/0.13.1
-    "ninja; platform_system!='Windows'",
+    # dynamic metadata API is still unstable
+    # TODO: unpin the upper bound when it is stable
+    "scikit-build-core>=0.5,<0.6",
+    "packaging",
 ]
-build-backend = "dp_backend"
-backend-path = ["backend"]
+build-backend = "backend.dp_backend"
+backend-path = ["."]
 
 [project]
 name = "deepmd-kit"
-dynamic = ["version", "optional-dependencies", "entry-points"]
+dynamic = ["version", "optional-dependencies", "scripts"]
 description = "A deep learning package for many-body potential energy representation and molecular dynamics"
 authors = [
   {name = "DeepModeling"},
@@ -53,6 +50,9 @@ requires-python = ">=3.7"
 readme = "README.md"
 keywords = ["deepmd"]
 
+[project.entry-points."lammps.plugin"]
+deepmd = "deepmd.lmp:get_op_dir"
+
 [project.urls]
 Homepage = "https://github.com/deepmodeling/deepmd-kit"
 documentation = "https://docs.deepmodeling.com/projects/deepmd"
@@ -60,6 +60,41 @@ repository = "https://github.com/deepmodeling/deepmd-kit"
 
 [tool.setuptools_scm]
 write_to = "deepmd/_version.py"
+
+[tool.scikit-build]
+experimental = true
+minimum-version = "0.5"
+cmake.source-dir = "source"
+sdist.include = [
+    "deepmd/_version.py",
+]
+sdist.exclude = [
+    "source/tests",
+    "source/api_c/tests",
+    "source/api_cc/tests",
+    "source/lib/tests",
+    "source/lmp/tests",
+    "doc",
+    "examples",
+    "data",
+    ".github",
+]
+wheel.packages = [
+    "deepmd",
+    "deepmd_cli",
+]
+wheel.py-api = "py37"
+
+[tool.scikit-build.metadata.version]
+provider = "scikit_build_core.metadata.setuptools_scm"
+
+[tool.scikit-build.metadata.optional-dependencies]
+provider = "backend.dynamic_metadata"
+provider-path = "backend"
+
+[tool.scikit-build.metadata.scripts]
+provider = "backend.dynamic_metadata"
+provider-path = "backend"
 
 [tool.cibuildwheel]
 test-command = [
