@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Dict,
+    List,
 )
 
 from .find_tensorflow import (
@@ -13,7 +14,7 @@ from .read_env import (
 __all__ = ["dynamic_metadata"]
 
 
-def __dir__() -> list[str]:
+def __dir__() -> List[str]:
     return __all__
 
 
