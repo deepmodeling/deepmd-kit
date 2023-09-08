@@ -4,6 +4,7 @@
 #include <iomanip>
 #include <iostream>
 #include <limits>
+#include <sstream>
 
 #include "atom.h"
 #include "comm.h"
@@ -63,7 +64,7 @@ FixDPLR::FixDPLR(LAMMPS *lmp, int narg, char **arg)
   if (strcmp(update->unit_style, "metal") != 0) {
     error->all(
         FLERR,
-        "Pair deepmd requires metal unit, please set it by \"units metal\"");
+        "Fix dplr requires metal unit, please set it by \"units metal\"");
   }
 
   int iarg = 3;
@@ -71,8 +72,7 @@ FixDPLR::FixDPLR(LAMMPS *lmp, int narg, char **arg)
   bond_type.clear();
   while (iarg < narg) {
     if (!is_key(arg[iarg])) {
-      error->all(FLERR,
-                 "Illegal pair_style command\nwrong number of parameters\n");
+      error->all(FLERR, "Illegal fix command\nwrong number of parameters\n");
     }
     if (string(arg[iarg]) == string("model")) {
       if (iarg + 1 > narg) {
@@ -128,10 +128,6 @@ FixDPLR::FixDPLR(LAMMPS *lmp, int narg, char **arg)
   }
   assert(map_vec.size() % 2 == 0),
       "number of ints provided by type_associate should be even";
-  for (int ii = 0; ii < map_vec.size() / 2; ++ii) {
-    type_asso[map_vec[ii * 2 + 0]] = map_vec[ii * 2 + 1];
-    bk_type_asso[map_vec[ii * 2 + 1]] = map_vec[ii * 2 + 0];
-  }
 
   // dpt.init(model);
   // dtm.init("frozen_model.pb");
@@ -142,16 +138,68 @@ FixDPLR::FixDPLR(LAMMPS *lmp, int narg, char **arg)
     error->one(FLERR, e.what());
   }
 
+  pair_deepmd = (PairDeepMD *)force->pair_match("deepmd", 1);
+  if (!pair_deepmd) {
+    error->all(FLERR, "pair_style deepmd should be set before this fix\n");
+  }
+
+  int n = atom->ntypes;
+  std::vector<std::string> type_names = pair_deepmd->type_names;
+  std::vector<std::string> type_map;
+  std::string type_map_str;
+  dpt.get_type_map(type_map_str);
+  // convert the string to a vector of strings
+  std::istringstream iss(type_map_str);
+  std::string type_name;
+  while (iss >> type_name) {
+    type_map.push_back(type_name);
+  }
+  if (type_names.size() == 0 || type_map.size() == 0) {
+    type_idx_map.resize(n);
+    for (int ii = 0; ii < n; ++ii) {
+      type_idx_map[ii] = ii;
+    }
+  } else {
+    type_idx_map.clear();
+    for (std::string type_name : type_names) {
+      bool found_element = false;
+      for (int ii = 0; ii < type_map.size(); ++ii) {
+        if (type_map[ii] == type_name) {
+          type_idx_map.push_back(ii);
+          found_element = true;
+          break;
+        }
+      }
+      if (!found_element && "NULL" == type_name) {
+        type_idx_map.push_back(type_map.size());  // ghost type
+        found_element = true;
+      }
+      if (!found_element) {
+        error->all(FLERR, "pair_coeff: element " + type_name +
+                              " not found in the DPLR model");
+      }
+    }
+    int numb_types = type_idx_map.size();
+    if (numb_types < n) {
+      type_idx_map.resize(n);
+      for (int ii = numb_types; ii < n; ++ii) {
+        type_idx_map[ii] = ii;
+      }
+    }
+  }
+
+  for (int ii = 0; ii < map_vec.size() / 2; ++ii) {
+    type_asso[type_idx_map[map_vec[ii * 2 + 0]]] =
+        type_idx_map[map_vec[ii * 2 + 1]];
+    bk_type_asso[type_idx_map[map_vec[ii * 2 + 1]]] =
+        type_idx_map[map_vec[ii * 2 + 0]];
+  }
+
   sel_type = dpt.sel_types();
   sort(sel_type.begin(), sel_type.end());
   dpl_type.clear();
   for (int ii = 0; ii < sel_type.size(); ++ii) {
     dpl_type.push_back(type_asso[sel_type[ii]]);
-  }
-
-  pair_deepmd = (PairDeepMD *)force->pair_match("deepmd", 1);
-  if (!pair_deepmd) {
-    error->all(FLERR, "pair_style deepmd should be set before this fix\n");
   }
 
   // set comm size needed by this fix
@@ -284,7 +332,7 @@ void FixDPLR::get_valid_pairs(vector<pair<int, int> > &pairs) {
   // get type
   int *type = atom->type;
   for (int ii = 0; ii < nall; ++ii) {
-    dtype[ii] = type[ii] - 1;
+    dtype[ii] = type_idx_map[type[ii] - 1];
   }
 
   int **bondlist = neighbor->bondlist;
@@ -394,7 +442,7 @@ void FixDPLR::pre_force(int vflag) {
   vector<FLOAT_PREC> dcoord(nall * 3, 0.);
   // get type
   for (int ii = 0; ii < nall; ++ii) {
-    dtype[ii] = type[ii] - 1;
+    dtype[ii] = type_idx_map[type[ii] - 1];
   }
   // get box
   dbox[0] = domain->h[0];  // xx
@@ -518,7 +566,7 @@ void FixDPLR::post_force(int vflag) {
   {
     int *type = atom->type;
     for (int ii = 0; ii < nall; ++ii) {
-      dtype[ii] = type[ii] - 1;
+      dtype[ii] = type_idx_map[type[ii] - 1];
     }
     dbox[0] = domain->h[0];  // xx
     dbox[4] = domain->h[1];  // yy

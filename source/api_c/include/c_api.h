@@ -1034,6 +1034,13 @@ int* DP_DeepTensorGetSelTypes(DP_DeepTensor* dt);
 int DP_DeepTensorGetNumbSelTypes(DP_DeepTensor* dt);
 
 /**
+ * @brief Get the type map of a Deep Tensor.
+ * @param[in] dt The Deep Tensor to use.
+ * @return The type map of the Deep Tensor.
+ */
+const char* DP_DeepTensorGetTypeMap(DP_DeepTensor* dt);
+
+/**
  * @brief Check if there is any exceptions throw.
  *
  * @param dt The Deep Tensor to use.

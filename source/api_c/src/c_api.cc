@@ -1267,6 +1267,12 @@ int DP_DeepTensorGetNumbSelTypes(DP_DeepTensor* dt) {
   return dt->dt.sel_types().size();
 }
 
+const char* DP_DeepTensorGetTypeMap(DP_DeepTensor* dt) {
+  std::string type_map;
+  dt->dt.get_type_map(type_map);
+  return string_to_char(type_map);
+}
+
 const char* DP_DeepTensorCheckOK(DP_DeepTensor* dt) {
   return string_to_char(dt->exception);
 }

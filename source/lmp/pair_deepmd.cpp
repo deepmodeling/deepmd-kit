@@ -1163,8 +1163,10 @@ void PairDeepMD::coeff(int narg, char **arg) {
     }
 
     type_idx_map.clear();
+    type_names.clear();
     while (iarg < narg) {
       std::string type_name = arg[iarg];
+      type_names.push_back(type_name);
       bool found_element = false;
       for (int ii = 0; ii < type_map.size(); ++ii) {
         if (type_map[ii] == type_name) {
