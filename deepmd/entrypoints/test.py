@@ -116,7 +116,13 @@ def test(
 
         # create data class
         tmap = dp.get_type_map() if dp.model_type == "ener" else None
-        data = DeepmdData(system, set_prefix, shuffle_test=shuffle_test, type_map=tmap)
+        data = DeepmdData(
+            system,
+            set_prefix,
+            shuffle_test=shuffle_test,
+            type_map=tmap,
+            sort_atoms=False,
+        )
 
         if dp.model_type == "ener":
             err = test_ener(

@@ -42,6 +42,9 @@ class DeepmdData:
             Data modifier that has the method `modify_data`
     trn_all_set
             Use all sets as training dataset. Otherwise, if the number of sets is more than 1, the last set is left for test.
+    sort_atoms : bool
+            Sort atoms by atom types. Required to enable when the data is directly feeded to
+            descriptors except mixed types.
     """
 
     def __init__(
@@ -53,6 +56,7 @@ class DeepmdData:
         optional_type_map: bool = True,
         modifier=None,
         trn_all_set: bool = False,
+        sort_atoms: bool = True,
     ):
         """Constructor."""
         root = DPPath(sys_path)
@@ -102,6 +106,7 @@ class DeepmdData:
         if type_map is None and self.type_map is None and self.mixed_type:
             raise RuntimeError("mixed_type format must have type_map!")
         # make idx map
+        self.sort_atoms = sort_atoms
         self.idx_map = self._make_idx_map(self.atom_type)
         # train dirs
         self.test_dir = self.dirs[-1]
@@ -586,7 +591,10 @@ class DeepmdData:
     def _make_idx_map(self, atom_type):
         natoms = atom_type.shape[0]
         idx = np.arange(natoms)
-        idx_map = np.lexsort((idx, atom_type))
+        if self.sort_atoms:
+            idx_map = np.lexsort((idx, atom_type))
+        else:
+            idx_map = idx
         return idx_map
 
     def _load_type_map(self, sys_path: DPPath):

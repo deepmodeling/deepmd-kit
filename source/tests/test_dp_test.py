@@ -180,8 +180,6 @@ class TestDPTestEner(unittest.TestCase, TestDPTest):
             detail_file=detail_file,
             atomic=False,
         )
-        # TODO: see #2721
-        idx_map = np.lexsort((np.arange(len(self.atype)), self.atype))
         pred_e = np.loadtxt(detail_file + ".e.out", ndmin=2)[0, 1]
         pred_f = np.loadtxt(detail_file + ".f.out", ndmin=2)[:, 3:6]
         pred_v = np.loadtxt(detail_file + ".v.out", ndmin=2)[:, 9:18]
@@ -189,7 +187,7 @@ class TestDPTestEner(unittest.TestCase, TestDPTest):
         pred_v_peratom = np.loadtxt(detail_file + ".v_peratom.out", ndmin=2)[:, 9:18]
         self.assertAlmostEqual(pred_e, np.sum(self.expected_e), places=default_places)
         np.testing.assert_almost_equal(
-            pred_f, self.expected_f.reshape(-1, 3)[idx_map], decimal=default_places
+            pred_f, self.expected_f.reshape(-1, 3), decimal=default_places
         )
         np.testing.assert_almost_equal(
             pred_v,
