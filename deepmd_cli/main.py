@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import argparse
-import importlib
+import importlib.util
 import logging
 import os
 import sys
