@@ -354,8 +354,10 @@ PairDeepMD::PairDeepMD(LAMMPS *lmp)
                "Pair deepmd requires metal or real unit, please set it by "
                "\"units metal\" or \"units real\"");
   }
-  ener_unit_cvt_factor =
-      utils::get_conversion_factor(utils::ENERGY, unit_convert);
+  ener_unit_cvt_factor = force->boltz / 8.617343e-5;
+  dist_unit_cvt_factor = 1.0 / force->angstrom;
+  force_unit_cvt_factor = ener_unit_cvt_factor / dist_unit_cvt_factor;
+
   restartinfo = 1;
 #if LAMMPS_VERSION_NUMBER >= 20201130
   centroidstressflag =
