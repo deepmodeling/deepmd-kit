@@ -678,6 +678,6 @@ def test_pair_deepmd_si(lammps_si):
     assert lammps_si.eval("pe") == pytest.approx(expected_e * ener_metal2si)
     for ii in range(6):
         assert lammps_si.atoms[ii].force == pytest.approx(
-            expected_f[lammps_si.atoms[ii].id - 1] * metal2si
+            expected_f[lammps_si.atoms[ii].id - 1] * force_metal2si
         )
     lammps_si.run(1)
