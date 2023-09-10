@@ -57,7 +57,7 @@ ComputeDeeptensorAtom::ComputeDeeptensorAtom(LAMMPS *lmp, int narg, char **arg)
   timeflag = 1;
 
   nmax = 0;
-  
+
   dist_unit_cvt_factor = 1.0 / force->angstrom;
 }
 
@@ -127,7 +127,8 @@ void ComputeDeeptensorAtom::compute_peratom() {
   // get coord
   for (int ii = 0; ii < nall; ++ii) {
     for (int dd = 0; dd < 3; ++dd) {
-      dcoord[ii * 3 + dd] = (x[ii][dd] - domain->boxlo[dd]) / dist_unit_cvt_factor;
+      dcoord[ii * 3 + dd] =
+          (x[ii][dd] - domain->boxlo[dd]) / dist_unit_cvt_factor;
     }
   }
 
