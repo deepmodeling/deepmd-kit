@@ -1261,7 +1261,7 @@ double PairDeepMD::init_one(int i, int j) {
   }
 
   if (setflag[i][j] == 0) {
-    scale[i][j] = 1.0 * ener_unit_cvt_factor;
+    scale[i][j] = 1.0;
   }
   scale[j][i] = scale[i][j];
 
