@@ -23,6 +23,7 @@ pb_file = Path(__file__).parent / "graph.pb"
 pb_file2 = Path(__file__).parent / "graph2.pb"
 system_file = Path(__file__).parent.parent.parent / "tests"
 data_file = Path(__file__).parent / "data.lmp"
+data_file_si = Path(__file__).parent / "data.si"
 data_type_map_file = Path(__file__).parent / "data_type_map.lmp"
 md_file = Path(__file__).parent / "md.out"
 
@@ -219,6 +220,9 @@ type_HO = np.array([2, 1, 1, 2, 1, 1])
 nktv2p = 1.6021765e6
 nktv2p_real = 68568.415
 metal2real = 23.060549
+dist_metal2si = 1.0e-10
+ener_metal2si = 1.3806504e-23 / 8.617343e-5
+force_metal2si = ener_metal2si / dist_metal2si
 
 sp.check_output(
     "{} -m deepmd convert-from pbtxt -i {} -o {}".format(
@@ -239,6 +243,7 @@ sp.check_output(
 def setup_module():
     write_lmp_data(box, coord, type_OH, data_file)
     write_lmp_data(box, coord, type_HO, data_type_map_file)
+    write_lmp_data(box*dist_metal2si, coord*dist_metal2si, type_OH, data_file_si)
 
 
 def teardown_module():
@@ -254,14 +259,22 @@ def _lammps(data_file, units="metal") -> PyLammps:
     lammps.neighbor("2.0 bin")
     lammps.neigh_modify("every 10 delay 0 check no")
     lammps.read_data(data_file.resolve())
-    lammps.mass("1 16")
-    lammps.mass("2 2")
+    if units == "metal" or units == "real":
+        lammps.mass("1 16")
+        lammps.mass("2 2")
+    elif units == "si":
+        lammps.mass("1 %.6f"%(16e-3/6.02214e23))
+        lammps.mass("2 %.6f"%(2e-3/6.02214e23))
+    else: 
+        raise ValueError("units should be metal, real, or si")
     if units == "metal":
         lammps.timestep(0.0005)
     elif units == "real":
         lammps.timestep(0.5)
+    elif units == "si":
+        lammps.timestep(5e-16)
     else:
-        raise ValueError("units should be metal or real")
+        raise ValueError("units should be metal, real, or si")
     lammps.fix("1 all nve")
     return lammps
 
@@ -286,6 +299,11 @@ def lammps_real():
     yield lmp
     lmp.close()
 
+@pytest.fixture
+def lammps_si():
+    lmp = _lammps(data_file=data_file_si, units="si")
+    yield lmp
+    lmp.close()
 
 def test_pair_deepmd(lammps):
     lammps.pair_style(f"deepmd {pb_file.resolve()}")
@@ -649,3 +667,14 @@ def test_pair_deepmd_model_devi_atomic_relative_v_real(lammps_real):
     assert md[3] == pytest.approx(
         np.sqrt(np.mean(np.square(expected_md_v))) * metal2real
     )
+
+def test_pair_deepmd_si(lammps_si):
+    lammps_si.pair_style(f"deepmd {pb_file.resolve()}")
+    lammps_si.pair_coeff("* *")
+    lammps_si.run(0)
+    assert lammps_si.eval("pe") == pytest.approx(expected_e * ener_metal2si)
+    for ii in range(6):
+        assert lammps_si.atoms[ii].force == pytest.approx(
+            expected_f[lammps_si.atoms[ii].id - 1] * metal2si
+        )
+    lammps_si.run(1)
