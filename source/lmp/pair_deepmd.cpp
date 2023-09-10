@@ -1192,7 +1192,7 @@ void PairDeepMD::coeff(int narg, char **arg) {
   for (int i = ilo; i <= ihi; i++) {
     for (int j = MAX(jlo, i); j <= jhi; j++) {
       setflag[i][j] = 1;
-      scale[i][j] = 1.0 * ener_unit_cvt_factor;
+      scale[i][j] = 1.0;
       if (i > numb_types || j > numb_types) {
         char warning_msg[1024];
         sprintf(warning_msg,
