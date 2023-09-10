@@ -921,7 +921,7 @@ void PairDeepMD::settings(int narg, char **arg) {
     } catch (deepmd_compat::deepmd_exception &e) {
       error->one(FLERR, e.what());
     }
-    cutoff = deep_pot.cutoff();
+    cutoff = deep_pot.cutoff() * dist_unit_cvt_factor;
     numb_types = deep_pot.numb_types();
     numb_types_spin = deep_pot.numb_types_spin();
     dim_fparam = deep_pot.dim_fparam();
