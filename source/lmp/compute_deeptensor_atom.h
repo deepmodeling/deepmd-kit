@@ -36,6 +36,7 @@ class ComputeDeeptensorAtom : public Compute {
   void compute_peratom() override;
   double memory_usage() override;
   void init_list(int, class NeighList *) override;
+  double dist_unit_cvt_factor;
 
  private:
   int nmax;

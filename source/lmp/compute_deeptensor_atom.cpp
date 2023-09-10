@@ -57,6 +57,8 @@ ComputeDeeptensorAtom::ComputeDeeptensorAtom(LAMMPS *lmp, int narg, char **arg)
   timeflag = 1;
 
   nmax = 0;
+  
+  dist_unit_cvt_factor = 1.0 / force->angstrom;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -116,16 +118,16 @@ void ComputeDeeptensorAtom::compute_peratom() {
     dtype[ii] = type[ii] - 1;
   }
   // get box
-  dbox[0] = domain->h[0];  // xx
-  dbox[4] = domain->h[1];  // yy
-  dbox[8] = domain->h[2];  // zz
-  dbox[7] = domain->h[3];  // zy
-  dbox[6] = domain->h[4];  // zx
-  dbox[3] = domain->h[5];  // yx
+  dbox[0] = domain->h[0] / dist_unit_cvt_factor;  // xx
+  dbox[4] = domain->h[1] / dist_unit_cvt_factor;  // yy
+  dbox[8] = domain->h[2] / dist_unit_cvt_factor;  // zz
+  dbox[7] = domain->h[3] / dist_unit_cvt_factor;  // zy
+  dbox[6] = domain->h[4] / dist_unit_cvt_factor;  // zx
+  dbox[3] = domain->h[5] / dist_unit_cvt_factor;  // yx
   // get coord
   for (int ii = 0; ii < nall; ++ii) {
     for (int dd = 0; dd < 3; ++dd) {
-      dcoord[ii * 3 + dd] = x[ii][dd] - domain->boxlo[dd];
+      dcoord[ii * 3 + dd] = (x[ii][dd] - domain->boxlo[dd]) / dist_unit_cvt_factor;
     }
   }
 
@@ -155,7 +157,7 @@ void ComputeDeeptensorAtom::compute_peratom() {
     // record when selected and in group
     if (selected && ingroup) {
       for (int jj = 0; jj < size_peratom_cols; ++jj) {
-        tensor[ii][jj] = atensor[iter_tensor + jj];
+        tensor[ii][jj] = atensor[iter_tensor + jj] * dist_unit_cvt_factor;
       }
     }
     // if not selected or not in group set to 0.
