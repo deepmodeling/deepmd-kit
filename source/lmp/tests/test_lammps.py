@@ -256,7 +256,7 @@ def _lammps(data_file, units="metal") -> PyLammps:
     lammps.units(units)
     lammps.boundary("p p p")
     lammps.atom_style("atomic")
-    lammps.neighbor("2.0 bin")
+    # lammps.neighbor("2.0 bin")
     lammps.neigh_modify("every 10 delay 0 check no")
     lammps.read_data(data_file.resolve())
     if units == "metal" or units == "real":
