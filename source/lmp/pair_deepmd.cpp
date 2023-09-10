@@ -346,7 +346,8 @@ PairDeepMD::PairDeepMD(LAMMPS *lmp)
   }
   if (strcmp(update->unit_style, "lj") == 0) {
     error->all(FLERR,
-               "Pair deepmd does not support unit style lj. Please use other unit styles like metal or real unit instead. You may set it by "
+               "Pair deepmd does not support unit style lj. Please use other "
+               "unit styles like metal or real unit instead. You may set it by "
                "\"units metal\" or \"units real\"");
   }
   ener_unit_cvt_factor = force->boltz / 8.617343e-5;
@@ -485,7 +486,8 @@ void PairDeepMD::compute(int eflag, int vflag) {
   // get coord
   for (int ii = 0; ii < nall; ++ii) {
     for (int dd = 0; dd < 3; ++dd) {
-      dcoord[ii * 3 + dd] = (x[ii][dd] - domain->boxlo[dd]) / dist_unit_cvt_factor;
+      dcoord[ii * 3 + dd] =
+          (x[ii][dd] - domain->boxlo[dd]) / dist_unit_cvt_factor;
     }
   }
 
@@ -595,15 +597,24 @@ void PairDeepMD::compute(int eflag, int vflag) {
             // vatom[ii][3] += 1.0 * dvatom[9*ii+3];
             // vatom[ii][4] += 1.0 * dvatom[9*ii+6];
             // vatom[ii][5] += 1.0 * dvatom[9*ii+7];
-            cvatom[ii][0] += scale[1][1] * dvatom[9 * ii + 0] * ener_unit_cvt_factor;  // xx
-            cvatom[ii][1] += scale[1][1] * dvatom[9 * ii + 4] * ener_unit_cvt_factor;  // yy
-            cvatom[ii][2] += scale[1][1] * dvatom[9 * ii + 8] * ener_unit_cvt_factor;  // zz
-            cvatom[ii][3] += scale[1][1] * dvatom[9 * ii + 3] * ener_unit_cvt_factor;  // xy
-            cvatom[ii][4] += scale[1][1] * dvatom[9 * ii + 6] * ener_unit_cvt_factor;  // xz
-            cvatom[ii][5] += scale[1][1] * dvatom[9 * ii + 7] * ener_unit_cvt_factor;  // yz
-            cvatom[ii][6] += scale[1][1] * dvatom[9 * ii + 1] * ener_unit_cvt_factor;  // yx
-            cvatom[ii][7] += scale[1][1] * dvatom[9 * ii + 2] * ener_unit_cvt_factor;  // zx
-            cvatom[ii][8] += scale[1][1] * dvatom[9 * ii + 5] * ener_unit_cvt_factor;  // zy
+            cvatom[ii][0] +=
+                scale[1][1] * dvatom[9 * ii + 0] * ener_unit_cvt_factor;  // xx
+            cvatom[ii][1] +=
+                scale[1][1] * dvatom[9 * ii + 4] * ener_unit_cvt_factor;  // yy
+            cvatom[ii][2] +=
+                scale[1][1] * dvatom[9 * ii + 8] * ener_unit_cvt_factor;  // zz
+            cvatom[ii][3] +=
+                scale[1][1] * dvatom[9 * ii + 3] * ener_unit_cvt_factor;  // xy
+            cvatom[ii][4] +=
+                scale[1][1] * dvatom[9 * ii + 6] * ener_unit_cvt_factor;  // xz
+            cvatom[ii][5] +=
+                scale[1][1] * dvatom[9 * ii + 7] * ener_unit_cvt_factor;  // yz
+            cvatom[ii][6] +=
+                scale[1][1] * dvatom[9 * ii + 1] * ener_unit_cvt_factor;  // yx
+            cvatom[ii][7] +=
+                scale[1][1] * dvatom[9 * ii + 2] * ener_unit_cvt_factor;  // zx
+            cvatom[ii][8] +=
+                scale[1][1] * dvatom[9 * ii + 5] * ener_unit_cvt_factor;  // zy
           }
         }
       }
@@ -647,15 +658,24 @@ void PairDeepMD::compute(int eflag, int vflag) {
           // vatom[ii][3] += 1.0 * dvatom[9*ii+3];
           // vatom[ii][4] += 1.0 * dvatom[9*ii+6];
           // vatom[ii][5] += 1.0 * dvatom[9*ii+7];
-          cvatom[ii][0] += scale[1][1] * dvatom[9 * ii + 0] * ener_unit_cvt_factor;  // xx
-          cvatom[ii][1] += scale[1][1] * dvatom[9 * ii + 4] * ener_unit_cvt_factor;  // yy
-          cvatom[ii][2] += scale[1][1] * dvatom[9 * ii + 8] * ener_unit_cvt_factor;  // zz
-          cvatom[ii][3] += scale[1][1] * dvatom[9 * ii + 3] * ener_unit_cvt_factor;  // xy
-          cvatom[ii][4] += scale[1][1] * dvatom[9 * ii + 6] * ener_unit_cvt_factor;  // xz
-          cvatom[ii][5] += scale[1][1] * dvatom[9 * ii + 7] * ener_unit_cvt_factor;  // yz
-          cvatom[ii][6] += scale[1][1] * dvatom[9 * ii + 1] * ener_unit_cvt_factor;  // yx
-          cvatom[ii][7] += scale[1][1] * dvatom[9 * ii + 2] * ener_unit_cvt_factor;  // zx
-          cvatom[ii][8] += scale[1][1] * dvatom[9 * ii + 5] * ener_unit_cvt_factor;  // zy
+          cvatom[ii][0] +=
+              scale[1][1] * dvatom[9 * ii + 0] * ener_unit_cvt_factor;  // xx
+          cvatom[ii][1] +=
+              scale[1][1] * dvatom[9 * ii + 4] * ener_unit_cvt_factor;  // yy
+          cvatom[ii][2] +=
+              scale[1][1] * dvatom[9 * ii + 8] * ener_unit_cvt_factor;  // zz
+          cvatom[ii][3] +=
+              scale[1][1] * dvatom[9 * ii + 3] * ener_unit_cvt_factor;  // xy
+          cvatom[ii][4] +=
+              scale[1][1] * dvatom[9 * ii + 6] * ener_unit_cvt_factor;  // xz
+          cvatom[ii][5] +=
+              scale[1][1] * dvatom[9 * ii + 7] * ener_unit_cvt_factor;  // yz
+          cvatom[ii][6] +=
+              scale[1][1] * dvatom[9 * ii + 1] * ener_unit_cvt_factor;  // yx
+          cvatom[ii][7] +=
+              scale[1][1] * dvatom[9 * ii + 2] * ener_unit_cvt_factor;  // zx
+          cvatom[ii][8] +=
+              scale[1][1] * dvatom[9 * ii + 5] * ener_unit_cvt_factor;  // zy
         }
       }
       if (out_freq > 0 && update->ntimestep % out_freq == 0) {
@@ -755,7 +775,8 @@ void PairDeepMD::compute(int eflag, int vflag) {
                       displacements, MPI_DOUBLE, 0, world);
           if (rank == 0) {
             for (int dd = 0; dd < all_nlocal; ++dd) {
-              std_f_all[tagrecv[dd] - 1] = stdfrecv[dd] * scale[1][1] * force_unit_cvt_factor;
+              std_f_all[tagrecv[dd] - 1] =
+                  stdfrecv[dd] * scale[1][1] * force_unit_cvt_factor;
             }
             for (int dd = 0; dd < all_nlocal; ++dd) {
               fp << " " << setw(18) << std_f_all[dd];
@@ -794,7 +815,8 @@ void PairDeepMD::compute(int eflag, int vflag) {
     for (int ii = 0; ii < nall; ++ii) {
       for (int dd = 0; dd < 3; ++dd) {
         int new_idx = new_idx_map[ii];
-        f[ii][dd] += scale[1][1] * dforce[3 * new_idx + dd] * force_unit_cvt_factor;
+        f[ii][dd] +=
+            scale[1][1] * dforce[3 * new_idx + dd] * force_unit_cvt_factor;
         if (dtype[ii] < numb_types_spin && ii < nlocal) {
           fm[ii][dd] += scale[1][1] * dforce[3 * (new_idx + nlocal) + dd] /
                         (hbar / spin_norm[dtype[ii]]) * force_unit_cvt_factor;
