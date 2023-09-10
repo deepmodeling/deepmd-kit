@@ -457,7 +457,8 @@ void FixDPLR::pre_force(int vflag) {
   // get coord
   for (int ii = 0; ii < nall; ++ii) {
     for (int dd = 0; dd < 3; ++dd) {
-      dcoord[ii * 3 + dd] = (x[ii][dd] - domain->boxlo[dd]) / dist_unit_cvt_factor;
+      dcoord[ii * 3 + dd] =
+          (x[ii][dd] - domain->boxlo[dd]) / dist_unit_cvt_factor;
     }
   }
   // get lammps nlist
@@ -526,9 +527,11 @@ void FixDPLR::pre_force(int vflag) {
     int res_idx = sel_fwd[idx0];
     // int ret_idx = dpl_bwd[res_idx];
     for (int dd = 0; dd < 3; ++dd) {
-      x[idx1][dd] = x[idx0][dd] + tensor[res_idx * 3 + dd] * dist_unit_cvt_factor;
+      x[idx1][dd] =
+          x[idx0][dd] + tensor[res_idx * 3 + dd] * dist_unit_cvt_factor;
       // res_buff[idx1 * odim + dd] = tensor[res_idx * odim + dd];
-      dipole_recd[idx0 * 3 + dd] = tensor[res_idx * 3 + dd] * dist_unit_cvt_factor;
+      dipole_recd[idx0 * 3 + dd] =
+          tensor[res_idx * 3 + dd] * dist_unit_cvt_factor;
     }
   }
   // cout << "-------------------- fix/dplr: pre force " << endl;
@@ -581,7 +584,8 @@ void FixDPLR::post_force(int vflag) {
     double **x = atom->x;
     for (int ii = 0; ii < nall; ++ii) {
       for (int dd = 0; dd < 3; ++dd) {
-        dcoord[ii * 3 + dd] = (x[ii][dd] - domain->boxlo[dd]) / dist_unit_cvt_factor;
+        dcoord[ii * 3 + dd] =
+            (x[ii][dd] - domain->boxlo[dd]) / dist_unit_cvt_factor;
       }
     }
     // revise force according to efield
@@ -643,7 +647,7 @@ void FixDPLR::post_force(int vflag) {
     for (int ii = 0; ii < nlocal * 3; ++ii) {
       dfcorr[ii] *= force_unit_cvt_factor;
     }
-    for (int ii=0; ii < 9; ++ii) {
+    for (int ii = 0; ii < 9; ++ii) {
       dvcorr[ii] *= ener_unit_cvt_factor;
     }
   } catch (deepmd_compat::deepmd_exception &e) {
