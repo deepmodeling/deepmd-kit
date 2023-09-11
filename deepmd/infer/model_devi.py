@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
-    Literal,
     Optional,
     Tuple,
     overload,
@@ -21,6 +20,11 @@ from ..utils.data import (
 from .deep_pot import (
     DeepPot,
 )
+
+try:
+    from typing import Literal  # python >=3.8
+except ImportError:
+    from typing_extensions import Literal  # type: ignore
 
 
 @overload
