@@ -22,22 +22,26 @@ from .deep_pot import (
     DeepPot,
 )
 
-@overload
-def calc_model_devi_f(
-    fs: np.ndarray,
-    real_f: Optional[np.ndarray] = None,
-    relative: Optional[float] = None,
-    atomic: Literal[False] = False,
-)-> Tuple[np.ndarray, np.ndarray, np.ndarray]: ...
 
 @overload
 def calc_model_devi_f(
     fs: np.ndarray,
     real_f: Optional[np.ndarray] = None,
     relative: Optional[float] = None,
-    *
-    atomic: Literal[True],
-)-> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]: ...
+    atomic: Literal[False] = False,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    ...
+
+
+@overload
+def calc_model_devi_f(
+    fs: np.ndarray,
+    real_f: Optional[np.ndarray] = None,
+    relative: Optional[float] = None,
+    *atomic: Literal[True],
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    ...
+
 
 def calc_model_devi_f(
     fs: np.ndarray,
@@ -59,7 +63,7 @@ def calc_model_devi_f(
         value is the level parameter for computing the relative model
         deviation of the force.
     atomic : bool, default: False
-        Whether return deviation of force in all atoms  
+        Whether return deviation of force in all atoms
 
     Returns
     -------
@@ -328,7 +332,11 @@ def calc_model_devi(
         devi += list(
             calc_model_devi_v(virials, real_data["virial"], relative=relative_v)
         )
-        devi_f = list(calc_model_devi_f(forces, real_data["force"], relative=relative, atomic=atomic))
+        devi_f = list(
+            calc_model_devi_f(
+                forces, real_data["force"], relative=relative, atomic=atomic
+            )
+        )
         devi += devi_f[:3]
         devi.append(calc_model_devi_e(energies, real_data["energy"]))
     devi = np.vstack(devi).T
