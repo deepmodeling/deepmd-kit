@@ -38,7 +38,8 @@ def calc_model_devi_f(
     fs: np.ndarray,
     real_f: Optional[np.ndarray] = None,
     relative: Optional[float] = None,
-    *atomic: Literal[True],
+    *,
+    atomic: Literal[True],
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     ...
 
