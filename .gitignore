@@ -22,7 +22,7 @@ _skbuild
 deepmd_kit.egg-info/
 dist
 .eggs
-_version.py
+/deepmd/_version.py
 venv*
 .vscode/**
 _build
