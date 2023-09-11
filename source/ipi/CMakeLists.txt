@@ -24,11 +24,7 @@ endif()
 target_link_libraries(${ipiname} PRIVATE ${libipiname})
 target_include_directories(${ipiname}
                            PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/)
-if(BUILD_PY_IF)
-  set(LIB_DIR op)
-else(BUILD_PY_IF)
-  set(LIB_DIR lib)
-endif(BUILD_PY_IF)
+set(LIB_DIR lib)
 
 if(BUILD_PY_IF AND TENSORFLOW_LINK_LIBPYTHON)
   # ignore undefined reference for libpython
@@ -63,8 +59,8 @@ if(CMAKE_TESTING_ENABLED)
 endif()
 
 if(BUILD_PY_IF)
-  install(TARGETS ${libipiname} DESTINATION deepmd/op/)
-  install(TARGETS ${ipiname} DESTINATION deepmd/op/)
+  install(TARGETS ${libipiname} DESTINATION deepmd/lib/)
+  install(TARGETS ${ipiname} DESTINATION deepmd/lib/)
 else(BUILD_PY_IF)
   install(TARGETS ${libipiname} DESTINATION lib/)
   install(TARGETS ${ipiname} DESTINATION bin/)
