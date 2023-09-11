@@ -78,6 +78,7 @@ One may set the following environment variables before executing `pip`:
 | ROCM_ROOT             | Path                   | Detected automatically | The path to the ROCM toolkit directory. |
 | TENSORFLOW_ROOT       | Path                   | Detected automatically | The path to TensorFlow Python library. By default the installer only finds TensorFlow under user site-package directory (`site.getusersitepackages()`) or system site-package directory (`sysconfig.get_path("purelib")`) due to limitation of [PEP-517](https://peps.python.org/pep-0517/). If not found, the latest TensorFlow (or the environment variable `TENSORFLOW_VERSION` if given) from PyPI will be built against.|
 | DP_ENABLE_NATIVE_OPTIMIZATION | 0, 1           | 0             | Enable compilation optimization for the native machine's CPU type. Do not enable it if generated code will run on different CPUs. |
+| CMAKE_ARGS             | str                   | -             | Additional CMake arguments |
 
 To test the installation, one should first jump out of the source directory
 ```
