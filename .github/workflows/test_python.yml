@@ -25,7 +25,9 @@ jobs:
     - uses: mpi4py/setup-mpi@v1
     # https://github.com/pypa/pip/issues/11770
     - run: python -m pip install -U "pip>=21.3.1,!=23.0.0"
-    - run: pip install -e .[cpu,test,mpi]
+    - run: |
+        pip install -e .[cpu,test] mpi4py
+        pip install horovod
       env:
         TENSORFLOW_VERSION: ${{ matrix.tf }}
         DP_BUILD_TESTING: 1
