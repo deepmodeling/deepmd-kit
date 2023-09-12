@@ -30,7 +30,7 @@ jobs:
         TENSORFLOW_VERSION: ${{ matrix.tf }}
         DP_BUILD_TESTING: 1
     - run: pip install horovod mpi4py
-      if: matrix.tf == ""
+      if: ${{ matrix.tf == '' }}
       env:
         HOROVOD_WITH_TENSORFLOW: 1
         HOROVOD_WITHOUT_GLOO: 1
