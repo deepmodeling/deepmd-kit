@@ -454,6 +454,22 @@ def main_parser() -> argparse.ArgumentParser:
         default=False,
         help="Calculate the RMS real error of the model. The real data should be given in the systems.",
     )
+    parser_model_devi.add_argument(
+        "--atomic",
+        action="store_true",
+        default=False,
+        help="Print the force model deviation of each atom.",
+    )
+    parser_model_devi.add_argument(
+        "--relative",
+        type=float,
+        help="Calculate the relative model deviation of force. The level parameter for computing the relative model deviation of the force should be given.",
+    )
+    parser_model_devi.add_argument(
+        "--relative_v",
+        type=float,
+        help="Calculate the relative model deviation of virial. The level parameter for computing the relative model deviation of the virial should be given.",
+    )
 
     # * convert models
     parser_transform = subparsers.add_parser(
