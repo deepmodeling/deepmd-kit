@@ -183,7 +183,7 @@ def embedding_net(
     References
     ----------
     .. [1] Kaiming  He,  Xiangyu  Zhang,  Shaoqing  Ren,  and  Jian  Sun. Identitymappings
-       in deep residual networks. InComputer Vision – ECCV 2016,pages 630–645. Springer
+       in deep residual networks. InComputer Vision - ECCV 2016,pages 630-645. Springer
        International Publishing, 2016.
     """
     input_shape = xx.get_shape().as_list()

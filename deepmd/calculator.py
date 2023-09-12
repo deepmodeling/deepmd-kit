@@ -6,6 +6,7 @@ from pathlib import (
 )
 from typing import (
     TYPE_CHECKING,
+    ClassVar,
     Dict,
     List,
     Optional,
@@ -69,7 +70,13 @@ class DP(Calculator):
     """
 
     name = "DP"
-    implemented_properties = ["energy", "free_energy", "forces", "virial", "stress"]
+    implemented_properties: ClassVar[List[str]] = [
+        "energy",
+        "free_energy",
+        "forces",
+        "virial",
+        "stress",
+    ]
 
     def __init__(
         self,
