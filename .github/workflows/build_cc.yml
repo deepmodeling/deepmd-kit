@@ -27,6 +27,7 @@ jobs:
       with:
         python-version: '3.11'
         cache: 'pip'
+    - uses: lukka/get-cmake@latest
     - run: python -m pip install tensorflow
     - run: sudo apt-get update && sudo apt-get install -y nvidia-cuda-toolkit
       if: matrix.variant == 'cuda'
@@ -49,6 +50,7 @@ jobs:
       env:
         DP_VARIANT: ${{ matrix.dp_variant }}
         DOWNLOAD_TENSORFLOW: "FALSE"
+        CMAKE_GENERATOR: ninja
       if: matrix.variant != 'clang'
     - run: source/install/build_cc.sh
       env:
@@ -56,6 +58,7 @@ jobs:
         DOWNLOAD_TENSORFLOW: "FALSE"
         CC: clang
         CXX: clang++
+        CMAKE_GENERATOR: ninja
       if: matrix.variant == 'clang'
     - name: Test files exist
       run: |
