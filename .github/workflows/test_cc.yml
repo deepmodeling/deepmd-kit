@@ -24,7 +24,7 @@ jobs:
         TF_INTRA_OP_PARALLELISM_THREADS: 1
         TF_INTER_OP_PARALLELISM_THREADS: 1
         LMP_CXX11_ABI_0: 1
-        CMAKE_GENERATOR: ninja
+        CMAKE_GENERATOR: Ninja
     # test lammps
     # ASE issue: https://gitlab.com/ase/ase/-/merge_requests/2843
     # TODO: remove ase version when ase has new release

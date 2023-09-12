@@ -54,7 +54,7 @@ jobs:
       env:
         DP_VARIANT: ${{ matrix.dp_variant }}
         DOWNLOAD_TENSORFLOW: "FALSE"
-        CMAKE_GENERATOR: ninja
+        CMAKE_GENERATOR: Ninja
       if: matrix.variant != 'clang'
     - run: source/install/build_cc.sh
       env:
@@ -62,7 +62,7 @@ jobs:
         DOWNLOAD_TENSORFLOW: "FALSE"
         CC: clang
         CXX: clang++
-        CMAKE_GENERATOR: ninja
+        CMAKE_GENERATOR: Ninja
       if: matrix.variant == 'clang'
     - name: Test files exist
       run: |
