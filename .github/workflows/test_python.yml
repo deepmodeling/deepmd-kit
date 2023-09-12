@@ -5,40 +5,27 @@ name: Test Python
 jobs:
   testpython:
     name: Test Python
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     strategy:
       matrix:
         include:
           - python: 3.7
-            gcc: 5
-            tf: 1.14
-          - python: 3.7
-            gcc: 6
-            tf: 1.14
-          - python: 3.7
-            gcc: 7
-            tf: 1.14
-          - python: 3.7
-            gcc: 8
             tf: 1.14
           - python: 3.8
-            gcc: 8
             tf:
           - python: "3.11"
-            gcc: 8
             tf:
 
-    container: ghcr.io/deepmodeling/deepmd-kit-test-environment:py${{ matrix.python }}-gcc${{ matrix.gcc }}-tf${{ matrix.tf }}
     steps:
-    - name: work around permission issue
-      run: git config --global --add safe.directory /__w/deepmd-kit/deepmd-kit
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python }}
+        cache: 'pip'
     # https://github.com/pypa/pip/issues/11770
     - run: python -m pip install -U "pip>=21.3.1,!=23.0.0"
     - run: pip install -e .[cpu,test]
       env:
-        CC: gcc-${{ matrix.gcc }}
-        CXX: g++-${{ matrix.gcc }}
         TENSORFLOW_VERSION: ${{ matrix.tf }}
         DP_BUILD_TESTING: 1
     - run: dp --version
@@ -46,7 +33,6 @@ jobs:
     - uses: codecov/codecov-action@v3
       with:
         gcov: true
-        gcov_executable: gcov-${{ matrix.gcc }}
   pass:
     name: Pass testing Python
     needs: [testpython]
