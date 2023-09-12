@@ -22,12 +22,15 @@ jobs:
       with:
         python-version: ${{ matrix.python }}
         cache: 'pip'
+    - uses: mpi4py/setup-mpi@v1
     # https://github.com/pypa/pip/issues/11770
     - run: python -m pip install -U "pip>=21.3.1,!=23.0.0"
-    - run: pip install -e .[cpu,test]
+    - run: pip install -e .[cpu,test,mpi]
       env:
         TENSORFLOW_VERSION: ${{ matrix.tf }}
         DP_BUILD_TESTING: 1
+        HOROVOD_WITH_TENSORFLOW: 1
+        HOROVOD_WITHOUT_GLOO: 1
     - run: dp --version
     - run: pytest --cov=deepmd --cov=deepmd_cli source/tests --durations=0
     - uses: codecov/codecov-action@v3
