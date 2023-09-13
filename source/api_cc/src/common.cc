@@ -374,8 +374,8 @@ int deepmd::session_input_tensors(
     const std::vector<VALUETYPE>& fparam_,
     const std::vector<VALUETYPE>& aparam__,
     const deepmd::AtomMap& atommap,
-    const bool aparam_nall,
-    const std::string scope) {
+    const std::string scope,
+    const bool aparam_nall) {
   int nframes = dcoord_.size() / 3 / datype_.size();
   int nall = datype_.size();
   int nloc = nall;
@@ -514,8 +514,8 @@ int deepmd::session_input_tensors(
     const deepmd::AtomMap& atommap,
     const int nghost,
     const int ago,
-    const bool aparam_nall,
-    const std::string scope) {
+    const std::string scope,
+    const bool aparam_nall) {
   int nframes = dcoord_.size() / 3 / datype_.size();
   int nall = datype_.size();
   int nloc = nall - nghost;
@@ -651,8 +651,8 @@ int deepmd::session_input_tensors_mixed_type(
     const std::vector<VALUETYPE>& fparam_,
     const std::vector<VALUETYPE>& aparam__,
     const deepmd::AtomMap& atommap,
-    const bool aparam_nall,
-    const std::string scope) {
+    const std::string scope,
+    const bool aparam_nall) {
   int nall = datype_.size() / nframes;
   int nloc = nall;
   assert(nall * 3 * nframes == dcoord_.size());
