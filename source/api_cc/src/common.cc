@@ -374,6 +374,7 @@ int deepmd::session_input_tensors(
     const std::vector<VALUETYPE>& fparam_,
     const std::vector<VALUETYPE>& aparam__,
     const deepmd::AtomMap& atommap,
+    const bool aparam_nall,
     const std::string scope) {
   int nframes = dcoord_.size() / 3 / datype_.size();
   int nall = datype_.size();
@@ -440,8 +441,10 @@ int deepmd::session_input_tensors(
   std::vector<VALUETYPE> dcoord(dcoord_);
   atommap.forward<VALUETYPE>(dcoord.begin(), dcoord_.begin(), 3, nframes, nall);
   std::vector<VALUETYPE> aparam_(aparam__);
-  atommap.forward<VALUETYPE>(aparam_.begin(), aparam__.begin(),
-                             aparam__.size() / nframes / nloc, nframes, nloc);
+  atommap.forward<VALUETYPE>(
+      aparam_.begin(), aparam__.begin(),
+      aparam__.size() / nframes / (aparam_nall ? nall : nloc), nframes,
+      (aparam_nall ? nall : nloc));
 
   for (int ii = 0; ii < nframes; ++ii) {
     for (int jj = 0; jj < nall * 3; ++jj) {
@@ -511,6 +514,7 @@ int deepmd::session_input_tensors(
     const deepmd::AtomMap& atommap,
     const int nghost,
     const int ago,
+    const bool aparam_nall,
     const std::string scope) {
   int nframes = dcoord_.size() / 3 / datype_.size();
   int nall = datype_.size();
@@ -573,8 +577,10 @@ int deepmd::session_input_tensors(
   std::vector<VALUETYPE> dcoord(dcoord_);
   atommap.forward<VALUETYPE>(dcoord.begin(), dcoord_.begin(), 3, nframes, nall);
   std::vector<VALUETYPE> aparam_(aparam__);
-  atommap.forward<VALUETYPE>(aparam_.begin(), aparam__.begin(),
-                             aparam__.size() / nframes / nloc, nframes, nloc);
+  atommap.forward<VALUETYPE>(
+      aparam_.begin(), aparam__.begin(),
+      aparam__.size() / nframes / (aparam_nall ? nall : nloc), nframes,
+      (aparam_nall ? nall : nloc));
 
   for (int ii = 0; ii < nframes; ++ii) {
     for (int jj = 0; jj < nall * 3; ++jj) {
@@ -645,6 +651,7 @@ int deepmd::session_input_tensors_mixed_type(
     const std::vector<VALUETYPE>& fparam_,
     const std::vector<VALUETYPE>& aparam__,
     const deepmd::AtomMap& atommap,
+    const bool aparam_nall,
     const std::string scope) {
   int nall = datype_.size() / nframes;
   int nloc = nall;
@@ -706,8 +713,10 @@ int deepmd::session_input_tensors_mixed_type(
   std::vector<VALUETYPE> dcoord(dcoord_);
   atommap.forward<VALUETYPE>(dcoord.begin(), dcoord_.begin(), 3, nframes, nall);
   std::vector<VALUETYPE> aparam_(aparam__);
-  atommap.forward<VALUETYPE>(aparam_.begin(), aparam__.begin(),
-                             aparam__.size() / nframes / nloc, nframes, nloc);
+  atommap.forward<VALUETYPE>(
+      aparam_.begin(), aparam__.begin(),
+      aparam__.size() / nframes / (aparam_nall ? nall : nloc), nframes,
+      (aparam_nall ? nall : nloc));
 
   for (int ii = 0; ii < nframes; ++ii) {
     for (int jj = 0; jj < nall * 3; ++jj) {

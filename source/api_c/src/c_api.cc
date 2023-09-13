@@ -29,6 +29,7 @@ DP_DeepPot::DP_DeepPot() {}
 DP_DeepPot::DP_DeepPot(deepmd::DeepPot& dp) : dp(dp) {
   dfparam = dp.dim_fparam();
   daparam = dp.dim_aparam();
+  aparam_nall = dp.is_aparam_all();
 }
 
 DP_DeepPot* DP_NewDeepPot(const char* c_model) {
@@ -65,6 +66,7 @@ DP_DeepPotModelDevi::DP_DeepPotModelDevi(deepmd::DeepPotModelDevi& dp)
     : dp(dp) {
   dfparam = dp.dim_fparam();
   daparam = dp.dim_aparam();
+  aparam_nall = dp.is_aparam_all();
 }
 
 DP_DeepPotModelDevi* DP_NewDeepPotModelDevi(const char** c_models,
@@ -249,7 +251,10 @@ inline void DP_DeepPotComputeNList_variant(DP_DeepPot* dp,
   }
   std::vector<VALUETYPE> aparam_;
   if (aparam) {
-    aparam_.assign(aparam, aparam + nframes * (natoms - nghost) * dp->daparam);
+    aparam_.assign(aparam,
+                   aparam + nframes *
+                                (dp->aparam_all ? natoms : (natoms - nghost)) *
+                                dp->daparam);
   }
   std::vector<double> e;
   std::vector<VALUETYPE> f, v, ae, av;
@@ -433,7 +438,9 @@ void DP_DeepPotModelDeviComputeNList_variant(DP_DeepPotModelDevi* dp,
   }
   std::vector<VALUETYPE> aparam_;
   if (aparam) {
-    aparam_.assign(aparam, aparam + (natoms - nghost) * dp->daparam);
+    aparam_.assign(
+        aparam,
+        aparam + (dp->aparam_all ? natoms : (natoms - nghost)) * dp->daparam);
   }
   // different from DeepPot
   std::vector<double> e;

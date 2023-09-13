@@ -1051,7 +1051,9 @@ class DeepPot {
     }
 
     if (aparam.size() != daparam * nloc &&
-        aparam.size() != nframes * daparam * nloc) {
+        aparam.size() != nframes * daparam * nloc &&
+        aparam.size() != daparam * nall &&
+        aparam.size() != nframes * daparam * nall) {
       throw deepmd::hpp::deepmd_exception(
           "the dim of atom parameter provided is not consistent with what the "
           "model uses");
@@ -1460,7 +1462,9 @@ class DeepPotModelDevi {
     }
 
     if (aparam.size() != daparam * nloc &&
-        aparam.size() != nframes * daparam * nloc) {
+        aparam.size() != nframes * daparam * nloc &&
+        aparam.size() != daparam * nall &&
+        aparam.size() != nframes * daparam * nall) {
       throw deepmd::hpp::deepmd_exception(
           "the dim of atom parameter provided is not consistent with what the "
           "model uses");

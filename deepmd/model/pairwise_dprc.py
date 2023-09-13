@@ -125,6 +125,7 @@ class PairwiseDPRc(Model):
         with tf.variable_scope("fitting_attr" + suffix, reuse=reuse):
             t_dfparam = tf.constant(0, name="dfparam", dtype=tf.int32)
             t_daparam = tf.constant(1, name="daparam", dtype=tf.int32)
+            t_aparam_nall = tf.constant(True, name="aparam_nall", dtype=tf.bool)
         with tf.variable_scope("descrpt_attr" + suffix, reuse=reuse):
             t_ntypes = tf.constant(self.ntypes, name="ntypes", dtype=tf.int32)
             t_rcut = tf.constant(

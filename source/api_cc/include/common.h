@@ -227,6 +227,8 @@ int session_get_dtype(tensorflow::Session* session,
  * @param[in] fparam_ Frame parameters.
  * @param[in] aparam_ Atom parameters.
  * @param[in] atommap Atom map.
+ * @param[in] aparam_nall Whether the atomic dimesion of atomic parameters is
+ * nall.
  * @param[in] scope The scope of the tensors.
  */
 template <typename MODELTYPE, typename VALUETYPE>
@@ -240,6 +242,7 @@ int session_input_tensors(
     const std::vector<VALUETYPE>& fparam_,
     const std::vector<VALUETYPE>& aparam_,
     const deepmd::AtomMap& atommap,
+    const bool aparam_nall = false,
     const std::string scope = "");
 
 /**
@@ -254,6 +257,8 @@ int session_input_tensors(
  * @param[in] atommap Atom map.
  * @param[in] nghost Number of ghost atoms.
  * @param[in] ago Update the internal neighbour list if ago is 0.
+ * @param[in] aparam_nall Whether the atomic dimesion of atomic parameters is
+ * nall.
  * @param[in] scope The scope of the tensors.
  */
 template <typename MODELTYPE, typename VALUETYPE>
@@ -269,6 +274,7 @@ int session_input_tensors(
     const deepmd::AtomMap& atommap,
     const int nghost,
     const int ago,
+    const bool aparam_nall = false,
     const std::string scope = "");
 
 /**
@@ -284,6 +290,8 @@ int session_input_tensors(
  * @param[in] atommap Atom map.
  * @param[in] nghost Number of ghost atoms.
  * @param[in] ago Update the internal neighbour list if ago is 0.
+ * @param[in] aparam_nall Whether the atomic dimesion of atomic parameters is
+ * nall.
  * @param[in] scope The scope of the tensors.
  */
 template <typename MODELTYPE, typename VALUETYPE>
@@ -298,6 +306,7 @@ int session_input_tensors_mixed_type(
     const std::vector<VALUETYPE>& fparam_,
     const std::vector<VALUETYPE>& aparam_,
     const deepmd::AtomMap& atommap,
+    const bool aparam_nall = false,
     const std::string scope = "");
 
 /**
