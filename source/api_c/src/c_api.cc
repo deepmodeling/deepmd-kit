@@ -29,7 +29,7 @@ DP_DeepPot::DP_DeepPot() {}
 DP_DeepPot::DP_DeepPot(deepmd::DeepPot& dp) : dp(dp) {
   dfparam = dp.dim_fparam();
   daparam = dp.dim_aparam();
-  aparam_nall = dp.is_aparam_all();
+  aparam_nall = dp.is_aparam_nall();
 }
 
 DP_DeepPot* DP_NewDeepPot(const char* c_model) {
@@ -66,7 +66,7 @@ DP_DeepPotModelDevi::DP_DeepPotModelDevi(deepmd::DeepPotModelDevi& dp)
     : dp(dp) {
   dfparam = dp.dim_fparam();
   daparam = dp.dim_aparam();
-  aparam_nall = dp.is_aparam_all();
+  aparam_nall = dp.is_aparam_nall();
 }
 
 DP_DeepPotModelDevi* DP_NewDeepPotModelDevi(const char** c_models,
