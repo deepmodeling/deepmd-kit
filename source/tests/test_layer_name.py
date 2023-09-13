@@ -137,7 +137,7 @@ class TestModel(tf.test.TestCase):
             is_training: False,
         }
 
-        with self.test_session() as sess:
+        with self.cached_session() as sess:
             sess.run(tf.global_variables_initializer())
             [e1, f1, v1, e2, f2, v2] = sess.run(
                 [e_energy1, e_force1, e_virial1, e_energy2, e_force2, e_virial2],

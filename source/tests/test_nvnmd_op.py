@@ -17,7 +17,7 @@ class TestOpAddFltNvnmd(tf.test.TestCase):
             config.graph_options.rewrite_options.custom_optimizers.add().name = (
                 "dpparallel"
             )
-        self.sess = self.test_session(config=config).__enter__()
+        self.sess = self.cached_session(config=config).__enter__()
 
     def test_op(self):
         # graph
@@ -110,7 +110,7 @@ class TestOpCopyFltNvnmd(tf.test.TestCase):
             config.graph_options.rewrite_options.custom_optimizers.add().name = (
                 "dpparallel"
             )
-        self.sess = self.test_session(config=config).__enter__()
+        self.sess = self.cached_session(config=config).__enter__()
 
     def test_op(self):
         # graph
@@ -140,7 +140,7 @@ class TestOpDotmulFltNvnmd(tf.test.TestCase):
             config.graph_options.rewrite_options.custom_optimizers.add().name = (
                 "dpparallel"
             )
-        self.sess = self.test_session(config=config).__enter__()
+        self.sess = self.cached_session(config=config).__enter__()
 
     def test_op(self):
         # graph
@@ -166,7 +166,7 @@ class TestOpFltNvnmd(tf.test.TestCase):
             config.graph_options.rewrite_options.custom_optimizers.add().name = (
                 "dpparallel"
             )
-        self.sess = self.test_session(config=config).__enter__()
+        self.sess = self.cached_session(config=config).__enter__()
 
     def test_op(self):
         # graph
@@ -192,7 +192,7 @@ class TestOpMatmulFitnetNvnmd(tf.test.TestCase):
             config.graph_options.rewrite_options.custom_optimizers.add().name = (
                 "dpparallel"
             )
-        self.sess = self.test_session(config=config).__enter__()
+        self.sess = self.cached_session(config=config).__enter__()
 
     def test_op(self):
         # graph
@@ -238,7 +238,7 @@ class TestOpMatmulFltNvnmd(tf.test.TestCase):
             config.graph_options.rewrite_options.custom_optimizers.add().name = (
                 "dpparallel"
             )
-        self.sess = self.test_session(config=config).__enter__()
+        self.sess = self.cached_session(config=config).__enter__()
 
     def test_op(self):
         # graph
@@ -284,7 +284,7 @@ class TestOpMatmulFlt2fixNvnmd(tf.test.TestCase):
             config.graph_options.rewrite_options.custom_optimizers.add().name = (
                 "dpparallel"
             )
-        self.sess = self.test_session(config=config).__enter__()
+        self.sess = self.cached_session(config=config).__enter__()
 
     def test_op(self):
         # graph
@@ -330,7 +330,7 @@ class TestOpMulFltNvnmd(tf.test.TestCase):
             config.graph_options.rewrite_options.custom_optimizers.add().name = (
                 "dpparallel"
             )
-        self.sess = self.test_session(config=config).__enter__()
+        self.sess = self.cached_session(config=config).__enter__()
 
     def test_op(self):
         # graph
@@ -376,7 +376,7 @@ class TestOpQuantizeNvnmd(tf.test.TestCase):
             config.graph_options.rewrite_options.custom_optimizers.add().name = (
                 "dpparallel"
             )
-        self.sess = self.test_session(config=config).__enter__()
+        self.sess = self.cached_session(config=config).__enter__()
 
     def test_op(self):
         # graph
@@ -402,7 +402,7 @@ class TestOpTanh4FltNvnmd(tf.test.TestCase):
             config.graph_options.rewrite_options.custom_optimizers.add().name = (
                 "dpparallel"
             )
-        self.sess = self.test_session(config=config).__enter__()
+        self.sess = self.cached_session(config=config).__enter__()
 
     def test_op(self):
         # graph
