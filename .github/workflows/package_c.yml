@@ -9,7 +9,7 @@ jobs:
     name: Build C library
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Package C library
         run: ./source/install/docker_package_c.sh
       # for download and debug
@@ -30,7 +30,7 @@ jobs:
     needs: [build_c]
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Download artifact
         uses: actions/download-artifact@v3
         with:
