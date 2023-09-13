@@ -597,6 +597,7 @@ class DeepPot {
     DP_CHECK_OK(DP_DeepPotCheckOK, dp);
     dfparam = DP_DeepPotGetDimFParam(dp);
     daparam = DP_DeepPotGetDimAParam(dp);
+    aparam_nall = DP_DeepPotIsAParamNAll(dp);
   };
 
   /**
@@ -771,9 +772,12 @@ class DeepPot {
     VALUETYPE *force_ = &force[0];
     VALUETYPE *virial_ = &virial[0];
     std::vector<VALUETYPE> fparam_, aparam_;
-    validate_fparam_aparam(nframes, natoms - nghost, fparam, aparam);
+    validate_fparam_aparam(nframes, (aparam_nall ? natoms : (natoms - nghost)),
+                           fparam, aparam);
     tile_fparam_aparam(fparam_, nframes, dfparam, fparam);
-    tile_fparam_aparam(aparam_, nframes, (natoms - nghost) * daparam, aparam);
+    tile_fparam_aparam(aparam_, nframes,
+                       (aparam_nall ? natoms : (natoms - nghost)) * daparam,
+                       aparam);
     const VALUETYPE *fparam__ = !fparam_.empty() ? &fparam_[0] : nullptr;
     const VALUETYPE *aparam__ = !aparam_.empty() ? &aparam_[0] : nullptr;
 
@@ -842,9 +846,12 @@ class DeepPot {
     VALUETYPE *atomic_ener_ = &atom_energy[0];
     VALUETYPE *atomic_virial_ = &atom_virial[0];
     std::vector<VALUETYPE> fparam_, aparam_;
-    validate_fparam_aparam(nframes, natoms - nghost, fparam, aparam);
+    validate_fparam_aparam(nframes, (aparam_nall ? natoms : (natoms - nghost)),
+                           fparam, aparam);
     tile_fparam_aparam(fparam_, nframes, dfparam, fparam);
-    tile_fparam_aparam(aparam_, nframes, (natoms - nghost) * daparam, aparam);
+    tile_fparam_aparam(aparam_, nframes,
+                       (aparam_nall ? natoms : (natoms - nghost)) * daparam,
+                       aparam);
     const VALUETYPE *fparam__ = !fparam_.empty() ? &fparam_[0] : nullptr;
     const VALUETYPE *aparam__ = !aparam_.empty() ? &aparam_[0] : nullptr;
 
@@ -1039,6 +1046,7 @@ class DeepPot {
   DP_DeepPot *dp;
   int dfparam;
   int daparam;
+  bool aparam_nall;
   template <typename VALUETYPE>
   void validate_fparam_aparam(const int &nframes,
                               const int &nloc,
@@ -1051,9 +1059,7 @@ class DeepPot {
     }
 
     if (aparam.size() != daparam * nloc &&
-        aparam.size() != nframes * daparam * nloc &&
-        aparam.size() != daparam * nall &&
-        aparam.size() != nframes * daparam * nall) {
+        aparam.size() != nframes * daparam * nloc) {
       throw deepmd::hpp::deepmd_exception(
           "the dim of atom parameter provided is not consistent with what the "
           "model uses");
@@ -1130,6 +1136,7 @@ class DeepPotModelDevi {
     numb_models = models.size();
     dfparam = DP_DeepPotModelDeviGetDimFParam(dp);
     daparam = DP_DeepPotModelDeviGetDimAParam(dp);
+    aparam_nall = DP_DeepPotModelDeviIsAParamNAll(dp);
   };
 
   /**
@@ -1175,9 +1182,12 @@ class DeepPotModelDevi {
     VALUETYPE *force_ = &force_flat[0];
     VALUETYPE *virial_ = &virial_flat[0];
     std::vector<VALUETYPE> fparam_, aparam_;
-    validate_fparam_aparam(nframes, natoms - nghost, fparam, aparam);
+    validate_fparam_aparam(nframes, (aparam_nall ? natoms : (natoms - nghost)),
+                           fparam, aparam);
     tile_fparam_aparam(fparam_, nframes, dfparam, fparam);
-    tile_fparam_aparam(aparam_, nframes, (natoms - nghost) * daparam, aparam);
+    tile_fparam_aparam(aparam_, nframes,
+                       (aparam_nall ? natoms : (natoms - nghost)) * daparam,
+                       aparam);
     const VALUETYPE *fparam__ = !fparam_.empty() ? &fparam_[0] : nullptr;
     const VALUETYPE *aparam__ = !aparam_.empty() ? &aparam_[0] : nullptr;
 
@@ -1252,9 +1262,12 @@ class DeepPotModelDevi {
     VALUETYPE *atomic_ener_ = &atom_energy_flat[0];
     VALUETYPE *atomic_virial_ = &atom_virial_flat[0];
     std::vector<VALUETYPE> fparam_, aparam_;
-    validate_fparam_aparam(nframes, natoms - nghost, fparam, aparam);
+    validate_fparam_aparam(nframes, (aparam_nall ? natoms : (natoms - nghost)),
+                           fparam, aparam);
     tile_fparam_aparam(fparam_, nframes, dfparam, fparam);
-    tile_fparam_aparam(aparam_, nframes, (natoms - nghost) * daparam, aparam);
+    tile_fparam_aparam(aparam_, nframes,
+                       (aparam_nall ? natoms : (natoms - nghost)) * daparam,
+                       aparam);
     const VALUETYPE *fparam__ = !fparam_.empty() ? &fparam_[0] : nullptr;
     const VALUETYPE *aparam__ = !aparam_.empty() ? &aparam_[0] : nullptr;
 
@@ -1450,6 +1463,7 @@ class DeepPotModelDevi {
   int numb_models;
   int dfparam;
   int daparam;
+  bool aparam_nall;
   template <typename VALUETYPE>
   void validate_fparam_aparam(const int &nframes,
                               const int &nloc,
@@ -1462,9 +1476,7 @@ class DeepPotModelDevi {
     }
 
     if (aparam.size() != daparam * nloc &&
-        aparam.size() != nframes * daparam * nloc &&
-        aparam.size() != daparam * nall &&
-        aparam.size() != nframes * daparam * nall) {
+        aparam.size() != nframes * daparam * nloc) {
       throw deepmd::hpp::deepmd_exception(
           "the dim of atom parameter provided is not consistent with what the "
           "model uses");

@@ -253,7 +253,7 @@ inline void DP_DeepPotComputeNList_variant(DP_DeepPot* dp,
   if (aparam) {
     aparam_.assign(aparam,
                    aparam + nframes *
-                                (dp->aparam_all ? natoms : (natoms - nghost)) *
+                                (dp->aparam_nall ? natoms : (natoms - nghost)) *
                                 dp->daparam);
   }
   std::vector<double> e;
@@ -440,7 +440,7 @@ void DP_DeepPotModelDeviComputeNList_variant(DP_DeepPotModelDevi* dp,
   if (aparam) {
     aparam_.assign(
         aparam,
-        aparam + (dp->aparam_all ? natoms : (natoms - nghost)) * dp->daparam);
+        aparam + (dp->aparam_nall ? natoms : (natoms - nghost)) * dp->daparam);
   }
   // different from DeepPot
   std::vector<double> e;
@@ -1038,6 +1038,8 @@ int DP_DeepPotGetDimFParam(DP_DeepPot* dp) { return dp->dfparam; }
 
 int DP_DeepPotGetDimAParam(DP_DeepPot* dp) { return dp->daparam; }
 
+bool DP_DeepPotIsAParamNAll(DP_DeepPot* dp) { return dp->aparam_nall; }
+
 const char* DP_DeepPotCheckOK(DP_DeepPot* dp) {
   return string_to_char(dp->exception);
 }
@@ -1138,6 +1140,10 @@ int DP_DeepPotModelDeviGetDimFParam(DP_DeepPotModelDevi* dp) {
 
 int DP_DeepPotModelDeviGetDimAParam(DP_DeepPotModelDevi* dp) {
   return dp->daparam;
+}
+
+bool DP_DeepPotModelDeviIsAParamNAll(DP_DeepPotModelDevi* dp) {
+  return dp->aparam_nall;
 }
 
 const char* DP_DeepPotModelDeviCheckOK(DP_DeepPotModelDevi* dp) {

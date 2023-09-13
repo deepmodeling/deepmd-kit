@@ -928,6 +928,10 @@ template int deepmd::session_get_scalar<int>(Session*,
                                              const std::string,
                                              const std::string);
 
+template bool deepmd::session_get_scalar<bool>(Session*,
+                                               const std::string,
+                                               const std::string);
+
 template void deepmd::session_get_vector<int>(std::vector<int>&,
                                               Session*,
                                               const std::string,

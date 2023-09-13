@@ -242,8 +242,8 @@ int session_input_tensors(
     const std::vector<VALUETYPE>& fparam_,
     const std::vector<VALUETYPE>& aparam_,
     const deepmd::AtomMap& atommap,
-    const bool aparam_nall = false,
-    const std::string scope = "");
+    const std::string scope = "",
+    const bool aparam_nall = false);
 
 /**
  * @brief Get input tensors.
