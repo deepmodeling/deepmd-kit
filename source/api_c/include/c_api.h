@@ -2,6 +2,9 @@
 #pragma once
 #ifdef __cplusplus
 extern "C" {
+#else
+// for C99
+#include <stdbool.h>
 #endif
 
 /**
