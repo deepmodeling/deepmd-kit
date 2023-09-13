@@ -5,7 +5,7 @@
 
 #include "AtomMap.h"
 #include "device.h"
-#if defined(_WIN32)
+#if defined(_WIN32) aparam_
 #if defined(_WIN32_WINNT)
 #undef _WIN32_WINNT
 #endif
@@ -164,7 +164,8 @@ void deepmd::select_real_atoms_coord(std::vector<VALUETYPE>& dcoord,
                                      const int& ntypes,
                                      const int& nframes,
                                      const int& daparam,
-                                     const int& nall) {
+                                     const int& nall,
+                                     const bool aparam_nall) {
   select_real_atoms(fwd_map, bkw_map, nghost_real, dcoord_, datype_, nghost,
                     ntypes);
   // resize to nall_real
@@ -178,8 +179,9 @@ void deepmd::select_real_atoms_coord(std::vector<VALUETYPE>& dcoord,
   // aparam
   if (daparam > 0) {
     aparam.resize(nframes * nloc_real);
-    select_map<VALUETYPE>(aparam, aparam_, fwd_map, daparam, nframes, nloc_real,
-                          nall - nghost);
+    select_map<VALUETYPE>(aparam, aparam_, fwd_map, daparam, nframes,
+                          (aparam_nall ? nall_real : nloc_real),
+                          (aparam_nall ? nall : (nall - nghost)));
   }
 }
 
@@ -199,7 +201,8 @@ template void deepmd::select_real_atoms_coord<double>(
     const int& ntypes,
     const int& nframes,
     const int& daparam,
-    const int& nall);
+    const int& nall,
+    const bool aparam_nall);
 
 template void deepmd::select_real_atoms_coord<float>(
     std::vector<float>& dcoord,
@@ -217,7 +220,8 @@ template void deepmd::select_real_atoms_coord<float>(
     const int& ntypes,
     const int& nframes,
     const int& daparam,
-    const int& nall);
+    const int& nall,
+    const bool aparam_nall);
 
 void deepmd::NeighborListData::copy_from_nlist(const InputNlist& inlist) {
   int inum = inlist.inum;

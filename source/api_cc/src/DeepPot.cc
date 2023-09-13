@@ -674,7 +674,7 @@ void DeepPot::compute(ENERGYVTYPE& dener,
   int nghost_real, nall_real, nloc_real;
   select_real_atoms_coord(dcoord, datype, aparam, nghost_real, fwd_map, bkw_map,
                           nall_real, nloc_real, dcoord_, datype_, aparam_,
-                          nghost, ntypes, nframes, daparam, nall);
+                          nghost, ntypes, nframes, daparam, nall, aparam_nall);
 
   // internal nlist
   if (ago == 0) {
@@ -946,7 +946,7 @@ void DeepPot::compute(ENERGYVTYPE& dener,
   int nghost_real, nall_real, nloc_real;
   select_real_atoms_coord(dcoord, datype, aparam, nghost_real, fwd_map, bkw_map,
                           nall_real, nloc_real, dcoord_, datype_, aparam_,
-                          nghost, ntypes, nframes, daparam, nall);
+                          nghost, ntypes, nframes, daparam, nall, aparam_nall);
 
   if (ago == 0) {
     atommap = deepmd::AtomMap(datype.begin(), datype.begin() + nloc_real);
@@ -1459,7 +1459,7 @@ void DeepPotModelDevi::compute(std::vector<ENERGYTYPE>& all_energy,
   int nghost_real, nall_real, nloc_real;
   select_real_atoms_coord(dcoord, datype, aparam, nghost_real, fwd_map, bkw_map,
                           nall_real, nloc_real, dcoord_, datype_, aparam_,
-                          nghost, ntypes, nframes, daparam, nall);
+                          nghost, ntypes, nframes, daparam, nall, aparam_nall);
 
   // agp == 0 means that the LAMMPS nbor list has been updated
   if (ago == 0) {
@@ -1557,7 +1557,7 @@ void DeepPotModelDevi::compute(
   int nghost_real, nall_real, nloc_real;
   select_real_atoms_coord(dcoord, datype, aparam, nghost_real, fwd_map, bkw_map,
                           nall_real, nloc_real, dcoord_, datype_, aparam_,
-                          nghost, ntypes, nframes, daparam, nall);
+                          nghost, ntypes, nframes, daparam, nall, aparam_nall);
   // agp == 0 means that the LAMMPS nbor list has been updated
 
   if (ago == 0) {

@@ -90,7 +90,8 @@ void select_real_atoms_coord(std::vector<VALUETYPE>& dcoord,
                              const int& ntypes,
                              const int& nframes,
                              const int& daparam,
-                             const int& nall);
+                             const int& nall,
+                             const bool aparam_nall = false);
 
 /**
  * @brief Apply the given map to a vector.
