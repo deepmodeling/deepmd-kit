@@ -178,7 +178,7 @@ void deepmd::select_real_atoms_coord(std::vector<VALUETYPE>& dcoord,
   select_map<int>(datype, datype_, fwd_map, 1);
   // aparam
   if (daparam > 0) {
-    aparam.resize(nframes * nloc_real);
+    aparam.resize(nframes * (aparam_nall ? nall_real : nloc_real));
     select_map<VALUETYPE>(aparam, aparam_, fwd_map, daparam, nframes,
                           (aparam_nall ? nall_real : nloc_real),
                           (aparam_nall ? nall : (nall - nghost)));
