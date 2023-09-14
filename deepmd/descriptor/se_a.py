@@ -1054,8 +1054,8 @@ class DescrptSeA(DescrptSe):
                         # add zero is meaningless; skip
                         rets.append(ret)
                     start_index += self.sel_a[type_i]
-                # faster to use accumulate_n than multiple add
-                xyz_scatter_1 = tf.accumulate_n(rets)
+                # faster to use add_n than multiple add
+                xyz_scatter_1 = tf.add_n(rets)
             else:
                 xyz_scatter_1 = self._filter_lower(
                     type_i,
