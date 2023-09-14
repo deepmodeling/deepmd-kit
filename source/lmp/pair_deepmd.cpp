@@ -939,7 +939,7 @@ void PairDeepMD::settings(int narg, char **arg) {
     numb_types_spin = deep_pot_model_devi.numb_types_spin();
     dim_fparam = deep_pot_model_devi.dim_fparam();
     dim_aparam = deep_pot_model_devi.dim_aparam();
-    assert(cutoff == deep_pot.cutoff() * dist_unit_cvt_factor;);
+    assert(cutoff == deep_pot.cutoff() * dist_unit_cvt_factor);
     assert(numb_types == deep_pot.numb_types());
     assert(numb_types_spin == deep_pot.numb_types_spin());
     assert(dim_fparam == deep_pot.dim_fparam());
