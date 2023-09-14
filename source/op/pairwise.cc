@@ -78,7 +78,7 @@ class PairwiseIdxOp : public OpKernel {
       nghost_qmmm.push_back(nghost_qmmm_ii);
       nframes_qmmm.push_back(backward_qmmm_map.size() / nall);
     }
-    int max_nloc_qm = 0, max_nloc_qmmm = 0, max_nghost_qm = 0,
+    int max_nloc_qm = 1, max_nloc_qmmm = 1, max_nghost_qm = 0,
         max_nghost_qmmm = 0;
     for (int ii = 0; ii < nframes; ++ii) {
       max_nloc_qm = std::max(max_nloc_qm, nloc_qm[ii]);
