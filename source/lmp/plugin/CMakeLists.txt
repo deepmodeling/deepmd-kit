@@ -100,7 +100,7 @@ if(DEFINED LAMMPS_SOURCE_ROOT OR DEFINED LAMMPS_VERSION)
   endif()
 
   if(BUILD_PY_IF)
-    install(TARGETS ${libname} DESTINATION deepmd/op/)
+    install(TARGETS ${libname} DESTINATION deepmd/lib/)
   else(BUILD_PY_IF)
     install(TARGETS ${libname} DESTINATION lib/)
 

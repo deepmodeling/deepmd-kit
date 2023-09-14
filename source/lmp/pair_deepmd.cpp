@@ -351,7 +351,7 @@ PairDeepMD::PairDeepMD(LAMMPS *lmp)
                "\"units metal\" or \"units real\"");
   }
   ener_unit_cvt_factor = force->boltz / 8.617343e-5;
-  dist_unit_cvt_factor = 1.0 / force->angstrom;
+  dist_unit_cvt_factor = force->angstrom;
   force_unit_cvt_factor = ener_unit_cvt_factor / dist_unit_cvt_factor;
 
   restartinfo = 1;

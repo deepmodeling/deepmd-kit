@@ -58,7 +58,7 @@ ComputeDeeptensorAtom::ComputeDeeptensorAtom(LAMMPS *lmp, int narg, char **arg)
 
   nmax = 0;
 
-  dist_unit_cvt_factor = 1.0 / force->angstrom;
+  dist_unit_cvt_factor = force->angstrom;
 }
 
 /* ---------------------------------------------------------------------- */
