@@ -508,6 +508,7 @@ class TestPairwiseModel(tf.test.TestCase):
         [e1, f1, v1] = sess.run([energy, force, virial], feed_dict=feed_dict_test)
 
         idx_map = np.concatenate([np.arange(nloc1, 21), np.arange(nloc1)])
+        idx_map_inv = np.argsort(idx_map)
         feed_dict_test = {
             t_energy: np.reshape(test_data["energy"], [-1]),
             t_coord: np.reshape(np.reshape(test_data["coord"], [-1, 3])[idx_map], [-1]),
@@ -519,6 +520,7 @@ class TestPairwiseModel(tf.test.TestCase):
             is_training: False,
         }
         [e2, f2, v2] = sess.run([energy, force, virial], feed_dict=feed_dict_test)
+        f2 = np.reshape(np.reshape(f2, [-1, 3])[idx_map_inv], f2.shape)
 
         feed_dict_test = {
             t_energy: np.reshape(test_data["energy"], [-1]),
