@@ -160,6 +160,10 @@ class PairwiseIdxOp : public OpKernel {
       }
       for (int jj = 0; jj < nall; ++jj) {
         m_backward_qm_map(ii, jj) = backward_qm_maps[ii][jj];
+        // the ghost index should add the padding indexes
+        if (m_backward_qm_map(ii, jj) >= nloc_qm[ii]) {
+          m_backward_qm_map(ii, jj) += max_nloc_qm - nloc_qm[ii];
+        }
       }
       for (int kk = 0; kk < nframes_qmmm[ii]; ++kk) {
         for (int jj = 0; jj < max_nloc_qmmm + max_nghost_qmmm; ++jj) {
@@ -180,6 +184,10 @@ class PairwiseIdxOp : public OpKernel {
         for (int jj = 0; jj < nall; ++jj) {
           // max_nloc_qmmm + max_nghost_qmmm
           m_backward_qmmm_map(nn, jj) = backward_qmmm_maps[ii][kk * nall + jj];
+          // the ghost index should add the padding indexes
+          if (m_backward_qmmm_map(nn, jj) >= nloc_qmmm[ii]) {
+            m_backward_qmmm_map(nn, jj) += max_nloc_qmmm - nloc_qmmm[ii];
+          }
         }
         m_qmmm_frame_idx(nn) = ii;
         nn++;
