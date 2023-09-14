@@ -11,6 +11,9 @@ from .loc_frame import (
 from .se_a import (
     DescrptSeA,
 )
+from .se_a_v2 import (
+    DescrptSeAV2,
+)
 from .se_a_ebd import (
     DescrptSeAEbd,
 )
@@ -39,6 +42,7 @@ __all__ = [
     "DescrptHybrid",
     "DescrptLocFrame",
     "DescrptSeA",
+    "DescrptSeAV2",
     "DescrptSeAEbd",
     "DescrptSeAEf",
     "DescrptSeAEfLower",

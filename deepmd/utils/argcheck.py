@@ -429,6 +429,11 @@ def descrpt_se_atten_v2_args():
     ]
 
 
+@descrpt_args_plugin.register("se_e2_a_v2")
+def descrpt_se_e2_a_v2_args():
+    return descrpt_se_a_args()
+
+
 @descrpt_args_plugin.register("se_a_mask")
 def descrpt_se_a_mask_args():
     doc_sel = 'This parameter sets the number of selected neighbors for each type of atom. It can be:\n\n\

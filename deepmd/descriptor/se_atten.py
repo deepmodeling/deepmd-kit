@@ -429,6 +429,7 @@ class DescrptSeAtten(DescrptSeA):
             graph, "descrpt_attr%s/t_std" % suffix
         )
 
+    # todo: refactor
     def _get_two_side_type_embedding(self, graph):
         type_embedding = get_tensor_by_name_from_graph(graph, "t_typeebd")
         type_embedding = type_embedding.astype(self.filter_np_precision)
