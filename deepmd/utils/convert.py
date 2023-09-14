@@ -33,7 +33,7 @@ def detect_model_version(input_model: str):
     elif file_content.find("model_attr/model_version") == -1:
         name_dsea = file_content.find('name: "DescrptSeA"')
         post_dsea = file_content[name_dsea:]
-        post_dsea2 = post_dsea[:300].find("\}")
+        post_dsea2 = post_dsea[:300].find(r"}")
         search_double = post_dsea[:post_dsea2]
         if search_double.find("DT_DOUBLE") == -1:
             version = "1.2"
