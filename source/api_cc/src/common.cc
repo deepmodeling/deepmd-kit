@@ -5,7 +5,7 @@
 
 #include "AtomMap.h"
 #include "device.h"
-#if defined(_WIN32) aparam_
+#if defined(_WIN32)
 #if defined(_WIN32_WINNT)
 #undef _WIN32_WINNT
 #endif
