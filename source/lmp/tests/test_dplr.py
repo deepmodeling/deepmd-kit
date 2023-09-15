@@ -6,6 +6,7 @@ from pathlib import (
     Path,
 )
 
+import constants
 import numpy as np
 import pytest
 from lammps import (
@@ -14,7 +15,6 @@ from lammps import (
 from write_lmp_data import (
     write_lmp_data_full,
 )
-import constants
 
 pbtxt_file = Path(__file__).parent / "lrmodel.pbtxt"
 pb_file = Path(__file__).parent / "lrmodel.pb"
