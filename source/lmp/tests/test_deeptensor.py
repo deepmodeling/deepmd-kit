@@ -14,6 +14,7 @@ from lammps import (
 from write_lmp_data import (
     write_lmp_data,
 )
+import constants
 
 pbtxt_file = Path(__file__).parent.parent.parent / "tests" / "infer" / "deeppot.pbtxt"
 pb_file = Path(__file__).parent / "graph.pb"
