@@ -267,8 +267,8 @@ def _lammps(data_file, units="metal") -> PyLammps:
         lammps.mass("1 16")
         lammps.mass("2 2")
     elif units == "si":
-        lammps.mass("1 %.10e" % (16e-3 / 6.02214e23))
-        lammps.mass("2 %.10e" % (2e-3 / 6.02214e23))
+        lammps.mass("1 %.10e" % (16 * constants.mass_metal2si))
+        lammps.mass("2 %.10e" % (2 * constants.mass_metal2si))
     else:
         raise ValueError("units should be metal, real, or si")
     if units == "metal":
