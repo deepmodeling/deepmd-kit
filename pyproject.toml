@@ -139,7 +139,7 @@ test-command = [
 ]
 
 # One can run `tox` or `tox -e gpu`
-# to run pytest in an insolated environment
+# to run pytest in an isolated environment
 # Use with pipx:
 # $ pip install -U pipx
 # $ pipx tox
