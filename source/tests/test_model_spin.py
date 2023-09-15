@@ -51,7 +51,7 @@ class TestModelSpin(tf.test.TestCase):
         batch_size = j_must_have(jdata["training"]["training_data"], "batch_size")
         batch_size = 2
         test_size = j_must_have(jdata["training"]["validation_data"], "numb_btch")
-        stop_batch = j_must_have(jdata["training"], "numb_steps")
+        j_must_have(jdata["training"], "numb_steps")
         rcut = j_must_have(jdata["model"]["descriptor"], "rcut")
         jdata["training"]["training_data"]["systems"] = [
             str(tests_path / "model_spin/")

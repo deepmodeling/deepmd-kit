@@ -38,7 +38,7 @@ class TestModel(tf.test.TestCase):
         test_size = j_must_have(jdata, "numb_test")
         batch_size = 2
         test_size = 1
-        stop_batch = j_must_have(jdata, "stop_batch")
+        j_must_have(jdata, "stop_batch")
         rcut = j_must_have(jdata["model"]["descriptor"], "rcut")
         sel = j_must_have(jdata["model"]["descriptor"], "sel")
         ntypes = len(sel)
@@ -69,7 +69,7 @@ class TestModel(tf.test.TestCase):
         descrpt = DescrptSeA(**jdata["model"]["descriptor"], uniform_seed=True)
 
         # model._compute_dstats([test_data['coord']], [test_data['box']], [test_data['type']], [test_data['natoms_vec']], [test_data['default_mesh']])
-        input_data = {
+        {
             "coord": [test_data["coord"]],
             "box": [test_data["box"]],
             "type": [test_data["type"]],
@@ -91,7 +91,6 @@ class TestModel(tf.test.TestCase):
         t_box = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None, 9], name="i_box")
         t_mesh = tf.placeholder(tf.int32, [None], name="i_mesh")
         is_training = tf.placeholder(tf.bool)
-        t_fparam = None
 
         type_embedding = typeebd.build(ntypes, suffix="_se_a_type_des_ebd_2sdies")
 
@@ -201,7 +200,7 @@ class TestModel(tf.test.TestCase):
         test_size = j_must_have(jdata, "numb_test")
         batch_size = 1
         test_size = 1
-        stop_batch = j_must_have(jdata, "stop_batch")
+        j_must_have(jdata, "stop_batch")
         rcut = j_must_have(jdata["model"]["descriptor"], "rcut")
         sel = j_must_have(jdata["model"]["descriptor"], "sel")
         ntypes = len(sel)
@@ -233,7 +232,7 @@ class TestModel(tf.test.TestCase):
         descrpt = DescrptSeA(**jdata["model"]["descriptor"], uniform_seed=True)
 
         # model._compute_dstats([test_data['coord']], [test_data['box']], [test_data['type']], [test_data['natoms_vec']], [test_data['default_mesh']])
-        input_data = {
+        {
             "coord": [test_data["coord"]],
             "box": [test_data["box"]],
             "type": [test_data["type"]],
@@ -255,7 +254,6 @@ class TestModel(tf.test.TestCase):
         t_box = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None, 9], name="i_box")
         t_mesh = tf.placeholder(tf.int32, [None], name="i_mesh")
         is_training = tf.placeholder(tf.bool)
-        t_fparam = None
 
         type_embedding = typeebd.build(ntypes, suffix="_se_a_type_des_ebd_1side")
 

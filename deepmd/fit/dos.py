@@ -426,9 +426,9 @@ class DOSFitting(Fitting):
                 self.aparam_inv_std = 1.0
 
         with tf.variable_scope("fitting_attr" + suffix, reuse=reuse):
-            t_dfparam = tf.constant(self.numb_fparam, name="dfparam", dtype=tf.int32)
-            t_daparam = tf.constant(self.numb_aparam, name="daparam", dtype=tf.int32)
-            t_numb_dos = tf.constant(self.numb_dos, name="numb_dos", dtype=tf.int32)
+            tf.constant(self.numb_fparam, name="dfparam", dtype=tf.int32)
+            tf.constant(self.numb_aparam, name="daparam", dtype=tf.int32)
+            tf.constant(self.numb_dos, name="numb_dos", dtype=tf.int32)
 
             self.t_bias_dos = tf.get_variable(
                 "t_bias_dos",
@@ -530,7 +530,6 @@ class DOSFitting(Fitting):
             inputs = tf.concat(
                 [tf.reshape(inputs, [-1, self.dim_descrpt]), atype_embed], axis=1
             )
-            original_dim_descrpt = self.dim_descrpt
             self.dim_descrpt = self.dim_descrpt + type_shape[1]
             inputs = tf.reshape(inputs, [-1, natoms[0], self.dim_descrpt])
             final_layer = self._build_lower(

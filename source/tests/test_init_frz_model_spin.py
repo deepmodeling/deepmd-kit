@@ -44,7 +44,7 @@ def _file_delete(file):
 
 
 def _init_models():
-    data_file = str(tests_path / os.path.join("init_frz_model", "data"))
+    str(tests_path / os.path.join("init_frz_model", "data"))
     frozen_model = str(tests_path / "init_frz_se_a_spin.pb")
     ckpt = str(tests_path / "init_frz_se_a_spin.ckpt")
     run_opt_ckpt = RunOptions(init_model=ckpt, log_level=20)

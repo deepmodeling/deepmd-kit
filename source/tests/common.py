@@ -398,11 +398,9 @@ def force_dw_test(
         inter.coord, inter.box, inter.type, inter.tnatoms, name="f_dw_test_0" + suffix
     )
     inter.sess.run(tf.global_variables_initializer())
-    ll_0 = inter.sess.run(t_ll, feed_dict=feed_dict_test0)
+    inter.sess.run(t_ll, feed_dict=feed_dict_test0)
     dw_0 = inter.sess.run(t_dw, feed_dict=feed_dict_test0)
 
-    absolut_e = []
-    relativ_e = []
     test_list = range(inter.ndescrpt)
     ntest = 3
     if inter.sel_a[0] != 0:
@@ -439,7 +437,7 @@ def force_dw_test(
         ll_2 = inter.sess.run(t_ll, feed_dict=feed_dict_test0)
         num_v = (ll_1 - ll_2) / (2.0 * hh)
         ana_v = dw_0[ii]
-        diff = np.abs(num_v - ana_v)
+        np.abs(num_v - ana_v)
         # print(ii, num_v, ana_v)
         testCase.assertAlmostEqual(num_v, ana_v, places=places)
 
@@ -464,11 +462,9 @@ def virial_dw_test(
         inter.coord, inter.box, inter.type, inter.tnatoms, name="v_dw_test_0" + suffix
     )
     inter.sess.run(tf.global_variables_initializer())
-    ll_0 = inter.sess.run(t_ll, feed_dict=feed_dict_test0)
+    inter.sess.run(t_ll, feed_dict=feed_dict_test0)
     dw_0 = inter.sess.run(t_dw, feed_dict=feed_dict_test0)
 
-    absolut_e = []
-    relativ_e = []
     test_list = range(inter.ndescrpt)
     ntest = 3
     if inter.sel_a[0] != 0:

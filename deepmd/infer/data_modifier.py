@@ -91,34 +91,29 @@ class DipoleChargeModifier(DeepDipole):
     def build_fv_graph(self) -> tf.Tensor:
         """Build the computational graph for the force and virial inference."""
         with tf.variable_scope("modifier_attr"):
-            t_mdl_name = tf.constant(self.model_name, name="mdl_name", dtype=tf.string)
-            t_modi_type = tf.constant(
-                self.modifier_prefix, name="type", dtype=tf.string
-            )
-            t_mdl_charge_map = tf.constant(
+            tf.constant(self.model_name, name="mdl_name", dtype=tf.string)
+            tf.constant(self.modifier_prefix, name="type", dtype=tf.string)
+            tf.constant(
                 " ".join([str(ii) for ii in self.model_charge_map]),
                 name="mdl_charge_map",
                 dtype=tf.string,
             )
-            t_sys_charge_map = tf.constant(
+            tf.constant(
                 " ".join([str(ii) for ii in self.sys_charge_map]),
                 name="sys_charge_map",
                 dtype=tf.string,
             )
-            t_ewald_h = tf.constant(self.ewald_h, name="ewald_h", dtype=tf.float64)
-            t_ewald_b = tf.constant(
-                self.ewald_beta, name="ewald_beta", dtype=tf.float64
-            )
+            tf.constant(self.ewald_h, name="ewald_h", dtype=tf.float64)
+            tf.constant(self.ewald_beta, name="ewald_beta", dtype=tf.float64)
         with self.graph.as_default():
             return self._build_fv_graph_inner()
 
     def _build_fv_graph_inner(self):
         self.t_ef = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None], name="t_ef")
         nf = 10
-        nfxnas = 64 * nf
+        64 * nf
         nfxna = 192 * nf
         nf = -1
-        nfxnas = -1
         nfxna = -1
         self.t_box_reshape = tf.reshape(self.t_box, [-1, 9])
         t_nframes = tf.shape(self.t_box_reshape)[0]
@@ -348,7 +343,6 @@ class DipoleChargeModifier(DeepDipole):
         default_mesh = make_default_mesh(True, False)
 
         # evaluate
-        tensor = []
         feed_dict_test = {}
         feed_dict_test[self.t_natoms] = natoms_vec
         feed_dict_test[self.t_type] = np.tile(atom_types, [nframes, 1]).reshape([-1])
@@ -436,7 +430,7 @@ class DipoleChargeModifier(DeepDipole):
         box = data["box"][:get_nframes, :]
         atype = data["type"][:get_nframes, :]
         atype = atype[0]
-        nframes = coord.shape[0]
+        coord.shape[0]
 
         tot_e, tot_f, tot_v = self.eval(coord, box, atype)
 

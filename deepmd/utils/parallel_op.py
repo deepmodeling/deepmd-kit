@@ -61,7 +61,7 @@ class ParallelOp:
         self.placeholders = []
         self.ops = []
         for ii in range(self.nthreads):
-            with tf.name_scope("task_%d" % ii) as scope:
+            with tf.name_scope("task_%d" % ii):
                 placeholder, op = builder()
                 self.placeholders.append(placeholder)
                 self.ops.append(op)

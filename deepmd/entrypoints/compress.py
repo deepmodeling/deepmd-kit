@@ -186,7 +186,7 @@ def compress(
 def _check_compress_type(graph: tf.Graph):
     try:
         t_model_type = bytes.decode(get_tensor_by_name_from_graph(graph, "model_type"))
-    except GraphWithoutTensorError as e:
+    except GraphWithoutTensorError:
         # Compatible with the upgraded model, which has no 'model_type' info
         t_model_type = None
 

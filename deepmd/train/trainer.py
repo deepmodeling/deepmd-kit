@@ -602,10 +602,9 @@ class DPTrainer:
             tb_train_writer = tf.summary.FileWriter(
                 self.tensorboard_log_dir + "/train", self.sess.graph
             )
-            tb_valid_writer = tf.summary.FileWriter(self.tensorboard_log_dir + "/test")
+            tf.summary.FileWriter(self.tensorboard_log_dir + "/test")
         else:
             tb_train_writer = None
-            tb_valid_writer = None
         if self.enable_profiler:
             # https://www.tensorflow.org/guide/profiler
             tfv2.profiler.experimental.start(self.tensorboard_log_dir)
@@ -1080,7 +1079,7 @@ class DPTrainer:
         # get the model type from the model
         try:
             t_model_type = get_tensor_by_name_from_graph(graph, "model_type")
-        except GraphWithoutTensorError as e:
+        except GraphWithoutTensorError:
             self.model_type = "original_model"
         else:
             self.model_type = bytes.decode(t_model_type)

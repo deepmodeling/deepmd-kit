@@ -48,7 +48,7 @@ class TestModel(tf.test.TestCase):
         test_size = j_must_have(jdata, "numb_test")
         batch_size = 1
         test_size = 1
-        stop_batch = j_must_have(jdata, "stop_batch")
+        j_must_have(jdata, "stop_batch")
         rcut = j_must_have(jdata["model"]["descriptor"], "rcut")
 
         data = DataSystem(systems, set_pfx, batch_size, test_size, rcut, run_opt=None)
@@ -120,7 +120,7 @@ class TestModel(tf.test.TestCase):
         e_energy = model_pred["water_ener"]["energy"]
         e_force = model_pred["water_ener"]["force"]
         e_virial = model_pred["water_ener"]["virial"]
-        e_atom_ener = model_pred["water_ener"]["atom_ener"]
+        model_pred["water_ener"]["atom_ener"]
 
         d_dipole = model_pred["water_dipole"]["dipole"]
         d_gdipole = model_pred["water_dipole"]["global_dipole"]

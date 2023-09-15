@@ -1140,7 +1140,7 @@ class TestProdEnvMat(tf.test.TestCase):
             },
         )
         ff = 0
-        dem = dem_[ff]
+        dem_[ff]
         dem_deriv = dem_deriv_[ff]
         dnlist = dnlist_[ff]
         for ii in range(self.dnatoms[0]):

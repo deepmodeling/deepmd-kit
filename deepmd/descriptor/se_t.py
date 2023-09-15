@@ -432,14 +432,14 @@ class DescrptSeT(DescrptSe):
                 davg = np.zeros([self.ntypes, self.ndescrpt])
             if dstd is None:
                 dstd = np.ones([self.ntypes, self.ndescrpt])
-            t_rcut = tf.constant(
+            tf.constant(
                 np.max([self.rcut_r, self.rcut_a]),
                 name="rcut",
                 dtype=GLOBAL_TF_FLOAT_PRECISION,
             )
-            t_ntypes = tf.constant(self.ntypes, name="ntypes", dtype=tf.int32)
-            t_ndescrpt = tf.constant(self.ndescrpt, name="ndescrpt", dtype=tf.int32)
-            t_sel = tf.constant(self.sel_a, name="sel", dtype=tf.int32)
+            tf.constant(self.ntypes, name="ntypes", dtype=tf.int32)
+            tf.constant(self.ndescrpt, name="ndescrpt", dtype=tf.int32)
+            tf.constant(self.sel_a, name="sel", dtype=tf.int32)
             self.t_avg = tf.get_variable(
                 "t_avg",
                 davg.shape,
@@ -545,10 +545,8 @@ class DescrptSeT(DescrptSe):
     def _pass_filter(
         self, inputs, atype, natoms, input_dict, reuse=None, suffix="", trainable=True
     ):
-        start_index = 0
         inputs = tf.reshape(inputs, [-1, natoms[0], self.ndescrpt])
         output = []
-        output_qmat = []
         inputs_i = inputs
         inputs_i = tf.reshape(inputs_i, [-1, self.ndescrpt])
         type_i = -1
@@ -632,7 +630,7 @@ class DescrptSeT(DescrptSe):
         trainable=True,
     ):
         # natom x (nei x 4)
-        shape = inputs.get_shape().as_list()
+        inputs.get_shape().as_list()
         outputs_size = [1, *self.filter_neuron]
         with tf.variable_scope(name, reuse=reuse):
             start_index_i = 0

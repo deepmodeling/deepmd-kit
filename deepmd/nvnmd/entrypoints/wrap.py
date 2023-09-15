@@ -302,7 +302,7 @@ class Wrap:
         nlayer_fit = fitn["nlayer_fit"]
         NNODE_FITS = fitn["NNODE_FITS"]
 
-        NBIT_FIT_DATA = nbit["NBIT_FIT_DATA"]
+        nbit["NBIT_FIT_DATA"]
         NBIT_FIT_DATA_FL = nbit["NBIT_FIT_DATA_FL"]
         NBIT_FIT_WEIGHT = nbit["NBIT_FIT_WEIGHT"]
         NBIT_FIT_DISP = nbit["NBIT_FIT_DISP"]
@@ -507,7 +507,6 @@ class Wrap:
     def wrap_lut(self):
         r"""Wrap the LUT."""
         dscp = nvnmd_cfg.dscp
-        fitn = nvnmd_cfg.fitn
         maps = nvnmd_cfg.map
         nbit = nvnmd_cfg.nbit
         weight = nvnmd_cfg.weight
@@ -517,7 +516,7 @@ class Wrap:
         ntype_max = dscp["ntype_max"]
         NBIT_FLTE = nbit["NBIT_FLTE"]
         NBIT_FLTF = nbit["NBIT_FLTF"]
-        NBIT_DATA = nvnmd_cfg.nbit["NBIT_FIT_DATA"]
+        nvnmd_cfg.nbit["NBIT_FIT_DATA"]
         NBIT_WXDB = nvnmd_cfg.nbit["NBIT_FIT_WXDB"]
         NBIT_DATA_FL = nvnmd_cfg.nbit["NBIT_FIT_DATA_FL"]
 

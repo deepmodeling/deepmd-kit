@@ -229,7 +229,7 @@ class DescrptSeAEbd(DescrptSeA):
         """
         # natom x (nei x 4)
         inputs = tf.reshape(inputs, [-1, self.ndescrpt])
-        shape = inputs.get_shape().as_list()
+        inputs.get_shape().as_list()
         outputs_size = [1, *filter_neuron]
         with tf.variable_scope(name, reuse=reuse):
             xyz_scatter_total = []

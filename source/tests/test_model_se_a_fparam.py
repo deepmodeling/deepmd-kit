@@ -41,7 +41,7 @@ class TestModel(tf.test.TestCase):
         test_size = j_must_have(jdata, "numb_test")
         batch_size = 1
         test_size = 1
-        stop_batch = j_must_have(jdata, "stop_batch")
+        j_must_have(jdata, "stop_batch")
         rcut = j_must_have(jdata["model"]["descriptor"], "rcut")
 
         data = DataSystem(systems, set_pfx, batch_size, test_size, rcut, run_opt=None)
@@ -99,7 +99,7 @@ class TestModel(tf.test.TestCase):
         energy = model_pred["energy"]
         force = model_pred["force"]
         virial = model_pred["virial"]
-        atom_ener = model_pred["atom_ener"]
+        model_pred["atom_ener"]
 
         feed_dict_test = {
             t_prop_c: test_data["prop_c"],

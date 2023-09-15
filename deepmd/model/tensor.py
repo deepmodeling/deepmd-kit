@@ -120,11 +120,11 @@ class TensorModel(StandardModel):
         if input_dict is None:
             input_dict = {}
         with tf.variable_scope("model_attr" + suffix, reuse=reuse):
-            t_tmap = tf.constant(" ".join(self.type_map), name="tmap", dtype=tf.string)
-            t_st = tf.constant(self.get_sel_type(), name="sel_type", dtype=tf.int32)
-            t_mt = tf.constant(self.model_type, name="model_type", dtype=tf.string)
-            t_ver = tf.constant(MODEL_VERSION, name="model_version", dtype=tf.string)
-            t_od = tf.constant(self.get_out_size(), name="output_dim", dtype=tf.int32)
+            tf.constant(" ".join(self.type_map), name="tmap", dtype=tf.string)
+            tf.constant(self.get_sel_type(), name="sel_type", dtype=tf.int32)
+            tf.constant(self.model_type, name="model_type", dtype=tf.string)
+            tf.constant(MODEL_VERSION, name="model_version", dtype=tf.string)
+            tf.constant(self.get_out_size(), name="output_dim", dtype=tf.int32)
 
         natomsel = sum(natoms[2 + type_i] for type_i in self.get_sel_type())
         nout = self.get_out_size()

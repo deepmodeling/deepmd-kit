@@ -176,9 +176,9 @@ class EnerModel(StandardModel):
         if input_dict is None:
             input_dict = {}
         with tf.variable_scope("model_attr" + suffix, reuse=reuse):
-            t_tmap = tf.constant(" ".join(self.type_map), name="tmap", dtype=tf.string)
-            t_mt = tf.constant(self.model_type, name="model_type", dtype=tf.string)
-            t_ver = tf.constant(MODEL_VERSION, name="model_version", dtype=tf.string)
+            tf.constant(" ".join(self.type_map), name="tmap", dtype=tf.string)
+            tf.constant(self.model_type, name="model_type", dtype=tf.string)
+            tf.constant(MODEL_VERSION, name="model_version", dtype=tf.string)
 
             if self.srtab is not None:
                 tab_info, tab_data = self.srtab.get()
@@ -211,7 +211,7 @@ class EnerModel(StandardModel):
             input_dict["type_embedding"] = type_embedding
         # spin if any
         if self.spin is not None:
-            type_spin = self.spin.build(
+            self.spin.build(
                 reuse=reuse,
                 suffix=suffix,
             )

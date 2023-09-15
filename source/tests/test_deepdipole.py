@@ -86,7 +86,7 @@ class TestDeepDipolePBC(unittest.TestCase):
         dd = self.dp.eval(self.coords, self.box, self.atype)
         # check shape of the returns
         nframes = 1
-        natoms = len(self.atype)
+        len(self.atype)
         nsel = 2
         self.assertEqual(dd.shape, (nframes, nsel, 3))
         # check values
@@ -98,7 +98,7 @@ class TestDeepDipolePBC(unittest.TestCase):
         dd = self.dp.eval(coords2, box2, self.atype)
         # check shape of the returns
         nframes = 2
-        natoms = len(self.atype)
+        len(self.atype)
         nsel = 2
         self.assertEqual(dd.shape, (nframes, nsel, 3))
         # check values
@@ -159,7 +159,7 @@ class TestDeepDipoleNoPBC(unittest.TestCase):
         dd = self.dp.eval(self.coords, None, self.atype)
         # check shape of the returns
         nframes = 1
-        natoms = len(self.atype)
+        len(self.atype)
         nsel = 2
         self.assertEqual(dd.shape, (nframes, nsel, 3))
         # check values
@@ -169,7 +169,7 @@ class TestDeepDipoleNoPBC(unittest.TestCase):
         dd = self.dp.eval(self.coords, self.box, self.atype)
         # check shape of the returns
         nframes = 1
-        natoms = len(self.atype)
+        len(self.atype)
         nsel = 2
         self.assertEqual(dd.shape, (nframes, nsel, 3))
         # check values
@@ -477,7 +477,7 @@ class TestDeepDipoleNewPBC(unittest.TestCase):
         at = self.dp.eval(self.coords, self.box, self.atype)
         # check shape of the returns
         nframes = 1
-        natoms = len(self.atype)
+        len(self.atype)
         nsel = 2
         self.assertEqual(at.shape, (nframes, nsel, self.nout))
         # check values
@@ -489,7 +489,7 @@ class TestDeepDipoleNewPBC(unittest.TestCase):
         at = self.dp.eval(coords2, box2, self.atype)
         # check shape of the returns
         nframes = 2
-        natoms = len(self.atype)
+        len(self.atype)
         nsel = 2
         self.assertEqual(at.shape, (nframes, nsel, self.nout))
         # check values

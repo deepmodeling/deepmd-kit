@@ -100,7 +100,7 @@ class DOSLoss(Loss):
                 tf.square(diff_atom_cdf), name="l2_acdf_" + suffix
             )
 
-        atom_norm = 1.0 / global_cvt_2_tf_float(natoms[0])
+        1.0 / global_cvt_2_tf_float(natoms[0])
         atom_norm_ener = 1.0 / global_cvt_2_ener_float(natoms[0])
         pref_dos = global_cvt_2_ener_float(
             find_dos

@@ -98,7 +98,6 @@ def descrpt2r4(inputs, natoms):
         s = []
         h = []
         for type_i in range(ntypes):
-            type_input = 0
             u_i = tf.slice(u, [0, start_index * NIDP], [-1, natoms[2 + type_i] * NIDP])
             u_i = tf.reshape(u_i, [-1, 1])
             # s

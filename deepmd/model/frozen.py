@@ -103,23 +103,15 @@ class FrozenModel(Model):
         )
 
         with tf.variable_scope("model_attr" + suffix, reuse=reuse):
-            t_tmap = tf.constant(
-                " ".join(self.get_type_map()), name="tmap", dtype=tf.string
-            )
-            t_mt = tf.constant(self.model_type, name="model_type", dtype=tf.string)
-            t_ver = tf.constant(MODEL_VERSION, name="model_version", dtype=tf.string)
+            tf.constant(" ".join(self.get_type_map()), name="tmap", dtype=tf.string)
+            tf.constant(self.model_type, name="model_type", dtype=tf.string)
+            tf.constant(MODEL_VERSION, name="model_version", dtype=tf.string)
         with tf.variable_scope("descrpt_attr" + suffix, reuse=reuse):
-            t_ntypes = tf.constant(self.get_ntypes(), name="ntypes", dtype=tf.int32)
-            t_rcut = tf.constant(
-                self.get_rcut(), name="rcut", dtype=GLOBAL_TF_FLOAT_PRECISION
-            )
+            tf.constant(self.get_ntypes(), name="ntypes", dtype=tf.int32)
+            tf.constant(self.get_rcut(), name="rcut", dtype=GLOBAL_TF_FLOAT_PRECISION)
         with tf.variable_scope("fitting_attr" + suffix, reuse=reuse):
-            t_dfparam = tf.constant(
-                self.model.get_dim_fparam(), name="dfparam", dtype=tf.int32
-            )
-            t_daparam = tf.constant(
-                self.model.get_dim_aparam(), name="daparam", dtype=tf.int32
-            )
+            tf.constant(self.model.get_dim_fparam(), name="dfparam", dtype=tf.int32)
+            tf.constant(self.model.get_dim_aparam(), name="daparam", dtype=tf.int32)
         if self.model_type == "ener":
             return {
                 "energy": tf.identity(self.model.t_energy, name="o_energy" + suffix),

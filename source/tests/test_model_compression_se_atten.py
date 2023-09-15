@@ -542,7 +542,6 @@ class TestDeepPotALargeBoxNoPBC(unittest.TestCase):
             ff0 = water0.get_forces()
             ee1 = water1.get_potential_energy()
             ff1 = water1.get_forces()
-            nframes = 1
             np.testing.assert_almost_equal(ff0, ff1, default_places)
             np.testing.assert_almost_equal(ee0, ee1, default_places)
 

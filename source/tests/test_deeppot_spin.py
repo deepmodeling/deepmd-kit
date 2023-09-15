@@ -204,7 +204,7 @@ class TestDeepPotAPBC(unittest.TestCase):
         )
         # check shape of the returns
         nframes = 1
-        natoms = len(self.atype)
+        len(self.atype)
         self.assertEqual(ee.shape, (nframes, 1))
         self.assertEqual(ff.shape, (nframes, 6, 3))
         self.assertEqual(vv.shape, (nframes, 9))

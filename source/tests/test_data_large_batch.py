@@ -148,7 +148,6 @@ class TestDataLargeBatch(tf.test.TestCase):
         t_box = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None, 9], name="i_box")
         t_mesh = tf.placeholder(tf.int32, [None], name="i_mesh")
         is_training = tf.placeholder(tf.bool)
-        t_fparam = None
         inputs_dict = {}
 
         model_pred = model.build(
@@ -165,7 +164,7 @@ class TestDataLargeBatch(tf.test.TestCase):
         energy = model_pred["energy"]
         force = model_pred["force"]
         virial = model_pred["virial"]
-        atom_ener = model_pred["atom_ener"]
+        model_pred["atom_ener"]
 
         feed_dict_test = {
             t_energy: np.reshape(test_data["energy"][:numb_test], [-1]),
@@ -344,7 +343,6 @@ class TestDataLargeBatch(tf.test.TestCase):
         t_box = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None, 9], name="i_box")
         t_mesh = tf.placeholder(tf.int32, [None], name="i_mesh")
         is_training = tf.placeholder(tf.bool)
-        t_fparam = None
         inputs_dict = {}
 
         model_pred = model.build(
@@ -361,7 +359,7 @@ class TestDataLargeBatch(tf.test.TestCase):
         energy = model_pred["energy"]
         force = model_pred["force"]
         virial = model_pred["virial"]
-        atom_ener = model_pred["atom_ener"]
+        model_pred["atom_ener"]
 
         feed_dict_test = {
             t_energy: np.reshape(test_data["energy"][:numb_test], [-1]),
@@ -540,7 +538,6 @@ class TestDataLargeBatch(tf.test.TestCase):
         t_box = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None, 9], name="i_box")
         t_mesh = tf.placeholder(tf.int32, [None], name="i_mesh")
         is_training = tf.placeholder(tf.bool)
-        t_fparam = None
         inputs_dict = {}
 
         model_pred = model.build(
@@ -557,7 +554,7 @@ class TestDataLargeBatch(tf.test.TestCase):
         energy = model_pred["energy"]
         force = model_pred["force"]
         virial = model_pred["virial"]
-        atom_ener = model_pred["atom_ener"]
+        model_pred["atom_ener"]
 
         feed_dict_test = {
             t_energy: np.reshape(test_data["energy"][:numb_test], [-1]),
