@@ -69,7 +69,8 @@ def _main():
     tmp = np.reshape(tmp, [nframe, -1])
     nframe = tmp.shape[0]
     idx = np.arange(nframe)
-    np.random.shuffle(idx)
+    rng = np.random.default_rng()
+    rng.shuffle(idx)
 
     for ii in raws:
         data = np.loadtxt(inpath + "/" + ii)

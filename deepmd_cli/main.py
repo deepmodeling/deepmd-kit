@@ -312,7 +312,7 @@ def main_parser() -> argparse.ArgumentParser:
     # The table is composed of fifth-order polynomial coefficients and is assembled
     # from two sub-tables. The first table takes the step(parameter) as it's uniform
     # step, while the second table takes 10 * step as it\s uniform step
-    #  The range of the first table is automatically detected by deepmd-kit, while the
+    #  The range of the first table is automatically detected by deepmd-kit, while the
     # second table ranges from the first table's upper boundary(upper) to the
     # extrapolate(parameter) * upper.
     parser_compress = subparsers.add_parser(

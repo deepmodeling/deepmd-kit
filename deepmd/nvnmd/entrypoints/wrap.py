@@ -145,7 +145,7 @@ class Wrap:
         nvnmd_cfg.save(nvnmd_cfg.config_file)
         head = self.wrap_head(nhs, nws)
         # output model
-        hs = [] + head
+        hs = [*head]
         for d in datas:
             hs.extend(d)
 
