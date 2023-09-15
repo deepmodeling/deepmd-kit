@@ -61,10 +61,11 @@ FixDPLR::FixDPLR(LAMMPS *lmp, int narg, char **arg)
   qe2f = force->qe2f;
   xstyle = ystyle = zstyle = NONE;
 
-  if (strcmp(update->unit_style, "metal") != 0) {
-    error->all(
-        FLERR,
-        "Fix dplr requires metal unit, please set it by \"units metal\"");
+  if (strcmp(update->unit_style, "lj") == 0) {
+    error->all(FLERR,
+               "Fix dplr does not support unit style lj. Please use other "
+               "unit styles like metal or real unit instead. You may set it by "
+               "\"units metal\" or \"units real\"");
   }
 
   int iarg = 3;
