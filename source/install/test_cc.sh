@@ -14,13 +14,4 @@ cd ${BUILD_TMP_DIR}
 cmake -DINSTALL_TENSORFLOW=TRUE -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX} -DTENSORFLOW_ROOT=${INSTALL_PREFIX} -DBUILD_TESTING:BOOL=TRUE -DLAMMPS_VERSION=stable_2Aug2023 ..
 cmake --build . -j${NPROC}
 cmake --install .
-
-#------------------
-# go to a subdirectory...
-# TODO: detect directory of graph files
-mkdir -p ${BUILD_TMP_DIR}/exec_tests
-cd ${BUILD_TMP_DIR}/exec_tests
-
-${INSTALL_PREFIX}/bin/runUnitTests_lib
-${INSTALL_PREFIX}/bin/runUnitTests_cc
-${INSTALL_PREFIX}/bin/runUnitTests_c
+cmake --build . --target test
