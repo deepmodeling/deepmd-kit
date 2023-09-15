@@ -890,7 +890,7 @@ class DescrptSeA(DescrptSe):
         suffix="",
     ):
         """Input env matrix, returns R.G."""
-        outputs_size = [1] + self.filter_neuron
+        outputs_size = [1, *self.filter_neuron]
         # cut-out inputs
         # with natom x (nei_type_i x 4)
         inputs_i = tf.slice(inputs, [0, start_index * 4], [-1, incrs_index * 4])
@@ -1006,7 +1006,7 @@ class DescrptSeA(DescrptSe):
         nframes = tf.shape(tf.reshape(inputs, [-1, natoms[0], self.ndescrpt]))[0]
         # natom x (nei x 4)
         shape = inputs.get_shape().as_list()
-        outputs_size = [1] + self.filter_neuron
+        outputs_size = [1, *self.filter_neuron]
         outputs_size_2 = self.n_axis_neuron
         all_excluded = all(
             (type_input, type_i) in self.exclude_types for type_i in range(self.ntypes)

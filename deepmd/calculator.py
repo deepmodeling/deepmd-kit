@@ -75,7 +75,7 @@ class DP(Calculator):
         self,
         model: Union[str, "Path"],
         label: str = "DP",
-        type_dict: Dict[str, int] = None,
+        type_dict: Optional[Dict[str, int]] = None,
         **kwargs,
     ) -> None:
         Calculator.__init__(self, label=label, **kwargs)

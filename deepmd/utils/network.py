@@ -187,7 +187,7 @@ def embedding_net(
        International Publishing, 2016.
     """
     input_shape = xx.get_shape().as_list()
-    outputs_size = [input_shape[1]] + network_size
+    outputs_size = [input_shape[1], *network_size]
 
     for ii in range(1, len(outputs_size)):
         w_initializer = tf.random_normal_initializer(

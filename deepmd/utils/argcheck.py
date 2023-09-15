@@ -263,7 +263,8 @@ def descrpt_se_a_tpe_args():
     doc_type_nlayer = "number of hidden layers of type embedding net"
     doc_numb_aparam = "dimension of atomic parameter. if set to a value > 0, the atomic parameters are embedded."
 
-    return descrpt_se_a_args() + [
+    return [
+        *descrpt_se_a_args(),
         Argument("type_nchanl", int, optional=True, default=4, doc=doc_type_nchanl),
         Argument("type_nlayer", int, optional=True, default=2, doc=doc_type_nlayer),
         Argument("numb_aparam", int, optional=True, default=0, doc=doc_numb_aparam),
@@ -397,7 +398,8 @@ def descrpt_se_atten_args():
     doc_smooth_type_embdding = "When using stripped type embedding, whether to dot smooth factor on the network output of type embedding to keep the network smooth, instead of setting `set_davg_zero` to be True."
     doc_set_davg_zero = "Set the normalization average to zero. This option should be set when `se_atten` descriptor or `atom_ener` in the energy fitting is used"
 
-    return descrpt_se_atten_common_args() + [
+    return [
+        *descrpt_se_atten_common_args(),
         Argument(
             "stripped_type_embedding",
             bool,
@@ -422,7 +424,8 @@ def descrpt_se_atten_args():
 def descrpt_se_atten_v2_args():
     doc_set_davg_zero = "Set the normalization average to zero. This option should be set when `se_atten` descriptor or `atom_ener` in the energy fitting is used"
 
-    return descrpt_se_atten_common_args() + [
+    return [
+        *descrpt_se_atten_common_args(),
         Argument(
             "set_davg_zero", bool, optional=True, default=False, doc=doc_set_davg_zero
         ),
