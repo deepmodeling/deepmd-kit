@@ -15,4 +15,4 @@ cd ${BUILD_TMP_DIR}
 cmake -DINSTALL_TENSORFLOW=FALSE -DUSE_TF_PYTHON_LIBS=TRUE -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX} -DBUILD_TESTING:BOOL=TRUE -DLAMMPS_VERSION=stable_2Aug2023 ..
 cmake --build . -j${NPROC}
 cmake --install .
-cmake --build . --target test
+ctest --output-on-failure

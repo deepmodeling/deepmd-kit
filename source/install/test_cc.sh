@@ -14,4 +14,4 @@ cd ${BUILD_TMP_DIR}
 cmake -DINSTALL_TENSORFLOW=TRUE -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX} -DTENSORFLOW_ROOT=${INSTALL_PREFIX} -DBUILD_TESTING:BOOL=TRUE -DLAMMPS_VERSION=stable_2Aug2023 ..
 cmake --build . -j${NPROC}
 cmake --install .
-cmake --build . --target test
+ctest --output-on-failure
