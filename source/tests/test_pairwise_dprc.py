@@ -9,9 +9,7 @@ from common import (
     run_dp,
     tests_path,
 )
-from pkg_resources import (
-    parse_version,
-)
+from packaging.version import parse as parse_version
 
 from deepmd import (
     DeepPotential,
