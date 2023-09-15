@@ -362,9 +362,7 @@ class DeepEval:
         [typeebd] = run_sess(self.sess, [t_typeebd], feed_dict={})
         return typeebd
 
-    def update_typeebd(
-            self, new_typeebd: np.ndarray, save_path: str
-    ):
+    def update_typeebd(self, new_typeebd: np.ndarray, save_path: str):
         """Change the type embedding of this model and then save to a new one.
 
         Parameters
@@ -387,16 +385,17 @@ class DeepEval:
             graph_def = tf.GraphDef()
             graph_def.ParseFromString(f.read())
         for node in graph_def.node:
-            if node.name in ['type_embed_net/matrix_1']:
+            if node.name in ["type_embed_net/matrix_1"]:
                 t_matrix = node.attr["value"].tensor
                 old_typeebd = tf.make_ndarray(t_matrix)
                 required_shape = (old_typeebd.shape[0] + 1, old_typeebd.shape[1])
-                assert required_shape == new_typeebd.shape, \
-                    f"The input type embedding should has shape {required_shape}, but got {new_typeebd.shape} instead!"
+                assert (
+                    required_shape == new_typeebd.shape
+                ), f"The input type embedding should has shape {required_shape}, but got {new_typeebd.shape} instead!"
                 new_typeebd = new_typeebd[:-1].astype(old_typeebd.dtype)
                 new_typeebd_tensor_pb = tf.make_tensor_proto(new_typeebd)
                 node.attr["value"].tensor.CopyFrom(new_typeebd_tensor_pb)
-            elif node.name in ['type_embed_net/bias_1']:
+            elif node.name in ["type_embed_net/bias_1"]:
                 t_bias = node.attr["value"].tensor
                 old_bias = tf.make_ndarray(t_bias)
                 new_bias_tensor_pb = tf.make_tensor_proto(np.zeros_like(old_bias))
