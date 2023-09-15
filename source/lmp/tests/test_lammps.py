@@ -217,12 +217,6 @@ coord = np.array(
 type_OH = np.array([1, 2, 2, 1, 2, 2])
 type_HO = np.array([2, 1, 1, 2, 1, 1])
 
-# https://github.com/lammps/lammps/blob/1e1311cf401c5fc2614b5d6d0ff3230642b76597/src/update.cpp#L193
-constants.nktv2p = 1.6021765e6
-constants.nktv2p_real = 68568.415
-constants.metal2real = 23.060549
-constants.dist_metal2si = 1.0e-10
-constants.ener_metal2si = 1.3806504e-23 / 8.617343e-5
 
 sp.check_output(
     "{} -m deepmd convert-from pbtxt -i {} -o {}".format(
