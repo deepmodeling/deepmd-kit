@@ -56,6 +56,13 @@ Cite DeePMD-kit and methods
 
    Zhang_PhysPlasmas_2020_v27_p122704
 
+- If atom-specific parameters (`aparam`, e.g. electronic temperature) is used,
+
+.. bibliography::
+   :filter: False
+
+   Zeng_2023_TTMDPMD
+
 - If fitting dipole,
 
 .. bibliography::
