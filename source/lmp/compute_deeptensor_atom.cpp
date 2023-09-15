@@ -28,11 +28,11 @@ ComputeDeeptensorAtom::ComputeDeeptensorAtom(LAMMPS *lmp, int narg, char **arg)
     : Compute(lmp, narg, arg), dp(lmp), tensor(nullptr) {
   if (strcmp(update->unit_style, "lj") == 0) {
     error->all(FLERR,
-               "Compute deeptensor/atom does not support unit style lj. Please use other "
+               "Compute deeptensor/atom does not support unit style lj. Please "
+               "use other "
                "unit styles like metal or real unit instead. You may set it by "
                "\"units metal\" or \"units real\"");
   }
-
 
   if (narg < 4) {
     error->all(FLERR, "Illegal compute deeptensor/atom command");
