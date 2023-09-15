@@ -45,7 +45,7 @@ log = logging.getLogger(__name__)
 
 
 # http://patorjk.com/software/taag. Font:Big"
-WELCOME = (  # noqa
+WELCOME = (
     r" _____               _____   __  __  _____           _     _  _   ",
     r"|  __ \             |  __ \ |  \/  ||  __ \         | |   (_)| |  ",
     r"| |  | |  ___   ___ | |__) || \  / || |  | | ______ | | __ _ | |_ ",
@@ -71,7 +71,7 @@ BUILD = (
     f"build float prec:     {global_float_prec}",
     f"build variant:        {GLOBAL_CONFIG['dp_variant']}",
     f"build with tf inc:    {GLOBAL_CONFIG['tf_include_dir']}",
-    f"build with tf lib:    {GLOBAL_CONFIG['tf_libs'].replace(';', _sep)}",  # noqa
+    f"build with tf lib:    {GLOBAL_CONFIG['tf_libs'].replace(';', _sep)}",
 )
 
 

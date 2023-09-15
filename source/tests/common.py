@@ -919,9 +919,7 @@ class DataSystem:
                 min_len = min([len(ii), len(ret)])
                 for idx in range(min_len):
                     if ii[idx] != ret[idx]:
-                        raise RuntimeError(
-                            f"inconsistent type map: {str(ret)} {str(ii)}"
-                        )
+                        raise RuntimeError(f"inconsistent type map: {ret!s} {ii!s}")
                 if len(ii) > len(ret):
                     ret = ii
         return ret

@@ -454,7 +454,7 @@ class TestNvnmdEntrypointsV0(tf.test.TestCase):
             dic_ph["default_mesh"]: mesh_dat,
         }
         #
-        sess = self.test_session().__enter__()
+        sess = self.cached_session().__enter__()
         sess.run(tf.global_variables_initializer())
         # get tensordic
         keys = "o_descriptor,o_rmat,o_energy".split(",")
@@ -762,7 +762,7 @@ class TestNvnmdEntrypointsV1(tf.test.TestCase):
             dic_ph["default_mesh"]: mesh_dat,
         }
         #
-        sess = self.test_session().__enter__()
+        sess = self.cached_session().__enter__()
         sess.run(tf.global_variables_initializer())
         # get tensordic
         keys = "o_descriptor,o_rmat,o_energy".split(",")
@@ -818,7 +818,7 @@ class TestNvnmdEntrypointsV1(tf.test.TestCase):
         ref_dout = 60.73941362
         np.testing.assert_almost_equal(pred, ref_dout, 8)
         # test freeze
-        sess = self.test_session().__enter__()
+        sess = self.cached_session().__enter__()
         weight_file1 = str(tests_path / "nvnmd" / "ref" / "weight_v1_cnn.npy")
         weight_file2 = str(tests_path / "nvnmd" / "out" / "weight_v1_qnn.npy")
         save_weight(sess, weight_file2)

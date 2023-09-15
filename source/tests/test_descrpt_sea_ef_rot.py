@@ -17,7 +17,7 @@ from deepmd.env import (
 
 class TestEfRot(tf.test.TestCase):
     def setUp(self):
-        self.sess = self.test_session().__enter__()
+        self.sess = self.cached_session().__enter__()
         self.natoms = [5, 5, 2, 3]
         self.ntypes = 2
         self.sel_a = [12, 24]
@@ -108,7 +108,7 @@ class TestEfRot(tf.test.TestCase):
         one_type = []
         for ii in range(2, 2 + self.ntypes):
             one_type = one_type + [ii - 2 for jj in range(self.natoms[ii])]
-        np.random.shuffle(one_type)
+        np.random.shuffle(one_type)  # noqa: NPY002
         one_type = np.array(one_type, dtype=int).reshape([1, -1])
         dtype = np.tile(one_type, [nframes, 1])
         defield = np.random.random(dcoord.shape)
@@ -162,7 +162,7 @@ class TestEfRot(tf.test.TestCase):
         )
         self.sess.run(tf.global_variables_initializer())
 
-        np.random.seed(0)
+        np.random.seed(0)  # noqa: NPY002
         # make test data
         nframes = 2
         dcoord, dbox, dtype, defield = self.make_test_data(nframes)
@@ -308,7 +308,7 @@ class TestEfRot(tf.test.TestCase):
         )
         self.sess.run(tf.global_variables_initializer())
 
-        np.random.seed(0)
+        np.random.seed(0)  # noqa: NPY002
         # make test data
         nframes = 2
         dcoord, dbox, dtype, defield = self.make_test_data(nframes)
@@ -423,7 +423,7 @@ class TestEfRot(tf.test.TestCase):
         )
         self.sess.run(tf.global_variables_initializer())
 
-        np.random.seed(0)
+        np.random.seed(0)  # noqa: NPY002
         # make test data
         nframes = 2
         dcoord, dbox, dtype, defield = self.make_test_data(nframes)

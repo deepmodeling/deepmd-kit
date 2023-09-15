@@ -113,6 +113,95 @@ class TestMakeModelDevi(unittest.TestCase):
             6,
         )
 
+    def test_make_model_devi_atomic_relative(self):
+        _, expected_f, expected_v = self.graphs[0].eval(
+            self.coord[0], self.box[0], self.atype
+        )
+        _, expected_f2, expected_v2 = self.graphs[1].eval(
+            self.coord[0], self.box[0], self.atype
+        )
+        expected_f = expected_f.reshape((-1, 3))
+        expected_f2 = expected_f2.reshape((-1, 3))
+        expected_v = expected_v.reshape((-1, 3))
+        expected_v2 = expected_v2.reshape((-1, 3))
+        relative = 1.0
+        make_model_devi(
+            models=self.graph_dirs,
+            system=self.data_dir,
+            set_prefix="set",
+            output=self.output,
+            frequency=self.freq,
+            atomic=True,
+            relative=relative,
+        )
+        md = np.loadtxt(self.output)
+        # copy from lammps test
+        norm = np.linalg.norm(np.mean([expected_f, expected_f2], axis=0), axis=1)
+        expected_md_f = np.linalg.norm(
+            np.std([expected_f, expected_f2], axis=0), axis=1
+        )
+        expected_md_f /= norm + relative
+        np.testing.assert_allclose(md[8:], expected_md_f, 6)
+        np.testing.assert_allclose(md[7], self.expect[7], 6)
+        np.testing.assert_allclose(md[4], np.max(expected_md_f), 6)
+        np.testing.assert_allclose(md[5], np.min(expected_md_f), 6)
+        np.testing.assert_allclose(md[6], np.mean(expected_md_f), 6)
+        expected_md_v = (
+            np.std([np.sum(expected_v, axis=0), np.sum(expected_v2, axis=0)], axis=0)
+            / 6
+        )
+        np.testing.assert_allclose(md[1], np.max(expected_md_v), 6)
+        np.testing.assert_allclose(md[2], np.min(expected_md_v), 6)
+        np.testing.assert_allclose(md[3], np.sqrt(np.mean(np.square(expected_md_v))), 6)
+
+    def test_make_model_devi_atomic_relative_v(self):
+        _, expected_f, expected_v = self.graphs[0].eval(
+            self.coord[0], self.box[0], self.atype
+        )
+        _, expected_f2, expected_v2 = self.graphs[1].eval(
+            self.coord[0], self.box[0], self.atype
+        )
+        expected_f = expected_f.reshape((-1, 3))
+        expected_f2 = expected_f2.reshape((-1, 3))
+        expected_v = expected_v.reshape((-1, 3))
+        expected_v2 = expected_v2.reshape((-1, 3))
+        relative = 1.0
+        make_model_devi(
+            models=self.graph_dirs,
+            system=self.data_dir,
+            set_prefix="set",
+            output=self.output,
+            frequency=self.freq,
+            atomic=True,
+            relative_v=relative,
+        )
+        md = np.loadtxt(self.output)
+        # copy from lammps test
+        expected_md_f = np.linalg.norm(
+            np.std([expected_f, expected_f2], axis=0), axis=1
+        )
+        np.testing.assert_allclose(md[8:], expected_md_f, 6)
+        np.testing.assert_allclose(md[7], self.expect[7], 6)
+        np.testing.assert_allclose(md[4], np.max(expected_md_f), 6)
+        np.testing.assert_allclose(md[5], np.min(expected_md_f), 6)
+        np.testing.assert_allclose(md[6], np.mean(expected_md_f), 6)
+        expected_md_v = (
+            np.std([np.sum(expected_v, axis=0), np.sum(expected_v2, axis=0)], axis=0)
+            / 6
+        )
+        norm = (
+            np.abs(
+                np.mean(
+                    [np.sum(expected_v, axis=0), np.sum(expected_v2, axis=0)], axis=0
+                )
+            )
+            / 6
+        )
+        expected_md_v /= norm + relative
+        np.testing.assert_allclose(md[1], np.max(expected_md_v), 6)
+        np.testing.assert_allclose(md[2], np.min(expected_md_v), 6)
+        np.testing.assert_allclose(md[3], np.sqrt(np.mean(np.square(expected_md_v))), 6)
+
     def tearDown(self):
         for pb in self.graph_dirs:
             os.remove(pb)

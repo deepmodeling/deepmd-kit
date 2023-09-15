@@ -312,7 +312,7 @@ def main_parser() -> argparse.ArgumentParser:
     # The table is composed of fifth-order polynomial coefficients and is assembled
     # from two sub-tables. The first table takes the step(parameter) as it's uniform
     # step, while the second table takes 10 * step as it\s uniform step
-    #  The range of the first table is automatically detected by deepmd-kit, while the
+    #  The range of the first table is automatically detected by deepmd-kit, while the
     # second table ranges from the first table's upper boundary(upper) to the
     # extrapolate(parameter) * upper.
     parser_compress = subparsers.add_parser(
@@ -453,6 +453,22 @@ def main_parser() -> argparse.ArgumentParser:
         action="store_true",
         default=False,
         help="Calculate the RMS real error of the model. The real data should be given in the systems.",
+    )
+    parser_model_devi.add_argument(
+        "--atomic",
+        action="store_true",
+        default=False,
+        help="Print the force model deviation of each atom.",
+    )
+    parser_model_devi.add_argument(
+        "--relative",
+        type=float,
+        help="Calculate the relative model deviation of force. The level parameter for computing the relative model deviation of the force should be given.",
+    )
+    parser_model_devi.add_argument(
+        "--relative_v",
+        type=float,
+        help="Calculate the relative model deviation of virial. The level parameter for computing the relative model deviation of the virial should be given.",
     )
 
     # * convert models

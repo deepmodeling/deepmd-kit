@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     TYPE_CHECKING,
+    ClassVar,
+    Dict,
     List,
     Optional,
     Tuple,
@@ -39,7 +41,7 @@ class DeepTensor(DeepEval):
         The input map for tf.import_graph_def. Only work with default tf graph
     """
 
-    tensors = {
+    tensors: ClassVar[Dict[str, str]] = {
         # descriptor attrs
         "t_ntypes": "descrpt_attr/ntypes:0",
         "t_rcut": "descrpt_attr/rcut:0",

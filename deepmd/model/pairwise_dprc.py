@@ -125,6 +125,7 @@ class PairwiseDPRc(Model):
         with tf.variable_scope("fitting_attr" + suffix, reuse=reuse):
             t_dfparam = tf.constant(0, name="dfparam", dtype=tf.int32)
             t_daparam = tf.constant(1, name="daparam", dtype=tf.int32)
+            t_aparam_nall = tf.constant(True, name="aparam_nall", dtype=tf.bool)
         with tf.variable_scope("descrpt_attr" + suffix, reuse=reuse):
             t_ntypes = tf.constant(self.ntypes, name="ntypes", dtype=tf.int32)
             t_rcut = tf.constant(
@@ -222,12 +223,14 @@ class PairwiseDPRc(Model):
         virial = virial_qm + virial_qmmm
         virial = tf.identity(virial, name="o_virial" + suffix)
 
+        backward_qm_map_nloc = tf.slice(backward_qm_map, [0, 0], [-1, natoms[0]])
+        backward_qmmm_map_nloc = tf.slice(backward_qmmm_map, [0, 0], [-1, natoms[0]])
         atom_ener_qm = gather_placeholder(
-            qm_dict["atom_ener"], backward_qm_map, placeholder=0.0
+            qm_dict["atom_ener"], backward_qm_map_nloc, placeholder=0.0
         )
         atom_ener_qmmm = tf.math.segment_sum(
             gather_placeholder(
-                qmmm_dict["atom_ener"], backward_qmmm_map, placeholder=0.0
+                qmmm_dict["atom_ener"], backward_qmmm_map_nloc, placeholder=0.0
             ),
             qmmm_frame_idx,
         )

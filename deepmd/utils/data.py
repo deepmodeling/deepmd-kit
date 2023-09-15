@@ -580,7 +580,7 @@ class DeepmdData:
             return np.float32(0.0), data
 
     def _load_type(self, sys_path: DPPath):
-        atom_type = (sys_path / "type.raw").load_txt(dtype=np.int32, ndmin=1)
+        atom_type = (sys_path / "type.raw").load_txt(ndmin=1).astype(np.int32)
         return atom_type
 
     def _load_type_mix(self, set_name: DPPath):

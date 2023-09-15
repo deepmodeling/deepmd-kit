@@ -349,13 +349,194 @@ class TestPairwiseModel(tf.test.TestCase):
             t_aparam: np.reshape(np.tile(test_data["aparam"], 5), [-1]),
             is_training: False,
         }
-        sess = self.test_session().__enter__()
+        sess = self.cached_session().__enter__()
         sess.run(tf.global_variables_initializer())
         [e, f, v] = sess.run([energy, force, virial], feed_dict=feed_dict_test)
 
         # the model is pairwise!
         self.assertAllClose(e[1] + e[2] + e[3] - 3 * e[0], e[4] - e[0])
         self.assertAllClose(f[1] + f[2] + f[3] - 3 * f[0], f[4] - f[0])
+
+    def test_nloc(self):
+        jfile = tests_path / "pairwise_dprc.json"
+        jdata = j_loader(jfile)
+        model = Model(**jdata["model"])
+
+        sys = dpdata.LabeledSystem()
+        sys.data["atom_names"] = ["C", "N", "O", "H", "OW", "HW"]
+        sys.data["coords"] = np.array(
+            [
+                2.48693,
+                -0.12642,
+                0.45320,
+                3.86292,
+                -0.00082,
+                0.07286,
+                4.19135,
+                0.35148,
+                -1.21253,
+                3.35886,
+                0.58875,
+                -2.08423,
+                5.67422,
+                0.44076,
+                -1.45160,
+                2.40712,
+                -0.32538,
+                1.52137,
+                2.04219,
+                -0.93912,
+                -0.12445,
+                1.98680,
+                0.81574,
+                0.21261,
+                4.57186,
+                -0.33026,
+                0.71127,
+                6.24532,
+                0.18814,
+                -0.55212,
+                5.92647,
+                1.46447,
+                -1.74069,
+                5.95030,
+                -0.25321,
+                -2.24804,
+                -0.32794,
+                1.50468,
+                0.83176,
+                0.23662,
+                2.24068,
+                1.13166,
+                -0.24528,
+                1.59132,
+                -0.14907,
+                -0.50371,
+                -1.24800,
+                -0.05601,
+                -0.28305,
+                -1.84629,
+                0.67555,
+                -0.68673,
+                -0.40535,
+                0.41384,
+                0.38397,
+                0.80987,
+                -1.90358,
+                1.30191,
+                0.68503,
+                -2.22909,
+                0.11626,
+                -0.11276,
+                -1.70506,
+            ]
+        ).reshape(1, 21, 3)
+        sys.data["atom_types"] = np.array(
+            [0, 1, 0, 2, 0, 3, 3, 3, 3, 3, 3, 3, 4, 5, 5, 4, 5, 5, 4, 5, 5]
+        )
+        sys.data["cells"] = np.array([np.eye(3) * 30])
+        nframes = 1
+        natoms = 21
+        sys.data["coords"] = sys.data["coords"].reshape([nframes, natoms, 3])
+        sys.data["cells"] = sys.data["cells"].reshape([nframes, 3, 3])
+        sys.data["energies"] = np.ones(
+            [
+                nframes,
+            ]
+        )
+        sys.data["forces"] = np.zeros([nframes, natoms, 3])
+        sys.data["nopbc"] = True
+        sys.to_deepmd_npy("system", prec=np.float64)
+        idxs = np.array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3])
+        np.save("system/set.000/aparam.npy", idxs)
+
+        systems = j_must_have(jdata["training"]["training_data"], "systems")
+        batch_size = 1
+        test_size = 1
+        rcut = model.get_rcut()
+
+        data = DeepmdDataSystem(systems, batch_size, test_size, rcut)
+        data.add("energy", 1, atomic=False, must=True, high_prec=True)
+        data.add("aparam", 1, atomic=True, must=True, high_prec=True)
+        test_data = data.get_test()
+
+        t_energy = tf.placeholder(GLOBAL_ENER_FLOAT_PRECISION, [None], name="t_energy")
+        t_coord = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None], name="i_coord")
+        t_type = tf.placeholder(tf.int32, [None], name="i_type")
+        t_natoms = tf.placeholder(tf.int32, [model.get_ntypes() + 2], name="i_natoms")
+        t_box = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None, 9], name="i_box")
+        t_mesh = tf.placeholder(tf.int32, [None], name="i_mesh")
+        is_training = tf.placeholder(tf.bool)
+        t_aparam = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None], name="i_aparam")
+        input_dict = {}
+        input_dict["aparam"] = t_aparam
+
+        model.data_stat(data)
+        model_pred = model.build(
+            t_coord,
+            t_type,
+            t_natoms,
+            t_box,
+            t_mesh,
+            input_dict,
+            suffix="se_a_atom_ener_0",
+            reuse=False,
+        )
+        energy = model_pred["energy"]
+        force = model_pred["force"]
+        virial = model_pred["virial"]
+
+        test_types = np.array(
+            [
+                [0, 0, 0, 1, 2, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 5, 5, 5, 5, 5, 5],
+            ]
+        )
+        nloc1 = 17
+        # aparam: [[0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 1. 2. 3. 1. 1. 2. 2. 3. 3.]]
+        feed_dict_test = {
+            t_energy: np.reshape(test_data["energy"], [-1]),
+            t_coord: np.reshape(test_data["coord"], [-1]),
+            t_box: np.reshape(test_data["box"], (1, 9)),
+            t_type: np.reshape(test_types, [-1]),
+            t_natoms: [nloc1, 21, nloc1, 0, 0, 0, 0, 0],
+            t_mesh: test_data["default_mesh"],
+            t_aparam: np.reshape(test_data["aparam"], [-1]),
+            is_training: False,
+        }
+        sess = self.cached_session().__enter__()
+        sess.run(tf.global_variables_initializer())
+        [e1, f1, v1] = sess.run([energy, force, virial], feed_dict=feed_dict_test)
+
+        idx_map = np.concatenate([np.arange(nloc1, 21), np.arange(nloc1)])
+        idx_map_inv = np.argsort(idx_map)
+        feed_dict_test = {
+            t_energy: np.reshape(test_data["energy"], [-1]),
+            t_coord: np.reshape(np.reshape(test_data["coord"], [-1, 3])[idx_map], [-1]),
+            t_box: np.reshape(test_data["box"], (1, 9)),
+            t_type: np.reshape(test_types, [-1])[idx_map],
+            t_natoms: [21 - nloc1, 21, 21 - nloc1, 0, 0, 0, 0, 0],
+            t_mesh: test_data["default_mesh"],
+            t_aparam: np.reshape(test_data["aparam"], [-1])[idx_map],
+            is_training: False,
+        }
+        [e2, f2, v2] = sess.run([energy, force, virial], feed_dict=feed_dict_test)
+        f2 = np.reshape(np.reshape(f2, [-1, 3])[idx_map_inv], f2.shape)
+
+        feed_dict_test = {
+            t_energy: np.reshape(test_data["energy"], [-1]),
+            t_coord: np.reshape(test_data["coord"], [-1]),
+            t_box: np.reshape(test_data["box"], (1, 9)),
+            t_type: np.reshape(test_types, [-1]),
+            t_natoms: [21, 21, 21, 0, 0, 0, 0, 0],
+            t_mesh: test_data["default_mesh"],
+            t_aparam: np.reshape(test_data["aparam"], [-1]),
+            is_training: False,
+        }
+        [e3, f3, v3] = sess.run([energy, force, virial], feed_dict=feed_dict_test)
+
+        np.testing.assert_allclose(e1 + e2, e3, 6)
+        np.testing.assert_allclose(f1 + f2, f3, 6)
+        np.testing.assert_allclose(v1 + v2, v3, 6)
 
 
 def _init_models():

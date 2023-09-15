@@ -56,7 +56,7 @@ def replace_model_params_with_pretrained_model(
         if i not in pretrained_type_map:
             out_line_type.append(i)
     assert not out_line_type, (
-        f"{str(out_line_type)} type(s) not contained in the pretrained model! "
+        f"{out_line_type!s} type(s) not contained in the pretrained model! "
         "Please choose another suitable one."
     )
     if cur_type_map != pretrained_type_map:
@@ -103,9 +103,7 @@ def replace_model_params_with_pretrained_model(
             # keep some params that are irrelevant to model structures (need to discuss) TODO
             if "trainable" in cur_para.keys():
                 target_para["trainable"] = cur_para["trainable"]
-            log.info(
-                f"Change the '{config_key}' from {str(cur_para)} to {str(target_para)}."
-            )
+            log.info(f"Change the '{config_key}' from {cur_para!s} to {target_para!s}.")
             jdata["model"][config_key] = target_para
 
     return jdata, cur_type_map
