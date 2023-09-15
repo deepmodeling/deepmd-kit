@@ -138,6 +138,31 @@ test-command = [
     "dp -h",
 ]
 
+# One can run `tox` or `tox -e gpu`
+# to run pytest in an insolated environment
+# Use with pipx:
+# $ pip install -U pipx
+# $ pipx tox
+[tool.tox]
+legacy_tox_ini = """
+    [tox]
+    min_version = 4.0
+
+    [testenv]
+    extras =
+        test
+        cpu
+    commands = pytest source/tests
+
+    [testenv:gpu]
+    extras =
+        test
+        gpu
+    commands = pytest source/tests
+    setenv =
+        DP_VARIANT = cuda
+"""
+
 # selectively turn of lintner warnings, always include reasoning why any warning should
 # be silenced
 
