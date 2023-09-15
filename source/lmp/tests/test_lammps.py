@@ -6,6 +6,7 @@ from pathlib import (
     Path,
 )
 
+import constants
 import numpy as np
 import pytest
 from lammps import (
@@ -14,7 +15,6 @@ from lammps import (
 from write_lmp_data import (
     write_lmp_data,
 )
-import constants
 
 pbtxt_file = Path(__file__).parent.parent.parent / "tests" / "infer" / "deeppot.pbtxt"
 pbtxt_file2 = (
@@ -243,7 +243,12 @@ sp.check_output(
 def setup_module():
     write_lmp_data(box, coord, type_OH, data_file)
     write_lmp_data(box, coord, type_HO, data_type_map_file)
-    write_lmp_data(box * constants.dist_metal2si, coord * constants.dist_metal2si, type_OH, data_file_si)
+    write_lmp_data(
+        box * constants.dist_metal2si,
+        coord * constants.dist_metal2si,
+        type_OH,
+        data_file_si,
+    )
 
 
 def teardown_module():
@@ -525,7 +530,9 @@ def test_pair_deepmd_virial_real(lammps_real):
     for ii in range(9):
         assert np.array(
             lammps_real.variables[f"virial{ii}"].value
-        ) / constants.nktv2p_real == pytest.approx(expected_v[idx_map, ii] * constants.metal2real)
+        ) / constants.nktv2p_real == pytest.approx(
+            expected_v[idx_map, ii] * constants.metal2real
+        )
 
 
 def test_pair_deepmd_model_devi_real(lammps_real):
@@ -582,7 +589,9 @@ def test_pair_deepmd_model_devi_virial_real(lammps_real):
     for ii in range(9):
         assert np.array(
             lammps_real.variables[f"virial{ii}"].value
-        ) / constants.nktv2p_real == pytest.approx(expected_v[idx_map, ii] * constants.metal2real)
+        ) / constants.nktv2p_real == pytest.approx(
+            expected_v[idx_map, ii] * constants.metal2real
+        )
     # load model devi
     md = np.loadtxt(md_file.resolve())
     expected_md_f = np.linalg.norm(np.std([expected_f, expected_f2], axis=0), axis=1)
