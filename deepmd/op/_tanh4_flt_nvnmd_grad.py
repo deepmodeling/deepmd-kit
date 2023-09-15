@@ -20,12 +20,12 @@ def _Tanh4FltNvnmdGrad(op, grad):
     xhi = xc + tf.stop_gradient(tf.floor(xc * prechi) / prechi - xc)
     xlo = xc + tf.stop_gradient(tf.floor(xc * preclo) / preclo - xc)
     xx = xhi * xlo
-    xx + tf.stop_gradient(tf.floor(xx * prechi) / prechi - xx)
+    xxhi = xx + tf.stop_gradient(tf.floor(xx * prechi) / prechi - xx)
     xxlo = xx + tf.stop_gradient(tf.floor(xx * preclo) / preclo - xx)
     #
     dydx = xxlo * (xhi / 4 - 3 / 4) + 1
     # dydx = xxhi * (xlo/4 - 3/4) + 1
-    dydx + tf.stop_gradient(tf.floor(dydx * prechi) / prechi - dydx)
+    dydxhi = dydx + tf.stop_gradient(tf.floor(dydx * prechi) / prechi - dydx)
     dydxlo = dydx + tf.stop_gradient(tf.floor(dydx * preclo) / preclo - dydx)
     #
     gradhi = grad + tf.stop_gradient(tf.floor(grad * prechi) / prechi - grad)

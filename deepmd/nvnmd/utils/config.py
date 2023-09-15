@@ -219,7 +219,7 @@ class NvnmdConfig:
 
     def init_nbit(self, jdata: dict, jdata_parent: dict = {}) -> dict:
         r"""Initialize members about quantification precision."""
-        jdata_parent["size"]["Na"]
+        Na = jdata_parent["size"]["Na"]
         NaX = jdata_parent["size"]["NaX"]
         ntype_max = jdata_parent["dscp"]["ntype_max"]
         NSEL = jdata_parent["ctrl"]["NSEL"]

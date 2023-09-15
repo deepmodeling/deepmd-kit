@@ -96,7 +96,7 @@ class TestDeepPolarPBC(unittest.TestCase):
         dd = self.dp.eval(self.coords, self.box, self.atype)
         # check shape of the returns
         nframes = 1
-        len(self.atype)
+        natoms = len(self.atype)
         nsel = 2
         self.assertEqual(dd.shape, (nframes, nsel, 9))
         # check values
@@ -108,7 +108,7 @@ class TestDeepPolarPBC(unittest.TestCase):
         dd = self.dp.eval(coords2, box2, self.atype)
         # check shape of the returns
         nframes = 2
-        len(self.atype)
+        natoms = len(self.atype)
         nsel = 2
         self.assertEqual(dd.shape, (nframes, nsel, 9))
         # check values
@@ -181,7 +181,7 @@ class TestDeepPolarNoPBC(unittest.TestCase):
         dd = self.dp.eval(self.coords, None, self.atype)
         # check shape of the returns
         nframes = 1
-        len(self.atype)
+        natoms = len(self.atype)
         nsel = 2
         self.assertEqual(dd.shape, (nframes, nsel, 9))
         # check values
@@ -191,7 +191,7 @@ class TestDeepPolarNoPBC(unittest.TestCase):
         dd = self.dp.eval(self.coords, self.box, self.atype)
         # check shape of the returns
         nframes = 1
-        len(self.atype)
+        natoms = len(self.atype)
         nsel = 2
         self.assertEqual(dd.shape, (nframes, nsel, 9))
         # check values
@@ -943,7 +943,7 @@ class TestDeepPolarNewPBC(unittest.TestCase):
         at = self.dp.eval(self.coords, self.box, self.atype)
         # check shape of the returns
         nframes = 1
-        len(self.atype)
+        natoms = len(self.atype)
         nsel = 2
         self.assertEqual(at.shape, (nframes, nsel, self.nout))
         # check values
@@ -955,7 +955,7 @@ class TestDeepPolarNewPBC(unittest.TestCase):
         at = self.dp.eval(coords2, box2, self.atype)
         # check shape of the returns
         nframes = 2
-        len(self.atype)
+        natoms = len(self.atype)
         nsel = 2
         self.assertEqual(at.shape, (nframes, nsel, self.nout))
         # check values

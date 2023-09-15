@@ -135,6 +135,7 @@ class TestDataModifier(tf.test.TestCase):
         np.save(os.path.join(dirname, "set.0", "box.npy"), box)
 
     def _setUp_jdata(self):
+        aa = {"a": [1, 2, 3]}
         jdata = {
             "model": {
                 "type_map": ["A", "B", "C", "D", "E"],

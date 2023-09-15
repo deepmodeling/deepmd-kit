@@ -178,16 +178,20 @@ class LinearEnergyModel(LinearModel):
             The output dict
         """
         with tf.variable_scope("model_attr" + suffix, reuse=reuse):
-            tf.constant(" ".join(self.get_type_map()), name="tmap", dtype=tf.string)
-            tf.constant(self.model_type, name="model_type", dtype=tf.string)
-            tf.constant(MODEL_VERSION, name="model_version", dtype=tf.string)
+            t_tmap = tf.constant(
+                " ".join(self.get_type_map()), name="tmap", dtype=tf.string
+            )
+            t_mt = tf.constant(self.model_type, name="model_type", dtype=tf.string)
+            t_ver = tf.constant(MODEL_VERSION, name="model_version", dtype=tf.string)
         with tf.variable_scope("fitting_attr" + suffix, reuse=reuse):
             # non zero not supported
-            tf.constant(0, name="dfparam", dtype=tf.int32)
-            tf.constant(0, name="daparam", dtype=tf.int32)
+            t_dfparam = tf.constant(0, name="dfparam", dtype=tf.int32)
+            t_daparam = tf.constant(0, name="daparam", dtype=tf.int32)
         with tf.variable_scope("descrpt_attr" + suffix, reuse=reuse):
-            tf.constant(self.get_ntypes(), name="ntypes", dtype=tf.int32)
-            tf.constant(self.get_rcut(), name="rcut", dtype=GLOBAL_TF_FLOAT_PRECISION)
+            t_ntypes = tf.constant(self.get_ntypes(), name="ntypes", dtype=tf.int32)
+            t_rcut = tf.constant(
+                self.get_rcut(), name="rcut", dtype=GLOBAL_TF_FLOAT_PRECISION
+            )
 
         subdicts = []
         for ii, model in enumerate(self.models):

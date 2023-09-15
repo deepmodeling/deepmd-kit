@@ -217,7 +217,9 @@ class TestEfRot(tf.test.TestCase):
             defield_ = np.copy(defield).reshape([nframes, -1, 3])
             defield0 = np.matmul(defield_[0], rr0)
             defield1 = np.matmul(defield_[1], rr1)
-            np.concatenate([defield0, defield1], axis=0).reshape([nframes, -1])
+            new_defield = np.concatenate([defield0, defield1], axis=0).reshape(
+                [nframes, -1]
+            )
 
             [p_ae1] = self.sess.run(
                 [t_p_ae],
@@ -352,7 +354,9 @@ class TestEfRot(tf.test.TestCase):
         defield_ = np.copy(defield).reshape([nframes, -1, 3])
         defield0 = np.matmul(defield_[0], rr0)
         defield1 = np.matmul(defield_[1], rr1)
-        np.concatenate([defield0, defield1], axis=0).reshape([nframes, -1])
+        new_defield = np.concatenate([defield0, defield1], axis=0).reshape(
+            [nframes, -1]
+        )
 
         [p_ae1] = self.sess.run(
             [t_p_ae],

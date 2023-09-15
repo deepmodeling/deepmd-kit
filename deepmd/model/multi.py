@@ -263,9 +263,9 @@ class MultiModel(Model):
         if input_dict is None:
             input_dict = {}
         with tf.variable_scope("model_attr" + suffix, reuse=reuse):
-            tf.constant(" ".join(self.type_map), name="tmap", dtype=tf.string)
-            tf.constant(self.model_type, name="model_type", dtype=tf.string)
-            tf.constant(MODEL_VERSION, name="model_version", dtype=tf.string)
+            t_tmap = tf.constant(" ".join(self.type_map), name="tmap", dtype=tf.string)
+            t_mt = tf.constant(self.model_type, name="model_type", dtype=tf.string)
+            t_ver = tf.constant(MODEL_VERSION, name="model_version", dtype=tf.string)
             t_st = {}
             t_od = {}
             sel_type = {}

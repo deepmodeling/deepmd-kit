@@ -53,7 +53,7 @@ class TestModel(tf.test.TestCase):
         test_size = j_must_have(jdata, "numb_test")
         batch_size = 1
         test_size = 1
-        j_must_have(jdata, "stop_batch")
+        stop_batch = j_must_have(jdata, "stop_batch")
         rcut = j_must_have(jdata["model"]["descriptor"], "rcut")
 
         data = DataSystem(systems, set_pfx, batch_size, test_size, rcut, run_opt=None)
@@ -101,6 +101,7 @@ class TestModel(tf.test.TestCase):
         t_box = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None, 9], name="i_box")
         t_mesh = tf.placeholder(tf.int32, [None], name="i_mesh")
         is_training = tf.placeholder(tf.bool)
+        t_fparam = None
         inputs_dict = {}
 
         model_pred = model.build(
@@ -116,7 +117,7 @@ class TestModel(tf.test.TestCase):
         energy = model_pred["energy"]
         force = model_pred["force"]
         virial = model_pred["virial"]
-        model_pred["atom_ener"]
+        atom_ener = model_pred["atom_ener"]
 
         feed_dict_test = {
             t_prop_c: test_data["prop_c"],
@@ -275,7 +276,7 @@ class TestModel(tf.test.TestCase):
         test_size = j_must_have(jdata, "numb_test")
         batch_size = 1
         test_size = 1
-        j_must_have(jdata, "stop_batch")
+        stop_batch = j_must_have(jdata, "stop_batch")
         rcut = j_must_have(jdata["model"]["descriptor"], "rcut")
 
         data = DataSystem(systems, set_pfx, batch_size, test_size, rcut, run_opt=None)
@@ -325,6 +326,7 @@ class TestModel(tf.test.TestCase):
         t_box = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None, 9], name="i_box")
         t_mesh = tf.placeholder(tf.int32, [None], name="i_mesh")
         is_training = tf.placeholder(tf.bool)
+        t_fparam = None
         inputs_dict = {}
 
         model_pred = model.build(
@@ -340,7 +342,7 @@ class TestModel(tf.test.TestCase):
         energy = model_pred["energy"]
         force = model_pred["force"]
         virial = model_pred["virial"]
-        model_pred["atom_ener"]
+        atom_ener = model_pred["atom_ener"]
 
         feed_dict_test = {
             t_prop_c: test_data["prop_c"],
@@ -501,7 +503,7 @@ class TestModel(tf.test.TestCase):
         test_size = j_must_have(jdata, "numb_test")
         batch_size = 1
         test_size = 1
-        j_must_have(jdata, "stop_batch")
+        stop_batch = j_must_have(jdata, "stop_batch")
         rcut = j_must_have(jdata["model"]["descriptor"], "rcut")
 
         data = DataSystem(systems, set_pfx, batch_size, test_size, rcut, run_opt=None)
@@ -551,6 +553,7 @@ class TestModel(tf.test.TestCase):
         t_box = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None, 9], name="i_box")
         t_mesh = tf.placeholder(tf.int32, [None], name="i_mesh")
         is_training = tf.placeholder(tf.bool)
+        t_fparam = None
         inputs_dict = {}
 
         model_pred = model.build(
@@ -569,7 +572,7 @@ class TestModel(tf.test.TestCase):
         energy = model_pred["energy"]
         force = model_pred["force"]
         virial = model_pred["virial"]
-        model_pred["atom_ener"]
+        atom_ener = model_pred["atom_ener"]
 
         feed_dict_test = {
             t_prop_c: test_data["prop_c"],

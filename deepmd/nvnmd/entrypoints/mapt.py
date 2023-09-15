@@ -179,7 +179,7 @@ class MapTable:
                 dats = []
                 for ii in range(len(val)):
                     val_i = val[ii]
-                    np.shape(val_i)[0]
+                    nr = np.shape(val_i)[0]
                     nc = np.shape(val_i)[1] // 4
                     dat_i = np.zeros([n, nc])
                     for kk in range(n):
@@ -407,7 +407,7 @@ class MapTable:
 
     def run_u2s(self):
         r"""Build u->s graph and run it to get value of mapping table."""
-        nvnmd_cfg.dscp["ntype"]
+        ntype = nvnmd_cfg.dscp["ntype"]
         if nvnmd_cfg.version == 0:
             ndim = nvnmd_cfg.dscp["ntype"]
         if nvnmd_cfg.version == 1:

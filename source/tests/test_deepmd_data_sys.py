@@ -82,7 +82,7 @@ class TestDataSystem(unittest.TestCase):
         batch_size = "foo"
         test_size = 2
         with self.assertRaises(RuntimeError):
-            DeepmdDataSystem(self.sys_name, batch_size, test_size, 2.0)
+            ds = DeepmdDataSystem(self.sys_name, batch_size, test_size, 2.0)
 
     def test_get_test(self):
         batch_size = 3

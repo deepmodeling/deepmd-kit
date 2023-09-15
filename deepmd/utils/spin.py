@@ -56,13 +56,15 @@ class Spin:
         """
         name = "spin_attr" + suffix
         with tf.variable_scope(name, reuse=reuse):
-            tf.constant(self.ntypes_spin, name="ntypes_spin", dtype=tf.int32)
-            tf.constant(
+            t_ntypes_spin = tf.constant(
+                self.ntypes_spin, name="ntypes_spin", dtype=tf.int32
+            )
+            t_virtual_len = tf.constant(
                 self.virtual_len,
                 name="virtual_len",
                 dtype=GLOBAL_TF_FLOAT_PRECISION,
             )
-            tf.constant(
+            t_spin_norm = tf.constant(
                 self.spin_norm,
                 name="spin_norm",
                 dtype=GLOBAL_TF_FLOAT_PRECISION,

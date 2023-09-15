@@ -43,7 +43,7 @@ class TestModel(tf.test.TestCase):
         test_size = j_must_have(jdata, "numb_test")
         batch_size = 1
         test_size = 1
-        j_must_have(jdata, "stop_batch")
+        stop_batch = j_must_have(jdata, "stop_batch")
         rcut = j_must_have(jdata["model"]["descriptor"], "rcut")
 
         data = DataSystem(systems, set_pfx, batch_size, test_size, rcut, run_opt=None)
@@ -70,10 +70,12 @@ class TestModel(tf.test.TestCase):
         model._compute_input_stat(input_data)
 
         t_prop_c = tf.placeholder(tf.float32, [5], name="t_prop_c")
-        tf.placeholder(GLOBAL_ENER_FLOAT_PRECISION, [None], name="t_energy")
-        tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None], name="t_force")
-        tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None], name="t_virial")
-        tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None], name="t_atom_ener")
+        t_energy = tf.placeholder(GLOBAL_ENER_FLOAT_PRECISION, [None], name="t_energy")
+        t_force = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None], name="t_force")
+        t_virial = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None], name="t_virial")
+        t_atom_ener = tf.placeholder(
+            GLOBAL_TF_FLOAT_PRECISION, [None], name="t_atom_ener"
+        )
         t_coord = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None], name="i_coord")
         t_type = tf.placeholder(tf.int32, [None], name="i_type")
         t_natoms = tf.placeholder(tf.int32, [model.ntypes + 2], name="i_natoms")

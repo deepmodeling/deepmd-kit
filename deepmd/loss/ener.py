@@ -440,7 +440,7 @@ class EnerSpinLoss(Loss):
         force_label = label_dict["force"]
         virial_label = label_dict["virial"]
         atom_ener_label = label_dict["atom_ener"]
-        label_dict["atom_pref"]
+        atom_pref = label_dict["atom_pref"]
         find_energy = label_dict["find_energy"]
         find_force = label_dict["find_force"]
         find_virial = label_dict["find_virial"]

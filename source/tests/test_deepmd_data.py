@@ -236,7 +236,7 @@ class TestData(unittest.TestCase):
     def test_load_null_must(self):
         dd = DeepmdData(self.data_name).add("test_atomic_1", 7, atomic=True, must=True)
         with self.assertRaises(RuntimeError):
-            dd._load_set(os.path.join(self.data_name, "set.foo"))
+            data = dd._load_set(os.path.join(self.data_name, "set.foo"))
 
     def test_avg(self):
         dd = DeepmdData(self.data_name).add("test_frame", 5, atomic=False, must=True)
@@ -306,4 +306,4 @@ class TestH5Data(unittest.TestCase):
 
     def test_get_batch(self):
         dd = DeepmdData(self.data_name)
-        dd.get_batch(5)
+        data = dd.get_batch(5)

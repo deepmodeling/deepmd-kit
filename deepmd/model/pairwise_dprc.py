@@ -118,17 +118,19 @@ class PairwiseDPRc(Model):
         input_dict_qm = {"global_feed_dict": feed_dict}
         input_dict_qmmm = {"global_feed_dict": feed_dict}
         with tf.variable_scope("model_attr" + suffix, reuse=reuse):
-            tf.constant(" ".join(self.type_map), name="tmap", dtype=tf.string)
-            tf.constant(self.model_type, name="model_type", dtype=tf.string)
-            tf.constant(MODEL_VERSION, name="model_version", dtype=tf.string)
+            t_tmap = tf.constant(" ".join(self.type_map), name="tmap", dtype=tf.string)
+            t_mt = tf.constant(self.model_type, name="model_type", dtype=tf.string)
+            t_ver = tf.constant(MODEL_VERSION, name="model_version", dtype=tf.string)
 
         with tf.variable_scope("fitting_attr" + suffix, reuse=reuse):
-            tf.constant(0, name="dfparam", dtype=tf.int32)
-            tf.constant(1, name="daparam", dtype=tf.int32)
-            tf.constant(True, name="aparam_nall", dtype=tf.bool)
+            t_dfparam = tf.constant(0, name="dfparam", dtype=tf.int32)
+            t_daparam = tf.constant(1, name="daparam", dtype=tf.int32)
+            t_aparam_nall = tf.constant(True, name="aparam_nall", dtype=tf.bool)
         with tf.variable_scope("descrpt_attr" + suffix, reuse=reuse):
-            tf.constant(self.ntypes, name="ntypes", dtype=tf.int32)
-            tf.constant(self.rcut, name="rcut", dtype=GLOBAL_TF_FLOAT_PRECISION)
+            t_ntypes = tf.constant(self.ntypes, name="ntypes", dtype=tf.int32)
+            t_rcut = tf.constant(
+                self.rcut, name="rcut", dtype=GLOBAL_TF_FLOAT_PRECISION
+            )
         # convert X-frame to X-Y-frame coordinates
         box = tf.reshape(box_, [-1, 9])
         nframes = tf.shape(box)[0]

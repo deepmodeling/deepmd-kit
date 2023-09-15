@@ -417,10 +417,12 @@ class DescrptSeR(DescrptSe):
                 davg = np.zeros([self.ntypes, self.ndescrpt])
             if dstd is None:
                 dstd = np.ones([self.ntypes, self.ndescrpt])
-            tf.constant(self.rcut, name="rcut", dtype=GLOBAL_TF_FLOAT_PRECISION)
-            tf.constant(self.ntypes, name="ntypes", dtype=tf.int32)
-            tf.constant(self.ndescrpt, name="ndescrpt", dtype=tf.int32)
-            tf.constant(self.sel_a, name="sel", dtype=tf.int32)
+            t_rcut = tf.constant(
+                self.rcut, name="rcut", dtype=GLOBAL_TF_FLOAT_PRECISION
+            )
+            t_ntypes = tf.constant(self.ntypes, name="ntypes", dtype=tf.int32)
+            t_ndescrpt = tf.constant(self.ndescrpt, name="ndescrpt", dtype=tf.int32)
+            t_sel = tf.constant(self.sel_a, name="sel", dtype=tf.int32)
             self.t_avg = tf.get_variable(
                 "t_avg",
                 davg.shape,

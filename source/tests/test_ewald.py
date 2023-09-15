@@ -62,6 +62,7 @@ class TestEwaldRecp(tf.test.TestCase):
         self.nloc = tf.placeholder(tf.int32, [1], name="t_nloc")
 
     def test_py_interface(self):
+        hh = 1e-4
         places = 4
         sess = self.cached_session().__enter__()
         t_energy, t_force, t_virial = op_module.ewald_recp(
@@ -181,6 +182,7 @@ class TestEwaldRecp(tf.test.TestCase):
                 dbox3m[:, ii, jj] = self.dbox3[:, ii, jj] - hh
                 dboxp = np.reshape(dbox3p, [-1, 9])
                 dboxm = np.reshape(dbox3m, [-1, 9])
+                dcoord = self.dcoord
                 dcoord3p = np.matmul(self.rcoord3, dbox3p)
                 dcoord3m = np.matmul(self.rcoord3, dbox3m)
                 dcoordp = np.reshape(dcoord3p, [self.nframes, -1])

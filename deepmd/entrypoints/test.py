@@ -101,6 +101,7 @@ def test(
     if len(all_sys) == 0:
         raise RuntimeError("Did not find valid system")
     err_coll = []
+    siz_coll = []
 
     # init random seed
     if rand_seed is not None:

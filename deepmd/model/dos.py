@@ -144,10 +144,10 @@ class DOSModel(StandardModel):
         if input_dict is None:
             input_dict = {}
         with tf.variable_scope("model_attr" + suffix, reuse=reuse):
-            tf.constant(" ".join(self.type_map), name="tmap", dtype=tf.string)
-            tf.constant(self.model_type, name="model_type", dtype=tf.string)
-            tf.constant(MODEL_VERSION, name="model_version", dtype=tf.string)
-            tf.constant(self.numb_dos, name="output_dim", dtype=tf.int32)
+            t_tmap = tf.constant(" ".join(self.type_map), name="tmap", dtype=tf.string)
+            t_mt = tf.constant(self.model_type, name="model_type", dtype=tf.string)
+            t_ver = tf.constant(MODEL_VERSION, name="model_version", dtype=tf.string)
+            t_od = tf.constant(self.numb_dos, name="output_dim", dtype=tf.int32)
 
         coord = tf.reshape(coord_, [-1, natoms[1] * 3])
         atype = tf.reshape(atype_, [-1, natoms[1]])

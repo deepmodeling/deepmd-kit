@@ -175,8 +175,12 @@ class DescrptSeAMask(DescrptSeA):
             nei_type = np.append(nei_type, ii * np.ones(self.sel_a[ii]))  # like a mask
         self.nei_type = tf.constant(nei_type, dtype=tf.int32)
 
-        np.zeros([self.ntypes, self.ndescrpt]).astype(GLOBAL_NP_FLOAT_PRECISION)
-        np.ones([self.ntypes, self.ndescrpt]).astype(GLOBAL_NP_FLOAT_PRECISION)
+        avg_zero = np.zeros([self.ntypes, self.ndescrpt]).astype(
+            GLOBAL_NP_FLOAT_PRECISION
+        )
+        std_ones = np.ones([self.ntypes, self.ndescrpt]).astype(
+            GLOBAL_NP_FLOAT_PRECISION
+        )
         sub_graph = tf.Graph()
         with sub_graph.as_default():
             name_pfx = "d_sea_mask_"
@@ -302,7 +306,7 @@ class DescrptSeAMask(DescrptSeA):
         """
         aparam = input_dict["aparam"]
         with tf.variable_scope("fitting_attr" + suffix, reuse=reuse):
-            tf.constant(True, name="aparam_nall", dtype=tf.bool)
+            t_aparam_nall = tf.constant(True, name="aparam_nall", dtype=tf.bool)
         self.mask = tf.cast(aparam, tf.int32)
         self.mask = tf.reshape(self.mask, [-1, natoms[1]])
 
@@ -311,14 +315,14 @@ class DescrptSeAMask(DescrptSeA):
                 davg = np.zeros([self.ntypes, self.ndescrpt])
             if dstd is None:
                 dstd = np.ones([self.ntypes, self.ndescrpt])
-            tf.constant(
+            t_rcut = tf.constant(
                 self.rcut,
                 name="rcut",
                 dtype=GLOBAL_TF_FLOAT_PRECISION,
             )
-            tf.constant(self.ntypes, name="ntypes", dtype=tf.int32)
-            tf.constant(self.ndescrpt, name="ndescrpt", dtype=tf.int32)
-            tf.constant(self.sel_a, name="sel", dtype=tf.int32)
+            t_ntypes = tf.constant(self.ntypes, name="ntypes", dtype=tf.int32)
+            t_ndescrpt = tf.constant(self.ndescrpt, name="ndescrpt", dtype=tf.int32)
+            t_sel = tf.constant(self.sel_a, name="sel", dtype=tf.int32)
             """
             self.t_avg = tf.get_variable('t_avg',
                                          davg.shape,

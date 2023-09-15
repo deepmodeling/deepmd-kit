@@ -243,8 +243,10 @@ class DescrptHybrid(Descriptor):
             The output descriptor
         """
         with tf.variable_scope("descrpt_attr" + suffix, reuse=reuse):
-            tf.constant(self.get_rcut(), name="rcut", dtype=GLOBAL_TF_FLOAT_PRECISION)
-            tf.constant(self.get_ntypes(), name="ntypes", dtype=tf.int32)
+            t_rcut = tf.constant(
+                self.get_rcut(), name="rcut", dtype=GLOBAL_TF_FLOAT_PRECISION
+            )
+            t_ntypes = tf.constant(self.get_ntypes(), name="ntypes", dtype=tf.int32)
         all_dout = []
         for idx, ii in enumerate(self.descrpt_list):
             dout = ii.build(

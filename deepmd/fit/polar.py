@@ -163,7 +163,7 @@ class PolarFittingSeA(Fitting):
 
         # YWolfeee: support polar normalization, initialize to a more appropriate point
         if self.shift_diag:
-            np.zeros([len(self.sel_type), 9])
+            mean_polar = np.zeros([len(self.sel_type), 9])
             sys_matrix, polar_bias = [], []
             for ss in range(len(all_stat["type"])):
                 atom_has_polar = [

@@ -258,12 +258,12 @@ class DescrptLocFrame(Descriptor):
                 davg = np.zeros([self.ntypes, self.ndescrpt])
             if dstd is None:
                 dstd = np.ones([self.ntypes, self.ndescrpt])
-            tf.constant(
+            t_rcut = tf.constant(
                 np.max([self.rcut_r, self.rcut_a]),
                 name="rcut",
                 dtype=GLOBAL_TF_FLOAT_PRECISION,
             )
-            tf.constant(self.ntypes, name="ntypes", dtype=tf.int32)
+            t_ntypes = tf.constant(self.ntypes, name="ntypes", dtype=tf.int32)
             self.t_avg = tf.get_variable(
                 "t_avg",
                 davg.shape,
