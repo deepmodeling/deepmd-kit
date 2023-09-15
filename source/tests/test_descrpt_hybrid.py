@@ -115,7 +115,7 @@ class TestHybrid(tf.test.TestCase):
             is_training: False,
         }
 
-        sess = self.test_session().__enter__()
+        sess = self.cached_session().__enter__()
         sess.run(tf.global_variables_initializer())
         [model_dout] = sess.run([dout], feed_dict=feed_dict_test)
 

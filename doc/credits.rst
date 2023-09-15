@@ -49,6 +49,13 @@ Cite DeePMD-kit and methods
 
    Zhang_2022_DPA1
 
+- If frame-specific parameters (`fparam`, e.g. electronic temperature) is used,
+
+.. bibliography::
+   :filter: False
+
+   Zhang_PhysPlasmas_2020_v27_p122704
+
 - If fitting dipole,
 
 .. bibliography::

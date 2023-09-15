@@ -116,7 +116,7 @@ class TestModel(tf.test.TestCase):
             is_training: False,
         }
 
-        sess = self.test_session().__enter__()
+        sess = self.cached_session().__enter__()
         sess.run(tf.global_variables_initializer())
         [pred_dos, pred_atom_dos] = sess.run([dos, atom_dos], feed_dict=feed_dict_test)
 

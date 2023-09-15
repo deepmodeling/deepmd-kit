@@ -164,7 +164,8 @@ void deepmd::select_real_atoms_coord(std::vector<VALUETYPE>& dcoord,
                                      const int& ntypes,
                                      const int& nframes,
                                      const int& daparam,
-                                     const int& nall) {
+                                     const int& nall,
+                                     const bool aparam_nall) {
   select_real_atoms(fwd_map, bkw_map, nghost_real, dcoord_, datype_, nghost,
                     ntypes);
   // resize to nall_real
@@ -177,9 +178,10 @@ void deepmd::select_real_atoms_coord(std::vector<VALUETYPE>& dcoord,
   select_map<int>(datype, datype_, fwd_map, 1);
   // aparam
   if (daparam > 0) {
-    aparam.resize(nframes * nloc_real);
-    select_map<VALUETYPE>(aparam, aparam_, fwd_map, daparam, nframes, nloc_real,
-                          nall - nghost);
+    aparam.resize(nframes * (aparam_nall ? nall_real : nloc_real));
+    select_map<VALUETYPE>(aparam, aparam_, fwd_map, daparam, nframes,
+                          (aparam_nall ? nall_real : nloc_real),
+                          (aparam_nall ? nall : (nall - nghost)));
   }
 }
 
@@ -199,7 +201,8 @@ template void deepmd::select_real_atoms_coord<double>(
     const int& ntypes,
     const int& nframes,
     const int& daparam,
-    const int& nall);
+    const int& nall,
+    const bool aparam_nall);
 
 template void deepmd::select_real_atoms_coord<float>(
     std::vector<float>& dcoord,
@@ -217,7 +220,8 @@ template void deepmd::select_real_atoms_coord<float>(
     const int& ntypes,
     const int& nframes,
     const int& daparam,
-    const int& nall);
+    const int& nall,
+    const bool aparam_nall);
 
 void deepmd::NeighborListData::copy_from_nlist(const InputNlist& inlist) {
   int inum = inlist.inum;
@@ -374,7 +378,8 @@ int deepmd::session_input_tensors(
     const std::vector<VALUETYPE>& fparam_,
     const std::vector<VALUETYPE>& aparam__,
     const deepmd::AtomMap& atommap,
-    const std::string scope) {
+    const std::string scope,
+    const bool aparam_nall) {
   int nframes = dcoord_.size() / 3 / datype_.size();
   int nall = datype_.size();
   int nloc = nall;
@@ -440,8 +445,10 @@ int deepmd::session_input_tensors(
   std::vector<VALUETYPE> dcoord(dcoord_);
   atommap.forward<VALUETYPE>(dcoord.begin(), dcoord_.begin(), 3, nframes, nall);
   std::vector<VALUETYPE> aparam_(aparam__);
-  atommap.forward<VALUETYPE>(aparam_.begin(), aparam__.begin(),
-                             aparam__.size() / nframes / nloc, nframes, nloc);
+  atommap.forward<VALUETYPE>(
+      aparam_.begin(), aparam__.begin(),
+      aparam__.size() / nframes / (aparam_nall ? nall : nloc), nframes,
+      (aparam_nall ? nall : nloc));
 
   for (int ii = 0; ii < nframes; ++ii) {
     for (int jj = 0; jj < nall * 3; ++jj) {
@@ -511,7 +518,8 @@ int deepmd::session_input_tensors(
     const deepmd::AtomMap& atommap,
     const int nghost,
     const int ago,
-    const std::string scope) {
+    const std::string scope,
+    const bool aparam_nall) {
   int nframes = dcoord_.size() / 3 / datype_.size();
   int nall = datype_.size();
   int nloc = nall - nghost;
@@ -573,8 +581,10 @@ int deepmd::session_input_tensors(
   std::vector<VALUETYPE> dcoord(dcoord_);
   atommap.forward<VALUETYPE>(dcoord.begin(), dcoord_.begin(), 3, nframes, nall);
   std::vector<VALUETYPE> aparam_(aparam__);
-  atommap.forward<VALUETYPE>(aparam_.begin(), aparam__.begin(),
-                             aparam__.size() / nframes / nloc, nframes, nloc);
+  atommap.forward<VALUETYPE>(
+      aparam_.begin(), aparam__.begin(),
+      aparam__.size() / nframes / (aparam_nall ? nall : nloc), nframes,
+      (aparam_nall ? nall : nloc));
 
   for (int ii = 0; ii < nframes; ++ii) {
     for (int jj = 0; jj < nall * 3; ++jj) {
@@ -645,7 +655,8 @@ int deepmd::session_input_tensors_mixed_type(
     const std::vector<VALUETYPE>& fparam_,
     const std::vector<VALUETYPE>& aparam__,
     const deepmd::AtomMap& atommap,
-    const std::string scope) {
+    const std::string scope,
+    const bool aparam_nall) {
   int nall = datype_.size() / nframes;
   int nloc = nall;
   assert(nall * 3 * nframes == dcoord_.size());
@@ -706,8 +717,10 @@ int deepmd::session_input_tensors_mixed_type(
   std::vector<VALUETYPE> dcoord(dcoord_);
   atommap.forward<VALUETYPE>(dcoord.begin(), dcoord_.begin(), 3, nframes, nall);
   std::vector<VALUETYPE> aparam_(aparam__);
-  atommap.forward<VALUETYPE>(aparam_.begin(), aparam__.begin(),
-                             aparam__.size() / nframes / nloc, nframes, nloc);
+  atommap.forward<VALUETYPE>(
+      aparam_.begin(), aparam__.begin(),
+      aparam__.size() / nframes / (aparam_nall ? nall : nloc), nframes,
+      (aparam_nall ? nall : nloc));
 
   for (int ii = 0; ii < nframes; ++ii) {
     for (int jj = 0; jj < nall * 3; ++jj) {
@@ -919,6 +932,10 @@ template int deepmd::session_get_scalar<int>(Session*,
                                              const std::string,
                                              const std::string);
 
+template bool deepmd::session_get_scalar<bool>(Session*,
+                                               const std::string,
+                                               const std::string);
+
 template void deepmd::session_get_vector<int>(std::vector<int>&,
                                               Session*,
                                               const std::string,
@@ -1092,7 +1109,8 @@ template int deepmd::session_input_tensors<double, double>(
     const std::vector<double>& fparam_,
     const std::vector<double>& aparam_,
     const deepmd::AtomMap& atommap,
-    const std::string scope);
+    const std::string scope,
+    const bool aparam_nall);
 template int deepmd::session_input_tensors<float, double>(
     std::vector<std::pair<std::string, tensorflow::Tensor>>& input_tensors,
     const std::vector<double>& dcoord_,
@@ -1103,7 +1121,8 @@ template int deepmd::session_input_tensors<float, double>(
     const std::vector<double>& fparam_,
     const std::vector<double>& aparam_,
     const deepmd::AtomMap& atommap,
-    const std::string scope);
+    const std::string scope,
+    const bool aparam_nall);
 
 template int deepmd::session_input_tensors<double, float>(
     std::vector<std::pair<std::string, tensorflow::Tensor>>& input_tensors,
@@ -1115,7 +1134,8 @@ template int deepmd::session_input_tensors<double, float>(
     const std::vector<float>& fparam_,
     const std::vector<float>& aparam_,
     const deepmd::AtomMap& atommap,
-    const std::string scope);
+    const std::string scope,
+    const bool aparam_nall);
 template int deepmd::session_input_tensors<float, float>(
     std::vector<std::pair<std::string, tensorflow::Tensor>>& input_tensors,
     const std::vector<float>& dcoord_,
@@ -1126,7 +1146,8 @@ template int deepmd::session_input_tensors<float, float>(
     const std::vector<float>& fparam_,
     const std::vector<float>& aparam_,
     const deepmd::AtomMap& atommap,
-    const std::string scope);
+    const std::string scope,
+    const bool aparam_nall);
 
 template int deepmd::session_input_tensors<double, double>(
     std::vector<std::pair<std::string, tensorflow::Tensor>>& input_tensors,
@@ -1140,7 +1161,8 @@ template int deepmd::session_input_tensors<double, double>(
     const deepmd::AtomMap& atommap,
     const int nghost,
     const int ago,
-    const std::string scope);
+    const std::string scope,
+    const bool aparam_nall);
 template int deepmd::session_input_tensors<float, double>(
     std::vector<std::pair<std::string, tensorflow::Tensor>>& input_tensors,
     const std::vector<double>& dcoord_,
@@ -1153,7 +1175,8 @@ template int deepmd::session_input_tensors<float, double>(
     const deepmd::AtomMap& atommap,
     const int nghost,
     const int ago,
-    const std::string scope);
+    const std::string scope,
+    const bool aparam_nall);
 
 template int deepmd::session_input_tensors<double, float>(
     std::vector<std::pair<std::string, tensorflow::Tensor>>& input_tensors,
@@ -1167,7 +1190,8 @@ template int deepmd::session_input_tensors<double, float>(
     const deepmd::AtomMap& atommap,
     const int nghost,
     const int ago,
-    const std::string scope);
+    const std::string scope,
+    const bool aparam_nall);
 template int deepmd::session_input_tensors<float, float>(
     std::vector<std::pair<std::string, tensorflow::Tensor>>& input_tensors,
     const std::vector<float>& dcoord_,
@@ -1180,7 +1204,8 @@ template int deepmd::session_input_tensors<float, float>(
     const deepmd::AtomMap& atommap,
     const int nghost,
     const int ago,
-    const std::string scope);
+    const std::string scope,
+    const bool aparam_nall);
 
 template int deepmd::session_input_tensors_mixed_type<double, double>(
     std::vector<std::pair<std::string, tensorflow::Tensor>>& input_tensors,
@@ -1193,7 +1218,8 @@ template int deepmd::session_input_tensors_mixed_type<double, double>(
     const std::vector<double>& fparam_,
     const std::vector<double>& aparam_,
     const deepmd::AtomMap& atommap,
-    const std::string scope);
+    const std::string scope,
+    const bool aparam_nall);
 template int deepmd::session_input_tensors_mixed_type<float, double>(
     std::vector<std::pair<std::string, tensorflow::Tensor>>& input_tensors,
     const int& nframes,
@@ -1205,7 +1231,8 @@ template int deepmd::session_input_tensors_mixed_type<float, double>(
     const std::vector<double>& fparam_,
     const std::vector<double>& aparam_,
     const deepmd::AtomMap& atommap,
-    const std::string scope);
+    const std::string scope,
+    const bool aparam_nall);
 
 template int deepmd::session_input_tensors_mixed_type<double, float>(
     std::vector<std::pair<std::string, tensorflow::Tensor>>& input_tensors,
@@ -1218,7 +1245,8 @@ template int deepmd::session_input_tensors_mixed_type<double, float>(
     const std::vector<float>& fparam_,
     const std::vector<float>& aparam_,
     const deepmd::AtomMap& atommap,
-    const std::string scope);
+    const std::string scope,
+    const bool aparam_nall);
 template int deepmd::session_input_tensors_mixed_type<float, float>(
     std::vector<std::pair<std::string, tensorflow::Tensor>>& input_tensors,
     const int& nframes,
@@ -1230,7 +1258,8 @@ template int deepmd::session_input_tensors_mixed_type<float, float>(
     const std::vector<float>& fparam_,
     const std::vector<float>& aparam_,
     const deepmd::AtomMap& atommap,
-    const std::string scope);
+    const std::string scope,
+    const bool aparam_nall);
 
 void deepmd::print_summary(const std::string& pre) {
   int num_intra_nthreads, num_inter_nthreads;

@@ -250,7 +250,7 @@ class DPTrainer:
             if not self.multi_task_mode:
                 single_data = data
             else:
-                single_data = data[list(data.keys())[0]]
+                single_data = data[next(iter(data.keys()))]
             if self.ntypes < single_data.get_ntypes():
                 raise ValueError(
                     "The number of types of the training data is %d, but that of the "
@@ -373,7 +373,7 @@ class DPTrainer:
             if not self.multi_task_mode:
                 self._get_place_horders(data.get_data_dict())
             else:
-                self._get_place_horders(data[list(data.keys())[0]].get_data_dict())
+                self._get_place_horders(data[next(iter(data.keys()))].get_data_dict())
 
         self.place_holders["type"] = tf.placeholder(tf.int32, [None], name="t_type")
         self.place_holders["natoms_vec"] = tf.placeholder(
@@ -467,7 +467,7 @@ class DPTrainer:
                 var_list=trainable_variables,
                 name="train_step",
             )
-            train_ops = [apply_op] + self._extra_train_ops
+            train_ops = [apply_op, *self._extra_train_ops]
             self.train_op = tf.group(*train_ops)
         else:
             self.train_op = {}
@@ -479,7 +479,7 @@ class DPTrainer:
                     var_list=trainable_variables,
                     name=f"train_step_{fitting_key}",
                 )
-                train_ops = [apply_op] + self._extra_train_ops
+                train_ops = [apply_op, *self._extra_train_ops]
                 self.train_op[fitting_key] = tf.group(*train_ops)
         log.info("built training")
 

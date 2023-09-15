@@ -135,7 +135,7 @@ class TestSmooth(Inter, tf.test.TestCase):
     def setUp(self):
         self.places = 5
         data = Data()
-        Inter.setUp(self, data, sess=self.test_session().__enter__())
+        Inter.setUp(self, data, sess=self.cached_session().__enter__())
 
     def test_force(self):
         force_test(self, self, suffix="_se_r")
@@ -155,8 +155,8 @@ class TestSeRPbc(tf.test.TestCase):
         data = Data()
         inter0 = Inter()
         inter1 = Inter()
-        inter0.setUp(data, pbc=True, sess=self.test_session().__enter__())
-        inter1.setUp(data, pbc=False, sess=self.test_session().__enter__())
+        inter0.setUp(data, pbc=True, sess=self.cached_session().__enter__())
+        inter1.setUp(data, pbc=False, sess=self.cached_session().__enter__())
         inter0.net_w_i = np.copy(np.ones(inter0.ndescrpt))
         inter1.net_w_i = np.copy(np.ones(inter1.ndescrpt))
 
@@ -208,8 +208,8 @@ class TestSeRPbc(tf.test.TestCase):
         data1 = Data(box_scale=2)
         inter0 = Inter()
         inter1 = Inter()
-        inter0.setUp(data0, pbc=True, sess=self.test_session().__enter__())
-        inter1.setUp(data1, pbc=False, sess=self.test_session().__enter__())
+        inter0.setUp(data0, pbc=True, sess=self.cached_session().__enter__())
+        inter1.setUp(data1, pbc=False, sess=self.cached_session().__enter__())
         inter0.net_w_i = np.copy(np.ones(inter0.ndescrpt))
         inter1.net_w_i = np.copy(np.ones(inter1.ndescrpt))
 

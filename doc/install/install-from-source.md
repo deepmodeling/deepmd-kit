@@ -78,6 +78,7 @@ One may set the following environment variables before executing `pip`:
 | ROCM_ROOT             | Path                   | Detected automatically | The path to the ROCM toolkit directory. |
 | TENSORFLOW_ROOT       | Path                   | Detected automatically | The path to TensorFlow Python library. By default the installer only finds TensorFlow under user site-package directory (`site.getusersitepackages()`) or system site-package directory (`sysconfig.get_path("purelib")`) due to limitation of [PEP-517](https://peps.python.org/pep-0517/). If not found, the latest TensorFlow (or the environment variable `TENSORFLOW_VERSION` if given) from PyPI will be built against.|
 | DP_ENABLE_NATIVE_OPTIMIZATION | 0, 1           | 0             | Enable compilation optimization for the native machine's CPU type. Do not enable it if generated code will run on different CPUs. |
+| CMAKE_ARGS             | str                   | -             | Additional CMake arguments |
 
 To test the installation, one should first jump out of the source directory
 ```
@@ -166,6 +167,13 @@ cd $deepmd_source_dir/source
 mkdir build
 cd build
 ```
+
+The installation requires CMake 3.16 or later for the CPU version, CMake 3.23 or later for the CUDA support, and CMake 3.21 or later for the ROCM support. One can install CMake via `pip` if it is not installed or the installed version does not satisfy the requirement:
+
+```sh
+pip install -U cmake
+```
+
 I assume you have activated the TensorFlow Python environment and want to install DeePMD-kit into path `$deepmd_root`, then execute CMake
 ```bash
 cmake -DUSE_TF_PYTHON_LIBS=TRUE -DCMAKE_INSTALL_PREFIX=$deepmd_root ..

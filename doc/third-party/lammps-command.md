@@ -40,7 +40,7 @@ and the model deviation will be computed among all models every `out_freq` times
     <i>fparam_from_compute</i> value = id
         id = compute id used to update the frame parameter.
     <i>atomic</i> = no value is required.
-        If this keyword is set, the model deviation of each atom will be output.
+        If this keyword is set, the force model deviation of each atom will be output.
     <i>relative</i> value = level
         level = The level parameter for computing the relative model deviation of the force
     <i>relative_v</i> value = level

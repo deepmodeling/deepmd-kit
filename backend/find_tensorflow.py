@@ -112,16 +112,31 @@ def get_tf_requirement(tf_version: str = "") -> dict:
     if tf_version == "":
         tf_version = os.environ.get("TENSORFLOW_VERSION", "")
 
+    extra_requires = []
+    extra_select = {}
+    if not (tf_version == "" or tf_version in SpecifierSet(">=2.12")):
+        extra_requires.append("protobuf<3.20")
+    if tf_version == "" or tf_version in SpecifierSet(">=1.15"):
+        extra_select["mpi"] = [
+            "horovod",
+            "mpi4py",
+        ]
+    else:
+        extra_select["mpi"] = []
+
     if tf_version == "":
         return {
             "cpu": [
                 "tensorflow-cpu; platform_machine!='aarch64' and (platform_machine!='arm64' or platform_system != 'Darwin')",
                 "tensorflow; platform_machine=='aarch64' or (platform_machine=='arm64' and platform_system == 'Darwin')",
+                *extra_requires,
             ],
             "gpu": [
                 "tensorflow",
                 "tensorflow-metal; platform_machine=='arm64' and platform_system == 'Darwin'",
+                *extra_requires,
             ],
+            **extra_select,
         }
     elif tf_version in SpecifierSet("<1.15") or tf_version in SpecifierSet(
         ">=2.0,<2.1"
@@ -129,22 +144,28 @@ def get_tf_requirement(tf_version: str = "") -> dict:
         return {
             "cpu": [
                 f"tensorflow=={tf_version}",
+                *extra_requires,
             ],
             "gpu": [
                 f"tensorflow-gpu=={tf_version}; platform_machine!='aarch64'",
                 f"tensorflow=={tf_version}; platform_machine=='aarch64'",
+                *extra_requires,
             ],
+            **extra_select,
         }
     else:
         return {
             "cpu": [
                 f"tensorflow-cpu=={tf_version}; platform_machine!='aarch64' and (platform_machine!='arm64' or platform_system != 'Darwin')",
                 f"tensorflow=={tf_version}; platform_machine=='aarch64'  or (platform_machine=='arm64' and platform_system == 'Darwin')",
+                *extra_requires,
             ],
             "gpu": [
                 f"tensorflow=={tf_version}",
                 "tensorflow-metal; platform_machine=='arm64' and platform_system == 'Darwin'",
+                *extra_requires,
             ],
+            **extra_select,
         }
 
 

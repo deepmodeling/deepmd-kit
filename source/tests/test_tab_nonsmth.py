@@ -178,7 +178,7 @@ class TestTabNonSmooth(IntplInter, tf.test.TestCase):
     def setUp(self):
         self.places = 5
         data = Data()
-        IntplInter.setUp(self, data, sess=self.test_session().__enter__())
+        IntplInter.setUp(self, data, sess=self.cached_session().__enter__())
 
     def test_force(self):
         force_test(self, self, places=5, suffix="_tab")

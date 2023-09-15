@@ -121,13 +121,14 @@ class EnerStdLoss(Loss):
         )
         # drdq: the partial derivative of atomic coordinates w.r.t. generalized coordinates
         # TODO: could numb_generalized_coord decided from the training data?
-        add_data_requirement(
-            "drdq",
-            self.numb_generalized_coord * 3,
-            atomic=True,
-            must=False,
-            high_prec=False,
-        )
+        if self.has_gf > 0:
+            add_data_requirement(
+                "drdq",
+                self.numb_generalized_coord * 3,
+                atomic=True,
+                must=False,
+                high_prec=False,
+            )
         if self.enable_atom_ener_coeff:
             add_data_requirement(
                 "atom_ener_coeff",
@@ -387,9 +388,9 @@ class EnerSpinLoss(Loss):
         limit_pref_ae: float = 0.0,
         start_pref_pf: float = 0.0,
         limit_pref_pf: float = 0.0,
-        relative_f: float = None,
+        relative_f: Optional[float] = None,
         enable_atom_ener_coeff: bool = False,
-        use_spin: list = None,
+        use_spin: Optional[list] = None,
     ) -> None:
         self.starter_learning_rate = starter_learning_rate
         self.start_pref_e = start_pref_e

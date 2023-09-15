@@ -90,7 +90,8 @@ void select_real_atoms_coord(std::vector<VALUETYPE>& dcoord,
                              const int& ntypes,
                              const int& nframes,
                              const int& daparam,
-                             const int& nall);
+                             const int& nall,
+                             const bool aparam_nall = false);
 
 /**
  * @brief Apply the given map to a vector.
@@ -228,6 +229,8 @@ int session_get_dtype(tensorflow::Session* session,
  * @param[in] aparam_ Atom parameters.
  * @param[in] atommap Atom map.
  * @param[in] scope The scope of the tensors.
+ * @param[in] aparam_nall Whether the atomic dimesion of atomic parameters is
+ * nall.
  */
 template <typename MODELTYPE, typename VALUETYPE>
 int session_input_tensors(
@@ -240,7 +243,8 @@ int session_input_tensors(
     const std::vector<VALUETYPE>& fparam_,
     const std::vector<VALUETYPE>& aparam_,
     const deepmd::AtomMap& atommap,
-    const std::string scope = "");
+    const std::string scope = "",
+    const bool aparam_nall = false);
 
 /**
  * @brief Get input tensors.
@@ -255,6 +259,8 @@ int session_input_tensors(
  * @param[in] nghost Number of ghost atoms.
  * @param[in] ago Update the internal neighbour list if ago is 0.
  * @param[in] scope The scope of the tensors.
+ * @param[in] aparam_nall Whether the atomic dimesion of atomic parameters is
+ * nall.
  */
 template <typename MODELTYPE, typename VALUETYPE>
 int session_input_tensors(
@@ -269,7 +275,8 @@ int session_input_tensors(
     const deepmd::AtomMap& atommap,
     const int nghost,
     const int ago,
-    const std::string scope = "");
+    const std::string scope = "",
+    const bool aparam_nall = false);
 
 /**
  * @brief Get input tensors for mixed type.
@@ -285,6 +292,8 @@ int session_input_tensors(
  * @param[in] nghost Number of ghost atoms.
  * @param[in] ago Update the internal neighbour list if ago is 0.
  * @param[in] scope The scope of the tensors.
+ * @param[in] aparam_nall Whether the atomic dimesion of atomic parameters is
+ * nall.
  */
 template <typename MODELTYPE, typename VALUETYPE>
 int session_input_tensors_mixed_type(
@@ -298,7 +307,8 @@ int session_input_tensors_mixed_type(
     const std::vector<VALUETYPE>& fparam_,
     const std::vector<VALUETYPE>& aparam_,
     const deepmd::AtomMap& atommap,
-    const std::string scope = "");
+    const std::string scope = "",
+    const bool aparam_nall = false);
 
 /**
  * @brief Read model file to a string.
