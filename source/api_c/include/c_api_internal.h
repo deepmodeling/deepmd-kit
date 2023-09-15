@@ -41,6 +41,7 @@ struct DP_DeepPot {
   std::string exception;
   int dfparam;
   int daparam;
+  bool aparam_nall;
 };
 
 struct DP_DeepPotModelDevi {
@@ -51,6 +52,7 @@ struct DP_DeepPotModelDevi {
   std::string exception;
   int dfparam;
   int daparam;
+  bool aparam_nall;
 };
 
 struct DP_DeepTensor {

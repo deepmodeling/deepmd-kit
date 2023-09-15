@@ -114,7 +114,7 @@ class DPPath(ABC):
         """Represent string."""
 
     def __repr__(self) -> str:
-        return f"{type(self)} ({str(self)})"
+        return f"{type(self)} ({self!s})"
 
     def __eq__(self, other) -> bool:
         return str(self) == str(other)

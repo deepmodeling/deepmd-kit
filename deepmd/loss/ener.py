@@ -388,9 +388,9 @@ class EnerSpinLoss(Loss):
         limit_pref_ae: float = 0.0,
         start_pref_pf: float = 0.0,
         limit_pref_pf: float = 0.0,
-        relative_f: float = None,
+        relative_f: Optional[float] = None,
         enable_atom_ener_coeff: bool = False,
-        use_spin: list = None,
+        use_spin: Optional[list] = None,
     ) -> None:
         self.starter_learning_rate = starter_learning_rate
         self.start_pref_e = start_pref_e

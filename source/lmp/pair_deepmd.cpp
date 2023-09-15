@@ -382,6 +382,7 @@ PairDeepMD::PairDeepMD(LAMMPS *lmp)
   eps_v = 0.;
   scale = NULL;
   do_ttm = false;
+  do_compute = false;
   single_model = false;
   multi_models_mod_devi = false;
   multi_models_no_mod_devi = false;

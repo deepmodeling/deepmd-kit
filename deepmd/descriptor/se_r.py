@@ -638,7 +638,7 @@ class DescrptSeR(DescrptSe):
         trainable=True,
     ):
         # natom x nei
-        outputs_size = [1] + self.filter_neuron
+        outputs_size = [1, *self.filter_neuron]
         with tf.variable_scope(name, reuse=reuse):
             start_index = 0
             xyz_scatter_total = []
