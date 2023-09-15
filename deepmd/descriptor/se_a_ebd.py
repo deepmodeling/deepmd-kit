@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     List,
     Optional,
@@ -87,6 +88,7 @@ class DescrptSeAEbd(DescrptSeA):
         activation_function: str = "tanh",
         precision: str = "default",
         exclude_types: List[List[int]] = [],
+        **kwargs,
     ) -> None:
         """Constructor."""
         DescrptSeA.__init__(
@@ -228,7 +230,7 @@ class DescrptSeAEbd(DescrptSeA):
         # natom x (nei x 4)
         inputs = tf.reshape(inputs, [-1, self.ndescrpt])
         shape = inputs.get_shape().as_list()
-        outputs_size = [1] + filter_neuron
+        outputs_size = [1, *filter_neuron]
         with tf.variable_scope(name, reuse=reuse):
             xyz_scatter_total = []
             # with natom x (nei x 4)

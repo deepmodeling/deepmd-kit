@@ -1,5 +1,5 @@
 {
-  "_comment": " model parameters",
+  "_comment1": " model parameters",
   "model": {
     "type_map": [
       "O",
@@ -20,8 +20,9 @@
       ],
       "resnet_dt": false,
       "axis_neuron": 8,
+      "precision": "float64",
       "seed": 1,
-      "_comment": " that's all"
+      "_comment2": " that's all"
     },
     "fitting_net": {
       "type": "dipole",
@@ -34,10 +35,11 @@
         128
       ],
       "resnet_dt": true,
+      "precision": "float64",
       "seed": 1,
-      "_comment": " that's all"
+      "_comment3": " that's all"
     },
-    "_comment": " that's all"
+    "_comment4": " that's all"
   },
 
   "learning_rate": {
@@ -45,17 +47,17 @@
     "start_lr": 0.01,
     "stop_lr": 1e-7,
     "decay_steps": 5000,
-    "_comment": "that's all"
+    "_comment5": "that's all"
   },
 
   "loss": {
     "type": "tensor",
     "pref": 0.0,
     "pref_atomic": 1.0,
-    "_comment": " that's all"
+    "_comment6": " that's all"
   },
 
-  "_comment": " traing controls",
+  "_comment7": " traing controls",
   "training": {
     "training_data": {
       "systems": [
@@ -63,22 +65,22 @@
       ],
       "batch_size": "auto",
       "set_prefix": "set",
-      "_comment": "that's all"
+      "_comment8": "that's all"
     },
 
     "numb_steps": 2000,
     "seed": 1,
 
-    "_comment": " display and restart",
-    "_comment": " frequencies counted in batch",
+    "_comment9": " display and restart",
+    "_comment10": " frequencies counted in batch",
     "disp_file": "lcurve.out",
     "disp_freq": 100,
     "save_freq": 500,
     "save_ckpt": "model.ckpt",
     "disp_training": true,
     "time_training": true,
-    "_comment": "that's all"
+    "_comment11": "that's all"
   },
 
-  "_comment": "that's all"
+  "_comment12": "that's all"
 }

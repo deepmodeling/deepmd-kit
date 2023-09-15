@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 #include "map_aparam.h"
 
 #include "custom_op.h"

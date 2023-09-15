@@ -37,7 +37,8 @@ file(
   neighbor_stat.cc
   unaggregated_grad.cc
   tabulate_multi_device.cc
-  prod_env_mat_multi_device.cc)
+  prod_env_mat_multi_device.cc
+  pairwise.cc)
 file(
   GLOB
   OP_GRADS_SRC
@@ -49,7 +50,6 @@ file(
   prod_virial_grad_multi_device.cc
   soft_min_force_grad.cc
   soft_min_virial_grad.cc)
-file(GLOB OP_PY *.py)
 file(GLOB OP_REMAPPER_SRC optimizer/parallel.cc)
 
 add_library(${LIB_DEEPMD_OP} MODULE ${OP_SRC} ${OP_REMAPPER_SRC})
@@ -90,9 +90,8 @@ if(BUILD_PY_IF)
 endif(BUILD_PY_IF)
 
 if(BUILD_PY_IF)
-  install(TARGETS ${LIB_DEEPMD_OP} DESTINATION deepmd/op/)
-  install(TARGETS op_grads DESTINATION deepmd/op/)
-  install(FILES ${OP_PY} DESTINATION deepmd/op/)
+  install(TARGETS ${LIB_DEEPMD_OP} DESTINATION deepmd/lib/)
+  install(TARGETS op_grads DESTINATION deepmd/lib/)
 else(BUILD_PY_IF)
   install(TARGETS ${LIB_DEEPMD_OP} DESTINATION lib/)
 endif(BUILD_PY_IF)

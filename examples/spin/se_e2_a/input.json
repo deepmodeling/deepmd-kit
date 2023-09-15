@@ -1,5 +1,5 @@
 {
-  "_comment": " model parameters",
+  "_comment1": " model parameters",
   "model": {
     "type_map": [
       "Ni",
@@ -20,8 +20,9 @@
       ],
       "resnet_dt": false,
       "axis_neuron": 16,
+      "precision": "float64",
       "seed": 1,
-      "_comment": " that's all"
+      "_comment2": " that's all"
     },
     "fitting_net": {
       "neuron": [
@@ -30,8 +31,9 @@
         240
       ],
       "resnet_dt": true,
+      "precision": "float64",
       "seed": 1,
-      "_comment": " that's all"
+      "_comment3": " that's all"
     },
     "spin": {
       "use_spin": [
@@ -44,9 +46,9 @@
       "spin_norm": [
         1.2737
       ],
-      "_comment": " that's all"
+      "_comment4": " that's all"
     },
-    "_comment": " that's all"
+    "_comment5": " that's all"
   },
 
   "learning_rate": {
@@ -54,7 +56,7 @@
     "decay_steps": 10000,
     "start_lr": 1.00e-3,
     "stop_lr": 5.92e-6,
-    "_comment": " that's all"
+    "_comment6": " that's all"
   },
 
   "loss": {
@@ -67,7 +69,7 @@
     "limit_pref_fm": 10.0,
     "start_pref_v": 0,
     "limit_pref_v": 0,
-    "_comment": " that's all"
+    "_comment7": " that's all"
   },
 
   "training": {
@@ -76,7 +78,7 @@
         "../data/data_0/"
       ],
       "batch_size": 1,
-      "_comment": "that's all"
+      "_comment8": "that's all"
     },
     "validation_data": {
       "systems": [
@@ -84,15 +86,15 @@
       ],
       "batch_size": 1,
       "numb_btch": 10,
-      "_comment": "that's all"
+      "_comment9": "that's all"
     },
     "numb_steps": 1000000,
     "seed": 1,
     "disp_file": "lcurve.out",
     "disp_freq": 5000,
     "save_freq": 10000,
-    "_comment": "that's all"
+    "_comment10": "that's all"
   },
 
-  "_comment": "that's all"
+  "_comment11": "that's all"
 }

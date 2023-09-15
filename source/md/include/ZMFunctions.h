@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 #ifndef __Functions_h_ZM_wanghan__
 #define __Functions_h_ZM_wanghan__
 

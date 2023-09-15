@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 #include "soft_min_switch.h"
 
 #include <cmath>
@@ -31,7 +32,9 @@ void deepmd::soft_min_switch_cpu(FPTYPE* sw_value,
     FPTYPE bb = 0;
     for (int jj = 0; jj < nnei; ++jj) {
       int j_idx = nlist[i_idx * nnei + jj];
-      if (j_idx < 0) continue;
+      if (j_idx < 0) {
+        continue;
+      }
       int rij_idx_shift = (i_idx * nnei + jj) * 3;
       FPTYPE dr[3] = {rij[rij_idx_shift + 0], rij[rij_idx_shift + 1],
                       rij[rij_idx_shift + 2]};
@@ -49,7 +52,9 @@ void deepmd::soft_min_switch_cpu(FPTYPE* sw_value,
     // deriv of switch distributed as force
     for (int jj = 0; jj < nnei; ++jj) {
       int j_idx = nlist[i_idx * nnei + jj];
-      if (j_idx < 0) continue;
+      if (j_idx < 0) {
+        continue;
+      }
       int rij_idx_shift = (ii * nnei + jj) * 3;
       FPTYPE dr[3] = {rij[rij_idx_shift + 0], rij[rij_idx_shift + 1],
                       rij[rij_idx_shift + 2]};

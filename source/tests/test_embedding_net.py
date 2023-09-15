@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 import unittest
 
 import numpy as np
@@ -12,7 +13,7 @@ from deepmd.utils.network import (
 
 class Inter(tf.test.TestCase):
     def setUp(self):
-        self.sess = self.test_session().__enter__()
+        self.sess = self.cached_session().__enter__()
         self.inputs = tf.constant([0.0, 1.0, 2.0], dtype=tf.float64)
         self.ndata = 3
         self.inputs = tf.reshape(self.inputs, [-1, 1])

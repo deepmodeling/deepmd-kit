@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 """Unittests for argument parser."""
 
 import re
@@ -31,7 +32,10 @@ if TYPE_CHECKING:
     except ImportError:
         from typing_extensions import TypedDict  # python<=3.7
 
-    DATA = TypedDict("DATA", {"type": Union[type, Tuple[type]], "value": Any})
+    class DATA(TypedDict):
+        type: Union[type, Tuple[type]]
+        value: Any
+
     TEST_DICT = Dict[str, DATA]
 
 
@@ -87,7 +91,7 @@ class TestParserOutput(unittest.TestCase):
         test_value : bool
             whether to test for value match
         """
-        mapping = {**{"command": dict(type=str, value=command)}, **mapping}
+        mapping = {**{"command": {"type": str, "value": command}}, **mapping}
 
         for argument, test_data in mapping.items():
             # get expected type
@@ -180,7 +184,7 @@ class TestParserOutput(unittest.TestCase):
                     )
 
         # test default values
-        cmd_args = [command] + required
+        cmd_args = [command, *required]
         buffer = StringIO()
         try:
             with redirect_stderr(buffer):
@@ -206,8 +210,8 @@ class TestParserOutput(unittest.TestCase):
     def test_parser_log(self):
         """Check if logging associated attributes are present in specified parsers."""
         ARGS = {
-            "--log-level": dict(type=int, value="INFO", expected=20),
-            "--log-path": dict(type=(str, type(None)), value="LOGFILE"),
+            "--log-level": {"type": int, "value": "INFO", "expected": 20},
+            "--log-path": {"type": (str, type(None)), "value": "LOGFILE"},
         }
 
         for parser in (
@@ -220,7 +224,7 @@ class TestParserOutput(unittest.TestCase):
             "model-devi",
         ):
             if parser in ("train",):
-                args = {**{"INPUT": dict(type=str, value="INFILE")}, **ARGS}
+                args = {**{"INPUT": {"type": str, "value": "INFILE"}}, **ARGS}
             else:
                 args = ARGS
 
@@ -228,11 +232,11 @@ class TestParserOutput(unittest.TestCase):
 
     def test_parser_mpi(self):
         """Check if mpi-log attribute is present in specified parsers."""
-        ARGS = {"--mpi-log": dict(type=str, value="master")}
+        ARGS = {"--mpi-log": {"type": str, "value": "master"}}
 
         for parser in ("train", "compress"):
             if parser in ("train"):
-                args = {**{"INPUT": dict(type=str, value="INFILE")}, **ARGS}
+                args = {**{"INPUT": {"type": str, "value": "INFILE"}}, **ARGS}
             else:
                 args = ARGS
             self.run_test(command=parser, mapping=args)
@@ -240,9 +244,9 @@ class TestParserOutput(unittest.TestCase):
     def test_parser_transfer(self):
         """Test transfer subparser."""
         ARGS = {
-            "--raw-model": dict(type=str, value="INFILE.PB"),
-            "--old-model": dict(type=str, value="OUTFILE.PB"),
-            "--output": dict(type=str, value="OUTPUT"),
+            "--raw-model": {"type": str, "value": "INFILE.PB"},
+            "--old-model": {"type": str, "value": "OUTFILE.PB"},
+            "--output": {"type": str, "value": "OUTPUT"},
         }
 
         self.run_test(command="transfer", mapping=ARGS)
@@ -250,9 +254,9 @@ class TestParserOutput(unittest.TestCase):
     def test_parser_train_init_model(self):
         """Test train init-model subparser."""
         ARGS = {
-            "INPUT": dict(type=str, value="INFILE"),
-            "--init-model": dict(type=(str, type(None)), value="SYSTEM_DIR"),
-            "--output": dict(type=str, value="OUTPUT"),
+            "INPUT": {"type": str, "value": "INFILE"},
+            "--init-model": {"type": (str, type(None)), "value": "SYSTEM_DIR"},
+            "--output": {"type": str, "value": "OUTPUT"},
         }
 
         self.run_test(command="train", mapping=ARGS)
@@ -260,9 +264,9 @@ class TestParserOutput(unittest.TestCase):
     def test_parser_train_restart(self):
         """Test train restart subparser."""
         ARGS = {
-            "INPUT": dict(type=str, value="INFILE"),
-            "--restart": dict(type=(str, type(None)), value="RESTART"),
-            "--output": dict(type=str, value="OUTPUT"),
+            "INPUT": {"type": str, "value": "INFILE"},
+            "--restart": {"type": (str, type(None)), "value": "RESTART"},
+            "--output": {"type": str, "value": "OUTPUT"},
         }
 
         self.run_test(command="train", mapping=ARGS)
@@ -270,9 +274,9 @@ class TestParserOutput(unittest.TestCase):
     def test_parser_train_init_frz_model(self):
         """Test train init-frz-model subparser."""
         ARGS = {
-            "INPUT": dict(type=str, value="INFILE"),
-            "--init-frz-model": dict(type=(str, type(None)), value="INIT_FRZ_MODEL"),
-            "--output": dict(type=str, value="OUTPUT"),
+            "INPUT": {"type": str, "value": "INFILE"},
+            "--init-frz-model": {"type": (str, type(None)), "value": "INIT_FRZ_MODEL"},
+            "--output": {"type": str, "value": "OUTPUT"},
         }
 
         self.run_test(command="train", mapping=ARGS)
@@ -280,9 +284,9 @@ class TestParserOutput(unittest.TestCase):
     def test_parser_train_finetune(self):
         """Test train finetune subparser."""
         ARGS = {
-            "INPUT": dict(type=str, value="INFILE"),
-            "--finetune": dict(type=(str, type(None)), value="FINETUNE"),
-            "--output": dict(type=str, value="OUTPUT"),
+            "INPUT": {"type": str, "value": "INFILE"},
+            "--finetune": {"type": (str, type(None)), "value": "FINETUNE"},
+            "--output": {"type": str, "value": "OUTPUT"},
         }
 
         self.run_test(command="train", mapping=ARGS)
@@ -290,10 +294,10 @@ class TestParserOutput(unittest.TestCase):
     def test_parser_train_wrong_subcommand(self):
         """Test train with multiple subparsers."""
         ARGS = {
-            "INPUT": dict(type=str, value="INFILE"),
-            "--init-model": dict(type=(str, type(None)), value="SYSTEM_DIR"),
-            "--restart": dict(type=(str, type(None)), value="RESTART"),
-            "--output": dict(type=str, value="OUTPUT"),
+            "INPUT": {"type": str, "value": "INFILE"},
+            "--init-model": {"type": (str, type(None)), "value": "SYSTEM_DIR"},
+            "--restart": {"type": (str, type(None)), "value": "RESTART"},
+            "--output": {"type": str, "value": "OUTPUT"},
         }
         with self.assertRaises(SystemExit):
             self.run_test(command="train", mapping=ARGS)
@@ -301,9 +305,9 @@ class TestParserOutput(unittest.TestCase):
     def test_parser_freeze(self):
         """Test freeze subparser."""
         ARGS = {
-            "--checkpoint-folder": dict(type=str, value="FOLDER"),
-            "--output": dict(type=str, value="FROZEN.PB"),
-            "--node-names": dict(type=(str, type(None)), value="NODES"),
+            "--checkpoint-folder": {"type": str, "value": "FOLDER"},
+            "--output": {"type": str, "value": "FROZEN.PB"},
+            "--node-names": {"type": (str, type(None)), "value": "NODES"},
         }
 
         self.run_test(command="freeze", mapping=ARGS)
@@ -311,13 +315,13 @@ class TestParserOutput(unittest.TestCase):
     def test_parser_test(self):
         """Test test subparser."""
         ARGS = {
-            "--model": dict(type=str, value="MODEL.PB"),
-            "--system": dict(type=str, value="SYSTEM_DIR"),
-            "--set-prefix": dict(type=str, value="SET_PREFIX"),
-            "--numb-test": dict(type=int, value=1),
-            "--rand-seed": dict(type=(int, type(None)), value=12321),
-            "--detail-file": dict(type=(str, type(None)), value="TARGET.FILE"),
-            "--atomic": dict(type=bool),
+            "--model": {"type": str, "value": "MODEL.PB"},
+            "--system": {"type": str, "value": "SYSTEM_DIR"},
+            "--set-prefix": {"type": str, "value": "SET_PREFIX"},
+            "--numb-test": {"type": int, "value": 1},
+            "--rand-seed": {"type": (int, type(None)), "value": 12321},
+            "--detail-file": {"type": (str, type(None)), "value": "TARGET.FILE"},
+            "--atomic": {"type": bool},
         }
 
         self.run_test(command="test", mapping=ARGS)
@@ -325,11 +329,11 @@ class TestParserOutput(unittest.TestCase):
     def test_parser_compress(self):
         """Test compress subparser."""
         ARGS = {
-            "--output": dict(type=str, value="OUTFILE"),
-            "--extrapolate": dict(type=int, value=5),
-            "--step": dict(type=float, value=0.1),
-            "--frequency": dict(type=int, value=-1),
-            "--checkpoint-folder": dict(type=str, value="."),
+            "--output": {"type": str, "value": "OUTFILE"},
+            "--extrapolate": {"type": int, "value": 5},
+            "--step": {"type": float, "value": 0.1},
+            "--frequency": {"type": int, "value": -1},
+            "--checkpoint-folder": {"type": str, "value": "."},
         }
 
         self.run_test(command="compress", mapping=ARGS)
@@ -337,7 +341,7 @@ class TestParserOutput(unittest.TestCase):
     def test_parser_doc(self):
         """Test doc subparser."""
         ARGS = {
-            "--out-type": dict(type=str, value="rst"),
+            "--out-type": {"type": str, "value": "rst"},
         }
 
         self.run_test(command="doc-train-input", mapping=ARGS)
@@ -345,15 +349,15 @@ class TestParserOutput(unittest.TestCase):
     def test_parser_model_devi(self):
         """Test model-devi subparser."""
         ARGS = {
-            "--models": dict(
-                type=list,
-                value="GRAPH.000.pb GRAPH.001.pb",
-                expected=["GRAPH.000.pb", "GRAPH.001.pb"],
-            ),
-            "--system": dict(type=str, value="SYSTEM_DIR"),
-            "--set-prefix": dict(type=str, value="SET_PREFIX"),
-            "--output": dict(type=str, value="OUTFILE"),
-            "--frequency": dict(type=int, value=1),
+            "--models": {
+                "type": list,
+                "value": "GRAPH.000.pb GRAPH.001.pb",
+                "expected": ["GRAPH.000.pb", "GRAPH.001.pb"],
+            },
+            "--system": {"type": str, "value": "SYSTEM_DIR"},
+            "--set-prefix": {"type": str, "value": "SET_PREFIX"},
+            "--output": {"type": str, "value": "OUTFILE"},
+            "--frequency": {"type": int, "value": 1},
         }
 
         self.run_test(command="model-devi", mapping=ARGS)

@@ -16,7 +16,7 @@ if(USE_CUDA_TOOLKIT)
   target_link_libraries(${libname} INTERFACE deepmd_dyn_cudart ${EXTRA_LIBS})
   # gpu_cuda.h
   target_include_directories(
-    ${libname} PUBLIC $<BUILD_INTERFACE:${CUDA_INCLUDE_DIRS}>
+    ${libname} PUBLIC $<BUILD_INTERFACE:${CUDAToolkit_INCLUDE_DIRS}>
                       $<INSTALL_INTERFACE:include>)
 endif()
 
@@ -38,7 +38,7 @@ if(CMAKE_TESTING_ENABLED)
 endif()
 
 if(BUILD_PY_IF)
-  install(TARGETS ${libname} DESTINATION deepmd/op/)
+  install(TARGETS ${libname} DESTINATION deepmd/lib/)
 else(BUILD_PY_IF)
   install(
     TARGETS ${libname}

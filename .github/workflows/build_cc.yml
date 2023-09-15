@@ -20,20 +20,26 @@ jobs:
         - variant: clang
           dp_variant: clang
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
       with:
         submodules: true
     - uses: actions/setup-python@v4
       with:
         python-version: '3.11'
+        cache: 'pip'
+    - uses: lukka/get-cmake@latest
     - run: python -m pip install tensorflow
-    - run: sudo apt-get update && sudo apt-get install -y nvidia-cuda-toolkit
+    - run: |
+         wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.0-1_all.deb \
+         && sudo dpkg -i cuda-keyring_1.0-1_all.deb \
+         && sudo apt-get update \
+         && sudo apt-get -y install cuda-cudart-dev-11-8 cuda-nvcc-11-8
       if: matrix.variant == 'cuda'
     - run: |
          wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.0-1_all.deb \
          && sudo dpkg -i cuda-keyring_1.0-1_all.deb \
          && sudo apt-get update \
-         && sudo apt-get -y install cuda-12-0
+         && sudo apt-get -y install cuda-cudart-dev-12-0 cuda-nvcc-12-0
       if: matrix.variant == 'cuda120'
       env:
         DEBIAN_FRONTEND: noninteractive
@@ -44,12 +50,11 @@ jobs:
          && sudo apt-get update \
          && sudo apt-get install -y rocm-dev hipcub-dev
       if: matrix.variant == 'rocm'
-    - run: sudo apt-get update && sudo apt-get install -y clang
-      if: matrix.variant == 'clang'
     - run: source/install/build_cc.sh
       env:
         DP_VARIANT: ${{ matrix.dp_variant }}
         DOWNLOAD_TENSORFLOW: "FALSE"
+        CMAKE_GENERATOR: Ninja
       if: matrix.variant != 'clang'
     - run: source/install/build_cc.sh
       env:
@@ -57,6 +62,7 @@ jobs:
         DOWNLOAD_TENSORFLOW: "FALSE"
         CC: clang
         CXX: clang++
+        CMAKE_GENERATOR: Ninja
       if: matrix.variant == 'clang'
     - name: Test files exist
       run: |

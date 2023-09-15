@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 #ifdef COMPUTE_CLASS
 // clang-format off
 ComputeStyle(deeptensor/atom, ComputeDeeptensorAtom)

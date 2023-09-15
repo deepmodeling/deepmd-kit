@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 import numpy as np
 from common import (
     DataSystem,
@@ -124,7 +125,7 @@ class TestModel(tf.test.TestCase):
         feed_dict_test2[t_type] = np.reshape(new_type2[:numb_test, :], [-1])
         feed_dict_test2[t_natoms] = new_natoms2
 
-        with self.test_session() as sess:
+        with self.cached_session() as sess:
             sess.run(tf.global_variables_initializer())
             [model_dout1] = sess.run([dout], feed_dict=feed_dict_test1)
             [model_dout2] = sess.run([dout], feed_dict=feed_dict_test2)
@@ -230,7 +231,7 @@ class TestModel(tf.test.TestCase):
         feed_dict_test2[t_type] = np.reshape(new_type2[:numb_test, :], [-1])
         feed_dict_test2[t_natoms] = new_natoms2
 
-        with self.test_session() as sess:
+        with self.cached_session() as sess:
             sess.run(tf.global_variables_initializer())
             [model_dout1] = sess.run([dout], feed_dict=feed_dict_test1)
             [model_dout2] = sess.run([dout], feed_dict=feed_dict_test2)

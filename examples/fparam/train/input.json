@@ -1,5 +1,5 @@
 {
-  "_comment": " model parameters",
+  "_comment1": " model parameters",
   "model": {
     "data_stat_nbatch": 1,
     "descriptor": {
@@ -16,6 +16,7 @@
       ],
       "resnet_dt": false,
       "axis_neuron": 8,
+      "precision": "float64",
       "seed": 1
     },
     "fitting_net": {
@@ -26,6 +27,7 @@
       ],
       "resnet_dt": true,
       "numb_fparam": 1,
+      "precision": "float64",
       "seed": 1
     }
   },
@@ -45,7 +47,7 @@
     "decay_steps": 5000
   },
 
-  "_comment": " traing controls",
+  "_comment2": " traing controls",
   "training": {
     "training_data": {
       "systems": [
@@ -59,8 +61,8 @@
 
     "seed": 1,
 
-    "_comment": " display and restart",
-    "_comment": " frequencies counted in batch",
+    "_comment3": " display and restart",
+    "_comment4": " frequencies counted in batch",
     "disp_file": "lcurve.out",
     "disp_freq": 100,
     "save_freq": 1000,
@@ -71,5 +73,5 @@
     "profiling_file": "timeline.json"
   },
 
-  "_comment": "that's all"
+  "_comment5": "that's all"
 }

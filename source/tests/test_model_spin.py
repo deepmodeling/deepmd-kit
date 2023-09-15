@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 import unittest
 
 import numpy as np
@@ -6,6 +7,7 @@ from common import (
     del_data,
     gen_data,
     j_loader,
+    tests_path,
 )
 
 from deepmd.common import (
@@ -51,6 +53,12 @@ class TestModelSpin(tf.test.TestCase):
         test_size = j_must_have(jdata["training"]["validation_data"], "numb_btch")
         stop_batch = j_must_have(jdata["training"], "numb_steps")
         rcut = j_must_have(jdata["model"]["descriptor"], "rcut")
+        jdata["training"]["training_data"]["systems"] = [
+            str(tests_path / "model_spin/")
+        ]
+        jdata["training"]["validation_data"]["systems"] = [
+            str(tests_path / "model_spin/")
+        ]
         data = DataSystem(systems, set_pfx, batch_size, test_size, rcut, run_opt=None)
         test_data = data.get_test()
 
@@ -114,7 +122,7 @@ class TestModelSpin(tf.test.TestCase):
             is_training: False,
         }
 
-        sess = self.test_session().__enter__()
+        sess = self.cached_session().__enter__()
         sess.run(tf.global_variables_initializer())
         [out_ener, out_force, out_virial] = sess.run(
             [energy, force, virial], feed_dict=feed_dict_test

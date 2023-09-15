@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 """Register entry points for lammps-wheel."""
 import os
 import platform
@@ -63,7 +64,7 @@ else:
     raise RuntimeError("Unsupported platform")
 
 tf_dir = tf.sysconfig.get_lib()
-op_dir = str((Path(__file__).parent / "op").absolute())
+op_dir = str((Path(__file__).parent / "lib").absolute())
 
 
 cuda_library_paths = []

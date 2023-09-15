@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 #ifndef __SimulationRegion_Impl_h_wanghan__
 #define __SimulationRegion_Impl_h_wanghan__
 
@@ -199,11 +200,14 @@ inline void SimulationRegion<VALUETYPE>::shiftCoord(const int *idx,
 template <typename VALUETYPE>
 inline void SimulationRegion<VALUETYPE>::apply_periodic(int dim,
                                                         double *dd) const {
-  if (!is_periodic[dim]) return;
-  if (dd[dim] >= static_cast<double>(0.5))
+  if (!is_periodic[dim]) {
+    return;
+  }
+  if (dd[dim] >= static_cast<double>(0.5)) {
     dd[dim] -= static_cast<double>(1.);
-  else if (dd[dim] < -static_cast<double>(0.5))
+  } else if (dd[dim] < -static_cast<double>(0.5)) {
     dd[dim] += static_cast<double>(1.);
+  }
 }
 
 template <typename VALUETYPE>
@@ -211,7 +215,9 @@ inline void SimulationRegion<VALUETYPE>::apply_periodic(int dim,
                                                         double *dd,
                                                         int &shift) const {
   shift = 0;
-  if (!is_periodic[dim]) return;
+  if (!is_periodic[dim]) {
+    return;
+  }
   if (dd[dim] >= static_cast<double>(0.5)) {
     dd[dim] -= static_cast<double>(1.);
     shift = -1;
@@ -225,9 +231,13 @@ template <typename VALUETYPE>
 inline void SimulationRegion<VALUETYPE>::diffNearestNeighbor(
     const VALUETYPE *r0, const VALUETYPE *r1, VALUETYPE *phys) const {
   double inter[3];
-  for (int dd = 0; dd < 3; ++dd) phys[dd] = r0[dd] - r1[dd];
+  for (int dd = 0; dd < 3; ++dd) {
+    phys[dd] = r0[dd] - r1[dd];
+  }
   SimulationRegion<VALUETYPE>::phys2Inter(inter, phys);
-  for (int dd = 0; dd < 3; ++dd) apply_periodic(dd, inter);
+  for (int dd = 0; dd < 3; ++dd) {
+    apply_periodic(dd, inter);
+  }
   SimulationRegion<VALUETYPE>::inter2Phys(phys, inter);
 }
 
@@ -334,7 +344,9 @@ template <typename VALUETYPE>
 inline void SimulationRegion<VALUETYPE>::phys2Inter(
     double *i_v, const VALUETYPE *p_v_) const {
   double p_v[3];
-  for (int dd = 0; dd < 3; ++dd) p_v[dd] = p_v_[dd];
+  for (int dd = 0; dd < 3; ++dd) {
+    p_v[dd] = p_v_[dd];
+  }
   tensorDotVector(i_v, rec_boxt, p_v);
 }
 
@@ -343,7 +355,9 @@ inline void SimulationRegion<VALUETYPE>::inter2Phys(VALUETYPE *p_v_,
                                                     const double *i_v) const {
   double p_v[3];
   tensorTransDotVector(p_v, boxt, i_v);
-  for (int dd = 0; dd < 3; ++dd) p_v_[dd] = p_v[dd];
+  for (int dd = 0; dd < 3; ++dd) {
+    p_v_[dd] = p_v[dd];
+  }
 }
 
 template <typename VALUETYPE>

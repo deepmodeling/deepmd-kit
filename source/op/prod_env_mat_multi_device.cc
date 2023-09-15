@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 #include "coord.h"
 #include "custom_op.h"
 #include "errors.h"
@@ -506,6 +507,10 @@ class ProdEnvMatAOp : public OpKernel {
       // no pbc
       assert(nloc == nall);
       nei_mode = -1;
+    } else if (mesh_tensor.shape().dim_size(0) == 7 ||
+               mesh_tensor.shape().dim_size(0) == 1) {
+      throw deepmd::deepmd_exception(
+          "Mixed types are not supported by this OP.");
     } else {
       throw deepmd::deepmd_exception("invalid mesh tensor");
     }
@@ -601,7 +606,9 @@ class ProdEnvMatAOp : public OpKernel {
                                         gpu_inlist, array_int, array_longlong,
                                         max_nbor_size, avg, std, nloc,
                                         frame_nall, rcut_r, rcut_r_smth, sec_a);
-        if (b_nlist_map) _map_nlist_gpu(nlist, idx_mapping, nloc, nnei);
+        if (b_nlist_map) {
+          _map_nlist_gpu(nlist, idx_mapping, nloc, nnei);
+        }
         deepmd::delete_device_memory(firstneigh);
 #endif  // GOOGLE_CUDA
 
@@ -644,7 +651,9 @@ class ProdEnvMatAOp : public OpKernel {
                                         gpu_inlist, array_int, array_longlong,
                                         max_nbor_size, avg, std, nloc,
                                         frame_nall, rcut_r, rcut_r_smth, sec_a);
-        if (b_nlist_map) _map_nlist_gpu_rocm(nlist, idx_mapping, nloc, nnei);
+        if (b_nlist_map) {
+          _map_nlist_gpu_rocm(nlist, idx_mapping, nloc, nnei);
+        }
         deepmd::delete_device_memory(firstneigh);
 #endif  // TENSORFLOW_USE_ROCM
       } else if (device == "CPU") {
@@ -668,7 +677,9 @@ class ProdEnvMatAOp : public OpKernel {
                                    inlist, max_nbor_size, avg, std, nloc,
                                    frame_nall, rcut_r, rcut_r_smth, sec_a);
         // do nlist mapping if coords were copied
-        if (b_nlist_map) _map_nlist_cpu(nlist, &idx_mapping[0], nloc, nnei);
+        if (b_nlist_map) {
+          _map_nlist_cpu(nlist, &idx_mapping[0], nloc, nnei);
+        }
       }
     }
   }
@@ -788,6 +799,10 @@ class ProdEnvMatROp : public OpKernel {
       // no pbc
       assert(nloc == nall);
       nei_mode = -1;
+    } else if (mesh_tensor.shape().dim_size(0) == 7 ||
+               mesh_tensor.shape().dim_size(0) == 1) {
+      throw deepmd::deepmd_exception(
+          "Mixed types are not supported by this OP.");
     } else {
       throw deepmd::deepmd_exception("invalid mesh tensor");
     }
@@ -883,7 +898,9 @@ class ProdEnvMatROp : public OpKernel {
                                         gpu_inlist, array_int, array_longlong,
                                         max_nbor_size, avg, std, nloc,
                                         frame_nall, rcut, rcut_smth, sec);
-        if (b_nlist_map) _map_nlist_gpu(nlist, idx_mapping, nloc, nnei);
+        if (b_nlist_map) {
+          _map_nlist_gpu(nlist, idx_mapping, nloc, nnei);
+        }
         deepmd::delete_device_memory(firstneigh);
 #endif  // GOOGLE_CUDA
 
@@ -926,7 +943,9 @@ class ProdEnvMatROp : public OpKernel {
                                         gpu_inlist, array_int, array_longlong,
                                         max_nbor_size, avg, std, nloc,
                                         frame_nall, rcut, rcut_smth, sec);
-        if (b_nlist_map) _map_nlist_gpu_rocm(nlist, idx_mapping, nloc, nnei);
+        if (b_nlist_map) {
+          _map_nlist_gpu_rocm(nlist, idx_mapping, nloc, nnei);
+        }
         deepmd::delete_device_memory(firstneigh);
 #endif  // TENSORFLOW_USE_ROCM
       } else if (device == "CPU") {
@@ -949,7 +968,9 @@ class ProdEnvMatROp : public OpKernel {
         deepmd::prod_env_mat_r_cpu(em, em_deriv, rij, nlist, coord, type,
                                    inlist, max_nbor_size, avg, std, nloc,
                                    frame_nall, rcut, rcut_smth, sec);
-        if (b_nlist_map) _map_nlist_cpu(nlist, &idx_mapping[0], nloc, nnei);
+        if (b_nlist_map) {
+          _map_nlist_cpu(nlist, &idx_mapping[0], nloc, nnei);
+        }
       }
     }
   }
@@ -1077,12 +1098,14 @@ class ProdEnvMatAMixOp : public OpKernel {
     if (mesh_tensor.shape().dim_size(0) == 16) {
       // lammps neighbor list
       nei_mode = 3;
-    } else if (mesh_tensor.shape().dim_size(0) == 6) {
+    } else if (mesh_tensor.shape().dim_size(0) == 6 ||
+               mesh_tensor.shape().dim_size(0) == 7) {
       // manual copied pbc
       assert(nloc == nall);
       nei_mode = 1;
       b_nlist_map = true;
-    } else if (mesh_tensor.shape().dim_size(0) == 0) {
+    } else if (mesh_tensor.shape().dim_size(0) == 0 ||
+               mesh_tensor.shape().dim_size(0) == 1) {
       // no pbc
       assert(nloc == nall);
       nei_mode = -1;
@@ -1135,6 +1158,12 @@ class ProdEnvMatAMixOp : public OpKernel {
                    context->allocate_output(context_output_index++, nmask_shape,
                                             &nmask_tensor));
 
+    Tensor fake_type_tensor;  // all zeros
+    TensorShape fake_type_shape;
+    fake_type_shape.AddDim(nsamples * nall);
+    OP_REQUIRES_OK(context, context->allocate_temp(DT_INT32, fake_type_shape,
+                                                   &fake_type_tensor));
+
     FPTYPE* p_em = descrpt_tensor->flat<FPTYPE>().data();
     FPTYPE* p_em_deriv = descrpt_deriv_tensor->flat<FPTYPE>().data();
     FPTYPE* p_rij = rij_tensor->flat<FPTYPE>().data();
@@ -1146,6 +1175,20 @@ class ProdEnvMatAMixOp : public OpKernel {
     const FPTYPE* avg = avg_tensor.flat<FPTYPE>().data();
     const FPTYPE* std = std_tensor.flat<FPTYPE>().data();
     const int* p_type = type_tensor.flat<int>().data();
+    int* p_f_type = fake_type_tensor.flat<int>().data();
+
+    if (device == "GPU") {
+#if GOOGLE_CUDA
+      deepmd::filter_ftype_gpu_cuda(p_f_type, p_type, nsamples * nall);
+#endif
+#if TENSORFLOW_USE_ROCM
+      deepmd::filter_ftype_gpu_rocm(p_f_type, p_type, nsamples * nall);
+#endif
+    } else if (device == "CPU") {
+      for (int ii = 0; ii < nsamples * nall; ii++) {
+        p_f_type[ii] = (p_type[ii] < 0) ? -1 : 0;
+      }
+    }
 
     // loop over samples
     for (int_64 ff = 0; ff < nsamples; ++ff) {
@@ -1158,6 +1201,7 @@ class ProdEnvMatAMixOp : public OpKernel {
       const FPTYPE* coord = p_coord + ff * nall * 3;
       const FPTYPE* box = p_box + ff * 9;
       const int* type = p_type + ff * nall;
+      const int* f_type = p_f_type + ff * nall;
 
       if (device == "GPU") {
 #if GOOGLE_CUDA
@@ -1171,13 +1215,6 @@ class ProdEnvMatAMixOp : public OpKernel {
         int frame_nall = nall;
         int mesh_tensor_size = static_cast<int>(mesh_tensor.NumElements());
         std::vector<Tensor> tensor_list(7);
-        Tensor fake_type;  // all zeros
-        TensorShape fake_type_shape;
-        fake_type_shape.AddDim(nall);
-        OP_REQUIRES_OK(context, context->allocate_temp(
-                                    DT_INT32, fake_type_shape, &fake_type));
-        deepmd::filter_ftype_gpu_cuda(fake_type.flat<int>().data(), type, nall);
-        const int* f_type = fake_type.flat<int>().data();
         // prepare coord and nlist
         _prepare_coord_nlist_gpu<FPTYPE>(
             context, &tensor_list[0], &coord, coord_cpy, &f_type, type_cpy,
@@ -1222,13 +1259,6 @@ class ProdEnvMatAMixOp : public OpKernel {
         int frame_nall = nall;
         int mesh_tensor_size = static_cast<int>(mesh_tensor.NumElements());
         std::vector<Tensor> tensor_list(7);
-        Tensor fake_type;  // all zeros
-        TensorShape fake_type_shape;
-        fake_type_shape.AddDim(nall);
-        OP_REQUIRES_OK(context, context->allocate_temp(
-                                    DT_INT32, fake_type_shape, &fake_type));
-        deepmd::filter_ftype_gpu_rocm(fake_type.flat<int>().data(), type, nall);
-        const int* f_type = fake_type.flat<int>().data();
         // prepare coord and nlist
         _prepare_coord_nlist_gpu_rocm<FPTYPE>(
             context, &tensor_list[0], &coord, coord_cpy, &f_type, type_cpy,
@@ -1271,13 +1301,6 @@ class ProdEnvMatAMixOp : public OpKernel {
         std::vector<FPTYPE> coord_cpy;
         std::vector<int> type_cpy;
         int frame_nall = nall;
-        std::vector<int> fake_type(nall, 0);
-        for (int ii = 0; ii < nall; ii++) {
-          if (type[ii] < 0) {
-            fake_type[ii] = -1;
-          }
-        }
-        const int* f_type = &fake_type[0];
         // prepare coord and nlist
         _prepare_coord_nlist_cpu<FPTYPE>(
             context, &coord, coord_cpy, &f_type, type_cpy, idx_mapping, inlist,
@@ -1478,8 +1501,11 @@ static int _norm_copy_coord_gpu(OpKernelContext* context,
   // Tensor FPTYPE_temp;
   TensorShape FPTYPE_shape;
   FPTYPE_shape.AddDim(nall * 3);
-  context->allocate_temp(DataTypeToEnum<FPTYPE>::value, FPTYPE_shape,
-                         tensor_list);
+  tensorflow::Status status = context->allocate_temp(
+      DataTypeToEnum<FPTYPE>::value, FPTYPE_shape, tensor_list);
+  if (!status.ok()) {
+    return false;
+  }
   FPTYPE* tmp_coord = (*tensor_list).flat<FPTYPE>().data();
   DPErrcheck(cudaMemcpy(tmp_coord, coord, sizeof(FPTYPE) * nall * 3,
                         cudaMemcpyDeviceToDevice));
@@ -1496,8 +1522,11 @@ static int _norm_copy_coord_gpu(OpKernelContext* context,
   // Tensor double_temp;
   TensorShape double_shape;
   double_shape.AddDim(18);
-  context->allocate_temp(DataTypeToEnum<FPTYPE>::value, double_shape,
-                         tensor_list + 1);
+  status = context->allocate_temp(DataTypeToEnum<FPTYPE>::value, double_shape,
+                                  tensor_list + 1);
+  if (!status.ok()) {
+    return false;
+  }
   // Tensor int_temp;
   TensorShape int_shape;
   int_shape.AddDim(23 + nloc * 3 + loc_cellnum + total_cellnum * 3 +
@@ -1520,8 +1549,11 @@ static int _norm_copy_coord_gpu(OpKernelContext* context,
     // Tensor cpy_temp;
     TensorShape cpy_shape;
     cpy_shape.AddDim(mem_cpy * 3);
-    context->allocate_temp(DataTypeToEnum<FPTYPE>::value, cpy_shape,
-                           tensor_list + 3);
+    status = context->allocate_temp(DataTypeToEnum<FPTYPE>::value, cpy_shape,
+                                    tensor_list + 3);
+    if (!status.ok()) {
+      return false;
+    }
     // Tensor t_temp;
     TensorShape t_shape;
     t_shape.AddDim(mem_cpy * 2);
@@ -1560,7 +1592,11 @@ static int _build_nlist_gpu(OpKernelContext* context,
   // Tensor nlist_temp;
   TensorShape nlist_shape;
   nlist_shape.AddDim(nloc * 2);
-  context->allocate_temp(DT_INT32, nlist_shape, tensor_list);
+  tensorflow::Status status =
+      context->allocate_temp(DT_INT32, nlist_shape, tensor_list);
+  if (!status.ok()) {
+    return false;
+  }
   ilist = (*tensor_list).flat<int>().data();
   numneigh = ilist + nloc;
   // Tensor jlist_temp;
@@ -1571,7 +1607,10 @@ static int _build_nlist_gpu(OpKernelContext* context,
   for (tt = 0; tt < max_nnei_trial; ++tt) {
     TensorShape jlist_shape;
     jlist_shape.AddDim(3 * int_64(nloc) * mem_nnei);
-    context->allocate_temp(DT_INT32, jlist_shape, tensor_list + 1);
+    status = context->allocate_temp(DT_INT32, jlist_shape, tensor_list + 1);
+    if (!status.ok()) {
+      return false;
+    }
     jlist = (*(tensor_list + 1)).flat<int>().data();
     ind_data = jlist + nloc * mem_nnei;
     for (int_64 ii = 0; ii < nloc; ++ii) {
@@ -1719,8 +1758,11 @@ static int _norm_copy_coord_gpu_rocm(OpKernelContext* context,
   // Tensor double_temp;
   TensorShape double_shape;
   double_shape.AddDim(18);
-  context->allocate_temp(DataTypeToEnum<FPTYPE>::value, double_shape,
-                         tensor_list + 1);
+  tensorflow::Status status = context->allocate_temp(
+      DataTypeToEnum<FPTYPE>::value, double_shape, tensor_list + 1);
+  if (!status.ok()) {
+    return false;
+  }
   // Tensor int_temp;
   TensorShape int_shape;
   int_shape.AddDim(23 + nloc * 3 + loc_cellnum + total_cellnum * 3 +
@@ -1783,7 +1825,11 @@ static int _build_nlist_gpu_rocm(OpKernelContext* context,
   // Tensor nlist_temp;
   TensorShape nlist_shape;
   nlist_shape.AddDim(nloc * 2);
-  context->allocate_temp(DT_INT32, nlist_shape, tensor_list);
+  tensorflow::Status status =
+      context->allocate_temp(DT_INT32, nlist_shape, tensor_list);
+  if (!status.ok()) {
+    return false;
+  }
   ilist = (*tensor_list).flat<int>().data();
   numneigh = ilist + nloc;
   // Tensor jlist_temp;
@@ -1794,7 +1840,10 @@ static int _build_nlist_gpu_rocm(OpKernelContext* context,
   for (tt = 0; tt < max_nnei_trial; ++tt) {
     TensorShape jlist_shape;
     jlist_shape.AddDim(3 * int_64(nloc) * mem_nnei);
-    context->allocate_temp(DT_INT32, jlist_shape, tensor_list + 1);
+    status = context->allocate_temp(DT_INT32, jlist_shape, tensor_list + 1);
+    if (!status.ok()) {
+      return false;
+    }
     jlist = (*(tensor_list + 1)).flat<int>().data();
     ind_data = jlist + nloc * mem_nnei;
     for (int_64 ii = 0; ii < nloc; ++ii) {

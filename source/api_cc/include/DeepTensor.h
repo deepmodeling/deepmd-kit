@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 #pragma once
 
 #include "common.h"
@@ -38,7 +39,6 @@ class DeepTensor {
    **/
   void print_summary(const std::string& pre) const;
 
- public:
   /**
    * @brief Evaluate the value by using this model.
    * @param[out] value The value to evalute, usually would be the atomic tensor.
@@ -197,6 +197,11 @@ class DeepTensor {
     assert(inited);
     return sel_type;
   };
+  /**
+   * @brief Get the type map (element name of the atom types) of this model.
+   * @param[out] type_map The type map of this model.
+   **/
+  void get_type_map(std::string& type_map);
 
  private:
   tensorflow::Session* session;

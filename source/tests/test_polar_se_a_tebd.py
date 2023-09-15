@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 import unittest
 
 import numpy as np
@@ -127,7 +128,7 @@ class TestModel(tf.test.TestCase):
             is_training: False,
         }
 
-        sess = self.test_session().__enter__()
+        sess = self.cached_session().__enter__()
         sess.run(tf.global_variables_initializer())
         [p, gp] = sess.run([polar, gpolar], feed_dict=feed_dict_test)
 

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 #include "map_aparam.h"
 
 template <typename FPTYPE>
@@ -26,7 +27,9 @@ void deepmd::map_aparam_cpu(FPTYPE* output,
     // loop over neighbor atoms
     for (int jj = 0; jj < nnei; ++jj) {
       int j_idx = nlist[i_idx * nnei + jj];
-      if (j_idx < 0) continue;
+      if (j_idx < 0) {
+        continue;
+      }
       // loop over elements of aparam
       for (int dd = 0; dd < numb_aparam; ++dd) {
         output[ii * nnei * numb_aparam + jj * numb_aparam + dd] =

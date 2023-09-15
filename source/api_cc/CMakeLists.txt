@@ -33,7 +33,7 @@ endif()
 target_compile_features(${libname} PUBLIC cxx_std_11)
 
 if(BUILD_PY_IF)
-  install(TARGETS ${libname} DESTINATION deepmd/op/)
+  install(TARGETS ${libname} DESTINATION deepmd/lib/)
 else(BUILD_PY_IF)
   install(
     TARGETS ${libname}

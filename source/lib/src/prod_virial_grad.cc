@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 #include "prod_virial_grad.h"
 
 #include <cstring>
@@ -42,7 +43,9 @@ void deepmd::prod_virial_grad_a_cpu(FPTYPE* grad_net,
     // loop over neighbors
     for (int jj = 0; jj < nnei; ++jj) {
       int j_idx = nlist[i_idx * nnei + jj];
-      if (j_idx < 0) continue;
+      if (j_idx < 0) {
+        continue;
+      }
       int aa_start, aa_end;
       make_index_range(aa_start, aa_end, jj, nnei);
       for (int aa = aa_start; aa < aa_end; ++aa) {
@@ -108,7 +111,9 @@ void deepmd::prod_virial_grad_r_cpu(FPTYPE* grad_net,
     // loop over neighbors
     for (int jj = 0; jj < nnei; ++jj) {
       int j_idx = nlist[i_idx * nnei + jj];
-      if (j_idx < 0) continue;
+      if (j_idx < 0) {
+        continue;
+      }
       for (int dd0 = 0; dd0 < 3; ++dd0) {
         for (int dd1 = 0; dd1 < 3; ++dd1) {
           grad_net[i_idx * ndescrpt + jj] -=

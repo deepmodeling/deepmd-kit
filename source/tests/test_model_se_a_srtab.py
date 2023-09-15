@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 import os
 
 import numpy as np
@@ -139,7 +140,7 @@ class TestModel(tf.test.TestCase):
             is_training: False,
         }
 
-        sess = self.test_session().__enter__()
+        sess = self.cached_session().__enter__()
         sess.run(tf.global_variables_initializer())
         [e, f, v] = sess.run([energy, force, virial], feed_dict=feed_dict_test)
 

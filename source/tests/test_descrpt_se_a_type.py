@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 import numpy as np
 from common import (
     DataSystem,
@@ -119,7 +120,7 @@ class TestModel(tf.test.TestCase):
             is_training: False,
         }
 
-        sess = self.test_session().__enter__()
+        sess = self.cached_session().__enter__()
         sess.run(tf.global_variables_initializer())
         [model_dout] = sess.run([dout], feed_dict=feed_dict_test)
         model_dout = model_dout.reshape([-1])
@@ -283,7 +284,7 @@ class TestModel(tf.test.TestCase):
             is_training: False,
         }
 
-        sess = self.test_session().__enter__()
+        sess = self.cached_session().__enter__()
         sess.run(tf.global_variables_initializer())
         [model_dout] = sess.run([dout], feed_dict=feed_dict_test)
         model_dout = model_dout.reshape([-1])

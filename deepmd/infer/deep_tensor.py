@@ -1,5 +1,8 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     TYPE_CHECKING,
+    ClassVar,
+    Dict,
     List,
     Optional,
     Tuple,
@@ -34,9 +37,11 @@ class DeepTensor(DeepEval):
         The prefix in the load computational graph
     default_tf_graph : bool
         If uses the default tf graph, otherwise build a new tf graph for evaluation
+    input_map : dict, optional
+        The input map for tf.import_graph_def. Only work with default tf graph
     """
 
-    tensors = {
+    tensors: ClassVar[Dict[str, str]] = {
         # descriptor attrs
         "t_ntypes": "descrpt_attr/ntypes:0",
         "t_rcut": "descrpt_attr/rcut:0",
@@ -57,10 +62,15 @@ class DeepTensor(DeepEval):
         model_file: "Path",
         load_prefix: str = "load",
         default_tf_graph: bool = False,
+        input_map: Optional[dict] = None,
     ) -> None:
         """Constructor."""
         DeepEval.__init__(
-            self, model_file, load_prefix=load_prefix, default_tf_graph=default_tf_graph
+            self,
+            model_file,
+            load_prefix=load_prefix,
+            default_tf_graph=default_tf_graph,
+            input_map=input_map,
         )
         # check model type
         model_type = self.tensors["t_tensor"][2:-2]
@@ -213,10 +223,7 @@ class DeepTensor(DeepEval):
             )
         feed_dict_test[self.t_coord] = np.reshape(coords, [-1])
         feed_dict_test[self.t_box] = np.reshape(cells, [-1])
-        if pbc:
-            feed_dict_test[self.t_mesh] = make_default_mesh(cells)
-        else:
-            feed_dict_test[self.t_mesh] = np.array([], dtype=np.int32)
+        feed_dict_test[self.t_mesh] = make_default_mesh(pbc, mixed_type)
 
         if atomic:
             assert (
@@ -340,10 +347,7 @@ class DeepTensor(DeepEval):
             )
         feed_dict_test[self.t_coord] = np.reshape(coords, [-1])
         feed_dict_test[self.t_box] = np.reshape(cells, [-1])
-        if pbc:
-            feed_dict_test[self.t_mesh] = make_default_mesh(cells)
-        else:
-            feed_dict_test[self.t_mesh] = np.array([], dtype=np.int32)
+        feed_dict_test[self.t_mesh] = make_default_mesh(pbc, mixed_type)
 
         t_out = [self.t_global_tensor, self.t_force, self.t_virial]
         if atomic:

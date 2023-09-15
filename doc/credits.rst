@@ -12,7 +12,7 @@ Cite DeePMD-kit and methods
    :filter: False
 
    Wang_ComputPhysCommun_2018_v228_p178
-   Zeng_arXiv_2023
+   Zeng_JChemPhys_2023_v159_p054801
 
 - If GPU version is used,
 
@@ -42,12 +42,19 @@ Cite DeePMD-kit and methods
 
    Wang_NuclFusion_2022_v62_p126013
 
-- If attention-based descriptor (`se_atten`) is used,
+- If attention-based descriptor (`se_atten`, `se_atten_v2`) is used,
 
 .. bibliography::
    :filter: False
 
    Zhang_2022_DPA1
+
+- If frame-specific parameters (`fparam`, e.g. electronic temperature) is used,
+
+.. bibliography::
+   :filter: False
+
+   Zhang_PhysPlasmas_2020_v27_p122704
 
 - If fitting dipole,
 

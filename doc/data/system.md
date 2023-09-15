@@ -33,6 +33,7 @@ dipole                 | Frame dipole             | dipole.raw               | A
 atomic_dipole          | Atomic dipole            | atomic_dipole.raw        | Any    | Nframes \* Natoms \* 3   |
 polarizability         | Frame polarizability     | polarizability.raw       | Any    | Nframes \* 9             | in the order `XX XY XZ YX YY YZ ZX ZY ZZ`
 atomic_polarizability  | Atomic polarizability    | atomic_polarizability.raw| Any    | Nframes \* Natoms \* 9   | in the order `XX XY XZ YX YY YZ ZX ZY ZZ`
+drdq                   | Partial derivative of atomic coordinates with respect to generalized coordinates | drdq.raw | 1 | Nframes \* Natoms \* 3 \* Ngen_coords |
 
 In general, we always use the following convention of units:
 

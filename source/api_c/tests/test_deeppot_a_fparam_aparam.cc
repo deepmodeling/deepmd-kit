@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 #include <fcntl.h>
 #include <gtest/gtest.h>
 #include <sys/stat.h>
@@ -378,4 +379,58 @@ TYPED_TEST(TestInferDeepPotAFParamAParam, cpu_lmp_nlist_2rc) {
   for (int ii = 0; ii < 3 * 3; ++ii) {
     EXPECT_LT(fabs(virial[ii] - expected_tot_v[ii]), EPSILON);
   }
+}
+
+template <class VALUETYPE>
+class TestInferAParamNAll : public ::testing::Test {
+ protected:
+  std::vector<VALUETYPE> coord = {12.83, 2.56, 2.18, 12.09, 2.87, 2.74,
+                                  00.25, 3.32, 1.68, 3.36,  3.00, 1.81,
+                                  3.51,  2.51, 2.60, 4.27,  3.22, 1.56};
+  std::vector<int> atype = {0, 0, 0, 0, 0, 0};
+  std::vector<VALUETYPE> box = {13., 0., 0., 0., 13., 0., 0., 0., 13.};
+  int natoms = 6;
+
+  deepmd::hpp::DeepPot dp;
+
+  void SetUp() override {
+    std::string file_name = "../../tests/infer/pairwise_dprc.pbtxt";
+    deepmd::hpp::convert_pbtxt_to_pb(file_name, "pairwise_dprc.pb");
+    dp.init("pairwise_dprc.pb");
+  };
+
+  void TearDown() override { remove("fparam_aparam.pb"); };
+};
+
+TYPED_TEST_SUITE(TestInferAParamNAll, ValueTypes);
+
+TYPED_TEST(TestInferAParamNAll, cpu_lmp_nlist) {
+  using VALUETYPE = TypeParam;
+  std::vector<VALUETYPE>& coord = this->coord;
+  std::vector<int>& atype = this->atype;
+  std::vector<VALUETYPE>& box = this->box;
+  int& natoms = this->natoms;
+  deepmd::hpp::DeepPot& dp = this->dp;
+  float rc = dp.cutoff();
+  int nloc = coord.size() / 3;
+  std::vector<VALUETYPE> coord_cpy;
+  std::vector<int> atype_cpy, mapping;
+  std::vector<std::vector<int> > nlist_data;
+  _build_nlist<VALUETYPE>(nlist_data, coord_cpy, atype_cpy, mapping, coord,
+                          atype, box, rc);
+  int nall = coord_cpy.size() / 3;
+  // nall aparam
+  std::vector<VALUETYPE> aparam_cpy(nall, 0);
+  // for some reason all QM atoms do not work
+  aparam_cpy[0] = 1;
+  std::vector<int> ilist(nloc), numneigh(nloc);
+  std::vector<int*> firstneigh(nloc);
+  deepmd::hpp::InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]);
+  convert_nlist(inlist, nlist_data);
+
+  double ener;
+  std::vector<VALUETYPE> force_, virial;
+  dp.compute(ener, force_, virial, coord_cpy, atype_cpy, box, nall - nloc,
+             inlist, 0, std::vector<VALUETYPE>(), aparam_cpy);
+  // just check if the interface accepts nall aparam; no interest with results
 }

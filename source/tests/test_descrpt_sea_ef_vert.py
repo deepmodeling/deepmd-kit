@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 import unittest
 
 import numpy as np
@@ -153,7 +154,7 @@ class TestSmooth(Inter, tf.test.TestCase):
     def setUp(self):
         self.places = 5
         data = Data()
-        Inter.setUp(self, data, sess=self.test_session().__enter__())
+        Inter.setUp(self, data, sess=self.cached_session().__enter__())
 
     def test_force(self):
         force_test(self, self, suffix="_sea_ef_vert")

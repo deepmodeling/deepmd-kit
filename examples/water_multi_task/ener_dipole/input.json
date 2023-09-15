@@ -1,5 +1,5 @@
 {
-  "_comment": "that's all",
+  "_comment1": "that's all",
   "model": {
     "type_map": [
       "O",
@@ -20,8 +20,9 @@
       ],
       "resnet_dt": false,
       "axis_neuron": 16,
+      "precision": "float64",
       "seed": 1,
-      "_comment": " that's all"
+      "_comment2": " that's all"
     },
     "fitting_net_dict": {
       "water_dipole": {
@@ -35,8 +36,9 @@
           100
         ],
         "resnet_dt": true,
+        "precision": "float64",
         "seed": 1,
-        "_comment": " that's all"
+        "_comment3": " that's all"
       },
       "water_ener": {
         "neuron": [
@@ -45,25 +47,26 @@
           240
         ],
         "resnet_dt": true,
+        "precision": "float64",
         "seed": 1,
-        "_comment": " that's all"
+        "_comment4": " that's all"
       }
     },
-    "_comment": " that's all"
+    "_comment5": " that's all"
   },
   "learning_rate": {
     "type": "exp",
     "decay_steps": 5000,
     "start_lr": 0.001,
     "stop_lr": 3.51e-08,
-    "_comment": "that's all"
+    "_comment6": "that's all"
   },
   "loss_dict": {
     "water_dipole": {
       "type": "tensor",
       "pref": 1.0,
       "pref_atomic": 1.0,
-      "_comment": " that's all"
+      "_comment7": " that's all"
     },
     "water_ener": {
       "type": "ener",
@@ -73,7 +76,7 @@
       "limit_pref_f": 1,
       "start_pref_v": 0,
       "limit_pref_v": 0,
-      "_comment": " that's all"
+      "_comment8": " that's all"
     }
   },
   "training": {
@@ -85,7 +88,7 @@
             "../../water_tensor/dipole/training_data/global_system"
           ],
           "batch_size": "auto",
-          "_comment": "that's all"
+          "_comment9": "that's all"
         },
         "validation_data": {
           "systems": [
@@ -94,7 +97,7 @@
           ],
           "batch_size": 1,
           "numb_btch": 3,
-          "_comment": "that's all"
+          "_comment10": "that's all"
         }
       },
       "water_ener": {
@@ -105,7 +108,7 @@
             "../../water/data/data_2/"
           ],
           "batch_size": "auto",
-          "_comment": "that's all"
+          "_comment11": "that's all"
         },
         "validation_data": {
           "systems": [
@@ -113,7 +116,7 @@
           ],
           "batch_size": 1,
           "numb_btch": 3,
-          "_comment": "that's all"
+          "_comment12": "that's all"
         }
       }
     },
@@ -126,6 +129,6 @@
     "disp_file": "lcurve.out",
     "disp_freq": 100,
     "save_freq": 1000,
-    "_comment": "that's all"
+    "_comment13": "that's all"
   }
 }

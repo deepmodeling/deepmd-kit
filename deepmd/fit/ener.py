@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
 from typing import (
     List,
@@ -22,6 +23,14 @@ from deepmd.fit.fitting import (
 )
 from deepmd.infer import (
     DeepPotential,
+)
+from deepmd.loss.ener import (
+    EnerDipoleLoss,
+    EnerSpinLoss,
+    EnerStdLoss,
+)
+from deepmd.loss.loss import (
+    Loss,
 )
 from deepmd.nvnmd.fit.ener import (
     one_layer_nvnmd,
@@ -126,7 +135,7 @@ class EnerFitting(Fitting):
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
-        rcond: float = 1e-3,
+        rcond: Optional[float] = None,
         tot_ener_zero: bool = False,
         trainable: Optional[List[bool]] = None,
         seed: Optional[int] = None,
@@ -137,6 +146,7 @@ class EnerFitting(Fitting):
         layer_name: Optional[List[Optional[str]]] = None,
         use_aparam_as_mask: bool = False,
         spin: Optional[Spin] = None,
+        **kwargs,
     ) -> None:
         """Constructor."""
         # model param
@@ -274,11 +284,11 @@ class EnerFitting(Fitting):
             # In this situation, we directly use these assigned energies instead of computing stats.
             # This will make the loss decrease quickly
             assigned_atom_ener = np.array(
-                list(ee for ee in self.atom_ener_v if ee is not None)
+                [ee for ee in self.atom_ener_v if ee is not None]
             )
-            assigned_ener_idx = list(
-                (ii for ii, ee in enumerate(self.atom_ener_v) if ee is not None)
-            )
+            assigned_ener_idx = [
+                ii for ii, ee in enumerate(self.atom_ener_v) if ee is not None
+            ]
             # np.dot out size: nframe
             sys_ener -= np.dot(sys_tynatom[:, assigned_ener_idx], assigned_atom_ener)
             sys_tynatom[:, assigned_ener_idx] = 0.0
@@ -592,7 +602,13 @@ class EnerFitting(Fitting):
             )
             atype_filter = tf.cast(self.atype_nloc >= 0, GLOBAL_TF_FLOAT_PRECISION)
             self.atype_nloc = tf.reshape(self.atype_nloc, [-1])
-
+        if (
+            nvnmd_cfg.enable
+            and nvnmd_cfg.quantize_descriptor
+            and nvnmd_cfg.restore_descriptor
+            and (nvnmd_cfg.version == 1)
+        ):
+            type_embedding = nvnmd_cfg.map["t_ebd"]
         if type_embedding is not None:
             atype_embed = tf.nn.embedding_lookup(type_embedding, self.atype_nloc)
         else:
@@ -679,12 +695,14 @@ class EnerFitting(Fitting):
             outs = tf.reshape(final_layer, [tf.shape(inputs)[0], natoms[0]])
         # add bias
         self.atom_ener_before = outs * atype_filter
-        self.add_type = tf.reshape(
+        # atomic bias energy from data statistics
+        self.atom_bias_ener = tf.reshape(
             tf.nn.embedding_lookup(self.t_bias_atom_e, self.atype_nloc),
             [tf.shape(inputs)[0], tf.reduce_sum(natoms[2 : 2 + ntypes_atom])],
         )
-        outs = outs + self.add_type
+        outs = outs + self.atom_bias_ener
         outs *= atype_filter
+        self.atom_bias_ener *= atype_filter
         self.atom_ener_after = outs
 
         if self.tot_ener_zero:
@@ -843,9 +861,7 @@ class EnerFitting(Fitting):
             ).mean()
             self.bias_atom_e[idx_type_map] += delta_bias.reshape(-1)
             log.info(
-                "RMSE of atomic energy after linear regression is: {} eV/atom.".format(
-                    rmse_ae
-                )
+                f"RMSE of atomic energy after linear regression is: {rmse_ae} eV/atom."
             )
         elif bias_shift == "statistic":
             statistic_bias = np.linalg.lstsq(
@@ -870,3 +886,29 @@ class EnerFitting(Fitting):
         """
         self.mixed_prec = mixed_prec
         self.fitting_precision = get_precision(mixed_prec["output_prec"])
+
+    def get_loss(self, loss: dict, lr) -> Loss:
+        """Get the loss function.
+
+        Parameters
+        ----------
+        loss : dict
+            The loss function parameters.
+        lr : LearningRateExp
+            The learning rate.
+
+        Returns
+        -------
+        Loss
+            The loss function.
+        """
+        _loss_type = loss.pop("type", "ener")
+        loss["starter_learning_rate"] = lr.start_lr()
+        if _loss_type == "ener":
+            return EnerStdLoss(**loss)
+        elif _loss_type == "ener_dipole":
+            return EnerDipoleLoss(**loss)
+        elif _loss_type == "ener_spin":
+            return EnerSpinLoss(**loss, use_spin=self.spin.use_spin)
+        else:
+            raise RuntimeError("unknown loss type")

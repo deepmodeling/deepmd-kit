@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 import numpy as np
 
 from deepmd.common import (
@@ -34,6 +35,7 @@ class DOSLoss(Loss):
         limit_pref_acdf: float = 0.0,
         protect_value: float = 1e-8,
         log_fit: bool = False,
+        **kwargs,
     ) -> None:
         self.starter_learning_rate = starter_learning_rate
         self.numb_dos = numb_dos

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 """Module taking care of important package constants."""
 
 import logging
@@ -11,11 +12,16 @@ from typing import (
     Optional,
 )
 
+from packaging.version import (
+    Version,
+)
+
 from deepmd.cluster import (
     get_resource,
 )
 from deepmd.env import (
     GLOBAL_CONFIG,
+    TF_VERSION,
     get_tf_default_nthreads,
     global_float_prec,
     tf,
@@ -39,7 +45,7 @@ log = logging.getLogger(__name__)
 
 
 # http://patorjk.com/software/taag. Font:Big"
-WELCOME = (  # noqa
+WELCOME = (
     r" _____               _____   __  __  _____           _     _  _   ",
     r"|  __ \             |  __ \ |  \/  ||  __ \         | |   (_)| |  ",
     r"| |  | |  ___   ___ | |__) || \  / || |  | | ______ | | __ _ | |_ ",
@@ -51,7 +57,7 @@ WELCOME = (  # noqa
 CITATION = (
     "Please read and cite:",
     "Wang, Zhang, Han and E, Comput.Phys.Comm. 228, 178-184 (2018)",
-    "Zeng et al, arXiv:2304.09409",
+    "Zeng et al, J. Chem. Phys., 159, 054801 (2023)",
     "See https://deepmd.rtfd.io/credits/ for details.",
 )
 
@@ -65,7 +71,7 @@ BUILD = (
     f"build float prec:     {global_float_prec}",
     f"build variant:        {GLOBAL_CONFIG['dp_variant']}",
     f"build with tf inc:    {GLOBAL_CONFIG['tf_include_dir']}",
-    f"build with tf lib:    {GLOBAL_CONFIG['tf_libs'].replace(';', _sep)}",  # noqa
+    f"build with tf lib:    {GLOBAL_CONFIG['tf_libs'].replace(';', _sep)}",
 )
 
 
@@ -236,6 +242,11 @@ class RunOptions:
                     "Count of local processes is larger than that of available GPUs!"
                 )
             self.my_device = f"gpu:{gpu_idx:d}"
+            if Version(TF_VERSION) >= Version("1.14"):
+                physical_devices = tf.config.experimental.list_physical_devices("GPU")
+                tf.config.experimental.set_visible_devices(
+                    physical_devices[gpu_idx], "GPU"
+                )
         else:
             self.my_device = "cpu:0"
 

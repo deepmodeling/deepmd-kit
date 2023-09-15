@@ -1,15 +1,20 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     List,
     Optional,
+    Union,
 )
 
 from deepmd.env import (
     MODEL_VERSION,
     tf,
 )
+from deepmd.utils.type_embed import (
+    TypeEmbedNet,
+)
 
 from .model import (
-    Model,
+    StandardModel,
 )
 from .model_stat import (
     make_stat_input,
@@ -17,18 +22,18 @@ from .model_stat import (
 )
 
 
-class TensorModel(Model):
+class TensorModel(StandardModel):
     """Tensor model.
 
     Parameters
     ----------
     tensor_name
             Name of the tensor.
-    descrpt
+    descriptor
             Descriptor
-    fitting
+    fitting_net
             Fitting net
-    typeebd
+    type_embedding
             Type embedding net
     type_map
             Mapping atom type to the name (str) of the type.
@@ -42,30 +47,25 @@ class TensorModel(Model):
     def __init__(
         self,
         tensor_name: str,
-        descrpt,
-        fitting,
-        typeebd=None,
+        descriptor: dict,
+        fitting_net: dict,
+        type_embedding: Optional[Union[dict, TypeEmbedNet]] = None,
         type_map: Optional[List[str]] = None,
         data_stat_nbatch: int = 10,
         data_stat_protect: float = 1e-2,
+        **kwargs,
     ) -> None:
         """Constructor."""
+        super().__init__(
+            descriptor=descriptor,
+            fitting_net=fitting_net,
+            type_embedding=type_embedding,
+            type_map=type_map,
+            data_stat_nbatch=data_stat_nbatch,
+            data_stat_protect=data_stat_protect,
+            **kwargs,
+        )
         self.model_type = tensor_name
-        # descriptor
-        self.descrpt = descrpt
-        self.rcut = self.descrpt.get_rcut()
-        self.ntypes = self.descrpt.get_ntypes()
-        # fitting
-        self.fitting = fitting
-        # type embedding
-        self.typeebd = typeebd
-        # other params
-        if type_map is None:
-            self.type_map = []
-        else:
-            self.type_map = type_map
-        self.data_stat_nbatch = data_stat_nbatch
-        self.data_stat_protect = data_stat_protect
 
     def get_rcut(self):
         return self.rcut

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 import unittest
 
 import numpy as np
@@ -16,7 +17,7 @@ from deepmd.utils.network import (
 class TestGelu(tf.test.TestCase):
     def setUp(self):
         self.places = 6
-        self.sess = self.test_session().__enter__()
+        self.sess = self.cached_session().__enter__()
         self.inputs = tf.reshape(
             tf.constant([0.0, 1.0, 2.0, 3.0], dtype=tf.float64), [-1, 1]
         )

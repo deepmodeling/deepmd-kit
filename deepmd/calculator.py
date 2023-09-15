@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 """ASE calculator interface module."""
 
 from pathlib import (
@@ -5,6 +6,7 @@ from pathlib import (
 )
 from typing import (
     TYPE_CHECKING,
+    ClassVar,
     Dict,
     List,
     Optional,
@@ -68,13 +70,19 @@ class DP(Calculator):
     """
 
     name = "DP"
-    implemented_properties = ["energy", "free_energy", "forces", "virial", "stress"]
+    implemented_properties: ClassVar[List[str]] = [
+        "energy",
+        "free_energy",
+        "forces",
+        "virial",
+        "stress",
+    ]
 
     def __init__(
         self,
         model: Union[str, "Path"],
         label: str = "DP",
-        type_dict: Dict[str, int] = None,
+        type_dict: Optional[Dict[str, int]] = None,
         **kwargs,
     ) -> None:
         Calculator.__init__(self, label=label, **kwargs)

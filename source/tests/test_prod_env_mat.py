@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 import numpy as np
 
 from deepmd.env import (
@@ -10,7 +11,7 @@ from deepmd.env import (
 
 class TestProdEnvMat(tf.test.TestCase):
     def setUp(self):
-        self.sess = self.test_session().__enter__()
+        self.sess = self.cached_session().__enter__()
         self.nframes = 2
         self.dcoord = [
             12.83,

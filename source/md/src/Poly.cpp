@@ -1,11 +1,16 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 #include "Poly.h"
 
 bool PiecewisePoly::valid() const {
-  if (x.size() != p.size() + 1) return false;
+  if (x.size() != p.size() + 1) {
+    return false;
+  }
   std::vector<double>::const_iterator i = x.begin();
   std::vector<double>::const_iterator j = x.begin();
   for (++j; j != x.end(); ++i, ++j) {
-    if (*i > *j) return false;
+    if (*i > *j) {
+      return false;
+    }
   }
   return true;
 }
@@ -60,8 +65,12 @@ double PiecewisePoly::value_periodic(const double& xx_) const {
 double PiecewisePoly::value(const double& xx,
                             unsigned& begin,
                             unsigned& end) const {
-  if (end <= begin) return 0;
-  if (end - begin == 1) return p[begin].value(xx);
+  if (end <= begin) {
+    return 0;
+  }
+  if (end - begin == 1) {
+    return p[begin].value(xx);
+  }
   unsigned mid = (begin + end) / 2;
   while (end - begin > 1) {
     if (xx < x[mid]) {

@@ -36,3 +36,14 @@ optional arguments:
 ```
 
 For more details concerning the definition of model deviation and its application, please refer to [Yuzhi Zhang, Haidi Wang, Weijie Chen, Jinzhe Zeng, Linfeng Zhang, Han Wang, and Weinan E, DP-GEN: A concurrent learning platform for the generation of reliable deep learning based potential energy models, Computer Physics Communications, 2020, 253, 107206.](https://doi.org/10.1016/j.cpc.2020.107206)
+
+## Relative model deviation
+
+By default, the model deviation is output in absolute value. If the argument `--relative` is passed, then the relative model deviation of the force will be output, including values output by the argument `--atomic`. The relative model deviation of the force on atom $i$ is defined by
+
+$$E_{f_i}=\frac{\left|D_{f_i}\right|}{\left|f_i\right|+l}$$
+
+where $D_{f_i}$ is the absolute model deviation of the force on atom $i$, $f_i$ is the norm of the force and $l$ is provided as the parameter of the keyword `relative`.
+If the argument `--relative_v` is set, then the relative model deviation of the virial will be output instead of the absolute value, with the same definition of that of the force:
+
+$$E_{v_i}=\frac{\left|D_{v_i}\right|}{\left|v_i\right|+l}$$

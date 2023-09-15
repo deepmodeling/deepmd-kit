@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 import json
 import os
 import subprocess as sp
@@ -72,6 +73,28 @@ def _init_models():
 
 
 INPUT, FROZEN_MODEL, COMPRESSED_MODEL = _init_models()
+
+
+def tearDownModule():
+    _file_delete(INPUT)
+    _file_delete(FROZEN_MODEL)
+    _file_delete(COMPRESSED_MODEL)
+    _file_delete("out.json")
+    _file_delete("compress.json")
+    _file_delete("checkpoint")
+    _file_delete("model.ckpt.meta")
+    _file_delete("model.ckpt.index")
+    _file_delete("model.ckpt.data-00000-of-00001")
+    _file_delete("model.ckpt-100.meta")
+    _file_delete("model.ckpt-100.index")
+    _file_delete("model.ckpt-100.data-00000-of-00001")
+    _file_delete("model-compression/checkpoint")
+    _file_delete("model-compression/model.ckpt.meta")
+    _file_delete("model-compression/model.ckpt.index")
+    _file_delete("model-compression/model.ckpt.data-00000-of-00001")
+    _file_delete("model-compression")
+    _file_delete("input_v2_compat.json")
+    _file_delete("lcurve.out")
 
 
 class TestDeepPotAPBC(unittest.TestCase):
@@ -444,28 +467,6 @@ class TestDeepPotAPBCExcludeTypes(unittest.TestCase):
         self.atype = [0, 1, 1, 0, 1, 1]
         self.box = np.array([13.0, 0.0, 0.0, 0.0, 13.0, 0.0, 0.0, 0.0, 13.0])
 
-    @classmethod
-    def tearDownClass(self):
-        _file_delete(INPUT)
-        _file_delete(FROZEN_MODEL)
-        _file_delete(COMPRESSED_MODEL)
-        _file_delete("out.json")
-        _file_delete("compress.json")
-        _file_delete("checkpoint")
-        _file_delete("model.ckpt.meta")
-        _file_delete("model.ckpt.index")
-        _file_delete("model.ckpt.data-00000-of-00001")
-        _file_delete("model.ckpt-100.meta")
-        _file_delete("model.ckpt-100.index")
-        _file_delete("model.ckpt-100.data-00000-of-00001")
-        _file_delete("model-compression/checkpoint")
-        _file_delete("model-compression/model.ckpt.meta")
-        _file_delete("model-compression/model.ckpt.index")
-        _file_delete("model-compression/model.ckpt.data-00000-of-00001")
-        _file_delete("model-compression")
-        _file_delete("input_v2_compat.json")
-        _file_delete("lcurve.out")
-
     def test_attrs(self):
         self.assertEqual(self.dp_original.get_ntypes(), 2)
         self.assertAlmostEqual(self.dp_original.get_rcut(), 6.0, places=default_places)
@@ -558,3 +559,25 @@ class TestDeepPotAPBCExcludeTypes(unittest.TestCase):
         np.testing.assert_almost_equal(av0, av1, default_places)
         np.testing.assert_almost_equal(ee0, ee1, default_places)
         np.testing.assert_almost_equal(vv0, vv1, default_places)
+
+
+class TestDeepPotAPBC2(TestDeepPotAPBC):
+    @classmethod
+    def setUpClass(self):
+        self.dp_original = DeepPot(FROZEN_MODEL)
+        self.dp_compressed = DeepPot(COMPRESSED_MODEL)
+        self.coords = np.array(
+            [
+                0.0,
+                0.0,
+                0.0,
+                2.0,
+                0.0,
+                0.0,
+                0.0,
+                2.0,
+                0.0,
+            ]
+        )
+        self.atype = [0, 0, 0]
+        self.box = np.array([13.0, 0.0, 0.0, 0.0, 13.0, 0.0, 0.0, 0.0, 13.0])

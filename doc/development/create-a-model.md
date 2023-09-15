@@ -16,6 +16,7 @@ After implementation, you need to register the component with a key:
 ```py
 from deepmd.descriptor import Descriptor
 
+
 @Descriptor.register("some_descrpt")
 class SomeDescript(Descriptor):
     def __init__(self, arg1: bool, arg2: float) -> None:
@@ -31,6 +32,7 @@ from typing import List
 
 from dargs import Argument
 from deepmd.utils.argcheck import descrpt_args_plugin
+
 
 @descrpt_args_plugin.register("some_descrpt")
 def descrpt_some_args() -> List[Argument]:
@@ -57,11 +59,13 @@ The arguments here should be consistent with the class arguments of your new com
 You may use `setuptools` to package new codes into a new Python package. It's crucial to add your new component to `entry_points['deepmd']` in `setup.py`:
 
 ```py
-    entry_points={
-        'deepmd': [
-            'some_descrpt=deepmd_some_descrtpt:SomeDescript',
+entry_points = (
+    {
+        "deepmd": [
+            "some_descrpt=deepmd_some_descrtpt:SomeDescript",
         ],
     },
+)
 ```
 
 where `deepmd_some_descrtpt` is the module of your codes. It is equivalent to `from deepmd_some_descrtpt import SomeDescript`.

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 """Use dp_ipi inside the Python package."""
 import os
 import subprocess
@@ -23,7 +24,7 @@ def _program(name: str, args: List[str]):
     args : list of str
         list of arguments
     """
-    return subprocess.call([os.path.join(ROOT_DIR, name)] + args, close_fds=False)
+    return subprocess.call([os.path.join(ROOT_DIR, name), *args], close_fds=False)
 
 
 def dp_ipi():

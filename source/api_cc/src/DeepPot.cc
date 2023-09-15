@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 #include "DeepPot.h"
 
 #include <stdexcept>
@@ -423,10 +424,11 @@ void DeepPot::init(const std::string& model,
   options.config.set_intra_op_parallelism_threads(num_intra_nthreads);
   deepmd::load_op_library();
 
-  if (file_content.size() == 0)
+  if (file_content.size() == 0) {
     check_status(ReadBinaryProto(Env::Default(), model, graph_def));
-  else
+  } else {
     (*graph_def).ParseFromString(file_content);
+  }
   int gpu_num = -1;
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
   DPGetDeviceCount(gpu_num);  // check current device environment
@@ -471,8 +473,21 @@ void DeepPot::init(const std::string& model,
   }
   dfparam = get_scalar<int>("fitting_attr/dfparam");
   daparam = get_scalar<int>("fitting_attr/daparam");
-  if (dfparam < 0) dfparam = 0;
-  if (daparam < 0) daparam = 0;
+  if (dfparam < 0) {
+    dfparam = 0;
+  }
+  if (daparam < 0) {
+    daparam = 0;
+  }
+  if (daparam > 0) {
+    try {
+      aparam_nall = get_scalar<bool>("fitting_attr/aparam_nall");
+    } catch (deepmd::deepmd_exception) {
+      aparam_nall = false;
+    }
+  } else {
+    aparam_nall = false;
+  }
   model_type = get_scalar<STRINGTYPE>("model_attr/model_type");
   inited = true;
 
@@ -565,23 +580,25 @@ void DeepPot::compute(ENERGYVTYPE& dener,
   assert(nloc == atommap.get_type().size());
   std::vector<VALUETYPE> fparam;
   std::vector<VALUETYPE> aparam;
-  validate_fparam_aparam(nframes, nloc, fparam_, aparam_);
+  validate_fparam_aparam(nframes, (aparam_nall ? nall : nloc), fparam_,
+                         aparam_);
   tile_fparam_aparam(fparam, nframes, dfparam, fparam_);
-  tile_fparam_aparam(aparam, nframes, nloc * daparam, aparam_);
+  tile_fparam_aparam(aparam, nframes, (aparam_nall ? nall : nloc) * daparam,
+                     aparam_);
 
   std::vector<std::pair<std::string, Tensor>> input_tensors;
 
   if (dtype == tensorflow::DT_DOUBLE) {
-    int ret =
-        session_input_tensors<double>(input_tensors, dcoord_, ntypes, datype_,
-                                      dbox, cell_size, fparam, aparam, atommap);
+    int ret = session_input_tensors<double>(input_tensors, dcoord_, ntypes,
+                                            datype_, dbox, cell_size, fparam,
+                                            aparam, atommap, "", aparam_nall);
     assert(ret == nloc);
     run_model<double>(dener, dforce_, dvirial, session, input_tensors, atommap,
                       nframes);
   } else {
-    int ret =
-        session_input_tensors<float>(input_tensors, dcoord_, ntypes, datype_,
-                                     dbox, cell_size, fparam, aparam, atommap);
+    int ret = session_input_tensors<float>(input_tensors, dcoord_, ntypes,
+                                           datype_, dbox, cell_size, fparam,
+                                           aparam, atommap, "", aparam_nall);
     assert(ret == nloc);
     run_model<float>(dener, dforce_, dvirial, session, input_tensors, atommap,
                      nframes);
@@ -644,9 +661,12 @@ void DeepPot::compute(ENERGYVTYPE& dener,
   int nframes = dcoord_.size() / nall / 3;
   std::vector<VALUETYPE> fparam;
   std::vector<VALUETYPE> aparam_;
-  validate_fparam_aparam(nframes, nall - nghost, fparam_, aparam__);
+  validate_fparam_aparam(nframes, (aparam_nall ? nall : (nall - nghost)),
+                         fparam_, aparam__);
   tile_fparam_aparam(fparam, nframes, dfparam, fparam_);
-  tile_fparam_aparam(aparam_, nframes, (nall - nghost) * daparam, aparam__);
+  tile_fparam_aparam(aparam_, nframes,
+                     (aparam_nall ? nall : (nall - nghost)) * daparam,
+                     aparam__);
 
   // select real atoms
   std::vector<VALUETYPE> dcoord, dforce, aparam;
@@ -654,7 +674,7 @@ void DeepPot::compute(ENERGYVTYPE& dener,
   int nghost_real, nall_real, nloc_real;
   select_real_atoms_coord(dcoord, datype, aparam, nghost_real, fwd_map, bkw_map,
                           nall_real, nloc_real, dcoord_, datype_, aparam_,
-                          nghost, ntypes, nframes, daparam, nall);
+                          nghost, ntypes, nframes, daparam, nall, aparam_nall);
 
   // internal nlist
   if (ago == 0) {
@@ -746,16 +766,16 @@ void DeepPot::compute_inner(ENERGYVTYPE& dener,
     nlist_data.make_inlist(nlist);
   }
   if (dtype == tensorflow::DT_DOUBLE) {
-    int ret = session_input_tensors<double>(input_tensors, dcoord_, ntypes,
-                                            datype_, dbox, nlist, fparam,
-                                            aparam, atommap, nghost, ago);
+    int ret = session_input_tensors<double>(
+        input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam,
+        atommap, nghost, ago, "", aparam_nall);
     assert(nloc == ret);
     run_model<double>(dener, dforce_, dvirial, session, input_tensors, atommap,
                       nframes, nghost);
   } else {
-    int ret = session_input_tensors<float>(input_tensors, dcoord_, ntypes,
-                                           datype_, dbox, nlist, fparam, aparam,
-                                           atommap, nghost, ago);
+    int ret = session_input_tensors<float>(
+        input_tensors, dcoord_, ntypes, datype_, dbox, nlist, fparam, aparam,
+        atommap, nghost, ago, "", aparam_nall);
     assert(nloc == ret);
     run_model<float>(dener, dforce_, dvirial, session, input_tensors, atommap,
                      nframes, nghost);
@@ -833,15 +853,15 @@ void DeepPot::compute(ENERGYVTYPE& dener,
   std::vector<std::pair<std::string, Tensor>> input_tensors;
 
   if (dtype == tensorflow::DT_DOUBLE) {
-    int nloc =
-        session_input_tensors<double>(input_tensors, dcoord_, ntypes, datype_,
-                                      dbox, cell_size, fparam, aparam, atommap);
+    int nloc = session_input_tensors<double>(input_tensors, dcoord_, ntypes,
+                                             datype_, dbox, cell_size, fparam,
+                                             aparam, atommap, "", aparam_nall);
     run_model<double>(dener, dforce_, dvirial, datom_energy_, datom_virial_,
                       session, input_tensors, atommap, nframes);
   } else {
-    int nloc =
-        session_input_tensors<float>(input_tensors, dcoord_, ntypes, datype_,
-                                     dbox, cell_size, fparam, aparam, atommap);
+    int nloc = session_input_tensors<float>(input_tensors, dcoord_, ntypes,
+                                            datype_, dbox, cell_size, fparam,
+                                            aparam, atommap, "", aparam_nall);
     run_model<float>(dener, dforce_, dvirial, datom_energy_, datom_virial_,
                      session, input_tensors, atommap, nframes);
   }
@@ -914,9 +934,11 @@ void DeepPot::compute(ENERGYVTYPE& dener,
   int nloc = nall - nghost;
   std::vector<VALUETYPE> fparam;
   std::vector<VALUETYPE> aparam_;
-  validate_fparam_aparam(nframes, nloc, fparam_, aparam__);
+  validate_fparam_aparam(nframes, (aparam_nall ? nall : nloc), fparam_,
+                         aparam__);
   tile_fparam_aparam(fparam, nframes, dfparam, fparam_);
-  tile_fparam_aparam(aparam_, nframes, nloc * daparam, aparam__);
+  tile_fparam_aparam(aparam_, nframes, (aparam_nall ? nall : nloc) * daparam,
+                     aparam__);
   std::vector<std::pair<std::string, Tensor>> input_tensors;
   // select real atoms
   std::vector<VALUETYPE> dcoord, dforce, aparam, datom_energy, datom_virial;
@@ -924,7 +946,7 @@ void DeepPot::compute(ENERGYVTYPE& dener,
   int nghost_real, nall_real, nloc_real;
   select_real_atoms_coord(dcoord, datype, aparam, nghost_real, fwd_map, bkw_map,
                           nall_real, nloc_real, dcoord_, datype_, aparam_,
-                          nghost, ntypes, nframes, daparam, nall);
+                          nghost, ntypes, nframes, daparam, nall, aparam_nall);
 
   if (ago == 0) {
     atommap = deepmd::AtomMap(datype.begin(), datype.begin() + nloc_real);
@@ -937,16 +959,16 @@ void DeepPot::compute(ENERGYVTYPE& dener,
   }
 
   if (dtype == tensorflow::DT_DOUBLE) {
-    int ret = session_input_tensors<double>(input_tensors, dcoord, ntypes,
-                                            datype, dbox, nlist, fparam, aparam,
-                                            atommap, nghost_real, ago);
+    int ret = session_input_tensors<double>(
+        input_tensors, dcoord, ntypes, datype, dbox, nlist, fparam, aparam,
+        atommap, nghost_real, ago, "", aparam_nall);
     assert(nloc_real == ret);
     run_model<double>(dener, dforce, dvirial, datom_energy, datom_virial,
                       session, input_tensors, atommap, nframes, nghost_real);
   } else {
-    int ret = session_input_tensors<float>(input_tensors, dcoord, ntypes,
-                                           datype, dbox, nlist, fparam, aparam,
-                                           atommap, nghost_real, ago);
+    int ret = session_input_tensors<float>(
+        input_tensors, dcoord, ntypes, datype, dbox, nlist, fparam, aparam,
+        atommap, nghost_real, ago, "", aparam_nall);
     assert(nloc_real == ret);
     run_model<float>(dener, dforce, dvirial, datom_energy, datom_virial,
                      session, input_tensors, atommap, nframes, nghost_real);
@@ -1049,14 +1071,14 @@ void DeepPot::compute_mixed_type(ENERGYVTYPE& dener,
   if (dtype == tensorflow::DT_DOUBLE) {
     int ret = session_input_tensors_mixed_type<double>(
         input_tensors, nframes, dcoord_, ntypes, datype_, dbox, cell_size,
-        fparam, aparam, atommap);
+        fparam, aparam, atommap, "", aparam_nall);
     assert(ret == nloc);
     run_model<double>(dener, dforce_, dvirial, session, input_tensors, atommap,
                       nframes);
   } else {
     int ret = session_input_tensors_mixed_type<float>(
         input_tensors, nframes, dcoord_, ntypes, datype_, dbox, cell_size,
-        fparam, aparam, atommap);
+        fparam, aparam, atommap, "", aparam_nall);
     assert(ret == nloc);
     run_model<float>(dener, dforce_, dvirial, session, input_tensors, atommap,
                      nframes);
@@ -1133,13 +1155,13 @@ void DeepPot::compute_mixed_type(ENERGYVTYPE& dener,
   if (dtype == tensorflow::DT_DOUBLE) {
     int nloc = session_input_tensors_mixed_type<double>(
         input_tensors, nframes, dcoord_, ntypes, datype_, dbox, cell_size,
-        fparam, aparam, atommap);
+        fparam, aparam, atommap, "", aparam_nall);
     run_model<double>(dener, dforce_, dvirial, datom_energy_, datom_virial_,
                       session, input_tensors, atommap, nframes);
   } else {
     int nloc = session_input_tensors_mixed_type<float>(
         input_tensors, nframes, dcoord_, ntypes, datype_, dbox, cell_size,
-        fparam, aparam, atommap);
+        fparam, aparam, atommap, "", aparam_nall);
     run_model<float>(dener, dforce_, dvirial, datom_energy_, datom_virial_,
                      session, input_tensors, atommap, nframes);
   }
@@ -1242,10 +1264,11 @@ void DeepPotModelDevi::init(const std::vector<std::string>& models,
   options.config.set_intra_op_parallelism_threads(num_intra_nthreads);
   for (unsigned ii = 0; ii < numb_models; ++ii) {
     graph_defs[ii] = new GraphDef();
-    if (file_contents.size() == 0)
+    if (file_contents.size() == 0) {
       check_status(ReadBinaryProto(Env::Default(), models[ii], graph_defs[ii]));
-    else
+    } else {
       (*graph_defs[ii]).ParseFromString(file_contents[ii]);
+    }
   }
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
   if (gpu_num > 0) {
@@ -1294,8 +1317,21 @@ void DeepPotModelDevi::init(const std::vector<std::string>& models,
   }
   dfparam = get_scalar<int>("fitting_attr/dfparam");
   daparam = get_scalar<int>("fitting_attr/daparam");
-  if (dfparam < 0) dfparam = 0;
-  if (daparam < 0) daparam = 0;
+  if (dfparam < 0) {
+    dfparam = 0;
+  }
+  if (daparam < 0) {
+    daparam = 0;
+  }
+  if (daparam > 0) {
+    try {
+      aparam_nall = get_scalar<bool>("fitting_attr/aparam_nall");
+    } catch (deepmd::deepmd_exception) {
+      aparam_nall = false;
+    }
+  } else {
+    aparam_nall = false;
+  }
   model_type = get_scalar<STRINGTYPE>("model_attr/model_type");
   // rcut = get_rcut();
   // cell_size = rcut;
@@ -1408,11 +1444,13 @@ void DeepPotModelDevi::compute(std::vector<ENERGYTYPE>& all_energy,
                                const int& ago,
                                const std::vector<VALUETYPE>& fparam,
                                const std::vector<VALUETYPE>& aparam_) {
-  if (numb_models == 0) return;
+  if (numb_models == 0) {
+    return;
+  }
   int nall = dcoord_.size() / 3;
   int nframes = 1;
   int nloc = nall - nghost;
-  validate_fparam_aparam(nloc, fparam, aparam_);
+  validate_fparam_aparam((aparam_nall ? nall : nloc), fparam, aparam_);
   std::vector<std::pair<std::string, Tensor>> input_tensors;
 
   // select real atoms
@@ -1421,7 +1459,7 @@ void DeepPotModelDevi::compute(std::vector<ENERGYTYPE>& all_energy,
   int nghost_real, nall_real, nloc_real;
   select_real_atoms_coord(dcoord, datype, aparam, nghost_real, fwd_map, bkw_map,
                           nall_real, nloc_real, dcoord_, datype_, aparam_,
-                          nghost, ntypes, nframes, daparam, nall);
+                          nghost, ntypes, nframes, daparam, nall, aparam_nall);
 
   // agp == 0 means that the LAMMPS nbor list has been updated
   if (ago == 0) {
@@ -1437,11 +1475,11 @@ void DeepPotModelDevi::compute(std::vector<ENERGYTYPE>& all_energy,
   if (dtype == tensorflow::DT_DOUBLE) {
     ret = session_input_tensors<double>(input_tensors, dcoord, ntypes, datype,
                                         dbox, nlist, fparam, aparam, atommap,
-                                        nghost_real, ago);
+                                        nghost_real, ago, "", aparam_nall);
   } else {
     ret = session_input_tensors<float>(input_tensors, dcoord, ntypes, datype,
                                        dbox, nlist, fparam, aparam, atommap,
-                                       nghost_real, ago);
+                                       nghost_real, ago, "", aparam_nall);
   }
   all_energy.resize(numb_models);
   all_force.resize(numb_models);
@@ -1504,11 +1542,13 @@ void DeepPotModelDevi::compute(
     const int& ago,
     const std::vector<VALUETYPE>& fparam,
     const std::vector<VALUETYPE>& aparam_) {
-  if (numb_models == 0) return;
+  if (numb_models == 0) {
+    return;
+  }
   int nframes = 1;
   int nall = dcoord_.size() / 3;
   int nloc = nall - nghost;
-  validate_fparam_aparam(nloc, fparam, aparam_);
+  validate_fparam_aparam((aparam_nall ? nall : nloc), fparam, aparam_);
   std::vector<std::pair<std::string, Tensor>> input_tensors;
 
   // select real atoms
@@ -1517,7 +1557,7 @@ void DeepPotModelDevi::compute(
   int nghost_real, nall_real, nloc_real;
   select_real_atoms_coord(dcoord, datype, aparam, nghost_real, fwd_map, bkw_map,
                           nall_real, nloc_real, dcoord_, datype_, aparam_,
-                          nghost, ntypes, nframes, daparam, nall);
+                          nghost, ntypes, nframes, daparam, nall, aparam_nall);
   // agp == 0 means that the LAMMPS nbor list has been updated
 
   if (ago == 0) {
@@ -1533,11 +1573,11 @@ void DeepPotModelDevi::compute(
   if (dtype == tensorflow::DT_DOUBLE) {
     ret = session_input_tensors<double>(input_tensors, dcoord, ntypes, datype,
                                         dbox, nlist, fparam, aparam, atommap,
-                                        nghost_real, ago);
+                                        nghost_real, ago, "", aparam_nall);
   } else {
     ret = session_input_tensors<float>(input_tensors, dcoord, ntypes, datype,
                                        dbox, nlist, fparam, aparam, atommap,
-                                       nghost_real, ago);
+                                       nghost_real, ago, "", aparam_nall);
   }
 
   all_energy.resize(numb_models);
@@ -1604,7 +1644,9 @@ template <typename VALUETYPE>
 void DeepPotModelDevi::compute_avg(VALUETYPE& dener,
                                    const std::vector<VALUETYPE>& all_energy) {
   assert(all_energy.size() == numb_models);
-  if (numb_models == 0) return;
+  if (numb_models == 0) {
+    return;
+  }
 
   dener = 0;
   for (unsigned ii = 0; ii < numb_models; ++ii) {
@@ -1624,7 +1666,9 @@ void DeepPotModelDevi::compute_avg(
     std::vector<VALUETYPE>& avg,
     const std::vector<std::vector<VALUETYPE>>& xx) {
   assert(xx.size() == numb_models);
-  if (numb_models == 0) return;
+  if (numb_models == 0) {
+    return;
+  }
 
   avg.resize(xx[0].size());
   fill(avg.begin(), avg.end(), VALUETYPE(0.));
@@ -1653,7 +1697,9 @@ void DeepPotModelDevi::compute_std(
     const std::vector<std::vector<VALUETYPE>>& xx,
     const int& stride) {
   assert(xx.size() == numb_models);
-  if (numb_models == 0) return;
+  if (numb_models == 0) {
+    return;
+  }
 
   unsigned ndof = avg.size();
   unsigned nloc = ndof / stride;

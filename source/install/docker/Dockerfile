@@ -7,7 +7,8 @@ COPY dist /dist
 RUN pip install "$(ls /dist/deepmd_kit-*manylinux*_x86_64.whl)[gpu,cu11,lmp,ipi]" \
     && dp -h \
     && lmp -h \
-    && dp_ipi
+    && dp_ipi \
+    && python -m deepmd -h
 
 FROM python:3.10 AS build-image
 COPY --from=compile-image /opt/deepmd-kit /opt/deepmd-kit

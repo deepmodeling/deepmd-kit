@@ -104,7 +104,7 @@ See {cpp:class}`deepmd::hpp::DeepPot` for details.
 
 You can compile `infer_water_hpp.cpp` using `gcc`:
 ```sh
-gcc infer_water_hpp.hpp -L $deepmd_root/lib -L $tensorflow_root/lib -I $deepmd_root/include -Wl,--no-as-needed -ldeepmd_c -Wl,-rpath=$deepmd_root/lib -Wl,-rpath=$tensorflow_root/lib -o infer_water_hpp
+gcc infer_water_hpp.cpp -L $deepmd_root/lib -L $tensorflow_root/lib -I $deepmd_root/include -Wl,--no-as-needed -ldeepmd_c -Wl,-rpath=$deepmd_root/lib -Wl,-rpath=$tensorflow_root/lib -o infer_water_hpp
 ```
 and then run the program:
 ```sh

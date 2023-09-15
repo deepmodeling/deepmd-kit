@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 #ifndef LAMMPS_VERSION_NUMBER
 #error Please define LAMMPS_VERSION_NUMBER to yyyymmdd
 #endif
@@ -74,6 +75,7 @@ class PairDeepMD : public Pair {
   std::string get_file_content(const std::string &model);
   std::vector<std::string> get_file_content(
       const std::vector<std::string> &models);
+  std::vector<std::string> type_names;
 
  protected:
   virtual void allocate();
@@ -130,6 +132,7 @@ class PairDeepMD : public Pair {
   tagint *tagsend, *tagrecv;
   double *stdfsend, *stdfrecv;
   std::vector<int> type_idx_map;
+  double ener_unit_cvt_factor;
 };
 
 }  // namespace LAMMPS_NS

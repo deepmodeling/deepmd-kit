@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 import dpdata
 import numpy as np
 from common import (
@@ -122,7 +123,7 @@ class TestModel(tf.test.TestCase):
             t_mesh: test_data["default_mesh"],
             is_training: False,
         }
-        sess = self.test_session().__enter__()
+        sess = self.cached_session().__enter__()
         sess.run(tf.global_variables_initializer())
         [e, f, v] = sess.run([energy, force, virial], feed_dict=feed_dict_test)
         self.assertAlmostEqual(e[0], set_atom_ener[0], places=10)
@@ -211,7 +212,7 @@ class TestModel(tf.test.TestCase):
             is_training: False,
         }
 
-        sess = self.test_session().__enter__()
+        sess = self.cached_session().__enter__()
         sess.run(tf.global_variables_initializer())
         [e, f, v] = sess.run([energy, force, virial], feed_dict=feed_dict_test)
 
@@ -346,7 +347,7 @@ class TestModel(tf.test.TestCase):
             t_mesh: test_data["default_mesh"],
             is_training: False,
         }
-        sess = self.test_session().__enter__()
+        sess = self.cached_session().__enter__()
         sess.run(tf.global_variables_initializer())
         [e, f, v] = sess.run([energy, force, virial], feed_dict=feed_dict_test)
         self.assertAlmostEqual(e[0], set_atom_ener[0], places=10)

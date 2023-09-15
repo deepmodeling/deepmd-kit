@@ -1,5 +1,5 @@
 {
-  "_comment": " model parameters",
+  "_comment1": " model parameters",
   "model": {
     "type_map": [
       "C",
@@ -27,8 +27,9 @@
       ],
       "resnet_dt": true,
       "axis_neuron": 16,
+      "precision": "float64",
       "seed": 1,
-      "_comment": " that's all"
+      "_comment2": " that's all"
     },
     "fitting_net": {
       "neuron": [
@@ -37,12 +38,13 @@
         240
       ],
       "resnet_dt": true,
+      "precision": "float64",
       "seed": 1,
       "numb_aparam": 1,
       "use_aparam_as_mask": true,
-      "_comment": " that's all"
+      "_comment3": " that's all"
     },
-    "_comment": " that's all"
+    "_comment4": " that's all"
   },
 
   "learning_rate": {
@@ -50,7 +52,7 @@
     "decay_steps": 20000,
     "start_lr": 0.001,
     "stop_lr": 3.51e-8,
-    "_comment": "that's all"
+    "_comment5": "that's all"
   },
 
   "loss": {
@@ -61,7 +63,7 @@
     "limit_pref_f": 0.0,
     "start_pref_pf": 1.0,
     "limit_pref_pf": 1.0,
-    "_comment": " that's all"
+    "_comment6": " that's all"
   },
   "training": {
     "training_data": {
@@ -69,14 +71,14 @@
         "example/zinc_protein/train_data_dp_mask/"
       ],
       "batch_size": 2,
-      "_comment": "that's all"
+      "_comment7": "that's all"
     },
     "validation_data": {
       "systems": [
         "example/zinc_protein/val_data_dp_mask/"
       ],
       "batch_size": 2,
-      "_comment": "that's all"
+      "_comment8": "that's all"
     },
     "numb_steps": 1,
     "seed": 10,
@@ -85,7 +87,7 @@
     "tensorboard": true,
     "tensorboard_log_dir": "log4tensorboard",
     "tensorboard_freq": 100,
-    "_comment": "that's all"
+    "_comment9": "that's all"
   },
-  "_comment": "that's all"
+  "_comment10": "that's all"
 }

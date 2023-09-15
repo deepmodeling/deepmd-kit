@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 import json
 import logging
 from typing import (
@@ -41,10 +42,11 @@ def replace_model_params_with_pretrained_model(
 
     # Check the model type
     assert pretrained_jdata["model"]["descriptor"]["type"] in [
-        "se_atten"
+        "se_atten",
+        "se_atten_v2",
     ] and pretrained_jdata["model"]["fitting_net"]["type"] in [
         "ener"
-    ], "The finetune process only supports models pretrained with 'se_atten' descriptor and 'ener' fitting_net!"
+    ], "The finetune process only supports models pretrained with 'se_atten' or 'se_atten_v2' descriptor and 'ener' fitting_net!"
 
     # Check the type map
     pretrained_type_map = pretrained_jdata["model"]["type_map"]
@@ -54,8 +56,8 @@ def replace_model_params_with_pretrained_model(
         if i not in pretrained_type_map:
             out_line_type.append(i)
     assert not out_line_type, (
-        "{} type(s) not contained in the pretrained model! "
-        "Please choose another suitable one.".format(str(out_line_type))
+        f"{out_line_type!s} type(s) not contained in the pretrained model! "
+        "Please choose another suitable one."
     )
     if cur_type_map != pretrained_type_map:
         log.info(
@@ -101,11 +103,7 @@ def replace_model_params_with_pretrained_model(
             # keep some params that are irrelevant to model structures (need to discuss) TODO
             if "trainable" in cur_para.keys():
                 target_para["trainable"] = cur_para["trainable"]
-            log.info(
-                "Change the '{}' from {} to {}.".format(
-                    config_key, str(cur_para), str(target_para)
-                )
-            )
+            log.info(f"Change the '{config_key}' from {cur_para!s} to {target_para!s}.")
             jdata["model"][config_key] = target_para
 
     return jdata, cur_type_map

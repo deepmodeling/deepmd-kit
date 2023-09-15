@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 #include "DeepTensor.h"
 
 using namespace deepmd;
@@ -791,3 +792,7 @@ template void DeepTensor::compute_inner<float>(
     const std::vector<float> &dbox,
     const int nghost,
     const InputNlist &nlist_);
+
+void DeepTensor::get_type_map(std::string &type_map) {
+  type_map = get_scalar<STRINGTYPE>("model_attr/tmap");
+}

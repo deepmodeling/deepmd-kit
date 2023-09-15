@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 from collections import (
     defaultdict,
 )
@@ -57,7 +58,7 @@ def make_stat_input(data, nbatches, merge_sys=True):
 
 
 def merge_sys_stat(all_stat):
-    first_key = list(all_stat.keys())[0]
+    first_key = next(iter(all_stat.keys()))
     nsys = len(all_stat[first_key])
     ret = defaultdict(list)
     for ii in range(nsys):

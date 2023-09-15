@@ -1,6 +1,10 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 #pragma once
 #ifdef __cplusplus
 extern "C" {
+#else
+// for C99
+#include <stdbool.h>
 #endif
 
 /**
@@ -717,6 +721,16 @@ int DP_DeepPotGetDimFParam(DP_DeepPot* dp);
 int DP_DeepPotGetDimAParam(DP_DeepPot* dp);
 
 /**
+ * @brief Check whether the atomic dimension of atomic parameters is nall
+ * instead of nloc.
+ *
+ * @param[in] dp The DP to use.
+ * @return true the atomic dimension of atomic parameters is nall
+ * @return false the atomic dimension of atomic parameters is nloc
+ */
+bool DP_DeepPotIsAParamNAll(DP_DeepPot* dp);
+
+/**
  * @brief Get the type map of a DP.
  * @param[in] dp The DP to use.
  * @return The type map of the DP.
@@ -735,6 +749,16 @@ int DP_DeepPotModelDeviGetDimFParam(DP_DeepPotModelDevi* dp);
  * @return The dimension of atomic parameters of the DP Model Deviation.
  */
 int DP_DeepPotModelDeviGetDimAParam(DP_DeepPotModelDevi* dp);
+
+/**
+ * @brief Check whether the atomic dimension of atomic parameters is nall
+ * instead of nloc.
+ *
+ * @param[in] dp The DP Model Deviation to use.
+ * @return true the atomic dimension of atomic parameters is nall
+ * @return false the atomic dimension of atomic parameters is nloc
+ */
+bool DP_DeepPotModelDeviIsAParamNAll(DP_DeepPotModelDevi* dp);
 
 /**
  * @brief The deep tensor.
@@ -1031,6 +1055,13 @@ int* DP_DeepTensorGetSelTypes(DP_DeepTensor* dt);
  * @return The number of sel types
  */
 int DP_DeepTensorGetNumbSelTypes(DP_DeepTensor* dt);
+
+/**
+ * @brief Get the type map of a Deep Tensor.
+ * @param[in] dt The Deep Tensor to use.
+ * @return The type map of the Deep Tensor.
+ */
+const char* DP_DeepTensorGetTypeMap(DP_DeepTensor* dt);
 
 /**
  * @brief Check if there is any exceptions throw.

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 """Module that reads node resources, auto detects if running local or on SLURM."""
 
 import os

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 """Collection of functions and classes used throughout the whole package."""
 
 import json
@@ -205,28 +206,29 @@ def select_idx_map(atom_types: np.ndarray, select_types: np.ndarray) -> np.ndarr
     return np.concatenate(idx_map)
 
 
-# TODO not really sure if the docstring is right the purpose of this is a bit unclear
-def make_default_mesh(test_box: np.ndarray, cell_size: float = 3.0) -> np.ndarray:
-    """Get number of cells of size=`cell_size` fit into average box.
+def make_default_mesh(pbc: bool, mixed_type: bool) -> np.ndarray:
+    """Make mesh.
+
+    Only the size of mesh matters, not the values:
+    * 6 for PBC, no mixed types
+    * 0 for no PBC, no mixed types
+    * 7 for PBC, mixed types
+    * 1 for no PBC, mixed types
 
     Parameters
     ----------
-    test_box : np.ndarray
-        numpy array with cells of shape Nx9
-    cell_size : float, optional
-        length of one cell, by default 3.0
+    pbc : bool
+        if True, the mesh will be made for periodic boundary conditions
+    mixed_type : bool
+        if True, the mesh will be made for mixed types
 
     Returns
     -------
     np.ndarray
-        mesh for supplied boxes, how many cells fit in each direction
+        mesh
     """
-    cell_lengths = np.linalg.norm(test_box.reshape([-1, 3, 3]), axis=2)
-    avg_cell_lengths = np.average(cell_lengths, axis=0)
-    ncell = (avg_cell_lengths / cell_size).astype(np.int32)
-    ncell[ncell < 2] = 2
-    default_mesh = np.zeros(6, dtype=np.int32)
-    default_mesh[3:6] = ncell
+    mesh_size = int(pbc) * 6 + int(mixed_type)
+    default_mesh = np.zeros(mesh_size, dtype=np.int32)
     return default_mesh
 
 

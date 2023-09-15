@@ -1,5 +1,5 @@
 {
-  "_comment": " model parameters",
+  "_comment1": " model parameters",
   "model": {
     "type_map": [
       "O",
@@ -20,8 +20,9 @@
       ],
       "resnet_dt": false,
       "axis_neuron": 16,
+      "precision": "float64",
       "seed": 1,
-      "_comment": " that's all"
+      "_comment2": " that's all"
     },
     "fitting_net": {
       "neuron": [
@@ -30,10 +31,11 @@
         240
       ],
       "resnet_dt": true,
+      "precision": "float64",
       "seed": 1,
-      "_comment": " that's all"
+      "_comment3": " that's all"
     },
-    "_comment": " that's all"
+    "_comment4": " that's all"
   },
 
   "learning_rate": {
@@ -41,7 +43,7 @@
     "decay_steps": 5000,
     "start_lr": 0.001,
     "stop_lr": 3.51e-8,
-    "_comment": "that's all"
+    "_comment5": "that's all"
   },
 
   "loss": {
@@ -52,7 +54,7 @@
     "limit_pref_f": 1,
     "start_pref_v": 0,
     "limit_pref_v": 0,
-    "_comment": " that's all"
+    "_comment6": " that's all"
   },
 
   "training": {
@@ -63,7 +65,7 @@
         "../data/data_2/"
       ],
       "batch_size": "auto",
-      "_comment": "that's all"
+      "_comment7": "that's all"
     },
     "validation_data": {
       "systems": [
@@ -71,15 +73,15 @@
       ],
       "batch_size": 1,
       "numb_btch": 3,
-      "_comment": "that's all"
+      "_comment8": "that's all"
     },
     "numb_steps": 1000000,
     "seed": 10,
     "disp_file": "lcurve.out",
     "disp_freq": 100,
     "save_freq": 1000,
-    "_comment": "that's all"
+    "_comment9": "that's all"
   },
 
-  "_comment": "that's all"
+  "_comment10": "that's all"
 }

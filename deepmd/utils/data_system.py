@@ -1,6 +1,10 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 import collections
 import logging
 import warnings
+from functools import (
+    lru_cache,
+)
 from typing import (
     List,
     Optional,
@@ -8,6 +12,9 @@ from typing import (
 
 import numpy as np
 
+from deepmd.common import (
+    make_default_mesh,
+)
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
 )
@@ -39,6 +46,7 @@ class DeepmdDataSystem:
         trn_all_set=False,
         sys_probs=None,
         auto_prob_style="prob_sys_size",
+        sort_atoms: bool = True,
     ):
         """Constructor.
 
@@ -77,7 +85,10 @@ class DeepmdDataSystem:
                                 the list of systems is devided into blocks. A block is specified by `stt_idx:end_idx:weight`,
                                 where `stt_idx` is the starting index of the system, `end_idx` is then ending (not including) index of the system,
                                 the probabilities of the systems in this block sums up to `weight`, and the relatively probabilities within this block is proportional
-        to the number of batches in the system.
+                to the number of batches in the system.
+        sort_atoms : bool
+            Sort atoms by atom types. Required to enable when the data is directly feeded to
+            descriptors except mixed types.
         """
         # init data
         self.rcut = rcut
@@ -94,6 +105,7 @@ class DeepmdDataSystem:
                     optional_type_map=optional_type_map,
                     modifier=modifier,
                     trn_all_set=trn_all_set,
+                    sort_atoms=sort_atoms,
                 )
             )
         # check mix_type format
@@ -218,25 +230,18 @@ class DeepmdDataSystem:
             for nn in test_system_data:
                 self.test_data[nn].append(test_system_data[nn])
 
-    def _make_default_mesh(self):
-        self.default_mesh = []
-        cell_size = np.max(self.rcut)
-        for ii in range(self.nsystems):
-            if self.data_systems[ii].pbc:
-                test_system_data = self.data_systems[ii].get_batch(self.batch_size[ii])
-                self.data_systems[ii].reset_get_batch()
-                # test_system_data = self.data_systems[ii].get_test()
-                avg_box = np.average(test_system_data["box"], axis=0)
-                avg_box = np.reshape(avg_box, [3, 3])
-                ncell = (np.linalg.norm(avg_box, axis=1) / cell_size).astype(np.int32)
-                ncell[ncell < 2] = 2
-                default_mesh = np.zeros(6, dtype=np.int32)
-                default_mesh[3:6] = ncell
-                self.default_mesh.append(default_mesh)
-            else:
-                self.default_mesh.append(np.array([], dtype=np.int32))
+    @property
+    @lru_cache(maxsize=None)
+    def default_mesh(self) -> List[np.ndarray]:
+        """Mesh for each system."""
+        return [
+            make_default_mesh(
+                self.data_systems[ii].pbc, self.data_systems[ii].mixed_type
+            )
+            for ii in range(self.nsystems)
+        ]
 
-    def compute_energy_shift(self, rcond=1e-3, key="energy"):
+    def compute_energy_shift(self, rcond=None, key="energy"):
         sys_ener = []
         for ss in self.data_systems:
             sys_ener.append(ss.avg(key))
@@ -391,8 +396,6 @@ class DeepmdDataSystem:
         dict
             The batch data
         """
-        if not hasattr(self, "default_mesh"):
-            self._make_default_mesh()
         if not self.mixed_systems:
             b_data = self.get_batch_standard(sys_idx)
         else:
@@ -505,8 +508,6 @@ class DeepmdDataSystem:
         n_test
             Number of test data. If set to -1 all test data will be get.
         """
-        if not hasattr(self, "default_mesh"):
-            self._make_default_mesh()
         if not hasattr(self, "test_data"):
             self._load_test(ntests=n_test)
         if sys_idx is not None:
@@ -617,9 +618,7 @@ class DeepmdDataSystem:
                 min_len = min([len(ii), len(ret)])
                 for idx in range(min_len):
                     if ii[idx] != ret[idx]:
-                        raise RuntimeError(
-                            f"inconsistent type map: {str(ret)} {str(ii)}"
-                        )
+                        raise RuntimeError(f"inconsistent type map: {ret!s} {ii!s}")
                 if len(ii) > len(ret):
                     ret = ii
         return ret

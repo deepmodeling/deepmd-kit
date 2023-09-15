@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 import numpy as np
 
 from deepmd.env import (
@@ -63,7 +64,7 @@ class TestEwaldRecp(tf.test.TestCase):
     def test_py_interface(self):
         hh = 1e-4
         places = 4
-        sess = self.test_session().__enter__()
+        sess = self.cached_session().__enter__()
         t_energy, t_force, t_virial = op_module.ewald_recp(
             self.coord,
             self.charge,
@@ -90,7 +91,7 @@ class TestEwaldRecp(tf.test.TestCase):
     def test_force(self):
         hh = 1e-4
         places = 6
-        sess = self.test_session().__enter__()
+        sess = self.cached_session().__enter__()
         t_energy, t_force, t_virial = op_module.ewald_recp(
             self.coord,
             self.charge,
@@ -143,7 +144,7 @@ class TestEwaldRecp(tf.test.TestCase):
     def test_virial(self):
         hh = 1e-4
         places = 6
-        sess = self.test_session().__enter__()
+        sess = self.cached_session().__enter__()
         t_energy, t_force, t_virial = op_module.ewald_recp(
             self.coord,
             self.charge,

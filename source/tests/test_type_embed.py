@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 import numpy as np
 
 from deepmd.env import (
@@ -22,14 +23,14 @@ class TestTypeEbd(tf.test.TestCase):
         )
         expected_out = [[1, 2, 3], [1, 2, 3], [1, 2, 3], [7, 7, 7], [7, 7, 7]]
         atom_embed = embed_atom_type(ntypes, natoms, type_embedding)
-        sess = self.test_session().__enter__()
+        sess = self.cached_session().__enter__()
         atom_embed = sess.run(atom_embed)
         np.testing.assert_almost_equal(atom_embed, expected_out, 10)
 
     def test_type_embed_net(self):
         ten = TypeEmbedNet([2, 4, 8], seed=1, uniform_seed=True)
         type_embedding = ten.build(2)
-        sess = self.test_session().__enter__()
+        sess = self.cached_session().__enter__()
         sess.run(tf.global_variables_initializer())
         type_embedding = sess.run(type_embedding)
 

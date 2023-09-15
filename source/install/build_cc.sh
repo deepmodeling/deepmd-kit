@@ -20,9 +20,9 @@ NPROC=$(nproc --all)
 BUILD_TMP_DIR=${SCRIPT_PATH}/../build
 mkdir -p ${BUILD_TMP_DIR}
 cd ${BUILD_TMP_DIR}
-cmake -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX} -DUSE_TF_PYTHON_LIBS=TRUE ${CUDA_ARGS} -DLAMMPS_VERSION=stable_23Jun2022_update4 ..
-make -j${NPROC}
-make install
+cmake -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX} -DUSE_TF_PYTHON_LIBS=TRUE ${CUDA_ARGS} -DLAMMPS_VERSION=stable_2Aug2023 ..
+cmake --build . -j${NPROC}
+cmake --install .
 
 #------------------
 echo "Congratulations! DeePMD-kit has been installed at ${INSTALL_PREFIX}"

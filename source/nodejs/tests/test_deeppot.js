@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 const deepmd = require('deepmd-kit');
 
 deepmd.convert_pbtxt_to_pb(

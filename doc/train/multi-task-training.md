@@ -27,6 +27,7 @@ The supported descriptors for multi-task mode are listed:
 - {ref}`se_r (se_e2_r) <model/descriptor[se_e2_r]>`
 - {ref}`se_at (se_e3) <model/descriptor[se_e3]>`
 - {ref}`se_atten <model/descriptor[se_atten]>`
+- {ref}`se_atten_v2 <model/descriptor[se_atten_v2]>`
 - {ref}`hybrid <model/descriptor[hybrid]>`
 
 The supported fitting nets for multi-task mode are listed:

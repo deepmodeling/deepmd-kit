@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 import json
 import logging
 from typing import (
@@ -53,8 +54,8 @@ def replace_model_params_with_frz_multi_model(
         if i not in pretrained_type_map:
             out_line_type.append(i)
     assert not out_line_type, (
-        "{} type(s) not contained in the pretrained model! "
-        "Please choose another suitable one.".format(str(out_line_type))
+        f"{out_line_type!s} type(s) not contained in the pretrained model! "
+        "Please choose another suitable one."
     )
     if cur_type_map != pretrained_type_map:
         log.info(
@@ -66,9 +67,9 @@ def replace_model_params_with_frz_multi_model(
 
     # Change model configurations
     pretrained_fitting_keys = sorted(
-        list(pretrained_jdata["model"]["fitting_net_dict"].keys())
+        pretrained_jdata["model"]["fitting_net_dict"].keys()
     )
-    cur_fitting_keys = sorted(list(jdata["model"]["fitting_net_dict"].keys()))
+    cur_fitting_keys = sorted(jdata["model"]["fitting_net_dict"].keys())
     newly_added_fittings = set(cur_fitting_keys) - set(pretrained_fitting_keys)
     reused_fittings = set(cur_fitting_keys) - newly_added_fittings
     log.info("Change the model configurations according to the pretrained one...")
@@ -168,9 +169,5 @@ def _change_sub_config(jdata: Dict[str, Any], src_jdata: Dict[str, Any], sub_key
     # keep some params that are irrelevant to model structures (need to discuss) TODO
     if "trainable" in cur_para.keys():
         target_para["trainable"] = cur_para["trainable"]
-    log.info(
-        "Change the '{}' from {} to {}.".format(
-            sub_key, str(cur_para), str(target_para)
-        )
-    )
+    log.info(f"Change the '{sub_key}' from {cur_para!s} to {target_para!s}.")
     jdata[sub_key] = target_para

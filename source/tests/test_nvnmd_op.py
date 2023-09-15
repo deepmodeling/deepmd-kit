@@ -1,13 +1,10 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 import os
 import unittest
 
 import numpy as np
-from common import (
-    tests_path,
-)
 
 from deepmd.env import (
-    GLOBAL_NP_FLOAT_PRECISION,
     op_module,
     tf,
 )
@@ -20,7 +17,7 @@ class TestOpAddFltNvnmd(tf.test.TestCase):
             config.graph_options.rewrite_options.custom_optimizers.add().name = (
                 "dpparallel"
             )
-        self.sess = self.test_session(config=config).__enter__()
+        self.sess = self.cached_session(config=config).__enter__()
 
     def test_op(self):
         # graph
@@ -113,7 +110,7 @@ class TestOpCopyFltNvnmd(tf.test.TestCase):
             config.graph_options.rewrite_options.custom_optimizers.add().name = (
                 "dpparallel"
             )
-        self.sess = self.test_session(config=config).__enter__()
+        self.sess = self.cached_session(config=config).__enter__()
 
     def test_op(self):
         # graph
@@ -143,7 +140,7 @@ class TestOpDotmulFltNvnmd(tf.test.TestCase):
             config.graph_options.rewrite_options.custom_optimizers.add().name = (
                 "dpparallel"
             )
-        self.sess = self.test_session(config=config).__enter__()
+        self.sess = self.cached_session(config=config).__enter__()
 
     def test_op(self):
         # graph
@@ -169,7 +166,7 @@ class TestOpFltNvnmd(tf.test.TestCase):
             config.graph_options.rewrite_options.custom_optimizers.add().name = (
                 "dpparallel"
             )
-        self.sess = self.test_session(config=config).__enter__()
+        self.sess = self.cached_session(config=config).__enter__()
 
     def test_op(self):
         # graph
@@ -188,182 +185,6 @@ class TestOpFltNvnmd(tf.test.TestCase):
         tf.reset_default_graph()
 
 
-class TestOpMapFltNvnmd(tf.test.TestCase):
-    def setUp(self):
-        config = tf.ConfigProto()
-        if int(os.environ.get("DP_AUTO_PARALLELIZATION", 0)):
-            config.graph_options.rewrite_options.custom_optimizers.add().name = (
-                "dpparallel"
-            )
-        self.sess = self.test_session(config=config).__enter__()
-
-    def test_op(self):
-        map_path = str(tests_path / os.path.join("nvnmd", "map.npy"))
-        mapt = np.load(map_path, allow_pickle=True)[0]
-        table = GLOBAL_NP_FLOAT_PRECISION(
-            np.concatenate([mapt["s"][0], mapt["h"][0]], axis=1)
-        )
-        table_grad = GLOBAL_NP_FLOAT_PRECISION(
-            np.concatenate([mapt["s_grad"][0], mapt["h_grad"][0]], axis=1)
-        )
-        table_info = mapt["cfg_u2s"]
-        table_info = np.array([np.float64(v) for vs in table_info for v in vs])
-        table_info = GLOBAL_NP_FLOAT_PRECISION(table_info)
-        # graph
-        t_x = tf.placeholder(tf.float64, [None, 1], "t_x")
-        t_table = tf.placeholder(tf.float64, [None, None], "t_table")
-        t_table_grad = tf.placeholder(tf.float64, [None, None], "t_table_grad")
-        t_table_info = tf.placeholder(tf.float64, [None], "t_table_info")
-        t_y = op_module.map_flt_nvnmd(t_x, t_table, t_table_grad, t_table_info)
-        # feed_dic
-        x = np.reshape(np.arange(0, 8**2), [-1, 1])
-        feed_dict = {
-            t_x: x,
-            t_table: table,
-            t_table_grad: table_grad * 0.0,
-            t_table_info: np.reshape(np.array(table_info), [-1]),
-        }
-        # get value and test
-        self.sess.run(tf.global_variables_initializer())
-        y_pred = self.sess.run(t_y, feed_dict=feed_dict)
-        y_test = np.array(
-            [
-                -4.02932405e-01,
-                0.00000000e00,
-                1.27062531e01,
-                2.10604095e01,
-                8.86666107e00,
-                1.05302048e01,
-                7.16565704e00,
-                7.02013779e00,
-                6.15166092e00,
-                5.26510239e00,
-                5.45392990e00,
-                4.20795822e00,
-                4.91504288e00,
-                3.48788261e00,
-                4.46474457e00,
-                2.95572662e00,
-                4.06997681e00,
-                2.54059982e00,
-                3.71370125e00,
-                2.20451164e00,
-                3.38652611e00,
-                1.92516804e00,
-                3.08297348e00,
-                1.68853760e00,
-                2.79967117e00,
-                1.48526478e00,
-                2.53443527e00,
-                1.30881405e00,
-                2.28576660e00,
-                1.15443516e00,
-                2.05257607e00,
-                1.01856136e00,
-                1.83401871e00,
-                8.98437500e-01,
-                1.62939548e00,
-                7.91882038e-01,
-                1.43810177e00,
-                6.97134972e-01,
-                1.25958920e00,
-                6.12747669e-01,
-                1.09334564e00,
-                5.37512302e-01,
-                9.38878059e-01,
-                4.70406055e-01,
-                7.95710087e-01,
-                4.10553455e-01,
-                6.63372517e-01,
-                3.57197762e-01,
-                5.41402817e-01,
-                3.09679031e-01,
-                4.29343462e-01,
-                2.67416716e-01,
-                3.26739788e-01,
-                2.29896545e-01,
-                2.33141899e-01,
-                1.96660519e-01,
-                1.48102522e-01,
-                1.67298198e-01,
-                7.11788535e-02,
-                1.41440034e-01,
-                1.93022378e-03,
-                1.18751287e-01,
-                -6.00755513e-02,
-                9.89289284e-02,
-                -1.15272462e-01,
-                8.16950202e-02,
-                -1.64083123e-01,
-                6.67971969e-02,
-                -2.06929684e-01,
-                5.40025234e-02,
-                -2.44227648e-01,
-                4.30970192e-02,
-                -2.76385307e-01,
-                3.38837802e-02,
-                -3.03807735e-01,
-                2.61801332e-02,
-                -3.26895952e-01,
-                1.98162049e-02,
-                -3.46041203e-01,
-                1.46353990e-02,
-                -3.61629009e-01,
-                1.04917213e-02,
-                -3.74043703e-01,
-                7.24812597e-03,
-                -3.83658171e-01,
-                4.77796420e-03,
-                -3.90845537e-01,
-                2.96119228e-03,
-                -3.95965099e-01,
-                1.68743543e-03,
-                -3.99380922e-01,
-                8.50534532e-04,
-                -4.01440382e-01,
-                3.53393843e-04,
-                -4.02492762e-01,
-                1.03041355e-04,
-                -4.02877808e-01,
-                1.26575978e-05,
-                -4.02932405e-01,
-                0.00000000e00,
-                -4.02932405e-01,
-                0.00000000e00,
-                -4.02932405e-01,
-                0.00000000e00,
-                -4.02932405e-01,
-                0.00000000e00,
-                -4.02932405e-01,
-                0.00000000e00,
-                -4.02932405e-01,
-                0.00000000e00,
-                -4.02932405e-01,
-                0.00000000e00,
-                -4.02932405e-01,
-                0.00000000e00,
-                -4.02932405e-01,
-                0.00000000e00,
-                -4.02932405e-01,
-                0.00000000e00,
-                -4.02932405e-01,
-                0.00000000e00,
-                -4.02932405e-01,
-                0.00000000e00,
-                -4.02932405e-01,
-                0.00000000e00,
-                -4.02932405e-01,
-                0.00000000e00,
-                -4.02932405e-01,
-                0.00000000e00,
-            ]
-        )
-        y_pred = np.reshape(y_pred, [-1])
-        y_test = np.reshape(y_test, [-1])
-        np.testing.assert_almost_equal(y_test, y_pred, 5)
-        tf.reset_default_graph()
-
-
 class TestOpMatmulFitnetNvnmd(tf.test.TestCase):
     def setUp(self):
         config = tf.ConfigProto()
@@ -371,7 +192,7 @@ class TestOpMatmulFitnetNvnmd(tf.test.TestCase):
             config.graph_options.rewrite_options.custom_optimizers.add().name = (
                 "dpparallel"
             )
-        self.sess = self.test_session(config=config).__enter__()
+        self.sess = self.cached_session(config=config).__enter__()
 
     def test_op(self):
         # graph
@@ -417,7 +238,7 @@ class TestOpMatmulFltNvnmd(tf.test.TestCase):
             config.graph_options.rewrite_options.custom_optimizers.add().name = (
                 "dpparallel"
             )
-        self.sess = self.test_session(config=config).__enter__()
+        self.sess = self.cached_session(config=config).__enter__()
 
     def test_op(self):
         # graph
@@ -463,7 +284,7 @@ class TestOpMatmulFlt2fixNvnmd(tf.test.TestCase):
             config.graph_options.rewrite_options.custom_optimizers.add().name = (
                 "dpparallel"
             )
-        self.sess = self.test_session(config=config).__enter__()
+        self.sess = self.cached_session(config=config).__enter__()
 
     def test_op(self):
         # graph
@@ -509,7 +330,7 @@ class TestOpMulFltNvnmd(tf.test.TestCase):
             config.graph_options.rewrite_options.custom_optimizers.add().name = (
                 "dpparallel"
             )
-        self.sess = self.test_session(config=config).__enter__()
+        self.sess = self.cached_session(config=config).__enter__()
 
     def test_op(self):
         # graph
@@ -555,7 +376,7 @@ class TestOpQuantizeNvnmd(tf.test.TestCase):
             config.graph_options.rewrite_options.custom_optimizers.add().name = (
                 "dpparallel"
             )
-        self.sess = self.test_session(config=config).__enter__()
+        self.sess = self.cached_session(config=config).__enter__()
 
     def test_op(self):
         # graph
@@ -581,7 +402,7 @@ class TestOpTanh4FltNvnmd(tf.test.TestCase):
             config.graph_options.rewrite_options.custom_optimizers.add().name = (
                 "dpparallel"
             )
-        self.sess = self.test_session(config=config).__enter__()
+        self.sess = self.cached_session(config=config).__enter__()
 
     def test_op(self):
         # graph

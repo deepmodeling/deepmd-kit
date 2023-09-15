@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 #include "neighbor_list.h"
 
 #include <iostream>
@@ -15,8 +16,12 @@ bool is_loc(const std::vector<int>& idx,
             const std::vector<int>& nat_stt,
             const std::vector<int>& nat_end) {
   bool ret = true;
-  for (int dd = 0; dd < 3; ++dd) ret = ret && idx[dd] >= nat_stt[dd];
-  for (int dd = 0; dd < 3; ++dd) ret = ret && idx[dd] < nat_end[dd];
+  for (int dd = 0; dd < 3; ++dd) {
+    ret = ret && idx[dd] >= nat_stt[dd];
+  }
+  for (int dd = 0; dd < 3; ++dd) {
+    ret = ret && idx[dd] < nat_end[dd];
+  }
   return ret;
 }
 
@@ -49,14 +54,22 @@ void build_clist(std::vector<std::vector<int> >& clist,
   // compute region info, in terms of internal coord
   int nall = coord.size() / 3;
   std::vector<int> ext_ncell(3);
-  for (int dd = 0; dd < 3; ++dd) ext_ncell[dd] = ext_end[dd] - ext_stt[dd];
+  for (int dd = 0; dd < 3; ++dd) {
+    ext_ncell[dd] = ext_end[dd] - ext_stt[dd];
+  }
   int ncell = ext_ncell[0] * ext_ncell[1] * ext_ncell[2];
   std::vector<double> cell_size(3);
-  for (int dd = 0; dd < 3; ++dd) cell_size[dd] = 1. / global_grid[dd];
+  for (int dd = 0; dd < 3; ++dd) {
+    cell_size[dd] = 1. / global_grid[dd];
+  }
   std::vector<double> nat_orig(3);
-  for (int dd = 0; dd < 3; ++dd) nat_orig[dd] = nat_stt[dd] * cell_size[dd];
+  for (int dd = 0; dd < 3; ++dd) {
+    nat_orig[dd] = nat_stt[dd] * cell_size[dd];
+  }
   std::vector<int> idx_orig_shift(3);
-  for (int dd = 0; dd < 3; ++dd) idx_orig_shift[dd] = nat_stt[dd] - ext_stt[dd];
+  for (int dd = 0; dd < 3; ++dd) {
+    idx_orig_shift[dd] = nat_stt[dd] - ext_stt[dd];
+  }
 
   // allocate the reserve the cell list
   clist.resize(ncell);
@@ -73,7 +86,9 @@ void build_clist(std::vector<std::vector<int> >& clist,
     std::vector<int> idx(3);
     for (int dd = 0; dd < 3; ++dd) {
       idx[dd] = (inter[dd] - nat_orig[dd]) / cell_size[dd];
-      if (inter[dd] - nat_orig[dd] < 0.) idx[dd]--;
+      if (inter[dd] - nat_orig[dd] < 0.) {
+        idx[dd]--;
+      }
       if (idx[dd] < nat_stt[dd]) {
         if (count_warning_loc_idx_lower < MAX_WARN_IDX_OUT_OF_BOUND) {
           std::cerr << "# warning: loc idx out of lower bound (ignored if "
@@ -101,7 +116,9 @@ void build_clist(std::vector<std::vector<int> >& clist,
     std::vector<int> idx(3);
     for (int dd = 0; dd < 3; ++dd) {
       idx[dd] = (inter[dd] - nat_orig[dd]) / cell_size[dd];
-      if (inter[dd] - nat_orig[dd] < 0.) idx[dd]--;
+      if (inter[dd] - nat_orig[dd] < 0.) {
+        idx[dd]--;
+      }
       if (idx[dd] < ext_stt[dd]) {
         if (count_warning_ghost_idx_lower < MAX_WARN_IDX_OUT_OF_BOUND &&
             fabs((inter[dd] - nat_orig[dd]) - (ext_stt[dd] * cell_size[dd])) >
@@ -139,12 +156,18 @@ void build_clist(std::vector<std::vector<int> >& clist,
   // compute region info, in terms of internal coord
   int nall = coord.size() / 3;
   std::vector<int> nat_ncell(3);
-  for (int dd = 0; dd < 3; ++dd) nat_ncell[dd] = nat_end[dd] - nat_stt[dd];
+  for (int dd = 0; dd < 3; ++dd) {
+    nat_ncell[dd] = nat_end[dd] - nat_stt[dd];
+  }
   int ncell = nat_ncell[0] * nat_ncell[1] * nat_ncell[2];
   std::vector<double> cell_size(3);
-  for (int dd = 0; dd < 3; ++dd) cell_size[dd] = 1. / nat_end[dd];
+  for (int dd = 0; dd < 3; ++dd) {
+    cell_size[dd] = 1. / nat_end[dd];
+  }
   std::vector<double> nat_orig(3);
-  for (int dd = 0; dd < 3; ++dd) nat_orig[dd] = nat_stt[dd] * cell_size[dd];
+  for (int dd = 0; dd < 3; ++dd) {
+    nat_orig[dd] = nat_stt[dd] * cell_size[dd];
+  }
 
   // allocate the reserve the cell list
   clist.resize(ncell);
@@ -162,7 +185,9 @@ void build_clist(std::vector<std::vector<int> >& clist,
     std::vector<int> idx(3);
     for (int dd = 0; dd < 3; ++dd) {
       idx[dd] = (inter[dd] - nat_orig[dd]) / cell_size[dd];
-      if (inter[dd] - nat_orig[dd] < 0.) idx[dd]--;
+      if (inter[dd] - nat_orig[dd] < 0.) {
+        idx[dd]--;
+      }
       if (idx[dd] < nat_stt[dd]) {
         if (count_warning_loc_idx_lower < MAX_WARN_IDX_OUT_OF_BOUND) {
           std::cerr << "# warning: loc idx out of lower bound (ignored if "
@@ -204,7 +229,9 @@ void build_nlist_cell(std::vector<std::vector<int> >& nlist0,
     // loop over t (target) cell
     for (unsigned jj = 0; jj < clist[tidx].size(); ++jj) {
       int j_idx = clist[tidx][jj];
-      if (cidx == tidx && j_idx <= i_idx) continue;
+      if (cidx == tidx && j_idx <= i_idx) {
+        continue;
+      }
       double diff[3];
       for (int dd0 = 0; dd0 < 3; ++dd0) {
         diff[dd0] = coord[i_idx * 3 + dd0] - coord[j_idx * 3 + dd0];
@@ -214,11 +241,19 @@ void build_nlist_cell(std::vector<std::vector<int> >& nlist0,
       }
       double r2 = deepmd::dot3(diff, diff);
       if (r2 < rc02) {
-        if (i_idx < nloc) nlist0[i_idx].push_back(j_idx);
-        if (j_idx < nloc) nlist0[j_idx].push_back(i_idx);
+        if (i_idx < nloc) {
+          nlist0[i_idx].push_back(j_idx);
+        }
+        if (j_idx < nloc) {
+          nlist0[j_idx].push_back(i_idx);
+        }
       } else if (r2 < rc12) {
-        if (i_idx < nloc) nlist1[i_idx].push_back(j_idx);
-        if (j_idx < nloc) nlist1[j_idx].push_back(i_idx);
+        if (i_idx < nloc) {
+          nlist1[i_idx].push_back(j_idx);
+        }
+        if (j_idx < nloc) {
+          nlist1[j_idx].push_back(i_idx);
+        }
       }
     }
   }
@@ -239,11 +274,15 @@ void build_nlist_cell(std::vector<std::vector<int> >& nlist0,
   // loop over c (current) cell
   for (unsigned ii = 0; ii < clist0[cidx].size(); ++ii) {
     int i_idx = clist0[cidx][ii];
-    if (i_idx >= nlist0.size()) continue;
+    if (i_idx >= nlist0.size()) {
+      continue;
+    }
     // loop over t (target) cell
     for (unsigned jj = 0; jj < clist1[tidx].size(); ++jj) {
       int j_idx = clist1[tidx][jj];
-      if (cidx == tidx && j_idx == i_idx) continue;
+      if (cidx == tidx && j_idx == i_idx) {
+        continue;
+      }
       double diff[3];
       for (int dd0 = 0; dd0 < 3; ++dd0) {
         diff[dd0] = coord[i_idx * 3 + dd0] - coord[j_idx * 3 + dd0];
@@ -288,7 +327,9 @@ void build_nlist(std::vector<std::vector<int> >& nlist0,
   // compute the region info
   int nall = coord.size() / 3;
   std::vector<int> ext_ncell(3);
-  for (int dd = 0; dd < 3; ++dd) ext_ncell[dd] = ext_end[dd] - ext_stt[dd];
+  for (int dd = 0; dd < 3; ++dd) {
+    ext_ncell[dd] = ext_end[dd] - ext_stt[dd];
+  }
 
   // compute number of iter according to the cut-off
   assert(rc0 <= rc1);
@@ -298,7 +339,9 @@ void build_nlist(std::vector<std::vector<int> >& nlist0,
   for (int dd = 0; dd < 3; ++dd) {
     double cell_size = to_face[dd] / nat_end[dd];
     niter[dd] = rc1 / cell_size;
-    if (niter[dd] * cell_size < rc1) niter[dd] += 1;
+    if (niter[dd] * cell_size < rc1) {
+      niter[dd] += 1;
+    }
     assert(niter[dd] * cell_size >= rc1);
   }
   // check the validity of the iters
@@ -313,7 +356,9 @@ void build_nlist(std::vector<std::vector<int> >& nlist0,
   for (int ii = 0; ii < nloc; ++ii) {
     nlist0[ii].clear();
     int esti = 4. / 3. * 3.14 * (rc0 * rc0 * rc0) * density * 1.5 + 20;
-    if (esti < 0) esti = 10;
+    if (esti < 0) {
+      esti = 10;
+    }
     nlist0[ii].reserve(esti);
   }
   nlist1.resize(nloc);
@@ -322,25 +367,32 @@ void build_nlist(std::vector<std::vector<int> >& nlist0,
     int esti =
         4. / 3. * 3.14 * (rc1 * rc1 * rc1 - rc0 * rc0 * rc0) * density * 1.5 +
         20;
-    if (esti < 0) esti = 10;
+    if (esti < 0) {
+      esti = 10;
+    }
     nlist1[ii].reserve(esti);
   }
 
   // shift of the idx origin
   std::vector<int> idx_orig_shift(3);
-  for (int dd = 0; dd < 3; ++dd) idx_orig_shift[dd] = nat_stt[dd] - ext_stt[dd];
+  for (int dd = 0; dd < 3; ++dd) {
+    idx_orig_shift[dd] = nat_stt[dd] - ext_stt[dd];
+  }
 
   // compute the nlists
   double rc02 = 0;
-  if (rc0 > 0) rc02 = rc0 * rc0;
+  if (rc0 > 0) {
+    rc02 = rc0 * rc0;
+  }
   double rc12 = rc1 * rc1;
   std::vector<int> cidx(3);
   for (cidx[0] = nat_stt[0]; cidx[0] < nat_end[0]; ++cidx[0]) {
     for (cidx[1] = nat_stt[1]; cidx[1] < nat_end[1]; ++cidx[1]) {
       for (cidx[2] = nat_stt[2]; cidx[2] < nat_end[2]; ++cidx[2]) {
         std::vector<int> mcidx(3);
-        for (int dd = 0; dd < 3; ++dd)
+        for (int dd = 0; dd < 3; ++dd) {
           mcidx[dd] = cidx[dd] + idx_orig_shift[dd];
+        }
         int clp_cidx = collapse_index(mcidx, ext_ncell);
         std::vector<int> tidx(3);
         for (tidx[0] = cidx[0] - niter[0]; tidx[0] < cidx[0] + niter[0] + 1;
@@ -350,11 +402,13 @@ void build_nlist(std::vector<std::vector<int> >& nlist0,
             for (tidx[2] = cidx[2] - niter[2]; tidx[2] < cidx[2] + niter[2] + 1;
                  ++tidx[2]) {
               std::vector<int> mtidx(3);
-              for (int dd = 0; dd < 3; ++dd)
+              for (int dd = 0; dd < 3; ++dd) {
                 mtidx[dd] = tidx[dd] + idx_orig_shift[dd];
+              }
               int clp_tidx = collapse_index(mtidx, ext_ncell);
-              if (is_loc(tidx, nat_stt, nat_end) && clp_tidx < clp_cidx)
+              if (is_loc(tidx, nat_stt, nat_end) && clp_tidx < clp_cidx) {
                 continue;
+              }
               build_nlist_cell(nlist0, nlist1, clp_cidx, clp_tidx, clist, coord,
                                rc02, rc12);
             }
@@ -385,7 +439,9 @@ void build_nlist(std::vector<std::vector<int> >& nlist0,
   // compute the region info
   int nall = coord.size() / 3;
   std::vector<int> nat_ncell(3);
-  for (int dd = 0; dd < 3; ++dd) nat_ncell[dd] = nat_end[dd] - nat_stt[dd];
+  for (int dd = 0; dd < 3; ++dd) {
+    nat_ncell[dd] = nat_end[dd] - nat_stt[dd];
+  }
 
   // compute number of iter according to the cut-off
   assert(rc0 <= rc1);
@@ -395,7 +451,9 @@ void build_nlist(std::vector<std::vector<int> >& nlist0,
   for (int dd = 0; dd < 3; ++dd) {
     double cell_size = to_face[dd] / nat_end[dd];
     niter[dd] = rc1 / cell_size;
-    if (niter[dd] * cell_size < rc1) niter[dd] += 1;
+    if (niter[dd] * cell_size < rc1) {
+      niter[dd] += 1;
+    }
     assert(niter[dd] * cell_size >= rc1);
   }
   // check the validity of the iters
@@ -420,11 +478,15 @@ void build_nlist(std::vector<std::vector<int> >& nlist0,
 
   // physical cell size
   std::vector<double> phys_cs(9);
-  for (int dd = 0; dd < 9; ++dd) phys_cs[dd] = region.getBoxTensor()[dd];
+  for (int dd = 0; dd < 9; ++dd) {
+    phys_cs[dd] = region.getBoxTensor()[dd];
+  }
 
   // compute the nlists
   double rc02 = 0;
-  if (rc0 > 0) rc02 = rc0 * rc0;
+  if (rc0 > 0) {
+    rc02 = rc0 * rc0;
+  }
   double rc12 = rc1 * rc1;
 
 #ifdef HALF_NEIGHBOR_LIST
@@ -455,30 +517,35 @@ void build_nlist(std::vector<std::vector<int> >& nlist0,
         for (tidx[0] = cidx[0] - niter[0]; tidx[0] < cidx[0] + niter[0] + 1;
              ++tidx[0]) {
           shift[0] = 0;
-          if (tidx[0] < 0)
+          if (tidx[0] < 0) {
             shift[0] += 1;
-          else if (tidx[0] >= nat_ncell[0])
+          } else if (tidx[0] >= nat_ncell[0]) {
             shift[0] -= 1;
+          }
           stidx[0] = tidx[0] + shift[0] * nat_ncell[0];
           for (tidx[1] = cidx[1] - niter[1]; tidx[1] < cidx[1] + niter[1] + 1;
                ++tidx[1]) {
             shift[1] = 0;
-            if (tidx[1] < 0)
+            if (tidx[1] < 0) {
               shift[1] += 1;
-            else if (tidx[1] >= nat_ncell[1])
+            } else if (tidx[1] >= nat_ncell[1]) {
               shift[1] -= 1;
+            }
             stidx[1] = tidx[1] + shift[1] * nat_ncell[1];
             for (tidx[2] = cidx[2] - niter[2]; tidx[2] < cidx[2] + niter[2] + 1;
                  ++tidx[2]) {
               shift[2] = 0;
-              if (tidx[2] < 0)
+              if (tidx[2] < 0) {
                 shift[2] += 1;
-              else if (tidx[2] >= nat_ncell[2])
+              } else if (tidx[2] >= nat_ncell[2]) {
                 shift[2] -= 1;
+              }
               stidx[2] = tidx[2] + shift[2] * nat_ncell[2];
               int clp_tidx = collapse_index(stidx, nat_ncell);
 #ifdef HALF_NEIGHBOR_LIST
-              if (clp_tidx < clp_cidx) continue;
+              if (clp_tidx < clp_cidx) {
+                continue;
+              }
               build_nlist_cell(nlist0, nlist1, clp_cidx, clp_tidx, clist, coord,
                                rc02, rc12, shift, phys_cs);
 #else
@@ -513,7 +580,9 @@ void build_nlist(std::vector<std::vector<int> >& nlist0,
   // compute the region info
   int nall = coord.size() / 3;
   std::vector<int> nat_ncell(3);
-  for (int dd = 0; dd < 3; ++dd) nat_ncell[dd] = nat_end[dd] - nat_stt[dd];
+  for (int dd = 0; dd < 3; ++dd) {
+    nat_ncell[dd] = nat_end[dd] - nat_stt[dd];
+  }
 
   // compute number of iter according to the cut-off
   assert(rc0 <= rc1);
@@ -523,7 +592,9 @@ void build_nlist(std::vector<std::vector<int> >& nlist0,
   for (int dd = 0; dd < 3; ++dd) {
     double cell_size = to_face[dd] / nat_end[dd];
     niter[dd] = rc1 / cell_size;
-    if (niter[dd] * cell_size < rc1) niter[dd] += 1;
+    if (niter[dd] * cell_size < rc1) {
+      niter[dd] += 1;
+    }
     assert(niter[dd] * cell_size >= rc1);
   }
   // check the validity of the iters
@@ -548,11 +619,15 @@ void build_nlist(std::vector<std::vector<int> >& nlist0,
 
   // physical cell size
   std::vector<double> phys_cs(9);
-  for (int dd = 0; dd < 9; ++dd) phys_cs[dd] = region.getBoxTensor()[dd];
+  for (int dd = 0; dd < 9; ++dd) {
+    phys_cs[dd] = region.getBoxTensor()[dd];
+  }
 
   // compute the nlists
   double rc02 = 0;
-  if (rc0 > 0) rc02 = rc0 * rc0;
+  if (rc0 > 0) {
+    rc02 = rc0 * rc0;
+  }
   double rc12 = rc1 * rc1;
   std::vector<int> cidx(3);
   for (cidx[0] = nat_stt[0]; cidx[0] < nat_end[0]; ++cidx[0]) {
@@ -565,26 +640,29 @@ void build_nlist(std::vector<std::vector<int> >& nlist0,
         for (tidx[0] = cidx[0] - niter[0]; tidx[0] < cidx[0] + niter[0] + 1;
              ++tidx[0]) {
           shift[0] = 0;
-          if (tidx[0] < 0)
+          if (tidx[0] < 0) {
             shift[0] += 1;
-          else if (tidx[0] >= nat_ncell[0])
+          } else if (tidx[0] >= nat_ncell[0]) {
             shift[0] -= 1;
+          }
           stidx[0] = tidx[0] + shift[0] * nat_ncell[0];
           for (tidx[1] = cidx[1] - niter[1]; tidx[1] < cidx[1] + niter[1] + 1;
                ++tidx[1]) {
             shift[1] = 0;
-            if (tidx[1] < 0)
+            if (tidx[1] < 0) {
               shift[1] += 1;
-            else if (tidx[1] >= nat_ncell[1])
+            } else if (tidx[1] >= nat_ncell[1]) {
               shift[1] -= 1;
+            }
             stidx[1] = tidx[1] + shift[1] * nat_ncell[1];
             for (tidx[2] = cidx[2] - niter[2]; tidx[2] < cidx[2] + niter[2] + 1;
                  ++tidx[2]) {
               shift[2] = 0;
-              if (tidx[2] < 0)
+              if (tidx[2] < 0) {
                 shift[2] += 1;
-              else if (tidx[2] >= nat_ncell[2])
+              } else if (tidx[2] >= nat_ncell[2]) {
                 shift[2] -= 1;
+              }
               stidx[2] = tidx[2] + shift[2] * nat_ncell[2];
               int clp_tidx = collapse_index(stidx, nat_ncell);
               build_nlist_cell(nlist0, nlist1, clp_cidx, clp_tidx, clist0,
@@ -608,7 +686,9 @@ void build_nlist(std::vector<std::vector<int> >& nlist0,
   assert(rc0 <= rc1);
   double rc02 = rc0 * rc0;
   // negative rc0 means not applying rc0
-  if (rc0 < 0) rc02 = 0;
+  if (rc0 < 0) {
+    rc02 = 0;
+  }
   double rc12 = rc1 * rc1;
 
   unsigned natoms = posi3.size() / 3;
@@ -649,10 +729,14 @@ static int compute_pbc_shift(int idx, int ncell) {
   int shift = 0;
   if (idx < 0) {
     shift = 1;
-    while (idx + shift * ncell < 0) shift++;
+    while (idx + shift * ncell < 0) {
+      shift++;
+    }
   } else if (idx >= ncell) {
     shift = -1;
-    while (idx + shift * ncell >= ncell) shift--;
+    while (idx + shift * ncell >= ncell) {
+      shift--;
+    }
   }
   assert(idx + shift * ncell >= 0 && idx + shift * ncell < ncell);
   return shift;
@@ -677,7 +761,9 @@ void copy_coord(std::vector<double>& out_c,
   region.toFaceDistance(to_face);
   for (int dd = 0; dd < 3; ++dd) {
     ncell[dd] = to_face[dd] / rc;
-    if (ncell[dd] == 0) ncell[dd] = 1;
+    if (ncell[dd] == 0) {
+      ncell[dd] = 1;
+    }
     cell_size[dd] = to_face[dd] / ncell[dd];
     ngcell[dd] = int(rc / cell_size[dd]) + 1;
     assert(cell_size[dd] * ngcell[dd] >= rc);
@@ -703,7 +789,9 @@ void copy_coord(std::vector<double>& out_c,
   mapping.resize(nloc);
   copy(in_c.begin(), in_c.end(), out_c.begin());
   copy(in_t.begin(), in_t.end(), out_t.begin());
-  for (int ii = 0; ii < nloc; ++ii) mapping[ii] = ii;
+  for (int ii = 0; ii < nloc; ++ii) {
+    mapping[ii] = ii;
+  }
 
   // push ghost
   std::vector<int> ii(3), jj(3), pbc_shift(3, 0);
@@ -771,7 +859,9 @@ void deepmd::convert_nlist(InputNlist& to_nlist,
 int deepmd::max_numneigh(const InputNlist& nlist) {
   int max_num = 0;
   for (int ii = 0; ii < nlist.inum; ++ii) {
-    if (nlist.numneigh[ii] > max_num) max_num = nlist.numneigh[ii];
+    if (nlist.numneigh[ii] > max_num) {
+      max_num = nlist.numneigh[ii];
+    }
   }
   return max_num;
 }
@@ -794,7 +884,9 @@ int deepmd::build_nlist_cpu(InputNlist& nlist,
     nlist.ilist[ii] = ii;
     jlist.clear();
     for (int jj = 0; jj < nall; ++jj) {
-      if (jj == ii) continue;
+      if (jj == ii) {
+        continue;
+      }
       FPTYPE diff[3];
       for (int dd = 0; dd < 3; ++dd) {
         diff[dd] = c_cpy[ii * 3 + dd] - c_cpy[jj * 3 + dd];
@@ -810,7 +902,9 @@ int deepmd::build_nlist_cpu(InputNlist& nlist,
     } else {
       int list_size = jlist.size();
       nlist.numneigh[ii] = list_size;
-      if (list_size > *max_list_size) *max_list_size = list_size;
+      if (list_size > *max_list_size) {
+        *max_list_size = list_size;
+      }
       std::copy(jlist.begin(), jlist.end(), nlist.firstneigh[ii]);
     }
   }

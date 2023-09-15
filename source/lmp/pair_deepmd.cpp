@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 #include <string.h>
 
 #include <iomanip>
@@ -48,30 +49,38 @@ static const char cite_user_deepmd_package[] =
     "energy representation and molecular dynamics}},\n"
     "  pages = {178--184}\n"
     "}\n"
-    "@misc{Zeng_arXiv_2023,\n"
-    "    title = {DeePMD-kit v2: A software package for Deep Potential "
-    "models},\n"
-    "    author = {Jinzhe Zeng and Duo Zhang and Denghui Lu and Pinghui Mo "
-    "and\n"
-    "            Zeyu Li and Yixiao Chen and Marián Rynik and Li'ang Huang "
-    "and\n"
-    "            Ziyao Li and Shaochen Shi and Yingze Wang and Haotian Ye and\n"
-    "            Ping Tuo and Jiabin Yang and Ye Ding and Yifan Li and Davide\n"
-    "            Tisi and Qiyu Zeng and Han Bao and Yu Xia and Jiameng Huang\n"
-    "            and Koki Muraoka and Yibo Wang and Junhan Chang and Fengbo\n"
-    "            Yuan and Sigbjørn Løland Bore and Chun Cai and Yinnian Lin\n"
-    "            and Bo Wang and Jiayan Xu and Jia-Xin Zhu and Chenxing Luo "
-    "and\n"
-    "            Yuzhi Zhang and Rhys E. A. Goodall and Wenshuo Liang and "
-    "Anurag\n"
-    "            Kumar Singh and Sikai Yao and Jingchao Zhang and Renata\n"
-    "            Wentzcovitch and Jiequn Han and Jie Liu and Weile Jia and\n"
-    "            Darrin M. York and Weinan E and Roberto Car and Linfeng "
-    "Zhang\n"
-    "            and Han Wang},\n"
-    "    year = {2023},\n"
-    "    archivePrefix = {arXiv},\n"
-    "    doi = {10.48550/arXiv.2304.09409}\n"
+    "@misc{Zeng_JChemPhys_2023_v159_p054801,\n"
+    "  title  = {{DeePMD-kit v2: A software package for deep potential "
+    "models}},\n"
+    "  author =   {Jinzhe Zeng and Duo Zhang and Denghui Lu and Pinghui Mo and "
+    "Zeyu Li\n"
+    "         and Yixiao Chen and Mari{\\'a}n Rynik and Li'ang Huang and Ziyao "
+    "Li and \n"
+    "         Shaochen Shi and Yingze Wang and Haotian Ye and Ping Tuo and "
+    "Jiabin\n"
+    "         Yang and Ye Ding and Yifan Li and Davide Tisi and Qiyu Zeng and "
+    "Han \n"
+    "         Bao and Yu Xia and Jiameng Huang and Koki Muraoka and Yibo Wang "
+    "and \n"
+    "         Junhan Chang and Fengbo Yuan and Sigbj{\\o}rn L{\\o}land Bore "
+    "and "
+    "Chun\n"
+    "         Cai and Yinnian Lin and Bo Wang and Jiayan Xu and Jia-Xin Zhu "
+    "and \n"
+    "         Chenxing Luo and Yuzhi Zhang and Rhys E A Goodall and Wenshuo "
+    "Liang\n"
+    "         and Anurag Kumar Singh and Sikai Yao and Jingchao Zhang and "
+    "Renata\n"
+    "         Wentzcovitch and Jiequn Han and Jie Liu and Weile Jia and Darrin "
+    "M\n"
+    "         York and Weinan E and Roberto Car and Linfeng Zhang and Han "
+    "Wang},\n"
+    "  journal =  {J. Chem. Phys.},\n"
+    "  volume =   159,\n"
+    "  issue =    5,  \n"
+    "  year =    2023,\n"
+    "  pages  =   054801,\n"
+    "  doi =      {10.1063/5.0155600},\n"
     "}\n\n";
 
 static int stringCmp(const void *a, const void *b) {
@@ -79,13 +88,14 @@ static int stringCmp(const void *a, const void *b) {
   char *n = (char *)b;
   int i, sum = 0;
 
-  for (i = 0; i < MPI_MAX_PROCESSOR_NAME; i++)
-    if (m[i] == n[i])
+  for (i = 0; i < MPI_MAX_PROCESSOR_NAME; i++) {
+    if (m[i] == n[i]) {
       continue;
-    else {
+    } else {
       sum = m[i] - n[i];
       break;
     }
+  }
   return sum;
 }
 
@@ -109,9 +119,10 @@ int PairDeepMD::get_node_rank() {
 
   strcpy(host_names[rank], host_name);
 
-  for (n = 0; n < nprocs; n++)
+  for (n = 0; n < nprocs; n++) {
     MPI_Bcast(&(host_names[n]), MPI_MAX_PROCESSOR_NAME, MPI_CHAR, n,
               MPI_COMM_WORLD);
+  }
   qsort(host_names, nprocs, sizeof(char[MPI_MAX_PROCESSOR_NAME]), stringCmp);
 
   color = 0;
@@ -172,13 +183,19 @@ static void ana_st(double &max,
                    double &sum,
                    const vector<double> &vec,
                    const int &nloc) {
-  if (nloc == 0) return;
+  if (nloc == 0) {
+    return;
+  }
   max = vec[0];
   min = vec[0];
   sum = vec[0];
   for (unsigned ii = 1; ii < nloc; ++ii) {
-    if (vec[ii] > max) max = vec[ii];
-    if (vec[ii] < min) min = vec[ii];
+    if (vec[ii] > max) {
+      max = vec[ii];
+    }
+    if (vec[ii] < min) {
+      min = vec[ii];
+    }
     sum += vec[ii];
   }
 }
@@ -240,14 +257,16 @@ void PairDeepMD::make_ttm_fparam(vector<double> &fparam) {
   double total_Te = 0;
 
   // loop over grids to get average electron temperature
-  for (int ixnode = 0; ixnode < nxnodes; ixnode++)
-    for (int iynode = 0; iynode < nynodes; iynode++)
+  for (int ixnode = 0; ixnode < nxnodes; ixnode++) {
+    for (int iynode = 0; iynode < nynodes; iynode++) {
       for (int iznode = 0; iznode < nznodes; iznode++) {
         if (T_electron[ixnode][iynode][iznode] != 0) {
           numb_effective_nodes += 1;
           total_Te += T_electron[ixnode][iynode][iznode];
         }
       }
+    }
+  }
 
   fparam[0] = total_Te / numb_effective_nodes;
 }
@@ -287,12 +306,24 @@ void PairDeepMD::make_ttm_aparam(vector<double> &daparam) {
       int ixnode = static_cast<int>(xscale * nxnodes);
       int iynode = static_cast<int>(yscale * nynodes);
       int iznode = static_cast<int>(zscale * nznodes);
-      while (ixnode > nxnodes - 1) ixnode -= nxnodes;
-      while (iynode > nynodes - 1) iynode -= nynodes;
-      while (iznode > nznodes - 1) iznode -= nznodes;
-      while (ixnode < 0) ixnode += nxnodes;
-      while (iynode < 0) iynode += nynodes;
-      while (iznode < 0) iznode += nznodes;
+      while (ixnode > nxnodes - 1) {
+        ixnode -= nxnodes;
+      }
+      while (iynode > nynodes - 1) {
+        iynode -= nynodes;
+      }
+      while (iznode > nznodes - 1) {
+        iznode -= nznodes;
+      }
+      while (ixnode < 0) {
+        ixnode += nxnodes;
+      }
+      while (iynode < 0) {
+        iynode += nynodes;
+      }
+      while (iznode < 0) {
+        iznode += nznodes;
+      }
       daparam[ii] = T_electron[ixnode][iynode][iznode];
     }
   }
@@ -310,12 +341,21 @@ PairDeepMD::PairDeepMD(LAMMPS *lmp)
     : Pair(lmp)
 
 {
-  if (lmp->citeme) lmp->citeme->add(cite_user_deepmd_package);
-  if (strcmp(update->unit_style, "metal") != 0) {
-    error->all(
-        FLERR,
-        "Pair deepmd requires metal unit, please set it by \"units metal\"");
+  if (lmp->citeme) {
+    lmp->citeme->add(cite_user_deepmd_package);
   }
+  int unit_convert;
+  if (strcmp(update->unit_style, "metal") == 0) {
+    unit_convert = utils::NOCONVERT;
+  } else if (strcmp(update->unit_style, "real") == 0) {
+    unit_convert = utils::METAL2REAL;
+  } else {
+    error->all(FLERR,
+               "Pair deepmd requires metal or real unit, please set it by "
+               "\"units metal\" or \"units real\"");
+  }
+  ener_unit_cvt_factor =
+      utils::get_conversion_factor(utils::ENERGY, unit_convert);
   restartinfo = 1;
 #if LAMMPS_VERSION_NUMBER >= 20201130
   centroidstressflag =
@@ -328,6 +368,8 @@ PairDeepMD::PairDeepMD(LAMMPS *lmp)
   pppmflag = 1;
   respa_enable = 0;
   writedata = 0;
+  unit_convert_flag = utils::get_supported_conversions(utils::ENERGY);
+
   cutoff = 0.;
   numb_types = 0;
   numb_types_spin = 0;
@@ -340,6 +382,7 @@ PairDeepMD::PairDeepMD(LAMMPS *lmp)
   eps_v = 0.;
   scale = NULL;
   do_ttm = false;
+  do_compute = false;
   single_model = false;
   multi_models_mod_devi = false;
   multi_models_no_mod_devi = false;
@@ -386,12 +429,17 @@ PairDeepMD::~PairDeepMD() {
 }
 
 void PairDeepMD::compute(int eflag, int vflag) {
-  if (numb_models == 0) return;
-  if (eflag || vflag) ev_setup(eflag, vflag);
-  if (vflag_atom)
+  if (numb_models == 0) {
+    return;
+  }
+  if (eflag || vflag) {
+    ev_setup(eflag, vflag);
+  }
+  if (vflag_atom) {
     error->all(FLERR,
                "6-element atomic virial is not supported. Use compute "
                "centroid/stress/atom command for 9-element atomic virial.");
+  }
   bool do_ghost = true;
 
   double **x = atom->x;
@@ -537,7 +585,9 @@ void PairDeepMD::compute(int eflag, int vflag) {
           }
         }
         if (eflag_atom) {
-          for (int ii = 0; ii < nlocal; ++ii) eatom[ii] += deatom[ii];
+          for (int ii = 0; ii < nlocal; ++ii) {
+            eatom[ii] += scale[1][1] * deatom[ii];
+          }
         }
         // Added by Davide Tisi 2020
         // interface the atomic virial computed by DeepMD
@@ -550,15 +600,15 @@ void PairDeepMD::compute(int eflag, int vflag) {
             // vatom[ii][3] += 1.0 * dvatom[9*ii+3];
             // vatom[ii][4] += 1.0 * dvatom[9*ii+6];
             // vatom[ii][5] += 1.0 * dvatom[9*ii+7];
-            cvatom[ii][0] += -1.0 * dvatom[9 * ii + 0];  // xx
-            cvatom[ii][1] += -1.0 * dvatom[9 * ii + 4];  // yy
-            cvatom[ii][2] += -1.0 * dvatom[9 * ii + 8];  // zz
-            cvatom[ii][3] += -1.0 * dvatom[9 * ii + 3];  // xy
-            cvatom[ii][4] += -1.0 * dvatom[9 * ii + 6];  // xz
-            cvatom[ii][5] += -1.0 * dvatom[9 * ii + 7];  // yz
-            cvatom[ii][6] += -1.0 * dvatom[9 * ii + 1];  // yx
-            cvatom[ii][7] += -1.0 * dvatom[9 * ii + 2];  // zx
-            cvatom[ii][8] += -1.0 * dvatom[9 * ii + 5];  // zy
+            cvatom[ii][0] += scale[1][1] * dvatom[9 * ii + 0];  // xx
+            cvatom[ii][1] += scale[1][1] * dvatom[9 * ii + 4];  // yy
+            cvatom[ii][2] += scale[1][1] * dvatom[9 * ii + 8];  // zz
+            cvatom[ii][3] += scale[1][1] * dvatom[9 * ii + 3];  // xy
+            cvatom[ii][4] += scale[1][1] * dvatom[9 * ii + 6];  // xz
+            cvatom[ii][5] += scale[1][1] * dvatom[9 * ii + 7];  // yz
+            cvatom[ii][6] += scale[1][1] * dvatom[9 * ii + 1];  // yx
+            cvatom[ii][7] += scale[1][1] * dvatom[9 * ii + 2];  // zx
+            cvatom[ii][8] += scale[1][1] * dvatom[9 * ii + 5];  // zy
           }
         }
       }
@@ -587,7 +637,9 @@ void PairDeepMD::compute(int eflag, int vflag) {
       deatom = all_atom_energy[0];
       dvatom = all_atom_virial[0];
       if (eflag_atom) {
-        for (int ii = 0; ii < nlocal; ++ii) eatom[ii] += deatom[ii];
+        for (int ii = 0; ii < nlocal; ++ii) {
+          eatom[ii] += scale[1][1] * deatom[ii];
+        }
       }
       // Added by Davide Tisi 2020
       // interface the atomic virial computed by DeepMD
@@ -600,15 +652,15 @@ void PairDeepMD::compute(int eflag, int vflag) {
           // vatom[ii][3] += 1.0 * dvatom[9*ii+3];
           // vatom[ii][4] += 1.0 * dvatom[9*ii+6];
           // vatom[ii][5] += 1.0 * dvatom[9*ii+7];
-          cvatom[ii][0] += -1.0 * dvatom[9 * ii + 0];  // xx
-          cvatom[ii][1] += -1.0 * dvatom[9 * ii + 4];  // yy
-          cvatom[ii][2] += -1.0 * dvatom[9 * ii + 8];  // zz
-          cvatom[ii][3] += -1.0 * dvatom[9 * ii + 3];  // xy
-          cvatom[ii][4] += -1.0 * dvatom[9 * ii + 6];  // xz
-          cvatom[ii][5] += -1.0 * dvatom[9 * ii + 7];  // yz
-          cvatom[ii][6] += -1.0 * dvatom[9 * ii + 1];  // yx
-          cvatom[ii][7] += -1.0 * dvatom[9 * ii + 2];  // zx
-          cvatom[ii][8] += -1.0 * dvatom[9 * ii + 5];  // zy
+          cvatom[ii][0] += scale[1][1] * dvatom[9 * ii + 0];  // xx
+          cvatom[ii][1] += scale[1][1] * dvatom[9 * ii + 4];  // yy
+          cvatom[ii][2] += scale[1][1] * dvatom[9 * ii + 8];  // zz
+          cvatom[ii][3] += scale[1][1] * dvatom[9 * ii + 3];  // xy
+          cvatom[ii][4] += scale[1][1] * dvatom[9 * ii + 6];  // xz
+          cvatom[ii][5] += scale[1][1] * dvatom[9 * ii + 7];  // yz
+          cvatom[ii][6] += scale[1][1] * dvatom[9 * ii + 1];  // yx
+          cvatom[ii][7] += scale[1][1] * dvatom[9 * ii + 2];  // zx
+          cvatom[ii][8] += scale[1][1] * dvatom[9 * ii + 5];  // zy
         }
       }
       if (out_freq > 0 && update->ntimestep % out_freq == 0) {
@@ -677,6 +729,12 @@ void PairDeepMD::compute(int eflag, int vflag) {
           all_v_avg = sqrt(all_v_avg / 9);
         }
         if (rank == 0) {
+          all_v_max *= scale[1][1];
+          all_v_min *= scale[1][1];
+          all_v_avg *= scale[1][1];
+          all_f_max *= scale[1][1];
+          all_f_min *= scale[1][1];
+          all_f_avg *= scale[1][1];
           fp << setw(12) << update->ntimestep << " " << setw(18) << all_v_max
              << " " << setw(18) << all_v_min << " " << setw(18) << all_v_avg
              << " " << setw(18) << all_f_max << " " << setw(18) << all_f_min
@@ -693,15 +751,16 @@ void PairDeepMD::compute(int eflag, int vflag) {
           }
           MPI_Gather(&nlocal, 1, MPI_INT, counts, 1, MPI_INT, 0, world);
           displacements[0] = 0;
-          for (int ii = 0; ii < nprocs - 1; ii++)
+          for (int ii = 0; ii < nprocs - 1; ii++) {
             displacements[ii + 1] = displacements[ii] + counts[ii];
+          }
           MPI_Gatherv(tagsend, nlocal, MPI_LMP_TAGINT, tagrecv, counts,
                       displacements, MPI_LMP_TAGINT, 0, world);
           MPI_Gatherv(stdfsend, nlocal, MPI_DOUBLE, stdfrecv, counts,
                       displacements, MPI_DOUBLE, 0, world);
           if (rank == 0) {
             for (int dd = 0; dd < all_nlocal; ++dd) {
-              std_f_all[tagrecv[dd] - 1] = stdfrecv[dd];
+              std_f_all[tagrecv[dd] - 1] = stdfrecv[dd] * scale[1][1];
             }
             for (int dd = 0; dd < all_nlocal; ++dd) {
               fp << " " << setw(18) << std_f_all[dd];
@@ -759,7 +818,9 @@ void PairDeepMD::compute(int eflag, int vflag) {
   }
 
   // accumulate energy and virial
-  if (eflag) eng_vdwl += scale[1][1] * dener;
+  if (eflag) {
+    eng_vdwl += scale[1][1] * dener;
+  }
   if (vflag) {
     virial[0] += 1.0 * dvirial[0] * scale[1][1];
     virial[1] += 1.0 * dvirial[4] * scale[1][1];
@@ -785,11 +846,15 @@ void PairDeepMD::allocate() {
     }
   }
   for (int i = 1; i <= numb_types; ++i) {
-    if (i > n) continue;
+    if (i > n) {
+      continue;
+    }
     for (int j = i; j <= numb_types; ++j) {
-      if (j > n) continue;
+      if (j > n) {
+        continue;
+      }
       setflag[i][j] = 1;
-      scale[i][j] = 1;
+      scale[i][j] = 1.0 * ener_unit_cvt_factor;
     }
   }
 }
@@ -817,7 +882,9 @@ static bool is_key(const string &input) {
 }
 
 void PairDeepMD::settings(int narg, char **arg) {
-  if (narg <= 0) error->all(FLERR, "Illegal pair_style command");
+  if (narg <= 0) {
+    error->all(FLERR, "Illegal pair_style command");
+  }
 
   vector<string> models;
   int iarg = 0;
@@ -875,11 +942,15 @@ void PairDeepMD::settings(int narg, char **arg) {
                  "Illegal pair_style command\nwrong number of parameters\n");
     }
     if (string(arg[iarg]) == string("out_freq")) {
-      if (iarg + 1 >= narg) error->all(FLERR, "Illegal out_freq, not provided");
+      if (iarg + 1 >= narg) {
+        error->all(FLERR, "Illegal out_freq, not provided");
+      }
       out_freq = atoi(arg[iarg + 1]);
       iarg += 2;
     } else if (string(arg[iarg]) == string("out_file")) {
-      if (iarg + 1 >= narg) error->all(FLERR, "Illegal out_file, not provided");
+      if (iarg + 1 >= narg) {
+        error->all(FLERR, "Illegal out_file, not provided");
+      }
       out_file = string(arg[iarg + 1]);
       iarg += 2;
     } else if (string(arg[iarg]) == string("fparam")) {
@@ -943,11 +1014,11 @@ void PairDeepMD::settings(int narg, char **arg) {
       iarg += 1;
     } else if (string(arg[iarg]) == string("relative")) {
       out_rel = 1;
-      eps = atof(arg[iarg + 1]);
+      eps = atof(arg[iarg + 1]) / ener_unit_cvt_factor;
       iarg += 2;
     } else if (string(arg[iarg]) == string("relative_v")) {
       out_rel_v = 1;
-      eps_v = atof(arg[iarg + 1]);
+      eps_v = atof(arg[iarg + 1]) / ener_unit_cvt_factor;
       iarg += 2;
     } else if (string(arg[iarg]) == string("virtual_len")) {
       virtual_len.resize(numb_types_spin);
@@ -964,7 +1035,9 @@ void PairDeepMD::settings(int narg, char **arg) {
     }
   }
 
-  if (out_freq < 0) error->all(FLERR, "Illegal out_freq, should be >= 0");
+  if (out_freq < 0) {
+    error->all(FLERR, "Illegal out_freq, should be >= 0");
+  }
   if (do_ttm && aparam.size() > 0) {
     error->all(FLERR, "aparam and ttm should NOT be set simultaneously");
   }
@@ -982,7 +1055,12 @@ void PairDeepMD::settings(int narg, char **arg) {
         fp << "#" << setw(12 - 1) << "step" << setw(18 + 1) << "max_devi_v"
            << setw(18 + 1) << "min_devi_v" << setw(18 + 1) << "avg_devi_v"
            << setw(18 + 1) << "max_devi_f" << setw(18 + 1) << "min_devi_f"
-           << setw(18 + 1) << "avg_devi_f" << endl;
+           << setw(18 + 1) << "avg_devi_f";
+        if (out_each) {
+          // at this time, we don't know how many atoms
+          fp << setw(18 + 1) << "atm_devi_f(N)";
+        }
+        fp << endl;
       } else {
         fp.open(out_file, std::ofstream::out | std::ofstream::app);
         fp << scientific;
@@ -1086,8 +1164,10 @@ void PairDeepMD::coeff(int narg, char **arg) {
     }
 
     type_idx_map.clear();
+    type_names.clear();
     while (iarg < narg) {
       std::string type_name = arg[iarg];
+      type_names.push_back(type_name);
       bool found_element = false;
       for (int ii = 0; ii < type_map.size(); ++ii) {
         if (type_map[ii] == type_name) {
@@ -1095,6 +1175,10 @@ void PairDeepMD::coeff(int narg, char **arg) {
           found_element = true;
           break;
         }
+      }
+      if (!found_element && "NULL" == type_name) {
+        type_idx_map.push_back(type_map.size());  // ghost type
+        found_element = true;
       }
       if (!found_element) {
         error->all(FLERR, "pair_coeff: element " + type_name +
@@ -1113,7 +1197,7 @@ void PairDeepMD::coeff(int narg, char **arg) {
   for (int i = ilo; i <= ihi; i++) {
     for (int j = MAX(jlo, i); j <= jhi; j++) {
       setflag[i][j] = 1;
-      scale[i][j] = 1.0;
+      scale[i][j] = 1.0 * ener_unit_cvt_factor;
       if (i > numb_types || j > numb_types) {
         char warning_msg[1024];
         sprintf(warning_msg,
@@ -1159,7 +1243,9 @@ double PairDeepMD::init_one(int i, int j) {
     error->warning(FLERR, warning_msg);
   }
 
-  if (setflag[i][j] == 0) scale[i][j] = 1.0;
+  if (setflag[i][j] == 0) {
+    scale[i][j] = 1.0 * ener_unit_cvt_factor;
+  }
   scale[j][i] = scale[i][j];
 
   return cutoff;
@@ -1245,10 +1331,11 @@ void PairDeepMD::extend(int &extend_inum,
   std::map<int, int>::iterator iter = loc_type_count.begin();
   for (int i = 0; i < nloc; i++) {
     iter = loc_type_count.find(atype[i]);
-    if (iter != loc_type_count.end())
+    if (iter != loc_type_count.end()) {
       iter->second += 1;
-    else
+    } else {
       loc_type_count.insert(pair<int, int>(atype[i], 1));
+    }
   }
   assert(numb_types_real - 1 == loc_type_count.rbegin()->first);
   int nloc_virt = 0;
@@ -1260,10 +1347,11 @@ void PairDeepMD::extend(int &extend_inum,
   std::map<int, int> ghost_type_count;
   for (int i = nloc; i < nall; i++) {
     iter = ghost_type_count.find(atype[i]);
-    if (iter != ghost_type_count.end())
+    if (iter != ghost_type_count.end()) {
       iter->second += 1;
-    else
+    } else {
       ghost_type_count.insert(pair<int, int>(atype[i], 1));
+    }
   }
   int nghost_virt = 0;
   for (int i = 0; i < numb_types_spin; i++) {

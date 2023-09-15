@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 #include "Gaussian.h"
 
 void Gaussian::set_seed(unsigned long s) {
