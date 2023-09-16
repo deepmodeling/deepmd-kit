@@ -556,6 +556,28 @@ class ProdEnvMatAOp : public OpKernel {
     const FPTYPE* std = std_tensor.flat<FPTYPE>().data();
     const int* p_type = type_tensor.flat<int>().data();
 
+    Tensor int_temp;
+    Tensor uint64_temp;
+    if (device == "GPU") {
+      // allocate temp memory only once for multiple frames
+      // allocate temp memory, temp memory must not be used after this
+      // operation!
+
+      // used for format_nbor_list_gpu_cuda
+
+      TensorShape int_shape;
+      int_shape.AddDim(sec_a.size() + int_64(nloc) * sec_a.size() + nloc);
+      OP_REQUIRES_OK(context,
+                     context->allocate_temp(DT_INT32, int_shape, &int_temp));
+
+      TensorShape uint64_shape;
+      uint64_shape.AddDim(int_64(nloc) * max_nbor_size * 2);
+      OP_REQUIRES_OK(context, context->allocate_temp(DT_UINT64, uint64_shape,
+                                                     &uint64_temp));
+      array_int = int_temp.flat<int>().data();
+      array_longlong = uint64_temp.flat<unsigned long long>().data();
+    }
+
     // loop over samples
     for (int_64 ff = 0; ff < nsamples; ++ff) {
       FPTYPE* em = p_em + ff * nloc * ndescrpt;
@@ -586,21 +608,6 @@ class ProdEnvMatAOp : public OpKernel {
             mesh_tensor.flat<int>().data(), mesh_tensor_size, nloc, nei_mode,
             rcut_r, max_cpy_trial, max_nnei_trial);
 
-        // allocate temp memory, temp memory must not be used after this
-        // operation!
-        Tensor int_temp;
-        TensorShape int_shape;
-        int_shape.AddDim(sec_a.size() + int_64(nloc) * sec_a.size() + nloc);
-        OP_REQUIRES_OK(context,
-                       context->allocate_temp(DT_INT32, int_shape, &int_temp));
-        Tensor uint64_temp;
-        TensorShape uint64_shape;
-        uint64_shape.AddDim(int_64(nloc) * max_nbor_size * 2);
-        OP_REQUIRES_OK(context, context->allocate_temp(DT_UINT64, uint64_shape,
-                                                       &uint64_temp));
-        array_int = int_temp.flat<int>().data();
-        array_longlong = uint64_temp.flat<unsigned long long>().data();
-
         // launch the gpu(nv) compute function
         deepmd::prod_env_mat_a_gpu_cuda(em, em_deriv, rij, nlist, coord, type,
                                         gpu_inlist, array_int, array_longlong,
@@ -630,21 +637,6 @@ class ProdEnvMatAOp : public OpKernel {
             nbor_list_dev, frame_nall, mem_cpy, mem_nnei, max_nbor_size, box,
             mesh_tensor.flat<int>().data(), mesh_tensor_size, nloc, nei_mode,
             rcut_r, max_cpy_trial, max_nnei_trial);
-
-        // allocate temp memory, temp memory must not be used after this
-        // operation!
-        Tensor int_temp;
-        TensorShape int_shape;
-        int_shape.AddDim(sec_a.size() + int_64(nloc) * sec_a.size() + nloc);
-        OP_REQUIRES_OK(context,
-                       context->allocate_temp(DT_INT32, int_shape, &int_temp));
-        Tensor uint64_temp;
-        TensorShape uint64_shape;
-        uint64_shape.AddDim(int_64(nloc) * max_nbor_size * 2);
-        OP_REQUIRES_OK(context, context->allocate_temp(DT_UINT64, uint64_shape,
-                                                       &uint64_temp));
-        array_int = int_temp.flat<int>().data();
-        array_longlong = uint64_temp.flat<unsigned long long>().data();
 
         // launch the gpu(nv) compute function
         deepmd::prod_env_mat_a_gpu_rocm(em, em_deriv, rij, nlist, coord, type,
@@ -848,6 +840,29 @@ class ProdEnvMatROp : public OpKernel {
     const FPTYPE* std = std_tensor.flat<FPTYPE>().data();
     const int* p_type = type_tensor.flat<int>().data();
 
+    Tensor int_temp;
+    Tensor uint64_temp;
+    if (device == "GPU") {
+      // allocate temp memory only once for multiple frames
+      // allocate temp memory, temp memory must not be used after this
+      // operation!
+
+      // used for format_nbor_list_gpu_cuda
+
+      TensorShape int_shape;
+      int_shape.AddDim(sec.size() + int_64(nloc) * sec.size() + nloc);
+      OP_REQUIRES_OK(context,
+                     context->allocate_temp(DT_INT32, int_shape, &int_temp));
+
+      TensorShape uint64_shape;
+      uint64_shape.AddDim(int_64(nloc) * max_nbor_size * 2);
+      OP_REQUIRES_OK(context, context->allocate_temp(DT_UINT64, uint64_shape,
+                                                     &uint64_temp));
+
+      array_int = int_temp.flat<int>().data();
+      array_longlong = uint64_temp.flat<unsigned long long>().data();
+    }
+
     // loop over samples
     for (int_64 ff = 0; ff < nsamples; ++ff) {
       FPTYPE* em = p_em + ff * nloc * ndescrpt;
@@ -878,21 +893,6 @@ class ProdEnvMatROp : public OpKernel {
             mesh_tensor.flat<int>().data(), mesh_tensor_size, nloc, nei_mode,
             rcut, max_cpy_trial, max_nnei_trial);
 
-        // allocate temp memory, temp memory must not be used after this
-        // operation!
-        Tensor int_temp;
-        TensorShape int_shape;
-        int_shape.AddDim(sec.size() + int_64(nloc) * sec.size() + nloc);
-        OP_REQUIRES_OK(context,
-                       context->allocate_temp(DT_INT32, int_shape, &int_temp));
-        Tensor uint64_temp;
-        TensorShape uint64_shape;
-        uint64_shape.AddDim(int_64(nloc) * max_nbor_size * 2);
-        OP_REQUIRES_OK(context, context->allocate_temp(DT_UINT64, uint64_shape,
-                                                       &uint64_temp));
-        array_int = int_temp.flat<int>().data();
-        array_longlong = uint64_temp.flat<unsigned long long>().data();
-
         // launch the gpu(nv) compute function
         deepmd::prod_env_mat_r_gpu_cuda(em, em_deriv, rij, nlist, coord, type,
                                         gpu_inlist, array_int, array_longlong,
@@ -922,21 +922,6 @@ class ProdEnvMatROp : public OpKernel {
             nbor_list_dev, frame_nall, mem_cpy, mem_nnei, max_nbor_size, box,
             mesh_tensor.flat<int>().data(), mesh_tensor_size, nloc, nei_mode,
             rcut, max_cpy_trial, max_nnei_trial);
-
-        // allocate temp memory, temp memory must not be used after this
-        // operation!
-        Tensor int_temp;
-        TensorShape int_shape;
-        int_shape.AddDim(sec.size() + int_64(nloc) * sec.size() + nloc);
-        OP_REQUIRES_OK(context,
-                       context->allocate_temp(DT_INT32, int_shape, &int_temp));
-        Tensor uint64_temp;
-        TensorShape uint64_shape;
-        uint64_shape.AddDim(int_64(nloc) * max_nbor_size * 2);
-        OP_REQUIRES_OK(context, context->allocate_temp(DT_UINT64, uint64_shape,
-                                                       &uint64_temp));
-        array_int = int_temp.flat<int>().data();
-        array_longlong = uint64_temp.flat<unsigned long long>().data();
 
         // launch the gpu(nv) compute function
         deepmd::prod_env_mat_r_gpu_rocm(em, em_deriv, rij, nlist, coord, type,
@@ -1190,6 +1175,30 @@ class ProdEnvMatAMixOp : public OpKernel {
       }
     }
 
+    // must declar out of if, otherwise the memory will be destroyed!
+    Tensor int_temp;
+    Tensor uint64_temp;
+    if (device == "GPU") {
+      // allocate temp memory only once for multiple frames
+      // allocate temp memory, temp memory must not be used after this
+      // operation!
+
+      // used for format_nbor_list_gpu_cuda
+
+      TensorShape int_shape;
+      int_shape.AddDim(sec_a.size() + int_64(nloc) * sec_a.size() + nloc);
+      OP_REQUIRES_OK(context,
+                     context->allocate_temp(DT_INT32, int_shape, &int_temp));
+
+      TensorShape uint64_shape;
+      uint64_shape.AddDim(int_64(nloc) * max_nbor_size * 2);
+      OP_REQUIRES_OK(context, context->allocate_temp(DT_UINT64, uint64_shape,
+                                                     &uint64_temp));
+
+      array_int = int_temp.flat<int>().data();
+      array_longlong = uint64_temp.flat<unsigned long long>().data();
+    }
+
     // loop over samples
     for (int_64 ff = 0; ff < nsamples; ++ff) {
       FPTYPE* em = p_em + ff * nloc * ndescrpt;
@@ -1223,21 +1232,6 @@ class ProdEnvMatAMixOp : public OpKernel {
             mesh_tensor.flat<int>().data(), mesh_tensor_size, nloc, nei_mode,
             rcut_r, max_cpy_trial, max_nnei_trial);
 
-        // allocate temp memory, temp memory must not be used after this
-        // operation!
-        Tensor int_temp;
-        TensorShape int_shape;
-        int_shape.AddDim(sec_a.size() + int_64(nloc) * sec_a.size() + nloc);
-        OP_REQUIRES_OK(context,
-                       context->allocate_temp(DT_INT32, int_shape, &int_temp));
-        Tensor uint64_temp;
-        TensorShape uint64_shape;
-        uint64_shape.AddDim(int_64(nloc) * max_nbor_size * 2);
-        OP_REQUIRES_OK(context, context->allocate_temp(DT_UINT64, uint64_shape,
-                                                       &uint64_temp));
-        array_int = int_temp.flat<int>().data();
-        array_longlong = uint64_temp.flat<unsigned long long>().data();
-
         // launch the gpu(nv) compute function
         deepmd::prod_env_mat_a_gpu_cuda(
             em, em_deriv, rij, nlist, coord, type, gpu_inlist, array_int,
@@ -1266,21 +1260,6 @@ class ProdEnvMatAMixOp : public OpKernel {
             nbor_list_dev, frame_nall, mem_cpy, mem_nnei, max_nbor_size, box,
             mesh_tensor.flat<int>().data(), mesh_tensor_size, nloc, nei_mode,
             rcut_r, max_cpy_trial, max_nnei_trial);
-
-        // allocate temp memory, temp memory must not be used after this
-        // operation!
-        Tensor int_temp;
-        TensorShape int_shape;
-        int_shape.AddDim(sec_a.size() + int_64(nloc) * sec_a.size() + nloc);
-        OP_REQUIRES_OK(context,
-                       context->allocate_temp(DT_INT32, int_shape, &int_temp));
-        Tensor uint64_temp;
-        TensorShape uint64_shape;
-        uint64_shape.AddDim(int_64(nloc) * max_nbor_size * 2);
-        OP_REQUIRES_OK(context, context->allocate_temp(DT_UINT64, uint64_shape,
-                                                       &uint64_temp));
-        array_int = int_temp.flat<int>().data();
-        array_longlong = uint64_temp.flat<unsigned long long>().data();
 
         // launch the gpu(nv) compute function
         deepmd::prod_env_mat_a_gpu_rocm(
