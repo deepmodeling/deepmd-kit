@@ -496,7 +496,9 @@ def test_pair_deepmd_real(lammps_real):
     lammps_real.pair_style(f"deepmd {pb_file.resolve()}")
     lammps_real.pair_coeff("* *")
     lammps_real.run(0)
-    assert lammps_real.eval("pe") == pytest.approx(expected_e * constants.ener_metal2real)
+    assert lammps_real.eval("pe") == pytest.approx(
+        expected_e * constants.ener_metal2real
+    )
     for ii in range(6):
         assert lammps_real.atoms[ii].force == pytest.approx(
             expected_f[lammps_real.atoms[ii].id - 1] * constants.force_metal2real
@@ -515,7 +517,9 @@ def test_pair_deepmd_virial_real(lammps_real):
         "1 all custom 1 dump id " + " ".join([f"v_virial{ii}" for ii in range(9)])
     )
     lammps_real.run(0)
-    assert lammps_real.eval("pe") == pytest.approx(expected_e * constants.ener_metal2real)
+    assert lammps_real.eval("pe") == pytest.approx(
+        expected_e * constants.ener_metal2real
+    )
     for ii in range(6):
         assert lammps_real.atoms[ii].force == pytest.approx(
             expected_f[lammps_real.atoms[ii].id - 1] * constants.force_metal2real
@@ -537,7 +541,9 @@ def test_pair_deepmd_model_devi_real(lammps_real):
     )
     lammps_real.pair_coeff("* *")
     lammps_real.run(0)
-    assert lammps_real.eval("pe") == pytest.approx(expected_e * constants.ener_metal2real)
+    assert lammps_real.eval("pe") == pytest.approx(
+        expected_e * constants.ener_metal2real
+    )
     for ii in range(6):
         assert lammps_real.atoms[ii].force == pytest.approx(
             expected_f[lammps_real.atoms[ii].id - 1] * constants.force_metal2real
@@ -574,7 +580,9 @@ def test_pair_deepmd_model_devi_virial_real(lammps_real):
         "1 all custom 1 dump id " + " ".join([f"v_virial{ii}" for ii in range(9)])
     )
     lammps_real.run(0)
-    assert lammps_real.eval("pe") == pytest.approx(expected_e * constants.ener_metal2real)
+    assert lammps_real.eval("pe") == pytest.approx(
+        expected_e * constants.ener_metal2real
+    )
     for ii in range(6):
         assert lammps_real.atoms[ii].force == pytest.approx(
             expected_f[lammps_real.atoms[ii].id - 1] * constants.force_metal2real
@@ -615,7 +623,9 @@ def test_pair_deepmd_model_devi_atomic_relative_real(lammps_real):
     )
     lammps_real.pair_coeff("* *")
     lammps_real.run(0)
-    assert lammps_real.eval("pe") == pytest.approx(expected_e * constants.ener_metal2real)
+    assert lammps_real.eval("pe") == pytest.approx(
+        expected_e * constants.ener_metal2real
+    )
     for ii in range(6):
         assert lammps_real.atoms[ii].force == pytest.approx(
             expected_f[lammps_real.atoms[ii].id - 1] * constants.force_metal2real
@@ -651,7 +661,9 @@ def test_pair_deepmd_model_devi_atomic_relative_v_real(lammps_real):
     )
     lammps_real.pair_coeff("* *")
     lammps_real.run(0)
-    assert lammps_real.eval("pe") == pytest.approx(expected_e * constants.ener_metal2real)
+    assert lammps_real.eval("pe") == pytest.approx(
+        expected_e * constants.ener_metal2real
+    )
     for ii in range(6):
         assert lammps_real.atoms[ii].force == pytest.approx(
             expected_f[lammps_real.atoms[ii].id - 1] * constants.force_metal2real
