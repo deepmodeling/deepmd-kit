@@ -7,3 +7,4 @@ dist_metal2si = 1.0e-10
 ener_metal2si = 1.3806504e-23 / 8.617343e-5
 force_metal2si = ener_metal2si / dist_metal2si
 mass_metal2si = 1e-3 / 6.02214e23
+charge_metal2si = 1.6021765e-19
