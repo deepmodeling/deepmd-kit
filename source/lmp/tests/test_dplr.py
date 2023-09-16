@@ -280,7 +280,14 @@ def setup_module():
         box, coord, mol_list, type_HO, charge, data_type_map_file, bond_list, mass_list
     )
     write_lmp_data_full(
-        box * constants.dist_metal2si, coord * constants.dist_metal2si, mol_list, type_OH, charge * constants.charge_metal2si, data_file_si, bond_list, mass_list * constants.mass_metal2si
+        box * constants.dist_metal2si,
+        coord * constants.dist_metal2si,
+        mol_list,
+        type_OH,
+        charge * constants.charge_metal2si,
+        data_file_si,
+        bond_list,
+        mass_list * constants.mass_metal2si,
     )
 
 
@@ -525,6 +532,7 @@ def test_pair_deepmd_lr_type_map(lammps_type_map):
             )
     lammps_type_map.run(1)
 
+
 def test_pair_deepmd_lr_si(lammps_si):
     lammps_si.pair_style(f"deepmd {pb_file.resolve()}")
     lammps_si.pair_coeff("* *")
@@ -532,8 +540,12 @@ def test_pair_deepmd_lr_si(lammps_si):
     lammps_si.bond_coeff("*")
     lammps_si.special_bonds("lj/coul 1 1 1 angle no")
     lammps_si.kspace_style("pppm/dplr 1e-5")
-    lammps_si.kspace_modify(f"gewald {beta:.2f} diff ik mesh {mesh:d} {mesh:d} {mesh:d}")
-    lammps_si.fix(f"0 all dplr model {pb_file.resolve()} type_associate 1 3 bond_type 1")
+    lammps_si.kspace_modify(
+        f"gewald {beta:.2f} diff ik mesh {mesh:d} {mesh:d} {mesh:d}"
+    )
+    lammps_si.fix(
+        f"0 all dplr model {pb_file.resolve()} type_associate 1 3 bond_type 1"
+    )
     lammps_si.fix_modify("0 virial yes")
     lammps_si.run(0)
     for ii in range(8):
@@ -541,8 +553,12 @@ def test_pair_deepmd_lr_si(lammps_si):
             assert lammps_si.atoms[ii].position == pytest.approx(
                 expected_WC[lammps_si.atoms[ii].id - 7] * constants.dist_metal2si
             )
-    assert lammps_si.eval("elong") == pytest.approx(expected_e_kspace * constants.ener_metal2si)
-    assert lammps_si.eval("pe") == pytest.approx(expected_e_lr * constants.ener_metal2si)
+    assert lammps_si.eval("elong") == pytest.approx(
+        expected_e_kspace * constants.ener_metal2si
+    )
+    assert lammps_si.eval("pe") == pytest.approx(
+        expected_e_lr * constants.ener_metal2si
+    )
     for ii in range(8):
         if lammps_si.atoms[ii].id <= 6:
             assert lammps_si.atoms[ii].force == pytest.approx(
