@@ -1614,7 +1614,11 @@ static int _norm_copy_coord_gpu(OpKernelContext* context,
   int_shape.AddDim(23 + nloc * 3 + loc_cellnum + total_cellnum * 3 +
                    total_cellnum * 3 + loc_cellnum + 1 + total_cellnum + 1 +
                    nloc);
-  context, context->allocate_temp(DT_INT32, int_shape, tensor_list + 2);
+  tensorflow::Status status =
+      context->allocate_temp(DT_INT32, int_shape, tensor_list + 2);
+  if (!status.ok()) {
+    return false;
+  }
   FPTYPE* box_info_dev = (*(tensor_list + 1)).flat<FPTYPE>().data();
   int* cell_info_dev = (*(tensor_list + 2)).flat<int>().data();
   int* int_data_dev = cell_info_dev + 23;
@@ -1641,8 +1645,8 @@ static int _norm_copy_coord_gpu(OpKernelContext* context,
       // Tensor cpy_temp;
       TensorShape cpy_shape;
       cpy_shape.AddDim(mem_cpy * 3);
-      tensorflow::Status status = context->allocate_temp(
-          DataTypeToEnum<FPTYPE>::value, cpy_shape, tensor_list + 3);
+      status = context->allocate_temp(DataTypeToEnum<FPTYPE>::value, cpy_shape,
+                                      tensor_list + 3);
       if (!status.ok()) {
         return false;
       }
