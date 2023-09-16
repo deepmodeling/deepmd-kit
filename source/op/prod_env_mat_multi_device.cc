@@ -669,7 +669,6 @@ class ProdEnvMatAOp : public OpKernel {
         int* type_cpy;
         int frame_nall = nall;
         int mesh_tensor_size = static_cast<int>(mesh_tensor.NumElements());
-        std::vector<Tensor> tensor_list(7);
         // prepare coord and nlist
         _prepare_coord_nlist_gpu_rocm<FPTYPE>(
             context, &tensor_list[0], &coord, coord_cpy, &type, type_cpy,
@@ -994,7 +993,6 @@ class ProdEnvMatROp : public OpKernel {
         int* type_cpy;
         int frame_nall = nall;
         int mesh_tensor_size = static_cast<int>(mesh_tensor.NumElements());
-        std::vector<Tensor> tensor_list(7);
         // prepare coord and nlist
         _prepare_coord_nlist_gpu_rocm<FPTYPE>(
             context, &tensor_list[0], &coord, coord_cpy, &type, type_cpy,
@@ -1371,7 +1369,6 @@ class ProdEnvMatAMixOp : public OpKernel {
         int* type_cpy;
         int frame_nall = nall;
         int mesh_tensor_size = static_cast<int>(mesh_tensor.NumElements());
-        std::vector<Tensor> tensor_list(7);
         // prepare coord and nlist
         _prepare_coord_nlist_gpu_rocm<FPTYPE>(
             context, &tensor_list[0], &coord, coord_cpy, &f_type, type_cpy,
