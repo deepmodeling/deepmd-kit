@@ -150,8 +150,8 @@ TEST_F(TestProdVirialGradA, gpu) {
   deepmd::malloc_device_memory_sync(env_deriv_dev, env_deriv);
   deepmd::malloc_device_memory_sync(rij_dev, rij);
   deepmd::malloc_device_memory(grad_net_dev, nloc * ndescrpt);
-  deepmd::prod_virial_grad_a_gpu_cuda<double>(
-      grad_net_dev, grad_dev, env_deriv_dev, rij_dev, nlist_dev, nloc, nnei);
+  deepmd::prod_virial_grad_a_gpu<double>(grad_net_dev, grad_dev, env_deriv_dev,
+                                         rij_dev, nlist_dev, nloc, nnei);
   deepmd::memcpy_device_to_host(grad_net_dev, grad_net);
   deepmd::delete_device_memory(nlist_dev);
   deepmd::delete_device_memory(grad_dev);
@@ -184,8 +184,8 @@ TEST_F(TestProdVirialGradA, gpu) {
   deepmd::malloc_device_memory_sync(env_deriv_dev, env_deriv);
   deepmd::malloc_device_memory_sync(rij_dev, rij);
   deepmd::malloc_device_memory(grad_net_dev, nloc * ndescrpt);
-  deepmd::prod_virial_grad_a_gpu_rocm<double>(
-      grad_net_dev, grad_dev, env_deriv_dev, rij_dev, nlist_dev, nloc, nnei);
+  deepmd::prod_virial_grad_a_gpu<double>(grad_net_dev, grad_dev, env_deriv_dev,
+                                         rij_dev, nlist_dev, nloc, nnei);
   deepmd::memcpy_device_to_host(grad_net_dev, grad_net);
   deepmd::delete_device_memory(nlist_dev);
   deepmd::delete_device_memory(grad_dev);

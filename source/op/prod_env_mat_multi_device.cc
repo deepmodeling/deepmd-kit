@@ -320,76 +320,76 @@ static void _prepare_coord_nlist_gpu(OpKernelContext* context,
 
 #if TENSORFLOW_USE_ROCM
 template <typename FPTYPE>
-static int _norm_copy_coord_gpu_rocm(OpKernelContext* context,
+static int _norm_copy_coord_gpu(OpKernelContext* context,
+                                Tensor* tensor_list,
+                                FPTYPE*& coord_cpy,
+                                int*& type_cpy,
+                                int*& idx_mapping,
+                                int& nall,
+                                int& mem_cpy,
+                                const FPTYPE* coord,
+                                const FPTYPE* box,
+                                const int* type,
+                                const int& nloc,
+                                const int& max_cpy_trial,
+                                const float& rcut_r);
+
+template <typename FPTYPE>
+static int _build_nlist_gpu(OpKernelContext* context,
+                            Tensor* tensor_list,
+                            int*& ilist,
+                            int*& numneigh,
+                            int**& firstneigh,
+                            int*& jlist,
+                            int& max_nnei,
+                            int& mem_nnei,
+                            const FPTYPE* coord,
+                            const int& nloc,
+                            const int& new_nall,
+                            const int& max_nnei_trial,
+                            const float& rcut_r);
+
+static void _map_nlist_gpu(int* nlist,
+                           const int* idx_mapping,
+                           const int& nloc,
+                           const int& nnei);
+
+static void _map_nei_info_gpu(int* nlist,
+                              int* ntype,
+                              bool* nmask,
+                              const int* type,
+                              const int* idx_mapping,
+                              const int& nloc,
+                              const int& nnei,
+                              const int& ntypes,
+                              const bool& b_nlist_map);
+
+template <typename FPTYPE>
+static void _prepare_coord_nlist_gpu(OpKernelContext* context,
                                      Tensor* tensor_list,
+                                     FPTYPE const** coord,
                                      FPTYPE*& coord_cpy,
+                                     int const** type,
                                      int*& type_cpy,
                                      int*& idx_mapping,
-                                     int& nall,
+                                     deepmd::InputNlist& inlist,
+                                     int*& ilist,
+                                     int*& numneigh,
+                                     int**& firstneigh,
+                                     int*& jlist,
+                                     int*& nbor_list_dev,
+                                     int& new_nall,
                                      int& mem_cpy,
-                                     const FPTYPE* coord,
+                                     int& mem_nnei,
+                                     int& max_nbor_size,
                                      const FPTYPE* box,
-                                     const int* type,
+                                     const int* mesh_tensor_data,
+                                     const int mesh_tensor_size,
                                      const int& nloc,
+                                     const int& nei_mode,
+                                     const float& rcut_r,
                                      const int& max_cpy_trial,
-                                     const float& rcut_r);
-
-template <typename FPTYPE>
-static int _build_nlist_gpu_rocm(OpKernelContext* context,
-                                 Tensor* tensor_list,
-                                 int*& ilist,
-                                 int*& numneigh,
-                                 int**& firstneigh,
-                                 int*& jlist,
-                                 int& max_nnei,
-                                 int& mem_nnei,
-                                 const FPTYPE* coord,
-                                 const int& nloc,
-                                 const int& new_nall,
-                                 const int& max_nnei_trial,
-                                 const float& rcut_r);
-
-static void _map_nlist_gpu_rocm(int* nlist,
-                                const int* idx_mapping,
-                                const int& nloc,
-                                const int& nnei);
-
-static void _map_nei_info_gpu_rocm(int* nlist,
-                                   int* ntype,
-                                   bool* nmask,
-                                   const int* type,
-                                   const int* idx_mapping,
-                                   const int& nloc,
-                                   const int& nnei,
-                                   const int& ntypes,
-                                   const bool& b_nlist_map);
-
-template <typename FPTYPE>
-static void _prepare_coord_nlist_gpu_rocm(OpKernelContext* context,
-                                          Tensor* tensor_list,
-                                          FPTYPE const** coord,
-                                          FPTYPE*& coord_cpy,
-                                          int const** type,
-                                          int*& type_cpy,
-                                          int*& idx_mapping,
-                                          deepmd::InputNlist& inlist,
-                                          int*& ilist,
-                                          int*& numneigh,
-                                          int**& firstneigh,
-                                          int*& jlist,
-                                          int*& nbor_list_dev,
-                                          int& new_nall,
-                                          int& mem_cpy,
-                                          int& mem_nnei,
-                                          int& max_nbor_size,
-                                          const FPTYPE* box,
-                                          const int* mesh_tensor_data,
-                                          const int mesh_tensor_size,
-                                          const int& nloc,
-                                          const int& nei_mode,
-                                          const float& rcut_r,
-                                          const int& max_cpy_trial,
-                                          const int& max_nnei_trial);
+                                     const int& max_nnei_trial);
 
 #endif  // TENSORFLOW_USE_ROCM
 
@@ -602,10 +602,10 @@ class ProdEnvMatAOp : public OpKernel {
         array_longlong = uint64_temp.flat<unsigned long long>().data();
 
         // launch the gpu(nv) compute function
-        deepmd::prod_env_mat_a_gpu_cuda(em, em_deriv, rij, nlist, coord, type,
-                                        gpu_inlist, array_int, array_longlong,
-                                        max_nbor_size, avg, std, nloc,
-                                        frame_nall, rcut_r, rcut_r_smth, sec_a);
+        deepmd::prod_env_mat_a_gpu(em, em_deriv, rij, nlist, coord, type,
+                                   gpu_inlist, array_int, array_longlong,
+                                   max_nbor_size, avg, std, nloc, frame_nall,
+                                   rcut_r, rcut_r_smth, sec_a);
         if (b_nlist_map) {
           _map_nlist_gpu(nlist, idx_mapping, nloc, nnei);
         }
@@ -624,7 +624,7 @@ class ProdEnvMatAOp : public OpKernel {
         int mesh_tensor_size = static_cast<int>(mesh_tensor.NumElements());
         std::vector<Tensor> tensor_list(7);
         // prepare coord and nlist
-        _prepare_coord_nlist_gpu_rocm<FPTYPE>(
+        _prepare_coord_nlist_gpu<FPTYPE>(
             context, &tensor_list[0], &coord, coord_cpy, &type, type_cpy,
             idx_mapping, gpu_inlist, ilist, numneigh, firstneigh, jlist,
             nbor_list_dev, frame_nall, mem_cpy, mem_nnei, max_nbor_size, box,
@@ -647,12 +647,12 @@ class ProdEnvMatAOp : public OpKernel {
         array_longlong = uint64_temp.flat<unsigned long long>().data();
 
         // launch the gpu(nv) compute function
-        deepmd::prod_env_mat_a_gpu_rocm(em, em_deriv, rij, nlist, coord, type,
-                                        gpu_inlist, array_int, array_longlong,
-                                        max_nbor_size, avg, std, nloc,
-                                        frame_nall, rcut_r, rcut_r_smth, sec_a);
+        deepmd::prod_env_mat_a_gpu(em, em_deriv, rij, nlist, coord, type,
+                                   gpu_inlist, array_int, array_longlong,
+                                   max_nbor_size, avg, std, nloc, frame_nall,
+                                   rcut_r, rcut_r_smth, sec_a);
         if (b_nlist_map) {
-          _map_nlist_gpu_rocm(nlist, idx_mapping, nloc, nnei);
+          _map_nlist_gpu(nlist, idx_mapping, nloc, nnei);
         }
         deepmd::delete_device_memory(firstneigh);
 #endif  // TENSORFLOW_USE_ROCM
@@ -894,10 +894,10 @@ class ProdEnvMatROp : public OpKernel {
         array_longlong = uint64_temp.flat<unsigned long long>().data();
 
         // launch the gpu(nv) compute function
-        deepmd::prod_env_mat_r_gpu_cuda(em, em_deriv, rij, nlist, coord, type,
-                                        gpu_inlist, array_int, array_longlong,
-                                        max_nbor_size, avg, std, nloc,
-                                        frame_nall, rcut, rcut_smth, sec);
+        deepmd::prod_env_mat_r_gpu(em, em_deriv, rij, nlist, coord, type,
+                                   gpu_inlist, array_int, array_longlong,
+                                   max_nbor_size, avg, std, nloc, frame_nall,
+                                   rcut, rcut_smth, sec);
         if (b_nlist_map) {
           _map_nlist_gpu(nlist, idx_mapping, nloc, nnei);
         }
@@ -916,7 +916,7 @@ class ProdEnvMatROp : public OpKernel {
         int mesh_tensor_size = static_cast<int>(mesh_tensor.NumElements());
         std::vector<Tensor> tensor_list(7);
         // prepare coord and nlist
-        _prepare_coord_nlist_gpu_rocm<FPTYPE>(
+        _prepare_coord_nlist_gpu<FPTYPE>(
             context, &tensor_list[0], &coord, coord_cpy, &type, type_cpy,
             idx_mapping, gpu_inlist, ilist, numneigh, firstneigh, jlist,
             nbor_list_dev, frame_nall, mem_cpy, mem_nnei, max_nbor_size, box,
@@ -939,12 +939,12 @@ class ProdEnvMatROp : public OpKernel {
         array_longlong = uint64_temp.flat<unsigned long long>().data();
 
         // launch the gpu(nv) compute function
-        deepmd::prod_env_mat_r_gpu_rocm(em, em_deriv, rij, nlist, coord, type,
-                                        gpu_inlist, array_int, array_longlong,
-                                        max_nbor_size, avg, std, nloc,
-                                        frame_nall, rcut, rcut_smth, sec);
+        deepmd::prod_env_mat_r_gpu(em, em_deriv, rij, nlist, coord, type,
+                                   gpu_inlist, array_int, array_longlong,
+                                   max_nbor_size, avg, std, nloc, frame_nall,
+                                   rcut, rcut_smth, sec);
         if (b_nlist_map) {
-          _map_nlist_gpu_rocm(nlist, idx_mapping, nloc, nnei);
+          _map_nlist_gpu(nlist, idx_mapping, nloc, nnei);
         }
         deepmd::delete_device_memory(firstneigh);
 #endif  // TENSORFLOW_USE_ROCM
@@ -1179,10 +1179,10 @@ class ProdEnvMatAMixOp : public OpKernel {
 
     if (device == "GPU") {
 #if GOOGLE_CUDA
-      deepmd::filter_ftype_gpu_cuda(p_f_type, p_type, nsamples * nall);
+      deepmd::filter_ftype_gpu(p_f_type, p_type, nsamples * nall);
 #endif
 #if TENSORFLOW_USE_ROCM
-      deepmd::filter_ftype_gpu_rocm(p_f_type, p_type, nsamples * nall);
+      deepmd::filter_ftype_gpu(p_f_type, p_type, nsamples * nall);
 #endif
     } else if (device == "CPU") {
       for (int ii = 0; ii < nsamples * nall; ii++) {
@@ -1239,10 +1239,10 @@ class ProdEnvMatAMixOp : public OpKernel {
         array_longlong = uint64_temp.flat<unsigned long long>().data();
 
         // launch the gpu(nv) compute function
-        deepmd::prod_env_mat_a_gpu_cuda(
-            em, em_deriv, rij, nlist, coord, type, gpu_inlist, array_int,
-            array_longlong, max_nbor_size, avg, std, nloc, frame_nall, rcut_r,
-            rcut_r_smth, sec_a, f_type);
+        deepmd::prod_env_mat_a_gpu(em, em_deriv, rij, nlist, coord, type,
+                                   gpu_inlist, array_int, array_longlong,
+                                   max_nbor_size, avg, std, nloc, frame_nall,
+                                   rcut_r, rcut_r_smth, sec_a, f_type);
         _map_nei_info_gpu(nlist, ntype, nmask, type, idx_mapping, nloc, nnei,
                           ntypes, b_nlist_map);
         deepmd::delete_device_memory(firstneigh);
@@ -1260,7 +1260,7 @@ class ProdEnvMatAMixOp : public OpKernel {
         int mesh_tensor_size = static_cast<int>(mesh_tensor.NumElements());
         std::vector<Tensor> tensor_list(7);
         // prepare coord and nlist
-        _prepare_coord_nlist_gpu_rocm<FPTYPE>(
+        _prepare_coord_nlist_gpu<FPTYPE>(
             context, &tensor_list[0], &coord, coord_cpy, &f_type, type_cpy,
             idx_mapping, gpu_inlist, ilist, numneigh, firstneigh, jlist,
             nbor_list_dev, frame_nall, mem_cpy, mem_nnei, max_nbor_size, box,
@@ -1283,12 +1283,12 @@ class ProdEnvMatAMixOp : public OpKernel {
         array_longlong = uint64_temp.flat<unsigned long long>().data();
 
         // launch the gpu(nv) compute function
-        deepmd::prod_env_mat_a_gpu_rocm(
-            em, em_deriv, rij, nlist, coord, type, gpu_inlist, array_int,
-            array_longlong, max_nbor_size, avg, std, nloc, frame_nall, rcut_r,
-            rcut_r_smth, sec_a, f_type);
-        _map_nei_info_gpu_rocm(nlist, ntype, nmask, type, idx_mapping, nloc,
-                               nnei, ntypes, b_nlist_map);
+        deepmd::prod_env_mat_a_gpu(em, em_deriv, rij, nlist, coord, type,
+                                   gpu_inlist, array_int, array_longlong,
+                                   max_nbor_size, avg, std, nloc, frame_nall,
+                                   rcut_r, rcut_r_smth, sec_a, f_type);
+        _map_nei_info_gpu(nlist, ntype, nmask, type, idx_mapping, nloc, nnei,
+                          ntypes, b_nlist_map);
         deepmd::delete_device_memory(firstneigh);
 #endif  // TENSORFLOW_USE_ROCM
       } else if (device == "CPU") {
@@ -1724,19 +1724,19 @@ static void _prepare_coord_nlist_gpu(OpKernelContext* context,
 
 #if TENSORFLOW_USE_ROCM
 template <typename FPTYPE>
-static int _norm_copy_coord_gpu_rocm(OpKernelContext* context,
-                                     Tensor* tensor_list,
-                                     FPTYPE*& coord_cpy,
-                                     int*& type_cpy,
-                                     int*& idx_mapping,
-                                     int& nall,
-                                     int& mem_cpy,
-                                     const FPTYPE* coord,
-                                     const FPTYPE* box,
-                                     const int* type,
-                                     const int& nloc,
-                                     const int& max_cpy_trial,
-                                     const float& rcut_r) {
+static int _norm_copy_coord_gpu(OpKernelContext* context,
+                                Tensor* tensor_list,
+                                FPTYPE*& coord_cpy,
+                                int*& type_cpy,
+                                int*& idx_mapping,
+                                int& nall,
+                                int& mem_cpy,
+                                const FPTYPE* coord,
+                                const FPTYPE* box,
+                                const int* type,
+                                const int& nloc,
+                                const int& max_cpy_trial,
+                                const float& rcut_r) {
   // Tensor FPTYPE_temp;
   TensorShape FPTYPE_shape;
   FPTYPE_shape.AddDim(nall * 3);
@@ -1779,7 +1779,7 @@ static int _norm_copy_coord_gpu_rocm(OpKernelContext* context,
   FPTYPE* new_rec_boxt = region_dev.rec_boxt;
   region_dev.boxt = box_info_dev;
   region_dev.rec_boxt = box_info_dev + 9;
-  deepmd::normalize_coord_gpu_rocm(tmp_coord, nall, region_dev);
+  deepmd::normalize_coord_gpu(tmp_coord, nall, region_dev);
   int tt;
   for (tt = 0; tt < max_cpy_trial; ++tt) {
     // Tensor cpy_temp;
@@ -1794,7 +1794,7 @@ static int _norm_copy_coord_gpu_rocm(OpKernelContext* context,
     coord_cpy = (*(tensor_list + 3)).flat<FPTYPE>().data();
     type_cpy = (*(tensor_list + 4)).flat<int>().data();
     idx_mapping = type_cpy + mem_cpy;
-    int ret = deepmd::copy_coord_gpu_rocm(
+    int ret = deepmd::copy_coord_gpu(
         coord_cpy, type_cpy, idx_mapping, &nall, int_data_dev, tmp_coord, type,
         nloc, mem_cpy, loc_cellnum, total_cellnum, cell_info_dev, region_dev);
     if (ret == 0) {
@@ -1809,19 +1809,19 @@ static int _norm_copy_coord_gpu_rocm(OpKernelContext* context,
 }
 
 template <typename FPTYPE>
-static int _build_nlist_gpu_rocm(OpKernelContext* context,
-                                 Tensor* tensor_list,
-                                 int*& ilist,
-                                 int*& numneigh,
-                                 int**& firstneigh,
-                                 int*& jlist,
-                                 int& max_nnei,
-                                 int& mem_nnei,
-                                 const FPTYPE* coord,
-                                 const int& nloc,
-                                 const int& new_nall,
-                                 const int& max_nnei_trial,
-                                 const float& rcut_r) {
+static int _build_nlist_gpu(OpKernelContext* context,
+                            Tensor* tensor_list,
+                            int*& ilist,
+                            int*& numneigh,
+                            int**& firstneigh,
+                            int*& jlist,
+                            int& max_nnei,
+                            int& mem_nnei,
+                            const FPTYPE* coord,
+                            const int& nloc,
+                            const int& new_nall,
+                            const int& max_nnei_trial,
+                            const float& rcut_r) {
   // Tensor nlist_temp;
   TensorShape nlist_shape;
   nlist_shape.AddDim(nloc * 2);
@@ -1851,8 +1851,8 @@ static int _build_nlist_gpu_rocm(OpKernelContext* context,
     }
     deepmd::memcpy_host_to_device(firstneigh, firstneigh_host);
     deepmd::InputNlist inlist(nloc, ilist, numneigh, firstneigh);
-    int ret = deepmd::build_nlist_gpu_rocm(inlist, &max_nnei, ind_data, coord,
-                                           nloc, new_nall, mem_nnei, rcut_r);
+    int ret = deepmd::build_nlist_gpu(inlist, &max_nnei, ind_data, coord, nloc,
+                                      new_nall, mem_nnei, rcut_r);
     if (ret == 0) {
       break;
     } else {
@@ -1862,58 +1862,58 @@ static int _build_nlist_gpu_rocm(OpKernelContext* context,
   return (tt != max_nnei_trial);
 }
 
-static void _map_nlist_gpu_rocm(int* nlist,
-                                const int* idx_mapping,
-                                const int& nloc,
-                                const int& nnei) {
+static void _map_nlist_gpu(int* nlist,
+                           const int* idx_mapping,
+                           const int& nloc,
+                           const int& nnei) {
   deepmd::use_nlist_map(nlist, idx_mapping, nloc, nnei);
 }
 
-static void _map_nei_info_gpu_rocm(int* nlist,
-                                   int* ntype,
-                                   bool* nmask,
-                                   const int* type,
-                                   const int* idx_mapping,
-                                   const int& nloc,
-                                   const int& nnei,
-                                   const int& ntypes,
-                                   const bool& b_nlist_map) {
-  deepmd::use_nei_info_gpu_rocm(nlist, ntype, nmask, type, idx_mapping, nloc,
-                                nnei, ntypes, b_nlist_map);
+static void _map_nei_info_gpu(int* nlist,
+                              int* ntype,
+                              bool* nmask,
+                              const int* type,
+                              const int* idx_mapping,
+                              const int& nloc,
+                              const int& nnei,
+                              const int& ntypes,
+                              const bool& b_nlist_map) {
+  deepmd::use_nei_info_gpu(nlist, ntype, nmask, type, idx_mapping, nloc, nnei,
+                           ntypes, b_nlist_map);
 }
 
 template <typename FPTYPE>
-static void _prepare_coord_nlist_gpu_rocm(OpKernelContext* context,
-                                          Tensor* tensor_list,
-                                          FPTYPE const** coord,
-                                          FPTYPE*& coord_cpy,
-                                          int const** type,
-                                          int*& type_cpy,
-                                          int*& idx_mapping,
-                                          deepmd::InputNlist& inlist,
-                                          int*& ilist,
-                                          int*& numneigh,
-                                          int**& firstneigh,
-                                          int*& jlist,
-                                          int*& nbor_list_dev,
-                                          int& new_nall,
-                                          int& mem_cpy,
-                                          int& mem_nnei,
-                                          int& max_nbor_size,
-                                          const FPTYPE* box,
-                                          const int* mesh_tensor_data,
-                                          const int mesh_tensor_size,
-                                          const int& nloc,
-                                          const int& nei_mode,
-                                          const float& rcut_r,
-                                          const int& max_cpy_trial,
-                                          const int& max_nnei_trial) {
+static void _prepare_coord_nlist_gpu(OpKernelContext* context,
+                                     Tensor* tensor_list,
+                                     FPTYPE const** coord,
+                                     FPTYPE*& coord_cpy,
+                                     int const** type,
+                                     int*& type_cpy,
+                                     int*& idx_mapping,
+                                     deepmd::InputNlist& inlist,
+                                     int*& ilist,
+                                     int*& numneigh,
+                                     int**& firstneigh,
+                                     int*& jlist,
+                                     int*& nbor_list_dev,
+                                     int& new_nall,
+                                     int& mem_cpy,
+                                     int& mem_nnei,
+                                     int& max_nbor_size,
+                                     const FPTYPE* box,
+                                     const int* mesh_tensor_data,
+                                     const int mesh_tensor_size,
+                                     const int& nloc,
+                                     const int& nei_mode,
+                                     const float& rcut_r,
+                                     const int& max_cpy_trial,
+                                     const int& max_nnei_trial) {
   if (nei_mode != 3) {
     inlist.inum = nloc;
     // build nlist by myself
     // normalize and copy coord
     if (nei_mode == 1) {
-      int copy_ok = _norm_copy_coord_gpu_rocm(
+      int copy_ok = _norm_copy_coord_gpu(
           context, tensor_list, coord_cpy, type_cpy, idx_mapping, new_nall,
           mem_cpy, *coord, box, *type, nloc, max_cpy_trial, rcut_r);
       OP_REQUIRES(context, copy_ok,
@@ -1923,9 +1923,9 @@ static void _prepare_coord_nlist_gpu_rocm(OpKernelContext* context,
     }
     // build nlist
     int build_ok =
-        _build_nlist_gpu_rocm(context, tensor_list + 5, ilist, numneigh,
-                              firstneigh, jlist, max_nbor_size, mem_nnei,
-                              *coord, nloc, new_nall, max_nnei_trial, rcut_r);
+        _build_nlist_gpu(context, tensor_list + 5, ilist, numneigh, firstneigh,
+                         jlist, max_nbor_size, mem_nnei, *coord, nloc, new_nall,
+                         max_nnei_trial, rcut_r);
     OP_REQUIRES(context, build_ok,
                 errors::Aborted("cannot allocate mem for nlist"));
     if (max_nbor_size <= 1024) {

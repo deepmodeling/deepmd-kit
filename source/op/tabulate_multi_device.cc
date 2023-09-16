@@ -197,15 +197,13 @@ class TabulateFusionSeAOp : public OpKernel {
 
     if (device == "GPU") {
 #if GOOGLE_CUDA
-      deepmd::tabulate_fusion_se_a_gpu_cuda(descriptor, table, table_info, em_x,
-                                            em, two_embed, nloc, nnei,
-                                            last_layer_size);
+      deepmd::tabulate_fusion_se_a_gpu(descriptor, table, table_info, em_x, em,
+                                       two_embed, nloc, nnei, last_layer_size);
 #endif  // GOOGLE_CUDA
 
 #if TENSORFLOW_USE_ROCM
-      deepmd::tabulate_fusion_se_a_gpu_rocm(descriptor, table, table_info, em_x,
-                                            em, two_embed, nloc, nnei,
-                                            last_layer_size);
+      deepmd::tabulate_fusion_se_a_gpu(descriptor, table, table_info, em_x, em,
+                                       two_embed, nloc, nnei, last_layer_size);
 #endif  // TENSORFLOW_USE_ROCM
     } else if (device == "CPU") {
       deepmd::tabulate_fusion_se_a_cpu(descriptor, table, table_info, em_x, em,
@@ -269,15 +267,15 @@ class TabulateFusionSeAGradOp : public OpKernel {
 
     if (device == "GPU") {
 #if GOOGLE_CUDA
-      deepmd::tabulate_fusion_se_a_grad_gpu_cuda(
-          dy_dem_x, dy_dem, table, table_info, em_x, em, two_embed, dy, nloc,
-          nnei, last_layer_size);
+      deepmd::tabulate_fusion_se_a_grad_gpu(dy_dem_x, dy_dem, table, table_info,
+                                            em_x, em, two_embed, dy, nloc, nnei,
+                                            last_layer_size);
 #endif  // GOOGLE_CUDA
 
 #if TENSORFLOW_USE_ROCM
-      deepmd::tabulate_fusion_se_a_grad_gpu_rocm(
-          dy_dem_x, dy_dem, table, table_info, em_x, em, two_embed, dy, nloc,
-          nnei, last_layer_size);
+      deepmd::tabulate_fusion_se_a_grad_gpu(dy_dem_x, dy_dem, table, table_info,
+                                            em_x, em, two_embed, dy, nloc, nnei,
+                                            last_layer_size);
 #endif  // TENSORFLOW_USE_ROCM
     } else if (device == "CPU") {
       deepmd::tabulate_fusion_se_a_grad_cpu(dy_dem_x, dy_dem, table, table_info,
@@ -333,12 +331,12 @@ class TabulateFusionSeAGradGradOp : public OpKernel {
 
     if (device == "GPU") {
 #if GOOGLE_CUDA
-      deepmd::tabulate_fusion_se_a_grad_grad_gpu_cuda(
+      deepmd::tabulate_fusion_se_a_grad_grad_gpu(
           dz_dy, table, table_info, em_x, em, dz_dy_dem_x, dz_dy_dem, nloc,
           nnei, last_layer_size, is_sorted);
 #endif  // GOOGLE_CUDA
 #if TENSORFLOW_USE_ROCM
-      deepmd::tabulate_fusion_se_a_grad_grad_gpu_rocm(
+      deepmd::tabulate_fusion_se_a_grad_grad_gpu(
           dz_dy, table, table_info, em_x, em, dz_dy_dem_x, dz_dy_dem, nloc,
           nnei, last_layer_size, is_sorted);
 #endif  // TENSORFLOW_USE_ROCM
@@ -411,15 +409,15 @@ class TabulateFusionSeAttenOp : public OpKernel {
 
     if (device == "GPU") {
 #if GOOGLE_CUDA
-      deepmd::tabulate_fusion_se_a_gpu_cuda(descriptor, table, table_info, em_x,
-                                            em, two_embed, nloc, nnei,
-                                            last_layer_size, is_sorted);
+      deepmd::tabulate_fusion_se_a_gpu(descriptor, table, table_info, em_x, em,
+                                       two_embed, nloc, nnei, last_layer_size,
+                                       is_sorted);
 #endif  // GOOGLE_CUDA
 
 #if TENSORFLOW_USE_ROCM
-      deepmd::tabulate_fusion_se_a_gpu_rocm(descriptor, table, table_info, em_x,
-                                            em, two_embed, nloc, nnei,
-                                            last_layer_size, is_sorted);
+      deepmd::tabulate_fusion_se_a_gpu(descriptor, table, table_info, em_x, em,
+                                       two_embed, nloc, nnei, last_layer_size,
+                                       is_sorted);
 #endif  // TENSORFLOW_USE_ROCM
     } else if (device == "CPU") {
       deepmd::tabulate_fusion_se_a_cpu(descriptor, table, table_info, em_x, em,
@@ -492,15 +490,15 @@ class TabulateFusionSeAttenGradOp : public OpKernel {
 
     if (device == "GPU") {
 #if GOOGLE_CUDA
-      deepmd::tabulate_fusion_se_a_grad_gpu_cuda(
-          dy_dem_x, dy_dem, table, table_info, em_x, em, two_embed, dy, nloc,
-          nnei, last_layer_size, is_sorted);
+      deepmd::tabulate_fusion_se_a_grad_gpu(dy_dem_x, dy_dem, table, table_info,
+                                            em_x, em, two_embed, dy, nloc, nnei,
+                                            last_layer_size, is_sorted);
 #endif  // GOOGLE_CUDA
 
 #if TENSORFLOW_USE_ROCM
-      deepmd::tabulate_fusion_se_a_grad_gpu_rocm(
-          dy_dem_x, dy_dem, table, table_info, em_x, em, two_embed, dy, nloc,
-          nnei, last_layer_size, is_sorted);
+      deepmd::tabulate_fusion_se_a_grad_gpu(dy_dem_x, dy_dem, table, table_info,
+                                            em_x, em, two_embed, dy, nloc, nnei,
+                                            last_layer_size, is_sorted);
 #endif  // TENSORFLOW_USE_ROCM
     } else if (device == "CPU") {
       deepmd::tabulate_fusion_se_a_grad_cpu(dy_dem_x, dy_dem, table, table_info,
@@ -562,15 +560,13 @@ class TabulateFusionSeTOp : public OpKernel {
 
     if (device == "GPU") {
 #if GOOGLE_CUDA
-      deepmd::tabulate_fusion_se_t_gpu_cuda(descriptor, table, table_info, em_x,
-                                            em, nloc, nnei_i, nnei_j,
-                                            last_layer_size);
+      deepmd::tabulate_fusion_se_t_gpu(descriptor, table, table_info, em_x, em,
+                                       nloc, nnei_i, nnei_j, last_layer_size);
 #endif  // GOOGLE_CUDA
 
 #if TENSORFLOW_USE_ROCM
-      deepmd::tabulate_fusion_se_t_gpu_rocm(descriptor, table, table_info, em_x,
-                                            em, nloc, nnei_i, nnei_j,
-                                            last_layer_size);
+      deepmd::tabulate_fusion_se_t_gpu(descriptor, table, table_info, em_x, em,
+                                       nloc, nnei_i, nnei_j, last_layer_size);
 #endif  // TENSORFLOW_USE_ROCM
     } else if (device == "CPU") {
       deepmd::tabulate_fusion_se_t_cpu(descriptor, table, table_info, em_x, em,
@@ -632,15 +628,15 @@ class TabulateFusionSeTGradOp : public OpKernel {
 
     if (device == "GPU") {
 #if GOOGLE_CUDA
-      deepmd::tabulate_fusion_se_t_grad_gpu_cuda(
-          dy_dem_x, dy_dem, table, table_info, em_x, em, dy, nloc, nnei_i,
-          nnei_j, last_layer_size);
+      deepmd::tabulate_fusion_se_t_grad_gpu(dy_dem_x, dy_dem, table, table_info,
+                                            em_x, em, dy, nloc, nnei_i, nnei_j,
+                                            last_layer_size);
 #endif  // GOOGLE_CUDA
 
 #if TENSORFLOW_USE_ROCM
-      deepmd::tabulate_fusion_se_t_grad_gpu_rocm(
-          dy_dem_x, dy_dem, table, table_info, em_x, em, dy, nloc, nnei_i,
-          nnei_j, last_layer_size);
+      deepmd::tabulate_fusion_se_t_grad_gpu(dy_dem_x, dy_dem, table, table_info,
+                                            em_x, em, dy, nloc, nnei_i, nnei_j,
+                                            last_layer_size);
 #endif  // TENSORFLOW_USE_ROCM
     } else if (device == "CPU") {
       deepmd::tabulate_fusion_se_t_grad_cpu(dy_dem_x, dy_dem, table, table_info,
@@ -695,12 +691,12 @@ class TabulateFusionSeTGradGradOp : public OpKernel {
 
     if (device == "GPU") {
 #if GOOGLE_CUDA
-      deepmd::tabulate_fusion_se_t_grad_grad_gpu_cuda(
+      deepmd::tabulate_fusion_se_t_grad_grad_gpu(
           dz_dy, table, table_info, em_x, em, dz_dy_dem_x, dz_dy_dem, nloc,
           nnei_i, nnei_j, last_layer_size);
 #endif  // GOOGLE_CUDA
 #if TENSORFLOW_USE_ROCM
-      deepmd::tabulate_fusion_se_t_grad_grad_gpu_rocm(
+      deepmd::tabulate_fusion_se_t_grad_grad_gpu(
           dz_dy, table, table_info, em_x, em, dz_dy_dem_x, dz_dy_dem, nloc,
           nnei_i, nnei_j, last_layer_size);
 #endif  // TENSORFLOW_USE_ROCM
@@ -763,13 +759,13 @@ class TabulateFusionSeROp : public OpKernel {
 
     if (device == "GPU") {
 #if GOOGLE_CUDA
-      deepmd::tabulate_fusion_se_r_gpu_cuda(descriptor, table, table_info, em,
-                                            nloc, nnei, last_layer_size);
+      deepmd::tabulate_fusion_se_r_gpu(descriptor, table, table_info, em, nloc,
+                                       nnei, last_layer_size);
 #endif  // GOOGLE_CUDA
 
 #if TENSORFLOW_USE_ROCM
-      deepmd::tabulate_fusion_se_r_gpu_rocm(descriptor, table, table_info, em,
-                                            nloc, nnei, last_layer_size);
+      deepmd::tabulate_fusion_se_r_gpu(descriptor, table, table_info, em, nloc,
+                                       nnei, last_layer_size);
 #endif  // TENSORFLOW_USE_ROCM
     } else if (device == "CPU") {
       deepmd::tabulate_fusion_se_r_cpu(descriptor, table, table_info, em, nloc,
@@ -823,13 +819,13 @@ class TabulateFusionSeRGradOp : public OpKernel {
 
     if (device == "GPU") {
 #if GOOGLE_CUDA
-      deepmd::tabulate_fusion_se_r_grad_gpu_cuda(
-          dy_dem, table, table_info, em, dy, nloc, nnei, last_layer_size);
+      deepmd::tabulate_fusion_se_r_grad_gpu(dy_dem, table, table_info, em, dy,
+                                            nloc, nnei, last_layer_size);
 #endif  // GOOGLE_CUDA
 
 #if TENSORFLOW_USE_ROCM
-      deepmd::tabulate_fusion_se_r_grad_gpu_rocm(
-          dy_dem, table, table_info, em, dy, nloc, nnei, last_layer_size);
+      deepmd::tabulate_fusion_se_r_grad_gpu(dy_dem, table, table_info, em, dy,
+                                            nloc, nnei, last_layer_size);
 #endif  // TENSORFLOW_USE_ROCM
     } else if (device == "CPU") {
       deepmd::tabulate_fusion_se_r_grad_cpu(dy_dem, table, table_info, em, dy,
@@ -876,11 +872,11 @@ class TabulateFusionSeRGradGradOp : public OpKernel {
 
     if (device == "GPU") {
 #if GOOGLE_CUDA
-      deepmd::tabulate_fusion_se_r_grad_grad_gpu_cuda(
+      deepmd::tabulate_fusion_se_r_grad_grad_gpu(
           dz_dy, table, table_info, em, dz_dy_dem, nloc, nnei, last_layer_size);
 #endif  // GOOGLE_CUDA
 #if TENSORFLOW_USE_ROCM
-      deepmd::tabulate_fusion_se_r_grad_grad_gpu_rocm(
+      deepmd::tabulate_fusion_se_r_grad_grad_gpu(
           dz_dy, table, table_info, em, dz_dy_dem, nloc, nnei, last_layer_size);
 #endif  // TENSORFLOW_USE_ROCM
       OP_REQUIRES(context, (last_layer_size <= 1024),

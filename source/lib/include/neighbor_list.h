@@ -150,7 +150,7 @@ int build_nlist_gpu(InputNlist& nlist,
  * @param ftype_in The input atom type.
  * @param nloc The number of atoms.
  */
-void filter_ftype_gpu_cuda(int* ftype_out, const int* ftype_in, const int nloc);
+void filter_ftype_gpu(int* ftype_out, const int* ftype_in, const int nloc);
 
 void use_nei_info_gpu(int* nlist,
                       int* ntype,
@@ -177,14 +177,14 @@ void use_nei_info_gpu(int* nlist,
 //	1: the memory is not large enough to hold all neighbors.
 //	   i.e. max_list_size > mem_nall
 template <typename FPTYPE>
-int build_nlist_gpu_rocm(InputNlist& nlist,
-                         int* max_list_size,
-                         int* nlist_data,
-                         const FPTYPE* c_cpy,
-                         const int& nloc,
-                         const int& nall,
-                         const int& mem_size,
-                         const float& rcut);
+int build_nlist_gpu(InputNlist& nlist,
+                    int* max_list_size,
+                    int* nlist_data,
+                    const FPTYPE* c_cpy,
+                    const int& nloc,
+                    const int& nall,
+                    const int& mem_size,
+                    const float& rcut);
 /**
  * @brief Filter the fake atom type.
  * @details If >=0, set to 0; if <0, set to -1.
@@ -192,17 +192,17 @@ int build_nlist_gpu_rocm(InputNlist& nlist,
  * @param ftype_in The input atom type.
  * @param nloc The number of atoms.
  */
-void filter_ftype_gpu_rocm(int* ftype_out, const int* ftype_in, const int nloc);
+void filter_ftype_gpu(int* ftype_out, const int* ftype_in, const int nloc);
 
-void use_nei_info_gpu_rocm(int* nlist,
-                           int* ntype,
-                           bool* nmask,
-                           const int* type,
-                           const int* nlist_map,
-                           const int nloc,
-                           const int nnei,
-                           const int ntypes,
-                           const bool b_nlist_map);
+void use_nei_info_gpu(int* nlist,
+                      int* ntype,
+                      bool* nmask,
+                      const int* type,
+                      const int* nlist_map,
+                      const int nloc,
+                      const int nnei,
+                      const int ntypes,
+                      const bool b_nlist_map);
 
 #endif  // TENSORFLOW_USE_ROCM
 

@@ -294,9 +294,7 @@ __global__ void map_filter_ftype(int *ftype_out,
   }
 }
 
-void filter_ftype_gpu_cuda(int *ftype_out,
-                           const int *ftype_in,
-                           const int nloc) {
+void filter_ftype_gpu(int *ftype_out, const int *ftype_in, const int nloc) {
   DPErrcheck(cudaGetLastError());
   DPErrcheck(cudaDeviceSynchronize());
   int nblock = (nloc + TPB - 1) / TPB;

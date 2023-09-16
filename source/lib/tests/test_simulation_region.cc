@@ -180,14 +180,14 @@ TEST_F(TestRegion, gpu) {
   double vol[1];
   double* vol_dev = NULL;
   deepmd::malloc_device_memory(vol_dev, 1);
-  deepmd::volume_gpu_rocm(vol_dev, region_dev);
+  deepmd::volume_gpu(vol_dev, region_dev);
   deepmd::memcpy_device_to_host(vol_dev, vol, 1);
   EXPECT_LT(fabs(vol[0] - expected_vol), 1e-10);
   // check conversion between phys and inter coords.
   double ri[3];
   double* ri_dev = NULL;
   deepmd::malloc_device_memory(ri_dev, 3);
-  deepmd::convert_to_inter_gpu_rocm(ri_dev, region_dev, ref_rp_dev);
+  deepmd::convert_to_inter_gpu(ri_dev, region_dev, ref_rp_dev);
   deepmd::memcpy_device_to_host(ri_dev, ri, 3);
   for (int ii = 0; ii < 3; ++ii) {
     EXPECT_LT(fabs(ri[ii] - ref_ri[ii]), 1e-10);
@@ -195,7 +195,7 @@ TEST_F(TestRegion, gpu) {
   double rp2[3];
   double* rp2_dev = NULL;
   deepmd::malloc_device_memory(rp2_dev, 3);
-  deepmd::convert_to_phys_gpu_rocm(rp2_dev, region_dev, ri_dev);
+  deepmd::convert_to_phys_gpu(rp2_dev, region_dev, ri_dev);
   deepmd::memcpy_device_to_host(rp2_dev, rp2, 3);
   for (int ii = 0; ii < 3; ++ii) {
     EXPECT_LT(fabs(rp2[ii] - ref_rp[ii]), 1e-10);
@@ -203,7 +203,7 @@ TEST_F(TestRegion, gpu) {
   double rp[3];
   double* rp_dev = NULL;
   deepmd::malloc_device_memory(rp_dev, 3);
-  deepmd::convert_to_phys_gpu_rocm(rp_dev, region_dev, ref_ri_dev);
+  deepmd::convert_to_phys_gpu(rp_dev, region_dev, ref_ri_dev);
   deepmd::memcpy_device_to_host(rp_dev, rp, 3);
   for (int ii = 0; ii < 3; ++ii) {
     EXPECT_LT(fabs(rp[ii] - ref_rp[ii]), 1e-10);
@@ -211,7 +211,7 @@ TEST_F(TestRegion, gpu) {
   double ri2[3];
   double* ri2_dev = NULL;
   deepmd::malloc_device_memory(ri2_dev, 3);
-  deepmd::convert_to_inter_gpu_rocm(ri2_dev, region_dev, rp_dev);
+  deepmd::convert_to_inter_gpu(ri2_dev, region_dev, rp_dev);
   deepmd::memcpy_device_to_host(ri2_dev, ri2, 3);
   for (int ii = 0; ii < 3; ++ii) {
     EXPECT_LT(fabs(ri2[ii] - ref_ri[ii]), 1e-10);
