@@ -1638,6 +1638,21 @@ static int _norm_copy_coord_gpu(OpKernelContext* context,
       break;
     } else {
       mem_cpy *= 2;
+      // Tensor cpy_temp;
+      TensorShape cpy_shape;
+      cpy_shape.AddDim(mem_cpy * 3);
+      tensorflow::Status status = context->allocate_temp(
+          DataTypeToEnum<FPTYPE>::value, cpy_shape, tensor_list + 3);
+      if (!status.ok()) {
+        return false;
+      }
+      // Tensor t_temp;
+      TensorShape t_shape;
+      t_shape.AddDim(mem_cpy * 2);
+      status = context->allocate_temp(DT_INT32, t_shape, tensor_list + 4);
+      if (!status.ok()) {
+        return false;
+      }
     }
   }
   region_dev.boxt = new_boxt;
@@ -1680,6 +1695,13 @@ static int _build_nlist_gpu(OpKernelContext* context,
       break;
     } else {
       mem_nnei *= 2;
+      TensorShape jlist_shape;
+      jlist_shape.AddDim(3 * int_64(nloc) * mem_nnei);
+      tensorflow::Status status =
+          context->allocate_temp(DT_INT32, jlist_shape, tensor_list + 1);
+      if (!status.ok()) {
+        return false;
+      }
     }
   }
   return (tt != max_nnei_trial);
@@ -1857,6 +1879,21 @@ static int _norm_copy_coord_gpu_rocm(OpKernelContext* context,
       break;
     } else {
       mem_cpy *= 2;
+      // Tensor cpy_temp;
+      TensorShape cpy_shape;
+      cpy_shape.AddDim(mem_cpy * 3);
+      tensorflow::Status status = context->allocate_temp(
+          DataTypeToEnum<FPTYPE>::value, cpy_shape, tensor_list + 3);
+      if (!status.ok()) {
+        return false;
+      }
+      // Tensor t_temp;
+      TensorShape t_shape;
+      t_shape.AddDim(mem_cpy * 2);
+      status = context->allocate_temp(DT_INT32, t_shape, tensor_list + 4);
+      if (!status.ok()) {
+        return false;
+      }
     }
   }
   region_dev.boxt = new_boxt;
@@ -1913,6 +1950,13 @@ static int _build_nlist_gpu_rocm(OpKernelContext* context,
       break;
     } else {
       mem_nnei *= 2;
+      TensorShape jlist_shape;
+      jlist_shape.AddDim(3 * int_64(nloc) * mem_nnei);
+      tensorflow::Status status =
+          context->allocate_temp(DT_INT32, jlist_shape, tensor_list + 1);
+      if (!status.ok()) {
+        return false;
+      }
     }
   }
   return (tt != max_nnei_trial);
