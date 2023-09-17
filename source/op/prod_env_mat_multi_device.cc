@@ -1745,6 +1745,7 @@ static void _prepare_coord_nlist_gpu(OpKernelContext* context,
     // copy from cpu to gpu
     int* fake_mesh_dev = NULL;
     deepmd::malloc_device_memory(fake_mesh_dev, 16);
+    deepmd::memcpy_host_to_device(fake_mesh_dev, fake_mesh);
 
     deepmd::InputNlist inlist_temp;
     inlist_temp.inum = nloc;
