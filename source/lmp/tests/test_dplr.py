@@ -337,7 +337,7 @@ def lammps_type_map():
 
 @pytest.fixture
 def lammps_si():
-    lmp = _lammps(data_file=data_file_si)
+    lmp = _lammps(data_file=data_file_si, units="si")
     yield lmp
     lmp.close()
 
