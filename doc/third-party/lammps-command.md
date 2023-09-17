@@ -3,7 +3,7 @@
 ## units
 All units in LAMMPS except `lj` are supported. `lj` is not supported.
 
-The most commonly used units are `metal`, since the internal units of distance, energy, force, and charge in DeePMD-kit are `\AA`, `eV`, `eV / \AA`, and `proton charge`, respectively. These units are consistent with the `metal` units in LAMMPS. 
+The most commonly used units are `metal`, since the internal units of distance, energy, force, and charge in DeePMD-kit are `\AA`, `eV`, `eV / \AA`, and `proton charge`, respectively. These units are consistent with the `metal` units in LAMMPS.
 
 If one wants to use other units like `real` or `si`, it is welcome to do so. There is no need to do the unit conversion mannualy. The unit conversion is done automatically by LAMMPS.
 
