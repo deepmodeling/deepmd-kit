@@ -48,7 +48,7 @@ def write_lmp_data_full(
         f.write("\nAtoms\n\n")
         for i in range(natom):
             f.write(
-                "%d %d %d %d %.10e %.10e %.10e\n"
+                "%d %d %d %.10e %.10e %.10e %.10e\n"
                 % (
                     i + 1,
                     mol_list[i],
