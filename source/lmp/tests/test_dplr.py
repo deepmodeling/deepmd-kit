@@ -293,6 +293,7 @@ def setup_module():
 
 def teardown_module():
     os.remove(data_file)
+    os.remove(data_type_map_file)
     os.remove(data_file_si)
 
 
@@ -337,7 +338,7 @@ def lammps_type_map():
 
 @pytest.fixture
 def lammps_si():
-    lmp = _lammps(data_file=data_file_si)
+    lmp = _lammps(data_file=data_file_si, units="si")
     yield lmp
     lmp.close()
 
@@ -541,7 +542,7 @@ def test_pair_deepmd_lr_si(lammps_si):
     lammps_si.special_bonds("lj/coul 1 1 1 angle no")
     lammps_si.kspace_style("pppm/dplr 1e-5")
     lammps_si.kspace_modify(
-        f"gewald {beta:.2f} diff ik mesh {mesh:d} {mesh:d} {mesh:d}"
+        f"gewald {beta / constants.dist_metal2si:.6e} diff ik mesh {mesh:d} {mesh:d} {mesh:d}"
     )
     lammps_si.fix(
         f"0 all dplr model {pb_file.resolve()} type_associate 1 3 bond_type 1"
