@@ -1101,13 +1101,11 @@ class ProdEnvMatAMixOp : public OpKernel {
     } else if (mesh_tensor.shape().dim_size(0) == 6 ||
                mesh_tensor.shape().dim_size(0) == 7) {
       // manual copied pbc
-      assert(nloc == nall);
       nei_mode = 1;
       b_nlist_map = true;
     } else if (mesh_tensor.shape().dim_size(0) == 0 ||
                mesh_tensor.shape().dim_size(0) == 1) {
       // no pbc
-      assert(nloc == nall);
       nei_mode = -1;
     } else if (mesh_tensor.shape().dim_size(0) > 16) {
       // pass neighbor list inside the tensor
@@ -1478,16 +1476,17 @@ static void _prepare_coord_nlist_cpu(OpKernelContext* context,
     inlist.numneigh = &numneigh[0];
     inlist.firstneigh = &firstneigh[0];
   } else if (nei_mode == 4) {
-    std::memcpy(&inlist.ilist, 16 + mesh_tensor_data, sizeof(int) * nloc);
-    std::memcpy(&inlist.numneigh, 16 + nloc + mesh_tensor_data,
-                sizeof(int) * nloc);
+    std::memcpy(&ilist[0], 16 + mesh_tensor_data, sizeof(int) * nloc);
+    std::memcpy(&numneigh[0], 16 + nloc + mesh_tensor_data, sizeof(int) * nloc);
     for (int ii = 0, kk = 0; ii < nloc; ++ii) {
-      jlist[ii].resize(inlist.numneigh[ii]);
+      jlist[ii].resize(numneigh[ii]);
       std::memcpy(&jlist[ii][0], 16 + 2 * nloc + kk + mesh_tensor_data,
-                  sizeof(int) * inlist.numneigh[ii]);
+                  sizeof(int) * numneigh[ii]);
       firstneigh[ii] = &jlist[ii][0];
-      kk += inlist.numneigh[ii];
+      kk += numneigh[ii];
     }
+    inlist.ilist = &ilist[0];
+    inlist.numneigh = &numneigh[0];
     inlist.firstneigh = &firstneigh[0];
   } else {
     // copy pointers to nlist data
