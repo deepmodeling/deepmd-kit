@@ -274,7 +274,7 @@ class ConvertForwardMapOp : public OpKernel {
     // Create an output tensor
     TensorShape forward_map_shape;
     forward_map_shape.AddDim(1);
-    forward_map_shape.AddDim(new_nloc + new_nghost);
+    forward_map_shape.AddDim(new_nall);
     TensorShape backward_map_shape;
     // since the atom index can not be repeated, we still need
     // to split to multiple frames
@@ -286,6 +286,7 @@ class ConvertForwardMapOp : public OpKernel {
     Tensor* forward_map_tensor = NULL;
     Tensor* backward_map_tensor = NULL;
     Tensor* new_natoms_tensor = NULL;
+    tmp_idx = 0;
     OP_REQUIRES_OK(context,
                    context->allocate_output(tmp_idx++, forward_map_shape,
                                             &forward_map_tensor));
@@ -317,7 +318,7 @@ class ConvertForwardMapOp : public OpKernel {
       start_kk[ii] = kk;
       for (int jj = 0; jj < sub_nloc; ++jj) {
         if (sub_forward_map(ii, jj) != -1) {
-          forward_map(1, kk) = sub_forward_map(ii, jj);
+          forward_map(0, kk) = sub_forward_map(ii, jj);
           backward_map(ii, sub_forward_map(ii, jj)) = kk;
           kk++;
         }
@@ -332,16 +333,11 @@ class ConvertForwardMapOp : public OpKernel {
         }
       }
     }
-    // fill -1 in kk ~ new_nloc
-    for (int jj = kk; jj < new_nloc; ++jj) {
-      forward_map(1, jj) = -1;
-    }
     for (int ii = 0; ii < sub_nframes; ++ii) {
-      kk = new_nloc;
       int start_ghost_kk = kk;
       for (int jj = sub_nloc; jj < sub_nall; ++jj) {
         if (sub_forward_map(ii, jj) != -1) {
-          forward_map(1, kk) = sub_forward_map(ii, jj);
+          forward_map(0, kk) = sub_forward_map(ii, jj);
           backward_map(ii, sub_forward_map(ii, jj)) = kk;
           kk++;
         }
@@ -353,10 +349,6 @@ class ConvertForwardMapOp : public OpKernel {
           jlist[mm].push_back(nn);
         }
       }
-    }
-    // fill -1 in kk ~ new_nall
-    for (int jj = kk; jj < new_nall; ++jj) {
-      forward_map(1, jj) = -1;
     }
 
     // natoms
@@ -380,7 +372,7 @@ class ConvertForwardMapOp : public OpKernel {
       numneigh[ii] = jlist[ii].size();
     }
     int size_mesh =
-        std::accumulate(numneigh.begin(), numneigh.end(), 2 * new_nloc + 1);
+        std::accumulate(numneigh.begin(), numneigh.end(), 2 * new_nloc + 16);
 
     TensorShape mesh_shape;
     mesh_shape.AddDim(size_mesh);
@@ -398,9 +390,10 @@ class ConvertForwardMapOp : public OpKernel {
     for (int ii = 0; ii < new_nloc; ++ii) {
       mesh(ii + 16 + new_nloc) = numneigh[ii];
     }
-    for (int ii = 0, kk = 0; ii < new_nloc; ++ii) {
+    kk = 0;
+    for (int ii = 0; ii < new_nloc; ++ii) {
       for (int jj = 0; jj < numneigh[ii]; ++jj) {
-        mesh(ii + 16 + 2 * new_nloc + kk) = jlist[ii][jj];
+        mesh(16 + 2 * new_nloc + kk) = jlist[ii][jj];
         kk++;
       }
     }
