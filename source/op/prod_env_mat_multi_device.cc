@@ -1109,6 +1109,9 @@ class ProdEnvMatAMixOp : public OpKernel {
       // no pbc
       assert(nloc == nall);
       nei_mode = -1;
+    } else if (mesh_tensor.shape().dim_size(0) > 16) {
+      // pass neighbor list inside the tensor
+      nei_mode = 4;
     } else {
       throw deepmd::deepmd_exception("invalid mesh tensor");
     }
@@ -1453,7 +1456,7 @@ static void _prepare_coord_nlist_cpu(OpKernelContext* context,
                                      const int& max_cpy_trial,
                                      const int& max_nnei_trial) {
   inlist.inum = nloc;
-  if (nei_mode != 3) {
+  if (nei_mode != 3 && nei_mode != 4) {
     // build nlist by myself
     // normalize and copy coord
     if (nei_mode == 1) {
@@ -1473,6 +1476,18 @@ static void _prepare_coord_nlist_cpu(OpKernelContext* context,
                 errors::Aborted("cannot allocate mem for nlist"));
     inlist.ilist = &ilist[0];
     inlist.numneigh = &numneigh[0];
+    inlist.firstneigh = &firstneigh[0];
+  } else if (nei_mode == 4) {
+    std::memcpy(&inlist.ilist, 16 + mesh_tensor_data, sizeof(int) * nloc);
+    std::memcpy(&inlist.numneigh, 16 + nloc + mesh_tensor_data,
+                sizeof(int) * nloc);
+    for (int ii = 0, kk = 0; ii < nloc; ++ii) {
+      jlist[ii].resize(inlist.numneigh[ii]);
+      std::memcpy(&jlist[ii][0], 16 + 2 * nloc + kk + mesh_tensor_data,
+                  sizeof(int) * inlist.numneigh[ii]);
+      firstneigh[ii] = &jlist[ii][0];
+      kk += inlist.numneigh[ii];
+    }
     inlist.firstneigh = &firstneigh[0];
   } else {
     // copy pointers to nlist data
@@ -1675,7 +1690,7 @@ static void _prepare_coord_nlist_gpu(OpKernelContext* context,
                                      const float& rcut_r,
                                      const int& max_cpy_trial,
                                      const int& max_nnei_trial) {
-  if (nei_mode != 3) {
+  if (nei_mode != 3 && nei_mode != 4) {
     inlist.inum = nloc;
     // build nlist by myself
     // normalize and copy coord
@@ -1705,6 +1720,45 @@ static void _prepare_coord_nlist_gpu(OpKernelContext* context,
     inlist.ilist = ilist;
     inlist.numneigh = numneigh;
     inlist.firstneigh = firstneigh;
+  } else if (nei_mode == 4) {
+    // TODO: in theory, it will be faster to put everything on GPUs...
+    std::vector<int> mesh_tensor_data_host(mesh_tensor_size);
+    std::vector<int> ilist_host(nloc);
+    std::vector<int> numneigh_host(nloc);
+    std::vector<int*> firstneigh_host(nloc);
+    std::vector<int> fake_mesh(16);
+
+    // copy from gpu to cpu
+    deepmd::memcpy_device_to_host(mesh_tensor_data, mesh_tensor_data_host);
+    std::memcpy(&ilist_host[0], &mesh_tensor_data_host[16], sizeof(int) * nloc);
+    std::memcpy(&numneigh_host[0], &mesh_tensor_data_host[16 + nloc],
+                sizeof(int) * nloc);
+    for (int ii = 0, kk = 0; ii < nloc; ++ii) {
+      firstneigh_host[ii] = &mesh_tensor_data_host[16 + 2 * nloc + kk];
+      kk += numneigh_host[ii];
+    }
+    // make a fake mesh
+    fake_mesh[0] = 0;
+    fake_mesh[1] = nloc;
+    std::memcpy(&fake_mesh[4], &ilist_host, sizeof(int*));
+    std::memcpy(&fake_mesh[8], &numneigh_host, sizeof(int*));
+    std::memcpy(&fake_mesh[12], &firstneigh_host, sizeof(int**));
+    // copy from cpu to gpu
+    int* fake_mesh_dev = NULL;
+    deepmd::malloc_device_memory(fake_mesh_dev, 16);
+
+    deepmd::InputNlist inlist_temp;
+    inlist_temp.inum = nloc;
+    // everything should be copied to GPU...
+    deepmd::env_mat_nbor_update(inlist_temp, inlist, max_nbor_size,
+                                nbor_list_dev, fake_mesh_dev, 16);
+    OP_REQUIRES(context, (max_numneigh(inlist_temp) <= max_nbor_size),
+                errors::InvalidArgument(
+                    "Assert failed, max neighbor size of atom(lammps) " +
+                    std::to_string(max_numneigh(inlist_temp)) +
+                    " is larger than " + std::to_string(max_nbor_size) +
+                    ", which currently is not supported by deepmd-kit."));
+    deepmd::delete_device_memory(fake_mesh_dev);
   } else {
     // update nbor list
     deepmd::InputNlist inlist_temp;
