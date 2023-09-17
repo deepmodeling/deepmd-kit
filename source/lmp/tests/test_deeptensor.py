@@ -155,6 +155,7 @@ def test_compute_deeptensor_atom(lammps):
         expected_d[idx_map]
     )
 
+
 def test_compute_deeptensor_atom_si(lammps_si):
     lammps_si.pair_style(f"deepmd {pb_file.resolve()}")
     lammps_si.pair_coeff("* *")
