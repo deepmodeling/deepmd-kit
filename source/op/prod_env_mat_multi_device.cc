@@ -507,6 +507,9 @@ class ProdEnvMatAOp : public OpKernel {
       // no pbc
       assert(nloc == nall);
       nei_mode = -1;
+    } else if (mesh_tensor.shape().dim_size(0) > 16) {
+      // pass neighbor list inside the tensor
+      nei_mode = 4;
     } else if (mesh_tensor.shape().dim_size(0) == 7 ||
                mesh_tensor.shape().dim_size(0) == 1) {
       throw deepmd::deepmd_exception(
@@ -799,6 +802,9 @@ class ProdEnvMatROp : public OpKernel {
       // no pbc
       assert(nloc == nall);
       nei_mode = -1;
+    } else if (mesh_tensor.shape().dim_size(0) > 16) {
+      // pass neighbor list inside the tensor
+      nei_mode = 4;
     } else if (mesh_tensor.shape().dim_size(0) == 7 ||
                mesh_tensor.shape().dim_size(0) == 1) {
       throw deepmd::deepmd_exception(
