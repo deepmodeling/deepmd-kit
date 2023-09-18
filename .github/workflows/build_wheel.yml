@@ -43,7 +43,7 @@ jobs:
           submodules: true
           # https://github.com/pypa/setuptools_scm/issues/480
           fetch-depth: 0
-      - uses: docker/setup-qemu-action@v2
+      - uses: docker/setup-qemu-action@v3
         name: Setup QEMU
         if: matrix.platform_id == 'manylinux_aarch64'
       - name: Build wheels
