@@ -1436,6 +1436,24 @@ static void _map_nei_info_cpu(int* nlist,
                            ntypes, b_nlist_map);
 }
 
+/**
+ * @param[in] nei_mode -1, 1, 3, or 4.
+ *   - -1: Build neighbor list without PBC. The size of mesh should
+ *     be 0 (no mixed) or 1 (mixed).
+ *   - 1: Build neighbor list with PBC. The size of mesh should
+ *     be 6 (no mixed) or 7 (mixed).
+ *   - 3：Use neighbor list from given pointers. The size of mesh should be 16.
+ *     The first element is ago (whether update the internal neighbour list).
+ *     The second element is the number of local atoms. The 5th-8th, 9th-12th,
+ *     and 13th-16th elements are the pointer (int*, 4x size of int) to
+ *     ilist, numneigh, firstneigh. The pointer should be valid during the
+ *     execution of this op, so it may be created and given by an external
+ *     program calling the TensorFlow session.
+ *   - 4: Use neighbor list stored in the tensor. The size of mesh should be
+ *     16 + 2 * nloc + sum(numneigh). Starting from the 17th element, the
+ *     elements are ilist (size of nloc), numneigh (size of nloc), and neighbors
+ *     (size of numneigh[i] for each i).
+ */
 template <typename FPTYPE>
 static void _prepare_coord_nlist_cpu(OpKernelContext* context,
                                      FPTYPE const** coord,
