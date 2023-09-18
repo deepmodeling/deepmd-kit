@@ -1,5 +1,14 @@
 # LAMMPS commands
 
+## units
+All units in LAMMPS except `lj` are supported. `lj` is not supported.
+
+The most commonly used units are `metal`, since the internal units of distance, energy, force, and charge in DeePMD-kit are `\AA`, `eV`, `eV / \AA`, and `proton charge`, respectively. These units are consistent with the `metal` units in LAMMPS.
+
+If one wants to use other units like `real` or `si`, it is welcome to do so. There is no need to do the unit conversion mannualy. The unit conversion is done automatically by LAMMPS.
+
+The only thing that one needs to take care is the unit of the output of `compute deeptensor/atom`. Working with `metal` units for `compute deeptensor/atom` is totally fine, since there is no unit conversion. For other unit styles, we currently assume that the output of the `compute deeptensor/atom` command has the unit of distance and have applied the unit conversion factor of distance. If a user wants to infer quantities with units other than distance, the user is encouraged to open a GitHub feature request, so that the unit conversion factor can be added.
+
 ## Enable DeePMD-kit plugin (plugin mode)
 
 If you are using the plugin mode, enable DeePMD-kit package in LAMMPS with `plugin` command:
@@ -119,6 +128,7 @@ dump            1 all custom 100 water.dump id type c_dipole[1] c_dipole[2] c_di
 
 ### Restrictions
 - The `deeptensor/atom` compute is provided in the USER-DEEPMD package, which is compiled from the DeePMD-kit, visit the [DeePMD-kit website](https://github.com/deepmodeling/deepmd-kit) for more information.
+- For the issue of using a unit style for `compute deeptensor/atom`, refer to the discussions in [units](#units) of this page.
 
 
 ## Long-range interaction
