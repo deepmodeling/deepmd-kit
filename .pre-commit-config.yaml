@@ -53,7 +53,7 @@ repos:
     rev: v16.0.6
     hooks:
     -   id: clang-format
-        exclude: ^source/3rdparty|source/lib/src/cuda/cudart/.+\.inc
+        exclude: ^source/3rdparty|source/lib/src/gpu/cudart/.+\.inc
 # CSS
 -   repo: https://github.com/pre-commit/mirrors-csslint
     rev: v1.0.5
@@ -83,7 +83,7 @@ repos:
         - --comment-style
         - //
         - --no-extra-eol
-        exclude: ^source/3rdparty|source/lib/src/cuda/cudart/.+\.inc
+        exclude: ^source/3rdparty|source/lib/src/gpu/cudart/.+\.inc
     # CSS
     -   id: insert-license
         files: \.(css|scss)$
