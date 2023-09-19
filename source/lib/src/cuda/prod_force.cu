@@ -110,15 +110,15 @@ void prod_force_a_gpu(FPTYPE* force,
                       const int nall,
                       const int nnei,
                       const int nframes) {
-  DPErrcheck(cudaGetLastError());
-  DPErrcheck(cudaDeviceSynchronize());
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
   const int ndescrpt = nnei * 4;
   DPErrcheck(cudaMemset(force, 0, sizeof(FPTYPE) * nframes * nall * 3));
 
   force_deriv_wrt_center_atom<FPTYPE, TPB><<<nframes * nloc, TPB>>>(
       force, net_deriv, in_deriv, ndescrpt, nloc, nall);
-  DPErrcheck(cudaGetLastError());
-  DPErrcheck(cudaDeviceSynchronize());
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
 
   const int LEN = 64;
   const int nblock = (nnei + LEN - 1) / LEN;
@@ -126,8 +126,8 @@ void prod_force_a_gpu(FPTYPE* force,
   dim3 thread_grid(LEN, 3);
   force_deriv_wrt_neighbors_a<<<block_grid, thread_grid>>>(
       force, net_deriv, in_deriv, nlist, nloc, nall, nnei);
-  DPErrcheck(cudaGetLastError());
-  DPErrcheck(cudaDeviceSynchronize());
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
 }
 
 template <typename FPTYPE>
@@ -139,15 +139,15 @@ void prod_force_r_gpu(FPTYPE* force,
                       const int nall,
                       const int nnei,
                       const int nframes) {
-  DPErrcheck(cudaGetLastError());
-  DPErrcheck(cudaDeviceSynchronize());
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
   const int ndescrpt = nnei * 1;
   DPErrcheck(cudaMemset(force, 0, sizeof(FPTYPE) * nframes * nall * 3));
 
   force_deriv_wrt_center_atom<FPTYPE, TPB><<<nframes * nloc, TPB>>>(
       force, net_deriv, in_deriv, ndescrpt, nloc, nall);
-  DPErrcheck(cudaGetLastError());
-  DPErrcheck(cudaDeviceSynchronize());
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
 
   const int LEN = 64;
   const int nblock = (nnei + LEN - 1) / LEN;
@@ -155,8 +155,8 @@ void prod_force_r_gpu(FPTYPE* force,
   dim3 thread_grid(LEN, 3);
   force_deriv_wrt_neighbors_r<<<block_grid, thread_grid>>>(
       force, net_deriv, in_deriv, nlist, nloc, nall, nnei);
-  DPErrcheck(cudaGetLastError());
-  DPErrcheck(cudaDeviceSynchronize());
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
 }
 
 template void prod_force_a_gpu<float>(float* force,

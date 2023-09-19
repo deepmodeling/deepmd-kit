@@ -99,8 +99,8 @@ void prod_virial_grad_a_gpu(FPTYPE* grad_net,
   dim3 thread_grid(LEN, 4);
   hipLaunchKernelGGL(virial_grad_wrt_neighbors_a, block_grid, thread_grid, 0, 0,
                      grad_net, grad, env_deriv, rij, nlist, nloc, nnei);
-  DPErrcheck(hipGetLastError());
-  DPErrcheck(hipDeviceSynchronize());
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
 }
 
 template <typename FPTYPE>
@@ -119,8 +119,8 @@ void prod_virial_grad_r_gpu(FPTYPE* grad_net,
   dim3 thread_grid(LEN, 1);
   hipLaunchKernelGGL(virial_grad_wrt_neighbors_r, block_grid, thread_grid, 0, 0,
                      grad_net, grad, env_deriv, rij, nlist, nloc, nnei);
-  DPErrcheck(hipGetLastError());
-  DPErrcheck(hipDeviceSynchronize());
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
 }
 
 template void prod_virial_grad_a_gpu<float>(float* grad_net,

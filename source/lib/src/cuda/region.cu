@@ -27,31 +27,31 @@ template <typename FPTYPE>
 void convert_to_inter_gpu(FPTYPE *ri,
                           const Region<FPTYPE> &region,
                           const FPTYPE *rp) {
-  DPErrcheck(cudaGetLastError());
-  DPErrcheck(cudaDeviceSynchronize());
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
   _phys2Inter<<<1, 1>>>(ri, rp, region.rec_boxt);
-  DPErrcheck(cudaGetLastError());
-  DPErrcheck(cudaDeviceSynchronize());
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
 }
 
 template <typename FPTYPE>
 void convert_to_phys_gpu(FPTYPE *rp,
                          const Region<FPTYPE> &region,
                          const FPTYPE *ri) {
-  DPErrcheck(cudaGetLastError());
-  DPErrcheck(cudaDeviceSynchronize());
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
   _inter2Phys<<<1, 1>>>(rp, ri, region.boxt);
-  DPErrcheck(cudaGetLastError());
-  DPErrcheck(cudaDeviceSynchronize());
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
 }
 
 template <typename FPTYPE>
 void volume_gpu(FPTYPE *volume, const Region<FPTYPE> &region) {
-  DPErrcheck(cudaGetLastError());
-  DPErrcheck(cudaDeviceSynchronize());
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
   _compute_volume<<<1, 1>>>(volume, region.boxt);
-  DPErrcheck(cudaGetLastError());
-  DPErrcheck(cudaDeviceSynchronize());
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
 }
 
 template void convert_to_inter_gpu<float>(float *ri,

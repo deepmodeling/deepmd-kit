@@ -640,8 +640,8 @@ void tabulate_fusion_se_a_gpu(FPTYPE* out,
       nloc, last_layer_size, sizeof(FPTYPE) * MM * last_layer_size, 0, out,
       table, em_x, em, two_embed, table_info[0], table_info[1], table_info[2],
       table_info[3], table_info[4], nnei, last_layer_size, is_sorted);
-  DPErrcheck(hipGetLastError());
-  DPErrcheck(hipDeviceSynchronize());
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
 }
 
 template <typename FPTYPE>
@@ -670,8 +670,8 @@ void tabulate_fusion_se_a_grad_gpu(FPTYPE* dy_dem_x,
       dy_dem, table, em_x, em, two_embed, dy, table_info[0], table_info[1],
       table_info[2], table_info[3], table_info[4], nnei, last_layer_size,
       is_sorted);
-  DPErrcheck(hipGetLastError());
-  DPErrcheck(hipDeviceSynchronize());
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
 }
 
 template <typename FPTYPE>
@@ -698,8 +698,8 @@ void tabulate_fusion_se_a_grad_grad_gpu(FPTYPE* dz_dy,
       table, em_x, em, dz_dy_dem_x, dz_dy_dem, table_info[0], table_info[1],
       table_info[2], table_info[3], table_info[4], nnei, last_layer_size,
       is_sorted);
-  DPErrcheck(hipGetLastError());
-  DPErrcheck(hipDeviceSynchronize());
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
 }
 
 template <typename FPTYPE>
@@ -721,8 +721,8 @@ void tabulate_fusion_se_t_gpu(FPTYPE* out,
       nloc, last_layer_size, 0, 0, out, table, em_x, em, table_info[0],
       table_info[1], table_info[2], table_info[3], table_info[4], nnei_i,
       nnei_j, last_layer_size);
-  DPErrcheck(hipGetLastError());
-  DPErrcheck(hipDeviceSynchronize());
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
 }
 
 template <typename FPTYPE>
@@ -749,8 +749,8 @@ void tabulate_fusion_se_t_grad_gpu(FPTYPE* dy_dem_x,
       nloc, KK * WARP_SIZE, sizeof(FPTYPE) * last_layer_size, 0, dy_dem_x,
       dy_dem, table, em_x, em, dy, table_info[0], table_info[1], table_info[2],
       table_info[3], table_info[4], nnei_i, nnei_j, last_layer_size);
-  DPErrcheck(hipGetLastError());
-  DPErrcheck(hipDeviceSynchronize());
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
 }
 
 template <typename FPTYPE>
@@ -776,8 +776,8 @@ void tabulate_fusion_se_t_grad_grad_gpu(FPTYPE* dz_dy,
       nloc, last_layer_size, 0, 0, dz_dy, table, em_x, em, dz_dy_dem_x,
       dz_dy_dem, table_info[0], table_info[1], table_info[2], table_info[3],
       table_info[4], nnei_i, nnei_j, last_layer_size);
-  DPErrcheck(hipGetLastError());
-  DPErrcheck(hipDeviceSynchronize());
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
 }
 
 template <typename FPTYPE>
@@ -797,8 +797,8 @@ void tabulate_fusion_se_r_gpu(FPTYPE* out,
       nloc, last_layer_size, sizeof(FPTYPE) * MM * last_layer_size, 0, out,
       table, em, table_info[0], table_info[1], table_info[2], table_info[3],
       table_info[4], nnei, last_layer_size);
-  DPErrcheck(hipGetLastError());
-  DPErrcheck(hipDeviceSynchronize());
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
 }
 
 template <typename FPTYPE>
@@ -821,8 +821,8 @@ void tabulate_fusion_se_r_grad_gpu(FPTYPE* dy_dem,
       nloc, KK * WARP_SIZE, sizeof(FPTYPE) * MM * last_layer_size, 0, dy_dem,
       table, em, dy, table_info[0], table_info[1], table_info[2], table_info[3],
       table_info[4], nnei, last_layer_size);
-  DPErrcheck(hipGetLastError());
-  DPErrcheck(hipDeviceSynchronize());
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
 }
 
 template <typename FPTYPE>
@@ -846,8 +846,8 @@ void tabulate_fusion_se_r_grad_grad_gpu(FPTYPE* dz_dy,
       nloc, last_layer_size, sizeof(FPTYPE) * MM * last_layer_size, 0, dz_dy,
       table, em, dz_dy_dem, table_info[0], table_info[1], table_info[2],
       table_info[3], table_info[4], nnei, last_layer_size);
-  DPErrcheck(hipGetLastError());
-  DPErrcheck(hipDeviceSynchronize());
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
 }
 
 template void tabulate_fusion_se_a_gpu<float>(float* out,

@@ -96,16 +96,16 @@ void prod_force_grad_a_gpu(FPTYPE* grad_net,
   dim3 thread_grid(TPB, 1);
   hipLaunchKernelGGL(force_grad_wrt_center_atom, block_grid, thread_grid, 0, 0,
                      grad_net, grad, env_deriv, ndescrpt);
-  DPErrcheck(hipGetLastError());
-  DPErrcheck(hipDeviceSynchronize());
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
   const int LEN = 128;
   const int nblock_ = (nframes * nloc + LEN - 1) / LEN;
   dim3 block_grid_(nblock_, nnei);
   dim3 thread_grid_(LEN, 4);
   hipLaunchKernelGGL(force_grad_wrt_neighbors_a, block_grid_, thread_grid_, 0,
                      0, grad_net, grad, env_deriv, nlist, nloc, nnei, nframes);
-  DPErrcheck(hipGetLastError());
-  DPErrcheck(hipDeviceSynchronize());
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
 }
 
 template <typename FPTYPE>
@@ -124,8 +124,8 @@ void prod_force_grad_r_gpu(FPTYPE* grad_net,
   dim3 thread_grid(TPB, 1);
   hipLaunchKernelGGL(force_grad_wrt_center_atom, block_grid, thread_grid, 0, 0,
                      grad_net, grad, env_deriv, ndescrpt);
-  DPErrcheck(hipGetLastError());
-  DPErrcheck(hipDeviceSynchronize());
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
 
   const int LEN = 128;
   const int nblock_ = (nframes * nloc + LEN - 1) / LEN;
@@ -133,8 +133,8 @@ void prod_force_grad_r_gpu(FPTYPE* grad_net,
   dim3 thread_grid_(LEN, 1);
   hipLaunchKernelGGL(force_grad_wrt_neighbors_r, block_grid_, thread_grid_, 0,
                      0, grad_net, grad, env_deriv, nlist, nloc, nnei, nframes);
-  DPErrcheck(hipGetLastError());
-  DPErrcheck(hipDeviceSynchronize());
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
 }
 
 template void prod_force_grad_a_gpu<float>(float* grad_net,

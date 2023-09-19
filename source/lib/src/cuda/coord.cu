@@ -266,21 +266,21 @@ void compute_int_data(int *int_data,
   _fill_idx_cellmap<<<nblock_loc, TPB>>>(idx_cellmap, idx_cellmap_noshift, in_c,
                                          rec_boxt, nat_stt, nat_end, ext_stt,
                                          ext_end, nloc);
-  DPErrcheck(cudaGetLastError());
-  DPErrcheck(cudaDeviceSynchronize());
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
 
   const int nblock_loc_cellnum = (loc_cellnum + TPB - 1) / TPB;
   _fill_loc_cellnum_map<<<nblock_loc_cellnum, TPB>>>(
       temp_idx_order, loc_cellnum_map, idx_cellmap_noshift, nloc, loc_cellnum);
-  DPErrcheck(cudaGetLastError());
-  DPErrcheck(cudaDeviceSynchronize());
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
 
   const int nblock_total_cellnum = (total_cellnum + TPB - 1) / TPB;
   _fill_total_cellnum_map<<<nblock_total_cellnum, TPB>>>(
       total_cellnum_map, mask_cellnum_map, cell_map, cell_shift_map, nat_stt,
       nat_end, ext_stt, ext_end, loc_cellnum_map, total_cellnum);
-  DPErrcheck(cudaGetLastError());
-  DPErrcheck(cudaDeviceSynchronize());
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
 }
 
 void build_loc_clist(int *int_data,
@@ -297,8 +297,8 @@ void build_loc_clist(int *int_data,
                    total_cellnum * 3 + loc_cellnum + 1 + total_cellnum + 1;
   _build_loc_clist<<<nblock, TPB>>>(loc_clist, idx_cellmap_noshift,
                                     temp_idx_order, sec_loc_cellnum_map, nloc);
-  DPErrcheck(cudaGetLastError());
-  DPErrcheck(cudaDeviceSynchronize());
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
 }
 
 template <typename FPTYPE>
@@ -326,8 +326,8 @@ void copy_coord(FPTYPE *out_c,
                                cell_shift_map, sec_loc_cellnum_map,
                                sec_total_cellnum_map, loc_clist, nloc, nall,
                                total_cellnum, boxt, rec_boxt);
-  DPErrcheck(cudaGetLastError());
-  DPErrcheck(cudaDeviceSynchronize());
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
 }
 
 namespace deepmd {
@@ -335,14 +335,14 @@ template <typename FPTYPE>
 void normalize_coord_gpu(FPTYPE *coord,
                          const int natom,
                          const Region<FPTYPE> &region) {
-  DPErrcheck(cudaGetLastError());
-  DPErrcheck(cudaDeviceSynchronize());
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
   const FPTYPE *boxt = region.boxt;
   const FPTYPE *rec_boxt = region.rec_boxt;
   const int nblock = (natom + TPB - 1) / TPB;
   normalize_one<<<nblock, TPB>>>(coord, boxt, rec_boxt, natom);
-  DPErrcheck(cudaGetLastError());
-  DPErrcheck(cudaDeviceSynchronize());
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
 }
 
 //  int_data(temp cuda
@@ -362,16 +362,16 @@ int copy_coord_gpu(FPTYPE *out_c,
                    const int &total_cellnum,
                    const int *cell_info,
                    const Region<FPTYPE> &region) {
-  DPErrcheck(cudaGetLastError());
-  DPErrcheck(cudaDeviceSynchronize());
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
   compute_int_data(int_data, in_c, cell_info, region, nloc, loc_cellnum,
                    total_cellnum);
   int *int_data_cpu = new int
       [loc_cellnum + 2 * total_cellnum + loc_cellnum + 1 + total_cellnum +
        1];  // loc_cellnum_map,total_cellnum_map,mask_cellnum_map,sec_loc_cellnum_map,sec_total_cellnum_map
-  DPErrcheck(cudaMemcpy(int_data_cpu, int_data + 3 * nloc,
-                        sizeof(int) * (loc_cellnum + 2 * total_cellnum),
-                        cudaMemcpyDeviceToHost));
+  DPErrcheck(gpuMemcpy(int_data_cpu, int_data + 3 * nloc,
+                       sizeof(int) * (loc_cellnum + 2 * total_cellnum),
+                       gpuMemcpyDeviceToHost));
   int *loc_cellnum_map = int_data_cpu;
   int *total_cellnum_map = loc_cellnum_map + loc_cellnum;
   int *mask_cellnum_map = total_cellnum_map + total_cellnum;
@@ -397,11 +397,11 @@ int copy_coord_gpu(FPTYPE *out_c,
     // size of the output arrays is not large enough
     return 1;
   } else {
-    DPErrcheck(cudaMemcpy(int_data + nloc * 3 + loc_cellnum +
-                              total_cellnum * 3 + total_cellnum * 3,
-                          sec_loc_cellnum_map,
-                          sizeof(int) * (loc_cellnum + 1 + total_cellnum + 1),
-                          cudaMemcpyHostToDevice));
+    DPErrcheck(gpuMemcpy(int_data + nloc * 3 + loc_cellnum + total_cellnum * 3 +
+                             total_cellnum * 3,
+                         sec_loc_cellnum_map,
+                         sizeof(int) * (loc_cellnum + 1 + total_cellnum + 1),
+                         gpuMemcpyHostToDevice));
     delete[] int_data_cpu;
     build_loc_clist(int_data, nloc, loc_cellnum, total_cellnum);
     copy_coord(out_c, out_t, mapping, int_data, in_c, in_t, nloc, *nall,

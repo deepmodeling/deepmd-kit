@@ -219,8 +219,8 @@ void format_nbor_list_256(uint_64* key,
   hipLaunchKernelGGL(format_nlist_fill_a, block_grid, thread_grid, 0, 0, key,
                      coord, type, gpu_inlist.numneigh, gpu_inlist.firstneigh,
                      rcut, i_idx, MAX_NBOR_SIZE);
-  DPErrcheck(hipGetLastError());
-  DPErrcheck(hipDeviceSynchronize());
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
   const int ITEMS_PER_THREAD = 4;
   const int BLOCK_THREADS = MAX_NBOR_SIZE / ITEMS_PER_THREAD;
   // hipLaunchKernelGGL(HIP_KERNEL_NAME(BlockSortKernel<NeighborInfo,
@@ -229,8 +229,8 @@ void format_nbor_list_256(uint_64* key,
       HIP_KERNEL_NAME(
           BlockSortKernel<uint_64, BLOCK_THREADS, ITEMS_PER_THREAD>),
       nloc, BLOCK_THREADS, 0, 0, key, key + nloc * MAX_NBOR_SIZE);
-  DPErrcheck(hipGetLastError());
-  DPErrcheck(hipDeviceSynchronize());
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
 }
 
 template <typename FPTYPE>
@@ -249,8 +249,8 @@ void format_nbor_list_512(uint_64* key,
   hipLaunchKernelGGL(format_nlist_fill_a, block_grid, thread_grid, 0, 0, key,
                      coord, type, gpu_inlist.numneigh, gpu_inlist.firstneigh,
                      rcut, i_idx, MAX_NBOR_SIZE);
-  DPErrcheck(hipGetLastError());
-  DPErrcheck(hipDeviceSynchronize());
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
   const int ITEMS_PER_THREAD = 4;
   const int BLOCK_THREADS = MAX_NBOR_SIZE / ITEMS_PER_THREAD;
   // hipLaunchKernelGGL(HIP_KERNEL_NAME(BlockSortKernel<NeighborInfo,
@@ -259,8 +259,8 @@ void format_nbor_list_512(uint_64* key,
       HIP_KERNEL_NAME(
           BlockSortKernel<uint_64, BLOCK_THREADS, ITEMS_PER_THREAD>),
       nloc, BLOCK_THREADS, 0, 0, key, key + nloc * MAX_NBOR_SIZE);
-  DPErrcheck(hipGetLastError());
-  DPErrcheck(hipDeviceSynchronize());
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
 }
 
 template <typename FPTYPE>
@@ -279,8 +279,8 @@ void format_nbor_list_1024(uint_64* key,
   hipLaunchKernelGGL(format_nlist_fill_a, block_grid, thread_grid, 0, 0, key,
                      coord, type, gpu_inlist.numneigh, gpu_inlist.firstneigh,
                      rcut, i_idx, MAX_NBOR_SIZE);
-  DPErrcheck(hipGetLastError());
-  DPErrcheck(hipDeviceSynchronize());
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
   const int ITEMS_PER_THREAD = 8;
   const int BLOCK_THREADS = MAX_NBOR_SIZE / ITEMS_PER_THREAD;
   // hipLaunchKernelGGL(HIP_KERNEL_NAME(BlockSortKernel<NeighborInfo,
@@ -289,8 +289,8 @@ void format_nbor_list_1024(uint_64* key,
       HIP_KERNEL_NAME(
           BlockSortKernel<uint_64, BLOCK_THREADS, ITEMS_PER_THREAD>),
       nloc, BLOCK_THREADS, 0, 0, key, key + nloc * MAX_NBOR_SIZE);
-  DPErrcheck(hipGetLastError());
-  DPErrcheck(hipDeviceSynchronize());
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
 }
 
 template <typename FPTYPE>
@@ -309,8 +309,8 @@ void format_nbor_list_2048(uint_64* key,
   hipLaunchKernelGGL(format_nlist_fill_a, block_grid, thread_grid, 0, 0, key,
                      coord, type, gpu_inlist.numneigh, gpu_inlist.firstneigh,
                      rcut, i_idx, MAX_NBOR_SIZE);
-  DPErrcheck(hipGetLastError());
-  DPErrcheck(hipDeviceSynchronize());
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
   const int ITEMS_PER_THREAD = 8;
   const int BLOCK_THREADS = MAX_NBOR_SIZE / ITEMS_PER_THREAD;
   // hipLaunchKernelGGL(HIP_KERNEL_NAME(BlockSortKernel<NeighborInfo,
@@ -319,8 +319,8 @@ void format_nbor_list_2048(uint_64* key,
       HIP_KERNEL_NAME(
           BlockSortKernel<uint_64, BLOCK_THREADS, ITEMS_PER_THREAD>),
       nloc, BLOCK_THREADS, 0, 0, key, key + nloc * MAX_NBOR_SIZE);
-  DPErrcheck(hipGetLastError());
-  DPErrcheck(hipDeviceSynchronize());
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
 }
 
 template <typename FPTYPE>
@@ -339,8 +339,8 @@ void format_nbor_list_4096(uint_64* key,
   hipLaunchKernelGGL(format_nlist_fill_a, block_grid, thread_grid, 0, 0, key,
                      coord, type, gpu_inlist.numneigh, gpu_inlist.firstneigh,
                      rcut, i_idx, MAX_NBOR_SIZE);
-  DPErrcheck(hipGetLastError());
-  DPErrcheck(hipDeviceSynchronize());
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
   const int ITEMS_PER_THREAD = 16;
   const int BLOCK_THREADS = MAX_NBOR_SIZE / ITEMS_PER_THREAD;
   // hipLaunchKernelGGL(HIP_KERNEL_NAME(BlockSortKernel<NeighborInfo,
@@ -349,8 +349,8 @@ void format_nbor_list_4096(uint_64* key,
       HIP_KERNEL_NAME(
           BlockSortKernel<uint_64, BLOCK_THREADS, ITEMS_PER_THREAD>),
       nloc, BLOCK_THREADS, 0, 0, key, key + nloc * MAX_NBOR_SIZE);
-  DPErrcheck(hipGetLastError());
-  DPErrcheck(hipDeviceSynchronize());
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
 }
 
 template <typename FPTYPE, int THREADS_PER_BLOCK>
@@ -588,13 +588,13 @@ void format_nbor_list_gpu(int* nlist,
   DPErrcheck(hipMemset(nlist, -1, sizeof(int) * int_64(nloc) * nnei));
   DPErrcheck(hipMemset(key, 0xffffffff,
                        sizeof(uint_64) * int_64(nloc) * max_nbor_size));
-  DPErrcheck(hipMemcpy(sec_dev, &sec[0], sizeof(int) * sec.size(),
-                       hipMemcpyHostToDevice));
+  DPErrcheck(gpuMemcpy(sec_dev, &sec[0], sizeof(int) * sec.size(),
+                       gpuMemcpyHostToDevice));
 
   hipLaunchKernelGGL(get_i_idx, nblock, LEN, 0, 0, i_idx, nloc,
                      gpu_inlist.ilist);
-  DPErrcheck(hipGetLastError());
-  DPErrcheck(hipDeviceSynchronize());
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
 
   if (max_nbor_size == 256) {
     format_nbor_list_256(key, coord, type, gpu_inlist, nloc, rcut, i_idx);
@@ -614,8 +614,8 @@ void format_nbor_list_gpu(int* nlist,
   hipLaunchKernelGGL(
       format_nlist_fill_b, dim3(nloc, (max_nbor_size + LEN - 1) / LEN), LEN, 0,
       0, nlist, nnei, nloc, key, sec_dev, sec.size(), nei_iter, max_nbor_size);
-  DPErrcheck(hipGetLastError());
-  DPErrcheck(hipDeviceSynchronize());
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
 }
 
 template <typename FPTYPE>
@@ -649,14 +649,14 @@ void prod_env_mat_a_gpu(FPTYPE* em,
 
   format_nbor_list_gpu(nlist, coord, f_type, gpu_inlist, array_int,
                        array_longlong, max_nbor_size, nloc, nall, rcut, sec);
-  nborErrcheck(hipGetLastError());
-  nborErrcheck(hipDeviceSynchronize());
+  nborErrcheck(gpuGetLastError());
+  nborErrcheck(gpuDeviceSynchronize());
 
   hipLaunchKernelGGL(HIP_KERNEL_NAME(compute_env_mat_a<FPTYPE, TPB>), nloc, TPB,
                      0, 0, em, em_deriv, rij, coord, avg, std, type, nlist,
                      nnei, rcut_smth, rcut);
-  DPErrcheck(hipGetLastError());
-  DPErrcheck(hipDeviceSynchronize());
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
 }
 
 template <typename FPTYPE>
@@ -686,14 +686,14 @@ void prod_env_mat_r_gpu(FPTYPE* em,
 
   format_nbor_list_gpu(nlist, coord, type, gpu_inlist, array_int,
                        array_longlong, max_nbor_size, nloc, nall, rcut, sec);
-  nborErrcheck(hipGetLastError());
-  nborErrcheck(hipDeviceSynchronize());
+  nborErrcheck(gpuGetLastError());
+  nborErrcheck(gpuDeviceSynchronize());
 
   hipLaunchKernelGGL(HIP_KERNEL_NAME(compute_env_mat_r<FPTYPE, TPB>), nloc, TPB,
                      0, 0, em, em_deriv, rij, coord, avg, std, type, nlist,
                      nnei, rcut_smth, rcut);
-  DPErrcheck(hipGetLastError());
-  DPErrcheck(hipDeviceSynchronize());
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
 }
 
 template <typename FPTYPE>
@@ -708,8 +708,8 @@ void test_encoding_decoding_nbor_info_gpu(uint_64* key,
   hipLaunchKernelGGL(encoding_decoding_nbor_info, nblock, TPB, 0, 0, key,
                      out_type, out_index, in_type, in_dist, in_index,
                      size_of_array);
-  DPErrcheck(hipGetLastError());
-  DPErrcheck(hipDeviceSynchronize());
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
 }
 
 template void prod_env_mat_a_gpu<float>(float* em,
