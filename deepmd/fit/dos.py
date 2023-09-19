@@ -98,8 +98,8 @@ class DOSFitting(Fitting):
         numb_aparam: int = 0,
         numb_dos: int = 300,
         rcond: Optional[float] = None,
-        trainable: List[bool] = None,
-        seed: int = None,
+        trainable: Optional[List[bool]] = None,
+        seed: Optional[int] = None,
         activation_function: str = "tanh",
         precision: str = "default",
         uniform_seed: bool = False,
@@ -380,8 +380,8 @@ class DOSFitting(Fitting):
         self,
         inputs: tf.Tensor,
         natoms: tf.Tensor,
-        input_dict: dict = None,
-        reuse: bool = None,
+        input_dict: Optional[dict] = None,
+        reuse: Optional[bool] = None,
         suffix: str = "",
     ) -> tf.Tensor:
         """Build the computational graph for fitting net.

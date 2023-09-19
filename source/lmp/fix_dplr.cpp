@@ -61,10 +61,11 @@ FixDPLR::FixDPLR(LAMMPS *lmp, int narg, char **arg)
   qe2f = force->qe2f;
   xstyle = ystyle = zstyle = NONE;
 
-  if (strcmp(update->unit_style, "metal") != 0) {
-    error->all(
-        FLERR,
-        "Fix dplr requires metal unit, please set it by \"units metal\"");
+  if (strcmp(update->unit_style, "lj") == 0) {
+    error->all(FLERR,
+               "Fix dplr does not support unit style lj. Please use other "
+               "unit styles like metal or real unit instead. You may set it by "
+               "\"units metal\" or \"units real\"");
   }
 
   int iarg = 3;
@@ -142,6 +143,9 @@ FixDPLR::FixDPLR(LAMMPS *lmp, int narg, char **arg)
   if (!pair_deepmd) {
     error->all(FLERR, "pair_style deepmd should be set before this fix\n");
   }
+  ener_unit_cvt_factor = pair_deepmd->ener_unit_cvt_factor;
+  dist_unit_cvt_factor = pair_deepmd->dist_unit_cvt_factor;
+  force_unit_cvt_factor = pair_deepmd->force_unit_cvt_factor;
 
   int n = atom->ntypes;
   std::vector<std::string> type_names = pair_deepmd->type_names;
@@ -445,16 +449,17 @@ void FixDPLR::pre_force(int vflag) {
     dtype[ii] = type_idx_map[type[ii] - 1];
   }
   // get box
-  dbox[0] = domain->h[0];  // xx
-  dbox[4] = domain->h[1];  // yy
-  dbox[8] = domain->h[2];  // zz
-  dbox[7] = domain->h[3];  // zy
-  dbox[6] = domain->h[4];  // zx
-  dbox[3] = domain->h[5];  // yx
+  dbox[0] = domain->h[0] / dist_unit_cvt_factor;  // xx
+  dbox[4] = domain->h[1] / dist_unit_cvt_factor;  // yy
+  dbox[8] = domain->h[2] / dist_unit_cvt_factor;  // zz
+  dbox[7] = domain->h[3] / dist_unit_cvt_factor;  // zy
+  dbox[6] = domain->h[4] / dist_unit_cvt_factor;  // zx
+  dbox[3] = domain->h[5] / dist_unit_cvt_factor;  // yx
   // get coord
   for (int ii = 0; ii < nall; ++ii) {
     for (int dd = 0; dd < 3; ++dd) {
-      dcoord[ii * 3 + dd] = x[ii][dd] - domain->boxlo[dd];
+      dcoord[ii * 3 + dd] =
+          (x[ii][dd] - domain->boxlo[dd]) / dist_unit_cvt_factor;
     }
   }
   // get lammps nlist
@@ -523,9 +528,11 @@ void FixDPLR::pre_force(int vflag) {
     int res_idx = sel_fwd[idx0];
     // int ret_idx = dpl_bwd[res_idx];
     for (int dd = 0; dd < 3; ++dd) {
-      x[idx1][dd] = x[idx0][dd] + tensor[res_idx * 3 + dd];
+      x[idx1][dd] =
+          x[idx0][dd] + tensor[res_idx * 3 + dd] * dist_unit_cvt_factor;
       // res_buff[idx1 * odim + dd] = tensor[res_idx * odim + dd];
-      dipole_recd[idx0 * 3 + dd] = tensor[res_idx * 3 + dd];
+      dipole_recd[idx0 * 3 + dd] =
+          tensor[res_idx * 3 + dd] * dist_unit_cvt_factor;
     }
   }
   // cout << "-------------------- fix/dplr: pre force " << endl;
@@ -568,17 +575,18 @@ void FixDPLR::post_force(int vflag) {
     for (int ii = 0; ii < nall; ++ii) {
       dtype[ii] = type_idx_map[type[ii] - 1];
     }
-    dbox[0] = domain->h[0];  // xx
-    dbox[4] = domain->h[1];  // yy
-    dbox[8] = domain->h[2];  // zz
-    dbox[7] = domain->h[3];  // zy
-    dbox[6] = domain->h[4];  // zx
-    dbox[3] = domain->h[5];  // yx
+    dbox[0] = domain->h[0] / dist_unit_cvt_factor;  // xx
+    dbox[4] = domain->h[1] / dist_unit_cvt_factor;  // yy
+    dbox[8] = domain->h[2] / dist_unit_cvt_factor;  // zz
+    dbox[7] = domain->h[3] / dist_unit_cvt_factor;  // zy
+    dbox[6] = domain->h[4] / dist_unit_cvt_factor;  // zx
+    dbox[3] = domain->h[5] / dist_unit_cvt_factor;  // yx
     // get coord
     double **x = atom->x;
     for (int ii = 0; ii < nall; ++ii) {
       for (int dd = 0; dd < 3; ++dd) {
-        dcoord[ii * 3 + dd] = x[ii][dd] - domain->boxlo[dd];
+        dcoord[ii * 3 + dd] =
+            (x[ii][dd] - domain->boxlo[dd]) / dist_unit_cvt_factor;
       }
     }
     // revise force according to efield
@@ -599,7 +607,7 @@ void FixDPLR::post_force(int vflag) {
     for (int ii = 0; ii < nlocal; ++ii) {
       double tmpf[3];
       for (int dd = 0; dd < 3; ++dd) {
-        tmpf[dd] = q[ii] * efield[dd];
+        tmpf[dd] = q[ii] * efield[dd] * force->qe2f;
       }
       for (int dd = 0; dd < 3; ++dd) {
         dfele[ii * 3 + dd] += tmpf[dd];
@@ -632,8 +640,17 @@ void FixDPLR::post_force(int vflag) {
   vector<FLOAT_PREC> dfcorr, dvcorr;
   // compute
   try {
+    for (int ii = 0; ii < nlocal * 3; ++ii) {
+      dfele[ii] /= force_unit_cvt_factor;
+    }
     dtm.compute(dfcorr, dvcorr, dcoord, dtype, dbox, valid_pairs, dfele, nghost,
                 lmp_list);
+    for (int ii = 0; ii < nlocal * 3; ++ii) {
+      dfcorr[ii] *= force_unit_cvt_factor;
+    }
+    for (int ii = 0; ii < 9; ++ii) {
+      dvcorr[ii] *= ener_unit_cvt_factor;
+    }
   } catch (deepmd_compat::deepmd_exception &e) {
     error->one(FLERR, e.what());
   }

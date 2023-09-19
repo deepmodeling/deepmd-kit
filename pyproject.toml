@@ -138,6 +138,31 @@ test-command = [
     "dp -h",
 ]
 
+# One can run `tox` or `tox -e gpu`
+# to run pytest in an isolated environment
+# Use with pipx:
+# $ pip install -U pipx
+# $ pipx tox
+[tool.tox]
+legacy_tox_ini = """
+    [tox]
+    min_version = 4.0
+
+    [testenv]
+    extras =
+        test
+        cpu
+    commands = pytest source/tests
+
+    [testenv:gpu]
+    extras =
+        test
+        gpu
+    commands = pytest source/tests
+    setenv =
+        DP_VARIANT = cuda
+"""
+
 # selectively turn of lintner warnings, always include reasoning why any warning should
 # be silenced
 
@@ -166,24 +191,20 @@ profile = "black"
 force_grid_wrap = 1
 
 [tool.ruff]
-target-version = "py37"
 select = [
     "E", # errors
     "F", # pyflakes
     "D", # pydocstyle
     "UP", # pyupgrade
     "C4", # flake8-comprehensions
+    "RUF", # ruff
+    "NPY", # numpy
 ]
 ignore = [
     "E501", # line too long
     "F841", # local variable is assigned to but never used
     "E741", # ambiguous variable name
     "E402", # module level import not at top of file
-    "D413", # missing blank line after last section
-    "D416", # section name should end with a colon
-    "D203", # 1 blank line required before class docstring
-    "D107", # missing docstring in __init__
-    "D213", # multi-line docstring summary should start at the second line
     "D100", # TODO: missing docstring in public module
     "D101", # TODO: missing docstring in public class
     "D102", # TODO: missing docstring in public method
@@ -195,3 +216,6 @@ ignore = [
     "D404", # TODO: first word of the docstring should not be This
 ]
 ignore-init-module-imports = true
+
+[tool.ruff.pydocstyle]
+convention = "numpy"

@@ -157,7 +157,7 @@ class DescrptSeA(DescrptSe):
     .. [1] Linfeng Zhang, Jiequn Han, Han Wang, Wissam A. Saidi, Roberto Car, and E. Weinan. 2018.
        End-to-end symmetry preserving inter-atomic potential energy model for finite and extended
        systems. In Proceedings of the 32nd International Conference on Neural Information Processing
-       Systems (NIPS'18). Curran Associates Inc., Red Hook, NY, USA, 4441–4451.
+       Systems (NIPS'18). Curran Associates Inc., Red Hook, NY, USA, 4441-4451.
     """
 
     def __init__(
@@ -942,7 +942,7 @@ class DescrptSeA(DescrptSe):
         suffix="",
     ):
         """Input env matrix, returns R.G."""
-        outputs_size = [1] + self.filter_neuron
+        outputs_size = [1, *self.filter_neuron]
         # cut-out inputs
         # with natom x (nei_type_i x 4)
         inputs_i = tf.slice(inputs, [0, start_index * 4], [-1, incrs_index * 4])
@@ -1160,7 +1160,7 @@ class DescrptSeA(DescrptSe):
         nframes = tf.shape(tf.reshape(inputs, [-1, natoms[0], self.ndescrpt]))[0]
         # natom x (nei x 4)
         shape = inputs.get_shape().as_list()
-        outputs_size = [1] + self.filter_neuron
+        outputs_size = [1, *self.filter_neuron]
         outputs_size_2 = self.n_axis_neuron
         all_excluded = all(
             (type_input, type_i) in self.exclude_types for type_i in range(self.ntypes)
@@ -1208,8 +1208,8 @@ class DescrptSeA(DescrptSe):
                         # add zero is meaningless; skip
                         rets.append(ret)
                     start_index += self.sel_a[type_i]
-                # faster to use accumulate_n than multiple add
-                xyz_scatter_1 = tf.accumulate_n(rets)
+                # faster to use add_n than multiple add
+                xyz_scatter_1 = tf.add_n(rets)
             else:
                 xyz_scatter_1 = self._filter_lower(
                     type_i,

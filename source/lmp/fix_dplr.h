@@ -54,6 +54,7 @@ class FixDPLR : public Fix {
   void unpack_reverse_comm(int, int *, double *) override;
   double compute_scalar(void) override;
   double compute_vector(int) override;
+  double ener_unit_cvt_factor, dist_unit_cvt_factor, force_unit_cvt_factor;
 
  private:
   PairDeepMD *pair_deepmd;

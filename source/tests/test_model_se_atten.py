@@ -132,7 +132,7 @@ class TestModel(tf.test.TestCase):
             t_mesh: test_data["default_mesh"],
             is_training: False,
         }
-        sess = self.test_session().__enter__()
+        sess = self.cached_session().__enter__()
         sess.run(tf.global_variables_initializer())
         [e, f, v] = sess.run([energy, force, virial], feed_dict=feed_dict_test)
         # print(sess.run(model.type_embedding))
@@ -258,7 +258,7 @@ class TestModel(tf.test.TestCase):
             is_training: False,
         }
 
-        with self.test_session() as sess:
+        with self.cached_session() as sess:
             sess.run(tf.global_variables_initializer())
             [des] = sess.run([dout], feed_dict=feed_dict_test1)
 
@@ -357,7 +357,7 @@ class TestModel(tf.test.TestCase):
             t_mesh: test_data["default_mesh"],
             is_training: False,
         }
-        sess = self.test_session().__enter__()
+        sess = self.cached_session().__enter__()
         sess.run(tf.global_variables_initializer())
         [e, f, v] = sess.run([energy, force, virial], feed_dict=feed_dict_test)
         # print(sess.run(model.type_embedding))
@@ -485,7 +485,7 @@ class TestModel(tf.test.TestCase):
             is_training: False,
         }
 
-        with self.test_session() as sess:
+        with self.cached_session() as sess:
             sess.run(tf.global_variables_initializer())
             [des] = sess.run([dout], feed_dict=feed_dict_test1)
 
@@ -587,7 +587,7 @@ class TestModel(tf.test.TestCase):
             t_mesh: test_data["default_mesh"],
             is_training: False,
         }
-        sess = self.test_session().__enter__()
+        sess = self.cached_session().__enter__()
         sess.run(tf.global_variables_initializer())
         [e, f, v] = sess.run([energy, force, virial], feed_dict=feed_dict_test)
         # print(sess.run(model.type_embedding))
@@ -719,7 +719,7 @@ class TestModel(tf.test.TestCase):
             is_training: False,
         }
 
-        with self.test_session() as sess:
+        with self.cached_session() as sess:
             sess.run(tf.global_variables_initializer())
             [des] = sess.run([dout], feed_dict=feed_dict_test1)
 

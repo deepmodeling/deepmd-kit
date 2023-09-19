@@ -28,12 +28,12 @@ def _make_fake_data(sys_natoms, sys_nframes, avgs, stds):
         tmp_data_a = []
         for jj in range(ndof):
             tmp_data_f.append(
-                np.random.normal(
+                np.random.normal(  # noqa: NPY002
                     loc=avgs[jj], scale=stds[jj], size=(sys_nframes[ii], 1)
                 )
             )
             tmp_data_a.append(
-                np.random.normal(
+                np.random.normal(  # noqa: NPY002
                     loc=avgs[jj], scale=stds[jj], size=(sys_nframes[ii], sys_natoms[ii])
                 )
             )

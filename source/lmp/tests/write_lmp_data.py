@@ -11,13 +11,13 @@ def write_lmp_data(box, coord, type_list, file_name):
         f.write(comment_lmp_data + "\n")
         f.write("%d atoms\n" % (natom))
         f.write("%d atom types\n" % (ntype))
-        f.write(f"{box[0]:.8f} {box[1]:.8f} xlo xhi\n")
-        f.write(f"{box[2]:.8f} {box[3]:.8f} ylo yhi\n")
-        f.write(f"{box[4]:.8f} {box[5]:.8f} zlo zhi\n")
-        f.write(f"{box[6]:.8f} {box[7]:.8f} {box[8]:.8f} xy xz yz\n\nAtoms\n\n")
+        f.write(f"{box[0]:.10e} {box[1]:.10e} xlo xhi\n")
+        f.write(f"{box[2]:.10e} {box[3]:.10e} ylo yhi\n")
+        f.write(f"{box[4]:.10e} {box[5]:.10e} zlo zhi\n")
+        f.write(f"{box[6]:.10e} {box[7]:.10e} {box[8]:.10e} xy xz yz\n\nAtoms\n\n")
         for i in range(natom):
             f.write(
-                "%d %d %.8f %.8f %.8f\n"
+                "%d %d %.10e %.10e %.10e\n"
                 % (i + 1, type_list[i], coord[i][0], coord[i][1], coord[i][2])
             )
         f.write("\n")
@@ -38,17 +38,17 @@ def write_lmp_data_full(
         f.write("%d atom types\n" % (ntype))
         f.write("%d bonds\n" % (nbond_list.sum()))
         f.write("%d bond types\n" % (nbond_type))
-        f.write(f"{box[0]:.8f} {box[1]:.8f} xlo xhi\n")
-        f.write(f"{box[2]:.8f} {box[3]:.8f} ylo yhi\n")
-        f.write(f"{box[4]:.8f} {box[5]:.8f} zlo zhi\n")
-        f.write(f"{box[6]:.8f} {box[7]:.8f} {box[8]:.8f} xy xz yz\n")
+        f.write(f"{box[0]:.10e} {box[1]:.10e} xlo xhi\n")
+        f.write(f"{box[2]:.10e} {box[3]:.10e} ylo yhi\n")
+        f.write(f"{box[4]:.10e} {box[5]:.10e} zlo zhi\n")
+        f.write(f"{box[6]:.10e} {box[7]:.10e} {box[8]:.10e} xy xz yz\n")
         f.write("\nMasses\n\n")
         for i in range(3):
-            f.write(f"{i+1:d} {mass_list[i]:.6f}\n")
+            f.write(f"{i+1:d} {mass_list[i]:.10e}\n")
         f.write("\nAtoms\n\n")
         for i in range(natom):
             f.write(
-                "%d %d %d %d %.8f %.8f %.8f\n"
+                "%d %d %d %.10e %.10e %.10e %.10e\n"
                 % (
                     i + 1,
                     mol_list[i],

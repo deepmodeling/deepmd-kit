@@ -11,6 +11,9 @@ target_link_libraries(runUnitTests_c PRIVATE GTest::gtest_main ${LIB_DEEPMD_C}
                                              rt coverage_config)
 target_link_libraries(runUnitTests_c PRIVATE ${LIB_DEEPMD} ${LIB_DEEPMD_CC})
 target_precompile_headers(runUnitTests_c PRIVATE test_utils.h [["deepmd.hpp"]])
-add_test(runUnitTests_c runUnitTests_c)
+add_test(
+  NAME runUnitTests_c
+  COMMAND runUnitTests_c
+  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 set_target_properties(runUnitTests_c PROPERTIES INSTALL_RPATH "$ORIGIN/../lib")
 install(TARGETS runUnitTests_c DESTINATION bin/)

@@ -141,7 +141,7 @@ class TestModel(tf.test.TestCase):
             t_mesh: test_data["default_mesh"],
             is_training: False,
         }
-        sess = self.test_session().__enter__()
+        sess = self.cached_session().__enter__()
 
         # test water energy
         sess.run(tf.global_variables_initializer())
