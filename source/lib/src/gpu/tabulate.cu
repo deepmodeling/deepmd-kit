@@ -14,6 +14,14 @@
 #endif
 #define FULL_MASK 0xffffffff
 
+#if GOOGLE_CUDA
+#define GPU_DYNAMIC_SHARED_MEM_DECL(TYPE, NAME) extern __shared__ TYPE NAME[]
+#elif TENSORFLOW_USE_ROCM
+#define GPU_DYNAMIC_SHARED_MEM_DECL(TYPE, NAME) HIP_DYNAMIC_SHARED(TYPE, NAME)
+#else
+#error "should not touch here"
+#endif
+
 // Copyright 2017 The TensorFlow Authors.
 // Licensed under the Apache License, Version 2.0
 template <typename T>
@@ -160,7 +168,7 @@ __global__ void tabulate_fusion_se_a_fifth_order_polynomial(
     const bool is_sorted) {
   bool enable_se_atten = two_embed != nullptr;
 #if TENSORFLOW_USE_ROCM
-  HIP_DYNAMIC_SHARED(int, _data)
+  GPU_DYNAMIC_SHARED_MEM_DECL(int, _data)
 #endif
   const int_64 block_idx = blockIdx.x;  // nloc
   const int thread_idx = threadIdx.x;   // last_layer_size
@@ -249,11 +257,10 @@ __global__ void tabulate_fusion_se_a_grad_fifth_order_polynomial(
     const int last_layer_size,
     const bool is_sorted) {
   bool enable_se_atten = two_embed != nullptr;
+  GPU_DYNAMIC_SHARED_MEM_DECL(int, _data);
 #if GOOGLE_CUDA
-  extern __shared__ int _data[];
   int MTILE_OR_KTILE = MTILE;
 #elif TENSORFLOW_USE_ROCM
-  HIP_DYNAMIC_SHARED(int, _data)
   int MTILE_OR_KTILE = KTILE;
 #else
 #error "should not touch here"
@@ -432,7 +439,7 @@ __global__ void tabulate_fusion_se_t_fifth_order_polynomial(
     const int nnei_j,
     const int last_layer_size) {
 #if TENSORFLOW_USE_ROCM
-  HIP_DYNAMIC_SHARED(int, _data)
+  GPU_DYNAMIC_SHARED_MEM_DECL(int, _data)
 #endif
   const int_64 block_idx = blockIdx.x;  // nloc
   const int thread_idx = threadIdx.x;   // last_layer_size
@@ -479,13 +486,7 @@ __global__ void tabulate_fusion_se_t_grad_fifth_order_polynomial(
     const int nnei_i,
     const int nnei_j,
     const int last_layer_size) {
-#if GOOGLE_CUDA
-  extern __shared__ int _data[];
-#elif TENSORFLOW_USE_ROCM
-  HIP_DYNAMIC_SHARED(int, _data)
-#else
-#error "should not touch here"
-#endif
+  GPU_DYNAMIC_SHARED_MEM_DECL(int, _data);
   const int_64 block_idx = blockIdx.x;  // nloc
   const int thread_idx = threadIdx.x;   // KTILE * WARP_SIZE, usally 128 here~
   int warp_idx = GpuShuffleSync(0xffffffff, threadIdx.x / WARP_SIZE, 0);
@@ -556,7 +557,7 @@ __global__ void tabulate_fusion_se_t_grad_grad_fifth_order_polynomial(
     const int nnei_j,
     const int last_layer_size) {
 #if TENSORFLOW_USE_ROCM
-  HIP_DYNAMIC_SHARED(int, _data)
+  GPU_DYNAMIC_SHARED_MEM_DECL(int, _data)
 #endif
   const int_64 block_idx = blockIdx.x;  // nloc
   const int thread_idx = threadIdx.x;   // last_layer_size
@@ -642,13 +643,7 @@ __global__ void tabulate_fusion_se_r_grad_fifth_order_polynomial(
     const FPTYPE stride1,
     const int nnei,
     const int last_layer_size) {
-#if GOOGLE_CUDA
-  extern __shared__ int _data[];
-#elif TENSORFLOW_USE_ROCM
-  HIP_DYNAMIC_SHARED(int, _data)
-#else
-#error "should not touch here"
-#endif
+  GPU_DYNAMIC_SHARED_MEM_DECL(int, _data);
   const int_64 block_idx = blockIdx.x;  // nloc
   const int thread_idx = threadIdx.x;   // KTILE * WARP_SIZE, usally 128 here~
   int warp_idx = GpuShuffleSync(0xffffffff, thread_idx / WARP_SIZE, 0);
