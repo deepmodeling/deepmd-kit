@@ -1,4 +1,9 @@
+#if GOOGLE_CUDA
 #include <cub/block/block_scan.cuh>
+#elif TENSORFLOW_USE_ROCM
+#include <hipcub/hipcub.hpp>
+namespace cub = hipcub;
+#endif
 
 #include "device.h"
 #include "neighbor_list.h"

@@ -32,7 +32,7 @@ __global__ void gelu_grad(FPTYPE* out,
             (xx[idx] + (FPTYPE)0.044715 * xx[idx] * xx[idx] * xx[idx]));
   out[idx] =
       dy[idx] * ((FPTYPE)0.5 * SQRT_2_PI * xx[idx] * ((FPTYPE)1. - var * var) *
-                     ((FPTYPE)0.134145 * xx[idx] * xx[idx] + 1) +
+                     ((FPTYPE)0.134145 * xx[idx] * xx[idx] + (FPTYPE)1.) +
                  (FPTYPE)0.5 * var + (FPTYPE)0.5);
 }
 

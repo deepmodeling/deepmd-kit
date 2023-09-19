@@ -372,6 +372,7 @@ int copy_coord_gpu(FPTYPE *out_c,
   DPErrcheck(gpuMemcpy(int_data_cpu, int_data + 3 * nloc,
                        sizeof(int) * (loc_cellnum + 2 * total_cellnum),
                        gpuMemcpyDeviceToHost));
+  DPErrcheck(gpuGetLastError());
   int *loc_cellnum_map = int_data_cpu;
   int *total_cellnum_map = loc_cellnum_map + loc_cellnum;
   int *mask_cellnum_map = total_cellnum_map + total_cellnum;
@@ -402,6 +403,7 @@ int copy_coord_gpu(FPTYPE *out_c,
                          sec_loc_cellnum_map,
                          sizeof(int) * (loc_cellnum + 1 + total_cellnum + 1),
                          gpuMemcpyHostToDevice));
+    DPErrcheck(gpuGetLastError());
     delete[] int_data_cpu;
     build_loc_clist(int_data, nloc, loc_cellnum, total_cellnum);
     copy_coord(out_c, out_t, mapping, int_data, in_c, in_t, nloc, *nall,
