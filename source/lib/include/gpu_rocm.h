@@ -13,7 +13,7 @@
 
 #define gpuGetLastError hipGetLastError
 #define gpuDeviceSynchronize hipDeviceSynchronize
-#define gpuMemcpy cudaMemcpy
+#define gpuMemcpy hipMemcpy
 #define gpuMemcpyDeviceToHost hipMemcpyDeviceToHost
 #define gpuMemcpyHostToDevice hipMemcpyHostToDevice
 #define gpuMemset hipMemset
