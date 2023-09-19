@@ -134,7 +134,7 @@ __forceinline__ __device__ void warp_reduce(FPTYPE& val) {
 #if GOOGLE_CUDA
   for (int offset = 16; offset > 0; offset >>= 1) {
     val += __shfl_down_sync(FULL_MASK, val, offset);
-#elif USE_TENSORFLOW_ROCM
+#elif TENSORFLOW_USE_ROCM
   for (int offset = 32; offset > 0; offset >>= 1) {
     val += __shfl_down(val, offset);  // ########????
 #else
@@ -159,7 +159,7 @@ __global__ void tabulate_fusion_se_a_fifth_order_polynomial(
     const int last_layer_size,
     const bool is_sorted) {
   bool enable_se_atten = two_embed != nullptr;
-#if USE_TENSORFLOW_ROCM
+#if TENSORFLOW_USE_ROCM
   HIP_DYNAMIC_SHARED(int, _data)
 #endif
   const int_64 block_idx = blockIdx.x;  // nloc
@@ -169,7 +169,7 @@ __global__ void tabulate_fusion_se_a_fifth_order_polynomial(
   int breakpoint = nnei - 1;
 #if GOOGLE_CUDA
   FPTYPE sum[MTILE] = {(FPTYPE)0.};
-#elif USE_TENSORFLOW_ROCM
+#elif TENSORFLOW_USE_ROCM
   FPTYPE* iteratorC = (FPTYPE*)&_data[0];
   for (int kk = 0; kk < MTILE; kk++) {
     iteratorC[kk * last_layer_size + thread_idx] = (FPTYPE)0.;
@@ -205,7 +205,7 @@ __global__ void tabulate_fusion_se_a_fifth_order_polynomial(
     for (int kk = 0; kk < MTILE; kk++) {
 #if GOOGLE_CUDA
       sum[kk]
-#elif USE_TENSORFLOW_ROCM
+#elif TENSORFLOW_USE_ROCM
       iteratorC[kk * last_layer_size + thread_idx]
 #else
 #error "should not touch here"
@@ -223,7 +223,7 @@ __global__ void tabulate_fusion_se_a_fifth_order_polynomial(
         thread_idx] =
 #if GOOGLE_CUDA
         sum[ii];
-#elif USE_TENSORFLOW_ROCM
+#elif TENSORFLOW_USE_ROCM
         iteratorC[ii * last_layer_size + thread_idx];
 #else
 #error "should not touch here"
@@ -252,7 +252,7 @@ __global__ void tabulate_fusion_se_a_grad_fifth_order_polynomial(
 #if GOOGLE_CUDA
   extern __shared__ int _data[];
   int MTILE_OR_KTILE = MTILE;
-#elif USE_TENSORFLOW_ROCM
+#elif TENSORFLOW_USE_ROCM
   HIP_DYNAMIC_SHARED(int, _data)
   int MTILE_OR_KTILE = KTILE;
 #else
@@ -323,7 +323,7 @@ __global__ void tabulate_fusion_se_a_grad_fifth_order_polynomial(
     }
 #if GOOGLE_CUDA
     __syncwarp();
-#elif USE_TENSORFLOW_ROCM
+#elif TENSORFLOW_USE_ROCM
     //__syncwarp();->syncwrap
     __syncthreads();
 #else
@@ -431,7 +431,7 @@ __global__ void tabulate_fusion_se_t_fifth_order_polynomial(
     const int nnei_i,
     const int nnei_j,
     const int last_layer_size) {
-#if USE_TENSORFLOW_ROCM
+#if TENSORFLOW_USE_ROCM
   HIP_DYNAMIC_SHARED(int, _data)
 #endif
   const int_64 block_idx = blockIdx.x;  // nloc
@@ -481,7 +481,7 @@ __global__ void tabulate_fusion_se_t_grad_fifth_order_polynomial(
     const int last_layer_size) {
 #if GOOGLE_CUDA
   extern __shared__ int _data[];
-#elif USE_TENSORFLOW_ROCM
+#elif TENSORFLOW_USE_ROCM
   HIP_DYNAMIC_SHARED(int, _data)
 #else
 #error "should not touch here"
@@ -524,7 +524,7 @@ __global__ void tabulate_fusion_se_t_grad_fifth_order_polynomial(
       }
 #if GOOGLE_CUDA
       __syncwarp();
-#elif USE_TENSORFLOW_ROCM
+#elif TENSORFLOW_USE_ROCM
       __syncthreads();
 #else
 #error "should not touch here"
@@ -555,7 +555,7 @@ __global__ void tabulate_fusion_se_t_grad_grad_fifth_order_polynomial(
     const int nnei_i,
     const int nnei_j,
     const int last_layer_size) {
-#if USE_TENSORFLOW_ROCM
+#if TENSORFLOW_USE_ROCM
   HIP_DYNAMIC_SHARED(int, _data)
 #endif
   const int_64 block_idx = blockIdx.x;  // nloc
@@ -644,7 +644,7 @@ __global__ void tabulate_fusion_se_r_grad_fifth_order_polynomial(
     const int last_layer_size) {
 #if GOOGLE_CUDA
   extern __shared__ int _data[];
-#elif USE_TENSORFLOW_ROCM
+#elif TENSORFLOW_USE_ROCM
   HIP_DYNAMIC_SHARED(int, _data)
 #else
 #error "should not touch here"
@@ -674,7 +674,7 @@ __global__ void tabulate_fusion_se_r_grad_fifth_order_polynomial(
     }
 #if GOOGLE_CUDA
     __syncwarp();
-#elif USE_TENSORFLOW_ROCM
+#elif TENSORFLOW_USE_ROCM
     __syncthreads();
 #else
 #error "should not touch here"
@@ -704,7 +704,7 @@ __global__ void tabulate_fusion_se_r_grad_grad_fifth_order_polynomial(
   const int_64 block_idx = blockIdx.x;  // nloc
   const int thread_idx = threadIdx.x;   // last_layer_size
 
-#if USE_TENSORFLOW_ROCM
+#if TENSORFLOW_USE_ROCM
   __syncthreads();
 #endif
 
