@@ -190,7 +190,7 @@ int build_nlist_gpu(InputNlist &nlist,
   int *ilist = nlist.ilist;
   int *numneigh = nlist.numneigh;
   int **firstneigh = nlist.firstneigh;
-  DPErrcheck(hipMemset(nlist_data, -1, sizeof(int) * 2 * nloc * mem_size));
+  DPErrcheck(gpuMemset(nlist_data, -1, sizeof(int) * 2 * nloc * mem_size));
   int *temp_nlist = nlist_data;  // nloc*mem_size
   int *nei_order = temp_nlist + nloc * mem_size;
   nlist.inum = nloc;
@@ -249,8 +249,8 @@ void use_nei_info_gpu(int *nlist,
   int nblock = (nnei + TPB - 1) / TPB;
   dim3 block_grid(nloc, nblock);
   dim3 thread_grid(1, TPB);
-  DPErrcheck(hipMemset(ntype, 0, sizeof(int) * nloc * nnei));
-  DPErrcheck(hipMemset(nmask, 0, sizeof(bool) * nloc * nnei));
+  DPErrcheck(gpuMemset(ntype, 0, sizeof(int) * nloc * nnei));
+  DPErrcheck(gpuMemset(nmask, 0, sizeof(bool) * nloc * nnei));
   if (b_nlist_map) {
     hipLaunchKernelGGL(map_nei_info, block_grid, thread_grid, 0, 0, nlist,
                        ntype, nmask, type, nlist_map, nloc, nnei, ntypes);

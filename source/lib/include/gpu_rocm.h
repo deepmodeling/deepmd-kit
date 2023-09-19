@@ -16,6 +16,7 @@
 #define gpuMemcpy cudaMemcpy
 #define gpuMemcpyDeviceToHost hipMemcpyDeviceToHost
 #define gpuMemcpyHostToDevice hipMemcpyHostToDevice
+#define gpuMemset hipMemset
 
 #define DPErrcheck(res) \
   { DPAssert((res), __FILE__, __LINE__); }

@@ -113,7 +113,7 @@ void prod_force_a_gpu(FPTYPE* force,
   DPErrcheck(gpuGetLastError());
   DPErrcheck(gpuDeviceSynchronize());
   const int ndescrpt = nnei * 4;
-  DPErrcheck(cudaMemset(force, 0, sizeof(FPTYPE) * nframes * nall * 3));
+  DPErrcheck(gpuMemset(force, 0, sizeof(FPTYPE) * nframes * nall * 3));
 
   force_deriv_wrt_center_atom<FPTYPE, TPB><<<nframes * nloc, TPB>>>(
       force, net_deriv, in_deriv, ndescrpt, nloc, nall);
@@ -142,7 +142,7 @@ void prod_force_r_gpu(FPTYPE* force,
   DPErrcheck(gpuGetLastError());
   DPErrcheck(gpuDeviceSynchronize());
   const int ndescrpt = nnei * 1;
-  DPErrcheck(cudaMemset(force, 0, sizeof(FPTYPE) * nframes * nall * 3));
+  DPErrcheck(gpuMemset(force, 0, sizeof(FPTYPE) * nframes * nall * 3));
 
   force_deriv_wrt_center_atom<FPTYPE, TPB><<<nframes * nloc, TPB>>>(
       force, net_deriv, in_deriv, ndescrpt, nloc, nall);

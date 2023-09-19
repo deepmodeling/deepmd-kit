@@ -585,8 +585,8 @@ void format_nbor_list_gpu(int* nlist,
   uint_64* key = array_longlong;
   assert(max_nbor_size == 256 || max_nbor_size == 512 || 1024 ||
          max_nbor_size == 2048 || max_nbor_size == 4096);
-  DPErrcheck(hipMemset(nlist, -1, sizeof(int) * int_64(nloc) * nnei));
-  DPErrcheck(hipMemset(key, 0xffffffff,
+  DPErrcheck(gpuMemset(nlist, -1, sizeof(int) * int_64(nloc) * nnei));
+  DPErrcheck(gpuMemset(key, 0xffffffff,
                        sizeof(uint_64) * int_64(nloc) * max_nbor_size));
   DPErrcheck(gpuMemcpy(sec_dev, &sec[0], sizeof(int) * sec.size(),
                        gpuMemcpyHostToDevice));
@@ -642,10 +642,10 @@ void prod_env_mat_a_gpu(FPTYPE* em,
   }
   const int nnei = sec.back();
   const int ndescrpt = nnei * 4;
-  DPErrcheck(hipMemset(em, 0, sizeof(FPTYPE) * int_64(nloc) * ndescrpt));
+  DPErrcheck(gpuMemset(em, 0, sizeof(FPTYPE) * int_64(nloc) * ndescrpt));
   DPErrcheck(
-      hipMemset(em_deriv, 0, sizeof(FPTYPE) * int_64(nloc) * ndescrpt * 3));
-  DPErrcheck(hipMemset(rij, 0, sizeof(FPTYPE) * int_64(nloc) * nnei * 3));
+      gpuMemset(em_deriv, 0, sizeof(FPTYPE) * int_64(nloc) * ndescrpt * 3));
+  DPErrcheck(gpuMemset(rij, 0, sizeof(FPTYPE) * int_64(nloc) * nnei * 3));
 
   format_nbor_list_gpu(nlist, coord, f_type, gpu_inlist, array_int,
                        array_longlong, max_nbor_size, nloc, nall, rcut, sec);
@@ -679,10 +679,10 @@ void prod_env_mat_r_gpu(FPTYPE* em,
                         const std::vector<int> sec) {
   const int nnei = sec.back();
   const int ndescrpt = nnei * 1;
-  DPErrcheck(hipMemset(em, 0, sizeof(FPTYPE) * int_64(nloc) * ndescrpt));
+  DPErrcheck(gpuMemset(em, 0, sizeof(FPTYPE) * int_64(nloc) * ndescrpt));
   DPErrcheck(
-      hipMemset(em_deriv, 0, sizeof(FPTYPE) * int_64(nloc) * ndescrpt * 3));
-  DPErrcheck(hipMemset(rij, 0, sizeof(FPTYPE) * int_64(nloc) * nnei * 3));
+      gpuMemset(em_deriv, 0, sizeof(FPTYPE) * int_64(nloc) * ndescrpt * 3));
+  DPErrcheck(gpuMemset(rij, 0, sizeof(FPTYPE) * int_64(nloc) * nnei * 3));
 
   format_nbor_list_gpu(nlist, coord, type, gpu_inlist, array_int,
                        array_longlong, max_nbor_size, nloc, nall, rcut, sec);

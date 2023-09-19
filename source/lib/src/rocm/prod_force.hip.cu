@@ -111,7 +111,7 @@ void prod_force_a_gpu(FPTYPE* force,
                       const int nnei,
                       const int nframes) {
   const int ndescrpt = nnei * 4;
-  DPErrcheck(hipMemset(force, 0, sizeof(FPTYPE) * nframes * nall * 3));
+  DPErrcheck(gpuMemset(force, 0, sizeof(FPTYPE) * nframes * nall * 3));
 
   hipLaunchKernelGGL(HIP_KERNEL_NAME(force_deriv_wrt_center_atom<FPTYPE, TPB>),
                      nframes * nloc, TPB, 0, 0, force, net_deriv, in_deriv,
@@ -139,7 +139,7 @@ void prod_force_r_gpu(FPTYPE* force,
                       const int nnei,
                       const int nframes) {
   const int ndescrpt = nnei * 1;
-  DPErrcheck(hipMemset(force, 0, sizeof(FPTYPE) * nframes * nall * 3));
+  DPErrcheck(gpuMemset(force, 0, sizeof(FPTYPE) * nframes * nall * 3));
 
   hipLaunchKernelGGL(HIP_KERNEL_NAME(force_deriv_wrt_center_atom<FPTYPE, TPB>),
                      nframes * nloc, TPB, 0, 0, force, net_deriv, in_deriv,

@@ -92,7 +92,7 @@ void prod_force_grad_a_gpu(FPTYPE* grad_net,
   DPErrcheck(gpuDeviceSynchronize());
   const int ndescrpt = nnei * 4;
   DPErrcheck(
-      cudaMemset(grad_net, 0, sizeof(FPTYPE) * nframes * nloc * ndescrpt));
+      gpuMemset(grad_net, 0, sizeof(FPTYPE) * nframes * nloc * ndescrpt));
   const int nblock = (ndescrpt + TPB - 1) / TPB;
   dim3 block_grid(nframes * nloc, nblock);
   dim3 thread_grid(TPB, 1);
@@ -123,7 +123,7 @@ void prod_force_grad_r_gpu(FPTYPE* grad_net,
   DPErrcheck(gpuDeviceSynchronize());
   const int ndescrpt = nnei * 1;
   DPErrcheck(
-      cudaMemset(grad_net, 0, sizeof(FPTYPE) * nframes * nloc * ndescrpt));
+      gpuMemset(grad_net, 0, sizeof(FPTYPE) * nframes * nloc * ndescrpt));
   const int nblock = (ndescrpt + TPB - 1) / TPB;
   dim3 block_grid(nframes * nloc, nblock);
   dim3 thread_grid(TPB, 1);

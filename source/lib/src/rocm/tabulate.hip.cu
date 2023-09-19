@@ -660,8 +660,8 @@ void tabulate_fusion_se_a_grad_gpu(FPTYPE* dy_dem_x,
   if (nloc <= 0) {
     return;
   }
-  DPErrcheck(hipMemset(dy_dem_x, 0, sizeof(FPTYPE) * nloc * nnei));
-  DPErrcheck(hipMemset(dy_dem, 0, sizeof(FPTYPE) * nloc * nnei * 4));
+  DPErrcheck(gpuMemset(dy_dem_x, 0, sizeof(FPTYPE) * nloc * nnei));
+  DPErrcheck(gpuMemset(dy_dem, 0, sizeof(FPTYPE) * nloc * nnei * 4));
 
   hipLaunchKernelGGL(
       HIP_KERNEL_NAME(
@@ -689,7 +689,7 @@ void tabulate_fusion_se_a_grad_grad_gpu(FPTYPE* dz_dy,
   if (nloc <= 0) {
     return;
   }
-  DPErrcheck(hipMemset(dz_dy, 0, sizeof(FPTYPE) * nloc * 4 * last_layer_size));
+  DPErrcheck(gpuMemset(dz_dy, 0, sizeof(FPTYPE) * nloc * 4 * last_layer_size));
   hipLaunchKernelGGL(
       HIP_KERNEL_NAME(
           tabulate_fusion_se_a_grad_grad_fifth_order_polynomial<FPTYPE, MM,
@@ -740,8 +740,8 @@ void tabulate_fusion_se_t_grad_gpu(FPTYPE* dy_dem_x,
   if (nloc <= 0) {
     return;
   }
-  DPErrcheck(hipMemset(dy_dem_x, 0, sizeof(FPTYPE) * nloc * nnei_i * nnei_j));
-  DPErrcheck(hipMemset(dy_dem, 0, sizeof(FPTYPE) * nloc * nnei_i * nnei_j));
+  DPErrcheck(gpuMemset(dy_dem_x, 0, sizeof(FPTYPE) * nloc * nnei_i * nnei_j));
+  DPErrcheck(gpuMemset(dy_dem, 0, sizeof(FPTYPE) * nloc * nnei_i * nnei_j));
 
   hipLaunchKernelGGL(
       HIP_KERNEL_NAME(
@@ -768,7 +768,7 @@ void tabulate_fusion_se_t_grad_grad_gpu(FPTYPE* dz_dy,
   if (nloc <= 0) {
     return;
   }
-  DPErrcheck(hipMemset(dz_dy, 0, sizeof(FPTYPE) * nloc * last_layer_size));
+  DPErrcheck(gpuMemset(dz_dy, 0, sizeof(FPTYPE) * nloc * last_layer_size));
   hipLaunchKernelGGL(
       HIP_KERNEL_NAME(
           tabulate_fusion_se_t_grad_grad_fifth_order_polynomial<FPTYPE, MM,
@@ -813,7 +813,7 @@ void tabulate_fusion_se_r_grad_gpu(FPTYPE* dy_dem,
   if (nloc <= 0) {
     return;
   }
-  DPErrcheck(hipMemset(dy_dem, 0, sizeof(FPTYPE) * nloc * nnei));
+  DPErrcheck(gpuMemset(dy_dem, 0, sizeof(FPTYPE) * nloc * nnei));
 
   hipLaunchKernelGGL(
       HIP_KERNEL_NAME(
@@ -838,7 +838,7 @@ void tabulate_fusion_se_r_grad_grad_gpu(FPTYPE* dz_dy,
     return;
   }
   DPErrcheck(
-      hipMemset(dz_dy, 0, sizeof(FPTYPE) * nloc * nnei * last_layer_size));
+      gpuMemset(dz_dy, 0, sizeof(FPTYPE) * nloc * nnei * last_layer_size));
   hipLaunchKernelGGL(
       HIP_KERNEL_NAME(
           tabulate_fusion_se_r_grad_grad_fifth_order_polynomial<FPTYPE, MM,

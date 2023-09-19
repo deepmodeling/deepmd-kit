@@ -108,8 +108,8 @@ void prod_virial_a_gpu(FPTYPE* virial,
                        const int nloc,
                        const int nall,
                        const int nnei) {
-  DPErrcheck(hipMemset(virial, 0, sizeof(FPTYPE) * 9));
-  DPErrcheck(hipMemset(atom_virial, 0, sizeof(FPTYPE) * 9 * nall));
+  DPErrcheck(gpuMemset(virial, 0, sizeof(FPTYPE) * 9));
+  DPErrcheck(gpuMemset(atom_virial, 0, sizeof(FPTYPE) * 9 * nall));
 
   const int LEN = 16;
   int nblock = (nnei + LEN - 1) / LEN;
@@ -138,8 +138,8 @@ void prod_virial_r_gpu(FPTYPE* virial,
                        const int nloc,
                        const int nall,
                        const int nnei) {
-  DPErrcheck(hipMemset(virial, 0, sizeof(FPTYPE) * 9));
-  DPErrcheck(hipMemset(atom_virial, 0, sizeof(FPTYPE) * 9 * nall));
+  DPErrcheck(gpuMemset(virial, 0, sizeof(FPTYPE) * 9));
+  DPErrcheck(gpuMemset(atom_virial, 0, sizeof(FPTYPE) * 9 * nall));
 
   const int LEN = 16;
   int nblock = (nnei + LEN - 1) / LEN;
