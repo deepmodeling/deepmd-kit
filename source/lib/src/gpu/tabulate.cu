@@ -368,7 +368,7 @@ __global__ void tabulate_fusion_se_a_grad_grad_fifth_order_polynomial(
     const int nnei,
     const int last_layer_size,
     const bool is_sorted) {
-  extern __shared__ int _data[];
+  GPU_DYNAMIC_SHARED_MEM_DECL(int, _data);
   const int_64 block_idx = blockIdx.x;  // nloc
   const int thread_idx = threadIdx.x;   // last_layer_size
   FPTYPE ago = GpuShuffleSync(0xffffffff, em_x[block_idx * nnei + nnei - 1], 0);
@@ -438,9 +438,6 @@ __global__ void tabulate_fusion_se_t_fifth_order_polynomial(
     const int nnei_i,
     const int nnei_j,
     const int last_layer_size) {
-#if TENSORFLOW_USE_ROCM
-  GPU_DYNAMIC_SHARED_MEM_DECL(int, _data)
-#endif
   const int_64 block_idx = blockIdx.x;  // nloc
   const int thread_idx = threadIdx.x;   // last_layer_size
 
@@ -556,9 +553,6 @@ __global__ void tabulate_fusion_se_t_grad_grad_fifth_order_polynomial(
     const int nnei_i,
     const int nnei_j,
     const int last_layer_size) {
-#if TENSORFLOW_USE_ROCM
-  GPU_DYNAMIC_SHARED_MEM_DECL(int, _data)
-#endif
   const int_64 block_idx = blockIdx.x;  // nloc
   const int thread_idx = threadIdx.x;   // last_layer_size
 
@@ -643,7 +637,6 @@ __global__ void tabulate_fusion_se_r_grad_fifth_order_polynomial(
     const FPTYPE stride1,
     const int nnei,
     const int last_layer_size) {
-  GPU_DYNAMIC_SHARED_MEM_DECL(int, _data);
   const int_64 block_idx = blockIdx.x;  // nloc
   const int thread_idx = threadIdx.x;   // KTILE * WARP_SIZE, usally 128 here~
   int warp_idx = GpuShuffleSync(0xffffffff, thread_idx / WARP_SIZE, 0);
@@ -695,7 +688,6 @@ __global__ void tabulate_fusion_se_r_grad_grad_fifth_order_polynomial(
     const FPTYPE stride1,
     const int nnei,
     const int last_layer_size) {
-  extern __shared__ int _data[];
   const int_64 block_idx = blockIdx.x;  // nloc
   const int thread_idx = threadIdx.x;   // last_layer_size
 
