@@ -92,9 +92,9 @@ int copy_coord_gpu(FPTYPE* out_c,
 // input:
 // natom, box_info: boxt, rec_boxt
 template <typename FPTYPE>
-void normalize_coord_gpu_rocm(FPTYPE* coord,
-                              const int natom,
-                              const deepmd::Region<FPTYPE>& region);
+void normalize_coord_gpu(FPTYPE* coord,
+                         const int natom,
+                         const deepmd::Region<FPTYPE>& region);
 
 // copy coordinates
 // outputs:
@@ -111,19 +111,19 @@ void normalize_coord_gpu_rocm(FPTYPE* coord,
 //	1: the memory is not large enough to hold all copied coords and types.
 //	   i.e. nall > mem_nall
 template <typename FPTYPE>
-int copy_coord_gpu_rocm(FPTYPE* out_c,
-                        int* out_t,
-                        int* mapping,
-                        int* nall,
-                        int* int_data,
-                        const FPTYPE* in_c,
-                        const int* in_t,
-                        const int& nloc,
-                        const int& mem_nall,
-                        const int& loc_cellnum,
-                        const int& total_cellnum,
-                        const int* cell_info,
-                        const deepmd::Region<FPTYPE>& region);
+int copy_coord_gpu(FPTYPE* out_c,
+                   int* out_t,
+                   int* mapping,
+                   int* nall,
+                   int* int_data,
+                   const FPTYPE* in_c,
+                   const int* in_t,
+                   const int& nloc,
+                   const int& mem_nall,
+                   const int& loc_cellnum,
+                   const int& total_cellnum,
+                   const int* cell_info,
+                   const deepmd::Region<FPTYPE>& region);
 #endif  // TENSORFLOW_USE_ROCM
 
 }  // namespace deepmd

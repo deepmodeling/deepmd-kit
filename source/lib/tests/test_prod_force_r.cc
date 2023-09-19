@@ -131,7 +131,7 @@ TEST_F(TestProdForceR, cpu) {
 }
 
 #if GOOGLE_CUDA
-TEST_F(TestProdForceR, gpu_cuda) {
+TEST_F(TestProdForceR, gpu) {
   std::vector<double> force(nframes * nall * 3, 0.0);
   int n_a_sel = nnei;
 
@@ -143,8 +143,8 @@ TEST_F(TestProdForceR, gpu_cuda) {
   deepmd::malloc_device_memory_sync(net_deriv_dev, net_deriv);
   deepmd::malloc_device_memory_sync(env_deriv_dev, env_deriv);
 
-  deepmd::prod_force_r_gpu_cuda<double>(force_dev, net_deriv_dev, env_deriv_dev,
-                                        nlist_dev, nloc, nall, nnei, nframes);
+  deepmd::prod_force_r_gpu<double>(force_dev, net_deriv_dev, env_deriv_dev,
+                                   nlist_dev, nloc, nall, nnei, nframes);
 
   deepmd::memcpy_device_to_host(force_dev, force);
   deepmd::delete_device_memory(nlist_dev);
@@ -161,7 +161,7 @@ TEST_F(TestProdForceR, gpu_cuda) {
 #endif  // GOOGLE_CUDA
 
 #if TENSORFLOW_USE_ROCM
-TEST_F(TestProdForceR, gpu_rocm) {
+TEST_F(TestProdForceR, gpu) {
   std::vector<double> force(nframes * nall * 3, 0.0);
   int n_a_sel = nnei;
 
@@ -173,8 +173,8 @@ TEST_F(TestProdForceR, gpu_rocm) {
   deepmd::malloc_device_memory_sync(net_deriv_dev, net_deriv);
   deepmd::malloc_device_memory_sync(env_deriv_dev, env_deriv);
 
-  deepmd::prod_force_r_gpu_rocm<double>(force_dev, net_deriv_dev, env_deriv_dev,
-                                        nlist_dev, nloc, nall, nnei, nframes);
+  deepmd::prod_force_r_gpu<double>(force_dev, net_deriv_dev, env_deriv_dev,
+                                   nlist_dev, nloc, nall, nnei, nframes);
 
   deepmd::memcpy_device_to_host(force_dev, force);
   deepmd::delete_device_memory(nlist_dev);

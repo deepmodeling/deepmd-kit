@@ -621,16 +621,16 @@ __global__ void tabulate_fusion_se_r_grad_grad_fifth_order_polynomial(
 
 namespace deepmd {
 template <typename FPTYPE>
-void tabulate_fusion_se_a_gpu_rocm(FPTYPE* out,
-                                   const FPTYPE* table,
-                                   const FPTYPE* table_info,
-                                   const FPTYPE* em_x,
-                                   const FPTYPE* em,
-                                   const FPTYPE* two_embed,
-                                   const int nloc,
-                                   const int nnei,
-                                   const int last_layer_size,
-                                   const bool is_sorted) {
+void tabulate_fusion_se_a_gpu(FPTYPE* out,
+                              const FPTYPE* table,
+                              const FPTYPE* table_info,
+                              const FPTYPE* em_x,
+                              const FPTYPE* em,
+                              const FPTYPE* two_embed,
+                              const int nloc,
+                              const int nnei,
+                              const int last_layer_size,
+                              const bool is_sorted) {
   if (nloc <= 0) {
     return;
   }
@@ -645,18 +645,18 @@ void tabulate_fusion_se_a_gpu_rocm(FPTYPE* out,
 }
 
 template <typename FPTYPE>
-void tabulate_fusion_se_a_grad_gpu_rocm(FPTYPE* dy_dem_x,
-                                        FPTYPE* dy_dem,
-                                        const FPTYPE* table,
-                                        const FPTYPE* table_info,
-                                        const FPTYPE* em_x,
-                                        const FPTYPE* em,
-                                        const FPTYPE* two_embed,
-                                        const FPTYPE* dy,
-                                        const int nloc,
-                                        const int nnei,
-                                        const int last_layer_size,
-                                        const bool is_sorted) {
+void tabulate_fusion_se_a_grad_gpu(FPTYPE* dy_dem_x,
+                                   FPTYPE* dy_dem,
+                                   const FPTYPE* table,
+                                   const FPTYPE* table_info,
+                                   const FPTYPE* em_x,
+                                   const FPTYPE* em,
+                                   const FPTYPE* two_embed,
+                                   const FPTYPE* dy,
+                                   const int nloc,
+                                   const int nnei,
+                                   const int last_layer_size,
+                                   const bool is_sorted) {
   if (nloc <= 0) {
     return;
   }
@@ -675,17 +675,17 @@ void tabulate_fusion_se_a_grad_gpu_rocm(FPTYPE* dy_dem_x,
 }
 
 template <typename FPTYPE>
-void tabulate_fusion_se_a_grad_grad_gpu_rocm(FPTYPE* dz_dy,
-                                             const FPTYPE* table,
-                                             const FPTYPE* table_info,
-                                             const FPTYPE* em_x,
-                                             const FPTYPE* em,
-                                             const FPTYPE* dz_dy_dem_x,
-                                             const FPTYPE* dz_dy_dem,
-                                             const int nloc,
-                                             const int nnei,
-                                             const int last_layer_size,
-                                             const bool is_sorted) {
+void tabulate_fusion_se_a_grad_grad_gpu(FPTYPE* dz_dy,
+                                        const FPTYPE* table,
+                                        const FPTYPE* table_info,
+                                        const FPTYPE* em_x,
+                                        const FPTYPE* em,
+                                        const FPTYPE* dz_dy_dem_x,
+                                        const FPTYPE* dz_dy_dem,
+                                        const int nloc,
+                                        const int nnei,
+                                        const int last_layer_size,
+                                        const bool is_sorted) {
   if (nloc <= 0) {
     return;
   }
@@ -703,15 +703,15 @@ void tabulate_fusion_se_a_grad_grad_gpu_rocm(FPTYPE* dz_dy,
 }
 
 template <typename FPTYPE>
-void tabulate_fusion_se_t_gpu_rocm(FPTYPE* out,
-                                   const FPTYPE* table,
-                                   const FPTYPE* table_info,
-                                   const FPTYPE* em_x,
-                                   const FPTYPE* em,
-                                   const int nloc,
-                                   const int nnei_i,
-                                   const int nnei_j,
-                                   const int last_layer_size) {
+void tabulate_fusion_se_t_gpu(FPTYPE* out,
+                              const FPTYPE* table,
+                              const FPTYPE* table_info,
+                              const FPTYPE* em_x,
+                              const FPTYPE* em,
+                              const int nloc,
+                              const int nnei_i,
+                              const int nnei_j,
+                              const int last_layer_size) {
   if (nloc <= 0) {
     return;
   }
@@ -726,17 +726,17 @@ void tabulate_fusion_se_t_gpu_rocm(FPTYPE* out,
 }
 
 template <typename FPTYPE>
-void tabulate_fusion_se_t_grad_gpu_rocm(FPTYPE* dy_dem_x,
-                                        FPTYPE* dy_dem,
-                                        const FPTYPE* table,
-                                        const FPTYPE* table_info,
-                                        const FPTYPE* em_x,
-                                        const FPTYPE* em,
-                                        const FPTYPE* dy,
-                                        const int nloc,
-                                        const int nnei_i,
-                                        const int nnei_j,
-                                        const int last_layer_size) {
+void tabulate_fusion_se_t_grad_gpu(FPTYPE* dy_dem_x,
+                                   FPTYPE* dy_dem,
+                                   const FPTYPE* table,
+                                   const FPTYPE* table_info,
+                                   const FPTYPE* em_x,
+                                   const FPTYPE* em,
+                                   const FPTYPE* dy,
+                                   const int nloc,
+                                   const int nnei_i,
+                                   const int nnei_j,
+                                   const int last_layer_size) {
   if (nloc <= 0) {
     return;
   }
@@ -754,17 +754,17 @@ void tabulate_fusion_se_t_grad_gpu_rocm(FPTYPE* dy_dem_x,
 }
 
 template <typename FPTYPE>
-void tabulate_fusion_se_t_grad_grad_gpu_rocm(FPTYPE* dz_dy,
-                                             const FPTYPE* table,
-                                             const FPTYPE* table_info,
-                                             const FPTYPE* em_x,
-                                             const FPTYPE* em,
-                                             const FPTYPE* dz_dy_dem_x,
-                                             const FPTYPE* dz_dy_dem,
-                                             const int nloc,
-                                             const int nnei_i,
-                                             const int nnei_j,
-                                             const int last_layer_size) {
+void tabulate_fusion_se_t_grad_grad_gpu(FPTYPE* dz_dy,
+                                        const FPTYPE* table,
+                                        const FPTYPE* table_info,
+                                        const FPTYPE* em_x,
+                                        const FPTYPE* em,
+                                        const FPTYPE* dz_dy_dem_x,
+                                        const FPTYPE* dz_dy_dem,
+                                        const int nloc,
+                                        const int nnei_i,
+                                        const int nnei_j,
+                                        const int last_layer_size) {
   if (nloc <= 0) {
     return;
   }
@@ -781,13 +781,13 @@ void tabulate_fusion_se_t_grad_grad_gpu_rocm(FPTYPE* dz_dy,
 }
 
 template <typename FPTYPE>
-void tabulate_fusion_se_r_gpu_rocm(FPTYPE* out,
-                                   const FPTYPE* table,
-                                   const FPTYPE* table_info,
-                                   const FPTYPE* em,
-                                   const int nloc,
-                                   const int nnei,
-                                   const int last_layer_size) {
+void tabulate_fusion_se_r_gpu(FPTYPE* out,
+                              const FPTYPE* table,
+                              const FPTYPE* table_info,
+                              const FPTYPE* em,
+                              const int nloc,
+                              const int nnei,
+                              const int last_layer_size) {
   if (nloc <= 0) {
     return;
   }
@@ -802,14 +802,14 @@ void tabulate_fusion_se_r_gpu_rocm(FPTYPE* out,
 }
 
 template <typename FPTYPE>
-void tabulate_fusion_se_r_grad_gpu_rocm(FPTYPE* dy_dem,
-                                        const FPTYPE* table,
-                                        const FPTYPE* table_info,
-                                        const FPTYPE* em,
-                                        const FPTYPE* dy,
-                                        const int nloc,
-                                        const int nnei,
-                                        const int last_layer_size) {
+void tabulate_fusion_se_r_grad_gpu(FPTYPE* dy_dem,
+                                   const FPTYPE* table,
+                                   const FPTYPE* table_info,
+                                   const FPTYPE* em,
+                                   const FPTYPE* dy,
+                                   const int nloc,
+                                   const int nnei,
+                                   const int last_layer_size) {
   if (nloc <= 0) {
     return;
   }
@@ -826,14 +826,14 @@ void tabulate_fusion_se_r_grad_gpu_rocm(FPTYPE* dy_dem,
 }
 
 template <typename FPTYPE>
-void tabulate_fusion_se_r_grad_grad_gpu_rocm(FPTYPE* dz_dy,
-                                             const FPTYPE* table,
-                                             const FPTYPE* table_info,
-                                             const FPTYPE* em,
-                                             const FPTYPE* dz_dy_dem,
-                                             const int nloc,
-                                             const int nnei,
-                                             const int last_layer_size) {
+void tabulate_fusion_se_r_grad_grad_gpu(FPTYPE* dz_dy,
+                                        const FPTYPE* table,
+                                        const FPTYPE* table_info,
+                                        const FPTYPE* em,
+                                        const FPTYPE* dz_dy_dem,
+                                        const int nloc,
+                                        const int nnei,
+                                        const int last_layer_size) {
   if (nloc <= 0) {
     return;
   }
@@ -850,53 +850,51 @@ void tabulate_fusion_se_r_grad_grad_gpu_rocm(FPTYPE* dz_dy,
   DPErrcheck(hipDeviceSynchronize());
 }
 
-template void tabulate_fusion_se_a_gpu_rocm<float>(float* out,
+template void tabulate_fusion_se_a_gpu<float>(float* out,
+                                              const float* table,
+                                              const float* table_info,
+                                              const float* em_x,
+                                              const float* em,
+                                              const float* two_embed,
+                                              const int nloc,
+                                              const int nnei,
+                                              const int last_layer_size,
+                                              const bool is_sorted);
+template void tabulate_fusion_se_a_gpu<double>(double* out,
+                                               const double* table,
+                                               const double* table_info,
+                                               const double* em_x,
+                                               const double* em,
+                                               const double* two_embed,
+                                               const int nloc,
+                                               const int nnei,
+                                               const int last_layer_size,
+                                               const bool is_sorted);
+template void tabulate_fusion_se_a_grad_gpu<float>(float* dy_dem_x,
+                                                   float* dy_dem,
                                                    const float* table,
                                                    const float* table_info,
                                                    const float* em_x,
                                                    const float* em,
                                                    const float* two_embed,
+                                                   const float* dy,
                                                    const int nloc,
                                                    const int nnei,
                                                    const int last_layer_size,
                                                    const bool is_sorted);
-template void tabulate_fusion_se_a_gpu_rocm<double>(double* out,
+template void tabulate_fusion_se_a_grad_gpu<double>(double* dy_dem_x,
+                                                    double* dy_dem,
                                                     const double* table,
                                                     const double* table_info,
                                                     const double* em_x,
                                                     const double* em,
                                                     const double* two_embed,
+                                                    const double* dy,
                                                     const int nloc,
                                                     const int nnei,
                                                     const int last_layer_size,
                                                     const bool is_sorted);
-template void tabulate_fusion_se_a_grad_gpu_rocm<float>(
-    float* dy_dem_x,
-    float* dy_dem,
-    const float* table,
-    const float* table_info,
-    const float* em_x,
-    const float* em,
-    const float* two_embed,
-    const float* dy,
-    const int nloc,
-    const int nnei,
-    const int last_layer_size,
-    const bool is_sorted);
-template void tabulate_fusion_se_a_grad_gpu_rocm<double>(
-    double* dy_dem_x,
-    double* dy_dem,
-    const double* table,
-    const double* table_info,
-    const double* em_x,
-    const double* em,
-    const double* two_embed,
-    const double* dy,
-    const int nloc,
-    const int nnei,
-    const int last_layer_size,
-    const bool is_sorted);
-template void tabulate_fusion_se_a_grad_grad_gpu_rocm<float>(
+template void tabulate_fusion_se_a_grad_grad_gpu<float>(
     float* dz_dy,
     const float* table,
     const float* table_info,
@@ -908,7 +906,7 @@ template void tabulate_fusion_se_a_grad_grad_gpu_rocm<float>(
     const int nnei,
     const int last_layer_size,
     const bool is_sorted);
-template void tabulate_fusion_se_a_grad_grad_gpu_rocm<double>(
+template void tabulate_fusion_se_a_grad_grad_gpu<double>(
     double* dz_dy,
     const double* table,
     const double* table_info,
@@ -921,49 +919,47 @@ template void tabulate_fusion_se_a_grad_grad_gpu_rocm<double>(
     const int last_layer_size,
     const bool is_sorted);
 
-template void tabulate_fusion_se_t_gpu_rocm<float>(float* out,
+template void tabulate_fusion_se_t_gpu<float>(float* out,
+                                              const float* table,
+                                              const float* table_info,
+                                              const float* em_x,
+                                              const float* em,
+                                              const int nloc,
+                                              const int nnei_i,
+                                              const int nnei_j,
+                                              const int last_layer_size);
+template void tabulate_fusion_se_t_gpu<double>(double* out,
+                                               const double* table,
+                                               const double* table_info,
+                                               const double* em_x,
+                                               const double* em,
+                                               const int nloc,
+                                               const int nnei_i,
+                                               const int nnei_j,
+                                               const int last_layer_size);
+template void tabulate_fusion_se_t_grad_gpu<float>(float* dy_dem_x,
+                                                   float* dy_dem,
                                                    const float* table,
                                                    const float* table_info,
                                                    const float* em_x,
                                                    const float* em,
+                                                   const float* dy,
                                                    const int nloc,
                                                    const int nnei_i,
                                                    const int nnei_j,
                                                    const int last_layer_size);
-template void tabulate_fusion_se_t_gpu_rocm<double>(double* out,
+template void tabulate_fusion_se_t_grad_gpu<double>(double* dy_dem_x,
+                                                    double* dy_dem,
                                                     const double* table,
                                                     const double* table_info,
                                                     const double* em_x,
                                                     const double* em,
+                                                    const double* dy,
                                                     const int nloc,
                                                     const int nnei_i,
                                                     const int nnei_j,
                                                     const int last_layer_size);
-template void tabulate_fusion_se_t_grad_gpu_rocm<float>(
-    float* dy_dem_x,
-    float* dy_dem,
-    const float* table,
-    const float* table_info,
-    const float* em_x,
-    const float* em,
-    const float* dy,
-    const int nloc,
-    const int nnei_i,
-    const int nnei_j,
-    const int last_layer_size);
-template void tabulate_fusion_se_t_grad_gpu_rocm<double>(
-    double* dy_dem_x,
-    double* dy_dem,
-    const double* table,
-    const double* table_info,
-    const double* em_x,
-    const double* em,
-    const double* dy,
-    const int nloc,
-    const int nnei_i,
-    const int nnei_j,
-    const int last_layer_size);
-template void tabulate_fusion_se_t_grad_grad_gpu_rocm<float>(
+template void tabulate_fusion_se_t_grad_grad_gpu<float>(
     float* dz_dy,
     const float* table,
     const float* table_info,
@@ -975,7 +971,7 @@ template void tabulate_fusion_se_t_grad_grad_gpu_rocm<float>(
     const int nnei_i,
     const int nnei_j,
     const int last_layer_size);
-template void tabulate_fusion_se_t_grad_grad_gpu_rocm<double>(
+template void tabulate_fusion_se_t_grad_grad_gpu<double>(
     double* dz_dy,
     const double* table,
     const double* table_info,
@@ -988,39 +984,37 @@ template void tabulate_fusion_se_t_grad_grad_gpu_rocm<double>(
     const int nnei_j,
     const int last_layer_size);
 
-template void tabulate_fusion_se_r_gpu_rocm<float>(float* out,
+template void tabulate_fusion_se_r_gpu<float>(float* out,
+                                              const float* table,
+                                              const float* table_info,
+                                              const float* em,
+                                              const int nloc,
+                                              const int nnei,
+                                              const int last_layer_size);
+template void tabulate_fusion_se_r_gpu<double>(double* out,
+                                               const double* table,
+                                               const double* table_info,
+                                               const double* em,
+                                               const int nloc,
+                                               const int nnei,
+                                               const int last_layer_size);
+template void tabulate_fusion_se_r_grad_gpu<float>(float* dy_dem,
                                                    const float* table,
                                                    const float* table_info,
                                                    const float* em,
+                                                   const float* dy,
                                                    const int nloc,
                                                    const int nnei,
                                                    const int last_layer_size);
-template void tabulate_fusion_se_r_gpu_rocm<double>(double* out,
+template void tabulate_fusion_se_r_grad_gpu<double>(double* dy_dem,
                                                     const double* table,
                                                     const double* table_info,
                                                     const double* em,
+                                                    const double* dy,
                                                     const int nloc,
                                                     const int nnei,
                                                     const int last_layer_size);
-template void tabulate_fusion_se_r_grad_gpu_rocm<float>(
-    float* dy_dem,
-    const float* table,
-    const float* table_info,
-    const float* em,
-    const float* dy,
-    const int nloc,
-    const int nnei,
-    const int last_layer_size);
-template void tabulate_fusion_se_r_grad_gpu_rocm<double>(
-    double* dy_dem,
-    const double* table,
-    const double* table_info,
-    const double* em,
-    const double* dy,
-    const int nloc,
-    const int nnei,
-    const int last_layer_size);
-template void tabulate_fusion_se_r_grad_grad_gpu_rocm<float>(
+template void tabulate_fusion_se_r_grad_grad_gpu<float>(
     float* dz_dy,
     const float* table,
     const float* table_info,
@@ -1029,7 +1023,7 @@ template void tabulate_fusion_se_r_grad_grad_gpu_rocm<float>(
     const int nloc,
     const int nnei,
     const int last_layer_size);
-template void tabulate_fusion_se_r_grad_grad_gpu_rocm<double>(
+template void tabulate_fusion_se_r_grad_grad_gpu<double>(
     double* dz_dy,
     const double* table,
     const double* table_info,

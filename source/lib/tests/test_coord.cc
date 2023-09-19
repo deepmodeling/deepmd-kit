@@ -164,7 +164,7 @@ TEST_F(TestNormCoord, gpu_case0) {
   deepmd::malloc_device_memory_sync(out_c_dev, out_c);
   region_dev.boxt = box_info_dev;
   region_dev.rec_boxt = box_info_dev + 9;
-  deepmd::normalize_coord_gpu_rocm(out_c_dev, natoms, region_dev);
+  deepmd::normalize_coord_gpu(out_c_dev, natoms, region_dev);
   region_dev.boxt = new_boxt;
   region_dev.rec_boxt = new_rec_boxt;
   deepmd::memcpy_device_to_host(out_c_dev, out_c);
@@ -192,7 +192,7 @@ TEST_F(TestNormCoord, gpu_case1) {
   deepmd::malloc_device_memory_sync(out_c_dev, out_c);
   region_dev.boxt = box_info_dev;
   region_dev.rec_boxt = box_info_dev + 9;
-  deepmd::normalize_coord_gpu_rocm(out_c_dev, natoms, region_dev);
+  deepmd::normalize_coord_gpu(out_c_dev, natoms, region_dev);
   region_dev.boxt = new_boxt;
   region_dev.rec_boxt = new_rec_boxt;
   deepmd::memcpy_device_to_host(out_c_dev, out_c);
@@ -220,7 +220,7 @@ TEST_F(TestNormCoord, gpu_case2) {
   deepmd::malloc_device_memory_sync(out_c_dev, out_c);
   region_dev.boxt = box_info_dev;
   region_dev.rec_boxt = box_info_dev + 9;
-  deepmd::normalize_coord_gpu_rocm(out_c_dev, natoms, region_dev);
+  deepmd::normalize_coord_gpu(out_c_dev, natoms, region_dev);
   region_dev.boxt = new_boxt;
   region_dev.rec_boxt = new_rec_boxt;
   deepmd::memcpy_device_to_host(out_c_dev, out_c);
@@ -553,10 +553,10 @@ TEST_F(TestCopyCoord, gpu) {
                         1 + nloc);
   region_dev.boxt = box_info_dev;
   region_dev.rec_boxt = box_info_dev + 9;
-  int ret = deepmd::copy_coord_gpu_rocm(
-      out_c_dev, out_t_dev, mapping_dev, &nall, int_data_dev, in_c_dev,
-      in_t_dev, nloc, mem_size, loc_cellnum, total_cellnum, cell_info_dev,
-      region_dev);
+  int ret = deepmd::copy_coord_gpu(out_c_dev, out_t_dev, mapping_dev, &nall,
+                                   int_data_dev, in_c_dev, in_t_dev, nloc,
+                                   mem_size, loc_cellnum, total_cellnum,
+                                   cell_info_dev, region_dev);
   region_dev.boxt = new_boxt;
   region_dev.rec_boxt = new_rec_boxt;
   deepmd::memcpy_device_to_host(out_c_dev, out_c);
@@ -628,10 +628,10 @@ TEST_F(TestCopyCoord, gpu_lessmem) {
                         1 + nloc);
   region_dev.boxt = box_info_dev;
   region_dev.rec_boxt = box_info_dev + 9;
-  int ret = deepmd::copy_coord_gpu_rocm(
-      out_c_dev, out_t_dev, mapping_dev, &nall, int_data_dev, in_c_dev,
-      in_t_dev, nloc, mem_size, loc_cellnum, total_cellnum, cell_info_dev,
-      region_dev);
+  int ret = deepmd::copy_coord_gpu(out_c_dev, out_t_dev, mapping_dev, &nall,
+                                   int_data_dev, in_c_dev, in_t_dev, nloc,
+                                   mem_size, loc_cellnum, total_cellnum,
+                                   cell_info_dev, region_dev);
   region_dev.boxt = new_boxt;
   region_dev.rec_boxt = new_rec_boxt;
   deepmd::memcpy_device_to_host(out_c_dev, out_c);
@@ -938,10 +938,10 @@ TEST_F(TestCopyCoordMoreCell, gpu) {
                         1 + nloc);
   region_dev.boxt = box_info_dev;
   region_dev.rec_boxt = box_info_dev + 9;
-  int ret = deepmd::copy_coord_gpu_rocm(
-      out_c_dev, out_t_dev, mapping_dev, &nall, int_data_dev, in_c_dev,
-      in_t_dev, nloc, mem_size, loc_cellnum, total_cellnum, cell_info_dev,
-      region_dev);
+  int ret = deepmd::copy_coord_gpu(out_c_dev, out_t_dev, mapping_dev, &nall,
+                                   int_data_dev, in_c_dev, in_t_dev, nloc,
+                                   mem_size, loc_cellnum, total_cellnum,
+                                   cell_info_dev, region_dev);
   region_dev.boxt = new_boxt;
   region_dev.rec_boxt = new_rec_boxt;
   deepmd::memcpy_device_to_host(out_c_dev, out_c);
@@ -1013,10 +1013,10 @@ TEST_F(TestCopyCoordMoreCell, gpu_lessmem) {
                         1 + nloc);
   region_dev.boxt = box_info_dev;
   region_dev.rec_boxt = box_info_dev + 9;
-  int ret = deepmd::copy_coord_gpu_rocm(
-      out_c_dev, out_t_dev, mapping_dev, &nall, int_data_dev, in_c_dev,
-      in_t_dev, nloc, mem_size, loc_cellnum, total_cellnum, cell_info_dev,
-      region_dev);
+  int ret = deepmd::copy_coord_gpu(out_c_dev, out_t_dev, mapping_dev, &nall,
+                                   int_data_dev, in_c_dev, in_t_dev, nloc,
+                                   mem_size, loc_cellnum, total_cellnum,
+                                   cell_info_dev, region_dev);
   region_dev.boxt = new_boxt;
   region_dev.rec_boxt = new_rec_boxt;
   deepmd::memcpy_device_to_host(out_c_dev, out_c);
