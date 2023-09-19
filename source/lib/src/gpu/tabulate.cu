@@ -53,8 +53,6 @@ __forceinline__ __device__ void locate_xx_se_a(FPTYPE& xx,
   }
 }
 
-const auto locate_xx_se_r = locate_xx_se_a;
-
 template <typename FPTYPE>
 __forceinline__ __device__ void locate_xx_se_t(FPTYPE& xx,
                                                int& table_idx,
@@ -82,6 +80,31 @@ __forceinline__ __device__ void locate_xx_se_t(FPTYPE& xx,
   } else {
     table_idx = int((lower - min) / stride1) + int((upper - lower) / stride0) +
                 (int)((max - upper) / stride1) - 1;
+    xx = (FPTYPE)0.;
+  }
+}
+
+template <typename FPTYPE>
+__forceinline__ __device__ void locate_xx_se_r(FPTYPE& xx,
+                                               int& table_idx,
+                                               const FPTYPE& lower,
+                                               const FPTYPE& upper,
+                                               const FPTYPE& max,
+                                               const FPTYPE& stride0,
+                                               const FPTYPE& stride1) {
+  if (xx < lower) {
+    table_idx = 0;
+    xx = (FPTYPE)0.;
+  } else if (xx < upper) {
+    table_idx = (int)((xx - lower) / stride0);
+    xx -= (table_idx * stride0 + lower);
+  } else if (xx < max) {
+    int first_stride = int((upper - lower) / stride0);
+    table_idx = first_stride + (int)((xx - upper) / stride1);
+    xx -= ((table_idx - first_stride) * stride1 + upper);
+  } else {
+    table_idx =
+        int((upper - lower) / stride0) + (int)((max - upper) / stride1) - 1;
     xx = (FPTYPE)0.;
   }
 }
