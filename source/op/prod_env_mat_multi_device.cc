@@ -507,6 +507,9 @@ class ProdEnvMatAOp : public OpKernel {
       // no pbc
       assert(nloc == nall);
       nei_mode = -1;
+    } else if (mesh_tensor.shape().dim_size(0) > 16) {
+      // pass neighbor list inside the tensor
+      nei_mode = 4;
     } else if (mesh_tensor.shape().dim_size(0) == 7 ||
                mesh_tensor.shape().dim_size(0) == 1) {
       throw deepmd::deepmd_exception(
@@ -799,6 +802,9 @@ class ProdEnvMatROp : public OpKernel {
       // no pbc
       assert(nloc == nall);
       nei_mode = -1;
+    } else if (mesh_tensor.shape().dim_size(0) > 16) {
+      // pass neighbor list inside the tensor
+      nei_mode = 4;
     } else if (mesh_tensor.shape().dim_size(0) == 7 ||
                mesh_tensor.shape().dim_size(0) == 1) {
       throw deepmd::deepmd_exception(
@@ -1101,14 +1107,15 @@ class ProdEnvMatAMixOp : public OpKernel {
     } else if (mesh_tensor.shape().dim_size(0) == 6 ||
                mesh_tensor.shape().dim_size(0) == 7) {
       // manual copied pbc
-      assert(nloc == nall);
       nei_mode = 1;
       b_nlist_map = true;
     } else if (mesh_tensor.shape().dim_size(0) == 0 ||
                mesh_tensor.shape().dim_size(0) == 1) {
       // no pbc
-      assert(nloc == nall);
       nei_mode = -1;
+    } else if (mesh_tensor.shape().dim_size(0) > 16) {
+      // pass neighbor list inside the tensor
+      nei_mode = 4;
     } else {
       throw deepmd::deepmd_exception("invalid mesh tensor");
     }
@@ -1429,6 +1436,24 @@ static void _map_nei_info_cpu(int* nlist,
                            ntypes, b_nlist_map);
 }
 
+/**
+ * @param[in] nei_mode -1, 1, 3, or 4.
+ *   - -1: Build neighbor list without PBC. The size of mesh should
+ *     be 0 (no mixed) or 1 (mixed).
+ *   - 1: Build neighbor list with PBC. The size of mesh should
+ *     be 6 (no mixed) or 7 (mixed).
+ *   - 3：Use neighbor list from given pointers. The size of mesh should be 16.
+ *     The first element is ago (whether update the internal neighbour list).
+ *     The second element is the number of local atoms. The 5th-8th, 9th-12th,
+ *     and 13th-16th elements are the pointer (int*, 4x size of int) to
+ *     ilist, numneigh, firstneigh. The pointer should be valid during the
+ *     execution of this op, so it may be created and given by an external
+ *     program calling the TensorFlow session.
+ *   - 4: Use neighbor list stored in the tensor. The size of mesh should be
+ *     16 + 2 * nloc + sum(numneigh). Starting from the 17th element, the
+ *     elements are ilist (size of nloc), numneigh (size of nloc), and neighbors
+ *     (size of numneigh[i] for each i).
+ */
 template <typename FPTYPE>
 static void _prepare_coord_nlist_cpu(OpKernelContext* context,
                                      FPTYPE const** coord,
@@ -1453,7 +1478,7 @@ static void _prepare_coord_nlist_cpu(OpKernelContext* context,
                                      const int& max_cpy_trial,
                                      const int& max_nnei_trial) {
   inlist.inum = nloc;
-  if (nei_mode != 3) {
+  if (nei_mode != 3 && nei_mode != 4) {
     // build nlist by myself
     // normalize and copy coord
     if (nei_mode == 1) {
@@ -1471,6 +1496,19 @@ static void _prepare_coord_nlist_cpu(OpKernelContext* context,
                                     new_nall, max_nnei_trial, rcut_r);
     OP_REQUIRES(context, build_ok,
                 errors::Aborted("cannot allocate mem for nlist"));
+    inlist.ilist = &ilist[0];
+    inlist.numneigh = &numneigh[0];
+    inlist.firstneigh = &firstneigh[0];
+  } else if (nei_mode == 4) {
+    std::memcpy(&ilist[0], 16 + mesh_tensor_data, sizeof(int) * nloc);
+    std::memcpy(&numneigh[0], 16 + nloc + mesh_tensor_data, sizeof(int) * nloc);
+    for (int ii = 0, kk = 0; ii < nloc; ++ii) {
+      jlist[ii].resize(numneigh[ii]);
+      std::memcpy(&jlist[ii][0], 16 + 2 * nloc + kk + mesh_tensor_data,
+                  sizeof(int) * numneigh[ii]);
+      firstneigh[ii] = &jlist[ii][0];
+      kk += numneigh[ii];
+    }
     inlist.ilist = &ilist[0];
     inlist.numneigh = &numneigh[0];
     inlist.firstneigh = &firstneigh[0];
@@ -1675,7 +1713,7 @@ static void _prepare_coord_nlist_gpu(OpKernelContext* context,
                                      const float& rcut_r,
                                      const int& max_cpy_trial,
                                      const int& max_nnei_trial) {
-  if (nei_mode != 3) {
+  if (nei_mode != 3 && nei_mode != 4) {
     inlist.inum = nloc;
     // build nlist by myself
     // normalize and copy coord
@@ -1705,6 +1743,46 @@ static void _prepare_coord_nlist_gpu(OpKernelContext* context,
     inlist.ilist = ilist;
     inlist.numneigh = numneigh;
     inlist.firstneigh = firstneigh;
+  } else if (nei_mode == 4) {
+    // TODO: in theory, it will be faster to put everything on GPUs...
+    std::vector<int> mesh_tensor_data_host(mesh_tensor_size);
+    std::vector<int> ilist_host(nloc);
+    std::vector<int> numneigh_host(nloc);
+    std::vector<int*> firstneigh_host(nloc);
+    std::vector<int> fake_mesh(16);
+
+    // copy from gpu to cpu
+    deepmd::memcpy_device_to_host(mesh_tensor_data, mesh_tensor_data_host);
+    std::memcpy(&ilist_host[0], &mesh_tensor_data_host[16], sizeof(int) * nloc);
+    std::memcpy(&numneigh_host[0], &mesh_tensor_data_host[16 + nloc],
+                sizeof(int) * nloc);
+    for (int ii = 0, kk = 0; ii < nloc; ++ii) {
+      firstneigh_host[ii] = &mesh_tensor_data_host[16 + 2 * nloc + kk];
+      kk += numneigh_host[ii];
+    }
+    // make a fake mesh
+    fake_mesh[0] = 0;
+    fake_mesh[1] = nloc;
+    std::memcpy(&fake_mesh[4], &ilist_host, sizeof(int*));
+    std::memcpy(&fake_mesh[8], &numneigh_host, sizeof(int*));
+    std::memcpy(&fake_mesh[12], &firstneigh_host, sizeof(int**));
+    // copy from cpu to gpu
+    int* fake_mesh_dev = NULL;
+    deepmd::malloc_device_memory(fake_mesh_dev, 16);
+    deepmd::memcpy_host_to_device(fake_mesh_dev, fake_mesh);
+
+    deepmd::InputNlist inlist_temp;
+    inlist_temp.inum = nloc;
+    // everything should be copied to GPU...
+    deepmd::env_mat_nbor_update(inlist_temp, inlist, max_nbor_size,
+                                nbor_list_dev, fake_mesh_dev, 16);
+    OP_REQUIRES(context, (max_numneigh(inlist_temp) <= max_nbor_size),
+                errors::InvalidArgument(
+                    "Assert failed, max neighbor size of atom(lammps) " +
+                    std::to_string(max_numneigh(inlist_temp)) +
+                    " is larger than " + std::to_string(max_nbor_size) +
+                    ", which currently is not supported by deepmd-kit."));
+    deepmd::delete_device_memory(fake_mesh_dev);
   } else {
     // update nbor list
     deepmd::InputNlist inlist_temp;
@@ -1908,7 +1986,7 @@ static void _prepare_coord_nlist_gpu(OpKernelContext* context,
                                      const float& rcut_r,
                                      const int& max_cpy_trial,
                                      const int& max_nnei_trial) {
-  if (nei_mode != 3) {
+  if (nei_mode != 3 && nei_mode != 4) {
     inlist.inum = nloc;
     // build nlist by myself
     // normalize and copy coord
@@ -1938,6 +2016,46 @@ static void _prepare_coord_nlist_gpu(OpKernelContext* context,
     inlist.ilist = ilist;
     inlist.numneigh = numneigh;
     inlist.firstneigh = firstneigh;
+  } else if (nei_mode == 4) {
+    // TODO: in theory, it will be faster to put everything on GPUs...
+    std::vector<int> mesh_tensor_data_host(mesh_tensor_size);
+    std::vector<int> ilist_host(nloc);
+    std::vector<int> numneigh_host(nloc);
+    std::vector<int*> firstneigh_host(nloc);
+    std::vector<int> fake_mesh(16);
+
+    // copy from gpu to cpu
+    deepmd::memcpy_device_to_host(mesh_tensor_data, mesh_tensor_data_host);
+    std::memcpy(&ilist_host[0], &mesh_tensor_data_host[16], sizeof(int) * nloc);
+    std::memcpy(&numneigh_host[0], &mesh_tensor_data_host[16 + nloc],
+                sizeof(int) * nloc);
+    for (int ii = 0, kk = 0; ii < nloc; ++ii) {
+      firstneigh_host[ii] = &mesh_tensor_data_host[16 + 2 * nloc + kk];
+      kk += numneigh_host[ii];
+    }
+    // make a fake mesh
+    fake_mesh[0] = 0;
+    fake_mesh[1] = nloc;
+    std::memcpy(&fake_mesh[4], &ilist_host, sizeof(int*));
+    std::memcpy(&fake_mesh[8], &numneigh_host, sizeof(int*));
+    std::memcpy(&fake_mesh[12], &firstneigh_host, sizeof(int**));
+    // copy from cpu to gpu
+    int* fake_mesh_dev = NULL;
+    deepmd::malloc_device_memory(fake_mesh_dev, 16);
+    deepmd::memcpy_host_to_device(fake_mesh_dev, fake_mesh);
+
+    deepmd::InputNlist inlist_temp;
+    inlist_temp.inum = nloc;
+    // everything should be copied to GPU...
+    deepmd::env_mat_nbor_update(inlist_temp, inlist, max_nbor_size,
+                                nbor_list_dev, fake_mesh_dev, 16);
+    OP_REQUIRES(context, (max_numneigh(inlist_temp) <= max_nbor_size),
+                errors::InvalidArgument(
+                    "Assert failed, max neighbor size of atom(lammps) " +
+                    std::to_string(max_numneigh(inlist_temp)) +
+                    " is larger than " + std::to_string(max_nbor_size) +
+                    ", which currently is not supported by deepmd-kit."));
+    deepmd::delete_device_memory(fake_mesh_dev);
   } else {
     // update nbor list
     deepmd::InputNlist inlist_temp;
