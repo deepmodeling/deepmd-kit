@@ -35,6 +35,11 @@ from deepmd.nvnmd.descriptor.se_atten import (
 from deepmd.nvnmd.utils.config import (
     nvnmd_cfg,
 )
+from deepmd.utils.compress import (
+    get_extra_side_embedding_net_variable,
+    get_two_side_type_embedding,
+    make_data,
+)
 from deepmd.utils.graph import (
     get_attention_layer_variables_from_graph_def,
     get_pattern_nodes_from_graph_def,
@@ -50,12 +55,6 @@ from deepmd.utils.sess import (
 )
 from deepmd.utils.tabulate import (
     DPTabulate,
-)
-from deepmd.utils.compress import (
-    get_type_embedding,
-    get_two_side_type_embedding,
-    get_extra_side_embedding_net_variable,
-    make_data,
 )
 
 from .descriptor import (
@@ -425,7 +424,9 @@ class DescrptSeAtten(DescrptSeA):
         self.matrix = get_extra_side_embedding_net_variable(
             self, graph_def, "two_side", "matrix", suffix
         )
-        self.bias = get_extra_side_embedding_net_variable(self, graph_def, "two_side", "bias", suffix)
+        self.bias = get_extra_side_embedding_net_variable(
+            self, graph_def, "two_side", "bias", suffix
+        )
         self.two_embd = make_data(self, self.final_type_embedding)
 
         self.davg = get_tensor_by_name_from_graph(

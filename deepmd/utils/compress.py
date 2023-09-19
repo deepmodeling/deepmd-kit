@@ -1,21 +1,24 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
+
+import numpy as np
 
 from deepmd.env import (
     tf,
 )
-
 from deepmd.utils.graph import (
     get_pattern_nodes_from_graph_def,
     get_tensor_by_name_from_graph,
 )
-import numpy as np
 
 log = logging.getLogger(__name__)
+
 
 def get_type_embedding(self, graph):
     type_embedding = get_tensor_by_name_from_graph(graph, "t_typeebd")
     type_embedding = type_embedding.astype(self.filter_np_precision)
     return type_embedding
+
 
 def get_two_side_type_embedding(self, graph):
     type_embedding = get_tensor_by_name_from_graph(graph, "t_typeebd")
@@ -38,7 +41,10 @@ def get_two_side_type_embedding(self, graph):
     )
     return two_side_type_embedding
 
-def get_extra_side_embedding_net_variable(self, graph_def, type_side, varialbe_name, suffix):
+
+def get_extra_side_embedding_net_variable(
+    self, graph_def, type_side, varialbe_name, suffix
+):
     ret = {}
     for i in range(1, self.layer_size + 1):
         target = get_pattern_nodes_from_graph_def(
@@ -49,12 +55,15 @@ def get_extra_side_embedding_net_variable(self, graph_def, type_side, varialbe_n
         ret["layer_" + str(i)] = node
     return ret
 
+
 def _layer_0(self, x, w, b):
     return self.filter_activation_fn(tf.matmul(x, w) + b)
+
 
 def _layer_1(self, x, w, b):
     t = tf.concat([x, x], axis=1)
     return t, self.filter_activation_fn(tf.matmul(x, w) + b) + t
+
 
 def make_data(self, xx):
     with tf.Session() as sess:

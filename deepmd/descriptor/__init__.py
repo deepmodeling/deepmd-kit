@@ -11,9 +11,6 @@ from .loc_frame import (
 from .se_a import (
     DescrptSeA,
 )
-from .se_a_v2 import (
-    DescrptSeAV2,
-)
 from .se_a_ebd import (
     DescrptSeAEbd,
 )
@@ -23,6 +20,9 @@ from .se_a_ef import (
 )
 from .se_a_mask import (
     DescrptSeAMask,
+)
+from .se_a_v2 import (
+    DescrptSeAV2,
 )
 from .se_atten import (
     DescrptSeAtten,

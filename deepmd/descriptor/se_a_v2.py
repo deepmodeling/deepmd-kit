@@ -5,14 +5,15 @@ from typing import (
     Optional,
 )
 
+from deepmd.utils.spin import (
+    Spin,
+)
+
 from .descriptor import (
     Descriptor,
 )
 from .se_a import (
     DescrptSeA,
-)
-from deepmd.utils.spin import (
-    Spin,
 )
 
 log = logging.getLogger(__name__)
@@ -20,9 +21,7 @@ log = logging.getLogger(__name__)
 
 @Descriptor.register("se_e2_a_v2")
 class DescrptSeAV2(DescrptSeA):
-    r"""
-    A warpper for DescriptorSeA, which set stripped_type_embedding=True
-    """
+    r"""A warpper for DescriptorSeA, which set stripped_type_embedding=True."""
 
     def __init__(
         self,

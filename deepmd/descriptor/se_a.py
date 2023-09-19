@@ -10,8 +10,8 @@ import numpy as np
 from deepmd.common import (
     cast_precision,
     get_activation_func,
-    get_precision,
     get_np_precision,
+    get_precision,
 )
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
@@ -31,10 +31,17 @@ from deepmd.nvnmd.descriptor.se_a import (
 from deepmd.nvnmd.utils.config import (
     nvnmd_cfg,
 )
+from deepmd.utils.compress import (
+    get_extra_side_embedding_net_variable,
+    get_two_side_type_embedding,
+    get_type_embedding,
+    make_data,
+)
 from deepmd.utils.errors import (
     GraphWithoutTensorError,
 )
 from deepmd.utils.graph import (
+    get_pattern_nodes_from_graph_def,
     get_tensor_by_name_from_graph,
 )
 from deepmd.utils.network import (
@@ -52,18 +59,6 @@ from deepmd.utils.tabulate import (
 )
 from deepmd.utils.type_embed import (
     embed_atom_type,
-)
-from deepmd.utils.graph import (
-    get_attention_layer_variables_from_graph_def,
-    get_pattern_nodes_from_graph_def,
-    get_tensor_by_name_from_graph,
-    get_tensor_by_type,
-)
-from deepmd.utils.compress import (
-    get_type_embedding,
-    get_two_side_type_embedding,
-    get_extra_side_embedding_net_variable,
-    make_data,
 )
 
 from .descriptor import (
@@ -501,14 +496,18 @@ class DescrptSeA(DescrptSe):
                 self.matrix = get_extra_side_embedding_net_variable(
                     self, graph_def, "two_side", "matrix", suffix
                 )
-                self.bias = get_extra_side_embedding_net_variable(self, graph_def, "two_side", "bias", suffix)
+                self.bias = get_extra_side_embedding_net_variable(
+                    self, graph_def, "two_side", "bias", suffix
+                )
                 self.extra_embedding = make_data(self, self.final_type_embedding)
             else:
                 self.final_type_embedding = get_type_embedding(self, graph)
                 self.matrix = get_extra_side_embedding_net_variable(
                     self, graph_def, "one_side", "matrix", suffix
                 )
-                self.bias = get_extra_side_embedding_net_variable(self, graph_def, "one_side", "bias", suffix)
+                self.bias = get_extra_side_embedding_net_variable(
+                    self, graph_def, "one_side", "bias", suffix
+                )
                 self.extra_embedding = make_data(self, self.final_type_embedding)
 
         self.compress = True
@@ -983,7 +982,9 @@ class DescrptSeA(DescrptSe):
                             initial_variables=self.extra_embeeding_net_variables,
                             mixed_prec=self.mixed_prec,
                         )
-                        net_output = tf.nn.embedding_lookup(net_output, self.nei_type_vec)
+                        net_output = tf.nn.embedding_lookup(
+                            net_output, self.nei_type_vec
+                        )
                     else:
                         type_embedding_nei = tf.tile(
                             tf.reshape(type_embedding, [1, padding_ntypes, -1]),
@@ -1024,9 +1025,7 @@ class DescrptSeA(DescrptSe):
                             initial_variables=self.extra_embeeding_net_variables,
                             mixed_prec=self.mixed_prec,
                         )
-                        net_output = tf.nn.embedding_lookup(
-                            net_output, idx
-                        )
+                        net_output = tf.nn.embedding_lookup(net_output, idx)
                     net_output = tf.reshape(net_output, [-1, self.filter_neuron[-1]])
             else:
                 xyz_scatter = self._concat_type_embedding(
@@ -1077,7 +1076,7 @@ class DescrptSeA(DescrptSe):
                     tf.reshape(inputs_i, [natom, shape_i[1] // 4, 4]),
                     net_output,
                     last_layer_size=outputs_size[-1],
-                    is_sorted=False
+                    is_sorted=False,
                 )
             else:
                 if self.type_one_side:
@@ -1333,11 +1332,11 @@ class DescrptSeA(DescrptSe):
                 self.dstd = new_dstd
                 if self.original_sel is None:
                     self.original_sel = sel
+
     @property
     def explicit_ntypes(self) -> bool:
         """Explicit ntypes with type embedding."""
-        print('inner se_a, explicit_ntypes = ', self.stripped_type_embedding)
+        print("inner se_a, explicit_ntypes = ", self.stripped_type_embedding)
         if self.stripped_type_embedding:
             return True
         return False
-
