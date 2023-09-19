@@ -90,7 +90,13 @@ __device__ inline uint_64 encoding_nbor_info(const int type,
   // the index of nbor atom(including ghost region) must be smaller than
   // 16777216(1 << 24)
   if (type >= 128 || dist >= (FPTYPE)128.0 || index >= (1 << 24)) {
+#if GOOGLE_CUDA
     asm("trap;");
+#elif TENSORFLOW_USE_ROCM
+    __builtin_trap();
+#else
+#error "should not touch here"
+#endif
   }
   return ((uint_64)type << 57) +
          (uint_64)((double)dist * ((uint_64)1 << 50)) / (1 << 24) * (1 << 24) +
