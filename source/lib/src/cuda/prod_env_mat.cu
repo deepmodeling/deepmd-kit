@@ -1,6 +1,13 @@
+#if GOOGLE_CUDA
 #include <cub/block/block_load.cuh>
 #include <cub/block/block_radix_sort.cuh>
 #include <cub/block/block_store.cuh>
+#elif TENSORFLOW_USE_ROCM
+#include <hipcub/hipcub.hpp>
+namespace cub = hipcub;
+#else
+#error "should not touch here"
+#endif
 
 #include "device.h"
 #include "fmt_nlist.h"
@@ -376,9 +383,9 @@ __global__ void compute_env_mat_a(FPTYPE* em,
     const int idx_value = ii * 4;   // 4 components
     const int idx_deriv = ii * 12;  // 4 components time 3 directions
     if (row_nlist[ii] >= 0) {
-      FPTYPE rr[3] = {0};
-      FPTYPE dd[4] = {0};
-      FPTYPE vv[12] = {0};
+      FPTYPE rr[3] = {(FPTYPE)0.};
+      FPTYPE dd[4] = {(FPTYPE)0.};
+      FPTYPE vv[12] = {(FPTYPE)0.};
       const int j_idx = row_nlist[ii];
       for (int kk = 0; kk < 3; kk++) {
         rr[kk] = coord[j_idx * 3 + kk] - coord[bid * 3 + kk];

@@ -4,8 +4,29 @@
 #define MM 4
 #define KK 4
 #define TPB 256
+#if GOOGLE_CUDA
 #define WARP_SIZE 32
+#elif TENSORFLOW_USE_ROCM
+// See https://github.com/pytorch/pytorch/pull/64302
+#define WARP_SIZE warpSize  // = 64 or 32 (Defined in hip_runtime.h)
+#else
+#error "should not touch here"
+#endif
 #define FULL_MASK 0xffffffff
+
+// Copyright 2017 The TensorFlow Authors.
+// Licensed under the Apache License, Version 2.0
+template <typename T>
+__device__ T
+GpuShuffleSync(unsigned mask, T value, int src_lane, int width = warpSize) {
+#if GOOGLE_CUDA
+  return __shfl_sync(mask, value, src_lane, width);
+#elif TENSORFLOW_USE_ROCM
+  return __shfl(value, src_lane, width);
+#else
+#error "should not touch here"
+#endif
+}
 
 template <typename FPTYPE>
 __forceinline__ __device__ void locate_xx_se_a(FPTYPE& xx,
@@ -110,8 +131,15 @@ __forceinline__ __device__ FPTYPE dot(FPTYPE ll[4], FPTYPE rr[4]) {
 
 template <typename FPTYPE>
 __forceinline__ __device__ void warp_reduce(FPTYPE& val) {
+#if GOOGLE_CUDA
   for (int offset = 16; offset > 0; offset >>= 1) {
     val += __shfl_down_sync(FULL_MASK, val, offset);
+#elif USE_TENSORFLOW_ROCM
+  for (int offset = 32; offset > 0; offset >>= 1) {
+    val += __shfl_down(val, offset);  // ########????
+#else
+#error "should not touch here"
+#endif
   }
 }
 
@@ -131,13 +159,25 @@ __global__ void tabulate_fusion_se_a_fifth_order_polynomial(
     const int last_layer_size,
     const bool is_sorted) {
   bool enable_se_atten = two_embed != nullptr;
+#if USE_TENSORFLOW_ROCM
+  HIP_DYNAMIC_SHARED(int, _data)
+#endif
   const int_64 block_idx = blockIdx.x;  // nloc
   const int thread_idx = threadIdx.x;   // last_layer_size
-  FPTYPE ago = __shfl_sync(0xffffffff, em_x[block_idx * nnei + nnei - 1], 0);
+  FPTYPE ago = GpuShuffleSync(0xffffffff, em_x[block_idx * nnei + nnei - 1], 0);
   bool unloop = false;
   int breakpoint = nnei - 1;
-
+#if GOOGLE_CUDA
   FPTYPE sum[MTILE] = {(FPTYPE)0.};
+#elif USE_TENSORFLOW_ROCM
+  FPTYPE* iteratorC = (FPTYPE*)&_data[0];
+  for (int kk = 0; kk < MTILE; kk++) {
+    iteratorC[kk * last_layer_size + thread_idx] = (FPTYPE)0.;
+  }
+  __syncthreads();
+#else
+#error "should not touch here"
+#endif
   int mark_table_idx = -1;
   FPTYPE var[6];
   for (int ii = 0; ii < nnei; ii++) {
@@ -163,8 +203,15 @@ __global__ void tabulate_fusion_se_a_fifth_order_polynomial(
     }
 
     for (int kk = 0; kk < MTILE; kk++) {
-      sum[kk] += (nnei - breakpoint) *
-                 em[block_idx * nnei * MTILE + ii * MTILE + kk] * res;
+#if GOOGLE_CUDA
+      sum[kk]
+#elif USE_TENSORFLOW_ROCM
+      iteratorC[kk * last_layer_size + thread_idx]
+#else
+#error "should not touch here"
+#endif
+          += (nnei - breakpoint) *
+             em[block_idx * nnei * MTILE + ii * MTILE + kk] * res;
     }
     if (unloop) {
       break;
@@ -173,7 +220,14 @@ __global__ void tabulate_fusion_se_a_fifth_order_polynomial(
   }
   for (int ii = 0; ii < MTILE; ii++) {
     out[block_idx * MTILE * last_layer_size + ii * last_layer_size +
-        thread_idx] = sum[ii];
+        thread_idx] =
+#if GOOGLE_CUDA
+        sum[ii];
+#elif USE_TENSORFLOW_ROCM
+        iteratorC[ii * last_layer_size + thread_idx];
+#else
+#error "should not touch here"
+#endif
   }
 }
 
@@ -195,10 +249,18 @@ __global__ void tabulate_fusion_se_a_grad_fifth_order_polynomial(
     const int last_layer_size,
     const bool is_sorted) {
   bool enable_se_atten = two_embed != nullptr;
+#if GOOGLE_CUDA
   extern __shared__ int _data[];
+  int MTILE_OR_KTILE = MTILE;
+#elif USE_TENSORFLOW_ROCM
+  HIP_DYNAMIC_SHARED(int, _data)
+  int MTILE_OR_KTILE = KTILE;
+#else
+#error "should not touch here"
+#endif
   const int_64 block_idx = blockIdx.x;  // nloc
   const int thread_idx = threadIdx.x;   // KTILE * WARP_SIZE, usally 128 here~
-  int warp_idx = __shfl_sync(0xffffffff, threadIdx.x / WARP_SIZE, 0);
+  int warp_idx = GpuShuffleSync(0xffffffff, threadIdx.x / WARP_SIZE, 0);
   int lane_idx = threadIdx.x % WARP_SIZE;
   int breakpoint = nnei - 1;
   bool unloop = false;
@@ -210,7 +272,7 @@ __global__ void tabulate_fusion_se_a_grad_fifth_order_polynomial(
     }
   }
   __syncthreads();
-  FPTYPE ago = __shfl_sync(0xffffffff, em_x[block_idx * nnei + nnei - 1], 0);
+  FPTYPE ago = GpuShuffleSync(0xffffffff, em_x[block_idx * nnei + nnei - 1], 0);
   for (int ii = warp_idx; ii < nnei; ii += KTILE) {
     FPTYPE xx = em_x[block_idx * nnei + ii];
     if (ago == xx && is_sorted) {
@@ -242,7 +304,7 @@ __global__ void tabulate_fusion_se_a_grad_fifth_order_polynomial(
         res = res * t + res;
       }
 
-      for (int kk = 0; kk < MTILE; kk++) {
+      for (int kk = 0; kk < MTILE_OR_KTILE; kk++) {
         sum[kk] +=
             (nnei - breakpoint) * iteratorA[kk * last_layer_size + jj] * res;
       }
@@ -252,18 +314,27 @@ __global__ void tabulate_fusion_se_a_grad_fifth_order_polynomial(
       res += reg_em[3] * iteratorA[3 * last_layer_size + jj];
       Csub +=
           (nnei - breakpoint) *
-          (var[1] + (2 * var[2] +
-                     (3 * var[3] + (4 * var[4] + 5 * var[5] * xx) * xx) * xx) *
+          (var[1] + ((FPTYPE)2. * var[2] +
+                     ((FPTYPE)3. * var[3] +
+                      ((FPTYPE)4. * var[4] + (FPTYPE)5. * var[5] * xx) * xx) *
+                         xx) *
                         xx) *
           (enable_se_atten ? res * t + res : res);
     }
+#if GOOGLE_CUDA
     __syncwarp();
-    for (int kk = 0; kk < MTILE; kk++) {
+#elif USE_TENSORFLOW_ROCM
+    //__syncwarp();->syncwrap
+    __syncthreads();
+#else
+#error "should not touch here"
+#endif
+    for (int kk = 0; kk < MTILE_OR_KTILE; kk++) {
       warp_reduce(sum[kk]);
     }
     warp_reduce(Csub);
     if (lane_idx == 0) {
-      for (int kk = 0; kk < MTILE; kk++) {
+      for (int kk = 0; kk < MTILE_OR_KTILE; kk++) {
         dy_dem[block_idx * nnei * MTILE + ii * 4 + kk] = sum[kk];
       }
       dy_dem_x[block_idx * nnei + ii] = Csub;
@@ -293,7 +364,7 @@ __global__ void tabulate_fusion_se_a_grad_grad_fifth_order_polynomial(
   extern __shared__ int _data[];
   const int_64 block_idx = blockIdx.x;  // nloc
   const int thread_idx = threadIdx.x;   // last_layer_size
-  FPTYPE ago = __shfl_sync(0xffffffff, em_x[block_idx * nnei + nnei - 1], 0);
+  FPTYPE ago = GpuShuffleSync(0xffffffff, em_x[block_idx * nnei + nnei - 1], 0);
   bool unloop = false;
   int breakpoint = nnei - 1;
   FPTYPE* iteratorC = (FPTYPE*)&_data[0];
@@ -323,9 +394,11 @@ __global__ void tabulate_fusion_se_a_grad_grad_fifth_order_polynomial(
         (var[1] + (var[2] + (var[3] + (var[4] + var[5] * xx) * xx) * xx) * xx) *
             xx;
     FPTYPE res_grad =
-        var[1] +
-        (2 * var[2] + (3 * var[3] + (4 * var[4] + 5 * var[5] * xx) * xx) * xx) *
-            xx;
+        var[1] + ((FPTYPE)2. * var[2] +
+                  ((FPTYPE)3. * var[3] +
+                   ((FPTYPE)4. * var[4] + (FPTYPE)5. * var[5] * xx) * xx) *
+                      xx) *
+                     xx;
 
     for (int kk = 0; kk < MTILE; kk++) {
       int em_index = block_idx * nnei * MTILE + ii * MTILE + kk;
@@ -358,6 +431,9 @@ __global__ void tabulate_fusion_se_t_fifth_order_polynomial(
     const int nnei_i,
     const int nnei_j,
     const int last_layer_size) {
+#if USE_TENSORFLOW_ROCM
+  HIP_DYNAMIC_SHARED(int, _data)
+#endif
   const int_64 block_idx = blockIdx.x;  // nloc
   const int thread_idx = threadIdx.x;   // last_layer_size
 
@@ -403,10 +479,16 @@ __global__ void tabulate_fusion_se_t_grad_fifth_order_polynomial(
     const int nnei_i,
     const int nnei_j,
     const int last_layer_size) {
+#if GOOGLE_CUDA
   extern __shared__ int _data[];
+#elif USE_TENSORFLOW_ROCM
+  HIP_DYNAMIC_SHARED(int, _data)
+#else
+#error "should not touch here"
+#endif
   const int_64 block_idx = blockIdx.x;  // nloc
   const int thread_idx = threadIdx.x;   // KTILE * WARP_SIZE, usally 128 here~
-  int warp_idx = __shfl_sync(0xffffffff, threadIdx.x / WARP_SIZE, 0);
+  int warp_idx = GpuShuffleSync(0xffffffff, threadIdx.x / WARP_SIZE, 0);
   int lane_idx = threadIdx.x % WARP_SIZE;
   FPTYPE* iteratorA = (FPTYPE*)&_data[0];  // dy
   for (int ii = thread_idx; ii < last_layer_size; ii += blockDim.x) {
@@ -440,7 +522,13 @@ __global__ void tabulate_fusion_se_t_grad_fifth_order_polynomial(
                            xx) *
                           xx);
       }
+#if GOOGLE_CUDA
       __syncwarp();
+#elif USE_TENSORFLOW_ROCM
+      __syncthreads();
+#else
+#error "should not touch here"
+#endif
       warp_reduce(sum);
       warp_reduce(Csub);
       if (lane_idx == 0) {
@@ -467,6 +555,9 @@ __global__ void tabulate_fusion_se_t_grad_grad_fifth_order_polynomial(
     const int nnei_i,
     const int nnei_j,
     const int last_layer_size) {
+#if USE_TENSORFLOW_ROCM
+  HIP_DYNAMIC_SHARED(int, _data)
+#endif
   const int_64 block_idx = blockIdx.x;  // nloc
   const int thread_idx = threadIdx.x;   // last_layer_size
 
@@ -551,10 +642,16 @@ __global__ void tabulate_fusion_se_r_grad_fifth_order_polynomial(
     const FPTYPE stride1,
     const int nnei,
     const int last_layer_size) {
+#if GOOGLE_CUDA
   extern __shared__ int _data[];
+#elif USE_TENSORFLOW_ROCM
+  HIP_DYNAMIC_SHARED(int, _data)
+#else
+#error "should not touch here"
+#endif
   const int_64 block_idx = blockIdx.x;  // nloc
   const int thread_idx = threadIdx.x;   // KTILE * WARP_SIZE, usally 128 here~
-  int warp_idx = __shfl_sync(0xffffffff, thread_idx / WARP_SIZE, 0);
+  int warp_idx = GpuShuffleSync(0xffffffff, thread_idx / WARP_SIZE, 0);
   int lane_idx = thread_idx % WARP_SIZE;
   __syncthreads();
   for (int ii = warp_idx; ii < nnei; ii += KTILE) {
@@ -568,12 +665,20 @@ __global__ void tabulate_fusion_se_r_grad_fifth_order_polynomial(
     for (int jj = lane_idx; jj < last_layer_size; jj += WARP_SIZE) {
       load_polynomial_params(var, table, table_idx, jj, last_layer_size);
       Csub +=
-          (var[1] + (2 * var[2] +
-                     (3 * var[3] + (4 * var[4] + 5 * var[5] * xx) * xx) * xx) *
+          (var[1] + ((FPTYPE)2. * var[2] +
+                     ((FPTYPE)3. * var[3] +
+                      ((FPTYPE)4. * var[4] + (FPTYPE)5. * var[5] * xx) * xx) *
+                         xx) *
                         xx) *
           dy[block_idx * nnei * last_layer_size + ii * last_layer_size + jj];
     }
+#if GOOGLE_CUDA
     __syncwarp();
+#elif USE_TENSORFLOW_ROCM
+    __syncthreads();
+#else
+#error "should not touch here"
+#endif
 
     warp_reduce(Csub);
     if (lane_idx == 0) {
@@ -599,6 +704,10 @@ __global__ void tabulate_fusion_se_r_grad_grad_fifth_order_polynomial(
   const int_64 block_idx = blockIdx.x;  // nloc
   const int thread_idx = threadIdx.x;   // last_layer_size
 
+#if USE_TENSORFLOW_ROCM
+  __syncthreads();
+#endif
+
   int mark_table_idx = -1;
   FPTYPE var[6];
   for (int ii = 0; ii < nnei; ii++) {
@@ -610,9 +719,11 @@ __global__ void tabulate_fusion_se_r_grad_grad_fifth_order_polynomial(
                              last_layer_size);
     }
     FPTYPE res_grad =
-        var[1] +
-        (2 * var[2] + (3 * var[3] + (4 * var[4] + 5 * var[5] * xx) * xx) * xx) *
-            xx;
+        var[1] + ((FPTYPE)2. * var[2] +
+                  ((FPTYPE)3. * var[3] +
+                   ((FPTYPE)4. * var[4] + (FPTYPE)5. * var[5] * xx) * xx) *
+                      xx) *
+                     xx;
     mark_table_idx = table_idx;
     dz_dy[block_idx * nnei * last_layer_size + ii * last_layer_size +
           thread_idx] = dz_dy_dem[block_idx * nnei + ii] * res_grad;

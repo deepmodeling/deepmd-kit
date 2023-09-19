@@ -12,7 +12,7 @@ __global__ void force_deriv_wrt_center_atom(FPTYPE* force,
   int_64 bid = blockIdx.x;
   unsigned int tid = threadIdx.x;
   for (int ii = tid; ii < THREADS_PER_BLOCK * 3; ii += THREADS_PER_BLOCK) {
-    data[ii] = 0.f;
+    data[ii] = (FPTYPE)0.;
   }
   for (int ii = tid; ii < ndescrpt; ii += THREADS_PER_BLOCK) {
     for (int jj = 0; jj < 3; jj++) {
@@ -64,7 +64,7 @@ __global__ void force_deriv_wrt_neighbors_a(FPTYPE* force,
   if (j_idx < 0) {
     return;
   }
-  FPTYPE force_tmp = 0.f;
+  FPTYPE force_tmp = (FPTYPE)0.;
   for (int idw = 0; idw < 4; ++idw) {
     force_tmp += net_deriv[idx * ndescrpt + idy * 4 + idw] *
                  in_deriv[idx * ndescrpt * 3 + (idy * 4 + idw) * 3 + idz];

@@ -3,6 +3,8 @@
 #elif TENSORFLOW_USE_ROCM
 #include <hipcub/hipcub.hpp>
 namespace cub = hipcub;
+#else
+#error "should not touch here"
 #endif
 
 #include "device.h"

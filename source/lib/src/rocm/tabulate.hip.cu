@@ -4,7 +4,8 @@
 #define MM 4
 #define KK 4
 #define TPB 256
-#define WARP_SIZE 64
+// See https://github.com/pytorch/pytorch/pull/64302
+#define WARP_SIZE warpSize  // = 64 or 32 (Defined in hip_runtime.h)
 #define FULL_MASK 0xffffffff
 
 template <typename FPTYPE>
