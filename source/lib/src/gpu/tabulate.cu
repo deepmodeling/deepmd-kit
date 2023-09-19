@@ -748,10 +748,16 @@ void tabulate_fusion_se_a_gpu(FPTYPE* out,
   DPErrcheck(gpuGetLastError());
   DPErrcheck(gpuDeviceSynchronize());
   tabulate_fusion_se_a_fifth_order_polynomial<FPTYPE, MM, KK>
-      <<<nloc, last_layer_size>>>(out, table, em_x, em, two_embed,
-                                  table_info[0], table_info[1], table_info[2],
-                                  table_info[3], table_info[4], nnei,
-                                  last_layer_size, is_sorted);
+#if GOOGLE_CUDA
+      <<<nloc, last_layer_size>>>
+#elif TENSORFLOW_USE_ROCM
+      <<<nloc, last_layer_size, sizeof(FPTYPE) * MM * last_layer_size>>>
+#else
+#error "should not touch here"
+#endif
+      (out, table, em_x, em, two_embed, table_info[0], table_info[1],
+       table_info[2], table_info[3], table_info[4], nnei, last_layer_size,
+       is_sorted);
   DPErrcheck(gpuGetLastError());
   DPErrcheck(gpuDeviceSynchronize());
 }
