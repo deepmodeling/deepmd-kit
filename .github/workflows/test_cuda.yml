@@ -7,6 +7,9 @@ on:
 name: Test CUDA
 jobs:
   remove_label:
+    permissions:
+      contents: read
+      pull-requests: write
     # so one can re-trigger the workflow without manually removing the label
     runs-on: ubuntu-latest
     if: github.repository_owner == 'deepmodeling' && github.event.label.name == 'Test CUDA'
@@ -14,6 +17,7 @@ jobs:
     - uses: actions-ecosystem/action-remove-labels@v1
       with:
         labels: Test CUDA
+        number: ${{ github.event.pull_request.number }}
   test_cuda:
     name: Test Python and C++ on CUDA
     runs-on: nvidia
@@ -29,13 +33,18 @@ jobs:
       with:
         mpi: mpich
     - uses: lukka/get-cmake@latest
+    - run: |
+         wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.0-1_all.deb \
+         && sudo dpkg -i cuda-keyring_1.0-1_all.deb \
+         && sudo apt-get update \
+         && sudo apt-get -y install cuda-cudart-dev-11-8 cuda-nvcc-11-8
     - run: python -m pip install -U "pip>=21.3.1,!=23.0.0"
-    - run: pip install -e .[gpu,test,lmp] "ase @ https://github.com/rosswhitfield/ase/archive/edd03571aff6944b77b4a4b055239f3c3e4eeb66.zip"
+    - run: pip install -e .[gpu,test,lmp,cu11] "ase @ https://github.com/rosswhitfield/ase/archive/edd03571aff6944b77b4a4b055239f3c3e4eeb66.zip"
       env:
         DP_BUILD_TESTING: 1
         DP_VARIANT: cuda
     - run: dp --version
-    - run: pytest --cov=deepmd --cov=deepmd_cli source/tests --durations=0
+    - run: pytest -s --cov=deepmd --cov=deepmd_cli source/tests --durations=0
     - run: source/install/test_cc_local.sh
       env:
         OMP_NUM_THREADS: 1
@@ -44,10 +53,11 @@ jobs:
         LMP_CXX11_ABI_0: 1
         CMAKE_GENERATOR: Ninja
         DP_VARIANT: cuda
+        DP_USE_MPICH2: 1
     - run: |
         export LD_LIBRARY_PATH=${{ github.workspace }}/dp_test/lib:$LD_LIBRARY_PATH
         export PATH=${{ github.workspace }}/dp_test/bin:$PATH
-        pytest --cov=deepmd source/lmp/tests source/ipi/tests
+        pytest -s --cov=deepmd source/lmp/tests source/ipi/tests
       env:
         OMP_NUM_THREADS: 1
         TF_INTRA_OP_PARALLELISM_THREADS: 1
