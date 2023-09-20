@@ -47,7 +47,8 @@ jobs:
     - run: |
         export LD_LIBRARY_PATH=${{ github.workspace }}/dp_test/lib:$LD_LIBRARY_PATH
         export PATH=${{ github.workspace }}/dp_test/bin:$PATH
-        pytest -s --cov=deepmd source/lmp/tests source/ipi/tests
+        pytest -s --cov=deepmd source/lmp/tests
+        pytest -s --cov=deepmd source/ipi/tests
       env:
         OMP_NUM_THREADS: 1
         TF_INTRA_OP_PARALLELISM_THREADS: 1
