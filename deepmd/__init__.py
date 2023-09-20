@@ -32,7 +32,7 @@ from .infer.data_modifier import (
 set_mkl()
 
 try:
-    from ._version import version as __version__
+    from deepmd_cli._version import version as __version__
 except ImportError:
     from .__about__ import (
         __version__,
