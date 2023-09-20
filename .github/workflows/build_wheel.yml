@@ -5,8 +5,21 @@ on:
   pull_request:
 
 jobs:
+  determine-arm64-runner:
+    runs-on: ubuntu-latest
+    outputs:
+      runner: ${{ steps.set-runner.outputs.use-runner }}
+    steps:
+      - name: Determine which runner to use for ARM64 build
+        id: set-runner
+        uses: runner-fallback-action@v1
+        with:
+          primary-runner: "self-hosted,Linux,ARM64"
+          fallback-runner: "ubuntu-latest"
+          github-token: ${{ secrets.GITHUB_TOKEN }}
   build_wheels:
     name: Build wheels for cp${{ matrix.python }}-${{ matrix.platform_id }}
+    needs: determine-arm64-runner
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -33,8 +46,7 @@ jobs:
             platform_id: win_amd64
             dp_variant: cpu
           # linux-aarch64
-          #- os: ubuntu-latest
-          - os: oracle-arm
+          - os: ${{ fromJson(needs.determine-arm64-runner.outputs.runner) }}
             python: 310
             platform_id: manylinux_aarch64
             dp_variant: cpu
@@ -44,9 +56,9 @@ jobs:
           submodules: true
           # https://github.com/pypa/setuptools_scm/issues/480
           fetch-depth: 0
-      #- uses: docker/setup-qemu-action@v3
-      #  name: Setup QEMU
-      #  if: matrix.platform_id == 'manylinux_aarch64'
+      - uses: docker/setup-qemu-action@v3
+        name: Setup QEMU
+        if: matrix.platform_id == 'manylinux_aarch64' && matrix.os == 'ubuntu-latest'
       - name: Build wheels
         uses: pypa/cibuildwheel@v2.15
         env:
