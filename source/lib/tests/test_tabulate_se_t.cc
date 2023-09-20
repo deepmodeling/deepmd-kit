@@ -5260,7 +5260,7 @@ TEST_F(TestTabulateSeT, tabulate_fusion_se_t_grad_cpu) {
   }
 }
 
-#if GOOGLE_CUDA
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 TEST_F(TestTabulateSeT, tabulate_fusion_se_t_gpu) {
   std::vector<double> xyz_scatter(nloc * last_layer_size, 0.0);
   double *xyz_scatter_dev = NULL, *table_dev = NULL, *em_x_dev = NULL,
@@ -5322,66 +5322,4 @@ TEST_F(TestTabulateSeT, tabulate_fusion_se_a_grad_gpu) {
     EXPECT_LT(fabs(dy_dem[jj] - expected_dy_dem[jj]), 1e-5);
   }
 }
-#endif  // GOOGLE_CUDA
-
-#if TENSORFLOW_USE_ROCM
-TEST_F(TestTabulateSeT, tabulate_fusion_se_t_gpu) {
-  std::vector<double> xyz_scatter(nloc * last_layer_size, 0.0);
-  double *xyz_scatter_dev = NULL, *table_dev = NULL, *em_x_dev = NULL,
-         *em_dev = NULL;
-  deepmd::malloc_device_memory_sync(xyz_scatter_dev, xyz_scatter);
-  deepmd::malloc_device_memory_sync(table_dev, table);
-  deepmd::malloc_device_memory_sync(em_x_dev, em_x);
-  deepmd::malloc_device_memory_sync(em_dev, em);
-  deepmd::tabulate_fusion_se_t_gpu<double>(xyz_scatter_dev, table_dev, &info[0],
-                                           em_x_dev, em_dev, nloc, nnei_i,
-                                           nnei_j, last_layer_size);
-  deepmd::memcpy_device_to_host(xyz_scatter_dev, xyz_scatter);
-  deepmd::delete_device_memory(xyz_scatter_dev);
-  deepmd::delete_device_memory(table_dev);
-  deepmd::delete_device_memory(em_x_dev);
-  deepmd::delete_device_memory(em_dev);
-
-  EXPECT_EQ(xyz_scatter.size(), nloc * last_layer_size);
-  EXPECT_EQ(xyz_scatter.size(), expected_xyz_scatter.size());
-  for (int jj = 0; jj < xyz_scatter.size() / 100; ++jj) {
-    EXPECT_LT(fabs(xyz_scatter[jj] - expected_xyz_scatter[jj]), 1e-5);
-  }
-}
-
-TEST_F(TestTabulateSeT, tabulate_fusion_se_t_grad_gpu) {
-  std::vector<double> dy_dem_x(em_x.size(), 0.0);
-  std::vector<double> dy_dem(em.size(), 0.0);
-
-  double *dy_dem_x_dev = NULL, *dy_dem_dev = NULL, *table_dev = NULL,
-         *em_x_dev = NULL, *em_dev = NULL, *dy_dev = NULL;
-  deepmd::malloc_device_memory_sync(dy_dem_x_dev, dy_dem_x);
-  deepmd::malloc_device_memory_sync(dy_dem_dev, dy_dem);
-  deepmd::malloc_device_memory_sync(table_dev, table);
-  deepmd::malloc_device_memory_sync(em_x_dev, em_x);
-  deepmd::malloc_device_memory_sync(em_dev, em);
-  deepmd::malloc_device_memory_sync(dy_dev, dy);
-  deepmd::tabulate_fusion_se_t_grad_gpu<double>(
-      dy_dem_x_dev, dy_dem_dev, table_dev, &info[0], em_x_dev, em_dev, dy_dev,
-      nloc, nnei_i, nnei_j, last_layer_size);
-  deepmd::memcpy_device_to_host(dy_dem_x_dev, dy_dem_x);
-  deepmd::memcpy_device_to_host(dy_dem_dev, dy_dem);
-  deepmd::delete_device_memory(dy_dem_x_dev);
-  deepmd::delete_device_memory(dy_dem_dev);
-  deepmd::delete_device_memory(table_dev);
-  deepmd::delete_device_memory(em_x_dev);
-  deepmd::delete_device_memory(em_dev);
-  deepmd::delete_device_memory(dy_dev);
-
-  EXPECT_EQ(dy_dem_x.size(), nloc * nnei_i * nnei_j);
-  EXPECT_EQ(dy_dem.size(), nloc * nnei_i * nnei_j);
-  EXPECT_EQ(dy_dem_x.size(), expected_dy_dem_x.size());
-  EXPECT_EQ(dy_dem.size(), expected_dy_dem.size());
-  for (int jj = 0; jj < dy_dem_x.size(); ++jj) {
-    EXPECT_LT(fabs(dy_dem_x[jj] - expected_dy_dem_x[jj]), 1e-5);
-  }
-  for (int jj = 0; jj < dy_dem.size(); ++jj) {
-    EXPECT_LT(fabs(dy_dem[jj] - expected_dy_dem[jj]), 1e-5);
-  }
-}
-#endif  // TENSORFLOW_USE_ROCM
+#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
