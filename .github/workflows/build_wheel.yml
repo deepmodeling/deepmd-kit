@@ -7,8 +7,7 @@ on:
 jobs:
   determine-arm64-runner:
     runs-on: ubuntu-latest
-    permissions:
-      repository-projects: read
+    permissions: read-all
     outputs:
       runner: ${{ steps.set-runner.outputs.use-runner }}
     steps:
