@@ -19,7 +19,7 @@ if(DEFINED LAMMPS_SOURCE_ROOT OR DEFINED LAMMPS_VERSION)
 
   target_include_directories(lammps_interface INTERFACE ${LAMMPS_HEADER_DIR})
 
-  if($ENV{DP_USE_MPICH2} STREQUAL "1")
+  if("$ENV{DP_USE_MPICH2}" STREQUAL "1")
     set(MPI_GUESS_LIBRARY_NAME MPICH2)
   endif()
 
