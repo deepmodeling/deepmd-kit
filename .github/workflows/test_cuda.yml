@@ -44,21 +44,15 @@ jobs:
         LMP_CXX11_ABI_0: 1
         CMAKE_GENERATOR: Ninja
         DP_VARIANT: cuda
-    - run: pytest --cov=deepmd source/lmp/tests
+    - run: |
+        export LD_LIBRARY_PATH=${{ github.workspace }}/dp_test/lib:$LD_LIBRARY_PATH
+        export PATH=${{ github.workspace }}/dp_test/bin:$PATH
+        pytest --cov=deepmd source/lmp/tests source/ipi/tests
       env:
         OMP_NUM_THREADS: 1
         TF_INTRA_OP_PARALLELISM_THREADS: 1
         TF_INTER_OP_PARALLELISM_THREADS: 1
         LAMMPS_PLUGIN_PATH: ${{ github.workspace }}/dp_test/lib/deepmd_lmp
-        LD_LIBRARY_PATH: ${{ github.workspace }}/dp_test/lib:$LD_LIBRARY_PATH
-    # test ipi
-    - run: pytest --cov=deepmd source/ipi/tests
-      env:
-        OMP_NUM_THREADS: 1
-        TF_INTRA_OP_PARALLELISM_THREADS: 1
-        TF_INTER_OP_PARALLELISM_THREADS: 1
-        PATH: ${{ github.workspace }}/dp_test/bin:$PATH
-        LD_LIBRARY_PATH: ${{ github.workspace }}/dp_test/lib:$LD_LIBRARY_PATH
     - uses: codecov/codecov-action@v3
       with:
         gcov: true
