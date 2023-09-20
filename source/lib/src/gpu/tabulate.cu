@@ -139,11 +139,10 @@ __forceinline__ __device__ FPTYPE dot(FPTYPE ll[4], FPTYPE rr[4]) {
 
 template <typename FPTYPE>
 __forceinline__ __device__ void warp_reduce(FPTYPE& val) {
+  for (int offset = WARP_SIZE; offset > 0; offset >>= 1) {
 #if GOOGLE_CUDA
-  for (int offset = 16; offset > 0; offset >>= 1) {
     val += __shfl_down_sync(FULL_MASK, val, offset);
 #elif TENSORFLOW_USE_ROCM
-  for (int offset = 32; offset > 0; offset >>= 1) {
     val += __shfl_down(val, offset);  // ########????
 #else
 #error "should not touch here"
@@ -258,13 +257,6 @@ __global__ void tabulate_fusion_se_a_grad_fifth_order_polynomial(
     const bool is_sorted) {
   bool enable_se_atten = two_embed != nullptr;
   GPU_DYNAMIC_SHARED_MEM_DECL(int, _data);
-#if GOOGLE_CUDA
-  int MTILE_OR_KTILE = MTILE;
-#elif TENSORFLOW_USE_ROCM
-  int MTILE_OR_KTILE = KTILE;
-#else
-#error "should not touch here"
-#endif
   const int_64 block_idx = blockIdx.x;  // nloc
   const int thread_idx = threadIdx.x;   // KTILE * WARP_SIZE, usally 128 here~
   int warp_idx = GpuShuffleSync(0xffffffff, threadIdx.x / WARP_SIZE, 0);
@@ -311,7 +303,7 @@ __global__ void tabulate_fusion_se_a_grad_fifth_order_polynomial(
         res = res * t + res;
       }
 
-      for (int kk = 0; kk < MTILE_OR_KTILE; kk++) {
+      for (int kk = 0; kk < MTILE; kk++) {
         sum[kk] +=
             (nnei - breakpoint) * iteratorA[kk * last_layer_size + jj] * res;
       }
@@ -336,12 +328,12 @@ __global__ void tabulate_fusion_se_a_grad_fifth_order_polynomial(
 #else
 #error "should not touch here"
 #endif
-    for (int kk = 0; kk < MTILE_OR_KTILE; kk++) {
+    for (int kk = 0; kk < MTILE; kk++) {
       warp_reduce(sum[kk]);
     }
     warp_reduce(Csub);
     if (lane_idx == 0) {
-      for (int kk = 0; kk < MTILE_OR_KTILE; kk++) {
+      for (int kk = 0; kk < MTILE; kk++) {
         dy_dem[block_idx * nnei * MTILE + ii * 4 + kk] = sum[kk];
       }
       dy_dem_x[block_idx * nnei + ii] = Csub;

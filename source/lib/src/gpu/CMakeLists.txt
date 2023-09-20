@@ -28,6 +28,9 @@ if(USE_CUDA_TOOLKIT)
   if(${CMAKE_CUDA_COMPILER_VERSION} VERSION_LESS "11")
     include_directories(cub)
   endif()
+  if(${CMAKE_CUDA_COMPILER_VERSION} VERSION_LESS "9")
+    message(FATAL_ERROR "CUDA version must be >= 9.0")
+  endif()
 
   message(STATUS "NVCC version is " ${CMAKE_CUDA_COMPILER_VERSION})
 
