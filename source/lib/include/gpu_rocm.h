@@ -59,7 +59,7 @@ void memcpy_host_to_device(FPTYPE *device, const FPTYPE *host, const int size) {
 }
 
 template <typename FPTYPE>
-void memcpy_device_to_host(FPTYPE *device, std::vector<FPTYPE> &host) {
+void memcpy_device_to_host(const FPTYPE *device, std::vector<FPTYPE> &host) {
   DPErrcheck(hipMemcpy(&host[0], device, sizeof(FPTYPE) * host.size(),
                        hipMemcpyDeviceToHost));
 }

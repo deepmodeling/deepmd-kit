@@ -253,9 +253,8 @@ TEST_F(TestNeighborList, gpu) {
   deepmd::InputNlist nlist_dev(nloc, ilist_dev, numneigh_dev, firstneigh_dev);
 
   int max_list_size;
-  int ret =
-      deepmd::build_nlist_gpu_rocm(nlist_dev, &max_list_size, nlist_data_dev,
-                                   c_cpy_dev, nloc, nall, mem_size, rc);
+  int ret = deepmd::build_nlist_gpu(nlist_dev, &max_list_size, nlist_data_dev,
+                                    c_cpy_dev, nloc, nall, mem_size, rc);
 
   EXPECT_EQ(ret, 0);
   int* ilist = new int[nloc];
@@ -314,9 +313,8 @@ TEST_F(TestNeighborList, gpu_lessmem) {
   deepmd::InputNlist nlist_dev(nloc, ilist_dev, numneigh_dev, firstneigh_dev);
 
   int max_list_size;
-  int ret =
-      deepmd::build_nlist_gpu_rocm(nlist_dev, &max_list_size, nlist_data_dev,
-                                   c_cpy_dev, nloc, nall, mem_size, rc);
+  int ret = deepmd::build_nlist_gpu(nlist_dev, &max_list_size, nlist_data_dev,
+                                    c_cpy_dev, nloc, nall, mem_size, rc);
 
   EXPECT_EQ(ret, 1);
   deepmd::delete_device_memory(nlist_data_dev);

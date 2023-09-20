@@ -5261,7 +5261,7 @@ TEST_F(TestTabulateSeT, tabulate_fusion_se_t_grad_cpu) {
 }
 
 #if GOOGLE_CUDA
-TEST_F(TestTabulateSeT, tabulate_fusion_se_t_gpu_cuda) {
+TEST_F(TestTabulateSeT, tabulate_fusion_se_t_gpu) {
   std::vector<double> xyz_scatter(nloc * last_layer_size, 0.0);
   double *xyz_scatter_dev = NULL, *table_dev = NULL, *em_x_dev = NULL,
          *em_dev = NULL;
@@ -5269,9 +5269,9 @@ TEST_F(TestTabulateSeT, tabulate_fusion_se_t_gpu_cuda) {
   deepmd::malloc_device_memory_sync(table_dev, table);
   deepmd::malloc_device_memory_sync(em_x_dev, em_x);
   deepmd::malloc_device_memory_sync(em_dev, em);
-  deepmd::tabulate_fusion_se_t_gpu_cuda<double>(
-      xyz_scatter_dev, table_dev, &info[0], em_x_dev, em_dev, nloc, nnei_i,
-      nnei_j, last_layer_size);
+  deepmd::tabulate_fusion_se_t_gpu<double>(xyz_scatter_dev, table_dev, &info[0],
+                                           em_x_dev, em_dev, nloc, nnei_i,
+                                           nnei_j, last_layer_size);
   // deepmd::tabulate_fusion_se_t_cpu<double>(&xyz_scatter[0], &table[0],
   // &info[0], &em_x[0], &em[0], nloc, nnei_i, nnei_j, last_layer_size);
   deepmd::memcpy_device_to_host(xyz_scatter_dev, xyz_scatter);
@@ -5287,7 +5287,7 @@ TEST_F(TestTabulateSeT, tabulate_fusion_se_t_gpu_cuda) {
   }
 }
 
-TEST_F(TestTabulateSeT, tabulate_fusion_se_a_grad_gpu_cuda) {
+TEST_F(TestTabulateSeT, tabulate_fusion_se_a_grad_gpu) {
   std::vector<double> dy_dem_x(em_x.size(), 0.0);
   std::vector<double> dy_dem(em.size(), 0.0);
 
@@ -5299,7 +5299,7 @@ TEST_F(TestTabulateSeT, tabulate_fusion_se_a_grad_gpu_cuda) {
   deepmd::malloc_device_memory_sync(em_x_dev, em_x);
   deepmd::malloc_device_memory_sync(em_dev, em);
   deepmd::malloc_device_memory_sync(dy_dev, dy);
-  deepmd::tabulate_fusion_se_t_grad_gpu_cuda<double>(
+  deepmd::tabulate_fusion_se_t_grad_gpu<double>(
       dy_dem_x_dev, dy_dem_dev, table_dev, &info[0], em_x_dev, em_dev, dy_dev,
       nloc, nnei_i, nnei_j, last_layer_size);
   deepmd::memcpy_device_to_host(dy_dem_x_dev, dy_dem_x);
@@ -5325,7 +5325,7 @@ TEST_F(TestTabulateSeT, tabulate_fusion_se_a_grad_gpu_cuda) {
 #endif  // GOOGLE_CUDA
 
 #if TENSORFLOW_USE_ROCM
-TEST_F(TestTabulateSeT, tabulate_fusion_se_t_gpu_rocm) {
+TEST_F(TestTabulateSeT, tabulate_fusion_se_t_gpu) {
   std::vector<double> xyz_scatter(nloc * last_layer_size, 0.0);
   double *xyz_scatter_dev = NULL, *table_dev = NULL, *em_x_dev = NULL,
          *em_dev = NULL;
@@ -5333,9 +5333,9 @@ TEST_F(TestTabulateSeT, tabulate_fusion_se_t_gpu_rocm) {
   deepmd::malloc_device_memory_sync(table_dev, table);
   deepmd::malloc_device_memory_sync(em_x_dev, em_x);
   deepmd::malloc_device_memory_sync(em_dev, em);
-  deepmd::tabulate_fusion_se_t_gpu_rocm<double>(
-      xyz_scatter_dev, table_dev, &info[0], em_x_dev, em_dev, nloc, nnei_i,
-      nnei_j, last_layer_size);
+  deepmd::tabulate_fusion_se_t_gpu<double>(xyz_scatter_dev, table_dev, &info[0],
+                                           em_x_dev, em_dev, nloc, nnei_i,
+                                           nnei_j, last_layer_size);
   deepmd::memcpy_device_to_host(xyz_scatter_dev, xyz_scatter);
   deepmd::delete_device_memory(xyz_scatter_dev);
   deepmd::delete_device_memory(table_dev);
@@ -5349,7 +5349,7 @@ TEST_F(TestTabulateSeT, tabulate_fusion_se_t_gpu_rocm) {
   }
 }
 
-TEST_F(TestTabulateSeT, tabulate_fusion_se_t_grad_gpu_rocm) {
+TEST_F(TestTabulateSeT, tabulate_fusion_se_t_grad_gpu) {
   std::vector<double> dy_dem_x(em_x.size(), 0.0);
   std::vector<double> dy_dem(em.size(), 0.0);
 
@@ -5361,7 +5361,7 @@ TEST_F(TestTabulateSeT, tabulate_fusion_se_t_grad_gpu_rocm) {
   deepmd::malloc_device_memory_sync(em_x_dev, em_x);
   deepmd::malloc_device_memory_sync(em_dev, em);
   deepmd::malloc_device_memory_sync(dy_dev, dy);
-  deepmd::tabulate_fusion_se_t_grad_gpu_rocm<double>(
+  deepmd::tabulate_fusion_se_t_grad_gpu<double>(
       dy_dem_x_dev, dy_dem_dev, table_dev, &info[0], em_x_dev, em_dev, dy_dev,
       nloc, nnei_i, nnei_j, last_layer_size);
   deepmd::memcpy_device_to_host(dy_dem_x_dev, dy_dem_x);

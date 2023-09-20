@@ -63,7 +63,7 @@ __global__ void gelu_grad_grad(FPTYPE* out,
 
 namespace deepmd {
 template <typename FPTYPE>
-void gelu_gpu_cuda(FPTYPE* out, const FPTYPE* xx, const int_64 size) {
+void gelu_gpu(FPTYPE* out, const FPTYPE* xx, const int_64 size) {
   if (size <= 0) {
     return;
   }
@@ -78,10 +78,10 @@ void gelu_gpu_cuda(FPTYPE* out, const FPTYPE* xx, const int_64 size) {
 }
 
 template <typename FPTYPE>
-void gelu_grad_gpu_cuda(FPTYPE* out,
-                        const FPTYPE* xx,
-                        const FPTYPE* dy,
-                        const int_64 size) {
+void gelu_grad_gpu(FPTYPE* out,
+                   const FPTYPE* xx,
+                   const FPTYPE* dy,
+                   const int_64 size) {
   if (size <= 0) {
     return;
   }
@@ -96,11 +96,11 @@ void gelu_grad_gpu_cuda(FPTYPE* out,
 }
 
 template <typename FPTYPE>
-void gelu_grad_grad_gpu_cuda(FPTYPE* out,
-                             const FPTYPE* xx,
-                             const FPTYPE* dy,
-                             const FPTYPE* dy_2,
-                             const int_64 size) {
+void gelu_grad_grad_gpu(FPTYPE* out,
+                        const FPTYPE* xx,
+                        const FPTYPE* dy,
+                        const FPTYPE* dy_2,
+                        const int_64 size) {
   if (size <= 0) {
     return;
   }
@@ -114,28 +114,24 @@ void gelu_grad_grad_gpu_cuda(FPTYPE* out,
   DPErrcheck(cudaDeviceSynchronize());
 }
 
-template void gelu_gpu_cuda<float>(float* out,
+template void gelu_gpu<float>(float* out, const float* x, const int_64 size);
+template void gelu_gpu<double>(double* out, const double* x, const int_64 size);
+template void gelu_grad_gpu<float>(float* out,
                                    const float* x,
+                                   const float* dy,
                                    const int_64 size);
-template void gelu_gpu_cuda<double>(double* out,
+template void gelu_grad_gpu<double>(double* out,
                                     const double* x,
+                                    const double* dy,
                                     const int_64 size);
-template void gelu_grad_gpu_cuda<float>(float* out,
+template void gelu_grad_grad_gpu<float>(float* out,
                                         const float* x,
                                         const float* dy,
+                                        const float* dy_2,
                                         const int_64 size);
-template void gelu_grad_gpu_cuda<double>(double* out,
+template void gelu_grad_grad_gpu<double>(double* out,
                                          const double* x,
                                          const double* dy,
+                                         const double* dy_2,
                                          const int_64 size);
-template void gelu_grad_grad_gpu_cuda<float>(float* out,
-                                             const float* x,
-                                             const float* dy,
-                                             const float* dy_2,
-                                             const int_64 size);
-template void gelu_grad_grad_gpu_cuda<double>(double* out,
-                                              const double* x,
-                                              const double* dy,
-                                              const double* dy_2,
-                                              const int_64 size);
 }  // namespace deepmd

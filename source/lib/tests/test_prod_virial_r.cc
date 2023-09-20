@@ -179,7 +179,7 @@ TEST_F(TestProdVirialR, cpu) {
 }
 
 #if GOOGLE_CUDA
-TEST_F(TestProdVirialR, gpu_cuda) {
+TEST_F(TestProdVirialR, gpu) {
   std::vector<double> virial(9, 0.0);
   std::vector<double> atom_virial(nall * 9, 0.0);
   int n_a_sel = nnei;
@@ -195,9 +195,9 @@ TEST_F(TestProdVirialR, gpu_cuda) {
   deepmd::malloc_device_memory_sync(env_deriv_dev, env_deriv);
   deepmd::malloc_device_memory_sync(rij_dev, rij);
 
-  deepmd::prod_virial_r_gpu_cuda<double>(virial_dev, atom_virial_dev,
-                                         net_deriv_dev, env_deriv_dev, rij_dev,
-                                         nlist_dev, nloc, nall, nnei);
+  deepmd::prod_virial_r_gpu<double>(virial_dev, atom_virial_dev, net_deriv_dev,
+                                    env_deriv_dev, rij_dev, nlist_dev, nloc,
+                                    nall, nnei);
 
   deepmd::memcpy_device_to_host(virial_dev, virial);
   deepmd::memcpy_device_to_host(atom_virial_dev, atom_virial);
@@ -228,7 +228,7 @@ TEST_F(TestProdVirialR, gpu_cuda) {
 #endif  // GOOGLE_CUDA
 
 #if TENSORFLOW_USE_ROCM
-TEST_F(TestProdVirialR, gpu_rocm) {
+TEST_F(TestProdVirialR, gpu) {
   std::vector<double> virial(9, 0.0);
   std::vector<double> atom_virial(nall * 9, 0.0);
   int n_a_sel = nnei;
@@ -244,9 +244,9 @@ TEST_F(TestProdVirialR, gpu_rocm) {
   deepmd::malloc_device_memory_sync(env_deriv_dev, env_deriv);
   deepmd::malloc_device_memory_sync(rij_dev, rij);
 
-  deepmd::prod_virial_r_gpu_rocm<double>(virial_dev, atom_virial_dev,
-                                         net_deriv_dev, env_deriv_dev, rij_dev,
-                                         nlist_dev, nloc, nall, nnei);
+  deepmd::prod_virial_r_gpu<double>(virial_dev, atom_virial_dev, net_deriv_dev,
+                                    env_deriv_dev, rij_dev, nlist_dev, nloc,
+                                    nall, nnei);
 
   deepmd::memcpy_device_to_host(virial_dev, virial);
   deepmd::memcpy_device_to_host(atom_virial_dev, atom_virial);

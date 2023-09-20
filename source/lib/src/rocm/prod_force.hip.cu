@@ -102,14 +102,14 @@ __global__ void force_deriv_wrt_neighbors_r(FPTYPE* force,
 
 namespace deepmd {
 template <typename FPTYPE>
-void prod_force_a_gpu_rocm(FPTYPE* force,
-                           const FPTYPE* net_deriv,
-                           const FPTYPE* in_deriv,
-                           const int* nlist,
-                           const int nloc,
-                           const int nall,
-                           const int nnei,
-                           const int nframes) {
+void prod_force_a_gpu(FPTYPE* force,
+                      const FPTYPE* net_deriv,
+                      const FPTYPE* in_deriv,
+                      const int* nlist,
+                      const int nloc,
+                      const int nall,
+                      const int nnei,
+                      const int nframes) {
   const int ndescrpt = nnei * 4;
   DPErrcheck(hipMemset(force, 0, sizeof(FPTYPE) * nframes * nall * 3));
 
@@ -130,14 +130,14 @@ void prod_force_a_gpu_rocm(FPTYPE* force,
 }
 
 template <typename FPTYPE>
-void prod_force_r_gpu_rocm(FPTYPE* force,
-                           const FPTYPE* net_deriv,
-                           const FPTYPE* in_deriv,
-                           const int* nlist,
-                           const int nloc,
-                           const int nall,
-                           const int nnei,
-                           const int nframes) {
+void prod_force_r_gpu(FPTYPE* force,
+                      const FPTYPE* net_deriv,
+                      const FPTYPE* in_deriv,
+                      const int* nlist,
+                      const int nloc,
+                      const int nall,
+                      const int nnei,
+                      const int nframes) {
   const int ndescrpt = nnei * 1;
   DPErrcheck(hipMemset(force, 0, sizeof(FPTYPE) * nframes * nall * 3));
 
@@ -157,37 +157,37 @@ void prod_force_r_gpu_rocm(FPTYPE* force,
   DPErrcheck(hipDeviceSynchronize());
 }
 
-template void prod_force_a_gpu_rocm<float>(float* force,
-                                           const float* net_deriv,
-                                           const float* in_deriv,
-                                           const int* nlist,
-                                           const int nloc,
-                                           const int nall,
-                                           const int nnei,
-                                           const int nframes);
-template void prod_force_a_gpu_rocm<double>(double* force,
-                                            const double* net_deriv,
-                                            const double* in_deriv,
-                                            const int* nlist,
-                                            const int nloc,
-                                            const int nall,
-                                            const int nnei,
-                                            const int nframes);
-template void prod_force_r_gpu_rocm<float>(float* force,
-                                           const float* net_deriv,
-                                           const float* in_deriv,
-                                           const int* nlist,
-                                           const int nloc,
-                                           const int nall,
-                                           const int nnei,
-                                           const int nframes);
-template void prod_force_r_gpu_rocm<double>(double* force,
-                                            const double* net_deriv,
-                                            const double* in_deriv,
-                                            const int* nlist,
-                                            const int nloc,
-                                            const int nall,
-                                            const int nnei,
-                                            const int nframes);
+template void prod_force_a_gpu<float>(float* force,
+                                      const float* net_deriv,
+                                      const float* in_deriv,
+                                      const int* nlist,
+                                      const int nloc,
+                                      const int nall,
+                                      const int nnei,
+                                      const int nframes);
+template void prod_force_a_gpu<double>(double* force,
+                                       const double* net_deriv,
+                                       const double* in_deriv,
+                                       const int* nlist,
+                                       const int nloc,
+                                       const int nall,
+                                       const int nnei,
+                                       const int nframes);
+template void prod_force_r_gpu<float>(float* force,
+                                      const float* net_deriv,
+                                      const float* in_deriv,
+                                      const int* nlist,
+                                      const int nloc,
+                                      const int nall,
+                                      const int nnei,
+                                      const int nframes);
+template void prod_force_r_gpu<double>(double* force,
+                                       const double* net_deriv,
+                                       const double* in_deriv,
+                                       const int* nlist,
+                                       const int nloc,
+                                       const int nall,
+                                       const int nnei,
+                                       const int nframes);
 
 }  // namespace deepmd

@@ -175,14 +175,14 @@ __global__ void map_nei_info_noconvert(int *nlist,
 
 namespace deepmd {
 template <typename FPTYPE>
-int build_nlist_gpu_rocm(InputNlist &nlist,
-                         int *max_list_size,
-                         int *nlist_data,
-                         const FPTYPE *c_cpy,
-                         const int &nloc,
-                         const int &nall,
-                         const int &mem_size,
-                         const float &rcut) {
+int build_nlist_gpu(InputNlist &nlist,
+                    int *max_list_size,
+                    int *nlist_data,
+                    const FPTYPE *c_cpy,
+                    const int &nloc,
+                    const int &nall,
+                    const int &mem_size,
+                    const float &rcut) {
   if (mem_size < nall) {
     return 1;
   }
@@ -237,15 +237,15 @@ void use_nlist_map(int *nlist,
   DPErrcheck(hipDeviceSynchronize());
 }
 
-void use_nei_info_gpu_rocm(int *nlist,
-                           int *ntype,
-                           bool *nmask,
-                           const int *type,
-                           const int *nlist_map,
-                           const int nloc,
-                           const int nnei,
-                           const int ntypes,
-                           const bool b_nlist_map) {
+void use_nei_info_gpu(int *nlist,
+                      int *ntype,
+                      bool *nmask,
+                      const int *type,
+                      const int *nlist_map,
+                      const int nloc,
+                      const int nnei,
+                      const int ntypes,
+                      const bool b_nlist_map) {
   int nblock = (nnei + TPB - 1) / TPB;
   dim3 block_grid(nloc, nblock);
   dim3 thread_grid(1, TPB);
@@ -262,22 +262,22 @@ void use_nei_info_gpu_rocm(int *nlist,
   DPErrcheck(hipDeviceSynchronize());
 }
 
-template int build_nlist_gpu_rocm<float>(InputNlist &nlist,
-                                         int *max_list_size,
-                                         int *nlist_data,
-                                         const float *c_cpy,
-                                         const int &nloc,
-                                         const int &nall,
-                                         const int &mem_size,
-                                         const float &rcut);
-template int build_nlist_gpu_rocm<double>(InputNlist &nlist,
-                                          int *max_list_size,
-                                          int *nlist_data,
-                                          const double *c_cpy,
-                                          const int &nloc,
-                                          const int &nall,
-                                          const int &mem_size,
-                                          const float &rcut);
+template int build_nlist_gpu<float>(InputNlist &nlist,
+                                    int *max_list_size,
+                                    int *nlist_data,
+                                    const float *c_cpy,
+                                    const int &nloc,
+                                    const int &nall,
+                                    const int &mem_size,
+                                    const float &rcut);
+template int build_nlist_gpu<double>(InputNlist &nlist,
+                                     int *max_list_size,
+                                     int *nlist_data,
+                                     const double *c_cpy,
+                                     const int &nloc,
+                                     const int &nall,
+                                     const int &mem_size,
+                                     const float &rcut);
 __global__ void map_filter_ftype(int *ftype_out,
                                  const int *ftype_in,
                                  const int nloc) {
@@ -287,9 +287,7 @@ __global__ void map_filter_ftype(int *ftype_out,
   }
 }
 
-void filter_ftype_gpu_rocm(int *ftype_out,
-                           const int *ftype_in,
-                           const int nloc) {
+void filter_ftype_gpu(int *ftype_out, const int *ftype_in, const int nloc) {
   int nblock = (nloc + TPB - 1) / TPB;
   map_filter_ftype<<<nblock, TPB>>>(ftype_out, ftype_in, nloc);
   DPErrcheck(hipGetLastError());

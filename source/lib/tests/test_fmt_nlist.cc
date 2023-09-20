@@ -314,7 +314,7 @@ TEST_F(TestFormatNlistShortSel, cpu) {
 }
 
 #if GOOGLE_CUDA
-TEST_F(TestFormatNlist, gpu_cuda) {
+TEST_F(TestFormatNlist, gpu) {
   std::vector<std::vector<int>> nlist_a_0, nlist_r_0;
   build_nlist(nlist_a_0, nlist_r_0, posi_cpy, nloc, rc, rc, nat_stt, ncell,
               ext_stt, ext_end, region, ncell);
@@ -357,9 +357,9 @@ TEST_F(TestFormatNlist, gpu_cuda) {
   deepmd::convert_nlist_gpu_device(gpu_inlist, in_nlist, memory_dev,
                                    max_nbor_size);
   // format nlist
-  format_nbor_list_gpu_cuda(nlist_dev, posi_cpy_dev, atype_cpy_dev, gpu_inlist,
-                            array_int_dev, array_longlong_dev, max_nbor_size,
-                            nloc, nall, rc, sec_a);
+  format_nbor_list_gpu(nlist_dev, posi_cpy_dev, atype_cpy_dev, gpu_inlist,
+                       array_int_dev, array_longlong_dev, max_nbor_size, nloc,
+                       nall, rc, sec_a);
   deepmd::memcpy_device_to_host(nlist_dev, nlist);
   deepmd::delete_device_memory(nlist_dev);
   deepmd::delete_device_memory(posi_cpy_dev);
@@ -374,7 +374,7 @@ TEST_F(TestFormatNlist, gpu_cuda) {
   }
 }
 
-TEST_F(TestFormatNlistShortSel, gpu_cuda) {
+TEST_F(TestFormatNlistShortSel, gpu) {
   std::vector<std::vector<int>> nlist_a_0, nlist_r_0;
   build_nlist(nlist_a_0, nlist_r_0, posi_cpy, nloc, rc, rc, nat_stt, ncell,
               ext_stt, ext_end, region, ncell);
@@ -417,9 +417,9 @@ TEST_F(TestFormatNlistShortSel, gpu_cuda) {
   deepmd::convert_nlist_gpu_device(gpu_inlist, in_nlist, memory_dev,
                                    max_nbor_size);
   // format nlist
-  format_nbor_list_gpu_cuda(nlist_dev, posi_cpy_dev, atype_cpy_dev, gpu_inlist,
-                            array_int_dev, array_longlong_dev, max_nbor_size,
-                            nloc, nall, rc, sec_a);
+  format_nbor_list_gpu(nlist_dev, posi_cpy_dev, atype_cpy_dev, gpu_inlist,
+                       array_int_dev, array_longlong_dev, max_nbor_size, nloc,
+                       nall, rc, sec_a);
   deepmd::memcpy_device_to_host(nlist_dev, nlist);
   deepmd::delete_device_memory(nlist_dev);
   deepmd::delete_device_memory(posi_cpy_dev);
@@ -434,7 +434,7 @@ TEST_F(TestFormatNlistShortSel, gpu_cuda) {
   }
 }
 
-TEST_F(TestEncodingDecodingNborInfo, valid_nbor_info_gpu_cuda) {
+TEST_F(TestEncodingDecodingNborInfo, valid_nbor_info_gpu) {
   int *valid_type_dev = NULL, *valid_index_dev = NULL, *out_type_dev = NULL,
       *out_index_dev = NULL;
   double* valid_dist_dev = NULL;
@@ -449,7 +449,7 @@ TEST_F(TestEncodingDecodingNborInfo, valid_nbor_info_gpu_cuda) {
   deepmd::malloc_device_memory_sync(out_index_dev, out_index);
   deepmd::malloc_device_memory_sync(key_dev, key);
 
-  deepmd::test_encoding_decoding_nbor_info_gpu_cuda(
+  deepmd::test_encoding_decoding_nbor_info_gpu(
       key_dev, out_type_dev, out_index_dev, valid_type_dev, valid_dist_dev,
       valid_index_dev, size_of_array);
 
@@ -470,7 +470,7 @@ TEST_F(TestEncodingDecodingNborInfo, valid_nbor_info_gpu_cuda) {
   }
 }
 
-// TEST_F(TestEncodingDecodingNborInfo, invalid_nbor_info_gpu_cuda)
+// TEST_F(TestEncodingDecodingNborInfo, invalid_nbor_info_gpu)
 // {
 //   int * invalid_type_dev = NULL, * invalid_index_dev = NULL, * out_type_dev =
 //   NULL, * out_index_dev = NULL; double * invalid_dist_dev = NULL; uint_64 *
@@ -485,7 +485,7 @@ TEST_F(TestEncodingDecodingNborInfo, valid_nbor_info_gpu_cuda) {
 //   deepmd::malloc_device_memory_sync(key_dev, key);
 
 //   EXPECT_EQ(cudaGetLastError() == cudaSuccess && cudaDeviceSynchronize() ==
-//   cudaSuccess, true); deepmd::test_encoding_decoding_nbor_info_gpu_cuda(
+//   cudaSuccess, true); deepmd::test_encoding_decoding_nbor_info_gpu(
 //       key_dev, out_type_dev, out_index_dev,
 //       invalid_type_dev, invalid_dist_dev, invalid_index_dev, size_of_array
 //   );
@@ -504,7 +504,7 @@ TEST_F(TestEncodingDecodingNborInfo, valid_nbor_info_gpu_cuda) {
 #endif  // GOOGLE_CUDA
 
 #if TENSORFLOW_USE_ROCM
-TEST_F(TestFormatNlist, gpu_rocm) {
+TEST_F(TestFormatNlist, gpu) {
   std::vector<std::vector<int>> nlist_a_0, nlist_r_0;
   build_nlist(nlist_a_0, nlist_r_0, posi_cpy, nloc, rc, rc, nat_stt, ncell,
               ext_stt, ext_end, region, ncell);
@@ -547,9 +547,9 @@ TEST_F(TestFormatNlist, gpu_rocm) {
   deepmd::convert_nlist_gpu_device(gpu_inlist, in_nlist, memory_dev,
                                    max_nbor_size);
   // format nlist
-  format_nbor_list_gpu_rocm(nlist_dev, posi_cpy_dev, atype_cpy_dev, gpu_inlist,
-                            array_int_dev, array_longlong_dev, max_nbor_size,
-                            nloc, nall, rc, sec_a);
+  format_nbor_list_gpu(nlist_dev, posi_cpy_dev, atype_cpy_dev, gpu_inlist,
+                       array_int_dev, array_longlong_dev, max_nbor_size, nloc,
+                       nall, rc, sec_a);
   deepmd::memcpy_device_to_host(nlist_dev, nlist);
   deepmd::delete_device_memory(nlist_dev);
   deepmd::delete_device_memory(posi_cpy_dev);
@@ -564,7 +564,7 @@ TEST_F(TestFormatNlist, gpu_rocm) {
   }
 }
 
-TEST_F(TestFormatNlistShortSel, gpu_rocm) {
+TEST_F(TestFormatNlistShortSel, gpu) {
   std::vector<std::vector<int>> nlist_a_0, nlist_r_0;
   build_nlist(nlist_a_0, nlist_r_0, posi_cpy, nloc, rc, rc, nat_stt, ncell,
               ext_stt, ext_end, region, ncell);
@@ -607,9 +607,9 @@ TEST_F(TestFormatNlistShortSel, gpu_rocm) {
   deepmd::convert_nlist_gpu_device(gpu_inlist, in_nlist, memory_dev,
                                    max_nbor_size);
   // format nlist
-  format_nbor_list_gpu_rocm(nlist_dev, posi_cpy_dev, atype_cpy_dev, gpu_inlist,
-                            array_int_dev, array_longlong_dev, max_nbor_size,
-                            nloc, nall, rc, sec_a);
+  format_nbor_list_gpu(nlist_dev, posi_cpy_dev, atype_cpy_dev, gpu_inlist,
+                       array_int_dev, array_longlong_dev, max_nbor_size, nloc,
+                       nall, rc, sec_a);
   deepmd::memcpy_device_to_host(nlist_dev, nlist);
   deepmd::delete_device_memory(nlist_dev);
   deepmd::delete_device_memory(posi_cpy_dev);
@@ -624,7 +624,7 @@ TEST_F(TestFormatNlistShortSel, gpu_rocm) {
   }
 }
 
-TEST_F(TestEncodingDecodingNborInfo, valid_nbor_info_gpu_rocm) {
+TEST_F(TestEncodingDecodingNborInfo, valid_nbor_info_gpu) {
   int *valid_type_dev = NULL, *valid_index_dev = NULL, *out_type_dev = NULL,
       *out_index_dev = NULL;
   double* valid_dist_dev = NULL;
@@ -639,7 +639,7 @@ TEST_F(TestEncodingDecodingNborInfo, valid_nbor_info_gpu_rocm) {
   deepmd::malloc_device_memory_sync(out_index_dev, out_index);
   deepmd::malloc_device_memory_sync(key_dev, key);
 
-  deepmd::test_encoding_decoding_nbor_info_gpu_rocm(
+  deepmd::test_encoding_decoding_nbor_info_gpu(
       key_dev, out_type_dev, out_index_dev, valid_type_dev, valid_dist_dev,
       valid_index_dev, size_of_array);
 

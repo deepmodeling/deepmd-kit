@@ -335,9 +335,9 @@ void copy_coord(FPTYPE *out_c,
 
 namespace deepmd {
 template <typename FPTYPE>
-void normalize_coord_gpu_rocm(FPTYPE *coord,
-                              const int natom,
-                              const Region<FPTYPE> &region) {
+void normalize_coord_gpu(FPTYPE *coord,
+                         const int natom,
+                         const Region<FPTYPE> &region) {
   const FPTYPE *boxt = region.boxt;
   const FPTYPE *rec_boxt = region.rec_boxt;
   const int nblock = (natom + TPB - 1) / TPB;
@@ -348,19 +348,19 @@ void normalize_coord_gpu_rocm(FPTYPE *coord,
 }
 
 template <typename FPTYPE>
-int copy_coord_gpu_rocm(FPTYPE *out_c,
-                        int *out_t,
-                        int *mapping,
-                        int *nall,
-                        int *int_data,
-                        const FPTYPE *in_c,
-                        const int *in_t,
-                        const int &nloc,
-                        const int &mem_nall,
-                        const int &loc_cellnum,
-                        const int &total_cellnum,
-                        const int *cell_info,
-                        const Region<FPTYPE> &region) {
+int copy_coord_gpu(FPTYPE *out_c,
+                   int *out_t,
+                   int *mapping,
+                   int *nall,
+                   int *int_data,
+                   const FPTYPE *in_c,
+                   const int *in_t,
+                   const int &nloc,
+                   const int &mem_nall,
+                   const int &loc_cellnum,
+                   const int &total_cellnum,
+                   const int *cell_info,
+                   const Region<FPTYPE> &region) {
   compute_int_data(int_data, in_c, cell_info, region, nloc, loc_cellnum,
                    total_cellnum);
   int *int_data_cpu = new int
@@ -409,36 +409,36 @@ int copy_coord_gpu_rocm(FPTYPE *out_c,
   return 0;
 }
 
-template void normalize_coord_gpu_rocm<float>(float *coord,
-                                              const int natom,
-                                              const Region<float> &region);
-template void normalize_coord_gpu_rocm<double>(double *coord,
-                                               const int natom,
-                                               const Region<double> &region);
-template int copy_coord_gpu_rocm<float>(float *out_c,
-                                        int *out_t,
-                                        int *mapping,
-                                        int *nall,
-                                        int *int_data,
-                                        const float *in_c,
-                                        const int *in_t,
-                                        const int &nloc,
-                                        const int &mem_nall,
-                                        const int &loc_cellnum,
-                                        const int &total_cellnum,
-                                        const int *cell_info,
-                                        const Region<float> &region);
-template int copy_coord_gpu_rocm<double>(double *out_c,
-                                         int *out_t,
-                                         int *mapping,
-                                         int *nall,
-                                         int *int_data,
-                                         const double *in_c,
-                                         const int *in_t,
-                                         const int &nloc,
-                                         const int &mem_nall,
-                                         const int &loc_cellnum,
-                                         const int &total_cellnum,
-                                         const int *cell_info,
-                                         const Region<double> &region);
+template void normalize_coord_gpu<float>(float *coord,
+                                         const int natom,
+                                         const Region<float> &region);
+template void normalize_coord_gpu<double>(double *coord,
+                                          const int natom,
+                                          const Region<double> &region);
+template int copy_coord_gpu<float>(float *out_c,
+                                   int *out_t,
+                                   int *mapping,
+                                   int *nall,
+                                   int *int_data,
+                                   const float *in_c,
+                                   const int *in_t,
+                                   const int &nloc,
+                                   const int &mem_nall,
+                                   const int &loc_cellnum,
+                                   const int &total_cellnum,
+                                   const int *cell_info,
+                                   const Region<float> &region);
+template int copy_coord_gpu<double>(double *out_c,
+                                    int *out_t,
+                                    int *mapping,
+                                    int *nall,
+                                    int *int_data,
+                                    const double *in_c,
+                                    const int *in_t,
+                                    const int &nloc,
+                                    const int &mem_nall,
+                                    const int &loc_cellnum,
+                                    const int &total_cellnum,
+                                    const int *cell_info,
+                                    const Region<double> &region);
 }  // namespace deepmd
