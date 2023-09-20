@@ -50,7 +50,7 @@ jobs:
         TF_INTRA_OP_PARALLELISM_THREADS: 1
         TF_INTER_OP_PARALLELISM_THREADS: 1
         LAMMPS_PLUGIN_PATH: ${{ github.workspace }}/dp_test/lib/deepmd_lmp
-        LD_LIBRARY_PATH: ${{ github.workspace }}/dp_test/lib
+        LD_LIBRARY_PATH: ${{ github.workspace }}/dp_test/lib:$LD_LIBRARY_PATH
     # test ipi
     - run: pytest --cov=deepmd source/ipi/tests
       env:
@@ -58,7 +58,7 @@ jobs:
         TF_INTRA_OP_PARALLELISM_THREADS: 1
         TF_INTER_OP_PARALLELISM_THREADS: 1
         PATH: ${{ github.workspace }}/dp_test/bin:$PATH
-        LD_LIBRARY_PATH: ${{ github.workspace }}/dp_test/lib
+        LD_LIBRARY_PATH: ${{ github.workspace }}/dp_test/lib:$LD_LIBRARY_PATH
     - uses: codecov/codecov-action@v3
       with:
         gcov: true
