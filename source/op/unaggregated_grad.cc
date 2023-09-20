@@ -490,7 +490,7 @@ REGISTER_CPU(float);
 REGISTER_CPU(double);
 // Not required in the current situation
 // // Register the GPU kernels.
-// #if GOOGLE_CUDA
+// #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 // #define REGISTER_GPU(T) \
 // REGISTER_KERNEL_BUILDER( \
 //     Name("UnaggregatedDyDxS").Device(DEVICE_GPU).TypeConstraint<T>("T"), \
@@ -500,4 +500,4 @@ REGISTER_CPU(double);
 //     UnaggregatedDyDxOp<GPUDevice, T>);
 // REGISTER_GPU(float);
 // REGISTER_GPU(double);
-// #endif  // GOOGLE_CUDA
+// #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
