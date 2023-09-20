@@ -12,7 +12,7 @@ jobs:
     steps:
       - name: Determine which runner to use for ARM64 build
         id: set-runner
-        uses: runner-fallback-action@v1
+        uses: jimmygchen/runner-fallback-action@v1
         with:
           primary-runner: "self-hosted,Linux,ARM64"
           fallback-runner: "ubuntu-latest"
