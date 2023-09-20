@@ -97,7 +97,7 @@ provider = "backend.dynamic_metadata"
 provider-path = "backend"
 
 [[tool.scikit-build.generate]]
-path = "deepmd_cli/_version/__init__.py"
+path = "deepmd_cli/_version.py"
 template = '''
 version = "${version}"
 '''
