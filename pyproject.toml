@@ -59,7 +59,12 @@ documentation = "https://docs.deepmodeling.com/projects/deepmd"
 repository = "https://github.com/deepmodeling/deepmd-kit"
 
 [tool.setuptools_scm]
-write_to = "deepmd/_version.py"
+
+[[tool.scikit-build.generate]]
+path = "deepmd/_version.py"
+template = '''
+version = "${version}"
+'''
 
 [tool.scikit-build]
 experimental = true
