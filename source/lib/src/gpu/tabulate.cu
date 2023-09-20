@@ -36,6 +36,17 @@ GpuShuffleSync(unsigned mask, T value, int src_lane, int width = warpSize) {
 #endif
 }
 
+__device__ void GpuSyncThreads() {
+#if GOOGLE_CUDA
+  __syncwarp();
+#elif TENSORFLOW_USE_ROCM
+  //__syncwarp();->syncwrap
+  __syncthreads();
+#else
+#error "should not touch here"
+#endif
+}
+
 template <typename FPTYPE>
 __forceinline__ __device__ void locate_xx_se_a(FPTYPE& xx,
                                                int& table_idx,
@@ -320,14 +331,7 @@ __global__ void tabulate_fusion_se_a_grad_fifth_order_polynomial(
                         xx) *
           (enable_se_atten ? res * t + res : res);
     }
-#if GOOGLE_CUDA
-    __syncwarp();
-#elif TENSORFLOW_USE_ROCM
-    //__syncwarp();->syncwrap
-    __syncthreads();
-#else
-#error "should not touch here"
-#endif
+    GpuSyncThreads();
     for (int kk = 0; kk < MTILE; kk++) {
       warp_reduce(sum[kk]);
     }
@@ -512,13 +516,7 @@ __global__ void tabulate_fusion_se_t_grad_fifth_order_polynomial(
                            xx) *
                           xx);
       }
-#if GOOGLE_CUDA
-      __syncwarp();
-#elif TENSORFLOW_USE_ROCM
-      __syncthreads();
-#else
-#error "should not touch here"
-#endif
+      GpuSyncThreads();
       warp_reduce(sum);
       warp_reduce(Csub);
       if (lane_idx == 0) {
@@ -652,13 +650,7 @@ __global__ void tabulate_fusion_se_r_grad_fifth_order_polynomial(
                         xx) *
           dy[block_idx * nnei * last_layer_size + ii * last_layer_size + jj];
     }
-#if GOOGLE_CUDA
-    __syncwarp();
-#elif TENSORFLOW_USE_ROCM
-    __syncthreads();
-#else
-#error "should not touch here"
-#endif
+    GpuSyncThreads();
 
     warp_reduce(Csub);
     if (lane_idx == 0) {
