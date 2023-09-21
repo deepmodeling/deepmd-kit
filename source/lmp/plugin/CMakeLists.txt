@@ -19,6 +19,11 @@ if(DEFINED LAMMPS_SOURCE_ROOT OR DEFINED LAMMPS_VERSION)
 
   target_include_directories(lammps_interface INTERFACE ${LAMMPS_HEADER_DIR})
 
+  if("$ENV{DP_USE_MPICH2}" STREQUAL "1")
+    # See https://stackoverflow.com/a/47976518/9567349
+    set(MPI_EXECUTABLE_SUFFIX ".mpich")
+  endif()
+
   find_package(MPI)
   if(MPI_FOUND)
     set(LAMMPS_MPI_INCLUDE_DIRS ${MPI_CXX_INCLUDE_DIRS})
