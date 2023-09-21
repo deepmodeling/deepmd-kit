@@ -110,23 +110,24 @@ void prod_force_a_gpu(FPTYPE* force,
                       const int nall,
                       const int nnei,
                       const int nframes) {
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
   const int ndescrpt = nnei * 4;
-  DPErrcheck(hipMemset(force, 0, sizeof(FPTYPE) * nframes * nall * 3));
+  DPErrcheck(gpuMemset(force, 0, sizeof(FPTYPE) * nframes * nall * 3));
 
-  hipLaunchKernelGGL(HIP_KERNEL_NAME(force_deriv_wrt_center_atom<FPTYPE, TPB>),
-                     nframes * nloc, TPB, 0, 0, force, net_deriv, in_deriv,
-                     ndescrpt, nloc, nall);
-  DPErrcheck(hipGetLastError());
-  DPErrcheck(hipDeviceSynchronize());
+  force_deriv_wrt_center_atom<FPTYPE, TPB><<<nframes * nloc, TPB>>>(
+      force, net_deriv, in_deriv, ndescrpt, nloc, nall);
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
 
   const int LEN = 64;
   const int nblock = (nnei + LEN - 1) / LEN;
   dim3 block_grid(nframes * nloc, nblock);
   dim3 thread_grid(LEN, 3);
-  hipLaunchKernelGGL(force_deriv_wrt_neighbors_a, block_grid, thread_grid, 0, 0,
-                     force, net_deriv, in_deriv, nlist, nloc, nall, nnei);
-  DPErrcheck(hipGetLastError());
-  DPErrcheck(hipDeviceSynchronize());
+  force_deriv_wrt_neighbors_a<<<block_grid, thread_grid>>>(
+      force, net_deriv, in_deriv, nlist, nloc, nall, nnei);
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
 }
 
 template <typename FPTYPE>
@@ -138,23 +139,24 @@ void prod_force_r_gpu(FPTYPE* force,
                       const int nall,
                       const int nnei,
                       const int nframes) {
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
   const int ndescrpt = nnei * 1;
-  DPErrcheck(hipMemset(force, 0, sizeof(FPTYPE) * nframes * nall * 3));
+  DPErrcheck(gpuMemset(force, 0, sizeof(FPTYPE) * nframes * nall * 3));
 
-  hipLaunchKernelGGL(HIP_KERNEL_NAME(force_deriv_wrt_center_atom<FPTYPE, TPB>),
-                     nframes * nloc, TPB, 0, 0, force, net_deriv, in_deriv,
-                     ndescrpt, nloc, nall);
-  DPErrcheck(hipGetLastError());
-  DPErrcheck(hipDeviceSynchronize());
+  force_deriv_wrt_center_atom<FPTYPE, TPB><<<nframes * nloc, TPB>>>(
+      force, net_deriv, in_deriv, ndescrpt, nloc, nall);
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
 
   const int LEN = 64;
   const int nblock = (nnei + LEN - 1) / LEN;
   dim3 block_grid(nframes * nloc, nblock);
   dim3 thread_grid(LEN, 3);
-  hipLaunchKernelGGL(force_deriv_wrt_neighbors_r, block_grid, thread_grid, 0, 0,
-                     force, net_deriv, in_deriv, nlist, nloc, nall, nnei);
-  DPErrcheck(hipGetLastError());
-  DPErrcheck(hipDeviceSynchronize());
+  force_deriv_wrt_neighbors_r<<<block_grid, thread_grid>>>(
+      force, net_deriv, in_deriv, nlist, nloc, nall, nnei);
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
 }
 
 template void prod_force_a_gpu<float>(float* force,
@@ -189,5 +191,4 @@ template void prod_force_r_gpu<double>(double* force,
                                        const int nall,
                                        const int nnei,
                                        const int nframes);
-
 }  // namespace deepmd

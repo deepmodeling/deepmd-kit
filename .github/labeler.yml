@@ -5,8 +5,8 @@ Python:
 Docs: doc/**/*
 Examples: examples/**/*
 Core: source/lib/**/*
-CUDA: source/lib/src/cuda/**/*
-ROCM: source/lib/src/rocm/**/*
+CUDA: source/lib/src/gpu/**/*
+ROCM: source/lib/src/gpu/**/*
 OP: source/op/**/*
 C++: source/api_cc/**/*
 C: source/api_c/**/*

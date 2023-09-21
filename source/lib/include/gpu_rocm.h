@@ -11,6 +11,13 @@
 
 #define GPU_MAX_NBOR_SIZE 4096
 
+#define gpuGetLastError hipGetLastError
+#define gpuDeviceSynchronize hipDeviceSynchronize
+#define gpuMemcpy hipMemcpy
+#define gpuMemcpyDeviceToHost hipMemcpyDeviceToHost
+#define gpuMemcpyHostToDevice hipMemcpyHostToDevice
+#define gpuMemset hipMemset
+
 #define DPErrcheck(res) \
   { DPAssert((res), __FILE__, __LINE__); }
 inline void DPAssert(hipError_t code,
