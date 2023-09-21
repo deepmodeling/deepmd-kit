@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions: read-all
     outputs:
-      runner: ${{ steps.set-runner.outputs.use-runner }}
+      runner: ${{ steps.set-runner.outputs.runner }}
     steps:
       - name: Determine which runner to use for ARM64 build
         id: set-runner
