@@ -1,31 +1,16 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import argparse
-import importlib.util
 import logging
-import os
-import sys
 import textwrap
 from typing import (
     List,
     Optional,
 )
 
-
-def load_child_module(name):
-    """Load a child module without loading its parent module."""
-    names = name.split(".")
-    parent_spec = importlib.util.find_spec(names[0])
-    paths = os.path.join(*names[1:]) + ".py"
-    spec = importlib.util.spec_from_file_location(
-        name, os.path.join(parent_spec.submodule_search_locations[0], paths)
-    )
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-__version__ = load_child_module("deepmd._version").__version__
+try:
+    from deepmd_cli._version import version as __version__
+except ImportError:
+    __version__ = "unknown"
 
 
 def get_ll(log_level: str) -> int:

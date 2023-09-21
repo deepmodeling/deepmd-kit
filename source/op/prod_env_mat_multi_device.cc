@@ -559,6 +559,69 @@ class ProdEnvMatAOp : public OpKernel {
     const FPTYPE* std = std_tensor.flat<FPTYPE>().data();
     const int* p_type = type_tensor.flat<int>().data();
 
+    // must declar out of if, otherwise the memory will be destroyed!
+    Tensor int_temp;
+    Tensor uint64_temp;
+    std::vector<Tensor> tensor_list(7);
+    if (device == "GPU") {
+      // allocate temp memory only once for multiple frames
+      // allocate temp memory, temp memory must not be used after this
+      // operation!
+      if (nei_mode != 3) {
+        if (nei_mode == 1) {
+          // Tensor FPTYPE_temp;
+          TensorShape FPTYPE_shape;
+          FPTYPE_shape.AddDim(nall * 3);
+          OP_REQUIRES_OK(context,
+                         context->allocate_temp(DataTypeToEnum<FPTYPE>::value,
+                                                FPTYPE_shape, &tensor_list[0]));
+
+          // Tensor double_temp;
+          TensorShape double_shape;
+          double_shape.AddDim(18);
+          OP_REQUIRES_OK(context,
+                         context->allocate_temp(DataTypeToEnum<FPTYPE>::value,
+                                                double_shape, &tensor_list[1]));
+          // Tensor cpy_temp;
+          TensorShape cpy_shape;
+          cpy_shape.AddDim(mem_cpy * 3);
+          OP_REQUIRES_OK(context,
+                         context->allocate_temp(DataTypeToEnum<FPTYPE>::value,
+                                                cpy_shape, &tensor_list[3]));
+          // Tensor t_temp;
+          TensorShape t_shape;
+          t_shape.AddDim(mem_cpy * 2);
+          OP_REQUIRES_OK(context, context->allocate_temp(DT_INT32, t_shape,
+                                                         &tensor_list[4]));
+        }
+
+        // Tensor nlist_temp;
+        TensorShape nlist_shape;
+        nlist_shape.AddDim(nloc * 2);
+        OP_REQUIRES_OK(context, context->allocate_temp(DT_INT32, nlist_shape,
+                                                       &tensor_list[5]));
+
+        TensorShape jlist_shape;
+        jlist_shape.AddDim(3 * int_64(nloc) * mem_nnei);
+        OP_REQUIRES_OK(context, context->allocate_temp(DT_INT32, jlist_shape,
+                                                       &tensor_list[6]));
+      }
+
+      // used for format_nbor_list_gpu_cuda
+
+      TensorShape int_shape;
+      int_shape.AddDim(sec_a.size() + int_64(nloc) * sec_a.size() + nloc);
+      OP_REQUIRES_OK(context,
+                     context->allocate_temp(DT_INT32, int_shape, &int_temp));
+
+      TensorShape uint64_shape;
+      uint64_shape.AddDim(int_64(nloc) * max_nbor_size * 2);
+      OP_REQUIRES_OK(context, context->allocate_temp(DT_UINT64, uint64_shape,
+                                                     &uint64_temp));
+      array_int = int_temp.flat<int>().data();
+      array_longlong = uint64_temp.flat<unsigned long long>().data();
+    }
+
     // loop over samples
     for (int_64 ff = 0; ff < nsamples; ++ff) {
       FPTYPE* em = p_em + ff * nloc * ndescrpt;
@@ -580,7 +643,6 @@ class ProdEnvMatAOp : public OpKernel {
         int* type_cpy;
         int frame_nall = nall;
         int mesh_tensor_size = static_cast<int>(mesh_tensor.NumElements());
-        std::vector<Tensor> tensor_list(7);
         // prepare coord and nlist
         _prepare_coord_nlist_gpu<FPTYPE>(
             context, &tensor_list[0], &coord, coord_cpy, &type, type_cpy,
@@ -588,21 +650,6 @@ class ProdEnvMatAOp : public OpKernel {
             nbor_list_dev, frame_nall, mem_cpy, mem_nnei, max_nbor_size, box,
             mesh_tensor.flat<int>().data(), mesh_tensor_size, nloc, nei_mode,
             rcut_r, max_cpy_trial, max_nnei_trial);
-
-        // allocate temp memory, temp memory must not be used after this
-        // operation!
-        Tensor int_temp;
-        TensorShape int_shape;
-        int_shape.AddDim(sec_a.size() + int_64(nloc) * sec_a.size() + nloc);
-        OP_REQUIRES_OK(context,
-                       context->allocate_temp(DT_INT32, int_shape, &int_temp));
-        Tensor uint64_temp;
-        TensorShape uint64_shape;
-        uint64_shape.AddDim(int_64(nloc) * max_nbor_size * 2);
-        OP_REQUIRES_OK(context, context->allocate_temp(DT_UINT64, uint64_shape,
-                                                       &uint64_temp));
-        array_int = int_temp.flat<int>().data();
-        array_longlong = uint64_temp.flat<unsigned long long>().data();
 
         // launch the gpu(nv) compute function
         deepmd::prod_env_mat_a_gpu(em, em_deriv, rij, nlist, coord, type,
@@ -625,7 +672,6 @@ class ProdEnvMatAOp : public OpKernel {
         int* type_cpy;
         int frame_nall = nall;
         int mesh_tensor_size = static_cast<int>(mesh_tensor.NumElements());
-        std::vector<Tensor> tensor_list(7);
         // prepare coord and nlist
         _prepare_coord_nlist_gpu<FPTYPE>(
             context, &tensor_list[0], &coord, coord_cpy, &type, type_cpy,
@@ -633,21 +679,6 @@ class ProdEnvMatAOp : public OpKernel {
             nbor_list_dev, frame_nall, mem_cpy, mem_nnei, max_nbor_size, box,
             mesh_tensor.flat<int>().data(), mesh_tensor_size, nloc, nei_mode,
             rcut_r, max_cpy_trial, max_nnei_trial);
-
-        // allocate temp memory, temp memory must not be used after this
-        // operation!
-        Tensor int_temp;
-        TensorShape int_shape;
-        int_shape.AddDim(sec_a.size() + int_64(nloc) * sec_a.size() + nloc);
-        OP_REQUIRES_OK(context,
-                       context->allocate_temp(DT_INT32, int_shape, &int_temp));
-        Tensor uint64_temp;
-        TensorShape uint64_shape;
-        uint64_shape.AddDim(int_64(nloc) * max_nbor_size * 2);
-        OP_REQUIRES_OK(context, context->allocate_temp(DT_UINT64, uint64_shape,
-                                                       &uint64_temp));
-        array_int = int_temp.flat<int>().data();
-        array_longlong = uint64_temp.flat<unsigned long long>().data();
 
         // launch the gpu(nv) compute function
         deepmd::prod_env_mat_a_gpu(em, em_deriv, rij, nlist, coord, type,
@@ -854,6 +885,70 @@ class ProdEnvMatROp : public OpKernel {
     const FPTYPE* std = std_tensor.flat<FPTYPE>().data();
     const int* p_type = type_tensor.flat<int>().data();
 
+    // must declar out of if, otherwise the memory will be destroyed!
+    Tensor int_temp;
+    Tensor uint64_temp;
+    std::vector<Tensor> tensor_list(7);
+    if (device == "GPU") {
+      // allocate temp memory only once for multiple frames
+      // allocate temp memory, temp memory must not be used after this
+      // operation!
+      if (nei_mode != 3) {
+        if (nei_mode == 1) {
+          // Tensor FPTYPE_temp;
+          TensorShape FPTYPE_shape;
+          FPTYPE_shape.AddDim(nall * 3);
+          OP_REQUIRES_OK(context,
+                         context->allocate_temp(DataTypeToEnum<FPTYPE>::value,
+                                                FPTYPE_shape, &tensor_list[0]));
+
+          // Tensor double_temp;
+          TensorShape double_shape;
+          double_shape.AddDim(18);
+          OP_REQUIRES_OK(context,
+                         context->allocate_temp(DataTypeToEnum<FPTYPE>::value,
+                                                double_shape, &tensor_list[1]));
+          // Tensor cpy_temp;
+          TensorShape cpy_shape;
+          cpy_shape.AddDim(mem_cpy * 3);
+          OP_REQUIRES_OK(context,
+                         context->allocate_temp(DataTypeToEnum<FPTYPE>::value,
+                                                cpy_shape, &tensor_list[3]));
+          // Tensor t_temp;
+          TensorShape t_shape;
+          t_shape.AddDim(mem_cpy * 2);
+          OP_REQUIRES_OK(context, context->allocate_temp(DT_INT32, t_shape,
+                                                         &tensor_list[4]));
+        }
+
+        // Tensor nlist_temp;
+        TensorShape nlist_shape;
+        nlist_shape.AddDim(nloc * 2);
+        OP_REQUIRES_OK(context, context->allocate_temp(DT_INT32, nlist_shape,
+                                                       &tensor_list[5]));
+
+        TensorShape jlist_shape;
+        jlist_shape.AddDim(3 * int_64(nloc) * mem_nnei);
+        OP_REQUIRES_OK(context, context->allocate_temp(DT_INT32, jlist_shape,
+                                                       &tensor_list[6]));
+      }
+
+      // used for format_nbor_list_gpu_cuda
+
+      TensorShape int_shape;
+      int_shape.AddDim(sec.size() + int_64(nloc) * sec.size() + nloc);
+      OP_REQUIRES_OK(context,
+                     context->allocate_temp(DT_INT32, int_shape, &int_temp));
+
+      TensorShape uint64_shape;
+      uint64_shape.AddDim(int_64(nloc) * max_nbor_size * 2);
+      OP_REQUIRES_OK(context, context->allocate_temp(DT_UINT64, uint64_shape,
+                                                     &uint64_temp));
+
+      array_int = int_temp.flat<int>().data();
+      array_longlong = uint64_temp.flat<unsigned long long>().data();
+    }
+
     // loop over samples
     for (int_64 ff = 0; ff < nsamples; ++ff) {
       FPTYPE* em = p_em + ff * nloc * ndescrpt;
@@ -875,7 +970,6 @@ class ProdEnvMatROp : public OpKernel {
         int* type_cpy;
         int frame_nall = nall;
         int mesh_tensor_size = static_cast<int>(mesh_tensor.NumElements());
-        std::vector<Tensor> tensor_list(7);
         // prepare coord and nlist
         _prepare_coord_nlist_gpu<FPTYPE>(
             context, &tensor_list[0], &coord, coord_cpy, &type, type_cpy,
@@ -883,21 +977,6 @@ class ProdEnvMatROp : public OpKernel {
             nbor_list_dev, frame_nall, mem_cpy, mem_nnei, max_nbor_size, box,
             mesh_tensor.flat<int>().data(), mesh_tensor_size, nloc, nei_mode,
             rcut, max_cpy_trial, max_nnei_trial);
-
-        // allocate temp memory, temp memory must not be used after this
-        // operation!
-        Tensor int_temp;
-        TensorShape int_shape;
-        int_shape.AddDim(sec.size() + int_64(nloc) * sec.size() + nloc);
-        OP_REQUIRES_OK(context,
-                       context->allocate_temp(DT_INT32, int_shape, &int_temp));
-        Tensor uint64_temp;
-        TensorShape uint64_shape;
-        uint64_shape.AddDim(int_64(nloc) * max_nbor_size * 2);
-        OP_REQUIRES_OK(context, context->allocate_temp(DT_UINT64, uint64_shape,
-                                                       &uint64_temp));
-        array_int = int_temp.flat<int>().data();
-        array_longlong = uint64_temp.flat<unsigned long long>().data();
 
         // launch the gpu(nv) compute function
         deepmd::prod_env_mat_r_gpu(em, em_deriv, rij, nlist, coord, type,
@@ -920,7 +999,6 @@ class ProdEnvMatROp : public OpKernel {
         int* type_cpy;
         int frame_nall = nall;
         int mesh_tensor_size = static_cast<int>(mesh_tensor.NumElements());
-        std::vector<Tensor> tensor_list(7);
         // prepare coord and nlist
         _prepare_coord_nlist_gpu<FPTYPE>(
             context, &tensor_list[0], &coord, coord_cpy, &type, type_cpy,
@@ -928,21 +1006,6 @@ class ProdEnvMatROp : public OpKernel {
             nbor_list_dev, frame_nall, mem_cpy, mem_nnei, max_nbor_size, box,
             mesh_tensor.flat<int>().data(), mesh_tensor_size, nloc, nei_mode,
             rcut, max_cpy_trial, max_nnei_trial);
-
-        // allocate temp memory, temp memory must not be used after this
-        // operation!
-        Tensor int_temp;
-        TensorShape int_shape;
-        int_shape.AddDim(sec.size() + int_64(nloc) * sec.size() + nloc);
-        OP_REQUIRES_OK(context,
-                       context->allocate_temp(DT_INT32, int_shape, &int_temp));
-        Tensor uint64_temp;
-        TensorShape uint64_shape;
-        uint64_shape.AddDim(int_64(nloc) * max_nbor_size * 2);
-        OP_REQUIRES_OK(context, context->allocate_temp(DT_UINT64, uint64_shape,
-                                                       &uint64_temp));
-        array_int = int_temp.flat<int>().data();
-        array_longlong = uint64_temp.flat<unsigned long long>().data();
 
         // launch the gpu(nv) compute function
         deepmd::prod_env_mat_r_gpu(em, em_deriv, rij, nlist, coord, type,
@@ -1197,6 +1260,70 @@ class ProdEnvMatAMixOp : public OpKernel {
       }
     }
 
+    // must declar out of if, otherwise the memory will be destroyed!
+    Tensor int_temp;
+    Tensor uint64_temp;
+    std::vector<Tensor> tensor_list(7);
+    if (device == "GPU") {
+      // allocate temp memory only once for multiple frames
+      // allocate temp memory, temp memory must not be used after this
+      // operation!
+      if (nei_mode != 3) {
+        if (nei_mode == 1) {
+          // Tensor FPTYPE_temp;
+          TensorShape FPTYPE_shape;
+          FPTYPE_shape.AddDim(nall * 3);
+          OP_REQUIRES_OK(context,
+                         context->allocate_temp(DataTypeToEnum<FPTYPE>::value,
+                                                FPTYPE_shape, &tensor_list[0]));
+
+          // Tensor double_temp;
+          TensorShape double_shape;
+          double_shape.AddDim(18);
+          OP_REQUIRES_OK(context,
+                         context->allocate_temp(DataTypeToEnum<FPTYPE>::value,
+                                                double_shape, &tensor_list[1]));
+          // Tensor cpy_temp;
+          TensorShape cpy_shape;
+          cpy_shape.AddDim(mem_cpy * 3);
+          OP_REQUIRES_OK(context,
+                         context->allocate_temp(DataTypeToEnum<FPTYPE>::value,
+                                                cpy_shape, &tensor_list[3]));
+          // Tensor t_temp;
+          TensorShape t_shape;
+          t_shape.AddDim(mem_cpy * 2);
+          OP_REQUIRES_OK(context, context->allocate_temp(DT_INT32, t_shape,
+                                                         &tensor_list[4]));
+        }
+
+        // Tensor nlist_temp;
+        TensorShape nlist_shape;
+        nlist_shape.AddDim(nloc * 2);
+        OP_REQUIRES_OK(context, context->allocate_temp(DT_INT32, nlist_shape,
+                                                       &tensor_list[5]));
+
+        TensorShape jlist_shape;
+        jlist_shape.AddDim(3 * int_64(nloc) * mem_nnei);
+        OP_REQUIRES_OK(context, context->allocate_temp(DT_INT32, jlist_shape,
+                                                       &tensor_list[6]));
+      }
+
+      // used for format_nbor_list_gpu_cuda
+
+      TensorShape int_shape;
+      int_shape.AddDim(sec_a.size() + int_64(nloc) * sec_a.size() + nloc);
+      OP_REQUIRES_OK(context,
+                     context->allocate_temp(DT_INT32, int_shape, &int_temp));
+
+      TensorShape uint64_shape;
+      uint64_shape.AddDim(int_64(nloc) * max_nbor_size * 2);
+      OP_REQUIRES_OK(context, context->allocate_temp(DT_UINT64, uint64_shape,
+                                                     &uint64_temp));
+
+      array_int = int_temp.flat<int>().data();
+      array_longlong = uint64_temp.flat<unsigned long long>().data();
+    }
+
     // loop over samples
     for (int_64 ff = 0; ff < nsamples; ++ff) {
       FPTYPE* em = p_em + ff * nloc * ndescrpt;
@@ -1221,7 +1348,6 @@ class ProdEnvMatAMixOp : public OpKernel {
         int* type_cpy;
         int frame_nall = nall;
         int mesh_tensor_size = static_cast<int>(mesh_tensor.NumElements());
-        std::vector<Tensor> tensor_list(7);
         // prepare coord and nlist
         _prepare_coord_nlist_gpu<FPTYPE>(
             context, &tensor_list[0], &coord, coord_cpy, &f_type, type_cpy,
@@ -1229,21 +1355,6 @@ class ProdEnvMatAMixOp : public OpKernel {
             nbor_list_dev, frame_nall, mem_cpy, mem_nnei, max_nbor_size, box,
             mesh_tensor.flat<int>().data(), mesh_tensor_size, nloc, nei_mode,
             rcut_r, max_cpy_trial, max_nnei_trial);
-
-        // allocate temp memory, temp memory must not be used after this
-        // operation!
-        Tensor int_temp;
-        TensorShape int_shape;
-        int_shape.AddDim(sec_a.size() + int_64(nloc) * sec_a.size() + nloc);
-        OP_REQUIRES_OK(context,
-                       context->allocate_temp(DT_INT32, int_shape, &int_temp));
-        Tensor uint64_temp;
-        TensorShape uint64_shape;
-        uint64_shape.AddDim(int_64(nloc) * max_nbor_size * 2);
-        OP_REQUIRES_OK(context, context->allocate_temp(DT_UINT64, uint64_shape,
-                                                       &uint64_temp));
-        array_int = int_temp.flat<int>().data();
-        array_longlong = uint64_temp.flat<unsigned long long>().data();
 
         // launch the gpu(nv) compute function
         deepmd::prod_env_mat_a_gpu(em, em_deriv, rij, nlist, coord, type,
@@ -1265,7 +1376,6 @@ class ProdEnvMatAMixOp : public OpKernel {
         int* type_cpy;
         int frame_nall = nall;
         int mesh_tensor_size = static_cast<int>(mesh_tensor.NumElements());
-        std::vector<Tensor> tensor_list(7);
         // prepare coord and nlist
         _prepare_coord_nlist_gpu<FPTYPE>(
             context, &tensor_list[0], &coord, coord_cpy, &f_type, type_cpy,
@@ -1273,21 +1383,6 @@ class ProdEnvMatAMixOp : public OpKernel {
             nbor_list_dev, frame_nall, mem_cpy, mem_nnei, max_nbor_size, box,
             mesh_tensor.flat<int>().data(), mesh_tensor_size, nloc, nei_mode,
             rcut_r, max_cpy_trial, max_nnei_trial);
-
-        // allocate temp memory, temp memory must not be used after this
-        // operation!
-        Tensor int_temp;
-        TensorShape int_shape;
-        int_shape.AddDim(sec_a.size() + int_64(nloc) * sec_a.size() + nloc);
-        OP_REQUIRES_OK(context,
-                       context->allocate_temp(DT_INT32, int_shape, &int_temp));
-        Tensor uint64_temp;
-        TensorShape uint64_shape;
-        uint64_shape.AddDim(int_64(nloc) * max_nbor_size * 2);
-        OP_REQUIRES_OK(context, context->allocate_temp(DT_UINT64, uint64_shape,
-                                                       &uint64_temp));
-        array_int = int_temp.flat<int>().data();
-        array_longlong = uint64_temp.flat<unsigned long long>().data();
 
         // launch the gpu(nv) compute function
         deepmd::prod_env_mat_a_gpu(em, em_deriv, rij, nlist, coord, type,
@@ -1536,14 +1631,6 @@ static int _norm_copy_coord_gpu(OpKernelContext* context,
                                 const int& nloc,
                                 const int& max_cpy_trial,
                                 const float& rcut_r) {
-  // Tensor FPTYPE_temp;
-  TensorShape FPTYPE_shape;
-  FPTYPE_shape.AddDim(nall * 3);
-  tensorflow::Status status = context->allocate_temp(
-      DataTypeToEnum<FPTYPE>::value, FPTYPE_shape, tensor_list);
-  if (!status.ok()) {
-    return false;
-  }
   FPTYPE* tmp_coord = (*tensor_list).flat<FPTYPE>().data();
   DPErrcheck(cudaMemcpy(tmp_coord, coord, sizeof(FPTYPE) * nall * 3,
                         cudaMemcpyDeviceToDevice));
@@ -1557,20 +1644,16 @@ static int _norm_copy_coord_gpu(OpKernelContext* context,
   deepmd::compute_cell_info(cell_info, rcut_r, region);
   const int loc_cellnum = cell_info[21];
   const int total_cellnum = cell_info[22];
-  // Tensor double_temp;
-  TensorShape double_shape;
-  double_shape.AddDim(18);
-  status = context->allocate_temp(DataTypeToEnum<FPTYPE>::value, double_shape,
-                                  tensor_list + 1);
-  if (!status.ok()) {
-    return false;
-  }
   // Tensor int_temp;
   TensorShape int_shape;
   int_shape.AddDim(23 + nloc * 3 + loc_cellnum + total_cellnum * 3 +
                    total_cellnum * 3 + loc_cellnum + 1 + total_cellnum + 1 +
                    nloc);
-  context, context->allocate_temp(DT_INT32, int_shape, tensor_list + 2);
+  tensorflow::Status status =
+      context->allocate_temp(DT_INT32, int_shape, tensor_list + 2);
+  if (!status.ok()) {
+    return false;
+  }
   FPTYPE* box_info_dev = (*(tensor_list + 1)).flat<FPTYPE>().data();
   int* cell_info_dev = (*(tensor_list + 2)).flat<int>().data();
   int* int_data_dev = cell_info_dev + 23;
@@ -1584,18 +1667,6 @@ static int _norm_copy_coord_gpu(OpKernelContext* context,
   deepmd::normalize_coord_gpu(tmp_coord, nall, region_dev);
   int tt;
   for (tt = 0; tt < max_cpy_trial; ++tt) {
-    // Tensor cpy_temp;
-    TensorShape cpy_shape;
-    cpy_shape.AddDim(mem_cpy * 3);
-    status = context->allocate_temp(DataTypeToEnum<FPTYPE>::value, cpy_shape,
-                                    tensor_list + 3);
-    if (!status.ok()) {
-      return false;
-    }
-    // Tensor t_temp;
-    TensorShape t_shape;
-    t_shape.AddDim(mem_cpy * 2);
-    context, context->allocate_temp(DT_INT32, t_shape, tensor_list + 4);
     coord_cpy = (*(tensor_list + 3)).flat<FPTYPE>().data();
     type_cpy = (*(tensor_list + 4)).flat<int>().data();
     idx_mapping = type_cpy + mem_cpy;
@@ -1606,6 +1677,21 @@ static int _norm_copy_coord_gpu(OpKernelContext* context,
       break;
     } else {
       mem_cpy *= 2;
+      // Tensor cpy_temp;
+      TensorShape cpy_shape;
+      cpy_shape.AddDim(mem_cpy * 3);
+      status = context->allocate_temp(DataTypeToEnum<FPTYPE>::value, cpy_shape,
+                                      tensor_list + 3);
+      if (!status.ok()) {
+        return false;
+      }
+      // Tensor t_temp;
+      TensorShape t_shape;
+      t_shape.AddDim(mem_cpy * 2);
+      status = context->allocate_temp(DT_INT32, t_shape, tensor_list + 4);
+      if (!status.ok()) {
+        return false;
+      }
     }
   }
   region_dev.boxt = new_boxt;
@@ -1627,14 +1713,6 @@ static int _build_nlist_gpu(OpKernelContext* context,
                             const int& new_nall,
                             const int& max_nnei_trial,
                             const float& rcut_r) {
-  // Tensor nlist_temp;
-  TensorShape nlist_shape;
-  nlist_shape.AddDim(nloc * 2);
-  tensorflow::Status status =
-      context->allocate_temp(DT_INT32, nlist_shape, tensor_list);
-  if (!status.ok()) {
-    return false;
-  }
   ilist = (*tensor_list).flat<int>().data();
   numneigh = ilist + nloc;
   // Tensor jlist_temp;
@@ -1643,12 +1721,6 @@ static int _build_nlist_gpu(OpKernelContext* context,
   std::vector<int*> firstneigh_host(nloc);
   int tt;
   for (tt = 0; tt < max_nnei_trial; ++tt) {
-    TensorShape jlist_shape;
-    jlist_shape.AddDim(3 * int_64(nloc) * mem_nnei);
-    status = context->allocate_temp(DT_INT32, jlist_shape, tensor_list + 1);
-    if (!status.ok()) {
-      return false;
-    }
     jlist = (*(tensor_list + 1)).flat<int>().data();
     ind_data = jlist + nloc * mem_nnei;
     for (int_64 ii = 0; ii < nloc; ++ii) {
@@ -1662,6 +1734,13 @@ static int _build_nlist_gpu(OpKernelContext* context,
       break;
     } else {
       mem_nnei *= 2;
+      TensorShape jlist_shape;
+      jlist_shape.AddDim(3 * int_64(nloc) * mem_nnei);
+      tensorflow::Status status =
+          context->allocate_temp(DT_INT32, jlist_shape, tensor_list + 1);
+      if (!status.ok()) {
+        return false;
+      }
     }
   }
   return (tt != max_nnei_trial);
@@ -1815,11 +1894,6 @@ static int _norm_copy_coord_gpu(OpKernelContext* context,
                                 const int& nloc,
                                 const int& max_cpy_trial,
                                 const float& rcut_r) {
-  // Tensor FPTYPE_temp;
-  TensorShape FPTYPE_shape;
-  FPTYPE_shape.AddDim(nall * 3);
-  context->allocate_temp(DataTypeToEnum<FPTYPE>::value, FPTYPE_shape,
-                         tensor_list);
   FPTYPE* tmp_coord = (*tensor_list).flat<FPTYPE>().data();
   DPErrcheck(hipMemcpy(tmp_coord, coord, sizeof(FPTYPE) * nall * 3,
                        hipMemcpyDeviceToDevice));
@@ -1833,20 +1907,16 @@ static int _norm_copy_coord_gpu(OpKernelContext* context,
   deepmd::compute_cell_info(cell_info, rcut_r, region);
   const int loc_cellnum = cell_info[21];
   const int total_cellnum = cell_info[22];
-  // Tensor double_temp;
-  TensorShape double_shape;
-  double_shape.AddDim(18);
-  tensorflow::Status status = context->allocate_temp(
-      DataTypeToEnum<FPTYPE>::value, double_shape, tensor_list + 1);
-  if (!status.ok()) {
-    return false;
-  }
   // Tensor int_temp;
   TensorShape int_shape;
   int_shape.AddDim(23 + nloc * 3 + loc_cellnum + total_cellnum * 3 +
                    total_cellnum * 3 + loc_cellnum + 1 + total_cellnum + 1 +
                    nloc);
-  context, context->allocate_temp(DT_INT32, int_shape, tensor_list + 2);
+  tensorflow::Status status =
+      context->allocate_temp(DT_INT32, int_shape, tensor_list + 2);
+  if (!status.ok()) {
+    return false;
+  }
   FPTYPE* box_info_dev = (*(tensor_list + 1)).flat<FPTYPE>().data();
   int* cell_info_dev = (*(tensor_list + 2)).flat<int>().data();
   int* int_data_dev = cell_info_dev + 23;
@@ -1860,15 +1930,6 @@ static int _norm_copy_coord_gpu(OpKernelContext* context,
   deepmd::normalize_coord_gpu(tmp_coord, nall, region_dev);
   int tt;
   for (tt = 0; tt < max_cpy_trial; ++tt) {
-    // Tensor cpy_temp;
-    TensorShape cpy_shape;
-    cpy_shape.AddDim(mem_cpy * 3);
-    context->allocate_temp(DataTypeToEnum<FPTYPE>::value, cpy_shape,
-                           tensor_list + 3);
-    // Tensor t_temp;
-    TensorShape t_shape;
-    t_shape.AddDim(mem_cpy * 2);
-    context, context->allocate_temp(DT_INT32, t_shape, tensor_list + 4);
     coord_cpy = (*(tensor_list + 3)).flat<FPTYPE>().data();
     type_cpy = (*(tensor_list + 4)).flat<int>().data();
     idx_mapping = type_cpy + mem_cpy;
@@ -1879,6 +1940,21 @@ static int _norm_copy_coord_gpu(OpKernelContext* context,
       break;
     } else {
       mem_cpy *= 2;
+      // Tensor cpy_temp;
+      TensorShape cpy_shape;
+      cpy_shape.AddDim(mem_cpy * 3);
+      tensorflow::Status status = context->allocate_temp(
+          DataTypeToEnum<FPTYPE>::value, cpy_shape, tensor_list + 3);
+      if (!status.ok()) {
+        return false;
+      }
+      // Tensor t_temp;
+      TensorShape t_shape;
+      t_shape.AddDim(mem_cpy * 2);
+      status = context->allocate_temp(DT_INT32, t_shape, tensor_list + 4);
+      if (!status.ok()) {
+        return false;
+      }
     }
   }
   region_dev.boxt = new_boxt;
@@ -1900,14 +1976,6 @@ static int _build_nlist_gpu(OpKernelContext* context,
                             const int& new_nall,
                             const int& max_nnei_trial,
                             const float& rcut_r) {
-  // Tensor nlist_temp;
-  TensorShape nlist_shape;
-  nlist_shape.AddDim(nloc * 2);
-  tensorflow::Status status =
-      context->allocate_temp(DT_INT32, nlist_shape, tensor_list);
-  if (!status.ok()) {
-    return false;
-  }
   ilist = (*tensor_list).flat<int>().data();
   numneigh = ilist + nloc;
   // Tensor jlist_temp;
@@ -1916,12 +1984,6 @@ static int _build_nlist_gpu(OpKernelContext* context,
   std::vector<int*> firstneigh_host(nloc);
   int tt;
   for (tt = 0; tt < max_nnei_trial; ++tt) {
-    TensorShape jlist_shape;
-    jlist_shape.AddDim(3 * int_64(nloc) * mem_nnei);
-    status = context->allocate_temp(DT_INT32, jlist_shape, tensor_list + 1);
-    if (!status.ok()) {
-      return false;
-    }
     jlist = (*(tensor_list + 1)).flat<int>().data();
     ind_data = jlist + nloc * mem_nnei;
     for (int_64 ii = 0; ii < nloc; ++ii) {
@@ -1935,6 +1997,13 @@ static int _build_nlist_gpu(OpKernelContext* context,
       break;
     } else {
       mem_nnei *= 2;
+      TensorShape jlist_shape;
+      jlist_shape.AddDim(3 * int_64(nloc) * mem_nnei);
+      tensorflow::Status status =
+          context->allocate_temp(DT_INT32, jlist_shape, tensor_list + 1);
+      if (!status.ok()) {
+        return false;
+      }
     }
   }
   return (tt != max_nnei_trial);
