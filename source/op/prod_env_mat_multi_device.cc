@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 #include "coord.h"
 #include "custom_op.h"
+#include "device.h"
 #include "errors.h"
 #include "neighbor_list.h"
 #include "prod_env_mat.h"
@@ -1468,8 +1469,8 @@ static int _norm_copy_coord_gpu(OpKernelContext* context,
                                 const int& max_cpy_trial,
                                 const float& rcut_r) {
   FPTYPE* tmp_coord = (*tensor_list).flat<FPTYPE>().data();
-  DPErrcheck(cudaMemcpy(tmp_coord, coord, sizeof(FPTYPE) * nall * 3,
-                        cudaMemcpyDeviceToDevice));
+  DPErrcheck(gpuMemcpy(tmp_coord, coord, sizeof(FPTYPE) * nall * 3,
+                       gpuMemcpyDeviceToDevice));
 
   deepmd::Region<FPTYPE> region;
   init_region_cpu(region, box);
