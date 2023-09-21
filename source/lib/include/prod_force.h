@@ -67,7 +67,7 @@ void prod_force_r_cpu(FPTYPE* force,
                       const int nnei,
                       const int nframes);
 
-#if GOOGLE_CUDA
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 template <typename FPTYPE>
 void prod_force_a_gpu(FPTYPE* force,
                       const FPTYPE* net_deriv,
@@ -87,28 +87,6 @@ void prod_force_r_gpu(FPTYPE* force,
                       const int nall,
                       const int nnei,
                       const int nframes);
-#endif  // GOOGLE_CUDA
-
-#if TENSORFLOW_USE_ROCM
-template <typename FPTYPE>
-void prod_force_a_gpu(FPTYPE* force,
-                      const FPTYPE* net_deriv,
-                      const FPTYPE* in_deriv,
-                      const int* nlist,
-                      const int nloc,
-                      const int nall,
-                      const int nnei,
-                      const int nframes);
-
-template <typename FPTYPE>
-void prod_force_r_gpu(FPTYPE* force,
-                      const FPTYPE* net_deriv,
-                      const FPTYPE* in_deriv,
-                      const int* nlist,
-                      const int nloc,
-                      const int nall,
-                      const int nnei,
-                      const int nframes);
-#endif  // TENSORFLOW_USE_ROCM
+#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 
 }  // namespace deepmd

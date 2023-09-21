@@ -145,7 +145,7 @@ TEST_F(TestGelu, gelu_grad_grad_cpu) {
   }
 }
 
-#if GOOGLE_CUDA
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 TEST_F(TestGelu, gelu_gpu) {
   std::vector<double> gelu(nloc, 0.0);
 
@@ -210,71 +210,4 @@ TEST_F(TestGelu, gelu_grad_grad_gpu) {
     EXPECT_LT(fabs(gelu_grad_grad[jj] - expected_gelu_grad_grad[jj]), 1e-5);
   }
 }
-#endif  // GOOGLE_CUDA
-
-#if TENSORFLOW_USE_ROCM
-TEST_F(TestGelu, gelu_gpu) {
-  std::vector<double> gelu(nloc, 0.0);
-
-  double *gelu_dev = NULL, *xx_dev = NULL;
-  deepmd::malloc_device_memory_sync(gelu_dev, gelu);
-  deepmd::malloc_device_memory_sync(xx_dev, xx);
-  deepmd::gelu_gpu<double>(gelu_dev, xx_dev, nloc);
-  deepmd::memcpy_device_to_host(gelu_dev, gelu);
-  deepmd::delete_device_memory(gelu_dev);
-  deepmd::delete_device_memory(xx_dev);
-
-  EXPECT_EQ(gelu.size(), nloc);
-  EXPECT_EQ(gelu.size(), expected_gelu.size());
-  for (int jj = 0; jj < gelu.size(); ++jj) {
-    EXPECT_LT(fabs(gelu[jj] - expected_gelu[jj]), 1e-5);
-  }
-}
-
-TEST_F(TestGelu, gelu_grad_gpu) {
-  std::vector<double> dy(100, 1.0);
-  std::vector<double> gelu_grad(nloc, 0.0);
-
-  double *gelu_grad_dev = NULL, *xx_dev = NULL, *dy_dev = NULL;
-  deepmd::malloc_device_memory_sync(gelu_grad_dev, gelu_grad);
-  deepmd::malloc_device_memory_sync(xx_dev, xx);
-  deepmd::malloc_device_memory_sync(dy_dev, dy);
-  deepmd::gelu_grad_gpu<double>(gelu_grad_dev, xx_dev, dy_dev, nloc);
-  deepmd::memcpy_device_to_host(gelu_grad_dev, gelu_grad);
-  deepmd::delete_device_memory(gelu_grad_dev);
-  deepmd::delete_device_memory(xx_dev);
-  deepmd::delete_device_memory(dy_dev);
-
-  EXPECT_EQ(gelu_grad.size(), nloc);
-  EXPECT_EQ(gelu_grad.size(), expected_gelu_grad.size());
-  for (int jj = 0; jj < gelu_grad.size(); ++jj) {
-    EXPECT_LT(fabs(gelu_grad[jj] - expected_gelu_grad[jj]), 1e-5);
-  }
-}
-
-TEST_F(TestGelu, gelu_grad_grad_gpu) {
-  std::vector<double> dy(100, 1.0);
-  std::vector<double> dy_2(100, 1.0);
-  std::vector<double> gelu_grad_grad(nloc, 0.0);
-
-  double *gelu_grad_grad_dev = NULL, *xx_dev = NULL, *dy_dev = NULL,
-         *dy_2_dev = NULL;
-  deepmd::malloc_device_memory_sync(gelu_grad_grad_dev, gelu_grad_grad);
-  deepmd::malloc_device_memory_sync(xx_dev, xx);
-  deepmd::malloc_device_memory_sync(dy_dev, dy);
-  deepmd::malloc_device_memory_sync(dy_2_dev, dy_2);
-  deepmd::gelu_grad_grad_gpu<double>(gelu_grad_grad_dev, xx_dev, dy_dev,
-                                     dy_2_dev, nloc);
-  deepmd::memcpy_device_to_host(gelu_grad_grad_dev, gelu_grad_grad);
-  deepmd::delete_device_memory(gelu_grad_grad_dev);
-  deepmd::delete_device_memory(xx_dev);
-  deepmd::delete_device_memory(dy_dev);
-  deepmd::delete_device_memory(dy_2_dev);
-
-  EXPECT_EQ(gelu_grad_grad.size(), nloc);
-  EXPECT_EQ(gelu_grad_grad.size(), expected_gelu_grad_grad.size());
-  for (int jj = 0; jj < gelu_grad_grad.size(); ++jj) {
-    EXPECT_LT(fabs(gelu_grad_grad[jj] - expected_gelu_grad_grad[jj]), 1e-5);
-  }
-}
-#endif  // TENSORFLOW_USE_ROCM
+#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
