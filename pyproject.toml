@@ -59,7 +59,6 @@ documentation = "https://docs.deepmodeling.com/projects/deepmd"
 repository = "https://github.com/deepmodeling/deepmd-kit"
 
 [tool.setuptools_scm]
-write_to = "deepmd/_version.py"
 
 [tool.scikit-build]
 experimental = true
@@ -96,6 +95,12 @@ provider-path = "backend"
 [tool.scikit-build.metadata.scripts]
 provider = "backend.dynamic_metadata"
 provider-path = "backend"
+
+[[tool.scikit-build.generate]]
+path = "deepmd_cli/_version.py"
+template = '''
+version = "${version}"
+'''
 
 [tool.cibuildwheel]
 test-command = [
