@@ -1336,7 +1336,6 @@ class DescrptSeA(DescrptSe):
     @property
     def explicit_ntypes(self) -> bool:
         """Explicit ntypes with type embedding."""
-        print("inner se_a, explicit_ntypes = ", self.stripped_type_embedding)
         if self.stripped_type_embedding:
             return True
         return False
