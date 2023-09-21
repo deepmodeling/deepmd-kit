@@ -13,11 +13,13 @@ jobs:
     steps:
       - name: Determine which runner to use for ARM64 build
         id: set-runner
-        uses: jimmygchen/runner-fallback-action@v1
-        with:
-          primary-runner: "self-hosted,Linux,ARM64"
-          fallback-runner: "ubuntu-latest"
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ "${{ github.repository_owner }}" == "deepmodeling" ]; then
+            echo "::set-output name=runner::[\"Linux\",\"ARM64\"]"
+          else
+            echo "::set-output name=runner::ubuntu-latest"
+          fi
+
   build_wheels:
     name: Build wheels for cp${{ matrix.python }}-${{ matrix.platform_id }}
     needs: determine-arm64-runner
