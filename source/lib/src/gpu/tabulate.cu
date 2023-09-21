@@ -150,7 +150,7 @@ __forceinline__ __device__ FPTYPE dot(FPTYPE ll[4], FPTYPE rr[4]) {
 
 template <typename FPTYPE>
 __forceinline__ __device__ void warp_reduce(FPTYPE& val) {
-  for (int offset = WARP_SIZE; offset > 0; offset >>= 1) {
+  for (int offset = WARP_SIZE / 2; offset > 0; offset >>= 1) {
 #if GOOGLE_CUDA
     val += __shfl_down_sync(FULL_MASK, val, offset);
 #elif TENSORFLOW_USE_ROCM
