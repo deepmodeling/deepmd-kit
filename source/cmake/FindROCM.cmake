@@ -1,6 +1,7 @@
 # Input: ROCM_ROOT
 #
-# hip cmake path is added into CMAKE_MODULE_PATH
+# Output: CMAKE_HIP_COMPILER_ROCM_ROOT hip cmake path is added into
+# CMAKE_MODULE_PATH
 
 # define the search path
 cmake_minimum_required(VERSION 3.21)
@@ -24,8 +25,8 @@ if(NOT HIP_CMAKE AND ROCM_FIND_REQUIRED)
 endif()
 
 list(APPEND CMAKE_MODULE_PATH ${HIP_CMAKE})
-find_package(HIP)
-find_package(hipCUB)
+find_package(hip REQUIRED)
+find_package(hipcub REQUIRED)
 
 # print message
 if(NOT ROCM_FIND_QUIETLY)

@@ -50,6 +50,7 @@ elseif(USE_ROCM_TOOLKIT)
   cmake_minimum_required(VERSION 3.21)
   # project name
   project(deepmd_op_rocm)
+  enable_language(HIP)
   set(GPU_LIB_NAME deepmd_op_rocm)
   set(CMAKE_LINK_WHAT_YOU_USE TRUE)
 

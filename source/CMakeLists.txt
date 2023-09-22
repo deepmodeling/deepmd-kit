@@ -118,7 +118,9 @@ if(USE_ROCM_TOOLKIT)
   find_package(ROCM REQUIRED)
   add_definitions("-DTENSORFLOW_USE_ROCM")
   add_compile_definitions(__HIP_PLATFORM_HCC__)
-  message(STATUS "Found ROCM in ${ROCM_ROOT}, build AMD GPU support")
+  message(
+    STATUS
+      "Found ROCM in ${CMAKE_HIP_COMPILER_ROCM_ROOT}, build AMD GPU support")
   set(DP_VARIANT "rocm")
 else()
   message(STATUS "Will not build AMD GPU support")
