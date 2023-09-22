@@ -57,20 +57,21 @@ elseif(USE_ROCM_TOOLKIT)
   set(CMAKE_CXX_STANDARD 14)
   set(CMAKE_HIP_STANDARD 14)
   add_definitions("-DCUB_IGNORE_DEPRECATED_CPP_DIALECT")
-  add_definitions("-DCUB_IGNORE_DEPRECATED_CPP_DIALECT")
 
   message(STATUS "HIP major version is " ${HIP_VERSION_MAJOR})
 
-  set(HIP_HIPCC_FLAGS -fno-gpu-rdc; -fPIC --std=c++14 ${HIP_HIPCC_FLAGS}
-  )# --amdgpu-target=gfx906
+  set(CMAKE_HIP_FLAGS -fno-gpu-rdc; ${CMAKE_HIP_FLAGS}) # --amdgpu-target=gfx906
   if(HIP_VERSION VERSION_LESS 3.5.1)
-    set(HIP_HIPCC_FLAGS -hc; ${HIP_HIPCC_FLAGS})
+    set(CMAKE_HIP_FLAGS -hc; ${CMAKE_HIP_FLAGS})
   endif()
 
   file(GLOB SOURCE_FILES "*.cu")
 
   add_library(${GPU_LIB_NAME} SHARED ${SOURCE_FILES})
   set_source_files_properties(${SOURCE_FILES} PROPERTIES LANGUAGE HIP)
+  # -fpic
+  set_property(TARGET ${GPU_LIB_NAME} PROPERTY POSITION_INDEPENDENT_CODE ON)
+  target_link_libraries(${GPU_LIB_NAME} PRIVATE hip::hipcub)
 
 endif()
 
