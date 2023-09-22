@@ -2,6 +2,7 @@
 cmake_minimum_required(VERSION 3.21)
 # project name
 project(deepmd_op_rocm)
+enable_language(HIP)
 set(CMAKE_LINK_WHAT_YOU_USE TRUE)
 
 # set c++ version c++11
@@ -20,7 +21,8 @@ endif()
 
 file(GLOB SOURCE_FILES "*.hip.cu")
 
-hip_add_library(deepmd_op_rocm SHARED ${SOURCE_FILES})
+add_library(deepmd_op_rocm SHARED ${SOURCE_FILES})
+set_source_files_properties(${SOURCE_FILES} PROPERTIES LANGUAGE HIP)
 target_include_directories(
   deepmd_op_rocm
   PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../include/>
