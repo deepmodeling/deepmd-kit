@@ -26,7 +26,9 @@ if(USE_ROCM_TOOLKIT)
   set(EXTRA_LIBS ${EXTRA_LIBS} deepmd_op_rocm)
   target_link_libraries(${libname} INTERFACE hip::host ${EXTRA_LIBS})
   # gpu_rocm.h
-  target_include_directories(${libname} PUBLIC $<INSTALL_INTERFACE:include>)
+  target_include_directories(
+    ${libname} PUBLIC $<BUILD_INTERFACE:${HIP_INCLUDE_DIRS}>
+                      $<INSTALL_INTERFACE:include>)
 endif()
 
 set_target_properties(${libname} PROPERTIES INSTALL_RPATH $ORIGIN)
