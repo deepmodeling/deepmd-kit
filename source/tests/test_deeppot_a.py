@@ -8,6 +8,7 @@ from common import (
     run_dp,
     tests_path,
 )
+from packaging.version import parse as parse_version
 
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
@@ -750,33 +751,33 @@ class TestModelConvert(unittest.TestCase):
         new_model_pb = "deeppot_new.pb"
         convert_pbtxt_to_pb(str(tests_path / "infer" / "sea_012.pbtxt"), old_model)
         version = detect_model_version(old_model)
-        self.assertEqual(version, "<= 0.12")
+        self.assertEqual(version, parse_version("0.12"))
         os.remove(old_model)
         shutil.copyfile(str(tests_path / "infer" / "sea_012.pbtxt"), new_model_txt)
         convert_dp012_to_dp10(new_model_txt)
         convert_pbtxt_to_pb(new_model_txt, new_model_pb)
         version = detect_model_version(new_model_pb)
-        self.assertEqual(version, "1.0")
+        self.assertEqual(version, parse_version("1.0"))
         os.remove(new_model_pb)
         convert_dp10_to_dp11(new_model_txt)
         convert_pbtxt_to_pb(new_model_txt, new_model_pb)
         version = detect_model_version(new_model_pb)
-        self.assertEqual(version, "1.3")
+        self.assertEqual(version, parse_version("1.3"))
         os.remove(new_model_pb)
         convert_dp12_to_dp13(new_model_txt)
         convert_pbtxt_to_pb(new_model_txt, new_model_pb)
         version = detect_model_version(new_model_pb)
-        self.assertEqual(version, "1.3")
+        self.assertEqual(version, parse_version("1.3"))
         os.remove(new_model_pb)
         convert_dp13_to_dp20(new_model_txt)
         convert_pbtxt_to_pb(new_model_txt, new_model_pb)
         version = detect_model_version(new_model_pb)
-        self.assertEqual(version, "2.0")
+        self.assertEqual(version, parse_version("2.0"))
         os.remove(new_model_pb)
         convert_dp20_to_dp21(new_model_txt)
         convert_pbtxt_to_pb(new_model_txt, new_model_pb)
         version = detect_model_version(new_model_pb)
-        self.assertEqual(version, ">= 2.1")
+        self.assertEqual(version, parse_version("2.1"))
         os.remove(new_model_pb)
         os.remove(new_model_txt)
 
