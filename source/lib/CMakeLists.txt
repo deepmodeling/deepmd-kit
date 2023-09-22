@@ -24,11 +24,9 @@ if(USE_ROCM_TOOLKIT)
   add_definitions("-DTENSORFLOW_USE_ROCM")
   add_subdirectory(src/gpu)
   set(EXTRA_LIBS ${EXTRA_LIBS} deepmd_op_rocm)
-  target_link_libraries(${libname} INTERFACE ${ROCM_LIBRARIES} ${EXTRA_LIBS})
+  target_link_libraries(${libname} INTERFACE hip::device ${EXTRA_LIBS})
   # gpu_rocm.h
-  target_include_directories(
-    ${libname} PUBLIC $<BUILD_INTERFACE:${ROCM_INCLUDE_DIRS}>
-                      $<INSTALL_INTERFACE:include>)
+  target_include_directories(${libname} PUBLIC $<INSTALL_INTERFACE:include>)
 endif()
 
 set_target_properties(${libname} PROPERTIES INSTALL_RPATH $ORIGIN)
