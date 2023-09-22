@@ -113,10 +113,10 @@ void prod_virial_a_gpu(FPTYPE* virial,
                        const int nloc,
                        const int nall,
                        const int nnei) {
-  DPErrcheck(cudaGetLastError());
-  DPErrcheck(cudaDeviceSynchronize());
-  DPErrcheck(cudaMemset(virial, 0, sizeof(FPTYPE) * 9));
-  DPErrcheck(cudaMemset(atom_virial, 0, sizeof(FPTYPE) * 9 * nall));
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
+  DPErrcheck(gpuMemset(virial, 0, sizeof(FPTYPE) * 9));
+  DPErrcheck(gpuMemset(atom_virial, 0, sizeof(FPTYPE) * 9 * nall));
 
   const int LEN = 16;
   int nblock = (nnei + LEN - 1) / LEN;
@@ -125,12 +125,12 @@ void prod_virial_a_gpu(FPTYPE* virial,
   // compute virial of a frame
   virial_deriv_wrt_neighbors_a<<<block_grid, thread_grid>>>(
       virial, atom_virial, net_deriv, in_deriv, rij, nlist, nloc, nnei);
-  DPErrcheck(cudaGetLastError());
-  DPErrcheck(cudaDeviceSynchronize());
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
   // reduction atom_virial to virial
   atom_virial_reduction<FPTYPE, TPB><<<9, TPB>>>(virial, atom_virial, nall);
-  DPErrcheck(cudaGetLastError());
-  DPErrcheck(cudaDeviceSynchronize());
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
 }
 
 template <typename FPTYPE>
@@ -143,10 +143,10 @@ void prod_virial_r_gpu(FPTYPE* virial,
                        const int nloc,
                        const int nall,
                        const int nnei) {
-  DPErrcheck(cudaGetLastError());
-  DPErrcheck(cudaDeviceSynchronize());
-  DPErrcheck(cudaMemset(virial, 0, sizeof(FPTYPE) * 9));
-  DPErrcheck(cudaMemset(atom_virial, 0, sizeof(FPTYPE) * 9 * nall));
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
+  DPErrcheck(gpuMemset(virial, 0, sizeof(FPTYPE) * 9));
+  DPErrcheck(gpuMemset(atom_virial, 0, sizeof(FPTYPE) * 9 * nall));
 
   const int LEN = 16;
   int nblock = (nnei + LEN - 1) / LEN;
@@ -155,12 +155,12 @@ void prod_virial_r_gpu(FPTYPE* virial,
   // compute virial of a frame
   virial_deriv_wrt_neighbors_r<<<block_grid, thread_grid>>>(
       virial, atom_virial, net_deriv, in_deriv, rij, nlist, nloc, nnei);
-  DPErrcheck(cudaGetLastError());
-  DPErrcheck(cudaDeviceSynchronize());
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
   // reduction atom_virial to virial
   atom_virial_reduction<FPTYPE, TPB><<<9, TPB>>>(virial, atom_virial, nall);
-  DPErrcheck(cudaGetLastError());
-  DPErrcheck(cudaDeviceSynchronize());
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
 }
 
 template void prod_virial_a_gpu<float>(float* virial,

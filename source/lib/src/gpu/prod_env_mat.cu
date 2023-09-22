@@ -1,6 +1,16 @@
+#if GOOGLE_CUDA
+#include <cub/block/block_load.cuh>
+#include <cub/block/block_radix_sort.cuh>
+#include <cub/block/block_store.cuh>
+#elif TENSORFLOW_USE_ROCM
+#include <hipcub/hipcub.hpp>
+namespace cub = hipcub;
+#else
+#error "should not touch here"
+#endif
+
 #include "device.h"
 #include "fmt_nlist.h"
-#include "hipcub/hipcub.hpp"
 #include "prod_env_mat.h"
 
 __device__ inline double _sqrt(double x) { return sqrt(x); }
@@ -17,11 +27,11 @@ __launch_bounds__(BLOCK_THREADS) __global__
   enum { TILE_SIZE = BLOCK_THREADS * ITEMS_PER_THREAD };
   // Specialize BlockLoad type for our thread block (uses warp-striped loads for
   // coalescing, then transposes in shared memory to a blocked arrangement)
-  typedef hipcub::BlockLoad<Key, BLOCK_THREADS, ITEMS_PER_THREAD,
-                            hipcub::BLOCK_LOAD_WARP_TRANSPOSE>
+  typedef cub::BlockLoad<Key, BLOCK_THREADS, ITEMS_PER_THREAD,
+                         cub::BLOCK_LOAD_WARP_TRANSPOSE>
       BlockLoadT;
   // Specialize BlockRadixSort type for our thread block
-  typedef hipcub::BlockRadixSort<Key, BLOCK_THREADS, ITEMS_PER_THREAD>
+  typedef cub::BlockRadixSort<Key, BLOCK_THREADS, ITEMS_PER_THREAD>
       BlockRadixSortT;
   // Shared memory
   __shared__ union TempStorage {
@@ -39,8 +49,8 @@ __launch_bounds__(BLOCK_THREADS) __global__
   // Sort keys
   BlockRadixSortT(temp_storage.sort).SortBlockedToStriped(items);
   // Store output in striped fashion
-  hipcub::StoreDirectStriped<BLOCK_THREADS>(threadIdx.x, d_out + block_offset,
-                                            items);
+  cub::StoreDirectStriped<BLOCK_THREADS>(threadIdx.x, d_out + block_offset,
+                                         items);
 }
 
 template <typename FPTYPE>
@@ -80,7 +90,13 @@ __device__ inline uint_64 encoding_nbor_info(const int type,
   // the index of nbor atom(including ghost region) must be smaller than
   // 16777216(1 << 24)
   if (type >= 128 || dist >= (FPTYPE)128.0 || index >= (1 << 24)) {
+#if GOOGLE_CUDA
+    asm("trap;");
+#elif TENSORFLOW_USE_ROCM
     __builtin_trap();
+#else
+#error "should not touch here"
+#endif
   }
   return ((uint_64)type << 57) +
          (uint_64)((double)dist * ((uint_64)1 << 50)) / (1 << 24) * (1 << 24) +
@@ -216,21 +232,19 @@ void format_nbor_list_256(uint_64* key,
   const int nblock = (MAX_NBOR_SIZE + LEN - 1) / LEN;
   dim3 block_grid(nloc, nblock);
   dim3 thread_grid(1, LEN);
-  hipLaunchKernelGGL(format_nlist_fill_a, block_grid, thread_grid, 0, 0, key,
-                     coord, type, gpu_inlist.numneigh, gpu_inlist.firstneigh,
-                     rcut, i_idx, MAX_NBOR_SIZE);
-  DPErrcheck(hipGetLastError());
-  DPErrcheck(hipDeviceSynchronize());
+  format_nlist_fill_a<<<block_grid, thread_grid>>>(
+      key, coord, type, gpu_inlist.numneigh, gpu_inlist.firstneigh, rcut, i_idx,
+      MAX_NBOR_SIZE);
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
   const int ITEMS_PER_THREAD = 4;
   const int BLOCK_THREADS = MAX_NBOR_SIZE / ITEMS_PER_THREAD;
-  // hipLaunchKernelGGL(HIP_KERNEL_NAME(BlockSortKernel<NeighborInfo,
-  // BLOCK_THREADS, ITEMS_PER_THREAD>), g_grid_size, BLOCK_THREADS, 0, 0,
-  hipLaunchKernelGGL(
-      HIP_KERNEL_NAME(
-          BlockSortKernel<uint_64, BLOCK_THREADS, ITEMS_PER_THREAD>),
-      nloc, BLOCK_THREADS, 0, 0, key, key + nloc * MAX_NBOR_SIZE);
-  DPErrcheck(hipGetLastError());
-  DPErrcheck(hipDeviceSynchronize());
+  // BlockSortKernel<NeighborInfo, BLOCK_THREADS,
+  // ITEMS_PER_THREAD><<<g_grid_size, BLOCK_THREADS>>> (
+  BlockSortKernel<uint_64, BLOCK_THREADS, ITEMS_PER_THREAD>
+      <<<nloc, BLOCK_THREADS>>>(key, key + nloc * MAX_NBOR_SIZE);
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
 }
 
 template <typename FPTYPE>
@@ -246,21 +260,19 @@ void format_nbor_list_512(uint_64* key,
   const int nblock = (MAX_NBOR_SIZE + LEN - 1) / LEN;
   dim3 block_grid(nloc, nblock);
   dim3 thread_grid(1, LEN);
-  hipLaunchKernelGGL(format_nlist_fill_a, block_grid, thread_grid, 0, 0, key,
-                     coord, type, gpu_inlist.numneigh, gpu_inlist.firstneigh,
-                     rcut, i_idx, MAX_NBOR_SIZE);
-  DPErrcheck(hipGetLastError());
-  DPErrcheck(hipDeviceSynchronize());
+  format_nlist_fill_a<<<block_grid, thread_grid>>>(
+      key, coord, type, gpu_inlist.numneigh, gpu_inlist.firstneigh, rcut, i_idx,
+      MAX_NBOR_SIZE);
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
   const int ITEMS_PER_THREAD = 4;
   const int BLOCK_THREADS = MAX_NBOR_SIZE / ITEMS_PER_THREAD;
-  // hipLaunchKernelGGL(HIP_KERNEL_NAME(BlockSortKernel<NeighborInfo,
-  // BLOCK_THREADS, ITEMS_PER_THREAD>), g_grid_size, BLOCK_THREADS, 0, 0,
-  hipLaunchKernelGGL(
-      HIP_KERNEL_NAME(
-          BlockSortKernel<uint_64, BLOCK_THREADS, ITEMS_PER_THREAD>),
-      nloc, BLOCK_THREADS, 0, 0, key, key + nloc * MAX_NBOR_SIZE);
-  DPErrcheck(hipGetLastError());
-  DPErrcheck(hipDeviceSynchronize());
+  // BlockSortKernel<NeighborInfo, BLOCK_THREADS,
+  // ITEMS_PER_THREAD><<<g_grid_size, BLOCK_THREADS>>> (
+  BlockSortKernel<uint_64, BLOCK_THREADS, ITEMS_PER_THREAD>
+      <<<nloc, BLOCK_THREADS>>>(key, key + nloc * MAX_NBOR_SIZE);
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
 }
 
 template <typename FPTYPE>
@@ -276,21 +288,19 @@ void format_nbor_list_1024(uint_64* key,
   const int nblock = (MAX_NBOR_SIZE + LEN - 1) / LEN;
   dim3 block_grid(nloc, nblock);
   dim3 thread_grid(1, LEN);
-  hipLaunchKernelGGL(format_nlist_fill_a, block_grid, thread_grid, 0, 0, key,
-                     coord, type, gpu_inlist.numneigh, gpu_inlist.firstneigh,
-                     rcut, i_idx, MAX_NBOR_SIZE);
-  DPErrcheck(hipGetLastError());
-  DPErrcheck(hipDeviceSynchronize());
+  format_nlist_fill_a<<<block_grid, thread_grid>>>(
+      key, coord, type, gpu_inlist.numneigh, gpu_inlist.firstneigh, rcut, i_idx,
+      MAX_NBOR_SIZE);
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
   const int ITEMS_PER_THREAD = 8;
   const int BLOCK_THREADS = MAX_NBOR_SIZE / ITEMS_PER_THREAD;
-  // hipLaunchKernelGGL(HIP_KERNEL_NAME(BlockSortKernel<NeighborInfo,
-  // BLOCK_THREADS, ITEMS_PER_THREAD>), g_grid_size, BLOCK_THREADS, 0, 0,
-  hipLaunchKernelGGL(
-      HIP_KERNEL_NAME(
-          BlockSortKernel<uint_64, BLOCK_THREADS, ITEMS_PER_THREAD>),
-      nloc, BLOCK_THREADS, 0, 0, key, key + nloc * MAX_NBOR_SIZE);
-  DPErrcheck(hipGetLastError());
-  DPErrcheck(hipDeviceSynchronize());
+  // BlockSortKernel<NeighborInfo, BLOCK_THREADS,
+  // ITEMS_PER_THREAD><<<g_grid_size, BLOCK_THREADS>>> (
+  BlockSortKernel<uint_64, BLOCK_THREADS, ITEMS_PER_THREAD>
+      <<<nloc, BLOCK_THREADS>>>(key, key + nloc * MAX_NBOR_SIZE);
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
 }
 
 template <typename FPTYPE>
@@ -306,21 +316,19 @@ void format_nbor_list_2048(uint_64* key,
   const int nblock = (MAX_NBOR_SIZE + LEN - 1) / LEN;
   dim3 block_grid(nloc, nblock);
   dim3 thread_grid(1, LEN);
-  hipLaunchKernelGGL(format_nlist_fill_a, block_grid, thread_grid, 0, 0, key,
-                     coord, type, gpu_inlist.numneigh, gpu_inlist.firstneigh,
-                     rcut, i_idx, MAX_NBOR_SIZE);
-  DPErrcheck(hipGetLastError());
-  DPErrcheck(hipDeviceSynchronize());
+  format_nlist_fill_a<<<block_grid, thread_grid>>>(
+      key, coord, type, gpu_inlist.numneigh, gpu_inlist.firstneigh, rcut, i_idx,
+      MAX_NBOR_SIZE);
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
   const int ITEMS_PER_THREAD = 8;
   const int BLOCK_THREADS = MAX_NBOR_SIZE / ITEMS_PER_THREAD;
-  // hipLaunchKernelGGL(HIP_KERNEL_NAME(BlockSortKernel<NeighborInfo,
-  // BLOCK_THREADS, ITEMS_PER_THREAD>), g_grid_size, BLOCK_THREADS, 0, 0,
-  hipLaunchKernelGGL(
-      HIP_KERNEL_NAME(
-          BlockSortKernel<uint_64, BLOCK_THREADS, ITEMS_PER_THREAD>),
-      nloc, BLOCK_THREADS, 0, 0, key, key + nloc * MAX_NBOR_SIZE);
-  DPErrcheck(hipGetLastError());
-  DPErrcheck(hipDeviceSynchronize());
+  // BlockSortKernel<NeighborInfo, BLOCK_THREADS,
+  // ITEMS_PER_THREAD><<<g_grid_size, BLOCK_THREADS>>> (
+  BlockSortKernel<uint_64, BLOCK_THREADS, ITEMS_PER_THREAD>
+      <<<nloc, BLOCK_THREADS>>>(key, key + nloc * MAX_NBOR_SIZE);
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
 }
 
 template <typename FPTYPE>
@@ -336,21 +344,19 @@ void format_nbor_list_4096(uint_64* key,
   const int nblock = (MAX_NBOR_SIZE + LEN - 1) / LEN;
   dim3 block_grid(nloc, nblock);
   dim3 thread_grid(1, LEN);
-  hipLaunchKernelGGL(format_nlist_fill_a, block_grid, thread_grid, 0, 0, key,
-                     coord, type, gpu_inlist.numneigh, gpu_inlist.firstneigh,
-                     rcut, i_idx, MAX_NBOR_SIZE);
-  DPErrcheck(hipGetLastError());
-  DPErrcheck(hipDeviceSynchronize());
+  format_nlist_fill_a<<<block_grid, thread_grid>>>(
+      key, coord, type, gpu_inlist.numneigh, gpu_inlist.firstneigh, rcut, i_idx,
+      MAX_NBOR_SIZE);
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
   const int ITEMS_PER_THREAD = 16;
   const int BLOCK_THREADS = MAX_NBOR_SIZE / ITEMS_PER_THREAD;
-  // hipLaunchKernelGGL(HIP_KERNEL_NAME(BlockSortKernel<NeighborInfo,
-  // BLOCK_THREADS, ITEMS_PER_THREAD>), g_grid_size, BLOCK_THREADS, 0, 0,
-  hipLaunchKernelGGL(
-      HIP_KERNEL_NAME(
-          BlockSortKernel<uint_64, BLOCK_THREADS, ITEMS_PER_THREAD>),
-      nloc, BLOCK_THREADS, 0, 0, key, key + nloc * MAX_NBOR_SIZE);
-  DPErrcheck(hipGetLastError());
-  DPErrcheck(hipDeviceSynchronize());
+  // BlockSortKernel<NeighborInfo, BLOCK_THREADS,
+  // ITEMS_PER_THREAD><<<g_grid_size, BLOCK_THREADS>>> (
+  BlockSortKernel<uint_64, BLOCK_THREADS, ITEMS_PER_THREAD>
+      <<<nloc, BLOCK_THREADS>>>(key, key + nloc * MAX_NBOR_SIZE);
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
 }
 
 template <typename FPTYPE, int THREADS_PER_BLOCK>
@@ -383,9 +389,9 @@ __global__ void compute_env_mat_a(FPTYPE* em,
     const int idx_value = ii * 4;   // 4 components
     const int idx_deriv = ii * 12;  // 4 components time 3 directions
     if (row_nlist[ii] >= 0) {
-      FPTYPE rr[3] = {0};
-      FPTYPE dd[4] = {0};
-      FPTYPE vv[12] = {0};
+      FPTYPE rr[3] = {(FPTYPE)0.};
+      FPTYPE dd[4] = {(FPTYPE)0.};
+      FPTYPE vv[12] = {(FPTYPE)0.};
       const int j_idx = row_nlist[ii];
       for (int kk = 0; kk < 3; kk++) {
         rr[kk] = coord[j_idx * 3 + kk] - coord[bid * 3 + kk];
@@ -514,9 +520,9 @@ __global__ void compute_env_mat_r(FPTYPE* em,
     const int idx_value = ii;      // 4 components
     const int idx_deriv = ii * 3;  // 4 components time 3 directions
     if (row_nlist[ii] >= 0) {
-      FPTYPE rr[3] = {(FPTYPE)0.};
-      FPTYPE vv[3] = {(FPTYPE)0.};
-      FPTYPE dd = (FPTYPE)0.;
+      FPTYPE rr[3] = {0};
+      FPTYPE vv[3] = {0};
+      FPTYPE dd = 0;
       const int& j_idx = row_nlist[ii];
       for (int kk = 0; kk < 3; kk++) {
         rr[kk] = coord[j_idx * 3 + kk] - coord[bid * 3 + kk];
@@ -576,6 +582,8 @@ void format_nbor_list_gpu(int* nlist,
                           const int nall,
                           const float rcut,
                           const std::vector<int> sec) {
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
   const int LEN = 256;
   const int nnei = sec.back();
   const int nblock = (nloc + LEN - 1) / LEN;
@@ -583,18 +591,18 @@ void format_nbor_list_gpu(int* nlist,
   int* nei_iter = array_int + sec.size();  // = new int[sec_size];
   int* i_idx = array_int + sec.size() + nloc * sec.size();
   uint_64* key = array_longlong;
-  assert(max_nbor_size == 256 || max_nbor_size == 512 || 1024 ||
-         max_nbor_size == 2048 || max_nbor_size == 4096);
-  DPErrcheck(hipMemset(nlist, -1, sizeof(int) * int_64(nloc) * nnei));
-  DPErrcheck(hipMemset(key, 0xffffffff,
+  assert(max_nbor_size == 256 || max_nbor_size == 512 ||
+         max_nbor_size == 1024 || max_nbor_size == 2048 ||
+         max_nbor_size == 4096);
+  DPErrcheck(gpuMemset(nlist, -1, sizeof(int) * int_64(nloc) * nnei));
+  DPErrcheck(gpuMemset(key, 0xffffffff,
                        sizeof(uint_64) * int_64(nloc) * max_nbor_size));
-  DPErrcheck(hipMemcpy(sec_dev, &sec[0], sizeof(int) * sec.size(),
-                       hipMemcpyHostToDevice));
+  DPErrcheck(gpuMemcpy(sec_dev, &sec[0], sizeof(int) * sec.size(),
+                       gpuMemcpyHostToDevice));
 
-  hipLaunchKernelGGL(get_i_idx, nblock, LEN, 0, 0, i_idx, nloc,
-                     gpu_inlist.ilist);
-  DPErrcheck(hipGetLastError());
-  DPErrcheck(hipDeviceSynchronize());
+  get_i_idx<<<nblock, LEN>>>(i_idx, nloc, gpu_inlist.ilist);
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
 
   if (max_nbor_size == 256) {
     format_nbor_list_256(key, coord, type, gpu_inlist, nloc, rcut, i_idx);
@@ -608,14 +616,13 @@ void format_nbor_list_gpu(int* nlist,
     format_nbor_list_4096(key, coord, type, gpu_inlist, nloc, rcut, i_idx);
   }
 
-  hipLaunchKernelGGL(fill_nei_iter, dim3(nloc, (max_nbor_size + LEN - 1) / LEN),
-                     LEN, 0, 0, nei_iter, key, nloc, max_nbor_size, sec.size());
+  fill_nei_iter<<<dim3(nloc, (max_nbor_size + LEN - 1) / LEN), LEN>>>(
+      nei_iter, key, nloc, max_nbor_size, sec.size());
 
-  hipLaunchKernelGGL(
-      format_nlist_fill_b, dim3(nloc, (max_nbor_size + LEN - 1) / LEN), LEN, 0,
-      0, nlist, nnei, nloc, key, sec_dev, sec.size(), nei_iter, max_nbor_size);
-  DPErrcheck(hipGetLastError());
-  DPErrcheck(hipDeviceSynchronize());
+  format_nlist_fill_b<<<dim3(nloc, (max_nbor_size + LEN - 1) / LEN), LEN>>>(
+      nlist, nnei, nloc, key, sec_dev, sec.size(), nei_iter, max_nbor_size);
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
 }
 
 template <typename FPTYPE>
@@ -637,26 +644,27 @@ void prod_env_mat_a_gpu(FPTYPE* em,
                         const float rcut_smth,
                         const std::vector<int> sec,
                         const int* f_type) {
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
   if (f_type == NULL) {
     f_type = type;
   }
   const int nnei = sec.back();
   const int ndescrpt = nnei * 4;
-  DPErrcheck(hipMemset(em, 0, sizeof(FPTYPE) * int_64(nloc) * ndescrpt));
+  DPErrcheck(gpuMemset(em, 0, sizeof(FPTYPE) * int_64(nloc) * ndescrpt));
   DPErrcheck(
-      hipMemset(em_deriv, 0, sizeof(FPTYPE) * int_64(nloc) * ndescrpt * 3));
-  DPErrcheck(hipMemset(rij, 0, sizeof(FPTYPE) * int_64(nloc) * nnei * 3));
+      gpuMemset(em_deriv, 0, sizeof(FPTYPE) * int_64(nloc) * ndescrpt * 3));
+  DPErrcheck(gpuMemset(rij, 0, sizeof(FPTYPE) * int_64(nloc) * nnei * 3));
 
   format_nbor_list_gpu(nlist, coord, f_type, gpu_inlist, array_int,
                        array_longlong, max_nbor_size, nloc, nall, rcut, sec);
-  nborErrcheck(hipGetLastError());
-  nborErrcheck(hipDeviceSynchronize());
+  nborErrcheck(gpuGetLastError());
+  nborErrcheck(gpuDeviceSynchronize());
 
-  hipLaunchKernelGGL(HIP_KERNEL_NAME(compute_env_mat_a<FPTYPE, TPB>), nloc, TPB,
-                     0, 0, em, em_deriv, rij, coord, avg, std, type, nlist,
-                     nnei, rcut_smth, rcut);
-  DPErrcheck(hipGetLastError());
-  DPErrcheck(hipDeviceSynchronize());
+  compute_env_mat_a<FPTYPE, TPB><<<nloc, TPB>>>(
+      em, em_deriv, rij, coord, avg, std, type, nlist, nnei, rcut_smth, rcut);
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
 }
 
 template <typename FPTYPE>
@@ -677,23 +685,24 @@ void prod_env_mat_r_gpu(FPTYPE* em,
                         const float rcut,
                         const float rcut_smth,
                         const std::vector<int> sec) {
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
   const int nnei = sec.back();
   const int ndescrpt = nnei * 1;
-  DPErrcheck(hipMemset(em, 0, sizeof(FPTYPE) * int_64(nloc) * ndescrpt));
+  DPErrcheck(gpuMemset(em, 0, sizeof(FPTYPE) * int_64(nloc) * ndescrpt));
   DPErrcheck(
-      hipMemset(em_deriv, 0, sizeof(FPTYPE) * int_64(nloc) * ndescrpt * 3));
-  DPErrcheck(hipMemset(rij, 0, sizeof(FPTYPE) * int_64(nloc) * nnei * 3));
+      gpuMemset(em_deriv, 0, sizeof(FPTYPE) * int_64(nloc) * ndescrpt * 3));
+  DPErrcheck(gpuMemset(rij, 0, sizeof(FPTYPE) * int_64(nloc) * nnei * 3));
 
   format_nbor_list_gpu(nlist, coord, type, gpu_inlist, array_int,
                        array_longlong, max_nbor_size, nloc, nall, rcut, sec);
-  nborErrcheck(hipGetLastError());
-  nborErrcheck(hipDeviceSynchronize());
+  nborErrcheck(gpuGetLastError());
+  nborErrcheck(gpuDeviceSynchronize());
 
-  hipLaunchKernelGGL(HIP_KERNEL_NAME(compute_env_mat_r<FPTYPE, TPB>), nloc, TPB,
-                     0, 0, em, em_deriv, rij, coord, avg, std, type, nlist,
-                     nnei, rcut_smth, rcut);
-  DPErrcheck(hipGetLastError());
-  DPErrcheck(hipDeviceSynchronize());
+  compute_env_mat_r<FPTYPE, TPB><<<nloc, TPB>>>(
+      em, em_deriv, rij, coord, avg, std, type, nlist, nnei, rcut_smth, rcut);
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
 }
 
 template <typename FPTYPE>
@@ -705,11 +714,10 @@ void test_encoding_decoding_nbor_info_gpu(uint_64* key,
                                           const int* in_index,
                                           const int size_of_array) {
   const int nblock = (size_of_array + TPB - 1) / TPB;
-  hipLaunchKernelGGL(encoding_decoding_nbor_info, nblock, TPB, 0, 0, key,
-                     out_type, out_index, in_type, in_dist, in_index,
-                     size_of_array);
-  DPErrcheck(hipGetLastError());
-  DPErrcheck(hipDeviceSynchronize());
+  encoding_decoding_nbor_info<<<nblock, TPB>>>(
+      key, out_type, out_index, in_type, in_dist, in_index, size_of_array);
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
 }
 
 template void prod_env_mat_a_gpu<float>(float* em,
