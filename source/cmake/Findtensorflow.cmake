@@ -30,7 +30,7 @@ if(BUILD_CPP_IF AND INSTALL_TENSORFLOW)
   if(NOT DEFINED TENSORFLOW_ROOT)
     set(TENSORFLOW_ROOT ${CMAKE_INSTALL_PREFIX})
   endif()
-  # execute conda install
+  # execute pip install
   execute_process(
     COMMAND ${Python_EXECUTABLE} -m pip install tensorflow${VARIANT} --no-deps
             --target=${TENSORFLOW_ROOT})
