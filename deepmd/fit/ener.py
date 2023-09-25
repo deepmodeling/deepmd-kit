@@ -856,9 +856,13 @@ class EnerFitting(Fitting):
             delta_bias = np.linalg.lstsq(type_numbs, bias_diff, rcond=None)[0]
             unbias_e = energy_predict + type_numbs @ delta_bias
             atom_numbs = type_numbs.sum(-1)
-            rmse_ae = (
-                np.sqrt(np.square(unbias_e - energy_ground_truth)) / atom_numbs
-            ).mean()
+            rmse_ae = np.sqrt(
+                np.mean(
+                    np.square(
+                        (unbias_e.ravel() - energy_ground_truth.ravel()) / atom_numbs
+                    )
+                )
+            )
             self.bias_atom_e[idx_type_map] += delta_bias.reshape(-1)
             log.info(
                 f"RMSE of atomic energy after linear regression is: {rmse_ae} eV/atom."
