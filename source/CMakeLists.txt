@@ -111,10 +111,14 @@ endif(USE_CUDA_TOOLKIT)
 # define USE_ROCM_TOOLKIT
 if(USE_ROCM_TOOLKIT)
   cmake_minimum_required(VERSION 3.21)
-  find_package(ROCM REQUIRED)
+  include(CMakeDetermineHIPCompiler)
+  list(APPEND CMAKE_PREFIX_PATH ${CMAKE_HIP_COMPILER_ROCM_ROOT})
+  find_package(hip REQUIRED)
+  find_package(hipcub REQUIRED)
   add_definitions("-DTENSORFLOW_USE_ROCM")
-  add_compile_definitions(__HIP_PLATFORM_HCC__)
-  message(STATUS "Found ROCM in ${ROCM_ROOT}, build AMD GPU support")
+  message(
+    STATUS
+      "Found ROCM in ${CMAKE_HIP_COMPILER_ROCM_ROOT}, build AMD GPU support")
   set(DP_VARIANT "rocm")
 else()
   message(STATUS "Will not build AMD GPU support")
