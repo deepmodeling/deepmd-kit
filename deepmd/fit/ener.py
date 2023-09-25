@@ -858,7 +858,9 @@ class EnerFitting(Fitting):
             atom_numbs = type_numbs.sum(-1)
             rmse_ae = np.sqrt(
                 np.mean(
-                    np.square((unbias_e.ravel() - energy_ground_truth.ravel()) / atom_numbs)
+                    np.square(
+                        (unbias_e.ravel() - energy_ground_truth.ravel()) / atom_numbs
+                    )
                 )
             )
             self.bias_atom_e[idx_type_map] += delta_bias.reshape(-1)
