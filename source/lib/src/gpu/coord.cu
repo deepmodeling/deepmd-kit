@@ -92,7 +92,7 @@ __global__ void _fill_idx_cellmap(int *idx_cellmap,
     phys2Inter(inter, in_c + idy * 3, rec_boxt);
     for (int dd = 0; dd < 3; ++dd) {
       idx_noshift[dd] = (inter[dd] - nat_orig[dd]) / cell_size[dd];
-      if (inter[dd] - nat_orig[dd] < 0.) {
+      if (inter[dd] - nat_orig[dd] < (FPTYPE)0.) {
         idx_noshift[dd]--;
       }
       if (idx_noshift[dd] < nat_stt[dd]) {
@@ -263,26 +263,24 @@ void compute_int_data(int *int_data,
   const FPTYPE *rec_boxt = region.rec_boxt;
 
   const int nblock_loc = (nloc + TPB - 1) / TPB;
-  hipLaunchKernelGGL(_fill_idx_cellmap, nblock_loc, TPB, 0, 0, idx_cellmap,
-                     idx_cellmap_noshift, in_c, rec_boxt, nat_stt, nat_end,
-                     ext_stt, ext_end, nloc);
-  DPErrcheck(hipGetLastError());
-  DPErrcheck(hipDeviceSynchronize());
+  _fill_idx_cellmap<<<nblock_loc, TPB>>>(idx_cellmap, idx_cellmap_noshift, in_c,
+                                         rec_boxt, nat_stt, nat_end, ext_stt,
+                                         ext_end, nloc);
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
 
   const int nblock_loc_cellnum = (loc_cellnum + TPB - 1) / TPB;
-  hipLaunchKernelGGL(_fill_loc_cellnum_map, nblock_loc_cellnum, TPB, 0, 0,
-                     temp_idx_order, loc_cellnum_map, idx_cellmap_noshift, nloc,
-                     loc_cellnum);
-  DPErrcheck(hipGetLastError());
-  DPErrcheck(hipDeviceSynchronize());
+  _fill_loc_cellnum_map<<<nblock_loc_cellnum, TPB>>>(
+      temp_idx_order, loc_cellnum_map, idx_cellmap_noshift, nloc, loc_cellnum);
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
 
   const int nblock_total_cellnum = (total_cellnum + TPB - 1) / TPB;
-  hipLaunchKernelGGL(_fill_total_cellnum_map, nblock_total_cellnum, TPB, 0, 0,
-                     total_cellnum_map, mask_cellnum_map, cell_map,
-                     cell_shift_map, nat_stt, nat_end, ext_stt, ext_end,
-                     loc_cellnum_map, total_cellnum);
-  DPErrcheck(hipGetLastError());
-  DPErrcheck(hipDeviceSynchronize());
+  _fill_total_cellnum_map<<<nblock_total_cellnum, TPB>>>(
+      total_cellnum_map, mask_cellnum_map, cell_map, cell_shift_map, nat_stt,
+      nat_end, ext_stt, ext_end, loc_cellnum_map, total_cellnum);
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
 }
 
 void build_loc_clist(int *int_data,
@@ -297,11 +295,10 @@ void build_loc_clist(int *int_data,
                                    3 * total_cellnum;
   int *loc_clist = int_data + nloc * 3 + loc_cellnum + total_cellnum * 3 +
                    total_cellnum * 3 + loc_cellnum + 1 + total_cellnum + 1;
-  hipLaunchKernelGGL(_build_loc_clist, nblock, TPB, 0, 0, loc_clist,
-                     idx_cellmap_noshift, temp_idx_order, sec_loc_cellnum_map,
-                     nloc);
-  DPErrcheck(hipGetLastError());
-  DPErrcheck(hipDeviceSynchronize());
+  _build_loc_clist<<<nblock, TPB>>>(loc_clist, idx_cellmap_noshift,
+                                    temp_idx_order, sec_loc_cellnum_map, nloc);
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
 }
 
 template <typename FPTYPE>
@@ -325,52 +322,57 @@ void copy_coord(FPTYPE *out_c,
 
   const FPTYPE *boxt = region.boxt;
   const FPTYPE *rec_boxt = region.rec_boxt;
-  hipLaunchKernelGGL(_copy_coord, nblock, TPB, 0, 0, out_c, out_t, mapping,
-                     in_c, in_t, cell_map, cell_shift_map, sec_loc_cellnum_map,
-                     sec_total_cellnum_map, loc_clist, nloc, nall,
-                     total_cellnum, boxt, rec_boxt);
-  DPErrcheck(hipGetLastError());
-  DPErrcheck(hipDeviceSynchronize());
+  _copy_coord<<<nblock, TPB>>>(out_c, out_t, mapping, in_c, in_t, cell_map,
+                               cell_shift_map, sec_loc_cellnum_map,
+                               sec_total_cellnum_map, loc_clist, nloc, nall,
+                               total_cellnum, boxt, rec_boxt);
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
 }
 
 namespace deepmd {
 template <typename FPTYPE>
-void normalize_coord_gpu_rocm(FPTYPE *coord,
-                              const int natom,
-                              const Region<FPTYPE> &region) {
+void normalize_coord_gpu(FPTYPE *coord,
+                         const int natom,
+                         const Region<FPTYPE> &region) {
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
   const FPTYPE *boxt = region.boxt;
   const FPTYPE *rec_boxt = region.rec_boxt;
   const int nblock = (natom + TPB - 1) / TPB;
-  hipLaunchKernelGGL(normalize_one, nblock, TPB, 0, 0, coord, boxt, rec_boxt,
-                     natom);
-  DPErrcheck(hipGetLastError());
-  DPErrcheck(hipDeviceSynchronize());
+  normalize_one<<<nblock, TPB>>>(coord, boxt, rec_boxt, natom);
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
 }
 
+//  int_data(temp cuda
+//  memory):idx_map,idx_map_noshift,temp_idx_order,loc_cellnum_map,total_cellnum_map,mask_cellnum_map,
+//                             cell_map,cell_shift_map,sec_loc_cellnum_map,sec_total_cellnum_map,loc_clist
 template <typename FPTYPE>
-int copy_coord_gpu_rocm(FPTYPE *out_c,
-                        int *out_t,
-                        int *mapping,
-                        int *nall,
-                        int *int_data,
-                        const FPTYPE *in_c,
-                        const int *in_t,
-                        const int &nloc,
-                        const int &mem_nall,
-                        const int &loc_cellnum,
-                        const int &total_cellnum,
-                        const int *cell_info,
-                        const Region<FPTYPE> &region) {
+int copy_coord_gpu(FPTYPE *out_c,
+                   int *out_t,
+                   int *mapping,
+                   int *nall,
+                   int *int_data,
+                   const FPTYPE *in_c,
+                   const int *in_t,
+                   const int &nloc,
+                   const int &mem_nall,
+                   const int &loc_cellnum,
+                   const int &total_cellnum,
+                   const int *cell_info,
+                   const Region<FPTYPE> &region) {
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
   compute_int_data(int_data, in_c, cell_info, region, nloc, loc_cellnum,
                    total_cellnum);
   int *int_data_cpu = new int
       [loc_cellnum + 2 * total_cellnum + loc_cellnum + 1 + total_cellnum +
        1];  // loc_cellnum_map,total_cellnum_map,mask_cellnum_map,sec_loc_cellnum_map,sec_total_cellnum_map
-  DPErrcheck(hipMemcpy(int_data_cpu, int_data + 3 * nloc,
+  DPErrcheck(gpuMemcpy(int_data_cpu, int_data + 3 * nloc,
                        sizeof(int) * (loc_cellnum + 2 * total_cellnum),
-                       hipMemcpyDeviceToHost));
-  DPErrcheck(hipGetLastError());
-  DPErrcheck(hipDeviceSynchronize());
+                       gpuMemcpyDeviceToHost));
+  DPErrcheck(gpuGetLastError());
   int *loc_cellnum_map = int_data_cpu;
   int *total_cellnum_map = loc_cellnum_map + loc_cellnum;
   int *mask_cellnum_map = total_cellnum_map + total_cellnum;
@@ -396,11 +398,12 @@ int copy_coord_gpu_rocm(FPTYPE *out_c,
     // size of the output arrays is not large enough
     return 1;
   } else {
-    DPErrcheck(hipMemcpy(int_data + nloc * 3 + loc_cellnum + total_cellnum * 3 +
+    DPErrcheck(gpuMemcpy(int_data + nloc * 3 + loc_cellnum + total_cellnum * 3 +
                              total_cellnum * 3,
                          sec_loc_cellnum_map,
                          sizeof(int) * (loc_cellnum + 1 + total_cellnum + 1),
-                         hipMemcpyHostToDevice));
+                         gpuMemcpyHostToDevice));
+    DPErrcheck(gpuGetLastError());
     delete[] int_data_cpu;
     build_loc_clist(int_data, nloc, loc_cellnum, total_cellnum);
     copy_coord(out_c, out_t, mapping, int_data, in_c, in_t, nloc, *nall,
@@ -409,36 +412,36 @@ int copy_coord_gpu_rocm(FPTYPE *out_c,
   return 0;
 }
 
-template void normalize_coord_gpu_rocm<float>(float *coord,
-                                              const int natom,
-                                              const Region<float> &region);
-template void normalize_coord_gpu_rocm<double>(double *coord,
-                                               const int natom,
-                                               const Region<double> &region);
-template int copy_coord_gpu_rocm<float>(float *out_c,
-                                        int *out_t,
-                                        int *mapping,
-                                        int *nall,
-                                        int *int_data,
-                                        const float *in_c,
-                                        const int *in_t,
-                                        const int &nloc,
-                                        const int &mem_nall,
-                                        const int &loc_cellnum,
-                                        const int &total_cellnum,
-                                        const int *cell_info,
-                                        const Region<float> &region);
-template int copy_coord_gpu_rocm<double>(double *out_c,
-                                         int *out_t,
-                                         int *mapping,
-                                         int *nall,
-                                         int *int_data,
-                                         const double *in_c,
-                                         const int *in_t,
-                                         const int &nloc,
-                                         const int &mem_nall,
-                                         const int &loc_cellnum,
-                                         const int &total_cellnum,
-                                         const int *cell_info,
-                                         const Region<double> &region);
+template void normalize_coord_gpu<float>(float *coord,
+                                         const int natom,
+                                         const Region<float> &region);
+template void normalize_coord_gpu<double>(double *coord,
+                                          const int natom,
+                                          const Region<double> &region);
+template int copy_coord_gpu<float>(float *out_c,
+                                   int *out_t,
+                                   int *mapping,
+                                   int *nall,
+                                   int *int_data,
+                                   const float *in_c,
+                                   const int *in_t,
+                                   const int &nloc,
+                                   const int &mem_nall,
+                                   const int &loc_cellnum,
+                                   const int &total_cellnum,
+                                   const int *cell_info,
+                                   const Region<float> &region);
+template int copy_coord_gpu<double>(double *out_c,
+                                    int *out_t,
+                                    int *mapping,
+                                    int *nall,
+                                    int *int_data,
+                                    const double *in_c,
+                                    const int *in_t,
+                                    const int &nloc,
+                                    const int &mem_nall,
+                                    const int &loc_cellnum,
+                                    const int &total_cellnum,
+                                    const int *cell_info,
+                                    const Region<double> &region);
 }  // namespace deepmd

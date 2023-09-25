@@ -11,7 +11,7 @@ target_include_directories(
 
 if(USE_CUDA_TOOLKIT)
   add_definitions("-DGOOGLE_CUDA")
-  add_subdirectory(src/cuda)
+  add_subdirectory(src/gpu)
   set(EXTRA_LIBS ${EXTRA_LIBS} deepmd_op_cuda)
   target_link_libraries(${libname} INTERFACE deepmd_dyn_cudart ${EXTRA_LIBS})
   # gpu_cuda.h
@@ -22,12 +22,14 @@ endif()
 
 if(USE_ROCM_TOOLKIT)
   add_definitions("-DTENSORFLOW_USE_ROCM")
-  add_subdirectory(src/rocm)
+  add_subdirectory(src/gpu)
   set(EXTRA_LIBS ${EXTRA_LIBS} deepmd_op_rocm)
-  target_link_libraries(${libname} INTERFACE ${ROCM_LIBRARIES} ${EXTRA_LIBS})
+  # to define __HIP_PLATFORM_AMD__ in hip_runtime.h
+  target_link_libraries(${libname} PUBLIC hip::host)
+  target_link_libraries(${libname} INTERFACE ${EXTRA_LIBS})
   # gpu_rocm.h
   target_include_directories(
-    ${libname} PUBLIC $<BUILD_INTERFACE:${ROCM_INCLUDE_DIRS}>
+    ${libname} PUBLIC $<BUILD_INTERFACE:${HIP_INCLUDE_DIRS}>
                       $<INSTALL_INTERFACE:include>)
 endif()
 

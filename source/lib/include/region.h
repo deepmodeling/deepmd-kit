@@ -27,7 +27,7 @@ void convert_to_phys_cpu(FPTYPE* rp,
                          const Region<FPTYPE>& region,
                          const FPTYPE* ri);
 
-#if GOOGLE_CUDA
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 // only for unittest
 template <typename FPTYPE>
 void convert_to_inter_gpu(FPTYPE* ri,
@@ -41,21 +41,6 @@ void convert_to_phys_gpu(FPTYPE* rp,
 
 template <typename FPTYPE>
 void volume_gpu(FPTYPE* volume, const Region<FPTYPE>& region);
-#endif  // GOOGLE_CUDA
+#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 
-#if TENSORFLOW_USE_ROCM
-// only for unittest
-template <typename FPTYPE>
-void convert_to_inter_gpu_rocm(FPTYPE* ri,
-                               const Region<FPTYPE>& region,
-                               const FPTYPE* rp);
-
-template <typename FPTYPE>
-void convert_to_phys_gpu_rocm(FPTYPE* rp,
-                              const Region<FPTYPE>& region,
-                              const FPTYPE* ri);
-
-template <typename FPTYPE>
-void volume_gpu_rocm(FPTYPE* volume, const Region<FPTYPE>& region);
-#endif  // TENSORFLOW_USE_ROCM
 }  // namespace deepmd

@@ -18,53 +18,29 @@ void format_nlist_cpu(int* nlist,
                       const float rcut,
                       const std::vector<int> sec);
 
-#if GOOGLE_CUDA
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 template <typename FPTYPE>
-void format_nbor_list_gpu_cuda(int* nlist,
-                               const FPTYPE* coord,
-                               const int* type,
-                               const deepmd::InputNlist& gpu_inlist,
-                               int* array_int,
-                               uint_64* array_longlong,
-                               const int max_nbor_size,
-                               const int nloc,
-                               const int nall,
-                               const float rcut,
-                               const std::vector<int> sec);
+void format_nbor_list_gpu(int* nlist,
+                          const FPTYPE* coord,
+                          const int* type,
+                          const deepmd::InputNlist& gpu_inlist,
+                          int* array_int,
+                          uint_64* array_longlong,
+                          const int max_nbor_size,
+                          const int nloc,
+                          const int nall,
+                          const float rcut,
+                          const std::vector<int> sec);
 
 template <typename FPTYPE>
-void test_encoding_decoding_nbor_info_gpu_cuda(uint_64* key,
-                                               int* out_type,
-                                               int* out_index,
-                                               const int* in_type,
-                                               const FPTYPE* in_dist,
-                                               const int* in_index,
-                                               const int size_of_array);
-#endif  // GOOGLE_CUDA
-
-#if TENSORFLOW_USE_ROCM
-template <typename FPTYPE>
-void format_nbor_list_gpu_rocm(int* nlist,
-                               const FPTYPE* coord,
-                               const int* type,
-                               const deepmd::InputNlist& gpu_inlist,
-                               int* array_int,
-                               uint_64* array_longlong,
-                               const int max_nbor_size,
-                               const int nloc,
-                               const int nall,
-                               const float rcut,
-                               const std::vector<int> sec);
-
-template <typename FPTYPE>
-void test_encoding_decoding_nbor_info_gpu_rocm(uint_64* key,
-                                               int* out_type,
-                                               int* out_index,
-                                               const int* in_type,
-                                               const FPTYPE* in_dist,
-                                               const int* in_index,
-                                               const int size_of_array);
-#endif  // TENSORFLOW_USE_ROCM
+void test_encoding_decoding_nbor_info_gpu(uint_64* key,
+                                          int* out_type,
+                                          int* out_index,
+                                          const int* in_type,
+                                          const FPTYPE* in_dist,
+                                          const int* in_index,
+                                          const int size_of_array);
+#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 
 }  // namespace deepmd
 
