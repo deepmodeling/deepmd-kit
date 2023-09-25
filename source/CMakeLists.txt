@@ -25,10 +25,6 @@ if((NOT BUILD_PY_IF) AND (NOT BUILD_CPP_IF))
 endif()
 
 if(BUILD_CPP_IF AND BUILD_TESTING)
-  if(NOT INSTALL_TENSORFLOW)
-    # some errors in conda packages...
-    find_package(GTest)
-  endif()
   if(NOT GTEST_LIBRARIES)
     configure_file(${CMAKE_CURRENT_SOURCE_DIR}/cmake/googletest.cmake.in
                    googletest-download/CMakeLists.txt @ONLY)
@@ -127,6 +123,9 @@ endif(USE_ROCM_TOOLKIT)
 set(DEEPMD_SOURCE_DIR ${PROJECT_SOURCE_DIR}/..)
 
 # setup tensorflow libraries by python
+if(INSTALL_TENSORFLOW)
+  set(USE_TF_PYTHON_LIBS TRUE)
+endif(INSTALL_TENSORFLOW)
 if(USE_TF_PYTHON_LIBS)
   if(NOT "$ENV{CIBUILDWHEEL}" STREQUAL "1")
     find_package(

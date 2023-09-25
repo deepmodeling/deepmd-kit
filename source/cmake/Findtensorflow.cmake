@@ -19,25 +19,30 @@ if(SKBUILD)
 endif(SKBUILD)
 
 if(BUILD_CPP_IF AND INSTALL_TENSORFLOW)
-  # Here we try to install libtensorflow_cc using conda install.
+  # Here we try to install libtensorflow_cc using pip install.
 
   if(USE_CUDA_TOOLKIT)
-    set(VARIANT cuda)
+    set(VARIANT "")
   else()
-    set(VARIANT cpu)
+    set(VARIANT "-cpu")
   endif()
 
   if(NOT DEFINED TENSORFLOW_ROOT)
     set(TENSORFLOW_ROOT ${CMAKE_INSTALL_PREFIX})
   endif()
-  # execute conda install
-  execute_process(COMMAND conda create libtensorflow_cc=*=${VARIANT}* -c
-                          deepmodeling -y -p ${TENSORFLOW_ROOT})
+  # execute pip install
+  execute_process(
+    COMMAND ${Python_EXECUTABLE} -m pip install tensorflow${VARIANT} --no-deps
+            --target=${TENSORFLOW_ROOT})
+  set(TENSORFLOW_ROOT
+      ${TENSORFLOW_ROOT}/lib/python${Python_VERSION_MAJOR}.${Python_VERSION_MINOR}/site-packages/tensorflow
+  )
 endif()
 
 if(BUILD_CPP_IF
    AND USE_TF_PYTHON_LIBS
-   AND NOT SKBUILD)
+   AND NOT SKBUILD
+   AND NOT INSTALL_TENSORFLOW)
   # Here we try to install libtensorflow_cc.so as well as
   # libtensorflow_framework.so using libs within the python site-package
   # tensorflow folder.
