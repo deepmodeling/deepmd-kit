@@ -744,9 +744,7 @@ class DescrptSeA(DescrptSe):
         else:
             type_embedding = None
         if self.stripped_type_embedding and type_embedding is None:
-            raise RuntimeError(
-                "type_embedding is required for se_a_tebd_v2 model."
-            )
+            raise RuntimeError("type_embedding is required for se_a_tebd_v2 model.")
         start_index = 0
         inputs = tf.reshape(inputs, [-1, natoms[0], self.ndescrpt])
         output = []
