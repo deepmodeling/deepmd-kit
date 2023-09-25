@@ -79,6 +79,7 @@ One may set the following environment variables before executing `pip`:
 | TENSORFLOW_ROOT       | Path                   | Detected automatically | The path to TensorFlow Python library. By default the installer only finds TensorFlow under user site-package directory (`site.getusersitepackages()`) or system site-package directory (`sysconfig.get_path("purelib")`) due to limitation of [PEP-517](https://peps.python.org/pep-0517/). If not found, the latest TensorFlow (or the environment variable `TENSORFLOW_VERSION` if given) from PyPI will be built against.|
 | DP_ENABLE_NATIVE_OPTIMIZATION | 0, 1           | 0             | Enable compilation optimization for the native machine's CPU type. Do not enable it if generated code will run on different CPUs. |
 | CMAKE_ARGS             | str                   | -             | Additional CMake arguments |
+| &lt;LANG&gt;FLAGS (`<LANG>`=`CXX`, `CUDA` or `HIP`)   | str            | -             | Default compilation flags to be used when compiling `<LANG>` files. See [CMake documentation](https://cmake.org/cmake/help/latest/variable/CMAKE_LANG_FLAGS.html). |
 
 To test the installation, one should first jump out of the source directory
 ```
@@ -193,7 +194,8 @@ One may add the following arguments to `cmake`:
 | -DCMAKE_HIP_COMPILER_ROCM_ROOT=&lt;value&gt; | Path         | Detected automatically | The path to the ROCM toolkit directory. |
 | -DLAMMPS_SOURCE_ROOT=&lt;value&gt; | Path         | - | Only neccessary for LAMMPS plugin mode. The path to the [LAMMPS source code](install-lammps.md). LAMMPS 8Apr2021 or later is supported. If not assigned, the plugin mode will not be enabled. |
 | -DUSE_TF_PYTHON_LIBS=&lt;value&gt; | `TRUE` or `FALSE` | `FALSE`       | If `TRUE`, Build C++ interface with TensorFlow's Python libraries(TensorFlow's Python Interface is required). And there's no need for building TensorFlow's C++ interface.|
-| -DENABLE_NATIVE_OPTIMIZATION       | `TRUE` or `FALSE` | `FALSE`       | Enable compilation optimization for the native machine's CPU type. Do not enable it if generated code will run on different CPUs. |
+| -DENABLE_NATIVE_OPTIMIZATION=&lt;value&gt;       | `TRUE` or `FALSE` | `FALSE`       | Enable compilation optimization for the native machine's CPU type. Do not enable it if generated code will run on different CPUs. |
+| -DCMAKE_&lt;LANG&gt;_FLAGS=&lt;value&gt; (`<LANG>`=`CXX`, `CUDA` or `HIP`)   | str            | -             | Default compilation flags to be used when compiling `<LANG>` files. See [CMake documentation](https://cmake.org/cmake/help/latest/variable/CMAKE_LANG_FLAGS.html). |
 
 If the CMake has been executed successfully, then run the following make commands to build the package:
 ```bash
