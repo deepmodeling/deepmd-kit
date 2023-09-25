@@ -48,12 +48,12 @@ def _init_models():
     data_file = str(tests_path / os.path.join("model_compression", "data"))
     frozen_model = str(tests_path / "dp-original-se-e2-a-v2.pb")
     compressed_model = str(tests_path / "dp-compressed-se-e2-a-v2.pb")
-    INPUT = str(tests_path / "input_se_e2_a_v2.json")
+    INPUT = str(tests_path / "input_se_a_ebd_v2.json")
     jdata = j_loader(str(tests_path / os.path.join("model_compression", "input.json")))
     jdata["training"]["training_data"]["systems"] = data_file
     jdata["training"]["validation_data"]["systems"] = data_file
     jdata["model"]["descriptor"] = {}
-    jdata["model"]["descriptor"]["type"] = "se_e2_a_v2"
+    jdata["model"]["descriptor"]["type"] = "se_a_ebd_v2"
     jdata["model"]["descriptor"]["type_one_side"] = False
     jdata["model"]["type_embedding"] = {}
     jdata["model"]["type_embedding"]["neuron"] = [1]
@@ -73,12 +73,12 @@ def _init_models():
 
 def _init_models_exclude_types():
     data_file = str(tests_path / os.path.join("model_compression", "data"))
-    frozen_model = str(tests_path / "dp-original-exclude-types-se-e2-a-v2.pb")
-    compressed_model = str(tests_path / "dp-compressed-exclude-types-se-e2-a-v2.pb")
-    INPUT = str(tests_path / "input_se_e2_a_v2.json")
+    frozen_model = str(tests_path / "dp-original-exclude-types-se-e2-a-ebd-v2.pb")
+    compressed_model = str(tests_path / "dp-compressed-exclude-types-se-e2-a-ebd-v2.pb")
+    INPUT = str(tests_path / "input_se_a_ebd_v2.json")
     jdata = j_loader(str(tests_path / os.path.join("model_compression", "input.json")))
     jdata["model"]["descriptor"] = {}
-    jdata["model"]["descriptor"]["type"] = "se_e2_a_v2"
+    jdata["model"]["descriptor"]["type"] = "se_a_ebd_v2"
     jdata["model"]["descriptor"]["exclude_types"] = [[0, 1]]
     jdata["model"]["descriptor"]["type_one_side"] = False
     jdata["model"]["type_embedding"] = {}

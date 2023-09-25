@@ -19,9 +19,13 @@ from .se_a import (
 log = logging.getLogger(__name__)
 
 
-@Descriptor.register("se_e2_a_v2")
-class DescrptSeAV2(DescrptSeA):
-    r"""A warpper for DescriptorSeA, which set stripped_type_embedding=True."""
+@Descriptor.register("se_a_tpe_v2")
+@Descriptor.register("se_a_ebd_v2")
+class DescrptSeAEbdV2(DescrptSeA):
+    r"""A compressible se_a_ebd model.
+
+    This model is a warpper for DescriptorSeA, which set stripped_type_embedding=True.
+    """
 
     def __init__(
         self,

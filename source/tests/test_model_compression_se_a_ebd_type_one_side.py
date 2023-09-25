@@ -53,7 +53,7 @@ def _init_models():
     jdata["training"]["training_data"]["systems"] = data_file
     jdata["training"]["validation_data"]["systems"] = data_file
     jdata["model"]["descriptor"] = {}
-    jdata["model"]["descriptor"]["type"] = "se_e2_a_v2"
+    jdata["model"]["descriptor"]["type"] = "se_a_ebd_v2"
     jdata["model"]["descriptor"]["type_one_side"] = True
     jdata["model"]["type_embedding"] = {}
     jdata["model"]["type_embedding"]["neuron"] = [1]
@@ -78,7 +78,7 @@ def _init_models_exclude_types():
     INPUT = str(tests_path / "input.json")
     jdata = j_loader(str(tests_path / os.path.join("model_compression", "input.json")))
     jdata["model"]["descriptor"] = {}
-    jdata["model"]["descriptor"]["type"] = "se_e2_a_v2"
+    jdata["model"]["descriptor"]["type"] = "se_a_ebd_v2"
     jdata["model"]["descriptor"]["exclude_types"] = [[0, 1]]
     jdata["model"]["descriptor"]["type_one_side"] = True
     jdata["model"]["type_embedding"] = {}
