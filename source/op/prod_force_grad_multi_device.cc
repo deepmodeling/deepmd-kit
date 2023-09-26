@@ -121,15 +121,10 @@ class ProdForceSeAGradOp : public OpKernel {
     const int* p_nlist = nlist_tensor.flat<int>().data();
 
     if (device == "GPU") {
-#if GOOGLE_CUDA
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
       deepmd::prod_force_grad_a_gpu(p_grad_net, p_grad, p_in_deriv, p_nlist,
                                     nloc, nnei, nframes);
-#endif  // GOOGLE_CUDA
-
-#if TENSORFLOW_USE_ROCM
-      deepmd::prod_force_grad_a_gpu(p_grad_net, p_grad, p_in_deriv, p_nlist,
-                                    nloc, nnei, nframes);
-#endif  // TENSORFLOW_USE_ROCM
+#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
     } else if (device == "CPU") {
       deepmd::prod_force_grad_a_cpu(p_grad_net, p_grad, p_in_deriv, p_nlist,
                                     nloc, nnei, nframes);
@@ -234,15 +229,10 @@ class ProdForceSeRGradOp : public OpKernel {
     const int* p_nlist = nlist_tensor.flat<int>().data();
 
     if (device == "GPU") {
-#if GOOGLE_CUDA
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
       deepmd::prod_force_grad_r_gpu(p_grad_net, p_grad, p_in_deriv, p_nlist,
                                     nloc, nnei, nframes);
-#endif  // GOOGLE_CUDA
-
-#if TENSORFLOW_USE_ROCM
-      deepmd::prod_force_grad_r_gpu(p_grad_net, p_grad, p_in_deriv, p_nlist,
-                                    nloc, nnei, nframes);
-#endif  // TENSORFLOW_USE_ROCM
+#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
     } else if (device == "CPU") {
       deepmd::prod_force_grad_r_cpu(p_grad_net, p_grad, p_in_deriv, p_nlist,
                                     nloc, nnei, nframes);

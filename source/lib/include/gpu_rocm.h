@@ -16,6 +16,7 @@
 #define gpuMemcpy hipMemcpy
 #define gpuMemcpyDeviceToHost hipMemcpyDeviceToHost
 #define gpuMemcpyHostToDevice hipMemcpyHostToDevice
+#define gpuMemcpyDeviceToDevice hipMemcpyDeviceToDevice
 #define gpuMemset hipMemset
 
 #define DPErrcheck(res) \
