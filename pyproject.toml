@@ -205,6 +205,7 @@ select = [
     "RUF", # ruff
     "NPY", # numpy
 ]
+
 ignore = [
     "E501", # line too long
     "F841", # local variable is assigned to but never used
@@ -224,3 +225,6 @@ ignore-init-module-imports = true
 
 [tool.ruff.pydocstyle]
 convention = "numpy"
+
+[tool.pytest.ini_options]
+markers = "run"
