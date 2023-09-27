@@ -11,6 +11,14 @@
 
 #define GPU_MAX_NBOR_SIZE 4096
 
+#define gpuGetLastError hipGetLastError
+#define gpuDeviceSynchronize hipDeviceSynchronize
+#define gpuMemcpy hipMemcpy
+#define gpuMemcpyDeviceToHost hipMemcpyDeviceToHost
+#define gpuMemcpyHostToDevice hipMemcpyHostToDevice
+#define gpuMemcpyDeviceToDevice hipMemcpyDeviceToDevice
+#define gpuMemset hipMemset
+
 #define DPErrcheck(res) \
   { DPAssert((res), __FILE__, __LINE__); }
 inline void DPAssert(hipError_t code,
@@ -59,7 +67,7 @@ void memcpy_host_to_device(FPTYPE *device, const FPTYPE *host, const int size) {
 }
 
 template <typename FPTYPE>
-void memcpy_device_to_host(FPTYPE *device, std::vector<FPTYPE> &host) {
+void memcpy_device_to_host(const FPTYPE *device, std::vector<FPTYPE> &host) {
   DPErrcheck(hipMemcpy(&host[0], device, sizeof(FPTYPE) * host.size(),
                        hipMemcpyDeviceToHost));
 }

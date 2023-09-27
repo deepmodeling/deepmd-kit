@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import argparse
-import imp
 import logging
 import textwrap
 from typing import (
@@ -8,18 +7,10 @@ from typing import (
     Optional,
 )
 
-
-def load_child_module(name):
-    """Load a child module without loading its parent module."""
-    names = name.split(".")
-    path = None
-    for name in names:
-        f, path, info = imp.find_module(name, path)
-        path = [path]
-    return imp.load_module(name, f, path[0], info)
-
-
-__version__ = load_child_module("deepmd._version").__version__
+try:
+    from deepmd_cli._version import version as __version__
+except ImportError:
+    __version__ = "unknown"
 
 
 def get_ll(log_level: str) -> int:
@@ -150,14 +141,14 @@ def main_parser() -> argparse.ArgumentParser:
         "--init-model",
         type=str,
         default=None,
-        help="Initialize the model by the provided checkpoint.",
+        help="Initialize the model by the provided path prefix of checkpoint files.",
     )
     parser_train_subgroup.add_argument(
         "-r",
         "--restart",
         type=str,
         default=None,
-        help="Restart the training from the provided checkpoint.",
+        help="Restart the training from the provided path prefix of checkpoint files.",
     )
     parser_train_subgroup.add_argument(
         "-f",
@@ -306,7 +297,7 @@ def main_parser() -> argparse.ArgumentParser:
     # The table is composed of fifth-order polynomial coefficients and is assembled
     # from two sub-tables. The first table takes the step(parameter) as it's uniform
     # step, while the second table takes 10 * step as it\s uniform step
-    #  The range of the first table is automatically detected by deepmd-kit, while the
+    #  The range of the first table is automatically detected by deepmd-kit, while the
     # second table ranges from the first table's upper boundary(upper) to the
     # extrapolate(parameter) * upper.
     parser_compress = subparsers.add_parser(
@@ -448,6 +439,22 @@ def main_parser() -> argparse.ArgumentParser:
         default=False,
         help="Calculate the RMS real error of the model. The real data should be given in the systems.",
     )
+    parser_model_devi.add_argument(
+        "--atomic",
+        action="store_true",
+        default=False,
+        help="Print the force model deviation of each atom.",
+    )
+    parser_model_devi.add_argument(
+        "--relative",
+        type=float,
+        help="Calculate the relative model deviation of force. The level parameter for computing the relative model deviation of the force should be given.",
+    )
+    parser_model_devi.add_argument(
+        "--relative_v",
+        type=float,
+        help="Calculate the relative model deviation of virial. The level parameter for computing the relative model deviation of the virial should be given.",
+    )
 
     # * convert models
     parser_transform = subparsers.add_parser(
@@ -549,7 +556,7 @@ def main_parser() -> argparse.ArgumentParser:
         "--restart",
         type=str,
         default=None,
-        help="Restart the training from the provided checkpoint.",
+        help="Restart the training from the provided prefix of checkpoint files.",
     )
     parser_train_nvnmd.add_argument(
         "-s",

@@ -21,43 +21,24 @@ void prod_force_grad_r_cpu(FPTYPE* grad_net,
                            const int nnei,
                            const int nframes);
 
-#if GOOGLE_CUDA
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 template <typename FPTYPE>
-void prod_force_grad_a_gpu_cuda(FPTYPE* grad_net,
-                                const FPTYPE* grad,
-                                const FPTYPE* env_deriv,
-                                const int* nlist,
-                                const int nloc,
-                                const int nnei,
-                                const int nframes);
+void prod_force_grad_a_gpu(FPTYPE* grad_net,
+                           const FPTYPE* grad,
+                           const FPTYPE* env_deriv,
+                           const int* nlist,
+                           const int nloc,
+                           const int nnei,
+                           const int nframes);
 
 template <typename FPTYPE>
-void prod_force_grad_r_gpu_cuda(FPTYPE* grad_net,
-                                const FPTYPE* grad,
-                                const FPTYPE* env_deriv,
-                                const int* nlist,
-                                const int nloc,
-                                const int nnei,
-                                const int nframes);
-#endif  // GOOGLE_CUDA
+void prod_force_grad_r_gpu(FPTYPE* grad_net,
+                           const FPTYPE* grad,
+                           const FPTYPE* env_deriv,
+                           const int* nlist,
+                           const int nloc,
+                           const int nnei,
+                           const int nframes);
+#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 
-#if TENSORFLOW_USE_ROCM
-template <typename FPTYPE>
-void prod_force_grad_a_gpu_rocm(FPTYPE* grad_net,
-                                const FPTYPE* grad,
-                                const FPTYPE* env_deriv,
-                                const int* nlist,
-                                const int nloc,
-                                const int nnei,
-                                const int nframes);
-
-template <typename FPTYPE>
-void prod_force_grad_r_gpu_rocm(FPTYPE* grad_net,
-                                const FPTYPE* grad,
-                                const FPTYPE* env_deriv,
-                                const int* nlist,
-                                const int nloc,
-                                const int nnei,
-                                const int nframes);
-#endif  // TENSORFLOW_USE_ROCM
 }  // namespace deepmd

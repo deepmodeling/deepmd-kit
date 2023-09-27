@@ -25,7 +25,8 @@ if(Protobuf_LIBRARY)
 endif()
 
 set_target_properties(
-  ${libname} PROPERTIES INSTALL_RPATH "$ORIGIN;${TensorFlow_LIBRARY_PATH}")
+  ${libname} PROPERTIES INSTALL_RPATH "$ORIGIN;${TensorFlow_LIBRARY_PATH}"
+                        BUILD_RPATH "$ORIGIN/../op")
 target_compile_definitions(${libname} PRIVATE TF_PRIVATE)
 if(CMAKE_TESTING_ENABLED)
   target_link_libraries(${libname} PRIVATE coverage_config)
@@ -33,7 +34,7 @@ endif()
 target_compile_features(${libname} PUBLIC cxx_std_11)
 
 if(BUILD_PY_IF)
-  install(TARGETS ${libname} DESTINATION deepmd/op/)
+  install(TARGETS ${libname} DESTINATION deepmd/lib/)
 else(BUILD_PY_IF)
   install(
     TARGETS ${libname}

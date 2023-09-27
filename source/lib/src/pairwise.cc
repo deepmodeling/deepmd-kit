@@ -95,7 +95,7 @@ void deepmd::dprc_pairwise_map_cpu(
   // (3, 4, 8, 9, -1, 10, -1)
   forward_qmmm_map.resize((nfragments - 1) * map_size);
   std::fill(forward_qmmm_map.begin(), forward_qmmm_map.end(), -1);
-  int nqm_real;
+  int nqm_real = nloc;  // init for nfragments = 1
   for (int ii = 0; ii < nfragments - 1; ++ii) {
     // real
     for (int jj = 0, kk = 0; jj < nqm; ++jj) {

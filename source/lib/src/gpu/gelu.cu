@@ -31,10 +31,9 @@ __global__ void gelu_grad(FPTYPE* out,
       _tanh((FPTYPE)SQRT_2_PI *
             (xx[idx] + (FPTYPE)0.044715 * xx[idx] * xx[idx] * xx[idx]));
   out[idx] =
-      dy[idx] *
-      ((FPTYPE)0.5 * (FPTYPE)SQRT_2_PI * xx[idx] * ((FPTYPE)1. - var * var) *
-           ((FPTYPE)0.134145 * xx[idx] * xx[idx] + (FPTYPE)1.) +
-       (FPTYPE)0.5 * var + (FPTYPE)0.5);
+      dy[idx] * ((FPTYPE)0.5 * SQRT_2_PI * xx[idx] * ((FPTYPE)1. - var * var) *
+                     ((FPTYPE)0.134145 * xx[idx] * xx[idx] + (FPTYPE)1.) +
+                 (FPTYPE)0.5 * var + (FPTYPE)0.5);
 }
 
 template <typename FPTYPE>
@@ -64,75 +63,75 @@ __global__ void gelu_grad_grad(FPTYPE* out,
 
 namespace deepmd {
 template <typename FPTYPE>
-void gelu_gpu_rocm(FPTYPE* out, const FPTYPE* xx, const int_64 size) {
+void gelu_gpu(FPTYPE* out, const FPTYPE* xx, const int_64 size) {
   if (size <= 0) {
     return;
   }
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
   const int THREAD_ITEMS = 1024;
   const int BLOCK_NUMS = (size + THREAD_ITEMS - 1) / THREAD_ITEMS;
 
-  hipLaunchKernelGGL(gelu, BLOCK_NUMS, THREAD_ITEMS, 0, 0, out, xx, size);
-  DPErrcheck(hipGetLastError());
-  DPErrcheck(hipDeviceSynchronize());
+  gelu<<<BLOCK_NUMS, THREAD_ITEMS>>>(out, xx, size);
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
 }
 
 template <typename FPTYPE>
-void gelu_grad_gpu_rocm(FPTYPE* out,
+void gelu_grad_gpu(FPTYPE* out,
+                   const FPTYPE* xx,
+                   const FPTYPE* dy,
+                   const int_64 size) {
+  if (size <= 0) {
+    return;
+  }
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
+  const int THREAD_ITEMS = 1024;
+  const int BLOCK_NUMS = (size + THREAD_ITEMS - 1) / THREAD_ITEMS;
+
+  gelu_grad<<<BLOCK_NUMS, THREAD_ITEMS>>>(out, xx, dy, size);
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
+}
+
+template <typename FPTYPE>
+void gelu_grad_grad_gpu(FPTYPE* out,
                         const FPTYPE* xx,
                         const FPTYPE* dy,
+                        const FPTYPE* dy_2,
                         const int_64 size) {
   if (size <= 0) {
     return;
   }
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
   const int THREAD_ITEMS = 1024;
   const int BLOCK_NUMS = (size + THREAD_ITEMS - 1) / THREAD_ITEMS;
 
-  hipLaunchKernelGGL(gelu_grad, BLOCK_NUMS, THREAD_ITEMS, 0, 0, out, xx, dy,
-                     size);
-  DPErrcheck(hipGetLastError());
-  DPErrcheck(hipDeviceSynchronize());
+  gelu_grad_grad<<<BLOCK_NUMS, THREAD_ITEMS>>>(out, xx, dy, dy_2, size);
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
 }
 
-template <typename FPTYPE>
-void gelu_grad_grad_gpu_rocm(FPTYPE* out,
-                             const FPTYPE* xx,
-                             const FPTYPE* dy,
-                             const FPTYPE* dy_2,
-                             const int_64 size) {
-  if (size <= 0) {
-    return;
-  }
-  const int THREAD_ITEMS = 1024;
-  const int BLOCK_NUMS = (size + THREAD_ITEMS - 1) / THREAD_ITEMS;
-
-  hipLaunchKernelGGL(gelu_grad_grad, BLOCK_NUMS, THREAD_ITEMS, 0, 0, out, xx,
-                     dy, dy_2, size);
-  DPErrcheck(hipGetLastError());
-  DPErrcheck(hipDeviceSynchronize());
-}
-
-template void gelu_gpu_rocm<float>(float* out,
+template void gelu_gpu<float>(float* out, const float* x, const int_64 size);
+template void gelu_gpu<double>(double* out, const double* x, const int_64 size);
+template void gelu_grad_gpu<float>(float* out,
                                    const float* x,
+                                   const float* dy,
                                    const int_64 size);
-template void gelu_gpu_rocm<double>(double* out,
+template void gelu_grad_gpu<double>(double* out,
                                     const double* x,
+                                    const double* dy,
                                     const int_64 size);
-template void gelu_grad_gpu_rocm<float>(float* out,
+template void gelu_grad_grad_gpu<float>(float* out,
                                         const float* x,
                                         const float* dy,
+                                        const float* dy_2,
                                         const int_64 size);
-template void gelu_grad_gpu_rocm<double>(double* out,
+template void gelu_grad_grad_gpu<double>(double* out,
                                          const double* x,
                                          const double* dy,
+                                         const double* dy_2,
                                          const int_64 size);
-template void gelu_grad_grad_gpu_rocm<float>(float* out,
-                                             const float* x,
-                                             const float* dy,
-                                             const float* dy_2,
-                                             const int_64 size);
-template void gelu_grad_grad_gpu_rocm<double>(double* out,
-                                              const double* x,
-                                              const double* dy,
-                                              const double* dy_2,
-                                              const int_64 size);
 }  // namespace deepmd

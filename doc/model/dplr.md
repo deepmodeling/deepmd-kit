@@ -171,8 +171,8 @@ fix_modify	0 virial yes
 ```
 
 The fix command `dplr` calculates the position of WCs by the DW model and back-propagates the long-range interaction on virtual atoms to real toms.
-At this time, the training parameter {ref}`type_map <model/type_map>` will be mapped to LAMMPS atom types.
-
+The atom names specified in [pair_style `deepmd`](../third-party/lammps-command.md#pair_style-deepmd) will be used to determine elements.
+If it is not set, the training parameter {ref}`type_map <model/type_map>` will be mapped to LAMMPS atom types.
 
 To use a time-dependent electric field, LAMMPS's `variable` feature can be utilized:
 ```lammps

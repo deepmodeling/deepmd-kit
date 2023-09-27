@@ -81,25 +81,25 @@ __global__ void force_grad_wrt_neighbors_r(FPTYPE* grad_net,
 
 namespace deepmd {
 template <typename FPTYPE>
-void prod_force_grad_a_gpu_cuda(FPTYPE* grad_net,
-                                const FPTYPE* grad,
-                                const FPTYPE* env_deriv,
-                                const int* nlist,
-                                const int nloc,
-                                const int nnei,
-                                const int nframes) {
-  DPErrcheck(cudaGetLastError());
-  DPErrcheck(cudaDeviceSynchronize());
+void prod_force_grad_a_gpu(FPTYPE* grad_net,
+                           const FPTYPE* grad,
+                           const FPTYPE* env_deriv,
+                           const int* nlist,
+                           const int nloc,
+                           const int nnei,
+                           const int nframes) {
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
   const int ndescrpt = nnei * 4;
   DPErrcheck(
-      cudaMemset(grad_net, 0, sizeof(FPTYPE) * nframes * nloc * ndescrpt));
+      gpuMemset(grad_net, 0, sizeof(FPTYPE) * nframes * nloc * ndescrpt));
   const int nblock = (ndescrpt + TPB - 1) / TPB;
   dim3 block_grid(nframes * nloc, nblock);
   dim3 thread_grid(TPB, 1);
   force_grad_wrt_center_atom<<<block_grid, thread_grid>>>(grad_net, grad,
                                                           env_deriv, ndescrpt);
-  DPErrcheck(cudaGetLastError());
-  DPErrcheck(cudaDeviceSynchronize());
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
 
   const int LEN = 128;
   const int nblock_ = (nframes * nloc + LEN - 1) / LEN;
@@ -107,30 +107,30 @@ void prod_force_grad_a_gpu_cuda(FPTYPE* grad_net,
   dim3 thread_grid_(LEN, 4);
   force_grad_wrt_neighbors_a<<<block_grid_, thread_grid_>>>(
       grad_net, grad, env_deriv, nlist, nloc, nnei, nframes);
-  DPErrcheck(cudaGetLastError());
-  DPErrcheck(cudaDeviceSynchronize());
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
 }
 
 template <typename FPTYPE>
-void prod_force_grad_r_gpu_cuda(FPTYPE* grad_net,
-                                const FPTYPE* grad,
-                                const FPTYPE* env_deriv,
-                                const int* nlist,
-                                const int nloc,
-                                const int nnei,
-                                const int nframes) {
-  DPErrcheck(cudaGetLastError());
-  DPErrcheck(cudaDeviceSynchronize());
+void prod_force_grad_r_gpu(FPTYPE* grad_net,
+                           const FPTYPE* grad,
+                           const FPTYPE* env_deriv,
+                           const int* nlist,
+                           const int nloc,
+                           const int nnei,
+                           const int nframes) {
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
   const int ndescrpt = nnei * 1;
   DPErrcheck(
-      cudaMemset(grad_net, 0, sizeof(FPTYPE) * nframes * nloc * ndescrpt));
+      gpuMemset(grad_net, 0, sizeof(FPTYPE) * nframes * nloc * ndescrpt));
   const int nblock = (ndescrpt + TPB - 1) / TPB;
   dim3 block_grid(nframes * nloc, nblock);
   dim3 thread_grid(TPB, 1);
   force_grad_wrt_center_atom<<<block_grid, thread_grid>>>(grad_net, grad,
                                                           env_deriv, ndescrpt);
-  DPErrcheck(cudaGetLastError());
-  DPErrcheck(cudaDeviceSynchronize());
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
 
   const int LEN = 128;
   const int nblock_ = (nframes * nloc + LEN - 1) / LEN;
@@ -138,36 +138,36 @@ void prod_force_grad_r_gpu_cuda(FPTYPE* grad_net,
   dim3 thread_grid_(LEN, 1);
   force_grad_wrt_neighbors_r<<<block_grid_, thread_grid_>>>(
       grad_net, grad, env_deriv, nlist, nloc, nnei, nframes);
-  DPErrcheck(cudaGetLastError());
-  DPErrcheck(cudaDeviceSynchronize());
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
 }
 
-template void prod_force_grad_a_gpu_cuda<float>(float* grad_net,
-                                                const float* grad,
-                                                const float* env_deriv,
-                                                const int* nlist,
-                                                const int nloc,
-                                                const int nnei,
-                                                const int nframes);
-template void prod_force_grad_a_gpu_cuda<double>(double* grad_net,
-                                                 const double* grad,
-                                                 const double* env_deriv,
-                                                 const int* nlist,
-                                                 const int nloc,
-                                                 const int nnei,
-                                                 const int nframes);
-template void prod_force_grad_r_gpu_cuda<float>(float* grad_net,
-                                                const float* grad,
-                                                const float* env_deriv,
-                                                const int* nlist,
-                                                const int nloc,
-                                                const int nnei,
-                                                const int nframes);
-template void prod_force_grad_r_gpu_cuda<double>(double* grad_net,
-                                                 const double* grad,
-                                                 const double* env_deriv,
-                                                 const int* nlist,
-                                                 const int nloc,
-                                                 const int nnei,
-                                                 const int nframes);
+template void prod_force_grad_a_gpu<float>(float* grad_net,
+                                           const float* grad,
+                                           const float* env_deriv,
+                                           const int* nlist,
+                                           const int nloc,
+                                           const int nnei,
+                                           const int nframes);
+template void prod_force_grad_a_gpu<double>(double* grad_net,
+                                            const double* grad,
+                                            const double* env_deriv,
+                                            const int* nlist,
+                                            const int nloc,
+                                            const int nnei,
+                                            const int nframes);
+template void prod_force_grad_r_gpu<float>(float* grad_net,
+                                           const float* grad,
+                                           const float* env_deriv,
+                                           const int* nlist,
+                                           const int nloc,
+                                           const int nnei,
+                                           const int nframes);
+template void prod_force_grad_r_gpu<double>(double* grad_net,
+                                            const double* grad,
+                                            const double* env_deriv,
+                                            const int* nlist,
+                                            const int nloc,
+                                            const int nnei,
+                                            const int nframes);
 }  // namespace deepmd

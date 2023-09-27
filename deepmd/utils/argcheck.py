@@ -177,7 +177,7 @@ def descrpt_se_a_args():
     doc_axis_neuron = "Size of the submatrix of G (embedding matrix)."
     doc_activation_function = f'The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version. If you set "None" or "none" here, no activation function will be used.'
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
-    doc_type_one_side = r"If true, the embedding network parameters vary by types of neighbor atoms only, so there will be $N_\text{types}$ sets of embedding network parameters. Otherwise, the embedding network parameters vary by types of centric atoms and types of neighbor atoms, so there will be $N_\text{types}^2$ sets of embedding network parameters."
+    doc_type_one_side = r"If true, the embedding network parameters vary by types of neighbor atoms only, so there will be $N_\text{types}$ sets of embedding network parameters. Otherwise, the embedding network parameters vary by types of centric atoms and types of neighbor atoms, so there will be $N_\text{types}^2$ sets of embedding network parameters."
     doc_precision = f"The precision of the embedding net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
     doc_trainable = "If the parameters in the embedding net is trainable"
     doc_seed = "Random seed for parameter initialization"
@@ -263,7 +263,8 @@ def descrpt_se_a_tpe_args():
     doc_type_nlayer = "number of hidden layers of type embedding net"
     doc_numb_aparam = "dimension of atomic parameter. if set to a value > 0, the atomic parameters are embedded."
 
-    return descrpt_se_a_args() + [
+    return [
+        *descrpt_se_a_args(),
         Argument("type_nchanl", int, optional=True, default=4, doc=doc_type_nchanl),
         Argument("type_nlayer", int, optional=True, default=2, doc=doc_type_nlayer),
         Argument("numb_aparam", int, optional=True, default=0, doc=doc_numb_aparam),
@@ -280,7 +281,7 @@ def descrpt_se_r_args():
     doc_neuron = "Number of neurons in each hidden layers of the embedding net. When two layers are of the same size or one layer is twice as large as the previous layer, a skip connection is built."
     doc_activation_function = f'The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version. If you set "None" or "none" here, no activation function will be used.'
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
-    doc_type_one_side = r"If true, the embedding network parameters vary by types of neighbor atoms only, so there will be $N_\text{types}$ sets of embedding network parameters. Otherwise, the embedding network parameters vary by types of centric atoms and types of neighbor atoms, so there will be $N_\text{types}^2$ sets of embedding network parameters."
+    doc_type_one_side = r"If true, the embedding network parameters vary by types of neighbor atoms only, so there will be $N_\text{types}$ sets of embedding network parameters. Otherwise, the embedding network parameters vary by types of centric atoms and types of neighbor atoms, so there will be $N_\text{types}^2$ sets of embedding network parameters."
     doc_precision = f"The precision of the embedding net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
     doc_trainable = "If the parameters in the embedding net are trainable"
     doc_seed = "Random seed for parameter initialization"
@@ -344,7 +345,7 @@ def descrpt_se_atten_common_args():
     doc_axis_neuron = "Size of the submatrix of G (embedding matrix)."
     doc_activation_function = f'The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version. If you set "None" or "none" here, no activation function will be used.'
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
-    doc_type_one_side = r"If true, the embedding network parameters vary by types of neighbor atoms only, so there will be $N_\text{types}$ sets of embedding network parameters. Otherwise, the embedding network parameters vary by types of centric atoms and types of neighbor atoms, so there will be $N_\text{types}^2$ sets of embedding network parameters."
+    doc_type_one_side = r"If true, the embedding network parameters vary by types of neighbor atoms only, so there will be $N_\text{types}$ sets of embedding network parameters. Otherwise, the embedding network parameters vary by types of centric atoms and types of neighbor atoms, so there will be $N_\text{types}^2$ sets of embedding network parameters."
     doc_precision = f"The precision of the embedding net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
     doc_trainable = "If the parameters in the embedding net is trainable"
     doc_seed = "Random seed for parameter initialization"
@@ -397,7 +398,8 @@ def descrpt_se_atten_args():
     doc_smooth_type_embdding = "When using stripped type embedding, whether to dot smooth factor on the network output of type embedding to keep the network smooth, instead of setting `set_davg_zero` to be True."
     doc_set_davg_zero = "Set the normalization average to zero. This option should be set when `se_atten` descriptor or `atom_ener` in the energy fitting is used"
 
-    return descrpt_se_atten_common_args() + [
+    return [
+        *descrpt_se_atten_common_args(),
         Argument(
             "stripped_type_embedding",
             bool,
@@ -422,7 +424,8 @@ def descrpt_se_atten_args():
 def descrpt_se_atten_v2_args():
     doc_set_davg_zero = "Set the normalization average to zero. This option should be set when `se_atten` descriptor or `atom_ener` in the energy fitting is used"
 
-    return descrpt_se_atten_common_args() + [
+    return [
+        *descrpt_se_atten_common_args(),
         Argument(
             "set_davg_zero", bool, optional=True, default=False, doc=doc_set_davg_zero
         ),
@@ -799,6 +802,7 @@ def model_args(exclude_hybrid=False):
         hybrid_models.extend(
             [
                 pairwise_dprc(),
+                linear_ener_model_args(),
             ]
         )
     return Argument(
@@ -871,6 +875,7 @@ def model_args(exclude_hybrid=False):
                 [
                     standard_model_args(),
                     multi_model_args(),
+                    frozen_model_args(),
                     *hybrid_models,
                 ],
                 optional=True,
@@ -940,6 +945,46 @@ def pairwise_dprc() -> Argument:
         [
             qm_model_args,
             qmmm_model_args,
+        ],
+    )
+    return ca
+
+
+def frozen_model_args() -> Argument:
+    doc_model_file = "Path to the frozen model file."
+    ca = Argument(
+        "frozen",
+        dict,
+        [
+            Argument("model_file", str, optional=False, doc=doc_model_file),
+        ],
+    )
+    return ca
+
+
+def linear_ener_model_args() -> Argument:
+    doc_weights = (
+        "If the type is list of float, a list of weights for each model. "
+        'If "mean", the weights are set to be 1 / len(models). '
+        'If "sum", the weights are set to be 1.'
+    )
+    models_args = model_args(exclude_hybrid=True)
+    models_args.name = "models"
+    models_args.fold_subdoc = True
+    models_args.set_dtype(list)
+    models_args.set_repeat(True)
+    models_args.doc = "The sub-models."
+    ca = Argument(
+        "linear_ener",
+        dict,
+        [
+            models_args,
+            Argument(
+                "weights",
+                [list, str],
+                optional=False,
+                doc=doc_weights,
+            ),
         ],
     )
     return ca
@@ -1158,7 +1203,7 @@ def loss_ener_spin():
     doc_start_pref_pf = start_pref("atom_pref")
     doc_limit_pref_pf = limit_pref("atom_pref")
     doc_relative_f = "If provided, relative force error will be used in the loss. The difference of force will be normalized by the magnitude of the force in the label with a shift given by `relative_f`, i.e. DF_i / ( || F || + relative_f ) with DF denoting the difference between prediction and label and || F || denoting the L2 norm of the label."
-    doc_enable_atom_ener_coeff = "If true, the energy will be computed as \sum_i c_i E_i. c_i should be provided by file atom_ener_coeff.npy in each data system, otherwise it's 1."
+    doc_enable_atom_ener_coeff = r"If true, the energy will be computed as \sum_i c_i E_i. c_i should be provided by file atom_ener_coeff.npy in each data system, otherwise it's 1."
     return [
         Argument(
             "start_pref_e",
@@ -1559,7 +1604,7 @@ def training_args():  # ! modified by Ziyao: data configuration isolated.
     doc_disp_file = "The file for printing learning curve."
     doc_disp_freq = "The frequency of printing learning curve."
     doc_save_freq = "The frequency of saving check point."
-    doc_save_ckpt = "The file name of saving check point."
+    doc_save_ckpt = "The path prefix of saving check point files."
     doc_disp_training = "Displaying verbose information during training."
     doc_time_training = "Timing durining training."
     doc_profiling = "Profiling during training."

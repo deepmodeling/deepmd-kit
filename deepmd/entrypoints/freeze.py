@@ -224,6 +224,7 @@ def _make_node_names(
             "spin_attr/ntypes_spin",
             "fitting_attr/dfparam",
             "fitting_attr/daparam",
+            "fitting_attr/aparam_nall",
         ]
     elif model_type == "dos":
         nodes += [

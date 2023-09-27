@@ -54,6 +54,7 @@ class FixDPLR : public Fix {
   void unpack_reverse_comm(int, int *, double *) override;
   double compute_scalar(void) override;
   double compute_vector(int) override;
+  double ener_unit_cvt_factor, dist_unit_cvt_factor, force_unit_cvt_factor;
 
  private:
   PairDeepMD *pair_deepmd;
@@ -78,6 +79,7 @@ class FixDPLR : public Fix {
   double qe2f;
   void update_efield_variables();
   enum { NONE, CONSTANT, EQUAL };
+  std::vector<int> type_idx_map;
 };
 }  // namespace LAMMPS_NS
 

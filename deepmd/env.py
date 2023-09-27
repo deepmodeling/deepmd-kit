@@ -27,6 +27,8 @@ from packaging.version import (
     Version,
 )
 
+import deepmd.lib
+
 if TYPE_CHECKING:
     from types import (
         ModuleType,
@@ -101,7 +103,9 @@ __all__ = [
     "TF_VERSION",
 ]
 
-SHARED_LIB_MODULE = "op"
+SHARED_LIB_MODULE = "lib"
+SHARED_LIB_DIR = Path(deepmd.lib.__path__[0])
+CONFIG_FILE = SHARED_LIB_DIR / "run_config.ini"
 
 # Python library version
 try:
@@ -241,7 +245,20 @@ def set_mkl():
     check whether the numpy is built by mkl, see
     https://github.com/numpy/numpy/issues/14751
     """
-    if "mkl_rt" in np.__config__.get_info("blas_mkl_info").get("libraries", []):
+    try:
+        is_mkl = (
+            np.show_config("dicts")
+            .get("Build Dependencies", {})
+            .get("blas", {})
+            .get("name", "")
+            .lower()
+            .startswith("mkl")
+        )
+    except TypeError:
+        is_mkl = "mkl_rt" in np.__config__.get_info("blas_mkl_info").get(
+            "libraries", []
+        )
+    if is_mkl:
         set_env_if_empty("KMP_BLOCKTIME", "0")
         set_env_if_empty("KMP_AFFINITY", "granularity=fine,verbose,compact,1,0")
         reload(np)
@@ -361,11 +378,7 @@ def get_module(module_name: str) -> "ModuleType":
         ext = ".so"
         prefix = "lib"
 
-    module_file = (
-        (Path(__file__).parent / SHARED_LIB_MODULE / (prefix + module_name))
-        .with_suffix(ext)
-        .resolve()
-    )
+    module_file = (SHARED_LIB_DIR / (prefix + module_name)).with_suffix(ext).resolve()
 
     if not module_file.is_file():
         raise FileNotFoundError(f"module {module_name} does not exist")
@@ -433,7 +446,7 @@ def get_module(module_name: str) -> "ModuleType":
 
 
 def _get_package_constants(
-    config_file: Path = Path(__file__).parent / "run_config.ini",
+    config_file: Path = CONFIG_FILE,
 ) -> Dict[str, str]:
     """Read package constants set at compile time by CMake to dictionary.
 

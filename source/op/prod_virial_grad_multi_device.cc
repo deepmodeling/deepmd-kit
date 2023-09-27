@@ -142,15 +142,10 @@ class ProdVirialSeAGradOp : public OpKernel {
       const FPTYPE* rij = p_rij + kk * nloc * nnei * 3;
       const int* nlist = p_nlist + kk * nloc * nnei;
       if (device == "GPU") {
-#if GOOGLE_CUDA
-        deepmd::prod_virial_grad_a_gpu_cuda(grad_net, grad, in_deriv, rij,
-                                            nlist, nloc, nnei);
-#endif  // GOOGLE_CUDA
-
-#if TENSORFLOW_USE_ROCM
-        deepmd::prod_virial_grad_a_gpu_rocm(grad_net, grad, in_deriv, rij,
-                                            nlist, nloc, nnei);
-#endif  // TENSORFLOW_USE_ROCM
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+        deepmd::prod_virial_grad_a_gpu(grad_net, grad, in_deriv, rij, nlist,
+                                       nloc, nnei);
+#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
       } else if (device == "CPU") {
         deepmd::prod_virial_grad_a_cpu(grad_net, grad, in_deriv, rij, nlist,
                                        nloc, nnei);
@@ -275,15 +270,10 @@ class ProdVirialSeRGradOp : public OpKernel {
       const FPTYPE* rij = p_rij + kk * nloc * nnei * 3;
       const int* nlist = p_nlist + kk * nloc * nnei;
       if (device == "GPU") {
-#if GOOGLE_CUDA
-        deepmd::prod_virial_grad_r_gpu_cuda(grad_net, grad, in_deriv, rij,
-                                            nlist, nloc, nnei);
-#endif  // GOOGLE_CUDA
-
-#if TENSORFLOW_USE_ROCM
-        deepmd::prod_virial_grad_r_gpu_rocm(grad_net, grad, in_deriv, rij,
-                                            nlist, nloc, nnei);
-#endif  // TENSORFLOW_USE_ROCM
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+        deepmd::prod_virial_grad_r_gpu(grad_net, grad, in_deriv, rij, nlist,
+                                       nloc, nnei);
+#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
       } else if (device == "CPU") {
         deepmd::prod_virial_grad_r_cpu(grad_net, grad, in_deriv, rij, nlist,
                                        nloc, nnei);

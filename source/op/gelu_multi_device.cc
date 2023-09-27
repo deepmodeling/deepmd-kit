@@ -64,13 +64,9 @@ class GeluOp : public OpKernel {
     const int_64 size = static_cast<int_64>(output_tensor->NumElements());
 
     if (device == "GPU") {
-#if GOOGLE_CUDA
-      deepmd::gelu_gpu_cuda(out, x, size);
-#endif  // GOOGLE_CUDA
-
-#if TENSORFLOW_USE_ROCM
-      deepmd::gelu_gpu_rocm(out, x, size);
-#endif  // TENSORFLOW_USE_ROCM
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+      deepmd::gelu_gpu(out, x, size);
+#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
     } else if (device == "CPU") {
       deepmd::gelu_cpu(out, x, size);
     }
@@ -108,13 +104,9 @@ class GeluGradOp : public OpKernel {
     const int_64 size = static_cast<int_64>(output_tensor->NumElements());
 
     if (device == "GPU") {
-#if GOOGLE_CUDA
-      deepmd::gelu_grad_gpu_cuda(out, x, dy, size);
-#endif  // GOOGLE_CUDA
-
-#if TENSORFLOW_USE_ROCM
-      deepmd::gelu_grad_gpu_rocm(out, x, dy, size);
-#endif  // TENSORFLOW_USE_ROCM
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+      deepmd::gelu_grad_gpu(out, x, dy, size);
+#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
     } else if (device == "CPU") {
       deepmd::gelu_grad_cpu(out, x, dy, size);
     }
@@ -154,13 +146,9 @@ class GeluGradGradOp : public OpKernel {
     const int_64 size = static_cast<int_64>(output_tensor->NumElements());
 
     if (device == "GPU") {
-#if GOOGLE_CUDA
-      deepmd::gelu_grad_grad_gpu_cuda(out, x, dy, dy_2, size);
-#endif  // GOOGLE_CUDA
-
-#if TENSORFLOW_USE_ROCM
-      deepmd::gelu_grad_grad_gpu_rocm(out, x, dy, dy_2, size);
-#endif  // TENSORFLOW_USE_ROCM
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+      deepmd::gelu_grad_grad_gpu(out, x, dy, dy_2, size);
+#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
     } else if (device == "CPU") {
       deepmd::gelu_grad_grad_cpu(out, x, dy, dy_2, size);
     }

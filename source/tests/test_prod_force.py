@@ -18,7 +18,7 @@ class TestProdForce(tf.test.TestCase):
             config.graph_options.rewrite_options.custom_optimizers.add().name = (
                 "dpparallel"
             )
-        self.sess = self.test_session(config=config).__enter__()
+        self.sess = self.cached_session(config=config).__enter__()
         self.nframes = 2
         self.dcoord = [
             12.83,

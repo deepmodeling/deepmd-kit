@@ -104,19 +104,19 @@ __global__ void virial_deriv_wrt_neighbors_r(FPTYPE* virial,
 
 namespace deepmd {
 template <typename FPTYPE>
-void prod_virial_a_gpu_cuda(FPTYPE* virial,
-                            FPTYPE* atom_virial,
-                            const FPTYPE* net_deriv,
-                            const FPTYPE* in_deriv,
-                            const FPTYPE* rij,
-                            const int* nlist,
-                            const int nloc,
-                            const int nall,
-                            const int nnei) {
-  DPErrcheck(cudaGetLastError());
-  DPErrcheck(cudaDeviceSynchronize());
-  DPErrcheck(cudaMemset(virial, 0, sizeof(FPTYPE) * 9));
-  DPErrcheck(cudaMemset(atom_virial, 0, sizeof(FPTYPE) * 9 * nall));
+void prod_virial_a_gpu(FPTYPE* virial,
+                       FPTYPE* atom_virial,
+                       const FPTYPE* net_deriv,
+                       const FPTYPE* in_deriv,
+                       const FPTYPE* rij,
+                       const int* nlist,
+                       const int nloc,
+                       const int nall,
+                       const int nnei) {
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
+  DPErrcheck(gpuMemset(virial, 0, sizeof(FPTYPE) * 9));
+  DPErrcheck(gpuMemset(atom_virial, 0, sizeof(FPTYPE) * 9 * nall));
 
   const int LEN = 16;
   int nblock = (nnei + LEN - 1) / LEN;
@@ -125,28 +125,28 @@ void prod_virial_a_gpu_cuda(FPTYPE* virial,
   // compute virial of a frame
   virial_deriv_wrt_neighbors_a<<<block_grid, thread_grid>>>(
       virial, atom_virial, net_deriv, in_deriv, rij, nlist, nloc, nnei);
-  DPErrcheck(cudaGetLastError());
-  DPErrcheck(cudaDeviceSynchronize());
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
   // reduction atom_virial to virial
   atom_virial_reduction<FPTYPE, TPB><<<9, TPB>>>(virial, atom_virial, nall);
-  DPErrcheck(cudaGetLastError());
-  DPErrcheck(cudaDeviceSynchronize());
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
 }
 
 template <typename FPTYPE>
-void prod_virial_r_gpu_cuda(FPTYPE* virial,
-                            FPTYPE* atom_virial,
-                            const FPTYPE* net_deriv,
-                            const FPTYPE* in_deriv,
-                            const FPTYPE* rij,
-                            const int* nlist,
-                            const int nloc,
-                            const int nall,
-                            const int nnei) {
-  DPErrcheck(cudaGetLastError());
-  DPErrcheck(cudaDeviceSynchronize());
-  DPErrcheck(cudaMemset(virial, 0, sizeof(FPTYPE) * 9));
-  DPErrcheck(cudaMemset(atom_virial, 0, sizeof(FPTYPE) * 9 * nall));
+void prod_virial_r_gpu(FPTYPE* virial,
+                       FPTYPE* atom_virial,
+                       const FPTYPE* net_deriv,
+                       const FPTYPE* in_deriv,
+                       const FPTYPE* rij,
+                       const int* nlist,
+                       const int nloc,
+                       const int nall,
+                       const int nnei) {
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
+  DPErrcheck(gpuMemset(virial, 0, sizeof(FPTYPE) * 9));
+  DPErrcheck(gpuMemset(atom_virial, 0, sizeof(FPTYPE) * 9 * nall));
 
   const int LEN = 16;
   int nblock = (nnei + LEN - 1) / LEN;
@@ -155,48 +155,48 @@ void prod_virial_r_gpu_cuda(FPTYPE* virial,
   // compute virial of a frame
   virial_deriv_wrt_neighbors_r<<<block_grid, thread_grid>>>(
       virial, atom_virial, net_deriv, in_deriv, rij, nlist, nloc, nnei);
-  DPErrcheck(cudaGetLastError());
-  DPErrcheck(cudaDeviceSynchronize());
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
   // reduction atom_virial to virial
   atom_virial_reduction<FPTYPE, TPB><<<9, TPB>>>(virial, atom_virial, nall);
-  DPErrcheck(cudaGetLastError());
-  DPErrcheck(cudaDeviceSynchronize());
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
 }
 
-template void prod_virial_a_gpu_cuda<float>(float* virial,
-                                            float* atom_virial,
-                                            const float* net_deriv,
-                                            const float* in_deriv,
-                                            const float* rij,
-                                            const int* nlist,
-                                            const int nloc,
-                                            const int nall,
-                                            const int nnei);
-template void prod_virial_a_gpu_cuda<double>(double* virial,
-                                             double* atom_virial,
-                                             const double* net_deriv,
-                                             const double* in_deriv,
-                                             const double* rij,
-                                             const int* nlist,
-                                             const int nloc,
-                                             const int nall,
-                                             const int nnei);
-template void prod_virial_r_gpu_cuda<float>(float* virial,
-                                            float* atom_virial,
-                                            const float* net_deriv,
-                                            const float* in_deriv,
-                                            const float* rij,
-                                            const int* nlist,
-                                            const int nloc,
-                                            const int nall,
-                                            const int nnei);
-template void prod_virial_r_gpu_cuda<double>(double* virial,
-                                             double* atom_virial,
-                                             const double* net_deriv,
-                                             const double* in_deriv,
-                                             const double* rij,
-                                             const int* nlist,
-                                             const int nloc,
-                                             const int nall,
-                                             const int nnei);
+template void prod_virial_a_gpu<float>(float* virial,
+                                       float* atom_virial,
+                                       const float* net_deriv,
+                                       const float* in_deriv,
+                                       const float* rij,
+                                       const int* nlist,
+                                       const int nloc,
+                                       const int nall,
+                                       const int nnei);
+template void prod_virial_a_gpu<double>(double* virial,
+                                        double* atom_virial,
+                                        const double* net_deriv,
+                                        const double* in_deriv,
+                                        const double* rij,
+                                        const int* nlist,
+                                        const int nloc,
+                                        const int nall,
+                                        const int nnei);
+template void prod_virial_r_gpu<float>(float* virial,
+                                       float* atom_virial,
+                                       const float* net_deriv,
+                                       const float* in_deriv,
+                                       const float* rij,
+                                       const int* nlist,
+                                       const int nloc,
+                                       const int nall,
+                                       const int nnei);
+template void prod_virial_r_gpu<double>(double* virial,
+                                        double* atom_virial,
+                                        const double* net_deriv,
+                                        const double* in_deriv,
+                                        const double* rij,
+                                        const int* nlist,
+                                        const int nloc,
+                                        const int nall,
+                                        const int nnei);
 }  // namespace deepmd

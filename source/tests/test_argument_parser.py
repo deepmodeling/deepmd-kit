@@ -184,7 +184,7 @@ class TestParserOutput(unittest.TestCase):
                     )
 
         # test default values
-        cmd_args = [command] + required
+        cmd_args = [command, *required]
         buffer = StringIO()
         try:
             with redirect_stderr(buffer):

@@ -121,7 +121,7 @@ optional arguments:
   --skip-neighbor-stat  Skip calculating neighbor statistics. Sel checking, automatic sel, and model compression will be disabled. (default: False)
 ```
 
-**`--init-model model.ckpt`**, initializes the model training with an existing model that is stored in the checkpoint `model.ckpt`, the network architectures should match.
+**`--init-model model.ckpt`**, initializes the model training with an existing model that is stored in the path prefix of checkpoint files `model.ckpt`, the network architectures should match.
 
 **`--restart model.ckpt`**, continues the training from the checkpoint `model.ckpt`.
 

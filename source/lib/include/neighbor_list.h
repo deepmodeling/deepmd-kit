@@ -121,7 +121,7 @@ void use_nlist_map(int* nlist,
 
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 
-#if GOOGLE_CUDA
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 // build neighbor list.
 // outputs
 //	nlist, max_list_size
@@ -150,7 +150,7 @@ int build_nlist_gpu(InputNlist& nlist,
  * @param ftype_in The input atom type.
  * @param nloc The number of atoms.
  */
-void filter_ftype_gpu_cuda(int* ftype_out, const int* ftype_in, const int nloc);
+void filter_ftype_gpu(int* ftype_out, const int* ftype_in, const int nloc);
 
 void use_nei_info_gpu(int* nlist,
                       int* ntype,
@@ -162,49 +162,7 @@ void use_nei_info_gpu(int* nlist,
                       const int ntypes,
                       const bool b_nlist_map);
 
-#endif  // GOOGLE_CUDA
-
-#if TENSORFLOW_USE_ROCM
-// build neighbor list.
-// outputs
-//	nlist, max_list_size
-//	max_list_size is the maximal size of jlist.
-// inputs
-//	c_cpy, nloc, nall, mem_size, rcut, region
-//	mem_size is the size of allocated memory for jlist.
-// returns
-//	0: succssful
-//	1: the memory is not large enough to hold all neighbors.
-//	   i.e. max_list_size > mem_nall
-template <typename FPTYPE>
-int build_nlist_gpu_rocm(InputNlist& nlist,
-                         int* max_list_size,
-                         int* nlist_data,
-                         const FPTYPE* c_cpy,
-                         const int& nloc,
-                         const int& nall,
-                         const int& mem_size,
-                         const float& rcut);
-/**
- * @brief Filter the fake atom type.
- * @details If >=0, set to 0; if <0, set to -1.
- * @param ftype_out The output filtered atom type.
- * @param ftype_in The input atom type.
- * @param nloc The number of atoms.
- */
-void filter_ftype_gpu_rocm(int* ftype_out, const int* ftype_in, const int nloc);
-
-void use_nei_info_gpu_rocm(int* nlist,
-                           int* ntype,
-                           bool* nmask,
-                           const int* type,
-                           const int* nlist_map,
-                           const int nloc,
-                           const int nnei,
-                           const int ntypes,
-                           const bool b_nlist_map);
-
-#endif  // TENSORFLOW_USE_ROCM
+#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 
 }  // namespace deepmd
 

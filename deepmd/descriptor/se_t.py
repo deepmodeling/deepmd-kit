@@ -633,7 +633,7 @@ class DescrptSeT(DescrptSe):
     ):
         # natom x (nei x 4)
         shape = inputs.get_shape().as_list()
-        outputs_size = [1] + self.filter_neuron
+        outputs_size = [1, *self.filter_neuron]
         with tf.variable_scope(name, reuse=reuse):
             start_index_i = 0
             result = None

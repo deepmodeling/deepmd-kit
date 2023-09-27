@@ -46,6 +46,7 @@ class DeepmdDataSystem:
         trn_all_set=False,
         sys_probs=None,
         auto_prob_style="prob_sys_size",
+        sort_atoms: bool = True,
     ):
         """Constructor.
 
@@ -84,7 +85,10 @@ class DeepmdDataSystem:
                                 the list of systems is devided into blocks. A block is specified by `stt_idx:end_idx:weight`,
                                 where `stt_idx` is the starting index of the system, `end_idx` is then ending (not including) index of the system,
                                 the probabilities of the systems in this block sums up to `weight`, and the relatively probabilities within this block is proportional
-        to the number of batches in the system.
+                to the number of batches in the system.
+        sort_atoms : bool
+            Sort atoms by atom types. Required to enable when the data is directly feeded to
+            descriptors except mixed types.
         """
         # init data
         self.rcut = rcut
@@ -101,6 +105,7 @@ class DeepmdDataSystem:
                     optional_type_map=optional_type_map,
                     modifier=modifier,
                     trn_all_set=trn_all_set,
+                    sort_atoms=sort_atoms,
                 )
             )
         # check mix_type format
@@ -613,9 +618,7 @@ class DeepmdDataSystem:
                 min_len = min([len(ii), len(ret)])
                 for idx in range(min_len):
                     if ii[idx] != ret[idx]:
-                        raise RuntimeError(
-                            f"inconsistent type map: {str(ret)} {str(ii)}"
-                        )
+                        raise RuntimeError(f"inconsistent type map: {ret!s} {ii!s}")
                 if len(ii) > len(ret):
                     ret = ii
         return ret

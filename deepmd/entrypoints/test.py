@@ -116,7 +116,13 @@ def test(
 
         # create data class
         tmap = dp.get_type_map() if dp.model_type == "ener" else None
-        data = DeepmdData(system, set_prefix, shuffle_test=shuffle_test, type_map=tmap)
+        data = DeepmdData(
+            system,
+            set_prefix,
+            shuffle_test=shuffle_test,
+            type_map=tmap,
+            sort_atoms=False,
+        )
 
         if dp.model_type == "ener":
             err = test_ener(
@@ -848,19 +854,65 @@ def test_polar(
     if detail_file is not None:
         detail_path = Path(detail_file)
 
-        pe = np.concatenate(
-            (
-                np.reshape(test_data["polarizability"][:numb_test], [-1, 9]),
-                np.reshape(polar, [-1, 9]),
-            ),
-            axis=1,
-        )
+        if not atomic:
+            pe = np.concatenate(
+                (
+                    np.reshape(test_data["polarizability"][:numb_test], [-1, 9]),
+                    np.reshape(polar, [-1, 9]),
+                ),
+                axis=1,
+            )
+            header_text = (
+                "data_pxx data_pxy data_pxz data_pyx data_pyy data_pyz data_pzx "
+                "data_pzy data_pzz pred_pxx pred_pxy pred_pxz pred_pyx pred_pyy "
+                "pred_pyz pred_pzx pred_pzy pred_pzz"
+            )
+        else:
+            pe = np.concatenate(
+                (
+                    np.reshape(
+                        test_data["atomic_polarizability"][:numb_test],
+                        [-1, 9 * sel_natoms],
+                    ),
+                    np.reshape(polar, [-1, 9 * sel_natoms]),
+                ),
+                axis=1,
+            )
+            header_text = [
+                f"{letter}{number}"
+                for number in range(1, sel_natoms + 1)
+                for letter in [
+                    "data_pxx",
+                    "data_pxy",
+                    "data_pxz",
+                    "data_pyx",
+                    "data_pyy",
+                    "data_pyz",
+                    "data_pzx",
+                    "data_pzy",
+                    "data_pzz",
+                ]
+            ] + [
+                f"{letter}{number}"
+                for number in range(1, sel_natoms + 1)
+                for letter in [
+                    "pred_pxx",
+                    "pred_pxy",
+                    "pred_pxz",
+                    "pred_pyx",
+                    "pred_pyy",
+                    "pred_pyz",
+                    "pred_pzx",
+                    "pred_pzy",
+                    "pred_pzz",
+                ]
+            ]
+            header_text = " ".join(header_text)
+
         np.savetxt(
             detail_path.with_suffix(".out"),
             pe,
-            header="data_pxx data_pxy data_pxz data_pyx data_pyy data_pyz data_pzx "
-            "data_pzy data_pzz pred_pxx pred_pxy pred_pxz pred_pyx pred_pyy pred_pyz "
-            "pred_pzx pred_pzy pred_pzz",
+            header=header_text,
         )
     return {"rmse": (rmse_f, polar.size)}
 

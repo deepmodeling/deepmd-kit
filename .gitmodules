@@ -1,3 +1,0 @@
-[submodule "source/lib/src/cuda/cub"]
-	path = source/lib/src/cuda/cub
-	url = https://github.com/NVIDIA/cub.git

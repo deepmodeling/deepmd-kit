@@ -1,5 +1,13 @@
+#if GOOGLE_CUDA
+#include <cub/block/block_scan.cuh>
+#elif TENSORFLOW_USE_ROCM
+#include <hipcub/hipcub.hpp>
+namespace cub = hipcub;
+#else
+#error "should not touch here"
+#endif
+
 #include "device.h"
-#include "hipcub/hipcub.hpp"
 #include "neighbor_list.h"
 // A stateful callback functor that maintains a running prefix to be applied
 // during consecutive scan operations.
@@ -28,7 +36,7 @@ __global__ void parallel_prefix_scan(int *numneigh,
                                      const int nall) {
   // Specialize BlockLoad, BlockStore, and BlockScan for a 1D block of 128
   // threads, 4 ints per thread
-  typedef hipcub::BlockScan<int, THREADS_PER_BLOCK> BlockScan;
+  typedef cub::BlockScan<int, THREADS_PER_BLOCK> BlockScan;
   // Allocate aliased shared memory for BlockLoad, BlockStore, and BlockScan
   __shared__ typename BlockScan::TempStorage temp_storage;
 
@@ -175,22 +183,24 @@ __global__ void map_nei_info_noconvert(int *nlist,
 
 namespace deepmd {
 template <typename FPTYPE>
-int build_nlist_gpu_rocm(InputNlist &nlist,
-                         int *max_list_size,
-                         int *nlist_data,
-                         const FPTYPE *c_cpy,
-                         const int &nloc,
-                         const int &nall,
-                         const int &mem_size,
-                         const float &rcut) {
+int build_nlist_gpu(InputNlist &nlist,
+                    int *max_list_size,
+                    int *nlist_data,
+                    const FPTYPE *c_cpy,
+                    const int &nloc,
+                    const int &nall,
+                    const int &mem_size,
+                    const float &rcut) {
   if (mem_size < nall) {
     return 1;
   }
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
   const int nblock = (nall + TPB - 1) / TPB;
   int *ilist = nlist.ilist;
   int *numneigh = nlist.numneigh;
   int **firstneigh = nlist.firstneigh;
-  DPErrcheck(hipMemset(nlist_data, -1, sizeof(int) * 2 * nloc * mem_size));
+  DPErrcheck(gpuMemset(nlist_data, -1, sizeof(int) * 2 * nloc * mem_size));
   int *temp_nlist = nlist_data;  // nloc*mem_size
   int *nei_order = temp_nlist + nloc * mem_size;
   nlist.inum = nloc;
@@ -198,21 +208,21 @@ int build_nlist_gpu_rocm(InputNlist &nlist,
 
   dim3 block_grid(nloc, nblock);
   dim3 thread_grid(1, TPB);
-  hipLaunchKernelGGL(build_nlist, block_grid, thread_grid, 0, 0, ilist,
-                     temp_nlist, c_cpy, rcut2, nloc, nall, mem_size);
-  DPErrcheck(hipGetLastError());
-  DPErrcheck(hipDeviceSynchronize());
-  hipLaunchKernelGGL(HIP_KERNEL_NAME(parallel_prefix_scan<TPB>), nloc, TPB, 0,
-                     0, numneigh, nei_order, temp_nlist, mem_size, nloc, nall);
-  DPErrcheck(hipGetLastError());
-  DPErrcheck(hipDeviceSynchronize());
-  hipLaunchKernelGGL(fill_nlist, block_grid, thread_grid, 0, 0, firstneigh,
-                     temp_nlist, nei_order, mem_size, nall);
-  DPErrcheck(hipGetLastError());
-  DPErrcheck(hipDeviceSynchronize());
+  build_nlist<<<block_grid, thread_grid>>>(ilist, temp_nlist, c_cpy, rcut2,
+                                           nloc, nall, mem_size);
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
+  parallel_prefix_scan<TPB>
+      <<<nloc, TPB>>>(numneigh, nei_order, temp_nlist, mem_size, nloc, nall);
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
+  fill_nlist<<<block_grid, thread_grid>>>(firstneigh, temp_nlist, nei_order,
+                                          mem_size, nall);
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
   int *numneigh_host = new int[nloc];
-  DPErrcheck(hipMemcpy(numneigh_host, numneigh, sizeof(int) * nloc,
-                       hipMemcpyDeviceToHost));
+  DPErrcheck(gpuMemcpy(numneigh_host, numneigh, sizeof(int) * nloc,
+                       gpuMemcpyDeviceToHost));
   int max_nei = 0;
   for (int ii = 0; ii < nloc; ii++) {
     if (numneigh_host[ii] > max_nei) {
@@ -228,56 +238,60 @@ void use_nlist_map(int *nlist,
                    const int *nlist_map,
                    const int nloc,
                    const int nnei) {
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
   int nblock = (nnei + TPB - 1) / TPB;
   dim3 block_grid(nloc, nblock);
   dim3 thread_grid(1, TPB);
-  hipLaunchKernelGGL(map_nlist, block_grid, thread_grid, 0, 0, nlist, nlist_map,
-                     nloc, nnei);
-  DPErrcheck(hipGetLastError());
-  DPErrcheck(hipDeviceSynchronize());
+  map_nlist<<<block_grid, thread_grid>>>(nlist, nlist_map, nloc, nnei);
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
 }
 
-void use_nei_info_gpu_rocm(int *nlist,
-                           int *ntype,
-                           bool *nmask,
-                           const int *type,
-                           const int *nlist_map,
-                           const int nloc,
-                           const int nnei,
-                           const int ntypes,
-                           const bool b_nlist_map) {
+void use_nei_info_gpu(int *nlist,
+                      int *ntype,
+                      bool *nmask,
+                      const int *type,
+                      const int *nlist_map,
+                      const int nloc,
+                      const int nnei,
+                      const int ntypes,
+                      const bool b_nlist_map) {
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
   int nblock = (nnei + TPB - 1) / TPB;
   dim3 block_grid(nloc, nblock);
   dim3 thread_grid(1, TPB);
-  DPErrcheck(hipMemset(ntype, 0, sizeof(int) * nloc * nnei));
-  DPErrcheck(hipMemset(nmask, 0, sizeof(bool) * nloc * nnei));
+  DPErrcheck(gpuMemset(ntype, 0, sizeof(int) * nloc * nnei));
+  DPErrcheck(gpuMemset(nmask, 0, sizeof(bool) * nloc * nnei));
   if (b_nlist_map) {
-    hipLaunchKernelGGL(map_nei_info, block_grid, thread_grid, 0, 0, nlist,
-                       ntype, nmask, type, nlist_map, nloc, nnei, ntypes);
+    map_nei_info<<<block_grid, thread_grid>>>(nlist, ntype, nmask, type,
+                                              nlist_map, nloc, nnei, ntypes);
   } else {
-    hipLaunchKernelGGL(map_nei_info_noconvert, block_grid, thread_grid, 0, 0,
-                       nlist, ntype, nmask, type, nloc, nnei, ntypes);
+    map_nei_info_noconvert<<<block_grid, thread_grid>>>(
+        nlist, ntype, nmask, type, nloc, nnei, ntypes);
   }
-  DPErrcheck(hipGetLastError());
-  DPErrcheck(hipDeviceSynchronize());
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
 }
 
-template int build_nlist_gpu_rocm<float>(InputNlist &nlist,
-                                         int *max_list_size,
-                                         int *nlist_data,
-                                         const float *c_cpy,
-                                         const int &nloc,
-                                         const int &nall,
-                                         const int &mem_size,
-                                         const float &rcut);
-template int build_nlist_gpu_rocm<double>(InputNlist &nlist,
-                                          int *max_list_size,
-                                          int *nlist_data,
-                                          const double *c_cpy,
-                                          const int &nloc,
-                                          const int &nall,
-                                          const int &mem_size,
-                                          const float &rcut);
+template int build_nlist_gpu<float>(InputNlist &nlist,
+                                    int *max_list_size,
+                                    int *nlist_data,
+                                    const float *c_cpy,
+                                    const int &nloc,
+                                    const int &nall,
+                                    const int &mem_size,
+                                    const float &rcut);
+template int build_nlist_gpu<double>(InputNlist &nlist,
+                                     int *max_list_size,
+                                     int *nlist_data,
+                                     const double *c_cpy,
+                                     const int &nloc,
+                                     const int &nall,
+                                     const int &mem_size,
+                                     const float &rcut);
+
 __global__ void map_filter_ftype(int *ftype_out,
                                  const int *ftype_in,
                                  const int nloc) {
@@ -287,12 +301,13 @@ __global__ void map_filter_ftype(int *ftype_out,
   }
 }
 
-void filter_ftype_gpu_rocm(int *ftype_out,
-                           const int *ftype_in,
-                           const int nloc) {
+void filter_ftype_gpu(int *ftype_out, const int *ftype_in, const int nloc) {
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
   int nblock = (nloc + TPB - 1) / TPB;
   map_filter_ftype<<<nblock, TPB>>>(ftype_out, ftype_in, nloc);
-  DPErrcheck(hipGetLastError());
-  DPErrcheck(hipDeviceSynchronize());
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
 }
+
 }  // namespace deepmd

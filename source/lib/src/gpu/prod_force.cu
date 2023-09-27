@@ -12,7 +12,7 @@ __global__ void force_deriv_wrt_center_atom(FPTYPE* force,
   int_64 bid = blockIdx.x;
   unsigned int tid = threadIdx.x;
   for (int ii = tid; ii < THREADS_PER_BLOCK * 3; ii += THREADS_PER_BLOCK) {
-    data[ii] = 0.f;
+    data[ii] = (FPTYPE)0.;
   }
   for (int ii = tid; ii < ndescrpt; ii += THREADS_PER_BLOCK) {
     for (int jj = 0; jj < 3; jj++) {
@@ -64,7 +64,7 @@ __global__ void force_deriv_wrt_neighbors_a(FPTYPE* force,
   if (j_idx < 0) {
     return;
   }
-  FPTYPE force_tmp = 0.f;
+  FPTYPE force_tmp = (FPTYPE)0.;
   for (int idw = 0; idw < 4; ++idw) {
     force_tmp += net_deriv[idx * ndescrpt + idy * 4 + idw] *
                  in_deriv[idx * ndescrpt * 3 + (idy * 4 + idw) * 3 + idz];
@@ -102,23 +102,23 @@ __global__ void force_deriv_wrt_neighbors_r(FPTYPE* force,
 
 namespace deepmd {
 template <typename FPTYPE>
-void prod_force_a_gpu_cuda(FPTYPE* force,
-                           const FPTYPE* net_deriv,
-                           const FPTYPE* in_deriv,
-                           const int* nlist,
-                           const int nloc,
-                           const int nall,
-                           const int nnei,
-                           const int nframes) {
-  DPErrcheck(cudaGetLastError());
-  DPErrcheck(cudaDeviceSynchronize());
+void prod_force_a_gpu(FPTYPE* force,
+                      const FPTYPE* net_deriv,
+                      const FPTYPE* in_deriv,
+                      const int* nlist,
+                      const int nloc,
+                      const int nall,
+                      const int nnei,
+                      const int nframes) {
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
   const int ndescrpt = nnei * 4;
-  DPErrcheck(cudaMemset(force, 0, sizeof(FPTYPE) * nframes * nall * 3));
+  DPErrcheck(gpuMemset(force, 0, sizeof(FPTYPE) * nframes * nall * 3));
 
   force_deriv_wrt_center_atom<FPTYPE, TPB><<<nframes * nloc, TPB>>>(
       force, net_deriv, in_deriv, ndescrpt, nloc, nall);
-  DPErrcheck(cudaGetLastError());
-  DPErrcheck(cudaDeviceSynchronize());
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
 
   const int LEN = 64;
   const int nblock = (nnei + LEN - 1) / LEN;
@@ -126,28 +126,28 @@ void prod_force_a_gpu_cuda(FPTYPE* force,
   dim3 thread_grid(LEN, 3);
   force_deriv_wrt_neighbors_a<<<block_grid, thread_grid>>>(
       force, net_deriv, in_deriv, nlist, nloc, nall, nnei);
-  DPErrcheck(cudaGetLastError());
-  DPErrcheck(cudaDeviceSynchronize());
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
 }
 
 template <typename FPTYPE>
-void prod_force_r_gpu_cuda(FPTYPE* force,
-                           const FPTYPE* net_deriv,
-                           const FPTYPE* in_deriv,
-                           const int* nlist,
-                           const int nloc,
-                           const int nall,
-                           const int nnei,
-                           const int nframes) {
-  DPErrcheck(cudaGetLastError());
-  DPErrcheck(cudaDeviceSynchronize());
+void prod_force_r_gpu(FPTYPE* force,
+                      const FPTYPE* net_deriv,
+                      const FPTYPE* in_deriv,
+                      const int* nlist,
+                      const int nloc,
+                      const int nall,
+                      const int nnei,
+                      const int nframes) {
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
   const int ndescrpt = nnei * 1;
-  DPErrcheck(cudaMemset(force, 0, sizeof(FPTYPE) * nframes * nall * 3));
+  DPErrcheck(gpuMemset(force, 0, sizeof(FPTYPE) * nframes * nall * 3));
 
   force_deriv_wrt_center_atom<FPTYPE, TPB><<<nframes * nloc, TPB>>>(
       force, net_deriv, in_deriv, ndescrpt, nloc, nall);
-  DPErrcheck(cudaGetLastError());
-  DPErrcheck(cudaDeviceSynchronize());
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
 
   const int LEN = 64;
   const int nblock = (nnei + LEN - 1) / LEN;
@@ -155,40 +155,40 @@ void prod_force_r_gpu_cuda(FPTYPE* force,
   dim3 thread_grid(LEN, 3);
   force_deriv_wrt_neighbors_r<<<block_grid, thread_grid>>>(
       force, net_deriv, in_deriv, nlist, nloc, nall, nnei);
-  DPErrcheck(cudaGetLastError());
-  DPErrcheck(cudaDeviceSynchronize());
+  DPErrcheck(gpuGetLastError());
+  DPErrcheck(gpuDeviceSynchronize());
 }
 
-template void prod_force_a_gpu_cuda<float>(float* force,
-                                           const float* net_deriv,
-                                           const float* in_deriv,
-                                           const int* nlist,
-                                           const int nloc,
-                                           const int nall,
-                                           const int nnei,
-                                           const int nframes);
-template void prod_force_a_gpu_cuda<double>(double* force,
-                                            const double* net_deriv,
-                                            const double* in_deriv,
-                                            const int* nlist,
-                                            const int nloc,
-                                            const int nall,
-                                            const int nnei,
-                                            const int nframes);
-template void prod_force_r_gpu_cuda<float>(float* force,
-                                           const float* net_deriv,
-                                           const float* in_deriv,
-                                           const int* nlist,
-                                           const int nloc,
-                                           const int nall,
-                                           const int nnei,
-                                           const int nframes);
-template void prod_force_r_gpu_cuda<double>(double* force,
-                                            const double* net_deriv,
-                                            const double* in_deriv,
-                                            const int* nlist,
-                                            const int nloc,
-                                            const int nall,
-                                            const int nnei,
-                                            const int nframes);
+template void prod_force_a_gpu<float>(float* force,
+                                      const float* net_deriv,
+                                      const float* in_deriv,
+                                      const int* nlist,
+                                      const int nloc,
+                                      const int nall,
+                                      const int nnei,
+                                      const int nframes);
+template void prod_force_a_gpu<double>(double* force,
+                                       const double* net_deriv,
+                                       const double* in_deriv,
+                                       const int* nlist,
+                                       const int nloc,
+                                       const int nall,
+                                       const int nnei,
+                                       const int nframes);
+template void prod_force_r_gpu<float>(float* force,
+                                      const float* net_deriv,
+                                      const float* in_deriv,
+                                      const int* nlist,
+                                      const int nloc,
+                                      const int nall,
+                                      const int nnei,
+                                      const int nframes);
+template void prod_force_r_gpu<double>(double* force,
+                                       const double* net_deriv,
+                                       const double* in_deriv,
+                                       const int* nlist,
+                                       const int nloc,
+                                       const int nall,
+                                       const int nnei,
+                                       const int nframes);
 }  // namespace deepmd
