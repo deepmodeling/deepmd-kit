@@ -5,9 +5,8 @@ Please follow our [GitHub](https://github.com/deepmodeling/deepmd-kit) webpage t
 Or get the DeePMD-kit source code by `git clone`
 ```bash
 cd /some/workspace
-git clone --recursive https://github.com/deepmodeling/deepmd-kit.git deepmd-kit
+git clone https://github.com/deepmodeling/deepmd-kit.git deepmd-kit
 ```
-The `--recursive` option clones all [submodules](https://git-scm.com/book/en/v2/Git-Tools-Submodules) needed by DeePMD-kit.
 
 For convenience, you may want to record the location of the source to a variable, saying `deepmd_source_dir` by
 ```bash
