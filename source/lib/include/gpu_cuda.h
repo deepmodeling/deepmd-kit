@@ -69,7 +69,7 @@ inline void nborAssert(cudaError_t code,
       if (abort) {
         throw deepmd::deepmd_exception_oom(error_msg);
       } else {
-        fprintf(stderr, err_msg + "\n");
+        fprintf(stderr, error_msg + "\n");
       }
     }
   }
@@ -78,7 +78,7 @@ inline void nborAssert(cudaError_t code,
     if (abort) {
       throw deepmd::deepmd_exception(error_msg);
     } else {
-      fprintf(stderr, err_msg + "\n");
+      fprintf(stderr, error_msg + "\n");
     }
   }
 }
