@@ -26,10 +26,14 @@ inline void DPAssert(hipError_t code,
                      int line,
                      bool abort = true) {
   if (code != hipSuccess) {
-    fprintf(stderr, "hip assert: %s %s %d\n", hipGetErrorString(code), file,
-            line);
+    std::string error_msg = "HIP runtime library throws an error: " +
+                            std::string(hipGetErrorString(code)) +
+                            ", in file " + std::string(file) + ": " +
+                            std::to_string(line);
     if (abort) {
-      throw deepmd::deepmd_exception("HIP Assert");
+      throw deepmd::deepmd_exception(error_msg);
+    } else {
+      fprintf(stderr, err_msg + "\n");
     }
   }
 }
@@ -41,10 +45,16 @@ inline void nborAssert(hipError_t code,
                        int line,
                        bool abort = true) {
   if (code != hipSuccess) {
-    fprintf(stderr, "hip assert: %s %s %d\n",
-            "DeePMD-kit:\tillegal nbor list sorting", file, line);
-    if (abort) {
-      throw deepmd::deepmd_exception("HIP Assert: illegal nbor list sorting");
+    std::string error_msg = "DeePMD-kit: Illegal nbor list sorting: ";
+    try {
+      DPAssert(code, file, line, true);
+    } catch (deepmd::deepmd_exception &e) {
+      error_msg += e.what();
+      if (abort) {
+        throw deepmd::deepmd_exception(error_msg);
+      } else {
+        fprintf(stderr, err_msg + "\n");
+      }
     }
   }
 }

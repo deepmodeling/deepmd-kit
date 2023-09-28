@@ -24,27 +24,31 @@ inline void DPAssert(cudaError_t code,
                      int line,
                      bool abort = true) {
   if (code != cudaSuccess) {
-    fprintf(stderr, "cuda assert: %s %s %d\n", cudaGetErrorString(code), file,
-            line);
+    std::string error_msg = "CUDA Runtime library throws an error: " +
+                            std::string(cudaGetErrorString(code)) +
+                            ", in file " + std::string(file) + ": " +
+                            std::to_string(line);
     if (code == 2) {
       // out of memory
-      fprintf(stderr,
-              "Your memory is not enough, thus an error has been raised "
-              "above. You need to take the following actions:\n"
-              "1. Check if the network size of the model is too large.\n"
-              "2. Check if the batch size of training or testing is too large. "
-              "You can set the training batch size to `auto`.\n"
-              "3. Check if the number of atoms is too large.\n"
-              "4. Check if another program is using the same GPU by execuating "
-              "`nvidia-smi`. "
-              "The usage of GPUs is controlled by `CUDA_VISIBLE_DEVICES` "
-              "environment variable.\n");
+      error_msg +=
+          "\nYour memory is not enough, thus an error has been raised "
+          "above. You need to take the following actions:\n"
+          "1. Check if the network size of the model is too large.\n"
+          "2. Check if the batch size of training or testing is too large. "
+          "You can set the training batch size to `auto`.\n"
+          "3. Check if the number of atoms is too large.\n"
+          "4. Check if another program is using the same GPU by execuating "
+          "`nvidia-smi`. "
+          "The usage of GPUs is controlled by `CUDA_VISIBLE_DEVICES` "
+          "environment variable.";
       if (abort) {
-        throw deepmd::deepmd_exception_oom("CUDA Assert");
+        throw deepmd::deepmd_exception_oom(error_msg);
       }
     }
     if (abort) {
-      throw deepmd::deepmd_exception("CUDA Assert");
+      throw deepmd::deepmd_exception(error_msg);
+    } else {
+      printf(stderr, error_msg + "\n");
     }
   }
 }
@@ -56,29 +60,27 @@ inline void nborAssert(cudaError_t code,
                        int line,
                        bool abort = true) {
   if (code != cudaSuccess) {
-    fprintf(stderr, "cuda assert: %s %s %d\n",
-            "DeePMD-kit:\tillegal nbor list sorting", file, line);
-    if (code == 2) {
-      // out of memory
-      fprintf(stderr,
-              "Your memory is not enough, thus an error has been raised "
-              "above. You need to take the following actions:\n"
-              "1. Check if the network size of the model is too large.\n"
-              "2. Check if the batch size of training or testing is too large. "
-              "You can set the training batch size to `auto`.\n"
-              "3. Check if the number of atoms is too large.\n"
-              "4. Check if another program is using the same GPU by execuating "
-              "`nvidia-smi`. "
-              "The usage of GPUs is controlled by `CUDA_VISIBLE_DEVICES` "
-              "environment variable.\n");
+    std::string error_msg = "DeePMD-kit: Illegal nbor list sorting: ";
+    try {
+      DPAssert(code, file, line, true);
+    } catch (deepmd::deepmd_exception_oom &e) {
+      error_msg += e.what();
       if (abort) {
-        throw deepmd::deepmd_exception_oom("CUDA Assert");
+        throw deepmd::deepmd_exception_oom(error_msg);
+      } else {
+        fprintf(stderr, err_msg + "\n");
       }
     }
+  }
+  catch (deepmd::deepmd_exception &e) {
+    error_msg += e.what();
     if (abort) {
-      throw deepmd::deepmd_exception("CUDA Assert");
+      throw deepmd::deepmd_exception(error_msg);
+    } else {
+      fprintf(stderr, err_msg + "\n");
     }
   }
+}
 }
 
 #if defined(__CUDA_ARCH__) && __CUDA_ARCH__ < 600
