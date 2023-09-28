@@ -4,6 +4,7 @@
 #include <hip/hip_runtime.h>
 #include <stdio.h>
 
+#include <string>
 #include <vector>
 // #include<rocprim/rocprim.hpp>
 // #include <hipcub/hipcub.hpp>

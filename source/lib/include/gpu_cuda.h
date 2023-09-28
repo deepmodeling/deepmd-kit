@@ -4,6 +4,7 @@
 #include <cuda_runtime.h>
 #include <stdio.h>
 
+#include <string>
 #include <vector>
 
 #include "errors.h"
@@ -48,7 +49,7 @@ inline void DPAssert(cudaError_t code,
     if (abort) {
       throw deepmd::deepmd_exception(error_msg);
     } else {
-      printf(stderr, error_msg + "\n");
+      fprintf(stderr, error_msg + "\n");
     }
   }
 }
