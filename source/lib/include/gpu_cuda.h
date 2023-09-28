@@ -49,7 +49,7 @@ inline void DPAssert(cudaError_t code,
     if (abort) {
       throw deepmd::deepmd_exception(error_msg);
     } else {
-      fprintf(stderr, error_msg + "\n");
+      fprintf(stderr, "%s\n", error_msg.c_str());
     }
   }
 }
@@ -69,19 +69,17 @@ inline void nborAssert(cudaError_t code,
       if (abort) {
         throw deepmd::deepmd_exception_oom(error_msg);
       } else {
-        fprintf(stderr, error_msg + "\n");
+        fprintf(stderr, "%s\n", error_msg.c_str());
+      }
+    } catch (deepmd::deepmd_exception &e) {
+      error_msg += e.what();
+      if (abort) {
+        throw deepmd::deepmd_exception(error_msg);
+      } else {
+        fprintf(stderr, "%s\n", error_msg.c_str());
       }
     }
   }
-  catch (deepmd::deepmd_exception &e) {
-    error_msg += e.what();
-    if (abort) {
-      throw deepmd::deepmd_exception(error_msg);
-    } else {
-      fprintf(stderr, error_msg + "\n");
-    }
-  }
-}
 }
 
 #if defined(__CUDA_ARCH__) && __CUDA_ARCH__ < 600

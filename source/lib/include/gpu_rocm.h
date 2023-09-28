@@ -34,7 +34,7 @@ inline void DPAssert(hipError_t code,
     if (abort) {
       throw deepmd::deepmd_exception(error_msg);
     } else {
-      fprintf(stderr, error_msg + "\n");
+      fprintf(stderr, "%s\n", error_msg.c_str());
     }
   }
 }
@@ -54,7 +54,7 @@ inline void nborAssert(hipError_t code,
       if (abort) {
         throw deepmd::deepmd_exception(error_msg);
       } else {
-        fprintf(stderr, error_msg + "\n");
+        fprintf(stderr, "%s\n", error_msg.c_str());
       }
     }
   }
