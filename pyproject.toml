@@ -131,7 +131,8 @@ repair-wheel-command = "auditwheel repair --exclude libtensorflow_framework.so.2
 environment-pass = ["CIBW_BUILD", "DP_VARIANT"]
 environment = { PIP_PREFER_BINARY="1", DP_VARIANT="cuda", DP_LAMMPS_VERSION="stable_2Aug2023_update1", DP_ENABLE_IPI="1", MPI_HOME="/usr/lib64/mpich", PATH="/usr/lib64/mpich/bin:$PATH" }
 before-all = [
-"""{ if [ "$(uname -m)" = "x86_64" ] ; then yum config-manager --add-repo http://developer.download.nvidia.com/compute/cuda/repos/rhel8/x86_64/cuda-rhel8.repo && yum install -y cuda-11-8; fi }""",    "yum install -y mpich-devel",
+    """{ if [ "$(uname -m)" = "x86_64" ] ; then yum config-manager --add-repo http://developer.download.nvidia.com/compute/cuda/repos/rhel8/x86_64/cuda-rhel8.repo && yum install -y cuda-11-8; fi }""",
+    "yum install -y mpich-devel",
 ]
 
 [tool.cibuildwheel.windows]
