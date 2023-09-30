@@ -1,7 +1,7 @@
 enable_language(C ASM)
 # Python is usually installed in every Linux distribution...
 find_package(
-  Python
+  Python3
   COMPONENTS Interpreter
   REQUIRED)
 get_property(
@@ -10,7 +10,7 @@ get_property(
   PROPERTY IMPORTED_LOCATION)
 execute_process(
   COMMAND
-    ${Python_EXECUTABLE}
+    ${Python3_EXECUTABLE}
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../../3rdparty/implib/implib-gen.py
     ${CUDART_LOCATION} --target ${CMAKE_SYSTEM_PROCESSOR} COMMAND_ERROR_IS_FATAL
     ANY
@@ -23,6 +23,7 @@ add_library(deepmd_dyn_cudart SHARED ${CUDA_STUB_SRC})
 target_include_directories(deepmd_dyn_cudart PUBLIC ${CUDAToolkit_INCLUDE_DIRS})
 set_target_properties(deepmd_dyn_cudart PROPERTIES INSTALL_RPATH
                                                    "${CUDAToolkit_LIBRARY_DIR}")
+target_compile_definitions(deepmd_dyn_cudart PRIVATE IMPLIB_EXPORT_SHIMS)
 if(BUILD_CPP_IF AND NOT BUILD_PY_IF)
   install(
     TARGETS deepmd_dyn_cudart
