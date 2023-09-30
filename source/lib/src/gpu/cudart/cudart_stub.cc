@@ -25,8 +25,7 @@ void *DP_cudart_dlopen(char *libname) {
 #endif
     if (!dso_handle) {
       std::cerr << "DeePMD-kit: Cannot find " << libname << std::endl;
-      // fake a handle to avoid crash
-      return reinterpret_cast<void *>(0x1);
+      return nullptr;
     }
     std::cerr << "DeePMD-kit: Successfully load " << libname << std::endl;
     return dso_handle;
@@ -35,9 +34,9 @@ void *DP_cudart_dlopen(char *libname) {
 }
 
 void *DP_cudart_dlsym(void *handle, const char *sym_name) {
-  // check if the fake handle, if so, return a function that
+  // check if the handle is nullptr, if so, return a function that
   // returns cudaErrorSharedObjectSymbolNotFound
-  if (!handle || reinterpret_cast<uintptr_t>(handle) == 0x1) {
+  if (!handle) {
     return reinterpret_cast<void *>(&DP_CudartGetSymbolNotFoundError);
   }
   void *symbol = dlsym(handle, sym_name);

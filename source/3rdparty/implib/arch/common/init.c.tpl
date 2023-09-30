@@ -31,8 +31,6 @@ extern "C" {
 #define CHECK(cond, fmt, ...) do { \
     if(!(cond)) { \
       fprintf(stderr, "implib-gen: $load_name: " fmt "\n", ##__VA_ARGS__); \
-      assert(0 && "Assertion in generated code"); \
-      abort(); \
     } \
   } while(0)
 
