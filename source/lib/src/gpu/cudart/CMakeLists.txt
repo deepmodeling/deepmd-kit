@@ -20,6 +20,7 @@ file(GLOB CUDA_STUB_SRC ${CMAKE_CURRENT_BINARY_DIR}/*.tramp.S
      ${CMAKE_CURRENT_BINARY_DIR}/*.init.c)
 
 add_library(deepmd_dyn_cudart SHARED ${CUDA_STUB_SRC})
+target_include_directories(deepmd_dyn_cudart PUBLIC ${CUDAToolkit_INCLUDE_DIRS})
 set_target_properties(deepmd_dyn_cudart PROPERTIES INSTALL_RPATH
                                                    "${CUDAToolkit_LIBRARY_DIR}")
 if(BUILD_CPP_IF AND NOT BUILD_PY_IF)
