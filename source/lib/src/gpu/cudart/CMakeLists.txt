@@ -13,8 +13,7 @@ execute_process(
     ${Python3_EXECUTABLE}
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../../3rdparty/implib/implib-gen.py
     ${CUDART_LOCATION} --target ${CMAKE_SYSTEM_PROCESSOR} --dlopen-callback
-    DP_cudart_dlopen --dlsym-callback DP_cudart_dlsym --symbol-prefix DP_
-    COMMAND_ERROR_IS_FATAL ANY
+    DP_cudart_dlopen --dlsym-callback DP_cudart_dlsym COMMAND_ERROR_IS_FATAL ANY
   WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 
 file(GLOB CUDA_STUB_SRC ${CMAKE_CURRENT_BINARY_DIR}/*.tramp.S
