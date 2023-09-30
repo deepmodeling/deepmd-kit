@@ -31,6 +31,7 @@ extern "C" {
 #define CHECK(cond, fmt, ...) do { \
     if(!(cond)) { \
       fprintf(stderr, "implib-gen: $load_name: " fmt "\n", ##__VA_ARGS__); \
+      assert(0 && "Assertion in generated code"); \
     } \
   } while(0)
 
@@ -113,7 +114,6 @@ void _${lib_suffix}_tramp_resolve(int i) {
 #else
   h = load_library();
   CHECK(h, "failed to resolve symbol '%s', library failed to load", sym_names[i]);
-  if (!h) return;
 #endif
 
 #if HAS_DLSYM_CALLBACK
