@@ -12,7 +12,7 @@
 
 extern "C" {
 
-static cudaError_t CudartGetSymbolNotFoundError() {
+static cudaError_t DP_CudartGetSymbolNotFoundError() {
   return cudaErrorSharedObjectSymbolNotFound;
 }
 
@@ -38,11 +38,11 @@ void *DP_cudart_dlsym(void *handle, const char *sym_name) {
   // check if the fake handle, if so, return a function that
   // returns cudaErrorSharedObjectSymbolNotFound
   if (!handle || reinterpret_cast<uintptr_t>(handle) == 0x1) {
-    return reinterpret_cast<void *>(&CudartGetSymbolNotFoundError);
+    return reinterpret_cast<void *>(&DP_CudartGetSymbolNotFoundError);
   }
   void *symbol = dlsym(handle, sym_name);
   if (!symbol) {
-    return reinterpret_cast<void *>(&CudartGetSymbolNotFoundError);
+    return reinterpret_cast<void *>(&DP_CudartGetSymbolNotFoundError);
   }
   return symbol;
 };
