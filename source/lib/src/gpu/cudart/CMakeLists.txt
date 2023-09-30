@@ -12,14 +12,14 @@ execute_process(
   COMMAND
     ${Python3_EXECUTABLE}
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../../3rdparty/implib/implib-gen.py
-    ${CUDART_LOCATION} --target ${CMAKE_SYSTEM_PROCESSOR} COMMAND_ERROR_IS_FATAL
-    ANY
+    ${CUDART_LOCATION} --target ${CMAKE_SYSTEM_PROCESSOR} --dlopen-callback
+    DP_cudart_dlopen --dlsym-callback DP_cudart_dlsym COMMAND_ERROR_IS_FATAL ANY
   WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 
 file(GLOB CUDA_STUB_SRC ${CMAKE_CURRENT_BINARY_DIR}/*.tramp.S
      ${CMAKE_CURRENT_BINARY_DIR}/*.init.c)
 
-add_library(deepmd_dyn_cudart SHARED ${CUDA_STUB_SRC})
+add_library(deepmd_dyn_cudart SHARED cudart_stub.cc ${CUDA_STUB_SRC})
 target_include_directories(deepmd_dyn_cudart PUBLIC ${CUDAToolkit_INCLUDE_DIRS})
 set_target_properties(
   deepmd_dyn_cudart PROPERTIES INSTALL_RPATH "${CUDAToolkit_LIBRARY_DIR}"
