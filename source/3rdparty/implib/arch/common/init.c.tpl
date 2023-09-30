@@ -113,8 +113,12 @@ void _${lib_suffix}_tramp_resolve(int i) {
 #else
   h = load_library();
   CHECK(h, "failed to resolve symbol '%s', library failed to load", sym_names[i]);
-  if (!h) return;
 #endif
+
+  if (!h) {
+    _${lib_suffix}_tramp_table[i] = NULL;
+    return;
+  }
 
 #if HAS_DLSYM_CALLBACK
   extern void *$dlsym_callback(void *handle, const char *sym_name);
