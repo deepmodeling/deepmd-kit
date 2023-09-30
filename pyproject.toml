@@ -112,13 +112,13 @@ path = "README.md"
 
 [[tool.hatch.metadata.hooks.fancy-pypi-readme.substitutions]]
 # links
-pattern = '!\!\[(.+?)\]\(((?!https?://)\S+?)\)'
-replacement = '[\1](https://github.com/deepmodeling/deepmd-kit/tree/master\g<2>)'
+pattern = '\[(.+?)\]\(((?!https?://)\S+?)\)'
+replacement = '[\1](https://github.com/deepmodeling/deepmd-kit/tree/master/\g<2>)'
 
 [[tool.hatch.metadata.hooks.fancy-pypi-readme.substitutions]]
 # image
 pattern = '(srcset|src)="((?!https?://)\S+?)"'
-replacement = '\1="https://github.com/deepmodeling/deepmd-kit/raw/master\g<2>"'
+replacement = '\1="https://github.com/deepmodeling/deepmd-kit/raw/master/\g<2>"'
 
 [tool.cibuildwheel]
 test-command = [
