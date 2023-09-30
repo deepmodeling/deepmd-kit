@@ -1,4 +1,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
+/*
+  dynamically load CUDA runtime library
+*/
 #include <dlfcn.h>
 #include <fcntl.h>
 
