@@ -17,7 +17,13 @@ cd /some/workspace
 wget https://github.com/lammps/lammps/archive/stable_2Aug2023_update1.tar.gz
 tar xf stable_2Aug2023_update1.tar.gz
 ```
-The source code of LAMMPS is stored in the directory `lammps-stable_2Aug2023_update1`. Now go into the LAMMPS code and copy the DeePMD-kit module like this
+The source code of LAMMPS is stored in the directory `lammps-stable_2Aug2023_update1`.
+
+Then, you can [build LAMMPS](https://docs.lammps.org/Build.html) with either make or CMake.
+
+### With make
+
+Now go into the LAMMPS code and copy the DeePMD-kit module like this
 ```bash
 cd lammps-stable_2Aug2023_update1/src/
 cp -r $deepmd_source_dir/source/build/USER-DEEPMD .
@@ -40,6 +46,35 @@ The DeePMD-kit module can be removed from the LAMMPS source code by
 make no-user-deepmd
 ```
 
+### With CMake
+
+Now go into the LAMMPS directory and create a directory called `build`:
+
+```bash
+mkdir -p lammps-stable_2Aug2023_update1/build/
+cd lammps-stable_2Aug2023_update1/build/
+```
+
+Patch the LAMMPS `CMakeLists.txt` file:
+
+```bash
+echo "include(${deepmd_source_dir}/source/lmp/builtin.cmake)" >> ../cmake/CMakeLists.txt
+```
+
+It's expected to see one extra line in the end of `CMakeLists.txt`.
+
+Now build LAMMPS. You can install any other package you want.
+```bash
+cmake -D LAMMPS_INSTALL_RPATH=ON -D BUILD_SHARED_LIBS=yes -D CMAKE_INSTALL_PREFIX=${deepmd_root} -DCMAKE_PREFIX_PATH=${deepmd_root} ../cmake
+make -j4
+make install
+```
+
+If everything works fine, you will end up with an executable `${deepmd_root}/bin/lmp`.
+```bash
+${deepmd_root}/bin/lmp -h
+```
+
 ## Install LAMMPS (plugin mode)
 Starting from `8Apr2021`, LAMMPS also provides a plugin mode, allowing one to build LAMMPS and a plugin separately.
 
@@ -56,9 +91,9 @@ The source code of LAMMPS is stored in the directory `lammps-stable_2Aug2023_upd
 mkdir -p lammps-stable_2Aug2023_update1/build/
 cd lammps-stable_2Aug2023_update1/build/
 ```
-Now build LAMMPS. Note that `PLUGIN` and `KSPACE` packages must be enabled, and `BUILD_SHARED_LIBS` must be set to `yes`. You can install any other package you want.
+Now build LAMMPS. Note that `PLUGIN` must be enabled, and `BUILD_SHARED_LIBS` must be set to `yes`. You can install any other package you want.
 ```bash
-cmake -D PKG_PLUGIN=ON -D PKG_KSPACE=ON -D LAMMPS_INSTALL_RPATH=ON -D BUILD_SHARED_LIBS=yes -D CMAKE_INSTALL_PREFIX=${deepmd_root} -D CMAKE_INSTALL_LIBDIR=lib -D CMAKE_INSTALL_FULL_LIBDIR=${deepmd_root}/lib ../cmake
+cmake -D PKG_PLUGIN=ON -D LAMMPS_INSTALL_RPATH=ON -D BUILD_SHARED_LIBS=yes -D CMAKE_INSTALL_PREFIX=${deepmd_root} -D CMAKE_INSTALL_LIBDIR=lib -D CMAKE_INSTALL_FULL_LIBDIR=${deepmd_root}/lib ../cmake
 make -j4
 make install
 ```
