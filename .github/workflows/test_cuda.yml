@@ -9,6 +9,10 @@ jobs:
   test_cuda:
     name: Test Python and C++ on CUDA
     runs-on: nvidia
+    # https://github.com/deepmodeling/deepmd-kit/pull/2884#issuecomment-1744216845
+    container:
+      image: python:3.11
+      options: --gpus all
     if: github.repository_owner == 'deepmodeling' && github.event.label.name == 'Test CUDA' || github.event_name == 'workflow_dispatch'
     steps:
     - uses: actions/checkout@v4
