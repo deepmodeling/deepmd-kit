@@ -1,5 +1,2 @@
-# pbtxt files should be treared as binary; see https://git-scm.com/book/en/v2/Customizing-Git-Git-Attributes
-*.pbtxt binary
-
 # do not show up detailed difference on GitHub
 source/3rdparty/* linguist-generated=true
