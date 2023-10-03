@@ -15,8 +15,8 @@ jobs:
       options: --gpus all
     if: github.repository_owner == 'deepmodeling' && github.event.label.name == 'Test CUDA' || github.event_name == 'workflow_dispatch'
     steps:
-    - name: Make sudo work
-      run: apt-get update && apt-get install -y sudo
+    - name: Make sudo and git work
+      run: apt-get update && apt-get install -y sudo git
     - uses: actions/checkout@v4
     - uses: actions/setup-python@v4
       with:
