@@ -146,6 +146,8 @@ class NeighborStat:
                 self.min_nbor_dist = dt
             self.max_nbor_size = np.maximum(mn, self.max_nbor_size)
 
+        # do sqrt in the final
+        self.min_nbor_dist = math.sqrt(self.min_nbor_dist)
         log.info("training data with min nbor dist: " + str(self.min_nbor_dist))
         log.info("training data with max nbor size: " + str(self.max_nbor_size))
         return self.min_nbor_dist, self.max_nbor_size

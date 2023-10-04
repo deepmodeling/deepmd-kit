@@ -48,21 +48,23 @@ __global__ void neighbor_stat_g(const FPTYPE* coord,
       min_nbor_dist[ii * MAX_NNEI + jj] = INFINITY;
       return;  // virtual atom
     }
+    __syncthreads();
+    FPTYPE rij[3] = {coord[idx_j * 3 + 0] - coord[idx_i * 3 + 0],
+                     coord[idx_j * 3 + 1] - coord[idx_i * 3 + 1],
+                     coord[idx_j * 3 + 2] - coord[idx_i * 3 + 2]};
+    // we do not need to use the real index
+    // we do not need to do slow sqrt for every dist; instead do sqrt in the
+    // final
+    min_nbor_dist[ii * MAX_NNEI + jj] =
+        rij[0] * rij[0] + rij[1] * rij[1] + rij[2] * rij[2];
+
     // atomicAdd(max_nbor_size + ii * ntypes + type_j, 1);
     // See https://www.cnblogs.com/neopenx/p/4705320.html
-    __syncthreads();
     atomicAdd(&cache[type_j], 1);
     __syncthreads();
     if (threadIdx.x < ntypes) {
       atomicAdd(&max_nbor_size[ii * ntypes + threadIdx.x], cache[threadIdx.x]);
     }
-
-    FPTYPE rij[3] = {coord[idx_j * 3 + 0] - coord[idx_i * 3 + 0],
-                     coord[idx_j * 3 + 1] - coord[idx_i * 3 + 1],
-                     coord[idx_j * 3 + 2] - coord[idx_i * 3 + 2]};
-    // we do not need to use the real index
-    min_nbor_dist[ii * MAX_NNEI + jj] =
-        _sqrt(rij[0] * rij[0] + rij[1] * rij[1] + rij[2] * rij[2]);
   } else {
     // set others to 10000
     min_nbor_dist[ii * MAX_NNEI + jj] = INFINITY;
