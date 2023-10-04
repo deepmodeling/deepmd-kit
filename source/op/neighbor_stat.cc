@@ -24,6 +24,11 @@ class NeighborStatOp : public OpKernel {
  public:
   explicit NeighborStatOp(OpKernelConstruction* context) : OpKernel(context) {
     OP_REQUIRES_OK(context, context->GetAttr("rcut", &rcut));
+    max_nbor_size_nlist = 1024;
+    max_cpy_trial = 100;
+    mem_cpy = 256;
+    max_nnei_trial = 100;
+    mem_nnei = 256;
   }
 
   void Compute(OpKernelContext* context) override {
@@ -103,12 +108,6 @@ class NeighborStatOp : public OpKernel {
     int* max_nbor_size = max_nbor_size_tensor->flat<int>().data();
     if (device == "GPU") {
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
-      int max_nbor_size_nlist = 1024;
-      int max_cpy_trial = 100;
-      int mem_cpy = 256;
-      int max_nnei_trial = 100;
-      int mem_nnei = 256;
-
       std::vector<Tensor> tensor_list(7);
       if (nei_mode == 1) {
         // Tensor FPTYPE_temp;
@@ -168,7 +167,7 @@ class NeighborStatOp : public OpKernel {
           rcut, max_cpy_trial, max_nnei_trial);
 
       TensorShape min_nbor_dist_shape;
-      min_nbor_dist_shape.AddDim(nloc * max_nbor_size_nlist);
+      min_nbor_dist_shape.AddDim(nloc * mem_nnei);
       Tensor* min_nbor_dist_tensor = NULL;
       OP_REQUIRES_OK(context, context->allocate_output(context_output_index++,
                                                        min_nbor_dist_shape,
@@ -177,7 +176,7 @@ class NeighborStatOp : public OpKernel {
 
       deepmd::neighbor_stat_gpu<FPTYPE>(coord, type, nloc, gpu_inlist,
                                         max_nbor_size, min_nbor_dist, ntypes,
-                                        max_nbor_size_nlist);
+                                        mem_nnei);
       deepmd::delete_device_memory(firstneigh);
 #endif
     } else {
@@ -291,6 +290,7 @@ class NeighborStatOp : public OpKernel {
   int nnei;
   float rcut;
   std::string device;
+  int max_nbor_size_nlist, max_cpy_trial, mem_cpy, max_nnei_trial, mem_nnei;
 };
 
 #define REGISTER_CPU(T)                                               \
