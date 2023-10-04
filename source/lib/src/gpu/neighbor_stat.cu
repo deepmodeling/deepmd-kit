@@ -1,19 +1,7 @@
 #include <cmath>
 
-#if GOOGLE_CUDA
-#include <cub/cub.cuh>
-#elif TENSORFLOW_USE_ROCM
-#include <hipcub/hipcub.hpp>
-namespace cub = hipcub;
-#else
-#error "should not touch here"
-#endif
-
 #include "device.h"
 #include "neighbor_list.h"
-
-__device__ inline double _sqrt(double x) { return sqrt(x); }
-__device__ inline float _sqrt(float x) { return sqrtf(x); }
 
 template <typename FPTYPE>
 __global__ void neighbor_stat_g(const FPTYPE* coord,
