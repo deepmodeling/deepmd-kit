@@ -26,7 +26,17 @@ if(USE_CUDA_TOOLKIT)
   # cub has been included in CUDA Toolkit 11, we do not need to include it any
   # more see https://github.com/NVIDIA/cub
   if(${CMAKE_CUDA_COMPILER_VERSION} VERSION_LESS "11")
-    include_directories(cub)
+    include(FetchContent)
+    FetchContent_Declare(
+      cub_download
+      GIT_REPOSITORY https://github.com/NVIDIA/cub
+      GIT_TAG b229817e3963fc942c7cc2c61715a6b2b2c49bed)
+    FetchContent_GetProperties(cub_download)
+    if(NOT cub_download_POPULATED)
+      FetchContent_Populate(cub_download)
+      set(CUB_SOURCE_ROOT ${cub_download_SOURCE_DIR})
+    endif()
+    include_directories(${CUB_SOURCE_ROOT})
   endif()
   if(${CMAKE_CUDA_COMPILER_VERSION} VERSION_LESS "9")
     message(FATAL_ERROR "CUDA version must be >= 9.0")

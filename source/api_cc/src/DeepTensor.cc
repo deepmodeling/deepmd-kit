@@ -30,6 +30,20 @@ void DeepTensor::init(const std::string &model,
   options.config.set_inter_op_parallelism_threads(num_inter_nthreads);
   options.config.set_intra_op_parallelism_threads(num_intra_nthreads);
   deepmd::load_op_library();
+  int gpu_num = -1;
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+  DPGetDeviceCount(gpu_num);  // check current device environment
+  if (gpu_num > 0) {
+    options.config.set_allow_soft_placement(true);
+    options.config.mutable_gpu_options()->set_per_process_gpu_memory_fraction(
+        0.9);
+    options.config.mutable_gpu_options()->set_allow_growth(true);
+    DPErrcheck(DPSetDevice(gpu_rank % gpu_num));
+    std::string str = "/gpu:";
+    str += std::to_string(gpu_rank % gpu_num);
+    graph::SetDefaultDevice(str, graph_def);
+  }
+#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
   deepmd::check_status(NewSession(options, &session));
   deepmd::check_status(ReadBinaryProto(Env::Default(), model, graph_def));
   deepmd::check_status(session->Create(*graph_def));
