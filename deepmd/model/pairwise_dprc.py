@@ -395,6 +395,26 @@ class PairwiseDPRc(Model):
         }
         return feed_dict
 
+    @classmethod
+    def update_sel(cls, global_jdata: dict, local_jdata: dict):
+        """Update the selection and perform neighbor statistics.
+
+        Parameters
+        ----------
+        global_jdata : dict
+            The global data, containing the training section
+        local_jdata : dict
+            The local data refer to the current class
+        """
+        from deepmd.entrypoints.train import (
+            get_min_nbor_dist,
+        )
+
+        # do not update sel; only find min distance
+        # rcut is not important here
+        get_min_nbor_dist(global_jdata, 0.0)
+        return local_jdata
+
 
 def gather_placeholder(
     params: tf.Tensor, indices: tf.Tensor, placeholder: float = 0.0, **kwargs
