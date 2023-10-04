@@ -792,9 +792,9 @@ void tabulate_fusion_se_a_grad_grad_gpu(FPTYPE* dz_dy,
   DPErrcheck(gpuMemset(dz_dy, 0, sizeof(FPTYPE) * nloc * 4 * last_layer_size));
   tabulate_fusion_se_a_grad_grad_fifth_order_polynomial<FPTYPE, MM, KK>
       <<<nloc, last_layer_size, sizeof(FPTYPE) * MM * last_layer_size>>>(
-          dz_dy, table, em_x, em, two_embed, dz_dy_dem_x, dz_dy_dem, table_info[0],
-          table_info[1], table_info[2], table_info[3], table_info[4], nnei,
-          last_layer_size, is_sorted);
+          dz_dy, table, em_x, em, two_embed, dz_dy_dem_x, dz_dy_dem,
+          table_info[0], table_info[1], table_info[2], table_info[3],
+          table_info[4], nnei, last_layer_size, is_sorted);
   DPErrcheck(gpuGetLastError());
   DPErrcheck(gpuDeviceSynchronize());
 }
