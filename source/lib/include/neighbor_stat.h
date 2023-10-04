@@ -4,7 +4,6 @@
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 
 namespace deepmd {
-void get_largest_numnei_gpu(int& numnei, const deepmd::InputNlist& gpu_nlist);
 template <typename FPTYPE>
 void neighbor_stat_gpu(const FPTYPE* coord,
                        const int* type,

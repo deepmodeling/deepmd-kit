@@ -58,31 +58,6 @@ __global__ void neighbor_stat_g(const FPTYPE* coord,
 
 namespace deepmd {
 
-void get_largest_numnei_gpu(int& largest_numnei,
-                            const deepmd::InputNlist& gpu_nlist) {
-  DPErrcheck(gpuGetLastError());
-  DPErrcheck(gpuDeviceSynchronize());
-
-  // TODO: maybe allocate memory using TensorFlow?
-  int* d_max = NULL;
-  gpuMalloc(&d_max, sizeof(int));
-
-  void* d_temp_storage = NULL;
-  size_t temp_storage_bytes = 0;
-  cub::DeviceReduce::Max(d_temp_storage, temp_storage_bytes, gpu_nlist.numneigh,
-                         d_max, gpu_nlist.inum);
-  gpuMalloc(&d_temp_storage, temp_storage_bytes);
-  cub::DeviceReduce::Max(d_temp_storage, temp_storage_bytes, gpu_nlist.numneigh,
-                         d_max, gpu_nlist.inum);
-  gpuFree(d_temp_storage);
-  // copy d_max to largest_numnei
-  gpuMemcpy(&largest_numnei, d_max, sizeof(int), gpuMemcpyDeviceToHost);
-  gpuFree(d_max);
-
-  DPErrcheck(gpuGetLastError());
-  DPErrcheck(gpuDeviceSynchronize());
-}
-
 template <typename FPTYPE>
 void neighbor_stat_gpu(const FPTYPE* coord,
                        const int* type,

@@ -167,11 +167,8 @@ class NeighborStatOp : public OpKernel {
           box, mesh_tensor.flat<int>().data(), mesh_tensor_size, nloc, nei_mode,
           rcut, max_cpy_trial, max_nnei_trial);
 
-      int MAX_NNEI;
-      deepmd::get_largest_numnei_gpu(MAX_NNEI, gpu_inlist);
-
       TensorShape min_nbor_dist_shape;
-      min_nbor_dist_shape.AddDim(nloc * MAX_NNEI);
+      min_nbor_dist_shape.AddDim(nloc * max_nbor_size_nlist);
       Tensor* min_nbor_dist_tensor = NULL;
       OP_REQUIRES_OK(context, context->allocate_output(context_output_index++,
                                                        min_nbor_dist_shape,
@@ -180,7 +177,7 @@ class NeighborStatOp : public OpKernel {
 
       deepmd::neighbor_stat_gpu<FPTYPE>(coord, type, nloc, gpu_inlist,
                                         max_nbor_size, min_nbor_dist, ntypes,
-                                        MAX_NNEI);
+                                        max_nbor_size_nlist);
       deepmd::delete_device_memory(firstneigh);
 #endif
     } else {
