@@ -19,6 +19,8 @@
 #define gpuMemcpyHostToDevice hipMemcpyHostToDevice
 #define gpuMemcpyDeviceToDevice hipMemcpyDeviceToDevice
 #define gpuMemset hipMemset
+#define gpuMalloc hipMalloc
+#define gpuFree cudaFree
 
 #define DPErrcheck(res) \
   { DPAssert((res), __FILE__, __LINE__); }

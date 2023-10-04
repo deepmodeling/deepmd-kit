@@ -16,6 +16,8 @@
 #define gpuMemcpyHostToDevice cudaMemcpyHostToDevice
 #define gpuMemcpyDeviceToDevice cudaMemcpyDeviceToDevice
 #define gpuMemset cudaMemset
+#define gpuMalloc cudaMalloc
+#define gpuFree cudaFree
 
 #define GPU_MAX_NBOR_SIZE 4096
 #define DPErrcheck(res) \
