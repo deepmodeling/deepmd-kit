@@ -82,6 +82,7 @@ class NeighborStat:
                 rcut=self.rcut,
             )
             place_holders["dir"] = tf.placeholder(tf.string)
+            _min_nbor_dist = tf.reduce_min(_min_nbor_dist)
             return place_holders, (_max_nbor_size, _min_nbor_dist, place_holders["dir"])
 
         with sub_graph.as_default():
@@ -128,10 +129,7 @@ class NeighborStat:
                         }
 
         for mn, dt, jj in self.p.generate(self.sub_sess, feed()):
-            if dt.size != 0:
-                dt = np.min(dt)
-            else:
-                dt = self.rcut
+            if np.isinf(dt):
                 log.warning(
                     "Atoms with no neighbors found in %s. Please make sure it's what you expected."
                     % jj
