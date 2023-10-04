@@ -1,11 +1,13 @@
 /*
- * Copyright 2018-2022 Yury Gribov
+ * Copyright 2018-2023 Yury Gribov
  *
  * The MIT License (MIT)
  *
  * Use of this source code is governed by MIT license that can be
  * found in the LICENSE.txt file.
  */
+
+  .section .note.GNU-stack,"",@progbits
 
   .data
 

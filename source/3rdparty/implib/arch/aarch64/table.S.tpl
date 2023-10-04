@@ -1,5 +1,5 @@
 /*
- * Copyright 2018-2020 Yury Gribov
+ * Copyright 2018-2023 Yury Gribov
  *
  * The MIT License (MIT)
  *
@@ -9,6 +9,8 @@
 
 #define lr x30
 #define ip0 x16
+
+  .section .note.GNU-stack,"",@progbits
 
   .data
 
