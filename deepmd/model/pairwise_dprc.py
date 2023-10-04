@@ -32,10 +32,6 @@ from deepmd.utils.type_embed import (
     TypeEmbedNet,
 )
 
-from .ener import (
-    EnerModel,
-)
-
 
 class PairwiseDPRc(Model):
     """Pairwise Deep Potential - Range Correction."""
@@ -87,19 +83,19 @@ class PairwiseDPRc(Model):
                 padding=True,
             )
 
-        self.qm_model = EnerModel(
+        self.qm_model = Model(
             **qm_model,
             type_map=type_map,
             type_embedding=self.typeebd,
             compress=compress,
         )
-        self.qmmm_model = EnerModel(
+        self.qmmm_model = Model(
             **qmmm_model,
             type_map=type_map,
             type_embedding=self.typeebd,
             compress=compress,
         )
-        add_data_requirement("aparam", 1, atomic=True, must=True, high_prec=False)
+        add_data_requirement("aparam", 1, atomic=True, must=False, high_prec=False)
         self.ntypes = len(type_map)
         self.rcut = max(self.qm_model.get_rcut(), self.qmmm_model.get_rcut())
 
@@ -301,7 +297,7 @@ class PairwiseDPRc(Model):
         return max(self.qm_model.get_rcut(), self.qmmm_model.get_rcut())
 
     def get_ntypes(self) -> int:
-        return self.qm_model.get_ntypes()
+        return self.qmmm_model.get_ntypes()
 
     def data_stat(self, data):
         self.qm_model.data_stat(data)
