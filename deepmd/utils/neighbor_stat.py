@@ -83,6 +83,7 @@ class NeighborStat:
             )
             place_holders["dir"] = tf.placeholder(tf.string)
             _min_nbor_dist = tf.reduce_min(_min_nbor_dist)
+            _max_nbor_size = tf.reduce_max(_max_nbor_size, axis=0)
             return place_holders, (_max_nbor_size, _min_nbor_dist, place_holders["dir"])
 
         with sub_graph.as_default():
@@ -143,8 +144,7 @@ class NeighborStat:
                         " training data to remove duplicated atoms." % jj
                     )
                 self.min_nbor_dist = dt
-            var = np.max(mn, axis=0)
-            self.max_nbor_size = np.maximum(var, self.max_nbor_size)
+            self.max_nbor_size = np.maximum(mn, self.max_nbor_size)
 
         log.info("training data with min nbor dist: " + str(self.min_nbor_dist))
         log.info("training data with max nbor size: " + str(self.max_nbor_size))
