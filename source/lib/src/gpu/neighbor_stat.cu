@@ -29,6 +29,9 @@ __global__ void neighbor_stat_g(const FPTYPE* coord,
   int ithread = blockIdx.x * blockDim.x + threadIdx.x;
   int ii = ithread / MAX_NNEI;
   int jj = ithread % MAX_NNEI;
+  // assume the same block has the same ii
+  __shared__ int cache[TPB];
+  cache[threadIdx.x] = 0;
   if (ii >= nloc) {
     return;
   }
@@ -45,7 +48,15 @@ __global__ void neighbor_stat_g(const FPTYPE* coord,
       min_nbor_dist[ii * MAX_NNEI + jj] = INFINITY;
       return;  // virtual atom
     }
-    atomicAdd(max_nbor_size + ii * ntypes + type_j, 1);
+    // atomicAdd(max_nbor_size + ii * ntypes + type_j, 1);
+    // See https://www.cnblogs.com/neopenx/p/4705320.html
+    __syncthreads();
+    atomicAdd(&cache[type_j], 1);
+    __syncthreads();
+    if (threadIdx.x < ntypes) {
+      atomicAdd(&max_nbor_size[ii * ntypes + threadIdx.x], cache[threadIdx.x]);
+    }
+
     FPTYPE rij[3] = {coord[idx_j * 3 + 0] - coord[idx_i * 3 + 0],
                      coord[idx_j * 3 + 1] - coord[idx_i * 3 + 1],
                      coord[idx_j * 3 + 2] - coord[idx_i * 3 + 2]};
