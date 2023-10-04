@@ -478,7 +478,7 @@ def wrap_up_4(xx):
     return 4 * ((int(xx) + 3) // 4)
 
 
-def update_one_sel(jdata, descriptor, one_type: bool):
+def update_one_sel(jdata, descriptor, one_type: bool = False):
     rcut = descriptor["rcut"]
     tmp_sel = get_sel(
         jdata,
