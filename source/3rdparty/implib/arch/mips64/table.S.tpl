@@ -7,6 +7,8 @@
  * found in the LICENSE.txt file.
  */
 
+  .section .note.GNU-stack,"",@progbits
+
   .data
 
   .globl _${lib_suffix}_tramp_table
