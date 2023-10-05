@@ -1404,3 +1404,21 @@ class DescrptSeAtten(DescrptSeA):
     def explicit_ntypes(self) -> bool:
         """Explicit ntypes with type embedding."""
         return True
+
+    @classmethod
+    def update_sel(cls, global_jdata: dict, local_jdata: dict):
+        """Update the selection and perform neighbor statistics.
+
+        Parameters
+        ----------
+        global_jdata : dict
+            The global data, containing the training section
+        local_jdata : dict
+            The local data refer to the current class
+        """
+        from deepmd.entrypoints.train import (
+            update_one_sel,
+        )
+
+        local_jdata_cpy = local_jdata.copy()
+        return update_one_sel(global_jdata, local_jdata_cpy, True)

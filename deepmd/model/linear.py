@@ -128,6 +128,24 @@ class LinearModel(Model):
         """Get the type map."""
         return self.models[0].get_type_map()
 
+    @classmethod
+    def update_sel(cls, global_jdata: dict, local_jdata: dict):
+        """Update the selection and perform neighbor statistics.
+
+        Parameters
+        ----------
+        global_jdata : dict
+            The global data, containing the training section
+        local_jdata : dict
+            The local data refer to the current class
+        """
+        local_jdata_cpy = local_jdata.copy()
+        local_jdata_cpy["models"] = [
+            Model.update_sel(global_jdata, sub_jdata)
+            for sub_jdata in local_jdata["models"]
+        ]
+        return local_jdata_cpy
+
 
 class LinearEnergyModel(LinearModel):
     """Linear energy model make linear combinations of several existing energy models."""

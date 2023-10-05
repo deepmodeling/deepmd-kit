@@ -645,3 +645,20 @@ class MultiModel(Model):
                 loss_param, lr[fitting_key]
             )
         return loss_dict
+
+    @classmethod
+    def update_sel(cls, global_jdata: dict, local_jdata: dict):
+        """Update the selection and perform neighbor statistics.
+
+        Parameters
+        ----------
+        global_jdata : dict
+            The global data, containing the training section
+        local_jdata : dict
+            The local data refer to the current class
+        """
+        local_jdata_cpy = local_jdata.copy()
+        local_jdata_cpy["descriptor"] = Descriptor.update_sel(
+            global_jdata, local_jdata["descriptor"]
+        )
+        return local_jdata_cpy
