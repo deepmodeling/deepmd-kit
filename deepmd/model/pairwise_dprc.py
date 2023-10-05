@@ -412,7 +412,7 @@ class PairwiseDPRc(Model):
 
         # do not update sel; only find min distance
         # rcut is not important here
-        get_min_nbor_dist(global_jdata, 0.0)
+        get_min_nbor_dist(global_jdata, 6.0)
         return local_jdata
 
 
