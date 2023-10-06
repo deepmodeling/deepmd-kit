@@ -95,7 +95,7 @@ class PairwiseDPRc(Model):
             type_embedding=self.typeebd,
             compress=compress,
         )
-        add_data_requirement("aparam", 1, atomic=True, must=False, high_prec=False)
+        add_data_requirement("aparam", 1, atomic=True, must=True, high_prec=False)
         self.ntypes = len(type_map)
         self.rcut = max(self.qm_model.get_rcut(), self.qmmm_model.get_rcut())
 
