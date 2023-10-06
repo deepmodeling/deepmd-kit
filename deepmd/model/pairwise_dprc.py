@@ -183,6 +183,14 @@ class PairwiseDPRc(Model):
 
         mesh_mixed_type = make_default_mesh(False, True)
 
+        # allow loading a frozen QM model that has only QM types
+        # Note: here we don't map the type between models, so
+        #       the type of the frozen model must be the same as
+        #       the first Ntypes of the current model
+        if self.get_ntypes() > self.qm_model.get_ntypes():
+            natoms_qm = tf.slice(natoms_qm, [0], [self.qm_model.get_ntypes() + 2])
+        assert self.get_ntypes() == self.qmmm_model.get_ntypes()
+
         qm_dict = self.qm_model.build(
             coord_qm,
             atype_qm,
@@ -297,7 +305,7 @@ class PairwiseDPRc(Model):
         return max(self.qm_model.get_rcut(), self.qmmm_model.get_rcut())
 
     def get_ntypes(self) -> int:
-        return self.qmmm_model.get_ntypes()
+        return self.ntypes
 
     def data_stat(self, data):
         self.qm_model.data_stat(data)
