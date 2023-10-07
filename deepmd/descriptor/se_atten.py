@@ -120,6 +120,11 @@ class DescrptSeAtten(DescrptSeA):
             When using stripped type embedding, whether to dot smooth factor on the network output of type embedding
             to keep the network smooth, instead of setting `set_davg_zero` to be True.
             Default value will be True in `se_atten_v2` descriptor.
+
+    Raises
+    ------
+    ValueError
+        if ntypes is 0.
     """
 
     def __init__(
@@ -178,6 +183,8 @@ class DescrptSeAtten(DescrptSeA):
             assert Version(TF_VERSION) > Version(
                 "2"
             ), "se_atten only support tensorflow version 2.0 or higher."
+        if ntypes == 0:
+            raise ValueError("`model/type_map` is not set or empty!")
         self.stripped_type_embedding = stripped_type_embedding
         self.smooth = smooth_type_embdding
         self.ntypes = ntypes

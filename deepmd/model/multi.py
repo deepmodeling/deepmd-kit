@@ -122,7 +122,7 @@ class MultiModel(Model):
         else:
             self.descrpt = Descriptor(
                 **descriptor,
-                ntypes=len(type_map),
+                ntypes=len(self.get_type_map()),
                 multi_task=True,
                 spin=self.spin,
             )

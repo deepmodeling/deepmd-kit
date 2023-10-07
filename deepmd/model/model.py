@@ -566,7 +566,7 @@ class StandardModel(Model):
             self.descrpt = descriptor
         else:
             self.descrpt = Descriptor(
-                **descriptor, ntypes=len(type_map), spin=self.spin
+                **descriptor, ntypes=len(self.get_type_map()), spin=self.spin
             )
 
         if isinstance(fitting_net, Fitting):
