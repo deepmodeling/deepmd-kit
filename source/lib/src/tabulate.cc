@@ -325,7 +325,7 @@ void deepmd::tabulate_fusion_se_a_grad_grad_cpu(FPTYPE* dz_dy,
          * as: `var_grad * dz_xx`.
          *
          * If `enable_se_atten` is true, `var` will be `var * t + var`, and
-         * `var'` becomes `(var_grad * t + var_grad) * dz_xx`.
+         * `var'` will be `(var_grad * t + var_grad) * dz_xx`.
          */
         if (unloop) {
           dz_dy[ii * last_layer_size * 4 + 0 * last_layer_size + kk] +=

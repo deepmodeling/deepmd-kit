@@ -429,7 +429,7 @@ __global__ void tabulate_fusion_se_a_grad_grad_fifth_order_polynomial(
      * dz_xx`.
      *
      * If `enable_se_atten` is true, `res` will be `res * t + res`, and `res'`
-     * becomes `(res_grad * t + res_grad) * dz_xx`.
+     * will become `(res_grad * t + res_grad) * dz_xx`.
      */
     for (int kk = 0; kk < MTILE; kk++) {
       int em_index = block_idx * nnei * MTILE + ii * MTILE + kk;
