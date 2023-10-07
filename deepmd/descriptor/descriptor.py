@@ -66,16 +66,20 @@ class Descriptor(PluginVariant):
         """
         return Descriptor.__plugins.register(key)
 
+    @classmethod
+    def get_class_by_input(cls, input: dict):
+        try:
+            descrpt_type = input["type"]
+        except KeyError:
+            raise KeyError("the type of descriptor should be set by `type`")
+        if descrpt_type in Descriptor.__plugins.plugins:
+            return Descriptor.__plugins.plugins[descrpt_type]
+        else:
+            raise RuntimeError("Unknown descriptor type: " + descrpt_type)
+
     def __new__(cls, *args, **kwargs):
         if cls is Descriptor:
-            try:
-                descrpt_type = kwargs["type"]
-            except KeyError:
-                raise KeyError("the type of descriptor should be set by `type`")
-            if descrpt_type in Descriptor.__plugins.plugins:
-                cls = Descriptor.__plugins.plugins[descrpt_type]
-            else:
-                raise RuntimeError("Unknown descriptor type: " + descrpt_type)
+            cls = cls.get_class_by_input(kwargs)
         return super().__new__(cls)
 
     @abstractmethod
@@ -489,3 +493,19 @@ class Descriptor(PluginVariant):
     def explicit_ntypes(self) -> bool:
         """Explicit ntypes with type embedding."""
         return False
+
+    @classmethod
+    @abstractmethod
+    def update_sel(cls, global_jdata: dict, local_jdata: dict):
+        """Update the selection and perform neighbor statistics.
+
+        Parameters
+        ----------
+        global_jdata : dict
+            The global data, containing the training section
+        local_jdata : dict
+            The local data refer to the current class
+        """
+        # call subprocess
+        cls = cls.get_class_by_input(local_jdata)
+        return cls.update_sel(global_jdata, local_jdata)

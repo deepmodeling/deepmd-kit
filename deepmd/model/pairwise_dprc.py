@@ -32,10 +32,6 @@ from deepmd.utils.type_embed import (
     TypeEmbedNet,
 )
 
-from .ener import (
-    EnerModel,
-)
-
 
 class PairwiseDPRc(Model):
     """Pairwise Deep Potential - Range Correction."""
@@ -87,13 +83,13 @@ class PairwiseDPRc(Model):
                 padding=True,
             )
 
-        self.qm_model = EnerModel(
+        self.qm_model = Model(
             **qm_model,
             type_map=type_map,
             type_embedding=self.typeebd,
             compress=compress,
         )
-        self.qmmm_model = EnerModel(
+        self.qmmm_model = Model(
             **qmmm_model,
             type_map=type_map,
             type_embedding=self.typeebd,
@@ -186,6 +182,14 @@ class PairwiseDPRc(Model):
         input_dict_qmmm["type_embedding"] = type_embedding
 
         mesh_mixed_type = make_default_mesh(False, True)
+
+        # allow loading a frozen QM model that has only QM types
+        # Note: here we don't map the type between models, so
+        #       the type of the frozen model must be the same as
+        #       the first Ntypes of the current model
+        if self.get_ntypes() > self.qm_model.get_ntypes():
+            natoms_qm = tf.slice(natoms_qm, [0], [self.qm_model.get_ntypes() + 2])
+        assert self.get_ntypes() == self.qmmm_model.get_ntypes()
 
         qm_dict = self.qm_model.build(
             coord_qm,
@@ -301,7 +305,7 @@ class PairwiseDPRc(Model):
         return max(self.qm_model.get_rcut(), self.qmmm_model.get_rcut())
 
     def get_ntypes(self) -> int:
-        return self.qm_model.get_ntypes()
+        return self.ntypes
 
     def data_stat(self, data):
         self.qm_model.data_stat(data)
@@ -394,6 +398,26 @@ class PairwiseDPRc(Model):
             "t_aparam:0": kwargs["aparam"],
         }
         return feed_dict
+
+    @classmethod
+    def update_sel(cls, global_jdata: dict, local_jdata: dict):
+        """Update the selection and perform neighbor statistics.
+
+        Parameters
+        ----------
+        global_jdata : dict
+            The global data, containing the training section
+        local_jdata : dict
+            The local data refer to the current class
+        """
+        from deepmd.entrypoints.train import (
+            get_min_nbor_dist,
+        )
+
+        # do not update sel; only find min distance
+        # rcut is not important here
+        get_min_nbor_dist(global_jdata, 6.0)
+        return local_jdata
 
 
 def gather_placeholder(

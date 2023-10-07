@@ -416,3 +416,21 @@ class DescrptHybrid(Descriptor):
     def explicit_ntypes(self) -> bool:
         """Explicit ntypes with type embedding."""
         return any(ii.explicit_ntypes for ii in self.descrpt_list)
+
+    @classmethod
+    def update_sel(cls, global_jdata: dict, local_jdata: dict):
+        """Update the selection and perform neighbor statistics.
+
+        Parameters
+        ----------
+        global_jdata : dict
+            The global data, containing the training section
+        local_jdata : dict
+            The local data refer to the current class
+        """
+        local_jdata_cpy = local_jdata.copy()
+        local_jdata_cpy["list"] = [
+            Descriptor.update_sel(global_jdata, sub_jdata)
+            for sub_jdata in local_jdata["list"]
+        ]
+        return local_jdata_cpy
