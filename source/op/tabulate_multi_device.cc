@@ -91,6 +91,19 @@ REGISTER_OP("TabulateFusionSeAttenGrad")
     .Output("dy_dtwo: T")
     .Attr("is_sorted: bool = true");
 
+REGISTER_OP("TabulateFusionSeAttenGradGrad")
+    .Attr("T: {float, double}")
+    .Input("table: T")
+    .Input("table_info: T")
+    .Input("em_x: T")
+    .Input("em: T")
+    .Input("two_embed: T")
+    .Input("dz_dy_dem_x: T")
+    .Input("dz_dy_dem: T")
+    .Input("descriptor: T")
+    .Output("dz_dy: T")
+    .Attr("is_sorted: bool = true");
+
 REGISTER_OP("TabulateFusionSeT")
     .Attr("T: {float, double} = DT_DOUBLE")
     .Input("table: T")
@@ -312,6 +325,7 @@ class TabulateFusionSeAGradGradOp : public OpKernel {
     const FPTYPE* table_info = table_info_tensor.flat<FPTYPE>().data();
     const FPTYPE* em_x = em_x_tensor.flat<FPTYPE>().data();
     const FPTYPE* em = em_tensor.flat<FPTYPE>().data();
+    const FPTYPE* two_embed = nullptr;
     const FPTYPE* dz_dy_dem_x = dz_dy_dem_x_tensor.flat<FPTYPE>().data();
     const FPTYPE* dz_dy_dem = dz_dy_dem_tensor.flat<FPTYPE>().data();
     const int nloc = em_tensor.shape().dim_size(0);
@@ -321,8 +335,8 @@ class TabulateFusionSeAGradGradOp : public OpKernel {
     if (device == "GPU") {
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
       deepmd::tabulate_fusion_se_a_grad_grad_gpu(
-          dz_dy, table, table_info, em_x, em, dz_dy_dem_x, dz_dy_dem, nloc,
-          nnei, last_layer_size, is_sorted);
+          dz_dy, table, table_info, em_x, em, two_embed, dz_dy_dem_x, dz_dy_dem,
+          nloc, nnei, last_layer_size, is_sorted);
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
       OP_REQUIRES(context, (last_layer_size <= 1024),
                   errors::InvalidArgument(
@@ -330,8 +344,8 @@ class TabulateFusionSeAGradGradOp : public OpKernel {
                       "last layer of embedding net must be less than 1024!"));
     } else if (device == "CPU") {
       deepmd::tabulate_fusion_se_a_grad_grad_cpu(
-          dz_dy, table, table_info, em_x, em, dz_dy_dem_x, dz_dy_dem, nloc,
-          nnei, last_layer_size, is_sorted);
+          dz_dy, table, table_info, em_x, em, two_embed, dz_dy_dem_x, dz_dy_dem,
+          nloc, nnei, last_layer_size, is_sorted);
     }
   }
 
@@ -476,6 +490,76 @@ class TabulateFusionSeAttenGradOp : public OpKernel {
       deepmd::tabulate_fusion_se_a_grad_cpu(dy_dem_x, dy_dem, table, table_info,
                                             em_x, em, two_embed, dy, nloc, nnei,
                                             last_layer_size, is_sorted);
+    }
+  }
+
+ private:
+  bool is_sorted;
+  std::string device;
+};
+
+template <typename Device, typename FPTYPE>
+class TabulateFusionSeAttenGradGradOp : public OpKernel {
+ public:
+  explicit TabulateFusionSeAttenGradGradOp(OpKernelConstruction* context)
+      : OpKernel(context) {
+    OP_REQUIRES_OK(context, context->GetAttr("is_sorted", &is_sorted));
+  }
+  void Compute(OpKernelContext* context) override {
+    deepmd::safe_compute(
+        context, [this](OpKernelContext* context) { this->_Compute(context); });
+  }
+
+  void _Compute(OpKernelContext* context) {
+    // Grab the input tensor
+    int context_input_index = 0;
+    const Tensor& table_tensor = context->input(context_input_index++);
+    const Tensor& table_info_tensor = context->input(context_input_index++);
+    const Tensor& em_x_tensor = context->input(context_input_index++);
+    const Tensor& em_tensor = context->input(context_input_index++);
+    const Tensor& two_embed_tensor = context->input(context_input_index++);
+    const Tensor& dz_dy_dem_x_tensor = context->input(context_input_index++);
+    const Tensor& dz_dy_dem_tensor = context->input(context_input_index++);
+    const Tensor& descriptor_tensor = context->input(context_input_index++);
+    // set size of the sample
+    OP_REQUIRES(context, (dz_dy_dem_x_tensor.shape().dims() == 2),
+                errors::InvalidArgument("Dim of input should be 2"));
+    OP_REQUIRES(context, (dz_dy_dem_tensor.shape().dims() == 3),
+                errors::InvalidArgument("Dim of input should be 3"));
+    int context_output_index = 0;
+    Tensor* dz_dy_tensor = NULL;
+    OP_REQUIRES_OK(context, context->allocate_output(context_output_index++,
+                                                     descriptor_tensor.shape(),
+                                                     &dz_dy_tensor));
+    DeviceFunctor()(device, context->eigen_device<Device>());
+
+    // flat the tensors
+    FPTYPE* dz_dy = dz_dy_tensor->flat<FPTYPE>().data();
+    const FPTYPE* table = table_tensor.flat<FPTYPE>().data();
+    const FPTYPE* table_info = table_info_tensor.flat<FPTYPE>().data();
+    const FPTYPE* em_x = em_x_tensor.flat<FPTYPE>().data();
+    const FPTYPE* em = em_tensor.flat<FPTYPE>().data();
+    const FPTYPE* two_embed = two_embed_tensor.flat<FPTYPE>().data();
+    const FPTYPE* dz_dy_dem_x = dz_dy_dem_x_tensor.flat<FPTYPE>().data();
+    const FPTYPE* dz_dy_dem = dz_dy_dem_tensor.flat<FPTYPE>().data();
+    const int nloc = em_tensor.shape().dim_size(0);
+    const int nnei = em_tensor.shape().dim_size(1);
+    const int last_layer_size = descriptor_tensor.shape().dim_size(2);
+
+    if (device == "GPU") {
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+      deepmd::tabulate_fusion_se_a_grad_grad_gpu(
+          dz_dy, table, table_info, em_x, em, two_embed, dz_dy_dem_x, dz_dy_dem,
+          nloc, nnei, last_layer_size, is_sorted);
+#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+      OP_REQUIRES(context, (last_layer_size <= 1024),
+                  errors::InvalidArgument(
+                      "In the process of model compression, the size of the "
+                      "last layer of embedding net must be less than 1024!"));
+    } else if (device == "CPU") {
+      deepmd::tabulate_fusion_se_a_grad_grad_cpu(
+          dz_dy, table, table_info, em_x, em, two_embed, dz_dy_dem_x, dz_dy_dem,
+          nloc, nnei, last_layer_size, is_sorted);
     }
   }
 
@@ -863,6 +947,10 @@ class TabulateFusionSeRGradGradOp : public OpKernel {
                               .Device(DEVICE_CPU)                              \
                               .TypeConstraint<T>("T"),                         \
                           TabulateFusionSeAttenGradOp<CPUDevice, T>);          \
+  REGISTER_KERNEL_BUILDER(Name("TabulateFusionSeAttenGradGrad")                \
+                              .Device(DEVICE_CPU)                              \
+                              .TypeConstraint<T>("T"),                         \
+                          TabulateFusionSeAttenGradGradOp<CPUDevice, T>);      \
   REGISTER_KERNEL_BUILDER(                                                     \
       Name("TabulateFusionSeT").Device(DEVICE_CPU).TypeConstraint<T>("T"),     \
       TabulateFusionSeTOp<CPUDevice, T>);                                      \
@@ -887,76 +975,81 @@ REGISTER_CPU(float);
 REGISTER_CPU(double);
 
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
-#define REGISTER_GPU(T)                                               \
-  REGISTER_KERNEL_BUILDER(Name("TabulateFusion")                      \
-                              .Device(DEVICE_GPU)                     \
-                              .TypeConstraint<T>("T")                 \
-                              .HostMemory("table_info"),              \
-                          TabulateFusionSeAOp<GPUDevice, T>);         \
-  REGISTER_KERNEL_BUILDER(Name("TabulateFusionGrad")                  \
-                              .Device(DEVICE_GPU)                     \
-                              .TypeConstraint<T>("T")                 \
-                              .HostMemory("table_info"),              \
-                          TabulateFusionSeAGradOp<GPUDevice, T>);     \
-  REGISTER_KERNEL_BUILDER(Name("TabulateFusionGradGrad")              \
-                              .Device(DEVICE_GPU)                     \
-                              .TypeConstraint<T>("T")                 \
-                              .HostMemory("table_info"),              \
-                          TabulateFusionSeAGradGradOp<GPUDevice, T>); \
-  REGISTER_KERNEL_BUILDER(Name("TabulateFusionSeA")                   \
-                              .Device(DEVICE_GPU)                     \
-                              .TypeConstraint<T>("T")                 \
-                              .HostMemory("table_info"),              \
-                          TabulateFusionSeAOp<GPUDevice, T>);         \
-  REGISTER_KERNEL_BUILDER(Name("TabulateFusionSeAGrad")               \
-                              .Device(DEVICE_GPU)                     \
-                              .TypeConstraint<T>("T")                 \
-                              .HostMemory("table_info"),              \
-                          TabulateFusionSeAGradOp<GPUDevice, T>);     \
-  REGISTER_KERNEL_BUILDER(Name("TabulateFusionSeAGradGrad")           \
-                              .Device(DEVICE_GPU)                     \
-                              .TypeConstraint<T>("T")                 \
-                              .HostMemory("table_info"),              \
-                          TabulateFusionSeAGradGradOp<GPUDevice, T>); \
-  REGISTER_KERNEL_BUILDER(Name("TabulateFusionSeAtten")               \
-                              .Device(DEVICE_GPU)                     \
-                              .TypeConstraint<T>("T")                 \
-                              .HostMemory("table_info"),              \
-                          TabulateFusionSeAttenOp<GPUDevice, T>);     \
-  REGISTER_KERNEL_BUILDER(Name("TabulateFusionSeAttenGrad")           \
-                              .Device(DEVICE_GPU)                     \
-                              .TypeConstraint<T>("T")                 \
-                              .HostMemory("table_info"),              \
-                          TabulateFusionSeAttenGradOp<GPUDevice, T>); \
-  REGISTER_KERNEL_BUILDER(Name("TabulateFusionSeT")                   \
-                              .Device(DEVICE_GPU)                     \
-                              .TypeConstraint<T>("T")                 \
-                              .HostMemory("table_info"),              \
-                          TabulateFusionSeTOp<GPUDevice, T>);         \
-  REGISTER_KERNEL_BUILDER(Name("TabulateFusionSeTGrad")               \
-                              .Device(DEVICE_GPU)                     \
-                              .TypeConstraint<T>("T")                 \
-                              .HostMemory("table_info"),              \
-                          TabulateFusionSeTGradOp<GPUDevice, T>);     \
-  REGISTER_KERNEL_BUILDER(Name("TabulateFusionSeTGradGrad")           \
-                              .Device(DEVICE_GPU)                     \
-                              .TypeConstraint<T>("T")                 \
-                              .HostMemory("table_info"),              \
-                          TabulateFusionSeTGradGradOp<GPUDevice, T>); \
-  REGISTER_KERNEL_BUILDER(Name("TabulateFusionSeR")                   \
-                              .Device(DEVICE_GPU)                     \
-                              .TypeConstraint<T>("T")                 \
-                              .HostMemory("table_info"),              \
-                          TabulateFusionSeROp<GPUDevice, T>);         \
-  REGISTER_KERNEL_BUILDER(Name("TabulateFusionSeRGrad")               \
-                              .Device(DEVICE_GPU)                     \
-                              .TypeConstraint<T>("T")                 \
-                              .HostMemory("table_info"),              \
-                          TabulateFusionSeRGradOp<GPUDevice, T>);     \
-  REGISTER_KERNEL_BUILDER(Name("TabulateFusionSeRGradGrad")           \
-                              .Device(DEVICE_GPU)                     \
-                              .TypeConstraint<T>("T")                 \
-                              .HostMemory("table_info"),              \
+#define REGISTER_GPU(T)                                                   \
+  REGISTER_KERNEL_BUILDER(Name("TabulateFusion")                          \
+                              .Device(DEVICE_GPU)                         \
+                              .TypeConstraint<T>("T")                     \
+                              .HostMemory("table_info"),                  \
+                          TabulateFusionSeAOp<GPUDevice, T>);             \
+  REGISTER_KERNEL_BUILDER(Name("TabulateFusionGrad")                      \
+                              .Device(DEVICE_GPU)                         \
+                              .TypeConstraint<T>("T")                     \
+                              .HostMemory("table_info"),                  \
+                          TabulateFusionSeAGradOp<GPUDevice, T>);         \
+  REGISTER_KERNEL_BUILDER(Name("TabulateFusionGradGrad")                  \
+                              .Device(DEVICE_GPU)                         \
+                              .TypeConstraint<T>("T")                     \
+                              .HostMemory("table_info"),                  \
+                          TabulateFusionSeAGradGradOp<GPUDevice, T>);     \
+  REGISTER_KERNEL_BUILDER(Name("TabulateFusionSeA")                       \
+                              .Device(DEVICE_GPU)                         \
+                              .TypeConstraint<T>("T")                     \
+                              .HostMemory("table_info"),                  \
+                          TabulateFusionSeAOp<GPUDevice, T>);             \
+  REGISTER_KERNEL_BUILDER(Name("TabulateFusionSeAGrad")                   \
+                              .Device(DEVICE_GPU)                         \
+                              .TypeConstraint<T>("T")                     \
+                              .HostMemory("table_info"),                  \
+                          TabulateFusionSeAGradOp<GPUDevice, T>);         \
+  REGISTER_KERNEL_BUILDER(Name("TabulateFusionSeAGradGrad")               \
+                              .Device(DEVICE_GPU)                         \
+                              .TypeConstraint<T>("T")                     \
+                              .HostMemory("table_info"),                  \
+                          TabulateFusionSeAGradGradOp<GPUDevice, T>);     \
+  REGISTER_KERNEL_BUILDER(Name("TabulateFusionSeAtten")                   \
+                              .Device(DEVICE_GPU)                         \
+                              .TypeConstraint<T>("T")                     \
+                              .HostMemory("table_info"),                  \
+                          TabulateFusionSeAttenOp<GPUDevice, T>);         \
+  REGISTER_KERNEL_BUILDER(Name("TabulateFusionSeAttenGrad")               \
+                              .Device(DEVICE_GPU)                         \
+                              .TypeConstraint<T>("T")                     \
+                              .HostMemory("table_info"),                  \
+                          TabulateFusionSeAttenGradOp<GPUDevice, T>);     \
+  REGISTER_KERNEL_BUILDER(Name("TabulateFusionSeAttenGradGrad")           \
+                              .Device(DEVICE_GPU)                         \
+                              .TypeConstraint<T>("T")                     \
+                              .HostMemory("table_info"),                  \
+                          TabulateFusionSeAttenGradGradOp<GPUDevice, T>); \
+  REGISTER_KERNEL_BUILDER(Name("TabulateFusionSeT")                       \
+                              .Device(DEVICE_GPU)                         \
+                              .TypeConstraint<T>("T")                     \
+                              .HostMemory("table_info"),                  \
+                          TabulateFusionSeTOp<GPUDevice, T>);             \
+  REGISTER_KERNEL_BUILDER(Name("TabulateFusionSeTGrad")                   \
+                              .Device(DEVICE_GPU)                         \
+                              .TypeConstraint<T>("T")                     \
+                              .HostMemory("table_info"),                  \
+                          TabulateFusionSeTGradOp<GPUDevice, T>);         \
+  REGISTER_KERNEL_BUILDER(Name("TabulateFusionSeTGradGrad")               \
+                              .Device(DEVICE_GPU)                         \
+                              .TypeConstraint<T>("T")                     \
+                              .HostMemory("table_info"),                  \
+                          TabulateFusionSeTGradGradOp<GPUDevice, T>);     \
+  REGISTER_KERNEL_BUILDER(Name("TabulateFusionSeR")                       \
+                              .Device(DEVICE_GPU)                         \
+                              .TypeConstraint<T>("T")                     \
+                              .HostMemory("table_info"),                  \
+                          TabulateFusionSeROp<GPUDevice, T>);             \
+  REGISTER_KERNEL_BUILDER(Name("TabulateFusionSeRGrad")                   \
+                              .Device(DEVICE_GPU)                         \
+                              .TypeConstraint<T>("T")                     \
+                              .HostMemory("table_info"),                  \
+                          TabulateFusionSeRGradOp<GPUDevice, T>);         \
+  REGISTER_KERNEL_BUILDER(Name("TabulateFusionSeRGradGrad")               \
+                              .Device(DEVICE_GPU)                         \
+                              .TypeConstraint<T>("T")                     \
+                              .HostMemory("table_info"),                  \
                           TabulateFusionSeRGradGradOp<GPUDevice, T>);
 REGISTER_GPU(float);
 REGISTER_GPU(double);

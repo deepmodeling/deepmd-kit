@@ -247,12 +247,14 @@ void deepmd::tabulate_fusion_se_a_grad_grad_cpu(FPTYPE* dz_dy,
                                                 const FPTYPE* table_info,
                                                 const FPTYPE* em_x,
                                                 const FPTYPE* em,
+                                                const FPTYPE* two_embed,
                                                 const FPTYPE* dz_dy_dem_x,
                                                 const FPTYPE* dz_dy_dem,
                                                 const int nloc,
                                                 const int nnei,
                                                 const int last_layer_size,
                                                 const bool is_sorted) {
+  bool enable_se_atten = two_embed != nullptr;
   memset(dz_dy, 0, sizeof(FPTYPE) * nloc * 4 * last_layer_size);
   const FPTYPE lower = table_info[0];
   const FPTYPE upper = table_info[1];
@@ -298,6 +300,12 @@ void deepmd::tabulate_fusion_se_a_grad_grad_cpu(FPTYPE* dz_dy,
              ((FPTYPE)3. * a3 + ((FPTYPE)4. * a4 + (FPTYPE)5. * a5 * xx) * xx) *
                  xx) *
                 xx;
+        if (enable_se_atten) {
+          FPTYPE t = two_embed[ii * nnei * last_layer_size +
+                               jj * last_layer_size + kk];
+          var += var * t;
+          var_grad += var_grad * t;
+        }
         if (unloop) {
           dz_dy[ii * last_layer_size * 4 + 0 * last_layer_size + kk] +=
               (nnei - jj) * (var * hh[0] + dz_xx * var_grad * ll[0]);
@@ -660,6 +668,7 @@ template void deepmd::tabulate_fusion_se_a_grad_grad_cpu<float>(
     const float* table_info,
     const float* em_x,
     const float* em,
+    const float* two_embed,
     const float* dz_dy_dem_x,
     const float* dz_dy_dem,
     const int nloc,
@@ -672,6 +681,7 @@ template void deepmd::tabulate_fusion_se_a_grad_grad_cpu<double>(
     const double* table_info,
     const double* em_x,
     const double* em,
+    const double* two_embed,
     const double* dz_dy_dem_x,
     const double* dz_dy_dem,
     const int nloc,
