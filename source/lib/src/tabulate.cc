@@ -306,6 +306,27 @@ void deepmd::tabulate_fusion_se_a_grad_grad_cpu(FPTYPE* dz_dy,
           var += var * t;
           var_grad += var_grad * t;
         }
+
+        /*
+         * `dz_dy` represents the derivative of the variable `out` in the
+         * function `deepmd::tabulate_fusion_se_a_cpu`.
+         *
+         * The expression `var * hh[0] + dz_xx * var_grad * ll[0]` utilizes the
+         * product rule of derivatives: `(f * g)' = f' * g + f * g'`.
+         *
+         * This expression can be alternatively expressed as:
+         * `hh[0] * var + ll[0] * (dz_xx * var_grad))`.
+         * Note that `hh[0]` is one element of `em`, and `ll[0]` is one element
+         * of `dz_dy_dem` which is `em'`.
+         *
+         * Therefore, we can rewrite this expression as: `em' * var + em *
+         * var'`, where `em'` is the derivative of `em` and `var'` is the
+         * derivative of `var`. Additionally, `var'` can be further represented
+         * as: `var_grad * dz_xx`.
+         *
+         * If `enable_se_atten` is true, `var` will be `var * t + var`, and
+         * `var'` becomes `(var_grad * t + var_grad) * dz_xx`.
+         */
         if (unloop) {
           dz_dy[ii * last_layer_size * 4 + 0 * last_layer_size + kk] +=
               (nnei - jj) * (var * hh[0] + dz_xx * var_grad * ll[0]);
