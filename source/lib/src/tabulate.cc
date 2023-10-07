@@ -315,7 +315,7 @@ void deepmd::tabulate_fusion_se_a_grad_grad_cpu(FPTYPE* dz_dy,
          * product rule of derivatives: `(f * g)' = f' * g + f * g'`.
          *
          * This expression can be alternatively expressed as:
-         * `hh[0] * var + ll[0] * (dz_xx * var_grad))`.
+         * `hh[0] * var + ll[0] * (dz_xx * var_grad)`.
          * Note that `hh[0]` is one element of `em`, and `ll[0]` is one element
          * of `dz_dy_dem` which is `em'`.
          *

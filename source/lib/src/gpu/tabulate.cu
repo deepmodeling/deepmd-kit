@@ -420,7 +420,7 @@ __global__ void tabulate_fusion_se_a_grad_grad_fifth_order_polynomial(
      * g'`.
      *
      * This expression can be alternatively expressed as:
-     * `dz_dy_dem[em_index] * res + em[em_index] * (res_grad * dz_xx))`.
+     * `dz_dy_dem[em_index] * res + em[em_index] * (res_grad * dz_xx)`.
      * Note that we can refer to `dz_dy_dem` as `em'`
      *
      * Therefore, we can rewrite this expression as: `em' * res + em * res'`,
