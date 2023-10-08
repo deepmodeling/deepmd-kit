@@ -14,13 +14,18 @@ def start_dpgui(*, port: int, bind_all: bool, **kwargs):
         to the network on both IPv4 and IPv6 (where available).
     **kwargs
         additional arguments
+
+    Raises
+    ------
+    ModuleNotFoundError
+        The dpgui package is not installed
     """
     try:
         from dpgui import (
             start_dpgui,
         )
-    except ModuleNotFoundError:
-        raise RuntimeError(
+    except ModuleNotFoundError as e:
+        raise ModuleNotFoundError(
             "To use DP-GUI, please install the dpgui package:\npip install dpgui"
-        )
+        ) from e
     start_dpgui(port=port, bind_all=bind_all)
