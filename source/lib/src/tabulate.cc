@@ -235,7 +235,7 @@ void deepmd::tabulate_fusion_se_a_grad_cpu(FPTYPE* dy_dem_x,
             // fill from jj to nnei
             for (int jj2 = jj; jj2 < nnei; jj2++) {
               dy_dtwo[ii * nnei * last_layer_size + jj2 * last_layer_size +
-                      kk] += res * dotllrr;
+                      kk] += resold * dotllrr;
             }
           }
         } else {
