@@ -411,6 +411,26 @@ __global__ void tabulate_fusion_se_a_grad_grad_fifth_order_polynomial(
       res_grad += res_grad * t;
     }
 
+    /*
+     * `dz_dy`(or `iteratorC`) represents the derivative of the variable `out`
+     * in the function `tabulate_fusion_se_a_fifth_order_polynomial`.
+     *
+     * The expression `em[em_index] * res_grad * dz_xx + dz_dy_dem[em_index] *
+     * res` utilizes the product rule of derivatives: `(f * g)' = f' * g + f *
+     * g'`.
+     *
+     * This expression can be alternatively expressed as:
+     * `dz_dy_dem[em_index] * res + em[em_index] * (res_grad * dz_xx)`.
+     * Note that we can refer to `dz_dy_dem` as `em'`
+     *
+     * Therefore, we can rewrite this expression as: `em' * res + em * res'`,
+     * where `em'` is the derivative of `em` and `res'` is the derivative of
+     * `res`. Additionally, `res'` can be further represented as: `res_grad *
+     * dz_xx`.
+     *
+     * If `enable_se_atten` is true, `res` will be `res * t + res`, and `res'`
+     * will become `(res_grad * t + res_grad) * dz_xx`.
+     */
     for (int kk = 0; kk < MTILE; kk++) {
       int em_index = block_idx * nnei * MTILE + ii * MTILE + kk;
       iteratorC[kk * last_layer_size + thread_idx] +=
