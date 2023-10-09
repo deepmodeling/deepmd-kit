@@ -261,6 +261,7 @@ class TabulateFusionSeAGradOp : public OpKernel {
     // flat the tensors
     FPTYPE* dy_dem_x = dy_dem_x_tensor->flat<FPTYPE>().data();
     FPTYPE* dy_dem = dy_dem_tensor->flat<FPTYPE>().data();
+    FPTYPE* dy_dtwo = nullptr;
 
     const FPTYPE* descriptor = descriptor_tensor.flat<FPTYPE>().data();
     const FPTYPE* table = table_tensor.flat<FPTYPE>().data();
@@ -275,14 +276,14 @@ class TabulateFusionSeAGradOp : public OpKernel {
 
     if (device == "GPU") {
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
-      deepmd::tabulate_fusion_se_a_grad_gpu(dy_dem_x, dy_dem, table, table_info,
-                                            em_x, em, two_embed, dy, nloc, nnei,
-                                            last_layer_size);
+      deepmd::tabulate_fusion_se_a_grad_gpu(dy_dem_x, dy_dem, dy_dtwo, table,
+                                            table_info, em_x, em, two_embed, dy,
+                                            nloc, nnei, last_layer_size);
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
     } else if (device == "CPU") {
-      deepmd::tabulate_fusion_se_a_grad_cpu(dy_dem_x, dy_dem, table, table_info,
-                                            em_x, em, two_embed, dy, nloc, nnei,
-                                            last_layer_size);
+      deepmd::tabulate_fusion_se_a_grad_cpu(dy_dem_x, dy_dem, dy_dtwo, table,
+                                            table_info, em_x, em, two_embed, dy,
+                                            nloc, nnei, last_layer_size);
     }
   }
 
@@ -468,6 +469,7 @@ class TabulateFusionSeAttenGradOp : public OpKernel {
     // flat the tensors
     FPTYPE* dy_dem_x = dy_dem_x_tensor->flat<FPTYPE>().data();
     FPTYPE* dy_dem = dy_dem_tensor->flat<FPTYPE>().data();
+    FPTYPE* dy_dtwo = dy_dtwo_tensor->flat<FPTYPE>().data();
 
     const FPTYPE* descriptor = descriptor_tensor.flat<FPTYPE>().data();
     const FPTYPE* table = table_tensor.flat<FPTYPE>().data();
@@ -482,14 +484,14 @@ class TabulateFusionSeAttenGradOp : public OpKernel {
 
     if (device == "GPU") {
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
-      deepmd::tabulate_fusion_se_a_grad_gpu(dy_dem_x, dy_dem, table, table_info,
-                                            em_x, em, two_embed, dy, nloc, nnei,
-                                            last_layer_size, is_sorted);
+      deepmd::tabulate_fusion_se_a_grad_gpu(
+          dy_dem_x, dy_dem, dy_dtwo, table, table_info, em_x, em, two_embed, dy,
+          nloc, nnei, last_layer_size, is_sorted);
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
     } else if (device == "CPU") {
-      deepmd::tabulate_fusion_se_a_grad_cpu(dy_dem_x, dy_dem, table, table_info,
-                                            em_x, em, two_embed, dy, nloc, nnei,
-                                            last_layer_size, is_sorted);
+      deepmd::tabulate_fusion_se_a_grad_cpu(
+          dy_dem_x, dy_dem, dy_dtwo, table, table_info, em_x, em, two_embed, dy,
+          nloc, nnei, last_layer_size, is_sorted);
     }
   }
 
