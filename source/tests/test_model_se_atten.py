@@ -5,6 +5,8 @@ import unittest
 import numpy as np
 from common import (
     DataSystem,
+    check_smooth_efv,
+    finite_difference_fv,
     gen_data,
     j_loader,
 )
@@ -28,7 +30,6 @@ from deepmd.model import (
 from deepmd.utils.type_embed import (
     TypeEmbedNet,
 )
-from common import finite_difference_fv, check_smooth_efv
 
 GLOBAL_ENER_FLOAT_PRECISION = tf.float64
 GLOBAL_TF_FLOAT_PRECISION = tf.float64
@@ -728,10 +729,8 @@ class TestModel(tf.test.TestCase):
         with self.assertRaises(AssertionError):
             np.testing.assert_almost_equal(des[:, 2:6], 0.0, 10)
 
-
     def test_smoothness_of_stripped_type_embedding_smooth_model(self):
-        """test: auto-diff, continuity of e,f,v
-        """
+        """test: auto-diff, continuity of e,f,v."""
         jfile = "water_se_atten.json"
         jdata = j_loader(jfile)
 
@@ -834,34 +833,42 @@ class TestModel(tf.test.TestCase):
         eps = 1e-4
         delta = 1e-5
         fdf, fdv = finite_difference_fv(
-          sess, energy, feed_dict_test, t_coord, t_box, delta=eps)
+            sess, energy, feed_dict_test, t_coord, t_box, delta=eps
+        )
         np.testing.assert_allclose(pf, fdf, delta)
         np.testing.assert_allclose(pv, fdv, delta)
-        
+
         tested_eps = [1e-3, 1e-4, 1e-5, 1e-6, 1e-7]
         for eps in tested_eps:
-          deltae = eps
-          deltad = eps
-          de, df, dv = check_smooth_efv(
-            sess, energy, force, virial,
-            feed_dict_test, t_coord,
-            jdata["model"]["descriptor"]["rcut"],
-            delta=eps,
-          )
-          np.testing.assert_allclose(de[0], de[1], rtol=0, atol=deltae)
-          np.testing.assert_allclose(df[0], df[1], rtol=0, atol=deltad)
-          np.testing.assert_allclose(dv[0], dv[1], rtol=0, atol=deltad)
-        
+            deltae = eps
+            deltad = eps
+            de, df, dv = check_smooth_efv(
+                sess,
+                energy,
+                force,
+                virial,
+                feed_dict_test,
+                t_coord,
+                jdata["model"]["descriptor"]["rcut"],
+                delta=eps,
+            )
+            np.testing.assert_allclose(de[0], de[1], rtol=0, atol=deltae)
+            np.testing.assert_allclose(df[0], df[1], rtol=0, atol=deltad)
+            np.testing.assert_allclose(dv[0], dv[1], rtol=0, atol=deltad)
+
         for eps in tested_eps:
-          deltae = 5.*eps
-          deltad = 5.*eps
-          de, df, dv = check_smooth_efv(
-            sess, energy, force, virial,
-            feed_dict_test, t_coord,
-            jdata["model"]["descriptor"]["rcut_smth"],
-            delta=eps,
-          )
-          np.testing.assert_allclose(de[0], de[1], rtol=0, atol=deltae)
-          np.testing.assert_allclose(df[0], df[1], rtol=0, atol=deltad)
-          np.testing.assert_allclose(dv[0], dv[1], rtol=0, atol=deltad)
-        
+            deltae = 5.0 * eps
+            deltad = 5.0 * eps
+            de, df, dv = check_smooth_efv(
+                sess,
+                energy,
+                force,
+                virial,
+                feed_dict_test,
+                t_coord,
+                jdata["model"]["descriptor"]["rcut_smth"],
+                delta=eps,
+            )
+            np.testing.assert_allclose(de[0], de[1], rtol=0, atol=deltae)
+            np.testing.assert_allclose(df[0], df[1], rtol=0, atol=deltad)
+            np.testing.assert_allclose(dv[0], dv[1], rtol=0, atol=deltad)
