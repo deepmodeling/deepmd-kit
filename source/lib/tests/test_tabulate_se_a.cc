@@ -726,7 +726,7 @@ TEST_F(TestTabulateSeA, tabulate_fusion_se_a_grad_cpu) {
   std::vector<double> dy_dem_x(em_x.size());
   std::vector<double> dy_dem(em.size());
   std::vector<double> dy(nloc * nnei * last_layer_size, 1.0);
-  FPTYPE *dy_dtwo = nullptr;
+  double *dy_dtwo = nullptr;
   deepmd::tabulate_fusion_se_a_grad_cpu<double>(
       &dy_dem_x[0], &dy_dem[0], dy_dtwo, table[0], &info[0], &em_x[0], &em[0],
       nullptr, &dy[0], nloc, nnei, last_layer_size);
