@@ -101,18 +101,18 @@ void DipoleChargeModifier::run_model(
   Tensor output_f = output_tensors[cc++];
   Tensor output_v = output_tensors[cc++];
   Tensor output_av = output_tensors[cc++];
-  assert(output_f.dims() == 2), "dim of output tensor should be 2";
-  assert(output_v.dims() == 2), "dim of output tensor should be 2";
-  assert(output_av.dims() == 2), "dim of output tensor should be 2";
+  assert(output_f.dims() == 2 && "dim of output tensor should be 2");
+  assert(output_v.dims() == 2 && "dim of output tensor should be 2");
+  assert(output_av.dims() == 2 && "dim of output tensor should be 2");
   int nframes = output_f.dim_size(0);
   int natoms = output_f.dim_size(1) / 3;
-  assert(output_f.dim_size(0) == 1), "nframes should match";
-  assert(natoms == nall), "natoms should be nall";
-  assert(output_v.dim_size(0) == nframes), "nframes should match";
-  assert(output_v.dim_size(1) == 9), "dof of virial should be 9";
-  assert(output_av.dim_size(0) == nframes), "nframes should match";
-  assert(output_av.dim_size(1) == natoms * 9),
-      "dof of atom virial should be 9 * natoms";
+  assert(output_f.dim_size(0) == 1 && "nframes should match");
+  assert(natoms == nall && "natoms should be nall");
+  assert(output_v.dim_size(0) == nframes && "nframes should match");
+  assert(output_v.dim_size(1) == 9 && "dof of virial should be 9");
+  assert(output_av.dim_size(0) == nframes && "nframes should match");
+  assert(output_av.dim_size(1) == natoms * 9 &&
+         "dof of atom virial should be 9 * natoms");
 
   auto of = output_f.flat<MODELTYPE>();
   auto ov = output_v.flat<MODELTYPE>();
