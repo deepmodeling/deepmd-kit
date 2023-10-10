@@ -815,8 +815,8 @@ TEST_F(TestTabulateSeA, tabulate_fusion_se_a_grad_gpu) {
   deepmd::malloc_device_memory_sync(em_dev, em);
   deepmd::malloc_device_memory_sync(dy_dev, dy);
   deepmd::tabulate_fusion_se_a_grad_gpu<double>(
-      dy_dem_x_dev, dy_dem_dev, dy_dtwo_dev, table_dev, &info[0], em_x_dev, em_dev,
-      nullptr, dy_dev, nloc, nnei, last_layer_size);
+      dy_dem_x_dev, dy_dem_dev, dy_dtwo_dev, table_dev, &info[0], em_x_dev,
+      em_dev, nullptr, dy_dev, nloc, nnei, last_layer_size);
   deepmd::memcpy_device_to_host(dy_dem_x_dev, dy_dem_x);
   deepmd::memcpy_device_to_host(dy_dem_dev, dy_dem);
 
