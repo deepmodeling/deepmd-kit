@@ -235,7 +235,7 @@ void deepmd::tabulate_fusion_se_a_grad_cpu(FPTYPE* dy_dem_x,
             // fill from jj to nnei
             for (int jj2 = jj; jj2 < nnei; jj2++) {
               dy_dtwo[ii * nnei * last_layer_size + jj2 * last_layer_size +
-                      kk] += res * dotllrr;
+                      kk] += resold * dotllrr;
             }
           }
         } else {
@@ -267,6 +267,7 @@ void deepmd::tabulate_fusion_se_a_grad_grad_cpu(FPTYPE* dz_dy,
                                                 const FPTYPE* two_embed,
                                                 const FPTYPE* dz_dy_dem_x,
                                                 const FPTYPE* dz_dy_dem,
+                                                const FPTYPE* dz_dy_dtwo,
                                                 const int nloc,
                                                 const int nnei,
                                                 const int last_layer_size,
@@ -317,9 +318,15 @@ void deepmd::tabulate_fusion_se_a_grad_grad_cpu(FPTYPE* dz_dy,
              ((FPTYPE)3. * a3 + ((FPTYPE)4. * a4 + (FPTYPE)5. * a5 * xx) * xx) *
                  xx) *
                 xx;
+        FPTYPE two_grad = 0.;
         if (enable_se_atten) {
           FPTYPE t = two_embed[ii * nnei * last_layer_size +
                                jj * last_layer_size + kk];
+          // dz_dy_dtwo * var * ll
+          // var above should be used instead of var + var * t below
+          two_grad = dz_dy_dtwo[ii * nnei * last_layer_size +
+                                jj * last_layer_size + kk] *
+                     var;
           var += var * t;
           var_grad += var_grad * t;
         }
@@ -346,22 +353,26 @@ void deepmd::tabulate_fusion_se_a_grad_grad_cpu(FPTYPE* dz_dy,
          */
         if (unloop) {
           dz_dy[ii * last_layer_size * 4 + 0 * last_layer_size + kk] +=
-              (nnei - jj) * (var * hh[0] + dz_xx * var_grad * ll[0]);
+              (nnei - jj) *
+              (var * hh[0] + (dz_xx * var_grad + two_grad) * ll[0]);
           dz_dy[ii * last_layer_size * 4 + 1 * last_layer_size + kk] +=
-              (nnei - jj) * (var * hh[1] + dz_xx * var_grad * ll[1]);
+              (nnei - jj) *
+              (var * hh[1] + (dz_xx * var_grad + two_grad) * ll[1]);
           dz_dy[ii * last_layer_size * 4 + 2 * last_layer_size + kk] +=
-              (nnei - jj) * (var * hh[2] + dz_xx * var_grad * ll[2]);
+              (nnei - jj) *
+              (var * hh[2] + (dz_xx * var_grad + two_grad) * ll[2]);
           dz_dy[ii * last_layer_size * 4 + 3 * last_layer_size + kk] +=
-              (nnei - jj) * (var * hh[3] + dz_xx * var_grad * ll[3]);
+              (nnei - jj) *
+              (var * hh[3] + (dz_xx * var_grad + two_grad) * ll[3]);
         } else {
           dz_dy[ii * last_layer_size * 4 + 0 * last_layer_size + kk] +=
-              var * hh[0] + dz_xx * var_grad * ll[0];
+              var * hh[0] + (dz_xx * var_grad + two_grad) * ll[0];
           dz_dy[ii * last_layer_size * 4 + 1 * last_layer_size + kk] +=
-              var * hh[1] + dz_xx * var_grad * ll[1];
+              var * hh[1] + (dz_xx * var_grad + two_grad) * ll[1];
           dz_dy[ii * last_layer_size * 4 + 2 * last_layer_size + kk] +=
-              var * hh[2] + dz_xx * var_grad * ll[2];
+              var * hh[2] + (dz_xx * var_grad + two_grad) * ll[2];
           dz_dy[ii * last_layer_size * 4 + 3 * last_layer_size + kk] +=
-              var * hh[3] + dz_xx * var_grad * ll[3];
+              var * hh[3] + (dz_xx * var_grad + two_grad) * ll[3];
         }
       }
       if (unloop) {
@@ -711,6 +722,7 @@ template void deepmd::tabulate_fusion_se_a_grad_grad_cpu<float>(
     const float* two_embed,
     const float* dz_dy_dem_x,
     const float* dz_dy_dem,
+    const float* dz_dy_dtwo,
     const int nloc,
     const int nnei,
     const int last_layer_size,
@@ -724,6 +736,7 @@ template void deepmd::tabulate_fusion_se_a_grad_grad_cpu<double>(
     const double* two_embed,
     const double* dz_dy_dem_x,
     const double* dz_dy_dem,
+    const double* dz_dy_dtwo,
     const int nloc,
     const int nnei,
     const int last_layer_size,
