@@ -849,13 +849,13 @@ void deepmd::select_map(std::vector<VT>& out,
                         const int& nall2) {
   for (int kk = 0; kk < nframes; ++kk) {
 #ifdef DEBUG
-    assert(in.size() / stride * stride == in.size()),
-        "in size should be multiples of stride"
+    assert(in.size() / stride * stride == in.size() &&
+           "in size should be multiples of stride")
 #endif
         for (int ii = 0; ii < in.size() / stride / nframes; ++ii) {
 #ifdef DEBUG
-      assert(ii < idx_map.size()), "idx goes over the idx map size";
-      assert(idx_map[ii] < out.size()), "mappped idx goes over the out size";
+      assert(ii < idx_map.size() && "idx goes over the idx map size");
+      assert(idx_map[ii] < out.size() && "mappped idx goes over the out size");
 #endif
       if (idx_map[ii] >= 0) {
         int to_ii = idx_map[ii];
@@ -896,13 +896,13 @@ void deepmd::select_map_inv(std::vector<VT>& out,
                             const std::vector<int>& idx_map,
                             const int& stride) {
 #ifdef DEBUG
-  assert(in.size() / stride * stride == in.size()),
-      "in size should be multiples of stride"
+  assert(in.size() / stride * stride == in.size() &&
+         "in size should be multiples of stride");
 #endif
-      for (int ii = 0; ii < out.size() / stride; ++ii) {
+  for (int ii = 0; ii < out.size() / stride; ++ii) {
 #ifdef DEBUG
-    assert(ii < idx_map.size()), "idx goes over the idx map size";
-    assert(idx_map[ii] < in.size()), "from idx goes over the in size";
+    assert(ii < idx_map.size() && "idx goes over the idx map size");
+    assert(idx_map[ii] < in.size() && "from idx goes over the in size");
 #endif
     if (idx_map[ii] >= 0) {
       int from_ii = idx_map[ii];
