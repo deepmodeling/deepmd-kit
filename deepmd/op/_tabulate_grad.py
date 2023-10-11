@@ -55,7 +55,7 @@ def _tabulate_fusion_se_atten_grad_cc(op, dy):
         op.outputs[0],
         is_sorted=op.get_attr("is_sorted"),
     )
-    return [None, None, dy_dx, dy_df, None]
+    return [None, None, dy_dx, dy_df, dy_dtwo]
 
 
 @ops.RegisterGradient("TabulateFusionSeAttenGrad")
@@ -68,6 +68,7 @@ def _tabulate_fusion_se_atten_grad_grad_cc(op, dy, dy_, dy_dtwo):
         op.inputs[4],
         dy,
         dy_,
+        dy_dtwo,
         op.inputs[6],
         is_sorted=op.get_attr("is_sorted"),
     )
