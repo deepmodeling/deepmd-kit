@@ -798,9 +798,6 @@ void tabulate_fusion_se_a_grad_gpu(FPTYPE* dy_dem_x,
   DPErrcheck(gpuDeviceSynchronize());
   DPErrcheck(gpuMemset(dy_dem_x, 0, sizeof(FPTYPE) * nloc * nnei));
   DPErrcheck(gpuMemset(dy_dem, 0, sizeof(FPTYPE) * nloc * nnei * 4));
-  if (two_embed != nullptr) {
-    DPErrcheck(gpuMemset(dy_dtwo, 0, sizeof(FPTYPE) * nloc * nnei));
-  }
 
   tabulate_fusion_se_a_grad_fifth_order_polynomial<FPTYPE, MM, KK>
       <<<nloc, KK * WARP_SIZE, sizeof(FPTYPE) * MM * last_layer_size>>>(
