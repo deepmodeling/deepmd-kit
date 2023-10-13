@@ -30,7 +30,6 @@ from deepmd.model import (
 from deepmd.utils.type_embed import (
     TypeEmbedNet,
 )
-from common import finite_difference_fv, check_smooth_efv
 
 GLOBAL_ENER_FLOAT_PRECISION = tf.float64
 GLOBAL_TF_FLOAT_PRECISION = tf.float64

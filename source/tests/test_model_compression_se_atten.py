@@ -46,11 +46,31 @@ def _subprocess_run(command):
 # - type embedding FP32, se_atten FP64
 # - type embedding FP32, se_atten FP32
 tests = [
-    {"se_atten precision": "float64", "type embedding precision": "float64", "smooth_type_embdding": True},
-    {"se_atten precision": "float64", "type embedding precision": "float64", "smooth_type_embdding": False},
-    {"se_atten precision": "float64", "type embedding precision": "float32", "smooth_type_embdding": True},
-    {"se_atten precision": "float32", "type embedding precision": "float64", "smooth_type_embdding": True},
-    {"se_atten precision": "float32", "type embedding precision": "float32", "smooth_type_embdding": True},
+    {
+        "se_atten precision": "float64",
+        "type embedding precision": "float64",
+        "smooth_type_embdding": True,
+    },
+    {
+        "se_atten precision": "float64",
+        "type embedding precision": "float64",
+        "smooth_type_embdding": False,
+    },
+    {
+        "se_atten precision": "float64",
+        "type embedding precision": "float32",
+        "smooth_type_embdding": True,
+    },
+    {
+        "se_atten precision": "float32",
+        "type embedding precision": "float64",
+        "smooth_type_embdding": True,
+    },
+    {
+        "se_atten precision": "float32",
+        "type embedding precision": "float32",
+        "smooth_type_embdding": True,
+    },
 ]
 
 
@@ -75,7 +95,7 @@ def _init_models():
         jdata["model"]["descriptor"]["sel"] = 120
         jdata["model"]["descriptor"]["attn_layer"] = 0
         jdata["model"]["descriptor"]["smooth_type_embdding"] = tests[i][
-          "smooth_type_embdding"
+            "smooth_type_embdding"
         ]
         jdata["model"]["type_embedding"] = {}
         jdata["model"]["type_embedding"]["precision"] = tests[i][
@@ -483,9 +503,15 @@ class TestDeepPotALargeBoxNoPBC(unittest.TestCase):
             self.assertEqual(ff1.shape, (nframes, natoms, 3))
             self.assertEqual(vv1.shape, (nframes, 9))
             # check values
-            np.testing.assert_almost_equal(ff0, ff1, default_places, err_msg=str(tests[i]))
-            np.testing.assert_almost_equal(ee0, ee1, default_places, err_msg=str(tests[i]))
-            np.testing.assert_almost_equal(vv0, vv1, default_places, err_msg=str(tests[i]))
+            np.testing.assert_almost_equal(
+                ff0, ff1, default_places, err_msg=str(tests[i])
+            )
+            np.testing.assert_almost_equal(
+                ee0, ee1, default_places, err_msg=str(tests[i])
+            )
+            np.testing.assert_almost_equal(
+                vv0, vv1, default_places, err_msg=str(tests[i])
+            )
 
     def test_1frame_atm(self):
         for i in range(len(tests)):
