@@ -564,7 +564,7 @@ class DescrptSeAtten(DescrptSeA):
             self.filter_precision,
         )
         self.negative_mask = -(2 << 32) * (1.0 - self.nmask)
-        # hard coding the magnitude of attention weight shift 
+        # hard coding the magnitude of attention weight shift
         self.smth_attn_w_shift = 20.0
         # only used when tensorboard was set as true
         tf.summary.histogram("descrpt", self.descrpt)
@@ -601,7 +601,9 @@ class DescrptSeAtten(DescrptSeA):
             )
             self.recovered_r = (
                 tf.reshape(
-                    tf.slice(tf.reshape(self.descrpt_reshape, [-1, 4]), [0, 0], [-1, 1]),
+                    tf.slice(
+                        tf.reshape(self.descrpt_reshape, [-1, 4]), [0, 0], [-1, 1]
+                    ),
                     [-1, natoms[0], self.sel_all_a[0]],
                 )
                 * self.std_looked_up
@@ -870,18 +872,21 @@ class DescrptSeAtten(DescrptSeA):
         if self.smooth:
             # (nb x nloc) x nsel
             nsel = self.sel_all_a[0]
-            attn = ((attn + self.smth_attn_w_shift) * 
-                    tf.reshape(self.recovered_switch, [-1,1,nsel]) * 
-                    tf.reshape(self.recovered_switch, [-1,nsel,1]) - 
-                    self.smth_attn_w_shift)
+            attn = (attn + self.smth_attn_w_shift) * tf.reshape(
+                self.recovered_switch, [-1, 1, nsel]
+            ) * tf.reshape(
+                self.recovered_switch, [-1, nsel, 1]
+            ) - self.smth_attn_w_shift
         else:
             attn *= self.nmask
             attn += self.negative_mask
         attn = tf.nn.softmax(attn, axis=-1)
         if self.smooth:
-            attn = (attn * 
-                    tf.reshape(self.recovered_switch, [-1,1,nsel]) * 
-                    tf.reshape(self.recovered_switch, [-1,nsel,1]))
+            attn = (
+                attn
+                * tf.reshape(self.recovered_switch, [-1, 1, nsel])
+                * tf.reshape(self.recovered_switch, [-1, nsel, 1])
+            )
         else:
             attn *= tf.reshape(self.nmask, [-1, attn.shape[-1], 1])
         if save_weights:

@@ -127,8 +127,8 @@ FixDPLR::FixDPLR(LAMMPS *lmp, int narg, char **arg)
       break;
     }
   }
-  assert(map_vec.size() % 2 == 0),
-      "number of ints provided by type_associate should be even";
+  assert(map_vec.size() % 2 == 0 &&
+         "number of ints provided by type_associate should be even");
 
   // dpt.init(model);
   // dtm.init("frozen_model.pb");
