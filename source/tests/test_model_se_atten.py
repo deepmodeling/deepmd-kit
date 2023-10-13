@@ -754,6 +754,8 @@ class TestModel(tf.test.TestCase):
         jdata["model"]["descriptor"]["stripped_type_embedding"] = True
         jdata["model"]["descriptor"]["smooth_type_embdding"] = True
         jdata["model"]["descriptor"]["attn_layer"] = 1
+        jdata["model"]["descriptor"]["rcut"] = 6.0
+        jdata["model"]["descriptor"]["rcut_smth"] = 4.0
         descrpt = DescrptSeAtten(**jdata["model"]["descriptor"], uniform_seed=True)
         jdata["model"]["fitting_net"]["descrpt"] = descrpt
         fitting = EnerFitting(**jdata["model"]["fitting_net"], uniform_seed=True)
