@@ -41,6 +41,7 @@ endif()
 
 if(BUILD_CPP_IF
    AND USE_TF_PYTHON_LIBS
+   AND NOT CMAKE_CROSSCOMPILING
    AND NOT SKBUILD
    AND NOT INSTALL_TENSORFLOW)
   # Here we try to install libtensorflow_cc.so as well as

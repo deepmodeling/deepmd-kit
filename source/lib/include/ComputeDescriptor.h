@@ -829,8 +829,8 @@ void compute_descriptor_se_a_extf(std::vector<double> &descrpt_a,
       ef[ii] = ef_[ii];
     }
   }
-  assert(fabs(deepmd::dot3(ef, ef) - 1.0) < 1e-12),
-      "ef should be a normalized std::vector";
+  assert(fabs(deepmd::dot3(ef, ef) - 1.0) < 1e-12 &&
+         "ef should be a normalized std::vector");
 
   // compute the diff of the neighbors
   std::vector<std::vector<double> > sel_a_diff(sec_a.back());
@@ -970,8 +970,8 @@ void compute_descriptor_se_a_ef_para(std::vector<double> &descrpt_a,
       ef[ii] = ef_[ii];
     }
   }
-  assert(fabs(deepmd::dot3(ef, ef) - 1.0) < 1e-12),
-      "ef should be a normalized vector";
+  assert(fabs(deepmd::dot3(ef, ef) - 1.0) < 1e-12 &&
+         "ef should be a normalized vector");
 
   // compute the diff of the neighbors
   std::vector<std::vector<double> > sel_a_diff(sec_a.back());
@@ -1107,8 +1107,8 @@ void compute_descriptor_se_a_ef_vert(std::vector<double> &descrpt_a,
       ef[ii] = ef_[ii];
     }
   }
-  assert(fabs(deepmd::dot3(ef, ef) - 1.0) < 1e-12),
-      "ef should be a normalized vector";
+  assert(fabs(deepmd::dot3(ef, ef) - 1.0) < 1e-12 &&
+         "ef should be a normalized vector");
 
   // compute the diff of the neighbors
   std::vector<std::vector<double> > sel_a_diff(sec_a.back());

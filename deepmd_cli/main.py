@@ -571,6 +571,29 @@ def main_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Skip calculating neighbor statistics. Sel checking, automatic sel, and model compression will be disabled.",
     )
+
+    # gui
+    parser_gui = subparsers.add_parser(
+        "gui",
+        parents=[parser_log],
+        help="Serve DP-GUI.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser_gui.add_argument(
+        "-p",
+        "--port",
+        type=int,
+        default=6042,
+        help="The port to serve DP-GUI on.",
+    )
+    parser_gui.add_argument(
+        "--bind_all",
+        action="store_true",
+        help=(
+            "Serve on all public interfaces. This will expose your DP-GUI instance "
+            "to the network on both IPv4 and IPv6 (where available)."
+        ),
+    )
     return parser
 
 

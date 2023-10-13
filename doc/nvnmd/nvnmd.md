@@ -239,10 +239,10 @@ Then you need prepare the configuration file `job.json`, the configuration file 
     "job_name": "test",
     "command": "/usr/bin/lmp_mpi < in.lmp;",
     "log_file": "OUTCAR",
-    "machine_type": "c8_m32_cpu",
+    "machine_type": "c4_m16_cpu",
     "job_type": "container",
     "image_name": "lammps_dp:29Sep2021",
-    "platform": "hnu",
+    "platform": "hnugba",
     "region": "default",
     "project_id": 0000
 }
@@ -255,24 +255,24 @@ where items are defined as:
 | job_name     | the name of computing job, which can be named freely                                                                       | a string       |
 | command      | the command to be executed on the computing node                                                                           | a string       |
 | log_file     | the log file that can be viewed at any time during the calculation process, which can be viewed on the Bohrium "Jobs" page | a string       |
-| machine_type | the machine type used for the job                                                                                          | "c8_m32_cpu"   |
+| machine_type | the machine type used for the job                                                                                          | "c1_m4_cpu", "c4_m16_cpu", "c8_m32_cpu"   |
 | job_type     | the job type                                                                                                               | "container"    |
 | image_name   | the image name used for the job                                                                                            | "lammps_dp:29Sep2021"|
-| platform     | resource provider                                                                                                          | "hnu"          |
+| platform     | resource provider                                                                                                          | "hnugba"          |
 | project_id   | the project ID to which the job belongs, which can be viewed on the "Projects" page                                        | a integer      |
 
-Notice：The task will use 8 CPU cores for computation, so do not repeatedly use the `mpirun` command, otherwise an error will be reported. All 0000 after "project_id" need to be replaced with your own project ID, which can be viewed on the "Projects" page. Also, the JSON file format requires that no commas be added after the last field within the {}, otherwise, there will be a syntax error.
+Notice：The task will use 4 CPU cores for computation, so do not repeatedly use the `mpirun` command, otherwise an error will be reported. All 0000 after "project_id" need to be replaced with your own project ID, which can be viewed on the "Projects" page. Also, the JSON file format requires that no commas be added after the last field within the {}, otherwise, there will be a syntax error. Please check the [documentation](https://github.com/LiuGroupHNU/md-data/blob/master/code/doc/mdpu/hardware.md) for the latest hardware configuration information.
 
 In addition, it is necessary to prepare input script of the MD simulation, the ML model named `model.pb` obtained by QNN training and data files containing information required for running an MD simulation (e.g., `coord.lmp` containing initial atom coordinates).
 
 In the input script, one needs to specify the pair style as follows
 
 ```lammps
-pair_style nvnmd model.pb 6 2
+pair_style nvnmd model.pb
 pair_coeff * *
 ```
 
-where `model.pb` is the path to model, `6` is the cutoff radius, `2` is the number of FPGA cards used with the maximum of 2.
+where `model.pb` is the path to model.
 
 After preparing the configuration file and the required files for calculation, using Lebesgue Utility to submit the job
 

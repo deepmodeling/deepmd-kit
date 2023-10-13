@@ -10,7 +10,7 @@ backend-path = ["."]
 
 [project]
 name = "deepmd-kit"
-dynamic = ["version", "optional-dependencies", "scripts"]
+dynamic = ["version", "optional-dependencies", "scripts", "readme"]
 description = "A deep learning package for many-body potential energy representation and molecular dynamics"
 authors = [
   {name = "DeepModeling"},
@@ -47,11 +47,13 @@ dependencies = [
     'packaging',
 ]
 requires-python = ">=3.7"
-readme = "README.md"
 keywords = ["deepmd"]
 
 [project.entry-points."lammps.plugins"]
 deepmd = "deepmd.lmp:get_op_dir"
+
+[project.entry-points."dpgui"]
+"DeePMD-kit" = "deepmd.utils.argcheck:gen_args"
 
 [project.urls]
 Homepage = "https://github.com/deepmodeling/deepmd-kit"
@@ -96,11 +98,30 @@ provider-path = "backend"
 provider = "backend.dynamic_metadata"
 provider-path = "backend"
 
+[tool.scikit-build.metadata.readme]
+provider = "scikit_build_core.metadata.fancy_pypi_readme"
+
 [[tool.scikit-build.generate]]
 path = "deepmd_cli/_version.py"
 template = '''
 version = "${version}"
 '''
+
+[tool.hatch.metadata.hooks.fancy-pypi-readme]
+content-type = "text/markdown"
+
+[[tool.hatch.metadata.hooks.fancy-pypi-readme.fragments]]
+path = "README.md"
+
+[[tool.hatch.metadata.hooks.fancy-pypi-readme.substitutions]]
+# links
+pattern = '\[(.+?)\]\(((?!https?://)\S+?)\)'
+replacement = '[\1](https://github.com/deepmodeling/deepmd-kit/tree/master/\g<2>)'
+
+[[tool.hatch.metadata.hooks.fancy-pypi-readme.substitutions]]
+# image
+pattern = '(srcset|src)="((?!https?://)\S+?)"'
+replacement = '\1="https://github.com/deepmodeling/deepmd-kit/raw/master/\g<2>"'
 
 [tool.cibuildwheel]
 test-command = [
@@ -129,9 +150,9 @@ repair-wheel-command = """if [[ "$CIBW_BUILD" == *macosx_arm64* ]]; then rm -rf 
 [tool.cibuildwheel.linux]
 repair-wheel-command = "auditwheel repair --exclude libtensorflow_framework.so.2 --exclude libtensorflow_framework.so.1 --exclude libtensorflow_framework.so --exclude _pywrap_tensorflow_internal.so --exclude libtensorflow_cc.so.2 -w {dest_dir} {wheel}"
 environment-pass = ["CIBW_BUILD", "DP_VARIANT"]
-environment = { PIP_PREFER_BINARY="1", DP_VARIANT="cuda", DP_LAMMPS_VERSION="stable_2Aug2023_update1", DP_ENABLE_IPI="1", MPI_HOME="/usr/lib64/mpich", PATH="/usr/lib64/mpich/bin:$PATH" }
+environment = { PIP_PREFER_BINARY="1", DP_LAMMPS_VERSION="stable_2Aug2023_update1", DP_ENABLE_IPI="1", MPI_HOME="/usr/lib64/mpich", PATH="/usr/lib64/mpich/bin:$PATH" }
 before-all = [
-    """{ if [ "$(uname -m)" = "x86_64" ] ; then curl https://developer.download.nvidia.com/compute/cuda/11.8.0/local_installers/cuda_11.8.0_520.61.05_linux.run -O && bash cuda_11.8.0_520.61.05_linux.run --silent --toolkit; fi }""",
+    """{ if [ "$(uname -m)" = "x86_64" ] ; then yum config-manager --add-repo http://developer.download.nvidia.com/compute/cuda/repos/rhel8/x86_64/cuda-rhel8.repo && yum install -y cuda-nvcc-11-8 cuda-cudart-devel-11-8; fi }""",
     "yum install -y mpich-devel",
 ]
 
@@ -205,6 +226,7 @@ select = [
     "RUF", # ruff
     "NPY", # numpy
 ]
+
 ignore = [
     "E501", # line too long
     "F841", # local variable is assigned to but never used
@@ -224,3 +246,6 @@ ignore-init-module-imports = true
 
 [tool.ruff.pydocstyle]
 convention = "numpy"
+
+[tool.pytest.ini_options]
+markers = "run"

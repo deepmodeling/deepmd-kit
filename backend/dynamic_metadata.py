@@ -38,6 +38,7 @@ def dynamic_metadata(
                 "pytest",
                 "pytest-cov",
                 "pytest-sugar",
+                "dpgui",
             ],
             "docs": [
                 "sphinx>=3.1.1",
@@ -61,6 +62,9 @@ def dynamic_metadata(
             "ipi": [
                 "i-PI",
                 *find_libpython_requires,
+            ],
+            "gui": [
+                "dpgui",
             ],
             **get_tf_requirement(tf_version),
             "cu11": [

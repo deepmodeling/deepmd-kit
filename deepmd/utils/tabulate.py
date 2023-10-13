@@ -176,7 +176,9 @@ class DPTabulate:
         """
         # tabulate range [lower, upper] with stride0 'stride0'
         lower, upper = self._get_env_mat_range(min_nbor_dist)
-        if isinstance(self.descrpt, deepmd.descriptor.DescrptSeAtten):
+        if isinstance(self.descrpt, deepmd.descriptor.DescrptSeAtten) or isinstance(
+            self.descrpt, deepmd.descriptor.DescrptSeAEbdV2
+        ):
             uu = np.max(upper)
             ll = np.min(lower)
             xx = np.arange(ll, uu, stride0, dtype=self.data_type)
@@ -419,7 +421,9 @@ class DPTabulate:
         bias = {}
         for layer in range(1, self.layer_size + 1):
             bias["layer_" + str(layer)] = []
-            if isinstance(self.descrpt, deepmd.descriptor.DescrptSeAtten):
+            if isinstance(self.descrpt, deepmd.descriptor.DescrptSeAtten) or isinstance(
+                self.descrpt, deepmd.descriptor.DescrptSeAEbdV2
+            ):
                 node = self.embedding_net_nodes[
                     f"filter_type_all{self.suffix}/bias_{layer}"
                 ]
@@ -483,7 +487,9 @@ class DPTabulate:
         matrix = {}
         for layer in range(1, self.layer_size + 1):
             matrix["layer_" + str(layer)] = []
-            if isinstance(self.descrpt, deepmd.descriptor.DescrptSeAtten):
+            if isinstance(self.descrpt, deepmd.descriptor.DescrptSeAtten) or isinstance(
+                self.descrpt, deepmd.descriptor.DescrptSeAEbdV2
+            ):
                 node = self.embedding_net_nodes[
                     f"filter_type_all{self.suffix}/matrix_{layer}"
                 ]
@@ -687,7 +693,9 @@ class DPTabulate:
 
     def _get_layer_size(self):
         layer_size = 0
-        if isinstance(self.descrpt, deepmd.descriptor.DescrptSeAtten):
+        if isinstance(self.descrpt, deepmd.descriptor.DescrptSeAtten) or isinstance(
+            self.descrpt, deepmd.descriptor.DescrptSeAEbdV2
+        ):
             layer_size = len(self.embedding_net_nodes) // 2
         elif isinstance(self.descrpt, deepmd.descriptor.DescrptSeA):
             layer_size = len(self.embedding_net_nodes) // (
@@ -737,7 +745,9 @@ class DPTabulate:
 
     def _get_table_size(self):
         table_size = 0
-        if isinstance(self.descrpt, deepmd.descriptor.DescrptSeAtten):
+        if isinstance(self.descrpt, deepmd.descriptor.DescrptSeAtten) or isinstance(
+            self.descrpt, deepmd.descriptor.DescrptSeAEbdV2
+        ):
             table_size = 1
         elif isinstance(self.descrpt, deepmd.descriptor.DescrptSeA):
             table_size = self.ntypes * self.ntypes

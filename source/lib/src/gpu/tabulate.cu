@@ -253,6 +253,7 @@ template <typename FPTYPE, int MTILE, int KTILE>
 __global__ void tabulate_fusion_se_a_grad_fifth_order_polynomial(
     FPTYPE* dy_dem_x,
     FPTYPE* dy_dem,
+    FPTYPE* dy_dtwo,
     const FPTYPE* table,
     const FPTYPE* em_x,
     const FPTYPE* em,
@@ -307,6 +308,7 @@ __global__ void tabulate_fusion_se_a_grad_fifth_order_polynomial(
           (var[1] +
            (var[2] + (var[3] + (var[4] + var[5] * xx) * xx) * xx) * xx) *
               xx;
+      FPTYPE oldres = res;
       FPTYPE t;
       if (enable_se_atten) {
         t = two_embed[block_idx * nnei * last_layer_size +
@@ -330,6 +332,13 @@ __global__ void tabulate_fusion_se_a_grad_fifth_order_polynomial(
                          xx) *
                         xx) *
           (enable_se_atten ? res * t + res : res);
+      if (enable_se_atten) {
+        // from ii to ii + (nnei - breakpoint)
+        for (int ii2 = ii; ii2 < ii + nnei - breakpoint; ii2++) {
+          dy_dtwo[block_idx * nnei * last_layer_size + ii2 * last_layer_size +
+                  jj] = oldres * res;
+        }
+      }
     }
     GpuSyncThreads();
     for (int kk = 0; kk < MTILE; kk++) {
@@ -354,8 +363,10 @@ __global__ void tabulate_fusion_se_a_grad_grad_fifth_order_polynomial(
     const FPTYPE* table,
     const FPTYPE* em_x,
     const FPTYPE* em,
+    const FPTYPE* two_embed,
     const FPTYPE* dz_dy_dem_x,
     const FPTYPE* dz_dy_dem,
+    const FPTYPE* dz_dy_dtwo,
     const FPTYPE lower,
     const FPTYPE upper,
     const FPTYPE max,
@@ -364,6 +375,7 @@ __global__ void tabulate_fusion_se_a_grad_grad_fifth_order_polynomial(
     const int nnei,
     const int last_layer_size,
     const bool is_sorted) {
+  bool enable_se_atten = two_embed != nullptr;
   GPU_DYNAMIC_SHARED_MEM_DECL(int, _data);
   const int_64 block_idx = blockIdx.x;  // nloc
   const int thread_idx = threadIdx.x;   // last_layer_size
@@ -402,12 +414,44 @@ __global__ void tabulate_fusion_se_a_grad_grad_fifth_order_polynomial(
                    ((FPTYPE)4. * var[4] + (FPTYPE)5. * var[5] * xx) * xx) *
                       xx) *
                      xx;
+    FPTYPE two_grad = 0.;
+    if (enable_se_atten) {
+      FPTYPE t = two_embed[block_idx * nnei * last_layer_size +
+                           ii * last_layer_size + thread_idx];
+      // dz_dy_dtwo * res * em
+      // res above should be used instead of res + res * t below
+      two_grad = dz_dy_dtwo[block_idx * nnei * last_layer_size +
+                            ii * last_layer_size + thread_idx] *
+                 res;
+      res += res * t;
+      res_grad += res_grad * t;
+    }
 
+    /*
+     * `dz_dy`(or `iteratorC`) represents the derivative of the variable `out`
+     * in the function `tabulate_fusion_se_a_fifth_order_polynomial`.
+     *
+     * The expression `em[em_index] * res_grad * dz_xx + dz_dy_dem[em_index] *
+     * res` utilizes the product rule of derivatives: `(f * g)' = f' * g + f *
+     * g'`.
+     *
+     * This expression can be alternatively expressed as:
+     * `dz_dy_dem[em_index] * res + em[em_index] * (res_grad * dz_xx)`.
+     * Note that we can refer to `dz_dy_dem` as `em'`
+     *
+     * Therefore, we can rewrite this expression as: `em' * res + em * res'`,
+     * where `em'` is the derivative of `em` and `res'` is the derivative of
+     * `res`. Additionally, `res'` can be further represented as: `res_grad *
+     * dz_xx`.
+     *
+     * If `enable_se_atten` is true, `res` will be `res * t + res`, and `res'`
+     * will become `(res_grad * t + res_grad) * dz_xx`.
+     */
     for (int kk = 0; kk < MTILE; kk++) {
       int em_index = block_idx * nnei * MTILE + ii * MTILE + kk;
       iteratorC[kk * last_layer_size + thread_idx] +=
-          (nnei - breakpoint) *
-          (em[em_index] * res_grad * dz_xx + dz_dy_dem[em_index] * res);
+          (nnei - breakpoint) * (em[em_index] * (res_grad * dz_xx + two_grad) +
+                                 dz_dy_dem[em_index] * res);
     }
     mark_table_idx = table_idx;
     if (unloop) {
@@ -736,6 +780,7 @@ void tabulate_fusion_se_a_gpu(FPTYPE* out,
 template <typename FPTYPE>
 void tabulate_fusion_se_a_grad_gpu(FPTYPE* dy_dem_x,
                                    FPTYPE* dy_dem,
+                                   FPTYPE* dy_dtwo,
                                    const FPTYPE* table,
                                    const FPTYPE* table_info,
                                    const FPTYPE* em_x,
@@ -756,9 +801,9 @@ void tabulate_fusion_se_a_grad_gpu(FPTYPE* dy_dem_x,
 
   tabulate_fusion_se_a_grad_fifth_order_polynomial<FPTYPE, MM, KK>
       <<<nloc, KK * WARP_SIZE, sizeof(FPTYPE) * MM * last_layer_size>>>(
-          dy_dem_x, dy_dem, table, em_x, em, two_embed, dy, table_info[0],
-          table_info[1], table_info[2], table_info[3], table_info[4], nnei,
-          last_layer_size, is_sorted);
+          dy_dem_x, dy_dem, dy_dtwo, table, em_x, em, two_embed, dy,
+          table_info[0], table_info[1], table_info[2], table_info[3],
+          table_info[4], nnei, last_layer_size, is_sorted);
   DPErrcheck(gpuGetLastError());
   DPErrcheck(gpuDeviceSynchronize());
 }
@@ -769,8 +814,10 @@ void tabulate_fusion_se_a_grad_grad_gpu(FPTYPE* dz_dy,
                                         const FPTYPE* table_info,
                                         const FPTYPE* em_x,
                                         const FPTYPE* em,
+                                        const FPTYPE* two_embed,
                                         const FPTYPE* dz_dy_dem_x,
                                         const FPTYPE* dz_dy_dem,
+                                        const FPTYPE* dz_dy_dtwo,
                                         const int nloc,
                                         const int nnei,
                                         const int last_layer_size,
@@ -783,9 +830,9 @@ void tabulate_fusion_se_a_grad_grad_gpu(FPTYPE* dz_dy,
   DPErrcheck(gpuMemset(dz_dy, 0, sizeof(FPTYPE) * nloc * 4 * last_layer_size));
   tabulate_fusion_se_a_grad_grad_fifth_order_polynomial<FPTYPE, MM, KK>
       <<<nloc, last_layer_size, sizeof(FPTYPE) * MM * last_layer_size>>>(
-          dz_dy, table, em_x, em, dz_dy_dem_x, dz_dy_dem, table_info[0],
-          table_info[1], table_info[2], table_info[3], table_info[4], nnei,
-          last_layer_size, is_sorted);
+          dz_dy, table, em_x, em, two_embed, dz_dy_dem_x, dz_dy_dem, dz_dy_dtwo,
+          table_info[0], table_info[1], table_info[2], table_info[3],
+          table_info[4], nnei, last_layer_size, is_sorted);
   DPErrcheck(gpuGetLastError());
   DPErrcheck(gpuDeviceSynchronize());
 }
@@ -961,6 +1008,7 @@ template void tabulate_fusion_se_a_gpu<double>(double* out,
                                                const bool is_sorted);
 template void tabulate_fusion_se_a_grad_gpu<float>(float* dy_dem_x,
                                                    float* dy_dem,
+                                                   float* dy_dtwo,
                                                    const float* table,
                                                    const float* table_info,
                                                    const float* em_x,
@@ -973,6 +1021,7 @@ template void tabulate_fusion_se_a_grad_gpu<float>(float* dy_dem_x,
                                                    const bool is_sorted);
 template void tabulate_fusion_se_a_grad_gpu<double>(double* dy_dem_x,
                                                     double* dy_dem,
+                                                    double* dy_dtwo,
                                                     const double* table,
                                                     const double* table_info,
                                                     const double* em_x,
@@ -989,8 +1038,10 @@ template void tabulate_fusion_se_a_grad_grad_gpu<float>(
     const float* table_info,
     const float* em_x,
     const float* em,
+    const float* two_embed,
     const float* dz_dy_dem_x,
     const float* dz_dy_dem,
+    const float* dz_dy_dtwo,
     const int nloc,
     const int nnei,
     const int last_layer_size,
@@ -1001,8 +1052,10 @@ template void tabulate_fusion_se_a_grad_grad_gpu<double>(
     const double* table_info,
     const double* em_x,
     const double* em,
+    const double* two_embed,
     const double* dz_dy_dem_x,
     const double* dz_dy_dem,
+    const double* dz_dy_dtwo,
     const int nloc,
     const int nnei,
     const int last_layer_size,

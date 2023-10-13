@@ -430,3 +430,16 @@ class DescrptLocFrame(Descriptor):
         self.dstd = get_tensor_by_name_from_graph(
             graph, "descrpt_attr%s/t_std" % suffix
         )
+
+    @classmethod
+    def update_sel(cls, global_jdata: dict, local_jdata: dict):
+        """Update the selection and perform neighbor statistics.
+
+        Parameters
+        ----------
+        global_jdata : dict
+            The global data, containing the training section
+        local_jdata : dict
+            The local data refer to the current class
+        """
+        return local_jdata
