@@ -100,10 +100,12 @@ class AutoBatchSize:
         OutOfMemoryError
             OOM when batch size is 1
         """
+        if natoms > 0:
+            batch_nframes = self.current_batch_size // natoms
+        else:
+            batch_nframes = self.current_batch_size
         try:
-            n_batch, result = callable(
-                max(self.current_batch_size // natoms, 1), start_index
-            )
+            n_batch, result = callable(max(batch_nframes, 1), start_index)
         except OutOfMemoryError as e:
             # TODO: it's very slow to catch OOM error; I don't know what TF is doing here
             # but luckily we only need to catch once

@@ -13,6 +13,7 @@ from packaging.version import parse as parse_version
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
     MODEL_VERSION,
+    tf,
 )
 from deepmd.infer import (
     DeepPot,
@@ -301,6 +302,23 @@ class TestDeepPotAPBC(unittest.TestCase):
         np.testing.assert_almost_equal(ee.ravel(), expected_se.ravel(), default_places)
         expected_sv = np.sum(expected_v.reshape([nframes, -1, 9]), axis=1)
         np.testing.assert_almost_equal(vv.ravel(), expected_sv.ravel(), default_places)
+
+    # TODO: needs to fix
+    @unittest.skipIf(tf.test.is_gpu_available(), reason="Segfault in GPUs")
+    def test_zero_input(self):
+        nframes = 1
+        ee, ff, vv = self.dp.eval(
+            np.zeros([nframes, 0, 3]), self.box, np.zeros([0]), atomic=False
+        )
+        # check shape of the returns
+        natoms = 0
+        self.assertEqual(ee.shape, (nframes, 1))
+        self.assertEqual(ff.shape, (nframes, natoms, 3))
+        self.assertEqual(vv.shape, (nframes, 9))
+        # check values
+        np.testing.assert_almost_equal(ff.ravel(), 0, default_places)
+        np.testing.assert_almost_equal(ee.ravel(), 0, default_places)
+        np.testing.assert_almost_equal(vv.ravel(), 0, default_places)
 
 
 class TestDeepPotANoPBC(unittest.TestCase):
