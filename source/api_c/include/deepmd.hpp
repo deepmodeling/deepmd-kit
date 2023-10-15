@@ -630,7 +630,7 @@ class DeepPot {
       const std::vector<VALUETYPE> &fparam = std::vector<VALUETYPE>(),
       const std::vector<VALUETYPE> &aparam = std::vector<VALUETYPE>()) {
     unsigned int natoms = atype.size();
-    unsigned int nframes = coord.size() / natoms / 3;
+    unsigned int nframes = natoms > 0 ? coord.size() / natoms / 3 : 1;
     assert(nframes * natoms * 3 == coord.size());
     if (!box.empty()) {
       assert(box.size() == nframes * 9);
@@ -690,7 +690,7 @@ class DeepPot {
       const std::vector<VALUETYPE> &fparam = std::vector<VALUETYPE>(),
       const std::vector<VALUETYPE> &aparam = std::vector<VALUETYPE>()) {
     unsigned int natoms = atype.size();
-    unsigned int nframes = coord.size() / natoms / 3;
+    unsigned int nframes = natoms > 0 ? coord.size() / natoms / 3 : 1;
     assert(nframes * natoms * 3 == coord.size());
     if (!box.empty()) {
       assert(box.size() == nframes * 9);
@@ -758,7 +758,7 @@ class DeepPot {
       const std::vector<VALUETYPE> &fparam = std::vector<VALUETYPE>(),
       const std::vector<VALUETYPE> &aparam = std::vector<VALUETYPE>()) {
     unsigned int natoms = atype.size();
-    unsigned int nframes = coord.size() / natoms / 3;
+    unsigned int nframes = natoms > 0 ? coord.size() / natoms / 3 : 1;
     assert(nframes * natoms * 3 == coord.size());
     if (!box.empty()) {
       assert(box.size() == nframes * 9);
@@ -827,7 +827,7 @@ class DeepPot {
       const std::vector<VALUETYPE> &fparam = std::vector<VALUETYPE>(),
       const std::vector<VALUETYPE> &aparam = std::vector<VALUETYPE>()) {
     unsigned int natoms = atype.size();
-    unsigned int nframes = coord.size() / natoms / 3;
+    unsigned int nframes = natoms > 0 ? coord.size() / natoms / 3 : 1;
     assert(nframes * natoms * 3 == coord.size());
     if (!box.empty()) {
       assert(box.size() == nframes * 9);

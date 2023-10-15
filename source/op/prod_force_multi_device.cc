@@ -89,8 +89,8 @@ class ProdForceSeAOp : public OpKernel {
     int nloc = natoms[0];
     int nall = natoms[1];
     int nframes = net_deriv_tensor.shape().dim_size(0);
-    int ndescrpt = net_deriv_tensor.shape().dim_size(1) / nloc;
-    int nnei = nlist_tensor.shape().dim_size(1) / nloc;
+    int ndescrpt = nloc > 0 ? net_deriv_tensor.shape().dim_size(1) / nloc : 0;
+    int nnei = nloc > 0 ? nlist_tensor.shape().dim_size(1) / nloc : 0;
     // check the sizes
     OP_REQUIRES(context, (nframes == in_deriv_tensor.shape().dim_size(0)),
                 errors::InvalidArgument("number of samples should match"));
@@ -187,8 +187,8 @@ class ProdForceSeROp : public OpKernel {
     int nloc = natoms[0];
     int nall = natoms[1];
     int nframes = net_deriv_tensor.shape().dim_size(0);
-    int ndescrpt = net_deriv_tensor.shape().dim_size(1) / nloc;
-    int nnei = nlist_tensor.shape().dim_size(1) / nloc;
+    int ndescrpt = nloc > 0 ? net_deriv_tensor.shape().dim_size(1) / nloc : 0;
+    int nnei = nloc > 0 ? nlist_tensor.shape().dim_size(1) / nloc : 0;
     // check the sizes
     OP_REQUIRES(context, (nframes == in_deriv_tensor.shape().dim_size(0)),
                 errors::InvalidArgument("number of samples should match"));

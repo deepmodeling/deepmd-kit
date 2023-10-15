@@ -380,7 +380,8 @@ int deepmd::session_input_tensors(
     const deepmd::AtomMap& atommap,
     const std::string scope,
     const bool aparam_nall) {
-  int nframes = dcoord_.size() / 3 / datype_.size();
+  // if datype.size is 0, not clear nframes; but 1 is just ok
+  int nframes = datype_.size() > 0 ? (dcoord_.size() / 3 / datype_.size()) : 1;
   int nall = datype_.size();
   int nloc = nall;
   assert(nall * 3 * nframes == dcoord_.size());
@@ -523,7 +524,8 @@ int deepmd::session_input_tensors(
     const int ago,
     const std::string scope,
     const bool aparam_nall) {
-  int nframes = dcoord_.size() / 3 / datype_.size();
+  // if datype.size is 0, not clear nframes; but 1 is just ok
+  int nframes = datype_.size() > 0 ? (dcoord_.size() / 3 / datype_.size()) : 1;
   int nall = datype_.size();
   int nloc = nall - nghost;
   assert(nall * 3 * nframes == dcoord_.size());
