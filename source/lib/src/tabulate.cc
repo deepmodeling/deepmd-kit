@@ -195,8 +195,7 @@ void deepmd::tabulate_fusion_se_a_grad_cpu(FPTYPE* dy_dem_x,
       ll[2] = em[ii * nnei * 4 + jj * 4 + 2];
       ll[3] = em[ii * nnei * 4 + jj * 4 + 3];
       FPTYPE xx = em_x[ii * nnei + jj];
-      if (ago == xx && &&ll[1] == 0. && ll[2] == 0. && ll[3] == 0. &&
-          is_sorted) {
+      if (ago == xx && ll[1] == 0. && ll[2] == 0. && ll[3] == 0. && is_sorted) {
         unloop = true;
       }
       int table_idx = 0;
