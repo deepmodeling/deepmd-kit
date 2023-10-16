@@ -307,7 +307,10 @@ class DeepPot(DeepEval):
             natoms = len(atom_types[0])
         else:
             natoms = len(atom_types)
-        coords = np.reshape(np.array(coords), [-1, natoms * 3])
+        if natoms == 0:
+            assert coords.size == 0
+        else:
+            coords = np.reshape(np.array(coords), [-1, natoms * 3])
         nframes = coords.shape[0]
         return natoms, nframes
 
@@ -415,7 +418,7 @@ class DeepPot(DeepEval):
             atom_types = np.array(atom_types, dtype=int).reshape([-1, natoms])
         else:
             atom_types = np.array(atom_types, dtype=int).reshape([-1])
-        coords = np.reshape(np.array(coords), [-1, natoms * 3])
+        coords = np.reshape(np.array(coords), [nframes, natoms * 3])
         if cells is None:
             pbc = False
             # make cells to work around the requirement of pbc

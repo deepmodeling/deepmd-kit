@@ -478,6 +478,23 @@ TYPED_TEST(TestInferDeepPotAHPP, cpu_lmp_nlist_type_sel) {
   }
 }
 
+TYPED_TEST(TestInferDeepPotAHPP, cpu_build_nlist_empty_input) {
+  using VALUETYPE = TypeParam;
+  std::vector<VALUETYPE> coord;
+  std::vector<int> atype;
+  std::vector<VALUETYPE>& box = this->box;
+  unsigned int natoms = 0;
+  deepmd::hpp::DeepPot& dp = this->dp;
+  double ener;
+  std::vector<VALUETYPE> force, virial;
+
+  dp.compute(ener, force, virial, coord, atype, box);
+  // no errors will be fine
+  EXPECT_EQ(force.size(), natoms * 3);
+  EXPECT_EQ(virial.size(), 9);
+  EXPECT_LT(fabs(ener), EPSILON);
+}
+
 TYPED_TEST(TestInferDeepPotAHPP, print_summary) {
   deepmd::hpp::DeepPot& dp = this->dp;
   dp.print_summary("");

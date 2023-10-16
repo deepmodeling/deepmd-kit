@@ -618,6 +618,7 @@ class DeepPot {
    * nframes x natoms x dim_aparam.
    * natoms x dim_aparam. Then all frames are assumed to be provided with the
    *same aparam.
+   * @warning Natoms should not be zero when computing multiple frames.
    **/
   template <typename VALUETYPE, typename ENERGYVTYPE>
   void compute(
@@ -630,7 +631,7 @@ class DeepPot {
       const std::vector<VALUETYPE> &fparam = std::vector<VALUETYPE>(),
       const std::vector<VALUETYPE> &aparam = std::vector<VALUETYPE>()) {
     unsigned int natoms = atype.size();
-    unsigned int nframes = coord.size() / natoms / 3;
+    unsigned int nframes = natoms > 0 ? coord.size() / natoms / 3 : 1;
     assert(nframes * natoms * 3 == coord.size());
     if (!box.empty()) {
       assert(box.size() == nframes * 9);
@@ -676,6 +677,7 @@ class DeepPot {
    * nframes x natoms x dim_aparam.
    * natoms x dim_aparam. Then all frames are assumed to be provided with the
    *same aparam.
+   * @warning Natoms should not be zero when computing multiple frames.
    **/
   template <typename VALUETYPE, typename ENERGYVTYPE>
   void compute(
@@ -690,7 +692,7 @@ class DeepPot {
       const std::vector<VALUETYPE> &fparam = std::vector<VALUETYPE>(),
       const std::vector<VALUETYPE> &aparam = std::vector<VALUETYPE>()) {
     unsigned int natoms = atype.size();
-    unsigned int nframes = coord.size() / natoms / 3;
+    unsigned int nframes = natoms > 0 ? coord.size() / natoms / 3 : 1;
     assert(nframes * natoms * 3 == coord.size());
     if (!box.empty()) {
       assert(box.size() == nframes * 9);
@@ -743,6 +745,7 @@ class DeepPot {
    * nframes x natoms x dim_aparam.
    * natoms x dim_aparam. Then all frames are assumed to be provided with the
    *same aparam.
+   * @warning Natoms should not be zero when computing multiple frames.
    **/
   template <typename VALUETYPE, typename ENERGYVTYPE>
   void compute(
@@ -758,7 +761,7 @@ class DeepPot {
       const std::vector<VALUETYPE> &fparam = std::vector<VALUETYPE>(),
       const std::vector<VALUETYPE> &aparam = std::vector<VALUETYPE>()) {
     unsigned int natoms = atype.size();
-    unsigned int nframes = coord.size() / natoms / 3;
+    unsigned int nframes = natoms > 0 ? coord.size() / natoms / 3 : 1;
     assert(nframes * natoms * 3 == coord.size());
     if (!box.empty()) {
       assert(box.size() == nframes * 9);
@@ -810,6 +813,7 @@ class DeepPot {
    * nframes x natoms x dim_aparam.
    * natoms x dim_aparam. Then all frames are assumed to be provided with the
    *same aparam.
+   * @warning Natoms should not be zero when computing multiple frames.
    **/
   template <typename VALUETYPE, typename ENERGYVTYPE>
   void compute(
@@ -827,7 +831,7 @@ class DeepPot {
       const std::vector<VALUETYPE> &fparam = std::vector<VALUETYPE>(),
       const std::vector<VALUETYPE> &aparam = std::vector<VALUETYPE>()) {
     unsigned int natoms = atype.size();
-    unsigned int nframes = coord.size() / natoms / 3;
+    unsigned int nframes = natoms > 0 ? coord.size() / natoms / 3 : 1;
     assert(nframes * natoms * 3 == coord.size());
     if (!box.empty()) {
       assert(box.size() == nframes * 9);
