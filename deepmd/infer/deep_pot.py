@@ -307,7 +307,9 @@ class DeepPot(DeepEval):
             natoms = len(atom_types[0])
         else:
             natoms = len(atom_types)
-        if coords.size > 0:
+        if natoms == 0:
+            assert coords.size == 0
+        else:
             coords = np.reshape(np.array(coords), [-1, natoms * 3])
         nframes = coords.shape[0]
         return natoms, nframes
