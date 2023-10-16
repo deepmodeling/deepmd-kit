@@ -168,7 +168,7 @@ class DOSFitting(Fitting):
 
     def get_numb_aparam(self) -> int:
         """Get the number of atomic parameters."""
-        return self.numb_fparam
+        return self.numb_aparam
 
     def get_numb_dos(self) -> int:
         """Get the number of gridpoints in energy space."""
