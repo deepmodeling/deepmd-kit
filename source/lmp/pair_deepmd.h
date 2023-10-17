@@ -123,7 +123,7 @@ class PairDeepMD : public Pair {
   void make_fparam_from_compute(std::vector<double> &fparam);
   bool do_compute_fparam;
   std::string compute_fparam_id;
-  void make_aparam_from_compute(std::vector<double> &fparam);
+  void make_aparam_from_compute(std::vector<double> &aparam);
   bool do_compute_aparam;
   std::string compute_aparam_id;
 

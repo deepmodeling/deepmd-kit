@@ -1102,8 +1102,8 @@ void PairDeepMD::settings(int narg, char **arg) {
   if (out_freq < 0) {
     error->all(FLERR, "Illegal out_freq, should be >= 0");
   }
-  if (do_ttm && aparam.size() > 0) {
-    error->all(FLERR, "aparam and ttm should NOT be set simultaneously");
+  if ((int)do_ttm + (int)do_compute_aparam + (int)(aparam.size() > 0) > 1) {
+    error->all(FLERR, "aparam, aparam_from_compute, and ttm should NOT be set simultaneously");
   }
   if (do_compute_fparam && fparam.size() > 0) {
     error->all(
