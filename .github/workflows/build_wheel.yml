@@ -148,7 +148,6 @@ jobs:
         name: Install Python
         with:
           python-version: '3.11'
-          cache: 'pip'
       - run: pip install dumb-pypi
       - run: |
           ls dist/packages > package_list.txt
