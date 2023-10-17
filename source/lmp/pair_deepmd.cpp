@@ -222,10 +222,16 @@ void PairDeepMD::make_fparam_from_compute(vector<double> &fparam) {
   fparam.resize(dim_fparam);
 
   if (dim_fparam == 1) {
-    compute->compute_scalar();
+    if (!(compute->invoked_flag & Compute::INVOKED_SCALAR)) {
+      compute->compute_scalar();
+      compute->invoked_flag |= Compute::INVOKED_SCALAR;
+    }
     fparam[0] = compute->scalar;
   } else if (dim_fparam > 1) {
-    compute->compute_vector();
+    if (!(compute->invoked_flag & Compute::INVOKED_VECTOR)) {
+      compute->compute_vector();
+      compute->invoked_flag |= Compute::INVOKED_VECTOR;
+    }
     double *cvector = compute->vector;
     for (int jj = 0; jj < dim_fparam; ++jj) {
       fparam[jj] = cvector[jj];
@@ -242,8 +248,11 @@ void PairDeepMD::make_aparam_from_compute(vector<double> &aparam) {
   assert(compute);
   int nlocal = atom->nlocal;
   aparam.resize(dim_aparam * nlocal);
-
-  compute->compute_peratom();
+  
+  if (!(compute->invoked_flag & Compute::INVOKED_PERATOM)) {
+    compute->compute_peratom();
+    compute->invoked_flag |= Compute::INVOKED_PERATOM;
+  }
   if (dim_aparam == 1) {
     double *cvector = compute->vector_atom;
     aparam.assign(cvector, cvector + nlocal);
