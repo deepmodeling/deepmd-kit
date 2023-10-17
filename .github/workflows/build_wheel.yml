@@ -165,7 +165,7 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/pypi-server' && github.repository_owner == 'njzjz'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/devel' && github.repository_owner == 'deepmodeling'
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
