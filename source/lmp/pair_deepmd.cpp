@@ -227,7 +227,7 @@ void PairDeepMD::make_fparam_from_compute(vector<double> &fparam) {
   } else if (dim_fparam > 1) {
     compute->compute_vector();
     double *cvector = compute->vector;
-    for (int jj = 0; jj < dim_aparam; ++jj) {
+    for (int jj = 0; jj < dim_fparam; ++jj) {
       fparam[jj] = cvector[jj];
     }
   }

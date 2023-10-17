@@ -228,7 +228,7 @@ class EnerFitting(Fitting):
 
     def get_numb_aparam(self) -> int:
         """Get the number of atomic parameters."""
-        return self.numb_fparam
+        return self.numb_aparam
 
     def compute_output_stats(self, all_stat: dict, mixed_type: bool = False) -> None:
         """Compute the ouput statistics.
