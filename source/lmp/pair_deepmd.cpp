@@ -242,7 +242,7 @@ void PairDeepMD::make_aparam_from_compute(vector<double> &aparam) {
   assert(compute);
   int nlocal = atom->nlocal;
   aparam.resize(dim_aparam * nlocal);
-  
+
   compute->compute_peratom();
   if (dim_aparam == 1) {
     double *cvector = compute->vector_atom;
