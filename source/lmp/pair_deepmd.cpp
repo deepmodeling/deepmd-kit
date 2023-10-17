@@ -248,7 +248,7 @@ void PairDeepMD::make_aparam_from_compute(vector<double> &aparam) {
   assert(compute);
   int nlocal = atom->nlocal;
   aparam.resize(dim_aparam * nlocal);
-  
+
   if (!(compute->invoked_flag & Compute::INVOKED_PERATOM)) {
     compute->compute_peratom();
     compute->invoked_flag |= Compute::INVOKED_PERATOM;
