@@ -213,9 +213,9 @@ static void make_uniform_aparam(vector<double> &daparam,
 }
 
 void PairDeepMD::make_fparam_from_compute(vector<double> &fparam) {
-  assert(do_compute);
+  assert(do_compute_fparam);
 
-  int icompute = modify->find_compute(compute_id);
+  int icompute = modify->find_compute(compute_fparam_id);
   Compute *compute = modify->compute[icompute];
 
   assert(compute);
@@ -229,6 +229,30 @@ void PairDeepMD::make_fparam_from_compute(vector<double> &fparam) {
     double *cvector = compute->vector;
     for (int jj = 0; jj < dim_fparam; ++jj) {
       fparam[jj] = cvector[jj];
+    }
+  }
+}
+
+void PairDeepMD::make_aparam_from_compute(vector<double> &aparam) {
+  assert(do_compute_aparam);
+
+  int icompute = modify->find_compute(compute_aparam_id);
+  Compute *compute = modify->compute[icompute];
+
+  assert(compute);
+  int nlocal = atom->nlocal;
+  aparam.resize(dim_aparam * nlocal);
+  
+  compute->compute_peratom();
+  if (dim_aparam == 1) {
+    double *cvector = compute->vector_atom;
+    aparam.assign(cvector, cvector + nlocal);
+  } else if (dim_aparam > 1) {
+    double **carray = compute->array_atom;
+    for (int ii = 0; ii < nlocal; ++ii) {
+      for (int jj = 0; jj < dim_aparam; ++jj) {
+        aparam[ii * dim_aparam + jj] = carray[ii][jj];
+      }
     }
   }
 }
@@ -379,7 +403,8 @@ PairDeepMD::PairDeepMD(LAMMPS *lmp)
   eps_v = 0.;
   scale = NULL;
   do_ttm = false;
-  do_compute = false;
+  do_compute_fparam = false;
+  do_compute_aparam = false;
   single_model = false;
   multi_models_mod_devi = false;
   multi_models_no_mod_devi = false;
@@ -492,8 +517,10 @@ void PairDeepMD::compute(int eflag, int vflag) {
     }
   }
 
-  // uniform aparam
-  if (aparam.size() > 0) {
+  if (do_compute_aparam) {
+    make_aparam_from_compute(daparam);
+  } else if (aparam.size() > 0) {
+    // uniform aparam
     make_uniform_aparam(daparam, aparam, nlocal);
   } else if (do_ttm) {
 #ifdef USE_TTM
@@ -505,7 +532,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
 #endif
   }
 
-  if (do_compute) {
+  if (do_compute_fparam) {
     make_fparam_from_compute(fparam);
   }
 
@@ -884,6 +911,7 @@ static bool is_key(const string &input) {
   keys.push_back("fparam");
   keys.push_back("aparam");
   keys.push_back("fparam_from_compute");
+  keys.push_back("aparam_from_compute");
   keys.push_back("ttm");
   keys.push_back("atomic");
   keys.push_back("relative");
@@ -1019,15 +1047,24 @@ void PairDeepMD::settings(int narg, char **arg) {
         if (iarg + 1 + ii >= narg || is_key(arg[iarg + 1 + ii])) {
           error->all(FLERR,
                      "invalid fparam_from_compute key: should be "
-                     "fparam_from_compute compute_id(str)");
+                     "fparam_from_compute compute_fparam_id(str)");
         }
       }
-      do_compute = true;
-      compute_id = arg[iarg + 1];
+      do_compute_fparam = true;
+      compute_fparam_id = arg[iarg + 1];
       iarg += 1 + 1;
-    }
-
-    else if (string(arg[iarg]) == string("atomic")) {
+    } else if (string(arg[iarg]) == string("aparam_from_compute")) {
+      for (int ii = 0; ii < 1; ++ii) {
+        if (iarg + 1 + ii >= narg || is_key(arg[iarg + 1 + ii])) {
+          error->all(FLERR,
+                     "invalid aparam_from_compute key: should be "
+                     "aparam_from_compute compute_aparam_id(str)");
+        }
+      }
+      do_compute_aparam = true;
+      compute_aparam_id = arg[iarg + 1];
+      iarg += 1 + 1;
+    } else if (string(arg[iarg]) == string("atomic")) {
       out_each = 1;
       iarg += 1;
     } else if (string(arg[iarg]) == string("relative")) {
@@ -1059,7 +1096,7 @@ void PairDeepMD::settings(int narg, char **arg) {
   if (do_ttm && aparam.size() > 0) {
     error->all(FLERR, "aparam and ttm should NOT be set simultaneously");
   }
-  if (do_compute && fparam.size() > 0) {
+  if (do_compute_fparam && fparam.size() > 0) {
     error->all(
         FLERR,
         "fparam and fparam_from_compute should NOT be set simultaneously");
@@ -1104,9 +1141,13 @@ void PairDeepMD::settings(int narg, char **arg) {
       }
       cout << endl;
     }
-    if (do_compute) {
-      cout << pre << "using compute id:      ";
-      cout << compute_id << "  " << endl;
+    if (do_compute_fparam) {
+      cout << pre << "using compute id (fparam):      ";
+      cout << compute_fparam_id << "  " << endl;
+    }
+    if (do_compute_aparam) {
+      cout << pre << "using compute id (aparam):      ";
+      cout << compute_aparam_id << "  " << endl;
     }
     if (aparam.size() > 0) {
       cout << pre << "using aparam(s):    ";
