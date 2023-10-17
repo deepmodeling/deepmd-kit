@@ -151,7 +151,7 @@ jobs:
       - run: pip install dumb-pypi
       - run: |
           ls dist/packages > package_list.txt
-          dumb-pypi --output-dir dist --packages-url ../../packages --package-list package_list.txt
+          dumb-pypi --output-dir dist --packages-url ../../packages --package-list package_list.txt --title "DeePMD-kit Developed Packages"
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v2
         with:
@@ -165,7 +165,7 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/pypi-server'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/pypi-server' && github.repository_owner == 'njzjz'
     steps:
       - name: Deploy to GitHub Pages
         id: deployment

@@ -17,7 +17,7 @@ docker pull ghcr.io/deepmodeling/deepmd-kit:devel
 Below is an one-line shell command to download the [artifact](https://nightly.link/deepmodeling/deepmd-kit/workflows/build_wheel/devel/artifact.zip) containing wheels and install it with `pip`:
 
 ```sh
-bash -c 'wget -O /tmp/z.$$ https://nightly.link/deepmodeling/deepmd-kit/workflows/build_wheel/devel/artifact.zip && unzip /tmp/z.$$ -d /tmp/dist.$$ && pip install -U --pre deepmd-kit[gpu,cu11,lmp] --find-links /tmp/dist.$$ && rm -r /tmp/z.$$ /tmp/dist.$$'
+pip install --pre deepmd-kit[gpu,cu11,lmp] --extra-index-url https://deepmodeling.github.io/deepmd-kit/simple
 ```
 
 `cu11` and `lmp` are optional, which is the same as the stable version.
