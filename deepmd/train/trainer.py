@@ -368,12 +368,12 @@ class DPTrainer:
                 self.place_holders[kk] = tf.placeholder(
                     GLOBAL_TF_FLOAT_PRECISION, [None], "t_" + kk
                 )
-            self._get_place_horders(data_requirement)
+            self._get_place_holders(data_requirement)
         else:
             if not self.multi_task_mode:
-                self._get_place_horders(data.get_data_dict())
+                self._get_place_holders(data.get_data_dict())
             else:
-                self._get_place_horders(data[next(iter(data.keys()))].get_data_dict())
+                self._get_place_holders(data[next(iter(data.keys()))].get_data_dict())
 
         self.place_holders["type"] = tf.placeholder(tf.int32, [None], name="t_type")
         self.place_holders["natoms_vec"] = tf.placeholder(
@@ -1035,7 +1035,7 @@ class DPTrainer:
         if self.is_compress:
             self.saver.save(self.sess, os.path.join(os.getcwd(), self.save_ckpt))
 
-    def _get_place_horders(self, data_dict):
+    def _get_place_holders(self, data_dict):
         for kk in data_dict.keys():
             if kk == "type":
                 continue
