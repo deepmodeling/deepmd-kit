@@ -168,7 +168,9 @@ struct UnaggregatedDyDxFunctor {
           accumulator += w[jj * width + ii] * dy_dx[kk * size + jj];
         }
         dz_drou *= accumulator;
-        dz_drou += dy_dx[kk * size + ii % size];
+        if (width == 2 * size || width == size) {
+          dz_drou += dy_dx[kk * size + ii % size];
+        }
         dz_dx[kk * width + ii] = dz_drou;
       }
     }
@@ -256,7 +258,9 @@ struct UnaggregatedDy2DxFunctor {
         dz_drou +=
             grad_grad(ybar[kk * width + ii], z[kk * width + ii], functype) *
             accumulator * accumulator;
-        dz_drou += dy2_dx[kk * size + ii % size];
+        if (width == 2 * size || width == size) {
+          dz_drou += dy2_dx[kk * size + ii % size];
+        }
         dz2_dx[kk * width + ii] = dz_drou;
       }
     }

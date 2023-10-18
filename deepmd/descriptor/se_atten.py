@@ -387,14 +387,6 @@ class DescrptSeAtten(DescrptSeA):
                 "empty embedding-net are not supported in model compression!"
             )
 
-        for ii in range(len(self.filter_neuron) - 1):
-            if self.filter_neuron[ii] * 2 != self.filter_neuron[ii + 1]:
-                raise NotImplementedError(
-                    "Model Compression error: descriptor neuron [%s] is not supported by model compression! "
-                    "The size of the next layer of the neural network must be twice the size of the previous layer."
-                    % ",".join([str(item) for item in self.filter_neuron])
-                )
-
         if self.attn_layer != 0:
             raise RuntimeError("can not compress model when attention layer is not 0.")
 
