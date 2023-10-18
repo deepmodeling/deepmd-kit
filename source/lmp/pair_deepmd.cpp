@@ -547,21 +547,20 @@ void PairDeepMD::compute(int eflag, int vflag) {
 
   // int ago = numb_models > 1 ? 0 : neighbor->ago;
   int ago = neighbor->ago;
+  bool model_devi_writeflag = out_freq > 0 &&
+                              update->ntimestep % out_freq == 0 &&
+                              update->ntimestep != model_devi_last_dump;
   if (numb_models > 1) {
-    if (multi_models_no_mod_devi &&
-        (out_freq > 0 && update->ntimestep % out_freq == 0)) {
+    if (multi_models_no_mod_devi && model_devi_writeflag) {
       ago = 0;
-    } else if (multi_models_mod_devi &&
-               (out_freq == 0 || update->ntimestep % out_freq != 0)) {
+    } else if (multi_models_mod_devi && !model_devi_writeflag) {
       ago = 0;
     }
   }
   // compute
   single_model = (numb_models == 1);
-  multi_models_no_mod_devi =
-      (numb_models > 1 && (out_freq == 0 || update->ntimestep % out_freq != 0));
-  multi_models_mod_devi =
-      (numb_models > 1 && (out_freq > 0 && update->ntimestep % out_freq == 0));
+  multi_models_no_mod_devi = (numb_models > 1 && !model_devi_writeflag);
+  multi_models_mod_devi = (numb_models > 1 && model_devi_writeflag);
   if (do_ghost) {
     deepmd_compat::InputNlist lmp_list(list->inum, list->ilist, list->numneigh,
                                        list->firstneigh);
@@ -715,7 +714,8 @@ void PairDeepMD::compute(int eflag, int vflag) {
               scale[1][1] * dvatom[9 * ii + 5] * ener_unit_cvt_factor;  // zy
         }
       }
-      if (out_freq > 0 && update->ntimestep % out_freq == 0) {
+      if (model_devi_writeflag) {
+        model_devi_last_dump = update->ntimestep;
         int rank = comm->me;
         // std force
         if (newton_pair) {
@@ -989,6 +989,7 @@ void PairDeepMD::settings(int narg, char **arg) {
   out_each = 0;
   out_rel = 0;
   eps = 0.;
+  model_devi_last_dump = -1;
   fparam.clear();
   aparam.clear();
   while (iarg < narg) {
