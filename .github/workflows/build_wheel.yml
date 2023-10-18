@@ -136,6 +136,41 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
+  build_pypi_index:
+    needs: [build_wheels, build_sdist]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v3
+        with:
+          name: artifact
+          path: dist/packages
+      - uses: actions/setup-python@v4
+        name: Install Python
+        with:
+          python-version: '3.11'
+      - run: pip install dumb-pypi
+      - run: |
+          ls dist/packages > package_list.txt
+          dumb-pypi --output-dir dist --packages-url ../../packages --package-list package_list.txt --title "DeePMD-kit Developed Packages"
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v2
+        with:
+          path: dist
+  deploy_pypi_index:
+    needs: build_pypi_index
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/devel' && github.repository_owner == 'deepmodeling'
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v2
+
   pass:
     name: Pass testing build wheels
     needs: [build_wheels, build_sdist]
