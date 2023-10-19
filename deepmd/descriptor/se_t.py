@@ -349,14 +349,6 @@ class DescrptSeT(DescrptSe):
             not self.filter_resnet_dt
         ), "Model compression error: descriptor resnet_dt must be false!"
 
-        for ii in range(len(self.filter_neuron) - 1):
-            if self.filter_neuron[ii] * 2 != self.filter_neuron[ii + 1]:
-                raise NotImplementedError(
-                    "Model Compression error: descriptor neuron [%s] is not supported by model compression! "
-                    "The size of the next layer of the neural network must be twice the size of the previous layer."
-                    % ",".join([str(item) for item in self.filter_neuron])
-                )
-
         self.compress = True
         self.table = DPTabulate(
             self,
