@@ -22,7 +22,7 @@ def convert(
         if input_model[-6:] != ".pbtxt":
             convert_pb_to_pbtxt(input_model, output_model)
         else:
-            raise RuntimeError("input model is already pbtx")
+            raise RuntimeError("input model is already pbtxt")
     else:
         if FROM == "auto":
             convert_to_21(input_model, output_model)
