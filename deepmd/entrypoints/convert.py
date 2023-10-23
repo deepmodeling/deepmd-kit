@@ -18,8 +18,8 @@ def convert(
     output_model: str,
     **kwargs,
 ):
-    if output_model[:-6] == ".pbtxt":
-        if input_model[:-6] != ".pbtxt":
+    if output_model[-6:] == ".pbtxt":
+        if input_model[-6:] != ".pbtxt":
             convert_pb_to_pbtxt(input_model, output_model)
         else:
             raise RuntimeError("input model is already pbtx")
