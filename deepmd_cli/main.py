@@ -491,7 +491,7 @@ def main_parser() -> argparse.ArgumentParser:
         "--output-model",
         default="convert_out.pb",
         type=str,
-        help="the output model\nIf it ends with '.pbtxt', the provided model will be converted to pbtxt format, without version conversion.",
+        help="the output model\nIf OUTPUT_MODEL ends with '.pbtxt', the provided model will be converted to pbtxt format, without version conversion.",
     )
 
     # neighbor_stat
