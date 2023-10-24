@@ -38,7 +38,7 @@ dependencies = [
     'numpy',
     'scipy',
     'pyyaml',
-    'dargs >= 0.4.0',
+    'dargs >= 0.4.1',
     'python-hostlist >= 1.21',
     'typing_extensions; python_version < "3.8"',
     'importlib_metadata>=1.4; python_version < "3.8"',
