@@ -745,7 +745,7 @@ class TestModelConvert(unittest.TestCase):
 
     def test_convert_012(self):
         old_model = "deeppot.pb"
-        new_model = "deeppot.pbtxt"
+        new_model = "deeppot-new.pb"
         convert_pbtxt_to_pb(str(tests_path / "infer" / "sea_012.pbtxt"), old_model)
         run_dp(f"dp convert-from 0.12 -i {old_model} -o {new_model}")
         dp = DeepPot(new_model)
@@ -755,7 +755,7 @@ class TestModelConvert(unittest.TestCase):
 
     def test_convert(self):
         old_model = "deeppot.pb"
-        new_model = "deeppot.pbtxt"
+        new_model = "deeppot-new.pb"
         convert_pbtxt_to_pb(str(tests_path / "infer" / "sea_012.pbtxt"), old_model)
         run_dp(f"dp convert-from -i {old_model} -o {new_model}")
         dp = DeepPot(new_model)
