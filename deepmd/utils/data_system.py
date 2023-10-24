@@ -353,11 +353,13 @@ class DeepmdDataSystem:
             elif auto_prob_style == "prob_sys_size":
                 probs = self.prob_nbatches
             elif auto_prob_style[:14] == "prob_sys_size;":
-                probs = prob_sys_size_ext(auto_prob_style,self.get_nsystems(),self.nbatches)
+                probs = prob_sys_size_ext(
+                    auto_prob_style, self.get_nsystems(), self.nbatches
+                )
             else:
                 raise RuntimeError("Unknown auto prob style: " + auto_prob_style)
         else:
-            probs = process_sys_probs(sys_probs,self.nbatches)
+            probs = process_sys_probs(sys_probs, self.nbatches)
         self.sys_probs = probs
 
     def get_batch(self, sys_idx: Optional[int] = None) -> dict:
@@ -608,7 +610,8 @@ class DeepmdDataSystem:
                     ret = ii
         return ret
 
-def process_sys_probs(sys_probs,nbatch):
+
+def process_sys_probs(sys_probs, nbatch):
     sys_probs = np.array(sys_probs)
     type_filter = sys_probs >= 0
     assigned_sum_prob = np.sum(type_filter * sys_probs)
@@ -626,7 +629,8 @@ def process_sys_probs(sys_probs,nbatch):
     assert np.isclose(np.sum(ret_prob), 1), "sum of probs should be 1"
     return ret_prob
 
-def prob_sys_size_ext(keywords,nsystems,nbatch):
+
+def prob_sys_size_ext(keywords, nsystems, nbatch):
     block_str = keywords.split(";")[1:]
     block_stt = []
     block_end = []

@@ -13,7 +13,7 @@ from deepmd.utils import (
 )
 from deepmd.utils.data_system import (
     DeepmdDataSystem,
-    prob_sys_size_ext
+    prob_sys_size_ext,
 )
 
 if GLOBAL_NP_FLOAT_PRECISION == np.float32:
@@ -311,7 +311,9 @@ class TestDataSystem(unittest.TestCase):
         batch_size = 1
         test_size = 1
         ds = DeepmdDataSystem(self.sys_name, batch_size, test_size, 2.0)
-        prob = prob_sys_size_ext("prob_sys_size; 0:2:2; 2:4:8",ds.get_nsystems(),ds.get_nbatches())
+        prob = prob_sys_size_ext(
+            "prob_sys_size; 0:2:2; 2:4:8", ds.get_nsystems(), ds.get_nbatches()
+        )
         self.assertAlmostEqual(np.sum(prob), 1)
         self.assertAlmostEqual(np.sum(prob[0:2]), 0.2)
         self.assertAlmostEqual(np.sum(prob[2:4]), 0.8)
@@ -333,7 +335,9 @@ class TestDataSystem(unittest.TestCase):
         batch_size = 1
         test_size = 1
         ds = DeepmdDataSystem(self.sys_name, batch_size, test_size, 2.0)
-        prob = prob_sys_size_ext("prob_sys_size; 1:2:0.4; 2:4:1.6",ds.get_nsystems(),ds.get_nbatches())
+        prob = prob_sys_size_ext(
+            "prob_sys_size; 1:2:0.4; 2:4:1.6", ds.get_nsystems(), ds.get_nbatches()
+        )
         self.assertAlmostEqual(np.sum(prob), 1)
         self.assertAlmostEqual(np.sum(prob[1:2]), 0.2)
         self.assertAlmostEqual(np.sum(prob[2:4]), 0.8)
