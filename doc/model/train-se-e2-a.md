@@ -21,7 +21,7 @@ The descriptor, using either full information or radial-only information, is giv
 
 where $\mathcal{R}^i \in \mathbb{R}^{N_c \times \{1,4\}}$ is the coordinate matrix, and each row of $\mathcal{R}^i$ can be constructed as
 
-```
+```math
     (\mathcal{R}^i)_j =
     \begin{cases}
     \{
@@ -38,9 +38,9 @@ where $\mathcal{R}^i \in \mathbb{R}^{N_c \times \{1,4\}}$ is the coordinate matr
     \label{eq:rij}
 ```
 
-where $\bm{r}_{ij}=\bm{r}_j-\bm{r}_i = (x_{ij}, y_{ij}, z_{ij})$ is the relative coordinate and $r_{ij}=\lVert \bm{r}_{ij} \lVert$ is its norm. The switching function $s(r)$ is defined as
+where $\boldsymbol{r}_{ij}=\boldsymbol{r}_j-\boldsymbol{r}_i = (x_{ij}, y_{ij}, z_{ij})$ is the relative coordinate and $r_{ij}=\lVert \boldsymbol{r}_{ij} \lVert$ is its norm. The switching function $s(r)$ is defined as
 
-```
+```math
     s(r)=
     \begin{cases}
     \frac{1}{r}, & r<r_s, \\
