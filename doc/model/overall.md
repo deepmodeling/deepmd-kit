@@ -16,9 +16,9 @@ The indices of the neighboring atoms (i.e. atoms within a certain cutoff radius)
 Note that the Cartesian coordinates can be either under the periodic boundary condition (PBC) or in vacuum (under the open boundary condition).
 The network parameters are denoted by $\boldsymbol \theta = \{\boldsymbol \theta_d, \boldsymbol \theta_f\}$, where $\boldsymbol \theta_d$ and $\boldsymbol\theta_f$ yield the network parameters of the descriptor (if any) and those of the fitting network, respectively.
 From the above equation, one may compute the global property of the system by
-\begin{align}
+```math
     \boldsymbol y = \sum_{i=1}^N \boldsymbol y_i,
-\end{align}
+```
 where $N$ is the number of atoms in a frame.
 For example, if $y_i$ represents the potential energy contribution of atom $i$, then $y$ gives the total potential energy of the frame.[^1]
 

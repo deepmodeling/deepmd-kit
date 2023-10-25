@@ -4,7 +4,7 @@ In this section, we will take `$deepmd_source_dir/examples/water/se_e2_a/input.j
 
 ## Theory
 
-In the DP model, we let the fitting network $\mathcal{F}_0$ maps the descriptor $\mathcal D^i$ to a scalar, where the subscript $0$ means that the output is a zero-order tensor (i.e. scalar).  The model can then be used to predict the total potential energy of the system by
+In the DP model, we let the fitting network $\mathcal{F}_ 0$ maps the descriptor $\mathcal{D}^i$ to a scalar, where the subscript $0$ means that the output is a zero-order tensor (i.e. scalar).  The model can then be used to predict the total potential energy of the system by
 ```math
     E  =  \sum_i E_i = \sum_i \mathcal F_0 (\mathcal D^i),
 ```

@@ -35,7 +35,7 @@ The first and second-order derivatives are easily calculated by the back-propaga
 
 In the standard DP model inference, taking the [two-body embedding descriptor](../model/train-se-e2-a.md) as an example, the matrix product $(\mathcal G^i)^T \mathcal R$ requires the transfer of the tensor  $\mathcal G^i$ between the register and the host/device memories, which usually becomes the bottle-neck of the computation due to the relatively small memory bandwidth of the GPUs.
 The compressed DP model merges the matrix multiplication $(\mathcal G^i)^T \mathcal R$ with the tabulated inference step.
-More specifically, once one column of the $(\mathcal G^i)^T $ is evaluated, it is immediately multiplied with one row of the environment matrix in the register, and the outer product is deposited to the result of $(\mathcal G^i)^T \mathcal R$.
+More specifically, once one column of the $(\mathcal G^i)^T$ is evaluated, it is immediately multiplied with one row of the environment matrix in the register, and the outer product is deposited to the result of $(\mathcal G^i)^T \mathcal R$.
 By the operator merging technique, the allocation of  $\mathcal G^i$ and the memory movement between register and host/device memories is avoided.
 The operator merging of the three-body embedding can be derived analogously.
 
