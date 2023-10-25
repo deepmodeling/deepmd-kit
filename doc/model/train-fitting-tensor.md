@@ -11,6 +11,40 @@ The training and validation data are also provided our examples. But note that *
 
 Similar to the `input.json` used in `ener` mode, training JSON is also divided into {ref}`model <model>`, {ref}`learning_rate <learning_rate>`, {ref}`loss <loss>` and {ref}`training <training>`. Most keywords remain the same as `ener` mode, and their meaning can be found [here](train-se-e2-a.md). To fit a tensor, one needs to modify {ref}`model/fitting_net <model/fitting_net>` and {ref}`loss <loss>`.
 
+## Theory
+
+To represent the first-order tensorial properties (i.e.~vector properties), we let the fitting network, denoted by $\mathcal F_{1}$, output an $M$-dimensional vector; then we have the representation,
+
+```math
+(T_i^{(1)})_\alpha =
+\frac{1}{N_c}
+\sum_{j=1}^{N_c}\sum_{m=1}^M (\mathcal G^i)_{jm} (\mathcal R^i)_{j,\alpha+1}
+(\mathcal F_{1}(\mathcal D^i))_m, \ \alpha=1,2,3.
+```
+We let the fitting network $\mathcal F_{2}$ output an $M$-dimensional vector, and the second-order tensorial properties (matrix properties) are formulated as
+```math
+(T_i^{(2)})_{\alpha\beta} =
+\frac{1}{N_c^2}
+\sum_{j=1}^{N_c}\sum_{k=1}^{N_c}\sum_{m=1}^M
+(\mathcal G^i)_{jm}
+(\mathcal R^i)_{j,\alpha+1}
+(\mathcal R^i)_{k,\beta+1}
+(\mathcal G^i)_{km}
+(\mathcal F_{2}(\mathcal D^i))_m,
+\ \alpha,\beta=1,2,3,
+```
+
+where $\mathcal{G}^i$ and $\mathcal{R}^i$ can be found in [`se_e2_a`](./train-se-e2-a.md).
+Thus, the tensor fitting network requires the descriptor to have the same or similar form as the DeepPot-SE descriptor.
+$\mathcal{F}_1$ and $\mathcal F_2$ are the neural network functions.
+The total tensor $\boldsymbol{T}$ (total dipole $\boldsymbol{T}^{(1)}$ or total polarizability $\boldsymbol{T}^{(2)}$) is the sum of the atomic tensor:
+```math
+    \boldsymbol{T} = \sum_i \boldsymbol{T}_i.
+```
+The tensorial models can be used to calculate IR spectrum and Raman spectrum.[^1]
+
+[^1]: This section is built upon Jinzhe Zeng, Duo Zhang, Denghui Lu, Pinghui Mo, Zeyu Li, Yixiao Chen,  Marián Rynik, Li'ang Huang, Ziyao Li, Shaochen Shi, Yingze Wang, Haotian Ye, Ping Tuo, Jiabin Yang, Ye Ding, Yifan Li, Davide Tisi, Qiyu Zeng, Han Bao, Yu Xia, Jiameng Huang, Koki Muraoka, Yibo Wang, Junhan Chang, Fengbo Yuan, Sigbjørn Løland Bore, Chun Cai, Yinnian Lin, Bo Wang, Jiayan Xu, Jia-Xin Zhu, Chenxing Luo, Yuzhi Zhang, Rhys E. A. Goodall, Wenshuo Liang, Anurag Kumar Singh, Sikai Yao, Jingchao Zhang, Renata Wentzcovitch, Jiequn Han, Jie Liu, Weile Jia, Darrin M. York, Weinan E, Roberto Car, Linfeng Zhang, Han Wang, [J. Chem. Phys. 159, 054801 (2023)](https://doi.org/10.1063/5.0155600) licensed under a [Creative Commons Attribution (CC BY) license](http://creativecommons.org/licenses/by/4.0/).
+
 ## The fitting Network
 
 The {ref}`fitting_net <model/fitting_net>` section tells DP which fitting net to use.

@@ -1,5 +1,22 @@
 # Multi-task training
 
+## Theory
+
+The multi-task training process can simultaneously handle different datasets with properties that can not be fitted in one network (e.g. properties from DFT calculations under different exchange-correlation functionals or different basis sets).
+These datasets are denoted by $\boldsymbol x^{(1)}, \dots, \boldsymbol x^{(n_t)}$.
+For each dataset, a training task is defined as
+```math
+    \min_{\boldsymbol \theta}   L^{(t)} (\boldsymbol x^{(t)}; \boldsymbol  \theta^{(t)}, \tau), \quad t=1, \dots, n_t.
+```
+
+During the multi-task training process, all tasks share one descriptor with trainable parameters $\boldsymbol{\theta}_{d}$, while each of them has its own fitting network with trainable parameters $\boldsymbol{\theta}_f^{(t)}$, thus
+$\boldsymbol{\theta}^{(t)} = \{ \boldsymbol{\theta}_{d} , \boldsymbol{\theta}_{f}^{(t)} \}$.
+At each training step, a task is randomly picked from ${1, \dots, n_t}$, and the Adam optimizer is executed to minimize $L^{(t)}$ for one step to update the parameter $\boldsymbol \theta^{(t)}$.
+If different fitting networks have the same architecture, they can share the parameters of some layers
+to improve training efficiency.[^1]
+
+[^1]: This section is built upon Jinzhe Zeng, Duo Zhang, Denghui Lu, Pinghui Mo, Zeyu Li, Yixiao Chen,  Marián Rynik, Li'ang Huang, Ziyao Li, Shaochen Shi, Yingze Wang, Haotian Ye, Ping Tuo, Jiabin Yang, Ye Ding, Yifan Li, Davide Tisi, Qiyu Zeng, Han Bao, Yu Xia, Jiameng Huang, Koki Muraoka, Yibo Wang, Junhan Chang, Fengbo Yuan, Sigbjørn Løland Bore, Chun Cai, Yinnian Lin, Bo Wang, Jiayan Xu, Jia-Xin Zhu, Chenxing Luo, Yuzhi Zhang, Rhys E. A. Goodall, Wenshuo Liang, Anurag Kumar Singh, Sikai Yao, Jingchao Zhang, Renata Wentzcovitch, Jiequn Han, Jie Liu, Weile Jia, Darrin M. York, Weinan E, Roberto Car, Linfeng Zhang, Han Wang, [J. Chem. Phys. 159, 054801 (2023)](https://doi.org/10.1063/5.0155600) licensed under a [Creative Commons Attribution (CC BY) license](http://creativecommons.org/licenses/by/4.0/).
+
 ## Perform the multi-task training
 Training on multiple data sets (each data set contains several data systems) can be performed in multi-task mode,
 with one common descriptor and multiple specific fitting nets for each data set.

@@ -4,7 +4,56 @@ We generate specific a type embedding vector for each atom type so that we can s
 
 The training input script is similar to that of [`se_e2_a`](train-se-e2-a.md), but different by adding the {ref}`type_embedding <model/type_embedding>` section.
 
-## Type embedding net
+## Theory
+
+Usually, when the type embedding approach is not enabled, for a system with multiple chemical species ($|\{\alpha_i\}| > 1$), parameters of the embedding network $\mathcal{N}_{e,\{2,3\}}$ are as follows chemical-species-wise:
+
+```math
+    &(\mathcal{G}^i)_j = \mathcal{N}^{\alpha_i, \alpha_j}_{e,2}(s(r_{ij})) \quad \mathrm{or}\quad
+    (\mathcal{G}^i)_j = \mathcal{N}^{ \alpha_j}_{e,2}(s(r_{ij})),
+    \\
+    &(\mathcal{G}^i)_{jk} =\mathcal{N}^{\alpha_j, \alpha_k}_{e,3}((\theta_i)_{jk}).
+```
+
+Thus, there will be $N_t^2$ or $N_t$ embedding networks where $N_t$ is the number of chemical species.
+To improve the performance of matrix operations, $n(i)$ is divided into blocks of different chemical species.
+Each matrix with a dimension of $N_c$ is divided into corresponding blocks, and each block is padded to $N_c^{\alpha_j}$ separately.
+The limitation of this approach is that when there are large numbers of chemical species, the number of embedding networks will increase, requiring large memory and decreasing computing efficiency.
+
+Similar to the embedding networks, if the type embedding approach is not used, the fitting network parameters are chemical-species-wise, and there are $N_t$ sets of fitting network parameters.
+For performance, atoms are sorted by their chemical species $\alpha_i$ in advance.
+Take an example, the atomic energy $E_i$ is represented as follows:
+```math
+E_i=\mathcal{F}_0^{\alpha_i}(\mathcal{D}^i).
+```
+
+To reduce the number of NN parameters and improve computing efficiency when there are large numbers of chemical species,
+the type embedding $\mathcal{A}$ is introduced, represented as a NN function $\mathcal{N}_t$ of the atomic type $\alpha$:
+
+```math
+    \mathcal{A}^i = \mathcal{N}_t\big( \text{one\textunderscore hot}(\alpha_i) \big),
+```
+
+where $\alpha_i$ is converted to a one-hot vector representing the chemical species before feeding to the NN.
+The NN function \del{will be introduced in Section~\ref{section:NN}}\add{$\mathcal{N}$ was given in Eq.~\eqref{eq:NN}}.
+Based on Eqs.~\eqref{eq:G2} and \eqref{eq:nn-descrpt-e3}, the type embeddings of central and neighboring atoms $\mathcal{A}^i$ and $\mathcal{A}^j$ are added as an extra input of the embedding network $\mathcal{N}_{e,\{2,3\}}$:
+
+```math
+    &(\mathcal{G}^i)_j = \mathcal{N}_{e,2}(\{s(r_{ij}), \mathcal{A}^i, \mathcal{A}^j\})  \quad \mathrm{or}\quad
+    (\mathcal{G}^i)_j = \mathcal{N}_{e,2}(\{s(r_{ij}), \mathcal{A}^j\}) , \label{eq:G2_tbed} \\
+    &(\mathcal{G}^i)_{jk} =\mathcal{N}_{e,3}(\{(\theta_i)_{jk}, \mathcal{A}^j, \mathcal{A}^k\}).
+```
+
+In fitting networks, the type embedding is inserted into the input of the fitting networks:
+```math
+E_i=\mathcal{F}_0(\{\mathcal{D}^i, \mathcal{A}^i\}).
+```
+
+In this way, all chemical species share the same network parameters through the type embedding.[^1]
+
+[^1]: This section is built upon Jinzhe Zeng, Duo Zhang, Denghui Lu, Pinghui Mo, Zeyu Li, Yixiao Chen,  Marián Rynik, Li'ang Huang, Ziyao Li, Shaochen Shi, Yingze Wang, Haotian Ye, Ping Tuo, Jiabin Yang, Ye Ding, Yifan Li, Davide Tisi, Qiyu Zeng, Han Bao, Yu Xia, Jiameng Huang, Koki Muraoka, Yibo Wang, Junhan Chang, Fengbo Yuan, Sigbjørn Løland Bore, Chun Cai, Yinnian Lin, Bo Wang, Jiayan Xu, Jia-Xin Zhu, Chenxing Luo, Yuzhi Zhang, Rhys E. A. Goodall, Wenshuo Liang, Anurag Kumar Singh, Sikai Yao, Jingchao Zhang, Renata Wentzcovitch, Jiequn Han, Jie Liu, Weile Jia, Darrin M. York, Weinan E, Roberto Car, Linfeng Zhang, Han Wang, [J. Chem. Phys. 159, 054801 (2023)](https://doi.org/10.1063/5.0155600) licensed under a [Creative Commons Attribution (CC BY) license](http://creativecommons.org/licenses/by/4.0/).
+
+## Instructions
 The {ref}`model <model>` defines how the model is constructed, adding a section of type embedding net:
 ```json
     "model": {

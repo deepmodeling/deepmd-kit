@@ -2,6 +2,37 @@
 
 The notation of `se_e3` is short for the Deep Potential Smooth Edition (DeepPot-SE) constructed from all information (both angular and radial) of atomic configurations. The embedding takes angles between two neighboring atoms as input (denoted by `e3`).
 
+## Theory
+
+The three-body embedding DeepPot-SE descriptor incorporates bond-angle information, making the model more accurate. The descriptor $\mathcal{D}^i$ can be represented as
+```math
+    \mathcal{D}^i = \frac{1}{N_c^2}(\mathcal{R}^i(\mathcal{R}^i)^T):\mathcal{G}^i,
+```
+where
+$N_c$ is the expected maximum number of neighboring atoms, which is the same constant for all atoms over all frames.
+$\mathcal{R}^i$ is constructed as
+
+```math
+    (\mathcal{R}^i)_j =
+    \begin{array}{cccc}
+    s(r_{ij}) & \frac{s(r_{ij})x_{ij}}{r_{ij}} & \frac{s(r_{ij})y_{ij}}{r_{ij}} & \frac{s(r_{ij})z_{ij}}{r_{ij}}
+    \end{array}
+    \},
+```
+Currently, only the full information case of $\mathcal{R}^i$ is supported by the three-body embedding.
+Similar to Eq.~\eqref{eq:G2}, each element of $\mathcal{G}^i \in \mathbb{R}^{N_c \times N_c \times M}$ comes from $M$ nodes from the output layer of an NN $\mathcal{N}_{e,3}$ function:
+
+```math
+    (\mathcal{G}^i)_{jk}=\mathcal{N}_{e,3}((\theta_i)_{jk}),
+```
+
+where $(\theta_i)_{jk} = (\mathcal{R}^i)_{j,\{2,3,4\}}\cdot (\mathcal{R}^i)_{k,\{2,3,4\}}$ considers the angle form of two neighbours ($j$ and $k$).
+The notation ``$:$'' in the equation indicates the contraction between matrix $\mathcal{R}^i(\mathcal{R}^i)^T$ and the first two dimensions of tensor $\mathcal{G}^i$.[^1]
+
+[^1]: This section is built upon Jinzhe Zeng, Duo Zhang, Denghui Lu, Pinghui Mo, Zeyu Li, Yixiao Chen,  Marián Rynik, Li'ang Huang, Ziyao Li, Shaochen Shi, Yingze Wang, Haotian Ye, Ping Tuo, Jiabin Yang, Ye Ding, Yifan Li, Davide Tisi, Qiyu Zeng, Han Bao, Yu Xia, Jiameng Huang, Koki Muraoka, Yibo Wang, Junhan Chang, Fengbo Yuan, Sigbjørn Løland Bore, Chun Cai, Yinnian Lin, Bo Wang, Jiayan Xu, Jia-Xin Zhu, Chenxing Luo, Yuzhi Zhang, Rhys E. A. Goodall, Wenshuo Liang, Anurag Kumar Singh, Sikai Yao, Jingchao Zhang, Renata Wentzcovitch, Jiequn Han, Jie Liu, Weile Jia, Darrin M. York, Weinan E, Roberto Car, Linfeng Zhang, Han Wang, [J. Chem. Phys. 159, 054801 (2023)](https://doi.org/10.1063/5.0155600) licensed under a [Creative Commons Attribution (CC BY) license](http://creativecommons.org/licenses/by/4.0/).
+
+## Instructions
+
 A complete training input script of this example can be found in the directory
 ```bash
 $deepmd_source_dir/examples/water/se_e3/input.json
