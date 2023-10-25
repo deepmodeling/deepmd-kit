@@ -5,6 +5,7 @@
 - [Descriptor `"se_e2_r"`](train-se-e2-r.md)
 - [Descriptor `"se_e3"`](train-se-e3.md)
 - [Descriptor `"se_atten"`](train-se-atten.md)
+- [Descriptor `"se_atten_v2"`](train-se-atten.md#descriptor-se_atten_v2)
 - [Descriptor `"se_a_mask"`](train-se-a-mask.md)
 - [Descriptor `"hybrid"`](train-hybrid.md)
 - [Descriptor `sel`](sel.md)
@@ -15,3 +16,4 @@
 - [Train a Deep Potential model using `type embedding` approach](train-se-e2-a-tebd.md)
 - [Deep potential long-range](dplr.md)
 - [Deep Potential - Range Correction (DPRc)](dprc.md)
+- [Linear model](linear.md)

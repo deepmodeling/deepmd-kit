@@ -1,5 +1,5 @@
 {
-  "_comment": " model parameters",
+  "_comment1": " model parameters",
   "model": {
     "type": "pairwise_dprc",
     "type_map": [
@@ -18,8 +18,7 @@
     },
     "qm_model": {
       "descriptor": {
-        "type": "se_atten",
-        "stripped_type_embedding": true,
+        "type": "se_atten_v2",
         "sel": 24,
         "rcut_smth": 0.50,
         "rcut": 9.00,
@@ -56,8 +55,7 @@
     },
     "qmmm_model": {
       "descriptor": {
-        "type": "se_atten",
-        "stripped_type_embedding": true,
+        "type": "se_atten_v2",
         "sel": 27,
         "rcut_smth": 0.50,
         "rcut": 6.00,
@@ -153,7 +151,7 @@
     "decay_steps": 5000,
     "start_lr": 0.001,
     "stop_lr": 3.51e-8,
-    "_comment": "that's all"
+    "_comment2": "that's all"
   },
 
   "loss": {
@@ -164,7 +162,7 @@
     "limit_pref_f": 1,
     "start_pref_v": 0,
     "limit_pref_v": 0,
-    "_comment": " that's all"
+    "_comment3": " that's all"
   },
 
   "training": {
@@ -173,15 +171,15 @@
         "../data"
       ],
       "batch_size": "auto",
-      "_comment": "that's all"
+      "_comment4": "that's all"
     },
     "numb_steps": 1000,
     "seed": 10,
     "disp_file": "lcurve.out",
     "disp_freq": 100,
     "save_freq": 1000,
-    "_comment": "that's all"
+    "_comment5": "that's all"
   },
 
-  "_comment": "that's all"
+  "_comment6": "that's all"
 }

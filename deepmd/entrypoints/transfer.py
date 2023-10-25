@@ -196,7 +196,7 @@ class CopyNodeAttr:
         )
 
     def from_str(self, tensor: np.ndarray):
-        self.node.attr["value"].tensor.tensor_content = tensor.tostring()
+        self.node.attr["value"].tensor.tensor_content = tensor.tobytes()
 
 
 def load_tensor(node: tf.Tensor, dtype_old: type, dtype_new: type) -> np.ndarray:

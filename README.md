@@ -5,8 +5,6 @@
 <span style="font-size:larger;">DeePMD-kit Manual</span>
 ========
 [![GitHub release](https://img.shields.io/github/release/deepmodeling/deepmd-kit.svg?maxAge=86400)](https://github.com/deepmodeling/deepmd-kit/releases)
-[![doi:10.1016/j.cpc.2018.03.016](https://img.shields.io/badge/DOI-10.1016%2Fj.cpc.2018.03.016-blue)](https://doi.org/10.1016/j.cpc.2018.03.016)
-[![Citations](https://citations.njzjz.win/10.1016/j.cpc.2018.03.016)](https://badge.dimensions.ai/details/doi/10.1016/j.cpc.2018.03.016)
 [![offline packages](https://img.shields.io/github/downloads/deepmodeling/deepmd-kit/total?label=offline%20packages)](https://github.com/deepmodeling/deepmd-kit/releases)
 [![conda-forge](https://img.shields.io/conda/dn/conda-forge/deepmd-kit?color=red&label=conda-forge&logo=conda-forge)](https://anaconda.org/conda-forge/deepmd-kit)
 [![pip install](https://img.shields.io/pypi/dm/deepmd-kit?label=pip%20install)](https://pypi.org/project/deepmd-kit)
@@ -49,7 +47,11 @@ For more information, check the [documentation](https://deepmd.readthedocs.io/).
 The project DeePMD-kit is licensed under [GNU LGPLv3.0](./LICENSE).
 If you use this code in any future publications, please cite the following publications for general purpose:
 - Han Wang, Linfeng Zhang, Jiequn Han, and Weinan E. "DeePMD-kit: A deep learning package for many-body potential energy representation and molecular dynamics." Computer Physics Communications 228 (2018): 178-184.
-- Jinzhe Zeng, Duo Zhang, Denghui Lu, Pinghui Mo, Zeyu Li, Yixiao Chen, Marián Rynik, Li'ang Huang, Ziyao Li, Shaochen Shi, Yingze Wang, Haotian Ye, Ping Tuo, Jiabin Yang, Ye Ding, Yifan Li, Davide Tisi, Qiyu Zeng, Han Bao, Yu Xia, Jiameng Huang, Koki Muraoka, Yibo Wang, Junhan Chang, Fengbo Yuan, Sigbjørn Løland Bore, Chun Cai, Yinnian Lin, Bo Wang, Jiayan Xu, Jia-Xin Zhu, Chenxing Luo, Yuzhi Zhang, Rhys E. A. Goodall, Wenshuo Liang, Anurag Kumar Singh, Sikai Yao, Jingchao Zhang, Renata Wentzcovitch, Jiequn Han, Jie Liu, Weile Jia, Darrin M. York, Weinan E, Roberto Car, Linfeng Zhang, Han Wang. "DeePMD-kit v2: A software package for Deep Potential models." [arXiv:2304.09409](https://doi.org/10.48550/arXiv.2304.09409).
+[![doi:10.1016/j.cpc.2018.03.016](https://img.shields.io/badge/DOI-10.1016%2Fj.cpc.2018.03.016-blue)](https://doi.org/10.1016/j.cpc.2018.03.016)
+[![Citations](https://citations.njzjz.win/10.1016/j.cpc.2018.03.016)](https://badge.dimensions.ai/details/doi/10.1016/j.cpc.2018.03.016)
+- Jinzhe Zeng, Duo Zhang, Denghui Lu, Pinghui Mo, Zeyu Li, Yixiao Chen, Marián Rynik, Li'ang Huang, Ziyao Li, Shaochen Shi, Yingze Wang, Haotian Ye, Ping Tuo, Jiabin Yang, Ye Ding, Yifan Li, Davide Tisi, Qiyu Zeng, Han Bao, Yu Xia, Jiameng Huang, Koki Muraoka, Yibo Wang, Junhan Chang, Fengbo Yuan, Sigbjørn Løland Bore, Chun Cai, Yinnian Lin, Bo Wang, Jiayan Xu, Jia-Xin Zhu, Chenxing Luo, Yuzhi Zhang, Rhys E. A. Goodall, Wenshuo Liang, Anurag Kumar Singh, Sikai Yao, Jingchao Zhang, Renata Wentzcovitch, Jiequn Han, Jie Liu, Weile Jia, Darrin M. York, Weinan E, Roberto Car, Linfeng Zhang, Han Wang. "DeePMD-kit v2: A software package for deep potential models." J. Chem. Phys. 159 (2023): 054801.
+[![doi:10.1063/5.0155600](https://img.shields.io/badge/DOI-10.1063%2F5.0155600-blue)](https://doi.org/10.1063/5.0155600)
+[![Citations](https://citations.njzjz.win/10.1063/5.0155600)](https://badge.dimensions.ai/details/doi/10.1063/5.0155600)
 
 In addition, please follow [the bib file](CITATIONS.bib) to cite the methods you used.
 
@@ -90,6 +92,7 @@ A full [document](doc/train/train-input-auto.rst) on options in the training inp
     - [Install GROMACS](doc/install/install-gromacs.md)
     - [Building conda packages](doc/install/build-conda.md)
     - [Install Node.js interface](doc/install/install-nodejs.md)
+    - [Easy install the latest development version](doc/install/easy-install-dev.md)
 - [Data](doc/data/index.md)
     - [System](doc/data/system.md)
     - [Formats of a system](doc/data/data-conv.md)
@@ -100,6 +103,7 @@ A full [document](doc/train/train-input-auto.rst) on options in the training inp
     - [Descriptor `"se_e2_r"`](doc/model/train-se-e2-r.md)
     - [Descriptor `"se_e3"`](doc/model/train-se-e3.md)
     - [Descriptor `"se_atten"`](doc/model/train-se-atten.md)
+    - [Descriptor `"se_atten_v2"`](doc/model/train-se-atten.md#descriptor-se_atten_v2)
     - [Descriptor `"hybrid"`](doc/model/train-hybrid.md)
     - [Descriptor `sel`](doc/model/sel.md)
     - [Fit energy](doc/model/train-energy.md)
@@ -109,6 +113,7 @@ A full [document](doc/train/train-input-auto.rst) on options in the training inp
     - [Train a Deep Potential model using `type embedding` approach](doc/model/train-se-e2-a-tebd.md)
     - [Deep potential long-range](doc/model/dplr.md)
     - [Deep Potential - Range Correction (DPRc)](doc/model/dprc.md)
+    - [Linear model](doc/model/linear.md)
 - [Training](doc/train/index.md)
     - [Training a model](doc/train/training.md)
     - [Advanced options](doc/train/training-advanced.md)

@@ -32,10 +32,6 @@ from deepmd.utils.type_embed import (
     TypeEmbedNet,
 )
 
-from .ener import (
-    EnerModel,
-)
-
 
 class PairwiseDPRc(Model):
     """Pairwise Deep Potential - Range Correction."""
@@ -59,6 +55,10 @@ class PairwiseDPRc(Model):
         compress: Optional[dict] = None,
         **kwargs,
     ) -> None:
+        # internal variable to compare old and new behavior
+        # expect they give the same results
+        self.merge_frames = True
+
         super().__init__(
             type_embedding=type_embedding,
             type_map=type_map,
@@ -83,13 +83,13 @@ class PairwiseDPRc(Model):
                 padding=True,
             )
 
-        self.qm_model = EnerModel(
+        self.qm_model = Model(
             **qm_model,
             type_map=type_map,
             type_embedding=self.typeebd,
             compress=compress,
         )
-        self.qmmm_model = EnerModel(
+        self.qmmm_model = Model(
             **qmmm_model,
             type_map=type_map,
             type_embedding=self.typeebd,
@@ -125,6 +125,7 @@ class PairwiseDPRc(Model):
         with tf.variable_scope("fitting_attr" + suffix, reuse=reuse):
             t_dfparam = tf.constant(0, name="dfparam", dtype=tf.int32)
             t_daparam = tf.constant(1, name="daparam", dtype=tf.int32)
+            t_aparam_nall = tf.constant(True, name="aparam_nall", dtype=tf.bool)
         with tf.variable_scope("descrpt_attr" + suffix, reuse=reuse):
             t_ntypes = tf.constant(self.ntypes, name="ntypes", dtype=tf.int32)
             t_rcut = tf.constant(
@@ -150,16 +151,27 @@ class PairwiseDPRc(Model):
         atype = tf.reshape(atype_, [nframes, natoms[1], 1])
         nframes_qmmm = tf.shape(qmmm_frame_idx)[0]
 
+        if self.merge_frames:
+            (
+                forward_qmmm_map,
+                backward_qmmm_map,
+                natoms_qmmm,
+                mesh_qmmm,
+            ) = op_module.convert_forward_map(forward_qmmm_map, natoms_qmmm, natoms)
+            coord_qmmm = tf.reshape(coord, [1, -1, 3])
+            atype_qmmm = tf.reshape(atype, [1, -1, 1])
+            box_qmmm = tf.reshape(box[0], [1, 9])
+        else:
+            mesh_qmmm = make_default_mesh(False, True)
+            coord_qmmm = tf.gather(coord, qmmm_frame_idx)
+            atype_qmmm = tf.gather(atype, qmmm_frame_idx)
+            box_qmmm = tf.gather(box, qmmm_frame_idx)
+
         coord_qm = gather_placeholder(coord, forward_qm_map)
         atype_qm = gather_placeholder(atype, forward_qm_map, placeholder=-1)
-        coord_qmmm = gather_placeholder(
-            tf.gather(coord, qmmm_frame_idx), forward_qmmm_map
-        )
-        atype_qmmm = gather_placeholder(
-            tf.gather(atype, qmmm_frame_idx), forward_qmmm_map, placeholder=-1
-        )
+        coord_qmmm = gather_placeholder(coord_qmmm, forward_qmmm_map)
+        atype_qmmm = gather_placeholder(atype_qmmm, forward_qmmm_map, placeholder=-1)
         box_qm = box
-        box_qmmm = tf.gather(box, qmmm_frame_idx)
 
         type_embedding = self.typeebd.build(
             self.ntypes,
@@ -170,6 +182,14 @@ class PairwiseDPRc(Model):
         input_dict_qmmm["type_embedding"] = type_embedding
 
         mesh_mixed_type = make_default_mesh(False, True)
+
+        # allow loading a frozen QM model that has only QM types
+        # Note: here we don't map the type between models, so
+        #       the type of the frozen model must be the same as
+        #       the first Ntypes of the current model
+        if self.get_ntypes() > self.qm_model.get_ntypes():
+            natoms_qm = tf.slice(natoms_qm, [0], [self.qm_model.get_ntypes() + 2])
+        assert self.get_ntypes() == self.qmmm_model.get_ntypes()
 
         qm_dict = self.qm_model.build(
             coord_qm,
@@ -188,7 +208,7 @@ class PairwiseDPRc(Model):
             atype_qmmm,
             natoms_qmmm,
             box_qmmm,
-            mesh_mixed_type,
+            mesh_qmmm,
             input_dict_qmmm,
             frz_model=frz_model,
             ckpt_meta=ckpt_meta,
@@ -196,10 +216,14 @@ class PairwiseDPRc(Model):
             reuse=reuse,
         )
 
-        energy_qm = qm_dict["energy"]
-        energy_qmmm = tf.math.segment_sum(qmmm_dict["energy"], qmmm_frame_idx)
-        energy = energy_qm + energy_qmmm
-        energy = tf.identity(energy, name="o_energy" + suffix)
+        if self.merge_frames:
+            qmmm_dict = qmmm_dict.copy()
+            sub_nframes = tf.shape(backward_qmmm_map)[0]
+            qmmm_dict["force"] = tf.tile(qmmm_dict["force"], [sub_nframes, 1])
+            qmmm_dict["atom_ener"] = tf.tile(qmmm_dict["atom_ener"], [sub_nframes, 1])
+            qmmm_dict["atom_virial"] = tf.tile(
+                qmmm_dict["atom_virial"], [sub_nframes, 1]
+            )
 
         force_qm = gather_placeholder(
             tf.reshape(qm_dict["force"], (nframes, natoms_qm[1], 3)),
@@ -217,17 +241,14 @@ class PairwiseDPRc(Model):
         force = force_qm + force_qmmm
         force = tf.reshape(force, (nframes, 3 * natoms[1]), name="o_force" + suffix)
 
-        virial_qm = qm_dict["virial"]
-        virial_qmmm = tf.math.segment_sum(qmmm_dict["virial"], qmmm_frame_idx)
-        virial = virial_qm + virial_qmmm
-        virial = tf.identity(virial, name="o_virial" + suffix)
-
+        backward_qm_map_nloc = tf.slice(backward_qm_map, [0, 0], [-1, natoms[0]])
+        backward_qmmm_map_nloc = tf.slice(backward_qmmm_map, [0, 0], [-1, natoms[0]])
         atom_ener_qm = gather_placeholder(
-            qm_dict["atom_ener"], backward_qm_map, placeholder=0.0
+            qm_dict["atom_ener"], backward_qm_map_nloc, placeholder=0.0
         )
         atom_ener_qmmm = tf.math.segment_sum(
             gather_placeholder(
-                qmmm_dict["atom_ener"], backward_qmmm_map, placeholder=0.0
+                qmmm_dict["atom_ener"], backward_qmmm_map_nloc, placeholder=0.0
             ),
             qmmm_frame_idx,
         )
@@ -250,6 +271,13 @@ class PairwiseDPRc(Model):
         atom_virial = atom_virial_qm + atom_virial_qmmm
         atom_virial = tf.reshape(
             atom_virial, (nframes, 9 * natoms[1]), name="o_atom_virial" + suffix
+        )
+
+        energy = tf.reduce_sum(atom_ener, axis=1, name="o_energy" + suffix)
+        virial = tf.reduce_sum(
+            tf.reshape(atom_virial, (nframes, natoms[1], 9)),
+            axis=1,
+            name="o_virial" + suffix,
         )
 
         model_dict = {}
@@ -277,7 +305,7 @@ class PairwiseDPRc(Model):
         return max(self.qm_model.get_rcut(), self.qmmm_model.get_rcut())
 
     def get_ntypes(self) -> int:
-        return self.qm_model.get_ntypes()
+        return self.ntypes
 
     def data_stat(self, data):
         self.qm_model.data_stat(data)
@@ -370,6 +398,26 @@ class PairwiseDPRc(Model):
             "t_aparam:0": kwargs["aparam"],
         }
         return feed_dict
+
+    @classmethod
+    def update_sel(cls, global_jdata: dict, local_jdata: dict):
+        """Update the selection and perform neighbor statistics.
+
+        Parameters
+        ----------
+        global_jdata : dict
+            The global data, containing the training section
+        local_jdata : dict
+            The local data refer to the current class
+        """
+        from deepmd.entrypoints.train import (
+            get_min_nbor_dist,
+        )
+
+        # do not update sel; only find min distance
+        # rcut is not important here
+        get_min_nbor_dist(global_jdata, 6.0)
+        return local_jdata
 
 
 def gather_placeholder(

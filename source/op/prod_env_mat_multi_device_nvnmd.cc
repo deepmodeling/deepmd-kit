@@ -471,13 +471,9 @@ class ProdEnvMatANvnmdQuantizeOp : public OpKernel {
       const int* type = p_type + ff * nall;
 
       if (device == "GPU") {
-#if GOOGLE_CUDA
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 // UNDEFINE
-#endif  // GOOGLE_CUDA
-
-#if TENSORFLOW_USE_ROCM
-// UNDEFINE
-#endif  // TENSORFLOW_USE_ROCM
+#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
       } else if (device == "CPU") {
         deepmd::InputNlist inlist;
         // some buffers, be freed after the evaluation of this frame
@@ -720,13 +716,9 @@ class ProdEnvMatAMixNvnmdQuantizeOp : public OpKernel {
       const int* type = p_type + ff * nall;
 
       if (device == "GPU") {
-#if GOOGLE_CUDA
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 // UNDEFINE
-#endif  // GOOGLE_CUDA
-
-#if TENSORFLOW_USE_ROCM
-// UNDEFINE
-#endif  // TENSORFLOW_USE_ROCM
+#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
       } else if (device == "CPU") {
         deepmd::InputNlist inlist;
         // some buffers, be freed after the evaluation of this frame

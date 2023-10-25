@@ -291,6 +291,16 @@ class DeepPot {
    **/
   void get_type_map(std::string& type_map);
 
+  /**
+   * @brief Get whether the atom dimension of aparam is nall instead of fparam.
+   * @param[out] aparam_nall whether the atom dimension of aparam is nall
+   *instead of fparam.
+   **/
+  bool is_aparam_nall() const {
+    assert(inited);
+    return aparam_nall;
+  };
+
  private:
   tensorflow::Session* session;
   int num_intra_nthreads, num_inter_nthreads;
@@ -309,6 +319,7 @@ class DeepPot {
   int ntypes_spin;
   int dfparam;
   int daparam;
+  bool aparam_nall;
   /**
    * @brief Validate the size of frame and atomic parameters.
    * @param[in] nframes The number of frames.
@@ -572,6 +583,15 @@ class DeepPotModelDevi {
   void compute_relative_std_f(std::vector<VALUETYPE>& std,
                               const std::vector<VALUETYPE>& avg,
                               const VALUETYPE eps);
+  /**
+   * @brief Get whether the atom dimension of aparam is nall instead of fparam.
+   * @param[out] aparam_nall whether the atom dimension of aparam is nall
+   *instead of fparam.
+   **/
+  bool is_aparam_nall() const {
+    assert(inited);
+    return aparam_nall;
+  };
 
  private:
   unsigned numb_models;
@@ -592,6 +612,7 @@ class DeepPotModelDevi {
   int ntypes_spin;
   int dfparam;
   int daparam;
+  bool aparam_nall;
   template <typename VALUETYPE>
   void validate_fparam_aparam(const int& nloc,
                               const std::vector<VALUETYPE>& fparam,

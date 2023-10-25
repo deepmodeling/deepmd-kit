@@ -530,6 +530,85 @@ def strerch_box(old_coord, old_box, new_box):
     return ncoord.reshape(old_coord.shape)
 
 
+def finite_difference_fv(sess, energy, feed_dict, t_coord, t_box, delta=1e-6):
+    """For energy models, compute f, v by finite difference."""
+    base_dict = feed_dict.copy()
+    coord0 = base_dict.pop(t_coord)
+    box0 = base_dict.pop(t_box)
+    fdf = -finite_difference(
+        lambda coord: sess.run(
+            energy, feed_dict={**base_dict, t_coord: coord, t_box: box0}
+        ).reshape(-1),
+        coord0,
+        delta=delta,
+    ).reshape(-1)
+    fdv = -(
+        finite_difference(
+            lambda box: sess.run(
+                energy,
+                feed_dict={
+                    **base_dict,
+                    t_coord: strerch_box(coord0, box0, box),
+                    t_box: box,
+                },
+            ).reshape(-1),
+            box0,
+            delta=delta,
+        )
+        .reshape([-1, 3, 3])
+        .transpose(0, 2, 1)
+        @ box0.reshape(3, 3)
+    ).reshape(-1)
+    return fdf, fdv
+
+
+def check_continuity(f, cc, rcut, delta):
+    """coord[0:2] to [[0, 0, 0], [rcut+-.5*delta, 0, 0]]."""
+    cc = cc.reshape([-1, 3])
+    cc0 = np.copy(cc)
+    cc1 = np.copy(cc)
+    cc0[:2, :] = np.array(
+        [
+            0.0,
+            0.0,
+            0.0,
+            rcut - 0.5 * delta,
+            0.0,
+            0.0,
+        ]
+    ).reshape([-1, 3])
+    cc1[:2, :] = np.array(
+        [
+            0.0,
+            0.0,
+            0.0,
+            rcut + 0.5 * delta,
+            0.0,
+            0.0,
+        ]
+    ).reshape([-1, 3])
+    return f(cc0.reshape(-1)), f(cc1.reshape(-1))
+
+
+def check_smooth_efv(sess, energy, force, virial, feed_dict, t_coord, rcut, delta=1e-5):
+    """Check the smoothness of e, f and v
+    the returned values are de, df, dv
+    de[0] are supposed to be closed to de[1]
+    df[0] are supposed to be closed to df[1]
+    dv[0] are supposed to be closed to dv[1].
+    """
+    base_dict = feed_dict.copy()
+    coord0 = base_dict.pop(t_coord)
+    [fe, ff, fv] = [
+        lambda coord: sess.run(ii, feed_dict={**base_dict, t_coord: coord}).reshape(-1)
+        for ii in [energy, force, virial]
+    ]
+    [de, df, dv] = [
+        check_continuity(ii, coord0, rcut, delta=delta) for ii in [fe, ff, fv]
+    ]
+    return de, df, dv
+
+
 def run_dp(cmd: str) -> int:
     """Run DP directly from the entry point instead of the subprocess.
 
@@ -919,9 +998,7 @@ class DataSystem:
                 min_len = min([len(ii), len(ret)])
                 for idx in range(min_len):
                     if ii[idx] != ret[idx]:
-                        raise RuntimeError(
-                            f"inconsistent type map: {str(ret)} {str(ii)}"
-                        )
+                        raise RuntimeError(f"inconsistent type map: {ret!s} {ii!s}")
                 if len(ii) > len(ret):
                     ret = ii
         return ret

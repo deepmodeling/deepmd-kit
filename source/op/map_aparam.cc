@@ -49,8 +49,8 @@ class MapAparamOp : public OpKernel {
     int nframes = aparam_tensor.shape().dim_size(0);
     int nloc = natoms(0);
     int nall = natoms(1);
-    int nnei = nlist_tensor.shape().dim_size(1) / nloc;
-    int numb_aparam = aparam_tensor.shape().dim_size(1) / nall;
+    int nnei = nloc > 0 ? nlist_tensor.shape().dim_size(1) / nloc : 0;
+    int numb_aparam = nall > 0 ? aparam_tensor.shape().dim_size(1) / nall : 0;
 
     // check the sizes
     OP_REQUIRES(context, (nframes == nlist_tensor.shape().dim_size(0)),

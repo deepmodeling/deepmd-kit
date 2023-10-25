@@ -2,14 +2,14 @@
 # See https://pre-commit.com/hooks.html for more hooks
 repos:
 -   repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.4.0
+    rev: v4.5.0
     hooks:
     -   id: trailing-whitespace
         exclude: "^.+\\.pbtxt$"
     -   id: end-of-file-fixer
         exclude: "^.+\\.pbtxt$"
     -   id: check-yaml
-    #-   id: check-json
+    -   id: check-json
     -   id: check-added-large-files
         args: ['--maxkb=1024', '--enforce-all']
         # TODO: remove the following after resolved
@@ -22,38 +22,42 @@ repos:
     -   id: check-symlinks
     -   id: check-toml
 # Python
--   repo: https://github.com/psf/black
-    rev: 23.7.0
-    hooks:
-    -   id: black-jupyter
 -   repo: https://github.com/PyCQA/isort
     rev: 5.12.0
     hooks:
     - id: isort
       files: \.py$
+      exclude: ^source/3rdparty
 -   repo: https://github.com/astral-sh/ruff-pre-commit
     # Ruff version.
-    rev: v0.0.280
+    rev: v0.1.1
     hooks:
     - id: ruff
       args: ["--fix"]
+      exclude: ^source/3rdparty
+-   repo: https://github.com/psf/black-pre-commit-mirror
+    rev: 23.10.0
+    hooks:
+    -   id: black-jupyter
+        exclude: ^source/3rdparty
 # numpydoc
 -   repo: https://github.com/Carreau/velin
     rev: 0.0.12
     hooks:
     - id: velin
       args: ["--write"]
+      exclude: ^source/3rdparty
 # Python inside docs
 -   repo: https://github.com/asottile/blacken-docs
-    rev: 1.15.0
+    rev: 1.16.0
     hooks:
     -   id: blacken-docs
 # C++
 -   repo: https://github.com/pre-commit/mirrors-clang-format
-    rev: v16.0.6
+    rev: v17.0.3
     hooks:
     -   id: clang-format
-        exclude: ^source/3rdparty|source/lib/src/cuda/cudart/.+\.inc
+        exclude: ^source/3rdparty|source/lib/src/gpu/cudart/.+\.inc
 # CSS
 -   repo: https://github.com/pre-commit/mirrors-csslint
     rev: v1.0.5
@@ -72,7 +76,7 @@ repos:
     #- id: cmake-lint
 # license header
 - repo: https://github.com/Lucas-C/pre-commit-hooks
-  rev: v1.5.1
+  rev: v1.5.4
   hooks:
     # C++, js
     -   id: insert-license
@@ -83,7 +87,7 @@ repos:
         - --comment-style
         - //
         - --no-extra-eol
-        exclude: ^source/3rdparty|source/lib/src/cuda/cudart/.+\.inc
+        exclude: ^source/3rdparty|source/lib/src/gpu/cudart/.+\.inc
     # CSS
     -   id: insert-license
         files: \.(css|scss)$
@@ -102,6 +106,7 @@ repos:
         - --comment-style
         - "#"
         - --no-extra-eol
+        exclude: ^source/3rdparty
     # HTML
     -   id: insert-license
         files: \.(html|vue|xml)$

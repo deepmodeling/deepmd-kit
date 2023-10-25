@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import argparse
-import imp
 import logging
 import textwrap
 from typing import (
@@ -8,18 +7,10 @@ from typing import (
     Optional,
 )
 
-
-def load_child_module(name):
-    """Load a child module without loading its parent module."""
-    names = name.split(".")
-    path = None
-    for name in names:
-        f, path, info = imp.find_module(name, path)
-        path = [path]
-    return imp.load_module(name, f, path[0], info)
-
-
-__version__ = load_child_module("deepmd._version").__version__
+try:
+    from deepmd_cli._version import version as __version__
+except ImportError:
+    __version__ = "unknown"
 
 
 def get_ll(log_level: str) -> int:
@@ -150,14 +141,14 @@ def main_parser() -> argparse.ArgumentParser:
         "--init-model",
         type=str,
         default=None,
-        help="Initialize the model by the provided checkpoint.",
+        help="Initialize the model by the provided path prefix of checkpoint files.",
     )
     parser_train_subgroup.add_argument(
         "-r",
         "--restart",
         type=str,
         default=None,
-        help="Restart the training from the provided checkpoint.",
+        help="Restart the training from the provided path prefix of checkpoint files.",
     )
     parser_train_subgroup.add_argument(
         "-f",
@@ -274,7 +265,11 @@ def main_parser() -> argparse.ArgumentParser:
         "-S", "--set-prefix", default="set", type=str, help="The set prefix"
     )
     parser_tst.add_argument(
-        "-n", "--numb-test", default=100, type=int, help="The number of data for test"
+        "-n",
+        "--numb-test",
+        default=0,
+        type=int,
+        help="The number of data for test. 0 means all data.",
     )
     parser_tst.add_argument(
         "-r", "--rand-seed", type=int, default=None, help="The random seed"
@@ -302,7 +297,7 @@ def main_parser() -> argparse.ArgumentParser:
     # The table is composed of fifth-order polynomial coefficients and is assembled
     # from two sub-tables. The first table takes the step(parameter) as it's uniform
     # step, while the second table takes 10 * step as it\s uniform step
-    #  The range of the first table is automatically detected by deepmd-kit, while the
+    #  The range of the first table is automatically detected by deepmd-kit, while the
     # second table ranges from the first table's upper boundary(upper) to the
     # extrapolate(parameter) * upper.
     parser_compress = subparsers.add_parser(
@@ -438,6 +433,28 @@ def main_parser() -> argparse.ArgumentParser:
         type=int,
         help="The trajectory frequency of the system",
     )
+    parser_model_devi.add_argument(
+        "--real_error",
+        action="store_true",
+        default=False,
+        help="Calculate the RMS real error of the model. The real data should be given in the systems.",
+    )
+    parser_model_devi.add_argument(
+        "--atomic",
+        action="store_true",
+        default=False,
+        help="Print the force model deviation of each atom.",
+    )
+    parser_model_devi.add_argument(
+        "--relative",
+        type=float,
+        help="Calculate the relative model deviation of force. The level parameter for computing the relative model deviation of the force should be given.",
+    )
+    parser_model_devi.add_argument(
+        "--relative_v",
+        type=float,
+        help="Calculate the relative model deviation of virial. The level parameter for computing the relative model deviation of the virial should be given.",
+    )
 
     # * convert models
     parser_transform = subparsers.add_parser(
@@ -474,7 +491,7 @@ def main_parser() -> argparse.ArgumentParser:
         "--output-model",
         default="convert_out.pb",
         type=str,
-        help="the output model",
+        help="the output model\nIf OUTPUT_MODEL ends with '.pbtxt', the provided model will be converted to pbtxt format, without version conversion.",
     )
 
     # neighbor_stat
@@ -539,7 +556,7 @@ def main_parser() -> argparse.ArgumentParser:
         "--restart",
         type=str,
         default=None,
-        help="Restart the training from the provided checkpoint.",
+        help="Restart the training from the provided prefix of checkpoint files.",
     )
     parser_train_nvnmd.add_argument(
         "-s",
@@ -553,6 +570,29 @@ def main_parser() -> argparse.ArgumentParser:
         "--skip-neighbor-stat",
         action="store_true",
         help="Skip calculating neighbor statistics. Sel checking, automatic sel, and model compression will be disabled.",
+    )
+
+    # gui
+    parser_gui = subparsers.add_parser(
+        "gui",
+        parents=[parser_log],
+        help="Serve DP-GUI.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser_gui.add_argument(
+        "-p",
+        "--port",
+        type=int,
+        default=6042,
+        help="The port to serve DP-GUI on.",
+    )
+    parser_gui.add_argument(
+        "--bind_all",
+        action="store_true",
+        help=(
+            "Serve on all public interfaces. This will expose your DP-GUI instance "
+            "to the network on both IPv4 and IPv6 (where available)."
+        ),
     )
     return parser
 

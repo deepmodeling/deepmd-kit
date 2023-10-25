@@ -1,5 +1,5 @@
 {
-  "_comment": " model parameters",
+  "_comment1": " model parameters",
   "use_smooth": true,
   "sel_a": [
     46,
@@ -23,7 +23,7 @@
   "coord_norm": true,
   "type_fitting_net": false,
 
-  "_comment": " traing controls",
+  "_comment2": " traing controls",
   "systems": [
     "../data/"
   ],
@@ -45,8 +45,8 @@
 
   "seed": 1,
 
-  "_comment": " display and restart",
-  "_comment": " frequencies counted in batch",
+  "_comment3": " display and restart",
+  "_comment4": " frequencies counted in batch",
   "disp_file": "lcurve.out",
   "disp_freq": 100,
   "numb_test": 10,
@@ -57,5 +57,5 @@
   "profiling": true,
   "profiling_file": "timeline.json",
 
-  "_comment": "that's all"
+  "_comment5": "that's all"
 }

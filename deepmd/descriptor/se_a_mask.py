@@ -112,7 +112,7 @@ class DescrptSeAMask(DescrptSeA):
     .. [1] Linfeng Zhang, Jiequn Han, Han Wang, Wissam A. Saidi, Roberto Car, and E. Weinan. 2018.
        End-to-end symmetry preserving inter-atomic potential energy model for finite and extended
        systems. In Proceedings of the 32nd International Conference on Neural Information Processing
-       Systems (NIPS'18). Curran Associates Inc., Red Hook, NY, USA, 4441–4451.
+       Systems (NIPS'18). Curran Associates Inc., Red Hook, NY, USA, 4441-4451.
     """
 
     def __init__(
@@ -128,6 +128,7 @@ class DescrptSeAMask(DescrptSeA):
         activation_function: str = "tanh",
         precision: str = "default",
         uniform_seed: bool = False,
+        stripped_type_embedding: bool = False,
         **kwargs,
     ) -> None:
         """Constructor."""
@@ -159,6 +160,7 @@ class DescrptSeAMask(DescrptSeA):
         # numb of neighbors and numb of descrptors
         self.nnei_a = np.cumsum(self.sel_a)[-1]
         self.nnei = self.nnei_a
+        self.stripped_type_embedding = stripped_type_embedding
 
         self.ndescrpt_a = self.nnei_a * 4
         self.ndescrpt = self.ndescrpt_a
@@ -301,10 +303,12 @@ class DescrptSeAMask(DescrptSeA):
         dstd = self.dstd
 
         """
-        ``aparam'' shape is [nframes, natoms]
+        ``aparam'' shape is [nframes, nall]
         aparam[:, :] is the real/virtual sign for each atom.
         """
         aparam = input_dict["aparam"]
+        with tf.variable_scope("fitting_attr" + suffix, reuse=reuse):
+            t_aparam_nall = tf.constant(True, name="aparam_nall", dtype=tf.bool)
         self.mask = tf.cast(aparam, tf.int32)
         self.mask = tf.reshape(self.mask, [-1, natoms[1]])
 

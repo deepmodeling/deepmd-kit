@@ -114,7 +114,7 @@ class MapFltNvnmdOp : public OpKernel {
       for (ii = 0; ii < N * D; ii++) {
         // cal idx and xx
         xi = x[ii];
-        if ((xi < x0) || (xi >= x1)) {
+        if ((xi < x0) || (xi > x1)) {
           continue;
         }
         //

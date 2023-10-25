@@ -1,5 +1,5 @@
 {
-  "_comment": " model parameters",
+  "_comment1": " model parameters",
   "model": {
     "type": "polar",
     "type_map": [
@@ -31,13 +31,13 @@
         1,
         0
       ],
-      "_comment": " default rule: []",
-      "_comment": " user defined rule: for each type provides two axes, ",
-      "_comment": "                    for each axis: (a_or_r, type, idx)",
-      "_comment": "                    if type < 0, exclude type -(type+1)",
-      "_comment": "                    for water (O:0, H:1) it can be",
-      "_comment": "                    [0, 1, 0, 0, 1, 1, 0, 0, 0, 0, 1, 0]",
-      "_comment": " that's all"
+      "_comment2": " default rule: []",
+      "_comment3": " user defined rule: for each type provides two axes, ",
+      "_comment4": "                    for each axis: (a_or_r, type, idx)",
+      "_comment5": "                    if type < 0, exclude type -(type+1)",
+      "_comment6": "                    for water (O:0, H:1) it can be",
+      "_comment7": "                    [0, 1, 0, 0, 1, 1, 0, 0, 0, 0, 1, 0]",
+      "_comment8": " that's all"
     },
     "fitting_net": {
       "type": "wfc",
@@ -52,9 +52,9 @@
       ],
       "resnet_dt": true,
       "seed": 1,
-      "_comment": " that's all"
+      "_comment9": " that's all"
     },
-    "_comment": " that's all"
+    "_comment10": " that's all"
   },
 
   "learning_rate": {
@@ -62,10 +62,10 @@
     "start_lr": 0.001,
     "decay_steps": 5000,
     "decay_rate": 0.95,
-    "_comment": "that's all"
+    "_comment11": "that's all"
   },
 
-  "_comment": " traing controls",
+  "_comment12": " traing controls",
   "systems": [
     "system"
   ],
@@ -77,8 +77,8 @@
 
   "seed": 1,
 
-  "_comment": " display and restart",
-  "_comment": " frequencies counted in batch",
+  "_comment13": " display and restart",
+  "_comment14": " frequencies counted in batch",
   "disp_file": "lcurve.out",
   "disp_freq": 100,
   "numb_test": 10,
@@ -88,5 +88,5 @@
   "disp_training": true,
   "time_training": true,
 
-  "_comment": "that's all"
+  "_comment15": "that's all"
 }

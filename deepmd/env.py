@@ -27,6 +27,8 @@ from packaging.version import (
     Version,
 )
 
+import deepmd.lib
+
 if TYPE_CHECKING:
     from types import (
         ModuleType,
@@ -48,7 +50,7 @@ def dlopen_library(module: str, filename: str):
     except ModuleNotFoundError:
         pass
     else:
-        libs = sorted(Path(m.__file__).parent.glob(filename))
+        libs = sorted(Path(m.__path__[0]).glob(filename))
         # hope that there is only one version installed...
         if len(libs):
             ctypes.CDLL(str(libs[0].absolute()))
@@ -87,6 +89,7 @@ __all__ = [
     "global_cvt_2_tf_float",
     "global_cvt_2_ener_float",
     "MODEL_VERSION",
+    "SHARED_LIB_DIR",
     "SHARED_LIB_MODULE",
     "default_tf_session_config",
     "reset_default_tf_session_config",
@@ -101,7 +104,9 @@ __all__ = [
     "TF_VERSION",
 ]
 
-SHARED_LIB_MODULE = "op"
+SHARED_LIB_MODULE = "lib"
+SHARED_LIB_DIR = Path(deepmd.lib.__path__[0])
+CONFIG_FILE = SHARED_LIB_DIR / "run_config.ini"
 
 # Python library version
 try:
@@ -241,7 +246,20 @@ def set_mkl():
     check whether the numpy is built by mkl, see
     https://github.com/numpy/numpy/issues/14751
     """
-    if "mkl_rt" in np.__config__.get_info("blas_mkl_info").get("libraries", []):
+    try:
+        is_mkl = (
+            np.show_config("dicts")
+            .get("Build Dependencies", {})
+            .get("blas", {})
+            .get("name", "")
+            .lower()
+            .startswith("mkl")
+        )
+    except TypeError:
+        is_mkl = "mkl_rt" in np.__config__.get_info("blas_mkl_info").get(
+            "libraries", []
+        )
+    if is_mkl:
         set_env_if_empty("KMP_BLOCKTIME", "0")
         set_env_if_empty("KMP_AFFINITY", "granularity=fine,verbose,compact,1,0")
         reload(np)
@@ -361,11 +379,7 @@ def get_module(module_name: str) -> "ModuleType":
         ext = ".so"
         prefix = "lib"
 
-    module_file = (
-        (Path(__file__).parent / SHARED_LIB_MODULE / (prefix + module_name))
-        .with_suffix(ext)
-        .resolve()
-    )
+    module_file = (SHARED_LIB_DIR / (prefix + module_name)).with_suffix(ext).resolve()
 
     if not module_file.is_file():
         raise FileNotFoundError(f"module {module_name} does not exist")
@@ -418,9 +432,9 @@ def get_module(module_name: str) -> "ModuleType":
                 ) from e
             error_message = (
                 "This deepmd-kit package is inconsitent with TensorFlow "
-                "Runtime, thus an error is raised when loading {}. "
+                f"Runtime, thus an error is raised when loading {module_name}. "
                 "You need to rebuild deepmd-kit against this TensorFlow "
-                "runtime.".format(module_name)
+                "runtime."
             )
             if TF_CXX11_ABI_FLAG == 1:
                 # #1791
@@ -433,7 +447,7 @@ def get_module(module_name: str) -> "ModuleType":
 
 
 def _get_package_constants(
-    config_file: Path = Path(__file__).parent / "run_config.ini",
+    config_file: Path = CONFIG_FILE,
 ) -> Dict[str, str]:
     """Read package constants set at compile time by CMake to dictionary.
 

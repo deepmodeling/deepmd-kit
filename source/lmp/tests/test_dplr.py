@@ -6,6 +6,7 @@ from pathlib import (
     Path,
 )
 
+import constants
 import numpy as np
 import pytest
 from lammps import (
@@ -20,6 +21,8 @@ pb_file = Path(__file__).parent / "lrmodel.pb"
 dipole_pbtxt_file = Path(__file__).parent / "lrdipole.pbtxt"
 dipole_pb_file = Path(__file__).parent / "lrdipole.pb"
 data_file = Path(__file__).parent / "data.lmp"
+data_file_si = Path(__file__).parent / "data.si"
+data_type_map_file = Path(__file__).parent / "data_type_map.lmp"
 
 # this is as the same as python and c++ tests, test_deeppot_a.py
 expected_e_sr = -40.56538550
@@ -252,15 +255,13 @@ coord = np.array(
 )
 mol_list = np.array([1, 2, 1, 1, 2, 2, 1, 2])
 type_OH = np.array([1, 1, 2, 2, 2, 2, 3, 3])
+type_HO = np.array([2, 2, 1, 1, 1, 1, 3, 3])
 charge = np.array([6, 6, 1, 1, 1, 1, -8, -8])
 bond_list = (((1, 7), (2, 8)),)
 mass_list = np.array([15.99940, 1.00794, 15.99940])
 beta = 0.4
 mesh = 10
 
-
-# https://github.com/lammps/lammps/blob/1e1311cf401c5fc2614b5d6d0ff3230642b76597/src/update.cpp#L193
-nktv2p = 1.6021765e6
 
 sp.check_output(
     "{} -m deepmd convert-from pbtxt -i {} -o {}".format(
@@ -275,28 +276,71 @@ def setup_module():
     write_lmp_data_full(
         box, coord, mol_list, type_OH, charge, data_file, bond_list, mass_list
     )
+    write_lmp_data_full(
+        box, coord, mol_list, type_HO, charge, data_type_map_file, bond_list, mass_list
+    )
+    write_lmp_data_full(
+        box * constants.dist_metal2si,
+        coord * constants.dist_metal2si,
+        mol_list,
+        type_OH,
+        charge * constants.charge_metal2si,
+        data_file_si,
+        bond_list,
+        mass_list * constants.mass_metal2si,
+    )
 
 
 def teardown_module():
     os.remove(data_file)
+    os.remove(data_type_map_file)
+    os.remove(data_file_si)
 
 
-def _lammps(data_file) -> PyLammps:
+def _lammps(data_file, exclude_type="1 3", units="metal") -> PyLammps:
     lammps = PyLammps()
-    lammps.units("metal")
+    lammps.units(units)
     lammps.boundary("p p p")
     lammps.atom_style("full")
-    lammps.neighbor("0.2 bin")
-    lammps.neigh_modify("every 1 delay 0 check no exclude type 1 3")
+    if units == "metal" or units == "real":
+        lammps.neighbor("0.2 bin")
+    elif units == "si":
+        lammps.neighbor("2.0e-11 bin")
+    else:
+        raise ValueError("units should be metal, real, or si")
+    lammps.neigh_modify("every 1 delay 0 check no exclude type " + exclude_type)
     lammps.read_data(data_file.resolve())
-    lammps.timestep(0.0005)
+    if units == "metal":
+        lammps.timestep(0.0005)
+    elif units == "real":
+        lammps.timestep(0.5)
+    elif units == "si":
+        lammps.timestep(5e-16)
+    else:
+        raise ValueError("units should be metal, real, or si")
     lammps.fix("1 all nve")
     return lammps
 
 
 @pytest.fixture
 def lammps():
-    yield _lammps(data_file=data_file)
+    lmp = _lammps(data_file=data_file)
+    yield lmp
+    lmp.close()
+
+
+@pytest.fixture
+def lammps_type_map():
+    lmp = _lammps(data_file=data_type_map_file, exclude_type="2 3")
+    yield lmp
+    lmp.close()
+
+
+@pytest.fixture
+def lammps_si():
+    lmp = _lammps(data_file=data_file_si, units="si")
+    yield lmp
+    lmp.close()
 
 
 def test_pair_deepmd_sr(lammps):
@@ -335,7 +379,7 @@ def test_pair_deepmd_sr_virial(lammps):
     for ii in range(9):
         assert np.array(lammps.variables[f"virial{ii}"].value)[
             idx_list
-        ] / nktv2p == pytest.approx(expected_v_sr[:, ii])
+        ] / constants.nktv2p == pytest.approx(expected_v_sr[:, ii])
     os.remove("dump")
 
 
@@ -350,12 +394,18 @@ def test_pair_deepmd_lr(lammps):
     lammps.fix(f"0 all dplr model {pb_file.resolve()} type_associate 1 3 bond_type 1")
     lammps.fix_modify("0 virial yes")
     lammps.run(0)
-    for ii in range(2):
-        assert lammps.atoms[6 + ii].position == pytest.approx(expected_WC[ii])
+    for ii in range(8):
+        if lammps.atoms[ii].id > 6:
+            assert lammps.atoms[ii].position == pytest.approx(
+                expected_WC[lammps.atoms[ii].id - 7]
+            )
     assert lammps.eval("elong") == pytest.approx(expected_e_kspace)
     assert lammps.eval("pe") == pytest.approx(expected_e_lr)
-    for ii in range(6):
-        assert lammps.atoms[ii].force == pytest.approx(expected_f_lr[ii])
+    for ii in range(8):
+        if lammps.atoms[ii].id <= 6:
+            assert lammps.atoms[ii].force == pytest.approx(
+                expected_f_lr[lammps.atoms[ii].id - 1]
+            )
     lammps.run(1)
 
 
@@ -443,8 +493,76 @@ def test_min_dplr(lammps):
     lammps.min_style("cg")
     lammps.minimize("0 1.0e-6 2 2")
     for ii in range(8):
-        assert lammps.atoms[ii].position == pytest.approx(expected_x_min_step1[ii])
+        assert lammps.atoms[ii].position == pytest.approx(
+            expected_x_min_step1[lammps.atoms[ii].id - 1]
+        )
     assert lammps.eval("pe") == pytest.approx(expected_e_min_step1)
     assert lammps.eval("elong") == pytest.approx(expected_e_kspace_min_step1)
     for ii in range(8):
-        assert lammps.atoms[ii].force == pytest.approx(expected_f_min_step1[ii])
+        assert lammps.atoms[ii].force == pytest.approx(
+            expected_f_min_step1[lammps.atoms[ii].id - 1]
+        )
+
+
+def test_pair_deepmd_lr_type_map(lammps_type_map):
+    lammps_type_map.pair_style(f"deepmd {pb_file.resolve()}")
+    lammps_type_map.pair_coeff("* * H O")
+    lammps_type_map.bond_style("zero")
+    lammps_type_map.bond_coeff("*")
+    lammps_type_map.special_bonds("lj/coul 1 1 1 angle no")
+    lammps_type_map.kspace_style("pppm/dplr 1e-5")
+    lammps_type_map.kspace_modify(
+        f"gewald {beta:.2f} diff ik mesh {mesh:d} {mesh:d} {mesh:d}"
+    )
+    lammps_type_map.fix(
+        f"0 all dplr model {pb_file.resolve()} type_associate 2 3 bond_type 1"
+    )
+    lammps_type_map.fix_modify("0 virial yes")
+    lammps_type_map.run(0)
+    for ii in range(8):
+        if lammps_type_map.atoms[ii].id > 6:
+            assert lammps_type_map.atoms[ii].position == pytest.approx(
+                expected_WC[lammps_type_map.atoms[ii].id - 7]
+            )
+    assert lammps_type_map.eval("elong") == pytest.approx(expected_e_kspace)
+    assert lammps_type_map.eval("pe") == pytest.approx(expected_e_lr)
+    for ii in range(8):
+        if lammps_type_map.atoms[ii].id <= 6:
+            assert lammps_type_map.atoms[ii].force == pytest.approx(
+                expected_f_lr[lammps_type_map.atoms[ii].id - 1]
+            )
+    lammps_type_map.run(1)
+
+
+def test_pair_deepmd_lr_si(lammps_si):
+    lammps_si.pair_style(f"deepmd {pb_file.resolve()}")
+    lammps_si.pair_coeff("* *")
+    lammps_si.bond_style("zero")
+    lammps_si.bond_coeff("*")
+    lammps_si.special_bonds("lj/coul 1 1 1 angle no")
+    lammps_si.kspace_style("pppm/dplr 1e-5")
+    lammps_si.kspace_modify(
+        f"gewald {beta / constants.dist_metal2si:.6e} diff ik mesh {mesh:d} {mesh:d} {mesh:d}"
+    )
+    lammps_si.fix(
+        f"0 all dplr model {pb_file.resolve()} type_associate 1 3 bond_type 1"
+    )
+    lammps_si.fix_modify("0 virial yes")
+    lammps_si.run(0)
+    for ii in range(8):
+        if lammps_si.atoms[ii].id > 6:
+            assert lammps_si.atoms[ii].position == pytest.approx(
+                expected_WC[lammps_si.atoms[ii].id - 7] * constants.dist_metal2si
+            )
+    assert lammps_si.eval("elong") == pytest.approx(
+        expected_e_kspace * constants.ener_metal2si
+    )
+    assert lammps_si.eval("pe") == pytest.approx(
+        expected_e_lr * constants.ener_metal2si
+    )
+    for ii in range(8):
+        if lammps_si.atoms[ii].id <= 6:
+            assert lammps_si.atoms[ii].force == pytest.approx(
+                expected_f_lr[lammps_si.atoms[ii].id - 1] * constants.force_metal2si
+            )
+    lammps_si.run(1)

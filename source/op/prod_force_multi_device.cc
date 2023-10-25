@@ -89,8 +89,8 @@ class ProdForceSeAOp : public OpKernel {
     int nloc = natoms[0];
     int nall = natoms[1];
     int nframes = net_deriv_tensor.shape().dim_size(0);
-    int ndescrpt = net_deriv_tensor.shape().dim_size(1) / nloc;
-    int nnei = nlist_tensor.shape().dim_size(1) / nloc;
+    int ndescrpt = nloc > 0 ? net_deriv_tensor.shape().dim_size(1) / nloc : 0;
+    int nnei = nloc > 0 ? nlist_tensor.shape().dim_size(1) / nloc : 0;
     // check the sizes
     OP_REQUIRES(context, (nframes == in_deriv_tensor.shape().dim_size(0)),
                 errors::InvalidArgument("number of samples should match"));
@@ -142,15 +142,10 @@ class ProdForceSeAOp : public OpKernel {
     }
 
     if (device == "GPU") {
-#if GOOGLE_CUDA
-      deepmd::prod_force_a_gpu_cuda(p_force, p_net_deriv, p_in_deriv, p_nlist,
-                                    nloc, nall, nnei, nframes);
-#endif  // GOOGLE_CUDA
-
-#if TENSORFLOW_USE_ROCM
-      deepmd::prod_force_a_gpu_rocm(p_force, p_net_deriv, p_in_deriv, p_nlist,
-                                    nloc, nall, nnei, nframes);
-#endif  // TENSORFLOW_USE_ROCM
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+      deepmd::prod_force_a_gpu(p_force, p_net_deriv, p_in_deriv, p_nlist, nloc,
+                               nall, nnei, nframes);
+#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
     } else if (device == "CPU") {
       deepmd::prod_force_a_cpu(p_force, p_net_deriv, p_in_deriv, p_nlist, nloc,
                                nall, nnei, nframes, nloc_loc,
@@ -192,8 +187,8 @@ class ProdForceSeROp : public OpKernel {
     int nloc = natoms[0];
     int nall = natoms[1];
     int nframes = net_deriv_tensor.shape().dim_size(0);
-    int ndescrpt = net_deriv_tensor.shape().dim_size(1) / nloc;
-    int nnei = nlist_tensor.shape().dim_size(1) / nloc;
+    int ndescrpt = nloc > 0 ? net_deriv_tensor.shape().dim_size(1) / nloc : 0;
+    int nnei = nloc > 0 ? nlist_tensor.shape().dim_size(1) / nloc : 0;
     // check the sizes
     OP_REQUIRES(context, (nframes == in_deriv_tensor.shape().dim_size(0)),
                 errors::InvalidArgument("number of samples should match"));
@@ -228,15 +223,10 @@ class ProdForceSeROp : public OpKernel {
     const int* p_nlist = nlist_tensor.flat<int>().data();
 
     if (device == "GPU") {
-#if GOOGLE_CUDA
-      deepmd::prod_force_r_gpu_cuda(p_force, p_net_deriv, p_in_deriv, p_nlist,
-                                    nloc, nall, nnei, nframes);
-#endif  // GOOGLE_CUDA
-
-#if TENSORFLOW_USE_ROCM
-      deepmd::prod_force_r_gpu_rocm(p_force, p_net_deriv, p_in_deriv, p_nlist,
-                                    nloc, nall, nnei, nframes);
-#endif  // TENSORFLOW_USE_ROCM
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+      deepmd::prod_force_r_gpu(p_force, p_net_deriv, p_in_deriv, p_nlist, nloc,
+                               nall, nnei, nframes);
+#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
     } else if (device == "CPU") {
       deepmd::prod_force_r_cpu(p_force, p_net_deriv, p_in_deriv, p_nlist, nloc,
                                nall, nnei, nframes);

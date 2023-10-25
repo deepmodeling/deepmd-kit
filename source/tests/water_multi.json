@@ -1,5 +1,5 @@
 {
-  "_comment": " model parameters",
+  "_comment1": " model parameters",
   "model": {
     "descriptor": {
       "type": "se_a",
@@ -52,14 +52,14 @@
           "start_lr": 0.001,
           "decay_steps": 5000,
           "decay_rate": 0.95,
-          "_comment": "that's all"
+          "_comment2": "that's all"
         },
         "water_dipole": {
           "type": "exp",
           "start_lr": 0.001,
           "decay_steps": 5000,
           "decay_rate": 0.95,
-          "_comment": "that's all"
+          "_comment3": "that's all"
         }
       },
 
@@ -80,7 +80,7 @@
     }
   },
 
-  "_comment": " traing controls",
+  "_comment4": " traing controls",
   "systems": [
     "system"
   ],
@@ -100,5 +100,5 @@
   "profiling": false,
   "profiling_file": "timeline.json",
 
-  "_comment": "that's all"
+  "_comment5": "that's all"
 }

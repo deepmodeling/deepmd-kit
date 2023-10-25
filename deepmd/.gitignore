@@ -1,4 +1,2 @@
-op/_*.py
 pkg_config
 run_config.ini
-!op/__init__.py

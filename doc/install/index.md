@@ -8,3 +8,4 @@
 - [Install GROMACS](install-gromacs.md)
 - [Building conda packages](build-conda.md)
 - [Install Node.js interface](install-nodejs.md)
+- [Easy install the latest development version](easy-install-dev.md)

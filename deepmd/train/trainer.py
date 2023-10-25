@@ -250,7 +250,7 @@ class DPTrainer:
             if not self.multi_task_mode:
                 single_data = data
             else:
-                single_data = data[list(data.keys())[0]]
+                single_data = data[next(iter(data.keys()))]
             if self.ntypes < single_data.get_ntypes():
                 raise ValueError(
                     "The number of types of the training data is %d, but that of the "
@@ -325,6 +325,9 @@ class DPTrainer:
         log.info("built lr")
 
     def _build_loss(self):
+        if self.stop_batch == 0:
+            # l2 is not used if stop_batch is zero
+            return None, None
         if not self.multi_task_mode:
             l2_l, l2_more = self.loss.build(
                 self.learning_rate,
@@ -365,12 +368,12 @@ class DPTrainer:
                 self.place_holders[kk] = tf.placeholder(
                     GLOBAL_TF_FLOAT_PRECISION, [None], "t_" + kk
                 )
-            self._get_place_horders(data_requirement)
+            self._get_place_holders(data_requirement)
         else:
             if not self.multi_task_mode:
-                self._get_place_horders(data.get_data_dict())
+                self._get_place_holders(data.get_data_dict())
             else:
-                self._get_place_horders(data[list(data.keys())[0]].get_data_dict())
+                self._get_place_holders(data[next(iter(data.keys()))].get_data_dict())
 
         self.place_holders["type"] = tf.placeholder(tf.int32, [None], name="t_type")
         self.place_holders["natoms_vec"] = tf.placeholder(
@@ -449,6 +452,11 @@ class DPTrainer:
         return optimizer
 
     def _build_training(self):
+        if self.stop_batch == 0:
+            # self.train_op is not used if stop_batch is zero
+            self.train_op = None
+            return
+
         trainable_variables = tf.trainable_variables()
 
         if not self.multi_task_mode:
@@ -459,7 +467,7 @@ class DPTrainer:
                 var_list=trainable_variables,
                 name="train_step",
             )
-            train_ops = [apply_op] + self._extra_train_ops
+            train_ops = [apply_op, *self._extra_train_ops]
             self.train_op = tf.group(*train_ops)
         else:
             self.train_op = {}
@@ -471,7 +479,7 @@ class DPTrainer:
                     var_list=trainable_variables,
                     name=f"train_step_{fitting_key}",
                 )
-                train_ops = [apply_op] + self._extra_train_ops
+                train_ops = [apply_op, *self._extra_train_ops]
                 self.train_op[fitting_key] = tf.group(*train_ops)
         log.info("built training")
 
@@ -832,7 +840,7 @@ class DPTrainer:
                 pass
             if platform.system() != "Windows":
                 # by default one does not have access to create symlink on Windows
-                os.symlink(ori_ff, new_ff)
+                os.symlink(os.path.relpath(ori_ff, os.path.dirname(new_ff)), new_ff)
             else:
                 shutil.copyfile(ori_ff, new_ff)
         log.info("saved checkpoint %s" % self.save_ckpt)
@@ -1027,7 +1035,7 @@ class DPTrainer:
         if self.is_compress:
             self.saver.save(self.sess, os.path.join(os.getcwd(), self.save_ckpt))
 
-    def _get_place_horders(self, data_dict):
+    def _get_place_holders(self, data_dict):
         for kk in data_dict.keys():
             if kk == "type":
                 continue

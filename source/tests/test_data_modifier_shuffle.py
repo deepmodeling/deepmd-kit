@@ -81,7 +81,7 @@ class TestDataModifier(tf.test.TestCase):
         model.build(data)
 
         # freeze the graph
-        with self.test_session() as sess:
+        with self.cached_session() as sess:
             init_op = tf.global_variables_initializer()
             sess.run(init_op)
             graph = tf.get_default_graph()

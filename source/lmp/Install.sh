@@ -30,6 +30,17 @@ action() {
 	fi
 }
 
+if (test $1 = 1); then
+	if (test ! -e ../pppm.cpp); then
+		echo "Must install KSPACE package with USER-DEEPMD package"
+		exit 1
+	fi
+	if (test ! -e ../fix_ttm.cpp); then
+		echo "Must install EXTRA-FIX package with USER-DEEPMD package"
+		exit 1
+	fi
+fi
+
 # all package files with no dependencies
 
 for file in *.cpp *.h; do

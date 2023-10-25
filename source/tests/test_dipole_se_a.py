@@ -111,7 +111,7 @@ class TestModel(tf.test.TestCase):
             is_training: False,
         }
 
-        sess = self.test_session().__enter__()
+        sess = self.cached_session().__enter__()
         sess.run(tf.global_variables_initializer())
         [p, gp] = sess.run([dipole, gdipole], feed_dict=feed_dict_test)
 

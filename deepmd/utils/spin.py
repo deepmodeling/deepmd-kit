@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     List,
+    Optional,
 )
 
 from deepmd.env import (
@@ -24,9 +25,9 @@ class Spin:
 
     def __init__(
         self,
-        use_spin: List[bool] = None,
-        spin_norm: List[float] = None,
-        virtual_len: List[float] = None,
+        use_spin: Optional[List[bool]] = None,
+        spin_norm: Optional[List[float]] = None,
+        virtual_len: Optional[List[float]] = None,
     ) -> None:
         """Constructor."""
         self.use_spin = use_spin

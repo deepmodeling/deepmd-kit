@@ -78,26 +78,47 @@ class Model(ABC):
         Compression information for internal use
     """
 
+    @classmethod
+    def get_class_by_input(cls, input: dict):
+        """Get the class by input data.
+
+        Parameters
+        ----------
+        input : dict
+            The input data
+        """
+        # infer model type by fitting_type
+        from deepmd.model.frozen import (
+            FrozenModel,
+        )
+        from deepmd.model.linear import (
+            LinearEnergyModel,
+        )
+        from deepmd.model.multi import (
+            MultiModel,
+        )
+        from deepmd.model.pairwise_dprc import (
+            PairwiseDPRc,
+        )
+
+        model_type = input.get("type", "standard")
+        if model_type == "standard":
+            return StandardModel
+        elif model_type == "multi":
+            return MultiModel
+        elif model_type == "pairwise_dprc":
+            return PairwiseDPRc
+        elif model_type == "frozen":
+            return FrozenModel
+        elif model_type == "linear_ener":
+            return LinearEnergyModel
+        else:
+            raise ValueError(f"unknown model type: {model_type}")
+
     def __new__(cls, *args, **kwargs):
         if cls is Model:
             # init model
-            # infer model type by fitting_type
-            from deepmd.model.multi import (
-                MultiModel,
-            )
-            from deepmd.model.pairwise_dprc import (
-                PairwiseDPRc,
-            )
-
-            model_type = kwargs.get("type", "standard")
-            if model_type == "standard":
-                cls = StandardModel
-            elif model_type == "multi":
-                cls = MultiModel
-            elif model_type == "pairwise_dprc":
-                cls = PairwiseDPRc
-            else:
-                raise ValueError(f"unknown model type: {model_type}")
+            cls = cls.get_class_by_input(kwargs)
             return cls.__new__(cls, *args, **kwargs)
         return super().__new__(cls)
 
@@ -181,7 +202,7 @@ class Model(ABC):
         frz_model : str, optional
             The path to the frozen model
         ckpt_meta : str, optional
-            The path to the checkpoint and meta file
+            The path prefix of the checkpoint and meta files
         suffix : str, optional
             The suffix of the scope
         reuse : bool or tf.AUTO_REUSE, optional
@@ -249,7 +270,7 @@ class Model(ABC):
         frz_model : str, optional
             The path to the frozen model
         ckpt_meta : str, optional
-            The path to the checkpoint and meta file
+            The path prefix of the checkpoint and meta files
         suffix : str, optional
             The suffix of the scope
         reuse : bool or tf.AUTO_REUSE, optional
@@ -393,11 +414,11 @@ class Model(ABC):
         return 0
 
     @abstractmethod
-    def get_fitting(self) -> Union[str, dict]:
+    def get_fitting(self) -> Union[Fitting, dict]:
         """Get the fitting(s)."""
 
     @abstractmethod
-    def get_loss(self, loss: dict, lr) -> Union[Loss, dict]:
+    def get_loss(self, loss: dict, lr) -> Optional[Union[Loss, dict]]:
         """Get the loss function(s)."""
 
     @abstractmethod
@@ -461,6 +482,30 @@ class Model(ABC):
             feed_dict["t_aparam:0"] = kwargs["aparam"]
         return feed_dict
 
+    @classmethod
+    @abstractmethod
+    def update_sel(cls, global_jdata: dict, local_jdata: dict) -> dict:
+        """Update the selection and perform neighbor statistics.
+
+        Notes
+        -----
+        Do not modify the input data without copying it.
+
+        Parameters
+        ----------
+        global_jdata : dict
+            The global data, containing the training section
+        local_jdata : dict
+            The local data refer to the current class
+
+        Returns
+        -------
+        dict
+            The updated local data
+        """
+        cls = cls.get_class_by_input(local_jdata)
+        return cls.update_sel(global_jdata, local_jdata)
+
 
 class StandardModel(Model):
     """Standard model, which must contain a descriptor and a fitting.
@@ -521,7 +566,7 @@ class StandardModel(Model):
             self.descrpt = descriptor
         else:
             self.descrpt = Descriptor(
-                **descriptor, ntypes=len(type_map), spin=self.spin
+                **descriptor, ntypes=len(self.get_type_map()), spin=self.spin
             )
 
         if isinstance(fitting_net, Fitting):
@@ -603,3 +648,20 @@ class StandardModel(Model):
     def get_ntypes(self) -> int:
         """Get the number of types."""
         return self.ntypes
+
+    @classmethod
+    def update_sel(cls, global_jdata: dict, local_jdata: dict):
+        """Update the selection and perform neighbor statistics.
+
+        Parameters
+        ----------
+        global_jdata : dict
+            The global data, containing the training section
+        local_jdata : dict
+            The local data refer to the current class
+        """
+        local_jdata_cpy = local_jdata.copy()
+        local_jdata_cpy["descriptor"] = Descriptor.update_sel(
+            global_jdata, local_jdata["descriptor"]
+        )
+        return local_jdata_cpy

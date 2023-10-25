@@ -24,13 +24,16 @@ from deepmd.utils.sess import (
 from .descriptor import (
     Descriptor,
 )
+from .se import (
+    DescrptSe,
+)
 from .se_a import (
     DescrptSeA,
 )
 
 
 @Descriptor.register("se_a_ef")
-class DescrptSeAEf(Descriptor):
+class DescrptSeAEf(DescrptSe):
     r"""Smooth edition descriptor with Ef.
 
     Parameters

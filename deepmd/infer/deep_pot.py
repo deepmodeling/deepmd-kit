@@ -49,6 +49,8 @@ class DeepPot(DeepEval):
     auto_batch_size : bool or int or AutomaticBatchSize, default: True
         If True, automatic batch size will be used. If int, it will be used
         as the initial batch size.
+    input_map : dict, optional
+        The input map for tf.import_graph_def. Only work with default tf graph
 
     Examples
     --------
@@ -75,6 +77,7 @@ class DeepPot(DeepEval):
         load_prefix: str = "load",
         default_tf_graph: bool = False,
         auto_batch_size: Union[bool, int, AutoBatchSize] = True,
+        input_map: Optional[dict] = None,
     ) -> None:
         # add these tensors on top of what is defined by DeepTensor Class
         # use this in favor of dict update to move attribute from class to
@@ -108,21 +111,23 @@ class DeepPot(DeepEval):
             load_prefix=load_prefix,
             default_tf_graph=default_tf_graph,
             auto_batch_size=auto_batch_size,
+            input_map=input_map,
         )
 
         # load optional tensors
         operations = [op.name for op in self.graph.get_operations()]
         # check if the graph has these operations:
         # if yes add them
-        if "t_efield" in operations:
-            self._get_tensor("t_efield:0", "t_efield")
+
+        if ("%s/t_efield" % load_prefix) in operations:
+            self.tensors.update({"t_efield": "t_efield:0"})
             self.has_efield = True
         else:
             log.debug("Could not get tensor 't_efield:0'")
             self.t_efield = None
             self.has_efield = False
 
-        if "load/t_fparam" in operations:
+        if ("%s/t_fparam" % load_prefix) in operations:
             self.tensors.update({"t_fparam": "t_fparam:0"})
             self.has_fparam = True
         else:
@@ -130,7 +135,7 @@ class DeepPot(DeepEval):
             self.t_fparam = None
             self.has_fparam = False
 
-        if "load/t_aparam" in operations:
+        if ("%s/t_aparam" % load_prefix) in operations:
             self.tensors.update({"t_aparam": "t_aparam:0"})
             self.has_aparam = True
         else:
@@ -138,7 +143,7 @@ class DeepPot(DeepEval):
             self.t_aparam = None
             self.has_aparam = False
 
-        if "load/spin_attr/ntypes_spin" in operations:
+        if ("%s/spin_attr/ntypes_spin" % load_prefix) in operations:
             self.tensors.update({"t_ntypes_spin": "spin_attr/ntypes_spin:0"})
             self.has_spin = True
         else:
@@ -302,7 +307,10 @@ class DeepPot(DeepEval):
             natoms = len(atom_types[0])
         else:
             natoms = len(atom_types)
-        coords = np.reshape(np.array(coords), [-1, natoms * 3])
+        if natoms == 0:
+            assert coords.size == 0
+        else:
+            coords = np.reshape(np.array(coords), [-1, natoms * 3])
         nframes = coords.shape[0]
         return natoms, nframes
 
@@ -399,7 +407,6 @@ class DeepPot(DeepEval):
         atom_types,
         fparam=None,
         aparam=None,
-        atomic=False,
         efield=None,
         mixed_type=False,
     ):
@@ -411,7 +418,7 @@ class DeepPot(DeepEval):
             atom_types = np.array(atom_types, dtype=int).reshape([-1, natoms])
         else:
             atom_types = np.array(atom_types, dtype=int).reshape([-1])
-        coords = np.reshape(np.array(coords), [-1, natoms * 3])
+        coords = np.reshape(np.array(coords), [nframes, natoms * 3])
         if cells is None:
             pbc = False
             # make cells to work around the requirement of pbc

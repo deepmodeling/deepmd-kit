@@ -5,8 +5,24 @@ on:
   pull_request:
 
 jobs:
+  determine-arm64-runner:
+    runs-on: ubuntu-latest
+    permissions: read-all
+    outputs:
+      runner: ${{ steps.set-runner.outputs.runner }}
+    steps:
+      - name: Determine which runner to use for ARM64 build
+        id: set-runner
+        run: |
+          if [ "${{ github.repository_owner }}" == "deepmodeling" ]; then
+            echo "runner=[\"Linux\",\"ARM64\"]" >> $GITHUB_OUTPUT
+          else
+            echo "runner=\"ubuntu-latest\"" >> $GITHUB_OUTPUT
+          fi
+
   build_wheels:
     name: Build wheels for cp${{ matrix.python }}-${{ matrix.platform_id }}
+    needs: determine-arm64-runner
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -33,21 +49,20 @@ jobs:
             platform_id: win_amd64
             dp_variant: cpu
           # linux-aarch64
-          - os: ubuntu-latest
+          - os: ${{ fromJson(needs.determine-arm64-runner.outputs.runner) }}
             python: 310
             platform_id: manylinux_aarch64
             dp_variant: cpu
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
-          submodules: true
           # https://github.com/pypa/setuptools_scm/issues/480
           fetch-depth: 0
-      - uses: docker/setup-qemu-action@v2
+      - uses: docker/setup-qemu-action@v3
         name: Setup QEMU
-        if: matrix.platform_id == 'manylinux_aarch64'
+        if: matrix.platform_id == 'manylinux_aarch64' && matrix.os == 'ubuntu-latest'
       - name: Build wheels
-        uses: pypa/cibuildwheel@v2.14
+        uses: pypa/cibuildwheel@v2.16
         env:
           CIBW_BUILD_VERBOSITY: 1
           CIBW_ARCHS: all
@@ -60,13 +75,14 @@ jobs:
     name: Build source distribution
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
-          submodules: true
+          fetch-depth: 0
       - uses: actions/setup-python@v4
         name: Install Python
         with:
           python-version: '3.11'
+          cache: 'pip'
       - run: python -m pip install build
       - name: Build sdist
         run: python -m build --sdist
@@ -94,13 +110,13 @@ jobs:
     needs: [build_wheels]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v3
         with:
           name: artifact
           path: source/install/docker/dist
       - name: Log in to the Container registry
-        uses: docker/login-action@465a07811f14bebb1938fbed4728c6a1ff8901fc
+        uses: docker/login-action@343f7c4344506bcbf9b4de18042ae17996df046d
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -108,17 +124,52 @@ jobs:
 
       - name: Extract metadata (tags, labels) for Docker
         id: meta
-        uses: docker/metadata-action@818d4b7b91585d195f67373fd9cb0332e31a7175
+        uses: docker/metadata-action@96383f45573cb7f253c731d3b3ab81c87ef81934
         with:
           images: ghcr.io/deepmodeling/deepmd-kit
 
       - name: Build and push Docker image
-        uses: docker/build-push-action@2eb1c1961a95fc15694676618e422e8ba1d63825
+        uses: docker/build-push-action@0565240e2d4ab88bba5387d719585280857ece09
         with:
           context: source/install/docker
           push: ${{ github.repository_owner == 'deepmodeling' && github.event_name == 'push' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+  build_pypi_index:
+    needs: [build_wheels, build_sdist]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v3
+        with:
+          name: artifact
+          path: dist/packages
+      - uses: actions/setup-python@v4
+        name: Install Python
+        with:
+          python-version: '3.11'
+      - run: pip install dumb-pypi
+      - run: |
+          ls dist/packages > package_list.txt
+          dumb-pypi --output-dir dist --packages-url ../../packages --package-list package_list.txt --title "DeePMD-kit Developed Packages"
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v2
+        with:
+          path: dist
+  deploy_pypi_index:
+    needs: build_pypi_index
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/devel' && github.repository_owner == 'deepmodeling'
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v2
 
   pass:
     name: Pass testing build wheels

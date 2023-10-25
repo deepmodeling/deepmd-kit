@@ -1,5 +1,5 @@
 {
-  "_comment": " model parameters",
+  "_comment1": " model parameters",
   "model": {
     "type": "pairwise_dprc",
     "type_map": [
@@ -17,8 +17,7 @@
     },
     "qm_model": {
       "descriptor": {
-        "type": "se_atten",
-        "stripped_type_embedding": true,
+        "type": "se_atten_v2",
         "sel": 100,
         "rcut_smth": 5.80,
         "rcut": 6.00,
@@ -45,8 +44,7 @@
     },
     "qmmm_model": {
       "descriptor": {
-        "type": "se_atten",
-        "stripped_type_embedding": true,
+        "type": "se_atten_v2",
         "sel": 100,
         "rcut_smth": 5.80,
         "rcut": 6.00,
@@ -160,8 +158,8 @@
 
     "seed": 1,
 
-    "_comment": " display and restart",
-    "_comment": " frequencies counted in batch",
+    "_comment2": " display and restart",
+    "_comment3": " frequencies counted in batch",
     "disp_file": "lcurve.out",
     "disp_freq": 100,
     "numb_test": 1,
@@ -173,5 +171,5 @@
     "profiling_file": "timeline.json"
   },
 
-  "_comment": "that's all"
+  "_comment4": "that's all"
 }

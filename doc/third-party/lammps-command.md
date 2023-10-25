@@ -1,5 +1,14 @@
 # LAMMPS commands
 
+## units
+All units in LAMMPS except `lj` are supported. `lj` is not supported.
+
+The most commonly used units are `metal`, since the internal units of distance, energy, force, and charge in DeePMD-kit are `\AA`, `eV`, `eV / \AA`, and `proton charge`, respectively. These units are consistent with the `metal` units in LAMMPS.
+
+If one wants to use other units like `real` or `si`, it is welcome to do so. There is no need to do the unit conversion mannualy. The unit conversion is done automatically by LAMMPS.
+
+The only thing that one needs to take care is the unit of the output of `compute deeptensor/atom`. Working with `metal` units for `compute deeptensor/atom` is totally fine, since there is no unit conversion. For other unit styles, we currently assume that the output of the `compute deeptensor/atom` command has the unit of distance and have applied the unit conversion factor of distance. If a user wants to infer quantities with units other than distance, the user is encouraged to open a GitHub feature request, so that the unit conversion factor can be added.
+
 ## Enable DeePMD-kit plugin (plugin mode)
 
 If you are using the plugin mode, enable DeePMD-kit package in LAMMPS with `plugin` command:
@@ -29,7 +38,7 @@ pair_style deepmd models ... keyword value ...
 - models = frozen model(s) to compute the interaction.
 If multiple models are provided, then only the first model serves to provide energy and force prediction for each timestep of molecular dynamics,
 and the model deviation will be computed among all models every `out_freq` timesteps.
-- keyword = *out_file* or *out_freq* or *fparam* or *fparam_from_compute* or *atomic* or *relative* or *relative_v* or *aparam* or *ttm*
+- keyword = *out_file* or *out_freq* or *fparam* or *fparam_from_compute* or *aparam_from_compute* or *atomic* or *relative* or *relative_v* or *aparam* or *ttm*
 <pre>
     <i>out_file</i> value = filename
         filename = The file name for the model deviation output. Default is model_devi.out
@@ -39,8 +48,10 @@ and the model deviation will be computed among all models every `out_freq` times
         parameters = one or more frame parameters required for model evaluation.
     <i>fparam_from_compute</i> value = id
         id = compute id used to update the frame parameter.
+    <i>aparam_from_compute</i> value = id
+        id = compute id used to update the atom parameter.
     <i>atomic</i> = no value is required.
-        If this keyword is set, the model deviation of each atom will be output.
+        If this keyword is set, the force model deviation of each atom will be output.
     <i>relative</i> value = level
         level = The level parameter for computing the relative model deviation of the force
     <i>relative_v</i> value = level
@@ -60,6 +71,9 @@ pair_coeff * * O H
 
 pair_style deepmd cp.pb fparam_from_compute TEMP
 compute    TEMP all temp
+
+pair_style deepmd ener.pb aparam_from_compute 1
+compute    1 all ke/atom
 ```
 
 ### Description
@@ -80,11 +94,13 @@ $$E_{v_i}=\frac{\left|D_{v_i}\right|}{\left|v_i\right|+l}$$
 
 If the keyword `fparam` is set, the given frame parameter(s) will be fed to the model.
 If the keyword `fparam_from_compute` is set, the global parameter(s) from compute command (e.g., temperature from [compute temp command](https://docs.lammps.org/compute_temp.html)) will be fed to the model as the frame parameter(s).
+If the keyword `aparam_from_compute` is set, the atomic parameter(s) from compute command (e.g., per-atom translational kinetic energy from [compute ke/atom command](https://docs.lammps.org/compute_ke_atom.html)) will be fed to the model as the atom parameter(s).
 If the keyword `aparam` is set, the given atomic parameter(s) will be fed to the model, where each atom is assumed to have the same atomic parameter(s).
 If the keyword `ttm` is set, electronic temperatures from [fix ttm command](https://docs.lammps.org/fix_ttm.html) will be fed to the model as the atomic parameters.
 
 Only a single `pair_coeff` command is used with the deepmd style which specifies atom names. These are mapped to LAMMPS atom types (integers from 1 to Ntypes) by specifying Ntypes additional arguments after `* *` in the `pair_coeff` command.
 If atom names are not set in the `pair_coeff` command, the training parameter {ref}`type_map <model/type_map>` will be used by default.
+If a mapping value is specified as `NULL`, the mapping is not performed. This can be used when a deepmd potential is used as part of the hybrid pair style. The `NULL` values are placeholders for atom types that will be used with other potentials.
 If the training parameter {ref}`type_map <model/type_map>` is not set, atom names in the `pair_coeff` command cannot be set. In this case, atom type indexes in [`type.raw`](../data/system.md) (integers from 0 to Ntypes-1) will map to LAMMPS atom types.
 
 Spin is specified by keywords `virtual_len` and `spin_norm`. If the keyword `virtual_len` is set, the distance between virtual atom and its corresponding real atom for each type of magnetic atoms will be fed to the model as the spin parameters. If the keyword `spin_norm` is set, the magnitude of the magnetic moment for each type of magnetic atoms will be fed to the model as the spin parameters.
@@ -118,6 +134,7 @@ dump            1 all custom 100 water.dump id type c_dipole[1] c_dipole[2] c_di
 
 ### Restrictions
 - The `deeptensor/atom` compute is provided in the USER-DEEPMD package, which is compiled from the DeePMD-kit, visit the [DeePMD-kit website](https://github.com/deepmodeling/deepmd-kit) for more information.
+- For the issue of using a unit style for `compute deeptensor/atom`, refer to the discussions in [units](#units) of this page.
 
 
 ## Long-range interaction

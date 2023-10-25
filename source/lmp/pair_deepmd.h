@@ -75,6 +75,8 @@ class PairDeepMD : public Pair {
   std::string get_file_content(const std::string &model);
   std::vector<std::string> get_file_content(
       const std::vector<std::string> &models);
+  std::vector<std::string> type_names;
+  double ener_unit_cvt_factor, dist_unit_cvt_factor, force_unit_cvt_factor;
 
  protected:
   virtual void allocate();
@@ -119,8 +121,11 @@ class PairDeepMD : public Pair {
   double eps_v;
 
   void make_fparam_from_compute(std::vector<double> &fparam);
-  bool do_compute;
-  std::string compute_id;
+  bool do_compute_fparam;
+  std::string compute_fparam_id;
+  void make_aparam_from_compute(std::vector<double> &aparam);
+  bool do_compute_aparam;
+  std::string compute_aparam_id;
 
   void make_ttm_fparam(std::vector<double> &fparam);
 

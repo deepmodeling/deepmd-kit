@@ -49,7 +49,7 @@ class ProdForceSeAMaskOp : public OpKernel {
     int nloc = total_atom_num;
     int nall = total_atom_num;
     int ndescrpt = nall * 4;
-    int nnei = nlist_tensor.shape().dim_size(1) / nloc;
+    int nnei = nloc > 0 ? nlist_tensor.shape().dim_size(1) / nloc : 0;
 
     // check the sizes
     OP_REQUIRES(context, (nframes == in_deriv_tensor.shape().dim_size(0)),
