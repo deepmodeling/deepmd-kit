@@ -13,7 +13,7 @@ Similar to the `input.json` used in `ener` mode, training JSON is also divided i
 
 ## Theory
 
-To represent the first-order tensorial properties (i.e.~vector properties), we let the fitting network, denoted by $\mathcal F_{1}$, output an $M$-dimensional vector; then we have the representation,
+To represent the first-order tensorial properties (i.e. vector properties), we let the fitting network, denoted by $\mathcal F_{1}$, output an $M$-dimensional vector; then we have the representation,
 
 ```math
 (T_i^{(1)})_\alpha =

@@ -43,7 +43,7 @@ See the [JCTC paper](https://doi.org/10.1021/acs.jctc.1c00201) for details.
 Instead the normal _ab initio_ data, one needs to provide the correction from a low-level QM/MM method to a high-level QM/MM method:
 
 ```math
-$ E = E_\text{high-level QM/MM} - E_\text{low-level QM/MM}
+E = E_\text{high-level QM/MM} - E_\text{low-level QM/MM}
 ```
 
 Two levels of data use the same MM method, so $E_\text{MM}$ is eliminated.

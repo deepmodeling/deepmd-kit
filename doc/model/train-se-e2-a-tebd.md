@@ -9,10 +9,11 @@ The training input script is similar to that of [`se_e2_a`](train-se-e2-a.md), b
 Usually, when the type embedding approach is not enabled, for a system with multiple chemical species ($|\{\alpha_i\}| > 1$), parameters of the embedding network $\mathcal{N}_{e,\{2,3\}}$ are as follows chemical-species-wise:
 
 ```math
-    &(\mathcal{G}^i)_j = \mathcal{N}^{\alpha_i, \alpha_j}_{e,2}(s(r_{ij})) \quad \mathrm{or}\quad
+    (\mathcal{G}^i)_j = \mathcal{N}^{\alpha_i, \alpha_j}_{e,2}(s(r_{ij})) \quad \mathrm{or}\quad
     (\mathcal{G}^i)_j = \mathcal{N}^{ \alpha_j}_{e,2}(s(r_{ij})),
-    \\
-    &(\mathcal{G}^i)_{jk} =\mathcal{N}^{\alpha_j, \alpha_k}_{e,3}((\theta_i)_{jk}).
+```
+```math
+    (\mathcal{G}^i)_{jk} =\mathcal{N}^{\alpha_j, \alpha_k}_{e,3}((\theta_i)_{jk}).
 ```
 
 Thus, there will be $N_t^2$ or $N_t$ embedding networks where $N_t$ is the number of chemical species.
@@ -31,7 +32,7 @@ To reduce the number of NN parameters and improve computing efficiency when ther
 the type embedding $\mathcal{A}$ is introduced, represented as a NN function $\mathcal{N}_t$ of the atomic type $\alpha$:
 
 ```math
-    \mathcal{A}^i = \mathcal{N}_t\big( \text{one\textunderscore hot}(\alpha_i) \big),
+    \mathcal{A}^i = \mathcal{N}_t\big( \text{one\_hot}(\alpha_i) \big),
 ```
 
 where $\alpha_i$ is converted to a one-hot vector representing the chemical species before feeding to the NN.

@@ -28,8 +28,8 @@ where $\boldsymbol{r}_{ij}=\boldsymbol{r}_j-\boldsymbol{r}_i = (x_{ij}, y_{ij}, 
 ```math
     s(r)=
     \begin{cases}
-    \frac{1}{r}, & r<r_s, \\
-    \frac{1}{r} \big[ x^3 (-6 x^2 +15 x -10) +1 \big], & r_s \leq r<r_c, \\
+    \frac{1}{r}, & r \lt r_s, \\
+    \frac{1}{r} \big[ x^3 (-6 x^2 +15 x -10) +1 \big], & r_s \leq r \lt r_c, \\
     0, & r \geq r_c,
     \end{cases}
 ```
@@ -37,9 +37,9 @@ where $\boldsymbol{r}_{ij}=\boldsymbol{r}_j-\boldsymbol{r}_i = (x_{ij}, y_{ij}, 
 where $x=\frac{r - r_s}{ r_c - r_s}$  switches from 1 at $r_s$ to 0 at the cutoff radius $r_c$.
 The switching function $s(r)$ is smooth in the sense that the second-order derivative is continuous.
 
-Each row of the embedding matrix  $\mathcal{G}^i \in \mathbb{R}^{N_c \times M}$ consists of $M$ nodes from the output layer of an NN function $\mathcal{N}_g$ of $s(r_{ij})$:
+Each row of the embedding matrix  $\mathcal{G}^i \in \mathbb{R}^{N_c \times M}$ consists of $M$ nodes from the output layer of an NN function $\mathcal{N}_ {g}$ of $s(r_{ij})$:
 
-```
+```math
     (\mathcal{G}^i)_j = \mathcal{N}_{e,2}(s(r_{ij})),
 ```
 

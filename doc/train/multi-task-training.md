@@ -9,8 +9,8 @@ For each dataset, a training task is defined as
     \min_{\boldsymbol \theta}   L^{(t)} (\boldsymbol x^{(t)}; \boldsymbol  \theta^{(t)}, \tau), \quad t=1, \dots, n_t.
 ```
 
-During the multi-task training process, all tasks share one descriptor with trainable parameters $\boldsymbol{\theta}_{d}$, while each of them has its own fitting network with trainable parameters $\boldsymbol{\theta}_f^{(t)}$, thus
-$\boldsymbol{\theta}^{(t)} = \{ \boldsymbol{\theta}_{d} , \boldsymbol{\theta}_{f}^{(t)} \}$.
+During the multi-task training process, all tasks share one descriptor with trainable parameters $\boldsymbol{\theta}_ {d}$, while each of them has its own fitting network with trainable parameters $\boldsymbol{\theta}_ f^{(t)}$, thus
+$\boldsymbol{\theta}^{(t)} = \{ \boldsymbol{\theta}_ {d} , \boldsymbol{\theta}_ {f}^{(t)} \}$.
 At each training step, a task is randomly picked from ${1, \dots, n_t}$, and the Adam optimizer is executed to minimize $L^{(t)}$ for one step to update the parameter $\boldsymbol \theta^{(t)}$.
 If different fitting networks have the same architecture, they can share the parameters of some layers
 to improve training efficiency.[^1]

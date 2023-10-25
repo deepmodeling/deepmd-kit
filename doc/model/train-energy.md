@@ -4,11 +4,11 @@ In this section, we will take `$deepmd_source_dir/examples/water/se_e2_a/input.j
 
 ## Theory
 
-In the DP model, we let the fitting network $\mathcal{F}_0$ maps the descriptor $\mathcal D^i$ to a scalar, where the subscript ``0'' means that the output is a zero-order tensor (i.e.~scalar).  The model can then be used to predict the total potential energy of the system by
+In the DP model, we let the fitting network $\mathcal{F}_0$ maps the descriptor $\mathcal D^i$ to a scalar, where the subscript $0$ means that the output is a zero-order tensor (i.e. scalar).  The model can then be used to predict the total potential energy of the system by
 ```math
     E  =  \sum_i E_i = \sum_i \mathcal F_0 (\mathcal D^i),
 ```
-where the output of the fitting network is treated as the atomic potential energy contribution, i.e.~$E_i$.
+where the output of the fitting network is treated as the atomic potential energy contribution, i.e. $E_i$.
 The output scalar can also be treated as other scalar properties defined on an atom, for example, the partial charge of atom $i$.
 
 In some cases, atomic-specific or frame-specific  parameters, such as electron temperature, may be treated as extra input to the fitting network.
@@ -17,7 +17,7 @@ We denote the atomic and frame-specific parameters by $\boldsymbol{P}^i\in \math
     E_i=\mathcal{F}_0(\{\mathcal{D}^i, \boldsymbol{P}^i, \boldsymbol Q\}).
 ```
 
-The atomic force $\boldsymbol{F}_i$ and the virial tensor $\boldsymbol{\Xi} = (\Xi_{\alpha\beta})$ (if PBC is applied) can be derived from the potential energy $E$:
+The atomic force $\boldsymbol{F}_ {i}$ and the virial tensor $\boldsymbol{\Xi} = (\Xi_{\alpha\beta})$ (if PBC is applied) can be derived from the potential energy $E$:
 ```math
     F_{i,\alpha}=-\frac{\partial E}{\partial r_{i,\alpha}},
 ```
@@ -39,7 +39,7 @@ The properties $\eta$ of the energy loss function could be energy $E$, force $\b
 ```math
     L_{\Delta E}(\boldsymbol{x};\boldsymbol{\theta})=\frac{1}{N}({\Delta E}(\boldsymbol{x};\boldsymbol{\theta})-{\Delta E}^*)^2,
 ```
-where $F_{k,\alpha}$ is the $\alpha$-th component of the force on atom $k$, and the superscript ``$\ast$'' indicates the label of the property that should be provided in advance.
+where $F_{k,\alpha}$ is the $\alpha$-th component of the force on atom $k$, and the superscript $\ast$ indicates the label of the property that should be provided in advance.
 Using $N$ ensures that each loss of fitting property is averaged over atomic contributions before they contribute to the total loss by weight.
 
 If part of atoms is more important than others, for example, certain atoms play an essential role when calculating free energy profiles or kinetic isotope effects, the MSE of atomic forces with prefactors $q_{k}$ can also be used as the loss function:

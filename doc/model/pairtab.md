@@ -15,8 +15,8 @@ The interpolation weight $w_i$ is defined by
 ```math
     w_i =
     \begin{cases}
-    1, & \sigma_i <r_a, \\
-    u_i^3 (-6 u_i^2 +15 u_i -10) +1, & r_a \leq \sigma_i <r_b, \\
+    1, & \sigma_i \lt r_a, \\
+    u_i^3 (-6 u_i^2 +15 u_i -10) +1, & r_a \leq \sigma_i \lt r_b, \\
     0, & \sigma_i \geq r_b,
     \end{cases}
 ```

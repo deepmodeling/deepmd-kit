@@ -8,7 +8,7 @@ Note that it is sometimes called a "two-atom embedding descriptor" which means t
 
 The two-body embedding smooth edition of the DP descriptor $\mathcal{D}^i \in \mathbb{R}^{M \times M_{<}}$, is usually named DeepPot-SE descriptor.
 It is noted that the descriptor is a multi-body representation of the local environment of the atom $i$.
-We call it ``two-body embedding'' because the embedding network takes only the distance between atoms $i$ and $j$ (see below), but it is not implied that the descriptor takes only the pairwise information between $i$ and its neighbors.
+We call it two-body embedding because the embedding network takes only the distance between atoms $i$ and $j$ (see below), but it is not implied that the descriptor takes only the pairwise information between $i$ and its neighbors.
 The descriptor, using full information, is given by
 
 ```math
@@ -32,8 +32,8 @@ where $\boldsymbol{r}_{ij}=\boldsymbol{r}_j-\boldsymbol{r}_i = (x_{ij}, y_{ij}, 
 ```math
     s(r)=
     \begin{cases}
-    \frac{1}{r}, & r<r_s, \\
-    \frac{1}{r} \big[ x^3 (-6 x^2 +15 x -10) +1 \big], & r_s \leq r<r_c, \\
+    \frac{1}{r}, & r \lt r_s, \\
+    \frac{1}{r} \big[ x^3 (-6 x^2 +15 x -10) +1 \big], & r_s \leq r \lt r_c, \\
     0, & r \geq r_c,
     \end{cases}
 ```
@@ -41,13 +41,13 @@ where $\boldsymbol{r}_{ij}=\boldsymbol{r}_j-\boldsymbol{r}_i = (x_{ij}, y_{ij}, 
 where $x=\frac{r - r_s}{ r_c - r_s}$  switches from 1 at $r_s$ to 0 at the cutoff radius $r_c$.
 The switching function $s(r)$ is smooth in the sense that the second-order derivative is continuous.
 
-Each row of the embedding matrix  $\mathcal{G}^i \in \mathbb{R}^{N_c \times M}$ consists of $M$ nodes from the output layer of an NN function $\mathcal{N}_g$ of $s(r_{ij})$:
+Each row of the embedding matrix  $\mathcal{G}^i \in \mathbb{R}^{N_c \times M}$ consists of $M$ nodes from the output layer of an NN function $\mathcal{N}_ {g}$ of $s(r_{ij})$:
 
-```
+```math
     (\mathcal{G}^i)_j = \mathcal{N}_{e,2}(s(r_{ij})),
 ```
 
-where the subscript ``$e,2$'' is used to distinguish the NN from other NNs used in the DP model.
+where the subscript $e,2$ is used to distinguish the NN from other NNs used in the DP model.
 In the above equation, the network parameters are not explicitly written.
 $\mathcal{G}^i_< \in \mathbb{R}^{N_c \times M_<}$ only takes first $M_<$ columns of $\mathcal{G}^i$ to reduce the size of $\mathcal D^i$.
 $r_s$, $r_c$, $M$ and $M_<$ are hyperparameters provided by the user.

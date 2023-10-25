@@ -11,7 +11,8 @@ A Deep Potential (DP) model, denoted by $\mathcal{M}$, can be generally represen
 
 where $\boldsymbol{y}_i$ is the fitting properties, $\mathcal{F}$ is the fitting network, $\mathcal{D}$ is the descriptor.
 $\boldsymbol{x} = (\boldsymbol r_i, \alpha_i)$, with $\boldsymbol r_i$ being the Cartesian coordinates and $\alpha_i$ being the chemical species, denotes the degrees of freedom of the atom $i$.
-The indices of the neighboring atoms (i.e.~atoms within a certain cutoff radius) of atom $i$ are given by the notation $n(i)$.
+
+The indices of the neighboring atoms (i.e. atoms within a certain cutoff radius) of atom $i$ are given by the notation $n(i)$.
 Note that the Cartesian coordinates can be either under the periodic boundary condition (PBC) or in vacuum (under the open boundary condition).
 The network parameters are denoted by $\boldsymbol \theta = \{\boldsymbol \theta_d, \boldsymbol \theta_f\}$, where $\boldsymbol \theta_d$ and $\boldsymbol\theta_f$ yield the network parameters of the descriptor (if any) and those of the fitting network, respectively.
 From the above equation, one may compute the global property of the system by

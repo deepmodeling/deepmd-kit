@@ -2,7 +2,7 @@
 
 ## Theory
 
-Model deviation $\epsilon_y$ is the standard deviation of properties $\boldsymbol y$ inferred by an ensemble of models $\mathcal{M}_1, \dots, \mathcal{M}_{n_m}$ that are trained by the same dataset(s) with the model parameters initialized independently.
+Model deviation $\epsilon_y$ is the standard deviation of properties $\boldsymbol y$ inferred by an ensemble of models $\mathcal{M}_ 1, \dots, \mathcal{M}_{n_m}$ that are trained by the same dataset(s) with the model parameters initialized independently.
 The DeePMD-kit supports $\boldsymbol y$ to be the atomic force $\boldsymbol F_i$ and the virial tensor $\boldsymbol \Xi$.
 The model deviation is used to estimate the error of a model at a certain data frame, denoted by $\boldsymbol x$, containing the coordinates and chemical species of all atoms.
 We present the model deviation of the atomic force and the virial tensor
