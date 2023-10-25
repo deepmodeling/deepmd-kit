@@ -10,17 +10,25 @@ The input domain (a compact domain in $\mathbb R$) is divided into $L_c$ equally
 ```math
     g^l_m(x) = a^l_m x^5 + b^l_m x^4 + c^l_m x^3 + d^l_m x^2 + e^l_m x + f^l_m,\quad
     x \in [x_l, x_{l+1}),
-    \label{eq:compress}
 ```
 where $l=1,2,\dots,L_c$ is the index of the intervals, $x_1, \dots, x_{L_c}, x_{L_c+1}$ are the endpoints of the intervals, and $a^l_m$, $b^l_m$, $c^l_m$, $d^l_m$, $e^l_m$, and $f^l_m$ are the fitting parameters.
 The fitting parameters can be computed by the equations below:
 ```math
-    a^l_m &= \frac{1}{2\Delta x_l^5}[12h_{m,l}-6(y'_{m,l+1}+y'_{m,l})\Delta x_l + (y''_{m,l+1}-y''_{m,l})\Delta x_l^2], \\
-    b^l_m &= \frac{1}{2\Delta x_l^4}[-30h_{m,l} +(14y'_{m,l+1}+16y'_{m,l})\Delta x_l + (-2y''_{m,l+1}+3y''_{m,l})\Delta x_l^2], \\
-    c^l_m &= \frac{1}{2\Delta x_l^3}[20h_{m,l}-(8y'_{m,l+1}+12y'_{m,l})\Delta x_l + (y''_{m,l+1}-3y''_{m,l})\Delta x_l^2], \\
-    d^l_m &= \frac{1}{2}y''_{m,l}, \\
-    e^l_m &= y_{m,l}', \\
-    f^l_m &= y_{m,l},
+    a^l_m = \frac{1}{2\Delta x_l^5}[12h_{m,l}-6(y'_{m,l+1}+y'_{m,l})\Delta x_l + (y''_{m,l+1}-y''_{m,l})\Delta x_l^2],
+```
+```math
+    b^l_m = \frac{1}{2\Delta x_l^4}[-30h_{m,l} +(14y'_{m,l+1}+16y'_{m,l})\Delta x_l + (-2y''_{m,l+1}+3y''_{m,l})\Delta x_l^2],
+```
+```math
+    c^l_m = \frac{1}{2\Delta x_l^3}[20h_{m,l}-(8y'_{m,l+1}+12y'_{m,l})\Delta x_l + (y''_{m,l+1}-3y''_{m,l})\Delta x_l^2],
+```math
+    d^l_m = \frac{1}{2}y''_{m,l},
+```
+```math
+    e^l_m = y_{m,l}',
+```
+```math
+    f^l_m = y_{m,l},
 ```
 where $\Delta x_l=x_{l+1}-x_l$ denotes the size of the interval. $h_{m,l}=y_{m,l+1}-y_{m,l}$. $y_{m,l} = y_m(x_l)$, $y'_{m,l} = y'_m(x_l)$ and $y''_{m,l} = y''_m(x_l)$ are the value, the first-order derivative, and the second-order derivative of the $m$-th component of the target NN function at the interval point $x_l$, respectively.
 The first and second-order derivatives are easily calculated by the back-propagation of the NN functions.

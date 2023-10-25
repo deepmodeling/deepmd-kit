@@ -19,7 +19,6 @@ The interpolation weight $w_i$ is defined by
     u_i^3 (-6 u_i^2 +15 u_i -10) +1, & r_a \leq \sigma_i <r_b, \\
     0, & \sigma_i \geq r_b,
     \end{cases}
-    \label{eq:interpolation}
 ```
 where $u_i = (\sigma_i - r_a ) / (r_b - r_a)$.
 $E_i^0$ is the atom energy bias.

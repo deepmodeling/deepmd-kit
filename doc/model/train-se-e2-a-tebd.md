@@ -39,9 +39,11 @@ The NN function \del{will be introduced in Section~\ref{section:NN}}\add{$\mathc
 Based on Eqs.~\eqref{eq:G2} and \eqref{eq:nn-descrpt-e3}, the type embeddings of central and neighboring atoms $\mathcal{A}^i$ and $\mathcal{A}^j$ are added as an extra input of the embedding network $\mathcal{N}_{e,\{2,3\}}$:
 
 ```math
-    &(\mathcal{G}^i)_j = \mathcal{N}_{e,2}(\{s(r_{ij}), \mathcal{A}^i, \mathcal{A}^j\})  \quad \mathrm{or}\quad
-    (\mathcal{G}^i)_j = \mathcal{N}_{e,2}(\{s(r_{ij}), \mathcal{A}^j\}) , \label{eq:G2_tbed} \\
-    &(\mathcal{G}^i)_{jk} =\mathcal{N}_{e,3}(\{(\theta_i)_{jk}, \mathcal{A}^j, \mathcal{A}^k\}).
+    (\mathcal{G}^i)_j = \mathcal{N}_{e,2}(\{s(r_{ij}), \mathcal{A}^i, \mathcal{A}^j\})  \quad \mathrm{or}\quad
+    (\mathcal{G}^i)_j = \mathcal{N}_{e,2}(\{s(r_{ij}), \mathcal{A}^j\}) ,
+```
+```math
+    (\mathcal{G}^i)_{jk} =\mathcal{N}_{e,3}(\{(\theta_i)_{jk}, \mathcal{A}^j, \mathcal{A}^k\}).
 ```
 
 In fitting networks, the type embedding is inserted into the input of the fitting networks:

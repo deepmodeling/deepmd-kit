@@ -20,9 +20,13 @@ Note that we obtain $\mathcal{G}^i$ using the type embedding method by default i
 
 To perform the self-attention mechanism, the queries $\mathcal{Q}^{i,l} \in \mathbb{R}^{N_c\times d_k}$, keys $\mathcal{K}^{i,l} \in \mathbb{R}^{N_c\times d_k}$, and values $\mathcal{V}^{i,l} \in \mathbb{R}^{N_c\times d_v}$ are first obtained:
 ```math
-    \left(\mathcal{Q}^{i,l}\right)_{j}&=Q_{l}\left(\left(\mathcal{G}^{i,l-1}\right)_{j}\right),\\
-    \left(\mathcal{K}^{i,l}\right)_{j}&=K_{l}\left(\left(\mathcal{G}^{i,l-1}\right)_{j}\right), \\
-    \left(\mathcal{V}^{i,l}\right)_{j}&=V_{l}\left(\left(\mathcal{G}^{i,l-1}\right)_{j}\right),
+    \left(\mathcal{Q}^{i,l}\right)_{j}=Q_{l}\left(\left(\mathcal{G}^{i,l-1}\right)_{j}\right),
+```
+```math
+    \left(\mathcal{K}^{i,l}\right)_{j}=K_{l}\left(\left(\mathcal{G}^{i,l-1}\right)_{j}\right),
+```
+```math
+    \left(\mathcal{V}^{i,l}\right)_{j}=V_{l}\left(\left(\mathcal{G}^{i,l-1}\right)_{j}\right),
 ```
 where $Q_{l}$, $K_{l}$, $V_{l}$ represent three trainable linear transformations that output the queries and keys of dimension $d_k$ and values of dimension $d_v$, and $l$ is the index of the attention layer.
 The input embedding matrix to the attention layers,  denoted by $\mathcal{G}^{i,0}$, is chosen as the two-body embedding matrix.

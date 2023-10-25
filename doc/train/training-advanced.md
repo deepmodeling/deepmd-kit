@@ -8,7 +8,7 @@ In this section, we will take `$deepmd_source_dir/examples/water/se_e2_a/input.j
 
 The learning rate $\gamma$ decays exponentially:
 ```math
-    \gamma(\tau) = \gamma^0 r ^ {\lfloor  \tau/s \rfloor},\label{eq:learning_rate}
+    \gamma(\tau) = \gamma^0 r ^ {\lfloor  \tau/s \rfloor},
 ```
 where $\tau \in \mathbb{N}$ is the index of the training step, $\gamma^0  \in \mathbb{R}$ is the learning rate at the first step, and the decay rate $r$ is given by
 ```math

@@ -7,10 +7,11 @@ The DeePMD-kit supports $\boldsymbol y$ to be the atomic force $\boldsymbol F_i$
 The model deviation is used to estimate the error of a model at a certain data frame, denoted by $\boldsymbol x$, containing the coordinates and chemical species of all atoms.
 We present the model deviation of the atomic force and the virial tensor
 ```math
-    \epsilon_{\boldsymbol{F},i} (\boldsymbol x)&=
-    \sqrt{\langle \lVert \boldsymbol F_i(\boldsymbol x; \boldsymbol \theta_k)-\langle \boldsymbol F_i(\boldsymbol x; \boldsymbol \theta_k) \rangle \rVert^2 \rangle}, \\
-    \label{eq:69}
-    \epsilon_{\boldsymbol{\Xi},{\alpha \beta}} (\boldsymbol x)&=
+    \epsilon_{\boldsymbol{F},i} (\boldsymbol x)=
+    \sqrt{\langle \lVert \boldsymbol F_i(\boldsymbol x; \boldsymbol \theta_k)-\langle \boldsymbol F_i(\boldsymbol x; \boldsymbol \theta_k) \rangle \rVert^2 \rangle},
+```
+```math
+    \epsilon_{\boldsymbol{\Xi},{\alpha \beta}} (\boldsymbol x)=
     \frac{1}{N} \sqrt{\langle ( {\Xi}_{\alpha \beta}(\boldsymbol x; \boldsymbol \theta_k)-\langle {\Xi}_{\alpha \beta}(\boldsymbol x; \boldsymbol \theta_k) \rangle )^2 \rangle},
 ```
 where $\boldsymbol \theta_k$ is the parameters of the model $\mathcal M_k$, and the ensemble average $\langle\cdot\rangle$ is estimated by
@@ -24,12 +25,13 @@ If the magnitude of $\boldsymbol F_i$ or $\boldsymbol \Xi$ is quite large,
 a relative model deviation $\epsilon_{\boldsymbol{F},i,\text{rel}}$ or $\epsilon_{\boldsymbol{\Xi},\alpha\beta,\text{rel}}$ can be used instead of the absolute model deviation:
 ```math
     \epsilon_{\boldsymbol{F},i,\text{rel}}  (\boldsymbol x)
-    &=
+    =
     \frac{\lvert \epsilon_{\boldsymbol{F},i} (\boldsymbol x) \lvert}
-    {\lvert \langle \boldsymbol F_i (\boldsymbol x; \boldsymbol \theta_k) \rangle \lvert + \nu}, \\
-    \label{eq:72}
+    {\lvert \langle \boldsymbol F_i (\boldsymbol x; \boldsymbol \theta_k) \rangle \lvert + \nu},
+```
+```math
     \epsilon_{\boldsymbol{\Xi},\alpha\beta,\text{rel}}  (\boldsymbol x)
-    &=
+    =
     \frac{ \epsilon_{\boldsymbol{\Xi},\alpha\beta} (\boldsymbol x) }
     {\lvert \langle \boldsymbol \Xi (\boldsymbol x; \boldsymbol \theta_k) \rangle \lvert + \nu},
 ```

@@ -19,24 +19,32 @@ We denote the atomic and frame-specific parameters by $\boldsymbol{P}^i\in \math
 
 The atomic force $\boldsymbol{F}_i$ and the virial tensor $\boldsymbol{\Xi} = (\Xi_{\alpha\beta})$ (if PBC is applied) can be derived from the potential energy $E$:
 ```math
-    F_{i,\alpha}&=-\frac{\partial E}{\partial r_{i,\alpha}}, \\
-    \Xi_{\alpha\beta}&=-\sum_{\gamma} \frac{\partial E}{\partial h_{\gamma\alpha}} h_{\gamma\beta},
+    F_{i,\alpha}=-\frac{\partial E}{\partial r_{i,\alpha}},
+```
+```math
+    \Xi_{\alpha\beta}=-\sum_{\gamma} \frac{\partial E}{\partial h_{\gamma\alpha}} h_{\gamma\beta},
 ```
 where $r_{i,\alpha}$ and $F_{i,\alpha}$ denotes the $\alpha$-th component of the coordinate and force of atom $i$. $h_{\alpha\beta}$ is the $\beta$-th component of the $\alpha$-th basis vector of the simulation region.
 
 The properties $\eta$ of the energy loss function could be energy $E$, force $\boldsymbol{F}$, virial $\boldsymbol{\Xi}$, relative energy $\Delta E$, or any combination among them, and the loss functions of them are
 ```math
-    L_E(\boldsymbol{x};\boldsymbol{\theta})&=\frac{1}{N}(E(\boldsymbol{x};\boldsymbol{\theta})-E^*)^2, \\
-    L_F(\boldsymbol{x};\boldsymbol{\theta})&=\frac{1}{3N}\sum_{k=1}^{N}\sum_{\alpha=1}^3(F_{k,\alpha}(\boldsymbol{x};\boldsymbol{\theta})-F_{k,\alpha}^*)^2, \label{eq:loss_f} \\
-    L_\Xi(\boldsymbol{x};\boldsymbol{\theta})&=\frac{1}{9N}\sum_{\alpha,\beta=1}^{3}(\Xi_{\alpha\beta}(\boldsymbol{x};\boldsymbol{\theta})-\Xi_{\alpha\beta}^*)^2, \\
-    L_{\Delta E}(\boldsymbol{x};\boldsymbol{\theta})&=\frac{1}{N}({\Delta E}(\boldsymbol{x};\boldsymbol{\theta})-{\Delta E}^*)^2,
+    L_E(\boldsymbol{x};\boldsymbol{\theta})=\frac{1}{N}(E(\boldsymbol{x};\boldsymbol{\theta})-E^*)^2,
+```
+```math
+    L_F(\boldsymbol{x};\boldsymbol{\theta})=\frac{1}{3N}\sum_{k=1}^{N}\sum_{\alpha=1}^3(F_{k,\alpha}(\boldsymbol{x};\boldsymbol{\theta})-F_{k,\alpha}^*)^2,
+```
+```math
+    L_\Xi(\boldsymbol{x};\boldsymbol{\theta})=\frac{1}{9N}\sum_{\alpha,\beta=1}^{3}(\Xi_{\alpha\beta}(\boldsymbol{x};\boldsymbol{\theta})-\Xi_{\alpha\beta}^*)^2,
+```
+```math
+    L_{\Delta E}(\boldsymbol{x};\boldsymbol{\theta})=\frac{1}{N}({\Delta E}(\boldsymbol{x};\boldsymbol{\theta})-{\Delta E}^*)^2,
 ```
 where $F_{k,\alpha}$ is the $\alpha$-th component of the force on atom $k$, and the superscript ``$\ast$'' indicates the label of the property that should be provided in advance.
 Using $N$ ensures that each loss of fitting property is averaged over atomic contributions before they contribute to the total loss by weight.
 
 If part of atoms is more important than others, for example, certain atoms play an essential role when calculating free energy profiles or kinetic isotope effects, the MSE of atomic forces with prefactors $q_{k}$ can also be used as the loss function:
 ```math
-    L_F^p(\mathbf{x};\boldsymbol{\theta})&=\frac{1}{3N}\sum_{k=1}^{N} \sum_{\alpha} q_{k} (F_{k,\alpha}(\mathbf{x};\boldsymbol{\theta})-F_{k,\alpha}^*)^2.
+    L_F^p(\mathbf{x};\boldsymbol{\theta})=\frac{1}{3N}\sum_{k=1}^{N} \sum_{\alpha} q_{k} (F_{k,\alpha}(\mathbf{x};\boldsymbol{\theta})-F_{k,\alpha}^*)^2.
 ```
 The atomic forces with larger prefactors will be fitted more accurately than those in other atoms.
 
