@@ -110,7 +110,8 @@ def get_tf_requirement(tf_version: str = "") -> dict:
         TensorFlow requirement, including cpu and gpu.
     """
     if tf_version == "":
-        tf_version = os.environ.get("TENSORFLOW_VERSION", "")
+        # TODO: revert after stable version released
+        tf_version = os.environ.get("TENSORFLOW_VERSION", "2.15.0rc0")
 
     extra_requires = []
     extra_select = {}
