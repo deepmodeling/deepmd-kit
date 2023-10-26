@@ -213,8 +213,9 @@ class PolarFittingSeA(Fitting):
                     # add polar_bias
                     polar_bias.append(all_stat["polarizability"][ss].reshape((1, 9)))
 
-            matrix, bias = np.concatenate(sys_matrix, axis=0), np.concatenate(
-                polar_bias, axis=0
+            matrix, bias = (
+                np.concatenate(sys_matrix, axis=0),
+                np.concatenate(polar_bias, axis=0),
             )
             atom_polar, _, _, _ = np.linalg.lstsq(matrix, bias, rcond=None)
             for itype in range(len(self.sel_type)):
