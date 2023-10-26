@@ -17,10 +17,11 @@ The descriptor, using full information, is given by
 
 where
 $N_c$ is the expected maximum number of neighboring atoms, which is the same constant for all atoms over all frames.
-A matrix with a dimension of $N_c$ will be padded if the number of neighboring atoms is less than $N_c$.$\mathcal{R}^i \in \mathbb{R}^{N_c \times 4}$ is the coordinate matrix, and each row of $\mathcal{R}^i$ can be constructed as
+A matrix with a dimension of $N_c$ will be padded if the number of neighboring atoms is less than $N_c$. $\mathcal{R}^i \in \mathbb{R}^{N_c \times 4}$ is the coordinate matrix, and each row of $\mathcal{R}^i$ can be constructed as
 
 ```math
     (\mathcal{R}^i)_j =
+    \{
     \begin{array}{cccc}
     s(r_{ij}) & \frac{s(r_{ij})x_{ij}}{r_{ij}} & \frac{s(r_{ij})y_{ij}}{r_{ij}} & \frac{s(r_{ij})z_{ij}}{r_{ij}}
     \end{array}

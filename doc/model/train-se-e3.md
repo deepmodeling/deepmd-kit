@@ -14,6 +14,7 @@ $\mathcal{R}^i$ is constructed as
 
 ```math
     (\mathcal{R}^i)_j =
+    \{
     \begin{array}{cccc}
     s(r_{ij}) & \frac{s(r_{ij})x_{ij}}{r_{ij}} & \frac{s(r_{ij})y_{ij}}{r_{ij}} & \frac{s(r_{ij})z_{ij}}{r_{ij}}
     \end{array}
