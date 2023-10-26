@@ -5,7 +5,6 @@
 #include "deepmd/c_api.h"
 
 int main() {
-    DP_ConvertPbtxtToPb("../../../source/tests/infer/deeppot.pbtxt",
-                                        "graph.pb");
-    return 0;
+  DP_ConvertPbtxtToPb("../../../source/tests/infer/deeppot.pbtxt", "graph.pb");
+  return 0;
 }
