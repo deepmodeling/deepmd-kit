@@ -115,8 +115,8 @@ class DPTrainer:
                 scale_lr_coef = np.sqrt(self.run_opt.world_size).real
             else:
                 scale_lr_coef = 1.0
-            lr_type = lr_param.get("type", "exp")
-            if lr_type == "exp":
+            self.lr_type = lr_param.get("type", "exp")
+            if self.lr_type == "exp":
                 lr = LearningRateExp(
                     lr_param["start_lr"], lr_param["stop_lr"], lr_param["decay_steps"]
                 )
@@ -129,7 +129,7 @@ class DPTrainer:
                     lr_param["start_lr"], lr_param["stop_lr"], lr_param["decay_steps"]
                 )
             else:
-                raise RuntimeError("unknown learning_rate type " + lr_type)
+                raise RuntimeError("unknown learning_rate type " + self.lr_type)
             return lr, scale_lr_coef
 
         # learning rate
@@ -563,29 +563,31 @@ class DPTrainer:
         is_first_step = True
         self.cur_batch = cur_batch
         if not self.multi_task_mode:
-            log.info(
-                "start training at lr %.2e (== %.2e), decay_step %d, decay_rate %f, final lr will be %.2e"
-                % (
-                    run_sess(self.sess, self.learning_rate),
-                    self.lr.value(cur_batch),
-                    self.lr.decay_steps_,
-                    self.lr.decay_rate_,
-                    self.lr.value(stop_batch),
-                )
-            )
-        else:
-            for fitting_key in self.fitting:
+            if self.lr_type == "exp":
                 log.info(
-                    "%s: start training at lr %.2e (== %.2e), decay_step %d, decay_rate %f, final lr will be %.2e"
+                    "start training at lr %.2e (== %.2e), decay_step %d, decay_rate %f, final lr will be %.2e"
                     % (
-                        fitting_key,
-                        run_sess(self.sess, self.learning_rate_dict[fitting_key]),
-                        self.lr_dict[fitting_key].value(cur_batch),
-                        self.lr_dict[fitting_key].decay_steps_,
-                        self.lr_dict[fitting_key].decay_rate_,
-                        self.lr_dict[fitting_key].value(stop_batch),
+                        run_sess(self.sess, self.learning_rate),
+                        self.lr.value(cur_batch),
+                        self.lr.decay_steps_,
+                        self.lr.decay_rate_,
+                        self.lr.value(stop_batch),
                     )
                 )
+        else:
+            for fitting_key in self.fitting:
+                if self.lr_type == "exp":
+                    log.info(
+                        "%s: start training at lr %.2e (== %.2e), decay_step %d, decay_rate %f, final lr will be %.2e"
+                        % (
+                            fitting_key,
+                            run_sess(self.sess, self.learning_rate_dict[fitting_key]),
+                            self.lr_dict[fitting_key].value(cur_batch),
+                            self.lr_dict[fitting_key].decay_steps_,
+                            self.lr_dict[fitting_key].decay_rate_,
+                            self.lr_dict[fitting_key].value(stop_batch),
+                        )
+                    )
 
         prf_options = None
         prf_run_metadata = None
