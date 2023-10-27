@@ -89,6 +89,7 @@ __all__ = [
     "global_cvt_2_tf_float",
     "global_cvt_2_ener_float",
     "MODEL_VERSION",
+    "SHARED_LIB_DIR",
     "SHARED_LIB_MODULE",
     "default_tf_session_config",
     "reset_default_tf_session_config",

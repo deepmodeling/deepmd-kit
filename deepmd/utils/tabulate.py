@@ -571,13 +571,13 @@ class DPTabulate:
                                 + xx
                             )
                             dy = op_module.unaggregated_dy_dx_s(
-                                yy,
+                                yy - xx,
                                 self.matrix["layer_" + str(layer + 1)][idx],
                                 xbar,
                                 tf.constant(self.functype),
                             ) + tf.ones([1, 1], yy.dtype)
                             dy2 = op_module.unaggregated_dy2_dx_s(
-                                yy,
+                                yy - xx,
                                 dy,
                                 self.matrix["layer_" + str(layer + 1)][idx],
                                 xbar,
@@ -626,26 +626,72 @@ class DPTabulate:
                             tf.matmul(yy, self.matrix["layer_" + str(layer + 1)][idx])
                             + self.bias["layer_" + str(layer + 1)][idx]
                         )
-                        tt, zz = self._layer_1(
-                            yy,
-                            self.matrix["layer_" + str(layer + 1)][idx],
-                            self.bias["layer_" + str(layer + 1)][idx],
-                        )
-                        dz = op_module.unaggregated_dy_dx(
-                            zz - tt,
-                            self.matrix["layer_" + str(layer + 1)][idx],
-                            dy,
-                            ybar,
-                            tf.constant(self.functype),
-                        )
-                        dy2 = op_module.unaggregated_dy2_dx(
-                            zz - tt,
-                            self.matrix["layer_" + str(layer + 1)][idx],
-                            dy,
-                            dy2,
-                            ybar,
-                            tf.constant(self.functype),
-                        )
+                        if self.neuron[layer] == self.neuron[layer - 1]:
+                            zz = (
+                                self._layer_0(
+                                    yy,
+                                    self.matrix["layer_" + str(layer + 1)][idx],
+                                    self.bias["layer_" + str(layer + 1)][idx],
+                                )
+                                + yy
+                            )
+                            dz = op_module.unaggregated_dy_dx(
+                                zz - yy,
+                                self.matrix["layer_" + str(layer + 1)][idx],
+                                dy,
+                                ybar,
+                                tf.constant(self.functype),
+                            )
+                            dy2 = op_module.unaggregated_dy2_dx(
+                                zz - yy,
+                                self.matrix["layer_" + str(layer + 1)][idx],
+                                dy,
+                                dy2,
+                                ybar,
+                                tf.constant(self.functype),
+                            )
+                        elif self.neuron[layer] == 2 * self.neuron[layer - 1]:
+                            tt, zz = self._layer_1(
+                                yy,
+                                self.matrix["layer_" + str(layer + 1)][idx],
+                                self.bias["layer_" + str(layer + 1)][idx],
+                            )
+                            dz = op_module.unaggregated_dy_dx(
+                                zz - tt,
+                                self.matrix["layer_" + str(layer + 1)][idx],
+                                dy,
+                                ybar,
+                                tf.constant(self.functype),
+                            )
+                            dy2 = op_module.unaggregated_dy2_dx(
+                                zz - tt,
+                                self.matrix["layer_" + str(layer + 1)][idx],
+                                dy,
+                                dy2,
+                                ybar,
+                                tf.constant(self.functype),
+                            )
+                        else:
+                            zz = self._layer_0(
+                                yy,
+                                self.matrix["layer_" + str(layer + 1)][idx],
+                                self.bias["layer_" + str(layer + 1)][idx],
+                            )
+                            dz = op_module.unaggregated_dy_dx(
+                                zz,
+                                self.matrix["layer_" + str(layer + 1)][idx],
+                                dy,
+                                ybar,
+                                tf.constant(self.functype),
+                            )
+                            dy2 = op_module.unaggregated_dy2_dx(
+                                zz,
+                                self.matrix["layer_" + str(layer + 1)][idx],
+                                dy,
+                                dy2,
+                                ybar,
+                                tf.constant(self.functype),
+                            )
                         dy = dz
                         yy = zz
 

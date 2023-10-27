@@ -353,27 +353,14 @@ class DeepmdDataSystem:
             elif auto_prob_style == "prob_sys_size":
                 probs = self.prob_nbatches
             elif auto_prob_style[:14] == "prob_sys_size;":
-                probs = self._prob_sys_size_ext(auto_prob_style)
+                probs = prob_sys_size_ext(
+                    auto_prob_style, self.get_nsystems(), self.nbatches
+                )
             else:
                 raise RuntimeError("Unknown auto prob style: " + auto_prob_style)
         else:
-            probs = self._process_sys_probs(sys_probs)
+            probs = process_sys_probs(sys_probs, self.nbatches)
         self.sys_probs = probs
-
-    def _get_sys_probs(self, sys_probs, auto_prob_style):  # depreciated
-        if sys_probs is None:
-            if auto_prob_style == "prob_uniform":
-                prob_v = 1.0 / float(self.nsystems)
-                prob = [prob_v for ii in range(self.nsystems)]
-            elif auto_prob_style == "prob_sys_size":
-                prob = self.prob_nbatches
-            elif auto_prob_style[:14] == "prob_sys_size;":
-                prob = self._prob_sys_size_ext(auto_prob_style)
-            else:
-                raise RuntimeError("unknown style " + auto_prob_style)
-        else:
-            prob = self._process_sys_probs(sys_probs)
-        return prob
 
     def get_batch(self, sys_idx: Optional[int] = None) -> dict:
         # batch generation style altered by Ziyao Li:
@@ -623,42 +610,44 @@ class DeepmdDataSystem:
                     ret = ii
         return ret
 
-    def _process_sys_probs(self, sys_probs):
-        sys_probs = np.array(sys_probs)
-        type_filter = sys_probs >= 0
-        assigned_sum_prob = np.sum(type_filter * sys_probs)
-        # 1e-8 is to handle floating point error; See #1917
-        assert (
-            assigned_sum_prob <= 1.0 + 1e-8
-        ), "the sum of assigned probability should be less than 1"
-        rest_sum_prob = 1.0 - assigned_sum_prob
-        if not np.isclose(rest_sum_prob, 0):
-            rest_nbatch = (1 - type_filter) * self.nbatches
-            rest_prob = rest_sum_prob * rest_nbatch / np.sum(rest_nbatch)
-            ret_prob = rest_prob + type_filter * sys_probs
-        else:
-            ret_prob = sys_probs
-        assert np.isclose(np.sum(ret_prob), 1), "sum of probs should be 1"
-        return ret_prob
 
-    def _prob_sys_size_ext(self, keywords):
-        block_str = keywords.split(";")[1:]
-        block_stt = []
-        block_end = []
-        block_weights = []
-        for ii in block_str:
-            stt = int(ii.split(":")[0])
-            end = int(ii.split(":")[1])
-            weight = float(ii.split(":")[2])
-            assert weight >= 0, "the weight of a block should be no less than 0"
-            block_stt.append(stt)
-            block_end.append(end)
-            block_weights.append(weight)
-        nblocks = len(block_str)
-        block_probs = np.array(block_weights) / np.sum(block_weights)
-        sys_probs = np.zeros([self.get_nsystems()])
-        for ii in range(nblocks):
-            nbatch_block = self.nbatches[block_stt[ii] : block_end[ii]]
-            tmp_prob = [float(i) for i in nbatch_block] / np.sum(nbatch_block)
-            sys_probs[block_stt[ii] : block_end[ii]] = tmp_prob * block_probs[ii]
-        return sys_probs
+def process_sys_probs(sys_probs, nbatch):
+    sys_probs = np.array(sys_probs)
+    type_filter = sys_probs >= 0
+    assigned_sum_prob = np.sum(type_filter * sys_probs)
+    # 1e-8 is to handle floating point error; See #1917
+    assert (
+        assigned_sum_prob <= 1.0 + 1e-8
+    ), "the sum of assigned probability should be less than 1"
+    rest_sum_prob = 1.0 - assigned_sum_prob
+    if not np.isclose(rest_sum_prob, 0):
+        rest_nbatch = (1 - type_filter) * nbatch
+        rest_prob = rest_sum_prob * rest_nbatch / np.sum(rest_nbatch)
+        ret_prob = rest_prob + type_filter * sys_probs
+    else:
+        ret_prob = sys_probs
+    assert np.isclose(np.sum(ret_prob), 1), "sum of probs should be 1"
+    return ret_prob
+
+
+def prob_sys_size_ext(keywords, nsystems, nbatch):
+    block_str = keywords.split(";")[1:]
+    block_stt = []
+    block_end = []
+    block_weights = []
+    for ii in block_str:
+        stt = int(ii.split(":")[0])
+        end = int(ii.split(":")[1])
+        weight = float(ii.split(":")[2])
+        assert weight >= 0, "the weight of a block should be no less than 0"
+        block_stt.append(stt)
+        block_end.append(end)
+        block_weights.append(weight)
+    nblocks = len(block_str)
+    block_probs = np.array(block_weights) / np.sum(block_weights)
+    sys_probs = np.zeros([nsystems])
+    for ii in range(nblocks):
+        nbatch_block = nbatch[block_stt[ii] : block_end[ii]]
+        tmp_prob = [float(i) for i in nbatch_block] / np.sum(nbatch_block)
+        sys_probs[block_stt[ii] : block_end[ii]] = tmp_prob * block_probs[ii]
+    return sys_probs

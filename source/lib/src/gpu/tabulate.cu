@@ -200,7 +200,9 @@ __global__ void tabulate_fusion_se_a_fifth_order_polynomial(
   FPTYPE var[6];
   for (int ii = 0; ii < nnei; ii++) {
     FPTYPE xx = em_x[block_idx * nnei + ii];
-    if (xx == ago && is_sorted) {
+    if (xx == ago && em[block_idx * nnei * 4 + ii * 4 + 1] == 0. &&
+        em[block_idx * nnei * 4 + ii * 4 + 2] == 0. &&
+        em[block_idx * nnei * 4 + ii * 4 + 3] == 0. && is_sorted) {
       unloop = true;
       breakpoint = ii;
     }
@@ -286,7 +288,9 @@ __global__ void tabulate_fusion_se_a_grad_fifth_order_polynomial(
   FPTYPE ago = GpuShuffleSync(0xffffffff, em_x[block_idx * nnei + nnei - 1], 0);
   for (int ii = warp_idx; ii < nnei; ii += KTILE) {
     FPTYPE xx = em_x[block_idx * nnei + ii];
-    if (ago == xx && is_sorted) {
+    if (ago == xx && em[block_idx * nnei * 4 + ii * 4 + 1] == 0. &&
+        em[block_idx * nnei * 4 + ii * 4 + 2] == 0. &&
+        em[block_idx * nnei * 4 + ii * 4 + 3] == 0. && is_sorted) {
       unloop = true;
       breakpoint = ii;
     }
@@ -393,7 +397,9 @@ __global__ void tabulate_fusion_se_a_grad_grad_fifth_order_polynomial(
   for (int ii = 0; ii < nnei; ii++) {
     FPTYPE xx = em_x[block_idx * nnei + ii];
     FPTYPE dz_xx = dz_dy_dem_x[block_idx * nnei + ii];
-    if (xx == ago && is_sorted) {
+    if (xx == ago && em[block_idx * nnei * 4 + ii * 4 + 1] == 0. &&
+        em[block_idx * nnei * 4 + ii * 4 + 2] == 0. &&
+        em[block_idx * nnei * 4 + ii * 4 + 3] == 0. && is_sorted) {
       unloop = true;
       breakpoint = ii;
     }

@@ -469,13 +469,6 @@ class DescrptSeA(DescrptSe):
                 "empty embedding-net are not supported in model compression!"
             )
 
-        for ii in range(len(self.filter_neuron) - 1):
-            if self.filter_neuron[ii] * 2 != self.filter_neuron[ii + 1]:
-                raise NotImplementedError(
-                    "Model Compression error: descriptor neuron [%s] is not supported by model compression! "
-                    "The size of the next layer of the neural network must be twice the size of the previous layer."
-                    % ",".join([str(item) for item in self.filter_neuron])
-                )
         if self.stripped_type_embedding:
             ret_two_side = get_pattern_nodes_from_graph_def(
                 graph_def, f"filter_type_all{suffix}/.+_two_side_ebd"

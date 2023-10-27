@@ -18,6 +18,7 @@ from packaging.version import (
 )
 
 from deepmd.env import (
+    SHARED_LIB_DIR,
     TF_VERSION,
     tf,
 )
@@ -74,7 +75,7 @@ else:
     raise RuntimeError("Unsupported platform")
 
 tf_dir = tf.sysconfig.get_lib()
-op_dir = str((Path(__file__).parent / "lib").absolute())
+op_dir = str(SHARED_LIB_DIR)
 
 
 cuda_library_paths = []

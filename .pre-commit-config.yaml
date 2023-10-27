@@ -30,13 +30,13 @@ repos:
       exclude: ^source/3rdparty
 -   repo: https://github.com/astral-sh/ruff-pre-commit
     # Ruff version.
-    rev: v0.0.292
+    rev: v0.1.1
     hooks:
     - id: ruff
       args: ["--fix"]
       exclude: ^source/3rdparty
 -   repo: https://github.com/psf/black-pre-commit-mirror
-    rev: 23.9.1
+    rev: 23.10.0
     hooks:
     -   id: black-jupyter
         exclude: ^source/3rdparty
@@ -54,7 +54,7 @@ repos:
     -   id: blacken-docs
 # C++
 -   repo: https://github.com/pre-commit/mirrors-clang-format
-    rev: v16.0.6
+    rev: v17.0.3
     hooks:
     -   id: clang-format
         exclude: ^source/3rdparty|source/lib/src/gpu/cudart/.+\.inc
