@@ -1010,13 +1010,42 @@ def learning_rate_exp():
     ]
     return args
 
+def learning_rate_cos():
+    doc_start_lr = "The learning rate the start of the training."
+    doc_stop_lr = "The desired learning rate at the end of the training."
+    doc_decay_steps = (
+        "Number of steps to decay over."
+    )
+
+    args = [
+        Argument("start_lr", float, optional=True, default=1e-3, doc=doc_start_lr),
+        Argument("stop_lr", float, optional=True, default=1e-8, doc=doc_stop_lr),
+        Argument("decay_steps", int, optional=True, default=100000, doc=doc_decay_steps),
+    ]
+    return args
+
+def learning_rate_cosrestarts():
+    doc_start_lr = "The learning rate the start of the training."
+    doc_stop_lr = "The desired learning rate at the end of the training."
+    doc_decay_steps = (
+        "Number of steps to decay over of the first decay."
+    )
+
+    args = [
+        Argument("start_lr", float, optional=True, default=1e-3, doc=doc_start_lr),
+        Argument("stop_lr", float, optional=True, default=1e-8, doc=doc_stop_lr),
+        Argument("decay_steps", int, optional=True, default=10000, doc=doc_decay_steps),
+    ]
+    return args
 
 def learning_rate_variant_type_args():
     doc_lr = "The type of the learning rate."
 
     return Variant(
         "type",
-        [Argument("exp", dict, learning_rate_exp())],
+        [Argument("exp", dict, learning_rate_exp()),
+         Argument("cos", dict, learning_rate_cos()),
+         Argument("cosrestart", dict, learning_rate_cosrestarts())],
         optional=True,
         default_tag="exp",
         doc=doc_lr,

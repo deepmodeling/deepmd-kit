@@ -58,6 +58,8 @@ from deepmd.utils.graph import (
 )
 from deepmd.utils.learning_rate import (
     LearningRateExp,
+    LearningRateCos,
+    LearningRateCosRestarts,
 )
 from deepmd.utils.sess import (
     run_sess,
@@ -116,6 +118,14 @@ class DPTrainer:
             lr_type = lr_param.get("type", "exp")
             if lr_type == "exp":
                 lr = LearningRateExp(
+                    lr_param["start_lr"], lr_param["stop_lr"], lr_param["decay_steps"]
+                )
+            elif self.lr_type == "cos":
+                lr = LearningRateCos(
+                    lr_param["start_lr"], lr_param["stop_lr"], lr_param["decay_steps"]
+                )
+            elif self.lr_type == "cosrestart":
+                lr = LearningRateCosRestarts(
                     lr_param["start_lr"], lr_param["stop_lr"], lr_param["decay_steps"]
                 )
             else:
