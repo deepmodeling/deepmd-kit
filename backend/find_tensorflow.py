@@ -95,7 +95,6 @@ def find_tensorflow() -> Tuple[Optional[str], List[str]]:
                 ]
             )
         requires.extend(get_tf_requirement()["cpu"])
-
         # setuptools will re-find tensorflow after installing setup_requires
         tf_install_dir = None
     return tf_install_dir, requires

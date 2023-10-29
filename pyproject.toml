@@ -25,7 +25,7 @@ classifiers = [
     "Programming Language :: C",
     "Programming Language :: C++",
     "Programming Language :: Python :: 3 :: Only",
-    "Environment :: GPU :: NVIDIA CUDA :: 12",
+    "Environment :: GPU :: NVIDIA CUDA :: 12 :: 12.2",
     "Intended Audience :: Science/Research",
     "Programming Language :: Python :: 3.7",
     "License :: OSI Approved :: GNU Lesser General Public License v3 (LGPLv3)",
