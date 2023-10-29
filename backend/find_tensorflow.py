@@ -95,8 +95,7 @@ def find_tensorflow() -> Tuple[Optional[str], List[str]]:
                     "tensorflow>=2.15.0rc0; platform_machine=='aarch64' or (platform_machine=='arm64' and platform_system == 'Darwin')",
                 ]
             )
-        else:
-            requires.extend(get_tf_requirement()["cpu"])
+        requires.extend(get_tf_requirement()["cpu"])
 
         # setuptools will re-find tensorflow after installing setup_requires
         tf_install_dir = None
