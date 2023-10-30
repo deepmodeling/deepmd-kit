@@ -85,7 +85,10 @@ class DPTabulate:
         # functype
         if activation_fn == ACTIVATION_FN_DICT["tanh"]:
             self.functype = 1
-        elif activation_fn == ACTIVATION_FN_DICT["gelu"]:
+        elif activation_fn in (
+            ACTIVATION_FN_DICT["gelu"],
+            ACTIVATION_FN_DICT["gelu_tf"],
+        ):
             self.functype = 2
         elif activation_fn == ACTIVATION_FN_DICT["relu"]:
             self.functype = 3
