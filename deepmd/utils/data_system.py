@@ -351,7 +351,7 @@ class DeepmdDataSystem:
                 probs = [prob_v for ii in range(self.nsystems)]
             elif auto_prob_style[:13] == "prob_sys_size":
                 if auto_prob_style == "prob_sys_size":
-                    prob_style = "prob_sys_size;0:{}:1.0".format(self.get_nsystems())
+                    prob_style = f"prob_sys_size;0:{self.get_nsystems()}:1.0"
                 else:
                     prob_style = auto_prob_style
                 probs = prob_sys_size_ext(
