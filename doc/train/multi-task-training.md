@@ -2,7 +2,7 @@
 
 ## Theory
 
-The multi-task training process can simultaneously handle different datasets with properties that can not be fitted in one network (e.g. properties from DFT calculations under different exchange-correlation functionals or different basis sets).
+The multi-task training process can simultaneously handle different datasets with properties that cannot be fitted in one network (e.g. properties from DFT calculations under different exchange-correlation functionals or different basis sets).
 These datasets are denoted by $\boldsymbol x^{(1)}, \dots, \boldsymbol x^{(n_t)}$.
 For each dataset, a training task is defined as
 ```math

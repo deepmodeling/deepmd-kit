@@ -6,7 +6,7 @@ The compression of the DP model uses three techniques, tabulated inference, oper
 
 For better performance, the NN inference can be replaced by tabulated function evaluations if the input of the NN is of dimension one.
 The idea is to approximate the output of the NN by a piece-wise polynomial fitting.
-The input domain (a compact domain in $\mathbb R$) is divided into $L_c$ equally spaced intervals, in which apply a fifth-order polynomial $g^l_m(x)$ approximation of the $m$-th output component of the NN function:
+The input domain (a compact domain in $\mathbb R$) is divided into $L_c$ equally spaced intervals, in which we apply a fifth-order polynomial $g^l_m(x)$ approximation of the $m$-th output component of the NN function:
 ```math
     g^l_m(x) = a^l_m x^5 + b^l_m x^4 + c^l_m x^3 + d^l_m x^2 + e^l_m x + f^l_m,\quad
     x \in [x_l, x_{l+1}),
@@ -21,6 +21,7 @@ The fitting parameters can be computed by the equations below:
 ```
 ```math
     c^l_m = \frac{1}{2\Delta x_l^3}[20h_{m,l}-(8y'_{m,l+1}+12y'_{m,l})\Delta x_l + (y''_{m,l+1}-3y''_{m,l})\Delta x_l^2],
+```
 ```math
     d^l_m = \frac{1}{2}y''_{m,l},
 ```

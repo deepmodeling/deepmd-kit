@@ -48,7 +48,7 @@ If part of atoms is more important than others, for example, certain atoms play 
 ```
 The atomic forces with larger prefactors will be fitted more accurately than those in other atoms.
 
-If some forces are quite large, for example, forces can be greater than 60~eV/\AA{} in high-temperature reactive simulations, one may also prefer the force loss is relative to the magnitude:
+If some forces are quite large, for example, forces can be greater than 60 eV/Å in high-temperature reactive simulations, one may also prefer the force loss is relative to the magnitude:
 ```math
     L^r_F(\boldsymbol{x};\boldsymbol{\theta})=\frac{1}{3N}\sum_{k=1}^{N}\sum_\alpha \left(\frac{F_{k,\alpha}(\boldsymbol{x};\boldsymbol{\theta})-F_{k,\alpha}^*}{\lvert\boldsymbol{F}^\ast_k\lvert + \nu}\right)^2.
 ```

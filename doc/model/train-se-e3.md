@@ -21,7 +21,7 @@ $\mathcal{R}^i$ is constructed as
     \},
 ```
 Currently, only the full information case of $\mathcal{R}^i$ is supported by the three-body embedding.
-Similar to Eq.~\eqref{eq:G2}, each element of $\mathcal{G}^i \in \mathbb{R}^{N_c \times N_c \times M}$ comes from $M$ nodes from the output layer of an NN $\mathcal{N}_{e,3}$ function:
+Each element of $\mathcal{G}^i \in \mathbb{R}^{N_c \times N_c \times M}$ comes from $M$ nodes from the output layer of an NN $\mathcal{N}_{e,3}$ function:
 
 ```math
     (\mathcal{G}^i)_{jk}=\mathcal{N}_{e,3}((\theta_i)_{jk}),
