@@ -20,7 +20,7 @@ Each row of the embedding matrix  $\mathcal{G}^i \in \mathbb{R}^{N_c \times M}$ 
     (\mathcal{G}^i)_j = \mathcal{N}_{e,2}(s(r_{ij})),
 ```
 
-where $\boldsymbol{r}_{ij}=\boldsymbol{r}_j-\boldsymbol{r}_i = (x_{ij}, y_{ij}, z_{ij})$ is the relative coordinate and $r_{ij}=\lVert \boldsymbol{r}_{ij} \lVert$ is its norm. The switching function $s(r)$ is defined as
+where $\boldsymbol{r}_ {ij}=\boldsymbol{r}_ j-\boldsymbol{r}_ i = (x_{ij}, y_{ij}, z_{ij})$ is the relative coordinate and $r_{ij}=\lVert \boldsymbol{r}_{ij} \lVert$ is its norm. The switching function $s(r)$ is defined as
 
 ```math
     s(r)=
