@@ -1857,12 +1857,8 @@ def normalize_multi_task(data):
             fitting_weight=fitting_weight,
         )
     else:
-        assert (
-            not multi_loss
-        ), "In single-task mode, please use 'model/loss' in stead of 'model/loss_dict'! "
-        assert (
-            not multi_learning_rate
-        ), "In single-task mode, please use 'model/learning_rate' in stead of 'model/learning_rate_dict'! "
+        assert not multi_loss, "In single-task mode, please use 'model/loss' in stead of 'model/loss_dict'! "
+        assert not multi_learning_rate, "In single-task mode, please use 'model/learning_rate' in stead of 'model/learning_rate_dict'! "
     return data
 
 
@@ -1912,9 +1908,7 @@ def normalize_learning_rate_dict(fitting_keys, learning_rate_dict):
     failed_learning_rate_keys = [
         item for item in learning_rate_dict if item not in fitting_keys
     ]
-    assert (
-        not failed_learning_rate_keys
-    ), "Learning rate dict key(s) {} not have corresponding fitting keys in {}! ".format(
+    assert not failed_learning_rate_keys, "Learning rate dict key(s) {} not have corresponding fitting keys in {}! ".format(
         str(failed_learning_rate_keys), str(list(fitting_keys))
     )
     new_dict = {}
@@ -1970,9 +1964,7 @@ def normalize_fitting_weight(fitting_keys, data_keys, fitting_weight=None):
         failed_weight_keys = [
             item for item in fitting_weight if item not in fitting_keys
         ]
-        assert (
-            not failed_weight_keys
-        ), "Fitting weight key(s) {} not have corresponding fitting keys in {}! ".format(
+        assert not failed_weight_keys, "Fitting weight key(s) {} not have corresponding fitting keys in {}! ".format(
             str(failed_weight_keys), str(list(fitting_keys))
         )
         sum_prob = 0.0

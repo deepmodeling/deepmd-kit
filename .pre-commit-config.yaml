@@ -35,11 +35,10 @@ repos:
     - id: ruff
       args: ["--fix"]
       exclude: ^source/3rdparty
--   repo: https://github.com/psf/black-pre-commit-mirror
-    rev: 23.10.1
-    hooks:
-    -   id: black-jupyter
-        exclude: ^source/3rdparty
+      types_or: [python, pyi, jupyter]
+    - id: ruff-format
+      exclude: ^source/3rdparty
+      types_or: [python, pyi, jupyter]
 # numpydoc
 -   repo: https://github.com/Carreau/velin
     rev: 0.0.12

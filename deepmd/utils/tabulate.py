@@ -333,8 +333,7 @@ class DPTabulate:
         elif isinstance(self.descrpt, deepmd.descriptor.DescrptSeT):
             tt = np.full((nspline, self.last_layer_size), stride1)
             tt[
-                int((lower - extrapolate * lower) / stride1)
-                + 1 : (
+                int((lower - extrapolate * lower) / stride1) + 1 : (
                     int((lower - extrapolate * lower) / stride1)
                     + int((upper - lower) / stride0)
                 ),

@@ -404,9 +404,7 @@ def get_nbor_stat(jdata, rcut, one_type: bool = False):
                 None,
             )
             tmp_data.get_batch()
-            assert (
-                tmp_data.get_type_map()
-            ), f"In multi-task mode, 'type_map.raw' must be defined in data systems {systems}! "
+            assert tmp_data.get_type_map(), f"In multi-task mode, 'type_map.raw' must be defined in data systems {systems}! "
             if train_data is None:
                 train_data = tmp_data
             else:
