@@ -32,7 +32,7 @@ To reduce the number of NN parameters and improve computing efficiency when ther
 the type embedding $\mathcal{A}$ is introduced, represented as a NN function $\mathcal{N}_t$ of the atomic type $\alpha$:
 
 ```math
-    \mathcal{A}^i = \mathcal{N}_t\big( \text{one_hot}(\alpha_i) \big),
+    \mathcal{A}^i = \mathcal{N}_t\big( \text{one hot}(\alpha_i) \big),
 ```
 
 where $\alpha_i$ is converted to a one-hot vector representing the chemical species before feeding to the NN.
