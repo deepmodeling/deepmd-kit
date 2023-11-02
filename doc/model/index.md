@@ -17,3 +17,4 @@
 - [Deep potential long-range](dplr.md)
 - [Deep Potential - Range Correction (DPRc)](dprc.md)
 - [Linear model](linear.md)
+- [Interpolation with a pairwise potential](pairtab.md)
