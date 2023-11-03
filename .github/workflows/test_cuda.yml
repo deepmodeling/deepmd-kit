@@ -37,7 +37,7 @@ jobs:
       run: python -m pip config --user set global.index-url https://mirrors.aliyun.com/pypi/simple/
     - run: python -m pip install -U "pip>=21.3.1,!=23.0.0"
     - run: python -m pip install "tensorflow>=2.15.0rc0"
-    - run: python -m pip install -v -e .[gpu,test,lmp,cu11] "ase @ https://gitlab.com/ase/ase/-/archive/8c5aa5fd6448c5cfb517a014dccf2b214a9dfa8f/ase-8c5aa5fd6448c5cfb517a014dccf2b214a9dfa8f.tar.gz"
+    - run: python -m pip install -v -e .[gpu,test,lmp,cu12] "ase @ https://gitlab.com/ase/ase/-/archive/8c5aa5fd6448c5cfb517a014dccf2b214a9dfa8f/ase-8c5aa5fd6448c5cfb517a014dccf2b214a9dfa8f.tar.gz"
       env:
         DP_BUILD_TESTING: 1
         DP_VARIANT: cuda
