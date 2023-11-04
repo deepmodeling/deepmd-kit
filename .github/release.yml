@@ -1,0 +1,31 @@
+changelog:
+  exclude:
+    authors:
+      - app/pre-commit-ci
+      - app/dependabot
+  categories:
+    - title: Breaking Changes
+      labels:
+        - "breaking change"
+    - title: New Features
+      labels:
+        - "new feature"
+    - title: Enhancement
+      labels:
+        - enhancement
+    - title: Documentation
+      labels:
+        - Docs
+      exclude:
+        labels:
+          - build
+          - bug
+    - title: Build and release
+      labels:
+        - build
+    - title: Bug fixings
+      labels:
+        - bug
+    - title: Other Changes
+      labels:
+        - "*"
