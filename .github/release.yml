@@ -15,7 +15,10 @@ changelog:
         - enhancement
     - title: Documentation
       labels:
+        # automatically added
         - Docs
+        # for docs outside the doc directory
+        - "other docs"
       exclude:
         labels:
           - build
