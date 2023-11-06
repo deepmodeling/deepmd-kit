@@ -5,7 +5,9 @@ if(USE_CUDA_TOOLKIT)
   project(deepmd_op_cuda)
   set(GPU_LIB_NAME deepmd_op_cuda)
 
-  set(CMAKE_CUDA_ARCHITECTURES all)
+  if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
+    set(CMAKE_CUDA_ARCHITECTURES all)
+  endif()
   enable_language(CUDA)
   set(CMAKE_CUDA_STANDARD 11)
   add_compile_definitions(
