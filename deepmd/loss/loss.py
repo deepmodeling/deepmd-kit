@@ -1,21 +1,15 @@
-from abc import (
-    ABCMeta,
-    abstractmethod,
-)
-from typing import (
-    Dict,
-    Tuple,
-)
+from abc import ABCMeta
+from abc import abstractmethod
+from typing import Dict
+from typing import Tuple
 
-from deepmd.env import (
-    tf,
-)
+from deepmd.env import tf
 
 
 class Loss(metaclass=ABCMeta):
     """The abstract class for the loss function."""
 
-    @abstractmethod
+    # @abstractmethod
     def build(
         self,
         learning_rate: tf.Tensor,
@@ -46,6 +40,7 @@ class Loss(metaclass=ABCMeta):
         dict[str, tf.Tensor]
             A dictionary that maps loss keys to more loss tensors
         """
+        pass
 
     @abstractmethod
     def eval(

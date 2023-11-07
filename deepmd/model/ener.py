@@ -1,33 +1,22 @@
-from typing import (
-    List,
-    Optional,
-)
+from typing import List
+from typing import Optional
 
 import numpy as np
 
-from deepmd.env import (
-    MODEL_VERSION,
-    global_cvt_2_ener_float,
-    op_module,
-    tf,
-)
-from deepmd.utils.pair_tab import (
-    PairTab,
-)
-from deepmd.utils.spin import (
-    Spin,
-)
+from deepmd.env import MODEL_VERSION
+from deepmd.env import global_cvt_2_ener_float
+from deepmd.env import op_module
+from deepmd.env import paddle
+from deepmd.env import tf
+from deepmd.utils.pair_tab import PairTab
+from deepmd.utils.spin import Spin
 
-from .model import (
-    Model,
-)
-from .model_stat import (
-    make_stat_input,
-    merge_sys_stat,
-)
+from .model import Model
+from .model_stat import make_stat_input
+from .model_stat import merge_sys_stat
 
 
-class EnerModel(Model):
+class EnerModel(Model, paddle.nn.Layer):
     """Energy model.
 
     Parameters
@@ -69,6 +58,8 @@ class EnerModel(Model):
         sw_rmax: Optional[float] = None,
         spin: Optional[Spin] = None,
     ) -> None:
+        super().__init__()
+        # super(EnerModel, self).__init__(name_scope="EnerModel")
         """Constructor."""
         # descriptor
         self.descrpt = descrpt
@@ -96,6 +87,11 @@ class EnerModel(Model):
             self.sw_rmax = sw_rmax
         else:
             self.srtab = None
+
+        # self.type_map = " ".join(self.type_map)
+        self.t_tmap = " ".join(self.type_map)
+        self.t_mt = self.model_type
+        self.t_ver = MODEL_VERSION
 
     def get_rcut(self):
         return self.rcut
@@ -144,7 +140,7 @@ class EnerModel(Model):
         else:
             self.fitting.compute_output_stats(all_stat)
 
-    def build(
+    def forward(
         self,
         coord_,
         atype_,
@@ -157,172 +153,199 @@ class EnerModel(Model):
         suffix="",
         reuse=None,
     ):
+        # print(__file__, coord_.shape)
+        # print(__file__, atype_.shape)
+        # print(__file__, natoms.shape)
+        # print(__file__, box.shape)
+        # print(__file__, mesh.shape)
+        # for k, v in input_dict.items():
+        #     print(f"{__file__} {k} {v.shape}")
+
         if input_dict is None:
             input_dict = {}
-        with tf.variable_scope("model_attr" + suffix, reuse=reuse):
-            t_tmap = tf.constant(" ".join(self.type_map), name="tmap", dtype=tf.string)
-            t_mt = tf.constant(self.model_type, name="model_type", dtype=tf.string)
-            t_ver = tf.constant(MODEL_VERSION, name="model_version", dtype=tf.string)
+        # if self.srtab is not None:
+        #     tab_info, tab_data = self.srtab.get()
+        #     self.tab_info = tf.get_variable(
+        #         "t_tab_info",
+        #         tab_info.shape,
+        #         dtype=tf.float64,
+        #         trainable=False,
+        #         initializer=tf.constant_initializer(tab_info, dtype=tf.float64),
+        #     )
+        #     self.tab_data = tf.get_variable(
+        #         "t_tab_data",
+        #         tab_data.shape,
+        #         dtype=tf.float64,
+        #         trainable=False,
+        #         initializer=tf.constant_initializer(tab_data, dtype=tf.float64),
+        #     )
 
-            if self.srtab is not None:
-                tab_info, tab_data = self.srtab.get()
-                self.tab_info = tf.get_variable(
-                    "t_tab_info",
-                    tab_info.shape,
-                    dtype=tf.float64,
-                    trainable=False,
-                    initializer=tf.constant_initializer(tab_info, dtype=tf.float64),
-                )
-                self.tab_data = tf.get_variable(
-                    "t_tab_data",
-                    tab_data.shape,
-                    dtype=tf.float64,
-                    trainable=False,
-                    initializer=tf.constant_initializer(tab_data, dtype=tf.float64),
-                )
-
-        coord = tf.reshape(coord_, [-1, natoms[1] * 3])
-        atype = tf.reshape(atype_, [-1, natoms[1]])
-        input_dict["nframes"] = tf.shape(coord)[0]
+        coord = paddle.reshape(coord_, [-1, natoms[1] * 3])
+        atype = paddle.reshape(atype_, [-1, natoms[1]])
+        # input_dict["nframes"] = paddle.shape(coord)[0]  # 推理模型导出的时候注释掉这里，否则会报错
 
         # type embedding if any
-        if self.typeebd is not None:
-            type_embedding = self.typeebd.build(
-                self.ntypes,
-                reuse=reuse,
-                suffix=suffix,
-            )
-            input_dict["type_embedding"] = type_embedding
+        # if self.typeebd is not None:
+        #     type_embedding = self.typeebd.build(
+        #         self.ntypes,
+        #         reuse=reuse,
+        #         suffix=suffix,
+        #     )
+        #     input_dict["type_embedding"] = type_embedding
         # spin if any
-        if self.spin is not None:
-            type_spin = self.spin.build(
-                reuse=reuse,
-                suffix=suffix,
-            )
+        # if self.spin is not None:
+        #     type_spin = self.spin.build(
+        #         reuse=reuse,
+        #         suffix=suffix,
+        #     )
         input_dict["atype"] = atype_
 
-        dout = self.build_descrpt(
+        dout = self.descrpt(
             coord,
             atype,
             natoms,
             box,
             mesh,
             input_dict,
-            frz_model=frz_model,
-            ckpt_meta=ckpt_meta,
+            # frz_model=frz_model,
+            # ckpt_meta=ckpt_meta,
             suffix=suffix,
             reuse=reuse,
         )
+        # self.dout = dout
 
-        if self.srtab is not None:
-            nlist, rij, sel_a, sel_r = self.descrpt.get_nlist()
-            nnei_a = np.cumsum(sel_a)[-1]
-            nnei_r = np.cumsum(sel_r)[-1]
+        # if self.srtab is not None:
+        #     nlist, rij, sel_a, sel_r = self.descrpt.get_nlist()
+        #     nnei_a = np.cumsum(sel_a)[-1]
+        #     nnei_r = np.cumsum(sel_r)[-1]
 
-        atom_ener = self.fitting.build(
-            dout, natoms, input_dict, reuse=reuse, suffix=suffix
-        )
+        atom_ener = self.fitting(dout, natoms, input_dict, reuse=reuse, suffix=suffix)
         self.atom_ener = atom_ener
 
-        if self.srtab is not None:
-            sw_lambda, sw_deriv = op_module.soft_min_switch(
-                atype,
-                rij,
-                nlist,
-                natoms,
-                sel_a=sel_a,
-                sel_r=sel_r,
-                alpha=self.smin_alpha,
-                rmin=self.sw_rmin,
-                rmax=self.sw_rmax,
-            )
-            inv_sw_lambda = 1.0 - sw_lambda
-            # NOTICE:
-            # atom energy is not scaled,
-            # force and virial are scaled
-            tab_atom_ener, tab_force, tab_atom_virial = op_module.pair_tab(
-                self.tab_info,
-                self.tab_data,
-                atype,
-                rij,
-                nlist,
-                natoms,
-                sw_lambda,
-                sel_a=sel_a,
-                sel_r=sel_r,
-            )
-            energy_diff = tab_atom_ener - tf.reshape(atom_ener, [-1, natoms[0]])
-            tab_atom_ener = tf.reshape(sw_lambda, [-1]) * tf.reshape(
-                tab_atom_ener, [-1]
-            )
-            atom_ener = tf.reshape(inv_sw_lambda, [-1]) * atom_ener
-            energy_raw = tab_atom_ener + atom_ener
-        else:
-            energy_raw = atom_ener
+        # if self.srtab is not None:
+        #     sw_lambda, sw_deriv = op_module.soft_min_switch(
+        #         atype,
+        #         rij,
+        #         nlist,
+        #         natoms,
+        #         sel_a=sel_a,
+        #         sel_r=sel_r,
+        #         alpha=self.smin_alpha,
+        #         rmin=self.sw_rmin,
+        #         rmax=self.sw_rmax,
+        #     )
+        #     inv_sw_lambda = 1.0 - sw_lambda
+        #     # NOTICE:
+        #     # atom energy is not scaled,
+        #     # force and virial are scaled
+        #     tab_atom_ener, tab_force, tab_atom_virial = op_module.pair_tab(
+        #         self.tab_info,
+        #         self.tab_data,
+        #         atype,
+        #         rij,
+        #         nlist,
+        #         natoms,
+        #         sw_lambda,
+        #         sel_a=sel_a,
+        #         sel_r=sel_r,
+        #     )
+        #     energy_diff = tab_atom_ener - tf.reshape(atom_ener, [-1, natoms[0]])
+        #     tab_atom_ener = tf.reshape(sw_lambda, [-1]) * tf.reshape(
+        #         tab_atom_ener, [-1]
+        #     )
+        #     atom_ener = tf.reshape(inv_sw_lambda, [-1]) * atom_ener
+        #     energy_raw = tab_atom_ener + atom_ener
+        # else:
+        energy_raw = atom_ener
 
         nloc_atom = (
             natoms[0]
             if self.spin is None
-            else tf.reduce_sum(natoms[2 : 2 + len(self.spin.use_spin)])
+            else paddle.sum(natoms[2 : 2 + len(self.spin.use_spin)]).item()
         )
-        energy_raw = tf.reshape(
+        energy_raw = paddle.reshape(
             energy_raw, [-1, nloc_atom], name="o_atom_energy" + suffix
         )
-        energy = tf.reduce_sum(
-            global_cvt_2_ener_float(energy_raw), axis=1, name="o_energy" + suffix
-        )
+        energy = paddle.sum(energy_raw, axis=1, name="o_energy" + suffix)
 
         force, virial, atom_virial = self.descrpt.prod_force_virial(atom_ener, natoms)
 
-        if self.srtab is not None:
-            sw_force = op_module.soft_min_force(
-                energy_diff, sw_deriv, nlist, natoms, n_a_sel=nnei_a, n_r_sel=nnei_r
-            )
-            force = force + sw_force + tab_force
+        # if self.srtab is not None:
+        #     sw_force = op_module.soft_min_force(
+        #         energy_diff, sw_deriv, nlist, natoms, n_a_sel=nnei_a, n_r_sel=nnei_r
+        #     )
+        #     force = force + sw_force + tab_force
 
-        force = tf.reshape(force, [-1, 3 * natoms[1]])
+        force = paddle.reshape(force, [-1, 3 * natoms[1]])
         if self.spin is not None:
             # split and concatenate force to compute local atom force and magnetic force
-            judge = tf.equal(natoms[0], natoms[1])
-            force = tf.cond(
+            judge = paddle.equal(natoms[0], natoms[1])
+            force = paddle.where(
                 judge,
-                lambda: self.natoms_match(force, natoms),
-                lambda: self.natoms_not_match(force, natoms, atype),
+                self.natoms_match(force, natoms),
+                self.natoms_not_match(force, natoms, atype),
             )
 
-        force = tf.reshape(force, [-1, 3 * natoms[1]], name="o_force" + suffix)
+        force = paddle.reshape(force, [-1, 3 * natoms[1]], name="o_force" + suffix)
 
-        if self.srtab is not None:
-            sw_virial, sw_atom_virial = op_module.soft_min_virial(
-                energy_diff,
-                sw_deriv,
-                rij,
-                nlist,
-                natoms,
-                n_a_sel=nnei_a,
-                n_r_sel=nnei_r,
-            )
-            atom_virial = atom_virial + sw_atom_virial + tab_atom_virial
-            virial = (
-                virial
-                + sw_virial
-                + tf.reduce_sum(tf.reshape(tab_atom_virial, [-1, natoms[1], 9]), axis=1)
-            )
+        # if self.srtab is not None:
+        #     sw_virial, sw_atom_virial = op_module.soft_min_virial(
+        #         energy_diff,
+        #         sw_deriv,
+        #         rij,
+        #         nlist,
+        #         natoms,
+        #         n_a_sel=nnei_a,
+        #         n_r_sel=nnei_r,
+        #     )
+        #     atom_virial = atom_virial + sw_atom_virial + tab_atom_virial
+        #     virial = (
+        #         virial
+        #         + sw_virial
+        #         + tf.sum(tf.reshape(tab_atom_virial, [-1, natoms[1], 9]), axis=1)
+        #     )
 
-        virial = tf.reshape(virial, [-1, 9], name="o_virial" + suffix)
-        atom_virial = tf.reshape(
+        virial = paddle.reshape(virial, [-1, 9], name="o_virial" + suffix)
+        atom_virial = paddle.reshape(
             atom_virial, [-1, 9 * natoms[1]], name="o_atom_virial" + suffix
         )
 
         model_dict = {}
-        model_dict["energy"] = energy
-        model_dict["force"] = force
-        model_dict["virial"] = virial
-        model_dict["atom_ener"] = energy_raw
-        model_dict["atom_virial"] = atom_virial
-        model_dict["coord"] = coord
-        model_dict["atype"] = atype
+        model_dict["energy"] = energy  # [5]
+        model_dict["force"] = force  # [5, 576]
+        model_dict["virial"] = virial  # [5, 9]
+        model_dict["atom_ener"] = energy_raw  # [5, 192]
+        model_dict["atom_virial"] = atom_virial  # [5, 1728]
+        model_dict["coord"] = coord  # [5, 576]
+        model_dict["atype"] = atype  # [5, 192]
 
+        # model_dict["zdebug1"] = self.descrpt.descrpt
+        # model_dict["zdebug2"] = self.descrpt.descrpt_deriv
+        # model_dict["zdebug3"] = self.descrpt.rij
+        # model_dict["zdebug4"] = self.descrpt.nlist
+        # model_dict["zdebug5"] = self.descrpt.dout
+        # model_dict["zdebug6"] = self.descrpt.qmat
+        # model_dict["zdebug7"] = self.descrpt.xyz_scatter_input
+        # model_dict["zdebug8"] = self.descrpt.xyz_scatter_output
+
+        # model_dict["zdebug9"] = self.descrpt.debug_inputs
+        # model_dict["zdebug99"] = self.descrpt.debug_inputs_i
+        # model_dict["zdebug999"] = self.descrpt.debug_inputs_reshape
+        # model_dict["zdebug9999"] = self.descrpt.debug_xyz_scatter
+        # model_dict["zdebug99999"] = self.descrpt.debug_xyz_scatter_input
+        # model_dict["zdebug999999"] = self.descrpt.debug_xyz_scatter_output
+
+        # model_dict["z00_hidden1"] = self.descrpt.embedding_nets[0][0].hidden1
+        # model_dict["z00_hidden2"] = self.descrpt.embedding_nets[0][0].hidden2
+        # model_dict["z00_hidden3"] = self.descrpt.embedding_nets[0][0].hidden3
+        # model_dict["z00_xx1"] = self.descrpt.embedding_nets[0][0].xx1
+        # model_dict["z00_xx2"] = self.descrpt.embedding_nets[0][0].xx2
+        # model_dict["z00_xx3"] = self.descrpt.embedding_nets[0][0].xx3
+        # model_dict["z00_xx4"] = self.descrpt.embedding_nets[0][0].xx4
+        # model_dict["z00_0"] = self.descrpt.embedding_nets[0][0].weight[0]
+        # model_dict["z00_1"] = self.descrpt.embedding_nets[0][0].bias[0]
+        # model_dict["z00_2"] = self.descrpt.embedding_nets[0][0].xx1
+        # model_dict["z00_3"] = self.descrpt.embedding_nets[0][0].hidden1
         return model_dict
 
     def init_variables(

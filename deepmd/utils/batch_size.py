@@ -1,18 +1,12 @@
 import logging
 import os
-from typing import (
-    Callable,
-    Tuple,
-)
+from typing import Callable
+from typing import Tuple
 
 import numpy as np
 
-from deepmd.env import (
-    tf,
-)
-from deepmd.utils.errors import (
-    OutOfMemoryError,
-)
+from deepmd.env import tf
+from deepmd.utils.errors import OutOfMemoryError
 
 log = logging.getLogger(__name__)
 
@@ -100,9 +94,11 @@ class AutoBatchSize:
             OOM when batch size is 1
         """
         try:
+            # print(__file__, self.current_batch_size, natoms)
             n_batch, result = callable(
                 max(self.current_batch_size // natoms, 1), start_index
             )
+            # print(__file__, n_batch)
         except OutOfMemoryError as e:
             # TODO: it's very slow to catch OOM error; I don't know what TF is doing here
             # but luckily we only need to catch once
@@ -196,6 +192,7 @@ class AutoBatchSize:
                 for rr in result:
                     rr.reshape((n_batch, -1))
                 results.append(result)
+        # print(__file__, "here")
 
         r = tuple([np.concatenate(r, axis=0) for r in zip(*results)])
         if len(r) == 1:

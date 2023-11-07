@@ -3,37 +3,23 @@
 import argparse
 import logging
 import textwrap
-from pathlib import (
-    Path,
-)
-from typing import (
-    List,
-    Optional,
-)
+from pathlib import Path
+from typing import List
+from typing import Optional
 
-from deepmd import (
-    __version__,
-)
-from deepmd.common import (
-    clear_session,
-)
-from deepmd.entrypoints import (
-    compress,
-    convert,
-    doc_train_input,
-    freeze,
-    make_model_devi,
-    neighbor_stat,
-    test,
-    train_dp,
-    transfer,
-)
-from deepmd.loggers import (
-    set_log_handles,
-)
-from deepmd.nvnmd.entrypoints.train import (
-    train_nvnmd,
-)
+from deepmd import __version__
+from deepmd.common import clear_session
+from deepmd.entrypoints import compress
+from deepmd.entrypoints import convert
+from deepmd.entrypoints import doc_train_input
+from deepmd.entrypoints import freeze
+from deepmd.entrypoints import make_model_devi
+from deepmd.entrypoints import neighbor_stat
+from deepmd.entrypoints import test
+from deepmd.entrypoints import train_dp
+from deepmd.entrypoints import transfer
+from deepmd.loggers import set_log_handles
+from deepmd.nvnmd.entrypoints.train import train_nvnmd
 
 __all__ = ["main", "parse_args", "get_ll", "main_parser"]
 
@@ -217,8 +203,8 @@ def main_parser() -> argparse.ArgumentParser:
         ),
     )
     parser_frz.add_argument(
-        "-c",
-        "--checkpoint-folder",
+        "-i",
+        "--input_file",
         type=str,
         default=".",
         help="path to checkpoint folder",
@@ -230,26 +216,26 @@ def main_parser() -> argparse.ArgumentParser:
         default="frozen_model.pb",
         help="name of graph, will output to the checkpoint folder",
     )
-    parser_frz.add_argument(
-        "-n",
-        "--node-names",
-        type=str,
-        default=None,
-        help="the frozen nodes, if not set, determined from the model type",
-    )
-    parser_frz.add_argument(
-        "-w",
-        "--nvnmd-weight",
-        type=str,
-        default=None,
-        help="the name of weight file (.npy), if set, save the model's weight into the file",
-    )
-    parser_frz.add_argument(
-        "--united-model",
-        action="store_true",
-        default=False,
-        help="When in multi-task mode, freeze all nodes into one united model",
-    )
+    # parser_frz.add_argument(
+    #     "-n",
+    #     "--node-names",
+    #     type=str,
+    #     default=None,
+    #     help="the frozen nodes, if not set, determined from the model type",
+    # )
+    # parser_frz.add_argument(
+    #     "-w",
+    #     "--nvnmd-weight",
+    #     type=str,
+    #     default=None,
+    #     help="the name of weight file (.npy), if set, save the model's weight into the file",
+    # )
+    # parser_frz.add_argument(
+    #     "--united-model",
+    #     action="store_true",
+    #     default=False,
+    #     help="When in multi-task mode, freeze all nodes into one united model",
+    # )
 
     # * test script ********************************************************************
     parser_tst = subparsers.add_parser(

@@ -1,22 +1,13 @@
-from typing import (
-    List,
-    Optional,
-    Union,
-)
+from typing import List
+from typing import Optional
+from typing import Union
 
-from deepmd.common import (
-    get_activation_func,
-    get_precision,
-)
-from deepmd.env import (
-    tf,
-)
-from deepmd.utils.graph import (
-    get_type_embedding_net_variables_from_graph_def,
-)
-from deepmd.utils.network import (
-    embedding_net,
-)
+from deepmd.common import get_activation_func
+from deepmd.common import get_precision
+from deepmd.env import paddle
+from deepmd.env import tf
+from deepmd.utils.graph import get_type_embedding_net_variables_from_graph_def
+from deepmd.utils.network import embedding_net
 
 
 def embed_atom_type(
@@ -47,15 +38,15 @@ def embed_atom_type(
         The embedded type of each atom.
         It has the shape of [numb_atoms, embedding_dim]
     """
-    te_out_dim = type_embedding.get_shape().as_list()[-1]
+    te_out_dim = type_embedding.shape[-1]
     atype = []
     for ii in range(ntypes):
-        atype.append(tf.tile([ii], [natoms[2 + ii]]))
-    atype = tf.concat(atype, axis=0)
-    atm_embed = tf.nn.embedding_lookup(
-        type_embedding, tf.cast(atype, dtype=tf.int32)
+        atype.append(paddle.tile([ii], [natoms[2 + ii]]))
+    atype = paddle.concat(atype, axis=0)
+    atm_embed = paddle.nn.functional.embedding(
+        paddle.cast(atype, dtype=paddle.int32), type_embedding
     )  # (nf*natom)*nchnl
-    atm_embed = tf.reshape(atm_embed, [-1, te_out_dim])
+    atm_embed = paddle.reshape(atm_embed, [-1, te_out_dim])
     return atm_embed
 
 

@@ -1,43 +1,27 @@
 """Test trained DeePMD model."""
 import logging
-from pathlib import (
-    Path,
-)
-from typing import (
-    TYPE_CHECKING,
-    Dict,
-    List,
-    Optional,
-    Tuple,
-)
+from pathlib import Path
+from typing import TYPE_CHECKING
+from typing import Dict
+from typing import List
+from typing import Optional
+from typing import Tuple
 
 import numpy as np
 
-from deepmd import (
-    DeepPotential,
-)
-from deepmd.common import (
-    expand_sys_str,
-)
+from deepmd import DeepPotential
+from deepmd.common import expand_sys_str
 from deepmd.utils import random as dp_random
-from deepmd.utils.data import (
-    DeepmdData,
-)
-from deepmd.utils.weight_avg import (
-    weighted_average,
-)
+from deepmd.utils.data import DeepmdData
+from deepmd.utils.weight_avg import weighted_average
 
 if TYPE_CHECKING:
-    from deepmd.infer import (
-        DeepDipole,
-        DeepDOS,
-        DeepPolar,
-        DeepPot,
-        DeepWFC,
-    )
-    from deepmd.infer.deep_tensor import (
-        DeepTensor,
-    )
+    from deepmd.infer import DeepDipole
+    from deepmd.infer import DeepDOS
+    from deepmd.infer import DeepPolar
+    from deepmd.infer import DeepPot
+    from deepmd.infer import DeepWFC
+    from deepmd.infer.deep_tensor import DeepTensor
 
 __all__ = ["test"]
 
@@ -260,7 +244,7 @@ def test_ener(
     data.add("energy", 1, atomic=False, must=False, high_prec=True)
     data.add("force", 3, atomic=True, must=False, high_prec=False)
     data.add("virial", 9, atomic=False, must=False, high_prec=False)
-    if dp.has_efield:
+    if dp.has_efield:  # False
         data.add("efield", 3, atomic=True, must=True, high_prec=False)
     if has_atom_ener:
         data.add("atom_ener", 1, atomic=True, must=True, high_prec=False)
@@ -298,6 +282,13 @@ def test_ener(
     else:
         aparam = None
 
+    # print(type(coord))
+    # print(type(box))
+    # print(type(atype))
+    # np.save("/workspace/hesensen/deepmd_backend/infer_align/coord_pd.npy", coord)
+    # np.save("/workspace/hesensen/deepmd_backend/infer_align/box_pd.npy", box)
+    # np.save("/workspace/hesensen/deepmd_backend/infer_align/atype_pd.npy", atype)
+    # exit()
     ret = dp.eval(
         coord,
         box,
@@ -341,6 +332,40 @@ def test_ener(
         )[1]
 
     diff_e = energy - test_data["energy"][:numb_test].reshape([-1, 1])
+    # print(energy)
+    """
+    [[-29857.71310608]
+    [-29863.80820815]
+    [-29860.15135615]
+    [-29854.51192426]
+    [-29863.13812543]
+    [-29855.93205087]
+    [-29855.50978599]
+    [-29865.49989375]
+    [-29859.1466963 ]
+    [-29857.09336879]
+    [-29862.98884167]
+    [-29859.11198703]
+    [-29861.66000458]
+    [-29861.923259  ]
+    [-29865.03699558]
+    [-29860.04100619]
+    [-29858.07084488]
+    [-29865.77369217]
+    [-29856.55031266]
+    [-29856.55155207]
+    [-29855.50095994]
+    [-29855.1020719 ]
+    [-29855.39086308]
+    [-29863.13015616]
+    [-29858.15176772]
+    [-29860.35238411]
+    [-29855.99364597]
+    [-29862.08350903]
+    [-29861.07073953]
+    [-29862.65406131]]
+    """
+    # exit()
     mae_e = mae(diff_e)
     rmse_e = rmse(diff_e)
     diff_f = force - test_data["force"][:numb_test]

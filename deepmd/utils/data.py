@@ -1,21 +1,15 @@
 #!/usr/bin/env python3
 
 import logging
-from typing import (
-    List,
-    Optional,
-)
+from typing import List
+from typing import Optional
 
 import numpy as np
 
-from deepmd.env import (
-    GLOBAL_ENER_FLOAT_PRECISION,
-    GLOBAL_NP_FLOAT_PRECISION,
-)
+from deepmd.env import GLOBAL_ENER_FLOAT_PRECISION
+from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
 from deepmd.utils import random as dp_random
-from deepmd.utils.path import (
-    DPPath,
-)
+from deepmd.utils.path import DPPath
 
 log = logging.getLogger(__name__)
 
@@ -458,7 +452,7 @@ class DeepmdData:
                     self.data_dict[kk]["ndof"],
                     atomic=self.data_dict[kk]["atomic"],
                     high_prec=self.data_dict[kk]["high_prec"],
-                    must=self.data_dict[kk]["must"],
+                    must=False,
                     type_sel=self.data_dict[kk]["type_sel"],
                     repeat=self.data_dict[kk]["repeat"],
                     default=self.data_dict[kk]["default"],
