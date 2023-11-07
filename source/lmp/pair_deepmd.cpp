@@ -339,24 +339,10 @@ void PairDeepMD::make_ttm_aparam(vector<double> &daparam) {
       int ixnode = static_cast<int>(xscale * nxnodes);
       int iynode = static_cast<int>(yscale * nynodes);
       int iznode = static_cast<int>(zscale * nznodes);
-      while (ixnode > nxnodes - 1) {
-        ixnode -= nxnodes;
-      }
-      while (iynode > nynodes - 1) {
-        iynode -= nynodes;
-      }
-      while (iznode > nznodes - 1) {
-        iznode -= nznodes;
-      }
-      while (ixnode < 0) {
-        ixnode += nxnodes;
-      }
-      while (iynode < 0) {
-        iynode += nynodes;
-      }
-      while (iznode < 0) {
-        iznode += nznodes;
-      }
+      // https://stackoverflow.com/a/1907585/9567349
+      ixnode = ((ixnode % nxnodes) + nxnodes) % nxnodes;
+      iynode = ((iynode % nynodes) + nynodes) % nynodes;
+      iznode = ((iznode % nznodes) + nznodes) % nznodes;
       daparam[ii] = T_electron[ixnode][iynode][iznode];
     }
   }
