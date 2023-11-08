@@ -8,7 +8,7 @@ from typing import (
 )
 
 try:
-    from deepmd_cli._version import version as __version__
+    from deepmd_utils._version import version as __version__
 except ImportError:
     __version__ = "unknown"
 

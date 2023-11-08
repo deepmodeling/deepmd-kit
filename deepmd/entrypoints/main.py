@@ -32,7 +32,7 @@ from deepmd.loggers import (
 from deepmd.nvnmd.entrypoints.train import (
     train_nvnmd,
 )
-from deepmd_cli.main import (
+from deepmd_utils.main import (
     get_ll,
     main_parser,
     parse_args,
