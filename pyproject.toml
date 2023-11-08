@@ -2,7 +2,7 @@
 requires = [
     # dynamic metadata API is still unstable
     # TODO: unpin the upper bound when it is stable
-    "scikit-build-core>=0.5,<0.6",
+    "scikit-build-core>=0.5,<0.7,!=0.6.0",
     "packaging",
 ]
 build-backend = "backend.dp_backend"
