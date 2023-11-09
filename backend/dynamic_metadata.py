@@ -27,7 +27,7 @@ def dynamic_metadata(
     _, _, find_libpython_requires, extra_scripts, tf_version = get_argument_from_env()
     if field == "scripts":
         return {
-            "dp": "deepmd_cli.main:main",
+            "dp": "deepmd_utils.main:main",
             **extra_scripts,
         }
     elif field == "optional-dependencies":

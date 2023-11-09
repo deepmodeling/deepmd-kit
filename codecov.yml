@@ -20,7 +20,7 @@ component_management:
       name: Python
       paths:
         - deepmd/**
-        - deepmd_cli/**
+        - deepmd_utils/**
     - component_id: module_op
       name: OP
       paths:

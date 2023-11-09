@@ -42,7 +42,7 @@ jobs:
         DP_VARIANT: cuda
         CUDA_PATH: /usr/local/cuda-11.8
     - run: dp --version
-    - run: python -m pytest -s --cov=deepmd --cov=deepmd_cli source/tests --durations=0
+    - run: python -m pytest -s --cov=deepmd --cov=deepmd_utils source/tests --durations=0
     - run: source/install/test_cc_local.sh
       env:
         OMP_NUM_THREADS: 1
