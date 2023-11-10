@@ -1,4 +1,4 @@
-# LAMMPS commands
+# Run MD with LAMMPS
 
 ## units
 All units in LAMMPS except `lj` are supported. `lj` is not supported.
