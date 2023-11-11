@@ -43,16 +43,20 @@ class Fitting(PluginVariant):
         """
         return Fitting.__plugins.register(key)
 
+    @classmethod
+    def get_class_by_input(cls, input: dict):
+        try:
+            fitting_type = input["type"]
+        except KeyError:
+            raise KeyError("the type of fitting should be set by `type`")
+        if fitting_type in Fitting.__plugins.plugins:
+            return Fitting.__plugins.plugins[fitting_type]
+        else:
+            raise RuntimeError("Unknown descriptor type: " + fitting_type)
+
     def __new__(cls, *args, **kwargs):
         if cls is Fitting:
-            try:
-                fitting_type = kwargs["type"]
-            except KeyError:
-                raise KeyError("the type of fitting should be set by `type`")
-            if fitting_type in Fitting.__plugins.plugins:
-                cls = Fitting.__plugins.plugins[fitting_type]
-            else:
-                raise RuntimeError("Unknown descriptor type: " + fitting_type)
+            cls = Fitting.get_class_by_input(kwargs)
         return super().__new__(cls)
 
     @property
@@ -102,3 +106,31 @@ class Fitting(PluginVariant):
         Loss
             the loss function
         """
+
+    @classmethod
+    def deserialize(cls, data: dict):
+        """Deserialize the model.
+
+        Parameters
+        ----------
+        data : dict
+            The serialized data
+
+        Returns
+        -------
+        Model
+            The deserialized model
+        """
+        if cls is Fitting:
+            return Fitting.get_class_by_input(data).deserialize(data)
+        raise NotImplementedError("Not implemented in class %s" % cls.__name__)
+
+    def serialize(self) -> dict:
+        """Serialize the model.
+
+        Returns
+        -------
+        dict
+            The serialized data
+        """
+        raise NotImplementedError("Not implemented in class %s" % self.__name__)

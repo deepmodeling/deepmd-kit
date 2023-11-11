@@ -192,6 +192,7 @@ class DescrptSeA(DescrptSe):
         self.seed_shift = embedding_net_rand_seed_shift(self.filter_neuron)
         self.trainable = trainable
         self.compress_activation_fn = get_activation_func(activation_function)
+        self.activation_function_name = activation_function
         self.filter_activation_fn = get_activation_func(activation_function)
         self.filter_precision = get_precision(precision)
         self.filter_np_precision = get_np_precision(precision)
@@ -1334,3 +1335,57 @@ class DescrptSeA(DescrptSe):
         if self.stripped_type_embedding:
             return True
         return False
+
+    @classmethod
+    def deserialize(cls, data: dict):
+        """Deserialize the model.
+
+        Parameters
+        ----------
+        data : dict
+            The serialized data
+
+        Returns
+        -------
+        Model
+            The deserialized model
+        """
+        descriptor = cls(**data)
+        descriptor.davg = data["@variables"]["davg"]
+        descriptor.dstd = data["@variables"]["dstd"]
+        descriptor.embedding_net_variables = data["@variables"]
+        descriptor.original_sel = data["@variables"]["original_sel"]
+        return descriptor
+
+    def serialize(self) -> dict:
+        """Serialize the model.
+
+        Returns
+        -------
+        dict
+            The serialized data
+        """
+        return {
+            "type": "se_e2_a",
+            "rcut": self.rcut_r,
+            "rcut_smth": self.rcut_r_smth,
+            "sel": self.sel_a,
+            "neuron": self.filter_neuron,
+            "axis_neuron": self.n_axis_neuron,
+            "resnet_dt": self.filter_resnet_dt,
+            "trainable": self.trainable,
+            "seed": self.seed,
+            "type_one_side": self.type_one_side,
+            "exclude_types": list(self.exclude_types),
+            "set_davg_zero": self.set_davg_zero,
+            "activation_function": self.activation_function_name,
+            "precision": self.filter_precision.name,
+            "uniform_seed": self.uniform_seed,
+            "stripped_type_embedding": self.stripped_type_embedding,
+            "@variables": {
+                **self.embedding_net_variables,
+                "davg": self.davg,
+                "dstd": self.dstd,
+                "original_sel": self.original_sel,
+            },
+        }

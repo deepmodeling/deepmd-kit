@@ -32,7 +32,11 @@ from deepmd.utils.argcheck import (
 from deepmd.utils.data_system import (
     DeepmdDataSystem,
 )
+from deepmd.utils.errors import (
+    GraphWithoutTensorError,
+)
 from deepmd.utils.graph import (
+    get_tensor_by_name_from_graph,
     load_graph_def,
 )
 from deepmd.utils.pair_tab import (
@@ -43,6 +47,10 @@ from deepmd.utils.spin import (
 )
 from deepmd.utils.type_embed import (
     TypeEmbedNet,
+)
+from deepmd_utils.model_format import (
+    load_dp_model,
+    save_dp_model,
 )
 
 
@@ -506,6 +514,78 @@ class Model(ABC):
         cls = cls.get_class_by_input(local_jdata)
         return cls.update_sel(global_jdata, local_jdata)
 
+    @classmethod
+    def deserialize(cls, data: dict):
+        """Deserialize the model.
+
+        Parameters
+        ----------
+        data : dict
+            The serialized data
+
+        Returns
+        -------
+        Model
+            The deserialized model
+        """
+        if cls is Model:
+            return Model.get_class_by_input(data).deserialize(data)
+        raise NotImplementedError("Not implemented in class %s" % cls.__name__)
+
+    def serialize(self) -> dict:
+        """Serialize the model.
+
+        Returns
+        -------
+        dict
+            The serialized data
+        """
+        raise NotImplementedError("Not implemented in class %s" % self.__name__)
+
+    @classmethod
+    def load_model(cls, filename: str) -> "Model":
+        """Load the model from file.
+
+        Parameters
+        ----------
+        filename : str
+            The filename
+
+        Returns
+        -------
+        Model
+            The loaded model
+        """
+        data = load_dp_model(filename=filename)
+        return cls.deserialize(data["model"])
+
+    def save_model(self, filename: str, graph: tf.Graph, graph_def: tf.GraphDef):
+        """Save the model to file.
+
+        Parameters
+        ----------
+        filename : str
+            The filename
+        """
+        self.init_variables(graph=graph, graph_def=graph_def)
+        model_dict = self.serialize()
+        try:
+            t_min_nbor_dist = get_tensor_by_name_from_graph(
+                graph, "train_attr/min_nbor_dist"
+            )
+        except GraphWithoutTensorError as e:
+            pass
+        else:
+            model_dict.setdefault("@variables", {})
+            model_dict["@variables"]["min_nbor_dist"] = t_min_nbor_dist
+        save_dp_model(
+            filename=filename,
+            model_dict=model_dict,
+            extra_info={
+                "module": __name__,
+            },
+        )
+
 
 class StandardModel(Model):
     """Standard model, which must contain a descriptor and a fitting.
@@ -522,7 +602,8 @@ class StandardModel(Model):
         The type map
     """
 
-    def __new__(cls, *args, **kwargs):
+    @classmethod
+    def get_class_by_input(cls, input: dict):
         from .dos import (
             DOSModel,
         )
@@ -534,20 +615,23 @@ class StandardModel(Model):
             PolarModel,
         )
 
+        fitting_type = input["fitting_net"]["type"]
+        # init model
+        # infer model type by fitting_type
+        if fitting_type == "ener":
+            return EnerModel
+        elif fitting_type == "dos":
+            return DOSModel
+        elif fitting_type == "dipole":
+            return DipoleModel
+        elif fitting_type == "polar":
+            return PolarModel
+        else:
+            raise RuntimeError("get unknown fitting type when building model")
+
+    def __new__(cls, *args, **kwargs):
         if cls is StandardModel:
-            fitting_type = kwargs["fitting_net"]["type"]
-            # init model
-            # infer model type by fitting_type
-            if fitting_type == "ener":
-                cls = EnerModel
-            elif fitting_type == "dos":
-                cls = DOSModel
-            elif fitting_type == "dipole":
-                cls = DipoleModel
-            elif fitting_type == "polar":
-                cls = PolarModel
-            else:
-                raise RuntimeError("get unknown fitting type when building model")
+            cls = cls.get_class_by_input(kwargs)
             return cls.__new__(cls)
         return super().__new__(cls)
 
@@ -665,3 +749,21 @@ class StandardModel(Model):
             global_jdata, local_jdata["descriptor"]
         )
         return local_jdata_cpy
+
+    @classmethod
+    def deserialize(cls, data: dict):
+        """Deserialize the model.
+
+        Parameters
+        ----------
+        data : dict
+            The serialized data
+
+        Returns
+        -------
+        Model
+            The deserialized model
+        """
+        if cls is StandardModel:
+            return StandardModel.get_class_by_input(data).deserialize(data)
+        raise NotImplementedError("Not implemented in class %s" % cls.__name__)

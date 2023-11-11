@@ -509,3 +509,31 @@ class Descriptor(PluginVariant):
         # call subprocess
         cls = cls.get_class_by_input(local_jdata)
         return cls.update_sel(global_jdata, local_jdata)
+
+    @classmethod
+    def deserialize(cls, data: dict):
+        """Deserialize the model.
+
+        Parameters
+        ----------
+        data : dict
+            The serialized data
+
+        Returns
+        -------
+        Model
+            The deserialized model
+        """
+        if cls is Descriptor:
+            return Descriptor.get_class_by_input(data).deserialize(data)
+        raise NotImplementedError("Not implemented in class %s" % cls.__name__)
+
+    def serialize(self) -> dict:
+        """Serialize the model.
+
+        Returns
+        -------
+        dict
+            The serialized data
+        """
+        raise NotImplementedError("Not implemented in class %s" % self.__name__)

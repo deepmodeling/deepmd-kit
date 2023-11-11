@@ -9,6 +9,10 @@ from deepmd.utils.convert import (
     convert_pbtxt_to_pb,
     convert_to_21,
 )
+from deepmd.utils.convert_dp import (
+    convert_dp_to_pb,
+    convert_pb_to_dp,
+)
 
 
 def convert(
@@ -23,6 +27,11 @@ def convert(
             convert_pb_to_pbtxt(input_model, output_model)
         else:
             raise RuntimeError("input model is already pbtxt")
+    elif output_model.endswith(".dp"):
+        if input_model.endswith(".pb"):
+            convert_pb_to_dp(input_model, output_model)
+        else:
+            raise RuntimeError("Unsupported format")
     else:
         if FROM == "auto":
             convert_to_21(input_model, output_model)
@@ -39,5 +48,7 @@ def convert(
             convert_20_to_21(input_model, output_model)
         elif FROM == "pbtxt":
             convert_pbtxt_to_pb(input_model, output_model)
+        elif FROM == "dp":
+            convert_dp_to_pb(input_model, output_model)
         else:
             raise RuntimeError("unsupported model version " + FROM)

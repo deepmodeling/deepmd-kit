@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
 from typing import (
+    TYPE_CHECKING,
     List,
     Optional,
 )
@@ -52,6 +53,11 @@ from deepmd.utils.network import (
 from deepmd.utils.spin import (
     Spin,
 )
+
+if TYPE_CHECKING:
+    from deepmd.descriptor import (
+        Descriptor,
+    )
 
 log = logging.getLogger(__name__)
 
@@ -130,7 +136,7 @@ class EnerFitting(Fitting):
 
     def __init__(
         self,
-        descrpt: tf.Tensor,
+        descrpt: "Descriptor",
         neuron: List[int] = [120, 120, 120],
         resnet_dt: bool = True,
         numb_fparam: int = 0,
@@ -176,6 +182,7 @@ class EnerFitting(Fitting):
         self.ntypes_spin = self.spin.get_ntypes_spin() if self.spin is not None else 0
         self.seed_shift = one_layer_rand_seed_shift()
         self.tot_ener_zero = tot_ener_zero
+        self.activation_function_name = activation_function
         self.fitting_activation_fn = get_activation_func(activation_function)
         self.fitting_precision = get_precision(precision)
         self.trainable = trainable
@@ -916,3 +923,66 @@ class EnerFitting(Fitting):
             return EnerSpinLoss(**loss, use_spin=self.spin.use_spin)
         else:
             raise RuntimeError("unknown loss type")
+
+    @classmethod
+    def deserialize(cls, data: dict):
+        """Deserialize the model.
+
+        Parameters
+        ----------
+        data : dict
+            The serialized data
+
+        Returns
+        -------
+        Model
+            The deserialized model
+        """
+        fitting = cls(**data)
+        fitting.fitting_net_variables = data["@variables"]
+        fitting.bias_atom_e = fitting.fitting_net_variables.pop("bias_atom_e")
+        if fitting.numb_fparam > 0:
+            fitting.fparam_avg = fitting.fitting_net_variables.pop("fparam_avg")
+            fitting.fparam_inv_std = fitting.fitting_net_variables.pop("fparam_inv_std")
+        if fitting.numb_aparam > 0:
+            fitting.aparam_avg = fitting.fitting_net_variables.pop("aparam_avg")
+            fitting.aparam_inv_std = fitting.fitting_net_variables.pop("aparam_inv_std")
+        return fitting
+
+    def serialize(self) -> dict:
+        """Serialize the model.
+
+        Returns
+        -------
+        dict
+            The serialized data
+        """
+        data = {
+            "type": "ener",
+            "neuron": self.n_neuron,
+            "resnet_dt": self.resnet_dt,
+            "numb_fparam": self.numb_fparam,
+            "numb_aparam": self.numb_aparam,
+            "rcond": self.rcond,
+            "tot_ener_zero": self.tot_ener_zero,
+            "trainable": self.trainable,
+            "seed": self.seed,
+            "atom_ener": self.atom_ener,
+            "activation_function": self.activation_function_name,
+            "precision": self.fitting_precision.name,
+            "uniform_seed": self.uniform_seed,
+            "layer_name": self.layer_name,
+            "use_aparam_as_mask": self.use_aparam_as_mask,
+            "@variables": {
+                **self.fitting_net_variables,
+                "bias_atom_e": self.bias_atom_e,
+            },
+        }
+
+        if self.numb_fparam > 0:
+            data["@variables"]["fparam_avg"] = self.fparam_avg
+            data["@variables"]["fparam_inv_std"] = self.fparam_inv_std
+        if self.numb_aparam > 0:
+            data["@variables"]["aparam_avg"] = self.aparam_avg
+            data["@variables"]["aparam_inv_std"] = self.aparam_inv_std
+        return data

@@ -7,11 +7,17 @@ from typing import (
 
 import numpy as np
 
+from deepmd.descriptor.descriptor import (
+    Descriptor,
+)
 from deepmd.env import (
     MODEL_VERSION,
     global_cvt_2_ener_float,
     op_module,
     tf,
+)
+from deepmd.fit.fitting import (
+    Fitting,
 )
 from deepmd.utils.data_system import (
     DeepmdDataSystem,
@@ -512,3 +518,59 @@ class EnerModel(StandardModel):
             bias_shift,
             self.data_bias_nsample,
         )
+
+    @classmethod
+    def deserialize(cls, data: dict):
+        """Deserialize the model.
+
+        Parameters
+        ----------
+        data : dict
+            The serialized data
+
+        Returns
+        -------
+        Model
+            The deserialized model
+        """
+        data = data.copy()
+        data["descriptor"] = Descriptor.deserialize(data["descriptor"])
+        fitting_data = data["fitting_net"].copy()
+        fitting_data["descrpt"] = data["descriptor"]
+        data["fitting_net"] = Fitting.deserialize(fitting_data)
+        if data.get("type_embedding") is not None:
+            data["type_embedding"] = TypeEmbedNet.deserialize(data["type_embedding"])
+        return cls(**data)
+
+    def serialize(self) -> dict:
+        """Serialize the model.
+
+        Returns
+        -------
+        dict
+            The serialized data
+        """
+        data = {
+            "type": "standard",
+            "descriptor": self.descrpt.serialize(),
+            "fitting_net": self.fitting.serialize(),
+            "type_embedding": self.typeebd.serialize()
+            if self.typeebd is not None
+            else None,
+            "type_map": self.get_type_map(),
+            "data_stat_nbatch": self.data_stat_nbatch,
+            "data_stat_protect": self.data_stat_protect,
+            "use_srtab": self.srtab_name,
+            "spin": self.spin.serialize() if self.spin is not None else None,
+            "data_bias_nsample": self.data_bias_nsample,
+        }
+        if self.srtab_name is not None:
+            data.merge(
+                {
+                    "srtab_add_bias": self.srtab_add_bias,
+                    "smin_alpha": self.smin_alpha,
+                    "sw_rmin": self.sw_rmin,
+                    "sw_rmax": self.sw_rmax,
+                }
+            )
+        return data
