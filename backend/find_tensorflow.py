@@ -89,7 +89,7 @@ def find_tensorflow() -> Tuple[Optional[str], List[str]]:
     except (AttributeError, TypeError, IndexError):
         if os.environ.get("CIBUILDWHEEL", "0") == "1":
             cuda_version = os.environ.get("CUDA_VERSION", "12.2")
-            if cuda_version in SpecifierSet(">=12,<13"):
+            if cuda_version == "" or cuda_version in SpecifierSet(">=12,<13"):
                 # CUDA 12.2
                 requires.extend(
                     [
