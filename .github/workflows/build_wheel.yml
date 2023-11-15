@@ -33,6 +33,13 @@ jobs:
             python: 311
             platform_id: manylinux_x86_64
             dp_variant: cuda
+            cuda_version: 12.2
+          - os: ubuntu-latest
+            python: 311
+            platform_id: manylinux_x86_64
+            dp_variant: cuda
+            cuda_version: 11.8
+            dp_pkg_name: deepmd-kit-cu11
           # macos-x86-64
           - os: macos-latest
             python: 311
@@ -68,6 +75,8 @@ jobs:
           CIBW_ARCHS: all
           CIBW_BUILD: cp${{ matrix.python }}-${{ matrix.platform_id }}
           DP_VARIANT: ${{ matrix.dp_variant }}
+          CUDA_VERSION: ${{ matrix.cuda_version }}
+          DP_PKG_NAME: ${{ matrix.dp_pkg_name }}
       - uses: actions/upload-artifact@v3
         with:
           path: ./wheelhouse/*.whl

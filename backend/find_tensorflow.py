@@ -88,12 +88,23 @@ def find_tensorflow() -> Tuple[Optional[str], List[str]]:
         # IndexError if submodule_search_locations is an empty list
     except (AttributeError, TypeError, IndexError):
         if os.environ.get("CIBUILDWHEEL", "0") == "1":
-            # CUDA 12.2
-            requires.extend(
-                [
-                    "tensorflow-cpu>=2.15.0rc0; platform_machine=='x86_64' and platform_system == 'Linux'",
-                ]
-            )
+            cuda_version = os.environ.get("CUDA_VERSION", "12.2")
+            if cuda_version in SpecifierSet(">=12,<13"):
+                # CUDA 12.2
+                requires.extend(
+                    [
+                        "tensorflow-cpu>=2.15.0rc0; platform_machine=='x86_64' and platform_system == 'Linux'",
+                    ]
+                )
+            elif cuda_version in SpecifierSet(">=11,<12"):
+                # CUDA 11.8
+                requires.extend(
+                    [
+                        "tensorflow-cpu>=2.5.0rc0,<2.15; platform_machine=='x86_64' and platform_system == 'Linux'",
+                    ]
+                )
+            else:
+                raise RuntimeError("Unsupported CUDA version")
         requires.extend(get_tf_requirement()["cpu"])
         # setuptools will re-find tensorflow after installing setup_requires
         tf_install_dir = None
