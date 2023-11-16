@@ -383,7 +383,6 @@ class Model(ABC):
             else:
                 raise RuntimeError("should not reach here")  # pragma: no cover
             dout = imported_tensors[-1]
-            self.typeebd.type_embedding_from_graph = dout
         return dout
 
     def _import_graph_def_from_frz_model(
