@@ -203,10 +203,12 @@ class EnerModel(StandardModel):
 
         # type embedding if any
         if self.typeebd is not None and "type_embedding" not in input_dict:
-            type_embedding = self.typeebd.build(
+            type_embedding = self.build_type_embedding(
                 self.ntypes,
                 reuse=reuse,
                 suffix=suffix,
+                ckpt_meta=ckpt_meta,
+                frz_model=frz_model,
             )
             input_dict["type_embedding"] = type_embedding
         # spin if any

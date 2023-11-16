@@ -16,7 +16,6 @@ from deepmd.nvnmd.utils.config import (
     nvnmd_cfg,
 )
 from deepmd.utils.graph import (
-    get_tensor_by_name_from_graph,
     get_type_embedding_net_variables_from_graph_def,
 )
 from deepmd.utils.network import (
@@ -109,7 +108,6 @@ class TypeEmbedNet:
         self.trainable = trainable
         self.uniform_seed = uniform_seed
         self.type_embedding_net_variables = None
-        self.type_embedding_from_graph = None
         self.padding = padding
         self.model_type = None
 
@@ -135,8 +133,6 @@ class TypeEmbedNet:
         embedded_types
             The computational graph for embedded types
         """
-        if self.model_type is not None and self.model_type == "compressed_model":
-            return self.type_embedding_from_graph
         types = tf.convert_to_tensor(list(range(ntypes)), dtype=tf.int32)
         ebd_type = tf.cast(
             tf.one_hot(tf.cast(types, dtype=tf.int32), int(ntypes)),
@@ -166,7 +162,7 @@ class TypeEmbedNet:
         if self.padding:
             last_type = tf.cast(tf.zeros([1, self.neuron[-1]]), self.filter_precision)
             ebd_type = tf.concat([ebd_type, last_type], 0)  # (ntypes + 1) * neuron[-1]
-        self.ebd_type = tf.identity(ebd_type, name="t_typeebd")
+        self.ebd_type = tf.identity(ebd_type, name="t_typeebd" + suffix)
         return self.ebd_type
 
     def init_variables(
@@ -193,5 +189,3 @@ class TypeEmbedNet:
         self.type_embedding_net_variables = (
             get_type_embedding_net_variables_from_graph_def(graph_def, suffix=suffix)
         )
-        type_embedding = get_tensor_by_name_from_graph(graph, "t_typeebd")
-        self.type_embedding_from_graph = tf.convert_to_tensor(type_embedding)
