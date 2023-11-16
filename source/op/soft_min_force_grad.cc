@@ -62,7 +62,7 @@ class SoftMinForceGradOp : public OpKernel {
 
     int nframes = du_tensor.shape().dim_size(0);
     int nloc = natoms(0);
-    int nnei = nlist_tensor.shape().dim_size(1) / nloc;
+    int nnei = nloc > 0 ? nlist_tensor.shape().dim_size(1) / nloc : 0;
 
     // check the sizes
     OP_REQUIRES(context, (nframes == grad_shape.dim_size(0)),

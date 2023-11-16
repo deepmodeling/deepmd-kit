@@ -9,9 +9,7 @@ from common import (
     run_dp,
     tests_path,
 )
-from pkg_resources import (
-    parse_version,
-)
+from packaging.version import parse as parse_version
 
 from deepmd import (
     DeepPotential,
@@ -97,6 +95,169 @@ class TestPairwiseOP(tf.test.TestCase):
         np.testing.assert_array_equal(natoms_qm, np.array([2, 3, 2], dtype=int))
         np.testing.assert_array_equal(natoms_qmmm, np.array([5, 7, 5], dtype=int))
         np.testing.assert_array_equal(qmmm_frame_idx, np.array([0, 0, 0], dtype=int))
+
+
+class TestConvertForwardMapOP(tf.test.TestCase):
+    """Test convert_forward_map OP."""
+
+    def test_convert_forward_map(self):
+        forward_qmmm_map = np.array(
+            [
+                [3, 4, 0, 1, 2, 10, 11],
+                [3, 4, 5, 6, 7, 10, -1],
+                [3, 4, 8, 9, -1, 10, -1],
+            ],
+            dtype=int,
+        )
+        natoms_qmmm = np.array([5, 7, 5], dtype=int)
+        natoms = np.array([10, 12, 10], dtype=int)
+        with self.cached_session() as sess:
+            (
+                forward_qmmm_map,
+                backward_qmmm_map,
+                natoms_qmmm,
+                mesh_qmmm,
+            ) = run_sess(
+                sess,
+                op_module.convert_forward_map(forward_qmmm_map, natoms_qmmm, natoms),
+            )
+        np.testing.assert_array_equal(
+            forward_qmmm_map,
+            np.array([[3, 4, 0, 1, 2, 3, 4, 5, 6, 7, 3, 4, 8, 9, 10, 11, 10, 10]]),
+        )
+        np.testing.assert_array_equal(
+            backward_qmmm_map,
+            np.array(
+                [
+                    [2, 3, 4, 0, 1, -1, -1, -1, -1, -1, 14, 15],
+                    [-1, -1, -1, 5, 6, 7, 8, 9, -1, -1, 16, -1],
+                    [-1, -1, -1, 10, 11, -1, -1, -1, 12, 13, 17, -1],
+                ]
+            ),
+        )
+        np.testing.assert_array_equal(natoms_qmmm, np.array([14, 18, 14], dtype=int))
+        np.testing.assert_array_equal(
+            mesh_qmmm,
+            np.array(
+                [
+                    14,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    1,
+                    2,
+                    3,
+                    4,
+                    5,
+                    6,
+                    7,
+                    8,
+                    9,
+                    10,
+                    11,
+                    12,
+                    13,
+                    6,
+                    6,
+                    6,
+                    6,
+                    6,
+                    5,
+                    5,
+                    5,
+                    5,
+                    5,
+                    4,
+                    4,
+                    4,
+                    4,
+                    1,
+                    2,
+                    3,
+                    4,
+                    14,
+                    15,
+                    0,
+                    2,
+                    3,
+                    4,
+                    14,
+                    15,
+                    0,
+                    1,
+                    3,
+                    4,
+                    14,
+                    15,
+                    0,
+                    1,
+                    2,
+                    4,
+                    14,
+                    15,
+                    0,
+                    1,
+                    2,
+                    3,
+                    14,
+                    15,
+                    6,
+                    7,
+                    8,
+                    9,
+                    16,
+                    5,
+                    7,
+                    8,
+                    9,
+                    16,
+                    5,
+                    6,
+                    8,
+                    9,
+                    16,
+                    5,
+                    6,
+                    7,
+                    9,
+                    16,
+                    5,
+                    6,
+                    7,
+                    8,
+                    16,
+                    11,
+                    12,
+                    13,
+                    17,
+                    10,
+                    12,
+                    13,
+                    17,
+                    10,
+                    11,
+                    13,
+                    17,
+                    10,
+                    11,
+                    12,
+                    17,
+                ]
+            ),
+        )
 
 
 @unittest.skipIf(
@@ -293,6 +454,7 @@ class TestPairwiseModel(tf.test.TestCase):
         input_dict["aparam"] = t_aparam
 
         model.data_stat(data)
+        # model.merge_frames = False
         model_pred = model.build(
             t_coord,
             t_type,
@@ -300,7 +462,7 @@ class TestPairwiseModel(tf.test.TestCase):
             t_box,
             t_mesh,
             input_dict,
-            suffix="se_a_atom_ener_0",
+            suffix="pairwise_dprc_0",
             reuse=False,
         )
         energy = model_pred["energy"]
@@ -356,6 +518,8 @@ class TestPairwiseModel(tf.test.TestCase):
         # the model is pairwise!
         self.assertAllClose(e[1] + e[2] + e[3] - 3 * e[0], e[4] - e[0])
         self.assertAllClose(f[1] + f[2] + f[3] - 3 * f[0], f[4] - f[0])
+        self.assertAllClose(e[0], 0.189075, 1e-6)
+        self.assertAllClose(f[0, 0], 0.060047, 1e-6)
 
     def test_nloc(self):
         jfile = tests_path / "pairwise_dprc.json"

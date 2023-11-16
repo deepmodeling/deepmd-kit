@@ -20,11 +20,14 @@ consistent, clean, and correct, it probably will be accepted.  But
 don't be surprised if the "offending" code gets fiddled with overtime to
 conform to these conventions.
 
-There are also GitHub actions CI checks for python code style which will annotate the
-PR diff for you to see the areas where your code is lacking compared to the set standard.
+There are also pre-commit CI checks for python code style which will automatically fix the
+PR.
+
+Python
+======
 
 Rules
-=====
+-----
 
 The code must be compatible with the oldest supported version of python
 which is 3.7
@@ -74,7 +77,7 @@ Conventions`_ and `Typing Conventions`_ PEPs, clarified and extended as follows:
   convenient than f-strings.
 
 Whitespace
-==========
+----------
 
 Python is not C/C++ so whitespace  should be used sparingly to maintain code readability
 
@@ -114,7 +117,7 @@ Python is not C/C++ so whitespace  should be used sparingly to maintain code rea
                           emacs/Useless-Whitespace.html
 
 General advice
-==============
+--------------
 
 * Get rid of as many ``break`` and ``continue`` statements as possible.
 
@@ -124,7 +127,7 @@ General advice
 * Use descriptive variable names.
 
 Writing documentation in the code
-=================================
+---------------------------------
 
 Here is an example of how to write good docstrings:
 
@@ -132,59 +135,22 @@ Here is an example of how to write good docstrings:
 
 The NumPy docstring documentation can be found `here <https://numpydoc.readthedocs.io/en/latest/format.html>`_
 
-It is a good practice to run `pydocstyle <https://github.com/PyCQA/pydocstyle>`_
-check on your code or use a text editor that does it automatically):
+C++
+===
+
+The customized Clang Format style is used for C++ code formatting. The style is defined in
+``.clang-format`` file in the root of the repository. The style is based on the Google C++
+style with some modifications.
+
+Run scripts to check the code
+=============================
+
+It's a good idea to install `pre-commit <https://pre-commit.com>`_ on your repository:
 
 .. code-block:: bash
 
-    $ pydocstyle filename.py
+    $ pip install pre-commit
+    $ pre-commit install
 
-.. _stylecheck:
-
-Run pycodestyle on your code
-============================
-
-It's a good idea to run `pycodestyle <https://github.com/PyCQA/pycodestyle>`_
-on your code (or use a text editor that does it automatically):
-
-.. code-block:: bash
-
-    $ pycodestyle filename.py
-
-.. _typing:
-
-Run mypy on your code
-=====================
-
-It's a good idea to run `mypy <https://github.com/PyCQA/pycodestyle>`_
-on your code (or use a text editor that does it automatically):
-
-.. code-block:: bash
-
-    $ mypy filename.py
-
-.. _docstyle:
-
-Run pydocstyle on your code
-===========================
-
-It's a good idea to run `pycodestyle <https://github.com/PyCQA/pycodestyle>`_
-on your code (or use a text editor that does it automatically):
-
-.. code-block:: bash
-
-    $ pycodestyle filename.py --max-line-length=88
-
-.. _autoformat:
-
-Run black on your code
-======================
-
-Another method of enforcing PEP8_ is using a tool such as
-`black <https://github.com/psf/black>`_. These tools tend to be
-very effective at cleaning up code but should be used carefully and code
-should be retested after cleaning it. Try:
-
-.. code-block:: bash
-
-  $ black --help
+The scripts will be run automatically before each commit and will fix the code style
+issues automatically.

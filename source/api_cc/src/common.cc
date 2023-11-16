@@ -380,7 +380,8 @@ int deepmd::session_input_tensors(
     const deepmd::AtomMap& atommap,
     const std::string scope,
     const bool aparam_nall) {
-  int nframes = dcoord_.size() / 3 / datype_.size();
+  // if datype.size is 0, not clear nframes; but 1 is just ok
+  int nframes = datype_.size() > 0 ? (dcoord_.size() / 3 / datype_.size()) : 1;
   int nall = datype_.size();
   int nloc = nall;
   assert(nall * 3 * nframes == dcoord_.size());
@@ -445,10 +446,13 @@ int deepmd::session_input_tensors(
   std::vector<VALUETYPE> dcoord(dcoord_);
   atommap.forward<VALUETYPE>(dcoord.begin(), dcoord_.begin(), 3, nframes, nall);
   std::vector<VALUETYPE> aparam_(aparam__);
-  atommap.forward<VALUETYPE>(
-      aparam_.begin(), aparam__.begin(),
-      aparam__.size() / nframes / (aparam_nall ? nall : nloc), nframes,
-      (aparam_nall ? nall : nloc));
+  if ((aparam_nall ? nall : nloc) > 0) {
+    atommap.forward<VALUETYPE>(
+        aparam_.begin(), aparam__.begin(),
+        aparam__.size() / nframes / (aparam_nall ? nall : nloc), nframes,
+        (aparam_nall ? nall : nloc));
+  }
+  // if == 0, aparam__.size should also be 0, so no need to forward
 
   for (int ii = 0; ii < nframes; ++ii) {
     for (int jj = 0; jj < nall * 3; ++jj) {
@@ -520,7 +524,8 @@ int deepmd::session_input_tensors(
     const int ago,
     const std::string scope,
     const bool aparam_nall) {
-  int nframes = dcoord_.size() / 3 / datype_.size();
+  // if datype.size is 0, not clear nframes; but 1 is just ok
+  int nframes = datype_.size() > 0 ? (dcoord_.size() / 3 / datype_.size()) : 1;
   int nall = datype_.size();
   int nloc = nall - nghost;
   assert(nall * 3 * nframes == dcoord_.size());
@@ -581,10 +586,13 @@ int deepmd::session_input_tensors(
   std::vector<VALUETYPE> dcoord(dcoord_);
   atommap.forward<VALUETYPE>(dcoord.begin(), dcoord_.begin(), 3, nframes, nall);
   std::vector<VALUETYPE> aparam_(aparam__);
-  atommap.forward<VALUETYPE>(
-      aparam_.begin(), aparam__.begin(),
-      aparam__.size() / nframes / (aparam_nall ? nall : nloc), nframes,
-      (aparam_nall ? nall : nloc));
+  if ((aparam_nall ? nall : nloc) > 0) {
+    atommap.forward<VALUETYPE>(
+        aparam_.begin(), aparam__.begin(),
+        aparam__.size() / nframes / (aparam_nall ? nall : nloc), nframes,
+        (aparam_nall ? nall : nloc));
+  }
+  // if == 0, aparam__.size should also be 0, so no need to forward
 
   for (int ii = 0; ii < nframes; ++ii) {
     for (int jj = 0; jj < nall * 3; ++jj) {
@@ -717,10 +725,13 @@ int deepmd::session_input_tensors_mixed_type(
   std::vector<VALUETYPE> dcoord(dcoord_);
   atommap.forward<VALUETYPE>(dcoord.begin(), dcoord_.begin(), 3, nframes, nall);
   std::vector<VALUETYPE> aparam_(aparam__);
-  atommap.forward<VALUETYPE>(
-      aparam_.begin(), aparam__.begin(),
-      aparam__.size() / nframes / (aparam_nall ? nall : nloc), nframes,
-      (aparam_nall ? nall : nloc));
+  if ((aparam_nall ? nall : nloc) > 0) {
+    atommap.forward<VALUETYPE>(
+        aparam_.begin(), aparam__.begin(),
+        aparam__.size() / nframes / (aparam_nall ? nall : nloc), nframes,
+        (aparam_nall ? nall : nloc));
+  }
+  // if == 0, aparam__.size should also be 0, so no need to forward
 
   for (int ii = 0; ii < nframes; ++ii) {
     for (int jj = 0; jj < nall * 3; ++jj) {
@@ -849,13 +860,13 @@ void deepmd::select_map(std::vector<VT>& out,
                         const int& nall2) {
   for (int kk = 0; kk < nframes; ++kk) {
 #ifdef DEBUG
-    assert(in.size() / stride * stride == in.size()),
-        "in size should be multiples of stride"
+    assert(in.size() / stride * stride == in.size() &&
+           "in size should be multiples of stride")
 #endif
         for (int ii = 0; ii < in.size() / stride / nframes; ++ii) {
 #ifdef DEBUG
-      assert(ii < idx_map.size()), "idx goes over the idx map size";
-      assert(idx_map[ii] < out.size()), "mappped idx goes over the out size";
+      assert(ii < idx_map.size() && "idx goes over the idx map size");
+      assert(idx_map[ii] < out.size() && "mappped idx goes over the out size");
 #endif
       if (idx_map[ii] >= 0) {
         int to_ii = idx_map[ii];
@@ -896,13 +907,13 @@ void deepmd::select_map_inv(std::vector<VT>& out,
                             const std::vector<int>& idx_map,
                             const int& stride) {
 #ifdef DEBUG
-  assert(in.size() / stride * stride == in.size()),
-      "in size should be multiples of stride"
+  assert(in.size() / stride * stride == in.size() &&
+         "in size should be multiples of stride");
 #endif
-      for (int ii = 0; ii < out.size() / stride; ++ii) {
+  for (int ii = 0; ii < out.size() / stride; ++ii) {
 #ifdef DEBUG
-    assert(ii < idx_map.size()), "idx goes over the idx map size";
-    assert(idx_map[ii] < in.size()), "from idx goes over the in size";
+    assert(ii < idx_map.size() && "idx goes over the idx map size");
+    assert(idx_map[ii] < in.size() && "from idx goes over the in size");
 #endif
     if (idx_map[ii] >= 0) {
       int from_ii = idx_map[ii];

@@ -89,6 +89,7 @@ __all__ = [
     "global_cvt_2_tf_float",
     "global_cvt_2_ener_float",
     "MODEL_VERSION",
+    "SHARED_LIB_DIR",
     "SHARED_LIB_MODULE",
     "default_tf_session_config",
     "reset_default_tf_session_config",
@@ -245,7 +246,20 @@ def set_mkl():
     check whether the numpy is built by mkl, see
     https://github.com/numpy/numpy/issues/14751
     """
-    if "mkl_rt" in np.__config__.get_info("blas_mkl_info").get("libraries", []):
+    try:
+        is_mkl = (
+            np.show_config("dicts")
+            .get("Build Dependencies", {})
+            .get("blas", {})
+            .get("name", "")
+            .lower()
+            .startswith("mkl")
+        )
+    except TypeError:
+        is_mkl = "mkl_rt" in np.__config__.get_info("blas_mkl_info").get(
+            "libraries", []
+        )
+    if is_mkl:
         set_env_if_empty("KMP_BLOCKTIME", "0")
         set_env_if_empty("KMP_AFFINITY", "granularity=fine,verbose,compact,1,0")
         reload(np)

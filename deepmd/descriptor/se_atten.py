@@ -35,6 +35,11 @@ from deepmd.nvnmd.descriptor.se_atten import (
 from deepmd.nvnmd.utils.config import (
     nvnmd_cfg,
 )
+from deepmd.utils.compress import (
+    get_extra_side_embedding_net_variable,
+    get_two_side_type_embedding,
+    make_data,
+)
 from deepmd.utils.graph import (
     get_attention_layer_variables_from_graph_def,
     get_pattern_nodes_from_graph_def,
@@ -115,6 +120,11 @@ class DescrptSeAtten(DescrptSeA):
             When using stripped type embedding, whether to dot smooth factor on the network output of type embedding
             to keep the network smooth, instead of setting `set_davg_zero` to be True.
             Default value will be True in `se_atten_v2` descriptor.
+
+    Raises
+    ------
+    ValueError
+        if ntypes is 0.
     """
 
     def __init__(
@@ -173,6 +183,8 @@ class DescrptSeAtten(DescrptSeA):
             assert Version(TF_VERSION) > Version(
                 "2"
             ), "se_atten only support tensorflow version 2.0 or higher."
+        if ntypes == 0:
+            raise ValueError("`model/type_map` is not set or empty!")
         self.stripped_type_embedding = stripped_type_embedding
         self.smooth = smooth_type_embdding
         self.ntypes = ntypes
@@ -375,14 +387,6 @@ class DescrptSeAtten(DescrptSeA):
                 "empty embedding-net are not supported in model compression!"
             )
 
-        for ii in range(len(self.filter_neuron) - 1):
-            if self.filter_neuron[ii] * 2 != self.filter_neuron[ii + 1]:
-                raise NotImplementedError(
-                    "Model Compression error: descriptor neuron [%s] is not supported by model compression! "
-                    "The size of the next layer of the neural network must be twice the size of the previous layer."
-                    % ",".join([str(item) for item in self.filter_neuron])
-                )
-
         if self.attn_layer != 0:
             raise RuntimeError("can not compress model when attention layer is not 0.")
 
@@ -415,12 +419,14 @@ class DescrptSeAtten(DescrptSeA):
             min_nbor_dist, table_extrapolate, table_stride_1, table_stride_2
         )
 
-        self.final_type_embedding = self._get_two_side_type_embedding(graph)
-        self.matrix = self._get_two_side_embedding_net_variable(
-            graph_def, "matrix", suffix
+        self.final_type_embedding = get_two_side_type_embedding(self, graph)
+        self.matrix = get_extra_side_embedding_net_variable(
+            self, graph_def, "two_side", "matrix", suffix
         )
-        self.bias = self._get_two_side_embedding_net_variable(graph_def, "bias", suffix)
-        self.two_embd = self._make_data(self.final_type_embedding)
+        self.bias = get_extra_side_embedding_net_variable(
+            self, graph_def, "two_side", "bias", suffix
+        )
+        self.two_embd = make_data(self, self.final_type_embedding)
 
         self.davg = get_tensor_by_name_from_graph(
             graph, "descrpt_attr%s/t_avg" % suffix
@@ -428,79 +434,6 @@ class DescrptSeAtten(DescrptSeA):
         self.dstd = get_tensor_by_name_from_graph(
             graph, "descrpt_attr%s/t_std" % suffix
         )
-
-    def _get_two_side_type_embedding(self, graph):
-        type_embedding = get_tensor_by_name_from_graph(graph, "t_typeebd")
-        type_embedding = type_embedding.astype(self.filter_np_precision)
-        type_embedding_shape = type_embedding.shape
-        type_embedding_nei = np.tile(
-            np.reshape(type_embedding, [1, type_embedding_shape[0], -1]),
-            [type_embedding_shape[0], 1, 1],
-        )  # (ntypes) * ntypes * Y
-        type_embedding_center = np.tile(
-            np.reshape(type_embedding, [type_embedding_shape[0], 1, -1]),
-            [1, type_embedding_shape[0], 1],
-        )  # ntypes * (ntypes) * Y
-        two_side_type_embedding = np.concatenate(
-            [type_embedding_nei, type_embedding_center], -1
-        )  # ntypes * ntypes * (Y+Y)
-        two_side_type_embedding = np.reshape(
-            two_side_type_embedding, [-1, two_side_type_embedding.shape[-1]]
-        )
-        return two_side_type_embedding
-
-    def _get_two_side_embedding_net_variable(self, graph_def, varialbe_name, suffix):
-        ret = {}
-        for i in range(1, self.layer_size + 1):
-            target = get_pattern_nodes_from_graph_def(
-                graph_def,
-                f"filter_type_all{suffix}/{varialbe_name}_{i}_two_side_ebd",
-            )
-            node = target[f"filter_type_all{suffix}/{varialbe_name}_{i}_two_side_ebd"]
-            ret["layer_" + str(i)] = node
-        return ret
-
-    def _layer_0(self, x, w, b):
-        return self.filter_activation_fn(tf.matmul(x, w) + b)
-
-    def _layer_1(self, x, w, b):
-        t = tf.concat([x, x], axis=1)
-        return t, self.filter_activation_fn(tf.matmul(x, w) + b) + t
-
-    def _make_data(self, xx):
-        with tf.Session() as sess:
-            for layer in range(self.layer_size):
-                if layer == 0:
-                    if self.filter_neuron[0] == 1:
-                        yy = (
-                            self._layer_0(
-                                xx,
-                                self.matrix["layer_" + str(layer + 1)],
-                                self.bias["layer_" + str(layer + 1)],
-                            )
-                            + xx
-                        )
-                    elif self.filter_neuron[0] == 2:
-                        tt, yy = self._layer_1(
-                            xx,
-                            self.matrix["layer_" + str(layer + 1)],
-                            self.bias["layer_" + str(layer + 1)],
-                        )
-                    else:
-                        yy = self._layer_0(
-                            xx,
-                            self.matrix["layer_" + str(layer + 1)],
-                            self.bias["layer_" + str(layer + 1)],
-                        )
-                else:
-                    tt, zz = self._layer_1(
-                        yy,
-                        self.matrix["layer_" + str(layer + 1)],
-                        self.bias["layer_" + str(layer + 1)],
-                    )
-                    yy = zz
-            vv = sess.run(zz)
-        return vv
 
     def build(
         self,
@@ -623,6 +556,8 @@ class DescrptSeAtten(DescrptSeA):
             self.filter_precision,
         )
         self.negative_mask = -(2 << 32) * (1.0 - self.nmask)
+        # hard coding the magnitude of attention weight shift
+        self.smth_attn_w_shift = 20.0
         # only used when tensorboard was set as true
         tf.summary.histogram("descrpt", self.descrpt)
         tf.summary.histogram("rij", self.rij)
@@ -658,7 +593,9 @@ class DescrptSeAtten(DescrptSeA):
             )
             self.recovered_r = (
                 tf.reshape(
-                    tf.slice(tf.reshape(self.descrpt, [-1, 4]), [0, 0], [-1, 1]),
+                    tf.slice(
+                        tf.reshape(self.descrpt_reshape, [-1, 4]), [0, 0], [-1, 1]
+                    ),
                     [-1, natoms[0], self.sel_all_a[0]],
                 )
                 * self.std_looked_up
@@ -924,10 +861,26 @@ class DescrptSeAtten(DescrptSeA):
         save_weights=True,
     ):
         attn = tf.matmul(Q / temperature, K, transpose_b=True)
-        attn *= self.nmask
-        attn += self.negative_mask
+        if self.smooth:
+            # (nb x nloc) x nsel
+            nsel = self.sel_all_a[0]
+            attn = (attn + self.smth_attn_w_shift) * tf.reshape(
+                self.recovered_switch, [-1, 1, nsel]
+            ) * tf.reshape(
+                self.recovered_switch, [-1, nsel, 1]
+            ) - self.smth_attn_w_shift
+        else:
+            attn *= self.nmask
+            attn += self.negative_mask
         attn = tf.nn.softmax(attn, axis=-1)
-        attn *= tf.reshape(self.nmask, [-1, attn.shape[-1], 1])
+        if self.smooth:
+            attn = (
+                attn
+                * tf.reshape(self.recovered_switch, [-1, 1, nsel])
+                * tf.reshape(self.recovered_switch, [-1, nsel, 1])
+            )
+        else:
+            attn *= tf.reshape(self.nmask, [-1, attn.shape[-1], 1])
         if save_weights:
             self.attn_weight[layer] = attn[0]  # atom 0
         if dotr:
@@ -1470,3 +1423,21 @@ class DescrptSeAtten(DescrptSeA):
     def explicit_ntypes(self) -> bool:
         """Explicit ntypes with type embedding."""
         return True
+
+    @classmethod
+    def update_sel(cls, global_jdata: dict, local_jdata: dict):
+        """Update the selection and perform neighbor statistics.
+
+        Parameters
+        ----------
+        global_jdata : dict
+            The global data, containing the training section
+        local_jdata : dict
+            The local data refer to the current class
+        """
+        from deepmd.entrypoints.train import (
+            update_one_sel,
+        )
+
+        local_jdata_cpy = local_jdata.copy()
+        return update_one_sel(global_jdata, local_jdata_cpy, True)

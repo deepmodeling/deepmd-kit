@@ -55,7 +55,7 @@ class ProdForceSeAMaskGradOp : public OpKernel {
 
     int nframes = net_deriv_tensor.shape().dim_size(0);
     int nloc = total_atom_num;
-    int ndescrpt = net_deriv_tensor.shape().dim_size(1) / nloc;
+    int ndescrpt = nloc > 0 ? net_deriv_tensor.shape().dim_size(1) / nloc : 0;
     int nnei = total_atom_num;
 
     // check the sizes

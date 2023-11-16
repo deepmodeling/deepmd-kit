@@ -19,6 +19,11 @@ if(DEFINED LAMMPS_SOURCE_ROOT OR DEFINED LAMMPS_VERSION)
 
   target_include_directories(lammps_interface INTERFACE ${LAMMPS_HEADER_DIR})
 
+  if("$ENV{DP_USE_MPICH2}" STREQUAL "1")
+    # See https://stackoverflow.com/a/47976518/9567349
+    set(MPI_EXECUTABLE_SUFFIX ".mpich")
+  endif()
+
   find_package(MPI)
   if(MPI_FOUND)
     set(LAMMPS_MPI_INCLUDE_DIRS ${MPI_CXX_INCLUDE_DIRS})
@@ -44,9 +49,16 @@ if(DEFINED LAMMPS_SOURCE_ROOT OR DEFINED LAMMPS_VERSION)
   configure_file("../deepmd_version.h.in"
                  "${CMAKE_CURRENT_BINARY_DIR}/deepmd_version.h" @ONLY)
 
-  file(GLOB LMP_SRC deepmdplugin.cpp ../*.cpp
-       ${LAMMPS_SOURCE_ROOT}/src/kspace.cpp # for pppm_dplr
-       ${LAMMPS_SOURCE_ROOT}/src/KSPACE/pppm.cpp)
+  file(
+    GLOB
+    LMP_SRC
+    deepmdplugin.cpp
+    ../*.cpp
+    ${LAMMPS_SOURCE_ROOT}/src/KSPACE/pppm.cpp # for pppm_dplr
+    ${LAMMPS_SOURCE_ROOT}/src/KSPACE/fft3d.cpp
+    ${LAMMPS_SOURCE_ROOT}/src/KSPACE/fft3d_wrap.cpp
+    ${LAMMPS_SOURCE_ROOT}/src/KSPACE/remap.cpp
+    ${LAMMPS_SOURCE_ROOT}/src/KSPACE/remap_wrap.cpp)
   if(LAMMPS_VERSION_NUMBER GREATER 20210831)
     list(APPEND LMP_SRC ${LAMMPS_SOURCE_ROOT}/src/EXTRA-FIX/fix_ttm.cpp
     )# for ttm

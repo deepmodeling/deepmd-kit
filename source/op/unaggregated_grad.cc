@@ -168,7 +168,9 @@ struct UnaggregatedDyDxFunctor {
           accumulator += w[jj * width + ii] * dy_dx[kk * size + jj];
         }
         dz_drou *= accumulator;
-        dz_drou += dy_dx[kk * size + ii % size];
+        if (width == 2 * size || width == size) {
+          dz_drou += dy_dx[kk * size + ii % size];
+        }
         dz_dx[kk * width + ii] = dz_drou;
       }
     }
@@ -256,7 +258,9 @@ struct UnaggregatedDy2DxFunctor {
         dz_drou +=
             grad_grad(ybar[kk * width + ii], z[kk * width + ii], functype) *
             accumulator * accumulator;
-        dz_drou += dy2_dx[kk * size + ii % size];
+        if (width == 2 * size || width == size) {
+          dz_drou += dy2_dx[kk * size + ii % size];
+        }
         dz2_dx[kk * width + ii] = dz_drou;
       }
     }
@@ -490,7 +494,7 @@ REGISTER_CPU(float);
 REGISTER_CPU(double);
 // Not required in the current situation
 // // Register the GPU kernels.
-// #if GOOGLE_CUDA
+// #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 // #define REGISTER_GPU(T) \
 // REGISTER_KERNEL_BUILDER( \
 //     Name("UnaggregatedDyDxS").Device(DEVICE_GPU).TypeConstraint<T>("T"), \
@@ -500,4 +504,4 @@ REGISTER_CPU(double);
 //     UnaggregatedDyDxOp<GPUDevice, T>);
 // REGISTER_GPU(float);
 // REGISTER_GPU(double);
-// #endif  // GOOGLE_CUDA
+// #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM

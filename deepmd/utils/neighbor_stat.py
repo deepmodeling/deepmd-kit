@@ -82,6 +82,8 @@ class NeighborStat:
                 rcut=self.rcut,
             )
             place_holders["dir"] = tf.placeholder(tf.string)
+            _min_nbor_dist = tf.reduce_min(_min_nbor_dist)
+            _max_nbor_size = tf.reduce_max(_max_nbor_size, axis=0)
             return place_holders, (_max_nbor_size, _min_nbor_dist, place_holders["dir"])
 
         with sub_graph.as_default():
@@ -128,10 +130,7 @@ class NeighborStat:
                         }
 
         for mn, dt, jj in self.p.generate(self.sub_sess, feed()):
-            if dt.size != 0:
-                dt = np.min(dt)
-            else:
-                dt = self.rcut
+            if np.isinf(dt):
                 log.warning(
                     "Atoms with no neighbors found in %s. Please make sure it's what you expected."
                     % jj
@@ -145,9 +144,10 @@ class NeighborStat:
                         " training data to remove duplicated atoms." % jj
                     )
                 self.min_nbor_dist = dt
-            var = np.max(mn, axis=0)
-            self.max_nbor_size = np.maximum(var, self.max_nbor_size)
+            self.max_nbor_size = np.maximum(mn, self.max_nbor_size)
 
+        # do sqrt in the final
+        self.min_nbor_dist = math.sqrt(self.min_nbor_dist)
         log.info("training data with min nbor dist: " + str(self.min_nbor_dist))
         log.info("training data with max nbor size: " + str(self.max_nbor_size))
         return self.min_nbor_dist, self.max_nbor_size

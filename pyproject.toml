@@ -2,7 +2,7 @@
 requires = [
     # dynamic metadata API is still unstable
     # TODO: unpin the upper bound when it is stable
-    "scikit-build-core>=0.5,<0.6",
+    "scikit-build-core>=0.5,<0.7,!=0.6.0",
     "packaging",
 ]
 build-backend = "backend.dp_backend"
@@ -10,7 +10,7 @@ backend-path = ["."]
 
 [project]
 name = "deepmd-kit"
-dynamic = ["version", "optional-dependencies", "scripts"]
+dynamic = ["version", "optional-dependencies", "scripts", "readme"]
 description = "A deep learning package for many-body potential energy representation and molecular dynamics"
 authors = [
   {name = "DeepModeling"},
@@ -38,7 +38,7 @@ dependencies = [
     'numpy',
     'scipy',
     'pyyaml',
-    'dargs >= 0.3.5',
+    'dargs >= 0.4.1',
     'python-hostlist >= 1.21',
     'typing_extensions; python_version < "3.8"',
     'importlib_metadata>=1.4; python_version < "3.8"',
@@ -47,11 +47,13 @@ dependencies = [
     'packaging',
 ]
 requires-python = ">=3.7"
-readme = "README.md"
 keywords = ["deepmd"]
 
 [project.entry-points."lammps.plugins"]
 deepmd = "deepmd.lmp:get_op_dir"
+
+[project.entry-points."dpgui"]
+"DeePMD-kit" = "deepmd.utils.argcheck:gen_args"
 
 [project.urls]
 Homepage = "https://github.com/deepmodeling/deepmd-kit"
@@ -59,7 +61,6 @@ documentation = "https://docs.deepmodeling.com/projects/deepmd"
 repository = "https://github.com/deepmodeling/deepmd-kit"
 
 [tool.setuptools_scm]
-write_to = "deepmd/_version.py"
 
 [tool.scikit-build]
 experimental = true
@@ -81,7 +82,7 @@ sdist.exclude = [
 ]
 wheel.packages = [
     "deepmd",
-    "deepmd_cli",
+    "deepmd_utils",
 ]
 wheel.py-api = "py37"
 build-dir = "build/{wheel_tag}"
@@ -96,6 +97,31 @@ provider-path = "backend"
 [tool.scikit-build.metadata.scripts]
 provider = "backend.dynamic_metadata"
 provider-path = "backend"
+
+[tool.scikit-build.metadata.readme]
+provider = "scikit_build_core.metadata.fancy_pypi_readme"
+
+[[tool.scikit-build.generate]]
+path = "deepmd_utils/_version.py"
+template = '''
+version = "${version}"
+'''
+
+[tool.hatch.metadata.hooks.fancy-pypi-readme]
+content-type = "text/markdown"
+
+[[tool.hatch.metadata.hooks.fancy-pypi-readme.fragments]]
+path = "README.md"
+
+[[tool.hatch.metadata.hooks.fancy-pypi-readme.substitutions]]
+# links
+pattern = '\[(.+?)\]\(((?!https?://)\S+?)\)'
+replacement = '[\1](https://github.com/deepmodeling/deepmd-kit/tree/master/\g<2>)'
+
+[[tool.hatch.metadata.hooks.fancy-pypi-readme.substitutions]]
+# image
+pattern = '(srcset|src)="((?!https?://)\S+?)"'
+replacement = '\1="https://github.com/deepmodeling/deepmd-kit/raw/master/\g<2>"'
 
 [tool.cibuildwheel]
 test-command = [
@@ -112,7 +138,7 @@ manylinux-x86_64-image = "quay.io/pypa/manylinux_2_28_x86_64:2022-11-19-1b19e81"
 manylinux-aarch64-image = "quay.io/pypa/manylinux_2_28_aarch64:2022-11-19-1b19e81"
 
 [tool.cibuildwheel.macos]
-environment = { PIP_PREFER_BINARY="1", DP_LAMMPS_VERSION="stable_2Aug2023", DP_ENABLE_IPI="1" }
+environment = { PIP_PREFER_BINARY="1", DP_LAMMPS_VERSION="stable_2Aug2023_update1", DP_ENABLE_IPI="1" }
 before-all = [
     """if [[ "$CIBW_BUILD" != *macosx_arm64* ]]; then brew install mpich; fi""",
 ]
@@ -124,9 +150,9 @@ repair-wheel-command = """if [[ "$CIBW_BUILD" == *macosx_arm64* ]]; then rm -rf 
 [tool.cibuildwheel.linux]
 repair-wheel-command = "auditwheel repair --exclude libtensorflow_framework.so.2 --exclude libtensorflow_framework.so.1 --exclude libtensorflow_framework.so --exclude _pywrap_tensorflow_internal.so --exclude libtensorflow_cc.so.2 -w {dest_dir} {wheel}"
 environment-pass = ["CIBW_BUILD", "DP_VARIANT"]
-environment = { PIP_PREFER_BINARY="1", DP_VARIANT="cuda", DP_LAMMPS_VERSION="stable_2Aug2023", DP_ENABLE_IPI="1", MPI_HOME="/usr/lib64/mpich", PATH="/usr/lib64/mpich/bin:$PATH" }
+environment = { PIP_PREFER_BINARY="1", DP_LAMMPS_VERSION="stable_2Aug2023_update1", DP_ENABLE_IPI="1", MPI_HOME="/usr/lib64/mpich", PATH="/usr/lib64/mpich/bin:$PATH" }
 before-all = [
-    """{ if [ "$(uname -m)" = "x86_64" ] ; then curl https://developer.download.nvidia.com/compute/cuda/11.8.0/local_installers/cuda_11.8.0_520.61.05_linux.run -O && bash cuda_11.8.0_520.61.05_linux.run --silent --toolkit; fi }""",
+    """{ if [ "$(uname -m)" = "x86_64" ] ; then yum config-manager --add-repo http://developer.download.nvidia.com/compute/cuda/repos/rhel8/x86_64/cuda-rhel8.repo && yum install -y cuda-nvcc-11-8 cuda-cudart-devel-11-8; fi }""",
     "yum install -y mpich-devel",
 ]
 
@@ -137,6 +163,31 @@ test-command = [
     "python -m deepmd -h",
     "dp -h",
 ]
+
+# One can run `tox` or `tox -e gpu`
+# to run pytest in an isolated environment
+# Use with pipx:
+# $ pip install -U pipx
+# $ pipx tox
+[tool.tox]
+legacy_tox_ini = """
+    [tox]
+    min_version = 4.0
+
+    [testenv]
+    extras =
+        test
+        cpu
+    commands = pytest source/tests
+
+    [testenv:gpu]
+    extras =
+        test
+        gpu
+    commands = pytest source/tests
+    setenv =
+        DP_VARIANT = cuda
+"""
 
 # selectively turn of lintner warnings, always include reasoning why any warning should
 # be silenced
@@ -176,9 +227,6 @@ select = [
     "NPY", # numpy
 ]
 
-[tool.pytest.ini_options]
-markers = "run"
-
 ignore = [
     "E501", # line too long
     "F841", # local variable is assigned to but never used
@@ -198,3 +246,6 @@ ignore-init-module-imports = true
 
 [tool.ruff.pydocstyle]
 convention = "numpy"
+
+[tool.pytest.ini_options]
+markers = "run"

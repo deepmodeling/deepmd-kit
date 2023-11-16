@@ -42,45 +42,45 @@ void prod_env_mat_r_cpu(FPTYPE *em,
                         const float rcut_smth,
                         const std::vector<int> sec);
 
-#if GOOGLE_CUDA
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 template <typename FPTYPE>
-void prod_env_mat_a_gpu_cuda(FPTYPE *em,
-                             FPTYPE *em_deriv,
-                             FPTYPE *rij,
-                             int *nlist,
-                             const FPTYPE *coord,
-                             const int *type,
-                             const InputNlist &gpu_inlist,
-                             int *array_int,
-                             unsigned long long *array_longlong,
-                             const int max_nbor_size,
-                             const FPTYPE *avg,
-                             const FPTYPE *std,
-                             const int nloc,
-                             const int nall,
-                             const float rcut,
-                             const float rcut_smth,
-                             const std::vector<int> sec,
-                             const int *f_type = NULL);
+void prod_env_mat_a_gpu(FPTYPE *em,
+                        FPTYPE *em_deriv,
+                        FPTYPE *rij,
+                        int *nlist,
+                        const FPTYPE *coord,
+                        const int *type,
+                        const InputNlist &gpu_inlist,
+                        int *array_int,
+                        unsigned long long *array_longlong,
+                        const int max_nbor_size,
+                        const FPTYPE *avg,
+                        const FPTYPE *std,
+                        const int nloc,
+                        const int nall,
+                        const float rcut,
+                        const float rcut_smth,
+                        const std::vector<int> sec,
+                        const int *f_type = NULL);
 
 template <typename FPTYPE>
-void prod_env_mat_r_gpu_cuda(FPTYPE *em,
-                             FPTYPE *em_deriv,
-                             FPTYPE *rij,
-                             int *nlist,
-                             const FPTYPE *coord,
-                             const int *type,
-                             const InputNlist &gpu_inlist,
-                             int *array_int,
-                             unsigned long long *array_longlong,
-                             const int max_nbor_size,
-                             const FPTYPE *avg,
-                             const FPTYPE *std,
-                             const int nloc,
-                             const int nall,
-                             const float rcut,
-                             const float rcut_smth,
-                             const std::vector<int> sec);
+void prod_env_mat_r_gpu(FPTYPE *em,
+                        FPTYPE *em_deriv,
+                        FPTYPE *rij,
+                        int *nlist,
+                        const FPTYPE *coord,
+                        const int *type,
+                        const InputNlist &gpu_inlist,
+                        int *array_int,
+                        unsigned long long *array_longlong,
+                        const int max_nbor_size,
+                        const FPTYPE *avg,
+                        const FPTYPE *std,
+                        const int nloc,
+                        const int nall,
+                        const float rcut,
+                        const float rcut_smth,
+                        const std::vector<int> sec);
 
 void env_mat_nbor_update(InputNlist &inlist,
                          InputNlist &gpu_inlist,
@@ -88,54 +88,6 @@ void env_mat_nbor_update(InputNlist &inlist,
                          int *&nbor_list_dev,
                          const int *mesh,
                          const int size);
-#endif  // GOOGLE_CUDA
-
-#if TENSORFLOW_USE_ROCM
-template <typename FPTYPE>
-void prod_env_mat_a_gpu_rocm(FPTYPE *em,
-                             FPTYPE *em_deriv,
-                             FPTYPE *rij,
-                             int *nlist,
-                             const FPTYPE *coord,
-                             const int *type,
-                             const InputNlist &gpu_inlist,
-                             int *array_int,
-                             unsigned long long *array_longlong,
-                             const int max_nbor_size,
-                             const FPTYPE *avg,
-                             const FPTYPE *std,
-                             const int nloc,
-                             const int nall,
-                             const float rcut,
-                             const float rcut_smth,
-                             const std::vector<int> sec,
-                             const int *f_type = NULL);
-
-template <typename FPTYPE>
-void prod_env_mat_r_gpu_rocm(FPTYPE *em,
-                             FPTYPE *em_deriv,
-                             FPTYPE *rij,
-                             int *nlist,
-                             const FPTYPE *coord,
-                             const int *type,
-                             const InputNlist &gpu_inlist,
-                             int *array_int,
-                             unsigned long long *array_longlong,
-                             const int max_nbor_size,
-                             const FPTYPE *avg,
-                             const FPTYPE *std,
-                             const int nloc,
-                             const int nall,
-                             const float rcut,
-                             const float rcut_smth,
-                             const std::vector<int> sec);
-
-void env_mat_nbor_update(InputNlist &inlist,
-                         InputNlist &gpu_inlist,
-                         int &max_nbor_size,
-                         int *&nbor_list_dev,
-                         const int *mesh,
-                         const int size);
-#endif  // TENSORFLOW_USE_ROCM
+#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 
 }  // namespace deepmd

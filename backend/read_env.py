@@ -57,8 +57,8 @@ def get_argument_from_env() -> Tuple[str, list, list, dict, str]:
         if rocm_root:
             cmake_args.append(f"-DCMAKE_HIP_COMPILER_ROCM_ROOT:STRING={rocm_root}")
         hipcc_flags = os.environ.get("HIP_HIPCC_FLAGS")
-        if hipcc_flags:
-            cmake_args.append(f"-DHIP_HIPCC_FLAGS:STRING={hipcc_flags}")
+        if hipcc_flags is not None:
+            os.environ["HIPFLAGS"] = os.environ.get("HIPFLAGS", "") + " " + hipcc_flags
     else:
         raise RuntimeError("Unsupported DP_VARIANT option: %s" % dp_variant)
 

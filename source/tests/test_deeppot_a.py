@@ -8,10 +8,12 @@ from common import (
     run_dp,
     tests_path,
 )
+from packaging.version import parse as parse_version
 
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
     MODEL_VERSION,
+    tf,
 )
 from deepmd.infer import (
     DeepPot,
@@ -300,6 +302,23 @@ class TestDeepPotAPBC(unittest.TestCase):
         np.testing.assert_almost_equal(ee.ravel(), expected_se.ravel(), default_places)
         expected_sv = np.sum(expected_v.reshape([nframes, -1, 9]), axis=1)
         np.testing.assert_almost_equal(vv.ravel(), expected_sv.ravel(), default_places)
+
+    # TODO: needs to fix
+    @unittest.skipIf(tf.test.is_gpu_available(), reason="Segfault in GPUs")
+    def test_zero_input(self):
+        nframes = 1
+        ee, ff, vv = self.dp.eval(
+            np.zeros([nframes, 0, 3]), self.box, np.zeros([0]), atomic=False
+        )
+        # check shape of the returns
+        natoms = 0
+        self.assertEqual(ee.shape, (nframes, 1))
+        self.assertEqual(ff.shape, (nframes, natoms, 3))
+        self.assertEqual(vv.shape, (nframes, 9))
+        # check values
+        np.testing.assert_almost_equal(ff.ravel(), 0, default_places)
+        np.testing.assert_almost_equal(ee.ravel(), 0, default_places)
+        np.testing.assert_almost_equal(vv.ravel(), 0, default_places)
 
 
 class TestDeepPotANoPBC(unittest.TestCase):
@@ -726,7 +745,7 @@ class TestModelConvert(unittest.TestCase):
 
     def test_convert_012(self):
         old_model = "deeppot.pb"
-        new_model = "deeppot.pbtxt"
+        new_model = "deeppot-new.pb"
         convert_pbtxt_to_pb(str(tests_path / "infer" / "sea_012.pbtxt"), old_model)
         run_dp(f"dp convert-from 0.12 -i {old_model} -o {new_model}")
         dp = DeepPot(new_model)
@@ -736,7 +755,7 @@ class TestModelConvert(unittest.TestCase):
 
     def test_convert(self):
         old_model = "deeppot.pb"
-        new_model = "deeppot.pbtxt"
+        new_model = "deeppot-new.pb"
         convert_pbtxt_to_pb(str(tests_path / "infer" / "sea_012.pbtxt"), old_model)
         run_dp(f"dp convert-from -i {old_model} -o {new_model}")
         dp = DeepPot(new_model)
@@ -750,33 +769,33 @@ class TestModelConvert(unittest.TestCase):
         new_model_pb = "deeppot_new.pb"
         convert_pbtxt_to_pb(str(tests_path / "infer" / "sea_012.pbtxt"), old_model)
         version = detect_model_version(old_model)
-        self.assertEqual(version, "<= 0.12")
+        self.assertEqual(version, parse_version("0.12"))
         os.remove(old_model)
         shutil.copyfile(str(tests_path / "infer" / "sea_012.pbtxt"), new_model_txt)
         convert_dp012_to_dp10(new_model_txt)
         convert_pbtxt_to_pb(new_model_txt, new_model_pb)
         version = detect_model_version(new_model_pb)
-        self.assertEqual(version, "1.0")
+        self.assertEqual(version, parse_version("1.0"))
         os.remove(new_model_pb)
         convert_dp10_to_dp11(new_model_txt)
         convert_pbtxt_to_pb(new_model_txt, new_model_pb)
         version = detect_model_version(new_model_pb)
-        self.assertEqual(version, "1.3")
+        self.assertEqual(version, parse_version("1.3"))
         os.remove(new_model_pb)
         convert_dp12_to_dp13(new_model_txt)
         convert_pbtxt_to_pb(new_model_txt, new_model_pb)
         version = detect_model_version(new_model_pb)
-        self.assertEqual(version, "1.3")
+        self.assertEqual(version, parse_version("1.3"))
         os.remove(new_model_pb)
         convert_dp13_to_dp20(new_model_txt)
         convert_pbtxt_to_pb(new_model_txt, new_model_pb)
         version = detect_model_version(new_model_pb)
-        self.assertEqual(version, "2.0")
+        self.assertEqual(version, parse_version("2.0"))
         os.remove(new_model_pb)
         convert_dp20_to_dp21(new_model_txt)
         convert_pbtxt_to_pb(new_model_txt, new_model_pb)
         version = detect_model_version(new_model_pb)
-        self.assertEqual(version, ">= 2.1")
+        self.assertEqual(version, parse_version("2.1"))
         os.remove(new_model_pb)
         os.remove(new_model_txt)
 

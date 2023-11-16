@@ -21,6 +21,7 @@ from deepmd.entrypoints import (
     freeze,
     make_model_devi,
     neighbor_stat,
+    start_dpgui,
     test,
     train_dp,
     transfer,
@@ -31,7 +32,7 @@ from deepmd.loggers import (
 from deepmd.nvnmd.entrypoints.train import (
     train_nvnmd,
 )
-from deepmd_cli.main import (
+from deepmd_utils.main import (
     get_ll,
     main_parser,
     parse_args,
@@ -89,6 +90,8 @@ def main(args: Optional[Union[List[str], argparse.Namespace]] = None):
         neighbor_stat(**dict_args)
     elif args.command == "train-nvnmd":  # nvnmd
         train_nvnmd(**dict_args)
+    elif args.command == "gui":
+        start_dpgui(**dict_args)
     elif args.command is None:
         pass
     else:

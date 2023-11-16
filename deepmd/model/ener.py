@@ -120,7 +120,7 @@ class EnerModel(StandardModel):
 
     def get_numb_aparam(self) -> int:
         """Get the number of atomic parameters."""
-        return self.numb_fparam
+        return self.numb_aparam
 
     def data_stat(self, data):
         all_stat = make_stat_input(data, self.data_stat_nbatch, merge_sys=False)

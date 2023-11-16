@@ -130,8 +130,8 @@ TEST_F(TestProdForceR, cpu) {
   // printf("\n");
 }
 
-#if GOOGLE_CUDA
-TEST_F(TestProdForceR, gpu_cuda) {
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+TEST_F(TestProdForceR, gpu) {
   std::vector<double> force(nframes * nall * 3, 0.0);
   int n_a_sel = nnei;
 
@@ -143,8 +143,8 @@ TEST_F(TestProdForceR, gpu_cuda) {
   deepmd::malloc_device_memory_sync(net_deriv_dev, net_deriv);
   deepmd::malloc_device_memory_sync(env_deriv_dev, env_deriv);
 
-  deepmd::prod_force_r_gpu_cuda<double>(force_dev, net_deriv_dev, env_deriv_dev,
-                                        nlist_dev, nloc, nall, nnei, nframes);
+  deepmd::prod_force_r_gpu<double>(force_dev, net_deriv_dev, env_deriv_dev,
+                                   nlist_dev, nloc, nall, nnei, nframes);
 
   deepmd::memcpy_device_to_host(force_dev, force);
   deepmd::delete_device_memory(nlist_dev);
@@ -158,34 +158,4 @@ TEST_F(TestProdForceR, gpu_cuda) {
     EXPECT_LT(fabs(force[jj] - expected_force[jj]), 1e-5);
   }
 }
-#endif  // GOOGLE_CUDA
-
-#if TENSORFLOW_USE_ROCM
-TEST_F(TestProdForceR, gpu_rocm) {
-  std::vector<double> force(nframes * nall * 3, 0.0);
-  int n_a_sel = nnei;
-
-  int* nlist_dev = NULL;
-  double *force_dev = NULL, *net_deriv_dev = NULL, *env_deriv_dev = NULL;
-
-  deepmd::malloc_device_memory_sync(nlist_dev, nlist);
-  deepmd::malloc_device_memory_sync(force_dev, force);
-  deepmd::malloc_device_memory_sync(net_deriv_dev, net_deriv);
-  deepmd::malloc_device_memory_sync(env_deriv_dev, env_deriv);
-
-  deepmd::prod_force_r_gpu_rocm<double>(force_dev, net_deriv_dev, env_deriv_dev,
-                                        nlist_dev, nloc, nall, nnei, nframes);
-
-  deepmd::memcpy_device_to_host(force_dev, force);
-  deepmd::delete_device_memory(nlist_dev);
-  deepmd::delete_device_memory(force_dev);
-  deepmd::delete_device_memory(net_deriv_dev);
-  deepmd::delete_device_memory(env_deriv_dev);
-
-  EXPECT_EQ(force.size(), nframes * nall * 3);
-  EXPECT_EQ(force.size(), expected_force.size());
-  for (int jj = 0; jj < force.size(); ++jj) {
-    EXPECT_LT(fabs(force[jj] - expected_force[jj]), 1e-5);
-  }
-}
-#endif  // TENSORFLOW_USE_ROCM
+#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM

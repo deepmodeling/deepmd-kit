@@ -70,9 +70,9 @@ class ProdVirialSeAOp : public OpKernel {
     const int* natoms = natoms_tensor.flat<int>().data();
     int nloc = natoms[0];
     int nall = natoms[1];
-    int nnei = nlist_tensor.shape().dim_size(1) / nloc;
+    int nnei = nloc > 0 ? nlist_tensor.shape().dim_size(1) / nloc : 0;
     int nframes = net_deriv_tensor.shape().dim_size(0);
-    int ndescrpt = net_deriv_tensor.shape().dim_size(1) / nloc;
+    int ndescrpt = nloc > 0 ? net_deriv_tensor.shape().dim_size(1) / nloc : 0;
     // check the sizes
     OP_REQUIRES(context, (nframes == in_deriv_tensor.shape().dim_size(0)),
                 errors::InvalidArgument("number of samples should match"));
@@ -120,15 +120,10 @@ class ProdVirialSeAOp : public OpKernel {
       const FPTYPE* rij = p_rij + kk * nloc * nnei * 3;
       const int* nlist = p_nlist + kk * nloc * nnei;
       if (device == "GPU") {
-#if GOOGLE_CUDA
-        deepmd::prod_virial_a_gpu_cuda(virial, atom_virial, net_deriv, in_deriv,
-                                       rij, nlist, nloc, nall, nnei);
-#endif  // GOOGLE_CUDA
-
-#if TENSORFLOW_USE_ROCM
-        deepmd::prod_virial_a_gpu_rocm(virial, atom_virial, net_deriv, in_deriv,
-                                       rij, nlist, nloc, nall, nnei);
-#endif  // TENSORFLOW_USE_ROCM
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+        deepmd::prod_virial_a_gpu(virial, atom_virial, net_deriv, in_deriv, rij,
+                                  nlist, nloc, nall, nnei);
+#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
       } else if (device == "CPU") {
         deepmd::prod_virial_a_cpu(virial, atom_virial, net_deriv, in_deriv, rij,
                                   nlist, nloc, nall, nnei);
@@ -174,9 +169,9 @@ class ProdVirialSeROp : public OpKernel {
     const int* natoms = natoms_tensor.flat<int>().data();
     int nloc = natoms[0];
     int nall = natoms[1];
-    int nnei = nlist_tensor.shape().dim_size(1) / nloc;
+    int nnei = nloc > 0 ? nlist_tensor.shape().dim_size(1) / nloc : 0;
     int nframes = net_deriv_tensor.shape().dim_size(0);
-    int ndescrpt = net_deriv_tensor.shape().dim_size(1) / nloc;
+    int ndescrpt = nloc > 0 ? net_deriv_tensor.shape().dim_size(1) / nloc : 0;
     // check the sizes
     OP_REQUIRES(context, (nframes == in_deriv_tensor.shape().dim_size(0)),
                 errors::InvalidArgument("number of samples should match"));
@@ -224,15 +219,10 @@ class ProdVirialSeROp : public OpKernel {
       const FPTYPE* rij = p_rij + kk * nloc * nnei * 3;
       const int* nlist = p_nlist + kk * nloc * nnei;
       if (device == "GPU") {
-#if GOOGLE_CUDA
-        deepmd::prod_virial_r_gpu_cuda(virial, atom_virial, net_deriv, in_deriv,
-                                       rij, nlist, nloc, nall, nnei);
-#endif  // GOOGLE_CUDA
-
-#if TENSORFLOW_USE_ROCM
-        deepmd::prod_virial_r_gpu_rocm(virial, atom_virial, net_deriv, in_deriv,
-                                       rij, nlist, nloc, nall, nnei);
-#endif  // TENSORFLOW_USE_ROCM
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+        deepmd::prod_virial_r_gpu(virial, atom_virial, net_deriv, in_deriv, rij,
+                                  nlist, nloc, nall, nnei);
+#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
       } else if (device == "CPU") {
         deepmd::prod_virial_r_cpu(virial, atom_virial, net_deriv, in_deriv, rij,
                                   nlist, nloc, nall, nnei);

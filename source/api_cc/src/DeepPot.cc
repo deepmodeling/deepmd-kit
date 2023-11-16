@@ -574,7 +574,8 @@ void DeepPot::compute(ENERGYVTYPE& dener,
                       const std::vector<VALUETYPE>& fparam_,
                       const std::vector<VALUETYPE>& aparam_) {
   int nall = datype_.size();
-  int nframes = dcoord_.size() / nall / 3;
+  // if nall==0, unclear nframes, but 1 is ok
+  int nframes = nall > 0 ? (dcoord_.size() / nall / 3) : 1;
   int nloc = nall;
   atommap = deepmd::AtomMap(datype_.begin(), datype_.begin() + nloc);
   assert(nloc == atommap.get_type().size());
@@ -658,7 +659,8 @@ void DeepPot::compute(ENERGYVTYPE& dener,
                       const std::vector<VALUETYPE>& fparam_,
                       const std::vector<VALUETYPE>& aparam__) {
   int nall = datype_.size();
-  int nframes = dcoord_.size() / nall / 3;
+  // if nall==0, unclear nframes, but 1 is ok
+  int nframes = nall > 0 ? (dcoord_.size() / nall / 3) : 1;
   std::vector<VALUETYPE> fparam;
   std::vector<VALUETYPE> aparam_;
   validate_fparam_aparam(nframes, (aparam_nall ? nall : (nall - nghost)),
@@ -753,7 +755,8 @@ void DeepPot::compute_inner(ENERGYVTYPE& dener,
                             const std::vector<VALUETYPE>& fparam,
                             const std::vector<VALUETYPE>& aparam) {
   int nall = datype_.size();
-  int nframes = dcoord_.size() / nall / 3;
+  // if nall==0, unclear nframes, but 1 is ok
+  int nframes = nall > 0 ? (dcoord_.size() / nall / 3) : 1;
   int nloc = nall - nghost;
 
   std::vector<std::pair<std::string, Tensor>> input_tensors;
@@ -841,7 +844,8 @@ void DeepPot::compute(ENERGYVTYPE& dener,
                       const std::vector<VALUETYPE>& dbox,
                       const std::vector<VALUETYPE>& fparam_,
                       const std::vector<VALUETYPE>& aparam_) {
-  int nframes = dcoord_.size() / 3 / datype_.size();
+  // if datype.size is 0, not clear nframes; but 1 is just ok
+  int nframes = datype_.size() > 0 ? (dcoord_.size() / 3 / datype_.size()) : 1;
   atommap = deepmd::AtomMap(datype_.begin(), datype_.end());
   int nloc = datype_.size();
   std::vector<VALUETYPE> fparam;
@@ -930,7 +934,8 @@ void DeepPot::compute(ENERGYVTYPE& dener,
                       const std::vector<VALUETYPE>& fparam_,
                       const std::vector<VALUETYPE>& aparam__) {
   int nall = datype_.size();
-  int nframes = dcoord_.size() / 3 / nall;
+  // if nall==0, unclear nframes, but 1 is ok
+  int nframes = nall > 0 ? (dcoord_.size() / nall / 3) : 1;
   int nloc = nall - nghost;
   std::vector<VALUETYPE> fparam;
   std::vector<VALUETYPE> aparam_;

@@ -6,6 +6,28 @@ The method of DPLR is described in [this paper][1]. One is recommended to read t
 
 In the following, we take the DPLR model for example to introduce the training and LAMMPS simulation with the DPLR model. The DPLR model is trained in two steps.
 
+## Theory
+
+The Deep Potential Long Range (DPLR) model adds the electrostatic energy to the total energy:
+```math
+    E=E_{\text{DP}} + E_{\text{ele}},
+```
+where $E_{\text{DP}}$ is the short-range contribution constructed as the [standard energy model](./train-energy.md) that is fitted against $(E^\ast-E_{\text{ele}})$.
+$E_{\text{ele}}$ is the electrostatic energy
+introduced by a group of Gaussian distributions that is an approximation of the electronic structure of the system, and is calculated in Fourier space by
+```math
+    E_{\text{ele}} = \frac{1}{2\pi V}\sum_{m \neq 0, \|m\|\leq L} \frac{\exp({-\pi ^2 m^2/\beta ^2})}{m^2}S^2(m),
+```
+where $\beta$ is a freely tunable parameter that controls the spread of the Gaussians.
+$L$ is the cutoff in Fourier space and $S(m)$, the structure factor, is given by
+```math
+    S(m)=\sum_i q_i e^{-2\pi \imath m \boldsymbol r_i} + \sum_n q_n e^{-2\pi \imath m \boldsymbol W_n},
+```
+where $\imath = \sqrt{-1}$ denotes the imaginary unit, $\boldsymbol r_i$ indicates ion coordinates, $q_i$ is the charge of the ion $i$, and $W_n$ is the $n$-th Wannier centroid (WC) which can be obtained from a separated [dipole model](./train-fitting-tensor.md).
+It can be proved that the error in the electrostatic energy introduced by the Gaussian approximations is dominated by a summation of dipole-quadrupole interactions that decay as $r^{-4}$, where $r$ is the distance between the dipole and quadrupole.[^1]
+
+[^1]: This section is built upon Jinzhe Zeng, Duo Zhang, Denghui Lu, Pinghui Mo, Zeyu Li, Yixiao Chen,  Marián Rynik, Li'ang Huang, Ziyao Li, Shaochen Shi, Yingze Wang, Haotian Ye, Ping Tuo, Jiabin Yang, Ye Ding, Yifan Li, Davide Tisi, Qiyu Zeng, Han Bao, Yu Xia, Jiameng Huang, Koki Muraoka, Yibo Wang, Junhan Chang, Fengbo Yuan, Sigbjørn Løland Bore, Chun Cai, Yinnian Lin, Bo Wang, Jiayan Xu, Jia-Xin Zhu, Chenxing Luo, Yuzhi Zhang, Rhys E. A. Goodall, Wenshuo Liang, Anurag Kumar Singh, Sikai Yao, Jingchao Zhang, Renata Wentzcovitch, Jiequn Han, Jie Liu, Weile Jia, Darrin M. York, Weinan E, Roberto Car, Linfeng Zhang, Han Wang, [J. Chem. Phys. 159, 054801 (2023)](https://doi.org/10.1063/5.0155600) licensed under a [Creative Commons Attribution (CC BY) license](http://creativecommons.org/licenses/by/4.0/).
+
 ## Train a deep Wannier model for Wannier centroids
 
 We use the deep Wannier model (DW) to represent the relative position of the Wannier centroid (WC) with the atom with which it is associated. One may consult the introduction of the [dipole model](train-fitting-tensor.md) for a detailed introduction. An example input `wc.json` and a small dataset `data` for tutorial purposes can be found in

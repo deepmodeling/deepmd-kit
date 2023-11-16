@@ -193,3 +193,17 @@ class FrozenModel(Model):
     def get_type_map(self) -> list:
         """Get the type map."""
         return self.model.get_type_map()
+
+    @classmethod
+    def update_sel(cls, global_jdata: dict, local_jdata: dict):
+        """Update the selection and perform neighbor statistics.
+
+        Parameters
+        ----------
+        global_jdata : dict
+            The global data, containing the training section
+        local_jdata : dict
+            The local data refer to the current class
+        """
+        # we don't know how to compress it, so no neighbor statistics here
+        return local_jdata

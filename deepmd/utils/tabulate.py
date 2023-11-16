@@ -85,7 +85,10 @@ class DPTabulate:
         # functype
         if activation_fn == ACTIVATION_FN_DICT["tanh"]:
             self.functype = 1
-        elif activation_fn == ACTIVATION_FN_DICT["gelu"]:
+        elif activation_fn in (
+            ACTIVATION_FN_DICT["gelu"],
+            ACTIVATION_FN_DICT["gelu_tf"],
+        ):
             self.functype = 2
         elif activation_fn == ACTIVATION_FN_DICT["relu"]:
             self.functype = 3
@@ -176,7 +179,9 @@ class DPTabulate:
         """
         # tabulate range [lower, upper] with stride0 'stride0'
         lower, upper = self._get_env_mat_range(min_nbor_dist)
-        if isinstance(self.descrpt, deepmd.descriptor.DescrptSeAtten):
+        if isinstance(self.descrpt, deepmd.descriptor.DescrptSeAtten) or isinstance(
+            self.descrpt, deepmd.descriptor.DescrptSeAEbdV2
+        ):
             uu = np.max(upper)
             ll = np.min(lower)
             xx = np.arange(ll, uu, stride0, dtype=self.data_type)
@@ -328,8 +333,7 @@ class DPTabulate:
         elif isinstance(self.descrpt, deepmd.descriptor.DescrptSeT):
             tt = np.full((nspline, self.last_layer_size), stride1)
             tt[
-                int((lower - extrapolate * lower) / stride1)
-                + 1 : (
+                int((lower - extrapolate * lower) / stride1) + 1 : (
                     int((lower - extrapolate * lower) / stride1)
                     + int((upper - lower) / stride0)
                 ),
@@ -419,7 +423,9 @@ class DPTabulate:
         bias = {}
         for layer in range(1, self.layer_size + 1):
             bias["layer_" + str(layer)] = []
-            if isinstance(self.descrpt, deepmd.descriptor.DescrptSeAtten):
+            if isinstance(self.descrpt, deepmd.descriptor.DescrptSeAtten) or isinstance(
+                self.descrpt, deepmd.descriptor.DescrptSeAEbdV2
+            ):
                 node = self.embedding_net_nodes[
                     f"filter_type_all{self.suffix}/bias_{layer}"
                 ]
@@ -483,7 +489,9 @@ class DPTabulate:
         matrix = {}
         for layer in range(1, self.layer_size + 1):
             matrix["layer_" + str(layer)] = []
-            if isinstance(self.descrpt, deepmd.descriptor.DescrptSeAtten):
+            if isinstance(self.descrpt, deepmd.descriptor.DescrptSeAtten) or isinstance(
+                self.descrpt, deepmd.descriptor.DescrptSeAEbdV2
+            ):
                 node = self.embedding_net_nodes[
                     f"filter_type_all{self.suffix}/matrix_{layer}"
                 ]
@@ -565,13 +573,13 @@ class DPTabulate:
                                 + xx
                             )
                             dy = op_module.unaggregated_dy_dx_s(
-                                yy,
+                                yy - xx,
                                 self.matrix["layer_" + str(layer + 1)][idx],
                                 xbar,
                                 tf.constant(self.functype),
                             ) + tf.ones([1, 1], yy.dtype)
                             dy2 = op_module.unaggregated_dy2_dx_s(
-                                yy,
+                                yy - xx,
                                 dy,
                                 self.matrix["layer_" + str(layer + 1)][idx],
                                 xbar,
@@ -620,26 +628,72 @@ class DPTabulate:
                             tf.matmul(yy, self.matrix["layer_" + str(layer + 1)][idx])
                             + self.bias["layer_" + str(layer + 1)][idx]
                         )
-                        tt, zz = self._layer_1(
-                            yy,
-                            self.matrix["layer_" + str(layer + 1)][idx],
-                            self.bias["layer_" + str(layer + 1)][idx],
-                        )
-                        dz = op_module.unaggregated_dy_dx(
-                            zz - tt,
-                            self.matrix["layer_" + str(layer + 1)][idx],
-                            dy,
-                            ybar,
-                            tf.constant(self.functype),
-                        )
-                        dy2 = op_module.unaggregated_dy2_dx(
-                            zz - tt,
-                            self.matrix["layer_" + str(layer + 1)][idx],
-                            dy,
-                            dy2,
-                            ybar,
-                            tf.constant(self.functype),
-                        )
+                        if self.neuron[layer] == self.neuron[layer - 1]:
+                            zz = (
+                                self._layer_0(
+                                    yy,
+                                    self.matrix["layer_" + str(layer + 1)][idx],
+                                    self.bias["layer_" + str(layer + 1)][idx],
+                                )
+                                + yy
+                            )
+                            dz = op_module.unaggregated_dy_dx(
+                                zz - yy,
+                                self.matrix["layer_" + str(layer + 1)][idx],
+                                dy,
+                                ybar,
+                                tf.constant(self.functype),
+                            )
+                            dy2 = op_module.unaggregated_dy2_dx(
+                                zz - yy,
+                                self.matrix["layer_" + str(layer + 1)][idx],
+                                dy,
+                                dy2,
+                                ybar,
+                                tf.constant(self.functype),
+                            )
+                        elif self.neuron[layer] == 2 * self.neuron[layer - 1]:
+                            tt, zz = self._layer_1(
+                                yy,
+                                self.matrix["layer_" + str(layer + 1)][idx],
+                                self.bias["layer_" + str(layer + 1)][idx],
+                            )
+                            dz = op_module.unaggregated_dy_dx(
+                                zz - tt,
+                                self.matrix["layer_" + str(layer + 1)][idx],
+                                dy,
+                                ybar,
+                                tf.constant(self.functype),
+                            )
+                            dy2 = op_module.unaggregated_dy2_dx(
+                                zz - tt,
+                                self.matrix["layer_" + str(layer + 1)][idx],
+                                dy,
+                                dy2,
+                                ybar,
+                                tf.constant(self.functype),
+                            )
+                        else:
+                            zz = self._layer_0(
+                                yy,
+                                self.matrix["layer_" + str(layer + 1)][idx],
+                                self.bias["layer_" + str(layer + 1)][idx],
+                            )
+                            dz = op_module.unaggregated_dy_dx(
+                                zz,
+                                self.matrix["layer_" + str(layer + 1)][idx],
+                                dy,
+                                ybar,
+                                tf.constant(self.functype),
+                            )
+                            dy2 = op_module.unaggregated_dy2_dx(
+                                zz,
+                                self.matrix["layer_" + str(layer + 1)][idx],
+                                dy,
+                                dy2,
+                                ybar,
+                                tf.constant(self.functype),
+                            )
                         dy = dz
                         yy = zz
 
@@ -687,7 +741,9 @@ class DPTabulate:
 
     def _get_layer_size(self):
         layer_size = 0
-        if isinstance(self.descrpt, deepmd.descriptor.DescrptSeAtten):
+        if isinstance(self.descrpt, deepmd.descriptor.DescrptSeAtten) or isinstance(
+            self.descrpt, deepmd.descriptor.DescrptSeAEbdV2
+        ):
             layer_size = len(self.embedding_net_nodes) // 2
         elif isinstance(self.descrpt, deepmd.descriptor.DescrptSeA):
             layer_size = len(self.embedding_net_nodes) // (
@@ -737,7 +793,9 @@ class DPTabulate:
 
     def _get_table_size(self):
         table_size = 0
-        if isinstance(self.descrpt, deepmd.descriptor.DescrptSeAtten):
+        if isinstance(self.descrpt, deepmd.descriptor.DescrptSeAtten) or isinstance(
+            self.descrpt, deepmd.descriptor.DescrptSeAEbdV2
+        ):
             table_size = 1
         elif isinstance(self.descrpt, deepmd.descriptor.DescrptSeA):
             table_size = self.ntypes * self.ntypes

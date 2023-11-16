@@ -16,6 +16,9 @@ from .doc import (
 from .freeze import (
     freeze,
 )
+from .gui import (
+    start_dpgui,
+)
 from .neighbor_stat import (
     neighbor_stat,
 )
@@ -41,4 +44,5 @@ __all__ = [
     "make_model_devi",
     "convert",
     "neighbor_stat",
+    "start_dpgui",
 ]

@@ -6,7 +6,7 @@ This is the training code we used to generate the results in our paper entitled 
 
 Any user can follow two consecutive steps to run molecular dynamics (MD) on the proposed NVNMD computer, which has been released online: (i) to train a machine learning (ML) model that can decently reproduce the potential energy surface (PES); and (ii) to deploy the trained ML model on the proposed NVNMD computer, then run MD there to obtain the atomistic trajectories.
 
-# Training
+## Training
 
 Our training procedure consists of not only continuous neural network (CNN) training but also quantized neural network (QNN) training which uses the results of CNN as inputs. It is performed on CPU or GPU by using the training codes we open-sourced online.
 
@@ -261,7 +261,7 @@ where items are defined as:
 | platform     | resource provider                                                                                                          | "hnugba"          |
 | project_id   | the project ID to which the job belongs, which can be viewed on the "Projects" page                                        | a integer      |
 
-Notice：The task will use 4 CPU cores for computation, so do not repeatedly use the `mpirun` command, otherwise an error will be reported. All 0000 after "project_id" need to be replaced with your own project ID, which can be viewed on the "Projects" page. Also, the JSON file format requires that no commas be added after the last field within the {}, otherwise, there will be a syntax error. Please check the (documentation)[https://github.com/LiuGroupHNU/md-data/blob/master/code/doc/mdpu/hardware.md] for the latest hardware configuration information.
+Notice：The task will use 4 CPU cores for computation, so do not repeatedly use the `mpirun` command, otherwise an error will be reported. All 0000 after "project_id" need to be replaced with your own project ID, which can be viewed on the "Projects" page. Also, the JSON file format requires that no commas be added after the last field within the {}, otherwise, there will be a syntax error. Please check the [documentation](https://github.com/LiuGroupHNU/md-data/blob/master/code/doc/mdpu/hardware.md) for the latest hardware configuration information.
 
 In addition, it is necessary to prepare input script of the MD simulation, the ML model named `model.pb` obtained by QNN training and data files containing information required for running an MD simulation (e.g., `coord.lmp` containing initial atom coordinates).
 

@@ -134,7 +134,7 @@ def run_apidoc(_):
 
     sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
     cur_dir = os.path.abspath(os.path.dirname(__file__))
-    module = os.path.join(cur_dir, "..", "deepmd")
+    module = os.path.join(cur_dir, "..")
     main(
         [
             "-M",
@@ -145,6 +145,7 @@ def run_apidoc(_):
             "-o",
             os.path.join(cur_dir, "api_py"),
             module,
+            "source/*",
             "--force",
         ]
     )
@@ -298,6 +299,7 @@ myst_enable_extensions = [
     "dollarmath",
     "colon_fence",
 ]
+myst_fence_as_directive = ("math",)
 # fix emoji issue in pdf
 latex_engine = "xelatex"
 latex_elements = {

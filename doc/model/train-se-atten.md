@@ -8,9 +8,48 @@ Here we propose DPA-1, a Deep Potential model with a novel attention mechanism, 
 
 See [this paper](https://arxiv.org/abs/2208.08236) for more information. DPA-1 is implemented as a new descriptor `"se_atten"` for model training, which can be used after simply editing the input.json.
 
-## Installation
-Follow the [standard installation](../install/install-from-source.md#install-the-python-interface) of Python interface in the DeePMD-kit.
-After that, you can smoothly use the DPA-1 model with the following instructions.
+## Theory
+
+Attention-based descriptor $\mathcal{D}^i \in \mathbb{R}^{M \times M_{<}}$, which is proposed in pretrainable DPA-1 model, is given by
+
+```math
+    \mathcal{D}^i = \frac{1}{N_c^2}(\hat{\mathcal{G}}^i)^T \mathcal{R}^i (\mathcal{R}^i)^T \hat{\mathcal{G}}^i_<,
+```
+where $\hat{\mathcal{G}}^i$ represents the embedding matrix $\mathcal{G}^i$ after additional self-attention mechanism and $\mathcal{R}^i$ is defined by the full case in the [`se_e2_a`](./train-se-e2-a.md).
+Note that we obtain $\mathcal{G}^i$ using the type embedding method by default in this descriptor.
+
+To perform the self-attention mechanism, the queries $\mathcal{Q}^{i,l} \in \mathbb{R}^{N_c\times d_k}$, keys $\mathcal{K}^{i,l} \in \mathbb{R}^{N_c\times d_k}$, and values $\mathcal{V}^{i,l} \in \mathbb{R}^{N_c\times d_v}$ are first obtained:
+```math
+    \left(\mathcal{Q}^{i,l}\right)_{j}=Q_{l}\left(\left(\mathcal{G}^{i,l-1}\right)_{j}\right),
+```
+```math
+    \left(\mathcal{K}^{i,l}\right)_{j}=K_{l}\left(\left(\mathcal{G}^{i,l-1}\right)_{j}\right),
+```
+```math
+    \left(\mathcal{V}^{i,l}\right)_{j}=V_{l}\left(\left(\mathcal{G}^{i,l-1}\right)_{j}\right),
+```
+where $Q_{l}$, $K_{l}$, $V_{l}$ represent three trainable linear transformations that output the queries and keys of dimension $d_k$ and values of dimension $d_v$, and $l$ is the index of the attention layer.
+The input embedding matrix to the attention layers,  denoted by $\mathcal{G}^{i,0}$, is chosen as the two-body embedding matrix.
+
+Then the scaled dot-product attention method is adopted:
+```math
+A(\mathcal{Q}^{i,l}, \mathcal{K}^{i,l}, \mathcal{V}^{i,l}, \mathcal{R}^{i,l})=\varphi\left(\mathcal{Q}^{i,l}, \mathcal{K}^{i,l},\mathcal{R}^{i,l}\right)\mathcal{V}^{i,l},
+```
+where $\varphi\left(\mathcal{Q}^{i,l}, \mathcal{K}^{i,l},\mathcal{R}^{i,l}\right) \in \mathbb{R}^{N_c\times N_c}$ is attention weights.
+In the original attention method, one typically has $\varphi\left(\mathcal{Q}^{i,l}, \mathcal{K}^{i,l}\right)=\mathrm{softmax}\left(\frac{\mathcal{Q}^{i,l} (\mathcal{K}^{i,l})^{T}}{\sqrt{d_{k}}}\right)$, with $\sqrt{d_{k}}$ being the normalization temperature.
+This is slightly modified to incorporate the angular information:
+```math
+\varphi\left(\mathcal{Q}^{i,l}, \mathcal{K}^{i,l},\mathcal{R}^{i,l}\right) = \mathrm{softmax}\left(\frac{\mathcal{Q}^{i,l} (\mathcal{K}^{i,l})^{T}}{\sqrt{d_{k}}}\right) \odot \hat{\mathcal{R}}^{i}(\hat{\mathcal{R}}^{i})^{T},
+```
+where $\hat{\mathcal{R}}^{i} \in \mathbb{R}^{N_c\times 3}$ denotes normalized relative coordinates , $\hat{\mathcal{R}}^{i}_{j} = \frac{\boldsymbol{r}_{ij}}{\lVert \boldsymbol{r}_{ij} \lVert}$ and $\odot$ means element-wise multiplication.
+
+Then layer normalization is added in a residual way to finally obtain the self-attention local embedding matrix $\hat{\mathcal{G}}^{i} = \mathcal{G}^{i,L_a}$ after $L_a$ attention layers:[^1]
+```math
+\mathcal{G}^{i,l} = \mathcal{G}^{i,l-1} + \mathrm{LayerNorm}(A(\mathcal{Q}^{i,l}, \mathcal{K}^{i,l}, \mathcal{V}^{i,l}, \mathcal{R}^{i,l})).
+```
+
+[^1]: This section is built upon Jinzhe Zeng, Duo Zhang, Denghui Lu, Pinghui Mo, Zeyu Li, Yixiao Chen,  Marián Rynik, Li'ang Huang, Ziyao Li, Shaochen Shi, Yingze Wang, Haotian Ye, Ping Tuo, Jiabin Yang, Ye Ding, Yifan Li, Davide Tisi, Qiyu Zeng, Han Bao, Yu Xia, Jiameng Huang, Koki Muraoka, Yibo Wang, Junhan Chang, Fengbo Yuan, Sigbjørn Løland Bore, Chun Cai, Yinnian Lin, Bo Wang, Jiayan Xu, Jia-Xin Zhu, Chenxing Luo, Yuzhi Zhang, Rhys E. A. Goodall, Wenshuo Liang, Anurag Kumar Singh, Sikai Yao, Jingchao Zhang, Renata Wentzcovitch, Jiequn Han, Jie Liu, Weile Jia, Darrin M. York, Weinan E, Roberto Car, Linfeng Zhang, Han Wang, [J. Chem. Phys. 159, 054801 (2023)](https://doi.org/10.1063/5.0155600) licensed under a [Creative Commons Attribution (CC BY) license](http://creativecommons.org/licenses/by/4.0/).
+
 
 ## Introduction to new features of DPA-1
 Next, we will list the detailed settings in input.json and the data format, especially for large systems with dozens of elements. An example of DPA-1 input can be found [here](../../examples/water/se_atten/input.json).

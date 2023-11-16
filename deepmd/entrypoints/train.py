@@ -27,6 +27,9 @@ from deepmd.env import (
 from deepmd.infer.data_modifier import (
     DipoleChargeModifier,
 )
+from deepmd.model.model import (
+    Model,
+)
 from deepmd.train.run_options import (
     BUILD,
     CITATION,
@@ -374,7 +377,10 @@ def get_type_map(jdata):
 
 
 def get_nbor_stat(jdata, rcut, one_type: bool = False):
-    max_rcut = get_rcut(jdata)
+    # it seems that DeepmdDataSystem does not need rcut
+    # it's not clear why there is an argument...
+    # max_rcut = get_rcut(jdata)
+    max_rcut = rcut
     type_map = get_type_map(jdata)
 
     if type_map and len(type_map) == 0:
@@ -398,11 +404,7 @@ def get_nbor_stat(jdata, rcut, one_type: bool = False):
                 None,
             )
             tmp_data.get_batch()
-            assert (
-                tmp_data.get_type_map()
-            ), "In multi-task mode, 'type_map.raw' must be defined in data systems {}! ".format(
-                systems
-            )
+            assert tmp_data.get_type_map(), f"In multi-task mode, 'type_map.raw' must be defined in data systems {systems}! "
             if train_data is None:
                 train_data = tmp_data
             else:
@@ -472,18 +474,12 @@ def wrap_up_4(xx):
     return 4 * ((int(xx) + 3) // 4)
 
 
-def update_one_sel(jdata, descriptor):
-    if descriptor["type"] == "loc_frame":
-        return descriptor
+def update_one_sel(jdata, descriptor, one_type: bool = False):
     rcut = descriptor["rcut"]
     tmp_sel = get_sel(
         jdata,
         rcut,
-        one_type=descriptor["type"]
-        in (
-            "se_atten",
-            "se_atten_v2",
-        ),
+        one_type=one_type,
     )
     sel = descriptor["sel"]
     if isinstance(sel, int):
@@ -503,10 +499,7 @@ def update_one_sel(jdata, descriptor):
                     "not less than %d, but you set it to %d. The accuracy"
                     " of your model may get worse." % (ii, tt, dd)
                 )
-    if descriptor["type"] in (
-        "se_atten",
-        "se_atten_v2",
-    ):
+    if one_type:
         descriptor["sel"] = sel = sum(sel)
     return descriptor
 
@@ -515,18 +508,6 @@ def update_sel(jdata):
     log.info(
         "Calculate neighbor statistics... (add --skip-neighbor-stat to skip this step)"
     )
-    if jdata["model"].get("type") == "pairwise_dprc":
-        # do not update sel; only find min distance
-        rcut = get_rcut(jdata)
-        get_min_nbor_dist(jdata, rcut)
-        return jdata
-    elif jdata["model"].get("type") in ("linear_ener", "frozen"):
-        return jdata
-    descrpt_data = jdata["model"]["descriptor"]
-    if descrpt_data["type"] == "hybrid":
-        for ii in range(len(descrpt_data["list"])):
-            descrpt_data["list"][ii] = update_one_sel(jdata, descrpt_data["list"][ii])
-    else:
-        descrpt_data = update_one_sel(jdata, descrpt_data)
-    jdata["model"]["descriptor"] = descrpt_data
-    return jdata
+    jdata_cpy = jdata.copy()
+    jdata_cpy["model"] = Model.update_sel(jdata, jdata["model"])
+    return jdata_cpy

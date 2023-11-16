@@ -25,10 +25,6 @@ if((NOT BUILD_PY_IF) AND (NOT BUILD_CPP_IF))
 endif()
 
 if(BUILD_CPP_IF AND BUILD_TESTING)
-  if(NOT INSTALL_TENSORFLOW)
-    # some errors in conda packages...
-    find_package(GTest)
-  endif()
   if(NOT GTEST_LIBRARIES)
     configure_file(${CMAKE_CURRENT_SOURCE_DIR}/cmake/googletest.cmake.in
                    googletest-download/CMakeLists.txt @ONLY)
@@ -115,10 +111,14 @@ endif(USE_CUDA_TOOLKIT)
 # define USE_ROCM_TOOLKIT
 if(USE_ROCM_TOOLKIT)
   cmake_minimum_required(VERSION 3.21)
-  find_package(ROCM REQUIRED)
+  include(CMakeDetermineHIPCompiler)
+  list(APPEND CMAKE_PREFIX_PATH ${CMAKE_HIP_COMPILER_ROCM_ROOT})
+  find_package(hip REQUIRED)
+  find_package(hipcub REQUIRED)
   add_definitions("-DTENSORFLOW_USE_ROCM")
-  add_compile_definitions(__HIP_PLATFORM_HCC__)
-  message(STATUS "Found ROCM in ${ROCM_ROOT}, build AMD GPU support")
+  message(
+    STATUS
+      "Found ROCM in ${CMAKE_HIP_COMPILER_ROCM_ROOT}, build AMD GPU support")
   set(DP_VARIANT "rocm")
 else()
   message(STATUS "Will not build AMD GPU support")
@@ -127,6 +127,9 @@ endif(USE_ROCM_TOOLKIT)
 set(DEEPMD_SOURCE_DIR ${PROJECT_SOURCE_DIR}/..)
 
 # setup tensorflow libraries by python
+if(INSTALL_TENSORFLOW)
+  set(USE_TF_PYTHON_LIBS TRUE)
+endif(INSTALL_TENSORFLOW)
 if(USE_TF_PYTHON_LIBS)
   if(NOT "$ENV{CIBUILDWHEEL}" STREQUAL "1")
     find_package(

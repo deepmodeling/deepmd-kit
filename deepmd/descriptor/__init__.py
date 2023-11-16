@@ -14,6 +14,9 @@ from .se_a import (
 from .se_a_ebd import (
     DescrptSeAEbd,
 )
+from .se_a_ebd_v2 import (
+    DescrptSeAEbdV2,
+)
 from .se_a_ef import (
     DescrptSeAEf,
     DescrptSeAEfLower,
@@ -39,6 +42,7 @@ __all__ = [
     "DescrptHybrid",
     "DescrptLocFrame",
     "DescrptSeA",
+    "DescrptSeAEbdV2",
     "DescrptSeAEbd",
     "DescrptSeAEf",
     "DescrptSeAEfLower",
