@@ -64,9 +64,9 @@ repos:
     -   id: csslint
 # Shell
 - repo: https://github.com/scop/pre-commit-shfmt
-  rev: v3.7.0-2
+  rev: v3.7.0-3
   hooks:
-    - id: shfmt
+    - id: shfmt-src
 # CMake
 - repo: https://github.com/cheshirekow/cmake-format-precommit
   rev: v0.6.13
