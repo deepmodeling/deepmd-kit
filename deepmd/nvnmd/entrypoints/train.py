@@ -117,6 +117,7 @@ def normalized_input_qnn(jdata, PATH_QNN, CONFIG_CNN, WEIGHT_CNN, MAP_CNN):
 def train_nvnmd(
     *,
     INPUT: str,
+    init_model: Optional[str],
     restart: Optional[str],
     step: str,
     skip_neighbor_stat: bool = False,
@@ -142,6 +143,7 @@ def train_nvnmd(
         jdata = jdata_cmd_train.copy()
         jdata["INPUT"] = INPUT_CNN
         jdata["log_path"] = LOG_CNN
+        jdata["init_model"] = init_model
         jdata["restart"] = restart
         jdata["skip_neighbor_stat"] = skip_neighbor_stat
         train(**jdata)
