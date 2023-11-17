@@ -84,13 +84,13 @@ docker pull deepmodeling/dpmdkit-rocm:dp2.0.3-rocm4.5.2-tf2.6-lmp29Sep2021
 
 ## Install Python interface with pip
 
-If you have no existing TensorFlow installed, you can use `pip` to install the pre-built package of the Python interface with CUDA 11 supported:
+If you have no existing TensorFlow installed, you can use `pip` to install the pre-built package of the Python interface with CUDA 12 supported:
 
 ```bash
-pip install deepmd-kit[gpu,cu11]
+pip install deepmd-kit[gpu,cu12]
 ```
 
-`cu11` is required only when CUDA Toolkit and cuDNN were not installed.
+`cu12` is required only when CUDA Toolkit and cuDNN were not installed.
 
 Or install the CPU version without CUDA supported:
 ```bash
@@ -99,7 +99,7 @@ pip install deepmd-kit[cpu]
 
 [The LAMMPS module](../third-party/lammps-command.md) and [the i-Pi driver](../third-party/ipi.md) are only provided on Linux and macOS. To install LAMMPS and/or i-Pi, add `lmp` and/or `ipi` to extras:
 ```bash
-pip install deepmd-kit[gpu,cu11,lmp,ipi]
+pip install deepmd-kit[gpu,cu12,lmp,ipi]
 ```
 MPICH is required for parallel running. (The macOS arm64 package doesn't support MPI yet.)
 

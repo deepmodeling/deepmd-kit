@@ -87,6 +87,13 @@ def find_tensorflow() -> Tuple[Optional[str], List[str]]:
         # TypeError if submodule_search_locations are None
         # IndexError if submodule_search_locations is an empty list
     except (AttributeError, TypeError, IndexError):
+        if os.environ.get("CIBUILDWHEEL", "0") == "1":
+            # CUDA 12.2
+            requires.extend(
+                [
+                    "tensorflow-cpu>=2.15.0rc0; platform_machine=='x86_64' and platform_system == 'Linux'",
+                ]
+            )
         requires.extend(get_tf_requirement()["cpu"])
         # setuptools will re-find tensorflow after installing setup_requires
         tf_install_dir = None
@@ -129,6 +136,8 @@ def get_tf_requirement(tf_version: str = "") -> dict:
             "cpu": [
                 "tensorflow-cpu; platform_machine!='aarch64' and (platform_machine!='arm64' or platform_system != 'Darwin')",
                 "tensorflow; platform_machine=='aarch64' or (platform_machine=='arm64' and platform_system == 'Darwin')",
+                # https://github.com/tensorflow/tensorflow/issues/61830
+                "tensorflow-cpu<2.15; platform_system=='Windows'",
                 *extra_requires,
             ],
             "gpu": [
