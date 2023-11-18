@@ -30,6 +30,7 @@ class TestCompressedTrainingSeAtten(unittest.TestCase):
             tests_path / "dp-compress-training-compress-training.pb"
         )
         self.ckpt_file = str(tests_path / "dp-compress-training.ckpt")
+        self.checkpoint_dir = str(tests_path)
         jdata = j_loader(
             str(tests_path / os.path.join("model_compression", "input.json"))
         )
@@ -45,14 +46,16 @@ class TestCompressedTrainingSeAtten(unittest.TestCase):
 
     def test_compressed_training(self):
         run_dp(f"dp train {self.input_file}")
-        run_dp(f"dp freeze -o {self.frozen_model}")
+        run_dp(f"dp freeze -c {self.checkpoint_dir} -o {self.frozen_model}")
         run_dp(f"dp compress -i {self.frozen_model} -o {self.compressed_model}")
         # compress training
         run_dp(f"dp train {self.input_file} -f {self.compressed_model}")
         # restart compress training
         run_dp(f"dp train {self.input_file} -r {self.ckpt_file}")
         # freeze compress training
-        run_dp(f"dp freeze -o {self.frozen_compress_training_model}")
+        run_dp(
+            f"dp freeze -c {self.checkpoint_dir} -o {self.frozen_compress_training_model}"
+        )
         # it should not be able to compress again
         with self.assertRaises(RuntimeError):
             run_dp(
