@@ -89,7 +89,7 @@ coord = np.array(
         [4.27, 3.22, 1.56],
     ]
 )
-type_OH = np.array([1, 2, 2, 1, 2, 2])
+type_OH = np.array([1, 1, 1, 1, 1, 1])
 
 
 sp.check_output(
