@@ -17,8 +17,8 @@ from write_lmp_data import (
     write_lmp_data,
 )
 
-pbtxt_file = Path(__file__).parent.parent.parent / "tests" / "infer" / "deeppot.pbtxt"
-pb_file = Path(__file__).parent / "graph.pb"
+pbtxt_file = Path(__file__).parent.parent.parent / "tests" / "infer" / "fparam_aparam.pbtxt"
+pb_file = Path(__file__).parent / "fparam_aparam.pb"
 system_file = Path(__file__).parent.parent.parent / "tests"
 data_file = Path(__file__).parent / "data.lmp"
 md_file = Path(__file__).parent / "md.out"
