@@ -114,31 +114,45 @@ try:
 except AttributeError:
     tf_py_version = tf.__version__
 
+
+# subpatterns:
+# \1: type of centeral atom
+# \2: weight name
+# \3: layer index
+# The rest: types of neighbor atoms
 EMBEDDING_NET_PATTERN = str(
-    r"filter_type_\d+/matrix_\d+_\d+|"
-    r"filter_type_\d+/bias_\d+_\d+|"
-    r"filter_type_\d+/idt_\d+_\d+|"
-    r"filter_type_all/matrix_\d+|"
-    r"filter_type_all/matrix_\d+_\d+|"
-    r"filter_type_all/matrix_\d+_\d+_\d+|"
-    r"filter_type_all/bias_\d+|"
-    r"filter_type_all/bias_\d+_\d+|"
-    r"filter_type_all/bias_\d+_\d+_\d+|"
-    r"filter_type_all/idt_\d+|"
-    r"filter_type_all/idt_\d+_\d+|"
+    r"^(?:"
+    r"filter_type_(\d+)/(matrix)_(\d+)_(\d+)|"
+    r"filter_type_(\d+)/(bias)_(\d+)_(\d+)|"
+    r"filter_type_(\d+)/(idt)_(\d+)_(\d+)|"
+    r"filter_type_(all)/(matrix)_(\d+)|"
+    r"filter_type_(all)/(matrix)_(\d+)_(\d+)|"
+    r"filter_type_(all)/(matrix)_(\d+)_(\d+)_(\d+)|"
+    r"filter_type_(all)/(bias)_(\d+)|"
+    r"filter_type_(all)/(bias)_(\d+)_(\d+)|"
+    r"filter_type_(all)/(bias)_(\d+)_(\d+)_(\d+)|"
+    r"filter_type_(all)/(idt)_(\d+)|"
+    r"filter_type_(all)/(idt)_(\d+)_(\d+)|"
+    r")$"
 )
 
+# subpatterns:
+# \1: layer index or "final"
+# \2: type of centeral atom, optional
+# the last: weight name
 FITTING_NET_PATTERN = str(
-    r"layer_\d+/matrix|"
-    r"layer_\d+_type_\d+/matrix|"
-    r"layer_\d+/bias|"
-    r"layer_\d+_type_\d+/bias|"
-    r"layer_\d+/idt|"
-    r"layer_\d+_type_\d+/idt|"
-    r"final_layer/matrix|"
-    r"final_layer_type_\d+/matrix|"
-    r"final_layer/bias|"
-    r"final_layer_type_\d+/bias|"
+    r"^(?:"
+    r"layer_(\d+)/(matrix)|"
+    r"layer_(\d+)_type_(\d+)/(matrix)|"
+    r"layer_(\d+)/(bias)|"
+    r"layer_(\d+)_type_(\d+)/(bias)|"
+    r"layer_(\d+)_/(idt)|"
+    r"layer_(\d+)_type_(\d+)/(idt)|"
+    r"(final)_layer/(matrix)|"
+    r"(final)_layer_type_(\d+)/(matrix)|"
+    r"(final)_layer/(bias)|"
+    r"(final)_layer_type_(\d+)/(bias)|"
+    # TODO: not sure how to parse for shared layers...
     # layer_name
     r"share_.+_type_\d/matrix|"
     r"share_.+_type_\d/bias|"
@@ -146,6 +160,7 @@ FITTING_NET_PATTERN = str(
     r"share_.+/matrix|"
     r"share_.+/bias|"
     r"share_.+/idt|"
+    r")$"
 )
 
 TYPE_EMBEDDING_PATTERN = str(

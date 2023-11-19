@@ -1,12 +1,15 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import re
 from abc import (
     abstractmethod,
 )
 from typing import (
     Callable,
+    DefaultDict,
 )
 
 from deepmd.env import (
+    FITTING_NET_PATTERN,
     tf,
 )
 from deepmd.loss.loss import (
@@ -15,6 +18,9 @@ from deepmd.loss.loss import (
 from deepmd.utils import (
     Plugin,
     PluginVariant,
+)
+from deepmd_utils.model_format import (
+    NativeNet,
 )
 
 
@@ -134,3 +140,59 @@ class Fitting(PluginVariant):
             The serialized data
         """
         raise NotImplementedError("Not implemented in class %s" % self.__name__)
+
+    def to_dp_variables(self, variables: dict) -> dict:
+        """Convert the variables to deepmd format.
+
+        Parameters
+        ----------
+        variables : dict
+            The input variables
+
+        Returns
+        -------
+        dict
+            The converted variables
+        """
+        networks = DefaultDict(NativeNet)
+        for key, value in variables.items():
+            m = re.search(FITTING_NET_PATTERN, key)
+            m = [mm for mm in m.groups() if mm is not None]
+            # type_{m[1]}/layer_{m[0]}/{m[-1]}
+            atom_type = m[1] if len(m) >= 3 else "all"
+            layer_idx = int(m[0]) if m[0] != "final" else len(self.n_neuron)
+            weight_name = m[-1]
+            networks[f"type_{atom_type}"][layer_idx][weight_name] = value
+        return {key: value.serialize() for key, value in networks.items()}
+
+    @classmethod
+    def from_dp_variables(cls, variables: dict) -> dict:
+        """Convert the variables from deepmd format.
+
+        Parameters
+        ----------
+        variables : dict
+            The input variables
+
+        Returns
+        -------
+        dict
+            The converted variables
+        """
+        embedding_net_variables = {}
+        for key, value in variables.items():
+            if key[5:] == "all":
+                key = ""
+            else:
+                key = "_type_" + key[5:]
+            network = NativeNet.deserialize(value)
+            for layer_idx, layer in enumerate(network.layers):
+                if layer_idx == len(network.layers) - 1:
+                    layer_name = "final_layer"
+                else:
+                    layer_name = f"layer_{layer_idx}"
+                embedding_net_variables[f"{layer_name}{key}/matrix"] = layer.w
+                embedding_net_variables[f"{layer_name}{key}/bias"] = layer.b
+                if layer.idt is not None:
+                    embedding_net_variables[f"{layer_name}{key}/idt"] = layer.idt
+        return embedding_net_variables

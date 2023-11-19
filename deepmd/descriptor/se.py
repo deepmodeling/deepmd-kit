@@ -1,14 +1,20 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import re
 from typing import (
+    DefaultDict,
     Tuple,
 )
 
 from deepmd.env import (
+    EMBEDDING_NET_PATTERN,
     tf,
 )
 from deepmd.utils.graph import (
     get_embedding_net_variables_from_graph_def,
     get_tensor_by_name_from_graph,
+)
+from deepmd_utils.model_format import (
+    NativeNet,
 )
 
 from .descriptor import (
@@ -160,3 +166,66 @@ class DescrptSe(Descriptor):
         # default behavior is to update sel which is a list
         local_jdata_cpy = local_jdata.copy()
         return update_one_sel(global_jdata, local_jdata_cpy, False)
+
+    def to_dp_variables(self, variables: dict) -> dict:
+        """Convert the variables to deepmd format.
+
+        Parameters
+        ----------
+        variables : dict
+            The input variables
+
+        Returns
+        -------
+        dict
+            The converted variables
+        """
+        # TODO: unclear how to hand suffix, maybe we need to add a suffix argument?
+        networks = DefaultDict(NativeNet)
+        for key, value in variables.items():
+            m = re.search(EMBEDDING_NET_PATTERN, key)
+            m = [mm for mm in m.groups() if mm is not None]
+            # type_{m[0]}/type_{"_".join(m[3:])}/layer_{m[2]}/{m[1]}
+            typei = m[0]
+            typej = "_".join(m[3:]) if len(m[3:]) else "all"
+            layer_idx = int(m[2])
+            weight_name = m[1]
+            networks[f"type_{typei}/type_{typej}"][layer_idx][weight_name] = value
+        return {key: value.serialize() for key, value in networks.items()}
+
+    @classmethod
+    def from_dp_variables(cls, variables: dict) -> dict:
+        """Convert the variables from deepmd format.
+
+        Parameters
+        ----------
+        variables : dict
+            The input variables
+
+        Returns
+        -------
+        dict
+            The converted variables
+        """
+        embedding_net_variables = {}
+        for key, value in variables.items():
+            keys = key.split("/")
+            key0 = keys[0][5:]
+            key1 = keys[1][5:]
+            if key1 == "all":
+                key1 = ""
+            else:
+                key1 = "_" + key1
+            network = NativeNet.deserialize(value)
+            for layer_idx, layer in enumerate(network.layers):
+                embedding_net_variables[
+                    f"filter_type_{key0}/matrix_{layer_idx}{key1}"
+                ] = layer.w
+                embedding_net_variables[
+                    f"filter_type_{key0}/bias_{layer_idx}{key1}"
+                ] = layer.b
+                if layer.idt is not None:
+                    embedding_net_variables[
+                        f"filter_type_{key0}/idt_{layer_idx}{key1}"
+                    ] = layer.idt
+        return embedding_net_variables

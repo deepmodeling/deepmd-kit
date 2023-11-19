@@ -939,14 +939,16 @@ class EnerFitting(Fitting):
             The deserialized model
         """
         fitting = cls(**data)
-        fitting.fitting_net_variables = data["@variables"]
-        fitting.bias_atom_e = fitting.fitting_net_variables.pop("bias_atom_e")
+        fitting.fitting_net_variables = cls.from_dp_variables(
+            data["@variables"]["networks"]
+        )
+        fitting.bias_atom_e = data["@variables"]["bias_atom_e"]
         if fitting.numb_fparam > 0:
-            fitting.fparam_avg = fitting.fitting_net_variables.pop("fparam_avg")
-            fitting.fparam_inv_std = fitting.fitting_net_variables.pop("fparam_inv_std")
+            fitting.fparam_avg = data["@variables"]["fparam_avg"]
+            fitting.fparam_inv_std = data["@variables"]["fparam_inv_std"]
         if fitting.numb_aparam > 0:
-            fitting.aparam_avg = fitting.fitting_net_variables.pop("aparam_avg")
-            fitting.aparam_inv_std = fitting.fitting_net_variables.pop("aparam_inv_std")
+            fitting.aparam_avg = data["@variables"]["aparam_avg"]
+            fitting.aparam_inv_std = data["@variables"]["aparam_inv_std"]
         return fitting
 
     def serialize(self) -> dict:
@@ -974,7 +976,7 @@ class EnerFitting(Fitting):
             "layer_name": self.layer_name,
             "use_aparam_as_mask": self.use_aparam_as_mask,
             "@variables": {
-                **self.fitting_net_variables,
+                "networks": self.to_dp_variables(self.fitting_net_variables),
                 "bias_atom_e": self.bias_atom_e,
             },
         }

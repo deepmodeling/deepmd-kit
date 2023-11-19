@@ -1353,7 +1353,9 @@ class DescrptSeA(DescrptSe):
         descriptor = cls(**data)
         descriptor.davg = data["@variables"]["davg"]
         descriptor.dstd = data["@variables"]["dstd"]
-        descriptor.embedding_net_variables = data["@variables"]
+        descriptor.embedding_net_variables = cls.from_dp_variables(
+            data["@variables"]["networks"]
+        )
         descriptor.original_sel = data["@variables"]["original_sel"]
         return descriptor
 
@@ -1383,7 +1385,7 @@ class DescrptSeA(DescrptSe):
             "uniform_seed": self.uniform_seed,
             "stripped_type_embedding": self.stripped_type_embedding,
             "@variables": {
-                **self.embedding_net_variables,
+                "networks": self.to_dp_variables(self.embedding_net_variables),
                 "davg": self.davg,
                 "dstd": self.dstd,
                 "original_sel": self.original_sel,
