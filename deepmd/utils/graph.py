@@ -166,9 +166,9 @@ def get_embedding_net_nodes_from_graph_def(
     # embedding_net_pattern = f"filter_type_\d+{suffix}/matrix_\d+_\d+|filter_type_\d+{suffix}/bias_\d+_\d+|filter_type_\d+{suffix}/idt_\d+_\d+|filter_type_all{suffix}/matrix_\d+_\d+|filter_type_all{suffix}/matrix_\d+_\d+_\d+|filter_type_all{suffix}/bias_\d+_\d+|filter_type_all{suffix}/bias_\d+_\d+_\d+|filter_type_all{suffix}/idt_\d+_\d+"
     if suffix != "":
         embedding_net_pattern = (
-            EMBEDDING_NET_PATTERN.replace("/idt", suffix + "/idt")
-            .replace("/bias", suffix + "/bias")
-            .replace("/matrix", suffix + "/matrix")
+            EMBEDDING_NET_PATTERN.replace("/(idt)", suffix + "/(idt)")
+            .replace("/(bias)", suffix + "/(bias)")
+            .replace("/(matrix)", suffix + "/(matrix)")
         )
     else:
         embedding_net_pattern = EMBEDDING_NET_PATTERN
@@ -275,9 +275,9 @@ def get_fitting_net_nodes_from_graph_def(
     """
     if suffix != "":
         fitting_net_pattern = (
-            FITTING_NET_PATTERN.replace("/idt", suffix + "/idt")
-            .replace("/bias", suffix + "/bias")
-            .replace("/matrix", suffix + "/matrix")
+            FITTING_NET_PATTERN.replace("/(idt)", suffix + "/(idt)")
+            .replace("/(bias)", suffix + "/(bias)")
+            .replace("/(matrix)", suffix + "/(matrix)")
         )
     else:
         fitting_net_pattern = FITTING_NET_PATTERN
