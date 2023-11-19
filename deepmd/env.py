@@ -146,7 +146,7 @@ FITTING_NET_PATTERN = str(
     r"layer_(\d+)_type_(\d+)/(matrix)|"
     r"layer_(\d+)/(bias)|"
     r"layer_(\d+)_type_(\d+)/(bias)|"
-    r"layer_(\d+)_/(idt)|"
+    r"layer_(\d+)/(idt)|"
     r"layer_(\d+)_type_(\d+)/(idt)|"
     r"(final)_layer/(matrix)|"
     r"(final)_layer_type_(\d+)/(matrix)|"
