@@ -121,7 +121,6 @@ except AttributeError:
 # \3: layer index
 # The rest: types of neighbor atoms
 EMBEDDING_NET_PATTERN = str(
-    r"^(?:"
     r"filter_type_(\d+)/(matrix)_(\d+)_(\d+)|"
     r"filter_type_(\d+)/(bias)_(\d+)_(\d+)|"
     r"filter_type_(\d+)/(idt)_(\d+)_(\d+)|"
@@ -133,15 +132,13 @@ EMBEDDING_NET_PATTERN = str(
     r"filter_type_(all)/(bias)_(\d+)_(\d+)_(\d+)|"
     r"filter_type_(all)/(idt)_(\d+)|"
     r"filter_type_(all)/(idt)_(\d+)_(\d+)|"
-    r")$"
-)
+)[:-1]
 
 # subpatterns:
 # \1: layer index or "final"
 # \2: type of centeral atom, optional
 # the last: weight name
 FITTING_NET_PATTERN = str(
-    r"^(?:"
     r"layer_(\d+)/(matrix)|"
     r"layer_(\d+)_type_(\d+)/(matrix)|"
     r"layer_(\d+)/(bias)|"
@@ -160,8 +157,7 @@ FITTING_NET_PATTERN = str(
     r"share_.+/matrix|"
     r"share_.+/bias|"
     r"share_.+/idt|"
-    r")$"
-)
+)[:-1]
 
 TYPE_EMBEDDING_PATTERN = str(
     r"type_embed_net+/matrix_\d+|"
