@@ -135,9 +135,8 @@ build = ["cp310-*"]
 skip = ["*-win32", "*-manylinux_i686", "*-musllinux*"]
 # TODO: uncomment when CUDA 11 is deprecated
 # manylinux-x86_64-image = "manylinux_2_28"
-# manylinux-aarch64-image = "manylinux_2_28"
 manylinux-x86_64-image = "quay.io/pypa/manylinux_2_28_x86_64:2022-11-19-1b19e81"
-manylinux-aarch64-image = "quay.io/pypa/manylinux_2_28_aarch64:2022-11-19-1b19e81"
+manylinux-aarch64-image = "manylinux_2_28"
 
 [tool.cibuildwheel.macos]
 environment = { PIP_PREFER_BINARY="1", DP_LAMMPS_VERSION="stable_2Aug2023_update1", DP_ENABLE_IPI="1" }
