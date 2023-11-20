@@ -173,10 +173,12 @@ class PairwiseDPRc(Model):
         atype_qmmm = gather_placeholder(atype_qmmm, forward_qmmm_map, placeholder=-1)
         box_qm = box
 
-        type_embedding = self.typeebd.build(
+        type_embedding = self.build_type_embedding(
             self.ntypes,
             reuse=reuse,
             suffix=suffix,
+            frz_model=frz_model,
+            ckpt_meta=ckpt_meta,
         )
         input_dict_qm["type_embedding"] = type_embedding
         input_dict_qmmm["type_embedding"] = type_embedding
