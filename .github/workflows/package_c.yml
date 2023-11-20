@@ -24,7 +24,8 @@ jobs:
         env:
           TENSORFLOW_VERSION: ${{ matrix.tensorflow_version }}
           TENSORFLOW_BUILD_VERSION: ${{ matrix.tensorflow_build_version }}
-      - run: “cp libdeepmd_c.tar.gz ${{ matrix.filename }} || :”
+      - run: cp libdeepmd_c.tar.gz ${{ matrix.filename }}
+        if: ${{ matrix.filename }} != "libdeepmd_c.tar.gz"
       # for download and debug
       - name: Upload artifact
         uses: actions/upload-artifact@v3
