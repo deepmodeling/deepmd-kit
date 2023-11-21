@@ -58,7 +58,7 @@ conda activate deepmd
 DeePMD-kit is also available on the [conda-forge](https://conda-forge.org/) channel:
 
 ```bash
-conda create -n deepmd deepmd-kit lammps -c conda-forge
+conda create -n deepmd deepmd-kit lammps horovod -c conda-forge
 ```
 
 The supported platform includes Linux x86-64, macOS x86-64, and macOS arm64.
