@@ -193,7 +193,7 @@ jobs:
 
   pass:
     name: Pass testing build wheels
-    needs: [build_wheels, build_sdist, build_docker, deploy_pypi_index]
+    needs: [build_wheels, build_sdist, build_docker, build_pypi_index]
     runs-on: ubuntu-latest
     if: always()
     steps:
