@@ -496,6 +496,13 @@ class MapTable:
         r"""Build s-> graph and run it to get value of mapping table."""
         smin = nvnmd_cfg.dscp["smin"]
         smax = nvnmd_cfg.dscp["smax"]
+        # fix the bug: if model initial mode is 'init_from_model',
+        # we need dmin to calculate smin and smax in mapt.py
+        if smin == -2:
+            davg, dstd = get_normalize(nvnmd_cfg.weight)
+            nvnmd_cfg.get_s_range(davg, dstd)
+            smin = nvnmd_cfg.dscp["smin"]
+            smax = nvnmd_cfg.dscp["smax"]
 
         tf.reset_default_graph()
         dic_ph = self.build_s2g_grad()
