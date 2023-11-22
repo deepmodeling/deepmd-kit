@@ -236,6 +236,7 @@ def get_embedding_net_variables_from_graph_def(
         embedding_net_variables[item] = np.reshape(tensor_value, tensor_shape)
     return embedding_net_variables
 
+
 def get_extra_embedding_net_suffix(type_one_side: bool):
     """Get the extra embedding net suffix according to the value of type_one_side.
 
@@ -255,6 +256,7 @@ def get_extra_embedding_net_suffix(type_one_side: bool):
         extra_suffix = "_two_side_ebd"
     return extra_suffix
 
+
 def get_variables_from_graph_def_as_numpy_array(graph_def: tf.GraphDef, pattern: str):
     """Get variables from the given tf.GraphDef object, with numpy array returns.
 
@@ -262,7 +264,7 @@ def get_variables_from_graph_def_as_numpy_array(graph_def: tf.GraphDef, pattern:
     ----------
     graph_def
         The input tf.GraphDef object
-    suffix : str
+    pattern : str
         The name of variable
 
     Returns
@@ -282,7 +284,10 @@ def get_variables_from_graph_def_as_numpy_array(graph_def: tf.GraphDef, pattern:
         tensor_value = get_tensor_by_type(node, dtype)
     return np.reshape(tensor_value, tensor_shape)
 
-def get_extra_embedding_net_variables_from_graph_def(graph_def: tf.GraphDef, suffix: str, extra_suffix: str, layer_size: int):
+
+def get_extra_embedding_net_variables_from_graph_def(
+    graph_def: tf.GraphDef, suffix: str, extra_suffix: str, layer_size: int
+):
     """Get extra embedding net variables from the given tf.GraphDef object.
     The "extra embedding net" means the embedding net with only type embeddings input,
     which occurs in "se_atten_v2" and "se_a_ebd_v2" descriptor.
@@ -293,10 +298,10 @@ def get_extra_embedding_net_variables_from_graph_def(graph_def: tf.GraphDef, suf
         The input tf.GraphDef object
     suffix : str
         The "common" suffix in the descriptor
-    extra_suffix: str
+    extra_suffix : str
         This value depends on the value of "type_one_side".
         It should always be "_one_side_ebd" or "_two_side_ebd"
-    layer_size: int
+    layer_size : int
         The layer size of the embedding net
 
     Returns
@@ -315,6 +320,7 @@ def get_extra_embedding_net_variables_from_graph_def(graph_def: tf.GraphDef, suf
             bias_pattern
         ] = get_variables_from_graph_def_as_numpy_array(graph_def, bias_pattern)
     return extra_embedding_net_variables
+
 
 def get_embedding_net_variables(model_file: str, suffix: str = "") -> Dict:
     """Get the embedding net variables with the given frozen model(model_file).

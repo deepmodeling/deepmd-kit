@@ -42,10 +42,10 @@ from deepmd.utils.compress import (
 )
 from deepmd.utils.graph import (
     get_attention_layer_variables_from_graph_def,
+    get_extra_embedding_net_suffix,
+    get_extra_embedding_net_variables_from_graph_def,
     get_pattern_nodes_from_graph_def,
     get_tensor_by_name_from_graph,
-    get_extra_embedding_net_variables_from_graph_def,
-    get_extra_embedding_net_suffix
 )
 from deepmd.utils.network import (
     embedding_net,
@@ -392,7 +392,8 @@ class DescrptSeAtten(DescrptSeA):
             raise RuntimeError("can not compress model when attention layer is not 0.")
 
         ret = get_pattern_nodes_from_graph_def(
-            graph_def, f"filter_type_all{suffix}/.+{get_extra_embedding_net_suffix(type_one_side=False)}"
+            graph_def,
+            f"filter_type_all{suffix}/.+{get_extra_embedding_net_suffix(type_one_side=False)}",
         )
         if len(ret) == 0:
             raise RuntimeError(
@@ -1133,7 +1134,9 @@ class DescrptSeAtten(DescrptSeA):
                             self.filter_precision,
                             activation_fn=activation_fn,
                             resnet_dt=self.filter_resnet_dt,
-                            name_suffix=get_extra_embedding_net_suffix(type_one_side=False),
+                            name_suffix=get_extra_embedding_net_suffix(
+                                type_one_side=False
+                            ),
                             stddev=stddev,
                             bavg=bavg,
                             seed=self.seed,
@@ -1312,7 +1315,14 @@ class DescrptSeAtten(DescrptSeA):
                 ]
 
         if self.stripped_type_embedding:
-            self.two_side_embeeding_net_variables = get_extra_embedding_net_variables_from_graph_def(graph_def, suffix, get_extra_embedding_net_suffix(type_one_side=False), self.layer_size)
+            self.two_side_embeeding_net_variables = (
+                get_extra_embedding_net_variables_from_graph_def(
+                    graph_def,
+                    suffix,
+                    get_extra_embedding_net_suffix(type_one_side=False),
+                    self.layer_size,
+                )
+            )
 
     def build_type_exclude_mask(
         self,
