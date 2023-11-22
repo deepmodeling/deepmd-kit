@@ -478,7 +478,7 @@ class DescrptSeA(DescrptSe):
                 graph_def, f"filter_type_all{suffix}/.+{two_side_suffix}"
             )
             ret_one_side = get_pattern_nodes_from_graph_def(
-                graph_def, f"filter_type_all{suffix}/.+{two_side_suffix}"
+                graph_def, f"filter_type_all{suffix}/.+{one_side_suffix}"
             )
             if len(ret_two_side) == 0 and len(ret_one_side) == 0:
                 raise RuntimeError(
