@@ -45,6 +45,7 @@ from deepmd.utils.graph import (
     get_extra_embedding_net_variables_from_graph_def,
     get_pattern_nodes_from_graph_def,
     get_tensor_by_name_from_graph,
+    get_extra_embedding_net_suffix,
 )
 from deepmd.utils.network import (
     embedding_net,
@@ -472,11 +473,13 @@ class DescrptSeA(DescrptSe):
             )
 
         if self.stripped_type_embedding:
+            one_side_suffix = get_extra_embedding_net_suffix(type_one_side=True)
+            two_side_suffix = get_extra_embedding_net_suffix(type_one_side=False)
             ret_two_side = get_pattern_nodes_from_graph_def(
-                graph_def, f"filter_type_all{suffix}/.+_two_side_ebd"
+                graph_def, f"filter_type_all{suffix}/.+{two_side_suffix}"
             )
             ret_one_side = get_pattern_nodes_from_graph_def(
-                graph_def, f"filter_type_all{suffix}/.+_one_side_ebd"
+                graph_def, f"filter_type_all{suffix}/.+{two_side_suffix}"
             )
             if len(ret_two_side) == 0 and len(ret_one_side) == 0:
                 raise RuntimeError(
@@ -489,19 +492,19 @@ class DescrptSeA(DescrptSe):
             elif len(ret_two_side) != 0:
                 self.final_type_embedding = get_two_side_type_embedding(self, graph)
                 self.matrix = get_extra_side_embedding_net_variable(
-                    self, graph_def, "two_side", "matrix", suffix
+                    self, graph_def, two_side_suffix, "matrix", suffix
                 )
                 self.bias = get_extra_side_embedding_net_variable(
-                    self, graph_def, "two_side", "bias", suffix
+                    self, graph_def, two_side_suffix, "bias", suffix
                 )
                 self.extra_embedding = make_data(self, self.final_type_embedding)
             else:
                 self.final_type_embedding = get_type_embedding(self, graph)
                 self.matrix = get_extra_side_embedding_net_variable(
-                    self, graph_def, "one_side", "matrix", suffix
+                    self, graph_def, one_side_suffix, "matrix", suffix
                 )
                 self.bias = get_extra_side_embedding_net_variable(
-                    self, graph_def, "one_side", "bias", suffix
+                    self, graph_def, one_side_suffix, "bias", suffix
                 )
                 self.extra_embedding = make_data(self, self.final_type_embedding)
 
@@ -963,14 +966,13 @@ class DescrptSeA(DescrptSe):
 
                 if not self.compress:
                     if self.type_one_side:
-                        one_side_type_embedding_suffix = "_one_side_ebd"
                         net_output = embedding_net(
                             type_embedding,
                             self.filter_neuron,
                             self.filter_precision,
                             activation_fn=activation_fn,
                             resnet_dt=self.filter_resnet_dt,
-                            name_suffix=one_side_type_embedding_suffix,
+                            name_suffix=get_extra_embedding_net_suffix(self.type_one_side),
                             stddev=stddev,
                             bavg=bavg,
                             seed=self.seed,
@@ -1006,14 +1008,13 @@ class DescrptSeA(DescrptSe):
                         index_of_two_side = tf.reshape(idx, [-1])
                         self.extra_embedding_index = index_of_two_side
 
-                        two_side_type_embedding_suffix = "_two_side_ebd"
                         net_output = embedding_net(
                             two_side_type_embedding,
                             self.filter_neuron,
                             self.filter_precision,
                             activation_fn=activation_fn,
                             resnet_dt=self.filter_resnet_dt,
-                            name_suffix=two_side_type_embedding_suffix,
+                            name_suffix=get_extra_embedding_net_suffix(self.type_one_side),
                             stddev=stddev,
                             bavg=bavg,
                             seed=self.seed,
