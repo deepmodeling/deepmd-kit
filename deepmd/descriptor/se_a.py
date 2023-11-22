@@ -45,7 +45,6 @@ from deepmd.utils.graph import (
     get_extra_embedding_net_variables_from_graph_def,
     get_pattern_nodes_from_graph_def,
     get_tensor_by_name_from_graph,
-    get_extra_embedding_net_suffix,
 )
 from deepmd.utils.network import (
     embedding_net,
@@ -972,7 +971,9 @@ class DescrptSeA(DescrptSe):
                             self.filter_precision,
                             activation_fn=activation_fn,
                             resnet_dt=self.filter_resnet_dt,
-                            name_suffix=get_extra_embedding_net_suffix(self.type_one_side),
+                            name_suffix=get_extra_embedding_net_suffix(
+                                self.type_one_side
+                            ),
                             stddev=stddev,
                             bavg=bavg,
                             seed=self.seed,
@@ -1014,7 +1015,9 @@ class DescrptSeA(DescrptSe):
                             self.filter_precision,
                             activation_fn=activation_fn,
                             resnet_dt=self.filter_resnet_dt,
-                            name_suffix=get_extra_embedding_net_suffix(self.type_one_side),
+                            name_suffix=get_extra_embedding_net_suffix(
+                                self.type_one_side
+                            ),
                             stddev=stddev,
                             bavg=bavg,
                             seed=self.seed,
