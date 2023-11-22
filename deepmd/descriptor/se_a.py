@@ -43,6 +43,7 @@ from deepmd.utils.errors import (
 from deepmd.utils.graph import (
     get_pattern_nodes_from_graph_def,
     get_tensor_by_name_from_graph,
+    get_extra_embedding_net_variables_from_graph_def,
 )
 from deepmd.utils.network import (
     embedding_net,
@@ -1327,6 +1328,12 @@ class DescrptSeA(DescrptSe):
                 self.dstd = new_dstd
                 if self.original_sel is None:
                     self.original_sel = sel
+        if self.stripped_type_embedding:
+            if self.type_one_side:
+                extra_suffix = "_one_side_ebd"
+            else:
+                extra_suffix = "_two_side_ebd"
+            self.extra_embedding_net_variables = get_extra_embedding_net_variables_from_graph_def(graph_def, suffix, extra_suffix, self.layer_size)
 
     @property
     def explicit_ntypes(self) -> bool:
