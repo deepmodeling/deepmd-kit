@@ -204,7 +204,7 @@ class DescrptSeA(DescrptSe):
         self.type_one_side = type_one_side
         self.spin = spin
         self.stripped_type_embedding = stripped_type_embedding
-        self.extra_embeeding_net_variables = None
+        self.extra_embedding_net_variables = None
         self.layer_size = len(neuron)
 
         # extend sel_a for spin system
@@ -974,7 +974,7 @@ class DescrptSeA(DescrptSe):
                             seed=self.seed,
                             trainable=trainable,
                             uniform_seed=self.uniform_seed,
-                            initial_variables=self.extra_embeeding_net_variables,
+                            initial_variables=self.extra_embedding_net_variables,
                             mixed_prec=self.mixed_prec,
                         )
                         net_output = tf.nn.embedding_lookup(
@@ -1017,7 +1017,7 @@ class DescrptSeA(DescrptSe):
                             seed=self.seed,
                             trainable=trainable,
                             uniform_seed=self.uniform_seed,
-                            initial_variables=self.extra_embeeding_net_variables,
+                            initial_variables=self.extra_embedding_net_variables,
                             mixed_prec=self.mixed_prec,
                         )
                         net_output = tf.nn.embedding_lookup(net_output, idx)
