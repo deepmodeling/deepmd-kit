@@ -67,6 +67,7 @@ jdata_config_v0 = {
         "NSEL": "NSTDM*NTYPE_MAX",
         "NSADV": "NSTDM+1",
         "VERSION": 0,
+        "SUB_VERSION": 1,
     },
     "nbit": {
         # general
@@ -181,6 +182,7 @@ jdata_config_v1 = {
         "NSEL": "NSTDM",
         "NSADV": "NSTDM+1",
         "VERSION": 1,
+        "SUB_VERSION": 1,
     },
     "nbit": {
         # general
