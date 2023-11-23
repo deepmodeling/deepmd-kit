@@ -515,7 +515,7 @@ class EnerFitting(Fitting):
             self.bias_atom_e = self.bias_atom_e[:ntypes_atom]
         
         if nvnmd_cfg.enable:
-            # fix the bug: CNN and QNN have t_bias_atom_e.
+            # fix the bug: CNN and QNN have different t_bias_atom_e.
             if "t_bias_atom_e" in nvnmd_cfg.weight.keys():
                 self.bias_atom_e = nvnmd_cfg.weight['t_bias_atom_e']
 
