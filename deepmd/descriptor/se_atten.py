@@ -42,9 +42,10 @@ from deepmd.utils.compress import (
 )
 from deepmd.utils.graph import (
     get_attention_layer_variables_from_graph_def,
+    get_extra_embedding_net_suffix,
+    get_extra_embedding_net_variables_from_graph_def,
     get_pattern_nodes_from_graph_def,
     get_tensor_by_name_from_graph,
-    get_tensor_by_type,
 )
 from deepmd.utils.network import (
     embedding_net,
@@ -391,11 +392,12 @@ class DescrptSeAtten(DescrptSeA):
             raise RuntimeError("can not compress model when attention layer is not 0.")
 
         ret = get_pattern_nodes_from_graph_def(
-            graph_def, f"filter_type_all{suffix}/.+_two_side_ebd"
+            graph_def,
+            f"filter_type_all{suffix}/.+{get_extra_embedding_net_suffix(type_one_side=False)}",
         )
         if len(ret) == 0:
             raise RuntimeError(
-                "can not find variables of embedding net `*_two_side_ebd` from graph_def, maybe it is not a compressible model."
+                f"can not find variables of embedding net `*{get_extra_embedding_net_suffix(type_one_side=False)}` from graph_def, maybe it is not a compressible model."
             )
 
         self.compress = True
@@ -420,11 +422,12 @@ class DescrptSeAtten(DescrptSeA):
         )
 
         self.final_type_embedding = get_two_side_type_embedding(self, graph)
+        type_side_suffix = get_extra_embedding_net_suffix(type_one_side=False)
         self.matrix = get_extra_side_embedding_net_variable(
-            self, graph_def, "two_side", "matrix", suffix
+            self, graph_def, type_side_suffix, "matrix", suffix
         )
         self.bias = get_extra_side_embedding_net_variable(
-            self, graph_def, "two_side", "bias", suffix
+            self, graph_def, type_side_suffix, "bias", suffix
         )
         self.two_embd = make_data(self, self.final_type_embedding)
 
@@ -1125,14 +1128,15 @@ class DescrptSeAtten(DescrptSeA):
                             two_side_type_embedding,
                             [-1, two_side_type_embedding.shape[-1]],
                         )
-                        two_side_type_embedding_suffix = "_two_side_ebd"
                         embedding_of_two_side_type_embedding = embedding_net(
                             two_side_type_embedding,
                             self.filter_neuron,
                             self.filter_precision,
                             activation_fn=activation_fn,
                             resnet_dt=self.filter_resnet_dt,
-                            name_suffix=two_side_type_embedding_suffix,
+                            name_suffix=get_extra_embedding_net_suffix(
+                                type_one_side=False
+                            ),
                             stddev=stddev,
                             bavg=bavg,
                             seed=self.seed,
@@ -1292,18 +1296,6 @@ class DescrptSeAtten(DescrptSeA):
         """
         super().init_variables(graph=graph, graph_def=graph_def, suffix=suffix)
 
-        if self.stripped_type_embedding:
-            self.two_side_embeeding_net_variables = {}
-            for i in range(1, self.layer_size + 1):
-                matrix_pattern = f"filter_type_all{suffix}/matrix_{i}_two_side_ebd"
-                self.two_side_embeeding_net_variables[
-                    matrix_pattern
-                ] = self._get_two_embed_variables(graph_def, matrix_pattern)
-                bias_pattern = f"filter_type_all{suffix}/bias_{i}_two_side_ebd"
-                self.two_side_embeeding_net_variables[
-                    bias_pattern
-                ] = self._get_two_embed_variables(graph_def, bias_pattern)
-
         self.attention_layer_variables = get_attention_layer_variables_from_graph_def(
             graph_def, suffix=suffix
         )
@@ -1322,18 +1314,15 @@ class DescrptSeAtten(DescrptSeA):
                     f"attention_layer_{i}{suffix}/layer_normalization_{i}/gamma"
                 ]
 
-    def _get_two_embed_variables(self, graph_def, pattern: str):
-        node = get_pattern_nodes_from_graph_def(graph_def, pattern)[pattern]
-        dtype = tf.as_dtype(node.dtype).as_numpy_dtype
-        tensor_shape = tf.TensorShape(node.tensor_shape).as_list()
-        if (len(tensor_shape) != 1) or (tensor_shape[0] != 1):
-            tensor_value = np.frombuffer(
-                node.tensor_content,
-                dtype=tf.as_dtype(node.dtype).as_numpy_dtype,
+        if self.stripped_type_embedding:
+            self.two_side_embeeding_net_variables = (
+                get_extra_embedding_net_variables_from_graph_def(
+                    graph_def,
+                    suffix,
+                    get_extra_embedding_net_suffix(type_one_side=False),
+                    self.layer_size,
+                )
             )
-        else:
-            tensor_value = get_tensor_by_type(node, dtype)
-        return np.reshape(tensor_value, tensor_shape)
 
     def build_type_exclude_mask(
         self,
