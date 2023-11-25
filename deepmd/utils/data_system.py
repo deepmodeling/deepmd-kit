@@ -560,11 +560,11 @@ class DeepmdDataSystem:
         log.info("found %d system(s):" % self.nsystems)
         log.info(
             ("%s  " % self._format_name_length("system", sys_width))
-            + ("%6s  %6s  %6s  %5s  %3s" % ("natoms", "bch_sz", "n_bch", "prob", "pbc"))
+            + ("%6s  %6s  %6s  %9s  %3s" % ("natoms", "bch_sz", "n_bch", "prob", "pbc"))
         )
         for ii in range(self.nsystems):
             log.info(
-                "%s  %6d  %6d  %6d  %5.3f  %3s"
+                "%s  %6d  %6d  %6d  %.3e  %3s"
                 % (
                     self._format_name_length(self.system_dirs[ii], sys_width),
                     self.natoms[ii],
