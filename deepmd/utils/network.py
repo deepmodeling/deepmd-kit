@@ -430,8 +430,6 @@ class EmbeddingNet(paddle.nn.Layer):
                     ),
                 )
             )
-            # print(outputs_size[ii-1], precision, False, trainable, outputs_size[ii]+outputs_size[ii-1])
-            # exit()
             bias.append(
                 self.create_parameter(
                     shape=[1, outputs_size[ii]],
@@ -460,62 +458,12 @@ class EmbeddingNet(paddle.nn.Layer):
         self.idt = paddle.nn.ParameterList(idt)
 
     def forward(self, xx):
-        # outputs_size = self.outputs_size
-        # print(self.outputs_size)
-        # for ii in range(1, len(outputs_size)):
-        #     # if self.activation_fn is not None:
-        #     hidden = paddle.reshape(
-        #         self.activation_fn(paddle.matmul(xx, self.weight[ii-1]) + self.bias[ii-1]),
-        #         [-1, outputs_size[ii]]
-        #     )
-        #     # print(__file__, 1)
-        #     # else:
-        #     #     hidden = paddle.reshape(
-        #     #         paddle.matmul(xx, self.weight[ii-1]) + self.bias[ii-1],
-        #     #         [-1, outputs_size[ii]]
-        #     #     )
-        #         # print(__file__, 2)
-
-        #     if outputs_size[ii] == outputs_size[ii - 1]:
-        #         if self.resnet_dt:
-        #             xx += hidden * self.idt[ii]
-        #             # print(__file__, 3)
-        #         else:
-        #             xx += hidden
-        #             # print(__file__, 4)
-        #     elif outputs_size[ii] == outputs_size[ii-1] * 2:
-        #         if self.resnet_dt:
-        #             xx = paddle.concat([xx,xx], axis=1) + hidden * self.idt[ii]
-        #             # print(__file__, 5)
-        #         else:
-        #             xx = paddle.concat([xx,xx], axis=1) + hidden
-        #             # print(__file__, 6)
-        #     else:
-        #         # print(__file__, 7)
-        #         xx = hidden
-        # # exit()
-
-        # return xx
-        # if not hasattr(self, "xx1"):
-        #     self.xx1 = xx
-        # paddle.save(self.xx1.numpy(), f"/workspace/hesensen/deepmd_backend/debug_emb/{self.name}_xx1.npy")
-        # paddle.save(self.weight[0].numpy(), f"/workspace/hesensen/deepmd_backend/debug_emb/{self.name}_weight_0.npy")
-        # paddle.save(self.bias[0].numpy(), f"/workspace/hesensen/deepmd_backend/debug_emb/{self.name}_bias_0.npy")
-
         hidden = nn.functional.tanh(
             nn.functional.linear(xx, self.weight[0], self.bias[0])
         ).reshape(
             [-1, 25]
         )  # 1
         xx = hidden  # 7
-
-        # if not hasattr(self, "hidden1"):
-        #     self.hidden1 = hidden
-        # paddle.save(self.hidden1.numpy(), f"/workspace/hesensen/deepmd_backend/debug_emb/{self.name}_hidden1.npy")
-
-        # if not hasattr(self, "xx2"):
-        #     self.xx2 = xx
-        # paddle.save(self.xx2.numpy(), f"/workspace/hesensen/deepmd_backend/debug_emb/{self.name}_xx2.npy")
 
         hidden = nn.functional.tanh(
             nn.functional.linear(xx, self.weight[1], self.bias[1])
@@ -524,27 +472,11 @@ class EmbeddingNet(paddle.nn.Layer):
         )  # 1
         xx = paddle.concat([xx, xx], axis=1) + hidden  # 6
 
-        # if not hasattr(self, "hidden2"):
-        #     self.hidden2 = hidden
-        # paddle.save(self.hidden2.numpy(), f"/workspace/hesensen/deepmd_backend/debug_emb/{self.name}_hidden2.npy")
-
-        # if not hasattr(self, "xx3"):
-        #     self.xx3 = xx
-        # paddle.save(self.xx3.numpy(), f"/workspace/hesensen/deepmd_backend/debug_emb/{self.name}_xx3.npy")
-
         hidden = nn.functional.tanh(
             nn.functional.linear(xx, self.weight[2], self.bias[2])
         ).reshape(
             [-1, 100]
         )  # 1
         xx = paddle.concat([xx, xx], axis=1) + hidden  # 6
-
-        # if not hasattr(self, "hidden3"):
-        #     self.hidden3 = hidden
-        # paddle.save(self.hidden3.numpy(), f"/workspace/hesensen/deepmd_backend/debug_emb/{self.name}_hidden3.npy")
-
-        # if not hasattr(self, "xx4"):
-        #     self.xx4 = xx
-        # paddle.save(self.xx4.numpy(), f"/workspace/hesensen/deepmd_backend/debug_emb/{self.name}_xx4.npy")
 
         return xx

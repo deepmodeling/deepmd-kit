@@ -364,20 +364,6 @@ def get_module(module_name: str) -> "ModuleType":
             import paddle_deepmd_lib
             from paddle.utils import cpp_extension
 
-            # module = cpp_extension.load(
-            #     name="paddle_custom_ops",
-            #     sources=[
-            #         "/workspace/hesensen/deepmd-kit/source/op/paddle/neighbor_stat.cc",
-            #         "/workspace/hesensen/deepmd-kit/source/op/paddle/prod_env_mat.cc",
-            #     ],
-            #     extra_include_paths=[
-            #         "/workspace/hesensen/deepmd-kit/source/lib/include/",
-            #         "/usr/local/cuda/lib64/",
-            #         "/workspace/hesensen/deepmd-kit/source/op/paddle/cub/",
-            #         "/usr/local/cuda/include/"
-            #     ],
-            #     verbose=True,
-            # )
             module = paddle_deepmd_lib
 
         except tf.errors.NotFoundError as e:

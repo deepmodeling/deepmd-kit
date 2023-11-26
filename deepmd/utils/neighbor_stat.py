@@ -9,15 +9,6 @@ from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
 from deepmd.env import default_tf_session_config
 from deepmd.env import op_module
 from deepmd.env import tf
-
-# from paddle.utils import cpp_extension
-# op_module = cpp_extension.load(
-#     name="custom_op_paddle2",
-#     sources=["/workspace/hesensen/deepmd-kit/source/op/paddle/neighbor_stat.cc"],
-#     extra_include_paths=["/workspace/hesensen/deepmd-kit/source/lib/include/","/usr/local/cuda/targets/x86_64-linux/include/", "/workspace/hesensen/deepmd-kit/source/op"],
-#     # extra_library_paths=["../build/lib/", "/usr/local/cuda/lib64"],
-#     verbose=True,
-# )
 from deepmd.utils.data_system import DeepmdDataSystem
 from deepmd.utils.parallel_op import ParallelOp
 
