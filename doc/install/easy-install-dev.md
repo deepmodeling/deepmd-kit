@@ -6,11 +6,13 @@ The following is the way to install the pre-compiled packages without [building 
 
 ## Install with docker
 
-The [`devel` tag](https://github.com/deepmodeling/deepmd-kit/pkgs/container/deepmd-kit/131827568?tag=devel) is used to mark the latest development version with CUDA support:
+The [`devel` tag](https://github.com/deepmodeling/deepmd-kit/pkgs/container/deepmd-kit/131827568?tag=devel) is used to mark the latest development version with CUDA 12.2 support:
 
 ```bash
 docker pull ghcr.io/deepmodeling/deepmd-kit:devel
 ```
+
+For CUDA 11.8 support, use the `devel_cu11` tag.
 
 ## Install with pip
 

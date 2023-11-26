@@ -92,6 +92,12 @@ pip install deepmd-kit[gpu,cu12]
 
 `cu12` is required only when CUDA Toolkit and cuDNN were not installed.
 
+To install the package built against CUDA 11.8, use
+
+```bash
+pip install deepmd-kit-cu11[gpu,cu11]
+```
+
 Or install the CPU version without CUDA supported:
 ```bash
 pip install deepmd-kit[cpu]
