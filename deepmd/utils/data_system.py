@@ -564,7 +564,7 @@ class DeepmdDataSystem:
         )
         for ii in range(self.nsystems):
             log.info(
-                "%s  %6d  %6d  %6d  %.3e  %3s"
+                "%s  %6d  %6d  %6d  %9.3e  %3s"
                 % (
                     self._format_name_length(self.system_dirs[ii], sys_width),
                     self.natoms[ii],
