@@ -636,6 +636,17 @@ class DeepPot(DeepEval):
                 eval_inputs["box"],  # [45] paddle.float64
                 eval_inputs["default_mesh"],  # [6] paddle.int32
             )
+            # print(eval_inputs["coord"].shape)
+            # print(eval_inputs["type"].shape)
+            # print(eval_inputs["natoms_vec"].shape)
+            # print(eval_inputs["box"].shape)
+            # print(eval_inputs["default_mesh"].shape)
+            # np.save("/workspace/hesensen/deepmd_backend/python_infer_data/coord.npy", eval_inputs["coord"].numpy())
+            # np.save("/workspace/hesensen/deepmd_backend/python_infer_data/type.npy", eval_inputs["type"].numpy())
+            # np.save("/workspace/hesensen/deepmd_backend/python_infer_data/natoms_vec.npy", eval_inputs["natoms_vec"].numpy())
+            # np.save("/workspace/hesensen/deepmd_backend/python_infer_data/box.npy", eval_inputs["box"].numpy())
+            # np.save("/workspace/hesensen/deepmd_backend/python_infer_data/default_mesh.npy", eval_inputs["default_mesh"].numpy())
+            # exit()
             eval_outputs = {
                 "atom_ener": eval_outputs[0],
                 "atom_virial": eval_outputs[1],
@@ -656,6 +667,12 @@ class DeepPot(DeepEval):
                 # "xx1": eval_outputs[9],
                 # "hidden1": eval_outputs[10],
             }
+
+            # for k, v in eval_outputs.items():
+            #     print(k, v.shape)
+            #     np.save(f"/workspace/hesensen/deepmd_backend/python_infer_data/st_model_{k}.npy", v.numpy())
+            #     print(f"finished save {k}")
+            # exit()
         else:
             eval_outputs = self.model(
                 eval_inputs["coord"],  # [2880] paddle.float64

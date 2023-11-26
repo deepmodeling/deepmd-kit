@@ -147,6 +147,7 @@ class DescrptSeA(paddle.nn.Layer):
             )
         self.sel_a = sel
         self.rcut_r = rcut
+        self.register_buffer("buffer_rcut", paddle.to_tensor(rcut, dtype="float64"))
         self.rcut_r_smth = rcut_smth
         self.filter_neuron = neuron
         self.n_axis_neuron = axis_neuron
@@ -175,10 +176,12 @@ class DescrptSeA(paddle.nn.Layer):
             self.sel_a.extend(self.sel_a_spin)
         else:
             self.ntypes_spin = 0
+        self.register_buffer("buffer_ntypes_spin", paddle.to_tensor(self.ntypes_spin))
 
         # descrpt config
         self.sel_r = [0 for ii in range(len(self.sel_a))]
         self.ntypes = len(self.sel_a)
+        self.register_buffer("buffer_ntypes", paddle.to_tensor(self.ntypes))
         assert self.ntypes == len(self.sel_r)
         self.rcut_a = -1
         # numb of neighbors and numb of descrptors

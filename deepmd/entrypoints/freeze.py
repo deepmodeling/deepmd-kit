@@ -424,7 +424,20 @@ def freeze_graph(
             False,
         ],
     )
-    paddle.jit.save(st_model, output)
+    print(f"st_model.descrpt.buffer_rcut.name = {st_model.descrpt.buffer_rcut.name}")
+    print(
+        f"st_model.descrpt.buffer_ntypes.name = {st_model.descrpt.buffer_ntypes.name}"
+    )
+    print(
+        f"st_model.fitting.buffer_dfparam.name = {st_model.fitting.buffer_dfparam.name}"
+    )
+    print(
+        f"st_model.fitting.buffer_daparam.name = {st_model.fitting.buffer_daparam.name}"
+    )
+    # 跳过对program的裁剪，从而保留rcut、ntypes等不参与前向的参数，从而在C++端可以获取这些参数
+    skip_prune_program = True
+    print(f"==>> skip_prune_program = {skip_prune_program}")
+    paddle.jit.save(st_model, output, skip_prune_program=skip_prune_program)
     print(f"Saved to path: {output}")
 
 

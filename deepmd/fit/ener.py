@@ -140,7 +140,9 @@ class EnerFitting(nn.Layer):
         #        .add("precision",           str, default = "default")\
         #        .add("trainable",        [list, bool], default = True)
         self.numb_fparam = numb_fparam
+        self.register_buffer("buffer_dfparam", paddle.to_tensor(self.numb_fparam))
         self.numb_aparam = numb_aparam
+        self.register_buffer("buffer_daparam", paddle.to_tensor(self.numb_aparam))
         self.n_neuron = neuron
         self.resnet_dt = resnet_dt
         self.rcond = rcond
