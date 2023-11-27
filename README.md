@@ -5,7 +5,7 @@
 ## DeePMD-kit(PaddlePaddle backend)
 
 > [!IMPORTANT]
-> 本项目为 DeePMD-kit 的 PaddlePaddle 版本，主要修改了部分代码，使其可以运行在 PaddlePaddle 上。运行功能包括在 water_se_e2_a 案例的单卡 GPU 训练、单卡 GPU 评估、导出静态图模型、接入 LAMMPS(GPU) 推理 5 部分的功能。
+> 本项目为 DeePMD-kit 的 PaddlePaddle 版本，主要修改了部分代码，使其可以运行在 PaddlePaddle 上。运行功能包括 water_se_e2_a 案例的单卡 GPU 训练、单卡 GPU 评估、导出静态图模型、接入 LAMMPS(GPU) 推理 4 部分的功能。
 
 ## 1. 环境安装
 
@@ -39,6 +39,17 @@
 cd ./source/lib/paddle_src
 python setup_ins.py install
 ```
+
+安装完毕之后建议运行如下命令测试一下 python 自定义算子在 CPU、GPU 上的正确性：
+
+``` sh
+wget -nc https://paddle-org.bj.bcebos.com/paddlescience/deepmd/deepmd_custom_op_test_data.tar
+tar -xf deepmd_custom_op_test_data.tar
+export UNITTEST_DIR=$PWD/deepmd_custom_op_test_data
+python ./custom_op_test.py
+```
+
+除少量 `deprecated` 相关的警告外，如果输出全部都是 True，则说明自定义算子安装成功并且运行正常。
 
 ### 2.1 训练
 
