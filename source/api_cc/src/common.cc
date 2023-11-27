@@ -21,6 +21,7 @@
 #endif
 #include "google/protobuf/io/zero_copy_stream_impl.h"
 #include "google/protobuf/text_format.h"
+#include "paddle/include/paddle_inference_api.h"
 
 using namespace tensorflow;
 
@@ -40,23 +41,24 @@ static std::vector<std::string> split(const std::string& input_,
 bool deepmd::model_compatable(std::string& model_version) {
   std::vector<std::string> words_mv = split(model_version, ".");
   std::vector<std::string> words_gmv = split(global_model_version, ".");
-  // if (words_mv.size() != 2) {
-  //   throw deepmd::deepmd_exception("invalid graph model version string " +
-  //                                  model_version);
-  // }
-  // if (words_gmv.size() != 2) {
-  //   throw deepmd::deepmd_exception("invalid supported model version string " +
-  //                                  global_model_version);
-  // }
-  // int model_version_major = atoi(words_mv[0].c_str());
-  // int model_version_minor = atoi(words_mv[1].c_str());
-  // int MODEL_VERSION_MAJOR = atoi(words_gmv[0].c_str());
-  // int MODEL_VERSION_MINOR = atoi(words_gmv[1].c_str());
+  //   if (words_mv.size() != 2) {
+  //     throw deepmd::deepmd_exception("invalid graph model version string " +
+  //                                    model_version);
+  //   }
+  //   if (words_gmv.size() != 2) {
+  //     throw deepmd::deepmd_exception("invalid supported model version string
+  //     " +
+  //                                    global_model_version);
+  //   }
+  //   int model_version_major = atoi(words_mv[0].c_str());
+  //   int model_version_minor = atoi(words_mv[1].c_str());
+  //   int MODEL_VERSION_MAJOR = atoi(words_gmv[0].c_str());
+  //   int MODEL_VERSION_MINOR = atoi(words_gmv[1].c_str());
   int model_version_major = 1;
   int model_version_minor = 1;
   int MODEL_VERSION_MAJOR = 1;
   int MODEL_VERSION_MINOR = 1;
-  printf(">>> debug\n");
+  // printf(">>> debug\n");
   return true;
   if (model_version_major != MODEL_VERSION_MAJOR ||
       model_version_minor > MODEL_VERSION_MINOR) {
@@ -499,6 +501,93 @@ int deepmd::session_input_tensors(
 }
 
 template <typename MODELTYPE, typename VALUETYPE>
+int deepmd::predictor_input_tensors(
+    const std::shared_ptr<paddle_infer::Predictor>& predictor,
+    const std::vector<VALUETYPE>& dcoord_,
+    const int& ntypes,
+    const std::vector<int>& datype_,
+    const std::vector<VALUETYPE>& dbox,
+    InputNlist& dlist,
+    const std::vector<VALUETYPE>& fparam_,
+    const std::vector<VALUETYPE>& aparam_,
+    const deepmd::AtomMap& atommap,
+    const int nghost,
+    const int ago,
+    const std::string scope) {
+  int nframes = dcoord_.size() / 3 / datype_.size();
+  int nall = datype_.size();
+  int nloc = nall - nghost;
+  assert(nall * 3 * nframes == dcoord_.size());
+  assert(dbox.size() == nframes * 9);
+
+  std::vector<int> datype = atommap.get_type();
+  std::vector<int> type_count(ntypes, 0);
+  for (unsigned ii = 0; ii < datype.size(); ++ii) {
+    type_count[datype[ii]]++;
+  }
+  datype.insert(datype.end(), datype_.begin() + nloc, datype_.end());
+
+  std::vector<VALUETYPE> dcoord(dcoord_);
+  atommap.forward<VALUETYPE>(dcoord.begin(), dcoord_.begin(), 3, nframes, nall);
+
+  // 准备输入Tensor句柄
+  auto input_names = predictor->GetInputNames();
+  auto coord_handle = predictor->GetInputHandle(input_names[0]);
+  auto atype_handle = predictor->GetInputHandle(input_names[1]);
+  auto natoms_handle = predictor->GetInputHandle(input_names[2]);
+  auto box_handle = predictor->GetInputHandle(input_names[3]);
+  auto mesh_handle = predictor->GetInputHandle(input_names[4]);
+
+  // 设置输入 Tensor 的维度信息
+  std::vector<int> COORD_SHAPE = {nframes, nall * 3};
+  std::vector<int> ATYPE_SHAPE = {nframes, nall};
+  std::vector<int> BOX_SHAPE = {nframes, 9};
+  std::vector<int> MESH_SHAPE = {16};
+  std::vector<int> NATOMS_SHAPE = {2 + ntypes};
+
+  coord_handle->Reshape(COORD_SHAPE);
+  atype_handle->Reshape(ATYPE_SHAPE);
+  natoms_handle->Reshape(NATOMS_SHAPE);
+  box_handle->Reshape(BOX_SHAPE);
+  mesh_handle->Reshape(MESH_SHAPE);
+
+  // 发送输入数据到Tensor句柄
+  coord_handle->CopyFromCpu(dcoord.data());
+
+  std::vector<int> datype_pad(nframes * nall, 0);
+  for (int ii = 0; ii < nframes; ++ii) {
+    for (int jj = 0; jj < nall; ++jj) {
+      datype_pad[ii * nall + jj] = datype[jj];
+    }
+  }
+  atype_handle->CopyFromCpu(datype_pad.data());
+
+  std::vector<int> mesh_pad(16, 0);
+  mesh_pad[0] = ago;
+  mesh_pad[1] = dlist.inum;
+  mesh_pad[2] = 0;
+  mesh_pad[3] = 0;
+  memcpy(&mesh_pad[4], &(dlist.ilist), sizeof(int*));
+  memcpy(&mesh_pad[8], &(dlist.numneigh), sizeof(int*));
+  memcpy(&mesh_pad[12], &(dlist.firstneigh), sizeof(int**));
+  mesh_handle->CopyFromCpu(mesh_pad.data());
+
+  std::vector<int> natoms_pad = {nloc, nall};
+  for (int ii = 0; ii < ntypes; ++ii) {
+    natoms_pad.push_back(type_count[ii]);
+  }
+  natoms_handle->CopyFromCpu(natoms_pad.data());
+
+  box_handle->CopyFromCpu(dbox.data());
+
+  const int stride = sizeof(int*) / sizeof(int);
+  assert(stride * sizeof(int) == sizeof(int*));
+  assert(stride <= 4);
+
+  return nloc;
+}
+
+template <typename MODELTYPE, typename VALUETYPE>
 int deepmd::session_input_tensors(
     std::vector<std::pair<std::string, Tensor>>& input_tensors,
     const std::vector<VALUETYPE>& dcoord_,
@@ -773,6 +862,15 @@ VT deepmd::session_get_scalar(Session* session,
 }
 
 template <typename VT>
+VT deepmd::predictor_get_scalar(const std::shared_ptr<paddle_infer::Predictor>& predictor,
+                                const std::string name_) {
+  auto scalar_tensor = predictor->GetOutputHandle(name_);
+  VT *scalar_ptr = (VT *)malloc(1 * sizeof(VT));
+  scalar_tensor->CopyToCpu(scalar_ptr);
+  return (*scalar_ptr);
+}
+
+template <typename VT>
 void deepmd::session_get_vector(std::vector<VT>& o_vec,
                                 Session* session,
                                 const std::string name_,
@@ -809,6 +907,13 @@ int deepmd::session_get_dtype(tensorflow::Session* session,
   Tensor output_rc = output_tensors[0];
   // cast enum to int
   return (int)output_rc.dtype();
+}
+
+paddle_infer::DataType deepmd::predictor_get_dtype(
+    const std::shared_ptr<paddle_infer::Predictor>& predictor,
+    const std::string& name_) {
+  auto scalar_tensor = predictor->GetOutputHandle(name_);
+  return scalar_tensor->type();
 }
 
 template <typename VT>
@@ -904,6 +1009,14 @@ template int deepmd::session_get_scalar<int>(Session*,
                                              const std::string,
                                              const std::string);
 
+template int deepmd::predictor_get_scalar<int>(
+  const std::shared_ptr<paddle_infer::Predictor>& predictor,
+  const std::string name_);
+
+template int64_t deepmd::predictor_get_scalar<int64_t>(
+  const std::shared_ptr<paddle_infer::Predictor>& predictor,
+  const std::string name_);
+
 template void deepmd::session_get_vector<int>(std::vector<int>&,
                                               Session*,
                                               const std::string,
@@ -941,6 +1054,10 @@ template float deepmd::session_get_scalar<float>(Session*,
                                                  const std::string,
                                                  const std::string);
 
+template float deepmd::predictor_get_scalar<float>(
+  const std::shared_ptr<paddle_infer::Predictor>& predictor,
+  const std::string name_);
+
 template void deepmd::session_get_vector<float>(std::vector<float>&,
                                                 Session*,
                                                 const std::string,
@@ -977,6 +1094,10 @@ template void deepmd::select_map_inv<float>(
 template double deepmd::session_get_scalar<double>(Session*,
                                                    const std::string,
                                                    const std::string);
+
+template double deepmd::predictor_get_scalar<double>(
+  const std::shared_ptr<paddle_infer::Predictor>& predictor,
+  const std::string name_);
 
 template void deepmd::session_get_vector<double>(std::vector<double>&,
                                                  Session*,
@@ -1113,6 +1234,7 @@ template int deepmd::session_input_tensors<float, float>(
     const deepmd::AtomMap& atommap,
     const std::string scope);
 
+/*下面是跟tensorflow session_input_tensors代码相关的模板声明*/
 template int deepmd::session_input_tensors<double, double>(
     std::vector<std::pair<std::string, tensorflow::Tensor>>& input_tensors,
     const std::vector<double>& dcoord_,
@@ -1166,6 +1288,63 @@ template int deepmd::session_input_tensors<float, float>(
     const int nghost,
     const int ago,
     const std::string scope);
+/*tensorflow end*/
+
+/*下面是跟paddle predictor_input_tensors代码相关的模板声明*/
+template int deepmd::predictor_input_tensors<double, double>(
+    const std::shared_ptr<paddle_infer::Predictor>& predictor,
+    const std::vector<double>& dcoord_,
+    const int& ntypes,
+    const std::vector<int>& datype_,
+    const std::vector<double>& dbox,
+    InputNlist& dlist,
+    const std::vector<double>& fparam_,
+    const std::vector<double>& aparam_,
+    const deepmd::AtomMap& atommap,
+    const int nghost,
+    const int ago,
+    const std::string scope);
+template int deepmd::predictor_input_tensors<float, double>(
+    const std::shared_ptr<paddle_infer::Predictor>& predictor,
+    const std::vector<double>& dcoord_,
+    const int& ntypes,
+    const std::vector<int>& datype_,
+    const std::vector<double>& dbox,
+    InputNlist& dlist,
+    const std::vector<double>& fparam_,
+    const std::vector<double>& aparam_,
+    const deepmd::AtomMap& atommap,
+    const int nghost,
+    const int ago,
+    const std::string scope);
+
+template int deepmd::predictor_input_tensors<double, float>(
+    const std::shared_ptr<paddle_infer::Predictor>& predictor,
+    const std::vector<float>& dcoord_,
+    const int& ntypes,
+    const std::vector<int>& datype_,
+    const std::vector<float>& dbox,
+    InputNlist& dlist,
+    const std::vector<float>& fparam_,
+    const std::vector<float>& aparam_,
+    const deepmd::AtomMap& atommap,
+    const int nghost,
+    const int ago,
+    const std::string scope);
+template int deepmd::predictor_input_tensors<float, float>(
+    const std::shared_ptr<paddle_infer::Predictor>& predictor,
+    const std::vector<float>& dcoord_,
+    const int& ntypes,
+    const std::vector<int>& datype_,
+    const std::vector<float>& dbox,
+    InputNlist& dlist,
+    const std::vector<float>& fparam_,
+    const std::vector<float>& aparam_,
+    const deepmd::AtomMap& atommap,
+    const int nghost,
+    const int ago,
+    const std::string scope);
+/*paddle end*/
 
 template int deepmd::session_input_tensors_mixed_type<double, double>(
     std::vector<std::pair<std::string, tensorflow::Tensor>>& input_tensors,

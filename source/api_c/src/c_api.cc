@@ -54,24 +54,10 @@ DP_DeepPot* DP_NewDeepPotWithParam2(const char* c_model,
                                     const char* c_file_content,
                                     const int size_file_content) {
   std::string model(c_model);
-  printf("==>> [DP_NewDeepPotWithParam2]\n");
   std::string file_content(c_file_content, c_file_content + size_file_content);
   DP_NEW_OK(DP_DeepPot, deepmd::DeepPot dp(model, gpu_rank, file_content);
             DP_DeepPot* new_dp = new DP_DeepPot(dp); return new_dp;)
 }
-
-// DP_DeepPot* DP_NewDeepPotWithParam3(const char* c_pdmodel_path,
-//                                     const char* c_pdiparams_path,
-//                                     const int gpu_rank,
-//                                     const char* c_file_content,
-//                                     const int size_file_content) {
-//   std::string pdmodel(c_pdmodel_path);
-//   std::string pdiparams(c_pdiparams_path);
-//   printf("==>> [DP_NewDeepPotWithParam3 Paddle ver]\n");
-//   std::string file_content(c_file_content, c_file_content + size_file_content);
-//   DP_NEW_OK(DP_DeepPot, deepmd::DeepPot dp(pdmodel, pdiparams, gpu_rank, file_content);
-//             DP_DeepPot* new_dp = new DP_DeepPot(dp); return new_dp;)
-// }
 
 DP_DeepPotModelDevi::DP_DeepPotModelDevi() {}
 DP_DeepPotModelDevi::DP_DeepPotModelDevi(deepmd::DeepPotModelDevi& dp)
