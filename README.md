@@ -1,8 +1,4 @@
-[<picture><source media="(prefers-color-scheme: dark)" srcset="./doc/_static/logo-dark.svg"><source media="(prefers-color-scheme: light)" srcset="./doc/_static/logo.svg"><img alt="DeePMD-kit logo" src="./doc/_static/logo.svg"></picture>](./doc/logo.md)
-
---------------------------------------------------------------------------------
-
-## DeePMD-kit(PaddlePaddle backend)
+# DeePMD-kit(PaddlePaddle backend)
 
 > [!IMPORTANT]
 > 本项目为 DeePMD-kit 的 PaddlePaddle 版本，主要修改了部分代码，使其可以运行在 PaddlePaddle 上。运行功能包括 water_se_e2_a 案例的单卡 GPU 训练、单卡 GPU 评估、导出静态图模型、接入 LAMMPS(GPU) 推理 4 部分的功能。
@@ -40,7 +36,7 @@ cd ./source/lib/paddle_src
 python setup_ins.py install
 ```
 
-安装完毕之后建议运行如下命令测试一下 python 自定义算子在 CPU、GPU 上的正确性：
+安装完毕之后建议运行如下命令测试一下 python 端自定义算子在 CPU、GPU 上的正确性：
 
 ``` sh
 wget -nc https://paddle-org.bj.bcebos.com/paddlescience/deepmd/deepmd_custom_op_test_data.tar
@@ -49,12 +45,9 @@ export UNITTEST_DIR=$PWD/deepmd_custom_op_test_data
 python ./custom_op_test.py
 ```
 
-除少量 `deprecated` 相关的警告外，如果输出全部都是 True，则说明自定义算子安装成功并且运行正常。
+除少量 `deprecated` 相关的警告外，如果输出全部都是 True，则说明 python 端自定义算子安装成功并且运行正常。
 
-### 2.1 训练
-
-> [!NOTE]
-> 暂时只支持 water_se_e2_a 案例的训练
+### 2.2 训练
 
 ``` sh
 # 进入案例目录
@@ -63,7 +56,7 @@ cd examples/water/se_e2_a
 dp train ./input.json
 ```
 
-### 2.2 评估
+### 2.3 评估
 
 ``` sh
 # 进入案例目录
@@ -74,7 +67,7 @@ WEIGHT_PATH="path/to/your_model.pdparams"
 dp test -m ${WEIGHT_PATH} -s ../data/data_3/ -n 30
 ```
 
-### 2.3 导出静态图模型
+### 2.4 导出静态图模型
 
 ``` sh
 # 进入案例目录
@@ -87,7 +80,7 @@ DUMP_PATH="path/to/your_dump"
 dp freeze -i ${WEIGHT_PATH} -o ${DUMP_PATH}
 ```
 
-### 2.4 在 LAMMPS(GPU) 中推理
+### 2.5 在 LAMMPS(GPU) 中推理
 
 1. 修改 `examples/water/lmp/in.lammps` 文件，将 `pair_style deepmd` 后面的路径改为 **2.3 导出静态图模型** 这一章节内设置好的 DUMP_PATH 的值
 
@@ -95,7 +88,7 @@ dp freeze -i ${WEIGHT_PATH} -o ${DUMP_PATH}
     pair_style  deepmd "path/to/your_dump"
     ```
 
-2. 编译 Paddle，得到未裁剪算子的 Paddle 推理库(LAMMPS 推理涉及到 `xxx_grad` 反向算子，因而需要使用未裁剪的 Paddle 推理库)
+2. 编译 Paddle，得到未裁剪算子的 Paddle 推理库(LAMMPS 推理涉及到 `xxx_grad` 反向算子，因而在此需要手动编译 Paddle，得到未裁剪的 Paddle 推理库)
 
     ``` sh
     git clone https://github.com/PaddlePaddle/Paddle.git -b develop
@@ -105,10 +98,12 @@ dp freeze -i ${WEIGHT_PATH} -o ${DUMP_PATH}
     # 推荐使用 Anaconda 安装 python3.9 环境，并在该环境下执行编译命令
     cmake .. -DPY_VERSION=3.9 -DWITH_GPU=ON -WITH_DISTRIBUTE=ON -DWITH_TESTING=ON -DCMAKE_BUILD_TYPE=Release
     make -j$(nproc)
-    pip install python/dist/paddlepaddle_gpu-0.0.0-cp39-cp39-linux_x86_64.whl
+
+    # 编译完成后，确认 paddle_inference_install_dir 推理库是否存在
+    ls build/paddle_inference_install_dir
     ```
 
-3. 安装 LAMMPS 并运行推理
+3. Paddle 推理库和 LAMMPS 联合编译安装，并运行推理
 
     ``` sh
     # 下载并解压 lammps 源码
@@ -119,7 +114,7 @@ dp freeze -i ${WEIGHT_PATH} -o ${DUMP_PATH}
 
     # 设置推理时的 GPU 卡号
     export CUDA_VISIBLE_DEVICES=0
-    # PADDLE_DIR 设置为第一步clone下的 Paddle 目录
+    # PADDLE_DIR 设置为第二步 clone下来的 Paddle 目录
     export PADDLE_DIR="/path/to/Paddle"
     # DEEPMD_DIR 设置为本项目的根目录
     export DEEPMD_DIR="/path/to/deepmd-kit"
@@ -166,7 +161,9 @@ dp freeze -i ${WEIGHT_PATH} -o ${DUMP_PATH}
     lmp_serial -in in.lammps
     ```
 
-4. 直接运行推理
+4. [可选]直接运行推理
+
+    若已完成 **3. Paddle 推理库和 LAMMPS 联合编译安装，并运行推理**，且没有对 C++ 代码进行修改，则无需重新联合编译 Paddle 推理库和 LAMMPS，直接运行以下命令即可开始推理。
 
     ``` sh
     # 设置推理时的 GPU 卡号
@@ -182,10 +179,13 @@ dp freeze -i ${WEIGHT_PATH} -o ${DUMP_PATH}
     lmp_serial -in in.lammps
     ```
 
----
+--------------------------------------------------------------------------------
 
-<span style="font-size:larger;">DeePMD-kit Manual</span>
-========
+[<picture><source media="(prefers-color-scheme: dark)" srcset="./doc/_static/logo-dark.svg"><source media="(prefers-color-scheme: light)" srcset="./doc/_static/logo.svg"><img alt="DeePMD-kit logo" src="./doc/_static/logo.svg"></picture>](./doc/logo.md)
+
+--------------------------------------------------------------------------------
+
+# DeePMD-kit Manual
 
 [![GitHub release](https://img.shields.io/github/release/deepmodeling/deepmd-kit.svg?maxAge=86400)](https://github.com/deepmodeling/deepmd-kit/releases)
 [![doi:10.1016/j.cpc.2018.03.016](https://img.shields.io/badge/DOI-10.1016%2Fj.cpc.2018.03.016-blue)](https://doi.org/10.1016/j.cpc.2020.107206)
@@ -216,7 +216,8 @@ For more information, check the [documentation](https://deepmd.readthedocs.io/).
 
 # Highlights in DeePMD-kit v2.0
 
-* [Model compression](doc/freeze/compress.md). Accelerate the efficiency of model inference 4-15 times.
+- [Model compression](doc/freeze/compress.md). Accelerate the efficiency of model inference 4-15 times.
+
 - [New descriptors](doc/model/overall.md). Including [`se_e2_r`](doc/model/train-se-e2-r.md) and [`se_e3`](doc/model/train-se-e3.md).
 - [Hybridization of descriptors](doc/model/train-hybrid.md). Hybrid descriptor constructed from the concatenation of several descriptors.
 - [Atom type embedding](doc/model/train-se-e2-a-tebd.md). Enable atom-type embedding to decline training complexity and refine performance.
@@ -226,7 +227,8 @@ For more information, check the [documentation](https://deepmd.readthedocs.io/).
 
 ## Highlighted features
 
-* **interfaced with TensorFlow**, one of the most popular deep learning frameworks, making the training process highly automatic and efficient, in addition, Tensorboard can be used to visualize training procedures.
+- **interfaced with TensorFlow**, one of the most popular deep learning frameworks, making the training process highly automatic and efficient, in addition, Tensorboard can be used to visualize training procedures.
+
 - **interfaced with high-performance classical MD and quantum (path-integral) MD packages**, i.e., LAMMPS and i-PI, respectively.
 - **implements the Deep Potential series models**, which have been successfully applied to finite and extended systems including organic molecules, metals, semiconductors, insulators, etc.
 - **implements MPI and GPU supports**, making it highly efficient for high-performance parallel and distributed computing.
