@@ -1,17 +1,11 @@
 import shutil
 import unittest
-from pathlib import (
-    Path,
-)
+from pathlib import Path
 
-from deepmd.common import (
-    GLOBAL_TF_FLOAT_PRECISION,
-    cast_precision,
-    expand_sys_str,
-)
-from deepmd.env import (
-    tf,
-)
+from deepmd.common import GLOBAL_TF_FLOAT_PRECISION
+from deepmd.common import cast_precision
+from deepmd.common import expand_sys_str
+from deepmd.env import tf
 
 
 # compute relative path

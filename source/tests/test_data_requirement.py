@@ -1,9 +1,7 @@
 import unittest
 
-from deepmd.common import (
-    add_data_requirement,
-    data_requirement,
-)
+from deepmd.common import add_data_requirement
+from deepmd.common import data_requirement
 
 
 class TestDataRequirement(unittest.TestCase):

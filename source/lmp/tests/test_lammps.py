@@ -1,18 +1,12 @@
 import os
 import subprocess as sp
 import sys
-from pathlib import (
-    Path,
-)
+from pathlib import Path
 
 import numpy as np
 import pytest
-from lammps import (
-    PyLammps,
-)
-from write_lmp_data import (
-    write_lmp_data,
-)
+from lammps import PyLammps
+from write_lmp_data import write_lmp_data
 
 pbtxt_file = Path(__file__).parent.parent.parent / "tests" / "infer" / "deeppot.pbtxt"
 pbtxt_file2 = (

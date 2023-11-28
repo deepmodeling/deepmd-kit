@@ -1,34 +1,20 @@
 import logging
-from functools import (
-    lru_cache,
-)
-from typing import (
-    Callable,
-    Dict,
-    List,
-    Tuple,
-)
+from functools import lru_cache
+from typing import Callable
+from typing import Dict
+from typing import List
+from typing import Tuple
 
 import numpy as np
-from scipy.special import (
-    comb,
-)
+from scipy.special import comb
 
 import deepmd
-from deepmd.common import (
-    ACTIVATION_FN_DICT,
-)
-from deepmd.descriptor import (
-    Descriptor,
-)
-from deepmd.env import (
-    op_module,
-    tf,
-)
-from deepmd.utils.graph import (
-    get_embedding_net_nodes_from_graph_def,
-    get_tensor_by_name_from_graph,
-)
+from deepmd.common import ACTIVATION_FN_DICT
+from deepmd.descriptor import Descriptor
+from deepmd.env import op_module
+from deepmd.env import tf
+from deepmd.utils.graph import get_embedding_net_nodes_from_graph_def
+from deepmd.utils.graph import get_tensor_by_name_from_graph
 
 log = logging.getLogger(__name__)
 

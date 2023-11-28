@@ -2,9 +2,7 @@
 
 import importlib
 import logging
-from pathlib import (
-    Path,
-)
+from pathlib import Path
 
 NOT_LOADABLE = ("__init__.py",)
 PACKAGE_BASE = "deepmd.op"

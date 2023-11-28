@@ -1,14 +1,8 @@
-from typing import (
-    Callable,
-)
+from typing import Callable
 
-from deepmd.env import (
-    tf,
-)
-from deepmd.utils import (
-    Plugin,
-    PluginVariant,
-)
+from deepmd.env import tf
+from deepmd.utils import Plugin
+from deepmd.utils import PluginVariant
 
 
 class Fitting(PluginVariant):

@@ -3,27 +3,15 @@ import os
 import unittest
 
 import numpy as np
-from common import (
-    gen_data,
-    j_loader,
-    tests_path,
-)
+from common import gen_data
+from common import j_loader
+from common import tests_path
 
-from deepmd.common import (
-    j_must_have,
-)
-from deepmd.infer import (
-    DeepPot,
-)
-from deepmd.utils.convert import (
-    convert_pbtxt_to_pb,
-)
-from deepmd.utils.data_system import (
-    DeepmdDataSystem,
-)
-from deepmd.utils.neighbor_stat import (
-    NeighborStat,
-)
+from deepmd.common import j_must_have
+from deepmd.infer import DeepPot
+from deepmd.utils.convert import convert_pbtxt_to_pb
+from deepmd.utils.data_system import DeepmdDataSystem
+from deepmd.utils.neighbor_stat import NeighborStat
 
 
 class TestVirtualType(unittest.TestCase):

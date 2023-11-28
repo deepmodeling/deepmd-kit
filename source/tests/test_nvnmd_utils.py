@@ -3,18 +3,10 @@ import unittest
 
 import numpy as np
 
-from deepmd.env import (
-    tf,
-)
-from deepmd.nvnmd.data.data import (
-    jdata_deepmd_input,
-)
-from deepmd.nvnmd.utils.config import (
-    nvnmd_cfg,
-)
-from deepmd.nvnmd.utils.network import (
-    one_layer,
-)
+from deepmd.env import tf
+from deepmd.nvnmd.data.data import jdata_deepmd_input
+from deepmd.nvnmd.utils.config import nvnmd_cfg
+from deepmd.nvnmd.utils.network import one_layer
 
 
 class TestNvnmdNetwork(tf.test.TestCase):

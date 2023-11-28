@@ -2,13 +2,9 @@ import os
 import subprocess as sp
 import unittest
 
-from common import (
-    tests_path,
-)
+from common import tests_path
 
-from deepmd.cluster.local import (
-    get_gpus,
-)
+from deepmd.cluster.local import get_gpus
 
 
 class TestSingleMachine(unittest.TestCase):

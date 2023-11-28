@@ -1,41 +1,23 @@
 import logging
-from typing import (
-    List,
-    Optional,
-)
+from typing import List
+from typing import Optional
 
 import numpy as np
 
-from deepmd.common import (
-    add_data_requirement,
-    cast_precision,
-    get_activation_func,
-    get_precision,
-)
-from deepmd.env import (
-    GLOBAL_TF_FLOAT_PRECISION,
-    tf,
-)
-from deepmd.fit.fitting import (
-    Fitting,
-)
-from deepmd.nvnmd.fit.ener import (
-    one_layer_nvnmd,
-)
-from deepmd.nvnmd.utils.config import (
-    nvnmd_cfg,
-)
-from deepmd.utils.errors import (
-    GraphWithoutTensorError,
-)
-from deepmd.utils.graph import (
-    get_fitting_net_variables_from_graph_def,
-    get_tensor_by_name_from_graph,
-)
+from deepmd.common import add_data_requirement
+from deepmd.common import cast_precision
+from deepmd.common import get_activation_func
+from deepmd.common import get_precision
+from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
+from deepmd.env import tf
+from deepmd.fit.fitting import Fitting
+from deepmd.nvnmd.fit.ener import one_layer_nvnmd
+from deepmd.nvnmd.utils.config import nvnmd_cfg
+from deepmd.utils.errors import GraphWithoutTensorError
+from deepmd.utils.graph import get_fitting_net_variables_from_graph_def
+from deepmd.utils.graph import get_tensor_by_name_from_graph
 from deepmd.utils.network import one_layer as one_layer_deepmd
-from deepmd.utils.network import (
-    one_layer_rand_seed_shift,
-)
+from deepmd.utils.network import one_layer_rand_seed_shift
 
 log = logging.getLogger(__name__)
 

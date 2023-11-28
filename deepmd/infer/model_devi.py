@@ -1,22 +1,12 @@
-from typing import (
-    Tuple,
-)
+from typing import Tuple
 
 import numpy as np
 
-from deepmd.common import (
-    expand_sys_str,
-)
+from deepmd.common import expand_sys_str
 
-from ..utils.batch_size import (
-    AutoBatchSize,
-)
-from ..utils.data import (
-    DeepmdData,
-)
-from .deep_pot import (
-    DeepPot,
-)
+from ..utils.batch_size import AutoBatchSize
+from ..utils.data import DeepmdData
+from .deep_pot import DeepPot
 
 
 def calc_model_devi_f(fs: np.ndarray) -> Tuple[np.ndarray]:

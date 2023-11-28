@@ -3,12 +3,8 @@ import unittest
 
 import numpy as np
 
-from deepmd.utils.batch_size import (
-    AutoBatchSize,
-)
-from deepmd.utils.errors import (
-    OutOfMemoryError,
-)
+from deepmd.utils.batch_size import AutoBatchSize
+from deepmd.utils.errors import OutOfMemoryError
 
 
 class TestAutoBatchSize(unittest.TestCase):

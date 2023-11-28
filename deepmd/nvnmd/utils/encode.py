@@ -2,9 +2,7 @@ import logging
 
 import numpy as np
 
-from deepmd.nvnmd.data.data import (
-    jdata_sys,
-)
+from deepmd.nvnmd.data.data import jdata_sys
 
 log = logging.getLogger(__name__)
 

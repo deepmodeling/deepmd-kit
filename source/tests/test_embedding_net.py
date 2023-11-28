@@ -2,12 +2,8 @@ import unittest
 
 import numpy as np
 
-from deepmd.env import (
-    tf,
-)
-from deepmd.utils.network import (
-    embedding_net,
-)
+from deepmd.env import tf
+from deepmd.utils.network import embedding_net
 
 
 class Inter(tf.test.TestCase):

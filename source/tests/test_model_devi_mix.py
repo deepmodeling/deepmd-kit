@@ -4,28 +4,18 @@ import unittest
 
 import numpy as np
 
-from deepmd.infer import (
-    DeepPotential,
-    calc_model_devi,
-)
-from deepmd.infer.model_devi import (
-    make_model_devi,
-)
+from deepmd.infer import DeepPotential
+from deepmd.infer import calc_model_devi
+from deepmd.infer.model_devi import make_model_devi
 
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
-from common import (
-    del_data,
-    gen_data,
-    tests_path,
-)
+from common import del_data
+from common import gen_data
+from common import tests_path
 from packaging.version import parse as parse_version
 
-from deepmd.env import (
-    tf,
-)
-from deepmd.utils.convert import (
-    convert_pbtxt_to_pb,
-)
+from deepmd.env import tf
+from deepmd.utils.convert import convert_pbtxt_to_pb
 
 
 @unittest.skipIf(

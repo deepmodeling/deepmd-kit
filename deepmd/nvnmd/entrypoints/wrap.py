@@ -1,37 +1,19 @@
 import logging
-from typing import (
-    Optional,
-)
+from typing import Optional
 
 import numpy as np
 
-from deepmd.env import (
-    op_module,
-    tf,
-)
-from deepmd.nvnmd.data.data import (
-    jdata_deepmd_input,
-    jdata_sys,
-)
-from deepmd.nvnmd.utils.config import (
-    nvnmd_cfg,
-)
-from deepmd.nvnmd.utils.encode import (
-    Encode,
-)
-from deepmd.nvnmd.utils.fio import (
-    FioBin,
-    FioTxt,
-)
-from deepmd.nvnmd.utils.network import (
-    get_sess,
-)
-from deepmd.nvnmd.utils.weight import (
-    get_fitnet_weight,
-)
-from deepmd.utils.sess import (
-    run_sess,
-)
+from deepmd.env import op_module
+from deepmd.env import tf
+from deepmd.nvnmd.data.data import jdata_deepmd_input
+from deepmd.nvnmd.data.data import jdata_sys
+from deepmd.nvnmd.utils.config import nvnmd_cfg
+from deepmd.nvnmd.utils.encode import Encode
+from deepmd.nvnmd.utils.fio import FioBin
+from deepmd.nvnmd.utils.fio import FioTxt
+from deepmd.nvnmd.utils.network import get_sess
+from deepmd.nvnmd.utils.weight import get_fitnet_weight
+from deepmd.utils.sess import run_sess
 
 log = logging.getLogger(__name__)
 

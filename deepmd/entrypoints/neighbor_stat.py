@@ -1,17 +1,9 @@
 import logging
-from typing import (
-    List,
-)
+from typing import List
 
-from deepmd.common import (
-    expand_sys_str,
-)
-from deepmd.utils.data_system import (
-    DeepmdDataSystem,
-)
-from deepmd.utils.neighbor_stat import (
-    NeighborStat,
-)
+from deepmd.common import expand_sys_str
+from deepmd.utils.data_system import DeepmdDataSystem
+from deepmd.utils.neighbor_stat import NeighborStat
 
 log = logging.getLogger(__name__)
 

@@ -1,27 +1,15 @@
 import os
 import site
-from importlib.machinery import (
-    FileFinder,
-)
-from importlib.util import (
-    find_spec,
-)
-from pathlib import (
-    Path,
-)
-from sysconfig import (
-    get_path,
-)
-from typing import (
-    List,
-    Optional,
-    Tuple,
-    Union,
-)
+from importlib.machinery import FileFinder
+from importlib.util import find_spec
+from pathlib import Path
+from sysconfig import get_path
+from typing import List
+from typing import Optional
+from typing import Tuple
+from typing import Union
 
-from packaging.specifiers import (
-    SpecifierSet,
-)
+from packaging.specifiers import SpecifierSet
 
 
 def find_tensorflow() -> Tuple[Optional[str], List[str]]:

@@ -1,31 +1,19 @@
 import json
-from typing import (
-    List,
-    Optional,
-)
+from typing import List
+from typing import Optional
 
 import numpy as np
 
-from deepmd.env import (
-    MODEL_VERSION,
-    global_cvt_2_ener_float,
-    op_module,
-    tf,
-)
-from deepmd.utils.graph import (
-    get_tensor_by_name_from_graph,
-)
-from deepmd.utils.pair_tab import (
-    PairTab,
-)
+from deepmd.env import MODEL_VERSION
+from deepmd.env import global_cvt_2_ener_float
+from deepmd.env import op_module
+from deepmd.env import tf
+from deepmd.utils.graph import get_tensor_by_name_from_graph
+from deepmd.utils.pair_tab import PairTab
 
-from .model import (
-    Model,
-)
-from .model_stat import (
-    make_stat_input,
-    merge_sys_stat,
-)
+from .model import Model
+from .model_stat import make_stat_input
+from .model_stat import merge_sys_stat
 
 
 class MultiModel(Model):

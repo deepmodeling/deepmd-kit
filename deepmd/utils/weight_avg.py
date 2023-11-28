@@ -1,11 +1,7 @@
-from collections import (
-    defaultdict,
-)
-from typing import (
-    Dict,
-    List,
-    Tuple,
-)
+from collections import defaultdict
+from typing import Dict
+from typing import List
+from typing import Tuple
 
 import numpy as np
 

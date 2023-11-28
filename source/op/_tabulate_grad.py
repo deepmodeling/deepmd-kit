@@ -1,13 +1,9 @@
 #!/usr/bin/env python3
 """Gradients for tabulate."""
 
-from tensorflow.python.framework import (
-    ops,
-)
+from tensorflow.python.framework import ops
 
-from deepmd.env import (
-    op_module,
-)
+from deepmd.env import op_module
 
 # from deepmd.DescrptSeATabulate import last_layer_size
 

@@ -2,9 +2,7 @@ import unittest
 
 import numpy as np
 
-from deepmd.common import (
-    select_idx_map,
-)
+from deepmd.common import select_idx_map
 
 
 class TestSelIdx(unittest.TestCase):

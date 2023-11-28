@@ -1,28 +1,16 @@
-from typing import (
-    List,
-    Optional,
-)
+from typing import List
+from typing import Optional
 
 import numpy as np
 
-from deepmd.common import (
-    cast_precision,
-    get_activation_func,
-    get_precision,
-)
-from deepmd.env import (
-    tf,
-)
-from deepmd.fit.fitting import (
-    Fitting,
-)
-from deepmd.utils.graph import (
-    get_fitting_net_variables_from_graph_def,
-)
-from deepmd.utils.network import (
-    one_layer,
-    one_layer_rand_seed_shift,
-)
+from deepmd.common import cast_precision
+from deepmd.common import get_activation_func
+from deepmd.common import get_precision
+from deepmd.env import tf
+from deepmd.fit.fitting import Fitting
+from deepmd.utils.graph import get_fitting_net_variables_from_graph_def
+from deepmd.utils.network import one_layer
+from deepmd.utils.network import one_layer_rand_seed_shift
 
 
 @Fitting.register("dipole")

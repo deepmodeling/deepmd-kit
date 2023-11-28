@@ -1,14 +1,10 @@
 import os
 import unittest
 
-from common import (
-    j_loader,
-)
+from common import j_loader
 
-from deepmd.utils.compat import (
-    convert_input_v0_v1,
-    convert_input_v1_v2,
-)
+from deepmd.utils.compat import convert_input_v0_v1
+from deepmd.utils.compat import convert_input_v1_v2
 
 
 class TestConvertInput(unittest.TestCase):

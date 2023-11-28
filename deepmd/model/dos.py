@@ -1,21 +1,13 @@
-from typing import (
-    List,
-    Optional,
-)
+from typing import List
+from typing import Optional
 
-from deepmd.env import (
-    MODEL_VERSION,
-    global_cvt_2_ener_float,
-    tf,
-)
+from deepmd.env import MODEL_VERSION
+from deepmd.env import global_cvt_2_ener_float
+from deepmd.env import tf
 
-from .model import (
-    Model,
-)
-from .model_stat import (
-    make_stat_input,
-    merge_sys_stat,
-)
+from .model import Model
+from .model_stat import make_stat_input
+from .model_stat import merge_sys_stat
 
 
 class DOSModel(Model):

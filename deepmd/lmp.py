@@ -1,30 +1,18 @@
 """Register entry points for lammps-wheel."""
 import os
 import platform
-from importlib import (
-    import_module,
-)
-from pathlib import (
-    Path,
-)
-from typing import (
-    List,
-    Optional,
-)
+from importlib import import_module
+from pathlib import Path
+from typing import List
+from typing import Optional
 
-from packaging.version import (
-    Version,
-)
+from packaging.version import Version
 
-from deepmd.env import (
-    TF_VERSION,
-    tf,
-)
+from deepmd.env import TF_VERSION
+from deepmd.env import tf
 
 if Version(TF_VERSION) < Version("2.12"):
-    from find_libpython import (
-        find_libpython,
-    )
+    from find_libpython import find_libpython
 else:
     find_libpython = None
 

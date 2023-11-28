@@ -1,18 +1,12 @@
-from typing import (
-    Tuple,
-)
+from typing import Tuple
 
 import numpy as np
 
-from deepmd.env import (
-    GLOBAL_TF_FLOAT_PRECISION,
-    default_tf_session_config,
-    op_module,
-    tf,
-)
-from deepmd.utils.sess import (
-    run_sess,
-)
+from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
+from deepmd.env import default_tf_session_config
+from deepmd.env import op_module
+from deepmd.env import tf
+from deepmd.utils.sess import run_sess
 
 
 class EwaldRecp:

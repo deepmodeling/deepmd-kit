@@ -1,10 +1,8 @@
 import numpy as np
 
-from deepmd.env import (
-    GLOBAL_TF_FLOAT_PRECISION,
-    op_grads_module,
-    tf,
-)
+from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
+from deepmd.env import op_grads_module
+from deepmd.env import tf
 
 
 class TestProdForceGrad(tf.test.TestCase):

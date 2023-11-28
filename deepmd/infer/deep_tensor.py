@@ -1,26 +1,16 @@
-from typing import (
-    TYPE_CHECKING,
-    List,
-    Optional,
-    Tuple,
-)
+from typing import TYPE_CHECKING
+from typing import List
+from typing import Optional
+from typing import Tuple
 
 import numpy as np
 
-from deepmd.common import (
-    make_default_mesh,
-)
-from deepmd.infer.deep_eval import (
-    DeepEval,
-)
-from deepmd.utils.sess import (
-    run_sess,
-)
+from deepmd.common import make_default_mesh
+from deepmd.infer.deep_eval import DeepEval
+from deepmd.utils.sess import run_sess
 
 if TYPE_CHECKING:
-    from pathlib import (
-        Path,
-    )
+    from pathlib import Path
 
 
 class DeepTensor(DeepEval):

@@ -3,40 +3,22 @@
 import json
 import logging
 import os
-from typing import (
-    Optional,
-)
+from typing import Optional
 
-from deepmd.common import (
-    j_loader,
-)
-from deepmd.env import (
-    GLOBAL_ENER_FLOAT_PRECISION,
-    tf,
-)
-from deepmd.utils.argcheck import (
-    normalize,
-)
-from deepmd.utils.compat import (
-    update_deepmd_input,
-)
-from deepmd.utils.errors import (
-    GraphTooLargeError,
-    GraphWithoutTensorError,
-)
-from deepmd.utils.graph import (
-    get_tensor_by_name_from_graph,
-    load_graph_def,
-)
+from deepmd.common import j_loader
+from deepmd.env import GLOBAL_ENER_FLOAT_PRECISION
+from deepmd.env import tf
+from deepmd.utils.argcheck import normalize
+from deepmd.utils.compat import update_deepmd_input
+from deepmd.utils.errors import GraphTooLargeError
+from deepmd.utils.errors import GraphWithoutTensorError
+from deepmd.utils.graph import get_tensor_by_name_from_graph
+from deepmd.utils.graph import load_graph_def
 
-from .freeze import (
-    freeze,
-)
-from .train import (
-    get_min_nbor_dist,
-    get_rcut,
-    train,
-)
+from .freeze import freeze
+from .train import get_min_nbor_dist
+from .train import get_rcut
+from .train import train
 
 __all__ = ["compress"]
 

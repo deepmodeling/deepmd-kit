@@ -1,15 +1,9 @@
-from typing import (
-    TYPE_CHECKING,
-)
+from typing import TYPE_CHECKING
 
-from deepmd.infer.deep_tensor import (
-    DeepTensor,
-)
+from deepmd.infer.deep_tensor import DeepTensor
 
 if TYPE_CHECKING:
-    from pathlib import (
-        Path,
-    )
+    from pathlib import Path
 
 
 class DeepDipole(DeepTensor):

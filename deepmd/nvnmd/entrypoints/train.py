@@ -1,33 +1,15 @@
 import logging
 import os
-from typing import (
-    Optional,
-)
+from typing import Optional
 
-from deepmd.entrypoints.freeze import (
-    freeze,
-)
-from deepmd.entrypoints.train import (
-    train,
-)
-from deepmd.env import (
-    tf,
-)
-from deepmd.nvnmd.data.data import (
-    jdata_deepmd_input,
-)
-from deepmd.nvnmd.entrypoints.mapt import (
-    mapt,
-)
-from deepmd.nvnmd.entrypoints.wrap import (
-    wrap,
-)
-from deepmd.nvnmd.utils.config import (
-    nvnmd_cfg,
-)
-from deepmd.nvnmd.utils.fio import (
-    FioDic,
-)
+from deepmd.entrypoints.freeze import freeze
+from deepmd.entrypoints.train import train
+from deepmd.env import tf
+from deepmd.nvnmd.data.data import jdata_deepmd_input
+from deepmd.nvnmd.entrypoints.mapt import mapt
+from deepmd.nvnmd.entrypoints.wrap import wrap
+from deepmd.nvnmd.utils.config import nvnmd_cfg
+from deepmd.nvnmd.utils.fio import FioDic
 
 log = logging.getLogger(__name__)
 

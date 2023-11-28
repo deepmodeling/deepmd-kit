@@ -1,12 +1,8 @@
 """Base of plugin systems."""
 # copied from https://github.com/deepmodeling/dpdata/blob/a3e76d75de53f6076254de82d18605a010dc3b00/dpdata/plugin.py
 
-from abc import (
-    ABCMeta,
-)
-from typing import (
-    Callable,
-)
+from abc import ABCMeta
+from typing import Callable
 
 
 class Plugin:

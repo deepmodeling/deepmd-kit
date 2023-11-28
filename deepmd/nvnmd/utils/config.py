@@ -2,19 +2,13 @@ import logging
 
 import numpy as np
 
-from deepmd.nvnmd.data.data import (
-    NVNMD_CITATION,
-    NVNMD_WELCOME,
-    jdata_config,
-    jdata_configs,
-    jdata_deepmd_input,
-)
-from deepmd.nvnmd.utils.fio import (
-    FioDic,
-)
-from deepmd.nvnmd.utils.op import (
-    r2s,
-)
+from deepmd.nvnmd.data.data import NVNMD_CITATION
+from deepmd.nvnmd.data.data import NVNMD_WELCOME
+from deepmd.nvnmd.data.data import jdata_config
+from deepmd.nvnmd.data.data import jdata_configs
+from deepmd.nvnmd.data.data import jdata_deepmd_input
+from deepmd.nvnmd.utils.fio import FioDic
+from deepmd.nvnmd.utils.op import r2s
 
 log = logging.getLogger(__name__)
 

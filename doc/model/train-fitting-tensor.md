@@ -18,25 +18,25 @@ The {ref}`fitting_net <model/fitting_net>` section tells DP which fitting net to
 The JSON of `dipole` type should be provided like
 
 ```json
-	"fitting_net" : {
-		"type": "dipole",
-		"sel_type": [0],
-		"neuron": [100,100,100],
-		"resnet_dt": true,
-		"seed": 1,
-	},
+    "fitting_net" : {
+        "type": "dipole",
+        "sel_type": [0],
+        "neuron": [100,100,100],
+        "resnet_dt": true,
+        "seed": 1,
+    },
 ```
 
 The JSON of `polar` type should be provided like
 
 ```json
-	"fitting_net" : {
-	   	"type": "polar",
-		"sel_type": [0],
-		"neuron": [100,100,100],
-		"resnet_dt": true,
-		"seed": 1,
-	},
+    "fitting_net" : {
+           "type": "polar",
+        "sel_type": [0],
+        "neuron": [100,100,100],
+        "resnet_dt": true,
+        "seed": 1,
+    },
 ```
 
 -   `type` specifies which type of fitting net should be used. It should be either `dipole` or `polar`. Note that `global_polar` mode in version 1.x is already **deprecated** and is merged into `polar`. To specify whether a system is global or atomic, please see [here](train-se-e2-a.md).
@@ -56,11 +56,11 @@ loss = pref * global_loss + pref_atomic * atomic_loss
 The loss section should be provided like
 
 ```json
-	"loss" : {
-		"type":		"tensor",
-		"pref":		1.0,
-		"pref_atomic":	1.0
-	},
+    "loss" : {
+        "type":        "tensor",
+        "pref":        1.0,
+        "pref_atomic":    1.0
+    },
 ```
 
 -   {ref}`type <loss/type>` should be written as `tensor` as a distinction from `ener` mode.
@@ -113,11 +113,11 @@ The detailed loss can be found in `lcurve.out`:
 
 One may notice that in each step, some of the local loss and global loss will be `0.0`. This is because our training data and validation data consist of the global system and atomic system, i.e.
 ```
-	--training_data
-		>atomic_system
-		>global_system
-	--validation_data
-		>atomic_system
-		>global_system
+    --training_data
+        >atomic_system
+        >global_system
+    --validation_data
+        >atomic_system
+        >global_system
 ```
 During training, at each step when the `lcurve.out` is printed, the system used for evaluating the training (validation) error may be either with only global or only atomic labels, thus the corresponding atomic or global errors are missing and are printed as zeros.
