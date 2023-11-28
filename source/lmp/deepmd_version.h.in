@@ -5,7 +5,7 @@
 #define DEEPMD_ROOT @CMAKE_INSTALL_PREFIX@
 #define TensorFlow_INCLUDE_DIRS @TensorFlow_INCLUDE_DIRS@
 #define TensorFlow_LIBRARY @TensorFlow_LIBRARY@
-#define DPMD_CVT_STR(x) #x
+#define DPMD_CVT_STR(...) #__VA_ARGS__
 #define DPMD_CVT_ASSTR(X) DPMD_CVT_STR(X)
 #define STR_GIT_SUMM DPMD_CVT_ASSTR(GIT_SUMM)
 #define STR_GIT_HASH DPMD_CVT_ASSTR(GIT_HASH)
