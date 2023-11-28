@@ -171,6 +171,7 @@ class Wrap:
         weight = nvnmd_cfg.weight
         VERSION = ctrl["VERSION"]
         SUB_VERSION = ctrl["SUB_VERSION"]
+        MAX_NNEI = ctrl['MAX_NNEI']
         nhead = 128
         NBIT_MODEL_HEAD = nbit["NBIT_MODEL_HEAD"]
         NBIT_FIXD_FL = nbit["NBIT_FIXD_FL"]
@@ -181,7 +182,7 @@ class Wrap:
         bs = ""
         e = Encode()
         # version
-        vv = VERSION + 256 * SUB_VERSION
+        vv = VERSION + 256 * SUB_VERSION + 256 * 256 * MAX_NNEI
         bs = e.dec2bin(vv, NBIT_MODEL_HEAD)[0] + bs
         # nhead
         bs = e.dec2bin(nhead, NBIT_MODEL_HEAD)[0] + bs

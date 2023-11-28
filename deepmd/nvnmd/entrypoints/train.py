@@ -100,6 +100,7 @@ def normalized_input_qnn(jdata, PATH_QNN, CONFIG_CNN, WEIGHT_CNN, MAP_CNN):
     jdata_nvnmd = jdata_deepmd_input_v0["nvnmd"]
     jdata_nvnmd["enable"] = True
     jdata_nvnmd["version"] = nvnmd_cfg.version
+    jdata_nvnmd["max_nnei"] = nvnmd_cfg.max_nnei
     jdata_nvnmd["config_file"] = CONFIG_CNN
     jdata_nvnmd["weight_file"] = WEIGHT_CNN
     jdata_nvnmd["map_file"] = MAP_CNN

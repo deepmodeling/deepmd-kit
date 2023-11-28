@@ -60,6 +60,7 @@ jdata_config_v0 = {
     },
     "ctrl": {
         # NSTDM
+        "MAX_NNEI": 128,
         "NSTDM": 64,
         "NSTDM_M1": 32,
         "NSTDM_M2": 2,
@@ -116,6 +117,22 @@ jdata_config_v0 = {
     },
     "end": "",
 }
+
+# change the configuration accordng to the max_nnei
+jdata_config_v0_ni128 = jdata_config_v0.copy()
+jdata_config_v0_ni256 = jdata_config_v0.copy()
+jdata_config_v0_ni256['ctrl'] = {
+    "MAX_NNEI": 256,
+    "NSTDM": 128,
+    "NSTDM_M1": 32,
+    "NSTDM_M2": 4,
+    "NSTDM_M1X": 8,
+    "NSEL": "NSTDM*NTYPE_MAX",
+    "NSADV": "NSTDM+1",
+    "VERSION": 0,
+    "SUB_VERSION": 1,
+}
+jdata_config_v0_ni256['nbit']['NBIT_NEIB'] = 9
 
 jdata_config_v1 = {
     "dscp": {
@@ -232,6 +249,9 @@ jdata_config_v1 = {
     "end": "",
 }
 
+# change the configuration accordng to the max_nnei
+jdata_config_v1_ni128 = jdata_config_v1.copy()
+
 jdata_deepmd_input_v0 = {
     "model": {
         "descriptor": {
@@ -249,6 +269,7 @@ jdata_deepmd_input_v0 = {
     },
     "nvnmd": {
         "version": 0,
+        "max_nnei": 128, # 128 or 256
         "net_size": 128,
         "config_file": "none",
         "weight_file": "none",
@@ -288,6 +309,10 @@ jdata_deepmd_input_v0 = {
     },
 }
 
+jdata_deepmd_input_v0_ni128 = jdata_deepmd_input_v0.copy()
+jdata_deepmd_input_v0_ni256 = jdata_deepmd_input_v0.copy()
+jdata_deepmd_input_v0_ni256['nvnmd']['max_nnei'] = 256
+
 jdata_deepmd_input_v1 = {
     "model": {
         "descriptor": {
@@ -310,6 +335,7 @@ jdata_deepmd_input_v1 = {
     },
     "nvnmd": {
         "version": 1,
+        "max_nnei": 128, # only 128. need time to develop 256 version
         "net_size": 128,
         "config_file": "none",
         "weight_file": "none",
@@ -348,6 +374,9 @@ jdata_deepmd_input_v1 = {
         "training_data": {"systems": "dataset", "set_prefix": "set", "batch_size": 1},
     },
 }
+
+jdata_deepmd_input_v1_ni128 = jdata_deepmd_input_v1.copy()
+
 
 NVNMD_WELCOME = (
     r" _   _  __     __  _   _   __  __   ____  ",
