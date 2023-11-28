@@ -262,6 +262,7 @@ def test_ener(
     numb_test = min(nframes, numb_test)
 
     coord = test_data["coord"][:numb_test].reshape([numb_test, -1])
+
     box = test_data["box"][:numb_test]
     if dp.has_efield:
         efield = test_data["efield"][:numb_test].reshape([numb_test, -1])

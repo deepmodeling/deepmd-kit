@@ -444,6 +444,9 @@ class DescrptSeA(paddle.nn.Layer):
             self.davg = np.array(all_davg)
         self.dstd = np.array(all_dstd)
 
+        self.t_avg = paddle.to_tensor(self.davg, dtype=GLOBAL_NP_FLOAT_PRECISION)
+        self.t_std = paddle.to_tensor(self.dstd, dtype=GLOBAL_NP_FLOAT_PRECISION)
+
     def enable_compression(
         self,
         min_nbor_dist: float,

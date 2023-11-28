@@ -212,34 +212,18 @@ class DeepEval:
         else:
             return True
 
-    def _get_value(
-        self, tensor_name: str, attr_name: Optional[str] = None
-    ) -> tf.Tensor:
-        """Get TF graph tensor and assign it to class namespace.
-
-        Parameters
-        ----------
-        tensor_name : str
-            name of tensor to get
-        attr_name : Optional[str], optional
-            if specified, class attribute with this name will be created and tensor will
-            be assigned to it, by default None
-
-        Returns
-        -------
-        tf.Tensor
-            loaded tensor
-        """
+    def _get_value(self, tensor_name: str, attr_name: Optional[str] = None):
+        """ """
         # do not use os.path.join as it doesn't work on Windows
         value = None
         for name, tensor in self.model.named_buffers():
             if tensor_name in name:
                 value = tensor.numpy()[0] if tensor.shape == [1] else tensor.numpy()
         if attr_name:
-            setattr(self, attr_name, tensor)
-            return tensor
+            setattr(self, attr_name, value)
+            return value
         else:
-            return tensor
+            return value
 
     @staticmethod
     def _load_graph(

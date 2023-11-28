@@ -66,6 +66,7 @@ class EnerModel(Model, paddle.nn.Layer):
         # super(EnerModel, self).__init__(name_scope="EnerModel")
         """Constructor."""
         # descriptor
+        super(EnerModel, self).__init__(name_scope="EnerModel")
         self.descrpt = descrpt
         self.rcut = self.descrpt.get_rcut()
         self.ntypes = self.descrpt.get_ntypes()
@@ -91,6 +92,10 @@ class EnerModel(Model, paddle.nn.Layer):
             self.sw_rmax = sw_rmax
         else:
             self.srtab = None
+
+        self.t_tmap = " ".join(self.type_map)
+        self.t_mt = self.model_type
+        self.t_ver = MODEL_VERSION
 
         # self.type_map = " ".join(self.type_map)
         self.t_tmap = " ".join(self.type_map)
