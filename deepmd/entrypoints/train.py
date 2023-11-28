@@ -86,6 +86,12 @@ def train(
     RuntimeError
         if distributed training job name is wrong
     """
+    if kwargs.get("cpu", False):
+        import paddle
+
+        paddle.set_device("cpu")
+        print("[NOTE]", "=" * 10, "Running paddle code on CPU", "=" * 10)
+
     run_opt = RunOptions(
         init_model=init_model,
         restart=restart,
@@ -386,10 +392,7 @@ def get_nbor_stat(jdata, rcut, one_type: bool = False):
 
     neistat = NeighborStat(ntypes, rcut, one_type=one_type)
 
-    min_nbor_dist, max_nbor_size = neistat.get_stat(
-        train_data
-    )  # 0.8854385688525511, [38 72]
-    # paddle: 0.8854385614395142 [38 72]
+    min_nbor_dist, max_nbor_size = neistat.get_stat(train_data)
 
     # moved from traier.py as duplicated
     # TODO: this is a simple fix but we should have a clear
@@ -466,25 +469,6 @@ def update_one_sel(jdata, descriptor):
                     "not less than %d, but you set it to %d. The accuracy"
                     " of your model may get worse." % (ii, tt, dd)
                 )
-    """
-    descriptor:
-    {
-        'type': 'se_e2_a',
-        'sel': [46, 92],
-        'rcut_smth': 0.5,
-        'rcut': 6.0,
-        'neuron': [25, 50, 100],
-        'resnet_dt': False,
-        'axis_neuron': 16,
-        'seed': 1,
-        'activation_function': 'tanh',
-        'type_one_side': False,
-        'precision': 'default',
-        'trainable': True,
-        'exclude_types': [],
-        'set_davg_zero': False
-    }
-    """
     if descriptor["type"] in ("se_atten",):
         descriptor["sel"] = sel = sum(sel)
     return descriptor

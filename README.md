@@ -7,6 +7,8 @@
 
 1. 安装 tensorflow 2.12
 
+    由于 DeepMD-kit 大量代码基于 tensorflow 编写，暂时没有完全迁移到 PaddlePaddle 上，因此运行前需要安装 tensorflow 2.12。
+
     ``` sh
     # Current stable release for CPU and GPU(CPU和GPU使用同一个命令，不再以安装tensorflow-gpu的形式安装GPU版本)
     pip install tensorflow==2.12 -i https://pypi.tuna.tsinghua.edu.cn/simple
@@ -17,6 +19,7 @@
     参考 [Paddle 官网](https://www.paddlepaddle.org.cn/install/quick?docurl=/documentation/docs/zh/develop/install/pip/linux-pip.html)，安装对应机器环境的 GPU 版 paddlepaddle-develop
 
 3. 安装 deepmd-kit
+
 
     ``` sh
     git clone https://github.com/HydrogenSulfate/deepmd-kit.git -b add_ddle_backend
@@ -52,8 +55,11 @@ python ./custom_op_test.py
 ``` sh
 # 进入案例目录
 cd examples/water/se_e2_a
-# 运行训练
+# 运行 GPU 训练
 dp train ./input.json
+
+# 运行 CPU 训练(速度极慢，不推荐运行，仅作为跑通测试)
+dp train ./input.json --cpu
 ```
 
 ### 2.3 评估

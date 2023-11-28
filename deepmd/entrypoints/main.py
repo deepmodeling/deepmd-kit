@@ -188,6 +188,13 @@ def main_parser() -> argparse.ArgumentParser:
         help="Skip calculating neighbor statistics. Sel checking, automatic sel, and model compression will be disabled.",
     )
 
+    parser_train.add_argument(
+        "--cpu",
+        action="store_true",
+        default=False,
+        help="Training on CPU",
+    )
+
     # * freeze script ******************************************************************
     parser_frz = subparsers.add_parser(
         "freeze",
