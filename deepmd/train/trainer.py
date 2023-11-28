@@ -4,9 +4,7 @@ import logging
 import os
 import platform
 import shutil
-import sys
 import time
-from collections import defaultdict
 from typing import Dict
 from typing import List
 
