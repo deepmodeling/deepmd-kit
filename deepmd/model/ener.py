@@ -1,3 +1,4 @@
+from typing import TYPE_CHECKING
 from typing import List
 from typing import Optional
 
@@ -14,6 +15,9 @@ from deepmd.utils.spin import Spin
 from .model import Model
 from .model_stat import make_stat_input
 from .model_stat import merge_sys_stat
+
+if TYPE_CHECKING:
+    from deepmd.fit import ener
 
 
 class EnerModel(Model, paddle.nn.Layer):
@@ -47,7 +51,7 @@ class EnerModel(Model, paddle.nn.Layer):
     def __init__(
         self,
         descrpt,
-        fitting,
+        fitting: "ener.EnerFitting",
         typeebd=None,
         type_map: Optional[List[str]] = None,
         data_stat_nbatch: int = 10,
@@ -211,7 +215,7 @@ class EnerModel(Model, paddle.nn.Layer):
             # ckpt_meta=ckpt_meta,
             suffix=suffix,
             reuse=reuse,
-        )
+        )  # [1, all_atom, M1*M2]
         # self.dout = dout
 
         # if self.srtab is not None:
@@ -256,7 +260,7 @@ class EnerModel(Model, paddle.nn.Layer):
         #     atom_ener = tf.reshape(inv_sw_lambda, [-1]) * atom_ener
         #     energy_raw = tab_atom_ener + atom_ener
         # else:
-        energy_raw = atom_ener
+        energy_raw = atom_ener  # [1, all_atoms]
 
         nloc_atom = (
             natoms[0]
@@ -269,6 +273,9 @@ class EnerModel(Model, paddle.nn.Layer):
         energy = paddle.sum(energy_raw, axis=1, name="o_energy" + suffix)
 
         force, virial, atom_virial = self.descrpt.prod_force_virial(atom_ener, natoms)
+        # force: [1, all_atoms*3]
+        # virial: [1, 9]
+        # force: [1, all_atoms*9]
 
         # if self.srtab is not None:
         #     sw_force = op_module.soft_min_force(
@@ -276,7 +283,7 @@ class EnerModel(Model, paddle.nn.Layer):
         #     )
         #     force = force + sw_force + tab_force
 
-        force = paddle.reshape(force, [-1, 3 * natoms[1]])
+        force = paddle.reshape(force, [-1, 3 * natoms[1]])  # [1, all_atoms*3]
         if self.spin is not None:
             # split and concatenate force to compute local atom force and magnetic force
             judge = paddle.equal(natoms[0], natoms[1])
@@ -311,41 +318,13 @@ class EnerModel(Model, paddle.nn.Layer):
         )
 
         model_dict = {}
-        model_dict["energy"] = energy  # [5]
-        model_dict["force"] = force  # [5, 576]
-        model_dict["virial"] = virial  # [5, 9]
-        model_dict["atom_ener"] = energy_raw  # [5, 192]
-        model_dict["atom_virial"] = atom_virial  # [5, 1728]
-        model_dict["coord"] = coord  # [5, 576]
-        model_dict["atype"] = atype  # [5, 192]
-
-        # model_dict["zdebug1"] = self.descrpt.descrpt
-        # model_dict["zdebug2"] = self.descrpt.descrpt_deriv
-        # model_dict["zdebug3"] = self.descrpt.rij
-        # model_dict["zdebug4"] = self.descrpt.nlist
-        # model_dict["zdebug5"] = self.descrpt.dout
-        # model_dict["zdebug6"] = self.descrpt.qmat
-        # model_dict["zdebug7"] = self.descrpt.xyz_scatter_input
-        # model_dict["zdebug8"] = self.descrpt.xyz_scatter_output
-
-        # model_dict["zdebug9"] = self.descrpt.debug_inputs
-        # model_dict["zdebug99"] = self.descrpt.debug_inputs_i
-        # model_dict["zdebug999"] = self.descrpt.debug_inputs_reshape
-        # model_dict["zdebug9999"] = self.descrpt.debug_xyz_scatter
-        # model_dict["zdebug99999"] = self.descrpt.debug_xyz_scatter_input
-        # model_dict["zdebug999999"] = self.descrpt.debug_xyz_scatter_output
-
-        # model_dict["z00_hidden1"] = self.descrpt.embedding_nets[0][0].hidden1
-        # model_dict["z00_hidden2"] = self.descrpt.embedding_nets[0][0].hidden2
-        # model_dict["z00_hidden3"] = self.descrpt.embedding_nets[0][0].hidden3
-        # model_dict["z00_xx1"] = self.descrpt.embedding_nets[0][0].xx1
-        # model_dict["z00_xx2"] = self.descrpt.embedding_nets[0][0].xx2
-        # model_dict["z00_xx3"] = self.descrpt.embedding_nets[0][0].xx3
-        # model_dict["z00_xx4"] = self.descrpt.embedding_nets[0][0].xx4
-        # model_dict["z00_0"] = self.descrpt.embedding_nets[0][0].weight[0]
-        # model_dict["z00_1"] = self.descrpt.embedding_nets[0][0].bias[0]
-        # model_dict["z00_2"] = self.descrpt.embedding_nets[0][0].xx1
-        # model_dict["z00_3"] = self.descrpt.embedding_nets[0][0].hidden1
+        model_dict["energy"] = energy  # [batch_size]
+        model_dict["force"] = force  # [batch_size, 576]
+        model_dict["virial"] = virial  # [batch_size, 9]
+        model_dict["atom_ener"] = energy_raw  # [batch_size, 192]
+        model_dict["atom_virial"] = atom_virial  # [batch_size, 1728]
+        model_dict["coord"] = coord  # [batch_size, 576]
+        model_dict["atype"] = atype  # [batch_size, 192]
         return model_dict
 
     def init_variables(

@@ -282,13 +282,6 @@ def test_ener(
     else:
         aparam = None
 
-    # print(type(coord))
-    # print(type(box))
-    # print(type(atype))
-    # np.save("/workspace/hesensen/deepmd_backend/infer_align/coord_pd.npy", coord)
-    # np.save("/workspace/hesensen/deepmd_backend/infer_align/box_pd.npy", box)
-    # np.save("/workspace/hesensen/deepmd_backend/infer_align/atype_pd.npy", atype)
-    # exit()
     ret = dp.eval(
         coord,
         box,
@@ -332,40 +325,6 @@ def test_ener(
         )[1]
 
     diff_e = energy - test_data["energy"][:numb_test].reshape([-1, 1])
-    # print(energy)
-    """
-    [[-29857.71310608]
-    [-29863.80820815]
-    [-29860.15135615]
-    [-29854.51192426]
-    [-29863.13812543]
-    [-29855.93205087]
-    [-29855.50978599]
-    [-29865.49989375]
-    [-29859.1466963 ]
-    [-29857.09336879]
-    [-29862.98884167]
-    [-29859.11198703]
-    [-29861.66000458]
-    [-29861.923259  ]
-    [-29865.03699558]
-    [-29860.04100619]
-    [-29858.07084488]
-    [-29865.77369217]
-    [-29856.55031266]
-    [-29856.55155207]
-    [-29855.50095994]
-    [-29855.1020719 ]
-    [-29855.39086308]
-    [-29863.13015616]
-    [-29858.15176772]
-    [-29860.35238411]
-    [-29855.99364597]
-    [-29862.08350903]
-    [-29861.07073953]
-    [-29862.65406131]]
-    """
-    # exit()
     mae_e = mae(diff_e)
     rmse_e = rmse(diff_e)
     diff_f = force - test_data["force"][:numb_test]

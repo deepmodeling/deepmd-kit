@@ -13,6 +13,7 @@ from deepmd.common import data_requirement
 from deepmd.common import expand_sys_str
 from deepmd.common import j_loader
 from deepmd.common import j_must_have
+from deepmd.descriptor import DescrptSeA
 from deepmd.env import MODEL_VERSION
 from deepmd.env import default_tf_session_config
 from deepmd.env import paddle
@@ -54,12 +55,24 @@ class DeepEval:
         model_param = j_must_have(jdata, "model")
 
         descrpt_param = j_must_have(model_param, "descriptor")
-        from deepmd.descriptor import DescrptSeA
+        explicit_ntypes_descrpt = ["se_atten"]
+        # hybrid_with_tebd = False
+        if descrpt_param["type"] in explicit_ntypes_descrpt:
+            descrpt_param["ntypes"] = len(model_param["type_map"])
+        elif descrpt_param["type"] == "hybrid":
+            for descrpt_item in descrpt_param["list"]:
+                if descrpt_item["type"] in explicit_ntypes_descrpt:
+                    descrpt_item["ntypes"] = len(model_param["type_map"])
+                    # hybrid_with_tebd = True
+
+        # if descrpt_param["type"] in ["se_e2_a", "se_a", "se_e2_r", "se_r", "hybrid"]:
+        descrpt_param["spin"] = None
+        descrpt_param["type_one_side"] = False
 
         descrpt_param.pop("type", None)
         descrpt_param.pop("_comment", None)
         self.spin = None
-        descrpt_param["spin"] = self.spin
+        # descrpt_param["spin"] = self.spin
         self.descrpt = DescrptSeA(**descrpt_param)
 
         self.multi_task_mode = "fitting_net_dict" in model_param
@@ -90,28 +103,32 @@ class DeepEval:
             model_param.get("sw_rmax"),
             self.spin,
         )
-        load_state_dict = paddle.load(str(model_file))
-        for k, v in load_state_dict.items():
-            if k in self.model.state_dict():
-                if load_state_dict[k].dtype != self.model.state_dict()[k].dtype:
-                    print(
-                        f"convert {k}'s dtype from {load_state_dict[k].dtype} to {self.model.state_dict()[k].dtype}"
-                    )
-                    load_state_dict[k] = load_state_dict[k].astype(
-                        self.model.state_dict()[k].dtype
-                    )
-                if list(load_state_dict[k].shape) != list(
-                    self.model.state_dict()[k].shape
-                ):
-                    print(
-                        f"convert {k}'s shape from {load_state_dict[k].shape} to {self.model.state_dict()[k].shape}"
-                    )
-                    load_state_dict[k] = load_state_dict[k].reshape(
+        model_file_str = str(model_file)
+        if model_file_str.endswith((".pdmodel", ".pdiparams")):
+            st_model_prefix = model_file_str.rsplit(".", 1)[0]
+            self.st_model = paddle.jit.load(st_model_prefix)
+        else:
+            load_state_dict = paddle.load(str(model_file))
+            for k, v in load_state_dict.items():
+                if k in self.model.state_dict():
+                    if load_state_dict[k].dtype != self.model.state_dict()[k].dtype:
+                        print(
+                            f"convert {k}'s dtype from {load_state_dict[k].dtype} to {self.model.state_dict()[k].dtype}"
+                        )
+                        load_state_dict[k] = load_state_dict[k].astype(
+                            self.model.state_dict()[k].dtype
+                        )
+                    if list(load_state_dict[k].shape) != list(
                         self.model.state_dict()[k].shape
-                    )
-        # print(f"==>> Load pretraied model successfully from: {str(model_file)}")
-        # exit()
-        self.model.set_state_dict(load_state_dict)
+                    ):
+                        print(
+                            f"convert {k}'s shape from {load_state_dict[k].shape} to {self.model.state_dict()[k].shape}"
+                        )
+                        load_state_dict[k] = load_state_dict[k].reshape(
+                            self.model.state_dict()[k].shape
+                        )
+            self.model.set_state_dict(load_state_dict)
+        print(f"==>> Load pretraied model successfully from: {str(model_file)}")
         self.load_prefix = load_prefix
 
         # graph_compatable should be called after graph and prefix are set
@@ -265,7 +282,6 @@ class DeepEval:
                 #                 # print(param.shape)
                 #                 if param.shape == (2,):
                 #                     print(constant_op.outputs[0], param)
-                # exit()
 
             return graph
 

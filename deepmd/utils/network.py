@@ -329,7 +329,6 @@ class OneLayer(paddle.nn.Layer):
                 std=stddev / np.sqrt(in_features + out_features)
             ),
         )
-        # print(bavg, stddev)
         self.bias = self.create_parameter(
             shape=[out_features],
             dtype=precision,
@@ -448,7 +447,7 @@ class EmbeddingNet(paddle.nn.Layer):
                         dtype=precision,
                         attr=paddle.ParamAttr(trainable=trainable),
                         default_initializer=paddle.nn.initializer.Normal(
-                            mean=0.1, std=0.001
+                            mean=1.0, std=0.001
                         ),
                     )
                 )
@@ -458,25 +457,56 @@ class EmbeddingNet(paddle.nn.Layer):
         self.idt = paddle.nn.ParameterList(idt)
 
     def forward(self, xx):
-        hidden = nn.functional.tanh(
-            nn.functional.linear(xx, self.weight[0], self.bias[0])
-        ).reshape(
-            [-1, 25]
-        )  # 1
-        xx = hidden  # 7
+        outputs_size = self.outputs_size
+        for ii in range(1, len(outputs_size)):
+            if self.activation_fn is not None:
+                hidden = paddle.reshape(
+                    self.activation_fn(
+                        paddle.matmul(xx, self.weight[ii - 1]) + self.bias[ii - 1]
+                    ),
+                    [-1, outputs_size[ii]],
+                )
+            else:
+                hidden = paddle.reshape(
+                    paddle.matmul(xx, self.weight[ii - 1]) + self.bias[ii - 1],
+                    [-1, outputs_size[ii]],
+                )
 
-        hidden = nn.functional.tanh(
-            nn.functional.linear(xx, self.weight[1], self.bias[1])
-        ).reshape(
-            [-1, 50]
-        )  # 1
-        xx = paddle.concat([xx, xx], axis=1) + hidden  # 6
-
-        hidden = nn.functional.tanh(
-            nn.functional.linear(xx, self.weight[2], self.bias[2])
-        ).reshape(
-            [-1, 100]
-        )  # 1
-        xx = paddle.concat([xx, xx], axis=1) + hidden  # 6
+            if outputs_size[ii] == outputs_size[ii - 1]:
+                if self.resnet_dt:
+                    xx += hidden * self.idt[ii]
+                else:
+                    xx += hidden
+            elif outputs_size[ii] == outputs_size[ii - 1] * 2:
+                if self.resnet_dt:
+                    xx = paddle.concat([xx, xx], axis=1) + hidden * self.idt[ii]
+                else:
+                    xx = paddle.concat([xx, xx], axis=1) + hidden
+            else:
+                xx = hidden
 
         return xx
+
+        # == debug code below ==#
+        # hidden = nn.functional.tanh(
+        #     nn.functional.linear(xx, self.weight[0], self.bias[0])
+        # ).reshape(
+        #     [-1, 25]
+        # )  # 1
+        # xx = hidden  # 7
+
+        # hidden = nn.functional.tanh(
+        #     nn.functional.linear(xx, self.weight[1], self.bias[1])
+        # ).reshape(
+        #     [-1, 50]
+        # )  # 1
+        # xx = paddle.concat([xx, xx], axis=1) + hidden  # 6
+
+        # hidden = nn.functional.tanh(
+        #     nn.functional.linear(xx, self.weight[2], self.bias[2])
+        # ).reshape(
+        #     [-1, 100]
+        # )  # 1
+        # xx = paddle.concat([xx, xx], axis=1) + hidden  # 6
+
+        # return xx

@@ -1021,35 +1021,6 @@ class DPTrainer:
                 model_inputs["natoms_vec"] = paddle.to_tensor(
                     model_inputs["natoms_vec"], place="cpu"
                 )
-                # for k, v in model_inputs.items():
-                #     np.save(
-                #         "/workspace/hesensen/deepmd_backend/"
-                #         f"deepmd-kit/examples/water/se_e2_a/align_input/{k}",
-                #         v,
-                #     )
-                # exit()
-                # {
-                #     find_box: []
-                #     box: [9]
-                #     find_coord: []
-                #     coord: [576]
-                #     find_numb_copy: []
-                #     numb_copy: [1]
-                #     find_energy: []
-                #     energy: [1]
-                #     find_force: []
-                #     force: [576]
-                #     find_virial: []
-                #     virial: [9]
-                #     find_atom_ener: []
-                #     atom_ener: [192]
-                #     find_atom_pref: []
-                #     atom_pref: [576]
-                #     natoms_vec: [4]
-                #     default_mesh: [6]
-                #     type: [192]
-                #     is_training: []
-                # }
                 model_pred = self.model(
                     model_inputs["coord"],
                     model_inputs["type"],
@@ -1060,13 +1031,6 @@ class DPTrainer:
                     suffix="",
                     reuse=False,
                 )
-                # for k, v in model_pred.items():
-                #     np.save(
-                #         "/workspace/hesensen/deepmd_backend/"
-                #         f"deepmd-kit/examples/water/se_e2_a/align_input/pred_{k}",
-                #         v,
-                #     )
-                # exit()
 
                 # loss = (
                 #     model_pred["force"].sum()

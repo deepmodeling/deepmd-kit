@@ -202,40 +202,6 @@ class DeepPot(DeepEval):
         #         ewald_beta=ewald_beta,
         #     )
 
-        # NOTE: 使用静态图模型推理
-        if not hasattr(self, "st_model"):
-            self.st_model = paddle.jit.load(
-                "/workspace/hesensen/deepmd_backend/deepmd-kit/examples/water/se_e2_a/Model_1000000"
-            )
-            # for k, v in self.st_model.named_parameters():
-            #     print(f"{k} {v.shape} {v.mean().item()} {v.var().item()}")
-            # """
-            # param_0 [1, 25] 0.9498768667019655 0.7340928425051493
-            # param_1 [1, 50] 1.1214760345730344 0.9621536430386503
-            # param_2 [1, 100] 1.168418946306086 1.0411743399117217
-            # param_3 [1, 25] 0.002546645920014433 0.27806176560439083
-            # param_4 [25, 50] -0.015372691466039676 0.10679961485782502
-            # param_5 [50, 100] -0.0010681208730640539 0.09950205346985407
-            # param_6 [1, 25] 1.0639599744616117 0.917256936729768
-            # param_7 [1, 50] 1.142691803888668 0.9639366693005659
-            # param_8 [1, 100] 1.1471394365452061 1.0091294911290036
-            # param_9 [1, 25] 0.019013792716200625 0.1450311660373793
-            # param_10 [25, 50] -0.006747145320748169 0.028971429954693633
-            # param_11 [50, 100] -0.03750622755877242 0.04714041793007081
-            # param_12 [1, 25] 1.0380588819220322 0.8904020425094114
-            # param_13 [1, 50] 1.1245407895732316 0.9234643810098301
-            # param_14 [1, 100] 1.1430567514092813 0.9876968977916372
-            # param_15 [1, 25] 0.03272738992064966 0.1751917732380509
-            # param_16 [25, 50] -0.017871745658352124 0.0384813911462805
-            # param_17 [50, 100] -0.07345191324160481 0.1768254187693918
-            # param_18 [1, 25] 1.0147830400771964 0.9070964180637516
-            # param_19 [1, 50] 1.1198266551333698 1.034746190888665
-            # param_20 [1, 100] 1.1410748813679754 1.0428001731414345
-            # param_21 [1, 25] -0.022862385119536602 0.18038150422614693
-            # param_22 [25, 50] -0.024970130750642985 0.07176423978220656
-            # param_23 [50, 100] -0.012309303874398866 0.07227932085917015
-            # """
-
     def _run_default_sess(self):
         if self.has_spin is True:
             [
@@ -611,7 +577,6 @@ class DeepPot(DeepEval):
         # print(eval_inputs['type'].shape) # [960]
         # print(eval_inputs['natoms_vec'].shape) # [4]
         # print(eval_inputs['box'].shape) # [45]
-        # exit()
 
         if self.has_fparam:
             eval_inputs["fparam"] = paddle.to_tensor(
@@ -629,6 +594,7 @@ class DeepPot(DeepEval):
         # eval_inputs['default_mesh'] = paddle.to_tensor(np.array([], dtype = np.int32))
 
         if hasattr(self, "st_model"):
+            # NOTE: 使用静态图模型推理
             eval_outputs = self.st_model(
                 eval_inputs["coord"],  # [2880] paddle.float64
                 eval_inputs["type"],  # [960] paddle.int32
@@ -636,17 +602,6 @@ class DeepPot(DeepEval):
                 eval_inputs["box"],  # [45] paddle.float64
                 eval_inputs["default_mesh"],  # [6] paddle.int32
             )
-            # print(eval_inputs["coord"].shape)
-            # print(eval_inputs["type"].shape)
-            # print(eval_inputs["natoms_vec"].shape)
-            # print(eval_inputs["box"].shape)
-            # print(eval_inputs["default_mesh"].shape)
-            # np.save("/workspace/hesensen/deepmd_backend/python_infer_data/coord.npy", eval_inputs["coord"].numpy())
-            # np.save("/workspace/hesensen/deepmd_backend/python_infer_data/type.npy", eval_inputs["type"].numpy())
-            # np.save("/workspace/hesensen/deepmd_backend/python_infer_data/natoms_vec.npy", eval_inputs["natoms_vec"].numpy())
-            # np.save("/workspace/hesensen/deepmd_backend/python_infer_data/box.npy", eval_inputs["box"].numpy())
-            # np.save("/workspace/hesensen/deepmd_backend/python_infer_data/default_mesh.npy", eval_inputs["default_mesh"].numpy())
-            # exit()
             eval_outputs = {
                 "atom_ener": eval_outputs[0],
                 "atom_virial": eval_outputs[1],
@@ -655,25 +610,9 @@ class DeepPot(DeepEval):
                 "energy": eval_outputs[4],
                 "force": eval_outputs[5],
                 "virial": eval_outputs[6],
-                # "z00_hidden1": eval_outputs[7],
-                # "z00_hidden2": eval_outputs[8],
-                # "z00_hidden3": eval_outputs[9],
-                # "z00_xx1": eval_outputs[7],
-                # "z00_xx2": eval_outputs[8],
-                # "z00_xx3": eval_outputs[9],
-                # "z00_xx4": eval_outputs[10],
-                # "weight_0": eval_outputs[7],
-                # "bias_0": eval_outputs[8],
-                # "xx1": eval_outputs[9],
-                # "hidden1": eval_outputs[10],
             }
-
-            # for k, v in eval_outputs.items():
-            #     print(k, v.shape)
-            #     np.save(f"/workspace/hesensen/deepmd_backend/python_infer_data/st_model_{k}.npy", v.numpy())
-            #     print(f"finished save {k}")
-            # exit()
         else:
+            # NOTE: 使用动态图模型推理
             eval_outputs = self.model(
                 eval_inputs["coord"],  # [2880] paddle.float64
                 eval_inputs["type"],  # [960] paddle.int32
@@ -681,11 +620,6 @@ class DeepPot(DeepEval):
                 eval_inputs["box"],  # [45] paddle.float64
                 eval_inputs["default_mesh"],  # [6] paddle.int32
                 eval_inputs,
-                # eval_inputs.coord: [2880] paddle.float64
-                # eval_inputs.type: [960] paddle.int32
-                # eval_inputs.natoms_vec: [4] paddle.int32
-                # eval_inputs.box: [45] paddle.float64
-                # eval_inputs.default_mesh: [6] paddle.int32
                 suffix="",
                 reuse=False,
             )

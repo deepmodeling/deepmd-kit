@@ -145,13 +145,14 @@ class DescrptSeA(paddle.nn.Layer):
             raise RuntimeError(
                 f"rcut_smth ({rcut_smth:f}) should be no more than rcut ({rcut:f})!"
             )
-        self.sel_a = sel
-        self.rcut_r = rcut
+        self.sel_a = sel  # [46(O), 92(H)]
+        self.rcut_r = rcut  # 6.0
+        # NOTE: register 'rcut' in buffer to be accessed in inference
         self.register_buffer("buffer_rcut", paddle.to_tensor(rcut, dtype="float64"))
-        self.rcut_r_smth = rcut_smth
-        self.filter_neuron = neuron
-        self.n_axis_neuron = axis_neuron
-        self.filter_resnet_dt = resnet_dt
+        self.rcut_r_smth = rcut_smth  # 0.5
+        self.filter_neuron = neuron  # [25, 50, 100]
+        self.n_axis_neuron = axis_neuron  # 16
+        self.filter_resnet_dt = resnet_dt  # False
         self.seed = seed
         self.uniform_seed = uniform_seed
         self.seed_shift = embedding_net_rand_seed_shift(self.filter_neuron)
@@ -159,15 +160,15 @@ class DescrptSeA(paddle.nn.Layer):
         self.compress_activation_fn = get_activation_func(activation_function)
         self.filter_activation_fn = get_activation_func(activation_function)
         self.filter_precision = get_precision(precision)
-        self.exclude_types = set()
+        self.exclude_types = set()  # empty
         for tt in exclude_types:
             assert len(tt) == 2
             self.exclude_types.add((tt[0], tt[1]))
             self.exclude_types.add((tt[1], tt[0]))
-        self.set_davg_zero = set_davg_zero
-        self.type_one_side = type_one_side
+        self.set_davg_zero = set_davg_zero  # False
+        # self.type_one_side = type_one_side  # False
         self.type_one_side = False
-        self.spin = spin
+        self.spin = spin  # None
 
         # extend sel_a for spin system
         if self.spin is not None:
@@ -176,28 +177,52 @@ class DescrptSeA(paddle.nn.Layer):
             self.sel_a.extend(self.sel_a_spin)
         else:
             self.ntypes_spin = 0
-        self.register_buffer("buffer_ntypes_spin", paddle.to_tensor(self.ntypes_spin))
+        # NOTE: register 'ntypes_spin' in buffer to be accessed in inference
+        self.register_buffer(
+            "buffer_ntypes_spin", paddle.to_tensor(self.ntypes_spin, dtype="int32")
+        )
 
         # descrpt config
-        self.sel_r = [0 for ii in range(len(self.sel_a))]
-        self.ntypes = len(self.sel_a)
-        self.register_buffer("buffer_ntypes", paddle.to_tensor(self.ntypes))
+        self.sel_r = [0 for ii in range(len(self.sel_a))]  # [0, 0]
+        self.ntypes = len(self.sel_a)  # 2
+        # NOTE: register 'ntypes' in buffer to be accessed in inference
+        self.register_buffer(
+            "buffer_ntypes", paddle.to_tensor(self.ntypes, dtype="int32")
+        )
         assert self.ntypes == len(self.sel_r)
         self.rcut_a = -1
         # numb of neighbors and numb of descrptors
-        self.nnei_a = np.cumsum(self.sel_a)[-1]
-        self.nnei_r = np.cumsum(self.sel_r)[-1]
-        self.nnei = self.nnei_a + self.nnei_r
-        self.ndescrpt_a = self.nnei_a * 4
-        self.ndescrpt_r = self.nnei_r * 1
-        self.ndescrpt = self.ndescrpt_a + self.ndescrpt_r
+        self.nnei_a = np.cumsum(self.sel_a)[-1]  # 138 邻域内原子个数
+        self.nnei_r = np.cumsum(self.sel_r)[-1]  # 0
+        self.nnei = self.nnei_a + self.nnei_r  # 138
+        self.ndescrpt_a = self.nnei_a * 4  # 552 原子个数*4([s, s/x, s/y, s/z])
+        self.ndescrpt_r = self.nnei_r * 1  # 0
+        self.ndescrpt = self.ndescrpt_a + self.ndescrpt_r  # 552
         self.useBN = False
         self.dstd = None
         self.davg = None
-
-        self.avg_zero = paddle.zeros([self.ntypes, self.ndescrpt], dtype="float32")
-        self.std_ones = paddle.ones([self.ntypes, self.ndescrpt], dtype="float32")
+        # self.compress = False
+        # self.embedding_net_variables = None
+        # self.mixed_prec = None
+        # self.place_holders = {}
+        # self.nei_type = np.repeat(np.arange(self.ntypes), self.sel_a)
+        """
+        array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1])
+        """
+        self.avg_zero = paddle.zeros(
+            [self.ntypes, self.ndescrpt], dtype="float32"
+        )  # [2, 552]
+        self.std_ones = paddle.ones(
+            [self.ntypes, self.ndescrpt], dtype="float32"
+        )  # [2, 552]
         nets = []
+        # self._pass_filter => self._filter => self._filter_lower
         for type_input in range(self.ntypes):
             layer = []
             for type_i in range(self.ntypes):
@@ -601,14 +626,6 @@ class DescrptSeA(paddle.nn.Layer):
         # op_descriptor = (
         #     build_op_descriptor() if nvnmd_cfg.enable else op_module.prod_env_mat_a
         # )
-        # print(coord.dtype) # paddle.float64
-        # print(atype.dtype) # paddle.int32
-        # print(box.dtype) # paddle.float64
-        # print(mesh.dtype) # paddle.int32
-        # print(self.t_avg.dtype) # paddle.float32
-        # print(self.t_std.dtype) # paddle.float32
-        # print(natoms)
-        # exit()
         (
             self.descrpt,
             self.descrpt_deriv,
@@ -628,38 +645,6 @@ class DescrptSeA(paddle.nn.Layer):
             sel_a=self.sel_a,
             sel_r=self.sel_r,
         )
-        # np.save(
-        #     "/workspace/hesensen/deepmd_backend/"
-        #     "deepmd-kit/examples/water/se_e2_a/align_input/pred_descrpt",
-        #     self.descrpt,
-        # )
-        # np.save(
-        #     "/workspace/hesensen/deepmd_backend/"
-        #     "deepmd-kit/examples/water/se_e2_a/align_input/pred_descrpt_deriv",
-        #     self.descrpt_deriv,
-        # )
-        # np.save(
-        #     "/workspace/hesensen/deepmd_backend/"
-        #     "deepmd-kit/examples/water/se_e2_a/align_input/pred_rij",
-        #     self.rij,
-        # )
-        # np.save(
-        #     "/workspace/hesensen/deepmd_backend/"
-        #     "deepmd-kit/examples/water/se_e2_a/align_input/pred_nlist",
-        #     self.nlist,
-        # )
-        # np.save(
-        #     "/workspace/hesensen/deepmd_backend/"
-        #     "deepmd-kit/examples/water/se_e2_a/align_input/pred_nlist",
-        #     self.nlist,
-        # )
-        # np.save(
-        #     "/workspace/hesensen/deepmd_backend/"
-        #     "deepmd-kit/examples/water/se_e2_a/align_input/pred_nlist",
-        #     self.nlist,
-        # )
-        # exit()
-        # self.descrpt.shape = [1, 105984]
         # only used when tensorboard was set as true
         # tf.summary.histogram("descrpt", self.descrpt)
         # tf.summary.histogram("rij", self.rij)
@@ -676,24 +661,10 @@ class DescrptSeA(paddle.nn.Layer):
             suffix=suffix,
             reuse=reuse,
             trainable=self.trainable,
-        )
-        # np.save(
-        #     "/workspace/hesensen/deepmd_backend/"
-        #     "deepmd-kit/examples/water/se_e2_a/align_input/pred_dout",
-        #     self.dout,
-        # )
-        # np.save(
-        #     "/workspace/hesensen/deepmd_backend/"
-        #     "deepmd-kit/examples/water/se_e2_a/align_input/pred_qmat",
-        #     self.qmat,
-        # )
-        # exit()
+        )  # [1, all_atom, M1*M2], output_qmat: [1, all_atom, M1*3]
 
         # only used when tensorboard was set as true
         # tf.summary.histogram("embedding_net_output", self.dout)
-        # print(self.dout.shape)
-        # np.save(f"/workspace/hesensen/deepmd_backend/infer_align/dout_pd.npy", self.dout)
-        # exit()
         return self.dout
 
     def get_rot_mat(self) -> paddle.Tensor:
@@ -756,23 +727,33 @@ class DescrptSeA(paddle.nn.Layer):
     def _pass_filter(
         self, inputs, atype, natoms, input_dict, reuse=None, suffix="", trainable=True
     ):
+        """pass_filter.
+
+        Args:
+            inputs (_type_): _description_
+            atype (_type_): _description_
+            natoms (_type_): _description_
+            input_dict (_type_): _description_
+            reuse (_type_, optional): _description_. Defaults to None.
+            suffix (str, optional): _description_. Defaults to "".
+            trainable (bool, optional): _description_. Defaults to True.
+
+        Returns:
+            Tuple[Tensor, Tensor]: output: [1, all_atom, M1*M2], output_qmat: [1, all_atom, M1*3]
+        """
         # natoms = [192, 192, 64 , 128]
         if input_dict is not None:
             type_embedding = input_dict.get("type_embedding", None)
         else:
             type_embedding = None
         start_index = 0
-        # print(inputs.shape) # [192, 552]
+        # print(inputs.shape) # [192, 552(nnei*4)]，每个原子和它周围nnei个原子的R矩阵(展平后)
         inputs = paddle.reshape(inputs, [-1, int(natoms[0].item()), int(self.ndescrpt)])
-        # print(inputs.shape) # [1, 192, 552]
-        # exit()
         output = []
         output_qmat = []
-        # print(self.type_one_side, type_embedding)
-        # exit()
         if not self.type_one_side and type_embedding is None:
-            # print("here", self.ntypes)
             for type_i in range(self.ntypes):
+                # 按不同原子类型进行处理
                 inputs_i = paddle.slice(
                     inputs,
                     [0, 1, 2],
@@ -782,10 +763,12 @@ class DescrptSeA(paddle.nn.Layer):
                         start_index + natoms[2 + type_i],
                         inputs.shape[2],
                     ],
-                )  # [1, 192, 552] --> [1, 64, 552]
-                inputs_i = paddle.reshape(inputs_i, [-1, self.ndescrpt])  # [64, 552]
+                )  # [1, 某种类型原子个数64/128, 552]
+                inputs_i = paddle.reshape(
+                    inputs_i, [-1, self.ndescrpt]
+                )  # [某种类型原子个数64/128, 552]
                 filter_name = "filter_type_" + str(type_i) + suffix
-                layer, qmat = self._filter(
+                layer, qmat = self._filter(  # 计算某个类型的原子的 result 和 qmat
                     inputs_i,
                     type_i,
                     name=filter_name,
@@ -793,10 +776,10 @@ class DescrptSeA(paddle.nn.Layer):
                     reuse=reuse,
                     trainable=trainable,
                     activation_fn=self.filter_activation_fn,
-                )
+                )  # [natom, M1*M2], qmat: [natom, M1, 3]
                 layer = paddle.reshape(
                     layer, [inputs.shape[0], natoms[2 + type_i], self.get_dim_out()]
-                )
+                )  # [1, 某种类型原子个数64/128, M1*M2]
                 qmat = paddle.reshape(
                     qmat,
                     [
@@ -804,20 +787,22 @@ class DescrptSeA(paddle.nn.Layer):
                         natoms[2 + type_i],
                         self.get_dim_rot_mat_1() * 3,
                     ],
-                )
+                )  # [1, 某种类型原子个数64/128, 100*3]
                 output.append(layer)
                 output_qmat.append(qmat)
                 start_index += natoms[2 + type_i]
         else:
             ...
+            # This branch will not be excecuted at current
             # inputs_i = inputs
             # inputs_i = paddle.reshape(inputs_i, [-1, self.ndescrpt])
             # type_i = -1
-            # if nvnmd_cfg.enable and nvnmd_cfg.quantize_descriptor:
-            #     inputs_i = descrpt2r4(inputs_i, natoms)
+            # # if nvnmd_cfg.enable and nvnmd_cfg.quantize_descriptor:
+            # #     inputs_i = descrpt2r4(inputs_i, natoms)
             # if len(self.exclude_types):
             #     atype_nloc = paddle.reshape(
-            #         paddle.slice(atype, [0, 0], [-1, natoms[0]]), [-1]
+            #         paddle.slice(atype, [0, 1], [0, 0], [atype.shape[0], natoms[0]]),
+            #         [-1],
             #     )  # when nloc != nall, pass nloc to mask
             #     mask = self.build_type_exclude_mask(
             #         self.exclude_types,
@@ -847,9 +832,10 @@ class DescrptSeA(paddle.nn.Layer):
             # )
             # output.append(layer)
             # output_qmat.append(qmat)
-        # print(f"len(output) = {len(output)}")
         output = paddle.concat(output, axis=1)
         output_qmat = paddle.concat(output_qmat, axis=1)
+        # output: [1, 192, M1*M2]
+        # output_qmat: [1, 192, M1*3]
         return output, output_qmat
 
     def _compute_dstats_sys_smth(
@@ -875,15 +861,6 @@ class DescrptSeA(paddle.nn.Layer):
         )
         input_dict["default_mesh"] = paddle.to_tensor(mesh, dtype="int32")
 
-        # print(input_dict["coord"].dtype) # fp64
-        # print(input_dict["type"].dtype) # int32
-        # print(input_dict["natoms_vec"].dtype) # int32
-        # print(input_dict["box"].dtype) # fp64
-        # print(input_dict["default_mesh"].dtype) # int32
-        # print(self.avg_zero)
-        # print(self.std_ones)
-        # print(self.sel_a)
-        # print(self.sel_r)
         self.stat_descrpt, descrpt_deriv, rij, nlist = op_module.prod_env_mat_a(
             input_dict["coord"],  # fp32
             input_dict["type"],  # int32
@@ -993,65 +970,47 @@ class DescrptSeA(paddle.nn.Layer):
 
     def _filter_lower(
         self,
-        type_i,
-        type_input,
-        start_index,
-        incrs_index,
-        inputs,
-        nframes,
-        natoms,
+        type_i: int,  # inner-loop
+        type_input: int,  # outer-loop
+        start_index: int,
+        incrs_index: int,
+        inputs: paddle.Tensor,  # [1, 原子个数(64或128), 552(embedding_dim)]
+        nframes: int,
+        natoms: int,
         type_embedding=None,
         is_exclude=False,
-        activation_fn=None,
-        bavg=0.0,
-        stddev=1.0,
-        trainable=True,
-        suffix="",
+        # activation_fn=None,
+        # bavg=0.0,
+        # stddev=1.0,
+        # trainable=True,
+        # suffix="",
     ):
         """Input env matrix, returns R.G."""
         outputs_size = [1] + self.filter_neuron
         # cut-out inputs
         # with natom x (nei_type_i x 4)
-        # if not hasattr(self, "debug_inputs"):
-        #     self.debug_inputs = inputs
-        #     paddle.save(self.debug_inputs, "/workspace/hesensen/deepmd_backend/small_case/debug_inputs.pddata")
-        # print(__file__, "inputs.shape", inputs.shape)
-
         inputs_i = paddle.slice(
             inputs,
             [0, 1],
             [0, start_index * 4],
             [inputs.shape[0], start_index * 4 + incrs_index * 4],
-        )
-        # if not hasattr(self, "debug_inputs_i"):
-        #     self.debug_inputs_i = inputs_i
-        #     paddle.save(self.debug_inputs_i, "/workspace/hesensen/deepmd_backend/small_case/debug_inputs_i.pddata")
-        # print(__file__, "inputs_i.shape", inputs_i.shape)
+        )  # 得到某个类型的原子i对邻域内类型为j的的原子关系，取出二者之间的描述矩阵R natom x nei_type_i x 4
 
         shape_i = inputs_i.shape
         natom = inputs_i.shape[0]
 
         # with (natom x nei_type_i) x 4
         inputs_reshape = paddle.reshape(inputs_i, [-1, 4])
-        # if not hasattr(self, "debug_inputs_reshape"):
-        #     self.debug_inputs_reshape = inputs_reshape
-        #     paddle.save(self.debug_inputs_reshape, "/workspace/hesensen/deepmd_backend/small_case/debug_inputs_reshape.pddata")
-        # print(__file__, "inputs_reshape.shape", inputs_reshape.shape)
-
         # with (natom x nei_type_i) x 1
         xyz_scatter = paddle.reshape(
             paddle.slice(inputs_reshape, [0, 1], [0, 0], [inputs_reshape.shape[0], 1]),
             [-1, 1],
-        )
-        # if not hasattr(self, "debug_xyz_scatter"):
-        #     self.debug_xyz_scatter = xyz_scatter
-        #     paddle.save(self.debug_xyz_scatter, "/workspace/hesensen/deepmd_backend/small_case/debug_xyz_scatter.pddata")
-        # print(__file__, "xyz_scatter.shape", xyz_scatter.shape)
+        )  # 得到某个类型的原子i对邻域内类型为j的的原子关系，取出二者之间的描述矩阵R矩阵的第一列s(rij)
 
         if type_embedding is not None:
             xyz_scatter = self._concat_type_embedding(
                 xyz_scatter, nframes, natoms, type_embedding
-            )
+            )  #
             if self.compress:
                 raise RuntimeError(
                     "compression of type embedded descriptor is not supported at the moment"
@@ -1098,35 +1057,10 @@ class DescrptSeA(paddle.nn.Layer):
             )
         else:
             if not is_exclude:
-                # with (natom x nei_type_i) x out_size
-                # if not hasattr(self, "xyz_scatter_input"):
-                #     self.debug_xyz_scatter_input = xyz_scatter
-                # paddle.save(self.xyz_scatter_input, "/workspace/hesensen/deepmd_backend/small_case/embd_net_0_0_input.pddata")
-                # paddle.save(self.embedding_nets[type_input][type_i].state_dict(), "/workspace/hesensen/deepmd_backend/small_case/embd_net_0_0.pdparams")
-                # print(__file__, "saved")
-                xyz_scatter_out = self.embedding_nets[type_input][type_i](xyz_scatter)
-                # print(__file__, "xyz_scatter.shape", xyz_scatter.shape)
-                # if not hasattr(self, "xyz_scatter_output"):
-                #     self.debug_xyz_scatter_output = xyz_scatter_out
-                # paddle.save(self.xyz_scatter_output, "/workspace/hesensen/deepmd_backend/small_case/embd_net_0_0_output.pddata")
-                # print(__file__, "saved")
-
-                # xyz_scatter = embedding_net(
-                #     xyz_scatter,
-                #     self.filter_neuron,
-                #     self.filter_precision,
-                #     activation_fn=activation_fn,
-                #     resnet_dt=self.filter_resnet_dt,
-                #     name_suffix=suffix,
-                #     stddev=stddev,
-                #     bavg=bavg,
-                #     seed=self.seed,
-                #     trainable=trainable,
-                #     uniform_seed=self.uniform_seed,
-                #     initial_variables=self.embedding_net_variables,
-                #     mixed_prec=self.mixed_prec,
-                # )
-                # xyz_scatter = paddle.reshape(xyz_scatter, (-1, shape_i[1]//4, outputs_size[-1]))
+                # excuted this branch
+                xyz_scatter_out = self.embedding_nets[type_input][type_i](
+                    xyz_scatter
+                )  # 对 s(rij) 进行embedding映射, (natom x nei_type_i) x 1==>(natom x nei_type_i) x 100，得到每个原子i对邻域内类型为j的的原子特征，所有该类型的原子的g_i的concat
                 if (not self.uniform_seed) and (self.seed is not None):
                     self.seed += self.seed_shift
             else:
@@ -1138,24 +1072,32 @@ class DescrptSeA(paddle.nn.Layer):
             # natom x nei_type_i x out_size
             xyz_scatter_out = paddle.reshape(
                 xyz_scatter_out, (-1, shape_i[1] // 4, outputs_size[-1])
-            )
+            )  # (natom x nei_type_i) x 100 ==> natom x nei_type_i x 100
             # When using paddle.reshape(inputs_i, [-1, shape_i[1]//4, 4]) below
             # [588 24] -> [588 6 4] correct
             # but if sel is zero
             # [588 0] -> [147 0 4] incorrect; the correct one is [588 0 4]
             # So we need to explicitly assign the shape to paddle.shape(inputs_i)[0] instead of -1
             # natom x 4 x outputs_size
+
+            # [natom, nei_type_i, 4].T x [natom, nei_type_i, 100]
+            # 等价于
+            # [natom, 4, nei_type_i] x [natom, nei_type_i, 100]
+            # ==>
+            # [natom, 4, 100]
             return paddle.matmul(
-                paddle.reshape(inputs_i, [natom, shape_i[1] // 4, 4]),
-                xyz_scatter_out,
+                paddle.reshape(
+                    inputs_i, [natom, shape_i[1] // 4, 4]
+                ),  # [natom, nei_type_i, 4]
+                xyz_scatter_out,  # [natom, nei_type_i, 100]
                 transpose_x=True,
-            )
+            )  # 得到(R_i).T*g_i，即D_i表达式的右半部分
 
     # @cast_precision
     def _filter(
         self,
-        inputs,
-        type_input,
+        inputs: paddle.Tensor,  # [1, 原子个数(64或128), 552(nnei*4)]
+        type_input: int,
         natoms,
         type_embedding=None,
         activation_fn=paddle.nn.functional.tanh,
@@ -1165,19 +1107,40 @@ class DescrptSeA(paddle.nn.Layer):
         reuse=None,
         trainable=True,
     ):
+        """_filter
+
+        Args:
+            inputs (paddle.Tensor): _description_
+            natoms (_type_): _description_
+            type_embedding (_type_, optional): _description_. Defaults to None.
+            activation_fn (_type_, optional): _description_. Defaults to paddle.nn.functional.tanh.
+            stddev (float, optional): _description_. Defaults to 1.0.
+            bavg (float, optional): _description_. Defaults to 0.0.
+            name (str, optional): _description_. Defaults to "linear".
+            reuse (_type_, optional): _description_. Defaults to None.
+            trainable (bool, optional): _description_. Defaults to True.
+
+        Returns:
+            Tuple[Tensor, Tensor]: result: [64/128, M1*M2], qmat: [64/128, M1, 3]
+        """
         # nframes = paddle.shape(paddle.reshape(inputs, [-1, natoms[0], self.ndescrpt]))[0]
+        # 上述 nframes的计算代码是错误的，reshape前后numel根本不相等，会导致程序报错，tf不会报错是因为tf计算图
+        # 检测到这个变量后续不会被真正使用到，所以自动进行了优化。
+        # nframes由于没有被使用到，所以这段代码没有被执行，所以tf实际运行是没有报错。
+        # 复现报错很简单，只需要把这个nframes run出来，会导致这段代码被执行，然后报错。
+
+        # 给 nframes 设置一个无用值 1 即可
         nframes = 1
         # natom x (nei x 4)
         shape = inputs.shape
         outputs_size = [1] + self.filter_neuron
-        outputs_size_2 = self.n_axis_neuron
+        outputs_size_2 = self.n_axis_neuron  # 16
         all_excluded = all(
             [
-                (type_input, type_i) in self.exclude_types
+                (type_input, type_i) in self.exclude_types  #  set()
                 for type_i in range(self.ntypes)
             ]
-        )
-        # print(__file__, all_excluded)
+        )  # False
         if all_excluded:
             # all types are excluded so result and qmat should be zeros
             # we can safaly return a zero matrix...
@@ -1201,29 +1164,33 @@ class DescrptSeA(paddle.nn.Layer):
         # natom x 4 x outputs_size
         if type_embedding is None:
             rets = []
+            # execute this branch
             for type_i in range(self.ntypes):
+                # 计算type_input和type_i的原子之间的特征
                 ret = self._filter_lower(
                     type_i,
                     type_input,
                     start_index,
-                    self.sel_a[type_i],
-                    inputs,
+                    self.sel_a[type_i],  # 46(O)/92(H)
+                    inputs,  # [1, 原子个数(64或128), 552(nnei*4)]
                     nframes,
                     natoms,
                     type_embedding=type_embedding,
                     is_exclude=(type_input, type_i) in self.exclude_types,
-                    activation_fn=activation_fn,
-                    stddev=stddev,
-                    bavg=bavg,
-                    trainable=trainable,
-                    suffix="_" + str(type_i),
-                )
+                    # activation_fn=activation_fn,
+                    # stddev=stddev,
+                    # bavg=bavg,
+                    # trainable=trainable,
+                    # suffix="_" + str(type_i),
+                )  # ==> [natom_i, 4, 100]
                 if (type_input, type_i) not in self.exclude_types:
                     # add zero is meaningless; skip
                     rets.append(ret)
                 start_index += self.sel_a[type_i]
             # faster to use accumulate_n than multiple add
-            xyz_scatter_1 = paddle.add_n(rets)
+            xyz_scatter_1 = paddle.add_n(
+                rets
+            )  # 得到所有(R_i).T*g_i: [当前类型原子个数64/128, 4, embedding维度M1]
         else:
             xyz_scatter_1 = self._filter_lower(
                 type_i,
@@ -1235,10 +1202,10 @@ class DescrptSeA(paddle.nn.Layer):
                 natoms,
                 type_embedding=type_embedding,
                 is_exclude=False,
-                activation_fn=activation_fn,
-                stddev=stddev,
-                bavg=bavg,
-                trainable=trainable,
+                # activation_fn=activation_fn,
+                # stddev=stddev,
+                # bavg=bavg,
+                # trainable=trainable,
             )
         # if nvnmd_cfg.enable:
         #     return filter_GR2D(xyz_scatter_1)
@@ -1260,15 +1227,18 @@ class DescrptSeA(paddle.nn.Layer):
                 ),
                 self.filter_precision,
             )
-        xyz_scatter_1 = xyz_scatter_1 / nnei
+        xyz_scatter_1 = (
+            xyz_scatter_1 / nnei
+        )  # (R_i).T*g_i: [当前类型原子个数64/128, 4, embedding维度M1]
         # natom x 4 x outputs_size_2
         xyz_scatter_2 = paddle.slice(
             xyz_scatter_1,
             [0, 1, 2],
             [0, 0, 0],
             [xyz_scatter_1.shape[0], xyz_scatter_1.shape[1], outputs_size_2],
-        )
-        # # natom x 3 x outputs_size_2
+        )  # [当前类型原子个数, R矩阵描述特征数4, 隐层特征数里的前16维特征(M2)], [64, 4, 16]
+        # (g_i<).T*(R_i): [当前类型原子个数64/128, 4, embedding前M2列]
+        # natom x 3 x outputs_size_2
         # qmat = tf.slice(xyz_scatter_2, [0,1,0], [-1, 3, -1])
         # natom x 3 x outputs_size_1
         qmat = paddle.slice(
@@ -1278,12 +1248,18 @@ class DescrptSeA(paddle.nn.Layer):
             [xyz_scatter_1.shape[0], 1 + 3, xyz_scatter_1.shape[2]],
         )
         # natom x outputs_size_1 x 3
-        qmat = paddle.transpose(qmat, perm=[0, 2, 1])
+        qmat = paddle.transpose(qmat, perm=[0, 2, 1])  # [64/128, M1, 3]
         # natom x outputs_size x outputs_size_2
-        result = paddle.matmul(xyz_scatter_1, xyz_scatter_2, transpose_x=True)
+        result = paddle.matmul(
+            xyz_scatter_1, xyz_scatter_2, transpose_x=True
+        )  # [64/128,M1,4]x[64/128,4,M2]==>[64/128,M1,M2]
         # natom x (outputs_size x outputs_size_2)
-        result = paddle.reshape(result, [-1, outputs_size_2 * outputs_size[-1]])
+        result = paddle.reshape(
+            result, [-1, outputs_size_2 * outputs_size[-1]]
+        )  # [64,M1*M2]
 
+        # result: [64/128, M1*M2]
+        # qmat: [64/128, M1, 3]
         return result, qmat
 
     def init_variables(

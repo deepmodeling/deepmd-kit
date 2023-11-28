@@ -125,7 +125,7 @@ class EnerFitting(nn.Layer):
         """Constructor."""
         # model param
         self.ntypes = descrpt.get_ntypes()
-        self.dim_descrpt = descrpt.get_dim_out()
+        self.dim_descrpt = descrpt.get_dim_out()  # M1*M2
         self.use_aparam_as_mask = use_aparam_as_mask
         # args = ()\
         #        .add('numb_fparam',      int,    default = 0)\
@@ -255,11 +255,6 @@ class EnerFitting(nn.Layer):
                 )
             )
 
-        # print("create bias_atom_e", self.bias_atom_e.shape, self.bias_atom_e)
-        # self.register_buffer(
-        #     "t_bias_atom_e",
-        #     paddle.to_tensor(self.bias_atom_e),
-        # )
         if self.numb_fparam > 0:
             if self.fparam_avg is None:
                 self.fparam_avg = 0.0
@@ -316,10 +311,6 @@ class EnerFitting(nn.Layer):
             all_stat, rcond=self.rcond, mixed_type=mixed_type
         )
         paddle.assign(self.bias_atom_e, self.t_bias_atom_e)
-        # self.register_buffer(
-        #     "t_bias_atom_e",
-        #     paddle.to_tensor(self.bias_atom_e),
-        # )
 
     def _compute_output_stats(self, all_stat, rcond=1e-3, mixed_type=False):
         data = all_stat["energy"]
@@ -439,7 +430,7 @@ class EnerFitting(nn.Layer):
             [0, start_index, 0],
             [inputs.shape[0], start_index + natoms, inputs.shape[2]],
         )
-        inputs_i = paddle.reshape(inputs_i, [-1, self.dim_descrpt])
+        inputs_i = paddle.reshape(inputs_i, [-1, self.dim_descrpt])  # [natoms, M1*M2]
         layer = inputs_i
         if fparam is not None:
             ext_fparam = paddle.tile(fparam, [1, natoms])
@@ -504,7 +495,7 @@ class EnerFitting(nn.Layer):
         if (not self.uniform_seed) and (self.seed is not None):
             self.seed += self.seed_shift
 
-        return final_layer
+        return final_layer  # [natoms, 1]
 
     def forward(
         self,
@@ -519,7 +510,7 @@ class EnerFitting(nn.Layer):
         Parameters
         ----------
         inputs
-            The input descriptor
+            The input descriptor, [1, all_atoms, M1*M2]
         input_dict
             Additional dict for inputs.
             if numb_fparam > 0, should have input_dict['fparam']
@@ -575,7 +566,9 @@ class EnerFitting(nn.Layer):
                     self.bias_atom_e[type_i] = self.bias_atom_e[type_i]
             self.bias_atom_e = self.bias_atom_e[:ntypes_atom]
 
-        inputs = paddle.reshape(inputs, [-1, natoms[0], self.dim_descrpt])
+        inputs = paddle.reshape(
+            inputs, [-1, natoms[0], self.dim_descrpt]
+        )  # [1, all_atoms, M1*M2]
         if len(self.atom_ener):
             # only for atom_ener
             nframes = input_dict.get("nframes")
@@ -680,7 +673,7 @@ class EnerFitting(nn.Layer):
                     final_layer -= zero_layer
                 final_layer = paddle.reshape(
                     final_layer, [paddle.shape(inputs)[0], natoms[2 + type_i]]
-                )
+                )  # [1, natoms]
                 outs_list.append(final_layer)
                 start_index += natoms[2 + type_i]
             # concat the results
@@ -727,9 +720,7 @@ class EnerFitting(nn.Layer):
             ),
             [paddle.shape(inputs)[0], paddle.sum(natoms[2 : 2 + ntypes_atom]).item()],
         )
-        # print(__file__, self.t_bias_atom_e)
-        # exit()
-        outs = outs + self.add_type
+        outs = outs + self.add_type  # 类型编码(类似于transformer的位置编码，每种类型自己有一个特征，加到原特征上)
         outs *= atype_filter
         self.atom_ener_after = outs
 
@@ -747,7 +738,7 @@ class EnerFitting(nn.Layer):
             )
             outs = outs - outs_mean
             outs = paddle.reshape(outs, [-1])
-        return paddle.reshape(outs, [-1])
+        return paddle.reshape(outs, [-1])  # [all_atoms]
 
     def init_variables(
         self,
