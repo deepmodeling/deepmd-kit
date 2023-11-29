@@ -482,7 +482,7 @@ class MapTable:
             shift = 0
         if nvnmd_cfg.version == 1:
             ndim = 1
-            shift = 1
+            shift = 0
         #
         dic_ph = {}
         dic_ph["s"] = tf.placeholder(tf.float64, [None, 1], "t_s")
@@ -574,9 +574,11 @@ class MapTable:
             two_side_type_embedding,
             [-1, two_side_type_embedding.shape[-1]],
         )
-
+        # see se_atten.py in dp
+        # old version : xyz_scatter = xyz_scatter * two_embd + xyz_scatter; Gs + 1, Gt + 0
+        # new version : xyz_scatter = xyz_scatter * two_embd + two_embd   ; Gs + 0, Gt + 1
         wbs = [get_filter_type_weight(nvnmd_cfg.weight, ll) for ll in range(1, 5)]
-        dic_ph["gt"] = self.build_embedding_net(two_side_type_embedding, wbs)
+        dic_ph["gt"] = self.build_embedding_net(two_side_type_embedding, wbs) + 1
         return dic_ph
 
     def run_t2g(self):

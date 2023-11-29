@@ -10,10 +10,12 @@ from deepmd.nvnmd.data.data import (
     jdata_config_v0_ni128,
     jdata_config_v0_ni256,
     jdata_config_v1_ni128,
+    jdata_config_v1_ni256,
     jdata_deepmd_input_v0,
     jdata_deepmd_input_v0_ni128,
     jdata_deepmd_input_v0_ni256,
     jdata_deepmd_input_v1_ni128,
+    jdata_deepmd_input_v1_ni256,
 )
 from deepmd.nvnmd.utils.fio import (
     FioDic,
@@ -140,8 +142,11 @@ class NvnmdConfig:
             if self.max_nnei == 128:
                 self.jdata_deepmd_input = jdata_deepmd_input_v1_ni128.copy()
                 self.config = jdata_config_v1_ni128.copy()
+            elif self.max_nnei == 256:
+                self.jdata_deepmd_input = jdata_deepmd_input_v1_ni256.copy()
+                self.config = jdata_config_v1_ni256.copy()
             else:
-                log.error("The max_nnei only can be set as 128 for version 1")
+                log.error("The max_nnei only can be set as 128|256 for version 1")
 
 
     def init_net_size(self):
