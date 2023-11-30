@@ -4,6 +4,7 @@
 
 #include "AtomMap.h"
 #include "device.h"
+#include "type_traits"
 #if defined(_WIN32)
 #if defined(_WIN32_WINNT)
 #undef _WIN32_WINNT
@@ -864,10 +865,40 @@ VT deepmd::session_get_scalar(Session* session,
 template <typename VT>
 VT deepmd::predictor_get_scalar(const std::shared_ptr<paddle_infer::Predictor>& predictor,
                                 const std::string name_) {
-  auto scalar_tensor = predictor->GetOutputHandle(name_);
-  VT *scalar_ptr = (VT *)malloc(1 * sizeof(VT));
-  scalar_tensor->CopyToCpu(scalar_ptr);
-  return (*scalar_ptr);
+  if (std::is_same<VT, std::string>::value){
+    /*
+    NOTE: Convert from ascii code(int64) to std::string
+    A workaround for string data type is not supported in Paddle
+    */
+    auto scalar_tensor = predictor->GetOutputHandle(name_);
+    if (scalar_tensor->shape().size() == 0) {
+      return VT();
+    }
+    const auto &shape = scalar_tensor->shape();
+    const int &str_len = std::accumulate(
+      std::begin(shape),
+      std::end(shape),
+      1,
+      std::multiplies<>{}
+    );
+    if (str_len == 0) {
+      return VT();
+    }
+    int32_t *scalar_ptr = (int32_t *)malloc(str_len * sizeof(int32_t));
+    scalar_tensor->CopyToCpu(scalar_ptr);
+    VT ret;
+    for (int ii = 0; ii < str_len; ++ii) {
+      ret += (char)scalar_ptr[ii];
+    }
+    free(scalar_ptr);
+    return ret;
+  } else {
+    /* Vanillia process for other data type below*/
+    auto scalar_tensor = predictor->GetOutputHandle(name_);
+    VT *scalar_ptr = (VT *)malloc(1 * sizeof(VT));
+    scalar_tensor->CopyToCpu(scalar_ptr);
+    return (*scalar_ptr);
+  }
 }
 
 template <typename VT>
@@ -1134,6 +1165,10 @@ template void deepmd::select_map_inv<double>(
 
 template deepmd::STRINGTYPE deepmd::session_get_scalar<deepmd::STRINGTYPE>(
     Session*, const std::string, const std::string);
+
+template std::string deepmd::predictor_get_scalar<std::string>(
+    const std::shared_ptr<paddle_infer::Predictor>& predictor,
+    const std::string name_);
 
 template void deepmd::session_get_vector<deepmd::STRINGTYPE>(
     std::vector<deepmd::STRINGTYPE>&,

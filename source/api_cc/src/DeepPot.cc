@@ -695,12 +695,12 @@ void DeepPot::init(const std::string& model,
   std::string pdmodel_path = "";
   std::string pdiparams_path = "";
   bool use_paddle_inference = false;
-  std::string tf_model = model;
   if (model.find(".pb") == std::string::npos) {
     pdmodel_path = model + ".pdmodel";
     pdiparams_path = model + ".pdiparams";
     use_paddle_inference = true;
-    tf_model = "model.pb";
+  } else {
+    throw "[Error] Not found any inference model in";
   }
   math_lib_num_threads = 1;
 
@@ -714,32 +714,10 @@ void DeepPot::init(const std::string& model,
     // config.EnableProfile();
     predictor = paddle_infer::CreatePredictor(config);
   }
-  SessionOptions options;
-  get_env_nthreads(num_intra_nthreads, num_inter_nthreads);
-  options.config.set_inter_op_parallelism_threads(num_inter_nthreads);
-  options.config.set_intra_op_parallelism_threads(num_intra_nthreads);
-  deepmd::load_op_library();
-
-  if (file_content.size() == 0)
-    check_status(ReadBinaryProto(Env::Default(), tf_model, graph_def));
-  else
-    (*graph_def).ParseFromString(file_content);
   int gpu_num = -1;
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
   DPGetDeviceCount(gpu_num);  // check current device environment
-  if (gpu_num > 0) {
-    options.config.set_allow_soft_placement(true);
-    options.config.mutable_gpu_options()->set_per_process_gpu_memory_fraction(
-        0.9);
-    options.config.mutable_gpu_options()->set_allow_growth(true);
-    DPErrcheck(DPSetDevice(gpu_rank % gpu_num));
-    std::string str = "/gpu:";
-    str += std::to_string(gpu_rank % gpu_num);
-    graph::SetDefaultDevice(str, graph_def);
-  }
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
-  check_status(NewSession(options, &session));
-  check_status(session->Create(*graph_def));
   if (use_paddle_inference) {
     /*
     tensorflow::DT_DOUBLE = 2
@@ -750,58 +728,51 @@ void DeepPot::init(const std::string& model,
     * st_model.descrpt.buffer_ntypes.name = generated_tensor_2
     * st_model.fitting.buffer_dfparam.name = generated_tensor_9
     * st_model.fitting.buffer_daparam.name = generated_tensor_10
+    [buffer_t_type, [3]] generated name in static_model is: generated_tensor_12
+    [buffer_t_mt, [4]] generated name in static_model is: generated_tensor_13
+    [buffer_t_ver, [1]] generated name in static_model is: generated_tensor_14
+    [descrpt.buffer_rcut, []] generated name in static_model is: generated_tensor_0
+    [descrpt.buffer_ntypes_spin, []] generated name in static_model is: generated_tensor_1
+    [descrpt.buffer_ntypes, []] generated name in static_model is: generated_tensor_2
+    [descrpt.avg_zero, [2, 552]] generated name in static_model is: eager_tmp_0
+    [descrpt.std_ones, [2, 552]] generated name in static_model is: eager_tmp_1
+    [descrpt.t_rcut, []] generated name in static_model is: generated_tensor_3
+    [descrpt.t_rcut, []] generated name in static_model is: generated_tensor_3
+    [descrpt.t_rcut, []] generated name in static_model is: generated_tensor_3
+    [descrpt.t_ntypes, []] generated name in static_model is: generated_tensor_4
+    [descrpt.t_ntypes, []] generated name in static_model is: generated_tensor_4
+    [descrpt.t_ntypes, []] generated name in static_model is: generated_tensor_4
+    [descrpt.t_ndescrpt, []] generated name in static_model is: generated_tensor_5
+    [descrpt.t_sel, [2]] generated name in static_model is: generated_tensor_6
+    [descrpt.t_avg, [2, 552]] generated name in static_model is: generated_tensor_7
+    [descrpt.t_std, [2, 552]] generated name in static_model is: generated_tensor_8
+    [fitting.buffer_dfparam, []] generated name in static_model is: generated_tensor_9
+    [fitting.buffer_daparam, []] generated name in static_model is: generated_tensor_10
     **/
-    model_version = "0.0";
+    model_version = paddle_get_scalar<std::string>("generated_tensor_14");
     dtype = predictor_get_dtype(predictor, "generated_tensor_0");
     if (dtype == paddle_infer::DataType::FLOAT64) {
       rcut = paddle_get_scalar<double>("generated_tensor_0");
-      dtype = tensorflow::DT_DOUBLE;
     } else {
       rcut = paddle_get_scalar<float>("generated_tensor_0");
-      dtype = tensorflow::DT_FLOAT;
     }
-    ntypes = paddle_get_scalar<int64_t>("generated_tensor_2");
+    ntypes = paddle_get_scalar<int32_t>("generated_tensor_2");
     // ntypes_spin = paddle_get_scalar<int64_t>("buffer_ntypes_spin");
     ntypes_spin = 0;
     dfparam = paddle_get_scalar<int64_t>("generated_tensor_9");
     daparam = paddle_get_scalar<int64_t>("generated_tensor_10");
-    model_type = "ener";
+    model_type = paddle_get_scalar<std::string>("generated_tensor_13");;
+    inited = true;
+    init_nbor = false;
     return ;
   }
-  try {
-    model_version = get_scalar<STRINGTYPE>("model_attr/model_version");
-  } catch (deepmd::tf_exception& e) {
-    // no model version defined in old models
-    model_version = "0.0";
-  }
-  //   if (!model_compatable(model_version)) {
-  //     throw deepmd::deepmd_exception(
-  //         "incompatable model: version " + model_version +
-  //         " in graph, but version " + global_model_version +
-  //         " supported "
-  //         "See https://deepmd.rtfd.io/compatability/ for details.");
-  //   }
-  dtype = session_get_dtype(session, "descrpt_attr/rcut");
-  if (dtype == tensorflow::DT_DOUBLE) {
-    rcut = get_scalar<double>("descrpt_attr/rcut");
-  } else {
-    rcut = get_scalar<float>("descrpt_attr/rcut");
-  }
-  cell_size = rcut;
-  ntypes = get_scalar<int>("descrpt_attr/ntypes");
-  try {
-    ntypes_spin = get_scalar<int>("spin_attr/ntypes_spin");
-  } catch (deepmd::deepmd_exception) {
-    ntypes_spin = 0;
-  }
-  dfparam = get_scalar<int>("fitting_attr/dfparam");
-  daparam = get_scalar<int>("fitting_attr/daparam");
-  if (dfparam < 0) dfparam = 0;
-  if (daparam < 0) daparam = 0;
-  model_type = get_scalar<STRINGTYPE>("model_attr/model_type");
-  inited = true;
-
-  init_nbor = false;
+  // if (!model_compatable(model_version)) {
+  //   throw deepmd::deepmd_exception(
+  //       "incompatable model: version " + model_version +
+  //       " in graph, but version " + global_model_version +
+  //       " supported "
+  //       "See https://deepmd.rtfd.io/compatability/ for details.");
+  // }
 }
 
 void DeepPot::print_summary(const std::string& pre) const {
@@ -1266,7 +1237,7 @@ void DeepPot::compute(ENERGYVTYPE& dener,
     nlist_data.make_inlist(nlist);
   }
 
-  if (dtype == tensorflow::DT_DOUBLE) {
+  if (dtype == tensorflow::DT_DOUBLE || paddle_infer::DataType::FLOAT64) {
     int ret = 0;
     if (predictor == nullptr) {
       /* run tensorflow inference if paddle predictor is nullptr*/
@@ -1542,7 +1513,10 @@ template void DeepPot::compute_mixed_type<float, std::vector<ENERGYTYPE>>(
     const std::vector<float>& aparam);
 
 void DeepPot::get_type_map(std::string& type_map) {
-  type_map = get_scalar<STRINGTYPE>("model_attr/tmap");
+  if (predictor == nullptr)
+    type_map = get_scalar<STRINGTYPE>("model_attr/tmap");
+  else
+    type_map = paddle_get_scalar<std::string>("generated_tensor_12");
 }
 
 DeepPotModelDevi::DeepPotModelDevi()

@@ -94,8 +94,21 @@ class EnerModel(Model, paddle.nn.Layer):
 
         # self.type_map = " ".join(self.type_map)
         self.t_tmap = " ".join(self.type_map)
+        print(self.t_tmap)
         self.t_mt = self.model_type
-        self.t_ver = MODEL_VERSION
+        self.t_ver = str(MODEL_VERSION)
+        # NOTE: workaround for string type is not supported in Paddle
+        self.register_buffer(
+            "buffer_t_type",
+            paddle.to_tensor([ord(c) for c in self.t_tmap], dtype="int32"),
+        )
+        self.register_buffer(
+            "buffer_t_mt", paddle.to_tensor([ord(c) for c in self.t_mt], dtype="int32")
+        )
+        self.register_buffer(
+            "buffer_t_ver",
+            paddle.to_tensor([ord(c) for c in self.t_ver], dtype="int32"),
+        )
 
     def get_rcut(self):
         return self.rcut
