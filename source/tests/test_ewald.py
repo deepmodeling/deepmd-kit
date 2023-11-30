@@ -1,14 +1,10 @@
 import numpy as np
 
-from deepmd.env import (
-    GLOBAL_NP_FLOAT_PRECISION,
-    GLOBAL_TF_FLOAT_PRECISION,
-    tf,
-)
-from deepmd.infer.ewald_recp import (
-    EwaldRecp,
-    op_module,
-)
+from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
+from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
+from deepmd.env import tf
+from deepmd.infer.ewald_recp import EwaldRecp
+from deepmd.infer.ewald_recp import op_module
 
 if GLOBAL_NP_FLOAT_PRECISION == np.float32:
     global_default_fv_hh = 1e-2

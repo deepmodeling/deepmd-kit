@@ -1,13 +1,9 @@
 #!/usr/bin/env python3
 
-from typing import (
-    Tuple,
-)
+from typing import Tuple
 
 import numpy as np
-from scipy.interpolate import (
-    CubicSpline,
-)
+from scipy.interpolate import CubicSpline
 
 
 class PairTab:

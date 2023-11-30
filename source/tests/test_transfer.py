@@ -3,20 +3,12 @@ import subprocess as sp
 import unittest
 
 import numpy as np
-from common import (
-    run_dp,
-    tests_path,
-)
+from common import run_dp
+from common import tests_path
 
-from deepmd.env import (
-    GLOBAL_NP_FLOAT_PRECISION,
-)
-from deepmd.infer import (
-    DeepPot,
-)
-from deepmd.utils.convert import (
-    convert_pbtxt_to_pb,
-)
+from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
+from deepmd.infer import DeepPot
+from deepmd.utils.convert import convert_pbtxt_to_pb
 
 if GLOBAL_NP_FLOAT_PRECISION == np.float32:
     default_places = 4

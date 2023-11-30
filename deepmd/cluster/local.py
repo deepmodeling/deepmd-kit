@@ -3,15 +3,11 @@
 import socket
 import subprocess as sp
 import sys
-from typing import (
-    List,
-    Optional,
-    Tuple,
-)
+from typing import List
+from typing import Optional
+from typing import Tuple
 
-from deepmd.env import (
-    tf,
-)
+from deepmd.env import tf
 
 __all__ = ["get_gpus", "get_resource"]
 

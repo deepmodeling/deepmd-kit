@@ -1,35 +1,23 @@
 import warnings
-from typing import (
-    Any,
-    Dict,
-    List,
-    Optional,
-    Tuple,
-)
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Optional
+from typing import Tuple
 
 import numpy as np
 
-from deepmd.common import (
-    get_activation_func,
-    get_precision,
-)
-from deepmd.env import (
-    GLOBAL_NP_FLOAT_PRECISION,
-    GLOBAL_TF_FLOAT_PRECISION,
-    default_tf_session_config,
-    op_module,
-    tf,
-)
-from deepmd.utils.network import (
-    embedding_net_rand_seed_shift,
-)
+from deepmd.common import get_activation_func
+from deepmd.common import get_precision
+from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
+from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
+from deepmd.env import default_tf_session_config
+from deepmd.env import op_module
+from deepmd.env import tf
+from deepmd.utils.network import embedding_net_rand_seed_shift
 
-from .descriptor import (
-    Descriptor,
-)
-from .se_a import (
-    DescrptSeA,
-)
+from .descriptor import Descriptor
+from .se_a import DescrptSeA
 
 
 @Descriptor.register("se_a_mask")

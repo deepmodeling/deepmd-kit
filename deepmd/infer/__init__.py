@@ -1,40 +1,18 @@
 """Submodule containing all the implemented potentials."""
 
-from pathlib import (
-    Path,
-)
-from typing import (
-    Union,
-)
+from pathlib import Path
+from typing import Union
 
-from .data_modifier import (
-    DipoleChargeModifier,
-)
-from .deep_dipole import (
-    DeepDipole,
-)
-from .deep_dos import (
-    DeepDOS,
-)
-from .deep_eval import (
-    DeepEval,
-)
-from .deep_polar import (
-    DeepGlobalPolar,
-    DeepPolar,
-)
-from .deep_pot import (
-    DeepPot,
-)
-from .deep_wfc import (
-    DeepWFC,
-)
-from .ewald_recp import (
-    EwaldRecp,
-)
-from .model_devi import (
-    calc_model_devi,
-)
+from .data_modifier import DipoleChargeModifier
+from .deep_dipole import DeepDipole
+from .deep_dos import DeepDOS
+from .deep_eval import DeepEval
+from .deep_polar import DeepGlobalPolar
+from .deep_polar import DeepPolar
+from .deep_pot import DeepPot
+from .deep_wfc import DeepWFC
+from .ewald_recp import EwaldRecp
+from .model_devi import calc_model_devi
 
 __all__ = [
     "DeepPotential",

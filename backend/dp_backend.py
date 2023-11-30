@@ -1,11 +1,7 @@
 """A PEP-517 backend to find TensorFlow."""
-from typing import (
-    List,
-)
+from typing import List
 
-from find_tensorflow import (
-    find_tensorflow,
-)
+from find_tensorflow import find_tensorflow
 
 # TODO: switch to scikit_build_core after it is available
 from setuptools import build_meta as _orig

@@ -1,12 +1,8 @@
 #!/usr/bin/env python3
 
-from tensorflow.python.framework import (
-    ops,
-)
+from tensorflow.python.framework import ops
 
-from deepmd.env import (
-    tf,
-)
+from deepmd.env import tf
 
 
 @ops.RegisterGradient("Tanh4FltNvnmd")

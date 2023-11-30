@@ -23,29 +23,29 @@ directory by modifying the input script, setting {ref}`tensorboard <training/ten
 
 ```json
     "training" : {
-	"systems":	["../data/"],
-	"set_prefix":	"set",
-	"stop_batch":	1000000,
-	"batch_size":	1,
+    "systems":    ["../data/"],
+    "set_prefix":    "set",
+    "stop_batch":    1000000,
+    "batch_size":    1,
 
-	"seed":		1,
+    "seed":        1,
 
-	"_comment": " display and restart",
-	"_comment": " frequencies counted in batch",
-	"disp_file":	"lcurve.out",
-	"disp_freq":	100,
-	"numb_test":	10,
-	"save_freq":	1000,
-	"save_ckpt":	"model.ckpt",
+    "_comment": " display and restart",
+    "_comment": " frequencies counted in batch",
+    "disp_file":    "lcurve.out",
+    "disp_freq":    100,
+    "numb_test":    10,
+    "save_freq":    1000,
+    "save_ckpt":    "model.ckpt",
 
-	"disp_training":true,
-	"time_training":true,
-	"tensorboard":	true,
-	"tensorboard_log_dir":"log",
-	"tensorboard_freq": 1000,
-	"profiling":	false,
-	"profiling_file":"timeline.json",
-	"_comment":	"that's all"
+    "disp_training":true,
+    "time_training":true,
+    "tensorboard":    true,
+    "tensorboard_log_dir":"log",
+    "tensorboard_freq": 1000,
+    "profiling":    false,
+    "profiling_file":"timeline.json",
+    "_comment":    "that's all"
     }
 ```
 

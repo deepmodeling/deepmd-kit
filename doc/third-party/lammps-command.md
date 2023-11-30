@@ -123,10 +123,10 @@ dump            1 all custom 100 water.dump id type c_dipole[1] c_dipole[2] c_di
 ## Long-range interaction
 The reciprocal space part of the long-range interaction can be calculated by LAMMPS command `kspace_style`. To use it with DeePMD-kit, one writes
 ```lammps
-pair_style	deepmd graph.pb
+pair_style    deepmd graph.pb
 pair_coeff  * *
-kspace_style	pppm 1.0e-5
-kspace_modify	gewald 0.45
+kspace_style    pppm 1.0e-5
+kspace_modify    gewald 0.45
 ```
 Please notice that the DeePMD does nothing to the direct space part of the electrostatic interaction, because this part is assumed to be fitted in the DeePMD model (the direct space cut-off is thus the cut-off of the DeePMD model). The splitting parameter `gewald` is modified by the `kspace_modify` command.
 

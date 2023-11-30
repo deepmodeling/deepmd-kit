@@ -6,18 +6,12 @@ import unittest
 import numpy as np
 
 # from deepmd.entrypoints.compress import compress
-from common import (
-    j_loader,
-    run_dp,
-    tests_path,
-)
+from common import j_loader
+from common import run_dp
+from common import tests_path
 
-from deepmd.env import (
-    GLOBAL_NP_FLOAT_PRECISION,
-)
-from deepmd.infer import (
-    DeepPot,
-)
+from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
+from deepmd.infer import DeepPot
 
 if GLOBAL_NP_FLOAT_PRECISION == np.float32:
     default_places = 4

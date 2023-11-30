@@ -15,20 +15,20 @@ $deepmd_source_dir/examples/water/dplr/train/
 It is noted that **the tutorial dataset is not enough for training a productive model**.
 Two settings make the training input script different from an energy training input:
 ```json
-	"fitting_net": {
-	    "type":		"dipole",
-	    "dipole_type":	[0],
-	    "neuron":		[128, 128, 128],
-	    "seed":		1
-	},
+    "fitting_net": {
+        "type":        "dipole",
+        "dipole_type":    [0],
+        "neuron":        [128, 128, 128],
+        "seed":        1
+    },
 ```
 The type of fitting is set to {ref}`dipole <model/fitting_net[dipole]>`. The dipole is associated with type 0 atoms (oxygens), by the setting `"dipole_type": [0]`. What we trained is the displacement of the WC from the corresponding oxygen atom. It shares the same training input as the atomic dipole because both are 3-dimensional vectors defined on atoms.
 The loss section is provided as follows
 ```json
     "loss": {
-	"type":		"tensor",
-	"pref":		0.0,
-	"pref_atomic":	1.0
+    "type":        "tensor",
+    "pref":        0.0,
+    "pref_atomic":    1.0
     },
 ```
 so that the atomic dipole is trained as labels. Note that the NumPy compressed file `atomic_dipole.npy` should be provided in each dataset.
@@ -128,8 +128,8 @@ Type 1 and 2 (O and H) are `real_atom`s, while type 3 (WCs) are `virtual_atom`s.
 # kspace_style "pppm/dplr" should be used. in addition the
 # gewald(1/distance) should be set the same as that used in
 # training. Currently only ik differentiation is supported.
-kspace_style	pppm/dplr 1e-5
-kspace_modify	gewald ${BETA} diff ik mesh ${KMESH} ${KMESH} ${KMESH}
+kspace_style    pppm/dplr 1e-5
+kspace_modify    gewald ${BETA} diff ik mesh ${KMESH} ${KMESH} ${KMESH}
 ```
 The long-range part is calculated by the `kspace` support of LAMMPS. The `kspace_style` `pppm/dplr` is required. The spread parameter set by variable `BETA` should be set the same as that used in training. The `KMESH` should be set dense enough so the long-range calculation is converged.
 
@@ -139,18 +139,18 @@ The long-range part is calculated by the `kspace` support of LAMMPS. The `kspace
 # atoms. "type_associate" associates the real atom type its
 # corresponding virtual atom type. "bond_type" gives the type of the
 # bond between the real and virtual atoms.
-fix		0 all dplr model ener.pb type_associate 1 3 bond_type 1
-fix_modify	0 virial yes
+fix        0 all dplr model ener.pb type_associate 1 3 bond_type 1
+fix_modify    0 virial yes
 ```
 The fix command `dplr` calculates the position of WCs by the DW model and back-propagates the long-range interaction on virtual atoms to real toms.
 At this time, the training parameter {ref}`type_map <model/type_map>` will be mapped to LAMMPS atom types.
 
 ```lammps
 # compute the temperature of real atoms, excluding virtual atom contribution
-compute		real_temp real_atom temp
-compute		real_press all pressure real_temp
-fix		1 real_atom nvt temp ${TEMP} ${TEMP} ${TAU_T}
-fix_modify	1 temp real_temp
+compute        real_temp real_atom temp
+compute        real_press all pressure real_temp
+fix        1 real_atom nvt temp ${TEMP} ${TEMP} ${TAU_T}
+fix_modify    1 temp real_temp
 ```
 The temperature of the system should be computed from the real atoms. The kinetic contribution in the pressure tensor is also computed from the real atoms. The thermostat is applied to only real atoms. The computed temperature and pressure of real atoms can be accessed by, e.g.
 ```lammps

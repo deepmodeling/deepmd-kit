@@ -36,15 +36,15 @@ pref_fr(t) = start_pref_fr * ( lr(t) / start_lr ) + limit_pref_fr * ( 1 - lr(t) 
 The {ref}`loss <loss>` section in the `input.json` is
 ```json
     "loss" :{
-	"type":		        "ener_spin",
-	"start_pref_e":	    0.02,
-	"limit_pref_e":	    1,
-	"start_pref_fr":	1000,
-    "limit_pref_fr":	1.0,
-	"start_pref_fm":	10000,
-	"limit_pref_fm":	10.0,
-	"start_pref_v":	    0,
-	"limit_pref_v":	    0,
+    "type":                "ener_spin",
+    "start_pref_e":        0.02,
+    "limit_pref_e":        1,
+    "start_pref_fr":    1000,
+    "limit_pref_fr":    1.0,
+    "start_pref_fm":    10000,
+    "limit_pref_fm":    10.0,
+    "start_pref_v":        0,
+    "limit_pref_v":        0,
     },
 ```
 The options {ref}`start_pref_e <loss[ener_spin]/start_pref_e>`, {ref}`limit_pref_e <loss[ener_spin]/limit_pref_e>`, {ref}`start_pref_fr <loss[ener_spin]/start_pref_fr>`, {ref}`limit_pref_fm <loss[ener_spin]/limit_pref_fm>`, {ref}`start_pref_v <loss[ener_spin]/start_pref_v>` and {ref}`limit_pref_v <loss[ener_spin]/limit_pref_v>` determine the start and limit prefactors of energy, atomic force, magnatic force and virial, respectively.

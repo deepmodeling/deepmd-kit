@@ -1,30 +1,20 @@
 """ASE calculator interface module."""
 
-from pathlib import (
-    Path,
-)
-from typing import (
-    TYPE_CHECKING,
-    Dict,
-    List,
-    Optional,
-    Union,
-)
+from pathlib import Path
+from typing import TYPE_CHECKING
+from typing import Dict
+from typing import List
+from typing import Optional
+from typing import Union
 
-from ase.calculators.calculator import (
-    Calculator,
-    PropertyNotImplementedError,
-    all_changes,
-)
+from ase.calculators.calculator import Calculator
+from ase.calculators.calculator import PropertyNotImplementedError
+from ase.calculators.calculator import all_changes
 
-from deepmd import (
-    DeepPotential,
-)
+from deepmd import DeepPotential
 
 if TYPE_CHECKING:
-    from ase import (
-        Atoms,
-    )
+    from ase import Atoms
 
 __all__ = ["DP"]
 

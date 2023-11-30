@@ -1,13 +1,9 @@
 import os
 import textwrap
 
-from google.protobuf import (
-    text_format,
-)
+from google.protobuf import text_format
 
-from deepmd.env import (
-    tf,
-)
+from deepmd.env import tf
 
 
 def detect_model_version(input_model: str):

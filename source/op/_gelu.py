@@ -1,13 +1,9 @@
 #!/usr/bin/env python3
 """First-order derivatives and second-order derivatives for gelu function."""
 import tensorflow
-from tensorflow.python.framework import (
-    ops,
-)
+from tensorflow.python.framework import ops
 
-from deepmd.env import (
-    op_module,
-)
+from deepmd.env import op_module
 
 try:
     gelu = tensorflow.nn.gelu

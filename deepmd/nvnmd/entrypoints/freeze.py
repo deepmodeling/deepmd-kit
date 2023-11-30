@@ -1,14 +1,8 @@
 #!/usr/bin/env python3
 
-from deepmd.env import (
-    tf,
-)
-from deepmd.nvnmd.utils.fio import (
-    FioDic,
-)
-from deepmd.utils.graph import (
-    get_tensor_by_name_from_graph,
-)
+from deepmd.env import tf
+from deepmd.nvnmd.utils.fio import FioDic
+from deepmd.utils.graph import get_tensor_by_name_from_graph
 
 
 def filter_tensorVariableList(tensorVariableList) -> dict:

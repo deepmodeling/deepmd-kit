@@ -2,9 +2,7 @@ import json
 import logging
 import os
 import struct
-from typing import (
-    List,
-)
+from typing import List
 
 import numpy as np
 

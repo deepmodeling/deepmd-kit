@@ -8,12 +8,12 @@ To use the descriptor in DeePMD-kit, one firstly set the {ref}`type <model/descr
             "type": "hybrid",
             "list" : [
                 {
-		    "type" : "se_e2_a",
-		    ...
+            "type" : "se_e2_a",
+            ...
                 },
                 {
-		    "type" : "se_e2_r",
-		    ...
+            "type" : "se_e2_r",
+            ...
                 }
             ]
         },

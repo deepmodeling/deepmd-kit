@@ -1,15 +1,11 @@
 import unittest
-from unittest.mock import (
-    patch,
-)
+from unittest.mock import patch
 
-from deepmd.entrypoints.train import (
-    parse_auto_sel,
-    parse_auto_sel_ratio,
-    update_one_sel,
-    update_sel,
-    wrap_up_4,
-)
+from deepmd.entrypoints.train import parse_auto_sel
+from deepmd.entrypoints.train import parse_auto_sel_ratio
+from deepmd.entrypoints.train import update_one_sel
+from deepmd.entrypoints.train import update_sel
+from deepmd.entrypoints.train import wrap_up_4
 
 
 class TestTrain(unittest.TestCase):

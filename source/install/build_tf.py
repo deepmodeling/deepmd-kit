@@ -32,33 +32,19 @@ import subprocess as sp
 import tarfile
 import tempfile
 import urllib.request
-from abc import (
-    ABCMeta,
-    abstractmethod,
-    abstractproperty,
-)
-from contextlib import (
-    contextmanager,
-)
-from fnmatch import (
-    filter,
-)
-from functools import (
-    lru_cache,
-)
-from pathlib import (
-    Path,
-)
-from shutil import (
-    copy2,
-    copytree,
-    ignore_patterns,
-)
-from typing import (
-    Dict,
-    List,
-    Optional,
-)
+from abc import ABCMeta
+from abc import abstractmethod
+from abc import abstractproperty
+from contextlib import contextmanager
+from fnmatch import filter
+from functools import lru_cache
+from pathlib import Path
+from shutil import copy2
+from shutil import copytree
+from shutil import ignore_patterns
+from typing import Dict
+from typing import List
+from typing import Optional
 
 # default config
 FILE = Path(__file__).parent.absolute()

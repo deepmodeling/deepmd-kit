@@ -1,18 +1,12 @@
-from typing import (
-    Any,
-    Callable,
-    Dict,
-    Generator,
-    Optional,
-    Tuple,
-)
+from typing import Any
+from typing import Callable
+from typing import Dict
+from typing import Generator
+from typing import Optional
+from typing import Tuple
 
-from deepmd.env import (
-    tf,
-)
-from deepmd.utils.sess import (
-    run_sess,
-)
+from deepmd.env import tf
+from deepmd.utils.sess import run_sess
 
 
 class ParallelOp:

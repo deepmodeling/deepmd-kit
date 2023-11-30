@@ -2,26 +2,14 @@ import os
 import pathlib
 
 import numpy as np
-from common import (
-    DataSystem,
-    j_loader,
-)
+from common import DataSystem
+from common import j_loader
 
-from deepmd.common import (
-    j_must_have,
-)
-from deepmd.descriptor import (
-    DescrptSeAMask,
-)
-from deepmd.env import (
-    tf,
-)
-from deepmd.infer import (
-    DeepPot,
-)
-from deepmd.utils.convert import (
-    convert_pbtxt_to_pb,
-)
+from deepmd.common import j_must_have
+from deepmd.descriptor import DescrptSeAMask
+from deepmd.env import tf
+from deepmd.infer import DeepPot
+from deepmd.utils.convert import convert_pbtxt_to_pb
 
 GLOBAL_ENER_FLOAT_PRECISION = tf.float64
 GLOBAL_TF_FLOAT_PRECISION = tf.float64

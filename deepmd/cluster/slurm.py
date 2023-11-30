@@ -6,17 +6,13 @@ https://github.com/deepsense-ai/tensorflow_on_slurm ####
 """
 
 import os
-from typing import (
-    List,
-    Optional,
-    Tuple,
-)
+from typing import List
+from typing import Optional
+from typing import Tuple
 
 import hostlist
 
-from deepmd.cluster import (
-    local,
-)
+from deepmd.cluster import local
 
 __all__ = ["get_resource"]
 

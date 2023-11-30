@@ -1,32 +1,18 @@
 import os
-from typing import (
-    List,
-    Tuple,
-)
+from typing import List
+from typing import Tuple
 
 import numpy as np
 
-from deepmd.common import (
-    make_default_mesh,
-    select_idx_map,
-)
-from deepmd.env import (
-    GLOBAL_TF_FLOAT_PRECISION,
-    op_module,
-    tf,
-)
-from deepmd.infer.deep_dipole import (
-    DeepDipole,
-)
-from deepmd.infer.ewald_recp import (
-    EwaldRecp,
-)
-from deepmd.utils.data import (
-    DeepmdData,
-)
-from deepmd.utils.sess import (
-    run_sess,
-)
+from deepmd.common import make_default_mesh
+from deepmd.common import select_idx_map
+from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
+from deepmd.env import op_module
+from deepmd.env import tf
+from deepmd.infer.deep_dipole import DeepDipole
+from deepmd.infer.ewald_recp import EwaldRecp
+from deepmd.utils.data import DeepmdData
+from deepmd.utils.sess import run_sess
 
 
 class DipoleChargeModifier(DeepDipole):

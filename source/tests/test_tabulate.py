@@ -2,13 +2,9 @@ import unittest
 
 import numpy as np
 
-from deepmd.common import (
-    gelu,
-)
-from deepmd.env import (
-    op_module,
-    tf,
-)
+from deepmd.common import gelu
+from deepmd.env import op_module
+from deepmd.env import tf
 
 # Now just test some OPs utilized by DPTabulate sourced in /opt/deepmd-kit/source/op/unaggregated_grad.cc
 

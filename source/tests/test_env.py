@@ -1,11 +1,7 @@
 import unittest
-from unittest import (
-    mock,
-)
+from unittest import mock
 
-from deepmd import (
-    env,
-)
+from deepmd import env
 
 
 class TestTFThreadCount(unittest.TestCase):

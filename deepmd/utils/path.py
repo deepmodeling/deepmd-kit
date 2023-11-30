@@ -1,24 +1,14 @@
 import os
-from abc import (
-    ABC,
-    abstractmethod,
-)
-from functools import (
-    lru_cache,
-)
-from pathlib import (
-    Path,
-)
-from typing import (
-    List,
-    Optional,
-)
+from abc import ABC
+from abc import abstractmethod
+from functools import lru_cache
+from pathlib import Path
+from typing import List
+from typing import Optional
 
 import h5py
 import numpy as np
-from wcmatch.glob import (
-    globfilter,
-)
+from wcmatch.glob import globfilter
 
 
 class DPPath(ABC):

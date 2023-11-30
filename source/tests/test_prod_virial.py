@@ -1,10 +1,8 @@
 import numpy as np
 
-from deepmd.env import (
-    GLOBAL_TF_FLOAT_PRECISION,
-    op_module,
-    tf,
-)
+from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
+from deepmd.env import op_module
+from deepmd.env import tf
 
 
 class TestProdVirial(tf.test.TestCase):

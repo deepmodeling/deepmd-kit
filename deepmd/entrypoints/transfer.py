@@ -2,18 +2,14 @@
 
 import logging
 import re
-from typing import (
-    Dict,
-    Optional,
-    Sequence,
-)
+from typing import Dict
+from typing import Optional
+from typing import Sequence
 
 import numpy as np
 
-from deepmd.env import (
-    TRANSFER_PATTERN,
-    tf,
-)
+from deepmd.env import TRANSFER_PATTERN
+from deepmd.env import tf
 
 __all__ = ["transfer"]
 
