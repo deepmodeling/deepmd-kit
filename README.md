@@ -22,7 +22,7 @@
 
 
     ``` sh
-    git clone https://github.com/HydrogenSulfate/deepmd-kit.git -b add_ddle_backend
+    git clone https://github.com/HydrogenSulfate/deepmd-kit.git -b add_ddle_backend_polish_ver
     cd deepmd-kit
     # 以 editable 的方式安装，方便调试
     pip install -e . -i https://pypi.tuna.tsinghua.edu.cn/simple
