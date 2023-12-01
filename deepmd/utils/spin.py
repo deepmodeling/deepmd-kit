@@ -1,10 +1,11 @@
 from typing import List
 
 from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
+from deepmd.env import paddle
 from deepmd.env import tf
 
 
-class Spin:
+class Spin(paddle.nn.Layer):
     """Class for spin.
 
     Parameters
@@ -28,41 +29,18 @@ class Spin:
         self.spin_norm = spin_norm
         self.virtual_len = virtual_len
         self.ntypes_spin = self.use_spin.count(True)
-
-    def build(
-        self,
-        reuse=None,
-        suffix="",
-    ):
-        """Build the computational graph for the spin.
-
-        Parameters
-        ----------
-        reuse
-            The weights in the networks should be reused when get the variable.
-        suffix
-            Name suffix to identify this descriptor
-
-        Returns
-        -------
-        embedded_types
-            The computational graph for embedded types
-        """
-        name = "spin_attr" + suffix
-        with tf.variable_scope(name, reuse=reuse):
-            t_ntypes_spin = tf.constant(
-                self.ntypes_spin, name="ntypes_spin", dtype=tf.int32
-            )
-            t_virtual_len = tf.constant(
-                self.virtual_len,
-                name="virtual_len",
-                dtype=GLOBAL_TF_FLOAT_PRECISION,
-            )
-            t_spin_norm = tf.constant(
-                self.spin_norm,
-                name="spin_norm",
-                dtype=GLOBAL_TF_FLOAT_PRECISION,
-            )
+        self.register_bufer(
+            "buffer_ntypes_spin",
+            paddle.to_tensor([self.ntypes_spin], dtype=tf.int32),
+        )
+        self.register_bufer(
+            "buffer_virtual_len",
+            paddle.to_tensor([self.virtual_len], dtype=paddle.get_default_dtype()),
+        )
+        self.register_bufer(
+            "buffer_spin_norm",
+            paddle.to_tensor([self.spin_norm], dtype=paddle.get_default_dtype()),
+        )
 
     def get_ntypes_spin(self) -> int:
         """Returns the number of atom types which contain spin."""
