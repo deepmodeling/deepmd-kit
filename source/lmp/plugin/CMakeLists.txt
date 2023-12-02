@@ -95,15 +95,16 @@ if(DEFINED LAMMPS_SOURCE_ROOT OR DEFINED LAMMPS_VERSION)
       ${libname} PRIVATE ${LAMMPS_SOURCE_ROOT}/src/EXTRA-FIX) # for ttm
   endif()
   if(CMAKE_SYSTEM_NAME STREQUAL Darwin)
-    set_target_properties(${libname} PROPERTIES LINK_FLAGS
-                                                "-Wl,-undefined,dynamic_lookup"
-						INSTALL_RPATH
-      						"@loader_path:${TensorFlow_LIBRARY_PATH}:@loader_path/.."
-      )
+    set_target_properties(
+      ${libname}
+      PROPERTIES LINK_FLAGS "-Wl,-undefined,dynamic_lookup"
+                 INSTALL_RPATH
+                 "@loader_path:${TensorFlow_LIBRARY_PATH}:@loader_path/..")
   else()
     set_target_properties(
-      ${libname} PROPERTIES INSTALL_RPATH "$ORIGIN;${TensorFlow_LIBRARY_PATH};$ORIGIN/.."
-                            LINK_FLAGS "-rdynamic")
+      ${libname}
+      PROPERTIES INSTALL_RPATH "$ORIGIN;${TensorFlow_LIBRARY_PATH};$ORIGIN/.."
+                 LINK_FLAGS "-rdynamic")
   endif()
   target_compile_definitions(
     ${libname}
