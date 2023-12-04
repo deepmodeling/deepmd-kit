@@ -138,6 +138,7 @@ class DescrptSeA(paddle.nn.Layer):
         uniform_seed: bool = False,
         multi_task: bool = False,
         spin: Optional[Spin] = None,
+        mixed_prec: Optional[dict] = None,
     ) -> None:
         """Constructor."""
         super().__init__()
@@ -160,6 +161,8 @@ class DescrptSeA(paddle.nn.Layer):
         self.compress_activation_fn = get_activation_func(activation_function)
         self.filter_activation_fn = get_activation_func(activation_function)
         self.filter_precision = get_precision(precision)
+        if mixed_prec is not None:
+            self.filter_precision = get_precision(mixed_prec["output_prec"])
         self.exclude_types = set()  # empty
         for tt in exclude_types:
             assert len(tt) == 2
@@ -199,7 +202,7 @@ class DescrptSeA(paddle.nn.Layer):
         self.davg = None
         # self.compress = False
         # self.embedding_net_variables = None
-        # self.mixed_prec = None
+        self.mixed_prec = mixed_prec
         # self.place_holders = {}
         # self.nei_type = np.repeat(np.arange(self.ntypes), self.sel_a)
         self.avg_zero = paddle.zeros(
@@ -222,6 +225,7 @@ class DescrptSeA(paddle.nn.Layer):
                         self.seed,
                         self.trainable,
                         name="filter_type_" + str(type_input) + str(type_i),
+                        mixed_prec=self.mixed_prec,
                     )
                 )
             nets.append(paddle.nn.LayerList(layer))
@@ -230,7 +234,7 @@ class DescrptSeA(paddle.nn.Layer):
 
         self.compress = False
         self.embedding_net_variables = None
-        self.mixed_prec = None
+        # self.mixed_prec = None
         # self.place_holders = {}
         self.nei_type = np.repeat(np.arange(self.ntypes), self.sel_a)  # like a mask
 
@@ -1074,7 +1078,7 @@ class DescrptSeA(paddle.nn.Layer):
                 transpose_x=True,
             )  # 得到(R_i).T*g_i，即D_i表达式的右半部分
 
-    # @cast_precision
+    @cast_precision
     def _filter(
         self,
         inputs: paddle.Tensor,  # [1, 原子个数(64或128), 552(nnei*4)]
@@ -1313,3 +1317,8 @@ class DescrptSeA(paddle.nn.Layer):
                 self.dstd = new_dstd
                 if self.original_sel is None:
                     self.original_sel = sel
+
+    @property
+    def precision(self) -> paddle.dtype:
+        """Precision of filter network."""
+        return self.filter_precision

@@ -1,3 +1,5 @@
+from typing import Optional
+
 import numpy as np
 from paddle import nn
 
@@ -297,6 +299,12 @@ def variable_summaries(var: tf.Variable, name: str):
         tf.summary.histogram("histogram", var)
 
 
+def cast_to_dtype(x, dtype: paddle.dtype) -> paddle.Tensor:
+    if x.dtype != dtype:
+        return paddle.cast(x, dtype)
+    return x
+
+
 class OneLayer(paddle.nn.Layer):
     def __init__(
         self,
@@ -311,6 +319,8 @@ class OneLayer(paddle.nn.Layer):
         use_timestep=False,
         trainable=True,
         useBN=False,
+        mixed_prec: Optional[dict] = None,
+        final_layer=False,
     ):
         super(OneLayer, self).__init__(name)
         self.out_features = out_features
@@ -318,6 +328,8 @@ class OneLayer(paddle.nn.Layer):
         self.use_timestep = use_timestep
         self.useBN = useBN
         self.seed = seed
+        self.mixed_prec = mixed_prec
+        self.final_layer = final_layer
         # paddle.seed(seed)
 
         self.weight = self.create_parameter(
@@ -345,7 +357,22 @@ class OneLayer(paddle.nn.Layer):
             )
 
     def forward(self, input):
-        hidden = paddle.matmul(input, self.weight) + self.bias
+        if self.mixed_prec is not None:
+            if self.final_layer:
+                input = cast_to_dtype(
+                    input, get_precision(self.mixed_prec["output_prec"])
+                )
+            else:
+                input = cast_to_dtype(
+                    input, get_precision(self.mixed_prec["compute_prec"])
+                )
+
+        w = self.weight
+        b = self.bias
+        if self.mixed_prec is not None and not self.final_layer:
+            w = cast_to_dtype(w, get_precision(self.mixed_prec["compute_prec"]))
+            b = cast_to_dtype(b, get_precision(self.mixed_prec["compute_prec"]))
+        hidden = paddle.matmul(input, w) + b
         if self.activation_fn is not None:
             if self.useBN:
                 None
@@ -353,16 +380,25 @@ class OneLayer(paddle.nn.Layer):
                 # return activation_fn(hidden_bn)
             else:
                 if self.use_timestep:
+                    idt = self.idt
+                    if self.mixed_prec is not None:
+                        idt = cast_to_dtype(
+                            idt, get_precision(self.mixed_prec["compute_prec"])
+                        )
                     hidden = (
                         paddle.reshape(
                             self.activation_fn(hidden), [-1, self.out_features]
                         )
-                        * self.idt
+                        * idt
                     )
                 else:
                     hidden = paddle.reshape(
                         self.activation_fn(hidden), [-1, self.out_features]
                     )
+        if self.mixed_prec is not None:
+            hidden = cast_to_dtype(
+                hidden, get_precision(self.mixed_prec["output_prec"])
+            )
         return hidden
 
 
@@ -394,7 +430,7 @@ class EmbeddingNet(paddle.nn.Layer):
     def __init__(
         self,
         network_size,
-        precision,
+        precision: paddle.dtype,
         activation_fn=paddle.nn.functional.tanh,
         resnet_dt=False,
         stddev=1.0,
@@ -402,6 +438,7 @@ class EmbeddingNet(paddle.nn.Layer):
         seed=42,
         trainable=True,
         name="",
+        mixed_prec: dict = None,
     ):
         super().__init__(name)
         self.name = name
@@ -410,7 +447,8 @@ class EmbeddingNet(paddle.nn.Layer):
         self.resnet_dt = resnet_dt
         self.seed = seed
         # paddle.seed(seed)
-
+        self.precision = precision
+        self.mixed_prec = mixed_prec
         outputs_size = self.outputs_size
         weight = []
         bias = []
@@ -457,30 +495,48 @@ class EmbeddingNet(paddle.nn.Layer):
     def forward(self, xx):
         outputs_size = self.outputs_size
         for ii in range(1, len(outputs_size)):
+            w = self.weight[ii - 1]
+            b = self.bias[ii - 1]
+            if self.mixed_prec is not None:
+                xx = cast_to_dtype(xx, get_precision(self.mixed_prec["compute_prec"]))
+                w = cast_to_dtype(
+                    self.weight[ii - 1], get_precision(self.mixed_prec["compute_prec"])
+                )
+                b = cast_to_dtype(
+                    self.bias[ii - 1], get_precision(self.mixed_prec["compute_prec"])
+                )
             if self.activation_fn is not None:
                 hidden = paddle.reshape(
-                    self.activation_fn(
-                        paddle.matmul(xx, self.weight[ii - 1]) + self.bias[ii - 1]
-                    ),
+                    self.activation_fn(paddle.matmul(xx, w) + b),
                     [-1, outputs_size[ii]],
                 )
             else:
                 hidden = paddle.reshape(
-                    paddle.matmul(xx, self.weight[ii - 1]) + self.bias[ii - 1],
+                    paddle.matmul(xx, w) + b,
                     [-1, outputs_size[ii]],
                 )
-
             if outputs_size[ii] == outputs_size[ii - 1]:
                 if self.resnet_dt:
-                    xx += hidden * self.idt[ii - 1]
+                    idt = self.idt[ii - 1]
+                    if self.mixed_prec is not None:
+                        idt = cast_to_dtype(
+                            idt, get_precision(self.mixed_prec["compute_prec"])
+                        )
+                    xx += hidden * idt
                 else:
                     xx += hidden
             elif outputs_size[ii] == outputs_size[ii - 1] * 2:
                 if self.resnet_dt:
-                    xx = paddle.concat([xx, xx], axis=1) + hidden * self.idt[ii - 1]
+                    idt = self.idt[ii - 1]
+                    if self.mixed_prec is not None:
+                        idt = cast_to_dtype(
+                            idt, get_precision(self.mixed_prec["compute_prec"])
+                        )
+                    xx = paddle.concat([xx, xx], axis=1) + hidden * idt
                 else:
                     xx = paddle.concat([xx, xx], axis=1) + hidden
             else:
                 xx = hidden
-
+        if self.mixed_prec is not None:
+            xx = cast_to_dtype(xx, get_precision(self.mixed_prec["output_prec"]))
         return xx

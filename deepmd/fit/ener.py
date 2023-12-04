@@ -120,6 +120,7 @@ class EnerFitting(nn.Layer):
         layer_name: Optional[List[Optional[str]]] = None,
         use_aparam_as_mask: bool = False,
         spin: Optional[Spin] = None,
+        mixed_prec: Optional[dict] = None,
     ) -> None:
         super().__init__(name_scope="EnerFitting")
         """Constructor."""
@@ -149,11 +150,14 @@ class EnerFitting(nn.Layer):
         self.seed = seed
         self.uniform_seed = uniform_seed
         self.spin = spin
+        self.mixed_prec = mixed_prec
         self.ntypes_spin = self.spin.get_ntypes_spin() if self.spin is not None else 0
         self.seed_shift = one_layer_rand_seed_shift()
         self.tot_ener_zero = tot_ener_zero
         self.fitting_activation_fn = get_activation_func(activation_function)
         self.fitting_precision = get_precision(precision)
+        if mixed_prec is not None:
+            self.filter_precision = get_precision(mixed_prec["output_prec"])
         self.trainable = trainable
         if self.trainable is None:
             self.trainable = [True for ii in range(len(self.n_neuron) + 1)]
@@ -194,7 +198,7 @@ class EnerFitting(nn.Layer):
             self.aparam_inv_std = None
 
         self.fitting_net_variables = None
-        self.mixed_prec = None
+        self.mixed_prec = mixed_prec
         self.layer_name = layer_name
         if self.layer_name is not None:
             assert isinstance(self.layer_name, list), "layer_name should be a list"
@@ -226,6 +230,7 @@ class EnerFitting(nn.Layer):
                             seed=self.seed,
                             use_timestep=self.resnet_dt,
                             trainable=self.trainable[ii],
+                            mixed_prec=self.mixed_prec,
                         )
                     )
                 else:
@@ -238,6 +243,7 @@ class EnerFitting(nn.Layer):
                             name=layer_suffix,
                             seed=self.seed,
                             trainable=self.trainable[ii],
+                            mixed_prec=self.mixed_prec,
                         )
                     )
                 if (not self.uniform_seed) and (self.seed is not None):
@@ -253,6 +259,8 @@ class EnerFitting(nn.Layer):
                     name=layer_suffix,
                     seed=self.seed,
                     trainable=self.trainable[-1],
+                    mixed_prec=self.mixed_prec,
+                    final_layer=True,
                 )
             )
 
@@ -431,7 +439,7 @@ class EnerFitting(nn.Layer):
     def _compute_std(self, sumv2, sumv, sumn):
         return np.sqrt(sumv2 / sumn - np.multiply(sumv / sumn, sumv / sumn))
 
-    # @cast_precision
+    @cast_precision
     def _build_lower(
         self,
         start_index,
@@ -911,3 +919,8 @@ class EnerFitting(nn.Layer):
         """
         self.mixed_prec = mixed_prec
         self.fitting_precision = get_precision(mixed_prec["output_prec"])
+
+    @property
+    def precision(self) -> paddle.dtype:
+        """Precision of filter network."""
+        return self.fitting_precision
