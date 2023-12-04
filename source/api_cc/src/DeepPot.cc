@@ -719,7 +719,7 @@ void DeepPot::init(const std::string& model,
   DPGetDeviceCount(gpu_num);  // check current device environment
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
   if (use_paddle_inference) {
-    /*
+    /* water se_e2_a
     tensorflow::DT_DOUBLE = 2
     tensorflow::DT_FLOAT = 1
     paddle_infer::DataType::FLOAT64 = 7
@@ -749,6 +749,26 @@ void DeepPot::init(const std::string& model,
     [fitting.buffer_dfparam, []] generated name in static_model is: generated_tensor_9
     [fitting.buffer_daparam, []] generated name in static_model is: generated_tensor_10
     **/
+    /* spin se_e2_a
+    [buffer_tmap, [4]] generated name in static_model is: generated_tensor_14
+    [buffer_model_type, [4]] generated name in static_model is: generated_tensor_15
+    [buffer_model_version, [1]] generated name in static_model is: generated_tensor_16
+    [descrpt.buffer_rcut, []] generated name in static_model is: generated_tensor_3
+    [descrpt.buffer_ntypes, []] generated name in static_model is: generated_tensor_4
+    [descrpt.avg_zero, [3, 720]] generated name in static_model is: eager_tmp_0
+    [descrpt.std_ones, [3, 720]] generated name in static_model is: eager_tmp_1
+    [descrpt.t_rcut, []] generated name in static_model is: generated_tensor_5
+    [descrpt.buffer_sel, [3]] generated name in static_model is: generated_tensor_6
+    [descrpt.buffer_ndescrpt, []] generated name in static_model is: generated_tensor_7
+    [descrpt.buffer_original_sel, [3]] generated name in static_model is: generated_tensor_8
+    [descrpt.t_avg, [3, 720]] generated name in static_model is: generated_tensor_9
+    [descrpt.t_std, [3, 720]] generated name in static_model is: generated_tensor_10
+    [descrpt.spin.buffer_ntypes_spin, [1]] generated name in static_model is: generated_tensor_0
+    [descrpt.spin.buffer_virtual_len, [1, 1]] generated name in static_model is: generated_tensor_1
+    [descrpt.spin.buffer_spin_norm, [1, 1]] generated name in static_model is: generated_tensor_2
+    [fitting.buffer_dfparam, []] generated name in static_model is: generated_tensor_11
+    [fitting.buffer_daparam, []] generated name in static_model is: generated_tensor_12                                                                                  [fitting.t_bias_atom_e, [2]] generated name in static_model is: generated_tensor_13
+   */
     model_version = paddle_get_scalar<std::string>("generated_tensor_14");
     dtype = predictor_get_dtype(predictor, "generated_tensor_0");
     if (dtype == paddle_infer::DataType::FLOAT64) {
@@ -757,7 +777,7 @@ void DeepPot::init(const std::string& model,
       rcut = paddle_get_scalar<float>("generated_tensor_0");
     }
     ntypes = paddle_get_scalar<int32_t>("generated_tensor_2");
-    // ntypes_spin = paddle_get_scalar<int64_t>("buffer_ntypes_spin");
+    // ntypes_spin = paddle_get_scalar<int32_t>("buffer_ntypes_spin");
     ntypes_spin = 0;
     dfparam = paddle_get_scalar<int64_t>("generated_tensor_9");
     daparam = paddle_get_scalar<int64_t>("generated_tensor_10");

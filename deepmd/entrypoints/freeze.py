@@ -367,7 +367,7 @@ def freeze_graph(
     )
     for name, param in st_model.named_buffers():
         print(
-            f"[{name}, {param.shape}] generated name in static_model is: {param.name}"
+            f"[{name}, {param.dtype}, {param.shape}] generated name in static_model is: {param.name}"
         )
     # 跳过对program的裁剪，从而保留rcut、ntypes等不参与前向的参数，从而在C++端可以获取这些参数
     skip_prune_program = True

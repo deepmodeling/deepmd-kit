@@ -155,7 +155,9 @@ class DeepPot(DeepEval):
         self.rcut = float(self.model.descrpt.buffer_rcut)
         self.dfparam = 0
         self.daparam = 0
-        self.t_tmap = "".join([chr(idx) for idx in self.model.buffer_tmap.tolist()])
+        # self.t_tmap = "".join([chr(idx) for idx in self.model.buffer_tmap.tolist()])
+        self.t_tmap = [chr(idx) for idx in self.model.buffer_tmap.tolist()]
+        self.t_tmap = [c for c in self.t_tmap if c != " "]
 
         # setup modifier
         try:
