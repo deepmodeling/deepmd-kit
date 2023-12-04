@@ -135,8 +135,12 @@ class DeepPot(DeepEval):
         #     self.tensors.update({"t_ntypes_spin": "spin_attr/ntypes_spin"})
         #     self.has_spin = True
         # else:
-        self.ntypes_spin = 0
-        self.has_spin = False
+        self.ntypes_spin = (
+            0
+            if self.model.descrpt.spin is None
+            else self.model.descrpt.spin.ntypes_spin
+        )
+        self.has_spin = self.model.descrpt.spin is not None
 
         # now load tensors to object attributes
         for attr_name, tensor_name in self.tensors.items():
@@ -147,13 +151,11 @@ class DeepPot(DeepEval):
                     raise
 
         # self._run_default_sess()
-        # self.tmap = self.tmap.decode("UTF-8").split()
-        self.ntypes = 2
-        self.rcut = 6.0
+        self.ntypes = int(self.model.descrpt.buffer_ntypes)
+        self.rcut = float(self.model.descrpt.buffer_rcut)
         self.dfparam = 0
         self.daparam = 0
-        # self.t_tmap = self.model.t_tmap.split()
-        self.t_tmap = ["O", "H"]
+        self.t_tmap = "".join([chr(idx) for idx in self.model.buffer_tmap.tolist()])
 
         # setup modifier
         try:
@@ -573,10 +575,6 @@ class DeepPot(DeepEval):
             natoms_vec, dtype="int32", place="cpu"
         )
         eval_inputs["box"] = paddle.to_tensor(np.reshape(cells, [-1]), dtype="float64")
-        # print(eval_inputs['coord'].shape) # [2880]
-        # print(eval_inputs['type'].shape) # [960]
-        # print(eval_inputs['natoms_vec'].shape) # [4]
-        # print(eval_inputs['box'].shape) # [45]
 
         if self.has_fparam:
             eval_inputs["fparam"] = paddle.to_tensor(
@@ -598,7 +596,7 @@ class DeepPot(DeepEval):
             eval_outputs = self.st_model(
                 eval_inputs["coord"],  # [2880] paddle.float64
                 eval_inputs["type"],  # [960] paddle.int32
-                eval_inputs["natoms_vec"],  # [4] paddle.int32
+                eval_inputs["natoms_vec"],  # [2+num_type_atoms] paddle.int32
                 eval_inputs["box"],  # [45] paddle.float64
                 eval_inputs["default_mesh"],  # [6] paddle.int32
             )
@@ -616,7 +614,7 @@ class DeepPot(DeepEval):
             eval_outputs = self.model(
                 eval_inputs["coord"],  # [2880] paddle.float64
                 eval_inputs["type"],  # [960] paddle.int32
-                eval_inputs["natoms_vec"],  # [4] paddle.int32
+                eval_inputs["natoms_vec"],  # [2+num_type_atoms] paddle.int32
                 eval_inputs["box"],  # [45] paddle.float64
                 eval_inputs["default_mesh"],  # [6] paddle.int32
                 eval_inputs,

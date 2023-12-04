@@ -355,27 +355,11 @@ def freeze_graph(
         input_spec=[
             InputSpec(shape=[None], dtype="float64"),  # coord_
             InputSpec(shape=[None], dtype="int32"),  # atype_
-            InputSpec(shape=[4], dtype="int32"),  # natoms
+            InputSpec(shape=[2 + dp.model.descrpt.ntypes], dtype="int32"),  # natoms
             InputSpec(shape=[None], dtype="float64"),  # box
             InputSpec(shape=[6], dtype="int32"),  # mesh
             {
-                # "coord": InputSpec(
-                #     shape=[2880],
-                #     dtype="float64"
-                # ),
-                # "type": InputSpec(
-                #     shape=[960],
-                #     dtype="int32"
-                # ),
-                # "natoms_vec": InputSpec(
-                #     shape=[4],
-                #     dtype="int32"
-                # ),
                 "box": InputSpec(shape=[None], dtype="float64"),
-                # "default_mesh": InputSpec(
-                #     shape=[6],
-                #     dtype="int32"
-                # ),
             },
             "",
             False,
@@ -385,16 +369,6 @@ def freeze_graph(
         print(
             f"[{name}, {param.shape}] generated name in static_model is: {param.name}"
         )
-    # print(f"st_model.descrpt.buffer_rcut.name = {st_model.descrpt.buffer_rcut.name}")
-    # print(
-    #     f"st_model.descrpt.buffer_ntypes.name = {st_model.descrpt.buffer_ntypes.name}"
-    # )
-    # print(
-    #     f"st_model.fitting.buffer_dfparam.name = {st_model.fitting.buffer_dfparam.name}"
-    # )
-    # print(
-    #     f"st_model.fitting.buffer_daparam.name = {st_model.fitting.buffer_daparam.name}"
-    # )
     # 跳过对program的裁剪，从而保留rcut、ntypes等不参与前向的参数，从而在C++端可以获取这些参数
     skip_prune_program = True
     print(f"==>> Set skip_prune_program = {skip_prune_program}")

@@ -171,6 +171,8 @@ class EnerFitting(nn.Layer):
                 self.atom_ener.append(None)
         self.useBN = False
         self.bias_atom_e = np.zeros(self.ntypes, dtype=np.float64)
+        ntypes_atom = self.ntypes - self.ntypes_spin
+        self.bias_atom_e = self.bias_atom_e[:ntypes_atom]
         self.register_buffer(
             "t_bias_atom_e",
             paddle.to_tensor(self.bias_atom_e),
@@ -248,7 +250,6 @@ class EnerFitting(nn.Layer):
                     1,
                     activation_fn=None,
                     precision=self.fitting_precision,
-                    bavg=self.bias_atom_e,
                     name=layer_suffix,
                     seed=self.seed,
                     trainable=self.trainable[-1],
@@ -310,6 +311,26 @@ class EnerFitting(nn.Layer):
         self.bias_atom_e = self._compute_output_stats(
             all_stat, rcond=self.rcond, mixed_type=mixed_type
         )
+        ntypes_atom = self.ntypes - self.ntypes_spin
+        if self.spin is not None:
+            for type_i in range(ntypes_atom):
+                if self.bias_atom_e.shape[0] != self.ntypes:
+                    self.bias_atom_e = np.pad(
+                        self.bias_atom_e,
+                        (0, self.ntypes_spin),
+                        "constant",
+                        constant_values=(0, 0),
+                    )
+                    bias_atom_e = self.bias_atom_e
+                if self.spin.use_spin[type_i]:
+                    self.bias_atom_e[type_i] = (
+                        self.bias_atom_e[type_i]
+                        + self.bias_atom_e[type_i + ntypes_atom]
+                    )
+                else:
+                    self.bias_atom_e[type_i] = self.bias_atom_e[type_i]
+            self.bias_atom_e = self.bias_atom_e[:ntypes_atom]
+
         paddle.assign(self.bias_atom_e, self.t_bias_atom_e)
 
     def _compute_output_stats(self, all_stat, rcond=1e-3, mixed_type=False):
@@ -548,24 +569,6 @@ class EnerFitting(nn.Layer):
                 self.aparam_inv_std = 1.0
 
         ntypes_atom = self.ntypes - self.ntypes_spin
-        if self.spin is not None:
-            for type_i in range(ntypes_atom):
-                if self.bias_atom_e.shape[0] != self.ntypes:
-                    self.bias_atom_e = np.pad(
-                        self.bias_atom_e,
-                        (0, self.ntypes_spin),
-                        "constant",
-                        constant_values=(0, 0),
-                    )
-                    bias_atom_e = self.bias_atom_e
-                if self.spin.use_spin[type_i]:
-                    self.bias_atom_e[type_i] = (
-                        self.bias_atom_e[type_i]
-                        + self.bias_atom_e[type_i + ntypes_atom]
-                    )
-                else:
-                    self.bias_atom_e[type_i] = self.bias_atom_e[type_i]
-            self.bias_atom_e = self.bias_atom_e[:ntypes_atom]
 
         inputs = paddle.reshape(
             inputs, [-1, natoms[0], self.dim_descrpt]
@@ -583,7 +586,7 @@ class EnerFitting(nn.Layer):
                 inputs_zero = paddle.zeros_like(inputs, dtype=GLOBAL_PD_FLOAT_PRECISION)
 
         if bias_atom_e is not None:
-            assert len(bias_atom_e) == self.ntypes
+            assert len(bias_atom_e) == self.ntypes - self.ntypes_spin
 
         fparam = None
         if self.numb_fparam > 0:
@@ -615,7 +618,7 @@ class EnerFitting(nn.Layer):
                 atype_nall,
                 [0, 1],
                 [0, 0],
-                [-1, paddle.sum(natoms[2 : 2 + ntypes_atom]).item()],
+                [atype_nall.shape[0], paddle.sum(natoms[2 : 2 + ntypes_atom]).item()],
             )
             atype_filter = paddle.cast(self.atype_nloc >= 0, GLOBAL_PD_FLOAT_PRECISION)
             self.atype_nloc = paddle.reshape(self.atype_nloc, [-1])

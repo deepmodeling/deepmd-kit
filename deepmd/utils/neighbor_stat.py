@@ -6,6 +6,7 @@ from typing import Tuple
 import numpy as np
 
 from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
+from deepmd.env import GLOBAL_PD_FLOAT_PRECISION
 from deepmd.env import default_tf_session_config
 from deepmd.env import op_module
 from deepmd.env import tf
@@ -138,28 +139,24 @@ class NeighborStat:
                         [-1, data.natoms[ii] * 3]
                     )
                     coord = paddle.to_tensor(
-                        coord, dtype="float32", place="cpu"
+                        coord, GLOBAL_PD_FLOAT_PRECISION, "cpu"
                     )  # [1, 576]
 
                     _type = np.array(data_set["type"])[kk].reshape(
                         [-1, data.natoms[ii]]
                     )
-                    _type = paddle.to_tensor(
-                        _type, dtype="int32", place="cpu"
-                    )  # [1, 192]
+                    _type = paddle.to_tensor(_type, "int32", "cpu")  # [1, 192]
 
                     natoms_vec = np.array(data.natoms_vec[ii])
-                    natoms_vec = paddle.to_tensor(
-                        natoms_vec, dtype="int64", place="cpu"
-                    )  # [4]
+                    natoms_vec = paddle.to_tensor(natoms_vec, "int32", "cpu")  # [4]
 
                     box = np.array(data_set["box"])[kk].reshape([-1, 9])
-                    box = paddle.to_tensor(box, dtype="float32", place="cpu")  # [1, 9]
+                    box = paddle.to_tensor(
+                        box, GLOBAL_PD_FLOAT_PRECISION, "cpu"
+                    )  # [1, 9]
 
                     default_mesh = np.array(data.default_mesh[ii])
-                    default_mesh = paddle.to_tensor(
-                        default_mesh, dtype="int32", place="cpu"
-                    )  # [6]
+                    default_mesh = paddle.to_tensor(default_mesh, "int32", "cpu")  # [6]
 
                     rcut = self.rcut
                     mn, dt = op_module.neighbor_stat(

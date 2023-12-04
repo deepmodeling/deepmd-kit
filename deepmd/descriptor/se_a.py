@@ -145,7 +145,7 @@ class DescrptSeA(paddle.nn.Layer):
             raise RuntimeError(
                 f"rcut_smth ({rcut_smth:f}) should be no more than rcut ({rcut:f})!"
             )
-        self.sel_a = sel  # [46(O), 92(H)]
+        self.sel_a = sel  # [46(O), 92(H)] / [60, 60]
         self.rcut_r = rcut  # 6.0
         # NOTE: register 'rcut' in buffer to be accessed in inference
         self.register_buffer("buffer_rcut", paddle.to_tensor(rcut, dtype="float64"))
@@ -177,10 +177,6 @@ class DescrptSeA(paddle.nn.Layer):
             self.sel_a.extend(self.sel_a_spin)
         else:
             self.ntypes_spin = 0
-        # NOTE: register 'ntypes_spin' in buffer to be accessed in inference
-        self.register_buffer(
-            "buffer_ntypes_spin", paddle.to_tensor(self.ntypes_spin, dtype="int32")
-        )
 
         # descrpt config
         self.sel_r = [0 for ii in range(len(self.sel_a))]  # [0, 0]
@@ -206,20 +202,11 @@ class DescrptSeA(paddle.nn.Layer):
         # self.mixed_prec = None
         # self.place_holders = {}
         # self.nei_type = np.repeat(np.arange(self.ntypes), self.sel_a)
-        """
-        array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-        1, 1, 1, 1, 1, 1])
-        """
         self.avg_zero = paddle.zeros(
-            [self.ntypes, self.ndescrpt], dtype="float32"
+            [self.ntypes, self.ndescrpt], dtype=GLOBAL_PD_FLOAT_PRECISION
         )  # [2, 552]
         self.std_ones = paddle.ones(
-            [self.ntypes, self.ndescrpt], dtype="float32"
+            [self.ntypes, self.ndescrpt], dtype=GLOBAL_PD_FLOAT_PRECISION
         )  # [2, 552]
         nets = []
         # self._pass_filter => self._filter => self._filter_lower
@@ -296,11 +283,22 @@ class DescrptSeA(paddle.nn.Layer):
             }
 
         self.t_rcut = paddle.to_tensor(
-            np.max([self.rcut_r, self.rcut_a]), dtype="float32"
+            np.max([self.rcut_r, self.rcut_a]), dtype=GLOBAL_PD_FLOAT_PRECISION
         )
-        self.t_ntypes = paddle.to_tensor(self.ntypes, dtype="int32")
-        self.t_ndescrpt = paddle.to_tensor(self.ndescrpt, dtype="int32")
-        self.t_sel = paddle.to_tensor(self.sel_a, dtype="int32")
+        # self.t_ntypes = paddle.to_tensor(self.ntypes, dtype="int32")
+        # self.t_ndescrpt = paddle.to_tensor(self.ndescrpt, dtype="int32")
+        # self.t_sel = paddle.to_tensor(self.sel_a, dtype="int32")
+        self.register_buffer("buffer_sel", paddle.to_tensor(self.sel_a, dtype="int32"))
+        self.register_buffer(
+            "buffer_ndescrpt", paddle.to_tensor(self.ndescrpt, dtype="int32")
+        )
+        self.register_buffer(
+            "buffer_original_sel",
+            paddle.to_tensor(
+                self.original_sel if self.original_sel is not None else self.sel_a,
+                dtype="int32",
+            ),
+        )
 
         t_avg = paddle.to_tensor(
             np.zeros([self.ntypes, self.ndescrpt]), dtype="float64"
@@ -747,28 +745,24 @@ class DescrptSeA(paddle.nn.Layer):
         else:
             type_embedding = None
         start_index = 0
-        # print(inputs.shape) # [192, 552(nnei*4)]，每个原子和它周围nnei个原子的R矩阵(展平后)
         inputs = paddle.reshape(inputs, [-1, int(natoms[0].item()), int(self.ndescrpt)])
         output = []
         output_qmat = []
         if not self.type_one_side and type_embedding is None:
             for type_i in range(self.ntypes):
-                # 按不同原子类型进行处理
                 inputs_i = paddle.slice(
                     inputs,
                     [0, 1, 2],
                     [0, start_index, 0],
                     [
                         inputs.shape[0],
-                        start_index + natoms[2 + type_i],
+                        start_index + natoms[2 + type_i].item(),
                         inputs.shape[2],
                     ],
-                )  # [1, 某种类型原子个数64/128, 552]
-                inputs_i = paddle.reshape(
-                    inputs_i, [-1, self.ndescrpt]
-                )  # [某种类型原子个数64/128, 552]
+                )
+                inputs_i = paddle.reshape(inputs_i, [-1, self.ndescrpt])
                 filter_name = "filter_type_" + str(type_i) + suffix
-                layer, qmat = self._filter(  # 计算某个类型的原子的 result 和 qmat
+                layer, qmat = self._filter(
                     inputs_i,
                     type_i,
                     name=filter_name,
@@ -779,7 +773,7 @@ class DescrptSeA(paddle.nn.Layer):
                 )  # [natom, M1*M2], qmat: [natom, M1, 3]
                 layer = paddle.reshape(
                     layer, [inputs.shape[0], natoms[2 + type_i], self.get_dim_out()]
-                )  # [1, 某种类型原子个数64/128, M1*M2]
+                )
                 qmat = paddle.reshape(
                     qmat,
                     [
@@ -787,10 +781,10 @@ class DescrptSeA(paddle.nn.Layer):
                         natoms[2 + type_i],
                         self.get_dim_rot_mat_1() * 3,
                     ],
-                )  # [1, 某种类型原子个数64/128, 100*3]
+                )
                 output.append(layer)
                 output_qmat.append(qmat)
-                start_index += natoms[2 + type_i]
+                start_index += natoms[2 + type_i].item()
         else:
             ...
             # This branch will not be excecuted at current
@@ -842,24 +836,11 @@ class DescrptSeA(paddle.nn.Layer):
         self, data_coord, data_box, data_atype, natoms_vec, mesh
     ):
         input_dict = {}
-        # dd_all = run_sess(
-        #     self.sub_sess,
-        #     self.stat_descrpt,
-        #     feed_dict={
-        #         self.place_holders["coord"]: data_coord,
-        #         self.place_holders["type"]: data_atype,
-        #         self.place_holders["natoms_vec"]: natoms_vec,
-        #         self.place_holders["box"]: data_box,
-        #         self.place_holders["default_mesh"]: mesh,
-        #     },
-        # )
-        input_dict["coord"] = paddle.to_tensor(data_coord, dtype="float32")
-        input_dict["box"] = paddle.to_tensor(data_box, dtype="float32")
-        input_dict["type"] = paddle.to_tensor(data_atype, dtype="int32")
-        input_dict["natoms_vec"] = paddle.to_tensor(
-            natoms_vec, dtype="int32", place="cpu"
-        )
-        input_dict["default_mesh"] = paddle.to_tensor(mesh, dtype="int32")
+        input_dict["coord"] = paddle.to_tensor(data_coord, GLOBAL_PD_FLOAT_PRECISION)
+        input_dict["box"] = paddle.to_tensor(data_box, GLOBAL_PD_FLOAT_PRECISION)
+        input_dict["type"] = paddle.to_tensor(data_atype, "int32")
+        input_dict["natoms_vec"] = paddle.to_tensor(natoms_vec, "int32", place="cpu")
+        input_dict["default_mesh"] = paddle.to_tensor(mesh, "int32")
 
         self.stat_descrpt, descrpt_deriv, rij, nlist = op_module.prod_env_mat_a(
             input_dict["coord"],  # fp32

@@ -962,19 +962,18 @@ class DPTrainer:
                 #     run_metadata=prf_run_metadata,
                 # )
                 # tb_train_writer.add_summary(summary, cur_batch)
-                model_pred = self.model(
-                    paddle.to_tensor(train_batch["coord"], "float32"),
-                    paddle.to_tensor(train_batch["type"], "int32"),
-                    paddle.to_tensor(train_batch["natoms_vec"], "int32", "cpu"),
-                    paddle.to_tensor(train_batch["box"], "float32"),
-                    paddle.to_tensor(train_batch["default_mesh"], "int32"),
-                    train_batch,
-                    suffix="",
-                    reuse=False,
-                )
+                pass
+                # model_pred = self.model(
+                #     paddle.to_tensor(train_batch["coord"], "float64"),
+                #     paddle.to_tensor(train_batch["type"], "int32"),
+                #     paddle.to_tensor(train_batch["natoms_vec"], "int32", "cpu"),
+                #     paddle.to_tensor(train_batch["box"], "float64"),
+                #     paddle.to_tensor(train_batch["default_mesh"], "int32"),
+                #     train_batch,
+                #     suffix="",
+                #     reuse=False,
+                # )
             else:
-                # for k, v in train_feed_dict.items():
-                #     print(f"{k} {v.shape if hasattr(v, 'shape') else v}")
                 """
                 find_box:0", dtype=float32) ()
                 find_coord:0", dtype=float32) ()
@@ -1031,13 +1030,6 @@ class DPTrainer:
                     suffix="",
                     reuse=False,
                 )
-
-                # loss = (
-                #     model_pred["force"].sum()
-                #     + model_pred["virial"].sum()
-                #     + model_pred["energy"].sum()
-                #     + model_pred["atom_ener"].sum()
-                # )
                 # print(f"{self.cur_batch} {self.learning_rate.get_lr():.10f}")
                 l2_l, l2_more = self.loss.compute_loss(
                     self.learning_rate.get_lr(),
@@ -1052,34 +1044,6 @@ class DPTrainer:
                 self.optimizer.step()
                 self.global_step += 1
 
-                # _, next_train_batch_list = run_sess(
-                #     self.sess,
-                #     [batch_train_op, next_train_batch_op],
-                #     feed_dict=train_feed_dict,
-                #     options=prf_options,
-                #     run_metadata=prf_run_metadata,
-                # )
-                """next_train_batch_list
-                find_box (): <class 'numpy.float32'> none
-                box (1, 9): <class 'numpy.ndarray'> (1, 9)
-                find_coord (): <class 'numpy.float32'> none
-                coord (1, 576): <class 'numpy.ndarray'> (1, 576)
-                find_numb_copy (): <class 'numpy.float32'> none
-                numb_copy (1, 1): <class 'numpy.ndarray'> (1, 1)
-                find_energy (): <class 'numpy.float32'> none
-                energy (1, 1): <class 'numpy.ndarray'> (1, 1)
-                find_force (): <class 'numpy.float32'> none
-                force (1, 576): <class 'numpy.ndarray'> (1, 576)
-                find_virial (): <class 'numpy.float32'> none
-                virial (1, 9): <class 'numpy.ndarray'> (1, 9)
-                find_atom_ener (): <class 'numpy.float32'> none
-                atom_ener (1, 192): <class 'numpy.ndarray'> (1, 192)
-                find_atom_pref (): <class 'numpy.float32'> none
-                atom_pref (1, 576): <class 'numpy.ndarray'> (1, 576)
-                type (1, 192): <class 'numpy.ndarray'> (1, 192)
-                natoms_vec (4,): <class 'numpy.ndarray'> (4,)
-                default_mesh (6,): <class 'numpy.ndarray'> (6,)
-                """
             if self.timing_in_training:
                 toc = time.time()
             if self.timing_in_training:

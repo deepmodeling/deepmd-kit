@@ -24,20 +24,21 @@ class Spin(paddle.nn.Layer):
         spin_norm: List[float] = None,
         virtual_len: List[float] = None,
     ) -> None:
+        super().__init__()
         """Constructor."""
         self.use_spin = use_spin
         self.spin_norm = spin_norm
         self.virtual_len = virtual_len
         self.ntypes_spin = self.use_spin.count(True)
-        self.register_bufer(
+        self.register_buffer(
             "buffer_ntypes_spin",
-            paddle.to_tensor([self.ntypes_spin], dtype=tf.int32),
+            paddle.to_tensor([self.ntypes_spin], dtype="int32"),
         )
-        self.register_bufer(
+        self.register_buffer(
             "buffer_virtual_len",
             paddle.to_tensor([self.virtual_len], dtype=paddle.get_default_dtype()),
         )
-        self.register_bufer(
+        self.register_buffer(
             "buffer_spin_norm",
             paddle.to_tensor([self.spin_norm], dtype=paddle.get_default_dtype()),
         )
