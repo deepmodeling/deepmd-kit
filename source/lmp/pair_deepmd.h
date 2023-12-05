@@ -95,6 +95,7 @@ class PairDeepMD : public Pair {
   std::string out_file;
   int dim_fparam;
   int dim_aparam;
+  int max_nlocal;
   int out_each;
   int out_rel;
   int out_rel_v;

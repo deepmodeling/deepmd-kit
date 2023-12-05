@@ -1280,7 +1280,7 @@ void deepmd::print_summary(const std::string& pre) {
   std::cout << pre << "source branch:       " + global_git_branch << "\n";
   std::cout << pre << "source commit:      " + global_git_hash << "\n";
   std::cout << pre << "source commit at:   " + global_git_date << "\n";
-  std::cout << pre << "surpport model ver.:" + global_model_version << "\n";
+  std::cout << pre << "supported model ver.:" + global_model_version << "\n";
 #if defined(GOOGLE_CUDA)
   std::cout << pre << "build variant:      cuda"
             << "\n";

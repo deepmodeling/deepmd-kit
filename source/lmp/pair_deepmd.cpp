@@ -389,6 +389,7 @@ PairDeepMD::PairDeepMD(LAMMPS *lmp)
   cutoff = 0.;
   numb_types = 0;
   numb_types_spin = 0;
+  max_nlocal = 0;
   numb_models = 0;
   out_freq = 0;
   out_each = 0;
@@ -783,16 +784,17 @@ void PairDeepMD::compute(int eflag, int vflag) {
           // Gather std_f and tags
           tagint *tag = atom->tag;
           int nprocs = comm->nprocs;
-          int newntotal = atom->natoms;
-          if (newntotal > sizeof(stdfsend)) {
+          // Grow arrays if necessary
+          if (nlocal > max_nlocal) {
+            max_nlocal = nlocal;
             memory->destroy(stdfsend);
             memory->destroy(stdfrecv);
             memory->destroy(tagsend);
             memory->destroy(tagrecv);
-            memory->create(stdfsend, newntotal, "deepmd:stdfsendall");
-            memory->create(stdfrecv, newntotal, "deepmd:stdfrecvall");
-            memory->create(tagsend, newntotal, "deepmd:tagsendall");
-            memory->create(tagrecv, newntotal, "deepmd:tagrecvall");
+            memory->create(stdfsend, nlocal, "deepmd:stdfsendall");
+            memory->create(stdfrecv, nlocal, "deepmd:stdfrecvall");
+            memory->create(tagsend, nlocal, "deepmd:tagsendall");
+            memory->create(tagrecv, nlocal, "deepmd:tagrecvall");
           }
           for (int ii = 0; ii < nlocal; ii++) {
             tagsend[ii] = tag[ii];
@@ -1290,6 +1292,9 @@ void PairDeepMD::init_style() {
   if (out_each == 1) {
     int ntotal = atom->natoms;
     int nprocs = comm->nprocs;
+    if (ntotal > max_nlocal) {
+      max_nlocal = ntotal;
+    }
     memory->create(counts, nprocs, "deepmd:counts");
     memory->create(displacements, nprocs, "deepmd:displacements");
     memory->create(stdfsend, ntotal, "deepmd:stdfsendall");
