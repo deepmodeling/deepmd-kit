@@ -8,23 +8,37 @@ jobs:
   build_c:
     name: Build C library
     runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        include:
+          - tensorflow_build_version: "2.15"
+            tensorflow_version: ""
+            filename: libdeepmd_c.tar.gz
+          - tensorflow_build_version: "2.14"
+            tensorflow_version: ">=2.5.0rc0,<2.15"
+            filename: libdeepmd_c_cu11.tar.gz
     steps:
       - uses: actions/checkout@v4
       - name: Package C library
         run: ./source/install/docker_package_c.sh
+        env:
+          TENSORFLOW_VERSION: ${{ matrix.tensorflow_version }}
+          TENSORFLOW_BUILD_VERSION: ${{ matrix.tensorflow_build_version }}
+      - run: cp libdeepmd_c.tar.gz ${{ matrix.filename }}
+        if: matrix.filename != 'libdeepmd_c.tar.gz'
       # for download and debug
       - name: Upload artifact
         uses: actions/upload-artifact@v3
         with:
           name: libdeepmd_c
-          path: ./libdeepmd_c.tar.gz
+          path: ${{ matrix.filename }}
       - name: Test C library
         run: ./source/install/docker_test_package_c.sh
       - name: Release
         uses: softprops/action-gh-release@v1
         if: startsWith(github.ref, 'refs/tags/')
         with:
-          files: libdeepmd_c.tar.gz
+          files: ${{ matrix.filename }}
   test_c:
     name: Test building from C library
     needs: [build_c]

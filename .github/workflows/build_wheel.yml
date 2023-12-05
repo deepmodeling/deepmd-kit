@@ -33,6 +33,13 @@ jobs:
             python: 311
             platform_id: manylinux_x86_64
             dp_variant: cuda
+            cuda_version: 12.2
+          - os: ubuntu-latest
+            python: 311
+            platform_id: manylinux_x86_64
+            dp_variant: cuda
+            cuda_version: 11.8
+            dp_pkg_name: deepmd-kit-cu11
           # macos-x86-64
           - os: macos-latest
             python: 311
@@ -68,6 +75,8 @@ jobs:
           CIBW_ARCHS: all
           CIBW_BUILD: cp${{ matrix.python }}-${{ matrix.platform_id }}
           DP_VARIANT: ${{ matrix.dp_variant }}
+          CUDA_VERSION: ${{ matrix.cuda_version }}
+          DP_PKG_NAME: ${{ matrix.dp_pkg_name }}
       - uses: actions/upload-artifact@v3
         with:
           path: ./wheelhouse/*.whl
@@ -109,6 +118,14 @@ jobs:
     # use the already built wheels to build docker
     needs: [build_wheels]
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: ""
+            cuda_version: "12"
+          - variant: "_cu11"
+            cuda_version: "11"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v3
@@ -133,8 +150,11 @@ jobs:
         with:
           context: source/install/docker
           push: ${{ github.repository_owner == 'deepmodeling' && github.event_name == 'push' }}
-          tags: ${{ steps.meta.outputs.tags }}
+          tags: ${{ steps.meta.outputs.tags }}${{ matrix.variant }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VARIANT=${{ matrix.variant }}
+            CUDA_VERSION=${{ matrix.cuda_version }}
 
   build_pypi_index:
     needs: [build_wheels, build_sdist]
@@ -173,7 +193,7 @@ jobs:
 
   pass:
     name: Pass testing build wheels
-    needs: [build_wheels, build_sdist]
+    needs: [build_wheels, build_sdist, build_docker, build_pypi_index]
     runs-on: ubuntu-latest
     if: always()
     steps:
