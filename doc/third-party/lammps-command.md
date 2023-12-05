@@ -82,6 +82,7 @@ Evaluate the interaction of the system by using [Deep Potential][DP] or [Deep Po
 This pair style takes the deep potential defined in a model file that usually has the .pb extension. The model can be trained and frozen by package [DeePMD-kit](https://github.com/deepmodeling/deepmd-kit), which can have either double or single float precision interface.
 
 The model deviation evalulates the consistency of the force predictions from multiple models. By default, only the maximal, minimal and average model deviations are output. If the key `atomic` is set, then the model deviation of force prediction of each atom will be output.
+The unit follows [LAMMPS units](#units) and the [scale factor](https://docs.lammps.org/pair_hybrid.html) is not applied.
 
 By default, the model deviation is output in absolute value. If the keyword `relative` is set, then the relative model deviation of the force will be output, including values output by the keyword `atomic`. The relative model deviation of the force on atom $i$ is defined by
 

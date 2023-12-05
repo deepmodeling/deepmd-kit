@@ -767,12 +767,12 @@ void PairDeepMD::compute(int eflag, int vflag) {
           all_v_avg = sqrt(all_v_avg / 9);
         }
         if (rank == 0) {
-          all_v_max *= scale[1][1] * ener_unit_cvt_factor;
-          all_v_min *= scale[1][1] * ener_unit_cvt_factor;
-          all_v_avg *= scale[1][1] * ener_unit_cvt_factor;
-          all_f_max *= scale[1][1] * force_unit_cvt_factor;
-          all_f_min *= scale[1][1] * force_unit_cvt_factor;
-          all_f_avg *= scale[1][1] * force_unit_cvt_factor;
+          all_v_max *= ener_unit_cvt_factor;
+          all_v_min *= ener_unit_cvt_factor;
+          all_v_avg *= ener_unit_cvt_factor;
+          all_f_max *= force_unit_cvt_factor;
+          all_f_min *= force_unit_cvt_factor;
+          all_f_avg *= force_unit_cvt_factor;
           fp << setw(12) << update->ntimestep << " " << setw(18) << all_v_max
              << " " << setw(18) << all_v_min << " " << setw(18) << all_v_avg
              << " " << setw(18) << all_f_max << " " << setw(18) << all_f_min
