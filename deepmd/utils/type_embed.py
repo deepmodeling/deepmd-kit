@@ -104,6 +104,7 @@ class TypeEmbedNet:
         self.seed = seed
         self.filter_resnet_dt = resnet_dt
         self.filter_precision = get_precision(precision)
+        self.activation_function_name = activation_function
         self.filter_activation_fn = get_activation_func(activation_function)
         self.trainable = trainable
         self.uniform_seed = uniform_seed
@@ -189,3 +190,26 @@ class TypeEmbedNet:
         self.type_embedding_net_variables = (
             get_type_embedding_net_variables_from_graph_def(graph_def, suffix=suffix)
         )
+
+    def serialize(self) -> dict:
+        """Serialize the model.
+
+        Returns
+        -------
+        dict
+            The serialized data
+        """
+        return {
+            "neuron": self.filter_neuron,
+            "resnet_dt": self.filter_resnet_dt,
+            "trainable": self.trainable,
+            "seed": self.seed,
+            "activation_function": self.activation_function_name,
+            "precision": self.filter_precision.name,
+            "uniform_seed": self.uniform_seed,
+            "padding": self.padding,
+            "@variables": {
+                # TODO
+                # "networks": self.to_dp_variables(self.embedding_net_variables),
+            },
+        }
