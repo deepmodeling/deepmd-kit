@@ -799,7 +799,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
           if (rank == 0) {
             for (int dd = 0; dd < all_nlocal; ++dd) {
               std_f_all[tagrecv[dd] - 1] =
-                  stdfrecv[dd] * scale[1][1] * force_unit_cvt_factor;
+                  stdfrecv[dd] * force_unit_cvt_factor;
             }
             for (int dd = 0; dd < all_nlocal; ++dd) {
               fp << " " << setw(18) << std_f_all[dd];
