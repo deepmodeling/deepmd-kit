@@ -798,8 +798,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
                       displacements, MPI_DOUBLE, 0, world);
           if (rank == 0) {
             for (int dd = 0; dd < all_nlocal; ++dd) {
-              std_f_all[tagrecv[dd] - 1] =
-                  stdfrecv[dd] * force_unit_cvt_factor;
+              std_f_all[tagrecv[dd] - 1] = stdfrecv[dd] * force_unit_cvt_factor;
             }
             for (int dd = 0; dd < all_nlocal; ++dd) {
               fp << " " << setw(18) << std_f_all[dd];
