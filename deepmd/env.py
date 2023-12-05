@@ -160,9 +160,9 @@ FITTING_NET_PATTERN = str(
 )[:-1]
 
 TYPE_EMBEDDING_PATTERN = str(
-    r"type_embed_net+/matrix_\d+|"
-    r"type_embed_net+/bias_\d+|"
-    r"type_embed_net+/idt_\d+|"
+    r"type_embed_net+/(matrix)_(\d+)|"
+    r"type_embed_net+/(bias)_(\d+)|"
+    r"type_embed_net+/(idt)_(\d+)|"
 )
 
 ATTENTION_LAYER_PATTERN = str(

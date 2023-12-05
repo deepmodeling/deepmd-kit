@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import re
+from collections import (
+    defaultdict,
+)
 from typing import (
-    DefaultDict,
     Tuple,
 )
 
@@ -181,7 +183,7 @@ class DescrptSe(Descriptor):
             The converted variables
         """
         # TODO: unclear how to hand suffix, maybe we need to add a suffix argument?
-        networks = DefaultDict(NativeNet)
+        networks = defaultdict(NativeNet)
         for key, value in variables.items():
             m = re.search(EMBEDDING_NET_PATTERN, key)
             m = [mm for mm in m.groups() if mm is not None]

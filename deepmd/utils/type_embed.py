@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import re
 from typing import (
     List,
     Optional,
@@ -10,6 +11,7 @@ from deepmd.common import (
     get_precision,
 )
 from deepmd.env import (
+    TYPE_EMBEDDING_PATTERN,
     tf,
 )
 from deepmd.nvnmd.utils.config import (
@@ -20,6 +22,9 @@ from deepmd.utils.graph import (
 )
 from deepmd.utils.network import (
     embedding_net,
+)
+from deepmd_utils.model_format import (
+    NativeNet,
 )
 
 
@@ -200,7 +205,7 @@ class TypeEmbedNet:
             The serialized data
         """
         return {
-            "neuron": self.filter_neuron,
+            "neuron": self.neuron,
             "resnet_dt": self.filter_resnet_dt,
             "trainable": self.trainable,
             "seed": self.seed,
@@ -209,7 +214,28 @@ class TypeEmbedNet:
             "uniform_seed": self.uniform_seed,
             "padding": self.padding,
             "@variables": {
-                # TODO
-                # "networks": self.to_dp_variables(self.embedding_net_variables),
+                "networks": self.to_dp_variables(self.type_embedding_net_variables),
             },
         }
+
+    def to_dp_variables(self, variables: dict) -> dict:
+        """Convert the variables to deepmd format.
+
+        Parameters
+        ----------
+        variables : dict
+            The input variables
+
+        Returns
+        -------
+        dict
+            The converted variables
+        """
+        network = NativeNet()
+        for key, value in variables.items():
+            m = re.search(TYPE_EMBEDDING_PATTERN, key)
+            m = [mm for mm in m.groups() if mm is not None]
+            layer_idx = int(m[1])
+            weight_name = m[0]
+            network[layer_idx][weight_name] = value
+        return network.serialize()
