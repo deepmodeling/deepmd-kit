@@ -785,16 +785,16 @@ void PairDeepMD::compute(int eflag, int vflag) {
           tagint *tag = atom->tag;
           int nprocs = comm->nprocs;
           // Grow arrays if necessary
-          if (nlocal > max_nlocal) {
-            max_nlocal = nlocal;
+          if (all_nlocal > max_nlocal) {
+            max_nlocal = all_nlocal;
             memory->destroy(stdfsend);
             memory->destroy(stdfrecv);
             memory->destroy(tagsend);
             memory->destroy(tagrecv);
-            memory->create(stdfsend, nlocal, "deepmd:stdfsendall");
-            memory->create(stdfrecv, nlocal, "deepmd:stdfrecvall");
-            memory->create(tagsend, nlocal, "deepmd:tagsendall");
-            memory->create(tagrecv, nlocal, "deepmd:tagrecvall");
+            memory->create(stdfsend, all_nlocal, "deepmd:stdfsendall");
+            memory->create(stdfrecv, all_nlocal, "deepmd:stdfrecvall");
+            memory->create(tagsend, all_nlocal, "deepmd:tagsendall");
+            memory->create(tagrecv, all_nlocal, "deepmd:tagrecvall");
           }
           for (int ii = 0; ii < nlocal; ii++) {
             tagsend[ii] = tag[ii];
