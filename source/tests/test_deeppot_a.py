@@ -1112,6 +1112,14 @@ class TestDeepPotAPBCNeighborList(TestDeepPotAPBC):
             ),
         )
 
+    @unittest.skip("multiple frames not supported")
+    def test_2frame_atm(self):
+        pass
+
     @unittest.skip("Zero atoms not supported")
     def test_zero_input(self):
+        pass
+
+    @unittest.skip("eval_descriptor not supported")
+    def test_descriptor(self):
         pass

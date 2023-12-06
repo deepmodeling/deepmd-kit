@@ -481,7 +481,7 @@ class DeepPot(DeepEval):
             aparam = np.reshape(aparam, [nframes, natoms * fdim])
 
         # make natoms_vec and default_mesh
-        if self.neighbor_list is not None:
+        if self.neighbor_list is None:
             natoms_vec = self.make_natoms_vec(atom_types, mixed_type=mixed_type)
             assert natoms_vec[0] == natoms
             mesh = make_default_mesh(pbc, mixed_type)
