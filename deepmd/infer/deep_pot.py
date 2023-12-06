@@ -78,6 +78,7 @@ class DeepPot(DeepEval):
         default_tf_graph: bool = False,
         auto_batch_size: Union[bool, int, AutoBatchSize] = True,
         input_map: Optional[dict] = None,
+        neighbor_list=None,
     ) -> None:
         # add these tensors on top of what is defined by DeepTensor Class
         # use this in favor of dict update to move attribute from class to
@@ -112,6 +113,7 @@ class DeepPot(DeepEval):
             default_tf_graph=default_tf_graph,
             auto_batch_size=auto_batch_size,
             input_map=input_map,
+            neighbor_list=neighbor_list,
         )
 
         # load optional tensors
@@ -479,8 +481,18 @@ class DeepPot(DeepEval):
             aparam = np.reshape(aparam, [nframes, natoms * fdim])
 
         # make natoms_vec and default_mesh
-        natoms_vec = self.make_natoms_vec(atom_types, mixed_type=mixed_type)
-        assert natoms_vec[0] == natoms
+        if self.neighbor_list is not None:
+            natoms_vec = self.make_natoms_vec(atom_types, mixed_type=mixed_type)
+            assert natoms_vec[0] == natoms
+            mesh = make_default_mesh(pbc, mixed_type)
+        else:
+            natoms_vec, coords, atom_types, mesh, imap = self.build_neighbor_list(
+                coords,
+                cells if cells is not None else None,
+                atom_types,
+                imap,
+                self.neighbor_list,
+            )
 
         # evaluate
         feed_dict_test = {}
@@ -501,7 +513,7 @@ class DeepPot(DeepEval):
             raise RuntimeError
         if self.has_efield:
             feed_dict_test[self.t_efield] = np.reshape(efield, [-1])
-        feed_dict_test[self.t_mesh] = make_default_mesh(pbc, mixed_type)
+        feed_dict_test[self.t_mesh] = mesh
         if self.has_fparam:
             feed_dict_test[self.t_fparam] = np.reshape(fparam, [-1])
         if self.has_aparam:
@@ -525,6 +537,9 @@ class DeepPot(DeepEval):
         feed_dict_test, imap, natoms_vec = self._prepare_feed_dict(
             coords, cells, atom_types, fparam, aparam, efield, mixed_type=mixed_type
         )
+
+        nloc = natoms_vec[0]
+        nall = natoms_vec[1]
 
         t_out = [self.t_energy, self.t_force, self.t_virial]
         if atomic:
@@ -556,11 +571,15 @@ class DeepPot(DeepEval):
             av = self.reverse_map(np.reshape(av, [nframes, -1, 9]), imap)
 
         energy = np.reshape(energy, [nframes, 1])
-        force = np.reshape(force, [nframes, natoms, 3])
+        force = np.reshape(force, [nframes, nall, 3])
+        if nloc < nall:
+            force = force[:, :nloc, :]
         virial = np.reshape(virial, [nframes, 9])
         if atomic:
             ae = np.reshape(ae, [nframes, natoms_real, 1])
-            av = np.reshape(av, [nframes, natoms, 9])
+            av = np.reshape(av, [nframes, nall, 9])
+            if nloc < nall:
+                av = av[:, :nloc, :]
             return energy, force, virial, ae, av
         else:
             return energy, force, virial

@@ -3,6 +3,7 @@ import os
 import shutil
 import unittest
 
+import ase.neighborlist
 import numpy as np
 from common import (
     run_dp,
@@ -1096,3 +1097,21 @@ class TestFparamAparam(unittest.TestCase):
         np.testing.assert_almost_equal(ee.ravel(), expected_se.ravel(), default_places)
         expected_sv = np.sum(expected_v.reshape([nframes, -1, 9]), axis=1)
         np.testing.assert_almost_equal(vv.ravel(), expected_sv.ravel(), default_places)
+
+
+class TestDeepPotAPBCNeighborList(TestDeepPotAPBC):
+    @classmethod
+    def setUpClass(cls):
+        convert_pbtxt_to_pb(
+            str(tests_path / os.path.join("infer", "deeppot.pbtxt")), "deeppot.pb"
+        )
+        cls.dp = DeepPot(
+            "deeppot.pb",
+            neighbor_list=ase.neighborlist.NewPrimitiveNeighborList(
+                cutoffs=6, bothways=True
+            ),
+        )
+
+    @unittest.skip("Zero atoms not supported")
+    def test_zero_input(self):
+        pass
