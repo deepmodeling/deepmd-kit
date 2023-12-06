@@ -389,12 +389,12 @@ PairDeepMD::PairDeepMD(LAMMPS *lmp)
   cutoff = 0.;
   numb_types = 0;
   numb_types_spin = 0;
-  max_nlocal = 0;
   numb_models = 0;
   out_freq = 0;
   out_each = 0;
   out_rel = 0;
   out_rel_v = 0;
+  stdf_comm_buff_size = 0;
   eps = 0.;
   eps_v = 0.;
   scale = NULL;
@@ -721,7 +721,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
         }
         double min = numeric_limits<double>::max(), max = 0, avg = 0;
         ana_st(max, min, avg, std_f, nlocal);
-        int all_nlocal = 0;
+        int all_nlocal = atom->natoms;
         MPI_Reduce(&nlocal, &all_nlocal, 1, MPI_INT, MPI_SUM, 0, world);
         double all_f_min = 0, all_f_max = 0, all_f_avg = 0;
         MPI_Reduce(&min, &all_f_min, 1, MPI_DOUBLE, MPI_MIN, 0, world);
@@ -785,16 +785,16 @@ void PairDeepMD::compute(int eflag, int vflag) {
           tagint *tag = atom->tag;
           int nprocs = comm->nprocs;
           // Grow arrays if necessary
-          if (all_nlocal > max_nlocal) {
-            max_nlocal = all_nlocal;
+          if (all_nlocal > stdf_comm_buff_size) {
+            stdf_comm_buff_size = all_nlocal;
             memory->destroy(stdfsend);
             memory->destroy(stdfrecv);
             memory->destroy(tagsend);
             memory->destroy(tagrecv);
-            memory->create(stdfsend, all_nlocal, "deepmd:stdfsendall");
-            memory->create(stdfrecv, all_nlocal, "deepmd:stdfrecvall");
-            memory->create(tagsend, all_nlocal, "deepmd:tagsendall");
-            memory->create(tagrecv, all_nlocal, "deepmd:tagrecvall");
+            memory->create(stdfsend, stdf_comm_buff_size, "deepmd:stdfsendall");
+            memory->create(stdfrecv, stdf_comm_buff_size, "deepmd:stdfrecvall");
+            memory->create(tagsend, stdf_comm_buff_size, "deepmd:tagsendall");
+            memory->create(tagrecv, stdf_comm_buff_size, "deepmd:tagrecvall");
           }
           for (int ii = 0; ii < nlocal; ii++) {
             tagsend[ii] = tag[ii];
@@ -1292,8 +1292,8 @@ void PairDeepMD::init_style() {
   if (out_each == 1) {
     int ntotal = atom->natoms;
     int nprocs = comm->nprocs;
-    if (ntotal > max_nlocal) {
-      max_nlocal = ntotal;
+    if (ntotal > stdf_comm_buff_size) {
+      stdf_comm_buff_size = ntotal;
     }
     memory->create(counts, nprocs, "deepmd:counts");
     memory->create(displacements, nprocs, "deepmd:displacements");
