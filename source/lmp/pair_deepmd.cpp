@@ -766,12 +766,12 @@ void PairDeepMD::compute(int eflag, int vflag) {
           all_v_avg = sqrt(all_v_avg / 9);
         }
         if (rank == 0) {
-          all_v_max *= scale[1][1] * ener_unit_cvt_factor;
-          all_v_min *= scale[1][1] * ener_unit_cvt_factor;
-          all_v_avg *= scale[1][1] * ener_unit_cvt_factor;
-          all_f_max *= scale[1][1] * force_unit_cvt_factor;
-          all_f_min *= scale[1][1] * force_unit_cvt_factor;
-          all_f_avg *= scale[1][1] * force_unit_cvt_factor;
+          all_v_max *= ener_unit_cvt_factor;
+          all_v_min *= ener_unit_cvt_factor;
+          all_v_avg *= ener_unit_cvt_factor;
+          all_f_max *= force_unit_cvt_factor;
+          all_f_min *= force_unit_cvt_factor;
+          all_f_avg *= force_unit_cvt_factor;
           fp << setw(12) << update->ntimestep << " " << setw(18) << all_v_max
              << " " << setw(18) << all_v_min << " " << setw(18) << all_v_avg
              << " " << setw(18) << all_f_max << " " << setw(18) << all_f_min
@@ -809,8 +809,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
                       displacements, MPI_DOUBLE, 0, world);
           if (rank == 0) {
             for (int dd = 0; dd < atom->natoms; ++dd) {
-              std_f_all[tagrecv[dd] - 1] =
-                  stdfrecv[dd] * scale[1][1] * force_unit_cvt_factor;
+              std_f_all[tagrecv[dd] - 1] = stdfrecv[dd] * force_unit_cvt_factor;
             }
             for (int dd = 0; dd < atom->natoms; ++dd) {
               fp << " " << setw(18) << std_f_all[dd];
