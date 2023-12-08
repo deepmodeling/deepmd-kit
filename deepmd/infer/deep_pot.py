@@ -485,8 +485,20 @@ class DeepPot(DeepEval):
             natoms_vec = self.make_natoms_vec(atom_types, mixed_type=mixed_type)
             assert natoms_vec[0] == natoms
             mesh = make_default_mesh(pbc, mixed_type)
+            ghost_map = None
         else:
-            natoms_vec, coords, atom_types, mesh, imap = self.build_neighbor_list(
+            if nframes > 1:
+                raise NotImplementedError(
+                    "neighbor_list does not support multiple frames"
+                )
+            (
+                natoms_vec,
+                coords,
+                atom_types,
+                mesh,
+                imap,
+                ghost_map,
+            ) = self.build_neighbor_list(
                 coords,
                 cells if cells is not None else None,
                 atom_types,
@@ -518,7 +530,7 @@ class DeepPot(DeepEval):
             feed_dict_test[self.t_fparam] = np.reshape(fparam, [-1])
         if self.has_aparam:
             feed_dict_test[self.t_aparam] = np.reshape(aparam, [-1])
-        return feed_dict_test, imap, natoms_vec
+        return feed_dict_test, imap, natoms_vec, ghost_map
 
     def _eval_inner(
         self,
@@ -534,7 +546,7 @@ class DeepPot(DeepEval):
         natoms, nframes = self._get_natoms_and_nframes(
             coords, atom_types, mixed_type=mixed_type
         )
-        feed_dict_test, imap, natoms_vec = self._prepare_feed_dict(
+        feed_dict_test, imap, natoms_vec, ghost_map = self._prepare_feed_dict(
             coords, cells, atom_types, fparam, aparam, efield, mixed_type=mixed_type
         )
 
@@ -563,6 +575,13 @@ class DeepPot(DeepEval):
             )
         else:
             natoms_real = natoms
+        if ghost_map is not None:
+            # add the value of ghost atoms to real atoms
+            force = np.reshape(force, [nframes, -1, 3])
+            np.add.at(force[0], ghost_map, force[0, nloc:])
+            if atomic:
+                av = np.reshape(av, [nframes, -1, 9])
+                np.add.at(av[0], ghost_map, av[0, nloc:])
 
         # reverse map of the outputs
         force = self.reverse_map(np.reshape(force, [nframes, -1, 3]), imap)
@@ -659,10 +678,11 @@ class DeepPot(DeepEval):
         natoms, nframes = self._get_natoms_and_nframes(
             coords, atom_types, mixed_type=mixed_type
         )
-        feed_dict_test, imap, natoms_vec = self._prepare_feed_dict(
+        feed_dict_test, imap, natoms_vec, ghost_map = self._prepare_feed_dict(
             coords, cells, atom_types, fparam, aparam, efield, mixed_type=mixed_type
         )
         (descriptor,) = run_sess(
             self.sess, [self.t_descriptor], feed_dict=feed_dict_test
         )
+        imap = imap[:natoms]
         return self.reverse_map(np.reshape(descriptor, [nframes, natoms, -1]), imap)

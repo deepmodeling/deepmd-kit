@@ -88,9 +88,6 @@ class DeepEval:
             raise TypeError("auto_batch_size should be bool, int, or AutoBatchSize")
 
         self.neighbor_list = neighbor_list
-        if neighbor_list is not None and self.auto_batch_size is not None:
-            # force nbatch = 1
-            self.auto_batch_size.maximum_working_batch_size = 1
 
     @property
     @lru_cache(maxsize=None)
@@ -408,6 +405,8 @@ class DeepEval:
             The mesh in nei_mode=4.
         imap : np.ndarray
             The index map of atoms. Should be of shape [nall]
+        ghost_map : np.ndarray
+            The index map of ghost atoms. Should be of shape [nghost]
         """
         pbc = np.repeat(cell is not None, 3)
         cell = cell.reshape(3, 3)
@@ -432,6 +431,7 @@ class DeepEval:
         all_coords = np.concatenate((positions, out_coords), axis=0)
         all_atype = np.concatenate((atype, out_atype), axis=0)
         # convert neighbor indexes
+        ghost_map = pair_second[out_mask]
         pair_second[out_mask] = np.arange(nloc, nloc + nghost)
         # get the mesh
         mesh = np.zeros(16 + nloc * 2 + pair_second.size, dtype=int)
@@ -451,4 +451,4 @@ class DeepEval:
             natoms_vec[ii + 2] = np.count_nonzero(atype == ii)
         # imap append ghost atoms
         imap = np.concatenate((imap, np.arange(nloc, nloc + nghost)))
-        return natoms_vec, all_coords, all_atype, mesh, imap
+        return natoms_vec, all_coords, all_atype, mesh, imap, ghost_map

@@ -1119,7 +1119,3 @@ class TestDeepPotAPBCNeighborList(TestDeepPotAPBC):
     @unittest.skip("Zero atoms not supported")
     def test_zero_input(self):
         pass
-
-    @unittest.skip("eval_descriptor not supported")
-    def test_descriptor(self):
-        pass
