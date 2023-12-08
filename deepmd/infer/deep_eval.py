@@ -45,6 +45,9 @@ class DeepEval:
         as the initial batch size.
     input_map : dict, optional
         The input map for tf.import_graph_def. Only work with default tf graph
+    neighbor_list : ase.neighborlist.NewPrimitiveNeighborList, optional
+        The ASE neighbor list class to produce the neighbor list. If None, the
+        neighbor list will be built natively in the model.
     """
 
     load_prefix: str  # set by subclass
