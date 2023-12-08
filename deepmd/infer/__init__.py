@@ -58,6 +58,7 @@ def DeepPotential(
     load_prefix: str = "load",
     default_tf_graph: bool = False,
     input_map: Optional[dict] = None,
+    neighbor_list=None,
 ) -> Union[DeepDipole, DeepGlobalPolar, DeepPolar, DeepPot, DeepDOS, DeepWFC]:
     """Factory function that will inialize appropriate potential read from `model_file`.
 
@@ -71,6 +72,8 @@ def DeepPotential(
         If uses the default tf graph, otherwise build a new tf graph for evaluation
     input_map : dict, optional
         The input map for tf.import_graph_def. Only work with default tf graph
+    neighbor_list : ase.neighborlist.NeighborList, optional
+        The neighbor list object. If None, then build the native neighbor list.
 
     Returns
     -------
@@ -97,6 +100,7 @@ def DeepPotential(
             load_prefix=load_prefix,
             default_tf_graph=default_tf_graph,
             input_map=input_map,
+            neighbor_list=neighbor_list,
         )
     elif model_type == "dos":
         dp = DeepDOS(
@@ -111,6 +115,7 @@ def DeepPotential(
             load_prefix=load_prefix,
             default_tf_graph=default_tf_graph,
             input_map=input_map,
+            neighbor_list=neighbor_list,
         )
     elif model_type == "polar":
         dp = DeepPolar(
@@ -118,6 +123,7 @@ def DeepPotential(
             load_prefix=load_prefix,
             default_tf_graph=default_tf_graph,
             input_map=input_map,
+            neighbor_list=neighbor_list,
         )
     elif model_type == "global_polar":
         dp = DeepGlobalPolar(
@@ -125,6 +131,7 @@ def DeepPotential(
             load_prefix=load_prefix,
             default_tf_graph=default_tf_graph,
             input_map=input_map,
+            neighbor_list=neighbor_list,
         )
     elif model_type == "wfc":
         dp = DeepWFC(

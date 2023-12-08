@@ -45,6 +45,8 @@ class DP(Calculator):
     type_dict : Dict[str, int], optional
         mapping of element types and their numbers, best left None and the calculator
         will infer this information from model, by default None
+    neighbor_list : ase.neighborlist.NeighborList, optional
+        The neighbor list object. If None, then build the native neighbor list.
 
     Examples
     --------
@@ -83,10 +85,11 @@ class DP(Calculator):
         model: Union[str, "Path"],
         label: str = "DP",
         type_dict: Optional[Dict[str, int]] = None,
+        neighbor_list=None,
         **kwargs,
     ) -> None:
         Calculator.__init__(self, label=label, **kwargs)
-        self.dp = DeepPotential(str(Path(model).resolve()))
+        self.dp = DeepPotential(str(Path(model).resolve()), neighbor_list=neighbor_list)
         if type_dict:
             self.type_dict = type_dict
         else:

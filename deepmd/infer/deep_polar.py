@@ -30,6 +30,8 @@ class DeepPolar(DeepTensor):
         If uses the default tf graph, otherwise build a new tf graph for evaluation
     input_map : dict, optional
         The input map for tf.import_graph_def. Only work with default tf graph
+    neighbor_list : ase.neighborlist.NeighborList, optional
+        The neighbor list object. If None, then build the native neighbor list.
 
     Warnings
     --------
@@ -44,6 +46,7 @@ class DeepPolar(DeepTensor):
         load_prefix: str = "load",
         default_tf_graph: bool = False,
         input_map: Optional[dict] = None,
+        neighbor_list=None,
     ) -> None:
         # use this in favor of dict update to move attribute from class to
         # instance namespace
@@ -61,6 +64,7 @@ class DeepPolar(DeepTensor):
             load_prefix=load_prefix,
             default_tf_graph=default_tf_graph,
             input_map=input_map,
+            neighbor_list=neighbor_list,
         )
 
     def get_dim_fparam(self) -> int:
@@ -83,10 +87,16 @@ class DeepGlobalPolar(DeepTensor):
         The prefix in the load computational graph
     default_tf_graph : bool
         If uses the default tf graph, otherwise build a new tf graph for evaluation
+    neighbor_list : ase.neighborlist.NeighborList, optional
+        The neighbor list object. If None, then build the native neighbor list.
     """
 
     def __init__(
-        self, model_file: str, load_prefix: str = "load", default_tf_graph: bool = False
+        self,
+        model_file: str,
+        load_prefix: str = "load",
+        default_tf_graph: bool = False,
+        neighbor_list=None,
     ) -> None:
         self.tensors.update(
             {
@@ -101,6 +111,7 @@ class DeepGlobalPolar(DeepTensor):
             model_file,
             load_prefix=load_prefix,
             default_tf_graph=default_tf_graph,
+            neighbor_list=None,
         )
 
     def eval(

@@ -1034,6 +1034,10 @@ class TestDeepDipoleFakePBC(unittest.TestCase):
         )
 
 
+@unittest.skipIf(
+    parse_version(tf.__version__) < parse_version("1.15"),
+    f"The current tf version {tf.__version__} is too low to run the new testing model.",
+)
 class TestDeepDipoleNewPBCNeighborList(TestDeepDipoleNewPBC):
     @classmethod
     def setUpClass(cls):
