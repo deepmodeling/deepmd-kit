@@ -2,6 +2,7 @@
 import os
 import unittest
 
+import ase.neighborlist
 import numpy as np
 from common import (
     finite_difference,
@@ -964,10 +965,6 @@ class TestDeepDipoleFakePBC(unittest.TestCase):
         gt, ff, vv, at, av = self.dp.eval_full(
             self.coords, self.box, self.atype, atomic=True
         )
-        for dd in at, ff, av:
-            print("\n\n")
-            print(", ".join(f"{ii:.18e}" for ii in dd.reshape(-1)))
-            print("\n\n")
         # check shape of the returns
         nframes = 1
         natoms = len(self.atype)
@@ -1035,3 +1032,26 @@ class TestDeepDipoleFakePBC(unittest.TestCase):
         np.testing.assert_almost_equal(
             vv.reshape([-1]), self.expected_gv.reshape([-1]), decimal=default_places
         )
+
+
+class TestDeepDipoleNewPBCNeighborList(TestDeepDipoleNewPBC):
+    @classmethod
+    def setUpClass(cls):
+        convert_pbtxt_to_pb(
+            str(tests_path / os.path.join("infer", "deepdipole_new.pbtxt")),
+            "deepdipole_new.pb",
+        )
+        cls.dp = DeepDipole(
+            "deepdipole_new.pb",
+            neighbor_list=ase.neighborlist.NewPrimitiveNeighborList(
+                cutoffs=6, bothways=True
+            ),
+        )
+
+    @unittest.skip("multiple frames not supported")
+    def test_2frame_full_atm(self):
+        pass
+
+    @unittest.skip("multiple frames not supported")
+    def test_2frame_old_atm(self):
+        pass
