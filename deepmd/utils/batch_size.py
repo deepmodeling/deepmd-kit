@@ -7,8 +7,12 @@ from typing import (
 )
 
 import numpy as np
+from packaging.version import (
+    Version,
+)
 
 from deepmd.env import (
+    TF_VERSION,
     tf,
 )
 from deepmd.utils.errors import (
@@ -59,7 +63,7 @@ class AutoBatchSize:
             self.minimal_not_working_batch_size = self.maximum_working_batch_size + 1
         else:
             self.maximum_working_batch_size = initial_batch_size
-            if tf.test.is_gpu_available():
+            if (Version(TF_VERSION) >= Version("1.14") and tf.config.experimental.get_visible_devices('GPU')) or tf.test.is_gpu_available():
                 self.minimal_not_working_batch_size = 2**31
             else:
                 self.minimal_not_working_batch_size = (
