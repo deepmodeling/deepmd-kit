@@ -39,6 +39,8 @@ class DeepTensor(DeepEval):
         If uses the default tf graph, otherwise build a new tf graph for evaluation
     input_map : dict, optional
         The input map for tf.import_graph_def. Only work with default tf graph
+    neighbor_list : ase.neighborlist.NeighborList, optional
+        The neighbor list object. If None, then build the native neighbor list.
     """
 
     tensors: ClassVar[Dict[str, str]] = {
@@ -63,6 +65,7 @@ class DeepTensor(DeepEval):
         load_prefix: str = "load",
         default_tf_graph: bool = False,
         input_map: Optional[dict] = None,
+        neighbor_list=None,
     ) -> None:
         """Constructor."""
         DeepEval.__init__(
@@ -71,6 +74,7 @@ class DeepTensor(DeepEval):
             load_prefix=load_prefix,
             default_tf_graph=default_tf_graph,
             input_map=input_map,
+            neighbor_list=neighbor_list,
         )
         # check model type
         model_type = self.tensors["t_tensor"][2:-2]
@@ -209,8 +213,29 @@ class DeepTensor(DeepEval):
         )
 
         # make natoms_vec and default_mesh
-        natoms_vec = self.make_natoms_vec(atom_types, mixed_type=mixed_type)
-        assert natoms_vec[0] == natoms
+        if self.neighbor_list is None:
+            natoms_vec = self.make_natoms_vec(atom_types, mixed_type=mixed_type)
+            assert natoms_vec[0] == natoms
+            mesh = make_default_mesh(pbc, mixed_type)
+        else:
+            if nframes > 1:
+                raise NotImplementedError(
+                    "neighbor_list does not support multiple frames"
+                )
+            (
+                natoms_vec,
+                coords,
+                atom_types,
+                mesh,
+                imap,
+                _,
+            ) = self.build_neighbor_list(
+                coords,
+                cells if cells is not None else None,
+                atom_types,
+                imap,
+                self.neighbor_list,
+            )
 
         # evaluate
         feed_dict_test = {}
@@ -223,7 +248,7 @@ class DeepTensor(DeepEval):
             )
         feed_dict_test[self.t_coord] = np.reshape(coords, [-1])
         feed_dict_test[self.t_box] = np.reshape(cells, [-1])
-        feed_dict_test[self.t_mesh] = make_default_mesh(pbc, mixed_type)
+        feed_dict_test[self.t_mesh] = mesh
 
         if atomic:
             assert (
@@ -333,8 +358,30 @@ class DeepTensor(DeepEval):
         )
 
         # make natoms_vec and default_mesh
-        natoms_vec = self.make_natoms_vec(atom_types, mixed_type=mixed_type)
-        assert natoms_vec[0] == natoms
+        if self.neighbor_list is None:
+            natoms_vec = self.make_natoms_vec(atom_types, mixed_type=mixed_type)
+            assert natoms_vec[0] == natoms
+            mesh = make_default_mesh(pbc, mixed_type)
+            ghost_map = None
+        else:
+            if nframes > 1:
+                raise NotImplementedError(
+                    "neighbor_list does not support multiple frames"
+                )
+            (
+                natoms_vec,
+                coords,
+                atom_types,
+                mesh,
+                imap,
+                ghost_map,
+            ) = self.build_neighbor_list(
+                coords,
+                cells if cells is not None else None,
+                atom_types,
+                imap,
+                self.neighbor_list,
+            )
 
         # evaluate
         feed_dict_test = {}
@@ -347,7 +394,7 @@ class DeepTensor(DeepEval):
             )
         feed_dict_test[self.t_coord] = np.reshape(coords, [-1])
         feed_dict_test[self.t_box] = np.reshape(cells, [-1])
-        feed_dict_test[self.t_mesh] = make_default_mesh(pbc, mixed_type)
+        feed_dict_test[self.t_mesh] = mesh
 
         t_out = [self.t_global_tensor, self.t_force, self.t_virial]
         if atomic:
@@ -361,21 +408,39 @@ class DeepTensor(DeepEval):
             at = v_out[3]  # atom tensor
             av = v_out[4]  # atom virial
 
+        nloc = natoms_vec[0]
+        nall = natoms_vec[1]
+
+        if ghost_map is not None:
+            # add the value of ghost atoms to real atoms
+            force = np.reshape(force, [nframes * nout, -1, 3])
+            # TODO: is there some way not to use for loop?
+            for ii in range(nframes * nout):
+                np.add.at(force[ii], ghost_map, force[ii, nloc:])
+            if atomic:
+                av = np.reshape(av, [nframes * nout, -1, 9])
+                for ii in range(nframes * nout):
+                    np.add.at(av[ii], ghost_map, av[ii, nloc:])
+
         # please note here the shape are wrong!
-        force = self.reverse_map(np.reshape(force, [nframes * nout, natoms, 3]), imap)
+        force = self.reverse_map(np.reshape(force, [nframes * nout, nall, 3]), imap)
         if atomic:
             at = self.reverse_map(
                 np.reshape(at, [nframes, len(sel_at), nout]), sel_imap
             )
-            av = self.reverse_map(np.reshape(av, [nframes * nout, natoms, 9]), imap)
+            av = self.reverse_map(np.reshape(av, [nframes * nout, nall, 9]), imap)
 
         # make sure the shapes are correct here
         gt = np.reshape(gt, [nframes, nout])
-        force = np.reshape(force, [nframes, nout, natoms, 3])
+        force = np.reshape(force, [nframes, nout, nall, 3])
+        if nloc < nall:
+            force = force[:, :, :nloc, :]
         virial = np.reshape(virial, [nframes, nout, 9])
         if atomic:
             at = np.reshape(at, [nframes, len(sel_at), self.output_dim])
-            av = np.reshape(av, [nframes, nout, natoms, 9])
+            av = np.reshape(av, [nframes, nout, nall, 9])
+            if nloc < nall:
+                av = av[:, :, :nloc, :]
             return gt, force, virial, at, av
         else:
             return gt, force, virial
