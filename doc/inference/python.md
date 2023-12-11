@@ -40,7 +40,7 @@ import ase.neighborlist
 neighbor_list = ase.neighborlist.NewPrimitiveNeighborList(
     cutoffs=6, bothways=True, self_interaction=False
 )
-dp = DeepPot("graph.pb", neighbor_list = neighbor_list)
+dp = DeepPot("graph.pb", neighbor_list=neighbor_list)
 ```
 
 The `update` and `build` methods will be called by {class}`DeepPot <deepmd.infer.DeepPot>`, and `first_neigh`, `pair_second`, and `offset_vec` properties will be used.
