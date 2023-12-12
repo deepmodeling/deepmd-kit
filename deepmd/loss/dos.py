@@ -143,16 +143,20 @@ class DOSLoss(Loss):
         more_loss = {}
         if self.has_dos:
             l2_loss += atom_norm_ener * (pref_dos * l2_dos_loss)
-            more_loss["l2_dos_loss"] = l2_dos_loss
+            more_loss["l2_dos_loss"] = self.display_if_exist(l2_dos_loss, find_dos)
         if self.has_cdf:
             l2_loss += atom_norm_ener * (pref_cdf * l2_cdf_loss)
-            more_loss["l2_cdf_loss"] = l2_cdf_loss
+            more_loss["l2_cdf_loss"] = self.display_if_exist(l2_cdf_loss, find_dos)
         if self.has_ados:
             l2_loss += global_cvt_2_ener_float(pref_ados * l2_atom_dos_loss)
-            more_loss["l2_atom_dos_loss"] = l2_atom_dos_loss
+            more_loss["l2_atom_dos_loss"] = self.display_if_exist(
+                l2_atom_dos_loss, find_atom_dos
+            )
         if self.has_acdf:
             l2_loss += global_cvt_2_ener_float(pref_acdf * l2_atom_cdf_loss)
-            more_loss["l2_atom_cdf_loss"] = l2_atom_cdf_loss
+            more_loss["l2_atom_cdf_loss"] = self.display_if_exist(
+                l2_atom_cdf_loss, find_atom_dos
+            )
 
         # only used when tensorboard was set as true
         self.l2_loss_summary = tf.summary.scalar("l2_loss_" + suffix, tf.sqrt(l2_loss))
