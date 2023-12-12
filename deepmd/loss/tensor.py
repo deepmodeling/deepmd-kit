@@ -87,7 +87,7 @@ class TensorLoss(Loss):
             local_loss = global_cvt_2_tf_float(find_atomic) * tf.reduce_mean(
                 tf.square(self.scale * (polar - atomic_polar_hat)), name="l2_" + suffix
             )
-            more_loss["local_loss"] = local_loss
+            more_loss["local_loss"] = self.display_if_exist(local_loss, find_atomic)
             l2_loss += self.local_weight * local_loss
             self.l2_loss_local_summary = tf.summary.scalar(
                 "l2_local_loss_" + suffix, tf.sqrt(more_loss["local_loss"])
@@ -118,7 +118,7 @@ class TensorLoss(Loss):
                 tf.square(self.scale * (global_polar - polar_hat)), name="l2_" + suffix
             )
 
-            more_loss["global_loss"] = global_loss
+            more_loss["global_loss"] = self.display_if_exist(global_loss, find_global)
             self.l2_loss_global_summary = tf.summary.scalar(
                 "l2_global_loss_" + suffix,
                 tf.sqrt(more_loss["global_loss"]) / global_cvt_2_tf_float(atoms),

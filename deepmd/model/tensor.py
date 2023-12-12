@@ -135,10 +135,12 @@ class TensorModel(StandardModel):
 
         # type embedding if any
         if self.typeebd is not None:
-            type_embedding = self.typeebd.build(
+            type_embedding = self.build_type_embedding(
                 self.ntypes,
                 reuse=reuse,
                 suffix=suffix,
+                ckpt_meta=ckpt_meta,
+                frz_model=frz_model,
             )
             input_dict["type_embedding"] = type_embedding
             input_dict["atype"] = atype_

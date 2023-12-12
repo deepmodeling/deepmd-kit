@@ -41,6 +41,8 @@ from deepmd.utils.errors import (
     GraphWithoutTensorError,
 )
 from deepmd.utils.graph import (
+    get_extra_embedding_net_suffix,
+    get_extra_embedding_net_variables_from_graph_def,
     get_pattern_nodes_from_graph_def,
     get_tensor_by_name_from_graph,
 )
@@ -204,7 +206,7 @@ class DescrptSeA(DescrptSe):
         self.type_one_side = type_one_side
         self.spin = spin
         self.stripped_type_embedding = stripped_type_embedding
-        self.extra_embeeding_net_variables = None
+        self.extra_embedding_net_variables = None
         self.layer_size = len(neuron)
 
         # extend sel_a for spin system
@@ -470,11 +472,13 @@ class DescrptSeA(DescrptSe):
             )
 
         if self.stripped_type_embedding:
+            one_side_suffix = get_extra_embedding_net_suffix(type_one_side=True)
+            two_side_suffix = get_extra_embedding_net_suffix(type_one_side=False)
             ret_two_side = get_pattern_nodes_from_graph_def(
-                graph_def, f"filter_type_all{suffix}/.+_two_side_ebd"
+                graph_def, f"filter_type_all{suffix}/.+{two_side_suffix}"
             )
             ret_one_side = get_pattern_nodes_from_graph_def(
-                graph_def, f"filter_type_all{suffix}/.+_one_side_ebd"
+                graph_def, f"filter_type_all{suffix}/.+{one_side_suffix}"
             )
             if len(ret_two_side) == 0 and len(ret_one_side) == 0:
                 raise RuntimeError(
@@ -487,19 +491,19 @@ class DescrptSeA(DescrptSe):
             elif len(ret_two_side) != 0:
                 self.final_type_embedding = get_two_side_type_embedding(self, graph)
                 self.matrix = get_extra_side_embedding_net_variable(
-                    self, graph_def, "two_side", "matrix", suffix
+                    self, graph_def, two_side_suffix, "matrix", suffix
                 )
                 self.bias = get_extra_side_embedding_net_variable(
-                    self, graph_def, "two_side", "bias", suffix
+                    self, graph_def, two_side_suffix, "bias", suffix
                 )
                 self.extra_embedding = make_data(self, self.final_type_embedding)
             else:
                 self.final_type_embedding = get_type_embedding(self, graph)
                 self.matrix = get_extra_side_embedding_net_variable(
-                    self, graph_def, "one_side", "matrix", suffix
+                    self, graph_def, one_side_suffix, "matrix", suffix
                 )
                 self.bias = get_extra_side_embedding_net_variable(
-                    self, graph_def, "one_side", "bias", suffix
+                    self, graph_def, one_side_suffix, "bias", suffix
                 )
                 self.extra_embedding = make_data(self, self.final_type_embedding)
 
@@ -778,16 +782,16 @@ class DescrptSeA(DescrptSe):
             type_i = -1
             if nvnmd_cfg.enable and nvnmd_cfg.quantize_descriptor:
                 inputs_i = descrpt2r4(inputs_i, natoms)
+            self.atype_nloc = tf.reshape(
+                tf.slice(atype, [0, 0], [-1, natoms[0]]), [-1]
+            )  # when nloc != nall, pass nloc to mask
             if len(self.exclude_types):
-                atype_nloc = tf.reshape(
-                    tf.slice(atype, [0, 0], [-1, natoms[0]]), [-1]
-                )  # when nloc != nall, pass nloc to mask
                 mask = self.build_type_exclude_mask(
                     self.exclude_types,
                     self.ntypes,
                     self.sel_a,
                     self.ndescrpt,
-                    atype_nloc,
+                    self.atype_nloc,
                     tf.shape(inputs_i)[0],
                 )
                 inputs_i *= mask
@@ -952,7 +956,7 @@ class DescrptSeA(DescrptSe):
                     extra_embedding_index = self.nei_type_vec
                 else:
                     padding_ntypes = type_embedding.shape[0]
-                    atype_expand = tf.reshape(self.atype, [-1, 1])
+                    atype_expand = tf.reshape(self.atype_nloc, [-1, 1])
                     idx_i = tf.tile(atype_expand * padding_ntypes, [1, self.nnei])
                     idx_j = tf.reshape(self.nei_type_vec, [-1, self.nnei])
                     idx = idx_i + idx_j
@@ -961,20 +965,21 @@ class DescrptSeA(DescrptSe):
 
                 if not self.compress:
                     if self.type_one_side:
-                        one_side_type_embedding_suffix = "_one_side_ebd"
                         net_output = embedding_net(
                             type_embedding,
                             self.filter_neuron,
                             self.filter_precision,
                             activation_fn=activation_fn,
                             resnet_dt=self.filter_resnet_dt,
-                            name_suffix=one_side_type_embedding_suffix,
+                            name_suffix=get_extra_embedding_net_suffix(
+                                self.type_one_side
+                            ),
                             stddev=stddev,
                             bavg=bavg,
                             seed=self.seed,
                             trainable=trainable,
                             uniform_seed=self.uniform_seed,
-                            initial_variables=self.extra_embeeding_net_variables,
+                            initial_variables=self.extra_embedding_net_variables,
                             mixed_prec=self.mixed_prec,
                         )
                         net_output = tf.nn.embedding_lookup(
@@ -997,27 +1002,21 @@ class DescrptSeA(DescrptSe):
                             [-1, two_side_type_embedding.shape[-1]],
                         )
 
-                        atype_expand = tf.reshape(self.atype, [-1, 1])
-                        idx_i = tf.tile(atype_expand * padding_ntypes, [1, self.nnei])
-                        idx_j = tf.reshape(self.nei_type_vec, [-1, self.nnei])
-                        idx = idx_i + idx_j
-                        index_of_two_side = tf.reshape(idx, [-1])
-                        self.extra_embedding_index = index_of_two_side
-
-                        two_side_type_embedding_suffix = "_two_side_ebd"
                         net_output = embedding_net(
                             two_side_type_embedding,
                             self.filter_neuron,
                             self.filter_precision,
                             activation_fn=activation_fn,
                             resnet_dt=self.filter_resnet_dt,
-                            name_suffix=two_side_type_embedding_suffix,
+                            name_suffix=get_extra_embedding_net_suffix(
+                                self.type_one_side
+                            ),
                             stddev=stddev,
                             bavg=bavg,
                             seed=self.seed,
                             trainable=trainable,
                             uniform_seed=self.uniform_seed,
-                            initial_variables=self.extra_embeeding_net_variables,
+                            initial_variables=self.extra_embedding_net_variables,
                             mixed_prec=self.mixed_prec,
                         )
                         net_output = tf.nn.embedding_lookup(net_output, idx)
@@ -1327,6 +1326,15 @@ class DescrptSeA(DescrptSe):
                 self.dstd = new_dstd
                 if self.original_sel is None:
                     self.original_sel = sel
+        if self.stripped_type_embedding:
+            self.extra_embedding_net_variables = (
+                get_extra_embedding_net_variables_from_graph_def(
+                    graph_def,
+                    suffix,
+                    get_extra_embedding_net_suffix(self.type_one_side),
+                    self.layer_size,
+                )
+            )
 
     @property
     def explicit_ntypes(self) -> bool:

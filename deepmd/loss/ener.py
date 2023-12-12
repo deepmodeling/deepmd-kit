@@ -291,22 +291,32 @@ class EnerStdLoss(Loss):
         more_loss = {}
         if self.has_e:
             l2_loss += atom_norm_ener * (pref_e * l2_ener_loss)
-            more_loss["l2_ener_loss"] = l2_ener_loss
+            more_loss["l2_ener_loss"] = self.display_if_exist(l2_ener_loss, find_energy)
         if self.has_f:
             l2_loss += global_cvt_2_ener_float(pref_f * l2_force_loss)
-            more_loss["l2_force_loss"] = l2_force_loss
+            more_loss["l2_force_loss"] = self.display_if_exist(
+                l2_force_loss, find_force
+            )
         if self.has_v:
             l2_loss += global_cvt_2_ener_float(atom_norm * (pref_v * l2_virial_loss))
-            more_loss["l2_virial_loss"] = l2_virial_loss
+            more_loss["l2_virial_loss"] = self.display_if_exist(
+                l2_virial_loss, find_virial
+            )
         if self.has_ae:
             l2_loss += global_cvt_2_ener_float(pref_ae * l2_atom_ener_loss)
-            more_loss["l2_atom_ener_loss"] = l2_atom_ener_loss
+            more_loss["l2_atom_ener_loss"] = self.display_if_exist(
+                l2_atom_ener_loss, find_atom_ener
+            )
         if self.has_pf:
             l2_loss += global_cvt_2_ener_float(pref_pf * l2_pref_force_loss)
-            more_loss["l2_pref_force_loss"] = l2_pref_force_loss
+            more_loss["l2_pref_force_loss"] = self.display_if_exist(
+                l2_pref_force_loss, find_atom_pref
+            )
         if self.has_gf:
             l2_loss += global_cvt_2_ener_float(pref_gf * l2_gen_force_loss)
-            more_loss["l2_gen_force_loss"] = l2_gen_force_loss
+            more_loss["l2_gen_force_loss"] = self.display_if_exist(
+                l2_gen_force_loss, find_drdq
+            )
 
         # only used when tensorboard was set as true
         self.l2_loss_summary = tf.summary.scalar("l2_loss_" + suffix, tf.sqrt(l2_loss))
@@ -553,19 +563,25 @@ class EnerSpinLoss(Loss):
         more_loss = {}
         if self.has_e:
             l2_loss += atom_norm_ener * (pref_e * l2_ener_loss)
-        more_loss["l2_ener_loss"] = l2_ener_loss
+        more_loss["l2_ener_loss"] = self.display_if_exist(l2_ener_loss, find_energy)
         if self.has_fr:
             l2_loss += global_cvt_2_ener_float(pref_fr * l2_force_r_loss)
-        more_loss["l2_force_r_loss"] = l2_force_r_loss
+        more_loss["l2_force_r_loss"] = self.display_if_exist(
+            l2_force_r_loss, find_force
+        )
         if self.has_fm:
             l2_loss += global_cvt_2_ener_float(pref_fm * l2_force_m_loss)
-        more_loss["l2_force_m_loss"] = l2_force_m_loss
+        more_loss["l2_force_m_loss"] = self.display_if_exist(
+            l2_force_m_loss, find_force
+        )
         if self.has_v:
             l2_loss += global_cvt_2_ener_float(atom_norm * (pref_v * l2_virial_loss))
-        more_loss["l2_virial_loss"] = l2_virial_loss
+        more_loss["l2_virial_loss"] = self.display_if_exist(l2_virial_loss, find_virial)
         if self.has_ae:
             l2_loss += global_cvt_2_ener_float(pref_ae * l2_atom_ener_loss)
-        more_loss["l2_atom_ener_loss"] = l2_atom_ener_loss
+        more_loss["l2_atom_ener_loss"] = self.display_if_exist(
+            l2_atom_ener_loss, find_atom_ener
+        )
 
         # only used when tensorboard was set as true
         self.l2_loss_summary = tf.summary.scalar("l2_loss", tf.sqrt(l2_loss))
@@ -785,8 +801,10 @@ class EnerDipoleLoss(Loss):
         more_loss = {}
         l2_loss += atom_norm_ener * (pref_e * l2_ener_loss)
         l2_loss += global_cvt_2_ener_float(pref_ed * l2_ener_dipole_loss)
-        more_loss["l2_ener_loss"] = l2_ener_loss
-        more_loss["l2_ener_dipole_loss"] = l2_ener_dipole_loss
+        more_loss["l2_ener_loss"] = self.display_if_exist(l2_ener_loss, find_energy)
+        more_loss["l2_ener_dipole_loss"] = self.display_if_exist(
+            l2_ener_dipole_loss, find_ener_dipole
+        )
 
         self.l2_loss_summary = tf.summary.scalar("l2_loss_" + suffix, tf.sqrt(l2_loss))
         self.l2_loss_ener_summary = tf.summary.scalar(

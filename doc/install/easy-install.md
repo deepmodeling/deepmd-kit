@@ -58,7 +58,7 @@ conda activate deepmd
 DeePMD-kit is also available on the [conda-forge](https://conda-forge.org/) channel:
 
 ```bash
-conda create -n deepmd deepmd-kit lammps -c conda-forge
+conda create -n deepmd deepmd-kit lammps horovod -c conda-forge
 ```
 
 The supported platform includes Linux x86-64, macOS x86-64, and macOS arm64.
@@ -91,6 +91,12 @@ pip install deepmd-kit[gpu,cu12]
 ```
 
 `cu12` is required only when CUDA Toolkit and cuDNN were not installed.
+
+To install the package built against CUDA 11.8, use
+
+```bash
+pip install deepmd-kit-cu11[gpu,cu11]
+```
 
 Or install the CPU version without CUDA supported:
 ```bash

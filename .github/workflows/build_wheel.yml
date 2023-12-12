@@ -33,6 +33,13 @@ jobs:
             python: 311
             platform_id: manylinux_x86_64
             dp_variant: cuda
+            cuda_version: 12.2
+          - os: ubuntu-latest
+            python: 311
+            platform_id: manylinux_x86_64
+            dp_variant: cuda
+            cuda_version: 11.8
+            dp_pkg_name: deepmd-kit-cu11
           # macos-x86-64
           - os: macos-latest
             python: 311
@@ -68,6 +75,8 @@ jobs:
           CIBW_ARCHS: all
           CIBW_BUILD: cp${{ matrix.python }}-${{ matrix.platform_id }}
           DP_VARIANT: ${{ matrix.dp_variant }}
+          CUDA_VERSION: ${{ matrix.cuda_version }}
+          DP_PKG_NAME: ${{ matrix.dp_pkg_name }}
       - uses: actions/upload-artifact@v3
         with:
           path: ./wheelhouse/*.whl
@@ -78,7 +87,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: actions/setup-python@v4
+      - uses: actions/setup-python@v5
         name: Install Python
         with:
           python-version: '3.11'
@@ -109,6 +118,14 @@ jobs:
     # use the already built wheels to build docker
     needs: [build_wheels]
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: ""
+            cuda_version: "12"
+          - variant: "_cu11"
+            cuda_version: "11"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v3
@@ -124,17 +141,20 @@ jobs:
 
       - name: Extract metadata (tags, labels) for Docker
         id: meta
-        uses: docker/metadata-action@96383f45573cb7f253c731d3b3ab81c87ef81934
+        uses: docker/metadata-action@31cebacef4805868f9ce9a0cb03ee36c32df2ac4
         with:
           images: ghcr.io/deepmodeling/deepmd-kit
 
       - name: Build and push Docker image
-        uses: docker/build-push-action@0565240e2d4ab88bba5387d719585280857ece09
+        uses: docker/build-push-action@4a13e500e55cf31b7a5d59a38ab2040ab0f42f56
         with:
           context: source/install/docker
-          push: ${{ github.repository_owner == 'deepmodeling' && github.event_name == 'push' }}
-          tags: ${{ steps.meta.outputs.tags }}
+          push: ${{ github.repository_owner == 'deepmodeling' && github.event_name == 'push' && github.actor != 'dependabot[bot]' }}
+          tags: ${{ steps.meta.outputs.tags }}${{ matrix.variant }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VARIANT=${{ matrix.variant }}
+            CUDA_VERSION=${{ matrix.cuda_version }}
 
   build_pypi_index:
     needs: [build_wheels, build_sdist]
@@ -144,7 +164,7 @@ jobs:
         with:
           name: artifact
           path: dist/packages
-      - uses: actions/setup-python@v4
+      - uses: actions/setup-python@v5
         name: Install Python
         with:
           python-version: '3.11'
@@ -169,11 +189,11 @@ jobs:
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v2
+        uses: actions/deploy-pages@v3
 
   pass:
     name: Pass testing build wheels
-    needs: [build_wheels, build_sdist]
+    needs: [build_wheels, build_sdist, build_docker, build_pypi_index]
     runs-on: ubuntu-latest
     if: always()
     steps:
