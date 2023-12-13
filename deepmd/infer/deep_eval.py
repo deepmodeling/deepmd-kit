@@ -81,7 +81,7 @@ class DeepEval:
         auto_batch_size: Union[bool, int, AutoBatchSize] = False,
     ):
         jdata = j_loader(
-            "input.json" if os.path.isfile("input.json") else "dipole_input.json"
+            "input.json" if os.path.exists("input.json") else "dipole_input.json"
         )
         remove_comment_in_json(jdata)
         model_param = j_must_have(jdata, "model")
@@ -150,7 +150,7 @@ class DeepEval:
                 fitting_param.pop("type", None)
                 fitting = dipole.DipoleFittingSeA(**fitting_param)
             else:
-                pass
+                raise NotImplementedError()
         else:
             self.fitting_dict = {}
             self.fitting_type_dict = {}
@@ -361,7 +361,6 @@ class DeepEval:
     @property
     @lru_cache(maxsize=None)
     def model_type(self) -> str:
-
         return self.model.model_type
         """Get type of model.
 

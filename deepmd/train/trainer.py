@@ -142,7 +142,7 @@ class DPTrainer:
                 fitting_param.pop("type")
                 self.fitting = dipole.DipoleFittingSeA(**fitting_param)
             else:
-                pass
+                raise NotImplementedError
         else:
             self.fitting_dict = {}
             self.fitting_type_dict = {}
@@ -804,7 +804,6 @@ class DPTrainer:
         cur_batch = self.global_step
         is_first_step = True
         self.cur_batch = cur_batch
-
         self.optimizer = paddle.optimizer.Adam(
             learning_rate=self.learning_rate, parameters=self.model.parameters()
         )

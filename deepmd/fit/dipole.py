@@ -67,7 +67,7 @@ class DipoleFittingSeA(nn.Layer):
     ) -> None:
         super().__init__(name_scope="DipoleFittingSeA")
         """Constructor."""
-        self.ntypes = descrpt.get_ntypes()  # 2
+        self.ntypes = descrpt.get_ntypes()
         self.dim_descrpt = descrpt.get_dim_out()
         self.n_neuron = neuron
         self.resnet_dt = resnet_dt
@@ -170,7 +170,6 @@ class DipoleFittingSeA(nn.Layer):
             [0, start_index, 0],
             [rot_mat.shape[0], start_index + natoms, rot_mat.shape[2]],
         )
-        # paddle.slice(rot_mat, [0, start_index, 0], [-1, natoms, -1])
         rot_mat_i = paddle.reshape(rot_mat_i, [-1, self.dim_rot_mat_1, 3])
         layer = inputs_i
         for ii in range(0, len(self.n_neuron)):
@@ -178,64 +177,25 @@ class DipoleFittingSeA(nn.Layer):
                 layer += self.one_layers[type_i][ii](layer)
             else:
                 layer = self.one_layers[type_i][ii](layer)
-            # if ii >= 1 and self.n_neuron[ii] == self.n_neuron[ii - 1]:
-            #     layer += one_layer(
-            #         layer,
-            #         self.n_neuron[ii],
-            #         name="layer_" + str(ii) + suffix,
-            #         reuse=reuse,
-            #         seed=self.seed,
-            #         use_timestep=self.resnet_dt,
-            #         activation_fn=self.fitting_activation_fn,
-            #         precision=self.fitting_precision,
-            #         uniform_seed=self.uniform_seed,
-            #         initial_variables=self.fitting_net_variables,
-            #         mixed_prec=self.mixed_prec,
-            #     )
-            # else:
-            #     layer = one_layer(
-            #         layer,
-            #         self.n_neuron[ii],
-            #         name="layer_" + str(ii) + suffix,
-            #         reuse=reuse,
-            #         seed=self.seed,
-            #         activation_fn=self.fitting_activation_fn,
-            #         precision=self.fitting_precision,
-            #         uniform_seed=self.uniform_seed,
-            #         initial_variables=self.fitting_net_variables,
-            #         mixed_prec=self.mixed_prec,
-            #     )
+
             if (not self.uniform_seed) and (self.seed is not None):
                 self.seed += self.seed_shift
-
+        # (nframes x natoms) x naxis
         final_layer = self.final_layers[type_i](
             layer,
         )
-        # # (nframes x natoms) x naxis
-        # final_layer = one_layer(
-        #     layer,
-        #     self.dim_rot_mat_1,
-        #     activation_fn=None,
-        #     name="final_layer" + suffix,
-        #     reuse=reuse,
-        #     seed=self.seed,
-        #     precision=self.fitting_precision,
-        #     uniform_seed=self.uniform_seed,
-        #     initial_variables=self.fitting_net_variables,
-        #     mixed_prec=self.mixed_prec,
-        #     final_layer=True,
-        # )
+
         if (not self.uniform_seed) and (self.seed is not None):
             self.seed += self.seed_shift
         # (nframes x natoms) x 1 * naxis
         final_layer = paddle.reshape(
             final_layer, [paddle.shape(inputs)[0] * natoms, 1, self.dim_rot_mat_1]
-        )  # natoms=64, self.dim_rot_mat_1=100
+        )
         # (nframes x natoms) x 1 x 3(coord)
         final_layer = paddle.matmul(final_layer, rot_mat_i)
         # nframes x natoms x 3
         final_layer = paddle.reshape(final_layer, [paddle.shape(inputs)[0], natoms, 3])
-        return final_layer  # [1, 64, 3]
+        return final_layer
 
     def forward(
         self,
@@ -282,7 +242,7 @@ class DipoleFittingSeA(nn.Layer):
 
         if type_embedding is not None:
             nloc_mask = paddle.reshape(
-                paddle.tile(paddle.repeat(self.sel_mask, natoms[2:]), [nframes]),
+                paddle.tile(paddle.repeat_interleave(self.sel_mask, natoms[2:]), [nframes]),
                 [nframes, -1],
             )
             atype_nall = paddle.reshape(atype, [-1, natoms[1]])
@@ -293,7 +253,7 @@ class DipoleFittingSeA(nn.Layer):
             self.nloc_masked = paddle.shape(
                 paddle.reshape(self.atype_nloc_masked, [nframes, -1])
             )[1]
-            atype_embed = paddle.nn.embedding_lookup(
+            atype_embed = nn.embedding_lookup(
                 type_embedding, self.atype_nloc_masked
             )
         else:
@@ -304,10 +264,10 @@ class DipoleFittingSeA(nn.Layer):
         if atype_embed is None:
             count = 0
             outs_list = []
-            for type_i in range(self.ntypes):  # 2
+            for type_i in range(self.ntypes):
                 if type_i not in self.sel_type:
                     start_index += natoms[2 + type_i]
-                    continue  # sel_type是0，所以就循环了一次
+                    continue
                 final_layer = self._build_lower(
                     start_index,
                     natoms[2 + type_i],
@@ -321,8 +281,7 @@ class DipoleFittingSeA(nn.Layer):
                 # concat the results
                 outs_list.append(final_layer)
                 count += 1
-
-            outs = paddle.concat(outs_list, axis=1)  # [1, 64, 3]
+            outs = paddle.concat(outs_list, axis=1)
         else:
             inputs = paddle.reshape(
                 paddle.reshape(inputs, [nframes, natoms[0], self.dim_descrpt])[
@@ -349,13 +308,10 @@ class DipoleFittingSeA(nn.Layer):
             final_layer = self._build_lower(
                 0, self.nloc_masked, inputs, rot_mat, suffix=suffix, reuse=reuse
             )
-
             # nframes x natoms x 3
             outs = paddle.reshape(final_layer, [nframes, self.nloc_masked, 3])
 
-        # paddle.summary.histogram("fitting_net_output", outs)
         return paddle.reshape(outs, [-1])
-        # return tf.reshape(outs, [tf.shape(inputs)[0] * natoms[0] * 3 // 3])
 
     def init_variables(
         self,

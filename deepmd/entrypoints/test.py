@@ -890,12 +890,12 @@ def test_dipole(
         atomic=atomic,
         must=True,
         high_prec=False,
-        type_sel=dp.tselt,
+        type_sel=dp.get_sel_type(),
     )
     test_data = data.get_test()
     dipole, numb_test, atype = run_test(dp, test_data, numb_test, data)
 
-    sel_type = dp.tselt
+    sel_type = dp.get_sel_type()
     sel_natoms = 0
     for ii in sel_type:
         sel_natoms += sum(atype == ii)

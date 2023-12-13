@@ -174,7 +174,6 @@ class TensorLoss(Loss):
         )
 
         l2_l, l2_more = self.compute_loss(
-            # 0.0, natoms, model_dict, batch_data
             0.0,
             model_inputs["natoms_vec"],
             model_pred,
