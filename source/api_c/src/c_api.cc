@@ -61,6 +61,8 @@ DP_DeepPot* DP_NewDeepPotWithParam2(const char* c_model,
             DP_DeepPot* new_dp = new DP_DeepPot(dp); return new_dp;)
 }
 
+void DP_DeleteDeepPot(DP_DeepPot* dp) { delete dp; }
+
 DP_DeepPotModelDevi::DP_DeepPotModelDevi() {}
 DP_DeepPotModelDevi::DP_DeepPotModelDevi(deepmd::DeepPotModelDevi& dp)
     : dp(dp) {

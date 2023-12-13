@@ -564,7 +564,7 @@ class DeepPot {
    * @brief DP constructor without initialization.
    **/
   DeepPot() : dp(nullptr){};
-  ~DeepPot(){};
+  ~DeepPot() { DP_DeleteDeepPot(dp); };
   /**
    * @brief DP constructor with initialization.
    * @param[in] model The name of the frozen model file.

@@ -73,6 +73,13 @@ extern DP_DeepPot* DP_NewDeepPotWithParam2(const char* c_model,
                                            const int size_file_content);
 
 /**
+ * @brief Delete a DP.
+ *
+ * @param dp Deep Potential to delete.
+ */
+extern void DP_DeleteDeepPot(DP_DeepPot* dp);
+
+/**
  * @brief Evaluate the energy, force and virial by using a DP. (double version)
  * @attention The number of frames is assumed to be 1.
  * @param[in] dp The DP to use.
