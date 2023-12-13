@@ -29,6 +29,7 @@ from deepmd.env import tf
 from deepmd.env import tfv2
 from deepmd.fit import Fitting
 from deepmd.fit import ener
+from deepmd.fit import dipole
 from deepmd.loss import DOSLoss
 from deepmd.loss import EnerDipoleLoss
 from deepmd.loss import EnerSpinLoss
@@ -136,7 +137,12 @@ class DPTrainer:
             if fitting_type == "ener":
                 fitting_param["spin"] = self.spin
                 fitting_param.pop("type")
-            self.fitting = ener.EnerFitting(**fitting_param)
+                self.fitting = ener.EnerFitting(**fitting_param)
+            elif fitting_type == "dipole":
+                fitting_param.pop("type")
+                self.fitting = dipole.DipoleFittingSeA(**fitting_param)
+            else:
+                pass
         else:
             self.fitting_dict = {}
             self.fitting_type_dict = {}
@@ -798,6 +804,8 @@ class DPTrainer:
         cur_batch = self.global_step
         is_first_step = True
         self.cur_batch = cur_batch
+        import pdb
+        # pdb.set_trace()
         self.optimizer = paddle.optimizer.Adam(
             learning_rate=self.learning_rate, parameters=self.model.parameters()
         )

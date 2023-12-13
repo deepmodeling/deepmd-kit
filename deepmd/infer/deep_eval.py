@@ -8,7 +8,7 @@ from typing import Union
 #     Descriptor,
 # )
 import numpy as np
-
+import os
 import deepmd
 from deepmd.common import data_requirement
 from deepmd.common import expand_sys_str
@@ -20,7 +20,9 @@ from deepmd.env import default_tf_session_config
 from deepmd.env import paddle
 from deepmd.env import tf
 from deepmd.fit import ener
+from deepmd.fit import dipole
 from deepmd.model import EnerModel
+from deepmd.model import DipoleModel
 from deepmd.utils.argcheck import type_embedding_args
 from deepmd.utils.batch_size import AutoBatchSize
 from deepmd.utils.sess import run_sess
@@ -77,7 +79,7 @@ class DeepEval:
         default_tf_graph: bool = False,
         auto_batch_size: Union[bool, int, AutoBatchSize] = False,
     ):
-        jdata = j_loader("input.json")
+        jdata = j_loader("input.json" if os.path.isfile("input.json") else "dipole_input.json")
         remove_comment_in_json(jdata)
         model_param = j_must_have(jdata, "model")
         self.multi_task_mode = "fitting_net_dict" in model_param
@@ -140,7 +142,12 @@ class DeepEval:
             if fitting_type == "ener":
                 fitting_param["spin"] = spin
                 fitting_param.pop("type", None)
-            fitting = ener.EnerFitting(**fitting_param)
+                fitting = ener.EnerFitting(**fitting_param)
+            elif fitting_type == "dipole":
+                fitting_param.pop("type", None)
+                fitting = dipole.DipoleFittingSeA(**fitting_param)
+            else:
+                pass
         else:
             self.fitting_dict = {}
             self.fitting_type_dict = {}
@@ -216,7 +223,6 @@ class DeepEval:
                 )
 
             elif self.fitting_type == "dipole":
-                raise NotImplementedError()
                 self.model = DipoleModel(
                     descrpt,
                     fitting,
@@ -352,7 +358,8 @@ class DeepEval:
     @property
     @lru_cache(maxsize=None)
     def model_type(self) -> str:
-        return "ener"
+
+        return self.model.model_type
         """Get type of model.
 
         :type:str
@@ -411,7 +418,7 @@ class DeepEval:
 
     def _get_value(
         self, tensor_name: str, attr_name: Optional[str] = None
-    ) -> tf.Tensor:
+    ) -> paddle.Tensor:
         """Get TF graph tensor and assign it to class namespace.
         Parameters
         ----------

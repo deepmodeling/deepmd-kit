@@ -2,6 +2,7 @@ import numpy as np
 
 from deepmd.common import add_data_requirement
 from deepmd.env import global_cvt_2_tf_float
+from deepmd.env import paddle
 from deepmd.env import tf
 from deepmd.utils.sess import run_sess
 
@@ -59,30 +60,30 @@ class TensorLoss(Loss):
             type_sel=self.type_sel,
         )
 
-    def build(self, learning_rate, natoms, model_dict, label_dict, suffix):
+    def compute_loss(self, learning_rate, natoms, model_dict, label_dict, suffix):
         polar_hat = label_dict[self.label_name]
         atomic_polar_hat = label_dict["atomic_" + self.label_name]
-        polar = tf.reshape(model_dict[self.tensor_name], [-1])
+        polar = paddle.reshape(model_dict[self.tensor_name], [-1])
 
         find_global = label_dict["find_" + self.label_name]
         find_atomic = label_dict["find_atomic_" + self.label_name]
 
         # YHT: added for global / local dipole combination
-        l2_loss = global_cvt_2_tf_float(0.0)
+        l2_loss = 0.0
         more_loss = {
-            "local_loss": global_cvt_2_tf_float(0.0),
-            "global_loss": global_cvt_2_tf_float(0.0),
+            "local_loss": 0.0,
+            "global_loss": 0.0,
         }
 
         if self.local_weight > 0.0:
-            local_loss = global_cvt_2_tf_float(find_atomic) * tf.reduce_mean(
-                tf.square(self.scale * (polar - atomic_polar_hat)), name="l2_" + suffix
+            local_loss = find_atomic * paddle.mean(
+                paddle.square(self.scale * (polar - atomic_polar_hat)), name="l2_" + suffix
             )
             more_loss["local_loss"] = local_loss
             l2_loss += self.local_weight * local_loss
-            self.l2_loss_local_summary = tf.summary.scalar(
-                "l2_local_loss_" + suffix, tf.sqrt(more_loss["local_loss"])
-            )
+            # self.l2_loss_local_summary = paddle.summary.scalar(
+            #     "l2_local_loss_" + suffix, paddle.sqrt(more_loss["local_loss"])
+            # )
 
         if self.global_weight > 0.0:  # Need global loss
             atoms = 0
@@ -91,33 +92,33 @@ class TensorLoss(Loss):
                     atoms += natoms[2 + w]
             else:
                 atoms = natoms[0]
-            nframes = tf.shape(polar)[0] // self.tensor_size // atoms
+            nframes = paddle.shape(polar)[0] // self.tensor_size // atoms
             # get global results
-            global_polar = tf.reshape(
-                tf.reduce_sum(
-                    tf.reshape(polar, [nframes, -1, self.tensor_size]), axis=1
+            global_polar = paddle.reshape(
+                paddle.sum(
+                    paddle.reshape(polar, [nframes, -1, self.tensor_size]), axis=1
                 ),
                 [-1],
             )
             # if self.atomic: # If label is local, however
-            #    global_polar_hat = tf.reshape(tf.reduce_sum(tf.reshape(
+            #    global_polar_hat = paddle.reshape(paddle.sum(paddle.reshape(
             #        polar_hat, [nframes, -1, self.tensor_size]), axis=1),[-1])
             # else:
             #    global_polar_hat = polar_hat
 
-            global_loss = global_cvt_2_tf_float(find_global) * tf.reduce_mean(
-                tf.square(self.scale * (global_polar - polar_hat)), name="l2_" + suffix
+            global_loss = find_global * paddle.mean(
+                paddle.square(self.scale * (global_polar - polar_hat)), name="l2_" + suffix
             )
 
             more_loss["global_loss"] = global_loss
-            self.l2_loss_global_summary = tf.summary.scalar(
-                "l2_global_loss_" + suffix,
-                tf.sqrt(more_loss["global_loss"]) / global_cvt_2_tf_float(atoms),
-            )
+            # self.l2_loss_global_summary = paddle.summary.scalar(
+            #     "l2_global_loss_" + suffix,
+            #     paddle.sqrt(more_loss["global_loss"]) / global_cvt_2_tf_float(atoms),
+            # )
 
             # YWolfeee: should only consider atoms with dipole, i.e. atoms
             # atom_norm  = 1./ global_cvt_2_tf_float(natoms[0])
-            atom_norm = 1.0 / global_cvt_2_tf_float(atoms)
+            atom_norm = 1.0 / atoms
             global_loss *= atom_norm
 
             l2_loss += self.global_weight * global_loss
@@ -125,10 +126,11 @@ class TensorLoss(Loss):
         self.l2_more = more_loss
         self.l2_l = l2_loss
 
-        self.l2_loss_summary = tf.summary.scalar("l2_loss_" + suffix, tf.sqrt(l2_loss))
+        # self.l2_loss_summary = paddle.summary.scalar("l2_loss_" + suffix, tf.sqrt(l2_loss))
         return l2_loss, more_loss
 
-    def eval(self, sess, feed_dict, natoms):
+
+    def eval(self, model, batch_data, natoms):
         atoms = 0
         if self.type_sel is not None:
             for w in self.type_sel:
@@ -136,8 +138,56 @@ class TensorLoss(Loss):
         else:
             atoms = natoms[0]
 
-        run_data = [self.l2_l, self.l2_more["local_loss"], self.l2_more["global_loss"]]
-        error, error_lc, error_gl = run_sess(sess, run_data, feed_dict=feed_dict)
+        model_inputs = {}
+        for kk in batch_data.keys():
+            if kk == "find_type" or kk == "type":
+                continue
+            prec = "float64"
+            if "find_" in kk:
+                model_inputs[kk] = paddle.to_tensor(batch_data[kk], dtype="float64")
+            else:
+                model_inputs[kk] = paddle.to_tensor(
+                    np.reshape(batch_data[kk], [-1]), dtype=prec
+                )
+
+        for ii in ["type"]:
+            model_inputs[ii] = paddle.to_tensor(
+                np.reshape(batch_data[ii], [-1]), dtype="int32"
+            )
+        for ii in ["natoms_vec", "default_mesh"]:
+            model_inputs[ii] = paddle.to_tensor(batch_data[ii], dtype="int32")
+        model_inputs["is_training"] = paddle.to_tensor(False)
+        model_inputs["natoms_vec"] = paddle.to_tensor(
+            model_inputs["natoms_vec"], place="cpu"
+        )
+
+        model_pred = model(
+            model_inputs["coord"],
+            model_inputs["type"],
+            model_inputs["natoms_vec"],
+            model_inputs["box"],
+            model_inputs["default_mesh"],
+            model_inputs,
+            suffix="",
+            reuse=False,
+        )
+        
+        l2_l, l2_more = self.compute_loss(
+            # 0.0, natoms, model_dict, batch_data
+            0.0,
+            model_inputs["natoms_vec"],
+            model_pred,
+            model_inputs,
+            suffix="test",
+        )
+        # pdb.set_trace()
+
+        run_data = [
+            (float(l2_l)),
+            (float(l2_more["local_loss"])),
+            (float(l2_more["global_loss"])),
+        ]
+        error, error_lc, error_gl = run_data
 
         results = {"natoms": atoms, "rmse": np.sqrt(error)}
         if self.local_weight > 0.0:
