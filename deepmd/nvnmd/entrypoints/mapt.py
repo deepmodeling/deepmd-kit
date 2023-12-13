@@ -87,9 +87,22 @@ class MapTable:
         jdata["weight_file"] = weight_file
         jdata["enable"] = True
 
+        # 0 : xyz_scatter = xyz_scatter * two_embd + xyz_scatter;
+        # Gs + 1, Gt + 0
+        # 1 : xyz_scatter = xyz_scatter * two_embd + two_embd   ;
+        # Gs + 0, Gt + 1
+        self.Gs_Gt_mode = 1
+
         nvnmd_cfg.init_from_jdata(jdata)
 
     def build_map(self):
+        if self.Gs_Gt_mode == 0:
+            self.shift_Gs = 1
+            self.shift_Gt = 0
+        if self.Gs_Gt_mode == 1:
+            self.shift_Gs = 0
+            self.shift_Gt = 1
+        #
         M = nvnmd_cfg.dscp["M1"]
         if nvnmd_cfg.version == 0:
             ndim = nvnmd_cfg.dscp["ntype"]
@@ -482,7 +495,7 @@ class MapTable:
             shift = 0
         if nvnmd_cfg.version == 1:
             ndim = 1
-            shift = 0
+            shift = self.shift_Gs
         #
         dic_ph = {}
         dic_ph["s"] = tf.placeholder(tf.float64, [None, 1], "t_s")
@@ -575,10 +588,8 @@ class MapTable:
             [-1, two_side_type_embedding.shape[-1]],
         )
         # see se_atten.py in dp
-        # old version : xyz_scatter = xyz_scatter * two_embd + xyz_scatter; Gs + 1, Gt + 0
-        # new version : xyz_scatter = xyz_scatter * two_embd + two_embd   ; Gs + 0, Gt + 1
         wbs = [get_filter_type_weight(nvnmd_cfg.weight, ll) for ll in range(1, 5)]
-        dic_ph["gt"] = self.build_embedding_net(two_side_type_embedding, wbs) + 1
+        dic_ph["gt"] = self.build_embedding_net(two_side_type_embedding, wbs) + self.shift_Gt
         return dic_ph
 
     def run_t2g(self):

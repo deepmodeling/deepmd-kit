@@ -113,6 +113,8 @@ class NvnmdConfig:
         r"""Initialize member element one by one."""
         if "ctrl" in jdata.keys():
             if "VERSION" in jdata["ctrl"].keys():
+                if "MAX_NNEI" not in jdata["ctrl"].keys():
+                    jdata["ctrl"]["MAX_NNEI"] = 128
                 self.init_config_by_version(jdata["ctrl"]["VERSION"], jdata["ctrl"]["MAX_NNEI"])
         #
         self.config = FioDic().update(jdata, self.config)
@@ -336,6 +338,7 @@ class NvnmdConfig:
         r"""Generate `nvnmd` in input script."""
         jdata = self.jdata_deepmd_input["nvnmd"]
         jdata["net_size"] = self.net_size
+        jdata["max_nnei"] = self.max_nnei
         jdata["config_file"] = self.config_file
         jdata["weight_file"] = self.weight_file
         jdata["map_file"] = self.map_file

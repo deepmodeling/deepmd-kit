@@ -192,6 +192,7 @@ jdata_config_v1 = {
     },
     "ctrl": {
         # NSTDM
+        "MAX_NNEI": 128,
         "NSTDM": 64,
         "NSTDM_M1": 32,
         "NSTDM_M2": 2,

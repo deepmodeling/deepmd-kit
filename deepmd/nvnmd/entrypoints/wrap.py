@@ -205,10 +205,10 @@ class Wrap:
             bs = e.dec2bin(SEL, NBIT_MODEL_HEAD)[0] + bs
         # atom_ener
         # fix the bug: the different energy between qnn and lammps
-        if "t_bias_atom_e" not in weight.keys():
-            log.error("NVNMD: There is not t_bias_atom_e in weight!")
-            exit(1)
-        atom_ener = weight['t_bias_atom_e']
+        if "t_bias_atom_e" in weight.keys():
+            atom_ener = weight['t_bias_atom_e']
+        else:
+            atom_ener = [0] * 32
         nlayer_fit = fitn["nlayer_fit"]
         if VERSION == 0:
             for tt in range(ntype):

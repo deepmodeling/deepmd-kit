@@ -1,6 +1,7 @@
 {
   "nvnmd": {
     "version": 0,
+    "max_nnei": 128,
     "net_size": 128,
     "sel": [
       60,

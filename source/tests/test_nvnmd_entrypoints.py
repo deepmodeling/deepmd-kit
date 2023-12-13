@@ -521,6 +521,7 @@ class TestNvnmdEntrypointsV1(tf.test.TestCase):
         map_file = str(tests_path / "nvnmd" / "out" / "map_v1_cnn.npy")
         # mapt
         mapObj = MapTable(config_file, weight_file, map_file)
+        mapObj.Gs_Gt_mode = 0
         mapt = mapObj.build_map()
         #
         N = 32
@@ -859,8 +860,9 @@ class TestNvnmdEntrypointsV1(tf.test.TestCase):
         # test
         data = FioBin().load(jdata["nvnmd_model"])
         idx = [0, 1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384]
+        idx = [i + 128*4 for i in idx]
         pred = [data[i] for i in idx]
-        red_dout = [1, 0, 0, 128, 0, 0, 0, 8, 249, 0, 0, 0, 91, 252, 183, 254]
+        red_dout = [249, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 254, 95, 24, 176]
         np.testing.assert_equal(pred, red_dout)
         # close
         nvnmd_cfg.enable = False
