@@ -1,3 +1,4 @@
+import os
 from functools import lru_cache
 from typing import TYPE_CHECKING
 from typing import List
@@ -8,7 +9,7 @@ from typing import Union
 #     Descriptor,
 # )
 import numpy as np
-import os
+
 import deepmd
 from deepmd.common import data_requirement
 from deepmd.common import expand_sys_str
@@ -19,10 +20,10 @@ from deepmd.env import MODEL_VERSION
 from deepmd.env import default_tf_session_config
 from deepmd.env import paddle
 from deepmd.env import tf
-from deepmd.fit import ener
 from deepmd.fit import dipole
-from deepmd.model import EnerModel
+from deepmd.fit import ener
 from deepmd.model import DipoleModel
+from deepmd.model import EnerModel
 from deepmd.utils.argcheck import type_embedding_args
 from deepmd.utils.batch_size import AutoBatchSize
 from deepmd.utils.sess import run_sess
@@ -79,7 +80,9 @@ class DeepEval:
         default_tf_graph: bool = False,
         auto_batch_size: Union[bool, int, AutoBatchSize] = False,
     ):
-        jdata = j_loader("input.json" if os.path.isfile("input.json") else "dipole_input.json")
+        jdata = j_loader(
+            "input.json" if os.path.isfile("input.json") else "dipole_input.json"
+        )
         remove_comment_in_json(jdata)
         model_param = j_must_have(jdata, "model")
         self.multi_task_mode = "fitting_net_dict" in model_param

@@ -804,8 +804,7 @@ class DPTrainer:
         cur_batch = self.global_step
         is_first_step = True
         self.cur_batch = cur_batch
-        import pdb
-        # pdb.set_trace()
+
         self.optimizer = paddle.optimizer.Adam(
             learning_rate=self.learning_rate, parameters=self.model.parameters()
         )

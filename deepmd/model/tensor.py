@@ -1,6 +1,5 @@
 from typing import List
 from typing import Optional
-import pdb
 
 from deepmd.env import MODEL_VERSION
 from deepmd.env import paddle
@@ -121,8 +120,10 @@ class TensorModel(Model, paddle.nn.Layer):
         #     t_ver = tf.constant(MODEL_VERSION, name="model_version", dtype=tf.string)
         #     t_od = tf.constant(self.get_out_size(), name="output_dim", dtype=tf.int32)
 
-        natomsel = sum(natoms[2 + type_i] for type_i in self.get_sel_type())#n_atom_selected
-        nout = self.get_out_size() # 3
+        natomsel = sum(
+            natoms[2 + type_i] for type_i in self.get_sel_type()
+        )  # n_atom_selected
+        nout = self.get_out_size()  # 3
 
         coord = paddle.reshape(coord_, [-1, natoms[1] * 3])
         atype = paddle.reshape(atype_, [-1, natoms[1]])
@@ -160,7 +161,7 @@ class TensorModel(Model, paddle.nn.Layer):
             dout, rot_mat, natoms, input_dict, reuse=reuse, suffix=suffix
         )
 
-        framesize = nout if "global" in self.model_type else natomsel * nout 
+        framesize = nout if "global" in self.model_type else natomsel * nout
         output = paddle.reshape(
             output, [-1, framesize], name="o_" + self.model_type + suffix
         )
@@ -168,10 +169,12 @@ class TensorModel(Model, paddle.nn.Layer):
         model_dict = {self.model_type: output}
 
         if "global" not in self.model_type:
-            gname = "global_" + self.model_type # "global_dipole"
-            atom_out = paddle.reshape(output, [-1, natomsel, nout])#  nout=3
+            gname = "global_" + self.model_type  # "global_dipole"
+            atom_out = paddle.reshape(output, [-1, natomsel, nout])  #  nout=3
             global_out = paddle.sum(atom_out, axis=1)
-            global_out = paddle.reshape(global_out, [-1, nout], name="o_" + gname + suffix)
+            global_out = paddle.reshape(
+                global_out, [-1, nout], name="o_" + gname + suffix
+            )
 
             out_cpnts = paddle.split(atom_out, nout, axis=-1)
             force_cpnts = []
@@ -184,7 +187,9 @@ class TensorModel(Model, paddle.nn.Layer):
                 )
                 force_cpnts.append(paddle.reshape(force_i, [-1, 3 * natoms[1]]))
                 virial_cpnts.append(paddle.reshape(virial_i, [-1, 9]))
-                atom_virial_cpnts.append(paddle.reshape(atom_virial_i, [-1, 9 * natoms[1]]))
+                atom_virial_cpnts.append(
+                    paddle.reshape(atom_virial_i, [-1, 9 * natoms[1]])
+                )
 
             # [nframe x nout x (natom x 3)]
             force = paddle.concat(force_cpnts, axis=1, name="o_force" + suffix)
@@ -195,7 +200,7 @@ class TensorModel(Model, paddle.nn.Layer):
                 atom_virial_cpnts, axis=1, name="o_atom_virial" + suffix
             )
 
-            model_dict[gname] = global_out # "global_dipole":global_out
+            model_dict[gname] = global_out
             model_dict["force"] = force
             model_dict["virial"] = virial
             model_dict["atom_virial"] = atom_virial

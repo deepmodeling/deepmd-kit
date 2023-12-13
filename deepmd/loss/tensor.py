@@ -77,7 +77,8 @@ class TensorLoss(Loss):
 
         if self.local_weight > 0.0:
             local_loss = find_atomic * paddle.mean(
-                paddle.square(self.scale * (polar - atomic_polar_hat)), name="l2_" + suffix
+                paddle.square(self.scale * (polar - atomic_polar_hat)),
+                name="l2_" + suffix,
             )
             more_loss["local_loss"] = local_loss
             l2_loss += self.local_weight * local_loss
@@ -107,7 +108,8 @@ class TensorLoss(Loss):
             #    global_polar_hat = polar_hat
 
             global_loss = find_global * paddle.mean(
-                paddle.square(self.scale * (global_polar - polar_hat)), name="l2_" + suffix
+                paddle.square(self.scale * (global_polar - polar_hat)),
+                name="l2_" + suffix,
             )
 
             more_loss["global_loss"] = global_loss
@@ -128,7 +130,6 @@ class TensorLoss(Loss):
 
         # self.l2_loss_summary = paddle.summary.scalar("l2_loss_" + suffix, tf.sqrt(l2_loss))
         return l2_loss, more_loss
-
 
     def eval(self, model, batch_data, natoms):
         atoms = 0
@@ -171,7 +172,7 @@ class TensorLoss(Loss):
             suffix="",
             reuse=False,
         )
-        
+
         l2_l, l2_more = self.compute_loss(
             # 0.0, natoms, model_dict, batch_data
             0.0,
@@ -180,7 +181,6 @@ class TensorLoss(Loss):
             model_inputs,
             suffix="test",
         )
-        # pdb.set_trace()
 
         run_data = [
             (float(l2_l)),

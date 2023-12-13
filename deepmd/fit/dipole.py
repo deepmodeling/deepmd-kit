@@ -1,7 +1,6 @@
 import logging
 from typing import List
 from typing import Optional
-import pdb
 import numpy as np
 from paddle import nn
 
@@ -16,9 +15,7 @@ from deepmd.env import global_cvt_2_tf_float
 from deepmd.env import paddle
 from deepmd.env import tf
 from deepmd.fit.fitting import Fitting
-from deepmd.utils.graph import get_fitting_net_variables_from_graph_def
-from deepmd.utils.network import one_layer
-from deepmd.utils.network import one_layer_rand_seed_shift
+
 # from deepmd.infer import DeepPotential
 from deepmd.nvnmd.fit.ener import one_layer_nvnmd
 from deepmd.nvnmd.utils.config import nvnmd_cfg
@@ -26,9 +23,11 @@ from deepmd.utils.errors import GraphWithoutTensorError
 from deepmd.utils.graph import get_fitting_net_variables_from_graph_def
 from deepmd.utils.graph import get_tensor_by_name_from_graph
 from deepmd.utils.network import OneLayer as OneLayer_deepmd
+from deepmd.utils.network import one_layer
 from deepmd.utils.network import one_layer as one_layer_deepmd
 from deepmd.utils.network import one_layer_rand_seed_shift
 from deepmd.utils.spin import Spin
+
 
 # @Fitting.register("dipole")
 class DipoleFittingSeA(nn.Layer):
@@ -68,7 +67,7 @@ class DipoleFittingSeA(nn.Layer):
     ) -> None:
         super().__init__(name_scope="DipoleFittingSeA")
         """Constructor."""
-        self.ntypes = descrpt.get_ntypes()#2
+        self.ntypes = descrpt.get_ntypes()  # 2
         self.dim_descrpt = descrpt.get_dim_out()
         self.n_neuron = neuron
         self.resnet_dt = resnet_dt
@@ -146,9 +145,16 @@ class DipoleFittingSeA(nn.Layer):
     def get_out_size(self) -> int:
         """Get the output size. Should be 3."""
         return 3
-    
-    def _build_lower(self, start_index, natoms, inputs, rot_mat, suffix="", reuse=None,
-                     type_i=None,
+
+    def _build_lower(
+        self,
+        start_index,
+        natoms,
+        inputs,
+        rot_mat,
+        suffix="",
+        reuse=None,
+        type_i=None,
     ):
         # cut-out inputs
         inputs_i = paddle.slice(
@@ -156,14 +162,14 @@ class DipoleFittingSeA(nn.Layer):
             [0, 1, 2],
             [0, start_index, 0],
             [inputs.shape[0], start_index + natoms, inputs.shape[2]],
-        )   
+        )
         inputs_i = paddle.reshape(inputs_i, [-1, self.dim_descrpt])
         rot_mat_i = paddle.slice(
             rot_mat,
             [0, 1, 2],
             [0, start_index, 0],
             [rot_mat.shape[0], start_index + natoms, rot_mat.shape[2]],
-        )   
+        )
         # paddle.slice(rot_mat, [0, start_index, 0], [-1, natoms, -1])
         rot_mat_i = paddle.reshape(rot_mat_i, [-1, self.dim_rot_mat_1, 3])
         layer = inputs_i
@@ -171,7 +177,7 @@ class DipoleFittingSeA(nn.Layer):
             if ii >= 1 and self.n_neuron[ii] == self.n_neuron[ii - 1]:
                 layer += self.one_layers[type_i][ii](layer)
             else:
-                layer = self.one_layers[type_i][ii](layer)            
+                layer = self.one_layers[type_i][ii](layer)
             # if ii >= 1 and self.n_neuron[ii] == self.n_neuron[ii - 1]:
             #     layer += one_layer(
             #         layer,
@@ -224,14 +230,12 @@ class DipoleFittingSeA(nn.Layer):
         # (nframes x natoms) x 1 * naxis
         final_layer = paddle.reshape(
             final_layer, [paddle.shape(inputs)[0] * natoms, 1, self.dim_rot_mat_1]
-        )#natoms=64, self.dim_rot_mat_1=100
+        )  # natoms=64, self.dim_rot_mat_1=100
         # (nframes x natoms) x 1 x 3(coord)
         final_layer = paddle.matmul(final_layer, rot_mat_i)
         # nframes x natoms x 3
         final_layer = paddle.reshape(final_layer, [paddle.shape(inputs)[0], natoms, 3])
-        # pdb.set_trace()        
-        return final_layer # [1, 64, 3]
-    
+        return final_layer  # [1, 64, 3]
 
     def forward(
         self,
@@ -278,7 +282,8 @@ class DipoleFittingSeA(nn.Layer):
 
         if type_embedding is not None:
             nloc_mask = paddle.reshape(
-                paddle.tile(paddle.repeat(self.sel_mask, natoms[2:]), [nframes]), [nframes, -1]
+                paddle.tile(paddle.repeat(self.sel_mask, natoms[2:]), [nframes]),
+                [nframes, -1],
             )
             atype_nall = paddle.reshape(atype, [-1, natoms[1]])
             # (nframes x nloc_masked)
@@ -288,7 +293,9 @@ class DipoleFittingSeA(nn.Layer):
             self.nloc_masked = paddle.shape(
                 paddle.reshape(self.atype_nloc_masked, [nframes, -1])
             )[1]
-            atype_embed = paddle.nn.embedding_lookup(type_embedding, self.atype_nloc_masked)
+            atype_embed = paddle.nn.embedding_lookup(
+                type_embedding, self.atype_nloc_masked
+            )
         else:
             atype_embed = None
 
@@ -297,11 +304,10 @@ class DipoleFittingSeA(nn.Layer):
         if atype_embed is None:
             count = 0
             outs_list = []
-            # pdb.set_trace()
-            for type_i in range(self.ntypes):#2
+            for type_i in range(self.ntypes):  # 2
                 if type_i not in self.sel_type:
                     start_index += natoms[2 + type_i]
-                    continue #sel_type是0，所以就循环了一次
+                    continue  # sel_type是0，所以就循环了一次
                 final_layer = self._build_lower(
                     start_index,
                     natoms[2 + type_i],
@@ -315,12 +321,13 @@ class DipoleFittingSeA(nn.Layer):
                 # concat the results
                 outs_list.append(final_layer)
                 count += 1
-                # pdb.set_trace()
 
-            outs = paddle.concat(outs_list, axis=1) # [1, 64, 3]
+            outs = paddle.concat(outs_list, axis=1)  # [1, 64, 3]
         else:
             inputs = paddle.reshape(
-                paddle.reshape(inputs, [nframes, natoms[0], self.dim_descrpt])[nloc_mask],
+                paddle.reshape(inputs, [nframes, natoms[0], self.dim_descrpt])[
+                    nloc_mask
+                ],
                 [-1, self.dim_descrpt],
             )
             rot_mat = paddle.reshape(
@@ -333,14 +340,15 @@ class DipoleFittingSeA(nn.Layer):
             type_shape = atype_embed.get_shape().as_list()
             inputs = paddle.concat([inputs, atype_embed], axis=1)
             self.dim_descrpt = self.dim_descrpt + type_shape[1]
-            inputs = paddle.reshape(inputs, [nframes, self.nloc_masked, self.dim_descrpt])
+            inputs = paddle.reshape(
+                inputs, [nframes, self.nloc_masked, self.dim_descrpt]
+            )
             rot_mat = paddle.reshape(
                 rot_mat, [nframes, self.nloc_masked, self.dim_rot_mat_1 * 3]
             )
             final_layer = self._build_lower(
                 0, self.nloc_masked, inputs, rot_mat, suffix=suffix, reuse=reuse
             )
-            pdb.set_trace()
 
             # nframes x natoms x 3
             outs = paddle.reshape(final_layer, [nframes, self.nloc_masked, 3])

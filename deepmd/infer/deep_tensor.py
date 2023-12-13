@@ -5,7 +5,6 @@ from typing import Optional
 from typing import Tuple
 from typing import Union
 
-
 import numpy as np
 
 from deepmd.common import make_default_mesh
@@ -88,7 +87,7 @@ class DeepTensor(DeepEval):
 
         # self._run_default_sess()
         self.ntypes = int(self.model.descrpt.buffer_ntypes)
-        self.tselt=self.model.fitting.sel_type
+        self.tselt = self.model.fitting.sel_type
         # self.tmap = self.tmap.decode("UTF-8").split()
 
     def _run_default_sess(self):
@@ -126,7 +125,7 @@ class DeepTensor(DeepEval):
     def get_dim_aparam(self) -> int:
         """Get the number (dimension) of atomic parameters of this DP."""
         return self.daparam
-    
+
     def _eval_func(self, inner_func: Callable, numb_test: int, natoms: int) -> Callable:
         """Wrapper method with auto batch size.
 
@@ -154,7 +153,7 @@ class DeepTensor(DeepEval):
         else:
             eval_func = inner_func
         return eval_func
-    
+
     def _get_natoms_and_nframes(
         self,
         coords: np.ndarray,
@@ -168,6 +167,7 @@ class DeepTensor(DeepEval):
         coords = np.reshape(np.array(coords), [-1, natoms * 3])
         nframes = coords.shape[0]
         return natoms, nframes
+
     def _prepare_feed_dict(
         self,
         coords,
@@ -275,6 +275,7 @@ class DeepTensor(DeepEval):
         # if self.has_aparam:
         #     feed_dict_test[self.t_aparam] = np.reshape(aparam, [-1])
         return None, None, natoms_vec
+
     def _eval_inner(
         self,
         coords,
@@ -309,8 +310,7 @@ class DeepTensor(DeepEval):
             natoms_vec, dtype="int32", place="cpu"
         )
         eval_inputs["box"] = paddle.to_tensor(np.reshape(cells, [-1]), dtype="float64")
-        import pdb
-        # pdb.set_trace()
+
         # if self.has_fparam:
         #     eval_inputs["fparam"] = paddle.to_tensor(
         #         np.reshape(fparam, [-1], dtype="float64")
@@ -324,7 +324,7 @@ class DeepTensor(DeepEval):
         #     make_default_mesh(cells), dtype="int32"
         # )
         # else:
-        eval_inputs['default_mesh'] = paddle.to_tensor(np.array([], dtype = np.int32))
+        eval_inputs["default_mesh"] = paddle.to_tensor(np.array([], dtype=np.int32))
 
         if hasattr(self, "st_model"):
             # NOTE: 使用静态图模型推理
@@ -348,9 +348,9 @@ class DeepTensor(DeepEval):
             # NOTE: 使用动态图模型推理
             eval_outputs = self.model(
                 eval_inputs["coord"],  #
-                eval_inputs["type"],  # 
-                eval_inputs["natoms_vec"],  # 
-                eval_inputs["box"],  # 
+                eval_inputs["type"],  #
+                eval_inputs["natoms_vec"],  #
+                eval_inputs["box"],  #
                 eval_inputs["default_mesh"],  #
                 eval_inputs,
                 suffix="",
@@ -360,14 +360,13 @@ class DeepTensor(DeepEval):
 
         return dipole
 
-
         # if atomic:
         #     ae = eval_outputs["atom_ener"].numpy()
         #     av = eval_outputs["atom_virial"].numpy()
         #     return energy, force, virial, ae, av
         # else:
         #     return energy, force, virial
-        
+
     def eval(
         self,
         coords: np.ndarray,
@@ -454,7 +453,7 @@ class DeepTensor(DeepEval):
         #     output = tuple(output)
 
         return output
-    
+
     def eval_full(
         self,
         coords: np.ndarray,
