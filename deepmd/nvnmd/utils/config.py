@@ -7,9 +7,15 @@ from deepmd.nvnmd.data.data import (
     NVNMD_CITATION,
     NVNMD_WELCOME,
     jdata_config_v0,
-    jdata_config_v1,
+    jdata_config_v0_ni128,
+    jdata_config_v0_ni256,
+    jdata_config_v1_ni128,
+    jdata_config_v1_ni256,
     jdata_deepmd_input_v0,
-    jdata_deepmd_input_v1,
+    jdata_deepmd_input_v0_ni128,
+    jdata_deepmd_input_v0_ni256,
+    jdata_deepmd_input_v1_ni128,
+    jdata_deepmd_input_v1_ni256,
 )
 from deepmd.nvnmd.utils.fio import (
     FioDic,
@@ -50,6 +56,7 @@ class NvnmdConfig:
             return None
 
         self.version = jdata["version"]
+        self.max_nnei = jdata["max_nnei"]
         self.net_size = jdata["net_size"]
         self.map_file = jdata["map_file"]
         self.config_file = jdata["config_file"]
@@ -65,7 +72,7 @@ class NvnmdConfig:
             self.map = FioDic().load(self.map_file, {})
             self.weight = FioDic().load(self.weight_file, {})
 
-            self.init_config_by_version(self.version)
+            self.init_config_by_version(self.version, self.max_nnei)
             load_config = FioDic().load(self.config_file, self.config)
             self.init_from_config(load_config)
             # if load the file, set net_size
@@ -106,7 +113,11 @@ class NvnmdConfig:
         r"""Initialize member element one by one."""
         if "ctrl" in jdata.keys():
             if "VERSION" in jdata["ctrl"].keys():
-                self.init_config_by_version(jdata["ctrl"]["VERSION"])
+                if "MAX_NNEI" not in jdata["ctrl"].keys():
+                    jdata["ctrl"]["MAX_NNEI"] = 128
+                self.init_config_by_version(
+                    jdata["ctrl"]["VERSION"], jdata["ctrl"]["MAX_NNEI"]
+                )
         #
         self.config = FioDic().update(jdata, self.config)
         self.config["dscp"] = self.init_dscp(self.config["dscp"], self.config)
@@ -117,16 +128,29 @@ class NvnmdConfig:
         self.config["nbit"] = self.init_nbit(self.config["nbit"], self.config)
         self.init_value()
 
-    def init_config_by_version(self, version):
+    def init_config_by_version(self, version, max_nnei):
         r"""Initialize version-dependent parameters."""
         self.version = version
+        self.max_nnei = max_nnei
         log.debug("#Set nvnmd version as %d " % self.version)
         if self.version == 0:
-            self.jdata_deepmd_input = jdata_deepmd_input_v0.copy()
-            self.config = jdata_config_v0.copy()
+            if self.max_nnei == 128:
+                self.jdata_deepmd_input = jdata_deepmd_input_v0_ni128.copy()
+                self.config = jdata_config_v0_ni128.copy()
+            elif self.max_nnei == 256:
+                self.jdata_deepmd_input = jdata_deepmd_input_v0_ni256.copy()
+                self.config = jdata_config_v0_ni256.copy()
+            else:
+                log.error("The max_nnei only can be set as 128|256 for version 0")
         if self.version == 1:
-            self.jdata_deepmd_input = jdata_deepmd_input_v1.copy()
-            self.config = jdata_config_v1.copy()
+            if self.max_nnei == 128:
+                self.jdata_deepmd_input = jdata_deepmd_input_v1_ni128.copy()
+                self.config = jdata_config_v1_ni128.copy()
+            elif self.max_nnei == 256:
+                self.jdata_deepmd_input = jdata_deepmd_input_v1_ni256.copy()
+                self.config = jdata_config_v1_ni256.copy()
+            else:
+                log.error("The max_nnei only can be set as 128|256 for version 1")
 
     def init_net_size(self):
         r"""Initialize net_size."""
@@ -154,10 +178,15 @@ class NvnmdConfig:
             jdata["M1"] = jdata["neuron"][-1]
             jdata["M2"] = jdata["axis_neuron"]
             jdata["SEL"] = (jdata["sel"] + [0, 0, 0, 0])[0:4]
+            for s in jdata["sel"]:
+                if s > self.max_nnei:
+                    log.error("The sel cannot be greater than the max_nnei")
+                    exit(1)
             jdata["NNODE_FEAS"] = [1] + jdata["neuron"]
             jdata["nlayer_fea"] = len(jdata["neuron"])
             jdata["same_net"] = 1 if jdata["type_one_side"] else 0
             # neighbor
+            jdata["NI"] = self.max_nnei
             jdata["NIDP"] = int(np.sum(jdata["sel"]))
             jdata["NIX"] = 2 ** int(np.ceil(np.log2(jdata["NIDP"] / 1.5)))
             # type
@@ -168,10 +197,14 @@ class NvnmdConfig:
             jdata["M1"] = jdata["neuron"][-1]
             jdata["M2"] = jdata["axis_neuron"]
             jdata["SEL"] = jdata["sel"]
+            if jdata["sel"] > self.max_nnei:
+                log.error("The sel cannot be greater than the max_nnei")
+                exit(1)
             jdata["NNODE_FEAS"] = [1] + jdata["neuron"]
             jdata["nlayer_fea"] = len(jdata["neuron"])
             jdata["same_net"] = 1 if jdata["type_one_side"] else 0
             # neighbor
+            jdata["NI"] = self.max_nnei
             jdata["NIDP"] = int(jdata["sel"])
             jdata["NIX"] = 2 ** int(np.ceil(np.log2(jdata["NIDP"] / 1.5)))
             # type
@@ -306,6 +339,7 @@ class NvnmdConfig:
         r"""Generate `nvnmd` in input script."""
         jdata = self.jdata_deepmd_input["nvnmd"]
         jdata["net_size"] = self.net_size
+        jdata["max_nnei"] = self.max_nnei
         jdata["config_file"] = self.config_file
         jdata["weight_file"] = self.weight_file
         jdata["map_file"] = self.map_file

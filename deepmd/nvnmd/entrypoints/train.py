@@ -100,6 +100,7 @@ def normalized_input_qnn(jdata, PATH_QNN, CONFIG_CNN, WEIGHT_CNN, MAP_CNN):
     jdata_nvnmd = jdata_deepmd_input_v0["nvnmd"]
     jdata_nvnmd["enable"] = True
     jdata_nvnmd["version"] = nvnmd_cfg.version
+    jdata_nvnmd["max_nnei"] = nvnmd_cfg.max_nnei
     jdata_nvnmd["config_file"] = CONFIG_CNN
     jdata_nvnmd["weight_file"] = WEIGHT_CNN
     jdata_nvnmd["map_file"] = MAP_CNN
@@ -117,6 +118,7 @@ def normalized_input_qnn(jdata, PATH_QNN, CONFIG_CNN, WEIGHT_CNN, MAP_CNN):
 def train_nvnmd(
     *,
     INPUT: str,
+    init_model: Optional[str],
     restart: Optional[str],
     step: str,
     skip_neighbor_stat: bool = False,
@@ -142,6 +144,7 @@ def train_nvnmd(
         jdata = jdata_cmd_train.copy()
         jdata["INPUT"] = INPUT_CNN
         jdata["log_path"] = LOG_CNN
+        jdata["init_model"] = init_model
         jdata["restart"] = restart
         jdata["skip_neighbor_stat"] = skip_neighbor_stat
         train(**jdata)

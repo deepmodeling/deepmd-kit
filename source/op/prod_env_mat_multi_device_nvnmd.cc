@@ -411,6 +411,9 @@ class ProdEnvMatANvnmdQuantizeOp : public OpKernel {
       // no pbc
       assert(nloc == nall);
       nei_mode = -1;
+    } else if (mesh_tensor.shape().dim_size(0) > 16) {
+      // pass neighbor list inside the tensor
+      nei_mode = 4;
     } else if (mesh_tensor.shape().dim_size(0) == 7 ||
                mesh_tensor.shape().dim_size(0) == 1) {
       throw deepmd::deepmd_exception(
@@ -422,16 +425,16 @@ class ProdEnvMatANvnmdQuantizeOp : public OpKernel {
     // Create output tensors
     TensorShape descrpt_shape;
     descrpt_shape.AddDim(nsamples);
-    descrpt_shape.AddDim(nloc * ndescrpt);
+    descrpt_shape.AddDim(int_64(nloc) * ndescrpt);
     TensorShape descrpt_deriv_shape;
     descrpt_deriv_shape.AddDim(nsamples);
-    descrpt_deriv_shape.AddDim(nloc * ndescrpt * 3);
+    descrpt_deriv_shape.AddDim(int_64(nloc) * ndescrpt * 3);
     TensorShape rij_shape;
     rij_shape.AddDim(nsamples);
-    rij_shape.AddDim(nloc * nnei * 3);
+    rij_shape.AddDim(int_64(nloc) * nnei * 3);
     TensorShape nlist_shape;
     nlist_shape.AddDim(nsamples);
-    nlist_shape.AddDim(nloc * nnei);
+    nlist_shape.AddDim(int_64(nloc) * nnei);
     // define output tensor
     int context_output_index = 0;
     Tensor* descrpt_tensor = NULL;
@@ -460,8 +463,16 @@ class ProdEnvMatANvnmdQuantizeOp : public OpKernel {
     const FPTYPE* std = std_tensor.flat<FPTYPE>().data();
     const int* p_type = type_tensor.flat<int>().data();
 
+    // must declar out of if, otherwise the memory will be destroyed!
+    Tensor int_temp;
+    Tensor uint64_temp;
+    std::vector<Tensor> tensor_list(7);
+    if (device == "GPU") {
+      // UNDEFINE
+    }
+
     // loop over samples
-    for (int ff = 0; ff < nsamples; ++ff) {
+    for (int_64 ff = 0; ff < nsamples; ++ff) {
       FPTYPE* em = p_em + ff * nloc * ndescrpt;
       FPTYPE* em_deriv = p_em_deriv + ff * nloc * ndescrpt * 3;
       FPTYPE* rij = p_rij + ff * nloc * nnei * 3;
@@ -633,15 +644,18 @@ class ProdEnvMatAMixNvnmdQuantizeOp : public OpKernel {
     if (mesh_tensor.shape().dim_size(0) == 16) {
       // lammps neighbor list
       nei_mode = 3;
-    } else if (mesh_tensor.shape().dim_size(0) == 6) {
+    } else if (mesh_tensor.shape().dim_size(0) == 6 ||
+               mesh_tensor.shape().dim_size(0) == 7) {
       // manual copied pbc
-      assert(nloc == nall);
       nei_mode = 1;
       b_nlist_map = true;
-    } else if (mesh_tensor.shape().dim_size(0) == 0) {
+    } else if (mesh_tensor.shape().dim_size(0) == 0 ||
+               mesh_tensor.shape().dim_size(0) == 1) {
       // no pbc
-      assert(nloc == nall);
       nei_mode = -1;
+    } else if (mesh_tensor.shape().dim_size(0) > 16) {
+      // pass neighbor list inside the tensor
+      nei_mode = 4;
     } else {
       throw deepmd::deepmd_exception("invalid mesh tensor");
     }
@@ -691,6 +705,12 @@ class ProdEnvMatAMixNvnmdQuantizeOp : public OpKernel {
                    context->allocate_output(context_output_index++, nmask_shape,
                                             &nmask_tensor));
 
+    Tensor fake_type_tensor;  // all zeros
+    TensorShape fake_type_shape;
+    fake_type_shape.AddDim(nsamples * nall);
+    OP_REQUIRES_OK(context, context->allocate_temp(DT_INT32, fake_type_shape,
+                                                   &fake_type_tensor));
+
     FPTYPE* p_em = descrpt_tensor->flat<FPTYPE>().data();
     FPTYPE* p_em_deriv = descrpt_deriv_tensor->flat<FPTYPE>().data();
     FPTYPE* p_rij = rij_tensor->flat<FPTYPE>().data();
@@ -702,7 +722,25 @@ class ProdEnvMatAMixNvnmdQuantizeOp : public OpKernel {
     const FPTYPE* avg = avg_tensor.flat<FPTYPE>().data();
     const FPTYPE* std = std_tensor.flat<FPTYPE>().data();
     const int* p_type = type_tensor.flat<int>().data();
+    int* p_f_type = fake_type_tensor.flat<int>().data();
 
+    if (device == "GPU") {
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+// UNDEFINE
+#endif
+    } else if (device == "CPU") {
+      for (int ii = 0; ii < nsamples * nall; ii++) {
+        p_f_type[ii] = (p_type[ii] < 0) ? -1 : 0;
+      }
+    }
+
+    // must declar out of if, otherwise the memory will be destroyed!
+    Tensor int_temp;
+    Tensor uint64_temp;
+    std::vector<Tensor> tensor_list(7);
+    if (device == "GPU") {
+      // UNDEFINE
+    }
     // loop over samples
     for (int_64 ff = 0; ff < nsamples; ++ff) {
       FPTYPE* em = p_em + ff * nloc * ndescrpt;
@@ -714,6 +752,7 @@ class ProdEnvMatAMixNvnmdQuantizeOp : public OpKernel {
       const FPTYPE* coord = p_coord + ff * nall * 3;
       const FPTYPE* box = p_box + ff * 9;
       const int* type = p_type + ff * nall;
+      const int* f_type = p_f_type + ff * nall;
 
       if (device == "GPU") {
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
@@ -729,13 +768,6 @@ class ProdEnvMatAMixNvnmdQuantizeOp : public OpKernel {
         std::vector<FPTYPE> coord_cpy;
         std::vector<int> type_cpy;
         int frame_nall = nall;
-        std::vector<int> fake_type(nall, 0);
-        for (int ii = 0; ii < nall; ii++) {
-          if (type[ii] < 0) {
-            fake_type[ii] = -1;
-          }
-        }
-        const int* f_type = &fake_type[0];
         // prepare coord and nlist
         _prepare_coord_nlist_cpu<FPTYPE>(
             context, &coord, coord_cpy, &f_type, type_cpy, idx_mapping, inlist,

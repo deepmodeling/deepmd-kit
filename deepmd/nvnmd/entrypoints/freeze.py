@@ -52,6 +52,7 @@ def filter_tensorVariableList(tensorVariableList) -> dict:
         p1 = p1 or name.startswith("filter_type_")
         p1 = p1 or name.startswith("layer_")
         p1 = p1 or name.startswith("final_layer")
+        p1 = p1 or name.endswith("t_bias_atom_e")
         p2 = "Adam" not in name
         p3 = "XXX" not in name
         if p1 and p2 and p3:
@@ -75,4 +76,5 @@ def save_weight(sess, file_name: str = "nvnmd/weight.npy"):
     else:
         min_dist = 0.0
     dic_key_value["train_attr.min_nbor_dist"] = min_dist
+    dic_key_value["t_bias_atom_e"] = dic_key_value["fitting_attr.t_bias_atom_e"]
     FioDic().save(file_name, dic_key_value)
