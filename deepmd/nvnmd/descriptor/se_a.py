@@ -57,7 +57,7 @@ def check_switch_range(davg, dstd):
     if min_dist is not None:
         nvnmd_cfg.dscp["dmin"] = min_dist
         nvnmd_cfg.save()
-    
+
     # if davg and dstd is None, the model initial mode is in
     #  'init_from_model', 'restart', 'init_from_frz_model', 'finetune'
     if (davg is not None) and (dstd is not None):

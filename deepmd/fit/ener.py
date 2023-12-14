@@ -513,11 +513,11 @@ class EnerFitting(Fitting):
                 else:
                     self.bias_atom_e[type_i] = self.bias_atom_e[type_i]
             self.bias_atom_e = self.bias_atom_e[:ntypes_atom]
-        
+
         if nvnmd_cfg.enable:
             # fix the bug: CNN and QNN have different t_bias_atom_e.
             if "t_bias_atom_e" in nvnmd_cfg.weight.keys():
-                self.bias_atom_e = nvnmd_cfg.weight['t_bias_atom_e']
+                self.bias_atom_e = nvnmd_cfg.weight["t_bias_atom_e"]
 
         with tf.variable_scope("fitting_attr" + suffix, reuse=reuse):
             t_dfparam = tf.constant(self.numb_fparam, name="dfparam", dtype=tf.int32)

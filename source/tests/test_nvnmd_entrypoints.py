@@ -860,7 +860,7 @@ class TestNvnmdEntrypointsV1(tf.test.TestCase):
         # test
         data = FioBin().load(jdata["nvnmd_model"])
         idx = [0, 1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384]
-        idx = [i + 128*4 for i in idx]
+        idx = [i + 128 * 4 for i in idx]
         pred = [data[i] for i in idx]
         red_dout = [249, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 254, 95, 24, 176]
         np.testing.assert_equal(pred, red_dout)

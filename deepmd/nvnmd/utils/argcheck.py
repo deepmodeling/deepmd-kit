@@ -8,9 +8,7 @@ def nvnmd_args():
     doc_version = (
         "configuration the nvnmd version (0 | 1), 0 for 4 types, 1 for 32 types"
     )
-    doc_max_nnei = (
-        "configuration the max number of neighbors, 128|256 for version 0, 128 for version 1"
-    )
+    doc_max_nnei = "configuration the max number of neighbors, 128|256 for version 0, 128 for version 1"
     doc_net_size_file = (
         "configuration the number of nodes of fitting_net, just can be set as 128"
     )

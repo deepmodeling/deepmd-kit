@@ -463,14 +463,14 @@ class ProdEnvMatANvnmdQuantizeOp : public OpKernel {
     const FPTYPE* std = std_tensor.flat<FPTYPE>().data();
     const int* p_type = type_tensor.flat<int>().data();
 
-// must declar out of if, otherwise the memory will be destroyed!
+    // must declar out of if, otherwise the memory will be destroyed!
     Tensor int_temp;
     Tensor uint64_temp;
     std::vector<Tensor> tensor_list(7);
     if (device == "GPU") {
       // UNDEFINE
     }
-    
+
     // loop over samples
     for (int_64 ff = 0; ff < nsamples; ++ff) {
       FPTYPE* em = p_em + ff * nloc * ndescrpt;
@@ -502,9 +502,9 @@ class ProdEnvMatANvnmdQuantizeOp : public OpKernel {
             max_nbor_size, box, mesh_tensor.flat<int>().data(), nloc, nei_mode,
             rcut_r, max_cpy_trial, max_nnei_trial);
         // launch the cpu compute function
-        deepmd::prod_env_mat_a_nvnmd_quantize_cpu(em, em_deriv, rij, nlist, coord, type,
-                                                  inlist, max_nbor_size, avg, std, nloc,
-                                                  frame_nall, rcut_r, rcut_r_smth, sec_a);
+        deepmd::prod_env_mat_a_nvnmd_quantize_cpu(
+            em, em_deriv, rij, nlist, coord, type, inlist, max_nbor_size, avg,
+            std, nloc, frame_nall, rcut_r, rcut_r_smth, sec_a);
         // do nlist mapping if coords were copied
         if (b_nlist_map) {
           _map_nlist_cpu(nlist, &idx_mapping[0], nloc, nnei);
@@ -739,8 +739,8 @@ class ProdEnvMatAMixNvnmdQuantizeOp : public OpKernel {
     Tensor uint64_temp;
     std::vector<Tensor> tensor_list(7);
     if (device == "GPU") {
-      //UNDEFINE
-  }
+      // UNDEFINE
+    }
     // loop over samples
     for (int_64 ff = 0; ff < nsamples; ++ff) {
       FPTYPE* em = p_em + ff * nloc * ndescrpt;

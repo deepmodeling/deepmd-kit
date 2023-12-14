@@ -589,7 +589,9 @@ class MapTable:
         )
         # see se_atten.py in dp
         wbs = [get_filter_type_weight(nvnmd_cfg.weight, ll) for ll in range(1, 5)]
-        dic_ph["gt"] = self.build_embedding_net(two_side_type_embedding, wbs) + self.shift_Gt
+        dic_ph["gt"] = (
+            self.build_embedding_net(two_side_type_embedding, wbs) + self.shift_Gt
+        )
         return dic_ph
 
     def run_t2g(self):

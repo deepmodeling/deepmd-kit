@@ -121,7 +121,7 @@ jdata_config_v0 = {
 # change the configuration accordng to the max_nnei
 jdata_config_v0_ni128 = jdata_config_v0.copy()
 jdata_config_v0_ni256 = jdata_config_v0.copy()
-jdata_config_v0_ni256['ctrl'] = {
+jdata_config_v0_ni256["ctrl"] = {
     "MAX_NNEI": 256,
     "NSTDM": 128,
     "NSTDM_M1": 32,
@@ -132,7 +132,7 @@ jdata_config_v0_ni256['ctrl'] = {
     "VERSION": 0,
     "SUB_VERSION": 1,
 }
-jdata_config_v0_ni256['nbit']['NBIT_NEIB'] = 9
+jdata_config_v0_ni256["nbit"]["NBIT_NEIB"] = 9
 
 jdata_config_v1 = {
     "dscp": {
@@ -253,7 +253,7 @@ jdata_config_v1 = {
 # change the configuration accordng to the max_nnei
 jdata_config_v1_ni128 = jdata_config_v1.copy()
 jdata_config_v1_ni256 = jdata_config_v1.copy()
-jdata_config_v1_ni256['ctrl'] = {
+jdata_config_v1_ni256["ctrl"] = {
     "MAX_NNEI": 256,
     "NSTDM": 128,
     "NSTDM_M1": 32,
@@ -264,7 +264,7 @@ jdata_config_v1_ni256['ctrl'] = {
     "VERSION": 1,
     "SUB_VERSION": 1,
 }
-jdata_config_v1_ni256['nbit']['NBIT_NEIB'] = 9
+jdata_config_v1_ni256["nbit"]["NBIT_NEIB"] = 9
 
 jdata_deepmd_input_v0 = {
     "model": {
@@ -283,7 +283,7 @@ jdata_deepmd_input_v0 = {
     },
     "nvnmd": {
         "version": 0,
-        "max_nnei": 128, # 128 or 256
+        "max_nnei": 128,  # 128 or 256
         "net_size": 128,
         "config_file": "none",
         "weight_file": "none",
@@ -325,7 +325,7 @@ jdata_deepmd_input_v0 = {
 
 jdata_deepmd_input_v0_ni128 = jdata_deepmd_input_v0.copy()
 jdata_deepmd_input_v0_ni256 = jdata_deepmd_input_v0.copy()
-jdata_deepmd_input_v0_ni256['nvnmd']['max_nnei'] = 256
+jdata_deepmd_input_v0_ni256["nvnmd"]["max_nnei"] = 256
 
 jdata_deepmd_input_v1 = {
     "model": {
@@ -349,7 +349,7 @@ jdata_deepmd_input_v1 = {
     },
     "nvnmd": {
         "version": 1,
-        "max_nnei": 128, # 128 or 256
+        "max_nnei": 128,  # 128 or 256
         "net_size": 128,
         "config_file": "none",
         "weight_file": "none",
@@ -391,7 +391,7 @@ jdata_deepmd_input_v1 = {
 
 jdata_deepmd_input_v1_ni128 = jdata_deepmd_input_v1.copy()
 jdata_deepmd_input_v1_ni256 = jdata_deepmd_input_v1.copy()
-jdata_deepmd_input_v1_ni256['nvnmd']['max_nnei'] = 256
+jdata_deepmd_input_v1_ni256["nvnmd"]["max_nnei"] = 256
 
 NVNMD_WELCOME = (
     r" _   _  __     __  _   _   __  __   ____  ",

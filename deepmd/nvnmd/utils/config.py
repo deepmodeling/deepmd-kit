@@ -115,7 +115,9 @@ class NvnmdConfig:
             if "VERSION" in jdata["ctrl"].keys():
                 if "MAX_NNEI" not in jdata["ctrl"].keys():
                     jdata["ctrl"]["MAX_NNEI"] = 128
-                self.init_config_by_version(jdata["ctrl"]["VERSION"], jdata["ctrl"]["MAX_NNEI"])
+                self.init_config_by_version(
+                    jdata["ctrl"]["VERSION"], jdata["ctrl"]["MAX_NNEI"]
+                )
         #
         self.config = FioDic().update(jdata, self.config)
         self.config["dscp"] = self.init_dscp(self.config["dscp"], self.config)
@@ -149,7 +151,6 @@ class NvnmdConfig:
                 self.config = jdata_config_v1_ni256.copy()
             else:
                 log.error("The max_nnei only can be set as 128|256 for version 1")
-
 
     def init_net_size(self):
         r"""Initialize net_size."""

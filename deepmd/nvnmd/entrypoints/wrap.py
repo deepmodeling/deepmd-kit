@@ -158,8 +158,8 @@ class Wrap:
         version
         nhead
         nheight
-        nwidth 
-        rcut       cut-off radius 
+        nwidth
+        rcut       cut-off radius
         ntype      number of atomic species
         nnei       number of neighbors
         atom_ener  atom bias energy
@@ -171,13 +171,13 @@ class Wrap:
         weight = nvnmd_cfg.weight
         VERSION = ctrl["VERSION"]
         SUB_VERSION = ctrl["SUB_VERSION"]
-        MAX_NNEI = ctrl['MAX_NNEI']
+        MAX_NNEI = ctrl["MAX_NNEI"]
         nhead = 128
         NBIT_MODEL_HEAD = nbit["NBIT_MODEL_HEAD"]
         NBIT_FIXD_FL = nbit["NBIT_FIXD_FL"]
         rcut = dscp["rcut"]
-        ntype = dscp['ntype']
-        SEL = dscp['SEL']
+        ntype = dscp["ntype"]
+        SEL = dscp["SEL"]
 
         bs = ""
         e = Encode()
@@ -206,19 +206,19 @@ class Wrap:
         # atom_ener
         # fix the bug: the different energy between qnn and lammps
         if "t_bias_atom_e" in weight.keys():
-            atom_ener = weight['t_bias_atom_e']
+            atom_ener = weight["t_bias_atom_e"]
         else:
             atom_ener = [0] * 32
         nlayer_fit = fitn["nlayer_fit"]
         if VERSION == 0:
             for tt in range(ntype):
-                w, b, _idt = get_fitnet_weight(weight, tt, nlayer_fit-1, nlayer_fit)
+                w, b, _idt = get_fitnet_weight(weight, tt, nlayer_fit - 1, nlayer_fit)
                 shift = atom_ener[tt] + b[0]
                 SHIFT = e.qr(shift, NBIT_FIXD_FL)
                 bs = e.dec2bin(SHIFT, NBIT_MODEL_HEAD, signed=True)[0] + bs
         if VERSION == 1:
             for tt in range(ntype):
-                w, b, _idt = get_fitnet_weight(weight, 0, nlayer_fit-1, nlayer_fit)
+                w, b, _idt = get_fitnet_weight(weight, 0, nlayer_fit - 1, nlayer_fit)
                 shift = atom_ener[tt] + b[0]
                 SHIFT = e.qr(shift, NBIT_FIXD_FL)
                 bs = e.dec2bin(SHIFT, NBIT_MODEL_HEAD, signed=True)[0] + bs
