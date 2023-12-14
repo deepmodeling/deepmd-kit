@@ -10,9 +10,9 @@
 #include <string>
 #include <vector>
 
+#include "DataModifier.h"
 #include "DeepPot.h"
 #include "DeepTensor.h"
-#include "DataModifier.h"
 #include "errors.h"
 TEST(TestDeepmdException, deepmdexception) {
   std::string expected_error_message = "DeePMD-kit Error: unittest";
@@ -28,13 +28,17 @@ TEST(TestDeepmdException, deepmdexception_nofile_deeppot) {
 }
 
 TEST(TestDeepmdException, deepmdexception_nofile_deeppotmodeldevi) {
-  ASSERT_THROW(deepmd::DeepPotModelDevi({"_no_such_file.pb", "_no_such_file.pb"}), deepmd::deepmd_exception);
+  ASSERT_THROW(
+      deepmd::DeepPotModelDevi({"_no_such_file.pb", "_no_such_file.pb"}),
+      deepmd::deepmd_exception);
 }
 
 TEST(TestDeepmdException, deepmdexception_nofile_deeptensor) {
-  ASSERT_THROW(deepmd::DeepTensor("_no_such_file.pb"), deepmd::deepmd_exception);
+  ASSERT_THROW(deepmd::DeepTensor("_no_such_file.pb"),
+               deepmd::deepmd_exception);
 }
 
 TEST(TestDeepmdException, deepmdexception_nofile_dipolechargemodifier) {
-  ASSERT_THROW(deepmd::DipoleChargeModifier("_no_such_file.pb"), deepmd::deepmd_exception);
+  ASSERT_THROW(deepmd::DipoleChargeModifier("_no_such_file.pb"),
+               deepmd::deepmd_exception);
 }

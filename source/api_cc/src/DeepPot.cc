@@ -405,7 +405,7 @@ DeepPot::DeepPot(const std::string& model,
                  const std::string& file_content)
     : inited(false), init_nbor(false), graph_def(new GraphDef()) {
   try {
-      init(model, gpu_rank, file_content);
+    init(model, gpu_rank, file_content);
   } catch (...) {
     // Clean up and rethrow, as the destructor will not be called
     delete graph_def;
@@ -1244,7 +1244,7 @@ DeepPotModelDevi::DeepPotModelDevi(
     : inited(false), init_nbor(false), numb_models(0) {
   try {
     init(models, gpu_rank, file_contents);
-      } catch (...) {
+  } catch (...) {
     // Clean up and rethrow, as the destructor will not be called
     for (unsigned ii = 0; ii < numb_models; ++ii) {
       delete graph_defs[ii];
