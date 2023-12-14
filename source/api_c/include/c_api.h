@@ -1271,6 +1271,13 @@ void DP_SelectMapInt(const int* in,
                      const int nall2,
                      int* out);
 
+/**
+ * @brief Destroy a char array.
+ *
+ * @param c_str The char array.
+ */
+void DP_DeleteChar(const char* c_str);
+
 #ifdef __cplusplus
 } /* end extern "C" */
 #endif
