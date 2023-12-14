@@ -35,10 +35,13 @@ struct deepmd_exception : public std::runtime_error {
 /**
  * @brief Check if any exceptions throw in the C++ API. Throw if possible.
  */
-#define DP_CHECK_OK(check_func, dp)                            \
-  const char *err_msg = check_func(dp);                        \
-  if (std::strlen(err_msg))                                    \
-    throw deepmd::hpp::deepmd_exception(std::string(err_msg)); \
+#define DP_CHECK_OK(check_func, dp)                   \
+  const char *err_msg = check_func(dp);               \
+  if (std::strlen(err_msg)) {                         \
+    std::string err_msg_str = std::string(err_msg);   \
+    DP_DeleteChar(err_msg);                           \
+    throw deepmd::hpp::deepmd_exception(err_msg_str); \
+  }                                                   \
   DP_DeleteChar(err_msg);
 
 template <typename FPTYPE>
@@ -2013,6 +2016,7 @@ void inline read_file_to_string(std::string model, std::string &file_content) {
     throw deepmd::hpp::deepmd_exception(error_message);
   }
   file_content = std::string(c_file_content, size);
+  DP_DeleteChar(c_file_content);
 };
 
 /**
