@@ -28,7 +28,7 @@ TEST(TestDeepmdException, deepmdexception_nofile_deeppot) {
 }
 
 TEST(TestDeepmdException, deepmdexception_nofile_deeppotmodeldevi) {
-  ASSERT_THROW(deepmd::DeepPotModelDevi(std::vector<std::string>("_no_such_file.pb", "_no_such_file.pb")), deepmd::deepmd_exception);
+  ASSERT_THROW(deepmd::DeepPotModelDevi({"_no_such_file.pb", "_no_such_file.pb"}), deepmd::deepmd_exception);
 }
 
 TEST(TestDeepmdException, deepmdexception_nofile_deeptensor) {
