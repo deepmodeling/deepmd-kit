@@ -25,7 +25,6 @@ jobs:
         TF_INTER_OP_PARALLELISM_THREADS: 1
         LMP_CXX11_ABI_0: 1
         CMAKE_GENERATOR: Ninja
-        CXXFLAGS: "-fsanitize=leak"
     # test lammps
     # ASE issue: https://gitlab.com/ase/ase/-/merge_requests/2843
     # TODO: remove ase version when ase has new release
