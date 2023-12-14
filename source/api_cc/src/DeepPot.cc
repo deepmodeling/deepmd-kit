@@ -1242,7 +1242,15 @@ DeepPotModelDevi::DeepPotModelDevi(
     const int& gpu_rank,
     const std::vector<std::string>& file_contents)
     : inited(false), init_nbor(false), numb_models(0) {
-  init(models, gpu_rank, file_contents);
+  try {
+    init(models, gpu_rank, file_contents);
+      } catch (...) {
+    // Clean up and rethrow, as the destructor will not be called
+    for (unsigned ii = 0; ii < numb_models; ++ii) {
+      delete graph_defs[ii];
+    }
+    throw;
+  }
 }
 
 DeepPotModelDevi::~DeepPotModelDevi() {
