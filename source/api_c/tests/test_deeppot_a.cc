@@ -86,7 +86,10 @@ class TestInferDeepPotA : public ::testing::Test {
     }
   };
 
-  void TearDown() override { remove("deeppot.pb"); };
+  void TearDown() override {
+    remove("deeppot.pb");
+    DP_DeleteDeepPot(dp);
+  };
 };
 
 TEST_F(TestInferDeepPotA, double_infer) {
@@ -253,7 +256,11 @@ class TestInferDeepPotANoPBC : public ::testing::Test {
     }
   };
 
-  void TearDown() override { remove("deeppot.pb"); };
+  void TearDown() override {
+    remove("deeppot.pb");
+
+    DP_DeleteDeepPot(dp);
+  };
 };
 
 TEST_F(TestInferDeepPotANoPBC, double_infer) {
