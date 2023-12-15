@@ -8,6 +8,8 @@ from typing import (
     Tuple,
 )
 
+import numpy as np
+
 from deepmd.env import (
     tf,
 )
@@ -72,3 +74,20 @@ class Loss(metaclass=ABCMeta):
             A dictionary that maps keys to values. It
             should contain key `natoms`
         """
+
+    @staticmethod
+    def display_if_exist(loss: tf.Tensor, find_property: float) -> tf.Tensor:
+        """Display NaN if labeled property is not found.
+
+        Parameters
+        ----------
+        loss : tf.Tensor
+            the loss tensor
+        find_property : float
+            whether the property is found
+        """
+        return tf.cond(
+            tf.cast(find_property, tf.bool),
+            lambda: loss,
+            lambda: tf.cast(np.nan, dtype=loss.dtype),
+        )

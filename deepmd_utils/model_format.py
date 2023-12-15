@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""Native DP model format for multiple backends."""
+"""Native DP model format for multiple backends.
+
+See issue #2982 for more information.
+"""
 import json
 from typing import (
     List,
@@ -114,7 +117,6 @@ def load_dp_model(filename: str) -> dict:
     """
     with h5py.File(filename, "r") as f:
         model_dict = json.loads(f.attrs["json"])
-        print(model_dict)
         model_dict = traverse_model_dict(model_dict, lambda x: f[x][()].copy())
     return model_dict
 
@@ -176,6 +178,16 @@ class NativeLayer:
             self.b = value
         elif key == "idt":
             self.idt = value
+        else:
+            raise KeyError(key)
+
+    def __getitem__(self, key):
+        if key in ("w", "matrix"):
+            return self.w
+        elif key in ("b", "bias"):
+            return self.b
+        elif key == "idt":
+            return self.idt
         else:
             raise KeyError(key)
 

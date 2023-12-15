@@ -1277,10 +1277,10 @@ void deepmd::print_summary(const std::string& pre) {
   deepmd::get_env_nthreads(num_intra_nthreads, num_inter_nthreads);
   std::cout << pre << "installed to:       " + global_install_prefix << "\n";
   std::cout << pre << "source:             " + global_git_summ << "\n";
-  std::cout << pre << "source branch:       " + global_git_branch << "\n";
+  std::cout << pre << "source branch:      " + global_git_branch << "\n";
   std::cout << pre << "source commit:      " + global_git_hash << "\n";
   std::cout << pre << "source commit at:   " + global_git_date << "\n";
-  std::cout << pre << "surpport model ver.:" + global_model_version << "\n";
+  std::cout << pre << "support model ver.: " + global_model_version << "\n";
 #if defined(GOOGLE_CUDA)
   std::cout << pre << "build variant:      cuda"
             << "\n";

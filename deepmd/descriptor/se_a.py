@@ -783,16 +783,16 @@ class DescrptSeA(DescrptSe):
             type_i = -1
             if nvnmd_cfg.enable and nvnmd_cfg.quantize_descriptor:
                 inputs_i = descrpt2r4(inputs_i, natoms)
+            self.atype_nloc = tf.reshape(
+                tf.slice(atype, [0, 0], [-1, natoms[0]]), [-1]
+            )  # when nloc != nall, pass nloc to mask
             if len(self.exclude_types):
-                atype_nloc = tf.reshape(
-                    tf.slice(atype, [0, 0], [-1, natoms[0]]), [-1]
-                )  # when nloc != nall, pass nloc to mask
                 mask = self.build_type_exclude_mask(
                     self.exclude_types,
                     self.ntypes,
                     self.sel_a,
                     self.ndescrpt,
-                    atype_nloc,
+                    self.atype_nloc,
                     tf.shape(inputs_i)[0],
                 )
                 inputs_i *= mask
@@ -957,7 +957,7 @@ class DescrptSeA(DescrptSe):
                     extra_embedding_index = self.nei_type_vec
                 else:
                     padding_ntypes = type_embedding.shape[0]
-                    atype_expand = tf.reshape(self.atype, [-1, 1])
+                    atype_expand = tf.reshape(self.atype_nloc, [-1, 1])
                     idx_i = tf.tile(atype_expand * padding_ntypes, [1, self.nnei])
                     idx_j = tf.reshape(self.nei_type_vec, [-1, self.nnei])
                     idx = idx_i + idx_j
@@ -1002,13 +1002,6 @@ class DescrptSeA(DescrptSe):
                             two_side_type_embedding,
                             [-1, two_side_type_embedding.shape[-1]],
                         )
-
-                        atype_expand = tf.reshape(self.atype, [-1, 1])
-                        idx_i = tf.tile(atype_expand * padding_ntypes, [1, self.nnei])
-                        idx_j = tf.reshape(self.nei_type_vec, [-1, self.nnei])
-                        idx = idx_i + idx_j
-                        index_of_two_side = tf.reshape(idx, [-1])
-                        self.extra_embedding_index = index_of_two_side
 
                         net_output = embedding_net(
                             two_side_type_embedding,

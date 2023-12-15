@@ -156,33 +156,75 @@ class Wrap:
         r"""Wrap the head information.
 
         version
+        nhead
         nheight
-        nweight
-        rcut
+        nwidth
+        rcut       cut-off radius
+        ntype      number of atomic species
+        nnei       number of neighbors
+        atom_ener  atom bias energy
         """
         nbit = nvnmd_cfg.nbit
         ctrl = nvnmd_cfg.ctrl
+        dscp = nvnmd_cfg.dscp
+        fitn = nvnmd_cfg.fitn
+        weight = nvnmd_cfg.weight
         VERSION = ctrl["VERSION"]
+        SUB_VERSION = ctrl["SUB_VERSION"]
+        MAX_NNEI = ctrl["MAX_NNEI"]
+        nhead = 128
         NBIT_MODEL_HEAD = nbit["NBIT_MODEL_HEAD"]
         NBIT_FIXD_FL = nbit["NBIT_FIXD_FL"]
-        rcut = nvnmd_cfg.dscp["rcut"]
+        rcut = dscp["rcut"]
+        ntype = dscp["ntype"]
+        SEL = dscp["SEL"]
 
         bs = ""
         e = Encode()
         # version
-        bs = e.dec2bin(VERSION, NBIT_MODEL_HEAD)[0] + bs
+        vv = VERSION + 256 * SUB_VERSION + 256 * 256 * MAX_NNEI
+        bs = e.dec2bin(vv, NBIT_MODEL_HEAD)[0] + bs
+        # nhead
+        bs = e.dec2bin(nhead, NBIT_MODEL_HEAD)[0] + bs
         # height
         for n in nhs:
             bs = e.dec2bin(n, NBIT_MODEL_HEAD)[0] + bs
-        # weight
+        # width
         for n in nws:
             bs = e.dec2bin(n, NBIT_MODEL_HEAD)[0] + bs
-        # dscp
+        # rcut
         RCUT = e.qr(rcut, NBIT_FIXD_FL)
         bs = e.dec2bin(RCUT, NBIT_MODEL_HEAD)[0] + bs
+        # ntype
+        bs = e.dec2bin(ntype, NBIT_MODEL_HEAD)[0] + bs
+        # nnei
+        if VERSION == 0:
+            for tt in range(ntype):
+                bs = e.dec2bin(SEL[tt], NBIT_MODEL_HEAD)[0] + bs
+        if VERSION == 1:
+            bs = e.dec2bin(SEL, NBIT_MODEL_HEAD)[0] + bs
+        # atom_ener
+        # fix the bug: the different energy between qnn and lammps
+        if "t_bias_atom_e" in weight.keys():
+            atom_ener = weight["t_bias_atom_e"]
+        else:
+            atom_ener = [0] * 32
+        nlayer_fit = fitn["nlayer_fit"]
+        if VERSION == 0:
+            for tt in range(ntype):
+                w, b, _idt = get_fitnet_weight(weight, tt, nlayer_fit - 1, nlayer_fit)
+                shift = atom_ener[tt] + b[0]
+                SHIFT = e.qr(shift, NBIT_FIXD_FL)
+                bs = e.dec2bin(SHIFT, NBIT_MODEL_HEAD, signed=True)[0] + bs
+        if VERSION == 1:
+            for tt in range(ntype):
+                w, b, _idt = get_fitnet_weight(weight, 0, nlayer_fit - 1, nlayer_fit)
+                shift = atom_ener[tt] + b[0]
+                SHIFT = e.qr(shift, NBIT_FIXD_FL)
+                bs = e.dec2bin(SHIFT, NBIT_MODEL_HEAD, signed=True)[0] + bs
         # extend
         hs = e.bin2hex(bs)
-        hs = e.extend_hex(hs, NBIT_MODEL_HEAD * 32)
+        hs = e.extend_hex(hs, NBIT_MODEL_HEAD * nhead)
         return hs
 
     def wrap_dscp(self):
