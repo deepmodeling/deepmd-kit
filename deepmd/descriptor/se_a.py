@@ -1002,13 +1002,6 @@ class DescrptSeA(DescrptSe):
                             [-1, two_side_type_embedding.shape[-1]],
                         )
 
-                        atype_expand = tf.reshape(self.atype_nloc, [-1, 1])
-                        idx_i = tf.tile(atype_expand * padding_ntypes, [1, self.nnei])
-                        idx_j = tf.reshape(self.nei_type_vec, [-1, self.nnei])
-                        idx = idx_i + idx_j
-                        index_of_two_side = tf.reshape(idx, [-1])
-                        self.extra_embedding_index = index_of_two_side
-
                         net_output = embedding_net(
                             two_side_type_embedding,
                             self.filter_neuron,

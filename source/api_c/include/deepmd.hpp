@@ -35,10 +35,14 @@ struct deepmd_exception : public std::runtime_error {
 /**
  * @brief Check if any exceptions throw in the C++ API. Throw if possible.
  */
-#define DP_CHECK_OK(check_func, dp)     \
-  const char *err_msg = check_func(dp); \
-  if (std::strlen(err_msg))             \
-    throw deepmd::hpp::deepmd_exception(std::string(err_msg));
+#define DP_CHECK_OK(check_func, dp)                   \
+  const char *err_msg = check_func(dp);               \
+  if (std::strlen(err_msg)) {                         \
+    std::string err_msg_str = std::string(err_msg);   \
+    DP_DeleteChar(err_msg);                           \
+    throw deepmd::hpp::deepmd_exception(err_msg_str); \
+  }                                                   \
+  DP_DeleteChar(err_msg);
 
 template <typename FPTYPE>
 inline void _DP_DeepPotCompute(DP_DeepPot *dp,
@@ -1019,7 +1023,7 @@ class DeepPot {
   void get_type_map(std::string &type_map) {
     const char *type_map_c = DP_DeepPotGetTypeMap(dp);
     type_map.assign(type_map_c);
-    delete[] type_map_c;
+    DP_DeleteChar(type_map_c);
   };
   /**
    * @brief Print the summary of DeePMD-kit, including the version and the build
@@ -1864,7 +1868,7 @@ class DeepTensor {
   void get_type_map(std::string &type_map) {
     const char *type_map_c = DP_DeepTensorGetTypeMap(dt);
     type_map.assign(type_map_c);
-    delete[] type_map_c;
+    DP_DeleteChar(type_map_c);
   };
 
  private:
@@ -2009,9 +2013,11 @@ void inline read_file_to_string(std::string model, std::string &file_content) {
   if (size < 0) {
     // negtive size indicates error
     std::string error_message = std::string(c_file_content, -size);
+    DP_DeleteChar(c_file_content);
     throw deepmd::hpp::deepmd_exception(error_message);
   }
   file_content = std::string(c_file_content, size);
+  DP_DeleteChar(c_file_content);
 };
 
 /**

@@ -11,7 +11,13 @@ DipoleChargeModifier::DipoleChargeModifier(const std::string& model,
                                            const int& gpu_rank,
                                            const std::string& name_scope_)
     : inited(false), name_scope(name_scope_), graph_def(new GraphDef()) {
-  init(model, gpu_rank, name_scope_);
+  try {
+    init(model, gpu_rank, name_scope_);
+  } catch (...) {
+    // Clean up and rethrow, as the destructor will not be called
+    delete graph_def;
+    throw;
+  }
 }
 
 DipoleChargeModifier::~DipoleChargeModifier() { delete graph_def; };

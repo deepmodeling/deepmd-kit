@@ -394,6 +394,7 @@ PairDeepMD::PairDeepMD(LAMMPS *lmp)
   out_each = 0;
   out_rel = 0;
   out_rel_v = 0;
+  stdf_comm_buff_size = 0;
   eps = 0.;
   eps_v = 0.;
   scale = NULL;
@@ -720,13 +721,11 @@ void PairDeepMD::compute(int eflag, int vflag) {
         }
         double min = numeric_limits<double>::max(), max = 0, avg = 0;
         ana_st(max, min, avg, std_f, nlocal);
-        int all_nlocal = 0;
-        MPI_Reduce(&nlocal, &all_nlocal, 1, MPI_INT, MPI_SUM, 0, world);
         double all_f_min = 0, all_f_max = 0, all_f_avg = 0;
         MPI_Reduce(&min, &all_f_min, 1, MPI_DOUBLE, MPI_MIN, 0, world);
         MPI_Reduce(&max, &all_f_max, 1, MPI_DOUBLE, MPI_MAX, 0, world);
         MPI_Reduce(&avg, &all_f_avg, 1, MPI_DOUBLE, MPI_SUM, 0, world);
-        all_f_avg /= double(all_nlocal);
+        all_f_avg /= double(atom->natoms);
         // std v
         std::vector<double> send_v(9 * numb_models);
         std::vector<double> recv_v(9 * numb_models);
@@ -779,10 +778,22 @@ void PairDeepMD::compute(int eflag, int vflag) {
              << " " << setw(18) << all_f_avg;
         }
         if (out_each == 1) {
-          vector<double> std_f_all(all_nlocal);
+          vector<double> std_f_all(atom->natoms);
           // Gather std_f and tags
           tagint *tag = atom->tag;
           int nprocs = comm->nprocs;
+          // Grow arrays if necessary
+          if (atom->natoms > stdf_comm_buff_size) {
+            stdf_comm_buff_size = atom->natoms;
+            memory->destroy(stdfsend);
+            memory->destroy(stdfrecv);
+            memory->destroy(tagsend);
+            memory->destroy(tagrecv);
+            memory->create(stdfsend, stdf_comm_buff_size, "deepmd:stdfsendall");
+            memory->create(stdfrecv, stdf_comm_buff_size, "deepmd:stdfrecvall");
+            memory->create(tagsend, stdf_comm_buff_size, "deepmd:tagsendall");
+            memory->create(tagrecv, stdf_comm_buff_size, "deepmd:tagrecvall");
+          }
           for (int ii = 0; ii < nlocal; ii++) {
             tagsend[ii] = tag[ii];
             stdfsend[ii] = std_f[ii];
@@ -797,10 +808,10 @@ void PairDeepMD::compute(int eflag, int vflag) {
           MPI_Gatherv(stdfsend, nlocal, MPI_DOUBLE, stdfrecv, counts,
                       displacements, MPI_DOUBLE, 0, world);
           if (rank == 0) {
-            for (int dd = 0; dd < all_nlocal; ++dd) {
+            for (int dd = 0; dd < atom->natoms; ++dd) {
               std_f_all[tagrecv[dd] - 1] = stdfrecv[dd] * force_unit_cvt_factor;
             }
-            for (int dd = 0; dd < all_nlocal; ++dd) {
+            for (int dd = 0; dd < atom->natoms; ++dd) {
               fp << " " << setw(18) << std_f_all[dd];
             }
           }
@@ -1278,6 +1289,9 @@ void PairDeepMD::init_style() {
   if (out_each == 1) {
     int ntotal = atom->natoms;
     int nprocs = comm->nprocs;
+    if (ntotal > stdf_comm_buff_size) {
+      stdf_comm_buff_size = ntotal;
+    }
     memory->create(counts, nprocs, "deepmd:counts");
     memory->create(displacements, nprocs, "deepmd:displacements");
     memory->create(stdfsend, ntotal, "deepmd:stdfsendall");

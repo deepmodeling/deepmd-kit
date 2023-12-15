@@ -87,9 +87,22 @@ class MapTable:
         jdata["weight_file"] = weight_file
         jdata["enable"] = True
 
+        # 0 : xyz_scatter = xyz_scatter * two_embd + xyz_scatter;
+        # Gs + 1, Gt + 0
+        # 1 : xyz_scatter = xyz_scatter * two_embd + two_embd   ;
+        # Gs + 0, Gt + 1
+        self.Gs_Gt_mode = 1
+
         nvnmd_cfg.init_from_jdata(jdata)
 
     def build_map(self):
+        if self.Gs_Gt_mode == 0:
+            self.shift_Gs = 1
+            self.shift_Gt = 0
+        if self.Gs_Gt_mode == 1:
+            self.shift_Gs = 0
+            self.shift_Gt = 1
+        #
         M = nvnmd_cfg.dscp["M1"]
         if nvnmd_cfg.version == 0:
             ndim = nvnmd_cfg.dscp["ntype"]
@@ -482,7 +495,7 @@ class MapTable:
             shift = 0
         if nvnmd_cfg.version == 1:
             ndim = 1
-            shift = 1
+            shift = self.shift_Gs
         #
         dic_ph = {}
         dic_ph["s"] = tf.placeholder(tf.float64, [None, 1], "t_s")
@@ -496,6 +509,13 @@ class MapTable:
         r"""Build s-> graph and run it to get value of mapping table."""
         smin = nvnmd_cfg.dscp["smin"]
         smax = nvnmd_cfg.dscp["smax"]
+        # fix the bug: if model initial mode is 'init_from_model',
+        # we need dmin to calculate smin and smax in mapt.py
+        if smin == -2:
+            davg, dstd = get_normalize(nvnmd_cfg.weight)
+            nvnmd_cfg.get_s_range(davg, dstd)
+            smin = nvnmd_cfg.dscp["smin"]
+            smax = nvnmd_cfg.dscp["smax"]
 
         tf.reset_default_graph()
         dic_ph = self.build_s2g_grad()
@@ -567,9 +587,11 @@ class MapTable:
             two_side_type_embedding,
             [-1, two_side_type_embedding.shape[-1]],
         )
-
+        # see se_atten.py in dp
         wbs = [get_filter_type_weight(nvnmd_cfg.weight, ll) for ll in range(1, 5)]
-        dic_ph["gt"] = self.build_embedding_net(two_side_type_embedding, wbs)
+        dic_ph["gt"] = (
+            self.build_embedding_net(two_side_type_embedding, wbs) + self.shift_Gt
+        )
         return dic_ph
 
     def run_t2g(self):

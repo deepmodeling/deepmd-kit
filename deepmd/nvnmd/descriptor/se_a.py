@@ -50,12 +50,17 @@ def check_switch_range(davg, dstd):
         else:
             min_dist = nvnmd_cfg.weight["train_attr.min_nbor_dist"]
     else:
-        min_dist = rmin
+        min_dist = None
+
+    # fix the bug: if model initial mode is 'init_from_model',
+    # we need dmin to calculate smin and smax in mapt.py
+    if min_dist is not None:
+        nvnmd_cfg.dscp["dmin"] = min_dist
+        nvnmd_cfg.save()
 
     # if davg and dstd is None, the model initial mode is in
     #  'init_from_model', 'restart', 'init_from_frz_model', 'finetune'
     if (davg is not None) and (dstd is not None):
-        nvnmd_cfg.dscp["dmin"] = min_dist
         nvnmd_cfg.get_s_range(davg, dstd)
 
 

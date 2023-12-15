@@ -1423,4 +1423,6 @@ void DP_SelectMapInt(const int* in,
   }
 }
 
+void DP_DeleteChar(const char* c_str) { delete[] c_str; }
+
 }  // extern "C"

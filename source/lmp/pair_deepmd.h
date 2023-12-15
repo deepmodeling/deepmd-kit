@@ -98,6 +98,7 @@ class PairDeepMD : public Pair {
   int out_each;
   int out_rel;
   int out_rel_v;
+  int stdf_comm_buff_size;
   bool single_model;
   bool multi_models_mod_devi;
   bool multi_models_no_mod_devi;
