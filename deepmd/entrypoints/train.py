@@ -505,9 +505,15 @@ def update_one_sel(jdata, descriptor, one_type: bool = False):
 
 
 def update_sel(jdata):
-    log.info(
-        "Calculate neighbor statistics... (add --skip-neighbor-stat to skip this step)"
-    )
-    jdata_cpy = jdata.copy()
-    jdata_cpy["model"] = Model.update_sel(jdata, jdata["model"])
+    if jdata['model']['descriptor']['type'] != "se_a_mask":
+        log.info(
+            "Skip neighbor statistics for se_a_mask descriptor."
+        )
+        jdata_cpy = jdata.copy()
+    else:
+        log.info(
+            "Calculate neighbor statistics... (add --skip-neighbor-stat to skip this step)"
+        )
+        jdata_cpy = jdata.copy()
+        jdata_cpy["model"] = Model.update_sel(jdata, jdata["model"])        
     return jdata_cpy
