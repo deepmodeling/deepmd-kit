@@ -421,6 +421,7 @@ class DescrptSeAMask(DescrptSeA):
     @classmethod
     def update_sel(cls, global_jdata: dict, local_jdata: dict):
         """Update the selection and perform neighbor statistics.
+
         Parameters
         ----------
         global_jdata : dict
