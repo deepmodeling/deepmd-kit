@@ -154,7 +154,7 @@ class TensorModel(Model, paddle.nn.Layer):
 
         rot_mat = self.descrpt.get_rot_mat()
         rot_mat = paddle.clone(rot_mat, name="o_rot_mat" + suffix)
- 
+
         output = self.fitting(
             dout, rot_mat, natoms, input_dict, reuse=reuse, suffix=suffix
         )

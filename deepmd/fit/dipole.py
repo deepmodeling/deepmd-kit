@@ -1,6 +1,7 @@
 import logging
 from typing import List
 from typing import Optional
+
 import numpy as np
 from paddle import nn
 
@@ -242,7 +243,9 @@ class DipoleFittingSeA(nn.Layer):
 
         if type_embedding is not None:
             nloc_mask = paddle.reshape(
-                paddle.tile(paddle.repeat_interleave(self.sel_mask, natoms[2:]), [nframes]),
+                paddle.tile(
+                    paddle.repeat_interleave(self.sel_mask, natoms[2:]), [nframes]
+                ),
                 [nframes, -1],
             )
             atype_nall = paddle.reshape(atype, [-1, natoms[1]])
@@ -253,9 +256,7 @@ class DipoleFittingSeA(nn.Layer):
             self.nloc_masked = paddle.shape(
                 paddle.reshape(self.atype_nloc_masked, [nframes, -1])
             )[1]
-            atype_embed = nn.embedding_lookup(
-                type_embedding, self.atype_nloc_masked
-            )
+            atype_embed = nn.embedding_lookup(type_embedding, self.atype_nloc_masked)
         else:
             atype_embed = None
 

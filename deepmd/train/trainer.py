@@ -28,8 +28,8 @@ from deepmd.env import paddle
 from deepmd.env import tf
 from deepmd.env import tfv2
 from deepmd.fit import Fitting
-from deepmd.fit import ener
 from deepmd.fit import dipole
+from deepmd.fit import ener
 from deepmd.loss import DOSLoss
 from deepmd.loss import EnerDipoleLoss
 from deepmd.loss import EnerSpinLoss
