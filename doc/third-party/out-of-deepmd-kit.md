@@ -26,7 +26,7 @@ The DPRc model and the interface were developed by the [York Lab](https://theory
 More details are available in
 - [Amber Reference Manuals](https://ambermd.org/Manuals.php), providing documentation for how to enable the interface and the `&dprc` namelist;
 - [GitLab RutgersLBSR/AmberDPRc](https://gitlab.com/RutgersLBSR/AmberDPRc/), providing examples mdin files;
-- [DP-Amber](https://gitlab.com/njzjz/dpamber/), a tiny tool to convert Amber trajectory to DPRc training data;
+- [DP-Amber](https://github.com/njzjz/dpamber/), a tiny tool to convert Amber trajectory to DPRc training data;
 - [The original DPRc paper](https://doi.org/10.1021/acs.jctc.1c00201).
 
 ## DP-GEN
