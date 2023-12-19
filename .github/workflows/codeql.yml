@@ -2,9 +2,7 @@ name: "CodeQL"
 
 on:
   push:
-    branches: [ "devel" ]
   pull_request:
-    branches: [ "devel" ]
   schedule:
     - cron: '45 2 * * 2'
 
@@ -26,30 +24,32 @@ jobs:
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
-
-    # Initializes the CodeQL tools for scanning.
-    - name: Initialize CodeQL
-      uses: github/codeql-action/init@v3
-      with:
-        languages: ${{ matrix.language }}
-        queries: security-extended,security-and-quality
     - uses: actions/setup-python@v5
       with:
         python-version: '3.11'
         cache: 'pip'
       if: matrix.language == 'c-cpp'
-    - name: "Run, Build Application using script"
+    - name: "Setup dependencies"
+      if: matrix.language == 'c-cpp'
       run: |
         wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.0-1_all.deb \
          && sudo dpkg -i cuda-keyring_1.0-1_all.deb \
          && sudo apt-get update \
          && sudo apt-get -y install cuda-cudart-dev-12-2 cuda-nvcc-12-2
         python -m pip install tensorflow
-        source/install/build_cc.sh
+      env:
+        DEBIAN_FRONTEND: noninteractive
+    # Initializes the CodeQL tools for scanning.
+    - name: Initialize CodeQL
+      uses: github/codeql-action/init@v3
+      with:
+        languages: ${{ matrix.language }}
+        queries: security-extended,security-and-quality
+    - name: "Run, Build Application using script"
+      run: source/install/build_cc.sh
       env:
         DP_VARIANT: cuda
         DOWNLOAD_TENSORFLOW: "FALSE"
-        DEBIAN_FRONTEND: noninteractive
       if: matrix.language == 'c-cpp'
 
     - name: Perform CodeQL Analysis
