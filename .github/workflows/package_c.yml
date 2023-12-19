@@ -30,7 +30,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: libdeepmd_c
+          name: libdeepmd_c-${{ github.job }}-${{ strategy.job-index }}
           path: ${{ matrix.filename }}
       - name: Test C library
         run: ./source/install/docker_test_package_c.sh
@@ -48,7 +48,7 @@ jobs:
       - name: Download artifact
         uses: actions/download-artifact@v4
         with:
-          name: libdeepmd_c
+          merge-multiple: true
       - run: tar -vxzf ./libdeepmd_c.tar.gz
       - name: Test C library
         run: ./source/install/build_from_c.sh
