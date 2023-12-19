@@ -32,18 +32,7 @@ jobs:
       uses: github/codeql-action/init@v3
       with:
         languages: ${{ matrix.language }}
-        # If you wish to specify custom queries, you can do so here or in a config file.
-        # By default, queries listed here will override any specified in a config file.
-        # Prefix the list here with "+" to use these queries and those in the config file.
-
-        # For more details on CodeQL's query packs, refer to: https://docs.github.com/en/code-security/code-scanning/automatically-scanning-your-code-for-vulnerabilities-and-errors/configuring-code-scanning#using-queries-in-ql-packs
-        # queries: security-extended,security-and-quality
-
-    # ℹ️ Command-line programs to run using the OS shell.
-    # 📚 See https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#jobsjob_idstepsrun
-
-    #   If the Autobuild fails above, remove it and uncomment the following three lines.
-    #   modify them (or add more) to build your code if your project, please refer to the EXAMPLE below for guidance.
+        queries: security-extended,security-and-quality
     - uses: actions/setup-python@v5
       with:
         python-version: '3.11'
@@ -51,10 +40,16 @@ jobs:
       if: matrix.language == 'c-cpp'
     - name: "Run, Build Application using script"
       run: |
+        wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.0-1_all.deb \
+         && sudo dpkg -i cuda-keyring_1.0-1_all.deb \
+         && sudo apt-get update \
+         && sudo apt-get -y install cuda-cudart-dev-12-2 cuda-nvcc-12-2
         python -m pip install tensorflow
         source/install/build_cc.sh
       env:
+        DP_VARIANT: cuda
         DOWNLOAD_TENSORFLOW: "FALSE"
+        DEBIAN_FRONTEND: noninteractive
       if: matrix.language == 'c-cpp'
 
     - name: Perform CodeQL Analysis
