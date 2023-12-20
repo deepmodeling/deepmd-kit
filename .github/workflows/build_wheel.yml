@@ -79,7 +79,7 @@ jobs:
           DP_PKG_NAME: ${{ matrix.dp_pkg_name }}
       - uses: actions/upload-artifact@v4
         with:
-          name: cibw-${{ github.job }}-${{ strategy.job-index }}
+          name: cibw-cp${{ matrix.python }}-${{ matrix.platform_id }}-cu${{ matrix.cuda_version }}-${{ strategy.job-index }}
           path: ./wheelhouse/*.whl
   build_sdist:
     name: Build source distribution
@@ -99,7 +99,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: sdist
+          name: cibw-sdist
           path: dist/*.tar.gz
 
   upload_pypi:
@@ -112,6 +112,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
+          pattern: cibw-*
           path: dist
           merge-multiple: true
       - uses: pypa/gh-action-pypi-publish@release/v1
