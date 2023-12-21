@@ -1,7 +1,11 @@
-from typing import List
+from typing import (
+    List,
+)
 
-from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
-from deepmd.env import tf
+from deepmd.env import (
+    GLOBAL_TF_FLOAT_PRECISION,
+    tf,
+)
 
 
 class Spin:

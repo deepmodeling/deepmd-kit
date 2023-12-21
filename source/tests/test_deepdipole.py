@@ -2,15 +2,23 @@ import os
 import unittest
 
 import numpy as np
-from common import finite_difference
-from common import strerch_box
-from common import tests_path
-from common import tf
+from common import (
+    finite_difference,
+    strerch_box,
+    tests_path,
+    tf,
+)
 from packaging.version import parse as parse_version
 
-from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
-from deepmd.infer import DeepDipole
-from deepmd.utils.convert import convert_pbtxt_to_pb
+from deepmd.env import (
+    GLOBAL_NP_FLOAT_PRECISION,
+)
+from deepmd.infer import (
+    DeepDipole,
+)
+from deepmd.utils.convert import (
+    convert_pbtxt_to_pb,
+)
 
 if GLOBAL_NP_FLOAT_PRECISION == np.float32:
     default_places = 4

@@ -1,16 +1,18 @@
 import logging
 import math
-from typing import List
-from typing import Tuple
+from typing import (
+    List,
+    Tuple,
+)
 
 import numpy as np
 
-from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
-from deepmd.env import default_tf_session_config
-from deepmd.env import op_module
-from deepmd.env import tf
-from deepmd.utils.data_system import DeepmdDataSystem
-from deepmd.utils.parallel_op import ParallelOp
+from deepmd.env import (
+    op_module,
+)
+from deepmd.utils.data_system import (
+    DeepmdDataSystem,
+)
 
 log = logging.getLogger(__name__)
 

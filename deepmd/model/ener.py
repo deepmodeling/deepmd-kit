@@ -1,23 +1,33 @@
-from typing import TYPE_CHECKING
-from typing import List
-from typing import Optional
+from typing import (
+    TYPE_CHECKING,
+    List,
+    Optional,
+)
 
-import numpy as np
+from deepmd.env import (
+    MODEL_VERSION,
+    paddle,
+    tf,
+)
+from deepmd.utils.pair_tab import (
+    PairTab,
+)
+from deepmd.utils.spin import (
+    Spin,
+)
 
-from deepmd.env import MODEL_VERSION
-from deepmd.env import global_cvt_2_ener_float
-from deepmd.env import op_module
-from deepmd.env import paddle
-from deepmd.env import tf
-from deepmd.utils.pair_tab import PairTab
-from deepmd.utils.spin import Spin
-
-from .model import Model
-from .model_stat import make_stat_input
-from .model_stat import merge_sys_stat
+from .model import (
+    Model,
+)
+from .model_stat import (
+    make_stat_input,
+    merge_sys_stat,
+)
 
 if TYPE_CHECKING:
-    from deepmd.fit import ener
+    from deepmd.fit import (
+        ener,
+    )
 
 
 class EnerModel(Model, paddle.nn.Layer):

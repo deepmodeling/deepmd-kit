@@ -1,12 +1,18 @@
 import os
 import subprocess as sp
 import sys
-from pathlib import Path
+from pathlib import (
+    Path,
+)
 
 import numpy as np
 import pytest
-from lammps import PyLammps
-from write_lmp_data import write_lmp_data_full
+from lammps import (
+    PyLammps,
+)
+from write_lmp_data import (
+    write_lmp_data_full,
+)
 
 pbtxt_file = Path(__file__).parent / "lrmodel.pbtxt"
 pb_file = Path(__file__).parent / "lrmodel.pb"

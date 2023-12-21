@@ -2,20 +2,32 @@ import os
 import unittest
 
 import numpy as np
-from common import j_loader
+from common import (
+    j_loader,
+)
 
-from deepmd.descriptor import DescrptSeA
-from deepmd.env import tf
+from deepmd.descriptor import (
+    DescrptSeA,
+)
+from deepmd.env import (
+    tf,
+)
 
 GLOBAL_ENER_FLOAT_PRECISION = tf.float64
 GLOBAL_TF_FLOAT_PRECISION = tf.float64
 GLOBAL_NP_FLOAT_PRECISION = np.float64
 
 #
-from common import tests_path
+from common import (
+    tests_path,
+)
 
-from deepmd.nvnmd.data.data import jdata_deepmd_input
-from deepmd.nvnmd.utils.config import nvnmd_cfg
+from deepmd.nvnmd.data.data import (
+    jdata_deepmd_input,
+)
+from deepmd.nvnmd.utils.config import (
+    nvnmd_cfg,
+)
 
 
 class TestModel(tf.test.TestCase):

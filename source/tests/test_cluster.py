@@ -1,8 +1,12 @@
 import unittest
-from unittest import mock
+from unittest import (
+    mock,
+)
 
-from deepmd.cluster import local
-from deepmd.cluster import slurm
+from deepmd.cluster import (
+    local,
+    slurm,
+)
 
 kHostName = "compute-b24-1"
 

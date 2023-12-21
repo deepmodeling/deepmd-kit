@@ -1,25 +1,43 @@
 import warnings
-from typing import List
-from typing import Optional
-from typing import Tuple
+from typing import (
+    List,
+    Optional,
+    Tuple,
+)
 
 import numpy as np
-from packaging.version import Version
+from packaging.version import (
+    Version,
+)
 
-from deepmd.common import cast_precision
-from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
-from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
-from deepmd.env import TF_VERSION
-from deepmd.env import default_tf_session_config
-from deepmd.env import op_module
-from deepmd.env import tf
-from deepmd.utils.graph import get_attention_layer_variables_from_graph_def
-from deepmd.utils.network import embedding_net
-from deepmd.utils.network import one_layer
-from deepmd.utils.sess import run_sess
+from deepmd.common import (
+    cast_precision,
+)
+from deepmd.env import (
+    GLOBAL_NP_FLOAT_PRECISION,
+    GLOBAL_TF_FLOAT_PRECISION,
+    TF_VERSION,
+    default_tf_session_config,
+    op_module,
+    tf,
+)
+from deepmd.utils.graph import (
+    get_attention_layer_variables_from_graph_def,
+)
+from deepmd.utils.network import (
+    embedding_net,
+    one_layer,
+)
+from deepmd.utils.sess import (
+    run_sess,
+)
 
-from .descriptor import Descriptor
-from .se_a import DescrptSeA
+from .descriptor import (
+    Descriptor,
+)
+from .se_a import (
+    DescrptSeA,
+)
 
 
 @Descriptor.register("se_atten")

@@ -1,13 +1,19 @@
-from typing import TYPE_CHECKING
-from typing import List
-from typing import Optional
+from typing import (
+    TYPE_CHECKING,
+    List,
+    Optional,
+)
 
 import numpy as np
 
-from deepmd.infer.deep_tensor import DeepTensor
+from deepmd.infer.deep_tensor import (
+    DeepTensor,
+)
 
 if TYPE_CHECKING:
-    from pathlib import Path
+    from pathlib import (
+        Path,
+    )
 
 
 class DeepPolar(DeepTensor):

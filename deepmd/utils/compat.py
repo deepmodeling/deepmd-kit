@@ -2,16 +2,22 @@
 
 import json
 import warnings
-from pathlib import Path
-from typing import Any
-from typing import Dict
-from typing import Optional
-from typing import Sequence
-from typing import Union
+from pathlib import (
+    Path,
+)
+from typing import (
+    Any,
+    Dict,
+    Optional,
+    Sequence,
+    Union,
+)
 
 import numpy as np
 
-from deepmd.common import j_must_have
+from deepmd.common import (
+    j_must_have,
+)
 
 
 def convert_input_v0_v1(

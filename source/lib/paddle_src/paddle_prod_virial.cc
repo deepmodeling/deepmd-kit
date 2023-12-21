@@ -111,9 +111,9 @@ std::vector<paddle::Tensor> ProdVirialSeAForward(
         net_deriv_tensor, in_deriv_tensor, rij_tensor, nlist_tensor,
         natoms_tensor.copy_to(paddle::CPUPlace(), false), n_a_sel, n_r_sel);
   } else if (net_deriv_tensor.is_cpu()) {
-    return ProdVirialSeAOpCPUForward(net_deriv_tensor, in_deriv_tensor,
-                                     rij_tensor, nlist_tensor, natoms_tensor.copy_to(paddle::CPUPlace(), false),
-                                     n_a_sel, n_r_sel);
+    return ProdVirialSeAOpCPUForward(
+        net_deriv_tensor, in_deriv_tensor, rij_tensor, nlist_tensor,
+        natoms_tensor.copy_to(paddle::CPUPlace(), false), n_a_sel, n_r_sel);
   } else {
     PD_THROW("Unsupported device type for ProdVirialSeAForward");
   }

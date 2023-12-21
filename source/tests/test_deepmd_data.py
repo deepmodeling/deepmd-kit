@@ -4,10 +4,16 @@ import shutil
 import unittest
 
 import numpy as np
-from common import tests_path
+from common import (
+    tests_path,
+)
 
-from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
-from deepmd.utils.data import DeepmdData
+from deepmd.env import (
+    GLOBAL_NP_FLOAT_PRECISION,
+)
+from deepmd.utils.data import (
+    DeepmdData,
+)
 
 if GLOBAL_NP_FLOAT_PRECISION == np.float32:
     places = 6

@@ -1,13 +1,19 @@
 """Test if `DeepPotential` facto function returns the right type of potential."""
 
 import unittest
-from pathlib import Path
+from pathlib import (
+    Path,
+)
 
-from deepmd.infer import DeepDipole
-from deepmd.infer import DeepPolar
-from deepmd.infer import DeepPot
-from deepmd.infer import DeepPotential
-from deepmd.utils.convert import convert_pbtxt_to_pb
+from deepmd.infer import (
+    DeepDipole,
+    DeepPolar,
+    DeepPot,
+    DeepPotential,
+)
+from deepmd.utils.convert import (
+    convert_pbtxt_to_pb,
+)
 
 
 class TestGetPotential(unittest.TestCase):

@@ -834,7 +834,8 @@ void PairDeepMD::settings(int narg, char **arg) {
   if (numb_models == 1) {
     try {
       auto ptr = strstr(arg[0], ".pb");
-      deep_pot.init(arg[0], get_node_rank(), (ptr != NULL) ? get_file_content(arg[0]) : "");
+      deep_pot.init(arg[0], get_node_rank(),
+                    (ptr != NULL) ? get_file_content(arg[0]) : "");
     } catch (deepmd_compat::deepmd_exception &e) {
       error->one(FLERR, e.what());
     }

@@ -1,12 +1,18 @@
 import logging
 import os
-from typing import Callable
-from typing import Tuple
+from typing import (
+    Callable,
+    Tuple,
+)
 
 import numpy as np
 
-from deepmd.env import tf
-from deepmd.utils.errors import OutOfMemoryError
+from deepmd.env import (
+    tf,
+)
+from deepmd.utils.errors import (
+    OutOfMemoryError,
+)
 
 log = logging.getLogger(__name__)
 

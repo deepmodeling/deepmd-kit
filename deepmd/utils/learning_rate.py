@@ -1,10 +1,15 @@
-from typing import Optional
+from typing import (
+    Optional,
+)
 
 import numpy as np
-from paddle.optimizer import lr
+from paddle.optimizer import (
+    lr,
+)
 
-from deepmd.env import paddle
-from deepmd.env import tf
+from deepmd.env import (
+    tf,
+)
 
 
 class LearningRateExp:

@@ -3,18 +3,34 @@ import os
 import unittest
 
 import numpy as np
-from common import j_loader
-from common import run_dp
-from common import tests_path
+from common import (
+    j_loader,
+    run_dp,
+    tests_path,
+)
 
-from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
-from deepmd.env import tf
-from deepmd.train.run_options import RunOptions
-from deepmd.train.trainer import DPTrainer
-from deepmd.utils.argcheck import normalize
-from deepmd.utils.compat import update_deepmd_input
-from deepmd.utils.data_system import DeepmdDataSystem
-from deepmd.utils.multi_init import replace_model_params_with_frz_multi_model
+from deepmd.env import (
+    GLOBAL_NP_FLOAT_PRECISION,
+    tf,
+)
+from deepmd.train.run_options import (
+    RunOptions,
+)
+from deepmd.train.trainer import (
+    DPTrainer,
+)
+from deepmd.utils.argcheck import (
+    normalize,
+)
+from deepmd.utils.compat import (
+    update_deepmd_input,
+)
+from deepmd.utils.data_system import (
+    DeepmdDataSystem,
+)
+from deepmd.utils.multi_init import (
+    replace_model_params_with_frz_multi_model,
+)
 
 if GLOBAL_NP_FLOAT_PRECISION == np.float32:
     default_places = 4

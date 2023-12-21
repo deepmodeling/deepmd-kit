@@ -1,7 +1,11 @@
 import os
 
-from deepmd.env import tf
-from deepmd.utils.errors import OutOfMemoryError
+from deepmd.env import (
+    tf,
+)
+from deepmd.utils.errors import (
+    OutOfMemoryError,
+)
 
 
 def run_sess(sess: tf.Session, *args, **kwargs):

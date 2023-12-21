@@ -1,27 +1,43 @@
 """Test trained DeePMD model."""
 import logging
-from pathlib import Path
-from typing import TYPE_CHECKING
-from typing import Dict
-from typing import List
-from typing import Optional
-from typing import Tuple
+from pathlib import (
+    Path,
+)
+from typing import (
+    TYPE_CHECKING,
+    Dict,
+    List,
+    Optional,
+    Tuple,
+)
 
 import numpy as np
 
-from deepmd import DeepPotential
-from deepmd.common import expand_sys_str
+from deepmd import (
+    DeepPotential,
+)
+from deepmd.common import (
+    expand_sys_str,
+)
 from deepmd.utils import random as dp_random
-from deepmd.utils.data import DeepmdData
-from deepmd.utils.weight_avg import weighted_average
+from deepmd.utils.data import (
+    DeepmdData,
+)
+from deepmd.utils.weight_avg import (
+    weighted_average,
+)
 
 if TYPE_CHECKING:
-    from deepmd.infer import DeepDipole
-    from deepmd.infer import DeepDOS
-    from deepmd.infer import DeepPolar
-    from deepmd.infer import DeepPot
-    from deepmd.infer import DeepWFC
-    from deepmd.infer.deep_tensor import DeepTensor
+    from deepmd.infer import (
+        DeepDipole,
+        DeepDOS,
+        DeepPolar,
+        DeepPot,
+        DeepWFC,
+    )
+    from deepmd.infer.deep_tensor import (
+        DeepTensor,
+    )
 
 __all__ = ["test"]
 

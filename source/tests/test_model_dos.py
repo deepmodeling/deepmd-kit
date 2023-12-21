@@ -1,14 +1,26 @@
 import numpy as np
-from common import DataSystem
-from common import del_data
-from common import gen_data
-from common import j_loader
+from common import (
+    DataSystem,
+    del_data,
+    gen_data,
+    j_loader,
+)
 
-from deepmd.common import j_must_have
-from deepmd.descriptor import DescrptSeA
-from deepmd.env import tf
-from deepmd.fit import DOSFitting
-from deepmd.model import DOSModel
+from deepmd.common import (
+    j_must_have,
+)
+from deepmd.descriptor import (
+    DescrptSeA,
+)
+from deepmd.env import (
+    tf,
+)
+from deepmd.fit import (
+    DOSFitting,
+)
+from deepmd.model import (
+    DOSModel,
+)
 
 GLOBAL_ENER_FLOAT_PRECISION = tf.float64
 GLOBAL_TF_FLOAT_PRECISION = tf.float64

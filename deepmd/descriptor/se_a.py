@@ -1,37 +1,41 @@
-from typing import List
-from typing import Optional
-from typing import Tuple
+from typing import (
+    List,
+    Optional,
+    Tuple,
+)
 
 import numpy as np
 
-from deepmd.common import cast_precision
-from deepmd.common import get_activation_func
-from deepmd.common import get_precision
-from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
-from deepmd.env import GLOBAL_PD_FLOAT_PRECISION
-from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
-from deepmd.env import default_tf_session_config
-from deepmd.env import op_module
-from deepmd.env import paddle
-from deepmd.env import tf
-from deepmd.nvnmd.descriptor.se_a import build_davg_dstd
-from deepmd.nvnmd.descriptor.se_a import build_op_descriptor
-from deepmd.nvnmd.descriptor.se_a import check_switch_range
-from deepmd.nvnmd.descriptor.se_a import descrpt2r4
-from deepmd.nvnmd.descriptor.se_a import filter_GR2D
-from deepmd.nvnmd.descriptor.se_a import filter_lower_R42GR
-from deepmd.nvnmd.utils.config import nvnmd_cfg
-from deepmd.utils.errors import GraphWithoutTensorError
-from deepmd.utils.graph import get_tensor_by_name_from_graph
+from deepmd.common import (
+    get_activation_func,
+    get_precision,
+)
+from deepmd.env import (
+    GLOBAL_NP_FLOAT_PRECISION,
+    GLOBAL_PD_FLOAT_PRECISION,
+    op_module,
+    paddle,
+    tf,
+)
+from deepmd.utils.errors import (
+    GraphWithoutTensorError,
+)
+from deepmd.utils.graph import (
+    get_tensor_by_name_from_graph,
+)
 from deepmd.utils.network import EmbeddingNet  # embedding_net,
-from deepmd.utils.network import embedding_net_rand_seed_shift
-from deepmd.utils.sess import run_sess
-from deepmd.utils.spin import Spin
-from deepmd.utils.tabulate import DPTabulate
-from deepmd.utils.type_embed import embed_atom_type
-
-from .descriptor import Descriptor
-from .se import DescrptSe
+from deepmd.utils.network import (
+    embedding_net_rand_seed_shift,
+)
+from deepmd.utils.spin import (
+    Spin,
+)
+from deepmd.utils.tabulate import (
+    DPTabulate,
+)
+from deepmd.utils.type_embed import (
+    embed_atom_type,
+)
 
 
 # @Descriptor.register("se_e2_a")
@@ -729,17 +733,26 @@ class DescrptSeA(paddle.nn.Layer):
     ):
         """pass_filter.
 
-        Args:
-            inputs (_type_): _description_
-            atype (_type_): _description_
-            natoms (_type_): _description_
-            input_dict (_type_): _description_
-            reuse (_type_, optional): _description_. Defaults to None.
-            suffix (str, optional): _description_. Defaults to "".
-            trainable (bool, optional): _description_. Defaults to True.
+        Parameters
+        ----------
+        inputs : paddle.Tensor
+            Inputs tensor.
+        atype : paddle.Tensor
+            Atom type Tensor.
+        natoms : paddle.Tensor
+            Number of atoms vector
+        input_dict : Dict[str, paddle.Tensor]
+            Input data dict.
+        reuse : bool, optional
+            Whether reuse variables. Defaults to None.
+        suffix : str, optional
+            Variable suffix. Defaults to "".
+        trainable : bool, optional
+            Whether make subnetwork traninable. Defaults to True.
 
-        Returns:
-            Tuple[Tensor, Tensor]: output: [1, all_atom, M1*M2], output_qmat: [1, all_atom, M1*3]
+        Returns
+        -------
+        Tuple[Tensor, Tensor]: output: [1, all_atom, M1*M2], output_qmat: [1, all_atom, M1*3]
         """
         # natoms = [192, 192, 64 , 128]
         if input_dict is not None:
@@ -1107,21 +1120,34 @@ class DescrptSeA(paddle.nn.Layer):
         reuse=None,
         trainable=True,
     ):
-        """_filter
+        """_filter.
 
-        Args:
-            inputs (paddle.Tensor): _description_
-            natoms (_type_): _description_
-            type_embedding (_type_, optional): _description_. Defaults to None.
-            activation_fn (_type_, optional): _description_. Defaults to paddle.nn.functional.tanh.
-            stddev (float, optional): _description_. Defaults to 1.0.
-            bavg (float, optional): _description_. Defaults to 0.0.
-            name (str, optional): _description_. Defaults to "linear".
-            reuse (_type_, optional): _description_. Defaults to None.
-            trainable (bool, optional): _description_. Defaults to True.
+        Parameters
+        ----------
+        inputs : paddle.Tensor
+            Inputs tensor.
+        type_input : int
+            Type of input.
+        natoms : paddle.Tensor
+            Number of atoms, a vector.
+        type_embedding : paddle.Tensor
+            Type embedding. Defaults to None.
+        activation_fn : Callable
+            Activation function. Defaults to paddle.nn.functional.tanh.
+        stddev : float, optional
+            Stddev for parameters initialization. Defaults to 1.0.
+        bavg : float, optional
+            Bavg for parameters initialization . Defaults to 0.0.
+        name : str, optional
+            Name for subnetwork. Defaults to "linear".
+        reuse : bool, optional
+            Whether reuse variables. Defaults to None.
+        trainable : bool, optional
+            Whether make subnetwork trainable. Defaults to True.
 
-        Returns:
-            Tuple[Tensor, Tensor]: result: [64/128, M1*M2], qmat: [64/128, M1, 3]
+        Returns
+        -------
+        Tuple[Tensor, Tensor]: result: [64/128, M1*M2], qmat: [64/128, M1, 3]
         """
         # nframes = paddle.shape(paddle.reshape(inputs, [-1, natoms[0], self.ndescrpt]))[0]
         # 上述 nframes的计算代码是错误的，reshape前后numel根本不相等，会导致程序报错，tf不会报错是因为tf计算图

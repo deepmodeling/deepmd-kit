@@ -129,7 +129,8 @@ std::vector<paddle::Tensor> ProdVirialSeABackward(
   if (virial_grad_tensor.is_gpu()) {
     return ProdVirialSeAOpCUDABackward(
         virial_grad_tensor, net_deriv_tensor, in_deriv_tensor, rij_tensor,
-        nlist_tensor, natoms_tensor.copy_to(paddle::CPUPlace(), false), n_a_sel, n_r_sel);
+        nlist_tensor, natoms_tensor.copy_to(paddle::CPUPlace(), false), n_a_sel,
+        n_r_sel);
   } else if (virial_grad_tensor.is_cpu()) {
     return ProdVirialSeAOpCPUBackward(virial_grad_tensor, net_deriv_tensor,
                                       in_deriv_tensor, rij_tensor, nlist_tensor,

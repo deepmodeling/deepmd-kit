@@ -207,7 +207,7 @@ std::vector<paddle::Tensor> ProdVirialSeAOpCUDAForward(
   CHECK_INPUT(in_deriv_tensor);
   CHECK_INPUT(rij_tensor);
   CHECK_INPUT(nlist_tensor);
-  CHECK_INPUT_ON_CPU(natoms_tensor); // TODO:
+  CHECK_INPUT_ON_CPU(natoms_tensor);  // TODO:
   // 暂时指定python端必须为cpu，gpu的copy_to会导致返回的指针数据不对
 
   CHECK_INPUT_DIM(net_deriv_tensor, 2);

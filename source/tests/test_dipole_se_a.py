@@ -1,15 +1,27 @@
 import numpy as np
-from common import DataSystem
-from common import finite_difference
-from common import gen_data
-from common import j_loader
-from common import strerch_box
+from common import (
+    DataSystem,
+    finite_difference,
+    gen_data,
+    j_loader,
+    strerch_box,
+)
 
-from deepmd.common import j_must_have
-from deepmd.descriptor import DescrptSeA
-from deepmd.env import tf
-from deepmd.fit import DipoleFittingSeA
-from deepmd.model import DipoleModel
+from deepmd.common import (
+    j_must_have,
+)
+from deepmd.descriptor import (
+    DescrptSeA,
+)
+from deepmd.env import (
+    tf,
+)
+from deepmd.fit import (
+    DipoleFittingSeA,
+)
+from deepmd.model import (
+    DipoleModel,
+)
 
 GLOBAL_ENER_FLOAT_PRECISION = tf.float64
 GLOBAL_TF_FLOAT_PRECISION = tf.float64

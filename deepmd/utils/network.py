@@ -1,11 +1,14 @@
 import numpy as np
-from paddle import nn
 
-from deepmd.common import get_precision
-from deepmd.env import GLOBAL_PD_FLOAT_PRECISION
-from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
-from deepmd.env import paddle
-from deepmd.env import tf
+from deepmd.common import (
+    get_precision,
+)
+from deepmd.env import (
+    GLOBAL_PD_FLOAT_PRECISION,
+    GLOBAL_TF_FLOAT_PRECISION,
+    paddle,
+    tf,
+)
 
 
 def one_layer_rand_seed_shift():
@@ -312,7 +315,7 @@ class OneLayer(paddle.nn.Layer):
         trainable=True,
         useBN=False,
     ):
-        super(OneLayer, self).__init__(name)
+        super().__init__(name)
         self.out_features = out_features
         self.activation_fn = activation_fn
         self.use_timestep = use_timestep

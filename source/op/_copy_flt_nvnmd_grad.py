@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 
-from tensorflow.python.framework import ops
+from tensorflow.python.framework import (
+    ops,
+)
 
-from deepmd.env import op_module
+from deepmd.env import (
+    op_module,
+)
 
 
 @ops.RegisterGradient("CopyFltNvnmd")

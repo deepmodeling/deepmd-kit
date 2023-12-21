@@ -1,8 +1,12 @@
 import numpy as np
 
-from deepmd.env import tf
-from deepmd.utils.type_embed import TypeEmbedNet
-from deepmd.utils.type_embed import embed_atom_type
+from deepmd.env import (
+    tf,
+)
+from deepmd.utils.type_embed import (
+    TypeEmbedNet,
+    embed_atom_type,
+)
 
 
 class TestTypeEbd(tf.test.TestCase):

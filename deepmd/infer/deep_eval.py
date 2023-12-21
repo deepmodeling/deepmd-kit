@@ -1,29 +1,45 @@
-from functools import lru_cache
-from typing import TYPE_CHECKING
-from typing import List
-from typing import Optional
-from typing import Union
+from functools import (
+    lru_cache,
+)
+from typing import (
+    TYPE_CHECKING,
+    List,
+    Optional,
+    Union,
+)
 
 # from deepmd.descriptor.descriptor import (
 #     Descriptor,
 # )
 import numpy as np
 
-from deepmd.common import data_requirement
-from deepmd.common import expand_sys_str
-from deepmd.common import j_loader
-from deepmd.common import j_must_have
-from deepmd.descriptor import DescrptSeA
-from deepmd.env import MODEL_VERSION
-from deepmd.env import default_tf_session_config
-from deepmd.env import paddle
-from deepmd.env import tf
-from deepmd.model import EnerModel
-from deepmd.utils.batch_size import AutoBatchSize
-from deepmd.utils.sess import run_sess
+from deepmd.common import (
+    j_loader,
+    j_must_have,
+)
+from deepmd.descriptor import (
+    DescrptSeA,
+)
+from deepmd.env import (
+    MODEL_VERSION,
+    default_tf_session_config,
+    paddle,
+    tf,
+)
+from deepmd.model import (
+    EnerModel,
+)
+from deepmd.utils.batch_size import (
+    AutoBatchSize,
+)
+from deepmd.utils.sess import (
+    run_sess,
+)
 
 if TYPE_CHECKING:
-    from pathlib import Path
+    from pathlib import (
+        Path,
+    )
 
 
 class DeepEval:
@@ -81,7 +97,9 @@ class DeepEval:
             if not self.multi_task_mode
             else j_must_have(model_param, "fitting_net_dict")
         )
-        from deepmd.fit import EnerFitting
+        from deepmd.fit import (
+            EnerFitting,
+        )
 
         # fitting_param.pop("type", None)
         fitting_param.pop("_comment", None)
@@ -216,6 +234,7 @@ class DeepEval:
         self, tensor_name: str, attr_name: Optional[str] = None
     ) -> tf.Tensor:
         """Get TF graph tensor and assign it to class namespace.
+
         Parameters
         ----------
         tensor_name : str
@@ -223,10 +242,6 @@ class DeepEval:
         attr_name : Optional[str], optional
             if specified, class attribute with this name will be created and tensor will
             be assigned to it, by default None
-        Returns
-        -------
-        tf.Tensor
-            loaded tensor
         """
         # do not use os.path.join as it doesn't work on Windows
         value = None

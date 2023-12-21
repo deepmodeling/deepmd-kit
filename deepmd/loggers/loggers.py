@@ -2,13 +2,19 @@
 
 import logging
 import os
-from typing import TYPE_CHECKING
-from typing import Optional
+from typing import (
+    TYPE_CHECKING,
+    Optional,
+)
 
 if TYPE_CHECKING:
-    from pathlib import Path
+    from pathlib import (
+        Path,
+    )
 
-    from mpi4py import MPI
+    from mpi4py import (
+        MPI,
+    )
 
     _MPI_APPEND_MODE = MPI.MODE_CREATE | MPI.MODE_APPEND
 
@@ -200,7 +206,9 @@ def set_log_handles(
     MPI = None
     if mpi_log:
         try:
-            from mpi4py import MPI
+            from mpi4py import (
+                MPI,
+            )
         except ImportError as e:
             raise RuntimeError(
                 "You cannot specify 'mpi_log' when mpi4py not installed"
