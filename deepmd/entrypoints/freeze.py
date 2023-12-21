@@ -354,23 +354,7 @@ def freeze_graph(
             InputSpec(shape=[None], dtype="float64"),  # box
             InputSpec(shape=[6], dtype="int32"),  # mesh
             {
-                # "coord": InputSpec(
-                #     shape=[2880],
-                #     dtype="float64"
-                # ),
-                # "type": InputSpec(
-                #     shape=[960],
-                #     dtype="int32"
-                # ),
-                # "natoms_vec": InputSpec(
-                #     shape=[4],
-                #     dtype="int32"
-                # ),
                 "box": InputSpec(shape=[None], dtype="float64"),
-                # "default_mesh": InputSpec(
-                #     shape=[6],
-                #     dtype="int32"
-                # ),
             },
             "",
             False,
@@ -380,17 +364,7 @@ def freeze_graph(
         print(
             f"[{name}, {param.shape}] generated name in static_model is: {param.name}"
         )
-    # print(f"st_model.descrpt.buffer_rcut.name = {st_model.descrpt.buffer_rcut.name}")
-    # print(
-    #     f"st_model.descrpt.buffer_ntypes.name = {st_model.descrpt.buffer_ntypes.name}"
-    # )
-    # print(
-    #     f"st_model.fitting.buffer_dfparam.name = {st_model.fitting.buffer_dfparam.name}"
-    # )
-    # print(
-    #     f"st_model.fitting.buffer_daparam.name = {st_model.fitting.buffer_daparam.name}"
-    # )
-    # 跳过对program的裁剪，从而保留rcut、ntypes等不参与前向的参数，从而在C++端可以获取这些参数
+    #  skip pruning for program so as to keep buffers into files
     skip_prune_program = True
     print(f"==>> Set skip_prune_program = {skip_prune_program}")
     paddle.jit.save(st_model, output, skip_prune_program=skip_prune_program)
@@ -475,12 +449,8 @@ def freeze_graph_multi(
 
 def freeze(
     *,
-    # checkpoint_folder: str,
     input_file: str,
     output: str,
-    # node_names: Optional[str] = None,
-    # nvnmd_weight: Optional[str] = None,
-    # united_model: bool = False,
     **kwargs,
 ):
     """Freeze the graph in supplied folder.
@@ -494,78 +464,7 @@ def freeze(
     **kwargs
         other arguments
     """
-    # We retrieve our checkpoint fullpath
-    # checkpoint = tf.train.get_checkpoint_state(checkpoint_folder)
-    # input_checkpoint = checkpoint.model_checkpoint_path
-
-    # # expand the output file to full path
-    # output_graph = abspath(output)
-
-    # # Before exporting our graph, we need to precise what is our output node
-    # # This is how TF decides what part of the Graph he has to keep
-    # # and what part it can dump
-    # # NOTE: this variable is plural, because you can have multiple output nodes
-    # # node_names = "energy_test,force_test,virial_test,t_rcut"
-
-    # # We clear devices to allow TensorFlow to control
-    # # on which device it will load operations
-    # clear_devices = True
-
-    # # We import the meta graph and retrieve a Saver
-    # try:
-    #     # In case paralle training
-    #     import horovod.tensorflow as _  # noqa: F401
-    # except ImportError:
-    #     pass
-    # saver = tf.train.import_meta_graph(
-    #     f"{input_checkpoint}.meta", clear_devices=clear_devices
-    # )
-
-    # # We retrieve the protobuf graph definition
-    # graph = tf.get_default_graph()
-    # try:
-    #     input_graph_def = graph.as_graph_def()
-    # except google.protobuf.message.DecodeError as e:
-    #     raise GraphTooLargeError(
-    #         "The graph size exceeds 2 GB, the hard limitation of protobuf."
-    #         " Then a DecodeError was raised by protobuf. You should "
-    #         "reduce the size of your model."
-    #     ) from e
-    # nodes = [n.name for n in input_graph_def.node]
-
-    # # We start a session and restore the graph weights
-    # with tf.Session() as sess:
-    #     saver.restore(sess, input_checkpoint)
-    #     model_type = run_sess(sess, "model_attr/model_type:0", feed_dict={}).decode(
-    #         "utf-8"
-    #     )
-    #     if "modifier_attr/type" in nodes:
-    #         modifier_type = run_sess(sess, "modifier_attr/type:0", feed_dict={}).decode(
-    #             "utf-8"
-    #         )
-    #     else:
-    #         modifier_type = None
-    #     if nvnmd_weight is not None:
-    #         save_weight(sess, nvnmd_weight)  # nvnmd
-    # if model_type != "multi_task":
     freeze_graph(
         input_file,
         output,
-        # sess,
-        # input_graph_def,
-        # nodes,
-        # model_type,
-        # modifier_type,
-        # output_graph,
-        # node_names,
     )
-    # else:
-    #     freeze_graph_multi(
-    #         sess,
-    #         input_graph_def,
-    #         nodes,
-    #         modifier_type,
-    #         output_graph,
-    #         node_names,
-    #         united_model=united_model,
-    #     )

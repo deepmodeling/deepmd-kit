@@ -848,39 +848,6 @@ class DPTrainer:
                     )
                 )
 
-        # prf_options = None
-        # prf_run_metadata = None
-        # if self.profiling:
-        #     prf_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
-        #     prf_run_metadata = tf.RunMetadata()
-
-        # set tensorboard execution environment
-        # if self.tensorboard:
-        #     summary_merged_op = tf.summary.merge_all()
-        #     # Remove TB old logging directory from previous run
-        #     try:
-        #         shutil.rmtree(self.tensorboard_log_dir)
-        #     except FileNotFoundError:
-        #         pass  # directory does not exist, this is OK
-        #     except Exception as e:
-        #         # general error when removing directory, warn user
-        #         log.exception(
-        #             f"Could not remove old tensorboard logging directory: "
-        #             f"{self.tensorboard_log_dir}. Error: {e}"
-        #         )
-        #     else:
-        #         log.debug("Removing old tensorboard log directory.")
-        #     tb_train_writer = tf.summary.FileWriter(
-        #         self.tensorboard_log_dir + "/train", self.sess.graph
-        #     )
-        #     tb_valid_writer = tf.summary.FileWriter(self.tensorboard_log_dir + "/test")
-        # else:
-        #     tb_train_writer = None
-        #     tb_valid_writer = None
-        # if self.enable_profiler:
-        #     # https://www.tensorflow.org/guide/profiler
-        #     tfv2.profiler.experimental.start(self.tensorboard_log_dir)
-
         train_time = 0
         total_train_time = 0.0
         wall_time_tic = time.time()
@@ -898,35 +865,6 @@ class DPTrainer:
 
         while cur_batch < stop_batch:
             train_batch = datasetloader.get_data_dict()
-            # first round validation:
-            # if is_first_step:
-            #     if not self.multi_task_mode:
-            #         train_batch = train_data.get_batch()
-            #         # batch_train_op = self.train_op
-            #     else:
-            #         fitting_idx = dp_random.choice(
-            #             np.arange(self.nfitting), p=np.array(self.fitting_prob)
-            #         )
-            #         fitting_key = self.fitting_key_list[fitting_idx]
-            #         train_batch = train_data[fitting_key].get_batch()
-            #         # batch_train_op = self.train_op[fitting_key]
-            # else:
-            #     train_batch = next_datasetloader.get_data_dict(next_train_batch_list)
-            #     # batch_train_op = next_batch_train_op
-            #     fitting_key = next_fitting_key
-            # for next round
-            # if not self.multi_task_mode:
-            #     next_datasetloader = datasetloader
-            # next_batch_train_op = self.train_op
-            # next_train_batch_op = data_op
-            # else:
-            #     fitting_idx = dp_random.choice(
-            #         np.arange(self.nfitting), p=np.array(self.fitting_prob)
-            #     )
-            #     next_fitting_key = self.fitting_key_list[fitting_idx]
-            #     next_datasetloader = datasetloader[next_fitting_key]
-            # next_batch_train_op = self.train_op[fitting_key]
-            # next_train_batch_op = data_op[fitting_key]
 
             if self.display_in_training and is_first_step:
                 if self.run_opt.is_chief:
@@ -972,18 +910,9 @@ class DPTrainer:
 
             if self.timing_in_training:
                 tic = time.time()
-            # train_feed_dict = self.get_feed_dict(train_batch, is_training=True)
             # use tensorboard to visualize the training of deepmd-kit
             # it will takes some extra execution time to generate the tensorboard data
             if self.tensorboard and (cur_batch % self.tensorboard_freq == 0):
-                # summary, _, next_train_batch_list = run_sess(
-                #     self.sess,
-                #     [summary_merged_op, batch_train_op, next_train_batch_op],
-                #     feed_dict=train_feed_dict,
-                #     options=prf_options,
-                #     run_metadata=prf_run_metadata,
-                # )
-                # tb_train_writer.add_summary(summary, cur_batch)
                 model_pred = self.model(
                     paddle.to_tensor(train_batch["coord"], "float32"),
                     paddle.to_tensor(train_batch["type"], "int32"),
@@ -995,30 +924,6 @@ class DPTrainer:
                     reuse=False,
                 )
             else:
-                # for k, v in train_feed_dict.items():
-                #     print(f"{k} {v.shape if hasattr(v, 'shape') else v}")
-                """
-                find_box:0", dtype=float32) ()
-                find_coord:0", dtype=float32) ()
-                find_numb_copy:0", dtype=float32) ()
-                find_energy:0", dtype=float32) ()
-                find_force:0", dtype=float32) ()
-                find_virial:0", dtype=float32) ()
-                find_atom_ener:0", dtype=float32) ()
-                find_atom_pref:0", dtype=float32) ()
-                box:0", shape=(?,), dtype=float64) (9,)
-                coord:0", shape=(?,), dtype=float64) (576,)
-                numb_copy:0", shape=(?,), dtype=float64) (1,)
-                energy:0", shape=(?,), dtype=float64) (1,)
-                force:0", shape=(?,), dtype=float64) (576,)
-                virial:0", shape=(?,), dtype=float64) (9,)
-                atom_ener:0", shape=(?,), dtype=float64) (192,)
-                atom_pref:0", shape=(?,), dtype=float64) (576,)
-                natoms:0", shape=(4,), dtype=int32) (4,)
-                mesh:0", shape=(?,), dtype=int32) (6,)
-                type:0", shape=(?,), dtype=int32) (192,)
-                aceholder:0", dtype=bool) True
-                """
                 model_inputs = {}
                 for kk in train_batch.keys():
                     if kk == "find_type" or kk == "type":
@@ -1054,12 +959,6 @@ class DPTrainer:
                     reuse=False,
                 )
 
-                # loss = (
-                #     model_pred["force"].sum()
-                #     + model_pred["virial"].sum()
-                #     + model_pred["energy"].sum()
-                #     + model_pred["atom_ener"].sum()
-                # )
                 # print(f"{self.cur_batch} {self.learning_rate.get_lr():.10f}")
                 l2_l, l2_more = self.loss.compute_loss(
                     self.learning_rate.get_lr(),
@@ -1074,34 +973,6 @@ class DPTrainer:
                 self.optimizer.step()
                 self.global_step += 1
 
-                # _, next_train_batch_list = run_sess(
-                #     self.sess,
-                #     [batch_train_op, next_train_batch_op],
-                #     feed_dict=train_feed_dict,
-                #     options=prf_options,
-                #     run_metadata=prf_run_metadata,
-                # )
-                """next_train_batch_list
-                find_box (): <class 'numpy.float32'> none
-                box (1, 9): <class 'numpy.ndarray'> (1, 9)
-                find_coord (): <class 'numpy.float32'> none
-                coord (1, 576): <class 'numpy.ndarray'> (1, 576)
-                find_numb_copy (): <class 'numpy.float32'> none
-                numb_copy (1, 1): <class 'numpy.ndarray'> (1, 1)
-                find_energy (): <class 'numpy.float32'> none
-                energy (1, 1): <class 'numpy.ndarray'> (1, 1)
-                find_force (): <class 'numpy.float32'> none
-                force (1, 576): <class 'numpy.ndarray'> (1, 576)
-                find_virial (): <class 'numpy.float32'> none
-                virial (1, 9): <class 'numpy.ndarray'> (1, 9)
-                find_atom_ener (): <class 'numpy.float32'> none
-                atom_ener (1, 192): <class 'numpy.ndarray'> (1, 192)
-                find_atom_pref (): <class 'numpy.float32'> none
-                atom_pref (1, 576): <class 'numpy.ndarray'> (1, 576)
-                type (1, 192): <class 'numpy.ndarray'> (1, 192)
-                natoms_vec (4,): <class 'numpy.ndarray'> (4,)
-                default_mesh (6,): <class 'numpy.ndarray'> (6,)
-                """
             if self.timing_in_training:
                 toc = time.time()
             if self.timing_in_training:
@@ -1183,42 +1054,7 @@ class DPTrainer:
                     total_train_time / (stop_batch // self.disp_freq * self.disp_freq),
                 )
 
-        # if self.profiling and self.run_opt.is_chief:
-        #     fetched_timeline = timeline.Timeline(prf_run_metadata.step_stats)
-        #     chrome_trace = fetched_timeline.generate_chrome_trace_format()
-        #     with open(self.profiling_file, "w") as f:
-        #         f.write(chrome_trace)
-        # if self.enable_profiler and self.run_opt.is_chief:
-        #     tfv2.profiler.experimental.stop()
-
     def save_checkpoint(self, cur_batch: int):
-        # try:
-        #     ckpt_prefix = self.saver.save(
-        #         self.sess,
-        #         os.path.join(os.getcwd(), self.save_ckpt),
-        #         global_step=cur_batch,
-        #     )
-        # except google.protobuf.message.DecodeError as e:
-        #     raise GraphTooLargeError(
-        #         "The graph size exceeds 2 GB, the hard limitation of protobuf."
-        #         " Then a DecodeError was raised by protobuf. You should "
-        #         "reduce the size of your model."
-        #     ) from e
-        # # make symlinks from prefix with step to that without step to break nothing
-        # # get all checkpoint files
-        # original_files = glob.glob(ckpt_prefix + ".*")
-        # for ori_ff in original_files:
-        #     new_ff = self.save_ckpt + ori_ff[len(ckpt_prefix) :]
-        #     try:
-        #         # remove old one
-        #         os.remove(new_ff)
-        #     except OSError:
-        #         pass
-        #     if platform.system() != "Windows":
-        #         # by default one does not have access to create symlink on Windows
-        #         os.symlink(ori_ff, new_ff)
-        #     else:
-        #         shutil.copyfile(ori_ff, new_ff)
         paddle.save(self.model.state_dict(), f"Model_{cur_batch}.pdparams")
         paddle.save(self.optimizer.state_dict(), f"Optimier_{cur_batch}.pdopt")
         log.info("saved checkpoint %s" % self.save_ckpt)

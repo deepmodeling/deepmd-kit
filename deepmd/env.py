@@ -372,10 +372,7 @@ def get_module(module_name: str) -> "ModuleType":
         raise FileNotFoundError(f"module {module_name} does not exist")
     else:
         try:
-            # module = tf.load_op_library(str(module_file))
-            import paddle_deepmd_lib
-
-            module = paddle_deepmd_lib
+            import paddle_deepmd_lib as module
 
         except tf.errors.NotFoundError as e:
             # check CXX11_ABI_FLAG is compatiblity

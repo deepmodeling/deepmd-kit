@@ -8,9 +8,6 @@ from typing import (
     Union,
 )
 
-# from deepmd.descriptor.descriptor import (
-#     Descriptor,
-# )
 import numpy as np
 
 from deepmd.common import (
@@ -130,18 +127,18 @@ class DeepEval:
             for k, v in load_state_dict.items():
                 if k in self.model.state_dict():
                     if load_state_dict[k].dtype != self.model.state_dict()[k].dtype:
-                        print(
-                            f"convert {k}'s dtype from {load_state_dict[k].dtype} to {self.model.state_dict()[k].dtype}"
-                        )
+                        # print(
+                        #     f"convert {k}'s dtype from {load_state_dict[k].dtype} to {self.model.state_dict()[k].dtype}"
+                        # )
                         load_state_dict[k] = load_state_dict[k].astype(
                             self.model.state_dict()[k].dtype
                         )
                     if list(load_state_dict[k].shape) != list(
                         self.model.state_dict()[k].shape
                     ):
-                        print(
-                            f"convert {k}'s shape from {load_state_dict[k].shape} to {self.model.state_dict()[k].shape}"
-                        )
+                        # print(
+                        #     f"convert {k}'s shape from {load_state_dict[k].shape} to {self.model.state_dict()[k].shape}"
+                        # )
                         load_state_dict[k] = load_state_dict[k].reshape(
                             self.model.state_dict()[k].shape
                         )
@@ -295,7 +292,6 @@ class DeepEval:
                 #                 # print(param.shape)
                 #                 if param.shape == (2,):
                 #                     print(constant_op.outputs[0], param)
-
             return graph
 
     @staticmethod

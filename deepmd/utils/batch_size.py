@@ -196,7 +196,6 @@ class AutoBatchSize:
                 for rr in result:
                     rr.reshape((n_batch, -1))
                 results.append(result)
-        # print(__file__, "here")
 
         r = tuple([np.concatenate(r, axis=0) for r in zip(*results)])
         if len(r) == 1:

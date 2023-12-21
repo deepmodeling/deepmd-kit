@@ -489,27 +489,3 @@ class EmbeddingNet(paddle.nn.Layer):
                 xx = hidden
 
         return xx
-
-        # == debug code below ==#
-        # hidden = nn.functional.tanh(
-        #     nn.functional.linear(xx, self.weight[0], self.bias[0])
-        # ).reshape(
-        #     [-1, 25]
-        # )  # 1
-        # xx = hidden  # 7
-
-        # hidden = nn.functional.tanh(
-        #     nn.functional.linear(xx, self.weight[1], self.bias[1])
-        # ).reshape(
-        #     [-1, 50]
-        # )  # 1
-        # xx = paddle.concat([xx, xx], axis=1) + hidden  # 6
-
-        # hidden = nn.functional.tanh(
-        #     nn.functional.linear(xx, self.weight[2], self.bias[2])
-        # ).reshape(
-        #     [-1, 100]
-        # )  # 1
-        # xx = paddle.concat([xx, xx], axis=1) + hidden  # 6
-
-        # return xx

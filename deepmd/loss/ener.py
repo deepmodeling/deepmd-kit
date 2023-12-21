@@ -195,11 +195,6 @@ class EnerStdLoss(Loss):
 
         l2_loss = 0
         more_loss = {}
-        # print(self.has_e)
-        # print(self.has_f)
-        # print(self.has_v)
-        # print(self.has_ae)
-        # print(self.has_pf)
         if self.has_e:  # true
             l2_loss += atom_norm_ener * (pref_e * l2_ener_loss)
             more_loss["l2_ener_loss"] = l2_ener_loss
@@ -215,24 +210,6 @@ class EnerStdLoss(Loss):
         if self.has_pf:  # false
             l2_loss += pref_pf * l2_pref_force_loss
             more_loss["l2_pref_force_loss"] = l2_pref_force_loss
-
-        # only used when tensorboard was set as true
-        # self.l2_loss_summary = paddle.summary.scalar("l2_loss_" + suffix, paddle.sqrt(l2_loss))
-        # if self.has_e:
-        #     self.l2_loss_ener_summary = paddle.summary.scalar(
-        #         "l2_ener_loss_" + suffix,
-        #         global_cvt_2_tf_float(paddle.sqrt(l2_ener_loss))
-        #         / global_cvt_2_tf_float(natoms[0]),
-        #     )
-        # if self.has_f:
-        #     self.l2_loss_force_summary = paddle.summary.scalar(
-        #         "l2_force_loss_" + suffix, paddle.sqrt(l2_force_loss)
-        #     )
-        # if self.has_v:
-        #     self.l2_loss_virial_summary = paddle.summary.scalar(
-        #         "l2_virial_loss_" + suffix,
-        #         paddle.sqrt(l2_virial_loss) / global_cvt_2_tf_float(natoms[0]),
-        #     )
 
         self.l2_l = l2_loss
         self.l2_more = more_loss
@@ -275,7 +252,6 @@ class EnerStdLoss(Loss):
             reuse=False,
         )
         l2_l, l2_more = self.compute_loss(
-            # 0.0, natoms, model_dict, batch_data
             0.0,
             model_inputs["natoms_vec"],
             model_pred,

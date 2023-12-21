@@ -431,7 +431,6 @@ class EnerFitting(nn.Layer):
         bias_atom_e=0.0,
         type_suffix="",
         suffix="",
-        # reuse=None,
         type_i=None,
     ):
         # cut-out inputs
@@ -462,51 +461,19 @@ class EnerFitting(nn.Layer):
             ext_aparam = paddle.cast(ext_aparam, self.fitting_precision)
             layer = paddle.concat([layer, ext_aparam], axis=1)
 
-        # if nvnmd_cfg.enable:
-        #     one_layer = one_layer_nvnmd
-        # else:
-        #     one_layer = one_layer_deepmd
         for ii in range(0, len(self.n_neuron)):
-            # if self.layer_name is not None and self.layer_name[ii] is not None:
-            #     layer_suffix = "share_" + self.layer_name[ii] + type_suffix
-            #     layer_reuse = tf.AUTO_REUSE
-            # else:
-            #     layer_suffix = "layer_" + str(ii) + type_suffix + suffix
-            #     layer_reuse = reuse
             if ii >= 1 and self.n_neuron[ii] == self.n_neuron[ii - 1]:
                 layer += self.one_layers[type_i][ii](layer)
             else:
                 layer = self.one_layers[type_i][ii](layer)
-            # print(f"use {ii} of {len(self.one_layers)}_{type_i}")
-            # if (not self.uniform_seed) and (self.seed is not None):
-            #     self.seed += self.seed_shift
-            # if self.layer_name is not None and self.layer_name[-1] is not None:
-            #     layer_suffix = "share_" + self.layer_name[-1] + type_suffix
-            #     layer_reuse = tf.AUTO_REUSE
-            # else:
-            #     layer_suffix = "final_layer" + type_suffix + suffix
-            #     layer_reuse = reuse
             if (not self.uniform_seed) and (self.seed is not None):
                 self.seed += self.seed_shift
-        final_layer = self.final_layers[type_i](
-            layer,
-            # 1,
-            # activation_fn=None,
-            # bavg=bias_atom_e,
-            # name=layer_suffix,
-            # reuse=layer_reuse,
-            # seed=self.seed,
-            # precision=self.fitting_precision,
-            # trainable=self.trainable[-1],
-            # uniform_seed=self.uniform_seed,
-            # initial_variables=self.fitting_net_variables,
-            # mixed_prec=self.mixed_prec,
-            # final_layer=True,
-        )
+
+        final_layer = self.final_layers[type_i](layer)
         if (not self.uniform_seed) and (self.seed is not None):
             self.seed += self.seed_shift
 
-        return final_layer  # [natoms, 1]
+        return final_layer
 
     def forward(
         self,
@@ -577,9 +544,7 @@ class EnerFitting(nn.Layer):
                     self.bias_atom_e[type_i] = self.bias_atom_e[type_i]
             self.bias_atom_e = self.bias_atom_e[:ntypes_atom]
 
-        inputs = paddle.reshape(
-            inputs, [-1, natoms[0], self.dim_descrpt]
-        )  # [1, all_atoms, M1*M2]
+        inputs = paddle.reshape(inputs, [-1, natoms[0], self.dim_descrpt])
         if len(self.atom_ener):
             # only for atom_ener
             nframes = input_dict.get("nframes")
@@ -643,18 +608,6 @@ class EnerFitting(nn.Layer):
             start_index = 0
             outs_list = []
             for type_i in range(ntypes_atom):
-                # final_layer = inputs
-                # for layer_j in range(type_i * ntypes_atom, (type_i + 1) * ntypes_atom):
-                #     final_layer = self.one_layers[layer_j](final_layer)
-                # final_layer = self.final_layers[type_i](final_layer)
-                # print(final_layer.shape)
-
-                # # concat the results
-                # if type_i < len(self.atom_ener) and self.atom_ener[type_i] is not None:
-                #     zero_layer = inputs_zero
-                #     for layer_j in range(type_i * ntypes_atom, (type_i + 1) * ntypes_atom):
-                #         zero_layer = self.one_layers[layer_j](zero_layer)
-                #     zero_layer = self.final_layers[type_i](zero_layer)
                 final_layer = self._build_lower(
                     start_index,
                     natoms[2 + type_i],
@@ -664,7 +617,6 @@ class EnerFitting(nn.Layer):
                     bias_atom_e=0.0,
                     type_suffix="_type_" + str(type_i),
                     suffix=suffix,
-                    # reuse=reuse,
                     type_i=type_i,
                 )
                 # concat the results
@@ -678,13 +630,12 @@ class EnerFitting(nn.Layer):
                         bias_atom_e=0.0,
                         type_suffix="_type_" + str(type_i),
                         suffix=suffix,
-                        # reuse=True,
                         type_i=type_i,
                     )
                     final_layer -= zero_layer
                 final_layer = paddle.reshape(
                     final_layer, [paddle.shape(inputs)[0], natoms[2 + type_i]]
-                )  # [1, natoms]
+                )
                 outs_list.append(final_layer)
                 start_index += natoms[2 + type_i]
             # concat the results
@@ -731,7 +682,7 @@ class EnerFitting(nn.Layer):
             ),
             [paddle.shape(inputs)[0], paddle.sum(natoms[2 : 2 + ntypes_atom]).item()],
         )
-        outs = outs + self.add_type  # 类型编码(类似于transformer的位置编码，每种类型自己有一个特征，加到原特征上)
+        outs = outs + self.add_type
         outs *= atype_filter
         self.atom_ener_after = outs
 
