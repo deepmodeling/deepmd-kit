@@ -279,7 +279,7 @@ class EnerModel(Model, paddle.nn.Layer):
         force, virial, atom_virial = self.descrpt.prod_force_virial(atom_ener, natoms)
         # force: [1, all_atoms*3]
         # virial: [1, 9]
-        # force: [1, all_atoms*9]
+        # atom_virial: [1, all_atoms*9]
 
         if self.srtab is not None:
             raise NotImplementedError()
