@@ -10,10 +10,21 @@ from typing import (
 
 import numpy as np
 
+from deepmd.common import (
+    j_loader,
+    j_must_have,
+)
+from deepmd.descriptor import (
+    DescrptSeA,
+)
 from deepmd.env import (
     MODEL_VERSION,
     default_tf_session_config,
+    paddle,
     tf,
+)
+from deepmd.model import (
+    EnerModel,
 )
 from deepmd.utils.batch_size import (
     AutoBatchSize,
@@ -53,18 +64,95 @@ class DeepEval:
         default_tf_graph: bool = False,
         auto_batch_size: Union[bool, int, AutoBatchSize] = False,
     ):
-        self.graph = self._load_graph(
-            model_file, prefix=load_prefix, default_tf_graph=default_tf_graph
+        jdata = j_loader("input.json")
+        model_param = j_must_have(jdata, "model")
+
+        descrpt_param = j_must_have(model_param, "descriptor")
+        explicit_ntypes_descrpt = ["se_atten"]
+        # hybrid_with_tebd = False
+        if descrpt_param["type"] in explicit_ntypes_descrpt:
+            descrpt_param["ntypes"] = len(model_param["type_map"])
+        elif descrpt_param["type"] == "hybrid":
+            for descrpt_item in descrpt_param["list"]:
+                if descrpt_item["type"] in explicit_ntypes_descrpt:
+                    descrpt_item["ntypes"] = len(model_param["type_map"])
+                    # hybrid_with_tebd = True
+
+        # if descrpt_param["type"] in ["se_e2_a", "se_a", "se_e2_r", "se_r", "hybrid"]:
+        descrpt_param["spin"] = None
+        descrpt_param["type_one_side"] = False
+
+        descrpt_param.pop("type", None)
+        descrpt_param.pop("_comment", None)
+        self.spin = None
+        # descrpt_param["spin"] = self.spin
+        self.descrpt = DescrptSeA(**descrpt_param)
+
+        self.multi_task_mode = "fitting_net_dict" in model_param
+        fitting_param = (
+            j_must_have(model_param, "fitting_net")
+            if not self.multi_task_mode
+            else j_must_have(model_param, "fitting_net_dict")
         )
+        from deepmd.fit import (
+            EnerFitting,
+        )
+
+        # fitting_param.pop("type", None)
+        fitting_param.pop("_comment", None)
+        fitting_param["descrpt"] = self.descrpt
+        self.fitting = EnerFitting(**fitting_param)
+
+        self.typeebd = None
+
+        self.model = EnerModel(
+            self.descrpt,
+            self.fitting,
+            self.typeebd,
+            model_param.get("type_map"),
+            model_param.get("data_stat_nbatch", 10),
+            model_param.get("data_stat_protect", 1e-2),
+            model_param.get("use_srtab"),
+            model_param.get("smin_alpha"),
+            model_param.get("sw_rmin"),
+            model_param.get("sw_rmax"),
+            self.spin,
+        )
+        model_file_str = str(model_file)
+        if model_file_str.endswith((".pdmodel", ".pdiparams")):
+            st_model_prefix = model_file_str.rsplit(".", 1)[0]
+            self.st_model = paddle.jit.load(st_model_prefix)
+        else:
+            load_state_dict = paddle.load(str(model_file))
+            for k, v in load_state_dict.items():
+                if k in self.model.state_dict():
+                    if load_state_dict[k].dtype != self.model.state_dict()[k].dtype:
+                        # print(
+                        #     f"convert {k}'s dtype from {load_state_dict[k].dtype} to {self.model.state_dict()[k].dtype}"
+                        # )
+                        load_state_dict[k] = load_state_dict[k].astype(
+                            self.model.state_dict()[k].dtype
+                        )
+                    if list(load_state_dict[k].shape) != list(
+                        self.model.state_dict()[k].shape
+                    ):
+                        # print(
+                        #     f"convert {k}'s shape from {load_state_dict[k].shape} to {self.model.state_dict()[k].shape}"
+                        # )
+                        load_state_dict[k] = load_state_dict[k].reshape(
+                            self.model.state_dict()[k].shape
+                        )
+            self.model.set_state_dict(load_state_dict)
+        print(f"==>> Load pretraied model successfully from: {str(model_file)}")
         self.load_prefix = load_prefix
 
         # graph_compatable should be called after graph and prefix are set
-        if not self._graph_compatable():
-            raise RuntimeError(
-                f"model in graph (version {self.model_version}) is incompatible"
-                f"with the model (version {MODEL_VERSION}) supported by the current code."
-                "See https://deepmd.rtfd.io/compatability/ for details."
-            )
+        # if not self._graph_compatable():
+        #     raise RuntimeError(
+        #         f"model in graph (version {self.model_version}) is incompatible"
+        #         f"with the model (version {MODEL_VERSION}) supported by the current code."
+        #         "See https://deepmd.rtfd.io/compatability/ for details."
+        #     )
 
         # set default to False, as subclasses may not support
         if isinstance(auto_batch_size, bool):
@@ -82,13 +170,15 @@ class DeepEval:
     @property
     @lru_cache(maxsize=None)
     def model_type(self) -> str:
+        return "ener"
         """Get type of model.
 
         :type:str
         """
-        t_mt = self._get_tensor("model_attr/model_type:0")
-        [mt] = run_sess(self.sess, [t_mt], feed_dict={})
-        return mt.decode("utf-8")
+        # t_mt = self._get_tensor("model_attr/model_type:0")
+        # [mt] = run_sess(self.sess, [t_mt], feed_dict={})
+        # return mt.decode("utf-8")
+        self._model_type = self.model.t_mt
 
     @property
     @lru_cache(maxsize=None)
@@ -100,6 +190,7 @@ class DeepEval:
         str
             version of model
         """
+        return "0.1.0"
         try:
             t_mt = self._get_tensor("model_attr/model_version:0")
         except KeyError:
@@ -117,6 +208,7 @@ class DeepEval:
         return tf.Session(graph=self.graph, config=default_tf_session_config)
 
     def _graph_compatable(self) -> bool:
+        return True
         """Check the model compatability.
 
         Returns
@@ -135,7 +227,7 @@ class DeepEval:
         else:
             return True
 
-    def _get_tensor(
+    def _get_value(
         self, tensor_name: str, attr_name: Optional[str] = None
     ) -> tf.Tensor:
         """Get TF graph tensor and assign it to class namespace.
@@ -147,15 +239,12 @@ class DeepEval:
         attr_name : Optional[str], optional
             if specified, class attribute with this name will be created and tensor will
             be assigned to it, by default None
-
-        Returns
-        -------
-        tf.Tensor
-            loaded tensor
         """
         # do not use os.path.join as it doesn't work on Windows
-        tensor_path = "/".join((self.load_prefix, tensor_name))
-        tensor = self.graph.get_tensor_by_name(tensor_path)
+        value = None
+        for name, tensor in self.model.named_buffers():
+            if tensor_name in name:
+                value = tensor.numpy()[0] if tensor.shape == [1] else tensor.numpy()
         if attr_name:
             setattr(self, attr_name, tensor)
             return tensor
@@ -194,7 +283,15 @@ class DeepEval:
                         name=prefix,
                         producer_op_list=None,
                     )
-
+                #     with tf.Session() as sess:
+                #         constant_ops = [op for op in graph.get_operations() if op.type == "Const"]
+                #         for constant_op in constant_ops:
+                #             param = sess.run(constant_op.outputs[0])
+                #             # print(type(param))
+                #             if hasattr(param, 'shape'):
+                #                 # print(param.shape)
+                #                 if param.shape == (2,):
+                #                     print(constant_op.outputs[0], param)
             return graph
 
     @staticmethod

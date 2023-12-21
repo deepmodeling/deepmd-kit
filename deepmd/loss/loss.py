@@ -15,7 +15,7 @@ from deepmd.env import (
 class Loss(metaclass=ABCMeta):
     """The abstract class for the loss function."""
 
-    @abstractmethod
+    # @abstractmethod
     def build(
         self,
         learning_rate: tf.Tensor,
@@ -46,6 +46,7 @@ class Loss(metaclass=ABCMeta):
         dict[str, tf.Tensor]
             A dictionary that maps loss keys to more loss tensors
         """
+        pass
 
     @abstractmethod
     def eval(

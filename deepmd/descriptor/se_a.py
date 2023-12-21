@@ -7,27 +7,15 @@ from typing import (
 import numpy as np
 
 from deepmd.common import (
-    cast_precision,
     get_activation_func,
     get_precision,
 )
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
-    GLOBAL_TF_FLOAT_PRECISION,
-    default_tf_session_config,
+    GLOBAL_PD_FLOAT_PRECISION,
     op_module,
+    paddle,
     tf,
-)
-from deepmd.nvnmd.descriptor.se_a import (
-    build_davg_dstd,
-    build_op_descriptor,
-    check_switch_range,
-    descrpt2r4,
-    filter_GR2D,
-    filter_lower_R42GR,
-)
-from deepmd.nvnmd.utils.config import (
-    nvnmd_cfg,
 )
 from deepmd.utils.errors import (
     GraphWithoutTensorError,
@@ -35,12 +23,9 @@ from deepmd.utils.errors import (
 from deepmd.utils.graph import (
     get_tensor_by_name_from_graph,
 )
+from deepmd.utils.network import EmbeddingNet  # embedding_net,
 from deepmd.utils.network import (
-    embedding_net,
     embedding_net_rand_seed_shift,
-)
-from deepmd.utils.sess import (
-    run_sess,
 )
 from deepmd.utils.spin import (
     Spin,
@@ -52,17 +37,8 @@ from deepmd.utils.type_embed import (
     embed_atom_type,
 )
 
-from .descriptor import (
-    Descriptor,
-)
-from .se import (
-    DescrptSe,
-)
 
-
-@Descriptor.register("se_e2_a")
-@Descriptor.register("se_a")
-class DescrptSeA(DescrptSe):
+class DescrptSeA(paddle.nn.Layer):
     r"""DeepPot-SE constructed from all information (both angular and radial) of
     atomic configurations. The embedding takes the distance between atoms as input.
 
@@ -166,12 +142,15 @@ class DescrptSeA(DescrptSe):
         spin: Optional[Spin] = None,
     ) -> None:
         """Constructor."""
+        super().__init__()
         if rcut < rcut_smth:
             raise RuntimeError(
                 f"rcut_smth ({rcut_smth:f}) should be no more than rcut ({rcut:f})!"
             )
         self.sel_a = sel
         self.rcut_r = rcut
+        # NOTE: register 'rcut' in buffer to be accessed in inference
+        self.register_buffer("buffer_rcut", paddle.to_tensor(rcut, dtype="float64"))
         self.rcut_r_smth = rcut_smth
         self.filter_neuron = neuron
         self.n_axis_neuron = axis_neuron
@@ -189,8 +168,9 @@ class DescrptSeA(DescrptSe):
             self.exclude_types.add((tt[0], tt[1]))
             self.exclude_types.add((tt[1], tt[0]))
         self.set_davg_zero = set_davg_zero
-        self.type_one_side = type_one_side
-        self.spin = spin
+        # self.type_one_side = type_one_side
+        self.type_one_side = False
+        self.spin = spin  # None
 
         # extend sel_a for spin system
         if self.spin is not None:
@@ -199,10 +179,18 @@ class DescrptSeA(DescrptSe):
             self.sel_a.extend(self.sel_a_spin)
         else:
             self.ntypes_spin = 0
+        # NOTE: register 'ntypes_spin' in buffer to be accessed in inference
+        self.register_buffer(
+            "buffer_ntypes_spin", paddle.to_tensor(self.ntypes_spin, dtype="int32")
+        )
 
         # descrpt config
         self.sel_r = [0 for ii in range(len(self.sel_a))]
         self.ntypes = len(self.sel_a)
+        # NOTE: register 'ntypes' in buffer to be accessed in inference
+        self.register_buffer(
+            "buffer_ntypes", paddle.to_tensor(self.ntypes, dtype="int32")
+        )
         assert self.ntypes == len(self.sel_r)
         self.rcut_a = -1
         # numb of neighbors and numb of descrptors
@@ -215,49 +203,33 @@ class DescrptSeA(DescrptSe):
         self.useBN = False
         self.dstd = None
         self.davg = None
+        self.avg_zero = paddle.zeros([self.ntypes, self.ndescrpt], dtype="float32")
+        self.std_ones = paddle.ones([self.ntypes, self.ndescrpt], dtype="float32")
+
+        nets = []
+        for type_input in range(self.ntypes):
+            layer = []
+            for type_i in range(self.ntypes):
+                layer.append(
+                    EmbeddingNet(
+                        self.filter_neuron,
+                        self.filter_precision,
+                        self.filter_activation_fn,
+                        self.filter_resnet_dt,
+                        self.seed,
+                        self.trainable,
+                        name="filter_type_" + str(type_input) + str(type_i),
+                    )
+                )
+            nets.append(paddle.nn.LayerList(layer))
+
+        self.embedding_nets = paddle.nn.LayerList(nets)
+
         self.compress = False
         self.embedding_net_variables = None
         self.mixed_prec = None
-        self.place_holders = {}
         self.nei_type = np.repeat(np.arange(self.ntypes), self.sel_a)  # like a mask
 
-        avg_zero = np.zeros([self.ntypes, self.ndescrpt]).astype(
-            GLOBAL_NP_FLOAT_PRECISION
-        )
-        std_ones = np.ones([self.ntypes, self.ndescrpt]).astype(
-            GLOBAL_NP_FLOAT_PRECISION
-        )
-        sub_graph = tf.Graph()
-        with sub_graph.as_default():
-            name_pfx = "d_sea_"
-            for ii in ["coord", "box"]:
-                self.place_holders[ii] = tf.placeholder(
-                    GLOBAL_NP_FLOAT_PRECISION, [None, None], name=name_pfx + "t_" + ii
-                )
-            self.place_holders["type"] = tf.placeholder(
-                tf.int32, [None, None], name=name_pfx + "t_type"
-            )
-            self.place_holders["natoms_vec"] = tf.placeholder(
-                tf.int32, [self.ntypes + 2], name=name_pfx + "t_natoms"
-            )
-            self.place_holders["default_mesh"] = tf.placeholder(
-                tf.int32, [None], name=name_pfx + "t_mesh"
-            )
-            self.stat_descrpt, descrpt_deriv, rij, nlist = op_module.prod_env_mat_a(
-                self.place_holders["coord"],
-                self.place_holders["type"],
-                self.place_holders["natoms_vec"],
-                self.place_holders["box"],
-                self.place_holders["default_mesh"],
-                tf.constant(avg_zero),
-                tf.constant(std_ones),
-                rcut_a=self.rcut_a,
-                rcut_r=self.rcut_r,
-                rcut_r_smth=self.rcut_r_smth,
-                sel_a=self.sel_a,
-                sel_r=self.sel_r,
-            )
-        self.sub_sess = tf.Session(graph=sub_graph, config=default_tf_session_config)
         self.original_sel = None
         self.multi_task = multi_task
         if multi_task:
@@ -268,6 +240,20 @@ class DescrptSeA(DescrptSe):
                 "sumr2": [],
                 "suma2": [],
             }
+
+        self.t_rcut = paddle.to_tensor(
+            np.max([self.rcut_r, self.rcut_a]), dtype="float32"
+        )
+        self.t_ntypes = paddle.to_tensor(self.ntypes, dtype="int32")
+        self.t_ndescrpt = paddle.to_tensor(self.ndescrpt, dtype="int32")
+        self.t_sel = paddle.to_tensor(self.sel_a, dtype="int32")
+
+        t_avg = paddle.to_tensor(
+            np.zeros([self.ntypes, self.ndescrpt]), dtype="float64"
+        )
+        t_std = paddle.to_tensor(np.ones([self.ntypes, self.ndescrpt]), dtype="float64")
+        self.register_buffer("t_avg", t_avg)
+        self.register_buffer("t_std", t_std)
 
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
@@ -285,7 +271,7 @@ class DescrptSeA(DescrptSe):
         """Returns the first dimension of the rotation matrix. The rotation is of shape dim_1 x 3."""
         return self.filter_neuron[-1]
 
-    def get_nlist(self) -> Tuple[tf.Tensor, tf.Tensor, List[int], List[int]]:
+    def get_nlist(self) -> Tuple[paddle.Tensor, paddle.Tensor, List[int], List[int]]:
         """Returns neighbor information.
 
         Returns
@@ -359,6 +345,9 @@ class DescrptSeA(DescrptSe):
                 self.stat_dict["sumn"] += sumn
                 self.stat_dict["sumr2"] += sumr2
                 self.stat_dict["suma2"] += suma2
+
+        self.t_avg = paddle.to_tensor(self.davg, dtype="float64")
+        self.t_std = paddle.to_tensor(self.dstd, dtype="float64")
 
     def merge_input_stats(self, stat_dict):
         """Merge the statisitcs computed from compute_input_stats to obtain the self.davg and self.dstd.
@@ -498,17 +487,17 @@ class DescrptSeA(DescrptSe):
         self.mixed_prec = mixed_prec
         self.filter_precision = get_precision(mixed_prec["output_prec"])
 
-    def build(
+    def forward(
         self,
-        coord_: tf.Tensor,
-        atype_: tf.Tensor,
-        natoms: tf.Tensor,
-        box_: tf.Tensor,
-        mesh: tf.Tensor,
+        coord_: paddle.Tensor,
+        atype_: paddle.Tensor,
+        natoms: paddle.Tensor,
+        box_: paddle.Tensor,
+        mesh: paddle.Tensor,
         input_dict: dict,
         reuse: Optional[bool] = None,
         suffix: str = "",
-    ) -> tf.Tensor:
+    ) -> paddle.Tensor:
         """Build the computational graph for the descriptor.
 
         Parameters
@@ -542,59 +531,27 @@ class DescrptSeA(DescrptSe):
         """
         davg = self.davg
         dstd = self.dstd
-        if nvnmd_cfg.enable:
-            if nvnmd_cfg.restore_descriptor:
-                davg, dstd = build_davg_dstd()
-            check_switch_range(davg, dstd)
-        with tf.variable_scope("descrpt_attr" + suffix, reuse=reuse):
-            if davg is None:
-                davg = np.zeros([self.ntypes, self.ndescrpt])
-            if dstd is None:
-                dstd = np.ones([self.ntypes, self.ndescrpt])
-            t_rcut = tf.constant(
-                np.max([self.rcut_r, self.rcut_a]),
-                name="rcut",
-                dtype=GLOBAL_TF_FLOAT_PRECISION,
-            )
-            t_ntypes = tf.constant(self.ntypes, name="ntypes", dtype=tf.int32)
-            t_ndescrpt = tf.constant(self.ndescrpt, name="ndescrpt", dtype=tf.int32)
-            t_sel = tf.constant(self.sel_a, name="sel", dtype=tf.int32)
-            t_original_sel = tf.constant(
-                self.original_sel if self.original_sel is not None else self.sel_a,
-                name="original_sel",
-                dtype=tf.int32,
-            )
-            self.t_avg = tf.get_variable(
-                "t_avg",
-                davg.shape,
-                dtype=GLOBAL_TF_FLOAT_PRECISION,
-                trainable=False,
-                initializer=tf.constant_initializer(davg),
-            )
-            self.t_std = tf.get_variable(
-                "t_std",
-                dstd.shape,
-                dtype=GLOBAL_TF_FLOAT_PRECISION,
-                trainable=False,
-                initializer=tf.constant_initializer(dstd),
-            )
+        if davg is None:
+            davg = np.zeros([self.ntypes, self.ndescrpt])
+        if dstd is None:
+            dstd = np.ones([self.ntypes, self.ndescrpt])
 
-        with tf.control_dependencies([t_sel, t_original_sel]):
-            coord = tf.reshape(coord_, [-1, natoms[1] * 3])
-        box = tf.reshape(box_, [-1, 9])
-        atype = tf.reshape(atype_, [-1, natoms[1]])
-
-        op_descriptor = (
-            build_op_descriptor() if nvnmd_cfg.enable else op_module.prod_env_mat_a
-        )
-        self.descrpt, self.descrpt_deriv, self.rij, self.nlist = op_descriptor(
+        coord = paddle.reshape(coord_, [-1, natoms[1] * 3])
+        box = paddle.reshape(box_, [-1, 9])
+        atype = paddle.reshape(atype_, [-1, natoms[1]])
+        (
+            self.descrpt,
+            self.descrpt_deriv,
+            self.rij,
+            self.nlist,
+        ) = op_module.prod_env_mat_a(
             coord,
             atype,
-            natoms,
             box,
             mesh,
             self.t_avg,
             self.t_std,
+            natoms,
             rcut_a=self.rcut_a,
             rcut_r=self.rcut_r,
             rcut_r_smth=self.rcut_r_smth,
@@ -602,13 +559,8 @@ class DescrptSeA(DescrptSe):
             sel_r=self.sel_r,
         )
         # only used when tensorboard was set as true
-        tf.summary.histogram("descrpt", self.descrpt)
-        tf.summary.histogram("rij", self.rij)
-        tf.summary.histogram("nlist", self.nlist)
-
-        self.descrpt_reshape = tf.reshape(self.descrpt, [-1, self.ndescrpt])
-        self._identity_tensors(suffix=suffix)
-
+        self.descrpt_reshape = paddle.reshape(self.descrpt, [-1, self.ndescrpt])
+        self.descrpt_reshape.stop_gradient = False
         self.dout, self.qmat = self._pass_filter(
             self.descrpt_reshape,
             atype,
@@ -619,17 +571,15 @@ class DescrptSeA(DescrptSe):
             trainable=self.trainable,
         )
 
-        # only used when tensorboard was set as true
-        tf.summary.histogram("embedding_net_output", self.dout)
         return self.dout
 
-    def get_rot_mat(self) -> tf.Tensor:
+    def get_rot_mat(self) -> paddle.Tensor:
         """Get rotational matrix."""
         return self.qmat
 
     def prod_force_virial(
-        self, atom_ener: tf.Tensor, natoms: tf.Tensor
-    ) -> Tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
+        self, atom_ener: paddle.Tensor, natoms: paddle.Tensor
+    ) -> Tuple[paddle.Tensor, paddle.Tensor, paddle.Tensor]:
         """Compute force and virial.
 
         Parameters
@@ -651,11 +601,11 @@ class DescrptSeA(DescrptSe):
         atom_virial
             The atomic virial
         """
-        [net_deriv] = tf.gradients(atom_ener, self.descrpt_reshape)
-        tf.summary.histogram("net_derivative", net_deriv)
-        net_deriv_reshape = tf.reshape(
+        net_deriv = paddle.grad(atom_ener, self.descrpt_reshape, create_graph=True)[0]
+        # tf.summary.histogram("net_derivative", net_deriv)
+        net_deriv_reshape = paddle.reshape(
             net_deriv,
-            [np.cast["int64"](-1), natoms[0] * np.cast["int64"](self.ndescrpt)],
+            [-1, natoms[0] * self.ndescrpt],
         )
         force = op_module.prod_force_se_a(
             net_deriv_reshape,
@@ -674,29 +624,56 @@ class DescrptSeA(DescrptSe):
             n_a_sel=self.nnei_a,
             n_r_sel=self.nnei_r,
         )
-        tf.summary.histogram("force", force)
-        tf.summary.histogram("virial", virial)
-        tf.summary.histogram("atom_virial", atom_virial)
 
         return force, virial, atom_virial
 
     def _pass_filter(
         self, inputs, atype, natoms, input_dict, reuse=None, suffix="", trainable=True
     ):
+        """pass_filter.
+
+        Parameters
+        ----------
+        inputs : paddle.Tensor
+            Inputs tensor.
+        atype : paddle.Tensor
+            Atom type Tensor.
+        natoms : paddle.Tensor
+            Number of atoms vector
+        input_dict : Dict[str, paddle.Tensor]
+            Input data dict.
+        reuse : bool, optional
+            Whether reuse variables. Defaults to None.
+        suffix : str, optional
+            Variable suffix. Defaults to "".
+        trainable : bool, optional
+            Whether make subnetwork traninable. Defaults to True.
+
+        Returns
+        -------
+        Tuple[Tensor, Tensor]: output: [1, all_atom, M1*M2], output_qmat: [1, all_atom, M1*3]
+        """
         if input_dict is not None:
             type_embedding = input_dict.get("type_embedding", None)
         else:
             type_embedding = None
         start_index = 0
-        inputs = tf.reshape(inputs, [-1, natoms[0], self.ndescrpt])
+        inputs = paddle.reshape(inputs, [-1, int(natoms[0].item()), int(self.ndescrpt)])
         output = []
         output_qmat = []
         if not self.type_one_side and type_embedding is None:
             for type_i in range(self.ntypes):
-                inputs_i = tf.slice(
-                    inputs, [0, start_index, 0], [-1, natoms[2 + type_i], -1]
+                inputs_i = paddle.slice(
+                    inputs,
+                    [0, 1, 2],
+                    [0, start_index, 0],
+                    [
+                        inputs.shape[0],
+                        start_index + natoms[2 + type_i],
+                        inputs.shape[2],
+                    ],
                 )
-                inputs_i = tf.reshape(inputs_i, [-1, self.ndescrpt])
+                inputs_i = paddle.reshape(inputs_i, [-1, self.ndescrpt])
                 filter_name = "filter_type_" + str(type_i) + suffix
                 layer, qmat = self._filter(
                     inputs_i,
@@ -707,13 +684,13 @@ class DescrptSeA(DescrptSe):
                     trainable=trainable,
                     activation_fn=self.filter_activation_fn,
                 )
-                layer = tf.reshape(
-                    layer, [tf.shape(inputs)[0], natoms[2 + type_i], self.get_dim_out()]
+                layer = paddle.reshape(
+                    layer, [inputs.shape[0], natoms[2 + type_i], self.get_dim_out()]
                 )
-                qmat = tf.reshape(
+                qmat = paddle.reshape(
                     qmat,
                     [
-                        tf.shape(inputs)[0],
+                        inputs.shape[0],
                         natoms[2 + type_i],
                         self.get_dim_rot_mat_1() * 3,
                     ],
@@ -722,61 +699,78 @@ class DescrptSeA(DescrptSe):
                 output_qmat.append(qmat)
                 start_index += natoms[2 + type_i]
         else:
-            inputs_i = inputs
-            inputs_i = tf.reshape(inputs_i, [-1, self.ndescrpt])
-            type_i = -1
-            if nvnmd_cfg.enable and nvnmd_cfg.quantize_descriptor:
-                inputs_i = descrpt2r4(inputs_i, natoms)
-            if len(self.exclude_types):
-                atype_nloc = tf.reshape(
-                    tf.slice(atype, [0, 0], [-1, natoms[0]]), [-1]
-                )  # when nloc != nall, pass nloc to mask
-                mask = self.build_type_exclude_mask(
-                    self.exclude_types,
-                    self.ntypes,
-                    self.sel_a,
-                    self.ndescrpt,
-                    atype_nloc,
-                    tf.shape(inputs_i)[0],
-                )
-                inputs_i *= mask
+            raise NotImplementedError()
+            # This branch will not be excecuted at current
+            # inputs_i = inputs
+            # inputs_i = paddle.reshape(inputs_i, [-1, self.ndescrpt])
+            # type_i = -1
+            # # if nvnmd_cfg.enable and nvnmd_cfg.quantize_descriptor:
+            # #     inputs_i = descrpt2r4(inputs_i, natoms)
+            # if len(self.exclude_types):
+            #     atype_nloc = paddle.reshape(
+            #         paddle.slice(atype, [0, 1], [0, 0], [atype.shape[0], natoms[0]]),
+            #         [-1],
+            #     )  # when nloc != nall, pass nloc to mask
+            #     mask = self.build_type_exclude_mask(
+            #         self.exclude_types,
+            #         self.ntypes,
+            #         self.sel_a,
+            #         self.ndescrpt,
+            #         atype_nloc,
+            #         paddle.shape(inputs_i)[0],
+            #     )
+            #     inputs_i *= mask
 
-            layer, qmat = self._filter(
-                inputs_i,
-                type_i,
-                name="filter_type_all" + suffix,
-                natoms=natoms,
-                reuse=reuse,
-                trainable=trainable,
-                activation_fn=self.filter_activation_fn,
-                type_embedding=type_embedding,
-            )
-            layer = tf.reshape(
-                layer, [tf.shape(inputs)[0], natoms[0], self.get_dim_out()]
-            )
-            qmat = tf.reshape(
-                qmat, [tf.shape(inputs)[0], natoms[0], self.get_dim_rot_mat_1() * 3]
-            )
-            output.append(layer)
-            output_qmat.append(qmat)
-        output = tf.concat(output, axis=1)
-        output_qmat = tf.concat(output_qmat, axis=1)
+            # layer, qmat = self._filter(
+            #     inputs_i,
+            #     type_i,
+            #     name="filter_type_all" + suffix,
+            #     natoms=natoms,
+            #     reuse=reuse,
+            #     trainable=trainable,
+            #     activation_fn=self.filter_activation_fn,
+            #     type_embedding=type_embedding,
+            # )
+            # layer = paddle.reshape(
+            #     layer, [inputs.shape[0], natoms[0], self.get_dim_out()]
+            # )
+            # qmat = paddle.reshape(
+            #     qmat, [inputs.shape[0], natoms[0], self.get_dim_rot_mat_1() * 3]
+            # )
+            # output.append(layer)
+            # output_qmat.append(qmat)
+        output = paddle.concat(output, axis=1)
+        output_qmat = paddle.concat(output_qmat, axis=1)
         return output, output_qmat
 
     def _compute_dstats_sys_smth(
         self, data_coord, data_box, data_atype, natoms_vec, mesh
     ):
-        dd_all = run_sess(
-            self.sub_sess,
-            self.stat_descrpt,
-            feed_dict={
-                self.place_holders["coord"]: data_coord,
-                self.place_holders["type"]: data_atype,
-                self.place_holders["natoms_vec"]: natoms_vec,
-                self.place_holders["box"]: data_box,
-                self.place_holders["default_mesh"]: mesh,
-            },
+        input_dict = {}
+        input_dict["coord"] = paddle.to_tensor(data_coord, dtype="float32")
+        input_dict["box"] = paddle.to_tensor(data_box, dtype="float32")
+        input_dict["type"] = paddle.to_tensor(data_atype, dtype="int32")
+        input_dict["natoms_vec"] = paddle.to_tensor(
+            natoms_vec, dtype="int32", place="cpu"
         )
+        input_dict["default_mesh"] = paddle.to_tensor(mesh, dtype="int32")
+
+        self.stat_descrpt, descrpt_deriv, rij, nlist = op_module.prod_env_mat_a(
+            input_dict["coord"],
+            input_dict["type"],
+            input_dict["box"],
+            input_dict["default_mesh"],
+            self.avg_zero,
+            self.std_ones,
+            input_dict["natoms_vec"],
+            rcut_a=self.rcut_a,
+            rcut_r=self.rcut_r,
+            rcut_r_smth=self.rcut_r_smth,
+            sel_a=self.sel_a,
+            sel_r=self.sel_r,
+        )
+
+        dd_all = self.stat_descrpt.numpy()
         natoms = natoms_vec
         dd_all = np.reshape(dd_all, [-1, self.ndescrpt * natoms[0]])
         start_index = 0
@@ -840,89 +834,77 @@ class DescrptSeA(DescrptSe):
         embedding:
             environment of each atom represented by embedding.
         """
-        te_out_dim = type_embedding.get_shape().as_list()[-1]
-        self.t_nei_type = tf.constant(self.nei_type, dtype=tf.int32)
-        nei_embed = tf.nn.embedding_lookup(
-            type_embedding, tf.cast(self.t_nei_type, dtype=tf.int32)
+        te_out_dim = type_embedding.shape[-1]
+        self.t_nei_type = paddle.to_tensor(self.nei_type, dtype=paddle.int32)
+        nei_embed = paddle.nn.functional.embedding(
+            paddle.cast(self.t_nei_type, dtype=paddle.int32),
+            type_embedding,
         )  # shape is [self.nnei, 1+te_out_dim]
-        nei_embed = tf.tile(
+        nei_embed = paddle.tile(
             nei_embed, (nframes * natoms[0], 1)
         )  # shape is [nframes*natoms[0]*self.nnei, te_out_dim]
-        nei_embed = tf.reshape(nei_embed, [-1, te_out_dim])
-        embedding_input = tf.concat(
+        nei_embed = paddle.reshape(nei_embed, [-1, te_out_dim])
+        embedding_input = paddle.concat(
             [xyz_scatter, nei_embed], 1
         )  # shape is [nframes*natoms[0]*self.nnei, 1+te_out_dim]
         if not self.type_one_side:
             atm_embed = embed_atom_type(
                 self.ntypes, natoms, type_embedding
             )  # shape is [natoms[0], te_out_dim]
-            atm_embed = tf.tile(
+            atm_embed = paddle.tile(
                 atm_embed, (nframes, self.nnei)
             )  # shape is [nframes*natoms[0], self.nnei*te_out_dim]
-            atm_embed = tf.reshape(
+            atm_embed = paddle.reshape(
                 atm_embed, [-1, te_out_dim]
             )  # shape is [nframes*natoms[0]*self.nnei, te_out_dim]
-            embedding_input = tf.concat(
+            embedding_input = paddle.concat(
                 [embedding_input, atm_embed], 1
             )  # shape is [nframes*natoms[0]*self.nnei, 1+te_out_dim+te_out_dim]
         return embedding_input
 
     def _filter_lower(
         self,
-        type_i,
-        type_input,
-        start_index,
-        incrs_index,
-        inputs,
-        nframes,
-        natoms,
+        type_i: int,  # inner-loop
+        type_input: int,  # outer-loop
+        start_index: int,
+        incrs_index: int,
+        inputs: paddle.Tensor,
+        nframes: int,
+        natoms: int,
         type_embedding=None,
         is_exclude=False,
-        activation_fn=None,
-        bavg=0.0,
-        stddev=1.0,
-        trainable=True,
-        suffix="",
     ):
         """Input env matrix, returns R.G."""
         outputs_size = [1] + self.filter_neuron
         # cut-out inputs
         # with natom x (nei_type_i x 4)
-        inputs_i = tf.slice(inputs, [0, start_index * 4], [-1, incrs_index * 4])
-        shape_i = inputs_i.get_shape().as_list()
-        natom = tf.shape(inputs_i)[0]
+        inputs_i = paddle.slice(
+            inputs,
+            [0, 1],
+            [0, start_index * 4],
+            [inputs.shape[0], start_index * 4 + incrs_index * 4],
+        )
+
+        shape_i = inputs_i.shape
+        natom = inputs_i.shape[0]
+
         # with (natom x nei_type_i) x 4
-        inputs_reshape = tf.reshape(inputs_i, [-1, 4])
+        inputs_reshape = paddle.reshape(inputs_i, [-1, 4])
         # with (natom x nei_type_i) x 1
-        xyz_scatter = tf.reshape(tf.slice(inputs_reshape, [0, 0], [-1, 1]), [-1, 1])
+        xyz_scatter = paddle.reshape(
+            paddle.slice(inputs_reshape, [0, 1], [0, 0], [inputs_reshape.shape[0], 1]),
+            [-1, 1],
+        )
+
         if type_embedding is not None:
             xyz_scatter = self._concat_type_embedding(
                 xyz_scatter, nframes, natoms, type_embedding
-            )
+            )  #
             if self.compress:
                 raise RuntimeError(
                     "compression of type embedded descriptor is not supported at the moment"
                 )
         # natom x 4 x outputs_size
-        if nvnmd_cfg.enable:
-            return filter_lower_R42GR(
-                type_i,
-                type_input,
-                inputs_i,
-                is_exclude,
-                activation_fn,
-                bavg,
-                stddev,
-                trainable,
-                suffix,
-                self.seed,
-                self.seed_shift,
-                self.uniform_seed,
-                self.filter_neuron,
-                self.filter_precision,
-                self.filter_resnet_dt,
-                self.embedding_net_variables,
-            )
         if self.compress and (not is_exclude):
             if self.type_one_side:
                 net = "filter_-1_net_" + str(type_i)
@@ -937,173 +919,195 @@ class DescrptSeA(DescrptSe):
                 self.table_config[3],
             ]
             return op_module.tabulate_fusion_se_a(
-                tf.cast(self.table.data[net], self.filter_precision),
+                paddle.cast(self.table.data[net], self.filter_precision),
                 info,
                 xyz_scatter,
-                tf.reshape(inputs_i, [natom, shape_i[1] // 4, 4]),
+                paddle.reshape(inputs_i, [natom, shape_i[1] // 4, 4]),
                 last_layer_size=outputs_size[-1],
             )
         else:
             if not is_exclude:
-                # with (natom x nei_type_i) x out_size
-                xyz_scatter = embedding_net(
-                    xyz_scatter,
-                    self.filter_neuron,
-                    self.filter_precision,
-                    activation_fn=activation_fn,
-                    resnet_dt=self.filter_resnet_dt,
-                    name_suffix=suffix,
-                    stddev=stddev,
-                    bavg=bavg,
-                    seed=self.seed,
-                    trainable=trainable,
-                    uniform_seed=self.uniform_seed,
-                    initial_variables=self.embedding_net_variables,
-                    mixed_prec=self.mixed_prec,
-                )
+                # excuted this branch
+                xyz_scatter_out = self.embedding_nets[type_input][type_i](xyz_scatter)
                 if (not self.uniform_seed) and (self.seed is not None):
                     self.seed += self.seed_shift
             else:
                 # we can safely return the final xyz_scatter filled with zero directly
-                return tf.cast(
-                    tf.fill((natom, 4, outputs_size[-1]), 0.0), self.filter_precision
+                return paddle.cast(
+                    paddle.fill((natom, 4, outputs_size[-1]), 0.0),
+                    self.filter_precision,
                 )
             # natom x nei_type_i x out_size
-            xyz_scatter = tf.reshape(
-                xyz_scatter, (-1, shape_i[1] // 4, outputs_size[-1])
-            )
-            # When using tf.reshape(inputs_i, [-1, shape_i[1]//4, 4]) below
+            xyz_scatter_out = paddle.reshape(
+                xyz_scatter_out, (-1, shape_i[1] // 4, outputs_size[-1])
+            )  # (natom x nei_type_i) x 100 ==> natom x nei_type_i x 100
+            # When using paddle.reshape(inputs_i, [-1, shape_i[1]//4, 4]) below
             # [588 24] -> [588 6 4] correct
             # but if sel is zero
             # [588 0] -> [147 0 4] incorrect; the correct one is [588 0 4]
-            # So we need to explicitly assign the shape to tf.shape(inputs_i)[0] instead of -1
+            # So we need to explicitly assign the shape to paddle.shape(inputs_i)[0] instead of -1
             # natom x 4 x outputs_size
-            return tf.matmul(
-                tf.reshape(inputs_i, [natom, shape_i[1] // 4, 4]),
-                xyz_scatter,
-                transpose_a=True,
+
+            return paddle.matmul(
+                paddle.reshape(
+                    inputs_i, [natom, shape_i[1] // 4, 4]
+                ),  # [natom, nei_type_i, 4]
+                xyz_scatter_out,  # [natom, nei_type_i, 100]
+                transpose_x=True,
             )
 
-    @cast_precision
+    # @cast_precision
     def _filter(
         self,
-        inputs,
-        type_input,
+        inputs: paddle.Tensor,
+        type_input: int,
         natoms,
         type_embedding=None,
-        activation_fn=tf.nn.tanh,
+        activation_fn=paddle.nn.functional.tanh,
         stddev=1.0,
         bavg=0.0,
         name="linear",
         reuse=None,
         trainable=True,
     ):
-        nframes = tf.shape(tf.reshape(inputs, [-1, natoms[0], self.ndescrpt]))[0]
+        """_filter.
+
+        Parameters
+        ----------
+        inputs : paddle.Tensor
+            Inputs tensor.
+        type_input : int
+            Type of input.
+        natoms : paddle.Tensor
+            Number of atoms, a vector.
+        type_embedding : paddle.Tensor
+            Type embedding. Defaults to None.
+        activation_fn : Callable
+            Activation function. Defaults to paddle.nn.functional.tanh.
+        stddev : float, optional
+            Stddev for parameters initialization. Defaults to 1.0.
+        bavg : float, optional
+            Bavg for parameters initialization . Defaults to 0.0.
+        name : str, optional
+            Name for subnetwork. Defaults to "linear".
+        reuse : bool, optional
+            Whether reuse variables. Defaults to None.
+        trainable : bool, optional
+            Whether make subnetwork trainable. Defaults to True.
+
+        Returns
+        -------
+        Tuple[Tensor, Tensor]: result: [64/128, M1*M2], qmat: [64/128, M1, 3]
+        """
+        # NOTE: code below is annotated as nframes computation is wrong
+        # nframes = paddle.shape(paddle.reshape(inputs, [-1, natoms[0], self.ndescrpt]))[0]
+
+        nframes = 1
         # natom x (nei x 4)
-        shape = inputs.get_shape().as_list()
+        shape = inputs.shape
         outputs_size = [1] + self.filter_neuron
-        outputs_size_2 = self.n_axis_neuron
+        outputs_size_2 = self.n_axis_neuron  # 16
         all_excluded = all(
             [
-                (type_input, type_i) in self.exclude_types
+                (type_input, type_i) in self.exclude_types  #  set()
                 for type_i in range(self.ntypes)
             ]
-        )
+        )  # False
         if all_excluded:
             # all types are excluded so result and qmat should be zeros
             # we can safaly return a zero matrix...
             # See also https://stackoverflow.com/a/34725458/9567349
             # result: natom x outputs_size x outputs_size_2
             # qmat: natom x outputs_size x 3
-            natom = tf.shape(inputs)[0]
-            result = tf.cast(
-                tf.fill((natom, outputs_size_2, outputs_size[-1]), 0.0),
-                GLOBAL_TF_FLOAT_PRECISION,
+            natom = paddle.shape(inputs)[0]
+            result = paddle.cast(
+                paddle.full((natom, outputs_size_2, outputs_size[-1]), 0.0),
+                GLOBAL_PD_FLOAT_PRECISION,
             )
-            qmat = tf.cast(
-                tf.fill((natom, outputs_size[-1], 3), 0.0), GLOBAL_TF_FLOAT_PRECISION
+            qmat = paddle.cast(
+                paddle.full((natom, outputs_size[-1], 3), 0.0),
+                GLOBAL_PD_FLOAT_PRECISION,
             )
             return result, qmat
 
-        with tf.variable_scope(name, reuse=reuse):
-            start_index = 0
-            type_i = 0
-            # natom x 4 x outputs_size
-            if type_embedding is None:
-                rets = []
-                for type_i in range(self.ntypes):
-                    ret = self._filter_lower(
-                        type_i,
-                        type_input,
-                        start_index,
-                        self.sel_a[type_i],
-                        inputs,
-                        nframes,
-                        natoms,
-                        type_embedding=type_embedding,
-                        is_exclude=(type_input, type_i) in self.exclude_types,
-                        activation_fn=activation_fn,
-                        stddev=stddev,
-                        bavg=bavg,
-                        trainable=trainable,
-                        suffix="_" + str(type_i),
-                    )
-                    if (type_input, type_i) not in self.exclude_types:
-                        # add zero is meaningless; skip
-                        rets.append(ret)
-                    start_index += self.sel_a[type_i]
-                # faster to use accumulate_n than multiple add
-                xyz_scatter_1 = tf.accumulate_n(rets)
-            else:
-                xyz_scatter_1 = self._filter_lower(
+        # with tf.variable_scope(name, reuse=reuse):
+        start_index = 0
+        type_i = 0
+        # natom x 4 x outputs_size
+        if type_embedding is None:
+            rets = []
+            # execute this branch
+            for type_i in range(self.ntypes):
+                ret = self._filter_lower(
                     type_i,
                     type_input,
                     start_index,
-                    np.cumsum(self.sel_a)[-1],
+                    self.sel_a[type_i],  # 46(O)/92(H)
                     inputs,
                     nframes,
                     natoms,
                     type_embedding=type_embedding,
-                    is_exclude=False,
-                    activation_fn=activation_fn,
-                    stddev=stddev,
-                    bavg=bavg,
-                    trainable=trainable,
+                    is_exclude=(type_input, type_i) in self.exclude_types,
                 )
-            if nvnmd_cfg.enable:
-                return filter_GR2D(xyz_scatter_1)
-            # natom x nei x outputs_size
-            # xyz_scatter = tf.concat(xyz_scatter_total, axis=1)
-            # natom x nei x 4
-            # inputs_reshape = tf.reshape(inputs, [-1, shape[1]//4, 4])
-            # natom x 4 x outputs_size
-            # xyz_scatter_1 = tf.matmul(inputs_reshape, xyz_scatter, transpose_a = True)
-            if self.original_sel is None:
-                # shape[1] = nnei * 4
-                nnei = shape[1] / 4
-            else:
-                nnei = tf.cast(
-                    tf.Variable(
-                        np.sum(self.original_sel),
-                        dtype=tf.int32,
-                        trainable=False,
-                        name="nnei",
-                    ),
-                    self.filter_precision,
-                )
-            xyz_scatter_1 = xyz_scatter_1 / nnei
-            # natom x 4 x outputs_size_2
-            xyz_scatter_2 = tf.slice(xyz_scatter_1, [0, 0, 0], [-1, -1, outputs_size_2])
-            # # natom x 3 x outputs_size_2
-            # qmat = tf.slice(xyz_scatter_2, [0,1,0], [-1, 3, -1])
-            # natom x 3 x outputs_size_1
-            qmat = tf.slice(xyz_scatter_1, [0, 1, 0], [-1, 3, -1])
-            # natom x outputs_size_1 x 3
-            qmat = tf.transpose(qmat, perm=[0, 2, 1])
-            # natom x outputs_size x outputs_size_2
-            result = tf.matmul(xyz_scatter_1, xyz_scatter_2, transpose_a=True)
-            # natom x (outputs_size x outputs_size_2)
-            result = tf.reshape(result, [-1, outputs_size_2 * outputs_size[-1]])
+                if (type_input, type_i) not in self.exclude_types:
+                    # add zero is meaningless; skip
+                    rets.append(ret)
+                start_index += self.sel_a[type_i]
+            # faster to use accumulate_n than multiple add
+            xyz_scatter_1 = paddle.add_n(rets)
+        else:
+            xyz_scatter_1 = self._filter_lower(
+                type_i,
+                type_input,
+                start_index,
+                np.cumsum(self.sel_a)[-1],
+                inputs,
+                nframes,
+                natoms,
+                type_embedding=type_embedding,
+                is_exclude=False,
+            )
+        # natom x nei x outputs_size
+        # xyz_scatter = tf.concat(xyz_scatter_total, axis=1)
+        # natom x nei x 4
+        # inputs_reshape = tf.reshape(inputs, [-1, shape[1]//4, 4])
+        # natom x 4 x outputs_size
+        # xyz_scatter_1 = tf.matmul(inputs_reshape, xyz_scatter, transpose_a = True)
+        if self.original_sel is None:
+            # shape[1] = nnei * 4
+            nnei = shape[1] / 4
+        else:
+            nnei = paddle.cast(
+                paddle.to_tensor(
+                    np.sum(self.original_sel),
+                    dtype=paddle.int32,
+                    stop_gradient=True,
+                ),
+                self.filter_precision,
+            )
+        xyz_scatter_1 = xyz_scatter_1 / nnei
+        # natom x 4 x outputs_size_2
+        xyz_scatter_2 = paddle.slice(
+            xyz_scatter_1,
+            [0, 1, 2],
+            [0, 0, 0],
+            [xyz_scatter_1.shape[0], xyz_scatter_1.shape[1], outputs_size_2],
+        )
+        # natom x 3 x outputs_size_2
+        # qmat = tf.slice(xyz_scatter_2, [0,1,0], [-1, 3, -1])
+        # natom x 3 x outputs_size_1
+        qmat = paddle.slice(
+            xyz_scatter_1,
+            [0, 1, 2],
+            [0, 1, 0],
+            [xyz_scatter_1.shape[0], 1 + 3, xyz_scatter_1.shape[2]],
+        )
+        # natom x outputs_size_1 x 3
+        qmat = paddle.transpose(qmat, perm=[0, 2, 1])  # [64/128, M1, 3]
+        # natom x outputs_size x outputs_size_2
+        result = paddle.matmul(xyz_scatter_1, xyz_scatter_2, transpose_x=True)
+        # natom x (outputs_size x outputs_size_2)
+        result = paddle.reshape(result, [-1, outputs_size_2 * outputs_size[-1]])
 
         return result, qmat
 

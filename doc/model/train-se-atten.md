@@ -28,20 +28,20 @@ With the training input script, data are also provided in the example directory.
 
 An example of the DPA-1 descriptor is provided as follows
 ```json
-	"descriptor" :{
-          "type":		"se_atten",
-          "rcut_smth":	0.50,
-          "rcut":		6.00,
-          "sel":		120,
-          "neuron":		[25, 50, 100],
-          "axis_neuron":	16,
-          "resnet_dt":	false,
-          "attn":	128,
-          "attn_layer":	2,
-          "attn_mask":	false,
-          "attn_dotr":	true,
-          "seed":	1
-	}
+    "descriptor" :{
+          "type":        "se_atten",
+          "rcut_smth":    0.50,
+          "rcut":        6.00,
+          "sel":        120,
+          "neuron":        [25, 50, 100],
+          "axis_neuron":    16,
+          "resnet_dt":    false,
+          "attn":    128,
+          "attn_layer":    2,
+          "attn_mask":    false,
+          "attn_dotr":    true,
+          "seed":    1
+    }
 ```
 * The {ref}`type <model/descriptor/type>` of the descriptor is set to `"se_atten"`, which will use DPA-1 structures.
 * {ref}`rcut <model/descriptor[se_atten]/rcut>` is the cut-off radius for neighbor searching, and the {ref}`rcut_smth <model/descriptor[se_atten]/rcut_smth>` gives where the smoothing starts.

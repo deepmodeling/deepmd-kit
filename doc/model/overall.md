@@ -3,7 +3,7 @@
 A model has two parts, a descriptor that maps atomic configuration to a set of symmetry invariant features, and a fitting net that takes descriptor as input and predicts the atomic contribution to the target physical property. It's defined in the {ref}`model <model>` section of the `input.json`, for example,
 ```json
     "model": {
-        "type_map":	["O", "H"],
+        "type_map":    ["O", "H"],
         "descriptor" :{
             "...": "..."
         },

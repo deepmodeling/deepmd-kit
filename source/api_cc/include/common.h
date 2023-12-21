@@ -14,6 +14,7 @@
 #else
 #include "tf_public.h"
 #endif
+#include "paddle/include/paddle_inference_api.h"
 
 namespace deepmd {
 
@@ -192,6 +193,17 @@ VT session_get_scalar(tensorflow::Session* session,
                       const std::string scope = "");
 
 /**
+ * @brief Get the value of a tensor.
+ * @param[in] predictor Paddle inference predictor.
+ * @param[in] name The name of the tensor.
+ * @return The value of the tensor.
+ **/
+template <typename VT>
+VT predictor_get_scalar(
+    const std::shared_ptr<paddle_infer::Predictor>& predictor,
+    const std::string name_);
+
+/**
  * @brief Get the vector of a tensor.
  * @param[out] o_vec The output vector.
  * @param[in] session TensorFlow session.
@@ -214,6 +226,16 @@ void session_get_vector(std::vector<VT>& o_vec,
 int session_get_dtype(tensorflow::Session* session,
                       const std::string name,
                       const std::string scope = "");
+
+/**
+ * @brief Get the type of a tensor.
+ * @param[in] predictor Paddle inference predictor.
+ * @param[in] name The name of the tensor.
+ * @return The type of the tensor.
+ **/
+paddle_infer::DataType predictor_get_dtype(
+    const std::shared_ptr<paddle_infer::Predictor>& predictor,
+    const std::string& name_);
 
 /**
  * @brief Get input tensors.
@@ -258,6 +280,35 @@ int session_input_tensors(
 template <typename MODELTYPE, typename VALUETYPE>
 int session_input_tensors(
     std::vector<std::pair<std::string, tensorflow::Tensor>>& input_tensors,
+    const std::vector<VALUETYPE>& dcoord_,
+    const int& ntypes,
+    const std::vector<int>& datype_,
+    const std::vector<VALUETYPE>& dbox,
+    InputNlist& dlist,
+    const std::vector<VALUETYPE>& fparam_,
+    const std::vector<VALUETYPE>& aparam_,
+    const deepmd::AtomMap& atommap,
+    const int nghost,
+    const int ago,
+    const std::string scope = "");
+
+/**
+ * @brief Send input data into paddle tensor handles.
+ * @param[in] predictor The paddle predictor pointer.
+ * @param[in] dcoord_ Coordinates of atoms.
+ * @param[in] ntypes Number of atom types.
+ * @param[in] datype_ Atom types.
+ * @param[in] dlist Neighbor list.
+ * @param[in] fparam_ Frame parameters.
+ * @param[in] aparam_ Atom parameters.
+ * @param[in] atommap Atom map.
+ * @param[in] nghost Number of ghost atoms.
+ * @param[in] ago Update the internal neighbour list if ago is 0.
+ * @param[in] scope The scope of the tensors.
+ */
+template <typename MODELTYPE, typename VALUETYPE>
+int predictor_input_tensors(
+    const std::shared_ptr<paddle_infer::Predictor>& predictor,
     const std::vector<VALUETYPE>& dcoord_,
     const int& ntypes,
     const std::vector<int>& datype_,

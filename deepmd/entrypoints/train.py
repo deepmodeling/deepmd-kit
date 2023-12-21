@@ -19,7 +19,6 @@ from deepmd.common import (
     j_must_have,
 )
 from deepmd.env import (
-    GLOBAL_ENER_FLOAT_PRECISION,
     reset_default_tf_session_config,
     tf,
 )
@@ -112,6 +111,12 @@ def train(
     RuntimeError
         if distributed training job name is wrong
     """
+    if kwargs.get("cpu", False):
+        import paddle
+
+        paddle.set_device("cpu")
+        print("[NOTE]", "=" * 10, "Running paddle code on CPU", "=" * 10)
+
     run_opt = RunOptions(
         init_model=init_model,
         restart=restart,
@@ -275,7 +280,7 @@ def _do_work(jdata: Dict[str, Any], run_opt: RunOptions, is_compress: bool = Fal
     if not is_compress:
         # train the model with the provided systems in a cyclic way
         start_time = time.time()
-        model.train(train_data, valid_data)
+        model.train(train_data, valid_data, stop_batch)
         end_time = time.time()
         log.info("finished training")
         log.info(f"wall time: {(end_time - start_time):.3f} s")
@@ -413,15 +418,6 @@ def get_nbor_stat(jdata, rcut, one_type: bool = False):
 
     min_nbor_dist, max_nbor_size = neistat.get_stat(train_data)
 
-    # moved from traier.py as duplicated
-    # TODO: this is a simple fix but we should have a clear
-    #       architecture to call neighbor stat
-    tf.constant(
-        min_nbor_dist,
-        name="train_attr/min_nbor_dist",
-        dtype=GLOBAL_ENER_FLOAT_PRECISION,
-    )
-    tf.constant(max_nbor_size, name="train_attr/max_nbor_size", dtype=tf.int32)
     return min_nbor_dist, max_nbor_size
 
 
@@ -468,7 +464,7 @@ def update_one_sel(jdata, descriptor):
         return descriptor
     rcut = descriptor["rcut"]
     tmp_sel = get_sel(jdata, rcut, one_type=descriptor["type"] in ("se_atten",))
-    sel = descriptor["sel"]
+    sel = descriptor["sel"]  # [46, 92]
     if isinstance(sel, int):
         # convert to list and finnally convert back to int
         sel = [sel]

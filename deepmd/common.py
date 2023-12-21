@@ -28,8 +28,10 @@ from tensorflow.python.framework import (
 
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
+    GLOBAL_PD_FLOAT_PRECISION,
     GLOBAL_TF_FLOAT_PRECISION,
     op_module,
+    paddle,
     tf,
 )
 from deepmd.utils.path import (
@@ -50,11 +52,11 @@ if TYPE_CHECKING:
 
 # define constants
 PRECISION_DICT = {
-    "default": GLOBAL_TF_FLOAT_PRECISION,
-    "float16": tf.float16,
-    "float32": tf.float32,
-    "float64": tf.float64,
-    "bfloat16": tf.bfloat16,
+    "default": GLOBAL_PD_FLOAT_PRECISION,
+    "float16": paddle.float16,
+    "float32": paddle.float32,
+    "float64": paddle.float64,
+    "bfloat16": paddle.bfloat16,
 }
 
 
@@ -119,11 +121,11 @@ def gelu_tf(x: tf.Tensor) -> tf.Tensor:
 data_requirement = {}
 
 ACTIVATION_FN_DICT = {
-    "relu": tf.nn.relu,
-    "relu6": tf.nn.relu6,
-    "softplus": tf.nn.softplus,
-    "sigmoid": tf.sigmoid,
-    "tanh": tf.nn.tanh,
+    "relu": paddle.nn.functional.relu,
+    "relu6": paddle.nn.functional.relu6,
+    "softplus": paddle.nn.functional.softplus,
+    "sigmoid": paddle.nn.functional.sigmoid,
+    "tanh": paddle.nn.functional.tanh,
     "gelu": gelu,
     "gelu_tf": gelu_tf,
     "None": None,

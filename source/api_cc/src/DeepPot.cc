@@ -4,6 +4,8 @@
 
 #include "AtomMap.h"
 #include "device.h"
+#include "paddle/include/paddle_inference_api.h"
+// #include "glog/logging.h"
 
 using namespace tensorflow;
 using namespace deepmd;
@@ -115,6 +117,7 @@ template void run_model<float, float>(
     const int nframes,
     const int nghost);
 
+/*下面这个函数是接受转发参数，真正运行计算的函数*/
 template <typename MODELTYPE, typename VALUETYPE>
 static void run_model(
     std::vector<ENERGYTYPE>& dener,
@@ -215,6 +218,166 @@ static void run_model(
                               nframes, nall);
 }
 
+// paddle_run_model开始
+template <typename MODELTYPE, typename VALUETYPE>
+static void paddle_run_model(
+    std::vector<ENERGYTYPE>& dener,
+    std::vector<VALUETYPE>& dforce_,
+    std::vector<VALUETYPE>& dvirial,
+    std::vector<VALUETYPE>& datom_energy_,
+    std::vector<VALUETYPE>& datom_virial_,
+    const std::shared_ptr<paddle_infer::Predictor>& predictor,
+    const deepmd::AtomMap& atommap,
+    const int& nframes,
+    const int& nghost = 0) {
+  unsigned nloc = atommap.get_type().size();
+  unsigned nall = nloc + nghost;
+  dener.resize(nframes);
+  if (nloc == 0) {
+    // no backward map needed
+    // dforce of size nall * 3
+    dforce_.resize(nframes * nall * 3);
+    fill(dforce_.begin(), dforce_.end(), (VALUETYPE)0.0);
+    // dvirial of size 9
+    dvirial.resize(nframes * 9);
+    fill(dvirial.begin(), dvirial.end(), (VALUETYPE)0.0);
+    // datom_energy_ of size nall
+    datom_energy_.resize(nframes * nall);
+    fill(datom_energy_.begin(), datom_energy_.end(), (VALUETYPE)0.0);
+    // datom_virial_ of size nall * 9
+    datom_virial_.resize(nframes * nall * 9);
+    fill(datom_virial_.begin(), datom_virial_.end(), (VALUETYPE)0.0);
+    return;
+  }
+
+  /* Running inference */
+  if (!predictor->Run()) {
+    throw deepmd::deepmd_exception("Paddle inference failed");
+  }
+
+  /* Get output handles*/
+  auto output_names = predictor->GetOutputNames();
+  auto output_atom_ener_tensor = predictor->GetOutputHandle(output_names[0]);
+  auto output_atom_virial_tensor = predictor->GetOutputHandle(output_names[1]);
+  auto output_atype_tensor = predictor->GetOutputHandle(output_names[2]);
+  auto output_coord_tensor = predictor->GetOutputHandle(output_names[3]);
+  auto output_energy_tensor = predictor->GetOutputHandle(output_names[4]);
+  auto output_force_tensor = predictor->GetOutputHandle(output_names[5]);
+  auto output_virial_tensor = predictor->GetOutputHandle(output_names[6]);
+
+  // 获取 Output Tensor 的维度信息
+  std::vector<int> output_atom_ener_shape = output_atom_ener_tensor->shape();
+  int output_atom_ener_size =
+      std::accumulate(output_atom_ener_shape.begin(),
+                      output_atom_ener_shape.end(), 1, std::multiplies<int>());
+  std::vector<int> output_atom_virial_shape =
+      output_atom_virial_tensor->shape();
+  int output_atom_virial_size = std::accumulate(
+      output_atom_virial_shape.begin(), output_atom_virial_shape.end(), 1,
+      std::multiplies<int>());
+  std::vector<int> output_atype_shape = output_atype_tensor->shape();
+  int output_atype_size =
+      std::accumulate(output_atype_shape.begin(), output_atype_shape.end(), 1,
+                      std::multiplies<int>());
+  std::vector<int> output_coord_shape = output_coord_tensor->shape();
+  int output_coord_size =
+      std::accumulate(output_coord_shape.begin(), output_coord_shape.end(), 1,
+                      std::multiplies<int>());
+  std::vector<int> output_energy_shape = output_energy_tensor->shape();
+  int output_energy_size =
+      std::accumulate(output_energy_shape.begin(), output_energy_shape.end(), 1,
+                      std::multiplies<int>());
+  std::vector<int> output_force_shape = output_force_tensor->shape();
+  int output_force_size =
+      std::accumulate(output_force_shape.begin(), output_force_shape.end(), 1,
+                      std::multiplies<int>());
+  std::vector<int> output_virial_shape = output_virial_tensor->shape();
+  int output_virial_size =
+      std::accumulate(output_virial_shape.begin(), output_virial_shape.end(), 1,
+                      std::multiplies<int>());
+
+  // get data of output_atom_ener
+  std::vector<VALUETYPE> output_atom_ener_data;
+  output_atom_ener_data.resize(output_atom_ener_size);
+  output_atom_ener_tensor->CopyToCpu(output_atom_ener_data.data());
+  // get data of output_atom_virial
+  std::vector<VALUETYPE> output_atom_virial_data;
+  output_atom_virial_data.resize(output_atom_virial_size);
+  output_atom_virial_tensor->CopyToCpu(output_atom_virial_data.data());
+  // get data of output_atype
+  // std::vector<VALUETYPE> output_atype_data;
+  // output_atype_data.resize(output_atype_size);
+  // output_atype_tensor->CopyToCpu(output_atype_data.data());
+  // get data of output_coord
+  std::vector<VALUETYPE> output_coord_data;
+  output_coord_data.resize(output_coord_size);
+  output_coord_tensor->CopyToCpu(output_coord_data.data());
+  // get data of output_energy
+  std::vector<VALUETYPE> output_energy_data;
+  output_energy_data.resize(output_energy_size);
+  output_energy_tensor->CopyToCpu(output_energy_data.data());
+  // get data of output_force
+  std::vector<VALUETYPE> output_force_data;
+  output_force_data.resize(output_force_size);
+  output_force_tensor->CopyToCpu(output_force_data.data());
+  // get data of output_virial
+  // std::vector<VALUETYPE> output_virial_data;
+  // output_virial_data.resize(output_virial_size);
+  // output_virial_tensor->CopyToCpu(output_virial_data.data());
+
+  std::vector<VALUETYPE> dforce(nframes * 3 * nall);
+  std::vector<VALUETYPE> datom_energy(nframes * nall, 0);
+  std::vector<VALUETYPE> datom_virial(nframes * 9 * nall);
+  dvirial.resize(nframes * 9);
+  for (int ii = 0; ii < nframes; ++ii) {
+    dener[ii] = output_energy_data[ii];
+  }
+  for (int ii = 0; ii < nframes * nall * 3; ++ii) {
+    dforce[ii] = output_force_data[ii];
+  }
+  for (int ii = 0; ii < nframes; ++ii) {
+    for (int jj = 0; jj < nloc; ++jj) {
+      datom_energy[ii * nall + jj] = output_atom_ener_data[ii * nloc + jj];
+    }
+  }
+  for (int ii = 0; ii < nframes * nall * 9; ++ii) {
+    datom_virial[ii] = output_atom_virial_data[ii];
+  }
+  // set dvirial to zero, prevent input vector is not zero (#1123)
+  std::fill(dvirial.begin(), dvirial.end(), (VALUETYPE)0.);
+  for (int kk = 0; kk < nframes; ++kk) {
+    for (int ii = 0; ii < nall; ++ii) {
+      dvirial[kk * 9 + 0] +=
+          (VALUETYPE)1.0 * datom_virial[kk * nall * 9 + 9 * ii + 0];
+      dvirial[kk * 9 + 1] +=
+          (VALUETYPE)1.0 * datom_virial[kk * nall * 9 + 9 * ii + 1];
+      dvirial[kk * 9 + 2] +=
+          (VALUETYPE)1.0 * datom_virial[kk * nall * 9 + 9 * ii + 2];
+      dvirial[kk * 9 + 3] +=
+          (VALUETYPE)1.0 * datom_virial[kk * nall * 9 + 9 * ii + 3];
+      dvirial[kk * 9 + 4] +=
+          (VALUETYPE)1.0 * datom_virial[kk * nall * 9 + 9 * ii + 4];
+      dvirial[kk * 9 + 5] +=
+          (VALUETYPE)1.0 * datom_virial[kk * nall * 9 + 9 * ii + 5];
+      dvirial[kk * 9 + 6] +=
+          (VALUETYPE)1.0 * datom_virial[kk * nall * 9 + 9 * ii + 6];
+      dvirial[kk * 9 + 7] +=
+          (VALUETYPE)1.0 * datom_virial[kk * nall * 9 + 9 * ii + 7];
+      dvirial[kk * 9 + 8] +=
+          (VALUETYPE)1.0 * datom_virial[kk * nall * 9 + 9 * ii + 8];
+    }
+  }
+  dforce_ = dforce;
+  datom_energy_ = datom_energy;
+  datom_virial_ = datom_virial;
+  atommap.backward<VALUETYPE>(dforce_.begin(), dforce.begin(), 3, nframes,
+                              nall);
+  atommap.backward<VALUETYPE>(datom_energy_.begin(), datom_energy.begin(), 1,
+                              nframes, nall);
+  atommap.backward<VALUETYPE>(datom_virial_.begin(), datom_virial.begin(), 9,
+                              nframes, nall);
+}
+
 template void run_model<double, double>(
     std::vector<ENERGYTYPE>& dener,
     std::vector<double>& dforce_,
@@ -259,6 +422,51 @@ template void run_model<float, float>(
     std::vector<float>& datom_virial_,
     Session* session,
     const std::vector<std::pair<std::string, Tensor>>& input_tensors,
+    const deepmd::AtomMap& atommap,
+    const int& nframes,
+    const int& nghost);
+
+/*start paddle run_model*/
+template void paddle_run_model<double, double>(
+    std::vector<ENERGYTYPE>& dener,
+    std::vector<double>& dforce_,
+    std::vector<double>& dvirial,
+    std::vector<double>& datom_energy_,
+    std::vector<double>& datom_virial_,
+    const std::shared_ptr<paddle_infer::Predictor>& predictor,
+    const deepmd::AtomMap& atommap,
+    const int& nframes,
+    const int& nghost);
+
+template void paddle_run_model<double, float>(
+    std::vector<ENERGYTYPE>& dener,
+    std::vector<float>& dforce_,
+    std::vector<float>& dvirial,
+    std::vector<float>& datom_energy_,
+    std::vector<float>& datom_virial_,
+    const std::shared_ptr<paddle_infer::Predictor>& predictor,
+    const deepmd::AtomMap& atommap,
+    const int& nframes,
+    const int& nghost);
+
+template void paddle_run_model<float, double>(
+    std::vector<ENERGYTYPE>& dener,
+    std::vector<double>& dforce_,
+    std::vector<double>& dvirial,
+    std::vector<double>& datom_energy_,
+    std::vector<double>& datom_virial_,
+    const std::shared_ptr<paddle_infer::Predictor>& predictor,
+    const deepmd::AtomMap& atommap,
+    const int& nframes,
+    const int& nghost);
+
+template void paddle_run_model<float, float>(
+    std::vector<ENERGYTYPE>& dener,
+    std::vector<float>& dforce_,
+    std::vector<float>& dvirial,
+    std::vector<float>& datom_energy_,
+    std::vector<float>& datom_virial_,
+    const std::shared_ptr<paddle_infer::Predictor>& predictor,
     const deepmd::AtomMap& atommap,
     const int& nframes,
     const int& nghost);
@@ -325,6 +533,7 @@ template void run_model<float, float>(
     const int nframes,
     const int nghost);
 
+/*Forwarding function of tensorflow*/
 template <typename MODELTYPE, typename VALUETYPE>
 static void run_model(
     ENERGYTYPE& dener,
@@ -343,6 +552,27 @@ static void run_model(
   run_model<MODELTYPE, VALUETYPE>(dener_, dforce_, dvirial, datom_energy_,
                                   datom_virial_, session, input_tensors,
                                   atommap, nframes, nghost);
+  dener = dener_[0];
+}
+
+/*Forwarding function of paddle*/
+template <typename MODELTYPE, typename VALUETYPE>
+static void paddle_run_model(
+    ENERGYTYPE& dener,
+    std::vector<VALUETYPE>& dforce_,
+    std::vector<VALUETYPE>& dvirial,
+    std::vector<VALUETYPE>& datom_energy_,
+    std::vector<VALUETYPE>& datom_virial_,
+    const std::shared_ptr<paddle_infer::Predictor>& predictor,
+    const deepmd::AtomMap& atommap,
+    const int& nframes = 1,
+    const int& nghost = 0) {
+  assert(nframes == 1);
+  std::vector<ENERGYTYPE> dener_(1);
+  // call multi-frame version
+  paddle_run_model<MODELTYPE, VALUETYPE>(dener_, dforce_, dvirial,
+                                         datom_energy_, datom_virial_,
+                                         predictor, atommap, nframes, nghost);
   dener = dener_[0];
 }
 
@@ -394,6 +624,51 @@ template void run_model<float, float>(
     const int& nframes,
     const int& nghost);
 
+/*start paddle */
+template void paddle_run_model<double, double>(
+    ENERGYTYPE& dener,
+    std::vector<double>& dforce_,
+    std::vector<double>& dvirial,
+    std::vector<double>& datom_energy_,
+    std::vector<double>& datom_virial_,
+    const std::shared_ptr<paddle_infer::Predictor>& predictor,
+    const deepmd::AtomMap& atommap,
+    const int& nframes,
+    const int& nghost);
+
+template void paddle_run_model<double, float>(
+    ENERGYTYPE& dener,
+    std::vector<float>& dforce_,
+    std::vector<float>& dvirial,
+    std::vector<float>& datom_energy_,
+    std::vector<float>& datom_virial_,
+    const std::shared_ptr<paddle_infer::Predictor>& predictor,
+    const deepmd::AtomMap& atommap,
+    const int& nframes,
+    const int& nghost);
+
+template void paddle_run_model<float, double>(
+    ENERGYTYPE& dener,
+    std::vector<double>& dforce_,
+    std::vector<double>& dvirial,
+    std::vector<double>& datom_energy_,
+    std::vector<double>& datom_virial_,
+    const std::shared_ptr<paddle_infer::Predictor>& predictor,
+    const deepmd::AtomMap& atommap,
+    const int& nframes,
+    const int& nghost);
+
+template void paddle_run_model<float, float>(
+    ENERGYTYPE& dener,
+    std::vector<float>& dforce_,
+    std::vector<float>& dvirial,
+    std::vector<float>& datom_energy_,
+    std::vector<float>& datom_virial_,
+    const std::shared_ptr<paddle_infer::Predictor>& predictor,
+    const deepmd::AtomMap& atommap,
+    const int& nframes,
+    const int& nghost);
+
 // end single frame
 
 DeepPot::DeepPot()
@@ -417,66 +692,90 @@ void DeepPot::init(const std::string& model,
               << std::endl;
     return;
   }
-  SessionOptions options;
-  get_env_nthreads(num_intra_nthreads, num_inter_nthreads);
-  options.config.set_inter_op_parallelism_threads(num_inter_nthreads);
-  options.config.set_intra_op_parallelism_threads(num_intra_nthreads);
-  deepmd::load_op_library();
+  std::string pdmodel_path = "";
+  std::string pdiparams_path = "";
+  bool use_paddle_inference = false;
+  if (model.find(".pb") == std::string::npos) {
+    pdmodel_path = model + ".pdmodel";
+    pdiparams_path = model + ".pdiparams";
+    use_paddle_inference = true;
+  } else {
+    throw "[Error] Not found any inference model in";
+  }
+  math_lib_num_threads = 1;
 
-  if (file_content.size() == 0)
-    check_status(ReadBinaryProto(Env::Default(), model, graph_def));
-  else
-    (*graph_def).ParseFromString(file_content);
+  if (use_paddle_inference) {
+    config.SetModel(pdmodel_path, pdiparams_path);
+    config.SwitchIrOptim(true);
+    config.EnableUseGpu(8192, 0);
+    // std::cout << "IR Optim is: " << config.ir_optim() << std::endl;
+    // config.EnableMKLDNN();
+    config.EnableMemoryOptim();
+    // config.EnableProfile();
+    predictor = paddle_infer::CreatePredictor(config);
+  }
   int gpu_num = -1;
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
   DPGetDeviceCount(gpu_num);  // check current device environment
-  if (gpu_num > 0) {
-    options.config.set_allow_soft_placement(true);
-    options.config.mutable_gpu_options()->set_per_process_gpu_memory_fraction(
-        0.9);
-    options.config.mutable_gpu_options()->set_allow_growth(true);
-    DPErrcheck(DPSetDevice(gpu_rank % gpu_num));
-    std::string str = "/gpu:";
-    str += std::to_string(gpu_rank % gpu_num);
-    graph::SetDefaultDevice(str, graph_def);
-  }
-#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
-  check_status(NewSession(options, &session));
-  check_status(session->Create(*graph_def));
-  try {
-    model_version = get_scalar<STRINGTYPE>("model_attr/model_version");
-  } catch (deepmd::tf_exception& e) {
-    // no model version defined in old models
-    model_version = "0.0";
-  }
-  if (!model_compatable(model_version)) {
-    throw deepmd::deepmd_exception(
-        "incompatable model: version " + model_version +
-        " in graph, but version " + global_model_version +
-        " supported "
-        "See https://deepmd.rtfd.io/compatability/ for details.");
-  }
-  dtype = session_get_dtype(session, "descrpt_attr/rcut");
-  if (dtype == tensorflow::DT_DOUBLE) {
-    rcut = get_scalar<double>("descrpt_attr/rcut");
-  } else {
-    rcut = get_scalar<float>("descrpt_attr/rcut");
-  }
-  cell_size = rcut;
-  ntypes = get_scalar<int>("descrpt_attr/ntypes");
-  try {
-    ntypes_spin = get_scalar<int>("spin_attr/ntypes_spin");
-  } catch (deepmd::deepmd_exception) {
+#endif                        // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+  if (use_paddle_inference) {
+    /*
+    tensorflow::DT_DOUBLE = 2
+    tensorflow::DT_FLOAT = 1
+    paddle_infer::DataType::FLOAT64 = 7
+    paddle_infer::DataType::FLOAT32 = 0
+    * st_model.descrpt.buffer_rcut.name = generated_tensor_0
+    * st_model.descrpt.buffer_ntypes.name = generated_tensor_2
+    * st_model.fitting.buffer_dfparam.name = generated_tensor_9
+    * st_model.fitting.buffer_daparam.name = generated_tensor_10
+    [buffer_t_type, [3]] generated name in static_model is: generated_tensor_12
+    [buffer_t_mt, [4]] generated name in static_model is: generated_tensor_13
+    [buffer_t_ver, [1]] generated name in static_model is: generated_tensor_14
+    [descrpt.buffer_rcut, []] generated name in static_model is:
+    generated_tensor_0 [descrpt.buffer_ntypes_spin, []] generated name in
+    static_model is: generated_tensor_1 [descrpt.buffer_ntypes, []] generated
+    name in static_model is: generated_tensor_2 [descrpt.avg_zero, [2, 552]]
+    generated name in static_model is: eager_tmp_0 [descrpt.std_ones, [2, 552]]
+    generated name in static_model is: eager_tmp_1 [descrpt.t_rcut, []]
+    generated name in static_model is: generated_tensor_3 [descrpt.t_rcut, []]
+    generated name in static_model is: generated_tensor_3 [descrpt.t_rcut, []]
+    generated name in static_model is: generated_tensor_3 [descrpt.t_ntypes, []]
+    generated name in static_model is: generated_tensor_4 [descrpt.t_ntypes, []]
+    generated name in static_model is: generated_tensor_4 [descrpt.t_ntypes, []]
+    generated name in static_model is: generated_tensor_4 [descrpt.t_ndescrpt,
+    []] generated name in static_model is: generated_tensor_5 [descrpt.t_sel,
+    [2]] generated name in static_model is: generated_tensor_6 [descrpt.t_avg,
+    [2, 552]] generated name in static_model is: generated_tensor_7
+    [descrpt.t_std, [2, 552]] generated name in static_model is:
+    generated_tensor_8 [fitting.buffer_dfparam, []] generated name in
+    static_model is: generated_tensor_9 [fitting.buffer_daparam, []] generated
+    name in static_model is: generated_tensor_10
+    **/
+    model_version = paddle_get_scalar<std::string>("generated_tensor_14");
+    dtype = predictor_get_dtype(predictor, "generated_tensor_0");
+    if (dtype == paddle_infer::DataType::FLOAT64) {
+      rcut = paddle_get_scalar<double>("generated_tensor_0");
+    } else {
+      rcut = paddle_get_scalar<float>("generated_tensor_0");
+    }
+    ntypes = paddle_get_scalar<int32_t>("generated_tensor_2");
+    // ntypes_spin = paddle_get_scalar<int64_t>("buffer_ntypes_spin");
     ntypes_spin = 0;
+    dfparam = paddle_get_scalar<int64_t>("generated_tensor_9");
+    daparam = paddle_get_scalar<int64_t>("generated_tensor_10");
+    model_type = paddle_get_scalar<std::string>("generated_tensor_13");
+    ;
+    inited = true;
+    init_nbor = false;
+    return;
   }
-  dfparam = get_scalar<int>("fitting_attr/dfparam");
-  daparam = get_scalar<int>("fitting_attr/daparam");
-  if (dfparam < 0) dfparam = 0;
-  if (daparam < 0) daparam = 0;
-  model_type = get_scalar<STRINGTYPE>("model_attr/model_type");
-  inited = true;
-
-  init_nbor = false;
+  // if (!model_compatable(model_version)) {
+  //   throw deepmd::deepmd_exception(
+  //       "incompatable model: version " + model_version +
+  //       " in graph, but version " + global_model_version +
+  //       " supported "
+  //       "See https://deepmd.rtfd.io/compatability/ for details.");
+  // }
 }
 
 void DeepPot::print_summary(const std::string& pre) const {
@@ -486,6 +785,11 @@ void DeepPot::print_summary(const std::string& pre) const {
 template <class VT>
 VT DeepPot::get_scalar(const std::string& name) const {
   return session_get_scalar<VT>(session, name);
+}
+
+template <class VT>
+VT DeepPot::paddle_get_scalar(const std::string& name) const {
+  return predictor_get_scalar<VT>(predictor, name);
 }
 
 template <typename VALUETYPE>
@@ -936,13 +1240,27 @@ void DeepPot::compute(ENERGYVTYPE& dener,
     nlist_data.make_inlist(nlist);
   }
 
-  if (dtype == tensorflow::DT_DOUBLE) {
-    int ret = session_input_tensors<double>(input_tensors, dcoord, ntypes,
-                                            datype, dbox, nlist, fparam, aparam,
-                                            atommap, nghost_real, ago);
-    assert(nloc_real == ret);
-    run_model<double>(dener, dforce, dvirial, datom_energy, datom_virial,
-                      session, input_tensors, atommap, nframes, nghost_real);
+  if (dtype == tensorflow::DT_DOUBLE || paddle_infer::DataType::FLOAT64) {
+    int ret = 0;
+    if (predictor == nullptr) {
+      /* run tensorflow inference if paddle predictor is nullptr*/
+      int ret = session_input_tensors<double>(
+          input_tensors, dcoord, ntypes, datype, dbox, nlist, fparam, aparam,
+          atommap, nghost_real, ago);
+      assert(nloc_real == ret);
+      run_model<double>(dener, dforce, dvirial, datom_energy, datom_virial,
+                        session, input_tensors, atommap, nframes, nghost_real);
+    }
+    /* run paddle inference if paddle predictor exist*/
+    else if (predictor != nullptr) {
+      int ret = predictor_input_tensors<double>(
+          predictor, dcoord, ntypes, datype, dbox, nlist, fparam, aparam,
+          atommap, nghost_real, ago);
+      assert(nloc_real == ret);
+      paddle_run_model<double>(dener, dforce, dvirial, datom_energy,
+                               datom_virial, predictor, atommap, nframes,
+                               nghost_real);
+    }
   } else {
     int ret = session_input_tensors<float>(input_tensors, dcoord, ntypes,
                                            datype, dbox, nlist, fparam, aparam,
@@ -1198,7 +1516,10 @@ template void DeepPot::compute_mixed_type<float, std::vector<ENERGYTYPE>>(
     const std::vector<float>& aparam);
 
 void DeepPot::get_type_map(std::string& type_map) {
-  type_map = get_scalar<STRINGTYPE>("model_attr/tmap");
+  if (predictor == nullptr)
+    type_map = get_scalar<STRINGTYPE>("model_attr/tmap");
+  else
+    type_map = paddle_get_scalar<std::string>("generated_tensor_12");
 }
 
 DeepPotModelDevi::DeepPotModelDevi()

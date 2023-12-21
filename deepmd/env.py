@@ -67,6 +67,7 @@ if platform.system() == "Linux":
 
 # import tensorflow v1 compatability
 try:
+    import paddle
     import tensorflow.compat.v1 as tf
 
     tf.disable_v2_behavior()
@@ -105,6 +106,7 @@ SHARED_LIB_MODULE = "op"
 # Python library version
 try:
     tf_py_version = tf.version.VERSION
+    pd_py_version = paddle.version.commit
 except AttributeError:
     tf_py_version = tf.__version__
 
@@ -370,7 +372,8 @@ def get_module(module_name: str) -> "ModuleType":
         raise FileNotFoundError(f"module {module_name} does not exist")
     else:
         try:
-            module = tf.load_op_library(str(module_file))
+            import paddle_deepmd_lib as module
+
         except tf.errors.NotFoundError as e:
             # check CXX11_ABI_FLAG is compatiblity
             # see https://gcc.gnu.org/onlinedocs/libstdc++/manual/using_dual_abi.html
@@ -452,9 +455,9 @@ def _get_package_constants(
 
 
 GLOBAL_CONFIG = _get_package_constants()
-MODEL_VERSION = GLOBAL_CONFIG["model_version"]
-TF_VERSION = GLOBAL_CONFIG["tf_version"]
-TF_CXX11_ABI_FLAG = int(GLOBAL_CONFIG["tf_cxx11_abi_flag"])
+MODEL_VERSION = 0
+TF_VERSION = 0
+TF_CXX11_ABI_FLAG = 0
 
 op_module = get_module("deepmd_op")
 op_grads_module = get_module("op_grads")
@@ -464,13 +467,15 @@ dp_float_prec = os.environ.get("DP_INTERFACE_PREC", "high").lower()
 if dp_float_prec in ("high", ""):
     # default is high
     GLOBAL_TF_FLOAT_PRECISION = tf.float64
+    GLOBAL_PD_FLOAT_PRECISION = paddle.float64
     GLOBAL_NP_FLOAT_PRECISION = np.float64
     GLOBAL_ENER_FLOAT_PRECISION = np.float64
     global_float_prec = "double"
 elif dp_float_prec == "low":
     GLOBAL_TF_FLOAT_PRECISION = tf.float32
+    GLOBAL_PD_FLOAT_PRECISION = paddle.float32
     GLOBAL_NP_FLOAT_PRECISION = np.float32
-    GLOBAL_ENER_FLOAT_PRECISION = np.float64
+    GLOBAL_ENER_FLOAT_PRECISION = np.float32
     global_float_prec = "float"
 else:
     raise RuntimeError(
@@ -496,17 +501,33 @@ def global_cvt_2_tf_float(xx: tf.Tensor) -> tf.Tensor:
     return tf.cast(xx, GLOBAL_TF_FLOAT_PRECISION)
 
 
-def global_cvt_2_ener_float(xx: tf.Tensor) -> tf.Tensor:
-    """Cast tensor to globally set energy precision.
+def global_cvt_2_pd_float(xx: paddle.Tensor) -> paddle.Tensor:
+    """Cast tensor to globally set TF precision.
 
     Parameters
     ----------
-    xx : tf.Tensor
+    xx : paddle.Tensor
         input tensor
 
     Returns
     -------
-    tf.Tensor
+    paddle.Tensor
+        output tensor cast to `GLOBAL_TF_FLOAT_PRECISION`
+    """
+    return paddle.cast(xx, GLOBAL_PD_FLOAT_PRECISION)
+
+
+def global_cvt_2_ener_float(xx: paddle.Tensor) -> paddle.Tensor:
+    """Cast tensor to globally set energy precision.
+
+    Parameters
+    ----------
+    xx : paddle.Tensor
+        input tensor
+
+    Returns
+    -------
+    paddle.Tensor
         output tensor cast to `GLOBAL_ENER_FLOAT_PRECISION`
     """
-    return tf.cast(xx, GLOBAL_ENER_FLOAT_PRECISION)
+    return paddle.cast(xx, GLOBAL_ENER_FLOAT_PRECISION)

@@ -5,29 +5,23 @@ from typing import (
 )
 
 import numpy as np
+from paddle import (
+    nn,
+)
 
 from deepmd.common import (
     add_data_requirement,
-    cast_precision,
     get_activation_func,
     get_precision,
 )
 from deepmd.env import (
-    GLOBAL_TF_FLOAT_PRECISION,
-    global_cvt_2_tf_float,
+    GLOBAL_PD_FLOAT_PRECISION,
+    global_cvt_2_pd_float,
+    paddle,
     tf,
-)
-from deepmd.fit.fitting import (
-    Fitting,
 )
 from deepmd.infer import (
     DeepPotential,
-)
-from deepmd.nvnmd.fit.ener import (
-    one_layer_nvnmd,
-)
-from deepmd.nvnmd.utils.config import (
-    nvnmd_cfg,
 )
 from deepmd.utils.errors import (
     GraphWithoutTensorError,
@@ -36,7 +30,7 @@ from deepmd.utils.graph import (
     get_fitting_net_variables_from_graph_def,
     get_tensor_by_name_from_graph,
 )
-from deepmd.utils.network import one_layer as one_layer_deepmd
+from deepmd.utils.network import OneLayer as OneLayer_deepmd
 from deepmd.utils.network import (
     one_layer_rand_seed_shift,
 )
@@ -47,8 +41,8 @@ from deepmd.utils.spin import (
 log = logging.getLogger(__name__)
 
 
-@Fitting.register("ener")
-class EnerFitting(Fitting):
+# @Fitting.register("ener")
+class EnerFitting(nn.Layer):
     r"""Fitting the energy of the system. The force and the virial can also be trained.
 
     The potential energy :math:`E` is a fitting network function of the descriptor :math:`\mathcal{D}`:
@@ -121,7 +115,7 @@ class EnerFitting(Fitting):
 
     def __init__(
         self,
-        descrpt: tf.Tensor,
+        descrpt: paddle.Tensor,
         neuron: List[int] = [120, 120, 120],
         resnet_dt: bool = True,
         numb_fparam: int = 0,
@@ -138,10 +132,11 @@ class EnerFitting(Fitting):
         use_aparam_as_mask: bool = False,
         spin: Optional[Spin] = None,
     ) -> None:
+        super().__init__(name_scope="EnerFitting")
         """Constructor."""
         # model param
         self.ntypes = descrpt.get_ntypes()
-        self.dim_descrpt = descrpt.get_dim_out()
+        self.dim_descrpt = descrpt.get_dim_out()  # M1*M2
         self.use_aparam_as_mask = use_aparam_as_mask
         # args = ()\
         #        .add('numb_fparam',      int,    default = 0)\
@@ -156,7 +151,9 @@ class EnerFitting(Fitting):
         #        .add("precision",           str, default = "default")\
         #        .add("trainable",        [list, bool], default = True)
         self.numb_fparam = numb_fparam
+        self.register_buffer("buffer_dfparam", paddle.to_tensor(self.numb_fparam))
         self.numb_aparam = numb_aparam
+        self.register_buffer("buffer_daparam", paddle.to_tensor(self.numb_aparam))
         self.n_neuron = neuron
         self.resnet_dt = resnet_dt
         self.rcond = rcond
@@ -180,13 +177,15 @@ class EnerFitting(Fitting):
         self.atom_ener_v = atom_ener
         for at, ae in enumerate(atom_ener):
             if ae is not None:
-                self.atom_ener.append(
-                    tf.constant(ae, GLOBAL_TF_FLOAT_PRECISION, name="atom_%d_ener" % at)
-                )
+                self.atom_ener.append(paddle.to_tensor(ae, GLOBAL_PD_FLOAT_PRECISION))
             else:
                 self.atom_ener.append(None)
         self.useBN = False
         self.bias_atom_e = np.zeros(self.ntypes, dtype=np.float64)
+        self.register_buffer(
+            "t_bias_atom_e",
+            paddle.to_tensor(self.bias_atom_e),
+        )
         # data requirement
         if self.numb_fparam > 0:
             add_data_requirement(
@@ -211,6 +210,91 @@ class EnerFitting(Fitting):
             assert (
                 len(self.layer_name) == len(self.n_neuron) + 1
             ), "length of layer_name should be that of n_neuron + 1"
+
+        type_suffix = ""
+        suffix = ""
+        self.one_layers = nn.LayerList()
+        self.final_layers = nn.LayerList()
+        ntypes_atom = self.ntypes - self.ntypes_spin
+        for type_i in range(0, ntypes_atom):
+            type_i_layers = nn.LayerList()
+            for ii in range(0, len(self.n_neuron)):
+                if self.layer_name is not None and self.layer_name[ii] is not None:
+                    layer_suffix = "share_" + self.layer_name[ii] + type_suffix
+                else:
+                    layer_suffix = "layer_" + str(ii) + type_suffix + suffix
+
+                if ii >= 1 and self.n_neuron[ii] == self.n_neuron[ii - 1]:
+                    type_i_layers.append(
+                        OneLayer_deepmd(
+                            self.n_neuron[ii - 1],
+                            self.n_neuron[ii],
+                            activation_fn=self.fitting_activation_fn,
+                            precision=self.fitting_precision,
+                            name=layer_suffix,
+                            seed=self.seed,
+                            use_timestep=self.resnet_dt,
+                            trainable=self.trainable[ii],
+                        )
+                    )
+                else:
+                    type_i_layers.append(
+                        OneLayer_deepmd(
+                            self.dim_descrpt + self.numb_fparam + self.numb_aparam,
+                            self.n_neuron[ii],
+                            activation_fn=self.fitting_activation_fn,
+                            precision=self.fitting_precision,
+                            name=layer_suffix,
+                            seed=self.seed,
+                            trainable=self.trainable[ii],
+                        )
+                    )
+                if (not self.uniform_seed) and (self.seed is not None):
+                    self.seed += self.seed_shift
+
+            self.one_layers.append(type_i_layers)
+            self.final_layers.append(
+                OneLayer_deepmd(
+                    self.n_neuron[-1],
+                    1,
+                    activation_fn=None,
+                    precision=self.fitting_precision,
+                    bavg=self.bias_atom_e,
+                    name=layer_suffix,
+                    seed=self.seed,
+                    trainable=self.trainable[-1],
+                )
+            )
+
+        if self.numb_fparam > 0:
+            if self.fparam_avg is None:
+                self.fparam_avg = 0.0
+            if self.fparam_inv_std is None:
+                self.fparam_inv_std = 1.0
+        if self.numb_aparam > 0:
+            if self.aparam_avg is None:
+                self.aparam_avg = 0.0
+            if self.aparam_inv_std is None:
+                self.aparam_inv_std = 1.0
+
+        if self.numb_fparam > 0:
+            self.register_buffer(
+                "t_fparam_avg",
+                paddle.to_tensor(self.fparam_avg),
+            )
+            self.register_buffer(
+                "t_fparam_istd",
+                paddle.to_tensor(self.fparam_inv_std),
+            )
+        if self.numb_aparam > 0:
+            self.register_buffer(
+                "t_aparam_avg",
+                paddle.to_tensor(self.aparam_avg),
+            )
+            self.register_buffer(
+                "t_aparam_istd",
+                paddle.to_tensor(self.aparam_inv_std),
+            )
 
     def get_numb_fparam(self) -> int:
         """Get the number of frame parameters."""
@@ -237,6 +321,7 @@ class EnerFitting(Fitting):
         self.bias_atom_e = self._compute_output_stats(
             all_stat, rcond=self.rcond, mixed_type=mixed_type
         )
+        paddle.assign(self.bias_atom_e, self.t_bias_atom_e)
 
     def _compute_output_stats(self, all_stat, rcond=1e-3, mixed_type=False):
         data = all_stat["energy"]
@@ -335,7 +420,7 @@ class EnerFitting(Fitting):
     def _compute_std(self, sumv2, sumv, sumn):
         return np.sqrt(sumv2 / sumn - np.multiply(sumv / sumn, sumv / sumn))
 
-    @cast_precision
+    # @cast_precision
     def _build_lower(
         self,
         start_index,
@@ -346,109 +431,64 @@ class EnerFitting(Fitting):
         bias_atom_e=0.0,
         type_suffix="",
         suffix="",
-        reuse=None,
+        type_i=None,
     ):
         # cut-out inputs
-        inputs_i = tf.slice(inputs, [0, start_index, 0], [-1, natoms, -1])
-        inputs_i = tf.reshape(inputs_i, [-1, self.dim_descrpt])
+        inputs_i = paddle.slice(
+            inputs,
+            [0, 1, 2],
+            [0, start_index, 0],
+            [inputs.shape[0], start_index + natoms, inputs.shape[2]],
+        )
+        inputs_i = paddle.reshape(inputs_i, [-1, self.dim_descrpt])  # [natoms, M1*M2]
         layer = inputs_i
         if fparam is not None:
-            ext_fparam = tf.tile(fparam, [1, natoms])
-            ext_fparam = tf.reshape(ext_fparam, [-1, self.numb_fparam])
-            ext_fparam = tf.cast(ext_fparam, self.fitting_precision)
-            layer = tf.concat([layer, ext_fparam], axis=1)
+            ext_fparam = paddle.tile(fparam, [1, natoms])
+            ext_fparam = paddle.reshape(ext_fparam, [-1, self.numb_fparam])
+            ext_fparam = paddle.cast(ext_fparam, self.fitting_precision)
+            layer = paddle.concat([layer, ext_fparam], axis=1)
         if aparam is not None:
-            ext_aparam = tf.slice(
+            ext_aparam = paddle.slice(
                 aparam,
+                [0, 1],
                 [0, start_index * self.numb_aparam],
-                [-1, natoms * self.numb_aparam],
+                [
+                    aparam.shape[0],
+                    start_index * self.numb_aparam + natoms * self.numb_aparam,
+                ],
             )
-            ext_aparam = tf.reshape(ext_aparam, [-1, self.numb_aparam])
-            ext_aparam = tf.cast(ext_aparam, self.fitting_precision)
-            layer = tf.concat([layer, ext_aparam], axis=1)
+            ext_aparam = paddle.reshape(ext_aparam, [-1, self.numb_aparam])
+            ext_aparam = paddle.cast(ext_aparam, self.fitting_precision)
+            layer = paddle.concat([layer, ext_aparam], axis=1)
 
-        if nvnmd_cfg.enable:
-            one_layer = one_layer_nvnmd
-        else:
-            one_layer = one_layer_deepmd
         for ii in range(0, len(self.n_neuron)):
-            if self.layer_name is not None and self.layer_name[ii] is not None:
-                layer_suffix = "share_" + self.layer_name[ii] + type_suffix
-                layer_reuse = tf.AUTO_REUSE
-            else:
-                layer_suffix = "layer_" + str(ii) + type_suffix + suffix
-                layer_reuse = reuse
             if ii >= 1 and self.n_neuron[ii] == self.n_neuron[ii - 1]:
-                layer += one_layer(
-                    layer,
-                    self.n_neuron[ii],
-                    name=layer_suffix,
-                    reuse=layer_reuse,
-                    seed=self.seed,
-                    use_timestep=self.resnet_dt,
-                    activation_fn=self.fitting_activation_fn,
-                    precision=self.fitting_precision,
-                    trainable=self.trainable[ii],
-                    uniform_seed=self.uniform_seed,
-                    initial_variables=self.fitting_net_variables,
-                    mixed_prec=self.mixed_prec,
-                )
+                layer += self.one_layers[type_i][ii](layer)
             else:
-                layer = one_layer(
-                    layer,
-                    self.n_neuron[ii],
-                    name=layer_suffix,
-                    reuse=layer_reuse,
-                    seed=self.seed,
-                    activation_fn=self.fitting_activation_fn,
-                    precision=self.fitting_precision,
-                    trainable=self.trainable[ii],
-                    uniform_seed=self.uniform_seed,
-                    initial_variables=self.fitting_net_variables,
-                    mixed_prec=self.mixed_prec,
-                )
+                layer = self.one_layers[type_i][ii](layer)
             if (not self.uniform_seed) and (self.seed is not None):
                 self.seed += self.seed_shift
-        if self.layer_name is not None and self.layer_name[-1] is not None:
-            layer_suffix = "share_" + self.layer_name[-1] + type_suffix
-            layer_reuse = tf.AUTO_REUSE
-        else:
-            layer_suffix = "final_layer" + type_suffix + suffix
-            layer_reuse = reuse
-        final_layer = one_layer(
-            layer,
-            1,
-            activation_fn=None,
-            bavg=bias_atom_e,
-            name=layer_suffix,
-            reuse=layer_reuse,
-            seed=self.seed,
-            precision=self.fitting_precision,
-            trainable=self.trainable[-1],
-            uniform_seed=self.uniform_seed,
-            initial_variables=self.fitting_net_variables,
-            mixed_prec=self.mixed_prec,
-            final_layer=True,
-        )
+
+        final_layer = self.final_layers[type_i](layer)
         if (not self.uniform_seed) and (self.seed is not None):
             self.seed += self.seed_shift
 
         return final_layer
 
-    def build(
+    def forward(
         self,
-        inputs: tf.Tensor,
-        natoms: tf.Tensor,
+        inputs: paddle.Tensor,
+        natoms: paddle.Tensor,
         input_dict: Optional[dict] = None,
         reuse: Optional[bool] = None,
         suffix: str = "",
-    ) -> tf.Tensor:
+    ) -> paddle.Tensor:
         """Build the computational graph for fitting net.
 
         Parameters
         ----------
         inputs
-            The input descriptor
+            The input descriptor, [1, all_atoms, M1*M2]
         input_dict
             Additional dict for inputs.
             if numb_fparam > 0, should have input_dict['fparam']
@@ -504,59 +544,18 @@ class EnerFitting(Fitting):
                     self.bias_atom_e[type_i] = self.bias_atom_e[type_i]
             self.bias_atom_e = self.bias_atom_e[:ntypes_atom]
 
-        with tf.variable_scope("fitting_attr" + suffix, reuse=reuse):
-            t_dfparam = tf.constant(self.numb_fparam, name="dfparam", dtype=tf.int32)
-            t_daparam = tf.constant(self.numb_aparam, name="daparam", dtype=tf.int32)
-            self.t_bias_atom_e = tf.get_variable(
-                "t_bias_atom_e",
-                self.bias_atom_e.shape,
-                dtype=GLOBAL_TF_FLOAT_PRECISION,
-                trainable=False,
-                initializer=tf.constant_initializer(self.bias_atom_e),
-            )
-            if self.numb_fparam > 0:
-                t_fparam_avg = tf.get_variable(
-                    "t_fparam_avg",
-                    self.numb_fparam,
-                    dtype=GLOBAL_TF_FLOAT_PRECISION,
-                    trainable=False,
-                    initializer=tf.constant_initializer(self.fparam_avg),
-                )
-                t_fparam_istd = tf.get_variable(
-                    "t_fparam_istd",
-                    self.numb_fparam,
-                    dtype=GLOBAL_TF_FLOAT_PRECISION,
-                    trainable=False,
-                    initializer=tf.constant_initializer(self.fparam_inv_std),
-                )
-            if self.numb_aparam > 0:
-                t_aparam_avg = tf.get_variable(
-                    "t_aparam_avg",
-                    self.numb_aparam,
-                    dtype=GLOBAL_TF_FLOAT_PRECISION,
-                    trainable=False,
-                    initializer=tf.constant_initializer(self.aparam_avg),
-                )
-                t_aparam_istd = tf.get_variable(
-                    "t_aparam_istd",
-                    self.numb_aparam,
-                    dtype=GLOBAL_TF_FLOAT_PRECISION,
-                    trainable=False,
-                    initializer=tf.constant_initializer(self.aparam_inv_std),
-                )
-
-        inputs = tf.reshape(inputs, [-1, natoms[0], self.dim_descrpt])
+        inputs = paddle.reshape(inputs, [-1, natoms[0], self.dim_descrpt])
         if len(self.atom_ener):
             # only for atom_ener
             nframes = input_dict.get("nframes")
             if nframes is not None:
                 # like inputs, but we don't want to add a dependency on inputs
-                inputs_zero = tf.zeros(
+                inputs_zero = paddle.zeros(
                     (nframes, natoms[0], self.dim_descrpt),
-                    dtype=GLOBAL_TF_FLOAT_PRECISION,
+                    dtype=GLOBAL_PD_FLOAT_PRECISION,
                 )
             else:
-                inputs_zero = tf.zeros_like(inputs, dtype=GLOBAL_TF_FLOAT_PRECISION)
+                inputs_zero = paddle.zeros_like(inputs, dtype=GLOBAL_PD_FLOAT_PRECISION)
 
         if bias_atom_e is not None:
             assert len(bias_atom_e) == self.ntypes
@@ -564,37 +563,42 @@ class EnerFitting(Fitting):
         fparam = None
         if self.numb_fparam > 0:
             fparam = input_dict["fparam"]
-            fparam = tf.reshape(fparam, [-1, self.numb_fparam])
-            fparam = (fparam - t_fparam_avg) * t_fparam_istd
+            fparam = paddle.reshape(fparam, [-1, self.numb_fparam])
+            fparam = (fparam - self.t_fparam_avg) * self.t_fparam_istd
 
         aparam = None
         if not self.use_aparam_as_mask:
             if self.numb_aparam > 0:
                 aparam = input_dict["aparam"]
-                aparam = tf.reshape(aparam, [-1, self.numb_aparam])
-                aparam = (aparam - t_aparam_avg) * t_aparam_istd
-                aparam = tf.reshape(aparam, [-1, self.numb_aparam * natoms[0]])
+                aparam = paddle.reshape(aparam, [-1, self.numb_aparam])
+                aparam = (aparam - self.t_aparam_avg) * self.t_aparam_istd
+                aparam = paddle.reshape(aparam, [-1, self.numb_aparam * natoms[0]])
 
-        atype_nall = tf.reshape(atype, [-1, natoms[1]])
-        self.atype_nloc = tf.slice(
-            atype_nall, [0, 0], [-1, natoms[0]]
+        atype_nall = paddle.reshape(atype, [-1, natoms[1]])
+        self.atype_nloc = paddle.slice(
+            atype_nall, [0, 1], [0, 0], [atype_nall.shape[0], natoms[0]]
         )  ## lammps will make error
-        atype_filter = tf.cast(self.atype_nloc >= 0, GLOBAL_TF_FLOAT_PRECISION)
-        self.atype_nloc = tf.reshape(self.atype_nloc, [-1])
+        atype_filter = paddle.cast(self.atype_nloc >= 0, GLOBAL_PD_FLOAT_PRECISION)
+        self.atype_nloc = paddle.reshape(self.atype_nloc, [-1])
         # prevent embedding_lookup error,
         # but the filter will be applied anyway
-        self.atype_nloc = tf.clip_by_value(self.atype_nloc, 0, self.ntypes - 1)
+        self.atype_nloc = paddle.clip(self.atype_nloc, 0, self.ntypes - 1)
 
         ## if spin is used
         if self.spin is not None:
-            self.atype_nloc = tf.slice(
-                atype_nall, [0, 0], [-1, tf.reduce_sum(natoms[2 : 2 + ntypes_atom])]
+            self.atype_nloc = paddle.slice(
+                atype_nall,
+                [0, 1],
+                [0, 0],
+                [-1, paddle.sum(natoms[2 : 2 + ntypes_atom]).item()],
             )
-            atype_filter = tf.cast(self.atype_nloc >= 0, GLOBAL_TF_FLOAT_PRECISION)
-            self.atype_nloc = tf.reshape(self.atype_nloc, [-1])
+            atype_filter = paddle.cast(self.atype_nloc >= 0, GLOBAL_PD_FLOAT_PRECISION)
+            self.atype_nloc = paddle.reshape(self.atype_nloc, [-1])
 
         if type_embedding is not None:
-            atype_embed = tf.nn.embedding_lookup(type_embedding, self.atype_nloc)
+            atype_embed = paddle.nn.functional.embedding(
+                self.atype_nloc, type_embedding
+            )
         else:
             atype_embed = None
 
@@ -613,7 +617,7 @@ class EnerFitting(Fitting):
                     bias_atom_e=0.0,
                     type_suffix="_type_" + str(type_i),
                     suffix=suffix,
-                    reuse=reuse,
+                    type_i=type_i,
                 )
                 # concat the results
                 if type_i < len(self.atom_ener) and self.atom_ener[type_i] is not None:
@@ -626,62 +630,57 @@ class EnerFitting(Fitting):
                         bias_atom_e=0.0,
                         type_suffix="_type_" + str(type_i),
                         suffix=suffix,
-                        reuse=True,
+                        type_i=type_i,
                     )
                     final_layer -= zero_layer
-                final_layer = tf.reshape(
-                    final_layer, [tf.shape(inputs)[0], natoms[2 + type_i]]
+                final_layer = paddle.reshape(
+                    final_layer, [paddle.shape(inputs)[0], natoms[2 + type_i]]
                 )
                 outs_list.append(final_layer)
                 start_index += natoms[2 + type_i]
             # concat the results
             # concat once may be faster than multiple concat
-            outs = tf.concat(outs_list, axis=1)
+            outs = paddle.concat(outs_list, axis=1)
         # with type embedding
         else:
-            atype_embed = tf.cast(atype_embed, GLOBAL_TF_FLOAT_PRECISION)
-            type_shape = atype_embed.get_shape().as_list()
-            inputs = tf.concat(
-                [tf.reshape(inputs, [-1, self.dim_descrpt]), atype_embed], axis=1
+            atype_embed = paddle.cast(atype_embed, GLOBAL_PD_FLOAT_PRECISION)
+            type_shape = atype_embed.shape
+            inputs = paddle.concat(
+                [paddle.reshape(inputs, [-1, self.dim_descrpt]), atype_embed], axis=1
             )
             original_dim_descrpt = self.dim_descrpt
             self.dim_descrpt = self.dim_descrpt + type_shape[1]
-            inputs = tf.reshape(inputs, [-1, natoms[0], self.dim_descrpt])
-            final_layer = self._build_lower(
-                0,
-                natoms[0],
-                inputs,
-                fparam,
-                aparam,
-                bias_atom_e=0.0,
-                suffix=suffix,
-                reuse=reuse,
-            )
+            inputs = paddle.reshape(inputs, [-1, natoms[0], self.dim_descrpt])
+            final_layer = inputs
+            for layer_j in range(0 * ntypes_atom, (0 + 1) * ntypes_atom):
+                final_layer = self.one_layers[layer_j](final_layer)
+            final_layer = self.final_layers[0](final_layer)
             if len(self.atom_ener):
                 # remove contribution in vacuum
-                inputs_zero = tf.concat(
-                    [tf.reshape(inputs_zero, [-1, original_dim_descrpt]), atype_embed],
+                inputs_zero = paddle.concat(
+                    [
+                        paddle.reshape(inputs_zero, [-1, original_dim_descrpt]),
+                        atype_embed,
+                    ],
                     axis=1,
                 )
-                inputs_zero = tf.reshape(inputs_zero, [-1, natoms[0], self.dim_descrpt])
-                zero_layer = self._build_lower(
-                    0,
-                    natoms[0],
-                    inputs_zero,
-                    fparam,
-                    aparam,
-                    bias_atom_e=0.0,
-                    suffix=suffix,
-                    reuse=True,
+                inputs_zero = paddle.reshape(
+                    inputs_zero, [-1, natoms[0], self.dim_descrpt]
                 )
-                # atomic energy will be stored in `self.t_bias_atom_e` which is not trainable
+                zero_layer = inputs_zero
+                for layer_j in range(0 * ntypes_atom, (0 + 1) * ntypes_atom):
+                    zero_layer = self.one_layers[layer_j](zero_layer)
+                zero_layer = self.final_layers[0](zero_layer)
+
                 final_layer -= zero_layer
-            outs = tf.reshape(final_layer, [tf.shape(inputs)[0], natoms[0]])
+            outs = paddle.reshape(final_layer, [paddle.shape(inputs)[0], natoms[0]])
         # add bias
         self.atom_ener_before = outs * atype_filter
-        self.add_type = tf.reshape(
-            tf.nn.embedding_lookup(self.t_bias_atom_e, self.atype_nloc),
-            [tf.shape(inputs)[0], tf.reduce_sum(natoms[2 : 2 + ntypes_atom])],
+        self.add_type = paddle.reshape(
+            paddle.nn.functional.embedding(
+                self.atype_nloc, self.t_bias_atom_e.reshape([2, -1])
+            ),
+            [paddle.shape(inputs)[0], paddle.sum(natoms[2 : 2 + ntypes_atom]).item()],
         )
         outs = outs + self.add_type
         outs *= atype_filter
@@ -689,19 +688,19 @@ class EnerFitting(Fitting):
 
         if self.tot_ener_zero:
             force_tot_ener = 0.0
-            outs = tf.reshape(outs, [-1, tf.reduce_sum(natoms[2 : 2 + ntypes_atom])])
-            outs_mean = tf.reshape(tf.reduce_mean(outs, axis=1), [-1, 1])
-            outs_mean = outs_mean - tf.ones_like(
-                outs_mean, dtype=GLOBAL_TF_FLOAT_PRECISION
+            outs = paddle.reshape(
+                outs, [-1, paddle.sum(natoms[2 : 2 + ntypes_atom]).item()]
+            )
+            outs_mean = paddle.reshape(paddle.mean(outs, axis=1), [-1, 1])
+            outs_mean = outs_mean - paddle.ones_like(
+                outs_mean, dtype=GLOBAL_PD_FLOAT_PRECISION
             ) * (
                 force_tot_ener
-                / global_cvt_2_tf_float(tf.reduce_sum(natoms[2 : 2 + ntypes_atom]))
+                / global_cvt_2_pd_float(paddle.sum(natoms[2 : 2 + ntypes_atom]))
             )
             outs = outs - outs_mean
-            outs = tf.reshape(outs, [-1])
-
-        tf.summary.histogram("fitting_net_output", outs)
-        return tf.reshape(outs, [-1])
+            outs = paddle.reshape(outs, [-1])
+        return paddle.reshape(outs, [-1])  # [all_atoms]
 
     def init_variables(
         self,

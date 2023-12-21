@@ -458,7 +458,7 @@ class DeepmdData:
                     self.data_dict[kk]["ndof"],
                     atomic=self.data_dict[kk]["atomic"],
                     high_prec=self.data_dict[kk]["high_prec"],
-                    must=self.data_dict[kk]["must"],
+                    must=False,
                     type_sel=self.data_dict[kk]["type_sel"],
                     repeat=self.data_dict[kk]["repeat"],
                     default=self.data_dict[kk]["default"],

@@ -25,15 +25,15 @@ $deepmd_source_dir/examples/zinc_protein/zinc_se_a_mask.json
 
 The construction of the descriptor is given by section {ref}`descriptor <model/descriptor>`. An example of the descriptor is provided as follows
 ```json
-	"descriptor" :{
-	    "type":	"se_a_mask",
-	    "sel":		[36, 16, 24, 64, 6, 1],
-	    "neuron":		[25, 50, 100],
-		"axis_neuron": 16,
-	    "type_one_side":	false,
-	    "resnet_dt":	false,
-	    "seed":		1
-	}
+    "descriptor" :{
+        "type":    "se_a_mask",
+        "sel":        [36, 16, 24, 64, 6, 1],
+        "neuron":        [25, 50, 100],
+        "axis_neuron": 16,
+        "type_one_side":    false,
+        "resnet_dt":    false,
+        "seed":        1
+    }
 ```
 * The {ref}`type <model/descriptor/type>` of the descriptor is set to `"se_a_mask"`.
 * {ref}`sel <model/descriptor[se_a_mask]/sel>` gives the maximum number of atoms in input coordinates. It is a list, the length of which is the same as the number of atom types in the system, and `sel[i]` denotes the maximum number of atoms with type `i`.
@@ -45,13 +45,13 @@ The construction of the descriptor is given by section {ref}`descriptor <model/d
 
 To make the `aparam.npy` used for descriptor `se_a_mask`, two variables in `fitting_net` section are needed.
 ```json
-	"fitting_net" :{
-	    "neuron": [240, 240, 240],
-      	"resnet_dt": true,
-      	"seed": 1,
-      	"numb_aparam": 1,
-      	"use_aparam_as_mask": true
-	}
+    "fitting_net" :{
+        "neuron": [240, 240, 240],
+          "resnet_dt": true,
+          "seed": 1,
+          "numb_aparam": 1,
+          "use_aparam_as_mask": true
+    }
 ```
 * `neuron`, `resnet_dt` and `seed` are the same as the {ref}`fitting_net <model/fitting_net[ener]>` section for fitting energy.
 * {ref}`numb_aparam <model/fitting_net[ener]/numb_aparam>` gives the dimesion of the `aparam.npy` file. In this example, it is set to 1 and stores the real/virtual sign of the atoms. For real/virtual atoms, the corresponding sign in `aparam.npy` is set to 1/0.

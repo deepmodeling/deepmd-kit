@@ -4,7 +4,9 @@ from deepmd.common import (
     get_precision,
 )
 from deepmd.env import (
+    GLOBAL_PD_FLOAT_PRECISION,
     GLOBAL_TF_FLOAT_PRECISION,
+    paddle,
     tf,
 )
 
@@ -296,3 +298,194 @@ def variable_summaries(var: tf.Variable, name: str):
         tf.summary.scalar("max", tf.reduce_max(var))
         tf.summary.scalar("min", tf.reduce_min(var))
         tf.summary.histogram("histogram", var)
+
+
+class OneLayer(paddle.nn.Layer):
+    def __init__(
+        self,
+        in_features,
+        out_features,
+        activation_fn=paddle.nn.functional.tanh,
+        precision=GLOBAL_PD_FLOAT_PRECISION,
+        stddev=1.0,
+        bavg=0.0,
+        name="linear",
+        seed=None,
+        use_timestep=False,
+        trainable=True,
+        useBN=False,
+    ):
+        super().__init__(name)
+        self.out_features = out_features
+        self.activation_fn = activation_fn
+        self.use_timestep = use_timestep
+        self.useBN = useBN
+        self.seed = seed
+        paddle.seed(seed)
+
+        self.weight = self.create_parameter(
+            shape=[in_features, out_features],
+            dtype=precision,
+            is_bias=False,
+            attr=paddle.ParamAttr(trainable=trainable),
+            default_initializer=paddle.nn.initializer.Normal(
+                std=stddev / np.sqrt(in_features + out_features)
+            ),
+        )
+        self.bias = self.create_parameter(
+            shape=[out_features],
+            dtype=precision,
+            is_bias=True,
+            attr=paddle.ParamAttr(trainable=trainable),
+            default_initializer=paddle.nn.initializer.Normal(
+                mean=bavg if isinstance(bavg, float) else bavg[0], std=stddev
+            ),
+        )
+        if self.activation_fn is not None and self.use_timestep:
+            self.idt = self.create_parameter(
+                shape=[out_features],
+                dtype=precision,
+                attr=paddle.ParamAttr(trainable=trainable),
+                default_initializer=paddle.nn.initializer.Normal(mean=0.1, std=0.001),
+            )
+
+    def forward(self, input):
+        hidden = paddle.matmul(input, self.weight) + self.bias
+        if self.activation_fn is not None:
+            if self.useBN:
+                None
+                # hidden_bn = self._batch_norm(hidden, name=name+'_normalization', reuse=reuse)
+                # return activation_fn(hidden_bn)
+            else:
+                if self.use_timestep:
+                    hidden = (
+                        paddle.reshape(
+                            self.activation_fn(hidden), [-1, self.out_features]
+                        )
+                        * self.idt
+                    )
+                else:
+                    hidden = paddle.reshape(
+                        self.activation_fn(hidden), [-1, self.out_features]
+                    )
+        return hidden
+
+
+class EmbeddingNet(paddle.nn.Layer):
+    """Parameters
+    ----------
+    xx : Tensor
+        Input tensor of shape [-1,1]
+    network_size: list of int
+        Size of the embedding network. For example [16,32,64]
+    precision:
+        Precision of network weights. For example, tf.float64
+    activation_fn:
+        Activation function
+    resnet_dt: boolean
+        Using time-step in the ResNet construction
+    name_suffix: str
+        The name suffix append to each variable.
+    stddev: float
+        Standard deviation of initializing network parameters
+    bavg: float
+        Mean of network intial bias
+    seed: int
+        Random seed for initializing network parameters
+    trainable: boolean
+        If the netowk is trainable
+    """
+
+    def __init__(
+        self,
+        network_size,
+        precision,
+        activation_fn=paddle.nn.functional.tanh,
+        resnet_dt=False,
+        stddev=1.0,
+        bavg=0.0,
+        seed=42,
+        trainable=True,
+        name="",
+    ):
+        super().__init__(name)
+        self.name = name
+        self.outputs_size = [1] + network_size
+        self.activation_fn = activation_fn
+        self.resnet_dt = resnet_dt
+        self.seed = seed
+        paddle.seed(seed)
+
+        outputs_size = self.outputs_size
+        weight = []
+        bias = []
+        idt = []
+        for ii in range(1, len(outputs_size)):
+            weight.append(
+                self.create_parameter(
+                    shape=[outputs_size[ii - 1], outputs_size[ii]],
+                    dtype=precision,
+                    is_bias=False,
+                    attr=paddle.ParamAttr(trainable=trainable),
+                    default_initializer=paddle.nn.initializer.Normal(
+                        std=stddev / np.sqrt(outputs_size[ii] + outputs_size[ii - 1])
+                    ),
+                )
+            )
+            bias.append(
+                self.create_parameter(
+                    shape=[1, outputs_size[ii]],
+                    dtype=precision,
+                    is_bias=True,
+                    attr=paddle.ParamAttr(trainable=trainable),
+                    default_initializer=paddle.nn.initializer.Normal(
+                        mean=bavg, std=stddev
+                    ),
+                )
+            )
+            if resnet_dt:
+                idt.append(
+                    self.create_parameter(
+                        shape=[1, outputs_size[ii]],
+                        dtype=precision,
+                        attr=paddle.ParamAttr(trainable=trainable),
+                        default_initializer=paddle.nn.initializer.Normal(
+                            mean=1.0, std=0.001
+                        ),
+                    )
+                )
+
+        self.weight = paddle.nn.ParameterList(weight)
+        self.bias = paddle.nn.ParameterList(bias)
+        self.idt = paddle.nn.ParameterList(idt)
+
+    def forward(self, xx):
+        outputs_size = self.outputs_size
+        for ii in range(1, len(outputs_size)):
+            if self.activation_fn is not None:
+                hidden = paddle.reshape(
+                    self.activation_fn(
+                        paddle.matmul(xx, self.weight[ii - 1]) + self.bias[ii - 1]
+                    ),
+                    [-1, outputs_size[ii]],
+                )
+            else:
+                hidden = paddle.reshape(
+                    paddle.matmul(xx, self.weight[ii - 1]) + self.bias[ii - 1],
+                    [-1, outputs_size[ii]],
+                )
+
+            if outputs_size[ii] == outputs_size[ii - 1]:
+                if self.resnet_dt:
+                    xx += hidden * self.idt[ii]
+                else:
+                    xx += hidden
+            elif outputs_size[ii] == outputs_size[ii - 1] * 2:
+                if self.resnet_dt:
+                    xx = paddle.concat([xx, xx], axis=1) + hidden * self.idt[ii]
+                else:
+                    xx = paddle.concat([xx, xx], axis=1) + hidden
+            else:
+                xx = hidden
+
+        return xx

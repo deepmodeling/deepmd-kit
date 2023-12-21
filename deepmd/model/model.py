@@ -1,6 +1,5 @@
 from abc import (
     ABC,
-    abstractmethod,
 )
 from enum import (
     Enum,
@@ -21,7 +20,7 @@ from deepmd.utils.graph import (
 
 
 class Model(ABC):
-    @abstractmethod
+    # @abstractmethod
     def build(
         self,
         coord_: tf.Tensor,

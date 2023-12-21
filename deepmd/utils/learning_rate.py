@@ -3,6 +3,9 @@ from typing import (
 )
 
 import numpy as np
+from paddle.optimizer import (
+    lr,
+)
 
 from deepmd.env import (
     tf,
@@ -89,12 +92,9 @@ class LearningRateExp:
                 np.log(self.stop_lr_ / self.start_lr_) / (stop_step / self.decay_steps_)
             )
 
-        return tf.train.exponential_decay(
+        return lr.ExponentialDecay(
             self.start_lr_,
-            global_step,
-            self.decay_steps_,
-            self.decay_rate_,
-            staircase=True,
+            gamma=self.decay_rate_,
         )
 
     def start_lr(self) -> float:

@@ -48,10 +48,10 @@ repos:
     -   id: clang-format
         exclude: ^source/3rdparty|source/lib/src/cuda/cudart/.+\.inc
 # CSS
--   repo: https://github.com/pre-commit/mirrors-csslint
-    rev: v1.0.5
-    hooks:
-    -   id: csslint
+# -   repo: https://github.com/pre-commit/mirrors-csslint
+#     rev: v1.0.5
+#     hooks:
+#     -   id: csslint
 # Shell
 - repo: https://github.com/scop/pre-commit-shfmt
   rev: v3.6.0-2

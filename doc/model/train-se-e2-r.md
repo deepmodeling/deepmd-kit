@@ -9,15 +9,15 @@ $deepmd_source_dir/examples/water/se_e2_r/input.json
 
 The training input script is very similar to that of [`se_e2_a`](train-se-e2-a.md). The only difference lies in the {ref}`descriptor <model/descriptor>` section
 ```json
-	"descriptor": {
-	    "type":		"se_e2_r",
-	    "sel":		[46, 92],
-	    "rcut_smth":	0.50,
-	    "rcut":		6.00,
-	    "neuron":		[5, 10, 20],
-	    "resnet_dt":	false,
-	    "seed":		1,
-	    "_comment": " that's all"
-	},
+    "descriptor": {
+        "type":        "se_e2_r",
+        "sel":        [46, 92],
+        "rcut_smth":    0.50,
+        "rcut":        6.00,
+        "neuron":        [5, 10, 20],
+        "resnet_dt":    false,
+        "seed":        1,
+        "_comment": " that's all"
+    },
 ```
 The type of the descriptor is set by the key {ref}`type <model/descriptor/type>`.

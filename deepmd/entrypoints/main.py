@@ -202,6 +202,13 @@ def main_parser() -> argparse.ArgumentParser:
         help="Skip calculating neighbor statistics. Sel checking, automatic sel, and model compression will be disabled.",
     )
 
+    parser_train.add_argument(
+        "--cpu",
+        action="store_true",
+        default=False,
+        help="Training on CPU",
+    )
+
     # * freeze script ******************************************************************
     parser_frz = subparsers.add_parser(
         "freeze",
@@ -217,8 +224,8 @@ def main_parser() -> argparse.ArgumentParser:
         ),
     )
     parser_frz.add_argument(
-        "-c",
-        "--checkpoint-folder",
+        "-i",
+        "--input_file",
         type=str,
         default=".",
         help="path to checkpoint folder",
@@ -230,26 +237,26 @@ def main_parser() -> argparse.ArgumentParser:
         default="frozen_model.pb",
         help="name of graph, will output to the checkpoint folder",
     )
-    parser_frz.add_argument(
-        "-n",
-        "--node-names",
-        type=str,
-        default=None,
-        help="the frozen nodes, if not set, determined from the model type",
-    )
-    parser_frz.add_argument(
-        "-w",
-        "--nvnmd-weight",
-        type=str,
-        default=None,
-        help="the name of weight file (.npy), if set, save the model's weight into the file",
-    )
-    parser_frz.add_argument(
-        "--united-model",
-        action="store_true",
-        default=False,
-        help="When in multi-task mode, freeze all nodes into one united model",
-    )
+    # parser_frz.add_argument(
+    #     "-n",
+    #     "--node-names",
+    #     type=str,
+    #     default=None,
+    #     help="the frozen nodes, if not set, determined from the model type",
+    # )
+    # parser_frz.add_argument(
+    #     "-w",
+    #     "--nvnmd-weight",
+    #     type=str,
+    #     default=None,
+    #     help="the name of weight file (.npy), if set, save the model's weight into the file",
+    # )
+    # parser_frz.add_argument(
+    #     "--united-model",
+    #     action="store_true",
+    #     default=False,
+    #     help="When in multi-task mode, freeze all nodes into one united model",
+    # )
 
     # * test script ********************************************************************
     parser_tst = subparsers.add_parser(

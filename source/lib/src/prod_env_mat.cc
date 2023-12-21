@@ -269,7 +269,7 @@ void deepmd::env_mat_nbor_update(InputNlist &inlist,
   memcpy(&inlist.numneigh, 8 + mesh_host, sizeof(int *));
   memcpy(&inlist.firstneigh, 12 + mesh_host, sizeof(int **));
   const int ago = mesh_host[0];
-  if (ago == 0 || gpu_inlist.inum < inlist.inum) {
+  if (ago == 0 || gpu_inlist.inum < inlist.inum || !gpu_inlist.ilist) {
     const int inum = inlist.inum;
     if (gpu_inlist.inum < inum) {
       delete_device_memory(gpu_inlist.ilist);
@@ -277,6 +277,15 @@ void deepmd::env_mat_nbor_update(InputNlist &inlist,
       delete_device_memory(gpu_inlist.firstneigh);
       malloc_device_memory(gpu_inlist.ilist, inum);
       malloc_device_memory(gpu_inlist.numneigh, inum);
+      malloc_device_memory(gpu_inlist.firstneigh, inum);
+    }
+    if (!gpu_inlist.ilist) {
+      malloc_device_memory(gpu_inlist.ilist, inum);
+    }
+    if (!gpu_inlist.numneigh) {
+      malloc_device_memory(gpu_inlist.numneigh, inum);
+    }
+    if (!gpu_inlist.firstneigh) {
       malloc_device_memory(gpu_inlist.firstneigh, inum);
     }
     memcpy_host_to_device(gpu_inlist.ilist, inlist.ilist, inum);

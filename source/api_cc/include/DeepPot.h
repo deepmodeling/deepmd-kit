@@ -291,12 +291,18 @@ class DeepPot {
   void get_type_map(std::string& type_map);
 
  private:
+  std::shared_ptr<paddle_infer::Predictor> predictor = nullptr;
+  paddle_infer::Config config;
+  int math_lib_num_threads;
   tensorflow::Session* session;
   int num_intra_nthreads, num_inter_nthreads;
   tensorflow::GraphDef* graph_def;
   bool inited;
   template <class VT>
   VT get_scalar(const std::string& name) const;
+  template <class VT>
+  VT paddle_get_scalar(const std::string& name) const;
+
   // VALUETYPE get_rcut () const;
   // int get_ntypes () const;
   double rcut;
