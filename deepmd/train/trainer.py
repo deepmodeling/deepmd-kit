@@ -910,7 +910,6 @@ class DPTrainer:
 
             if self.timing_in_training:
                 tic = time.time()
-            # train_feed_dict = self.get_feed_dict(train_batch, is_training=True)
             # use tensorboard to visualize the training of deepmd-kit
             # it will takes some extra execution time to generate the tensorboard data
             if self.tensorboard and (cur_batch % self.tensorboard_freq == 0):

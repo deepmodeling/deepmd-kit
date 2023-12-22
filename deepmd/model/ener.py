@@ -74,8 +74,6 @@ class EnerModel(Model, paddle.nn.Layer):
         sw_rmax: Optional[float] = None,
         spin: Optional[Spin] = None,
     ) -> None:
-        super().__init__()
-        # super(EnerModel, self).__init__(name_scope="EnerModel")
         """Constructor."""
         super().__init__()
         # descriptor
@@ -105,7 +103,6 @@ class EnerModel(Model, paddle.nn.Layer):
         else:
             self.srtab = None
 
-        # content of build below
         self.t_tmap = " ".join(self.type_map)
         self.t_mt = self.model_type
         self.t_ver = str(MODEL_VERSION)
@@ -197,22 +194,6 @@ class EnerModel(Model, paddle.nn.Layer):
 
         coord = paddle.reshape(coord_, [-1, natoms[1] * 3])
         atype = paddle.reshape(atype_, [-1, natoms[1]])
-        # input_dict["nframes"] = paddle.shape(coord)[0] # 推理模型导出的时候注释掉这里，否则会报错
-
-        # type embedding if any
-        # if self.typeebd is not None:
-        #     type_embedding = self.typeebd.build(
-        #         self.ntypes,
-        #         reuse=reuse,
-        #         suffix=suffix,
-        #     )
-        #     input_dict["type_embedding"] = type_embedding
-        # spin if any
-        # if self.spin is not None:
-        #     type_spin = self.spin.build(
-        #         reuse=reuse,
-        #         suffix=suffix,
-        #     )
         input_dict["atype"] = atype_
 
         dout = self.descrpt(
@@ -377,13 +358,6 @@ class EnerModel(Model, paddle.nn.Layer):
         use_spin = self.spin.use_spin
         virtual_len = self.spin.virtual_len
         spin_norm = self.spin.spin_norm
-        # natoms_index = paddle.concat(
-        #     [
-        #         paddle.to_tensor([0]),
-        #         paddle.sum(natoms[2:])
-        #     ],
-        #     axis=0,
-        # )
         natoms_index = paddle.concat(
             [
                 paddle.to_tensor([0], dtype=natoms.dtype),
@@ -459,7 +433,8 @@ class EnerModel(Model, paddle.nn.Layer):
         loc_force = self.natoms_match(force, natoms)
         aatype = atype[0, :]
 
-        # TODO: paddle.unique和tf.unique的返回值顺序是不一致, 下面的代码实现不正确，需要修改
+        # FIXME: paddle.unique和tf.unique的返回值顺序是不一致, 下面的代码实现不正确，
+        # 在某些案例中需要修改
         ghost_atype = aatype[natoms[0] :]
         _, idx, ghost_natoms = paddle.unique(
             ghost_atype, return_index=True, return_counts=True
@@ -469,9 +444,6 @@ class EnerModel(Model, paddle.nn.Layer):
         idx_inv[idx] = paddle.arange(0, len(idx))
         ghost_natoms = ghost_natoms[idx_inv]
 
-        # ghost_natoms_index = [0] + paddle.cumsum(ghost_natoms).tolist()
-        # for i in range(len(ghost_natoms_index)):
-        #     ghost_natoms_index[i] +=  natoms[0].item()
         ghost_natoms_index = paddle.concat(
             [
                 paddle.to_tensor([0], dtype=ghost_natoms.dtype),

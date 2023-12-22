@@ -8,9 +8,6 @@ from typing import (
     Union,
 )
 
-# from deepmd.descriptor.descriptor import (
-#     Descriptor,
-# )
 import numpy as np
 
 import deepmd
@@ -118,14 +115,6 @@ class DeepEval:
             )
         else:
             spin = None
-
-        # # nvnmd
-        # self.nvnmd_param = jdata.get("nvnmd", {})
-        # nvnmd_cfg.init_from_jdata(self.nvnmd_param)
-        # if nvnmd_cfg.enable:
-        #     nvnmd_cfg.init_from_deepmd_input(model_param)
-        #     nvnmd_cfg.disp_message()
-        #     nvnmd_cfg.save()
 
         # descriptor
         try:

@@ -494,7 +494,7 @@ class EnerFitting(nn.Layer):
         if (not self.uniform_seed) and (self.seed is not None):
             self.seed += self.seed_shift
 
-        return final_layer  # [natoms, 1]
+        return final_layer
 
     def forward(
         self,

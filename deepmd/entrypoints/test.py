@@ -260,7 +260,7 @@ def test_ener(
     data.add("energy", 1, atomic=False, must=False, high_prec=True)
     data.add("force", 3, atomic=True, must=False, high_prec=False)
     data.add("virial", 9, atomic=False, must=False, high_prec=False)
-    if dp.has_efield:  # False
+    if dp.has_efield:
         data.add("efield", 3, atomic=True, must=True, high_prec=False)
     if has_atom_ener:
         data.add("atom_ener", 1, atomic=True, must=True, high_prec=False)
@@ -278,7 +278,6 @@ def test_ener(
     numb_test = min(nframes, numb_test)
 
     coord = test_data["coord"][:numb_test].reshape([numb_test, -1])
-
     box = test_data["box"][:numb_test]
     if dp.has_efield:
         efield = test_data["efield"][:numb_test].reshape([numb_test, -1])

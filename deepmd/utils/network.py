@@ -320,7 +320,6 @@ class OneLayer(paddle.nn.Layer):
         self.use_timestep = use_timestep
         self.useBN = useBN
         self.seed = seed
-        # paddle.seed(seed)
 
         self.weight = self.create_parameter(
             shape=[in_features, out_features],

@@ -113,19 +113,15 @@ class DeepPot(DeepEval):
                 if attr_name != "t_descriptor":
                     raise
 
-        # self._run_default_sess()
         self.ntypes = int(self.model.descrpt.buffer_ntypes)
         self.rcut = float(self.model.descrpt.buffer_rcut)
         self.dfparam = 0
         self.daparam = 0
-        # self.t_tmap = "".join([chr(idx) for idx in self.model.buffer_tmap.tolist()])
         self.t_tmap = [chr(idx) for idx in self.model.buffer_tmap.tolist()]
         self.t_tmap = [c for c in self.t_tmap if c != " "]
 
         # setup modifier
         try:
-            # t_modifier_type = self._get_tensor("modifier_attr/type:0")
-            # self.modifier_type = run_sess(self.sess, t_modifier_type).decode("UTF-8")
             self.modifier_type = self._get_value("modifier_attr.type")
         except (ValueError, KeyError):
             self.modifier_type = None
@@ -312,7 +308,7 @@ class DeepPot(DeepEval):
             mixed_type=mixed_type,
         )
 
-        if self.modifier_type is not None:  # 这里不会运行
+        if self.modifier_type is not None:
             if atomic:
                 raise RuntimeError("modifier does not support atomic modification")
             me, mf, mv = self.dm.eval(coords, cells, atom_types)
@@ -444,21 +440,18 @@ class DeepPot(DeepEval):
             eval_inputs["aparam"] = paddle.to_tensor(
                 np.reshape(aparam, [-1], dtype="float64")
             )
-        # if se.pbc:
         eval_inputs["default_mesh"] = paddle.to_tensor(
             make_default_mesh(cells), dtype="int32"
         )
-        # else:
-        # eval_inputs['default_mesh'] = paddle.to_tensor(np.array([], dtype = np.int32))
 
         if hasattr(self, "st_model"):
             # NOTE: 使用静态图模型推理
             eval_outputs = self.st_model(
-                eval_inputs["coord"],  # [2880] paddle.float64
-                eval_inputs["type"],  # [960] paddle.int32
-                eval_inputs["natoms_vec"],  # [2+num_type_atoms] paddle.int32
-                eval_inputs["box"],  # [45] paddle.float64
-                eval_inputs["default_mesh"],  # [6] paddle.int32
+                eval_inputs["coord"],
+                eval_inputs["type"],
+                eval_inputs["natoms_vec"],
+                eval_inputs["box"],
+                eval_inputs["default_mesh"],
             )
             eval_outputs = {
                 "atom_ener": eval_outputs[0],

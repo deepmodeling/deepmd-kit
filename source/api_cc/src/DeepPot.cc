@@ -784,7 +784,6 @@ void DeepPot::init(const std::string& model,
       rcut = paddle_get_scalar<float>("generated_tensor_0");
     }
     ntypes = paddle_get_scalar<int32_t>("generated_tensor_2");
-    // ntypes_spin = paddle_get_scalar<int32_t>("buffer_ntypes_spin");
     ntypes_spin = 0;
     dfparam = paddle_get_scalar<int64_t>("generated_tensor_9");
     daparam = paddle_get_scalar<int64_t>("generated_tensor_10");
