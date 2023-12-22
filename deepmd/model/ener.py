@@ -77,6 +77,7 @@ class EnerModel(Model, paddle.nn.Layer):
         super().__init__()
         # super(EnerModel, self).__init__(name_scope="EnerModel")
         """Constructor."""
+        super().__init__()
         # descriptor
         self.descrpt = descrpt
         self.rcut = self.descrpt.get_rcut()
@@ -105,7 +106,7 @@ class EnerModel(Model, paddle.nn.Layer):
             self.srtab = None
 
         # content of build below
-        self.t_tmap = " ".join(self.type_map)  # "Ni O"
+        self.t_tmap = " ".join(self.type_map)
         self.t_mt = self.model_type
         self.t_ver = str(MODEL_VERSION)
         # NOTE: workaround for string type is not supported in Paddle
@@ -148,7 +149,6 @@ class EnerModel(Model, paddle.nn.Layer):
             m_all_stat, protection=self.data_stat_protect, mixed_type=data.mixed_type
         )
         self._compute_output_stat(all_stat, mixed_type=data.mixed_type)
-        # self.bias_atom_e = data.compute_energy_shift(self.rcond)
 
     def _compute_input_stat(self, all_stat, protection=1e-2, mixed_type=False):
         if mixed_type:
@@ -197,7 +197,7 @@ class EnerModel(Model, paddle.nn.Layer):
 
         coord = paddle.reshape(coord_, [-1, natoms[1] * 3])
         atype = paddle.reshape(atype_, [-1, natoms[1]])
-        # input_dict["nframes"] = paddle.shape(coord)[0]  # 推理模型导出的时候注释掉这里，否则会报错
+        # input_dict["nframes"] = paddle.shape(coord)[0] # 推理模型导出的时候注释掉这里，否则会报错
 
         # type embedding if any
         # if self.typeebd is not None:
@@ -222,12 +222,9 @@ class EnerModel(Model, paddle.nn.Layer):
             box,
             mesh,
             input_dict,
-            # frz_model=frz_model,
-            # ckpt_meta=ckpt_meta,
             suffix=suffix,
             reuse=reuse,
-        )  # [1, all_atom, M1*M2]
-        # self.dout = dout
+        )
 
         if self.srtab is not None:
             nlist, rij, sel_a, sel_r = self.descrpt.get_nlist()
@@ -238,6 +235,9 @@ class EnerModel(Model, paddle.nn.Layer):
         self.atom_ener = atom_ener
 
         if self.srtab is not None:
+            raise NotImplementedError(
+                f"srtab not implemented in {self.__class__.__name__}"
+            )
             # sw_lambda, sw_deriv = op_module.soft_min_switch(
             #     atype,
             #     rij,
@@ -270,11 +270,8 @@ class EnerModel(Model, paddle.nn.Layer):
             # )
             # atom_ener = tf.reshape(inv_sw_lambda, [-1]) * atom_ener
             # energy_raw = tab_atom_ener + atom_ener
-            raise NotImplementedError(
-                f"srtab not implemented in {self.__class__.__name__}"
-            )
         else:
-            energy_raw = atom_ener  # [1, all_atoms]
+            energy_raw = atom_ener
 
         nloc_atom = (
             natoms[0]
@@ -289,7 +286,7 @@ class EnerModel(Model, paddle.nn.Layer):
         force, virial, atom_virial = self.descrpt.prod_force_virial(atom_ener, natoms)
         # force: [1, all_atoms*3]
         # virial: [1, 9]
-        # force: [1, all_atoms*9]
+        # atom_virial: [1, all_atoms*9]
 
         if self.srtab is not None:
             raise NotImplementedError()
@@ -333,13 +330,13 @@ class EnerModel(Model, paddle.nn.Layer):
         )
 
         model_dict = {}
-        model_dict["energy"] = energy  # [batch_size]
-        model_dict["force"] = force  # [batch_size, 576]
-        model_dict["virial"] = virial  # [batch_size, 9]
-        model_dict["atom_ener"] = energy_raw  # [batch_size, 192]
-        model_dict["atom_virial"] = atom_virial  # [batch_size, 1728]
-        model_dict["coord"] = coord  # [batch_size, 576]
-        model_dict["atype"] = atype  # [batch_size, 192]
+        model_dict["energy"] = energy
+        model_dict["force"] = force
+        model_dict["virial"] = virial
+        model_dict["atom_ener"] = energy_raw
+        model_dict["atom_virial"] = atom_virial
+        model_dict["coord"] = coord
+        model_dict["atype"] = atype
         return model_dict
 
     def init_variables(

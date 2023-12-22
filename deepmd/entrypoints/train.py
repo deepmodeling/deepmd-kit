@@ -419,15 +419,6 @@ def get_nbor_stat(jdata, rcut, one_type: bool = False):
 
     min_nbor_dist, max_nbor_size = neistat.get_stat(train_data)
 
-    # moved from traier.py as duplicated
-    # TODO: this is a simple fix but we should have a clear
-    #       architecture to call neighbor stat
-    # tf.constant(
-    #     min_nbor_dist,
-    #     name="train_attr/min_nbor_dist",
-    #     dtype=GLOBAL_ENER_FLOAT_PRECISION,
-    # )
-    # tf.constant(max_nbor_size, name="train_attr/max_nbor_size", dtype=tf.int32)
     return min_nbor_dist, max_nbor_size
 
 
@@ -473,9 +464,7 @@ def update_one_sel(jdata, descriptor):
     if descriptor["type"] == "loc_frame":
         return descriptor
     rcut = descriptor["rcut"]
-    tmp_sel = get_sel(
-        jdata, rcut, one_type=descriptor["type"] in ("se_atten",)
-    )  # [38 72]，每个原子截断半径内，最多的邻域原子个数
+    tmp_sel = get_sel(jdata, rcut, one_type=descriptor["type"] in ("se_atten",))
     sel = descriptor["sel"]  # [46, 92]
     if isinstance(sel, int):
         # convert to list and finnally convert back to int

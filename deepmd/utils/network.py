@@ -411,7 +411,6 @@ class EmbeddingNet(paddle.nn.Layer):
         self.activation_fn = activation_fn
         self.resnet_dt = resnet_dt
         self.seed = seed
-        # paddle.seed(seed)
 
         outputs_size = self.outputs_size
         weight = []
