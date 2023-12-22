@@ -1,15 +1,21 @@
 #!/usr/bin/env python3
 
 import logging
-from typing import List
-from typing import Optional
+from typing import (
+    List,
+    Optional,
+)
 
 import numpy as np
 
-from deepmd.env import GLOBAL_ENER_FLOAT_PRECISION
-from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
+from deepmd.env import (
+    GLOBAL_ENER_FLOAT_PRECISION,
+    GLOBAL_NP_FLOAT_PRECISION,
+)
 from deepmd.utils import random as dp_random
-from deepmd.utils.path import DPPath
+from deepmd.utils.path import (
+    DPPath,
+)
 
 log = logging.getLogger(__name__)
 

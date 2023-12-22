@@ -4,13 +4,21 @@ import unittest
 import dpdata
 import numpy as np
 
-from deepmd.descriptor import DescrptSeA
-from deepmd.fit import EnerFitting
-from deepmd.model.model_stat import _make_all_stat_ref
-from deepmd.model.model_stat import make_stat_input
-from deepmd.model.model_stat import merge_sys_stat
+from deepmd.descriptor import (
+    DescrptSeA,
+)
+from deepmd.fit import (
+    EnerFitting,
+)
+from deepmd.model.model_stat import (
+    _make_all_stat_ref,
+    make_stat_input,
+    merge_sys_stat,
+)
 from deepmd.utils import random as dp_random
-from deepmd.utils.data_system import DeepmdDataSystem
+from deepmd.utils.data_system import (
+    DeepmdDataSystem,
+)
 
 
 def gen_sys(nframes, atom_types):

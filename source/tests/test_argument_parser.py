@@ -2,18 +2,28 @@
 
 import re
 import unittest
-from argparse import Namespace
-from contextlib import redirect_stderr
-from io import StringIO
-from typing import TYPE_CHECKING
-from typing import Any
-from typing import Dict
-from typing import List
-from typing import Tuple
-from typing import Union
+from argparse import (
+    Namespace,
+)
+from contextlib import (
+    redirect_stderr,
+)
+from io import (
+    StringIO,
+)
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Dict,
+    List,
+    Tuple,
+    Union,
+)
 
-from deepmd.entrypoints.main import get_ll
-from deepmd.entrypoints.main import parse_args
+from deepmd.entrypoints.main import (
+    get_ll,
+    parse_args,
+)
 
 if TYPE_CHECKING:
     try:

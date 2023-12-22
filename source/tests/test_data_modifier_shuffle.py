@@ -3,15 +3,29 @@ import shutil
 
 import numpy as np
 
-from deepmd.common import data_requirement
-from deepmd.common import j_must_have
-from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
-from deepmd.env import tf
-from deepmd.infer.data_modifier import DipoleChargeModifier
-from deepmd.infer.deep_dipole import DeepDipole
-from deepmd.train.run_options import RunOptions
-from deepmd.train.trainer import DPTrainer
-from deepmd.utils.data_system import DeepmdDataSystem
+from deepmd.common import (
+    data_requirement,
+    j_must_have,
+)
+from deepmd.env import (
+    GLOBAL_NP_FLOAT_PRECISION,
+    tf,
+)
+from deepmd.infer.data_modifier import (
+    DipoleChargeModifier,
+)
+from deepmd.infer.deep_dipole import (
+    DeepDipole,
+)
+from deepmd.train.run_options import (
+    RunOptions,
+)
+from deepmd.train.trainer import (
+    DPTrainer,
+)
+from deepmd.utils.data_system import (
+    DeepmdDataSystem,
+)
 
 if GLOBAL_NP_FLOAT_PRECISION == np.float32:
     global_default_fv_hh = 1e-2

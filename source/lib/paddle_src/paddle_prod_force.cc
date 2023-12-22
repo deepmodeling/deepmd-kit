@@ -100,9 +100,9 @@ std::vector<paddle::Tensor> ProdForceSeAForward(
     int n_a_sel,
     int n_r_sel) {
   if (net_deriv_tensor.place() == paddle::GPUPlace()) {
-    return ProdForceSeAOpCUDAForward(net_deriv_tensor, in_deriv_tensor,
-                                     nlist_tensor, natoms_tensor.copy_to(paddle::CPUPlace(), false), n_a_sel,
-                                     n_r_sel);
+    return ProdForceSeAOpCUDAForward(
+        net_deriv_tensor, in_deriv_tensor, nlist_tensor,
+        natoms_tensor.copy_to(paddle::CPUPlace(), false), n_a_sel, n_r_sel);
   } else if (net_deriv_tensor.place() == paddle::CPUPlace()) {
     return ProdForceSeAOpCPUForward(net_deriv_tensor, in_deriv_tensor,
                                     nlist_tensor, natoms_tensor, n_a_sel,

@@ -1,17 +1,25 @@
-from abc import abstractmethod
-from typing import Any
-from typing import Callable
-from typing import Dict
-from typing import List
-from typing import Optional
-from typing import Tuple
+from abc import (
+    abstractmethod,
+)
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    Tuple,
+)
 
 import numpy as np
 
-from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
-from deepmd.env import tf
-from deepmd.utils import Plugin
-from deepmd.utils import PluginVariant
+from deepmd.env import (
+    GLOBAL_TF_FLOAT_PRECISION,
+    tf,
+)
+from deepmd.utils import (
+    Plugin,
+    PluginVariant,
+)
 
 
 class Descriptor(PluginVariant):

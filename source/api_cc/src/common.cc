@@ -863,9 +863,10 @@ VT deepmd::session_get_scalar(Session* session,
 }
 
 template <typename VT>
-VT deepmd::predictor_get_scalar(const std::shared_ptr<paddle_infer::Predictor>& predictor,
-                                const std::string name_) {
-  if (std::is_same<VT, std::string>::value){
+VT deepmd::predictor_get_scalar(
+    const std::shared_ptr<paddle_infer::Predictor>& predictor,
+    const std::string name_) {
+  if (std::is_same<VT, std::string>::value) {
     /*
     NOTE: Convert from ascii code(int64) to std::string
     A workaround for string data type is not supported in Paddle
@@ -874,17 +875,13 @@ VT deepmd::predictor_get_scalar(const std::shared_ptr<paddle_infer::Predictor>& 
     if (scalar_tensor->shape().size() == 0) {
       return VT();
     }
-    const auto &shape = scalar_tensor->shape();
-    const int &str_len = std::accumulate(
-      std::begin(shape),
-      std::end(shape),
-      1,
-      std::multiplies<>{}
-    );
+    const auto& shape = scalar_tensor->shape();
+    const int& str_len = std::accumulate(std::begin(shape), std::end(shape), 1,
+                                         std::multiplies<>{});
     if (str_len == 0) {
       return VT();
     }
-    int32_t *scalar_ptr = (int32_t *)malloc(str_len * sizeof(int32_t));
+    int32_t* scalar_ptr = (int32_t*)malloc(str_len * sizeof(int32_t));
     scalar_tensor->CopyToCpu(scalar_ptr);
     VT ret;
     for (int ii = 0; ii < str_len; ++ii) {
@@ -895,7 +892,7 @@ VT deepmd::predictor_get_scalar(const std::shared_ptr<paddle_infer::Predictor>& 
   } else {
     /* Vanillia process for other data type below*/
     auto scalar_tensor = predictor->GetOutputHandle(name_);
-    VT *scalar_ptr = (VT *)malloc(1 * sizeof(VT));
+    VT* scalar_ptr = (VT*)malloc(1 * sizeof(VT));
     scalar_tensor->CopyToCpu(scalar_ptr);
     return (*scalar_ptr);
   }
@@ -1041,12 +1038,12 @@ template int deepmd::session_get_scalar<int>(Session*,
                                              const std::string);
 
 template int deepmd::predictor_get_scalar<int>(
-  const std::shared_ptr<paddle_infer::Predictor>& predictor,
-  const std::string name_);
+    const std::shared_ptr<paddle_infer::Predictor>& predictor,
+    const std::string name_);
 
 template int64_t deepmd::predictor_get_scalar<int64_t>(
-  const std::shared_ptr<paddle_infer::Predictor>& predictor,
-  const std::string name_);
+    const std::shared_ptr<paddle_infer::Predictor>& predictor,
+    const std::string name_);
 
 template void deepmd::session_get_vector<int>(std::vector<int>&,
                                               Session*,
@@ -1086,8 +1083,8 @@ template float deepmd::session_get_scalar<float>(Session*,
                                                  const std::string);
 
 template float deepmd::predictor_get_scalar<float>(
-  const std::shared_ptr<paddle_infer::Predictor>& predictor,
-  const std::string name_);
+    const std::shared_ptr<paddle_infer::Predictor>& predictor,
+    const std::string name_);
 
 template void deepmd::session_get_vector<float>(std::vector<float>&,
                                                 Session*,
@@ -1127,8 +1124,8 @@ template double deepmd::session_get_scalar<double>(Session*,
                                                    const std::string);
 
 template double deepmd::predictor_get_scalar<double>(
-  const std::shared_ptr<paddle_infer::Predictor>& predictor,
-  const std::string name_);
+    const std::shared_ptr<paddle_infer::Predictor>& predictor,
+    const std::string name_);
 
 template void deepmd::session_get_vector<double>(std::vector<double>&,
                                                  Session*,

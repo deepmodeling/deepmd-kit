@@ -4,9 +4,15 @@ import unittest
 
 import numpy as np
 
-from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
-from deepmd.utils import random
-from deepmd.utils.data_system import DeepmdDataSystem
+from deepmd.env import (
+    GLOBAL_NP_FLOAT_PRECISION,
+)
+from deepmd.utils import (
+    random,
+)
+from deepmd.utils.data_system import (
+    DeepmdDataSystem,
+)
 
 if GLOBAL_NP_FLOAT_PRECISION == np.float32:
     places = 6

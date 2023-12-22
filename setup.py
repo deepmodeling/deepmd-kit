@@ -3,16 +3,24 @@
 import os
 import sys
 
-from packaging.version import Version
-from skbuild import setup
-from wheel.bdist_wheel import bdist_wheel
+from packaging.version import (
+    Version,
+)
+from skbuild import (
+    setup,
+)
+from wheel.bdist_wheel import (
+    bdist_wheel,
+)
 
 topdir = os.path.abspath(os.path.dirname(__file__))
 sys.path.insert(0, os.path.join(topdir, "backend"))
 
-from find_tensorflow import find_tensorflow
-from find_tensorflow import get_tf_requirement
-from find_tensorflow import get_tf_version
+from find_tensorflow import (
+    find_tensorflow,
+    get_tf_requirement,
+    get_tf_version,
+)
 
 cmake_args = []
 extra_scripts = []

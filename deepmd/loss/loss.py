@@ -1,9 +1,15 @@
-from abc import ABCMeta
-from abc import abstractmethod
-from typing import Dict
-from typing import Tuple
+from abc import (
+    ABCMeta,
+    abstractmethod,
+)
+from typing import (
+    Dict,
+    Tuple,
+)
 
-from deepmd.env import tf
+from deepmd.env import (
+    tf,
+)
 
 
 class Loss(metaclass=ABCMeta):

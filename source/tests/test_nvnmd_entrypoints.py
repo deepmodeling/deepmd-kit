@@ -2,19 +2,37 @@ import os
 import unittest
 
 import numpy as np
-from common import tests_path
+from common import (
+    tests_path,
+)
 
-from deepmd.env import tf
-from deepmd.nvnmd.data.data import jdata_deepmd_input
-from deepmd.nvnmd.entrypoints.freeze import save_weight
-from deepmd.nvnmd.entrypoints.mapt import mapt
-from deepmd.nvnmd.entrypoints.train import normalized_input
-from deepmd.nvnmd.entrypoints.train import normalized_input_qnn
-from deepmd.nvnmd.entrypoints.wrap import wrap
-from deepmd.nvnmd.utils.config import nvnmd_cfg
-from deepmd.nvnmd.utils.fio import FioBin
-from deepmd.nvnmd.utils.fio import FioJsonDic
-from deepmd.nvnmd.utils.fio import FioNpyDic
+from deepmd.env import (
+    tf,
+)
+from deepmd.nvnmd.data.data import (
+    jdata_deepmd_input,
+)
+from deepmd.nvnmd.entrypoints.freeze import (
+    save_weight,
+)
+from deepmd.nvnmd.entrypoints.mapt import (
+    mapt,
+)
+from deepmd.nvnmd.entrypoints.train import (
+    normalized_input,
+    normalized_input_qnn,
+)
+from deepmd.nvnmd.entrypoints.wrap import (
+    wrap,
+)
+from deepmd.nvnmd.utils.config import (
+    nvnmd_cfg,
+)
+from deepmd.nvnmd.utils.fio import (
+    FioBin,
+    FioJsonDic,
+    FioNpyDic,
+)
 
 
 class TestNvnmdFreeze(tf.test.TestCase):

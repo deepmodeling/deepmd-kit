@@ -1,60 +1,82 @@
 #!/usr/bin/env python3
-import glob
 import logging
 import os
-import platform
-import shutil
 import time
-from typing import Dict
-from typing import List
+from typing import (
+    Dict,
+    List,
+)
 
-import google.protobuf.message
 import numpy as np
-from packaging.version import Version
-from tensorflow.python.client import timeline
+from packaging.version import (
+    Version,
+)
 
 # load grad of force module
 import deepmd.op  # noqa: F401
-from deepmd.common import data_requirement
-from deepmd.common import get_precision
-from deepmd.common import j_must_have
-from deepmd.descriptor.descriptor import Descriptor
-from deepmd.env import GLOBAL_ENER_FLOAT_PRECISION
-from deepmd.env import GLOBAL_PD_FLOAT_PRECISION
-from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
-from deepmd.env import TF_VERSION
-from deepmd.env import get_tf_session_config
-from deepmd.env import paddle
-from deepmd.env import tf
-from deepmd.env import tfv2
-from deepmd.fit import Fitting
-from deepmd.fit import ener
-from deepmd.loss import DOSLoss
-from deepmd.loss import EnerDipoleLoss
-from deepmd.loss import EnerSpinLoss
-from deepmd.loss import EnerStdLoss
-from deepmd.loss import TensorLoss
-from deepmd.model import DipoleModel
-from deepmd.model import DOSModel
-from deepmd.model import EnerModel
-from deepmd.model import MultiModel
-from deepmd.model import PolarModel
-from deepmd.utils import random as dp_random
-from deepmd.utils.argcheck import type_embedding_args
-from deepmd.utils.data_system import DeepmdDataSystem
-from deepmd.utils.errors import GraphTooLargeError
-from deepmd.utils.errors import GraphWithoutTensorError
-from deepmd.utils.graph import get_tensor_by_name_from_graph
-from deepmd.utils.graph import load_graph_def
-from deepmd.utils.learning_rate import LearningRateExp
-from deepmd.utils.sess import run_sess
-from deepmd.utils.spin import Spin
-from deepmd.utils.type_embed import TypeEmbedNet
+from deepmd.common import (
+    data_requirement,
+    get_precision,
+    j_must_have,
+)
+from deepmd.env import (
+    GLOBAL_ENER_FLOAT_PRECISION,
+    GLOBAL_TF_FLOAT_PRECISION,
+    TF_VERSION,
+    get_tf_session_config,
+    paddle,
+    tf,
+)
+from deepmd.fit import (
+    Fitting,
+    ener,
+)
+from deepmd.loss import (
+    DOSLoss,
+    EnerDipoleLoss,
+    EnerSpinLoss,
+    EnerStdLoss,
+    TensorLoss,
+)
+from deepmd.model import (
+    DipoleModel,
+    DOSModel,
+    EnerModel,
+    MultiModel,
+    PolarModel,
+)
+from deepmd.utils.argcheck import (
+    type_embedding_args,
+)
+from deepmd.utils.data_system import (
+    DeepmdDataSystem,
+)
+from deepmd.utils.errors import (
+    GraphWithoutTensorError,
+)
+from deepmd.utils.graph import (
+    get_tensor_by_name_from_graph,
+    load_graph_def,
+)
+from deepmd.utils.learning_rate import (
+    LearningRateExp,
+)
+from deepmd.utils.sess import (
+    run_sess,
+)
+from deepmd.utils.spin import (
+    Spin,
+)
+from deepmd.utils.type_embed import (
+    TypeEmbedNet,
+)
 
 log = logging.getLogger(__name__)
 
 # nvnmd
-from deepmd.nvnmd.utils.config import nvnmd_cfg
+from deepmd.nvnmd.utils.config import (
+    nvnmd_cfg,
+)
 
 
 def _is_subdir(path, directory):

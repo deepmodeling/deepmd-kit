@@ -1,12 +1,18 @@
-from typing import List
-from typing import Optional
-from typing import Tuple
+from typing import (
+    List,
+    Optional,
+    Tuple,
+)
 
 import numpy as np
 
-from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
-from deepmd.env import tf
-from deepmd.utils.spin import Spin
+from deepmd.env import (
+    GLOBAL_TF_FLOAT_PRECISION,
+    tf,
+)
+from deepmd.utils.spin import (
+    Spin,
+)
 
 # from deepmd.descriptor import DescrptLocFrame
 # from deepmd.descriptor import DescrptSeA
@@ -14,7 +20,9 @@ from deepmd.utils.spin import Spin
 # from deepmd.descriptor import DescrptSeAEbd
 # from deepmd.descriptor import DescrptSeAEf
 # from deepmd.descriptor import DescrptSeR
-from .descriptor import Descriptor
+from .descriptor import (
+    Descriptor,
+)
 
 
 @Descriptor.register("hybrid")

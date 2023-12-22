@@ -74,7 +74,9 @@
 
 import os
 import os.path
-from pprint import pprint
+from pprint import (
+    pprint,
+)
 
 import exhale
 import exhale.configs

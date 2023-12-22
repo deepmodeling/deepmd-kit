@@ -3,23 +3,37 @@
 import argparse
 import logging
 import textwrap
-from pathlib import Path
-from typing import List
-from typing import Optional
+from pathlib import (
+    Path,
+)
+from typing import (
+    List,
+    Optional,
+)
 
-from deepmd import __version__
-from deepmd.common import clear_session
-from deepmd.entrypoints import compress
-from deepmd.entrypoints import convert
-from deepmd.entrypoints import doc_train_input
-from deepmd.entrypoints import freeze
-from deepmd.entrypoints import make_model_devi
-from deepmd.entrypoints import neighbor_stat
-from deepmd.entrypoints import test
-from deepmd.entrypoints import train_dp
-from deepmd.entrypoints import transfer
-from deepmd.loggers import set_log_handles
-from deepmd.nvnmd.entrypoints.train import train_nvnmd
+from deepmd import (
+    __version__,
+)
+from deepmd.common import (
+    clear_session,
+)
+from deepmd.entrypoints import (
+    compress,
+    convert,
+    doc_train_input,
+    freeze,
+    make_model_devi,
+    neighbor_stat,
+    test,
+    train_dp,
+    transfer,
+)
+from deepmd.loggers import (
+    set_log_handles,
+)
+from deepmd.nvnmd.entrypoints.train import (
+    train_nvnmd,
+)
 
 __all__ = ["main", "parse_args", "get_ll", "main_parser"]
 

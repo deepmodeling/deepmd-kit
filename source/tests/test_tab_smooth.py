@@ -2,17 +2,25 @@ import os
 import unittest
 
 import numpy as np
-from common import Data
-from common import force_dw_test
-from common import force_test
-from common import virial_dw_test
-from common import virial_test
-from test_descrpt_smooth import Inter
+from common import (
+    Data,
+    force_dw_test,
+    force_test,
+    virial_dw_test,
+    virial_test,
+)
+from test_descrpt_smooth import (
+    Inter,
+)
 
 # load grad of force module
-from deepmd.env import op_module
-from deepmd.env import tf
-from deepmd.utils.pair_tab import PairTab
+from deepmd.env import (
+    op_module,
+    tf,
+)
+from deepmd.utils.pair_tab import (
+    PairTab,
+)
 
 
 def _make_tab(ntype):

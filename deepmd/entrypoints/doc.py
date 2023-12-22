@@ -1,7 +1,9 @@
 """Module that prints train input arguments docstrings."""
 
-from deepmd.utils.argcheck import gen_doc
-from deepmd.utils.argcheck import gen_json
+from deepmd.utils.argcheck import (
+    gen_doc,
+    gen_json,
+)
 
 __all__ = ["doc_train_input"]
 

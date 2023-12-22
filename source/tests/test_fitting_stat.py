@@ -1,11 +1,19 @@
 import unittest
-from collections import defaultdict
+from collections import (
+    defaultdict,
+)
 
 import numpy as np
-from common import j_loader
+from common import (
+    j_loader,
+)
 
-from deepmd.descriptor import DescrptSeA
-from deepmd.fit import EnerFitting
+from deepmd.descriptor import (
+    DescrptSeA,
+)
+from deepmd.fit import (
+    EnerFitting,
+)
 
 input_json = "water_se_a_afparam.json"
 

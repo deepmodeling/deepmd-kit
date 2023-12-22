@@ -1,31 +1,42 @@
 import logging
-from typing import List
-from typing import Optional
+from typing import (
+    List,
+    Optional,
+)
 
 import numpy as np
-from paddle import nn
+from paddle import (
+    nn,
+)
 
-from deepmd.common import add_data_requirement
-from deepmd.common import cast_precision
-from deepmd.common import get_activation_func
-from deepmd.common import get_precision
-from deepmd.env import GLOBAL_PD_FLOAT_PRECISION
-from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
-from deepmd.env import global_cvt_2_pd_float
-from deepmd.env import global_cvt_2_tf_float
-from deepmd.env import paddle
-from deepmd.env import tf
-from deepmd.fit.fitting import Fitting
-from deepmd.infer import DeepPotential
-from deepmd.nvnmd.fit.ener import one_layer_nvnmd
-from deepmd.nvnmd.utils.config import nvnmd_cfg
-from deepmd.utils.errors import GraphWithoutTensorError
-from deepmd.utils.graph import get_fitting_net_variables_from_graph_def
-from deepmd.utils.graph import get_tensor_by_name_from_graph
+from deepmd.common import (
+    add_data_requirement,
+    get_activation_func,
+    get_precision,
+)
+from deepmd.env import (
+    GLOBAL_PD_FLOAT_PRECISION,
+    global_cvt_2_pd_float,
+    paddle,
+    tf,
+)
+from deepmd.infer import (
+    DeepPotential,
+)
+from deepmd.utils.errors import (
+    GraphWithoutTensorError,
+)
+from deepmd.utils.graph import (
+    get_fitting_net_variables_from_graph_def,
+    get_tensor_by_name_from_graph,
+)
 from deepmd.utils.network import OneLayer as OneLayer_deepmd
-from deepmd.utils.network import one_layer as one_layer_deepmd
-from deepmd.utils.network import one_layer_rand_seed_shift
-from deepmd.utils.spin import Spin
+from deepmd.utils.network import (
+    one_layer_rand_seed_shift,
+)
+from deepmd.utils.spin import (
+    Spin,
+)
 
 log = logging.getLogger(__name__)
 
@@ -397,7 +408,6 @@ class EnerFitting(nn.Layer):
         protection
             Divided-by-zero protection
         """
-
         # stat fparam
         if self.numb_fparam > 0:
             cat_data = np.concatenate(all_stat["fparam"], axis=0)

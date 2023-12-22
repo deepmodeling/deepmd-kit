@@ -717,7 +717,7 @@ void DeepPot::init(const std::string& model,
   int gpu_num = -1;
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
   DPGetDeviceCount(gpu_num);  // check current device environment
-#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+#endif                        // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
   if (use_paddle_inference) {
     /* water se_e2_a
     tensorflow::DT_DOUBLE = 2
@@ -731,43 +731,50 @@ void DeepPot::init(const std::string& model,
     [buffer_t_type, [3]] generated name in static_model is: generated_tensor_12
     [buffer_t_mt, [4]] generated name in static_model is: generated_tensor_13
     [buffer_t_ver, [1]] generated name in static_model is: generated_tensor_14
-    [descrpt.buffer_rcut, []] generated name in static_model is: generated_tensor_0
-    [descrpt.buffer_ntypes_spin, []] generated name in static_model is: generated_tensor_1
-    [descrpt.buffer_ntypes, []] generated name in static_model is: generated_tensor_2
-    [descrpt.avg_zero, [2, 552]] generated name in static_model is: eager_tmp_0
-    [descrpt.std_ones, [2, 552]] generated name in static_model is: eager_tmp_1
-    [descrpt.t_rcut, []] generated name in static_model is: generated_tensor_3
-    [descrpt.t_rcut, []] generated name in static_model is: generated_tensor_3
-    [descrpt.t_rcut, []] generated name in static_model is: generated_tensor_3
-    [descrpt.t_ntypes, []] generated name in static_model is: generated_tensor_4
-    [descrpt.t_ntypes, []] generated name in static_model is: generated_tensor_4
-    [descrpt.t_ntypes, []] generated name in static_model is: generated_tensor_4
-    [descrpt.t_ndescrpt, []] generated name in static_model is: generated_tensor_5
-    [descrpt.t_sel, [2]] generated name in static_model is: generated_tensor_6
-    [descrpt.t_avg, [2, 552]] generated name in static_model is: generated_tensor_7
-    [descrpt.t_std, [2, 552]] generated name in static_model is: generated_tensor_8
-    [fitting.buffer_dfparam, []] generated name in static_model is: generated_tensor_9
-    [fitting.buffer_daparam, []] generated name in static_model is: generated_tensor_10
+    [descrpt.buffer_rcut, []] generated name in static_model is:
+    generated_tensor_0 [descrpt.buffer_ntypes_spin, []] generated name in
+    static_model is: generated_tensor_1 [descrpt.buffer_ntypes, []] generated
+    name in static_model is: generated_tensor_2 [descrpt.avg_zero, [2, 552]]
+    generated name in static_model is: eager_tmp_0 [descrpt.std_ones, [2, 552]]
+    generated name in static_model is: eager_tmp_1 [descrpt.t_rcut, []]
+    generated name in static_model is: generated_tensor_3 [descrpt.t_rcut, []]
+    generated name in static_model is: generated_tensor_3 [descrpt.t_rcut, []]
+    generated name in static_model is: generated_tensor_3 [descrpt.t_ntypes, []]
+    generated name in static_model is: generated_tensor_4 [descrpt.t_ntypes, []]
+    generated name in static_model is: generated_tensor_4 [descrpt.t_ntypes, []]
+    generated name in static_model is: generated_tensor_4 [descrpt.t_ndescrpt,
+    []] generated name in static_model is: generated_tensor_5 [descrpt.t_sel,
+    [2]] generated name in static_model is: generated_tensor_6 [descrpt.t_avg,
+    [2, 552]] generated name in static_model is: generated_tensor_7
+    [descrpt.t_std, [2, 552]] generated name in static_model is:
+    generated_tensor_8 [fitting.buffer_dfparam, []] generated name in
+    static_model is: generated_tensor_9 [fitting.buffer_daparam, []] generated
+    name in static_model is: generated_tensor_10
     **/
     /* spin se_e2_a
     [buffer_tmap, [4]] generated name in static_model is: generated_tensor_14
-    [buffer_model_type, [4]] generated name in static_model is: generated_tensor_15
-    [buffer_model_version, [1]] generated name in static_model is: generated_tensor_16
-    [descrpt.buffer_rcut, []] generated name in static_model is: generated_tensor_3
-    [descrpt.buffer_ntypes, []] generated name in static_model is: generated_tensor_4
-    [descrpt.avg_zero, [3, 720]] generated name in static_model is: eager_tmp_0
-    [descrpt.std_ones, [3, 720]] generated name in static_model is: eager_tmp_1
-    [descrpt.t_rcut, []] generated name in static_model is: generated_tensor_5
-    [descrpt.buffer_sel, [3]] generated name in static_model is: generated_tensor_6
-    [descrpt.buffer_ndescrpt, []] generated name in static_model is: generated_tensor_7
-    [descrpt.buffer_original_sel, [3]] generated name in static_model is: generated_tensor_8
-    [descrpt.t_avg, [3, 720]] generated name in static_model is: generated_tensor_9
-    [descrpt.t_std, [3, 720]] generated name in static_model is: generated_tensor_10
-    [descrpt.spin.buffer_ntypes_spin, [1]] generated name in static_model is: generated_tensor_0
-    [descrpt.spin.buffer_virtual_len, [1, 1]] generated name in static_model is: generated_tensor_1
-    [descrpt.spin.buffer_spin_norm, [1, 1]] generated name in static_model is: generated_tensor_2
-    [fitting.buffer_dfparam, []] generated name in static_model is: generated_tensor_11
-    [fitting.buffer_daparam, []] generated name in static_model is: generated_tensor_12                                                                                  [fitting.t_bias_atom_e, [2]] generated name in static_model is: generated_tensor_13
+    [buffer_model_type, [4]] generated name in static_model is:
+    generated_tensor_15 [buffer_model_version, [1]] generated name in
+    static_model is: generated_tensor_16 [descrpt.buffer_rcut, []] generated
+    name in static_model is: generated_tensor_3 [descrpt.buffer_ntypes, []]
+    generated name in static_model is: generated_tensor_4 [descrpt.avg_zero, [3,
+    720]] generated name in static_model is: eager_tmp_0 [descrpt.std_ones, [3,
+    720]] generated name in static_model is: eager_tmp_1 [descrpt.t_rcut, []]
+    generated name in static_model is: generated_tensor_5 [descrpt.buffer_sel,
+    [3]] generated name in static_model is: generated_tensor_6
+    [descrpt.buffer_ndescrpt, []] generated name in static_model is:
+    generated_tensor_7 [descrpt.buffer_original_sel, [3]] generated name in
+    static_model is: generated_tensor_8 [descrpt.t_avg, [3, 720]] generated name
+    in static_model is: generated_tensor_9 [descrpt.t_std, [3, 720]] generated
+    name in static_model is: generated_tensor_10
+    [descrpt.spin.buffer_ntypes_spin, [1]] generated name in static_model is:
+    generated_tensor_0 [descrpt.spin.buffer_virtual_len, [1, 1]] generated name
+    in static_model is: generated_tensor_1 [descrpt.spin.buffer_spin_norm, [1,
+    1]] generated name in static_model is: generated_tensor_2
+    [fitting.buffer_dfparam, []] generated name in static_model is:
+    generated_tensor_11 [fitting.buffer_daparam, []] generated name in
+    static_model is: generated_tensor_12 [fitting.t_bias_atom_e, [2]] generated
+    name in static_model is: generated_tensor_13
    */
     model_version = paddle_get_scalar<std::string>("generated_tensor_14");
     dtype = predictor_get_dtype(predictor, "generated_tensor_0");
@@ -781,10 +788,11 @@ void DeepPot::init(const std::string& model,
     ntypes_spin = 0;
     dfparam = paddle_get_scalar<int64_t>("generated_tensor_9");
     daparam = paddle_get_scalar<int64_t>("generated_tensor_10");
-    model_type = paddle_get_scalar<std::string>("generated_tensor_13");;
+    model_type = paddle_get_scalar<std::string>("generated_tensor_13");
+    ;
     inited = true;
     init_nbor = false;
-    return ;
+    return;
   }
   // if (!model_compatable(model_version)) {
   //   throw deepmd::deepmd_exception(
@@ -1261,22 +1269,22 @@ void DeepPot::compute(ENERGYVTYPE& dener,
     int ret = 0;
     if (predictor == nullptr) {
       /* run tensorflow inference if paddle predictor is nullptr*/
-      int ret = session_input_tensors<double>(input_tensors, dcoord, ntypes,
-                                              datype, dbox, nlist, fparam,
-                                              aparam, atommap, nghost_real,
-                                              ago);
+      int ret = session_input_tensors<double>(
+          input_tensors, dcoord, ntypes, datype, dbox, nlist, fparam, aparam,
+          atommap, nghost_real, ago);
       assert(nloc_real == ret);
       run_model<double>(dener, dforce, dvirial, datom_energy, datom_virial,
                         session, input_tensors, atommap, nframes, nghost_real);
     }
     /* run paddle inference if paddle predictor exist*/
     else if (predictor != nullptr) {
-      int ret = predictor_input_tensors<double>(predictor, dcoord, ntypes, datype, dbox,
-                                                nlist, fparam, aparam, atommap,
-                                                nghost_real, ago);
+      int ret = predictor_input_tensors<double>(
+          predictor, dcoord, ntypes, datype, dbox, nlist, fparam, aparam,
+          atommap, nghost_real, ago);
       assert(nloc_real == ret);
-      paddle_run_model<double>(dener, dforce, dvirial, datom_energy, datom_virial,
-                               predictor, atommap, nframes, nghost_real);
+      paddle_run_model<double>(dener, dforce, dvirial, datom_energy,
+                               datom_virial, predictor, atommap, nframes,
+                               nghost_real);
     }
   } else {
     int ret = session_input_tensors<float>(input_tensors, dcoord, ntypes,

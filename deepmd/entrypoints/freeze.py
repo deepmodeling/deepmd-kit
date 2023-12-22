@@ -8,22 +8,25 @@ https://blog.metaflow.fr/tensorflow-how-to-freeze-a-model-and-serve-it-with-a-py
 
 import json
 import logging
-from os.path import abspath
-from typing import List
-from typing import Optional
-from typing import Union
-
-import google.protobuf.message
+from typing import (
+    List,
+    Optional,
+    Union,
+)
 
 # load grad of force module
 import deepmd.op  # noqa: F401
-from deepmd.env import FITTING_NET_PATTERN
-from deepmd.env import REMOVE_SUFFIX_DICT
-from deepmd.env import tf
-from deepmd.nvnmd.entrypoints.freeze import save_weight
-from deepmd.utils.errors import GraphTooLargeError
-from deepmd.utils.graph import get_pattern_nodes_from_graph_def
-from deepmd.utils.sess import run_sess
+from deepmd.env import (
+    FITTING_NET_PATTERN,
+    REMOVE_SUFFIX_DICT,
+    tf,
+)
+from deepmd.utils.graph import (
+    get_pattern_nodes_from_graph_def,
+)
+from deepmd.utils.sess import (
+    run_sess,
+)
 
 __all__ = ["freeze"]
 
@@ -308,39 +311,21 @@ def _make_node_names(
 def freeze_graph(
     model_file: str,
     output: str,
-    # sess,
-    # input_graph,
-    # input_node,
-    # freeze_type,
-    # modifier,
-    # out_graph_name,
-    # node_names=None,
-    # out_suffix="",
 ):
     """Freeze the single graph with chosen out_suffix.
 
     Parameters
     ----------
-    sess : tf.Session
-        The default session.
-    input_graph : tf.GraphDef
-        The input graph_def stored from the checkpoint.
-    input_node : List[str]
-        The expected nodes to freeze.
-    freeze_type : str
-        The model type to freeze.
-    modifier : Optional[str], optional
-        Modifier type if any, by default None.
-    out_graph_name : str
-        The output graph.
-    node_names : Optional[str], optional
-        Names of nodes to output, by default None.
-    out_suffix : str
-        The chosen suffix to freeze in the input_graph.
+    model_file : str
+        Location of the *.pdparams file
+    output : str
+        output file name
     """
     import paddle
 
-    from deepmd.infer import DeepPot
+    from deepmd.infer import (
+        DeepPot,
+    )
 
     dp = DeepPot(
         model_file,
@@ -348,7 +333,9 @@ def freeze_graph(
         default_tf_graph=False,
     )
     dp.model.eval()
-    from paddle.static import InputSpec
+    from paddle.static import (
+        InputSpec,
+    )
 
     st_model = paddle.jit.to_static(
         dp.model,
@@ -466,16 +453,10 @@ def freeze(
 
     Parameters
     ----------
-    checkpoint_folder : str
-        location of the folder with model
+    input_file : str
+        location of the *.pdparams file
     output : str
         output file name
-    node_names : Optional[str], optional
-        names of nodes to output, by default None
-    nvnmd_weight : Optional[str], optional
-        nvnmd weight file
-    united_model : bool
-        when in multi-task mode, freeze all nodes into one unit model
     **kwargs
         other arguments
     """

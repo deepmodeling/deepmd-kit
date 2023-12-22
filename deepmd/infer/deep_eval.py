@@ -1,8 +1,12 @@
-from functools import lru_cache
-from typing import TYPE_CHECKING
-from typing import List
-from typing import Optional
-from typing import Union
+from functools import (
+    lru_cache,
+)
+from typing import (
+    TYPE_CHECKING,
+    List,
+    Optional,
+    Union,
+)
 
 # from deepmd.descriptor.descriptor import (
 #     Descriptor,
@@ -10,32 +14,46 @@ from typing import Union
 import numpy as np
 
 import deepmd
-from deepmd.common import data_requirement
-from deepmd.common import expand_sys_str
-from deepmd.common import j_loader
-from deepmd.common import j_must_have
-from deepmd.descriptor import DescrptSeA
-from deepmd.env import MODEL_VERSION
-from deepmd.env import default_tf_session_config
-from deepmd.env import paddle
-from deepmd.env import tf
-from deepmd.fit import ener
-from deepmd.model import EnerModel
-from deepmd.utils.argcheck import type_embedding_args
-from deepmd.utils.batch_size import AutoBatchSize
-from deepmd.utils.sess import run_sess
-from deepmd.utils.spin import Spin
+from deepmd.common import (
+    j_loader,
+    j_must_have,
+)
+from deepmd.env import (
+    MODEL_VERSION,
+    default_tf_session_config,
+    paddle,
+    tf,
+)
+from deepmd.fit import (
+    ener,
+)
+from deepmd.model import (
+    EnerModel,
+)
+from deepmd.utils.batch_size import (
+    AutoBatchSize,
+)
+from deepmd.utils.sess import (
+    run_sess,
+)
+from deepmd.utils.spin import (
+    Spin,
+)
 
 if TYPE_CHECKING:
-    from pathlib import Path
+    from pathlib import (
+        Path,
+    )
 
 
 def remove_comment_in_json(jdata):
     """Remove the comment in json file.
+
     Parameters
     ----------
     jdata : dict
         The data loaded from json file.
+
     Returns
     -------
     dict
@@ -160,28 +178,28 @@ class DeepEval:
             padding = True
         if typeebd_param is not None:
             raise NotImplementedError()
-            typeebd = TypeEmbedNet(
-                neuron=typeebd_param["neuron"],
-                resnet_dt=typeebd_param["resnet_dt"],
-                activation_function=typeebd_param["activation_function"],
-                precision=typeebd_param["precision"],
-                trainable=typeebd_param["trainable"],
-                seed=typeebd_param["seed"],
-                padding=padding,
-            )
+            # typeebd = TypeEmbedNet(
+            #     neuron=typeebd_param["neuron"],
+            #     resnet_dt=typeebd_param["resnet_dt"],
+            #     activation_function=typeebd_param["activation_function"],
+            #     precision=typeebd_param["precision"],
+            #     trainable=typeebd_param["trainable"],
+            #     seed=typeebd_param["seed"],
+            #     padding=padding,
+            # )
         elif descrpt_type == "se_atten" or hybrid_with_tebd:
             raise NotImplementedError()
-            default_args = type_embedding_args()
-            default_args_dict = {i.name: i.default for i in default_args}
-            typeebd = TypeEmbedNet(
-                neuron=default_args_dict["neuron"],
-                resnet_dt=default_args_dict["resnet_dt"],
-                activation_function=None,
-                precision=default_args_dict["precision"],
-                trainable=default_args_dict["trainable"],
-                seed=default_args_dict["seed"],
-                padding=padding,
-            )
+            # default_args = type_embedding_args()
+            # default_args_dict = {i.name: i.default for i in default_args}
+            # typeebd = TypeEmbedNet(
+            #     neuron=default_args_dict["neuron"],
+            #     resnet_dt=default_args_dict["resnet_dt"],
+            #     activation_function=None,
+            #     precision=default_args_dict["precision"],
+            #     trainable=default_args_dict["trainable"],
+            #     seed=default_args_dict["seed"],
+            #     padding=padding,
+            # )
         else:
             typeebd = None
 
@@ -206,35 +224,35 @@ class DeepEval:
             #     self.model = WFCModel(model_param, descrpt, fitting)
             elif self.fitting_type == "dos":
                 raise NotImplementedError()
-                self.model = DOSModel(
-                    descrpt,
-                    fitting,
-                    typeebd,
-                    model_param.get("type_map"),
-                    model_param.get("data_stat_nbatch", 10),
-                    model_param.get("data_stat_protect", 1e-2),
-                )
+                # self.model = DOSModel(
+                #     descrpt,
+                #     fitting,
+                #     typeebd,
+                #     model_param.get("type_map"),
+                #     model_param.get("data_stat_nbatch", 10),
+                #     model_param.get("data_stat_protect", 1e-2),
+                # )
 
             elif self.fitting_type == "dipole":
                 raise NotImplementedError()
-                self.model = DipoleModel(
-                    descrpt,
-                    fitting,
-                    typeebd,
-                    model_param.get("type_map"),
-                    model_param.get("data_stat_nbatch", 10),
-                    model_param.get("data_stat_protect", 1e-2),
-                )
+                # self.model = DipoleModel(
+                #     descrpt,
+                #     fitting,
+                #     typeebd,
+                #     model_param.get("type_map"),
+                #     model_param.get("data_stat_nbatch", 10),
+                #     model_param.get("data_stat_protect", 1e-2),
+                # )
             elif self.fitting_type == "polar":
                 raise NotImplementedError()
-                self.model = PolarModel(
-                    descrpt,
-                    fitting,
-                    typeebd,
-                    model_param.get("type_map"),
-                    model_param.get("data_stat_nbatch", 10),
-                    model_param.get("data_stat_protect", 1e-2),
-                )
+                # self.model = PolarModel(
+                #     descrpt,
+                #     fitting,
+                #     typeebd,
+                #     model_param.get("type_map"),
+                #     model_param.get("data_stat_nbatch", 10),
+                #     model_param.get("data_stat_protect", 1e-2),
+                # )
             # elif self.fitting_type == 'global_polar':
             #     self.model = GlobalPolarModel(
             #         descrpt,
@@ -247,19 +265,19 @@ class DeepEval:
                 raise RuntimeError("get unknown fitting type when building model")
         else:  # multi-task mode
             raise NotImplementedError()
-            self.model = MultiModel(
-                descrpt,
-                self.fitting_dict,
-                self.fitting_type_dict,
-                typeebd,
-                model_param.get("type_map"),
-                model_param.get("data_stat_nbatch", 10),
-                model_param.get("data_stat_protect", 1e-2),
-                model_param.get("use_srtab"),
-                model_param.get("smin_alpha"),
-                model_param.get("sw_rmin"),
-                model_param.get("sw_rmax"),
-            )
+            # self.model = MultiModel(
+            #     descrpt,
+            #     self.fitting_dict,
+            #     self.fitting_type_dict,
+            #     typeebd,
+            #     model_param.get("type_map"),
+            #     model_param.get("data_stat_nbatch", 10),
+            #     model_param.get("data_stat_protect", 1e-2),
+            #     model_param.get("use_srtab"),
+            #     model_param.get("smin_alpha"),
+            #     model_param.get("sw_rmin"),
+            #     model_param.get("sw_rmax"),
+            # )
 
         # # if descrpt_param["type"] in ["se_e2_a", "se_a", "se_e2_r", "se_r", "hybrid"]:
         # descrpt_param["spin"] = None
@@ -413,6 +431,7 @@ class DeepEval:
         self, tensor_name: str, attr_name: Optional[str] = None
     ) -> tf.Tensor:
         """Get TF graph tensor and assign it to class namespace.
+
         Parameters
         ----------
         tensor_name : str
@@ -420,10 +439,6 @@ class DeepEval:
         attr_name : Optional[str], optional
             if specified, class attribute with this name will be created and tensor will
             be assigned to it, by default None
-        Returns
-        -------
-        tf.Tensor
-            loaded tensor
         """
         # do not use os.path.join as it doesn't work on Windows
         value = None

@@ -1,10 +1,16 @@
 import json
 import logging
-from typing import Any
-from typing import Dict
+from typing import (
+    Any,
+    Dict,
+)
 
-from deepmd.utils.errors import GraphWithoutTensorError
-from deepmd.utils.graph import get_tensor_by_name
+from deepmd.utils.errors import (
+    GraphWithoutTensorError,
+)
+from deepmd.utils.graph import (
+    get_tensor_by_name,
+)
 
 log = logging.getLogger(__name__)
 

@@ -6,12 +6,18 @@ import unittest
 import numpy as np
 
 # from deepmd.entrypoints.compress import compress
-from common import j_loader
-from common import run_dp
-from common import tests_path
-from packaging.version import Version
+from common import (
+    j_loader,
+    run_dp,
+    tests_path,
+)
+from packaging.version import (
+    Version,
+)
 
-from deepmd.env import TF_VERSION
+from deepmd.env import (
+    TF_VERSION,
+)
 
 
 def _file_delete(file):

@@ -2,12 +2,20 @@ import logging
 
 import numpy as np
 
-from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
-from deepmd.env import op_module
-from deepmd.env import tf
-from deepmd.nvnmd.utils.config import nvnmd_cfg
-from deepmd.nvnmd.utils.weight import get_constant_initializer
-from deepmd.utils.network import variable_summaries
+from deepmd.env import (
+    GLOBAL_TF_FLOAT_PRECISION,
+    op_module,
+    tf,
+)
+from deepmd.nvnmd.utils.config import (
+    nvnmd_cfg,
+)
+from deepmd.nvnmd.utils.weight import (
+    get_constant_initializer,
+)
+from deepmd.utils.network import (
+    variable_summaries,
+)
 
 log = logging.getLogger(__name__)
 
