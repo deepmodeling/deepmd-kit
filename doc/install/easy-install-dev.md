@@ -26,8 +26,8 @@ pip install -U --pre deepmd-kit[gpu,cu12,lmp] --extra-index-url https://deepmode
 
 ## Download pre-compiled C Library
 
-The [pre-comiled C library](./install-from-c-library.md) can be downloaded from [here](https://nightly.link/deepmodeling/deepmd-kit/workflows/package_c/devel/libdeepmd_c.zip), or via a shell command:
+The [pre-comiled C library](./install-from-c-library.md) can be downloaded from [here](https://nightly.link/deepmodeling/deepmd-kit/workflows/package_c/devel/libdeepmd_c-0-libdeepmd_c.tar.gz.zip), or via a shell command:
 
 ```sh
-wget https://nightly.link/deepmodeling/deepmd-kit/workflows/package_c/devel/libdeepmd_c.zip && unzip libdeepmd_c.zip
+wget https://nightly.link/deepmodeling/deepmd-kit/workflows/package_c/devel/libdeepmd_c-0-libdeepmd_c.tar.gz.zip && unzip libdeepmd_c-0-libdeepmd_c.tar.gz.zip
 ```
