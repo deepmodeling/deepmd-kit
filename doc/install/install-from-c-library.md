@@ -1,6 +1,12 @@
 # Install from pre-compiled C library
 
 DeePMD-kit provides pre-compiled C library package (`libdeepmd_c.tar.gz`) in each [release](https://github.com/deepmodeling/deepmd-kit/releases). It can be used to build the [LAMMPS plugin](./install-lammps.md) and [GROMACS patch](./install-gromacs.md), as well as many [third-party software packages](../third-party/out-of-deepmd-kit.md), without building TensorFlow and DeePMD-kit on one's own.
+It can be downloaded via the shell command:
+
+```sh
+wget https://github.com/deepmodeling/deepmd-kit/releases/latest/download/libdeepmd_c.tar.gz
+tar xzf libdeepmd_c.tar.gz
+```
 
 The library is built in Linux (GLIBC 2.17) with CUDA 12.2 (`libdeepmd_c.tar.gz`) or 11.8 (`libdeepmd_c_cu11.tar.gz`). It's noted that this package does not contain CUDA Toolkit and cuDNN, so one needs to download them from the NVIDIA website.
 
