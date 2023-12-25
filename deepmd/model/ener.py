@@ -4,6 +4,8 @@ from typing import (
     Optional,
 )
 
+import numpy as np
+
 from deepmd.env import (
     MODEL_VERSION,
     paddle,
@@ -25,9 +27,9 @@ from .model_stat import (
 )
 
 if TYPE_CHECKING:
-    from deepmd.fit import (
-        ener,
-    )
+    import paddle  # noqa: F811
+
+    from deepmd.fit import ener  # noqa: F811
 
 
 class EnerModel(Model, paddle.nn.Layer):
@@ -106,16 +108,27 @@ class EnerModel(Model, paddle.nn.Layer):
         self.t_ver = str(MODEL_VERSION)
         # NOTE: workaround for string type is not supported in Paddle
         self.register_buffer(
-            "buffer_t_type",
+            "buffer_tmap",
             paddle.to_tensor([ord(c) for c in self.t_tmap], dtype="int32"),
         )
         self.register_buffer(
-            "buffer_t_mt", paddle.to_tensor([ord(c) for c in self.t_mt], dtype="int32")
+            "buffer_model_type",
+            paddle.to_tensor([ord(c) for c in self.t_mt], dtype="int32"),
         )
         self.register_buffer(
-            "buffer_t_ver",
+            "buffer_model_version",
             paddle.to_tensor([ord(c) for c in self.t_ver], dtype="int32"),
         )
+        if self.srtab is not None:
+            tab_info, tab_data = self.srtab.get()
+            self.tab_info = paddle.register_buffer(
+                "buffer_t_tab_info",
+                paddle.to_tensor(tab_info, dtype=paddle.float64),
+            )
+            self.tab_data = paddle.register_buffer(
+                "buffer_t_tab_data",
+                paddle.to_tensor(tab_data, dtype=paddle.float64),
+            )
 
     def get_rcut(self):
         return self.rcut
@@ -194,10 +207,52 @@ class EnerModel(Model, paddle.nn.Layer):
             reuse=reuse,
         )
 
+        if self.srtab is not None:
+            nlist, rij, sel_a, sel_r = self.descrpt.get_nlist()
+            nnei_a = np.cumsum(sel_a)[-1]
+            nnei_r = np.cumsum(sel_r)[-1]
+
         atom_ener = self.fitting(dout, natoms, input_dict, reuse=reuse, suffix=suffix)
         self.atom_ener = atom_ener
 
-        energy_raw = atom_ener
+        if self.srtab is not None:
+            raise NotImplementedError(
+                f"srtab not implemented in {self.__class__.__name__}"
+            )
+            # sw_lambda, sw_deriv = op_module.soft_min_switch(
+            #     atype,
+            #     rij,
+            #     nlist,
+            #     natoms,
+            #     sel_a=sel_a,
+            #     sel_r=sel_r,
+            #     alpha=self.smin_alpha,
+            #     rmin=self.sw_rmin,
+            #     rmax=self.sw_rmax,
+            # )
+            # inv_sw_lambda = 1.0 - sw_lambda
+            # # NOTICE:
+            # # atom energy is not scaled,
+            # # force and virial are scaled
+            # tab_atom_ener, tab_force, tab_atom_virial = op_module.pair_tab(
+            #     self.tab_info,
+            #     self.tab_data,
+            #     atype,
+            #     rij,
+            #     nlist,
+            #     natoms,
+            #     sw_lambda,
+            #     sel_a=sel_a,
+            #     sel_r=sel_r,
+            # )
+            # energy_diff = tab_atom_ener - tf.reshape(atom_ener, [-1, natoms[0]])
+            # tab_atom_ener = tf.reshape(sw_lambda, [-1]) * tf.reshape(
+            #     tab_atom_ener, [-1]
+            # )
+            # atom_ener = tf.reshape(inv_sw_lambda, [-1]) * atom_ener
+            # energy_raw = tab_atom_ener + atom_ener
+        else:
+            energy_raw = atom_ener
 
         nloc_atom = (
             natoms[0]
@@ -214,17 +269,41 @@ class EnerModel(Model, paddle.nn.Layer):
         # virial: [1, 9]
         # atom_virial: [1, all_atoms*9]
 
-        force = paddle.reshape(force, [-1, 3 * natoms[1]])
+        if self.srtab is not None:
+            raise NotImplementedError()
+            # sw_force = op_module.soft_min_force(
+            #     energy_diff, sw_deriv, nlist, natoms, n_a_sel=nnei_a, n_r_sel=nnei_r
+            # )
+            # force = force + sw_force + tab_force
+
+        force = paddle.reshape(force, [-1, 3 * natoms[1]])  # [1, all_atoms*3]
         if self.spin is not None:
             # split and concatenate force to compute local atom force and magnetic force
             judge = paddle.equal(natoms[0], natoms[1])
-            force = paddle.where(
-                judge,
-                self.natoms_match(force, natoms),
-                self.natoms_not_match(force, natoms, atype),
-            )
+            if judge.item():
+                force = self.natoms_match(force, natoms)
+            else:
+                force = self.natoms_not_match(force, natoms, atype)
 
         force = paddle.reshape(force, [-1, 3 * natoms[1]], name="o_force" + suffix)
+
+        if self.srtab is not None:
+            raise NotImplementedError()
+            # sw_virial, sw_atom_virial = op_module.soft_min_virial(
+            #     energy_diff,
+            #     sw_deriv,
+            #     rij,
+            #     nlist,
+            #     natoms,
+            #     n_a_sel=nnei_a,
+            #     n_r_sel=nnei_r,
+            # )
+            # atom_virial = atom_virial + sw_atom_virial + tab_atom_virial
+            # virial = (
+            #     virial
+            #     + sw_virial
+            #     + tf.sum(tf.reshape(tab_atom_virial, [-1, natoms[1], 9]), axis=1)
+            # )
 
         virial = paddle.reshape(virial, [-1, 9], name="o_virial" + suffix)
         atom_virial = paddle.reshape(
@@ -279,41 +358,69 @@ class EnerModel(Model, paddle.nn.Layer):
         use_spin = self.spin.use_spin
         virtual_len = self.spin.virtual_len
         spin_norm = self.spin.spin_norm
-        natoms_index = tf.concat([[0], tf.cumsum(natoms[2:])], axis=0)
+        natoms_index = paddle.concat(
+            [
+                paddle.to_tensor([0], dtype=natoms.dtype),
+                paddle.cumsum(natoms[2:]),
+            ],
+            axis=0,
+        )
         force_real_list = []
         for idx, use in enumerate(use_spin):
             if use is True:
                 force_real_list.append(
-                    tf.slice(
-                        force, [0, natoms_index[idx] * 3], [-1, natoms[idx + 2] * 3]
-                    )
-                    + tf.slice(
+                    paddle.slice(
                         force,
+                        [0, 1],
+                        [0, natoms_index[idx] * 3],
+                        [
+                            force.shape[0],
+                            natoms_index[idx] * 3 + natoms[idx + 2].item() * 3,
+                        ],
+                    )
+                    + paddle.slice(
+                        force,
+                        [0, 1],
                         [0, natoms_index[idx + len(use_spin)] * 3],
-                        [-1, natoms[idx + 2 + len(use_spin)] * 3],
+                        [
+                            force.shape[0],
+                            natoms_index[idx + len(use_spin)] * 3
+                            + natoms[idx + 2 + len(use_spin)].item() * 3,
+                        ],
                     )
                 )
             else:
                 force_real_list.append(
-                    tf.slice(
-                        force, [0, natoms_index[idx] * 3], [-1, natoms[idx + 2] * 3]
+                    paddle.slice(
+                        force,
+                        [0, 1],
+                        [0, natoms_index[idx] * 3],
+                        [
+                            force.shape[0],
+                            natoms_index[idx] * 3 + natoms[idx + 2].item() * 3,
+                        ],
                     )
                 )
         force_mag_list = []
         for idx, use in enumerate(use_spin):
             if use is True:
                 force_mag_list.append(
-                    tf.slice(
+                    paddle.slice(
                         force,
+                        [0, 1],
                         [0, natoms_index[idx + len(use_spin)] * 3],
-                        [-1, natoms[idx + 2 + len(use_spin)] * 3],
+                        [
+                            force.shape[0],
+                            natoms_index[idx + len(use_spin)] * 3
+                            + natoms[idx + 2 + len(use_spin)].item() * 3,
+                        ],
                     )
                 )
                 force_mag_list[idx] *= virtual_len[idx] / spin_norm[idx]
 
-        force_real = tf.concat(force_real_list, axis=1)
-        force_mag = tf.concat(force_mag_list, axis=1)
-        loc_force = tf.concat([force_real, force_mag], axis=1)
+        force_real = paddle.concat(force_real_list, axis=1)
+        force_mag = paddle.concat(force_mag_list, axis=1)
+        loc_force = paddle.concat([force_real, force_mag], axis=1)
         force = loc_force
         return force
 
@@ -325,48 +432,82 @@ class EnerModel(Model, paddle.nn.Layer):
         spin_norm = self.spin.spin_norm
         loc_force = self.natoms_match(force, natoms)
         aatype = atype[0, :]
+
+        # FIXME: paddle.unique和tf.unique的返回值顺序是不一致, 下面的代码实现不正确，
+        # 在某些案例中需要修改
         ghost_atype = aatype[natoms[0] :]
-        _, _, ghost_natoms = tf.unique_with_counts(ghost_atype)
-        ghost_natoms_index = tf.concat([[0], tf.cumsum(ghost_natoms)], axis=0)
+        _, idx, ghost_natoms = paddle.unique(
+            ghost_atype, return_index=True, return_counts=True
+        )
+        idx_inv = paddle.empty_like(idx)
+        # NOTE: Use inverse permutation to get equaivalent result as tf
+        idx_inv[idx] = paddle.arange(0, len(idx))
+        ghost_natoms = ghost_natoms[idx_inv]
+
+        ghost_natoms_index = paddle.concat(
+            [
+                paddle.to_tensor([0], dtype=ghost_natoms.dtype),
+                paddle.cumsum(ghost_natoms),
+            ],
+            axis=0,
+        )
         ghost_natoms_index += natoms[0]
 
         ghost_force_real_list = []
         for idx, use in enumerate(use_spin):
             if use is True:
                 ghost_force_real_list.append(
-                    tf.slice(
+                    paddle.slice(
                         force,
+                        [0, 1],
                         [0, ghost_natoms_index[idx] * 3],
-                        [-1, ghost_natoms[idx] * 3],
+                        [
+                            force.shape[0],
+                            ghost_natoms_index[idx] * 3 + ghost_natoms[idx].item() * 3,
+                        ],
                     )
-                    + tf.slice(
+                    + paddle.slice(
                         force,
+                        [0, 1],
                         [0, ghost_natoms_index[idx + len(use_spin)] * 3],
-                        [-1, ghost_natoms[idx + len(use_spin)] * 3],
+                        [
+                            force.shape[0],
+                            ghost_natoms_index[idx + len(use_spin)] * 3
+                            + ghost_natoms[idx + len(use_spin)].item() * 3,
+                        ],
                     )
                 )
             else:
                 ghost_force_real_list.append(
-                    tf.slice(
+                    paddle.slice(
                         force,
+                        [0, 1],
                         [0, ghost_natoms_index[idx] * 3],
-                        [-1, ghost_natoms[idx] * 3],
+                        [
+                            force.shape[0],
+                            ghost_natoms_index[idx] * 3 + ghost_natoms[idx].item() * 3,
+                        ],
                     )
                 )
         ghost_force_mag_list = []
         for idx, use in enumerate(use_spin):
             if use is True:
                 ghost_force_mag_list.append(
-                    tf.slice(
+                    paddle.slice(
                         force,
+                        [0, 1],
                         [0, ghost_natoms_index[idx + len(use_spin)] * 3],
-                        [-1, ghost_natoms[idx + len(use_spin)] * 3],
+                        [
+                            force.shape[0],
+                            ghost_natoms_index[idx + len(use_spin)] * 3
+                            + ghost_natoms[idx + len(use_spin)].item() * 3,
+                        ],
                     )
                 )
                 ghost_force_mag_list[idx] *= virtual_len[idx] / spin_norm[idx]
 
-        ghost_force_real = tf.concat(ghost_force_real_list, axis=1)
-        ghost_force_mag = tf.concat(ghost_force_mag_list, axis=1)
-        ghost_force = tf.concat([ghost_force_real, ghost_force_mag], axis=1)
-        force = tf.concat([loc_force, ghost_force], axis=1)
+        ghost_force_real = paddle.concat(ghost_force_real_list, axis=1)
+        ghost_force_mag = paddle.concat(ghost_force_mag_list, axis=1)
+        ghost_force = paddle.concat([ghost_force_real, ghost_force_mag], axis=1)
+        force = paddle.concat([loc_force, ghost_force], axis=1)
         return force

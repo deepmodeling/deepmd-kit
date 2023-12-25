@@ -913,16 +913,7 @@ class DPTrainer:
             # use tensorboard to visualize the training of deepmd-kit
             # it will takes some extra execution time to generate the tensorboard data
             if self.tensorboard and (cur_batch % self.tensorboard_freq == 0):
-                model_pred = self.model(
-                    paddle.to_tensor(train_batch["coord"], "float32"),
-                    paddle.to_tensor(train_batch["type"], "int32"),
-                    paddle.to_tensor(train_batch["natoms_vec"], "int32", "cpu"),
-                    paddle.to_tensor(train_batch["box"], "float32"),
-                    paddle.to_tensor(train_batch["default_mesh"], "int32"),
-                    train_batch,
-                    suffix="",
-                    reuse=False,
-                )
+                pass
             else:
                 model_inputs = {}
                 for kk in train_batch.keys():
@@ -958,7 +949,6 @@ class DPTrainer:
                     suffix="",
                     reuse=False,
                 )
-
                 # print(f"{self.cur_batch} {self.learning_rate.get_lr():.10f}")
                 l2_l, l2_more = self.loss.compute_loss(
                     self.learning_rate.get_lr(),

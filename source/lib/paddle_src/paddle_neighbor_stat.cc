@@ -5,16 +5,49 @@
 
 #undef PADDLE_WITH_CUDA
 #define CHECK_INPUT_CPU(x) PD_CHECK(x.is_cpu(), #x " must be a CPU Tensor.")
+#define CHECK_INPUT_FP64(x)                        \
+  PD_CHECK(x.dtype() == paddle::DataType::FLOAT64, \
+           #x " dtype should be FLOAT64.")
+#define CHECK_INPUT_INT32(x) \
+  PD_CHECK(x.dtype() == paddle::DataType::INT32, #x " dtype should be INT32.")
 #define CHECK_INPUT_DIM(x, value) \
   PD_CHECK(x.shape().size() == value, #x "'s dim should be " #value ".")
+
 typedef double boxtensor_t;
 typedef double compute_t;
 
+void neighbor_stat_cpu_forward_kernel(
+    const int& nloc,
+    const std::vector<int>& d_type,
+    const std::vector<std::vector<int> >& d_nlist_r,
+    const int& ntypes,
+    const std::vector<compute_t>& d_coord3,
+    const int& max_nnei,
+    int* max_nbor_size,
+    double* min_nbor_dist) {
+#pragma omp parallel for
+  for (int ii = 0; ii < nloc; ii++) {
+    if (d_type[ii] < 0) continue;  // virtual atom
+    for (int jj = 0; jj < d_nlist_r[ii].size(); jj++) {
+      int type = d_type[d_nlist_r[ii][jj]];
+      if (type < 0) continue;  // virtual atom
+      max_nbor_size[ii * ntypes + type] += 1;
+      compute_t rij[3] = {
+          d_coord3[d_nlist_r[ii][jj] * 3 + 0] - d_coord3[ii * 3 + 0],
+          d_coord3[d_nlist_r[ii][jj] * 3 + 1] - d_coord3[ii * 3 + 1],
+          d_coord3[d_nlist_r[ii][jj] * 3 + 2] - d_coord3[ii * 3 + 2]};
+      min_nbor_dist[ii * max_nnei + jj] =
+          sqrt(rij[0] * rij[0] + rij[1] * rij[1] + rij[2] * rij[2]);
+    }
+  }
+}
+
+// template<typename FPTYPE>
 std::vector<paddle::Tensor> NeighborStatOpCPUForward(
-    const paddle::Tensor& coord_tensor /*fp32/64*/,
+    const paddle::Tensor& coord_tensor /*fp64*/,
     const paddle::Tensor& type_tensor /*int32*/,
     const paddle::Tensor& natoms_tensor /*int64*/,
-    const paddle::Tensor& box_tensor /*fp32/64*/,
+    const paddle::Tensor& box_tensor /*fp64*/,
     const paddle::Tensor& mesh_tensor /*int32*/,
     const float& rcut) {
   CHECK_INPUT_CPU(coord_tensor);
@@ -22,6 +55,11 @@ std::vector<paddle::Tensor> NeighborStatOpCPUForward(
   CHECK_INPUT_CPU(natoms_tensor);
   CHECK_INPUT_CPU(box_tensor);
   CHECK_INPUT_CPU(mesh_tensor);
+
+  CHECK_INPUT_FP64(coord_tensor);
+  CHECK_INPUT_FP64(box_tensor);
+  CHECK_INPUT_INT32(type_tensor);
+  CHECK_INPUT_INT32(mesh_tensor);
 
   CHECK_INPUT_DIM(coord_tensor, 2);
   CHECK_INPUT_DIM(type_tensor, 2);
@@ -31,9 +69,9 @@ std::vector<paddle::Tensor> NeighborStatOpCPUForward(
   PD_CHECK(natoms_tensor.shape()[0] >= 3,
            "number of atoms should be larger than (or equal to) 3");
 
-  const int64_t* natoms = natoms_tensor.data<int64_t>();
-  int64_t nloc = natoms[0];
-  int64_t nall = natoms[1];
+  const int* natoms = natoms_tensor.data<int>();
+  int nloc = natoms[0];
+  int nall = natoms[1];
   int64_t nsamples = coord_tensor.shape()[0];
   int64_t ntypes = natoms_tensor.shape()[0] - 2;
 
@@ -63,9 +101,9 @@ std::vector<paddle::Tensor> NeighborStatOpCPUForward(
   paddle::Tensor max_nbor_size_tensor = paddle::zeros(
       max_nbor_size_shape, type_tensor.dtype(), type_tensor.place());
 
-  const float* coord = coord_tensor.data<float>();
+  const double* coord = coord_tensor.data<double>();
   const int* type = type_tensor.data<int>();
-  const float* box = box_tensor.data<float>();
+  const double* box = box_tensor.data<double>();
   const int* mesh = mesh_tensor.data<int>();
   int* max_nbor_size = max_nbor_size_tensor.data<int>();
 
@@ -136,31 +174,18 @@ std::vector<paddle::Tensor> NeighborStatOpCPUForward(
   std::vector<int64_t> min_nbor_dist_shape = {nloc * MAX_NNEI};
   paddle::Tensor min_nbor_dist_tensor = paddle::full(
       min_nbor_dist_shape, 10000.0, coord_tensor.dtype(), coord_tensor.place());
-  auto* min_nbor_dist = min_nbor_dist_tensor.data<float>();
+  double* min_nbor_dist = min_nbor_dist_tensor.data<double>();
 
-#pragma omp parallel for
-  for (int ii = 0; ii < nloc; ii++) {
-    if (d_type[ii] < 0) continue;  // virtual atom
-    for (int jj = 0; jj < d_nlist_r[ii].size(); jj++) {
-      int type = d_type[d_nlist_r[ii][jj]];
-      if (type < 0) continue;  // virtual atom
-      max_nbor_size[ii * ntypes + type] += 1;
-      compute_t rij[3] = {
-          d_coord3[d_nlist_r[ii][jj] * 3 + 0] - d_coord3[ii * 3 + 0],
-          d_coord3[d_nlist_r[ii][jj] * 3 + 1] - d_coord3[ii * 3 + 1],
-          d_coord3[d_nlist_r[ii][jj] * 3 + 2] - d_coord3[ii * 3 + 2]};
-      min_nbor_dist[ii * MAX_NNEI + jj] =
-          sqrt(rij[0] * rij[0] + rij[1] * rij[1] + rij[2] * rij[2]);
-    }
-  }
+  neighbor_stat_cpu_forward_kernel(nloc, d_type, d_nlist_r, ntypes, d_coord3,
+                                   MAX_NNEI, max_nbor_size, min_nbor_dist);
   return {max_nbor_size_tensor, min_nbor_dist_tensor};
 }
 
 std::vector<paddle::Tensor> NeighborStatForward(
-    const paddle::Tensor& coord_tensor,  /*float32*/
+    const paddle::Tensor& coord_tensor,  /*float64*/
     const paddle::Tensor& type_tensor,   /*int32*/
     const paddle::Tensor& natoms_tensor, /*int64*/
-    const paddle::Tensor& box_tensor,    /*float32*/
+    const paddle::Tensor& box_tensor,    /*float64*/
     const paddle::Tensor& mesh_tensor,   /*int32*/
     float rcut) {
   if (coord_tensor.is_cpu()) {

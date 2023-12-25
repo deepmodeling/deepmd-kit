@@ -350,7 +350,7 @@ def freeze_graph(
         input_spec=[
             InputSpec(shape=[None], dtype="float64"),  # coord_
             InputSpec(shape=[None], dtype="int32"),  # atype_
-            InputSpec(shape=[4], dtype="int32"),  # natoms
+            InputSpec(shape=[2 + dp.model.descrpt.ntypes], dtype="int32"),  # natoms
             InputSpec(shape=[None], dtype="float64"),  # box
             InputSpec(shape=[6], dtype="int32"),  # mesh
             {
@@ -362,9 +362,9 @@ def freeze_graph(
     )
     for name, param in st_model.named_buffers():
         print(
-            f"[{name}, {param.shape}] generated name in static_model is: {param.name}"
+            f"[{name}, {param.dtype}, {param.shape}] generated name in static_model is: {param.name}"
         )
-    #  skip pruning for program so as to keep buffers into files
+    # skip pruning for program so as to keep buffers into files
     skip_prune_program = True
     print(f"==>> Set skip_prune_program = {skip_prune_program}")
     paddle.jit.save(st_model, output, skip_prune_program=skip_prune_program)

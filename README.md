@@ -1,7 +1,11 @@
 # DeePMD-kit(PaddlePaddle backend)
 
 > [!IMPORTANT]
-> 本项目为 DeePMD-kit 的 PaddlePaddle 版本，主要修改了部分代码，使其可以运行在 PaddlePaddle 上。运行功能包括 water_se_e2_a 案例的单卡 GPU 训练、单卡 GPU 评估、导出静态图模型、接入 LAMMPS(GPU) 推理 4 部分的功能。
+> 本项目为 DeePMD-kit 的 PaddlePaddle 版本，修改了部分代码，使其可以以 PaddlePaddle(GPU) 为后端进行训练、评估、模型导出、LAMMPS 推理等任务。案例支持情况如下所示。
+> | example | Train | Test | Export | LAMMPS |
+> | :-----: | :--:  | :--: | :----: | :---: |
+> | water/se_e2_a  | ✅    | ✅    | ✅    | ✅    |
+> | spin/se_e2_a  | ✅    | ✅    | ✅     | TODO     |
 
 ## 1. 环境安装
 
@@ -20,9 +24,8 @@
 
 3. 安装 deepmd-kit
 
-
     ``` sh
-    git clone https://github.com/HydrogenSulfate/deepmd-kit.git -b add_ddle_backend_polish_ver
+    git clone https://github.com/deepmodeling/deepmd-kit.git -b paddle2
     cd deepmd-kit
     # 以 editable 的方式安装，方便调试
     pip install -e . -i https://pypi.tuna.tsinghua.edu.cn/simple

@@ -203,9 +203,17 @@ class DescrptSeA(paddle.nn.Layer):
         self.useBN = False
         self.dstd = None
         self.davg = None
-        self.avg_zero = paddle.zeros([self.ntypes, self.ndescrpt], dtype="float32")
-        self.std_ones = paddle.ones([self.ntypes, self.ndescrpt], dtype="float32")
-
+        # self.compress = False
+        # self.embedding_net_variables = None
+        # self.mixed_prec = None
+        # self.place_holders = {}
+        # self.nei_type = np.repeat(np.arange(self.ntypes), self.sel_a)
+        self.avg_zero = paddle.zeros(
+            [self.ntypes, self.ndescrpt], dtype=GLOBAL_PD_FLOAT_PRECISION
+        )
+        self.std_ones = paddle.ones(
+            [self.ntypes, self.ndescrpt], dtype=GLOBAL_PD_FLOAT_PRECISION
+        )
         nets = []
         for type_input in range(self.ntypes):
             layer = []
@@ -242,11 +250,19 @@ class DescrptSeA(paddle.nn.Layer):
             }
 
         self.t_rcut = paddle.to_tensor(
-            np.max([self.rcut_r, self.rcut_a]), dtype="float32"
+            np.max([self.rcut_r, self.rcut_a]), dtype=GLOBAL_PD_FLOAT_PRECISION
         )
-        self.t_ntypes = paddle.to_tensor(self.ntypes, dtype="int32")
-        self.t_ndescrpt = paddle.to_tensor(self.ndescrpt, dtype="int32")
-        self.t_sel = paddle.to_tensor(self.sel_a, dtype="int32")
+        self.register_buffer("buffer_sel", paddle.to_tensor(self.sel_a, dtype="int32"))
+        self.register_buffer(
+            "buffer_ndescrpt", paddle.to_tensor(self.ndescrpt, dtype="int32")
+        )
+        self.register_buffer(
+            "buffer_original_sel",
+            paddle.to_tensor(
+                self.original_sel if self.original_sel is not None else self.sel_a,
+                dtype="int32",
+            ),
+        )
 
         t_avg = paddle.to_tensor(
             np.zeros([self.ntypes, self.ndescrpt]), dtype="float64"
@@ -539,6 +555,7 @@ class DescrptSeA(paddle.nn.Layer):
         coord = paddle.reshape(coord_, [-1, natoms[1] * 3])
         box = paddle.reshape(box_, [-1, 9])
         atype = paddle.reshape(atype_, [-1, natoms[1]])
+
         (
             self.descrpt,
             self.descrpt_deriv,
@@ -669,7 +686,7 @@ class DescrptSeA(paddle.nn.Layer):
                     [0, start_index, 0],
                     [
                         inputs.shape[0],
-                        start_index + natoms[2 + type_i],
+                        start_index + natoms[2 + type_i].item(),
                         inputs.shape[2],
                     ],
                 )
@@ -697,7 +714,7 @@ class DescrptSeA(paddle.nn.Layer):
                 )
                 output.append(layer)
                 output_qmat.append(qmat)
-                start_index += natoms[2 + type_i]
+                start_index += natoms[2 + type_i].item()
         else:
             raise NotImplementedError()
             # This branch will not be excecuted at current
@@ -747,13 +764,11 @@ class DescrptSeA(paddle.nn.Layer):
         self, data_coord, data_box, data_atype, natoms_vec, mesh
     ):
         input_dict = {}
-        input_dict["coord"] = paddle.to_tensor(data_coord, dtype="float32")
-        input_dict["box"] = paddle.to_tensor(data_box, dtype="float32")
-        input_dict["type"] = paddle.to_tensor(data_atype, dtype="int32")
-        input_dict["natoms_vec"] = paddle.to_tensor(
-            natoms_vec, dtype="int32", place="cpu"
-        )
-        input_dict["default_mesh"] = paddle.to_tensor(mesh, dtype="int32")
+        input_dict["coord"] = paddle.to_tensor(data_coord, GLOBAL_PD_FLOAT_PRECISION)
+        input_dict["box"] = paddle.to_tensor(data_box, GLOBAL_PD_FLOAT_PRECISION)
+        input_dict["type"] = paddle.to_tensor(data_atype, "int32")
+        input_dict["natoms_vec"] = paddle.to_tensor(natoms_vec, "int32", place="cpu")
+        input_dict["default_mesh"] = paddle.to_tensor(mesh, "int32")
 
         self.stat_descrpt, descrpt_deriv, rij, nlist = op_module.prod_env_mat_a(
             input_dict["coord"],
@@ -949,10 +964,8 @@ class DescrptSeA(paddle.nn.Layer):
             # natom x 4 x outputs_size
 
             return paddle.matmul(
-                paddle.reshape(
-                    inputs_i, [natom, shape_i[1] // 4, 4]
-                ),  # [natom, nei_type_i, 4]
-                xyz_scatter_out,  # [natom, nei_type_i, 100]
+                paddle.reshape(inputs_i, [natom, shape_i[1] // 4, 4]),
+                xyz_scatter_out,
                 transpose_x=True,
             )
 

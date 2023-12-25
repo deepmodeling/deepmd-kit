@@ -9,6 +9,7 @@ import numpy as np
 import paddle
 
 from deepmd.env import (
+    GLOBAL_PD_FLOAT_PRECISION,
     op_module,
 )
 from deepmd.utils.data_system import (
@@ -71,25 +72,21 @@ class NeighborStat:
                     coord = np.array(data_set["coord"])[kk].reshape(
                         [-1, data.natoms[ii] * 3]
                     )
-                    coord = paddle.to_tensor(coord, dtype="float32", place="cpu")
+                    coord = paddle.to_tensor(coord, GLOBAL_PD_FLOAT_PRECISION, "cpu")
 
                     _type = np.array(data_set["type"])[kk].reshape(
                         [-1, data.natoms[ii]]
                     )
-                    _type = paddle.to_tensor(_type, dtype="int32", place="cpu")
+                    _type = paddle.to_tensor(_type, "int32", "cpu")
 
                     natoms_vec = np.array(data.natoms_vec[ii])
-                    natoms_vec = paddle.to_tensor(
-                        natoms_vec, dtype="int64", place="cpu"
-                    )
+                    natoms_vec = paddle.to_tensor(natoms_vec, "int32", "cpu")
 
                     box = np.array(data_set["box"])[kk].reshape([-1, 9])
-                    box = paddle.to_tensor(box, dtype="float32", place="cpu")
+                    box = paddle.to_tensor(box, GLOBAL_PD_FLOAT_PRECISION, "cpu")
 
                     default_mesh = np.array(data.default_mesh[ii])
-                    default_mesh = paddle.to_tensor(
-                        default_mesh, dtype="int32", place="cpu"
-                    )
+                    default_mesh = paddle.to_tensor(default_mesh, "int32", "cpu")
 
                     rcut = self.rcut
                     mn, dt = op_module.neighbor_stat(

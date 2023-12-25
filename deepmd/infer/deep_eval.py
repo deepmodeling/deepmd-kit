@@ -10,18 +10,19 @@ from typing import (
 
 import numpy as np
 
+import deepmd
 from deepmd.common import (
     j_loader,
     j_must_have,
-)
-from deepmd.descriptor import (
-    DescrptSeA,
 )
 from deepmd.env import (
     MODEL_VERSION,
     default_tf_session_config,
     paddle,
     tf,
+)
+from deepmd.fit import (
+    ener,
 )
 from deepmd.model import (
     EnerModel,
@@ -32,11 +33,38 @@ from deepmd.utils.batch_size import (
 from deepmd.utils.sess import (
     run_sess,
 )
+from deepmd.utils.spin import (
+    Spin,
+)
 
 if TYPE_CHECKING:
     from pathlib import (
         Path,
     )
+
+
+def remove_comment_in_json(jdata):
+    """Remove the comment in json file.
+
+    Parameters
+    ----------
+    jdata : dict
+        The data loaded from json file.
+
+    Returns
+    -------
+    dict
+        The new data without comments.
+    """
+    if not isinstance(jdata, dict):
+        return
+    find = False
+    for k, v in jdata.items():
+        if "_comment" == k:
+            find = True
+        remove_comment_in_json(v)
+    if find:
+        del jdata["_comment"]
 
 
 class DeepEval:
@@ -65,63 +93,224 @@ class DeepEval:
         auto_batch_size: Union[bool, int, AutoBatchSize] = False,
     ):
         jdata = j_loader("input.json")
+        remove_comment_in_json(jdata)
         model_param = j_must_have(jdata, "model")
-
+        self.multi_task_mode = "fitting_net_dict" in model_param
         descrpt_param = j_must_have(model_param, "descriptor")
+        fitting_param = (
+            j_must_have(model_param, "fitting_net")
+            if not self.multi_task_mode
+            else j_must_have(model_param, "fitting_net_dict")
+        )
+        typeebd_param = model_param.get("type_embedding", None)
+        spin_param = model_param.get("spin", None)
+        self.model_param = model_param
+        self.descrpt_param = descrpt_param
+        # spin
+        if spin_param is not None:
+            spin = Spin(
+                use_spin=spin_param["use_spin"],
+                virtual_len=spin_param["virtual_len"],
+                spin_norm=spin_param["spin_norm"],
+            )
+        else:
+            spin = None
+
+        # descriptor
+        try:
+            descrpt_type = descrpt_param["type"]
+            self.descrpt_type = descrpt_type
+        except KeyError:
+            raise KeyError("the type of descriptor should be set by `type`")
+
         explicit_ntypes_descrpt = ["se_atten"]
-        # hybrid_with_tebd = False
+        hybrid_with_tebd = False
         if descrpt_param["type"] in explicit_ntypes_descrpt:
             descrpt_param["ntypes"] = len(model_param["type_map"])
         elif descrpt_param["type"] == "hybrid":
             for descrpt_item in descrpt_param["list"]:
                 if descrpt_item["type"] in explicit_ntypes_descrpt:
                     descrpt_item["ntypes"] = len(model_param["type_map"])
-                    # hybrid_with_tebd = True
+                    hybrid_with_tebd = True
+        if self.multi_task_mode:
+            descrpt_param["multi_task"] = True
+        if descrpt_param["type"] in ["se_e2_a", "se_a", "se_e2_r", "se_r", "hybrid"]:
+            descrpt_param["spin"] = spin
+        descrpt_param.pop("type")
+        descrpt = deepmd.descriptor.se_a.DescrptSeA(**descrpt_param)
 
-        # if descrpt_param["type"] in ["se_e2_a", "se_a", "se_e2_r", "se_r", "hybrid"]:
-        descrpt_param["spin"] = None
-        descrpt_param["type_one_side"] = False
+        # fitting net
+        if not self.multi_task_mode:
+            fitting_type = fitting_param.get("type", "ener")
+            self.fitting_type = fitting_type
+            fitting_param["descrpt"] = descrpt
+            if fitting_type == "ener":
+                fitting_param["spin"] = spin
+                fitting_param.pop("type", None)
+            fitting = ener.EnerFitting(**fitting_param)
+        else:
+            self.fitting_dict = {}
+            self.fitting_type_dict = {}
+            self.nfitting = len(fitting_param)
+            for item in fitting_param:
+                item_fitting_param = fitting_param[item]
+                item_fitting_type = item_fitting_param.get("type", "ener")
+                self.fitting_type_dict[item] = item_fitting_type
+                item_fitting_param["descrpt"] = descrpt
+                if item_fitting_type == "ener":
+                    item_fitting_param["spin"] = spin
+                # self.fitting_dict[item] = Fitting(**item_fitting_param)
 
-        descrpt_param.pop("type", None)
-        descrpt_param.pop("_comment", None)
-        self.spin = None
-        # descrpt_param["spin"] = self.spin
-        self.descrpt = DescrptSeA(**descrpt_param)
+        # type embedding
+        padding = False
+        if descrpt_type == "se_atten" or hybrid_with_tebd:
+            padding = True
+        if typeebd_param is not None:
+            raise NotImplementedError()
+            # typeebd = TypeEmbedNet(
+            #     neuron=typeebd_param["neuron"],
+            #     resnet_dt=typeebd_param["resnet_dt"],
+            #     activation_function=typeebd_param["activation_function"],
+            #     precision=typeebd_param["precision"],
+            #     trainable=typeebd_param["trainable"],
+            #     seed=typeebd_param["seed"],
+            #     padding=padding,
+            # )
+        elif descrpt_type == "se_atten" or hybrid_with_tebd:
+            raise NotImplementedError()
+            # default_args = type_embedding_args()
+            # default_args_dict = {i.name: i.default for i in default_args}
+            # typeebd = TypeEmbedNet(
+            #     neuron=default_args_dict["neuron"],
+            #     resnet_dt=default_args_dict["resnet_dt"],
+            #     activation_function=None,
+            #     precision=default_args_dict["precision"],
+            #     trainable=default_args_dict["trainable"],
+            #     seed=default_args_dict["seed"],
+            #     padding=padding,
+            # )
+        else:
+            typeebd = None
 
-        self.multi_task_mode = "fitting_net_dict" in model_param
-        fitting_param = (
-            j_must_have(model_param, "fitting_net")
-            if not self.multi_task_mode
-            else j_must_have(model_param, "fitting_net_dict")
-        )
-        from deepmd.fit import (
-            EnerFitting,
-        )
+        # init model
+        # infer model type by fitting_type
+        if not self.multi_task_mode:
+            if self.fitting_type == "ener":
+                self.model = EnerModel(
+                    descrpt,
+                    fitting,
+                    typeebd,
+                    model_param.get("type_map"),
+                    model_param.get("data_stat_nbatch", 10),
+                    model_param.get("data_stat_protect", 1e-2),
+                    model_param.get("use_srtab"),
+                    model_param.get("smin_alpha"),
+                    model_param.get("sw_rmin"),
+                    model_param.get("sw_rmax"),
+                    spin,
+                )
+            # elif fitting_type == 'wfc':
+            #     self.model = WFCModel(model_param, descrpt, fitting)
+            elif self.fitting_type == "dos":
+                raise NotImplementedError()
+                # self.model = DOSModel(
+                #     descrpt,
+                #     fitting,
+                #     typeebd,
+                #     model_param.get("type_map"),
+                #     model_param.get("data_stat_nbatch", 10),
+                #     model_param.get("data_stat_protect", 1e-2),
+                # )
 
-        # fitting_param.pop("type", None)
-        fitting_param.pop("_comment", None)
-        fitting_param["descrpt"] = self.descrpt
-        self.fitting = EnerFitting(**fitting_param)
+            elif self.fitting_type == "dipole":
+                raise NotImplementedError()
+                # self.model = DipoleModel(
+                #     descrpt,
+                #     fitting,
+                #     typeebd,
+                #     model_param.get("type_map"),
+                #     model_param.get("data_stat_nbatch", 10),
+                #     model_param.get("data_stat_protect", 1e-2),
+                # )
+            elif self.fitting_type == "polar":
+                raise NotImplementedError()
+                # self.model = PolarModel(
+                #     descrpt,
+                #     fitting,
+                #     typeebd,
+                #     model_param.get("type_map"),
+                #     model_param.get("data_stat_nbatch", 10),
+                #     model_param.get("data_stat_protect", 1e-2),
+                # )
+            # elif self.fitting_type == 'global_polar':
+            #     self.model = GlobalPolarModel(
+            #         descrpt,
+            #         fitting,
+            #         model_param.get('type_map'),
+            #         model_param.get('data_stat_nbatch', 10),
+            #         model_param.get('data_stat_protect', 1e-2)
+            #     )
+            else:
+                raise RuntimeError("get unknown fitting type when building model")
+        else:  # multi-task mode
+            raise NotImplementedError()
+            # self.model = MultiModel(
+            #     descrpt,
+            #     self.fitting_dict,
+            #     self.fitting_type_dict,
+            #     typeebd,
+            #     model_param.get("type_map"),
+            #     model_param.get("data_stat_nbatch", 10),
+            #     model_param.get("data_stat_protect", 1e-2),
+            #     model_param.get("use_srtab"),
+            #     model_param.get("smin_alpha"),
+            #     model_param.get("sw_rmin"),
+            #     model_param.get("sw_rmax"),
+            # )
 
-        self.typeebd = None
+        # # if descrpt_param["type"] in ["se_e2_a", "se_a", "se_e2_r", "se_r", "hybrid"]:
+        # descrpt_param["spin"] = None
+        # descrpt_param["type_one_side"] = False
 
-        self.model = EnerModel(
-            self.descrpt,
-            self.fitting,
-            self.typeebd,
-            model_param.get("type_map"),
-            model_param.get("data_stat_nbatch", 10),
-            model_param.get("data_stat_protect", 1e-2),
-            model_param.get("use_srtab"),
-            model_param.get("smin_alpha"),
-            model_param.get("sw_rmin"),
-            model_param.get("sw_rmax"),
-            self.spin,
-        )
+        # descrpt_param.pop("type", None)
+        # descrpt_param.pop("_comment", None)
+        # spin = None
+        # # descrpt_param["spin"] = spin
+        # descrpt = DescrptSeA(**descrpt_param)
+
+        # self.multi_task_mode = "fitting_net_dict" in model_param
+        # fitting_param = (
+        #     j_must_have(model_param, "fitting_net")
+        #     if not self.multi_task_mode
+        #     else j_must_have(model_param, "fitting_net_dict")
+        # )
+        # from deepmd.fit import EnerFitting
+
+        # # fitting_param.pop("type", None)
+        # fitting_param.pop("_comment", None)
+        # fitting_param["descrpt"] = descrpt
+        # fitting = EnerFitting(**fitting_param)
+
+        # typeebd = None
+
+        # self.model = EnerModel(
+        #     descrpt,
+        #     fitting,
+        #     typeebd,
+        #     model_param.get("type_map"),
+        #     model_param.get("data_stat_nbatch", 10),
+        #     model_param.get("data_stat_protect", 1e-2),
+        #     model_param.get("use_srtab"),
+        #     model_param.get("smin_alpha"),
+        #     model_param.get("sw_rmin"),
+        #     model_param.get("sw_rmax"),
+        #     spin,
+        # )
         model_file_str = str(model_file)
         if model_file_str.endswith((".pdmodel", ".pdiparams")):
             st_model_prefix = model_file_str.rsplit(".", 1)[0]
             self.st_model = paddle.jit.load(st_model_prefix)
+            print(f"==>> Load static model successfully from: {str(st_model_prefix)}")
         else:
             load_state_dict = paddle.load(str(model_file))
             for k, v in load_state_dict.items():
@@ -143,7 +332,7 @@ class DeepEval:
                             self.model.state_dict()[k].shape
                         )
             self.model.set_state_dict(load_state_dict)
-        print(f"==>> Load pretraied model successfully from: {str(model_file)}")
+            print(f"==>> Load dynamic model successfully from: {str(model_file)}")
         self.load_prefix = load_prefix
 
         # graph_compatable should be called after graph and prefix are set

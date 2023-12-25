@@ -216,8 +216,6 @@ class EnerStdLoss(Loss):
         return l2_loss, more_loss
 
     def eval(self, model, batch_data, natoms):
-        # placeholder = self.l2_l
-
         model_inputs = {}
         for kk in batch_data.keys():
             if kk == "find_type" or kk == "type":
@@ -340,7 +338,7 @@ class EnerSpinLoss(Loss):
                 default=1.0,
             )
 
-    def build(self, learning_rate, natoms, model_dict, label_dict, suffix):
+    def compute_loss(self, learning_rate, natoms, model_dict, label_dict, suffix):
         energy_pred = model_dict["energy"]
         force_pred = model_dict["force"]
         virial_pred = model_dict["virial"]
@@ -365,151 +363,202 @@ class EnerSpinLoss(Loss):
             # E = - E(A) - E(B) + E(C) + E(D)
             # A, B, C, D could be put far away from each other
             atom_ener_coeff = label_dict["atom_ener_coeff"]
-            atom_ener_coeff = tf.reshape(atom_ener_coeff, tf.shape(atom_ener_pred))
-            energy_pred = tf.reduce_sum(atom_ener_coeff * atom_ener_pred, 1)
-        l2_ener_loss = tf.reduce_mean(
-            tf.square(energy_pred - energy_label), name="l2_" + suffix
+            atom_ener_coeff = paddle.reshape(
+                atom_ener_coeff, paddle.shape(atom_ener_pred)
+            )
+            energy_pred = paddle.sum(atom_ener_coeff * atom_ener_pred, 1)
+        l2_ener_loss = (
+            paddle.mean(paddle.square(energy_pred - energy_label), name="l2_" + suffix)
+            if self.has_e
+            else 0.0
         )
 
         # split force to force_r and force_m, compute their respective loss
-        real_nloc = tf.reduce_sum(natoms[2 : 2 + len(self.use_spin)])
+        real_nloc = paddle.sum(natoms[2 : 2 + len(self.use_spin)])
         virt_nloc = natoms[0] - real_nloc
-        force_pred_reshape = tf.reshape(force_pred, [-1, natoms[0] * 3])
-        force_label_reshape = tf.reshape(force_label, [-1, natoms[0] * 3])
-        force_r_pred = tf.reshape(
-            tf.slice(force_pred_reshape, [0, 0], [-1, real_nloc * 3]), [-1]
+        force_pred_reshape = paddle.reshape(force_pred, [-1, natoms[0] * 3])
+        force_label_reshape = paddle.reshape(force_label, [-1, natoms[0] * 3])
+        force_r_pred = paddle.reshape(
+            paddle.slice(
+                force_pred_reshape,
+                [0, 1],
+                [0, 0],
+                [force_pred_reshape.shape[0], real_nloc * 3],
+            ),
+            [-1],
         )
-        force_m_pred = tf.reshape(
-            tf.slice(force_pred_reshape, [0, real_nloc * 3], [-1, virt_nloc * 3]), [-1]
+        force_m_pred = paddle.reshape(
+            paddle.slice(
+                force_pred_reshape,
+                [0, 1],
+                [0, real_nloc * 3],
+                [force_pred_reshape.shape[0], real_nloc * 3 + virt_nloc * 3],
+            ),
+            [-1],
         )
-        force_r_label = tf.reshape(
-            tf.slice(force_label_reshape, [0, 0], [-1, real_nloc * 3]), [-1]
+        force_r_label = paddle.reshape(
+            paddle.slice(
+                force_label_reshape,
+                [0, 1],
+                [0, 0],
+                [force_label_reshape.shape[0], real_nloc * 3],
+            ),
+            [-1],
         )
-        force_m_label = tf.reshape(
-            tf.slice(force_label_reshape, [0, real_nloc * 3], [-1, virt_nloc * 3]), [-1]
+        force_m_label = paddle.reshape(
+            paddle.slice(
+                force_label_reshape,
+                [0, 1],
+                [0, real_nloc * 3],
+                [force_label_reshape.shape[0], real_nloc * 3 + virt_nloc * 3],
+            ),
+            [-1],
         )
-        l2_force_r_loss = tf.reduce_mean(
-            tf.square(force_r_pred - force_r_label), name="l2_force_real_" + suffix
+        l2_force_r_loss = (
+            paddle.mean(
+                paddle.square(force_r_pred - force_r_label),
+                name="l2_force_real_" + suffix,
+            )
+            if self.has_fr
+            else 0.0
         )
-        l2_force_m_loss = tf.reduce_mean(
-            tf.square(force_m_pred - force_m_label), name="l2_force_mag_" + suffix
+        l2_force_m_loss = (
+            paddle.mean(
+                paddle.square(force_m_pred - force_m_label),
+                name="l2_force_mag_" + suffix,
+            )
+            if self.has_fm
+            else 0.0
         )
 
-        virial_pred_reshape = tf.reshape(virial_pred, [-1])
-        virial_label_reshape = tf.reshape(virial_label, [-1])
-        l2_virial_loss = tf.reduce_mean(
-            tf.square(virial_pred_reshape - virial_label_reshape),
-            name="l2_virial_" + suffix,
+        virial_pred_reshape = paddle.reshape(virial_pred, [-1])
+        virial_label_reshape = paddle.reshape(virial_label, [-1])
+        l2_virial_loss = (
+            paddle.mean(
+                paddle.square(virial_pred_reshape - virial_label_reshape),
+                name="l2_virial_" + suffix,
+            )
+            if self.has_v
+            else 0.0
         )
 
         # need to change. can't get atom_ener_hat?
-        atom_ener_pred_reshape = tf.reshape(atom_ener_pred, [-1])
-        atom_ener_label_reshape = tf.reshape(atom_ener_label, [-1])
-        l2_atom_ener_loss = tf.reduce_mean(
-            tf.square(atom_ener_pred_reshape - atom_ener_label_reshape),
-            name="l2_atom_ener_" + suffix,
+        atom_ener_pred_reshape = paddle.reshape(atom_ener_pred, [-1])
+        atom_ener_label_reshape = paddle.reshape(atom_ener_label, [-1])
+        l2_atom_ener_loss = (
+            paddle.mean(
+                paddle.square(atom_ener_pred_reshape - atom_ener_label_reshape),
+                name="l2_atom_ener_" + suffix,
+            )
+            if self.has_ae
+            else 0.0
         )
 
-        atom_norm = 1.0 / global_cvt_2_tf_float(natoms[0])
-        atom_norm_ener = 1.0 / global_cvt_2_ener_float(natoms[0])
-        pref_e = global_cvt_2_ener_float(
-            find_energy
-            * (
-                self.limit_pref_e
-                + (self.start_pref_e - self.limit_pref_e)
-                * learning_rate
-                / self.starter_learning_rate
-            )
+        atom_norm = 1.0 / (natoms[0])
+        atom_norm_ener = 1.0 / (natoms[0])
+        pref_e = find_energy * (
+            self.limit_pref_e
+            + (self.start_pref_e - self.limit_pref_e)
+            * learning_rate
+            / self.starter_learning_rate
         )
-        pref_fr = global_cvt_2_tf_float(
-            find_force
-            * (
-                self.limit_pref_fr
-                + (self.start_pref_fr - self.limit_pref_fr)
-                * learning_rate
-                / self.starter_learning_rate
-            )
+        pref_fr = find_force * (
+            self.limit_pref_fr
+            + (self.start_pref_fr - self.limit_pref_fr)
+            * learning_rate
+            / self.starter_learning_rate
         )
-        pref_fm = global_cvt_2_tf_float(
-            find_force
-            * (
-                self.limit_pref_fm
-                + (self.start_pref_fm - self.limit_pref_fm)
-                * learning_rate
-                / self.starter_learning_rate
-            )
+        pref_fm = find_force * (
+            self.limit_pref_fm
+            + (self.start_pref_fm - self.limit_pref_fm)
+            * learning_rate
+            / self.starter_learning_rate
         )
-        pref_v = global_cvt_2_tf_float(
-            find_virial
-            * (
-                self.limit_pref_v
-                + (self.start_pref_v - self.limit_pref_v)
-                * learning_rate
-                / self.starter_learning_rate
-            )
+        pref_v = find_virial * (
+            self.limit_pref_v
+            + (self.start_pref_v - self.limit_pref_v)
+            * learning_rate
+            / self.starter_learning_rate
         )
-        pref_ae = global_cvt_2_tf_float(
-            find_atom_ener
-            * (
-                self.limit_pref_ae
-                + (self.start_pref_ae - self.limit_pref_ae)
-                * learning_rate
-                / self.starter_learning_rate
-            )
+        pref_ae = find_atom_ener * (
+            self.limit_pref_ae
+            + (self.start_pref_ae - self.limit_pref_ae)
+            * learning_rate
+            / self.starter_learning_rate
         )
 
         l2_loss = 0
         more_loss = {}
         if self.has_e:
             l2_loss += atom_norm_ener * (pref_e * l2_ener_loss)
-        more_loss["l2_ener_loss"] = l2_ener_loss
+            more_loss["l2_ener_loss"] = l2_ener_loss
         if self.has_fr:
-            l2_loss += global_cvt_2_ener_float(pref_fr * l2_force_r_loss)
-        more_loss["l2_force_r_loss"] = l2_force_r_loss
+            l2_loss += pref_fr * l2_force_r_loss
+            more_loss["l2_force_r_loss"] = l2_force_r_loss
         if self.has_fm:
-            l2_loss += global_cvt_2_ener_float(pref_fm * l2_force_m_loss)
-        more_loss["l2_force_m_loss"] = l2_force_m_loss
+            l2_loss += pref_fm * l2_force_m_loss
+            more_loss["l2_force_m_loss"] = l2_force_m_loss
         if self.has_v:
-            l2_loss += global_cvt_2_ener_float(atom_norm * (pref_v * l2_virial_loss))
-        more_loss["l2_virial_loss"] = l2_virial_loss
+            l2_loss += atom_norm * (pref_v * l2_virial_loss)
+            more_loss["l2_virial_loss"] = l2_virial_loss
         if self.has_ae:
-            l2_loss += global_cvt_2_ener_float(pref_ae * l2_atom_ener_loss)
-        more_loss["l2_atom_ener_loss"] = l2_atom_ener_loss
-
-        # only used when tensorboard was set as true
-        self.l2_loss_summary = tf.summary.scalar("l2_loss", tf.sqrt(l2_loss))
-        self.l2_loss_ener_summary = tf.summary.scalar(
-            "l2_ener_loss",
-            global_cvt_2_tf_float(tf.sqrt(l2_ener_loss))
-            / global_cvt_2_tf_float(natoms[0]),
-        )
-        self.l2_loss_force_r_summary = tf.summary.scalar(
-            "l2_force_r_loss", tf.sqrt(l2_force_r_loss)
-        )
-        self.l2_loss_force_m_summary = tf.summary.scalar(
-            "l2_force_m_loss", tf.sqrt(l2_force_m_loss)
-        )
-        self.l2_loss_virial_summary = tf.summary.scalar(
-            "l2_virial_loss", tf.sqrt(l2_virial_loss) / global_cvt_2_tf_float(natoms[0])
-        )
+            l2_loss += pref_ae * l2_atom_ener_loss
+            more_loss["l2_atom_ener_loss"] = l2_atom_ener_loss
 
         self.l2_l = l2_loss
         self.l2_more = more_loss
         return l2_loss, more_loss
 
-    def eval(self, sess, feed_dict, natoms):
-        placeholder = self.l2_l
-        run_data = [
-            self.l2_l,
-            self.l2_more["l2_ener_loss"] if self.has_e else placeholder,
-            self.l2_more["l2_force_r_loss"] if self.has_fr else placeholder,
-            self.l2_more["l2_force_m_loss"] if self.has_fm else placeholder,
-            self.l2_more["l2_virial_loss"] if self.has_v else placeholder,
-            self.l2_more["l2_atom_ener_loss"] if self.has_ae else placeholder,
-        ]
-        error, error_e, error_fr, error_fm, error_v, error_ae = run_sess(
-            sess, run_data, feed_dict=feed_dict
+    def eval(self, model, batch_data, natoms):
+        model_inputs = {}
+        for kk in batch_data.keys():
+            if kk == "find_type" or kk == "type":
+                continue
+            prec = "float64"
+            if "find_" in kk:
+                model_inputs[kk] = paddle.to_tensor(batch_data[kk], dtype="float64")
+            else:
+                model_inputs[kk] = paddle.to_tensor(
+                    np.reshape(batch_data[kk], [-1]), dtype=prec
+                )
+
+        for ii in ["type"]:
+            model_inputs[ii] = paddle.to_tensor(
+                np.reshape(batch_data[ii], [-1]), dtype="int32"
+            )
+        for ii in ["natoms_vec", "default_mesh"]:
+            model_inputs[ii] = paddle.to_tensor(batch_data[ii], dtype="int32")
+        model_inputs["is_training"] = paddle.to_tensor(False)
+        model_inputs["natoms_vec"] = paddle.to_tensor(
+            model_inputs["natoms_vec"], place="cpu"
         )
+
+        model_pred = model(
+            model_inputs["coord"],
+            model_inputs["type"],
+            model_inputs["natoms_vec"],
+            model_inputs["box"],
+            model_inputs["default_mesh"],
+            model_inputs,
+            suffix="",
+            reuse=False,
+        )
+        l2_l, l2_more = self.compute_loss(
+            0.0,
+            model_inputs["natoms_vec"],
+            model_pred,
+            model_inputs,
+            suffix="test",
+        )
+        run_data = [
+            (float(l2_l)),
+            (float(l2_more["l2_ener_loss"]) if self.has_e else 0.0),
+            (float(l2_more["l2_force_r_loss"]) if self.has_fr else 0.0),
+            (float(l2_more["l2_force_m_loss"]) if self.has_fm else 0.0),
+            (float(l2_more["l2_virial_loss"]) if self.has_v else 0.0),
+            (float(l2_more["l2_atom_ener_loss"]) if self.has_ae else 0.0),
+        ]
+        error, error_e, error_fr, error_fm, error_v, error_ae = run_data
         results = {"natoms": natoms[0], "rmse": np.sqrt(error)}
         if self.has_e:
             results["rmse_e"] = np.sqrt(error_e) / natoms[0]

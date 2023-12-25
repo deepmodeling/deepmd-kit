@@ -36,10 +36,10 @@ def test_neighbor_stat(place="cpu"):
 
     rcut = 6.0
 
-    coord = paddle.to_tensor(coord, "float32", place=place)
+    coord = paddle.to_tensor(coord, "float64", place=place)
     type = paddle.to_tensor(type, "int32", place=place)
-    natoms = paddle.to_tensor(natoms, "int64", place=place)
-    box = paddle.to_tensor(box, "float32", place=place)
+    natoms = paddle.to_tensor(natoms, "int32", place=place)
+    box = paddle.to_tensor(box, "float64", place=place)
     default_mesh = paddle.to_tensor(default_mesh, "int32", place=place)
 
     mn, dt = paddle_deepmd_lib.neighbor_stat(
@@ -59,8 +59,8 @@ def test_neighbor_stat(place="cpu"):
     # print(dt.shape, dt.min().item(), dt.max().item(), dt.mean().item(), dt.var().item())
     # print(dt_load.shape, dt_load.min().item(), dt_load.max().item(), dt_load.mean().item(), dt_load.var().item())
 
-    print(np.allclose(mn.numpy(), mn_load, 1e-1))
-    print(np.allclose(dt.numpy(), dt_load, 1e-1))
+    print(np.allclose(mn.numpy(), mn_load))
+    print(np.allclose(dt.numpy(), dt_load))
 
 
 def test_prod_env_mat_a(place="cpu"):
@@ -230,11 +230,7 @@ def test_prod_virial_se_a(place="cpu"):
     descrpt_deriv = paddle.to_tensor(descrpt_deriv, place=place)
     rij = paddle.to_tensor(rij, place=place)
     nlist = paddle.to_tensor(nlist, place=place)
-    # natoms = natoms.tolist()
-    natoms = paddle.to_tensor(natoms, place="cpu")  # [192, 192, 64 , 128]
-    # print(natoms.place)
-    # print(natoms.dtype)
-    # print(natoms)
+    natoms = paddle.to_tensor(natoms, place="cpu")
     virial, atom_virial = paddle_deepmd_lib.prod_virial_se_a(
         net_deriv_reshape,
         descrpt_deriv,
