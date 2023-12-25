@@ -788,7 +788,7 @@ void DeepPot::init(const std::string& model,
     dfparam = paddle_get_scalar<int64_t>("generated_tensor_9");
     daparam = paddle_get_scalar<int64_t>("generated_tensor_10");
     model_type = paddle_get_scalar<std::string>("generated_tensor_13");
-    ;
+
     inited = true;
     init_nbor = false;
     return;

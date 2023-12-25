@@ -451,7 +451,7 @@ class EnerSpinLoss(Loss):
                 name="l2_atom_ener_" + suffix,
             )
             if self.has_ae
-            else 0.9
+            else 0.0
         )
 
         atom_norm = 1.0 / (natoms[0])
