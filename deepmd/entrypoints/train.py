@@ -207,7 +207,7 @@ def _do_work(jdata: Dict[str, Any], run_opt: RunOptions, is_compress: bool = Fal
     dp_random.seed(seed)
 
     # setup data modifier
-    modifier = get_modifier(jdata["model"].get("modifier", None))  # None
+    modifier = get_modifier(jdata["model"].get("modifier", None))
 
     # check the multi-task mode
     multi_task_mode = "fitting_net_dict" in jdata["model"]
@@ -275,7 +275,6 @@ def _do_work(jdata: Dict[str, Any], run_opt: RunOptions, is_compress: bool = Fal
         origin_type_map = get_data(
             jdata["training"]["training_data"], rcut, None, modifier
         ).get_type_map()
-    print("model.build")
     model.build(train_data, stop_batch, origin_type_map=origin_type_map)
 
     if not is_compress:
@@ -377,7 +376,7 @@ def get_nbor_stat(jdata, rcut, one_type: bool = False):
     if type_map and len(type_map) == 0:
         type_map = None
     multi_task_mode = "data_dict" in jdata["training"]
-    if not multi_task_mode:  # here
+    if not multi_task_mode:
         train_data = get_data(
             jdata["training"]["training_data"], max_rcut, type_map, None
         )
@@ -465,7 +464,7 @@ def update_one_sel(jdata, descriptor):
         return descriptor
     rcut = descriptor["rcut"]
     tmp_sel = get_sel(jdata, rcut, one_type=descriptor["type"] in ("se_atten",))
-    sel = descriptor["sel"]  # [46, 92]
+    sel = descriptor["sel"]
     if isinstance(sel, int):
         # convert to list and finnally convert back to int
         sel = [sel]
@@ -496,7 +495,7 @@ def update_sel(jdata):
     if descrpt_data["type"] == "hybrid":
         for ii in range(len(descrpt_data["list"])):
             descrpt_data["list"][ii] = update_one_sel(jdata, descrpt_data["list"][ii])
-    else:  # here
+    else:
         descrpt_data = update_one_sel(jdata, descrpt_data)
     jdata["model"]["descriptor"] = descrpt_data
     return jdata

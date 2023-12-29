@@ -197,12 +197,12 @@ class DescrptSeA(paddle.nn.Layer):
         assert self.ntypes == len(self.sel_r)
         self.rcut_a = -1
         # numb of neighbors and numb of descrptors
-        self.nnei_a = np.cumsum(self.sel_a)[-1]  # 138 邻域内原子个数
-        self.nnei_r = np.cumsum(self.sel_r)[-1]  # 0
-        self.nnei = self.nnei_a + self.nnei_r  # 138
-        self.ndescrpt_a = self.nnei_a * 4  # 552 原子个数*4([s, s/x, s/y, s/z])
-        self.ndescrpt_r = self.nnei_r * 1  # 0
-        self.ndescrpt = self.ndescrpt_a + self.ndescrpt_r  # 552
+        self.nnei_a = np.cumsum(self.sel_a)[-1]
+        self.nnei_r = np.cumsum(self.sel_r)[-1]
+        self.nnei = self.nnei_a + self.nnei_r
+        self.ndescrpt_a = self.nnei_a * 4
+        self.ndescrpt_r = self.nnei_r * 1
+        self.ndescrpt = self.ndescrpt_a + self.ndescrpt_r
         self.useBN = False
         self.dstd = None
         self.davg = None
@@ -240,6 +240,7 @@ class DescrptSeA(paddle.nn.Layer):
         self.compress = False
         self.embedding_net_variables = None
         self.nei_type = np.repeat(np.arange(self.ntypes), self.sel_a)  # like a mask
+
         self.original_sel = None
         self.multi_task = multi_task
         if multi_task:
@@ -588,7 +589,7 @@ class DescrptSeA(paddle.nn.Layer):
             suffix=suffix,
             reuse=reuse,
             trainable=self.trainable,
-        )  # [1, all_atom, M1*M2], output_qmat: [1, all_atom, M1*3]
+        )
 
         return self.dout
 
@@ -702,11 +703,10 @@ class DescrptSeA(paddle.nn.Layer):
                     reuse=reuse,
                     trainable=trainable,
                     activation_fn=self.filter_activation_fn,
-                )  # [natom, M1*M2], qmat: [natom, M1, 3]
+                )
                 layer = paddle.reshape(
                     layer, [inputs.shape[0], natoms[2 + type_i], self.get_dim_out()]
                 )
-
                 qmat = paddle.reshape(
                     qmat,
                     [

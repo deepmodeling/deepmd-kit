@@ -391,7 +391,6 @@ class DPTrainer:
                 )
 
         # training
-        # tr_data = jdata["training"]
         self.fitting_weight = tr_data.get("fitting_weight", None)
         if self.multi_task_mode:
             self.fitting_key_list = []
@@ -412,7 +411,6 @@ class DPTrainer:
         self.tensorboard = self.run_opt.is_chief and tr_data.get("tensorboard", False)
         self.tensorboard_log_dir = tr_data.get("tensorboard_log_dir", "log")
         self.tensorboard_freq = tr_data.get("tensorboard_freq", 1)
-        # self.mixed_prec = tr_data.get("mixed_precision", None)
         if self.mixed_prec is not None:
             if (
                 self.mixed_prec["compute_prec"] not in ("float16", "bfloat16")

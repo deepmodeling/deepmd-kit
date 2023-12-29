@@ -502,7 +502,7 @@ class EnerFitting(nn.Layer):
         if (not self.uniform_seed) and (self.seed is not None):
             self.seed += self.seed_shift
 
-        return final_layer  # [natoms, 1]
+        return final_layer
 
     def forward(
         self,
@@ -621,18 +621,6 @@ class EnerFitting(nn.Layer):
             start_index = 0
             outs_list = []
             for type_i in range(ntypes_atom):
-                # final_layer = inputs
-                # for layer_j in range(type_i * ntypes_atom, (type_i + 1) * ntypes_atom):
-                #     final_layer = self.one_layers[layer_j](final_layer)
-                # final_layer = self.final_layers[type_i](final_layer)
-                # print(final_layer.shape)
-
-                # # concat the results
-                # if type_i < len(self.atom_ener) and self.atom_ener[type_i] is not None:
-                #     zero_layer = inputs_zero
-                #     for layer_j in range(type_i * ntypes_atom, (type_i + 1) * ntypes_atom):
-                #         zero_layer = self.one_layers[layer_j](zero_layer)
-                #     zero_layer = self.final_layers[type_i](zero_layer)
                 final_layer = self._build_lower(
                     start_index,
                     natoms[2 + type_i],
@@ -707,7 +695,7 @@ class EnerFitting(nn.Layer):
             ),
             [paddle.shape(inputs)[0], paddle.sum(natoms[2 : 2 + ntypes_atom]).item()],
         )
-        outs = outs + self.add_type  # 类型编码(类似于transformer的位置编码，每种类型自己有一个特征，加到原特征上)
+        outs = outs + self.add_type
         outs *= atype_filter
         self.atom_ener_after = outs
 

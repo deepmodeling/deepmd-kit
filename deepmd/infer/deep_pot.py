@@ -308,7 +308,7 @@ class DeepPot(DeepEval):
             mixed_type=mixed_type,
         )
 
-        if self.modifier_type is not None:  # 这里不会运行
+        if self.modifier_type is not None:
             if atomic:
                 raise RuntimeError("modifier does not support atomic modification")
             me, mf, mv = self.dm.eval(coords, cells, atom_types)

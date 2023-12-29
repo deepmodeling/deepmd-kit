@@ -337,7 +337,6 @@ class OneLayer(nn.Layer):
         self.seed = seed
         self.mixed_prec = mixed_prec
         self.final_layer = final_layer
-        # paddle.seed(seed)
 
         self.weight = self.create_parameter(
             shape=[in_features, out_features],

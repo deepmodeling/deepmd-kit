@@ -429,13 +429,13 @@ def cast_precision(func: Callable) -> Callable:
     The decorator should be used in a classmethod.
 
     The decorator will do the following thing:
-    (1) It casts input Tensors from `GLOBAL_TF_FLOAT_PRECISION`
+    (1) It casts input Tensors from `GLOBAL_PD_FLOAT_PRECISION`
     to precision defined by property `precision`.
     (2) It casts output Tensors from `precision` to
-    `GLOBAL_TF_FLOAT_PRECISION`.
+    `GLOBAL_PD_FLOAT_PRECISION`.
     (3) It checks inputs and outputs and only casts when
     input or output is a Tensor and its dtype matches
-    `GLOBAL_TF_FLOAT_PRECISION` and `precision`, respectively.
+    `GLOBAL_PD_FLOAT_PRECISION` and `precision`, respectively.
     If it does not match (e.g. it is an integer), the decorator
     will do nothing on it.
 

@@ -8,9 +8,6 @@ from typing import (
     Union,
 )
 
-# from deepmd.descriptor.descriptor import (
-#     Descriptor,
-# )
 import numpy as np
 
 import deepmd

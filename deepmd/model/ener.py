@@ -74,8 +74,6 @@ class EnerModel(Model, paddle.nn.Layer):
         sw_rmax: Optional[float] = None,
         spin: Optional[Spin] = None,
     ) -> None:
-        super().__init__()
-        # super(EnerModel, self).__init__(name_scope="EnerModel")
         """Constructor."""
         super().__init__()
         # descriptor
@@ -207,8 +205,7 @@ class EnerModel(Model, paddle.nn.Layer):
             input_dict,
             suffix=suffix,
             reuse=reuse,
-        )  # [1, all_atom, M1*M2]
-        # self.dout = dout
+        )
 
         if self.srtab is not None:
             nlist, rij, sel_a, sel_r = self.descrpt.get_nlist()
