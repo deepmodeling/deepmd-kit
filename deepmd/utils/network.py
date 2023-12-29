@@ -305,13 +305,13 @@ def variable_summaries(var: tf.Variable, name: str):
         tf.summary.scalar("min", tf.reduce_min(var))
         tf.summary.histogram("histogram", var)
 
-
+        
 def cast_to_dtype(x, dtype: paddle.dtype) -> paddle.Tensor:
     if x.dtype != dtype:
         return paddle.cast(x, dtype)
     return x
 
-
+  
 class OneLayer(nn.Layer):
     def __init__(
         self,
@@ -546,4 +546,5 @@ class EmbeddingNet(nn.Layer):
                 xx = hidden
         if self.mixed_prec is not None:
             xx = cast_to_dtype(xx, get_precision(self.mixed_prec["output_prec"]))
+
         return xx

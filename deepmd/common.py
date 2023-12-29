@@ -26,6 +26,7 @@ import yaml
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
     GLOBAL_PD_FLOAT_PRECISION,
+    GLOBAL_TF_FLOAT_PRECISION,
     op_module,
     paddle,
     tf,

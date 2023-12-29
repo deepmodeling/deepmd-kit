@@ -430,7 +430,7 @@ class DeepEval:
             name of tensor to get
         attr_name : Optional[str], optional
             if specified, class attribute with this name will be created and tensor will
-            be assigned to it, by default None.
+            be assigned to it, by default None
         """
         # do not use os.path.join as it doesn't work on Windows
         value = None

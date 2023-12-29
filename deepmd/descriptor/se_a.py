@@ -557,6 +557,7 @@ class DescrptSeA(paddle.nn.Layer):
         coord = paddle.reshape(coord_, [-1, natoms[1] * 3])
         box = paddle.reshape(box_, [-1, 9])
         atype = paddle.reshape(atype_, [-1, natoms[1]])
+
         (
             self.descrpt,
             self.descrpt_deriv,
@@ -705,6 +706,7 @@ class DescrptSeA(paddle.nn.Layer):
                 layer = paddle.reshape(
                     layer, [inputs.shape[0], natoms[2 + type_i], self.get_dim_out()]
                 )
+
                 qmat = paddle.reshape(
                     qmat,
                     [
