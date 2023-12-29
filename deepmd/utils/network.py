@@ -1,13 +1,20 @@
-from typing import Optional
+from typing import (
+    Optional,
+)
 
 import numpy as np
-from paddle import nn
+from paddle import (
+    nn,
+)
 
-from deepmd.common import get_precision
-from deepmd.env import GLOBAL_PD_FLOAT_PRECISION
-from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
-from deepmd.env import paddle
-from deepmd.env import tf
+from deepmd.common import (
+    get_precision,
+)
+from deepmd.env import (
+    GLOBAL_PD_FLOAT_PRECISION,
+    paddle,
+    tf,
+)
 
 
 def one_layer_rand_seed_shift():
@@ -305,7 +312,7 @@ def cast_to_dtype(x, dtype: paddle.dtype) -> paddle.Tensor:
     return x
 
 
-class OneLayer(paddle.nn.Layer):
+class OneLayer(nn.Layer):
     def __init__(
         self,
         in_features,
@@ -322,7 +329,7 @@ class OneLayer(paddle.nn.Layer):
         mixed_prec: Optional[dict] = None,
         final_layer=False,
     ):
-        super(OneLayer, self).__init__(name)
+        super().__init__(name)
         self.out_features = out_features
         self.activation_fn = activation_fn
         self.use_timestep = use_timestep
@@ -402,7 +409,7 @@ class OneLayer(paddle.nn.Layer):
         return hidden
 
 
-class EmbeddingNet(paddle.nn.Layer):
+class EmbeddingNet(nn.Layer):
     """Parameters
     ----------
     xx : Tensor

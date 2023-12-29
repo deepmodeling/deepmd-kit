@@ -122,9 +122,9 @@ std::vector<paddle::Tensor> ProdForceSeABackward(
     int n_a_sel,
     int n_r_sel) {
   if (net_deriv_tensor.place() == paddle::GPUPlace()) {
-    return ProdForceSeAOpCUDABackward(force_grad_tensor, net_deriv_tensor,
-                                      in_deriv_tensor, nlist_tensor,
-                                      natoms_tensor.copy_to(paddle::CPUPlace(), false), n_a_sel, n_r_sel);
+    return ProdForceSeAOpCUDABackward(
+        force_grad_tensor, net_deriv_tensor, in_deriv_tensor, nlist_tensor,
+        natoms_tensor.copy_to(paddle::CPUPlace(), false), n_a_sel, n_r_sel);
   } else if (net_deriv_tensor.place() == paddle::CPUPlace()) {
     return ProdForceSeAOpCPUBackward(force_grad_tensor, net_deriv_tensor,
                                      in_deriv_tensor, nlist_tensor,

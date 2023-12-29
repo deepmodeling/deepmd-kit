@@ -4,20 +4,32 @@ import ctypes
 import logging
 import os
 import platform
-from configparser import ConfigParser
-from importlib import import_module
-from importlib import reload
-from pathlib import Path
-from typing import TYPE_CHECKING
-from typing import Any
-from typing import Dict
-from typing import Tuple
+from configparser import (
+    ConfigParser,
+)
+from importlib import (
+    import_module,
+    reload,
+)
+from pathlib import (
+    Path,
+)
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Dict,
+    Tuple,
+)
 
 import numpy as np
-from packaging.version import Version
+from packaging.version import (
+    Version,
+)
 
 if TYPE_CHECKING:
-    from types import ModuleType
+    from types import (
+        ModuleType,
+    )
 
 
 def dlopen_library(module: str, filename: str):
@@ -360,11 +372,7 @@ def get_module(module_name: str) -> "ModuleType":
         raise FileNotFoundError(f"module {module_name} does not exist")
     else:
         try:
-            # module = tf.load_op_library(str(module_file))
-            import paddle_deepmd_lib
-            from paddle.utils import cpp_extension
-
-            module = paddle_deepmd_lib
+            import paddle_deepmd_lib as module
 
         except tf.errors.NotFoundError as e:
             # check CXX11_ABI_FLAG is compatiblity

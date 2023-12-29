@@ -1,4 +1,6 @@
-from paddle.utils import cpp_extension
+from paddle.utils import (
+    cpp_extension,
+)
 
 # NOTE: 请在本文件的目录下执行：python custom_op_install.py install，以安装自定义算子
 

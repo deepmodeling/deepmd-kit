@@ -1,13 +1,22 @@
-from abc import ABC
-from abc import abstractmethod
-from enum import Enum
-from typing import List
-from typing import Optional
-from typing import Union
+from abc import (
+    ABC,
+)
+from enum import (
+    Enum,
+)
+from typing import (
+    List,
+    Optional,
+    Union,
+)
 
-from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
-from deepmd.env import tf
-from deepmd.utils.graph import load_graph_def
+from deepmd.env import (
+    GLOBAL_TF_FLOAT_PRECISION,
+    tf,
+)
+from deepmd.utils.graph import (
+    load_graph_def,
+)
 
 
 class Model(ABC):

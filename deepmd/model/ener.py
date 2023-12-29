@@ -1,25 +1,35 @@
-from typing import TYPE_CHECKING
-from typing import List
-from typing import Optional
+from typing import (
+    TYPE_CHECKING,
+    List,
+    Optional,
+)
 
 import numpy as np
 
-from deepmd.env import MODEL_VERSION
-from deepmd.env import global_cvt_2_ener_float
-from deepmd.env import op_module
-from deepmd.env import paddle
-from deepmd.env import tf
-from deepmd.utils.pair_tab import PairTab
-from deepmd.utils.spin import Spin
+from deepmd.env import (
+    MODEL_VERSION,
+    paddle,
+    tf,
+)
+from deepmd.utils.pair_tab import (
+    PairTab,
+)
+from deepmd.utils.spin import (
+    Spin,
+)
 
-from .model import Model
-from .model_stat import make_stat_input
-from .model_stat import merge_sys_stat
+from .model import (
+    Model,
+)
+from .model_stat import (
+    make_stat_input,
+    merge_sys_stat,
+)
 
 if TYPE_CHECKING:
-    import paddle
+    import paddle  # noqa: F811
 
-    from deepmd.fit import ener
+    from deepmd.fit import ener  # noqa: F811
 
 
 class EnerModel(Model, paddle.nn.Layer):
@@ -67,6 +77,7 @@ class EnerModel(Model, paddle.nn.Layer):
         super().__init__()
         # super(EnerModel, self).__init__(name_scope="EnerModel")
         """Constructor."""
+        super().__init__()
         # descriptor
         self.descrpt = descrpt
         self.rcut = self.descrpt.get_rcut()
@@ -94,8 +105,7 @@ class EnerModel(Model, paddle.nn.Layer):
         else:
             self.srtab = None
 
-        # content of build below
-        self.t_tmap = " ".join(self.type_map)  # "Ni O"
+        self.t_tmap = " ".join(self.type_map)
         self.t_mt = self.model_type
         self.t_ver = str(MODEL_VERSION)
         # NOTE: workaround for string type is not supported in Paddle
@@ -138,7 +148,6 @@ class EnerModel(Model, paddle.nn.Layer):
             m_all_stat, protection=self.data_stat_protect, mixed_type=data.mixed_type
         )
         self._compute_output_stat(all_stat, mixed_type=data.mixed_type)
-        # self.bias_atom_e = data.compute_energy_shift(self.rcond)
 
     def _compute_input_stat(self, all_stat, protection=1e-2, mixed_type=False):
         if mixed_type:
@@ -187,22 +196,6 @@ class EnerModel(Model, paddle.nn.Layer):
 
         coord = paddle.reshape(coord_, [-1, natoms[1] * 3])
         atype = paddle.reshape(atype_, [-1, natoms[1]])
-        # input_dict["nframes"] = paddle.shape(coord)[0]  # 推理模型导出的时候注释掉这里，否则会报错
-
-        # type embedding if any
-        # if self.typeebd is not None:
-        #     type_embedding = self.typeebd.build(
-        #         self.ntypes,
-        #         reuse=reuse,
-        #         suffix=suffix,
-        #     )
-        #     input_dict["type_embedding"] = type_embedding
-        # spin if any
-        # if self.spin is not None:
-        #     type_spin = self.spin.build(
-        #         reuse=reuse,
-        #         suffix=suffix,
-        #     )
         input_dict["atype"] = atype_
 
         dout = self.descrpt(
@@ -212,8 +205,6 @@ class EnerModel(Model, paddle.nn.Layer):
             box,
             mesh,
             input_dict,
-            # frz_model=frz_model,
-            # ckpt_meta=ckpt_meta,
             suffix=suffix,
             reuse=reuse,
         )  # [1, all_atom, M1*M2]
@@ -228,6 +219,9 @@ class EnerModel(Model, paddle.nn.Layer):
         self.atom_ener = atom_ener
 
         if self.srtab is not None:
+            raise NotImplementedError(
+                f"srtab not implemented in {self.__class__.__name__}"
+            )
             # sw_lambda, sw_deriv = op_module.soft_min_switch(
             #     atype,
             #     rij,
@@ -260,9 +254,6 @@ class EnerModel(Model, paddle.nn.Layer):
             # )
             # atom_ener = tf.reshape(inv_sw_lambda, [-1]) * atom_ener
             # energy_raw = tab_atom_ener + atom_ener
-            raise NotImplementedError(
-                f"srtab not implemented in {self.__class__.__name__}"
-            )
         else:
             energy_raw = atom_ener  # [1, all_atoms]
 
@@ -283,10 +274,10 @@ class EnerModel(Model, paddle.nn.Layer):
 
         if self.srtab is not None:
             raise NotImplementedError()
-            sw_force = op_module.soft_min_force(
-                energy_diff, sw_deriv, nlist, natoms, n_a_sel=nnei_a, n_r_sel=nnei_r
-            )
-            force = force + sw_force + tab_force
+            # sw_force = op_module.soft_min_force(
+            #     energy_diff, sw_deriv, nlist, natoms, n_a_sel=nnei_a, n_r_sel=nnei_r
+            # )
+            # force = force + sw_force + tab_force
 
         force = paddle.reshape(force, [-1, 3 * natoms[1]])  # [1, all_atoms*3]
         if self.spin is not None:
@@ -301,21 +292,21 @@ class EnerModel(Model, paddle.nn.Layer):
 
         if self.srtab is not None:
             raise NotImplementedError()
-            sw_virial, sw_atom_virial = op_module.soft_min_virial(
-                energy_diff,
-                sw_deriv,
-                rij,
-                nlist,
-                natoms,
-                n_a_sel=nnei_a,
-                n_r_sel=nnei_r,
-            )
-            atom_virial = atom_virial + sw_atom_virial + tab_atom_virial
-            virial = (
-                virial
-                + sw_virial
-                + tf.sum(tf.reshape(tab_atom_virial, [-1, natoms[1], 9]), axis=1)
-            )
+            # sw_virial, sw_atom_virial = op_module.soft_min_virial(
+            #     energy_diff,
+            #     sw_deriv,
+            #     rij,
+            #     nlist,
+            #     natoms,
+            #     n_a_sel=nnei_a,
+            #     n_r_sel=nnei_r,
+            # )
+            # atom_virial = atom_virial + sw_atom_virial + tab_atom_virial
+            # virial = (
+            #     virial
+            #     + sw_virial
+            #     + tf.sum(tf.reshape(tab_atom_virial, [-1, natoms[1], 9]), axis=1)
+            # )
 
         virial = paddle.reshape(virial, [-1, 9], name="o_virial" + suffix)
         atom_virial = paddle.reshape(
@@ -323,13 +314,13 @@ class EnerModel(Model, paddle.nn.Layer):
         )
 
         model_dict = {}
-        model_dict["energy"] = energy  # [batch_size]
-        model_dict["force"] = force  # [batch_size, 576]
-        model_dict["virial"] = virial  # [batch_size, 9]
-        model_dict["atom_ener"] = energy_raw  # [batch_size, 192]
-        model_dict["atom_virial"] = atom_virial  # [batch_size, 1728]
-        model_dict["coord"] = coord  # [batch_size, 576]
-        model_dict["atype"] = atype  # [batch_size, 192]
+        model_dict["energy"] = energy
+        model_dict["force"] = force
+        model_dict["virial"] = virial
+        model_dict["atom_ener"] = energy_raw
+        model_dict["atom_virial"] = atom_virial
+        model_dict["coord"] = coord
+        model_dict["atype"] = atype
         return model_dict
 
     def init_variables(
@@ -370,13 +361,6 @@ class EnerModel(Model, paddle.nn.Layer):
         use_spin = self.spin.use_spin
         virtual_len = self.spin.virtual_len
         spin_norm = self.spin.spin_norm
-        # natoms_index = paddle.concat(
-        #     [
-        #         paddle.to_tensor([0]),
-        #         paddle.sum(natoms[2:])
-        #     ],
-        #     axis=0,
-        # )
         natoms_index = paddle.concat(
             [
                 paddle.to_tensor([0], dtype=natoms.dtype),
@@ -452,7 +436,8 @@ class EnerModel(Model, paddle.nn.Layer):
         loc_force = self.natoms_match(force, natoms)
         aatype = atype[0, :]
 
-        # TODO: paddle.unique和tf.unique的返回值顺序是不一致, 下面的代码实现不正确，需要修改
+        # FIXME: paddle.unique和tf.unique的返回值顺序是不一致, 下面的代码实现不正确，
+        # 在某些案例中需要修改
         ghost_atype = aatype[natoms[0] :]
         _, idx, ghost_natoms = paddle.unique(
             ghost_atype, return_index=True, return_counts=True
@@ -462,9 +447,6 @@ class EnerModel(Model, paddle.nn.Layer):
         idx_inv[idx] = paddle.arange(0, len(idx))
         ghost_natoms = ghost_natoms[idx_inv]
 
-        # ghost_natoms_index = [0] + paddle.cumsum(ghost_natoms).tolist()
-        # for i in range(len(ghost_natoms_index)):
-        #     ghost_natoms_index[i] +=  natoms[0].item()
         ghost_natoms_index = paddle.concat(
             [
                 paddle.to_tensor([0], dtype=ghost_natoms.dtype),

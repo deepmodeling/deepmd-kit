@@ -20,9 +20,9 @@ void neighbor_stat_cpu_forward_kernel(
     const int& nloc,
     const std::vector<int>& d_type,
     const std::vector<std::vector<int> >& d_nlist_r,
-    const int &ntypes,
-    const std::vector<compute_t> &d_coord3,
-    const int &max_nnei,
+    const int& ntypes,
+    const std::vector<compute_t>& d_coord3,
+    const int& max_nnei,
     int* max_nbor_size,
     double* min_nbor_dist) {
 #pragma omp parallel for
@@ -176,8 +176,8 @@ std::vector<paddle::Tensor> NeighborStatOpCPUForward(
       min_nbor_dist_shape, 10000.0, coord_tensor.dtype(), coord_tensor.place());
   double* min_nbor_dist = min_nbor_dist_tensor.data<double>();
 
-  neighbor_stat_cpu_forward_kernel(nloc, d_type, d_nlist_r, ntypes, d_coord3, MAX_NNEI,
-                                   max_nbor_size, min_nbor_dist);
+  neighbor_stat_cpu_forward_kernel(nloc, d_type, d_nlist_r, ntypes, d_coord3,
+                                   MAX_NNEI, max_nbor_size, min_nbor_dist);
   return {max_nbor_size_tensor, min_nbor_dist_tensor};
 }
 

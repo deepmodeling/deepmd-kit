@@ -8,22 +8,25 @@ https://blog.metaflow.fr/tensorflow-how-to-freeze-a-model-and-serve-it-with-a-py
 
 import json
 import logging
-from os.path import abspath
-from typing import List
-from typing import Optional
-from typing import Union
-
-import google.protobuf.message
+from typing import (
+    List,
+    Optional,
+    Union,
+)
 
 # load grad of force module
 import deepmd.op  # noqa: F401
-from deepmd.env import FITTING_NET_PATTERN
-from deepmd.env import REMOVE_SUFFIX_DICT
-from deepmd.env import tf
-from deepmd.nvnmd.entrypoints.freeze import save_weight
-from deepmd.utils.errors import GraphTooLargeError
-from deepmd.utils.graph import get_pattern_nodes_from_graph_def
-from deepmd.utils.sess import run_sess
+from deepmd.env import (
+    FITTING_NET_PATTERN,
+    REMOVE_SUFFIX_DICT,
+    tf,
+)
+from deepmd.utils.graph import (
+    get_pattern_nodes_from_graph_def,
+)
+from deepmd.utils.sess import (
+    run_sess,
+)
 
 __all__ = ["freeze"]
 
@@ -321,26 +324,16 @@ def freeze_graph(
 
     Parameters
     ----------
-    sess : tf.Session
-        The default session.
-    input_graph : tf.GraphDef
-        The input graph_def stored from the checkpoint.
-    input_node : List[str]
-        The expected nodes to freeze.
-    freeze_type : str
-        The model type to freeze.
-    modifier : Optional[str], optional
-        Modifier type if any, by default None.
-    out_graph_name : str
-        The output graph.
-    node_names : Optional[str], optional
-        Names of nodes to output, by default None.
-    out_suffix : str
-        The chosen suffix to freeze in the input_graph.
+    model_file : str
+        Location of the *.pdparams file
+    output : str
+        output file name
     """
     import paddle
 
-    from deepmd.infer import DeepPot
+    from deepmd.infer import (
+        DeepPot,
+    )
 
     dp = DeepPot(
         model_file,
@@ -348,7 +341,9 @@ def freeze_graph(
         default_tf_graph=False,
     )
     dp.model.eval()
-    from paddle.static import InputSpec
+    from paddle.static import (
+        InputSpec,
+    )
 
     st_model = paddle.jit.to_static(
         dp.model,
@@ -369,7 +364,7 @@ def freeze_graph(
         print(
             f"[{name}, {param.dtype}, {param.shape}] generated name in static_model is: {param.name}"
         )
-    # 跳过对program的裁剪，从而保留rcut、ntypes等不参与前向的参数，从而在C++端可以获取这些参数
+    # skip pruning for program so as to keep buffers into files
     skip_prune_program = True
     print(f"==>> Set skip_prune_program = {skip_prune_program}")
     paddle.jit.save(st_model, output, skip_prune_program=skip_prune_program)
@@ -454,103 +449,22 @@ def freeze_graph_multi(
 
 def freeze(
     *,
-    # checkpoint_folder: str,
     input_file: str,
     output: str,
-    # node_names: Optional[str] = None,
-    # nvnmd_weight: Optional[str] = None,
-    # united_model: bool = False,
     **kwargs,
 ):
     """Freeze the graph in supplied folder.
 
     Parameters
     ----------
-    checkpoint_folder : str
-        location of the folder with model
+    input_file : str
+        location of the *.pdparams file
     output : str
         output file name
-    node_names : Optional[str], optional
-        names of nodes to output, by default None
-    nvnmd_weight : Optional[str], optional
-        nvnmd weight file
-    united_model : bool
-        when in multi-task mode, freeze all nodes into one unit model
     **kwargs
         other arguments
     """
-    # We retrieve our checkpoint fullpath
-    # checkpoint = tf.train.get_checkpoint_state(checkpoint_folder)
-    # input_checkpoint = checkpoint.model_checkpoint_path
-
-    # # expand the output file to full path
-    # output_graph = abspath(output)
-
-    # # Before exporting our graph, we need to precise what is our output node
-    # # This is how TF decides what part of the Graph he has to keep
-    # # and what part it can dump
-    # # NOTE: this variable is plural, because you can have multiple output nodes
-    # # node_names = "energy_test,force_test,virial_test,t_rcut"
-
-    # # We clear devices to allow TensorFlow to control
-    # # on which device it will load operations
-    # clear_devices = True
-
-    # # We import the meta graph and retrieve a Saver
-    # try:
-    #     # In case paralle training
-    #     import horovod.tensorflow as _  # noqa: F401
-    # except ImportError:
-    #     pass
-    # saver = tf.train.import_meta_graph(
-    #     f"{input_checkpoint}.meta", clear_devices=clear_devices
-    # )
-
-    # # We retrieve the protobuf graph definition
-    # graph = tf.get_default_graph()
-    # try:
-    #     input_graph_def = graph.as_graph_def()
-    # except google.protobuf.message.DecodeError as e:
-    #     raise GraphTooLargeError(
-    #         "The graph size exceeds 2 GB, the hard limitation of protobuf."
-    #         " Then a DecodeError was raised by protobuf. You should "
-    #         "reduce the size of your model."
-    #     ) from e
-    # nodes = [n.name for n in input_graph_def.node]
-
-    # # We start a session and restore the graph weights
-    # with tf.Session() as sess:
-    #     saver.restore(sess, input_checkpoint)
-    #     model_type = run_sess(sess, "model_attr/model_type:0", feed_dict={}).decode(
-    #         "utf-8"
-    #     )
-    #     if "modifier_attr/type" in nodes:
-    #         modifier_type = run_sess(sess, "modifier_attr/type:0", feed_dict={}).decode(
-    #             "utf-8"
-    #         )
-    #     else:
-    #         modifier_type = None
-    #     if nvnmd_weight is not None:
-    #         save_weight(sess, nvnmd_weight)  # nvnmd
-    # if model_type != "multi_task":
     freeze_graph(
         input_file,
         output,
-        # sess,
-        # input_graph_def,
-        # nodes,
-        # model_type,
-        # modifier_type,
-        # output_graph,
-        # node_names,
     )
-    # else:
-    #     freeze_graph_multi(
-    #         sess,
-    #         input_graph_def,
-    #         nodes,
-    #         modifier_type,
-    #         output_graph,
-    #         node_names,
-    #         united_model=united_model,
-    #     )

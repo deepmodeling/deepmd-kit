@@ -1,49 +1,65 @@
 repos:
-  - repo: https://github.com/PyCQA/isort
-    rev: 5.11.5
+-   repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.4.0
     hooks:
-      - id: isort
-        args: ["--multi-line=7", "--sl"]
-
-  - repo: https://github.com/psf/black
-    rev: 22.3.0
+    -   id: trailing-whitespace
+        exclude: "^.+\\.pbtxt$"
+    -   id: end-of-file-fixer
+        exclude: "^.+\\.pbtxt$"
+    -   id: check-yaml
+    #-   id: check-json
+    -   id: check-added-large-files
+    -   id: check-merge-conflict
+    -   id: check-symlinks
+    -   id: check-toml
+# Python
+-   repo: https://github.com/psf/black
+    rev: 23.3.0
     hooks:
-      - id: black
-
-#   - repo: https://github.com/charliermarsh/ruff-pre-commit
-#     rev: 'v0.0.272'
+    -   id: black-jupyter
+-   repo: https://github.com/PyCQA/isort
+    rev: 5.12.0
+    hooks:
+    - id: isort
+      files: \.py$
+-   repo: https://github.com/charliermarsh/ruff-pre-commit
+    # Ruff version.
+    rev: v0.0.269
+    hooks:
+    - id: ruff
+      args: ["--fix"]
+# numpydoc
+-   repo: https://github.com/Carreau/velin
+    rev: 0.0.12
+    hooks:
+    - id: velin
+      args: ["--write"]
+# Python inside docs
+-   repo: https://github.com/asottile/blacken-docs
+    rev: 1.13.0
+    hooks:
+    -   id: blacken-docs
+# C++
+-   repo: https://github.com/pre-commit/mirrors-clang-format
+    rev: v16.0.4
+    hooks:
+    -   id: clang-format
+        exclude: ^source/3rdparty|source/lib/src/cuda/cudart/.+\.inc
+# CSS
+# -   repo: https://github.com/pre-commit/mirrors-csslint
+#     rev: v1.0.5
 #     hooks:
-#       - id: ruff
-
-  - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: a11d9314b22d8f8c7556443875b731ef05965464
-    hooks:
-      - id: check-merge-conflict
-      - id: check-symlinks
-      - id: detect-private-key
-        files: (?!.*paddle)^.*$
-      - id: end-of-file-fixer
-        files: \.md$
-      - id: trailing-whitespace
-        files: \.md$
-
-  - repo: https://github.com/Lucas-C/pre-commit-hooks
-    rev: v1.0.1
-    hooks:
-      - id: forbid-crlf
-        files: \.md$
-      - id: remove-crlf
-        files: \.md$
-      - id: forbid-tabs
-        files: \.md$
-      - id: remove-tabs
-        files: \.md$
-
-#   - repo: local
-#     hooks:
-#       - id: clang-format
-#         name: clang-format
-#         description: Format files with ClangFormat
-#         entry: bash .clang_format.hook -i
-#         language: system
-#         files: \.(c|cc|cxx|cpp|cu|h|hpp|hxx|cuh|proto)$
+#     -   id: csslint
+# Shell
+- repo: https://github.com/scop/pre-commit-shfmt
+  rev: v3.6.0-2
+  hooks:
+    - id: shfmt
+# CMake
+- repo: https://github.com/cheshirekow/cmake-format-precommit
+  rev: v0.6.13
+  hooks:
+    - id: cmake-format
+    #- id: cmake-lint
+ci:
+  autoupdate_branch: devel

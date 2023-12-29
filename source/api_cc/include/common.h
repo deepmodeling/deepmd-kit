@@ -199,8 +199,9 @@ VT session_get_scalar(tensorflow::Session* session,
  * @return The value of the tensor.
  **/
 template <typename VT>
-VT predictor_get_scalar(const std::shared_ptr<paddle_infer::Predictor>& predictor,
-                        const std::string name_);
+VT predictor_get_scalar(
+    const std::shared_ptr<paddle_infer::Predictor>& predictor,
+    const std::string name_);
 
 /**
  * @brief Get the vector of a tensor.

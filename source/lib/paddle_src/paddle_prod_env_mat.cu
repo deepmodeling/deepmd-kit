@@ -2,6 +2,10 @@
 #include <cub/block/block_radix_sort.cuh>
 #include <cub/block/block_store.cuh>
 #include <type_traits>
+<<<<<<< HEAD
+=======
+
+>>>>>>> paddle2
 #include "paddle/extension.h"
 
 #define GOOGLE_CUDA 1
@@ -17,7 +21,7 @@
 #include "region.h"
 #include "utilities.h"
 
-typedef long long int_64;
+    typedef long long int_64;
 
 #define CHECK_INPUT(x) PD_CHECK(x.is_gpu(), #x " must be a GPU Tensor.")
 #define CHECK_INPUT_ON_CPU(x) PD_CHECK(x.is_cpu(), #x " must be a CPU Tensor.")
@@ -965,17 +969,14 @@ static int _norm_copy_coord_gpu(std::vector<paddle::Tensor>* tensor_list,
   // Tensor FPTYPE_temp;
   std::vector<int64_t> FPTYPE_temp_shape{nall * 3};
 
-
   // use type trait to determine the data type
   paddle::Tensor tmp_coord_tensor;
   if (std::is_same<FPTYPE, float>::value) {
     tmp_coord_tensor = paddle::empty(
-      FPTYPE_temp_shape, paddle::DataType::FLOAT32, paddle::GPUPlace()
-    );
+        FPTYPE_temp_shape, paddle::DataType::FLOAT32, paddle::GPUPlace());
   } else if (std::is_same<FPTYPE, double>::value) {
     tmp_coord_tensor = paddle::empty(
-      FPTYPE_temp_shape, paddle::DataType::FLOAT64, paddle::GPUPlace()
-    );
+        FPTYPE_temp_shape, paddle::DataType::FLOAT64, paddle::GPUPlace());
   } else {
     PD_THROW("invalid data type");
   }

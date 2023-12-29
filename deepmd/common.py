@@ -2,29 +2,37 @@
 
 import json
 import warnings
-from functools import wraps
-from pathlib import Path
-from typing import TYPE_CHECKING
-from typing import Any
-from typing import Callable
-from typing import Dict
-from typing import List
-from typing import Optional
-from typing import TypeVar
-from typing import Union
+from functools import (
+    wraps,
+)
+from pathlib import (
+    Path,
+)
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    TypeVar,
+    Union,
+)
 
 import numpy as np
 import tensorflow
 import yaml
-from tensorflow.python.framework import tensor_util
 
-from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
-from deepmd.env import GLOBAL_PD_FLOAT_PRECISION
-from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
-from deepmd.env import op_module
-from deepmd.env import paddle
-from deepmd.env import tf
-from deepmd.utils.path import DPPath
+from deepmd.env import (
+    GLOBAL_NP_FLOAT_PRECISION,
+    GLOBAL_PD_FLOAT_PRECISION,
+    op_module,
+    paddle,
+    tf,
+)
+from deepmd.utils.path import (
+    DPPath,
+)
 
 if TYPE_CHECKING:
     _DICT_VAL = TypeVar("_DICT_VAL")

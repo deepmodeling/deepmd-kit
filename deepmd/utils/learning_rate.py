@@ -1,10 +1,15 @@
-from typing import Optional
+from typing import (
+    Optional,
+)
 
 import numpy as np
-from paddle.optimizer import lr
+from paddle.optimizer import (
+    lr,
+)
 
-from deepmd.env import paddle
-from deepmd.env import tf
+from deepmd.env import (
+    tf,
+)
 
 
 class LearningRateExp:
@@ -87,7 +92,6 @@ class LearningRateExp:
                 np.log(self.stop_lr_ / self.start_lr_) / (stop_step / self.decay_steps_)
             )
 
-        # print("decay_steps_ = ", self.decay_steps_)
         return lr.ExponentialDecay(
             self.start_lr_,
             gamma=self.decay_rate_,

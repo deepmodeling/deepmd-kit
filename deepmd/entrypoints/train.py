@@ -6,31 +6,56 @@ Can handle local or distributed training.
 import json
 import logging
 import time
-from typing import Any
-from typing import Dict
-from typing import Optional
+from typing import (
+    Any,
+    Dict,
+    Optional,
+)
 
-from deepmd.common import data_requirement
-from deepmd.common import expand_sys_str
-from deepmd.common import j_loader
-from deepmd.common import j_must_have
-from deepmd.env import GLOBAL_ENER_FLOAT_PRECISION
-from deepmd.env import reset_default_tf_session_config
-from deepmd.env import tf
-from deepmd.infer.data_modifier import DipoleChargeModifier
-from deepmd.train.run_options import BUILD
-from deepmd.train.run_options import CITATION
-from deepmd.train.run_options import WELCOME
-from deepmd.train.run_options import RunOptions
-from deepmd.train.trainer import DPTrainer
+from deepmd.common import (
+    data_requirement,
+    expand_sys_str,
+    j_loader,
+    j_must_have,
+)
+from deepmd.env import (
+    reset_default_tf_session_config,
+    tf,
+)
+from deepmd.infer.data_modifier import (
+    DipoleChargeModifier,
+)
+from deepmd.train.run_options import (
+    BUILD,
+    CITATION,
+    WELCOME,
+    RunOptions,
+)
+from deepmd.train.trainer import (
+    DPTrainer,
+)
 from deepmd.utils import random as dp_random
-from deepmd.utils.argcheck import normalize
-from deepmd.utils.compat import update_deepmd_input
-from deepmd.utils.data_system import DeepmdDataSystem
-from deepmd.utils.finetune import replace_model_params_with_pretrained_model
-from deepmd.utils.multi_init import replace_model_params_with_frz_multi_model
-from deepmd.utils.neighbor_stat import NeighborStat
-from deepmd.utils.path import DPPath
+from deepmd.utils.argcheck import (
+    normalize,
+)
+from deepmd.utils.compat import (
+    update_deepmd_input,
+)
+from deepmd.utils.data_system import (
+    DeepmdDataSystem,
+)
+from deepmd.utils.finetune import (
+    replace_model_params_with_pretrained_model,
+)
+from deepmd.utils.multi_init import (
+    replace_model_params_with_frz_multi_model,
+)
+from deepmd.utils.neighbor_stat import (
+    NeighborStat,
+)
+from deepmd.utils.path import (
+    DPPath,
+)
 
 __all__ = ["train"]
 
@@ -394,15 +419,6 @@ def get_nbor_stat(jdata, rcut, one_type: bool = False):
 
     min_nbor_dist, max_nbor_size = neistat.get_stat(train_data)
 
-    # moved from traier.py as duplicated
-    # TODO: this is a simple fix but we should have a clear
-    #       architecture to call neighbor stat
-    # tf.constant(
-    #     min_nbor_dist,
-    #     name="train_attr/min_nbor_dist",
-    #     dtype=GLOBAL_ENER_FLOAT_PRECISION,
-    # )
-    # tf.constant(max_nbor_size, name="train_attr/max_nbor_size", dtype=tf.int32)
     return min_nbor_dist, max_nbor_size
 
 
@@ -448,9 +464,7 @@ def update_one_sel(jdata, descriptor):
     if descriptor["type"] == "loc_frame":
         return descriptor
     rcut = descriptor["rcut"]
-    tmp_sel = get_sel(
-        jdata, rcut, one_type=descriptor["type"] in ("se_atten",)
-    )  # [38 72]，每个原子截断半径内，最多的邻域原子个数
+    tmp_sel = get_sel(jdata, rcut, one_type=descriptor["type"] in ("se_atten",))
     sel = descriptor["sel"]  # [46, 92]
     if isinstance(sel, int):
         # convert to list and finnally convert back to int

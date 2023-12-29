@@ -1,13 +1,23 @@
-from typing import List
-from typing import Optional
-from typing import Union
+from typing import (
+    List,
+    Optional,
+    Union,
+)
 
-from deepmd.common import get_activation_func
-from deepmd.common import get_precision
-from deepmd.env import paddle
-from deepmd.env import tf
-from deepmd.utils.graph import get_type_embedding_net_variables_from_graph_def
-from deepmd.utils.network import embedding_net
+from deepmd.common import (
+    get_activation_func,
+    get_precision,
+)
+from deepmd.env import (
+    paddle,
+    tf,
+)
+from deepmd.utils.graph import (
+    get_type_embedding_net_variables_from_graph_def,
+)
+from deepmd.utils.network import (
+    embedding_net,
+)
 
 
 def embed_atom_type(
