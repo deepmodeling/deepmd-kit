@@ -2,11 +2,15 @@ import os
 import unittest
 
 import numpy as np
-from common import tests_path
+from common import (
+    tests_path,
+)
 
-from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
-from deepmd.env import op_module
-from deepmd.env import tf
+from deepmd.env import (
+    GLOBAL_NP_FLOAT_PRECISION,
+    op_module,
+    tf,
+)
 
 
 class TestOpAddFltNvnmd(tf.test.TestCase):

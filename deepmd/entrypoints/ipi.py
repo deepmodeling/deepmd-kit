@@ -2,9 +2,13 @@
 import os
 import subprocess
 import sys
-from typing import List
+from typing import (
+    List,
+)
 
-from deepmd.lmp import get_op_dir
+from deepmd.lmp import (
+    get_op_dir,
+)
 
 ROOT_DIR = get_op_dir()
 

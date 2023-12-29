@@ -1,10 +1,18 @@
-from typing import Tuple
+from typing import (
+    Tuple,
+)
 
-from deepmd.env import tf
-from deepmd.utils.graph import get_embedding_net_variables_from_graph_def
-from deepmd.utils.graph import get_tensor_by_name_from_graph
+from deepmd.env import (
+    tf,
+)
+from deepmd.utils.graph import (
+    get_embedding_net_variables_from_graph_def,
+    get_tensor_by_name_from_graph,
+)
 
-from .descriptor import Descriptor
+from .descriptor import (
+    Descriptor,
+)
 
 
 class DescrptSe(Descriptor):

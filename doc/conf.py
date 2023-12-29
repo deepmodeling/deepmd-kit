@@ -12,11 +12,17 @@
 #
 import os
 import sys
-from datetime import date
+from datetime import (
+    date,
+)
 
-from deepmd.common import ACTIVATION_FN_DICT
-from deepmd.common import PRECISION_DICT
-from deepmd.utils.argcheck import list_to_doc
+from deepmd.common import (
+    ACTIVATION_FN_DICT,
+    PRECISION_DICT,
+)
+from deepmd.utils.argcheck import (
+    list_to_doc,
+)
 
 sys.path.append(os.path.dirname(__file__))
 import sphinx_contrib_exhale_multiproject  # noqa: F401
@@ -121,7 +127,9 @@ author = "DeepModeling"
 def run_apidoc(_):
     import sys
 
-    from sphinx.ext.apidoc import main
+    from sphinx.ext.apidoc import (
+        main,
+    )
 
     sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
     cur_dir = os.path.abspath(os.path.dirname(__file__))

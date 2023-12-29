@@ -1,8 +1,10 @@
-from . import data
-from . import descriptor
-from . import entrypoints
-from . import fit
-from . import utils
+from . import (
+    data,
+    descriptor,
+    entrypoints,
+    fit,
+    utils,
+)
 
 __all__ = [
     "data",

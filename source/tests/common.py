@@ -8,9 +8,13 @@ import dpdata
 import numpy as np
 
 from deepmd.common import j_loader as dp_j_loader
-from deepmd.entrypoints.main import main
-from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
-from deepmd.env import tf
+from deepmd.entrypoints.main import (
+    main,
+)
+from deepmd.env import (
+    GLOBAL_NP_FLOAT_PRECISION,
+    tf,
+)
 from deepmd.utils import random as dp_random
 
 if GLOBAL_NP_FLOAT_PRECISION == np.float32:

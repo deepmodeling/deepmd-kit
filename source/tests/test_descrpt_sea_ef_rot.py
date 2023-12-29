@@ -2,12 +2,16 @@ import unittest
 
 import numpy as np
 
-from deepmd.descriptor import DescrptSeA
-from deepmd.descriptor import DescrptSeAEfLower
-from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
-from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
-from deepmd.env import op_module
-from deepmd.env import tf
+from deepmd.descriptor import (
+    DescrptSeA,
+    DescrptSeAEfLower,
+)
+from deepmd.env import (
+    GLOBAL_NP_FLOAT_PRECISION,
+    GLOBAL_TF_FLOAT_PRECISION,
+    op_module,
+    tf,
+)
 
 
 class TestEfRot(tf.test.TestCase):

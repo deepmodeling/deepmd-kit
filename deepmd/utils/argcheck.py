@@ -1,18 +1,28 @@
 import json
 import logging
-from typing import Callable
-from typing import List
-from typing import Optional
+from typing import (
+    Callable,
+    List,
+    Optional,
+)
 
-from dargs import Argument
-from dargs import ArgumentEncoder
-from dargs import Variant
-from dargs import dargs
+from dargs import (
+    Argument,
+    ArgumentEncoder,
+    Variant,
+    dargs,
+)
 
-from deepmd.common import ACTIVATION_FN_DICT
-from deepmd.common import PRECISION_DICT
-from deepmd.nvnmd.utils.argcheck import nvnmd_args
-from deepmd.utils.plugin import Plugin
+from deepmd.common import (
+    ACTIVATION_FN_DICT,
+    PRECISION_DICT,
+)
+from deepmd.nvnmd.utils.argcheck import (
+    nvnmd_args,
+)
+from deepmd.utils.plugin import (
+    Plugin,
+)
 
 log = logging.getLogger(__name__)
 

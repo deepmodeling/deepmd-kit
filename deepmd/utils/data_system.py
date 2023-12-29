@@ -1,14 +1,20 @@
 import collections
 import logging
 import warnings
-from typing import List
-from typing import Optional
+from typing import (
+    List,
+    Optional,
+)
 
 import numpy as np
 
-from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
+from deepmd.env import (
+    GLOBAL_NP_FLOAT_PRECISION,
+)
 from deepmd.utils import random as dp_random
-from deepmd.utils.data import DeepmdData
+from deepmd.utils.data import (
+    DeepmdData,
+)
 
 log = logging.getLogger(__name__)
 

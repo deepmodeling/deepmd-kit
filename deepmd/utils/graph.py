@@ -1,16 +1,24 @@
 import re
-from typing import Dict
-from typing import Tuple
+from typing import (
+    Dict,
+    Tuple,
+)
 
 import numpy as np
 
-from deepmd.env import ATTENTION_LAYER_PATTERN
-from deepmd.env import EMBEDDING_NET_PATTERN
-from deepmd.env import FITTING_NET_PATTERN
-from deepmd.env import TYPE_EMBEDDING_PATTERN
-from deepmd.env import tf
-from deepmd.utils.errors import GraphWithoutTensorError
-from deepmd.utils.sess import run_sess
+from deepmd.env import (
+    ATTENTION_LAYER_PATTERN,
+    EMBEDDING_NET_PATTERN,
+    FITTING_NET_PATTERN,
+    TYPE_EMBEDDING_PATTERN,
+    tf,
+)
+from deepmd.utils.errors import (
+    GraphWithoutTensorError,
+)
+from deepmd.utils.sess import (
+    run_sess,
+)
 
 
 # TODO (JZ): I think in this file we can merge some duplicated lines into one method...

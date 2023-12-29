@@ -18,9 +18,7 @@
 #include "region.h"
 #include "utilities.h"
 
-
 typedef long long int_64;
-
 
 #define CHECK_INPUT(x) PD_CHECK(x.is_gpu(), #x " must be a GPU Tensor.")
 #define CHECK_INPUT_ON_CPU(x) PD_CHECK(x.is_cpu(), #x " must be a CPU Tensor.")

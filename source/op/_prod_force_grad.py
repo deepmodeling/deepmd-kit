@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 """Gradients for prod force."""
 
-from tensorflow.python.framework import ops
+from tensorflow.python.framework import (
+    ops,
+)
 
-from deepmd.env import op_grads_module
+from deepmd.env import (
+    op_grads_module,
+)
 
 
 @ops.RegisterGradient("ProdForce")

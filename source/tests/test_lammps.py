@@ -1,9 +1,13 @@
 import os
 import subprocess
 import unittest
-from pathlib import Path
+from pathlib import (
+    Path,
+)
 
-from deepmd.utils.convert import convert_pbtxt_to_pb
+from deepmd.utils.convert import (
+    convert_pbtxt_to_pb,
+)
 
 
 @unittest.skipIf(

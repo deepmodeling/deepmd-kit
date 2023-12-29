@@ -1,17 +1,29 @@
-from typing import List
-from typing import Optional
+from typing import (
+    List,
+    Optional,
+)
 
 import numpy as np
 
-from deepmd.common import add_data_requirement
-from deepmd.env import GLOBAL_TF_FLOAT_PRECISION
-from deepmd.env import op_module
-from deepmd.env import tf
-from deepmd.utils.network import embedding_net
-from deepmd.utils.network import one_layer
+from deepmd.common import (
+    add_data_requirement,
+)
+from deepmd.env import (
+    GLOBAL_TF_FLOAT_PRECISION,
+    op_module,
+    tf,
+)
+from deepmd.utils.network import (
+    embedding_net,
+    one_layer,
+)
 
-from .descriptor import Descriptor
-from .se_a import DescrptSeA
+from .descriptor import (
+    Descriptor,
+)
+from .se_a import (
+    DescrptSeA,
+)
 
 
 @Descriptor.register("se_a_tpe")

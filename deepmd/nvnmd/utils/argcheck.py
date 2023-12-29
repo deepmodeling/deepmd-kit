@@ -1,4 +1,6 @@
-from dargs import Argument
+from dargs import (
+    Argument,
+)
 
 
 def nvnmd_args():

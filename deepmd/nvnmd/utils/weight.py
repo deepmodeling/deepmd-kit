@@ -1,6 +1,8 @@
 import logging
 
-from deepmd.env import tf
+from deepmd.env import (
+    tf,
+)
 
 log = logging.getLogger(__name__)
 

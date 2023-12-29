@@ -2,17 +2,27 @@
 
 import logging
 import os
-from pathlib import Path
-from typing import TYPE_CHECKING
-from typing import List
-from typing import Optional
+from pathlib import (
+    Path,
+)
+from typing import (
+    TYPE_CHECKING,
+    List,
+    Optional,
+)
 
-from deepmd.cluster import get_resource
-from deepmd.env import GLOBAL_CONFIG
-from deepmd.env import get_tf_default_nthreads
-from deepmd.env import global_float_prec
-from deepmd.env import tf
-from deepmd.loggers import set_log_handles
+from deepmd.cluster import (
+    get_resource,
+)
+from deepmd.env import (
+    GLOBAL_CONFIG,
+    get_tf_default_nthreads,
+    global_float_prec,
+    tf,
+)
+from deepmd.loggers import (
+    set_log_handles,
+)
 
 if TYPE_CHECKING:
     import horovod.tensorflow as HVD

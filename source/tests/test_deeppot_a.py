@@ -3,19 +3,27 @@ import shutil
 import unittest
 
 import numpy as np
-from common import run_dp
-from common import tests_path
+from common import (
+    run_dp,
+    tests_path,
+)
 
-from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
-from deepmd.env import MODEL_VERSION
-from deepmd.infer import DeepPot
-from deepmd.utils.convert import convert_dp10_to_dp11
-from deepmd.utils.convert import convert_dp012_to_dp10
-from deepmd.utils.convert import convert_dp12_to_dp13
-from deepmd.utils.convert import convert_dp13_to_dp20
-from deepmd.utils.convert import convert_dp20_to_dp21
-from deepmd.utils.convert import convert_pbtxt_to_pb
-from deepmd.utils.convert import detect_model_version
+from deepmd.env import (
+    GLOBAL_NP_FLOAT_PRECISION,
+    MODEL_VERSION,
+)
+from deepmd.infer import (
+    DeepPot,
+)
+from deepmd.utils.convert import (
+    convert_dp10_to_dp11,
+    convert_dp012_to_dp10,
+    convert_dp12_to_dp13,
+    convert_dp13_to_dp20,
+    convert_dp20_to_dp21,
+    convert_pbtxt_to_pb,
+    detect_model_version,
+)
 
 if GLOBAL_NP_FLOAT_PRECISION == np.float32:
     default_places = 4
@@ -664,9 +672,13 @@ class TestDeepPotALargeBoxNoPBC(unittest.TestCase):
         np.testing.assert_almost_equal(vv.ravel(), expected_sv.ravel(), default_places)
 
     def test_ase(self):
-        from ase import Atoms
+        from ase import (
+            Atoms,
+        )
 
-        from deepmd.calculator import DP
+        from deepmd.calculator import (
+            DP,
+        )
 
         water = Atoms(
             "OHHOHH",

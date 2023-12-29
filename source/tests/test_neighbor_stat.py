@@ -4,7 +4,9 @@ import unittest
 import dpdata
 import numpy as np
 
-from deepmd.entrypoints.neighbor_stat import neighbor_stat
+from deepmd.entrypoints.neighbor_stat import (
+    neighbor_stat,
+)
 
 
 def gen_sys(nframes):
