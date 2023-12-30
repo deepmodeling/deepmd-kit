@@ -252,7 +252,7 @@ class EnerModel(Model, paddle.nn.Layer):
             # atom_ener = tf.reshape(inv_sw_lambda, [-1]) * atom_ener
             # energy_raw = tab_atom_ener + atom_ener
         else:
-            energy_raw = atom_ener
+            energy_raw = atom_ener  # [1, all_atoms]
 
         nloc_atom = (
             natoms[0]

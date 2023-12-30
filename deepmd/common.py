@@ -22,14 +22,10 @@ from typing import (
 import numpy as np
 import tensorflow
 import yaml
-from tensorflow.python.framework import (
-    tensor_util,
-)
 
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
     GLOBAL_PD_FLOAT_PRECISION,
-    GLOBAL_TF_FLOAT_PRECISION,
     op_module,
     paddle,
     tf,
@@ -317,7 +313,7 @@ def get_activation_func(
     return ACTIVATION_FN_DICT[activation_fn]
 
 
-def get_precision(precision: "_PRECISION") -> Any:
+def get_precision(precision: "_PRECISION") -> paddle.dtype:
     """Convert str to TF DType constant.
 
     Parameters
@@ -392,8 +388,8 @@ def get_np_precision(precision: "_PRECISION") -> np.dtype:
 
 
 def safe_cast_tensor(
-    input: tf.Tensor, from_precision: tf.DType, to_precision: tf.DType
-) -> tf.Tensor:
+    input: paddle.Tensor, from_precision: paddle.dtype, to_precision: paddle.dtype
+) -> paddle.Tensor:
     """Convert a Tensor from a precision to another precision.
 
     If input is not a Tensor or without the specific precision, the method will not
@@ -413,8 +409,16 @@ def safe_cast_tensor(
     tf.Tensor
         casted Tensor
     """
-    if tensor_util.is_tensor(input) and input.dtype == from_precision:
-        return tf.cast(input, to_precision)
+    assert isinstance(
+        from_precision, paddle.dtype
+    ), f"type of from_precision is {type(from_precision)}"
+    assert isinstance(
+        to_precision, paddle.dtype
+    ), f"type of from_precision is {type(to_precision)}"
+    if paddle.is_tensor(input):
+        if input.dtype == from_precision and input.dtype != to_precision:
+            return paddle.cast(input, to_precision)
+        return input
     return input
 
 
@@ -425,13 +429,13 @@ def cast_precision(func: Callable) -> Callable:
     The decorator should be used in a classmethod.
 
     The decorator will do the following thing:
-    (1) It casts input Tensors from `GLOBAL_TF_FLOAT_PRECISION`
+    (1) It casts input Tensors from `GLOBAL_PD_FLOAT_PRECISION`
     to precision defined by property `precision`.
     (2) It casts output Tensors from `precision` to
-    `GLOBAL_TF_FLOAT_PRECISION`.
+    `GLOBAL_PD_FLOAT_PRECISION`.
     (3) It checks inputs and outputs and only casts when
     input or output is a Tensor and its dtype matches
-    `GLOBAL_TF_FLOAT_PRECISION` and `precision`, respectively.
+    `GLOBAL_PD_FLOAT_PRECISION` and `precision`, respectively.
     If it does not match (e.g. it is an integer), the decorator
     will do nothing on it.
 
@@ -459,22 +463,22 @@ def cast_precision(func: Callable) -> Callable:
         returned_tensor = func(
             self,
             *[
-                safe_cast_tensor(vv, GLOBAL_TF_FLOAT_PRECISION, self.precision)
+                safe_cast_tensor(vv, GLOBAL_PD_FLOAT_PRECISION, self.precision)
                 for vv in args
             ],
             **{
-                kk: safe_cast_tensor(vv, GLOBAL_TF_FLOAT_PRECISION, self.precision)
+                kk: safe_cast_tensor(vv, GLOBAL_PD_FLOAT_PRECISION, self.precision)
                 for kk, vv in kwargs.items()
             },
         )
         if isinstance(returned_tensor, tuple):
             return tuple(
-                safe_cast_tensor(vv, self.precision, GLOBAL_TF_FLOAT_PRECISION)
+                safe_cast_tensor(vv, self.precision, GLOBAL_PD_FLOAT_PRECISION)
                 for vv in returned_tensor
             )
         else:
             return safe_cast_tensor(
-                returned_tensor, self.precision, GLOBAL_TF_FLOAT_PRECISION
+                returned_tensor, self.precision, GLOBAL_PD_FLOAT_PRECISION
             )
 
     return wrapper

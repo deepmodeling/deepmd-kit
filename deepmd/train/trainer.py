@@ -95,6 +95,10 @@ class DPTrainer:
         self.is_compress = is_compress
 
     def _init_param(self, jdata):
+        tr_data = jdata["training"]
+        self.mixed_prec = tr_data.get("mixed_precision", None)
+        if self.mixed_prec is not None:
+            log.info("mixed precision is enabled")
         # model config
         model_param = j_must_have(jdata, "model")
         self.multi_task_mode = "fitting_net_dict" in model_param
@@ -148,6 +152,9 @@ class DPTrainer:
         if descrpt_param["type"] in ["se_e2_a", "se_a", "se_e2_r", "se_r", "hybrid"]:
             descrpt_param["spin"] = self.spin
         descrpt_param.pop("type")
+        descrpt_param["mixed_prec"] = self.mixed_prec
+        if descrpt_param["mixed_prec"] is not None:
+            descrpt_param["precision"]: str = self.mixed_prec["output_prec"]
         self.descrpt = deepmd.descriptor.se_a.DescrptSeA(**descrpt_param)
 
         # fitting net
@@ -158,8 +165,12 @@ class DPTrainer:
             if fitting_type == "ener":
                 fitting_param["spin"] = self.spin
                 fitting_param.pop("type")
+            fitting_param["mixed_prec"] = self.mixed_prec
+            if fitting_param["mixed_prec"] is not None:
+                fitting_param["precision"]: str = self.mixed_prec["output_prec"]
             self.fitting = ener.EnerFitting(**fitting_param)
         else:
+            raise NotImplementedError("multi-task mode is not supported")
             self.fitting_dict = {}
             self.fitting_type_dict = {}
             self.nfitting = len(fitting_param)
@@ -380,7 +391,6 @@ class DPTrainer:
                 )
 
         # training
-        tr_data = jdata["training"]
         self.fitting_weight = tr_data.get("fitting_weight", None)
         if self.multi_task_mode:
             self.fitting_key_list = []
@@ -401,7 +411,6 @@ class DPTrainer:
         self.tensorboard = self.run_opt.is_chief and tr_data.get("tensorboard", False)
         self.tensorboard_log_dir = tr_data.get("tensorboard_log_dir", "log")
         self.tensorboard_freq = tr_data.get("tensorboard_freq", 1)
-        self.mixed_prec = tr_data.get("mixed_precision", None)
         if self.mixed_prec is not None:
             if (
                 self.mixed_prec["compute_prec"] not in ("float16", "bfloat16")

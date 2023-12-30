@@ -464,7 +464,7 @@ def update_one_sel(jdata, descriptor):
         return descriptor
     rcut = descriptor["rcut"]
     tmp_sel = get_sel(jdata, rcut, one_type=descriptor["type"] in ("se_atten",))
-    sel = descriptor["sel"]  # [46, 92]
+    sel = descriptor["sel"]
     if isinstance(sel, int):
         # convert to list and finnally convert back to int
         sel = [sel]
