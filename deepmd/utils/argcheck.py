@@ -1016,7 +1016,7 @@ def frozen_model_args() -> Argument:
 
 def pairtab_model_args() -> Argument:
     doc_tab_file = "Path to the tabulation file."
-    doc_rcut = "The cutoff radius."
+    doc_rcut = "The cut-off radius."
     doc_sel = 'This parameter set the number of selected neighbors. Note that this parameter is a little different from that in other descriptors. Instead of separating each type of atoms, only the summation matters. And this number is highly related with the efficiency, thus one should not make it too large. Usually 200 or less is enough, far away from the GPU limitation 4096. It can be:\n\n\
     - `int`. The maximum number of neighbor atoms to be considered. We recommend it to be less than 200. \n\n\
     - `List[int]`. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. Only the summation of `sel[i]` matters, and it is recommended to be less than 200.\
@@ -1026,7 +1026,7 @@ def pairtab_model_args() -> Argument:
         dict,
         [
             Argument("tab_file", str, optional=False, doc=doc_tab_file),
-            Argument("rcut", float, optional=False, doc="The cutoff radius."),
+            Argument("rcut", float, optional=False, doc=doc_rcut),
             Argument("sel", [int, List[int], str], optional=False, doc=doc_sel),
         ],
         doc="Pairwise tabulation energy model.",

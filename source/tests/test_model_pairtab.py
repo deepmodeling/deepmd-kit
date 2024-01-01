@@ -31,8 +31,6 @@ class TestModel(tf.test.TestCase):
         jdata = j_loader(jfile)
         systems = j_must_have(jdata, "systems")
         set_pfx = j_must_have(jdata, "set_prefix")
-        batch_size = j_must_have(jdata, "batch_size")
-        test_size = j_must_have(jdata, "numb_test")
         batch_size = 1
         test_size = 1
 
@@ -115,11 +113,9 @@ class TestModel(tf.test.TestCase):
 
         with self.cached_session() as sess:
             sess.run(tf.global_variables_initializer())
-            [e, f, v] = sess.run([energy, force, virial], feed_dict=feed_dict_test)
+            [e, _, _] = sess.run([energy, force, virial], feed_dict=feed_dict_test)
 
         e = e.reshape([-1])
-        f = f.reshape([-1])
-        v = v.reshape([-1])
 
         coord = test_data["coord"][0, :].reshape(-1, 3)
         distance = scipy.spatial.distance.cdist(coord, coord).ravel()
