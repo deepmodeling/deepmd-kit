@@ -11,6 +11,8 @@ from typing import (
 import numpy as np
 
 from deepmd.env import (
+    GLOBAL_TF_FLOAT_PRECISION,
+    MODEL_VERSION,
     global_cvt_2_ener_float,
     op_module,
     tf,
@@ -128,6 +130,18 @@ class PairTabModel(Model):
                 dtype=tf.float64,
                 trainable=False,
                 initializer=tf.constant_initializer(tab_data, dtype=tf.float64),
+            )
+            t_tmap = tf.constant(" ".join(self.type_map), name="tmap", dtype=tf.string)
+            t_mt = tf.constant(self.model_type, name="model_type", dtype=tf.string)
+            t_ver = tf.constant(MODEL_VERSION, name="model_version", dtype=tf.string)
+
+        with tf.variable_scope("fitting_attr" + suffix, reuse=reuse):
+            t_dfparam = tf.constant(0, name="dfparam", dtype=tf.int32)
+            t_daparam = tf.constant(0, name="daparam", dtype=tf.int32)
+        with tf.variable_scope("descrpt_attr" + suffix, reuse=reuse):
+            t_ntypes = tf.constant(self.ntypes, name="ntypes", dtype=tf.int32)
+            t_rcut = tf.constant(
+                self.rcut, name="rcut", dtype=GLOBAL_TF_FLOAT_PRECISION
             )
         coord = tf.reshape(coord_, [-1, natoms[1] * 3])
         atype = tf.reshape(atype_, [-1, natoms[1]])
