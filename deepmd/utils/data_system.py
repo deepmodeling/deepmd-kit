@@ -37,7 +37,7 @@ class DeepmdDataSystem:
         systems: List[str],
         batch_size: int,
         test_size: int,
-        rcut: float,
+        rcut: Optional[float] = None,
         set_prefix: str = "set",
         shuffle_test: bool = True,
         type_map: Optional[List[str]] = None,
@@ -59,7 +59,7 @@ class DeepmdDataSystem:
         test_size
             The size of test data
         rcut
-            The cut-off radius
+            The cut-off radius. Not used.
         set_prefix
             Prefix for the directories of different sets
         shuffle_test
@@ -91,7 +91,7 @@ class DeepmdDataSystem:
             descriptors except mixed types.
         """
         # init data
-        self.rcut = rcut
+        del rcut
         self.system_dirs = systems
         self.nsystems = len(self.system_dirs)
         self.data_systems = []
