@@ -653,7 +653,3 @@ def main(args: Optional[List[str]] = None):
 
     if args is not None:
         clear_session()
-
-
-if __name__ == "__main__":
-    main()
