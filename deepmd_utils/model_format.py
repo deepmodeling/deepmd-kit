@@ -195,7 +195,7 @@ class NativeLayer(NativeOP):
         return cls(
             w=data["@variables"]["w"],
             b=data["@variables"]["b"],
-            idt=data.get("idt", None),
+            idt=data["@variables"].get("idt", None),
             activation_function=data["activation_function"],
             resnet=data.get("resnet", False),
         )
@@ -241,17 +241,18 @@ class NativeLayer(NativeOP):
         np.ndarray
             The output.
         """
-        if self.w is None or self.b is None or self.activation_function is None:
+        if self.w is None or self.activation_function is None:
             raise ValueError("w, b, and activation_function must be set")
         if self.activation_function == "tanh":
             fn = np.tanh
         elif self.activation_function.lower() == "none":
-
             def fn(x):
                 return x
         else:
             raise NotImplementedError(self.activation_function)
-        y = fn(np.matmul(x, self.w) + self.b)
+        y = np.matmul(x, self.w) + self.b \
+          if self.b is not None else np.matmul(x, self.w)
+        y = fn(y)
         if self.idt is not None:
             y *= self.idt
         if self.resnet and self.w.shape[1] == self.w.shape[0]:
