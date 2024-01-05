@@ -21,6 +21,7 @@ template <typename FPTYPE>
 Region<FPTYPE>::Region(FPTYPE* extern_boxt, FPTYPE* extern_rec_boxt) {
   boxt = extern_boxt;
   rec_boxt = extern_rec_boxt;
+  self_allocated = false;
 }
 
 template <typename FPTYPE>
