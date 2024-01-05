@@ -194,7 +194,7 @@ class NativeLayer(NativeOP):
         """
         return cls(
             w=data["@variables"]["w"],
-            b=data["@variables"]["b"],
+            b=data["@variables"].get("b", None),
             idt=data["@variables"].get("idt", None),
             activation_function=data["activation_function"],
             resnet=data.get("resnet", False),
