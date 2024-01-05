@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import itertools
 import os
 import unittest
 from copy import (
@@ -8,16 +9,34 @@ from copy import (
 import numpy as np
 
 from deepmd_utils.model_format import (
+    NativeLayer,
     NativeNet,
     load_dp_model,
     save_dp_model,
 )
 
 
+class TestNativeLayer(unittest.TestCase):
+    def setUp(self) -> None:
+        self.w = np.full((2, 3), 3.0)
+        self.b = np.full((3,), 4.0)
+        self.idt = np.full((3,), 5.0)
+
+    def test_serialize_deserize(self):
+        for ww, bb, idt, activation_function, resnet in itertools.product(
+            [self.w], [self.b, None], [self.idt, None], ["tanh", "none"], [True, False]
+        ):
+            nl0 = NativeLayer(ww, bb, idt, activation_function, resnet)
+            nl1 = NativeLayer.deserialize(nl0.serialize())
+            inp = np.arange(self.w.shape[0])
+            np.testing.assert_allclose(nl0.call(inp), nl1.call(inp))
+
+
 class TestNativeNet(unittest.TestCase):
     def setUp(self) -> None:
-        self.w = np.full((3, 2), 3.0)
+        self.w = np.full((2, 3), 3.0)
         self.b = np.full((3,), 4.0)
+        self.idt = np.full((3,), 5.0)
 
     def test_serialize(self):
         network = NativeNet()
