@@ -362,80 +362,74 @@ def get_module(module_name: str) -> "ModuleType":
         ext = ".so"
         prefix = "lib"
 
-    module_file = (
-        (Path(__file__).parent / SHARED_LIB_MODULE / (prefix + module_name))
-        .with_suffix(ext)
-        .resolve()
-    )
+    try:
+        import paddle_deepmd_lib as module
 
-    if not module_file.is_file():
-        raise FileNotFoundError(f"module {module_name} does not exist")
-    else:
-        try:
-            import paddle_deepmd_lib as module
-
-        except tf.errors.NotFoundError as e:
-            # check CXX11_ABI_FLAG is compatiblity
-            # see https://gcc.gnu.org/onlinedocs/libstdc++/manual/using_dual_abi.html
-            # ABI should be the same
-            if "CXX11_ABI_FLAG" in tf.__dict__:
-                tf_cxx11_abi_flag = tf.CXX11_ABI_FLAG
-            else:
-                tf_cxx11_abi_flag = tf.sysconfig.CXX11_ABI_FLAG
-            if TF_CXX11_ABI_FLAG != tf_cxx11_abi_flag:
-                raise RuntimeError(
-                    "This deepmd-kit package was compiled with "
-                    "CXX11_ABI_FLAG=%d, but TensorFlow runtime was compiled "
-                    "with CXX11_ABI_FLAG=%d. These two library ABIs are "
-                    "incompatible and thus an error is raised when loading %s. "
-                    "You need to rebuild deepmd-kit against this TensorFlow "
-                    "runtime."
-                    % (
-                        TF_CXX11_ABI_FLAG,
-                        tf_cxx11_abi_flag,
-                        module_name,
-                    )
-                ) from e
-
-            # different versions may cause incompatibility
-            # see #406, #447, #557, #774, and #796 for example
-            # throw a message if versions are different
-            if TF_VERSION != tf_py_version:
-                raise RuntimeError(
-                    "The version of TensorFlow used to compile this "
-                    "deepmd-kit package is {}, but the version of TensorFlow "
-                    "runtime you are using is {}. These two versions are "
-                    "incompatible and thus an error is raised when loading {}. "
-                    "You need to install TensorFlow {}, or rebuild deepmd-kit "
-                    "against TensorFlow {}.\nIf you are using a wheel from "
-                    "pypi, you may consider to install deepmd-kit execuating "
-                    "`pip install deepmd-kit --no-binary deepmd-kit` "
-                    "instead.".format(
-                        TF_VERSION,
-                        tf_py_version,
-                        module_name,
-                        TF_VERSION,
-                        tf_py_version,
-                    )
-                ) from e
-            error_message = (
-                "This deepmd-kit package is inconsitent with TensorFlow "
-                "Runtime, thus an error is raised when loading {}. "
+    except tf.errors.NotFoundError as e:
+        # check CXX11_ABI_FLAG is compatiblity
+        # see https://gcc.gnu.org/onlinedocs/libstdc++/manual/using_dual_abi.html
+        # ABI should be the same
+        if "CXX11_ABI_FLAG" in tf.__dict__:
+            tf_cxx11_abi_flag = tf.CXX11_ABI_FLAG
+        else:
+            tf_cxx11_abi_flag = tf.sysconfig.CXX11_ABI_FLAG
+        if TF_CXX11_ABI_FLAG != tf_cxx11_abi_flag:
+            raise RuntimeError(
+                "This deepmd-kit package was compiled with "
+                "CXX11_ABI_FLAG=%d, but TensorFlow runtime was compiled "
+                "with CXX11_ABI_FLAG=%d. These two library ABIs are "
+                "incompatible and thus an error is raised when loading %s. "
                 "You need to rebuild deepmd-kit against this TensorFlow "
-                "runtime.".format(module_name)
-            )
-            if TF_CXX11_ABI_FLAG == 1:
-                # #1791
-                error_message += (
-                    "\nWARNING: devtoolset on RHEL6 and RHEL7 does not support _GLIBCXX_USE_CXX11_ABI=1. "
-                    "See https://bugzilla.redhat.com/show_bug.cgi?id=1546704"
+                "runtime."
+                % (
+                    TF_CXX11_ABI_FLAG,
+                    tf_cxx11_abi_flag,
+                    module_name,
                 )
-            raise RuntimeError(error_message) from e
-        return module
+            ) from e
+
+        # different versions may cause incompatibility
+        # see #406, #447, #557, #774, and #796 for example
+        # throw a message if versions are different
+        if TF_VERSION != tf_py_version:
+            raise RuntimeError(
+                "The version of TensorFlow used to compile this "
+                "deepmd-kit package is {}, but the version of TensorFlow "
+                "runtime you are using is {}. These two versions are "
+                "incompatible and thus an error is raised when loading {}. "
+                "You need to install TensorFlow {}, or rebuild deepmd-kit "
+                "against TensorFlow {}.\nIf you are using a wheel from "
+                "pypi, you may consider to install deepmd-kit execuating "
+                "`pip install deepmd-kit --no-binary deepmd-kit` "
+                "instead.".format(
+                    TF_VERSION,
+                    tf_py_version,
+                    module_name,
+                    TF_VERSION,
+                    tf_py_version,
+                )
+            ) from e
+        error_message = (
+            "This deepmd-kit package is inconsitent with TensorFlow "
+            "Runtime, thus an error is raised when loading {}. "
+            "You need to rebuild deepmd-kit against this TensorFlow "
+            "runtime.".format(module_name)
+        )
+        if TF_CXX11_ABI_FLAG == 1:
+            # #1791
+            error_message += (
+                "\nWARNING: devtoolset on RHEL6 and RHEL7 does not support _GLIBCXX_USE_CXX11_ABI=1. "
+                "See https://bugzilla.redhat.com/show_bug.cgi?id=1546704"
+            )
+        raise RuntimeError(error_message) from e
+    return module
 
 
 def _get_package_constants(
-    config_file: Path = Path(__file__).parent / "run_config.ini",
+    config_file: Path = Path(__file__).parent.parent
+    / "source"
+    / "config"
+    / "run_config.ini",
 ) -> Dict[str, str]:
     """Read package constants set at compile time by CMake to dictionary.
 

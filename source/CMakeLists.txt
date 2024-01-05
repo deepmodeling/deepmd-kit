@@ -14,25 +14,31 @@ endmacro()
 
 if(NOT DEFINED PADDLE_LIB)
   message(
-    FATAL_ERROR "please set PADDLE_LIB with -DPADDLE_LIB=/path/paddle/lib")
+    WARNING
+      "Optional arg: 'PADDLE_LIB' is not set, skip all compilation of paddle code now. "
+      "And do not forget to set 'PADDLE_LIB' with '-DPADDLE_LIB=/path/paddle/lib' before "
+      "using paddle custom operators")
 endif()
-set(PADDLE_LIB
-    ${PADDLE_LIB}
-    CACHE PATH "/path/paddle/lib")
 
-include_directories("${PADDLE_LIB}/")
-set(PADDLE_LIB_THIRD_PARTY_PATH "${PADDLE_LIB}/third_party/install/")
+if(DEFINED PADDLE_LIB)
+  set(PADDLE_LIB
+      ${PADDLE_LIB}
+      CACHE PATH "/path/paddle/lib")
 
-include_directories("${PADDLE_LIB_THIRD_PARTY_PATH}protobuf/include")
-include_directories("${PADDLE_LIB_THIRD_PARTY_PATH}glog/include")
-include_directories("${PADDLE_LIB_THIRD_PARTY_PATH}gflags/include")
-include_directories("${PADDLE_LIB_THIRD_PARTY_PATH}xxhash/include")
+  include_directories("${PADDLE_LIB}/")
+  set(PADDLE_LIB_THIRD_PARTY_PATH "${PADDLE_LIB}/third_party/install/")
 
-link_directories("${PADDLE_LIB_THIRD_PARTY_PATH}protobuf/lib")
-link_directories("${PADDLE_LIB_THIRD_PARTY_PATH}glog/lib")
-link_directories("${PADDLE_LIB_THIRD_PARTY_PATH}gflags/lib")
-link_directories("${PADDLE_LIB_THIRD_PARTY_PATH}xxhash/lib")
-link_directories("${PADDLE_LIB}/paddle/lib")
+  include_directories("${PADDLE_LIB_THIRD_PARTY_PATH}protobuf/include")
+  include_directories("${PADDLE_LIB_THIRD_PARTY_PATH}glog/include")
+  include_directories("${PADDLE_LIB_THIRD_PARTY_PATH}gflags/include")
+  include_directories("${PADDLE_LIB_THIRD_PARTY_PATH}xxhash/include")
+
+  link_directories("${PADDLE_LIB_THIRD_PARTY_PATH}protobuf/lib")
+  link_directories("${PADDLE_LIB_THIRD_PARTY_PATH}glog/lib")
+  link_directories("${PADDLE_LIB_THIRD_PARTY_PATH}gflags/lib")
+  link_directories("${PADDLE_LIB_THIRD_PARTY_PATH}xxhash/lib")
+  link_directories("${PADDLE_LIB}/paddle/lib")
+endif()
 
 # add custom operators
 option(USE_TENSORRT "Compile demo with TensorRT." OFF)
@@ -58,19 +64,21 @@ if(NOT WIN32)
   endif()
 endif(NOT WIN32)
 
-if(WITH_STATIC_LIB)
-  set(DEPS
-      ${PADDLE_LIB}/paddle/lib/libpaddle_inference${CMAKE_STATIC_LIBRARY_SUFFIX}
-  )
-else()
-  if(WIN32)
+if(DEFINED PADDLE_LIB)
+  if(WITH_STATIC_LIB)
     set(DEPS
         ${PADDLE_LIB}/paddle/lib/libpaddle_inference${CMAKE_STATIC_LIBRARY_SUFFIX}
     )
   else()
-    set(DEPS
-        ${PADDLE_LIB}/paddle/lib/libpaddle_inference${CMAKE_SHARED_LIBRARY_SUFFIX}
-    )
+    if(WIN32)
+      set(DEPS
+          ${PADDLE_LIB}/paddle/lib/libpaddle_inference${CMAKE_STATIC_LIBRARY_SUFFIX}
+      )
+    else()
+      set(DEPS
+          ${PADDLE_LIB}/paddle/lib/libpaddle_inference${CMAKE_SHARED_LIBRARY_SUFFIX}
+      )
+    endif()
   endif()
 endif()
 
