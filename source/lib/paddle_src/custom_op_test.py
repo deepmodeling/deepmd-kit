@@ -256,6 +256,107 @@ def test_prod_virial_se_a(place="cpu"):
     print(np.allclose(atom_virial.numpy(), atom_virial_load))
 
 
+def test_prod_force_se_a_mask(place="cpu"):
+    print("=" * 10, f"test_prod_force_se_a_mask [place={place}]", "=" * 10)
+    import numpy as np
+
+    net_deriv_reshape = np.ascontiguousarray(
+        np.load(osp.join(unitest_dir, "prod_force_se_a_mask/net_deriv_reshape.npy"))
+    )
+    descrpt_deriv = np.ascontiguousarray(
+        np.load(osp.join(unitest_dir, "prod_force_se_a_mask/descrpt_deriv.npy"))
+    )
+    mask = np.ascontiguousarray(
+        np.load(osp.join(unitest_dir, "prod_force_se_a_mask/mask.npy"))
+    )
+    nlist = np.ascontiguousarray(
+        np.load(osp.join(unitest_dir, "prod_force_se_a_mask/nlist.npy"))
+    )
+    total_atom_num = np.ascontiguousarray(
+        np.load(osp.join(unitest_dir, "prod_force_se_a_mask/total_atom_num.npy"))
+    )
+
+    net_deriv_reshape = paddle.to_tensor(
+        net_deriv_reshape, stop_gradient=False, place=place
+    )
+    descrpt_deriv = paddle.to_tensor(descrpt_deriv, "float64", place=place)
+    mask = paddle.to_tensor(mask, "int32", place=place)
+    nlist = paddle.to_tensor(nlist, "int32", place=place)
+
+    force = paddle_deepmd_lib.prod_force_se_a_mask(
+        net_deriv_reshape,
+        descrpt_deriv,
+        mask,
+        nlist,
+        total_atom_num,
+    )
+    force.sum().backward()
+    # print(f"net_deriv_reshape.grad.shape = {net_deriv_reshape.grad.shape}")
+
+    # print(mn.shape, mn.min().item()); print(mn.max().item()); print(mn.mean().item()); print(mn.var().item())
+    # print(mn_load.shape); print(mn_load.min().item()); print(mn_load.max().item()); print(mn_load.mean().item()); print(mn_load.var().item())
+    # print(dt.shape, dt.min().item(), dt.max().item(), dt.mean().item(), dt.var().item())
+    # print(dt_load.shape, dt_load.min().item(), dt_load.max().item(), dt_load.mean().item(), dt_load.var().item())
+    force_load = np.load(osp.join(unitest_dir, "prod_force_se_a_mask/force.npy"))
+    grad_load = np.load(
+        osp.join(unitest_dir, "prod_force_se_a_mask/net_deriv_reshape_grad.npy")
+    )
+
+    print(np.allclose(force.numpy(), force_load))
+    print(np.allclose(net_deriv_reshape.grad.numpy(), grad_load))
+
+
+def test_descrpt_se_a_mask(place="cpu"):
+    print("=" * 10, f"test_descrpt_se_a_mask [place={place}]", "=" * 10)
+    import numpy as np
+
+    coord = np.ascontiguousarray(
+        np.load(osp.join(unitest_dir, "descrpt_se_a_mask/coord.npy"))
+    )  # float64 (2,441)
+    atype = np.ascontiguousarray(
+        np.load(osp.join(unitest_dir, "descrpt_se_a_mask/atype.npy"))
+    )  # int32 (2,147)
+    mask = np.ascontiguousarray(
+        np.load(osp.join(unitest_dir, "descrpt_se_a_mask/mask.npy"))
+    )  # int32 (2, 147)
+    box = np.ascontiguousarray(
+        np.load(osp.join(unitest_dir, "descrpt_se_a_mask/box.npy"))
+    )  # float64 (2, 9)
+    natoms = np.ascontiguousarray(
+        np.load(osp.join(unitest_dir, "descrpt_se_a_mask/natoms.npy"))
+    )  # int32 (8,)
+    mesh = np.ascontiguousarray(
+        np.load(osp.join(unitest_dir, "descrpt_se_a_mask/mesh.npy"))
+    )  # int32 (0,)
+
+    coord = paddle.to_tensor(coord, "float64", place=place)
+    atype = paddle.to_tensor(atype, "int32", place=place)
+    mask = paddle.to_tensor(mask, "int32", place=place)
+    box = paddle.to_tensor(box, "float64", place=place)
+    natoms = paddle.to_tensor(natoms, "int32", place=place)
+    mesh = paddle.to_tensor(mesh, "int32", place=place)
+
+    descrpt, descrpt_deriv, rij, nlist = paddle_deepmd_lib.descrpt_se_a_mask(
+        coord, atype, mask, box, natoms, mesh
+    )
+
+    # print(mn.shape, mn.min().item()); print(mn.max().item()); print(mn.mean().item()); print(mn.var().item())
+    # print(mn_load.shape); print(mn_load.min().item()); print(mn_load.max().item()); print(mn_load.mean().item()); print(mn_load.var().item())
+    # print(dt.shape, dt.min().item(), dt.max().item(), dt.mean().item(), dt.var().item())
+    # print(dt_load.shape, dt_load.min().item(), dt_load.max().item(), dt_load.mean().item(), dt_load.var().item())
+    descrpt_load = np.load(osp.join(unitest_dir, "descrpt_se_a_mask/descrpt.npy"))
+    descrpt_deriv_load = np.load(
+        osp.join(unitest_dir, "descrpt_se_a_mask/descrpt_deriv.npy")
+    )
+    rij_load = np.load(osp.join(unitest_dir, "descrpt_se_a_mask/rij.npy"))
+    nlist_load = np.load(osp.join(unitest_dir, "descrpt_se_a_mask/nlist.npy"))
+
+    print(np.allclose(descrpt.numpy(), descrpt_load))
+    print(np.allclose(descrpt_deriv.numpy(), descrpt_deriv_load))
+    print(np.allclose(rij.numpy(), rij_load))
+    print(np.allclose(nlist.numpy(), nlist_load))
+
+
 if __name__ == "__main__":
     test_neighbor_stat()
 
@@ -266,3 +367,5 @@ if __name__ == "__main__":
     test_prod_env_mat_a("cpu")
     test_prod_force_se_a("cpu")
     test_prod_virial_se_a("cpu")
+    test_prod_force_se_a_mask()
+    test_descrpt_se_a_mask()
