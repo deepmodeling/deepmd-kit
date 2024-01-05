@@ -19,7 +19,11 @@ from deepmd_utils.model_format import (
 class TestNativeLayer(unittest.TestCase):
     def test_serialize_deserize(self):
         for (ni, no), bias, ut, activation_function, resnet in itertools.product(
-            [(5, 5), (5, 10), (5, 9), (9, 5)], [True, False], [True, False], ["tanh", "none"], [True, False]
+            [(5, 5), (5, 10), (5, 9), (9, 5)],
+            [True, False],
+            [True, False],
+            ["tanh", "none"],
+            [True, False],
         ):
             ww = np.full((ni, no), 3.0)
             bb = np.full((no,), 4.0) if bias else None
