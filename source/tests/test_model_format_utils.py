@@ -25,25 +25,45 @@ class TestNativeNet(unittest.TestCase):
         network[1]["b"] = self.b
         network[0]["w"] = self.w
         network[0]["b"] = self.b
+        network[1]["activation_function"] = "tanh"
+        network[0]["activation_function"] = "tanh"
+        network[1]["resnet"] = True
+        network[0]["resnet"] = True
         jdata = network.serialize()
-        np.testing.assert_array_equal(jdata["layers"][0]["w"], self.w)
-        np.testing.assert_array_equal(jdata["layers"][0]["b"], self.b)
-        np.testing.assert_array_equal(jdata["layers"][1]["w"], self.w)
-        np.testing.assert_array_equal(jdata["layers"][1]["b"], self.b)
+        np.testing.assert_array_equal(jdata["layers"][0]["@variables"]["w"], self.w)
+        np.testing.assert_array_equal(jdata["layers"][0]["@variables"]["b"], self.b)
+        np.testing.assert_array_equal(jdata["layers"][1]["@variables"]["w"], self.w)
+        np.testing.assert_array_equal(jdata["layers"][1]["@variables"]["b"], self.b)
+        np.testing.assert_array_equal(jdata["layers"][0]["activation_function"], "tanh")
+        np.testing.assert_array_equal(jdata["layers"][1]["activation_function"], "tanh")
+        np.testing.assert_array_equal(jdata["layers"][0]["resnet"], True)
+        np.testing.assert_array_equal(jdata["layers"][1]["resnet"], True)
 
     def test_deserialize(self):
         network = NativeNet.deserialize(
             {
                 "layers": [
-                    {"w": self.w, "b": self.b},
-                    {"w": self.w, "b": self.b},
-                ]
+                    {
+                        "activation_function": "tanh",
+                        "resnet": True,
+                        "@variables": {"w": self.w, "b": self.b},
+                    },
+                    {
+                        "activation_function": "tanh",
+                        "resnet": True,
+                        "@variables": {"w": self.w, "b": self.b},
+                    },
+                ],
             }
         )
         np.testing.assert_array_equal(network[0]["w"], self.w)
         np.testing.assert_array_equal(network[0]["b"], self.b)
         np.testing.assert_array_equal(network[1]["w"], self.w)
         np.testing.assert_array_equal(network[1]["b"], self.b)
+        np.testing.assert_array_equal(network[0]["activation_function"], "tanh")
+        np.testing.assert_array_equal(network[1]["activation_function"], "tanh")
+        np.testing.assert_array_equal(network[0]["resnet"], True)
+        np.testing.assert_array_equal(network[1]["resnet"], True)
 
 
 class TestDPModel(unittest.TestCase):
@@ -52,12 +72,18 @@ class TestDPModel(unittest.TestCase):
         self.b = np.full((3,), 4.0)
         self.model_dict = {
             "type": "some_type",
-            "@variables": {
-                "layers": [
-                    {"w": self.w, "b": self.b},
-                    {"w": self.w, "b": self.b},
-                ]
-            },
+            "layers": [
+                {
+                    "activation_function": "tanh",
+                    "resnet": True,
+                    "@variables": {"w": self.w, "b": self.b},
+                },
+                {
+                    "activation_function": "tanh",
+                    "resnet": True,
+                    "@variables": {"w": self.w, "b": self.b},
+                },
+            ],
         }
         self.filename = "test_dp_model_format.dp"
 
