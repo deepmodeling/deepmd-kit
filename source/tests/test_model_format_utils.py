@@ -33,7 +33,7 @@ class TestNativeLayer(unittest.TestCase):
             nl1 = NativeLayer.deserialize(nl0.serialize())
             inp_shap = [ww.shape[0]]
             if ashp is not None:
-              inp_shap = ashp + inp_shap              
+                inp_shap = ashp + inp_shap
             inp = np.arange(np.prod(inp_shap)).reshape(inp_shap)
             np.testing.assert_allclose(nl0.call(inp), nl1.call(inp))
 
