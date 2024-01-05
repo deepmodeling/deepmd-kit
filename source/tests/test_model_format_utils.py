@@ -17,18 +17,16 @@ from deepmd_utils.model_format import (
 
 
 class TestNativeLayer(unittest.TestCase):
-    def setUp(self) -> None:
-        self.w = np.full((2, 3), 3.0)
-        self.b = np.full((3,), 4.0)
-        self.idt = np.full((3,), 5.0)
-
     def test_serialize_deserize(self):
-        for ww, bb, idt, activation_function, resnet in itertools.product(
-            [self.w], [self.b, None], [self.idt, None], ["tanh", "none"], [True, False]
+        for (ni, no), bias, ut, activation_function, resnet in itertools.product(
+            [(5, 5), (5, 10), (5, 9), (9, 5)], [True, False], [True, False], ["tanh", "none"], [True, False]
         ):
+            ww = np.full((ni, no), 3.0)
+            bb = np.full((no,), 4.0) if bias else None
+            idt = np.full((no,), 5.0) if ut else None
             nl0 = NativeLayer(ww, bb, idt, activation_function, resnet)
             nl1 = NativeLayer.deserialize(nl0.serialize())
-            inp = np.arange(self.w.shape[0])
+            inp = np.arange(ww.shape[0])
             np.testing.assert_allclose(nl0.call(inp), nl1.call(inp))
 
 

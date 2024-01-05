@@ -262,7 +262,7 @@ class NativeLayer(NativeOP):
         if self.resnet and self.w.shape[1] == self.w.shape[0]:
             y += x
         elif self.resnet and self.w.shape[1] == 2 * self.w.shape[0]:
-            y += np.concatenate([x, x], axis=1)
+            y += np.concatenate([x, x], axis=-1)
         return y
 
 
