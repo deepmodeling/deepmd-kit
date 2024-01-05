@@ -246,12 +246,16 @@ class NativeLayer(NativeOP):
         if self.activation_function == "tanh":
             fn = np.tanh
         elif self.activation_function.lower() == "none":
+
             def fn(x):
                 return x
         else:
             raise NotImplementedError(self.activation_function)
-        y = np.matmul(x, self.w) + self.b \
-          if self.b is not None else np.matmul(x, self.w)
+        y = (
+            np.matmul(x, self.w) + self.b
+            if self.b is not None
+            else np.matmul(x, self.w)
+        )
         y = fn(y)
         if self.idt is not None:
             y *= self.idt
