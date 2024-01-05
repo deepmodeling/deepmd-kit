@@ -1496,11 +1496,7 @@ static int _norm_copy_coord_gpu(OpKernelContext* context,
   int* int_data_dev = cell_info_dev + 23;
   deepmd::memcpy_host_to_device(box_info_dev, box_info, 18);
   deepmd::memcpy_host_to_device(cell_info_dev, cell_info, 23);
-  deepmd::Region<FPTYPE> region_dev;
-  FPTYPE* new_boxt = region_dev.boxt;
-  FPTYPE* new_rec_boxt = region_dev.rec_boxt;
-  region_dev.boxt = box_info_dev;
-  region_dev.rec_boxt = box_info_dev + 9;
+  deepmd::Region<FPTYPE> region_dev(box_info_dev, box_info_dev + 9);
   deepmd::normalize_coord_gpu(tmp_coord, nall, region_dev);
   int tt;
   for (tt = 0; tt < max_cpy_trial; ++tt) {
@@ -1531,8 +1527,6 @@ static int _norm_copy_coord_gpu(OpKernelContext* context,
       }
     }
   }
-  region_dev.boxt = new_boxt;
-  region_dev.rec_boxt = new_rec_boxt;
   return (tt != max_cpy_trial);
 }
 
