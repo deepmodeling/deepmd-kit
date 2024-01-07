@@ -332,58 +332,59 @@ class NativeNet(NativeOP):
 
 
 class EmbeddingNet(NativeNet):
-  def __init__(
-      self,
-      in_dim,
-      neuron: List[int] = [24, 48, 96],
-      activation_function: str = "tanh",
-      resnet_dt: bool = False,
-  ):
-    layers = []
-    i_in = in_dim
-    for idx,ii in enumerate(neuron):      
-      i_ot = ii
-      layers.append(NativeLayer(
-        np.random.normal(size=(i_in, i_ot)),
-        b=np.random.normal(size=(ii)),
-        idt=np.random.normal(size=(ii)) if resnet_dt else None,
-        activation_function=activation_function,
-        resnet=True,
-      ).serialize())
-      i_in = i_ot
-    super(EmbeddingNet, self).__init__(layers)
-    self.in_dim = in_dim
-    self.neuron = neuron
-    self.activation_function = activation_function
-    self.resnet_dt = resnet_dt
-    
+    def __init__(
+        self,
+        in_dim,
+        neuron: List[int] = [24, 48, 96],
+        activation_function: str = "tanh",
+        resnet_dt: bool = False,
+    ):
+        layers = []
+        i_in = in_dim
+        for idx, ii in enumerate(neuron):
+            i_ot = ii
+            layers.append(
+                NativeLayer(
+                    np.random.normal(size=(i_in, i_ot)),
+                    b=np.random.normal(size=(ii)),
+                    idt=np.random.normal(size=(ii)) if resnet_dt else None,
+                    activation_function=activation_function,
+                    resnet=True,
+                ).serialize()
+            )
+            i_in = i_ot
+        super(EmbeddingNet, self).__init__(layers)
+        self.in_dim = in_dim
+        self.neuron = neuron
+        self.activation_function = activation_function
+        self.resnet_dt = resnet_dt
 
-  def serialize(self) -> dict:
-    """Serialize the network to a dict.
+    def serialize(self) -> dict:
+        """Serialize the network to a dict.
 
-    Returns
-    -------
-    dict
-        The serialized network.
-    """
-    return {
-      "in_dim": self.in_dim,
-      "neuron": self.neuron,
-      "activation_function": self.activation_function,
-      "resnet_dt": self.resnet_dt,
-      "layers": [layer.serialize() for layer in self.layers],
-    }
+        Returns
+        -------
+        dict
+            The serialized network.
+        """
+        return {
+            "in_dim": self.in_dim,
+            "neuron": self.neuron,
+            "activation_function": self.activation_function,
+            "resnet_dt": self.resnet_dt,
+            "layers": [layer.serialize() for layer in self.layers],
+        }
 
-  @classmethod
-  def deserialize(cls, data: dict) -> "EmbeddingNet":
-    """Deserialize the network from a dict.
+    @classmethod
+    def deserialize(cls, data: dict) -> "EmbeddingNet":
+        """Deserialize the network from a dict.
 
-    Parameters
-    ----------
-    data : dict
-        The dict to deserialize from.
-    """
-    layers = data.pop("layers")
-    obj = cls(**data)
-    super(EmbeddingNet, obj).__init__(layers)
-    return obj
+        Parameters
+        ----------
+        data : dict
+            The dict to deserialize from.
+        """
+        layers = data.pop("layers")
+        obj = cls(**data)
+        super(EmbeddingNet, obj).__init__(layers)
+        return obj

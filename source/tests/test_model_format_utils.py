@@ -9,9 +9,9 @@ from copy import (
 import numpy as np
 
 from deepmd_utils.model_format import (
+    EmbeddingNet,
     NativeLayer,
     NativeNet,
-    EmbeddingNet,
     load_dp_model,
     save_dp_model,
 )
@@ -91,17 +91,16 @@ class TestNativeNet(unittest.TestCase):
         np.testing.assert_array_equal(network[0]["resnet"], True)
         np.testing.assert_array_equal(network[1]["resnet"], True)
 
-
     def test_embedding_net(self):
         for ni, idt, act in itertools.product(
             [1, 10],
             [True, False],
             ["tanh", "none"],
-        ):          
-          en0 = EmbeddingNet(ni)
-          en1 = EmbeddingNet.deserialize(en0.serialize())
-          inp = np.ones([ni])
-          np.testing.assert_allclose(en0.call(inp), en1.call(inp))
+        ):
+            en0 = EmbeddingNet(ni)
+            en1 = EmbeddingNet.deserialize(en0.serialize())
+            inp = np.ones([ni])
+            np.testing.assert_allclose(en0.call(inp), en1.call(inp))
 
 
 class TestDPModel(unittest.TestCase):

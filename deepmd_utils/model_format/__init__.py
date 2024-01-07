@@ -1,8 +1,9 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 from .network import (
-  traverse_model_dict,
-  save_dp_model,
-  load_dp_model,
-  NativeLayer,
-  NativeNet,
-  EmbeddingNet,
+    EmbeddingNet,
+    NativeLayer,
+    NativeNet,
+    load_dp_model,
+    save_dp_model,
+    traverse_model_dict,
 )
