@@ -113,7 +113,7 @@ class DPPath(ABC):
         """Represent string."""
 
     def __repr__(self) -> str:
-        return f"{type(self)} ({str(self)})"
+        return f"{type(self)} ({self!s})"
 
     def __eq__(self, other) -> bool:
         return str(self) == str(other)
@@ -173,7 +173,7 @@ class DPOSPath(DPPath):
         """
         # currently DPOSPath will only derivative DPOSPath
         # TODO: discuss if we want to mix DPOSPath and DPH5Path?
-        return list([type(self)(p) for p in self.path.glob(pattern)])
+        return [type(self)(p) for p in self.path.glob(pattern)]
 
     def rglob(self, pattern: str) -> List["DPPath"]:
         """This is like calling :meth:`DPPath.glob()` with `**/` added in front
@@ -189,7 +189,7 @@ class DPOSPath(DPPath):
         List[DPPath]
             list of paths
         """
-        return list([type(self)(p) for p in self.path.rglob(pattern)])
+        return [type(self)(p) for p in self.path.rglob(pattern)]
 
     def is_file(self) -> bool:
         """Check if self is file."""
@@ -290,12 +290,10 @@ class DPH5Path(DPPath):
         """
         # got paths starts with current path first, which is faster
         subpaths = [ii for ii in self._keys if ii.startswith(self.name)]
-        return list(
-            [
+        return [
                 type(self)(f"{self.root_path}#{pp}")
                 for pp in globfilter(subpaths, self._connect_path(pattern))
             ]
-        )
 
     def rglob(self, pattern: str) -> List["DPPath"]:
         """This is like calling :meth:`DPPath.glob()` with `**/` added in front

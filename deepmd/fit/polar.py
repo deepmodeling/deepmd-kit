@@ -91,7 +91,7 @@ class PolarFittingSeA(Fitting):
         self.fitting_activation_fn = get_activation_func(activation_function)
         self.fitting_precision = get_precision(precision)
         if self.sel_type is None:
-            self.sel_type = [ii for ii in range(self.ntypes)]
+            self.sel_type = list(range(self.ntypes))
         self.sel_mask = np.array(
             [ii in self.sel_type for ii in range(self.ntypes)], dtype=bool
         )

@@ -29,7 +29,7 @@ from .model_stat import (
 if TYPE_CHECKING:
     import paddle  # noqa: F811
 
-    from deepmd.fit import ener  # noqa: F811
+    from deepmd.fit import ener
 
 
 class EnerModel(Model, paddle.nn.Layer):
@@ -433,7 +433,7 @@ class EnerModel(Model, paddle.nn.Layer):
         loc_force = self.natoms_match(force, natoms)
         aatype = atype[0, :]
 
-        # FIXME: paddle.unique和tf.unique的返回值顺序是不一致, 下面的代码实现不正确，
+        # FIXME: paddle.unique和tf.unique的返回值顺序是不一致, 下面的代码实现不正确,
         # 在某些案例中需要修改
         ghost_atype = aatype[natoms[0] :]
         _, idx, ghost_natoms = paddle.unique(

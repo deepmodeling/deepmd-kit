@@ -706,7 +706,7 @@ class DPTabulate:
             if type ii excluds all types
         """
         return all(
-            [(ii, type_i) in self.exclude_types for type_i in range(self.ntypes)]
+            (ii, type_i) in self.exclude_types for type_i in range(self.ntypes)
         )
 
     def _get_table_size(self):

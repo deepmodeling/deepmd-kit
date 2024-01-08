@@ -13,7 +13,7 @@ from packaging.version import (
 )
 
 # load grad of force module
-import deepmd.op  # noqa: F401
+import deepmd.op
 from deepmd.common import (
     data_requirement,
     get_precision,
@@ -744,7 +744,7 @@ class DPTrainer:
                 var_list=trainable_variables,
                 name="train_step",
             )
-            train_ops = [apply_op] + self._extra_train_ops
+            train_ops = [apply_op, *self._extra_train_ops]
             self.train_op = tf.group(*train_ops)
         else:
             self.train_op = {}
@@ -756,7 +756,7 @@ class DPTrainer:
                     var_list=trainable_variables,
                     name=f"train_step_{fitting_key}",
                 )
-                train_ops = [apply_op] + self._extra_train_ops
+                train_ops = [apply_op, *self._extra_train_ops]
                 self.train_op[fitting_key] = tf.group(*train_ops)
         log.info("built training")
 
@@ -1429,5 +1429,5 @@ class DatasetLoader:
         batch_data = self.train_data.get_batch()
         # convert dict to list of arryas
         batch_data = tuple([batch_data[kk] for kk in self.data_keys])
-        return {kk: vv for kk, vv in zip(self.data_keys, batch_data)}
+        return dict(zip(self.data_keys, batch_data))
         # return {kk: vv for kk, vv in zip(self.data_keys, batch_list)}
