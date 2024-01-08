@@ -354,7 +354,7 @@ class EmbeddingNet(NativeNet):
                 ).serialize()
             )
             i_in = i_ot
-        super(EmbeddingNet, self).__init__(layers)
+        super().__init__(layers)
         self.in_dim = in_dim
         self.neuron = neuron
         self.activation_function = activation_function
@@ -387,5 +387,5 @@ class EmbeddingNet(NativeNet):
         """
         layers = data.pop("layers")
         obj = cls(**data)
-        super().__init__(layers)
+        super(EmbeddingNet, obj).__init__(layers)
         return obj
