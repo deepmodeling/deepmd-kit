@@ -2,6 +2,9 @@
 from .common import (
     PRECISION_DICT,
 )
+from .env_mat import (
+    EnvMat,
+)
 from .network import (
     EmbeddingNet,
     NativeLayer,
@@ -10,10 +13,6 @@ from .network import (
     save_dp_model,
     traverse_model_dict,
 )
-from .env_mat import(
-  EnvMat,
-)
-
 
 __all__ = [
     "EmbeddingNet",
