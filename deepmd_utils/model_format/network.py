@@ -4,9 +4,6 @@
 See issue #2982 for more information.
 """
 import json
-from abc import (
-    ABC,
-)
 from typing import (
     List,
     Optional,
@@ -19,6 +16,11 @@ try:
     from deepmd_utils._version import version as __version__
 except ImportError:
     __version__ = "unknown"
+
+from .common import (
+  NativeOP,
+  PRECISION_DICT,
+)
 
 
 def traverse_model_dict(model_obj, callback: callable, is_variable: bool = False):
@@ -124,12 +126,6 @@ def load_dp_model(filename: str) -> dict:
     return model_dict
 
 
-class NativeOP(ABC):
-    """The unit operation of a native model."""
-
-    def call(self, *args, **kwargs):
-        """Forward pass in NumPy implementation."""
-        raise NotImplementedError
 
 
 class NativeLayer(NativeOP):
@@ -156,10 +152,13 @@ class NativeLayer(NativeOP):
         idt: Optional[np.ndarray] = None,
         activation_function: Optional[str] = None,
         resnet: bool = False,
+        precision: str = "default",
     ) -> None:
-        self.w = w
-        self.b = b
-        self.idt = idt
+        prec = PRECISION_DICT[precision.lower()]
+        self.precision = precision
+        self.w = w.astype(prec) if w is not None else None
+        self.b = b.astype(prec) if b is not None else None
+        self.idt = idt.astype(prec) if idt is not None else None
         self.activation_function = activation_function
         self.resnet = resnet
 
@@ -180,6 +179,7 @@ class NativeLayer(NativeOP):
         return {
             "activation_function": self.activation_function,
             "resnet": self.resnet,
+            "precision": self.precision,
             "@variables": data,
         }
 
@@ -198,6 +198,7 @@ class NativeLayer(NativeOP):
             idt=data["@variables"].get("idt", None),
             activation_function=data["activation_function"],
             resnet=data.get("resnet", False),
+            precision=data.get("precision", "default"),
         )
 
     def __setitem__(self, key, value):
@@ -211,6 +212,8 @@ class NativeLayer(NativeOP):
             self.activation_function = value
         elif key == "resnet":
             self.resnet = value
+        elif key == "precision":
+            self.precision = value
         else:
             raise KeyError(key)
 
@@ -225,6 +228,8 @@ class NativeLayer(NativeOP):
             return self.activation_function
         elif key == "resnet":
             return self.resnet
+        elif key == "precision":
+            return self.precision
         else:
             raise KeyError(key)
 
@@ -338,6 +343,7 @@ class EmbeddingNet(NativeNet):
         neuron: List[int] = [24, 48, 96],
         activation_function: str = "tanh",
         resnet_dt: bool = False,
+        precision: str = "default",
     ):
         layers = []
         i_in = in_dim
@@ -351,6 +357,7 @@ class EmbeddingNet(NativeNet):
                     idt=rng.normal(size=(ii)) if resnet_dt else None,
                     activation_function=activation_function,
                     resnet=True,
+                    precision=precision,
                 ).serialize()
             )
             i_in = i_ot
