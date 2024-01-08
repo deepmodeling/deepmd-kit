@@ -30,7 +30,7 @@ class TestNativeLayer(unittest.TestCase):
             ["tanh", "none"],
             [True, False],
             [None, [4], [3, 2]],
-            ["float32", "float64", "default"],
+            ["float32", "float64", "single", "double"],
         ):
             ww = np.full((ni, no), 3.0)
             bb = np.full((no,), 4.0) if bias else None
