@@ -18,8 +18,8 @@ except ImportError:
     __version__ = "unknown"
 
 from .common import (
-  NativeOP,
-  PRECISION_DICT,
+    PRECISION_DICT,
+    NativeOP,
 )
 
 
@@ -124,8 +124,6 @@ def load_dp_model(filename: str) -> dict:
         model_dict = json.loads(f.attrs["json"])
         model_dict = traverse_model_dict(model_dict, lambda x: f[x][()].copy())
     return model_dict
-
-
 
 
 class NativeLayer(NativeOP):

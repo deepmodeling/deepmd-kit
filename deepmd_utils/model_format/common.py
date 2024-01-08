@@ -1,4 +1,8 @@
-from abc import ABC
+# SPDX-License-Identifier: LGPL-3.0-or-later
+from abc import (
+    ABC,
+)
+
 import numpy as np
 
 PRECISION_DICT = {
@@ -7,6 +11,7 @@ PRECISION_DICT = {
     "float64": np.float64,
     "default": np.float64,
 }
+
 
 class NativeOP(ABC):
     """The unit operation of a native model."""
