@@ -9,8 +9,11 @@ PRECISION_DICT = {
     "float16": np.float16,
     "float32": np.float32,
     "float64": np.float64,
-    "default": np.float64,
+    "half": np.float16,
+    "single": np.float32,
+    "double": np.float64,
 }
+DEFAULT_PRECISION = "float64"
 
 
 class NativeOP(ABC):

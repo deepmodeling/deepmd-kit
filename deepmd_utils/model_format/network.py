@@ -18,6 +18,7 @@ except ImportError:
     __version__ = "unknown"
 
 from .common import (
+    DEFAULT_PRECISION,
     PRECISION_DICT,
     NativeOP,
 )
@@ -150,7 +151,7 @@ class NativeLayer(NativeOP):
         idt: Optional[np.ndarray] = None,
         activation_function: Optional[str] = None,
         resnet: bool = False,
-        precision: str = "default",
+        precision: str = DEFAULT_PRECISION,
     ) -> None:
         prec = PRECISION_DICT[precision.lower()]
         self.precision = precision
@@ -190,13 +191,29 @@ class NativeLayer(NativeOP):
         data : dict
             The dict to deserialize from.
         """
+        precision = data.get("precision", DEFAULT_PRECISION)
+        # assertion "float64" == "double" would fail
+        assert (
+            PRECISION_DICT[data["@variables"]["w"].dtype.name]
+            is PRECISION_DICT[precision]
+        )
+        if data["@variables"].get("b", None) is not None:
+            assert (
+                PRECISION_DICT[data["@variables"]["b"].dtype.name]
+                is PRECISION_DICT[precision]
+            )
+        if data["@variables"].get("idt", None) is not None:
+            assert (
+                PRECISION_DICT[data["@variables"]["idt"].dtype.name]
+                is PRECISION_DICT[precision]
+            )
         return cls(
             w=data["@variables"]["w"],
             b=data["@variables"].get("b", None),
             idt=data["@variables"].get("idt", None),
             activation_function=data["activation_function"],
             resnet=data.get("resnet", False),
-            precision=data.get("precision", "default"),
+            precision=precision,
         )
 
     def __setitem__(self, key, value):
@@ -341,7 +358,7 @@ class EmbeddingNet(NativeNet):
         neuron: List[int] = [24, 48, 96],
         activation_function: str = "tanh",
         resnet_dt: bool = False,
-        precision: str = "default",
+        precision: str = DEFAULT_PRECISION,
     ):
         layers = []
         i_in = in_dim
