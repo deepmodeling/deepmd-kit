@@ -310,7 +310,7 @@ class DeepEval:
         if model_file_str.endswith((".pdmodel", ".pdiparams")):
             st_model_prefix = model_file_str.rsplit(".", 1)[0]
             self.st_model = paddle.jit.load(st_model_prefix)
-            print(f"==>> Load static model successfully from: {str(st_model_prefix)}")
+            print(f"==>> Load static model successfully from: {st_model_prefix!s}")
         else:
             load_state_dict = paddle.load(str(model_file))
             for k, v in load_state_dict.items():
@@ -332,7 +332,7 @@ class DeepEval:
                             self.model.state_dict()[k].shape
                         )
             self.model.set_state_dict(load_state_dict)
-            print(f"==>> Load dynamic model successfully from: {str(model_file)}")
+            print(f"==>> Load dynamic model successfully from: {model_file!s}")
         self.load_prefix = load_prefix
 
         # graph_compatable should be called after graph and prefix are set

@@ -23,7 +23,7 @@ def _program(name: str, args: List[str]):
     args : list of str
         list of arguments
     """
-    return subprocess.call([os.path.join(ROOT_DIR, name)] + args, close_fds=False)
+    return subprocess.call([os.path.join(ROOT_DIR, name), *args], close_fds=False)
 
 
 def dp_ipi():

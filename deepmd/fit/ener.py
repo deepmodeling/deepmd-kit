@@ -388,11 +388,11 @@ class EnerFitting(nn.Layer):
             # In this situation, we directly use these assigned energies instead of computing stats.
             # This will make the loss decrease quickly
             assigned_atom_ener = np.array(
-                list(ee for ee in self.atom_ener_v if ee is not None)
+                [ee for ee in self.atom_ener_v if ee is not None]
             )
-            assigned_ener_idx = list(
-                (ii for ii, ee in enumerate(self.atom_ener_v) if ee is not None)
-            )
+            assigned_ener_idx = [
+                ii for ii, ee in enumerate(self.atom_ener_v) if ee is not None
+            ]
             # np.dot out size: nframe
             sys_ener -= np.dot(sys_tynatom[:, assigned_ener_idx], assigned_atom_ener)
             sys_tynatom[:, assigned_ener_idx] = 0.0
