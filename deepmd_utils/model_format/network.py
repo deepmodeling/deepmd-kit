@@ -341,13 +341,14 @@ class EmbeddingNet(NativeNet):
     ):
         layers = []
         i_in = in_dim
+        rng = np.random.default_rng()
         for idx, ii in enumerate(neuron):
             i_ot = ii
             layers.append(
                 NativeLayer(
-                    np.random.normal(size=(i_in, i_ot)),
-                    b=np.random.normal(size=(ii)),
-                    idt=np.random.normal(size=(ii)) if resnet_dt else None,
+                    rng.normal(size=(i_in, i_ot)),
+                    b=rng.normal(size=(ii)),
+                    idt=rng.normal(size=(ii)) if resnet_dt else None,
                     activation_function=activation_function,
                     resnet=True,
                 ).serialize()
@@ -386,5 +387,5 @@ class EmbeddingNet(NativeNet):
         """
         layers = data.pop("layers")
         obj = cls(**data)
-        super(EmbeddingNet, obj).__init__(layers)
+        super().__init__(layers)
         return obj
