@@ -114,7 +114,7 @@ A full [document](doc/train/train-input-auto.rst) on options in the training inp
     - [Deep potential long-range](doc/model/dplr.md)
     - [Deep Potential - Range Correction (DPRc)](doc/model/dprc.md)
     - [Linear model](doc/model/linear.md)
-    - [Interpolation with a pairwise potential](doc/model/pairtab.md)
+    - [Interpolation or combination with a pairwise potential](doc/model/pairtab.md)
 - [Training](doc/train/index.md)
     - [Training a model](doc/train/training.md)
     - [Advanced options](doc/train/training-advanced.md)

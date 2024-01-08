@@ -417,3 +417,16 @@ class DescrptSeAMask(DescrptSeA):
         atom_virial = tf.zeros([1, natoms[1], 9], dtype=force.dtype)
 
         return force, virial, atom_virial
+
+    @classmethod
+    def update_sel(cls, global_jdata: dict, local_jdata: dict):
+        """Update the selection and perform neighbor statistics.
+
+        Parameters
+        ----------
+        global_jdata : dict
+            The global data, containing the training section
+        local_jdata : dict
+            The local data refer to the current class
+        """
+        return local_jdata

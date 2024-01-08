@@ -105,6 +105,9 @@ class Model(ABC):
         from deepmd.model.multi import (
             MultiModel,
         )
+        from deepmd.model.pairtab import (
+            PairTabModel,
+        )
         from deepmd.model.pairwise_dprc import (
             PairwiseDPRc,
         )
@@ -120,6 +123,8 @@ class Model(ABC):
             return FrozenModel
         elif model_type == "linear_ener":
             return LinearEnergyModel
+        elif model_type == "pairtab":
+            return PairTabModel
         else:
             raise ValueError(f"unknown model type: {model_type}")
 

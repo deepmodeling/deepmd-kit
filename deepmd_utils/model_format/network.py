@@ -4,6 +4,9 @@
 See issue #2982 for more information.
 """
 import json
+from abc import (
+    ABC,
+)
 from typing import (
     List,
     Optional,
@@ -121,7 +124,15 @@ def load_dp_model(filename: str) -> dict:
     return model_dict
 
 
-class NativeLayer:
+class NativeOP(ABC):
+    """The unit operation of a native model."""
+
+    def call(self, *args, **kwargs):
+        """Forward pass in NumPy implementation."""
+        raise NotImplementedError
+
+
+class NativeLayer(NativeOP):
     """Native representation of a layer.
 
     Parameters
@@ -132,6 +143,10 @@ class NativeLayer:
         The biases of the layer.
     idt : np.ndarray, optional
         The identity matrix of the layer.
+    activation_function : str, optional
+        The activation function of the layer.
+    resnet : bool, optional
+        Whether the layer is a residual layer.
     """
 
     def __init__(
@@ -139,10 +154,14 @@ class NativeLayer:
         w: Optional[np.ndarray] = None,
         b: Optional[np.ndarray] = None,
         idt: Optional[np.ndarray] = None,
+        activation_function: Optional[str] = None,
+        resnet: bool = False,
     ) -> None:
         self.w = w
         self.b = b
         self.idt = idt
+        self.activation_function = activation_function
+        self.resnet = resnet
 
     def serialize(self) -> dict:
         """Serialize the layer to a dict.
@@ -158,7 +177,11 @@ class NativeLayer:
         }
         if self.idt is not None:
             data["idt"] = self.idt
-        return data
+        return {
+            "activation_function": self.activation_function,
+            "resnet": self.resnet,
+            "@variables": data,
+        }
 
     @classmethod
     def deserialize(cls, data: dict) -> "NativeLayer":
@@ -169,7 +192,13 @@ class NativeLayer:
         data : dict
             The dict to deserialize from.
         """
-        return cls(data["w"], data["b"], data.get("idt", None))
+        return cls(
+            w=data["@variables"]["w"],
+            b=data["@variables"].get("b", None),
+            idt=data["@variables"].get("idt", None),
+            activation_function=data["activation_function"],
+            resnet=data.get("resnet", False),
+        )
 
     def __setitem__(self, key, value):
         if key in ("w", "matrix"):
@@ -178,6 +207,10 @@ class NativeLayer:
             self.b = value
         elif key == "idt":
             self.idt = value
+        elif key == "activation_function":
+            self.activation_function = value
+        elif key == "resnet":
+            self.resnet = value
         else:
             raise KeyError(key)
 
@@ -188,11 +221,52 @@ class NativeLayer:
             return self.b
         elif key == "idt":
             return self.idt
+        elif key == "activation_function":
+            return self.activation_function
+        elif key == "resnet":
+            return self.resnet
         else:
             raise KeyError(key)
 
+    def call(self, x: np.ndarray) -> np.ndarray:
+        """Forward pass.
 
-class NativeNet:
+        Parameters
+        ----------
+        x : np.ndarray
+            The input.
+
+        Returns
+        -------
+        np.ndarray
+            The output.
+        """
+        if self.w is None or self.activation_function is None:
+            raise ValueError("w, b, and activation_function must be set")
+        if self.activation_function == "tanh":
+            fn = np.tanh
+        elif self.activation_function.lower() == "none":
+
+            def fn(x):
+                return x
+        else:
+            raise NotImplementedError(self.activation_function)
+        y = (
+            np.matmul(x, self.w) + self.b
+            if self.b is not None
+            else np.matmul(x, self.w)
+        )
+        y = fn(y)
+        if self.idt is not None:
+            y *= self.idt
+        if self.resnet and self.w.shape[1] == self.w.shape[0]:
+            y += x
+        elif self.resnet and self.w.shape[1] == 2 * self.w.shape[0]:
+            y += np.concatenate([x, x], axis=-1)
+        return y
+
+
+class NativeNet(NativeOP):
     """Native representation of a neural network.
 
     Parameters
@@ -201,10 +275,10 @@ class NativeNet:
         The layers of the network.
     """
 
-    def __init__(self, layers: Optional[List[NativeLayer]] = None) -> None:
+    def __init__(self, layers: Optional[List[dict]] = None) -> None:
         if layers is None:
             layers = []
-        self.layers = layers
+        self.layers = [NativeLayer.deserialize(layer) for layer in layers]
 
     def serialize(self) -> dict:
         """Serialize the network to a dict.
@@ -225,7 +299,7 @@ class NativeNet:
         data : dict
             The dict to deserialize from.
         """
-        return cls([NativeLayer.deserialize(layer) for layer in data["layers"]])
+        return cls(data["layers"])
 
     def __getitem__(self, key):
         assert isinstance(key, int)
@@ -238,3 +312,80 @@ class NativeNet:
         if len(self.layers) <= key:
             self.layers.extend([NativeLayer()] * (key - len(self.layers) + 1))
         self.layers[key] = value
+
+    def call(self, x: np.ndarray) -> np.ndarray:
+        """Forward pass.
+
+        Parameters
+        ----------
+        x : np.ndarray
+            The input.
+
+        Returns
+        -------
+        np.ndarray
+            The output.
+        """
+        for layer in self.layers:
+            x = layer.call(x)
+        return x
+
+
+class EmbeddingNet(NativeNet):
+    def __init__(
+        self,
+        in_dim,
+        neuron: List[int] = [24, 48, 96],
+        activation_function: str = "tanh",
+        resnet_dt: bool = False,
+    ):
+        layers = []
+        i_in = in_dim
+        rng = np.random.default_rng()
+        for idx, ii in enumerate(neuron):
+            i_ot = ii
+            layers.append(
+                NativeLayer(
+                    rng.normal(size=(i_in, i_ot)),
+                    b=rng.normal(size=(ii)),
+                    idt=rng.normal(size=(ii)) if resnet_dt else None,
+                    activation_function=activation_function,
+                    resnet=True,
+                ).serialize()
+            )
+            i_in = i_ot
+        super().__init__(layers)
+        self.in_dim = in_dim
+        self.neuron = neuron
+        self.activation_function = activation_function
+        self.resnet_dt = resnet_dt
+
+    def serialize(self) -> dict:
+        """Serialize the network to a dict.
+
+        Returns
+        -------
+        dict
+            The serialized network.
+        """
+        return {
+            "in_dim": self.in_dim,
+            "neuron": self.neuron.copy(),
+            "activation_function": self.activation_function,
+            "resnet_dt": self.resnet_dt,
+            "layers": [layer.serialize() for layer in self.layers],
+        }
+
+    @classmethod
+    def deserialize(cls, data: dict) -> "EmbeddingNet":
+        """Deserialize the network from a dict.
+
+        Parameters
+        ----------
+        data : dict
+            The dict to deserialize from.
+        """
+        layers = data.pop("layers")
+        obj = cls(**data)
+        super(EmbeddingNet, obj).__init__(layers)
+        return obj
