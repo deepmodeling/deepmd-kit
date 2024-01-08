@@ -9,8 +9,8 @@ from copy import (
 import numpy as np
 
 from deepmd_utils.model_format import (
-    EnvMat,
     EmbeddingNet,
+    EnvMat,
     NativeLayer,
     NativeNet,
     load_dp_model,
@@ -20,7 +20,10 @@ from deepmd_utils.model_format import (
 
 class TestNativeLayer(unittest.TestCase):
     def test_serialize_deserize(self):
-        for (ni, no), bias, ut, activation_function, resnet, ashp, prec in itertools.product(
+        for (
+            ni,
+            no,
+        ), bias, ut, activation_function, resnet, ashp, prec in itertools.product(
             [(5, 5), (5, 10), (5, 9), (9, 5)],
             [True, False],
             [True, False],
@@ -139,39 +142,44 @@ class TestDPModel(unittest.TestCase):
 
 
 class TestEnvMat(unittest.TestCase):
-  def setUp(self):
-    # nloc == 3, nall == 4
-    self.nloc = 3
-    self.nall = 4
-    self.coord_ext = np.array(
-      [ [0, 0, 0],
-        [0, 1, 0],
-        [0, 0, 1],
-        [0, -2, 0],
-       ], 
-      dtype = np.float64,
-    ).reshape([1, self.nall*3])
-    self.atype_ext = np.array(
-      [0, 0, 1, 0], dtype=int
-    ).reshape([1, self.nall])
-    # sel = [5, 2]
-    self.nlist = np.array(
-      [
-        [1, 3, -1, -1, -1, 2, -1],
-        [0,-1, -1, -1, -1, 2, -1],
-        [0, 1, -1, -1, -1, 0, -1],
-      ], 
-      dtype=int,
-    ).reshape([1, self.nloc, 7])
-    self.rcut = .4
-    self.rcut_smth = 2.2
+    def setUp(self):
+        # nloc == 3, nall == 4
+        self.nloc = 3
+        self.nall = 4
+        self.nf, self.nt = 1, 2
+        self.coord_ext = np.array(
+            [
+                [0, 0, 0],
+                [0, 1, 0],
+                [0, 0, 1],
+                [0, -2, 0],
+            ],
+            dtype=np.float64,
+        ).reshape([1, self.nall * 3])
+        self.atype_ext = np.array([0, 0, 1, 0], dtype=int).reshape([1, self.nall])
+        # sel = [5, 2]
+        self.nlist = np.array(
+            [
+                [1, 3, -1, -1, -1, 2, -1],
+                [0, -1, -1, -1, -1, 2, -1],
+                [0, 1, -1, -1, -1, 0, -1],
+            ],
+            dtype=int,
+        ).reshape([1, self.nloc, 7])
+        self.rcut = 0.4
+        self.rcut_smth = 2.2
 
-  def test_self_consistency(
-      self,
-  ):
-    em0 = EnvMat(self.rcut, self.rcut_smth)
-    em1 = EnvMat.deserialize(em0.serialize())
-    mm0, ww0 = em0.call(self.nlist, self.coord_ext)
-    mm1, ww1 = em1.call(self.nlist, self.coord_ext)
-    np.testing.assert_allclose(mm0, mm1)
-    np.testing.assert_allclose(ww0, ww1)
+    def test_self_consistency(
+        self,
+    ):
+        rng = np.random.default_rng()
+        nf, nloc, nnei = self.nlist.shape
+        davg = rng.normal(size=(self.nt, nnei, 4))
+        dstd = rng.normal(size=(self.nt, nnei, 4))
+        dstd = 0.1 + np.abs(dstd)
+        em0 = EnvMat(self.rcut, self.rcut_smth)
+        em1 = EnvMat.deserialize(em0.serialize())
+        mm0, ww0 = em0.call(self.nlist, self.coord_ext, self.atype_ext, davg, dstd)
+        mm1, ww1 = em1.call(self.nlist, self.coord_ext, self.atype_ext, davg, dstd)
+        np.testing.assert_allclose(mm0, mm1)
+        np.testing.assert_allclose(ww0, ww1)
