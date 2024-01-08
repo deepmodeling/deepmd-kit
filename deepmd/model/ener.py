@@ -29,7 +29,9 @@ from .model_stat import (
 if TYPE_CHECKING:
     import paddle  # noqa: F811
 
-    from deepmd.fit import ener
+    from deepmd.fit import (
+        ener,
+    )
 
 
 class EnerModel(Model, paddle.nn.Layer):

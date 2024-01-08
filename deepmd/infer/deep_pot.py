@@ -79,13 +79,13 @@ class DeepPot(DeepEval):
         # use this in favor of dict update to move attribute from class to
         # instance namespace
         self.tensors = {
-                # descrpt attrs
-                "ntypes": "descrpt.ntypes",
-                "rcut": "descrpt.rcut",
-                # fitting attrs
-                "dfparam": "fitting.t_dfparam",
-                "daparam": "fitting.t_daparam",
-            }
+            # descrpt attrs
+            "ntypes": "descrpt.ntypes",
+            "rcut": "descrpt.rcut",
+            # fitting attrs
+            "dfparam": "fitting.t_dfparam",
+            "daparam": "fitting.t_daparam",
+        }
         DeepEval.__init__(
             self,
             model_file,

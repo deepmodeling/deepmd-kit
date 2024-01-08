@@ -262,7 +262,12 @@ def descrpt_se_a_tpe_args():
     doc_type_nlayer = "number of hidden layers of type embedding net"
     doc_numb_aparam = "dimension of atomic parameter. if set to a value > 0, the atomic parameters are embedded."
 
-    return [*descrpt_se_a_args(), Argument("type_nchanl", int, optional=True, default=4, doc=doc_type_nchanl), Argument("type_nlayer", int, optional=True, default=2, doc=doc_type_nlayer), Argument("numb_aparam", int, optional=True, default=0, doc=doc_numb_aparam)]
+    return [
+        *descrpt_se_a_args(),
+        Argument("type_nchanl", int, optional=True, default=4, doc=doc_type_nchanl),
+        Argument("type_nlayer", int, optional=True, default=2, doc=doc_type_nlayer),
+        Argument("numb_aparam", int, optional=True, default=0, doc=doc_numb_aparam),
+    ]
 
 
 @descrpt_args_plugin.register("se_e2_r", alias=["se_r"])

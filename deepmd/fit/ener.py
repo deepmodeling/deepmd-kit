@@ -390,9 +390,9 @@ class EnerFitting(nn.Layer):
             assigned_atom_ener = np.array(
                 [ee for ee in self.atom_ener_v if ee is not None]
             )
-            assigned_ener_idx = ([
+            assigned_ener_idx = [
                 ii for ii, ee in enumerate(self.atom_ener_v) if ee is not None
-            ])
+            ]
             # np.dot out size: nframe
             sys_ener -= np.dot(sys_tynatom[:, assigned_ener_idx], assigned_atom_ener)
             sys_tynatom[:, assigned_ener_idx] = 0.0
