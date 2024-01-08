@@ -1358,12 +1358,13 @@ class DescrptSeA(DescrptSe):
         Model
             The deserialized model
         """
+        if type(cls) is not DescrptSeA:
+            raise NotImplementedError("Unsupported")
+        embedding_net_variables = cls.deserialize_network(data["networks"])
         descriptor = cls(**data)
+        descriptor.embedding_net_variables = embedding_net_variables
         descriptor.davg = data["@variables"]["davg"]
         descriptor.dstd = data["@variables"]["dstd"]
-        descriptor.embedding_net_variables = cls.from_dp_variables(
-            data["@variables"]["networks"]
-        )
         descriptor.original_sel = data["@variables"]["original_sel"]
         return descriptor
 
@@ -1375,6 +1376,8 @@ class DescrptSeA(DescrptSe):
         dict
             The serialized data
         """
+        if type(self) is not DescrptSeA:
+            raise NotImplementedError("Unsupported")
         return {
             "type": "se_e2_a",
             "rcut": self.rcut_r,
@@ -1392,8 +1395,15 @@ class DescrptSeA(DescrptSe):
             "precision": self.filter_precision.name,
             "uniform_seed": self.uniform_seed,
             "stripped_type_embedding": self.stripped_type_embedding,
+            "networks": self.serialize_network(
+                # TODO: how to consider type embedding?
+                in_dim=1,
+                neuron=self.filter_neuron,
+                activation_function=self.activation_function_name,
+                resnet_dt=self.filter_resnet_dt,
+                variables=self.embedding_net_variables,
+            ),
             "@variables": {
-                "networks": self.to_dp_variables(self.embedding_net_variables),
                 "davg": self.davg,
                 "dstd": self.dstd,
                 "original_sel": self.original_sel,

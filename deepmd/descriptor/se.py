@@ -4,6 +4,7 @@ from collections import (
     defaultdict,
 )
 from typing import (
+    List,
     Tuple,
 )
 
@@ -15,8 +16,8 @@ from deepmd.utils.graph import (
     get_embedding_net_variables_from_graph_def,
     get_tensor_by_name_from_graph,
 )
-from deepmd_utils.model_format import (
-    NativeNet,
+from deepmd_utils.model_format.network import (
+    EmbeddingNet,
 )
 
 from .descriptor import (
@@ -169,21 +170,43 @@ class DescrptSe(Descriptor):
         local_jdata_cpy = local_jdata.copy()
         return update_one_sel(global_jdata, local_jdata_cpy, False)
 
-    def to_dp_variables(self, variables: dict) -> dict:
-        """Convert the variables to deepmd format.
+    def serialize_network(
+        self,
+        in_dim: int,
+        neuron: List[int],
+        activation_function: str,
+        resnet_dt: bool,
+        variables: dict,
+    ) -> dict:
+        """Serialize network.
 
         Parameters
         ----------
+        in_dim : int
+            The input dimension
+        neuron : List[int]
+            The neuron list
+        activation_function : str
+            The activation function
+        resnet_dt : bool
+            Whether to use resnet
         variables : dict
             The input variables
 
         Returns
         -------
         dict
-            The converted variables
+            The converted network data
         """
         # TODO: unclear how to hand suffix, maybe we need to add a suffix argument?
-        networks = defaultdict(NativeNet)
+        networks = defaultdict(
+            lambda: EmbeddingNet(
+                in_dim=in_dim,
+                neuron=neuron,
+                activation_function=activation_function,
+                resnet_dt=resnet_dt,
+            )
+        )
         for key, value in variables.items():
             m = re.search(EMBEDDING_NET_PATTERN, key)
             m = [mm for mm in m.groups() if mm is not None]
@@ -196,21 +219,21 @@ class DescrptSe(Descriptor):
         return {key: value.serialize() for key, value in networks.items()}
 
     @classmethod
-    def from_dp_variables(cls, variables: dict) -> dict:
-        """Convert the variables from deepmd format.
+    def deserialize_network(cls, data: dict) -> Tuple[List[int], str, bool, dict, str]:
+        """Deserialize network.
 
         Parameters
         ----------
-        variables : dict
-            The input variables
+        data : dict
+            The input network data
 
         Returns
         -------
-        dict
-            The converted variables
+        variables : dict
+            The input variables
         """
         embedding_net_variables = {}
-        for key, value in variables.items():
+        for key, value in data.items():
             keys = key.split("/")
             key0 = keys[0][5:]
             key1 = keys[1][5:]
@@ -218,7 +241,7 @@ class DescrptSe(Descriptor):
                 key1 = ""
             else:
                 key1 = "_" + key1
-            network = NativeNet.deserialize(value)
+            network = EmbeddingNet.deserialize(value)
             for layer_idx, layer in enumerate(network.layers):
                 embedding_net_variables[
                     f"filter_type_{key0}/matrix_{layer_idx}{key1}"
