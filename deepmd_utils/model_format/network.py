@@ -369,7 +369,7 @@ class EmbeddingNet(NativeNet):
         """
         return {
             "in_dim": self.in_dim,
-            "neuron": self.neuron,
+            "neuron": self.neuron.copy(),
             "activation_function": self.activation_function,
             "resnet_dt": self.resnet_dt,
             "layers": [layer.serialize() for layer in self.layers],
