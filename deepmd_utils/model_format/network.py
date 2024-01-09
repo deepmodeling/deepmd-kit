@@ -8,8 +8,10 @@ from abc import (
     ABC,
 )
 from typing import (
+    Dict,
     List,
     Optional,
+    Union,
 )
 
 import h5py
@@ -389,3 +391,98 @@ class EmbeddingNet(NativeNet):
         obj = cls(**data)
         super(EmbeddingNet, obj).__init__(layers)
         return obj
+
+
+class Networks:
+    """A collection of networks for multiple elements.
+
+    The number of dimesions for types might be 0, 1, or 2.
+    - 0: embedding or fitting with type embedding, in ()
+    - 1: embedding with type_one_side, or fitting, in (type_i)
+    - 2: embedding without type_one_side, in (type_i, type_j)
+
+    Serialized keys are in the form of type, type_i, type_i_j, ...
+
+    Parameters
+    ----------
+    ndim : int
+        The number of dimensions.
+    network_type : str, optional
+        The type of the network.
+    networks : dict, optional
+        The networks to initialize with.
+    """
+
+    def __init__(
+        self,
+        ndim: int,
+        network_type: str = "network",
+        networks: Dict[Union[str, tuple], Union[NativeNet, dict]] = {},
+    ):
+        self.ndim = ndim
+        if network_type == "network":
+            self.network_type = NativeNet
+        elif network_type == "embedding_network":
+            self.network_type = EmbeddingNet
+        else:
+            raise NotImplementedError(network_type)
+        self._networks = {}
+        for kk, vv in networks.items():
+            self[kk] = vv
+
+    def _convert_key(self, key):
+        if isinstance(key, tuple):
+            pass
+        elif isinstance(key, str):
+            key = tuple([int(tt) for tt in key.split("_")[1:]])
+        else:
+            raise TypeError(key)
+        assert isinstance(key, tuple)
+        assert len(key) == self.ndim
+        return key
+
+    def __getitem__(self, key):
+        return self._networks[self._convert_key(key)]
+
+    def __setitem__(self, key, value):
+        if isinstance(value, self.network_type):
+            pass
+        elif isinstance(value, dict):
+            value = self.network_type.deserialize(value)
+        else:
+            raise TypeError(value)
+        self._networks[self._convert_key(key)] = value
+
+    def serialize(self) -> dict:
+        """Serialize the networks to a dict.
+
+        Returns
+        -------
+        dict
+            The serialized networks.
+        """
+        if self.network_type is NativeNet:
+            network_type_name = "network"
+        elif self.network_type is EmbeddingNet:
+            network_type_name = "embedding_network"
+        else:
+            raise NotImplementedError(self.network_type)
+        return {
+            "ndim": self.ndim,
+            "network_type": network_type_name,
+            "networks": {
+                ("_".join(["type"] + [str(tt) for tt in key])): value.serialize()
+                for key, value in self._networks.items()
+            },
+        }
+
+    @classmethod
+    def deserialize(cls, data: dict) -> "Networks":
+        """Deserialize the networks from a dict.
+
+        Parameters
+        ----------
+        data : dict
+            The dict to deserialize from.
+        """
+        return cls(**data)

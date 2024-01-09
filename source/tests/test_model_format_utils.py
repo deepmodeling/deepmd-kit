@@ -12,6 +12,7 @@ from deepmd_utils.model_format import (
     EmbeddingNet,
     NativeLayer,
     NativeNet,
+    Networks,
     load_dp_model,
     save_dp_model,
 )
@@ -101,6 +102,61 @@ class TestNativeNet(unittest.TestCase):
             en1 = EmbeddingNet.deserialize(en0.serialize())
             inp = np.ones([ni])
             np.testing.assert_allclose(en0.call(inp), en1.call(inp))
+
+
+class TestNetworks(unittest.TestCase):
+    def setUp(self) -> None:
+        w = np.full((2, 3), 3.0)
+        b = np.full((3,), 4.0)
+        self.network = {
+            "layers": [
+                {
+                    "activation_function": "tanh",
+                    "resnet": True,
+                    "@variables": {"w": w, "b": b},
+                },
+                {
+                    "activation_function": "tanh",
+                    "resnet": True,
+                    "@variables": {"w": w, "b": b},
+                },
+            ],
+        }
+
+    def test_two_dim(self):
+        networks = Networks(ndim=2)
+        networks[(0, 0)] = self.network
+        networks[(0, 1)] = self.network
+        self.assertDictEqual(
+            networks.serialize(),
+            Networks.deserialize(networks.serialize()).serialize(),
+        )
+        self.assertDictEqual(
+            networks[(0, 0)].serialize(), networks.serialize()["networks"]["type_0_0"]
+        )
+
+    def test_one_dim(self):
+        networks = Networks(ndim=1)
+        networks[(0,)] = self.network
+        networks[(1,)] = self.network
+        self.assertDictEqual(
+            networks.serialize(),
+            Networks.deserialize(networks.serialize()).serialize(),
+        )
+        self.assertDictEqual(
+            networks[(0,)].serialize(), networks.serialize()["networks"]["type_0"]
+        )
+
+    def test_zero_dim(self):
+        networks = Networks(ndim=0)
+        networks[()] = self.network
+        self.assertDictEqual(
+            networks.serialize(),
+            Networks.deserialize(networks.serialize()).serialize(),
+        )
+        self.assertDictEqual(
+            networks[()].serialize(), networks.serialize()["networks"]["type"]
+        )
 
 
 class TestDPModel(unittest.TestCase):
