@@ -73,7 +73,7 @@ class DescrptSeA(NativeOP):
         for ii in range(self.ntypes):
             self.embeddings.append(
                 EmbeddingNet(
-                    1,
+                    in_dim,
                     self.neuron,
                     self.activation_function,
                     self.resnet_dt,
