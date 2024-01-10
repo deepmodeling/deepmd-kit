@@ -39,7 +39,7 @@
 
 ``` sh
 cd ./source/lib/paddle_src
-python setup_ins.py install
+python custom_op_install.py install
 ```
 
 安装完毕之后建议运行如下命令测试一下 python 端自定义算子在 CPU、GPU 上的正确性：
