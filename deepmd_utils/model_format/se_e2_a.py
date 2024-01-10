@@ -25,6 +25,95 @@ from .network import (
 
 
 class DescrptSeA(NativeOP):
+    r"""DeepPot-SE constructed from all information (both angular and radial) of
+    atomic configurations. The embedding takes the distance between atoms as input.
+
+    The descriptor :math:`\mathcal{D}^i \in \mathcal{R}^{M_1 \times M_2}` is given by [1]_
+
+    .. math::
+        \mathcal{D}^i = (\mathcal{G}^i)^T \mathcal{R}^i (\mathcal{R}^i)^T \mathcal{G}^i_<
+
+    where :math:`\mathcal{R}^i \in \mathbb{R}^{N \times 4}` is the coordinate
+    matrix, and each row of :math:`\mathcal{R}^i` can be constructed as follows
+
+    .. math::
+        (\mathcal{R}^i)_j = [
+        \begin{array}{c}
+            s(r_{ji}) & \frac{s(r_{ji})x_{ji}}{r_{ji}} & \frac{s(r_{ji})y_{ji}}{r_{ji}} & \frac{s(r_{ji})z_{ji}}{r_{ji}}
+        \end{array}
+        ]
+
+    where :math:`\mathbf{R}_{ji}=\mathbf{R}_j-\mathbf{R}_i = (x_{ji}, y_{ji}, z_{ji})` is
+    the relative coordinate and :math:`r_{ji}=\lVert \mathbf{R}_{ji} \lVert` is its norm.
+    The switching function :math:`s(r)` is defined as:
+
+    .. math::
+        s(r)=
+        \begin{cases}
+        \frac{1}{r}, & r<r_s \\
+        \frac{1}{r} \{ {(\frac{r - r_s}{ r_c - r_s})}^3 (-6 {(\frac{r - r_s}{ r_c - r_s})}^2 +15 \frac{r - r_s}{ r_c - r_s} -10) +1 \}, & r_s \leq r<r_c \\
+        0, & r \geq r_c
+        \end{cases}
+
+    Each row of the embedding matrix  :math:`\mathcal{G}^i \in \mathbb{R}^{N \times M_1}` consists of outputs
+    of a embedding network :math:`\mathcal{N}` of :math:`s(r_{ji})`:
+
+    .. math::
+        (\mathcal{G}^i)_j = \mathcal{N}(s(r_{ji}))
+
+    :math:`\mathcal{G}^i_< \in \mathbb{R}^{N \times M_2}` takes first :math:`M_2` columns of
+    :math:`\mathcal{G}^i`. The equation of embedding network :math:`\mathcal{N}` can be found at
+    :meth:`deepmd.utils.network.embedding_net`.
+
+    Parameters
+    ----------
+    rcut
+            The cut-off radius :math:`r_c`
+    rcut_smth
+            From where the environment matrix should be smoothed :math:`r_s`
+    sel : list[str]
+            sel[i] specifies the maxmum number of type i atoms in the cut-off radius
+    neuron : list[int]
+            Number of neurons in each hidden layers of the embedding net :math:`\mathcal{N}`
+    axis_neuron
+            Number of the axis neuron :math:`M_2` (number of columns of the sub-matrix of the embedding matrix)
+    resnet_dt
+            Time-step `dt` in the resnet construction:
+            y = x + dt * \phi (Wx + b)
+    trainable
+            If the weights of embedding net are trainable.
+    type_one_side
+            Try to build N_types embedding nets. Otherwise, building N_types^2 embedding nets
+    exclude_types : List[List[int]]
+            The excluded pairs of types which have no interaction with each other.
+            For example, `[[0, 1]]` means no interaction between type 0 and type 1.
+    set_davg_zero
+            Set the shift of embedding net input to zero.
+    activation_function
+            The activation function in the embedding net. Supported options are |ACTIVATION_FN|
+    precision
+            The precision of the embedding net parameters. Supported options are |PRECISION|
+    multi_task
+            If the model has multi fitting nets to train.
+    spin
+            The deepspin object.
+
+    Limitations
+    -----------
+    The currently implementation does not support the following features
+
+    1. type_one_side == False
+    2. exclude_types != []
+    3. spin is not None
+
+    References
+    ----------
+    .. [1] Linfeng Zhang, Jiequn Han, Han Wang, Wissam A. Saidi, Roberto Car, and E. Weinan. 2018.
+       End-to-end symmetry preserving inter-atomic potential energy model for finite and extended
+       systems. In Proceedings of the 32nd International Conference on Neural Information Processing
+       Systems (NIPS'18). Curran Associates Inc., Red Hook, NY, USA, 4441-4451.
+    """
+
     def __init__(
         self,
         rcut: float,
@@ -40,13 +129,10 @@ class DescrptSeA(NativeOP):
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
         spin: Optional[Any] = None,
-        stripped_type_embedding: bool = False,
     ) -> None:
         ## seed, uniform_seed, multi_task, not included.
         if not type_one_side:
             raise NotImplementedError("type_one_side == False not implemented")
-        if stripped_type_embedding:
-            raise NotImplementedError("stripped_type_embedding is not implemented")
         if exclude_types != []:
             raise NotImplementedError("exclude_types is not implemented")
         if spin is not None:
@@ -66,7 +152,6 @@ class DescrptSeA(NativeOP):
         self.activation_function = activation_function
         self.precision = precision
         self.spin = spin
-        self.stripped_type_embedding = stripped_type_embedding
 
         in_dim = 1  # not considiering type embedding
         self.embeddings = []
@@ -120,7 +205,7 @@ class DescrptSeA(NativeOP):
         atype_ext,
         nlist,
     ):
-        """Compute the environment matrix.
+        """Compute the descriptor.
 
         Parameters
         ----------
@@ -172,7 +257,6 @@ class DescrptSeA(NativeOP):
             "activation_function": self.activation_function,
             "precision": self.precision,
             "spin": self.spin,
-            "stripped_type_embedding": self.stripped_type_embedding,
             "env_mat": self.env_mat.serialize(),
             "embeddings": [ii.serialize() for ii in self.embeddings],
             "@variables": {
