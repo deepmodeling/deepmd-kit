@@ -6,6 +6,7 @@ See issue #2982 for more information.
 import itertools
 import json
 from typing import (
+    ClassVar,
     Dict,
     List,
     Optional,
@@ -436,6 +437,12 @@ class NetworkCollection:
         The networks to initialize with.
     """
 
+    # subclass may override this
+    NETWORK_TYPE_MAP: ClassVar[Dict[str, type]] = {
+        "network": NativeNet,
+        "embedding_network": EmbeddingNet,
+    }
+
     def __init__(
         self,
         ndim: int,
@@ -445,12 +452,7 @@ class NetworkCollection:
     ):
         self.ndim = ndim
         self.ntypes = ntypes
-        if network_type == "network":
-            self.network_type = NativeNet
-        elif network_type == "embedding_network":
-            self.network_type = EmbeddingNet
-        else:
-            raise NotImplementedError(network_type)
+        self.network_type = self.NETWORK_TYPE_MAP[network_type]
         self._networks = {}
         for kk, vv in networks.items():
             self[kk] = vv
@@ -498,12 +500,10 @@ class NetworkCollection:
         dict
             The serialized networks.
         """
-        if self.network_type is NativeNet:
-            network_type_name = "network"
-        elif self.network_type is EmbeddingNet:
-            network_type_name = "embedding_network"
-        else:
-            raise NotImplementedError(self.network_type)
+        network_type_map_inv = inv_map = {
+            v: k for k, v in self.NETWORK_TYPE_MAP.items()
+        }
+        network_type_name = network_type_map_inv[self.network_type]
         return {
             "ndim": self.ndim,
             "ntypes": self.ntypes,
