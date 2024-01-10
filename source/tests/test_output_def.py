@@ -146,7 +146,7 @@ class TestDef(unittest.TestCase):
             ):
                 self.shape_rd, self.shape_dr = shape_rd, shape_dr
 
-            def output_def(cls):
+            def output_def(self):
                 defs = [
                     OutputVariableDef("energy", [1], True, True),
                 ]
