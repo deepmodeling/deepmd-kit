@@ -1,10 +1,14 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import unittest
 
+import numpy as np
+
 from deepmd_utils.model_format import (
     FittingOutputDef,
     ModelOutputDef,
     OutputVariableDef,
+    fitting_check_output,
+    model_check_output,
 )
 
 
@@ -55,6 +59,14 @@ class TestDef(unittest.TestCase):
         )
         for kk in expected_keys:
             self.assertEqual(md[kk].name, kk)
+        # reduce
+        self.assertEqual(md["energy"].reduciable, True)
+        self.assertEqual(md["dos"].reduciable, True)
+        self.assertEqual(md["foo"].reduciable, False)
+        # derivative
+        self.assertEqual(md["energy"].differentiable, True)
+        self.assertEqual(md["dos"].differentiable, False)
+        self.assertEqual(md["foo"].differentiable, False)
         # shape
         self.assertEqual(md["energy"].shape, [1])
         self.assertEqual(md["dos"].shape, [10])
@@ -73,3 +85,162 @@ class TestDef(unittest.TestCase):
     def test_raise_no_redu_deriv(self):
         with self.assertRaises(ValueError) as context:
             (OutputVariableDef("energy", [1], False, True),)
+
+    def test_model_decorator(self):
+        nf = 2
+        nloc = 3
+
+        @model_check_output
+        class Foo:
+            @classmethod
+            def output_def(cls):
+                defs = [
+                    OutputVariableDef("energy", [1], True, True),
+                ]
+                return ModelOutputDef(FittingOutputDef(defs))
+
+            def forward(self):
+                return {
+                    "energy": np.zeros([nf, nloc, 1]),
+                    "energy_redu": np.zeros([nf, 1]),
+                    "energy_derv_r": np.zeros([nf, nloc, 1, 3]),
+                    "energy_derv_c": np.zeros([nf, 1, 3, 3]),
+                }
+
+        ff = Foo()
+        ff.forward()
+
+    def test_model_decorator_keyerror(self):
+        nf = 2
+        nloc = 3
+
+        @model_check_output
+        class Foo:
+            @classmethod
+            def output_def(cls):
+                defs = [
+                    OutputVariableDef("energy", [1], True, True),
+                ]
+                return ModelOutputDef(FittingOutputDef(defs))
+
+            def forward(self):
+                return {
+                    "energy": np.zeros([nf, nloc, 1]),
+                    "energy_redu": np.zeros([nf, 1]),
+                    "energy_derv_c": np.zeros([nf, 1, 3, 3]),
+                }
+
+        ff = Foo()
+        with self.assertRaises(KeyError) as context:
+            ff.forward()
+            self.assertTrue("energy_derv_r" in context.exception)
+
+    def test_model_decorator_shapeerror(self):
+        nf = 2
+        nloc = 3
+
+        @model_check_output
+        class Foo:
+            def __init__(
+                self,
+                shape_rd=[nf, 1],
+                shape_dr=[nf, nloc, 1, 3],
+            ):
+                self.shape_rd, self.shape_dr = shape_rd, shape_dr
+
+            @classmethod
+            def output_def(cls):
+                defs = [
+                    OutputVariableDef("energy", [1], True, True),
+                ]
+                return ModelOutputDef(FittingOutputDef(defs))
+
+            def forward(self):
+                return {
+                    "energy": np.zeros([nf, nloc, 1]),
+                    "energy_redu": np.zeros(self.shape_rd),
+                    "energy_derv_r": np.zeros(self.shape_dr),
+                    "energy_derv_c": np.zeros([nf, 1, 3, 3]),
+                }
+
+        ff = Foo()
+        ff.forward()
+        # shape of reduced energy
+        with self.assertRaises(ValueError) as context:
+            ff = Foo(shape_rd=[nf, nloc, 1])
+            ff.forward()
+            self.assertTrue("not matching" in context.exception)
+        with self.assertRaises(ValueError) as context:
+            ff = Foo(shape_rd=[nf, 2])
+            ff.forward()
+            self.assertTrue("not matching" in context.exception)
+        # shape of dr
+        with self.assertRaises(ValueError) as context:
+            ff = Foo(shape_dr=[nf, nloc, 1])
+            ff.forward()
+            self.assertTrue("not matching" in context.exception)
+        with self.assertRaises(ValueError) as context:
+            ff = Foo(shape_dr=[nf, nloc, 1, 3, 3])
+            ff.forward()
+            self.assertTrue("not matching" in context.exception)
+        with self.assertRaises(ValueError) as context:
+            ff = Foo(shape_dr=[nf, nloc, 1, 4])
+            ff.forward()
+            self.assertTrue("not matching" in context.exception)
+
+    def test_fitting_decorator(self):
+        nf = 2
+        nloc = 3
+
+        @fitting_check_output
+        class Foo:
+            @classmethod
+            def output_def(cls):
+                defs = [
+                    OutputVariableDef("energy", [1], True, True),
+                ]
+                return FittingOutputDef(defs)
+
+            def forward(self):
+                return {
+                    "energy": np.zeros([nf, nloc, 1]),
+                }
+
+        ff = Foo()
+        ff.forward()
+
+    def test_fitting_decorator_shapeerror(self):
+        nf = 2
+        nloc = 3
+
+        @fitting_check_output
+        class Foo:
+            def __init__(
+                self,
+                shape=[nf, nloc, 1],
+            ):
+                self.shape = shape
+
+            @classmethod
+            def output_def(cls):
+                defs = [
+                    OutputVariableDef("energy", [1], True, True),
+                ]
+                return FittingOutputDef(defs)
+
+            def forward(self):
+                return {
+                    "energy": np.zeros(self.shape),
+                }
+
+        ff = Foo()
+        ff.forward()
+        # shape of reduced energy
+        with self.assertRaises(ValueError) as context:
+            ff = Foo(shape=[nf, 1])
+            ff.forward()
+            self.assertTrue("not matching" in context.exception)
+        with self.assertRaises(ValueError) as context:
+            ff = Foo(shape=[nf, nloc, 2])
+            ff.forward()
+            self.assertTrue("not matching" in context.exception)

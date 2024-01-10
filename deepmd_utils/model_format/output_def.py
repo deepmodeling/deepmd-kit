@@ -7,6 +7,76 @@ from typing import (
 )
 
 
+def check_var(var, var_def):
+    if var_def.atomic:
+        # var.shape == [nf, nloc, *var_def.shape]
+        if len(var.shape) != len(var_def.shape) + 2:
+            raise ValueError(f"{var.shape[2:]} length not matching def {var_def.shape}")
+        if list(var.shape[2:]) != var_def.shape:
+            raise ValueError(f"{var.shape[2:]} not matching def {var_def.shape}")
+    else:
+        # var.shape == [nf, *var_def.shape]
+        if len(var.shape) != len(var_def.shape) + 1:
+            raise ValueError(f"{var.shape[1:]} length not matching def {var_def.shape}")
+        if list(var.shape[1:]) != var_def.shape:
+            raise ValueError(f"{var.shape[1:]} not matching def {var_def.shape}")
+
+
+def model_check_output(cls):
+    class wrapper(cls):
+        def __init__(
+            self,
+            *args,
+            **kwargs,
+        ):
+            super().__init__(*args, **kwargs)
+            self.md = cls.output_def()
+
+        def forward(
+            self,
+            *args,
+            **kwargs,
+        ):
+            ret = cls.forward(self, *args, **kwargs)
+            for kk in self.md.keys_outp():
+                dd = self.md[kk]
+                check_var(ret[kk], dd)
+                if dd.reduciable:
+                    rk = get_reduce_name(kk)
+                    check_var(ret[rk], self.md[rk])
+                if dd.differentiable:
+                    dnr, dnc = get_deriv_name(kk)
+                    check_var(ret[dnr], self.md[dnr])
+                    check_var(ret[dnc], self.md[dnc])
+            return ret
+
+    return wrapper
+
+
+def fitting_check_output(cls):
+    class wrapper(cls):
+        def __init__(
+            self,
+            *args,
+            **kwargs,
+        ):
+            super().__init__(*args, **kwargs)
+            self.md = cls.output_def()
+
+        def forward(
+            self,
+            *args,
+            **kwargs,
+        ):
+            ret = cls.forward(self, *args, **kwargs)
+            for kk in self.md.keys():
+                dd = self.md[kk]
+                check_var(ret[kk], dd)
+            return ret
+
+    return wrapper
+
+
 class VariableDef:
     """Defines the shape and other properties of a variable.
 

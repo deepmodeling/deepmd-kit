@@ -20,6 +20,8 @@ from .output_def import (
     ModelOutputDef,
     OutputVariableDef,
     VariableDef,
+    fitting_check_output,
+    model_check_output,
 )
 from .se_e2_a import (
     DescrptSeA,
@@ -41,4 +43,6 @@ __all__ = [
     "FittingOutputDef",
     "OutputVariableDef",
     "VariableDef",
+    "model_check_output",
+    "fitting_check_output",
 ]
