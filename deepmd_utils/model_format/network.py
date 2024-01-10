@@ -3,6 +3,7 @@
 
 See issue #2982 for more information.
 """
+import itertools
 import json
 from typing import (
     Dict,
@@ -438,10 +439,12 @@ class NetworkCollection:
     def __init__(
         self,
         ndim: int,
+        ntypes: int,
         network_type: str = "network",
         networks: Dict[Union[str, tuple], Union[NativeNet, dict]] = {},
     ):
         self.ndim = ndim
+        self.ntypes = ntypes
         if network_type == "network":
             self.network_type = NativeNet
         elif network_type == "embedding_network":
@@ -451,6 +454,18 @@ class NetworkCollection:
         self._networks = {}
         for kk, vv in networks.items():
             self[kk] = vv
+
+    def check_completeness(self):
+        """Check whether the collection is complete.
+
+        Raises
+        ------
+        RuntimeError
+            If the collection is incomplete.
+        """
+        for tt in itertools.product(range(self.ntypes), repeat=self.ndim):
+            if tuple(tt) not in self._networks:
+                raise RuntimeError(f"network for {tt} not found")
 
     def _convert_key(self, key):
         if isinstance(key, tuple):
@@ -491,6 +506,7 @@ class NetworkCollection:
             raise NotImplementedError(self.network_type)
         return {
             "ndim": self.ndim,
+            "ntypes": self.ntypes,
             "network_type": network_type_name,
             "networks": {
                 ("_".join(["type"] + [str(tt) for tt in key])): value.serialize()

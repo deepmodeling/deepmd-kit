@@ -136,9 +136,14 @@ class TestNetworkCollection(unittest.TestCase):
         }
 
     def test_two_dim(self):
-        networks = NetworkCollection(ndim=2)
+        networks = NetworkCollection(ndim=2, ntypes=2)
         networks[(0, 0)] = self.network
+        networks[(1, 1)] = self.network
         networks[(0, 1)] = self.network
+        with self.assertRaises(RuntimeError):
+            networks.check_completeness()
+        networks[(1, 0)] = self.network
+        networks.check_completeness()
         np.testing.assert_equal(
             networks.serialize(),
             NetworkCollection.deserialize(networks.serialize()).serialize(),
@@ -148,9 +153,12 @@ class TestNetworkCollection(unittest.TestCase):
         )
 
     def test_one_dim(self):
-        networks = NetworkCollection(ndim=1)
+        networks = NetworkCollection(ndim=1, ntypes=2)
         networks[(0,)] = self.network
+        with self.assertRaises(RuntimeError):
+            networks.check_completeness()
         networks[(1,)] = self.network
+        networks.check_completeness()
         np.testing.assert_equal(
             networks.serialize(),
             NetworkCollection.deserialize(networks.serialize()).serialize(),
@@ -160,8 +168,9 @@ class TestNetworkCollection(unittest.TestCase):
         )
 
     def test_zero_dim(self):
-        networks = NetworkCollection(ndim=0)
+        networks = NetworkCollection(ndim=0, ntypes=2)
         networks[()] = self.network
+        networks.check_completeness()
         np.testing.assert_equal(
             networks.serialize(),
             NetworkCollection.deserialize(networks.serialize()).serialize(),
