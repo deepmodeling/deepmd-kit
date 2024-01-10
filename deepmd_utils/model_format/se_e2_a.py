@@ -137,7 +137,7 @@ class DescrptSeA(NativeOP):
             The descriptor. shape: nf x nloc x ng x axis_neuron
         """
         # nf x nloc x nnei x 4
-        rr, ww = self.env_mat.call(nlist, coord_ext, atype_ext, self.davg, self.dstd)
+        rr, ww = self.env_mat.call(coord_ext, atype_ext, nlist, self.davg, self.dstd)
         nf, nloc, nnei, _ = rr.shape
         sec = np.append([0], np.cumsum(self.sel))
 
