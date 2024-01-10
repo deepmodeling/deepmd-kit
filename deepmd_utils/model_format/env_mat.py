@@ -68,9 +68,9 @@ class EnvMat(NativeOP):
 
     def call(
         self,
-        nlist: np.ndarray,
         coord_ext: np.ndarray,
         atype_ext: np.ndarray,
+        nlist: np.ndarray,
         davg: Optional[np.ndarray] = None,
         dstd: Optional[np.ndarray] = None,
     ) -> Union[np.ndarray, np.ndarray]:
