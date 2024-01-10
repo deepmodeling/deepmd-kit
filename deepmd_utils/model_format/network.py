@@ -381,6 +381,7 @@ class EmbeddingNet(NativeNet):
         self.neuron = neuron
         self.activation_function = activation_function
         self.resnet_dt = resnet_dt
+        self.precision = precision
 
     def serialize(self) -> dict:
         """Serialize the network to a dict.
@@ -395,6 +396,7 @@ class EmbeddingNet(NativeNet):
             "neuron": self.neuron.copy(),
             "activation_function": self.activation_function,
             "resnet_dt": self.resnet_dt,
+            "precision": self.precision,
             "layers": [layer.serialize() for layer in self.layers],
         }
 
