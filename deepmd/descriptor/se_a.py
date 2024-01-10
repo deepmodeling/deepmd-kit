@@ -1026,8 +1026,12 @@ class DescrptSeA(paddle.nn.Layer):
         outputs_size = [1, *self.filter_neuron]
         outputs_size_2 = self.n_axis_neuron  # 16
         all_excluded = all(
-            (type_input, type_i) in self.exclude_types  #  set()
-            for type_i in range(self.ntypes)
+            # FIXME: the bracket '[]' is needed when convert to static model, will be
+            # removed when fixed.
+            [  # noqa
+                (type_input, type_i) in self.exclude_types  #  set() noqa
+                for type_i in range(self.ntypes)
+            ]
         )
         if all_excluded:
             # all types are excluded so result and qmat should be zeros
