@@ -14,6 +14,7 @@ from deepmd_utils.model_format import (
     EnvMat,
     NativeLayer,
     NativeNet,
+    NetworkCollection,
     load_dp_model,
     save_dp_model,
 )
@@ -113,6 +114,70 @@ class TestNativeNet(unittest.TestCase):
             en1 = EmbeddingNet.deserialize(en0.serialize())
             inp = np.ones([ni])
             np.testing.assert_allclose(en0.call(inp), en1.call(inp))
+
+
+class TestNetworkCollection(unittest.TestCase):
+    def setUp(self) -> None:
+        w = np.full((2, 3), 3.0)
+        b = np.full((3,), 4.0)
+        self.network = {
+            "layers": [
+                {
+                    "activation_function": "tanh",
+                    "resnet": True,
+                    "@variables": {"w": w, "b": b},
+                },
+                {
+                    "activation_function": "tanh",
+                    "resnet": True,
+                    "@variables": {"w": w, "b": b},
+                },
+            ],
+        }
+
+    def test_two_dim(self):
+        networks = NetworkCollection(ndim=2, ntypes=2)
+        networks[(0, 0)] = self.network
+        networks[(1, 1)] = self.network
+        networks[(0, 1)] = self.network
+        with self.assertRaises(RuntimeError):
+            networks.check_completeness()
+        networks[(1, 0)] = self.network
+        networks.check_completeness()
+        np.testing.assert_equal(
+            networks.serialize(),
+            NetworkCollection.deserialize(networks.serialize()).serialize(),
+        )
+        np.testing.assert_equal(
+            networks[(0, 0)].serialize(), networks.serialize()["networks"][0]
+        )
+
+    def test_one_dim(self):
+        networks = NetworkCollection(ndim=1, ntypes=2)
+        networks[(0,)] = self.network
+        with self.assertRaises(RuntimeError):
+            networks.check_completeness()
+        networks[(1,)] = self.network
+        networks.check_completeness()
+        np.testing.assert_equal(
+            networks.serialize(),
+            NetworkCollection.deserialize(networks.serialize()).serialize(),
+        )
+        np.testing.assert_equal(
+            networks[(0,)].serialize(), networks.serialize()["networks"][0]
+        )
+
+    def test_zero_dim(self):
+        networks = NetworkCollection(ndim=0, ntypes=2)
+        networks[()] = self.network
+        networks.check_completeness()
+        np.testing.assert_equal(
+            networks.serialize(),
+            NetworkCollection.deserialize(networks.serialize()).serialize(),
+        )
+        np.testing.assert_equal(
+            networks[()].serialize(), networks.serialize()["networks"][0]
+        )
 
 
 class TestDPModel(unittest.TestCase):

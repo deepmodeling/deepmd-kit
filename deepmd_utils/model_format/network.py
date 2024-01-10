@@ -3,10 +3,14 @@
 
 See issue #2982 for more information.
 """
+import itertools
 import json
 from typing import (
+    ClassVar,
+    Dict,
     List,
     Optional,
+    Union,
 )
 
 import h5py
@@ -411,3 +415,111 @@ class EmbeddingNet(NativeNet):
         obj = cls(**data)
         super(EmbeddingNet, obj).__init__(layers)
         return obj
+
+
+class NetworkCollection:
+    """A collection of networks for multiple elements.
+
+    The number of dimesions for types might be 0, 1, or 2.
+    - 0: embedding or fitting with type embedding, in ()
+    - 1: embedding with type_one_side, or fitting, in (type_i)
+    - 2: embedding without type_one_side, in (type_i, type_j)
+
+    Parameters
+    ----------
+    ndim : int
+        The number of dimensions.
+    network_type : str, optional
+        The type of the network.
+    networks : dict, optional
+        The networks to initialize with.
+    """
+
+    # subclass may override this
+    NETWORK_TYPE_MAP: ClassVar[Dict[str, type]] = {
+        "network": NativeNet,
+        "embedding_network": EmbeddingNet,
+    }
+
+    def __init__(
+        self,
+        ndim: int,
+        ntypes: int,
+        network_type: str = "network",
+        networks: List[Union[NativeNet, dict]] = [],
+    ):
+        self.ndim = ndim
+        self.ntypes = ntypes
+        self.network_type = self.NETWORK_TYPE_MAP[network_type]
+        self._networks = [None for ii in range(ntypes**ndim)]
+        for ii, network in enumerate(networks):
+            self[ii] = network
+        if len(networks):
+            self.check_completeness()
+
+    def check_completeness(self):
+        """Check whether the collection is complete.
+
+        Raises
+        ------
+        RuntimeError
+            If the collection is incomplete.
+        """
+        for tt in itertools.product(range(self.ntypes), repeat=self.ndim):
+            if self[tuple(tt)] is None:
+                raise RuntimeError(f"network for {tt} not found")
+
+    def _convert_key(self, key):
+        if isinstance(key, int):
+            idx = key
+        else:
+            if isinstance(key, tuple):
+                pass
+            elif isinstance(key, str):
+                key = tuple([int(tt) for tt in key.split("_")[1:]])
+            else:
+                raise TypeError(key)
+            assert isinstance(key, tuple)
+            assert len(key) == self.ndim
+            idx = sum([tt * self.ntypes**ii for ii, tt in enumerate(key)])
+        return idx
+
+    def __getitem__(self, key):
+        return self._networks[self._convert_key(key)]
+
+    def __setitem__(self, key, value):
+        if isinstance(value, self.network_type):
+            pass
+        elif isinstance(value, dict):
+            value = self.network_type.deserialize(value)
+        else:
+            raise TypeError(value)
+        self._networks[self._convert_key(key)] = value
+
+    def serialize(self) -> dict:
+        """Serialize the networks to a dict.
+
+        Returns
+        -------
+        dict
+            The serialized networks.
+        """
+        network_type_map_inv = {v: k for k, v in self.NETWORK_TYPE_MAP.items()}
+        network_type_name = network_type_map_inv[self.network_type]
+        return {
+            "ndim": self.ndim,
+            "ntypes": self.ntypes,
+            "network_type": network_type_name,
+            "networks": [nn.serialize() for nn in self._networks],
+        }
+
+    @classmethod
+    def deserialize(cls, data: dict) -> "NetworkCollection":
+        """Deserialize the networks from a dict.
+
+        Parameters
+        ----------
+        data : dict
+            The dict to deserialize from.
+        """
+        return cls(**data)
