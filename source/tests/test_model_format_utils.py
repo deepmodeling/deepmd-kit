@@ -149,7 +149,7 @@ class TestNetworkCollection(unittest.TestCase):
             NetworkCollection.deserialize(networks.serialize()).serialize(),
         )
         np.testing.assert_equal(
-            networks[(0, 0)].serialize(), networks.serialize()["networks"]["type_0_0"]
+            networks[(0, 0)].serialize(), networks.serialize()["networks"][0]
         )
 
     def test_one_dim(self):
@@ -164,7 +164,7 @@ class TestNetworkCollection(unittest.TestCase):
             NetworkCollection.deserialize(networks.serialize()).serialize(),
         )
         np.testing.assert_equal(
-            networks[(0,)].serialize(), networks.serialize()["networks"]["type_0"]
+            networks[(0,)].serialize(), networks.serialize()["networks"][0]
         )
 
     def test_zero_dim(self):
@@ -176,7 +176,7 @@ class TestNetworkCollection(unittest.TestCase):
             NetworkCollection.deserialize(networks.serialize()).serialize(),
         )
         np.testing.assert_equal(
-            networks[()].serialize(), networks.serialize()["networks"]["type"]
+            networks[()].serialize(), networks.serialize()["networks"][0]
         )
 
 

@@ -425,8 +425,6 @@ class NetworkCollection:
     - 1: embedding with type_one_side, or fitting, in (type_i)
     - 2: embedding without type_one_side, in (type_i, type_j)
 
-    Serialized keys are in the form of type, type_i, type_i_j, ...
-
     Parameters
     ----------
     ndim : int
@@ -448,14 +446,16 @@ class NetworkCollection:
         ndim: int,
         ntypes: int,
         network_type: str = "network",
-        networks: Dict[Union[str, tuple], Union[NativeNet, dict]] = {},
+        networks: List[Union[NativeNet, dict]] = [],
     ):
         self.ndim = ndim
         self.ntypes = ntypes
         self.network_type = self.NETWORK_TYPE_MAP[network_type]
-        self._networks = {}
-        for kk, vv in networks.items():
-            self[kk] = vv
+        self._networks = [None for ii in range(ntypes**ndim)]
+        for ii, network in enumerate(networks):
+            self[ii] = network
+        if len(networks):
+            self.check_completeness()
 
     def check_completeness(self):
         """Check whether the collection is complete.
@@ -466,19 +466,23 @@ class NetworkCollection:
             If the collection is incomplete.
         """
         for tt in itertools.product(range(self.ntypes), repeat=self.ndim):
-            if tuple(tt) not in self._networks:
+            if self[tuple(tt)] is None:
                 raise RuntimeError(f"network for {tt} not found")
 
     def _convert_key(self, key):
-        if isinstance(key, tuple):
-            pass
-        elif isinstance(key, str):
-            key = tuple([int(tt) for tt in key.split("_")[1:]])
+        if isinstance(key, int):
+            idx = key
         else:
-            raise TypeError(key)
-        assert isinstance(key, tuple)
-        assert len(key) == self.ndim
-        return key
+            if isinstance(key, tuple):
+                pass
+            elif isinstance(key, str):
+                key = tuple([int(tt) for tt in key.split("_")[1:]])
+            else:
+                raise TypeError(key)
+            assert isinstance(key, tuple)
+            assert len(key) == self.ndim
+            idx = sum([tt * self.ntypes**ii for ii, tt in enumerate(key)])
+        return idx
 
     def __getitem__(self, key):
         return self._networks[self._convert_key(key)]
@@ -500,18 +504,13 @@ class NetworkCollection:
         dict
             The serialized networks.
         """
-        network_type_map_inv = inv_map = {
-            v: k for k, v in self.NETWORK_TYPE_MAP.items()
-        }
+        network_type_map_inv = {v: k for k, v in self.NETWORK_TYPE_MAP.items()}
         network_type_name = network_type_map_inv[self.network_type]
         return {
             "ndim": self.ndim,
             "ntypes": self.ntypes,
             "network_type": network_type_name,
-            "networks": {
-                ("_".join(["type"] + [str(tt) for tt in key])): value.serialize()
-                for key, value in self._networks.items()
-            },
+            "networks": [nn.serialize() for nn in self._networks],
         }
 
     @classmethod

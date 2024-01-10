@@ -21,6 +21,7 @@ from .env_mat import (
 )
 from .network import (
     EmbeddingNet,
+    NetworkCollection,
 )
 
 
@@ -154,16 +155,18 @@ class DescrptSeA(NativeOP):
         self.spin = spin
 
         in_dim = 1  # not considiering type embedding
-        self.embeddings = []
+        self.embeddings = NetworkCollection(
+            ntypes=self.ntypes,
+            ndim=(1 if self.type_one_side else 2),
+            network_type="embedding_network",
+        )
         for ii in range(self.ntypes):
-            self.embeddings.append(
-                EmbeddingNet(
-                    in_dim,
-                    self.neuron,
-                    self.activation_function,
-                    self.resnet_dt,
-                    self.precision,
-                )
+            self.embeddings[(ii,)] = EmbeddingNet(
+                in_dim,
+                self.neuron,
+                self.activation_function,
+                self.resnet_dt,
+                self.precision,
             )
         self.env_mat = EnvMat(self.rcut, self.rcut_smth)
         self.nnei = np.sum(self.sel)
@@ -196,7 +199,7 @@ class DescrptSeA(NativeOP):
         nf, nloc, nnei = ss.shape[0:3]
         ss = ss.reshape(nf, nloc, nnei, 1)
         # nf x nloc x nnei x ng
-        gg = self.embeddings[ll].call(ss)
+        gg = self.embeddings[(ll,)].call(ss)
         return gg
 
     def call(
@@ -258,7 +261,7 @@ class DescrptSeA(NativeOP):
             "precision": self.precision,
             "spin": self.spin,
             "env_mat": self.env_mat.serialize(),
-            "embeddings": [ii.serialize() for ii in self.embeddings],
+            "embeddings": self.embeddings.serialize(),
             "@variables": {
                 "davg": self.davg,
                 "dstd": self.dstd,
@@ -274,6 +277,6 @@ class DescrptSeA(NativeOP):
 
         obj["davg"] = variables["davg"]
         obj["dstd"] = variables["dstd"]
-        obj.embeddings = [EmbeddingNet.deserialize(dd) for dd in embeddings]
+        obj.embeddings = NetworkCollection.deserialize(embeddings)
         obj.env_mat = EnvMat.deserialize(env_mat)
         return obj
