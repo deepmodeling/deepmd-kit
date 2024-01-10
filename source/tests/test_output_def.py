@@ -92,8 +92,7 @@ class TestDef(unittest.TestCase):
 
         @model_check_output
         class Foo:
-            @classmethod
-            def output_def(cls):
+            def output_def(self):
                 defs = [
                     OutputVariableDef("energy", [1], True, True),
                 ]
@@ -116,8 +115,7 @@ class TestDef(unittest.TestCase):
 
         @model_check_output
         class Foo:
-            @classmethod
-            def output_def(cls):
+            def output_def(self):
                 defs = [
                     OutputVariableDef("energy", [1], True, True),
                 ]
@@ -148,7 +146,6 @@ class TestDef(unittest.TestCase):
             ):
                 self.shape_rd, self.shape_dr = shape_rd, shape_dr
 
-            @classmethod
             def output_def(cls):
                 defs = [
                     OutputVariableDef("energy", [1], True, True),
@@ -194,8 +191,7 @@ class TestDef(unittest.TestCase):
 
         @fitting_check_output
         class Foo:
-            @classmethod
-            def output_def(cls):
+            def output_def(self):
                 defs = [
                     OutputVariableDef("energy", [1], True, True),
                 ]
@@ -221,8 +217,7 @@ class TestDef(unittest.TestCase):
             ):
                 self.shape = shape
 
-            @classmethod
-            def output_def(cls):
+            def output_def(self):
                 defs = [
                     OutputVariableDef("energy", [1], True, True),
                 ]

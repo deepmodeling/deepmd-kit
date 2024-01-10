@@ -23,6 +23,14 @@ def check_var(var, var_def):
 
 
 def model_check_output(cls):
+    """Check if the output of the Model is consistent with the definition.
+
+    Two methods are assumed to be provided by the Model:
+    1. Model.output_def that gives the output definition.
+    2. Model.forward that defines the forward path of the model.
+
+    """
+
     class wrapper(cls):
         def __init__(
             self,
@@ -30,7 +38,7 @@ def model_check_output(cls):
             **kwargs,
         ):
             super().__init__(*args, **kwargs)
-            self.md = cls.output_def()
+            self.md = cls.output_def(self)
 
         def forward(
             self,
@@ -54,6 +62,14 @@ def model_check_output(cls):
 
 
 def fitting_check_output(cls):
+    """Check if the output of the Fitting is consistent with the definition.
+
+    Two methods are assumed to be provided by the Fitting:
+    1. Fitting.output_def that gives the output definition.
+    2. Fitting.forward defines the forward path of the fitting.
+
+    """
+
     class wrapper(cls):
         def __init__(
             self,
@@ -61,7 +77,7 @@ def fitting_check_output(cls):
             **kwargs,
         ):
             super().__init__(*args, **kwargs)
-            self.md = cls.output_def()
+            self.md = cls.output_def(self)
 
         def forward(
             self,
