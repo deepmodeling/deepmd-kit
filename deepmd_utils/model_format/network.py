@@ -415,7 +415,7 @@ class EmbeddingNet(NativeNet):
         return obj
 
 
-class Networks:
+class NetworkCollection:
     """A collection of networks for multiple elements.
 
     The number of dimesions for types might be 0, 1, or 2.
@@ -499,7 +499,7 @@ class Networks:
         }
 
     @classmethod
-    def deserialize(cls, data: dict) -> "Networks":
+    def deserialize(cls, data: dict) -> "NetworkCollection":
         """Deserialize the networks from a dict.
 
         Parameters

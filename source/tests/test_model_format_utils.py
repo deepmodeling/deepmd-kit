@@ -14,7 +14,7 @@ from deepmd_utils.model_format import (
     EnvMat,
     NativeLayer,
     NativeNet,
-    Networks,
+    NetworkCollection,
     load_dp_model,
     save_dp_model,
 )
@@ -116,7 +116,7 @@ class TestNativeNet(unittest.TestCase):
             np.testing.assert_allclose(en0.call(inp), en1.call(inp))
 
 
-class TestNetworks(unittest.TestCase):
+class TestNetworkCollection(unittest.TestCase):
     def setUp(self) -> None:
         w = np.full((2, 3), 3.0)
         b = np.full((3,), 4.0)
@@ -136,35 +136,35 @@ class TestNetworks(unittest.TestCase):
         }
 
     def test_two_dim(self):
-        networks = Networks(ndim=2)
+        networks = NetworkCollection(ndim=2)
         networks[(0, 0)] = self.network
         networks[(0, 1)] = self.network
         np.testing.assert_equal(
             networks.serialize(),
-            Networks.deserialize(networks.serialize()).serialize(),
+            NetworkCollection.deserialize(networks.serialize()).serialize(),
         )
         np.testing.assert_equal(
             networks[(0, 0)].serialize(), networks.serialize()["networks"]["type_0_0"]
         )
 
     def test_one_dim(self):
-        networks = Networks(ndim=1)
+        networks = NetworkCollection(ndim=1)
         networks[(0,)] = self.network
         networks[(1,)] = self.network
         np.testing.assert_equal(
             networks.serialize(),
-            Networks.deserialize(networks.serialize()).serialize(),
+            NetworkCollection.deserialize(networks.serialize()).serialize(),
         )
         np.testing.assert_equal(
             networks[(0,)].serialize(), networks.serialize()["networks"]["type_0"]
         )
 
     def test_zero_dim(self):
-        networks = Networks(ndim=0)
+        networks = NetworkCollection(ndim=0)
         networks[()] = self.network
         np.testing.assert_equal(
             networks.serialize(),
-            Networks.deserialize(networks.serialize()).serialize(),
+            NetworkCollection.deserialize(networks.serialize()).serialize(),
         )
         np.testing.assert_equal(
             networks[()].serialize(), networks.serialize()["networks"]["type"]
