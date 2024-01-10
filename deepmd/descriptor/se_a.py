@@ -7,7 +7,6 @@ from typing import (
 import numpy as np
 
 from deepmd.common import (
-    cast_precision,
     get_activation_func,
     get_precision,
 )
@@ -973,7 +972,9 @@ class DescrptSeA(paddle.nn.Layer):
                 transpose_x=True,
             )
 
-    @cast_precision
+    # FIXME: @cast_precision should be annotated when convert to static model
+    # will restore it when it fixed.
+    # @cast_precision
     def _filter(
         self,
         inputs: paddle.Tensor,

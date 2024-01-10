@@ -1,6 +1,5 @@
 """Module that sets tensorflow working environment and exports inportant constants."""
 
-import ctypes
 import logging
 import os
 import platform
@@ -46,11 +45,11 @@ def dlopen_library(module: str, filename: str):
         m = import_module(module)
     except ModuleNotFoundError:
         pass
-    else:
-        libs = sorted(Path(m.__file__).parent.glob(filename))
-        # hope that there is only one version installed...
-        if len(libs):
-            ctypes.CDLL(str(libs[0].absolute()))
+    # else:
+    #     libs = sorted(Path(m.__file__).parent.glob(filename))
+    #     # hope that there is only one version installed...
+    #     if len(libs):
+    #         ctypes.CDLL(str(libs[0].absolute()))
 
 
 # dlopen pip cuda library before tensorflow
