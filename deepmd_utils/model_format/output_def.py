@@ -38,7 +38,7 @@ def check_output(cls, output_type):
             **kwargs,
         ):
             ret = cls.forward(self, *args, **kwargs)
-            keys = self.md.keys_outp() if output_type == 'model' else self.md.keys()
+            keys = self.md.keys_outp() if output_type == "model" else self.md.keys()
             for kk in keys:
                 dd = self.md[kk]
                 check_var(ret[kk], dd)
@@ -50,13 +50,16 @@ def check_output(cls, output_type):
                     check_var(ret[dnr], self.md[dnr])
                     check_var(ret[dnc], self.md[dnc])
             return ret
+
     return wrapper
 
+
 def model_check_output(cls):
-    return check_output(cls, 'model')
+    return check_output(cls, "model")
+
 
 def fitting_check_output(cls):
-    return check_output(cls, 'fitting')
+    return check_output(cls, "fitting")
 
 
 class VariableDef:
