@@ -450,6 +450,8 @@ void PairDeepMD::compute(int eflag, int vflag) {
   if (numb_models == 0) {
     return;
   }
+  // See
+  // https://docs.lammps.org/Developer_updating.html#use-ev-init-to-initialize-variables-derived-from-eflag-and-vflag
   ev_init(eflag, vflag);
   if (vflag_atom) {
     error->all(FLERR,
