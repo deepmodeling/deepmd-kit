@@ -1234,14 +1234,13 @@ void DeepPot::get_type_map(std::string& type_map) {
   type_map = get_scalar<STRINGTYPE>("model_attr/tmap");
 }
 
-DeepPotModelDevi::DeepPotModelDevi()
-    : inited(false), init_nbor(false), numb_models(0) {}
+DeepPotModelDevi::DeepPotModelDevi() : inited(false), numb_models(0) {}
 
 DeepPotModelDevi::DeepPotModelDevi(
     const std::vector<std::string>& models,
     const int& gpu_rank,
     const std::vector<std::string>& file_contents)
-    : inited(false), init_nbor(false), numb_models(0) {
+    : inited(false), numb_models(0) {
   init(models, gpu_rank, file_contents);
 }
 
