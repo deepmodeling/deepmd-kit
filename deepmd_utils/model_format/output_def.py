@@ -22,15 +22,7 @@ def check_var(var, var_def):
             raise ValueError(f"{var.shape[1:]} not matching def {var_def.shape}")
 
 
-def model_check_output(cls):
-    """Check if the output of the Model is consistent with the definition.
-
-    Two methods are assumed to be provided by the Model:
-    1. Model.output_def that gives the output definition.
-    2. Model.forward that defines the forward path of the model.
-
-    """
-
+def check_output(cls, output_type):
     class wrapper(cls):
         def __init__(
             self,
@@ -46,7 +38,8 @@ def model_check_output(cls):
             **kwargs,
         ):
             ret = cls.forward(self, *args, **kwargs)
-            for kk in self.md.keys_outp():
+            keys = self.md.keys_outp() if output_type == 'model' else self.md.keys()
+            for kk in keys:
                 dd = self.md[kk]
                 check_var(ret[kk], dd)
                 if dd.reduciable:
@@ -57,40 +50,13 @@ def model_check_output(cls):
                     check_var(ret[dnr], self.md[dnr])
                     check_var(ret[dnc], self.md[dnc])
             return ret
-
     return wrapper
 
+def model_check_output(cls):
+    return check_output(cls, 'model')
 
 def fitting_check_output(cls):
-    """Check if the output of the Fitting is consistent with the definition.
-
-    Two methods are assumed to be provided by the Fitting:
-    1. Fitting.output_def that gives the output definition.
-    2. Fitting.forward defines the forward path of the fitting.
-
-    """
-
-    class wrapper(cls):
-        def __init__(
-            self,
-            *args,
-            **kwargs,
-        ):
-            super().__init__(*args, **kwargs)
-            self.md = cls.output_def(self)
-
-        def forward(
-            self,
-            *args,
-            **kwargs,
-        ):
-            ret = cls.forward(self, *args, **kwargs)
-            for kk in self.md.keys():
-                dd = self.md[kk]
-                check_var(ret[kk], dd)
-            return ret
-
-    return wrapper
+    return check_output(cls, 'fitting')
 
 
 class VariableDef:
