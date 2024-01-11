@@ -595,34 +595,7 @@ class DeepPotModelDevi {
 
  private:
   unsigned numb_models;
-  std::vector<tensorflow::Session*> sessions;
-  int num_intra_nthreads, num_inter_nthreads;
-  std::vector<tensorflow::GraphDef*> graph_defs;
+  std::vector<deepmd::DeepPot> dps;
   bool inited;
-  template <class VT>
-  VT get_scalar(const std::string name) const;
-  // VALUETYPE get_rcut () const;
-  // int get_ntypes () const;
-  double rcut;
-  double cell_size;
-  int dtype;
-  std::string model_type;
-  std::string model_version;
-  int ntypes;
-  int ntypes_spin;
-  int dfparam;
-  int daparam;
-  bool aparam_nall;
-  template <typename VALUETYPE>
-  void validate_fparam_aparam(const int& nloc,
-                              const std::vector<VALUETYPE>& fparam,
-                              const std::vector<VALUETYPE>& aparam) const;
-
-  // copy neighbor list info from host
-  bool init_nbor;
-  std::vector<std::vector<int> > sec;
-  deepmd::AtomMap atommap;
-  NeighborListData nlist_data;
-  InputNlist nlist;
 };
 }  // namespace deepmd
