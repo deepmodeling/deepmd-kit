@@ -450,9 +450,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
   if (numb_models == 0) {
     return;
   }
-  if (eflag || vflag) {
-    ev_setup(eflag, vflag);
-  }
+  ev_init(eflag, vflag);
   if (vflag_atom) {
     error->all(FLERR,
                "6-element atomic virial is not supported. Use compute "
