@@ -1242,22 +1242,10 @@ DeepPotModelDevi::DeepPotModelDevi(
     const int& gpu_rank,
     const std::vector<std::string>& file_contents)
     : inited(false), init_nbor(false), numb_models(0) {
-  try {
-    init(models, gpu_rank, file_contents);
-  } catch (...) {
-    // Clean up and rethrow, as the destructor will not be called
-    for (unsigned ii = 0; ii < numb_models; ++ii) {
-      delete graph_defs[ii];
-    }
-    throw;
-  }
+  init(models, gpu_rank, file_contents);
 }
 
-DeepPotModelDevi::~DeepPotModelDevi() {
-  for (unsigned ii = 0; ii < numb_models; ++ii) {
-    delete graph_defs[ii];
-  }
-}
+DeepPotModelDevi::~DeepPotModelDevi() {}
 
 void DeepPotModelDevi::init(const std::vector<std::string>& models,
                             const int& gpu_rank,
@@ -1269,6 +1257,9 @@ void DeepPotModelDevi::init(const std::vector<std::string>& models,
     return;
   }
   numb_models = models.size();
+  if (numb_models == 0) {
+    throw deepmd::deepmd_exception("no model is specified");
+  }
   for (unsigned int ii = 0; ii < numb_models; ++ii) {
     dps[ii] = DeepPot(models[ii], gpu_rank, file_contents[ii]);
   }

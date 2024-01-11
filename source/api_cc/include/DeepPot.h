@@ -480,7 +480,7 @@ class DeepPotModelDevi {
    **/
   double cutoff() const {
     assert(inited);
-    return rcut;
+    return dps[0].cutoff();
   };
   /**
    * @brief Get the number of types.
@@ -488,7 +488,7 @@ class DeepPotModelDevi {
    **/
   int numb_types() const {
     assert(inited);
-    return ntypes;
+    return dps[0].numb_types();
   };
   /**
    * @brief Get the number of types with spin.
@@ -496,7 +496,7 @@ class DeepPotModelDevi {
    **/
   int numb_types_spin() const {
     assert(inited);
-    return ntypes_spin;
+    return dps[0].numb_types_spin();
   };
   /**
    * @brief Get the dimension of the frame parameter.
@@ -504,7 +504,7 @@ class DeepPotModelDevi {
    **/
   int dim_fparam() const {
     assert(inited);
-    return dfparam;
+    return dps[0].dim_fparam();
   };
   /**
    * @brief Get the dimension of the atomic parameter.
@@ -512,7 +512,7 @@ class DeepPotModelDevi {
    **/
   int dim_aparam() const {
     assert(inited);
-    return daparam;
+    return dps[0].dim_aparam();
   };
   /**
    * @brief Compute the average energy.
@@ -590,7 +590,7 @@ class DeepPotModelDevi {
    **/
   bool is_aparam_nall() const {
     assert(inited);
-    return aparam_nall;
+    return dps[0].is_aparam_nall();
   };
 
  private:
