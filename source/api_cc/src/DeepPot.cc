@@ -1260,6 +1260,9 @@ void DeepPotModelDevi::init(const std::vector<std::string>& models,
     throw deepmd::deepmd_exception("no model is specified");
   }
   dps.resize(numb_models);
+  if (file_contents.size() != numb_models) {
+    file_contents.resize(numb_models);
+  }
   for (unsigned int ii = 0; ii < numb_models; ++ii) {
     dps[ii] = DeepPot(models[ii], gpu_rank, file_contents[ii]);
   }
