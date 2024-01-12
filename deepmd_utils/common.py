@@ -9,11 +9,15 @@ from typing import (
     Any,
     Dict,
     List,
-    Literal,
     Optional,
     TypeVar,
     Union,
 )
+
+try:
+    from typing import Literal  # python >=3.8
+except ImportError:
+    from typing_extensions import Literal  # type: ignore
 
 import numpy as np
 import yaml
