@@ -512,7 +512,7 @@ class FittingNet(EmbeddingNet):
         }
 
     @classmethod
-    def deserialize(cls, data: dict) -> "EmbeddingNet":
+    def deserialize(cls, data: dict) -> "FittingNet":
         """Deserialize the network from a dict.
 
         Parameters
