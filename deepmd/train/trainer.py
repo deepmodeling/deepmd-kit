@@ -151,7 +151,7 @@ class DPTrainer:
             descrpt_param["multi_task"] = True
         if descrpt_param["type"] in ["se_e2_a", "se_a", "se_e2_r", "se_r", "hybrid"]:
             descrpt_param["spin"] = self.spin
-        if descrpt_param["type"] == "se_a_mask":
+        elif descrpt_param["type"] == "se_a_mask":
             descrpt_param.pop("type")
             self.descrpt = deepmd.descriptor.se_a_mask.DescrptSeAMask(**descrpt_param)
         else:
