@@ -151,11 +151,12 @@ class DPTrainer:
             descrpt_param["multi_task"] = True
         if descrpt_param["type"] in ["se_e2_a", "se_a", "se_e2_r", "se_r", "hybrid"]:
             descrpt_param["spin"] = self.spin
-        descrpt_param.pop("type")
-        descrpt_param["mixed_prec"] = self.mixed_prec
-        if descrpt_param["mixed_prec"] is not None:
-            descrpt_param["precision"]: str = self.mixed_prec["output_prec"]
-        self.descrpt = deepmd.descriptor.se_a.DescrptSeA(**descrpt_param)
+        elif descrpt_param["type"] == "se_a_mask":
+            descrpt_param.pop("type")
+            self.descrpt = deepmd.descriptor.se_a_mask.DescrptSeAMask(**descrpt_param)
+        else:
+            descrpt_param.pop("type")
+            self.descrpt = deepmd.descriptor.se_a.DescrptSeA(**descrpt_param)
 
         # fitting net
         if not self.multi_task_mode:

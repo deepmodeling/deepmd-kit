@@ -66,14 +66,14 @@
   "training": {
     "training_data": {
       "systems": [
-        "example/zinc_protein/train_data_dp_mask/"
+        "examples/zinc_protein/train_data_dp_mask/"
       ],
       "batch_size": 2,
       "_comment": "that's all"
     },
     "validation_data": {
       "systems": [
-        "example/zinc_protein/val_data_dp_mask/"
+        "examples/zinc_protein/val_data_dp_mask/"
       ],
       "batch_size": 2,
       "_comment": "that's all"
@@ -82,7 +82,7 @@
     "seed": 10,
     "disp_freq": 100,
     "save_freq": 1000,
-    "tensorboard": true,
+    "tensorboard": false,
     "tensorboard_log_dir": "log4tensorboard",
     "tensorboard_freq": 100,
     "_comment": "that's all"
