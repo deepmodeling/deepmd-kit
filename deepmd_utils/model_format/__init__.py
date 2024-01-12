@@ -15,6 +15,14 @@ from .network import (
     save_dp_model,
     traverse_model_dict,
 )
+from .output_def import (
+    FittingOutputDef,
+    ModelOutputDef,
+    OutputVariableDef,
+    VariableDef,
+    fitting_check_output,
+    model_check_output,
+)
 from .se_e2_a import (
     DescrptSeA,
 )
@@ -31,4 +39,10 @@ __all__ = [
     "traverse_model_dict",
     "PRECISION_DICT",
     "DEFAULT_PRECISION",
+    "ModelOutputDef",
+    "FittingOutputDef",
+    "OutputVariableDef",
+    "VariableDef",
+    "model_check_output",
+    "fitting_check_output",
 ]
