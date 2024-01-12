@@ -125,6 +125,7 @@ ACTIVATION_FN_DICT = {
     "softplus": tf.nn.softplus,
     "sigmoid": tf.sigmoid,
     "tanh": tf.nn.tanh,
+    "swish": tf.nn.swish,
     "gelu": gelu,
     "gelu_tf": gelu_tf,
     "None": None,
