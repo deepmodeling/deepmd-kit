@@ -162,7 +162,9 @@ class NativeLayer(NativeOP):
         self.w = w.astype(prec) if w is not None else None
         self.b = b.astype(prec) if b is not None else None
         self.idt = idt.astype(prec) if idt is not None else None
-        self.activation_function = activation_function
+        self.activation_function = (
+            activation_function if activation_function is not None else "none"
+        )
         self.resnet = resnet
         self.check_type_consistency()
 
@@ -354,6 +356,24 @@ class NativeNet(NativeOP):
 
 
 class EmbeddingNet(NativeNet):
+    """The embedding network.
+
+    Parameters
+    ----------
+    in_dim
+        Input dimension.
+    neuron
+        The number of neurons in each layer. The output dimension
+        is the same as the dimension of the last layer.
+    activation_function
+        The activation function.
+    resnet_dt
+        Use time step at the resnet architecture.
+    precision
+        Floating point precision for the model paramters.
+
+    """
+
     def __init__(
         self,
         in_dim,
@@ -370,8 +390,8 @@ class EmbeddingNet(NativeNet):
             layers.append(
                 NativeLayer(
                     rng.normal(size=(i_in, i_ot)),
-                    b=rng.normal(size=(ii)),
-                    idt=rng.normal(size=(ii)) if resnet_dt else None,
+                    b=rng.normal(size=(i_ot)),
+                    idt=rng.normal(size=(i_ot)) if resnet_dt else None,
                     activation_function=activation_function,
                     resnet=True,
                     precision=precision,
@@ -417,6 +437,95 @@ class EmbeddingNet(NativeNet):
         return obj
 
 
+class FittingNet(EmbeddingNet):
+    """The fitting network. It may be implemented as an embedding
+    net connected with a linear output layer.
+
+    Parameters
+    ----------
+    in_dim
+        Input dimension.
+    out_dim
+        Output dimension
+    neuron
+        The number of neurons in each hidden layer.
+    activation_function
+        The activation function.
+    resnet_dt
+        Use time step at the resnet architecture.
+    precision
+        Floating point precision for the model paramters.
+    bias_out
+        The last linear layer has bias.
+
+    """
+
+    def __init__(
+        self,
+        in_dim,
+        out_dim,
+        neuron: List[int] = [24, 48, 96],
+        activation_function: str = "tanh",
+        resnet_dt: bool = False,
+        precision: str = DEFAULT_PRECISION,
+        bias_out: bool = True,
+    ):
+        super().__init__(
+            in_dim,
+            neuron=neuron,
+            activation_function=activation_function,
+            resnet_dt=resnet_dt,
+            precision=precision,
+        )
+        rng = np.random.default_rng()
+        i_in, i_ot = neuron[-1], out_dim
+        self.layers.append(
+            NativeLayer(
+                rng.normal(size=(i_in, i_ot)),
+                b=rng.normal(size=(i_ot)) if bias_out else None,
+                idt=None,
+                activation_function=None,
+                resnet=False,
+                precision=precision,
+            )
+        )
+        self.out_dim = out_dim
+        self.bias_out = bias_out
+
+    def serialize(self) -> dict:
+        """Serialize the network to a dict.
+
+        Returns
+        -------
+        dict
+            The serialized network.
+        """
+        return {
+            "in_dim": self.in_dim,
+            "out_dim": self.out_dim,
+            "neuron": self.neuron.copy(),
+            "activation_function": self.activation_function,
+            "resnet_dt": self.resnet_dt,
+            "precision": self.precision,
+            "bias_out": self.bias_out,
+            "layers": [layer.serialize() for layer in self.layers],
+        }
+
+    @classmethod
+    def deserialize(cls, data: dict) -> "EmbeddingNet":
+        """Deserialize the network from a dict.
+
+        Parameters
+        ----------
+        data : dict
+            The dict to deserialize from.
+        """
+        layers = data.pop("layers")
+        obj = cls(**data)
+        NativeNet.__init__(obj, layers)
+        return obj
+
+
 class NetworkCollection:
     """A collection of networks for multiple elements.
 
@@ -439,6 +548,7 @@ class NetworkCollection:
     NETWORK_TYPE_MAP: ClassVar[Dict[str, type]] = {
         "network": NativeNet,
         "embedding_network": EmbeddingNet,
+        "fitting_network": FittingNet,
     }
 
     def __init__(

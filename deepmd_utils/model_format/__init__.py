@@ -8,6 +8,7 @@ from .env_mat import (
 )
 from .network import (
     EmbeddingNet,
+    FittingNet,
     NativeLayer,
     NativeNet,
     NetworkCollection,
@@ -31,6 +32,7 @@ __all__ = [
     "DescrptSeA",
     "EnvMat",
     "EmbeddingNet",
+    "FittingNet",
     "NativeLayer",
     "NativeNet",
     "NetworkCollection",
