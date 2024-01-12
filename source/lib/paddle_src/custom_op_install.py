@@ -52,6 +52,9 @@ cpp_extension.setup(
             "./paddle_prod_force_grad.cu",
             "./paddle_prod_force_grad.cc",
             "./paddle_neighbor_stat.cc",
+            "./paddle_descrpt_se_a_mask.cc",
+            "./paddle_prod_force_se_a_mask.cc",
+            "./paddle_prod_force_se_a_mask_grad.cc",
         ],
         include_dirs=[
             "../../lib/include/",
