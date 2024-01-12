@@ -30,9 +30,6 @@ from deepmd_utils.utils.path import (
 )
 
 __all__ = [
-    "_DICT_VAL",
-    "_PRECISION",
-    "_ACTIVATION",
     "data_requirement",
     "add_data_requirement",
     "select_idx_map",
@@ -50,6 +47,13 @@ if TYPE_CHECKING:
     _ACTIVATION = Literal[
         "relu", "relu6", "softplus", "sigmoid", "tanh", "gelu", "gelu_tf"
     ]
+    __all__.extend(
+        [
+            "_DICT_VAL",
+            "_PRECISION",
+            "_ACTIVATION",
+        ]
+    )
 
 
 # TODO this is not a good way to do things. This is some global variable to which

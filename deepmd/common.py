@@ -6,6 +6,7 @@ from functools import (
     wraps,
 )
 from typing import (
+    TYPE_CHECKING,
     Any,
     Callable,
     Union,
@@ -22,8 +23,6 @@ from deepmd.env import (
     tf,
 )
 from deepmd_utils.common import (
-    _ACTIVATION,
-    _PRECISION,
     add_data_requirement,
     data_requirement,
     expand_sys_str,
@@ -33,6 +32,12 @@ from deepmd_utils.common import (
     make_default_mesh,
     select_idx_map,
 )
+
+if TYPE_CHECKING:
+    from deepmd_utils.common import (
+        _ACTIVATION,
+        _PRECISION,
+    )
 
 __all__ = [
     # from deepmd_utils.common
