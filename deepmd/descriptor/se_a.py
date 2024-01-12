@@ -119,7 +119,7 @@ class DescrptSeA(paddle.nn.Layer):
     .. [1] Linfeng Zhang, Jiequn Han, Han Wang, Wissam A. Saidi, Roberto Car, and E. Weinan. 2018.
        End-to-end symmetry preserving inter-atomic potential energy model for finite and extended
        systems. In Proceedings of the 32nd International Conference on Neural Information Processing
-       Systems (NIPS'18). Curran Associates Inc., Red Hook, NY, USA, 4441–4451.
+       Systems (NIPS'18). Curran Associates Inc., Red Hook, NY, USA, 4441-4451.
     """
 
     def __init__(
@@ -893,7 +893,7 @@ class DescrptSeA(paddle.nn.Layer):
         is_exclude=False,
     ):
         """Input env matrix, returns R.G."""
-        outputs_size = [1] + self.filter_neuron
+        outputs_size = [1, *self.filter_neuron]
         # cut-out inputs
         # with natom x (nei_type_i x 4)
         inputs_i = paddle.slice(
@@ -972,6 +972,8 @@ class DescrptSeA(paddle.nn.Layer):
                 transpose_x=True,
             )
 
+    # FIXME: @cast_precision should be annotated when convert to static model
+    # will restore it when it fixed.
     # @cast_precision
     def _filter(
         self,
@@ -1021,14 +1023,16 @@ class DescrptSeA(paddle.nn.Layer):
         nframes = 1
         # natom x (nei x 4)
         shape = inputs.shape
-        outputs_size = [1] + self.filter_neuron
+        outputs_size = [1, *self.filter_neuron]
         outputs_size_2 = self.n_axis_neuron  # 16
         all_excluded = all(
-            [
-                (type_input, type_i) in self.exclude_types  #  set()
+            # FIXME: the bracket '[]' is needed when convert to static model, will be
+            # removed when fixed.
+            [  # noqa
+                (type_input, type_i) in self.exclude_types  #  set() noqa
                 for type_i in range(self.ntypes)
             ]
-        )  # False
+        )
         if all_excluded:
             # all types are excluded so result and qmat should be zeros
             # we can safaly return a zero matrix...

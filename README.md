@@ -39,7 +39,7 @@
 
 ``` sh
 cd ./source/lib/paddle_src
-python setup_ins.py install
+python custom_op_install.py install
 ```
 
 安装完毕之后建议运行如下命令测试一下 python 端自定义算子在 CPU、GPU 上的正确性：
@@ -91,7 +91,7 @@ dp freeze -i ${WEIGHT_PATH} -o ${DUMP_PATH}
 
 ### 2.5 在 LAMMPS(GPU) 中推理
 
-1. 修改 `examples/water/lmp/in.lammps` 文件，将 `pair_style deepmd` 后面的路径改为 **2.3 导出静态图模型** 这一章节内设置好的 DUMP_PATH 的值
+1. 修改 `examples/water/lmp/in.lammps` 文件，将 `pair_style deepmd` 后面的路径改为 **2.3 导出静态图模型** 这一章节内设置好的 DUMP_PATH 的值(末尾不需要加 `.pdmodel` 或 `.pdiparams`)
 
     ``` suggestion
     pair_style  deepmd "path/to/your_dump"
@@ -118,17 +118,22 @@ dp freeze -i ${WEIGHT_PATH} -o ${DUMP_PATH}
     # 下载并解压 lammps 源码
     wget https://github.com/lammps/lammps/archive/stable_2Aug2023_update1.tar.gz
     tar xf stable_2Aug2023_update1.tar.gz
+
     # LAMMPS_DIR 设置为 LAMMPS 的安装目录
     export LAMMPS_DIR="/path/to/lammps-stable_2Aug2023_update1"
 
     # 设置推理时的 GPU 卡号
     export CUDA_VISIBLE_DEVICES=0
+
     # PADDLE_DIR 设置为第二步 clone下来的 Paddle 目录
     export PADDLE_DIR="/path/to/Paddle"
+
     # DEEPMD_DIR 设置为本项目的根目录
     export DEEPMD_DIR="/path/to/deepmd-kit"
+
     # PADDLE_INFERENCE_DIR 设置为第二步编译得到的 Paddle 推理库目录
     export PADDLE_INFERENCE_DIR="/path/to/paddle_inference_install_dir"
+
     # TENSORFLOW_DIR 设置为 tensorflow 的安装目录，可用 pip show tensorflow 确定
     export TENSORFLOW_DIR="/path/to/tensorflow"
 
@@ -149,7 +154,7 @@ dp freeze -i ${WEIGHT_PATH} -o ${DUMP_PATH}
     export DEEPMD_INSTALL_DIR="path/to/deepmd_root"
 
     # 开始编译
-    cmake -DCMAKE_INSTALL_PREFIX=${DEEPMD_INSTALL_DIR} -DPADDLE_ROOT=${PADDLE_INFERENCE_DIR} \
+    cmake -DCMAKE_INSTALL_PREFIX=${DEEPMD_INSTALL_DIR} \
         -DUSE_CUDA_TOOLKIT=TRUE \
         -DTENSORFLOW_ROOT=${TENSORFLOW_DIR} \
         -DPADDLE_LIB=${PADDLE_INFERENCE_DIR} \
@@ -168,7 +173,6 @@ dp freeze -i ${WEIGHT_PATH} -o ${DUMP_PATH}
     cd ${DEEPMD_DIR}/examples/water/lmp
 
     lmp_serial -in in.lammps
-    ```
 
 4. [可选]直接运行推理
 

@@ -12,7 +12,7 @@ mass 		1 16
 mass		2 2
 
 # See https://deepmd.rtfd.io/lammps/ for usage
-pair_style	deepmd Model_1000000_with_buffer
+pair_style	deepmd frozen_model
 # If atom names (O H in this example) are not set in the pair_coeff command, the type_map defined by the training parameter will be used by default.
 pair_coeff  * *	O H
 

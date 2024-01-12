@@ -101,7 +101,7 @@ class DescrptSeAMask(paddle.nn.Layer):
     .. [1] Linfeng Zhang, Jiequn Han, Han Wang, Wissam A. Saidi, Roberto Car, and E. Weinan. 2018.
        End-to-end symmetry preserving inter-atomic potential energy model for finite and extended
        systems. In Proceedings of the 32nd International Conference on Neural Information Processing
-       Systems (NIPS'18). Curran Associates Inc., Red Hook, NY, USA, 4441–4451.
+       Systems (NIPS'18). Curran Associates Inc., Red Hook, NY, USA, 4441-4451.
     """
 
     def __init__(
