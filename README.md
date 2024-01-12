@@ -8,7 +8,7 @@
 >
 > **The current branch is no longer maintained due to the outdated Paddle version it adapts to and the significant differences from the DeePMD-kit main branch.**
 >
-> **The new paddle backend branch is [DeePMD-kit(paddle branch)](https://github.com/deepmodeling/deepmd-kit/tree/paddle)**
+> **The new paddle backend branch is [DeePMD-kit(paddle2 branch)](https://github.com/deepmodeling/deepmd-kit/tree/paddle2?tab=readme-ov-file#deepmd-kitpaddlepaddle-backend)**
 
 # Table of contents
 
