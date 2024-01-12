@@ -27,7 +27,7 @@ def model_check_output(cls):
 
     Two methods are assumed to be provided by the Model:
     1. Model.output_def that gives the output definition.
-    2. Model.forward that defines the forward path of the model.
+    2. Model.__call__ that defines the forward path of the model.
 
     """
 
@@ -40,12 +40,12 @@ def model_check_output(cls):
             super().__init__(*args, **kwargs)
             self.md = cls.output_def(self)
 
-        def forward(
+        def __call__(
             self,
             *args,
             **kwargs,
         ):
-            ret = cls.forward(self, *args, **kwargs)
+            ret = cls.__call__(self, *args, **kwargs)
             for kk in self.md.keys_outp():
                 dd = self.md[kk]
                 check_var(ret[kk], dd)
@@ -66,7 +66,7 @@ def fitting_check_output(cls):
 
     Two methods are assumed to be provided by the Fitting:
     1. Fitting.output_def that gives the output definition.
-    2. Fitting.forward defines the forward path of the fitting.
+    2. Fitting.__call__ defines the forward path of the fitting.
 
     """
 
@@ -79,12 +79,12 @@ def fitting_check_output(cls):
             super().__init__(*args, **kwargs)
             self.md = cls.output_def(self)
 
-        def forward(
+        def __call__(
             self,
             *args,
             **kwargs,
         ):
-            ret = cls.forward(self, *args, **kwargs)
+            ret = cls.__call__(self, *args, **kwargs)
             for kk in self.md.keys():
                 dd = self.md[kk]
                 check_var(ret[kk], dd)

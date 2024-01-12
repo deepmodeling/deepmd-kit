@@ -22,3 +22,7 @@ class NativeOP(ABC):
     def call(self, *args, **kwargs):
         """Forward pass in NumPy implementation."""
         raise NotImplementedError
+
+    def __call__(self, *args, **kwargs):
+        """Forward pass in NumPy implementation."""
+        return self.call(*args, **kwargs)

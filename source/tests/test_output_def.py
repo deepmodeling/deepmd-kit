@@ -6,6 +6,7 @@ import numpy as np
 from deepmd_utils.model_format import (
     FittingOutputDef,
     ModelOutputDef,
+    NativeOP,
     OutputVariableDef,
     fitting_check_output,
     model_check_output,
@@ -91,14 +92,14 @@ class TestDef(unittest.TestCase):
         nloc = 3
 
         @model_check_output
-        class Foo:
+        class Foo(NativeOP):
             def output_def(self):
                 defs = [
                     OutputVariableDef("energy", [1], True, True),
                 ]
                 return ModelOutputDef(FittingOutputDef(defs))
 
-            def forward(self):
+            def call(self):
                 return {
                     "energy": np.zeros([nf, nloc, 1]),
                     "energy_redu": np.zeros([nf, 1]),
@@ -107,21 +108,24 @@ class TestDef(unittest.TestCase):
                 }
 
         ff = Foo()
-        ff.forward()
+        ff()
 
     def test_model_decorator_keyerror(self):
         nf = 2
         nloc = 3
 
         @model_check_output
-        class Foo:
+        class Foo(NativeOP):
+            def __init__(self):
+                super().__init__()
+
             def output_def(self):
                 defs = [
                     OutputVariableDef("energy", [1], True, True),
                 ]
                 return ModelOutputDef(FittingOutputDef(defs))
 
-            def forward(self):
+            def call(self):
                 return {
                     "energy": np.zeros([nf, nloc, 1]),
                     "energy_redu": np.zeros([nf, 1]),
@@ -130,7 +134,7 @@ class TestDef(unittest.TestCase):
 
         ff = Foo()
         with self.assertRaises(KeyError) as context:
-            ff.forward()
+            ff()
             self.assertIn("energy_derv_r", context.exception)
 
     def test_model_decorator_shapeerror(self):
@@ -138,7 +142,7 @@ class TestDef(unittest.TestCase):
         nloc = 3
 
         @model_check_output
-        class Foo:
+        class Foo(NativeOP):
             def __init__(
                 self,
                 shape_rd=[nf, 1],
@@ -152,7 +156,7 @@ class TestDef(unittest.TestCase):
                 ]
                 return ModelOutputDef(FittingOutputDef(defs))
 
-            def forward(self):
+            def call(self):
                 return {
                     "energy": np.zeros([nf, nloc, 1]),
                     "energy_redu": np.zeros(self.shape_rd),
@@ -161,28 +165,28 @@ class TestDef(unittest.TestCase):
                 }
 
         ff = Foo()
-        ff.forward()
+        ff()
         # shape of reduced energy
         with self.assertRaises(ValueError) as context:
             ff = Foo(shape_rd=[nf, nloc, 1])
-            ff.forward()
+            ff()
             self.assertIn("not matching", context.exception)
         with self.assertRaises(ValueError) as context:
             ff = Foo(shape_rd=[nf, 2])
-            ff.forward()
+            ff()
             self.assertIn("not matching", context.exception)
         # shape of dr
         with self.assertRaises(ValueError) as context:
             ff = Foo(shape_dr=[nf, nloc, 1])
-            ff.forward()
+            ff()
             self.assertIn("not matching", context.exception)
         with self.assertRaises(ValueError) as context:
             ff = Foo(shape_dr=[nf, nloc, 1, 3, 3])
-            ff.forward()
+            ff()
             self.assertIn("not matching", context.exception)
         with self.assertRaises(ValueError) as context:
             ff = Foo(shape_dr=[nf, nloc, 1, 4])
-            ff.forward()
+            ff()
             self.assertIn("not matching", context.exception)
 
     def test_fitting_decorator(self):
@@ -190,27 +194,27 @@ class TestDef(unittest.TestCase):
         nloc = 3
 
         @fitting_check_output
-        class Foo:
+        class Foo(NativeOP):
             def output_def(self):
                 defs = [
                     OutputVariableDef("energy", [1], True, True),
                 ]
                 return FittingOutputDef(defs)
 
-            def forward(self):
+            def call(self):
                 return {
                     "energy": np.zeros([nf, nloc, 1]),
                 }
 
         ff = Foo()
-        ff.forward()
+        ff()
 
     def test_fitting_decorator_shapeerror(self):
         nf = 2
         nloc = 3
 
         @fitting_check_output
-        class Foo:
+        class Foo(NativeOP):
             def __init__(
                 self,
                 shape=[nf, nloc, 1],
@@ -223,19 +227,19 @@ class TestDef(unittest.TestCase):
                 ]
                 return FittingOutputDef(defs)
 
-            def forward(self):
+            def call(self):
                 return {
                     "energy": np.zeros(self.shape),
                 }
 
         ff = Foo()
-        ff.forward()
+        ff()
         # shape of reduced energy
         with self.assertRaises(ValueError) as context:
             ff = Foo(shape=[nf, 1])
-            ff.forward()
+            ff()
             self.assertIn("not matching", context.exception)
         with self.assertRaises(ValueError) as context:
             ff = Foo(shape=[nf, nloc, 2])
-            ff.forward()
+            ff()
             self.assertIn("not matching", context.exception)
