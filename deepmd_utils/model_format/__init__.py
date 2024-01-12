@@ -2,6 +2,7 @@
 from .common import (
     DEFAULT_PRECISION,
     PRECISION_DICT,
+    NativeOP,
 )
 from .env_mat import (
     EnvMat,
@@ -34,6 +35,7 @@ __all__ = [
     "NativeLayer",
     "NativeNet",
     "NetworkCollection",
+    "NativeOP",
     "load_dp_model",
     "save_dp_model",
     "traverse_model_dict",
