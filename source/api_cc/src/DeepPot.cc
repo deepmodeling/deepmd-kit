@@ -1261,8 +1261,8 @@ void DeepPotModelDevi::init(const std::vector<std::string>& models,
   }
   dps.resize(numb_models);
   for (unsigned int ii = 0; ii < numb_models; ++ii) {
-    dps[ii] = DeepPot(models[ii], gpu_rank,
-                      file_contents.size() > ii ? file_contents[ii] : "");
+    dps[ii].init(models[ii], gpu_rank,
+                 file_contents.size() > ii ? file_contents[ii] : "");
   }
   inited = true;
 }
