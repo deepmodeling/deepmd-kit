@@ -35,39 +35,74 @@ class TestNativeLayer(unittest.TestCase):
             [None, [4], [3, 2]],
             ["float32", "float64", "single", "double"],
         ):
-            ww = np.full((ni, no), 3.0)
-            bb = np.full((no,), 4.0) if bias else None
-            idt = np.full((no,), 5.0) if ut else None
-            nl0 = NativeLayer(ww, bb, idt, activation_function, resnet, prec)
+            nl0 = NativeLayer(
+                ni,
+                no,
+                bias=bias,
+                use_timestep=ut,
+                activation_function=activation_function,
+                resnet=resnet,
+                precision=prec,
+            )
             nl1 = NativeLayer.deserialize(nl0.serialize())
-            inp_shap = [ww.shape[0]]
+            inp_shap = [ni]
             if ashp is not None:
                 inp_shap = ashp + inp_shap
             inp = np.arange(np.prod(inp_shap)).reshape(inp_shap)
             np.testing.assert_allclose(nl0.call(inp), nl1.call(inp))
 
+    def test_shape_error(self):
+        self.w0 = np.full((2, 3), 3.0)
+        self.b0 = np.full((2,), 4.0)
+        self.b1 = np.full((3,), 4.0)
+        self.idt0 = np.full((2,), 4.0)
+        with self.assertRaises(ValueError) as context:
+            network = NativeLayer.deserialize(
+                {
+                    "activation_function": "tanh",
+                    "resnet": True,
+                    "@variables": {"w": self.w0, "b": self.b0},
+                }
+            )
+            assert "not equalt to shape of b" in context.exception
+        with self.assertRaises(ValueError) as context:
+            network = NativeLayer.deserialize(
+                {
+                    "activation_function": "tanh",
+                    "resnet": True,
+                    "@variables": {"w": self.w0, "b": self.b1, "idt": self.idt0},
+                }
+            )
+            assert "not equalt to shape of idt" in context.exception
+
 
 class TestNativeNet(unittest.TestCase):
     def setUp(self) -> None:
-        self.w = np.full((2, 3), 3.0)
-        self.b = np.full((3,), 4.0)
-        self.idt = np.full((3,), 5.0)
+        self.w0 = np.full((2, 3), 3.0)
+        self.b0 = np.full((3,), 4.0)
+        self.w1 = np.full((3, 4), 3.0)
+        self.b1 = np.full((4,), 4.0)
 
     def test_serialize(self):
-        network = NativeNet()
-        network[1]["w"] = self.w
-        network[1]["b"] = self.b
-        network[0]["w"] = self.w
-        network[0]["b"] = self.b
+        network = NativeNet(
+            [
+                NativeLayer(2, 3).serialize(),
+                NativeLayer(3, 4).serialize(),
+            ]
+        )
+        network[1]["w"] = self.w1
+        network[1]["b"] = self.b1
+        network[0]["w"] = self.w0
+        network[0]["b"] = self.b0
         network[1]["activation_function"] = "tanh"
         network[0]["activation_function"] = "tanh"
         network[1]["resnet"] = True
         network[0]["resnet"] = True
         jdata = network.serialize()
-        np.testing.assert_array_equal(jdata["layers"][0]["@variables"]["w"], self.w)
-        np.testing.assert_array_equal(jdata["layers"][0]["@variables"]["b"], self.b)
-        np.testing.assert_array_equal(jdata["layers"][1]["@variables"]["w"], self.w)
-        np.testing.assert_array_equal(jdata["layers"][1]["@variables"]["b"], self.b)
+        np.testing.assert_array_equal(jdata["layers"][0]["@variables"]["w"], self.w0)
+        np.testing.assert_array_equal(jdata["layers"][0]["@variables"]["b"], self.b0)
+        np.testing.assert_array_equal(jdata["layers"][1]["@variables"]["w"], self.w1)
+        np.testing.assert_array_equal(jdata["layers"][1]["@variables"]["b"], self.b1)
         np.testing.assert_array_equal(jdata["layers"][0]["activation_function"], "tanh")
         np.testing.assert_array_equal(jdata["layers"][1]["activation_function"], "tanh")
         np.testing.assert_array_equal(jdata["layers"][0]["resnet"], True)
@@ -80,24 +115,44 @@ class TestNativeNet(unittest.TestCase):
                     {
                         "activation_function": "tanh",
                         "resnet": True,
-                        "@variables": {"w": self.w, "b": self.b},
+                        "@variables": {"w": self.w0, "b": self.b0},
                     },
                     {
                         "activation_function": "tanh",
                         "resnet": True,
-                        "@variables": {"w": self.w, "b": self.b},
+                        "@variables": {"w": self.w1, "b": self.b1},
                     },
                 ],
             }
         )
-        np.testing.assert_array_equal(network[0]["w"], self.w)
-        np.testing.assert_array_equal(network[0]["b"], self.b)
-        np.testing.assert_array_equal(network[1]["w"], self.w)
-        np.testing.assert_array_equal(network[1]["b"], self.b)
+        np.testing.assert_array_equal(network[0]["w"], self.w0)
+        np.testing.assert_array_equal(network[0]["b"], self.b0)
+        np.testing.assert_array_equal(network[1]["w"], self.w1)
+        np.testing.assert_array_equal(network[1]["b"], self.b1)
         np.testing.assert_array_equal(network[0]["activation_function"], "tanh")
         np.testing.assert_array_equal(network[1]["activation_function"], "tanh")
         np.testing.assert_array_equal(network[0]["resnet"], True)
         np.testing.assert_array_equal(network[1]["resnet"], True)
+
+    def test_shape_error(self):
+        with self.assertRaises(ValueError) as context:
+            network = NativeNet.deserialize(
+                {
+                    "layers": [
+                        {
+                            "activation_function": "tanh",
+                            "resnet": True,
+                            "@variables": {"w": self.w0, "b": self.b0},
+                        },
+                        {
+                            "activation_function": "tanh",
+                            "resnet": True,
+                            "@variables": {"w": self.w0, "b": self.b0},
+                        },
+                    ],
+                }
+            )
+            assert "does not match the dim of layer" in context.exception
 
 
 class TestEmbeddingNet(unittest.TestCase):
@@ -146,19 +201,21 @@ class TestFittingNet(unittest.TestCase):
 
 class TestNetworkCollection(unittest.TestCase):
     def setUp(self) -> None:
-        w = np.full((2, 3), 3.0)
-        b = np.full((3,), 4.0)
+        w0 = np.full((2, 3), 3.0)
+        b0 = np.full((3,), 4.0)
+        w1 = np.full((3, 4), 3.0)
+        b1 = np.full((4,), 4.0)
         self.network = {
             "layers": [
                 {
                     "activation_function": "tanh",
                     "resnet": True,
-                    "@variables": {"w": w, "b": b},
+                    "@variables": {"w": w0, "b": b0},
                 },
                 {
                     "activation_function": "tanh",
                     "resnet": True,
-                    "@variables": {"w": w, "b": b},
+                    "@variables": {"w": w1, "b": b1},
                 },
             ],
         }

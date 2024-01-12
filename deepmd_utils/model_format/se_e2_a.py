@@ -6,6 +6,7 @@ try:
 except ImportError:
     __version__ = "unknown"
 
+import copy
 from typing import (
     Any,
     List,
@@ -270,6 +271,7 @@ class DescrptSeA(NativeOP):
 
     @classmethod
     def deserialize(cls, data: dict) -> "DescrptSeA":
+        data = copy.deepcopy(data)
         variables = data.pop("@variables")
         embeddings = data.pop("embeddings")
         env_mat = data.pop("env_mat")
