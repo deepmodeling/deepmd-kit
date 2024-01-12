@@ -12,6 +12,7 @@ from deepmd_utils.model_format import (
     DescrptSeA,
     EmbeddingNet,
     EnvMat,
+    FittingNet,
     NativeLayer,
     NativeNet,
     NetworkCollection,
@@ -98,6 +99,8 @@ class TestNativeNet(unittest.TestCase):
         np.testing.assert_array_equal(network[0]["resnet"], True)
         np.testing.assert_array_equal(network[1]["resnet"], True)
 
+
+class TestEmbeddingNet(unittest.TestCase):
     def test_embedding_net(self):
         for ni, act, idt, prec in itertools.product(
             [1, 10],
@@ -113,6 +116,31 @@ class TestNativeNet(unittest.TestCase):
             )
             en1 = EmbeddingNet.deserialize(en0.serialize())
             inp = np.ones([ni])
+            np.testing.assert_allclose(en0.call(inp), en1.call(inp))
+
+
+class TestFittingNet(unittest.TestCase):
+    def test_fitting_net(self):
+        for ni, no, act, idt, prec, bo in itertools.product(
+            [1, 10],
+            [1, 7],
+            ["tanh", "none"],
+            [True, False],
+            ["double", "single"],
+            [True, False],
+        ):
+            en0 = FittingNet(
+                ni,
+                no,
+                activation_function=act,
+                precision=prec,
+                resnet_dt=idt,
+                bias_out=bo,
+            )
+            en1 = FittingNet.deserialize(en0.serialize())
+            inp = np.ones([ni])
+            en0.call(inp)
+            en1.call(inp)
             np.testing.assert_allclose(en0.call(inp), en1.call(inp))
 
 
