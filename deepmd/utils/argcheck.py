@@ -4,11 +4,13 @@ from deepmd_utils.utils.argcheck import (
     gen_args,
     gen_doc,
     gen_json,
+    list_to_doc,
     normalize,
     type_embedding_args,
 )
 
 __all__ = [
+    "list_to_doc",
     "normalize",
     "gen_doc",
     "gen_json",
