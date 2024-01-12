@@ -536,7 +536,7 @@ class DescrptSeAMask(paddle.nn.Layer):
         is_exclude=False,
     ):
         """Input env matrix, returns R.G."""
-        outputs_size = [1] + self.filter_neuron
+        outputs_size = [1, *self.filter_neuron]
         # cut-out inputs
         # with natom x (nei_type_i x 4)
         inputs_i = paddle.slice(
@@ -663,13 +663,11 @@ class DescrptSeAMask(paddle.nn.Layer):
         nframes = 1
         # natom x (nei x 4)
         shape = inputs.shape
-        outputs_size = [1] + self.filter_neuron
+        outputs_size = [1, *self.filter_neuron]
         outputs_size_2 = self.n_axis_neuron  # 16
         all_excluded = all(
-            [
-                (type_input, type_i) in self.exclude_types  #  set()
+            (type_input, type_i) in self.exclude_types  #  set()
                 for type_i in range(self.ntypes)
-            ]
         )  # False
         if all_excluded:
             # all types are excluded so result and qmat should be zeros
