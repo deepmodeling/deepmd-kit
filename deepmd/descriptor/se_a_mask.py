@@ -674,7 +674,7 @@ class DescrptSeAMask(paddle.nn.Layer):
                 (type_input, type_i) in self.exclude_types  #  set()
                 for type_i in range(self.ntypes)
             ]
-        )  # False
+        )
         if all_excluded:
             # all types are excluded so result and qmat should be zeros
             # we can safaly return a zero matrix...
