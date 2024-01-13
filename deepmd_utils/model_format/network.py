@@ -3,6 +3,7 @@
 
 See issue #2982 for more information.
 """
+import copy
 import itertools
 import json
 from typing import (
@@ -150,23 +151,26 @@ class NativeLayer(NativeOP):
 
     def __init__(
         self,
-        w: Optional[np.ndarray] = None,
-        b: Optional[np.ndarray] = None,
-        idt: Optional[np.ndarray] = None,
+        num_in,
+        num_out,
+        bias: bool = True,
+        use_timestep: bool = False,
         activation_function: Optional[str] = None,
         resnet: bool = False,
         precision: str = DEFAULT_PRECISION,
     ) -> None:
         prec = PRECISION_DICT[precision.lower()]
         self.precision = precision
-        self.w = w.astype(prec) if w is not None else None
-        self.b = b.astype(prec) if b is not None else None
-        self.idt = idt.astype(prec) if idt is not None else None
+        rng = np.random.default_rng()
+        self.w = rng.normal(size=(num_in, num_out)).astype(prec)
+        self.b = rng.normal(size=(num_out,)).astype(prec) if bias else None
+        self.idt = rng.normal(size=(num_out,)).astype(prec) if use_timestep else None
         self.activation_function = (
             activation_function if activation_function is not None else "none"
         )
         self.resnet = resnet
         self.check_type_consistency()
+        self.check_shape_consistency()
 
     def serialize(self) -> dict:
         """Serialize the layer to a dict.
@@ -179,10 +183,11 @@ class NativeLayer(NativeOP):
         data = {
             "w": self.w,
             "b": self.b,
+            "idt": self.idt,
         }
-        if self.idt is not None:
-            data["idt"] = self.idt
         return {
+            "bias": self.b is not None,
+            "use_timestep": self.idt is not None,
             "activation_function": self.activation_function,
             "resnet": self.resnet,
             "precision": self.precision,
@@ -198,15 +203,34 @@ class NativeLayer(NativeOP):
         data : dict
             The dict to deserialize from.
         """
-        precision = data.get("precision", DEFAULT_PRECISION)
-        return cls(
-            w=data["@variables"]["w"],
-            b=data["@variables"].get("b", None),
-            idt=data["@variables"].get("idt", None),
-            activation_function=data["activation_function"],
-            resnet=data.get("resnet", False),
-            precision=precision,
+        data = copy.deepcopy(data)
+        variables = data.pop("@variables")
+        assert variables["w"] is not None and len(variables["w"].shape) == 2
+        num_in, num_out = variables["w"].shape
+        obj = cls(
+            num_in,
+            num_out,
+            **data,
         )
+        obj.w, obj.b, obj.idt = (
+            variables["w"],
+            variables.get("b", None),
+            variables.get("idt", None),
+        )
+        obj.check_shape_consistency()
+        return obj
+
+    def check_shape_consistency(self):
+        if self.b is not None and self.w.shape[1] != self.b.shape[0]:
+            raise ValueError(
+                f"dim 1 of w {self.w.shape[1]} is not equal to shape "
+                f"of b {self.b.shape[0]}",
+            )
+        if self.idt is not None and self.w.shape[1] != self.idt.shape[0]:
+            raise ValueError(
+                f"dim 1 of w {self.w.shape[1]} is not equal to shape "
+                f"of idt {self.idt.shape[0]}",
+            )
 
     def check_type_consistency(self):
         precision = self.precision
@@ -251,6 +275,14 @@ class NativeLayer(NativeOP):
             return self.precision
         else:
             raise KeyError(key)
+
+    @property
+    def dim_in(self) -> int:
+        return self.w.shape[0]
+
+    @property
+    def dim_out(self) -> int:
+        return self.w.shape[1]
 
     def call(self, x: np.ndarray) -> np.ndarray:
         """Forward pass.
@@ -303,6 +335,7 @@ class NativeNet(NativeOP):
         if layers is None:
             layers = []
         self.layers = [NativeLayer.deserialize(layer) for layer in layers]
+        self.check_shape_consistency()
 
     def serialize(self) -> dict:
         """Serialize the network to a dict.
@@ -327,15 +360,20 @@ class NativeNet(NativeOP):
 
     def __getitem__(self, key):
         assert isinstance(key, int)
-        if len(self.layers) <= key:
-            self.layers.extend([NativeLayer()] * (key - len(self.layers) + 1))
         return self.layers[key]
 
     def __setitem__(self, key, value):
         assert isinstance(key, int)
-        if len(self.layers) <= key:
-            self.layers.extend([NativeLayer()] * (key - len(self.layers) + 1))
         self.layers[key] = value
+
+    def check_shape_consistency(self):
+        for ii in range(len(self.layers) - 1):
+            if self.layers[ii].dim_out != self.layers[ii + 1].dim_in:
+                raise ValueError(
+                    f"the dim of layer {ii} output {self.layers[ii].dim_out} ",
+                    f"does not match the dim of layer {ii+1} ",
+                    f"output {self.layers[ii].dim_out}",
+                )
 
     def call(self, x: np.ndarray) -> np.ndarray:
         """Forward pass.
@@ -389,9 +427,10 @@ class EmbeddingNet(NativeNet):
             i_ot = ii
             layers.append(
                 NativeLayer(
-                    rng.normal(size=(i_in, i_ot)),
-                    b=rng.normal(size=(i_ot)),
-                    idt=rng.normal(size=(i_ot)) if resnet_dt else None,
+                    i_in,
+                    i_ot,
+                    bias=True,
+                    use_timestep=resnet_dt,
                     activation_function=activation_function,
                     resnet=True,
                     precision=precision,
@@ -431,6 +470,7 @@ class EmbeddingNet(NativeNet):
         data : dict
             The dict to deserialize from.
         """
+        data = copy.deepcopy(data)
         layers = data.pop("layers")
         obj = cls(**data)
         super(EmbeddingNet, obj).__init__(layers)
@@ -481,9 +521,10 @@ class FittingNet(EmbeddingNet):
         i_in, i_ot = neuron[-1], out_dim
         self.layers.append(
             NativeLayer(
-                rng.normal(size=(i_in, i_ot)),
-                b=rng.normal(size=(i_ot)) if bias_out else None,
-                idt=None,
+                i_in,
+                i_ot,
+                bias=bias_out,
+                use_timestep=False,
                 activation_function=None,
                 resnet=False,
                 precision=precision,
@@ -520,6 +561,7 @@ class FittingNet(EmbeddingNet):
         data : dict
             The dict to deserialize from.
         """
+        data = copy.deepcopy(data)
         layers = data.pop("layers")
         obj = cls(**data)
         NativeNet.__init__(obj, layers)
