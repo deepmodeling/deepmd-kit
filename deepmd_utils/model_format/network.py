@@ -276,11 +276,9 @@ class NativeLayer(NativeOP):
         else:
             raise KeyError(key)
 
-    @property
     def dim_in(self) -> int:
         return self.w.shape[0]
 
-    @property
     def dim_out(self) -> int:
         return self.w.shape[1]
 
@@ -322,250 +320,267 @@ class NativeLayer(NativeOP):
         return y
 
 
-class NativeNet(NativeOP):
-    """Native representation of a neural network.
-
-    Parameters
-    ----------
-    layers : list[NativeLayer], optional
-        The layers of the network.
-    """
-
-    def __init__(self, layers: Optional[List[dict]] = None) -> None:
-        if layers is None:
-            layers = []
-        self.layers = [NativeLayer.deserialize(layer) for layer in layers]
-        self.check_shape_consistency()
-
-    def serialize(self) -> dict:
-        """Serialize the network to a dict.
-
-        Returns
-        -------
-        dict
-            The serialized network.
-        """
-        return {"layers": [layer.serialize() for layer in self.layers]}
-
-    @classmethod
-    def deserialize(cls, data: dict) -> "NativeNet":
-        """Deserialize the network from a dict.
+def make_multilayer_network(T_NetworkLayer, ModuleBase):
+    class NN(ModuleBase):
+        """Native representation of a neural network.
 
         Parameters
         ----------
-        data : dict
-            The dict to deserialize from.
+        layers : list[NativeLayer], optional
+            The layers of the network.
         """
-        return cls(data["layers"])
 
-    def __getitem__(self, key):
-        assert isinstance(key, int)
-        return self.layers[key]
+        def __init__(self, layers: Optional[List[dict]] = None) -> None:
+            super().__init__()
+            if layers is None:
+                layers = []
+            self.layers = [T_NetworkLayer.deserialize(layer) for layer in layers]
+            self.check_shape_consistency()
 
-    def __setitem__(self, key, value):
-        assert isinstance(key, int)
-        self.layers[key] = value
+        def serialize(self) -> dict:
+            """Serialize the network to a dict.
 
-    def check_shape_consistency(self):
-        for ii in range(len(self.layers) - 1):
-            if self.layers[ii].dim_out != self.layers[ii + 1].dim_in:
-                raise ValueError(
-                    f"the dim of layer {ii} output {self.layers[ii].dim_out} ",
-                    f"does not match the dim of layer {ii+1} ",
-                    f"output {self.layers[ii].dim_out}",
-                )
+            Returns
+            -------
+            dict
+                The serialized network.
+            """
+            return {"layers": [layer.serialize() for layer in self.layers]}
 
-    def call(self, x: np.ndarray) -> np.ndarray:
-        """Forward pass.
+        @classmethod
+        def deserialize(cls, data: dict) -> "NN":
+            """Deserialize the network from a dict.
+
+            Parameters
+            ----------
+            data : dict
+                The dict to deserialize from.
+            """
+            return cls(data["layers"])
+
+        def __getitem__(self, key):
+            assert isinstance(key, int)
+            return self.layers[key]
+
+        def __setitem__(self, key, value):
+            assert isinstance(key, int)
+            self.layers[key] = value
+
+        def check_shape_consistency(self):
+            for ii in range(len(self.layers) - 1):
+                if self.layers[ii].dim_out() != self.layers[ii + 1].dim_in():
+                    raise ValueError(
+                        f"the dim of layer {ii} output {self.layers[ii].dim_out} ",
+                        f"does not match the dim of layer {ii+1} ",
+                        f"output {self.layers[ii].dim_out}",
+                    )
+
+        def call(self, x):
+            """Forward pass.
+
+            Parameters
+            ----------
+            x : np.ndarray
+                The input.
+
+            Returns
+            -------
+            np.ndarray
+                The output.
+            """
+            for layer in self.layers:
+                x = layer(x)
+            return x
+
+    return NN
+
+
+NativeNet = make_multilayer_network(NativeLayer, NativeOP)
+
+
+def make_embedding_network(T_Network, T_NetworkLayer):
+    class EN(T_Network):
+        """The embedding network.
 
         Parameters
         ----------
-        x : np.ndarray
-            The input.
+        in_dim
+            Input dimension.
+        neuron
+            The number of neurons in each layer. The output dimension
+            is the same as the dimension of the last layer.
+        activation_function
+            The activation function.
+        resnet_dt
+            Use time step at the resnet architecture.
+        precision
+            Floating point precision for the model paramters.
 
-        Returns
-        -------
-        np.ndarray
-            The output.
         """
-        for layer in self.layers:
-            x = layer.call(x)
-        return x
 
-
-class EmbeddingNet(NativeNet):
-    """The embedding network.
-
-    Parameters
-    ----------
-    in_dim
-        Input dimension.
-    neuron
-        The number of neurons in each layer. The output dimension
-        is the same as the dimension of the last layer.
-    activation_function
-        The activation function.
-    resnet_dt
-        Use time step at the resnet architecture.
-    precision
-        Floating point precision for the model paramters.
-
-    """
-
-    def __init__(
-        self,
-        in_dim,
-        neuron: List[int] = [24, 48, 96],
-        activation_function: str = "tanh",
-        resnet_dt: bool = False,
-        precision: str = DEFAULT_PRECISION,
-    ):
-        layers = []
-        i_in = in_dim
-        rng = np.random.default_rng()
-        for idx, ii in enumerate(neuron):
-            i_ot = ii
-            layers.append(
-                NativeLayer(
-                    i_in,
-                    i_ot,
-                    bias=True,
-                    use_timestep=resnet_dt,
-                    activation_function=activation_function,
-                    resnet=True,
-                    precision=precision,
-                ).serialize()
-            )
-            i_in = i_ot
-        super().__init__(layers)
-        self.in_dim = in_dim
-        self.neuron = neuron
-        self.activation_function = activation_function
-        self.resnet_dt = resnet_dt
-        self.precision = precision
-
-    def serialize(self) -> dict:
-        """Serialize the network to a dict.
-
-        Returns
-        -------
-        dict
-            The serialized network.
-        """
-        return {
-            "in_dim": self.in_dim,
-            "neuron": self.neuron.copy(),
-            "activation_function": self.activation_function,
-            "resnet_dt": self.resnet_dt,
-            "precision": self.precision,
-            "layers": [layer.serialize() for layer in self.layers],
-        }
-
-    @classmethod
-    def deserialize(cls, data: dict) -> "EmbeddingNet":
-        """Deserialize the network from a dict.
-
-        Parameters
-        ----------
-        data : dict
-            The dict to deserialize from.
-        """
-        data = copy.deepcopy(data)
-        layers = data.pop("layers")
-        obj = cls(**data)
-        super(EmbeddingNet, obj).__init__(layers)
-        return obj
-
-
-class FittingNet(EmbeddingNet):
-    """The fitting network. It may be implemented as an embedding
-    net connected with a linear output layer.
-
-    Parameters
-    ----------
-    in_dim
-        Input dimension.
-    out_dim
-        Output dimension
-    neuron
-        The number of neurons in each hidden layer.
-    activation_function
-        The activation function.
-    resnet_dt
-        Use time step at the resnet architecture.
-    precision
-        Floating point precision for the model paramters.
-    bias_out
-        The last linear layer has bias.
-
-    """
-
-    def __init__(
-        self,
-        in_dim,
-        out_dim,
-        neuron: List[int] = [24, 48, 96],
-        activation_function: str = "tanh",
-        resnet_dt: bool = False,
-        precision: str = DEFAULT_PRECISION,
-        bias_out: bool = True,
-    ):
-        super().__init__(
+        def __init__(
+            self,
             in_dim,
-            neuron=neuron,
-            activation_function=activation_function,
-            resnet_dt=resnet_dt,
-            precision=precision,
-        )
-        rng = np.random.default_rng()
-        i_in, i_ot = neuron[-1], out_dim
-        self.layers.append(
-            NativeLayer(
-                i_in,
-                i_ot,
-                bias=bias_out,
-                use_timestep=False,
-                activation_function=None,
-                resnet=False,
+            neuron: List[int] = [24, 48, 96],
+            activation_function: str = "tanh",
+            resnet_dt: bool = False,
+            precision: str = DEFAULT_PRECISION,
+        ):
+            layers = []
+            i_in = in_dim
+            for idx, ii in enumerate(neuron):
+                i_ot = ii
+                layers.append(
+                    T_NetworkLayer(
+                        i_in,
+                        i_ot,
+                        bias=True,
+                        use_timestep=resnet_dt,
+                        activation_function=activation_function,
+                        resnet=True,
+                        precision=precision,
+                    ).serialize()
+                )
+                i_in = i_ot
+            super().__init__(layers)
+            self.in_dim = in_dim
+            self.neuron = neuron
+            self.activation_function = activation_function
+            self.resnet_dt = resnet_dt
+            self.precision = precision
+
+        def serialize(self) -> dict:
+            """Serialize the network to a dict.
+
+            Returns
+            -------
+            dict
+                The serialized network.
+            """
+            return {
+                "in_dim": self.in_dim,
+                "neuron": self.neuron.copy(),
+                "activation_function": self.activation_function,
+                "resnet_dt": self.resnet_dt,
+                "precision": self.precision,
+                "layers": [layer.serialize() for layer in self.layers],
+            }
+
+        @classmethod
+        def deserialize(cls, data: dict) -> "EmbeddingNet":
+            """Deserialize the network from a dict.
+
+            Parameters
+            ----------
+            data : dict
+                The dict to deserialize from.
+            """
+            data = copy.deepcopy(data)
+            layers = data.pop("layers")
+            obj = cls(**data)
+            super(EN, obj).__init__(layers)
+            return obj
+
+    return EN
+
+
+EmbeddingNet = make_embedding_network(NativeNet, NativeLayer)
+
+
+def make_fitting_network(T_EmbeddingNet, T_Network, T_NetworkLayer):
+    class FN(T_EmbeddingNet):
+        """The fitting network. It may be implemented as an embedding
+        net connected with a linear output layer.
+
+        Parameters
+        ----------
+        in_dim
+            Input dimension.
+        out_dim
+            Output dimension
+        neuron
+            The number of neurons in each hidden layer.
+        activation_function
+            The activation function.
+        resnet_dt
+            Use time step at the resnet architecture.
+        precision
+            Floating point precision for the model paramters.
+        bias_out
+            The last linear layer has bias.
+
+        """
+
+        def __init__(
+            self,
+            in_dim,
+            out_dim,
+            neuron: List[int] = [24, 48, 96],
+            activation_function: str = "tanh",
+            resnet_dt: bool = False,
+            precision: str = DEFAULT_PRECISION,
+            bias_out: bool = True,
+        ):
+            super().__init__(
+                in_dim,
+                neuron=neuron,
+                activation_function=activation_function,
+                resnet_dt=resnet_dt,
                 precision=precision,
             )
-        )
-        self.out_dim = out_dim
-        self.bias_out = bias_out
+            i_in, i_ot = neuron[-1], out_dim
+            self.layers.append(
+                T_NetworkLayer(
+                    i_in,
+                    i_ot,
+                    bias=bias_out,
+                    use_timestep=False,
+                    activation_function=None,
+                    resnet=False,
+                    precision=precision,
+                )
+            )
+            self.out_dim = out_dim
+            self.bias_out = bias_out
 
-    def serialize(self) -> dict:
-        """Serialize the network to a dict.
+        def serialize(self) -> dict:
+            """Serialize the network to a dict.
 
-        Returns
-        -------
-        dict
-            The serialized network.
-        """
-        return {
-            "in_dim": self.in_dim,
-            "out_dim": self.out_dim,
-            "neuron": self.neuron.copy(),
-            "activation_function": self.activation_function,
-            "resnet_dt": self.resnet_dt,
-            "precision": self.precision,
-            "bias_out": self.bias_out,
-            "layers": [layer.serialize() for layer in self.layers],
-        }
+            Returns
+            -------
+            dict
+                The serialized network.
+            """
+            return {
+                "in_dim": self.in_dim,
+                "out_dim": self.out_dim,
+                "neuron": self.neuron.copy(),
+                "activation_function": self.activation_function,
+                "resnet_dt": self.resnet_dt,
+                "precision": self.precision,
+                "bias_out": self.bias_out,
+                "layers": [layer.serialize() for layer in self.layers],
+            }
 
-    @classmethod
-    def deserialize(cls, data: dict) -> "FittingNet":
-        """Deserialize the network from a dict.
+        @classmethod
+        def deserialize(cls, data: dict) -> "FittingNet":
+            """Deserialize the network from a dict.
 
-        Parameters
-        ----------
-        data : dict
-            The dict to deserialize from.
-        """
-        data = copy.deepcopy(data)
-        layers = data.pop("layers")
-        obj = cls(**data)
-        NativeNet.__init__(obj, layers)
-        return obj
+            Parameters
+            ----------
+            data : dict
+                The dict to deserialize from.
+            """
+            data = copy.deepcopy(data)
+            layers = data.pop("layers")
+            obj = cls(**data)
+            T_Network.__init__(obj, layers)
+            return obj
+
+    return FN
+
+
+FittingNet = make_fitting_network(EmbeddingNet, NativeNet, NativeLayer)
 
 
 class NetworkCollection:
