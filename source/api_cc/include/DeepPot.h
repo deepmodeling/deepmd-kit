@@ -16,7 +16,7 @@ class DeepPotBase {
    * @brief DP constructor without initialization.
    **/
   DeepPotBase(){};
-  ~DeepPotBase(){};
+  virtual ~DeepPotBase() = 0;
   /**
    * @brief DP constructor with initialization.
    * @param[in] model The name of the frozen model file.

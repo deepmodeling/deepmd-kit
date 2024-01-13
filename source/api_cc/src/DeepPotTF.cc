@@ -28,10 +28,10 @@ static void run_model(
   if (nloc == 0) {
     // no backward map needed
     // dforce of size nall * 3
-    dforce_.resize(nframes * nall * 3);
+    dforce_.resize(static_cast<size_t>(nframes) * nall * 3);
     fill(dforce_.begin(), dforce_.end(), (VALUETYPE)0.0);
     // dvirial of size 9
-    dvirial.resize(nframes * 9);
+    dvirial.resize(static_cast<size_t>(nframes) * 9);
     fill(dvirial.begin(), dvirial.end(), (VALUETYPE)0.0);
     return;
   }
@@ -49,12 +49,12 @@ static void run_model(
   auto of = output_f.flat<MODELTYPE>();
   auto oav = output_av.flat<MODELTYPE>();
 
-  std::vector<VALUETYPE> dforce(nframes * 3 * nall);
-  dvirial.resize(nframes * 9);
+  std::vector<VALUETYPE> dforce(static_cast<size_t>(nframes) * 3 * nall);
+  dvirial.resize(static_cast<size_t>(nframes) * 9);
   for (int ii = 0; ii < nframes; ++ii) {
     dener[ii] = oe(ii);
   }
-  for (unsigned ii = 0; ii < nframes * nall * 3; ++ii) {
+  for (size_t ii = 0; ii < static_cast<size_t>(nframes) * nall * 3; ++ii) {
     dforce[ii] = of(ii);
   }
   // set dvirial to zero, prevent input vector is not zero (#1123)
@@ -135,16 +135,16 @@ static void run_model(
   if (nloc == 0) {
     // no backward map needed
     // dforce of size nall * 3
-    dforce_.resize(nframes * nall * 3);
+    dforce_.resize(static_cast<size_t>(nframes) * nall * 3);
     fill(dforce_.begin(), dforce_.end(), (VALUETYPE)0.0);
     // dvirial of size 9
-    dvirial.resize(nframes * 9);
+    dvirial.resize(static_cast<size_t>(nframes) * 9);
     fill(dvirial.begin(), dvirial.end(), (VALUETYPE)0.0);
     // datom_energy_ of size nall
-    datom_energy_.resize(nframes * nall);
+    datom_energy_.resize(static_cast<size_t>(nframes) * nall);
     fill(datom_energy_.begin(), datom_energy_.end(), (VALUETYPE)0.0);
     // datom_virial_ of size nall * 9
-    datom_virial_.resize(nframes * nall * 9);
+    datom_virial_.resize(static_cast<size_t>(nframes) * nall * 9);
     fill(datom_virial_.begin(), datom_virial_.end(), (VALUETYPE)0.0);
     return;
   }
@@ -164,14 +164,14 @@ static void run_model(
   auto oae = output_ae.flat<MODELTYPE>();
   auto oav = output_av.flat<MODELTYPE>();
 
-  std::vector<VALUETYPE> dforce(nframes * 3 * nall);
-  std::vector<VALUETYPE> datom_energy(nframes * nall, 0);
-  std::vector<VALUETYPE> datom_virial(nframes * 9 * nall);
-  dvirial.resize(nframes * 9);
+  std::vector<VALUETYPE> dforce(static_cast<size_t>(nframes) * 3 * nall);
+  std::vector<VALUETYPE> datom_energy(static_cast<size_t>(nframes) * nall, 0);
+  std::vector<VALUETYPE> datom_virial(static_cast<size_t>(nframes) * 9 * nall);
+  dvirial.resize(static_cast<size_t>(nframes) * 9);
   for (int ii = 0; ii < nframes; ++ii) {
     dener[ii] = oe(ii);
   }
-  for (int ii = 0; ii < nframes * nall * 3; ++ii) {
+  for (size_t ii = 0; ii < static_cast<size_t>(nframes) * nall * 3; ++ii) {
     dforce[ii] = of(ii);
   }
   for (int ii = 0; ii < nframes; ++ii) {
@@ -179,7 +179,7 @@ static void run_model(
       datom_energy[ii * nall + jj] = oae(ii * nloc + jj);
     }
   }
-  for (int ii = 0; ii < nframes * nall * 9; ++ii) {
+  for (size_t ii = 0; ii < static_cast<size_t>(nframes) * nall * 9; ++ii) {
     datom_virial[ii] = oav(ii);
   }
   // set dvirial to zero, prevent input vector is not zero (#1123)
@@ -512,14 +512,15 @@ void DeepPotTF::validate_fparam_aparam(
     const int& nloc,
     const std::vector<VALUETYPE>& fparam,
     const std::vector<VALUETYPE>& aparam) const {
-  if (fparam.size() != dfparam && fparam.size() != nframes * dfparam) {
+  if (fparam.size() != dfparam &&
+      fparam.size() != static_cast<size_t>(nframes) * dfparam) {
     throw deepmd::deepmd_exception(
         "the dim of frame parameter provided is not consistent with what the "
         "model uses");
   }
 
   if (aparam.size() != daparam * nloc &&
-      aparam.size() != nframes * daparam * nloc) {
+      aparam.size() != static_cast<size_t>(nframes) * daparam * nloc) {
     throw deepmd::deepmd_exception(
         "the dim of atom parameter provided is not consistent with what the "
         "model uses");
@@ -544,11 +545,11 @@ void DeepPotTF::tile_fparam_aparam(std::vector<VALUETYPE>& out_param,
                                    const int& dparam,
                                    const std::vector<VALUETYPE>& param) const {
   if (param.size() == dparam) {
-    out_param.resize(nframes * dparam);
+    out_param.resize(static_cast<size_t>(nframes) * dparam);
     for (int ii = 0; ii < nframes; ++ii) {
       std::copy(param.begin(), param.end(), out_param.begin() + ii * dparam);
     }
-  } else if (param.size() == nframes * dparam) {
+  } else if (param.size() == static_cast<size_t>(nframes) * dparam) {
     out_param = param;
   }
 }
@@ -689,7 +690,7 @@ void DeepPotTF::compute(ENERGYVTYPE& dener,
   compute_inner(dener, dforce, dvirial, dcoord, datype, dbox, nghost_real, ago,
                 fparam, aparam);
   // bkw map
-  dforce_.resize(nframes * fwd_map.size() * 3);
+  dforce_.resize(static_cast<size_t>(nframes) * fwd_map.size() * 3);
   select_map<VALUETYPE>(dforce_, dforce, bkw_map, 3, nframes, fwd_map.size(),
                         bkw_map.size());
 }
@@ -860,15 +861,15 @@ void DeepPotTF::compute(ENERGYVTYPE& dener,
   std::vector<std::pair<std::string, Tensor>> input_tensors;
 
   if (dtype == tensorflow::DT_DOUBLE) {
-    int nloc = session_input_tensors<double>(input_tensors, dcoord_, ntypes,
-                                             datype_, dbox, cell_size, fparam,
-                                             aparam, atommap, "", aparam_nall);
+    int ret = session_input_tensors<double>(input_tensors, dcoord_, ntypes,
+                                            datype_, dbox, cell_size, fparam,
+                                            aparam, atommap, "", aparam_nall);
     run_model<double>(dener, dforce_, dvirial, datom_energy_, datom_virial_,
                       session, input_tensors, atommap, nframes);
   } else {
-    int nloc = session_input_tensors<float>(input_tensors, dcoord_, ntypes,
-                                            datype_, dbox, cell_size, fparam,
-                                            aparam, atommap, "", aparam_nall);
+    int ret = session_input_tensors<float>(input_tensors, dcoord_, ntypes,
+                                           datype_, dbox, cell_size, fparam,
+                                           aparam, atommap, "", aparam_nall);
     run_model<float>(dener, dforce_, dvirial, datom_energy_, datom_virial_,
                      session, input_tensors, atommap, nframes);
   }
@@ -983,9 +984,9 @@ void DeepPotTF::compute(ENERGYVTYPE& dener,
   }
 
   // bkw map
-  dforce_.resize(nframes * fwd_map.size() * 3);
-  datom_energy_.resize(nframes * fwd_map.size());
-  datom_virial_.resize(nframes * fwd_map.size() * 9);
+  dforce_.resize(static_cast<size_t>(nframes) * fwd_map.size() * 3);
+  datom_energy_.resize(static_cast<size_t>(nframes) * fwd_map.size());
+  datom_virial_.resize(static_cast<size_t>(nframes) * fwd_map.size() * 9);
   select_map<VALUETYPE>(dforce_, dforce, bkw_map, 3, nframes, fwd_map.size(),
                         nall_real);
   select_map<VALUETYPE>(datom_energy_, datom_energy, bkw_map, 1, nframes,
