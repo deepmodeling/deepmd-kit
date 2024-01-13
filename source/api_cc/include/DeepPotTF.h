@@ -566,8 +566,6 @@ class DeepPotTF : public DeepPotBase {
   bool inited;
   template <class VT>
   VT get_scalar(const std::string& name) const;
-  // VALUETYPE get_rcut () const;
-  // int get_ntypes () const;
   double rcut;
   int dtype;
   double cell_size;

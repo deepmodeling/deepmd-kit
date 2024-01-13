@@ -475,7 +475,7 @@ void DeepPotTF::init(const std::string& model,
   ntypes = get_scalar<int>("descrpt_attr/ntypes");
   try {
     ntypes_spin = get_scalar<int>("spin_attr/ntypes_spin");
-  } catch (const deepmd::deepmd_exception) {
+  } catch (const deepmd::deepmd_exception&) {
     ntypes_spin = 0;
   }
   dfparam = get_scalar<int>("fitting_attr/dfparam");
@@ -489,7 +489,7 @@ void DeepPotTF::init(const std::string& model,
   if (daparam > 0) {
     try {
       aparam_nall = get_scalar<bool>("fitting_attr/aparam_nall");
-    } catch (const deepmd::deepmd_exception) {
+    } catch (const deepmd::deepmd_exception&) {
       aparam_nall = false;
     }
   } else {
@@ -519,7 +519,7 @@ void DeepPotTF::validate_fparam_aparam(
         "model uses");
   }
 
-  if (aparam.size() != daparam * nloc &&
+  if (aparam.size() != static_cast<size_t>(daparam) * nloc &&
       aparam.size() != static_cast<size_t>(nframes) * daparam * nloc) {
     throw deepmd::deepmd_exception(
         "the dim of atom parameter provided is not consistent with what the "
@@ -547,7 +547,8 @@ void DeepPotTF::tile_fparam_aparam(std::vector<VALUETYPE>& out_param,
   if (param.size() == dparam) {
     out_param.resize(static_cast<size_t>(nframes) * dparam);
     for (int ii = 0; ii < nframes; ++ii) {
-      std::copy(param.begin(), param.end(), out_param.begin() + ii * dparam);
+      std::copy(param.begin(), param.end(),
+                out_param.begin() + static_cast<unsigned long>(ii) * dparam);
     }
   } else if (param.size() == static_cast<size_t>(nframes) * dparam) {
     out_param = param;

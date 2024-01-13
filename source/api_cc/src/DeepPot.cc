@@ -33,13 +33,13 @@ void DeepPot::init(const std::string& model,
     return;
   }
   // TODO: To implement detect_backend
-  Backend backend = deepmd::Backend::TENSORFLOW;
-  if (deepmd::Backend::TENSORFLOW == backend) {
+  DPBackend backend = deepmd::DPBackend::TensorFlow;
+  if (deepmd::DPBackend::TensorFlow == backend) {
     // TODO: throw errors if TF backend is not built, without mentioning TF
     dp = std::make_shared<deepmd::DeepPotTF>(model, gpu_rank, file_content);
-  } else if (deepmd::Backend::PYTORCH == backend) {
+  } else if (deepmd::DPBackend::PyTorch == backend) {
     throw deepmd::deepmd_exception("PyTorch backend is not supported yet");
-  } else if (deepmd::Backend::PADDLE == backend) {
+  } else if (deepmd::DPBackend::Paddle == backend) {
     throw deepmd::deepmd_exception("PaddlePaddle backend is not supported yet");
   } else {
     throw deepmd::deepmd_exception("Unknown file type");
