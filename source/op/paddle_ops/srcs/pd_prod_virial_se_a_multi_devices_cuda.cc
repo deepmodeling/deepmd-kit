@@ -1,7 +1,11 @@
 #define GOOGLE_CUDA 1
 #include <assert.h>
 #include "prod_virial.h"
+#ifdef ON_INFER
+#include "paddle/include/experimental/ext_all.h"
+#else
 #include "paddle/extension.h"
+#endif
 
 #define CHECK_INPUT(x) PD_CHECK(x.place() == paddle::PlaceType::kGPU, #x " must be a GPU Tensor.")
 #define CHECK_INPUT_DIM(x, value) PD_CHECK(x.shape().size() == value, #x "'s dim should be " #value ".")

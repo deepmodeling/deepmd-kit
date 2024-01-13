@@ -1,5 +1,9 @@
 #define GOOGLE_CUDA 1
+#ifdef ON_INFER
+#include "paddle/include/experimental/ext_all.h"
+#else
 #include "paddle/extension.h"
+#endif
 #include "utilities.h"
 #include "coord.h"
 #include "region.h"

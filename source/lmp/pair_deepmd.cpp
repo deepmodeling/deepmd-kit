@@ -1,3 +1,5 @@
+#include <fstream>
+#include <sstream>
 #include <iostream>
 #include <string.h>
 #include <iomanip>
@@ -27,6 +29,7 @@ using namespace std;
 
 static const char cite_user_deepmd_package[] =
 	"USER-DEEPMD package:\n\n"
+  "based on PaddlePaddle framework and inference"
     "@article{Wang_ComputPhysCommun_2018_v228_p178,\n"
     "  author = {Wang, Han and Zhang, Linfeng and Han, Jiequn and E, Weinan},\n"
     "  doi = {10.1016/j.cpc.2018.03.016},\n"
@@ -58,60 +61,20 @@ static int stringCmp(const void *a, const void* b)
     return sum;
 }
 
-int PairDeepMD::get_node_rank() {
-    char host_name[MPI_MAX_PROCESSOR_NAME];
-    memset(host_name, '\0', sizeof(char) * MPI_MAX_PROCESSOR_NAME);
-    char (*host_names)[MPI_MAX_PROCESSOR_NAME];
-    int n, namelen, color, rank, nprocs, myrank;
-    size_t bytes;
-    MPI_Comm nodeComm;
-    
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
-    MPI_Get_processor_name(host_name,&namelen);
-
-    bytes = nprocs * sizeof(char[MPI_MAX_PROCESSOR_NAME]);
-    host_names = (char (*)[MPI_MAX_PROCESSOR_NAME]) malloc(bytes);
-    for (int ii = 0; ii < nprocs; ii++) {
-        memset(host_names[ii], '\0', sizeof(char) * MPI_MAX_PROCESSOR_NAME);
-    }
-    
-    strcpy(host_names[rank], host_name);
-
-    for (n=0; n<nprocs; n++)
-        MPI_Bcast(&(host_names[n]),MPI_MAX_PROCESSOR_NAME, MPI_CHAR, n, MPI_COMM_WORLD);
-    qsort(host_names, nprocs,  sizeof(char[MPI_MAX_PROCESSOR_NAME]), stringCmp);
-
-    color = 0;
-    for (n=0; n<nprocs-1; n++)
-    {
-        if(strcmp(host_name, host_names[n]) == 0)
-        {
-            break;
-        }
-        if(strcmp(host_names[n], host_names[n+1]))
-        {
-            color++;
-        }
-    }
-
-    MPI_Comm_split(MPI_COMM_WORLD, color, 0, &nodeComm);
-    MPI_Comm_rank(nodeComm, &myrank);
-
-    MPI_Barrier(MPI_COMM_WORLD);
-    int looprank=myrank;
-    // printf (" Assigning device %d  to process on node %s rank %d, OK\n",looprank,  host_name, rank );
-    free(host_names);
-    return looprank;
+std::string readfile(std::string filename)
+{
+  auto ss = std::ostringstream{};
+  std::ifstream input_file(filename);
+  return std::string(std::istreambuf_iterator<char>(input_file), std::istreambuf_iterator<char>());
 }
 
-std::string PairDeepMD::get_file_content(const std::string & model) {
+std::string PairDeepMD::get_prog_file_content(const std::string & model) {
   int myrank = 0, root = 0;
   MPI_Comm_rank(MPI_COMM_WORLD, &myrank);
   int nchar = 0;
   std::string file_content;
   if (myrank == root) {
-    deepmd::check_status(tensorflow::ReadFileToString(tensorflow::Env::Default(), model, &file_content));
+    file_content = readfile(model);
     nchar = file_content.size();
   }
   MPI_Bcast(&nchar, 1, MPI_INT, root, MPI_COMM_WORLD);  
@@ -128,10 +91,41 @@ std::string PairDeepMD::get_file_content(const std::string & model) {
   return file_content;
 }
 
-std::vector<std::string> PairDeepMD::get_file_content(const std::vector<std::string> & models) {
+std::string PairDeepMD::get_params_file_content(const std::string & model) {
+  int myrank = 0, root = 0;
+  MPI_Comm_rank(MPI_COMM_WORLD, &myrank);
+  int nchar = 0;
+  std::string file_content;
+  if (myrank == root) {
+    file_content = readfile(model);
+    nchar = file_content.size();
+  }
+  MPI_Bcast(&nchar, 1, MPI_INT, root, MPI_COMM_WORLD);  
+  char * buff = (char *)malloc(sizeof(char) * nchar);  
+  if (myrank == root) {  
+    memcpy(buff, file_content.c_str(), sizeof(char) * nchar);
+  }
+  MPI_Bcast(buff, nchar, MPI_CHAR, root, MPI_COMM_WORLD);
+  file_content.resize(nchar);
+  for (unsigned ii = 0; ii < nchar; ++ii) {
+    file_content[ii] = buff[ii];
+  }
+  free(buff);
+  return file_content;
+}
+
+std::vector<std::string> PairDeepMD::get_prog_file_content(const std::vector<std::string> & models) {
   std::vector<std::string> file_contents(models.size());
   for (unsigned ii = 0; ii < models.size(); ++ii) {
-    file_contents[ii] = get_file_content(models[ii]);
+    file_contents[ii] = get_prog_file_content(models[ii]);
+  }
+  return file_contents;
+}
+
+std::vector<std::string> PairDeepMD::get_params_file_content(const std::vector<std::string> & models) {
+  std::vector<std::string> file_contents(models.size());
+  for (unsigned ii = 0; ii < models.size(); ++ii) {
+    file_contents[ii] = get_params_file_content(models[ii]);
   }
   return file_contents;
 }
@@ -211,9 +205,9 @@ void PairDeepMD::make_ttm_aparam(
   // loop over atoms to assign aparam
   for (int ii = 0; ii < nlocal; ii++) {
     if (mask[ii] & ttm_fix->groupbit) {
-      double xscale = (x[ii][0] - domain->boxlo[0])/domain->xprd;
-      double yscale = (x[ii][1] - domain->boxlo[1])/domain->yprd;
-      double zscale = (x[ii][2] - domain->boxlo[2])/domain->zprd;
+      double xscale = static_cast<double>((x[ii][0] - domain->boxlo[0])/domain->xprd);
+      double yscale = static_cast<double>((x[ii][1] - domain->boxlo[1])/domain->yprd);
+      double zscale = static_cast<double>((x[ii][2] - domain->boxlo[2])/domain->zprd);
       int ixnode = static_cast<int>(xscale*nxnodes);
       int iynode = static_cast<int>(yscale*nynodes);
       int iznode = static_cast<int>(zscale*nznodes);
@@ -263,7 +257,7 @@ PairDeepMD::print_summary(const string pre) const
 {
   if (comm->me == 0){
     cout << "Summary of lammps deepmd module ..." << endl;
-    cout << pre << ">>> Info of deepmd-kit:" << endl;
+    cout << pre << ">>> Info of deepmd-kit based on Paddle:" << endl;
     deep_pot.print_summary(pre);
     cout << pre << ">>> Info of lammps module:" << endl;
     cout << pre << "use deepmd-kit at:  " << STR_DEEPMD_ROOT << endl;
@@ -272,11 +266,8 @@ PairDeepMD::print_summary(const string pre) const
     cout << pre << "source commit:      " << STR_GIT_HASH << endl;
     cout << pre << "source commit at:   " << STR_GIT_DATE << endl;
     cout << pre << "build float prec:   " << STR_FLOAT_PREC << endl;
-    cout << pre << "build with tf inc:  " << STR_TensorFlow_INCLUDE_DIRS << endl;
-    cout << pre << "build with tf lib:  " << STR_TensorFlow_LIBRARY << endl;
   }
 }
-
 
 PairDeepMD::~PairDeepMD()
 {
@@ -424,7 +415,7 @@ void PairDeepMD::compute(int eflag, int vflag)
       vector<double> 		all_energy;
       vector<vector<double>> 	all_virial;	       
       vector<vector<double>> 	all_atom_energy;
-      vector<vector<double>> 	all_atom_virial;
+      vector<vector<float>> 	all_atom_virial;
       deep_pot_model_devi.compute(all_energy, all_force, all_virial, all_atom_energy, all_atom_virial, dcoord, dtype, dbox, nghost, lmp_list, ago, fparam, daparam);
       // deep_pot_model_devi.compute_avg (dener, all_energy);
       // deep_pot_model_devi.compute_avg (dforce, all_force);
@@ -674,7 +665,8 @@ void PairDeepMD::settings(int narg, char **arg)
 {
   if (narg <= 0) error->all(FLERR,"Illegal pair_style command");
 
-  vector<string> models;
+  vector<string> models_prog;
+  vector<string> models_params;
   int iarg = 0;
   while (iarg < narg){
     if (is_key(arg[iarg])) {
@@ -683,19 +675,24 @@ void PairDeepMD::settings(int narg, char **arg)
     iarg ++;
   }
   for (int ii = 0; ii < iarg; ++ii){
-    models.push_back(arg[ii]);
+    models_prog.push_back(arg[ii]);
+    models_params.push_back(arg[++ii]);
   }
-  numb_models = models.size();
+  numb_models = models_prog.size();
   if (numb_models == 1) {
-    deep_pot.init (arg[0], get_node_rank(), get_file_content(arg[0]));
+    auto prog_model = get_prog_file_content(arg[0]);
+    auto prog_params = get_params_file_content(arg[1]);
+    deep_pot.init (prog_model, prog_params);
+    // deep_pot.init (models_prog[0], models_params[0]);
     cutoff = deep_pot.cutoff ();
     numb_types = deep_pot.numb_types();
     dim_fparam = deep_pot.dim_fparam();
     dim_aparam = deep_pot.dim_aparam();
   }
   else {
-    deep_pot.init (arg[0], get_node_rank(), get_file_content(arg[0]));
-    deep_pot_model_devi.init(models, get_node_rank(), get_file_content(models));
+    auto progs_model = get_prog_file_content(models_prog);
+    auto progs_params = get_params_file_content(models_params);
+    deep_pot_model_devi.init(progs_model, progs_params);
     cutoff = deep_pot_model_devi.cutoff();
     numb_types = deep_pot_model_devi.numb_types();
     dim_fparam = deep_pot_model_devi.dim_fparam();
@@ -803,8 +800,8 @@ void PairDeepMD::settings(int narg, char **arg)
       cout << arg[0] << " ";
     }
     else {
-      for (int ii = 0; ii < models.size(); ++ii){
-      	cout << models[ii] << " ";
+      for (int ii = 0; ii < models_prog.size(); ++ii){
+      	cout << models_prog[ii] << " ";
       }
     }
     cout << endl

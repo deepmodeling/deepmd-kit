@@ -2,7 +2,7 @@
 #include "AtomMap.h"
 #include "device.h"
 
-using namespace tensorflow;
+// using namespace tensorflow;
 
 static std::vector<std::string>
 split(const std::string &input_, 
@@ -196,14 +196,14 @@ make_inlist(InputNlist & inlist)
   inlist.firstneigh = &firstneigh[0];
 }
 
-void
-deepmd::
-check_status(const tensorflow::Status& status) {
-  if (!status.ok()) {
-    std::cout << status.ToString() << std::endl;
-    exit(1);
-  }
-}
+// void
+// deepmd::
+// check_status(const tensorflow::Status& status) {
+//   if (!status.ok()) {
+//     std::cout << status.ToString() << std::endl;
+//     exit(1);
+//   }
+// }
 
 void
 deepmd::
@@ -239,314 +239,314 @@ name_prefix(const std::string & scope)
   return prefix;
 }
 
-int
-deepmd::
-session_input_tensors (
-    std::vector<std::pair<std::string, Tensor>> & input_tensors,
-    const std::vector<deepmd::VALUETYPE> &	dcoord_,
-    const int &					ntypes,
-    const std::vector<int> &			datype_,
-    const std::vector<deepmd::VALUETYPE> &	dbox, 
-    const deepmd::VALUETYPE &			cell_size,
-    const std::vector<deepmd::VALUETYPE> &	fparam_,
-    const std::vector<deepmd::VALUETYPE> &	aparam_,
-    const deepmd::AtomMap<deepmd::VALUETYPE>&	atommap,
-    const std::string				scope)
-{
-  bool b_pbc = (dbox.size() == 9);
+// int
+// deepmd::
+// session_input_tensors (
+//     std::vector<std::pair<std::string, Tensor>> & input_tensors,
+//     const std::vector<deepmd::VALUETYPE> &	dcoord_,
+//     const int &					ntypes,
+//     const std::vector<int> &			datype_,
+//     const std::vector<deepmd::VALUETYPE> &	dbox, 
+//     const deepmd::VALUETYPE &			cell_size,
+//     const std::vector<deepmd::VALUETYPE> &	fparam_,
+//     const std::vector<deepmd::VALUETYPE> &	aparam_,
+//     const deepmd::AtomMap<deepmd::VALUETYPE>&	atommap,
+//     const std::string				scope)
+// {
+//   bool b_pbc = (dbox.size() == 9);
 
-  int nframes = 1;
-  int nall = dcoord_.size() / 3;
-  int nloc = nall;
-  assert (nall == datype_.size());
+//   int nframes = 1;
+//   int nall = dcoord_.size() / 3;
+//   int nloc = nall;
+//   assert (nall == datype_.size());
 
-  std::vector<int > datype = atommap.get_type();
-  std::vector<int > type_count (ntypes, 0);
-  for (unsigned ii = 0; ii < datype.size(); ++ii){
-    type_count[datype[ii]] ++;
-  }
-  datype.insert (datype.end(), datype_.begin() + nloc, datype_.end());
+//   std::vector<int > datype = atommap.get_type();
+//   std::vector<int > type_count (ntypes, 0);
+//   for (unsigned ii = 0; ii < datype.size(); ++ii){
+//     type_count[datype[ii]] ++;
+//   }
+//   datype.insert (datype.end(), datype_.begin() + nloc, datype_.end());
 
-  TensorShape coord_shape ;
-  coord_shape.AddDim (nframes);
-  coord_shape.AddDim (nall * 3);
-  TensorShape type_shape ;
-  type_shape.AddDim (nframes);
-  type_shape.AddDim (nall);
-  TensorShape box_shape ;
-  box_shape.AddDim (nframes);
-  box_shape.AddDim (9);
-  TensorShape mesh_shape ;
-  if (b_pbc){
-    mesh_shape.AddDim(6);
-  }
-  else {
-    mesh_shape.AddDim(0);
-  }
-  TensorShape natoms_shape ;
-  natoms_shape.AddDim (2 + ntypes);
-  TensorShape fparam_shape ;
-  fparam_shape.AddDim (nframes);
-  fparam_shape.AddDim (fparam_.size());
-  TensorShape aparam_shape ;
-  aparam_shape.AddDim (nframes);
-  aparam_shape.AddDim (aparam_.size());
+//   TensorShape coord_shape ;
+//   coord_shape.AddDim (nframes);
+//   coord_shape.AddDim (nall * 3);
+//   TensorShape type_shape ;
+//   type_shape.AddDim (nframes);
+//   type_shape.AddDim (nall);
+//   TensorShape box_shape ;
+//   box_shape.AddDim (nframes);
+//   box_shape.AddDim (9);
+//   TensorShape mesh_shape ;
+//   if (b_pbc){
+//     mesh_shape.AddDim(6);
+//   }
+//   else {
+//     mesh_shape.AddDim(0);
+//   }
+//   TensorShape natoms_shape ;
+//   natoms_shape.AddDim (2 + ntypes);
+//   TensorShape fparam_shape ;
+//   fparam_shape.AddDim (nframes);
+//   fparam_shape.AddDim (fparam_.size());
+//   TensorShape aparam_shape ;
+//   aparam_shape.AddDim (nframes);
+//   aparam_shape.AddDim (aparam_.size());
   
-#ifdef HIGH_PREC
-  Tensor coord_tensor	(DT_DOUBLE, coord_shape);
-  Tensor box_tensor	(DT_DOUBLE, box_shape);
-  Tensor fparam_tensor  (DT_DOUBLE, fparam_shape);
-  Tensor aparam_tensor  (DT_DOUBLE, aparam_shape);
-#else
-  Tensor coord_tensor	(DT_FLOAT, coord_shape);
-  Tensor box_tensor	(DT_FLOAT, box_shape);
-  Tensor fparam_tensor  (DT_FLOAT, fparam_shape);
-  Tensor aparam_tensor  (DT_FLOAT, aparam_shape);
-#endif
-  Tensor type_tensor	(DT_INT32, type_shape);
-  Tensor mesh_tensor	(DT_INT32, mesh_shape);
-  Tensor natoms_tensor	(DT_INT32, natoms_shape);
+// #ifdef HIGH_PREC
+//   Tensor coord_tensor	(DT_DOUBLE, coord_shape);
+//   Tensor box_tensor	(DT_DOUBLE, box_shape);
+//   Tensor fparam_tensor  (DT_DOUBLE, fparam_shape);
+//   Tensor aparam_tensor  (DT_DOUBLE, aparam_shape);
+// #else
+//   Tensor coord_tensor	(DT_FLOAT, coord_shape);
+//   Tensor box_tensor	(DT_FLOAT, box_shape);
+//   Tensor fparam_tensor  (DT_FLOAT, fparam_shape);
+//   Tensor aparam_tensor  (DT_FLOAT, aparam_shape);
+// #endif
+//   Tensor type_tensor	(DT_INT32, type_shape);
+//   Tensor mesh_tensor	(DT_INT32, mesh_shape);
+//   Tensor natoms_tensor	(DT_INT32, natoms_shape);
 
-  auto coord = coord_tensor.matrix<deepmd::VALUETYPE> ();
-  auto type = type_tensor.matrix<int> ();
-  auto box = box_tensor.matrix<deepmd::VALUETYPE> ();
-  auto mesh = mesh_tensor.flat<int> ();
-  auto natoms = natoms_tensor.flat<int> ();  
-  auto fparam = fparam_tensor.matrix<deepmd::VALUETYPE> ();
-  auto aparam = aparam_tensor.matrix<deepmd::VALUETYPE> ();
+//   auto coord = coord_tensor.matrix<deepmd::VALUETYPE> ();
+//   auto type = type_tensor.matrix<int> ();
+//   auto box = box_tensor.matrix<deepmd::VALUETYPE> ();
+//   auto mesh = mesh_tensor.flat<int> ();
+//   auto natoms = natoms_tensor.flat<int> ();  
+//   auto fparam = fparam_tensor.matrix<deepmd::VALUETYPE> ();
+//   auto aparam = aparam_tensor.matrix<deepmd::VALUETYPE> ();
 
-  std::vector<deepmd::VALUETYPE> dcoord (dcoord_);
-  atommap.forward (dcoord.begin(), dcoord_.begin(), 3);
+//   std::vector<deepmd::VALUETYPE> dcoord (dcoord_);
+//   atommap.forward (dcoord.begin(), dcoord_.begin(), 3);
   
-  for (int ii = 0; ii < nframes; ++ii){
-    for (int jj = 0; jj < nall * 3; ++jj){
-      coord(ii, jj) = dcoord[jj];
-    }
-    if(b_pbc){
-      for (int jj = 0; jj < 9; ++jj){
-	box(ii, jj) = dbox[jj];
-      }
-    }
-    else{
-      for (int jj = 0; jj < 9; ++jj){
-	box(ii, jj) = 0.;
-      }
-    }
-    for (int jj = 0; jj < nall; ++jj){
-      type(ii, jj) = datype[jj];
-    }
-    for (int jj = 0; jj < fparam_.size(); ++jj){
-      fparam(ii, jj) = fparam_[jj];
-    }
-    for (int jj = 0; jj < aparam_.size(); ++jj){
-      aparam(ii, jj) = aparam_[jj];
-    }
-  }
-  if (b_pbc){
-    mesh (1-1) = 0;
-    mesh (2-1) = 0;
-    mesh (3-1) = 0;
-    mesh (4-1) = 0;
-    mesh (5-1) = 0;
-    mesh (6-1) = 0;
-  }
-  natoms (0) = nloc;
-  natoms (1) = nall;
-  for (int ii = 0; ii < ntypes; ++ii) natoms(ii+2) = type_count[ii];
+//   for (int ii = 0; ii < nframes; ++ii){
+//     for (int jj = 0; jj < nall * 3; ++jj){
+//       coord(ii, jj) = dcoord[jj];
+//     }
+//     if(b_pbc){
+//       for (int jj = 0; jj < 9; ++jj){
+// 	box(ii, jj) = dbox[jj];
+//       }
+//     }
+//     else{
+//       for (int jj = 0; jj < 9; ++jj){
+// 	box(ii, jj) = 0.;
+//       }
+//     }
+//     for (int jj = 0; jj < nall; ++jj){
+//       type(ii, jj) = datype[jj];
+//     }
+//     for (int jj = 0; jj < fparam_.size(); ++jj){
+//       fparam(ii, jj) = fparam_[jj];
+//     }
+//     for (int jj = 0; jj < aparam_.size(); ++jj){
+//       aparam(ii, jj) = aparam_[jj];
+//     }
+//   }
+//   if (b_pbc){
+//     mesh (1-1) = 0;
+//     mesh (2-1) = 0;
+//     mesh (3-1) = 0;
+//     mesh (4-1) = 0;
+//     mesh (5-1) = 0;
+//     mesh (6-1) = 0;
+//   }
+//   natoms (0) = nloc;
+//   natoms (1) = nall;
+//   for (int ii = 0; ii < ntypes; ++ii) natoms(ii+2) = type_count[ii];
 
-  std::string prefix = "";
-  if (scope != ""){
-    prefix = scope + "/";
-  }
-  input_tensors = {
-    {prefix+"t_coord",	coord_tensor}, 
-    {prefix+"t_type",	type_tensor},
-    {prefix+"t_box",	box_tensor},
-    {prefix+"t_mesh",	mesh_tensor},
-    {prefix+"t_natoms",	natoms_tensor},
-  };  
-  if (fparam_.size() > 0) {
-    input_tensors.push_back({prefix+"t_fparam", fparam_tensor});
-  }
-  if (aparam_.size() > 0) {
-    input_tensors.push_back({prefix+"t_aparam", aparam_tensor});
-  }
-  return nloc;
-}
+//   std::string prefix = "";
+//   if (scope != ""){
+//     prefix = scope + "/";
+//   }
+//   input_tensors = {
+//     {prefix+"t_coord",	coord_tensor}, 
+//     {prefix+"t_type",	type_tensor},
+//     {prefix+"t_box",	box_tensor},
+//     {prefix+"t_mesh",	mesh_tensor},
+//     {prefix+"t_natoms",	natoms_tensor},
+//   };  
+//   if (fparam_.size() > 0) {
+//     input_tensors.push_back({prefix+"t_fparam", fparam_tensor});
+//   }
+//   if (aparam_.size() > 0) {
+//     input_tensors.push_back({prefix+"t_aparam", aparam_tensor});
+//   }
+//   return nloc;
+// }
 
-int
-deepmd::
-session_input_tensors (
-    std::vector<std::pair<std::string, Tensor>> & input_tensors,
-    const std::vector<deepmd::VALUETYPE> &	dcoord_,
-    const int &					ntypes,
-    const std::vector<int> &			datype_,
-    const std::vector<deepmd::VALUETYPE> &	dbox,		    
-    InputNlist &				dlist, 
-    const std::vector<deepmd::VALUETYPE> &	fparam_,
-    const std::vector<deepmd::VALUETYPE> &	aparam_,
-    const deepmd::AtomMap<deepmd::VALUETYPE>&	atommap,
-    const int					nghost,
-    const int					ago,
-    const std::string				scope)
-{
-  assert (dbox.size() == 9);
+// int
+// deepmd::
+// session_input_tensors (
+//     std::vector<std::pair<std::string, Tensor>> & input_tensors,
+//     const std::vector<deepmd::VALUETYPE> &	dcoord_,
+//     const int &					ntypes,
+//     const std::vector<int> &			datype_,
+//     const std::vector<deepmd::VALUETYPE> &	dbox,		    
+//     InputNlist &				dlist, 
+//     const std::vector<deepmd::VALUETYPE> &	fparam_,
+//     const std::vector<deepmd::VALUETYPE> &	aparam_,
+//     const deepmd::AtomMap<deepmd::VALUETYPE>&	atommap,
+//     const int					nghost,
+//     const int					ago,
+//     const std::string				scope)
+// {
+//   assert (dbox.size() == 9);
 
-  int nframes = 1;
-  int nall = dcoord_.size() / 3;
-  int nloc = nall - nghost;
-  assert (nall == datype_.size());  
+//   int nframes = 1;
+//   int nall = dcoord_.size() / 3;
+//   int nloc = nall - nghost;
+//   assert (nall == datype_.size());  
 
-  std::vector<int > datype = atommap.get_type();
-  std::vector<int > type_count (ntypes, 0);
-  for (unsigned ii = 0; ii < datype.size(); ++ii){
-    type_count[datype[ii]] ++;
-  }
-  datype.insert (datype.end(), datype_.begin() + nloc, datype_.end());
+//   std::vector<int > datype = atommap.get_type();
+//   std::vector<int > type_count (ntypes, 0);
+//   for (unsigned ii = 0; ii < datype.size(); ++ii){
+//     type_count[datype[ii]] ++;
+//   }
+//   datype.insert (datype.end(), datype_.begin() + nloc, datype_.end());
 
-  TensorShape coord_shape ;
-  coord_shape.AddDim (nframes);
-  coord_shape.AddDim (nall * 3);
-  TensorShape type_shape ;
-  type_shape.AddDim (nframes);
-  type_shape.AddDim (nall);
-  TensorShape box_shape ;
-  box_shape.AddDim (nframes);
-  box_shape.AddDim (9);
-  TensorShape mesh_shape ;
-  mesh_shape.AddDim (16);
-  TensorShape natoms_shape ;
-  natoms_shape.AddDim (2 + ntypes);
-  TensorShape fparam_shape ;
-  fparam_shape.AddDim (nframes);
-  fparam_shape.AddDim (fparam_.size());
-  TensorShape aparam_shape ;
-  aparam_shape.AddDim (nframes);
-  aparam_shape.AddDim (aparam_.size());
+//   TensorShape coord_shape ;
+//   coord_shape.AddDim (nframes);
+//   coord_shape.AddDim (nall * 3);
+//   TensorShape type_shape ;
+//   type_shape.AddDim (nframes);
+//   type_shape.AddDim (nall);
+//   TensorShape box_shape ;
+//   box_shape.AddDim (nframes);
+//   box_shape.AddDim (9);
+//   TensorShape mesh_shape ;
+//   mesh_shape.AddDim (16);
+//   TensorShape natoms_shape ;
+//   natoms_shape.AddDim (2 + ntypes);
+//   TensorShape fparam_shape ;
+//   fparam_shape.AddDim (nframes);
+//   fparam_shape.AddDim (fparam_.size());
+//   TensorShape aparam_shape ;
+//   aparam_shape.AddDim (nframes);
+//   aparam_shape.AddDim (aparam_.size());
   
-#ifdef HIGH_PREC
-  Tensor coord_tensor	(DT_DOUBLE, coord_shape);
-  Tensor box_tensor	(DT_DOUBLE, box_shape);
-  Tensor fparam_tensor  (DT_DOUBLE, fparam_shape);
-  Tensor aparam_tensor  (DT_DOUBLE, aparam_shape);
-#else
-  Tensor coord_tensor	(DT_FLOAT, coord_shape);
-  Tensor box_tensor	(DT_FLOAT, box_shape);
-  Tensor fparam_tensor  (DT_FLOAT, fparam_shape);
-  Tensor aparam_tensor  (DT_FLOAT, aparam_shape);
-#endif
-  Tensor type_tensor	(DT_INT32, type_shape);
-  Tensor mesh_tensor	(DT_INT32, mesh_shape);
-  Tensor natoms_tensor	(DT_INT32, natoms_shape);
+// #ifdef HIGH_PREC
+//   Tensor coord_tensor	(DT_DOUBLE, coord_shape);
+//   Tensor box_tensor	(DT_DOUBLE, box_shape);
+//   Tensor fparam_tensor  (DT_DOUBLE, fparam_shape);
+//   Tensor aparam_tensor  (DT_DOUBLE, aparam_shape);
+// #else
+//   Tensor coord_tensor	(DT_FLOAT, coord_shape);
+//   Tensor box_tensor	(DT_FLOAT, box_shape);
+//   Tensor fparam_tensor  (DT_FLOAT, fparam_shape);
+//   Tensor aparam_tensor  (DT_FLOAT, aparam_shape);
+// #endif
+//   Tensor type_tensor	(DT_INT32, type_shape);
+//   Tensor mesh_tensor	(DT_INT32, mesh_shape);
+//   Tensor natoms_tensor	(DT_INT32, natoms_shape);
 
-  auto coord = coord_tensor.matrix<deepmd::VALUETYPE> ();
-  auto type = type_tensor.matrix<int> ();
-  auto box = box_tensor.matrix<deepmd::VALUETYPE> ();
-  auto mesh = mesh_tensor.flat<int> ();
-  auto natoms = natoms_tensor.flat<int> ();
-  auto fparam = fparam_tensor.matrix<deepmd::VALUETYPE> ();
-  auto aparam = aparam_tensor.matrix<deepmd::VALUETYPE> ();
+//   auto coord = coord_tensor.matrix<deepmd::VALUETYPE> ();
+//   auto type = type_tensor.matrix<int> ();
+//   auto box = box_tensor.matrix<deepmd::VALUETYPE> ();
+//   auto mesh = mesh_tensor.flat<int> ();
+//   auto natoms = natoms_tensor.flat<int> ();
+//   auto fparam = fparam_tensor.matrix<deepmd::VALUETYPE> ();
+//   auto aparam = aparam_tensor.matrix<deepmd::VALUETYPE> ();
 
-  std::vector<deepmd::VALUETYPE> dcoord (dcoord_);
-  atommap.forward (dcoord.begin(), dcoord_.begin(), 3);
+//   std::vector<deepmd::VALUETYPE> dcoord (dcoord_);
+//   atommap.forward (dcoord.begin(), dcoord_.begin(), 3);
   
-  for (int ii = 0; ii < nframes; ++ii){
-    for (int jj = 0; jj < nall * 3; ++jj){
-      coord(ii, jj) = dcoord[jj];
-    }
-    for (int jj = 0; jj < 9; ++jj){
-      box(ii, jj) = dbox[jj];
-    }
-    for (int jj = 0; jj < nall; ++jj){
-      type(ii, jj) = datype[jj];
-    }
-    for (int jj = 0; jj < fparam_.size(); ++jj){
-      fparam(ii, jj) = fparam_[jj];
-    }
-    for (int jj = 0; jj < aparam_.size(); ++jj){
-      aparam(ii, jj) = aparam_[jj];
-    }
-  }
+//   for (int ii = 0; ii < nframes; ++ii){
+//     for (int jj = 0; jj < nall * 3; ++jj){
+//       coord(ii, jj) = dcoord[jj];
+//     }
+//     for (int jj = 0; jj < 9; ++jj){
+//       box(ii, jj) = dbox[jj];
+//     }
+//     for (int jj = 0; jj < nall; ++jj){
+//       type(ii, jj) = datype[jj];
+//     }
+//     for (int jj = 0; jj < fparam_.size(); ++jj){
+//       fparam(ii, jj) = fparam_[jj];
+//     }
+//     for (int jj = 0; jj < aparam_.size(); ++jj){
+//       aparam(ii, jj) = aparam_[jj];
+//     }
+//   }
   
-  for (int ii = 0; ii < 16; ++ii) mesh(ii) = 0;
+//   for (int ii = 0; ii < 16; ++ii) mesh(ii) = 0;
   
-  const int stride = sizeof(int *) / sizeof(int);
-  assert (stride * sizeof(int) == sizeof(int *));
-  assert (stride <= 4);
-  mesh (0) = ago;
-  mesh (1) = dlist.inum;
-  mesh (2) = 0;
-  mesh (3) = 0;
-  memcpy (&mesh(4),  &(dlist.ilist), sizeof(int *));
-  memcpy (&mesh(8),  &(dlist.numneigh), sizeof(int *));
-  memcpy (&mesh(12), &(dlist.firstneigh), sizeof(int **));
+//   const int stride = sizeof(int *) / sizeof(int);
+//   assert (stride * sizeof(int) == sizeof(int *));
+//   assert (stride <= 4);
+//   mesh (0) = ago;
+//   mesh (1) = dlist.inum;
+//   mesh (2) = 0;
+//   mesh (3) = 0;
+//   memcpy (&mesh(4),  &(dlist.ilist), sizeof(int *));
+//   memcpy (&mesh(8),  &(dlist.numneigh), sizeof(int *));
+//   memcpy (&mesh(12), &(dlist.firstneigh), sizeof(int **));
 
-  natoms (0) = nloc;
-  natoms (1) = nall;
-  for (int ii = 0; ii < ntypes; ++ii) natoms(ii+2) = type_count[ii];
+//   natoms (0) = nloc;
+//   natoms (1) = nall;
+//   for (int ii = 0; ii < ntypes; ++ii) natoms(ii+2) = type_count[ii];
 
-  std::string prefix = "";
-  if (scope != ""){
-    prefix = scope + "/";
-  }
-  input_tensors = {
-    {prefix+"t_coord",	coord_tensor}, 
-    {prefix+"t_type",	type_tensor},
-    {prefix+"t_box",	box_tensor},
-    {prefix+"t_mesh",	mesh_tensor},
-    {prefix+"t_natoms",natoms_tensor},
-  };  
-  if (fparam_.size() > 0) {
-    input_tensors.push_back({prefix+"t_fparam", fparam_tensor});
-  }
-  if (aparam_.size() > 0) {
-    input_tensors.push_back({prefix+"t_aparam", aparam_tensor});
-  }
-  return nloc;
-}
+//   std::string prefix = "";
+//   if (scope != ""){
+//     prefix = scope + "/";
+//   }
+//   input_tensors = {
+//     {prefix+"t_coord",	coord_tensor}, 
+//     {prefix+"t_type",	type_tensor},
+//     {prefix+"t_box",	box_tensor},
+//     {prefix+"t_mesh",	mesh_tensor},
+//     {prefix+"t_natoms",natoms_tensor},
+//   };  
+//   if (fparam_.size() > 0) {
+//     input_tensors.push_back({prefix+"t_fparam", fparam_tensor});
+//   }
+//   if (aparam_.size() > 0) {
+//     input_tensors.push_back({prefix+"t_aparam", aparam_tensor});
+//   }
+//   return nloc;
+// }
 
-template<typename VT>
-VT
-deepmd::
-session_get_scalar(Session* session, const std::string name_, const std::string scope) 
-{
-  std::string name = name_;
-  if (scope != "") {
-    name = scope + "/" + name;
-  }
-  std::vector<Tensor> output_tensors;
-  deepmd::check_status (session->Run(std::vector<std::pair<std::string, Tensor>> ({}), 
-			    {name.c_str()}, 
-			    {}, 
-			    &output_tensors));
-  Tensor output_rc = output_tensors[0];
-  auto orc = output_rc.flat <VT> ();
-  return orc(0);
-}
+// template<typename VT>
+// VT
+// deepmd::
+// session_get_scalar(Session* session, const std::string name_, const std::string scope) 
+// {
+//   std::string name = name_;
+//   if (scope != "") {
+//     name = scope + "/" + name;
+//   }
+//   std::vector<Tensor> output_tensors;
+//   deepmd::check_status (session->Run(std::vector<std::pair<std::string, Tensor>> ({}), 
+// 			    {name.c_str()}, 
+// 			    {}, 
+// 			    &output_tensors));
+//   Tensor output_rc = output_tensors[0];
+//   auto orc = output_rc.flat <VT> ();
+//   return orc(0);
+// }
 
-template<typename VT>
-void
-deepmd::
-session_get_vector(std::vector<VT> & o_vec, Session* session, const std::string name_, const std::string scope) 
-{
-  std::string name = name_;
-  if (scope != "") {
-    name = scope + "/" + name;
-  }
-  std::vector<Tensor> output_tensors;
-  deepmd::check_status (session->Run(std::vector<std::pair<std::string, Tensor>> ({}), 
-			    {name.c_str()}, 
-			    {}, 
-			    &output_tensors));
-  Tensor output_rc = output_tensors[0];
-  assert(1 == output_rc.shape().dims());
-  int dof = output_rc.shape().dim_size(0);
-  o_vec.resize(dof);
-  auto orc = output_rc.flat <VT> ();
-  for (int ii = 0; ii < dof; ++ii){
-    o_vec[ii] = orc(ii);
-  }  
-}
+// template<typename VT>
+// void
+// deepmd::
+// session_get_vector(std::vector<VT> & o_vec, Session* session, const std::string name_, const std::string scope) 
+// {
+//   std::string name = name_;
+//   if (scope != "") {
+//     name = scope + "/" + name;
+//   }
+//   std::vector<Tensor> output_tensors;
+//   deepmd::check_status (session->Run(std::vector<std::pair<std::string, Tensor>> ({}), 
+// 			    {name.c_str()}, 
+// 			    {}, 
+// 			    &output_tensors));
+//   Tensor output_rc = output_tensors[0];
+//   assert(1 == output_rc.shape().dims());
+//   int dof = output_rc.shape().dim_size(0);
+//   o_vec.resize(dof);
+//   auto orc = output_rc.flat <VT> ();
+//   for (int ii = 0; ii < dof; ++ii){
+//     o_vec[ii] = orc(ii);
+//   }  
+// }
 
 
 template<typename VT>
@@ -575,15 +575,15 @@ select_map(std::vector<VT> & out,
 }
 
 
-template
-int
-deepmd::
-session_get_scalar<int>(Session*, const std::string, const std::string);
+// template
+// int
+// deepmd::
+// session_get_scalar<int>(Session*, const std::string, const std::string);
 
-template
-void
-deepmd::
-session_get_vector<int>(std::vector<int> &, Session*, const std::string, const std::string);
+// template
+// void
+// deepmd::
+// session_get_vector<int>(std::vector<int> &, Session*, const std::string, const std::string);
 
 template
 void 
@@ -595,15 +595,15 @@ select_map<int>(
     const int & stride);
 
 
-template
-float
-deepmd::
-session_get_scalar<float>(Session*, const std::string, const std::string);
+// template
+// float
+// deepmd::
+// session_get_scalar<float>(Session*, const std::string, const std::string);
 
-template
-void
-deepmd::
-session_get_vector<float>(std::vector<float> &, Session*, const std::string, const std::string);
+// template
+// void
+// deepmd::
+// session_get_vector<float>(std::vector<float> &, Session*, const std::string, const std::string);
 
 template
 void 
@@ -615,15 +615,15 @@ select_map<float>(
     const int & stride);
 
 
-template
-double
-deepmd::
-session_get_scalar<double>(Session*, const std::string, const std::string);
+// template
+// double
+// deepmd::
+// session_get_scalar<double>(Session*, const std::string, const std::string);
 
-template
-void
-deepmd::
-session_get_vector<double>(std::vector<double> &, Session*, const std::string, const std::string);
+// template
+// void
+// deepmd::
+// session_get_vector<double>(std::vector<double> &, Session*, const std::string, const std::string);
 
 template
 void 
@@ -635,15 +635,15 @@ select_map<double>(
     const int & stride);
 
 
-template
-deepmd::STRINGTYPE
-deepmd::
-session_get_scalar<deepmd::STRINGTYPE>(Session*, const std::string, const std::string);
+// template
+// deepmd::STRINGTYPE
+// deepmd::
+// session_get_scalar<deepmd::STRINGTYPE>(Session*, const std::string, const std::string);
 
-template
-void
-deepmd::
-session_get_vector<deepmd::STRINGTYPE>(std::vector<deepmd::STRINGTYPE> &, Session*, const std::string, const std::string);
+// template
+// void
+// deepmd::
+// session_get_vector<deepmd::STRINGTYPE>(std::vector<deepmd::STRINGTYPE> &, Session*, const std::string, const std::string);
 
 template
 void 

@@ -1,6 +1,10 @@
 #define GOOGLE_CUDA 1
 #include "prod_force.h"
+#ifdef ON_INFER
+#include "paddle/include/experimental/ext_all.h"
+#else
 #include "paddle/extension.h"
+#endif
 #include <assert.h>
 
 #define CHECK_INPUT(x) PD_CHECK(x.place() == paddle::PlaceType::kGPU, #x " must be a GPU Tensor.")
