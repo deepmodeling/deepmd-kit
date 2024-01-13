@@ -14,6 +14,9 @@ from .network import (
     NativeNet,
     NetworkCollection,
     load_dp_model,
+    make_embedding_network,
+    make_fitting_network,
+    make_multilayer_network,
     save_dp_model,
     traverse_model_dict,
 )
@@ -32,6 +35,9 @@ from .se_e2_a import (
 __all__ = [
     "DescrptSeA",
     "EnvMat",
+    "make_multilayer_network",
+    "make_embedding_network",
+    "make_fitting_network",
     "EmbeddingNet",
     "FittingNet",
     "NativeLayer",
