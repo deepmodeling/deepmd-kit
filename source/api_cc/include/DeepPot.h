@@ -56,6 +56,7 @@ class DeepPotBase {
    * nframes x natoms x dim_aparam.
    * natoms x dim_aparam. Then all frames are assumed to be provided with the
    *same aparam.
+   * @{
    **/
   virtual void computew(
       double& ener,
@@ -94,6 +95,7 @@ class DeepPotBase {
       const std::vector<float>& box,
       const std::vector<float>& fparam = std::vector<float>(),
       const std::vector<float>& aparam = std::vector<float>()) = 0;
+  /** @} */
   /**
    * @brief Evaluate the energy, force and virial by using this DP.
    * @param[out] ener The system energy.
@@ -115,6 +117,7 @@ class DeepPotBase {
    * nframes x natoms x dim_aparam.
    * natoms x dim_aparam. Then all frames are assumed to be provided with the
    *same aparam.
+   * @{
    **/
   virtual void computew(
       double& ener,
@@ -165,6 +168,8 @@ class DeepPotBase {
       const int& ago,
       const std::vector<float>& fparam = std::vector<float>(),
       const std::vector<float>& aparam = std::vector<float>()) = 0;
+  /** @} */
+
   /**
    * @brief Evaluate the energy, force, virial, atomic energy, and atomic virial
    *by using this DP.
@@ -186,6 +191,7 @@ class DeepPotBase {
    * nframes x natoms x dim_aparam.
    * natoms x dim_aparam. Then all frames are assumed to be provided with the
    *same aparam.
+   * @{
    **/
   virtual void computew(
       double& ener,
@@ -232,6 +238,7 @@ class DeepPotBase {
       const std::vector<float>& box,
       const std::vector<float>& fparam = std::vector<float>(),
       const std::vector<float>& aparam = std::vector<float>()) = 0;
+  /** @} */
   /**
    * @brief Evaluate the energy, force, virial, atomic energy, and atomic virial
    *by using this DP.
@@ -256,6 +263,7 @@ class DeepPotBase {
    * nframes x natoms x dim_aparam.
    * natoms x dim_aparam. Then all frames are assumed to be provided with the
    *same aparam.
+   * @{
    **/
   virtual void computew(
       double& ener,
@@ -314,6 +322,7 @@ class DeepPotBase {
       const int& ago,
       const std::vector<float>& fparam = std::vector<float>(),
       const std::vector<float>& aparam = std::vector<float>()) = 0;
+  /** @} */
   /**
    * @brief Evaluate the energy, force, and virial with the mixed type
    *by using this DP.
@@ -335,6 +344,7 @@ class DeepPotBase {
    * nframes x natoms x dim_aparam.
    * natoms x dim_aparam. Then all frames are assumed to be provided with the
    *same aparam.
+   * @{
    **/
   virtual void computew_mixed_type(
       double& ener,
@@ -376,6 +386,7 @@ class DeepPotBase {
       const std::vector<float>& box,
       const std::vector<float>& fparam = std::vector<float>(),
       const std::vector<float>& aparam = std::vector<float>()) = 0;
+  /** @} */
   /**
    * @brief Evaluate the energy, force, and virial with the mixed type
    *by using this DP.
@@ -399,6 +410,7 @@ class DeepPotBase {
    * nframes x natoms x dim_aparam.
    * natoms x dim_aparam. Then all frames are assumed to be provided with the
    *same aparam.
+   * @{
    **/
   virtual void computew_mixed_type(
       double& ener,
@@ -448,6 +460,7 @@ class DeepPotBase {
       const std::vector<float>& box,
       const std::vector<float>& fparam = std::vector<float>(),
       const std::vector<float>& aparam = std::vector<float>()) = 0;
+  /** @} */
   /**
    * @brief Get the cutoff radius.
    * @return The cutoff radius.
