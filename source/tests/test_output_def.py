@@ -11,6 +11,10 @@ from deepmd_utils.model_format import (
     fitting_check_output,
     model_check_output,
 )
+from deepmd_utils.model_format.output_def import (
+    VariableDef,
+    check_var,
+)
 
 
 class TestDef(unittest.TestCase):
@@ -243,3 +247,40 @@ class TestDef(unittest.TestCase):
             ff = Foo(shape=[nf, nloc, 2])
             ff()
             self.assertIn("not matching", context.exception)
+
+    def test_check_var(self):
+        var_def = VariableDef("foo", [2, 3], atomic=True)
+        with self.assertRaises(ValueError) as context:
+            check_var(np.zeros([2, 3, 4, 5, 6]), var_def)
+            self.assertIn("length not matching", context.exception)
+        with self.assertRaises(ValueError) as context:
+            check_var(np.zeros([2, 3, 4, 5]), var_def)
+            self.assertIn("shape not matching", context.exception)
+        check_var(np.zeros([2, 3, 2, 3]), var_def)
+
+        var_def = VariableDef("foo", [2, 3], atomic=False)
+        with self.assertRaises(ValueError) as context:
+            check_var(np.zeros([2, 3, 4, 5]), var_def)
+            self.assertIn("length not matching", context.exception)
+        with self.assertRaises(ValueError) as context:
+            check_var(np.zeros([2, 3, 4]), var_def)
+            self.assertIn("shape not matching", context.exception)
+        check_var(np.zeros([2, 2, 3]), var_def)
+
+        var_def = VariableDef("foo", [2, -1], atomic=True)
+        with self.assertRaises(ValueError) as context:
+            check_var(np.zeros([2, 3, 4, 5, 6]), var_def)
+            self.assertIn("length not matching", context.exception)
+        with self.assertRaises(ValueError) as context:
+            check_var(np.zeros([2, 3, 4, 5]), var_def)
+            self.assertIn("shape not matching", context.exception)
+        check_var(np.zeros([2, 3, 2, 8]), var_def)
+
+        var_def = VariableDef("foo", [2, -1], atomic=False)
+        with self.assertRaises(ValueError) as context:
+            check_var(np.zeros([2, 3, 4, 5]), var_def)
+            self.assertIn("length not matching", context.exception)
+        with self.assertRaises(ValueError) as context:
+            check_var(np.zeros([2, 3, 4]), var_def)
+            self.assertIn("shape not matching", context.exception)
+        check_var(np.zeros([2, 2, 8]), var_def)
