@@ -6,19 +6,31 @@ from typing import (
 )
 
 
+def check_shape(
+    shape: List[int],
+    def_shape: List[int],
+):
+    """Check if the shape satisfies the defined shape."""
+    assert len(shape) == len(def_shape)
+    if def_shape[-1] == -1:
+        if list(shape[:-1]) != def_shape[:-1]:
+            raise ValueError(f"{shape[:-1]} shape not matching def {def_shape[:-1]}")
+    else:
+        if list(shape) != def_shape:
+            raise ValueError(f"{shape} shape not matching def {def_shape}")
+
+
 def check_var(var, var_def):
     if var_def.atomic:
         # var.shape == [nf, nloc, *var_def.shape]
         if len(var.shape) != len(var_def.shape) + 2:
             raise ValueError(f"{var.shape[2:]} length not matching def {var_def.shape}")
-        if list(var.shape[2:]) != var_def.shape:
-            raise ValueError(f"{var.shape[2:]} not matching def {var_def.shape}")
+        check_shape(list(var.shape[2:]), var_def.shape)
     else:
         # var.shape == [nf, *var_def.shape]
         if len(var.shape) != len(var_def.shape) + 1:
             raise ValueError(f"{var.shape[1:]} length not matching def {var_def.shape}")
-        if list(var.shape[1:]) != var_def.shape:
-            raise ValueError(f"{var.shape[1:]} not matching def {var_def.shape}")
+        check_shape(list(var.shape[1:]), var_def.shape)
 
 
 def model_check_output(cls):
