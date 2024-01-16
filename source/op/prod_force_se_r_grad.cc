@@ -77,7 +77,7 @@ class ProdForceSeRGradOp : public OpKernel {
     // Create an output tensor
     TensorShape grad_net_shape;
     grad_net_shape.AddDim(nframes);
-    grad_net_shape.AddDim(nloc * ndescrpt);
+    grad_net_shape.AddDim(static_cast<int64_t>(nloc) * ndescrpt);
 
     // allocate the output tensor
     Tensor* grad_net_tensor = NULL;

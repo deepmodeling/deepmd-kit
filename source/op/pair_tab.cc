@@ -103,10 +103,10 @@ class PairTabOp : public OpKernel {
     energy_shape.AddDim(nloc);
     TensorShape force_shape;
     force_shape.AddDim(nframes);
-    force_shape.AddDim(3 * nall);
+    force_shape.AddDim(3 * static_cast<int64_t>(nall));
     TensorShape virial_shape;
     virial_shape.AddDim(nframes);
-    virial_shape.AddDim(9 * nall);
+    virial_shape.AddDim(9 * static_cast<int64_t>(nall));
     Tensor* energy_tensor = NULL;
     Tensor* force_tensor = NULL;
     Tensor* virial_tensor = NULL;

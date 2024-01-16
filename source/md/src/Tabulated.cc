@@ -24,7 +24,7 @@ void Tabulated::reinit(const VALUETYPE rc,
   hi = 1. / hh;
   rc2 = rc * rc;
 
-  data.resize(tableLength * stride);
+  data.resize(static_cast<size_t>(tableLength) * stride);
 
   int ii;
   for (ii = 0; ii < tableLength - 1; ++ii) {

@@ -517,7 +517,7 @@ void FixDPLR::pre_force(int vflag) {
 
   int odim = dpt.output_dim();
   assert(odim == 3);
-  dipole_recd.resize(nall * 3);
+  dipole_recd.resize(static_cast<size_t>(nall) * 3);
   fill(dipole_recd.begin(), dipole_recd.end(), 0.0);
   for (int ii = 0; ii < valid_pairs.size(); ++ii) {
     int idx0 = valid_pairs[ii].first;

@@ -96,7 +96,7 @@ class ProdVirialOp : public OpKernel {
                    context->allocate_output(0, virial_shape, &virial_tensor));
     TensorShape atom_virial_shape;
     atom_virial_shape.AddDim(nframes);
-    atom_virial_shape.AddDim(9 * nall);
+    atom_virial_shape.AddDim(9 * static_cast<int64_t>(nall));
     Tensor* atom_virial_tensor = NULL;
     OP_REQUIRES_OK(context, context->allocate_output(1, atom_virial_shape,
                                                      &atom_virial_tensor));
