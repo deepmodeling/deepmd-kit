@@ -56,10 +56,6 @@ void DipoleChargeModifierTF::init(const std::string& model,
   deepmd::check_status(NewSession(options, &session));
   deepmd::check_status(ReadBinaryProto(Env::Default(), model, graph_def));
   deepmd::check_status(session->Create(*graph_def));
-  // int nnodes = graph_def.node_size();
-  // for (int ii = 0; ii < nnodes; ++ii){
-  //   cout << ii << " \t " << graph_def.node(ii).name() << endl;
-  // }
   dtype = session_get_dtype(session, "descrpt_attr/rcut");
   if (dtype == tensorflow::DT_DOUBLE) {
     rcut = get_scalar<double>("descrpt_attr/rcut");
@@ -308,11 +304,6 @@ void DipoleChargeModifierTF::compute(
   }
   // add ele contrinution
   dfcorr_ = dfcorr_2;
-  // for (int ii = 0; ii < nloc; ++ii){
-  //   for (int dd = 0; dd < 3; ++dd){
-  //     dfcorr_[ii*3+dd] += delef_[ii*3+dd];
-  //   }
-  // }
   for (int ii = 0; ii < nloc_real; ++ii) {
     int oii = real_bkw_map[ii];
     for (int dd = 0; dd < 3; ++dd) {
