@@ -26,6 +26,8 @@ from .output_def import (
     OutputVariableDef,
     VariableDef,
     fitting_check_output,
+    get_deriv_name,
+    get_reduce_name,
     model_check_output,
 )
 from .se_e2_a import (
@@ -55,4 +57,6 @@ __all__ = [
     "VariableDef",
     "model_check_output",
     "fitting_check_output",
+    "get_reduce_name",
+    "get_deriv_name",
 ]

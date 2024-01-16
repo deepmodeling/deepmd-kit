@@ -3,7 +3,6 @@ from typing import (
     Dict,
     List,
     Tuple,
-    Union,
 )
 
 
@@ -38,7 +37,7 @@ def model_check_output(cls):
             **kwargs,
         ):
             super().__init__(*args, **kwargs)
-            self.md = cls.output_def(self)
+            self.md = self.output_def()
 
         def __call__(
             self,
@@ -77,7 +76,7 @@ def fitting_check_output(cls):
             **kwargs,
         ):
             super().__init__(*args, **kwargs)
-            self.md = cls.output_def(self)
+            self.md = self.output_def()
 
         def __call__(
             self,
@@ -113,7 +112,7 @@ class VariableDef:
     def __init__(
         self,
         name: str,
-        shape: Union[List[int], Tuple[int]],
+        shape: list[int],
         atomic: bool = True,
     ):
         self.name = name
@@ -149,12 +148,18 @@ class OutputVariableDef(VariableDef):
     def __init__(
         self,
         name: str,
-        shape: Union[List[int], Tuple[int]],
+        shape: List[int],
         reduciable: bool = False,
         differentiable: bool = False,
     ):
-        # fitting output must be atomic
-        super().__init__(name, shape, atomic=True)
+        ## fitting output must be atomic
+        ## Here we cannot use super because it does not pass jit
+        # super().__init__(name, shape, atomic=True)
+        ## the work around is the following
+        self.name = name
+        self.shape = list(shape)
+        self.atomic = True
+        #
         self.reduciable = reduciable
         self.differentiable = differentiable
         if not self.reduciable and self.differentiable:
@@ -176,13 +181,13 @@ class FittingOutputDef:
 
     def __init__(
         self,
-        var_defs: List[OutputVariableDef] = [],
+        var_defs: List[OutputVariableDef],
     ):
         self.var_defs = {vv.name: vv for vv in var_defs}
 
     def __getitem__(
         self,
-        key,
+        key: str,
     ) -> OutputVariableDef:
         return self.var_defs[key]
 
@@ -224,10 +229,16 @@ class ModelOutputDef:
         ]:
             self.var_defs.update(ii)
 
-    def __getitem__(self, key) -> VariableDef:
+    def __getitem__(
+        self,
+        key: str,
+    ) -> VariableDef:
         return self.var_defs[key]
 
-    def get_data(self, key) -> Dict[str, VariableDef]:
+    def get_data(
+        self,
+        key: str,
+    ) -> Dict[str, VariableDef]:
         return self.var_defs
 
     def keys(self):
@@ -246,17 +257,17 @@ class ModelOutputDef:
         return self.def_derv_c.keys()
 
 
-def get_reduce_name(name):
+def get_reduce_name(name: str) -> str:
     return name + "_redu"
 
 
-def get_deriv_name(name):
+def get_deriv_name(name: str) -> Tuple[str, str]:
     return name + "_derv_r", name + "_derv_c"
 
 
 def do_reduce(
-    def_outp,
-):
+    def_outp: FittingOutputDef,
+) -> Dict[str, VariableDef]:
     def_redu = {}
     for kk, vv in def_outp.get_data().items():
         if vv.reduciable:
@@ -266,8 +277,8 @@ def do_reduce(
 
 
 def do_derivative(
-    def_outp,
-):
+    def_outp: FittingOutputDef,
+) -> Dict[str, VariableDef]:
     def_derv_r = {}
     def_derv_c = {}
     for kk, vv in def_outp.get_data().items():
