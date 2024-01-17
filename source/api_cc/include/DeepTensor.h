@@ -35,49 +35,6 @@ class DeepTensorBase {
   virtual void init(const std::string& model,
                     const int& gpu_rank = 0,
                     const std::string& name_scope = "") = 0;
-
-  /**
-   * @brief Evaluate the value by using this model.
-   * @param[out] value The value to evalute, usually would be the atomic tensor.
-   * @param[in] coord The coordinates of atoms. The array should be of size
-   *natoms x 3.
-   * @param[in] atype The atom types. The list should contain natoms ints.
-   * @param[in] box The cell of the region. The array should be of size 9.
-   * @{
-   **/
-  virtual void computew(std::vector<double>& value,
-                        const std::vector<double>& coord,
-                        const std::vector<int>& atype,
-                        const std::vector<double>& box) = 0;
-  virtual void computew(std::vector<float>& value,
-                        const std::vector<float>& coord,
-                        const std::vector<int>& atype,
-                        const std::vector<float>& box) = 0;
-  /** @} */
-  /**
-   * @brief Evaluate the value by using this model.
-   * @param[out] value The value to evalute, usually would be the atomic tensor.
-   * @param[in] coord The coordinates of atoms. The array should be of size
-   *natoms x 3.
-   * @param[in] atype The atom types. The list should contain natoms ints.
-   * @param[in] box The cell of the region. The array should be of size 9.
-   * @param[in] nghost The number of ghost atoms.
-   * @param[in] inlist The input neighbour list.
-   * @{
-   **/
-  virtual void computew(std::vector<double>& value,
-                        const std::vector<double>& coord,
-                        const std::vector<int>& atype,
-                        const std::vector<double>& box,
-                        const int nghost,
-                        const InputNlist& inlist) = 0;
-  virtual void computew(std::vector<float>& value,
-                        const std::vector<float>& coord,
-                        const std::vector<int>& atype,
-                        const std::vector<float>& box,
-                        const int nghost,
-                        const InputNlist& inlist) = 0;
-  /** @} */
   /**
    * @brief Evaluate the global tensor and component-wise force and virial.
    * @param[out] global_tensor The global tensor to evalute.
@@ -93,6 +50,8 @@ class DeepTensorBase {
    *natoms x 3.
    * @param[in] atype The atom types. The list should contain natoms ints.
    * @param[in] box The cell of the region. The array should be of size 9.
+   * @param[in] request_deriv Whether to request the derivative of the global
+   * tensor, including force and virial.
    * @{
    **/
   virtual void computew(std::vector<double>& global_tensor,
@@ -102,7 +61,8 @@ class DeepTensorBase {
                         std::vector<double>& atom_virial,
                         const std::vector<double>& coord,
                         const std::vector<int>& atype,
-                        const std::vector<double>& box) = 0;
+                        const std::vector<double>& box,
+                        const bool request_deriv) = 0;
   virtual void computew(std::vector<float>& global_tensor,
                         std::vector<float>& force,
                         std::vector<float>& virial,
@@ -110,7 +70,8 @@ class DeepTensorBase {
                         std::vector<float>& atom_virial,
                         const std::vector<float>& coord,
                         const std::vector<int>& atype,
-                        const std::vector<float>& box) = 0;
+                        const std::vector<float>& box,
+                        const bool request_deriv) = 0;
   /** @} */
   /**
    * @brief Evaluate the global tensor and component-wise force and virial.
@@ -129,6 +90,8 @@ class DeepTensorBase {
    * @param[in] box The cell of the region. The array should be of size 9.
    * @param[in] nghost The number of ghost atoms.
    * @param[in] inlist The input neighbour list.
+   * @param[in] request_deriv Whether to request the derivative of the global
+   * tensor, including force and virial.
    * @{
    **/
   virtual void computew(std::vector<double>& global_tensor,
@@ -140,7 +103,8 @@ class DeepTensorBase {
                         const std::vector<int>& atype,
                         const std::vector<double>& box,
                         const int nghost,
-                        const InputNlist& inlist) = 0;
+                        const InputNlist& inlist,
+                        const bool request_deriv) = 0;
   virtual void computew(std::vector<float>& global_tensor,
                         std::vector<float>& force,
                         std::vector<float>& virial,
@@ -150,7 +114,8 @@ class DeepTensorBase {
                         const std::vector<int>& atype,
                         const std::vector<float>& box,
                         const int nghost,
-                        const InputNlist& inlist) = 0;
+                        const InputNlist& inlist,
+                        const bool request_deriv) = 0;
   /** @} */
   /**
    * @brief Get the cutoff radius.

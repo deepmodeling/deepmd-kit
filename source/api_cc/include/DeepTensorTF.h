@@ -77,48 +77,6 @@ class DeepTensorTF : public DeepTensorBase {
    *x natoms x 3.
    * @param[out] virial The component-wise virial of the global tensor, size
    *odim x 9.
-   * @param[in] coord The coordinates of atoms. The array should be of size
-   *natoms x 3.
-   * @param[in] atype The atom types. The list should contain natoms ints.
-   * @param[in] box The cell of the region. The array should be of size 9.
-   **/
-  template <typename VALUETYPE>
-  void compute(std::vector<VALUETYPE>& global_tensor,
-               std::vector<VALUETYPE>& force,
-               std::vector<VALUETYPE>& virial,
-               const std::vector<VALUETYPE>& coord,
-               const std::vector<int>& atype,
-               const std::vector<VALUETYPE>& box);
-  /**
-   * @brief Evaluate the global tensor and component-wise force and virial.
-   * @param[out] global_tensor The global tensor to evalute.
-   * @param[out] force The component-wise force of the global tensor, size odim
-   *x natoms x 3.
-   * @param[out] virial The component-wise virial of the global tensor, size
-   *odim x 9.
-   * @param[in] coord The coordinates of atoms. The array should be of size
-   *natoms x 3.
-   * @param[in] atype The atom types. The list should contain natoms ints.
-   * @param[in] box The cell of the region. The array should be of size 9.
-   * @param[in] nghost The number of ghost atoms.
-   * @param[in] inlist The input neighbour list.
-   **/
-  template <typename VALUETYPE>
-  void compute(std::vector<VALUETYPE>& global_tensor,
-               std::vector<VALUETYPE>& force,
-               std::vector<VALUETYPE>& virial,
-               const std::vector<VALUETYPE>& coord,
-               const std::vector<int>& atype,
-               const std::vector<VALUETYPE>& box,
-               const int nghost,
-               const InputNlist& inlist);
-  /**
-   * @brief Evaluate the global tensor and component-wise force and virial.
-   * @param[out] global_tensor The global tensor to evalute.
-   * @param[out] force The component-wise force of the global tensor, size odim
-   *x natoms x 3.
-   * @param[out] virial The component-wise virial of the global tensor, size
-   *odim x 9.
    * @param[out] atom_tensor The atomic tensor value of the model, size natoms x
    *odim.
    * @param[out] atom_virial The component-wise atomic virial of the global
@@ -205,48 +163,6 @@ class DeepTensorTF : public DeepTensorBase {
   void get_type_map(std::string& type_map);
 
   /**
-   * @brief Evaluate the value by using this model.
-   * @param[out] value The value to evalute, usually would be the atomic tensor.
-   * @param[in] coord The coordinates of atoms. The array should be of size
-   *natoms x 3.
-   * @param[in] atype The atom types. The list should contain natoms ints.
-   * @param[in] box The cell of the region. The array should be of size 9.
-   * @{
-   **/
-  void computew(std::vector<double>& value,
-                const std::vector<double>& coord,
-                const std::vector<int>& atype,
-                const std::vector<double>& box);
-  void computew(std::vector<float>& value,
-                const std::vector<float>& coord,
-                const std::vector<int>& atype,
-                const std::vector<float>& box);
-  /** @} */
-  /**
-   * @brief Evaluate the value by using this model.
-   * @param[out] value The value to evalute, usually would be the atomic tensor.
-   * @param[in] coord The coordinates of atoms. The array should be of size
-   *natoms x 3.
-   * @param[in] atype The atom types. The list should contain natoms ints.
-   * @param[in] box The cell of the region. The array should be of size 9.
-   * @param[in] nghost The number of ghost atoms.
-   * @param[in] inlist The input neighbour list.
-   * @{
-   **/
-  void computew(std::vector<double>& value,
-                const std::vector<double>& coord,
-                const std::vector<int>& atype,
-                const std::vector<double>& box,
-                const int nghost,
-                const InputNlist& inlist);
-  void computew(std::vector<float>& value,
-                const std::vector<float>& coord,
-                const std::vector<int>& atype,
-                const std::vector<float>& box,
-                const int nghost,
-                const InputNlist& inlist);
-  /** @} */
-  /**
    * @brief Evaluate the global tensor and component-wise force and virial.
    * @param[out] global_tensor The global tensor to evalute.
    * @param[out] force The component-wise force of the global tensor, size odim
@@ -261,6 +177,8 @@ class DeepTensorTF : public DeepTensorBase {
    *natoms x 3.
    * @param[in] atype The atom types. The list should contain natoms ints.
    * @param[in] box The cell of the region. The array should be of size 9.
+   * @param[in] request_deriv Whether to request the derivative of the global
+   * tensor, including force and virial.
    * @{
    **/
   void computew(std::vector<double>& global_tensor,
@@ -270,7 +188,8 @@ class DeepTensorTF : public DeepTensorBase {
                 std::vector<double>& atom_virial,
                 const std::vector<double>& coord,
                 const std::vector<int>& atype,
-                const std::vector<double>& box);
+                const std::vector<double>& box,
+                const bool request_deriv);
   void computew(std::vector<float>& global_tensor,
                 std::vector<float>& force,
                 std::vector<float>& virial,
@@ -278,7 +197,8 @@ class DeepTensorTF : public DeepTensorBase {
                 std::vector<float>& atom_virial,
                 const std::vector<float>& coord,
                 const std::vector<int>& atype,
-                const std::vector<float>& box);
+                const std::vector<float>& box,
+                const bool request_deriv);
   /** @} */
   /**
    * @brief Evaluate the global tensor and component-wise force and virial.
@@ -297,6 +217,8 @@ class DeepTensorTF : public DeepTensorBase {
    * @param[in] box The cell of the region. The array should be of size 9.
    * @param[in] nghost The number of ghost atoms.
    * @param[in] inlist The input neighbour list.
+   * @param[in] request_deriv Whether to request the derivative of the global
+   * tensor, including force and virial.
    * @{
    **/
   void computew(std::vector<double>& global_tensor,
@@ -308,7 +230,8 @@ class DeepTensorTF : public DeepTensorBase {
                 const std::vector<int>& atype,
                 const std::vector<double>& box,
                 const int nghost,
-                const InputNlist& inlist);
+                const InputNlist& inlist,
+                const bool request_deriv);
   void computew(std::vector<float>& global_tensor,
                 std::vector<float>& force,
                 std::vector<float>& virial,
@@ -318,7 +241,8 @@ class DeepTensorTF : public DeepTensorBase {
                 const std::vector<int>& atype,
                 const std::vector<float>& box,
                 const int nghost,
-                const InputNlist& inlist);
+                const InputNlist& inlist,
+                const bool request_deriv);
   /** @} */
 
  private:

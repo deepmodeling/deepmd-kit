@@ -52,7 +52,9 @@ void DeepTensor::compute(std::vector<VALUETYPE> &dtensor_,
                          const std::vector<VALUETYPE> &dcoord_,
                          const std::vector<int> &datype_,
                          const std::vector<VALUETYPE> &dbox) {
-  dt->computew(dtensor_, dcoord_, datype_, dbox);
+  std::vector<VALUETYPE> force_, virial_, datom_tensor_, datom_virial_;
+  dt->computew(dtensor_, force_, virial_, datom_tensor_, datom_virial_, dcoord_,
+               datype_, dbox, false);
 }
 
 template void DeepTensor::compute<double>(std::vector<double> &dtensor_,
@@ -72,7 +74,9 @@ void DeepTensor::compute(std::vector<VALUETYPE> &dtensor_,
                          const std::vector<VALUETYPE> &dbox,
                          const int nghost,
                          const InputNlist &lmp_list) {
-  dt->computew(dtensor_, dcoord_, datype_, dbox, nghost, lmp_list);
+  std::vector<VALUETYPE> force_, virial_, datom_tensor_, datom_virial_;
+  dt->computew(dtensor_, force_, virial_, datom_tensor_, datom_virial_, dcoord_,
+               datype_, dbox, nghost, lmp_list, false);
 }
 
 template void DeepTensor::compute<double>(std::vector<double> &dtensor_,
@@ -98,7 +102,7 @@ void DeepTensor::compute(std::vector<VALUETYPE> &dglobal_tensor_,
                          const std::vector<VALUETYPE> &dbox) {
   std::vector<VALUETYPE> datom_tensor_, datom_virial_;
   dt->computew(dglobal_tensor_, dforce_, dvirial_, datom_tensor_, datom_virial_,
-               dcoord_, datype_, dbox);
+               dcoord_, datype_, dbox, true);
 }
 
 template void DeepTensor::compute<double>(std::vector<double> &dglobal_tensor_,
@@ -126,7 +130,7 @@ void DeepTensor::compute(std::vector<VALUETYPE> &dglobal_tensor_,
                          const InputNlist &lmp_list) {
   std::vector<VALUETYPE> datom_tensor_, datom_virial_;
   dt->computew(dglobal_tensor_, dforce_, dvirial_, datom_tensor_, datom_virial_,
-               dcoord_, datype_, dbox, nghost, lmp_list);
+               dcoord_, datype_, dbox, nghost, lmp_list, true);
 }
 
 template void DeepTensor::compute<double>(std::vector<double> &dglobal_tensor_,
@@ -157,7 +161,7 @@ void DeepTensor::compute(std::vector<VALUETYPE> &dglobal_tensor_,
                          const std::vector<int> &datype_,
                          const std::vector<VALUETYPE> &dbox) {
   dt->computew(dglobal_tensor_, dforce_, dvirial_, datom_tensor_, datom_virial_,
-               dcoord_, datype_, dbox);
+               dcoord_, datype_, dbox, true);
 }
 
 template void DeepTensor::compute<double>(std::vector<double> &dglobal_tensor_,
@@ -190,7 +194,7 @@ void DeepTensor::compute(std::vector<VALUETYPE> &dglobal_tensor_,
                          const int nghost,
                          const InputNlist &lmp_list) {
   dt->computew(dglobal_tensor_, dforce_, dvirial_, datom_tensor_, datom_virial_,
-               dcoord_, datype_, dbox, nghost, lmp_list);
+               dcoord_, datype_, dbox, nghost, lmp_list, true);
 }
 
 template void DeepTensor::compute<double>(std::vector<double> &dglobal_tensor_,
