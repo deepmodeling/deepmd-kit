@@ -73,7 +73,7 @@ class SoftMinForceOp : public OpKernel {
     // Create an output tensor
     TensorShape force_shape;
     force_shape.AddDim(nframes);
-    force_shape.AddDim(3 * nall);
+    force_shape.AddDim(3 * static_cast<int64_t>(nall));
     Tensor* force_tensor = NULL;
     OP_REQUIRES_OK(context,
                    context->allocate_output(0, force_shape, &force_tensor));

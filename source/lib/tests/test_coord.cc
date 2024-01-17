@@ -234,7 +234,7 @@ TEST_F(TestCopyCoord, cpu) {
   // 	    << nloc << " "
   // 	    << nall << std::endl;
 
-  out_c.resize(nall * 3);
+  out_c.resize(static_cast<size_t>(nall) * 3);
   out_t.resize(nall);
   mapping.resize(nall);
 
@@ -322,7 +322,7 @@ TEST_F(TestCopyCoord, gpu) {
   deepmd::delete_device_memory(int_data_dev);
   EXPECT_EQ(ret, 0);
   EXPECT_EQ(nall, expected_nall);
-  out_c.resize(nall * 3);
+  out_c.resize(static_cast<size_t>(nall) * 3);
   out_t.resize(nall);
   mapping.resize(nall);
 
@@ -468,7 +468,7 @@ TEST_F(TestCopyCoordMoreCell, cpu) {
   // 	    << nloc << " "
   // 	    << nall << std::endl;
 
-  out_c.resize(nall * 3);
+  out_c.resize(static_cast<size_t>(nall) * 3);
   out_t.resize(nall);
   mapping.resize(nall);
 
@@ -556,7 +556,7 @@ TEST_F(TestCopyCoordMoreCell, gpu) {
   deepmd::delete_device_memory(int_data_dev);
   EXPECT_EQ(ret, 0);
   EXPECT_EQ(nall, expected_nall);
-  out_c.resize(nall * 3);
+  out_c.resize(static_cast<size_t>(nall) * 3);
   out_t.resize(nall);
   mapping.resize(nall);
 

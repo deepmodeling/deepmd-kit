@@ -53,8 +53,8 @@ void Convert<VALUETYPE>::gro2nnp(vector<VALUETYPE>& coord,
   assert(posi.size() == idx_map_nnp2gro.size());
   assert(velo.size() == idx_map_nnp2gro.size());
   int natoms = idx_map_nnp2gro.size();
-  coord.resize(3 * natoms);
-  veloc.resize(3 * natoms);
+  coord.resize(3 * static_cast<size_t>(natoms));
+  veloc.resize(3 * static_cast<size_t>(natoms));
   for (unsigned ii = 0; ii < natoms; ++ii) {
     int gro_i = idx_map_nnp2gro[ii];
     for (int dd = 0; dd < 3; ++dd) {
