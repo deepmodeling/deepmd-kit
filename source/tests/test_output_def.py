@@ -105,6 +105,7 @@ class TestDef(unittest.TestCase):
     def test_model_decorator(self):
         nf = 2
         nloc = 3
+        nall = 4
 
         @model_check_output
         class Foo(NativeOP):
@@ -118,8 +119,8 @@ class TestDef(unittest.TestCase):
                 return {
                     "energy": np.zeros([nf, nloc, 1]),
                     "energy_redu": np.zeros([nf, 1]),
-                    "energy_derv_r": np.zeros([nf, nloc, 1, 3]),
-                    "energy_derv_c": np.zeros([nf, nloc, 1, 3, 3]),
+                    "energy_derv_r": np.zeros([nf, nall, 1, 3]),
+                    "energy_derv_c": np.zeros([nf, nall, 1, 3, 3]),
                 }
 
         ff = Foo()
@@ -128,6 +129,7 @@ class TestDef(unittest.TestCase):
     def test_model_decorator_keyerror(self):
         nf = 2
         nloc = 3
+        nall = 4
 
         @model_check_output
         class Foo(NativeOP):
@@ -144,7 +146,7 @@ class TestDef(unittest.TestCase):
                 return {
                     "energy": np.zeros([nf, nloc, 1]),
                     "energy_redu": np.zeros([nf, 1]),
-                    "energy_derv_c": np.zeros([nf, nloc, 1, 3, 3]),
+                    "energy_derv_c": np.zeros([nf, nall, 1, 3, 3]),
                 }
 
         ff = Foo()
@@ -155,13 +157,14 @@ class TestDef(unittest.TestCase):
     def test_model_decorator_shapeerror(self):
         nf = 2
         nloc = 3
+        nall = 4
 
         @model_check_output
         class Foo(NativeOP):
             def __init__(
                 self,
                 shape_rd=[nf, 1],
-                shape_dr=[nf, nloc, 1, 3],
+                shape_dr=[nf, nall, 1, 3],
             ):
                 self.shape_rd, self.shape_dr = shape_rd, shape_dr
 
@@ -176,7 +179,7 @@ class TestDef(unittest.TestCase):
                     "energy": np.zeros([nf, nloc, 1]),
                     "energy_redu": np.zeros(self.shape_rd),
                     "energy_derv_r": np.zeros(self.shape_dr),
-                    "energy_derv_c": np.zeros([nf, nloc, 1, 3, 3]),
+                    "energy_derv_c": np.zeros([nf, nall, 1, 3, 3]),
                 }
 
         ff = Foo()
@@ -207,6 +210,7 @@ class TestDef(unittest.TestCase):
     def test_fitting_decorator(self):
         nf = 2
         nloc = 3
+        nall = 4
 
         @fitting_check_output
         class Foo(NativeOP):
