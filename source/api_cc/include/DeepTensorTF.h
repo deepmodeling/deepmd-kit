@@ -34,12 +34,8 @@ class DeepTensorTF : public DeepTensorBase {
   void init(const std::string& model,
             const int& gpu_rank = 0,
             const std::string& name_scope = "");
-  /**
-   * @brief Print the DP summary to the screen.
-   * @param[in] pre The prefix to each line.
-   **/
-  void print_summary(const std::string& pre) const;
 
+ private:
   /**
    * @brief Evaluate the value by using this model.
    * @param[out] value The value to evalute, usually would be the atomic tensor.
@@ -124,6 +120,8 @@ class DeepTensorTF : public DeepTensorBase {
                const std::vector<VALUETYPE>& box,
                const int nghost,
                const InputNlist& inlist);
+
+ public:
   /**
    * @brief Get the cutoff radius.
    * @return The cutoff radius.

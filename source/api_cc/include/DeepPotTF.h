@@ -36,6 +36,8 @@ class DeepPotTF : public DeepPotBase {
   void init(const std::string& model,
             const int& gpu_rank = 0,
             const std::string& file_content = "");
+
+ private:
   /**
    * @brief Evaluate the energy, force, virial, atomic energy, and atomic virial
    *by using this DP.
@@ -178,6 +180,8 @@ class DeepPotTF : public DeepPotBase {
       const std::vector<VALUETYPE>& box,
       const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
       const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
+
+ public:
   /**
    * @brief Get the cutoff radius.
    * @return The cutoff radius.

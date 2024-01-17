@@ -34,7 +34,7 @@ class DipoleChargeModifierTF : public DipoleChargeModifierBase {
             const int& gpu_rank = 0,
             const std::string& name_scope = "");
 
- public:
+ private:
   /**
    * @brief Evaluate the force and virial correction by using this dipole charge
    *modifier.
@@ -61,6 +61,8 @@ class DipoleChargeModifierTF : public DipoleChargeModifierBase {
                const std::vector<VALUETYPE>& delef_,
                const int nghost,
                const InputNlist& lmp_list);
+
+ public:
   /**
    * @brief Get cutoff radius.
    * @return double cutoff radius.
