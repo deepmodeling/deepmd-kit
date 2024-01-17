@@ -42,7 +42,6 @@ void DipoleChargeModifier::init(const std::string& model,
   inited = true;
 }
 
-
 template <typename VALUETYPE>
 void DipoleChargeModifier::compute(
     std::vector<VALUETYPE>& dfcorr_,
