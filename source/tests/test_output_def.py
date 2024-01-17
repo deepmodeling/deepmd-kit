@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import unittest
+from typing import List
 
 import numpy as np
 
@@ -20,7 +21,7 @@ class VariableDef:
     def __init__(
         self,
         name: str,
-        shape: list[int],
+        shape: List[int],
         atomic: bool = True,
     ):
         self.name = name
