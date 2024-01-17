@@ -94,7 +94,7 @@ class SoftMinSwitchOp : public OpKernel {
     sw_value_shape.AddDim(nloc);
     TensorShape sw_deriv_shape;
     sw_deriv_shape.AddDim(nframes);
-    sw_deriv_shape.AddDim(3 * nnei * nloc);
+    sw_deriv_shape.AddDim(3 * static_cast<int64_t>(nnei) * nloc);
     Tensor* sw_value_tensor = NULL;
     Tensor* sw_deriv_tensor = NULL;
     tmp_idx = 0;

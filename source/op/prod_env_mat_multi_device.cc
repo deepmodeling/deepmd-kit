@@ -497,7 +497,7 @@ class ProdEnvMatAOp : public OpKernel {
         if (nei_mode == 1) {
           // Tensor FPTYPE_temp;
           TensorShape FPTYPE_shape;
-          FPTYPE_shape.AddDim(nall * 3);
+          FPTYPE_shape.AddDim(static_cast<int64_t>(nall) * 3);
           OP_REQUIRES_OK(context,
                          context->allocate_temp(DataTypeToEnum<FPTYPE>::value,
                                                 FPTYPE_shape, &tensor_list[0]));
@@ -510,20 +510,20 @@ class ProdEnvMatAOp : public OpKernel {
                                                 double_shape, &tensor_list[1]));
           // Tensor cpy_temp;
           TensorShape cpy_shape;
-          cpy_shape.AddDim(mem_cpy * 3);
+          cpy_shape.AddDim(static_cast<int64_t>(mem_cpy) * 3);
           OP_REQUIRES_OK(context,
                          context->allocate_temp(DataTypeToEnum<FPTYPE>::value,
                                                 cpy_shape, &tensor_list[3]));
           // Tensor t_temp;
           TensorShape t_shape;
-          t_shape.AddDim(mem_cpy * 2);
+          t_shape.AddDim(static_cast<int64_t>(mem_cpy) * 2);
           OP_REQUIRES_OK(context, context->allocate_temp(DT_INT32, t_shape,
                                                          &tensor_list[4]));
         }
 
         // Tensor nlist_temp;
         TensorShape nlist_shape;
-        nlist_shape.AddDim(nloc * 2);
+        nlist_shape.AddDim(static_cast<int64_t>(nloc) * 2);
         OP_REQUIRES_OK(context, context->allocate_temp(DT_INT32, nlist_shape,
                                                        &tensor_list[5]));
 
@@ -794,7 +794,7 @@ class ProdEnvMatROp : public OpKernel {
         if (nei_mode == 1) {
           // Tensor FPTYPE_temp;
           TensorShape FPTYPE_shape;
-          FPTYPE_shape.AddDim(nall * 3);
+          FPTYPE_shape.AddDim(static_cast<int64_t>(nall) * 3);
           OP_REQUIRES_OK(context,
                          context->allocate_temp(DataTypeToEnum<FPTYPE>::value,
                                                 FPTYPE_shape, &tensor_list[0]));
@@ -807,20 +807,20 @@ class ProdEnvMatROp : public OpKernel {
                                                 double_shape, &tensor_list[1]));
           // Tensor cpy_temp;
           TensorShape cpy_shape;
-          cpy_shape.AddDim(mem_cpy * 3);
+          cpy_shape.AddDim(static_cast<int64_t>(mem_cpy) * 3);
           OP_REQUIRES_OK(context,
                          context->allocate_temp(DataTypeToEnum<FPTYPE>::value,
                                                 cpy_shape, &tensor_list[3]));
           // Tensor t_temp;
           TensorShape t_shape;
-          t_shape.AddDim(mem_cpy * 2);
+          t_shape.AddDim(static_cast<int64_t>(mem_cpy) * 2);
           OP_REQUIRES_OK(context, context->allocate_temp(DT_INT32, t_shape,
                                                          &tensor_list[4]));
         }
 
         // Tensor nlist_temp;
         TensorShape nlist_shape;
-        nlist_shape.AddDim(nloc * 2);
+        nlist_shape.AddDim(static_cast<int64_t>(nloc) * 2);
         OP_REQUIRES_OK(context, context->allocate_temp(DT_INT32, nlist_shape,
                                                        &tensor_list[5]));
 
@@ -1066,10 +1066,10 @@ class ProdEnvMatAMixOp : public OpKernel {
     nlist_shape.AddDim(int_64(nloc) * nnei);
     TensorShape ntype_shape;
     ntype_shape.AddDim(nsamples);
-    ntype_shape.AddDim(nloc * nnei);
+    ntype_shape.AddDim(static_cast<int64_t>(nloc) * nnei);
     TensorShape nmask_shape;
     nmask_shape.AddDim(nsamples);
-    nmask_shape.AddDim(nloc * nnei);
+    nmask_shape.AddDim(static_cast<int64_t>(nloc) * nnei);
     // define output tensor
     int context_output_index = 0;
     Tensor* descrpt_tensor = NULL;
@@ -1137,7 +1137,7 @@ class ProdEnvMatAMixOp : public OpKernel {
         if (nei_mode == 1) {
           // Tensor FPTYPE_temp;
           TensorShape FPTYPE_shape;
-          FPTYPE_shape.AddDim(nall * 3);
+          FPTYPE_shape.AddDim(static_cast<int64_t>(nall) * 3);
           OP_REQUIRES_OK(context,
                          context->allocate_temp(DataTypeToEnum<FPTYPE>::value,
                                                 FPTYPE_shape, &tensor_list[0]));
@@ -1150,20 +1150,20 @@ class ProdEnvMatAMixOp : public OpKernel {
                                                 double_shape, &tensor_list[1]));
           // Tensor cpy_temp;
           TensorShape cpy_shape;
-          cpy_shape.AddDim(mem_cpy * 3);
+          cpy_shape.AddDim(static_cast<int64_t>(mem_cpy) * 3);
           OP_REQUIRES_OK(context,
                          context->allocate_temp(DataTypeToEnum<FPTYPE>::value,
                                                 cpy_shape, &tensor_list[3]));
           // Tensor t_temp;
           TensorShape t_shape;
-          t_shape.AddDim(mem_cpy * 2);
+          t_shape.AddDim(static_cast<int64_t>(mem_cpy) * 2);
           OP_REQUIRES_OK(context, context->allocate_temp(DT_INT32, t_shape,
                                                          &tensor_list[4]));
         }
 
         // Tensor nlist_temp;
         TensorShape nlist_shape;
-        nlist_shape.AddDim(nloc * 2);
+        nlist_shape.AddDim(static_cast<int64_t>(nloc) * 2);
         OP_REQUIRES_OK(context, context->allocate_temp(DT_INT32, nlist_shape,
                                                        &tensor_list[5]));
 
@@ -1296,7 +1296,7 @@ static int _norm_copy_coord_cpu(std::vector<FPTYPE>& coord_cpy,
   normalize_coord_cpu(&tmp_coord[0], nall, region);
   int tt;
   for (tt = 0; tt < max_cpy_trial; ++tt) {
-    coord_cpy.resize(mem_cpy * 3);
+    coord_cpy.resize(static_cast<size_t>(mem_cpy) * 3);
     type_cpy.resize(mem_cpy);
     idx_mapping.resize(mem_cpy);
     int ret =
@@ -1512,7 +1512,7 @@ static int _norm_copy_coord_gpu(OpKernelContext* context,
       mem_cpy *= 2;
       // Tensor cpy_temp;
       TensorShape cpy_shape;
-      cpy_shape.AddDim(mem_cpy * 3);
+      cpy_shape.AddDim(static_cast<int64_t>(mem_cpy) * 3);
       status = context->allocate_temp(DataTypeToEnum<FPTYPE>::value, cpy_shape,
                                       tensor_list + 3);
       if (!status.ok()) {
@@ -1520,7 +1520,7 @@ static int _norm_copy_coord_gpu(OpKernelContext* context,
       }
       // Tensor t_temp;
       TensorShape t_shape;
-      t_shape.AddDim(mem_cpy * 2);
+      t_shape.AddDim(static_cast<int64_t>(mem_cpy) * 2);
       status = context->allocate_temp(DT_INT32, t_shape, tensor_list + 4);
       if (!status.ok()) {
         return false;
