@@ -104,35 +104,7 @@ def fitting_check_output(cls):
     return wrapper
 
 
-class VariableDef:
-    """Defines the shape and other properties of a variable.
-
-    Parameters
-    ----------
-    name
-          Name of the output variable. Notice that the xxxx_redu,
-          xxxx_derv_c, xxxx_derv_r are reserved names that should
-          not be used to define variables.
-    shape
-          The shape of the variable. e.g. energy should be [1],
-          dipole should be [3], polarizabilty should be [3,3].
-    atomic
-          If the variable is defined for each atom.
-
-    """
-
-    def __init__(
-        self,
-        name: str,
-        shape: list[int],
-        atomic: bool = True,
-    ):
-        self.name = name
-        self.shape = list(shape)
-        self.atomic = atomic
-
-
-class OutputVariableDef(VariableDef):
+class OutputVariableDef:
     """Defines the shape and other properties of the one output variable.
 
     It is assume that the fitting network output variables for each
@@ -163,15 +135,11 @@ class OutputVariableDef(VariableDef):
         shape: List[int],
         reduciable: bool = False,
         differentiable: bool = False,
+        atomic: bool = True,
     ):
-        ## fitting output must be atomic
-        ## Here we cannot use super because it does not pass jit
-        # super().__init__(name, shape, atomic=True)
-        ## the work around is the following
         self.name = name
         self.shape = list(shape)
-        self.atomic = True
-        #
+        self.atomic = atomic
         self.reduciable = reduciable
         self.differentiable = differentiable
         if not self.reduciable and self.differentiable:
@@ -232,7 +200,7 @@ class ModelOutputDef:
         self.def_outp = fit_defs
         self.def_redu = do_reduce(self.def_outp)
         self.def_derv_r, self.def_derv_c = do_derivative(self.def_outp)
-        self.var_defs = {}
+        self.var_defs: Dict[str, OutputVariableDef] = {}
         for ii in [
             self.def_outp.get_data(),
             self.def_redu,
@@ -244,13 +212,13 @@ class ModelOutputDef:
     def __getitem__(
         self,
         key: str,
-    ) -> VariableDef:
+    ) -> OutputVariableDef:
         return self.var_defs[key]
 
     def get_data(
         self,
         key: str,
-    ) -> Dict[str, VariableDef]:
+    ) -> Dict[str, OutputVariableDef]:
         return self.var_defs
 
     def keys(self):
@@ -279,23 +247,35 @@ def get_deriv_name(name: str) -> Tuple[str, str]:
 
 def do_reduce(
     def_outp: FittingOutputDef,
-) -> Dict[str, VariableDef]:
-    def_redu = {}
+) -> Dict[str, OutputVariableDef]:
+    def_redu: Dict[str, OutputVariableDef] = {}
     for kk, vv in def_outp.get_data().items():
         if vv.reduciable:
             rk = get_reduce_name(kk)
-            def_redu[rk] = VariableDef(rk, vv.shape, atomic=False)
+            def_redu[rk] = OutputVariableDef(
+                rk, vv.shape, reduciable=False, differentiable=False, atomic=False
+            )
     return def_redu
 
 
 def do_derivative(
     def_outp: FittingOutputDef,
-) -> Dict[str, VariableDef]:
-    def_derv_r = {}
-    def_derv_c = {}
+) -> Tuple[Dict[str, OutputVariableDef], Dict[str, OutputVariableDef]]:
+    def_derv_r: Dict[str, OutputVariableDef] = {}
+    def_derv_c: Dict[str, OutputVariableDef] = {}
     for kk, vv in def_outp.get_data().items():
         if vv.differentiable:
             rkr, rkc = get_deriv_name(kk)
-            def_derv_r[rkr] = VariableDef(rkr, [*vv.shape, 3], atomic=True)
-            def_derv_c[rkc] = VariableDef(rkc, [*vv.shape, 3, 3], atomic=False)
+            def_derv_r[rkr] = OutputVariableDef(
+                rkr,
+                vv.shape + [3],  # noqa: RUF005
+                reduciable=False,
+                differentiable=False,
+            )
+            def_derv_c[rkc] = OutputVariableDef(
+                rkc,
+                vv.shape + [3, 3],  # noqa: RUF005
+                reduciable=True,
+                differentiable=False,
+            )
     return def_derv_r, def_derv_c

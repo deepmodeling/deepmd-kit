@@ -12,9 +12,20 @@ from deepmd_utils.model_format import (
     model_check_output,
 )
 from deepmd_utils.model_format.output_def import (
-    VariableDef,
     check_var,
 )
+
+
+class VariableDef:
+    def __init__(
+        self,
+        name: str,
+        shape: list[int],
+        atomic: bool = True,
+    ):
+        self.name = name
+        self.shape = list(shape)
+        self.atomic = atomic
 
 
 class TestDef(unittest.TestCase):
@@ -85,7 +96,7 @@ class TestDef(unittest.TestCase):
         self.assertEqual(md["foo"].atomic, True)
         self.assertEqual(md["energy_redu"].atomic, False)
         self.assertEqual(md["energy_derv_r"].atomic, True)
-        self.assertEqual(md["energy_derv_c"].atomic, False)
+        self.assertEqual(md["energy_derv_c"].atomic, True)
 
     def test_raise_no_redu_deriv(self):
         with self.assertRaises(ValueError) as context:
@@ -108,7 +119,7 @@ class TestDef(unittest.TestCase):
                     "energy": np.zeros([nf, nloc, 1]),
                     "energy_redu": np.zeros([nf, 1]),
                     "energy_derv_r": np.zeros([nf, nloc, 1, 3]),
-                    "energy_derv_c": np.zeros([nf, 1, 3, 3]),
+                    "energy_derv_c": np.zeros([nf, nloc, 1, 3, 3]),
                 }
 
         ff = Foo()
@@ -133,7 +144,7 @@ class TestDef(unittest.TestCase):
                 return {
                     "energy": np.zeros([nf, nloc, 1]),
                     "energy_redu": np.zeros([nf, 1]),
-                    "energy_derv_c": np.zeros([nf, 1, 3, 3]),
+                    "energy_derv_c": np.zeros([nf, nloc, 1, 3, 3]),
                 }
 
         ff = Foo()
@@ -165,7 +176,7 @@ class TestDef(unittest.TestCase):
                     "energy": np.zeros([nf, nloc, 1]),
                     "energy_redu": np.zeros(self.shape_rd),
                     "energy_derv_r": np.zeros(self.shape_dr),
-                    "energy_derv_c": np.zeros([nf, 1, 3, 3]),
+                    "energy_derv_c": np.zeros([nf, nloc, 1, 3, 3]),
                 }
 
         ff = Foo()
