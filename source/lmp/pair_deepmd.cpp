@@ -204,7 +204,7 @@ static void make_uniform_aparam(vector<double> &daparam,
                                 const vector<double> &aparam,
                                 const int &nlocal) {
   unsigned dim_aparam = aparam.size();
-  daparam.resize(dim_aparam * nlocal);
+  daparam.resize(static_cast<size_t>(dim_aparam) * nlocal);
   for (int ii = 0; ii < nlocal; ++ii) {
     for (int jj = 0; jj < dim_aparam; ++jj) {
       daparam[ii * dim_aparam + jj] = aparam[jj];
@@ -247,7 +247,7 @@ void PairDeepMD::make_aparam_from_compute(vector<double> &aparam) {
 
   assert(compute);
   int nlocal = atom->nlocal;
-  aparam.resize(dim_aparam * nlocal);
+  aparam.resize(static_cast<size_t>(dim_aparam) * nlocal);
 
   if (!(compute->invoked_flag & Compute::INVOKED_PERATOM)) {
     compute->compute_peratom();
@@ -573,7 +573,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
             error->one(FLERR, e.what());
           }
         } else {
-          dforce.resize((extend_inum + extend_nghost) * 3);
+          dforce.resize(static_cast<size_t>(extend_inum + extend_nghost) * 3);
           try {
             deep_pot.compute(dener, dforce, dvirial, extend_dcoord,
                              extend_dtype, dbox, extend_nghost, extend_lmp_list,
@@ -596,7 +596,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
             error->one(FLERR, e.what());
           }
         } else {
-          dforce.resize((extend_inum + extend_nghost) * 3);
+          dforce.resize(static_cast<size_t>(extend_inum + extend_nghost) * 3);
           try {
             deep_pot.compute(dener, dforce, dvirial, extend_dcoord,
                              extend_dtype, dbox, extend_nghost, extend_lmp_list,
@@ -1495,7 +1495,7 @@ void PairDeepMD::extend(int &extend_inum,
   }
 
   // extend coord
-  extend_dcoord.resize(extend_nall * 3);
+  extend_dcoord.resize(static_cast<size_t>(extend_nall) * 3);
   for (int ii = 0; ii < nloc; ii++) {
     for (int jj = 0; jj < 3; jj++) {
       extend_dcoord[new_idx_map[ii] * 3 + jj] = dcoord[ii * 3 + jj];

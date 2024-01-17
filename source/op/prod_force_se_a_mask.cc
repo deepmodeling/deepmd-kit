@@ -63,7 +63,7 @@ class ProdForceSeAMaskOp : public OpKernel {
     // Create an output tensor
     TensorShape force_shape;
     force_shape.AddDim(nframes);
-    force_shape.AddDim(3 * nall);
+    force_shape.AddDim(3 * static_cast<int64_t>(nall));
     // std::cout << "forcesahpe " << force_shape.dim_size(0) << " " <<
     // force_shape.dim_size(1) << std::endl;
     Tensor *force_tensor = NULL;

@@ -65,7 +65,7 @@ class TestMapAparam : public ::testing::Test {
     }
     build_nlist(nlist_a_cpy, nlist_r_cpy, posi_cpy, nloc, rc, rc, nat_stt,
                 ncell, ext_stt, ext_end, region, ncell);
-    nlist.resize(nloc * nnei);
+    nlist.resize(static_cast<size_t>(nloc) * nnei);
     for (int ii = 0; ii < nloc; ++ii) {
       // format nlist and record
       format_nlist_i_cpu<double>(fmt_nlist_a, posi_cpy, atype_cpy, ii,
@@ -74,7 +74,7 @@ class TestMapAparam : public ::testing::Test {
         nlist[ii * nnei + jj] = fmt_nlist_a[jj];
       }
     }
-    aparam.resize(nall * numb_aparam);
+    aparam.resize(static_cast<size_t>(nall) * numb_aparam);
     for (int ii = 0; ii < nall * numb_aparam; ++ii) {
       aparam[ii] = 10 - 0.1 * ii;
     }

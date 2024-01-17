@@ -70,7 +70,7 @@ class EwaldRecpOp : public OpKernel {
     energy_shape.AddDim(nsamples);
     TensorShape force_shape;
     force_shape.AddDim(nsamples);
-    force_shape.AddDim(nloc * 3);
+    force_shape.AddDim(static_cast<int64_t>(nloc) * 3);
     TensorShape virial_shape;
     virial_shape.AddDim(nsamples);
     virial_shape.AddDim(9);

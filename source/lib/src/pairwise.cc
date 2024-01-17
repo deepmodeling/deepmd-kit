@@ -93,7 +93,7 @@ void deepmd::dprc_pairwise_map_cpu(
   // (3, 4, 0, 1, 2, 10, 11),
   // (3, 4, 5, 6, 7, 10, -1),
   // (3, 4, 8, 9, -1, 10, -1)
-  forward_qmmm_map.resize((nfragments - 1) * map_size);
+  forward_qmmm_map.resize(static_cast<size_t>(nfragments - 1) * map_size);
   std::fill(forward_qmmm_map.begin(), forward_qmmm_map.end(), -1);
   int nqm_real = nloc;  // init for nfragments = 1
   for (int ii = 0; ii < nfragments - 1; ++ii) {
@@ -133,7 +133,7 @@ void deepmd::dprc_pairwise_map_cpu(
   // (2, 3, 4, 0, 1, -1, -1, -1, -1, -1, 5, 6)
   // (-1, -1, -1, 0, 1, 2, 3, 4, -1, -1, 5, -1)
   // (-1, -1, -1, 0, 1, -1, -1, -1, 2, 3, 5, -1)
-  backward_qmmm_map.resize((nfragments - 1) * nall);
+  backward_qmmm_map.resize(static_cast<size_t>(nfragments - 1) * nall);
   std::fill(backward_qmmm_map.begin(), backward_qmmm_map.end(), -1);
   for (int ii = 0; ii < nfragments - 1; ++ii) {
     for (int jj = 0; jj < map_size; ++jj) {

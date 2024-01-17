@@ -93,7 +93,7 @@ class ProdVirialSeAOp : public OpKernel {
     virial_shape.AddDim(9);
     TensorShape atom_virial_shape;
     atom_virial_shape.AddDim(nframes);
-    atom_virial_shape.AddDim(9 * nall);
+    atom_virial_shape.AddDim(9 * static_cast<int64_t>(nall));
     int context_output_index = 0;
     Tensor* virial_tensor = NULL;
     OP_REQUIRES_OK(
@@ -192,7 +192,7 @@ class ProdVirialSeROp : public OpKernel {
     virial_shape.AddDim(9);
     TensorShape atom_virial_shape;
     atom_virial_shape.AddDim(nframes);
-    atom_virial_shape.AddDim(9 * nall);
+    atom_virial_shape.AddDim(9 * static_cast<int64_t>(nall));
     int context_output_index = 0;
     Tensor* virial_tensor = NULL;
     OP_REQUIRES_OK(

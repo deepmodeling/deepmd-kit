@@ -156,7 +156,7 @@ static int _norm_copy_coord_cpu(std::vector<FPTYPE>& coord_cpy,
   normalize_coord_cpu(&tmp_coord[0], nall, region);
   int tt;
   for (tt = 0; tt < max_cpy_trial; ++tt) {
-    coord_cpy.resize(mem_cpy * 3);
+    coord_cpy.resize(static_cast<size_t>(mem_cpy) * 3);
     type_cpy.resize(mem_cpy);
     idx_mapping.resize(mem_cpy);
     int ret =
@@ -675,10 +675,10 @@ class ProdEnvMatAMixNvnmdQuantizeOp : public OpKernel {
     nlist_shape.AddDim(int_64(nloc) * nnei);
     TensorShape ntype_shape;
     ntype_shape.AddDim(nsamples);
-    ntype_shape.AddDim(nloc * nnei);
+    ntype_shape.AddDim(static_cast<int64_t>(nloc) * nnei);
     TensorShape nmask_shape;
     nmask_shape.AddDim(nsamples);
-    nmask_shape.AddDim(nloc * nnei);
+    nmask_shape.AddDim(static_cast<int64_t>(nloc) * nnei);
     // define output tensor
     int context_output_index = 0;
     Tensor* descrpt_tensor = NULL;
@@ -707,7 +707,7 @@ class ProdEnvMatAMixNvnmdQuantizeOp : public OpKernel {
 
     Tensor fake_type_tensor;  // all zeros
     TensorShape fake_type_shape;
-    fake_type_shape.AddDim(nsamples * nall);
+    fake_type_shape.AddDim(static_cast<int64_t>(nsamples) * nall);
     OP_REQUIRES_OK(context, context->allocate_temp(DT_INT32, fake_type_shape,
                                                    &fake_type_tensor));
 
