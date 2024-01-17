@@ -238,7 +238,7 @@ void DeepTensorTF::run_model(
   }
 
   // component-wise force
-  std::vector<VALUETYPE> dforce(3 * nall * odim);
+  std::vector<VALUETYPE> dforce(3 * static_cast<size_t>(nall) * odim);
   for (unsigned ii = 0; ii < odim * nall * 3; ++ii) {
     dforce[ii] = of(ii);
   }
@@ -249,24 +249,24 @@ void DeepTensorTF::run_model(
   }
 
   // component-wise virial
-  dvirial_.resize(odim * 9);
+  dvirial_.resize(static_cast<size_t>(odim) * 9);
   for (unsigned ii = 0; ii < odim * 9; ++ii) {
     dvirial_[ii] = ov(ii);
   }
 
   // atomic tensor
-  std::vector<VALUETYPE> datom_tensor(nsel * odim);
+  std::vector<VALUETYPE> datom_tensor(static_cast<size_t>(nsel) * odim);
   for (unsigned ii = 0; ii < nsel * odim; ++ii) {
     datom_tensor[ii] = oat(ii);
   }
   std::vector<int> sel_srt = sel_fwd;
   select_map<int>(sel_srt, sel_fwd, atommap.get_fwd_map(), 1);
   std::remove(sel_srt.begin(), sel_srt.end(), -1);
-  datom_tensor_.resize(nsel * odim);
+  datom_tensor_.resize(static_cast<size_t>(nsel) * odim);
   select_map<VALUETYPE>(datom_tensor_, datom_tensor, sel_srt, odim);
 
   // component-wise atomic virial
-  std::vector<VALUETYPE> datom_virial(9 * nall * odim);
+  std::vector<VALUETYPE> datom_virial(9 * static_cast<size_t>(nall) * odim);
   for (unsigned ii = 0; ii < odim * nall * 9; ++ii) {
     datom_virial[ii] = oav(ii);
   }
