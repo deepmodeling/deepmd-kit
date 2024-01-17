@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import unittest
-from typing import List
+from typing import (
+    List,
+)
 
 import numpy as np
 
