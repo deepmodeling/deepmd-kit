@@ -98,7 +98,7 @@ void deepmd::ewald_recp(VALUETYPE& ener,
   // natoms
   int natoms = charge.size();
   // init returns
-  force.resize(natoms * 3);
+  force.resize(static_cast<size_t>(natoms) * 3);
   virial.resize(9);
   ener = 0;
   fill(force.begin(), force.end(), static_cast<VALUETYPE>(0));
@@ -179,7 +179,7 @@ void deepmd::ewald_recp(VALUETYPE& ener,
   std::vector<std::vector<VALUETYPE> > thread_force(nthreads);
   std::vector<std::vector<VALUETYPE> > thread_virial(nthreads);
   for (int ii = 0; ii < nthreads; ++ii) {
-    thread_force[ii].resize(natoms * 3, 0.);
+    thread_force[ii].resize(static_cast<size_t>(natoms) * 3, 0.);
     thread_virial[ii].resize(9, 0.);
   }
   // calculate ener, force and virial

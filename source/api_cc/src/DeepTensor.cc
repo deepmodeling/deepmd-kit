@@ -253,7 +253,7 @@ void DeepTensor::run_model(
   }
 
   // component-wise virial
-  dvirial_.resize(odim * 9);
+  dvirial_.resize(static_cast<size_t>(odim) * 9);
   for (unsigned ii = 0; ii < odim * 9; ++ii) {
     dvirial_[ii] = ov(ii);
   }
@@ -266,7 +266,7 @@ void DeepTensor::run_model(
   std::vector<int> sel_srt = sel_fwd;
   select_map<int>(sel_srt, sel_fwd, atommap.get_fwd_map(), 1);
   std::remove(sel_srt.begin(), sel_srt.end(), -1);
-  datom_tensor_.resize(nsel * odim);
+  datom_tensor_.resize(static_cast<size_t>(nsel) * odim);
   select_map<VALUETYPE>(datom_tensor_, datom_tensor, sel_srt, odim);
 
   // component-wise atomic virial

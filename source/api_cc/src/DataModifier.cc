@@ -123,7 +123,7 @@ void DipoleChargeModifier::run_model(
   auto of = output_f.flat<MODELTYPE>();
   auto ov = output_v.flat<MODELTYPE>();
 
-  dforce.resize(nall * 3);
+  dforce.resize(static_cast<size_t>(nall) * 3);
   dvirial.resize(9);
   for (int ii = 0; ii < nall * 3; ++ii) {
     dforce[ii] = of(ii);
@@ -186,7 +186,7 @@ void DipoleChargeModifier::compute(
   int nall_real = real_bkw_map.size();
   int nloc_real = nall_real - nghost_real;
   if (nloc_real == 0) {
-    dfcorr_.resize(nall * 3);
+    dfcorr_.resize(static_cast<size_t>(nall) * 3);
     dvcorr_.resize(9);
     fill(dfcorr_.begin(), dfcorr_.end(), (VALUETYPE)0.0);
     fill(dvcorr_.begin(), dvcorr_.end(), (VALUETYPE)0.0);
@@ -196,8 +196,8 @@ void DipoleChargeModifier::compute(
   std::vector<VALUETYPE> dcoord_real;
   std::vector<VALUETYPE> delef_real;
   std::vector<int> datype_real;
-  dcoord_real.resize(nall_real * 3);
-  delef_real.resize(nall_real * 3);
+  dcoord_real.resize(static_cast<size_t>(nall_real) * 3);
+  delef_real.resize(static_cast<size_t>(nall_real) * 3);
   datype_real.resize(nall_real);
   // fwd map
   select_map<VALUETYPE>(dcoord_real, dcoord_, real_fwd_map, 3);

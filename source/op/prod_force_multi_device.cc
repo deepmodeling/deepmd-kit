@@ -103,7 +103,7 @@ class ProdForceSeAOp : public OpKernel {
     // Create an output tensor
     TensorShape force_shape;
     force_shape.AddDim(nframes);
-    force_shape.AddDim(3 * nall);
+    force_shape.AddDim(3 * static_cast<int64_t>(nall));
     Tensor* force_tensor = NULL;
     int context_output_index = 0;
     OP_REQUIRES_OK(context,
@@ -200,7 +200,7 @@ class ProdForceSeROp : public OpKernel {
     // Create an output tensor
     TensorShape force_shape;
     force_shape.AddDim(nframes);
-    force_shape.AddDim(3 * nall);
+    force_shape.AddDim(3 * static_cast<int64_t>(nall));
     Tensor* force_tensor = NULL;
     int context_output_index = 0;
     OP_REQUIRES_OK(context,

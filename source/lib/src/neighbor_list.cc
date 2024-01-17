@@ -784,7 +784,7 @@ void copy_coord(std::vector<double>& out_c,
   build_clist(clist, in_c, nloc, nat_stt, ncell, nat_stt, ncell, region, ncell);
 
   // copy local atoms
-  out_c.resize(nloc * 3);
+  out_c.resize(static_cast<size_t>(nloc) * 3);
   out_t.resize(nloc);
   mapping.resize(nloc);
   copy(in_c.begin(), in_c.end(), out_c.begin());
