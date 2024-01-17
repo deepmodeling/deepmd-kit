@@ -644,8 +644,8 @@ class DeepPot {
     const VALUETYPE *box_ = !box.empty() ? &box[0] : nullptr;
     const int *atype_ = &atype[0];
     double *ener_ = _DP_Get_Energy_Pointer(ener, nframes);
-    force.resize(nframes * natoms * 3);
-    virial.resize(nframes * 9);
+    force.resize(static_cast<size_t>(nframes) * natoms * 3);
+    virial.resize(static_cast<size_t>(nframes) * 9);
     VALUETYPE *force_ = &force[0];
     VALUETYPE *virial_ = &virial[0];
     std::vector<VALUETYPE> fparam_, aparam_;
@@ -706,10 +706,10 @@ class DeepPot {
     const int *atype_ = &atype[0];
 
     double *ener_ = _DP_Get_Energy_Pointer(ener, nframes);
-    force.resize(nframes * natoms * 3);
-    virial.resize(nframes * 9);
-    atom_energy.resize(nframes * natoms);
-    atom_virial.resize(nframes * natoms * 9);
+    force.resize(static_cast<size_t>(nframes) * natoms * 3);
+    virial.resize(static_cast<size_t>(nframes) * 9);
+    atom_energy.resize(static_cast<size_t>(nframes) * natoms);
+    atom_virial.resize(static_cast<size_t>(nframes) * natoms * 9);
     VALUETYPE *force_ = &force[0];
     VALUETYPE *virial_ = &virial[0];
     VALUETYPE *atomic_ener_ = &atom_energy[0];
@@ -774,8 +774,8 @@ class DeepPot {
     const VALUETYPE *box_ = !box.empty() ? &box[0] : nullptr;
     const int *atype_ = &atype[0];
     double *ener_ = _DP_Get_Energy_Pointer(ener, nframes);
-    force.resize(nframes * natoms * 3);
-    virial.resize(nframes * 9);
+    force.resize(static_cast<size_t>(nframes) * natoms * 3);
+    virial.resize(static_cast<size_t>(nframes) * 9);
     VALUETYPE *force_ = &force[0];
     VALUETYPE *virial_ = &virial[0];
     std::vector<VALUETYPE> fparam_, aparam_;
@@ -845,10 +845,10 @@ class DeepPot {
     const int *atype_ = &atype[0];
 
     double *ener_ = _DP_Get_Energy_Pointer(ener, nframes);
-    force.resize(nframes * natoms * 3);
-    virial.resize(nframes * 9);
-    atom_energy.resize(nframes * natoms);
-    atom_virial.resize(nframes * natoms * 9);
+    force.resize(static_cast<size_t>(nframes) * natoms * 3);
+    virial.resize(static_cast<size_t>(nframes) * 9);
+    atom_energy.resize(static_cast<size_t>(nframes) * natoms);
+    atom_virial.resize(static_cast<size_t>(nframes) * natoms * 9);
     VALUETYPE *force_ = &force[0];
     VALUETYPE *virial_ = &virial[0];
     VALUETYPE *atomic_ener_ = &atom_energy[0];
@@ -910,8 +910,8 @@ class DeepPot {
     const VALUETYPE *box_ = !box.empty() ? &box[0] : nullptr;
     const int *atype_ = &atype[0];
     double *ener_ = _DP_Get_Energy_Pointer(ener, nframes);
-    force.resize(nframes * natoms * 3);
-    virial.resize(nframes * 9);
+    force.resize(static_cast<size_t>(nframes) * natoms * 3);
+    virial.resize(static_cast<size_t>(nframes) * 9);
     VALUETYPE *force_ = &force[0];
     VALUETYPE *virial_ = &virial[0];
     std::vector<VALUETYPE> fparam_, aparam_;
@@ -972,10 +972,10 @@ class DeepPot {
     const int *atype_ = &atype[0];
 
     double *ener_ = _DP_Get_Energy_Pointer(ener, nframes);
-    force.resize(nframes * natoms * 3);
-    virial.resize(nframes * 9);
-    atom_energy.resize(nframes * natoms);
-    atom_virial.resize(nframes * natoms * 9);
+    force.resize(static_cast<size_t>(nframes) * natoms * 3);
+    virial.resize(static_cast<size_t>(nframes) * 9);
+    atom_energy.resize(static_cast<size_t>(nframes) * natoms);
+    atom_virial.resize(static_cast<size_t>(nframes) * natoms * 9);
     VALUETYPE *force_ = &force[0];
     VALUETYPE *virial_ = &virial[0];
     VALUETYPE *atomic_ener_ = &atom_energy[0];
@@ -1079,7 +1079,7 @@ class DeepPot {
                           const int &dparam,
                           const std::vector<VALUETYPE> &param) const {
     if (param.size() == dparam) {
-      out_param.resize(nframes * dparam);
+      out_param.resize(static_cast<size_t>(nframes) * dparam);
       for (int ii = 0; ii < nframes; ++ii) {
         std::copy(param.begin(), param.end(), out_param.begin() + ii * dparam);
       }
@@ -1210,7 +1210,7 @@ class DeepPotModelDevi {
     virial.resize(numb_models);
     for (int i = 0; i < numb_models; i++) {
       ener[i] = energy_flat[i];
-      force[i].resize(natoms * 3);
+      force[i].resize(static_cast<size_t>(natoms) * 3);
       virial[i].resize(9);
       for (int j = 0; j < natoms * 3; j++) {
         force[i][j] = force_flat[i * natoms * 3 + j];
@@ -1292,10 +1292,10 @@ class DeepPotModelDevi {
     atom_virial.resize(numb_models);
     for (int i = 0; i < numb_models; i++) {
       ener[i] = energy_flat[i];
-      force[i].resize(natoms * 3);
+      force[i].resize(static_cast<size_t>(natoms) * 3);
       virial[i].resize(9);
       atom_energy[i].resize(natoms);
-      atom_virial[i].resize(natoms * 9);
+      atom_virial[i].resize(static_cast<size_t>(natoms) * 9);
       for (int j = 0; j < natoms * 3; j++) {
         force[i][j] = force_flat[i * natoms * 3 + j];
       }
@@ -1496,7 +1496,7 @@ class DeepPotModelDevi {
                           const int &dparam,
                           const std::vector<VALUETYPE> &param) const {
     if (param.size() == dparam) {
-      out_param.resize(nframes * dparam);
+      out_param.resize(static_cast<size_t>(nframes) * dparam);
       for (int ii = 0; ii < nframes; ++ii) {
         std::copy(param.begin(), param.end(), out_param.begin() + ii * dparam);
       }
@@ -1653,8 +1653,8 @@ class DeepTensor {
     const VALUETYPE *box_ = !box.empty() ? &box[0] : nullptr;
     const int *atype_ = &atype[0];
     global_tensor.resize(odim);
-    force.resize(odim * natoms * 3);
-    virial.resize(odim * 9);
+    force.resize(static_cast<size_t>(odim) * natoms * 3);
+    virial.resize(static_cast<size_t>(odim) * 9);
     VALUETYPE *global_tensor_ = &global_tensor[0];
     VALUETYPE *force_ = &force[0];
     VALUETYPE *virial_ = &virial[0];
@@ -1697,9 +1697,9 @@ class DeepTensor {
     const int *atype_ = &atype[0];
 
     global_tensor.resize(odim);
-    force.resize(odim * natoms * 3);
-    virial.resize(odim * 9);
-    atom_virial.resize(odim * natoms * 9);
+    force.resize(static_cast<size_t>(odim) * natoms * 3);
+    virial.resize(static_cast<size_t>(odim) * 9);
+    atom_virial.resize(static_cast<size_t>(odim) * natoms * 9);
     VALUETYPE *global_tensor_ = &global_tensor[0];
     VALUETYPE *force_ = &force[0];
     VALUETYPE *virial_ = &virial[0];
@@ -1752,8 +1752,8 @@ class DeepTensor {
     const VALUETYPE *box_ = !box.empty() ? &box[0] : nullptr;
     const int *atype_ = &atype[0];
     global_tensor.resize(odim);
-    force.resize(odim * natoms * 3);
-    virial.resize(odim * 9);
+    force.resize(static_cast<size_t>(odim) * natoms * 3);
+    virial.resize(static_cast<size_t>(odim) * 9);
     VALUETYPE *global_tensor_ = &global_tensor[0];
     VALUETYPE *force_ = &force[0];
     VALUETYPE *virial_ = &virial[0];
@@ -1800,9 +1800,9 @@ class DeepTensor {
     const int *atype_ = &atype[0];
 
     global_tensor.resize(odim);
-    force.resize(odim * natoms * 3);
-    virial.resize(odim * 9);
-    atom_virial.resize(odim * natoms * 9);
+    force.resize(static_cast<size_t>(odim) * natoms * 3);
+    virial.resize(static_cast<size_t>(odim) * 9);
+    atom_virial.resize(static_cast<size_t>(odim) * natoms * 9);
     VALUETYPE *global_tensor_ = &global_tensor[0];
     VALUETYPE *force_ = &force[0];
     VALUETYPE *virial_ = &virial[0];
@@ -1954,7 +1954,7 @@ class DipoleChargeModifier {
     const int *dpairs = reinterpret_cast<const int *>(&pairs[0]);
     const VALUETYPE *delef = &delef_[0];
 
-    dfcorr_.resize(natoms * 3);
+    dfcorr_.resize(static_cast<size_t>(natoms) * 3);
     dvcorr_.resize(9);
     VALUETYPE *dfcorr = &dfcorr_[0];
     VALUETYPE *dvcorr = &dvcorr_[0];
@@ -2071,7 +2071,7 @@ void select_map(std::vector<VT> &out,
       nall2++;
     }
   }
-  out.resize(nall2 * stride);
+  out.resize(static_cast<size_t>(nall2) * stride);
   DP_SelectMapInt(&in[0], &fwd_map[0], stride, nall1, nall2, &out[0]);
 };
 

@@ -190,11 +190,11 @@ int main(int argc, char *argv[]) {
                     << std::endl;
         }
 
-        dcoord.resize(3 * natoms);
-        dforce.resize(3 * natoms, 0);
-        dcoord_tmp.resize(3 * natoms);
-        dforce_tmp.resize(3 * natoms, 0);
-        msg_buff = new double[3 * natoms];
+        dcoord.resize(3 * static_cast<size_t>(natoms));
+        dforce.resize(3 * static_cast<size_t>(natoms), 0);
+        dcoord_tmp.resize(3 * static_cast<size_t>(natoms));
+        dforce_tmp.resize(3 * static_cast<size_t>(natoms), 0);
+        msg_buff = new double[3 * static_cast<size_t>(natoms)];
       }
 
       // get coord
