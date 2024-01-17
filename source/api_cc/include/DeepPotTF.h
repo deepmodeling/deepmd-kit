@@ -36,69 +36,6 @@ class DeepPotTF : public DeepPotBase {
   void init(const std::string& model,
             const int& gpu_rank = 0,
             const std::string& file_content = "");
-
-  /**
-   * @brief Evaluate the energy, force and virial by using this DP.
-   * @param[out] ener The system energy.
-   * @param[out] force The force on each atom.
-   * @param[out] virial The virial.
-   * @param[in] coord The coordinates of atoms. The array should be of size
-   *nframes x natoms x 3.
-   * @param[in] atype The atom types. The list should contain natoms ints.
-   * @param[in] box The cell of the region. The array should be of size nframes
-   *x 9.
-   * @param[in] fparam The frame parameter. The array can be of size :
-   * nframes x dim_fparam.
-   * dim_fparam. Then all frames are assumed to be provided with the same
-   *fparam.
-   * @param[in] aparam The atomic parameter The array can be of size :
-   * nframes x natoms x dim_aparam.
-   * natoms x dim_aparam. Then all frames are assumed to be provided with the
-   *same aparam.
-   **/
-  template <typename VALUETYPE, typename ENERGYVTYPE>
-  void compute(ENERGYVTYPE& ener,
-               std::vector<VALUETYPE>& force,
-               std::vector<VALUETYPE>& virial,
-               const std::vector<VALUETYPE>& coord,
-               const std::vector<int>& atype,
-               const std::vector<VALUETYPE>& box,
-               const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
-               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
-  /**
-   * @brief Evaluate the energy, force and virial by using this DP.
-   * @param[out] ener The system energy.
-   * @param[out] force The force on each atom.
-   * @param[out] virial The virial.
-   * @param[in] coord The coordinates of atoms. The array should be of size
-   *nframes x natoms x 3.
-   * @param[in] atype The atom types. The list should contain natoms ints.
-   * @param[in] box The cell of the region. The array should be of size nframes
-   *x 9.
-   * @param[in] nghost The number of ghost atoms.
-   * @param[in] inlist The input neighbour list.
-   * @param[in] ago Update the internal neighbour list if ago is 0.
-   * @param[in] fparam The frame parameter. The array can be of size :
-   * nframes x dim_fparam.
-   * dim_fparam. Then all frames are assumed to be provided with the same
-   *fparam.
-   * @param[in] aparam The atomic parameter The array can be of size :
-   * nframes x natoms x dim_aparam.
-   * natoms x dim_aparam. Then all frames are assumed to be provided with the
-   *same aparam.
-   **/
-  template <typename VALUETYPE, typename ENERGYVTYPE>
-  void compute(ENERGYVTYPE& ener,
-               std::vector<VALUETYPE>& force,
-               std::vector<VALUETYPE>& virial,
-               const std::vector<VALUETYPE>& coord,
-               const std::vector<int>& atype,
-               const std::vector<VALUETYPE>& box,
-               const int nghost,
-               const InputNlist& inlist,
-               const int& ago,
-               const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
-               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
   /**
    * @brief Evaluate the energy, force, virial, atomic energy, and atomic virial
    *by using this DP.
@@ -414,19 +351,6 @@ class DeepPotTF : public DeepPotBase {
                           const int& nframes,
                           const int& dparam,
                           const std::vector<VALUETYPE>& param) const;
-  template <typename VALUETYPE, typename ENERGYVTYPE>
-  void compute_inner(
-      ENERGYVTYPE& ener,
-      std::vector<VALUETYPE>& force,
-      std::vector<VALUETYPE>& virial,
-      const std::vector<VALUETYPE>& coord,
-      const std::vector<int>& atype,
-      const std::vector<VALUETYPE>& box,
-      const int nghost,
-      const int& ago,
-      const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
-      const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
-
   // copy neighbor list info from host
   bool init_nbor;
   std::vector<int> sec_a;
