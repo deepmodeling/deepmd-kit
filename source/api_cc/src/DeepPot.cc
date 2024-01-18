@@ -51,8 +51,8 @@ void DeepPot::print_summary(const std::string& pre) const {
   deepmd::print_summary(pre);
 }
 
-template <typename VALUETYPE, typename ENERGYVTYPE>
-void DeepPot::compute(ENERGYVTYPE& dener,
+template <typename VALUETYPE>
+void DeepPot::compute(ENERGYTYPE& dener,
                       std::vector<VALUETYPE>& dforce_,
                       std::vector<VALUETYPE>& dvirial,
                       const std::vector<VALUETYPE>& dcoord_,
@@ -60,52 +60,65 @@ void DeepPot::compute(ENERGYVTYPE& dener,
                       const std::vector<VALUETYPE>& dbox,
                       const std::vector<VALUETYPE>& fparam_,
                       const std::vector<VALUETYPE>& aparam_) {
-  dp->computew(dener, dforce_, dvirial, dcoord_, datype_, dbox, fparam_,
-               aparam_);
+  std::vector<ENERGYTYPE> dener_;
+  std::vector<VALUETYPE> datom_energy_, datom_virial_;
+  dp->computew(dener_, dforce_, dvirial, datom_energy_, datom_virial_, dcoord_,
+               datype_, dbox, fparam_, aparam_);
+  dener = dener_[0];
 }
 
-template void DeepPot::compute<double, ENERGYTYPE>(
-    ENERGYTYPE& dener,
-    std::vector<double>& dforce_,
-    std::vector<double>& dvirial,
-    const std::vector<double>& dcoord_,
-    const std::vector<int>& datype_,
-    const std::vector<double>& dbox,
-    const std::vector<double>& fparam,
-    const std::vector<double>& aparam);
+template <typename VALUETYPE>
+void DeepPot::compute(std::vector<ENERGYTYPE>& dener,
+                      std::vector<VALUETYPE>& dforce_,
+                      std::vector<VALUETYPE>& dvirial,
+                      const std::vector<VALUETYPE>& dcoord_,
+                      const std::vector<int>& datype_,
+                      const std::vector<VALUETYPE>& dbox,
+                      const std::vector<VALUETYPE>& fparam_,
+                      const std::vector<VALUETYPE>& aparam_) {
+  std::vector<VALUETYPE> datom_energy_, datom_virial_;
+  dp->computew(dener, dforce_, dvirial, datom_energy_, datom_virial_, dcoord_,
+               datype_, dbox, fparam_, aparam_);
+}
 
-template void DeepPot::compute<float, ENERGYTYPE>(
-    ENERGYTYPE& dener,
-    std::vector<float>& dforce_,
-    std::vector<float>& dvirial,
-    const std::vector<float>& dcoord_,
-    const std::vector<int>& datype_,
-    const std::vector<float>& dbox,
-    const std::vector<float>& fparam,
-    const std::vector<float>& aparam);
+template void DeepPot::compute<double>(ENERGYTYPE& dener,
+                                       std::vector<double>& dforce_,
+                                       std::vector<double>& dvirial,
+                                       const std::vector<double>& dcoord_,
+                                       const std::vector<int>& datype_,
+                                       const std::vector<double>& dbox,
+                                       const std::vector<double>& fparam,
+                                       const std::vector<double>& aparam);
 
-template void DeepPot::compute<double, std::vector<ENERGYTYPE>>(
-    std::vector<ENERGYTYPE>& dener,
-    std::vector<double>& dforce_,
-    std::vector<double>& dvirial,
-    const std::vector<double>& dcoord_,
-    const std::vector<int>& datype_,
-    const std::vector<double>& dbox,
-    const std::vector<double>& fparam,
-    const std::vector<double>& aparam);
+template void DeepPot::compute<float>(ENERGYTYPE& dener,
+                                      std::vector<float>& dforce_,
+                                      std::vector<float>& dvirial,
+                                      const std::vector<float>& dcoord_,
+                                      const std::vector<int>& datype_,
+                                      const std::vector<float>& dbox,
+                                      const std::vector<float>& fparam,
+                                      const std::vector<float>& aparam);
 
-template void DeepPot::compute<float, std::vector<ENERGYTYPE>>(
-    std::vector<ENERGYTYPE>& dener,
-    std::vector<float>& dforce_,
-    std::vector<float>& dvirial,
-    const std::vector<float>& dcoord_,
-    const std::vector<int>& datype_,
-    const std::vector<float>& dbox,
-    const std::vector<float>& fparam,
-    const std::vector<float>& aparam);
+template void DeepPot::compute<double>(std::vector<ENERGYTYPE>& dener,
+                                       std::vector<double>& dforce_,
+                                       std::vector<double>& dvirial,
+                                       const std::vector<double>& dcoord_,
+                                       const std::vector<int>& datype_,
+                                       const std::vector<double>& dbox,
+                                       const std::vector<double>& fparam,
+                                       const std::vector<double>& aparam);
 
-template <typename VALUETYPE, typename ENERGYVTYPE>
-void DeepPot::compute(ENERGYVTYPE& dener,
+template void DeepPot::compute<float>(std::vector<ENERGYTYPE>& dener,
+                                      std::vector<float>& dforce_,
+                                      std::vector<float>& dvirial,
+                                      const std::vector<float>& dcoord_,
+                                      const std::vector<int>& datype_,
+                                      const std::vector<float>& dbox,
+                                      const std::vector<float>& fparam,
+                                      const std::vector<float>& aparam);
+
+template <typename VALUETYPE>
+void DeepPot::compute(ENERGYTYPE& dener,
                       std::vector<VALUETYPE>& dforce_,
                       std::vector<VALUETYPE>& dvirial,
                       const std::vector<VALUETYPE>& dcoord_,
@@ -116,64 +129,96 @@ void DeepPot::compute(ENERGYVTYPE& dener,
                       const int& ago,
                       const std::vector<VALUETYPE>& fparam_,
                       const std::vector<VALUETYPE>& aparam__) {
-  dp->computew(dener, dforce_, dvirial, dcoord_, datype_, dbox, nghost,
-               lmp_list, ago, fparam_, aparam__);
+  std::vector<ENERGYTYPE> dener_;
+  std::vector<VALUETYPE> datom_energy_, datom_virial_;
+  dp->computew(dener_, dforce_, dvirial, datom_energy_, datom_virial_, dcoord_,
+               datype_, dbox, nghost, lmp_list, ago, fparam_, aparam__);
+  dener = dener_[0];
 }
 
-template void DeepPot::compute<double, ENERGYTYPE>(
-    ENERGYTYPE& dener,
-    std::vector<double>& dforce_,
-    std::vector<double>& dvirial,
-    const std::vector<double>& dcoord_,
-    const std::vector<int>& datype_,
-    const std::vector<double>& dbox,
-    const int nghost,
-    const InputNlist& lmp_list,
-    const int& ago,
-    const std::vector<double>& fparam,
-    const std::vector<double>& aparam_);
+template <typename VALUETYPE>
+void DeepPot::compute(std::vector<ENERGYTYPE>& dener,
+                      std::vector<VALUETYPE>& dforce_,
+                      std::vector<VALUETYPE>& dvirial,
+                      const std::vector<VALUETYPE>& dcoord_,
+                      const std::vector<int>& datype_,
+                      const std::vector<VALUETYPE>& dbox,
+                      const int nghost,
+                      const InputNlist& lmp_list,
+                      const int& ago,
+                      const std::vector<VALUETYPE>& fparam_,
+                      const std::vector<VALUETYPE>& aparam__) {
+  std::vector<VALUETYPE> datom_energy_, datom_virial_;
+  dp->computew(dener, dforce_, dvirial, datom_energy_, datom_virial_, dcoord_,
+               datype_, dbox, nghost, lmp_list, ago, fparam_, aparam__);
+}
 
-template void DeepPot::compute<float, ENERGYTYPE>(
-    ENERGYTYPE& dener,
-    std::vector<float>& dforce_,
-    std::vector<float>& dvirial,
-    const std::vector<float>& dcoord_,
-    const std::vector<int>& datype_,
-    const std::vector<float>& dbox,
-    const int nghost,
-    const InputNlist& lmp_list,
-    const int& ago,
-    const std::vector<float>& fparam,
-    const std::vector<float>& aparam_);
+template void DeepPot::compute<double>(ENERGYTYPE& dener,
+                                       std::vector<double>& dforce_,
+                                       std::vector<double>& dvirial,
+                                       const std::vector<double>& dcoord_,
+                                       const std::vector<int>& datype_,
+                                       const std::vector<double>& dbox,
+                                       const int nghost,
+                                       const InputNlist& lmp_list,
+                                       const int& ago,
+                                       const std::vector<double>& fparam,
+                                       const std::vector<double>& aparam_);
 
-template void DeepPot::compute<double, std::vector<ENERGYTYPE>>(
-    std::vector<ENERGYTYPE>& dener,
-    std::vector<double>& dforce_,
-    std::vector<double>& dvirial,
-    const std::vector<double>& dcoord_,
-    const std::vector<int>& datype_,
-    const std::vector<double>& dbox,
-    const int nghost,
-    const InputNlist& lmp_list,
-    const int& ago,
-    const std::vector<double>& fparam,
-    const std::vector<double>& aparam_);
+template void DeepPot::compute<float>(ENERGYTYPE& dener,
+                                      std::vector<float>& dforce_,
+                                      std::vector<float>& dvirial,
+                                      const std::vector<float>& dcoord_,
+                                      const std::vector<int>& datype_,
+                                      const std::vector<float>& dbox,
+                                      const int nghost,
+                                      const InputNlist& lmp_list,
+                                      const int& ago,
+                                      const std::vector<float>& fparam,
+                                      const std::vector<float>& aparam_);
 
-template void DeepPot::compute<float, std::vector<ENERGYTYPE>>(
-    std::vector<ENERGYTYPE>& dener,
-    std::vector<float>& dforce_,
-    std::vector<float>& dvirial,
-    const std::vector<float>& dcoord_,
-    const std::vector<int>& datype_,
-    const std::vector<float>& dbox,
-    const int nghost,
-    const InputNlist& lmp_list,
-    const int& ago,
-    const std::vector<float>& fparam,
-    const std::vector<float>& aparam_);
+template void DeepPot::compute<double>(std::vector<ENERGYTYPE>& dener,
+                                       std::vector<double>& dforce_,
+                                       std::vector<double>& dvirial,
+                                       const std::vector<double>& dcoord_,
+                                       const std::vector<int>& datype_,
+                                       const std::vector<double>& dbox,
+                                       const int nghost,
+                                       const InputNlist& lmp_list,
+                                       const int& ago,
+                                       const std::vector<double>& fparam,
+                                       const std::vector<double>& aparam_);
 
-template <typename VALUETYPE, typename ENERGYVTYPE>
-void DeepPot::compute(ENERGYVTYPE& dener,
+template void DeepPot::compute<float>(std::vector<ENERGYTYPE>& dener,
+                                      std::vector<float>& dforce_,
+                                      std::vector<float>& dvirial,
+                                      const std::vector<float>& dcoord_,
+                                      const std::vector<int>& datype_,
+                                      const std::vector<float>& dbox,
+                                      const int nghost,
+                                      const InputNlist& lmp_list,
+                                      const int& ago,
+                                      const std::vector<float>& fparam,
+                                      const std::vector<float>& aparam_);
+
+template <typename VALUETYPE>
+void DeepPot::compute(ENERGYTYPE& dener,
+                      std::vector<VALUETYPE>& dforce_,
+                      std::vector<VALUETYPE>& dvirial,
+                      std::vector<VALUETYPE>& datom_energy_,
+                      std::vector<VALUETYPE>& datom_virial_,
+                      const std::vector<VALUETYPE>& dcoord_,
+                      const std::vector<int>& datype_,
+                      const std::vector<VALUETYPE>& dbox,
+                      const std::vector<VALUETYPE>& fparam_,
+                      const std::vector<VALUETYPE>& aparam_) {
+  std::vector<ENERGYTYPE> dener_;
+  dp->computew(dener_, dforce_, dvirial, datom_energy_, datom_virial_, dcoord_,
+               datype_, dbox, fparam_, aparam_);
+  dener = dener_[0];
+}
+template <typename VALUETYPE>
+void DeepPot::compute(std::vector<ENERGYTYPE>& dener,
                       std::vector<VALUETYPE>& dforce_,
                       std::vector<VALUETYPE>& dvirial,
                       std::vector<VALUETYPE>& datom_energy_,
@@ -187,56 +232,71 @@ void DeepPot::compute(ENERGYVTYPE& dener,
                datype_, dbox, fparam_, aparam_);
 }
 
-template void DeepPot::compute<double, ENERGYTYPE>(
-    ENERGYTYPE& dener,
-    std::vector<double>& dforce_,
-    std::vector<double>& dvirial,
-    std::vector<double>& datom_energy_,
-    std::vector<double>& datom_virial_,
-    const std::vector<double>& dcoord_,
-    const std::vector<int>& datype_,
-    const std::vector<double>& dbox,
-    const std::vector<double>& fparam,
-    const std::vector<double>& aparam);
+template void DeepPot::compute<double>(ENERGYTYPE& dener,
+                                       std::vector<double>& dforce_,
+                                       std::vector<double>& dvirial,
+                                       std::vector<double>& datom_energy_,
+                                       std::vector<double>& datom_virial_,
+                                       const std::vector<double>& dcoord_,
+                                       const std::vector<int>& datype_,
+                                       const std::vector<double>& dbox,
+                                       const std::vector<double>& fparam,
+                                       const std::vector<double>& aparam);
 
-template void DeepPot::compute<float, ENERGYTYPE>(
-    ENERGYTYPE& dener,
-    std::vector<float>& dforce_,
-    std::vector<float>& dvirial,
-    std::vector<float>& datom_energy_,
-    std::vector<float>& datom_virial_,
-    const std::vector<float>& dcoord_,
-    const std::vector<int>& datype_,
-    const std::vector<float>& dbox,
-    const std::vector<float>& fparam,
-    const std::vector<float>& aparam);
+template void DeepPot::compute<float>(ENERGYTYPE& dener,
+                                      std::vector<float>& dforce_,
+                                      std::vector<float>& dvirial,
+                                      std::vector<float>& datom_energy_,
+                                      std::vector<float>& datom_virial_,
+                                      const std::vector<float>& dcoord_,
+                                      const std::vector<int>& datype_,
+                                      const std::vector<float>& dbox,
+                                      const std::vector<float>& fparam,
+                                      const std::vector<float>& aparam);
 
-template void DeepPot::compute<double, std::vector<ENERGYTYPE>>(
-    std::vector<ENERGYTYPE>& dener,
-    std::vector<double>& dforce_,
-    std::vector<double>& dvirial,
-    std::vector<double>& datom_energy_,
-    std::vector<double>& datom_virial_,
-    const std::vector<double>& dcoord_,
-    const std::vector<int>& datype_,
-    const std::vector<double>& dbox,
-    const std::vector<double>& fparam,
-    const std::vector<double>& aparam);
+template void DeepPot::compute<double>(std::vector<ENERGYTYPE>& dener,
+                                       std::vector<double>& dforce_,
+                                       std::vector<double>& dvirial,
+                                       std::vector<double>& datom_energy_,
+                                       std::vector<double>& datom_virial_,
+                                       const std::vector<double>& dcoord_,
+                                       const std::vector<int>& datype_,
+                                       const std::vector<double>& dbox,
+                                       const std::vector<double>& fparam,
+                                       const std::vector<double>& aparam);
 
-template void DeepPot::compute<float, std::vector<ENERGYTYPE>>(
-    std::vector<ENERGYTYPE>& dener,
-    std::vector<float>& dforce_,
-    std::vector<float>& dvirial,
-    std::vector<float>& datom_energy_,
-    std::vector<float>& datom_virial_,
-    const std::vector<float>& dcoord_,
-    const std::vector<int>& datype_,
-    const std::vector<float>& dbox,
-    const std::vector<float>& fparam,
-    const std::vector<float>& aparam);
+template void DeepPot::compute<float>(std::vector<ENERGYTYPE>& dener,
+                                      std::vector<float>& dforce_,
+                                      std::vector<float>& dvirial,
+                                      std::vector<float>& datom_energy_,
+                                      std::vector<float>& datom_virial_,
+                                      const std::vector<float>& dcoord_,
+                                      const std::vector<int>& datype_,
+                                      const std::vector<float>& dbox,
+                                      const std::vector<float>& fparam,
+                                      const std::vector<float>& aparam);
 
-template <typename VALUETYPE, typename ENERGYVTYPE>
-void DeepPot::compute(ENERGYVTYPE& dener,
+template <typename VALUETYPE>
+void DeepPot::compute(ENERGYTYPE& dener,
+                      std::vector<VALUETYPE>& dforce_,
+                      std::vector<VALUETYPE>& dvirial,
+                      std::vector<VALUETYPE>& datom_energy_,
+                      std::vector<VALUETYPE>& datom_virial_,
+                      const std::vector<VALUETYPE>& dcoord_,
+                      const std::vector<int>& datype_,
+                      const std::vector<VALUETYPE>& dbox,
+                      const int nghost,
+                      const InputNlist& lmp_list,
+                      const int& ago,
+                      const std::vector<VALUETYPE>& fparam_,
+                      const std::vector<VALUETYPE>& aparam__) {
+  std::vector<ENERGYTYPE> dener_;
+  dp->computew(dener_, dforce_, dvirial, datom_energy_, datom_virial_, dcoord_,
+               datype_, dbox, nghost, lmp_list, ago, fparam_, aparam__);
+  dener = dener_[0];
+}
+template <typename VALUETYPE>
+void DeepPot::compute(std::vector<ENERGYTYPE>& dener,
                       std::vector<VALUETYPE>& dforce_,
                       std::vector<VALUETYPE>& dvirial,
                       std::vector<VALUETYPE>& datom_energy_,
@@ -253,69 +313,65 @@ void DeepPot::compute(ENERGYVTYPE& dener,
                datype_, dbox, nghost, lmp_list, ago, fparam_, aparam__);
 }
 
-template void DeepPot::compute<double, ENERGYTYPE>(
-    ENERGYTYPE& dener,
-    std::vector<double>& dforce_,
-    std::vector<double>& dvirial,
-    std::vector<double>& datom_energy_,
-    std::vector<double>& datom_virial_,
-    const std::vector<double>& dcoord_,
-    const std::vector<int>& datype_,
-    const std::vector<double>& dbox,
-    const int nghost,
-    const InputNlist& lmp_list,
-    const int& ago,
-    const std::vector<double>& fparam,
-    const std::vector<double>& aparam_);
+template void DeepPot::compute<double>(ENERGYTYPE& dener,
+                                       std::vector<double>& dforce_,
+                                       std::vector<double>& dvirial,
+                                       std::vector<double>& datom_energy_,
+                                       std::vector<double>& datom_virial_,
+                                       const std::vector<double>& dcoord_,
+                                       const std::vector<int>& datype_,
+                                       const std::vector<double>& dbox,
+                                       const int nghost,
+                                       const InputNlist& lmp_list,
+                                       const int& ago,
+                                       const std::vector<double>& fparam,
+                                       const std::vector<double>& aparam_);
 
-template void DeepPot::compute<float, ENERGYTYPE>(
-    ENERGYTYPE& dener,
-    std::vector<float>& dforce_,
-    std::vector<float>& dvirial,
-    std::vector<float>& datom_energy_,
-    std::vector<float>& datom_virial_,
-    const std::vector<float>& dcoord_,
-    const std::vector<int>& datype_,
-    const std::vector<float>& dbox,
-    const int nghost,
-    const InputNlist& lmp_list,
-    const int& ago,
-    const std::vector<float>& fparam,
-    const std::vector<float>& aparam_);
+template void DeepPot::compute<float>(ENERGYTYPE& dener,
+                                      std::vector<float>& dforce_,
+                                      std::vector<float>& dvirial,
+                                      std::vector<float>& datom_energy_,
+                                      std::vector<float>& datom_virial_,
+                                      const std::vector<float>& dcoord_,
+                                      const std::vector<int>& datype_,
+                                      const std::vector<float>& dbox,
+                                      const int nghost,
+                                      const InputNlist& lmp_list,
+                                      const int& ago,
+                                      const std::vector<float>& fparam,
+                                      const std::vector<float>& aparam_);
 
-template void DeepPot::compute<double, std::vector<ENERGYTYPE>>(
-    std::vector<ENERGYTYPE>& dener,
-    std::vector<double>& dforce_,
-    std::vector<double>& dvirial,
-    std::vector<double>& datom_energy_,
-    std::vector<double>& datom_virial_,
-    const std::vector<double>& dcoord_,
-    const std::vector<int>& datype_,
-    const std::vector<double>& dbox,
-    const int nghost,
-    const InputNlist& lmp_list,
-    const int& ago,
-    const std::vector<double>& fparam,
-    const std::vector<double>& aparam_);
+template void DeepPot::compute<double>(std::vector<ENERGYTYPE>& dener,
+                                       std::vector<double>& dforce_,
+                                       std::vector<double>& dvirial,
+                                       std::vector<double>& datom_energy_,
+                                       std::vector<double>& datom_virial_,
+                                       const std::vector<double>& dcoord_,
+                                       const std::vector<int>& datype_,
+                                       const std::vector<double>& dbox,
+                                       const int nghost,
+                                       const InputNlist& lmp_list,
+                                       const int& ago,
+                                       const std::vector<double>& fparam,
+                                       const std::vector<double>& aparam_);
 
-template void DeepPot::compute<float, std::vector<ENERGYTYPE>>(
-    std::vector<ENERGYTYPE>& dener,
-    std::vector<float>& dforce_,
-    std::vector<float>& dvirial,
-    std::vector<float>& datom_energy_,
-    std::vector<float>& datom_virial_,
-    const std::vector<float>& dcoord_,
-    const std::vector<int>& datype_,
-    const std::vector<float>& dbox,
-    const int nghost,
-    const InputNlist& lmp_list,
-    const int& ago,
-    const std::vector<float>& fparam,
-    const std::vector<float>& aparam_);
+template void DeepPot::compute<float>(std::vector<ENERGYTYPE>& dener,
+                                      std::vector<float>& dforce_,
+                                      std::vector<float>& dvirial,
+                                      std::vector<float>& datom_energy_,
+                                      std::vector<float>& datom_virial_,
+                                      const std::vector<float>& dcoord_,
+                                      const std::vector<int>& datype_,
+                                      const std::vector<float>& dbox,
+                                      const int nghost,
+                                      const InputNlist& lmp_list,
+                                      const int& ago,
+                                      const std::vector<float>& fparam,
+                                      const std::vector<float>& aparam_);
 
 // mixed type
-template <typename VALUETYPE, typename ENERGYVTYPE>
-void DeepPot::compute_mixed_type(ENERGYVTYPE& dener,
+template <typename VALUETYPE>
+void DeepPot::compute_mixed_type(ENERGYTYPE& dener,
                                  std::vector<VALUETYPE>& dforce_,
                                  std::vector<VALUETYPE>& dvirial,
                                  const int& nframes,
@@ -324,11 +380,29 @@ void DeepPot::compute_mixed_type(ENERGYVTYPE& dener,
                                  const std::vector<VALUETYPE>& dbox,
                                  const std::vector<VALUETYPE>& fparam_,
                                  const std::vector<VALUETYPE>& aparam_) {
-  dp->computew_mixed_type(dener, dforce_, dvirial, nframes, dcoord_, datype_,
-                          dbox, fparam_, aparam_);
+  std::vector<ENERGYTYPE> dener_;
+  std::vector<VALUETYPE> datom_energy_, datom_virial_;
+  dp->computew_mixed_type(dener_, dforce_, dvirial, datom_energy_,
+                          datom_virial_, nframes, dcoord_, datype_, dbox,
+                          fparam_, aparam_);
+  dener = dener_[0];
+}
+template <typename VALUETYPE>
+void DeepPot::compute_mixed_type(std::vector<ENERGYTYPE>& dener,
+                                 std::vector<VALUETYPE>& dforce_,
+                                 std::vector<VALUETYPE>& dvirial,
+                                 const int& nframes,
+                                 const std::vector<VALUETYPE>& dcoord_,
+                                 const std::vector<int>& datype_,
+                                 const std::vector<VALUETYPE>& dbox,
+                                 const std::vector<VALUETYPE>& fparam_,
+                                 const std::vector<VALUETYPE>& aparam_) {
+  std::vector<VALUETYPE> datom_energy_, datom_virial_;
+  dp->computew_mixed_type(dener, dforce_, dvirial, datom_energy_, datom_virial_,
+                          nframes, dcoord_, datype_, dbox, fparam_, aparam_);
 }
 
-template void DeepPot::compute_mixed_type<double, ENERGYTYPE>(
+template void DeepPot::compute_mixed_type<double>(
     ENERGYTYPE& dener,
     std::vector<double>& dforce_,
     std::vector<double>& dvirial,
@@ -339,7 +413,7 @@ template void DeepPot::compute_mixed_type<double, ENERGYTYPE>(
     const std::vector<double>& fparam,
     const std::vector<double>& aparam);
 
-template void DeepPot::compute_mixed_type<float, ENERGYTYPE>(
+template void DeepPot::compute_mixed_type<float>(
     ENERGYTYPE& dener,
     std::vector<float>& dforce_,
     std::vector<float>& dvirial,
@@ -350,7 +424,7 @@ template void DeepPot::compute_mixed_type<float, ENERGYTYPE>(
     const std::vector<float>& fparam,
     const std::vector<float>& aparam);
 
-template void DeepPot::compute_mixed_type<double, std::vector<ENERGYTYPE>>(
+template void DeepPot::compute_mixed_type<double>(
     std::vector<ENERGYTYPE>& dener,
     std::vector<double>& dforce_,
     std::vector<double>& dvirial,
@@ -361,7 +435,7 @@ template void DeepPot::compute_mixed_type<double, std::vector<ENERGYTYPE>>(
     const std::vector<double>& fparam,
     const std::vector<double>& aparam);
 
-template void DeepPot::compute_mixed_type<float, std::vector<ENERGYTYPE>>(
+template void DeepPot::compute_mixed_type<float>(
     std::vector<ENERGYTYPE>& dener,
     std::vector<float>& dforce_,
     std::vector<float>& dvirial,
@@ -372,8 +446,26 @@ template void DeepPot::compute_mixed_type<float, std::vector<ENERGYTYPE>>(
     const std::vector<float>& fparam,
     const std::vector<float>& aparam);
 
-template <typename VALUETYPE, typename ENERGYVTYPE>
-void DeepPot::compute_mixed_type(ENERGYVTYPE& dener,
+template <typename VALUETYPE>
+void DeepPot::compute_mixed_type(ENERGYTYPE& dener,
+                                 std::vector<VALUETYPE>& dforce_,
+                                 std::vector<VALUETYPE>& dvirial,
+                                 std::vector<VALUETYPE>& datom_energy_,
+                                 std::vector<VALUETYPE>& datom_virial_,
+                                 const int& nframes,
+                                 const std::vector<VALUETYPE>& dcoord_,
+                                 const std::vector<int>& datype_,
+                                 const std::vector<VALUETYPE>& dbox,
+                                 const std::vector<VALUETYPE>& fparam_,
+                                 const std::vector<VALUETYPE>& aparam_) {
+  std::vector<ENERGYTYPE> dener_;
+  dp->computew_mixed_type(dener_, dforce_, dvirial, datom_energy_,
+                          datom_virial_, nframes, dcoord_, datype_, dbox,
+                          fparam_, aparam_);
+  dener = dener_[0];
+}
+template <typename VALUETYPE>
+void DeepPot::compute_mixed_type(std::vector<ENERGYTYPE>& dener,
                                  std::vector<VALUETYPE>& dforce_,
                                  std::vector<VALUETYPE>& dvirial,
                                  std::vector<VALUETYPE>& datom_energy_,
@@ -388,7 +480,7 @@ void DeepPot::compute_mixed_type(ENERGYVTYPE& dener,
                           nframes, dcoord_, datype_, dbox, fparam_, aparam_);
 }
 
-template void DeepPot::compute_mixed_type<double, ENERGYTYPE>(
+template void DeepPot::compute_mixed_type<double>(
     ENERGYTYPE& dener,
     std::vector<double>& dforce_,
     std::vector<double>& dvirial,
@@ -401,7 +493,7 @@ template void DeepPot::compute_mixed_type<double, ENERGYTYPE>(
     const std::vector<double>& fparam,
     const std::vector<double>& aparam);
 
-template void DeepPot::compute_mixed_type<float, ENERGYTYPE>(
+template void DeepPot::compute_mixed_type<float>(
     ENERGYTYPE& dener,
     std::vector<float>& dforce_,
     std::vector<float>& dvirial,
@@ -414,7 +506,7 @@ template void DeepPot::compute_mixed_type<float, ENERGYTYPE>(
     const std::vector<float>& fparam,
     const std::vector<float>& aparam);
 
-template void DeepPot::compute_mixed_type<double, std::vector<ENERGYTYPE>>(
+template void DeepPot::compute_mixed_type<double>(
     std::vector<ENERGYTYPE>& dener,
     std::vector<double>& dforce_,
     std::vector<double>& dvirial,
@@ -427,7 +519,7 @@ template void DeepPot::compute_mixed_type<double, std::vector<ENERGYTYPE>>(
     const std::vector<double>& fparam,
     const std::vector<double>& aparam);
 
-template void DeepPot::compute_mixed_type<float, std::vector<ENERGYTYPE>>(
+template void DeepPot::compute_mixed_type<float>(
     std::vector<ENERGYTYPE>& dener,
     std::vector<float>& dforce_,
     std::vector<float>& dvirial,
