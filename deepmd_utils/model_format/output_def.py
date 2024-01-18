@@ -3,8 +3,21 @@ from typing import (
     Dict,
     List,
     Tuple,
-    Union,
 )
+
+
+def check_shape(
+    shape: List[int],
+    def_shape: List[int],
+):
+    """Check if the shape satisfies the defined shape."""
+    assert len(shape) == len(def_shape)
+    if def_shape[-1] == -1:
+        if list(shape[:-1]) != def_shape[:-1]:
+            raise ValueError(f"{shape[:-1]} shape not matching def {def_shape[:-1]}")
+    else:
+        if list(shape) != def_shape:
+            raise ValueError(f"{shape} shape not matching def {def_shape}")
 
 
 def check_var(var, var_def):
@@ -12,14 +25,12 @@ def check_var(var, var_def):
         # var.shape == [nf, nloc, *var_def.shape]
         if len(var.shape) != len(var_def.shape) + 2:
             raise ValueError(f"{var.shape[2:]} length not matching def {var_def.shape}")
-        if list(var.shape[2:]) != var_def.shape:
-            raise ValueError(f"{var.shape[2:]} not matching def {var_def.shape}")
+        check_shape(list(var.shape[2:]), var_def.shape)
     else:
         # var.shape == [nf, *var_def.shape]
         if len(var.shape) != len(var_def.shape) + 1:
             raise ValueError(f"{var.shape[1:]} length not matching def {var_def.shape}")
-        if list(var.shape[1:]) != var_def.shape:
-            raise ValueError(f"{var.shape[1:]} not matching def {var_def.shape}")
+        check_shape(list(var.shape[1:]), var_def.shape)
 
 
 def model_check_output(cls):
@@ -38,7 +49,7 @@ def model_check_output(cls):
             **kwargs,
         ):
             super().__init__(*args, **kwargs)
-            self.md = cls.output_def(self)
+            self.md = self.output_def()
 
         def __call__(
             self,
@@ -77,7 +88,7 @@ def fitting_check_output(cls):
             **kwargs,
         ):
             super().__init__(*args, **kwargs)
-            self.md = cls.output_def(self)
+            self.md = self.output_def()
 
         def __call__(
             self,
@@ -93,35 +104,7 @@ def fitting_check_output(cls):
     return wrapper
 
 
-class VariableDef:
-    """Defines the shape and other properties of a variable.
-
-    Parameters
-    ----------
-    name
-          Name of the output variable. Notice that the xxxx_redu,
-          xxxx_derv_c, xxxx_derv_r are reserved names that should
-          not be used to define variables.
-    shape
-          The shape of the variable. e.g. energy should be [1],
-          dipole should be [3], polarizabilty should be [3,3].
-    atomic
-          If the variable is defined for each atom.
-
-    """
-
-    def __init__(
-        self,
-        name: str,
-        shape: Union[List[int], Tuple[int]],
-        atomic: bool = True,
-    ):
-        self.name = name
-        self.shape = list(shape)
-        self.atomic = atomic
-
-
-class OutputVariableDef(VariableDef):
+class OutputVariableDef:
     """Defines the shape and other properties of the one output variable.
 
     It is assume that the fitting network output variables for each
@@ -149,12 +132,14 @@ class OutputVariableDef(VariableDef):
     def __init__(
         self,
         name: str,
-        shape: Union[List[int], Tuple[int]],
+        shape: List[int],
         reduciable: bool = False,
         differentiable: bool = False,
+        atomic: bool = True,
     ):
-        # fitting output must be atomic
-        super().__init__(name, shape, atomic=True)
+        self.name = name
+        self.shape = list(shape)
+        self.atomic = atomic
         self.reduciable = reduciable
         self.differentiable = differentiable
         if not self.reduciable and self.differentiable:
@@ -176,13 +161,13 @@ class FittingOutputDef:
 
     def __init__(
         self,
-        var_defs: List[OutputVariableDef] = [],
+        var_defs: List[OutputVariableDef],
     ):
         self.var_defs = {vv.name: vv for vv in var_defs}
 
     def __getitem__(
         self,
-        key,
+        key: str,
     ) -> OutputVariableDef:
         return self.var_defs[key]
 
@@ -215,7 +200,7 @@ class ModelOutputDef:
         self.def_outp = fit_defs
         self.def_redu = do_reduce(self.def_outp)
         self.def_derv_r, self.def_derv_c = do_derivative(self.def_outp)
-        self.var_defs = {}
+        self.var_defs: Dict[str, OutputVariableDef] = {}
         for ii in [
             self.def_outp.get_data(),
             self.def_redu,
@@ -224,10 +209,16 @@ class ModelOutputDef:
         ]:
             self.var_defs.update(ii)
 
-    def __getitem__(self, key) -> VariableDef:
+    def __getitem__(
+        self,
+        key: str,
+    ) -> OutputVariableDef:
         return self.var_defs[key]
 
-    def get_data(self, key) -> Dict[str, VariableDef]:
+    def get_data(
+        self,
+        key: str,
+    ) -> Dict[str, OutputVariableDef]:
         return self.var_defs
 
     def keys(self):
@@ -246,33 +237,45 @@ class ModelOutputDef:
         return self.def_derv_c.keys()
 
 
-def get_reduce_name(name):
+def get_reduce_name(name: str) -> str:
     return name + "_redu"
 
 
-def get_deriv_name(name):
+def get_deriv_name(name: str) -> Tuple[str, str]:
     return name + "_derv_r", name + "_derv_c"
 
 
 def do_reduce(
-    def_outp,
-):
-    def_redu = {}
+    def_outp: FittingOutputDef,
+) -> Dict[str, OutputVariableDef]:
+    def_redu: Dict[str, OutputVariableDef] = {}
     for kk, vv in def_outp.get_data().items():
         if vv.reduciable:
             rk = get_reduce_name(kk)
-            def_redu[rk] = VariableDef(rk, vv.shape, atomic=False)
+            def_redu[rk] = OutputVariableDef(
+                rk, vv.shape, reduciable=False, differentiable=False, atomic=False
+            )
     return def_redu
 
 
 def do_derivative(
-    def_outp,
-):
-    def_derv_r = {}
-    def_derv_c = {}
+    def_outp: FittingOutputDef,
+) -> Tuple[Dict[str, OutputVariableDef], Dict[str, OutputVariableDef]]:
+    def_derv_r: Dict[str, OutputVariableDef] = {}
+    def_derv_c: Dict[str, OutputVariableDef] = {}
     for kk, vv in def_outp.get_data().items():
         if vv.differentiable:
             rkr, rkc = get_deriv_name(kk)
-            def_derv_r[rkr] = VariableDef(rkr, [*vv.shape, 3], atomic=True)
-            def_derv_c[rkc] = VariableDef(rkc, [*vv.shape, 3, 3], atomic=False)
+            def_derv_r[rkr] = OutputVariableDef(
+                rkr,
+                vv.shape + [3],  # noqa: RUF005
+                reduciable=False,
+                differentiable=False,
+            )
+            def_derv_c[rkc] = OutputVariableDef(
+                rkc,
+                vv.shape + [3, 3],  # noqa: RUF005
+                reduciable=True,
+                differentiable=False,
+            )
     return def_derv_r, def_derv_c
