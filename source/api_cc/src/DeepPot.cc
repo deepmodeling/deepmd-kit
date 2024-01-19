@@ -833,7 +833,7 @@ void DeepPotModelDevi::compute_relative_std(std::vector<VALUETYPE>& std,
   assert(nloc * stride == ndof);
 
   for (unsigned ii = 0; ii < nloc; ++ii) {
-    const VALUETYPE* tmp_avg = &(avg[ii * stride]);
+    const VALUETYPE* tmp_avg = &(avg[static_cast<size_t>(ii) * stride]);
     VALUETYPE f_norm = 0.0;
     for (unsigned dd = 0; dd < stride; ++dd) {
       f_norm += tmp_avg[dd] * tmp_avg[dd];
