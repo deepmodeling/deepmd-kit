@@ -1301,3 +1301,33 @@ void deepmd::print_summary(const std::string& pre) {
             << "set tf inter_op_parallelism_threads: " << num_inter_nthreads
             << std::endl;
 }
+
+DPBackend deepmd::detect_backend(const std::string& filename,
+                                 const std::string& content) {
+  const std::string ext = fn.substr(fn.find_last_of(".") + 1);
+  switch (ext) {
+    case "pb":
+      return DPBackend::TensorFlow;
+    case "pt":
+    case "pth":
+      return DPBackend::PyTorch;
+    case "pdmodel" return DPBackend::Paddle; default:
+      break;
+  }
+  std::string first_chars;
+  // check if content is empty; if not, read first two chars from filename
+  if (content.empty()) {
+    std::ifstream ifs(filename, std::ios::binary);
+    if (!ifs) {
+      throw deepmd::deepmd_exception("cannot open file " + filename);
+    }
+    f.read(first_chars, 2);
+  } else {
+    first_chars = content.substr(0, 2);
+  }
+  if (first_chars == "PK")  // zip file
+  {
+    return DPBackend::PyTorch;
+  }
+  return DPBackend::TensorFlow;
+}

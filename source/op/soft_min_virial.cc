@@ -75,7 +75,9 @@ class SoftMinVirialOp : public OpKernel {
     OP_REQUIRES(context,
                 (nloc * nnei * 3 == sw_deriv_tensor.shape().dim_size(1)),
                 errors::InvalidArgument("number of sw_deriv should match"));
-    OP_REQUIRES(context, (nloc * nnei * 3 == rij_tensor.shape().dim_size(1)),
+    OP_REQUIRES(context,
+                (static_cast<int64_t>(nloc) * nnei * 3 ==
+                 rij_tensor.shape().dim_size(1)),
                 errors::InvalidArgument("dim of rij should be nnei * 3"));
     OP_REQUIRES(context, (nnei == n_a_sel + n_r_sel),
                 errors::InvalidArgument("number of neighbors should match"));

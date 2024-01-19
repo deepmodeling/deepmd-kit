@@ -1083,7 +1083,7 @@ class DeepPot {
       for (int ii = 0; ii < nframes; ++ii) {
         std::copy(param.begin(), param.end(), out_param.begin() + ii * dparam);
       }
-    } else if (param.size() == nframes * dparam) {
+    } else if (param.size() == static_cast<size_t>(nframes) * dparam) {
       out_param = param;
     }
   }
@@ -1184,7 +1184,8 @@ class DeepPotModelDevi {
 
     // memory will be continous for std::vector but not std::vector<std::vector>
     std::vector<double> energy_flat(numb_models);
-    std::vector<VALUETYPE> force_flat(numb_models * natoms * 3);
+    std::vector<VALUETYPE> force_flat(static_cast<size_t>(numb_models) *
+                                      natoms * 3);
     std::vector<VALUETYPE> virial_flat(numb_models * 9);
     double *ener_ = &energy_flat[0];
     VALUETYPE *force_ = &force_flat[0];
@@ -1260,10 +1261,13 @@ class DeepPotModelDevi {
     const int *atype_ = &atype[0];
 
     std::vector<double> energy_flat(numb_models);
-    std::vector<VALUETYPE> force_flat(numb_models * natoms * 3);
+    std::vector<VALUETYPE> force_flat(static_cast<size_t>(numb_models) *
+                                      natoms * 3);
     std::vector<VALUETYPE> virial_flat(numb_models * 9);
-    std::vector<VALUETYPE> atom_energy_flat(numb_models * natoms);
-    std::vector<VALUETYPE> atom_virial_flat(numb_models * natoms * 9);
+    std::vector<VALUETYPE> atom_energy_flat(static_cast<size_t>(numb_models) *
+                                            natoms);
+    std::vector<VALUETYPE> atom_virial_flat(static_cast<size_t>(numb_models) *
+                                            natoms * 9);
     double *ener_ = &energy_flat[0];
     VALUETYPE *force_ = &force_flat[0];
     VALUETYPE *virial_ = &virial_flat[0];
@@ -1402,8 +1406,8 @@ class DeepPotModelDevi {
 
     for (unsigned ii = 0; ii < numb_models; ++ii) {
       for (unsigned jj = 0; jj < nloc; ++jj) {
-        const VALUETYPE *tmp_f = &(xx[ii][jj * stride]);
-        const VALUETYPE *tmp_avg = &(avg[jj * stride]);
+        const VALUETYPE *tmp_f = &(xx[ii][static_cast<size_t>(jj) * stride]);
+        const VALUETYPE *tmp_avg = &(avg[static_cast<size_t>(jj) * stride]);
         for (unsigned dd = 0; dd < stride; ++dd) {
           VALUETYPE vdiff = tmp_f[dd] - tmp_avg[dd];
           std[jj] += vdiff * vdiff;
@@ -1500,7 +1504,7 @@ class DeepPotModelDevi {
       for (int ii = 0; ii < nframes; ++ii) {
         std::copy(param.begin(), param.end(), out_param.begin() + ii * dparam);
       }
-    } else if (param.size() == nframes * dparam) {
+    } else if (param.size() == static_cast<size_t>(nframes) * dparam) {
       out_param = param;
     }
   }

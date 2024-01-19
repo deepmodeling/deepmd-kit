@@ -332,4 +332,17 @@ void convert_pbtxt_to_pb(std::string fn_pb_txt, std::string fn_pb);
  * @param[in] pre The prefix to each line.
  */
 void print_summary(const std::string& pre);
+
+/**
+ * @brief Detect the backend of the model.
+ * @details First, check the suffix of the filename. If still unknown, check the
+ * content of the file.
+ *
+ * @param filename The filename of the model.
+ * @param content The content of the model.
+ * @return DPBackend The backend of the model.
+ */
+DPBackend detect_backend(const std::string& filename,
+                         const std::string& content);
+
 }  // namespace deepmd

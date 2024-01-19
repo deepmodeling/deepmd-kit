@@ -56,10 +56,14 @@ class EwaldRecpOp : public OpKernel {
 
     // check the sizes
     OP_REQUIRES(
-        context, (nsamples * nloc * 3 == coord_tensor.shape().dim_size(0)),
+        context,
+        (static_cast<int64_t>(nsamples) * nloc * 3 ==
+         coord_tensor.shape().dim_size(0)),
         errors::InvalidArgument("coord  number of samples should match"));
     OP_REQUIRES(
-        context, (nsamples * nloc * 1 == charge_tensor.shape().dim_size(0)),
+        context,
+        (static_cast<int64_t>(nsamples) * nloc * 1 ==
+         charge_tensor.shape().dim_size(0)),
         errors::InvalidArgument("charge number of samples should match"));
     OP_REQUIRES(
         context, (nsamples * 9 == box_tensor.shape().dim_size(0)),
