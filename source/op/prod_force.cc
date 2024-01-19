@@ -70,7 +70,8 @@ class ProdForceOp : public OpKernel {
                 errors::InvalidArgument("number of samples should match"));
 
     OP_REQUIRES(context,
-                (nloc * ndescrpt * 12 == in_deriv_tensor.shape().dim_size(1)),
+                (static_cast<int64_t>(nloc) * ndescrpt * 12 ==
+                 in_deriv_tensor.shape().dim_size(1)),
                 errors::InvalidArgument("number of descriptors should match"));
     OP_REQUIRES(context, (nnei == n_a_sel + n_r_sel),
                 errors::InvalidArgument("number of neighbors should match"));

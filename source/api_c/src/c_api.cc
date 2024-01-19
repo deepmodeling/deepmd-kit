@@ -1414,7 +1414,7 @@ void DP_SelectMapInt(const int* in,
                      int* out) {
   std::vector<int> in_(in, in + stride * nall1);
   std::vector<int> fwd_map_(fwd_map, fwd_map + nall1);
-  std::vector<int> out_(stride * nall2);
+  std::vector<int> out_(static_cast<size_t>(stride) * nall2);
   deepmd::select_map(out_, in_, fwd_map_, stride);
   if (out) {
     std::copy(out_.begin(), out_.end(), out);

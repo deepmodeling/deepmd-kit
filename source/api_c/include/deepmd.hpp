@@ -1060,14 +1060,15 @@ class DeepPot {
                               const int &nloc,
                               const std::vector<VALUETYPE> &fparam,
                               const std::vector<VALUETYPE> &aparam) const {
-    if (fparam.size() != dfparam && fparam.size() != nframes * dfparam) {
+    if (fparam.size() != dfparam &&
+        fparam.size() != static_cast<size_t>(nframes) * dfparam) {
       throw deepmd::hpp::deepmd_exception(
           "the dim of frame parameter provided is not consistent with what the "
           "model uses");
     }
 
-    if (aparam.size() != daparam * nloc &&
-        aparam.size() != nframes * daparam * nloc) {
+    if (aparam.size() != static_cast<size_t>(daparam) * nloc &&
+        aparam.size() != static_cast<size_t>(nframes) * daparam * nloc) {
       throw deepmd::hpp::deepmd_exception(
           "the dim of atom parameter provided is not consistent with what the "
           "model uses");
@@ -1081,7 +1082,8 @@ class DeepPot {
     if (param.size() == dparam) {
       out_param.resize(static_cast<size_t>(nframes) * dparam);
       for (int ii = 0; ii < nframes; ++ii) {
-        std::copy(param.begin(), param.end(), out_param.begin() + ii * dparam);
+        std::copy(param.begin(), param.end(),
+                  out_param.begin() + static_cast<std::ptrdiff_t>(ii) * dparam);
       }
     } else if (param.size() == static_cast<size_t>(nframes) * dparam) {
       out_param = param;
@@ -1481,14 +1483,15 @@ class DeepPotModelDevi {
                               const int &nloc,
                               const std::vector<VALUETYPE> &fparam,
                               const std::vector<VALUETYPE> &aparam) const {
-    if (fparam.size() != dfparam && fparam.size() != nframes * dfparam) {
+    if (fparam.size() != dfparam &&
+        fparam.size() != static_cast<size_t>(nframes) * dfparam) {
       throw deepmd::hpp::deepmd_exception(
           "the dim of frame parameter provided is not consistent with what the "
           "model uses");
     }
 
-    if (aparam.size() != daparam * nloc &&
-        aparam.size() != nframes * daparam * nloc) {
+    if (aparam.size() != static_cast<size_t>(daparam) * nloc &&
+        aparam.size() != static_cast<size_t>(nframes) * daparam * nloc) {
       throw deepmd::hpp::deepmd_exception(
           "the dim of atom parameter provided is not consistent with what the "
           "model uses");
@@ -1502,7 +1505,8 @@ class DeepPotModelDevi {
     if (param.size() == dparam) {
       out_param.resize(static_cast<size_t>(nframes) * dparam);
       for (int ii = 0; ii < nframes; ++ii) {
-        std::copy(param.begin(), param.end(), out_param.begin() + ii * dparam);
+        std::copy(param.begin(), param.end(),
+                  out_param.begin() + static_cast<std::ptrdiff_t>(ii) * dparam);
       }
     } else if (param.size() == static_cast<size_t>(nframes) * dparam) {
       out_param = param;

@@ -118,12 +118,16 @@ class ProdVirialSeAGradOp : public OpKernel {
     assert(nframes == in_deriv_tensor.shape().dim_size(0));
     assert(nframes == rij_tensor.shape().dim_size(0));
     assert(nframes == nlist_tensor.shape().dim_size(0));
-    assert(nloc * ndescrpt == grad_net_shape.dim_size(1));
+    assert(static_cast<int64_t>(nloc) * ndescrpt == grad_net_shape.dim_size(1));
     assert(9 == grad_shape.dim_size(1));
-    assert(nloc * ndescrpt == net_deriv_tensor.shape().dim_size(1));
-    assert(nloc * ndescrpt * 3 == in_deriv_tensor.shape().dim_size(1));
-    assert(nloc * nnei * 3 == rij_tensor.shape().dim_size(1));
-    assert(nloc * nnei == nlist_tensor.shape().dim_size(1));
+    assert(static_cast<int64_t>(nloc) * ndescrpt ==
+           net_deriv_tensor.shape().dim_size(1));
+    assert(static_cast<int64_t>(nloc) * ndescrpt * 3 ==
+           in_deriv_tensor.shape().dim_size(1));
+    assert(static_cast<int64_t>(nloc) * nnei * 3 ==
+           rij_tensor.shape().dim_size(1));
+    assert(static_cast<int64_t>(nloc) * nnei ==
+           nlist_tensor.shape().dim_size(1));
     assert(nnei * 4 == ndescrpt);
 
     // flat the tensors
@@ -246,12 +250,16 @@ class ProdVirialSeRGradOp : public OpKernel {
     assert(nframes == in_deriv_tensor.shape().dim_size(0));
     assert(nframes == rij_tensor.shape().dim_size(0));
     assert(nframes == nlist_tensor.shape().dim_size(0));
-    assert(nloc * ndescrpt == grad_net_shape.dim_size(1));
+    assert(static_cast<int64_t>(nloc) * ndescrpt == grad_net_shape.dim_size(1));
     assert(9 == grad_shape.dim_size(1));
-    assert(nloc * ndescrpt == net_deriv_tensor.shape().dim_size(1));
-    assert(nloc * ndescrpt * 3 == in_deriv_tensor.shape().dim_size(1));
-    assert(nloc * nnei * 3 == rij_tensor.shape().dim_size(1));
-    assert(nloc * nnei == nlist_tensor.shape().dim_size(1));
+    assert(static_cast<int64_t>(nloc) * ndescrpt ==
+           net_deriv_tensor.shape().dim_size(1));
+    assert(static_cast<int64_t>(nloc) * ndescrpt * 3 ==
+           in_deriv_tensor.shape().dim_size(1));
+    assert(static_cast<int64_t>(nloc) * nnei * 3 ==
+           rij_tensor.shape().dim_size(1));
+    assert(static_cast<int64_t>(nloc) * nnei ==
+           nlist_tensor.shape().dim_size(1));
     assert(nnei * 1 == ndescrpt);
 
     // flat the tensors
