@@ -73,7 +73,8 @@ elseif(USE_ROCM_TOOLKIT)
 
   message(STATUS "HIP major version is " ${hip_VERSION_MAJOR})
 
-  set(CMAKE_HIP_FLAGS "-fno-gpu-rdc ${CMAKE_HIP_FLAGS}") # --amdgpu-target=gfx906
+  set(CMAKE_HIP_FLAGS "-fno-gpu-rdc ${CMAKE_HIP_FLAGS}"
+  )# --amdgpu-target=gfx906
   if(hip_VERSION VERSION_LESS 3.5.1)
     set(CMAKE_HIP_FLAGS "-hc ${CMAKE_HIP_FLAGS}")
   endif()
