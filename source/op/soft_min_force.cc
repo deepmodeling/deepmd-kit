@@ -65,7 +65,8 @@ class SoftMinForceOp : public OpKernel {
     OP_REQUIRES(context, (nloc == du_tensor.shape().dim_size(1)),
                 errors::InvalidArgument("number of du should match"));
     OP_REQUIRES(context,
-                (nloc * nnei * 3 == sw_deriv_tensor.shape().dim_size(1)),
+                (static_cast<int64_t>(nloc) * nnei * 3 ==
+                 sw_deriv_tensor.shape().dim_size(1)),
                 errors::InvalidArgument("number of switch deriv should match"));
     OP_REQUIRES(context, (nnei == n_a_sel + n_r_sel),
                 errors::InvalidArgument("number of neighbors should match"));

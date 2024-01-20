@@ -133,7 +133,7 @@ class MatmulFitnetNvnmdOp : public OpKernel {
     expo_maxs.resize(K);
 
     if (normw == 0) {
-      find_max_expo(expo_max, (FPTYPE*)&w[0], M * K);
+      find_max_expo(expo_max, (FPTYPE*)&w[0], static_cast<int64_t>(M) * K);
       for (kk = 0; kk < K; kk++) {
         expo_maxs[kk] = expo_max;
       }

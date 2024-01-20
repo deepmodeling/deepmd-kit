@@ -1098,7 +1098,7 @@ class ProdEnvMatAMixOp : public OpKernel {
 
     Tensor fake_type_tensor;  // all zeros
     TensorShape fake_type_shape;
-    fake_type_shape.AddDim(nsamples * nall);
+    fake_type_shape.AddDim(static_cast<int64_t>(nsamples) * nall);
     OP_REQUIRES_OK(context, context->allocate_temp(DT_INT32, fake_type_shape,
                                                    &fake_type_tensor));
 

@@ -89,10 +89,13 @@ class PairTabOp : public OpKernel {
     OP_REQUIRES(context, (nall == type_tensor.shape().dim_size(1)),
                 errors::InvalidArgument("shape of type should be nall"));
     OP_REQUIRES(
-        context, (3 * nnei * nloc == rij_tensor.shape().dim_size(1)),
+        context,
+        (3 * static_cast<int64_t>(nnei) * nloc ==
+         rij_tensor.shape().dim_size(1)),
         errors::InvalidArgument("shape of rij should be 3 * nloc * nnei"));
     OP_REQUIRES(
-        context, (nnei * nloc == nlist_tensor.shape().dim_size(1)),
+        context,
+        (static_cast<int64_t>(nnei) * nloc == nlist_tensor.shape().dim_size(1)),
         errors::InvalidArgument("shape of nlist should be nloc * nnei"));
     OP_REQUIRES(context, (nloc == scale_tensor.shape().dim_size(1)),
                 errors::InvalidArgument("shape of scale should be nloc"));
@@ -134,10 +137,11 @@ class PairTabOp : public OpKernel {
                     "ntypes provided in table does not match deeppot"));
     int nspline = table_info(2) + 0.1;
     int tab_stride = 4 * nspline;
-    assert(ntypes * ntypes * tab_stride ==
+    assert(static_cast<int64_t>(ntypes) * ntypes * tab_stride ==
            table_data_tensor.shape().dim_size(0));
     std::vector<double> d_table_info(4);
-    std::vector<double> d_table_data(ntypes * ntypes * tab_stride);
+    std::vector<double> d_table_data(static_cast<size_t>(ntypes) * ntypes *
+                                     tab_stride);
     for (unsigned ii = 0; ii < d_table_info.size(); ++ii) {
       d_table_info[ii] = table_info(ii);
     }

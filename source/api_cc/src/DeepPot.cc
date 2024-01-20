@@ -761,8 +761,8 @@ void DeepPotModelDevi::compute_std(
 
   for (unsigned ii = 0; ii < numb_models; ++ii) {
     for (unsigned jj = 0; jj < nloc; ++jj) {
-      const VALUETYPE* tmp_f = &(xx[ii][jj * stride]);
-      const VALUETYPE* tmp_avg = &(avg[jj * stride]);
+      const VALUETYPE* tmp_f = &(xx[ii][static_cast<size_t>(jj) * stride]);
+      const VALUETYPE* tmp_avg = &(avg[static_cast<size_t>(jj) * stride]);
       for (unsigned dd = 0; dd < stride; ++dd) {
         VALUETYPE vdiff = tmp_f[dd] - tmp_avg[dd];
         std[jj] += vdiff * vdiff;
@@ -833,7 +833,7 @@ void DeepPotModelDevi::compute_relative_std(std::vector<VALUETYPE>& std,
   assert(nloc * stride == ndof);
 
   for (unsigned ii = 0; ii < nloc; ++ii) {
-    const VALUETYPE* tmp_avg = &(avg[ii * stride]);
+    const VALUETYPE* tmp_avg = &(avg[static_cast<size_t>(ii) * stride]);
     VALUETYPE f_norm = 0.0;
     for (unsigned dd = 0; dd < stride; ++dd) {
       f_norm += tmp_avg[dd] * tmp_avg[dd];

@@ -57,7 +57,8 @@ class ProdForceSeAMaskOp : public OpKernel {
     OP_REQUIRES(context, (nframes == nlist_tensor.shape().dim_size(0)),
                 errors::InvalidArgument("number of samples should match"));
     OP_REQUIRES(context,
-                (nloc * ndescrpt * 3 == in_deriv_tensor.shape().dim_size(1)),
+                (static_cast<int64_t>(nloc) * ndescrpt * 3 ==
+                 in_deriv_tensor.shape().dim_size(1)),
                 errors::InvalidArgument("number of descriptors should match"));
 
     // Create an output tensor
