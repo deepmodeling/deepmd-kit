@@ -583,7 +583,7 @@ class ProdEnvMatAOp : public OpKernel {
           TensorShape uint64_shape;
           uint64_shape.AddDim(int_64(nloc) * max_nbor_size * 2);
           OP_REQUIRES_OK(context, context->allocate_temp(
-                                       DT_UINT64, uint64_shape, &uint64_temp));
+                                      DT_UINT64, uint64_shape, &uint64_temp));
           array_longlong = uint64_temp.flat<unsigned long long>().data();
         }
         // launch the gpu(nv) compute function
@@ -890,7 +890,7 @@ class ProdEnvMatROp : public OpKernel {
           TensorShape uint64_shape;
           uint64_shape.AddDim(int_64(nloc) * max_nbor_size * 2);
           OP_REQUIRES_OK(context, context->allocate_temp(
-                                       DT_UINT64, uint64_shape, &uint64_temp));
+                                      DT_UINT64, uint64_shape, &uint64_temp));
           array_longlong = uint64_temp.flat<unsigned long long>().data();
         }
 
@@ -1246,7 +1246,7 @@ class ProdEnvMatAMixOp : public OpKernel {
           TensorShape uint64_shape;
           uint64_shape.AddDim(int_64(nloc) * max_nbor_size * 2);
           OP_REQUIRES_OK(context, context->allocate_temp(
-                                       DT_UINT64, uint64_shape, &uint64_temp));
+                                      DT_UINT64, uint64_shape, &uint64_temp));
           array_longlong = uint64_temp.flat<unsigned long long>().data();
         }
 
