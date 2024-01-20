@@ -577,6 +577,15 @@ class ProdEnvMatAOp : public OpKernel {
             mesh_tensor.flat<int>().data(), mesh_tensor_size, nloc, nei_mode,
             rcut_r, max_cpy_trial, max_nnei_trial);
 
+        // max_nbor_size may be changed after _prepare_coord_nlist_gpu
+        // So we need to update the uint64_temp tensor if necessary
+        if (uint64_temp.NumElements() < int_64(nloc) * max_nbor_size * 2) {
+          TensorShape uint64_shape;
+          uint64_shape.AddDim(int_64(nloc) * max_nbor_size * 2);
+          OP_REQUIRES_OK(context, context->allocate_temp(
+                                       DT_UINT64, uint64_shape, &uint64_temp));
+          array_longlong = uint64_temp.flat<unsigned long long>().data();
+        }
         // launch the gpu(nv) compute function
         deepmd::prod_env_mat_a_gpu(em, em_deriv, rij, nlist, coord, type,
                                    gpu_inlist, array_int, array_longlong,
@@ -874,6 +883,16 @@ class ProdEnvMatROp : public OpKernel {
             nbor_list_dev, frame_nall, mem_cpy, mem_nnei, max_nbor_size, box,
             mesh_tensor.flat<int>().data(), mesh_tensor_size, nloc, nei_mode,
             rcut, max_cpy_trial, max_nnei_trial);
+
+        // max_nbor_size may be changed after _prepare_coord_nlist_gpu
+        // So we need to update the uint64_temp tensor if necessary
+        if (uint64_temp.NumElements() < int_64(nloc) * max_nbor_size * 2) {
+          TensorShape uint64_shape;
+          uint64_shape.AddDim(int_64(nloc) * max_nbor_size * 2);
+          OP_REQUIRES_OK(context, context->allocate_temp(
+                                       DT_UINT64, uint64_shape, &uint64_temp));
+          array_longlong = uint64_temp.flat<unsigned long long>().data();
+        }
 
         // launch the gpu(nv) compute function
         deepmd::prod_env_mat_r_gpu(em, em_deriv, rij, nlist, coord, type,
@@ -1220,6 +1239,16 @@ class ProdEnvMatAMixOp : public OpKernel {
             nbor_list_dev, frame_nall, mem_cpy, mem_nnei, max_nbor_size, box,
             mesh_tensor.flat<int>().data(), mesh_tensor_size, nloc, nei_mode,
             rcut_r, max_cpy_trial, max_nnei_trial);
+
+        // max_nbor_size may be changed after _prepare_coord_nlist_gpu
+        // So we need to update the uint64_temp tensor if necessary
+        if (uint64_temp.NumElements() < int_64(nloc) * max_nbor_size * 2) {
+          TensorShape uint64_shape;
+          uint64_shape.AddDim(int_64(nloc) * max_nbor_size * 2);
+          OP_REQUIRES_OK(context, context->allocate_temp(
+                                       DT_UINT64, uint64_shape, &uint64_temp));
+          array_longlong = uint64_temp.flat<unsigned long long>().data();
+        }
 
         // launch the gpu(nv) compute function
         deepmd::prod_env_mat_a_gpu(em, em_deriv, rij, nlist, coord, type,
