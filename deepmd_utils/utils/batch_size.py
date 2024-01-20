@@ -12,7 +12,7 @@ from typing import (
 
 import numpy as np
 
-from deepmd.utils.errors import (
+from deepmd_utils.utils.errors import (
     OutOfMemoryError,
 )
 
