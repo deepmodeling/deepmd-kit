@@ -29,6 +29,10 @@ More details are available in
 - [DP-Amber](https://github.com/njzjz/dpamber/), a tiny tool to convert Amber trajectory to DPRc training data;
 - [The original DPRc paper](https://doi.org/10.1021/acs.jctc.1c00201).
 
+## CP2K interface to DeePMD-kit
+
+[CP2K](https://github.com/cp2k/cp2k/) v2024.2 adds an interface to the DeePMD-kit for molecular dynamics. Read the [CP2K manual](https://manual.cp2k.org/trunk/methods/machine_learning/deepmd.html#deepmd-kit) for details.
+
 ## DP-GEN
 
 [DP-GEN](https://github.com/deepmodeling/dpgen) provides a workflow to generate accurate DP models by calling DeePMD-kit's command line interface (CLI) in the local or remote server. Details can be found in [this paper](https://doi.org/10.1016/j.cpc.2020.107206).
