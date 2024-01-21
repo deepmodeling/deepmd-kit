@@ -53,7 +53,7 @@ keywords = ["deepmd"]
 deepmd = "deepmd.lmp:get_op_dir"
 
 [project.entry-points."dpgui"]
-"DeePMD-kit" = "deepmd.utils.argcheck:gen_args"
+"DeePMD-kit" = "deepmd_utils.utils.argcheck:gen_args"
 
 [project.urls]
 Homepage = "https://github.com/deepmodeling/deepmd-kit"
