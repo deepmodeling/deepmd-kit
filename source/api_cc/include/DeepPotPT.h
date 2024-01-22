@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 #pragma once
 
+#include <torch/torch.h>
+
 #include "DeepPot.h"
 #include "commonPT.h"
-#include <torch/torch.h>
 
 namespace deepmd {
 /**
@@ -33,8 +34,7 @@ class DeepPotPT : public DeepPotBase {
    * @param[in] file_content The content of the model file. If it is not empty,
    *DP will read from the string instead of the file.
    **/
-  void init(const std::string& model,
-            const int& gpu_rank = 0);
+  void init(const std::string& model, const int& gpu_rank = 0);
 
  private:
   /**
@@ -63,13 +63,13 @@ class DeepPotPT : public DeepPotBase {
   void compute(ENERGYVTYPE& ener,
                std::vector<VALUETYPE>& force,
                std::vector<VALUETYPE>& virial,
-            //    std::vector<VALUETYPE>& atom_energy,
-            //    std::vector<VALUETYPE>& atom_virial,
+               //    std::vector<VALUETYPE>& atom_energy,
+               //    std::vector<VALUETYPE>& atom_virial,
                const std::vector<VALUETYPE>& coord,
                const std::vector<int>& atype,
                const std::vector<VALUETYPE>& box);
-            //    const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
-            //    const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
+  //    const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
+  //    const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
   /**
    * @brief Evaluate the energy, force, virial, atomic energy, and atomic virial
    *by using this DP.
@@ -99,16 +99,16 @@ class DeepPotPT : public DeepPotBase {
   void compute(ENERGYVTYPE& ener,
                std::vector<VALUETYPE>& force,
                std::vector<VALUETYPE>& virial,
-            //    std::vector<VALUETYPE>& atom_energy,
-            //    std::vector<VALUETYPE>& atom_virial,
+               //    std::vector<VALUETYPE>& atom_energy,
+               //    std::vector<VALUETYPE>& atom_virial,
                const std::vector<VALUETYPE>& coord,
                const std::vector<int>& atype,
                const std::vector<VALUETYPE>& box,
-            //    const int nghost,
+               //    const int nghost,
                const InputNlist& lmp_list,
                const int& ago);
-            //    const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
-            //    const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
+  //    const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
+  //    const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
   /**
    * @brief Evaluate the energy, force, and virial with the mixed type
    *by using this DP.
@@ -310,7 +310,6 @@ class DeepPotPT : public DeepPotBase {
       const std::vector<float>& aparam = std::vector<float>());
 
  private:
-  
   bool inited;
   int ntypes;
   int ntypes_spin;
@@ -320,10 +319,10 @@ class DeepPotPT : public DeepPotBase {
   torch::jit::script::Module module;
   double rcut;
   NeighborListData nlist_data;
-  //InputNlist nlist;
+  // InputNlist nlist;
   int max_num_neighbors;
   int gpu_id;
-  at::Tensor firstneigh_tensor; 
+  at::Tensor firstneigh_tensor;
 };
 
 }  // namespace deepmd
