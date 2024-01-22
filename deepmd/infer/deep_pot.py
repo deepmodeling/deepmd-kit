@@ -26,6 +26,7 @@ from deepmd.utils.batch_size import (
 from deepmd.utils.sess import (
     run_sess,
 )
+from deepmd_utils.infer.deep_pot import DeepPot as DeepPotBase
 
 if TYPE_CHECKING:
     from pathlib import (
@@ -35,7 +36,7 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
-class DeepPot(DeepEval):
+class DeepPot(DeepEval, DeepPotBase):
     """Constructor.
 
     Parameters
