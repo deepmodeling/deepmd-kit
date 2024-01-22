@@ -38,7 +38,8 @@ void DeepPot::init(const std::string& model,
     // TODO: throw errors if TF backend is not built, without mentioning TF
     dp = std::make_shared<deepmd::DeepPotTF>(model, gpu_rank, file_content);
   } else if (deepmd::DPBackend::PyTorch == backend) {
-    throw deepmd::deepmd_exception("PyTorch backend is not supported yet");
+    //throw deepmd::deepmd_exception("PyTorch backend is not supported yet");
+    dp = std::make_shared<deepmd::DeepPotPT>(model, gpu_rank, file_content);
   } else if (deepmd::DPBackend::Paddle == backend) {
     throw deepmd::deepmd_exception("PaddlePaddle backend is not supported yet");
   } else {
