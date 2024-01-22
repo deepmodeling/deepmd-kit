@@ -12,12 +12,12 @@ from typing import (
 
 import numpy as np
 
-from deepmd_utils.utils import (
+from deepmd_utils.utils.batch_size import (
     AutoBatchSize,
 )
 
 from .backend import (
-    Backend,
+    DPBackend,
     detect_backend,
 )
 
@@ -51,11 +51,11 @@ class DeepPot(ABC):
     def __new__(cls, model_file: str, *args, **kwargs):
         if cls is DeepPot:
             backend = detect_backend(model_file)
-            if backend == Backend.TensorFlow:
+            if backend == DPBackend.TensorFlow:
                 from deepmd.infer.deep_pot import DeepPot as DeepPotTF
 
                 return super().__new__(DeepPotTF)
-            elif backend == Backend.PyTorch:
+            elif backend == DPBackend.PyTorch:
                 from deepmd_pt.infer.deep_eval import DeepPot as DeepPotPT
 
                 return super().__new__(DeepPotPT)
