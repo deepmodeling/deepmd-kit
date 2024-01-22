@@ -8,6 +8,7 @@ from deepmd.env import (
     tf,
 )
 
+from common import tests_path
 
 class TestProdEnvMat(tf.test.TestCase):
     def setUp(self):
@@ -1180,3 +1181,166 @@ class TestProdEnvMat(tf.test.TestCase):
                             ii * self.nnei * 4 * 3 + jj * 4 * 3 + kk * 3 + dd
                         ]
                         self.assertAlmostEqual(num_deriv, ana_deriv, places=5)
+
+class TestProdEnvMatMaxNborSize(tf.test.TestCase):
+    def setUp(self):
+        # init base informations for the test
+        self.one_frame = 1
+        self.sel = [50, 100]
+        self.ntypes = len(self.sel)
+        self.sec = np.array([0, 0, 0], dtype=int)
+        self.sec[1:3] = np.cumsum(self.sel)
+        self.rcut = 6.0
+        self.rcut_smth = 0.5
+        
+        # load frame 1 inputs:
+        self.dnatoms = \
+            np.loadtxt(str(tests_path / "frame/water_nbor_size_256" / "natoms.txt"), dtype = np.int32).reshape([-1])
+        self.dcoord  = \
+            np.loadtxt(str(tests_path / "frame/water_nbor_size_256" / "coord.txt"), dtype = np.float64).reshape([self.one_frame, -1])
+        self.dtype   = \
+            np.loadtxt(str(tests_path / "frame/water_nbor_size_256" / "type.txt"), dtype = np.int32).reshape([self.one_frame, -1])
+        self.dbox    = \
+            np.loadtxt(str(tests_path / "frame/water_nbor_size_256" / "box.txt"), dtype = np.float64).reshape([self.one_frame, -1])
+        self.dmesh   = \
+            np.loadtxt(str(tests_path / "frame/water_nbor_size_256" / "mesh.txt"), dtype = np.int32).reshape([-1])
+        self.davg    = \
+            np.loadtxt(str(tests_path / "frame/water_nbor_size_256" / "avg.txt"), dtype = np.float64).reshape([2, -1]) 
+        self.dstd    = \
+            np.loadtxt(str(tests_path / "frame/water_nbor_size_256" / "std.txt"), dtype = np.float64).reshape([2, -1])
+
+        # load the expected outputs
+        self.expected_em        = \
+            np.loadtxt(str(tests_path / "frame/water_nbor_size_256" / "em.txt"), dtype = np.float64).reshape([self.one_frame, -1])
+        self.expected_em_deriv  = \
+            np.loadtxt(str(tests_path / "frame/water_nbor_size_256" / "em_deriv.txt"), dtype = np.float64).reshape([self.one_frame, -1])
+        self.expected_rij       = \
+            np.loadtxt(str(tests_path / "frame/water_nbor_size_256" / "rij.txt"), dtype = np.float64).reshape([self.one_frame, -1])
+        self.expected_nlist     = \
+            np.loadtxt(str(tests_path / "frame/water_nbor_size_256" / "nlist.txt"), dtype = np.int32).reshape([self.one_frame, -1])
+        
+        # load frame 2 inputs:
+        self.dnatoms_1 = \
+            np.loadtxt(str(tests_path / "frame/water_nbor_size_512" / "natoms.txt"), dtype = np.int32).reshape([-1])
+        self.dcoord_1  = \
+            np.loadtxt(str(tests_path / "frame/water_nbor_size_512" / "coord.txt"), dtype = np.float64).reshape([self.one_frame, -1])
+        self.dtype_1   = \
+            np.loadtxt(str(tests_path / "frame/water_nbor_size_512" / "type.txt"), dtype = np.int32).reshape([self.one_frame, -1])
+        self.dbox_1    = \
+            np.loadtxt(str(tests_path / "frame/water_nbor_size_512" / "box.txt"), dtype = np.float64).reshape([self.one_frame, -1])
+        self.dmesh_1   = \
+            np.loadtxt(str(tests_path / "frame/water_nbor_size_512" / "mesh.txt"), dtype = np.int32).reshape([-1])
+
+        # load the expected outputs
+        self.expected_em_1        = \
+            np.loadtxt(str(tests_path / "frame/water_nbor_size_512" / "em.txt"), dtype = np.float64).reshape([self.one_frame, -1])
+        self.expected_em_deriv_1  = \
+            np.loadtxt(str(tests_path / "frame/water_nbor_size_512" / "em_deriv.txt"), dtype = np.float64).reshape([self.one_frame, -1])
+        self.expected_rij_1       = \
+            np.loadtxt(str(tests_path / "frame/water_nbor_size_512" / "rij.txt"), dtype = np.float64).reshape([self.one_frame, -1])
+        self.expected_nlist_1     = \
+            np.loadtxt(str(tests_path / "frame/water_nbor_size_512" / "nlist.txt"), dtype = np.int32).reshape([self.one_frame, -1])
+        
+        self.nloc = self.dnatoms[0]
+        self.nall = self.dnatoms[1]
+        self.nnei = self.sec[-1]
+        self.ndescrpt = 4 * self.nnei
+        # Init tensorflow session, placeholders and constants
+        self.sess = self.cached_session().__enter__()
+        self.tcoord = tf.placeholder(
+            GLOBAL_TF_FLOAT_PRECISION, [None, self.nall * 3], name="t_coord"
+        )
+        self.ttype = tf.placeholder(tf.int32, [None, self.nall], name="t_type")
+        self.tnatoms = tf.placeholder(tf.int32, [None], name="t_natoms")
+        self.tbox = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None, 9], name="t_box")
+        self.tmesh = tf.placeholder(tf.int32, [None], name="t_mesh")
+        self.tavg = tf.constant(self.davg.astype(GLOBAL_NP_FLOAT_PRECISION))
+        self.tstd = tf.constant(self.dstd.astype(GLOBAL_NP_FLOAT_PRECISION))
+        
+        self.nall_1 = self.dnatoms_1[1]
+        
+        self.tcoord_1 = tf.placeholder(
+            GLOBAL_TF_FLOAT_PRECISION, [None, self.nall_1 * 3], name="t_coord"
+        )
+        self.ttype_1 = tf.placeholder(tf.int32, [None, self.nall_1], name="t_type")
+        self.tnatoms = tf.placeholder(tf.int32, [None], name="t_natoms")
+        self.tbox = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None, 9], name="t_box")
+        self.tmesh = tf.placeholder(tf.int32, [None], name="t_mesh")
+        self.tavg = tf.constant(self.davg.astype(GLOBAL_NP_FLOAT_PRECISION))
+        self.tstd = tf.constant(self.dstd.astype(GLOBAL_NP_FLOAT_PRECISION))
+
+    def test_frame_nbor_256(self):
+        tem, tem_deriv, trij, tnlist = op_module.prod_env_mat_a(
+            self.tcoord,
+            self.ttype,
+            self.tnatoms,
+            self.tbox,
+            self.tmesh,
+            self.tavg,
+            self.tstd,
+            rcut_a=-1,
+            rcut_r=self.rcut,
+            rcut_r_smth=self.rcut_smth,
+            sel_a=self.sel,
+            sel_r=[0, 0],
+        )
+        self.sess.run(tf.global_variables_initializer())
+        dem, dem_deriv, drij, dnlist = self.sess.run(
+            [tem, tem_deriv, trij, tnlist],
+            feed_dict={
+                self.tcoord: self.dcoord,
+                self.ttype: self.dtype,
+                self.tnatoms: self.dnatoms,
+                self.tbox: self.dbox,
+                self.tmesh: self.dmesh,
+                self.tavg: self.davg,
+                self.tstd: self.dstd
+            },
+        )
+        self.assertEqual(dem.shape, (self.one_frame, self.nloc * self.ndescrpt))
+        self.assertEqual(dem_deriv.shape, (self.one_frame, self.nloc * self.ndescrpt * 3))
+        self.assertEqual(drij.shape, (self.one_frame, self.nloc * self.nnei * 3))
+        self.assertEqual(dnlist.shape, (self.one_frame, self.nloc * self.nnei))
+        
+        np.testing.assert_almost_equal(dem.reshape([self.one_frame, -1]), self.expected_em)
+        np.testing.assert_almost_equal(dem_deriv.reshape([self.one_frame, -1]), self.expected_em_deriv)
+        np.testing.assert_almost_equal(drij.reshape([self.one_frame, -1]), self.expected_rij)
+        np.testing.assert_almost_equal(dnlist.reshape([self.one_frame, -1]), self.expected_nlist)
+    
+    def test_frame_nbor_512(self):
+        tem, tem_deriv, trij, tnlist = op_module.prod_env_mat_a(
+            self.tcoord_1,
+            self.ttype_1,
+            self.tnatoms,
+            self.tbox,
+            self.tmesh,
+            self.tavg,
+            self.tstd,
+            rcut_a=-1,
+            rcut_r=self.rcut,
+            rcut_r_smth=self.rcut_smth,
+            sel_a=self.sel,
+            sel_r=[0, 0],
+        )
+        self.sess.run(tf.global_variables_initializer())
+        dem, dem_deriv, drij, dnlist = self.sess.run(
+            [tem, tem_deriv, trij, tnlist],
+            feed_dict={
+                self.tcoord_1: self.dcoord_1,
+                self.ttype_1: self.dtype_1,
+                self.tnatoms: self.dnatoms_1,
+                self.tbox: self.dbox_1,
+                self.tmesh: self.dmesh_1,
+                self.tavg: self.davg,
+                self.tstd: self.dstd
+            },
+        )
+        self.assertEqual(dem.shape, (self.one_frame, self.nloc * self.ndescrpt))
+        self.assertEqual(dem_deriv.shape, (self.one_frame, self.nloc * self.ndescrpt * 3))
+        self.assertEqual(drij.shape, (self.one_frame, self.nloc * self.nnei * 3))
+        self.assertEqual(dnlist.shape, (self.one_frame, self.nloc * self.nnei))
+        
+        np.testing.assert_almost_equal(dem.reshape([self.one_frame, -1]), self.expected_em_1)
+        np.testing.assert_almost_equal(dem_deriv.reshape([self.one_frame, -1]), self.expected_em_deriv_1)
+        np.testing.assert_almost_equal(drij.reshape([self.one_frame, -1]), self.expected_rij_1)
+        np.testing.assert_almost_equal(dnlist.reshape([self.one_frame, -1]), self.expected_nlist_1)
