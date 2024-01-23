@@ -1,8 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import numpy as np
-from common import (
-    tests_path,
-)
 
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
@@ -11,6 +8,7 @@ from deepmd.env import (
     tf,
 )
 
+from common import tests_path
 
 class TestProdEnvMat(tf.test.TestCase):
     def setUp(self):
@@ -1184,7 +1182,6 @@ class TestProdEnvMat(tf.test.TestCase):
                         ]
                         self.assertAlmostEqual(num_deriv, ana_deriv, places=5)
 
-
 class TestProdEnvMatMaxNborSize(tf.test.TestCase):
     def setUp(self):
         # init base informations for the test
@@ -1195,79 +1192,55 @@ class TestProdEnvMatMaxNborSize(tf.test.TestCase):
         self.sec[1:3] = np.cumsum(self.sel)
         self.rcut = 6.0
         self.rcut_smth = 0.5
-
+        
         # load frame 1 inputs:
-        self.dnatoms = np.loadtxt(
-            str(tests_path / "frame/water_nbor_size_256" / "natoms.txt"), dtype=np.int32
-        ).reshape([-1])
-        self.dcoord = np.loadtxt(
-            str(tests_path / "frame/water_nbor_size_256" / "coord.txt"),
-            dtype=np.float64,
-        ).reshape([self.one_frame, -1])
-        self.dtype = np.loadtxt(
-            str(tests_path / "frame/water_nbor_size_256" / "type.txt"), dtype=np.int32
-        ).reshape([self.one_frame, -1])
-        self.dbox = np.loadtxt(
-            str(tests_path / "frame/water_nbor_size_256" / "box.txt"), dtype=np.float64
-        ).reshape([self.one_frame, -1])
-        self.dmesh = np.loadtxt(
-            str(tests_path / "frame/water_nbor_size_256" / "mesh.txt"), dtype=np.int32
-        ).reshape([-1])
-        self.davg = np.loadtxt(
-            str(tests_path / "frame/water_nbor_size_256" / "avg.txt"), dtype=np.float64
-        ).reshape([2, -1])
-        self.dstd = np.loadtxt(
-            str(tests_path / "frame/water_nbor_size_256" / "std.txt"), dtype=np.float64
-        ).reshape([2, -1])
+        self.dnatoms = \
+            np.loadtxt(str(tests_path / "frame/water_nbor_size_256" / "natoms.txt"), dtype = np.int32).reshape([-1])
+        self.dcoord  = \
+            np.loadtxt(str(tests_path / "frame/water_nbor_size_256" / "coord.txt"), dtype = np.float64).reshape([self.one_frame, -1])
+        self.dtype   = \
+            np.loadtxt(str(tests_path / "frame/water_nbor_size_256" / "type.txt"), dtype = np.int32).reshape([self.one_frame, -1])
+        self.dbox    = \
+            np.loadtxt(str(tests_path / "frame/water_nbor_size_256" / "box.txt"), dtype = np.float64).reshape([self.one_frame, -1])
+        self.dmesh   = \
+            np.loadtxt(str(tests_path / "frame/water_nbor_size_256" / "mesh.txt"), dtype = np.int32).reshape([-1])
+        self.davg    = \
+            np.loadtxt(str(tests_path / "frame/water_nbor_size_256" / "avg.txt"), dtype = np.float64).reshape([2, -1]) 
+        self.dstd    = \
+            np.loadtxt(str(tests_path / "frame/water_nbor_size_256" / "std.txt"), dtype = np.float64).reshape([2, -1])
 
         # load the expected outputs
-        self.expected_em = np.loadtxt(
-            str(tests_path / "frame/water_nbor_size_256" / "em.txt"), dtype=np.float64
-        ).reshape([self.one_frame, -1])
-        self.expected_em_deriv = np.loadtxt(
-            str(tests_path / "frame/water_nbor_size_256" / "em_deriv.txt"),
-            dtype=np.float64,
-        ).reshape([self.one_frame, -1])
-        self.expected_rij = np.loadtxt(
-            str(tests_path / "frame/water_nbor_size_256" / "rij.txt"), dtype=np.float64
-        ).reshape([self.one_frame, -1])
-        self.expected_nlist = np.loadtxt(
-            str(tests_path / "frame/water_nbor_size_256" / "nlist.txt"), dtype=np.int32
-        ).reshape([self.one_frame, -1])
-
+        self.expected_em        = \
+            np.loadtxt(str(tests_path / "frame/water_nbor_size_256" / "em.txt"), dtype = np.float64).reshape([self.one_frame, -1])
+        self.expected_em_deriv  = \
+            np.loadtxt(str(tests_path / "frame/water_nbor_size_256" / "em_deriv.txt"), dtype = np.float64).reshape([self.one_frame, -1])
+        self.expected_rij       = \
+            np.loadtxt(str(tests_path / "frame/water_nbor_size_256" / "rij.txt"), dtype = np.float64).reshape([self.one_frame, -1])
+        self.expected_nlist     = \
+            np.loadtxt(str(tests_path / "frame/water_nbor_size_256" / "nlist.txt"), dtype = np.int32).reshape([self.one_frame, -1])
+        
         # load frame 2 inputs:
-        self.dnatoms_1 = np.loadtxt(
-            str(tests_path / "frame/water_nbor_size_512" / "natoms.txt"), dtype=np.int32
-        ).reshape([-1])
-        self.dcoord_1 = np.loadtxt(
-            str(tests_path / "frame/water_nbor_size_512" / "coord.txt"),
-            dtype=np.float64,
-        ).reshape([self.one_frame, -1])
-        self.dtype_1 = np.loadtxt(
-            str(tests_path / "frame/water_nbor_size_512" / "type.txt"), dtype=np.int32
-        ).reshape([self.one_frame, -1])
-        self.dbox_1 = np.loadtxt(
-            str(tests_path / "frame/water_nbor_size_512" / "box.txt"), dtype=np.float64
-        ).reshape([self.one_frame, -1])
-        self.dmesh_1 = np.loadtxt(
-            str(tests_path / "frame/water_nbor_size_512" / "mesh.txt"), dtype=np.int32
-        ).reshape([-1])
+        self.dnatoms_1 = \
+            np.loadtxt(str(tests_path / "frame/water_nbor_size_512" / "natoms.txt"), dtype = np.int32).reshape([-1])
+        self.dcoord_1  = \
+            np.loadtxt(str(tests_path / "frame/water_nbor_size_512" / "coord.txt"), dtype = np.float64).reshape([self.one_frame, -1])
+        self.dtype_1   = \
+            np.loadtxt(str(tests_path / "frame/water_nbor_size_512" / "type.txt"), dtype = np.int32).reshape([self.one_frame, -1])
+        self.dbox_1    = \
+            np.loadtxt(str(tests_path / "frame/water_nbor_size_512" / "box.txt"), dtype = np.float64).reshape([self.one_frame, -1])
+        self.dmesh_1   = \
+            np.loadtxt(str(tests_path / "frame/water_nbor_size_512" / "mesh.txt"), dtype = np.int32).reshape([-1])
 
         # load the expected outputs
-        self.expected_em_1 = np.loadtxt(
-            str(tests_path / "frame/water_nbor_size_512" / "em.txt"), dtype=np.float64
-        ).reshape([self.one_frame, -1])
-        self.expected_em_deriv_1 = np.loadtxt(
-            str(tests_path / "frame/water_nbor_size_512" / "em_deriv.txt"),
-            dtype=np.float64,
-        ).reshape([self.one_frame, -1])
-        self.expected_rij_1 = np.loadtxt(
-            str(tests_path / "frame/water_nbor_size_512" / "rij.txt"), dtype=np.float64
-        ).reshape([self.one_frame, -1])
-        self.expected_nlist_1 = np.loadtxt(
-            str(tests_path / "frame/water_nbor_size_512" / "nlist.txt"), dtype=np.int32
-        ).reshape([self.one_frame, -1])
-
+        self.expected_em_1        = \
+            np.loadtxt(str(tests_path / "frame/water_nbor_size_512" / "em.txt"), dtype = np.float64).reshape([self.one_frame, -1])
+        self.expected_em_deriv_1  = \
+            np.loadtxt(str(tests_path / "frame/water_nbor_size_512" / "em_deriv.txt"), dtype = np.float64).reshape([self.one_frame, -1])
+        self.expected_rij_1       = \
+            np.loadtxt(str(tests_path / "frame/water_nbor_size_512" / "rij.txt"), dtype = np.float64).reshape([self.one_frame, -1])
+        self.expected_nlist_1     = \
+            np.loadtxt(str(tests_path / "frame/water_nbor_size_512" / "nlist.txt"), dtype = np.int32).reshape([self.one_frame, -1])
+        
         self.nloc = self.dnatoms[0]
         self.nall = self.dnatoms[1]
         self.nnei = self.sec[-1]
@@ -1283,9 +1256,9 @@ class TestProdEnvMatMaxNborSize(tf.test.TestCase):
         self.tmesh = tf.placeholder(tf.int32, [None], name="t_mesh")
         self.tavg = tf.constant(self.davg.astype(GLOBAL_NP_FLOAT_PRECISION))
         self.tstd = tf.constant(self.dstd.astype(GLOBAL_NP_FLOAT_PRECISION))
-
+        
         self.nall_1 = self.dnatoms_1[1]
-
+        
         self.tcoord_1 = tf.placeholder(
             GLOBAL_TF_FLOAT_PRECISION, [None, self.nall_1 * 3], name="t_coord"
         )
@@ -1321,29 +1294,19 @@ class TestProdEnvMatMaxNborSize(tf.test.TestCase):
                 self.tbox: self.dbox,
                 self.tmesh: self.dmesh,
                 self.tavg: self.davg,
-                self.tstd: self.dstd,
+                self.tstd: self.dstd
             },
         )
         self.assertEqual(dem.shape, (self.one_frame, self.nloc * self.ndescrpt))
-        self.assertEqual(
-            dem_deriv.shape, (self.one_frame, self.nloc * self.ndescrpt * 3)
-        )
+        self.assertEqual(dem_deriv.shape, (self.one_frame, self.nloc * self.ndescrpt * 3))
         self.assertEqual(drij.shape, (self.one_frame, self.nloc * self.nnei * 3))
         self.assertEqual(dnlist.shape, (self.one_frame, self.nloc * self.nnei))
-
-        np.testing.assert_almost_equal(
-            dem.reshape([self.one_frame, -1]), self.expected_em
-        )
-        np.testing.assert_almost_equal(
-            dem_deriv.reshape([self.one_frame, -1]), self.expected_em_deriv
-        )
-        np.testing.assert_almost_equal(
-            drij.reshape([self.one_frame, -1]), self.expected_rij
-        )
-        np.testing.assert_almost_equal(
-            dnlist.reshape([self.one_frame, -1]), self.expected_nlist
-        )
-
+        
+        np.testing.assert_almost_equal(dem.reshape([self.one_frame, -1]), self.expected_em)
+        np.testing.assert_almost_equal(dem_deriv.reshape([self.one_frame, -1]), self.expected_em_deriv)
+        np.testing.assert_almost_equal(drij.reshape([self.one_frame, -1]), self.expected_rij)
+        np.testing.assert_almost_equal(dnlist.reshape([self.one_frame, -1]), self.expected_nlist)
+    
     def test_frame_nbor_512(self):
         tem, tem_deriv, trij, tnlist = op_module.prod_env_mat_a(
             self.tcoord_1,
@@ -1369,25 +1332,15 @@ class TestProdEnvMatMaxNborSize(tf.test.TestCase):
                 self.tbox: self.dbox_1,
                 self.tmesh: self.dmesh_1,
                 self.tavg: self.davg,
-                self.tstd: self.dstd,
+                self.tstd: self.dstd
             },
         )
         self.assertEqual(dem.shape, (self.one_frame, self.nloc * self.ndescrpt))
-        self.assertEqual(
-            dem_deriv.shape, (self.one_frame, self.nloc * self.ndescrpt * 3)
-        )
+        self.assertEqual(dem_deriv.shape, (self.one_frame, self.nloc * self.ndescrpt * 3))
         self.assertEqual(drij.shape, (self.one_frame, self.nloc * self.nnei * 3))
         self.assertEqual(dnlist.shape, (self.one_frame, self.nloc * self.nnei))
-
-        np.testing.assert_almost_equal(
-            dem.reshape([self.one_frame, -1]), self.expected_em_1
-        )
-        np.testing.assert_almost_equal(
-            dem_deriv.reshape([self.one_frame, -1]), self.expected_em_deriv_1
-        )
-        np.testing.assert_almost_equal(
-            drij.reshape([self.one_frame, -1]), self.expected_rij_1
-        )
-        np.testing.assert_almost_equal(
-            dnlist.reshape([self.one_frame, -1]), self.expected_nlist_1
-        )
+        
+        np.testing.assert_almost_equal(dem.reshape([self.one_frame, -1]), self.expected_em_1)
+        np.testing.assert_almost_equal(dem_deriv.reshape([self.one_frame, -1]), self.expected_em_deriv_1)
+        np.testing.assert_almost_equal(drij.reshape([self.one_frame, -1]), self.expected_rij_1)
+        np.testing.assert_almost_equal(dnlist.reshape([self.one_frame, -1]), self.expected_nlist_1)
