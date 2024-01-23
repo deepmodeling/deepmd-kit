@@ -63,3 +63,14 @@ ${CMAKE_INSTALL_PREFIX}/lib/${CMAKE_SHARED_LIBRARY_PREFIX}${libname}${LOW_PREC_V
     add_subdirectory(tests)
   endif()
 endif(BUILD_PY_IF)
+
+if(BUILD_TESTING)
+  # A compilation test to make sure api_cc can compile without any backend
+  add_library(deepmd_cc_test_no_backend SHARED ${LIB_SRC})
+  target_link_libraries(deepmd_cc_test_no_backend PUBLIC ${LIB_DEEPMD})
+  target_include_directories(
+    deepmd_cc_test_no_backend
+    PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+           $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
+           $<INSTALL_INTERFACE:include>)
+endif()
