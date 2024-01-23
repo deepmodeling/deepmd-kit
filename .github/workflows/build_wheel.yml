@@ -68,6 +68,17 @@ jobs:
       - uses: docker/setup-qemu-action@v3
         name: Setup QEMU
         if: matrix.platform_id == 'manylinux_aarch64' && matrix.os == 'ubuntu-latest'
+      # detect version in advance. See #3168
+      - uses: actions/setup-python@v5
+        name: Install Python
+        with:
+          python-version: ${{ matrix.python }}
+          cache: 'pip'
+        if: matrix.dp_pkg_name == 'deepmd-kit-cu11'
+      - run: |
+          python -m pip install setuptools_scm
+          python -c "from setuptools_scm import get_version;print('SETUPTOOLS_SCM_PRETEND_VERSION_FOR_deepmd-kit-cu11='+get_version())" >> $GITHUB_ENV
+        if: matrix.dp_pkg_name == 'deepmd-kit-cu11'
       - name: Build wheels
         uses: pypa/cibuildwheel@v2.16
         env:
