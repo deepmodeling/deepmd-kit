@@ -46,7 +46,7 @@ class DeepPot(ABC):
         neighbor_list=None,
         **kwargs,
     ) -> None:
-        ...
+        pass
 
     def __new__(cls, model_file: str, *args, **kwargs):
         if cls is DeepPot:
@@ -75,7 +75,45 @@ class DeepPot(ABC):
         efield: Optional[np.ndarray] = None,
         mixed_type: bool = False,
     ) -> Tuple[np.ndarray, ...]:
-        """Evaluate the model."""
+        """Evaluate energy, force, and virial. If atomic is True,
+        also return atomic energy and atomic virial.
+
+        Parameters
+        ----------
+        coords : np.ndarray
+            The coordinates of the atoms, in shape (nframes, natoms, 3).
+        cells : np.ndarray
+            The cell vectors of the system, in shape (nframes, 9). If the system
+            is not periodic, set it to None.
+        atom_types : List[int]
+            The types of the atoms. If mixed_type is False, the shape is (natoms,);
+            otherwise, the shape is (nframes, natoms).
+        atomic : bool, optional
+            Whether to return atomic energy and atomic virial, by default False.
+        fparam : np.ndarray, optional
+            The frame parameters, by default None.
+        aparam : np.ndarray, optional
+            The atomic parameters, by default None.
+        efield : np.ndarray, optional
+            The electric field, by default None.
+        mixed_type : bool, optional
+            Whether the system contains mixed atom types, by default False.
+
+        Returns
+        -------
+        energy
+            The energy of the system, in shape (nframes,).
+        force
+            The force of the system, in shape (nframes, natoms, 3).
+        virial
+            The virial of the system, in shape (nframes, 9).
+        atomic_energy
+            The atomic energy of the system, in shape (nframes, natoms). Only returned
+            when atomic is True.
+        atomic_virial
+            The atomic virial of the system, in shape (nframes, natoms, 9). Only returned
+            when atomic is True.
+        """
         # This method has been used by:
         # documentation python.md
         # dp model_devi: +fparam, +aparam, +mixed_type
