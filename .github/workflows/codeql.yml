@@ -48,11 +48,12 @@ jobs:
         languages: ${{ matrix.language }}
         queries: security-extended,security-and-quality
     - name: "Run, Build Application using script"
-      run: source/install/build_cc.sh
+      run: |
+        export CMAKE_PREFIX_PATH=$GITHUB_WORKSPACE/libtorch
+        source/install/build_cc.sh
       env:
         DP_VARIANT: cuda
         DOWNLOAD_TENSORFLOW: "FALSE"
-        CMAKE_PREFIX_PATH: $GITHUB_WORKSPACE/libtorch
       if: matrix.language == 'c-cpp'
 
     - name: Perform CodeQL Analysis

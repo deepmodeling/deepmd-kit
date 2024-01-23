@@ -52,21 +52,23 @@ jobs:
          && sudo apt-get update \
          && sudo apt-get install -y rocm-dev hipcub-dev
       if: matrix.variant == 'rocm'
-    - run: source/install/build_cc.sh
+    - run: |
+        export CMAKE_PREFIX_PATH=$GITHUB_WORKSPACE/libtorch
+        source/install/build_cc.sh
       env:
         DP_VARIANT: ${{ matrix.dp_variant }}
         DOWNLOAD_TENSORFLOW: "FALSE"
         CMAKE_GENERATOR: Ninja
-        CMAKE_PREFIX_PATH: $GITHUB_WORKSPACE/libtorch
       if: matrix.variant != 'clang'
-    - run: source/install/build_cc.sh
+    - run: |
+        export CMAKE_PREFIX_PATH=$GITHUB_WORKSPACE/libtorch
+        source/install/build_cc.sh
       env:
         DP_VARIANT: cpu
         DOWNLOAD_TENSORFLOW: "FALSE"
         CC: clang
         CXX: clang++
         CMAKE_GENERATOR: Ninja
-        CMAKE_PREFIX_PATH: $GITHUB_WORKSPACE/libtorch
       if: matrix.variant == 'clang'
     - name: Test files exist
       run: |
