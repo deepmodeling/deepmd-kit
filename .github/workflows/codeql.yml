@@ -37,6 +37,8 @@ jobs:
          && sudo apt-get update \
          && sudo apt-get -y install cuda-cudart-dev-12-2 cuda-nvcc-12-2
         python -m pip install tensorflow
+        wget https://download.pytorch.org/libtorch/cpu/libtorch-cxx11-abi-shared-with-deps-2.1.2%2Bcpu.zip -O libtorch.zip
+        unzip libtorch.zip
       env:
         DEBIAN_FRONTEND: noninteractive
     # Initializes the CodeQL tools for scanning.
@@ -50,6 +52,7 @@ jobs:
       env:
         DP_VARIANT: cuda
         DOWNLOAD_TENSORFLOW: "FALSE"
+        CMAKE_PREFIX_PATH: $GITHUB_WORKSPACE/libtorch
       if: matrix.language == 'c-cpp'
 
     - name: Perform CodeQL Analysis
