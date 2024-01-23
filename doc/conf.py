@@ -275,6 +275,11 @@ rst_epilog = f"""
 .. |PRECISION| replace:: {list_to_doc(PRECISION_DICT.keys())}
 """
 
+myst_substitutions = {
+    "tensorflow_icon": """![TensorFlow](/_static/tensorflow.svg){class=platform-icon}""",
+    "pytorch_icon": """![PyTorch](/_static/pytorch.svg){class=platform-icon}""",
+}
+
 # -- Options for HTML output -------------------------------------------------
 
 # The theme to use for HTML and HTML Help pages.  See the documentation for
@@ -298,6 +303,8 @@ mathjax_path = (
 myst_enable_extensions = [
     "dollarmath",
     "colon_fence",
+    "substitution",
+    "attrs_inline",
 ]
 myst_fence_as_directive = ("math",)
 # fix emoji issue in pdf
