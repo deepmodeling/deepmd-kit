@@ -11,8 +11,16 @@ add_library(${libname} SHARED ${LIB_SRC})
 
 # link: libdeepmd libdeepmd_op libtensorflow_cc libtensorflow_framework
 target_link_libraries(${libname} PUBLIC ${LIB_DEEPMD})
-target_link_libraries(${libname} PRIVATE TensorFlow::tensorflow_cc
-                                         TensorFlow::tensorflow_framework)
+if(ENABLE_TENSORFLOW)
+  target_link_libraries(${libname} PRIVATE TensorFlow::tensorflow_cc
+                                           TensorFlow::tensorflow_framework)
+  target_compile_definitions(${libname} PRIVATE BUILD_TENSORFLOW)
+endif()
+if(ENABLE_PYTORCH)
+  target_link_libraries(${libname} PRIVATE "${TORCH_LIBRARIES}")
+  target_compile_definitions(${libname} PRIVATE BUILD_PYTORCH)
+endif()
+
 target_include_directories(
   ${libname}
   PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>

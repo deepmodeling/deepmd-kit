@@ -2,6 +2,8 @@
 cmake_minimum_required(VERSION 3.16)
 project(DeePMD)
 
+option(ENABLE_TENSORFLOW "Enable TensorFlow interface" OFF)
+option(ENABLE_PYTORCH "Enable PyTorch interface" OFF)
 option(BUILD_TESTING "Build test and enable converage" OFF)
 set(DEEPMD_C_ROOT
     ""
@@ -131,6 +133,7 @@ if(INSTALL_TENSORFLOW)
   set(USE_TF_PYTHON_LIBS TRUE)
 endif(INSTALL_TENSORFLOW)
 if(USE_TF_PYTHON_LIBS)
+  set(ENABLE_TENSORFLOW TRUE)
   if(NOT "$ENV{CIBUILDWHEEL}" STREQUAL "1")
     find_package(
       Python
@@ -141,10 +144,28 @@ if(USE_TF_PYTHON_LIBS)
     set(PYTHON_INCLUDE_DIRS ${PYTHON_INCLUDE_DIR})
   endif()
 endif(USE_TF_PYTHON_LIBS)
+if(TENSORFLOW_ROOT)
+  set(ENABLE_TENSORFLOW TRUE)
+endif()
 
 # find tensorflow, I need tf abi info
-if(NOT DEEPMD_C_ROOT)
+if(ENABLE_TENSORFLOW AND NOT DEEPMD_C_ROOT)
   find_package(tensorflow REQUIRED)
+endif()
+if(ENABLE_PYTORCH AND NOT DEEPMD_C_ROOT)
+  find_package(Torch REQUIRED)
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS}")
+endif()
+# log enabled backends
+message(STATUS "Enabled backends:")
+if(ENABLE_TENSORFLOW)
+  message(STATUS "- TensorFlow")
+endif()
+if(ENABLE_PYTORCH)
+  message(STATUS "- PyTorch")
+endif()
+if(NOT ENABLE_TENSORFLOW AND NOT ENABLE_PYTORCH)
+  message(FATAL_ERROR "No backend is enabled.")
 endif()
 
 # find threads
@@ -233,10 +254,13 @@ if(DEEPMD_C_ROOT)
   # use variable for TF path to set deepmd_c path
   set(TensorFlow_LIBRARY_PATH "${DEEPMD_C_ROOT}/lib")
   set(TENSORFLOW_INCLUDE_DIRS "${DEEPMD_C_ROOT}/include")
+  set(TORCH_LIBRARIES "${DEEPMD_C_ROOT}/lib/libtorch.so")
 endif()
 
 if(NOT DEEPMD_C_ROOT)
-  add_subdirectory(op/)
+  if(ENABLE_TENSORFLOW)
+    add_subdirectory(op/)
+  endif()
   add_subdirectory(lib/)
 endif()
 if(BUILD_PY_IF)

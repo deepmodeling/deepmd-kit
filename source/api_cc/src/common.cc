@@ -3,6 +3,8 @@
 
 #include <fcntl.h>
 
+#include <cstring>
+
 #include "AtomMap.h"
 #include "device.h"
 #if defined(_WIN32)
@@ -20,10 +22,13 @@
 // not windows
 #include <dlfcn.h>
 #endif
+#ifdef BUILD_TENSORFLOW
+#include "commonTF.h"
 #include "google/protobuf/io/zero_copy_stream_impl.h"
 #include "google/protobuf/text_format.h"
 
 using namespace tensorflow;
+#endif
 
 static std::vector<std::string> split(const std::string& input_,
                                       const std::string& delimiter) {
@@ -300,12 +305,14 @@ void deepmd::NeighborListData::make_inlist(InputNlist& inlist) {
   inlist.firstneigh = &firstneigh[0];
 }
 
+#ifdef BUILD_TENSORFLOW
 void deepmd::check_status(const tensorflow::Status& status) {
   if (!status.ok()) {
     std::cout << status.ToString() << std::endl;
     throw deepmd::tf_exception(status.ToString());
   }
 }
+#endif
 
 void throw_env_not_set_warning(std::string env_name) {
   std::cerr << "DeePMD-kit WARNING: Environmental variable " << env_name
@@ -345,6 +352,7 @@ void deepmd::get_env_nthreads(int& num_intra_nthreads,
 }
 
 void deepmd::load_op_library() {
+#ifdef BUILD_TENSORFLOW
   tensorflow::Env* env = tensorflow::Env::Default();
 #if defined(_WIN32)
   std::string dso_path = "deepmd_op.dll";
@@ -358,6 +366,7 @@ void deepmd::load_op_library() {
         dso_path +
         " is not found! You can add the library directory to LD_LIBRARY_PATH");
   }
+#endif
 }
 
 std::string deepmd::name_prefix(const std::string& scope) {
@@ -368,6 +377,7 @@ std::string deepmd::name_prefix(const std::string& scope) {
   return prefix;
 }
 
+#ifdef BUILD_TENSORFLOW
 template <typename MODELTYPE, typename VALUETYPE>
 int deepmd::session_input_tensors(
     std::vector<std::pair<std::string, Tensor>>& input_tensors,
@@ -850,6 +860,7 @@ int deepmd::session_get_dtype(tensorflow::Session* session,
   // cast enum to int
   return (int)output_rc.dtype();
 }
+#endif
 
 template <typename VT>
 void deepmd::select_map(std::vector<VT>& out,
@@ -940,6 +951,7 @@ void deepmd::select_map_inv(typename std::vector<VT>::iterator out,
   }
 }
 
+#ifdef BUILD_TENSORFLOW
 template int deepmd::session_get_scalar<int>(Session*,
                                              const std::string,
                                              const std::string);
@@ -989,6 +1001,7 @@ template void deepmd::session_get_vector<float>(std::vector<float>&,
                                                 Session*,
                                                 const std::string,
                                                 const std::string);
+#endif
 
 template void deepmd::select_map<float>(std::vector<float>& out,
                                         const std::vector<float>& in,
@@ -1018,6 +1031,7 @@ template void deepmd::select_map_inv<float>(
     const std::vector<int>& idx_map,
     const int& stride);
 
+#ifdef BUILD_TENSORFLOW
 template double deepmd::session_get_scalar<double>(Session*,
                                                    const std::string,
                                                    const std::string);
@@ -1026,6 +1040,7 @@ template void deepmd::session_get_vector<double>(std::vector<double>&,
                                                  Session*,
                                                  const std::string,
                                                  const std::string);
+#endif
 
 template void deepmd::select_map<double>(std::vector<double>& out,
                                          const std::vector<double>& in,
@@ -1055,6 +1070,7 @@ template void deepmd::select_map_inv<double>(
     const std::vector<int>& idx_map,
     const int& stride);
 
+#ifdef BUILD_TENSORFLOW
 template deepmd::STRINGTYPE deepmd::session_get_scalar<deepmd::STRINGTYPE>(
     Session*, const std::string, const std::string);
 
@@ -1093,13 +1109,19 @@ template void deepmd::select_map_inv<deepmd::STRINGTYPE>(
     const typename std::vector<deepmd::STRINGTYPE>::const_iterator in,
     const std::vector<int>& idx_map,
     const int& stride);
+#endif
 
 void deepmd::read_file_to_string(std::string model, std::string& file_content) {
+#ifdef BUILD_TENSORFLOW
   deepmd::check_status(tensorflow::ReadFileToString(tensorflow::Env::Default(),
                                                     model, &file_content));
+#else
+  throw deepmd::deepmd_exception("TODO: read_file_to_string only support TF");
+#endif
 }
 
 void deepmd::convert_pbtxt_to_pb(std::string fn_pb_txt, std::string fn_pb) {
+#ifdef BUILD_TENSORFLOW
   int fd = open(fn_pb_txt.c_str(), O_RDONLY);
   tensorflow::protobuf::io::ZeroCopyInputStream* input =
       new tensorflow::protobuf::io::FileInputStream(fd);
@@ -1109,8 +1131,13 @@ void deepmd::convert_pbtxt_to_pb(std::string fn_pb_txt, std::string fn_pb) {
   std::fstream output(fn_pb,
                       std::ios::out | std::ios::trunc | std::ios::binary);
   graph_def.SerializeToOstream(&output);
+#else
+  throw deepmd::deepmd_exception(
+      "convert_pbtxt_to_pb: TensorFlow backend is not enabled.");
+#endif
 }
 
+#ifdef BUILD_TENSORFLOW
 template int deepmd::session_input_tensors<double, double>(
     std::vector<std::pair<std::string, tensorflow::Tensor>>& input_tensors,
     const std::vector<double>& dcoord_,
@@ -1272,6 +1299,7 @@ template int deepmd::session_input_tensors_mixed_type<float, float>(
     const deepmd::AtomMap& atommap,
     const std::string scope,
     const bool aparam_nall);
+#endif
 
 void deepmd::print_summary(const std::string& pre) {
   int num_intra_nthreads, num_inter_nthreads;
@@ -1292,8 +1320,13 @@ void deepmd::print_summary(const std::string& pre) {
   std::cout << pre << "build variant:      cpu"
             << "\n";
 #endif
+#ifdef BUILD_TENSORFLOW
   std::cout << pre << "build with tf inc:  " + global_tf_include_dir << "\n";
   std::cout << pre << "build with tf lib:  " + global_tf_lib << "\n";
+#endif
+#ifdef BUILD_PYTORCH
+  std::cout << pre << "build with pt lib:  " + global_pt_lib << "\n";
+#endif
   std::cout << pre
             << "set tf intra_op_parallelism_threads: " << num_intra_nthreads
             << "\n";

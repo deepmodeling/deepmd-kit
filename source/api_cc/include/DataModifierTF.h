@@ -3,6 +3,7 @@
 
 #include "DataModifier.h"
 #include "common.h"
+#include "commonTF.h"
 
 namespace deepmd {
 /**

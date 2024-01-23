@@ -3,6 +3,7 @@
 
 #include "DeepTensor.h"
 #include "common.h"
+#include "commonTF.h"
 #include "neighbor_list.h"
 
 namespace deepmd {
