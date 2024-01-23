@@ -57,6 +57,7 @@ jobs:
         DP_VARIANT: ${{ matrix.dp_variant }}
         DOWNLOAD_TENSORFLOW: "FALSE"
         CMAKE_GENERATOR: Ninja
+        CMAKE_PREFIX_PATH: $GITHUB_WORKSPACE/libtorch
       if: matrix.variant != 'clang'
     - run: source/install/build_cc.sh
       env:
