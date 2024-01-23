@@ -87,6 +87,24 @@ def find_tensorflow() -> Tuple[Optional[str], List[str]]:
         # TypeError if submodule_search_locations are None
         # IndexError if submodule_search_locations is an empty list
     except (AttributeError, TypeError, IndexError):
+        if os.environ.get("CIBUILDWHEEL", "0") == "1":
+            cuda_version = os.environ.get("CUDA_VERSION", "12.2")
+            if cuda_version == "" or cuda_version in SpecifierSet(">=12,<13"):
+                # CUDA 12.2
+                requires.extend(
+                    [
+                        "tensorflow-cpu>=2.15.0rc0; platform_machine=='x86_64' and platform_system == 'Linux'",
+                    ]
+                )
+            elif cuda_version in SpecifierSet(">=11,<12"):
+                # CUDA 11.8
+                requires.extend(
+                    [
+                        "tensorflow-cpu>=2.5.0rc0,<2.15; platform_machine=='x86_64' and platform_system == 'Linux'",
+                    ]
+                )
+            else:
+                raise RuntimeError("Unsupported CUDA version")
         requires.extend(get_tf_requirement()["cpu"])
         # setuptools will re-find tensorflow after installing setup_requires
         tf_install_dir = None
@@ -114,9 +132,9 @@ def get_tf_requirement(tf_version: str = "") -> dict:
 
     extra_requires = []
     extra_select = {}
-    if not (tf_version == "" or tf_version in SpecifierSet(">=2.12")):
+    if not (tf_version == "" or tf_version in SpecifierSet(">=2.12", prereleases=True)):
         extra_requires.append("protobuf<3.20")
-    if tf_version == "" or tf_version in SpecifierSet(">=1.15"):
+    if tf_version == "" or tf_version in SpecifierSet(">=1.15", prereleases=True):
         extra_select["mpi"] = [
             "horovod",
             "mpi4py",
@@ -129,6 +147,8 @@ def get_tf_requirement(tf_version: str = "") -> dict:
             "cpu": [
                 "tensorflow-cpu; platform_machine!='aarch64' and (platform_machine!='arm64' or platform_system != 'Darwin')",
                 "tensorflow; platform_machine=='aarch64' or (platform_machine=='arm64' and platform_system == 'Darwin')",
+                # https://github.com/tensorflow/tensorflow/issues/61830
+                "tensorflow-cpu<2.15; platform_system=='Windows'",
                 *extra_requires,
             ],
             "gpu": [
@@ -138,9 +158,9 @@ def get_tf_requirement(tf_version: str = "") -> dict:
             ],
             **extra_select,
         }
-    elif tf_version in SpecifierSet("<1.15") or tf_version in SpecifierSet(
-        ">=2.0,<2.1"
-    ):
+    elif tf_version in SpecifierSet(
+        "<1.15", prereleases=True
+    ) or tf_version in SpecifierSet(">=2.0,<2.1", prereleases=True):
         return {
             "cpu": [
                 f"tensorflow=={tf_version}",

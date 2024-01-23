@@ -97,6 +97,9 @@ class Model(ABC):
         from deepmd.model.multi import (
             MultiModel,
         )
+        from deepmd.model.pairtab import (
+            PairTabModel,
+        )
         from deepmd.model.pairwise_dprc import (
             PairwiseDPRc,
         )
@@ -112,6 +115,8 @@ class Model(ABC):
             return FrozenModel
         elif model_type == "linear_ener":
             return LinearEnergyModel
+        elif model_type == "pairtab":
+            return PairTabModel
         else:
             raise ValueError(f"unknown model type: {model_type}")
 
@@ -329,6 +334,60 @@ class Model(ABC):
                 raise RuntimeError("should not reach here")  # pragma: no cover
             dout = imported_tensors[-1]
             self.descrpt.pass_tensors_from_frz_model(*imported_tensors[:-1])
+        return dout
+
+    def build_type_embedding(
+        self,
+        ntypes: int,
+        frz_model: Optional[str] = None,
+        ckpt_meta: Optional[str] = None,
+        suffix: str = "",
+        reuse: Optional[Union[bool, Enum]] = None,
+    ) -> tf.Tensor:
+        """Build the type embedding part of the model.
+
+        Parameters
+        ----------
+        ntypes : int
+            The number of types
+        frz_model : str, optional
+            The path to the frozen model
+        ckpt_meta : str, optional
+            The path prefix of the checkpoint and meta files
+        suffix : str, optional
+            The suffix of the scope
+        reuse : bool or tf.AUTO_REUSE, optional
+            Whether to reuse the variables
+
+        Returns
+        -------
+        tf.Tensor
+            The type embedding tensor
+        """
+        assert self.typeebd is not None
+        if frz_model is None and ckpt_meta is None:
+            dout = self.typeebd.build(
+                ntypes,
+                reuse=reuse,
+                suffix=suffix,
+            )
+        else:
+            # nothing input
+            feed_dict = {}
+            return_elements = [
+                f"t_typeebd{suffix}:0",
+            ]
+            if frz_model is not None:
+                imported_tensors = self._import_graph_def_from_frz_model(
+                    frz_model, feed_dict, return_elements
+                )
+            elif ckpt_meta is not None:
+                imported_tensors = self._import_graph_def_from_ckpt_meta(
+                    ckpt_meta, feed_dict, return_elements
+                )
+            else:
+                raise RuntimeError("should not reach here")  # pragma: no cover
+            dout = imported_tensors[-1]
         return dout
 
     def _import_graph_def_from_frz_model(

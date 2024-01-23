@@ -237,6 +237,91 @@ def get_embedding_net_variables_from_graph_def(
     return embedding_net_variables
 
 
+def get_extra_embedding_net_suffix(type_one_side: bool):
+    """Get the extra embedding net suffix according to the value of type_one_side.
+
+    Parameters
+    ----------
+    type_one_side
+        The value of type_one_side
+
+    Returns
+    -------
+    str
+        The extra embedding net suffix
+    """
+    if type_one_side:
+        extra_suffix = "_one_side_ebd"
+    else:
+        extra_suffix = "_two_side_ebd"
+    return extra_suffix
+
+
+def get_variables_from_graph_def_as_numpy_array(graph_def: tf.GraphDef, pattern: str):
+    """Get variables from the given tf.GraphDef object, with numpy array returns.
+
+    Parameters
+    ----------
+    graph_def
+        The input tf.GraphDef object
+    pattern : str
+        The name of variable
+
+    Returns
+    -------
+    np.ndarray
+        The numpy array of the variable
+    """
+    node = get_pattern_nodes_from_graph_def(graph_def, pattern)[pattern]
+    dtype = tf.as_dtype(node.dtype).as_numpy_dtype
+    tensor_shape = tf.TensorShape(node.tensor_shape).as_list()
+    if (len(tensor_shape) != 1) or (tensor_shape[0] != 1):
+        tensor_value = np.frombuffer(
+            node.tensor_content,
+            dtype=tf.as_dtype(node.dtype).as_numpy_dtype,
+        )
+    else:
+        tensor_value = get_tensor_by_type(node, dtype)
+    return np.reshape(tensor_value, tensor_shape)
+
+
+def get_extra_embedding_net_variables_from_graph_def(
+    graph_def: tf.GraphDef, suffix: str, extra_suffix: str, layer_size: int
+):
+    """Get extra embedding net variables from the given tf.GraphDef object.
+    The "extra embedding net" means the embedding net with only type embeddings input,
+    which occurs in "se_atten_v2" and "se_a_ebd_v2" descriptor.
+
+    Parameters
+    ----------
+    graph_def
+        The input tf.GraphDef object
+    suffix : str
+        The "common" suffix in the descriptor
+    extra_suffix : str
+        This value depends on the value of "type_one_side".
+        It should always be "_one_side_ebd" or "_two_side_ebd"
+    layer_size : int
+        The layer size of the embedding net
+
+    Returns
+    -------
+    Dict
+        The extra embedding net variables within the given tf.GraphDef object
+    """
+    extra_embedding_net_variables = {}
+    for i in range(1, layer_size + 1):
+        matrix_pattern = f"filter_type_all{suffix}/matrix_{i}{extra_suffix}"
+        extra_embedding_net_variables[
+            matrix_pattern
+        ] = get_variables_from_graph_def_as_numpy_array(graph_def, matrix_pattern)
+        bias_pattern = f"filter_type_all{suffix}/bias_{i}{extra_suffix}"
+        extra_embedding_net_variables[
+            bias_pattern
+        ] = get_variables_from_graph_def_as_numpy_array(graph_def, bias_pattern)
+    return extra_embedding_net_variables
+
+
 def get_embedding_net_variables(model_file: str, suffix: str = "") -> Dict:
     """Get the embedding net variables with the given frozen model(model_file).
 

@@ -204,7 +204,7 @@ static void make_uniform_aparam(vector<double> &daparam,
                                 const vector<double> &aparam,
                                 const int &nlocal) {
   unsigned dim_aparam = aparam.size();
-  daparam.resize(dim_aparam * nlocal);
+  daparam.resize(static_cast<size_t>(dim_aparam) * nlocal);
   for (int ii = 0; ii < nlocal; ++ii) {
     for (int jj = 0; jj < dim_aparam; ++jj) {
       daparam[ii * dim_aparam + jj] = aparam[jj];
@@ -247,7 +247,7 @@ void PairDeepMD::make_aparam_from_compute(vector<double> &aparam) {
 
   assert(compute);
   int nlocal = atom->nlocal;
-  aparam.resize(dim_aparam * nlocal);
+  aparam.resize(static_cast<size_t>(dim_aparam) * nlocal);
 
   if (!(compute->invoked_flag & Compute::INVOKED_PERATOM)) {
     compute->compute_peratom();
@@ -339,24 +339,10 @@ void PairDeepMD::make_ttm_aparam(vector<double> &daparam) {
       int ixnode = static_cast<int>(xscale * nxnodes);
       int iynode = static_cast<int>(yscale * nynodes);
       int iznode = static_cast<int>(zscale * nznodes);
-      while (ixnode > nxnodes - 1) {
-        ixnode -= nxnodes;
-      }
-      while (iynode > nynodes - 1) {
-        iynode -= nynodes;
-      }
-      while (iznode > nznodes - 1) {
-        iznode -= nznodes;
-      }
-      while (ixnode < 0) {
-        ixnode += nxnodes;
-      }
-      while (iynode < 0) {
-        iynode += nynodes;
-      }
-      while (iznode < 0) {
-        iznode += nznodes;
-      }
+      // https://stackoverflow.com/a/1907585/9567349
+      ixnode = ((ixnode % nxnodes) + nxnodes) % nxnodes;
+      iynode = ((iynode % nynodes) + nynodes) % nynodes;
+      iznode = ((iznode % nznodes) + nznodes) % nznodes;
       daparam[ii] = T_electron[ixnode][iynode][iznode];
     }
   }
@@ -408,6 +394,7 @@ PairDeepMD::PairDeepMD(LAMMPS *lmp)
   out_each = 0;
   out_rel = 0;
   out_rel_v = 0;
+  stdf_comm_buff_size = 0;
   eps = 0.;
   eps_v = 0.;
   scale = NULL;
@@ -463,9 +450,9 @@ void PairDeepMD::compute(int eflag, int vflag) {
   if (numb_models == 0) {
     return;
   }
-  if (eflag || vflag) {
-    ev_setup(eflag, vflag);
-  }
+  // See
+  // https://docs.lammps.org/Developer_updating.html#use-ev-init-to-initialize-variables-derived-from-eflag-and-vflag
+  ev_init(eflag, vflag);
   if (vflag_atom) {
     error->all(FLERR,
                "6-element atomic virial is not supported. Use compute "
@@ -586,7 +573,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
             error->one(FLERR, e.what());
           }
         } else {
-          dforce.resize((extend_inum + extend_nghost) * 3);
+          dforce.resize(static_cast<size_t>(extend_inum + extend_nghost) * 3);
           try {
             deep_pot.compute(dener, dforce, dvirial, extend_dcoord,
                              extend_dtype, dbox, extend_nghost, extend_lmp_list,
@@ -609,7 +596,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
             error->one(FLERR, e.what());
           }
         } else {
-          dforce.resize((extend_inum + extend_nghost) * 3);
+          dforce.resize(static_cast<size_t>(extend_inum + extend_nghost) * 3);
           try {
             deep_pot.compute(dener, dforce, dvirial, extend_dcoord,
                              extend_dtype, dbox, extend_nghost, extend_lmp_list,
@@ -734,13 +721,11 @@ void PairDeepMD::compute(int eflag, int vflag) {
         }
         double min = numeric_limits<double>::max(), max = 0, avg = 0;
         ana_st(max, min, avg, std_f, nlocal);
-        int all_nlocal = 0;
-        MPI_Reduce(&nlocal, &all_nlocal, 1, MPI_INT, MPI_SUM, 0, world);
         double all_f_min = 0, all_f_max = 0, all_f_avg = 0;
         MPI_Reduce(&min, &all_f_min, 1, MPI_DOUBLE, MPI_MIN, 0, world);
         MPI_Reduce(&max, &all_f_max, 1, MPI_DOUBLE, MPI_MAX, 0, world);
         MPI_Reduce(&avg, &all_f_avg, 1, MPI_DOUBLE, MPI_SUM, 0, world);
-        all_f_avg /= double(all_nlocal);
+        all_f_avg /= double(atom->natoms);
         // std v
         std::vector<double> send_v(9 * numb_models);
         std::vector<double> recv_v(9 * numb_models);
@@ -781,22 +766,34 @@ void PairDeepMD::compute(int eflag, int vflag) {
           all_v_avg = sqrt(all_v_avg / 9);
         }
         if (rank == 0) {
-          all_v_max *= scale[1][1] * ener_unit_cvt_factor;
-          all_v_min *= scale[1][1] * ener_unit_cvt_factor;
-          all_v_avg *= scale[1][1] * ener_unit_cvt_factor;
-          all_f_max *= scale[1][1] * force_unit_cvt_factor;
-          all_f_min *= scale[1][1] * force_unit_cvt_factor;
-          all_f_avg *= scale[1][1] * force_unit_cvt_factor;
+          all_v_max *= ener_unit_cvt_factor;
+          all_v_min *= ener_unit_cvt_factor;
+          all_v_avg *= ener_unit_cvt_factor;
+          all_f_max *= force_unit_cvt_factor;
+          all_f_min *= force_unit_cvt_factor;
+          all_f_avg *= force_unit_cvt_factor;
           fp << setw(12) << update->ntimestep << " " << setw(18) << all_v_max
              << " " << setw(18) << all_v_min << " " << setw(18) << all_v_avg
              << " " << setw(18) << all_f_max << " " << setw(18) << all_f_min
              << " " << setw(18) << all_f_avg;
         }
         if (out_each == 1) {
-          vector<double> std_f_all(all_nlocal);
+          vector<double> std_f_all(atom->natoms);
           // Gather std_f and tags
           tagint *tag = atom->tag;
           int nprocs = comm->nprocs;
+          // Grow arrays if necessary
+          if (atom->natoms > stdf_comm_buff_size) {
+            stdf_comm_buff_size = atom->natoms;
+            memory->destroy(stdfsend);
+            memory->destroy(stdfrecv);
+            memory->destroy(tagsend);
+            memory->destroy(tagrecv);
+            memory->create(stdfsend, stdf_comm_buff_size, "deepmd:stdfsendall");
+            memory->create(stdfrecv, stdf_comm_buff_size, "deepmd:stdfrecvall");
+            memory->create(tagsend, stdf_comm_buff_size, "deepmd:tagsendall");
+            memory->create(tagrecv, stdf_comm_buff_size, "deepmd:tagrecvall");
+          }
           for (int ii = 0; ii < nlocal; ii++) {
             tagsend[ii] = tag[ii];
             stdfsend[ii] = std_f[ii];
@@ -811,11 +808,10 @@ void PairDeepMD::compute(int eflag, int vflag) {
           MPI_Gatherv(stdfsend, nlocal, MPI_DOUBLE, stdfrecv, counts,
                       displacements, MPI_DOUBLE, 0, world);
           if (rank == 0) {
-            for (int dd = 0; dd < all_nlocal; ++dd) {
-              std_f_all[tagrecv[dd] - 1] =
-                  stdfrecv[dd] * scale[1][1] * force_unit_cvt_factor;
+            for (int dd = 0; dd < atom->natoms; ++dd) {
+              std_f_all[tagrecv[dd] - 1] = stdfrecv[dd] * force_unit_cvt_factor;
             }
-            for (int dd = 0; dd < all_nlocal; ++dd) {
+            for (int dd = 0; dd < atom->natoms; ++dd) {
               fp << " " << setw(18) << std_f_all[dd];
             }
           }
@@ -1293,6 +1289,9 @@ void PairDeepMD::init_style() {
   if (out_each == 1) {
     int ntotal = atom->natoms;
     int nprocs = comm->nprocs;
+    if (ntotal > stdf_comm_buff_size) {
+      stdf_comm_buff_size = ntotal;
+    }
     memory->create(counts, nprocs, "deepmd:counts");
     memory->create(displacements, nprocs, "deepmd:displacements");
     memory->create(stdfsend, ntotal, "deepmd:stdfsendall");
@@ -1496,7 +1495,7 @@ void PairDeepMD::extend(int &extend_inum,
   }
 
   // extend coord
-  extend_dcoord.resize(extend_nall * 3);
+  extend_dcoord.resize(static_cast<size_t>(extend_nall) * 3);
   for (int ii = 0; ii < nloc; ii++) {
     for (int jj = 0; jj < 3; jj++) {
       extend_dcoord[new_idx_map[ii] * 3 + jj] = dcoord[ii * 3 + jj];

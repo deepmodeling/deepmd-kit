@@ -30,7 +30,7 @@ void Convert<VALUETYPE>::forward(std::vector<VALUETYPE>& out,
                                  const int stride) const {
   assert(in.size() == stride * idx_map.size());
   int natoms = idx_map.size();
-  out.resize(stride * natoms);
+  out.resize(static_cast<size_t>(stride) * natoms);
   for (int ii = 0; ii < natoms; ++ii) {
     int gro_i = idx_map[ii];
     for (int dd = 0; dd < stride; ++dd) {
@@ -45,7 +45,7 @@ void Convert<VALUETYPE>::backward(std::vector<VALUETYPE>& out,
                                   const int stride) const {
   int natoms = idx_map.size();
   assert(in.size() == stride * idx_map.size());
-  out.resize(stride * natoms);
+  out.resize(static_cast<size_t>(stride) * natoms);
   for (int ii = 0; ii < natoms; ++ii) {
     int gro_i = idx_map[ii];
     for (int dd = 0; dd < stride; ++dd) {

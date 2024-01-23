@@ -43,15 +43,15 @@ def get_two_side_type_embedding(self, graph):
 
 
 def get_extra_side_embedding_net_variable(
-    self, graph_def, type_side, varialbe_name, suffix
+    self, graph_def, type_side_suffix, varialbe_name, suffix
 ):
     ret = {}
     for i in range(1, self.layer_size + 1):
         target = get_pattern_nodes_from_graph_def(
             graph_def,
-            f"filter_type_all{suffix}/{varialbe_name}_{i}_{type_side}_ebd",
+            f"filter_type_all{suffix}/{varialbe_name}_{i}{type_side_suffix}",
         )
-        node = target[f"filter_type_all{suffix}/{varialbe_name}_{i}_{type_side}_ebd"]
+        node = target[f"filter_type_all{suffix}/{varialbe_name}_{i}{type_side_suffix}"]
         ret["layer_" + str(i)] = node
     return ret
 

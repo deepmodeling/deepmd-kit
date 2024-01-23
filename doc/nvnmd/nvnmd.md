@@ -6,7 +6,7 @@ This is the training code we used to generate the results in our paper entitled 
 
 Any user can follow two consecutive steps to run molecular dynamics (MD) on the proposed NVNMD computer, which has been released online: (i) to train a machine learning (ML) model that can decently reproduce the potential energy surface (PES); and (ii) to deploy the trained ML model on the proposed NVNMD computer, then run MD there to obtain the atomistic trajectories.
 
-# Training
+## Training
 
 Our training procedure consists of not only continuous neural network (CNN) training but also quantized neural network (QNN) training which uses the results of CNN as inputs. It is performed on CPU or GPU by using the training codes we open-sourced online.
 
@@ -60,6 +60,7 @@ The "nvnmd" section is defined as
 ```json
 {
     "version": 0,
+    "max_nnei":128,
     "net_size":128,
     "sel":[60, 60],
     "rcut":6.0,
@@ -73,6 +74,7 @@ where items are defined as:
 | Item      | Mean                        | Optional Value                                |
 | --------- | --------------------------- | --------------------------------------------- |
 | version | the version of network structure | 0 or 1 |
+| max_nnei  | the maximum number of neighbors that do not distinguish element types | 128  or 256 |
 | net_size  | the size of nueral network  | 128                                     |
 | sel       | the number of neighbors     | version 0: integer list of lengths 1 to 4 are acceptable; version 1: integer |
 | rcut      | the cutoff radial           | (0, 8.0]                                      |
@@ -185,6 +187,15 @@ You can also restart the CNN training from the path prefix of checkpoint files (
 
 ``` bash
 dp train-nvnmd train_cnn.json -r nvnmd_cnn/model.ckpt -s s1
+```
+
+You can also initialize the CNN model and train it by
+
+``` bash
+mv nvnmd_cnn nvnmd_cnn_bck
+cp train_cnn.json train_cnn2.json
+# please edit train_cnn2.json
+dp train-nvnmd train_cnn2.json -s s1 -i nvnmd_cnn_bck/model.ckpt
 ```
 
 

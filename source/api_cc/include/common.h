@@ -19,6 +19,8 @@
 namespace deepmd {
 
 typedef double ENERGYTYPE;
+// TODO: currently we only implement TF; reserve for future use
+enum DPBackend { TensorFlow, PyTorch, Paddle, Unknown };
 
 struct NeighborListData {
   /// Array stores the core region atom's index

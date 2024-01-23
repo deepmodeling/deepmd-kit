@@ -27,7 +27,7 @@ def dynamic_metadata(
     _, _, find_libpython_requires, extra_scripts, tf_version = get_argument_from_env()
     if field == "scripts":
         return {
-            "dp": "deepmd_cli.main:main",
+            "dp": "deepmd_utils.main:main",
             **extra_scripts,
         }
     elif field == "optional-dependencies":
@@ -44,7 +44,8 @@ def dynamic_metadata(
                 "sphinx>=3.1.1",
                 "sphinx_rtd_theme>=1.0.0rc1",
                 "sphinx_markdown_tables",
-                "myst-nb",
+                "myst-nb>=1.0.0rc0",
+                "myst-parser>=0.19.2",
                 "breathe",
                 "exhale",
                 "numpydoc",
@@ -56,7 +57,7 @@ def dynamic_metadata(
                 "sphinxcontrib-bibtex",
             ],
             "lmp": [
-                "lammps~=2023.8.2.1.0",
+                "lammps~=2023.8.2.2.0",
                 *find_libpython_requires,
             ],
             "ipi": [

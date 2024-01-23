@@ -28,6 +28,11 @@ from packaging.version import (
 )
 
 import deepmd.lib
+from deepmd_utils.env import (
+    GLOBAL_ENER_FLOAT_PRECISION,
+    GLOBAL_NP_FLOAT_PRECISION,
+    global_float_prec,
+)
 
 if TYPE_CHECKING:
     from types import (
@@ -475,24 +480,7 @@ op_module = get_module("deepmd_op")
 op_grads_module = get_module("op_grads")
 
 # FLOAT_PREC
-dp_float_prec = os.environ.get("DP_INTERFACE_PREC", "high").lower()
-if dp_float_prec in ("high", ""):
-    # default is high
-    GLOBAL_TF_FLOAT_PRECISION = tf.float64
-    GLOBAL_NP_FLOAT_PRECISION = np.float64
-    GLOBAL_ENER_FLOAT_PRECISION = np.float64
-    global_float_prec = "double"
-elif dp_float_prec == "low":
-    GLOBAL_TF_FLOAT_PRECISION = tf.float32
-    GLOBAL_NP_FLOAT_PRECISION = np.float32
-    GLOBAL_ENER_FLOAT_PRECISION = np.float64
-    global_float_prec = "float"
-else:
-    raise RuntimeError(
-        "Unsupported float precision option: %s. Supported: high,"
-        "low. Please set precision with environmental variable "
-        "DP_INTERFACE_PREC." % dp_float_prec
-    )
+GLOBAL_TF_FLOAT_PRECISION = tf.dtypes.as_dtype(GLOBAL_NP_FLOAT_PRECISION)
 
 
 def global_cvt_2_tf_float(xx: tf.Tensor) -> tf.Tensor:

@@ -61,7 +61,7 @@ class MapAparamOp : public OpKernel {
     // Create an output tensor
     TensorShape output_shape;
     output_shape.AddDim(nframes);
-    output_shape.AddDim(nloc * nnei * numb_aparam);
+    output_shape.AddDim(static_cast<int64_t>(nloc) * nnei * numb_aparam);
     Tensor* output_tensor = NULL;
     OP_REQUIRES_OK(context,
                    context->allocate_output(0, output_shape, &output_tensor));

@@ -274,7 +274,7 @@ TEST_F(TestEnvMatANvnmd, prod_cpu) {
   deepmd::convert_nlist(inlist, nlist_a_cpy);
 
   std::vector<double> em(nloc * ndescrpt), em_deriv(nloc * ndescrpt * 3),
-      rij(nloc * nnei * 3);
+      rij(static_cast<size_t>(nloc) * nnei * 3);
   std::vector<int> nlist(nloc * nnei);
   std::vector<double> avg(ntypes * ndescrpt, 0);
   std::vector<double> std(ntypes * ndescrpt, 1);
@@ -308,7 +308,7 @@ TEST_F(TestEnvMatANvnmd, prod_cpu_equal_cpu) {
   deepmd::InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]);
   convert_nlist(inlist, nlist_a_cpy);
   std::vector<double> em(nloc * ndescrpt), em_deriv(nloc * ndescrpt * 3),
-      rij(nloc * nnei * 3);
+      rij(static_cast<size_t>(nloc) * nnei * 3);
   std::vector<int> nlist(nloc * nnei);
   std::vector<double> avg(ntypes * ndescrpt, 0);
   std::vector<double> std(ntypes * ndescrpt, 1);

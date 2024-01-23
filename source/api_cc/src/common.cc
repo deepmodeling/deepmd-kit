@@ -171,14 +171,15 @@ void deepmd::select_real_atoms_coord(std::vector<VALUETYPE>& dcoord,
   // resize to nall_real
   nall_real = bkw_map.size();
   nloc_real = nall_real - nghost_real;
-  dcoord.resize(nframes * nall_real * 3);
+  dcoord.resize(static_cast<size_t>(nframes) * nall_real * 3);
   datype.resize(nall_real);
   // fwd map
   select_map<VALUETYPE>(dcoord, dcoord_, fwd_map, 3, nframes, nall_real, nall);
   select_map<int>(datype, datype_, fwd_map, 1);
   // aparam
   if (daparam > 0) {
-    aparam.resize(nframes * (aparam_nall ? nall_real : nloc_real));
+    aparam.resize(static_cast<size_t>(nframes) *
+                  (aparam_nall ? nall_real : nloc_real));
     select_map<VALUETYPE>(aparam, aparam_, fwd_map, daparam, nframes,
                           (aparam_nall ? nall_real : nloc_real),
                           (aparam_nall ? nall : (nall - nghost)));
@@ -396,7 +397,7 @@ int deepmd::session_input_tensors(
 
   TensorShape coord_shape;
   coord_shape.AddDim(nframes);
-  coord_shape.AddDim(nall * 3);
+  coord_shape.AddDim(static_cast<int64_t>(nall) * 3);
   TensorShape type_shape;
   type_shape.AddDim(nframes);
   type_shape.AddDim(nall);
@@ -540,7 +541,7 @@ int deepmd::session_input_tensors(
 
   TensorShape coord_shape;
   coord_shape.AddDim(nframes);
-  coord_shape.AddDim(nall * 3);
+  coord_shape.AddDim(static_cast<int64_t>(nall) * 3);
   TensorShape type_shape;
   type_shape.AddDim(nframes);
   type_shape.AddDim(nall);
@@ -675,7 +676,7 @@ int deepmd::session_input_tensors_mixed_type(
 
   TensorShape coord_shape;
   coord_shape.AddDim(nframes);
-  coord_shape.AddDim(nall * 3);
+  coord_shape.AddDim(static_cast<int64_t>(nall) * 3);
   TensorShape type_shape;
   type_shape.AddDim(nframes);
   type_shape.AddDim(nall);
@@ -1277,10 +1278,10 @@ void deepmd::print_summary(const std::string& pre) {
   deepmd::get_env_nthreads(num_intra_nthreads, num_inter_nthreads);
   std::cout << pre << "installed to:       " + global_install_prefix << "\n";
   std::cout << pre << "source:             " + global_git_summ << "\n";
-  std::cout << pre << "source branch:       " + global_git_branch << "\n";
+  std::cout << pre << "source branch:      " + global_git_branch << "\n";
   std::cout << pre << "source commit:      " + global_git_hash << "\n";
   std::cout << pre << "source commit at:   " + global_git_date << "\n";
-  std::cout << pre << "surpport model ver.:" + global_model_version << "\n";
+  std::cout << pre << "support model ver.: " + global_model_version << "\n";
 #if defined(GOOGLE_CUDA)
   std::cout << pre << "build variant:      cuda"
             << "\n";

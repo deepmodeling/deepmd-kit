@@ -1,4 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+"""The entry points for DeePMD-kit.
+
+If only printing the help message, this module does not call
+the main DeePMD-kit module to avoid the slow import of TensorFlow.
+"""
 import argparse
 import logging
 import textwrap
@@ -8,7 +13,7 @@ from typing import (
 )
 
 try:
-    from deepmd_cli._version import version as __version__
+    from deepmd_utils._version import version as __version__
 except ImportError:
     __version__ = "unknown"
 
@@ -547,9 +552,25 @@ def main_parser() -> argparse.ArgumentParser:
         parents=[parser_log],
         help="train nvnmd model",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        epilog=textwrap.dedent(
+            """\
+        examples:
+            dp train-nvnmd input_cnn.json -s s1
+            dp train-nvnmd input_qnn.json -s s2
+            dp train-nvnmd input_cnn.json -s s1 --restart model.ckpt
+            dp train-nvnmd input_cnn.json -s s2 --init-model model.ckpt
+        """
+        ),
     )
     parser_train_nvnmd.add_argument(
         "INPUT", help="the input parameter file in json format"
+    )
+    parser_train_nvnmd.add_argument(
+        "-i",
+        "--init-model",
+        type=str,
+        default=None,
+        help="Initialize the model by the provided path prefix of checkpoint files.",
     )
     parser_train_nvnmd.add_argument(
         "-r",

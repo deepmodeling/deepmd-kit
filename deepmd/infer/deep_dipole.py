@@ -27,6 +27,8 @@ class DeepDipole(DeepTensor):
         If uses the default tf graph, otherwise build a new tf graph for evaluation
     input_map : dict, optional
         The input map for tf.import_graph_def. Only work with default tf graph
+    neighbor_list : ase.neighborlist.NeighborList, optional
+        The neighbor list object. If None, then build the native neighbor list.
 
     Warnings
     --------
@@ -41,6 +43,7 @@ class DeepDipole(DeepTensor):
         load_prefix: str = "load",
         default_tf_graph: bool = False,
         input_map: Optional[dict] = None,
+        neighbor_list=None,
     ) -> None:
         # use this in favor of dict update to move attribute from class to
         # instance namespace
@@ -58,6 +61,7 @@ class DeepDipole(DeepTensor):
             load_prefix=load_prefix,
             default_tf_graph=default_tf_graph,
             input_map=input_map,
+            neighbor_list=neighbor_list,
         )
 
     def get_dim_fparam(self) -> int:

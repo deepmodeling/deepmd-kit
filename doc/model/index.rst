@@ -20,3 +20,4 @@ Model
    dplr
    dprc
    linear
+   pairtab

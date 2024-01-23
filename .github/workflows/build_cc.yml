@@ -21,7 +21,7 @@ jobs:
           dp_variant: clang
     steps:
     - uses: actions/checkout@v4
-    - uses: actions/setup-python@v4
+    - uses: actions/setup-python@v5
       with:
         python-version: '3.11'
         cache: 'pip'
@@ -37,7 +37,7 @@ jobs:
          wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.0-1_all.deb \
          && sudo dpkg -i cuda-keyring_1.0-1_all.deb \
          && sudo apt-get update \
-         && sudo apt-get -y install cuda-cudart-dev-12-0 cuda-nvcc-12-0
+         && sudo apt-get -y install cuda-cudart-dev-12-2 cuda-nvcc-12-2
       if: matrix.variant == 'cuda120'
       env:
         DEBIAN_FRONTEND: noninteractive

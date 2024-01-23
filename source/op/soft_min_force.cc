@@ -65,7 +65,8 @@ class SoftMinForceOp : public OpKernel {
     OP_REQUIRES(context, (nloc == du_tensor.shape().dim_size(1)),
                 errors::InvalidArgument("number of du should match"));
     OP_REQUIRES(context,
-                (nloc * nnei * 3 == sw_deriv_tensor.shape().dim_size(1)),
+                (static_cast<int64_t>(nloc) * nnei * 3 ==
+                 sw_deriv_tensor.shape().dim_size(1)),
                 errors::InvalidArgument("number of switch deriv should match"));
     OP_REQUIRES(context, (nnei == n_a_sel + n_r_sel),
                 errors::InvalidArgument("number of neighbors should match"));
@@ -73,7 +74,7 @@ class SoftMinForceOp : public OpKernel {
     // Create an output tensor
     TensorShape force_shape;
     force_shape.AddDim(nframes);
-    force_shape.AddDim(3 * nall);
+    force_shape.AddDim(3 * static_cast<int64_t>(nall));
     Tensor* force_tensor = NULL;
     OP_REQUIRES_OK(context,
                    context->allocate_output(0, force_shape, &force_tensor));

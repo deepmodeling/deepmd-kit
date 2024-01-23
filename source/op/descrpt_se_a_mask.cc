@@ -95,16 +95,18 @@ class DescrptSeAMaskOp : public OpKernel {
     // Create an output tensor
     TensorShape descrpt_shape;
     descrpt_shape.AddDim(nsamples);
-    descrpt_shape.AddDim(total_atom_num * total_atom_num * n_descrpt);
+    descrpt_shape.AddDim(static_cast<int64_t>(total_atom_num) * total_atom_num *
+                         n_descrpt);
     TensorShape descrpt_deriv_shape;
     descrpt_deriv_shape.AddDim(nsamples);
-    descrpt_deriv_shape.AddDim(total_atom_num * total_atom_num * n_descrpt * 3);
+    descrpt_deriv_shape.AddDim(static_cast<int64_t>(total_atom_num) *
+                               total_atom_num * n_descrpt * 3);
     TensorShape rij_shape;
     rij_shape.AddDim(nsamples);
-    rij_shape.AddDim(total_atom_num * total_atom_num * 3);
+    rij_shape.AddDim(static_cast<int64_t>(total_atom_num) * total_atom_num * 3);
     TensorShape nlist_shape;
     nlist_shape.AddDim(nsamples);
-    nlist_shape.AddDim(total_atom_num * total_atom_num);
+    nlist_shape.AddDim(static_cast<int64_t>(total_atom_num) * total_atom_num);
 
     int context_output_index = 0;
     Tensor *descrpt_tensor = NULL;

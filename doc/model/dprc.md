@@ -2,7 +2,39 @@
 
 Deep Potential - Range Correction (DPRc) is designed to combine with QM/MM method, and corrects energies from a low-level QM/MM method to a high-level QM/MM method:
 
-$$ E=E_\text{QM}(\mathbf R; \mathbf P)  + E_\text{QM/MM}(\mathbf R; \mathbf P) + E_\text{MM}(\mathbf R) + E_\text{DPRc}(\mathbf R) $$
+```math
+E=E_\text{QM}(\mathbf R; \mathbf P)  + E_\text{QM/MM}(\mathbf R; \mathbf P) + E_\text{MM}(\mathbf R) + E_\text{DPRc}(\mathbf R)
+```
+
+## Theory
+
+Deep Potential - Range Correction (DPRc) was initially designed to correct the potential energy from a fast, linear-scaling low-level semiempirical QM/MM theory to a high-level ''ab initio'' QM/MM theory in a range-correction way to quantitatively correct short and mid-range non-bonded interactions leveraging the non-bonded lists routinely used in molecular dynamics simulations using molecular mechanical force fields such as AMBER.
+In this way, long-ranged electrostatic interactions can be modeled efficiently using the particle mesh Ewald method or its extensions for multipolar and QM/MM potentials.
+In a DPRc model, the switch function is modified to disable MM-MM interaction:
+```math
+  s_\text{DPRc}(r_{ij}) =
+  \begin{cases}
+  0, &\text{if $i \in \text{MM} \land j \in \text{MM}$}, \\
+  s(r_{ij}), &\text{otherwise},
+  \end{cases}
+```
+where $s_\text{DPRc}(r_{ij})$ is the new switch function and $s(r_{ij})$ is the old one.
+This ensures the forces between MM atoms are zero, i.e.
+```math
+{\boldsymbol F}_{ij} = - \frac{\partial E}{\partial \boldsymbol r_{ij}} = 0, \quad i \in \text{MM} \land j \in \text{MM}.
+```
+The fitting network is revised to remove energy bias from MM atoms:
+```math
+  E_i=
+  \begin{cases}
+  \mathcal{F}_0(\mathcal{D}^i),  &\text{if $i \in \text{QM}$}, \\
+  \mathcal{F}_0(\mathcal{D}^i) - \mathcal{F}_0(\mathbf{0}), &\text{if $i \in \text{MM}$},
+  \end{cases}
+```
+where $\mathbf{0}$ is a zero matrix.
+It is worth mentioning that usage of DPRc is not limited to its initial design for QM/MM correction and can be expanded to any similar interaction.[^1]
+
+[^1]: This section is built upon Jinzhe Zeng, Duo Zhang, Denghui Lu, Pinghui Mo, Zeyu Li, Yixiao Chen,  Marián Rynik, Li'ang Huang, Ziyao Li, Shaochen Shi, Yingze Wang, Haotian Ye, Ping Tuo, Jiabin Yang, Ye Ding, Yifan Li, Davide Tisi, Qiyu Zeng, Han Bao, Yu Xia, Jiameng Huang, Koki Muraoka, Yibo Wang, Junhan Chang, Fengbo Yuan, Sigbjørn Løland Bore, Chun Cai, Yinnian Lin, Bo Wang, Jiayan Xu, Jia-Xin Zhu, Chenxing Luo, Yuzhi Zhang, Rhys E. A. Goodall, Wenshuo Liang, Anurag Kumar Singh, Sikai Yao, Jingchao Zhang, Renata Wentzcovitch, Jiequn Han, Jie Liu, Weile Jia, Darrin M. York, Weinan E, Roberto Car, Linfeng Zhang, Han Wang, [J. Chem. Phys. 159, 054801 (2023)](https://doi.org/10.1063/5.0155600) licensed under a [Creative Commons Attribution (CC BY) license](http://creativecommons.org/licenses/by/4.0/).
 
 See the [JCTC paper](https://doi.org/10.1021/acs.jctc.1c00201) for details.
 
@@ -10,7 +42,9 @@ See the [JCTC paper](https://doi.org/10.1021/acs.jctc.1c00201) for details.
 
 Instead the normal _ab initio_ data, one needs to provide the correction from a low-level QM/MM method to a high-level QM/MM method:
 
-$$ E = E_\text{high-level QM/MM} - E_\text{low-level QM/MM} $$
+```math
+E = E_\text{high-level QM/MM} - E_\text{low-level QM/MM}
+```
 
 Two levels of data use the same MM method, so $E_\text{MM}$ is eliminated.
 

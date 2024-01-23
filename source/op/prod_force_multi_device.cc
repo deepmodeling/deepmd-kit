@@ -103,7 +103,7 @@ class ProdForceSeAOp : public OpKernel {
     // Create an output tensor
     TensorShape force_shape;
     force_shape.AddDim(nframes);
-    force_shape.AddDim(3 * nall);
+    force_shape.AddDim(3 * static_cast<int64_t>(nall));
     Tensor* force_tensor = NULL;
     int context_output_index = 0;
     OP_REQUIRES_OK(context,
@@ -115,9 +115,12 @@ class ProdForceSeAOp : public OpKernel {
     assert(nframes == in_deriv_tensor.shape().dim_size(0));
     assert(nframes == nlist_tensor.shape().dim_size(0));
     assert(nall * 3 == force_shape.dim_size(1));
-    assert(nloc * ndescrpt == net_deriv_tensor.shape().dim_size(1));
-    assert(nloc * ndescrpt * 3 == in_deriv_tensor.shape().dim_size(1));
-    assert(nloc * nnei == nlist_tensor.shape().dim_size(1));
+    assert(static_cast<int64_t>(nloc) * ndescrpt ==
+           net_deriv_tensor.shape().dim_size(1));
+    assert(static_cast<int64_t>(nloc) * ndescrpt * 3 ==
+           in_deriv_tensor.shape().dim_size(1));
+    assert(static_cast<int64_t>(nloc) * nnei ==
+           nlist_tensor.shape().dim_size(1));
     assert(nnei * 4 == ndescrpt);
 
     // flat the tensors
@@ -195,12 +198,13 @@ class ProdForceSeROp : public OpKernel {
     OP_REQUIRES(context, (nframes == nlist_tensor.shape().dim_size(0)),
                 errors::InvalidArgument("number of samples should match"));
     OP_REQUIRES(context,
-                (nloc * ndescrpt * 3 == in_deriv_tensor.shape().dim_size(1)),
+                (static_cast<int64_t>(nloc) * ndescrpt * 3 ==
+                 in_deriv_tensor.shape().dim_size(1)),
                 errors::InvalidArgument("number of descriptors should match"));
     // Create an output tensor
     TensorShape force_shape;
     force_shape.AddDim(nframes);
-    force_shape.AddDim(3 * nall);
+    force_shape.AddDim(3 * static_cast<int64_t>(nall));
     Tensor* force_tensor = NULL;
     int context_output_index = 0;
     OP_REQUIRES_OK(context,
@@ -212,8 +216,10 @@ class ProdForceSeROp : public OpKernel {
     assert(nframes == in_deriv_tensor.shape().dim_size(0));
     assert(nframes == nlist_tensor.shape().dim_size(0));
     assert(nall * 3 == force_shape.dim_size(1));
-    assert(nloc * ndescrpt == net_deriv_tensor.shape().dim_size(1));
-    assert(nloc * ndescrpt * 3 == in_deriv_tensor.shape().dim_size(1));
+    assert(static_cast<int64_t>(nloc) * ndescrpt ==
+           net_deriv_tensor.shape().dim_size(1));
+    assert(static_cast<int64_t>(nloc) * ndescrpt * 3 ==
+           in_deriv_tensor.shape().dim_size(1));
     assert(nloc * nnei == nlist_tensor.shape().dim_size(1));
     assert(nnei * 1 == ndescrpt);
     // flat the tensors

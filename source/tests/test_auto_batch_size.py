@@ -45,8 +45,10 @@ class TestAutoBatchSize(unittest.TestCase):
         self.assertEqual(result.shape, (256, 2))
 
     @unittest.mock.patch("tensorflow.compat.v1.test.is_gpu_available")
-    def test_execute_oom_cpu(self, mock_is_gpu_available):
+    @unittest.mock.patch("tensorflow.compat.v1.config.experimental.get_visible_devices")
+    def test_execute_oom_cpu(self, mock_is_gpu_available, mock_get_visible_devices):
         mock_is_gpu_available.return_value = False
+        mock_get_visible_devices.return_value = []
         # initial batch size 256 = 128 * 2, nb is always 128
         auto_batch_size = AutoBatchSize(256, 2.0)
         nb, result = auto_batch_size.execute(self.oom, 1, 2)
