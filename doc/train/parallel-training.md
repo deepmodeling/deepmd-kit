@@ -1,4 +1,8 @@
-# Parallel training
+# Parallel training {{ tensorflow_icon }}
+
+:::{note}
+**Supported backends**: TensorFlow {{ tensorflow_icon }}
+:::
 
 Currently, parallel training is enabled in a synchronized way with help of [Horovod](https://github.com/horovod/horovod).
 Depending on the number of training processes (according to MPI context) and the number of GPU cards available, DeePMD-kit will decide whether to launch the training in parallel (distributed) mode or in serial mode. Therefore, no additional options are specified in your JSON/YAML input file.

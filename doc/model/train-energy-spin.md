@@ -1,4 +1,8 @@
-# Fit spin energy
+# Fit spin energy {{ tensorflow_icon }}
+
+:::{note}
+**Supported backends**: TensorFlow {{ tensorflow_icon }}
+:::
 
 In this section, we will take `$deepmd_source_dir/examples/NiO/se_e2_a/input.json` as an example of the input file.
 

@@ -1,4 +1,8 @@
-# TensorBoard Usage
+# TensorBoard Usage {{ tensorflow_icon }}
+
+:::{note}
+**Supported backends**: TensorFlow {{ tensorflow_icon }}
+:::
 
 TensorBoard provides the visualization and tooling needed for machine learning
 experimentation. Full instructions for TensorBoard can be found
