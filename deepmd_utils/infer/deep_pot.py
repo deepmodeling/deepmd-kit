@@ -122,5 +122,21 @@ class DeepPot(ABC):
         # dpdata
         # ase
 
+    @abstractmethod
+    def get_ntypes(self) -> int:
+        """Get the number of atom types of this model."""
+
+    @abstractmethod
+    def get_type_map(self) -> List[str]:
+        """Get the type map (element name of the atom types) of this model."""
+
+    @abstractmethod
+    def get_dim_fparam(self) -> int:
+        """Get the number (dimension) of frame parameters of this DP."""
+
+    @abstractmethod
+    def get_dim_aparam(self) -> int:
+        """Get the number (dimension) of atomic parameters of this DP."""
+
 
 __all__ = ["DeepPot"]
