@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
+#ifdef BUILD_TENSORFLOW
 #include "DeepPotTF.h"
 
 #include <stdexcept>
@@ -1051,3 +1052,4 @@ void DeepPotTF::computew_mixed_type(std::vector<double>& ener,
   compute_mixed_type(ener, force, virial, atom_energy, atom_virial, nframes,
                      coord, atype, box, fparam, aparam);
 }
+#endif

@@ -213,7 +213,10 @@ exhale_args = {
 exhale_projects_args = {
     "cc": {
         "containmentFolder": "./API_CC",
-        "exhaleDoxygenStdin": "INPUT = ../source/api_cc/include/",
+        "exhaleDoxygenStdin": """INPUT = ../source/api_cc/include/
+                                 PREDEFINED += BUILD_TENSORFLOW
+                                               BUILD_PYTORCH
+        """,
         "rootFileTitle": "C++ API",
         "rootFileName": "api_cc.rst",
     },
