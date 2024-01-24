@@ -13,9 +13,6 @@ from deepmd_utils.common import (
 from deepmd_utils.infer.deep_pot import (
     DeepPot,
 )
-from deepmd_utils.utils.batch_size import (
-    AutoBatchSize,
-)
 from deepmd_utils.utils.data import (
     DeepmdData,
 )
@@ -395,9 +392,8 @@ def make_model_devi(
     **kwargs
         Arbitrary keyword arguments.
     """
-    auto_batch_size = AutoBatchSize()
     # init models
-    dp_models = [DeepPot(model, auto_batch_size=auto_batch_size) for model in models]
+    dp_models = [DeepPot(model, auto_batch_size=True) for model in models]
 
     # check type maps
     tmaps = [dp.get_type_map() for dp in dp_models]
