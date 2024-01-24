@@ -134,6 +134,7 @@ A full [document](doc/train/train-input-auto.rst) on options in the training inp
     - [C++ interface](doc/inference/cxx.md)
     - [Node.js interface](doc/inference/nodejs.md)
 - [Integrate with third-party packages](doc/third-party/index.rst)
+    - [Use deep potential with dpdata](doc/third-party/dpdata.md)
     - [Use deep potential with ASE](doc/third-party/ase.md)
     - [Run MD with LAMMPS](doc/third-party/lammps-command.md)
     - [Run path-integral MD with i-PI](doc/third-party/ipi.md)

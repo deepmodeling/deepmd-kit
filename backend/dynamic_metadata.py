@@ -33,7 +33,7 @@ def dynamic_metadata(
     elif field == "optional-dependencies":
         return {
             "test": [
-                "dpdata>=0.1.9",
+                "dpdata>=0.2.7",
                 "ase",
                 "pytest",
                 "pytest-cov",

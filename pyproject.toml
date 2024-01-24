@@ -55,6 +55,9 @@ deepmd = "deepmd.lmp:get_op_dir"
 [project.entry-points."dpgui"]
 "DeePMD-kit" = "deepmd_utils.utils.argcheck:gen_args"
 
+[project.entry-points."dpdata.plugins"]
+deepmd_driver = "deepmd_utils.driver:DPDriver"
+
 [project.urls]
 Homepage = "https://github.com/deepmodeling/deepmd-kit"
 documentation = "https://docs.deepmodeling.com/projects/deepmd"
