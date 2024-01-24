@@ -3,7 +3,7 @@
 Deep potential can be set up as a calculator with ASE to obtain potential energies and forces.
 ```python
 from ase import Atoms
-from deepmd.calculator import DP
+from deepmd_utils.calculator import DP
 
 water = Atoms(
     "H2O",
