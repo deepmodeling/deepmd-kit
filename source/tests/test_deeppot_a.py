@@ -519,6 +519,32 @@ class TestDeepPotANoPBC(unittest.TestCase):
         expected_sv = np.sum(expected_v.reshape([nframes, -1, 9]), axis=1)
         np.testing.assert_almost_equal(vv.ravel(), expected_sv.ravel(), default_places)
 
+    def test_dpdata_driver(self):
+        nframes = 1
+        system = dpdata.System(
+            data={
+                "coords": self.coords.reshape((nframes, -1, 3)),
+                "cells": np.zeros((nframes, 3, 3)),
+                "atom_types": np.array(self.atype),
+                "orig": np.zeros((3,)),
+                "atom_names": ["O", "H"],
+                "atom_numbs": [2, 4],
+                "nopbc": True,
+            }
+        )
+        system_predicted = system.predict(self.dp, driver="dp")
+        np.testing.assert_almost_equal(
+            system_predicted["forces"].ravel(), self.expected_f.ravel(), default_places
+        )
+        expected_se = np.sum(self.expected_e.reshape([nframes, -1]), axis=1)
+        np.testing.assert_almost_equal(
+            system_predicted["energies"].ravel(), expected_se.ravel(), default_places
+        )
+        expected_sv = np.sum(self.expected_v.reshape([nframes, -1, 9]), axis=1)
+        np.testing.assert_almost_equal(
+            system_predicted["virials"].ravel(), expected_sv.ravel(), default_places
+        )
+
 
 class TestDeepPotALargeBoxNoPBC(unittest.TestCase):
     @classmethod
