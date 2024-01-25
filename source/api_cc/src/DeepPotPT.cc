@@ -117,11 +117,12 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
   torch::Tensor flat_energy_ = energy_.toTensor().view({-1});
   torch::Tensor cpu_energy_ = flat_energy_.to(torch::kCPU);
   energy.assign(cpu_energy_.data_ptr<VALUETYPE>(),
-               cpu_energy_.data_ptr<VALUETYPE>() + cpu_energy_.numel());
+                cpu_energy_.data_ptr<VALUETYPE>() + cpu_energy_.numel());
   torch::Tensor flat_atom_energy_ = atom_energy_.toTensor().view({-1});
   torch::Tensor cpu_atom_energy_ = flat_atom_energy_.to(torch::kCPU);
-  atom_energy.assign(cpu_atom_energy_.data_ptr<VALUETYPE>(),
-               cpu_atom_energy_.data_ptr<VALUETYPE>() + cpu_atom_energy_.numel());
+  atom_energy.assign(
+      cpu_atom_energy_.data_ptr<VALUETYPE>(),
+      cpu_atom_energy_.data_ptr<VALUETYPE>() + cpu_atom_energy_.numel());
   torch::Tensor flat_force_ = force_.toTensor().view({-1});
   torch::Tensor cpu_force_ = flat_force_.to(torch::kCPU);
   force.assign(cpu_force_.data_ptr<VALUETYPE>(),
@@ -160,7 +161,7 @@ template void DeepPotPT::compute<float, ENERGYTYPE>(
     const std::vector<float>& box,
     const InputNlist& lmp_list,
     const int& ago);
-  template void DeepPotPT::compute<double, std::vector<ENERGYTYPE>>(
+template void DeepPotPT::compute<double, std::vector<ENERGYTYPE>>(
     std::vector<ENERGYTYPE>& ener,
     std::vector<double>& force,
     std::vector<double>& virial,
@@ -171,7 +172,7 @@ template void DeepPotPT::compute<float, ENERGYTYPE>(
     const std::vector<double>& box,
     const InputNlist& lmp_list,
     const int& ago);
-  template void DeepPotPT::compute<float, std::vector<ENERGYTYPE>>(
+template void DeepPotPT::compute<float, std::vector<ENERGYTYPE>>(
     std::vector<ENERGYTYPE>& ener,
     std::vector<float>& force,
     std::vector<float>& virial,
@@ -246,7 +247,7 @@ template void DeepPotPT::compute<float, ENERGYTYPE>(
     const std::vector<float>& coord,
     const std::vector<int>& atype,
     const std::vector<float>& box);
-  template void DeepPotPT::compute<double, std::vector<ENERGYTYPE>>(
+template void DeepPotPT::compute<double, std::vector<ENERGYTYPE>>(
     std::vector<ENERGYTYPE>& ener,
     std::vector<double>& force,
     std::vector<double>& virial,
@@ -255,7 +256,7 @@ template void DeepPotPT::compute<float, ENERGYTYPE>(
     const std::vector<double>& coord,
     const std::vector<int>& atype,
     const std::vector<double>& box);
-  template void DeepPotPT::compute<float, std::vector<ENERGYTYPE>>(
+template void DeepPotPT::compute<float, std::vector<ENERGYTYPE>>(
     std::vector<ENERGYTYPE>& ener,
     std::vector<float>& force,
     std::vector<float>& virial,
