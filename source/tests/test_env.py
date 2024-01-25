@@ -35,7 +35,7 @@ class TestTFSessionConfig(unittest.TestCase):
         new = env.get_tf_session_config()
         self.assertNotEqual(id(shared), id(new))
 
-    @mock.patch("deepmd.env.get_tf_default_nthreads")
+    @mock.patch("deepmd.tf.env.get_tf_default_nthreads")
     def test_get(self, mock_method):
         mock_method.return_value = (5, 3)
         config = env.get_tf_session_config()

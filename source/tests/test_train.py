@@ -4,7 +4,7 @@ from unittest.mock import (
     patch,
 )
 
-from deepmd.entrypoints.train import (
+from deepmd.tf.entrypoints.train import (
     parse_auto_sel,
     parse_auto_sel_ratio,
     update_one_sel,
@@ -31,7 +31,7 @@ class TestTrain(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             parse_auto_sel_ratio([1, 2, 3])
 
-    @patch("deepmd.entrypoints.train.get_sel")
+    @patch("deepmd.tf.entrypoints.train.get_sel")
     def test_update_one_sel(self, sel_mock):
         sel_mock.return_value = [10, 20]
         jdata = {}
@@ -44,7 +44,7 @@ class TestTrain(unittest.TestCase):
         # self.assertEqual(descriptor['sel'], [15,30])
         self.assertEqual(descriptor["sel"], [16, 32])
 
-    @patch("deepmd.entrypoints.train.get_sel")
+    @patch("deepmd.tf.entrypoints.train.get_sel")
     def test_update_sel_hybrid(self, sel_mock):
         sel_mock.return_value = [10, 20]
         jdata = {
@@ -72,7 +72,7 @@ class TestTrain(unittest.TestCase):
         jdata = update_sel(jdata)
         self.assertEqual(jdata, expected_out)
 
-    @patch("deepmd.entrypoints.train.get_sel")
+    @patch("deepmd.tf.entrypoints.train.get_sel")
     def test_update_sel(self, sel_mock):
         sel_mock.return_value = [10, 20]
         jdata = {"model": {"descriptor": {"type": "se_e2_a", "rcut": 6, "sel": "auto"}}}
@@ -82,7 +82,7 @@ class TestTrain(unittest.TestCase):
         jdata = update_sel(jdata)
         self.assertEqual(jdata, expected_out)
 
-    @patch("deepmd.entrypoints.train.get_sel")
+    @patch("deepmd.tf.entrypoints.train.get_sel")
     def test_update_sel_atten_auto(self, sel_mock):
         sel_mock.return_value = [25]
         jdata = {
@@ -106,7 +106,7 @@ class TestTrain(unittest.TestCase):
         jdata = update_sel(jdata)
         self.assertEqual(jdata, expected_out)
 
-    @patch("deepmd.entrypoints.train.get_sel")
+    @patch("deepmd.tf.entrypoints.train.get_sel")
     def test_update_sel_atten_int(self, sel_mock):
         sel_mock.return_value = [25]
         jdata = {
@@ -130,7 +130,7 @@ class TestTrain(unittest.TestCase):
         jdata = update_sel(jdata)
         self.assertEqual(jdata, expected_out)
 
-    @patch("deepmd.entrypoints.train.get_sel")
+    @patch("deepmd.tf.entrypoints.train.get_sel")
     def test_update_sel_atten_list(self, sel_mock):
         sel_mock.return_value = [25]
         jdata = {
@@ -200,7 +200,7 @@ class TestTrain(unittest.TestCase):
         jdata = update_sel(jdata)
         self.assertEqual(jdata, expected_out)
 
-    @patch("deepmd.entrypoints.train.get_min_nbor_dist")
+    @patch("deepmd.tf.entrypoints.train.get_min_nbor_dist")
     def test_pairwise_dprc(self, sel_mock):
         sel_mock.return_value = 0.5
         jdata = {

@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import numpy as np
 
-from deepmd.env import (
+from deepmd.tf.env import (
     GLOBAL_NP_FLOAT_PRECISION,
     GLOBAL_TF_FLOAT_PRECISION,
     tf,
 )
-from deepmd.infer.ewald_recp import (
+from deepmd.tf.infer.ewald_recp import (
     EwaldRecp,
     op_module,
 )

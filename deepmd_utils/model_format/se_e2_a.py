@@ -65,7 +65,7 @@ class DescrptSeA(NativeOP):
 
     :math:`\mathcal{G}^i_< \in \mathbb{R}^{N \times M_2}` takes first :math:`M_2` columns of
     :math:`\mathcal{G}^i`. The equation of embedding network :math:`\mathcal{N}` can be found at
-    :meth:`deepmd.utils.network.embedding_net`.
+    :meth:`deepmd.tf.utils.network.embedding_net`.
 
     Parameters
     ----------

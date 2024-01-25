@@ -8,8 +8,8 @@ from common import (
     tests_path,
 )
 
-from deepmd.infer.deep_pot import DeepPot as DeepPotTF
-from deepmd.utils.convert import (
+from deepmd.tf.infer.deep_pot import DeepPot as DeepPotTF
+from deepmd.tf.utils.convert import (
     convert_pbtxt_to_pb,
 )
 from deepmd_utils.infer.deep_pot import DeepPot as DeepPot

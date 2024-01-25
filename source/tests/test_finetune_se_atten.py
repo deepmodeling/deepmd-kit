@@ -12,23 +12,23 @@ from common import (
 )
 from packaging.version import parse as parse_version
 
-from deepmd.env import (
+from deepmd.tf.env import (
     GLOBAL_NP_FLOAT_PRECISION,
     tf,
 )
-from deepmd.infer import (
+from deepmd.tf.infer import (
     DeepPotential,
 )
-from deepmd.utils.argcheck import (
+from deepmd.tf.utils.argcheck import (
     normalize,
 )
-from deepmd.utils.compat import (
+from deepmd.tf.utils.compat import (
     update_deepmd_input,
 )
-from deepmd.utils.data_system import (
+from deepmd.tf.utils.data_system import (
     DeepmdDataSystem,
 )
-from deepmd.utils.graph import (
+from deepmd.tf.utils.graph import (
     get_tensor_by_name,
 )
 

@@ -3,10 +3,10 @@ import unittest
 
 import numpy as np
 
-from deepmd.env import (
+from deepmd.tf.env import (
     tf,
 )
-from deepmd.utils.network import (
+from deepmd.tf.utils.network import (
     embedding_net,
 )
 

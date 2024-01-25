@@ -651,6 +651,6 @@ def main():
         if no command was input
     """
     args = parse_args()
-    from deepmd.entrypoints.main import main as deepmd_main
+    from deepmd.tf.entrypoints.main import main as deepmd_main
 
     deepmd_main(args)

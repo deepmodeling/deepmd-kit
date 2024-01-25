@@ -3,7 +3,7 @@ import unittest
 
 import numpy as np
 
-from deepmd.common import (
+from deepmd.tf.common import (
     select_idx_map,
 )
 

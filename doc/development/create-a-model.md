@@ -10,11 +10,11 @@ To incorporate your custom model you'll need to:
 
 ## Design a new component
 
-When creating a new component, take descriptor as the example, you should inherit {py:class}`deepmd.descriptor.descriptor.Descriptor` class and override several methods. Abstract methods such as {py:class}`deepmd.descriptor.descriptor.Descriptor.build` must be implemented and others are not. You should keep arguments of these methods unchanged.
+When creating a new component, take descriptor as the example, you should inherit {py:class}`deepmd.tf.descriptor.descriptor.Descriptor` class and override several methods. Abstract methods such as {py:class}`deepmd.tf.descriptor.descriptor.Descriptor.build` must be implemented and others are not. You should keep arguments of these methods unchanged.
 
 After implementation, you need to register the component with a key:
 ```py
-from deepmd.descriptor import Descriptor
+from deepmd.tf.descriptor import Descriptor
 
 
 @Descriptor.register("some_descrpt")
@@ -31,7 +31,7 @@ To let someone uses your new component in their input file, you need to create a
 from typing import List
 
 from dargs import Argument
-from deepmd.utils.argcheck import descrpt_args_plugin
+from deepmd.tf.utils.argcheck import descrpt_args_plugin
 
 
 @descrpt_args_plugin.register("some_descrpt")

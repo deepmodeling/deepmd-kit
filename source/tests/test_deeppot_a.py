@@ -12,15 +12,15 @@ from common import (
 )
 from packaging.version import parse as parse_version
 
-from deepmd.env import (
+from deepmd.tf.env import (
     GLOBAL_NP_FLOAT_PRECISION,
     MODEL_VERSION,
     tf,
 )
-from deepmd.infer import (
+from deepmd.tf.infer import (
     DeepPot,
 )
-from deepmd.utils.convert import (
+from deepmd.tf.utils.convert import (
     convert_dp10_to_dp11,
     convert_dp012_to_dp10,
     convert_dp12_to_dp13,
@@ -724,7 +724,7 @@ class TestDeepPotALargeBoxNoPBC(unittest.TestCase):
             Atoms,
         )
 
-        from deepmd.calculator import (
+        from deepmd.tf.calculator import (
             DP,
         )
 

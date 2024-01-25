@@ -10,26 +10,26 @@ from common import (
     tests_path,
 )
 
-from deepmd.env import (
+from deepmd.tf.env import (
     GLOBAL_NP_FLOAT_PRECISION,
     tf,
 )
-from deepmd.train.run_options import (
+from deepmd.tf.train.run_options import (
     RunOptions,
 )
-from deepmd.train.trainer import (
+from deepmd.tf.train.trainer import (
     DPTrainer,
 )
-from deepmd.utils.argcheck import (
+from deepmd.tf.utils.argcheck import (
     normalize,
 )
-from deepmd.utils.compat import (
+from deepmd.tf.utils.compat import (
     update_deepmd_input,
 )
-from deepmd.utils.data_system import (
+from deepmd.tf.utils.data_system import (
     DeepmdDataSystem,
 )
-from deepmd.utils.multi_init import (
+from deepmd.tf.utils.multi_init import (
     replace_model_params_with_frz_multi_model,
 )
 

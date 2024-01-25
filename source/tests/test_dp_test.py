@@ -12,8 +12,8 @@ from common import (
     tests_path,
 )
 
-from deepmd.entrypoints.test import test as dp_test
-from deepmd.utils.convert import (
+from deepmd.tf.entrypoints.test import test as dp_test
+from deepmd.tf.utils.convert import (
     convert_pbtxt_to_pb,
 )
 

@@ -6,13 +6,13 @@ from pathlib import (
     Path,
 )
 
-from deepmd.infer import (
+from deepmd.tf.infer import (
     DeepDipole,
     DeepPolar,
     DeepPot,
     DeepPotential,
 )
-from deepmd.utils.convert import (
+from deepmd.tf.utils.convert import (
     convert_pbtxt_to_pb,
 )
 

@@ -50,7 +50,7 @@ requires-python = ">=3.7"
 keywords = ["deepmd"]
 
 [project.entry-points."lammps.plugins"]
-deepmd = "deepmd.lmp:get_op_dir"
+deepmd = "deepmd.tf.lmp:get_op_dir"
 
 [project.entry-points."dpgui"]
 "DeePMD-kit" = "deepmd_utils.utils.argcheck:gen_args"

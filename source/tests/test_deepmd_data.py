@@ -9,10 +9,10 @@ from common import (
     tests_path,
 )
 
-from deepmd.env import (
+from deepmd.tf.env import (
     GLOBAL_NP_FLOAT_PRECISION,
 )
-from deepmd.utils.data import (
+from deepmd.tf.utils.data import (
     DeepmdData,
 )
 

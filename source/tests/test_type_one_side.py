@@ -6,13 +6,13 @@ from common import (
     j_loader,
 )
 
-from deepmd.common import (
+from deepmd.tf.common import (
     j_must_have,
 )
-from deepmd.descriptor import (
+from deepmd.tf.descriptor import (
     Descriptor,
 )
-from deepmd.env import (
+from deepmd.tf.env import (
     tf,
 )
 

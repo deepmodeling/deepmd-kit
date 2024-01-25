@@ -5,13 +5,13 @@ import unittest
 
 import numpy as np
 
-from deepmd.env import (
+from deepmd.tf.env import (
     GLOBAL_NP_FLOAT_PRECISION,
 )
-from deepmd.utils import (
+from deepmd.tf.utils import (
     random,
 )
-from deepmd.utils.data_system import (
+from deepmd.tf.utils.data_system import (
     DeepmdDataSystem,
     prob_sys_size_ext,
 )

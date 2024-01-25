@@ -14,27 +14,27 @@ from packaging.version import parse as parse_version
 from deepmd import (
     DeepPotential,
 )
-from deepmd.common import (
+from deepmd.tf.common import (
     j_loader,
     j_must_have,
 )
-from deepmd.env import (
+from deepmd.tf.env import (
     GLOBAL_ENER_FLOAT_PRECISION,
     GLOBAL_NP_FLOAT_PRECISION,
     GLOBAL_TF_FLOAT_PRECISION,
     op_module,
     tf,
 )
-from deepmd.model.model import (
+from deepmd.tf.model.model import (
     Model,
 )
-from deepmd.model.pairwise_dprc import (
+from deepmd.tf.model.pairwise_dprc import (
     gather_placeholder,
 )
-from deepmd.utils.data_system import (
+from deepmd.tf.utils.data_system import (
     DeepmdDataSystem,
 )
-from deepmd.utils.sess import (
+from deepmd.tf.utils.sess import (
     run_sess,
 )
 

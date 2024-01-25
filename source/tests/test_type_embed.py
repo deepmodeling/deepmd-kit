@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import numpy as np
 
-from deepmd.env import (
+from deepmd.tf.env import (
     tf,
 )
-from deepmd.utils.type_embed import (
+from deepmd.tf.utils.type_embed import (
     TypeEmbedNet,
     embed_atom_type,
 )

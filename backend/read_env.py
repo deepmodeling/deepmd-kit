@@ -78,7 +78,7 @@ def get_argument_from_env() -> Tuple[str, list, list, dict, str]:
         cmake_args.append(f"-DLAMMPS_VERSION={dp_lammps_version}")
     if dp_ipi == "1":
         cmake_args.append("-DENABLE_IPI:BOOL=TRUE")
-        extra_scripts["dp_ipi"] = "deepmd.entrypoints.ipi:dp_ipi"
+        extra_scripts["dp_ipi"] = "deepmd.tf.entrypoints.ipi:dp_ipi"
 
     tf_install_dir, _ = find_tensorflow()
     tf_version = get_tf_version(tf_install_dir)

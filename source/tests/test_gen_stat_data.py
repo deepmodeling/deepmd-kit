@@ -5,19 +5,19 @@ import unittest
 import dpdata
 import numpy as np
 
-from deepmd.descriptor import (
+from deepmd.tf.descriptor import (
     DescrptSeA,
 )
-from deepmd.fit import (
+from deepmd.tf.fit import (
     EnerFitting,
 )
-from deepmd.model.model_stat import (
+from deepmd.tf.model.model_stat import (
     _make_all_stat_ref,
     make_stat_input,
     merge_sys_stat,
 )
-from deepmd.utils import random as dp_random
-from deepmd.utils.data_system import (
+from deepmd.tf.utils import random as dp_random
+from deepmd.tf.utils.data_system import (
     DeepmdDataSystem,
 )
 

@@ -7,14 +7,14 @@ from common import (
     tests_path,
 )
 
-from deepmd.env import (
+from deepmd.tf.env import (
     GLOBAL_NP_FLOAT_PRECISION,
     tf,
 )
-from deepmd.infer import (
+from deepmd.tf.infer import (
     DeepPot,
 )
-from deepmd.utils.convert import (
+from deepmd.tf.utils.convert import (
     convert_pbtxt_to_pb,
 )
 

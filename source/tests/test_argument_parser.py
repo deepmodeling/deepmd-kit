@@ -21,7 +21,7 @@ from typing import (
     Union,
 )
 
-from deepmd.entrypoints.main import (
+from deepmd.tf.entrypoints.main import (
     get_ll,
     parse_args,
 )
