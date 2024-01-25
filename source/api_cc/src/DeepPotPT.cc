@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 #include "DeepPotPT.h"
-
+#include "common.h"
 using namespace deepmd;
 DeepPotPT::DeepPotPT() : inited(false) {}
 DeepPotPT::DeepPotPT(const std::string& model,
@@ -25,16 +25,30 @@ void DeepPotPT::init(const std::string& model, const int& gpu_rank) {
             << std::endl;
   gpu_id = gpu_rank;
   torch::Device device(torch::kCUDA, gpu_rank);
-
-  module = torch::jit::load(model, device);
+  //This may be implemented as something like DPErrcheck(DPSetDevice(gpu_rank % gpu_num));
+  try {
+    module = torch::jit::load(model, device);
+  }
+  catch (const c10::Error& e) {
+      std::cerr << "Error loading the model, maybe GPU is not available\n";
+  }
   torch::jit::FusionStrategy strategy;
   strategy = {{torch::jit::FusionBehavior::DYNAMIC, 10}};
   torch::jit::setFusionStrategy(strategy);
 
   // at::globalContext().setAllowTF32CuBLAS(true);
   // at::globalContext().setAllowTF32CuDNN(true);
+  get_env_nthreads(num_intra_nthreads, num_inter_nthreads);//need to be fixed as DP_INTRA_OP_PARALLELISM_THREADS
+  at::set_num_interop_threads(num_inter_nthreads);
+  at::set_num_threads(num_intra_nthreads);
+
   auto rcut_ = module.run_method("get_rcut").toDouble();
   rcut = static_cast<VALUETYPE>(rcut_);
+  ntypes = 0;
+  ntypes_spin = 0;
+  dfparam = 0;
+  daparam = 0;
+  aparam_nall = false;
   inited = true;
 }
 DeepPotPT::~DeepPotPT() {}
@@ -43,6 +57,8 @@ template <typename VALUETYPE, typename ENERGYVTYPE>
 void DeepPotPT::compute(ENERGYVTYPE& ener,
                         std::vector<VALUETYPE>& force,
                         std::vector<VALUETYPE>& virial,
+                        std::vector<VALUETYPE>& atom_energy,
+                        std::vector<VALUETYPE>& atom_virial,
                         const std::vector<VALUETYPE>& coord,
                         const std::vector<int>& atype,
                         const std::vector<VALUETYPE>& box,
@@ -81,13 +97,21 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
     }
   }
   inputs.push_back(firstneigh_tensor);
+  at::Tensor box_Tensor =
+      torch::from_blob(const_cast<VALUETYPE*>(box.data()), {1, 9}, options)
+          .to(device);
+  inputs.push_back(box_Tensor);
+  at::Tensor do_atom_virial_tensor = torch.tensor(True);
+  inputs.push_back(do_atom_virial_tensor);
   c10::Dict<c10::IValue, c10::IValue> outputs =
       module.forward(inputs).toGenericDict();
   c10::IValue energy_ = outputs.at("energy");
   c10::IValue force_ = outputs.at("extended_force");
   c10::IValue virial_ = outputs.at("extended_virial");
+  c10::IValue atom_virial_ = outputs.at("atomic_virial");
+  c10::IValue atom_energy_ = outputs.at("atom_energy");
   ener = energy_.toTensor().item<double>();
-
+  atom_energy = atom_energy_.toTensor().item<double>();
   torch::Tensor flat_force_ = force_.toTensor().view({-1});
   torch::Tensor cpu_force_ = flat_force_.to(torch::kCPU);
   force.assign(cpu_force_.data_ptr<double>(),
@@ -97,6 +121,11 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
   torch::Tensor cpu_virial_ = flat_virial_.to(torch::kCPU);
   virial.assign(cpu_virial_.data_ptr<double>(),
                 cpu_virial_.data_ptr<double>() + cpu_virial_.numel());
+
+  torch::Tensor flat_atom_virial_ = atom_virial_.toTensor().view({-1});
+  torch::Tensor cpu_atom_virial_ = flat_atom_virial_.to(torch::kCPU);
+  atom_virial.assign(cpu_atom_virial_.data_ptr<double>(),
+                cpu_atom_virial_.data_ptr<double>() + cpu_atom_virial_.numel());
 }
 template void DeepPotPT::compute<double, double>(
     double& ener,
@@ -238,7 +267,8 @@ void DeepPotPT::computew_mixed_type(std::vector<double>& ener,
                                     const std::vector<double>& box,
                                     const std::vector<double>& fparam,
                                     const std::vector<double>& aparam) {
-  throw;
+  throw deepmd::deepmd_exception(
+        "computew_mixed_type is not implemented");
 }
 void DeepPotPT::computew_mixed_type(std::vector<double>& ener,
                                     std::vector<float>& force,
@@ -251,5 +281,6 @@ void DeepPotPT::computew_mixed_type(std::vector<double>& ener,
                                     const std::vector<float>& box,
                                     const std::vector<float>& fparam,
                                     const std::vector<float>& aparam) {
-  throw;
+  throw deepmd::deepmd_exception(
+        "computew_mixed_type is not implemented");
 }

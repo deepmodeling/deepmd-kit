@@ -310,11 +310,13 @@ class DeepPotPT : public DeepPotBase {
       const std::vector<float>& aparam = std::vector<float>());
 
  private:
+  int num_intra_nthreads, num_inter_nthreads;
   bool inited;
   int ntypes;
   int ntypes_spin;
   int dfparam;
   int daparam;
+  bool aparam_nall;
   // copy neighbor list info from host
   torch::jit::script::Module module;
   double rcut;
