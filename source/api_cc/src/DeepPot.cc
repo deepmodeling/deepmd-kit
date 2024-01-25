@@ -10,6 +10,9 @@
 #ifdef BUILD_TENSORFLOW
 #include "DeepPotTF.h"
 #endif
+#ifdef BUILD_PYTORCH
+#include "DeepPotPT.h"
+#endif
 #include "device.h"
 
 using namespace deepmd;
