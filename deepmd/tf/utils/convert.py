@@ -14,7 +14,7 @@ from packaging.specifiers import (
 )
 from packaging.version import parse as parse_version
 
-from deepmd import (
+from deepmd.tf import (
     __version__,
 )
 from deepmd.tf.env import (

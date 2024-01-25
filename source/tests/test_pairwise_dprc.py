@@ -11,7 +11,7 @@ from common import (
 )
 from packaging.version import parse as parse_version
 
-from deepmd import (
+from deepmd.tf import (
     DeepPotential,
 )
 from deepmd.tf.common import (

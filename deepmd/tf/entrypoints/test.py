@@ -14,7 +14,7 @@ from typing import (
 
 import numpy as np
 
-from deepmd import (
+from deepmd.tf import (
     DeepPotential,
 )
 from deepmd.tf.common import (

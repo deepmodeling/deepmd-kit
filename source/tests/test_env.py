@@ -4,7 +4,7 @@ from unittest import (
     mock,
 )
 
-from deepmd import (
+from deepmd.tf import (
     env,
 )
 
