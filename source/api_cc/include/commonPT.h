@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 #include <torch/script.h>
-#ifndef COMMON_H
-#define COMMON_H
 #include <cstdint>
 #include <cstdlib>
 #include <iostream>
