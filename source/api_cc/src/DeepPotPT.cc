@@ -117,7 +117,7 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
   torch::Tensor flat_energy_ = energy_.toTensor().view({-1});
   torch::Tensor cpu_energy_ = flat_energy_.to(torch::kCPU);
   ener.assign(cpu_energy_.data_ptr<VALUETYPE>(),
-                cpu_energy_.data_ptr<VALUETYPE>() + cpu_energy_.numel());
+              cpu_energy_.data_ptr<VALUETYPE>() + cpu_energy_.numel());
   torch::Tensor flat_atom_energy_ = atom_energy_.toTensor().view({-1});
   torch::Tensor cpu_atom_energy_ = flat_atom_energy_.to(torch::kCPU);
   atom_energy.assign(
@@ -224,7 +224,7 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
   torch::Tensor flat_energy_ = energy_.toTensor().view({-1});
   torch::Tensor cpu_energy_ = flat_energy_.to(torch::kCPU);
   ener.assign(cpu_energy_.data_ptr<VALUETYPE>(),
-                cpu_energy_.data_ptr<VALUETYPE>() + cpu_energy_.numel());
+              cpu_energy_.data_ptr<VALUETYPE>() + cpu_energy_.numel());
   torch::Tensor flat_atom_energy_ = atom_energy_.toTensor().view({-1});
   torch::Tensor cpu_atom_energy_ = flat_atom_energy_.to(torch::kCPU);
   atom_energy.assign(
