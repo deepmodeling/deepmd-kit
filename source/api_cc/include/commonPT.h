@@ -25,4 +25,4 @@ struct NeighborListDataPT {
                        int nnei);
   // void make_inlist(InputNlist& inlist);
 };
-}
+}  // namespace deepmd
