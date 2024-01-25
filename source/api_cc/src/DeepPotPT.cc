@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 #include "DeepPotPT.h"
+
 #include "common.h"
 using namespace deepmd;
 DeepPotPT::DeepPotPT() : inited(false) {}
@@ -25,12 +26,12 @@ void DeepPotPT::init(const std::string& model, const int& gpu_rank) {
             << std::endl;
   gpu_id = gpu_rank;
   torch::Device device(torch::kCUDA, gpu_rank);
-  //This may be implemented as something like DPErrcheck(DPSetDevice(gpu_rank % gpu_num));
+  // This may be implemented as something like DPErrcheck(DPSetDevice(gpu_rank %
+  // gpu_num));
   try {
     module = torch::jit::load(model, device);
-  }
-  catch (const c10::Error& e) {
-      std::cerr << "Error loading the model, maybe GPU is not available\n";
+  } catch (const c10::Error& e) {
+    std::cerr << "Error loading the model, maybe GPU is not available\n";
   }
   torch::jit::FusionStrategy strategy;
   strategy = {{torch::jit::FusionBehavior::DYNAMIC, 10}};
@@ -38,7 +39,9 @@ void DeepPotPT::init(const std::string& model, const int& gpu_rank) {
 
   // at::globalContext().setAllowTF32CuBLAS(true);
   // at::globalContext().setAllowTF32CuDNN(true);
-  get_env_nthreads(num_intra_nthreads, num_inter_nthreads);//need to be fixed as DP_INTRA_OP_PARALLELISM_THREADS
+  get_env_nthreads(num_intra_nthreads,
+                   num_inter_nthreads);  // need to be fixed as
+                                         // DP_INTRA_OP_PARALLELISM_THREADS
   at::set_num_interop_threads(num_inter_nthreads);
   at::set_num_threads(num_intra_nthreads);
 
@@ -124,8 +127,9 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
 
   torch::Tensor flat_atom_virial_ = atom_virial_.toTensor().view({-1});
   torch::Tensor cpu_atom_virial_ = flat_atom_virial_.to(torch::kCPU);
-  atom_virial.assign(cpu_atom_virial_.data_ptr<double>(),
-                cpu_atom_virial_.data_ptr<double>() + cpu_atom_virial_.numel());
+  atom_virial.assign(
+      cpu_atom_virial_.data_ptr<double>(),
+      cpu_atom_virial_.data_ptr<double>() + cpu_atom_virial_.numel());
 }
 template void DeepPotPT::compute<double, double>(
     double& ener,
@@ -267,8 +271,7 @@ void DeepPotPT::computew_mixed_type(std::vector<double>& ener,
                                     const std::vector<double>& box,
                                     const std::vector<double>& fparam,
                                     const std::vector<double>& aparam) {
-  throw deepmd::deepmd_exception(
-        "computew_mixed_type is not implemented");
+  throw deepmd::deepmd_exception("computew_mixed_type is not implemented");
 }
 void DeepPotPT::computew_mixed_type(std::vector<double>& ener,
                                     std::vector<float>& force,
@@ -281,6 +284,5 @@ void DeepPotPT::computew_mixed_type(std::vector<double>& ener,
                                     const std::vector<float>& box,
                                     const std::vector<float>& fparam,
                                     const std::vector<float>& aparam) {
-  throw deepmd::deepmd_exception(
-        "computew_mixed_type is not implemented");
+  throw deepmd::deepmd_exception("computew_mixed_type is not implemented");
 }
