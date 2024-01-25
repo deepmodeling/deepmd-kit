@@ -7,7 +7,7 @@
 
 #include "neighbor_list.h"
 
-struct NeighborListData {
+struct NeighborListDataPT {
   /// Array stores the core region atom's index
   std::vector<int> ilist;
   /// Array stores the core region atom's neighbor index

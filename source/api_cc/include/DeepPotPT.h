@@ -320,7 +320,7 @@ class DeepPotPT : public DeepPotBase {
   // copy neighbor list info from host
   torch::jit::script::Module module;
   double rcut;
-  NeighborListData nlist_data;
+  NeighborListDataPT nlist_data;
   // InputNlist nlist;
   int max_num_neighbors;
   int gpu_id;
