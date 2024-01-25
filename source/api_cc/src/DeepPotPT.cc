@@ -46,7 +46,7 @@ void DeepPotPT::init(const std::string& model, const int& gpu_rank) {
   at::set_num_threads(num_intra_nthreads);
 
   auto rcut_ = module.run_method("get_rcut").toDouble();
-  rcut = static_cast<VALUETYPE>(rcut_);
+  rcut = static_cast<double>(rcut_);
   ntypes = 0;
   ntypes_spin = 0;
   dfparam = 0;
@@ -99,13 +99,13 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
       firstneigh_tensor = firstneigh.to(torch::kInt64).to(device);
     }
   }
-  inputs.push_back(firstneigh_tensor);
   at::Tensor box_Tensor =
       torch::from_blob(const_cast<VALUETYPE*>(box.data()), {1, 9}, options)
           .to(device);
   inputs.push_back(box_Tensor);
-  at::Tensor do_atom_virial_tensor = torch.tensor(True);
+  at::Tensor do_atom_virial_tensor = torch::tensor(true);
   inputs.push_back(do_atom_virial_tensor);
+  inputs.push_back(firstneigh_tensor);
   c10::Dict<c10::IValue, c10::IValue> outputs =
       module.forward(inputs).toGenericDict();
   c10::IValue energy_ = outputs.at("energy");
@@ -114,7 +114,9 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
   c10::IValue atom_virial_ = outputs.at("atomic_virial");
   c10::IValue atom_energy_ = outputs.at("atom_energy");
   ener = energy_.toTensor().item<double>();
-  atom_energy = atom_energy_.toTensor().item<double>();
+  torch::Tensor flat_atom_energy_ = atom_energy_.toTensor().view({-1});
+    torch::Tensor cpu_atom_energy_ = flat_atom_energy_.to(torch::kCPU);
+    force.assign(cpu_atom_energy_.data_ptr<double>(), cpu_atom_energy_.data_ptr<double>() + cpu_atom_energy_.numel());
   torch::Tensor flat_force_ = force_.toTensor().view({-1});
   torch::Tensor cpu_force_ = flat_force_.to(torch::kCPU);
   force.assign(cpu_force_.data_ptr<double>(),
@@ -135,6 +137,8 @@ template void DeepPotPT::compute<double, double>(
     double& ener,
     std::vector<double>& force,
     std::vector<double>& virial,
+    std::vector<double>& atom_energy,
+    std::vector<double>& atom_virial,
     const std::vector<double>& coord,
     const std::vector<int>& atype,
     const std::vector<double>& box,
@@ -145,6 +149,8 @@ template <typename VALUETYPE, typename ENERGYVTYPE>
 void DeepPotPT::compute(ENERGYVTYPE& ener,
                         std::vector<VALUETYPE>& force,
                         std::vector<VALUETYPE>& virial,
+                        std::vector<VALUETYPE>& atom_energy,
+                        std::vector<VALUETYPE>& atom_virial,
                         const std::vector<VALUETYPE>& coord,
                         const std::vector<int>& atype,
                         const std::vector<VALUETYPE>& box) {
@@ -189,6 +195,8 @@ template void DeepPotPT::compute<double, double>(
     double& ener,
     std::vector<double>& force,
     std::vector<double>& virial,
+    std::vector<double>& atom_energy,
+    std::vector<double>& atom_virial,
     const std::vector<double>& coord,
     const std::vector<int>& atype,
     const std::vector<double>& box);
@@ -212,8 +220,7 @@ void DeepPotPT::computew(std::vector<double>& ener,
                          const std::vector<double>& box,
                          const std::vector<double>& fparam,
                          const std::vector<double>& aparam) {
-  // TODO: atomic compute unsupported
-  compute(ener, force, virial, coord, atype, box);
+  compute(ener, force, virial, atom_energy,atom_virial, atype, box);
 }
 void DeepPotPT::computew(std::vector<double>& ener,
                          std::vector<float>& force,
@@ -226,7 +233,8 @@ void DeepPotPT::computew(std::vector<double>& ener,
                          const std::vector<float>& fparam,
                          const std::vector<float>& aparam) {
   // TODO: atomic compute unsupported
-  compute(ener, force, virial, coord, atype, box);
+  //compute(ener, force, virial, atom_energy,atom_virial, atype, box);
+  throw deepmd::deepmd_exception("unsupported float type");
 }
 void DeepPotPT::computew(std::vector<double>& ener,
                          std::vector<double>& force,
@@ -242,7 +250,7 @@ void DeepPotPT::computew(std::vector<double>& ener,
                          const std::vector<double>& fparam,
                          const std::vector<double>& aparam) {
   // TODO: atomic compute unsupported
-  compute(ener, force, virial, coord, atype, box, inlist, ago);
+  compute(ener, force, virial, atom_energy,atom_virial,  coord, atype, box, inlist, ago);
 }
 void DeepPotPT::computew(std::vector<double>& ener,
                          std::vector<float>& force,
@@ -258,7 +266,8 @@ void DeepPotPT::computew(std::vector<double>& ener,
                          const std::vector<float>& fparam,
                          const std::vector<float>& aparam) {
   // TODO: atomic compute unsupported
-  compute(ener, force, virial, coord, atype, box, inlist, ago);
+  //compute(ener, force, virial, coord, atype, box, inlist, ago);
+  throw deepmd::deepmd_exception("unsupported float type");
 }
 void DeepPotPT::computew_mixed_type(std::vector<double>& ener,
                                     std::vector<double>& force,
