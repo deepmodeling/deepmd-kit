@@ -7,7 +7,7 @@
 #include <vector>
 
 #include "neighbor_list.h"
-
+namespace deepmd {
 struct NeighborListDataPT {
   /// Array stores the core region atom's index
   std::vector<int> ilist;
@@ -25,3 +25,4 @@ struct NeighborListDataPT {
                        int nnei);
   // void make_inlist(InputNlist& inlist);
 };
+}
