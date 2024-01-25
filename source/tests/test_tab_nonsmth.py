@@ -15,12 +15,12 @@ from test_descrpt_nonsmth import (
 )
 
 # load grad of force module
-import deepmd.op  # noqa: F401
-from deepmd.env import (
+import deepmd.tf.op  # noqa: F401
+from deepmd.tf.env import (
     op_module,
     tf,
 )
-from deepmd.utils.pair_tab import (
+from deepmd.tf.utils.pair_tab import (
     PairTab,
 )
 

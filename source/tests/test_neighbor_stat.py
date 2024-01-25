@@ -5,7 +5,7 @@ import unittest
 import dpdata
 import numpy as np
 
-from deepmd.entrypoints.neighbor_stat import (
+from deepmd.tf.entrypoints.neighbor_stat import (
     neighbor_stat,
 )
 

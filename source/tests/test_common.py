@@ -5,12 +5,12 @@ from pathlib import (
     Path,
 )
 
-from deepmd.common import (
+from deepmd.tf.common import (
     GLOBAL_TF_FLOAT_PRECISION,
     cast_precision,
     expand_sys_str,
 )
-from deepmd.env import (
+from deepmd.tf.env import (
     tf,
 )
 
@@ -66,7 +66,7 @@ class TestCommonExpandSysDir(unittest.TestCase):
 
 
 class TestCastPrecision(unittest.TestCase):
-    """This class tests `deepmd.common.cast_precision`."""
+    """This class tests `deepmd.tf.common.cast_precision`."""
 
     @property
     def precision(self):

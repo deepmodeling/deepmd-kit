@@ -10,16 +10,16 @@ from common import (
 )
 from packaging.version import parse as parse_version
 
-from deepmd.common import (
+from deepmd.tf.common import (
     j_must_have,
 )
-from deepmd.descriptor import (
+from deepmd.tf.descriptor import (
     DescrptSeAtten,
 )
-from deepmd.env import (
+from deepmd.tf.env import (
     tf,
 )
-from deepmd.utils.type_embed import (
+from deepmd.tf.utils.type_embed import (
     TypeEmbedNet,
 )
 

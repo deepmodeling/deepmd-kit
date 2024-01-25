@@ -6,7 +6,7 @@ import unittest
 
 import numpy as np
 
-# from deepmd.entrypoints.compress import compress
+# from deepmd.tf.entrypoints.compress import compress
 from common import (
     j_loader,
     run_dp,
@@ -14,10 +14,10 @@ from common import (
 )
 from packaging.version import parse as parse_version
 
-from deepmd.env import (
+from deepmd.tf.env import (
     tf,
 )
-from deepmd.infer import (
+from deepmd.tf.infer import (
     DeepPot,
 )
 
@@ -552,7 +552,7 @@ class TestDeepPotALargeBoxNoPBC(unittest.TestCase):
                 Atoms,
             )
 
-            from deepmd.calculator import (
+            from deepmd.tf.calculator import (
                 DP,
             )
 

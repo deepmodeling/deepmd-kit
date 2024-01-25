@@ -1,4 +1,8 @@
-# Multi-task training
+# Multi-task training {{ tensorflow_icon }}
+
+:::{note}
+**Supported backends**: TensorFlow {{ tensorflow_icon }}
+:::
 
 ## Theory
 

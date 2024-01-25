@@ -1,4 +1,8 @@
-# Descriptor `"se_a_mask"`
+# Descriptor `"se_a_mask"` {{ tensorflow_icon }}
+
+:::{note}
+**Supported backends**: TensorFlow {{ tensorflow_icon }}
+:::
 
 
 Descriptor `se_a_mask` is a concise implementation of the descriptor `se_e2_a`,

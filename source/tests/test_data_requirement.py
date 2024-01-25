@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import unittest
 
-from deepmd.common import (
+from deepmd.tf.common import (
     add_data_requirement,
     data_requirement,
 )

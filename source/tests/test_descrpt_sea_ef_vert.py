@@ -11,7 +11,7 @@ from common import (
 )
 
 # load grad of force module
-from deepmd.env import (
+from deepmd.tf.env import (
     GLOBAL_NP_FLOAT_PRECISION,
     GLOBAL_TF_FLOAT_PRECISION,
     op_module,

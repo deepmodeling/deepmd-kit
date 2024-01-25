@@ -9,20 +9,20 @@ from common import (
     strerch_box,
 )
 
-from deepmd.common import (
+from deepmd.tf.common import (
     j_must_have,
 )
-from deepmd.descriptor import (
+from deepmd.tf.descriptor import (
     DescrptSeA,
 )
-from deepmd.env import (
+from deepmd.tf.env import (
     tf,
 )
-from deepmd.fit import (
+from deepmd.tf.fit import (
     DipoleFittingSeA,
     EnerFitting,
 )
-from deepmd.model import (
+from deepmd.tf.model import (
     MultiModel,
 )
 

@@ -4,27 +4,27 @@ import shutil
 
 import numpy as np
 
-from deepmd.common import (
+from deepmd.tf.common import (
     data_requirement,
     j_must_have,
 )
-from deepmd.env import (
+from deepmd.tf.env import (
     GLOBAL_NP_FLOAT_PRECISION,
     tf,
 )
-from deepmd.infer.data_modifier import (
+from deepmd.tf.infer.data_modifier import (
     DipoleChargeModifier,
 )
-from deepmd.infer.deep_dipole import (
+from deepmd.tf.infer.deep_dipole import (
     DeepDipole,
 )
-from deepmd.train.run_options import (
+from deepmd.tf.train.run_options import (
     RunOptions,
 )
-from deepmd.train.trainer import (
+from deepmd.tf.train.trainer import (
     DPTrainer,
 )
-from deepmd.utils.data_system import (
+from deepmd.tf.utils.data_system import (
     DeepmdDataSystem,
 )
 

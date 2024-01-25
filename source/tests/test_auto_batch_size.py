@@ -4,10 +4,10 @@ import unittest
 
 import numpy as np
 
-from deepmd.utils.batch_size import (
+from deepmd.tf.utils.batch_size import (
     AutoBatchSize,
 )
-from deepmd.utils.errors import (
+from deepmd.tf.utils.errors import (
     OutOfMemoryError,
 )
 

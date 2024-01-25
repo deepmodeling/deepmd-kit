@@ -27,13 +27,13 @@ def dynamic_metadata(
     _, _, find_libpython_requires, extra_scripts, tf_version = get_argument_from_env()
     if field == "scripts":
         return {
-            "dp": "deepmd_utils.main:main",
+            "dp": "deepmd.main:main",
             **extra_scripts,
         }
     elif field == "optional-dependencies":
         return {
             "test": [
-                "dpdata>=0.1.9",
+                "dpdata>=0.2.7",
                 "ase",
                 "pytest",
                 "pytest-cov",

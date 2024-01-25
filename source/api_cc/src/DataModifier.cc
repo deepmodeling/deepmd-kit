@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 #include "DataModifier.h"
 
+#ifdef BUILD_TENSORFLOW
 #include "DataModifierTF.h"
+#endif
 #include "common.h"
 
 using namespace deepmd;
@@ -29,9 +31,12 @@ void DipoleChargeModifier::init(const std::string& model,
   // TODO: To implement detect_backend
   DPBackend backend = deepmd::DPBackend::TensorFlow;
   if (deepmd::DPBackend::TensorFlow == backend) {
-    // TODO: throw errors if TF backend is not built, without mentioning TF
+#ifdef BUILD_TENSORFLOW
     dcm = std::make_shared<deepmd::DipoleChargeModifierTF>(model, gpu_rank,
                                                            name_scope_);
+#else
+    throw deepmd::deepmd_exception("TensorFlow backend is not built");
+#endif
   } else if (deepmd::DPBackend::PyTorch == backend) {
     throw deepmd::deepmd_exception("PyTorch backend is not supported yet");
   } else if (deepmd::DPBackend::Paddle == backend) {

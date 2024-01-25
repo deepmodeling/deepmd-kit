@@ -15,11 +15,11 @@ from test_descrpt_smooth import (
 )
 
 # load grad of force module
-from deepmd.env import (
+from deepmd.tf.env import (
     op_module,
     tf,
 )
-from deepmd.utils.pair_tab import (
+from deepmd.tf.utils.pair_tab import (
     PairTab,
 )
 

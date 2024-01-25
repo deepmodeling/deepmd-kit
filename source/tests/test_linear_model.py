@@ -4,18 +4,18 @@ import sys
 
 import numpy as np
 
-from deepmd.env import (
+from deepmd.tf.env import (
     GLOBAL_ENER_FLOAT_PRECISION,
     GLOBAL_TF_FLOAT_PRECISION,
     tf,
 )
-from deepmd.infer import (
+from deepmd.tf.infer import (
     DeepPotential,
 )
-from deepmd.model.linear import (
+from deepmd.tf.model.linear import (
     LinearEnergyModel,
 )
-from deepmd.utils.convert import (
+from deepmd.tf.utils.convert import (
     convert_pbtxt_to_pb,
 )
 

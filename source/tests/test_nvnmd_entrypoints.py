@@ -7,40 +7,40 @@ from common import (
     tests_path,
 )
 
-from deepmd.env import (
+from deepmd.tf.env import (
     GLOBAL_TF_FLOAT_PRECISION,
     tf,
 )
-from deepmd.nvnmd.data.data import (
+from deepmd.tf.nvnmd.data.data import (
     jdata_deepmd_input_v0,
     jdata_deepmd_input_v1,
 )
-from deepmd.nvnmd.entrypoints.freeze import (
+from deepmd.tf.nvnmd.entrypoints.freeze import (
     save_weight,
 )
-from deepmd.nvnmd.entrypoints.mapt import (
+from deepmd.tf.nvnmd.entrypoints.mapt import (
     MapTable,
 )
-from deepmd.nvnmd.entrypoints.wrap import (
+from deepmd.tf.nvnmd.entrypoints.wrap import (
     wrap,
 )
-from deepmd.nvnmd.utils.config import (
+from deepmd.tf.nvnmd.utils.config import (
     nvnmd_cfg,
 )
-from deepmd.nvnmd.utils.fio import (
+from deepmd.tf.nvnmd.utils.fio import (
     FioBin,
     FioNpyDic,
 )
-from deepmd.train.run_options import (
+from deepmd.tf.train.run_options import (
     RunOptions,
 )
-from deepmd.train.trainer import (
+from deepmd.tf.train.trainer import (
     DPTrainer,
 )
-from deepmd.utils.argcheck import (
+from deepmd.tf.utils.argcheck import (
     normalize,
 )
-from deepmd.utils.compat import (
+from deepmd.tf.utils.compat import (
     update_deepmd_input,
 )
 

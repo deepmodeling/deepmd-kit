@@ -8,15 +8,15 @@ import shutil
 import dpdata
 import numpy as np
 
-from deepmd.common import j_loader as dp_j_loader
-from deepmd.entrypoints.main import (
+from deepmd.tf.common import j_loader as dp_j_loader
+from deepmd.tf.entrypoints.main import (
     main,
 )
-from deepmd.env import (
+from deepmd.tf.env import (
     GLOBAL_NP_FLOAT_PRECISION,
     tf,
 )
-from deepmd.utils import random as dp_random
+from deepmd.tf.utils import random as dp_random
 
 if GLOBAL_NP_FLOAT_PRECISION == np.float32:
     global_default_fv_hh = 1e-2

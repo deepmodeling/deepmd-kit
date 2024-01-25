@@ -6,17 +6,17 @@ import unittest
 
 import numpy as np
 
-# from deepmd.entrypoints.compress import compress
+# from deepmd.tf.entrypoints.compress import compress
 from common import (
     j_loader,
     run_dp,
     tests_path,
 )
 
-from deepmd.env import (
+from deepmd.tf.env import (
     GLOBAL_NP_FLOAT_PRECISION,
 )
-from deepmd.infer import (
+from deepmd.tf.infer import (
     DeepPot,
 )
 
@@ -412,7 +412,7 @@ class TestDeepPotALargeBoxNoPBC(unittest.TestCase):
             Atoms,
         )
 
-        from deepmd.calculator import (
+        from deepmd.tf.calculator import (
             DP,
         )
 

@@ -7,7 +7,9 @@
 #include <stdexcept>
 
 #include "AtomMap.h"
+#ifdef BUILD_TENSORFLOW
 #include "DeepPotTF.h"
+#endif
 #include "device.h"
 
 using namespace deepmd;
@@ -35,8 +37,11 @@ void DeepPot::init(const std::string& model,
   // TODO: To implement detect_backend
   DPBackend backend = deepmd::DPBackend::TensorFlow;
   if (deepmd::DPBackend::TensorFlow == backend) {
-    // TODO: throw errors if TF backend is not built, without mentioning TF
+#ifdef BUILD_TENSORFLOW
     dp = std::make_shared<deepmd::DeepPotTF>(model, gpu_rank, file_content);
+#else
+    throw deepmd::deepmd_exception("TensorFlow backend is not built");
+#endif
   } else if (deepmd::DPBackend::PyTorch == backend) {
     // throw deepmd::deepmd_exception("PyTorch backend is not supported yet");
     dp = std::make_shared<deepmd::DeepPotPT>(model, gpu_rank, file_content);

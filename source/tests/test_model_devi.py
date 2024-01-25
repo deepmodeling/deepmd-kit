@@ -5,11 +5,11 @@ import unittest
 
 import numpy as np
 
-from deepmd.infer import (
+from deepmd.tf.infer import (
     DeepPotential,
     calc_model_devi,
 )
-from deepmd.infer.model_devi import (
+from deepmd.tf.infer.model_devi import (
     make_model_devi,
 )
 
@@ -20,7 +20,7 @@ from common import (
     tests_path,
 )
 
-from deepmd.utils.convert import (
+from deepmd.tf.utils.convert import (
     convert_pbtxt_to_pb,
 )
 

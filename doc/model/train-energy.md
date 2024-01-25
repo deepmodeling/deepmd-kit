@@ -1,4 +1,8 @@
-# Fit energy
+# Fit energy {{ tensorflow_icon }}
+
+:::{note}
+**Supported backends**: TensorFlow {{ tensorflow_icon }}
+:::
 
 In this section, we will take `$deepmd_source_dir/examples/water/se_e2_a/input.json` as an example of the input file.
 

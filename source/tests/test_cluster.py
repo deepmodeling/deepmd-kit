@@ -4,7 +4,7 @@ from unittest import (
     mock,
 )
 
-from deepmd.cluster import (
+from deepmd.tf.cluster import (
     local,
     slurm,
 )

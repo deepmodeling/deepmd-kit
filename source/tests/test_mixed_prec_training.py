@@ -6,7 +6,7 @@ import unittest
 
 import numpy as np
 
-# from deepmd.entrypoints.compress import compress
+# from deepmd.tf.entrypoints.compress import compress
 from common import (
     j_loader,
     run_dp,
@@ -16,7 +16,7 @@ from packaging.version import (
     Version,
 )
 
-from deepmd.env import (
+from deepmd.tf.env import (
     TF_VERSION,
 )
 
