@@ -2,7 +2,7 @@
 
 --------------------------------------------------------------------------------
 
-<span style="font-size:larger;">DeePMD-kit Manual</span>
+# DeePMD-kit
 ========
 [![GitHub release](https://img.shields.io/github/release/deepmodeling/deepmd-kit.svg?maxAge=86400)](https://github.com/deepmodeling/deepmd-kit/releases)
 [![offline packages](https://img.shields.io/github/downloads/deepmodeling/deepmd-kit/total?label=offline%20packages)](https://github.com/deepmodeling/deepmd-kit/releases)
@@ -10,17 +10,6 @@
 [![pip install](https://img.shields.io/pypi/dm/deepmd-kit?label=pip%20install)](https://pypi.org/project/deepmd-kit)
 [![docker pull](https://img.shields.io/docker/pulls/deepmodeling/deepmd-kit)](https://hub.docker.com/r/deepmodeling/deepmd-kit)
 [![Documentation Status](https://readthedocs.org/projects/deepmd/badge/)](https://deepmd.readthedocs.io/)
-
-## Table of contents
-- [About DeePMD-kit](#about-deepmd-kit)
- 	- [Highlights in v2.0](#highlights-in-deepmd-kit-v2.0)
- 	- [Highlighted features](#highlighted-features)
- 	- [License and credits](#license-and-credits)
- 	- [Deep Potential in a nutshell](#deep-potential-in-a-nutshell)
-- [Download and install](#download-and-install)
-- [Use DeePMD-kit](#use-deepmd-kit)
-- [Code structure](#code-structure)
-- [Troubleshooting](#troubleshooting)
 
 ## About DeePMD-kit
 DeePMD-kit is a package written in Python/C++, designed to minimize the effort required to build deep learning-based model of interatomic potential energy and force field and to perform molecular dynamics (MD). This brings new hopes to addressing the accuracy-versus-efficiency dilemma in molecular simulations. Applications of DeePMD-kit span from finite molecules to extended systems and from metallic systems to chemically bonded systems.
