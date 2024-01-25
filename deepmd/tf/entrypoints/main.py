@@ -11,6 +11,11 @@ from typing import (
     Union,
 )
 
+from deepmd.main import (
+    get_ll,
+    main_parser,
+    parse_args,
+)
 from deepmd.tf.common import (
     clear_session,
 )
@@ -31,11 +36,6 @@ from deepmd.tf.loggers import (
 )
 from deepmd.tf.nvnmd.entrypoints.train import (
     train_nvnmd,
-)
-from deepmd_utils.main import (
-    get_ll,
-    main_parser,
-    parse_args,
 )
 
 __all__ = ["main", "parse_args", "get_ll", "main_parser"]

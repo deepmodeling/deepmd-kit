@@ -7,13 +7,13 @@ from typing import (
 
 import numpy as np
 
-from deepmd_utils.common import (
+from deepmd.common import (
     expand_sys_str,
 )
-from deepmd_utils.infer.deep_pot import (
+from deepmd.infer.deep_pot import (
     DeepPot,
 )
-from deepmd_utils.utils.data import (
+from deepmd.utils.data import (
     DeepmdData,
 )
 

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from deepmd_utils.infer.model_devi import (
+from deepmd.infer.model_devi import (
     calc_model_devi,
     calc_model_devi_e,
     calc_model_devi_f,

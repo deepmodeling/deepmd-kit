@@ -245,14 +245,14 @@ type_HO = np.array([2, 1, 1, 2, 1, 1, 3])
 nktv2p = 1.6021765e6
 
 sp.check_output(
-    "{} -m deepmd.tf convert-from pbtxt -i {} -o {}".format(
+    "{} -m deepmd convert-from pbtxt -i {} -o {}".format(
         sys.executable,
         pbtxt_file.resolve(),
         pb_file.resolve(),
     ).split()
 )
 sp.check_output(
-    "{} -m deepmd.tf convert-from pbtxt -i {} -o {}".format(
+    "{} -m deepmd convert-from pbtxt -i {} -o {}".format(
         sys.executable,
         pbtxt_file2.resolve(),
         pb_file2.resolve(),

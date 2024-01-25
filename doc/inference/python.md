@@ -2,7 +2,7 @@
 
 One may use the python interface of DeePMD-kit for model inference, an example is given as follows
 ```python
-from deepmd_utils.infer import DeepPot
+from deepmd.infer import DeepPot
 import numpy as np
 
 dp = DeepPot("graph.pb")
@@ -15,8 +15,8 @@ where `e`, `f` and `v` are predicted energy, force and virial of the system, res
 
 Furthermore, one can use the python interface to calculate model deviation.
 ```python
-from deepmd_utils.infer import calc_model_devi
-from deepmd_utils.infer import DeepPot as DP
+from deepmd.infer import calc_model_devi
+from deepmd.infer import DeepPot as DP
 import numpy as np
 
 coord = np.array([[1, 0, 0], [0, 0, 1.5], [1, 0, 3]]).reshape([1, -1])
@@ -32,7 +32,7 @@ Note that if the model inference or model deviation is performed cyclically, one
 
 The native neighbor list algorithm of the DeePMD-kit is in $O(N^2)$ complexity ($N$ is the number of atoms).
 While this is not a problem for small systems that quantum methods can afford, the large systems for molecular dynamics have slow performance.
-In this case, one may pass an external neighbor list that has lower complexity to {class}`DeepPot <deepmd_utils.infer.DeepPot>`, once it is compatible with {class}`ase.neighborlist.NewPrimitiveNeighborList`.
+In this case, one may pass an external neighbor list that has lower complexity to {class}`DeepPot <deepmd.infer.DeepPot>`, once it is compatible with {class}`ase.neighborlist.NewPrimitiveNeighborList`.
 
 ```py
 import ase.neighborlist
@@ -43,4 +43,4 @@ neighbor_list = ase.neighborlist.NewPrimitiveNeighborList(
 dp = DeepPot("graph.pb", neighbor_list=neighbor_list)
 ```
 
-The `update` and `build` methods will be called by {class}`DeepPot <deepmd_utils.infer.DeepPot>`, and `first_neigh`, `pair_second`, and `offset_vec` properties will be used.
+The `update` and `build` methods will be called by {class}`DeepPot <deepmd.infer.DeepPot>`, and `first_neigh`, `pair_second`, and `offset_vec` properties will be used.

@@ -17,12 +17,7 @@ from tensorflow.python.framework import (
     tensor_util,
 )
 
-from deepmd.tf.env import (
-    GLOBAL_TF_FLOAT_PRECISION,
-    op_module,
-    tf,
-)
-from deepmd_utils.common import (
+from deepmd.common import (
     add_data_requirement,
     data_requirement,
     expand_sys_str,
@@ -32,15 +27,20 @@ from deepmd_utils.common import (
     make_default_mesh,
     select_idx_map,
 )
+from deepmd.tf.env import (
+    GLOBAL_TF_FLOAT_PRECISION,
+    op_module,
+    tf,
+)
 
 if TYPE_CHECKING:
-    from deepmd_utils.common import (
+    from deepmd.common import (
         _ACTIVATION,
         _PRECISION,
     )
 
 __all__ = [
-    # from deepmd_utils.common
+    # from deepmd.common
     "data_requirement",
     "add_data_requirement",
     "select_idx_map",

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""Alias of deepmd_utils.loggers.loggers for backward compatibility."""
-from deepmd_utils.loggers.loggers import (
+"""Alias of deepmd.loggers.loggers for backward compatibility."""
+from deepmd.loggers.loggers import (
     set_log_handles,
 )
 

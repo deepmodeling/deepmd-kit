@@ -29,7 +29,7 @@ class DPDriver(dpdata.driver.Driver):
     """
 
     def __init__(self, dp: str) -> None:
-        from deepmd_utils.infer.deep_pot import (
+        from deepmd.infer.deep_pot import (
             DeepPot,
         )
 

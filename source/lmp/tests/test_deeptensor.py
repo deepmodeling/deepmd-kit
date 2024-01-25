@@ -57,7 +57,7 @@ type_OH = np.array([1, 2, 2, 1, 2, 2])
 
 
 sp.check_output(
-    "{} -m deepmd.tf convert-from pbtxt -i {} -o {}".format(
+    "{} -m deepmd convert-from pbtxt -i {} -o {}".format(
         sys.executable,
         pbtxt_file.resolve(),
         pb_file.resolve(),
@@ -65,7 +65,7 @@ sp.check_output(
 )
 
 sp.check_output(
-    "{} -m deepmd.tf convert-from pbtxt -i {} -o {}".format(
+    "{} -m deepmd convert-from pbtxt -i {} -o {}".format(
         sys.executable,
         pbtxt_file2.resolve(),
         pb_file2.resolve(),

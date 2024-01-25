@@ -2,7 +2,6 @@ Python:
 - changed-files:
   - any-glob-to-any-file:
     - deepmd/**/*
-    - deepmd_utils/**/*
     - source/tests/**/*
 Docs:
 - changed-files:

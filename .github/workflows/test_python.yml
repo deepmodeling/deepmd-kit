@@ -38,7 +38,7 @@ jobs:
         HOROVOD_WITH_TENSORFLOW: 1
         HOROVOD_WITHOUT_GLOO: 1
     - run: dp --version
-    - run: pytest --cov=deepmd --cov=deepmd_utils source/tests --durations=0
+    - run: pytest --cov=deepmd source/tests --durations=0
     - uses: codecov/codecov-action@v3
       with:
         gcov: true
