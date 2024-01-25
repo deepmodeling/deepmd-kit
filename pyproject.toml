@@ -128,7 +128,7 @@ replacement = '\1="https://github.com/deepmodeling/deepmd-kit/raw/master/\g<2>"'
 
 [tool.cibuildwheel]
 test-command = [
-    "python -m deepmd -h",
+    "python -m deepmd.tf -h",
     "dp -h",
     "dp_ipi",
     "pytest {project}/source/tests/test_lammps.py"
@@ -171,7 +171,7 @@ before-all = [
 environment = { PIP_PREFER_BINARY="1" }
 test-extras = ["cpu"]
 test-command = [
-    "python -m deepmd -h",
+    "python -m deepmd.tf -h",
     "dp -h",
 ]
 
