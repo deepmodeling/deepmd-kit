@@ -18,7 +18,7 @@ import h5py
 import numpy as np
 
 try:
-    from deepmd_utils._version import version as __version__
+    from deepmd._version import version as __version__
 except ImportError:
     __version__ = "unknown"
 

@@ -19,7 +19,7 @@ from ase.calculators.calculator import (
     all_changes,
 )
 
-from deepmd_utils.infer import (
+from deepmd.infer import (
     DeepPot,
 )
 

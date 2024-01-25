@@ -18,10 +18,10 @@ from deepmd.tf.common import (
     ACTIVATION_FN_DICT,
     PRECISION_DICT,
 )
-from deepmd_utils.utils.argcheck_nvnmd import (
+from deepmd.utils.argcheck_nvnmd import (
     nvnmd_args,
 )
-from deepmd_utils.utils.plugin import (
+from deepmd.utils.plugin import (
     Plugin,
 )
 

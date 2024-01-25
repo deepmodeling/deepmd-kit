@@ -12,14 +12,14 @@ from typing import (
 
 import numpy as np
 
-import deepmd_utils.utils.random as dp_random
-from deepmd_utils.common import (
+import deepmd.utils.random as dp_random
+from deepmd.common import (
     make_default_mesh,
 )
-from deepmd_utils.env import (
+from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
 )
-from deepmd_utils.utils.data import (
+from deepmd.utils.data import (
     DeepmdData,
 )
 

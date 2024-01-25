@@ -28,7 +28,7 @@ from packaging.version import (
 )
 
 import deepmd.lib
-from deepmd_utils.env import (
+from deepmd.env import (
     GLOBAL_ENER_FLOAT_PRECISION,
     GLOBAL_NP_FLOAT_PRECISION,
     global_float_prec,

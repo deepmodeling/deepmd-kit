@@ -9,12 +9,12 @@ from typing import (
 
 import numpy as np
 
-from deepmd_utils.env import (
+from deepmd.env import (
     GLOBAL_ENER_FLOAT_PRECISION,
     GLOBAL_NP_FLOAT_PRECISION,
 )
-from deepmd_utils.utils import random as dp_random
-from deepmd_utils.utils.path import (
+from deepmd.utils import random as dp_random
+from deepmd.utils.path import (
     DPPath,
 )
 

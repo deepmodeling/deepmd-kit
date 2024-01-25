@@ -8,7 +8,7 @@ from copy import (
 
 import numpy as np
 
-from deepmd_utils.model_format import (
+from deepmd.model_format import (
     DescrptSeA,
     EmbeddingNet,
     EnvMat,

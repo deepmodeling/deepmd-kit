@@ -11,6 +11,7 @@ from typing import (
 
 import numpy as np
 
+from deepmd.infer.deep_pot import DeepPot as DeepPotBase
 from deepmd.tf.common import (
     make_default_mesh,
 )
@@ -26,7 +27,6 @@ from deepmd.tf.utils.batch_size import (
 from deepmd.tf.utils.sess import (
     run_sess,
 )
-from deepmd_utils.infer.deep_pot import DeepPot as DeepPotBase
 
 if TYPE_CHECKING:
     from pathlib import (

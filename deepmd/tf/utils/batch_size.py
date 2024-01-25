@@ -10,7 +10,7 @@ from deepmd.tf.env import (
 from deepmd.tf.utils.errors import (
     OutOfMemoryError,
 )
-from deepmd_utils.utils.batch_size import AutoBatchSize as AutoBatchSizeBase
+from deepmd.utils.batch_size import AutoBatchSize as AutoBatchSizeBase
 
 
 class AutoBatchSize(AutoBatchSizeBase):

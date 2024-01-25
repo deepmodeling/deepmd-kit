@@ -22,10 +22,10 @@ except ImportError:
 import numpy as np
 import yaml
 
-from deepmd_utils.env import (
+from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
 )
-from deepmd_utils.utils.path import (
+from deepmd.utils.path import (
     DPPath,
 )
 

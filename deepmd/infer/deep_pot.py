@@ -12,7 +12,7 @@ from typing import (
 
 import numpy as np
 
-from deepmd_utils.utils.batch_size import (
+from deepmd.utils.batch_size import (
     AutoBatchSize,
 )
 
