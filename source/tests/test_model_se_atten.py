@@ -12,22 +12,22 @@ from common import (
 )
 from packaging.version import parse as parse_version
 
-from deepmd.common import (
+from deepmd.tf.common import (
     j_must_have,
 )
-from deepmd.descriptor import (
+from deepmd.tf.descriptor import (
     DescrptSeAtten,
 )
-from deepmd.env import (
+from deepmd.tf.env import (
     tf,
 )
-from deepmd.fit import (
+from deepmd.tf.fit import (
     EnerFitting,
 )
-from deepmd.model import (
+from deepmd.tf.model import (
     EnerModel,
 )
-from deepmd.utils.type_embed import (
+from deepmd.tf.utils.type_embed import (
     TypeEmbedNet,
 )
 

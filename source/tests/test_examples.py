@@ -7,10 +7,10 @@ from pathlib import (
     Path,
 )
 
-from deepmd.common import (
+from deepmd.tf.common import (
     j_loader,
 )
-from deepmd.utils.argcheck import (
+from deepmd.tf.utils.argcheck import (
     normalize,
 )
 

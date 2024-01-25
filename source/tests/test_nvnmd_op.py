@@ -4,7 +4,7 @@ import unittest
 
 import numpy as np
 
-from deepmd.env import (
+from deepmd.tf.env import (
     op_module,
     tf,
 )

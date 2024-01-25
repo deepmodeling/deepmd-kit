@@ -3,11 +3,11 @@ import unittest
 
 import numpy as np
 
-from deepmd.descriptor import (
+from deepmd.tf.descriptor import (
     DescrptSeA,
     DescrptSeAEfLower,
 )
-from deepmd.env import (
+from deepmd.tf.env import (
     GLOBAL_NP_FLOAT_PRECISION,
     GLOBAL_TF_FLOAT_PRECISION,
     op_module,

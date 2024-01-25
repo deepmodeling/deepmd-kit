@@ -52,7 +52,7 @@ class DeepPot(ABC):
         if cls is DeepPot:
             backend = detect_backend(model_file)
             if backend == DPBackend.TensorFlow:
-                from deepmd.infer.deep_pot import DeepPot as DeepPotTF
+                from deepmd.tf.infer.deep_pot import DeepPot as DeepPotTF
 
                 return super().__new__(DeepPotTF)
             elif backend == DPBackend.PyTorch:

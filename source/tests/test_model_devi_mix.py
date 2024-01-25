@@ -5,11 +5,11 @@ import unittest
 
 import numpy as np
 
-from deepmd.infer import (
+from deepmd.tf.infer import (
     DeepPotential,
     calc_model_devi,
 )
-from deepmd.infer.model_devi import (
+from deepmd.tf.infer.model_devi import (
     make_model_devi,
 )
 
@@ -21,10 +21,10 @@ from common import (
 )
 from packaging.version import parse as parse_version
 
-from deepmd.env import (
+from deepmd.tf.env import (
     tf,
 )
-from deepmd.utils.convert import (
+from deepmd.tf.utils.convert import (
     convert_pbtxt_to_pb,
 )
 

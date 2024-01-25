@@ -4,7 +4,7 @@ import unittest
 
 import numpy as np
 
-from deepmd.env import (
+from deepmd.tf.env import (
     GLOBAL_TF_FLOAT_PRECISION,
     op_module,
     tf,

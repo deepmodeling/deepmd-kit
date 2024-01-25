@@ -6,7 +6,7 @@ from common import (
     j_loader,
 )
 
-from deepmd.utils.compat import (
+from deepmd.tf.utils.compat import (
     convert_input_v0_v1,
     convert_input_v1_v2,
 )

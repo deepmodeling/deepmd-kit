@@ -14,7 +14,7 @@ from dargs import (
     dargs,
 )
 
-from deepmd.common import (
+from deepmd.tf.common import (
     ACTIVATION_FN_DICT,
     PRECISION_DICT,
 )

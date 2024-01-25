@@ -18,7 +18,7 @@ from ase.calculators.socketio import (
     SocketIOCalculator,
 )
 
-from deepmd.utils.convert import (
+from deepmd.tf.utils.convert import (
     convert_pbtxt_to_pb,
 )
 

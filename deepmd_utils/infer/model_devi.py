@@ -293,8 +293,8 @@ def calc_model_devi(
 
     Examples
     --------
-    >>> from deepmd.infer import calc_model_devi
-    >>> from deepmd.infer import DeepPot as DP
+    >>> from deepmd.tf.infer import calc_model_devi
+    >>> from deepmd.tf.infer import DeepPot as DP
     >>> import numpy as np
     >>> coord = np.array([[1,0,0], [0,0,1.5], [1,0,3]]).reshape([1, -1])
     >>> cell = np.diag(10 * np.ones(3)).reshape([1, -1])

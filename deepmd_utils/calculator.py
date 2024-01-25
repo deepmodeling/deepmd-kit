@@ -53,7 +53,7 @@ class DP(Calculator):
     Compute potential energy
 
     >>> from ase import Atoms
-    >>> from deepmd.calculator import DP
+    >>> from deepmd.tf.calculator import DP
     >>> water = Atoms('H2O',
     >>>             positions=[(0.7601, 1.9270, 1),
     >>>                        (1.9575, 1, 1),

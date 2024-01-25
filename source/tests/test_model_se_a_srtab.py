@@ -8,19 +8,19 @@ from common import (
     j_loader,
 )
 
-from deepmd.common import (
+from deepmd.tf.common import (
     j_must_have,
 )
-from deepmd.descriptor import (
+from deepmd.tf.descriptor import (
     DescrptSeA,
 )
-from deepmd.env import (
+from deepmd.tf.env import (
     tf,
 )
-from deepmd.fit import (
+from deepmd.tf.fit import (
     EnerFitting,
 )
-from deepmd.model import (
+from deepmd.tf.model import (
     EnerModel,
 )
 

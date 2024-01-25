@@ -7,13 +7,13 @@ from common import (
     j_loader,
 )
 
-from deepmd.common import (
+from deepmd.tf.common import (
     j_must_have,
 )
-from deepmd.env import (
+from deepmd.tf.env import (
     tf,
 )
-from deepmd.model.model import (
+from deepmd.tf.model.model import (
     Model,
 )
 

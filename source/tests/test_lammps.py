@@ -6,7 +6,7 @@ from pathlib import (
     Path,
 )
 
-from deepmd.utils.convert import (
+from deepmd.tf.utils.convert import (
     convert_pbtxt_to_pb,
 )
 

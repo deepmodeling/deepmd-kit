@@ -7,7 +7,7 @@ from common import (
     tests_path,
 )
 
-from deepmd.cluster.local import (
+from deepmd.tf.cluster.local import (
     get_gpus,
 )
 

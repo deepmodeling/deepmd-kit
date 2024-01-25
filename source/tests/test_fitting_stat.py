@@ -9,10 +9,10 @@ from common import (
     j_loader,
 )
 
-from deepmd.descriptor import (
+from deepmd.tf.descriptor import (
     DescrptSeA,
 )
-from deepmd.fit import (
+from deepmd.tf.fit import (
     EnerFitting,
 )
 

@@ -10,19 +10,19 @@ from common import (
     tests_path,
 )
 
-from deepmd.common import (
+from deepmd.tf.common import (
     j_must_have,
 )
-from deepmd.infer import (
+from deepmd.tf.infer import (
     DeepPot,
 )
-from deepmd.utils.convert import (
+from deepmd.tf.utils.convert import (
     convert_pbtxt_to_pb,
 )
-from deepmd.utils.data_system import (
+from deepmd.tf.utils.data_system import (
     DeepmdDataSystem,
 )
-from deepmd.utils.neighbor_stat import (
+from deepmd.tf.utils.neighbor_stat import (
     NeighborStat,
 )
 

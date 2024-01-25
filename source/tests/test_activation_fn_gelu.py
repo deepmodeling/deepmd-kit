@@ -3,13 +3,13 @@ import unittest
 
 import numpy as np
 
-from deepmd.common import (
+from deepmd.tf.common import (
     get_activation_func,
 )
-from deepmd.env import (
+from deepmd.tf.env import (
     tf,
 )
-from deepmd.utils.network import (
+from deepmd.tf.utils.network import (
     embedding_net,
 )
 

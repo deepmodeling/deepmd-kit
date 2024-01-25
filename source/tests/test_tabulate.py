@@ -3,10 +3,10 @@ import unittest
 
 import numpy as np
 
-from deepmd.common import (
+from deepmd.tf.common import (
     gelu,
 )
-from deepmd.env import (
+from deepmd.tf.env import (
     op_module,
     tf,
 )

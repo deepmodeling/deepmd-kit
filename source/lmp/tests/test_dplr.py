@@ -264,7 +264,7 @@ mesh = 10
 
 
 sp.check_output(
-    "{} -m deepmd convert-from pbtxt -i {} -o {}".format(
+    "{} -m deepmd.tf convert-from pbtxt -i {} -o {}".format(
         sys.executable,
         pbtxt_file.resolve(),
         pb_file.resolve(),

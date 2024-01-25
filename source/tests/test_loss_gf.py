@@ -2,7 +2,7 @@
 import numpy as np
 import tensorflow as tf
 
-from deepmd.loss import (
+from deepmd.tf.loss import (
     EnerStdLoss,
 )
 

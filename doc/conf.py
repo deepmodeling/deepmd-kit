@@ -17,11 +17,11 @@ from datetime import (
     date,
 )
 
-from deepmd.common import (
+from deepmd.tf.common import (
     ACTIVATION_FN_DICT,
     PRECISION_DICT,
 )
-from deepmd.utils.argcheck import (
+from deepmd.tf.utils.argcheck import (
     list_to_doc,
 )
 

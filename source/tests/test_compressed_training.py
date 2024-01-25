@@ -3,7 +3,7 @@ import json
 import os
 import unittest
 
-# from deepmd.entrypoints.compress import compress
+# from deepmd.tf.entrypoints.compress import compress
 from common import (
     j_loader,
     run_dp,
@@ -11,7 +11,7 @@ from common import (
 )
 from packaging.version import parse as parse_version
 
-from deepmd.env import (
+from deepmd.tf.env import (
     tf,
 )
 

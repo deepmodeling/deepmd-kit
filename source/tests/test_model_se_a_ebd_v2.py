@@ -6,22 +6,22 @@ from common import (
     j_loader,
 )
 
-from deepmd.common import (
+from deepmd.tf.common import (
     j_must_have,
 )
-from deepmd.descriptor.se_a_ebd_v2 import (
+from deepmd.tf.descriptor.se_a_ebd_v2 import (
     DescrptSeAEbdV2,
 )
-from deepmd.env import (
+from deepmd.tf.env import (
     tf,
 )
-from deepmd.fit import (
+from deepmd.tf.fit import (
     EnerFitting,
 )
-from deepmd.model import (
+from deepmd.tf.model import (
     EnerModel,
 )
-from deepmd.utils.type_embed import (
+from deepmd.tf.utils.type_embed import (
     TypeEmbedNet,
 )
 
