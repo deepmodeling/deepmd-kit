@@ -103,7 +103,7 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
       torch::from_blob(const_cast<VALUETYPE*>(box.data()), {1, 9}, options)
           .to(device);
   inputs.push_back(box_Tensor);
-  at::Tensor do_atom_virial_tensor = torch::tensor(true);
+  bool do_atom_virial_tensor = true;
   inputs.push_back(do_atom_virial_tensor);
   inputs.push_back(firstneigh_tensor);
   c10::Dict<c10::IValue, c10::IValue> outputs =
