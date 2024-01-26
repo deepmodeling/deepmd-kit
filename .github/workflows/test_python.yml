@@ -10,9 +10,6 @@ jobs:
       matrix:
         include:
           - python: 3.8
-            tf: 2.2
-            torch: 2.0.0
-          - python: 3.8
             tf:
             torch:
           - python: "3.11"
