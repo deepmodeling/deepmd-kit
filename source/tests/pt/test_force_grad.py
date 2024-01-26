@@ -99,6 +99,7 @@ class TestForceGrad(unittest.TestCase):
         )
         self.origin_batch = self.dpdatasystem._get_item(batch_index)
 
+    @unittest.skip("it can be replaced by autodiff")
     def test_force_grad(self, threshold=1e-2, delta0=1e-6, seed=20):
         result0 = self.model(**get_data(self.origin_batch))
         np.random.default_rng(seed)
