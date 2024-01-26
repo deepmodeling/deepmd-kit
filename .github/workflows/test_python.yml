@@ -5,7 +5,8 @@ name: Test Python
 jobs:
   testpython:
     name: Test Python
-    runs-on: ubuntu-22.04
+    runs-on: X64
+    container: ubuntu
     strategy:
       matrix:
         include:
