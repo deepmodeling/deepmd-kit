@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
+#ifdef BUILD_PYTORCH
 #include "DeepPotPT.h"
 
 #include "common.h"
@@ -378,3 +379,4 @@ void DeepPotPT::computew_mixed_type(std::vector<double>& ener,
                                     const std::vector<float>& aparam) {
   throw deepmd::deepmd_exception("computew_mixed_type is not implemented");
 }
+#endif

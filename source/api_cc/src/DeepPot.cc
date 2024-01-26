@@ -47,7 +47,11 @@ void DeepPot::init(const std::string& model,
 #endif
   } else if (deepmd::DPBackend::PyTorch == backend) {
     // throw deepmd::deepmd_exception("PyTorch backend is not supported yet");
+#ifdef BUILD_PYTORCH
     dp = std::make_shared<deepmd::DeepPotPT>(model, gpu_rank, file_content);
+#else
+    throw deepmd::deepmd_exception("PyTorch backend is not built");
+#endif
   } else if (deepmd::DPBackend::Paddle == backend) {
     throw deepmd::deepmd_exception("PaddlePaddle backend is not supported yet");
   } else {
