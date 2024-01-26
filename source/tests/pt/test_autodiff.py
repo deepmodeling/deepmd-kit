@@ -46,7 +46,7 @@ def stretch_box(old_coord, old_box, new_box):
     return ncoord.reshape(old_coord.shape)
 
 
-class TestForce:
+class ForceTest:
     def test(
         self,
     ):
@@ -84,7 +84,7 @@ class TestForce:
         np.testing.assert_almost_equal(fdf, rff, decimal=places)
 
 
-class TestVirial:
+class VirialTest:
     def test(
         self,
     ):
@@ -128,7 +128,7 @@ class TestVirial:
         np.testing.assert_almost_equal(fdv, rfv, decimal=places)
 
 
-class TestEnergyModelSeAForce(unittest.TestCase, TestForce):
+class TestEnergyModelSeAForce(unittest.TestCase, ForceTest):
     def setUp(self):
         model_params = copy.deepcopy(model_se_e2_a)
         sampled = make_sample(model_params)
@@ -136,7 +136,7 @@ class TestEnergyModelSeAForce(unittest.TestCase, TestForce):
         self.model = get_model(model_params, sampled).to(env.DEVICE)
 
 
-class TestEnergyModelSeAVirial(unittest.TestCase, TestVirial):
+class TestEnergyModelSeAVirial(unittest.TestCase, VirialTest):
     def setUp(self):
         model_params = copy.deepcopy(model_se_e2_a)
         sampled = make_sample(model_params)
@@ -144,7 +144,7 @@ class TestEnergyModelSeAVirial(unittest.TestCase, TestVirial):
         self.model = get_model(model_params, sampled).to(env.DEVICE)
 
 
-class TestEnergyModelDPA1Force(unittest.TestCase, TestForce):
+class TestEnergyModelDPA1Force(unittest.TestCase, ForceTest):
     def setUp(self):
         model_params = copy.deepcopy(model_dpa1)
         sampled = make_sample(model_params)
@@ -152,7 +152,7 @@ class TestEnergyModelDPA1Force(unittest.TestCase, TestForce):
         self.model = get_model(model_params, sampled).to(env.DEVICE)
 
 
-class TestEnergyModelDPA1Virial(unittest.TestCase, TestVirial):
+class TestEnergyModelDPA1Virial(unittest.TestCase, VirialTest):
     def setUp(self):
         model_params = copy.deepcopy(model_dpa1)
         sampled = make_sample(model_params)
@@ -160,7 +160,7 @@ class TestEnergyModelDPA1Virial(unittest.TestCase, TestVirial):
         self.model = get_model(model_params, sampled).to(env.DEVICE)
 
 
-class TestEnergyModelDPA2Force(unittest.TestCase, TestForce):
+class TestEnergyModelDPA2Force(unittest.TestCase, ForceTest):
     def setUp(self):
         model_params_sample = copy.deepcopy(model_dpa2)
         model_params_sample["descriptor"]["rcut"] = model_params_sample["descriptor"][
@@ -175,7 +175,7 @@ class TestEnergyModelDPA2Force(unittest.TestCase, TestForce):
         self.model = get_model(model_params, sampled).to(env.DEVICE)
 
 
-class TestEnergyModelDPAUniVirial(unittest.TestCase, TestVirial):
+class TestEnergyModelDPAUniVirial(unittest.TestCase, VirialTest):
     def setUp(self):
         model_params_sample = copy.deepcopy(model_dpa2)
         model_params_sample["descriptor"]["rcut"] = model_params_sample["descriptor"][

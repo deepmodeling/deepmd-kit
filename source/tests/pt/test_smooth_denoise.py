@@ -22,7 +22,7 @@ from .test_permutation_denoise import (
 dtype = torch.float64
 
 
-class TestSmoothDenoise:
+class SmoothDenoiseTest:
     def test(
         self,
     ):
@@ -96,7 +96,7 @@ class TestSmoothDenoise:
         compare(ret0, ret3)
 
 
-class TestDenoiseModelDPA2(unittest.TestCase, TestSmoothDenoise):
+class TestDenoiseModelDPA2(unittest.TestCase, SmoothDenoiseTest):
     def setUp(self):
         model_params_sample = copy.deepcopy(model_dpa2)
         model_params_sample["descriptor"]["rcut"] = model_params_sample["descriptor"][
@@ -116,7 +116,7 @@ class TestDenoiseModelDPA2(unittest.TestCase, TestSmoothDenoise):
         self.aprec = 1e-5
 
 
-class TestDenoiseModelDPA2_1(unittest.TestCase, TestSmoothDenoise):
+class TestDenoiseModelDPA2_1(unittest.TestCase, SmoothDenoiseTest):
     def setUp(self):
         model_params_sample = copy.deepcopy(model_dpa2)
         model_params_sample["descriptor"]["rcut"] = model_params_sample["descriptor"][

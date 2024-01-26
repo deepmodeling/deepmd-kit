@@ -24,7 +24,7 @@ from .test_permutation_denoise import (
 dtype = torch.float64
 
 
-class TestTransDenoise:
+class TransDenoiseTest:
     def test(
         self,
     ):
@@ -56,7 +56,7 @@ class TestTransDenoise:
         torch.testing.assert_close(ret0["logits"], ret1["logits"], rtol=prec, atol=prec)
 
 
-class TestDenoiseModelDPA1(unittest.TestCase, TestTransDenoise):
+class TestDenoiseModelDPA1(unittest.TestCase, TransDenoiseTest):
     def setUp(self):
         model_params = copy.deepcopy(model_dpa1)
         sampled = make_sample(model_params)
@@ -64,7 +64,7 @@ class TestDenoiseModelDPA1(unittest.TestCase, TestTransDenoise):
         self.model = get_model(model_params, sampled).to(env.DEVICE)
 
 
-class TestDenoiseModelDPA2(unittest.TestCase, TestTransDenoise):
+class TestDenoiseModelDPA2(unittest.TestCase, TransDenoiseTest):
     def setUp(self):
         model_params_sample = copy.deepcopy(model_dpa2)
         model_params_sample["descriptor"]["rcut"] = model_params_sample["descriptor"][
@@ -80,7 +80,7 @@ class TestDenoiseModelDPA2(unittest.TestCase, TestTransDenoise):
 
 
 @unittest.skip("hybrid not supported at the moment")
-class TestDenoiseModelHybrid(unittest.TestCase, TestTransDenoise):
+class TestDenoiseModelHybrid(unittest.TestCase, TransDenoiseTest):
     def setUp(self):
         model_params = copy.deepcopy(model_hybrid)
         sampled = make_sample(model_params)

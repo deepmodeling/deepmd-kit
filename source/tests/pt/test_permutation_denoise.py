@@ -34,7 +34,7 @@ model_hybrid["type_map"] = ["O", "H", "B", "MASKED_TOKEN"]
 model_hybrid.pop("fitting_net")
 
 
-class TestPermutationDenoise:
+class PermutationDenoiseTest:
     def test(
         self,
     ):
@@ -66,7 +66,7 @@ class TestPermutationDenoise:
         )
 
 
-class TestDenoiseModelDPA1(unittest.TestCase, TestPermutationDenoise):
+class TestDenoiseModelDPA1(unittest.TestCase, PermutationDenoiseTest):
     def setUp(self):
         model_params = copy.deepcopy(model_dpa1)
         sampled = make_sample(model_params)
@@ -74,7 +74,7 @@ class TestDenoiseModelDPA1(unittest.TestCase, TestPermutationDenoise):
         self.model = get_model(model_params, sampled).to(env.DEVICE)
 
 
-class TestDenoiseModelDPA2(unittest.TestCase, TestPermutationDenoise):
+class TestDenoiseModelDPA2(unittest.TestCase, PermutationDenoiseTest):
     def setUp(self):
         model_params_sample = copy.deepcopy(model_dpa2)
         model_params_sample["descriptor"]["rcut"] = model_params_sample["descriptor"][

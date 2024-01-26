@@ -25,7 +25,8 @@ from .test_permutation import (  # model_dpau,
 dtype = torch.float64
 
 
-class TestSmooth:
+class SmoothTest:
+
     def test(
         self,
     ):
@@ -120,7 +121,7 @@ class TestSmooth:
         compare(ret0, ret3)
 
 
-class TestEnergyModelSeA(unittest.TestCase, TestSmooth):
+class TestEnergyModelSeA(unittest.TestCase, SmoothTest):
     def setUp(self):
         model_params = copy.deepcopy(model_se_e2_a)
         sampled = make_sample(model_params)
@@ -130,7 +131,7 @@ class TestEnergyModelSeA(unittest.TestCase, TestSmooth):
 
 
 # @unittest.skip("dpa-1 not smooth at the moment")
-class TestEnergyModelDPA1(unittest.TestCase, TestSmooth):
+class TestEnergyModelDPA1(unittest.TestCase, SmoothTest):
     def setUp(self):
         model_params = copy.deepcopy(model_dpa1)
         sampled = make_sample(model_params)
@@ -142,7 +143,7 @@ class TestEnergyModelDPA1(unittest.TestCase, TestSmooth):
         self.aprec = 1e-5
 
 
-class TestEnergyModelDPA2(unittest.TestCase, TestSmooth):
+class TestEnergyModelDPA2(unittest.TestCase, SmoothTest):
     def setUp(self):
         model_params = copy.deepcopy(model_dpa2)
         model_params["descriptor"]["repinit_rcut"] = 8
@@ -164,7 +165,7 @@ class TestEnergyModelDPA2(unittest.TestCase, TestSmooth):
         self.epsilon, self.aprec = 1e-5, 1e-4
 
 
-class TestEnergyModelDPA2_1(unittest.TestCase, TestSmooth):
+class TestEnergyModelDPA2_1(unittest.TestCase, SmoothTest):
     def setUp(self):
         model_params = copy.deepcopy(model_dpa2)
         model_params["fitting_net"]["type"] = "ener"
@@ -182,7 +183,7 @@ class TestEnergyModelDPA2_1(unittest.TestCase, TestSmooth):
         self.epsilon, self.aprec = None, None
 
 
-class TestEnergyModelDPA2_2(unittest.TestCase, TestSmooth):
+class TestEnergyModelDPA2_2(unittest.TestCase, SmoothTest):
     def setUp(self):
         model_params = copy.deepcopy(model_dpa2)
         model_params["fitting_net"]["type"] = "ener"
@@ -201,7 +202,7 @@ class TestEnergyModelDPA2_2(unittest.TestCase, TestSmooth):
 
 
 @unittest.skip("hybrid not supported at the moment")
-class TestEnergyModelHybrid(unittest.TestCase, TestSmooth):
+class TestEnergyModelHybrid(unittest.TestCase, SmoothTest):
     def setUp(self):
         model_params = copy.deepcopy(model_hybrid)
         sampled = make_sample(model_params)

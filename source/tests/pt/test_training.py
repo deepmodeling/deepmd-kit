@@ -22,7 +22,7 @@ from .test_permutation import (
 )
 
 
-class TestDPTrain:
+class DPTrainTest:
     def test_dp_train(self):
         trainer = get_trainer(deepcopy(self.config))
         trainer.run()
@@ -38,7 +38,7 @@ class TestDPTrain:
                 shutil.rmtree(f)
 
 
-class TestEnergyModelSeA(unittest.TestCase, TestDPTrain):
+class TestEnergyModelSeA(unittest.TestCase, DPTrainTest):
     def setUp(self):
         input_json = str(Path(__file__).parent / "water/se_atten.json")
         with open(input_json) as f:
@@ -51,7 +51,7 @@ class TestEnergyModelSeA(unittest.TestCase, TestDPTrain):
         self.config["training"]["save_freq"] = 1
 
 
-class TestEnergyModelDPA1(unittest.TestCase, TestDPTrain):
+class TestEnergyModelDPA1(unittest.TestCase, DPTrainTest):
     def setUp(self):
         input_json = str(Path(__file__).parent / "water/se_atten.json")
         with open(input_json) as f:
@@ -64,7 +64,7 @@ class TestEnergyModelDPA1(unittest.TestCase, TestDPTrain):
         self.config["training"]["save_freq"] = 1
 
 
-class TestEnergyModelDPA2(unittest.TestCase, TestDPTrain):
+class TestEnergyModelDPA2(unittest.TestCase, DPTrainTest):
     def setUp(self):
         input_json = str(Path(__file__).parent / "water/se_atten.json")
         with open(input_json) as f:
@@ -87,7 +87,7 @@ class TestEnergyModelDPA2(unittest.TestCase, TestDPTrain):
 
 
 @unittest.skip("hybrid not supported at the moment")
-class TestEnergyModelHybrid(unittest.TestCase, TestDPTrain):
+class TestEnergyModelHybrid(unittest.TestCase, DPTrainTest):
     def setUp(self):
         input_json = str(Path(__file__).parent / "water/se_atten.json")
         with open(input_json) as f:

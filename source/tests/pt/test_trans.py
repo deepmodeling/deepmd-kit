@@ -25,7 +25,7 @@ from .test_permutation import (  # model_dpau,
 dtype = torch.float64
 
 
-class TestTrans:
+class TransTest:
     def test(
         self,
     ):
@@ -65,7 +65,7 @@ class TestTrans:
             )
 
 
-class TestEnergyModelSeA(unittest.TestCase, TestTrans):
+class TestEnergyModelSeA(unittest.TestCase, TransTest):
     def setUp(self):
         model_params = copy.deepcopy(model_se_e2_a)
         sampled = make_sample(model_params)
@@ -73,7 +73,7 @@ class TestEnergyModelSeA(unittest.TestCase, TestTrans):
         self.model = get_model(model_params, sampled).to(env.DEVICE)
 
 
-class TestEnergyModelDPA1(unittest.TestCase, TestTrans):
+class TestEnergyModelDPA1(unittest.TestCase, TransTest):
     def setUp(self):
         model_params = copy.deepcopy(model_dpa1)
         sampled = make_sample(model_params)
@@ -81,7 +81,7 @@ class TestEnergyModelDPA1(unittest.TestCase, TestTrans):
         self.model = get_model(model_params, sampled).to(env.DEVICE)
 
 
-class TestEnergyModelDPA2(unittest.TestCase, TestTrans):
+class TestEnergyModelDPA2(unittest.TestCase, TransTest):
     def setUp(self):
         model_params_sample = copy.deepcopy(model_dpa2)
         model_params_sample["descriptor"]["rcut"] = model_params_sample["descriptor"][
@@ -96,7 +96,7 @@ class TestEnergyModelDPA2(unittest.TestCase, TestTrans):
         self.model = get_model(model_params, sampled).to(env.DEVICE)
 
 
-class TestForceModelDPA2(unittest.TestCase, TestTrans):
+class TestForceModelDPA2(unittest.TestCase, TransTest):
     def setUp(self):
         model_params_sample = copy.deepcopy(model_dpa2)
         model_params_sample["descriptor"]["rcut"] = model_params_sample["descriptor"][
@@ -114,7 +114,7 @@ class TestForceModelDPA2(unittest.TestCase, TestTrans):
 
 
 @unittest.skip("hybrid not supported at the moment")
-class TestEnergyModelHybrid(unittest.TestCase, TestTrans):
+class TestEnergyModelHybrid(unittest.TestCase, TransTest):
     def setUp(self):
         model_params = copy.deepcopy(model_hybrid)
         sampled = make_sample(model_params)
@@ -123,7 +123,7 @@ class TestEnergyModelHybrid(unittest.TestCase, TestTrans):
 
 
 @unittest.skip("hybrid not supported at the moment")
-class TestForceModelHybrid(unittest.TestCase, TestTrans):
+class TestForceModelHybrid(unittest.TestCase, TransTest):
     def setUp(self):
         model_params = copy.deepcopy(model_hybrid)
         model_params["fitting_net"]["type"] = "direct_force_ener"

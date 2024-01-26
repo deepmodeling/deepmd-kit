@@ -23,7 +23,7 @@ from .test_permutation_denoise import (
 dtype = torch.float64
 
 
-class TestRotDenoise:
+class RotDenoiseTest:
     def test(
         self,
     ):
@@ -97,7 +97,7 @@ class TestRotDenoise:
         )
 
 
-class TestDenoiseModelDPA1(unittest.TestCase, TestRotDenoise):
+class TestDenoiseModelDPA1(unittest.TestCase, RotDenoiseTest):
     def setUp(self):
         model_params = copy.deepcopy(model_dpa1)
         sampled = make_sample(model_params)
@@ -105,7 +105,7 @@ class TestDenoiseModelDPA1(unittest.TestCase, TestRotDenoise):
         self.model = get_model(model_params, sampled).to(env.DEVICE)
 
 
-class TestDenoiseModelDPA2(unittest.TestCase, TestRotDenoise):
+class TestDenoiseModelDPA2(unittest.TestCase, RotDenoiseTest):
     def setUp(self):
         model_params_sample = copy.deepcopy(model_dpa2)
         model_params_sample["descriptor"]["rcut"] = model_params_sample["descriptor"][

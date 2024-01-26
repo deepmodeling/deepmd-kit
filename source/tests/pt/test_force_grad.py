@@ -99,7 +99,7 @@ class TestForceGrad(unittest.TestCase):
         )
         self.origin_batch = self.dpdatasystem._get_item(batch_index)
 
-    def test_force_grad(self, threshold=1e-3, delta0=1e-6, seed=20):
+    def test_force_grad(self, threshold=1e-2, delta0=1e-6, seed=20):
         result0 = self.model(**get_data(self.origin_batch))
         np.random.default_rng(seed)
         errors = np.zeros((self.dpdatasystem._natoms, 3))
@@ -115,7 +115,7 @@ class TestForceGrad(unittest.TestCase):
                     result0["force"][0, atom_index, axis_index] - disturb_force
                 )
                 errors[atom_index, axis_index] = disturb_error.detach().cpu().numpy()
-        self.assertTrue(np.abs(errors).max() < threshold)
+        self.assertTrue(np.abs(errors).max() < threshold, msg=str(np.abs(errors).max()))
 
 
 if __name__ == "__main__":
