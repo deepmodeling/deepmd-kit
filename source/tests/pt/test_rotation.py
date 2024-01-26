@@ -1,6 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import json
 import unittest
+from pathlib import (
+    Path,
+)
 from typing import (
     List,
     Optional,
@@ -26,10 +29,6 @@ from deepmd.pt.utils.dataset import (
 )
 from deepmd.pt.utils.stat import (
     make_stat_input,
-)
-
-from pathlib import (
-    Path,
 )
 
 

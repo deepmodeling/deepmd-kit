@@ -9,6 +9,10 @@ import torch
 
 tf.disable_eager_execution()
 
+from pathlib import (
+    Path,
+)
+
 from deepmd.pt.loss import (
     EnergyStdLoss,
 )
@@ -19,7 +23,7 @@ from deepmd.pt.utils.dataloader import (
     DpLoaderSet,
 )
 from deepmd.pt.utils.env import (
-    DEVICE
+    DEVICE,
 )
 from deepmd.pt.utils.learning_rate import LearningRateExp as MyLRExp
 from deepmd.pt.utils.stat import (
@@ -44,10 +48,6 @@ from deepmd.tf.utils.data_system import (
 )
 from deepmd.tf.utils.learning_rate import (
     LearningRateExp,
-)
-
-from pathlib import (
-    Path,
 )
 
 VariableState = collections.namedtuple("VariableState", ["value", "gradient"])

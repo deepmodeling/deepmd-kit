@@ -2,6 +2,9 @@
 import copy
 import json
 import unittest
+from pathlib import (
+    Path,
+)
 from typing import (
     List,
     Optional,
@@ -25,9 +28,7 @@ from deepmd.pt.utils.dataset import (
 from deepmd.pt.utils.stat import (
     make_stat_input,
 )
-from pathlib import (
-    Path,
-)
+
 
 class CheckSymmetry(DeepmdDataSystem):
     def __init__(

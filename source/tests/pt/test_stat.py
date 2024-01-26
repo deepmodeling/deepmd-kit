@@ -2,6 +2,9 @@
 import json
 import os
 import unittest
+from pathlib import (
+    Path,
+)
 
 import numpy as np
 import torch
@@ -31,10 +34,6 @@ from deepmd.tf.model.model_stat import merge_sys_stat as dp_merge
 from deepmd.tf.utils import random as tf_random
 from deepmd.tf.utils.data_system import (
     DeepmdDataSystem,
-)
-
-from pathlib import (
-    Path,
 )
 
 CUR_DIR = os.path.dirname(__file__)

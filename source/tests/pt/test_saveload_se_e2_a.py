@@ -3,6 +3,9 @@ import copy
 import json
 import os
 import unittest
+from pathlib import (
+    Path,
+)
 
 import torch
 from torch.utils.data import (
@@ -30,9 +33,6 @@ from deepmd.pt.utils.stat import (
 )
 from deepmd.tf.common import (
     expand_sys_str,
-)
-from pathlib import (
-    Path,
 )
 
 

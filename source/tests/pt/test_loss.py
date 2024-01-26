@@ -8,6 +8,10 @@ import tensorflow.compat.v1 as tf
 import torch
 
 tf.disable_eager_execution()
+from pathlib import (
+    Path,
+)
+
 from deepmd.pt.loss import (
     EnergyStdLoss,
 )
@@ -20,10 +24,6 @@ from deepmd.tf.common import (
 from deepmd.tf.loss.ener import (
     EnerStdLoss,
 )
-from pathlib import (
-    Path,
-)
-
 
 CUR_DIR = os.path.dirname(__file__)
 

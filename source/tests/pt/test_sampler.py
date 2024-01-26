@@ -2,15 +2,15 @@
 import json
 import os
 import unittest
+from pathlib import (
+    Path,
+)
 
 import numpy as np
 from torch.utils.data import (
     DataLoader,
 )
 
-from deepmd.pt.utils import (
-    env,
-)
 from deepmd.pt.utils.dataloader import (
     DpLoaderSet,
     get_weighted_sampler,
@@ -21,9 +21,6 @@ from deepmd.tf.common import (
 from deepmd.tf.utils import random as tf_random
 from deepmd.tf.utils.data_system import (
     DeepmdDataSystem,
-)
-from pathlib import (
-    Path,
 )
 
 CUR_DIR = os.path.dirname(__file__)

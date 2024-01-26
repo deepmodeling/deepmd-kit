@@ -1,4 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import json
+import os
 import unittest
 from pathlib import (
     Path,
@@ -7,9 +9,6 @@ from pathlib import (
 from deepmd.pt.entrypoints.main import (
     main,
 )
-
-import json
-import os
 
 
 class TestLKF(unittest.TestCase):

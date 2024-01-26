@@ -9,6 +9,9 @@ import torch
 tf.disable_eager_execution()
 
 import json
+from pathlib import (
+    Path,
+)
 
 from deepmd.pt.model.descriptor import (
     prod_env_mat_se_a,
@@ -22,16 +25,13 @@ from deepmd.pt.utils.dataset import (
 from deepmd.pt.utils.env import (
     DEVICE,
     GLOBAL_NP_FLOAT_PRECISION,
-    GLOBAL_PT_FLOAT_PRECISION
+    GLOBAL_PT_FLOAT_PRECISION,
 )
 from deepmd.tf.common import (
     expand_sys_str,
 )
 from deepmd.tf.env import (
     op_module,
-)
-from pathlib import (
-    Path,
 )
 
 CUR_DIR = os.path.dirname(__file__)

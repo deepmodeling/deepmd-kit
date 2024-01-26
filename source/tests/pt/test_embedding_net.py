@@ -10,6 +10,10 @@ import torch
 
 tf.disable_eager_execution()
 
+from pathlib import (
+    Path,
+)
+
 from deepmd.pt.model.descriptor import (
     DescrptSeA,
 )
@@ -21,16 +25,12 @@ from deepmd.pt.utils.dataset import (
 )
 from deepmd.pt.utils.env import (
     DEVICE,
-    GLOBAL_NP_FLOAT_PRECISION
+    GLOBAL_NP_FLOAT_PRECISION,
 )
 from deepmd.tf.common import (
     expand_sys_str,
 )
 from deepmd.tf.descriptor import DescrptSeA as DescrptSeA_tf
-
-from pathlib import (
-    Path,
-)
 
 CUR_DIR = os.path.dirname(__file__)
 
