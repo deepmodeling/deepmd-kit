@@ -146,32 +146,6 @@ if not parse_version(tf.__version__) < parse_version("1.15"):
         jdata["model"]["descriptor"]["stripped_type_embedding"] = True
         jdata["model"]["descriptor"]["attn_layer"] = 0
 
-    models = [previous_se_atten, stripped_model, compressible_model]
-    INPUTS = []
-    CKPTS = []
-    FROZEN_MODELS = []
-    CKPT_TRAINERS = []
-    FRZ_TRAINERS = []
-    VALID_DATAS = []
-    STOP_BATCHS = []
-    for i, model in enumerate(models):
-        (
-            INPUT,
-            CKPT,
-            FROZEN_MODEL,
-            CKPT_TRAINER,
-            FRZ_TRAINER,
-            VALID_DATA,
-            STOP_BATCH,
-        ) = _init_models(model, i)
-        INPUTS.append(INPUT)
-        CKPTS.append(CKPT)
-        FROZEN_MODELS.append(FROZEN_MODEL)
-        CKPT_TRAINERS.append(CKPT_TRAINER)
-        FRZ_TRAINERS.append(FRZ_TRAINER)
-        VALID_DATAS.append(VALID_DATA)
-        STOP_BATCHS.append(STOP_BATCH)
-
 
 @unittest.skipIf(
     parse_version(tf.__version__) < parse_version("1.15"),
@@ -180,6 +154,38 @@ if not parse_version(tf.__version__) < parse_version("1.15"):
 class TestInitFrzModelAtten(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        models = [previous_se_atten, stripped_model, compressible_model]
+        INPUTS = []
+        CKPTS = []
+        FROZEN_MODELS = []
+        CKPT_TRAINERS = []
+        FRZ_TRAINERS = []
+        VALID_DATAS = []
+        STOP_BATCHS = []
+        for i, model in enumerate(models):
+            (
+                INPUT,
+                CKPT,
+                FROZEN_MODEL,
+                CKPT_TRAINER,
+                FRZ_TRAINER,
+                VALID_DATA,
+                STOP_BATCH,
+            ) = _init_models(model, i)
+            INPUTS.append(INPUT)
+            CKPTS.append(CKPT)
+            FROZEN_MODELS.append(FROZEN_MODEL)
+            CKPT_TRAINERS.append(CKPT_TRAINER)
+            FRZ_TRAINERS.append(FRZ_TRAINER)
+            VALID_DATAS.append(VALID_DATA)
+            STOP_BATCHS.append(STOP_BATCH)
+        cls.INPUTS = INPUTS
+        cls.CKPTS = CKPTS
+        cls.FROZEN_MODELS = FROZEN_MODELS
+        cls.CKPT_TRAINERS = CKPT_TRAINERS
+        cls.FRZ_TRAINERS = FRZ_TRAINERS
+        cls.VALID_DATAS = VALID_DATAS
+        cls.STOP_BATCHS = STOP_BATCHS
         cls.dp_ckpts = CKPT_TRAINERS
         cls.dp_frzs = FRZ_TRAINERS
         cls.valid_datas = VALID_DATAS
@@ -188,28 +194,28 @@ class TestInitFrzModelAtten(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         for i in range(len(cls.dp_ckpts)):
-            _file_delete(INPUTS[i])
-            _file_delete(FROZEN_MODELS[i])
+            _file_delete(cls.INPUTS[i])
+            _file_delete(cls.FROZEN_MODELS[i])
             _file_delete("out.json")
             _file_delete(str(tests_path / "checkpoint"))
-            _file_delete(CKPT[i] + ".meta")
-            _file_delete(CKPT[i] + ".index")
-            _file_delete(CKPT[i] + ".data-00000-of-00001")
-            _file_delete(CKPT[i] + "-0.meta")
-            _file_delete(CKPT[i] + "-0.index")
-            _file_delete(CKPT[i] + "-0.data-00000-of-00001")
-            _file_delete(CKPT[i] + "-1.meta")
-            _file_delete(CKPT[i] + "-1.index")
-            _file_delete(CKPT[i] + "-1.data-00000-of-00001")
+            _file_delete(cls.CKPT[i] + ".meta")
+            _file_delete(cls.CKPT[i] + ".index")
+            _file_delete(cls.CKPT[i] + ".data-00000-of-00001")
+            _file_delete(cls.CKPT[i] + "-0.meta")
+            _file_delete(cls.CKPT[i] + "-0.index")
+            _file_delete(cls.CKPT[i] + "-0.data-00000-of-00001")
+            _file_delete(cls.CKPT[i] + "-1.meta")
+            _file_delete(cls.CKPT[i] + "-1.index")
+            _file_delete(cls.CKPT[i] + "-1.data-00000-of-00001")
             _file_delete(f"input_v2_compat{i}.json")
             _file_delete("lcurve.out")
 
     def test_single_frame(self):
         for i in range(len(self.dp_ckpts)):
-            self.dp_ckpt = CKPT_TRAINERS[i]
-            self.dp_frz = FRZ_TRAINERS[i]
-            self.valid_data = VALID_DATAS[i]
-            self.stop_batch = STOP_BATCHS[i]
+            self.dp_ckpt = self.CKPT_TRAINERS[i]
+            self.dp_frz = self.FRZ_TRAINERS[i]
+            self.valid_data = self.VALID_DATAS[i]
+            self.stop_batch = self.STOP_BATCHS[i]
 
             valid_batch = self.valid_data.get_batch()
             natoms = valid_batch["natoms_vec"]

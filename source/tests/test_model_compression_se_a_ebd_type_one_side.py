@@ -98,7 +98,6 @@ def _init_models_exclude_types():
 
 
 INPUT, FROZEN_MODEL, COMPRESSED_MODEL = _init_models()
-INPUT_ET, FROZEN_MODEL_ET, COMPRESSED_MODEL_ET = _init_models_exclude_types()
 
 
 class TestDeepPotAPBC(unittest.TestCase):
@@ -444,8 +443,13 @@ class TestDeepPotALargeBoxNoPBC(unittest.TestCase):
 class TestDeepPotAPBCExcludeTypes(unittest.TestCase):
     @classmethod
     def setUpClass(self):
-        self.dp_original = DeepPot(FROZEN_MODEL_ET)
-        self.dp_compressed = DeepPot(COMPRESSED_MODEL_ET)
+        (
+            self.INPUT_ET,
+            self.FROZEN_MODEL_ET,
+            self.COMPRESSED_MODEL_ET,
+        ) = _init_models_exclude_types()
+        self.dp_original = DeepPot(self.FROZEN_MODEL_ET)
+        self.dp_compressed = DeepPot(self.COMPRESSED_MODEL_ET)
         self.coords = np.array(
             [
                 12.83,
@@ -473,9 +477,9 @@ class TestDeepPotAPBCExcludeTypes(unittest.TestCase):
 
     @classmethod
     def tearDownClass(self):
-        _file_delete(INPUT_ET)
-        _file_delete(FROZEN_MODEL_ET)
-        _file_delete(COMPRESSED_MODEL_ET)
+        _file_delete(self.INPUT_ET)
+        _file_delete(self.FROZEN_MODEL_ET)
+        _file_delete(self.COMPRESSED_MODEL_ET)
         _file_delete("out.json")
         _file_delete("compress.json")
         _file_delete("checkpoint")

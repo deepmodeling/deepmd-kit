@@ -82,12 +82,10 @@ def _init_models():
     return INPUT, frozen_model, decreased_model, increased_model
 
 
-INPUT, FROZEN_MODEL, DECREASED_MODEL, INCREASED_MODEL = _init_models()
-
-
 class TestDeepPotAAdjustSel(unittest.TestCase):
     @classmethod
     def setUpClass(self):
+        INPUT, FROZEN_MODEL, DECREASED_MODEL, INCREASED_MODEL = _init_models()
         self.dp_original = DeepPot(FROZEN_MODEL)
         self.dp_decreased = DeepPot(DECREASED_MODEL)
         self.dp_increased = DeepPot(INCREASED_MODEL)
