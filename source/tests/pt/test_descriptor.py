@@ -71,7 +71,7 @@ def base_se_a(rcut, rcut_smth, sel, batch, mean, stddev):
         )
 
     with tf.Session(graph=g) as sess:
-        return sess.run(
+        y = sess.run(
             [stat_descrpt, force, nlist],
             feed_dict={
                 coord: batch["coord"],
@@ -81,6 +81,8 @@ def base_se_a(rcut, rcut_smth, sel, batch, mean, stddev):
                 default_mesh: np.array([0, 0, 0, 2, 2, 2]),
             },
         )
+    tf.reset_default_graph()
+    return y
 
 
 class TestSeA(unittest.TestCase):

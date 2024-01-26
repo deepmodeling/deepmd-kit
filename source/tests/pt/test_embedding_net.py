@@ -80,7 +80,8 @@ def base_se_a(descriptor, coord, atype, natoms, box):
                 t_default_mesh: np.array([0, 0, 0, 2, 2, 2]),
             },
         )
-        return embedding, force, values
+    tf.reset_default_graph()
+    return embedding, force, values
 
 
 class TestSeA(unittest.TestCase):

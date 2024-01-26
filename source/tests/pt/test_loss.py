@@ -151,6 +151,10 @@ class TestLearningRate(unittest.TestCase):
         }
         self.natoms = pt_batch["natoms"]
 
+    def tearDown(self) -> None:
+        tf.reset_default_graph()
+        return super().tearDown()
+
     def test_consistency(self):
         with tf.Session(graph=self.g) as sess:
             base_loss, base_more_loss = sess.run(

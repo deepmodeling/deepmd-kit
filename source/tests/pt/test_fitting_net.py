@@ -72,7 +72,8 @@ def base_fitting_net(dp_fn, embedding, natoms, atype):
                 t_atype: atype,
             },
         )
-        return energy, values
+    tf.reset_default_graph()
+    return energy, values
 
 
 class TestFittingNet(unittest.TestCase):

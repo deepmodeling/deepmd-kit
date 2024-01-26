@@ -169,6 +169,7 @@ class DpTrainer:
                 grad, var = grads_and_vars[idx]
                 vs_dict[one.name] = VariableState(var, grad)
 
+        tf.reset_default_graph()
         # Used for reproducing
         return batch, head_dict, stat_dict, vs_dict
 
