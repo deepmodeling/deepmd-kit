@@ -6,6 +6,7 @@ from typing import (
 )
 
 import torch
+
 from deepmd.model_format import (
     FittingOutputDef,
     ModelOutputDef,

@@ -11,14 +11,14 @@ from pathlib import (
 
 import numpy as np
 import torch
-from deepmd.common import (
-    expand_sys_str,
-)
 from torch.utils.data import (
     DataLoader,
     RandomSampler,
 )
 
+from deepmd.common import (
+    expand_sys_str,
+)
 from deepmd.pt.loss import (
     DenoiseLoss,
     EnergyStdLoss,

@@ -6,10 +6,10 @@ from typing import (
 
 import numpy as np
 import torch
+
 from deepmd.model_format import (
     FittingOutputDef,
 )
-
 from deepmd.pt.model.task.task import (
     TaskBaseMethod,
 )

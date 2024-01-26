@@ -10,11 +10,6 @@ import torch
 
 tf.disable_eager_execution()
 
-from deepmd.tf.common import (
-    expand_sys_str,
-)
-from deepmd.tf.descriptor import DescrptSeA as DescrptSeA_tf
-
 from deepmd.pt.model.descriptor import (
     DescrptSeA,
 )
@@ -29,6 +24,10 @@ from deepmd.pt.utils.env import (
     GLOBAL_NP_FLOAT_PRECISION,
     TEST_CONFIG,
 )
+from deepmd.tf.common import (
+    expand_sys_str,
+)
+from deepmd.tf.descriptor import DescrptSeA as DescrptSeA_tf
 
 CUR_DIR = os.path.dirname(__file__)
 

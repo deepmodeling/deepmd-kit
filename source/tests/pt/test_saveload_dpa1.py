@@ -5,9 +5,6 @@ import os
 import unittest
 
 import torch
-from deepmd.tf.common import (
-    expand_sys_str,
-)
 from torch.utils.data import (
     DataLoader,
 )
@@ -30,6 +27,9 @@ from deepmd.pt.utils.dataloader import (
 )
 from deepmd.pt.utils.stat import (
     make_stat_input,
+)
+from deepmd.tf.common import (
+    expand_sys_str,
 )
 
 

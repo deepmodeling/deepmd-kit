@@ -6,10 +6,10 @@ from typing import (
 )
 
 import torch
+
 from deepmd.model_format import (
     FittingOutputDef,
 )
-
 from deepmd.pt.model.descriptor.descriptor import (
     Descriptor,
 )

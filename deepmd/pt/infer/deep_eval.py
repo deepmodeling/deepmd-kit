@@ -12,8 +12,8 @@ from typing import (
 
 import numpy as np
 import torch
-from deepmd.infer.deep_pot import DeepPot as DeepPotBase
 
+from deepmd.infer.deep_pot import DeepPot as DeepPotBase
 from deepmd.pt.model.model import (
     get_model,
 )

@@ -44,18 +44,24 @@ static bool is_key(const string &input) {
   return false;
 }
 
-static void ana_st(double &max, double &min, double &sum,
-                   const vector<double> &vec, const int &nloc) {
-  if (nloc == 0)
+static void ana_st(double &max,
+                   double &min,
+                   double &sum,
+                   const vector<double> &vec,
+                   const int &nloc) {
+  if (nloc == 0) {
     return;
+  }
   max = vec[0];
   min = vec[0];
   sum = vec[0];
   for (unsigned ii = 1; ii < nloc; ++ii) {
-    if (vec[ii] > max)
+    if (vec[ii] > max) {
       max = vec[ii];
-    if (vec[ii] < min)
+    }
+    if (vec[ii] < min) {
       min = vec[ii];
+    }
     sum += vec[ii];
   }
 }
@@ -129,13 +135,15 @@ void PairDeepMD::settings(int narg, char **arg) {
                  "Illegal pair_style command\nwrong number of parameters\n");
     }
     if (string(arg[iarg]) == string("out_freq")) {
-      if (iarg + 1 >= narg)
+      if (iarg + 1 >= narg) {
         error->all(FLERR, "Illegal out_freq, not provided");
+      }
       out_freq = atoi(arg[iarg + 1]);
       iarg += 2;
     } else if (string(arg[iarg]) == string("out_file")) {
-      if (iarg + 1 >= narg)
+      if (iarg + 1 >= narg) {
         error->all(FLERR, "Illegal out_file, not provided");
+      }
       out_file = string(arg[iarg + 1]);
       iarg += 2;
     } else if (string(arg[iarg]) == string("fparam")) {
@@ -184,8 +192,9 @@ void PairDeepMD::settings(int narg, char **arg) {
     else if (string(arg[iarg]) == string("fparam_from_compute")) {
       for (int ii = 0; ii < 1; ++ii) {
         if (iarg + 1 + ii >= narg || is_key(arg[iarg + 1 + ii])) {
-          error->all(FLERR, "invalid fparam_from_compute key: should be "
-                            "fparam_from_compute compute_id(str)");
+          error->all(FLERR,
+                     "invalid fparam_from_compute key: should be "
+                     "fparam_from_compute compute_id(str)");
         }
       }
       do_compute = true;
@@ -219,8 +228,9 @@ void PairDeepMD::settings(int narg, char **arg) {
     }
   }
 
-  if (out_freq < 0)
+  if (out_freq < 0) {
     error->all(FLERR, "Illegal out_freq, should be >= 0");
+  }
   if (do_ttm && aparam.size() > 0) {
     error->all(FLERR, "aparam and ttm should NOT be set simultaneously");
   }
@@ -282,12 +292,12 @@ void PairDeepMD::compute(int eflag, int vflag) {
   }
 
   // get box
-  dbox[0] = domain->h[0]; // xx
-  dbox[4] = domain->h[1]; // yy
-  dbox[8] = domain->h[2]; // zz
-  dbox[7] = domain->h[3]; // zy
-  dbox[6] = domain->h[4]; // zx
-  dbox[3] = domain->h[5]; // yx
+  dbox[0] = domain->h[0];  // xx
+  dbox[4] = domain->h[1];  // yy
+  dbox[8] = domain->h[2];  // zz
+  dbox[7] = domain->h[3];  // zy
+  dbox[6] = domain->h[4];  // zx
+  dbox[3] = domain->h[5];  // yx
 
   // int ago = numb_models > 1 ? 0 : neighbor->ago;
   int ago = neighbor->ago;
@@ -392,8 +402,9 @@ void PairDeepMD::compute(int eflag, int vflag) {
         }
         MPI_Gather(&nlocal, 1, MPI_INT, counts, 1, MPI_INT, 0, world);
         displacements[0] = 0;
-        for (int ii = 0; ii < nprocs - 1; ii++)
+        for (int ii = 0; ii < nprocs - 1; ii++) {
           displacements[ii + 1] = displacements[ii] + counts[ii];
+        }
         MPI_Gatherv(tagsend, nlocal, MPI_LMP_TAGINT, tagrecv, counts,
                     displacements, MPI_LMP_TAGINT, 0, world);
         MPI_Gatherv(stdfsend, nlocal, MPI_DOUBLE, stdfrecv, counts,
@@ -440,8 +451,9 @@ void PairDeepMD::compute(int eflag, int vflag) {
 void PairDeepMD::coeff(int narg, char **arg) {
   // if (narg < 4 || narg > 5) error->all(FLERR, "Incorrect args for pair
   // coefficients");
-  if (!allocated)
+  if (!allocated) {
     allocate();
+  }
 
   int ilo, ihi, jlo, jhi;
   utils::bounds(FLERR, arg[0], 1, atom->ntypes, ilo, ihi, error);
@@ -458,8 +470,9 @@ void PairDeepMD::coeff(int narg, char **arg) {
     }
   }
 
-  if (count == 0)
+  if (count == 0) {
     error->all(FLERR, "Incorrect args for pair coefficients");
+  }
 }
 
 /* ---------------------------------------------------------------------- */

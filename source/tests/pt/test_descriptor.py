@@ -10,13 +10,6 @@ tf.disable_eager_execution()
 
 import json
 
-from deepmd.tf.common import (
-    expand_sys_str,
-)
-from deepmd.tf.env import (
-    op_module,
-)
-
 from deepmd.pt.model.descriptor import (
     prod_env_mat_se_a,
 )
@@ -31,6 +24,12 @@ from deepmd.pt.utils.env import (
     GLOBAL_NP_FLOAT_PRECISION,
     GLOBAL_PT_FLOAT_PRECISION,
     TEST_CONFIG,
+)
+from deepmd.tf.common import (
+    expand_sys_str,
+)
+from deepmd.tf.env import (
+    op_module,
 )
 
 CUR_DIR = os.path.dirname(__file__)

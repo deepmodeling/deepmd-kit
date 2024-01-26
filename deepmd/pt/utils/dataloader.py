@@ -17,10 +17,6 @@ import h5py
 import torch
 import torch.distributed as dist
 import torch.multiprocessing
-from deepmd.utils.data_system import (
-    prob_sys_size_ext,
-    process_sys_probs,
-)
 from torch.utils.data import (
     DataLoader,
     Dataset,
@@ -38,6 +34,10 @@ from deepmd.pt.utils import (
 )
 from deepmd.pt.utils.dataset import (
     DeepmdDataSetForLoader,
+)
+from deepmd.utils.data_system import (
+    prob_sys_size_ext,
+    process_sys_probs,
 )
 
 torch.multiprocessing.set_sharing_strategy("file_system")

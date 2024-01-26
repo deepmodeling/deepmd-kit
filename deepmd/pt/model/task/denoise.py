@@ -4,12 +4,12 @@ from typing import (
 )
 
 import torch
+
 from deepmd.model_format import (
     FittingOutputDef,
     OutputVariableDef,
     fitting_check_output,
 )
-
 from deepmd.pt.model.network.network import (
     MaskLMHead,
     NonLinearHead,

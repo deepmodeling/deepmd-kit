@@ -4,13 +4,6 @@ import os
 import unittest
 
 import numpy as np
-from deepmd.tf.common import (
-    expand_sys_str,
-)
-from deepmd.tf.utils import random as tf_random
-from deepmd.tf.utils.data_system import (
-    DeepmdDataSystem,
-)
 from torch.utils.data import (
     DataLoader,
 )
@@ -21,6 +14,13 @@ from deepmd.pt.utils import (
 from deepmd.pt.utils.dataloader import (
     DpLoaderSet,
     get_weighted_sampler,
+)
+from deepmd.tf.common import (
+    expand_sys_str,
+)
+from deepmd.tf.utils import random as tf_random
+from deepmd.tf.utils.data_system import (
+    DeepmdDataSystem,
 )
 
 CUR_DIR = os.path.dirname(__file__)

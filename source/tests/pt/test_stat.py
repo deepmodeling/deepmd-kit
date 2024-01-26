@@ -5,19 +5,6 @@ import unittest
 
 import numpy as np
 import torch
-from deepmd.tf.common import (
-    expand_sys_str,
-)
-from deepmd.tf.descriptor.se_a import DescrptSeA as DescrptSeA_tf
-from deepmd.tf.fit.ener import (
-    EnerFitting,
-)
-from deepmd.tf.model.model_stat import make_stat_input as dp_make
-from deepmd.tf.model.model_stat import merge_sys_stat as dp_merge
-from deepmd.tf.utils import random as tf_random
-from deepmd.tf.utils.data_system import (
-    DeepmdDataSystem,
-)
 
 from deepmd.pt.model.descriptor import (
     DescrptSeA,
@@ -32,6 +19,19 @@ from deepmd.pt.utils.stat import (
     compute_output_stats,
 )
 from deepmd.pt.utils.stat import make_stat_input as my_make
+from deepmd.tf.common import (
+    expand_sys_str,
+)
+from deepmd.tf.descriptor.se_a import DescrptSeA as DescrptSeA_tf
+from deepmd.tf.fit.ener import (
+    EnerFitting,
+)
+from deepmd.tf.model.model_stat import make_stat_input as dp_make
+from deepmd.tf.model.model_stat import merge_sys_stat as dp_merge
+from deepmd.tf.utils import random as tf_random
+from deepmd.tf.utils.data_system import (
+    DeepmdDataSystem,
+)
 
 CUR_DIR = os.path.dirname(__file__)
 

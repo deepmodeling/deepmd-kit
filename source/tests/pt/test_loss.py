@@ -8,13 +8,6 @@ import tensorflow.compat.v1 as tf
 import torch
 
 tf.disable_eager_execution()
-from deepmd.tf.common import (
-    expand_sys_str,
-)
-from deepmd.tf.loss.ener import (
-    EnerStdLoss,
-)
-
 from deepmd.pt.loss import (
     EnergyStdLoss,
 )
@@ -23,6 +16,12 @@ from deepmd.pt.utils.dataset import (
 )
 from deepmd.pt.utils.env import (
     TEST_CONFIG,
+)
+from deepmd.tf.common import (
+    expand_sys_str,
+)
+from deepmd.tf.loss.ener import (
+    EnerStdLoss,
 )
 
 CUR_DIR = os.path.dirname(__file__)

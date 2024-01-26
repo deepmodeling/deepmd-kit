@@ -5,10 +5,10 @@ from typing import (
 )
 
 import torch
+
 from deepmd.model_format import (
     ModelOutputDef,
 )
-
 from deepmd.pt.model.model.transform_output import (
     communicate_extended_output,
     fit_output_to_model_output,

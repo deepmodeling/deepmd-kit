@@ -8,15 +8,14 @@ import torch
 
 tf.disable_eager_execution()
 
-from deepmd.tf.fit.ener import (
-    EnerFitting,
-)
-
 from deepmd.pt.model.task import (
     EnergyFittingNet,
 )
 from deepmd.pt.utils.env import (
     GLOBAL_NP_FLOAT_PRECISION,
+)
+from deepmd.tf.fit.ener import (
+    EnerFitting,
 )
 
 

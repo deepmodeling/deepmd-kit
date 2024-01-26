@@ -24,7 +24,6 @@ from deepmd.model_format import (
     make_fitting_network,
     make_multilayer_network,
 )
-
 from deepmd.pt.utils.env import (
     DEFAULT_PRECISION,
     PRECISION_DICT,

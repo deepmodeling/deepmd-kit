@@ -16,7 +16,7 @@ namespace deepmd_compat = deepmd;
 namespace LAMMPS_NS {
 
 class PairDeepMD : public Pair {
-public:
+ public:
   PairDeepMD(class LAMMPS *);
   ~PairDeepMD() override;
   void compute(int, int) override;
@@ -55,18 +55,18 @@ public:
   // std::vector<std::string> get_file_content(
   //     const std::vector<std::string> &models);
 
-protected:
+ protected:
   virtual void allocate();
   double **scale;
 
-private:
+ private:
   deepmd_compat::DeepPot deep_pot;
   deepmd_compat::DeepPotModelDevi deep_pot_model_devi;
   unsigned numb_models;
   double cutoff;
   int numb_types;
   int numb_types_spin;
-  std::vector<std::vector<double>> all_force;
+  std::vector<std::vector<double> > all_force;
   std::ofstream fp;
   int out_freq;
   std::string out_file;
@@ -84,7 +84,7 @@ private:
   int extend_inum;
   std::vector<int> extend_ilist;
   std::vector<int> extend_numneigh;
-  std::vector<std::vector<int>> extend_neigh;
+  std::vector<std::vector<int> > extend_neigh;
   std::vector<int *> extend_firstneigh;
   std::vector<double> extend_dcoord;
   std::vector<int> extend_dtype;
@@ -112,7 +112,7 @@ private:
   std::vector<int> type_idx_map;
 };
 
-} // namespace LAMMPS_NS
+}  // namespace LAMMPS_NS
 
 #endif
 #endif
