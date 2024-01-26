@@ -9,13 +9,13 @@ DeepPotPT::DeepPotPT(const std::string& model,
                      const std::string& file_content)
     : inited(false) {
   try {
-    init(model, gpu_rank);
+    init(model, gpu_rank,file_content);
   } catch (...) {
     // Clean up and rethrow, as the destructor will not be called
     throw;
   }
 }
-void DeepPotPT::init(const std::string& model, const int& gpu_rank) {
+void DeepPotPT::init(const std::string& model, const int& gpu_rank, const std::string& file_content = "") {
   if (inited) {
     std::cerr << "WARNING: deepmd-kit should not be initialized twice, do "
                  "nothing at the second call of initializer"
