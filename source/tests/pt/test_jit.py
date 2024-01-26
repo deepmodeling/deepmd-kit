@@ -9,7 +9,9 @@ from copy import (
 from pathlib import (
     Path,
 )
+
 import torch
+
 from deepmd.pt.entrypoints.main import (
     get_trainer,
 )
@@ -26,7 +28,6 @@ from .test_permutation import (
 
 
 class JITTest:
-
     def test_jit(self):
         trainer = get_trainer(deepcopy(self.config))
         trainer.run()
