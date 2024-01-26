@@ -31,6 +31,9 @@ from deepmd.pt.utils.stat import (
 from deepmd.tf.common import (
     expand_sys_str,
 )
+from pathlib import (
+    Path,
+)
 
 
 def get_dataset(config):
@@ -62,12 +65,15 @@ def get_dataset(config):
 
 class TestSaveLoadDPA1(unittest.TestCase):
     def setUp(self):
-        input_json = "tests/water/se_atten.json"
+        input_json = str(Path(__file__).parent / "water/se_atten.json")
         with open(input_json) as fin:
             self.config = json.load(fin)
         self.config["loss"]["starter_learning_rate"] = self.config["learning_rate"][
             "start_lr"
         ]
+        data_file = str(Path(__file__).parent / "water/data/data_0")
+        self.config["training"]["training_data"]["systems"] = data_file
+        self.config["training"]["validation_data"]["systems"] = data_file
         self.dataset, self.sampled = get_dataset(self.config)
         self.training_dataloader = DataLoader(
             self.dataset,

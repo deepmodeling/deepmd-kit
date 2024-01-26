@@ -19,6 +19,9 @@ from deepmd.pt.utils.dataloader import (
 from deepmd.pt.utils.stat import (
     make_stat_input,
 )
+from pathlib import (
+    Path,
+)
 
 dtype = torch.float64
 
@@ -179,7 +182,7 @@ model_hybrid = {
 
 def make_sample(model_params):
     training_systems = [
-        "tests/water/data/data_0",
+        str(Path(__file__).parent / "water/data/data_0"),
     ]
     data_stat_nbatch = model_params.get("data_stat_nbatch", 10)
     train_data = DpLoaderSet(

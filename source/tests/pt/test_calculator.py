@@ -13,19 +13,24 @@ from deepmd.pt.entrypoints.main import (
 from deepmd.pt.utils.ase_calc import (
     DPCalculator,
 )
+from pathlib import (
+    Path,
+)
 
 dtype = torch.float64
 
 
 class TestCalculator(unittest.TestCase):
     def setUp(self):
-        input_json = "tests/water/se_atten.json"
+        input_json = str(Path(__file__).parent / "water/se_atten.json")
         with open(input_json) as f:
             self.config = json.load(f)
         self.config["training"]["numb_steps"] = 1
         self.config["training"]["save_freq"] = 1
+        data_file = str(Path(__file__).parent / "water/data/data_0")
+        self.config["training"]["training_data"]["systems"] = data_file
         self.config["training"]["validation_data"]["systems"] = [
-            "tests/water/data/single"
+            str(Path(__file__).parent / "water/data/single")
         ]
         self.input_json = "test_dp_test.json"
         with open(self.input_json, "w") as fp:

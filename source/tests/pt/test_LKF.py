@@ -4,11 +4,14 @@ import unittest
 from deepmd.pt.entrypoints.main import (
     main,
 )
+from pathlib import (
+    Path,
+)
 
 
 class TestLKF(unittest.TestCase):
     def test_lkf(self):
-        main(["train", "tests/water/lkf.json"])
+        main(["train", str(Path(__file__).parent / "water/lkf.json")])
 
 
 if __name__ == "__main__":

@@ -6,6 +6,9 @@ import unittest
 from copy import (
     deepcopy,
 )
+from pathlib import (
+    Path,
+)
 
 import numpy as np
 
@@ -19,13 +22,13 @@ from deepmd.pt.infer import (
 
 class TestDPTest(unittest.TestCase):
     def setUp(self):
-        input_json = "tests/water/se_atten.json"
+        input_json = str(Path(__file__).parent / "water/se_atten.json")
         with open(input_json) as f:
             self.config = json.load(f)
         self.config["training"]["numb_steps"] = 1
         self.config["training"]["save_freq"] = 1
         self.config["training"]["validation_data"]["systems"] = [
-            "tests/water/data/single"
+            str(Path(__file__).parent / "water/data/single")
         ]
         self.input_json = "test_dp_test.json"
         with open(self.input_json, "w") as fp:
