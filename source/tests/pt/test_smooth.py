@@ -26,7 +26,6 @@ dtype = torch.float64
 
 
 class TestSmooth:
-
     def test(
         self,
     ):

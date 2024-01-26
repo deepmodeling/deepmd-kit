@@ -28,7 +28,6 @@ from .test_permutation import (
 
 
 class TestJIT:
-
     def test_jit(self):
         trainer = get_trainer(deepcopy(self.config))
         trainer.run()
