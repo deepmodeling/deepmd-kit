@@ -47,9 +47,6 @@ def stretch_box(old_coord, old_box, new_box):
 
 
 class TestForce:
-    def __init__(self):
-        self.model = None
-
     def test(
         self,
     ):
@@ -88,9 +85,6 @@ class TestForce:
 
 
 class TestVirial:
-    def __init__(self):
-        self.model = None
-
     def test(
         self,
     ):
@@ -135,9 +129,6 @@ class TestVirial:
 
 
 class TestEnergyModelSeAForce(unittest.TestCase, TestForce):
-    def __init__(self):
-        super().__init__()
-
     def setUp(self):
         model_params = copy.deepcopy(model_se_e2_a)
         sampled = make_sample(model_params)
@@ -146,9 +137,6 @@ class TestEnergyModelSeAForce(unittest.TestCase, TestForce):
 
 
 class TestEnergyModelSeAVirial(unittest.TestCase, TestVirial):
-    def __init__(self):
-        super().__init__()
-
     def setUp(self):
         model_params = copy.deepcopy(model_se_e2_a)
         sampled = make_sample(model_params)
@@ -157,9 +145,6 @@ class TestEnergyModelSeAVirial(unittest.TestCase, TestVirial):
 
 
 class TestEnergyModelDPA1Force(unittest.TestCase, TestForce):
-    def __init__(self):
-        super().__init__()
-
     def setUp(self):
         model_params = copy.deepcopy(model_dpa1)
         sampled = make_sample(model_params)
@@ -168,9 +153,6 @@ class TestEnergyModelDPA1Force(unittest.TestCase, TestForce):
 
 
 class TestEnergyModelDPA1Virial(unittest.TestCase, TestVirial):
-    def __init__(self):
-        super().__init__()
-
     def setUp(self):
         model_params = copy.deepcopy(model_dpa1)
         sampled = make_sample(model_params)
@@ -179,9 +161,6 @@ class TestEnergyModelDPA1Virial(unittest.TestCase, TestVirial):
 
 
 class TestEnergyModelDPA2Force(unittest.TestCase, TestForce):
-    def __init__(self):
-        super().__init__()
-
     def setUp(self):
         model_params_sample = copy.deepcopy(model_dpa2)
         model_params_sample["descriptor"]["rcut"] = model_params_sample["descriptor"][
@@ -197,9 +176,6 @@ class TestEnergyModelDPA2Force(unittest.TestCase, TestForce):
 
 
 class TestEnergyModelDPAUniVirial(unittest.TestCase, TestVirial):
-    def __init__(self):
-        super().__init__()
-
     def setUp(self):
         model_params_sample = copy.deepcopy(model_dpa2)
         model_params_sample["descriptor"]["rcut"] = model_params_sample["descriptor"][

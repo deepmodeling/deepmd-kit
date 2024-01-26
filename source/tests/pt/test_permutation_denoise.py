@@ -35,12 +35,10 @@ model_hybrid.pop("fitting_net")
 
 
 class TestPermutationDenoise:
-    def __init__(self):
-        self.model = None
-
     def test(
         self,
     ):
+        self.model = None
         natoms = 5
         cell = torch.rand([3, 3], dtype=dtype).to(env.DEVICE)
         cell = (cell + cell.T) + 5.0 * torch.eye(3).to(env.DEVICE)
@@ -70,9 +68,6 @@ class TestPermutationDenoise:
 
 
 class TestDenoiseModelDPA1(unittest.TestCase, TestPermutationDenoise):
-    def __init__(self):
-        super().__init__()
-
     def setUp(self):
         model_params = copy.deepcopy(model_dpa1)
         sampled = make_sample(model_params)
@@ -81,9 +76,6 @@ class TestDenoiseModelDPA1(unittest.TestCase, TestPermutationDenoise):
 
 
 class TestDenoiseModelDPA2(unittest.TestCase, TestPermutationDenoise):
-    def __init__(self):
-        super().__init__()
-
     def setUp(self):
         model_params_sample = copy.deepcopy(model_dpa2)
         model_params_sample["descriptor"]["rcut"] = model_params_sample["descriptor"][

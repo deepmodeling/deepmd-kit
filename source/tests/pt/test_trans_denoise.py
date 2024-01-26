@@ -25,12 +25,10 @@ dtype = torch.float64
 
 
 class TestTransDenoise:
-    def __init__(self):
-        self.model = None
-
     def test(
         self,
     ):
+        self.model = None
         natoms = 5
         cell = torch.rand([3, 3], dtype=dtype).to(env.DEVICE)
         cell = (cell + cell.T) + 5.0 * torch.eye(3).to(env.DEVICE)
@@ -60,9 +58,6 @@ class TestTransDenoise:
 
 
 class TestDenoiseModelDPA1(unittest.TestCase, TestTransDenoise):
-    def __init__(self):
-        super().__init__()
-
     def setUp(self):
         model_params = copy.deepcopy(model_dpa1)
         sampled = make_sample(model_params)
@@ -71,9 +66,6 @@ class TestDenoiseModelDPA1(unittest.TestCase, TestTransDenoise):
 
 
 class TestDenoiseModelDPA2(unittest.TestCase, TestTransDenoise):
-    def __init__(self):
-        super().__init__()
-
     def setUp(self):
         model_params_sample = copy.deepcopy(model_dpa2)
         model_params_sample["descriptor"]["rcut"] = model_params_sample["descriptor"][
@@ -90,9 +82,6 @@ class TestDenoiseModelDPA2(unittest.TestCase, TestTransDenoise):
 
 @unittest.skip("hybrid not supported at the moment")
 class TestDenoiseModelHybrid(unittest.TestCase, TestTransDenoise):
-    def __init__(self):
-        super().__init__()
-
     def setUp(self):
         model_params = copy.deepcopy(model_hybrid)
         sampled = make_sample(model_params)
