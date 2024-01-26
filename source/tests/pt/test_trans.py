@@ -26,10 +26,12 @@ dtype = torch.float64
 
 
 class TestTrans:
+    def __init__(self):
+        self.model = None
+
     def test(
         self,
     ):
-        self.model = None
         natoms = 5
         cell = torch.rand([3, 3], dtype=dtype).to(env.DEVICE)
         cell = (cell + cell.T) + 5.0 * torch.eye(3).to(env.DEVICE)
@@ -67,6 +69,9 @@ class TestTrans:
 
 
 class TestEnergyModelSeA(unittest.TestCase, TestTrans):
+    def __init__(self):
+        super().__init__()
+
     def setUp(self):
         model_params = copy.deepcopy(model_se_e2_a)
         sampled = make_sample(model_params)
@@ -75,6 +80,9 @@ class TestEnergyModelSeA(unittest.TestCase, TestTrans):
 
 
 class TestEnergyModelDPA1(unittest.TestCase, TestTrans):
+    def __init__(self):
+        super().__init__()
+
     def setUp(self):
         model_params = copy.deepcopy(model_dpa1)
         sampled = make_sample(model_params)
@@ -83,6 +91,9 @@ class TestEnergyModelDPA1(unittest.TestCase, TestTrans):
 
 
 class TestEnergyModelDPA2(unittest.TestCase, TestTrans):
+    def __init__(self):
+        super().__init__()
+
     def setUp(self):
         model_params_sample = copy.deepcopy(model_dpa2)
         model_params_sample["descriptor"]["rcut"] = model_params_sample["descriptor"][
@@ -98,6 +109,9 @@ class TestEnergyModelDPA2(unittest.TestCase, TestTrans):
 
 
 class TestForceModelDPA2(unittest.TestCase, TestTrans):
+    def __init__(self):
+        super().__init__()
+
     def setUp(self):
         model_params_sample = copy.deepcopy(model_dpa2)
         model_params_sample["descriptor"]["rcut"] = model_params_sample["descriptor"][
@@ -116,6 +130,9 @@ class TestForceModelDPA2(unittest.TestCase, TestTrans):
 
 @unittest.skip("hybrid not supported at the moment")
 class TestEnergyModelHybrid(unittest.TestCase, TestTrans):
+    def __init__(self):
+        super().__init__()
+
     def setUp(self):
         model_params = copy.deepcopy(model_hybrid)
         sampled = make_sample(model_params)
@@ -125,6 +142,9 @@ class TestEnergyModelHybrid(unittest.TestCase, TestTrans):
 
 @unittest.skip("hybrid not supported at the moment")
 class TestForceModelHybrid(unittest.TestCase, TestTrans):
+    def __init__(self):
+        super().__init__()
+
     def setUp(self):
         model_params = copy.deepcopy(model_hybrid)
         model_params["fitting_net"]["type"] = "direct_force_ener"

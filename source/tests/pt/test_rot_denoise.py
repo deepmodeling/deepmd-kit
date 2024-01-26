@@ -24,10 +24,12 @@ dtype = torch.float64
 
 
 class TestRotDenoise:
+    def __init__(self):
+        self.model = None
+
     def test(
         self,
     ):
-        self.model = None
         prec = 1e-10
         natoms = 5
         cell = 10.0 * torch.eye(3, dtype=dtype).to(env.DEVICE)
@@ -99,6 +101,9 @@ class TestRotDenoise:
 
 
 class TestDenoiseModelDPA1(unittest.TestCase, TestRotDenoise):
+    def __init__(self):
+        super().__init__()
+
     def setUp(self):
         model_params = copy.deepcopy(model_dpa1)
         sampled = make_sample(model_params)
@@ -107,6 +112,9 @@ class TestDenoiseModelDPA1(unittest.TestCase, TestRotDenoise):
 
 
 class TestDenoiseModelDPA2(unittest.TestCase, TestRotDenoise):
+    def __init__(self):
+        super().__init__()
+
     def setUp(self):
         model_params_sample = copy.deepcopy(model_dpa2)
         model_params_sample["descriptor"]["rcut"] = model_params_sample["descriptor"][
