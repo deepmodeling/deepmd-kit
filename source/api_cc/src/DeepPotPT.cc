@@ -115,11 +115,11 @@ void DeepPotPT::compute(ENERGYTYPE& ener,
   c10::IValue virial_ = outputs.at("extended_virial");
   c10::IValue atom_virial_ = outputs.at("atomic_virial");
   c10::IValue atom_energy_ = outputs.at("atom_energy");
-
-  torch::Tensor flat_energy_ = energy_.toTensor().view({-1});
-  torch::Tensor cpu_energy_ = flat_energy_.to(torch::kCPU);
-  ener.assign(cpu_energy_.data_ptr<VALUETYPE>(),
-              cpu_energy_.data_ptr<VALUETYPE>() + cpu_energy_.numel());
+  ener = energy_.toTensor().item<double>();
+  // torch::Tensor flat_energy_ = energy_.toTensor().view({-1});
+  // torch::Tensor cpu_energy_ = flat_energy_.to(torch::kCPU);
+  // ener.assign(cpu_energy_.data_ptr<VALUETYPE>(),
+  //             cpu_energy_.data_ptr<VALUETYPE>() + cpu_energy_.numel());
   torch::Tensor flat_atom_energy_ = atom_energy_.toTensor().view({-1});
   torch::Tensor cpu_atom_energy_ = flat_atom_energy_.to(torch::kCPU);
   atom_energy.assign(
@@ -223,10 +223,7 @@ void DeepPotPT::compute(ENERGYTYPE& ener,
   c10::IValue virial_ = outputs.at("virial");
   c10::IValue atom_virial_ = outputs.at("atomic_virial");
   c10::IValue atom_energy_ = outputs.at("atom_energy");
-  torch::Tensor flat_energy_ = energy_.toTensor().view({-1});
-  torch::Tensor cpu_energy_ = flat_energy_.to(torch::kCPU);
-  ener.assign(cpu_energy_.data_ptr<VALUETYPE>(),
-              cpu_energy_.data_ptr<VALUETYPE>() + cpu_energy_.numel());
+  ener = energy_.toTensor().item<double>();
   torch::Tensor flat_atom_energy_ = atom_energy_.toTensor().view({-1});
   torch::Tensor cpu_atom_energy_ = flat_atom_energy_.to(torch::kCPU);
   atom_energy.assign(
