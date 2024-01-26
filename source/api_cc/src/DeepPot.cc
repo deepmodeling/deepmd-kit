@@ -37,10 +37,11 @@ void DeepPot::init(const std::string& model,
               << std::endl;
     return;
   }
+  DPBackend backend;
   if (model.length() >= 4 && model.substr(model.length() - 4) == ".pth") {
-    DPBackend backend = deepmd::DPBackend::PyTorch;
+    backend = deepmd::DPBackend::PyTorch;
   } else if (model.length() >= 3 && model.substr(model.length() - 3) == ".pb") {
-    DPBackend backend = deepmd::DPBackend::TensorFlow;
+    backend = deepmd::DPBackend::TensorFlow;
     else {
       throw deepmd::deepmd_exception("Unsupported model file format");
     }

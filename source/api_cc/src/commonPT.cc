@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
+#ifdef BUILD_PYTORCH
 #include "commonPT.h"
 using namespace deepmd;
 void NeighborListDataPT::copy_from_nlist(const InputNlist& inlist,
@@ -22,3 +23,4 @@ void NeighborListDataPT::copy_from_nlist(const InputNlist& inlist,
            jnum * sizeof(int));
   }
 }
+#endif
