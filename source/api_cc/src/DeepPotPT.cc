@@ -115,7 +115,7 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
   c10::IValue virial_ = outputs.at("extended_virial");
   c10::IValue atom_virial_ = outputs.at("atomic_virial");
   c10::IValue atom_energy_ = outputs.at("atom_energy");
-  //ener = energy_.toTensor().item<double>();
+  // ener = energy_.toTensor().item<double>();
   torch::Tensor flat_energy_ = energy_.toTensor().view({-1});
   torch::Tensor cpu_energy_ = flat_energy_.to(torch::kCPU);
   ener.assign(cpu_energy_.data_ptr<VALUETYPE>(),
@@ -223,7 +223,7 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
   c10::IValue virial_ = outputs.at("virial");
   c10::IValue atom_virial_ = outputs.at("atomic_virial");
   c10::IValue atom_energy_ = outputs.at("atom_energy");
-  //ener = energy_.toTensor().item<double>();
+  // ener = energy_.toTensor().item<double>();
   torch::Tensor flat_energy_ = energy_.toTensor().view({-1});
   torch::Tensor cpu_energy_ = flat_energy_.to(torch::kCPU);
   ener.assign(cpu_energy_.data_ptr<VALUETYPE>(),
