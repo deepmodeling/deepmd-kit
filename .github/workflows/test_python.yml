@@ -39,6 +39,7 @@ jobs:
     - run: pip install horovod mpi4py
       env:
         HOROVOD_WITH_TENSORFLOW: 1
+        HOROVOD_WITH_PYTORCH: 0
         HOROVOD_WITHOUT_GLOO: 1
     - run: dp --version
     - run: pytest --cov=deepmd source/tests --durations=0
