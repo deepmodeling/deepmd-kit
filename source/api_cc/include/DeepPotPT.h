@@ -34,7 +34,9 @@ class DeepPotPT : public DeepPotBase {
    * @param[in] file_content The content of the model file. If it is not empty,
    *DP will read from the string instead of the file.
    **/
-  void init(const std::string& model, const int& gpu_rank = 0, const std::string& file_content = "");
+  void init(const std::string& model,
+            const int& gpu_rank = 0,
+            const std::string& file_content = "");
 
  private:
   /**
