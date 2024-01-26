@@ -50,7 +50,6 @@ class TestForce:
     def test(
         self,
     ):
-        self.model = None
         places = 8
         delta = 1e-5
         natoms = 5
@@ -89,7 +88,6 @@ class TestVirial:
     def test(
         self,
     ):
-        self.model = None
         places = 8
         delta = 1e-4
         natoms = 5
