@@ -4,6 +4,9 @@ import unittest
 from copy import (
     deepcopy,
 )
+from pathlib import (
+    Path,
+)
 
 import torch
 
@@ -12,9 +15,6 @@ from deepmd.pt.entrypoints.main import (
 )
 from deepmd.pt.utils.ase_calc import (
     DPCalculator,
-)
-from pathlib import (
-    Path,
 )
 
 dtype = torch.float64

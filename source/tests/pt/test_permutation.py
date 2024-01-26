@@ -1,6 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import copy
 import unittest
+from pathlib import (
+    Path,
+)
 
 import torch
 
@@ -18,9 +21,6 @@ from deepmd.pt.utils.dataloader import (
 )
 from deepmd.pt.utils.stat import (
     make_stat_input,
-)
-from pathlib import (
-    Path,
 )
 
 dtype = torch.float64

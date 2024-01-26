@@ -6,6 +6,9 @@ import unittest
 from copy import (
     deepcopy,
 )
+from pathlib import (
+    Path,
+)
 
 from deepmd.pt.entrypoints.main import (
     get_trainer,
@@ -16,9 +19,6 @@ from .test_permutation import (
     model_dpa2,
     model_hybrid,
     model_se_e2_a,
-)
-from pathlib import (
-    Path,
 )
 
 

@@ -6,6 +6,9 @@ import unittest
 from copy import (
     deepcopy,
 )
+from pathlib import (
+    Path,
+)
 
 import torch
 
@@ -21,9 +24,6 @@ from .test_permutation import (
     model_dpa2,
     model_hybrid,
     model_se_e2_a,
-)
-from pathlib import (
-    Path,
 )
 
 
