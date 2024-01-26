@@ -84,7 +84,7 @@ class DipoleChargeModifierBase {
    * @brief Get the list of sel types.
    * @return The list of sel types.
    */
-  virtual std::vector<int> sel_types() const = 0;
+  virtual std::vector<int>& sel_types() const = 0;
 };
 
 /**
@@ -161,7 +161,7 @@ class DipoleChargeModifier {
    * @brief Get the list of sel types.
    * @return The list of sel types.
    */
-  std::vector<int> sel_types() const;
+  std::vector<int>& sel_types() const;
 
  private:
   bool inited;
