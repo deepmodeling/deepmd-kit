@@ -10,7 +10,12 @@ GLOBAL_PT_FLOAT_PRECISION = getattr(torch, PRECISION)
 GLOBAL_ENER_FLOAT_PRECISION = getattr(np, PRECISION)
 DISABLE_TQDM = os.environ.get("DISABLE_TQDM", False)
 SAMPLER_RECORD = os.environ.get("SAMPLER_RECORD", False)
-NUM_WORKERS = int(os.environ.get("NUM_WORKERS", 8))
+try:
+    # only linux
+    ncpus = len(os.sched_getaffinity(0))
+except AttributeError:
+    ncpus = os.cpu_count()
+NUM_WORKERS = int(os.environ.get("NUM_WORKERS", min(8, ncpus)))
 # Make sure DDP uses correct device if applicable
 LOCAL_RANK = os.environ.get("LOCAL_RANK")
 LOCAL_RANK = int(0 if LOCAL_RANK is None else LOCAL_RANK)
