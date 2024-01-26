@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 #include "commonPT.h"
 using namespace deepmd;
-void NeighborListData::copy_from_nlist(const InputNlist& inlist,
+void NeighborListDataPT::copy_from_nlist(const InputNlist& inlist,
                                        int& max_num_neighbors,
                                        int nnei) {
   int inum = inlist.inum;
