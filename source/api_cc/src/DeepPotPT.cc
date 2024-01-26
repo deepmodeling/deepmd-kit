@@ -59,7 +59,7 @@ void DeepPotPT::init(const std::string& model,
 DeepPotPT::~DeepPotPT() {}
 
 template <typename VALUETYPE, typename ENERGYVTYPE>
-void DeepPotPT::compute(ENERGYTYPE& ener,
+void DeepPotPT::compute(ENERGYVTYPE& ener,
                         std::vector<VALUETYPE>& force,
                         std::vector<VALUETYPE>& virial,
                         std::vector<VALUETYPE>& atom_energy,
@@ -186,7 +186,7 @@ template void DeepPotPT::compute<float, std::vector<ENERGYTYPE>>(
     const InputNlist& lmp_list,
     const int& ago);
 template <typename VALUETYPE, typename ENERGYVTYPE>
-void DeepPotPT::compute(ENERGYTYPE& ener,
+void DeepPotPT::compute(ENERGYVTYPE& ener,
                         std::vector<VALUETYPE>& force,
                         std::vector<VALUETYPE>& virial,
                         std::vector<VALUETYPE>& atom_energy,

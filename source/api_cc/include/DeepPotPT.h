@@ -62,7 +62,7 @@ class DeepPotPT : public DeepPotBase {
    *same aparam.
    **/
   template <typename VALUETYPE, typename ENERGYVTYPE>
-  void compute(ENERGYTYPE& ener,
+  void compute(ENERGYVTYPE& ener,
                std::vector<VALUETYPE>& force,
                std::vector<VALUETYPE>& virial,
                std::vector<VALUETYPE>& atom_energy,
@@ -98,7 +98,7 @@ class DeepPotPT : public DeepPotBase {
    *same aparam.
    **/
   template <typename VALUETYPE, typename ENERGYVTYPE>
-  void compute(ENERGYTYPE& ener,
+  void compute(ENERGYVTYPE& ener,
                std::vector<VALUETYPE>& force,
                std::vector<VALUETYPE>& virial,
                std::vector<VALUETYPE>& atom_energy,
