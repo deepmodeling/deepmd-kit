@@ -9,12 +9,15 @@ jobs:
     strategy:
       matrix:
         include:
-          - python: 3.7
-            tf: 1.14
+          - python: 3.8
+            tf: 2.2
+            torch: 2.0.0
           - python: 3.8
             tf:
+            torch:
           - python: "3.11"
             tf:
+            torch:
 
     steps:
     - uses: actions/checkout@v4
@@ -28,12 +31,13 @@ jobs:
         mpi: openmpi
     # https://github.com/pypa/pip/issues/11770
     - run: python -m pip install -U "pip>=21.3.1,!=23.0.0"
-    - run: pip install -e .[cpu,test]
+    - run: python -m pip install -U "torch==${{ matrix.torch }}"
+      if: matrix.torch != ''
+    - run: pip install -e .[cpu,test,torch]
       env:
         TENSORFLOW_VERSION: ${{ matrix.tf }}
         DP_BUILD_TESTING: 1
     - run: pip install horovod mpi4py
-      if: ${{ matrix.tf == '' }}
       env:
         HOROVOD_WITH_TENSORFLOW: 1
         HOROVOD_WITHOUT_GLOO: 1
