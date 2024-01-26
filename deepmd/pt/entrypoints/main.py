@@ -10,7 +10,7 @@ from torch.distributed.elastic.multiprocessing.errors import (
     record,
 )
 
-from deepmd.pt import (
+from deepmd import (
     __version__,
 )
 from deepmd.pt.infer import (
