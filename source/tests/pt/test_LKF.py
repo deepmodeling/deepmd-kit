@@ -8,10 +8,28 @@ from deepmd.pt.entrypoints.main import (
     main,
 )
 
+import json
+import os
+
 
 class TestLKF(unittest.TestCase):
     def test_lkf(self):
-        main(["train", str(Path(__file__).parent / "water/lkf.json")])
+        with open(str(Path(__file__).parent / "water/lkf.json")) as fin:
+            content = fin.read()
+        self.config = json.loads(content)
+        self.config["training"]["training_data"]["systems"] = [
+            str(Path(__file__).parent / "water/data/data_0")
+        ]
+        self.config["training"]["validation_data"]["systems"] = [
+            str(Path(__file__).parent / "water/data/data_0")
+        ]
+        self.input_json = "test_lkf.json"
+        with open(self.input_json, "w") as fp:
+            json.dump(self.config, fp, indent=4)
+        main(["train", self.input_json])
+
+    def tearDown(self):
+        os.remove(self.input_json)
 
 
 if __name__ == "__main__":

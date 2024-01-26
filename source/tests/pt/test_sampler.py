@@ -22,13 +22,16 @@ from deepmd.tf.utils import random as tf_random
 from deepmd.tf.utils.data_system import (
     DeepmdDataSystem,
 )
+from pathlib import (
+    Path,
+)
 
 CUR_DIR = os.path.dirname(__file__)
 
 
 class TestSampler(unittest.TestCase):
     def setUp(self):
-        with open(env.TEST_CONFIG) as fin:
+        with open(str(Path(__file__).parent / "water/se_e2_a.json")) as fin:
             content = fin.read()
         config = json.loads(content)
         model_config = config["model"]

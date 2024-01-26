@@ -22,14 +22,16 @@ from deepmd.pt.utils.dataset import (
 from deepmd.pt.utils.env import (
     DEVICE,
     GLOBAL_NP_FLOAT_PRECISION,
-    GLOBAL_PT_FLOAT_PRECISION,
-    TEST_CONFIG,
+    GLOBAL_PT_FLOAT_PRECISION
 )
 from deepmd.tf.common import (
     expand_sys_str,
 )
 from deepmd.tf.env import (
     op_module,
+)
+from pathlib import (
+    Path,
 )
 
 CUR_DIR = os.path.dirname(__file__)
@@ -84,7 +86,7 @@ def base_se_a(rcut, rcut_smth, sel, batch, mean, stddev):
 class TestSeA(unittest.TestCase):
     def setUp(self):
         dp_random.seed(20)
-        with open(TEST_CONFIG) as fin:
+        with open(str(Path(__file__).parent / "water/se_e2_a.json")) as fin:
             content = fin.read()
         config = json.loads(content)
         model_config = config["model"]

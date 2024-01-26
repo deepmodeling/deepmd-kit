@@ -200,6 +200,7 @@ class TestPermutation:
     def test(
         self,
     ):
+        self.model = None
         natoms = 5
         cell = torch.rand([3, 3], dtype=dtype).to(env.DEVICE)
         cell = (cell + cell.T) + 5.0 * torch.eye(3).to(env.DEVICE)

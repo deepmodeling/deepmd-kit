@@ -14,21 +14,22 @@ from deepmd.pt.loss import (
 from deepmd.pt.utils.dataset import (
     DeepmdDataSet,
 )
-from deepmd.pt.utils.env import (
-    TEST_CONFIG,
-)
 from deepmd.tf.common import (
     expand_sys_str,
 )
 from deepmd.tf.loss.ener import (
     EnerStdLoss,
 )
+from pathlib import (
+    Path,
+)
+
 
 CUR_DIR = os.path.dirname(__file__)
 
 
 def get_batch():
-    with open(TEST_CONFIG) as fin:
+    with open(str(Path(__file__).parent / "water/se_e2_a.json")) as fin:
         content = fin.read()
     config = json.loads(content)
     model_config = config["model"]

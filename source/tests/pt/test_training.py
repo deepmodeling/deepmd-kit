@@ -23,6 +23,9 @@ from .test_permutation import (
 
 
 class TestDPTrain:
+    def __init__(self):
+        self.config = None
+
     def test_dp_train(self):
         trainer = get_trainer(deepcopy(self.config))
         trainer.run()

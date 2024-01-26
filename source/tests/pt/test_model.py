@@ -19,8 +19,7 @@ from deepmd.pt.utils.dataloader import (
     DpLoaderSet,
 )
 from deepmd.pt.utils.env import (
-    DEVICE,
-    TEST_CONFIG,
+    DEVICE
 )
 from deepmd.pt.utils.learning_rate import LearningRateExp as MyLRExp
 from deepmd.pt.utils.stat import (
@@ -47,6 +46,10 @@ from deepmd.tf.utils.learning_rate import (
     LearningRateExp,
 )
 
+from pathlib import (
+    Path,
+)
+
 VariableState = collections.namedtuple("VariableState", ["value", "gradient"])
 
 
@@ -71,7 +74,7 @@ def torch2tf(torch_name):
 
 class DpTrainer:
     def __init__(self):
-        with open(TEST_CONFIG) as fin:
+        with open(str(Path(__file__).parent / "water/se_e2_a.json")) as fin:
             content = fin.read()
         config = json.loads(content)
         model_config = config["model"]

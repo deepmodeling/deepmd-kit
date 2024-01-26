@@ -27,6 +27,7 @@ class TestRotDenoise:
     def test(
         self,
     ):
+        self.model = None
         prec = 1e-10
         natoms = 5
         cell = 10.0 * torch.eye(3, dtype=dtype).to(env.DEVICE)

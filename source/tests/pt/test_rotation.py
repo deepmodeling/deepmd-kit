@@ -28,6 +28,10 @@ from deepmd.pt.utils.stat import (
     make_stat_input,
 )
 
+from pathlib import (
+    Path,
+)
+
 
 class CheckSymmetry(DeepmdDataSystem):
     def __init__(
@@ -69,7 +73,7 @@ def get_data(batch):
 
 class TestRotation(unittest.TestCase):
     def setUp(self):
-        with open(env.TEST_CONFIG) as fin:
+        with open(str(Path(__file__).parent / "water/se_e2_a.json")) as fin:
             self.config = json.load(fin)
         self.rotation = special_ortho_group.rvs(3)
         self.get_dataset(0)

@@ -23,6 +23,9 @@ dtype = torch.float64
 
 
 class TestSmoothDenoise:
+    def __init__(self):
+        self.epsilon = None
+
     def test(
         self,
     ):

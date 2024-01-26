@@ -25,7 +25,9 @@ from deepmd.pt.utils.dataset import (
 from deepmd.pt.utils.stat import (
     make_stat_input,
 )
-
+from pathlib import (
+    Path,
+)
 
 class CheckSymmetry(DeepmdDataSystem):
     def __init__(
@@ -61,7 +63,7 @@ def get_data(batch):
 
 class TestForceGrad(unittest.TestCase):
     def setUp(self):
-        with open(env.TEST_CONFIG) as fin:
+        with open(str(Path(__file__).parent / "water/se_e2_a.json")) as fin:
             self.config = json.load(fin)
         self.system_index = 0
         self.batch_index = 0
