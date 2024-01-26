@@ -50,6 +50,9 @@ class TestEnergyModelSeA(unittest.TestCase, DPTrainTest):
         self.config["training"]["numb_steps"] = 1
         self.config["training"]["save_freq"] = 1
 
+    def tearDown(self) -> None:
+        DPTrainTest.tearDown(self)
+
 
 class TestEnergyModelDPA1(unittest.TestCase, DPTrainTest):
     def setUp(self):
@@ -62,6 +65,9 @@ class TestEnergyModelDPA1(unittest.TestCase, DPTrainTest):
         self.config["model"] = deepcopy(model_dpa1)
         self.config["training"]["numb_steps"] = 1
         self.config["training"]["save_freq"] = 1
+
+    def tearDown(self) -> None:
+        DPTrainTest.tearDown(self)
 
 
 class TestEnergyModelDPA2(unittest.TestCase, DPTrainTest):
@@ -85,6 +91,9 @@ class TestEnergyModelDPA2(unittest.TestCase, DPTrainTest):
         self.config["training"]["numb_steps"] = 1
         self.config["training"]["save_freq"] = 1
 
+    def tearDown(self) -> None:
+        DPTrainTest.tearDown(self)
+
 
 @unittest.skip("hybrid not supported at the moment")
 class TestEnergyModelHybrid(unittest.TestCase, DPTrainTest):
@@ -98,6 +107,9 @@ class TestEnergyModelHybrid(unittest.TestCase, DPTrainTest):
         self.config["model"] = deepcopy(model_hybrid)
         self.config["training"]["numb_steps"] = 1
         self.config["training"]["save_freq"] = 1
+
+    def tearDown(self) -> None:
+        DPTrainTest.tearDown(self)
 
 
 if __name__ == "__main__":

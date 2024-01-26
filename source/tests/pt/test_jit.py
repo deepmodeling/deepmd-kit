@@ -97,6 +97,9 @@ class TestEnergyModelDPA2(unittest.TestCase, JITTest):
         self.config["training"]["numb_steps"] = 10
         self.config["training"]["save_freq"] = 10
 
+    def tearDown(self):
+        JITTest.tearDown(self)
+
 
 @unittest.skip("hybrid not supported at the moment")
 class TestEnergyModelHybrid(unittest.TestCase, JITTest):
@@ -110,6 +113,9 @@ class TestEnergyModelHybrid(unittest.TestCase, JITTest):
         self.config["model"] = deepcopy(model_hybrid)
         self.config["training"]["numb_steps"] = 10
         self.config["training"]["save_freq"] = 10
+
+    def tearDown(self):
+        JITTest.tearDown(self)
 
 
 @unittest.skip("hybrid not supported at the moment")
@@ -125,6 +131,9 @@ class TestEnergyModelHybrid2(unittest.TestCase, JITTest):
         self.config["model"]["descriptor"]["hybrid_mode"] = "sequential"
         self.config["training"]["numb_steps"] = 10
         self.config["training"]["save_freq"] = 10
+
+    def tearDown(self):
+        JITTest.tearDown(self)
 
 
 if __name__ == "__main__":
