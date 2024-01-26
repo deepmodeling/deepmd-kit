@@ -88,11 +88,11 @@ class DescrptBlockSeAtten(DescriptorBlock):
             sel = [sel]
 
         self.ntypes = ntypes
-        self.sel = sel  # 每种元素在邻居中的位移
+        self.sel = sel
         self.sec = self.sel
         self.split_sel = self.sel
-        self.nnei = sum(sel)  # 总的邻居数量
-        self.ndescrpt = self.nnei * 4  # 描述符的元素数量
+        self.nnei = sum(sel)
+        self.ndescrpt = self.nnei * 4
         self.dpa1_attention = NeighborWiseAttention(
             self.attn_layer,
             self.nnei,
@@ -180,7 +180,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         sumr2 = []
         suma2 = []
         mixed_type = "real_natoms_vec" in merged[0]
-        for system in merged:  # 逐个 system 的分析
+        for system in merged:
             index = system["mapping"].unsqueeze(-1).expand(-1, -1, 3)
             extended_coord = torch.gather(system["coord"], dim=1, index=index)
             extended_coord = extended_coord - system["shift"]
@@ -338,21 +338,21 @@ def analyze_descrpt(matrix, ndescrpt, natoms, mixed_type=False, real_atype=None)
     """Collect avg, square avg and count of descriptors in a batch."""
     ntypes = natoms.shape[1] - 2
     if not mixed_type:
-        sysr = []  # 每类元素的径向均值
-        sysa = []  # 每类元素的轴向均值
-        sysn = []  # 每类元素的样本数量
-        sysr2 = []  # 每类元素的径向平方均值
-        sysa2 = []  # 每类元素的轴向平方均值
+        sysr = []
+        sysa = []
+        sysn = []
+        sysr2 = []
+        sysa2 = []
         start_index = 0
         for type_i in range(ntypes):
             end_index = start_index + natoms[0, 2 + type_i]
-            dd = matrix[:, start_index:end_index]  # 本元素所有原子的 descriptor
+            dd = matrix[:, start_index:end_index]
             start_index = end_index
             dd = np.reshape(
                 dd, [-1, 4]
             )  # Shape is [nframes*natoms[2+type_id]*self.nnei, 4]
-            ddr = dd[:, :1]  # 径向值
-            dda = dd[:, 1:]  # XYZ 轴分量
+            ddr = dd[:, :1]
+            dda = dd[:, 1:]
             sumr = np.sum(ddr)
             suma = np.sum(dda) / 3.0
             sumn = dd.shape[0]  # Value is nframes*natoms[2+type_id]*self.nnei

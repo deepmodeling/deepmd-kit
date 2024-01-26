@@ -15,11 +15,10 @@ class Region3D:
     def __init__(self, boxt):
         """Construct a simulation box."""
         boxt = boxt.reshape([3, 3])
-        self.boxt = boxt  # 用于世界坐标转内部坐标
-        self.rec_boxt = torch.linalg.inv(self.boxt)  # 用于内部坐标转世界坐标
+        self.boxt = boxt  # convert physical coordinates to internal ones
+        self.rec_boxt = torch.linalg.inv(self.boxt)  # convert internal coordinates to physical ones
 
-        # 计算空间属性
-        self.volume = torch.linalg.det(self.boxt)  # 平行六面体空间的体积
+        self.volume = torch.linalg.det(self.boxt)  # compute the volume
 
         # boxt = boxt.permute(1, 0)
         c_yz = torch.cross(boxt[1], boxt[2])
@@ -87,8 +86,8 @@ def build_inside_clist(coord, region: Region3D, ncell):
     - coord: shape is [nloc*3]
     - ncell: shape is [3]
     """
-    loc_ncell = int(torch.prod(ncell))  # 模拟区域内的 Cell 数量
-    nloc = coord.numel() // 3  # 原子数量
+    loc_ncell = int(torch.prod(ncell))  # num of local cells
+    nloc = coord.numel() // 3  # num of local atoms
     inter_cell_size = 1.0 / ncell
 
     inter_cood = region.phys2inter(coord.view(-1, 3))
@@ -120,15 +119,15 @@ def append_neighbors(coord, region: Region3D, atype, rcut: float):
     """
     to_face = region.get_face_distance()
 
-    # 计算 3 个方向的 Cell 大小和 Cell 数量
+    # compute num and size of local cells
     ncell = torch.floor(to_face / rcut).to(torch.long)
-    ncell[ncell == 0] = 1  # 模拟区域内的 Cell 数量
+    ncell[ncell == 0] = 1
     cell_size = to_face / ncell
     ngcell = (
         torch.floor(rcut / cell_size).to(torch.long) + 1
-    )  # 模拟区域外的 Cell 数量, 存储的是 Ghost 原子
+    )  # num of cells out of local, which contain ghost atoms
 
-    # 借助 Cell 列表添加边界外的 Ghost 原子
+    # add ghost atoms
     a2c, c2a = build_inside_clist(coord, region, ncell)
     xi = torch.arange(-ngcell[0], ncell[0] + ngcell[0], 1, device=env.PREPROCESS_DEVICE)
     yi = torch.arange(-ngcell[1], ncell[1] + ngcell[1], 1, device=env.PREPROCESS_DEVICE)
@@ -160,7 +159,7 @@ def append_neighbors(coord, region: Region3D, atype, rcut: float):
     tmp_coord = coord[aid] - coord_shift[tmp]
     tmp_atype = atype[aid]
 
-    # 合并内部原子和 Ghost 原子信息
+    # merge local and ghost atoms
     merged_coord = torch.cat([coord, tmp_coord])
     merged_coord_shift = torch.cat([torch.zeros_like(coord), coord_shift[tmp]])
     merged_atype = torch.cat([atype, tmp_atype])
@@ -268,7 +267,7 @@ def make_env_mat(
     merged_coord_shift: shift on nall atoms, [nall, 3]
     merged_mapping: mapping from nall index to nloc index, [nall]
     """
-    # 将盒子外的原子, 通过镜像挪入盒子内
+    # move outer atoms into cell
     hybrid = isinstance(rcut, list)
     _rcut = rcut
     if hybrid:
@@ -286,7 +285,7 @@ def make_env_mat(
         merged_mapping = torch.arange(atype.numel(), device=env.PREPROCESS_DEVICE)
         merged_coord = coord.clone()
 
-    # 构建邻居列表, 并按 sel_a 筛选
+    # build nlist
     if not hybrid:
         nlist, nlist_loc, nlist_type = build_neighbor_list(
             coord.shape[0],

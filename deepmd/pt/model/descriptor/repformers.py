@@ -97,9 +97,9 @@ class DescrptBlockRepformers(DescriptorBlock):
         self.ntypes = ntypes
         self.nlayers = nlayers
         sel = [sel] if isinstance(sel, int) else sel
-        self.nnei = sum(sel)  # 总的邻居数量
+        self.nnei = sum(sel)
         assert len(sel) == 1
-        self.sel = sel  # 每种元素在邻居中的位移
+        self.sel = sel
         self.sec = self.sel
         self.split_sel = self.sel
         self.axis_dim = axis_dim
@@ -260,14 +260,14 @@ class DescrptBlockRepformers(DescriptorBlock):
 
     def compute_input_stats(self, merged):
         """Update mean and stddev for descriptor elements."""
-        ndescrpt = self.nnei * 4  # 描述符的元素数量
+        ndescrpt = self.nnei * 4
         sumr = []
         suma = []
         sumn = []
         sumr2 = []
         suma2 = []
         mixed_type = "real_natoms_vec" in merged[0]
-        for system in merged:  # 逐个 system 的分析
+        for system in merged:
             index = system["mapping"].unsqueeze(-1).expand(-1, -1, 3)
             extended_coord = torch.gather(system["coord"], dim=1, index=index)
             extended_coord = extended_coord - system["shift"]

@@ -324,9 +324,9 @@ class RepformerLayer(torch.nn.Module):
         self.rcut_smth = rcut_smth
         self.ntypes = ntypes
         sel = [sel] if isinstance(sel, int) else sel
-        self.nnei = sum(sel)  # 总的邻居数量
+        self.nnei = sum(sel)
         assert len(sel) == 1
-        self.sel = torch.tensor(sel)  # 每种元素在邻居中的位移
+        self.sel = torch.tensor(sel)
         self.sec = self.sel
         self.axis_dim = axis_dim
         self.set_davg_zero = set_davg_zero
