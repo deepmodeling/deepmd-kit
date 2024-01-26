@@ -1,0 +1,89 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
+import json
+import os
+import shutil
+import unittest
+from copy import (
+    deepcopy,
+)
+
+from deepmd.pt.entrypoints.main import (
+    get_trainer,
+)
+
+from .test_permutation import (
+    model_dpa1,
+    model_dpa2,
+    model_hybrid,
+    model_se_e2_a,
+)
+
+
+class TestDPTrain:
+    def test_dp_train(self):
+        trainer = get_trainer(deepcopy(self.config))
+        trainer.run()
+        self.tearDown()
+
+    def tearDown(self):
+        for f in os.listdir("."):
+            if f.startswith("model") and f.endswith(".pt"):
+                os.remove(f)
+            if f in ["lcurve.out"]:
+                os.remove(f)
+            if f in ["stat_files"]:
+                shutil.rmtree(f)
+
+
+class TestEnergyModelSeA(unittest.TestCase, TestDPTrain):
+    def setUp(self):
+        input_json = "tests/water/se_atten.json"
+        with open(input_json) as f:
+            self.config = json.load(f)
+        self.config["model"] = deepcopy(model_se_e2_a)
+        self.config["training"]["numb_steps"] = 1
+        self.config["training"]["save_freq"] = 1
+
+
+class TestEnergyModelDPA1(unittest.TestCase, TestDPTrain):
+    def setUp(self):
+        input_json = "tests/water/se_atten.json"
+        with open(input_json) as f:
+            self.config = json.load(f)
+        self.config["model"] = deepcopy(model_dpa1)
+        self.config["training"]["numb_steps"] = 1
+        self.config["training"]["save_freq"] = 1
+
+
+class TestEnergyModelDPA2(unittest.TestCase, TestDPTrain):
+    def setUp(self):
+        input_json = "tests/water/se_atten.json"
+        with open(input_json) as f:
+            self.config = json.load(f)
+        self.config["model"] = deepcopy(model_dpa2)
+        self.config["model"]["descriptor"]["rcut"] = self.config["model"]["descriptor"][
+            "repinit_rcut"
+        ]
+        self.config["model"]["descriptor"]["rcut_smth"] = self.config["model"][
+            "descriptor"
+        ]["repinit_rcut_smth"]
+        self.config["model"]["descriptor"]["sel"] = self.config["model"]["descriptor"][
+            "repinit_nsel"
+        ]
+        self.config["training"]["numb_steps"] = 1
+        self.config["training"]["save_freq"] = 1
+
+
+@unittest.skip("hybrid not supported at the moment")
+class TestEnergyModelHybrid(unittest.TestCase, TestDPTrain):
+    def setUp(self):
+        input_json = "tests/water/se_atten.json"
+        with open(input_json) as f:
+            self.config = json.load(f)
+        self.config["model"] = deepcopy(model_hybrid)
+        self.config["training"]["numb_steps"] = 1
+        self.config["training"]["save_freq"] = 1
+
+
+if __name__ == "__main__":
+    unittest.main()
