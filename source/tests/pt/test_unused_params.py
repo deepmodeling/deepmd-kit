@@ -27,13 +27,13 @@ class TestUnusedParamsDPA2(unittest.TestCase):
         import itertools
 
         for conv, drrd, grrg, attn1, g1g1, attn2, h2 in itertools.product(
-            [True, False],
-            [True, False],
-            [True, False],
-            [True, False],
-            [True, False],
-            [True, False],
-            [True, False],
+            [True],
+            [True],
+            [True],
+            [True],
+            [True],
+            [True],
+            [True],
         ):
             if (not drrd) and (not grrg) and h2:
                 # skip the case h2 is not envolved

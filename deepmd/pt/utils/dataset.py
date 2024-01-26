@@ -867,7 +867,7 @@ class DeepmdDataSet(Dataset):
         self._natoms_vec = [
             ii.get_natoms_vec(self._ntypes) for ii in self._data_systems
         ]
-        self.cache = [{} for sys in self._data_systems]
+        self.cache = [{} for _ in self._data_systems]
 
     @property
     def nsystems(self):

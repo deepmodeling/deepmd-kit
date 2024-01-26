@@ -52,6 +52,9 @@ class TestEnergyModelSeA(unittest.TestCase, TestJIT):
         input_json = str(Path(__file__).parent / "water/data/se_atten.json")
         with open(input_json) as f:
             self.config = json.load(f)
+        data_file = [str(Path(__file__).parent / "water/data/data_0")]
+        self.config["training"]["training_data"]["systems"] = data_file
+        self.config["training"]["validation_data"]["systems"] = data_file
         self.config["model"] = deepcopy(model_se_e2_a)
         self.config["training"]["numb_steps"] = 10
         self.config["training"]["save_freq"] = 10
@@ -65,6 +68,9 @@ class TestEnergyModelDPA1(unittest.TestCase, TestJIT):
         input_json = str(Path(__file__).parent / "water/data/se_atten.json")
         with open(input_json) as f:
             self.config = json.load(f)
+        data_file = [str(Path(__file__).parent / "water/data/data_0")]
+        self.config["training"]["training_data"]["systems"] = data_file
+        self.config["training"]["validation_data"]["systems"] = data_file
         self.config["model"] = deepcopy(model_dpa1)
         self.config["training"]["numb_steps"] = 10
         self.config["training"]["save_freq"] = 10
@@ -78,6 +84,9 @@ class TestEnergyModelDPA2(unittest.TestCase, TestJIT):
         input_json = str(Path(__file__).parent / "water/data/se_atten.json")
         with open(input_json) as f:
             self.config = json.load(f)
+        data_file = [str(Path(__file__).parent / "water/data/data_0")]
+        self.config["training"]["training_data"]["systems"] = data_file
+        self.config["training"]["validation_data"]["systems"] = data_file
         self.config["model"] = deepcopy(model_dpa2)
         self.config["model"]["descriptor"]["rcut"] = self.config["model"]["descriptor"][
             "repinit_rcut"
@@ -98,6 +107,9 @@ class TestEnergyModelHybrid(unittest.TestCase, TestJIT):
         input_json = str(Path(__file__).parent / "water/data/se_atten.json")
         with open(input_json) as f:
             self.config = json.load(f)
+        data_file = [str(Path(__file__).parent / "water/data/data_0")]
+        self.config["training"]["training_data"]["systems"] = data_file
+        self.config["training"]["validation_data"]["systems"] = data_file
         self.config["model"] = deepcopy(model_hybrid)
         self.config["training"]["numb_steps"] = 10
         self.config["training"]["save_freq"] = 10
@@ -109,6 +121,9 @@ class TestEnergyModelHybrid2(unittest.TestCase, TestJIT):
         input_json = str(Path(__file__).parent / "water/data/se_atten.json")
         with open(input_json) as f:
             self.config = json.load(f)
+        data_file = [str(Path(__file__).parent / "water/data/data_0")]
+        self.config["training"]["training_data"]["systems"] = data_file
+        self.config["training"]["validation_data"]["systems"] = data_file
         self.config["model"] = deepcopy(model_hybrid)
         self.config["model"]["descriptor"]["hybrid_mode"] = "sequential"
         self.config["training"]["numb_steps"] = 10
