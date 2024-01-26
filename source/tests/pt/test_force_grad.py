@@ -66,6 +66,9 @@ class TestForceGrad(unittest.TestCase):
     def setUp(self):
         with open(str(Path(__file__).parent / "water/se_e2_a.json")) as fin:
             self.config = json.load(fin)
+        data_file = [str(Path(__file__).parent / "water/data/data_0")]
+        self.config["training"]["training_data"]["systems"] = data_file
+        self.config["training"]["validation_data"]["systems"] = data_file
         self.system_index = 0
         self.batch_index = 0
         self.get_dataset(self.system_index, self.batch_index)

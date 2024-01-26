@@ -49,7 +49,7 @@ class TestJIT:
 
 class TestEnergyModelSeA(unittest.TestCase, TestJIT):
     def setUp(self):
-        input_json = str(Path(__file__).parent / "water/data/single")
+        input_json = str(Path(__file__).parent / "water/data/se_atten.json")
         with open(input_json) as f:
             self.config = json.load(f)
         self.config["model"] = deepcopy(model_se_e2_a)
@@ -62,7 +62,7 @@ class TestEnergyModelSeA(unittest.TestCase, TestJIT):
 
 class TestEnergyModelDPA1(unittest.TestCase, TestJIT):
     def setUp(self):
-        input_json = str(Path(__file__).parent / "water/data/single")
+        input_json = str(Path(__file__).parent / "water/data/se_atten.json")
         with open(input_json) as f:
             self.config = json.load(f)
         self.config["model"] = deepcopy(model_dpa1)
@@ -75,7 +75,7 @@ class TestEnergyModelDPA1(unittest.TestCase, TestJIT):
 
 class TestEnergyModelDPA2(unittest.TestCase, TestJIT):
     def setUp(self):
-        input_json = str(Path(__file__).parent / "water/data/single")
+        input_json = str(Path(__file__).parent / "water/data/se_atten.json")
         with open(input_json) as f:
             self.config = json.load(f)
         self.config["model"] = deepcopy(model_dpa2)
@@ -95,7 +95,7 @@ class TestEnergyModelDPA2(unittest.TestCase, TestJIT):
 @unittest.skip("hybrid not supported at the moment")
 class TestEnergyModelHybrid(unittest.TestCase, TestJIT):
     def setUp(self):
-        input_json = str(Path(__file__).parent / "water/data/single")
+        input_json = str(Path(__file__).parent / "water/data/se_atten.json")
         with open(input_json) as f:
             self.config = json.load(f)
         self.config["model"] = deepcopy(model_hybrid)
@@ -106,7 +106,7 @@ class TestEnergyModelHybrid(unittest.TestCase, TestJIT):
 @unittest.skip("hybrid not supported at the moment")
 class TestEnergyModelHybrid2(unittest.TestCase, TestJIT):
     def setUp(self):
-        input_json = str(Path(__file__).parent / "water/data/single")
+        input_json = str(Path(__file__).parent / "water/data/se_atten.json")
         with open(input_json) as f:
             self.config = json.load(f)
         self.config["model"] = deepcopy(model_hybrid)

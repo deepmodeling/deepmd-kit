@@ -46,7 +46,7 @@ class TestEnergyModelSeA(unittest.TestCase, TestDPTrain):
         input_json = str(Path(__file__).parent / "water/se_atten.json")
         with open(input_json) as f:
             self.config = json.load(f)
-        data_file = str(Path(__file__).parent / "water/data/data_0")
+        data_file = [str(Path(__file__).parent / "water/data/data_0")]
         self.config["training"]["training_data"]["systems"] = data_file
         self.config["training"]["validation_data"]["systems"] = data_file
         self.config["model"] = deepcopy(model_se_e2_a)
@@ -59,7 +59,7 @@ class TestEnergyModelDPA1(unittest.TestCase, TestDPTrain):
         input_json = str(Path(__file__).parent / "water/se_atten.json")
         with open(input_json) as f:
             self.config = json.load(f)
-        data_file = str(Path(__file__).parent / "water/data/data_0")
+        data_file = [str(Path(__file__).parent / "water/data/data_0")]
         self.config["training"]["training_data"]["systems"] = data_file
         self.config["training"]["validation_data"]["systems"] = data_file
         self.config["model"] = deepcopy(model_dpa1)
@@ -72,7 +72,7 @@ class TestEnergyModelDPA2(unittest.TestCase, TestDPTrain):
         input_json = str(Path(__file__).parent / "water/se_atten.json")
         with open(input_json) as f:
             self.config = json.load(f)
-        data_file = str(Path(__file__).parent / "water/data/data_0")
+        data_file = [str(Path(__file__).parent / "water/data/data_0")]
         self.config["training"]["training_data"]["systems"] = data_file
         self.config["training"]["validation_data"]["systems"] = data_file
         self.config["model"] = deepcopy(model_dpa2)
@@ -95,7 +95,7 @@ class TestEnergyModelHybrid(unittest.TestCase, TestDPTrain):
         input_json = str(Path(__file__).parent / "water/se_atten.json")
         with open(input_json) as f:
             self.config = json.load(f)
-        data_file = str(Path(__file__).parent / "water/data/data_0")
+        data_file = [str(Path(__file__).parent / "water/data/data_0")]
         self.config["training"]["training_data"]["systems"] = data_file
         self.config["training"]["validation_data"]["systems"] = data_file
         self.config["model"] = deepcopy(model_hybrid)

@@ -74,6 +74,9 @@ class TestRotation(unittest.TestCase):
     def setUp(self):
         with open(str(Path(__file__).parent / "water/se_e2_a.json")) as fin:
             self.config = json.load(fin)
+        data_file = [str(Path(__file__).parent / "water/data/data_0")]
+        self.config["training"]["training_data"]["systems"] = data_file
+        self.config["training"]["validation_data"]["systems"] = data_file
         self.rotation = special_ortho_group.rvs(3)
         self.get_dataset(0)
         self.get_model()

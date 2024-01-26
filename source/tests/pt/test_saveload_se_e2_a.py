@@ -68,6 +68,9 @@ class TestSaveLoadSeA(unittest.TestCase):
         input_json = str(Path(__file__).parent / "water/se_e2_a.json")
         with open(input_json) as fin:
             self.config = json.load(fin)
+        data_file = [str(Path(__file__).parent / "water/data/data_0")]
+        self.config["training"]["training_data"]["systems"] = data_file
+        self.config["training"]["validation_data"]["systems"] = data_file
         self.config["loss"]["starter_learning_rate"] = self.config["learning_rate"][
             "start_lr"
         ]

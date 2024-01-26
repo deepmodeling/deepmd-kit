@@ -31,6 +31,9 @@ class TestSampler(unittest.TestCase):
         with open(str(Path(__file__).parent / "water/se_e2_a.json")) as fin:
             content = fin.read()
         config = json.loads(content)
+        data_file = [str(Path(__file__).parent / "water/data/data_0")]
+        config["training"]["training_data"]["systems"] = data_file
+        config["training"]["validation_data"]["systems"] = data_file
         model_config = config["model"]
         self.rcut = model_config["descriptor"]["rcut"]
         self.rcut_smth = model_config["descriptor"]["rcut_smth"]

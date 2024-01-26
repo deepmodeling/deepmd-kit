@@ -71,7 +71,7 @@ class TestSaveLoadDPA1(unittest.TestCase):
         self.config["loss"]["starter_learning_rate"] = self.config["learning_rate"][
             "start_lr"
         ]
-        data_file = str(Path(__file__).parent / "water/data/data_0")
+        data_file = [str(Path(__file__).parent / "water/data/data_0")]
         self.config["training"]["training_data"]["systems"] = data_file
         self.config["training"]["validation_data"]["systems"] = data_file
         self.dataset, self.sampled = get_dataset(self.config)
