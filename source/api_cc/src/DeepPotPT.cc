@@ -17,7 +17,7 @@ DeepPotPT::DeepPotPT(const std::string& model,
 }
 void DeepPotPT::init(const std::string& model,
                      const int& gpu_rank,
-                     const std::string& file_content = "") {
+                     const std::string& file_content) {
   if (inited) {
     std::cerr << "WARNING: deepmd-kit should not be initialized twice, do "
                  "nothing at the second call of initializer"
@@ -59,7 +59,7 @@ void DeepPotPT::init(const std::string& model,
 DeepPotPT::~DeepPotPT() {}
 
 template <typename VALUETYPE, typename ENERGYVTYPE>
-void DeepPotPT::compute(std::vector<ENERGYTYPE>& ener,
+void DeepPotPT::compute(ENERGYTYPE& ener,
                         std::vector<VALUETYPE>& force,
                         std::vector<VALUETYPE>& virial,
                         std::vector<VALUETYPE>& atom_energy,
@@ -186,7 +186,7 @@ template void DeepPotPT::compute<float, std::vector<ENERGYTYPE>>(
     const InputNlist& lmp_list,
     const int& ago);
 template <typename VALUETYPE, typename ENERGYVTYPE>
-void DeepPotPT::compute(std::vector<ENERGYTYPE>& ener,
+void DeepPotPT::compute(ENERGYTYPE& ener,
                         std::vector<VALUETYPE>& force,
                         std::vector<VALUETYPE>& virial,
                         std::vector<VALUETYPE>& atom_energy,
