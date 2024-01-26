@@ -16,7 +16,9 @@ class Region3D:
         """Construct a simulation box."""
         boxt = boxt.reshape([3, 3])
         self.boxt = boxt  # convert physical coordinates to internal ones
-        self.rec_boxt = torch.linalg.inv(self.boxt)  # convert internal coordinates to physical ones
+        self.rec_boxt = torch.linalg.inv(
+            self.boxt
+        )  # convert internal coordinates to physical ones
 
         self.volume = torch.linalg.det(self.boxt)  # compute the volume
 
