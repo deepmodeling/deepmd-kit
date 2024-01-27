@@ -79,3 +79,8 @@ class TestDeepPot(unittest.TestCase):
         atype = np.array([0, 0, 0, 1, 1]).reshape(1, -1)
 
         e, f, v, ae, av = dp.eval(coord, cell, atype, atomic=True)
+        self.assertEqual(e.shape, (1, 1))
+        self.assertEqual(f.shape, (1, 5, 3))
+        self.assertEqual(v.shape, (1, 9))
+        self.assertEqual(ae.shape, (1, 5, 1))
+        self.assertEqual(av.shape, (1, 5, 9))
