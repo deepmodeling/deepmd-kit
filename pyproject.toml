@@ -27,7 +27,7 @@ classifiers = [
     "Programming Language :: Python :: 3 :: Only",
     "Environment :: GPU :: NVIDIA CUDA :: 12 :: 12.2",
     "Intended Audience :: Science/Research",
-    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
     "License :: OSI Approved :: GNU Lesser General Public License v3 (LGPLv3)",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Topic :: Scientific/Engineering :: Physics",
@@ -46,7 +46,7 @@ dependencies = [
     'wcmatch',
     'packaging',
 ]
-requires-python = ">=3.7"
+requires-python = ">=3.8"
 keywords = ["deepmd"]
 
 [project.entry-points."lammps.plugins"]
