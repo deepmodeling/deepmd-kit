@@ -1,0 +1,39 @@
+{
+  "type_map": [
+    "O",
+    "H"
+  ],
+  "descriptor": {
+    "type": "se_atten",
+    "sel": 30,
+    "rcut_smth": 2.0,
+    "rcut": 6.0,
+    "neuron": [
+      2,
+      4,
+      8
+    ],
+    "axis_neuron": 4,
+    "attn": 5,
+    "attn_layer": 2,
+    "attn_dotr": true,
+    "attn_mask": false,
+    "post_ln": true,
+    "ffn": false,
+    "ffn_embed_dim": 10,
+    "activation": "tanh",
+    "scaling_factor": 1.0,
+    "head_num": 1,
+    "normalize": true,
+    "temperature": 1.0
+  },
+  "fitting_net": {
+    "neuron": [
+      240,
+      240,
+      240
+    ],
+    "resnet_dt": true,
+    "seed": 1
+  }
+}

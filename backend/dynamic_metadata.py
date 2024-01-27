@@ -88,4 +88,8 @@ def dynamic_metadata(
                 "nvidia-cudnn-cu12",
                 "nvidia-cuda-nvcc-cu12",
             ],
+            "torch": [
+                "torch>=2a",
+                "tqdm",
+            ],
         }

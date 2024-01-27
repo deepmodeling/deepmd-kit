@@ -128,20 +128,18 @@ def _init_models():
     return INPUT, ckpt, frozen_model, model_ckpt, model_frz, data, stop_batch
 
 
-(
-    INPUT,
-    CKPT,
-    FROZEN_MODEL,
-    CKPT_TRAINER,
-    FRZ_TRAINER,
-    VALID_DATA,
-    STOP_BATCH,
-) = _init_models()
-
-
 class TestInitFrzModelA(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        (
+            cls.INPUT,
+            cls.CKPT,
+            cls.FROZEN_MODEL,
+            CKPT_TRAINER,
+            FRZ_TRAINER,
+            VALID_DATA,
+            STOP_BATCH,
+        ) = _init_models()
         cls.dp_ckpt = CKPT_TRAINER
         cls.dp_frz = FRZ_TRAINER
         cls.valid_data = VALID_DATA
@@ -149,19 +147,19 @@ class TestInitFrzModelA(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        _file_delete(INPUT)
-        _file_delete(FROZEN_MODEL)
+        _file_delete(cls.INPUT)
+        _file_delete(cls.FROZEN_MODEL)
         _file_delete("out.json")
         _file_delete(str(tests_path / "checkpoint"))
-        _file_delete(CKPT + ".meta")
-        _file_delete(CKPT + ".index")
-        _file_delete(CKPT + ".data-00000-of-00001")
-        _file_delete(CKPT + "-0.meta")
-        _file_delete(CKPT + "-0.index")
-        _file_delete(CKPT + "-0.data-00000-of-00001")
-        _file_delete(CKPT + "-1.meta")
-        _file_delete(CKPT + "-1.index")
-        _file_delete(CKPT + "-1.data-00000-of-00001")
+        _file_delete(cls.CKPT + ".meta")
+        _file_delete(cls.CKPT + ".index")
+        _file_delete(cls.CKPT + ".data-00000-of-00001")
+        _file_delete(cls.CKPT + "-0.meta")
+        _file_delete(cls.CKPT + "-0.index")
+        _file_delete(cls.CKPT + "-0.data-00000-of-00001")
+        _file_delete(cls.CKPT + "-1.meta")
+        _file_delete(cls.CKPT + "-1.index")
+        _file_delete(cls.CKPT + "-1.data-00000-of-00001")
         _file_delete("input_v2_compat.json")
         _file_delete("lcurve.out")
 

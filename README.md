@@ -93,7 +93,6 @@ The code is organized as follows:
 
 See [DeePMD-kit Contributing Guide](CONTRIBUTING.md) to become a contributor! 🤓
 
-
 [1]: https://arxiv.org/abs/1707.01478
 [2]: https://journals.aps.org/prl/abstract/10.1103/PhysRevLett.120.143001
 [3]: https://arxiv.org/abs/1805.09003
