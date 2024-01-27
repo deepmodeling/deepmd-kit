@@ -94,7 +94,7 @@ def main_parser() -> argparse.ArgumentParser:
     parser_backend.add_argument(
         "-b",
         "--backend",
-        choices=["tensorflow", "pytorch", "tf", "pt"],
+        choices=list(BACKEND_TABLE.keys()),
         action=BackendOption,
         default=default_backend,
         help=(
