@@ -770,12 +770,12 @@ class DPTabulate:
         return layer_size
 
     @property
-    @lru_cache()
+    @lru_cache
     def _n_all_excluded(self) -> int:
         """Then number of types excluding all types."""
         return sum(int(self._all_excluded(ii)) for ii in range(0, self.ntypes))
 
-    @lru_cache()
+    @lru_cache
     def _all_excluded(self, ii: int) -> bool:
         """Check if type ii excluds all types.
 
