@@ -319,7 +319,10 @@ def main(args: Optional[Union[List[str], argparse.Namespace]] = None):
         doc_train_input(**dict_args)
     elif args.command == "model-devi":
         dict_args["models"] = [
-            str(Path(mm).with_suffix(".pt")) for mm in dict_args["models"]
+            str(Path(mm).with_suffix(".pt"))
+            if Path(mm).suffix not in (".pb", ".pt")
+            else mm
+            for mm in dict_args["models"]
         ]
         make_model_devi(**dict_args)
     elif args.command == "gui":
