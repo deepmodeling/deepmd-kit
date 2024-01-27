@@ -140,11 +140,11 @@ class DescrptSeA(Descriptor):
         gr
             The rotationally equivariant and permutationally invariant single particle
             representation. shape: nf x nloc x ng x 3
-        gg
-            The rotationally invariant pair-partical channel, this descriptor returns None
-        rr
-            The rotationally equivariant pair-partical channel, this descriptor returns None
-        ww
+        g2
+            The rotationally invariant pair-partical representation, this descriptor returns None
+        h2
+            The rotationally equivariant pair-partical representation, this descriptor returns None
+        sw
             The smooth switch function.
 
         """

@@ -349,11 +349,11 @@ class DescrptDPA2(Descriptor):
         gr
             The rotationally equivariant and permutationally invariant single particle
             representation. shape: nf x nloc x ng x 3
-        gg
-            The rotationally invariant pair-partical channel.
+        g2
+            The rotationally invariant pair-partical representation.
             shape: nf x nloc x nnei x ng
-        hh
-            The rotationally equivariant pair-partical channel.
+        h2
+            The rotationally equivariant pair-partical representation.
             shape: nf x nloc x nnei x 3
         sw
             The smooth switch function. shape: nf x nloc x nnei
