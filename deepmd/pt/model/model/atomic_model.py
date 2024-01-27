@@ -14,16 +14,9 @@ import torch
 from deepmd.model_format import (
     FittingOutputDef,
 )
-from deepmd.pt.model.task import (
-    Fitting,
-)
 
 
 class AtomicModel(ABC):
-    @abstractmethod
-    def get_fitting_net(self) -> Fitting:
-        raise NotImplementedError
-
     @abstractmethod
     def get_fitting_output_def(self) -> FittingOutputDef:
         raise NotImplementedError

@@ -128,12 +128,6 @@ class DPAtomicModel(BaseModel, AtomicModel):
                     self.descriptor.dim_out, self.ntypes - 1, self.descriptor.dim_emb
                 )
 
-    def get_fitting_net(self) -> Fitting:
-        """Get the fitting net."""
-        return (
-            self.fitting_net if self.fitting_net is not None else self.coord_denoise_net
-        )
-
     def get_fitting_output_def(self) -> FittingOutputDef:
         """Get the output def of the fitting net."""
         return (
