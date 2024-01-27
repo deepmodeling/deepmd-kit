@@ -84,7 +84,7 @@ def main_parser() -> argparse.ArgumentParser:
 
     # default backend is TF for compatibility
     default_backend = os.environ.get("DP_BACKEND", "tensorflow").lower()
-    if default_backend not in ["tensorflow", "pytorch"]:
+    if default_backend not in BACKEND_TABLE.keys():
         raise ValueError(
             f"Unknown backend {default_backend}. "
             "Please set DP_BACKEND to either tensorflow or pytorch."
