@@ -10,6 +10,7 @@ from pathlib import (
 
 import numpy as np
 
+from deepmd.infer.deep_pot import DeepPot as DeepPotUni
 from deepmd.pt.entrypoints.main import (
     get_trainer,
 )
@@ -84,3 +85,13 @@ class TestDeepPot(unittest.TestCase):
         self.assertEqual(v.shape, (1, 9))
         self.assertEqual(ae.shape, (1, 5, 1))
         self.assertEqual(av.shape, (1, 5, 9))
+
+        self.assertEqual(dp.get_type_map(), ["O", "H"])
+        self.assertEqual(dp.get_ntypes(), 2)
+        self.assertEqual(dp.get_dim_fparam(), 0)
+        self.assertEqual(dp.get_dim_aparam(), 0)
+
+    def test_uni(self):
+        dp = DeepPotUni("model.pt")
+        self.assertIsInstance(dp, DeepPot)
+        # its methods has been tested in test_dp_test
