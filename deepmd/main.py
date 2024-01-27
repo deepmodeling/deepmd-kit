@@ -46,6 +46,21 @@ class RawTextArgumentDefaultsHelpFormatter(
     """This formatter is used to print multile-line help message with default value."""
 
 
+BACKEND_TABLE = {
+    "tensorflow": "tensorflow",
+    "tf": "tensorflow",
+    "pytorch": "pytorch",
+    "pt": "pytorch",
+}
+
+
+class BackendOption(argparse.Action):
+    """Map backend alias to unique name."""
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        setattr(namespace, self.dest, BACKEND_TABLE[values])
+
+
 def main_parser() -> argparse.ArgumentParser:
     """DeePMD-Kit commandline options argument parser.
 
@@ -79,7 +94,8 @@ def main_parser() -> argparse.ArgumentParser:
     parser_backend.add_argument(
         "-b",
         "--backend",
-        choices=["tensorflow", "pytorch"],
+        choices=["tensorflow", "pytorch", "tf", "pt"],
+        action=BackendOption,
         default=default_backend,
         help=(
             "The backend of the model. Default can be set by environment variable "
@@ -88,14 +104,16 @@ def main_parser() -> argparse.ArgumentParser:
     )
     parser_backend.add_argument(
         "--tf",
-        action="store_true",
-        default=False,
+        action="store_const",
+        dest="backend",
+        const="tensorflow",
         help="Alias for --backend tensorflow",
     )
     parser_backend.add_argument(
         "--pt",
-        action="store_true",
-        default=False,
+        action="store_const",
+        dest="backend",
+        const="pytorch",
         help="Alias for --backend pytorch",
     )
 
@@ -734,10 +752,6 @@ def main():
     """
     args = parse_args()
 
-    if args.tf:
-        args.backend = "tensorflow"
-    elif args.pt:
-        args.backend = "pytorch"
     if args.backend == "tensorflow":
         from deepmd.tf.entrypoints.main import main as deepmd_main
     elif args.backend == "pytorch":
