@@ -57,7 +57,14 @@ def main_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="DeePMD-kit: A deep learning package for many-body potential energy"
         " representation and molecular dynamics",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        formatter_class=RawTextArgumentDefaultsHelpFormatter,
+        epilog=textwrap.dedent(
+            """\
+        Use --tf or --pt to choose the backend:
+            dp --tf train input.json
+            dp --pt train input.json
+        """
+        ),
     )
 
     # default backend is TF for compatibility
@@ -623,9 +630,9 @@ def main_parser() -> argparse.ArgumentParser:
 
     # * train nvnmd script ******************************************************************
     parser_train_nvnmd = subparsers.add_parser(
-        "(Supported backend: TensorFlow) train-nvnmd",
+        "train-nvnmd",
         parents=[parser_log],
-        help="train nvnmd model",
+        help="(Supported backend: TensorFlow) train nvnmd model",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
         epilog=textwrap.dedent(
             """\
