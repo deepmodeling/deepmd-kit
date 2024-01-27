@@ -161,7 +161,7 @@ class Trainer:
                 _validation_data,
                 sampler=valid_sampler,
                 batch_size=None,
-                num_workers=1,
+                num_workers=min(NUM_WORKERS, 1),
                 drop_last=False,
                 pin_memory=True,
             )

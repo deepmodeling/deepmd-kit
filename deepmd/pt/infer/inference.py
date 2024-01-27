@@ -35,6 +35,7 @@ from deepmd.pt.utils.dataloader import (
 from deepmd.pt.utils.env import (
     DEVICE,
     JIT,
+    NUM_WORKERS,
 )
 
 if torch.__version__.startswith("2"):
@@ -232,7 +233,9 @@ class Tester:
                 dataset,
                 sampler=sampler,
                 batch_size=None,
-                num_workers=1,  # setting to 0 diverges the behavior of its iterator; should be >=1
+                num_workers=min(
+                    NUM_WORKERS, 1
+                ),  # setting to 0 diverges the behavior of its iterator; should be >=1
                 drop_last=False,
             )
             data = iter(dataloader)

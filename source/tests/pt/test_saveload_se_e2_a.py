@@ -79,7 +79,7 @@ class TestSaveLoadSeA(unittest.TestCase):
             self.dataset,
             sampler=torch.utils.data.RandomSampler(self.dataset),
             batch_size=None,
-            num_workers=1,  # setting to 0 diverges the behavior of its iterator; should be >=1
+            num_workers=0,  # setting to 0 diverges the behavior of its iterator; should be >=1
             drop_last=False,
             pin_memory=True,
         )
