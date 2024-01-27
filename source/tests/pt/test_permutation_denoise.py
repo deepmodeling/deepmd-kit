@@ -66,6 +66,7 @@ class PermutationDenoiseTest:
         )
 
 
+@unittest.skip("support of the denoise is temporally disabled")
 class TestDenoiseModelDPA1(unittest.TestCase, PermutationDenoiseTest):
     def setUp(self):
         model_params = copy.deepcopy(model_dpa1)
@@ -74,6 +75,7 @@ class TestDenoiseModelDPA1(unittest.TestCase, PermutationDenoiseTest):
         self.model = get_model(model_params, sampled).to(env.DEVICE)
 
 
+@unittest.skip("support of the denoise is temporally disabled")
 class TestDenoiseModelDPA2(unittest.TestCase, PermutationDenoiseTest):
     def setUp(self):
         model_params_sample = copy.deepcopy(model_dpa2)

@@ -135,12 +135,42 @@ class DescrptDPA1(Descriptor):
         nlist: torch.Tensor,
         mapping: Optional[torch.Tensor] = None,
     ):
+        """Compute the descriptor.
+
+        Parameters
+        ----------
+        coord_ext
+            The extended coordinates of atoms. shape: nf x (nallx3)
+        atype_ext
+            The extended aotm types. shape: nf x nall
+        nlist
+            The neighbor list. shape: nf x nloc x nnei
+        mapping
+            The index mapping, not required by this descriptor.
+
+        Returns
+        -------
+        descriptor
+            The descriptor. shape: nf x nloc x (ng x axis_neuron)
+        gr
+            The rotationally equivariant and permutationally invariant single particle
+            representation. shape: nf x nloc x ng x 3
+        g2
+            The rotationally invariant pair-partical channel.
+            shape: nf x nloc x nnei x ng
+        h2
+            The rotationally equivariant pair-partical channel.
+            shape: nf x nloc x nnei x 3
+        sw
+            The smooth switch function. shape: nf x nloc x nnei
+
+        """
         del mapping
         nframes, nloc, nnei = nlist.shape
         nall = extended_coord.view(nframes, -1).shape[1] // 3
         g1_ext = self.type_embedding(extended_atype)
         g1_inp = g1_ext[:, :nloc, :]
-        g1, env_mat, diff, rot_mat, sw = self.se_atten(
+        g1, g2, h2, rot_mat, sw = self.se_atten(
             nlist,
             extended_coord,
             extended_atype,
@@ -149,4 +179,5 @@ class DescrptDPA1(Descriptor):
         )
         if self.concat_output_tebd:
             g1 = torch.cat([g1, g1_inp], dim=-1)
-        return g1, env_mat, diff, rot_mat, sw
+
+        return g1, rot_mat, g2, h2, sw

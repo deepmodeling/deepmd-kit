@@ -102,7 +102,7 @@ class TestDescrptSeA(unittest.TestCase, TestCaseSingleFrameWithNlist):
             )
             # serialization
             dd1 = DescrptSeA.deserialize(dd0.serialize())
-            rd1, _, _, _, _ = dd1(
+            rd1, gr1, _, _, sw1 = dd1(
                 torch.tensor(self.coord_ext, dtype=dtype, device=env.DEVICE),
                 torch.tensor(self.atype_ext, dtype=int, device=env.DEVICE),
                 torch.tensor(self.nlist, dtype=int, device=env.DEVICE),
@@ -116,18 +116,19 @@ class TestDescrptSeA(unittest.TestCase, TestCaseSingleFrameWithNlist):
             )
             # dp impl
             dd2 = DPDescrptSeA.deserialize(dd0.serialize())
-            rd2 = dd2.call(
+            rd2, gr2, _, _, sw2 = dd2.call(
                 self.coord_ext,
                 self.atype_ext,
                 self.nlist,
             )
-            np.testing.assert_allclose(
-                rd0.detach().cpu().numpy(),
-                rd2,
-                rtol=rtol,
-                atol=atol,
-                err_msg=err_msg,
-            )
+            for aa, bb in zip([rd1, gr1, sw1], [rd2, gr2, sw2]):
+                np.testing.assert_allclose(
+                    aa.detach().cpu().numpy(),
+                    bb,
+                    rtol=rtol,
+                    atol=atol,
+                    err_msg=err_msg,
+                )
             # old impl
             if idt is False and prec == "float64":
                 dd3 = DescrptSeA(
@@ -154,18 +155,19 @@ class TestDescrptSeA(unittest.TestCase, TestCaseSingleFrameWithNlist):
                         dd3_state_dict[i] = dd3_state_dict[i].unsqueeze(0)
                 dd3.sea.load_state_dict(dd3_state_dict)
 
-                rd3, _, _, _, _ = dd3(
+                rd3, gr3, _, _, sw3 = dd3(
                     torch.tensor(self.coord_ext, dtype=dtype, device=env.DEVICE),
                     torch.tensor(self.atype_ext, dtype=int, device=env.DEVICE),
                     torch.tensor(self.nlist, dtype=int, device=env.DEVICE),
                 )
-                np.testing.assert_allclose(
-                    rd0.detach().cpu().numpy(),
-                    rd3.detach().cpu().numpy(),
-                    rtol=rtol,
-                    atol=atol,
-                    err_msg=err_msg,
-                )
+                for aa, bb in zip([rd1, gr1, sw1], [rd3, gr3, sw3]):
+                    np.testing.assert_allclose(
+                        aa.detach().cpu().numpy(),
+                        bb.detach().cpu().numpy(),
+                        rtol=rtol,
+                        atol=atol,
+                        err_msg=err_msg,
+                    )
 
     def test_jit(
         self,

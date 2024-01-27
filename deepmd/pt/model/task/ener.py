@@ -207,8 +207,11 @@ class EnergyFittingNetDirect(Fitting):
                 inputs
             )  # Shape is [nframes, nloc, m1]
             assert list(vec_out.size()) == [nframes, nloc, self.out_dim]
+            # (nf x nloc) x 1 x od
             vec_out = vec_out.view(-1, 1, self.out_dim)
             assert rot_mat is not None
+            # (nf x nloc) x od x 3
+            rot_mat = rot_mat.view(-1, self.out_dim, 3)
             vec_out = (
                 torch.bmm(vec_out, rot_mat).squeeze(-2).view(nframes, nloc, 3)
             )  # Shape is [nframes, nloc, 3]

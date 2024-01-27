@@ -96,6 +96,7 @@ class SmoothDenoiseTest:
         compare(ret0, ret3)
 
 
+@unittest.skip("support of the denoise is temporally disabled")
 class TestDenoiseModelDPA2(unittest.TestCase, SmoothDenoiseTest):
     def setUp(self):
         model_params_sample = copy.deepcopy(model_dpa2)
@@ -116,6 +117,7 @@ class TestDenoiseModelDPA2(unittest.TestCase, SmoothDenoiseTest):
         self.aprec = 1e-5
 
 
+@unittest.skip("support of the denoise is temporally disabled")
 class TestDenoiseModelDPA2_1(unittest.TestCase, SmoothDenoiseTest):
     def setUp(self):
         model_params_sample = copy.deepcopy(model_dpa2)

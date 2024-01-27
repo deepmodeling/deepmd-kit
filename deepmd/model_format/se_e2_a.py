@@ -223,7 +223,16 @@ class DescrptSeA(NativeOP):
         Returns
         -------
         descriptor
-            The descriptor. shape: nf x nloc x ng x axis_neuron
+            The descriptor. shape: nf x nloc x (ng x axis_neuron)
+        gr
+            The rotationally equivariant and permutationally invariant single particle
+            representation. shape: nf x nloc x ng x 3
+        gg
+            The rotationally invariant pair-partical channel, this descriptor returns None
+        rr
+            The rotationally equivariant pair-partical channel, this descriptor returns None
+        ww
+            The smooth switch function.
         """
         # nf x nloc x nnei x 4
         rr, ww = self.env_mat.call(coord_ext, atype_ext, nlist, self.davg, self.dstd)
@@ -238,15 +247,17 @@ class DescrptSeA(NativeOP):
             gg = self.cal_g(ss, tt)
             # nf x nloc x ng x 4
             gr += np.einsum("flni,flnj->flij", gg, tr)
+        # nf x nloc x ng x 4
         gr /= self.nnei
         gr1 = gr[:, :, : self.axis_neuron, :]
         # nf x nloc x ng x ng1
         grrg = np.einsum("flid,fljd->flij", gr, gr1)
         # nf x nloc x (ng x ng1)
         grrg = grrg.reshape(nf, nloc, ng * self.axis_neuron)
-        return grrg
+        return grrg, gr[..., 1:], None, None, ww
 
     def serialize(self) -> dict:
+        """Serialize the descriptor to dict."""
         return {
             "rcut": self.rcut,
             "rcut_smth": self.rcut_smth,
@@ -271,6 +282,7 @@ class DescrptSeA(NativeOP):
 
     @classmethod
     def deserialize(cls, data: dict) -> "DescrptSeA":
+        """Deserialize from dict."""
         data = copy.deepcopy(data)
         variables = data.pop("@variables")
         embeddings = data.pop("embeddings")
