@@ -16,12 +16,13 @@ deepmd_source_dir=`pwd`
 
 ## Install the python interface
 ### Install Tensorflow's python interface
-First, check the python version on your machine
+First, check the python version on your machine.
+Python 3.8 or above is required.
 ```bash
 python --version
 ```
 
-We follow the virtual environment approach to install TensorFlow's Python interface. The full instruction can be found on the official [TensorFlow website](https://www.tensorflow.org/install/pip). TensorFlow 1.8 or later is supported. Now we assume that the Python interface will be installed to the virtual environment directory `$tensorflow_venv`
+We follow the virtual environment approach to install TensorFlow's Python interface. The full instruction can be found on the official [TensorFlow website](https://www.tensorflow.org/install/pip). TensorFlow 2.2 or later is supported. Now we assume that the Python interface will be installed to the virtual environment directory `$tensorflow_venv`
 ```bash
 virtualenv -p python3 $tensorflow_venv
 source $tensorflow_venv/bin/activate
