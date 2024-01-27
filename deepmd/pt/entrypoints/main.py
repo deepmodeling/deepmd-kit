@@ -307,12 +307,12 @@ def main(args: Optional[Union[List[str], argparse.Namespace]] = None):
         FLAGS.output = str(Path(FLAGS.model).with_suffix(".pt"))
         test(FLAGS)
     elif FLAGS.command == "freeze":
-        if Path(FLAGS.checkpoint).is_dir():
+        if Path(FLAGS.checkpoint_folder).is_dir():
             # TODO: automatically generate model.pt during training
             # FLAGS.model = str(Path(FLAGS.checkpoint).joinpath("model.pt"))
             raise NotImplementedError("Checkpoint should give a file")
         else:
-            FLAGS.model = FLAGS.checkpoint
+            FLAGS.model = FLAGS.checkpoint_folder
         FLAGS.output = str(Path(FLAGS.output).with_suffix(".pth"))
         freeze(FLAGS)
     elif args.command == "doc-train-input":

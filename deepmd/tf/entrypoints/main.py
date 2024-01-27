@@ -74,7 +74,6 @@ def main(args: Optional[Union[List[str], argparse.Namespace]] = None):
         train_dp(**dict_args)
     elif args.command == "freeze":
         dict_args["output"] = str(Path(dict_args["output"]).with_suffix(".pb"))
-        dict_args["checkpoint_folder"] = dict_args["checkpoint"]
         freeze(**dict_args)
     elif args.command == "test":
         dict_args["model"] = str(Path(dict_args["model"]).with_suffix(".pb"))
