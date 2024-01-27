@@ -367,4 +367,5 @@ class TestDescrptSeA(unittest.TestCase, TestCaseSingleFrameWithNlist):
         em1 = DescrptSeA.deserialize(em0.serialize())
         mm0 = em0.call(self.coord_ext, self.atype_ext, self.nlist)
         mm1 = em1.call(self.coord_ext, self.atype_ext, self.nlist)
-        np.testing.assert_allclose(mm0, mm1)
+        for ii in [0, 1, 4]:
+            np.testing.assert_allclose(mm0[ii], mm1[ii])
