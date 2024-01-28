@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
-import os
 import time
 from copy import (
     deepcopy,
@@ -22,6 +21,9 @@ from tqdm.contrib.logging import (
     logging_redirect_tqdm,
 )
 
+from deepmd.common import (
+    symlink_prefix_files,
+)
 from deepmd.pt.loss import (
     DenoiseLoss,
     EnergyStdLoss,
@@ -102,7 +104,7 @@ class Trainer:
         self.num_steps = training_params["numb_steps"]
         self.disp_file = training_params.get("disp_file", "lcurve.out")
         self.disp_freq = training_params.get("disp_freq", 1000)
-        self.save_ckpt = training_params.get("save_ckpt", "model.pt")
+        self.save_ckpt = training_params.get("save_ckpt", "model.ckpt")
         self.save_freq = training_params.get("save_freq", 1000)
         self.lcurve_should_print_header = True
 
@@ -650,13 +652,14 @@ class Trainer:
                 or (_step_id + 1) == self.num_steps
             ) and (self.rank == 0 or dist.get_rank() == 0):
                 # Handle the case if rank 0 aborted and re-assigned
-                self.latest_model = Path(self.save_ckpt)
-                self.latest_model = self.latest_model.with_name(
-                    f"{self.latest_model.stem}_{_step_id + 1}{self.latest_model.suffix}"
-                )
+                self.latest_model = Path(self.save_ckpt + f"-{_step_id + 1}.pt")
+
                 module = self.wrapper.module if dist.is_initialized() else self.wrapper
                 self.save_model(self.latest_model, lr=cur_lr, step=_step_id)
                 logging.info(f"Saved model to {self.latest_model}")
+                symlink_prefix_files(self.latest_model.stem, self.save_ckpt)
+                with open("checkpoint", "w") as f:
+                    f.write(str(self.latest_model))
 
         self.t0 = time.time()
         with logging_redirect_tqdm():
@@ -694,10 +697,6 @@ class Trainer:
                 logging.info(
                     f"Frozen model for inferencing has been saved to {pth_model_path}"
                 )
-            try:
-                os.symlink(self.latest_model, self.save_ckpt)
-            except OSError:
-                self.save_model(self.save_ckpt, lr=0, step=self.num_steps)
             logging.info(f"Trained model has been saved to: {self.save_ckpt}")
 
         if fout:

@@ -121,9 +121,10 @@ class TestRotation(unittest.TestCase):
         if "virial" in result1:
             self.assertTrue(
                 torch.allclose(
-                    result2["virial"][0],
+                    result2["virial"][0].view([3, 3]),
                     torch.matmul(
-                        torch.matmul(rotation, result1["virial"][0].T), rotation.T
+                        torch.matmul(rotation, result1["virial"][0].view([3, 3]).T),
+                        rotation.T,
                     ),
                 )
             )

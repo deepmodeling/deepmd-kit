@@ -65,8 +65,8 @@ class RotTest:
         )
         if not hasattr(self, "test_virial") or self.test_virial:
             torch.testing.assert_close(
-                torch.matmul(rmat.T, torch.matmul(ret0["virial"], rmat)),
-                ret1["virial"],
+                torch.matmul(rmat.T, torch.matmul(ret0["virial"].view([3, 3]), rmat)),
+                ret1["virial"].view([3, 3]),
                 rtol=prec,
                 atol=prec,
             )
@@ -102,8 +102,8 @@ class RotTest:
         )
         if not hasattr(self, "test_virial") or self.test_virial:
             torch.testing.assert_close(
-                torch.matmul(rmat.T, torch.matmul(ret0["virial"], rmat)),
-                ret1["virial"],
+                torch.matmul(rmat.T, torch.matmul(ret0["virial"].view([3, 3]), rmat)),
+                ret1["virial"].view([3, 3]),
                 rtol=prec,
                 atol=prec,
             )

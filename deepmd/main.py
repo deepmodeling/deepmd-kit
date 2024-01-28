@@ -275,7 +275,7 @@ def main_parser() -> argparse.ArgumentParser:
         "--checkpoint",
         type=str,
         default=".",
-        help="Path to checkpoint. TensorFlow backend: a folder; PyTorch backend: either a folder containing model.pt, or a pt file",
+        help="Path to checkpoint. TensorFlow backend: a folder; PyTorch backend: either a folder containing checkpoint, or a pt file",
     )
     parser_frz.add_argument(
         "-o",

@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import glob
 import logging
 import os
-import platform
 import shutil
 import time
 from typing import (
@@ -22,6 +20,9 @@ from tensorflow.python.client import (
 
 # load grad of force module
 import deepmd.tf.op  # noqa: F401
+from deepmd.common import (
+    symlink_prefix_files,
+)
 from deepmd.tf.common import (
     data_requirement,
     get_precision,
@@ -830,19 +831,7 @@ class DPTrainer:
             ) from e
         # make symlinks from prefix with step to that without step to break nothing
         # get all checkpoint files
-        original_files = glob.glob(ckpt_prefix + ".*")
-        for ori_ff in original_files:
-            new_ff = self.save_ckpt + ori_ff[len(ckpt_prefix) :]
-            try:
-                # remove old one
-                os.remove(new_ff)
-            except OSError:
-                pass
-            if platform.system() != "Windows":
-                # by default one does not have access to create symlink on Windows
-                os.symlink(os.path.relpath(ori_ff, os.path.dirname(new_ff)), new_ff)
-            else:
-                shutil.copyfile(ori_ff, new_ff)
+        symlink_prefix_files(ckpt_prefix, self.save_ckpt)
         log.info("saved checkpoint %s" % self.save_ckpt)
 
     def get_feed_dict(self, batch, is_training):
