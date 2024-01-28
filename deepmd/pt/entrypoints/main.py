@@ -3,6 +3,14 @@ import argparse
 import json
 import logging
 import os
+from pathlib import (
+    Path,
+)
+from typing import (
+    List,
+    Optional,
+    Union,
+)
 
 import torch
 import torch.distributed as dist
@@ -12,6 +20,18 @@ from torch.distributed.elastic.multiprocessing.errors import (
 
 from deepmd import (
     __version__,
+)
+from deepmd.entrypoints.doc import (
+    doc_train_input,
+)
+from deepmd.entrypoints.gui import (
+    start_dpgui,
+)
+from deepmd.infer.model_devi import (
+    make_model_devi,
+)
+from deepmd.main import (
+    parse_args,
 )
 from deepmd.pt.infer import (
     inference,
@@ -266,130 +286,49 @@ def clean_loggers():
 
 
 @record
-def main(args=None):
+def main(args: Optional[Union[List[str], argparse.Namespace]] = None):
     clean_loggers()
+
+    if not isinstance(args, argparse.Namespace):
+        FLAGS = parse_args(args=args)
+    else:
+        FLAGS = args
+    dict_args = vars(FLAGS)
+
     logging.basicConfig(
         level=logging.WARNING if env.LOCAL_RANK else logging.INFO,
         format=f"%(asctime)-15s {os.environ.get('RANK') or ''} [%(filename)s:%(lineno)d] %(levelname)s %(message)s",
     )
     logging.info("DeepMD version: %s", __version__)
-    parser = argparse.ArgumentParser(
-        description="A tool to manager deep models of potential energy surface."
-    )
-    subparsers = parser.add_subparsers(dest="command")
-    train_parser = subparsers.add_parser("train", help="Train a model.")
-    train_parser.add_argument("INPUT", help="A Json-format configuration file.")
-    parser_train_subgroup = train_parser.add_mutually_exclusive_group()
-    parser_train_subgroup.add_argument(
-        "-i",
-        "--init-model",
-        type=str,
-        default=None,
-        help="Initialize the model by the provided checkpoint.",
-    )
-    parser_train_subgroup.add_argument(
-        "-r",
-        "--restart",
-        type=str,
-        default=None,
-        help="Restart the training from the provided checkpoint.",
-    )
-    parser_train_subgroup.add_argument(
-        "-t",
-        "--finetune",
-        type=str,
-        default=None,
-        help="Finetune the frozen pretrained model.",
-    )
-    train_parser.add_argument(
-        "-m",
-        "--model-branch",
-        type=str,
-        default="",
-        help="Model branch chosen for fine-tuning if multi-task. If not specified, it will re-init the fitting net.",
-    )
-    train_parser.add_argument(
-        "--force-load",
-        action="store_true",
-        help="Force load from ckpt, other missing tensors will init from scratch",
-    )
 
-    test_parser = subparsers.add_parser("test", help="Test a model.")
-    test_parser_subgroup = test_parser.add_mutually_exclusive_group()
-    test_parser_subgroup.add_argument(
-        "-s",
-        "--system",
-        default=None,
-        type=str,
-        help="The system dir. Recursively detect systems in this directory",
-    )
-    test_parser_subgroup.add_argument(
-        "-f",
-        "--datafile",
-        default=None,
-        type=str,
-        help="The path to file of test list.",
-    )
-    test_parser_subgroup.add_argument(
-        "-i",
-        "--input-script",
-        default=None,
-        type=str,
-        help="The path to the input script, the validation systems will be tested.",
-    )
-    test_parser.add_argument(
-        "-m",
-        "--model",
-        default="model.pt",
-        type=str,
-        help="Model checkpoint to import",
-    )
-    test_parser.add_argument(
-        "--head",
-        default=None,
-        type=str,
-        help="Task head to test if in multi-task mode.",
-    )
-    test_parser.add_argument(
-        "-n", "--numb-test", default=100, type=int, help="The number of data for test"
-    )
-    test_parser.add_argument(
-        "-d",
-        "--detail-file",
-        type=str,
-        default=None,
-        help="The prefix to files where details of energy, force and virial accuracy/accuracy per atom will be written",
-    )
-    test_parser.add_argument(
-        "--shuffle-test", action="store_true", default=False, help="Shuffle test data"
-    )
-
-    freeze_parser = subparsers.add_parser("freeze", help="Freeze a model.")
-    freeze_parser.add_argument("model", help="Resumes from checkpoint.")
-    freeze_parser.add_argument(
-        "-o",
-        "--output",
-        type=str,
-        default="frozen_model.pth",
-        help="The frozen model path",
-    )
-    freeze_parser.add_argument(
-        "--head",
-        default=None,
-        type=str,
-        help="Task head to freeze if in multi-task mode.",
-    )
-
-    FLAGS = parser.parse_args(args)
     if FLAGS.command == "train":
         train(FLAGS)
     elif FLAGS.command == "test":
+        FLAGS.output = str(Path(FLAGS.model).with_suffix(".pt"))
         test(FLAGS)
     elif FLAGS.command == "freeze":
+        if Path(FLAGS.checkpoint_folder).is_dir():
+            checkpoint_path = Path(FLAGS.checkpoint_folder)
+            latest_ckpt_file = (checkpoint_path / "checkpoint").read_text()
+            FLAGS.model = str(checkpoint_path.joinpath(latest_ckpt_file))
+        else:
+            FLAGS.model = FLAGS.checkpoint_folder
+        FLAGS.output = str(Path(FLAGS.output).with_suffix(".pth"))
         freeze(FLAGS)
+    elif args.command == "doc-train-input":
+        doc_train_input(**dict_args)
+    elif args.command == "model-devi":
+        dict_args["models"] = [
+            str(Path(mm).with_suffix(".pt"))
+            if Path(mm).suffix not in (".pb", ".pt")
+            else mm
+            for mm in dict_args["models"]
+        ]
+        make_model_devi(**dict_args)
+    elif args.command == "gui":
+        start_dpgui(**dict_args)
     else:
-        logging.error("Invalid command!")
-        parser.print_help()
+        raise RuntimeError(f"Invalid command {FLAGS.command}!")
 
 
 if __name__ == "__main__":

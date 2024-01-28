@@ -195,13 +195,27 @@ class DeepPot(DeepEval, DeepPotBase):
         )
         if isinstance(batch_output, tuple):
             batch_output = batch_output[0]
-        energy_out = batch_output["energy"].detach().cpu().numpy()
+        energy_out = batch_output["energy"].reshape(nframes, 1).detach().cpu().numpy()
         if "atom_energy" in batch_output:
-            atomic_energy_out = batch_output["atom_energy"].detach().cpu().numpy()
-        force_out = batch_output["force"].detach().cpu().numpy()
-        virial_out = batch_output["virial"].detach().cpu().numpy()
+            atomic_energy_out = (
+                batch_output["atom_energy"]
+                .reshape(nframes, natoms, 1)
+                .detach()
+                .cpu()
+                .numpy()
+            )
+        force_out = (
+            batch_output["force"].reshape(nframes, natoms, 3).detach().cpu().numpy()
+        )
+        virial_out = batch_output["virial"].reshape(nframes, 9).detach().cpu().numpy()
         if "atomic_virial" in batch_output:
-            atomic_virial_out = batch_output["atomic_virial"].detach().cpu().numpy()
+            atomic_virial_out = (
+                batch_output["atomic_virial"]
+                .reshape(nframes, natoms, 9)
+                .detach()
+                .cpu()
+                .numpy()
+            )
 
         if not atomic:
             return energy_out, force_out, virial_out

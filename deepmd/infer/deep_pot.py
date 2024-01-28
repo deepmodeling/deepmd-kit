@@ -56,7 +56,7 @@ class DeepPot(ABC):
 
                 return super().__new__(DeepPotTF)
             elif backend == DPBackend.PyTorch:
-                from deepmd_pt.infer.deep_eval import DeepPot as DeepPotPT
+                from deepmd.pt.infer.deep_eval import DeepPot as DeepPotPT
 
                 return super().__new__(DeepPotPT)
             else:

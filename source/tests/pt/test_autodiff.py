@@ -121,9 +121,11 @@ class VirialTest:
         def ff(bb):
             return np_infer(bb)["energy"]
 
-        fdv = -(
-            finite_difference(ff, cell, delta=delta).transpose(0, 2, 1) @ cell
-        ).squeeze()
+        fdv = (
+            -(finite_difference(ff, cell, delta=delta).transpose(0, 2, 1) @ cell)
+            .squeeze()
+            .reshape(9)
+        )
         rfv = np_infer(cell)["virial"]
         np.testing.assert_almost_equal(fdv, rfv, decimal=places)
 

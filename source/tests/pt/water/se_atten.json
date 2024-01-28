@@ -79,6 +79,7 @@
     "disp_file": "lcurve.out",
     "disp_freq": 100,
     "save_freq": 1000,
+    "save_ckpt": "model",
     "_comment": "that's all"
   }
 }

@@ -66,6 +66,7 @@ class TestCalculator(unittest.TestCase):
             # positions=[tuple(item) for item in coordinate],
             cell=cell,
             calculator=self.calculator,
+            pbc=True,
         )
         e0, f0 = ase_atoms0.get_potential_energy(), ase_atoms0.get_forces()
         s0, v0 = (
@@ -79,6 +80,7 @@ class TestCalculator(unittest.TestCase):
             # positions=[tuple(item) for item in coordinate],
             cell=cell,
             calculator=self.calculator,
+            pbc=True,
         )
         e1, f1 = ase_atoms1.get_potential_energy(), ase_atoms1.get_forces()
         s1, v1 = (
