@@ -34,6 +34,7 @@ DeePMD-kit is a package written in Python/C++, designed to minimize the effort r
    :numbered:
    :caption: Advanced
 
+   backend
    install/index
    data/index
    model/index
