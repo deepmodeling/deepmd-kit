@@ -141,7 +141,7 @@ class PairTabModel(nn.Module, AtomicModel):
         return {"energy": atomic_energy}
 
     def _check_table_upper_boundary(self):
-        """Update User Provided Table Based on `rcut`
+        """Update User Provided Table Based on `rcut`.
 
         This function checks the upper boundary provided in the table against rcut.
         If the table upper boundary values decay to zero before rcut, padding zeros will
