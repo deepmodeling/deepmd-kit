@@ -14,12 +14,6 @@ from typing import (
 
 import numpy as np
 import torch
-from tqdm import (
-    tqdm,
-)
-from tqdm.contrib.logging import (
-    logging_redirect_tqdm,
-)
 
 from deepmd.common import (
     symlink_prefix_files,
@@ -47,7 +41,6 @@ from deepmd.pt.utils.dataloader import (
 )
 from deepmd.pt.utils.env import (
     DEVICE,
-    DISABLE_TQDM,
     JIT,
     LOCAL_RANK,
     NUM_WORKERS,
@@ -662,29 +655,24 @@ class Trainer:
                     f.write(str(self.latest_model))
 
         self.t0 = time.time()
-        with logging_redirect_tqdm():
-            for step_id in tqdm(
-                range(self.num_steps),
-                disable=(bool(dist.get_rank()) if dist.is_initialized() else False)
-                or DISABLE_TQDM,
-            ):  # set to None to disable on non-TTY; disable on not rank 0
-                if step_id < self.start_step:
-                    continue
-                if self.multi_task:
-                    chosen_index_list = dp_random.choice(
-                        np.arange(self.num_model),
-                        p=np.array(self.model_prob),
-                        size=self.world_size,
-                        replace=True,
-                    )
-                    assert chosen_index_list.size == self.world_size
-                    model_index = chosen_index_list[self.rank]
-                    model_key = self.model_keys[model_index]
-                else:
-                    model_key = "Default"
-                step(step_id, model_key)
-                if JIT:
-                    break
+        for step_id in range(self.num_steps):
+            if step_id < self.start_step:
+                continue
+            if self.multi_task:
+                chosen_index_list = dp_random.choice(
+                    np.arange(self.num_model),
+                    p=np.array(self.model_prob),
+                    size=self.world_size,
+                    replace=True,
+                )
+                assert chosen_index_list.size == self.world_size
+                model_index = chosen_index_list[self.rank]
+                model_key = self.model_keys[model_index]
+            else:
+                model_key = "Default"
+            step(step_id, model_key)
+            if JIT:
+                break
 
         if (
             self.rank == 0 or dist.get_rank() == 0

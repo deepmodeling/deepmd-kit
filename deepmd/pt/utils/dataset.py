@@ -13,9 +13,6 @@ import torch.distributed as dist
 from torch.utils.data import (
     Dataset,
 )
-from tqdm import (
-    trange,
-)
 
 from deepmd.pt.utils import (
     dp_random,
@@ -506,7 +503,7 @@ class DeepmdDataSystem:
         assert batch["atype"].max() < len(self._type_map)
         nlist, nlist_loc, nlist_type, shift, mapping = [], [], [], [], []
 
-        for sid in trange(n_frames, disable=env.DISABLE_TQDM):
+        for sid in range(n_frames):
             region = Region3D(box[sid])
             nloc = atype[sid].shape[0]
             _coord = normalize_coord(coord[sid], region, nloc)
