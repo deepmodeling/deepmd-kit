@@ -24,7 +24,7 @@ from common import (
     DataSystem,
     del_data,
     gen_data,
-    tests_path,
+    infer_path,
 )
 
 
@@ -35,8 +35,8 @@ class TestLinearModel(tf.test.TestCase):
         with open(os.path.join(self.data_dir, "type_map.raw"), "w") as f:
             f.write("O\nH")
         self.pbtxts = [
-            os.path.join(tests_path, "infer/deeppot.pbtxt"),
-            os.path.join(tests_path, "infer/deeppot-1.pbtxt"),
+            os.path.join(infer_path, "deeppot.pbtxt"),
+            os.path.join(infer_path, "deeppot-1.pbtxt"),
         ]
         self.graph_dirs = [pbtxt.replace("pbtxt", "pb") for pbtxt in self.pbtxts]
         for pbtxt, pb in zip(self.pbtxts, self.graph_dirs):

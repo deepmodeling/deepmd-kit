@@ -17,6 +17,7 @@ sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 from common import (
     del_data,
     gen_data,
+    infer_path,
     tests_path,
 )
 from packaging.version import parse as parse_version
@@ -56,8 +57,8 @@ class TestMakeModelDeviMix(unittest.TestCase):
         )
 
         self.pbtxts = [
-            os.path.join(tests_path, "infer/se_atten_no_atten_1.pbtxt"),
-            os.path.join(tests_path, "infer/se_atten_no_atten_2.pbtxt"),
+            os.path.join(infer_path, "se_atten_no_atten_1.pbtxt"),
+            os.path.join(infer_path, "se_atten_no_atten_2.pbtxt"),
         ]
         self.graph_dirs = [pbtxt.replace("pbtxt", "pb") for pbtxt in self.pbtxts]
         for pbtxt, pb in zip(self.pbtxts, self.graph_dirs):

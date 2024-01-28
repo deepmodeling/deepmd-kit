@@ -17,6 +17,7 @@ sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 from common import (
     del_data,
     gen_data,
+    infer_path,
     tests_path,
 )
 
@@ -39,8 +40,8 @@ class TestMakeModelDevi(unittest.TestCase):
         self.freq = 10
 
         self.pbtxts = [
-            os.path.join(tests_path, "infer/deeppot.pbtxt"),
-            os.path.join(tests_path, "infer/deeppot-1.pbtxt"),
+            os.path.join(infer_path, "deeppot.pbtxt"),
+            os.path.join(infer_path, "deeppot-1.pbtxt"),
         ]
         self.graph_dirs = [pbtxt.replace("pbtxt", "pb") for pbtxt in self.pbtxts]
         for pbtxt, pb in zip(self.pbtxts, self.graph_dirs):
@@ -215,7 +216,7 @@ class TestMakeModelDeviFparamAparam(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.pbtxts = [
-            os.path.join(tests_path, "infer/fparam_aparam.pbtxt"),
+            os.path.join(infer_path, "fparam_aparam.pbtxt"),
         ]
         cls.graph_dirs = [pbtxt.replace("pbtxt", "pb") for pbtxt in cls.pbtxts]
         for pbtxt, pb in zip(cls.pbtxts, cls.graph_dirs):
