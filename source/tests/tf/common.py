@@ -28,6 +28,7 @@ else:
     global_default_places = 5
 
 tests_path = pathlib.Path(__file__).parent.absolute()
+infer_path = (tests_path.parent / "infer").absolute()
 
 
 def j_loader(filename):

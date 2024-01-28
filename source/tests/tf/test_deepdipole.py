@@ -6,8 +6,8 @@ import ase.neighborlist
 import numpy as np
 from common import (
     finite_difference,
+    infer_path,
     strerch_box,
-    tests_path,
     tf,
 )
 from packaging.version import parse as parse_version
@@ -32,7 +32,7 @@ class TestDeepDipolePBC(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         convert_pbtxt_to_pb(
-            str(tests_path / os.path.join("infer", "deepdipole.pbtxt")), "deepdipole.pb"
+            str(infer_path / os.path.join("deepdipole.pbtxt")), "deepdipole.pb"
         )
         cls.dp = DeepDipole("deepdipole.pb")
 
@@ -111,7 +111,7 @@ class TestDeepDipoleNoPBC(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         convert_pbtxt_to_pb(
-            str(tests_path / os.path.join("infer", "deepdipole.pbtxt")), "deepdipole.pb"
+            str(infer_path / os.path.join("deepdipole.pbtxt")), "deepdipole.pb"
         )
         cls.dp = DeepDipole("deepdipole.pb")
 
@@ -185,7 +185,7 @@ class TestDeepDipoleNewPBC(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         convert_pbtxt_to_pb(
-            str(tests_path / os.path.join("infer", "deepdipole_new.pbtxt")),
+            str(infer_path / os.path.join("deepdipole_new.pbtxt")),
             "deepdipole_new.pb",
         )
         cls.dp = DeepDipole("deepdipole_new.pb")
@@ -656,7 +656,7 @@ class TestDeepDipoleFakePBC(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         convert_pbtxt_to_pb(
-            str(tests_path / os.path.join("infer", "deepdipole_fake.pbtxt")),
+            str(infer_path / os.path.join("deepdipole_fake.pbtxt")),
             "deepdipole_fake.pb",
         )
         cls.dp = DeepDipole("deepdipole_fake.pb")
@@ -1042,7 +1042,7 @@ class TestDeepDipoleNewPBCNeighborList(TestDeepDipoleNewPBC):
     @classmethod
     def setUpClass(cls):
         convert_pbtxt_to_pb(
-            str(tests_path / os.path.join("infer", "deepdipole_new.pbtxt")),
+            str(infer_path / os.path.join("deepdipole_new.pbtxt")),
             "deepdipole_new.pb",
         )
         cls.dp = DeepDipole(

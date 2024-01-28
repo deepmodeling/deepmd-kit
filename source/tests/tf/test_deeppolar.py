@@ -5,7 +5,7 @@ import unittest
 import ase.neighborlist
 import numpy as np
 from common import (
-    tests_path,
+    infer_path,
     tf,
 )
 from packaging.version import parse as parse_version
@@ -30,7 +30,7 @@ class TestDeepPolarPBC(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         convert_pbtxt_to_pb(
-            str(tests_path / os.path.join("infer", "deeppolar.pbtxt")), "deeppolar.pb"
+            str(infer_path / os.path.join("deeppolar.pbtxt")), "deeppolar.pb"
         )
         cls.dp = DeepPolar("deeppolar.pb")
 
@@ -121,7 +121,7 @@ class TestDeepPolarNoPBC(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         convert_pbtxt_to_pb(
-            str(tests_path / os.path.join("infer", "deeppolar.pbtxt")), "deeppolar.pb"
+            str(infer_path / os.path.join("deeppolar.pbtxt")), "deeppolar.pb"
         )
         cls.dp = DeepPolar("deeppolar.pb")
 
@@ -207,7 +207,7 @@ class TestDeepPolarNewPBC(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         convert_pbtxt_to_pb(
-            str(tests_path / os.path.join("infer", "deeppolar_new.pbtxt")),
+            str(infer_path / os.path.join("deeppolar_new.pbtxt")),
             "deeppolar_new.pb",
         )
         cls.dp = DeepPolar("deeppolar_new.pb")
@@ -1093,7 +1093,7 @@ class TestDeepPolarNewPBCNeighborList(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         convert_pbtxt_to_pb(
-            str(tests_path / os.path.join("infer", "deeppolar_new.pbtxt")),
+            str(infer_path / os.path.join("deeppolar_new.pbtxt")),
             "deeppolar_new.pb",
         )
         cls.dp = DeepPolar(

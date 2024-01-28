@@ -6,8 +6,8 @@ import unittest
 import numpy as np
 from common import (
     gen_data,
+    infer_path,
     j_loader,
-    tests_path,
 )
 
 from deepmd.tf.common import (
@@ -31,7 +31,7 @@ class TestVirtualType(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         convert_pbtxt_to_pb(
-            str(tests_path / os.path.join("infer", "virtual_type.pbtxt")),
+            str(infer_path / os.path.join("virtual_type.pbtxt")),
             "virtual_type.pb",
         )
         cls.dp = DeepPot("virtual_type.pb")

@@ -5,6 +5,7 @@ import unittest
 
 import numpy as np
 from common import (
+    infer_path,
     run_dp,
     tests_path,
 )
@@ -48,10 +49,10 @@ class TestTransform(unittest.TestCase):
         self.raw_model = str(tests_path / "dp-raw.pb")
         self.new_model = str(tests_path / "dp-new.pb")
         convert_pbtxt_to_pb(
-            str(tests_path / os.path.join("infer", "deeppot.pbtxt")), self.old_model
+            str(infer_path / os.path.join("deeppot.pbtxt")), self.old_model
         )
         convert_pbtxt_to_pb(
-            str(tests_path / os.path.join("infer", "deeppot-1.pbtxt")), self.raw_model
+            str(infer_path / os.path.join("deeppot-1.pbtxt")), self.raw_model
         )
         ret = run_dp(
             "dp transfer -O "

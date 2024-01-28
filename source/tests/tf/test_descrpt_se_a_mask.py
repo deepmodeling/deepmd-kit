@@ -5,6 +5,7 @@ import pathlib
 import numpy as np
 from common import (
     DataSystem,
+    infer_path,
     j_loader,
 )
 
@@ -35,10 +36,10 @@ class TestModel(tf.test.TestCase):
     @classmethod
     def setUpClass(cls):
         convert_pbtxt_to_pb(
-            str(tests_path / os.path.join("infer", "dp4mask.pbtxt")),
-            str(tests_path / os.path.join("infer", "dp4mask.pb")),
+            str(infer_path / os.path.join("dp4mask.pbtxt")),
+            str(infer_path / os.path.join("dp4mask.pb")),
         )
-        cls.dp = DeepPot(str(tests_path / os.path.join("infer", "dp4mask.pb")))
+        cls.dp = DeepPot(str(infer_path / os.path.join("dp4mask.pb")))
 
     def test_dp_mask_model(self):
         dcoord = np.array(

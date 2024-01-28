@@ -4,7 +4,7 @@ import unittest
 
 import numpy as np
 from common import (
-    tests_path,
+    infer_path,
 )
 
 from deepmd.tf.env import (
@@ -28,7 +28,7 @@ class TestDeepPotRPBC(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         convert_pbtxt_to_pb(
-            str(tests_path / os.path.join("infer", "deeppot-r.pbtxt")), "deeppot.pb"
+            str(infer_path / os.path.join("deeppot-r.pbtxt")), "deeppot.pb"
         )
         cls.dp = DeepPot("deeppot.pb")
 
@@ -239,7 +239,7 @@ class TestDeepPotRNoPBC(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         convert_pbtxt_to_pb(
-            str(tests_path / os.path.join("infer", "deeppot-r.pbtxt")), "deeppot.pb"
+            str(infer_path / os.path.join("deeppot-r.pbtxt")), "deeppot.pb"
         )
         cls.dp = DeepPot("deeppot.pb")
 
@@ -453,7 +453,7 @@ class TestDeepPotRLargeBoxNoPBC(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         convert_pbtxt_to_pb(
-            str(tests_path / os.path.join("infer", "deeppot-r.pbtxt")), "deeppot.pb"
+            str(infer_path / os.path.join("deeppot-r.pbtxt")), "deeppot.pb"
         )
         cls.dp = DeepPot("deeppot.pb")
 

@@ -9,7 +9,7 @@ from pathlib import (
 import dpdata
 import numpy as np
 from common import (
-    tests_path,
+    infer_path,
 )
 
 from deepmd.tf.entrypoints.test import test as dp_test
@@ -71,7 +71,7 @@ class TestDPTestEner(unittest.TestCase, TestDPTest):
     def setUpClass(cls):
         cls.model_name = "deeppot.pb"
         convert_pbtxt_to_pb(
-            str(tests_path / os.path.join("infer", "deeppot.pbtxt")), cls.model_name
+            str(infer_path / os.path.join("deeppot.pbtxt")), cls.model_name
         )
 
     def setUp(self):
@@ -207,7 +207,7 @@ class TestDPTestDipole(unittest.TestCase, TestDPTest):
     def setUpClass(cls):
         cls.model_name = "deepdipole.pb"
         convert_pbtxt_to_pb(
-            str(tests_path / os.path.join("infer", "deepdipole.pbtxt")), cls.model_name
+            str(infer_path / os.path.join("deepdipole.pbtxt")), cls.model_name
         )
 
     def setUp(self):
@@ -266,7 +266,7 @@ class TestDPTestPolar(unittest.TestCase, TestDPTest):
     def setUpClass(cls):
         cls.model_name = "deeppolar.pb"
         convert_pbtxt_to_pb(
-            str(tests_path / os.path.join("infer", "deeppolar.pbtxt")), cls.model_name
+            str(infer_path / os.path.join("deeppolar.pbtxt")), cls.model_name
         )
 
     def setUp(self):

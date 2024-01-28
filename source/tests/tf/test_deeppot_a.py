@@ -7,6 +7,7 @@ import ase.neighborlist
 import dpdata
 import numpy as np
 from common import (
+    infer_path,
     run_dp,
     tests_path,
 )
@@ -38,7 +39,7 @@ else:
 
 class TestModelMajorCompatability(unittest.TestCase):
     def setUp(self):
-        model_file = str(tests_path / os.path.join("infer", "deeppot.pbtxt"))
+        model_file = str(infer_path / os.path.join("deeppot.pbtxt"))
         with open(model_file) as fp:
             # data = fp.read().replace('\n', '')
             data = fp.read().split("\n")
@@ -68,7 +69,7 @@ class TestModelMajorCompatability(unittest.TestCase):
 
 class TestModelMinorCompatability(unittest.TestCase):
     def setUp(self):
-        model_file = str(tests_path / os.path.join("infer", "deeppot.pbtxt"))
+        model_file = str(infer_path / os.path.join("deeppot.pbtxt"))
         with open(model_file) as fp:
             # data = fp.read().replace('\n', '')
             data = fp.read().split("\n")
@@ -100,7 +101,7 @@ class TestDeepPotAPBC(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         convert_pbtxt_to_pb(
-            str(tests_path / os.path.join("infer", "deeppot.pbtxt")), "deeppot.pb"
+            str(infer_path / os.path.join("deeppot.pbtxt")), "deeppot.pb"
         )
         cls.dp = DeepPot("deeppot.pb")
 
@@ -327,7 +328,7 @@ class TestDeepPotANoPBC(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         convert_pbtxt_to_pb(
-            str(tests_path / os.path.join("infer", "deeppot.pbtxt")), "deeppot.pb"
+            str(infer_path / os.path.join("deeppot.pbtxt")), "deeppot.pb"
         )
         cls.dp = DeepPot("deeppot.pb")
 
@@ -550,7 +551,7 @@ class TestDeepPotALargeBoxNoPBC(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         convert_pbtxt_to_pb(
-            str(tests_path / os.path.join("infer", "deeppot.pbtxt")), "deeppot.pb"
+            str(infer_path / os.path.join("deeppot.pbtxt")), "deeppot.pb"
         )
         cls.dp = DeepPot("deeppot.pb")
 
@@ -857,7 +858,7 @@ class TestTypeEmbed(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         convert_pbtxt_to_pb(
-            str(tests_path / os.path.join("infer", "se_e2_a_tebd.pbtxt")),
+            str(infer_path / os.path.join("se_e2_a_tebd.pbtxt")),
             "se_e2_a_tebd.pb",
         )
         cls.dp = DeepPot("se_e2_a_tebd.pb")
@@ -898,7 +899,7 @@ class TestFparamAparam(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         convert_pbtxt_to_pb(
-            str(tests_path / os.path.join("infer", "fparam_aparam.pbtxt")),
+            str(infer_path / os.path.join("fparam_aparam.pbtxt")),
             "fparam_aparam.pb",
         )
         cls.dp = DeepPot("fparam_aparam.pb")
@@ -1155,7 +1156,7 @@ class TestDeepPotAPBCNeighborList(TestDeepPotAPBC):
     @classmethod
     def setUpClass(cls):
         convert_pbtxt_to_pb(
-            str(tests_path / os.path.join("infer", "deeppot.pbtxt")), "deeppot.pb"
+            str(infer_path / os.path.join("deeppot.pbtxt")), "deeppot.pb"
         )
         cls.dp = DeepPot(
             "deeppot.pb",

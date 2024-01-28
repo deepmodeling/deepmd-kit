@@ -4,7 +4,7 @@ import unittest
 
 import numpy as np
 from common import (
-    tests_path,
+    infer_path,
 )
 
 from deepmd.tf.env import (
@@ -27,7 +27,7 @@ class TestDipoleCharge(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         convert_pbtxt_to_pb(
-            str(tests_path / os.path.join("infer", "dipolecharge_d.pbtxt")),
+            str(infer_path / os.path.join("dipolecharge_d.pbtxt")),
             "dipolecharge_d.pb",
         )
         cls.dp = DipoleChargeModifier(

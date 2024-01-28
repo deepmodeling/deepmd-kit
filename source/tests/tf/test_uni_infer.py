@@ -5,7 +5,7 @@ import os
 import unittest
 
 from common import (
-    tests_path,
+    infer_path,
 )
 
 from deepmd.infer.deep_pot import DeepPot as DeepPot
@@ -19,7 +19,7 @@ class TestUniversalInfer(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         convert_pbtxt_to_pb(
-            str(tests_path / os.path.join("infer", "deeppot-r.pbtxt")), "deeppot.pb"
+            str(infer_path / os.path.join("deeppot-r.pbtxt")), "deeppot.pb"
         )
 
     def test_deep_pot(self):
