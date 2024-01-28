@@ -308,9 +308,9 @@ def main(args: Optional[Union[List[str], argparse.Namespace]] = None):
         test(FLAGS)
     elif FLAGS.command == "freeze":
         if Path(FLAGS.checkpoint_folder).is_dir():
-            # TODO: automatically generate model.pt during training
-            # FLAGS.model = str(Path(FLAGS.checkpoint).joinpath("model.pt"))
-            raise NotImplementedError("Checkpoint should give a file")
+            checkpoint_path = Path(FLAGS.checkpoint_folder)
+            latest_ckpt_file = (checkpoint_path / "checkpoint").read_text()
+            FLAGS.model = str(checkpoint_path.joinpath(latest_ckpt_file))
         else:
             FLAGS.model = FLAGS.checkpoint_folder
         FLAGS.output = str(Path(FLAGS.output).with_suffix(".pth"))
