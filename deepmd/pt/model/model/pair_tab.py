@@ -222,10 +222,7 @@ class PairTabModel(nn.Module, AtomicModel):
                     upper, increment * (rcut_idx + 1), rcut_idx - upper_idx + 1
                 )
                 pad_linear[:-1, 1:] = np.array(
-                    [
-                        np.linspace(start, 0, rcut_idx - upper_idx)
-                        for start in upper_val
-                    ]
+                    [np.linspace(start, 0, rcut_idx - upper_idx) for start in upper_val]
                 ).T
                 raw_data = np.concatenate((raw_data[:-1, :], pad_linear), axis=0)
 

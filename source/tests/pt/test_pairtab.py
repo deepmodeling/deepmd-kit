@@ -56,7 +56,7 @@ class TestPairTabCalculation(unittest.TestCase):
         )
         expected_result = torch.tensor([[1.2000, 1.3542], [1.2000, 0.4000]])
 
-        torch.testing.assert_allclose(result['energy'], expected_result)
+        torch.testing.assert_allclose(result["energy"], expected_result)
 
     def test_with_mask(self):
         self.nlist = torch.tensor([[[1, -1], [0, 2]], [[1, 2], [0, 3]]])
@@ -66,7 +66,7 @@ class TestPairTabCalculation(unittest.TestCase):
         )
         expected_result = torch.tensor([[0.8000, 1.3542], [1.2000, 0.4000]])
 
-        torch.testing.assert_allclose(result['energy'], expected_result)
+        torch.testing.assert_allclose(result["energy"], expected_result)
 
     def test_jit(self):
         model = torch.jit.script(self.model)
