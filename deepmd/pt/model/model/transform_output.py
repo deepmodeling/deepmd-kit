@@ -70,6 +70,8 @@ def task_deriv_one(
     if do_atomic_virial:
         extended_virial_corr = atomic_virial_corr(extended_coord, atom_energy)
         extended_virial = extended_virial + extended_virial_corr
+    # to [...,3,3] -> [...,9]
+    extended_virial = extended_virial.view(list(extended_virial.shape[:-2]) + [9])  # noqa:RUF005
     return extended_force, extended_virial
 
 
@@ -106,18 +108,18 @@ def take_deriv(
     split_svv1 = torch.split(svv1, [1] * size, dim=-1)
     split_ff, split_avir = [], []
     for vvi, svvi in zip(split_vv1, split_svv1):
-        # nf x nloc x 3, nf x nloc x 3 x 3
+        # nf x nloc x 3, nf x nloc x 9
         ffi, aviri = task_deriv_one(
             vvi, svvi, coord_ext, do_atomic_virial=do_atomic_virial
         )
-        # nf x nloc x 1 x 3, nf x nloc x 1 x 3 x 3
+        # nf x nloc x 1 x 3, nf x nloc x 1 x 9
         ffi = ffi.unsqueeze(-2)
-        aviri = aviri.unsqueeze(-3)
+        aviri = aviri.unsqueeze(-2)
         split_ff.append(ffi)
         split_avir.append(aviri)
-    # nf x nloc x v_dim x 3, nf x nloc x v_dim x 3 x 3
+    # nf x nloc x v_dim x 3, nf x nloc x v_dim x 9
     ff = torch.concat(split_ff, dim=-2)
-    avir = torch.concat(split_avir, dim=-3)
+    avir = torch.concat(split_avir, dim=-2)
     return ff, avir
 
 
@@ -185,7 +187,7 @@ def communicate_extended_output(
                 force = torch.zeros(
                     vldims + derv_r_ext_dims, dtype=vv.dtype, device=vv.device
                 )
-                # nf x nloc x 1 x 3
+                # nf x nloc x nvar x 3
                 new_ret[kk_derv_r] = torch.scatter_reduce(
                     force,
                     1,
@@ -193,13 +195,15 @@ def communicate_extended_output(
                     src=model_ret[kk_derv_r],
                     reduce="sum",
                 )
-                mapping = mapping.unsqueeze(-1).expand(
-                    [-1] * (len(mldims) + len(derv_r_ext_dims)) + [3]
+                derv_c_ext_dims = list(vdef.shape) + [9]  # noqa:RUF005
+                # nf x nloc x nvar x 3 -> nf x nloc x nvar x 9
+                mapping = torch.tile(
+                    mapping, [1] * (len(mldims) + len(vdef.shape)) + [3]
                 )
                 virial = torch.zeros(
-                    vldims + derv_r_ext_dims + [3], dtype=vv.dtype, device=vv.device
+                    vldims + derv_c_ext_dims, dtype=vv.dtype, device=vv.device
                 )
-                # nf x nloc x 1 x 3
+                # nf x nloc x nvar x 9
                 new_ret[kk_derv_c] = torch.scatter_reduce(
                     virial,
                     1,
