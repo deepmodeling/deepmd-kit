@@ -279,7 +279,7 @@ class TestDeepPotAPBC(unittest.TestCase):
 
     def test_descriptor(self):
         descpt = self.dp.eval_descriptor(self.coords, self.box, self.atype)
-        expected_descpt = np.loadtxt(str(tests_path / "infer" / "deeppot_descpt.txt"))
+        expected_descpt = np.loadtxt(str(infer_path / "deeppot_descpt.txt"))
         np.testing.assert_almost_equal(descpt.ravel(), expected_descpt.ravel())
 
     def test_2frame_atm(self):
@@ -800,7 +800,7 @@ class TestModelConvert(unittest.TestCase):
     def test_convert_012(self):
         old_model = "deeppot.pb"
         new_model = "deeppot-new.pb"
-        convert_pbtxt_to_pb(str(tests_path / "infer" / "sea_012.pbtxt"), old_model)
+        convert_pbtxt_to_pb(str(infer_path / "sea_012.pbtxt"), old_model)
         run_dp(f"dp convert-from 0.12 -i {old_model} -o {new_model}")
         dp = DeepPot(new_model)
         _, _, _, _, _ = dp.eval(self.coords, self.box, self.atype, atomic=True)
@@ -810,7 +810,7 @@ class TestModelConvert(unittest.TestCase):
     def test_convert(self):
         old_model = "deeppot.pb"
         new_model = "deeppot-new.pb"
-        convert_pbtxt_to_pb(str(tests_path / "infer" / "sea_012.pbtxt"), old_model)
+        convert_pbtxt_to_pb(str(infer_path / "sea_012.pbtxt"), old_model)
         run_dp(f"dp convert-from -i {old_model} -o {new_model}")
         dp = DeepPot(new_model)
         _, _, _, _, _ = dp.eval(self.coords, self.box, self.atype, atomic=True)
@@ -821,11 +821,11 @@ class TestModelConvert(unittest.TestCase):
         old_model = "deeppot.pb"
         new_model_txt = "deeppot_new.pbtxt"
         new_model_pb = "deeppot_new.pb"
-        convert_pbtxt_to_pb(str(tests_path / "infer" / "sea_012.pbtxt"), old_model)
+        convert_pbtxt_to_pb(str(infer_path / "sea_012.pbtxt"), old_model)
         version = detect_model_version(old_model)
         self.assertEqual(version, parse_version("0.12"))
         os.remove(old_model)
-        shutil.copyfile(str(tests_path / "infer" / "sea_012.pbtxt"), new_model_txt)
+        shutil.copyfile(str(infer_path / "sea_012.pbtxt"), new_model_txt)
         convert_dp012_to_dp10(new_model_txt)
         convert_pbtxt_to_pb(new_model_txt, new_model_pb)
         version = detect_model_version(new_model_pb)
