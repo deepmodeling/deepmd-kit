@@ -129,7 +129,7 @@ class PairTabModel(nn.Module, AtomicModel):
         # slice rr to get (nframes, nloc, nnei)
         rr = torch.gather(pairwise_rr[:, :nloc, :], 2, masked_nlist)
 
-        raw_atomic_energy = self._pair_tabulated_inter(atype, j_type, rr)
+        raw_atomic_energy = self._pair_tabulated_inter(nlist, atype, j_type, rr)
 
         atomic_energy = 0.5 * torch.sum(
             torch.where(
@@ -227,7 +227,7 @@ class PairTabModel(nn.Module, AtomicModel):
                         for start in upper_val
                     ]
                 ).T
-                raw_data = np.concatenate((raw_data[:-1, :], pad_zero), axis=0)
+                raw_data = np.concatenate((raw_data[:-1, :], pad_linear), axis=0)
 
         # over writing file with padding if applicable.
         with open(self.tab_file, "wb") as f:
@@ -277,8 +277,7 @@ class PairTabModel(nn.Module, AtomicModel):
         uu = (rr - rmin) * hi  # this is broadcasted to (nframes,nloc,nnei)
 
         # if nnei of atom 0 has -1 in the nlist, uu would be 0.
-        # this is to handel the nlist where the mask is set to 0.
-        # by replacing the values wiht nspline + 1, the energy contribution will be 0
+        # this is to handel the nlist where the mask is set to 0, so that we don't raise exception for those atoms.
         uu = torch.where(nlist != -1, uu, self.nspline + 1)
 
         if torch.any(uu < 0):
