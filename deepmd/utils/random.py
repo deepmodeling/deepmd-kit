@@ -12,7 +12,7 @@ _RANDOM_GENERATOR = np.random.RandomState()
 
 def choice(
     a: Union[np.ndarray, int],
-    size: Union[int, Tuple[int, ...]] = None,
+    size: Optional[Union[int, Tuple[int, ...]]] = None,
     replace: bool = True,
     p: Optional[np.ndarray] = None,
 ):
