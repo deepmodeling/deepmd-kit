@@ -11,25 +11,25 @@ _RANDOM_GENERATOR = np.random.RandomState()
 
 
 def choice(
-        a: Union[np.ndarray, int],
-        size: Union[int, Tuple[int, ...]] = None,
-        replace: bool = True,
-        p: Optional[np.ndarray] = None,
-    ):
+    a: Union[np.ndarray, int],
+    size: Union[int, Tuple[int, ...]] = None,
+    replace: bool = True,
+    p: Optional[np.ndarray] = None,
+):
     """Generates a random sample from a given 1-D array.
 
     Parameters
     ----------
-    a: 1-D array-like or int
+    a : 1-D array-like or int
         If an ndarray, a random sample is generated from its elements. If an int,
         the random sample is generated as if it were np.arange(a)
-    size: int or tuple of ints, optional
+    size : int or tuple of ints, optional
         Output shape. If the given shape is, e.g., (m, n, k), then m * n * k samples
         are drawn. Default is None, in which case a single value is returned.
-    replace: boolean, optional
+    replace : boolean, optional
         Whether the sample is with or without replacement. Default is True, meaning
         that a value of a can be selected multiple times.
-    p: 1-D array-like, optional
+    p : 1-D array-like, optional
         The probabilities associated with each entry in a. If not given, the sample
         assumes a uniform distribution over all entries in a.
 
