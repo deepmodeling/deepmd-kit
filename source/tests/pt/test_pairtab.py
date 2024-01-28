@@ -12,7 +12,7 @@ from deepmd.pt.model.model.pair_tab import (
 )
 
 
-class TestPairTab(unittest.TestCase):
+class TestPairTabCalculation(unittest.TestCase):
     @patch("numpy.loadtxt")
     def setUp(self, mock_loadtxt) -> None:
         file_path = "dummy_path"
@@ -54,9 +54,9 @@ class TestPairTab(unittest.TestCase):
         result = self.model.forward_atomic(
             self.extended_coord, self.extended_atype, self.nlist
         )
-        expected_result = torch.tensor([[2.4000, 2.7085], [2.4000, 0.8000]])
+        expected_result = torch.tensor([[1.2000, 1.3542], [1.2000, 0.4000]])
 
-        torch.testing.assert_allclose(result, expected_result)
+        torch.testing.assert_allclose(result['energy'], expected_result)
 
     def test_with_mask(self):
         self.nlist = torch.tensor([[[1, -1], [0, 2]], [[1, 2], [0, 3]]])
@@ -64,9 +64,9 @@ class TestPairTab(unittest.TestCase):
         result = self.model.forward_atomic(
             self.extended_coord, self.extended_atype, self.nlist
         )
-        expected_result = torch.tensor([[1.6000, 2.7085], [2.4000, 0.8000]])
+        expected_result = torch.tensor([[0.8000, 1.3542], [1.2000, 0.4000]])
 
-        torch.testing.assert_allclose(result, expected_result)
+        torch.testing.assert_allclose(result['energy'], expected_result)
 
     def test_jit(self):
         model = torch.jit.script(self.model)

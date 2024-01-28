@@ -145,8 +145,8 @@ class PairTabModel(nn.Module, AtomicModel):
 
         This function checks the upper boundary provided in the table against rcut.
         If the table upper boundary values decay to zero before rcut, padding zeros will
-        be add to the table to cover rcut; if the table upper boundary values do not decay to zero
-        before ruct, linear extrapolation will be performed to rcut. In both cases, the table file
+        be added to the table to cover rcut; if the table upper boundary values do not decay to zero
+        before ruct, linear extrapolation will be performed till rcut. In both cases, the table file
         will be overwritten.
 
         Examples
@@ -160,7 +160,7 @@ class PairTabModel(nn.Module, AtomicModel):
         new_table = [[0.005 1.    2.    3.   ]
                     [0.01  0.8   1.6   2.4  ]
                     [0.015 0.    1.    1.5  ]
-                    [0.02  0.    0.5   0.75 ]
+                    [0.02  0.    0.    0.   ]
                     [0.025 0.    0.    0.   ]]
 
         ----------------------------------------------
@@ -212,7 +212,7 @@ class PairTabModel(nn.Module, AtomicModel):
                 logging.warning(
                     "The energy provided in the table does not decay to 0 at rcut."
                 )
-            # if rcut goes beyond table upper bond, need extrapolation.
+            # if rcut goes beyond table upper bond, need extrapolation, ensure values decay to `0` before rcut.
             else:
                 logging.warning(
                     "The rcut goes beyond table upper boundary, performing linear extrapolation."
@@ -221,9 +221,9 @@ class PairTabModel(nn.Module, AtomicModel):
                 pad_linear[:, 0] = np.linspace(
                     upper, increment * (rcut_idx + 1), rcut_idx - upper_idx + 1
                 )
-                pad_linear[:, 1:] = np.array(
+                pad_linear[:-1, 1:] = np.array(
                     [
-                        np.linspace(start, 0, rcut_idx - upper_idx + 1)
+                        np.linspace(start, 0, rcut_idx - upper_idx)
                         for start in upper_val
                     ]
                 ).T
