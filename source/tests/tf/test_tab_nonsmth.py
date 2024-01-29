@@ -3,9 +3,6 @@ import os
 import unittest
 
 import numpy as np
-from test_descrpt_nonsmth import (
-    Inter,
-)
 
 # load grad of force module
 import deepmd.tf.op  # noqa: F401
@@ -23,6 +20,9 @@ from .common import (
     force_test,
     virial_dw_test,
     virial_test,
+)
+from .test_descrpt_nonsmth import (
+    Inter,
 )
 
 

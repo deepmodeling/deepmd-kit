@@ -3,9 +3,6 @@ import os
 import unittest
 
 import numpy as np
-from test_descrpt_smooth import (
-    Inter,
-)
 
 # load grad of force module
 from deepmd.tf.env import (
@@ -22,6 +19,9 @@ from .common import (
     force_test,
     virial_dw_test,
     virial_test,
+)
+from .test_descrpt_smooth import (
+    Inter,
 )
 
 
