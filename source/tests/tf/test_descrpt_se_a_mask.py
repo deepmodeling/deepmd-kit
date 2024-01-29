@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import os
-import pathlib
 
 import numpy as np
 from common import (
     DataSystem,
     infer_path,
     j_loader,
+    tests_path,
 )
 
 from deepmd.tf.common import (
@@ -28,8 +28,6 @@ from deepmd.tf.utils.convert import (
 GLOBAL_ENER_FLOAT_PRECISION = tf.float64
 GLOBAL_TF_FLOAT_PRECISION = tf.float64
 GLOBAL_NP_FLOAT_PRECISION = np.float64
-
-tests_path = pathlib.Path(__file__).parent.absolute()
 
 
 class TestModel(tf.test.TestCase):
