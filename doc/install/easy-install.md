@@ -94,12 +94,14 @@ pip install deepmd-kit[gpu,cu12,torch]
 To install the package built against CUDA 11.8, use
 
 ```bash
-pip install deepmd-kit-cu11[gpu,cu11,torch] --index-url https://download.pytorch.org/whl/cu118
+pip install torch --index-url https://download.pytorch.org/whl/cu118
+pip install deepmd-kit-cu11[gpu,cu11]
 ```
 
 Or install the CPU version without CUDA supported:
 ```bash
-pip install deepmd-kit[cpu,torch] --index-url https://download.pytorch.org/whl/cpu
+pip install torch --index-url https://download.pytorch.org/whl/cpu
+pip install deepmd-kit[cpu]
 ```
 
 [The LAMMPS module](../third-party/lammps-command.md) and [the i-Pi driver](../third-party/ipi.md) are only provided on Linux and macOS for the TensorFlow backend. To install LAMMPS and/or i-Pi, add `lmp` and/or `ipi` to extras:
