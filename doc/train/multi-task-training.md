@@ -3,6 +3,7 @@
 :::{note}
 **Supported backends**: TensorFlow {{ tensorflow_icon }}
 :::
+<!-- we plan to drop TensorFlow backend multi-task training. Replace with the PyTorch one -->
 
 ## Theory
 

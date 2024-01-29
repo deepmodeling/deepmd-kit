@@ -14,24 +14,63 @@ cd deepmd-kit
 deepmd_source_dir=`pwd`
 ```
 
-## Install the python interface
-### Install Tensorflow's python interface
-First, check the python version on your machine.
+## Install the Python interface
+### Install Backend's Python interface
+First, check the Python version on your machine.
 Python 3.8 or above is required.
 ```bash
 python --version
 ```
 
-We follow the virtual environment approach to install TensorFlow's Python interface. The full instruction can be found on the official [TensorFlow website](https://www.tensorflow.org/install/pip). TensorFlow 2.2 or later is supported. Now we assume that the Python interface will be installed to the virtual environment directory `$tensorflow_venv`
+We follow the virtual environment approach to install the backend's Python interface.
+Now we assume that the Python interface will be installed in the virtual environment directory `$deepmd_venv`:
+
 ```bash
-virtualenv -p python3 $tensorflow_venv
-source $tensorflow_venv/bin/activate
+virtualenv -p python3 $deepmd_venv
+source $deepmd_venv/bin/activate
 pip install --upgrade pip
+```
+
+::::{tab-set}
+
+:::{tab-item} TensorFlow {{ tensorflow_icon }}
+
+The full instruction to install TensorFlow can be found on the official [TensorFlow website](https://www.tensorflow.org/install/pip). TensorFlow 2.2 or later is supported.
+```bash
 pip install --upgrade tensorflow
 ```
+
+If one does not need the GPU support of DeePMD-kit and is concerned about package size, the CPU-only version of TensorFlow should be installed by
+```bash
+pip install --upgrade tensorflow-cpu
+```
+
+To verify the installation, run
+```bash
+python -c "import tensorflow as tf;print(tf.reduce_sum(tf.random.normal([1000, 1000])))"
+```
+
+One can also [build the TensorFlow Python interface from source](https://www.tensorflow.org/install/source) for customized hardware optimization, such as CUDA, ROCM, or OneDNN support.
+
+:::
+
+:::{tab-item} PyTorch {{ pytorch_icon }}
+
+To install PyTorch, run
+
+```sh
+pip install torch
+```
+
+Follow [PyTorch documentation](https://pytorch.org/get-started/locally/) to install PyTorch built against different CUDA versions or without CUDA.
+
+:::
+
+::::
+
 It is important that every time a new shell is started and one wants to use `DeePMD-kit`, the virtual environment should be activated by
 ```bash
-source $tensorflow_venv/bin/activate
+source $deepmd_venv/bin/activate
 ```
 if one wants to skip out of the virtual environment, he/she can do
 ```bash
@@ -39,19 +78,9 @@ deactivate
 ```
 If one has multiple python interpreters named something like python3.x, it can be specified by, for example
 ```bash
-virtualenv -p python3.8 $tensorflow_venv
-```
-If one does not need the GPU support of DeePMD-kit and is concerned about package size, the CPU-only version of TensorFlow should be installed by
-```bash
-pip install --upgrade tensorflow-cpu
-```
-To verify the installation, run
-```bash
-python -c "import tensorflow as tf;print(tf.reduce_sum(tf.random.normal([1000, 1000])))"
+virtualenv -p python3.8 $deepmd_venv
 ```
 One should remember to activate the virtual environment every time he/she uses DeePMD-kit.
-
-One can also [build the TensorFlow Python interface from source](https://www.tensorflow.org/install/source) for custom hardware optimization, such as CUDA, ROCM, or OneDNN support.
 
 ### Install the DeePMD-kit's python interface
 
@@ -106,7 +135,7 @@ Valid subcommands:
     test               test the model
 ```
 
-### Install horovod and mpi4py
+### Install horovod and mpi4py {{ tensorflow_icon }}
 
 [Horovod](https://github.com/horovod/horovod) and [mpi4py](https://github.com/mpi4py/mpi4py) are used for parallel training. For better performance on GPU, please follow the tuning steps in [Horovod on GPU](https://github.com/horovod/horovod/blob/master/docs/gpus.rst).
 ```bash
@@ -152,13 +181,28 @@ If you don't install Horovod, DeePMD-kit will fall back to serial mode.
 
 If one does not need to use DeePMD-kit with Lammps or I-Pi, then the python interface installed in the previous section does everything and he/she can safely skip this section.
 
-### Install Tensorflow's C++ interface (optional)
+### Install Backends' C++ interface (optional)
+
+::::{tab-set}
+
+:::{tab-item} TensorFlow {{ tensorflow_icon }}
 
 Since TensorFlow 2.12, TensorFlow C++ library (`libtensorflow_cc`) is packaged inside the Python library. Thus, you can skip building TensorFlow C++ library manually. If that does not work for you, you can still build it manually.
 
 The C++ interface of DeePMD-kit was tested with compiler GCC >= 4.8. It is noticed that the I-Pi support is only compiled with GCC >= 4.8. Note that TensorFlow may have specific requirements for the compiler version.
 
 First, the C++ interface of Tensorflow should be installed. It is noted that the version of Tensorflow should be consistent with the python interface. You may follow [the instruction](install-tf.2.12.md) or run the script `$deepmd_source_dir/source/install/build_tf.py` to install the corresponding C++ interface.
+
+:::
+
+:::{tab-item} PyTorch {{ pytorch_icon }}
+
+If you have installed PyTorch using pip, you can use libtorch inside the PyTorch Python package.
+You can also download libtorch prebuilt library from the [PyTorch website](https://pytorch.org/get-started/locally/).
+
+:::
+
+::::
 
 ### Install DeePMD-kit's C++ interface
 
@@ -175,25 +219,46 @@ The installation requires CMake 3.16 or later for the CPU version, CMake 3.23 or
 pip install -U cmake
 ```
 
+You must enable at least one backend.
+If you enable two or more backends, these backend libraries must be built in a compatible way, e.g. using the same `_GLIBCXX_USE_CXX11_ABI` flag.
+
+::::{tab-set}
+
+:::{tab-item} TensorFlow {{ tensorflow_icon }}
+
 I assume you have activated the TensorFlow Python environment and want to install DeePMD-kit into path `$deepmd_root`, then execute CMake
 ```bash
-cmake -DUSE_TF_PYTHON_LIBS=TRUE -DCMAKE_INSTALL_PREFIX=$deepmd_root ..
+cmake -DENABLE_TENSORFLOW=TRUE -DUSE_TF_PYTHON_LIBS=TRUE -DCMAKE_INSTALL_PREFIX=$deepmd_root ..
 ```
 
 If you specify `-DUSE_TF_PYTHON_LIBS=FALSE`, you need to give the location where TensorFlow's C++ interface is installed to `-DTENSORFLOW_ROOT=${tensorflow_root}`.
+
+:::
+
+:::{tab-item} PyTorch {{ pytorch_icon }}
+
+I assume you have installed the PyTorch (either Python or C++ interface) to `$torch_root`, then execute CMake
+```bash
+cmake -DENABLE_PYTORCH=TRUE -DCMAKE_PREFIX_PATH=$torch_root -DCMAKE_INSTALL_PREFIX=$deepmd_root ..
+```
+:::
+
+::::
 
 One may add the following arguments to `cmake`:
 
 | CMake Aurgements         | Allowed value       | Default value | Usage                   |
 | ------------------------ | ------------------- | ------------- | ------------------------|
-| -DTENSORFLOW_ROOT=&lt;value&gt;  | Path              | -             | The Path to TensorFlow's C++ interface. |
+| -DENABLE_TENSORFLOW=&lt;value&gt;  | `TRUE` or `FALSE` | `FALSE`     | {{ tensorflow_icon }} Whether building the TensorFlow backend. |
+| -DENABLE_PYTORCH=&lt;value&gt;  | `TRUE` or `FALSE` | `FALSE`     | {{ pytorch_icon }} Whether building the PyTorch backend. |
+| -DTENSORFLOW_ROOT=&lt;value&gt;  | Path              | -             | {{ tensorflow_icon }} The Path to TensorFlow's C++ interface. |
 | -DCMAKE_INSTALL_PREFIX=&lt;value&gt; | Path          | -             | The Path where DeePMD-kit will be installed. |
 | -DUSE_CUDA_TOOLKIT=&lt;value&gt; | `TRUE` or `FALSE` | `FALSE`       | If `TRUE`, Build GPU support with CUDA toolkit. |
 | -DCUDAToolkit_ROOT=&lt;value&gt; | Path         | Detected automatically | The path to the CUDA toolkit directory. CUDA 9.0 or later is supported. NVCC is required. |
 | -DUSE_ROCM_TOOLKIT=&lt;value&gt; | `TRUE` or `FALSE` | `FALSE`       | If `TRUE`, Build GPU support with ROCM toolkit. |
 | -DCMAKE_HIP_COMPILER_ROCM_ROOT=&lt;value&gt; | Path         | Detected automatically | The path to the ROCM toolkit directory. |
 | -DLAMMPS_SOURCE_ROOT=&lt;value&gt; | Path         | - | Only neccessary for LAMMPS plugin mode. The path to the [LAMMPS source code](install-lammps.md). LAMMPS 8Apr2021 or later is supported. If not assigned, the plugin mode will not be enabled. |
-| -DUSE_TF_PYTHON_LIBS=&lt;value&gt; | `TRUE` or `FALSE` | `FALSE`       | If `TRUE`, Build C++ interface with TensorFlow's Python libraries(TensorFlow's Python Interface is required). And there's no need for building TensorFlow's C++ interface.|
+| -DUSE_TF_PYTHON_LIBS=&lt;value&gt; | `TRUE` or `FALSE` | `FALSE`       | {{ tensorflow_icon }} If `TRUE`, Build C++ interface with TensorFlow's Python libraries (TensorFlow's Python Interface is required). And there's no need for building TensorFlow's C++ interface.|
 | -DENABLE_NATIVE_OPTIMIZATION=&lt;value&gt;       | `TRUE` or `FALSE` | `FALSE`       | Enable compilation optimization for the native machine's CPU type. Do not enable it if generated code will run on different CPUs. |
 | -DCMAKE_&lt;LANG&gt;_FLAGS=&lt;value&gt; (`<LANG>`=`CXX`, `CUDA` or `HIP`)   | str            | -             | Default compilation flags to be used when compiling `<LANG>` files. See [CMake documentation](https://cmake.org/cmake/help/latest/variable/CMAKE_LANG_FLAGS.html). |
 
