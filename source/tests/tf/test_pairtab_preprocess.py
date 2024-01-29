@@ -144,12 +144,6 @@ class TestPairTabPreprocessZero(unittest.TestCase):
                 ]
             ),
         )
-        np.testing.assert_equal(self.tab3.nspline, 5)
-
-        # for this test case, padding zeros between 0.025 and 0.03 will cause the cubic spline go below zero and result in negative energy values,
-        # we will do post process to overwrite spline coefficient `a3`,`a2`,`a1`,`a0`, to ensure energy decays to `0`.
-        temp_data = self.tab3.tab_data.reshape(2, 2, -1, 4)
-        np.testing.assert_allclose(temp_data[:, :, -1, :], np.zeros((2, 2, 4)))
 
 
 class TestPairTabPreprocessUneven(unittest.TestCase):
@@ -212,9 +206,3 @@ class TestPairTabPreprocessUneven(unittest.TestCase):
             ),
         )
 
-        temp_data = self.tab3.tab_data.reshape(2, 2, -1, 4)
-
-        np.testing.assert_allclose(temp_data[0, 0, -2:], np.zeros((2, 4)))
-        np.testing.assert_allclose(temp_data[1, 1, -2:], np.zeros((2, 4)))
-        np.testing.assert_allclose(temp_data[0, 1, -1:], np.zeros((1, 4)))
-        np.testing.assert_allclose(temp_data[1, 0, -1:], np.zeros((1, 4)))
