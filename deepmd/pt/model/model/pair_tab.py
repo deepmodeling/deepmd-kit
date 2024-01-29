@@ -57,10 +57,7 @@ class PairTabModel(nn.Module, AtomicModel):
         self.tab_file = tab_file
         self.rcut = rcut
 
-        # check table data against rcut and update tab_file if needed.
-        self._check_table_upper_boundary()
-
-        self.tab = PairTab(self.tab_file)
+        self.tab = PairTab(self.tab_file, rcut=rcut)
         self.ntypes = self.tab.ntypes
 
         tab_info, tab_data = self.tab.get()  # this returns -> Tuple[np.array, np.array]
@@ -140,96 +137,6 @@ class PairTabModel(nn.Module, AtomicModel):
 
         return {"energy": atomic_energy}
 
-    def _check_table_upper_boundary(self):
-        """Update User Provided Table Based on `rcut`.
-
-        This function checks the upper boundary provided in the table against rcut.
-        If the table upper boundary values decay to zero before rcut, padding zeros will
-        be added to the table to cover rcut; if the table upper boundary values do not decay to zero
-        before ruct, linear extrapolation will be performed till rcut. In both cases, the table file
-        will be overwritten.
-
-        Examples
-        --------
-        table = [[0.005 1.    2.    3.   ]
-                [0.01  0.8   1.6   2.4  ]
-                [0.015 0.    1.    1.5  ]]
-
-        rcut = 0.022
-
-        new_table = [[0.005 1.    2.    3.   ]
-                    [0.01  0.8   1.6   2.4  ]
-                    [0.015 0.    1.    1.5  ]
-                    [0.02  0.    0.    0.   ]
-                    [0.025 0.    0.    0.   ]]
-
-        ----------------------------------------------
-
-        table = [[0.005 1.    2.    3.   ]
-                [0.01  0.8   1.6   2.4  ]
-                [0.015 0.5   1.    1.5  ]
-                [0.02  0.25  0.4   0.75 ]
-                [0.025 0.    0.1   0.   ]
-                [0.03  0.    0.    0.   ]]
-
-        rcut = 0.031
-
-        new_table = [[0.005 1.    2.    3.   ]
-                    [0.01  0.8   1.6   2.4  ]
-                    [0.015 0.5   1.    1.5  ]
-                    [0.02  0.25  0.4   0.75 ]
-                    [0.025 0.    0.1   0.   ]
-                    [0.03  0.    0.    0.   ]
-                    [0.035 0.    0.    0.   ]]
-        """
-        raw_data = np.loadtxt(self.tab_file)
-        upper = raw_data[-1][0]
-        upper_val = raw_data[-1][1:]
-        upper_idx = raw_data.shape[0] - 1
-        increment = raw_data[1][0] - raw_data[0][0]
-
-        # the index of table for the grid point right after rcut
-        rcut_idx = int(self.rcut / increment)
-
-        if np.all(upper_val == 0):
-            # if table values decay to `0` after rcut
-            if self.rcut < upper and np.any(raw_data[rcut_idx - 1][1:] != 0):
-                logging.warning(
-                    "The energy provided in the table does not decay to 0 at rcut."
-                )
-            # if table values decay to `0` at rcut, do nothing
-
-            # if table values decay to `0` before rcut, pad table with `0`s.
-            elif self.rcut > upper:
-                pad_zero = np.zeros((rcut_idx - upper_idx, 4))
-                pad_zero[:, 0] = np.linspace(
-                    upper + increment, increment * (rcut_idx + 1), rcut_idx - upper_idx
-                )
-                raw_data = np.concatenate((raw_data, pad_zero), axis=0)
-        else:
-            # if table values do not decay to `0` at rcut
-            if self.rcut <= upper:
-                logging.warning(
-                    "The energy provided in the table does not decay to 0 at rcut."
-                )
-            # if rcut goes beyond table upper bond, need extrapolation, ensure values decay to `0` before rcut.
-            else:
-                logging.warning(
-                    "The rcut goes beyond table upper boundary, performing linear extrapolation."
-                )
-                pad_linear = np.zeros((rcut_idx - upper_idx + 1, 4))
-                pad_linear[:, 0] = np.linspace(
-                    upper, increment * (rcut_idx + 1), rcut_idx - upper_idx + 1
-                )
-                pad_linear[:-1, 1:] = np.array(
-                    [np.linspace(start, 0, rcut_idx - upper_idx) for start in upper_val]
-                ).T
-                raw_data = np.concatenate((raw_data[:-1, :], pad_linear), axis=0)
-
-        # over writing file with padding if applicable.
-        with open(self.tab_file, "wb") as f:
-            np.savetxt(f, raw_data)
-
     def _pair_tabulated_inter(
         self,
         nlist: torch.Tensor,
@@ -285,6 +192,11 @@ class PairTabModel(nn.Module, AtomicModel):
         uu -= idx
 
         final_coef = self._extract_spline_coefficient(i_type, j_type, idx)
+
+        # here we need to do postprocess to overwrite coefficients when table values are not zero at rcut in linear extrapolation.
+        if self.tab.rmax < self.rcut:
+            post_mask = rr >= self.rcut
+            final_coef[post_mask] = torch.zeros(4)
 
         a3, a2, a1, a0 = torch.unbind(final_coef, dim=-1)  # 4 * (nframes, nloc, nnei)
 

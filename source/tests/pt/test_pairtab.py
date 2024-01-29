@@ -25,7 +25,7 @@ class TestPairTab(unittest.TestCase):
             ]
         )
 
-        self.model = PairTabModel(tab_file=file_path, rcut=0.1, sel=2)
+        self.model = PairTabModel(tab_file=file_path, rcut=0.02, sel=2)
 
         self.extended_coord = torch.tensor(
             [
