@@ -127,6 +127,12 @@ def get_tf_requirement(tf_version: str = "") -> dict:
     dict
         TensorFlow requirement, including cpu and gpu.
     """
+    if tf_version is None:
+        return {
+            "cpu": [],
+            "gpu": [],
+            "mpi": [],
+        }
     if tf_version == "":
         tf_version = os.environ.get("TENSORFLOW_VERSION", "")
 
