@@ -876,7 +876,7 @@ class DeepmdDataSet(Dataset):
     def __getitem__(self, index=None):
         """Get a batch of frames from the selected system."""
         if index is None:
-            index = dp_random.choice(np.arange(self.nsystems), self.probs)
+            index = dp_random.choice(np.arange(self.nsystems), p=self.probs)
         b_data = self._data_systems[index].get_batch(self._batch_size)
         b_data["natoms"] = torch.tensor(
             self._natoms_vec[index], device=env.PREPROCESS_DEVICE
@@ -889,7 +889,7 @@ class DeepmdDataSet(Dataset):
     def get_training_batch(self, index=None):
         """Get a batch of frames from the selected system."""
         if index is None:
-            index = dp_random.choice(np.arange(self.nsystems), self.probs)
+            index = dp_random.choice(np.arange(self.nsystems), p=self.probs)
         b_data = self._data_systems[index].get_batch_for_train(self._batch_size)
         b_data["natoms"] = torch.tensor(
             self._natoms_vec[index], device=env.PREPROCESS_DEVICE
