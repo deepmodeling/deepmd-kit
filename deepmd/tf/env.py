@@ -472,7 +472,6 @@ def _get_package_constants(
 
 
 GLOBAL_CONFIG = _get_package_constants()
-print(GLOBAL_CONFIG)
 if GLOBAL_CONFIG["enable_tensorflow"] == "0":
     raise RuntimeError(
         "TensorFlow backend is not built. To enable it, "
