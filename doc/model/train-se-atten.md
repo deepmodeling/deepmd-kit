@@ -1,7 +1,7 @@
-# Descriptor `"se_atten"` {{ tensorflow_icon }}
+# Descriptor `"se_atten"` {{ tensorflow_icon }} {{ pytorch_icon }}
 
 :::{note}
-**Supported backends**: TensorFlow {{ tensorflow_icon }}
+**Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}
 :::
 
 ## DPA-1: Pretraining of Attention-based Deep Potential Model for Molecular Simulation

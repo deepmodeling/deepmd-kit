@@ -130,7 +130,7 @@ test-command = [
     "python -m deepmd -h",
     "dp -h",
     "dp_ipi",
-    "pytest {project}/source/tests/test_lammps.py"
+    "pytest {project}/source/tests/tf/test_lammps.py"
 ]
 test-extras = ["cpu", "test", "lmp", "ipi"]
 build = ["cp310-*"]

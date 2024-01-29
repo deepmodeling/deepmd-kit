@@ -3,9 +3,6 @@ import logging
 
 import numpy as np
 import torch
-from tqdm import (
-    trange,
-)
 
 from deepmd.pt.utils import (
     env,
@@ -40,7 +37,7 @@ def make_stat_input(datasets, dataloaders, nbatches):
     if datasets[0].mixed_type:
         keys.append("real_natoms_vec")
     logging.info(f"Packing data for statistics from {len(datasets)} systems")
-    for i in trange(len(datasets), disable=env.DISABLE_TQDM):
+    for i in range(len(datasets)):
         sys_stat = {key: [] for key in keys}
         iterator = iter(dataloaders[i])
         for _ in range(nbatches):

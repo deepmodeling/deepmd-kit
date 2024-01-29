@@ -94,6 +94,7 @@ extensions = [
     "breathe",
     "exhale",
     "sphinxcontrib.bibtex",
+    "sphinx_design",
 ]
 
 # breathe_domain_by_extension = {

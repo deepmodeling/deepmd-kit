@@ -13,9 +13,6 @@ import torch.distributed as dist
 from torch.utils.data import (
     Dataset,
 )
-from tqdm import (
-    trange,
-)
 
 from deepmd.pt.utils import (
     dp_random,
@@ -506,7 +503,7 @@ class DeepmdDataSystem:
         assert batch["atype"].max() < len(self._type_map)
         nlist, nlist_loc, nlist_type, shift, mapping = [], [], [], [], []
 
-        for sid in trange(n_frames, disable=env.DISABLE_TQDM):
+        for sid in range(n_frames):
             region = Region3D(box[sid])
             nloc = atype[sid].shape[0]
             _coord = normalize_coord(coord[sid], region, nloc)
@@ -879,7 +876,7 @@ class DeepmdDataSet(Dataset):
     def __getitem__(self, index=None):
         """Get a batch of frames from the selected system."""
         if index is None:
-            index = dp_random.choice(np.arange(self.nsystems), self.probs)
+            index = dp_random.choice(np.arange(self.nsystems), p=self.probs)
         b_data = self._data_systems[index].get_batch(self._batch_size)
         b_data["natoms"] = torch.tensor(
             self._natoms_vec[index], device=env.PREPROCESS_DEVICE
@@ -892,7 +889,7 @@ class DeepmdDataSet(Dataset):
     def get_training_batch(self, index=None):
         """Get a batch of frames from the selected system."""
         if index is None:
-            index = dp_random.choice(np.arange(self.nsystems), self.probs)
+            index = dp_random.choice(np.arange(self.nsystems), p=self.probs)
         b_data = self._data_systems[index].get_batch_for_train(self._batch_size)
         b_data["natoms"] = torch.tensor(
             self._natoms_vec[index], device=env.PREPROCESS_DEVICE
