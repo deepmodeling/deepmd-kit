@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import logging
 from typing import (
     Dict,
     List,
@@ -7,7 +6,6 @@ from typing import (
     Union,
 )
 
-import numpy as np
 import torch
 from torch import (
     nn,

@@ -1,17 +1,16 @@
 #!/usr/bin/env python3
 
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import logging
 from typing import (
+    Optional,
     Tuple,
-    Optional
 )
 
 import numpy as np
 from scipy.interpolate import (
     CubicSpline,
 )
-
-import logging
 
 
 class PairTab:
@@ -105,7 +104,6 @@ class PairTab:
                     [0.03  0.    0.    0.   ]
                     [0.035 0.    0.    0.   ]]
         """
-        
         upper_val = self.vdata[-1][1:]
         upper_idx = self.vdata.shape[0] - 1
 
@@ -147,13 +145,11 @@ class PairTab:
                 ).T
                 self.vdata = np.concatenate((self.vdata[:-1, :], pad_linear), axis=0)
 
-
     def get(self) -> Tuple[np.array, np.array]:
         """Get the serialized table."""
         return self.tab_info, self.tab_data
 
     def _make_data(self):
-
         # here we need to do postprocess, to overwrite coefficients when padding zeros resulting in negative energies.
         data = np.zeros([self.ntypes * self.ntypes * 4 * self.nspline])
         stride = 4 * self.nspline
@@ -168,10 +164,16 @@ class PairTab:
                 dtmp = np.zeros(stride)
                 for ii in range(self.nspline):
                     # check if vv is zero, if so, that's case 1, set all coefficients to 0,
-                    dtmp[ii * 4 + 0] = 2 * vv[ii] - 2 * vv[ii + 1] + dd[ii] + dd[ii + 1] if vv[ii] != 0 else 0
+                    dtmp[ii * 4 + 0] = (
+                        2 * vv[ii] - 2 * vv[ii + 1] + dd[ii] + dd[ii + 1]
+                        if vv[ii] != 0
+                        else 0
+                    )
                     dtmp[ii * 4 + 1] = (
-                        -3 * vv[ii] + 3 * vv[ii + 1] - 2 * dd[ii] - dd[ii + 1]
-                    ) if vv[ii] != 0 else 0
+                        (-3 * vv[ii] + 3 * vv[ii + 1] - 2 * dd[ii] - dd[ii + 1])
+                        if vv[ii] != 0
+                        else 0
+                    )
                     dtmp[ii * 4 + 2] = dd[ii] if vv[ii] != 0 else 0
                     dtmp[ii * 4 + 3] = vv[ii]
                 data[
