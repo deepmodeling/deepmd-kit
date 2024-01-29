@@ -6,7 +6,7 @@ RUN python -m venv /opt/deepmd-kit
 ENV PATH="/opt/deepmd-kit/bin:$PATH"
 # Install package
 COPY dist /dist
-RUN if [ ${CUDA_VERSION} = 11 ]; then export PIP_INDEX_URL=https://download.pytorch.org/whl/cu118; fi \
+RUN if [ "${CUDA_VERSION}" = 11 ]; then export PIP_INDEX_URL=https://download.pytorch.org/whl/cu118; fi \
     && pip install "$(ls /dist/deepmd_kit${VARIANT}-*manylinux*_x86_64.whl)[gpu,cu${CUDA_VERSION},lmp,ipi,torch]" \
     && dp -h \
     && lmp -h \
