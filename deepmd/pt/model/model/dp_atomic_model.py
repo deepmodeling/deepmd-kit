@@ -14,7 +14,6 @@ from deepmd.pt.model.descriptor.descriptor import (
     Descriptor,
 )
 from deepmd.pt.model.task import (
-    DenoiseNet,
     Fitting,
 )
 
@@ -93,40 +92,20 @@ class DPAtomicModel(BaseModel, AtomicModel):
             sampled=sampled,
         )
 
-        # Fitting
-        if fitting_net:
-            fitting_net["type"] = fitting_net.get("type", "ener")
-            if self.descriptor_type not in ["se_e2_a"]:
-                fitting_net["ntypes"] = 1
-            else:
-                fitting_net["ntypes"] = self.descriptor.get_ntype()
-                fitting_net["use_tebd"] = False
-            fitting_net["embedding_width"] = self.descriptor.dim_out
-
-            self.grad_force = "direct" not in fitting_net["type"]
-            if not self.grad_force:
-                fitting_net["out_dim"] = self.descriptor.dim_emb
-                if "ener" in fitting_net["type"]:
-                    fitting_net["return_energy"] = True
-            self.fitting_net = Fitting(**fitting_net)
+        fitting_net["type"] = fitting_net.get("type", "ener")
+        if self.descriptor_type not in ["se_e2_a"]:
+            fitting_net["ntypes"] = 1
         else:
-            self.fitting_net = None
-            self.grad_force = False
-            if not self.split_nlist:
-                self.coord_denoise_net = DenoiseNet(
-                    self.descriptor.dim_out, self.ntypes - 1, self.descriptor.dim_emb
-                )
-            elif self.combination:
-                self.coord_denoise_net = DenoiseNet(
-                    self.descriptor.dim_out,
-                    self.ntypes - 1,
-                    self.descriptor.dim_emb_list,
-                    self.prefactor,
-                )
-            else:
-                self.coord_denoise_net = DenoiseNet(
-                    self.descriptor.dim_out, self.ntypes - 1, self.descriptor.dim_emb
-                )
+            fitting_net["ntypes"] = self.descriptor.get_ntype()
+            fitting_net["use_tebd"] = False
+        fitting_net["embedding_width"] = self.descriptor.dim_out
+
+        self.grad_force = "direct" not in fitting_net["type"]
+        if not self.grad_force:
+            fitting_net["out_dim"] = self.descriptor.dim_emb
+            if "ener" in fitting_net["type"]:
+                fitting_net["return_energy"] = True
+        self.fitting_net = Fitting(**fitting_net)
 
     def get_fitting_output_def(self) -> FittingOutputDef:
         """Get the output def of the fitting net."""
@@ -178,7 +157,7 @@ class DPAtomicModel(BaseModel, AtomicModel):
         atype = extended_atype[:, :nloc]
         if self.do_grad():
             extended_coord.requires_grad_(True)
-        descriptor, env_mat, diff, rot_mat, sw = self.descriptor(
+        descriptor, rot_mat, g2, h2, sw = self.descriptor(
             extended_coord,
             extended_atype,
             nlist,
@@ -186,23 +165,5 @@ class DPAtomicModel(BaseModel, AtomicModel):
         )
         assert descriptor is not None
         # energy, force
-        if self.fitting_net is not None:
-            fit_ret = self.fitting_net(
-                descriptor, atype, atype_tebd=None, rot_mat=rot_mat
-            )
-        # denoise
-        else:
-            nlist_list = [nlist]
-            if not self.split_nlist:
-                nnei_mask = nlist != -1
-            elif self.combination:
-                nnei_mask = []
-                for item in nlist_list:
-                    nnei_mask_item = item != -1
-                    nnei_mask.append(nnei_mask_item)
-            else:
-                env_mat = env_mat[-1]
-                diff = diff[-1]
-                nnei_mask = nlist_list[-1] != -1
-            fit_ret = self.coord_denoise_net(env_mat, diff, nnei_mask, descriptor, sw)
+        fit_ret = self.fitting_net(descriptor, atype, atype_tebd=None, rot_mat=rot_mat)
         return fit_ret
