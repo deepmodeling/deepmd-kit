@@ -2,12 +2,13 @@
 import os
 import subprocess
 import unittest
-from pathlib import (
-    Path,
-)
 
 from deepmd.tf.utils.convert import (
     convert_pbtxt_to_pb,
+)
+
+from .common import (
+    infer_path,
 )
 
 
@@ -20,7 +21,7 @@ class TestLAMMPS(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.work_dir = (Path(__file__).parent / "infer").absolute()
+        cls.work_dir = infer_path
 
         convert_pbtxt_to_pb(
             str(cls.work_dir / "deeppot.pbtxt"), str(cls.work_dir / "deep_pot.pb")
