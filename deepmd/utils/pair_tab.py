@@ -164,13 +164,11 @@ class PairTab:
                 dtmp = np.zeros(stride)
                 for ii in range(self.nspline):
                     # check if vv is zero, if so, that's case 1, set all coefficients to 0,
-                    dtmp[ii * 4 + 0] = (
-                        2 * vv[ii] - 2 * vv[ii + 1] + dd[ii] + dd[ii + 1]
-                    )
+                    dtmp[ii * 4 + 0] = 2 * vv[ii] - 2 * vv[ii + 1] + dd[ii] + dd[ii + 1]
                     dtmp[ii * 4 + 1] = (
-                        (-3 * vv[ii] + 3 * vv[ii + 1] - 2 * dd[ii] - dd[ii + 1])
+                        -3 * vv[ii] + 3 * vv[ii + 1] - 2 * dd[ii] - dd[ii + 1]
                     )
-                    dtmp[ii * 4 + 2] = dd[ii] 
+                    dtmp[ii * 4 + 2] = dd[ii]
                     dtmp[ii * 4 + 3] = vv[ii]
                 data[
                     (t0 * self.ntypes + t1) * stride : (t0 * self.ntypes + t1) * stride
