@@ -90,6 +90,5 @@ def dynamic_metadata(
             ],
             "torch": [
                 "torch>=2a",
-                "tqdm",
             ],
         }

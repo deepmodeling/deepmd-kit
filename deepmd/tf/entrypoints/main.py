@@ -73,8 +73,10 @@ def main(args: Optional[Union[List[str], argparse.Namespace]] = None):
     if args.command == "train":
         train_dp(**dict_args)
     elif args.command == "freeze":
+        dict_args["output"] = str(Path(dict_args["output"]).with_suffix(".pb"))
         freeze(**dict_args)
     elif args.command == "test":
+        dict_args["model"] = str(Path(dict_args["model"]).with_suffix(".pb"))
         test(**dict_args)
     elif args.command == "transfer":
         transfer(**dict_args)
@@ -83,6 +85,12 @@ def main(args: Optional[Union[List[str], argparse.Namespace]] = None):
     elif args.command == "doc-train-input":
         doc_train_input(**dict_args)
     elif args.command == "model-devi":
+        dict_args["models"] = [
+            str(Path(mm).with_suffix(".pb"))
+            if Path(mm).suffix not in (".pb", ".pt")
+            else mm
+            for mm in dict_args["models"]
+        ]
         make_model_devi(**dict_args)
     elif args.command == "convert-from":
         convert(**dict_args)
