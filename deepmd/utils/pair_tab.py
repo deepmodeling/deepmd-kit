@@ -127,7 +127,7 @@ class PairTab:
                 self.vdata = np.concatenate((self.vdata, pad_zero), axis=0)
         else:
             # if table values do not decay to `0` at rcut
-            if self.rcut <= self.rmax:
+            if self.rcut < self.rmax:
                 logging.warning(
                     "The energy provided in the table does not decay to 0 at rcut."
                 )
