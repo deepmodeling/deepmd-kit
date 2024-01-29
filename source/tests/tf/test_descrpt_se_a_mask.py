@@ -226,6 +226,10 @@ class TestModel(tf.test.TestCase):
         jfile = "zinc_se_a_mask.json"
         jdata = j_loader(jfile)
 
+        jdata["training"]["training_data"]["systems"] = str(tests_path / "data_dp_mask")
+        jdata["training"]["validation_data"]["systems"] = str(
+            tests_path / "data_dp_mask"
+        )
         systems = j_must_have(jdata["training"]["validation_data"], "systems")
         # set_pfx = j_must_have(jdata['validation_data'], "set_prefix")
         set_pfx = "set"

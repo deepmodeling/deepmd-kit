@@ -46,7 +46,6 @@ class TestModelSpin(tf.test.TestCase):
         jdata = j_loader(jfile)
 
         # set system information
-        systems = j_must_have(jdata["training"]["training_data"], "systems")
         set_pfx = j_must_have(jdata["training"], "set_prefix")
         batch_size = j_must_have(jdata["training"]["training_data"], "batch_size")
         batch_size = 2
@@ -59,6 +58,7 @@ class TestModelSpin(tf.test.TestCase):
         jdata["training"]["validation_data"]["systems"] = [
             str(tests_path / "model_spin/")
         ]
+        systems = j_must_have(jdata["training"]["training_data"], "systems")
         data = DataSystem(systems, set_pfx, batch_size, test_size, rcut, run_opt=None)
         test_data = data.get_test()
 

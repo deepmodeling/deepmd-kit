@@ -2,8 +2,9 @@
 """Test if `DeepPotential` facto function returns the right type of potential."""
 
 import unittest
-from pathlib import (
-    Path,
+
+from common import (
+    infer_path,
 )
 
 from deepmd.tf.infer import (
@@ -19,7 +20,7 @@ from deepmd.tf.utils.convert import (
 
 class TestGetPotential(unittest.TestCase):
     def setUp(self):
-        self.work_dir = Path(__file__).parent / "infer"
+        self.work_dir = infer_path
 
         convert_pbtxt_to_pb(
             str(self.work_dir / "deeppot.pbtxt"), str(self.work_dir / "deep_pot.pb")
