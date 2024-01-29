@@ -4,8 +4,16 @@ from typing import (
     Optional,
 )
 
+import numpy as np
 import torch
 import torch.nn.functional as F
+
+from deepmd.model_format.common import PRECISION_DICT as NP_PRECISION_DICT
+
+from .env import (
+    DEVICE,
+)
+from .env import PRECISION_DICT as PT_PRECISION_DICT
 
 
 def get_activation_fn(activation: str) -> Callable:
@@ -41,3 +49,27 @@ class ActivationFn(torch.nn.Module):
             return x
         else:
             raise RuntimeError(f"activation function {self.activation} not supported")
+
+
+def to_numpy_array(
+    xx: torch.Tensor,
+) -> np.ndarray:
+    if xx is not None:
+        prec = [key for key, value in PT_PRECISION_DICT.items() if value == xx.dtype]
+        if len(prec) == 0:
+            raise ValueError(f"unknown precision {xx.dtype}")
+        else:
+            prec = NP_PRECISION_DICT[prec[0]]
+    return xx.detach().cpu().numpy().astype(prec) if xx is not None else None
+
+
+def to_torch_tensor(
+    xx: np.ndarray,
+) -> torch.Tensor:
+    if xx is not None:
+        prec = [key for key, value in NP_PRECISION_DICT.items() if value == xx.dtype]
+        if len(prec) == 0:
+            raise ValueError(f"unknown precision {xx.dtype}")
+        else:
+            prec = PT_PRECISION_DICT[prec[0]]
+    return torch.tensor(xx, dtype=prec, device=DEVICE) if xx is not None else None

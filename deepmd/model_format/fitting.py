@@ -8,12 +8,6 @@ from typing import (
 
 import numpy as np
 
-from deepmd.model_format import (
-    FittingOutputDef,
-    OutputVariableDef,
-    fitting_check_output,
-)
-
 from .common import (
     DEFAULT_PRECISION,
     NativeOP,
@@ -21,6 +15,11 @@ from .common import (
 from .network import (
     FittingNet,
     NetworkCollection,
+)
+from .output_def import (
+    FittingOutputDef,
+    OutputVariableDef,
+    fitting_check_output,
 )
 
 

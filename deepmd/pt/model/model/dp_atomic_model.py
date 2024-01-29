@@ -94,7 +94,7 @@ class DPAtomicModel(BaseModel, AtomicModel):
 
         fitting_net["type"] = fitting_net.get("type", "ener")
         if self.descriptor_type not in ["se_e2_a"]:
-            fitting_net["ntypes"] = 1
+            fitting_net["ntypes"] = self.descriptor.get_ntype()
         else:
             fitting_net["ntypes"] = self.descriptor.get_ntype()
             fitting_net["use_tebd"] = False
@@ -165,5 +165,5 @@ class DPAtomicModel(BaseModel, AtomicModel):
         )
         assert descriptor is not None
         # energy, force
-        fit_ret = self.fitting_net(descriptor, atype, atype_tebd=None, rot_mat=rot_mat)
+        fit_ret = self.fitting_net(descriptor, atype, gr=rot_mat)
         return fit_ret
