@@ -329,6 +329,36 @@ class DescrptDPA2(Descriptor):
         nlist: torch.Tensor,
         mapping: Optional[torch.Tensor] = None,
     ):
+        """Compute the descriptor.
+
+        Parameters
+        ----------
+        coord_ext
+            The extended coordinates of atoms. shape: nf x (nallx3)
+        atype_ext
+            The extended aotm types. shape: nf x nall
+        nlist
+            The neighbor list. shape: nf x nloc x nnei
+        mapping
+            The index mapping, mapps extended region index to local region.
+
+        Returns
+        -------
+        descriptor
+            The descriptor. shape: nf x nloc x (ng x axis_neuron)
+        gr
+            The rotationally equivariant and permutationally invariant single particle
+            representation. shape: nf x nloc x ng x 3
+        g2
+            The rotationally invariant pair-partical representation.
+            shape: nf x nloc x nnei x ng
+        h2
+            The rotationally equivariant pair-partical representation.
+            shape: nf x nloc x nnei x 3
+        sw
+            The smooth switch function. shape: nf x nloc x nnei
+
+        """
         nframes, nloc, nnei = nlist.shape
         nall = extended_coord.view(nframes, -1).shape[1] // 3
         # nlists
@@ -372,4 +402,4 @@ class DescrptDPA2(Descriptor):
         )
         if self.concat_output_tebd:
             g1 = torch.cat([g1, g1_inp], dim=-1)
-        return g1, g2, h2, rot_mat, sw
+        return g1, rot_mat, g2, h2, sw

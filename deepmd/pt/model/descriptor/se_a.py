@@ -115,12 +115,42 @@ class DescrptSeA(Descriptor):
 
     def forward(
         self,
-        extended_coord: torch.Tensor,
-        extended_atype: torch.Tensor,
+        coord_ext: torch.Tensor,
+        atype_ext: torch.Tensor,
         nlist: torch.Tensor,
         mapping: Optional[torch.Tensor] = None,
     ):
-        return self.sea.forward(nlist, extended_coord, extended_atype, None, mapping)
+        """Compute the descriptor.
+
+        Parameters
+        ----------
+        coord_ext
+            The extended coordinates of atoms. shape: nf x (nallx3)
+        atype_ext
+            The extended aotm types. shape: nf x nall
+        nlist
+            The neighbor list. shape: nf x nloc x nnei
+        mapping
+            The index mapping, not required by this descriptor.
+
+        Returns
+        -------
+        descriptor
+            The descriptor. shape: nf x nloc x (ng x axis_neuron)
+        gr
+            The rotationally equivariant and permutationally invariant single particle
+            representation. shape: nf x nloc x ng x 3
+        g2
+            The rotationally invariant pair-partical representation.
+            this descriptor returns None
+        h2
+            The rotationally equivariant pair-partical representation.
+            this descriptor returns None
+        sw
+            The smooth switch function.
+
+        """
+        return self.sea.forward(nlist, coord_ext, atype_ext, None, mapping)
 
     def set_stat_mean_and_stddev(
         self,
@@ -389,7 +419,7 @@ class DescrptBlockSeA(DescriptorBlock):
         del extended_atype_embd, mapping
         nloc = nlist.shape[1]
         atype = extended_atype[:, :nloc]
-        dmatrix, diff, _ = prod_env_mat_se_a(
+        dmatrix, diff, sw = prod_env_mat_se_a(
             extended_coord,
             nlist,
             atype,
@@ -438,12 +468,14 @@ class DescrptBlockSeA(DescriptorBlock):
         result = torch.matmul(
             xyz_scatter_1, xyz_scatter_2
         )  # shape is [nframes*nall, self.filter_neuron[-1], self.axis_neuron]
+        result = result.view(-1, nloc, self.filter_neuron[-1] * self.axis_neuron)
+        rot_mat = rot_mat.view([-1, nloc] + list(rot_mat.shape[1:]))  # noqa:RUF005
         return (
-            result.view(-1, nloc, self.filter_neuron[-1] * self.axis_neuron),
+            result,
+            rot_mat,
             None,
             None,
-            None,
-            None,
+            sw,
         )
 
 
