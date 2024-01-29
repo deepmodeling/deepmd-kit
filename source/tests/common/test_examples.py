@@ -7,14 +7,14 @@ from pathlib import (
     Path,
 )
 
-from deepmd.tf.common import (
+from deepmd.common import (
     j_loader,
 )
-from deepmd.tf.utils.argcheck import (
+from deepmd.utils.argcheck import (
     normalize,
 )
 
-p_examples = Path(__file__).parent.parent.parent / "examples"
+p_examples = Path(__file__).parent.parent.parent.parent / "examples"
 
 input_files = (
     p_examples / "water" / "se_e2_a" / "input.json",
