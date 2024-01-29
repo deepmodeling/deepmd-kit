@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Optional,
+    Tuple,
+    Union,
 )
 
 import numpy as np
@@ -8,22 +10,35 @@ import numpy as np
 _RANDOM_GENERATOR = np.random.RandomState()
 
 
-def choice(a: np.ndarray, p: Optional[np.ndarray] = None):
+def choice(
+    a: Union[np.ndarray, int],
+    size: Optional[Union[int, Tuple[int, ...]]] = None,
+    replace: bool = True,
+    p: Optional[np.ndarray] = None,
+):
     """Generates a random sample from a given 1-D array.
 
     Parameters
     ----------
-    a : np.ndarray
-        A random sample is generated from its elements.
-    p : np.ndarray
-        The probabilities associated with each entry in a.
+    a : 1-D array-like or int
+        If an ndarray, a random sample is generated from its elements. If an int,
+        the random sample is generated as if it were np.arange(a)
+    size : int or tuple of ints, optional
+        Output shape. If the given shape is, e.g., (m, n, k), then m * n * k samples
+        are drawn. Default is None, in which case a single value is returned.
+    replace : boolean, optional
+        Whether the sample is with or without replacement. Default is True, meaning
+        that a value of a can be selected multiple times.
+    p : 1-D array-like, optional
+        The probabilities associated with each entry in a. If not given, the sample
+        assumes a uniform distribution over all entries in a.
 
     Returns
     -------
     np.ndarray
         arrays with results and their shapes
     """
-    return _RANDOM_GENERATOR.choice(a, p=p)
+    return _RANDOM_GENERATOR.choice(a, size=size, replace=replace, p=p)
 
 
 def random(size=None):
