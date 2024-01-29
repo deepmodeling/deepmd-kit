@@ -1,11 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import numpy as np
 import scipy.spatial.distance
-from common import (
-    DataSystem,
-    gen_data,
-    j_loader,
-)
 
 from deepmd.tf.common import (
     j_must_have,
@@ -15,6 +10,12 @@ from deepmd.tf.env import (
 )
 from deepmd.tf.model.model import (
     Model,
+)
+
+from .common import (
+    DataSystem,
+    gen_data,
+    j_loader,
 )
 
 GLOBAL_ENER_FLOAT_PRECISION = tf.float64

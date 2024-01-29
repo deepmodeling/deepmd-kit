@@ -4,11 +4,6 @@ import os
 import unittest
 
 import numpy as np
-from common import (
-    j_loader,
-    run_dp,
-    tests_path,
-)
 
 from deepmd.tf.env import (
     GLOBAL_NP_FLOAT_PRECISION,
@@ -31,6 +26,12 @@ from deepmd.tf.utils.data_system import (
 )
 from deepmd.tf.utils.multi_init import (
     replace_model_params_with_frz_multi_model,
+)
+
+from .common import (
+    j_loader,
+    run_dp,
+    tests_path,
 )
 
 if GLOBAL_NP_FLOAT_PRECISION == np.float32:

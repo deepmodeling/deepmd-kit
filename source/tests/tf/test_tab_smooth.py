@@ -3,13 +3,6 @@ import os
 import unittest
 
 import numpy as np
-from common import (
-    Data,
-    force_dw_test,
-    force_test,
-    virial_dw_test,
-    virial_test,
-)
 from test_descrpt_smooth import (
     Inter,
 )
@@ -21,6 +14,14 @@ from deepmd.tf.env import (
 )
 from deepmd.tf.utils.pair_tab import (
     PairTab,
+)
+
+from .common import (
+    Data,
+    force_dw_test,
+    force_test,
+    virial_dw_test,
+    virial_test,
 )
 
 

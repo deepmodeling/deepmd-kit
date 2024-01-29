@@ -1,10 +1,13 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import os
-import sys
 import unittest
 
 import numpy as np
+from packaging.version import parse as parse_version
 
+from deepmd.tf.env import (
+    tf,
+)
 from deepmd.tf.infer import (
     DeepPotential,
     calc_model_devi,
@@ -12,21 +15,15 @@ from deepmd.tf.infer import (
 from deepmd.tf.infer.model_devi import (
     make_model_devi,
 )
+from deepmd.tf.utils.convert import (
+    convert_pbtxt_to_pb,
+)
 
-sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
-from common import (
+from .common import (
     del_data,
     gen_data,
     infer_path,
     tests_path,
-)
-from packaging.version import parse as parse_version
-
-from deepmd.tf.env import (
-    tf,
-)
-from deepmd.tf.utils.convert import (
-    convert_pbtxt_to_pb,
 )
 
 

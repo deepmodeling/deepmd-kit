@@ -4,11 +4,6 @@ import os
 import unittest
 
 import numpy as np
-from common import (
-    j_loader,
-    run_dp,
-    tests_path,
-)
 from packaging.version import parse as parse_version
 
 from deepmd.tf.env import (
@@ -29,6 +24,12 @@ from deepmd.tf.utils.compat import (
 )
 from deepmd.tf.utils.data_system import (
     DeepmdDataSystem,
+)
+
+from .common import (
+    j_loader,
+    run_dp,
+    tests_path,
 )
 
 if GLOBAL_NP_FLOAT_PRECISION == np.float32:

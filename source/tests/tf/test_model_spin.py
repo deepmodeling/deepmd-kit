@@ -2,13 +2,6 @@
 import unittest
 
 import numpy as np
-from common import (
-    DataSystem,
-    del_data,
-    gen_data,
-    j_loader,
-    tests_path,
-)
 
 from deepmd.tf.common import (
     j_must_have,
@@ -27,6 +20,14 @@ from deepmd.tf.model import (
 )
 from deepmd.tf.utils.spin import (
     Spin,
+)
+
+from .common import (
+    DataSystem,
+    del_data,
+    gen_data,
+    j_loader,
+    tests_path,
 )
 
 GLOBAL_ENER_FLOAT_PRECISION = tf.float64

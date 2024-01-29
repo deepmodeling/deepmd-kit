@@ -3,9 +3,6 @@ import unittest
 
 import numpy as np
 import pytest
-from common import (
-    tests_path,
-)
 
 from deepmd.tf.env import (
     GLOBAL_TF_FLOAT_PRECISION,
@@ -42,6 +39,10 @@ from deepmd.tf.utils.argcheck import (
 )
 from deepmd.tf.utils.compat import (
     update_deepmd_input,
+)
+
+from .common import (
+    tests_path,
 )
 
 

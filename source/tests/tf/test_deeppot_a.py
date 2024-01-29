@@ -6,11 +6,6 @@ import unittest
 import ase.neighborlist
 import dpdata
 import numpy as np
-from common import (
-    infer_path,
-    run_dp,
-    tests_path,
-)
 from packaging.version import parse as parse_version
 
 from deepmd.tf.env import (
@@ -29,6 +24,12 @@ from deepmd.tf.utils.convert import (
     convert_dp20_to_dp21,
     convert_pbtxt_to_pb,
     detect_model_version,
+)
+
+from .common import (
+    infer_path,
+    run_dp,
+    tests_path,
 )
 
 if GLOBAL_NP_FLOAT_PRECISION == np.float32:

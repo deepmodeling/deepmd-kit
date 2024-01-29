@@ -2,13 +2,6 @@
 import unittest
 
 import numpy as np
-from common import (
-    Data,
-    force_dw_test,
-    force_test,
-    virial_dw_test,
-    virial_test,
-)
 
 # load grad of force module
 from deepmd.tf.env import (
@@ -16,6 +9,14 @@ from deepmd.tf.env import (
     GLOBAL_TF_FLOAT_PRECISION,
     op_module,
     tf,
+)
+
+from .common import (
+    Data,
+    force_dw_test,
+    force_test,
+    virial_dw_test,
+    virial_test,
 )
 
 

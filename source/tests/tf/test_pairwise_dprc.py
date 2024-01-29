@@ -5,10 +5,6 @@ import unittest
 
 import dpdata
 import numpy as np
-from common import (
-    run_dp,
-    tests_path,
-)
 from packaging.version import parse as parse_version
 
 from deepmd.tf import (
@@ -36,6 +32,11 @@ from deepmd.tf.utils.data_system import (
 )
 from deepmd.tf.utils.sess import (
     run_sess,
+)
+
+from .common import (
+    run_dp,
+    tests_path,
 )
 
 if GLOBAL_NP_FLOAT_PRECISION == np.float32:

@@ -5,11 +5,6 @@ import subprocess as sp
 import unittest
 
 import numpy as np
-from common import (
-    j_loader,
-    run_dp,
-    tests_path,
-)
 from packaging.version import parse as parse_version
 
 from deepmd.tf.env import (
@@ -30,6 +25,12 @@ from deepmd.tf.utils.data_system import (
 )
 from deepmd.tf.utils.graph import (
     get_tensor_by_name,
+)
+
+from .common import (
+    j_loader,
+    run_dp,
+    tests_path,
 )
 
 if GLOBAL_NP_FLOAT_PRECISION == np.float32:

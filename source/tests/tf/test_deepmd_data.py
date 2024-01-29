@@ -5,15 +5,16 @@ import shutil
 import unittest
 
 import numpy as np
-from common import (
-    tests_path,
-)
 
 from deepmd.tf.env import (
     GLOBAL_NP_FLOAT_PRECISION,
 )
 from deepmd.tf.utils.data import (
     DeepmdData,
+)
+
+from .common import (
+    tests_path,
 )
 
 if GLOBAL_NP_FLOAT_PRECISION == np.float32:

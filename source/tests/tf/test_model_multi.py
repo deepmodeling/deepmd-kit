@@ -1,13 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import numpy as np
-from common import (
-    DataSystem,
-    del_data,
-    finite_difference,
-    gen_data,
-    j_loader,
-    strerch_box,
-)
 
 from deepmd.tf.common import (
     j_must_have,
@@ -24,6 +16,15 @@ from deepmd.tf.fit import (
 )
 from deepmd.tf.model import (
     MultiModel,
+)
+
+from .common import (
+    DataSystem,
+    del_data,
+    finite_difference,
+    gen_data,
+    j_loader,
+    strerch_box,
 )
 
 GLOBAL_ENER_FLOAT_PRECISION = tf.float64

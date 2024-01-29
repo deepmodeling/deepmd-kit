@@ -2,11 +2,6 @@
 import os
 
 import numpy as np
-from common import (
-    Data,
-    j_loader,
-    tests_path,
-)
 
 from deepmd.tf.common import (
     data_requirement,
@@ -27,6 +22,12 @@ from deepmd.tf.train.trainer import (
 )
 from deepmd.tf.utils.data_system import (
     DeepmdDataSystem,
+)
+
+from .common import (
+    Data,
+    j_loader,
+    tests_path,
 )
 
 if GLOBAL_NP_FLOAT_PRECISION == np.float32:

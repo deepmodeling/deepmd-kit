@@ -5,15 +5,16 @@ from collections import (
 )
 
 import numpy as np
-from common import (
-    j_loader,
-)
 
 from deepmd.tf.descriptor import (
     DescrptSeA,
 )
 from deepmd.tf.fit import (
     EnerFitting,
+)
+
+from .common import (
+    j_loader,
 )
 
 input_json = "water_se_a_afparam.json"

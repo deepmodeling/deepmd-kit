@@ -2,13 +2,6 @@
 import unittest
 
 import numpy as np
-from common import (
-    DataSystem,
-    finite_difference,
-    gen_data,
-    j_loader,
-    strerch_box,
-)
 from packaging.version import parse as parse_version
 
 from deepmd.tf.common import (
@@ -28,6 +21,14 @@ from deepmd.tf.model import (
 )
 from deepmd.tf.utils.type_embed import (
     TypeEmbedNet,
+)
+
+from .common import (
+    DataSystem,
+    finite_difference,
+    gen_data,
+    j_loader,
+    strerch_box,
 )
 
 GLOBAL_ENER_FLOAT_PRECISION = tf.float64

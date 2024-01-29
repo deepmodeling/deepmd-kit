@@ -3,12 +3,12 @@ import os
 import subprocess as sp
 import unittest
 
-from common import (
-    tests_path,
-)
-
 from deepmd.tf.cluster.local import (
     get_gpus,
+)
+
+from .common import (
+    tests_path,
 )
 
 

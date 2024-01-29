@@ -3,9 +3,6 @@ import os
 import unittest
 
 import numpy as np
-from common import (
-    infer_path,
-)
 
 from deepmd.tf.env import (
     GLOBAL_NP_FLOAT_PRECISION,
@@ -16,6 +13,10 @@ from deepmd.tf.infer import (
 )
 from deepmd.tf.utils.convert import (
     convert_pbtxt_to_pb,
+)
+
+from .common import (
+    infer_path,
 )
 
 if GLOBAL_NP_FLOAT_PRECISION == np.float32:

@@ -2,12 +2,6 @@
 import os
 
 import numpy as np
-from common import (
-    DataSystem,
-    infer_path,
-    j_loader,
-    tests_path,
-)
 
 from deepmd.tf.common import (
     j_must_have,
@@ -23,6 +17,13 @@ from deepmd.tf.infer import (
 )
 from deepmd.tf.utils.convert import (
     convert_pbtxt_to_pb,
+)
+
+from .common import (
+    DataSystem,
+    infer_path,
+    j_loader,
+    tests_path,
 )
 
 GLOBAL_ENER_FLOAT_PRECISION = tf.float64

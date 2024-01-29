@@ -4,11 +4,6 @@ import os
 import unittest
 
 import numpy as np
-from common import (
-    gen_data,
-    infer_path,
-    j_loader,
-)
 
 from deepmd.tf.common import (
     j_must_have,
@@ -24,6 +19,12 @@ from deepmd.tf.utils.data_system import (
 )
 from deepmd.tf.utils.neighbor_stat import (
     NeighborStat,
+)
+
+from .common import (
+    gen_data,
+    infer_path,
+    j_loader,
 )
 
 

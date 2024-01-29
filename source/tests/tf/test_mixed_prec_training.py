@@ -5,19 +5,19 @@ import subprocess as sp
 import unittest
 
 import numpy as np
-
-# from deepmd.tf.entrypoints.compress import compress
-from common import (
-    j_loader,
-    run_dp,
-    tests_path,
-)
 from packaging.version import (
     Version,
 )
 
 from deepmd.tf.env import (
     TF_VERSION,
+)
+
+# from deepmd.tf.entrypoints.compress import compress
+from .common import (
+    j_loader,
+    run_dp,
+    tests_path,
 )
 
 

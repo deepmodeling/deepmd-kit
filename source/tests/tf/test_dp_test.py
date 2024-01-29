@@ -8,13 +8,14 @@ from pathlib import (
 
 import dpdata
 import numpy as np
-from common import (
-    infer_path,
-)
 
 from deepmd.tf.entrypoints.test import test as dp_test
 from deepmd.tf.utils.convert import (
     convert_pbtxt_to_pb,
+)
+
+from .common import (
+    infer_path,
 )
 
 default_places = 6

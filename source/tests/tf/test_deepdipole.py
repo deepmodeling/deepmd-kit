@@ -4,12 +4,6 @@ import unittest
 
 import ase.neighborlist
 import numpy as np
-from common import (
-    finite_difference,
-    infer_path,
-    strerch_box,
-    tf,
-)
 from packaging.version import parse as parse_version
 
 from deepmd.tf.env import (
@@ -20,6 +14,13 @@ from deepmd.tf.infer import (
 )
 from deepmd.tf.utils.convert import (
     convert_pbtxt_to_pb,
+)
+
+from .common import (
+    finite_difference,
+    infer_path,
+    strerch_box,
+    tf,
 )
 
 if GLOBAL_NP_FLOAT_PRECISION == np.float32:
