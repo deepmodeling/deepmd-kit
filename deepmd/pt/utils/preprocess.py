@@ -165,9 +165,7 @@ def append_neighbors(coord, region: Region3D, atype, rcut: float):
     merged_coord = torch.cat([coord, tmp_coord])
     merged_coord_shift = torch.cat([torch.zeros_like(coord), coord_shift[tmp]])
     merged_atype = torch.cat([atype, tmp_atype])
-    merged_mapping = torch.cat(
-        [torch.arange(atype.numel(), device=env.DEVICE), aid]
-    )
+    merged_mapping = torch.cat([torch.arange(atype.numel(), device=env.DEVICE), aid])
     return merged_coord_shift, merged_atype, merged_mapping
 
 
@@ -198,12 +196,8 @@ def build_neighbor_list(
         sec = sec[-1:]
     lst = []
     nlist = torch.zeros((nloc, sec[-1].item()), device=env.DEVICE).long() - 1
-    nlist_loc = (
-        torch.zeros((nloc, sec[-1].item()), device=env.DEVICE).long() - 1
-    )
-    nlist_type = (
-        torch.zeros((nloc, sec[-1].item()), device=env.DEVICE).long() - 1
-    )
+    nlist_loc = torch.zeros((nloc, sec[-1].item()), device=env.DEVICE).long() - 1
+    nlist_type = torch.zeros((nloc, sec[-1].item()), device=env.DEVICE).long() - 1
     for i, nnei in enumerate(sec):
         if i > 0:
             nnei = nnei - sec[i - 1]
@@ -217,10 +211,7 @@ def build_neighbor_list(
         else:
             # when nnei > nall
             indices = torch.zeros((nloc, nnei), device=env.DEVICE).long() - 1
-            _sorted = (
-                torch.ones((nloc, nnei), device=env.DEVICE).long()
-                * DISTANCE_INF
-            )
+            _sorted = torch.ones((nloc, nnei), device=env.DEVICE).long() * DISTANCE_INF
             _sorted_nnei, indices_nnei = torch.topk(
                 tmp, tmp.shape[1], dim=1, largest=False
             )

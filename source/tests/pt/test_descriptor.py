@@ -12,15 +12,13 @@ import json
 from pathlib import (
     Path,
 )
-from deepmd.pt.utils import (
-    env,
-)
 
 from deepmd.pt.model.descriptor import (
     prod_env_mat_se_a,
 )
 from deepmd.pt.utils import (
     dp_random,
+    env,
 )
 from deepmd.pt.utils.dataset import (
     DeepmdDataSet,
@@ -115,10 +113,14 @@ class TestSeA(unittest.TestCase):
 
     def test_consistency(self):
         avg_zero = torch.zeros(
-            [self.ntypes, self.nnei * 4], dtype=GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE
+            [self.ntypes, self.nnei * 4],
+            dtype=GLOBAL_PT_FLOAT_PRECISION,
+            device=env.DEVICE,
         )
         std_ones = torch.ones(
-            [self.ntypes, self.nnei * 4], dtype=GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE
+            [self.ntypes, self.nnei * 4],
+            dtype=GLOBAL_PT_FLOAT_PRECISION,
+            device=env.DEVICE,
         )
         base_d, base_force, nlist = base_se_a(
             rcut=self.rcut,

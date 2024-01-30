@@ -489,9 +489,7 @@ class DeepmdDataSystem:
 
         for kk in ["type", "real_natoms_vec"]:
             if kk in batch.keys():
-                batch[kk] = torch.tensor(
-                    batch[kk], dtype=torch.long, device=env.DEVICE
-                )
+                batch[kk] = torch.tensor(batch[kk], dtype=torch.long, device=env.DEVICE)
         batch["atype"] = batch.pop("type")
 
         keys = ["nlist", "nlist_loc", "nlist_type", "shift", "mapping"]
@@ -878,9 +876,7 @@ class DeepmdDataSet(Dataset):
         if index is None:
             index = dp_random.choice(np.arange(self.nsystems), p=self.probs)
         b_data = self._data_systems[index].get_batch(self._batch_size)
-        b_data["natoms"] = torch.tensor(
-            self._natoms_vec[index], device=env.DEVICE
-        )
+        b_data["natoms"] = torch.tensor(self._natoms_vec[index], device=env.DEVICE)
         batch_size = b_data["coord"].shape[0]
         b_data["natoms"] = b_data["natoms"].unsqueeze(0).expand(batch_size, -1)
         return b_data
@@ -891,9 +887,7 @@ class DeepmdDataSet(Dataset):
         if index is None:
             index = dp_random.choice(np.arange(self.nsystems), p=self.probs)
         b_data = self._data_systems[index].get_batch_for_train(self._batch_size)
-        b_data["natoms"] = torch.tensor(
-            self._natoms_vec[index], device=env.DEVICE
-        )
+        b_data["natoms"] = torch.tensor(self._natoms_vec[index], device=env.DEVICE)
         batch_size = b_data["coord"].shape[0]
         b_data["natoms"] = b_data["natoms"].unsqueeze(0).expand(batch_size, -1)
         return b_data

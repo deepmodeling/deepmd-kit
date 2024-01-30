@@ -5,11 +5,11 @@ import unittest
 import numpy as np
 import torch
 
-from deepmd.pt.utils.env import (
-    PRECISION_DICT,
-)
 from deepmd.pt.utils import (
     env,
+)
+from deepmd.pt.utils.env import (
+    PRECISION_DICT,
 )
 
 try:
@@ -107,9 +107,13 @@ class TestMLPLayer(unittest.TestCase):
                 inp_shap = ashp + inp_shap
             rtol, atol = get_tols(prec)
             dtype = PRECISION_DICT[prec]
-            xx = torch.arange(np.prod(inp_shap), dtype=dtype, device=env.DEVICE).view(inp_shap)
+            xx = torch.arange(np.prod(inp_shap), dtype=dtype, device=env.DEVICE).view(
+                inp_shap
+            )
             # def mlp layer
-            ml = MLPLayer(ninp, nout, bias, ut, ac, resnet, precision=prec).to(env.DEVICE)
+            ml = MLPLayer(ninp, nout, bias, ut, ac, resnet, precision=prec).to(
+                env.DEVICE
+            )
             # check consistency
             nl = NativeLayer.deserialize(ml.serialize())
             np.testing.assert_allclose(
@@ -160,7 +164,9 @@ class TestMLP(unittest.TestCase):
                 inp_shap = ashp + inp_shap
             rtol, atol = get_tols(prec)
             dtype = PRECISION_DICT[prec]
-            xx = torch.arange(np.prod(inp_shap), dtype=dtype, device=env.DEVICE).view(inp_shap)
+            xx = torch.arange(np.prod(inp_shap), dtype=dtype, device=env.DEVICE).view(
+                inp_shap
+            )
             # def MLP
             layers = []
             for ii in range(1, len(ndims)):
