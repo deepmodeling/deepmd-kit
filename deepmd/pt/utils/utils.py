@@ -54,22 +54,30 @@ class ActivationFn(torch.nn.Module):
 def to_numpy_array(
     xx: torch.Tensor,
 ) -> np.ndarray:
-    if xx is not None:
-        prec = [key for key, value in PT_PRECISION_DICT.items() if value == xx.dtype]
-        if len(prec) == 0:
-            raise ValueError(f"unknown precision {xx.dtype}")
-        else:
-            prec = NP_PRECISION_DICT[prec[0]]
-    return xx.detach().cpu().numpy().astype(prec) if xx is not None else None
+    if xx is None:
+        return None
+    assert xx is not None
+    # Create a reverse mapping of PT_PRECISION_DICT
+    reverse_precision_dict = {v: k for k, v in PT_PRECISION_DICT.items()}
+    # Use the reverse mapping to find keys with the desired value
+    prec = reverse_precision_dict.get(xx.dtype, None)
+    prec = NP_PRECISION_DICT.get(prec, None)
+    if prec is None:
+        raise ValueError(f"unknown precision {xx.dtype}")
+    return xx.detach().cpu().numpy().astype(prec)
 
 
 def to_torch_tensor(
     xx: np.ndarray,
 ) -> torch.Tensor:
-    if xx is not None:
-        prec = [key for key, value in NP_PRECISION_DICT.items() if value == xx.dtype]
-        if len(prec) == 0:
-            raise ValueError(f"unknown precision {xx.dtype}")
-        else:
-            prec = PT_PRECISION_DICT[prec[0]]
-    return torch.tensor(xx, dtype=prec, device=DEVICE) if xx is not None else None
+    if xx is None:
+        return None
+    assert xx is not None
+    # Create a reverse mapping of NP_PRECISION_DICT
+    reverse_precision_dict = {v: k for k, v in NP_PRECISION_DICT.items()}
+    # Use the reverse mapping to find keys with the desired value
+    prec = reverse_precision_dict.get(type(xx.flat[0]), None)
+    prec = PT_PRECISION_DICT.get(prec, None)
+    if prec is None:
+        raise ValueError(f"unknown precision {xx.dtype}")
+    return torch.tensor(xx, dtype=prec, device=DEVICE)
