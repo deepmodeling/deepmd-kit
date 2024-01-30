@@ -355,7 +355,6 @@ class InvarFitting(Fitting):
 
 
 @Fitting.register("ener")
-@fitting_check_output
 class EnergyFittingNet(InvarFitting):
     def __init__(
         self,
