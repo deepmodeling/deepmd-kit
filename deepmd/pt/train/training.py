@@ -681,10 +681,10 @@ class Trainer:
 
             # tensorboard
             if self.enable_tensorboard and _step_id % self.tensorboard_freq == 0:
-                writer.add_scalar("lr", cur_lr, _step_id)
-                writer.add_scalar("loss", loss, _step_id)
+                writer.add_scalar(f"{task_key}/lr", cur_lr, _step_id)
+                writer.add_scalar(f"{task_key}/loss", loss, _step_id)
                 for item in more_loss:
-                    writer.add_scalar(item, more_loss[item], _step_id)
+                    writer.add_scalar(f"{task_key}/{item}", more_loss[item], _step_id)
 
         self.t0 = time.time()
         for step_id in range(self.num_steps):
