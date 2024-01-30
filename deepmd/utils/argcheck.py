@@ -1703,7 +1703,7 @@ def training_args():  # ! modified by Ziyao: data configuration isolated.
     doc_time_training = "Timing durining training."
     doc_profiling = "Profiling during training."
     doc_profiling_file = "Output file for profiling."
-    doc_enable_profiler = "Enable TensorFlow Profiler (available in TensorFlow 2.3) to analyze performance. The log will be saved to `tensorboard_log_dir`."
+    doc_enable_profiler = "Enable TensorFlow Profiler (available in TensorFlow 2.3) or PyTorch Profiler to analyze performance. The log will be saved to `tensorboard_log_dir`."
     doc_tensorboard = "Enable tensorboard"
     doc_tensorboard_log_dir = "The log directory of tensorboard outputs"
     doc_tensorboard_freq = "The frequency of writing tensorboard events."

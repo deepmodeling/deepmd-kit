@@ -438,6 +438,12 @@ class Trainer:
             assert sum_prob > 0.0, "Sum of model prob must be larger than 0!"
             self.model_prob = self.model_prob / sum_prob
 
+        # Tensorboard
+        self.enable_tensorboard = training_params.get("tensorboard", False)
+        self.tensorboard_log_dir = training_params.get("tensorboard_log_dir", "log")
+        self.tensorboard_freq = training_params.get("tensorboard_freq", 1)
+        self.enable_profiler = training_params.get("enable_profiler", False)
+
     def run(self):
         fout = (
             open(self.disp_file, mode="w", buffering=1) if self.rank == 0 else None
@@ -448,8 +454,27 @@ class Trainer:
         logging.info("Start to train %d steps.", self.num_steps)
         if dist.is_initialized():
             logging.info(f"Rank: {dist.get_rank()}/{dist.get_world_size()}")
+        if self.enable_tensorboard:
+            from torch.utils.tensorboard import (
+                SummaryWriter,
+            )
+
+            writer = SummaryWriter(log_dir=self.tensorboard_log_dir)
+        if self.enable_profiler:
+            prof = torch.profiler.profile(
+                schedule=torch.profiler.schedule(wait=1, warmup=1, active=3, repeat=1),
+                on_trace_ready=torch.profiler.tensorboard_trace_handler(
+                    self.tensorboard_log_dir
+                ),
+                record_shapes=True,
+                with_stack=True,
+            )
+            prof.start()
 
         def step(_step_id, task_key="Default"):
+            # PyTorch Profiler
+            if self.enable_profiler:
+                prof.step()
             self.wrapper.train()
             if isinstance(self.lr_exp, dict):
                 _lr = self.lr_exp[task_key]
@@ -654,6 +679,13 @@ class Trainer:
                 with open("checkpoint", "w") as f:
                     f.write(str(self.latest_model))
 
+            # tensorboard
+            if self.enable_tensorboard and _step_id % self.tensorboard_freq == 0:
+                writer.add_scalar("lr", cur_lr, _step_id)
+                writer.add_scalar("loss", loss, _step_id)
+                for item in more_loss:
+                    writer.add_scalar(item, more_loss[item], _step_id)
+
         self.t0 = time.time()
         for step_id in range(self.num_steps):
             if step_id < self.start_step:
@@ -691,6 +723,10 @@ class Trainer:
             fout.close()
         if SAMPLER_RECORD:
             fout1.close()
+        if self.enable_tensorboard:
+            writer.close()
+        if self.enable_profiler:
+            prof.stop()
 
     def save_model(self, save_path, lr=0.0, step=0):
         module = self.wrapper.module if dist.is_initialized() else self.wrapper
