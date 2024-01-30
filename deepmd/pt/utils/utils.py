@@ -4,8 +4,16 @@ from typing import (
     Optional,
 )
 
+import numpy as np
 import torch
 import torch.nn.functional as F
+
+from deepmd.model_format.common import PRECISION_DICT as NP_PRECISION_DICT
+
+from .env import (
+    DEVICE,
+)
+from .env import PRECISION_DICT as PT_PRECISION_DICT
 
 
 def get_activation_fn(activation: str) -> Callable:
@@ -41,3 +49,35 @@ class ActivationFn(torch.nn.Module):
             return x
         else:
             raise RuntimeError(f"activation function {self.activation} not supported")
+
+
+def to_numpy_array(
+    xx: torch.Tensor,
+) -> np.ndarray:
+    if xx is None:
+        return None
+    assert xx is not None
+    # Create a reverse mapping of PT_PRECISION_DICT
+    reverse_precision_dict = {v: k for k, v in PT_PRECISION_DICT.items()}
+    # Use the reverse mapping to find keys with the desired value
+    prec = reverse_precision_dict.get(xx.dtype, None)
+    prec = NP_PRECISION_DICT.get(prec, None)
+    if prec is None:
+        raise ValueError(f"unknown precision {xx.dtype}")
+    return xx.detach().cpu().numpy().astype(prec)
+
+
+def to_torch_tensor(
+    xx: np.ndarray,
+) -> torch.Tensor:
+    if xx is None:
+        return None
+    assert xx is not None
+    # Create a reverse mapping of NP_PRECISION_DICT
+    reverse_precision_dict = {v: k for k, v in NP_PRECISION_DICT.items()}
+    # Use the reverse mapping to find keys with the desired value
+    prec = reverse_precision_dict.get(type(xx.flat[0]), None)
+    prec = PT_PRECISION_DICT.get(prec, None)
+    if prec is None:
+        raise ValueError(f"unknown precision {xx.dtype}")
+    return torch.tensor(xx, dtype=prec, device=DEVICE)
