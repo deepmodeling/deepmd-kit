@@ -59,7 +59,7 @@ class PairTab:
         # check table data against rcut and update tab_file if needed, table upper boundary is used as rcut if not provided.
         self.rcut = rcut if rcut is not None else self.rmax
         self._check_table_upper_boundary()
-        self.nspline = self.vdata.shape[0] - 1
+        self.nspline = self.vdata.shape[0] - 1 # this nspline is updated based on the expanded table.
         self.tab_info = np.array([self.rmin, self.hh, self.nspline, self.ntypes])
         self.tab_data = self._make_data()
 
@@ -106,7 +106,7 @@ class PairTab:
         """
         upper_val = self.vdata[-1][1:]
         upper_idx = self.vdata.shape[0] - 1
-
+        ncol = self.vdata.shape[1]
         # the index of table for the grid point right after rcut
         rcut_idx = int(self.rcut / self.hh)
 
@@ -120,7 +120,7 @@ class PairTab:
 
             # if table values decay to `0` before rcut, pad table with `0`s.
             elif self.rcut > self.rmax:
-                pad_zero = np.zeros((rcut_idx - upper_idx, 4))
+                pad_zero = np.zeros((rcut_idx - upper_idx, ncol))
                 pad_zero[:, 0] = np.linspace(
                     self.rmax + self.hh, self.hh * (rcut_idx + 1), rcut_idx - upper_idx
                 )
@@ -134,9 +134,9 @@ class PairTab:
             # if rcut goes beyond table upper bond, need extrapolation, ensure values decay to `0` before rcut.
             else:
                 logging.warning(
-                    "The rcut goes beyond table upper boundary, performing linear extrapolation."
+                    "The rcut goes beyond table upper boundary, performing extrapolation."
                 )
-                pad_linear = np.zeros((rcut_idx - upper_idx + 1, 4))
+                pad_linear = np.zeros((rcut_idx - upper_idx + 1, ncol))
                 pad_linear[:, 0] = np.linspace(
                     self.rmax, self.hh * (rcut_idx + 1), rcut_idx - upper_idx + 1
                 )
@@ -150,7 +150,6 @@ class PairTab:
         return self.tab_info, self.tab_data
 
     def _make_data(self):
-        # here we need to do postprocess, to overwrite coefficients when padding zeros resulting in negative energies.
         data = np.zeros([self.ntypes * self.ntypes * 4 * self.nspline])
         stride = 4 * self.nspline
         idx_iter = 0
