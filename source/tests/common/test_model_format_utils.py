@@ -471,3 +471,22 @@ class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 with self.assertRaises(ValueError) as context:
                     ret0 = ifn0(dd[0], atype, fparam=ifp, aparam=iap)
                     self.assertIn("input aparam", context.exception)
+
+    def test_get_set(self):
+        ifn0 = InvarFitting(
+            "energy",
+            self.nt,
+            3,
+            1,
+        )
+        rng = np.random.default_rng()
+        foo = rng.normal([3, 4])
+        for ii in [
+            "bias_atom_e",
+            "fparam_avg",
+            "fparam_inv_std",
+            "aparam_avg",
+            "aparam_inv_std",
+        ]:
+            ifn0[ii] = foo
+            np.testing.assert_allclose(foo, ifn0[ii])

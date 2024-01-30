@@ -160,3 +160,22 @@ class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 use_tebd=(not distinguish_types),
             ).to(env.DEVICE)
             torch.jit.script(ft0)
+
+    def test_get_set(self):
+        ifn0 = InvarFitting(
+            "energy",
+            self.nt,
+            3,
+            1,
+        )
+        rng = np.random.default_rng()
+        foo = rng.normal([3, 4])
+        for ii in [
+            "bias_atom_e",
+            "fparam_avg",
+            "fparam_inv_std",
+            "aparam_avg",
+            "aparam_inv_std",
+        ]:
+            ifn0[ii] = torch.tensor(foo, dtype=dtype, device=env.DEVICE)
+            np.testing.assert_allclose(foo, ifn0[ii].detach().cpu().numpy())
