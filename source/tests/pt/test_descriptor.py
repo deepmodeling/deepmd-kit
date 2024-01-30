@@ -131,15 +131,15 @@ class TestSeA(unittest.TestCase):
             stddev=std_ones.detach().cpu(),
         )
 
-        pt_coord = self.pt_batch["coord"]
+        pt_coord = self.pt_batch["coord"].to(env.DEVICE)
         pt_coord.requires_grad_(True)
-        index = self.pt_batch["mapping"].unsqueeze(-1).expand(-1, -1, 3)
+        index = self.pt_batch["mapping"].unsqueeze(-1).expand(-1, -1, 3).to(env.DEVICE)
         extended_coord = torch.gather(pt_coord, dim=1, index=index)
-        extended_coord = extended_coord - self.pt_batch["shift"]
+        extended_coord = extended_coord - self.pt_batch["shift"].to(env.DEVICE)
         my_d, _, _ = prod_env_mat_se_a(
             extended_coord.to(DEVICE),
-            self.pt_batch["nlist"],
-            self.pt_batch["atype"],
+            self.pt_batch["nlist"].to(env.DEVICE),
+            self.pt_batch["atype"].to(env.DEVICE),
             avg_zero.reshape([-1, self.nnei, 4]).to(DEVICE),
             std_ones.reshape([-1, self.nnei, 4]).to(DEVICE),
             self.rcut,

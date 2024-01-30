@@ -276,13 +276,11 @@ def collate_batch(batch):
                 result[key] = torch.zeros(
                     (n_frames, natoms_extended, 3),
                     dtype=env.GLOBAL_PT_FLOAT_PRECISION,
-                    device=env.DEVICE,
                 )
             else:
                 result[key] = torch.zeros(
                     (n_frames, natoms_extended),
                     dtype=torch.long,
-                    device=env.DEVICE,
                 )
             for i in range(len(batch)):
                 natoms_tmp = list[i].shape[0]

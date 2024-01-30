@@ -99,7 +99,7 @@ def build_inside_clist(coord, region: Region3D, ncell):
     cell_offset[cell_offset < 0] = 0
     delta = cell_offset - ncell
     a2c = compute_serial_cid(cell_offset, ncell)  # cell id of atoms
-    arange = torch.arange(0, loc_ncell, 1, device=env.DEVICE)
+    arange = torch.arange(0, loc_ncell, 1)
     cellid = a2c == arange.unsqueeze(-1)  # one hot cellid
     c2a = cellid.nonzero()
     lst = []
@@ -131,17 +131,17 @@ def append_neighbors(coord, region: Region3D, atype, rcut: float):
 
     # add ghost atoms
     a2c, c2a = build_inside_clist(coord, region, ncell)
-    xi = torch.arange(-ngcell[0], ncell[0] + ngcell[0], 1, device=env.DEVICE)
-    yi = torch.arange(-ngcell[1], ncell[1] + ngcell[1], 1, device=env.DEVICE)
-    zi = torch.arange(-ngcell[2], ncell[2] + ngcell[2], 1, device=env.DEVICE)
+    xi = torch.arange(-ngcell[0], ncell[0] + ngcell[0], 1)
+    yi = torch.arange(-ngcell[1], ncell[1] + ngcell[1], 1)
+    zi = torch.arange(-ngcell[2], ncell[2] + ngcell[2], 1)
     xyz = xi.view(-1, 1, 1, 1) * torch.tensor(
-        [1, 0, 0], dtype=torch.long, device=env.DEVICE
+        [1, 0, 0], dtype=torch.long
     )
     xyz = xyz + yi.view(1, -1, 1, 1) * torch.tensor(
-        [0, 1, 0], dtype=torch.long, device=env.DEVICE
+        [0, 1, 0], dtype=torch.long
     )
     xyz = xyz + zi.view(1, 1, -1, 1) * torch.tensor(
-        [0, 0, 1], dtype=torch.long, device=env.DEVICE
+        [0, 0, 1], dtype=torch.long
     )
     xyz = xyz.view(-1, 3)
     mask_a = (xyz >= 0).all(dim=-1)
@@ -165,7 +165,7 @@ def append_neighbors(coord, region: Region3D, atype, rcut: float):
     merged_coord = torch.cat([coord, tmp_coord])
     merged_coord_shift = torch.cat([torch.zeros_like(coord), coord_shift[tmp]])
     merged_atype = torch.cat([atype, tmp_atype])
-    merged_mapping = torch.cat([torch.arange(atype.numel(), device=env.DEVICE), aid])
+    merged_mapping = torch.cat([torch.arange(atype.numel()), aid])
     return merged_coord_shift, merged_atype, merged_mapping
 
 
@@ -187,7 +187,7 @@ def build_neighbor_list(
     distance = torch.linalg.norm(distance, dim=-1)
     DISTANCE_INF = distance.max().detach() + rcut
     distance[:nloc, :nloc] += (
-        torch.eye(nloc, dtype=torch.bool, device=env.DEVICE) * DISTANCE_INF
+        torch.eye(nloc, dtype=torch.bool) * DISTANCE_INF
     )
     if min_check:
         if distance.min().abs() < 1e-6:
@@ -195,9 +195,9 @@ def build_neighbor_list(
     if not type_split:
         sec = sec[-1:]
     lst = []
-    nlist = torch.zeros((nloc, sec[-1].item()), device=env.DEVICE).long() - 1
-    nlist_loc = torch.zeros((nloc, sec[-1].item()), device=env.DEVICE).long() - 1
-    nlist_type = torch.zeros((nloc, sec[-1].item()), device=env.DEVICE).long() - 1
+    nlist = torch.zeros((nloc, sec[-1].item())).long() - 1
+    nlist_loc = torch.zeros((nloc, sec[-1].item())).long() - 1
+    nlist_type = torch.zeros((nloc, sec[-1].item())).long() - 1
     for i, nnei in enumerate(sec):
         if i > 0:
             nnei = nnei - sec[i - 1]
@@ -210,8 +210,8 @@ def build_neighbor_list(
             _sorted, indices = torch.topk(tmp, nnei, dim=1, largest=False)
         else:
             # when nnei > nall
-            indices = torch.zeros((nloc, nnei), device=env.DEVICE).long() - 1
-            _sorted = torch.ones((nloc, nnei), device=env.DEVICE).long() * DISTANCE_INF
+            indices = torch.zeros((nloc, nnei)).long() - 1
+            _sorted = torch.ones((nloc, nnei)).long() * DISTANCE_INF
             _sorted_nnei, indices_nnei = torch.topk(
                 tmp, tmp.shape[1], dim=1, largest=False
             )
@@ -275,7 +275,7 @@ def make_env_mat(
     else:
         merged_coord_shift = torch.zeros_like(coord)
         merged_atype = atype.clone()
-        merged_mapping = torch.arange(atype.numel(), device=env.DEVICE)
+        merged_mapping = torch.arange(atype.numel())
         merged_coord = coord.clone()
 
     # build nlist

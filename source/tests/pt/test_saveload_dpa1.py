@@ -129,13 +129,13 @@ class TestSaveLoadDPA1(unittest.TestCase):
         input_dict = {}
         for item in ["coord", "atype", "box"]:
             if item in batch_data:
-                input_dict[item] = batch_data[item]
+                input_dict[item] = batch_data[item].to(env.DEVICE)
             else:
                 input_dict[item] = None
         label_dict = {}
         for item in ["energy", "force", "virial"]:
             if item in batch_data:
-                label_dict[item] = batch_data[item]
+                label_dict[item] = batch_data[item].to(env.DEVICE)
         return input_dict, label_dict
 
     def test_saveload(self):

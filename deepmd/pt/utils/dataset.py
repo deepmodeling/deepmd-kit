@@ -479,8 +479,7 @@ class DeepmdDataSystem:
             else:
                 batch[kk] = torch.tensor(
                     batch[kk],
-                    dtype=env.GLOBAL_PT_FLOAT_PRECISION,
-                    device=env.DEVICE,
+                    dtype=env.GLOBAL_PT_FLOAT_PRECISION
                 )
                 if self._data_dict[kk]["atomic"]:
                     batch[kk] = batch[kk].view(
@@ -489,7 +488,7 @@ class DeepmdDataSystem:
 
         for kk in ["type", "real_natoms_vec"]:
             if kk in batch.keys():
-                batch[kk] = torch.tensor(batch[kk], dtype=torch.long, device=env.DEVICE)
+                batch[kk] = torch.tensor(batch[kk], dtype=torch.long)
         batch["atype"] = batch.pop("type")
 
         keys = ["nlist", "nlist_loc", "nlist_type", "shift", "mapping"]
@@ -523,11 +522,10 @@ class DeepmdDataSystem:
         natoms_extended = max([item.shape[0] for item in shift])
         batch["shift"] = torch.zeros(
             (n_frames, natoms_extended, 3),
-            dtype=env.GLOBAL_PT_FLOAT_PRECISION,
-            device=env.DEVICE,
+            dtype=env.GLOBAL_PT_FLOAT_PRECISION
         )
         batch["mapping"] = torch.zeros(
-            (n_frames, natoms_extended), dtype=torch.long, device=env.DEVICE
+            (n_frames, natoms_extended), dtype=torch.long
         )
         for i in range(len(shift)):
             natoms_tmp = shift[i].shape[0]
@@ -565,15 +563,14 @@ class DeepmdDataSystem:
             else:
                 batch[kk] = torch.tensor(
                     batch[kk][sid],
-                    dtype=env.GLOBAL_PT_FLOAT_PRECISION,
-                    device=env.DEVICE,
+                    dtype=env.GLOBAL_PT_FLOAT_PRECISION
                 )
                 if self._data_dict[kk]["atomic"]:
                     batch[kk] = batch[kk].view(-1, self._data_dict[kk]["ndof"])
         for kk in ["type", "real_natoms_vec"]:
             if kk in batch.keys():
                 batch[kk] = torch.tensor(
-                    batch[kk][sid], dtype=torch.long, device=env.DEVICE
+                    batch[kk][sid], dtype=torch.long
                 )
         clean_coord = batch.pop("coord")
         clean_type = batch.pop("type")
@@ -669,14 +666,13 @@ class DeepmdDataSystem:
                     noised_coord = _clean_coord.clone().detach()
                     noised_coord[coord_mask] += noise_on_coord
                     batch["coord_mask"] = torch.tensor(
-                        coord_mask, dtype=torch.bool, device=env.DEVICE
+                        coord_mask, dtype=torch.bool
                     )
                 else:
                     noised_coord = _clean_coord
                     batch["coord_mask"] = torch.tensor(
                         np.zeros_like(coord_mask, dtype=bool),
-                        dtype=torch.bool,
-                        device=env.DEVICE,
+                        dtype=torch.bool
                     )
 
                 # add mask for type
@@ -684,14 +680,13 @@ class DeepmdDataSystem:
                     masked_type = clean_type.clone().detach()
                     masked_type[type_mask] = self.mask_type_idx
                     batch["type_mask"] = torch.tensor(
-                        type_mask, dtype=torch.bool, device=env.DEVICE
+                        type_mask, dtype=torch.bool
                     )
                 else:
                     masked_type = clean_type
                     batch["type_mask"] = torch.tensor(
                         np.zeros_like(type_mask, dtype=bool),
-                        dtype=torch.bool,
-                        device=env.DEVICE,
+                        dtype=torch.bool
                     )
                 if self.pbc:
                     _coord = normalize_coord(noised_coord, region, nloc)
@@ -801,7 +796,7 @@ class DeepmdDataSetForLoader(Dataset):
     def __getitem__(self, index):
         """Get a frame from the selected system."""
         b_data = self._data_system._get_item(index)
-        b_data["natoms"] = torch.tensor(self._natoms_vec, device=env.DEVICE)
+        b_data["natoms"] = torch.tensor(self._natoms_vec)
         return b_data
 
 
@@ -876,7 +871,7 @@ class DeepmdDataSet(Dataset):
         if index is None:
             index = dp_random.choice(np.arange(self.nsystems), p=self.probs)
         b_data = self._data_systems[index].get_batch(self._batch_size)
-        b_data["natoms"] = torch.tensor(self._natoms_vec[index], device=env.DEVICE)
+        b_data["natoms"] = torch.tensor(self._natoms_vec[index])
         batch_size = b_data["coord"].shape[0]
         b_data["natoms"] = b_data["natoms"].unsqueeze(0).expand(batch_size, -1)
         return b_data
@@ -887,7 +882,7 @@ class DeepmdDataSet(Dataset):
         if index is None:
             index = dp_random.choice(np.arange(self.nsystems), p=self.probs)
         b_data = self._data_systems[index].get_batch_for_train(self._batch_size)
-        b_data["natoms"] = torch.tensor(self._natoms_vec[index], device=env.DEVICE)
+        b_data["natoms"] = torch.tensor(self._natoms_vec[index])
         batch_size = b_data["coord"].shape[0]
         b_data["natoms"] = b_data["natoms"].unsqueeze(0).expand(batch_size, -1)
         return b_data
@@ -896,10 +891,7 @@ class DeepmdDataSet(Dataset):
         """TF-compatible batch for testing."""
         pt_batch = self[sys_idx]
         np_batch = {}
-        for key in ["coord", "box", "force", "energy", "virial"]:
-            if key in pt_batch.keys():
-                np_batch[key] = pt_batch[key].cpu().numpy()
-        for key in ["atype", "natoms"]:
+        for key in ["coord", "box", "force", "energy", "virial", "atype", "natoms"]:
             if key in pt_batch.keys():
                 np_batch[key] = pt_batch[key].cpu().numpy()
         batch_size = pt_batch["coord"].shape[0]

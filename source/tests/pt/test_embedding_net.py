@@ -7,6 +7,9 @@ import unittest
 import numpy as np
 import tensorflow.compat.v1 as tf
 import torch
+from deepmd.pt.utils import (
+    env,
+)
 
 tf.disable_eager_execution()
 
@@ -148,18 +151,18 @@ class TestSeA(unittest.TestCase):
                     # Keep parameter value consistency between 2 implentations
                     param.data.copy_(torch.from_numpy(var))
 
-        pt_coord = self.torch_batch["coord"]
+        pt_coord = self.torch_batch["coord"].to(env.DEVICE)
         pt_coord.requires_grad_(True)
-        index = self.torch_batch["mapping"].unsqueeze(-1).expand(-1, -1, 3)
+        index = self.torch_batch["mapping"].unsqueeze(-1).expand(-1, -1, 3).to(env.DEVICE)
         extended_coord = torch.gather(pt_coord, dim=1, index=index)
-        extended_coord = extended_coord - self.torch_batch["shift"]
+        extended_coord = extended_coord - self.torch_batch["shift"].to(env.DEVICE)
         extended_atype = torch.gather(
-            self.torch_batch["atype"], dim=1, index=self.torch_batch["mapping"]
+            self.torch_batch["atype"].to(env.DEVICE), dim=1, index=self.torch_batch["mapping"].to(env.DEVICE)
         )
         descriptor_out, _, _, _, _ = descriptor(
             extended_coord,
             extended_atype,
-            self.torch_batch["nlist"],
+            self.torch_batch["nlist"].to(env.DEVICE),
         )
         my_embedding = descriptor_out.cpu().detach().numpy()
         fake_energy = torch.sum(descriptor_out)
