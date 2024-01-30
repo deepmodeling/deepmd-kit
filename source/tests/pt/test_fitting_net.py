@@ -102,25 +102,25 @@ class TestFittingNet(unittest.TestCase):
         my_fn = EnergyFittingNet(
             self.ntypes,
             self.embedding_width,
-            neuron=self.n_neuron,
-            bias_atom_e=self.dp_fn.bias_atom_e,
-            distinguish_types=True,
+            self.n_neuron,
+            self.dp_fn.bias_atom_e,
+            use_tebd=False,
         )
         for name, param in my_fn.named_parameters():
-            matched = re.match(
-                "filter_layers\.networks\.(\d).layers\.(\d)\.([a-z]+)", name
-            )
+            matched = re.match("filter_layers\.(\d).deep_layers\.(\d)\.([a-z]+)", name)
             key = None
             if matched:
-                if int(matched.group(2)) == len(self.n_neuron):
-                    layer_id = -1
-                else:
-                    layer_id = matched.group(2)
                 key = gen_key(
                     type_id=matched.group(1),
-                    layer_id=layer_id,
+                    layer_id=matched.group(2),
                     w_or_b=matched.group(3),
                 )
+            else:
+                matched = re.match("filter_layers\.(\d).final_layer\.([a-z]+)", name)
+                if matched:
+                    key = gen_key(
+                        type_id=matched.group(1), layer_id=-1, w_or_b=matched.group(2)
+                    )
             assert key is not None
             var = values[key]
             with torch.no_grad():
@@ -132,7 +132,7 @@ class TestFittingNet(unittest.TestCase):
         ret = my_fn(embedding, atype)
         my_energy = ret["energy"]
         my_energy = my_energy.detach()
-        np.testing.assert_allclose(dp_energy, my_energy.numpy().reshape([-1]))
+        self.assertTrue(np.allclose(dp_energy, my_energy.numpy().reshape([-1])))
 
 
 if __name__ == "__main__":

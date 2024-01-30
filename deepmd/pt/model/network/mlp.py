@@ -56,10 +56,7 @@ class MLPLayer(nn.Module):
         precision: str = DEFAULT_PRECISION,
     ):
         super().__init__()
-        # only use_timestep when skip connection is established.
-        self.use_timestep = use_timestep and (
-            num_out == num_in or num_out == num_in * 2
-        )
+        self.use_timestep = use_timestep
         self.activate_name = activation_function
         self.activate = ActivationFn(self.activate_name)
         self.precision = precision
@@ -210,7 +207,7 @@ class NetworkCollection(DPNetworkCollection, nn.Module):
     NETWORK_TYPE_MAP: ClassVar[Dict[str, type]] = {
         "network": MLP,
         "embedding_network": EmbeddingNet,
-        "fitting_network": FittingNet,
+        # "fitting_network": FittingNet,
     }
 
     def __init__(self, *args, **kwargs):

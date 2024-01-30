@@ -7,9 +7,6 @@ from .common import (
 from .env_mat import (
     EnvMat,
 )
-from .fitting import (
-    InvarFitting,
-)
 from .network import (
     EmbeddingNet,
     FittingNet,
@@ -37,7 +34,6 @@ from .se_e2_a import (
 )
 
 __all__ = [
-    "InvarFitting",
     "DescrptSeA",
     "EnvMat",
     "make_multilayer_network",

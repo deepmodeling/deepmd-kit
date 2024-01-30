@@ -7,6 +7,9 @@ from typing import (
 import numpy as np
 import torch
 
+from deepmd.model_format import (
+    FittingOutputDef,
+)
 from deepmd.pt.model.task.task import (
     TaskBaseMethod,
 )
@@ -58,8 +61,16 @@ class Fitting(TaskBaseMethod):
             if fitting_type in Fitting.__plugins.plugins:
                 cls = Fitting.__plugins.plugins[fitting_type]
             else:
-                raise RuntimeError("Unknown fitting type: " + fitting_type)
+                raise RuntimeError("Unknown descriptor type: " + fitting_type)
         return super().__new__(cls)
+
+    def output_def(self) -> FittingOutputDef:
+        """Definition for the task Output."""
+        raise NotImplementedError
+
+    def forward(self, **kwargs):
+        """Task Output."""
+        raise NotImplementedError
 
     def share_params(self, base_class, shared_level, resume=False):
         assert (

@@ -161,8 +161,6 @@ class NativeLayer(NativeOP):
     ) -> None:
         prec = PRECISION_DICT[precision.lower()]
         self.precision = precision
-        # only use_timestep when skip connection is established.
-        use_timestep = use_timestep and (num_out == num_in or num_out == num_in * 2)
         rng = np.random.default_rng()
         self.w = rng.normal(size=(num_in, num_out)).astype(prec)
         self.b = rng.normal(size=(num_out,)).astype(prec) if bias else None

@@ -154,22 +154,7 @@ if(ENABLE_TENSORFLOW AND NOT DEEPMD_C_ROOT)
 endif()
 if(ENABLE_PYTORCH AND NOT DEEPMD_C_ROOT)
   find_package(Torch REQUIRED)
-  string(REGEX MATCH "_GLIBCXX_USE_CXX11_ABI=([0-9]+)" CXXABI_PT_MATCH
-               ${TORCH_CXX_FLAGS})
-  if(CXXABI_PT_MATCH)
-    message(STATUS "PyTorch CXX11 ABI: ${CMAKE_MATCH_1}")
-    if(DEFINED OP_CXX_ABI)
-      if(NOT ${CMAKE_MATCH_1} EQUAL ${OP_CXX_ABI})
-        message(
-          FATAL_ERROR
-            "PyTorch CXX11 ABI mismatch TensorFlow: ${CMAKE_MATCH_1} != ${OP_CXX_ABI}"
-        )
-      endif()
-    else()
-      set(OP_CXX_ABI ${CMAKE_MATCH_1})
-      add_definitions(-D_GLIBCXX_USE_CXX11_ABI=${OP_CXX_ABI})
-    endif()
-  endif()
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS}")
 endif()
 # log enabled backends
 if(NOT DEEPMD_C_ROOT)
@@ -180,9 +165,7 @@ if(NOT DEEPMD_C_ROOT)
   if(ENABLE_PYTORCH)
     message(STATUS "- PyTorch")
   endif()
-  if(NOT ENABLE_TENSORFLOW
-     AND NOT ENABLE_PYTORCH
-     AND NOT BUILD_PY_IF)
+  if(NOT ENABLE_TENSORFLOW AND NOT ENABLE_PYTORCH)
     message(FATAL_ERROR "No backend is enabled.")
   endif()
 endif()

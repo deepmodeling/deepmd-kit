@@ -171,8 +171,9 @@ class DescrptSeA(NativeOP):
             )
         self.env_mat = EnvMat(self.rcut, self.rcut_smth)
         self.nnei = np.sum(self.sel)
-        self.davg = np.zeros([self.ntypes, self.nnei, 4])
-        self.dstd = np.ones([self.ntypes, self.nnei, 4])
+        self.nneix4 = self.nnei * 4
+        self.davg = np.zeros([self.ntypes, self.nneix4])
+        self.dstd = np.ones([self.ntypes, self.nneix4])
         self.orig_sel = self.sel
 
     def __setitem__(self, key, value):
@@ -190,11 +191,6 @@ class DescrptSeA(NativeOP):
             return self.dstd
         else:
             raise KeyError(key)
-
-    @property
-    def dim_out(self):
-        """Returns the output dimension of this descriptor."""
-        return self.neuron[-1] * self.axis_neuron
 
     def cal_g(
         self,
