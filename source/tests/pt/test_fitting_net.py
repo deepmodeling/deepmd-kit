@@ -11,14 +11,14 @@ tf.disable_eager_execution()
 from deepmd.pt.model.task import (
     EnergyFittingNet,
 )
+from deepmd.pt.utils import (
+    env,
+)
 from deepmd.pt.utils.env import (
     GLOBAL_NP_FLOAT_PRECISION,
 )
 from deepmd.tf.fit.ener import (
     EnerFitting,
-)
-from deepmd.pt.utils import (
-    env,
 )
 
 
