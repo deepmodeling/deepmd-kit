@@ -6,6 +6,7 @@ import unittest
 import numpy as np
 import tensorflow.compat.v1 as tf
 import torch
+
 from deepmd.pt.utils import (
     env,
 )
@@ -343,10 +344,16 @@ class TestEnergy(unittest.TestCase):
             batch["natoms_vec"], device=batch["coord"].device
         ).unsqueeze(0)
         model_predict = my_model(
-            batch["coord"].to(env.DEVICE), batch["atype"].to(env.DEVICE), batch["box"].to(env.DEVICE), do_atomic_virial=True
+            batch["coord"].to(env.DEVICE),
+            batch["atype"].to(env.DEVICE),
+            batch["box"].to(env.DEVICE),
+            do_atomic_virial=True,
         )
         model_predict_1 = my_model(
-            batch["coord"].to(env.DEVICE), batch["atype"].to(env.DEVICE), batch["box"].to(env.DEVICE), do_atomic_virial=False
+            batch["coord"].to(env.DEVICE),
+            batch["atype"].to(env.DEVICE),
+            batch["box"].to(env.DEVICE),
+            do_atomic_virial=False,
         )
         p_energy, p_force, p_virial, p_atomic_virial = (
             model_predict["energy"],

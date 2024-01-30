@@ -134,15 +134,9 @@ def append_neighbors(coord, region: Region3D, atype, rcut: float):
     xi = torch.arange(-ngcell[0], ncell[0] + ngcell[0], 1)
     yi = torch.arange(-ngcell[1], ncell[1] + ngcell[1], 1)
     zi = torch.arange(-ngcell[2], ncell[2] + ngcell[2], 1)
-    xyz = xi.view(-1, 1, 1, 1) * torch.tensor(
-        [1, 0, 0], dtype=torch.long
-    )
-    xyz = xyz + yi.view(1, -1, 1, 1) * torch.tensor(
-        [0, 1, 0], dtype=torch.long
-    )
-    xyz = xyz + zi.view(1, 1, -1, 1) * torch.tensor(
-        [0, 0, 1], dtype=torch.long
-    )
+    xyz = xi.view(-1, 1, 1, 1) * torch.tensor([1, 0, 0], dtype=torch.long)
+    xyz = xyz + yi.view(1, -1, 1, 1) * torch.tensor([0, 1, 0], dtype=torch.long)
+    xyz = xyz + zi.view(1, 1, -1, 1) * torch.tensor([0, 0, 1], dtype=torch.long)
     xyz = xyz.view(-1, 3)
     mask_a = (xyz >= 0).all(dim=-1)
     mask_b = (xyz < ncell).all(dim=-1)
@@ -186,9 +180,7 @@ def build_neighbor_list(
     distance = coord_l - coord_r
     distance = torch.linalg.norm(distance, dim=-1)
     DISTANCE_INF = distance.max().detach() + rcut
-    distance[:nloc, :nloc] += (
-        torch.eye(nloc, dtype=torch.bool) * DISTANCE_INF
-    )
+    distance[:nloc, :nloc] += torch.eye(nloc, dtype=torch.bool) * DISTANCE_INF
     if min_check:
         if distance.min().abs() < 1e-6:
             RuntimeError("Atom dist too close!")

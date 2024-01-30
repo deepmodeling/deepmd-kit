@@ -7,6 +7,7 @@ import unittest
 import numpy as np
 import tensorflow.compat.v1 as tf
 import torch
+
 from deepmd.pt.utils import (
     env,
 )
@@ -153,11 +154,15 @@ class TestSeA(unittest.TestCase):
 
         pt_coord = self.torch_batch["coord"].to(env.DEVICE)
         pt_coord.requires_grad_(True)
-        index = self.torch_batch["mapping"].unsqueeze(-1).expand(-1, -1, 3).to(env.DEVICE)
+        index = (
+            self.torch_batch["mapping"].unsqueeze(-1).expand(-1, -1, 3).to(env.DEVICE)
+        )
         extended_coord = torch.gather(pt_coord, dim=1, index=index)
         extended_coord = extended_coord - self.torch_batch["shift"].to(env.DEVICE)
         extended_atype = torch.gather(
-            self.torch_batch["atype"].to(env.DEVICE), dim=1, index=self.torch_batch["mapping"].to(env.DEVICE)
+            self.torch_batch["atype"].to(env.DEVICE),
+            dim=1,
+            index=self.torch_batch["mapping"].to(env.DEVICE),
         )
         descriptor_out, _, _, _, _ = descriptor(
             extended_coord,
