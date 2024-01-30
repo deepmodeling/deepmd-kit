@@ -59,7 +59,9 @@ class PairTab:
         # check table data against rcut and update tab_file if needed, table upper boundary is used as rcut if not provided.
         self.rcut = rcut if rcut is not None else self.rmax
         self._check_table_upper_boundary()
-        self.nspline = self.vdata.shape[0] - 1 # this nspline is updated based on the expanded table.
+        self.nspline = (
+            self.vdata.shape[0] - 1
+        )  # this nspline is updated based on the expanded table.
         self.tab_info = np.array([self.rmin, self.hh, self.nspline, self.ntypes])
         self.tab_data = self._make_data()
 
