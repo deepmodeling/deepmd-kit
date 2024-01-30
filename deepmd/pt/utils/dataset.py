@@ -477,10 +477,7 @@ class DeepmdDataSystem:
             if "find_" in kk:
                 pass
             else:
-                batch[kk] = torch.tensor(
-                    batch[kk],
-                    dtype=env.GLOBAL_PT_FLOAT_PRECISION
-                )
+                batch[kk] = torch.tensor(batch[kk], dtype=env.GLOBAL_PT_FLOAT_PRECISION)
                 if self._data_dict[kk]["atomic"]:
                     batch[kk] = batch[kk].view(
                         n_frames, -1, self._data_dict[kk]["ndof"]
@@ -521,12 +518,9 @@ class DeepmdDataSystem:
         batch["nlist_type"] = nlist_type
         natoms_extended = max([item.shape[0] for item in shift])
         batch["shift"] = torch.zeros(
-            (n_frames, natoms_extended, 3),
-            dtype=env.GLOBAL_PT_FLOAT_PRECISION
+            (n_frames, natoms_extended, 3), dtype=env.GLOBAL_PT_FLOAT_PRECISION
         )
-        batch["mapping"] = torch.zeros(
-            (n_frames, natoms_extended), dtype=torch.long
-        )
+        batch["mapping"] = torch.zeros((n_frames, natoms_extended), dtype=torch.long)
         for i in range(len(shift)):
             natoms_tmp = shift[i].shape[0]
             batch["shift"][i, :natoms_tmp] = shift[i]
@@ -562,16 +556,13 @@ class DeepmdDataSystem:
                 pass
             else:
                 batch[kk] = torch.tensor(
-                    batch[kk][sid],
-                    dtype=env.GLOBAL_PT_FLOAT_PRECISION
+                    batch[kk][sid], dtype=env.GLOBAL_PT_FLOAT_PRECISION
                 )
                 if self._data_dict[kk]["atomic"]:
                     batch[kk] = batch[kk].view(-1, self._data_dict[kk]["ndof"])
         for kk in ["type", "real_natoms_vec"]:
             if kk in batch.keys():
-                batch[kk] = torch.tensor(
-                    batch[kk][sid], dtype=torch.long
-                )
+                batch[kk] = torch.tensor(batch[kk][sid], dtype=torch.long)
         clean_coord = batch.pop("coord")
         clean_type = batch.pop("type")
         nloc = clean_type.shape[0]
@@ -665,28 +656,22 @@ class DeepmdDataSystem:
                         NotImplementedError(f"Unknown noise type {self.noise_type}!")
                     noised_coord = _clean_coord.clone().detach()
                     noised_coord[coord_mask] += noise_on_coord
-                    batch["coord_mask"] = torch.tensor(
-                        coord_mask, dtype=torch.bool
-                    )
+                    batch["coord_mask"] = torch.tensor(coord_mask, dtype=torch.bool)
                 else:
                     noised_coord = _clean_coord
                     batch["coord_mask"] = torch.tensor(
-                        np.zeros_like(coord_mask, dtype=bool),
-                        dtype=torch.bool
+                        np.zeros_like(coord_mask, dtype=bool), dtype=torch.bool
                     )
 
                 # add mask for type
                 if self.mask_type:
                     masked_type = clean_type.clone().detach()
                     masked_type[type_mask] = self.mask_type_idx
-                    batch["type_mask"] = torch.tensor(
-                        type_mask, dtype=torch.bool
-                    )
+                    batch["type_mask"] = torch.tensor(type_mask, dtype=torch.bool)
                 else:
                     masked_type = clean_type
                     batch["type_mask"] = torch.tensor(
-                        np.zeros_like(type_mask, dtype=bool),
-                        dtype=torch.bool
+                        np.zeros_like(type_mask, dtype=bool), dtype=torch.bool
                     )
                 if self.pbc:
                     _coord = normalize_coord(noised_coord, region, nloc)

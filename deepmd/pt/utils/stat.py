@@ -64,10 +64,7 @@ def make_stat_input(datasets, dataloaders, nbatches):
                             dtype=env.GLOBAL_PT_FLOAT_PRECISION,
                         )
                     else:
-                        shape = torch.zeros(
-                            (n_frames, extend),
-                            dtype=torch.long
-                        )
+                        shape = torch.zeros((n_frames, extend), dtype=torch.long)
                     for i in range(len(item)):
                         natoms_tmp = l[i].shape[0]
                         shape[i, :natoms_tmp] = l[i]
