@@ -12,6 +12,9 @@ import json
 from pathlib import (
     Path,
 )
+from deepmd.pt.utils import (
+    env,
+)
 
 from deepmd.pt.model.descriptor import (
     prod_env_mat_se_a,
@@ -112,18 +115,18 @@ class TestSeA(unittest.TestCase):
 
     def test_consistency(self):
         avg_zero = torch.zeros(
-            [self.ntypes, self.nnei * 4], dtype=GLOBAL_PT_FLOAT_PRECISION
+            [self.ntypes, self.nnei * 4], dtype=GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE
         )
         std_ones = torch.ones(
-            [self.ntypes, self.nnei * 4], dtype=GLOBAL_PT_FLOAT_PRECISION
+            [self.ntypes, self.nnei * 4], dtype=GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE
         )
         base_d, base_force, nlist = base_se_a(
             rcut=self.rcut,
             rcut_smth=self.rcut_smth,
             sel=self.sel,
             batch=self.np_batch,
-            mean=avg_zero,
-            stddev=std_ones,
+            mean=avg_zero.detach().cpu(),
+            stddev=std_ones.detach().cpu(),
         )
 
         pt_coord = self.pt_batch["coord"]
