@@ -152,7 +152,13 @@ class PairTab:
         return self.tab_info, self.tab_data
 
     @staticmethod
-    def _make_data(ntypes: int, nspline: int, vdata: np.array, hh: float, passin_slope: Optional[np.array] = None) -> np.array:
+    def _make_data(
+        ntypes: int,
+        nspline: int,
+        vdata: np.array,
+        hh: float,
+        passin_slope: Optional[np.array] = None,
+    ) -> np.array:
         data = np.zeros([ntypes * ntypes * 4 * nspline])
         stride = 4 * nspline
         idx_iter = 0
@@ -164,7 +170,9 @@ class PairTab:
                     slope_idx = [t0 * (2 * ntypes - t0 - 1) // 2 + t1]
                     cs = CubicSpline(
                         # setting first order derivation and both end for extrapolation.
-                        xx, vv, bc_type=((1, passin_slope[slope_idx][0]), (1, 0))
+                        xx,
+                        vv,
+                        bc_type=((1, passin_slope[slope_idx][0]), (1, 0)),
                     )
                 else:
                     cs = CubicSpline(xx, vv)
@@ -180,12 +188,10 @@ class PairTab:
                     dtmp[ii * 4 + 2] = dd[ii]
                     dtmp[ii * 4 + 3] = vv[ii]
                 data[
-                    (t0 * ntypes + t1) * stride : (t0 * ntypes + t1) * stride
-                    + stride
+                    (t0 * ntypes + t1) * stride : (t0 * ntypes + t1) * stride + stride
                 ] = dtmp
                 data[
-                    (t1 * ntypes + t0) * stride : (t1 * ntypes + t0) * stride
-                    + stride
+                    (t1 * ntypes + t0) * stride : (t1 * ntypes + t0) * stride + stride
                 ] = dtmp
                 idx_iter += 1
         return data

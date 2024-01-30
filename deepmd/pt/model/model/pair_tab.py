@@ -6,11 +6,7 @@ from typing import (
     Union,
 )
 
-import numpy as np
 import torch
-from scipy.interpolate import (
-    CubicSpline,
-)
 from torch import (
     nn,
 )
@@ -199,7 +195,6 @@ class PairTabModel(nn.Module, AtomicModel):
         table_coef = table_coef.reshape(self.nframes, self.nloc, self.nnei, 4)
         ener = self._calcualte_ener(table_coef, uu)
 
-        
         if self.tab.rmax <= self.rcut:
             # here we need to overwrite energy to zero beyond rcut.
             mask_beyond_rcut = rr > self.rcut
@@ -241,7 +236,6 @@ class PairTabModel(nn.Module, AtomicModel):
         torch.Tensor
             The cubic spline coefficients for each pair of atom types. (ntype, ntype, 1, 4)
         """
-        
         rmax_val = torch.from_numpy(
             self.tab.vdata[self.tab.vdata[:, 0] == self.tab.rmax]
         )
@@ -268,7 +262,7 @@ class PairTabModel(nn.Module, AtomicModel):
             extrapolate_coef = torch.from_numpy(
                 self.tab._make_data(self.ntypes, 1, grid, self.tab.hh, passin_slope)
             ).reshape(self.ntypes, self.ntypes, 4)
-            return extrapolate_coef.unsqueeze(2) 
+            return extrapolate_coef.unsqueeze(2)
 
     @staticmethod
     def _get_pairwise_dist(coords: torch.Tensor) -> torch.Tensor:
@@ -361,8 +355,8 @@ class PairTabModel(nn.Module, AtomicModel):
     def _calcualte_ener(coef: torch.Tensor, uu: torch.Tensor) -> torch.Tensor:
         """Calculate energy using spline coeeficients.
 
-        Paramerters
-        -----------
+        Parameters
+        ----------
         coef : torch.Tensor
             The spline coefficients. (nframes, nloc, nnei, 4)
         uu : torch.Tensor
@@ -373,7 +367,7 @@ class PairTabModel(nn.Module, AtomicModel):
         torch.Tensor
             The atomic energy for all local atoms for all frames. (nframes, nloc, nnei)
         """
-        a3, a2, a1, a0 = torch.unbind(coef, dim=-1)  
+        a3, a2, a1, a0 = torch.unbind(coef, dim=-1)
         etmp = (a3 * uu + a2) * uu + a1  # this should be elementwise operations.
         ener = (
             etmp * uu + a0
