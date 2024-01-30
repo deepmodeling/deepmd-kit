@@ -183,7 +183,7 @@ class PairTabModel(nn.Module, AtomicModel):
         uu = (rr - rmin) * hi  # this is broadcasted to (nframes,nloc,nnei)
 
         # if nnei of atom 0 has -1 in the nlist, uu would be 0.
-        # this is to handel the nlist where the mask is set to 0, so that we don't raise exception for those atoms.
+        # this is to handle the nlist where the mask is set to 0, so that we don't raise exception for those atoms.
         uu = torch.where(nlist != -1, uu, self.nspline + 1)
 
         if torch.any(uu < 0):
@@ -199,8 +199,9 @@ class PairTabModel(nn.Module, AtomicModel):
         table_coef = table_coef.reshape(self.nframes, self.nloc, self.nnei, 4)
         ener = self._calcualte_ener(table_coef, uu)
 
-        # here we need to do postprocess to overwrite energy to zero beyond rcut.
+        
         if self.tab.rmax <= self.rcut:
+            # here we need to overwrite energy to zero beyond rcut.
             mask_beyond_rcut = rr > self.rcut
             ener[mask_beyond_rcut] = 0
 
@@ -233,15 +234,14 @@ class PairTabModel(nn.Module, AtomicModel):
                 Set values at the grid point right before `rcut` to 0, and perform exterapolation between
                 the grid point and `rmax`, this allows smooth decay to 0 at `rcut`.
             2. `rcut` - `rmax` < hh:
-                Set values at `rmax + hh` to 0, and perform extrapolation between `rmax` and `rmax + hh`,
-                the enery beyond `rcut` will be overwritten to `0` latter.
+                Set values at `rmax + hh` to 0, and perform extrapolation between `rmax` and `rmax + hh`.
 
         Returns
         -------
         torch.Tensor
             The cubic spline coefficients for each pair of atom types. (ntype, ntype, 1, 4)
         """
-        # check if decays to `0` at rmax, if yes, no extrapolation is needed.
+        
         rmax_val = torch.from_numpy(
             self.tab.vdata[self.tab.vdata[:, 0] == self.tab.rmax]
         )
@@ -249,6 +249,7 @@ class PairTabModel(nn.Module, AtomicModel):
             self.tab.vdata[self.tab.vdata[:, 0] == self.tab.rmax - self.tab.hh]
         )
 
+        # check if decays to `0` at rmax, if yes, no extrapolation is needed.
         if torch.all(rmax_val[:, 1:] == 0):
             return
         else:
@@ -261,47 +262,13 @@ class PairTabModel(nn.Module, AtomicModel):
                 grid = torch.from_numpy(self.tab.vdata[-2:, :])
             passin_slope = (
                 ((rmax_val - pre_rmax_val) / self.tab.hh)[:, 1:].squeeze(0)
-                if ~np.all(pre_rmax_val == None)
-                else 0
+                if self.tab.rmax > self.tab.hh
+                else torch.zeros_like(rmax_val[:, 1:]).squeeze(0)
             )  # the slope at the end of table for each ntype pairs (ntypes,ntypes,1)
             extrapolate_coef = torch.from_numpy(
-                self._calculate_spline_coef(grid, passin_slope)
+                self.tab._make_data(self.ntypes, 1, grid, self.tab.hh, passin_slope)
             ).reshape(self.ntypes, self.ntypes, 4)
-            return extrapolate_coef.unsqueeze(2)
-
-    # might be able to refactor this, combine with PairTab
-    def _calculate_spline_coef(self, grid, passin_slope):
-        data = np.zeros([self.ntypes * self.ntypes * 4])
-        stride = 4
-        idx_iter = 0
-
-        xx = grid[:, 0]
-        for t0 in range(self.ntypes):
-            for t1 in range(t0, self.ntypes):
-                vv = grid[:, 1 + idx_iter]
-                slope_idx = [t0 * (2 * self.ntypes - t0 - 1) // 2 + t1]
-
-                print(f"slope: {passin_slope[slope_idx]}")
-                cs = CubicSpline(
-                    xx, vv, bc_type=((1, passin_slope[slope_idx][0]), (1, 0))
-                )
-                dd = cs(xx, 1)
-                dd *= self.tab.hh
-                dtmp = np.zeros(stride)
-                dtmp[0] = 2 * vv[0] - 2 * vv[1] + dd[0] + dd[1]
-                dtmp[1] = -3 * vv[0] + 3 * vv[1] - 2 * dd[0] - dd[1]
-                dtmp[2] = dd[0]
-                dtmp[3] = vv[0]
-                data[
-                    (t0 * self.ntypes + t1) * stride : (t0 * self.ntypes + t1) * stride
-                    + stride
-                ] = dtmp
-                data[
-                    (t1 * self.ntypes + t0) * stride : (t1 * self.ntypes + t0) * stride
-                    + stride
-                ] = dtmp
-                idx_iter += 1
-        return data
+            return extrapolate_coef.unsqueeze(2) 
 
     @staticmethod
     def _get_pairwise_dist(coords: torch.Tensor) -> torch.Tensor:
@@ -367,7 +334,7 @@ class PairTabModel(nn.Module, AtomicModel):
         Returns
         -------
         torch.Tensor
-            The spline coefficient. (nframes, nloc, nnei, 4), shape maybe squeezed.
+            The spline coefficient. (nframes, nloc, nnei, 4), shape may be squeezed.
 
         """
         # (nframes, nloc, nnei)
@@ -391,8 +358,22 @@ class PairTabModel(nn.Module, AtomicModel):
         return final_coef
 
     @staticmethod
-    def _calcualte_ener(coef, uu):
-        a3, a2, a1, a0 = torch.unbind(coef, dim=-1)  # 4 * (nframes, nloc, nnei)
+    def _calcualte_ener(coef: torch.Tensor, uu: torch.Tensor) -> torch.Tensor:
+        """Calculate energy using spline coeeficients.
+
+        Paramerters
+        -----------
+        coef : torch.Tensor
+            The spline coefficients. (nframes, nloc, nnei, 4)
+        uu : torch.Tensor
+            The atom displancemnt used in interpolation and extrapolation (nframes, nloc, nnei)
+
+        Returns
+        -------
+        torch.Tensor
+            The atomic energy for all local atoms for all frames. (nframes, nloc, nnei)
+        """
+        a3, a2, a1, a0 = torch.unbind(coef, dim=-1)  
         etmp = (a3 * uu + a2) * uu + a1  # this should be elementwise operations.
         ener = (
             etmp * uu + a0

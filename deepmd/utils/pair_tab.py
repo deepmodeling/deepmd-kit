@@ -63,7 +63,7 @@ class PairTab:
             self.vdata.shape[0] - 1
         )  # this nspline is updated based on the expanded table.
         self.tab_info = np.array([self.rmin, self.hh, self.nspline, self.ntypes])
-        self.tab_data = self._make_data()
+        self.tab_data = self._make_data(self.ntypes, self.nspline, self.vdata, self.hh)
 
     def _check_table_upper_boundary(self) -> None:
         """Update User Provided Table Based on `rcut`.
@@ -151,19 +151,27 @@ class PairTab:
         """Get the serialized table."""
         return self.tab_info, self.tab_data
 
-    def _make_data(self):
-        data = np.zeros([self.ntypes * self.ntypes * 4 * self.nspline])
-        stride = 4 * self.nspline
+    @staticmethod
+    def _make_data(ntypes: int, nspline: int, vdata: np.array, hh: float, passin_slope: Optional[np.array] = None) -> np.array:
+        data = np.zeros([ntypes * ntypes * 4 * nspline])
+        stride = 4 * nspline
         idx_iter = 0
-        xx = self.vdata[:, 0]
-        for t0 in range(self.ntypes):
-            for t1 in range(t0, self.ntypes):
-                vv = self.vdata[:, 1 + idx_iter]
-                cs = CubicSpline(xx, vv)
+        xx = vdata[:, 0]
+        for t0 in range(ntypes):
+            for t1 in range(t0, ntypes):
+                vv = vdata[:, 1 + idx_iter]
+                if passin_slope is not None:
+                    slope_idx = [t0 * (2 * ntypes - t0 - 1) // 2 + t1]
+                    cs = CubicSpline(
+                        # setting first order derivation and both end for extrapolation.
+                        xx, vv, bc_type=((1, passin_slope[slope_idx][0]), (1, 0))
+                    )
+                else:
+                    cs = CubicSpline(xx, vv)
                 dd = cs(xx, 1)
-                dd *= self.hh
+                dd *= hh
                 dtmp = np.zeros(stride)
-                for ii in range(self.nspline):
+                for ii in range(nspline):
                     # check if vv is zero, if so, that's case 1, set all coefficients to 0,
                     dtmp[ii * 4 + 0] = 2 * vv[ii] - 2 * vv[ii + 1] + dd[ii] + dd[ii + 1]
                     dtmp[ii * 4 + 1] = (
@@ -172,11 +180,11 @@ class PairTab:
                     dtmp[ii * 4 + 2] = dd[ii]
                     dtmp[ii * 4 + 3] = vv[ii]
                 data[
-                    (t0 * self.ntypes + t1) * stride : (t0 * self.ntypes + t1) * stride
+                    (t0 * ntypes + t1) * stride : (t0 * ntypes + t1) * stride
                     + stride
                 ] = dtmp
                 data[
-                    (t1 * self.ntypes + t0) * stride : (t1 * self.ntypes + t0) * stride
+                    (t1 * ntypes + t0) * stride : (t1 * ntypes + t0) * stride
                     + stride
                 ] = dtmp
                 idx_iter += 1
