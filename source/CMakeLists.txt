@@ -180,7 +180,9 @@ if(NOT DEEPMD_C_ROOT)
   if(ENABLE_PYTORCH)
     message(STATUS "- PyTorch")
   endif()
-  if(NOT ENABLE_TENSORFLOW AND NOT ENABLE_PYTORCH)
+  if(NOT ENABLE_TENSORFLOW
+     AND NOT ENABLE_PYTORCH
+     AND NOT BUILD_PY_IF)
     message(FATAL_ERROR "No backend is enabled.")
   endif()
 endif()

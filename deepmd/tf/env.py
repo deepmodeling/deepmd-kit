@@ -472,6 +472,11 @@ def _get_package_constants(
 
 
 GLOBAL_CONFIG = _get_package_constants()
+if GLOBAL_CONFIG["enable_tensorflow"] == "0":
+    raise RuntimeError(
+        "TensorFlow backend is not built. To enable it, "
+        "set the environmental variable DP_ENABLE_TENSORFLOW=1."
+    )
 MODEL_VERSION = GLOBAL_CONFIG["model_version"]
 TF_VERSION = GLOBAL_CONFIG["tf_version"]
 TF_CXX11_ABI_FLAG = int(GLOBAL_CONFIG["tf_cxx11_abi_flag"])
