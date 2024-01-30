@@ -272,8 +272,6 @@ class InvarFitting(Fitting):
         """
         xx = descriptor
         nf, nloc, nd = xx.shape
-        dtype = descriptor.dtype
-        device = env.DEVICE
         # NOTICE in tests/pt/test_model.py
         # it happens that the user directly access the data memeber self.bias_atom_e
         # and set it to a wrong shape!
