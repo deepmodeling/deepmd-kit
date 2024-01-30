@@ -330,23 +330,36 @@ void deepmd::get_env_nthreads(int& num_intra_nthreads,
   num_intra_nthreads = 0;
   num_inter_nthreads = 0;
   const char* env_intra_nthreads =
-      std::getenv("TF_INTRA_OP_PARALLELISM_THREADS");
+      std::getenv("DP_INTRA_OP_PARALLELISM_THREADS");
   const char* env_inter_nthreads =
+      std::getenv("DP_INTER_OP_PARALLELISM_THREADS");
+  // backward compatibility
+  const char* env_intra_nthreads_tf =
+      std::getenv("TF_INTRA_OP_PARALLELISM_THREADS");
+  const char* env_inter_nthreads_tf =
       std::getenv("TF_INTER_OP_PARALLELISM_THREADS");
   const char* env_omp_nthreads = std::getenv("OMP_NUM_THREADS");
   if (env_intra_nthreads &&
       std::string(env_intra_nthreads) != std::string("") &&
       atoi(env_intra_nthreads) >= 0) {
     num_intra_nthreads = atoi(env_intra_nthreads);
+  } else if (env_intra_nthreads_tf &&
+             std::string(env_intra_nthreads_tf) != std::string("") &&
+             atoi(env_intra_nthreads_tf) >= 0) {
+    num_intra_nthreads = atoi(env_intra_nthreads_tf);
   } else {
-    throw_env_not_set_warning("TF_INTRA_OP_PARALLELISM_THREADS");
+    throw_env_not_set_warning("DP_INTRA_OP_PARALLELISM_THREADS");
   }
   if (env_inter_nthreads &&
       std::string(env_inter_nthreads) != std::string("") &&
       atoi(env_inter_nthreads) >= 0) {
     num_inter_nthreads = atoi(env_inter_nthreads);
+  } else if (env_inter_nthreads_tf &&
+             std::string(env_inter_nthreads_tf) != std::string("") &&
+             atoi(env_inter_nthreads_tf) >= 0) {
+    num_inter_nthreads = atoi(env_inter_nthreads_tf);
   } else {
-    throw_env_not_set_warning("TF_INTER_OP_PARALLELISM_THREADS");
+    throw_env_not_set_warning("DP_INTER_OP_PARALLELISM_THREADS");
   }
   if (!(env_omp_nthreads && std::string(env_omp_nthreads) != std::string("") &&
         atoi(env_omp_nthreads) >= 0)) {
