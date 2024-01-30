@@ -53,23 +53,24 @@ from deepmd.tf.utils.learning_rate import (
 VariableState = collections.namedtuple("VariableState", ["value", "gradient"])
 
 
-def torch2tf(torch_name):
+def torch2tf(torch_name, last_layer_id=None):
     fields = torch_name.split(".")
     offset = int(fields[2] == "networks")
     element_id = int(fields[2 + offset])
     if fields[0] == "descriptor":
         layer_id = int(fields[4 + offset]) + 1
         weight_type = fields[5 + offset]
-        return "filter_type_all/%s_%d_%d:0" % (weight_type, layer_id, element_id)
-    elif fields[3] == "deep_layers":
-        layer_id = int(fields[4])
-        weight_type = fields[5]
-        return "layer_%d_type_%d/%s:0" % (layer_id, element_id, weight_type)
-    elif fields[3] == "final_layer":
-        weight_type = fields[4]
-        return "final_layer_type_%d/%s:0" % (element_id, weight_type)
+        ret = "filter_type_all/%s_%d_%d:0" % (weight_type, layer_id, element_id)
+    elif fields[0] == "fitting_net":
+        layer_id = int(fields[4 + offset])
+        weight_type = fields[5 + offset]
+        if layer_id != last_layer_id:
+            ret = "layer_%d_type_%d/%s:0" % (layer_id, element_id, weight_type)
+        else:
+            ret = "final_layer_type_%d/%s:0" % (element_id, weight_type)
     else:
         raise RuntimeError("Unexpected parameter name: %s" % torch_name)
+    return ret
 
 
 class DpTrainer:
@@ -290,7 +291,7 @@ class TestEnergy(unittest.TestCase):
                     "neuron": self.filter_neuron,
                     "axis_neuron": self.axis_neuron,
                 },
-                "fitting_net": {"neuron": self.n_neuron},
+                "fitting_net": {"neuron": self.n_neuron, "distinguish_types": True},
                 "data_stat_nbatch": self.data_stat_nbatch,
                 "type_map": self.type_map,
             },
@@ -323,7 +324,7 @@ class TestEnergy(unittest.TestCase):
         # Keep parameter value consistency between 2 implentations
         for name, param in my_model.named_parameters():
             name = name.replace("sea.", "")
-            var_name = torch2tf(name)
+            var_name = torch2tf(name, last_layer_id=len(self.n_neuron))
             var = vs_dict[var_name].value
             with torch.no_grad():
                 src = torch.from_numpy(var)
@@ -404,7 +405,7 @@ class TestEnergy(unittest.TestCase):
 
         for name, param in my_model.named_parameters():
             name = name.replace("sea.", "")
-            var_name = torch2tf(name)
+            var_name = torch2tf(name, last_layer_id=len(self.n_neuron))
             var_grad = vs_dict[var_name].gradient
             param_grad = param.grad.cpu()
             var_grad = torch.tensor(var_grad)
