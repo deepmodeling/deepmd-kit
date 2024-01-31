@@ -12,6 +12,8 @@ PRECISION_DICT = {
     "half": np.float16,
     "single": np.float32,
     "double": np.float64,
+    "int32": np.int32,
+    "int64": np.int64,
 }
 DEFAULT_PRECISION = "float64"
 
