@@ -10,8 +10,6 @@ from typing import (
     Optional,
 )
 
-import numpy as np
-
 from .output_def import (
     FittingOutputDef,
 )
@@ -44,8 +42,8 @@ def make_base_atomic_model(T_Tensor):
             extended_atype: T_Tensor,
             nlist: T_Tensor,
             mapping: Optional[T_Tensor] = None,
-            fparam: Optional[np.ndarray] = None,
-            aparam: Optional[np.ndarray] = None,
+            fparam: Optional[T_Tensor] = None,
+            aparam: Optional[T_Tensor] = None,
         ) -> Dict[str, T_Tensor]:
             raise NotImplementedError
 
