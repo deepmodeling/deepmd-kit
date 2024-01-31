@@ -42,6 +42,7 @@ jobs:
         DP_BUILD_TESTING: 1
         DP_VARIANT: cuda
         CUDA_PATH: /usr/local/cuda-12.2
+        NUM_WORKERS: 0
     - run: dp --version
     - run: python -m pytest -s --cov=deepmd source/tests --durations=0
     - run: source/install/test_cc_local.sh

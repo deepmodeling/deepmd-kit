@@ -7,6 +7,10 @@ import numpy as np
 import tensorflow.compat.v1 as tf
 import torch
 
+from deepmd.pt.utils import (
+    env,
+)
+
 tf.disable_eager_execution()
 
 from pathlib import (
@@ -340,10 +344,16 @@ class TestEnergy(unittest.TestCase):
             batch["natoms_vec"], device=batch["coord"].device
         ).unsqueeze(0)
         model_predict = my_model(
-            batch["coord"], batch["atype"], batch["box"], do_atomic_virial=True
+            batch["coord"].to(env.DEVICE),
+            batch["atype"].to(env.DEVICE),
+            batch["box"].to(env.DEVICE),
+            do_atomic_virial=True,
         )
         model_predict_1 = my_model(
-            batch["coord"], batch["atype"], batch["box"], do_atomic_virial=False
+            batch["coord"].to(env.DEVICE),
+            batch["atype"].to(env.DEVICE),
+            batch["box"].to(env.DEVICE),
+            do_atomic_virial=False,
         )
         p_energy, p_force, p_virial, p_atomic_virial = (
             model_predict["energy"],
@@ -357,8 +367,8 @@ class TestEnergy(unittest.TestCase):
             "force": p_force,
         }
         label = {
-            "energy": batch["energy"],
-            "force": batch["force"],
+            "energy": batch["energy"].to(env.DEVICE),
+            "force": batch["force"].to(env.DEVICE),
         }
         loss, _ = my_loss(model_pred, label, int(batch["natoms"][0, 0]), cur_lr)
         np.testing.assert_allclose(

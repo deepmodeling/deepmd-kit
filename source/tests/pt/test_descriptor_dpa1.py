@@ -243,7 +243,7 @@ class TestDPA1(unittest.TestCase):
         dparams["ntypes"] = ntypes
         des = DescrptBlockSeAtten(
             **dparams,
-        )
+        ).to(env.DEVICE)
         des.load_state_dict(torch.load(self.file_model_param))
         rcut = dparams["rcut"]
         nsel = dparams["sel"]
@@ -260,7 +260,7 @@ class TestDPA1(unittest.TestCase):
             extended_coord, extended_atype, nloc, rcut, nsel, distinguish_types=False
         )
         # handel type_embedding
-        type_embedding = TypeEmbedNet(ntypes, 8)
+        type_embedding = TypeEmbedNet(ntypes, 8).to(env.DEVICE)
         type_embedding.load_state_dict(torch.load(self.file_type_embed))
 
         ## to save model parameters
@@ -293,7 +293,7 @@ class TestDPA1(unittest.TestCase):
         dparams["concat_output_tebd"] = False
         des = DescrptDPA1(
             **dparams,
-        )
+        ).to(env.DEVICE)
         target_dict = des.state_dict()
         source_dict = torch.load(self.file_model_param)
         type_embd_dict = torch.load(self.file_type_embed)
@@ -337,7 +337,7 @@ class TestDPA1(unittest.TestCase):
         dparams["concat_output_tebd"] = True
         des = DescrptDPA1(
             **dparams,
-        )
+        ).to(env.DEVICE)
         descriptor, env_mat, diff, rot_mat, sw = des(
             extended_coord,
             extended_atype,
