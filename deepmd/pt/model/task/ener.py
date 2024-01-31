@@ -470,6 +470,10 @@ class EnergyFittingNetDirect(Fitting):
         inputs: torch.Tensor,
         atype: torch.Tensor,
         gr: Optional[torch.Tensor] = None,
+        g2: Optional[torch.Tensor] = None,
+        h2: Optional[torch.Tensor] = None,
+        fparam: Optional[torch.Tensor] = None,
+        aparam: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, None]:
         """Based on embedding net output, alculate total energy.
 
