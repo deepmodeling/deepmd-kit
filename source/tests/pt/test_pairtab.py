@@ -54,7 +54,7 @@ class TestPairTab(unittest.TestCase):
         result = self.model.forward_atomic(
             self.extended_coord, self.extended_atype, self.nlist
         )
-        expected_result = torch.tensor([[1.2000, 1.3542], [1.2000, 0.4000]])
+        expected_result = torch.tensor([[1.2000, 1.3614], [1.2000, 0.4000]])
 
         torch.testing.assert_allclose(result["energy"], expected_result, 0.0001, 0.0001)
 
@@ -64,7 +64,7 @@ class TestPairTab(unittest.TestCase):
         result = self.model.forward_atomic(
             self.extended_coord, self.extended_atype, self.nlist
         )
-        expected_result = torch.tensor([[0.8000, 1.3542], [1.2000, 0.4000]])
+        expected_result = torch.tensor([[0.8000, 1.3614], [1.2000, 0.4000]])
 
         torch.testing.assert_allclose(result["energy"], expected_result, 0.0001, 0.0001)
 
@@ -112,34 +112,38 @@ class TestPairTabTwoAtoms(unittest.TestCase):
 
         for dist, rcut in zip(
             [
-                0.010,
+                0.01,
                 0.015,
                 0.020,
                 0.015,
-                0.020,
+                0.02,
                 0.021,
                 0.015,
-                0.020,
+                0.02,
                 0.021,
                 0.025,
                 0.026,
                 0.025,
-                0.02999,
+                0.025,
+                0.0216161
+                
             ],
             [
                 0.015,
                 0.015,
                 0.015,
                 0.02,
-                0.020,
-                0.020,
+                0.02,
+                0.02,
                 0.022,
                 0.022,
                 0.022,
                 0.025,
                 0.025,
-                0.030,
-                0.030,
+                0.03,
+                0.035,
+                0.025
+                
             ],
         ):
             extended_coord = torch.tensor(
@@ -162,24 +166,25 @@ class TestPairTabTwoAtoms(unittest.TestCase):
                     [
                         [
                             [0.4, 0],
-                            [0.25, 0.0],
+                            [0.0, 0],
                             [0.0, 0],
                             [0.25, 0],
-                            [0.125, 0],
-                            [0.0, 0],
+                            [0,    0],
+                            [0,    0],
                             [0.25, 0],
                             [0.125, 0],
-                            [0.0469, 0],
-                            [0.0, 0],
-                            [0.0, 0],
-                            [0.0469, 0],
-                            [0, 0],
+                            [0.0922, 0],
+                            [0,    0],
+                            [0,    0],
+                            [0,    0],
+                            [0.0923,  0],
+                            [0.0713,  0],
                         ]
                     ]
                 )
             ]
-        ).reshape(13, 2)
-        results = torch.stack(results).reshape(13, 2)
+        ).reshape(14, 2)
+        results = torch.stack(results).reshape(14, 2)
 
         torch.testing.assert_allclose(results, expected_result, 0.0001, 0.0001)
 

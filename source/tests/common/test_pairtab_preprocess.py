@@ -11,7 +11,7 @@ from deepmd.utils.pair_tab import (
 )
 
 
-class TestPairTabPreprocessLinear(unittest.TestCase):
+class TestPairTabPreprocessExtrapolate(unittest.TestCase):
     @patch("numpy.loadtxt")
     def setUp(self, mock_loadtxt) -> None:
         file_path = "dummy_path"
@@ -28,6 +28,7 @@ class TestPairTabPreprocessLinear(unittest.TestCase):
         self.tab2 = PairTab(filename=file_path, rcut=0.02)
         self.tab3 = PairTab(filename=file_path, rcut=0.022)
         self.tab4 = PairTab(filename=file_path, rcut=0.03)
+        self.tab5 = PairTab(filename=file_path, rcut=0.032)
 
     def test_preprocess(self):
         np.testing.assert_allclose(
@@ -39,9 +40,9 @@ class TestPairTabPreprocessLinear(unittest.TestCase):
                     [0.015, 0.5, 1.0, 1.5],
                     [0.02, 0.25, 0.4, 0.75],
                     [0.025, 0.0, 0.0, 0.0],
-                    [0.03, 0.0, 0.0, 0.0],
+
                 ]
-            ),
+            ), rtol=1e-04, atol = 1e-04
         )
         np.testing.assert_allclose(
             self.tab2.vdata,
@@ -51,9 +52,8 @@ class TestPairTabPreprocessLinear(unittest.TestCase):
                     [0.01, 0.8, 1.6, 2.4],
                     [0.015, 0.5, 1.0, 1.5],
                     [0.02, 0.25, 0.4, 0.75],
-                    [0.025, 0.0, 0.0, 0.0],
                 ]
-            ),
+            ), rtol=1e-04, atol = 1e-04
         )
 
         # for this test case, the table does not decay to zero at rcut = 0.22,
@@ -69,8 +69,9 @@ class TestPairTabPreprocessLinear(unittest.TestCase):
                     [0.02, 0.25, 0.4, 0.75],
                     [0.025, 0.0, 0.0, 0.0],
                 ]
-            ),
+            ), rtol=1e-04, atol = 1e-04
         )
+
         np.testing.assert_allclose(
             self.tab4.vdata,
             np.array(
@@ -79,11 +80,24 @@ class TestPairTabPreprocessLinear(unittest.TestCase):
                     [0.01, 0.8, 1.6, 2.4],
                     [0.015, 0.5, 1.0, 1.5],
                     [0.02, 0.25, 0.4, 0.75],
-                    [0.025, 0.125, 0.2, 0.375],
-                    [0.03, 0.0, 0.0, 0.0],
-                    [0.035, 0.0, 0.0, 0.0],
+                    [0.025, 0.0, 0.0, 0.0],
+
                 ]
-            ),
+            ), rtol = 1e-04, atol = 1e-04
+        )
+
+        np.testing.assert_allclose(
+            self.tab5.vdata,
+            np.array(
+                [
+                    [0.005, 1.0, 2.0, 3.0],
+                    [0.01, 0.8, 1.6, 2.4],
+                    [0.015, 0.5, 1.0, 1.5],
+                    [0.02, 0.25, 0.4, 0.75],
+                    [0.025, 0.12468, 0.1992, 0.3741],
+                    [0.03, 0.0, 0.0, 0.0],
+                ]
+            ), rtol = 1e-04, atol = 1e-04
         )
 
 
@@ -93,7 +107,6 @@ class TestPairTabPreprocessZero(unittest.TestCase):
         file_path = "dummy_path"
         mock_loadtxt.return_value = np.array(
             [
-                [0.005, 1.0, 2.0, 3.0],
                 [0.01, 0.8, 1.6, 2.4],
                 [0.015, 0.5, 1.0, 1.5],
                 [0.02, 0.25, 0.4, 0.75],
@@ -104,13 +117,14 @@ class TestPairTabPreprocessZero(unittest.TestCase):
         self.tab1 = PairTab(filename=file_path, rcut=0.023)
         self.tab2 = PairTab(filename=file_path, rcut=0.025)
         self.tab3 = PairTab(filename=file_path, rcut=0.028)
+        self.tab4 = PairTab(filename=file_path, rcut=0.033)
 
     def test_preprocess(self):
         np.testing.assert_allclose(
             self.tab1.vdata,
             np.array(
                 [
-                    [0.005, 1.0, 2.0, 3.0],
+
                     [0.01, 0.8, 1.6, 2.4],
                     [0.015, 0.5, 1.0, 1.5],
                     [0.02, 0.25, 0.4, 0.75],
@@ -122,7 +136,7 @@ class TestPairTabPreprocessZero(unittest.TestCase):
             self.tab2.vdata,
             np.array(
                 [
-                    [0.005, 1.0, 2.0, 3.0],
+
                     [0.01, 0.8, 1.6, 2.4],
                     [0.015, 0.5, 1.0, 1.5],
                     [0.02, 0.25, 0.4, 0.75],
@@ -135,7 +149,7 @@ class TestPairTabPreprocessZero(unittest.TestCase):
             self.tab3.vdata,
             np.array(
                 [
-                    [0.005, 1.0, 2.0, 3.0],
+
                     [0.01, 0.8, 1.6, 2.4],
                     [0.015, 0.5, 1.0, 1.5],
                     [0.02, 0.25, 0.4, 0.75],
@@ -145,6 +159,20 @@ class TestPairTabPreprocessZero(unittest.TestCase):
             ),
         )
 
+        np.testing.assert_allclose(
+            self.tab4.vdata,
+            np.array(
+                [
+
+                    [0.01, 0.8, 1.6, 2.4],
+                    [0.015, 0.5, 1.0, 1.5],
+                    [0.02, 0.25, 0.4, 0.75],
+                    [0.025, 0.0, 0.0, 0.0],
+                    [0.03, 0.0, 0.0, 0.0],
+                    [0.035, 0.0, 0.0, 0.0],
+                ]
+            ),
+        )
 
 class TestPairTabPreprocessUneven(unittest.TestCase):
     @patch("numpy.loadtxt")
@@ -163,6 +191,7 @@ class TestPairTabPreprocessUneven(unittest.TestCase):
         self.tab1 = PairTab(filename=file_path, rcut=0.025)
         self.tab2 = PairTab(filename=file_path, rcut=0.028)
         self.tab3 = PairTab(filename=file_path, rcut=0.03)
+        self.tab4 = PairTab(filename=file_path, rcut=0.037)
 
     def test_preprocess(self):
         np.testing.assert_allclose(
@@ -174,9 +203,8 @@ class TestPairTabPreprocessUneven(unittest.TestCase):
                     [0.015, 0.5, 1.0, 1.5],
                     [0.02, 0.25, 0.4, 0.75],
                     [0.025, 0.0, 0.1, 0.0],
-                    [0.03, 0.0, 0.0, 0.0],
                 ]
-            ),
+            ), rtol=1e-04, atol = 1e-04
         )
         np.testing.assert_allclose(
             self.tab2.vdata,
@@ -189,8 +217,9 @@ class TestPairTabPreprocessUneven(unittest.TestCase):
                     [0.025, 0.0, 0.1, 0.0],
                     [0.03, 0.0, 0.0, 0.0],
                 ]
-            ),
+            ), rtol=1e-04, atol = 1e-04
         )
+
         np.testing.assert_allclose(
             self.tab3.vdata,
             np.array(
@@ -201,7 +230,22 @@ class TestPairTabPreprocessUneven(unittest.TestCase):
                     [0.02, 0.25, 0.4, 0.75],
                     [0.025, 0.0, 0.1, 0.0],
                     [0.03, 0.0, 0.0, 0.0],
-                    [0.035, 0.0, 0.0, 0.0],
                 ]
-            ),
+            ), rtol=1e-04, atol = 1e-04
+        )
+
+        np.testing.assert_allclose(
+            self.tab4.vdata,
+            np.array(
+                [
+                    [0.005, 1.0, 2.0, 3.0],
+                    [0.01, 0.8, 1.6, 2.4],
+                    [0.015, 0.5, 1.0, 1.5],
+                    [0.02, 0.25, 0.4, 0.75],
+                    [0.025, 0.0, 0.1, 0.0],
+                    [0.03, 0.0, 0.04963, 0.0],
+                    [0.035, 0.0, 0.0, 0.0],
+
+                ]
+            ), rtol=1e-03, atol = 1e-03
         )

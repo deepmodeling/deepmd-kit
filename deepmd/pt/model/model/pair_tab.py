@@ -195,74 +195,16 @@ class PairTabModel(nn.Module, AtomicModel):
         table_coef = table_coef.reshape(self.nframes, self.nloc, self.nnei, 4)
         ener = self._calcualte_ener(table_coef, uu)
 
-        if self.tab.rmax <= self.rcut:
-            # here we need to overwrite energy to zero beyond rcut.
-            mask_beyond_rcut = rr > self.rcut
-            ener[mask_beyond_rcut] = 0
 
-            # here we use smooth extrapolation to replace linear extrapolation.
-            extrapolation = self._extrapolate_rmax_rcut()
-            if extrapolation is not None:
-                uu_extrapolate = (rr - self.tab.rmax) / (self.rcut - self.tab.rmax)
-                clipped_uu = torch.clamp(uu_extrapolate, 0, 1)  # clip rr within rmax.
-                extrapolate_coef = self._extract_spline_coefficient(
-                    i_type, j_type, torch.zeros_like(idx), extrapolation, 1
-                )
-                extrapolate_coef = extrapolate_coef.reshape(
-                    self.nframes, self.nloc, self.nnei, 4
-                )
-                ener_extrpolate = self._calcualte_ener(extrapolate_coef, clipped_uu)
-                mask_rmax_to_rcut = (self.tab.rmax < rr) & (rr <= self.rcut)
-                ener[mask_rmax_to_rcut] = ener_extrpolate[mask_rmax_to_rcut]
+        # here we need to overwrite energy to zero at rcut and beyond.
+        mask_beyond_rcut = rr >= self.rcut
+        # also overwrite values beyond extrapolation to zero
+        extrapolation_mask = rr >= self.tab.rmin + self.nspline * self.tab.hh
+        ener[mask_beyond_rcut] = 0
+        ener[extrapolation_mask] = 0
+
         return ener
 
-    def _extrapolate_rmax_rcut(self) -> torch.Tensor:
-        """Soomth extrapolation between table upper boundary and rcut.
-
-        This method should only be used when the table upper boundary `rmax` is smaller than `rcut`, and
-        the table upper boundary values are not zeros. To simplify the problem, we use a single
-        cubic spline between `rmax` and `rcut` for each pair of atom types. One can substitute this extrapolation
-        to higher order polynomials if needed.
-
-        There are two scenarios:
-            1. `ruct` - `rmax` >= hh:
-                Set values at the grid point right before `rcut` to 0, and perform exterapolation between
-                the grid point and `rmax`, this allows smooth decay to 0 at `rcut`.
-            2. `rcut` - `rmax` < hh:
-                Set values at `rmax + hh` to 0, and perform extrapolation between `rmax` and `rmax + hh`.
-
-        Returns
-        -------
-        torch.Tensor
-            The cubic spline coefficients for each pair of atom types. (ntype, ntype, 1, 4)
-        """
-        rmax_val = torch.from_numpy(
-            self.tab.vdata[self.tab.vdata[:, 0] == self.tab.rmax]
-        )
-        pre_rmax_val = torch.from_numpy(
-            self.tab.vdata[self.tab.vdata[:, 0] == self.tab.rmax - self.tab.hh]
-        )
-
-        # check if decays to `0` at rmax, if yes, no extrapolation is needed.
-        if torch.all(rmax_val[:, 1:] == 0):
-            return
-        else:
-            if self.rcut - self.tab.rmax >= self.tab.hh:
-                rcut_idx = int(self.rcut / self.tab.hh - self.tab.rmin / self.tab.hh)
-                rcut_val = torch.tensor(self.tab.vdata[rcut_idx, :]).reshape(1, -1)
-                grid = torch.concatenate([rmax_val, rcut_val], axis=0)
-            else:
-                # the last two rows will be the rmax, and rmax+hh
-                grid = torch.from_numpy(self.tab.vdata[-2:, :])
-            passin_slope = (
-                ((rmax_val - pre_rmax_val) / self.tab.hh)[:, 1:].squeeze(0)
-                if self.tab.rmax > self.tab.hh
-                else torch.zeros_like(rmax_val[:, 1:]).squeeze(0)
-            )  # the slope at the end of table for each ntype pairs (ntypes,ntypes,1)
-            extrapolate_coef = torch.from_numpy(
-                self.tab._make_data(self.ntypes, 1, grid, self.tab.hh, passin_slope)
-            ).reshape(self.ntypes, self.ntypes, 4)
-            return extrapolate_coef.unsqueeze(2)
 
     @staticmethod
     def _get_pairwise_dist(coords: torch.Tensor) -> torch.Tensor:
@@ -347,8 +289,7 @@ class PairTabModel(nn.Module, AtomicModel):
         final_coef = torch.gather(expanded_tab_data, 3, clipped_indices).squeeze()
 
         # when the spline idx is beyond the table, all spline coefficients are set to `0`, and the resulting ener corresponding to the idx is also `0`.
-        final_coef[expanded_idx.squeeze() >= nspline] = 0
-
+        final_coef[expanded_idx.squeeze() > nspline] = 0
         return final_coef
 
     @staticmethod
@@ -371,5 +312,5 @@ class PairTabModel(nn.Module, AtomicModel):
         etmp = (a3 * uu + a2) * uu + a1  # this should be elementwise operations.
         ener = (
             etmp * uu + a0
-        )  # this energy has the linear extrapolated value when rcut > rmax
+        )  # this energy has the extrapolated value when rcut > rmax
         return ener
