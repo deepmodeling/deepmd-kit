@@ -41,12 +41,12 @@ jobs:
             cuda_version: 11.8
             dp_pkg_name: deepmd-kit-cu11
           # macos-x86-64
-          - os: macos-latest
+          - os: macos-13
             python: 311
             platform_id: macosx_x86_64
             dp_variant: cpu
           # macos-arm64
-          - os: macos-latest
+          - os: macos-14
             python: 311
             platform_id: macosx_arm64
             dp_variant: cpu
