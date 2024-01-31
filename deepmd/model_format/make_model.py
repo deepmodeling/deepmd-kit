@@ -42,9 +42,11 @@ def make_model(T_AtomicModel):
             coord,
             atype,
             box: Optional[np.ndarray] = None,
+            fparam: Optional[np.ndarray] = None,
+            aparam: Optional[np.ndarray] = None,
             do_atomic_virial: bool = False,
         ) -> Dict[str, np.ndarray]:
-            """Return predictions of a model.
+            """Return model prediction.
 
             Parameters
             ----------
@@ -55,6 +57,10 @@ def make_model(T_AtomicModel):
                 The type of atoms. shape: nf x nloc
             box
                 The simulation box. shape: nf x 9
+            fparam
+                frame parameter. nf x ndf
+            aparam
+                atomic parameter. nf x nloc x nda
             do_atomic_virial
                 If calculate the atomic virial.
 
@@ -90,6 +96,8 @@ def make_model(T_AtomicModel):
                 extended_atype,
                 nlist,
                 mapping,
+                fparam=fparam,
+                aparam=aparam,
                 do_atomic_virial=do_atomic_virial,
             )
             model_predict = communicate_extended_output(
@@ -106,9 +114,14 @@ def make_model(T_AtomicModel):
             extended_atype,
             nlist,
             mapping: Optional[np.ndarray] = None,
+            fparam: Optional[np.ndarray] = None,
+            aparam: Optional[np.ndarray] = None,
             do_atomic_virial: bool = False,
         ):
-            """Return model prediction.
+            """Return model prediction. Lower interface that takes
+            extended atomic coordinates and types, nlist, and mapping
+            as input, and returns the predictions on the extended region.
+            The predictions are not reduced.
 
             Parameters
             ----------
@@ -120,13 +133,17 @@ def make_model(T_AtomicModel):
                 neighbor list. nf x nloc x nsel
             mapping
                 mapps the extended indices to local indices
+            fparam
+                frame parameter. nf x ndf
+            aparam
+                atomic parameter. nf x nloc x nda
             do_atomic_virial
                 whether do atomic virial
 
             Returns
             -------
             result_dict
-                the result dict, defined by the fitting net output def.
+                the result dict, defined by the `FittingOutputDef`.
 
             """
             nframes, nall = extended_atype.shape[:2]
@@ -136,6 +153,8 @@ def make_model(T_AtomicModel):
                 extended_atype,
                 nlist,
                 mapping=mapping,
+                fparam=fparam,
+                aparam=aparam,
             )
             model_predict = fit_output_to_model_output(
                 atomic_ret,

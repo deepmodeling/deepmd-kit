@@ -56,6 +56,29 @@ class DPAtomicModel(BaseAtomicModel):
         fparam: Optional[np.ndarray] = None,
         aparam: Optional[np.ndarray] = None,
     ) -> Dict[str, np.ndarray]:
+        """Models' atomic predictions.
+
+        Parameters
+        ----------
+        extended_coord
+            coodinates in extended region
+        extended_atype
+            atomic type in extended region
+        nlist
+            neighbor list. nf x nloc x nsel
+        mapping
+            mapps the extended indices to local indices. nf x nall
+        fparam
+            frame parameter. nf x ndf
+        aparam
+            atomic parameter. nf x nloc x nda
+
+        Returns
+        -------
+        result_dict
+            the result dict, defined by the `FittingOutputDef`.
+
+        """
         nframes, nloc, nnei = nlist.shape
         atype = extended_atype[:, :nloc]
         descriptor, rot_mat, g2, h2, sw = self.descriptor(

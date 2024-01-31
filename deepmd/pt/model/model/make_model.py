@@ -43,20 +43,30 @@ def make_model(T_AtomicModel):
             coord,
             atype,
             box: Optional[torch.Tensor] = None,
+            fparam: Optional[torch.Tensor] = None,
+            aparam: Optional[torch.Tensor] = None,
             do_atomic_virial: bool = False,
         ) -> Dict[str, torch.Tensor]:
-            """Return total energy of the system.
-            Args:
-            - coord: Atom coordinates with shape [nframes, natoms[1]*3].
-            - atype: Atom types with shape [nframes, natoms[1]].
-            - natoms: Atom statisics with shape [self.ntypes+2].
-            - box: Simulation box with shape [nframes, 9].
-            - atomic_virial: Whether or not compoute the atomic virial.
+            """Return model prediction.
+
+            Parameters
+            ----------
+            coord
+                The coordinates of the atoms.
+                shape: nf x (nloc x 3)
+            atype
+                The type of atoms. shape: nf x nloc
+            box
+                The simulation box. shape: nf x 9
+            do_atomic_virial
+                If calculate the atomic virial.
 
             Returns
             -------
-            - energy: Energy per atom.
-            - force: XYZ force per atom.
+            ret_dict
+                The result dict of type Dict[str,torch.Tensor].
+                The keys are defined by the `ModelOutputDef`.
+
             """
             nframes, nloc = atype.shape[:2]
             if box is not None:
@@ -84,6 +94,8 @@ def make_model(T_AtomicModel):
                 nlist,
                 mapping,
                 do_atomic_virial=do_atomic_virial,
+                fparam=fparam,
+                aparam=aparam,
             )
             model_predict = communicate_extended_output(
                 model_predict_lower,
@@ -99,9 +111,14 @@ def make_model(T_AtomicModel):
             extended_atype,
             nlist,
             mapping: Optional[torch.Tensor] = None,
+            fparam: Optional[torch.Tensor] = None,
+            aparam: Optional[torch.Tensor] = None,
             do_atomic_virial: bool = False,
         ):
-            """Return model prediction.
+            """Return model prediction. Lower interface that takes
+            extended atomic coordinates and types, nlist, and mapping
+            as input, and returns the predictions on the extended region.
+            The predictions are not reduced.
 
             Parameters
             ----------
@@ -119,7 +136,7 @@ def make_model(T_AtomicModel):
             Returns
             -------
             result_dict
-                the result dict, defined by the fitting net output def.
+                the result dict, defined by the `FittingOutputDef`.
 
             """
             nframes, nall = extended_atype.shape[:2]
@@ -129,6 +146,8 @@ def make_model(T_AtomicModel):
                 extended_atype,
                 nlist,
                 mapping=mapping,
+                fparam=fparam,
+                aparam=aparam,
             )
             model_predict = fit_output_to_model_output(
                 atomic_ret,

@@ -292,6 +292,7 @@ class InvarFitting(Fitting):
                     "get an input fparam of dim {fparam.shape[-1]}, ",
                     "which is not consistent with {self.numb_fparam}.",
                 )
+            fparam = fparam.view([nf, self.numb_fparam])
             nb, _ = fparam.shape
             t_fparam_avg = self._extend_f_avg_std(self.fparam_avg, nb)
             t_fparam_inv_std = self._extend_f_avg_std(self.fparam_inv_std, nb)
@@ -311,6 +312,7 @@ class InvarFitting(Fitting):
                     "get an input aparam of dim {aparam.shape[-1]}, ",
                     "which is not consistent with {self.numb_aparam}.",
                 )
+            aparam = aparam.view([nf, nloc, self.numb_aparam])
             nb, nloc, _ = aparam.shape
             t_aparam_avg = self._extend_a_avg_std(self.aparam_avg, nb, nloc)
             t_aparam_inv_std = self._extend_a_avg_std(self.aparam_inv_std, nb, nloc)

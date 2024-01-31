@@ -137,6 +137,8 @@ class DPAtomicModel(BaseModel, AtomicModel):
         extended_atype,
         nlist,
         mapping: Optional[torch.Tensor] = None,
+        fparam: Optional[torch.Tensor] = None,
+        aparam: Optional[torch.Tensor] = None,
     ) -> Dict[str, torch.Tensor]:
         """Return atomic prediction.
 
@@ -150,11 +152,15 @@ class DPAtomicModel(BaseModel, AtomicModel):
             neighbor list. nf x nloc x nsel
         mapping
             mapps the extended indices to local indices
+        fparam
+            frame parameter. nf x ndf
+        aparam
+            atomic parameter. nf x nloc x nda
 
         Returns
         -------
         result_dict
-            the result dict, defined by the fitting net output def.
+            the result dict, defined by the `FittingOutputDef`.
 
         """
         nframes, nloc, nnei = nlist.shape
@@ -169,5 +175,13 @@ class DPAtomicModel(BaseModel, AtomicModel):
         )
         assert descriptor is not None
         # energy, force
-        fit_ret = self.fitting_net(descriptor, atype, gr=rot_mat)
+        fit_ret = self.fitting_net(
+            descriptor,
+            atype,
+            gr=rot_mat,
+            g2=g2,
+            h2=h2,
+            fparam=fparam,
+            aparam=aparam,
+        )
         return fit_ret

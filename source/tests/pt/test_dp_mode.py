@@ -82,6 +82,7 @@ class TestDPModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
 
     def test_dp_consistency(self):
         nf, nloc = self.atype.shape
+        nfp, nap = 2, 3
         ds = DPDescrptSeA(
             self.rcut,
             self.rcut_smth,
@@ -93,14 +94,22 @@ class TestDPModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
             ds.get_dim_out(),
             1,
             distinguish_types=ds.distinguish_types(),
+            numb_fparam=nfp,
+            numb_aparam=nap,
         )
         type_map = ["foo", "bar"]
         md0 = DPDPModel(ds, ft, type_map=type_map)
         md1 = DPModel.deserialize(md0.serialize()).to(env.DEVICE)
+
+        rng = np.random.default_rng()
+        fparam = rng.normal(size=[self.nf, nfp])
+        aparam = rng.normal(size=[self.nf, nloc, nap])
         args0 = [self.coord, self.atype, self.cell]
         args1 = [to_torch_tensor(ii) for ii in [self.coord, self.atype, self.cell]]
-        ret0 = md0.call(*args0)
-        ret1 = md1.forward_common(*args1)
+        kwargs0 = {"fparam": fparam, "aparam": aparam}
+        kwargs1 = {kk: to_torch_tensor(vv) for kk, vv in kwargs0.items()}
+        ret0 = md0.call(*args0, **kwargs0)
+        ret1 = md1.forward_common(*args1, **kwargs1)
         np.testing.assert_allclose(
             ret0["energy"],
             to_numpy_array(ret1["energy"]),
@@ -112,6 +121,7 @@ class TestDPModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
 
     def test_dp_consistency_nopbc(self):
         nf, nloc = self.atype.shape
+        nfp, nap = 2, 3
         ds = DPDescrptSeA(
             self.rcut,
             self.rcut_smth,
@@ -123,14 +133,22 @@ class TestDPModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
             ds.get_dim_out(),
             1,
             distinguish_types=ds.distinguish_types(),
+            numb_fparam=nfp,
+            numb_aparam=nap,
         )
         type_map = ["foo", "bar"]
         md0 = DPDPModel(ds, ft, type_map=type_map)
         md1 = DPModel.deserialize(md0.serialize()).to(env.DEVICE)
+
+        rng = np.random.default_rng()
+        fparam = rng.normal(size=[self.nf, nfp])
+        aparam = rng.normal(size=[self.nf, self.nloc, nap])
         args0 = [self.coord, self.atype]
-        args1 = [to_torch_tensor(ii) for ii in [self.coord, self.atype]]
-        ret0 = md0.call(*args0)
-        ret1 = md1.forward_common(*args1)
+        args1 = [to_torch_tensor(ii) for ii in args0]
+        kwargs0 = {"fparam": fparam, "aparam": aparam}
+        kwargs1 = {kk: to_torch_tensor(vv) for kk, vv in kwargs0.items()}
+        ret0 = md0.call(*args0, **kwargs0)
+        ret1 = md1.forward_common(*args1, **kwargs1)
         np.testing.assert_allclose(
             ret0["energy"],
             to_numpy_array(ret1["energy"]),

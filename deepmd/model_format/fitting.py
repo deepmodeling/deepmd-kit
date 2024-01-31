@@ -320,7 +320,7 @@ class InvarFitting(NativeOP):
                     "which is not consistent with {self.numb_fparam}.",
                 )
             fparam = (fparam - self.fparam_avg) * self.fparam_inv_std
-            fparam = np.tile(fparam.reshape([nf, 1, -1]), [1, nloc, 1])
+            fparam = np.tile(fparam.reshape([nf, 1, self.numb_fparam]), [1, nloc, 1])
             xx = np.concatenate(
                 [xx, fparam],
                 axis=-1,
@@ -333,6 +333,7 @@ class InvarFitting(NativeOP):
                     "get an input aparam of dim {aparam.shape[-1]}, ",
                     "which is not consistent with {self.numb_aparam}.",
                 )
+            aparam = aparam.reshape([nf, nloc, self.numb_aparam])
             aparam = (aparam - self.aparam_avg) * self.aparam_inv_std
             xx = np.concatenate(
                 [xx, aparam],
