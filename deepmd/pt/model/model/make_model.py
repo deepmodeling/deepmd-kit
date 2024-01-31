@@ -60,7 +60,10 @@ def make_model(T_AtomicModel):
             """
             nframes, nloc = atype.shape[:2]
             if box is not None:
-                coord_normalized = normalize_coord(coord, box.reshape(-1, 3, 3))
+                coord_normalized = normalize_coord(
+                    coord.view(nframes, nloc, 3),
+                    box.reshape(nframes, 3, 3),
+                )
             else:
                 coord_normalized = coord.clone()
             extended_coord, extended_atype, mapping = extend_coord_with_ghosts(
@@ -74,7 +77,7 @@ def make_model(T_AtomicModel):
                 self.get_sel(),
                 distinguish_types=self.distinguish_types(),
             )
-            extended_coord = extended_coord.reshape(nframes, -1, 3)
+            extended_coord = extended_coord.view(nframes, -1, 3)
             model_predict_lower = self.forward_common_lower(
                 extended_coord,
                 extended_atype,
@@ -119,6 +122,8 @@ def make_model(T_AtomicModel):
                 the result dict, defined by the fitting net output def.
 
             """
+            nframes, nall = extended_atype.shape[:2]
+            extended_coord = extended_coord.view(nframes, -1, 3)
             atomic_ret = self.forward_atomic(
                 extended_coord,
                 extended_atype,

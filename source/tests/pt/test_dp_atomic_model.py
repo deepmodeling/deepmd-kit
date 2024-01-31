@@ -31,7 +31,7 @@ from .test_env_mat import (
 dtype = env.GLOBAL_PT_FLOAT_PRECISION
 
 
-class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
+class TestDPAtomicModel(unittest.TestCase, TestCaseSingleFrameWithNlist):
     def setUp(self):
         TestCaseSingleFrameWithNlist.setUp(self)
 

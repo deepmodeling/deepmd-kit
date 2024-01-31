@@ -55,6 +55,27 @@ class TestCaseSingleFrameWithNlist:
         self.rcut_smth = 2.2
 
 
+class TestCaseSingleFrameWithoutNlist:
+    def setUp(self):
+        # nloc == 3, nall == 4
+        self.nloc = 3
+        self.nf, self.nt = 1, 2
+        self.coord = np.array(
+            [
+                [0, 0, 0],
+                [0, 1, 0],
+                [0, 0, 1],
+            ],
+            dtype=np.float64,
+        ).reshape([1, self.nloc * 3])
+        self.atype = np.array([0, 0, 1], dtype=int).reshape([1, self.nloc])
+        self.cell = 2.0 * np.eye(3).reshape([1, 9])
+        # sel = [5, 2]
+        self.sel = [5, 2]
+        self.rcut = 0.4
+        self.rcut_smth = 2.2
+
+
 # to be merged with the tf test case
 @unittest.skipIf(not support_env_mat, "EnvMat not supported")
 class TestEnvMat(unittest.TestCase, TestCaseSingleFrameWithNlist):
