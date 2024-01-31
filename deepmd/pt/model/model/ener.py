@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Dict,
-    List,
     Optional,
 )
 
@@ -86,66 +85,3 @@ class EnergyModel(DPModel):
         else:
             model_predict = model_ret
         return model_predict
-
-
-# should be a stand-alone function!!!!
-def process_nlist(
-    nlist,
-    extended_atype,
-    mapping: Optional[torch.Tensor] = None,
-):
-    # process the nlist_type and nlist_loc
-    nframes, nloc = nlist.shape[:2]
-    nmask = nlist == -1
-    nlist[nmask] = 0
-    if mapping is not None:
-        nlist_loc = torch.gather(
-            mapping,
-            dim=1,
-            index=nlist.reshape(nframes, -1),
-        ).reshape(nframes, nloc, -1)
-        nlist_loc[nmask] = -1
-    else:
-        nlist_loc = None
-    nlist_type = torch.gather(
-        extended_atype,
-        dim=1,
-        index=nlist.reshape(nframes, -1),
-    ).reshape(nframes, nloc, -1)
-    nlist_type[nmask] = -1
-    nlist[nmask] = -1
-    return nlist_loc, nlist_type, nframes, nloc
-
-
-def process_nlist_gathered(
-    nlist,
-    extended_atype,
-    split_sel: List[int],
-    mapping: Optional[torch.Tensor] = None,
-):
-    nlist_list = list(torch.split(nlist, split_sel, -1))
-    nframes, nloc = nlist_list[0].shape[:2]
-    nlist_type_list = []
-    nlist_loc_list = []
-    for nlist_item in nlist_list:
-        nmask = nlist_item == -1
-        nlist_item[nmask] = 0
-        if mapping is not None:
-            nlist_loc_item = torch.gather(
-                mapping, dim=1, index=nlist_item.reshape(nframes, -1)
-            ).reshape(nframes, nloc, -1)
-            nlist_loc_item[nmask] = -1
-            nlist_loc_list.append(nlist_loc_item)
-        nlist_type_item = torch.gather(
-            extended_atype, dim=1, index=nlist_item.reshape(nframes, -1)
-        ).reshape(nframes, nloc, -1)
-        nlist_type_item[nmask] = -1
-        nlist_type_list.append(nlist_type_item)
-        nlist_item[nmask] = -1
-
-    if mapping is not None:
-        nlist_loc = torch.cat(nlist_loc_list, -1)
-    else:
-        nlist_loc = None
-    nlist_type = torch.cat(nlist_type_list, -1)
-    return nlist_loc, nlist_type, nframes, nloc
