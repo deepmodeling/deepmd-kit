@@ -194,7 +194,17 @@ class DescrptSeA(NativeOP):
     @property
     def dim_out(self):
         """Returns the output dimension of this descriptor."""
+        return self.get_dim_out()
+
+    def get_dim_out(self):
+        """Returns the output dimension of this descriptor."""
         return self.neuron[-1] * self.axis_neuron
+
+    def distinguish_types(self):
+        """Returns if the descriptor uses different nets for
+        different atomic types.
+        """
+        return True
 
     def cal_g(
         self,
@@ -212,6 +222,7 @@ class DescrptSeA(NativeOP):
         coord_ext,
         atype_ext,
         nlist,
+        mapping: Optional[np.ndarray] = None,
     ):
         """Compute the descriptor.
 
@@ -223,6 +234,8 @@ class DescrptSeA(NativeOP):
             The extended aotm types. shape: nf x nall
         nlist
             The neighbor list. shape: nf x nloc x nnei
+        mapping
+            The index mapping from extended to lcoal region. not used by this descriptor.
 
         Returns
         -------
@@ -240,6 +253,7 @@ class DescrptSeA(NativeOP):
         sw
             The smooth switch function.
         """
+        del mapping
         # nf x nloc x nnei x 4
         rr, ww = self.env_mat.call(coord_ext, atype_ext, nlist, self.davg, self.dstd)
         nf, nloc, nnei, _ = rr.shape

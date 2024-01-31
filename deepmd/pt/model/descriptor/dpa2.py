@@ -267,6 +267,16 @@ class DescrptDPA2(Descriptor):
             ret += self.tebd_dim
         return ret
 
+    def get_dim_emb(self) -> int:
+        """Returns the output dimension of this descriptor."""
+        return self.repformers.dim_emb
+
+    def distinguish_types(self) -> bool:
+        """Returns if the descriptor uses different nets for
+        different atomic types.
+        """
+        return False
+
     @property
     def dim_out(self):
         return self.get_dim_out()
@@ -274,7 +284,7 @@ class DescrptDPA2(Descriptor):
     @property
     def dim_emb(self):
         """Returns the embedding dimension g2."""
-        return self.repformers.dim_emb
+        return self.get_dim_emb()
 
     def compute_input_stats(self, merged):
         sumr, suma, sumn, sumr2, suma2 = [], [], [], [], []

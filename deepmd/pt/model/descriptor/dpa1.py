@@ -102,6 +102,12 @@ class DescrptDPA1(Descriptor):
             ret += self.tebd_dim
         return ret
 
+    def distinguish_types(self) -> bool:
+        """Returns if the descriptor uses different nets for
+        different atomic types.
+        """
+        return False
+
     @property
     def dim_out(self):
         return self.get_dim_out()
