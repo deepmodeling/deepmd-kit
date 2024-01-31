@@ -5,6 +5,9 @@ import unittest
 import numpy as np
 import torch
 
+from deepmd.pt.utils import (
+    env,
+)
 from deepmd.pt.utils.env import (
     PRECISION_DICT,
 )
@@ -104,23 +107,27 @@ class TestMLPLayer(unittest.TestCase):
                 inp_shap = ashp + inp_shap
             rtol, atol = get_tols(prec)
             dtype = PRECISION_DICT[prec]
-            xx = torch.arange(np.prod(inp_shap), dtype=dtype).view(inp_shap)
+            xx = torch.arange(np.prod(inp_shap), dtype=dtype, device=env.DEVICE).view(
+                inp_shap
+            )
             # def mlp layer
-            ml = MLPLayer(ninp, nout, bias, ut, ac, resnet, precision=prec)
+            ml = MLPLayer(ninp, nout, bias, ut, ac, resnet, precision=prec).to(
+                env.DEVICE
+            )
             # check consistency
             nl = NativeLayer.deserialize(ml.serialize())
             np.testing.assert_allclose(
-                ml.forward(xx).detach().numpy(),
-                nl.call(xx.detach().numpy()),
+                ml.forward(xx).detach().cpu().numpy(),
+                nl.call(xx.detach().cpu().numpy()),
                 rtol=rtol,
                 atol=atol,
                 err_msg=f"(i={ninp}, o={nout}) bias={bias} use_dt={ut} act={ac} resnet={resnet} prec={prec}",
             )
             # check self-consistency
-            ml1 = MLPLayer.deserialize(ml.serialize())
+            ml1 = MLPLayer.deserialize(ml.serialize()).to(env.DEVICE)
             np.testing.assert_allclose(
-                ml.forward(xx).detach().numpy(),
-                ml1.forward(xx).detach().numpy(),
+                ml.forward(xx).detach().cpu().numpy(),
+                ml1.forward(xx).detach().cpu().numpy(),
                 rtol=rtol,
                 atol=atol,
                 err_msg=f"(i={ninp}, o={nout}) bias={bias} use_dt={ut} act={ac} resnet={resnet} prec={prec}",
@@ -157,7 +164,9 @@ class TestMLP(unittest.TestCase):
                 inp_shap = ashp + inp_shap
             rtol, atol = get_tols(prec)
             dtype = PRECISION_DICT[prec]
-            xx = torch.arange(np.prod(inp_shap), dtype=dtype).view(inp_shap)
+            xx = torch.arange(np.prod(inp_shap), dtype=dtype, device=env.DEVICE).view(
+                inp_shap
+            )
             # def MLP
             layers = []
             for ii in range(1, len(ndims)):
@@ -166,21 +175,21 @@ class TestMLP(unittest.TestCase):
                         ndims[ii - 1], ndims[ii], bias, ut, ac, resnet, precision=prec
                     ).serialize()
                 )
-            ml = MLP(layers)
+            ml = MLP(layers).to(env.DEVICE)
             # check consistency
             nl = NativeNet.deserialize(ml.serialize())
             np.testing.assert_allclose(
-                ml.forward(xx).detach().numpy(),
-                nl.call(xx.detach().numpy()),
+                ml.forward(xx).detach().cpu().numpy(),
+                nl.call(xx.detach().cpu().numpy()),
                 rtol=rtol,
                 atol=atol,
                 err_msg=f"net={ndims} bias={bias} use_dt={ut} act={ac} resnet={resnet} prec={prec}",
             )
             # check self-consistency
-            ml1 = MLP.deserialize(ml.serialize())
+            ml1 = MLP.deserialize(ml.serialize()).to(env.DEVICE)
             np.testing.assert_allclose(
-                ml.forward(xx).detach().numpy(),
-                ml1.forward(xx).detach().numpy(),
+                ml.forward(xx).detach().cpu().numpy(),
+                ml1.forward(xx).detach().cpu().numpy(),
                 rtol=rtol,
                 atol=atol,
                 err_msg=f"net={ndims} bias={bias} use_dt={ut} act={ac} resnet={resnet} prec={prec}",
@@ -219,23 +228,23 @@ class TestEmbeddingNet(unittest.TestCase):
             # input
             rtol, atol = get_tols(prec)
             dtype = PRECISION_DICT[prec]
-            xx = torch.arange(idim, dtype=dtype)
+            xx = torch.arange(idim, dtype=dtype, device=env.DEVICE)
             # def MLP
-            ml = EmbeddingNet(idim, nn, act, idt, prec)
+            ml = EmbeddingNet(idim, nn, act, idt, prec).to(env.DEVICE)
             # check consistency
             nl = DPEmbeddingNet.deserialize(ml.serialize())
             np.testing.assert_allclose(
-                ml.forward(xx).detach().numpy(),
-                nl.call(xx.detach().numpy()),
+                ml.forward(xx).detach().cpu().numpy(),
+                nl.call(xx.detach().cpu().numpy()),
                 rtol=rtol,
                 atol=atol,
                 err_msg=f"idim={idim} nn={nn} use_dt={idt} act={act} prec={prec}",
             )
             # check self-consistency
-            ml1 = EmbeddingNet.deserialize(ml.serialize())
+            ml1 = EmbeddingNet.deserialize(ml.serialize()).to(env.DEVICE)
             np.testing.assert_allclose(
-                ml.forward(xx).detach().numpy(),
-                ml1.forward(xx).detach().numpy(),
+                ml.forward(xx).detach().cpu().numpy(),
+                ml1.forward(xx).detach().cpu().numpy(),
                 rtol=rtol,
                 atol=atol,
                 err_msg=f"idim={idim} nn={nn} use_dt={idt} act={act} prec={prec}",
@@ -246,8 +255,8 @@ class TestEmbeddingNet(unittest.TestCase):
     ):
         for idim, nn, act, idt, prec in self.test_cases:
             # def MLP
-            ml = EmbeddingNet(idim, nn, act, idt, prec)
-            ml1 = EmbeddingNet.deserialize(ml.serialize())
+            ml = EmbeddingNet(idim, nn, act, idt, prec).to(env.DEVICE)
+            ml1 = EmbeddingNet.deserialize(ml.serialize()).to(env.DEVICE)
             model = torch.jit.script(ml)
             model = torch.jit.script(ml1)
 
@@ -272,7 +281,7 @@ class TestFittingNet(unittest.TestCase):
             # input
             rtol, atol = get_tols(prec)
             dtype = PRECISION_DICT[prec]
-            xx = torch.arange(idim, dtype=dtype)
+            xx = torch.arange(idim, dtype=dtype, device=env.DEVICE)
             # def MLP
             ml = FittingNet(
                 idim,
@@ -282,21 +291,21 @@ class TestFittingNet(unittest.TestCase):
                 resnet_dt=idt,
                 precision=prec,
                 bias_out=ob,
-            )
+            ).to(env.DEVICE)
             # check consistency
             nl = DPFittingNet.deserialize(ml.serialize())
             np.testing.assert_allclose(
-                ml.forward(xx).detach().numpy(),
-                nl.call(xx.detach().numpy()),
+                ml.forward(xx).detach().cpu().numpy(),
+                nl.call(xx.detach().cpu().numpy()),
                 rtol=rtol,
                 atol=atol,
                 err_msg=f"idim={idim} nn={nn} use_dt={idt} act={act} prec={prec}",
             )
             # check self-consistency
-            ml1 = FittingNet.deserialize(ml.serialize())
+            ml1 = FittingNet.deserialize(ml.serialize()).to(env.DEVICE)
             np.testing.assert_allclose(
-                ml.forward(xx).detach().numpy(),
-                ml1.forward(xx).detach().numpy(),
+                ml.forward(xx).detach().cpu().numpy(),
+                ml1.forward(xx).detach().cpu().numpy(),
                 rtol=rtol,
                 atol=atol,
                 err_msg=f"idim={idim} nn={nn} use_dt={idt} act={act} prec={prec}",
@@ -315,7 +324,7 @@ class TestFittingNet(unittest.TestCase):
                 resnet_dt=idt,
                 precision=prec,
                 bias_out=ob,
-            )
-            ml1 = FittingNet.deserialize(ml.serialize())
+            ).to(env.DEVICE)
+            ml1 = FittingNet.deserialize(ml.serialize()).to(env.DEVICE)
             model = torch.jit.script(ml)
             model = torch.jit.script(ml1)

@@ -24,11 +24,6 @@ if os.environ.get("DEVICE") == "cpu" or torch.cuda.is_available() is False:
 else:
     DEVICE = torch.device(f"cuda:{LOCAL_RANK}")
 
-if os.environ.get("PREPROCESS_DEVICE") == "gpu":
-    PREPROCESS_DEVICE = torch.device(f"cuda:{LOCAL_RANK}")
-else:
-    PREPROCESS_DEVICE = torch.device("cpu")
-
 JIT = False
 CACHE_PER_SYS = 5  # keep at most so many sets per sys in memory
 ENERGY_BIAS_TRAINABLE = True
