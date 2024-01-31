@@ -200,6 +200,14 @@ class DescrptSeA(NativeOP):
         """Returns the output dimension of this descriptor."""
         return self.neuron[-1] * self.axis_neuron
 
+    def get_rcut(self):
+        """Returns cutoff radius."""
+        return self.rcut
+
+    def get_sel(self):
+        """Returns cutoff radius."""
+        return self.sel
+
     def distinguish_types(self):
         """Returns if the descriptor uses different nets for
         different atomic types.

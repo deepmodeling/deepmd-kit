@@ -7,6 +7,9 @@ from .common import (
 from .dp_atomic_model import (
     DPAtomicModel,
 )
+from .dp_model import (
+    DPModel,
+)
 from .env_mat import (
     EnvMat,
 )
@@ -40,6 +43,7 @@ from .se_e2_a import (
 )
 
 __all__ = [
+    "DPModel",
     "DPAtomicModel",
     "InvarFitting",
     "DescrptSeA",

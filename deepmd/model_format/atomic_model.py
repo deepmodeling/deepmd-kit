@@ -10,7 +10,7 @@ from typing import (
     Optional,
 )
 
-from deepmd.model_format import (
+from .output_def import (
     FittingOutputDef,
 )
 
