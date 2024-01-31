@@ -40,7 +40,7 @@ def build_neighbor_list(
     rr = rr[:, :, 1:]
     nlist = nlist[:, :, 1:]
     nnei = rr.shape[2]
-    if nsel != nnei:
+    if nsel <= nnei:
         rr = rr[:, :, :nsel]
         nlist = nlist[:, :, :nsel]
     else:

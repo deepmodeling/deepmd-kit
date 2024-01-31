@@ -110,6 +110,36 @@ class TestDPModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
             to_numpy_array(ret1["energy_redu"]),
         )
 
+    def test_dp_consistency_nopbc(self):
+        nf, nloc = self.atype.shape
+        ds = DPDescrptSeA(
+            self.rcut,
+            self.rcut_smth,
+            self.sel,
+        )
+        ft = DPInvarFitting(
+            "energy",
+            self.nt,
+            ds.get_dim_out(),
+            1,
+            distinguish_types=ds.distinguish_types(),
+        )
+        type_map = ["foo", "bar"]
+        md0 = DPDPModel(ds, ft, type_map=type_map)
+        md1 = DPModel.deserialize(md0.serialize()).to(env.DEVICE)
+        args0 = [self.coord, self.atype]
+        args1 = [to_torch_tensor(ii) for ii in [self.coord, self.atype]]
+        ret0 = md0.call(*args0)
+        ret1 = md1.forward_common(*args1)
+        np.testing.assert_allclose(
+            ret0["energy"],
+            to_numpy_array(ret1["energy"]),
+        )
+        np.testing.assert_allclose(
+            ret0["energy_redu"],
+            to_numpy_array(ret1["energy_redu"]),
+        )
+
 
 class TestDPModelLower(unittest.TestCase, TestCaseSingleFrameWithNlist):
     def setUp(self):

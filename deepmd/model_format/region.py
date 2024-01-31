@@ -57,6 +57,8 @@ def normalize_coord(
     ----------
     coord : np.ndarray
         orignal coordinates of shape [*, na, 3].
+    cell : np.ndarray
+        simulation cell shape [*, 3, 3].
 
     Returns
     -------
