@@ -172,6 +172,7 @@ def build_multiple_neighbor_list(
     return ret
 
 
+## translated from torch implemantation by chatgpt
 def extend_coord_with_ghosts(
     coord: np.ndarray,
     atype: np.ndarray,
