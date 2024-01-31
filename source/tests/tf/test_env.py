@@ -19,8 +19,8 @@ class TestTFThreadCount(unittest.TestCase):
     @mock.patch.dict(
         "os.environ",
         values={
-            "TF_INTRA_OP_PARALLELISM_THREADS": "5",
-            "TF_INTER_OP_PARALLELISM_THREADS": "3",
+            "DP_INTRA_OP_PARALLELISM_THREADS": "5",
+            "DP_INTER_OP_PARALLELISM_THREADS": "3",
         },
     )
     def test_given(self):
