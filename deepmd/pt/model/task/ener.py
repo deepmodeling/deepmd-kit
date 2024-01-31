@@ -397,7 +397,7 @@ class EnergyFittingNetDirect(Fitting):
         ntypes,
         embedding_width,
         neuron,
-        bias_atom_e,
+        bias_atom_e=None,
         out_dim=1,
         resnet_dt=True,
         use_tebd=True,
@@ -418,6 +418,8 @@ class EnergyFittingNetDirect(Fitting):
         self.dim_descrpt = embedding_width
         self.use_tebd = use_tebd
         self.out_dim = out_dim
+        if bias_atom_e is None:
+            bias_atom_e = np.zeros([self.ntypes])
         if not use_tebd:
             assert self.ntypes == len(bias_atom_e), "Element count mismatches!"
         bias_atom_e = torch.tensor(bias_atom_e)

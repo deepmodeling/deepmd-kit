@@ -12,11 +12,11 @@ import numpy as np
 from .base_atomic_model import (
     BaseAtomicModel,
 )
-from .fitting import InvarFitting  # noqa # should import all fittings!
+from .fitting import InvarFitting  # noqa # TODO: should import all fittings!
 from .output_def import (
     FittingOutputDef,
 )
-from .se_e2_a import DescrptSeA  # noqa # should import all descriptors!
+from .se_e2_a import DescrptSeA  # noqa # TODO: should import all descriptors!
 
 
 class DPAtomicModel(BaseAtomicModel):

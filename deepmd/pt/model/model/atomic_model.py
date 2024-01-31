@@ -1,49 +1,19 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from abc import (
-    ABC,
-    abstractmethod,
-)
 from typing import (
-    Dict,
     List,
     Optional,
 )
 
 import torch
 
-from deepmd.model_format import (
-    FittingOutputDef,
+from deepmd.model_format.atomic_model import (
+    make_base_atomic_model,
 )
 
+BaseAtomicModel = make_base_atomic_model(torch.Tensor)
 
-class AtomicModel(ABC):
-    @abstractmethod
-    def get_fitting_output_def(self) -> FittingOutputDef:
-        raise NotImplementedError
 
-    @abstractmethod
-    def get_rcut(self) -> float:
-        raise NotImplementedError
-
-    @abstractmethod
-    def get_sel(self) -> List[int]:
-        raise NotImplementedError
-
-    @abstractmethod
-    def distinguish_types(self) -> bool:
-        raise NotImplementedError
-
-    @abstractmethod
-    def forward_atomic(
-        self,
-        extended_coord,
-        extended_atype,
-        nlist,
-        mapping: Optional[torch.Tensor] = None,
-        do_atomic_virial: bool = False,
-    ) -> Dict[str, torch.Tensor]:
-        raise NotImplementedError
-
+class AtomicModel(BaseAtomicModel):
     def do_grad(
         self,
         var_name: Optional[str] = None,
