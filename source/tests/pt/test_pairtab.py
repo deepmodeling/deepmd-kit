@@ -125,8 +125,7 @@ class TestPairTabTwoAtoms(unittest.TestCase):
                 0.026,
                 0.025,
                 0.025,
-                0.0216161
-                
+                0.0216161,
             ],
             [
                 0.015,
@@ -142,8 +141,7 @@ class TestPairTabTwoAtoms(unittest.TestCase):
                 0.025,
                 0.03,
                 0.035,
-                0.025
-                
+                0.025,
             ],
         ):
             extended_coord = torch.tensor(
@@ -169,16 +167,16 @@ class TestPairTabTwoAtoms(unittest.TestCase):
                             [0.0, 0],
                             [0.0, 0],
                             [0.25, 0],
-                            [0,    0],
-                            [0,    0],
+                            [0, 0],
+                            [0, 0],
                             [0.25, 0],
                             [0.125, 0],
                             [0.0922, 0],
-                            [0,    0],
-                            [0,    0],
-                            [0,    0],
-                            [0.0923,  0],
-                            [0.0713,  0],
+                            [0, 0],
+                            [0, 0],
+                            [0, 0],
+                            [0.0923, 0],
+                            [0.0713, 0],
                         ]
                     ]
                 )

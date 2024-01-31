@@ -195,7 +195,6 @@ class PairTabModel(nn.Module, AtomicModel):
         table_coef = table_coef.reshape(self.nframes, self.nloc, self.nnei, 4)
         ener = self._calcualte_ener(table_coef, uu)
 
-
         # here we need to overwrite energy to zero at rcut and beyond.
         mask_beyond_rcut = rr >= self.rcut
         # also overwrite values beyond extrapolation to zero
@@ -204,7 +203,6 @@ class PairTabModel(nn.Module, AtomicModel):
         ener[extrapolation_mask] = 0
 
         return ener
-
 
     @staticmethod
     def _get_pairwise_dist(coords: torch.Tensor) -> torch.Tensor:
@@ -310,7 +308,5 @@ class PairTabModel(nn.Module, AtomicModel):
         """
         a3, a2, a1, a0 = torch.unbind(coef, dim=-1)
         etmp = (a3 * uu + a2) * uu + a1  # this should be elementwise operations.
-        ener = (
-            etmp * uu + a0
-        )  # this energy has the extrapolated value when rcut > rmax
+        ener = etmp * uu + a0  # this energy has the extrapolated value when rcut > rmax
         return ener

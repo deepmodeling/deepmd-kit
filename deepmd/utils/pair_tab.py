@@ -64,6 +64,7 @@ class PairTab:
         )  # this nspline is updated based on the expanded table.
         self.tab_info = np.array([self.rmin, self.hh, self.nspline, self.ntypes])
         self.tab_data = self._make_data()
+
     def _check_table_upper_boundary(self) -> None:
         """Update User Provided Table Based on `rcut`.
 
@@ -122,7 +123,9 @@ class PairTab:
             elif self.rcut > self.rmax:
                 pad_zero = np.zeros((rcut_idx - upper_idx, self.ncol))
                 pad_zero[:, 0] = np.linspace(
-                    self.rmax + self.hh, self.rmax + self.hh * (rcut_idx - upper_idx), rcut_idx - upper_idx
+                    self.rmax + self.hh,
+                    self.rmax + self.hh * (rcut_idx - upper_idx),
+                    rcut_idx - upper_idx,
                 )
                 self.vdata = np.concatenate((self.vdata, pad_zero), axis=0)
         else:
@@ -139,11 +142,13 @@ class PairTab:
                 pad_extrapolation = np.zeros((rcut_idx - upper_idx, self.ncol))
 
                 pad_extrapolation[:, 0] = np.linspace(
-                    self.rmax + self.hh, self.rmax + self.hh * (rcut_idx - upper_idx), rcut_idx - upper_idx
+                    self.rmax + self.hh,
+                    self.rmax + self.hh * (rcut_idx - upper_idx),
+                    rcut_idx - upper_idx,
                 )
-                # need to calculate table values to fill in with cubic spline 
+                # need to calculate table values to fill in with cubic spline
                 pad_extrapolation = self._extrapolate_table(pad_extrapolation)
-                
+
                 self.vdata = np.concatenate((self.vdata, pad_extrapolation), axis=0)
 
     def get(self) -> Tuple[np.array, np.array]:
@@ -167,34 +172,38 @@ class PairTab:
 
         Parameters
         ----------
-        pad_extrapolation: np.array
+        pad_extrapolation : np.array
             The emepty grid that holds the extrapolation values.
 
         Returns
         -------
         np.array
-            The cubic spline extrapolation. 
+            The cubic spline extrapolation.
         """
         # in theory we should check if the table has at least two rows.
-        slope =  (self.vdata[-1,1:] - self.vdata[-2,1:]) # shape of (ncol-1, )
+        slope = self.vdata[-1, 1:] - self.vdata[-2, 1:]  # shape of (ncol-1, )
 
         # for extrapolation, we want values decay to `0` prior to `ruct` if possible
         # here we try to find the grid point prior to `rcut`
-        grid_point = -2 if pad_extrapolation[-1,0]/self.hh - self.rmax/self.hh >= 2 else -1
-        temp_grid = np.stack((self.vdata[-1,:], pad_extrapolation[grid_point,:]))
-        vv = temp_grid[:,1:]
-        xx = temp_grid[:,0]
-        cs = CubicSpline(xx,vv, bc_type=((1,slope),(1,np.zeros_like(slope))))
-        xx_grid = pad_extrapolation[:,0]
+        grid_point = (
+            -2 if pad_extrapolation[-1, 0] / self.hh - self.rmax / self.hh >= 2 else -1
+        )
+        temp_grid = np.stack((self.vdata[-1, :], pad_extrapolation[grid_point, :]))
+        vv = temp_grid[:, 1:]
+        xx = temp_grid[:, 0]
+        cs = CubicSpline(xx, vv, bc_type=((1, slope), (1, np.zeros_like(slope))))
+        xx_grid = pad_extrapolation[:, 0]
         res = cs(xx_grid)
-        
-        pad_extrapolation[:,1:] = res
+
+        pad_extrapolation[:, 1:] = res
 
         # Note: when doing cubic spline, if we want to ensure values decay to zero prior to `rcut`
         # this may cause values be positive post `rcut`, we need to overwrite those values to zero
-        pad_extrapolation = pad_extrapolation if grid_point == -1 else pad_extrapolation[:-1,:]
+        pad_extrapolation = (
+            pad_extrapolation if grid_point == -1 else pad_extrapolation[:-1, :]
+        )
         return pad_extrapolation
-    
+
     def _make_data(self):
         data = np.zeros([self.ntypes * self.ntypes * 4 * self.nspline])
         stride = 4 * self.nspline
@@ -203,7 +212,7 @@ class PairTab:
         for t0 in range(self.ntypes):
             for t1 in range(t0, self.ntypes):
                 vv = self.vdata[:, 1 + idx_iter]
-                cs = CubicSpline(xx, vv, bc_type='clamped')
+                cs = CubicSpline(xx, vv, bc_type="clamped")
                 dd = cs(xx, 1)
                 dd *= self.hh
                 dtmp = np.zeros(stride)
