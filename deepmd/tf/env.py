@@ -483,6 +483,9 @@ TF_CXX11_ABI_FLAG = int(GLOBAL_CONFIG["tf_cxx11_abi_flag"])
 
 op_module = get_module("deepmd_op")
 op_grads_module = get_module("op_grads")
+# prevent OOM when using with other backends
+# tf.config doesn't work for unclear reason
+set_env_if_empty("TF_FORCE_GPU_ALLOW_GROWTH", "true", verbose=False)
 
 # FLOAT_PREC
 GLOBAL_TF_FLOAT_PRECISION = tf.dtypes.as_dtype(GLOBAL_NP_FLOAT_PRECISION)
