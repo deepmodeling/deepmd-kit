@@ -23,6 +23,28 @@ from deepmd.pt.utils.region import (
 
 
 def make_model(T_AtomicModel):
+    """Make a model as a derived class of an atomic model.
+
+    The model provide two interfaces.
+
+    1. the `forward_common_lower`, that takes extended coordinates, atyps and neighbor list,
+    and outputs the atomic and property and derivatives (if required) on the extended region.
+
+    2. the `forward_common`, that takes coordinates, atypes and cell and predicts
+    the atomic and reduced property, and derivatives (if required) on the local region.
+
+    Parameters
+    ----------
+    T_AtomicModel
+        The atomic model.
+
+    Returns
+    -------
+    CM
+        The model.
+
+    """
+
     class CM(T_AtomicModel):
         def __init__(
             self,
@@ -35,6 +57,7 @@ def make_model(T_AtomicModel):
             )
 
         def get_model_output_def(self):
+            """Get the output def for the model."""
             return ModelOutputDef(self.get_fitting_output_def())
 
         # cannot use the name forward. torch script does not work
@@ -131,7 +154,7 @@ def make_model(T_AtomicModel):
             mapping
                 mapps the extended indices to local indices
             do_atomic_virial
-                whether do atomic virial
+                whether calculate atomic virial
 
             Returns
             -------

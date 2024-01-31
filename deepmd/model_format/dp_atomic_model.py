@@ -20,6 +20,20 @@ from .se_e2_a import DescrptSeA  # noqa # TODO: should import all descriptors!
 
 
 class DPAtomicModel(BaseAtomicModel):
+    """Model give atomic prediction of some physical property.
+
+    Parameters
+    ----------
+    descriptor
+            Descriptor
+    fitting_net
+            Fitting net
+    type_map
+            Mapping atom type to the name (str) of the type.
+            For example `type_map[1]` gives the name of the type 1.
+
+    """
+
     def __init__(
         self,
         descriptor,

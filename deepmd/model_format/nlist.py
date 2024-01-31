@@ -22,6 +22,40 @@ def build_neighbor_list(
     sel: Union[int, List[int]],
     distinguish_types: bool = True,
 ) -> np.ndarray:
+    """Build neightbor list for a single frame. keeps nsel neighbors.
+
+    Parameters
+    ----------
+    coord1 : torch.Tensor
+        exptended coordinates of shape [batch_size, nall x 3]
+    atype : torch.Tensor
+        extended atomic types of shape [batch_size, nall]
+    nloc : int
+        number of local atoms.
+    rcut : float
+        cut-off radius
+    sel : int or List[int]
+        maximal number of neighbors (of each type).
+        if distinguish_types==True, nsel should be list and
+        the length of nsel should be equal to number of
+        types.
+    distinguish_types : bool
+        distinguish different types.
+
+    Returns
+    -------
+    neighbor_list : torch.Tensor
+        Neighbor list of shape [batch_size, nloc, nsel], the neighbors
+        are stored in an ascending order. If the number of
+        neighbors is less than nsel, the positions are masked
+        with -1. The neighbor list of an atom looks like
+        |------ nsel ------|
+        xx xx xx xx -1 -1 -1
+        if distinguish_types==True and we have two types
+        |---- nsel[0] -----| |---- nsel[1] -----|
+        xx xx xx xx -1 -1 -1 xx xx xx -1 -1 -1 -1
+
+    """
     batch_size = coord1.shape[0]
     coord1 = coord1.reshape(batch_size, -1)
     nall = coord1.shape[1] // 3
@@ -80,9 +114,36 @@ def get_multiple_nlist_key(rcut: float, nsel: int) -> str:
     return str(rcut) + "_" + str(nsel)
 
 
+## translated from torch implemantation by chatgpt
 def build_multiple_neighbor_list(
-    coord: np.ndarray, nlist: np.ndarray, rcuts: List[float], nsels: List[int]
+    coord: np.ndarray,
+    nlist: np.ndarray,
+    rcuts: List[float],
+    nsels: List[int],
 ) -> Dict[str, np.ndarray]:
+    """Input one neighbor list, and produce multiple neighbor lists with
+    different cutoff radius and numbers of selection out of it.  The
+    required rcuts and nsels should be smaller or equal to the input nlist.
+
+    Parameters
+    ----------
+    coord : torch.Tensor
+        exptended coordinates of shape [batch_size, nall x 3]
+    nlist : torch.Tensor
+        Neighbor list of shape [batch_size, nloc, nsel], the neighbors
+        should be stored in an ascending order.
+    rcuts : List[float]
+        list of cut-off radius in ascending order.
+    nsels : List[int]
+        maximal number of neighbors in ascending order.
+
+    Returns
+    -------
+    nlist_dict : Dict[str, torch.Tensor]
+        A dict of nlists, key given by get_multiple_nlist_key(rc, nsel)
+        value being the corresponding nlist.
+
+    """
     assert len(rcuts) == len(nsels)
     if len(rcuts) == 0:
         return {}
@@ -112,8 +173,34 @@ def build_multiple_neighbor_list(
 
 
 def extend_coord_with_ghosts(
-    coord: np.ndarray, atype: np.ndarray, cell: Optional[np.ndarray], rcut: float
+    coord: np.ndarray,
+    atype: np.ndarray,
+    cell: Optional[np.ndarray],
+    rcut: float,
 ):
+    """Extend the coordinates of the atoms by appending peridoc images.
+    The number of images is large enough to ensure all the neighbors
+    within rcut are appended.
+
+    Parameters
+    ----------
+    coord : torch.Tensor
+        original coordinates of shape [-1, nloc*3].
+    atype : torch.Tensor
+        atom type of shape [-1, nloc].
+    cell : torch.Tensor
+        simulation cell tensor of shape [-1, 9].
+
+    Returns
+    -------
+    extended_coord: torch.Tensor
+        extended coordinates of shape [-1, nall*3].
+    extended_atype: torch.Tensor
+        extended atom type of shape [-1, nall].
+    index_mapping: torch.Tensor
+        maping extended index to the local index
+
+    """
     nf, nloc = atype.shape
     aidx = np.tile(np.arange(nloc)[np.newaxis, :], (nf, 1))
     if cell is None:

@@ -14,6 +14,8 @@ BaseAtomicModel = make_base_atomic_model(torch.Tensor)
 
 
 class AtomicModel(BaseAtomicModel):
+    """Common base class for atomic model."""
+
     def do_grad(
         self,
         var_name: Optional[str] = None,
