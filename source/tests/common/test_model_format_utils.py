@@ -20,6 +20,16 @@ from deepmd.model_format import (
     load_dp_model,
     save_dp_model,
 )
+from deepmd.model_format.nlist import (
+    build_multiple_neighbor_list,
+    build_neighbor_list,
+    extend_coord_with_ghosts,
+    get_multiple_nlist_key,
+)
+from deepmd.model_format.region import (
+    inter2phys,
+    to_face_distance,
+)
 
 
 class TestNativeLayer(unittest.TestCase):
@@ -490,3 +500,226 @@ class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
         ]:
             ifn0[ii] = foo
             np.testing.assert_allclose(foo, ifn0[ii])
+
+
+class TestRegion(unittest.TestCase):
+    def setUp(self):
+        self.cell = np.array(
+            [[1, 0, 0], [0.4, 0.8, 0], [0.1, 0.3, 2.1]],
+        )
+        self.cell = np.reshape(self.cell, [1, 1, -1, 3])
+        self.cell = np.tile(self.cell, [4, 5, 1, 1])
+        self.prec = 1e-8
+
+    def test_inter_to_phys(self):
+        rng = np.random.default_rng()
+        inter = rng.normal(size=[4, 5, 3, 3])
+        phys = inter2phys(inter, self.cell)
+        for ii in range(4):
+            for jj in range(5):
+                expected_phys = np.matmul(inter[ii, jj], self.cell[ii, jj])
+                np.testing.assert_allclose(
+                    phys[ii, jj], expected_phys, rtol=self.prec, atol=self.prec
+                )
+
+    def test_to_face_dist(self):
+        cell0 = self.cell[0][0]
+        vol = np.linalg.det(cell0)
+        # area of surfaces xy, xz, yz
+        sxy = np.linalg.norm(np.cross(cell0[0], cell0[1]))
+        sxz = np.linalg.norm(np.cross(cell0[0], cell0[2]))
+        syz = np.linalg.norm(np.cross(cell0[1], cell0[2]))
+        # vol / area gives distance
+        dz = vol / sxy
+        dy = vol / sxz
+        dx = vol / syz
+        expected = np.array([dx, dy, dz])
+        dists = to_face_distance(self.cell)
+        for ii in range(4):
+            for jj in range(5):
+                np.testing.assert_allclose(
+                    dists[ii][jj], expected, rtol=self.prec, atol=self.prec
+                )
+
+
+dtype = np.float64
+
+
+class TestNeighList(unittest.TestCase):
+    def setUp(self):
+        self.nf = 3
+        self.nloc = 2
+        self.ns = 5 * 5 * 3
+        self.nall = self.ns * self.nloc
+        self.cell = np.array([[1, 0, 0], [0.4, 0.8, 0], [0.1, 0.3, 2.1]], dtype=dtype)
+        self.icoord = np.array([[0, 0, 0], [0.5, 0.5, 0.1]], dtype=dtype)
+        self.atype = np.array([0, 1], dtype=np.int32)
+        [self.cell, self.icoord, self.atype] = [
+            np.expand_dims(ii, 0) for ii in [self.cell, self.icoord, self.atype]
+        ]
+        self.coord = inter2phys(self.icoord, self.cell).reshape([-1, self.nloc * 3])
+        self.cell = self.cell.reshape([-1, 9])
+        [self.cell, self.coord, self.atype] = [
+            np.tile(ii, [self.nf, 1]) for ii in [self.cell, self.coord, self.atype]
+        ]
+        self.rcut = 1.01
+        self.prec = 1e-10
+        self.nsel = [10, 10]
+        self.ref_nlist = np.array(
+            [
+                [0, 0, 0, 0, 0, 0, -1, -1, -1, -1, 1, 1, 1, 1, -1, -1, -1, -1, -1, -1],
+                [0, 0, 0, 0, -1, -1, -1, -1, -1, -1, 1, 1, 1, 1, 1, 1, -1, -1, -1, -1],
+            ]
+        )
+
+    def test_build_notype(self):
+        ecoord, eatype, mapping = extend_coord_with_ghosts(
+            self.coord, self.atype, self.cell, self.rcut
+        )
+        nlist = build_neighbor_list(
+            ecoord,
+            eatype,
+            self.nloc,
+            self.rcut,
+            sum(self.nsel),
+            distinguish_types=False,
+        )
+        np.testing.assert_allclose(nlist[0], nlist[1])
+        nlist_mask = nlist[0] == -1
+        nlist_loc = mapping[0][nlist[0]]
+        nlist_loc[nlist_mask] = -1
+        np.testing.assert_allclose(
+            np.sort(nlist_loc, axis=-1),
+            np.sort(self.ref_nlist, axis=-1),
+        )
+
+    def test_build_type(self):
+        ecoord, eatype, mapping = extend_coord_with_ghosts(
+            self.coord, self.atype, self.cell, self.rcut
+        )
+        nlist = build_neighbor_list(
+            ecoord,
+            eatype,
+            self.nloc,
+            self.rcut,
+            self.nsel,
+            distinguish_types=True,
+        )
+        np.testing.assert_allclose(nlist[0], nlist[1])
+        nlist_mask = nlist[0] == -1
+        nlist_loc = mapping[0][nlist[0]]
+        nlist_loc[nlist_mask] = -1
+        for ii in range(2):
+            np.testing.assert_allclose(
+                np.sort(np.split(nlist_loc, self.nsel, axis=-1)[ii], axis=-1),
+                np.sort(np.split(self.ref_nlist, self.nsel, axis=-1)[ii], axis=-1),
+            )
+
+    def test_build_multiple_nlist(self):
+        rcuts = [1.01, 2.01]
+        nsels = [20, 80]
+        ecoord, eatype, mapping = extend_coord_with_ghosts(
+            self.coord, self.atype, self.cell, max(rcuts)
+        )
+        nlist1 = build_neighbor_list(
+            ecoord,
+            eatype,
+            self.nloc,
+            rcuts[1],
+            nsels[1] - 1,
+            distinguish_types=False,
+        )
+        pad = -1 * np.ones([self.nf, self.nloc, 1], dtype=nlist1.dtype)
+        nlist2 = np.concatenate([nlist1, pad], axis=-1)
+        nlist0 = build_neighbor_list(
+            ecoord,
+            eatype,
+            self.nloc,
+            rcuts[0],
+            nsels[0],
+            distinguish_types=False,
+        )
+        nlists = build_multiple_neighbor_list(ecoord, nlist1, rcuts, nsels)
+        for dd in range(2):
+            self.assertEqual(
+                nlists[get_multiple_nlist_key(rcuts[dd], nsels[dd])].shape[-1],
+                nsels[dd],
+            )
+        np.testing.assert_allclose(
+            nlists[get_multiple_nlist_key(rcuts[0], nsels[0])],
+            nlist0,
+        )
+        np.testing.assert_allclose(
+            nlists[get_multiple_nlist_key(rcuts[1], nsels[1])],
+            nlist2,
+        )
+
+    def test_extend_coord(self):
+        ecoord, eatype, mapping = extend_coord_with_ghosts(
+            self.coord, self.atype, self.cell, self.rcut
+        )
+        np.savetxt("tmp1.out", self.coord)
+        # expected ncopy x nloc
+        self.assertEqual(list(ecoord.shape), [self.nf, self.nall * 3])
+        self.assertEqual(list(eatype.shape), [self.nf, self.nall])
+        self.assertEqual(list(mapping.shape), [self.nf, self.nall])
+        # check the nloc part is identical with original coord
+        np.testing.assert_allclose(
+            ecoord[:, : self.nloc * 3], self.coord, rtol=self.prec, atol=self.prec
+        )
+        # check the shift vectors are aligned with grid
+        shift_vec = (
+            ecoord.reshape([-1, self.ns, self.nloc, 3])
+            - self.coord.reshape([-1, self.nloc, 3])[:, None, :, :]
+        )
+        shift_vec = shift_vec.reshape([-1, self.nall, 3])
+        # hack!!! assumes identical cell across frames
+        shift_vec = np.matmul(
+            shift_vec, np.linalg.inv(self.cell.reshape([self.nf, 3, 3])[0])
+        )
+        # nf x nall x 3
+        shift_vec = np.round(shift_vec)
+        # check: identical shift vecs
+        np.testing.assert_allclose(
+            shift_vec[0], shift_vec[1], rtol=self.prec, atol=self.prec
+        )
+        # check: shift idx aligned with grid
+        mm, cc = np.unique(shift_vec[0][:, 0], return_counts=True)
+        np.testing.assert_allclose(
+            mm,
+            np.array([-2, -1, 0, 1, 2], dtype=dtype),
+            rtol=self.prec,
+            atol=self.prec,
+        )
+        np.testing.assert_allclose(
+            cc,
+            np.array([30, 30, 30, 30, 30], dtype=np.int32),
+            rtol=self.prec,
+            atol=self.prec,
+        )
+        mm, cc = np.unique(shift_vec[1][:, 1], return_counts=True)
+        np.testing.assert_allclose(
+            mm,
+            np.array([-2, -1, 0, 1, 2], dtype=dtype),
+            rtol=self.prec,
+            atol=self.prec,
+        )
+        np.testing.assert_allclose(
+            cc,
+            np.array([30, 30, 30, 30, 30], dtype=np.int32),
+            rtol=self.prec,
+            atol=self.prec,
+        )
+        mm, cc = np.unique(shift_vec[1][:, 2], return_counts=True)
+        np.testing.assert_allclose(
+            mm,
+            np.array([-1, 0, 1], dtype=dtype),
+            rtol=self.prec,
+            atol=self.prec,
+        )
+        np.testing.assert_allclose(
+            cc,
+            np.array([50, 50, 50], dtype=np.int32),
+            rtol=self.prec,
+            atol=self.prec,
+        )

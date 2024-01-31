@@ -62,16 +62,18 @@ def build_neighbor_list(
         mask = nlist == -1
         tnlist_0 = nlist
         tnlist_0[mask] = 0
-        tnlist = np.take_along_axis(tmp_atype, tnlist_0[:, :, None], axis=2).squeeze()
+        tnlist = np.take_along_axis(tmp_atype, tnlist_0, axis=2).squeeze()
         tnlist = np.where(mask, -1, tnlist)
         snsel = tnlist.shape[2]
         for ii, ss in enumerate(sel):
             pick_mask = (tnlist == ii).astype(np.int32)
-            pick_mask_sorted_indices = np.argsort(-pick_mask, kind="stable", axis=-1)
-            inlist = np.take_along_axis(nlist, pick_mask_sorted_indices, axis=2)
-            inlist = np.where(pick_mask.astype(bool), inlist, -1)
+            sorted_indices = np.argsort(-pick_mask, kind="stable", axis=-1)
+            pick_mask_sorted = -np.sort(-pick_mask, axis=-1)
+            inlist = np.take_along_axis(nlist, sorted_indices, axis=2)
+            inlist = np.where(~pick_mask_sorted.astype(bool), -1, inlist)
             ret_nlist.append(np.split(inlist, [ss, snsel - ss], axis=-1)[0])
-        return np.concatenate(ret_nlist, axis=-1)
+        ret = np.concatenate(ret_nlist, axis=-1)
+        return ret
 
 
 def get_multiple_nlist_key(rcut: float, nsel: int) -> str:
@@ -103,10 +105,9 @@ def build_multiple_neighbor_list(
     nlist0 = nlist
     ret = {}
     for rc, ns in zip(rcuts[::-1], nsels[::-1]):
-        tnlist_1 = nlist0[:, :, :ns]
+        tnlist_1 = np.copy(nlist0[:, :, :ns])
         tnlist_1[rr[:, :, :ns] > rc] = int(-1)
-        nlist0 = tnlist_1
-        ret[get_multiple_nlist_key(rc, ns)] = nlist0
+        ret[get_multiple_nlist_key(rc, ns)] = tnlist_1
     return ret
 
 
