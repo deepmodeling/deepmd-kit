@@ -16,11 +16,26 @@ except ImportError:
 
 
 def DeepPotential(*args, **kwargs):
-    from deepmd.infer.deep_eval import (
-        DeepEval,
+    """Factory function that forwards to DeepEval (for compatbility
+    and performance).
+
+    Parameters
+    ----------
+    *args
+        positional arguments
+    **kwargs
+        keyword arguments
+
+    Returns
+    -------
+    DeepEval
+        potentials
+    """
+    from deepmd.infer import (
+        DeepPotential,
     )
 
-    return DeepEval(*args, **kwargs)
+    return DeepPotential(*args, **kwargs)
 
 
 __all__ = [

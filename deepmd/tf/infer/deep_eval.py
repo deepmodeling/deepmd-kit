@@ -59,12 +59,16 @@ if TYPE_CHECKING:
 
 
 class DeepEval(DeepEvalBase):
-    """Common methods for DeepPot, DeepWFC, DeepPolar, ...
+    """TensorFlow backend implementation for DeepEval.
 
     Parameters
     ----------
     model_file : Path
         The name of the frozen model file.
+    output_def : ModelOutputDef
+        The output definition of the model.
+    *args : list
+        Positional arguments.
     load_prefix: str
         The prefix in the load computational graph
     default_tf_graph : bool
@@ -77,19 +81,21 @@ class DeepEval(DeepEvalBase):
     neighbor_list : ase.neighborlist.NewPrimitiveNeighborList, optional
         The ASE neighbor list class to produce the neighbor list. If None, the
         neighbor list will be built natively in the model.
+    **kwargs : dict
+        Keyword arguments.
     """
-
-    load_prefix: str  # set by subclass
 
     def __init__(
         self,
         model_file: "Path",
         output_def: ModelOutputDef,
+        *args: list,
         load_prefix: str = "load",
         default_tf_graph: bool = False,
         auto_batch_size: Union[bool, int, AutoBatchSize] = False,
         input_map: Optional[dict] = None,
         neighbor_list=None,
+        **kwargs: dict,
     ):
         self.graph = self._load_graph(
             model_file,

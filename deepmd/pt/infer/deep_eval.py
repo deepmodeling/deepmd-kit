@@ -45,6 +45,26 @@ if TYPE_CHECKING:
 
 
 class DeepEval(DeepEvalBase):
+    """PyTorch backend implementaion of DeepEval.
+
+    Parameters
+    ----------
+    model_file : Path
+        The name of the frozen model file.
+    output_def : ModelOutputDef
+        The output definition of the model.
+    *args : list
+        Positional arguments.
+    auto_batch_size : bool or int or AutomaticBatchSize, default: False
+        If True, automatic batch size will be used. If int, it will be used
+        as the initial batch size.
+    neighbor_list : ase.neighborlist.NewPrimitiveNeighborList, optional
+        The ASE neighbor list class to produce the neighbor list. If None, the
+        neighbor list will be built natively in the model.
+    **kwargs : dict
+        Keyword arguments.
+    """
+
     def __init__(
         self,
         model_file: str,
