@@ -275,13 +275,14 @@ class EmbdLayer(MLPLayer):
         )
         obj.padding = padding
         prec = PRECISION_DICT[obj.precision]
-        check_load_param = (
-            lambda ss: nn.Parameter(
-                data=torch.tensor(nl[ss], dtype=prec, device=device)
+
+        def check_load_param(ss):
+            return (
+                nn.Parameter(data=torch.tensor(nl[ss], dtype=prec, device=device))
+                if nl[ss] is not None
+                else None
             )
-            if nl[ss] is not None
-            else None
-        )
+
         obj.matrix = check_load_param("matrix")
         return obj
 
@@ -334,9 +335,7 @@ class LayerNorm(MLPLayer):
         yy: torch.Tensor
             The output.
         """
-        yy = torch_func.layer_norm(
-            xx, tuple((self.num_in,)), self.matrix, self.bias, self.eps
-        )
+        yy = torch_func.layer_norm(xx, (self.num_in,), self.matrix, self.bias, self.eps)
         return yy
 
     def serialize(self) -> dict:
@@ -373,13 +372,14 @@ class LayerNorm(MLPLayer):
             precision=nl["precision"],
         )
         prec = PRECISION_DICT[obj.precision]
-        check_load_param = (
-            lambda ss: nn.Parameter(
-                data=torch.tensor(nl[ss], dtype=prec, device=device)
+
+        def check_load_param(ss):
+            return (
+                nn.Parameter(data=torch.tensor(nl[ss], dtype=prec, device=device))
+                if nl[ss] is not None
+                else None
             )
-            if nl[ss] is not None
-            else None
-        )
+
         obj.matrix = check_load_param("matrix")
         obj.bias = check_load_param("bias")
         return obj

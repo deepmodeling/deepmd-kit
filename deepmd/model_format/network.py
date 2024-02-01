@@ -567,7 +567,7 @@ class LayerNorm(NativeLayer):
         """
         if self.w is None or self.b is None:
             raise ValueError("w/b must be set")
-        y = self.layer_norm_numpy(x, tuple((self.num_in,)), self.w, self.b, self.eps)
+        y = self.layer_norm_numpy(x, (self.num_in,), self.w, self.b, self.eps)
         return y
 
     @staticmethod

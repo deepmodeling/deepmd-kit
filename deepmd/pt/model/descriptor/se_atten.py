@@ -425,11 +425,11 @@ class NeighborGatedAttention(nn.Module):
         do_mask: bool = False,
         scaling_factor: float = 1.0,
         normalize: bool = True,
-        temperature: float = None,
+        temperature: Optional[float] = None,
         precision: str = DEFAULT_PRECISION,
     ):
         """Construct a neighbor-wise attention net."""
-        super(NeighborGatedAttention, self).__init__()
+        super().__init__()
         self.layer_num = layer_num
         self.nnei = nnei
         self.embed_dim = embed_dim
@@ -467,9 +467,9 @@ class NeighborGatedAttention(nn.Module):
     ):
         """
         Args:
-            input_G: Input G, [nframes * nloc, nnei, embed_dim]
-            nei_mask: neighbor mask, [nframes * nloc, nnei]
-            input_r: normalized radial, [nframes, nloc, nei, 3]
+            input_G: Input G, [nframes * nloc, nnei, embed_dim].
+            nei_mask: neighbor mask, [nframes * nloc, nnei].
+            input_r: normalized radial, [nframes, nloc, nei, 3].
 
         Returns
         -------
@@ -558,11 +558,11 @@ class NeighborGatedAttentionLayer(nn.Module):
         do_mask: bool = False,
         scaling_factor: float = 1.0,
         normalize: bool = True,
-        temperature: float = None,
+        temperature: Optional[float] = None,
         precision: str = DEFAULT_PRECISION,
     ):
         """Construct a neighbor-wise attention layer."""
-        super(NeighborGatedAttentionLayer, self).__init__()
+        super().__init__()
         self.nnei = nnei
         self.embed_dim = embed_dim
         self.hidden_dim = hidden_dim
@@ -647,13 +647,13 @@ class GatedAttentionLayer(nn.Module):
         do_mask: bool = False,
         scaling_factor: float = 1.0,
         normalize: bool = True,
-        temperature: float = None,
+        temperature: Optional[float] = None,
         bias: bool = True,
         smooth: bool = True,
         precision: str = DEFAULT_PRECISION,
     ):
         """Construct a neighbor-wise attention net."""
-        super(GatedAttentionLayer, self).__init__()
+        super().__init__()
         self.nnei = nnei
         self.embed_dim = embed_dim
         self.hidden_dim = hidden_dim
@@ -698,9 +698,9 @@ class GatedAttentionLayer(nn.Module):
     ):
         """
         Args:
-            query: input G, [nframes * nloc, nnei, embed_dim]
-            nei_mask: neighbor mask, [nframes * nloc, nnei]
-            input_r: normalized radial, [nframes, nloc, nei, 3]
+            query: input G, [nframes * nloc, nnei, embed_dim].
+            nei_mask: neighbor mask, [nframes * nloc, nnei].
+            input_r: normalized radial, [nframes, nloc, nei, 3].
 
         Returns
         -------

@@ -256,7 +256,10 @@ class DescrptDPA1(Descriptor):
         attention_layers = data.pop("attention_layers")
         env_mat = data.pop("env_mat")
         obj = cls(**data)
-        t_cvt = lambda xx: torch.tensor(xx, dtype=obj.se_atten.prec, device=env.DEVICE)
+
+        def t_cvt(xx):
+            return torch.tensor(xx, dtype=obj.se_atten.prec, device=env.DEVICE)
+
         obj.type_embedding = EmbdLayer.deserialize(type_embedding)
         obj.se_atten["davg"] = t_cvt(variables["davg"])
         obj.se_atten["dstd"] = t_cvt(variables["dstd"])

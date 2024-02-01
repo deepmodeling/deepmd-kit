@@ -28,8 +28,9 @@ from .network import (
 
 
 class DescrptDPA1(NativeOP):
-    r"""Attention-based descriptor :math:`\mathcal{D}^i \in \mathbb{R}^{M \times M_{<}}`,
-    which is proposed in pretrainable DPA-1[1] model, is given by
+    r"""Attention-based descriptor which is proposed in the pretrainable DPA-1[1] model.
+
+    This descriptor, :math:`\mathcal{D}^i \in \mathbb{R}^{M \times M_{<}}`, is given by
 
     .. math::
         \mathcal{D}^i = \frac{1}{N_c^2}(\hat{\mathcal{G}}^i)^T \mathcal{R}^i (\mathcal{R}^i)^T \hat{\mathcal{G}}^i_<,
