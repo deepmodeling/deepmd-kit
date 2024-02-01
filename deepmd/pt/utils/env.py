@@ -4,6 +4,11 @@ import os
 import numpy as np
 import torch
 
+from deepmd.env import (
+    get_default_nthreads,
+    set_default_nthreads,
+)
+
 PRECISION = os.environ.get("PRECISION", "float64")
 GLOBAL_NP_FLOAT_PRECISION = getattr(np, PRECISION)
 GLOBAL_PT_FLOAT_PRECISION = getattr(torch, PRECISION)
@@ -24,11 +29,6 @@ if os.environ.get("DEVICE") == "cpu" or torch.cuda.is_available() is False:
 else:
     DEVICE = torch.device(f"cuda:{LOCAL_RANK}")
 
-if os.environ.get("PREPROCESS_DEVICE") == "gpu":
-    PREPROCESS_DEVICE = torch.device(f"cuda:{LOCAL_RANK}")
-else:
-    PREPROCESS_DEVICE = torch.device("cpu")
-
 JIT = False
 CACHE_PER_SYS = 5  # keep at most so many sets per sys in memory
 ENERGY_BIAS_TRAINABLE = True
@@ -44,3 +44,11 @@ PRECISION_DICT = {
     "int64": torch.int64,
 }
 DEFAULT_PRECISION = "float64"
+
+# throw warnings if threads not set
+set_default_nthreads()
+inter_nthreads, intra_nthreads = get_default_nthreads()
+if inter_nthreads > 0:  # the behavior of 0 is not documented
+    torch.set_num_interop_threads(inter_nthreads)
+if intra_nthreads > 0:
+    torch.set_num_threads(intra_nthreads)

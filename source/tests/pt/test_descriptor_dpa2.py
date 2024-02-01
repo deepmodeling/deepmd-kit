@@ -124,7 +124,7 @@ class TestDPA2(unittest.TestCase):
             dlist,
             ntypes,
             hybrid_mode=dparams["hybrid_mode"],
-        )
+        ).to(env.DEVICE)
         model_dict = torch.load(self.file_model_param)
         # type_embd of repformer is removed
         model_dict.pop("descriptor_list.1.type_embd.embedding.weight")
@@ -158,7 +158,7 @@ class TestDPA2(unittest.TestCase):
             )
         nlist = torch.cat(nlist_list, -1)
         # handel type_embedding
-        type_embedding = TypeEmbedNet(ntypes, 8)
+        type_embedding = TypeEmbedNet(ntypes, 8).to(env.DEVICE)
         type_embedding.load_state_dict(torch.load(self.file_type_embed))
 
         ## to save model parameters
@@ -186,7 +186,7 @@ class TestDPA2(unittest.TestCase):
         dparams["concat_output_tebd"] = False
         des = DescrptDPA2(
             **dparams,
-        )
+        ).to(env.DEVICE)
         target_dict = des.state_dict()
         source_dict = torch.load(self.file_model_param)
         # type_embd of repformer is removed
@@ -232,7 +232,7 @@ class TestDPA2(unittest.TestCase):
         dparams["concat_output_tebd"] = True
         des = DescrptDPA2(
             **dparams,
-        )
+        ).to(env.DEVICE)
         descriptor, env_mat, diff, rot_mat, sw = des(
             extended_coord,
             extended_atype,
