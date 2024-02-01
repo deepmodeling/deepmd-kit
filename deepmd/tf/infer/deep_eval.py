@@ -45,9 +45,6 @@ from deepmd.tf.env import (
     default_tf_session_config,
     tf,
 )
-from deepmd.tf.infer.data_modifier import (
-    DipoleChargeModifier,
-)
 from deepmd.tf.utils.batch_size import (
     AutoBatchSize,
 )
@@ -136,6 +133,10 @@ class DeepEval(DeepEvalBase):
 
         # looks ugly...
         if self.modifier_type == "dipole_charge":
+            from deepmd.tf.infer.data_modifier import (
+                DipoleChargeModifier,
+            )
+
             t_mdl_name = self._get_tensor("modifier_attr/mdl_name:0")
             t_mdl_charge_map = self._get_tensor("modifier_attr/mdl_charge_map:0")
             t_sys_charge_map = self._get_tensor("modifier_attr/sys_charge_map:0")
