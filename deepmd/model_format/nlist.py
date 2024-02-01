@@ -26,9 +26,9 @@ def build_neighbor_list(
 
     Parameters
     ----------
-    coord1 : torch.Tensor
+    coord1 : np.ndarray
         exptended coordinates of shape [batch_size, nall x 3]
-    atype : torch.Tensor
+    atype : np.ndarray
         extended atomic types of shape [batch_size, nall]
     nloc : int
         number of local atoms.
@@ -44,7 +44,7 @@ def build_neighbor_list(
 
     Returns
     -------
-    neighbor_list : torch.Tensor
+    neighbor_list : np.ndarray
         Neighbor list of shape [batch_size, nloc, nsel], the neighbors
         are stored in an ascending order. If the number of
         neighbors is less than nsel, the positions are masked
@@ -88,26 +88,39 @@ def build_neighbor_list(
     assert list(nlist.shape) == [batch_size, nloc, nsel]
     nlist = np.where((rr > rcut), -1, nlist)
 
-    if not distinguish_types:
-        return nlist
+    if distinguish_types:
+        return nlist_distinguish_types(nlist, atype, sel)
     else:
-        ret_nlist = []
-        tmp_atype = np.tile(atype[:, None], [1, nloc, 1])
-        mask = nlist == -1
-        tnlist_0 = nlist
-        tnlist_0[mask] = 0
-        tnlist = np.take_along_axis(tmp_atype, tnlist_0, axis=2).squeeze()
-        tnlist = np.where(mask, -1, tnlist)
-        snsel = tnlist.shape[2]
-        for ii, ss in enumerate(sel):
-            pick_mask = (tnlist == ii).astype(np.int32)
-            sorted_indices = np.argsort(-pick_mask, kind="stable", axis=-1)
-            pick_mask_sorted = -np.sort(-pick_mask, axis=-1)
-            inlist = np.take_along_axis(nlist, sorted_indices, axis=2)
-            inlist = np.where(~pick_mask_sorted.astype(bool), -1, inlist)
-            ret_nlist.append(np.split(inlist, [ss, snsel - ss], axis=-1)[0])
-        ret = np.concatenate(ret_nlist, axis=-1)
-        return ret
+        return nlist
+
+
+def nlist_distinguish_types(
+    nlist: np.ndarray,
+    atype: np.ndarray,
+    sel: List[int],
+):
+    """Given a nlist that does not distinguish atom types, return a nlist that
+    distinguish atom types.
+
+    """
+    nf, nloc, _ = nlist.shape
+    ret_nlist = []
+    tmp_atype = np.tile(atype[:, None], [1, nloc, 1])
+    mask = nlist == -1
+    tnlist_0 = nlist.copy()
+    tnlist_0[mask] = 0
+    tnlist = np.take_along_axis(tmp_atype, tnlist_0, axis=2).squeeze()
+    tnlist = np.where(mask, -1, tnlist)
+    snsel = tnlist.shape[2]
+    for ii, ss in enumerate(sel):
+        pick_mask = (tnlist == ii).astype(np.int32)
+        sorted_indices = np.argsort(-pick_mask, kind="stable", axis=-1)
+        pick_mask_sorted = -np.sort(-pick_mask, axis=-1)
+        inlist = np.take_along_axis(nlist, sorted_indices, axis=2)
+        inlist = np.where(~pick_mask_sorted.astype(bool), -1, inlist)
+        ret_nlist.append(np.split(inlist, [ss, snsel - ss], axis=-1)[0])
+    ret = np.concatenate(ret_nlist, axis=-1)
+    return ret
 
 
 def get_multiple_nlist_key(rcut: float, nsel: int) -> str:
@@ -127,9 +140,9 @@ def build_multiple_neighbor_list(
 
     Parameters
     ----------
-    coord : torch.Tensor
+    coord : np.ndarray
         exptended coordinates of shape [batch_size, nall x 3]
-    nlist : torch.Tensor
+    nlist : np.ndarray
         Neighbor list of shape [batch_size, nloc, nsel], the neighbors
         should be stored in an ascending order.
     rcuts : List[float]
@@ -139,7 +152,7 @@ def build_multiple_neighbor_list(
 
     Returns
     -------
-    nlist_dict : Dict[str, torch.Tensor]
+    nlist_dict : Dict[str, np.ndarray]
         A dict of nlists, key given by get_multiple_nlist_key(rc, nsel)
         value being the corresponding nlist.
 
@@ -185,20 +198,22 @@ def extend_coord_with_ghosts(
 
     Parameters
     ----------
-    coord : torch.Tensor
+    coord : np.ndarray
         original coordinates of shape [-1, nloc*3].
-    atype : torch.Tensor
+    atype : np.ndarray
         atom type of shape [-1, nloc].
-    cell : torch.Tensor
+    cell : np.ndarray
         simulation cell tensor of shape [-1, 9].
+    rcut : float
+        the cutoff radius
 
     Returns
     -------
-    extended_coord: torch.Tensor
+    extended_coord: np.ndarray
         extended coordinates of shape [-1, nall*3].
-    extended_atype: torch.Tensor
+    extended_atype: np.ndarray
         extended atom type of shape [-1, nall].
-    index_mapping: torch.Tensor
+    index_mapping: np.ndarray
         maping extended index to the local index
 
     """

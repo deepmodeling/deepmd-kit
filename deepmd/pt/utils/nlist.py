@@ -90,7 +90,7 @@ def build_neighbor_list(
         nlist = torch.cat(
             [
                 nlist,
-                torch.ones([batch_size, nloc, nsel - nnei], dtype=torch.long).to(
+                torch.ones([batch_size, nloc, nsel - nnei], dtype=nlist.dtype).to(
                     rr.device
                 ),
             ],
@@ -99,35 +99,46 @@ def build_neighbor_list(
     assert list(nlist.shape) == [batch_size, nloc, nsel]
     nlist = nlist.masked_fill((rr > rcut), -1)
 
-    if not distinguish_types:
-        return nlist
+    if distinguish_types:
+        return nlist_distinguish_types(nlist, atype, sel)
     else:
-        ret_nlist = []
-        # nloc x nall
-        tmp_atype = torch.tile(atype.unsqueeze(1), [1, nloc, 1])
-        mask = nlist == -1
+        return nlist
+
+
+def nlist_distinguish_types(
+    nlist: torch.Tensor,
+    atype: torch.Tensor,
+    sel: List[int],
+):
+    """Given a nlist that does not distinguish atom types, return a nlist that
+    distinguish atom types.
+
+    """
+    nf, nloc, nnei = nlist.shape
+    ret_nlist = []
+    # nloc x nall
+    tmp_atype = torch.tile(atype.unsqueeze(1), [1, nloc, 1])
+    mask = nlist == -1
+    # nloc x s(nsel)
+    tnlist = torch.gather(
+        tmp_atype,
+        2,
+        nlist.masked_fill(mask, 0),
+    )
+    tnlist = tnlist.masked_fill(mask, -1)
+    snsel = tnlist.shape[2]
+    for ii, ss in enumerate(sel):
         # nloc x s(nsel)
-        tnlist = torch.gather(
-            tmp_atype,
-            2,
-            nlist.masked_fill(mask, 0),
-        )
-        tnlist = tnlist.masked_fill(mask, -1)
-        snsel = tnlist.shape[2]
-        for ii, ss in enumerate(sel):
-            # nloc x s(nsel)
-            # to int because bool cannot be sort on GPU
-            pick_mask = (tnlist == ii).to(torch.int32)
-            # nloc x s(nsel), stable sort, nearer neighbors first
-            pick_mask, imap = torch.sort(
-                pick_mask, dim=-1, descending=True, stable=True
-            )
-            # nloc x s(nsel)
-            inlist = torch.gather(nlist, 2, imap)
-            inlist = inlist.masked_fill(~(pick_mask.to(torch.bool)), -1)
-            # nloc x nsel[ii]
-            ret_nlist.append(torch.split(inlist, [ss, snsel - ss], dim=-1)[0])
-        return torch.concat(ret_nlist, dim=-1)
+        # to int because bool cannot be sort on GPU
+        pick_mask = (tnlist == ii).to(torch.int32)
+        # nloc x s(nsel), stable sort, nearer neighbors first
+        pick_mask, imap = torch.sort(pick_mask, dim=-1, descending=True, stable=True)
+        # nloc x s(nsel)
+        inlist = torch.gather(nlist, 2, imap)
+        inlist = inlist.masked_fill(~(pick_mask.to(torch.bool)), -1)
+        # nloc x nsel[ii]
+        ret_nlist.append(torch.split(inlist, [ss, snsel - ss], dim=-1)[0])
+    return torch.concat(ret_nlist, dim=-1)
 
 
 # build_neighbor_list = torch.vmap(
@@ -232,6 +243,8 @@ def extend_coord_with_ghosts(
         atom type of shape [-1, nloc].
     cell : torch.Tensor
         simulation cell tensor of shape [-1, 9].
+    rcut : float
+        the cutoff radius
 
     Returns
     -------

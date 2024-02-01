@@ -256,3 +256,102 @@ class TestDPModelLower(unittest.TestCase, TestCaseSingleFrameWithNlist):
         # TODO: dirty hack to avoid data stat!!!
         md0 = DPModel(ds, ft, type_map=type_map, resuming=True).to(env.DEVICE)
         torch.jit.script(md0)
+
+
+class TestDPModelFormatNlist(unittest.TestCase):
+    def setUp(self):
+        # nloc == 3, nall == 4
+        self.nloc = 3
+        self.nall = 5
+        self.nf, self.nt = 1, 2
+        self.coord_ext = np.array(
+            [
+                [0, 0, 0],
+                [0, 1, 0],
+                [0, 0, 1],
+                [0, -2, 0],
+                [2.3, 0, 0],
+            ],
+            dtype=np.float64,
+        ).reshape([1, self.nall * 3])
+        # sel = [5, 2]
+        self.sel = [5, 2]
+        self.expected_nlist = np.array(
+            [
+                [1, 3, -1, -1, -1, 2, -1],
+                [0, -1, -1, -1, -1, 2, -1],
+                [0, 1, -1, -1, -1, -1, -1],
+            ],
+            dtype=int,
+        ).reshape([1, self.nloc, sum(self.sel)])
+        self.atype_ext = np.array([0, 0, 1, 0, 1], dtype=int).reshape([1, self.nall])
+        self.rcut_smth = 0.4
+        self.rcut = 2.0
+
+        nf, nloc, nnei = self.expected_nlist.shape
+        ds = DescrptSeA(
+            self.rcut,
+            self.rcut_smth,
+            self.sel,
+        ).to(env.DEVICE)
+        ft = InvarFitting(
+            "energy",
+            self.nt,
+            ds.get_dim_out(),
+            1,
+            distinguish_types=ds.distinguish_types(),
+        ).to(env.DEVICE)
+        type_map = ["foo", "bar"]
+        # TODO: dirty hack to avoid data stat!!!
+        self.md = DPModel(ds, ft, type_map=type_map, resuming=True).to(env.DEVICE)
+
+    def test_nlist_eq(self):
+        # n_nnei == nnei
+        nlist = np.array(
+            [
+                [1, 3, -1, -1, -1, 2, -1],
+                [0, -1, -1, -1, -1, 2, -1],
+                [0, 1, -1, -1, -1, -1, -1],
+            ],
+            dtype=np.int64,
+        ).reshape([1, self.nloc, -1])
+        nlist1 = self.md.format_nlist(
+            to_torch_tensor(self.coord_ext),
+            to_torch_tensor(self.atype_ext),
+            to_torch_tensor(nlist),
+        )
+        np.testing.assert_allclose(self.expected_nlist, to_numpy_array(nlist1))
+
+    def test_nlist_st(self):
+        # n_nnei < nnei
+        nlist = np.array(
+            [
+                [1, 3, -1, 2],
+                [0, -1, -1, 2],
+                [0, 1, -1, -1],
+            ],
+            dtype=np.int64,
+        ).reshape([1, self.nloc, -1])
+        nlist1 = self.md.format_nlist(
+            to_torch_tensor(self.coord_ext),
+            to_torch_tensor(self.atype_ext),
+            to_torch_tensor(nlist),
+        )
+        np.testing.assert_allclose(self.expected_nlist, to_numpy_array(nlist1))
+
+    def test_nlist_lt(self):
+        # n_nnei > nnei
+        nlist = np.array(
+            [
+                [1, 3, -1, -1, -1, 2, -1, -1, 4],
+                [0, -1, 4, -1, -1, 2, -1, 3, -1],
+                [0, 1, -1, -1, -1, 4, -1, -1, 3],
+            ],
+            dtype=np.int64,
+        ).reshape([1, self.nloc, -1])
+        nlist1 = self.md.format_nlist(
+            to_torch_tensor(self.coord_ext),
+            to_torch_tensor(self.atype_ext),
+            to_torch_tensor(nlist),
+        )
+        np.testing.assert_allclose(self.expected_nlist, to_numpy_array(nlist1))

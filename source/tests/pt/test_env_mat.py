@@ -47,7 +47,7 @@ class TestCaseSingleFrameWithNlist:
             [
                 [1, 3, -1, -1, -1, 2, -1],
                 [0, -1, -1, -1, -1, 2, -1],
-                [0, 1, -1, -1, -1, 0, -1],
+                [0, 1, -1, -1, -1, -1, -1],
             ],
             dtype=int,
         ).reshape([1, self.nloc, sum(self.sel)])
