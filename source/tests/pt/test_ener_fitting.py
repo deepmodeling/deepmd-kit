@@ -126,7 +126,7 @@ class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
             dd1 = ft1.state_dict()
             for kk, vv in dd1.items():
                 new_kk = kk
-                new_kk = new_kk.replace("filter_layers_old", "filter_layers.networks")
+                new_kk = new_kk.replace("filter_layers_old", "filter_layers._networks")
                 new_kk = new_kk.replace("deep_layers", "layers")
                 new_kk = new_kk.replace("final_layer", "layers.3")
                 dd1[kk] = dd0[new_kk]

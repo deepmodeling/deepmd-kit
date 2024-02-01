@@ -340,11 +340,11 @@ class InvarFitting(Fitting):
         else:
             if self.use_tebd:
                 atom_energy = (
-                    self.filter_layers.networks[0](xx) + self.bias_atom_e[atype]
+                    self.filter_layers._networks[0](xx) + self.bias_atom_e[atype]
                 )
                 outs = outs + atom_energy  # Shape is [nframes, natoms[0], 1]
             else:
-                for type_i, ll in enumerate(self.filter_layers.networks):
+                for type_i, ll in enumerate(self.filter_layers._networks):
                     mask = (atype == type_i).unsqueeze(-1)
                     mask = torch.tile(mask, (1, 1, self.dim_out))
                     atom_energy = ll(xx)
