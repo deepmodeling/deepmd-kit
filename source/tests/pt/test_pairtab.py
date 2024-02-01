@@ -70,7 +70,7 @@ class TestPairTab(unittest.TestCase):
 
     def test_jit(self):
         model = torch.jit.script(self.model)
-    
+
     @patch("numpy.loadtxt")
     def test_deserialize(self, mock_loadtxt):
         file_path = "dummy_path"
