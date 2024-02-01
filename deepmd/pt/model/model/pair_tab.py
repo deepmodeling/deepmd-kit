@@ -11,7 +11,7 @@ from torch import (
     nn,
 )
 
-from deepmd.model_format import (
+from deepmd.dpmodel import (
     FittingOutputDef,
     OutputVariableDef,
 )

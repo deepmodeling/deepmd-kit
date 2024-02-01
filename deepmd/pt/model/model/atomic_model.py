@@ -6,7 +6,7 @@ from typing import (
 
 import torch
 
-from deepmd.model_format.atomic_model import (
+from deepmd.dpmodel.model import (
     make_base_atomic_model,
 )
 

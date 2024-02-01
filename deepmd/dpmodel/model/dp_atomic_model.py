@@ -9,14 +9,19 @@ from typing import (
 
 import numpy as np
 
+from deepmd.dpmodel.descriptor import (  # noqa # TODO: should import all descriptors!
+    DescrptSeA,
+)
+from deepmd.dpmodel.fitting import (  # noqa # TODO: should import all fittings!
+    InvarFitting,
+)
+from deepmd.dpmodel.output_def import (
+    FittingOutputDef,
+)
+
 from .base_atomic_model import (
     BaseAtomicModel,
 )
-from .fitting import InvarFitting  # noqa # TODO: should import all fittings!
-from .output_def import (
-    FittingOutputDef,
-)
-from .se_e2_a import DescrptSeA  # noqa # TODO: should import all descriptors!
 
 
 class DPAtomicModel(BaseAtomicModel):

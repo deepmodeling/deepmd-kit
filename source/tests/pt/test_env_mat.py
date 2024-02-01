@@ -5,7 +5,7 @@ import numpy as np
 import torch
 
 try:
-    from deepmd.model_format import (
+    from deepmd.dpmodel import (
         EnvMat,
     )
 

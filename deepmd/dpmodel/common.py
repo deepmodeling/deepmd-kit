@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from abc import (
     ABC,
+    abstractmethod,
 )
 
 import numpy as np
@@ -21,9 +22,10 @@ DEFAULT_PRECISION = "float64"
 class NativeOP(ABC):
     """The unit operation of a native model."""
 
+    @abstractmethod
     def call(self, *args, **kwargs):
         """Forward pass in NumPy implementation."""
-        raise NotImplementedError
+        pass
 
     def __call__(self, *args, **kwargs):
         """Forward pass in NumPy implementation."""

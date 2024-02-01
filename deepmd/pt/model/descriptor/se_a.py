@@ -28,7 +28,7 @@ try:
 except ImportError:
     from torch.jit import Final
 
-from deepmd.model_format import EnvMat as DPEnvMat
+from deepmd.dpmodel.utils import EnvMat as DPEnvMat
 from deepmd.pt.model.network.mlp import (
     EmbeddingNet,
     NetworkCollection,

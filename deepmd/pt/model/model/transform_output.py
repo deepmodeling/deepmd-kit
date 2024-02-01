@@ -7,7 +7,7 @@ from typing import (
 
 import torch
 
-from deepmd.model_format import (
+from deepmd.dpmodel import (
     FittingOutputDef,
     ModelOutputDef,
     OutputVariableDef,

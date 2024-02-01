@@ -13,15 +13,13 @@ from typing import (
     Optional,
 )
 
-from .common import (
+from deepmd.dpmodel import (
     DEFAULT_PRECISION,
     NativeOP,
 )
-from .env_mat import (
-    EnvMat,
-)
-from .network import (
+from deepmd.dpmodel.utils import (
     EmbeddingNet,
+    EnvMat,
     NetworkCollection,
 )
 

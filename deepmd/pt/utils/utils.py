@@ -8,7 +8,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from deepmd.model_format.common import PRECISION_DICT as NP_PRECISION_DICT
+from deepmd.dpmodel.common import PRECISION_DICT as NP_PRECISION_DICT
 
 from .env import (
     DEVICE,

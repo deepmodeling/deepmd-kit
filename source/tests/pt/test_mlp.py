@@ -42,7 +42,7 @@ except ModuleNotFoundError:
 
 
 try:
-    from deepmd.model_format import (
+    from deepmd.dpmodel import (
         NativeLayer,
         NativeNet,
     )
@@ -54,7 +54,7 @@ except ImportError:
     support_native_net = False
 
 try:
-    from deepmd.model_format import EmbeddingNet as DPEmbeddingNet
+    from deepmd.dpmodel import EmbeddingNet as DPEmbeddingNet
 
     support_embedding_net = True
 except ModuleNotFoundError:
@@ -63,7 +63,7 @@ except ImportError:
     support_embedding_net = False
 
 try:
-    from deepmd.model_format import FittingNet as DPFittingNet
+    from deepmd.dpmodel import FittingNet as DPFittingNet
 
     support_fitting_net = True
 except ModuleNotFoundError:

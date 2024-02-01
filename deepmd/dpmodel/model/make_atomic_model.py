@@ -10,7 +10,7 @@ from typing import (
     Optional,
 )
 
-from .output_def import (
+from deepmd.dpmodel.output_def import (
     FittingOutputDef,
 )
 

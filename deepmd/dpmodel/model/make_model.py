@@ -6,17 +6,16 @@ from typing import (
 
 import numpy as np
 
-from .nlist import (
+from deepmd.dpmodel.output_def import (
+    ModelOutputDef,
+)
+from deepmd.dpmodel.utils import (
     build_neighbor_list,
     extend_coord_with_ghosts,
     nlist_distinguish_types,
-)
-from .output_def import (
-    ModelOutputDef,
-)
-from .region import (
     normalize_coord,
 )
+
 from .transform_output import (
     communicate_extended_output,
     fit_output_to_model_output,

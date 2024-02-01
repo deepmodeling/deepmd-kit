@@ -5,7 +5,7 @@ from typing import (
 
 import numpy as np
 
-from .output_def import (
+from deepmd.dpmodel.output_def import (
     FittingOutputDef,
     ModelOutputDef,
     get_deriv_name,

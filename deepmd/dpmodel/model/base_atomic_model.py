@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import numpy as np
 
-from .atomic_model import (
+from .make_atomic_model import (
     make_base_atomic_model,
 )
 

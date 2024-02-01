@@ -22,7 +22,7 @@ try:
 except ImportError:
     __version__ = "unknown"
 
-from .common import (
+from deepmd.dpmodel import (
     DEFAULT_PRECISION,
     PRECISION_DICT,
     NativeOP,

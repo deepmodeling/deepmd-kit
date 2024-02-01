@@ -8,18 +8,18 @@ from typing import (
 
 import numpy as np
 
-from .common import (
+from deepmd.dpmodel import (
     DEFAULT_PRECISION,
     NativeOP,
 )
-from .network import (
-    FittingNet,
-    NetworkCollection,
-)
-from .output_def import (
+from deepmd.dpmodel.output_def import (
     FittingOutputDef,
     OutputVariableDef,
     fitting_check_output,
+)
+from deepmd.dpmodel.utils import (
+    FittingNet,
+    NetworkCollection,
 )
 
 

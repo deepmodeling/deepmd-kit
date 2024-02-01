@@ -9,7 +9,7 @@ from typing import (
 
 import torch
 
-from deepmd.model_format import (
+from deepmd.dpmodel import (
     FittingOutputDef,
 )
 from deepmd.pt.model.descriptor.se_a import (  # noqa # TODO: should import all descriptors!!!

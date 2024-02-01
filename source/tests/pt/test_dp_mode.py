@@ -4,9 +4,9 @@ import unittest
 import numpy as np
 import torch
 
-from deepmd.model_format import DescrptSeA as DPDescrptSeA
-from deepmd.model_format import DPModel as DPDPModel
-from deepmd.model_format import InvarFitting as DPInvarFitting
+from deepmd.dpmodel import DPModel as DPDPModel
+from deepmd.dpmodel.descriptor import DescrptSeA as DPDescrptSeA
+from deepmd.dpmodel.fitting import InvarFitting as DPInvarFitting
 from deepmd.pt.model.descriptor.se_a import (
     DescrptSeA,
 )

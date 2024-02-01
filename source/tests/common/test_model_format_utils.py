@@ -8,28 +8,30 @@ from copy import (
 
 import numpy as np
 
-from deepmd.model_format import (
+from deepmd.dpmodel.descriptor import (
     DescrptSeA,
+)
+from deepmd.dpmodel.fitting import (
+    InvarFitting,
+)
+from deepmd.dpmodel.model import (
     DPAtomicModel,
     DPModel,
+)
+from deepmd.dpmodel.utils import (
     EmbeddingNet,
     EnvMat,
     FittingNet,
-    InvarFitting,
     NativeLayer,
     NativeNet,
     NetworkCollection,
-    load_dp_model,
-    save_dp_model,
-)
-from deepmd.model_format.nlist import (
     build_multiple_neighbor_list,
     build_neighbor_list,
     extend_coord_with_ghosts,
     get_multiple_nlist_key,
-)
-from deepmd.model_format.region import (
     inter2phys,
+    load_dp_model,
+    save_dp_model,
     to_face_distance,
 )
 
@@ -297,7 +299,7 @@ class TestSaveLoadDPModel(unittest.TestCase):
                 },
             ],
         }
-        self.filename = "test_dp_model_format.dp"
+        self.filename = "test_dp_dpmodel.dp"
 
     def test_save_load_model(self):
         save_dp_model(self.filename, deepcopy(self.model_dict))
