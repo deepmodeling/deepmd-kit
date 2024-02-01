@@ -239,7 +239,7 @@ class DeepEvalBase(ABC):
         return False
 
     @abstractmethod
-    def get_ntypes_spin(self):
+    def get_ntypes_spin(self) -> int:
         """Get the number of spin atom types of this model."""
 
 
@@ -458,10 +458,10 @@ class DeepEval(ABC):
         return np.sum(np.isin(atype, self.get_sel_type()).astype(int))
 
     @property
-    def has_efield(self):
+    def has_efield(self) -> bool:
         """Check if the model has efield."""
         return self.deep_eval.get_has_efield()
 
-    def get_ntypes_spin(self):
+    def get_ntypes_spin(self) -> int:
         """Get the number of spin atom types of this model."""
         return self.deep_eval.get_ntypes_spin()

@@ -148,7 +148,17 @@ class DeepPot(DeepEval):
         virial = results["energy_derv_c_redu"].reshape(nframes, 9)
 
         if atomic:
-            atomic_energy = results["energy"].reshape(nframes, natoms, 1)
+            if self.get_ntypes_spin() > 0:
+                ntypes_real = self.get_ntypes() - self.get_ntypes_spin()
+                natoms_real = sum(
+                    [
+                        np.count_nonzero(np.array(atom_types[0]) == ii)
+                        for ii in range(ntypes_real)
+                    ]
+                )
+            else:
+                natoms_real = natoms
+            atomic_energy = results["energy"].reshape(nframes, natoms_real, 1)
             atomic_virial = results["energy_derv_c"].reshape(nframes, natoms, 9)
             return (
                 energy,

@@ -208,7 +208,7 @@ class DeepEval(DeepEvalBase):
             "efield": "t_efield:0",
             "fparam": "t_fparam:0",
             "aparam": "t_aparam:0",
-            "ntypes_spin": "descrpt_attr/ntypes_spin:0",
+            "ntypes_spin": "spin_attr/ntypes_spin:0",
             # descriptor
             "descriptor": "o_descriptor:0",
         }
@@ -435,7 +435,7 @@ class DeepEval(DeepEvalBase):
         """
         natoms = atom_type.shape[1]
         if sel_atoms is not None:
-            selection = [False] * natoms
+            selection = np.array([False] * natoms, dtype=bool)
             for ii in sel_atoms:
                 selection += atom_type[0] == ii
             sel_atom_type = atom_type[:, selection]
@@ -628,7 +628,7 @@ class DeepEval(DeepEvalBase):
         """Get the number of atom types of this model."""
         return self.ntypes
 
-    def get_ntypes_spin(self):
+    def get_ntypes_spin(self) -> int:
         """Get the number of spin atom types of this model."""
         return self.ntypes_spin
 
@@ -770,7 +770,6 @@ class DeepEval(DeepEvalBase):
             output_dict["energy_redu"] += me.reshape(e.shape)
             output_dict["energy_deri_r"] += mf.reshape(f.shape)
             output_dict["energy_deri_c_redu"] += mv.reshape(v.shape)
-            output = tuple(output)
         return output_dict
 
     def _prepare_feed_dict(
@@ -787,7 +786,7 @@ class DeepEval(DeepEvalBase):
             coords,
             atom_types,
         )
-        atom_types = np.array(atom_types, dtype=int).reshape([-1, natoms])
+        atom_types = np.array(atom_types, dtype=int).reshape([nframes, natoms])
         coords = np.reshape(np.array(coords), [nframes, natoms * 3])
         if cells is None:
             pbc = False
@@ -942,7 +941,7 @@ class DeepEval(DeepEvalBase):
             ntypes_real = self.ntypes - self.ntypes_spin
             natoms_real = sum(
                 [
-                    np.count_nonzero(np.array(atom_types) == ii)
+                    np.count_nonzero(np.array(atom_types[0]) == ii)
                     for ii in range(ntypes_real)
                 ]
             )
@@ -977,7 +976,6 @@ class DeepEval(DeepEvalBase):
                     odef_shape = self._get_output_shape(
                         odef.name, nframes, natoms_real, odef.shape
                     )
-                    # tmp_shape = [np.prod(odef_shape[:-2]), *odef_shape[-2:]]
                     v_out[ii] = self.reverse_map(
                         np.reshape(v_out[ii], odef_shape), sel_imap[:natoms_real]
                     )

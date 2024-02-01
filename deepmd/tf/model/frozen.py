@@ -7,6 +7,9 @@ from typing import (
     Union,
 )
 
+from deepmd.infer.deep_pot import (
+    DeepPot,
+)
 from deepmd.tf.env import (
     GLOBAL_TF_FLOAT_PRECISION,
     MODEL_VERSION,
@@ -40,7 +43,12 @@ class FrozenModel(Model):
         super().__init__(**kwargs)
         self.model_file = model_file
         self.model = DeepPotential(model_file)
-        self.model_type = self.model.model_type
+        if isinstance(self.model, DeepPot):
+            self.model_type = "ener"
+        else:
+            raise NotImplementedError(
+                "This model type has not been implemented. " "Contribution is welcome!"
+            )
 
     def build(
         self,
