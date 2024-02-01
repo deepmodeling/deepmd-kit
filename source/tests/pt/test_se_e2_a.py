@@ -118,7 +118,7 @@ class TestDescrptSeA(unittest.TestCase, TestCaseSingleFrameWithNlist):
                     dd3_state_dict[i] = (
                         dd0_state_dict[
                             i.replace(".deep_layers.", ".layers.").replace(
-                                "filter_layers_old.", "filter_layers.networks."
+                                "filter_layers_old.", "filter_layers._networks."
                             )
                         ]
                         .detach()

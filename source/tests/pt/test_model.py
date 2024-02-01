@@ -59,7 +59,7 @@ VariableState = collections.namedtuple("VariableState", ["value", "gradient"])
 
 def torch2tf(torch_name, last_layer_id=None):
     fields = torch_name.split(".")
-    offset = int(fields[2] == "networks")
+    offset = int(fields[2] == "_networks")
     element_id = int(fields[2 + offset])
     if fields[0] == "descriptor":
         layer_id = int(fields[4 + offset]) + 1
