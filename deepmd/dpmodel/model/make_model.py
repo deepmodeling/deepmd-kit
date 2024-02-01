@@ -56,9 +56,9 @@ def make_model(T_AtomicModel):
                 **kwargs,
             )
 
-        def get_model_output_def(self):
+        def model_output_def(self):
             """Get the output def for the model."""
-            return ModelOutputDef(self.get_fitting_output_def())
+            return ModelOutputDef(self.fitting_output_def())
 
         def call(
             self,
@@ -125,7 +125,7 @@ def make_model(T_AtomicModel):
             )
             model_predict = communicate_extended_output(
                 model_predict_lower,
-                self.get_model_output_def(),
+                self.model_output_def(),
                 mapping,
                 do_atomic_virial=do_atomic_virial,
             )
@@ -182,7 +182,7 @@ def make_model(T_AtomicModel):
             )
             model_predict = fit_output_to_model_output(
                 atomic_ret,
-                self.get_fitting_output_def(),
+                self.fitting_output_def(),
                 extended_coord,
                 do_atomic_virial=do_atomic_virial,
             )

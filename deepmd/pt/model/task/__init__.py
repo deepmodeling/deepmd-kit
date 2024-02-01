@@ -2,6 +2,9 @@
 from .atten_lcc import (
     FittingNetAttenLcc,
 )
+from .base_fitting import (
+    BaseFitting,
+)
 from .denoise import (
     DenoiseNet,
 )
@@ -15,9 +18,6 @@ from .ener import (
 from .fitting import (
     Fitting,
 )
-from .task import (
-    TaskBaseMethod,
-)
 from .type_predict import (
     TypePredictNet,
 )
@@ -29,6 +29,6 @@ __all__ = [
     "EnergyFittingNet",
     "EnergyFittingNetDirect",
     "Fitting",
-    "TaskBaseMethod",
+    "BaseFitting",
     "TypePredictNet",
 ]

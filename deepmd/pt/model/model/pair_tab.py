@@ -19,12 +19,12 @@ from deepmd.utils.pair_tab import (
     PairTab,
 )
 
-from .atomic_model import (
-    AtomicModel,
+from .base_atomic_model import (
+    BaseAtomicModel,
 )
 
 
-class PairTabModel(nn.Module, AtomicModel):
+class PairTabModel(nn.Module, BaseAtomicModel):
     """Pairwise tabulation energy model.
 
     This model can be used to tabulate the pairwise energy between atoms for either
@@ -72,7 +72,7 @@ class PairTabModel(nn.Module, AtomicModel):
         else:
             raise TypeError("sel must be int or list[int]")
 
-    def get_fitting_output_def(self) -> FittingOutputDef:
+    def fitting_output_def(self) -> FittingOutputDef:
         return FittingOutputDef(
             [
                 OutputVariableDef(

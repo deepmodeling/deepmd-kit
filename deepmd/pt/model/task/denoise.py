@@ -14,8 +14,8 @@ from deepmd.pt.model.network.network import (
     MaskLMHead,
     NonLinearHead,
 )
-from deepmd.pt.model.task.task import (
-    TaskBaseMethod,
+from deepmd.pt.model.task.fitting import (
+    Fitting,
 )
 from deepmd.pt.utils import (
     env,
@@ -23,7 +23,7 @@ from deepmd.pt.utils import (
 
 
 @fitting_check_output
-class DenoiseNet(TaskBaseMethod):
+class DenoiseNet(Fitting):
     def __init__(
         self,
         feature_dim,

@@ -464,6 +464,12 @@ class EnergyFittingNetDirect(Fitting):
             ]
         )
 
+    def serialize(self) -> dict:
+        raise NotImplementedError
+
+    def deserialize(cls) -> "EnergyFittingNetDirect":
+        raise NotImplementedError
+
     def forward(
         self,
         inputs: torch.Tensor,

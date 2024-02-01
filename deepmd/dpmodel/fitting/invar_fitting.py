@@ -2,6 +2,7 @@
 import copy
 from typing import (
     Any,
+    Dict,
     List,
     Optional,
 )
@@ -22,10 +23,14 @@ from deepmd.dpmodel.utils import (
     NetworkCollection,
 )
 
+from .base_fitting import (
+    BaseFitting,
+)
+
 
 @fitting_check_output
-class InvarFitting(NativeOP):
-    r"""Fitting the energy (or a porperty of `dim_out`) of the system. The force and the virial can also be trained.
+class InvarFitting(NativeOP, BaseFitting):
+    r"""Fitting the energy (or a rotationally invariant porperty of `dim_out`) of the system. The force and the virial can also be trained.
 
     Lets take the energy fitting task as an example.
     The potential energy :math:`E` is a fitting network function of the descriptor :math:`\mathcal{D}`:
@@ -279,7 +284,7 @@ class InvarFitting(NativeOP):
         h2: Optional[np.array] = None,
         fparam: Optional[np.array] = None,
         aparam: Optional[np.array] = None,
-    ):
+    ) -> Dict[str, np.array]:
         """Calculate the fitting.
 
         Parameters

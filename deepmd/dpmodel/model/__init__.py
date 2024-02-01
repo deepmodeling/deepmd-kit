@@ -5,7 +5,7 @@ from .dp_atomic_model import (
 from .dp_model import (
     DPModel,
 )
-from .make_atomic_model import (
+from .make_base_atomic_model import (
     make_base_atomic_model,
 )
 

@@ -20,7 +20,7 @@ def make_base_atomic_model(T_Tensor):
         """Base Atomic Model provides the interfaces of an atomic model."""
 
         @abstractmethod
-        def get_fitting_output_def(self) -> FittingOutputDef:
+        def fitting_output_def(self) -> FittingOutputDef:
             pass
 
         @abstractmethod
@@ -54,5 +54,30 @@ def make_base_atomic_model(T_Tensor):
         @abstractclassmethod
         def deserialize(cls):
             pass
+
+        def do_grad(
+            self,
+            var_name: Optional[str] = None,
+        ) -> bool:
+            """Tell if the output variable `var_name` is differentiable.
+            if var_name is None, returns if any of the variable is differentiable.
+
+            """
+            odef = self.fitting_output_def()
+            if var_name is None:
+                require: List[bool] = []
+                for vv in odef.keys():
+                    require.append(self.do_grad_(vv))
+                return any(require)
+            else:
+                return self.do_grad_(var_name)
+
+        def do_grad_(
+            self,
+            var_name: str,
+        ) -> bool:
+            """Tell if the output variable `var_name` is differentiable."""
+            assert var_name is not None
+            return self.fitting_output_def()[var_name].differentiable
 
     return BAM

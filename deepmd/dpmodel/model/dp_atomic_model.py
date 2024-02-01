@@ -50,7 +50,7 @@ class DPAtomicModel(BaseAtomicModel):
         self.descriptor = descriptor
         self.fitting = fitting
 
-    def get_fitting_output_def(self) -> FittingOutputDef:
+    def fitting_output_def(self) -> FittingOutputDef:
         """Get the output def of the fitting net."""
         return self.fitting.output_def()
 

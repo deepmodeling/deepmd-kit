@@ -19,15 +19,15 @@ from deepmd.pt.model.task.ener import (  # noqa # TODO: should import all fittin
     InvarFitting,
 )
 
-from .atomic_model import (
-    AtomicModel,
+from .base_atomic_model import (
+    BaseAtomicModel,
 )
 from .model import (
     BaseModel,
 )
 
 
-class DPAtomicModel(BaseModel, AtomicModel):
+class DPAtomicModel(BaseModel, BaseAtomicModel):
     """Model give atomic prediction of some physical property.
 
     Parameters
@@ -84,7 +84,7 @@ class DPAtomicModel(BaseModel, AtomicModel):
             sampled=sampled,
         )
 
-    def get_fitting_output_def(self) -> FittingOutputDef:
+    def fitting_output_def(self) -> FittingOutputDef:
         """Get the output def of the fitting net."""
         return (
             self.fitting_net.output_def()
