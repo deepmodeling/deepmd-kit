@@ -19,6 +19,10 @@ from deepmd.pt.model.task.ener import (
 from deepmd.pt.utils import (
     env,
 )
+from deepmd.pt.utils.nlist import (
+    build_neighbor_list,
+    extend_coord_with_ghosts,
+)
 from deepmd.pt.utils.utils import (
     to_numpy_array,
     to_torch_tensor,
@@ -78,6 +82,29 @@ class TestDPModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
         np.testing.assert_allclose(
             to_numpy_array(ret0["energy_derv_c"]),
             to_numpy_array(ret1["energy_derv_c"]),
+        )
+
+        coord_ext, atype_ext, mapping = extend_coord_with_ghosts(
+            to_torch_tensor(self.coord),
+            to_torch_tensor(self.atype),
+            to_torch_tensor(self.cell),
+            self.rcut,
+        )
+        nlist = build_neighbor_list(
+            coord_ext,
+            atype_ext,
+            self.nloc,
+            self.rcut,
+            self.sel,
+            distinguish_types=md0.distinguish_types(),
+        )
+        args = [coord_ext, atype_ext, nlist]
+        ret2 = md0.forward_common_lower(*args, do_atomic_virial=True)
+        # check the consistency between the reduced virial from
+        # forward_common and forward_common_lower
+        np.testing.assert_allclose(
+            to_numpy_array(ret0["energy_derv_c_redu"]),
+            to_numpy_array(ret2["energy_derv_c_redu"]),
         )
 
     def test_dp_consistency(self):
@@ -197,6 +224,10 @@ class TestDPModelLower(unittest.TestCase, TestCaseSingleFrameWithNlist):
         np.testing.assert_allclose(
             to_numpy_array(ret0["energy_derv_r"]),
             to_numpy_array(ret1["energy_derv_r"]),
+        )
+        np.testing.assert_allclose(
+            to_numpy_array(ret0["energy_derv_c_redu"]),
+            to_numpy_array(ret1["energy_derv_c_redu"]),
         )
         ret0 = md0.forward_common_lower(*args, do_atomic_virial=True)
         ret1 = md1.forward_common_lower(*args, do_atomic_virial=True)
