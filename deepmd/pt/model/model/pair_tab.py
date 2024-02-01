@@ -90,6 +90,20 @@ class PairTabModel(nn.Module, AtomicModel):
     def distinguish_types(self) -> bool:
         # to match DPA1 and DPA2.
         return False
+    
+    def serialize(self) -> dict:
+        return {
+            "tab_file": self.tab_file,
+            "rcut": self.rcut,
+            "sel": self.sel
+        }
+    
+    @classmethod
+    def deserialize(cls, data) -> "PairTabModel":
+        tab_file = data["tab_file"]
+        rcut = data["rcut"]
+        sel = data["sel"]
+        return cls(tab_file, rcut, sel)
 
     def forward_atomic(
         self,

@@ -70,6 +70,20 @@ class TestPairTab(unittest.TestCase):
 
     def test_jit(self):
         model = torch.jit.script(self.model)
+    
+    @patch("numpy.loadtxt")
+    def test_deserialize(self, mock_loadtxt):
+        file_path = "dummy_path"
+        mock_loadtxt.return_value = np.array(
+            [
+                [0.005, 1.0, 2.0, 3.0],
+                [0.01, 0.8, 1.6, 2.4],
+                [0.015, 0.5, 1.0, 1.5],
+                [0.02, 0.25, 0.4, 0.75],
+            ]
+        )
+        model1 = PairTabModel.deserialize(self.model.serialize())
+        model1 = torch.jit.script(model1)
 
 
 class TestPairTabTwoAtoms(unittest.TestCase):
