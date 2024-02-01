@@ -91,6 +91,14 @@ class PairTabModel(nn.Module, AtomicModel):
         # to match DPA1 and DPA2.
         return False
 
+    def serialize(self) -> dict:
+        # place holder, implemantated in future PR
+        raise NotImplementedError
+
+    def deserialize(cls):
+        # place holder, implemantated in future PR
+        raise NotImplementedError
+
     def forward_atomic(
         self,
         extended_coord,
