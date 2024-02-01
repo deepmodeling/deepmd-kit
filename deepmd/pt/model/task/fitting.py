@@ -24,7 +24,7 @@ from deepmd.pt.utils.stat import (
 )
 
 
-class Fitting(BaseFitting, torch.nn.Module):
+class Fitting(torch.nn.Module, BaseFitting):
     __plugins = Plugin()
 
     @staticmethod

@@ -81,13 +81,17 @@ class DescrptSeA(Descriptor):
         """Returns the number of selected atoms for each type."""
         return self.sea.get_sel()
 
-    def get_ntype(self) -> int:
+    def get_ntypes(self) -> int:
         """Returns the number of element types."""
-        return self.sea.get_ntype()
+        return self.sea.get_ntypes()
 
     def get_dim_out(self) -> int:
         """Returns the output dimension."""
         return self.sea.get_dim_out()
+
+    def get_dim_emb(self) -> int:
+        """Returns the output dimension."""
+        return self.sea.get_dim_emb()
 
     def distinguish_types(self):
         """Returns if the descriptor uses different nets for
@@ -301,13 +305,17 @@ class DescrptBlockSeA(DescriptorBlock):
         """Returns the number of selected atoms for each type."""
         return self.sel
 
-    def get_ntype(self) -> int:
+    def get_ntypes(self) -> int:
         """Returns the number of element types."""
         return self.ntypes
 
     def get_dim_out(self) -> int:
         """Returns the output dimension."""
         return self.dim_out
+
+    def get_dim_emb(self) -> int:
+        """Returns the output dimension."""
+        return self.neuron[-1]
 
     def get_dim_in(self) -> int:
         """Returns the input dimension."""

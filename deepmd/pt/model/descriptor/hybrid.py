@@ -88,7 +88,7 @@ class DescrptBlockHybrid(DescriptorBlock):
         """Returns the number of selected atoms for each type."""
         return self.sel
 
-    def get_ntype(self) -> int:
+    def get_ntypes(self) -> int:
         """Returns the number of element types."""
         return self.ntypes
 
@@ -99,6 +99,9 @@ class DescrptBlockHybrid(DescriptorBlock):
     def get_dim_in(self) -> int:
         """Returns the input dimension."""
         return self.dim_in
+
+    def get_dim_emb(self):
+        return self.dim_emb
 
     @property
     def dim_out(self):

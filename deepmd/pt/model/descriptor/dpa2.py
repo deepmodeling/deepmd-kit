@@ -256,7 +256,7 @@ class DescrptDPA2(Descriptor):
         """Returns the number of selected atoms for each type."""
         return self.sel
 
-    def get_ntype(self) -> int:
+    def get_ntypes(self) -> int:
         """Returns the number of element types."""
         return self.ntypes
 
@@ -268,7 +268,7 @@ class DescrptDPA2(Descriptor):
         return ret
 
     def get_dim_emb(self) -> int:
-        """Returns the output dimension of this descriptor."""
+        """Returns the embedding dimension of this descriptor."""
         return self.repformers.dim_emb
 
     def distinguish_types(self) -> bool:
@@ -331,6 +331,15 @@ class DescrptDPA2(Descriptor):
             "sel": [config["repinit_nsel"], config["repformer_nsel"]],
             "rcut": [config["repinit_rcut"], config["repformer_rcut"]],
         }
+
+    def serialize(self) -> dict:
+        """Serialize the obj to dict."""
+        raise NotImplementedError
+
+    @classmethod
+    def deserialize(cls) -> "DescrptDPA2":
+        """Deserialize from a dict."""
+        raise NotImplementedError
 
     def forward(
         self,

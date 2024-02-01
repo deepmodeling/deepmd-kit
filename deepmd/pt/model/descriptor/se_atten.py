@@ -145,7 +145,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         """Returns the number of selected atoms for each type."""
         return self.sel
 
-    def get_ntype(self) -> int:
+    def get_ntypes(self) -> int:
         """Returns the number of element types."""
         return self.ntypes
 
@@ -156,6 +156,10 @@ class DescrptBlockSeAtten(DescriptorBlock):
     def get_dim_out(self) -> int:
         """Returns the output dimension."""
         return self.dim_out
+
+    def get_dim_emb(self) -> int:
+        """Returns the output dimension of embedding."""
+        return self.filter_neuron[-1]
 
     @property
     def dim_out(self):
@@ -170,7 +174,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
     @property
     def dim_emb(self):
         """Returns the output dimension of embedding."""
-        return self.filter_neuron[-1]
+        return self.get_dim_emb()
 
     def compute_input_stats(self, merged):
         """Update mean and stddev for descriptor elements."""

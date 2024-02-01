@@ -23,8 +23,12 @@ from deepmd.dpmodel.utils import (
     NetworkCollection,
 )
 
+from .base_descriptor import (
+    BaseDescriptor,
+)
 
-class DescrptSeA(NativeOP):
+
+class DescrptSeA(NativeOP, BaseDescriptor):
     r"""DeepPot-SE constructed from all information (both angular and radial) of
     atomic configurations. The embedding takes the distance between atoms as input.
 
@@ -198,6 +202,10 @@ class DescrptSeA(NativeOP):
         """Returns the output dimension of this descriptor."""
         return self.neuron[-1] * self.axis_neuron
 
+    def get_dim_emb(self):
+        """Returns the embedding (g2) dimension of this descriptor."""
+        return self.neuron[-1]
+
     def get_rcut(self):
         """Returns cutoff radius."""
         return self.rcut
@@ -211,6 +219,18 @@ class DescrptSeA(NativeOP):
         different atomic types.
         """
         return True
+
+    def get_ntypes(self) -> int:
+        """Returns the number of element types."""
+        return self.ntypes
+
+    def compute_input_stats(self, merged):
+        """Update mean and stddev for descriptor elements."""
+        raise NotImplementedError
+
+    def init_desc_stat(self, sumr, suma, sumn, sumr2, suma2):
+        """Initialize the model bias by the statistics."""
+        raise NotImplementedError
 
     def cal_g(
         self,

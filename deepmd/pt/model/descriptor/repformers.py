@@ -162,7 +162,7 @@ class DescrptBlockRepformers(DescriptorBlock):
         """Returns the number of selected atoms for each type."""
         return self.sel
 
-    def get_ntype(self) -> int:
+    def get_ntypes(self) -> int:
         """Returns the number of element types."""
         return self.ntypes
 
@@ -173,6 +173,10 @@ class DescrptBlockRepformers(DescriptorBlock):
     def get_dim_in(self) -> int:
         """Returns the input dimension."""
         return self.dim_in
+
+    def get_dim_emb(self) -> int:
+        """Returns the embedding dimension g2."""
+        return self.g2_dim
 
     @property
     def dim_out(self):
@@ -187,7 +191,7 @@ class DescrptBlockRepformers(DescriptorBlock):
     @property
     def dim_emb(self):
         """Returns the embedding dimension g2."""
-        return self.g2_dim
+        return self.get_dim_emb()
 
     def forward(
         self,

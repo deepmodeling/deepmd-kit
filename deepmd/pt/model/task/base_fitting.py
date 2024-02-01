@@ -5,4 +5,4 @@ from deepmd.dpmodel.fitting import (
     make_base_fitting,
 )
 
-BaseFitting = make_base_fitting(torch.Tensor, "forward")
+BaseFitting = make_base_fitting(torch.Tensor, fwd_method_name="forward")
