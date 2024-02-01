@@ -322,10 +322,10 @@ class DeepEval(ABC):
     def _get_natoms_and_nframes(
         self,
         coords: np.ndarray,
-        atom_types: Union[List[int], np.ndarray],
+        atom_types: np.ndarray,
         mixed_type: bool = False,
     ) -> Tuple[int, int]:
-        if mixed_type:
+        if mixed_type or atom_types.ndim > 1:
             natoms = len(atom_types[0])
         else:
             natoms = len(atom_types)

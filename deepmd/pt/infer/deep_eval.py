@@ -126,7 +126,8 @@ class DeepEval(DeepEvalBase):
         "energy": "atom_energy",
         "energy_redu": "energy",
         "energy_derv_r": "force",
-        "energy_derv_c": "atom_virial",
+        # not same as TF...
+        "energy_derv_c": "atomic_virial",
         "energy_derv_c_redu": "virial",
     }
 
