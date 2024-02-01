@@ -36,15 +36,15 @@ def make_base_descriptor(
 
         @abstractmethod
         def get_sel(self) -> List[int]:
-            """Returns the number of selected atoms for each type."""
+            """Returns the number of selected neighboring atoms for each type."""
             pass
 
         def get_nsel(self) -> int:
-            """Returns the total number of selected atoms in the cut-off radius."""
+            """Returns the total number of selected neighboring atoms in the cut-off radius."""
             return sum(self.get_sel())
 
         def get_nnei(self) -> int:
-            """Returns the total number of neighboring atoms in the cut-off radius."""
+            """Returns the total number of selected neighboring atoms in the cut-off radius."""
             return self.get_nsel()
 
         @abstractmethod
@@ -60,6 +60,13 @@ def make_base_descriptor(
         @abstractmethod
         def get_dim_emb(self) -> int:
             """Returns the embedding dimension of g2."""
+            pass
+
+        @abstractmethod
+        def distinguish_types(self) -> bool:
+            """Returns if the descriptor requires a neighbor list that distinguish different
+            atomic types or not.
+            """
             pass
 
         @abstractmethod

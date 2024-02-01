@@ -21,18 +21,32 @@ def make_base_atomic_model(T_Tensor):
 
         @abstractmethod
         def fitting_output_def(self) -> FittingOutputDef:
+            """Get the fitting output def."""
             pass
 
         @abstractmethod
         def get_rcut(self) -> float:
+            """Get the cut-off radius."""
             pass
 
         @abstractmethod
         def get_sel(self) -> List[int]:
+            """Returns the number of selected atoms for each type."""
             pass
+
+        def get_nsel(self) -> int:
+            """Returns the total number of selected neighboring atoms in the cut-off radius."""
+            return sum(self.get_sel())
+
+        def get_nnei(self) -> int:
+            """Returns the total number of selected neighboring atoms in the cut-off radius."""
+            return self.get_nsel()
 
         @abstractmethod
         def distinguish_types(self) -> bool:
+            """Returns if the model requires a neighbor list that distinguish different
+            atomic types or not.
+            """
             pass
 
         @abstractmethod

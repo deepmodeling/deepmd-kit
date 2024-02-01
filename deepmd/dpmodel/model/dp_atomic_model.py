@@ -63,7 +63,9 @@ class DPAtomicModel(BaseAtomicModel):
         return self.descriptor.get_sel()
 
     def distinguish_types(self) -> bool:
-        """If distinguish different types by sorting."""
+        """Returns if model requires a neighbor list that distinguish different
+        atomic types or not.
+        """
         return self.descriptor.distinguish_types()
 
     def forward_atomic(

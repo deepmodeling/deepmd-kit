@@ -272,8 +272,8 @@ class DescrptDPA2(Descriptor):
         return self.repformers.dim_emb
 
     def distinguish_types(self) -> bool:
-        """Returns if the descriptor uses different nets for
-        different atomic types.
+        """Returns if the descriptor requires a neighbor list that distinguish different
+        atomic types or not.
         """
         return False
 
