@@ -8,6 +8,7 @@ from typing import (
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as torch_func
 
 from deepmd.pt.utils import (
     env,
@@ -18,6 +19,8 @@ device = env.DEVICE
 from deepmd.model_format import (
     NativeLayer,
 )
+from deepmd.model_format import EmbdLayer as DPEmbdLayer
+from deepmd.model_format import LayerNorm as DPLayerNorm
 from deepmd.model_format import NetworkCollection as DPNetworkCollection
 from deepmd.model_format import (
     make_embedding_network,
@@ -188,6 +191,188 @@ class MLPLayer(nn.Module):
         return obj
 
 
+class EmbdLayer(MLPLayer):
+    def __init__(
+            self,
+            num_channel,
+            num_out,
+            padding: bool = True,
+            stddev: float = 1.,
+            precision: str = DEFAULT_PRECISION,
+    ):
+        self.padding = padding
+        self.num_channel = num_channel + 1 if self.padding else num_channel
+        super().__init__(num_in=self.num_channel,
+                         num_out=num_out,
+                         bias=False,
+                         use_timestep=False,
+                         activation_function=None,
+                         resnet=False,
+                         stddev=stddev,
+                         precision=precision,
+                         )
+        if self.padding:
+            nn.init.zeros_(self.matrix.data[-1])
+
+    def dim_channel(self) -> int:
+        return self.matrix.shape[0]
+
+    def forward(
+            self,
+            xx: torch.Tensor,
+    ) -> torch.Tensor:
+        """One Embedding layer used by DP model.
+
+        Parameters
+        ----------
+        xx: torch.Tensor
+            The input of index.
+
+        Returns
+        -------
+        yy: torch.Tensor
+            The output.
+        """
+        yy = torch_func.embedding(xx, self.matrix)
+        return yy
+
+    def serialize(self) -> dict:
+        """Serialize the layer to a dict.
+
+        Returns
+        -------
+        dict
+            The serialized layer.
+        """
+        nl = DPEmbdLayer(
+            self.matrix.shape[0],
+            self.matrix.shape[1],
+            padding=False,
+            precision=self.precision,
+        )
+        nl.w = self.matrix.detach().cpu().numpy()
+        data = nl.serialize()
+        data["padding"] = self.padding
+        return data
+
+    @classmethod
+    def deserialize(cls, data: dict) -> "EmbdLayer":
+        """Deserialize the layer from a dict.
+
+        Parameters
+        ----------
+        data : dict
+            The dict to deserialize from.
+        """
+        padding = data["padding"]
+        nl = DPEmbdLayer.deserialize(data)
+        obj = cls(
+            nl["matrix"].shape[0],
+            nl["matrix"].shape[1],
+            padding=False,
+            precision=nl["precision"],
+        )
+        obj.padding = padding
+        prec = PRECISION_DICT[obj.precision]
+        check_load_param = \
+            lambda ss: nn.Parameter(data=torch.tensor(nl[ss], dtype=prec, device=device)) \
+                if nl[ss] is not None else None
+        obj.matrix = check_load_param("matrix")
+        return obj
+
+
+class LayerNorm(MLPLayer):
+    def __init__(
+            self,
+            num_in,
+            eps: float = 1e-5,
+            uni_init: bool = True,
+            bavg: float = 0.,
+            stddev: float = 1.,
+            precision: str = DEFAULT_PRECISION,
+    ):
+        self.eps = eps
+        self.uni_init = uni_init
+        self.num_in = num_in
+        super().__init__(num_in=1,
+                         num_out=num_in,
+                         bias=True,
+                         use_timestep=False,
+                         activation_function=None,
+                         resnet=False,
+                         bavg=bavg,
+                         stddev=stddev,
+                         precision=precision,
+                         )
+        self.matrix = torch.nn.Parameter(self.matrix.squeeze(0))
+        if self.uni_init:
+            nn.init.ones_(self.matrix.data)
+            nn.init.zeros_(self.bias.data)
+
+    def dim_out(self) -> int:
+        return self.matrix.shape[0]
+
+    def forward(
+            self,
+            xx: torch.Tensor,
+    ) -> torch.Tensor:
+        """One Layer Norm used by DP model.
+
+        Parameters
+        ----------
+        xx: torch.Tensor
+            The input of index.
+
+        Returns
+        -------
+        yy: torch.Tensor
+            The output.
+        """
+        yy = torch_func.layer_norm(xx, tuple((self.num_in,)), self.matrix, self.bias, self.eps)
+        return yy
+
+    def serialize(self) -> dict:
+        """Serialize the layer to a dict.
+
+        Returns
+        -------
+        dict
+            The serialized layer.
+        """
+        nl = DPLayerNorm(
+            self.matrix.shape[0],
+            eps=self.eps,
+            precision=self.precision,
+        )
+        nl.w = self.matrix.detach().cpu().numpy()
+        nl.b = self.bias.detach().cpu().numpy()
+        data = nl.serialize()
+        return data
+
+    @classmethod
+    def deserialize(cls, data: dict) -> "LayerNorm":
+        """Deserialize the layer from a dict.
+
+        Parameters
+        ----------
+        data : dict
+            The dict to deserialize from.
+        """
+        nl = DPLayerNorm.deserialize(data)
+        obj = cls(
+            nl["matrix"].shape[0],
+            eps=nl["eps"],
+            precision=nl["precision"],
+        )
+        prec = PRECISION_DICT[obj.precision]
+        check_load_param = \
+            lambda ss: nn.Parameter(data=torch.tensor(nl[ss], dtype=prec, device=device)) \
+                if nl[ss] is not None else None
+        obj.matrix = check_load_param("matrix")
+        obj.bias = check_load_param("bias")
+        return obj
+
+
 MLP_ = make_multilayer_network(MLPLayer, nn.Module)
 
 
@@ -217,4 +402,4 @@ class NetworkCollection(DPNetworkCollection, nn.Module):
         # init both two base classes
         DPNetworkCollection.__init__(self, *args, **kwargs)
         nn.Module.__init__(self)
-        self.networks = self._networks = torch.nn.ModuleList(self._networks)
+        self._networks = torch.nn.ModuleList(self._networks)

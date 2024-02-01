@@ -451,7 +451,7 @@ class DescrptBlockSeA(DescriptorBlock):
             xyz_scatter = torch.zeros(
                 [nfnl, 4, self.filter_neuron[-1]], dtype=self.prec, device=env.DEVICE
             )
-            for ii, ll in enumerate(self.filter_layers.networks):
+            for ii, ll in enumerate(self.filter_layers._networks):
                 # nfnl x nt x 4
                 rr = dmatrix[:, self.sec[ii] : self.sec[ii + 1], :]
                 ss = rr[:, :, :1]

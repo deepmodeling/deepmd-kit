@@ -322,6 +322,272 @@ class NativeLayer(NativeOP):
         return y
 
 
+class EmbdLayer(NativeLayer):
+    """Implementation of embedding layer.
+
+    Parameters
+    ----------
+    w : np.ndarray, optional
+        The embedding weights of the layer.
+    padding : bool, optional
+        Whether the embedding layer need to add one padding in the last channel.
+    """
+
+    def __init__(
+        self,
+        num_channel,
+        num_out,
+        padding: bool = True,
+        precision: str = DEFAULT_PRECISION,
+    ) -> None:
+        self.padding = padding
+        self.num_channel = num_channel + 1 if self.padding else num_channel
+        super().__init__(num_in=self.num_channel,
+                         num_out=num_out,
+                         bias=False,
+                         use_timestep=False,
+                         activation_function=None,
+                         resnet=False,
+                         precision=precision,
+                         )
+        if self.padding:
+            self.w[-1] = 0.
+
+    def serialize(self) -> dict:
+        """Serialize the layer to a dict.
+
+        Returns
+        -------
+        dict
+            The serialized layer.
+        """
+        data = {
+            "w": self.w
+        }
+        return {
+            "padding": self.padding,
+            "precision": self.precision,
+            "@variables": data,
+        }
+
+    @classmethod
+    def deserialize(cls, data: dict) -> "EmbdLayer":
+        """Deserialize the layer from a dict.
+
+        Parameters
+        ----------
+        data : dict
+            The dict to deserialize from.
+        """
+        data = copy.deepcopy(data)
+        variables = data.pop("@variables")
+        padding = data.pop("padding")
+        assert variables["w"] is not None and len(variables["w"].shape) == 2
+        num_channel, num_out = variables["w"].shape
+        obj = cls(
+            num_channel,
+            num_out,
+            padding=False,
+            **data,
+        )
+        obj.w, = (
+            variables["w"],
+        )
+        obj.padding = padding
+        obj.check_shape_consistency()
+        return obj
+
+    def __setitem__(self, key, value):
+        if key in ("w", "matrix"):
+            self.w = value
+        elif key == "precision":
+            self.precision = value
+        elif key == "padding":
+            self.padding = value
+        else:
+            raise KeyError(key)
+
+    def __getitem__(self, key):
+        if key in ("w", "matrix"):
+            return self.w
+        elif key == "precision":
+            return self.precision
+        elif key == "padding":
+            return self.padding
+        else:
+            raise KeyError(key)
+
+    def dim_channel(self) -> int:
+        return self.w.shape[0]
+
+    def call(self, x: np.ndarray) -> np.ndarray:
+        """Forward pass.
+
+        Parameters
+        ----------
+        x : np.ndarray
+            The input.
+
+        Returns
+        -------
+        np.ndarray
+            The output.
+        """
+        if self.w is None:
+            raise ValueError("w must be set")
+        y = np.take(self.w, x, axis=0)
+        return y
+
+
+class LayerNorm(NativeLayer):
+    """Implementation of Layer Normalization layer.
+
+    Parameters
+    ----------
+    w : np.ndarray, optional
+        The learnable weights of the normalization scale in the layer.
+    b : np.ndarray, optional
+        The learnable biases of the normalization shift in the layer.
+    eps : float, optional
+        A small value added to prevent division by zero in calculations.
+    uni_init : bool, optional
+        If initialize the weights to be zeros and ones.
+    """
+
+    def __init__(
+        self,
+        num_in,
+        eps: float = 1e-5,
+        uni_init: bool = True,
+        precision: str = DEFAULT_PRECISION,
+    ) -> None:
+        self.eps = eps
+        self.uni_init = uni_init
+        self.num_in = num_in
+        super().__init__(num_in=1,
+                         num_out=num_in,
+                         bias=True,
+                         use_timestep=False,
+                         activation_function=None,
+                         resnet=False,
+                         precision=precision,
+                         )
+        self.w = self.w.squeeze(0)  # keep the weight shape to be [num_in]
+        if self.uni_init:
+            self.w = 1.
+            self.b = 0.
+
+    def serialize(self) -> dict:
+        """Serialize the layer to a dict.
+
+        Returns
+        -------
+        dict
+            The serialized layer.
+        """
+        data = {
+            "w": self.w,
+            "b": self.b,
+        }
+        return {
+            "eps": self.eps,
+            "precision": self.precision,
+            "@variables": data,
+        }
+
+    @classmethod
+    def deserialize(cls, data: dict) -> "LayerNorm":
+        """Deserialize the layer from a dict.
+
+        Parameters
+        ----------
+        data : dict
+            The dict to deserialize from.
+        """
+        data = copy.deepcopy(data)
+        variables = data.pop("@variables")
+        if variables["w"] is not None:
+            assert len(variables["w"].shape) == 1
+        if variables["b"] is not None:
+            assert len(variables["b"].shape) == 1
+        num_in,  = variables["w"].shape
+        obj = cls(
+            num_in,
+            **data,
+        )
+        obj.w, = (
+            variables["w"],
+        )
+        obj.b, = (
+            variables["b"],
+        )
+        obj._check_shape_consistency()
+        return obj
+
+    def _check_shape_consistency(self):
+        if self.b is not None and self.w.shape[0] != self.b.shape[0]:
+            raise ValueError(
+                f"dim 1 of w {self.w.shape[0]} is not equal to shape "
+                f"of b {self.b.shape[0]}",
+            )
+
+    def __setitem__(self, key, value):
+        if key in ("w", "matrix"):
+            self.w = value
+        elif key in ("b", "bias"):
+            self.b = value
+        elif key == "precision":
+            self.precision = value
+        elif key == "eps":
+            self.eps = value
+        else:
+            raise KeyError(key)
+
+    def __getitem__(self, key):
+        if key in ("w", "matrix"):
+            return self.w
+        elif key in ("b", "bias"):
+            return self.b
+        elif key == "precision":
+            return self.precision
+        elif key == "eps":
+            return self.eps
+        else:
+            raise KeyError(key)
+
+    def dim_out(self) -> int:
+        return self.w.shape[0]
+
+    def call(self, x: np.ndarray) -> np.ndarray:
+        """Forward pass.
+
+        Parameters
+        ----------
+        x : np.ndarray
+            The input.
+
+        Returns
+        -------
+        np.ndarray
+            The output.
+        """
+        if self.w is None or self.b is None:
+            raise ValueError("w/b must be set")
+        y = self.layer_norm_numpy(x, tuple((self.num_in,)), self.w, self.b, self.eps)
+        return y
+
+    @staticmethod
+    def layer_norm_numpy(x, shape, weight, bias, eps):
+        # mean and variance
+        mean = np.mean(x, axis=tuple(range(-len(shape), 0)), keepdims=True)
+        var = np.var(x, axis=tuple(range(-len(shape), 0)), keepdims=True)
+        # normalize
+        x_normalized = (x - mean) / np.sqrt(var + eps)
+        # shift and scale
+        x_ln = x_normalized * weight + bias
+        return x_ln
+
+
 def make_multilayer_network(T_NetworkLayer, ModuleBase):
     class NN(ModuleBase):
         """Native representation of a neural network.

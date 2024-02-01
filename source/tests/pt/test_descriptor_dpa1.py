@@ -12,9 +12,7 @@ from deepmd.pt.model.descriptor import (
     DescrptBlockSeAtten,
     DescrptDPA1,
 )
-from deepmd.pt.model.network.network import (
-    TypeEmbedNet,
-)
+from deepmd.pt.model.network.mlp import EmbdLayer
 from deepmd.pt.utils import (
     env,
 )
@@ -231,8 +229,8 @@ class TestDPA1(unittest.TestCase):
         ).to(env.DEVICE)
         with open(Path(CUR_DIR) / "models" / "dpa1.json") as fp:
             self.model_json = json.load(fp)
-        self.file_model_param = Path(CUR_DIR) / "models" / "dpa1.pth"
-        self.file_type_embed = Path(CUR_DIR) / "models" / "dpa2_tebd.pth"
+        self.file_model_param = Path(CUR_DIR) / "models" / "dpa1.pt"
+        self.file_type_embed = Path(CUR_DIR) / "models" / "dpa2_tebd.pt"
 
     def test_descriptor_block(self):
         # torch.manual_seed(0)
@@ -260,7 +258,7 @@ class TestDPA1(unittest.TestCase):
             extended_coord, extended_atype, nloc, rcut, nsel, distinguish_types=False
         )
         # handel type_embedding
-        type_embedding = TypeEmbedNet(ntypes, 8).to(env.DEVICE)
+        type_embedding = EmbdLayer(ntypes, 8, padding=True)
         type_embedding.load_state_dict(torch.load(self.file_type_embed))
 
         ## to save model parameters

@@ -111,7 +111,7 @@ class TestDPA2(unittest.TestCase):
         ).to(env.DEVICE)
         with open(Path(CUR_DIR) / "models" / "dpa2_hyb.json") as fp:
             self.model_json = json.load(fp)
-        self.file_model_param = Path(CUR_DIR) / "models" / "dpa2.pth"
+        self.file_model_param = Path(CUR_DIR) / "models" / "dpa2.pt"
         self.file_type_embed = Path(CUR_DIR) / "models" / "dpa2_tebd.pth"
 
     def test_descriptor_hyb(self):

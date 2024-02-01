@@ -14,6 +14,8 @@ from .network import (
     EmbeddingNet,
     FittingNet,
     NativeLayer,
+    EmbdLayer,
+    LayerNorm,
     NativeNet,
     NetworkCollection,
     load_dp_model,
@@ -35,10 +37,14 @@ from .output_def import (
 from .se_e2_a import (
     DescrptSeA,
 )
+from .dpa1 import DescrptDPA1
 
 __all__ = [
     "InvarFitting",
     "DescrptSeA",
+    "DescrptDPA1",
+    "EmbdLayer",
+    "LayerNorm",
     "EnvMat",
     "make_multilayer_network",
     "make_embedding_network",
