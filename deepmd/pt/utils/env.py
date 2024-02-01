@@ -4,6 +4,11 @@ import os
 import numpy as np
 import torch
 
+from deepmd.env import (
+    get_default_nthreads,
+    set_default_nthreads,
+)
+
 PRECISION = os.environ.get("PRECISION", "float64")
 GLOBAL_NP_FLOAT_PRECISION = getattr(np, PRECISION)
 GLOBAL_PT_FLOAT_PRECISION = getattr(torch, PRECISION)
@@ -37,3 +42,11 @@ PRECISION_DICT = {
     "double": torch.float64,
 }
 DEFAULT_PRECISION = "float64"
+
+# throw warnings if threads not set
+set_default_nthreads()
+inter_nthreads, intra_nthreads = get_default_nthreads()
+if inter_nthreads > 0:  # the behavior of 0 is not documented
+    torch.set_num_interop_threads(inter_nthreads)
+if intra_nthreads > 0:
+    torch.set_num_threads(intra_nthreads)
