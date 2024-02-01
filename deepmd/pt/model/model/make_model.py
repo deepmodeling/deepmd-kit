@@ -219,7 +219,6 @@ def make_model(T_AtomicModel):
                 the formated nlist.
 
             """
-            n_nf, n_nloc, n_nnei = nlist.shape
             distinguish_types = self.distinguish_types()
             nlist = self._format_nlist(extended_coord, nlist, sum(self.get_sel()))
             if distinguish_types:
@@ -235,7 +234,6 @@ def make_model(T_AtomicModel):
             n_nf, n_nloc, n_nnei = nlist.shape
             # nf x nall x 3
             extended_coord = extended_coord.view([n_nf, -1, 3])
-            nall = extended_coord.shape[1]
             rcut = self.get_rcut()
 
             if n_nnei < nnei:
