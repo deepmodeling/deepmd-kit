@@ -342,16 +342,17 @@ class EmbdLayer(NativeLayer):
     ) -> None:
         self.padding = padding
         self.num_channel = num_channel + 1 if self.padding else num_channel
-        super().__init__(num_in=self.num_channel,
-                         num_out=num_out,
-                         bias=False,
-                         use_timestep=False,
-                         activation_function=None,
-                         resnet=False,
-                         precision=precision,
-                         )
+        super().__init__(
+            num_in=self.num_channel,
+            num_out=num_out,
+            bias=False,
+            use_timestep=False,
+            activation_function=None,
+            resnet=False,
+            precision=precision,
+        )
         if self.padding:
-            self.w[-1] = 0.
+            self.w[-1] = 0.0
 
     def serialize(self) -> dict:
         """Serialize the layer to a dict.
@@ -361,9 +362,7 @@ class EmbdLayer(NativeLayer):
         dict
             The serialized layer.
         """
-        data = {
-            "w": self.w
-        }
+        data = {"w": self.w}
         return {
             "padding": self.padding,
             "precision": self.precision,
@@ -390,9 +389,7 @@ class EmbdLayer(NativeLayer):
             padding=False,
             **data,
         )
-        obj.w, = (
-            variables["w"],
-        )
+        (obj.w,) = (variables["w"],)
         obj.padding = padding
         obj.check_shape_consistency()
         return obj
@@ -464,18 +461,19 @@ class LayerNorm(NativeLayer):
         self.eps = eps
         self.uni_init = uni_init
         self.num_in = num_in
-        super().__init__(num_in=1,
-                         num_out=num_in,
-                         bias=True,
-                         use_timestep=False,
-                         activation_function=None,
-                         resnet=False,
-                         precision=precision,
-                         )
+        super().__init__(
+            num_in=1,
+            num_out=num_in,
+            bias=True,
+            use_timestep=False,
+            activation_function=None,
+            resnet=False,
+            precision=precision,
+        )
         self.w = self.w.squeeze(0)  # keep the weight shape to be [num_in]
         if self.uni_init:
-            self.w = 1.
-            self.b = 0.
+            self.w = 1.0
+            self.b = 0.0
 
     def serialize(self) -> dict:
         """Serialize the layer to a dict.
@@ -510,17 +508,13 @@ class LayerNorm(NativeLayer):
             assert len(variables["w"].shape) == 1
         if variables["b"] is not None:
             assert len(variables["b"].shape) == 1
-        num_in,  = variables["w"].shape
+        (num_in,) = variables["w"].shape
         obj = cls(
             num_in,
             **data,
         )
-        obj.w, = (
-            variables["w"],
-        )
-        obj.b, = (
-            variables["b"],
-        )
+        (obj.w,) = (variables["w"],)
+        (obj.b,) = (variables["b"],)
         obj._check_shape_consistency()
         return obj
 

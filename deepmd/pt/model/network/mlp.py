@@ -16,11 +16,11 @@ from deepmd.pt.utils import (
 
 device = env.DEVICE
 
+from deepmd.model_format import EmbdLayer as DPEmbdLayer
+from deepmd.model_format import LayerNorm as DPLayerNorm
 from deepmd.model_format import (
     NativeLayer,
 )
-from deepmd.model_format import EmbdLayer as DPEmbdLayer
-from deepmd.model_format import LayerNorm as DPLayerNorm
 from deepmd.model_format import NetworkCollection as DPNetworkCollection
 from deepmd.model_format import (
     make_embedding_network,
@@ -193,24 +193,25 @@ class MLPLayer(nn.Module):
 
 class EmbdLayer(MLPLayer):
     def __init__(
-            self,
-            num_channel,
-            num_out,
-            padding: bool = True,
-            stddev: float = 1.,
-            precision: str = DEFAULT_PRECISION,
+        self,
+        num_channel,
+        num_out,
+        padding: bool = True,
+        stddev: float = 1.0,
+        precision: str = DEFAULT_PRECISION,
     ):
         self.padding = padding
         self.num_channel = num_channel + 1 if self.padding else num_channel
-        super().__init__(num_in=self.num_channel,
-                         num_out=num_out,
-                         bias=False,
-                         use_timestep=False,
-                         activation_function=None,
-                         resnet=False,
-                         stddev=stddev,
-                         precision=precision,
-                         )
+        super().__init__(
+            num_in=self.num_channel,
+            num_out=num_out,
+            bias=False,
+            use_timestep=False,
+            activation_function=None,
+            resnet=False,
+            stddev=stddev,
+            precision=precision,
+        )
         if self.padding:
             nn.init.zeros_(self.matrix.data[-1])
 
@@ -218,14 +219,14 @@ class EmbdLayer(MLPLayer):
         return self.matrix.shape[0]
 
     def forward(
-            self,
-            xx: torch.Tensor,
+        self,
+        xx: torch.Tensor,
     ) -> torch.Tensor:
         """One Embedding layer used by DP model.
 
         Parameters
         ----------
-        xx: torch.Tensor
+        xx : torch.Tensor
             The input of index.
 
         Returns
@@ -274,36 +275,41 @@ class EmbdLayer(MLPLayer):
         )
         obj.padding = padding
         prec = PRECISION_DICT[obj.precision]
-        check_load_param = \
-            lambda ss: nn.Parameter(data=torch.tensor(nl[ss], dtype=prec, device=device)) \
-                if nl[ss] is not None else None
+        check_load_param = (
+            lambda ss: nn.Parameter(
+                data=torch.tensor(nl[ss], dtype=prec, device=device)
+            )
+            if nl[ss] is not None
+            else None
+        )
         obj.matrix = check_load_param("matrix")
         return obj
 
 
 class LayerNorm(MLPLayer):
     def __init__(
-            self,
-            num_in,
-            eps: float = 1e-5,
-            uni_init: bool = True,
-            bavg: float = 0.,
-            stddev: float = 1.,
-            precision: str = DEFAULT_PRECISION,
+        self,
+        num_in,
+        eps: float = 1e-5,
+        uni_init: bool = True,
+        bavg: float = 0.0,
+        stddev: float = 1.0,
+        precision: str = DEFAULT_PRECISION,
     ):
         self.eps = eps
         self.uni_init = uni_init
         self.num_in = num_in
-        super().__init__(num_in=1,
-                         num_out=num_in,
-                         bias=True,
-                         use_timestep=False,
-                         activation_function=None,
-                         resnet=False,
-                         bavg=bavg,
-                         stddev=stddev,
-                         precision=precision,
-                         )
+        super().__init__(
+            num_in=1,
+            num_out=num_in,
+            bias=True,
+            use_timestep=False,
+            activation_function=None,
+            resnet=False,
+            bavg=bavg,
+            stddev=stddev,
+            precision=precision,
+        )
         self.matrix = torch.nn.Parameter(self.matrix.squeeze(0))
         if self.uni_init:
             nn.init.ones_(self.matrix.data)
@@ -313,14 +319,14 @@ class LayerNorm(MLPLayer):
         return self.matrix.shape[0]
 
     def forward(
-            self,
-            xx: torch.Tensor,
+        self,
+        xx: torch.Tensor,
     ) -> torch.Tensor:
         """One Layer Norm used by DP model.
 
         Parameters
         ----------
-        xx: torch.Tensor
+        xx : torch.Tensor
             The input of index.
 
         Returns
@@ -328,7 +334,9 @@ class LayerNorm(MLPLayer):
         yy: torch.Tensor
             The output.
         """
-        yy = torch_func.layer_norm(xx, tuple((self.num_in,)), self.matrix, self.bias, self.eps)
+        yy = torch_func.layer_norm(
+            xx, tuple((self.num_in,)), self.matrix, self.bias, self.eps
+        )
         return yy
 
     def serialize(self) -> dict:
@@ -365,9 +373,13 @@ class LayerNorm(MLPLayer):
             precision=nl["precision"],
         )
         prec = PRECISION_DICT[obj.precision]
-        check_load_param = \
-            lambda ss: nn.Parameter(data=torch.tensor(nl[ss], dtype=prec, device=device)) \
-                if nl[ss] is not None else None
+        check_load_param = (
+            lambda ss: nn.Parameter(
+                data=torch.tensor(nl[ss], dtype=prec, device=device)
+            )
+            if nl[ss] is not None
+            else None
+        )
         obj.matrix = check_load_param("matrix")
         obj.bias = check_load_param("bias")
         return obj

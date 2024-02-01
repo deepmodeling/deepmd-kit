@@ -21,9 +21,9 @@ from .env_mat import (
     EnvMat,
 )
 from .network import (
+    EmbdLayer,
     EmbeddingNet,
     NetworkCollection,
-    EmbdLayer,
 )
 
 
@@ -147,6 +147,7 @@ class DescrptDPA1(NativeOP):
        DPA-1: Pretraining of Attention-based Deep Potential Model for Molecular Simulation.
        arXiv preprint arXiv:2208.08236.
     """
+
     def __init__(
         self,
         rcut: float,
@@ -183,7 +184,7 @@ class DescrptDPA1(NativeOP):
         if spin is not None:
             raise NotImplementedError("spin is not implemented")
         # TODO
-        if tebd_input_mode != 'concat':
+        if tebd_input_mode != "concat":
             raise NotImplementedError("tebd_input_mode != 'concat' not implemented")
         if not smooth:
             raise NotImplementedError("smooth == False not implemented")
@@ -215,8 +216,10 @@ class DescrptDPA1(NativeOP):
         self.concat_output_tebd = concat_output_tebd
         self.spin = spin
 
-        self.type_embedding = EmbdLayer(ntypes, tebd_dim, padding=True, precision=precision)
-        in_dim = 1 + self.tebd_dim * 2 if self.tebd_input_mode in ['concat'] else 1
+        self.type_embedding = EmbdLayer(
+            ntypes, tebd_dim, padding=True, precision=precision
+        )
+        in_dim = 1 + self.tebd_dim * 2 if self.tebd_input_mode in ["concat"] else 1
         self.embeddings = NetworkCollection(
             ndim=0,
             ntypes=self.ntypes,
@@ -255,8 +258,11 @@ class DescrptDPA1(NativeOP):
     @property
     def dim_out(self):
         """Returns the output dimension of this descriptor."""
-        return self.neuron[-1] * self.axis_neuron + self.tebd_dim * 2 \
-            if self.concat_output_tebd else self.neuron[-1] * self.axis_neuron
+        return (
+            self.neuron[-1] * self.axis_neuron + self.tebd_dim * 2
+            if self.concat_output_tebd
+            else self.neuron[-1] * self.axis_neuron
+        )
 
     def cal_g(
         self,
@@ -302,7 +308,6 @@ class DescrptDPA1(NativeOP):
         sw
             The smooth switch function.
         """
-
         # nf x nloc x nnei x 4
         rr, ww = self.env_mat.call(coord_ext, atype_ext, nlist, self.davg, self.dstd)
         nf, nloc, nnei, _ = rr.shape
@@ -318,7 +323,9 @@ class DescrptDPA1(NativeOP):
         nlist_masked[nlist_masked == -1] = 0
         index = np.tile(nlist_masked.reshape(nf, -1, 1), (1, 1, self.tebd_dim))
         # nf x nloc x nnei x tebd_dim
-        atype_embd_nlist = np.take_along_axis(atype_embd_ext, index, axis=1).reshape(nf, nloc, nnei, self.tebd_dim)
+        atype_embd_nlist = np.take_along_axis(atype_embd_ext, index, axis=1).reshape(
+            nf, nloc, nnei, self.tebd_dim
+        )
         ng = self.neuron[-1]
         ss = rr[..., 0:1]
         ss = np.concatenate([ss, atype_embd_nlist, atype_embd_nnei], axis=-1)

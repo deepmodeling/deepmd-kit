@@ -6,19 +6,25 @@ from typing import (
 
 import torch
 
+from deepmd.model_format import EnvMat as DPEnvMat
 from deepmd.pt.model.descriptor import (
     Descriptor,
+)
+from deepmd.pt.model.network.mlp import (
+    EmbdLayer,
+    NetworkCollection,
 )
 from deepmd.pt.model.network.network import (
     TypeEmbedNet,
 )
-
-from .se_atten import DescrptBlockSeAtten, NeighborGatedAttention
-from deepmd.pt.model.network.mlp import EmbdLayer, NetworkCollection
-from deepmd.model_format import (
-    EnvMat as DPEnvMat,
+from deepmd.pt.utils import (
+    env,
 )
-from deepmd.pt.utils import env
+
+from .se_atten import (
+    DescrptBlockSeAtten,
+    NeighborGatedAttention,
+)
 
 
 @Descriptor.register("dpa1")
@@ -74,7 +80,7 @@ class DescrptDPA1(Descriptor):
             normalize=normalize,
             temperature=temperature,
             old_impl=old_impl,
-            **kwargs
+            **kwargs,
         )
         self.type_embedding_old = None
         self.type_embedding = None
@@ -82,7 +88,9 @@ class DescrptDPA1(Descriptor):
         if self.old_impl:
             self.type_embedding_old = TypeEmbedNet(ntypes, tebd_dim)
         else:
-            self.type_embedding = EmbdLayer(ntypes, tebd_dim, padding=True, precision=precision)
+            self.type_embedding = EmbdLayer(
+                ntypes, tebd_dim, padding=True, precision=precision
+            )
         self.tebd_dim = tebd_dim
         self.concat_output_tebd = concat_output_tebd
 
@@ -195,9 +203,9 @@ class DescrptDPA1(Descriptor):
         return g1, rot_mat, g2, h2, sw
 
     def set_stat_mean_and_stddev(
-            self,
-            mean: torch.Tensor,
-            stddev: torch.Tensor,
+        self,
+        mean: torch.Tensor,
+        stddev: torch.Tensor,
     ) -> None:
         self.se_atten.mean = mean
         self.se_atten.stddev = stddev
@@ -253,5 +261,7 @@ class DescrptDPA1(Descriptor):
         obj.se_atten["davg"] = t_cvt(variables["davg"])
         obj.se_atten["dstd"] = t_cvt(variables["dstd"])
         obj.se_atten.filter_layers = NetworkCollection.deserialize(embeddings)
-        obj.se_atten.dpa1_attention = NeighborGatedAttention.deserialize(attention_layers)
+        obj.se_atten.dpa1_attention = NeighborGatedAttention.deserialize(
+            attention_layers
+        )
         return obj

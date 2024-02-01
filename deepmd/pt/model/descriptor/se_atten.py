@@ -8,11 +8,6 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as torch_func
-from deepmd.pt.utils.env import (
-    PRECISION_DICT,
-    DEFAULT_PRECISION,
-)
-from deepmd.pt.utils.utils import ActivationFn
 
 from deepmd.pt.model.descriptor.descriptor import (
     DescriptorBlock,
@@ -21,17 +16,22 @@ from deepmd.pt.model.descriptor.descriptor import (
 from deepmd.pt.model.descriptor.env_mat import (
     prod_env_mat_se_a,
 )
+from deepmd.pt.model.network.mlp import (
+    EmbeddingNet,
+    LayerNorm,
+    MLPLayer,
+    NetworkCollection,
+)
 from deepmd.pt.model.network.network import (
     NeighborWiseAttention,
     TypeFilter,
 )
-from deepmd.pt.model.network.mlp import EmbeddingNet, NetworkCollection, MLPLayer, LayerNorm
-
-from deepmd.model_format import (
-    EnvMat as DPEnvMat,
-)
 from deepmd.pt.utils import (
     env,
+)
+from deepmd.pt.utils.env import (
+    DEFAULT_PRECISION,
+    PRECISION_DICT,
 )
 
 
@@ -46,7 +46,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         neuron: list = [25, 50, 100],
         axis_neuron: int = 16,
         tebd_dim: int = 8,
-        tebd_input_mode: str = 'concat',
+        tebd_input_mode: str = "concat",
         # set_davg_zero: bool = False,
         set_davg_zero: bool = True,  # TODO
         attn: int = 128,
@@ -106,23 +106,30 @@ class DescrptBlockSeAtten(DescriptorBlock):
         self.nnei = sum(sel)
         self.ndescrpt = self.nnei * 4
         if self.old_impl:
-            self.dpa1_attention = NeighborWiseAttention(self.attn_layer, self.nnei, self.filter_neuron[-1],
-                                                        self.attn_dim,
-                                                        dotr=self.attn_dotr, do_mask=self.attn_mask,
-                                                        activation=self.activation_function,
-                                                        scaling_factor=self.scaling_factor,
-                                                        normalize=self.normalize,
-                                                        temperature=self.temperature)
+            self.dpa1_attention = NeighborWiseAttention(
+                self.attn_layer,
+                self.nnei,
+                self.filter_neuron[-1],
+                self.attn_dim,
+                dotr=self.attn_dotr,
+                do_mask=self.attn_mask,
+                activation=self.activation_function,
+                scaling_factor=self.scaling_factor,
+                normalize=self.normalize,
+                temperature=self.temperature,
+            )
         else:
-            self.dpa1_attention = NeighborGatedAttention(self.attn_layer,
-                                                         self.nnei,
-                                                         self.filter_neuron[-1],
-                                                         self.attn_dim,
-                                                         dotr=self.attn_dotr,
-                                                         do_mask=self.attn_mask,
-                                                         scaling_factor=self.scaling_factor,
-                                                         normalize=self.normalize,
-                                                         temperature=self.temperature)
+            self.dpa1_attention = NeighborGatedAttention(
+                self.attn_layer,
+                self.nnei,
+                self.filter_neuron[-1],
+                self.attn_dim,
+                dotr=self.attn_dotr,
+                do_mask=self.attn_mask,
+                scaling_factor=self.scaling_factor,
+                normalize=self.normalize,
+                temperature=self.temperature,
+            )
 
         wanted_shape = (self.ntypes, self.nnei, 4)
         mean = torch.zeros(
@@ -133,18 +140,29 @@ class DescrptBlockSeAtten(DescriptorBlock):
         )
         self.register_buffer("mean", mean)
         self.register_buffer("stddev", stddev)
-        self.embd_input_dim = 1 + self.tebd_dim * 2 if self.tebd_input_mode in ['concat'] else 1
+        self.embd_input_dim = (
+            1 + self.tebd_dim * 2 if self.tebd_input_mode in ["concat"] else 1
+        )
         self.filter_layers_old = None
         self.filter_layers = None
 
         if self.old_impl:
             filter_layers = []
-            one = TypeFilter(0, self.nnei, self.filter_neuron, return_G=True, tebd_dim=self.tebd_dim, use_tebd=True,
-                             tebd_mode=self.tebd_input_mode)
+            one = TypeFilter(
+                0,
+                self.nnei,
+                self.filter_neuron,
+                return_G=True,
+                tebd_dim=self.tebd_dim,
+                use_tebd=True,
+                tebd_mode=self.tebd_input_mode,
+            )
             filter_layers.append(one)
             self.filter_layers_old = torch.nn.ModuleList(filter_layers)
         else:
-            filter_layers = NetworkCollection(ndim=0, ntypes=len(sel), network_type="embedding_network")
+            filter_layers = NetworkCollection(
+                ndim=0, ntypes=len(sel), network_type="embedding_network"
+            )
             filter_layers[0] = EmbeddingNet(
                 self.embd_input_dim,
                 self.filter_neuron,
@@ -338,18 +356,26 @@ class DescrptBlockSeAtten(DescriptorBlock):
         atype_tebd_nlist = atype_tebd_nlist.view(nb, nloc, nnei, nt)
         if self.old_impl:
             assert self.filter_layers_old is not None
-            dmatrix = dmatrix.view(-1, self.ndescrpt)  # shape is [nframes*nall, self.ndescrpt]
+            dmatrix = dmatrix.view(
+                -1, self.ndescrpt
+            )  # shape is [nframes*nall, self.ndescrpt]
             gg = self.filter_layers_old[0](
                 dmatrix,
                 atype_tebd=atype_tebd_nnei,
                 nlist_tebd=atype_tebd_nlist,
             )  # shape is [nframes*nall, self.neei, out_size]
-            input_r = torch.nn.functional.normalize(dmatrix.reshape(-1, self.nnei, 4)[:, :, 1:4], dim=-1)
-            gg = self.dpa1_attention(gg, nlist_mask, input_r=input_r,
-                                     sw=sw)  # shape is [nframes*nloc, self.neei, out_size]
-            inputs_reshape = dmatrix.view(-1, self.nnei, 4).permute(0, 2,
-                                                                    1)  # shape is [nframes*natoms[0], 4, self.neei]
-            xyz_scatter = torch.matmul(inputs_reshape, gg)  # shape is [nframes*natoms[0], 4, out_size]
+            input_r = torch.nn.functional.normalize(
+                dmatrix.reshape(-1, self.nnei, 4)[:, :, 1:4], dim=-1
+            )
+            gg = self.dpa1_attention(
+                gg, nlist_mask, input_r=input_r, sw=sw
+            )  # shape is [nframes*nloc, self.neei, out_size]
+            inputs_reshape = dmatrix.view(-1, self.nnei, 4).permute(
+                0, 2, 1
+            )  # shape is [nframes*natoms[0], 4, self.neei]
+            xyz_scatter = torch.matmul(
+                inputs_reshape, gg
+            )  # shape is [nframes*natoms[0], 4, out_size]
         else:
             assert self.filter_layers is not None
             dmatrix = dmatrix.view(-1, self.nnei, 4)
@@ -357,16 +383,19 @@ class DescrptBlockSeAtten(DescriptorBlock):
             # nfnl x nnei x 4
             rr = dmatrix
             ss = rr[:, :, :1]
-            if self.tebd_input_mode in ['concat']:
+            if self.tebd_input_mode in ["concat"]:
                 nlist_tebd = atype_tebd_nlist.reshape(nfnl, nnei, self.tebd_dim)
                 atype_tebd = atype_tebd_nnei.reshape(nfnl, nnei, self.tebd_dim)
                 # nfnl x nnei x (1 + tebd_dim * 2)
                 ss = torch.concat([ss, nlist_tebd, atype_tebd], dim=2)
             # nfnl x nnei x ng
             gg = self.filter_layers._networks[0](ss)
-            input_r = torch.nn.functional.normalize(dmatrix.reshape(-1, self.nnei, 4)[:, :, 1:4], dim=-1)
-            gg = self.dpa1_attention(gg, nlist_mask, input_r=input_r,
-                                     sw=sw)  # shape is [nframes*nloc, self.neei, out_size]
+            input_r = torch.nn.functional.normalize(
+                dmatrix.reshape(-1, self.nnei, 4)[:, :, 1:4], dim=-1
+            )
+            gg = self.dpa1_attention(
+                gg, nlist_mask, input_r=input_r, sw=sw
+            )  # shape is [nframes*nloc, self.neei, out_size]
             # nfnl x 4 x ng
             xyz_scatter = torch.matmul(rr.permute(0, 2, 1), gg)
         xyz_scatter = xyz_scatter / self.nnei
@@ -386,20 +415,20 @@ class DescrptBlockSeAtten(DescriptorBlock):
 
 
 class NeighborGatedAttention(nn.Module):
-    def __init__(self,
-                 layer_num: int,
-                 nnei: int,
-                 embed_dim: int,
-                 hidden_dim: int,
-                 dotr: bool = False,
-                 do_mask: bool = False,
-                 scaling_factor: float = 1.0,
-                 normalize: bool = True,
-                 temperature: float = None,
-                 precision: str = DEFAULT_PRECISION,
-                 ):
-        """Construct a neighbor-wise attention net.
-        """
+    def __init__(
+        self,
+        layer_num: int,
+        nnei: int,
+        embed_dim: int,
+        hidden_dim: int,
+        dotr: bool = False,
+        do_mask: bool = False,
+        scaling_factor: float = 1.0,
+        normalize: bool = True,
+        temperature: float = None,
+        precision: str = DEFAULT_PRECISION,
+    ):
+        """Construct a neighbor-wise attention net."""
         super(NeighborGatedAttention, self).__init__()
         self.layer_num = layer_num
         self.nnei = nnei
@@ -414,31 +443,37 @@ class NeighborGatedAttention(nn.Module):
         self.network_type = NeighborGatedAttentionLayer
         attention_layers = []
         for i in range(self.layer_num):
-            attention_layers.append(NeighborGatedAttentionLayer(nnei,
-                                                                embed_dim,
-                                                                hidden_dim,
-                                                                dotr=dotr,
-                                                                do_mask=do_mask,
-                                                                scaling_factor=scaling_factor,
-                                                                normalize=normalize,
-                                                                temperature=temperature,
-                                                                precision=precision))
+            attention_layers.append(
+                NeighborGatedAttentionLayer(
+                    nnei,
+                    embed_dim,
+                    hidden_dim,
+                    dotr=dotr,
+                    do_mask=do_mask,
+                    scaling_factor=scaling_factor,
+                    normalize=normalize,
+                    temperature=temperature,
+                    precision=precision,
+                )
+            )
         self.attention_layers = nn.ModuleList(attention_layers)
 
     def forward(
-            self,
-            input_G,
-            nei_mask,
-            input_r: Optional[torch.Tensor] = None,
-            sw: Optional[torch.Tensor] = None,
+        self,
+        input_G,
+        nei_mask,
+        input_r: Optional[torch.Tensor] = None,
+        sw: Optional[torch.Tensor] = None,
     ):
         """
         Args:
             input_G: Input G, [nframes * nloc, nnei, embed_dim]
             nei_mask: neighbor mask, [nframes * nloc, nnei]
             input_r: normalized radial, [nframes, nloc, nei, 3]
-        Returns:
-            out: Output G, [nframes * nloc, nnei, embed_dim]
+
+        Returns
+        -------
+        out: Output G, [nframes * nloc, nnei, embed_dim]
         """
         out = input_G
         # https://github.com/pytorch/pytorch/issues/39165#issuecomment-635472592
@@ -475,6 +510,7 @@ class NeighborGatedAttention(nn.Module):
 
     def serialize(self) -> dict:
         """Serialize the networks to a dict.
+
         Returns
         -------
         dict
@@ -493,12 +529,13 @@ class NeighborGatedAttention(nn.Module):
             "normalize": self.normalize,
             "temperature": self.temperature,
             "precision": self.precision,
-            "attention_layers": [layer.serialize() for layer in self.attention_layers]
+            "attention_layers": [layer.serialize() for layer in self.attention_layers],
         }
 
     @classmethod
     def deserialize(cls, data: dict) -> "NeighborGatedAttention":
         """Deserialize the networks from a dict.
+
         Parameters
         ----------
         data : dict
@@ -512,19 +549,19 @@ class NeighborGatedAttention(nn.Module):
 
 
 class NeighborGatedAttentionLayer(nn.Module):
-    def __init__(self,
-                 nnei: int,
-                 embed_dim: int,
-                 hidden_dim: int,
-                 dotr: bool = False,
-                 do_mask: bool = False,
-                 scaling_factor: float = 1.0,
-                 normalize: bool = True,
-                 temperature: float = None,
-                 precision: str = DEFAULT_PRECISION,
-                 ):
-        """Construct a neighbor-wise attention layer.
-        """
+    def __init__(
+        self,
+        nnei: int,
+        embed_dim: int,
+        hidden_dim: int,
+        dotr: bool = False,
+        do_mask: bool = False,
+        scaling_factor: float = 1.0,
+        normalize: bool = True,
+        temperature: float = None,
+        precision: str = DEFAULT_PRECISION,
+    ):
+        """Construct a neighbor-wise attention layer."""
         super(NeighborGatedAttentionLayer, self).__init__()
         self.nnei = nnei
         self.embed_dim = embed_dim
@@ -535,24 +572,25 @@ class NeighborGatedAttentionLayer(nn.Module):
         self.normalize = normalize
         self.temperature = temperature
         self.precision = precision
-        self.attention_layer = GatedAttentionLayer(nnei,
-                                                   embed_dim,
-                                                   hidden_dim,
-                                                   dotr=dotr,
-                                                   do_mask=do_mask,
-                                                   scaling_factor=scaling_factor,
-                                                   normalize=normalize,
-                                                   temperature=temperature,
-                                                   precision=precision,
-                                                   )
+        self.attention_layer = GatedAttentionLayer(
+            nnei,
+            embed_dim,
+            hidden_dim,
+            dotr=dotr,
+            do_mask=do_mask,
+            scaling_factor=scaling_factor,
+            normalize=normalize,
+            temperature=temperature,
+            precision=precision,
+        )
         self.attn_layer_norm = LayerNorm(self.embed_dim, precision=precision)
 
     def forward(
-            self,
-            x,
-            nei_mask,
-            input_r: Optional[torch.Tensor] = None,
-            sw: Optional[torch.Tensor] = None,
+        self,
+        x,
+        nei_mask,
+        input_r: Optional[torch.Tensor] = None,
+        sw: Optional[torch.Tensor] = None,
     ):
         residual = x
         x = self.attention_layer(x, nei_mask, input_r=input_r, sw=sw)
@@ -562,6 +600,7 @@ class NeighborGatedAttentionLayer(nn.Module):
 
     def serialize(self) -> dict:
         """Serialize the networks to a dict.
+
         Returns
         -------
         dict
@@ -578,12 +617,13 @@ class NeighborGatedAttentionLayer(nn.Module):
             "temperature": self.temperature,
             "precision": self.precision,
             "attention_layer": self.attention_layer.serialize(),
-            "attn_layer_norm": self.attn_layer_norm.serialize()
+            "attn_layer_norm": self.attn_layer_norm.serialize(),
         }
 
     @classmethod
     def deserialize(cls, data: dict) -> "NeighborGatedAttentionLayer":
         """Deserialize the networks from a dict.
+
         Parameters
         ----------
         data : dict
@@ -598,21 +638,21 @@ class NeighborGatedAttentionLayer(nn.Module):
 
 
 class GatedAttentionLayer(nn.Module):
-    def __init__(self,
-                 nnei: int,
-                 embed_dim: int,
-                 hidden_dim: int,
-                 dotr: bool = False,
-                 do_mask: bool = False,
-                 scaling_factor: float = 1.0,
-                 normalize: bool = True,
-                 temperature: float = None,
-                 bias: bool = True,
-                 smooth: bool = True,
-                 precision: str = DEFAULT_PRECISION,
-                 ):
-        """Construct a neighbor-wise attention net.
-        """
+    def __init__(
+        self,
+        nnei: int,
+        embed_dim: int,
+        hidden_dim: int,
+        dotr: bool = False,
+        do_mask: bool = False,
+        scaling_factor: float = 1.0,
+        normalize: bool = True,
+        temperature: float = None,
+        bias: bool = True,
+        smooth: bool = True,
+        precision: str = DEFAULT_PRECISION,
+    ):
+        """Construct a neighbor-wise attention net."""
         super(GatedAttentionLayer, self).__init__()
         self.nnei = nnei
         self.embed_dim = embed_dim
@@ -629,26 +669,42 @@ class GatedAttentionLayer(nn.Module):
         else:
             self.scaling = temperature
         self.normalize = normalize
-        self.in_proj = MLPLayer(embed_dim, hidden_dim * 3, bias=bias, use_timestep=False, bavg=0., stddev=1.,
-                                precision=precision)
-        self.out_proj = MLPLayer(hidden_dim, embed_dim, bias=bias, use_timestep=False, bavg=0., stddev=1.,
-                                 precision=precision)
+        self.in_proj = MLPLayer(
+            embed_dim,
+            hidden_dim * 3,
+            bias=bias,
+            use_timestep=False,
+            bavg=0.0,
+            stddev=1.0,
+            precision=precision,
+        )
+        self.out_proj = MLPLayer(
+            hidden_dim,
+            embed_dim,
+            bias=bias,
+            use_timestep=False,
+            bavg=0.0,
+            stddev=1.0,
+            precision=precision,
+        )
 
     def forward(
-            self,
-            query,
-            nei_mask,
-            input_r: Optional[torch.Tensor] = None,
-            sw: Optional[torch.Tensor] = None,
-            attnw_shift: float = 20.0,
+        self,
+        query,
+        nei_mask,
+        input_r: Optional[torch.Tensor] = None,
+        sw: Optional[torch.Tensor] = None,
+        attnw_shift: float = 20.0,
     ):
         """
         Args:
             query: input G, [nframes * nloc, nnei, embed_dim]
             nei_mask: neighbor mask, [nframes * nloc, nnei]
             input_r: normalized radial, [nframes, nloc, nei, 3]
-        Returns:
-            type_embedding:
+
+        Returns
+        -------
+        type_embedding:
         """
         q, k, v = self.in_proj(query).chunk(3, dim=-1)
         #  [nframes * nloc, nnei, hidden_dim]
@@ -669,11 +725,15 @@ class GatedAttentionLayer(nn.Module):
             # [nframes * nloc, nnei]
             assert sw is not None
             sw = sw.view([-1, self.nnei])
-            attn_weights = (attn_weights + attnw_shift) * sw[:, :, None] * sw[:, None, :] - attnw_shift
+            attn_weights = (attn_weights + attnw_shift) * sw[:, :, None] * sw[
+                :, None, :
+            ] - attnw_shift
         else:
-            attn_weights = attn_weights.masked_fill(~nei_mask.unsqueeze(1), float("-inf"))
+            attn_weights = attn_weights.masked_fill(
+                ~nei_mask.unsqueeze(1), float("-inf")
+            )
         attn_weights = torch_func.softmax(attn_weights, dim=-1)
-        attn_weights = attn_weights.masked_fill(~nei_mask.unsqueeze(-1), float(0.0))
+        attn_weights = attn_weights.masked_fill(~nei_mask.unsqueeze(-1), 0.0)
         if self.smooth:
             assert sw is not None
             attn_weights = attn_weights * sw[:, :, None] * sw[:, None, :]
@@ -687,6 +747,7 @@ class GatedAttentionLayer(nn.Module):
 
     def serialize(self) -> dict:
         """Serialize the networks to a dict.
+
         Returns
         -------
         dict
@@ -707,12 +768,13 @@ class GatedAttentionLayer(nn.Module):
             "smooth": self.smooth,
             "precision": self.precision,
             "in_proj": self.in_proj.serialize(),
-            "out_proj": self.out_proj.serialize()
+            "out_proj": self.out_proj.serialize(),
         }
 
     @classmethod
     def deserialize(cls, data: dict) -> "GatedAttentionLayer":
         """Deserialize the networks from a dict.
+
         Parameters
         ----------
         data : dict

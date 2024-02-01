@@ -12,7 +12,9 @@ from deepmd.pt.model.descriptor import (
     DescrptBlockSeAtten,
     DescrptDPA1,
 )
-from deepmd.pt.model.network.mlp import EmbdLayer
+from deepmd.pt.model.network.mlp import (
+    EmbdLayer,
+)
 from deepmd.pt.utils import (
     env,
 )

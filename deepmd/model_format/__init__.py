@@ -4,6 +4,9 @@ from .common import (
     PRECISION_DICT,
     NativeOP,
 )
+from .dpa1 import (
+    DescrptDPA1,
+)
 from .env_mat import (
     EnvMat,
 )
@@ -11,11 +14,11 @@ from .fitting import (
     InvarFitting,
 )
 from .network import (
+    EmbdLayer,
     EmbeddingNet,
     FittingNet,
-    NativeLayer,
-    EmbdLayer,
     LayerNorm,
+    NativeLayer,
     NativeNet,
     NetworkCollection,
     load_dp_model,
@@ -37,7 +40,6 @@ from .output_def import (
 from .se_e2_a import (
     DescrptSeA,
 )
-from .dpa1 import DescrptDPA1
 
 __all__ = [
     "InvarFitting",
