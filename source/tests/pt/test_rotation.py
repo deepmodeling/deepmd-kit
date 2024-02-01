@@ -111,7 +111,7 @@ class TestRotation(unittest.TestCase):
         result1 = self.model(**get_data(self.origin_batch))
         result2 = self.model(**get_data(self.rotated_batch))
         rotation = torch.from_numpy(self.rotation).to(env.DEVICE)
-        self.assertAlmostEqual(result1["energy"], result2["energy"])
+        torch.testing.assert_close(result1["energy"], result2["energy"])
         if "force" in result1:
             torch.testing.assert_close(
                 result2["force"][0], torch.matmul(rotation, result1["force"][0].T).T
