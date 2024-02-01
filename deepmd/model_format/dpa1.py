@@ -390,7 +390,7 @@ class DescrptDPA1(NativeOP):
         variables = data.pop("@variables")
         embeddings = data.pop("embeddings")
         type_embedding = data.pop("type_embedding")
-        attention_layers = data.pop("attention_layers")
+        attention_layers = data.pop("attention_layers", None)
         env_mat = data.pop("env_mat")
         obj = cls(**data)
         obj["davg"] = variables["davg"]
