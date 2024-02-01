@@ -19,7 +19,7 @@ from .deep_eval import (
 )
 
 
-class DeepPot(DeepEval):
+class DeepDOS(DeepEval):
     """Potential energy model.
 
     Parameters
@@ -32,18 +32,6 @@ class DeepPot(DeepEval):
     neighbor_list : ase.neighborlist.NewPrimitiveNeighborList, optional
         The ASE neighbor list class to produce the neighbor list. If None, the
         neighbor list will be built natively in the model.
-
-    Examples
-    --------
-    >>> from deepmd.infer import DeepPot
-    >>> import numpy as np
-    >>> dp = DeepPot('graph.pb')
-    >>> coord = np.array([[1,0,0], [0,0,1.5], [1,0,3]]).reshape([1, -1])
-    >>> cell = np.diag(10 * np.ones(3)).reshape([1, -1])
-    >>> atype = [1,0,1]
-    >>> e, f, v = dp.eval(coord, cell, atype)
-
-    where `e`, `f` and `v` are predicted energy, force and virial of the system, respectively.
     """
 
     @property
@@ -53,16 +41,10 @@ class DeepPot(DeepEval):
             FittingOutputDef(
                 [
                     OutputVariableDef(
-                        "energy",
-                        shape=[1],
+                        "dos",
+                        shape=[-1],
                         reduciable=True,
-                        differentiable=True,
                         atomic=True,
-                    ),
-                    OutputVariableDef(
-                        # ugly...
-                        "energy_derv_c_redu",
-                        shape=[1, 3, 3],
                     ),
                 ]
             )
@@ -118,13 +100,6 @@ class DeepPot(DeepEval):
             The atomic virial of the system, in shape (nframes, natoms, 9). Only returned
             when atomic is True.
         """
-        # This method has been used by:
-        # documentation python.md
-        # dp model_devi: +fparam, +aparam, +mixed_type
-        # dp test: +atomic, +fparam, +aparam, +efield, +mixed_type
-        # finetune: +mixed_type
-        # dpdata
-        # ase
         (
             coords,
             cells,
@@ -143,26 +118,21 @@ class DeepPot(DeepEval):
             aparam=aparam,
             **kwargs,
         )
-        energy = results["energy_redu"].reshape(nframes, 1)
-        force = results["energy_derv_r"].reshape(nframes, natoms, 3)
-        virial = results["energy_derv_c_redu"].reshape(nframes, 9)
+        # energy = results["dos_redu"].reshape(nframes, self.get_numb_dos())
+        atomic_energy = results["dos"].reshape(nframes, natoms, self.get_numb_dos())
+        # not same as dos_redu... why?
+        energy = np.sum(atomic_energy, axis=1)
 
         if atomic:
-            atomic_energy = results["energy"].reshape(nframes, natoms, 1)
-            atomic_virial = results["energy_derv_c"].reshape(nframes, natoms, 9)
             return (
                 energy,
-                force,
-                virial,
                 atomic_energy,
-                atomic_virial,
             )
         else:
-            return (
-                energy,
-                force,
-                virial,
-            )
+            return (energy,)
+
+    def get_numb_dos(self) -> int:
+        return self.deep_eval.get_numb_dos()
 
 
-__all__ = ["DeepPot"]
+__all__ = ["DeepDOS"]

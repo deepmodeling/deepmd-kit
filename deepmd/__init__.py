@@ -14,6 +14,16 @@ except ImportError:
         __version__,
     )
 
+
+def DeepPotential(*args, **kwargs):
+    from deepmd.infer.deep_eval import (
+        DeepEval,
+    )
+
+    return DeepEval(*args, **kwargs)
+
+
 __all__ = [
     "__version__",
+    "DeepPotential",
 ]

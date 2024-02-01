@@ -1,9 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from pathlib import (
-    Path,
-)
 from typing import (
+    TYPE_CHECKING,
+    Any,
     Callable,
+    ClassVar,
+    Dict,
     List,
     Optional,
     Tuple,
@@ -13,7 +14,15 @@ from typing import (
 import numpy as np
 import torch
 
-from deepmd.infer.deep_pot import DeepPot as DeepPotBase
+from deepmd.infer.deep_eval import (
+    DeepEvalBase,
+)
+from deepmd.infer.deep_pot import (
+    DeepPot,
+)
+from deepmd.model_format.output_def import (
+    ModelOutputDef,
+)
 from deepmd.pt.model.model import (
     get_model,
 )
@@ -31,13 +40,21 @@ from deepmd.pt.utils.env import (
     GLOBAL_PT_FLOAT_PRECISION,
 )
 
+if TYPE_CHECKING:
+    import ase.neighborlist
 
-class DeepEval:
+
+class DeepEval(DeepEvalBase):
     def __init__(
         self,
-        model_file: "Path",
+        model_file: str,
+        output_def: ModelOutputDef,
+        *args: List[Any],
         auto_batch_size: Union[bool, int, AutoBatchSize] = True,
+        neighbor_list: Optional["ase.neighborlist.NewPrimitiveNeighborList"] = None,
+        **kwargs: Dict[str, Any],
     ):
+        self.output_def = output_def
         self.model_path = model_file
         state_dict = torch.load(model_file, map_location=env.DEVICE)
         if "model" in state_dict:
@@ -64,29 +81,54 @@ class DeepEval:
         else:
             raise TypeError("auto_batch_size should be bool, int, or AutoBatchSize")
 
-    def eval(
-        self,
-        coords: Union[np.ndarray, torch.Tensor],
-        cells: Optional[Union[np.ndarray, torch.Tensor]],
-        atom_types: Union[np.ndarray, torch.Tensor, List[int]],
-        atomic: bool = False,
-    ):
-        raise NotImplementedError
+    def get_rcut(self) -> float:
+        """Get the cutoff radius of this model."""
+        return self.rcut
 
+    def get_ntypes(self) -> int:
+        """Get the number of atom types of this model."""
+        return len(self.type_map)
 
-class DeepPot(DeepEval, DeepPotBase):
-    def __init__(
-        self,
-        model_file: "Path",
-        auto_batch_size: Union[bool, int, AutoBatchSize] = True,
-        neighbor_list=None,
-    ):
-        if neighbor_list is not None:
-            raise NotImplementedError
-        super().__init__(
-            model_file,
-            auto_batch_size=auto_batch_size,
-        )
+    def get_type_map(self) -> List[str]:
+        """Get the type map (element name of the atom types) of this model."""
+        return self.type_map
+
+    def get_dim_fparam(self) -> int:
+        """Get the number (dimension) of frame parameters of this DP."""
+        return 0
+
+    def get_dim_aparam(self) -> int:
+        """Get the number (dimension) of atomic parameters of this DP."""
+        return 0
+
+    @property
+    def model_type(self) -> "DeepEval":
+        """The the evaluator of the model type."""
+        return DeepPot
+
+    def get_sel_type(self) -> List[int]:
+        """Get the selected atom types of this model."""
+        return []
+
+    def get_numb_dos(self) -> int:
+        """Get the number of DOS."""
+        raise 0
+
+    def get_has_efield(self):
+        """Check if the model has efield."""
+        return False
+
+    def get_ntypes_spin(self):
+        """Get the number of spin atom types of this model."""
+        return 0
+
+    _OUTDEF_DP2PT: ClassVar[dict] = {
+        "energy": "atom_energy",
+        "energy_redu": "energy",
+        "energy_derv_r": "force",
+        "energy_derv_c": "atom_virial",
+        "energy_derv_c_redu": "virial",
+    }
 
     def eval(
         self,
@@ -96,10 +138,45 @@ class DeepPot(DeepEval, DeepPotBase):
         atomic: bool = False,
         fparam: Optional[np.ndarray] = None,
         aparam: Optional[np.ndarray] = None,
-        efield: Optional[np.ndarray] = None,
-        mixed_type: bool = False,
-    ):
-        if fparam is not None or aparam is not None or efield is not None:
+        **kwargs: Dict[str, Any],
+    ) -> Dict[str, np.ndarray]:
+        """Evaluate the energy, force and virial by using this DP.
+
+        Parameters
+        ----------
+        coords
+            The coordinates of atoms.
+            The array should be of size nframes x natoms x 3
+        cells
+            The cell of the region.
+            If None then non-PBC is assumed, otherwise using PBC.
+            The array should be of size nframes x 9
+        atom_types
+            The atom types
+            The list should contain natoms ints
+        atomic
+            Calculate the atomic energy and virial
+        fparam
+            The frame parameter.
+            The array can be of size :
+            - nframes x dim_fparam.
+            - dim_fparam. Then all frames are assumed to be provided with the same fparam.
+        aparam
+            The atomic parameter
+            The array can be of size :
+            - nframes x natoms x dim_aparam.
+            - natoms x dim_aparam. Then all frames are assumed to be provided with the same aparam.
+            - dim_aparam. Then all frames and atoms are provided with the same aparam.
+        **kwargs
+            Other parameters
+
+        Returns
+        -------
+        output_dict : dict
+            The output of the evaluation. The keys are the names of the output
+            variables, and the values are the corresponding output arrays.
+        """
+        if fparam is not None or aparam is not None:
             raise NotImplementedError
         # convert all of the input to numpy array
         atom_types = np.array(atom_types, dtype=np.int32)
@@ -109,8 +186,18 @@ class DeepPot(DeepEval, DeepPotBase):
         natoms, numb_test = self._get_natoms_and_nframes(
             coords, atom_types, len(atom_types.shape) > 1
         )
-        return self._eval_func(self._eval_model, numb_test, natoms)(
+        out = self._eval_func(self._eval_model, numb_test, natoms)(
             coords, cells, atom_types, atomic
+        )
+        return dict(
+            zip(
+                [
+                    x.name
+                    for x in self.output_def.var_defs.values()
+                    if atomic or "_redu" in x.name or "_derv_r" in x.name
+                ],
+                out,
+            )
         )
 
     def _eval_func(self, inner_func: Callable, numb_test: int, natoms: int) -> Callable:
@@ -195,54 +282,33 @@ class DeepPot(DeepEval, DeepPotBase):
         )
         if isinstance(batch_output, tuple):
             batch_output = batch_output[0]
-        energy_out = batch_output["energy"].reshape(nframes, 1).detach().cpu().numpy()
-        if "atom_energy" in batch_output:
-            atomic_energy_out = (
-                batch_output["atom_energy"]
-                .reshape(nframes, natoms, 1)
-                .detach()
-                .cpu()
-                .numpy()
-            )
-        force_out = (
-            batch_output["force"].reshape(nframes, natoms, 3).detach().cpu().numpy()
-        )
-        virial_out = batch_output["virial"].reshape(nframes, 9).detach().cpu().numpy()
-        if "atomic_virial" in batch_output:
-            atomic_virial_out = (
-                batch_output["atomic_virial"]
-                .reshape(nframes, natoms, 9)
-                .detach()
-                .cpu()
-                .numpy()
-            )
 
-        if not atomic:
-            return energy_out, force_out, virial_out
+        results = []
+        for ii, odef in enumerate(self.output_def.var_defs.values()):
+            if not atomic and "_redu" not in odef.name and "_derv_r" not in odef.name:
+                continue
+            pt_name = self._OUTDEF_DP2PT[odef.name]
+            if pt_name in batch_output:
+                shape = self._get_output_shape(odef.name, nframes, natoms, odef.shape)
+                out = batch_output[pt_name].reshape(shape).detach().cpu().numpy()
+                results.append(out)
+        return tuple(results)
+
+    def _get_output_shape(self, name, nframes, natoms, shape):
+        if "_redu" in name:
+            if "_derv_c" in name:
+                return [nframes, *shape[:-2], 9]
+            else:
+                return [nframes, *shape, 1]
         else:
-            return (
-                energy_out,
-                force_out,
-                virial_out,
-                atomic_energy_out,
-                atomic_virial_out,
-            )
-
-    def get_ntypes(self) -> int:
-        """Get the number of atom types of this model."""
-        return len(self.type_map)
-
-    def get_type_map(self) -> List[str]:
-        """Get the type map (element name of the atom types) of this model."""
-        return self.type_map
-
-    def get_dim_fparam(self) -> int:
-        """Get the number (dimension) of frame parameters of this DP."""
-        return 0
-
-    def get_dim_aparam(self) -> int:
-        """Get the number (dimension) of atomic parameters of this DP."""
-        return 0
+            if "_derv_c" in name:
+                return [nframes, *shape[:-2], natoms, 9]
+            elif "_derv_r" in name:
+                return [nframes, *shape[:-1], natoms, 3]
+            else:
+                # Something wrong here?
+                # return [nframes, *shape, natoms, 1]
+                return [nframes, natoms, *shape, 1]
 
 
 # For tests only
