@@ -21,19 +21,19 @@ def make_base_atomic_model(T_Tensor):
 
         @abstractmethod
         def get_fitting_output_def(self) -> FittingOutputDef:
-            raise NotImplementedError
+            pass
 
         @abstractmethod
         def get_rcut(self) -> float:
-            raise NotImplementedError
+            pass
 
         @abstractmethod
         def get_sel(self) -> List[int]:
-            raise NotImplementedError
+            pass
 
         @abstractmethod
         def distinguish_types(self) -> bool:
-            raise NotImplementedError
+            pass
 
         @abstractmethod
         def forward_atomic(
@@ -45,14 +45,14 @@ def make_base_atomic_model(T_Tensor):
             fparam: Optional[T_Tensor] = None,
             aparam: Optional[T_Tensor] = None,
         ) -> Dict[str, T_Tensor]:
-            raise NotImplementedError
+            pass
 
         @abstractmethod
         def serialize(self) -> dict:
-            raise NotImplementedError
+            pass
 
         @abstractclassmethod
         def deserialize(cls):
-            raise NotImplementedError
+            pass
 
     return BAM
