@@ -6,8 +6,8 @@ import numpy as np
 import torch
 
 try:
-    # from deepmd.model_format import PRECISION_DICT as DP_PRECISION_DICT
-    from deepmd.model_format import DescrptSeA as DPDescrptSeA
+    # from deepmd.dpmodel import PRECISION_DICT as DP_PRECISION_DICT
+    from deepmd.dpmodel import DescrptSeA as DPDescrptSeA
 
     support_se_e2_a = True
 except ModuleNotFoundError:

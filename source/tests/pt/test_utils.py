@@ -24,7 +24,7 @@ class TestCvt(unittest.TestCase):
             onk = to_numpy_array(bar)
             self.assertEqual(onk.dtype, npp)
         with self.assertRaises(ValueError) as ee:
-            foo = foo.astype(np.int32)
+            foo = foo.astype(np.int8)
             bar = to_torch_tensor(foo)
         with self.assertRaises(ValueError) as ee:
             bar = to_torch_tensor(foo)

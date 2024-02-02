@@ -256,7 +256,7 @@ class DescrptDPA2(Descriptor):
         """Returns the number of selected atoms for each type."""
         return self.sel
 
-    def get_ntype(self) -> int:
+    def get_ntypes(self) -> int:
         """Returns the number of element types."""
         return self.ntypes
 
@@ -267,6 +267,16 @@ class DescrptDPA2(Descriptor):
             ret += self.tebd_dim
         return ret
 
+    def get_dim_emb(self) -> int:
+        """Returns the embedding dimension of this descriptor."""
+        return self.repformers.dim_emb
+
+    def distinguish_types(self) -> bool:
+        """Returns if the descriptor requires a neighbor list that distinguish different
+        atomic types or not.
+        """
+        return False
+
     @property
     def dim_out(self):
         return self.get_dim_out()
@@ -274,7 +284,7 @@ class DescrptDPA2(Descriptor):
     @property
     def dim_emb(self):
         """Returns the embedding dimension g2."""
-        return self.repformers.dim_emb
+        return self.get_dim_emb()
 
     def compute_input_stats(self, merged):
         sumr, suma, sumn, sumr2, suma2 = [], [], [], [], []
@@ -321,6 +331,15 @@ class DescrptDPA2(Descriptor):
             "sel": [config["repinit_nsel"], config["repformer_nsel"]],
             "rcut": [config["repinit_rcut"], config["repformer_rcut"]],
         }
+
+    def serialize(self) -> dict:
+        """Serialize the obj to dict."""
+        raise NotImplementedError
+
+    @classmethod
+    def deserialize(cls) -> "DescrptDPA2":
+        """Deserialize from a dict."""
+        raise NotImplementedError
 
     def forward(
         self,

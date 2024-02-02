@@ -224,7 +224,7 @@ class TestDPA2(unittest.TestCase):
         self.assertEqual(descriptor.shape[-1], des.get_dim_out())
         self.assertAlmostEqual(6.0, des.get_rcut())
         self.assertEqual(30, des.get_nsel())
-        self.assertEqual(2, des.get_ntype())
+        self.assertEqual(2, des.get_ntypes())
         torch.testing.assert_close(
             descriptor.view(-1), self.ref_d, atol=1e-10, rtol=1e-10
         )

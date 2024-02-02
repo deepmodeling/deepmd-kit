@@ -19,8 +19,12 @@ from deepmd.pt.utils.plugin import (
     Plugin,
 )
 
+from .base_descriptor import (
+    BaseDescriptor,
+)
 
-class Descriptor(torch.nn.Module, ABC):
+
+class Descriptor(torch.nn.Module, BaseDescriptor):
     """The descriptor.
     Given the atomic coordinates, atomic types and neighbor list,
     calculate the descriptor.
@@ -28,52 +32,6 @@ class Descriptor(torch.nn.Module, ABC):
 
     __plugins = Plugin()
     local_cluster = False
-
-    @abstractmethod
-    def get_rcut(self) -> float:
-        """Returns the cut-off radius."""
-        raise NotImplementedError
-
-    @abstractmethod
-    def get_nsel(self) -> int:
-        """Returns the number of selected atoms in the cut-off radius."""
-        raise NotImplementedError
-
-    @abstractmethod
-    def get_sel(self) -> List[int]:
-        """Returns the number of selected atoms for each type."""
-        raise NotImplementedError
-
-    @abstractmethod
-    def get_ntype(self) -> int:
-        """Returns the number of element types."""
-        raise NotImplementedError
-
-    @abstractmethod
-    def get_dim_out(self) -> int:
-        """Returns the output dimension."""
-        raise NotImplementedError
-
-    @abstractmethod
-    def compute_input_stats(self, merged):
-        """Update mean and stddev for descriptor elements."""
-        raise NotImplementedError
-
-    @abstractmethod
-    def init_desc_stat(self, sumr, suma, sumn, sumr2, suma2):
-        """Initialize the model bias by the statistics."""
-        raise NotImplementedError
-
-    @abstractmethod
-    def forward(
-        self,
-        extended_coord,
-        extended_atype,
-        nlist,
-        mapping: Optional[torch.Tensor] = None,
-    ):
-        """Calculate descriptor."""
-        raise NotImplementedError
 
     @staticmethod
     def register(key: str) -> Callable:
@@ -166,42 +124,47 @@ class DescriptorBlock(torch.nn.Module, ABC):
     @abstractmethod
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
-        raise NotImplementedError
+        pass
 
     @abstractmethod
     def get_nsel(self) -> int:
         """Returns the number of selected atoms in the cut-off radius."""
-        raise NotImplementedError
+        pass
 
     @abstractmethod
     def get_sel(self) -> List[int]:
         """Returns the number of selected atoms for each type."""
-        raise NotImplementedError
+        pass
 
     @abstractmethod
-    def get_ntype(self) -> int:
+    def get_ntypes(self) -> int:
         """Returns the number of element types."""
-        raise NotImplementedError
+        pass
 
     @abstractmethod
     def get_dim_out(self) -> int:
         """Returns the output dimension."""
-        raise NotImplementedError
+        pass
 
     @abstractmethod
     def get_dim_in(self) -> int:
         """Returns the output dimension."""
-        raise NotImplementedError
+        pass
+
+    @abstractmethod
+    def get_dim_emb(self) -> int:
+        """Returns the embedding dimension."""
+        pass
 
     @abstractmethod
     def compute_input_stats(self, merged):
         """Update mean and stddev for DescriptorBlock elements."""
-        raise NotImplementedError
+        pass
 
     @abstractmethod
     def init_desc_stat(self, sumr, suma, sumn, sumr2, suma2):
         """Initialize the model bias by the statistics."""
-        raise NotImplementedError
+        pass
 
     def share_params(self, base_class, shared_level, resume=False):
         assert (

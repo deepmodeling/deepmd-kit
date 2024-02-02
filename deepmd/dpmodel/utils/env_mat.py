@@ -6,7 +6,7 @@ from typing import (
 
 import numpy as np
 
-from .common import (
+from deepmd.dpmodel import (
     NativeOP,
 )
 

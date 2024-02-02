@@ -28,7 +28,7 @@ try:
 except ImportError:
     from torch.jit import Final
 
-from deepmd.model_format import EnvMat as DPEnvMat
+from deepmd.dpmodel.utils import EnvMat as DPEnvMat
 from deepmd.pt.model.network.mlp import (
     EmbeddingNet,
     NetworkCollection,
@@ -81,13 +81,23 @@ class DescrptSeA(Descriptor):
         """Returns the number of selected atoms for each type."""
         return self.sea.get_sel()
 
-    def get_ntype(self) -> int:
+    def get_ntypes(self) -> int:
         """Returns the number of element types."""
-        return self.sea.get_ntype()
+        return self.sea.get_ntypes()
 
     def get_dim_out(self) -> int:
         """Returns the output dimension."""
         return self.sea.get_dim_out()
+
+    def get_dim_emb(self) -> int:
+        """Returns the output dimension."""
+        return self.sea.get_dim_emb()
+
+    def distinguish_types(self):
+        """Returns if the descriptor requires a neighbor list that distinguish different
+        atomic types or not.
+        """
+        return True
 
     @property
     def dim_out(self):
@@ -295,13 +305,17 @@ class DescrptBlockSeA(DescriptorBlock):
         """Returns the number of selected atoms for each type."""
         return self.sel
 
-    def get_ntype(self) -> int:
+    def get_ntypes(self) -> int:
         """Returns the number of element types."""
         return self.ntypes
 
     def get_dim_out(self) -> int:
         """Returns the output dimension."""
         return self.dim_out
+
+    def get_dim_emb(self) -> int:
+        """Returns the output dimension."""
+        return self.neuron[-1]
 
     def get_dim_in(self) -> int:
         """Returns the input dimension."""
