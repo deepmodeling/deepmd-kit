@@ -2,30 +2,35 @@
 import copy
 from typing import (
     Any,
+    Dict,
     List,
     Optional,
 )
 
 import numpy as np
 
-from .common import (
+from deepmd.dpmodel import (
     DEFAULT_PRECISION,
     NativeOP,
 )
-from .network import (
-    FittingNet,
-    NetworkCollection,
-)
-from .output_def import (
+from deepmd.dpmodel.output_def import (
     FittingOutputDef,
     OutputVariableDef,
     fitting_check_output,
 )
+from deepmd.dpmodel.utils import (
+    FittingNet,
+    NetworkCollection,
+)
+
+from .base_fitting import (
+    BaseFitting,
+)
 
 
 @fitting_check_output
-class InvarFitting(NativeOP):
-    r"""Fitting the energy (or a porperty of `dim_out`) of the system. The force and the virial can also be trained.
+class InvarFitting(NativeOP, BaseFitting):
+    r"""Fitting the energy (or a rotationally invariant porperty of `dim_out`) of the system. The force and the virial can also be trained.
 
     Lets take the energy fitting task as an example.
     The potential energy :math:`E` is a fitting network function of the descriptor :math:`\mathcal{D}`:
@@ -279,7 +284,7 @@ class InvarFitting(NativeOP):
         h2: Optional[np.array] = None,
         fparam: Optional[np.array] = None,
         aparam: Optional[np.array] = None,
-    ):
+    ) -> Dict[str, np.array]:
         """Calculate the fitting.
 
         Parameters
@@ -320,7 +325,7 @@ class InvarFitting(NativeOP):
                     "which is not consistent with {self.numb_fparam}.",
                 )
             fparam = (fparam - self.fparam_avg) * self.fparam_inv_std
-            fparam = np.tile(fparam.reshape([nf, 1, -1]), [1, nloc, 1])
+            fparam = np.tile(fparam.reshape([nf, 1, self.numb_fparam]), [1, nloc, 1])
             xx = np.concatenate(
                 [xx, fparam],
                 axis=-1,
@@ -333,6 +338,7 @@ class InvarFitting(NativeOP):
                     "get an input aparam of dim {aparam.shape[-1]}, ",
                     "which is not consistent with {self.numb_aparam}.",
                 )
+            aparam = aparam.reshape([nf, nloc, self.numb_aparam])
             aparam = (aparam - self.aparam_avg) * self.aparam_inv_std
             xx = np.concatenate(
                 [xx, aparam],

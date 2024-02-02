@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import functools
 from typing import (
     Dict,
     List,
@@ -42,6 +43,7 @@ def model_check_output(cls):
 
     """
 
+    @functools.wraps(cls, updated=())
     class wrapper(cls):
         def __init__(
             self,
@@ -81,6 +83,7 @@ def fitting_check_output(cls):
 
     """
 
+    @functools.wraps(cls, updated=())
     class wrapper(cls):
         def __init__(
             self,

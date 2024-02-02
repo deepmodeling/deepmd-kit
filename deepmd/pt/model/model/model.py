@@ -18,10 +18,6 @@ class BaseModel(torch.nn.Module):
         """Construct a basic model for different tasks."""
         super().__init__()
 
-    def forward(self, *args, **kwargs):
-        """Model output."""
-        raise NotImplementedError
-
     def compute_or_load_stat(
         self,
         fitting_param,

@@ -13,20 +13,22 @@ from typing import (
     Optional,
 )
 
-from .common import (
+from deepmd.dpmodel import (
     DEFAULT_PRECISION,
     NativeOP,
 )
-from .env_mat import (
-    EnvMat,
-)
-from .network import (
+from deepmd.dpmodel.utils import (
     EmbeddingNet,
+    EnvMat,
     NetworkCollection,
 )
 
+from .base_descriptor import (
+    BaseDescriptor,
+)
 
-class DescrptSeA(NativeOP):
+
+class DescrptSeA(NativeOP, BaseDescriptor):
     r"""DeepPot-SE constructed from all information (both angular and radial) of
     atomic configurations. The embedding takes the distance between atoms as input.
 
@@ -194,7 +196,41 @@ class DescrptSeA(NativeOP):
     @property
     def dim_out(self):
         """Returns the output dimension of this descriptor."""
+        return self.get_dim_out()
+
+    def get_dim_out(self):
+        """Returns the output dimension of this descriptor."""
         return self.neuron[-1] * self.axis_neuron
+
+    def get_dim_emb(self):
+        """Returns the embedding (g2) dimension of this descriptor."""
+        return self.neuron[-1]
+
+    def get_rcut(self):
+        """Returns cutoff radius."""
+        return self.rcut
+
+    def get_sel(self):
+        """Returns cutoff radius."""
+        return self.sel
+
+    def distinguish_types(self):
+        """Returns if the descriptor requires a neighbor list that distinguish different
+        atomic types or not.
+        """
+        return True
+
+    def get_ntypes(self) -> int:
+        """Returns the number of element types."""
+        return self.ntypes
+
+    def compute_input_stats(self, merged):
+        """Update mean and stddev for descriptor elements."""
+        raise NotImplementedError
+
+    def init_desc_stat(self, sumr, suma, sumn, sumr2, suma2):
+        """Initialize the model bias by the statistics."""
+        raise NotImplementedError
 
     def cal_g(
         self,
@@ -212,6 +248,7 @@ class DescrptSeA(NativeOP):
         coord_ext,
         atype_ext,
         nlist,
+        mapping: Optional[np.ndarray] = None,
     ):
         """Compute the descriptor.
 
@@ -223,6 +260,8 @@ class DescrptSeA(NativeOP):
             The extended aotm types. shape: nf x nall
         nlist
             The neighbor list. shape: nf x nloc x nnei
+        mapping
+            The index mapping from extended to lcoal region. not used by this descriptor.
 
         Returns
         -------
@@ -240,6 +279,7 @@ class DescrptSeA(NativeOP):
         sw
             The smooth switch function.
         """
+        del mapping
         # nf x nloc x nnei x 4
         rr, ww = self.env_mat.call(coord_ext, atype_ext, nlist, self.davg, self.dstd)
         nf, nloc, nnei, _ = rr.shape

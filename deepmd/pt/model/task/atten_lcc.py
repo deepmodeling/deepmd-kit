@@ -6,15 +6,15 @@ from deepmd.pt.model.network.network import (
     EnergyHead,
     NodeTaskHead,
 )
-from deepmd.pt.model.task.task import (
-    TaskBaseMethod,
+from deepmd.pt.model.task.fitting import (
+    Fitting,
 )
 from deepmd.pt.utils import (
     env,
 )
 
 
-class FittingNetAttenLcc(TaskBaseMethod):
+class FittingNetAttenLcc(Fitting):
     def __init__(
         self, embedding_width, bias_atom_e, pair_embed_dim, attention_heads, **kwargs
     ):

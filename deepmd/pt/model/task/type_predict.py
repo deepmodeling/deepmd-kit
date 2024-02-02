@@ -9,11 +9,11 @@ from deepmd.pt.model.network.network import (
     MaskLMHead,
 )
 from deepmd.pt.model.task import (
-    TaskBaseMethod,
+    Fitting,
 )
 
 
-class TypePredictNet(TaskBaseMethod):
+class TypePredictNet(Fitting):
     def __init__(self, feature_dim, ntypes, activation_function="gelu", **kwargs):
         """Construct a type predict net.
 

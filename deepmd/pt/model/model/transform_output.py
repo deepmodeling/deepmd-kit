@@ -7,7 +7,7 @@ from typing import (
 
 import torch
 
-from deepmd.model_format import (
+from deepmd.dpmodel import (
     FittingOutputDef,
     ModelOutputDef,
     OutputVariableDef,
@@ -152,6 +152,7 @@ def fit_output_to_model_output(
                 )
                 model_ret[kk_derv_r] = dr
                 model_ret[kk_derv_c] = dc
+                model_ret[kk_derv_c + "_redu"] = torch.sum(model_ret[kk_derv_c], dim=1)
     return model_ret
 
 
