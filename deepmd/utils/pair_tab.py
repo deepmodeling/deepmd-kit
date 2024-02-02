@@ -78,7 +78,7 @@ class PairTab:
             "tab_info": self.tab_info,
             "tab_data": self.tab_data,
         }
-    
+
     @classmethod
     def deserialize(cls, data) -> "PairTab":
         tab = PairTab(None, None)

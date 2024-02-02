@@ -58,7 +58,10 @@ class PairTabModel(nn.Module, AtomicModel):
 
         # handle deserialization with no input file
         if self.tab_file is not None:
-            tab_info, tab_data = self.tab.get()  # this returns -> Tuple[np.array, np.array]
+            (
+                tab_info,
+                tab_data,
+            ) = self.tab.get()  # this returns -> Tuple[np.array, np.array]
             self.tab_info = torch.from_numpy(tab_info)
             self.tab_data = torch.from_numpy(tab_data)
         else:
@@ -93,20 +96,16 @@ class PairTabModel(nn.Module, AtomicModel):
     def distinguish_types(self) -> bool:
         # to match DPA1 and DPA2.
         return False
-    
+
     def serialize(self) -> dict:
-        return {
-            "tab": self.tab.serialize(),
-            "rcut": self.rcut,
-            "sel": self.sel
-        }
-    
+        return {"tab": self.tab.serialize(), "rcut": self.rcut, "sel": self.sel}
+
     @classmethod
     def deserialize(cls, data) -> "PairTabModel":
         rcut = data["rcut"]
         sel = data["sel"]
         tab = PairTab.deserialize(data["tab"])
-        tab_model = PairTabModel(None,rcut,sel)
+        tab_model = PairTabModel(None, rcut, sel)
         tab_model.tab = tab
         tab_model.tab_info = torch.from_numpy(tab_model.tab.tab_info)
         tab_model.tab_data = torch.from_numpy(tab_model.tab.tab_data)

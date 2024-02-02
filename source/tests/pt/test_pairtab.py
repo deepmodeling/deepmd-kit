@@ -71,9 +71,7 @@ class TestPairTab(unittest.TestCase):
     def test_jit(self):
         model = torch.jit.script(self.model)
 
-
     def test_deserialize(self):
-
         model1 = PairTabModel.deserialize(self.model.serialize())
         torch.testing.assert_allclose(self.model.tab_data, model1.tab_data)
         torch.testing.assert_allclose(self.model.tab_info, model1.tab_info)
