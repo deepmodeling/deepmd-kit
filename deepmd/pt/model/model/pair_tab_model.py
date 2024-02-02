@@ -78,7 +78,7 @@ class PairTabModel(nn.Module, AtomicModel):
         else:
             raise TypeError("sel must be int or list[int]")
 
-    def get_fitting_output_def(self) -> FittingOutputDef:
+    def fitting_output_def(self) -> FittingOutputDef:
         return FittingOutputDef(
             [
                 OutputVariableDef(
