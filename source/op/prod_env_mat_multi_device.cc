@@ -1765,7 +1765,7 @@ REGISTER_CPU(double);
 
 // Register the GPU kernels.
 // Compatible with v1.3
-#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+#if 0  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 #define REGISTER_GPU(T)                                    \
   REGISTER_KERNEL_BUILDER(Name("ProdEnvMatA")              \
                               .Device(DEVICE_GPU)          \
