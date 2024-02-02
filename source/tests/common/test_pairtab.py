@@ -7,10 +7,10 @@ from unittest.mock import (
 import numpy as np
 import torch
 
-from deepmd.dpmodel.model.pair_tab import (
+from deepmd.dpmodel.model.pair_tab_model import (
     PairTabModel,
 )
-from deepmd.pt.model.model.pair_tab import PairTabModel as PtPairTabModel
+from deepmd.pt.model.model.pair_tab_model import PairTabModel as PtPairTabModel
 
 
 class TestPairTab(unittest.TestCase):
