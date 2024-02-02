@@ -84,7 +84,9 @@ class TestPairTab(unittest.TestCase):
             self.extended_coord, self.extended_atype, self.nlist
         )
 
-        torch.testing.assert_allclose(result["energy"], expected_result["energy"], 0.0001, 0.0001)
+        torch.testing.assert_allclose(
+            result["energy"], expected_result["energy"], 0.0001, 0.0001
+        )
 
         model1 = torch.jit.script(model1)
 

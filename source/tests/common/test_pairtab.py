@@ -70,7 +70,6 @@ class TestPairTab(unittest.TestCase):
 
         np.testing.assert_allclose(result["energy"], expected_result, 0.0001, 0.0001)
 
-
     def test_deserialize(self):
         model1 = PairTabModel.deserialize(self.model.serialize())
         np.testing.assert_allclose(self.model.tab_data, model1.tab_data)
@@ -84,23 +83,29 @@ class TestPairTab(unittest.TestCase):
             self.extended_coord, self.extended_atype, self.nlist
         )
 
-        np.testing.assert_allclose(result["energy"], expected_result["energy"], 0.0001, 0.0001)
+        np.testing.assert_allclose(
+            result["energy"], expected_result["energy"], 0.0001, 0.0001
+        )
 
     def test_cross_deserialize(self):
-        model_dict = self.model.serialize() # numpy model to dict
-        model1 = PtPairTabModel.deserialize(model_dict) # dict to pytorch model
+        model_dict = self.model.serialize()  # numpy model to dict
+        model1 = PtPairTabModel.deserialize(model_dict)  # dict to pytorch model
         np.testing.assert_allclose(self.model.tab_data, model1.tab_data)
         np.testing.assert_allclose(self.model.tab_info, model1.tab_info)
 
         self.nlist = np.array([[[1, -1], [0, 2]], [[1, 2], [0, 3]]])
         result = model1.forward_atomic(
-            torch.from_numpy(self.extended_coord), torch.from_numpy(self.extended_atype), torch.from_numpy(self.nlist)
+            torch.from_numpy(self.extended_coord),
+            torch.from_numpy(self.extended_atype),
+            torch.from_numpy(self.nlist),
         )
         expected_result = self.model.forward_atomic(
             self.extended_coord, self.extended_atype, self.nlist
         )
 
-        np.testing.assert_allclose(result["energy"], expected_result["energy"], 0.0001, 0.0001)
+        np.testing.assert_allclose(
+            result["energy"], expected_result["energy"], 0.0001, 0.0001
+        )
 
 
 class TestPairTabTwoAtoms(unittest.TestCase):

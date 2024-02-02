@@ -116,7 +116,9 @@ class PairTabModel(BaseAtomicModel):
         pairwise_dr = self._get_pairwise_dist(
             extended_coord
         )  # (nframes, nall, nall, 3)
-        pairwise_rr = np.sqrt(np.sum(np.power(pairwise_dr, 2), axis=-1))  # (nframes, nall, nall)
+        pairwise_rr = np.sqrt(
+            np.sum(np.power(pairwise_dr, 2), axis=-1)
+        )  # (nframes, nall, nall)
         self.tab_data = self.tab_data.reshape(
             self.tab.ntypes, self.tab.ntypes, self.tab.nspline, 4
         )
