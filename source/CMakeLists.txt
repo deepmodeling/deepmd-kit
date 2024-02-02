@@ -231,6 +231,7 @@ if(DEEPMD_C_ROOT)
                IMPORTED_LOCATION "${deepmd_c}"
                INTERFACE_INCLUDE_DIRECTORIES "${DEEPMD_INCLUDE_C_DIR}/deepmd")
   # use variable for TF path to set deepmd_c path
+  set(TENSORFLOW_ROOT "${DEEPMD_C_ROOT}")
   set(TensorFlow_LIBRARY_PATH "${DEEPMD_C_ROOT}/lib")
   set(TENSORFLOW_INCLUDE_DIRS "${DEEPMD_C_ROOT}/include")
 endif()
