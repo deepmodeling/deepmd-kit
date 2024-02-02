@@ -70,29 +70,32 @@ class PairTab:
 
     def serialize(self) -> dict:
         return {
-            "vdata": self.vdata,
             "rmin": self.rmin,
             "rmax": self.rmax,
             "hh": self.hh,
             "ntypes": self.ntypes,
             "rcut": self.rcut,
             "nspline": self.nspline,
-            "tab_info": self.tab_info,
-            "tab_data": self.tab_data,
+            "@variables":{
+                "vdata": self.vdata,
+                "tab_info": self.tab_info,
+                "tab_data": self.tab_data,
+            },
         }
 
     @classmethod
     def deserialize(cls, data) -> "PairTab":
+        variables =  data.pop("@variables")
         tab = PairTab(None, None)
-        tab.vdata = data["vdata"]
+        tab.vdata = variables["vdata"]
         tab.rmin = data["rmin"]
         tab.rmax = data["rmax"]
         tab.hh = data["hh"]
         tab.ntypes = data["ntypes"]
         tab.rcut = data["rcut"]
         tab.nspline = data["nspline"]
-        tab.tab_info = data["tab_info"]
-        tab.tab_data = data["tab_data"]
+        tab.tab_info = variables["tab_info"]
+        tab.tab_data = variables["tab_data"]
         return tab
 
     def _check_table_upper_boundary(self) -> None:

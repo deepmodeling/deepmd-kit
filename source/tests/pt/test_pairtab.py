@@ -54,9 +54,9 @@ class TestPairTab(unittest.TestCase):
         result = self.model.forward_atomic(
             self.extended_coord, self.extended_atype, self.nlist
         )
-        expected_result = torch.tensor([[1.2000, 1.3614], [1.2000, 0.4000]])
+        expected_result = torch.tensor([[1.2000, 1.3614], [1.2000, 0.4000]], dtype=torch.float64)
 
-        torch.testing.assert_allclose(result["energy"], expected_result, 0.0001, 0.0001)
+        torch.testing.assert_close(result["energy"], expected_result, rtol = 0.0001, atol = 0.0001)
 
     def test_with_mask(self):
         self.nlist = torch.tensor([[[1, -1], [0, 2]], [[1, 2], [0, 3]]])
@@ -64,17 +64,17 @@ class TestPairTab(unittest.TestCase):
         result = self.model.forward_atomic(
             self.extended_coord, self.extended_atype, self.nlist
         )
-        expected_result = torch.tensor([[0.8000, 1.3614], [1.2000, 0.4000]])
+        expected_result = torch.tensor([[0.8000, 1.3614], [1.2000, 0.4000]], dtype=torch.float64)
 
-        torch.testing.assert_allclose(result["energy"], expected_result, 0.0001, 0.0001)
+        torch.testing.assert_close(result["energy"], expected_result, rtol = 0.0001, atol = 0.0001)
 
     def test_jit(self):
         model = torch.jit.script(self.model)
 
     def test_deserialize(self):
         model1 = PairTabModel.deserialize(self.model.serialize())
-        torch.testing.assert_allclose(self.model.tab_data, model1.tab_data)
-        torch.testing.assert_allclose(self.model.tab_info, model1.tab_info)
+        torch.testing.assert_close(self.model.tab_data, model1.tab_data)
+        torch.testing.assert_close(self.model.tab_info, model1.tab_info)
 
         self.nlist = torch.tensor([[[1, -1], [0, 2]], [[1, 2], [0, 3]]])
         result = model1.forward_atomic(
@@ -84,8 +84,8 @@ class TestPairTab(unittest.TestCase):
             self.extended_coord, self.extended_atype, self.nlist
         )
 
-        torch.testing.assert_allclose(
-            result["energy"], expected_result["energy"], 0.0001, 0.0001
+        torch.testing.assert_close(
+            result["energy"], expected_result["energy"],rtol = 0.0001, atol = 0.0001
         )
 
         model1 = torch.jit.script(model1)
@@ -198,12 +198,12 @@ class TestPairTabTwoAtoms(unittest.TestCase):
                             [0.0713, 0],
                         ]
                     ]
-                )
+                , dtype = torch.float64)
             ]
         ).reshape(14, 2)
         results = torch.stack(results).reshape(14, 2)
 
-        torch.testing.assert_allclose(results, expected_result, 0.0001, 0.0001)
+        torch.testing.assert_close(results, expected_result, rtol = 0.0001, atol = 0.0001)
 
     if __name__ == "__main__":
         unittest.main()
