@@ -40,6 +40,8 @@ PRECISION_DICT = {
     "half": torch.float16,
     "single": torch.float32,
     "double": torch.float64,
+    "int32": torch.int32,
+    "int64": torch.int64,
 }
 DEFAULT_PRECISION = "float64"
 

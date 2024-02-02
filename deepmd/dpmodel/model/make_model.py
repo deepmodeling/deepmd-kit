@@ -4,22 +4,21 @@ from typing import (
     Optional,
 )
 
-import torch
+import numpy as np
 
-from deepmd.dpmodel import (
+from deepmd.dpmodel.output_def import (
     ModelOutputDef,
 )
-from deepmd.pt.model.model.transform_output import (
-    communicate_extended_output,
-    fit_output_to_model_output,
-)
-from deepmd.pt.utils.nlist import (
+from deepmd.dpmodel.utils import (
     build_neighbor_list,
     extend_coord_with_ghosts,
     nlist_distinguish_types,
-)
-from deepmd.pt.utils.region import (
     normalize_coord,
+)
+
+from .transform_output import (
+    communicate_extended_output,
+    fit_output_to_model_output,
 )
 
 
@@ -28,10 +27,10 @@ def make_model(T_AtomicModel):
 
     The model provide two interfaces.
 
-    1. the `forward_common_lower`, that takes extended coordinates, atyps and neighbor list,
+    1. the `call_lower`, that takes extended coordinates, atyps and neighbor list,
     and outputs the atomic and property and derivatives (if required) on the extended region.
 
-    2. the `forward_common`, that takes coordinates, atypes and cell and predicts
+    2. the `call`, that takes coordinates, atypes and cell and predicts
     the atomic and reduced property, and derivatives (if required) on the local region.
 
     Parameters
@@ -61,16 +60,15 @@ def make_model(T_AtomicModel):
             """Get the output def for the model."""
             return ModelOutputDef(self.fitting_output_def())
 
-        # cannot use the name forward. torch script does not work
-        def forward_common(
+        def call(
             self,
             coord,
             atype,
-            box: Optional[torch.Tensor] = None,
-            fparam: Optional[torch.Tensor] = None,
-            aparam: Optional[torch.Tensor] = None,
+            box: Optional[np.ndarray] = None,
+            fparam: Optional[np.ndarray] = None,
+            aparam: Optional[np.ndarray] = None,
             do_atomic_virial: bool = False,
-        ) -> Dict[str, torch.Tensor]:
+        ) -> Dict[str, np.ndarray]:
             """Return model prediction.
 
             Parameters
@@ -82,24 +80,28 @@ def make_model(T_AtomicModel):
                 The type of atoms. shape: nf x nloc
             box
                 The simulation box. shape: nf x 9
+            fparam
+                frame parameter. nf x ndf
+            aparam
+                atomic parameter. nf x nloc x nda
             do_atomic_virial
                 If calculate the atomic virial.
 
             Returns
             -------
             ret_dict
-                The result dict of type Dict[str,torch.Tensor].
+                The result dict of type Dict[str,np.ndarray].
                 The keys are defined by the `ModelOutputDef`.
 
             """
             nframes, nloc = atype.shape[:2]
             if box is not None:
                 coord_normalized = normalize_coord(
-                    coord.view(nframes, nloc, 3),
+                    coord.reshape(nframes, nloc, 3),
                     box.reshape(nframes, 3, 3),
                 )
             else:
-                coord_normalized = coord.clone()
+                coord_normalized = coord.copy()
             extended_coord, extended_atype, mapping = extend_coord_with_ghosts(
                 coord_normalized, atype, box, self.get_rcut()
             )
@@ -111,15 +113,15 @@ def make_model(T_AtomicModel):
                 self.get_sel(),
                 distinguish_types=self.distinguish_types(),
             )
-            extended_coord = extended_coord.view(nframes, -1, 3)
-            model_predict_lower = self.forward_common_lower(
+            extended_coord = extended_coord.reshape(nframes, -1, 3)
+            model_predict_lower = self.call_lower(
                 extended_coord,
                 extended_atype,
                 nlist,
                 mapping,
-                do_atomic_virial=do_atomic_virial,
                 fparam=fparam,
                 aparam=aparam,
+                do_atomic_virial=do_atomic_virial,
             )
             model_predict = communicate_extended_output(
                 model_predict_lower,
@@ -129,14 +131,14 @@ def make_model(T_AtomicModel):
             )
             return model_predict
 
-        def forward_common_lower(
+        def call_lower(
             self,
-            extended_coord,
-            extended_atype,
-            nlist,
-            mapping: Optional[torch.Tensor] = None,
-            fparam: Optional[torch.Tensor] = None,
-            aparam: Optional[torch.Tensor] = None,
+            extended_coord: np.ndarray,
+            extended_atype: np.ndarray,
+            nlist: np.ndarray,
+            mapping: Optional[np.ndarray] = None,
+            fparam: Optional[np.ndarray] = None,
+            aparam: Optional[np.ndarray] = None,
             do_atomic_virial: bool = False,
         ):
             """Return model prediction. Lower interface that takes
@@ -154,6 +156,10 @@ def make_model(T_AtomicModel):
                 neighbor list. nf x nloc x nsel
             mapping
                 mapps the extended indices to local indices
+            fparam
+                frame parameter. nf x ndf
+            aparam
+                atomic parameter. nf x nloc x nda
             do_atomic_virial
                 whether calculate atomic virial
 
@@ -164,7 +170,7 @@ def make_model(T_AtomicModel):
 
             """
             nframes, nall = extended_atype.shape[:2]
-            extended_coord = extended_coord.view(nframes, -1, 3)
+            extended_coord = extended_coord.reshape(nframes, -1, 3)
             nlist = self.format_nlist(extended_coord, extended_atype, nlist)
             atomic_ret = self.forward_atomic(
                 extended_coord,
@@ -184,9 +190,9 @@ def make_model(T_AtomicModel):
 
         def format_nlist(
             self,
-            extended_coord: torch.Tensor,
-            extended_atype: torch.Tensor,
-            nlist: torch.Tensor,
+            extended_coord: np.ndarray,
+            extended_atype: np.ndarray,
+            nlist: np.ndarray,
         ):
             """Format the neighbor list.
 
@@ -219,54 +225,51 @@ def make_model(T_AtomicModel):
                 the formated nlist.
 
             """
+            n_nf, n_nloc, n_nnei = nlist.shape
             distinguish_types = self.distinguish_types()
-            nlist = self._format_nlist(extended_coord, nlist, sum(self.get_sel()))
+            ret = self._format_nlist(extended_coord, nlist, sum(self.get_sel()))
             if distinguish_types:
-                nlist = nlist_distinguish_types(nlist, extended_atype, self.get_sel())
-            return nlist
+                ret = nlist_distinguish_types(ret, extended_atype, self.get_sel())
+            return ret
 
         def _format_nlist(
             self,
-            extended_coord: torch.Tensor,
-            nlist: torch.Tensor,
+            extended_coord: np.ndarray,
+            nlist: np.ndarray,
             nnei: int,
         ):
             n_nf, n_nloc, n_nnei = nlist.shape
-            # nf x nall x 3
-            extended_coord = extended_coord.view([n_nf, -1, 3])
+            extended_coord = extended_coord.reshape([n_nf, -1, 3])
+            nall = extended_coord.shape[1]
             rcut = self.get_rcut()
 
             if n_nnei < nnei:
-                nlist = torch.cat(
+                # make a copy before revise
+                ret = np.concatenate(
                     [
                         nlist,
-                        -1
-                        * torch.ones(
-                            [n_nf, n_nloc, nnei - n_nnei], dtype=nlist.dtype
-                        ).to(nlist.device),
+                        -1 * np.ones([n_nf, n_nloc, nnei - n_nnei], dtype=nlist.dtype),
                     ],
-                    dim=-1,
+                    axis=-1,
                 )
             elif n_nnei > nnei:
+                # make a copy before revise
                 m_real_nei = nlist >= 0
-                nlist = torch.where(m_real_nei, nlist, 0)
-                # nf x nloc x 3
+                ret = np.where(m_real_nei, nlist, 0)
                 coord0 = extended_coord[:, :n_nloc, :]
-                # nf x (nloc x nnei) x 3
-                index = nlist.view(n_nf, n_nloc * n_nnei, 1).expand(-1, -1, 3)
-                coord1 = torch.gather(extended_coord, 1, index)
-                # nf x nloc x nnei x 3
-                coord1 = coord1.view(n_nf, n_nloc, n_nnei, 3)
-                # nf x nloc x nnei
-                rr = torch.linalg.norm(coord0[:, :, None, :] - coord1, dim=-1)
-                rr = torch.where(m_real_nei, rr, float("inf"))
-                rr, nlist_mapping = torch.sort(rr, dim=-1)
-                nlist = torch.gather(nlist, 2, nlist_mapping)
-                nlist = torch.where(rr > rcut, -1, nlist)
-                nlist = nlist[..., :nnei]
+                index = ret.reshape(n_nf, n_nloc * n_nnei, 1).repeat(3, axis=2)
+                coord1 = np.take_along_axis(extended_coord, index, axis=1)
+                coord1 = coord1.reshape(n_nf, n_nloc, n_nnei, 3)
+                rr = np.linalg.norm(coord0[:, :, None, :] - coord1, axis=-1)
+                rr = np.where(m_real_nei, rr, float("inf"))
+                rr, ret_mapping = np.sort(rr, axis=-1), np.argsort(rr, axis=-1)
+                ret = np.take_along_axis(ret, ret_mapping, axis=2)
+                ret = np.where(rr > rcut, -1, ret)
+                ret = ret[..., :nnei]
             else:  # n_nnei == nnei:
-                pass  # great!
-            assert nlist.shape[-1] == nnei
-            return nlist
+                # copy anyway...
+                ret = nlist
+            assert ret.shape[-1] == nnei
+            return ret
 
     return CM

@@ -10,7 +10,7 @@ from typing import (
 import numpy as np
 import torch
 
-from deepmd.model_format import (
+from deepmd.dpmodel import (
     FittingOutputDef,
     OutputVariableDef,
     fitting_check_output,
@@ -292,6 +292,7 @@ class InvarFitting(Fitting):
                     "get an input fparam of dim {fparam.shape[-1]}, ",
                     "which is not consistent with {self.numb_fparam}.",
                 )
+            fparam = fparam.view([nf, self.numb_fparam])
             nb, _ = fparam.shape
             t_fparam_avg = self._extend_f_avg_std(self.fparam_avg, nb)
             t_fparam_inv_std = self._extend_f_avg_std(self.fparam_inv_std, nb)
@@ -311,6 +312,7 @@ class InvarFitting(Fitting):
                     "get an input aparam of dim {aparam.shape[-1]}, ",
                     "which is not consistent with {self.numb_aparam}.",
                 )
+            aparam = aparam.view([nf, nloc, self.numb_aparam])
             nb, nloc, _ = aparam.shape
             t_aparam_avg = self._extend_a_avg_std(self.aparam_avg, nb, nloc)
             t_aparam_inv_std = self._extend_a_avg_std(self.aparam_inv_std, nb, nloc)
@@ -396,7 +398,7 @@ class EnergyFittingNetDirect(Fitting):
         ntypes,
         embedding_width,
         neuron,
-        bias_atom_e,
+        bias_atom_e=None,
         out_dim=1,
         resnet_dt=True,
         use_tebd=True,
@@ -417,6 +419,8 @@ class EnergyFittingNetDirect(Fitting):
         self.dim_descrpt = embedding_width
         self.use_tebd = use_tebd
         self.out_dim = out_dim
+        if bias_atom_e is None:
+            bias_atom_e = np.zeros([self.ntypes])
         if not use_tebd:
             assert self.ntypes == len(bias_atom_e), "Element count mismatches!"
         bias_atom_e = torch.tensor(bias_atom_e)
@@ -460,11 +464,21 @@ class EnergyFittingNetDirect(Fitting):
             ]
         )
 
+    def serialize(self) -> dict:
+        raise NotImplementedError
+
+    def deserialize(cls) -> "EnergyFittingNetDirect":
+        raise NotImplementedError
+
     def forward(
         self,
         inputs: torch.Tensor,
         atype: torch.Tensor,
         gr: Optional[torch.Tensor] = None,
+        g2: Optional[torch.Tensor] = None,
+        h2: Optional[torch.Tensor] = None,
+        fparam: Optional[torch.Tensor] = None,
+        aparam: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, None]:
         """Based on embedding net output, alculate total energy.
 

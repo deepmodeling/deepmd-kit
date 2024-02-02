@@ -11,7 +11,7 @@ from torch import (
     nn,
 )
 
-from deepmd.model_format import (
+from deepmd.dpmodel import (
     FittingOutputDef,
     OutputVariableDef,
 )
@@ -19,12 +19,12 @@ from deepmd.utils.pair_tab import (
     PairTab,
 )
 
-from .atomic_model import (
-    AtomicModel,
+from .base_atomic_model import (
+    BaseAtomicModel,
 )
 
 
-class PairTabModel(nn.Module, AtomicModel):
+class PairTabModel(nn.Module, BaseAtomicModel):
     """Pairwise tabulation energy model.
 
     This model can be used to tabulate the pairwise energy between atoms for either
@@ -72,7 +72,7 @@ class PairTabModel(nn.Module, AtomicModel):
         else:
             raise TypeError("sel must be int or list[int]")
 
-    def get_fitting_output_def(self) -> FittingOutputDef:
+    def fitting_output_def(self) -> FittingOutputDef:
         return FittingOutputDef(
             [
                 OutputVariableDef(
@@ -90,6 +90,14 @@ class PairTabModel(nn.Module, AtomicModel):
     def distinguish_types(self) -> bool:
         # to match DPA1 and DPA2.
         return False
+
+    def serialize(self) -> dict:
+        # place holder, implemantated in future PR
+        raise NotImplementedError
+
+    def deserialize(cls):
+        # place holder, implemantated in future PR
+        raise NotImplementedError
 
     def forward_atomic(
         self,

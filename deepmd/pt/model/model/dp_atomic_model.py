@@ -1,4 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import copy
+import sys
 from typing import (
     Dict,
     List,
@@ -7,25 +9,25 @@ from typing import (
 
 import torch
 
-from deepmd.model_format import (
+from deepmd.dpmodel import (
     FittingOutputDef,
 )
-from deepmd.pt.model.descriptor.descriptor import (
-    Descriptor,
+from deepmd.pt.model.descriptor.se_a import (  # noqa # TODO: should import all descriptors!!!
+    DescrptSeA,
 )
-from deepmd.pt.model.task import (
-    Fitting,
+from deepmd.pt.model.task.ener import (  # noqa # TODO: should import all fittings!
+    InvarFitting,
 )
 
-from .atomic_model import (
-    AtomicModel,
+from .base_atomic_model import (
+    BaseAtomicModel,
 )
 from .model import (
     BaseModel,
 )
 
 
-class DPAtomicModel(BaseModel, AtomicModel):
+class DPAtomicModel(BaseModel, BaseAtomicModel):
     """Model give atomic prediction of some physical property.
 
     Parameters
@@ -49,10 +51,11 @@ class DPAtomicModel(BaseModel, AtomicModel):
             Sampled frames to compute the statistics.
     """
 
+    # I am enough with the shit interface!
     def __init__(
         self,
-        descriptor: dict,
-        fitting_net: dict,
+        descriptor,
+        fitting,
         type_map: Optional[List[str]],
         type_embedding: Optional[dict] = None,
         resuming: bool = False,
@@ -62,26 +65,15 @@ class DPAtomicModel(BaseModel, AtomicModel):
         **kwargs,
     ):
         super().__init__()
-        # Descriptor + Type Embedding Net (Optional)
         ntypes = len(type_map)
         self.type_map = type_map
         self.ntypes = ntypes
-        descriptor["ntypes"] = ntypes
-        self.combination = descriptor.get("combination", False)
-        if self.combination:
-            self.prefactor = descriptor.get("prefactor", [0.5, 0.5])
-        self.descriptor_type = descriptor["type"]
-
-        self.type_split = True
-        if self.descriptor_type not in ["se_e2_a"]:
-            self.type_split = False
-
-        self.descriptor = Descriptor(**descriptor)
+        self.descriptor = descriptor
         self.rcut = self.descriptor.get_rcut()
         self.sel = self.descriptor.get_sel()
-        self.split_nlist = False
-
+        self.fitting_net = fitting
         # Statistics
+        fitting_net = None  # TODO: hack!!! not sure if it is correct.
         self.compute_or_load_stat(
             fitting_net,
             ntypes,
@@ -92,22 +84,7 @@ class DPAtomicModel(BaseModel, AtomicModel):
             sampled=sampled,
         )
 
-        fitting_net["type"] = fitting_net.get("type", "ener")
-        fitting_net["ntypes"] = self.descriptor.get_ntype()
-        if self.descriptor_type in ["se_e2_a"]:
-            fitting_net["distinguish_types"] = True
-        else:
-            fitting_net["distinguish_types"] = False
-        fitting_net["embedding_width"] = self.descriptor.dim_out
-
-        self.grad_force = "direct" not in fitting_net["type"]
-        if not self.grad_force:
-            fitting_net["out_dim"] = self.descriptor.dim_emb
-            if "ener" in fitting_net["type"]:
-                fitting_net["return_energy"] = True
-        self.fitting_net = Fitting(**fitting_net)
-
-    def get_fitting_output_def(self) -> FittingOutputDef:
+    def fitting_output_def(self) -> FittingOutputDef:
         """Get the output def of the fitting net."""
         return (
             self.fitting_net.output_def()
@@ -125,7 +102,34 @@ class DPAtomicModel(BaseModel, AtomicModel):
 
     def distinguish_types(self) -> bool:
         """If distinguish different types by sorting."""
-        return self.type_split
+        return self.descriptor.distinguish_types()
+
+    def serialize(self) -> dict:
+        return {
+            "type_map": self.type_map,
+            "descriptor": self.descriptor.serialize(),
+            "fitting": self.fitting_net.serialize(),
+            "descriptor_name": self.descriptor.__class__.__name__,
+            "fitting_name": self.fitting_net.__class__.__name__,
+        }
+
+    @classmethod
+    def deserialize(cls, data) -> "DPAtomicModel":
+        data = copy.deepcopy(data)
+        descriptor_obj = getattr(
+            sys.modules[__name__], data["descriptor_name"]
+        ).deserialize(data["descriptor"])
+        fitting_obj = getattr(sys.modules[__name__], data["fitting_name"]).deserialize(
+            data["fitting"]
+        )
+        # TODO: dirty hack to provide type_map and avoid data stat!!!
+        obj = cls(
+            descriptor_obj,
+            fitting_obj,
+            type_map=data["type_map"],
+            resuming=True,
+        )
+        return obj
 
     def forward_atomic(
         self,
@@ -133,6 +137,8 @@ class DPAtomicModel(BaseModel, AtomicModel):
         extended_atype,
         nlist,
         mapping: Optional[torch.Tensor] = None,
+        fparam: Optional[torch.Tensor] = None,
+        aparam: Optional[torch.Tensor] = None,
     ) -> Dict[str, torch.Tensor]:
         """Return atomic prediction.
 
@@ -146,11 +152,15 @@ class DPAtomicModel(BaseModel, AtomicModel):
             neighbor list. nf x nloc x nsel
         mapping
             mapps the extended indices to local indices
+        fparam
+            frame parameter. nf x ndf
+        aparam
+            atomic parameter. nf x nloc x nda
 
         Returns
         -------
         result_dict
-            the result dict, defined by the fitting net output def.
+            the result dict, defined by the `FittingOutputDef`.
 
         """
         nframes, nloc, nnei = nlist.shape
@@ -165,5 +175,13 @@ class DPAtomicModel(BaseModel, AtomicModel):
         )
         assert descriptor is not None
         # energy, force
-        fit_ret = self.fitting_net(descriptor, atype, gr=rot_mat)
+        fit_ret = self.fitting_net(
+            descriptor,
+            atype,
+            gr=rot_mat,
+            g2=g2,
+            h2=h2,
+            fparam=fparam,
+            aparam=aparam,
+        )
         return fit_ret
