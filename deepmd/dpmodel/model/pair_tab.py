@@ -260,7 +260,7 @@ class PairTabModel(BaseAtomicModel):
 
         # (nframes, nloc, nnei, 1, 4)
         expanded_idx = np.broadcast_to(
-            idx[..., np.newaxis, np.newaxis], idx.shape + (1, 4)
+            idx[..., np.newaxis, np.newaxis], (*idx.shape,1, 4)
         )
         clipped_indices = np.clip(expanded_idx, 0, nspline - 1).astype(int)
 
