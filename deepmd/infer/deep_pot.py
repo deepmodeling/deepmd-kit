@@ -63,11 +63,6 @@ class DeepPot(DeepEval):
                         differentiable=True,
                         atomic=True,
                     ),
-                    OutputVariableDef(
-                        # ugly...
-                        "energy_derv_c_redu",
-                        shape=[1, 3, 3],
-                    ),
                 ]
             )
         )

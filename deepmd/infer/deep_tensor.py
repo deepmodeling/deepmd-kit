@@ -230,11 +230,6 @@ class DeepTensor(DeepEval):
                         differentiable=True,
                         atomic=True,
                     ),
-                    OutputVariableDef(
-                        # ugly...
-                        f"{self.output_tensor_name}_derv_c_redu",
-                        shape=[-1, 3, 3],
-                    ),
                 ]
             )
         )
