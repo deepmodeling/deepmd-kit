@@ -76,7 +76,7 @@ class PairTab:
             "ntypes": self.ntypes,
             "rcut": self.rcut,
             "nspline": self.nspline,
-            "@variables":{
+            "@variables": {
                 "vdata": self.vdata,
                 "tab_info": self.tab_info,
                 "tab_data": self.tab_data,
@@ -85,7 +85,7 @@ class PairTab:
 
     @classmethod
     def deserialize(cls, data) -> "PairTab":
-        variables =  data.pop("@variables")
+        variables = data.pop("@variables")
         tab = PairTab(None, None)
         tab.vdata = variables["vdata"]
         tab.rmin = data["rmin"]

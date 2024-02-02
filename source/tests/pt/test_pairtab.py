@@ -54,9 +54,13 @@ class TestPairTab(unittest.TestCase):
         result = self.model.forward_atomic(
             self.extended_coord, self.extended_atype, self.nlist
         )
-        expected_result = torch.tensor([[1.2000, 1.3614], [1.2000, 0.4000]], dtype=torch.float64)
+        expected_result = torch.tensor(
+            [[1.2000, 1.3614], [1.2000, 0.4000]], dtype=torch.float64
+        )
 
-        torch.testing.assert_close(result["energy"], expected_result, rtol = 0.0001, atol = 0.0001)
+        torch.testing.assert_close(
+            result["energy"], expected_result, rtol=0.0001, atol=0.0001
+        )
 
     def test_with_mask(self):
         self.nlist = torch.tensor([[[1, -1], [0, 2]], [[1, 2], [0, 3]]])
@@ -64,9 +68,13 @@ class TestPairTab(unittest.TestCase):
         result = self.model.forward_atomic(
             self.extended_coord, self.extended_atype, self.nlist
         )
-        expected_result = torch.tensor([[0.8000, 1.3614], [1.2000, 0.4000]], dtype=torch.float64)
+        expected_result = torch.tensor(
+            [[0.8000, 1.3614], [1.2000, 0.4000]], dtype=torch.float64
+        )
 
-        torch.testing.assert_close(result["energy"], expected_result, rtol = 0.0001, atol = 0.0001)
+        torch.testing.assert_close(
+            result["energy"], expected_result, rtol=0.0001, atol=0.0001
+        )
 
     def test_jit(self):
         model = torch.jit.script(self.model)
@@ -85,7 +93,7 @@ class TestPairTab(unittest.TestCase):
         )
 
         torch.testing.assert_close(
-            result["energy"], expected_result["energy"],rtol = 0.0001, atol = 0.0001
+            result["energy"], expected_result["energy"], rtol=0.0001, atol=0.0001
         )
 
         model1 = torch.jit.script(model1)
@@ -197,13 +205,14 @@ class TestPairTabTwoAtoms(unittest.TestCase):
                             [0.0923, 0],
                             [0.0713, 0],
                         ]
-                    ]
-                , dtype = torch.float64)
+                    ],
+                    dtype=torch.float64,
+                )
             ]
         ).reshape(14, 2)
         results = torch.stack(results).reshape(14, 2)
 
-        torch.testing.assert_close(results, expected_result, rtol = 0.0001, atol = 0.0001)
+        torch.testing.assert_close(results, expected_result, rtol=0.0001, atol=0.0001)
 
     if __name__ == "__main__":
         unittest.main()
