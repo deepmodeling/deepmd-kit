@@ -27,10 +27,10 @@ def make_model(T_AtomicModel):
 
     The model provide two interfaces.
 
-    1. the `forward_common_lower`, that takes extended coordinates, atyps and neighbor list,
+    1. the `call_lower`, that takes extended coordinates, atyps and neighbor list,
     and outputs the atomic and property and derivatives (if required) on the extended region.
 
-    2. the `forward_common`, that takes coordinates, atypes and cell and predicts
+    2. the `call`, that takes coordinates, atypes and cell and predicts
     the atomic and reduced property, and derivatives (if required) on the local region.
 
     Parameters
