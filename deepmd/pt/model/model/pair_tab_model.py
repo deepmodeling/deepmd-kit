@@ -11,7 +11,7 @@ from torch import (
     nn,
 )
 
-from deepmd.model_format import (
+from deepmd.dpmodel import (
     FittingOutputDef,
     OutputVariableDef,
 )
@@ -19,12 +19,12 @@ from deepmd.utils.pair_tab import (
     PairTab,
 )
 
-from .atomic_model import (
-    AtomicModel,
+from .base_atomic_model import (
+    BaseAtomicModel,
 )
 
 
-class PairTabModel(nn.Module, AtomicModel):
+class PairTabModel(nn.Module, BaseAtomicModel):
     """Pairwise tabulation energy model.
 
     This model can be used to tabulate the pairwise energy between atoms for either
