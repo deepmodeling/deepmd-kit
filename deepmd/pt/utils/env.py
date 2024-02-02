@@ -5,14 +5,19 @@ import numpy as np
 import torch
 
 from deepmd.env import (
+    GLOBAL_ENER_FLOAT_PRECISION,
+    GLOBAL_NP_FLOAT_PRECISION,
     get_default_nthreads,
     set_default_nthreads,
 )
 
-PRECISION = os.environ.get("PRECISION", "float64")
-GLOBAL_NP_FLOAT_PRECISION = getattr(np, PRECISION)
-GLOBAL_PT_FLOAT_PRECISION = getattr(torch, PRECISION)
-GLOBAL_ENER_FLOAT_PRECISION = getattr(np, PRECISION)
+numpy_to_torch_dtype_dict = {
+    np.float16: torch.float16,
+    np.float32: torch.float32,
+    np.float64: torch.float64,
+}
+
+GLOBAL_PT_FLOAT_PRECISION = numpy_to_torch_dtype_dict[GLOBAL_NP_FLOAT_PRECISION]
 SAMPLER_RECORD = os.environ.get("SAMPLER_RECORD", False)
 try:
     # only linux
@@ -52,3 +57,18 @@ if inter_nthreads > 0:  # the behavior of 0 is not documented
     torch.set_num_interop_threads(inter_nthreads)
 if intra_nthreads > 0:
     torch.set_num_threads(intra_nthreads)
+
+__all__ = [
+    "GLOBAL_ENER_FLOAT_PRECISION",
+    "GLOBAL_NP_FLOAT_PRECISION",
+    "GLOBAL_PT_FLOAT_PRECISION",
+    "DEFAULT_PRECISION",
+    "PRECISION_DICT",
+    "SAMPLER_RECORD",
+    "NUM_WORKERS",
+    "DEVICE",
+    "JIT",
+    "CACHE_PER_SYS",
+    "ENERGY_BIAS_TRAINABLE",
+    "LOCAL_RANK",
+]
