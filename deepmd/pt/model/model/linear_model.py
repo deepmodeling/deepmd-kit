@@ -34,22 +34,18 @@ class LinearModel(BaseModel, AtomicModel):
     Parameters
     ----------
     models
-            This linear model should take a DPAtomicModel and a PairTable model in the exact order.
+            This linear model should take a DPAtomicModel and a PairTable model.
     """
 
     def __init__(
         self,
-        models: List[AtomicModel],
+        dp_models: DPAtomicModel,
+        zbl_model: PairTabModel,
         **kwargs,
     ):
         super().__init__()
-        self.models = models
-        self.dp_model = models[0]
-        self.zbl_model = models[1]
-        assert (
-            isinstance(self.zbl_model, PairTabModel)
-            and isinstance(self.dp_model, DPAtomicModel)
-        ), "The provided models are not in the correct order `DPAtomicModel` + `PairTabModel`."
+        self.dp_model = dp_models
+        self.zbl_model = zbl_model
         self.rcut = self.get_rcut()
         self.sel = self.get_sel()
 
@@ -67,7 +63,7 @@ class LinearModel(BaseModel, AtomicModel):
 
     def get_rcuts(self) -> float:
         """Get the cut-off radius for each individual models in ascending order."""
-        return sorted([model.get_rcut() for model in self.models])
+        return sorted([self.zbl_model.get_rcut(), self.dp_model.get_rcut()])
 
     def get_sel(self) -> int:
         """Get the neighbor selection."""
@@ -75,14 +71,7 @@ class LinearModel(BaseModel, AtomicModel):
 
     def get_sels(self) -> int:
         """Get the neighbor selection for each individual models in ascending order."""
-        return sorted(
-            [
-                sum(model.get_sel())
-                if isinstance(model.get_sel(), list)
-                else model.get_sel()
-                for model in self.models
-            ]
-        )
+        return sorted([self.zbl_model.get_sel(), sum(self.dp_model.get_sel())])
 
     def distinguish_types(self) -> bool:
         """If distinguish different types by sorting."""
@@ -126,7 +115,6 @@ class LinearModel(BaseModel, AtomicModel):
         result_dict
             the result dict, defined by the fitting net output def.
         """
-        # the DPAtomicModel sel is always a List or Union[List, int]?
         nlists = build_multiple_neighbor_list(
             extended_coord, nlist, self.get_rcuts(), self.get_sels()
         )
@@ -136,20 +124,23 @@ class LinearModel(BaseModel, AtomicModel):
             str(self.dp_model.rcut) + "_" + str(self.dp_model.sel)
         ]  # need to handle sel dtype.
 
-        zbl_nframe, zbl_nloc, zbl_nnei = zbl_nlist.shape
-        dp_nframe, dp_nloc, dp_nnei = dp_nlist.shape
-        zbl_atype = extended_atype[
-            :, :zbl_nloc
-        ]  # nframe, nloc should all be the same, only difference is nnei based on rcut and nlist.
-        dp_atype = extended_atype[:, :dp_nloc]
+        zbl_nnei = zbl_nlist.shape[-1]
+        dp_nnei = dp_nlist.shape[-1]
+        
+        # use a larger rr based on nlist
+        nlist_ = zbl_nlist if zbl_nnei >= dp_nnei else dp_nnei
+        masked_nlist = torch.clamp(nlist_, 0)
+        pairwise_rr = (extended_coord.unsqueeze(2) - extended_coord.unsqueeze(1)).pow(2).sum(-1).sqrt()
+        rr = torch.gather(pairwise_rr[:, : self.nloc, :], 2, masked_nlist)
 
-        # which rr should I use? this rr should be (nfrmaes, nloc, nnei)
-        zbl_weight = self._compute_weight(rr, ra, rb)
-
-        dp_energy = self.dp_model.forward_atomic(extended_coord, dp_atype, nlist)[
+        # (nframes, nloc)
+        zbl_weight = self._compute_weight(rr, ra, rb, alpha)
+        # (nframes, nloc)
+        dp_energy = self.dp_model.forward_atomic(extended_coord, extended_atype, dp_nlist)[
             "energy"
         ]
-        zbl_energy = self.zbl_model.forward_atomic(extended_coord, zbl_atype, nlist)[
+        # (nframes, nloc)
+        zbl_energy = self.zbl_model.forward_atomic(extended_coord, extended_atype, zbl_nlist)[
             "energy"
         ]
         fit_ret = (
@@ -188,7 +179,7 @@ class LinearModel(BaseModel, AtomicModel):
         u = (sigma - ra) / (rb - ra)
         if sigma < ra:
             return torch.ones_like(u)
-        elif ra <= sigma < rb:
+        elif sigma < rb:
             return -6 * u**5 + 15 * u**4 - 10 * u**3 + 1
-        else:
+        elif sigma >= rb:
             return torch.zeros_like(u)
