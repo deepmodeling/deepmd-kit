@@ -6,12 +6,12 @@ import torch
 from deepmd.pt.model.network.network import (
     ResidualDeep,
 )
-from deepmd.pt.model.task.task import (
-    TaskBaseMethod,
+from deepmd.pt.model.task.fitting import (
+    Fitting,
 )
 
 
-class DipoleFittingNetType(TaskBaseMethod):
+class DipoleFittingNetType(Fitting):
     def __init__(
         self, ntypes, embedding_width, neuron, out_dim, resnet_dt=True, **kwargs
     ):

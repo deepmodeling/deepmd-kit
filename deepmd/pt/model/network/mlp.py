@@ -15,11 +15,11 @@ from deepmd.pt.utils import (
 
 device = env.DEVICE
 
-from deepmd.model_format import (
+from deepmd.dpmodel.utils import (
     NativeLayer,
 )
-from deepmd.model_format import NetworkCollection as DPNetworkCollection
-from deepmd.model_format import (
+from deepmd.dpmodel.utils import NetworkCollection as DPNetworkCollection
+from deepmd.dpmodel.utils import (
     make_embedding_network,
     make_fitting_network,
     make_multilayer_network,

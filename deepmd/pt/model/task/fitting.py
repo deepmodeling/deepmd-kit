@@ -7,8 +7,8 @@ from typing import (
 import numpy as np
 import torch
 
-from deepmd.pt.model.task.task import (
-    TaskBaseMethod,
+from deepmd.pt.model.task.base_fitting import (
+    BaseFitting,
 )
 from deepmd.pt.utils.dataloader import (
     DpLoaderSet,
@@ -24,7 +24,7 @@ from deepmd.pt.utils.stat import (
 )
 
 
-class Fitting(TaskBaseMethod):
+class Fitting(torch.nn.Module, BaseFitting):
     __plugins = Plugin()
 
     @staticmethod
