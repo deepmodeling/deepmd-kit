@@ -71,18 +71,21 @@ class TestPairTab(unittest.TestCase):
     def test_jit(self):
         model = torch.jit.script(self.model)
 
-    @patch("numpy.loadtxt")
-    def test_deserialize(self, mock_loadtxt):
-        file_path = "dummy_path"
-        mock_loadtxt.return_value = np.array(
-            [
-                [0.005, 1.0, 2.0, 3.0],
-                [0.01, 0.8, 1.6, 2.4],
-                [0.015, 0.5, 1.0, 1.5],
-                [0.02, 0.25, 0.4, 0.75],
-            ]
-        )
+
+    def test_deserialize(self):
+
         model1 = PairTabModel.deserialize(self.model.serialize())
+        torch.testing.assert_allclose(self.model.tab_data, model1.tab_data)
+        torch.testing.assert_allclose(self.model.tab_info, model1.tab_info)
+
+        self.nlist = torch.tensor([[[1, -1], [0, 2]], [[1, 2], [0, 3]]])
+        result = model1.forward_atomic(
+            self.extended_coord, self.extended_atype, self.nlist
+        )
+        expected_result = torch.tensor([[0.8000, 1.3614], [1.2000, 0.4000]])
+
+        torch.testing.assert_allclose(result["energy"], expected_result, 0.0001, 0.0001)
+
         model1 = torch.jit.script(model1)
 
 
