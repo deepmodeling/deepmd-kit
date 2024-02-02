@@ -53,9 +53,11 @@ class PairTabModel(BaseAtomicModel):
         self.rcut = rcut
 
         self.tab = PairTab(self.tab_file, rcut=rcut)
-        self.ntypes = self.tab.ntypes
 
-        self.tab_info, self.tab_data = self.tab.get()
+        if self.tab_file is not None:
+            self.tab_info, self.tab_data = self.tab.get()
+        else:
+            self.tab_info, self.tab_data = None, None
 
         if isinstance(sel, int):
             self.sel = sel
@@ -64,7 +66,7 @@ class PairTabModel(BaseAtomicModel):
         else:
             raise TypeError("sel must be int or list[int]")
 
-    def get_fitting_output_def(self) -> FittingOutputDef:
+    def fitting_output_def(self) -> FittingOutputDef:
         return FittingOutputDef(
             [
                 OutputVariableDef(
@@ -84,14 +86,18 @@ class PairTabModel(BaseAtomicModel):
         return False
 
     def serialize(self) -> dict:
-        return {"tab_file": self.tab_file, "rcut": self.rcut, "sel": self.sel}
+        return {"tab": self.tab.serialize(), "rcut": self.rcut, "sel": self.sel}
 
     @classmethod
     def deserialize(cls, data) -> "PairTabModel":
-        tab_file = data["tab_file"]
         rcut = data["rcut"]
         sel = data["sel"]
-        return cls(tab_file, rcut, sel)
+        tab = PairTab.deserialize(data["tab"])
+        tab_model = PairTabModel(None, rcut, sel)
+        tab_model.tab = tab
+        tab_model.tab_info = tab_model.tab.tab_info
+        tab_model.tab_data = tab_model.tab.tab_data
+        return tab_model
 
     def forward_atomic(
         self,
@@ -104,31 +110,28 @@ class PairTabModel(BaseAtomicModel):
         self.nframes, self.nloc, self.nnei = nlist.shape
 
         # this will mask all -1 in the nlist
-        masked_nlist = np.clip(nlist, 0)
+        masked_nlist = np.clip(nlist, 0, None)
 
         atype = extended_atype[:, : self.nloc]  # (nframes, nloc)
         pairwise_dr = self._get_pairwise_dist(
             extended_coord
         )  # (nframes, nall, nall, 3)
-        pairwise_rr = pairwise_dr.pow(2).sum(-1).sqrt()  # (nframes, nall, nall)
-
+        pairwise_rr = np.sqrt(np.sum(np.power(pairwise_dr, 2), axis=-1))  # (nframes, nall, nall)
         self.tab_data = self.tab_data.reshape(
             self.tab.ntypes, self.tab.ntypes, self.tab.nspline, 4
         )
 
         # (nframes, nloc, nnei)
         j_type = extended_atype[
-            np.arange(extended_atype.size(0))[:, None, None], masked_nlist
+            np.arange(extended_atype.shape[0])[:, None, None], masked_nlist
         ]
 
         # slice rr to get (nframes, nloc, nnei)
         rr = np.take_along_axis(pairwise_rr[:, : self.nloc, :], masked_nlist, 2)
-
         raw_atomic_energy = self._pair_tabulated_inter(nlist, atype, j_type, rr)
-
         atomic_energy = 0.5 * np.sum(
             np.where(nlist != -1, raw_atomic_energy, np.zeros_like(raw_atomic_energy)),
-            dim=-1,
+            axis=-1,
         )
 
         return {"energy": atomic_energy}
@@ -186,13 +189,11 @@ class PairTabModel(BaseAtomicModel):
         idx = uu.astype(int)
 
         uu -= idx
-
         table_coef = self._extract_spline_coefficient(
             i_type, j_type, idx, self.tab_data, self.nspline
         )
         table_coef = table_coef.reshape(self.nframes, self.nloc, self.nnei, 4)
         ener = self._calcualte_ener(table_coef, uu)
-
         # here we need to overwrite energy to zero at rcut and beyond.
         mask_beyond_rcut = rr >= self.rcut
         # also overwrite values beyond extrapolation to zero
@@ -286,7 +287,7 @@ class PairTabModel(BaseAtomicModel):
         np.array
             The atomic energy for all local atoms for all frames. (nframes, nloc, nnei)
         """
-        a3, a2, a1, a0 = torch.unbind(coef, dim=-1)
+        a3, a2, a1, a0 = coef[..., 0], coef[..., 1], coef[..., 2], coef[..., 3]
         etmp = (a3 * uu + a2) * uu + a1  # this should be elementwise operations.
         ener = etmp * uu + a0  # this energy has the extrapolated value when rcut > rmax
         return ener

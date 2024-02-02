@@ -109,7 +109,6 @@ class PairTabModel(nn.Module, AtomicModel):
         tab_model.tab = tab
         tab_model.tab_info = torch.from_numpy(tab_model.tab.tab_info)
         tab_model.tab_data = torch.from_numpy(tab_model.tab.tab_data)
-        print(tab_model.tab_info.shape, tab_model.tab_data.shape)
         return tab_model
 
     def forward_atomic(
