@@ -19,6 +19,7 @@ else()
   target_link_libraries(${libgmxname} PUBLIC ${LIB_DEEPMD_CC})
   target_compile_definitions(${libgmxname} PUBLIC "DP_USE_CXX_API")
 endif()
+target_compile_definitions(${libgmxname} PRIVATE "DP_GMX_PLUGIN_INTERNAL")
 target_include_directories(${libgmxname}
                            PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_include_directories(${libgmxname}
