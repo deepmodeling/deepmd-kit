@@ -8,7 +8,7 @@ from typing import (
 
 import numpy as np
 
-from deepmd.model_format.output_def import (
+from deepmd.dpmodel.output_def import (
     FittingOutputDef,
     ModelOutputDef,
     OutputVariableDef,

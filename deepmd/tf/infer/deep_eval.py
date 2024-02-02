@@ -18,6 +18,9 @@ import numpy as np
 from deepmd.common import (
     make_default_mesh,
 )
+from deepmd.dpmodel.output_def import (
+    ModelOutputDef,
+)
 from deepmd.infer.deep_dipole import (
     DeepDipole,
 )
@@ -36,9 +39,6 @@ from deepmd.infer.deep_pot import (
 )
 from deepmd.infer.deep_wfc import (
     DeepWFC,
-)
-from deepmd.model_format.output_def import (
-    ModelOutputDef,
 )
 from deepmd.tf.env import (
     MODEL_VERSION,

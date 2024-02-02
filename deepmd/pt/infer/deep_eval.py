@@ -14,14 +14,14 @@ from typing import (
 import numpy as np
 import torch
 
+from deepmd.dpmodel.output_def import (
+    ModelOutputDef,
+)
 from deepmd.infer.deep_eval import (
     DeepEvalBase,
 )
 from deepmd.infer.deep_pot import (
     DeepPot,
-)
-from deepmd.model_format.output_def import (
-    ModelOutputDef,
 )
 from deepmd.pt.model.model import (
     get_model,
