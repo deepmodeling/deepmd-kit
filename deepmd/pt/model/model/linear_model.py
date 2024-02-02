@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Dict,
-    List,
     Optional,
 )
 
@@ -126,23 +125,28 @@ class LinearModel(BaseModel, AtomicModel):
 
         zbl_nnei = zbl_nlist.shape[-1]
         dp_nnei = dp_nlist.shape[-1]
-        
+
         # use a larger rr based on nlist
         nlist_ = zbl_nlist if zbl_nnei >= dp_nnei else dp_nnei
         masked_nlist = torch.clamp(nlist_, 0)
-        pairwise_rr = (extended_coord.unsqueeze(2) - extended_coord.unsqueeze(1)).pow(2).sum(-1).sqrt()
+        pairwise_rr = (
+            (extended_coord.unsqueeze(2) - extended_coord.unsqueeze(1))
+            .pow(2)
+            .sum(-1)
+            .sqrt()
+        )
         rr = torch.gather(pairwise_rr[:, : self.nloc, :], 2, masked_nlist)
 
         # (nframes, nloc)
         zbl_weight = self._compute_weight(rr, ra, rb, alpha)
         # (nframes, nloc)
-        dp_energy = self.dp_model.forward_atomic(extended_coord, extended_atype, dp_nlist)[
-            "energy"
-        ]
+        dp_energy = self.dp_model.forward_atomic(
+            extended_coord, extended_atype, dp_nlist
+        )["energy"]
         # (nframes, nloc)
-        zbl_energy = self.zbl_model.forward_atomic(extended_coord, extended_atype, zbl_nlist)[
-            "energy"
-        ]
+        zbl_energy = self.zbl_model.forward_atomic(
+            extended_coord, extended_atype, zbl_nlist
+        )["energy"]
         fit_ret = (
             zbl_weight * zbl_energy + (1 - zbl_weight) * dp_energy
         )  # (nframes, nloc)
