@@ -32,7 +32,7 @@ if TYPE_CHECKING:
     import ase.neighborlist
 
 
-class DeepEvalBase(ABC):
+class DeepEvalBackend(ABC):
     """Low-level Deep Evaluator interface.
 
     Backends should inherbit implement this interface. High-level interface
@@ -67,7 +67,7 @@ class DeepEvalBase(ABC):
         pass
 
     def __new__(cls, model_file: str, *args, **kwargs):
-        if cls is DeepEvalBase:
+        if cls is DeepEvalBackend:
             backend = detect_backend(model_file)
             if backend == DPBackend.TensorFlow:
                 from deepmd.tf.infer.deep_eval import DeepEval as DeepEvalTF
@@ -268,7 +268,7 @@ class DeepEval(ABC):
 
     def __new__(cls, model_file: str, *args, **kwargs):
         if cls is DeepEval:
-            deep_eval = DeepEvalBase(
+            deep_eval = DeepEvalBackend(
                 model_file,
                 ModelOutputDef(FittingOutputDef([])),
                 *args,
@@ -285,7 +285,7 @@ class DeepEval(ABC):
         neighbor_list: Optional["ase.neighborlist.NewPrimitiveNeighborList"] = None,
         **kwargs: Dict[str, Any],
     ) -> None:
-        self.deep_eval = DeepEvalBase(
+        self.deep_eval = DeepEvalBackend(
             model_file,
             self.output_def,
             *args,

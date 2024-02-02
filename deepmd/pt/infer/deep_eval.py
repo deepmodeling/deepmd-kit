@@ -18,7 +18,7 @@ from deepmd.dpmodel.output_def import (
     ModelOutputDef,
 )
 from deepmd.infer.deep_eval import (
-    DeepEvalBase,
+    DeepEvalBackend,
 )
 from deepmd.infer.deep_pot import (
     DeepPot,
@@ -44,7 +44,7 @@ if TYPE_CHECKING:
     import ase.neighborlist
 
 
-class DeepEval(DeepEvalBase):
+class DeepEval(DeepEvalBackend):
     """PyTorch backend implementaion of DeepEval.
 
     Parameters

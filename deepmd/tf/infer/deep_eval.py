@@ -28,7 +28,7 @@ from deepmd.infer.deep_dos import (
     DeepDOS,
 )
 from deepmd.infer.deep_eval import (
-    DeepEvalBase,
+    DeepEvalBackend,
 )
 from deepmd.infer.deep_polar import (
     DeepGlobalPolar,
@@ -58,7 +58,7 @@ if TYPE_CHECKING:
     )
 
 
-class DeepEval(DeepEvalBase):
+class DeepEval(DeepEvalBackend):
     """TensorFlow backend implementation for DeepEval.
 
     Parameters
