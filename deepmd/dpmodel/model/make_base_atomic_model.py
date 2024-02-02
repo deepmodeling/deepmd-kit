@@ -15,7 +15,22 @@ from deepmd.dpmodel.output_def import (
 )
 
 
-def make_base_atomic_model(T_Tensor):
+def make_base_atomic_model(
+    t_tensor,
+    fwd_method_name: str = "forward_atomic",
+):
+    """Make the base class for the atomic model.
+
+    Parameters
+    ----------
+    t_tensor
+        The type of the tensor. used in the type hint.
+    fwd_method_name
+        Name of the forward method. For dpmodels, it should be "call".
+        For torch models, it should be "forward".
+
+    """
+
     class BAM(ABC):
         """Base Atomic Model provides the interfaces of an atomic model."""
 
@@ -50,15 +65,15 @@ def make_base_atomic_model(T_Tensor):
             pass
 
         @abstractmethod
-        def forward_atomic(
+        def fwd(
             self,
-            extended_coord: T_Tensor,
-            extended_atype: T_Tensor,
-            nlist: T_Tensor,
-            mapping: Optional[T_Tensor] = None,
-            fparam: Optional[T_Tensor] = None,
-            aparam: Optional[T_Tensor] = None,
-        ) -> Dict[str, T_Tensor]:
+            extended_coord: t_tensor,
+            extended_atype: t_tensor,
+            nlist: t_tensor,
+            mapping: Optional[t_tensor] = None,
+            fparam: Optional[t_tensor] = None,
+            aparam: Optional[t_tensor] = None,
+        ) -> Dict[str, t_tensor]:
             pass
 
         @abstractmethod
@@ -93,5 +108,8 @@ def make_base_atomic_model(T_Tensor):
             """Tell if the output variable `var_name` is differentiable."""
             assert var_name is not None
             return self.fitting_output_def()[var_name].differentiable
+
+    setattr(BAM, fwd_method_name, BAM.fwd)
+    delattr(BAM, "fwd")
 
     return BAM

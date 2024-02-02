@@ -823,7 +823,6 @@ class TestNeighList(unittest.TestCase):
         ecoord, eatype, mapping = extend_coord_with_ghosts(
             self.coord, self.atype, self.cell, self.rcut
         )
-        np.savetxt("tmp1.out", self.coord)
         # expected ncopy x nloc
         self.assertEqual(list(ecoord.shape), [self.nf, self.nall * 3])
         self.assertEqual(list(eatype.shape), [self.nf, self.nall])
