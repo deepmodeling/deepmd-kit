@@ -44,27 +44,29 @@ class PairTab:
             For example we have two atom types, 0 and 1.
             The columes from 2nd to 4th are for 0-0, 0-1 and 1-1 correspondingly.
         """
-        if filename is not None:
-            self.vdata = np.loadtxt(filename)
-            self.rmin = self.vdata[0][0]
-            self.rmax = self.vdata[-1][0]
-            self.hh = self.vdata[1][0] - self.vdata[0][0]
-            ncol = self.vdata.shape[1] - 1
-            n0 = (-1 + np.sqrt(1 + 8 * ncol)) * 0.5
-            self.ntypes = int(n0 + 0.1)
-            assert self.ntypes * (self.ntypes + 1) // 2 == ncol, (
-                "number of volumes provided in %s does not match guessed number of types %d"
-                % (filename, self.ntypes)
-            )
+        if filename is None:
+            self.tab_info, self.tab_data = None, None
+            return
+        self.vdata = np.loadtxt(filename)
+        self.rmin = self.vdata[0][0]
+        self.rmax = self.vdata[-1][0]
+        self.hh = self.vdata[1][0] - self.vdata[0][0]
+        ncol = self.vdata.shape[1] - 1
+        n0 = (-1 + np.sqrt(1 + 8 * ncol)) * 0.5
+        self.ntypes = int(n0 + 0.1)
+        assert self.ntypes * (self.ntypes + 1) // 2 == ncol, (
+            "number of volumes provided in %s does not match guessed number of types %d"
+            % (filename, self.ntypes)
+        )
 
-            # check table data against rcut and update tab_file if needed, table upper boundary is used as rcut if not provided.
-            self.rcut = rcut if rcut is not None else self.rmax
-            self._check_table_upper_boundary()
-            self.nspline = (
-                self.vdata.shape[0] - 1
-            )  # this nspline is updated based on the expanded table.
-            self.tab_info = np.array([self.rmin, self.hh, self.nspline, self.ntypes])
-            self.tab_data = self._make_data()
+        # check table data against rcut and update tab_file if needed, table upper boundary is used as rcut if not provided.
+        self.rcut = rcut if rcut is not None else self.rmax
+        self._check_table_upper_boundary()
+        self.nspline = (
+            self.vdata.shape[0] - 1
+        )  # this nspline is updated based on the expanded table.
+        self.tab_info = np.array([self.rmin, self.hh, self.nspline, self.ntypes])
+        self.tab_data = self._make_data()
 
     def serialize(self) -> dict:
         return {

@@ -56,8 +56,7 @@ class TestPairTab(unittest.TestCase):
             self.extended_coord, self.extended_atype, self.nlist
         )
         expected_result = np.array([[1.2000, 1.3614], [1.2000, 0.4000]])
-        print(f"res: {result['energy']}")
-        print(f"exp_res: {expected_result}")
+
         np.testing.assert_allclose(result["energy"], expected_result, 0.0001, 0.0001)
 
     def test_with_mask(self):

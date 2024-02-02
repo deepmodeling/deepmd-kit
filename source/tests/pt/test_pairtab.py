@@ -7,7 +7,7 @@ from unittest.mock import (
 import numpy as np
 import torch
 
-from deepmd.pt.model.model.pair_tab import (
+from deepmd.pt.model.model.pair_tab_model import (
     PairTabModel,
 )
 
