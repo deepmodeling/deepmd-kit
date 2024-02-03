@@ -32,6 +32,5 @@ int main() {
   free(v);
   free(ae);
   free(av);
-  free(dp);
   DP_DeleteDeepPot(dp);
 }
