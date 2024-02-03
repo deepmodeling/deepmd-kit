@@ -71,10 +71,11 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
                         const std::vector<VALUETYPE>& box,
                         const InputNlist& lmp_list,
                         const int& ago) {
-  if(cpu_enabled)
+  if (cpu_enabled) {
     torch::Device device(torch::kCPU);
-  else
+  } else {
     torch::Device device(torch::kCUDA, gpu_id);
+  }
   std::vector<VALUETYPE> coord_wrapped = coord;
   int natoms = atype.size();
   auto options = torch::TensorOptions().dtype(torch::kFloat64);
@@ -93,9 +94,10 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
       at::Tensor firstneigh = torch::from_blob(
           nlist_data.jlist, {lmp_list.inum, max_num_neighbors}, int32_options);
       at::Tensor nlist = firstneigh.to(torch::kInt64).to(device);
-      firstneigh_tensor =
-          module.run_method("format_nlist", coord_wrapped_Tensor,atype_Tensor,nlist)
-              .toTensor();
+      firstneigh_tensor = module
+                              .run_method("format_nlist", coord_wrapped_Tensor,
+                                          atype_Tensor, nlist)
+                              .toTensor();
     } else {
       at::Tensor firstneigh = torch::from_blob(
           nlist_data.jlist, {1, lmp_list.inum, max_num_neighbors},
@@ -106,7 +108,10 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
   bool do_atom_virial_tensor = true;
   torch::Tensor mapping_tensor = torch::Tensor(nullptr);
   c10::Dict<c10::IValue, c10::IValue> outputs =
-      module.run_method("forward_lower",coord_wrapped_Tensor,atype_Tensor,firstneigh_tensor,mapping_tensor, do_atom_virial_tensor).toGenericDict();
+      module
+          .run_method("forward_lower", coord_wrapped_Tensor, atype_Tensor,
+                      firstneigh_tensor, mapping_tensor, do_atom_virial_tensor)
+          .toGenericDict();
   c10::IValue energy_ = outputs.at("energy");
   c10::IValue force_ = outputs.at("extended_force");
   c10::IValue virial_ = outputs.at("reduced_virial");
@@ -190,10 +195,11 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
                         const std::vector<VALUETYPE>& coord,
                         const std::vector<int>& atype,
                         const std::vector<VALUETYPE>& box) {
-  if(cpu_enabled)
+  if (cpu_enabled) {
     torch::Device device(torch::kCPU);
-  else
+  } else {
     torch::Device device(torch::kCUDA, gpu_id);
+  }
   std::vector<VALUETYPE> coord_wrapped = coord;
   int natoms = atype.size();
   auto options = torch::TensorOptions().dtype(torch::kFloat64);

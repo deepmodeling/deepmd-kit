@@ -100,7 +100,7 @@ class DPAtomicModel(BaseModel, BaseAtomicModel):
     def get_sel(self) -> List[int]:
         """Get the neighbor selection."""
         return self.sel
-    
+
     def get_nnei(self) -> List[int]:
         """Get the the number of selected atoms in the cut-off radius."""
         return self.nnei
