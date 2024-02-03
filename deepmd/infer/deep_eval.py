@@ -441,7 +441,7 @@ class DeepEval(ABC):
         coords = np.array(coords)
         if cells is not None:
             cells = np.array(cells)
-        atom_types = np.array(atom_types)
+        atom_types = np.array(atom_types, dtype=np.int32)
         if fparam is not None:
             fparam = np.array(fparam)
         if aparam is not None:
