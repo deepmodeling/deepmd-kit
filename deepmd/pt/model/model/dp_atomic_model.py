@@ -71,6 +71,7 @@ class DPAtomicModel(BaseModel, BaseAtomicModel):
         self.descriptor = descriptor
         self.rcut = self.descriptor.get_rcut()
         self.sel = self.descriptor.get_sel()
+        self.nnei = self.descriptor.get_nsel()
         self.fitting_net = fitting
         # Statistics
         fitting_net = None  # TODO: hack!!! not sure if it is correct.
@@ -99,6 +100,10 @@ class DPAtomicModel(BaseModel, BaseAtomicModel):
     def get_sel(self) -> List[int]:
         """Get the neighbor selection."""
         return self.sel
+    
+    def get_nnei(self) -> List[int]:
+        """Get the the number of selected atoms in the cut-off radius."""
+        return self.nnei
 
     def distinguish_types(self) -> bool:
         """If distinguish different types by sorting."""

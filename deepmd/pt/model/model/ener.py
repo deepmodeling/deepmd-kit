@@ -81,6 +81,9 @@ class EnergyModel(DPModel):
                     model_predict["extended_virial"] = model_ret[
                         "energy_derv_c"
                     ].squeeze(-3)
+                    model_predict["ruduced_virial"] = model_ret[
+                        "energy_derv_c_redu"
+                    ].squeeze(-3)
             else:
                 assert model_ret["dforce"] is not None
                 model_predict["dforce"] = model_ret["dforce"]

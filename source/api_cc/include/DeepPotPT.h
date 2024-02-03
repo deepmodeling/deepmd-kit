@@ -323,9 +323,9 @@ class DeepPotPT : public DeepPotBase {
   torch::jit::script::Module module;
   double rcut;
   NeighborListDataPT nlist_data;
-  // InputNlist nlist;
   int max_num_neighbors;
   int gpu_id;
+  bool cpu_enabled;
   at::Tensor firstneigh_tensor;
 };
 

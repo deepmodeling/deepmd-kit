@@ -29,19 +29,20 @@ void DeepPotPT::init(const std::string& model,
             << std::endl;
   gpu_id = gpu_rank;
   torch::Device device(torch::kCUDA, gpu_rank);
+  cpu_enabled = false;
   // This may be implemented as something like DPErrcheck(DPSetDevice(gpu_rank %
   // gpu_num));
   try {
     module = torch::jit::load(model, device);
   } catch (const c10::Error& e) {
-    std::cerr << "Error loading the model, maybe GPU is not available\n";
+    torch::Device device(torch::kCPU);
+    module = torch::jit::load(model, device);
+    cpu_enabled = true;
   }
   torch::jit::FusionStrategy strategy;
   strategy = {{torch::jit::FusionBehavior::DYNAMIC, 10}};
   torch::jit::setFusionStrategy(strategy);
 
-  // at::globalContext().setAllowTF32CuBLAS(true);
-  // at::globalContext().setAllowTF32CuDNN(true);
   get_env_nthreads(num_intra_nthreads,
                    num_inter_nthreads);  // need to be fixed as
                                          // DP_INTRA_OP_PARALLELISM_THREADS
@@ -70,21 +71,21 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
                         const std::vector<VALUETYPE>& box,
                         const InputNlist& lmp_list,
                         const int& ago) {
-  torch::Device device(torch::kCUDA, gpu_id);
+  if(cpu_enabled)
+    torch::Device device(torch::kCPU);
+  else
+    torch::Device device(torch::kCUDA, gpu_id);
   std::vector<VALUETYPE> coord_wrapped = coord;
   int natoms = atype.size();
   auto options = torch::TensorOptions().dtype(torch::kFloat64);
   auto int_options = torch::TensorOptions().dtype(torch::kInt64);
   auto int32_options = torch::TensorOptions().dtype(torch::kInt32);
-  std::vector<torch::jit::IValue> inputs;
   at::Tensor coord_wrapped_Tensor =
       torch::from_blob(coord_wrapped.data(), {1, natoms, 3}, options)
           .to(device);
-  inputs.push_back(coord_wrapped_Tensor);
   std::vector<int64_t> atype_64(atype.begin(), atype.end());
   at::Tensor atype_Tensor =
       torch::from_blob(atype_64.data(), {1, natoms}, int_options).to(device);
-  inputs.push_back(atype_Tensor);
   if (ago == 0) {
     int64_t nnei = module.run_method("get_nnei").toInt();
     nlist_data.copy_from_nlist(lmp_list, max_num_neighbors, nnei);
@@ -93,7 +94,7 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
           nlist_data.jlist, {lmp_list.inum, max_num_neighbors}, int32_options);
       at::Tensor nlist = firstneigh.to(torch::kInt64).to(device);
       firstneigh_tensor =
-          module.run_method("sort_neighbor_list", coord_wrapped_Tensor, nlist)
+          module.run_method("format_nlist", coord_wrapped_Tensor,atype_Tensor,nlist)
               .toTensor();
     } else {
       at::Tensor firstneigh = torch::from_blob(
@@ -102,21 +103,15 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
       firstneigh_tensor = firstneigh.to(torch::kInt64).to(device);
     }
   }
-  at::Tensor box_Tensor =
-      torch::from_blob(const_cast<VALUETYPE*>(box.data()), {1, 9}, options)
-          .to(device);
-  inputs.push_back(box_Tensor);
   bool do_atom_virial_tensor = true;
-  inputs.push_back(do_atom_virial_tensor);
-  inputs.push_back(firstneigh_tensor);
+  torch::Tensor mapping_tensor = torch::Tensor(nullptr);
   c10::Dict<c10::IValue, c10::IValue> outputs =
-      module.forward(inputs).toGenericDict();
+      module.run_method("forward_lower",coord_wrapped_Tensor,atype_Tensor,firstneigh_tensor,mapping_tensor, do_atom_virial_tensor).toGenericDict();
   c10::IValue energy_ = outputs.at("energy");
   c10::IValue force_ = outputs.at("extended_force");
-  c10::IValue virial_ = outputs.at("extended_virial");
-  c10::IValue atom_virial_ = outputs.at("atomic_virial");
+  c10::IValue virial_ = outputs.at("reduced_virial");
+  c10::IValue atom_virial_ = outputs.at("extended_virial");
   c10::IValue atom_energy_ = outputs.at("atom_energy");
-  // ener = energy_.toTensor().item<double>();
   torch::Tensor flat_energy_ = energy_.toTensor().view({-1});
   torch::Tensor cpu_energy_ = flat_energy_.to(torch::kCPU);
   ener.assign(cpu_energy_.data_ptr<VALUETYPE>(),
@@ -195,8 +190,10 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
                         const std::vector<VALUETYPE>& coord,
                         const std::vector<int>& atype,
                         const std::vector<VALUETYPE>& box) {
-  auto device = torch::kCUDA;
-  module.to(device);
+  if(cpu_enabled)
+    torch::Device device(torch::kCPU);
+  else
+    torch::Device device(torch::kCUDA, gpu_id);
   std::vector<VALUETYPE> coord_wrapped = coord;
   int natoms = atype.size();
   auto options = torch::TensorOptions().dtype(torch::kFloat64);
@@ -214,6 +211,10 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
       torch::from_blob(const_cast<VALUETYPE*>(box.data()), {1, 9}, options)
           .to(device);
   inputs.push_back(box_Tensor);
+  torch::Tensor fparam_tensor = torch::Tensor(nullptr);
+  inputs.push_back(fparam_tensor);
+  torch::Tensor aparam_tensor = torch::Tensor(nullptr);
+  inputs.push_back(aparam_tensor);
   bool do_atom_virial_tensor = true;
   inputs.push_back(do_atom_virial_tensor);
   c10::Dict<c10::IValue, c10::IValue> outputs =
@@ -224,7 +225,6 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
   c10::IValue virial_ = outputs.at("virial");
   c10::IValue atom_virial_ = outputs.at("atomic_virial");
   c10::IValue atom_energy_ = outputs.at("atom_energy");
-  // ener = energy_.toTensor().item<double>();
   torch::Tensor flat_energy_ = energy_.toTensor().view({-1});
   torch::Tensor cpu_energy_ = flat_energy_.to(torch::kCPU);
   ener.assign(cpu_energy_.data_ptr<VALUETYPE>(),
