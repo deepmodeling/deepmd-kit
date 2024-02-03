@@ -25,6 +25,15 @@ DP_Nlist* DP_NewNlist(int inum_,
             DP_Nlist* new_nl = new DP_Nlist(nl); return new_nl;)
 }
 
+void DP_DeleteNlist(DP_Nlist* nl) {
+  // remove ilist, numneigh, and firstneigh before deleting nl
+  // as they are not owned by DP_Nlist
+  nl->nl.ilist = nullptr;
+  nl->nl.numneigh = nullptr;
+  nl->nl.firstneigh = nullptr;
+  delete nl;
+}
+
 DP_DeepPot::DP_DeepPot() {}
 DP_DeepPot::DP_DeepPot(deepmd::DeepPot& dp) : dp(dp) {
   dfparam = dp.dim_fparam();
