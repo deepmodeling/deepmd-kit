@@ -122,6 +122,12 @@ TEST_F(TestInferDeepPotA, double_infer) {
   for (int ii = 0; ii < natoms * 9; ++ii) {
     EXPECT_LT(fabs(atomic_virial[ii] - expected_v[ii]), 1e-10);
   }
+
+  delete ener_;
+  delete[] force_;
+  delete[] virial_;
+  delete[] atomic_ener_;
+  delete[] atomic_virial_;
 }
 
 TEST_F(TestInferDeepPotA, float_infer) {
@@ -154,6 +160,11 @@ TEST_F(TestInferDeepPotA, float_infer) {
   for (int ii = 0; ii < natoms * 9; ++ii) {
     EXPECT_LT(fabs(atomic_virial[ii] - expected_v[ii]), 1e-6);
   }
+  delete ener_;
+  delete[] force_;
+  delete[] virial_;
+  delete[] atomic_ener_;
+  delete[] atomic_virial_;
 }
 
 TEST_F(TestInferDeepPotA, cutoff) {
