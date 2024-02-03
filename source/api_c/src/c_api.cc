@@ -26,11 +26,6 @@ DP_Nlist* DP_NewNlist(int inum_,
 }
 
 void DP_DeleteNlist(DP_Nlist* nl) {
-  // remove ilist, numneigh, and firstneigh before deleting nl
-  // as they are not owned by DP_Nlist
-  nl->nl.ilist = nullptr;
-  nl->nl.numneigh = nullptr;
-  nl->nl.firstneigh = nullptr;
   delete nl;
 }
 
