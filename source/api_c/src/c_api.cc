@@ -25,9 +25,7 @@ DP_Nlist* DP_NewNlist(int inum_,
             DP_Nlist* new_nl = new DP_Nlist(nl); return new_nl;)
 }
 
-void DP_DeleteNlist(DP_Nlist* nl) {
-  delete nl;
-}
+void DP_DeleteNlist(DP_Nlist* nl) { delete nl; }
 
 DP_DeepPot::DP_DeepPot() {}
 DP_DeepPot::DP_DeepPot(deepmd::DeepPot& dp) : dp(dp) {
