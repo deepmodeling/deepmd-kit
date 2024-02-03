@@ -14,11 +14,7 @@ from dargs import (
     dargs,
 )
 
-from deepmd.common import (
-    ACTIVATION_FN_DICT,
-    PRECISION_DICT,
-)
-from deepmd.nvnmd.utils.argcheck import (
+from deepmd.utils.argcheck_nvnmd import (
     nvnmd_args,
 )
 from deepmd.utils.plugin import (
@@ -26,6 +22,28 @@ from deepmd.utils.plugin import (
 )
 
 log = logging.getLogger(__name__)
+
+
+# TODO: import from a module outside tf/pt
+ACTIVATION_FN_DICT = {
+    "relu": None,
+    "relu6": None,
+    "softplus": None,
+    "sigmoid": None,
+    "tanh": None,
+    "gelu": None,
+    "gelu_tf": None,
+    "None": None,
+    "none": None,
+}
+# TODO: import from a module outside tf/pt
+PRECISION_DICT = {
+    "default": None,
+    "float16": None,
+    "float32": None,
+    "float64": None,
+    "bfloat16": None,
+}
 
 
 def list_to_doc(xx):
@@ -927,6 +945,7 @@ def model_args(exclude_hybrid=False):
                     standard_model_args(),
                     multi_model_args(),
                     frozen_model_args(),
+                    pairtab_model_args(),
                     *hybrid_models,
                 ],
                 optional=True,
@@ -1009,6 +1028,26 @@ def frozen_model_args() -> Argument:
         [
             Argument("model_file", str, optional=False, doc=doc_model_file),
         ],
+    )
+    return ca
+
+
+def pairtab_model_args() -> Argument:
+    doc_tab_file = "Path to the tabulation file."
+    doc_rcut = "The cut-off radius."
+    doc_sel = 'This parameter set the number of selected neighbors. Note that this parameter is a little different from that in other descriptors. Instead of separating each type of atoms, only the summation matters. And this number is highly related with the efficiency, thus one should not make it too large. Usually 200 or less is enough, far away from the GPU limitation 4096. It can be:\n\n\
+    - `int`. The maximum number of neighbor atoms to be considered. We recommend it to be less than 200. \n\n\
+    - `List[int]`. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. Only the summation of `sel[i]` matters, and it is recommended to be less than 200.\
+    - `str`. Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`. In detail it counts the maximal number of neighbors with in the cutoff radius for each type of neighbor, then multiply the maximum by the "factor". Finally the number is wraped up to 4 divisible. The option "auto" is equivalent to "auto:1.1".'
+    ca = Argument(
+        "pairtab",
+        dict,
+        [
+            Argument("tab_file", str, optional=False, doc=doc_tab_file),
+            Argument("rcut", float, optional=False, doc=doc_rcut),
+            Argument("sel", [int, List[int], str], optional=False, doc=doc_sel),
+        ],
+        doc="Pairwise tabulation energy model.",
     )
     return ca
 
@@ -1664,7 +1703,7 @@ def training_args():  # ! modified by Ziyao: data configuration isolated.
     doc_time_training = "Timing durining training."
     doc_profiling = "Profiling during training."
     doc_profiling_file = "Output file for profiling."
-    doc_enable_profiler = "Enable TensorFlow Profiler (available in TensorFlow 2.3) to analyze performance. The log will be saved to `tensorboard_log_dir`."
+    doc_enable_profiler = "Enable TensorFlow Profiler (available in TensorFlow 2.3) or PyTorch Profiler to analyze performance. The log will be saved to `tensorboard_log_dir`."
     doc_tensorboard = "Enable tensorboard"
     doc_tensorboard_log_dir = "The log directory of tensorboard outputs"
     doc_tensorboard_freq = "The frequency of writing tensorboard events."

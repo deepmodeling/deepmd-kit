@@ -77,7 +77,9 @@ class ProdForceSeAGradOp : public OpKernel {
     OP_REQUIRES(
         context, (nloc * 3 == grad_shape.dim_size(1)),
         errors::InvalidArgument("input grad shape should be 3 x natoms"));
-    OP_REQUIRES(context, (nloc * ndescrpt * 3 == in_deriv_shape.dim_size(1)),
+    OP_REQUIRES(context,
+                (static_cast<int64_t>(nloc) * ndescrpt * 3 ==
+                 in_deriv_shape.dim_size(1)),
                 errors::InvalidArgument("number of descriptors should match"));
     OP_REQUIRES(context, (nnei == n_a_sel + n_r_sel),
                 errors::InvalidArgument("number of neighbors should match"));
@@ -85,7 +87,7 @@ class ProdForceSeAGradOp : public OpKernel {
     // Create an output tensor
     TensorShape grad_net_shape;
     grad_net_shape.AddDim(nframes);
-    grad_net_shape.AddDim(nloc * ndescrpt);
+    grad_net_shape.AddDim(static_cast<int64_t>(nloc) * ndescrpt);
 
     // allocate the output tensor
     Tensor* grad_net_tensor = NULL;

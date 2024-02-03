@@ -178,6 +178,6 @@ void ComputeDeeptensorAtom::compute_peratom() {
 ------------------------------------------------------------------------- */
 
 double ComputeDeeptensorAtom::memory_usage() {
-  double bytes = nmax * size_peratom_cols * sizeof(double);
+  double bytes = static_cast<size_t>(nmax) * size_peratom_cols * sizeof(double);
   return bytes;
 }

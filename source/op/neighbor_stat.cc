@@ -112,7 +112,7 @@ class NeighborStatOp : public OpKernel {
       if (nei_mode == 1) {
         // Tensor FPTYPE_temp;
         TensorShape FPTYPE_shape;
-        FPTYPE_shape.AddDim(nall * 3);
+        FPTYPE_shape.AddDim(static_cast<int64_t>(nall) * 3);
         OP_REQUIRES_OK(context,
                        context->allocate_temp(DataTypeToEnum<FPTYPE>::value,
                                               FPTYPE_shape, &tensor_list[0]));
@@ -125,20 +125,20 @@ class NeighborStatOp : public OpKernel {
                                               double_shape, &tensor_list[1]));
         // Tensor cpy_temp;
         TensorShape cpy_shape;
-        cpy_shape.AddDim(mem_cpy * 3);
+        cpy_shape.AddDim(static_cast<int64_t>(mem_cpy) * 3);
         OP_REQUIRES_OK(context,
                        context->allocate_temp(DataTypeToEnum<FPTYPE>::value,
                                               cpy_shape, &tensor_list[3]));
         // Tensor t_temp;
         TensorShape t_shape;
-        t_shape.AddDim(mem_cpy * 2);
+        t_shape.AddDim(static_cast<int64_t>(mem_cpy) * 2);
         OP_REQUIRES_OK(context, context->allocate_temp(DT_INT32, t_shape,
                                                        &tensor_list[4]));
       }
 
       // Tensor nlist_temp;
       TensorShape nlist_shape;
-      nlist_shape.AddDim(nloc * 2);
+      nlist_shape.AddDim(static_cast<int64_t>(nloc) * 2);
       OP_REQUIRES_OK(context, context->allocate_temp(DT_INT32, nlist_shape,
                                                      &tensor_list[5]));
 
@@ -167,7 +167,7 @@ class NeighborStatOp : public OpKernel {
           rcut, max_cpy_trial, max_nnei_trial);
 
       TensorShape min_nbor_dist_shape;
-      min_nbor_dist_shape.AddDim(nloc * mem_nnei);
+      min_nbor_dist_shape.AddDim(static_cast<int64_t>(nloc) * mem_nnei);
       Tensor* min_nbor_dist_tensor = NULL;
       OP_REQUIRES_OK(context, context->allocate_output(context_output_index++,
                                                        min_nbor_dist_shape,
@@ -253,7 +253,7 @@ class NeighborStatOp : public OpKernel {
       }
       // allocate output tensor for deepmd-kit
       TensorShape min_nbor_dist_shape;
-      min_nbor_dist_shape.AddDim(nloc * MAX_NNEI);
+      min_nbor_dist_shape.AddDim(static_cast<int64_t>(nloc) * MAX_NNEI);
       Tensor* min_nbor_dist_tensor = NULL;
       OP_REQUIRES_OK(context, context->allocate_output(context_output_index++,
                                                        min_nbor_dist_shape,

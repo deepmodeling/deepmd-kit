@@ -77,9 +77,6 @@ TEST_F(TestRegion, cpu) {
 TEST_F(TestRegion, gpu) {
   // check rec_box
   deepmd::Region<double> region;
-  deepmd::Region<double> region_dev;
-  double* new_boxt = region_dev.boxt;
-  double* new_rec_boxt = region_dev.rec_boxt;
   double *boxt_dev = NULL, *rec_boxt_dev = NULL;
   double *ref_rp_dev = NULL, *ref_ri_dev = NULL;
   init_region_cpu(region, &ref_boxt[0]);
@@ -90,8 +87,7 @@ TEST_F(TestRegion, gpu) {
   deepmd::malloc_device_memory_sync(rec_boxt_dev, region.rec_boxt, 9);
   deepmd::malloc_device_memory_sync(ref_rp_dev, ref_rp);
   deepmd::malloc_device_memory_sync(ref_ri_dev, ref_ri);
-  region_dev.boxt = boxt_dev;
-  region_dev.rec_boxt = rec_boxt_dev;
+  deepmd::Region<double> region_dev(boxt_dev, rec_boxt_dev);
   // check volume
   double vol[1];
   double* vol_dev = NULL;
@@ -141,8 +137,6 @@ TEST_F(TestRegion, gpu) {
   deepmd::delete_device_memory(rp2_dev);
   deepmd::delete_device_memory(rp_dev);
   deepmd::delete_device_memory(ri2_dev);
-  region_dev.boxt = new_boxt;
-  region_dev.rec_boxt = new_rec_boxt;
 }
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 

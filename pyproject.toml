@@ -27,7 +27,7 @@ classifiers = [
     "Programming Language :: Python :: 3 :: Only",
     "Environment :: GPU :: NVIDIA CUDA :: 12 :: 12.2",
     "Intended Audience :: Science/Research",
-    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
     "License :: OSI Approved :: GNU Lesser General Public License v3 (LGPLv3)",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Topic :: Scientific/Engineering :: Physics",
@@ -46,14 +46,17 @@ dependencies = [
     'wcmatch',
     'packaging',
 ]
-requires-python = ">=3.7"
+requires-python = ">=3.8"
 keywords = ["deepmd"]
 
 [project.entry-points."lammps.plugins"]
-deepmd = "deepmd.lmp:get_op_dir"
+deepmd = "deepmd.tf.lmp:get_op_dir"
 
 [project.entry-points."dpgui"]
 "DeePMD-kit" = "deepmd.utils.argcheck:gen_args"
+
+[project.entry-points."dpdata.plugins"]
+deepmd_driver = "deepmd.driver:DPDriver"
 
 [project.urls]
 Homepage = "https://github.com/deepmodeling/deepmd-kit"
@@ -82,7 +85,6 @@ sdist.exclude = [
 ]
 wheel.packages = [
     "deepmd",
-    "deepmd_utils",
 ]
 wheel.py-api = "py37"
 build-dir = "build/{wheel_tag}"
@@ -102,7 +104,7 @@ provider-path = "backend"
 provider = "scikit_build_core.metadata.fancy_pypi_readme"
 
 [[tool.scikit-build.generate]]
-path = "deepmd_utils/_version.py"
+path = "deepmd/_version.py"
 template = '''
 version = "${version}"
 '''
@@ -128,7 +130,7 @@ test-command = [
     "python -m deepmd -h",
     "dp -h",
     "dp_ipi",
-    "pytest {project}/source/tests/test_lammps.py"
+    "pytest {project}/source/tests/tf/test_lammps.py"
 ]
 test-extras = ["cpu", "test", "lmp", "ipi"]
 build = ["cp310-*"]
@@ -139,14 +141,12 @@ manylinux-x86_64-image = "quay.io/pypa/manylinux_2_28_x86_64:2022-11-19-1b19e81"
 manylinux-aarch64-image = "manylinux_2_28"
 
 [tool.cibuildwheel.macos]
-environment = { PIP_PREFER_BINARY="1", DP_LAMMPS_VERSION="stable_2Aug2023_update1", DP_ENABLE_IPI="1" }
+environment = { PIP_PREFER_BINARY="1", DP_LAMMPS_VERSION="stable_2Aug2023_update2", DP_ENABLE_IPI="1" }
 before-all = [
+    # enable MPI for macos-arm64 in the next lammps release for compatibility
     """if [[ "$CIBW_BUILD" != *macosx_arm64* ]]; then brew install mpich; fi""",
 ]
-before-build = [
-    """if [[ "$CIBW_BUILD" == *macosx_arm64* ]]; then python -m pip install "tensorflow-macos>=2.13.0rc0" --platform macosx_12_0_arm64 --no-deps --target=$RUNNER_TEMP/tensorflow; fi""",
-]
-repair-wheel-command = """if [[ "$CIBW_BUILD" == *macosx_arm64* ]]; then rm -rf $RUNNER_TEMP/tensorflow; fi && delocate-wheel --require-archs {delocate_archs} -w {dest_dir} -v {wheel} --ignore-missing-dependencies"""
+repair-wheel-command = """delocate-wheel --require-archs {delocate_archs} -w {dest_dir} -v {wheel} --ignore-missing-dependencies"""
 
 [tool.cibuildwheel.linux]
 repair-wheel-command = "auditwheel repair --exclude libtensorflow_framework.so.2 --exclude libtensorflow_framework.so.1 --exclude libtensorflow_framework.so --exclude _pywrap_tensorflow_internal.so --exclude libtensorflow_cc.so.2 -w {dest_dir} {wheel}"
@@ -155,8 +155,9 @@ environment-pass = [
     "DP_VARIANT",
     "CUDA_VERSION",
     "DP_PKG_NAME",
+    "SETUPTOOLS_SCM_PRETEND_VERSION_FOR_DEEPMD-KIT-CU11",
 ]
-environment = { PIP_PREFER_BINARY="1", DP_LAMMPS_VERSION="stable_2Aug2023_update1", DP_ENABLE_IPI="1", MPI_HOME="/usr/lib64/mpich", PATH="/usr/lib64/mpich/bin:$PATH" }
+environment = { PIP_PREFER_BINARY="1", DP_LAMMPS_VERSION="stable_2Aug2023_update2", DP_ENABLE_IPI="1", MPI_HOME="/usr/lib64/mpich", PATH="/usr/lib64/mpich/bin:$PATH" }
 before-all = [
     """if [ ! -z "${DP_PKG_NAME}" ]; then sed -i "s/name = \\"deepmd-kit\\"/name = \\"${DP_PKG_NAME}\\"/g" pyproject.toml; fi""",
     """{ if [ "$(uname -m)" = "x86_64" ] ; then yum config-manager --add-repo http://developer.download.nvidia.com/compute/cuda/repos/rhel8/x86_64/cuda-rhel8.repo && yum install -y cuda-nvcc-${CUDA_VERSION/./-} cuda-cudart-devel-${CUDA_VERSION/./-}; fi }""",

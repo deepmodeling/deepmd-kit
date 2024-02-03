@@ -84,10 +84,14 @@ class SoftMinVirialGradOp : public OpKernel {
         errors::InvalidArgument("input grad shape should be 3 x natoms"));
     OP_REQUIRES(context, (nloc == du_tensor.shape().dim_size(1)),
                 errors::InvalidArgument("number of du should match"));
-    OP_REQUIRES(context, (nloc * nnei * 3 == sw_deriv_shape.dim_size(1)),
-                errors::InvalidArgument("number of descriptors should match"));
-    OP_REQUIRES(context, (nloc * nnei * 3 == rij_shape.dim_size(1)),
-                errors::InvalidArgument("dim of rij should be  nnei * 3"));
+    OP_REQUIRES(
+        context,
+        (static_cast<int64_t>(nloc) * nnei * 3 == sw_deriv_shape.dim_size(1)),
+        errors::InvalidArgument("number of descriptors should match"));
+    OP_REQUIRES(
+        context,
+        (static_cast<int64_t>(nloc) * nnei * 3 == rij_shape.dim_size(1)),
+        errors::InvalidArgument("dim of rij should be  nnei * 3"));
     OP_REQUIRES(context, (nnei == n_a_sel + n_r_sel),
                 errors::InvalidArgument("number of neighbors should match"));
 

@@ -82,10 +82,13 @@ class SoftMinSwitchOp : public OpKernel {
     OP_REQUIRES(context, (nall == type_tensor.shape().dim_size(1)),
                 errors::InvalidArgument("shape of type should be nall"));
     OP_REQUIRES(
-        context, (3 * nnei * nloc == rij_tensor.shape().dim_size(1)),
+        context,
+        (3 * static_cast<int64_t>(nnei) * nloc ==
+         rij_tensor.shape().dim_size(1)),
         errors::InvalidArgument("shape of rij should be 3 * nloc * nnei"));
     OP_REQUIRES(
-        context, (nnei * nloc == nlist_tensor.shape().dim_size(1)),
+        context,
+        (static_cast<int64_t>(nnei) * nloc == nlist_tensor.shape().dim_size(1)),
         errors::InvalidArgument("shape of nlist should be nloc * nnei"));
 
     // Create an output tensor
@@ -94,7 +97,7 @@ class SoftMinSwitchOp : public OpKernel {
     sw_value_shape.AddDim(nloc);
     TensorShape sw_deriv_shape;
     sw_deriv_shape.AddDim(nframes);
-    sw_deriv_shape.AddDim(3 * nnei * nloc);
+    sw_deriv_shape.AddDim(3 * static_cast<int64_t>(nnei) * nloc);
     Tensor* sw_value_tensor = NULL;
     Tensor* sw_deriv_tensor = NULL;
     tmp_idx = 0;

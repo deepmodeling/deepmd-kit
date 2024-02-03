@@ -161,16 +161,16 @@ class DescrptSeAEfVertOp : public OpKernel {
     // Create an output tensor
     TensorShape descrpt_shape;
     descrpt_shape.AddDim(nsamples);
-    descrpt_shape.AddDim(nloc * ndescrpt);
+    descrpt_shape.AddDim(static_cast<int64_t>(nloc) * ndescrpt);
     TensorShape descrpt_deriv_shape;
     descrpt_deriv_shape.AddDim(nsamples);
-    descrpt_deriv_shape.AddDim(nloc * ndescrpt * 3);
+    descrpt_deriv_shape.AddDim(static_cast<int64_t>(nloc) * ndescrpt * 3);
     TensorShape rij_shape;
     rij_shape.AddDim(nsamples);
-    rij_shape.AddDim(nloc * nnei * 3);
+    rij_shape.AddDim(static_cast<int64_t>(nloc) * nnei * 3);
     TensorShape nlist_shape;
     nlist_shape.AddDim(nsamples);
-    nlist_shape.AddDim(nloc * nnei);
+    nlist_shape.AddDim(static_cast<int64_t>(nloc) * nnei);
 
     int context_output_index = 0;
     Tensor* descrpt_tensor = NULL;

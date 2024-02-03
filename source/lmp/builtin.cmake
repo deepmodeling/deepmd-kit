@@ -29,3 +29,7 @@ target_include_directories(
                  ${LAMMPS_SOURCE_DIR}/KSPACE ${LAMMPS_SOURCE_DIR}/EXTRA-FIX)
 target_compile_definitions(
   lammps PRIVATE "LAMMPS_VERSION_NUMBER=${LAMMPS_VERSION_NUMBER}")
+
+# register styles
+registerstyles(${CMAKE_CURRENT_LIST_DIR})
+generatestyleheaders(${LAMMPS_STYLE_HEADERS_DIR})

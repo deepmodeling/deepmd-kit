@@ -130,7 +130,8 @@ class MatmulFltNvnmdOp : public OpKernel {
     for (hh = 0; hh < H; hh++) {
       // find x max exponnet
       if ((normx & 0x0f) == 0) {  // normalize x[:,:]
-        find_max_expo(expo_max1, (FPTYPE *)&x[hh * N * M], N * M);
+        find_max_expo(expo_max1, (FPTYPE *)&x[hh * N * M],
+                      static_cast<int64_t>(N) * M);
         for (ii = 0; ii < N; ii++) {
           expo_max1s[ii] = expo_max1;
         }
@@ -144,7 +145,8 @@ class MatmulFltNvnmdOp : public OpKernel {
 
       // find w max exponnet
       if ((normw & 0x0f) == 0) {  // normalize w[:,:]
-        find_max_expo(expo_max2, (FPTYPE *)&w[hh * M * K], M * K);
+        find_max_expo(expo_max2, (FPTYPE *)&w[hh * M * K],
+                      static_cast<int64_t>(M) * K);
         for (kk = 0; kk < K; kk++) {
           expo_max2s[kk] = expo_max2;
         }
