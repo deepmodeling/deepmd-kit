@@ -7,6 +7,8 @@ from deepmd.pt.utils import (
     env,
 )
 
+log = logging.getLogger(__name__)
+
 
 def change_finetune_model_params(
     ckpt, finetune_model, model_config, multi_task=False, model_branch=""
@@ -45,7 +47,7 @@ def change_finetune_model_params(
                 old_type_map
             ), "Only support for smaller type map when finetuning or resuming."
             model_config = last_model_params
-            logging.info(
+            log.info(
                 "Change the model configurations according to the pretrained one..."
             )
             model_config["new_type_map"] = new_type_map
@@ -83,7 +85,7 @@ def change_finetune_model_params(
                 model_config["fitting_net"] = model_dict_params[model_branch_chosen][
                     "fitting_net"
                 ]
-            logging.info(
+            log.info(
                 f"Change the model configurations according to the model branch "
                 f"{model_branch_chosen} in the pretrained one..."
             )

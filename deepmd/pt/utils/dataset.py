@@ -449,7 +449,7 @@ class DeepmdDataSystem:
         if atomic:
             ndof *= self._natoms
         path = os.path.join(set_name, key + ".npy")
-        # logging.info('Loading data from: %s', path)
+        # log.info('Loading data from: %s', path)
         if os.path.isfile(path):
             if high_prec:
                 data = np.load(path).astype(env.GLOBAL_ENER_FLOAT_PRECISION)

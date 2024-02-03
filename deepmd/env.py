@@ -13,6 +13,8 @@ __all__ = [
     "global_float_prec",
 ]
 
+log = logging.getLogger(__name__)
+
 # FLOAT_PREC
 dp_float_prec = os.environ.get("DP_INTERFACE_PREC", "high").lower()
 if dp_float_prec in ("high", ""):
@@ -47,7 +49,7 @@ def set_env_if_empty(key: str, value: str, verbose: bool = True):
     if os.environ.get(key) is None:
         os.environ[key] = value
         if verbose:
-            logging.warning(
+            log.warning(
                 f"Environment variable {key} is empty. Use the default value {value}"
             )
 
@@ -72,7 +74,7 @@ def set_default_nthreads():
             and "TF_INTER_OP_PARALLELISM_THREADS" not in os.environ
         )
     ):
-        logging.warning(
+        log.warning(
             "To get the best performance, it is recommended to adjust "
             "the number of threads by setting the environment variables "
             "OMP_NUM_THREADS, DP_INTRA_OP_PARALLELISM_THREADS, and "
