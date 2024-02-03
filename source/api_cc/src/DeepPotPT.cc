@@ -46,8 +46,12 @@ void DeepPotPT::init(const std::string& model,
   get_env_nthreads(num_intra_nthreads,
                    num_inter_nthreads);  // need to be fixed as
                                          // DP_INTRA_OP_PARALLELISM_THREADS
-  at::set_num_interop_threads(num_inter_nthreads);
-  at::set_num_threads(num_intra_nthreads);
+  if (num_inter_nthreads) {
+    at::set_num_interop_threads(num_inter_nthreads);
+  }
+  if (num_intra_nthreads) {
+    at::set_num_threads(num_intra_nthreads);
+  }
 
   auto rcut_ = module.run_method("get_rcut").toDouble();
   rcut = static_cast<double>(rcut_);
