@@ -21,7 +21,7 @@ def change_finetune_model_params(
     """
     if multi_task:
         # TODO
-        print("finetune mode need modification for multitask mode!")
+        log.error("finetune mode need modification for multitask mode!")
     if finetune_model is not None:
         state_dict = torch.load(finetune_model, map_location=env.DEVICE)
         if "model" in state_dict:
@@ -59,7 +59,7 @@ def change_finetune_model_params(
                 model_branch_chosen = next(iter(model_dict_params.keys()))
                 new_fitting = True
                 model_config["bias_shift"] = "statistic"  # fitting net re-init
-                print(
+                log.warning(
                     "The fitting net will be re-init instead of using that in the pretrained model! "
                     "The bias_shift will be statistic!"
                 )
