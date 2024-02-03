@@ -217,8 +217,17 @@ class DeepEvalBackend(ABC):
         """
         raise NotImplementedError
 
-    def _check_distinguished_types(self, atom_types: np.ndarray) -> bool:
-        """Check if atom types of each frame."""
+    def _check_mixed_types(self, atom_types: np.ndarray) -> bool:
+        """Check if atom types of all frames are the same.
+
+        Traditional descriptors like se_e2_a requires all the frames to
+        have the same atom types.
+
+        Parameters
+        ----------
+        atom_types : np.ndarray
+            The atom types of all frames, in shape nframes * natoms.
+        """
         return np.all(np.equal(atom_types, atom_types[0]))
 
     @property

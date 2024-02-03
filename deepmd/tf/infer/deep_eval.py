@@ -857,9 +857,7 @@ class DeepEval(DeepEvalBackend):
         if self.neighbor_list is None:
             natoms_vec = self.make_natoms_vec(atom_types)
             assert natoms_vec[0] == natoms
-            mesh = make_default_mesh(
-                pbc, not self._check_distinguished_types(atom_types)
-            )
+            mesh = make_default_mesh(pbc, not self._check_mixed_types(atom_types))
             ghost_map = None
         else:
             if nframes > 1:
@@ -994,15 +992,20 @@ class DeepEval(DeepEvalBackend):
     def _get_output_shape(self, name, nframes, natoms, shape):
         if "_redu" in name:
             if "_derv_c" in name:
+                # virial
                 return [nframes, *shape[:-2], 9]
             else:
+                # energy
                 return [nframes, *shape, 1]
         else:
             if "_derv_c" in name:
+                # atom_virial
                 return [nframes, *shape[:-2], natoms, 9]
             elif "_derv_r" in name:
+                # force
                 return [nframes, *shape[:-1], natoms, 3]
             else:
+                # atom_energy, atom_tensor
                 # Something wrong here?
                 # return [nframes, *shape, natoms, 1]
                 return [nframes, natoms, *shape, 1]

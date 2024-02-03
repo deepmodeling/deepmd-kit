@@ -210,6 +210,9 @@ class DeepEval(DeepEvalBackend):
         out = self._eval_func(self._eval_model, numb_test, natoms)(
             coords, cells, atom_types, atomic
         )
+        # when atomic is True, all output_def are requested
+        # when atomic is False, only energy, force, and virial are requested
+        # the condition here should be the same as that in _eval_method
         return dict(
             zip(
                 [
@@ -306,6 +309,8 @@ class DeepEval(DeepEvalBackend):
 
         results = []
         for ii, odef in enumerate(self.output_def.var_defs.values()):
+            # when atomic is True, all output_def are requested
+            # when atomic is False, only energy, force, and virial are requested
             if not atomic and "_redu" not in odef.name and "_derv_r" not in odef.name:
                 continue
             pt_name = self._OUTDEF_DP2PT[odef.name]
@@ -318,15 +323,20 @@ class DeepEval(DeepEvalBackend):
     def _get_output_shape(self, name, nframes, natoms, shape):
         if "_redu" in name:
             if "_derv_c" in name:
+                # virial
                 return [nframes, *shape[:-2], 9]
             else:
+                # energy
                 return [nframes, *shape, 1]
         else:
             if "_derv_c" in name:
+                # atom_virial
                 return [nframes, *shape[:-2], natoms, 9]
             elif "_derv_r" in name:
+                # force
                 return [nframes, *shape[:-1], natoms, 3]
             else:
+                # atom_energy, atom_tensor
                 # Something wrong here?
                 # return [nframes, *shape, natoms, 1]
                 return [nframes, natoms, *shape, 1]
