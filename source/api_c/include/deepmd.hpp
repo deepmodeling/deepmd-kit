@@ -1933,7 +1933,7 @@ class DipoleChargeModifier {
       init(model, gpu_rank, name_scope);
     } catch (...) {
       // Clean up and rethrow, as the destructor will not be called
-      if (dp) {
+      if (dcm) {
         DP_DeleteDipoleChargeModifier(dcm);
       }
       throw;
