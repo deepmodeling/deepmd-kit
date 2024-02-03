@@ -580,7 +580,15 @@ class DeepPot {
           const int &gpu_rank = 0,
           const std::string &file_content = "")
       : dp(nullptr) {
-    init(model, gpu_rank, file_content);
+    try {
+      init(model, gpu_rank, file_content);
+    } catch (...) {
+      // Clean up and rethrow, as the destructor will not be called
+      if (dp) {
+        DP_DeleteDeepPot(dp);
+      }
+      throw;
+    }
   };
   /**
    * @brief Initialize the DP.
@@ -1107,7 +1115,15 @@ class DeepPotModelDevi {
    * @param[in] models The names of the frozen model file.
    **/
   DeepPotModelDevi(const std::vector<std::string> &models) : dp(nullptr) {
-    init(models);
+    try {
+      init(models);
+    } catch (...) {
+      // Clean up and rethrow, as the destructor will not be called
+      if (dp) {
+        DP_DeleteDeepPotModelDevi(dp);
+      }
+      throw;
+    }
   };
   /**
    * @brief Initialize the DP model deviation.
@@ -1533,7 +1549,15 @@ class DeepTensor {
              const int &gpu_rank = 0,
              const std::string &name_scope = "")
       : dt(nullptr) {
-    init(model, gpu_rank, name_scope);
+    try {
+      init(model, gpu_rank, name_scope);
+    } catch (...) {
+      // Clean up and rethrow, as the destructor will not be called
+      if (dt) {
+        DP_DeleteDeepTensor(dt);
+      }
+      throw;
+    }
   };
   /**
    * @brief Initialize the DeepTensor.
@@ -1903,7 +1927,15 @@ class DipoleChargeModifier {
                        const int &gpu_rank = 0,
                        const std::string &name_scope = "")
       : dcm(nullptr) {
-    init(model, gpu_rank, name_scope);
+    try {
+      init(model, gpu_rank, name_scope);
+    } catch (...) {
+      // Clean up and rethrow, as the destructor will not be called
+      if (dp) {
+        DP_DeleteDipoleChargeModifier(dcm);
+      }
+      throw;
+    }
   };
   /**
    * @brief Initialize the DipoleChargeModifier.
