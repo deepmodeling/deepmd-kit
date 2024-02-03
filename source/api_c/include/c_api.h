@@ -80,27 +80,6 @@ extern DP_DeepPot* DP_NewDeepPotWithParam2(const char* c_model,
 extern void DP_DeleteDeepPot(DP_DeepPot* dp);
 
 /**
- * @brief Delete a Deep Potential Model Deviation.
- *
- * @param dp Deep Potential to delete.
- */
-extern void DP_DeleteDeepPotModelDevi(DP_DeepPotModelDevi* dp);
-
-/**
- * @brief Delete a Deep Tensor.
- *
- * @param dp Deep Tensor to delete.
- */
-extern void DP_DeleteDeepTensor(DP_DeepTensor* dt);
-
-/**
- * @brief Delete a Dipole Charge Modifier.
- *
- * @param dp Dipole Charge Modifier to delete.
- */
-extern void DP_DeleteDipoleChargeModifier(DP_DipoleChargeModifier* dcm);
-
-/**
  * @brief Evaluate the energy, force and virial by using a DP. (double version)
  * @attention The number of frames is assumed to be 1.
  * @param[in] dp The DP to use.
@@ -520,6 +499,13 @@ extern DP_DeepPotModelDevi* DP_NewDeepPotModelDeviWithParam(
     const int* size_file_contents);
 
 /**
+ * @brief Delete a Deep Potential Model Deviation.
+ *
+ * @param dp Deep Potential to delete.
+ */
+extern void DP_DeleteDeepPotModelDevi(DP_DeepPotModelDevi* dp);
+
+/**
  * @brief Evaluate the energy, force and virial by using a DP model deviation
  *with neighbor list. (double version)
  * @param[in] dp The DP model deviation to use.
@@ -819,6 +805,13 @@ extern DP_DeepTensor* DP_NewDeepTensor(const char* c_model);
 extern DP_DeepTensor* DP_NewDeepTensorWithParam(const char* c_model,
                                                 const int gpu_rank,
                                                 const char* c_name_scope);
+
+/**
+ * @brief Delete a Deep Tensor.
+ *
+ * @param dp Deep Tensor to delete.
+ */
+extern void DP_DeleteDeepTensor(DP_DeepTensor* dt);
 
 /**
  * @brief Evaluate the tensor by using a DP. (double version)
@@ -1121,6 +1114,13 @@ extern DP_DipoleChargeModifier* DP_NewDipoleChargeModifier(const char* c_model);
  */
 extern DP_DipoleChargeModifier* DP_NewDipoleChargeModifierWithParam(
     const char* c_model, const int gpu_rank, const char* c_name_scope);
+
+/**
+ * @brief Delete a Dipole Charge Modifier.
+ *
+ * @param dp Dipole Charge Modifier to delete.
+ */
+extern void DP_DeleteDipoleChargeModifier(DP_DipoleChargeModifier* dcm);
 
 /**
  * @brief Evaluate the force and virial correction by using a dipole charge
