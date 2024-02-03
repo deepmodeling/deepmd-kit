@@ -1100,7 +1100,7 @@ class DeepPotModelDevi {
    * @brief DP model deviation constructor without initialization.
    **/
   DeepPotModelDevi() : dp(nullptr){};
-  ~DeepPotModelDevi(){};
+  ~DeepPotModelDevi() { DP_DeleteDeepPotModelDevi(dp); };
   /**
    * @brief DP model deviation constructor with initialization.
    * @param[in] models The names of the frozen model file.
@@ -1523,7 +1523,7 @@ class DeepTensor {
    * @brief Deep Tensor constructor without initialization.
    **/
   DeepTensor() : dt(nullptr){};
-  ~DeepTensor(){};
+  ~DeepTensor() { DP_DeleteDeepTensor(dt); };
   /**
    * @brief DeepTensor constructor with initialization.
    * @param[in] model The name of the frozen model file.
@@ -1891,7 +1891,7 @@ class DipoleChargeModifier {
    * @brief DipoleChargeModifier constructor without initialization.
    **/
   DipoleChargeModifier() : dcm(nullptr){};
-  ~DipoleChargeModifier(){};
+  ~DipoleChargeModifier() { DP_DeleteDipoleChargeModifier(dcm); };
   /**
    * @brief DipoleChargeModifier constructor with initialization.
    * @param[in] model The name of the frozen model file.

@@ -99,6 +99,8 @@ DP_DeepPotModelDevi* DP_NewDeepPotModelDeviWithParam(
             return new_dp;)
 }
 
+void DP_DeleteDeepPotModelDevi(DP_DeepPotModelDevi* dp) { delete dp; }
+
 DP_DeepTensor::DP_DeepTensor() {}
 DP_DeepTensor::DP_DeepTensor(deepmd::DeepTensor& dt) : dt(dt) {}
 
@@ -116,6 +118,8 @@ DP_DeepTensor* DP_NewDeepTensorWithParam(const char* c_model,
   DP_NEW_OK(DP_DeepTensor, deepmd::DeepTensor dt(model, gpu_rank, name_scope);
             DP_DeepTensor* new_dt = new DP_DeepTensor(dt); return new_dt;)
 }
+
+void DP_DeleteDeepTensor(DP_DeepTensor* dt) { delete dt; }
 
 DP_DipoleChargeModifier::DP_DipoleChargeModifier() {}
 DP_DipoleChargeModifier::DP_DipoleChargeModifier(
@@ -138,6 +142,8 @@ DP_DipoleChargeModifier* DP_NewDipoleChargeModifierWithParam(
             DP_DipoleChargeModifier* new_dcm = new DP_DipoleChargeModifier(dcm);
             return new_dcm;)
 }
+
+void DP_DeleteDipoleChargeModifier(DP_DipoleChargeModifier* dcm) { delete dcm; }
 
 }  // extern "C"
 

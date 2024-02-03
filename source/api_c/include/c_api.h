@@ -73,11 +73,32 @@ extern DP_DeepPot* DP_NewDeepPotWithParam2(const char* c_model,
                                            const int size_file_content);
 
 /**
- * @brief Delete a DP.
+ * @brief Delete a Deep Potential.
  *
  * @param dp Deep Potential to delete.
  */
 extern void DP_DeleteDeepPot(DP_DeepPot* dp);
+
+/**
+ * @brief Delete a Deep Potential Model Deviation.
+ *
+ * @param dp Deep Potential to delete.
+ */
+extern void DP_DeleteDeepPotModelDevi(DP_DeepPotModelDevi* dp);
+
+/**
+ * @brief Delete a Deep Tensor.
+ *
+ * @param dp Deep Tensor to delete.
+ */
+extern void DP_DeleteDeepTensor(DP_DeepTensor* dt);
+
+/**
+ * @brief Delete a Dipole Charge Modifier.
+ *
+ * @param dp Dipole Charge Modifier to delete.
+ */
+extern void DP_DeleteDipoleChargeModifier(DP_DipoleChargeModifier* dcm);
 
 /**
  * @brief Evaluate the energy, force and virial by using a DP. (double version)
