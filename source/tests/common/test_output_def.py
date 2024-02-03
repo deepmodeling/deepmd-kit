@@ -70,6 +70,7 @@ class TestDef(unittest.TestCase):
             "energy_redu",
             "energy_derv_r",
             "energy_derv_c",
+            "energy_derv_c_redu",
             "dos_redu",
         ]
         self.assertEqual(
@@ -93,6 +94,7 @@ class TestDef(unittest.TestCase):
         self.assertEqual(md["energy_redu"].shape, [1])
         self.assertEqual(md["energy_derv_r"].shape, [1, 3])
         self.assertEqual(md["energy_derv_c"].shape, [1, 3, 3])
+        self.assertEqual(md["energy_derv_c_redu"].shape, [1, 3, 3])
         # atomic
         self.assertEqual(md["energy"].atomic, True)
         self.assertEqual(md["dos"].atomic, True)
@@ -100,10 +102,15 @@ class TestDef(unittest.TestCase):
         self.assertEqual(md["energy_redu"].atomic, False)
         self.assertEqual(md["energy_derv_r"].atomic, True)
         self.assertEqual(md["energy_derv_c"].atomic, True)
+        self.assertEqual(md["energy_derv_c_redu"].atomic, False)
 
     def test_raise_no_redu_deriv(self):
         with self.assertRaises(ValueError) as context:
             (OutputVariableDef("energy", [1], False, True),)
+
+    def test_raise_redu_not_atomic(self):
+        with self.assertRaises(ValueError) as context:
+            (OutputVariableDef("energy", [1], True, False, atomic=False),)
 
     def test_model_decorator(self):
         nf = 2
