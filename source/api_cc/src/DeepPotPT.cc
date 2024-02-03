@@ -71,11 +71,9 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
                         const std::vector<VALUETYPE>& box,
                         const InputNlist& lmp_list,
                         const int& ago) {
-  torch::Device device;
+  torch::Device device(torch::kCUDA, gpu_id);
   if(cpu_enabled)
     device = torch::Device(torch::kCPU);
-  else
-    device = torch::Device(torch::kCUDA, gpu_id);
   std::vector<VALUETYPE> coord_wrapped = coord;
   int natoms = atype.size();
   auto options = torch::TensorOptions().dtype(torch::kFloat64);
