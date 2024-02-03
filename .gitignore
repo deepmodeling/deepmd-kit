@@ -13,6 +13,7 @@
 *.bz2
 *.pyc
 *.pb
+*.DS_Store
 tmp*
 CMakeCache.txt
 CMakeFiles

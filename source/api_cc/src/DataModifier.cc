@@ -92,6 +92,6 @@ double DipoleChargeModifier::cutoff() const { return dcm->cutoff(); }
 
 int DipoleChargeModifier::numb_types() const { return dcm->numb_types(); }
 
-std::vector<int> DipoleChargeModifier::sel_types() const {
+const std::vector<int>& DipoleChargeModifier::sel_types() const {
   return dcm->sel_types();
 }

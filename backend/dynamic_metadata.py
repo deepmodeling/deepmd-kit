@@ -46,6 +46,7 @@ def dynamic_metadata(
                 "sphinx_markdown_tables",
                 "myst-nb>=1.0.0rc0",
                 "myst-parser>=0.19.2",
+                "sphinx-design",
                 "breathe",
                 "exhale",
                 "numpydoc",
@@ -87,5 +88,8 @@ def dynamic_metadata(
                 "nvidia-cusparse-cu12",
                 "nvidia-cudnn-cu12",
                 "nvidia-cuda-nvcc-cu12",
+            ],
+            "torch": [
+                "torch>=2a",
             ],
         }

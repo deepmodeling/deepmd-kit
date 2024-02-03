@@ -19,7 +19,7 @@ from .find_tensorflow import (
 )
 
 
-@lru_cache()
+@lru_cache
 def get_argument_from_env() -> Tuple[str, list, list, dict, str]:
     """Get the arguments from environment variables.
 
@@ -80,16 +80,26 @@ def get_argument_from_env() -> Tuple[str, list, list, dict, str]:
         cmake_args.append("-DENABLE_IPI:BOOL=TRUE")
         extra_scripts["dp_ipi"] = "deepmd.tf.entrypoints.ipi:dp_ipi"
 
-    tf_install_dir, _ = find_tensorflow()
-    tf_version = get_tf_version(tf_install_dir)
-    if tf_version == "" or Version(tf_version) >= Version("2.12"):
-        find_libpython_requires = []
+    if os.environ.get("DP_ENABLE_TENSORFLOW", "1") == "1":
+        tf_install_dir, _ = find_tensorflow()
+        tf_version = get_tf_version(tf_install_dir)
+        if tf_version == "" or Version(tf_version) >= Version("2.12"):
+            find_libpython_requires = []
+        else:
+            find_libpython_requires = ["find_libpython"]
+        cmake_args.extend(
+            [
+                "-DENABLE_TENSORFLOW=ON",
+                f"-DTENSORFLOW_VERSION={tf_version}",
+                f"-DTENSORFLOW_ROOT:PATH={tf_install_dir}",
+            ]
+        )
     else:
-        find_libpython_requires = ["find_libpython"]
-    cmake_args.append(f"-DTENSORFLOW_VERSION={tf_version}")
+        find_libpython_requires = []
+        cmake_args.append("-DENABLE_TENSORFLOW=OFF")
+        tf_version = None
 
     cmake_args = [
-        f"-DTENSORFLOW_ROOT:PATH={tf_install_dir}",
         "-DBUILD_PY_IF:BOOL=TRUE",
         *cmake_args,
     ]

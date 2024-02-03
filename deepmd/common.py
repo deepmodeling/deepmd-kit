@@ -1,5 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import glob
 import json
+import os
+import platform
+import shutil
 import warnings
 from pathlib import (
     Path,
@@ -268,3 +272,30 @@ def get_np_precision(precision: "_PRECISION") -> np.dtype:
         return np.float64
     else:
         raise RuntimeError(f"{precision} is not a valid precision")
+
+
+def symlink_prefix_files(old_prefix: str, new_prefix: str):
+    """Create symlinks from old checkpoint prefix to new one.
+
+    On Windows this function will copy files instead of creating symlinks.
+
+    Parameters
+    ----------
+    old_prefix : str
+        old checkpoint prefix, all files with this prefix will be symlinked
+    new_prefix : str
+        new checkpoint prefix
+    """
+    original_files = glob.glob(old_prefix + ".*")
+    for ori_ff in original_files:
+        new_ff = new_prefix + ori_ff[len(old_prefix) :]
+        try:
+            # remove old one
+            os.remove(new_ff)
+        except OSError:
+            pass
+        if platform.system() != "Windows":
+            # by default one does not have access to create symlink on Windows
+            os.symlink(os.path.relpath(ori_ff, os.path.dirname(new_ff)), new_ff)
+        else:
+            shutil.copyfile(ori_ff, new_ff)

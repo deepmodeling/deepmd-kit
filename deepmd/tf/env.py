@@ -2,7 +2,6 @@
 """Module that sets tensorflow working environment and exports inportant constants."""
 
 import ctypes
-import logging
 import os
 import platform
 from configparser import (
@@ -19,7 +18,6 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Dict,
-    Tuple,
 )
 
 import numpy as np
@@ -31,7 +29,14 @@ import deepmd.lib
 from deepmd.env import (
     GLOBAL_ENER_FLOAT_PRECISION,
     GLOBAL_NP_FLOAT_PRECISION,
+)
+from deepmd.env import get_default_nthreads as get_tf_default_nthreads
+from deepmd.env import (
     global_float_prec,
+)
+from deepmd.env import set_default_nthreads as set_tf_default_nthreads
+from deepmd.env import (
+    set_env_if_empty,
 )
 
 if TYPE_CHECKING:
@@ -216,26 +221,6 @@ REMOVE_SUFFIX_DICT = {
 }
 
 
-def set_env_if_empty(key: str, value: str, verbose: bool = True):
-    """Set environment variable only if it is empty.
-
-    Parameters
-    ----------
-    key : str
-        env variable name
-    value : str
-        env variable value
-    verbose : bool, optional
-        if True action will be logged, by default True
-    """
-    if os.environ.get(key) is None:
-        os.environ[key] = value
-        if verbose:
-            logging.warning(
-                f"Environment variable {key} is empty. Use the default value {value}"
-            )
-
-
 def set_mkl():
     """Tuning MKL for the best performance.
 
@@ -268,44 +253,6 @@ def set_mkl():
         set_env_if_empty("KMP_BLOCKTIME", "0")
         set_env_if_empty("KMP_AFFINITY", "granularity=fine,verbose,compact,1,0")
         reload(np)
-
-
-def set_tf_default_nthreads():
-    """Set TF internal number of threads to default=automatic selection.
-
-    Notes
-    -----
-    `TF_INTRA_OP_PARALLELISM_THREADS` and `TF_INTER_OP_PARALLELISM_THREADS`
-    control TF configuration of multithreading.
-    """
-    if (
-        "OMP_NUM_THREADS" not in os.environ
-        or "TF_INTRA_OP_PARALLELISM_THREADS" not in os.environ
-        or "TF_INTER_OP_PARALLELISM_THREADS" not in os.environ
-    ):
-        logging.warning(
-            "To get the best performance, it is recommended to adjust "
-            "the number of threads by setting the environment variables "
-            "OMP_NUM_THREADS, TF_INTRA_OP_PARALLELISM_THREADS, and "
-            "TF_INTER_OP_PARALLELISM_THREADS. See "
-            "https://deepmd.rtfd.io/parallelism/ for more information."
-        )
-    set_env_if_empty("TF_INTRA_OP_PARALLELISM_THREADS", "0", verbose=False)
-    set_env_if_empty("TF_INTER_OP_PARALLELISM_THREADS", "0", verbose=False)
-
-
-def get_tf_default_nthreads() -> Tuple[int, int]:
-    """Get TF paralellism settings.
-
-    Returns
-    -------
-    Tuple[int, int]
-        number of `TF_INTRA_OP_PARALLELISM_THREADS` and
-        `TF_INTER_OP_PARALLELISM_THREADS`
-    """
-    return int(os.environ.get("TF_INTRA_OP_PARALLELISM_THREADS", "0")), int(
-        os.environ.get("TF_INTER_OP_PARALLELISM_THREADS", "0")
-    )
 
 
 def get_tf_session_config() -> Any:
@@ -472,12 +419,20 @@ def _get_package_constants(
 
 
 GLOBAL_CONFIG = _get_package_constants()
+if GLOBAL_CONFIG["enable_tensorflow"] == "0":
+    raise RuntimeError(
+        "TensorFlow backend is not built. To enable it, "
+        "set the environmental variable DP_ENABLE_TENSORFLOW=1."
+    )
 MODEL_VERSION = GLOBAL_CONFIG["model_version"]
 TF_VERSION = GLOBAL_CONFIG["tf_version"]
 TF_CXX11_ABI_FLAG = int(GLOBAL_CONFIG["tf_cxx11_abi_flag"])
 
 op_module = get_module("deepmd_op")
 op_grads_module = get_module("op_grads")
+# prevent OOM when using with other backends
+# tf.config doesn't work for unclear reason
+set_env_if_empty("TF_FORCE_GPU_ALLOW_GROWTH", "true", verbose=False)
 
 # FLOAT_PREC
 GLOBAL_TF_FLOAT_PRECISION = tf.dtypes.as_dtype(GLOBAL_NP_FLOAT_PRECISION)

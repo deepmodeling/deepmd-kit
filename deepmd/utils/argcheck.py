@@ -14,10 +14,6 @@ from dargs import (
     dargs,
 )
 
-from deepmd.tf.common import (
-    ACTIVATION_FN_DICT,
-    PRECISION_DICT,
-)
 from deepmd.utils.argcheck_nvnmd import (
     nvnmd_args,
 )
@@ -26,6 +22,28 @@ from deepmd.utils.plugin import (
 )
 
 log = logging.getLogger(__name__)
+
+
+# TODO: import from a module outside tf/pt
+ACTIVATION_FN_DICT = {
+    "relu": None,
+    "relu6": None,
+    "softplus": None,
+    "sigmoid": None,
+    "tanh": None,
+    "gelu": None,
+    "gelu_tf": None,
+    "None": None,
+    "none": None,
+}
+# TODO: import from a module outside tf/pt
+PRECISION_DICT = {
+    "default": None,
+    "float16": None,
+    "float32": None,
+    "float64": None,
+    "bfloat16": None,
+}
 
 
 def list_to_doc(xx):
@@ -1685,7 +1703,7 @@ def training_args():  # ! modified by Ziyao: data configuration isolated.
     doc_time_training = "Timing durining training."
     doc_profiling = "Profiling during training."
     doc_profiling_file = "Output file for profiling."
-    doc_enable_profiler = "Enable TensorFlow Profiler (available in TensorFlow 2.3) to analyze performance. The log will be saved to `tensorboard_log_dir`."
+    doc_enable_profiler = "Enable TensorFlow Profiler (available in TensorFlow 2.3) or PyTorch Profiler to analyze performance. The log will be saved to `tensorboard_log_dir`."
     doc_tensorboard = "Enable tensorboard"
     doc_tensorboard_log_dir = "The log directory of tensorboard outputs"
     doc_tensorboard_freq = "The frequency of writing tensorboard events."

@@ -28,96 +28,6 @@ from deepmd.tf.utils.argcheck import (
 sys.path.append(os.path.dirname(__file__))
 import sphinx_contrib_exhale_multiproject  # noqa: F401
 
-
-def mkindex(dirname):
-    dirname = dirname + "/"
-    oldfindex = open(dirname + "index.md")
-    oldlist = oldfindex.readlines()
-    oldfindex.close()
-
-    oldnames = []
-    for entry in oldlist:
-        _name = entry[entry.find("(") + 1 : entry.find(")")]
-        oldnames.append(_name)
-
-    newfindex = open(dirname + "index.md", "a")
-    for root, dirs, files in os.walk(dirname, topdown=False):
-        newnames = [
-            name for name in files if "index.md" not in name and name not in oldnames
-        ]
-        for name in newnames:
-            f = open(dirname + name)
-            _lines = f.readlines()
-            for _headline in _lines:
-                _headline = _headline.strip("#")
-                headline = _headline.strip()
-                if len(headline) == 0 or headline[0] == "." or headline[0] == "=":
-                    continue
-                else:
-                    break
-            longname = "- [" + headline + "]" + "(" + name + ")\n"
-            newfindex.write(longname)
-
-    newfindex.close()
-
-
-def classify_index_TS():
-    dirname = "troubleshooting/"
-    oldfindex = open(dirname + "index.md")
-    oldlist = oldfindex.readlines()
-    oldfindex.close()
-
-    oldnames = []
-    sub_titles = []
-    heads = []
-    while len(oldlist) > 0:
-        entry = oldlist.pop(0)
-        if entry.find("(") >= 0:
-            _name = entry[entry.find("(") + 1 : entry.find(")")]
-            oldnames.append(_name)
-            continue
-        if entry.find("##") >= 0:
-            _name = entry[entry.find("##") + 3 : -1]
-            sub_titles.append(_name)
-            continue
-        entry.strip()
-        if entry != "\n":
-            heads.append(entry)
-
-    newfindex = open(dirname + "index.md", "w")
-    for entry in heads:
-        newfindex.write(entry)
-    newfindex.write("\n")
-    sub_lists = [[], []]
-    for root, dirs, files in os.walk(dirname, topdown=False):
-        newnames = [name for name in files if "index.md" not in name]
-        for name in newnames:
-            f = open(dirname + name)
-            _lines = f.readlines()
-            f.close()
-            for _headline in _lines:
-                _headline = _headline.strip("#")
-                headline = _headline.strip()
-                if len(headline) == 0 or headline[0] == "." or headline[0] == "=":
-                    continue
-                else:
-                    break
-            longname = "- [" + headline + "]" + "(" + name + ")\n"
-            if "howtoset_" in name:
-                sub_lists[1].append(longname)
-            else:
-                sub_lists[0].append(longname)
-
-    newfindex.write("## Trouble shooting\n")
-    for entry in sub_lists[0]:
-        newfindex.write(entry)
-    newfindex.write("\n")
-    newfindex.write("## Parameters setting\n")
-    for entry in sub_lists[1]:
-        newfindex.write(entry)
-    newfindex.close()
-
-
 # -- Project information -----------------------------------------------------
 
 project = "DeePMD-kit"
@@ -169,10 +79,6 @@ def setup(app):
 #     'sphinx.ext.autosummary'
 # ]
 
-# mkindex("troubleshooting")
-# mkindex("development")
-# classify_index_TS()
-
 extensions = [
     "deepmodeling_sphinx",
     "dargs.sphinx",
@@ -188,6 +94,7 @@ extensions = [
     "breathe",
     "exhale",
     "sphinxcontrib.bibtex",
+    "sphinx_design",
 ]
 
 # breathe_domain_by_extension = {

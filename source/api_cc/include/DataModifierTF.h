@@ -84,7 +84,7 @@ class DipoleChargeModifierTF : public DipoleChargeModifierBase {
    * @brief Get the list of sel types.
    * @return The list of sel types.
    */
-  std::vector<int> sel_types() const {
+  const std::vector<int>& sel_types() const {
     assert(inited);
     return sel_type;
   };
