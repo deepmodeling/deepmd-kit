@@ -6,6 +6,9 @@ jobs:
   testcc:
     name: Test C++
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        check_memleak: [true, false]
     steps:
     - uses: actions/checkout@v4
     - uses: actions/setup-python@v5
@@ -25,6 +28,7 @@ jobs:
         TF_INTER_OP_PARALLELISM_THREADS: 1
         LMP_CXX11_ABI_0: 1
         CMAKE_GENERATOR: Ninja
+        CXXFLAGS: ${{ matrix.check_memleak && '-fsanitize=leak' || '' }}
     # test lammps
     # ASE issue: https://gitlab.com/ase/ase/-/merge_requests/2843
     # TODO: remove ase version when ase has new release
@@ -33,6 +37,7 @@ jobs:
         python -m pip install -e .[cpu,test,lmp] "ase @ https://gitlab.com/ase/ase/-/archive/8c5aa5fd6448c5cfb517a014dccf2b214a9dfa8f/ase-8c5aa5fd6448c5cfb517a014dccf2b214a9dfa8f.tar.gz"
       env:
         DP_BUILD_TESTING: 1
+      if: ${{ !matrix.check_memleak }}
     - run: pytest --cov=deepmd source/lmp/tests
       env:
         OMP_NUM_THREADS: 1
@@ -40,6 +45,7 @@ jobs:
         TF_INTER_OP_PARALLELISM_THREADS: 1
         LAMMPS_PLUGIN_PATH: ${{ github.workspace }}/dp_test/lib/deepmd_lmp
         LD_LIBRARY_PATH: ${{ github.workspace }}/dp_test/lib
+      if: ${{ !matrix.check_memleak }}
     # test ipi
     - run: pytest --cov=deepmd source/ipi/tests
       env:
@@ -48,6 +54,7 @@ jobs:
         TF_INTER_OP_PARALLELISM_THREADS: 1
         PATH: ${{ github.workspace }}/dp_test/bin:$PATH
         LD_LIBRARY_PATH: ${{ github.workspace }}/dp_test/lib
+      if: ${{ !matrix.check_memleak }}
     - uses: codecov/codecov-action@v3
       with:
         gcov: true
