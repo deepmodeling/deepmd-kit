@@ -106,7 +106,7 @@ class PairTabModel(BaseAtomicModel):
         nlist,
         mapping: Optional[np.ndarray] = None,
         do_atomic_virial: bool = False,
-    ) -> Dict[str, np.array]:
+    ) -> Dict[str, np.ndarray]:
         self.nframes, self.nloc, self.nnei = nlist.shape
         extended_coord = extended_coord.reshape(self.nframes, -1, 3)
 
@@ -141,27 +141,27 @@ class PairTabModel(BaseAtomicModel):
 
     def _pair_tabulated_inter(
         self,
-        nlist: np.array,
-        i_type: np.array,
-        j_type: np.array,
-        rr: np.array,
-    ) -> np.array:
+        nlist: np.ndarray,
+        i_type: np.ndarray,
+        j_type: np.ndarray,
+        rr: np.ndarray,
+    ) -> np.ndarray:
         """Pairwise tabulated energy.
 
         Parameters
         ----------
-        nlist : np.array
+        nlist : np.ndarray
             The unmasked neighbour list. (nframes, nloc)
-        i_type : np.array
+        i_type : np.ndarray
             The integer representation of atom type for all local atoms for all frames. (nframes, nloc)
-        j_type : np.array
+        j_type : np.ndarray
             The integer representation of atom type for all neighbour atoms of all local atoms for all frames. (nframes, nloc, nnei)
-        rr : np.array
+        rr : np.ndarray
             The salar distance vector between two atoms. (nframes, nloc, nnei)
 
         Returns
         -------
-        np.array
+        np.ndarray
             The masked atomic energy for all local atoms for all frames. (nframes, nloc, nnei)
 
         Raises
@@ -207,47 +207,47 @@ class PairTabModel(BaseAtomicModel):
         return ener
 
     @staticmethod
-    def _get_pairwise_dist(coords: np.array) -> np.array:
+    def _get_pairwise_dist(coords: np.ndarray) -> np.ndarray:
         """Get pairwise distance `dr`.
 
         Parameters
         ----------
-        coords : np.array
+        coords : np.ndarray
             The coordinate of the atoms shape of (nframes, nall, 3).
 
         Returns
         -------
-        np.array
+        np.ndarray
             The pairwise distance between the atoms (nframes, nall, nall, 3).
         """
         return np.expand_dims(coords, 2) - np.expand_dims(coords, 1)
 
     @staticmethod
     def _extract_spline_coefficient(
-        i_type: np.array,
-        j_type: np.array,
-        idx: np.array,
-        tab_data: np.array,
+        i_type: np.ndarray,
+        j_type: np.ndarray,
+        idx: np.ndarray,
+        tab_data: np.ndarray,
         nspline: int,
-    ) -> np.array:
+    ) -> np.ndarray:
         """Extract the spline coefficient from the table.
 
         Parameters
         ----------
-        i_type : np.array
+        i_type : np.ndarray
             The integer representation of atom type for all local atoms for all frames. (nframes, nloc)
-        j_type : np.array
+        j_type : np.ndarray
             The integer representation of atom type for all neighbour atoms of all local atoms for all frames. (nframes, nloc, nnei)
-        idx : np.array
+        idx : np.ndarray
             The index of the spline coefficient. (nframes, nloc, nnei)
-        tab_data : np.array
+        tab_data : np.ndarray
             The table storing all the spline coefficient. (ntype, ntype, nspline, 4)
         nspline : int
             The number of splines in the table.
 
         Returns
         -------
-        np.array
+        np.ndarray
             The spline coefficient. (nframes, nloc, nnei, 4), shape may be squeezed.
         """
         # (nframes, nloc, nnei)
@@ -275,19 +275,19 @@ class PairTabModel(BaseAtomicModel):
         return final_coef
 
     @staticmethod
-    def _calcualte_ener(coef: np.array, uu: np.array) -> np.array:
+    def _calcualte_ener(coef: np.ndarray, uu: np.ndarray) -> np.ndarray:
         """Calculate energy using spline coeeficients.
 
         Parameters
         ----------
-        coef : np.array
+        coef : np.ndarray
             The spline coefficients. (nframes, nloc, nnei, 4)
-        uu : np.array
+        uu : np.ndarray
             The atom displancemnt used in interpolation and extrapolation (nframes, nloc, nnei)
 
         Returns
         -------
-        np.array
+        np.ndarray
             The atomic energy for all local atoms for all frames. (nframes, nloc, nnei)
         """
         a3, a2, a1, a0 = coef[..., 0], coef[..., 1], coef[..., 2], coef[..., 3]
