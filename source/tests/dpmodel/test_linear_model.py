@@ -145,12 +145,11 @@ class TestIntegration(unittest.TestCase):
         self.md1 = LinearModel.deserialize(self.md0.serialize())
 
     def test_self_consistency(self):
-        nlist_copy = self.nlist.copy()
         ret0 = self.md0.forward_atomic(
             self.coord_ext, self.atype_ext, self.nlist, ra=0.2, rb=0.5
         )
         ret1 = self.md1.forward_atomic(
-            self.coord_ext, self.atype_ext, nlist_copy, ra=0.2, rb=0.5
+            self.coord_ext, self.atype_ext, self.nlist, ra=0.2, rb=0.5
         )
         np.testing.assert_allclose(
             ret0["energy"],
