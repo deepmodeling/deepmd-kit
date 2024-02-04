@@ -5,10 +5,8 @@ from unittest.mock import (
 )
 
 import numpy as np
-import torch
 
-from deepmd.dpmodel.model.pair_tab_model import PairTabModel as DPPairTabModel
-from deepmd.pt.model.model.pair_tab_model import (
+from deepmd.dpmodel.model.pair_tab_model import (
     PairTabModel,
 )
 
@@ -28,7 +26,7 @@ class TestPairTab(unittest.TestCase):
 
         self.model = PairTabModel(tab_file=file_path, rcut=0.02, sel=2)
 
-        self.extended_coord = torch.tensor(
+        self.extended_coord = np.array(
             [
                 [
                     [0.01, 0.01, 0.01],
@@ -46,73 +44,40 @@ class TestPairTab(unittest.TestCase):
         )
 
         # nframes=2, nall=4
-        self.extended_atype = torch.tensor([[0, 1, 0, 1], [0, 0, 1, 1]])
+        self.extended_atype = np.array([[0, 1, 0, 1], [0, 0, 1, 1]])
 
         # nframes=2, nloc=2, nnei=2
-        self.nlist = torch.tensor([[[1, 2], [0, 2]], [[1, 2], [0, 3]]])
+        self.nlist = np.array([[[1, 2], [0, 2]], [[1, 2], [0, 3]]])
 
     def test_without_mask(self):
         result = self.model.forward_atomic(
             self.extended_coord, self.extended_atype, self.nlist
         )
-        expected_result = torch.tensor(
-            [[[1.2000], [1.3614]], [[1.2000], [0.4000]]], dtype=torch.float64
-        )
+        expected_result = np.array([[[1.2000], [1.3614]], [[1.2000], [0.4000]]])
 
-        torch.testing.assert_close(
-            result["energy"], expected_result, rtol=0.0001, atol=0.0001
-        )
+        np.testing.assert_allclose(result["energy"], expected_result, 0.0001, 0.0001)
 
     def test_with_mask(self):
-        self.nlist = torch.tensor([[[1, -1], [0, 2]], [[1, 2], [0, 3]]])
+        self.nlist = np.array([[[1, -1], [0, 2]], [[1, 2], [0, 3]]])
 
         result = self.model.forward_atomic(
             self.extended_coord, self.extended_atype, self.nlist
         )
-        expected_result = torch.tensor(
-            [[[0.8000], [1.3614]], [[1.2000], [0.4000]]], dtype=torch.float64
-        )
+        expected_result = np.array([[[0.8000], [1.3614]], [[1.2000], [0.4000]]])
 
-        torch.testing.assert_close(
-            result["energy"], expected_result, rtol=0.0001, atol=0.0001
-        )
-
-    def test_jit(self):
-        model = torch.jit.script(self.model)
+        np.testing.assert_allclose(result["energy"], expected_result, 0.0001, 0.0001)
 
     def test_deserialize(self):
         model1 = PairTabModel.deserialize(self.model.serialize())
-        torch.testing.assert_close(self.model.tab_data, model1.tab_data)
-        torch.testing.assert_close(self.model.tab_info, model1.tab_info)
-
-        self.nlist = torch.tensor([[[1, -1], [0, 2]], [[1, 2], [0, 3]]])
-        result = model1.forward_atomic(
-            self.extended_coord, self.extended_atype, self.nlist
-        )
-        expected_result = self.model.forward_atomic(
-            self.extended_coord, self.extended_atype, self.nlist
-        )
-
-        torch.testing.assert_close(
-            result["energy"], expected_result["energy"], rtol=0.0001, atol=0.0001
-        )
-
-        model1 = torch.jit.script(model1)
-
-    def test_cross_deserialize(self):
-        model_dict = self.model.serialize()  # pytorch model to dict
-        model1 = DPPairTabModel.deserialize(model_dict)  # dict to numpy model
         np.testing.assert_allclose(self.model.tab_data, model1.tab_data)
         np.testing.assert_allclose(self.model.tab_info, model1.tab_info)
 
         self.nlist = np.array([[[1, -1], [0, 2]], [[1, 2], [0, 3]]])
         result = model1.forward_atomic(
-            self.extended_coord.numpy(),
-            self.extended_atype.numpy(),
-            self.nlist,
+            self.extended_coord, self.extended_atype, self.nlist
         )
         expected_result = self.model.forward_atomic(
-            self.extended_coord, self.extended_atype, torch.from_numpy(self.nlist)
+            self.extended_coord, self.extended_atype, self.nlist
         )
 
         np.testing.assert_allclose(
@@ -151,10 +116,10 @@ class TestPairTabTwoAtoms(unittest.TestCase):
         )
 
         # nframes=1, nall=2
-        extended_atype = torch.tensor([[0, 0]])
+        extended_atype = np.array([[0, 0]])
 
         # nframes=1, nloc=2, nnei=1
-        nlist = torch.tensor([[[1], [-1]]])
+        nlist = np.array([[[1], [-1]]])
 
         results = []
 
@@ -192,7 +157,7 @@ class TestPairTabTwoAtoms(unittest.TestCase):
                 0.025,
             ],
         ):
-            extended_coord = torch.tensor(
+            extended_coord = np.array(
                 [
                     [
                         [0.0, 0.0, 0.0],
@@ -206,9 +171,9 @@ class TestPairTabTwoAtoms(unittest.TestCase):
                 model.forward_atomic(extended_coord, extended_atype, nlist)["energy"]
             )
 
-        expected_result = torch.stack(
+        expected_result = np.stack(
             [
-                torch.tensor(
+                np.array(
                     [
                         [
                             [0.4, 0],
@@ -226,14 +191,13 @@ class TestPairTabTwoAtoms(unittest.TestCase):
                             [0.0923, 0],
                             [0.0713, 0],
                         ]
-                    ],
-                    dtype=torch.float64,
+                    ]
                 )
             ]
         ).reshape(14, 2)
-        results = torch.stack(results).reshape(14, 2)
+        results = np.stack(results).reshape(14, 2)
 
-        torch.testing.assert_close(results, expected_result, rtol=0.0001, atol=0.0001)
+        np.testing.assert_allclose(results, expected_result, 0.0001, 0.0001)
 
     if __name__ == "__main__":
         unittest.main()

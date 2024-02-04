@@ -147,6 +147,8 @@ class OutputVariableDef:
         self.differentiable = differentiable
         if not self.reduciable and self.differentiable:
             raise ValueError("only reduciable variable are differentiable")
+        if self.reduciable and not self.atomic:
+            raise ValueError("only reduciable variable should be atomic")
 
 
 class FittingOutputDef:
@@ -201,14 +203,16 @@ class ModelOutputDef:
         fit_defs: FittingOutputDef,
     ):
         self.def_outp = fit_defs
-        self.def_redu = do_reduce(self.def_outp)
-        self.def_derv_r, self.def_derv_c = do_derivative(self.def_outp)
+        self.def_redu = do_reduce(self.def_outp.get_data())
+        self.def_derv_r, self.def_derv_c = do_derivative(self.def_outp.get_data())
+        self.def_derv_c_redu = do_reduce(self.def_derv_c)
         self.var_defs: Dict[str, OutputVariableDef] = {}
         for ii in [
             self.def_outp.get_data(),
             self.def_redu,
             self.def_derv_c,
             self.def_derv_r,
+            self.def_derv_c_redu,
         ]:
             self.var_defs.update(ii)
 
@@ -239,6 +243,9 @@ class ModelOutputDef:
     def keys_derv_c(self):
         return self.def_derv_c.keys()
 
+    def keys_derv_c_redu(self):
+        return self.def_derv_c_redu.keys()
+
 
 def get_reduce_name(name: str) -> str:
     return name + "_redu"
@@ -249,10 +256,10 @@ def get_deriv_name(name: str) -> Tuple[str, str]:
 
 
 def do_reduce(
-    def_outp: FittingOutputDef,
+    def_outp_data: Dict[str, OutputVariableDef],
 ) -> Dict[str, OutputVariableDef]:
     def_redu: Dict[str, OutputVariableDef] = {}
-    for kk, vv in def_outp.get_data().items():
+    for kk, vv in def_outp_data.items():
         if vv.reduciable:
             rk = get_reduce_name(kk)
             def_redu[rk] = OutputVariableDef(
@@ -262,11 +269,11 @@ def do_reduce(
 
 
 def do_derivative(
-    def_outp: FittingOutputDef,
+    def_outp_data: Dict[str, OutputVariableDef],
 ) -> Tuple[Dict[str, OutputVariableDef], Dict[str, OutputVariableDef]]:
     def_derv_r: Dict[str, OutputVariableDef] = {}
     def_derv_c: Dict[str, OutputVariableDef] = {}
-    for kk, vv in def_outp.get_data().items():
+    for kk, vv in def_outp_data.items():
         if vv.differentiable:
             rkr, rkc = get_deriv_name(kk)
             def_derv_r[rkr] = OutputVariableDef(
@@ -274,11 +281,13 @@ def do_derivative(
                 vv.shape + [3],  # noqa: RUF005
                 reduciable=False,
                 differentiable=False,
+                atomic=True,
             )
             def_derv_c[rkc] = OutputVariableDef(
                 rkc,
                 vv.shape + [3, 3],  # noqa: RUF005
                 reduciable=True,
                 differentiable=False,
+                atomic=True,
             )
     return def_derv_r, def_derv_c

@@ -44,6 +44,9 @@ class PairTab:
             For example we have two atom types, 0 and 1.
             The columes from 2nd to 4th are for 0-0, 0-1 and 1-1 correspondingly.
         """
+        if filename is None:
+            self.tab_info, self.tab_data = None, None
+            return
         self.vdata = np.loadtxt(filename)
         self.rmin = self.vdata[0][0]
         self.rmax = self.vdata[-1][0]
@@ -64,6 +67,36 @@ class PairTab:
         )  # this nspline is updated based on the expanded table.
         self.tab_info = np.array([self.rmin, self.hh, self.nspline, self.ntypes])
         self.tab_data = self._make_data()
+
+    def serialize(self) -> dict:
+        return {
+            "rmin": self.rmin,
+            "rmax": self.rmax,
+            "hh": self.hh,
+            "ntypes": self.ntypes,
+            "rcut": self.rcut,
+            "nspline": self.nspline,
+            "@variables": {
+                "vdata": self.vdata,
+                "tab_info": self.tab_info,
+                "tab_data": self.tab_data,
+            },
+        }
+
+    @classmethod
+    def deserialize(cls, data) -> "PairTab":
+        variables = data.pop("@variables")
+        tab = PairTab(None, None)
+        tab.vdata = variables["vdata"]
+        tab.rmin = data["rmin"]
+        tab.rmax = data["rmax"]
+        tab.hh = data["hh"]
+        tab.ntypes = data["ntypes"]
+        tab.rcut = data["rcut"]
+        tab.nspline = data["nspline"]
+        tab.tab_info = variables["tab_info"]
+        tab.tab_data = variables["tab_data"]
+        return tab
 
     def _check_table_upper_boundary(self) -> None:
         """Update User Provided Table Based on `rcut`.
