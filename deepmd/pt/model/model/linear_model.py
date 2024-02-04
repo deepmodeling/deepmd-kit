@@ -135,7 +135,7 @@ class LinearModel(BaseModel, BaseAtomicModel):
             .sum(-1)
             .sqrt()
         )
-        rr = torch.gather(pairwise_rr[:, : nloc, :], 2, masked_nlist)
+        rr = torch.gather(pairwise_rr[:, :nloc, :], 2, masked_nlist)
         assert rr.shape == nlist_.shape
         # (nframes, nloc)
         zbl_weight = self._compute_weight(rr, ra, rb, alpha)
@@ -149,12 +149,12 @@ class LinearModel(BaseModel, BaseAtomicModel):
             extended_coord, extended_atype, zbl_nlist
         )["energy"]
         assert zbl_energy.shape == (nframe, nloc)
-        
+
         fit_ret = (
             zbl_weight * zbl_energy + (1 - zbl_weight) * dp_energy
         )  # (nframes, nloc)
         return fit_ret
-    
+
     def serialize(self):
         pass
 
@@ -163,7 +163,6 @@ class LinearModel(BaseModel, BaseAtomicModel):
 
     def fitting_output_def(self):
         pass
-        
 
     def _compute_weight(
         self, rr: torch.Tensor, ra: float, rb: float, alpha: Optional[float] = 0.1
@@ -190,14 +189,13 @@ class LinearModel(BaseModel, BaseAtomicModel):
             rb > ra
         ), "The upper boundary `rb` must be greater than the lower boundary `ra`."
 
-
         sigma = torch.sum(rr * torch.exp(-rr / alpha), dim=-1) / torch.sum(
             torch.exp(-rr / alpha), dim=-1
         )  # (nframes, nloc)
         u = (sigma - ra) / (rb - ra)
         coef = torch.zeros_like(u)
         left_mask = sigma < ra
-        mid_mask = (ra<=sigma) & (sigma<rb)
+        mid_mask = (ra <= sigma) & (sigma < rb)
         right_mask = sigma >= rb
         coef[left_mask] = 0
         smooth = -6 * u**5 + 15 * u**4 - 10 * u**3 + 1
