@@ -6,15 +6,15 @@ from typing import (
 
 import torch
 
-from deepmd.model_format import (
+from deepmd.dpmodel import (
     FittingOutputDef,
 )
 from deepmd.pt.utils.nlist import (
     build_multiple_neighbor_list,
 )
 
-from .atomic_model import (
-    AtomicModel,
+from .base_atomic_model import (
+    BaseAtomicModel,
 )
 from .dp_atomic_model import (
     DPAtomicModel,
@@ -27,7 +27,7 @@ from .pair_tab import (
 )
 
 
-class LinearModel(BaseModel, AtomicModel):
+class LinearModel(BaseModel, BaseAtomicModel):
     """Model linearly combine a list of AtomicModels.
 
     Parameters
@@ -120,10 +120,10 @@ class LinearModel(BaseModel, AtomicModel):
 
         zbl_nlist = nlists[str(self.zbl_model.rcut) + "_" + str(self.zbl_model.sel)]
         dp_nlist = nlists[
-            str(self.dp_model.rcut) + "_" + str(self.dp_model.sel)
+            str(self.dp_model.rcut) + "_" + str(sum(self.dp_model.sel))
         ]  # need to handle sel dtype.
 
-        zbl_nnei = zbl_nlist.shape[-1]
+        nframe, nloc, zbl_nnei = zbl_nlist.shape
         dp_nnei = dp_nlist.shape[-1]
 
         # use a larger rr based on nlist
@@ -135,22 +135,35 @@ class LinearModel(BaseModel, AtomicModel):
             .sum(-1)
             .sqrt()
         )
-        rr = torch.gather(pairwise_rr[:, : self.nloc, :], 2, masked_nlist)
-
+        rr = torch.gather(pairwise_rr[:, : nloc, :], 2, masked_nlist)
+        assert rr.shape == nlist_.shape
         # (nframes, nloc)
         zbl_weight = self._compute_weight(rr, ra, rb, alpha)
         # (nframes, nloc)
         dp_energy = self.dp_model.forward_atomic(
             extended_coord, extended_atype, dp_nlist
-        )["energy"]
+        )["energy"].squeeze(-1)
+        print(dp_energy.shape)
         # (nframes, nloc)
         zbl_energy = self.zbl_model.forward_atomic(
             extended_coord, extended_atype, zbl_nlist
         )["energy"]
+        assert zbl_energy.shape == (nframe, nloc)
+        
         fit_ret = (
             zbl_weight * zbl_energy + (1 - zbl_weight) * dp_energy
         )  # (nframes, nloc)
         return fit_ret
+    
+    def serialize(self):
+        pass
+
+    def deserialize(self):
+        pass
+
+    def fitting_output_def(self):
+        pass
+        
 
     def _compute_weight(
         self, rr: torch.Tensor, ra: float, rb: float, alpha: Optional[float] = 0.1
@@ -177,13 +190,23 @@ class LinearModel(BaseModel, AtomicModel):
             rb > ra
         ), "The upper boundary `rb` must be greater than the lower boundary `ra`."
 
+
         sigma = torch.sum(rr * torch.exp(-rr / alpha), dim=-1) / torch.sum(
             torch.exp(-rr / alpha), dim=-1
         )  # (nframes, nloc)
         u = (sigma - ra) / (rb - ra)
-        if sigma < ra:
-            return torch.ones_like(u)
-        elif sigma < rb:
-            return -6 * u**5 + 15 * u**4 - 10 * u**3 + 1
-        elif sigma >= rb:
-            return torch.zeros_like(u)
+        coef = torch.zeros_like(u)
+        left_mask = sigma < ra
+        mid_mask = (ra<=sigma) & (sigma<rb)
+        right_mask = sigma >= rb
+        coef[left_mask] = 0
+        smooth = -6 * u**5 + 15 * u**4 - 10 * u**3 + 1
+        coef[mid_mask] = smooth[mid_mask]
+        coef[right_mask] = 1
+        return coef
+        # if sigma < ra:
+        #     return torch.ones_like(u)
+        # elif sigma < rb:
+        #     return -6 * u**5 + 15 * u**4 - 10 * u**3 + 1
+        # elif sigma >= rb:
+        #     return torch.zeros_like(u)
