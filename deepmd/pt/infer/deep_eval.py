@@ -16,6 +16,7 @@ import torch
 
 from deepmd.dpmodel.output_def import (
     ModelOutputDef,
+    OutputVariableDef,
 )
 from deepmd.infer.deep_eval import (
     DeepEvalBackend,
@@ -42,6 +43,8 @@ from deepmd.pt.utils.env import (
 
 if TYPE_CHECKING:
     import ase.neighborlist
+
+    from deepmd.infer.deep_eval import DeepEval as DeepEvalWrapper
 
 
 class DeepEval(DeepEvalBackend):
@@ -122,7 +125,7 @@ class DeepEval(DeepEvalBackend):
         return 0
 
     @property
-    def model_type(self) -> "DeepEval":
+    def model_type(self) -> "DeepEvalWrapper":
         """The the evaluator of the model type."""
         return DeepPot
 
@@ -155,7 +158,7 @@ class DeepEval(DeepEvalBackend):
         self,
         coords: np.ndarray,
         cells: np.ndarray,
-        atom_types: List[int],
+        atom_types: np.ndarray,
         atomic: bool = False,
         fparam: Optional[np.ndarray] = None,
         aparam: Optional[np.ndarray] = None,
@@ -207,22 +210,42 @@ class DeepEval(DeepEvalBackend):
         natoms, numb_test = self._get_natoms_and_nframes(
             coords, atom_types, len(atom_types.shape) > 1
         )
+        request_defs = self._get_request_defs(atomic)
         out = self._eval_func(self._eval_model, numb_test, natoms)(
-            coords, cells, atom_types, atomic
+            coords, cells, atom_types, request_defs
         )
-        # when atomic is True, all output_def are requested
-        # when atomic is False, only energy, force, and virial are requested
-        # the condition here should be the same as that in _eval_method
         return dict(
             zip(
-                [
-                    x.name
-                    for x in self.output_def.var_defs.values()
-                    if atomic or "_redu" in x.name or "_derv_r" in x.name
-                ],
+                [x.name for x in request_defs],
                 out,
             )
         )
+
+    def _get_request_defs(self, atomic: bool) -> list[OutputVariableDef]:
+        """Get the requested output definitions.
+
+        When atomic is True, all output_def are requested.
+        When atomic is False, only energy (tensor), force, and virial
+        are requested.
+
+        Parameters
+        ----------
+        atomic : bool
+            Whether to request the atomic output.
+
+        Returns
+        -------
+        list[OutputVariableDef]
+            The requested output definitions.
+        """
+        if atomic:
+            return list(self.output_def.var_defs.values())
+        else:
+            return [
+                x
+                for x in self.output_def.var_defs.values()
+                if x.name.endswith("_redu") or x.name.endswith("_derv_r")
+            ]
 
     def _eval_func(self, inner_func: Callable, numb_test: int, natoms: int) -> Callable:
         """Wrapper method with auto batch size.
@@ -255,7 +278,7 @@ class DeepEval(DeepEvalBackend):
     def _get_natoms_and_nframes(
         self,
         coords: np.ndarray,
-        atom_types: Union[List[int], np.ndarray],
+        atom_types: np.ndarray,
         mixed_type: bool = False,
     ) -> Tuple[int, int]:
         if mixed_type:
@@ -274,14 +297,9 @@ class DeepEval(DeepEvalBackend):
         coords: np.ndarray,
         cells: Optional[np.ndarray],
         atom_types: np.ndarray,
-        atomic: bool = False,
+        request_defs: List[OutputVariableDef],
     ):
         model = self.dp.to(DEVICE)
-        energy_out = None
-        atomic_energy_out = None
-        force_out = None
-        virial_out = None
-        atomic_virial_out = None
 
         nframes = coords.shape[0]
         if len(atom_types.shape) == 1:
@@ -301,18 +319,15 @@ class DeepEval(DeepEvalBackend):
         else:
             box_input = None
 
+        do_atomic_virial = any(x.name.endswith("_derv_c") for x in request_defs)
         batch_output = model(
-            coord_input, type_input, box=box_input, do_atomic_virial=atomic
+            coord_input, type_input, box=box_input, do_atomic_virial=do_atomic_virial
         )
         if isinstance(batch_output, tuple):
             batch_output = batch_output[0]
 
         results = []
-        for ii, odef in enumerate(self.output_def.var_defs.values()):
-            # when atomic is True, all output_def are requested
-            # when atomic is False, only energy, force, and virial are requested
-            if not atomic and "_redu" not in odef.name and "_derv_r" not in odef.name:
-                continue
+        for odef in request_defs:
             pt_name = self._OUTDEF_DP2PT[odef.name]
             if pt_name in batch_output:
                 shape = self._get_output_shape(odef.name, nframes, natoms, odef.shape)
