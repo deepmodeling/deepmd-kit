@@ -20,6 +20,7 @@ from deepmd.dpmodel.model.pair_tab_model import (
     PairTabModel,
 )
 
+
 class TestWeightCalculation(unittest.TestCase):
     @patch("numpy.loadtxt")
     def test_pairwise(self, mock_loadtxt):
