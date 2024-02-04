@@ -5,13 +5,10 @@ from unittest.mock import (
 )
 
 import numpy as np
-import torch
 
 from deepmd.dpmodel.model.pair_tab_model import (
     PairTabModel,
 )
-from deepmd.pt.model.model.pair_tab_model import PairTabModel as PtPairTabModel
-
 
 class TestPairTab(unittest.TestCase):
     @patch("numpy.loadtxt")
@@ -55,7 +52,7 @@ class TestPairTab(unittest.TestCase):
         result = self.model.forward_atomic(
             self.extended_coord, self.extended_atype, self.nlist
         )
-        expected_result = np.array([[1.2000, 1.3614], [1.2000, 0.4000]])
+        expected_result = np.array([[[1.2000], [1.3614]], [[1.2000], [0.4000]]])
 
         np.testing.assert_allclose(result["energy"], expected_result, 0.0001, 0.0001)
 
@@ -65,7 +62,7 @@ class TestPairTab(unittest.TestCase):
         result = self.model.forward_atomic(
             self.extended_coord, self.extended_atype, self.nlist
         )
-        expected_result = np.array([[0.8000, 1.3614], [1.2000, 0.4000]])
+        expected_result = np.array([[[0.8000], [1.3614]], [[1.2000], [0.4000]]])
 
         np.testing.assert_allclose(result["energy"], expected_result, 0.0001, 0.0001)
 
@@ -86,25 +83,6 @@ class TestPairTab(unittest.TestCase):
             result["energy"], expected_result["energy"], 0.0001, 0.0001
         )
 
-    def test_cross_deserialize(self):
-        model_dict = self.model.serialize()  # numpy model to dict
-        model1 = PtPairTabModel.deserialize(model_dict)  # dict to pytorch model
-        np.testing.assert_allclose(self.model.tab_data, model1.tab_data)
-        np.testing.assert_allclose(self.model.tab_info, model1.tab_info)
-
-        self.nlist = np.array([[[1, -1], [0, 2]], [[1, 2], [0, 3]]])
-        result = model1.forward_atomic(
-            torch.from_numpy(self.extended_coord),
-            torch.from_numpy(self.extended_atype),
-            torch.from_numpy(self.nlist),
-        )
-        expected_result = self.model.forward_atomic(
-            self.extended_coord, self.extended_atype, self.nlist
-        )
-
-        np.testing.assert_allclose(
-            result["energy"], expected_result["energy"], 0.0001, 0.0001
-        )
 
 
 class TestPairTabTwoAtoms(unittest.TestCase):

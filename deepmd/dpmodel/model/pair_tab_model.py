@@ -104,10 +104,11 @@ class PairTabModel(BaseAtomicModel):
         extended_coord,
         extended_atype,
         nlist,
-        mapping: Optional[np.array] = None,
+        mapping: Optional[np.ndarray] = None,
         do_atomic_virial: bool = False,
     ) -> Dict[str, np.array]:
         self.nframes, self.nloc, self.nnei = nlist.shape
+        extended_coord = extended_coord.reshape(self.nframes, -1, 3)
 
         # this will mask all -1 in the nlist
         masked_nlist = np.clip(nlist, 0, None)
@@ -134,7 +135,7 @@ class PairTabModel(BaseAtomicModel):
         atomic_energy = 0.5 * np.sum(
             np.where(nlist != -1, raw_atomic_energy, np.zeros_like(raw_atomic_energy)),
             axis=-1,
-        )
+        ).reshape(self.nframes, self.nloc, 1)
 
         return {"energy": atomic_energy}
 
@@ -212,12 +213,12 @@ class PairTabModel(BaseAtomicModel):
         Parameters
         ----------
         coords : np.array
-            The coordinate of the atoms shape of (nframes * nall * 3).
+            The coordinate of the atoms shape of (nframes, nall, 3).
 
         Returns
         -------
         np.array
-            The pairwise distance between the atoms (nframes * nall * nall * 3).
+            The pairwise distance between the atoms (nframes, nall, nall, 3).
         """
         return np.expand_dims(coords, 2) - np.expand_dims(coords, 1)
 

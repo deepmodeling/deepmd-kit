@@ -120,7 +120,8 @@ class PairTabModel(nn.Module, BaseAtomicModel):
         do_atomic_virial: bool = False,
     ) -> Dict[str, torch.Tensor]:
         self.nframes, self.nloc, self.nnei = nlist.shape
-
+        extended_coord = extended_coord.view(self.nframes, -1, 3)
+        
         # this will mask all -1 in the nlist
         masked_nlist = torch.clamp(nlist, 0)
 
@@ -130,7 +131,7 @@ class PairTabModel(nn.Module, BaseAtomicModel):
         )  # (nframes, nall, nall, 3)
         pairwise_rr = pairwise_dr.pow(2).sum(-1).sqrt()  # (nframes, nall, nall)
 
-        self.tab_data = self.tab_data.reshape(
+        self.tab_data = self.tab_data.view(
             self.tab.ntypes, self.tab.ntypes, self.tab.nspline, 4
         )
 
@@ -151,7 +152,7 @@ class PairTabModel(nn.Module, BaseAtomicModel):
                 nlist != -1, raw_atomic_energy, torch.zeros_like(raw_atomic_energy)
             ),
             dim=-1,
-        )
+        ).unsqueeze(-1)
 
         return {"energy": atomic_energy}
 
@@ -212,7 +213,7 @@ class PairTabModel(nn.Module, BaseAtomicModel):
         table_coef = self._extract_spline_coefficient(
             i_type, j_type, idx, self.tab_data, self.nspline
         )
-        table_coef = table_coef.reshape(self.nframes, self.nloc, self.nnei, 4)
+        table_coef = table_coef.view(self.nframes, self.nloc, self.nnei, 4)
         ener = self._calcualte_ener(table_coef, uu)
 
         # here we need to overwrite energy to zero at rcut and beyond.
@@ -231,12 +232,12 @@ class PairTabModel(nn.Module, BaseAtomicModel):
         Parameters
         ----------
         coords : torch.Tensor
-            The coordinate of the atoms shape of (nframes * nall * 3).
+            The coordinate of the atoms shape of (nframes, nall, 3).
 
         Returns
         -------
         torch.Tensor
-            The pairwise distance between the atoms (nframes * nall * nall * 3).
+            The pairwise distance between the atoms (nframes, nall, nall, 3).
 
         Examples
         --------
