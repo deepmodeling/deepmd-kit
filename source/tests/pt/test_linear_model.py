@@ -16,6 +16,9 @@ from deepmd.pt.model.model.dp_atomic_model import (
 from deepmd.pt.model.model.linear_model import (
     LinearModel,
 )
+from deepmd.dpmodel.model.linear_model import (
+    LinearModel as DPLinearModel,
+)
 from deepmd.pt.model.model.pair_tab_model import (
     PairTabModel,
 )
@@ -140,6 +143,7 @@ class TestIntegration(unittest.TestCase, TestCaseSingleFrameWithNlist):
         zbl_model = PairTabModel(file_path, self.rcut, sum(self.sel))
         self.md0 = LinearModel(dp_model, zbl_model).to(env.DEVICE)
         self.md1 = LinearModel.deserialize(self.md0.serialize()).to(env.DEVICE)
+        self.md2 = DPLinearModel.deserialize(self.md0.serialize())
 
     def test_self_consistency(self):
         args = [
@@ -147,11 +151,16 @@ class TestIntegration(unittest.TestCase, TestCaseSingleFrameWithNlist):
         ]
         ret0 = self.md0.forward_atomic(*args, ra=0.2, rb=0.5)
         ret1 = self.md1.forward_atomic(*args, ra=0.2, rb=0.5)
+        ret2 = self.md2.forward_atomic(self.coord_ext, self.atype_ext, self.nlist, ra=0.2, rb=0.5)
         np.testing.assert_allclose(
             to_numpy_array(ret0["energy"]),
             to_numpy_array(ret1["energy"]),
         )
 
-    # add cross framework consistency check.
+        np.testing.assert_allclose(
+            to_numpy_array(ret0["energy"]),
+            ret2["energy"],
+        atol=0.001, rtol=0.001)
+
     def test_jit(self):
         torch.jit.script(self.md1)

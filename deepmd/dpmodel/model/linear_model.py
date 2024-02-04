@@ -3,14 +3,12 @@ from typing import (
     Dict,
     Optional,
 )
-
-import torch
-
+import numpy as np
 from deepmd.dpmodel import (
     FittingOutputDef,
     OutputVariableDef,
 )
-from deepmd.pt.utils.nlist import (
+from deepmd.dpmodel.utils.nlist import (
     build_multiple_neighbor_list,
 )
 
@@ -20,15 +18,13 @@ from .base_atomic_model import (
 from .dp_atomic_model import (
     DPAtomicModel,
 )
-from .model import (
-    BaseModel,
-)
+
 from .pair_tab_model import (
     PairTabModel,
 )
 
 
-class LinearModel(BaseModel, BaseAtomicModel):
+class LinearModel(BaseAtomicModel):
     """Model linearly combine a list of AtomicModels.
 
     Parameters
@@ -85,8 +81,8 @@ class LinearModel(BaseModel, BaseAtomicModel):
         ra: float,
         rb: float,
         alpha: Optional[float] = 0.1,
-        mapping: Optional[torch.Tensor] = None,
-    ) -> Dict[str, torch.Tensor]:
+        mapping: Optional[np.ndarray] = None,
+    ) -> Dict[str, np.ndarray]:
         """Return atomic prediction.
 
         Note: currently only support the linear combination of a ZBL model and a DP model,
@@ -116,29 +112,28 @@ class LinearModel(BaseModel, BaseAtomicModel):
             the result dict, defined by the fitting net output def.
         """
         nframes, nloc, nnei = nlist.shape
-        extended_coord = extended_coord.view(nframes, -1, 3)
+        extended_coord = extended_coord.reshape(nframes, -1, 3)
         nlists = build_multiple_neighbor_list(
             extended_coord,
             nlist,
-            [self.zbl_model.rcut, self.dp_model.rcut],
-            [self.zbl_model.sel, sum(self.dp_model.sel)],
+            [self.zbl_model.rcut, self.dp_model.get_rcut()],
+            [self.zbl_model.sel, sum(self.dp_model.get_sel())],
         )
         zbl_nlist = nlists[str(self.zbl_model.rcut) + "_" + str(self.zbl_model.sel)]
-        dp_nlist = nlists[str(self.dp_model.rcut) + "_" + str(sum(self.dp_model.sel))]
+        dp_nlist = nlists[str(self.dp_model.get_rcut()) + "_" + str(sum(self.dp_model.get_sel()))]
 
         zbl_nnei = zbl_nlist.shape[-1]
         dp_nnei = dp_nlist.shape[-1]
 
         # use the larger rr based on nlist
         nlist_ = zbl_nlist if zbl_nnei >= dp_nnei else dp_nlist
-        masked_nlist = torch.clamp(nlist_, 0)
-        pairwise_rr = (
-            (extended_coord.unsqueeze(2) - extended_coord.unsqueeze(1))
-            .pow(2)
-            .sum(-1)
-            .sqrt()
+        masked_nlist = np.clip(nlist_, 0, None)
+        pairwise_rr = np.sqrt(
+            np.sum(np.power((np.expand_dims(extended_coord, 2) - np.expand_dims(extended_coord, 1)), 2), axis=-1)
         )
-        rr = torch.gather(pairwise_rr[:, :nloc, :], 2, masked_nlist)
+            
+          
+        rr = np.take_along_axis(pairwise_rr[:, :nloc, :], masked_nlist, 2)
         # (nframes, nloc, 1)
         self.zbl_weight = self._compute_weight(nlist_, rr, ra, rb, alpha)
         # (nframes, nloc, 1)
@@ -149,7 +144,7 @@ class LinearModel(BaseModel, BaseAtomicModel):
         zbl_energy = self.zbl_model.forward_atomic(
             extended_coord, extended_atype, zbl_nlist
         )["energy"]
-        assert(zbl_energy.shape == (nframes, nloc, 1))
+
         fit_ret = {
             "energy": (
                 self.zbl_weight * zbl_energy + (1 - self.zbl_weight) * dp_energy
@@ -180,19 +175,19 @@ class LinearModel(BaseModel, BaseAtomicModel):
 
     @staticmethod
     def _compute_weight(
-        nlist: torch.Tensor,
-        rr: torch.Tensor,
+        nlist: np.ndarray,
+        rr: np.ndarray,
         ra: float,
         rb: float,
         alpha: Optional[float] = 0.1,
-    ) -> torch.Tensor:
+    ) -> np.ndarray:
         """ZBL weight.
 
         Parameters
         ----------
-        nlist : torch.Tensor
+        nlist : np.ndarray
             the neighbour list, (nframes, nloc, nnei).
-        rr : torch.Tensor
+        rr : np.ndarray
             pairwise distance between atom i and atom j, (nframes, nloc, nnei).
         ra : float
             inclusive lower boundary of the range in which the ZBL potential and the deep potential are interpolated.
@@ -203,23 +198,23 @@ class LinearModel(BaseModel, BaseAtomicModel):
 
         Returns
         -------
-        torch.Tensor
-            the atomic ZBL weight for interpolation. (nframes, nloc, 1)
+        np.ndarray
+            the atomic ZBL weight for interpolation. (nframes, nloc)
         """
         assert (
             rb > ra
         ), "The upper boundary `rb` must be greater than the lower boundary `ra`."
 
-        numerator = torch.sum(
-            rr * torch.exp(-rr / alpha), dim=-1
+        numerator = np.sum(
+            rr * np.exp(-rr / alpha), axis=-1
         )  # masked nnei will be zero, no need to handle
-        denominator = torch.sum(
-            torch.where(nlist != -1, torch.exp(-rr / alpha), torch.zeros_like(nlist)),
-            dim=-1,
+        denominator = np.sum(
+            np.where(nlist != -1, np.exp(-rr / alpha), np.zeros_like(nlist)),
+            axis=-1,
         )  # handle masked nnei.
         sigma = numerator / denominator
         u = (sigma - ra) / (rb - ra)
-        coef = torch.zeros_like(u)
+        coef = np.zeros_like(u)
         left_mask = sigma < ra
         mid_mask = (ra <= sigma) & (sigma < rb)
         right_mask = sigma >= rb
@@ -227,4 +222,4 @@ class LinearModel(BaseModel, BaseAtomicModel):
         smooth = -6 * u**5 + 15 * u**4 - 10 * u**3 + 1
         coef[mid_mask] = smooth[mid_mask]
         coef[right_mask] = 0
-        return coef.unsqueeze(-1)
+        return np.expand_dims(coef, -1)
