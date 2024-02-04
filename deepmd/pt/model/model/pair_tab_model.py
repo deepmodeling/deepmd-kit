@@ -121,7 +121,7 @@ class PairTabModel(nn.Module, BaseAtomicModel):
     ) -> Dict[str, torch.Tensor]:
         self.nframes, self.nloc, self.nnei = nlist.shape
         extended_coord = extended_coord.view(self.nframes, -1, 3)
-        
+
         # this will mask all -1 in the nlist
         masked_nlist = torch.clamp(nlist, 0)
 

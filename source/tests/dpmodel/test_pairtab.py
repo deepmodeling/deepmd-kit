@@ -10,6 +10,7 @@ from deepmd.dpmodel.model.pair_tab_model import (
     PairTabModel,
 )
 
+
 class TestPairTab(unittest.TestCase):
     @patch("numpy.loadtxt")
     def setUp(self, mock_loadtxt) -> None:
@@ -82,7 +83,6 @@ class TestPairTab(unittest.TestCase):
         np.testing.assert_allclose(
             result["energy"], expected_result["energy"], 0.0001, 0.0001
         )
-
 
 
 class TestPairTabTwoAtoms(unittest.TestCase):

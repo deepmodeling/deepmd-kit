@@ -7,10 +7,10 @@ from unittest.mock import (
 import numpy as np
 import torch
 
+from deepmd.dpmodel.model.pair_tab_model import PairTabModel as DPPairTabModel
 from deepmd.pt.model.model.pair_tab_model import (
     PairTabModel,
 )
-from deepmd.dpmodel.model.pair_tab_model import PairTabModel as DPPairTabModel
 
 
 class TestPairTab(unittest.TestCase):
@@ -107,9 +107,9 @@ class TestPairTab(unittest.TestCase):
 
         self.nlist = np.array([[[1, -1], [0, 2]], [[1, 2], [0, 3]]])
         result = model1.forward_atomic(
-           self.extended_coord.numpy(),
+            self.extended_coord.numpy(),
             self.extended_atype.numpy(),
-           self.nlist,
+            self.nlist,
         )
         expected_result = self.model.forward_atomic(
             self.extended_coord, self.extended_atype, torch.from_numpy(self.nlist)
@@ -118,6 +118,7 @@ class TestPairTab(unittest.TestCase):
         np.testing.assert_allclose(
             result["energy"], expected_result["energy"], 0.0001, 0.0001
         )
+
 
 class TestPairTabTwoAtoms(unittest.TestCase):
     @patch("numpy.loadtxt")
