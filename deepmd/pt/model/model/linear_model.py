@@ -149,11 +149,9 @@ class LinearModel(BaseModel, BaseAtomicModel):
         zbl_energy = self.zbl_model.forward_atomic(
             extended_coord, extended_atype, zbl_nlist
         )["energy"]
-        assert(zbl_energy.shape == (nframes, nloc, 1))
+        assert zbl_energy.shape == (nframes, nloc, 1)
         fit_ret = {
-            "energy": (
-                self.zbl_weight * zbl_energy + (1 - self.zbl_weight) * dp_energy
-            )
+            "energy": (self.zbl_weight * zbl_energy + (1 - self.zbl_weight) * dp_energy)
         }  # (nframes, nloc, 1)
         return fit_ret
 

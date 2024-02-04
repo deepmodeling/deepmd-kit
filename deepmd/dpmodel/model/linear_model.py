@@ -3,7 +3,9 @@ from typing import (
     Dict,
     Optional,
 )
+
 import numpy as np
+
 from deepmd.dpmodel import (
     FittingOutputDef,
     OutputVariableDef,
@@ -18,7 +20,6 @@ from .base_atomic_model import (
 from .dp_atomic_model import (
     DPAtomicModel,
 )
-
 from .pair_tab_model import (
     PairTabModel,
 )
@@ -120,7 +121,9 @@ class LinearModel(BaseAtomicModel):
             [self.zbl_model.sel, sum(self.dp_model.get_sel())],
         )
         zbl_nlist = nlists[str(self.zbl_model.rcut) + "_" + str(self.zbl_model.sel)]
-        dp_nlist = nlists[str(self.dp_model.get_rcut()) + "_" + str(sum(self.dp_model.get_sel()))]
+        dp_nlist = nlists[
+            str(self.dp_model.get_rcut()) + "_" + str(sum(self.dp_model.get_sel()))
+        ]
 
         zbl_nnei = zbl_nlist.shape[-1]
         dp_nnei = dp_nlist.shape[-1]
@@ -129,10 +132,18 @@ class LinearModel(BaseAtomicModel):
         nlist_ = zbl_nlist if zbl_nnei >= dp_nnei else dp_nlist
         masked_nlist = np.clip(nlist_, 0, None)
         pairwise_rr = np.sqrt(
-            np.sum(np.power((np.expand_dims(extended_coord, 2) - np.expand_dims(extended_coord, 1)), 2), axis=-1)
+            np.sum(
+                np.power(
+                    (
+                        np.expand_dims(extended_coord, 2)
+                        - np.expand_dims(extended_coord, 1)
+                    ),
+                    2,
+                ),
+                axis=-1,
+            )
         )
-            
-          
+
         rr = np.take_along_axis(pairwise_rr[:, :nloc, :], masked_nlist, 2)
         # (nframes, nloc, 1)
         self.zbl_weight = self._compute_weight(nlist_, rr, ra, rb, alpha)
@@ -146,9 +157,7 @@ class LinearModel(BaseAtomicModel):
         )["energy"]
 
         fit_ret = {
-            "energy": (
-                self.zbl_weight * zbl_energy + (1 - self.zbl_weight) * dp_energy
-            )
+            "energy": (self.zbl_weight * zbl_energy + (1 - self.zbl_weight) * dp_energy)
         }  # (nframes, nloc, 1)
         return fit_ret
 

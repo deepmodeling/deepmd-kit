@@ -9,20 +9,16 @@ import numpy as np
 from deepmd.dpmodel.descriptor.se_e2_a import (
     DescrptSeA,
 )
-from deepmd.dpmodel.model.dp_atomic_model import (
-    DPAtomicModel,
-)
-from deepmd.dpmodel.model.linear_model import (
-    LinearModel as LinearModel,
-)
-from deepmd.dpmodel.model.pair_tab_model import (
-    PairTabModel,
-)
 from deepmd.dpmodel.fitting.invar_fitting import (
     InvarFitting,
 )
-
-
+from deepmd.dpmodel.model.dp_atomic_model import (
+    DPAtomicModel,
+)
+from deepmd.dpmodel.model.linear_model import LinearModel as LinearModel
+from deepmd.dpmodel.model.pair_tab_model import (
+    PairTabModel,
+)
 
 # class TestWeightCalculation(unittest.TestCase):
 #     @patch("numpy.loadtxt")
@@ -56,7 +52,7 @@ from deepmd.dpmodel.fitting.invar_fitting import (
 #         type_map = ["foo", "bar"]
 #         zbl_model = PairTabModel(tab_file=file_path, rcut=0.3, sel=2)
 #         dp_model = DPAtomicModel(ds, ft, type_map=type_map)
-        
+
 #         wgt_model = LinearModel(dp_model, zbl_model)
 #         wgt_res = []
 #         for dist in np.linspace(0.05, 0.3, 10):
@@ -95,7 +91,6 @@ from deepmd.dpmodel.fitting.invar_fitting import (
 class TestIntegration(unittest.TestCase):
     @patch("numpy.loadtxt")
     def setUp(self, mock_loadtxt):
-        
         self.nloc = 3
         self.nall = 4
         self.nf, self.nt = 1, 2
@@ -149,10 +144,13 @@ class TestIntegration(unittest.TestCase):
         self.md1 = LinearModel.deserialize(self.md0.serialize())
 
     def test_self_consistency(self):
-        
         nlist_copy = self.nlist.copy()
-        ret0 = self.md0.forward_atomic(self.coord_ext, self.atype_ext, self.nlist, ra=0.2, rb=0.5)
-        ret1 = self.md1.forward_atomic(self.coord_ext, self.atype_ext, nlist_copy, ra=0.2, rb=0.5)
+        ret0 = self.md0.forward_atomic(
+            self.coord_ext, self.atype_ext, self.nlist, ra=0.2, rb=0.5
+        )
+        ret1 = self.md1.forward_atomic(
+            self.coord_ext, self.atype_ext, nlist_copy, ra=0.2, rb=0.5
+        )
         np.testing.assert_allclose(
             ret0["energy"],
             ret1["energy"],

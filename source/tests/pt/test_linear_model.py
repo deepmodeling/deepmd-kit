@@ -7,6 +7,7 @@ from unittest.mock import (
 import numpy as np
 import torch
 
+from deepmd.dpmodel.model.linear_model import LinearModel as DPLinearModel
 from deepmd.pt.model.descriptor.se_a import (
     DescrptSeA,
 )
@@ -15,9 +16,6 @@ from deepmd.pt.model.model.dp_atomic_model import (
 )
 from deepmd.pt.model.model.linear_model import (
     LinearModel,
-)
-from deepmd.dpmodel.model.linear_model import (
-    LinearModel as DPLinearModel,
 )
 from deepmd.pt.model.model.pair_tab_model import (
     PairTabModel,
@@ -151,16 +149,17 @@ class TestIntegration(unittest.TestCase, TestCaseSingleFrameWithNlist):
         ]
         ret0 = self.md0.forward_atomic(*args, ra=0.2, rb=0.5)
         ret1 = self.md1.forward_atomic(*args, ra=0.2, rb=0.5)
-        ret2 = self.md2.forward_atomic(self.coord_ext, self.atype_ext, self.nlist, ra=0.2, rb=0.5)
+        ret2 = self.md2.forward_atomic(
+            self.coord_ext, self.atype_ext, self.nlist, ra=0.2, rb=0.5
+        )
         np.testing.assert_allclose(
             to_numpy_array(ret0["energy"]),
             to_numpy_array(ret1["energy"]),
         )
 
         np.testing.assert_allclose(
-            to_numpy_array(ret0["energy"]),
-            ret2["energy"],
-        atol=0.001, rtol=0.001)
+            to_numpy_array(ret0["energy"]), ret2["energy"], atol=0.001, rtol=0.001
+        )
 
     def test_jit(self):
         torch.jit.script(self.md1)
