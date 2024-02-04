@@ -20,72 +20,72 @@ from deepmd.dpmodel.model.pair_tab_model import (
     PairTabModel,
 )
 
-# class TestWeightCalculation(unittest.TestCase):
-#     @patch("numpy.loadtxt")
-#     def test_pairwise(self, mock_loadtxt):
-#         file_path = "dummy_path"
-#         mock_loadtxt.return_value = np.array(
-#             [
-#                 [0.05, 1.0, 2.0, 3.0],
-#                 [0.1, 0.8, 1.6, 2.4],
-#                 [0.15, 0.5, 1.0, 1.5],
-#                 [0.2, 0.25, 0.4, 0.75],
-#                 [0.25, 0.0, 0.0, 0.0],
-#             ]
-#         )
-#         extended_atype = np.array([[0, 0]])
-#         nlist = np.array([[[1], [-1]]])
+class TestWeightCalculation(unittest.TestCase):
+    @patch("numpy.loadtxt")
+    def test_pairwise(self, mock_loadtxt):
+        file_path = "dummy_path"
+        mock_loadtxt.return_value = np.array(
+            [
+                [0.05, 1.0, 2.0, 3.0],
+                [0.1, 0.8, 1.6, 2.4],
+                [0.15, 0.5, 1.0, 1.5],
+                [0.2, 0.25, 0.4, 0.75],
+                [0.25, 0.0, 0.0, 0.0],
+            ]
+        )
+        extended_atype = np.array([[0, 0]])
+        nlist = np.array([[[1], [-1]]])
 
-#         ds = DescrptSeA(
-#             rcut=0.3,
-#             rcut_smth=0.4,
-#             sel=[3],
-#         )
-#         ft = InvarFitting(
-#             "energy",
-#             2,
-#             ds.get_dim_out(),
-#             1,
-#             distinguish_types=ds.distinguish_types(),
-#         )
+        ds = DescrptSeA(
+            rcut=0.3,
+            rcut_smth=0.4,
+            sel=[3],
+        )
+        ft = InvarFitting(
+            "energy",
+            2,
+            ds.get_dim_out(),
+            1,
+            distinguish_types=ds.distinguish_types(),
+        )
 
-#         type_map = ["foo", "bar"]
-#         zbl_model = PairTabModel(tab_file=file_path, rcut=0.3, sel=2)
-#         dp_model = DPAtomicModel(ds, ft, type_map=type_map)
+        type_map = ["foo", "bar"]
+        zbl_model = PairTabModel(tab_file=file_path, rcut=0.3, sel=2)
+        dp_model = DPAtomicModel(ds, ft, type_map=type_map)
 
-#         wgt_model = LinearModel(dp_model, zbl_model)
-#         wgt_res = []
-#         for dist in np.linspace(0.05, 0.3, 10):
-#             extended_coord = np.array(
-#                 [
-#                     [
-#                         [0.0, 0.0, 0.0],
-#                         [0.0, dist, 0.0],
-#                     ],
-#                 ]
-#             )
+        wgt_model = LinearModel(dp_model, zbl_model)
+        wgt_res = []
+        for dist in np.linspace(0.05, 0.3, 10):
+            extended_coord = np.array(
+                [
+                    [
+                        [0.0, 0.0, 0.0],
+                        [0.0, dist, 0.0],
+                    ],
+                ]
+            )
 
-#             wgt_model.forward_atomic(
-#                 extended_coord, extended_atype, nlist, ra=0.1, rb=0.25
-#             )
+            wgt_model.forward_atomic(
+                extended_coord, extended_atype, nlist, ra=0.1, rb=0.25
+            )
 
-#             wgt_res.append(wgt_model.zbl_weight)
-#         results = np.stack(wgt_res).reshape(10, 2)
-#         excepted_res = np.array(
-#             [
-#                 [1.0, 0.0],
-#                 [1.0, 0.0],
-#                 [0.9995, 0.0],
-#                 [0.9236, 0.0],
-#                 [0.6697, 0.0],
-#                 [0.3303, 0.0],
-#                 [0.0764, 0.0],
-#                 [0.0005, 0.0],
-#                 [0.0, 0.0],
-#                 [0.0, 0.0],
-#             ],
-#         )
-#         np.testing.assert_allclose(results, excepted_res, rtol=0.0001, atol=0.0001)
+            wgt_res.append(wgt_model.zbl_weight)
+        results = np.stack(wgt_res).reshape(10, 2)
+        excepted_res = np.array(
+            [
+                [1.0, 0.0],
+                [1.0, 0.0],
+                [0.9995, 0.0],
+                [0.9236, 0.0],
+                [0.6697, 0.0],
+                [0.3303, 0.0],
+                [0.0764, 0.0],
+                [0.0005, 0.0],
+                [0.0, 0.0],
+                [0.0, 0.0],
+            ],
+        )
+        np.testing.assert_allclose(results, excepted_res, rtol=0.0001, atol=0.0001)
 
 
 class TestIntegration(unittest.TestCase):
