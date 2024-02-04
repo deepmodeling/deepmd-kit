@@ -118,12 +118,13 @@ class LinearModel(BaseModel, BaseAtomicModel):
         nframes, nloc, nnei = nlist.shape
         extended_coord = extended_coord.view(nframes, -1, 3)
         nlists = build_multiple_neighbor_list(
-            extended_coord, nlist, [self.zbl_model.rcut, self.dp_model.rcut], [self.zbl_model.sel, sum(self.dp_model.sel)]
+            extended_coord,
+            nlist,
+            [self.zbl_model.rcut, self.dp_model.rcut],
+            [self.zbl_model.sel, sum(self.dp_model.sel)],
         )
         zbl_nlist = nlists[str(self.zbl_model.rcut) + "_" + str(self.zbl_model.sel)]
-        dp_nlist = nlists[
-            str(self.dp_model.rcut) + "_" + str(sum(self.dp_model.sel))
-        ]
+        dp_nlist = nlists[str(self.dp_model.rcut) + "_" + str(sum(self.dp_model.sel))]
 
         zbl_nnei = zbl_nlist.shape[-1]
         dp_nnei = dp_nlist.shape[-1]
@@ -149,13 +150,18 @@ class LinearModel(BaseModel, BaseAtomicModel):
             extended_coord, extended_atype, zbl_nlist
         )["energy"]
 
-        fit_ret = {"energy": (
-            self.zbl_weight * zbl_energy + (1 - self.zbl_weight) * dp_energy
-        ).unsqueeze(-1)}  # (nframes, nloc, 1)
+        fit_ret = {
+            "energy": (
+                self.zbl_weight * zbl_energy + (1 - self.zbl_weight) * dp_energy
+            ).unsqueeze(-1)
+        }  # (nframes, nloc, 1)
         return fit_ret
 
     def serialize(self) -> dict:
-        return {"dp_model": self.dp_model.serialize(), "zbl_model": self.zbl_model.serialize()}
+        return {
+            "dp_model": self.dp_model.serialize(),
+            "zbl_model": self.zbl_model.serialize(),
+        }
 
     @classmethod
     def deserialize(cls, data) -> "LinearModel":
@@ -174,7 +180,11 @@ class LinearModel(BaseModel, BaseAtomicModel):
 
     @staticmethod
     def _compute_weight(
-        nlist: torch.Tensor, rr: torch.Tensor, ra: float, rb: float, alpha: Optional[float] = 0.1
+        nlist: torch.Tensor,
+        rr: torch.Tensor,
+        ra: float,
+        rb: float,
+        alpha: Optional[float] = 0.1,
     ) -> torch.Tensor:
         """ZBL weight.
 
@@ -200,8 +210,13 @@ class LinearModel(BaseModel, BaseAtomicModel):
             rb > ra
         ), "The upper boundary `rb` must be greater than the lower boundary `ra`."
 
-        numerator = torch.sum(rr * torch.exp(-rr / alpha), dim=-1) # masked nnei will be zero, no need to handle
-        denominator = torch.sum(torch.where(nlist != -1, torch.exp(-rr / alpha), torch.zeros_like(nlist)), dim=-1)  # handle masked nnei.
+        numerator = torch.sum(
+            rr * torch.exp(-rr / alpha), dim=-1
+        )  # masked nnei will be zero, no need to handle
+        denominator = torch.sum(
+            torch.where(nlist != -1, torch.exp(-rr / alpha), torch.zeros_like(nlist)),
+            dim=-1,
+        )  # handle masked nnei.
         sigma = numerator / denominator
         u = (sigma - ra) / (rb - ra)
         coef = torch.zeros_like(u)
@@ -213,4 +228,3 @@ class LinearModel(BaseModel, BaseAtomicModel):
         coef[mid_mask] = smooth[mid_mask]
         coef[right_mask] = 0
         return coef
-        
