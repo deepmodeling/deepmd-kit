@@ -221,7 +221,7 @@ class DeepEval(DeepEvalBackend):
             )
         )
 
-    def _get_request_defs(self, atomic: bool) -> list[OutputVariableDef]:
+    def _get_request_defs(self, atomic: bool) -> List[OutputVariableDef]:
         """Get the requested output definitions.
 
         When atomic is True, all output_def are requested.
