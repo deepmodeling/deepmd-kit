@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import logging
 from typing import (
     Dict,
     List,
@@ -6,7 +7,7 @@ from typing import (
     Tuple,
     Union,
 )
-import logging
+
 import torch
 
 from deepmd.dpmodel import (
@@ -163,7 +164,7 @@ class LinearModel(BaseModel, BaseAtomicModel):
             for model, nl in zip(self.models, self.nlists_)
         ]
 
-        weights =  self._compute_weight()
+        weights = self._compute_weight()
         if atomic_bias is not None:
             raise NotImplementedError("Need to add bias in a future PR.")
         else:
@@ -197,9 +198,7 @@ class LinearModel(BaseModel, BaseAtomicModel):
             models = [DPAtomicModel.deserialize(model) for model in data["models"]]
         return cls(models, weights)
 
-    def _compute_weight(
-        self
-    ) -> torch.Tensor:
+    def _compute_weight(self) -> torch.Tensor:
         if isinstance(self.weights, list):
             if len(self.weights) != len(self.models):
                 raise ValueError(
@@ -215,6 +214,7 @@ class LinearModel(BaseModel, BaseAtomicModel):
             raise NotImplementedError("Use ZBLModel instead of LinearModel.")
         else:
             raise ValueError(f"Invalid weights {self.weights}")
+
 
 class ZBLModel(LinearModel):
     """Model linearly combine a list of AtomicModels.
@@ -241,7 +241,7 @@ class ZBLModel(LinearModel):
         self.zbl_model = zbl_model
         if weights != "zbl":
             raise ValueError("ZBLModel only supports weights 'zbl'.")
-        
+
         self.sw_rmin = sw_rmin
         self.sw_rmax = sw_rmax
         self.smin_alpha = smin_alpha
@@ -277,9 +277,7 @@ class ZBLModel(LinearModel):
             smin_alpha=smin_alpha,
         )
 
-    def _compute_weight(
-        self
-    ) -> torch.Tensor:
+    def _compute_weight(self) -> torch.Tensor:
         """ZBL weight.
 
         Returns
@@ -314,7 +312,9 @@ class ZBLModel(LinearModel):
         )  # masked nnei will be zero, no need to handle
         denominator = torch.sum(
             torch.where(
-                nlist_larger != -1, torch.exp(-rr / self.smin_alpha), torch.zeros_like(nlist_larger)
+                nlist_larger != -1,
+                torch.exp(-rr / self.smin_alpha),
+                torch.zeros_like(nlist_larger),
             ),
             dim=-1,
         )  # handle masked nnei.

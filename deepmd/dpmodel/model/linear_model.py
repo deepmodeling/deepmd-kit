@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import logging
 from typing import (
     Dict,
     List,
@@ -6,7 +7,7 @@ from typing import (
     Tuple,
     Union,
 )
-import logging
+
 import numpy as np
 
 from deepmd.dpmodel import (
@@ -136,7 +137,7 @@ class LinearModel(BaseAtomicModel):
             )["energy"]
             for model, nl in zip(self.models, self.nlists_)
         ]
-        weights =  self._compute_weight()
+        weights = self._compute_weight()
         if atomic_bias is not None:
             raise NotImplementedError("Need to add bias in a future PR.")
         else:
@@ -170,9 +171,7 @@ class LinearModel(BaseAtomicModel):
             models = [DPAtomicModel.deserialize(model) for model in data["models"]]
         return cls(models, weights)
 
-    def _compute_weight(
-        self
-    ) -> np.ndarray:
+    def _compute_weight(self) -> np.ndarray:
         if isinstance(self.weights, list):
             if len(self.weights) != len(self.models):
                 raise ValueError(
@@ -188,6 +187,7 @@ class LinearModel(BaseAtomicModel):
             raise NotImplementedError("Use ZBLModel instead of LinearModel.")
         else:
             raise ValueError(f"Invalid weights {self.weights}")
+
 
 class ZBLModel(LinearModel):
     """Model linearly combine a list of AtomicModels.
@@ -214,7 +214,7 @@ class ZBLModel(LinearModel):
         self.zbl_model = zbl_model
         if weights != "zbl":
             raise ValueError("ZBLModel only supports weights 'zbl'.")
-        
+
         self.sw_rmin = sw_rmin
         self.sw_rmax = sw_rmax
         self.smin_alpha = smin_alpha
@@ -250,9 +250,7 @@ class ZBLModel(LinearModel):
             smin_alpha=smin_alpha,
         )
 
-    def _compute_weight(
-        self
-    ) -> np.ndarray:
+    def _compute_weight(self) -> np.ndarray:
         """ZBL weight.
 
         Returns
@@ -264,7 +262,6 @@ class ZBLModel(LinearModel):
             self.sw_rmax > self.sw_rmin
         ), "The upper boundary `sw_rmax` must be greater than the lower boundary `sw_rmin`."
 
-         
         dp_nlist = self.nlists_[0]
         zbl_nlist = self.nlists_[1]
 
@@ -294,7 +291,11 @@ class ZBLModel(LinearModel):
             rr * np.exp(-rr / self.smin_alpha), axis=-1
         )  # masked nnei will be zero, no need to handle
         denominator = np.sum(
-            np.where(nlist_larger != -1, np.exp(-rr / self.smin_alpha), np.zeros_like(nlist_larger)),
+            np.where(
+                nlist_larger != -1,
+                np.exp(-rr / self.smin_alpha),
+                np.zeros_like(nlist_larger),
+            ),
             axis=-1,
         )  # handle masked nnei.
         sigma = numerator / denominator
