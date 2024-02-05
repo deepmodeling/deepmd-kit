@@ -127,15 +127,15 @@ class OutputVariableCategory(IntEnum):
     """Defines the category of the output variable."""
 
     OUT = OutputVariableOperation.NONE
-    """Output variable."""
+    """Output variable. (e.g. atom energy)"""
     REDU = OutputVariableOperation.REDU
-    """Reduced output variable."""
+    """Reduced output variable. (e.g. system energy)"""
     DERV_R = OutputVariableOperation.DERV_R
-    """Derivative w.r.t. coordinates."""
+    """Negative derivative w.r.t. coordinates. (e.g. force)"""
     DERV_C = OutputVariableOperation.DERV_C
-    """Derivative w.r.t. cell."""
+    """Atomic component of the virial, see PRB 104, 224202 (2021)  """
     DERV_C_REDU = OutputVariableOperation.DERV_C | OutputVariableOperation.REDU
-    """Reduced derivative w.r.t. cell."""
+    """Virial, the transposed negative gradient with cell tensor times cell tensor, see eq 40 JCP 159, 054801 (2023). """
 
 
 class OutputVariableDef:
