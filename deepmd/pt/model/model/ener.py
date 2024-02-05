@@ -9,15 +9,16 @@ import torch
 from .dp_atomic_model import (
     DPAtomicModel,
 )
+from .linear_model import (
+    ZBLAtomicModel,
+)
 from .make_model import (
     make_model,
-)
-from .linear_model import (
-    ZBLAtomicModel
 )
 
 DPModel = make_model(DPAtomicModel)
 ZBLModel_ = make_model(ZBLAtomicModel)
+
 
 class ZBLModel(ZBLModel_):
     model_type = "ener"
@@ -34,13 +35,13 @@ class ZBLModel(ZBLModel_):
         coord,
         atype,
         box: Optional[torch.Tensor] = None,
-        
-        
     ) -> Dict[str, torch.Tensor]:
         model_ret = self.forward_common(
-            coord, atype, box, 
+            coord,
+            atype,
+            box,
         )
-        
+
         model_predict = {}
         model_predict["atom_energy"] = model_ret["energy"]
         model_predict["energy"] = model_ret["energy_redu"]
@@ -52,23 +53,22 @@ class ZBLModel(ZBLModel_):
         extended_atype,
         nlist,
         mapping: Optional[torch.Tensor] = None,
-       
     ):
         model_ret = self.common_forward_lower(
             extended_coord,
             extended_atype,
             nlist,
             mapping,
-            
         )
-        
+
         model_predict = {}
         model_predict["atom_energy"] = model_ret["energy"]
         model_predict["energy"] = model_ret["energy_redu"]
-        
+
         model_predict = model_ret
         return model_predict
-    
+
+
 class EnergyModel(DPModel):
     model_type = "ener"
 
