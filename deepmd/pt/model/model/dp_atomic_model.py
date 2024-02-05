@@ -39,31 +39,9 @@ class DPAtomicModel(BaseModel, BaseAtomicModel):
     type_map
             Mapping atom type to the name (str) of the type.
             For example `type_map[1]` gives the name of the type 1.
-    type_embedding
-            Type embedding net
-    resuming
-            Whether to resume/fine-tune from checkpoint or not.
-    stat_file_dir
-            The directory to the state files.
-    stat_file_path
-            The path to the state files.
-    sampled
-            Sampled frames to compute the statistics.
     """
 
-    # I am enough with the shit interface!
-    def __init__(
-        self,
-        descriptor,
-        fitting,
-        type_map: Optional[List[str]],
-        type_embedding: Optional[dict] = None,
-        resuming: bool = False,
-        stat_file_dir=None,
-        stat_file_path=None,
-        sampled=None,
-        **kwargs,
-    ):
+    def __init__(self, descriptor, fitting, type_map: Optional[List[str]]):
         super().__init__()
         ntypes = len(type_map)
         self.type_map = type_map
@@ -72,17 +50,6 @@ class DPAtomicModel(BaseModel, BaseAtomicModel):
         self.rcut = self.descriptor.get_rcut()
         self.sel = self.descriptor.get_sel()
         self.fitting_net = fitting
-        # Statistics
-        fitting_net = None  # TODO: hack!!! not sure if it is correct.
-        self.compute_or_load_stat(
-            fitting_net,
-            ntypes,
-            resuming=resuming,
-            type_map=type_map,
-            stat_file_dir=stat_file_dir,
-            stat_file_path=stat_file_path,
-            sampled=sampled,
-        )
 
     def fitting_output_def(self) -> FittingOutputDef:
         """Get the output def of the fitting net."""
@@ -122,13 +89,7 @@ class DPAtomicModel(BaseModel, BaseAtomicModel):
         fitting_obj = getattr(sys.modules[__name__], data["fitting_name"]).deserialize(
             data["fitting"]
         )
-        # TODO: dirty hack to provide type_map and avoid data stat!!!
-        obj = cls(
-            descriptor_obj,
-            fitting_obj,
-            type_map=data["type_map"],
-            resuming=True,
-        )
+        obj = cls(descriptor_obj, fitting_obj, type_map=data["type_map"])
         return obj
 
     def forward_atomic(

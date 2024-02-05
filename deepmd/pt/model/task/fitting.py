@@ -92,6 +92,11 @@ class Fitting(torch.nn.Module, BaseFitting):
         else:
             raise NotImplementedError
 
+    def init_energy_bias(self, bias_atom_e):
+        self.bias_atom_e.copy_(
+            torch.tensor(bias_atom_e, device=DEVICE).view([self.ntypes, self.dim_out])
+        )
+
     def change_energy_bias(
         self, config, model, old_type_map, new_type_map, bias_shift="delta", ntest=10
     ):

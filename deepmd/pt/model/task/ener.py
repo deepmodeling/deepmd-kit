@@ -167,7 +167,7 @@ class InvarFitting(Fitting):
 
     def __setitem__(self, key, value):
         if key in ["bias_atom_e"]:
-            # correct bias_atom_e shape. user may provide stupid  shape
+            value = value.view([self.ntypes, self.dim_out])
             self.bias_atom_e = value
         elif key in ["fparam_avg"]:
             self.fparam_avg = value

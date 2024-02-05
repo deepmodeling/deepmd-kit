@@ -316,6 +316,7 @@ class DescrptDPA2(Descriptor):
 
     @classmethod
     def get_stat_name(cls, config):
+        """Get the name for the statistic file of the descriptor."""
         descrpt_type = config["type"]
         assert descrpt_type in ["dpa2"]
         return (
@@ -324,7 +325,13 @@ class DescrptDPA2(Descriptor):
         )
 
     @classmethod
+    def get_data_stat_key(cls, config):
+        """Get the keys for the data statistic of the descriptor."""
+        return ["sumr", "suma", "sumn", "sumr2", "suma2"]
+
+    @classmethod
     def get_data_process_key(cls, config):
+        """Get the keys for the data preprocess."""
         descrpt_type = config["type"]
         assert descrpt_type in ["dpa2"]
         return {

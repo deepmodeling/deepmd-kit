@@ -4,6 +4,9 @@ from .common import (
     PRECISION_DICT,
     NativeOP,
 )
+from .descriptor import (
+    DescrptSeA,
+)
 from .model import (
     DPAtomicModel,
     DPModel,
@@ -17,6 +20,13 @@ from .output_def import (
     get_reduce_name,
     model_check_output,
 )
+from .utils import (
+    EmbeddingNet,
+    EnvMat,
+    FittingNet,
+    NativeLayer,
+    NativeNet,
+)
 
 __all__ = [
     "DPModel",
@@ -24,6 +34,12 @@ __all__ = [
     "PRECISION_DICT",
     "DEFAULT_PRECISION",
     "NativeOP",
+    "EnvMat",
+    "NativeLayer",
+    "NativeNet",
+    "EmbeddingNet",
+    "FittingNet",
+    "DescrptSeA",
     "ModelOutputDef",
     "FittingOutputDef",
     "OutputVariableDef",

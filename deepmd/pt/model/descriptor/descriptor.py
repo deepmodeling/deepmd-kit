@@ -57,11 +57,19 @@ class Descriptor(torch.nn.Module, BaseDescriptor):
 
     @classmethod
     def get_stat_name(cls, config):
+        """Get the name for the statistic file of the descriptor."""
         descrpt_type = config["type"]
         return Descriptor.__plugins.plugins[descrpt_type].get_stat_name(config)
 
     @classmethod
+    def get_data_stat_key(cls, config):
+        """Get the keys for the data statistic of the descriptor."""
+        descrpt_type = config["type"]
+        return Descriptor.__plugins.plugins[descrpt_type].get_data_stat_key(config)
+
+    @classmethod
     def get_data_process_key(cls, config):
+        """Get the keys for the data preprocess."""
         descrpt_type = config["type"]
         return Descriptor.__plugins.plugins[descrpt_type].get_data_process_key(config)
 
