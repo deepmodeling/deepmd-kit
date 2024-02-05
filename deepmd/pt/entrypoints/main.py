@@ -30,6 +30,9 @@ from deepmd.entrypoints.gui import (
 from deepmd.infer.model_devi import (
     make_model_devi,
 )
+from deepmd.loggers.loggers import (
+    set_log_handles,
+)
 from deepmd.main import (
     parse_args,
 )
@@ -41,9 +44,6 @@ from deepmd.pt.model.descriptor import (
 )
 from deepmd.pt.train import (
     training,
-)
-from deepmd.pt.utils import (
-    env,
 )
 from deepmd.pt.utils.dataloader import (
     DpLoaderSet,
@@ -57,6 +57,8 @@ from deepmd.pt.utils.multi_task import (
 from deepmd.pt.utils.stat import (
     make_stat_input,
 )
+
+log = logging.getLogger(__name__)
 
 
 def get_trainer(
@@ -237,7 +239,7 @@ def get_trainer(
 
 
 def train(FLAGS):
-    logging.info("Configuration path: %s", FLAGS.INPUT)
+    log.info("Configuration path: %s", FLAGS.INPUT)
     with open(FLAGS.INPUT) as fin:
         config = json.load(fin)
     trainer = get_trainer(
@@ -278,28 +280,18 @@ def freeze(FLAGS):
     )
 
 
-# avoid logger conflicts of tf version
-def clean_loggers():
-    logger = logging.getLogger()
-    while logger.hasHandlers():
-        logger.removeHandler(logger.handlers[0])
-
-
 @record
 def main(args: Optional[Union[List[str], argparse.Namespace]] = None):
-    clean_loggers()
-
     if not isinstance(args, argparse.Namespace):
         FLAGS = parse_args(args=args)
     else:
         FLAGS = args
     dict_args = vars(FLAGS)
 
-    logging.basicConfig(
-        level=logging.WARNING if env.LOCAL_RANK else logging.INFO,
-        format=f"%(asctime)-15s {os.environ.get('RANK') or ''} [%(filename)s:%(lineno)d] %(levelname)s %(message)s",
-    )
-    logging.info("DeepMD version: %s", __version__)
+    set_log_handles(FLAGS.log_level, FLAGS.log_path, mpi_log=None)
+    log.debug("Log handles were successfully set")
+
+    log.info("DeepMD version: %s", __version__)
 
     if FLAGS.command == "train":
         train(FLAGS)
@@ -315,9 +307,9 @@ def main(args: Optional[Union[List[str], argparse.Namespace]] = None):
             FLAGS.model = FLAGS.checkpoint_folder
         FLAGS.output = str(Path(FLAGS.output).with_suffix(".pth"))
         freeze(FLAGS)
-    elif args.command == "doc-train-input":
+    elif FLAGS.command == "doc-train-input":
         doc_train_input(**dict_args)
-    elif args.command == "model-devi":
+    elif FLAGS.command == "model-devi":
         dict_args["models"] = [
             str(Path(mm).with_suffix(".pt"))
             if Path(mm).suffix not in (".pb", ".pt")
@@ -325,7 +317,7 @@ def main(args: Optional[Union[List[str], argparse.Namespace]] = None):
             for mm in dict_args["models"]
         ]
         make_model_devi(**dict_args)
-    elif args.command == "gui":
+    elif FLAGS.command == "gui":
         start_dpgui(**dict_args)
     else:
         raise RuntimeError(f"Invalid command {FLAGS.command}!")

@@ -8,6 +8,8 @@ from deepmd.pt.utils import (
     env,
 )
 
+log = logging.getLogger(__name__)
+
 
 def make_stat_input(datasets, dataloaders, nbatches):
     """Pack data for statistics.
@@ -36,7 +38,7 @@ def make_stat_input(datasets, dataloaders, nbatches):
     ]
     if datasets[0].mixed_type:
         keys.append("real_natoms_vec")
-    logging.info(f"Packing data for statistics from {len(datasets)} systems")
+    log.info(f"Packing data for statistics from {len(datasets)} systems")
     for i in range(len(datasets)):
         sys_stat = {key: [] for key in keys}
         iterator = iter(dataloaders[i])

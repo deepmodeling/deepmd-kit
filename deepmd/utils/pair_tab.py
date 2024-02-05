@@ -12,6 +12,8 @@ from scipy.interpolate import (
     CubicSpline,
 )
 
+log = logging.getLogger(__name__)
+
 
 class PairTab:
     """Pairwise tabulated potential.
@@ -147,7 +149,7 @@ class PairTab:
         if np.all(upper_val == 0):
             # if table values decay to `0` after rcut
             if self.rcut < self.rmax and np.any(self.vdata[rcut_idx - 1][1:] != 0):
-                logging.warning(
+                log.warning(
                     "The energy provided in the table does not decay to 0 at rcut."
                 )
             # if table values decay to `0` at rcut, do nothing
@@ -164,12 +166,12 @@ class PairTab:
         else:
             # if table values do not decay to `0` at rcut
             if self.rcut <= self.rmax:
-                logging.warning(
+                log.warning(
                     "The energy provided in the table does not decay to 0 at rcut."
                 )
             # if rcut goes beyond table upper bond, need extrapolation, ensure values decay to `0` before rcut.
             else:
-                logging.warning(
+                log.warning(
                     "The rcut goes beyond table upper boundary, performing extrapolation."
                 )
                 pad_extrapolation = np.zeros((rcut_idx - upper_idx, self.ncol))
