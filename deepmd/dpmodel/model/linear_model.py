@@ -4,6 +4,7 @@ from typing import (
     List,
     Optional,
     Union,
+    Tuple,
 )
 
 import numpy as np
@@ -97,7 +98,12 @@ class LinearModel(BaseAtomicModel):
             else model.get_sel()
             for model in self.models
         ]
-
+    
+    def _sort_rcuts_sels(self) -> Tuple[List[int], List[float]]:
+        # sort the pair of rcut and sels in ascending order, first based on sel, then on rcut.
+        zipped = sorted(zip(self.get_rcuts(), self.get_sels()), key=lambda x: (x[1],x[0]))
+        return [p[0] for p in zipped], [p[1] for p in zipped]
+    
     def forward_atomic(
         self,
         extended_coord,
@@ -125,11 +131,12 @@ class LinearModel(BaseAtomicModel):
         """
         nframes, nloc, nnei = nlist.shape
         extended_coord = extended_coord.reshape(nframes, -1, 3)
+        sorted_rcuts, sorted_sels = self._sort_rcuts_sels()
         nlists = build_multiple_neighbor_list(
             extended_coord,
             nlist,
-            self.get_rcuts(),
-            self.get_sels(),
+            sorted_rcuts,
+            sorted_sels,
         )
         nlists_ = [
             nlists[str(rcut) + "_" + str(sel)]
@@ -256,11 +263,12 @@ class ZBLModel(LinearModel):
         """
         nframes, nloc, nnei = nlist.shape
         extended_coord = extended_coord.reshape(nframes, -1, 3)
+        sorted_rcuts, sorted_sels = self._sort_rcuts_sels()
         nlists = build_multiple_neighbor_list(
             extended_coord,
             nlist,
-            [self.zbl_model.rcut, self.dp_model.get_rcut()],
-            [self.zbl_model.sel, sum(self.dp_model.get_sel())],
+            sorted_rcuts,
+            sorted_sels,
         )
         zbl_nlist = nlists[str(self.zbl_model.rcut) + "_" + str(self.zbl_model.sel)]
         dp_nlist = nlists[
