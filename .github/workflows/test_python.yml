@@ -43,8 +43,8 @@ jobs:
       env:
         NUM_WORKERS: 0
     - uses: codecov/codecov-action@v4
-      with:
-        gcov: true
+      env:
+        CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
   pass:
     name: Pass testing Python
     needs: [testpython]
