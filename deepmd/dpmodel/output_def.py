@@ -121,6 +121,8 @@ class OutputVariableOperation(IntEnum):
     """Derivative w.r.t. coordinates."""
     DERV_C = 4
     """Derivative w.r.t. cell."""
+    SEC_DERV_R = 8
+    """Second derivative w.r.t. coordinates."""
 
 
 class OutputVariableCategory(IntEnum):
@@ -136,6 +138,8 @@ class OutputVariableCategory(IntEnum):
     """Atomic component of the virial, see PRB 104, 224202 (2021)  """
     DERV_C_REDU = OutputVariableOperation.DERV_C | OutputVariableOperation.REDU
     """Virial, the transposed negative gradient with cell tensor times cell tensor, see eq 40 JCP 159, 054801 (2023). """
+    DERV_R_DERV_R = OutputVariableOperation.DERV_R | OutputVariableOperation.SEC_DERV_R
+    """Hession matrix, the second derivative w.r.t. coordinates."""
 
 
 class OutputVariableDef:
@@ -324,6 +328,17 @@ def check_operation_applied(
     bool
         True if the operation has been applied, False otherwise.
     """
+    if op in (OutputVariableOperation.DERV_REDU, OutputVariableOperation.DERV_C):
+        assert not check_operation_applied(var_def, op)
+    elif op == OutputVariableOperation.DERV_R:
+        if check_operation_applied(var_def, OutputVariableOperation.DERV_R):
+            op = OutputVariableOperation.SEC_DERV_R
+        else:
+            assert not check_operation_applied(
+                var_def, OutputVariableOperation.SEC_DERV_R
+            )
+    else:
+        raise ValueError(f"operation {op} not supported")
     return var_def.category & op.value == op.value
 
 
@@ -333,7 +348,6 @@ def do_reduce(
     def_redu: Dict[str, OutputVariableDef] = {}
     for kk, vv in def_outp_data.items():
         if vv.reduciable:
-            assert not check_operation_applied(vv, OutputVariableOperation.REDU)
             rk = get_reduce_name(kk)
             def_redu[rk] = OutputVariableDef(
                 rk,
@@ -353,8 +367,6 @@ def do_derivative(
     def_derv_c: Dict[str, OutputVariableDef] = {}
     for kk, vv in def_outp_data.items():
         if vv.differentiable:
-            assert not check_operation_applied(vv, OutputVariableOperation.DERV_R)
-            assert not check_operation_applied(vv, OutputVariableOperation.DERV_C)
             rkr, rkc = get_deriv_name(kk)
             def_derv_r[rkr] = OutputVariableDef(
                 rkr,
