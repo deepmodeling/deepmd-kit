@@ -40,6 +40,7 @@ from deepmd.utils.data_system import (
     process_sys_probs,
 )
 
+log = logging.getLogger(__name__)
 torch.multiprocessing.set_sharing_strategy("file_system")
 
 
@@ -69,7 +70,7 @@ class DpLoaderSet(Dataset):
 
         self.systems: List[DeepmdDataSetForLoader] = []
         if len(systems) >= 100:
-            logging.info(f"Constructing DataLoaders from {len(systems)} systems")
+            log.info(f"Constructing DataLoaders from {len(systems)} systems")
 
         def construct_dataset(system):
             ### this design requires "rcut" and "sel" in the descriptor
@@ -119,7 +120,7 @@ class DpLoaderSet(Dataset):
                     rule = int(batch_size.split(":")[1])
                 else:
                     rule = None
-                    logging.error("Unsupported batch size type")
+                    log.error("Unsupported batch size type")
                 self.batch_size = rule // system._natoms
                 if self.batch_size * system._natoms < rule:
                     self.batch_size += 1
@@ -155,7 +156,7 @@ class DpLoaderSet(Dataset):
         return len(self.dataloaders)
 
     def __getitem__(self, idx):
-        # logging.warning(str(torch.distributed.get_rank())+" idx: "+str(idx)+" index: "+str(self.index[idx]))
+        # log.warning(str(torch.distributed.get_rank())+" idx: "+str(idx)+" index: "+str(self.index[idx]))
         try:
             batch = next(self.iters[idx])
         except StopIteration:
@@ -216,7 +217,7 @@ class BufferedIterator:
                     self.warning_time is None
                     or time.time() - self.warning_time > 15 * 60
                 ):
-                    logging.warning(
+                    log.warning(
                         "Data loading buffer is empty or nearly empty. This may "
                         "indicate a data loading bottleneck, and increasing the "
                         "number of workers (--num-workers) may help."
@@ -310,7 +311,7 @@ def get_weighted_sampler(training_data, prob_style, sys_prob=False):
             probs = prob_sys_size_ext(style, len(training_data), training_data.index)
     else:
         probs = process_sys_probs(prob_style, training_data.index)
-    logging.info("Generated weighted sampler with prob array: " + str(probs))
+    log.info("Generated weighted sampler with prob array: " + str(probs))
     # training_data.total_batch is the size of one epoch, you can increase it to avoid too many  rebuilding of iteraters
     len_sampler = training_data.total_batch * max(env.NUM_WORKERS, 1)
     sampler = WeightedRandomSampler(probs, len_sampler, replacement=True)

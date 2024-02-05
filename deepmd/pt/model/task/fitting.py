@@ -23,6 +23,8 @@ from deepmd.pt.utils.stat import (
     make_stat_input,
 )
 
+log = logging.getLogger(__name__)
+
 
 class Fitting(torch.nn.Module, BaseFitting):
     __plugins = Plugin()
@@ -115,7 +117,7 @@ class Fitting(torch.nn.Module, BaseFitting):
         ntest : int
             The number of test samples in a system to change the energy bias.
         """
-        logging.info(
+        log.info(
             "Changing energy bias in pretrained model for types {}... "
             "(this step may take long time)".format(str(new_type_map))
         )
@@ -188,7 +190,7 @@ class Fitting(torch.nn.Module, BaseFitting):
             self.bias_atom_e[idx_type_map] += torch.from_numpy(
                 delta_bias.reshape(-1)
             ).to(DEVICE)
-            logging.info(
+            log.info(
                 f"RMSE of atomic energy after linear regression is: {rmse_ae:10.5e} eV/atom."
             )
         elif bias_shift == "statistic":
@@ -202,7 +204,7 @@ class Fitting(torch.nn.Module, BaseFitting):
             )
         else:
             raise RuntimeError("Unknown bias_shift mode: " + bias_shift)
-        logging.info(
+        log.info(
             "Change energy bias of {} from {} to {}.".format(
                 str(new_type_map),
                 str(old_bias.detach().cpu().numpy()),

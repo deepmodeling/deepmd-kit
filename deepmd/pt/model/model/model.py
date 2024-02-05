@@ -12,6 +12,8 @@ from deepmd.pt.utils.stat import (
     compute_output_stats,
 )
 
+log = logging.getLogger(__name__)
+
 
 class BaseModel(torch.nn.Module):
     def __init__(self):
@@ -55,7 +57,7 @@ class BaseModel(torch.nn.Module):
                     if not os.path.exists(stat_file_dir):
                         os.mkdir(stat_file_dir)
                     if not isinstance(stat_file_path, list):
-                        logging.info(f"Saving stat file to {stat_file_path}")
+                        log.info(f"Saving stat file to {stat_file_path}")
                         np.savez_compressed(
                             stat_file_path,
                             sumr=sumr,
@@ -68,7 +70,7 @@ class BaseModel(torch.nn.Module):
                         )
                     else:
                         for ii, file_path in enumerate(stat_file_path):
-                            logging.info(f"Saving stat file to {file_path}")
+                            log.info(f"Saving stat file to {file_path}")
                             np.savez_compressed(
                                 file_path,
                                 sumr=sumr[ii],
@@ -82,7 +84,7 @@ class BaseModel(torch.nn.Module):
             else:  # load stat
                 target_type_map = type_map
                 if not isinstance(stat_file_path, list):
-                    logging.info(f"Loading stat file from {stat_file_path}")
+                    log.info(f"Loading stat file from {stat_file_path}")
                     stats = np.load(stat_file_path)
                     stat_type_map = list(stats["type_map"])
                     missing_type = [
@@ -105,7 +107,7 @@ class BaseModel(torch.nn.Module):
                     sumr, suma, sumn, sumr2, suma2 = [], [], [], [], []
                     id_bias_atom_e = None
                     for ii, file_path in enumerate(stat_file_path):
-                        logging.info(f"Loading stat file from {file_path}")
+                        log.info(f"Loading stat file from {file_path}")
                         stats = np.load(file_path)
                         stat_type_map = list(stats["type_map"])
                         missing_type = [

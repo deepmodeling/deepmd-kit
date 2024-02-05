@@ -59,6 +59,8 @@ from torch.utils.data import (
     DataLoader,
 )
 
+log = logging.getLogger(__name__)
+
 
 class Trainer:
     def __init__(
@@ -140,7 +142,7 @@ class Trainer:
                 valid_sampler = get_weighted_sampler(_validation_data, "prob_sys_size")
 
             if train_sampler is None or valid_sampler is None:
-                logging.warning(
+                log.warning(
                     "Sampler not specified!"
                 )  # None sampler will lead to a premature stop iteration. Replacement should be True in attribute of the sampler to produce expected number of items in one iteration.
             training_dataloader = DataLoader(
@@ -299,7 +301,7 @@ class Trainer:
             origin_model = (
                 finetune_model if finetune_model is not None else resume_model
             )
-            logging.info(f"Resuming from {origin_model}.")
+            log.info(f"Resuming from {origin_model}.")
             state_dict = torch.load(origin_model, map_location=DEVICE)
             if "model" in state_dict:
                 optimizer_state_dict = (
@@ -332,7 +334,7 @@ class Trainer:
                                 tmp_keys = ".".join(item.split(".")[:3])
                                 slim_keys.append(tmp_keys)
                         slim_keys = [i + ".*" for i in slim_keys]
-                        logging.warning(
+                        log.warning(
                             f"Force load mode allowed! These keys are not in ckpt and will re-init: {slim_keys}"
                         )
                 elif self.finetune_multi_task:
@@ -451,9 +453,9 @@ class Trainer:
         if SAMPLER_RECORD:
             record_file = f"Sample_rank_{self.rank}.txt"
             fout1 = open(record_file, mode="w", buffering=1)
-        logging.info("Start to train %d steps.", self.num_steps)
+        log.info("Start to train %d steps.", self.num_steps)
         if dist.is_initialized():
-            logging.info(f"Rank: {dist.get_rank()}/{dist.get_world_size()}")
+            log.info(f"Rank: {dist.get_rank()}/{dist.get_world_size()}")
         if self.enable_tensorboard:
             from torch.utils.tensorboard import (
                 SummaryWriter,
@@ -655,7 +657,7 @@ class Trainer:
                 train_time = time.time() - self.t0
                 self.t0 = time.time()
                 msg += f", speed={train_time:.2f} s/{self.disp_freq if _step_id else 1} batches"
-                logging.info(msg)
+                log.info(msg)
 
                 if fout:
                     if self.lcurve_should_print_header:
@@ -674,7 +676,7 @@ class Trainer:
 
                 module = self.wrapper.module if dist.is_initialized() else self.wrapper
                 self.save_model(self.latest_model, lr=cur_lr, step=_step_id)
-                logging.info(f"Saved model to {self.latest_model}")
+                log.info(f"Saved model to {self.latest_model}")
                 symlink_prefix_files(self.latest_model.stem, self.save_ckpt)
                 with open("checkpoint", "w") as f:
                     f.write(str(self.latest_model))
@@ -714,10 +716,10 @@ class Trainer:
                     "frozen_model.pth"  # We use .pth to denote the frozen model
                 )
                 self.model.save(pth_model_path)
-                logging.info(
+                log.info(
                     f"Frozen model for inferencing has been saved to {pth_model_path}"
                 )
-            logging.info(f"Trained model has been saved to: {self.save_ckpt}")
+            log.info(f"Trained model has been saved to: {self.save_ckpt}")
 
         if fout:
             fout.close()

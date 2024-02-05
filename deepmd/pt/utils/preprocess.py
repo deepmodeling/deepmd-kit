@@ -10,6 +10,8 @@ from deepmd.pt.utils import (
     env,
 )
 
+log = logging.getLogger(__name__)
+
 
 class Region3D:
     def __init__(self, boxt):
@@ -263,7 +265,7 @@ def make_env_mat(
         )
         merged_coord = coord[merged_mapping] - merged_coord_shift
         if merged_coord.shape[0] <= coord.shape[0]:
-            logging.warning("No ghost atom is added for system ")
+            log.warning("No ghost atom is added for system ")
     else:
         merged_coord_shift = torch.zeros_like(coord)
         merged_atype = atype.clone()
