@@ -147,15 +147,15 @@ def make_model(T_AtomicModel):
             Parameters
             ----------
             extended_coord
-                coodinates in extended region
+                coodinates in extended region. nf x (nall x 3)
             extended_atype
-                atomic type in extended region
+                atomic type in extended region. nf x nall
             nlist
-                neighbor list. nf x nloc x nsel
+                neighbor list. nf x nloc x nsel.
             mapping
-                mapps the extended indices to local indices
+                mapps the extended indices to local indices. nf x nall.
             do_atomic_virial
-                whether calculate atomic virial
+                whether calculate atomic virial.
 
             Returns
             -------

@@ -7,6 +7,8 @@ from torch.optim.optimizer import (
     Optimizer,
 )
 
+log = logging.getLogger(__name__)
+
 
 class LKFOptimizer(Optimizer):
     def __init__(
@@ -59,7 +61,7 @@ class LKFOptimizer(Optimizer):
 
         P = []
         params_packed_index = []
-        logging.info("LKF parameter nums: %s" % param_nums)
+        log.info("LKF parameter nums: %s" % param_nums)
         for param_num in param_nums:
             if param_num >= block_size:
                 block_num = math.ceil(param_num / block_size)

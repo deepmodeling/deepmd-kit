@@ -143,7 +143,7 @@ class DpTrainer:
                 "energy": model_pred["energy"],
                 "force": model_pred["force"],
                 "virial": model_pred["virial"],
-                "atomic_virial": model_pred["atom_virial"],
+                "atom_virial": model_pred["atom_virial"],
             }
 
         # Get statistics of each component
@@ -352,7 +352,7 @@ class TestEnergy(unittest.TestCase):
             model_predict["energy"],
             model_predict["force"],
             model_predict["virial"],
-            model_predict["atomic_virial"],
+            model_predict["atom_virial"],
         )
         cur_lr = my_lr.value(self.wanted_step)
         model_pred = {
@@ -388,10 +388,10 @@ class TestEnergy(unittest.TestCase):
             .detach()
             .numpy(),
         )
-        self.assertIsNone(model_predict_1.get("atomic_virial", None))
+        self.assertIsNone(model_predict_1.get("atom_virial", None))
         np.testing.assert_allclose(
-            head_dict["atomic_virial"],
-            p_atomic_virial.view(*head_dict["atomic_virial"].shape)
+            head_dict["atom_virial"],
+            p_atomic_virial.view(*head_dict["atom_virial"].shape)
             .cpu()
             .detach()
             .numpy(),

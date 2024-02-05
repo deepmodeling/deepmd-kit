@@ -522,6 +522,7 @@ struct InputNlist {
         nl(DP_NewNlist(inum_, ilist_, numneigh_, firstneigh_)) {
     DP_CHECK_OK(DP_NlistCheckOK, nl);
   };
+  ~InputNlist() { DP_DeleteNlist(nl); };
   /// @brief C API neighbor list.
   DP_Nlist *nl;
   /// @brief Number of core region atoms
@@ -556,6 +557,8 @@ void inline convert_nlist(InputNlist &to_nlist,
     to_nlist.numneigh[ii] = from_nlist[ii].size();
     to_nlist.firstneigh[ii] = &from_nlist[ii][0];
   }
+  // delete the original nl
+  DP_DeleteNlist(to_nlist.nl);
   to_nlist.nl = DP_NewNlist(to_nlist.inum, to_nlist.ilist, to_nlist.numneigh,
                             to_nlist.firstneigh);
 }
@@ -568,7 +571,7 @@ class DeepPot {
    * @brief DP constructor without initialization.
    **/
   DeepPot() : dp(nullptr){};
-  ~DeepPot(){};
+  ~DeepPot() { DP_DeleteDeepPot(dp); };
   /**
    * @brief DP constructor with initialization.
    * @param[in] model The name of the frozen model file.
@@ -579,7 +582,15 @@ class DeepPot {
           const int &gpu_rank = 0,
           const std::string &file_content = "")
       : dp(nullptr) {
-    init(model, gpu_rank, file_content);
+    try {
+      init(model, gpu_rank, file_content);
+    } catch (...) {
+      // Clean up and rethrow, as the destructor will not be called
+      if (dp) {
+        DP_DeleteDeepPot(dp);
+      }
+      throw;
+    }
   };
   /**
    * @brief Initialize the DP.
@@ -1100,13 +1111,21 @@ class DeepPotModelDevi {
    * @brief DP model deviation constructor without initialization.
    **/
   DeepPotModelDevi() : dp(nullptr){};
-  ~DeepPotModelDevi(){};
+  ~DeepPotModelDevi() { DP_DeleteDeepPotModelDevi(dp); };
   /**
    * @brief DP model deviation constructor with initialization.
    * @param[in] models The names of the frozen model file.
    **/
   DeepPotModelDevi(const std::vector<std::string> &models) : dp(nullptr) {
-    init(models);
+    try {
+      init(models);
+    } catch (...) {
+      // Clean up and rethrow, as the destructor will not be called
+      if (dp) {
+        DP_DeleteDeepPotModelDevi(dp);
+      }
+      throw;
+    }
   };
   /**
    * @brief Initialize the DP model deviation.
@@ -1523,7 +1542,7 @@ class DeepTensor {
    * @brief Deep Tensor constructor without initialization.
    **/
   DeepTensor() : dt(nullptr){};
-  ~DeepTensor(){};
+  ~DeepTensor() { DP_DeleteDeepTensor(dt); };
   /**
    * @brief DeepTensor constructor with initialization.
    * @param[in] model The name of the frozen model file.
@@ -1532,7 +1551,15 @@ class DeepTensor {
              const int &gpu_rank = 0,
              const std::string &name_scope = "")
       : dt(nullptr) {
-    init(model, gpu_rank, name_scope);
+    try {
+      init(model, gpu_rank, name_scope);
+    } catch (...) {
+      // Clean up and rethrow, as the destructor will not be called
+      if (dt) {
+        DP_DeleteDeepTensor(dt);
+      }
+      throw;
+    }
   };
   /**
    * @brief Initialize the DeepTensor.
@@ -1891,7 +1918,7 @@ class DipoleChargeModifier {
    * @brief DipoleChargeModifier constructor without initialization.
    **/
   DipoleChargeModifier() : dcm(nullptr){};
-  ~DipoleChargeModifier(){};
+  ~DipoleChargeModifier() { DP_DeleteDipoleChargeModifier(dcm); };
   /**
    * @brief DipoleChargeModifier constructor with initialization.
    * @param[in] model The name of the frozen model file.
@@ -1902,7 +1929,15 @@ class DipoleChargeModifier {
                        const int &gpu_rank = 0,
                        const std::string &name_scope = "")
       : dcm(nullptr) {
-    init(model, gpu_rank, name_scope);
+    try {
+      init(model, gpu_rank, name_scope);
+    } catch (...) {
+      // Clean up and rethrow, as the destructor will not be called
+      if (dcm) {
+        DP_DeleteDipoleChargeModifier(dcm);
+      }
+      throw;
+    }
   };
   /**
    * @brief Initialize the DipoleChargeModifier.

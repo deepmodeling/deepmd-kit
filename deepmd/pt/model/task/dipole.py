@@ -10,6 +10,8 @@ from deepmd.pt.model.task.fitting import (
     Fitting,
 )
 
+log = logging.getLogger(__name__)
+
 
 class DipoleFittingNetType(Fitting):
     def __init__(
@@ -37,7 +39,7 @@ class DipoleFittingNetType(Fitting):
         self.filter_layers = torch.nn.ModuleList(filter_layers)
 
         if "seed" in kwargs:
-            logging.info("Set seed to %d in fitting net.", kwargs["seed"])
+            log.info("Set seed to %d in fitting net.", kwargs["seed"])
             torch.manual_seed(kwargs["seed"])
 
     def forward(self, inputs, atype, atype_tebd, rot_mat):
