@@ -1,5 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import functools
+from enum import (
+    IntEnum,
+    IntFlag,
+    auto,
+)
 from typing import (
     Dict,
     List,
@@ -107,6 +112,34 @@ def fitting_check_output(cls):
     return wrapper
 
 
+class OutputVariableOperation(IntFlag):
+    """Defines the operation of the output variable."""
+
+    NONE = 0
+    """No operation."""
+    REDU = auto()
+    """Reduce the output variable."""
+    DERV_R = auto()
+    """Derivative w.r.t. coordinates."""
+    DERV_C = auto()
+    """Derivative w.r.t. cell."""
+
+
+class OutputVariableCategory(IntEnum):
+    """Defines the category of the output variable."""
+
+    OUT = OutputVariableOperation.NONE
+    """Output variable."""
+    REDU = OutputVariableOperation.REDU
+    """Reduced output variable."""
+    DERV_R = OutputVariableOperation.DERV_R
+    """Derivative w.r.t. coordinates."""
+    DERV_C = OutputVariableOperation.DERV_C
+    """Derivative w.r.t. cell."""
+    DERV_C_REDU = OutputVariableOperation.DERV_C | OutputVariableOperation.REDU
+    """Reduced derivative w.r.t. cell."""
+
+
 class OutputVariableDef:
     """Defines the shape and other properties of the one output variable.
 
@@ -129,7 +162,8 @@ class OutputVariableDef:
           If the variable is differentiated with respect to coordinates
           of atoms and cell tensor (pbc case). Only reduciable variable
           are differentiable.
-
+    category : OutputVariableCategory
+          The category of the output variable.
     """
 
     def __init__(
@@ -139,6 +173,7 @@ class OutputVariableDef:
         reduciable: bool = False,
         differentiable: bool = False,
         atomic: bool = True,
+        category: OutputVariableCategory = OutputVariableCategory.OUT,
     ):
         self.name = name
         self.shape = list(shape)
@@ -149,6 +184,7 @@ class OutputVariableDef:
             raise ValueError("only reduciable variable are differentiable")
         if self.reduciable and not self.atomic:
             raise ValueError("only reduciable variable should be atomic")
+        self.category = category
 
 
 class FittingOutputDef:
@@ -261,9 +297,17 @@ def do_reduce(
     def_redu: Dict[str, OutputVariableDef] = {}
     for kk, vv in def_outp_data.items():
         if vv.reduciable:
+            assert vv.category & OutputVariableOperation.REDU == 0
             rk = get_reduce_name(kk)
             def_redu[rk] = OutputVariableDef(
-                rk, vv.shape, reduciable=False, differentiable=False, atomic=False
+                rk,
+                vv.shape,
+                reduciable=False,
+                differentiable=False,
+                atomic=False,
+                category=OutputVariableCategory(
+                    vv.category | OutputVariableOperation.REDU
+                ),
             )
     return def_redu
 
@@ -275,6 +319,8 @@ def do_derivative(
     def_derv_c: Dict[str, OutputVariableDef] = {}
     for kk, vv in def_outp_data.items():
         if vv.differentiable:
+            assert vv.category & OutputVariableOperation.DERV_R == 0
+            assert vv.category & OutputVariableOperation.DERV_C == 0
             rkr, rkc = get_deriv_name(kk)
             def_derv_r[rkr] = OutputVariableDef(
                 rkr,
@@ -282,6 +328,9 @@ def do_derivative(
                 reduciable=False,
                 differentiable=False,
                 atomic=True,
+                category=OutputVariableCategory(
+                    vv.category | OutputVariableOperation.DERV_R
+                ),
             )
             def_derv_c[rkc] = OutputVariableDef(
                 rkc,
@@ -289,5 +338,8 @@ def do_derivative(
                 reduciable=True,
                 differentiable=False,
                 atomic=True,
+                category=OutputVariableCategory(
+                    vv.category | OutputVariableOperation.DERV_C
+                ),
             )
     return def_derv_r, def_derv_c

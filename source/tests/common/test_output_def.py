@@ -15,6 +15,8 @@ from deepmd.dpmodel import (
     model_check_output,
 )
 from deepmd.dpmodel.output_def import (
+    OutputVariableCategory,
+    OutputVariableOperation,
     check_var,
 )
 
@@ -103,6 +105,59 @@ class TestDef(unittest.TestCase):
         self.assertEqual(md["energy_derv_r"].atomic, True)
         self.assertEqual(md["energy_derv_c"].atomic, True)
         self.assertEqual(md["energy_derv_c_redu"].atomic, False)
+        # category
+        self.assertEqual(md["energy"].category, OutputVariableCategory.OUT)
+        self.assertEqual(md["dos"].category, OutputVariableCategory.OUT)
+        self.assertEqual(md["foo"].category, OutputVariableCategory.OUT)
+        self.assertEqual(md["energy_redu"].category, OutputVariableCategory.REDU)
+        self.assertEqual(md["energy_derv_r"].category, OutputVariableCategory.DERV_R)
+        self.assertEqual(md["energy_derv_c"].category, OutputVariableCategory.DERV_C)
+        self.assertEqual(
+            md["energy_derv_c_redu"].category, OutputVariableCategory.DERV_C_REDU
+        )
+        # flag
+        self.assertEqual(md["energy"].category & OutputVariableOperation.REDU, 0)
+        self.assertEqual(md["energy"].category & OutputVariableOperation.DERV_R, 0)
+        self.assertEqual(md["energy"].category & OutputVariableOperation.DERV_C, 0)
+        self.assertEqual(md["dos"].category & OutputVariableOperation.REDU, 0)
+        self.assertEqual(md["dos"].category & OutputVariableOperation.DERV_R, 0)
+        self.assertEqual(md["dos"].category & OutputVariableOperation.DERV_C, 0)
+        self.assertEqual(md["foo"].category & OutputVariableOperation.REDU, 0)
+        self.assertEqual(md["foo"].category & OutputVariableOperation.DERV_R, 0)
+        self.assertEqual(md["foo"].category & OutputVariableOperation.DERV_C, 0)
+        self.assertEqual(
+            md["energy_redu"].category & OutputVariableOperation.REDU,
+            OutputVariableOperation.REDU,
+        )
+        self.assertEqual(md["energy_redu"].category & OutputVariableOperation.DERV_R, 0)
+        self.assertEqual(md["energy_redu"].category & OutputVariableOperation.DERV_C, 0)
+        self.assertEqual(md["energy_derv_r"].category & OutputVariableOperation.REDU, 0)
+        self.assertEqual(
+            md["energy_derv_r"].category & OutputVariableOperation.DERV_R,
+            OutputVariableOperation.DERV_R,
+        )
+        self.assertEqual(
+            md["energy_derv_r"].category & OutputVariableOperation.DERV_C, 0
+        )
+        self.assertEqual(md["energy_derv_c"].category & OutputVariableOperation.REDU, 0)
+        self.assertEqual(
+            md["energy_derv_c"].category & OutputVariableOperation.DERV_R, 0
+        )
+        self.assertEqual(
+            md["energy_derv_c"].category & OutputVariableOperation.DERV_C,
+            OutputVariableOperation.DERV_C,
+        )
+        self.assertEqual(
+            md["energy_derv_c_redu"].category & OutputVariableOperation.REDU,
+            OutputVariableOperation.REDU,
+        )
+        self.assertEqual(
+            md["energy_derv_c_redu"].category & OutputVariableOperation.DERV_R, 0
+        )
+        self.assertEqual(
+            md["energy_derv_c_redu"].category & OutputVariableOperation.DERV_C,
+            OutputVariableOperation.DERV_C,
+        )
 
     def test_raise_no_redu_deriv(self):
         with self.assertRaises(ValueError) as context:
