@@ -289,13 +289,51 @@ def get_deriv_name(name: str) -> Tuple[str, str]:
     return name + "_derv_r", name + "_derv_c"
 
 
+def apply_operation(var_def: OutputVariableDef, op: OutputVariableOperation) -> int:
+    """Apply a operation to the category of a variable definition.
+
+    Parameters
+    ----------
+    var_def : OutputVariableDef
+        The variable definition.
+    op : OutputVariableOperation
+        The operation to be applied.
+
+    Returns
+    -------
+    int
+        The new category of the variable definition.
+    """
+    return var_def.category | op.value
+
+
+def check_operation_applied(
+    var_def: OutputVariableDef, op: OutputVariableOperation
+) -> bool:
+    """Check if a operation has been applied to a variable definition.
+
+    Parameters
+    ----------
+    var_def : OutputVariableDef
+        The variable definition.
+    op : OutputVariableOperation
+        The operation to be checked.
+
+    Returns
+    -------
+    bool
+        True if the operation has been applied, False otherwise.
+    """
+    return var_def.category & op.value == op.value
+
+
 def do_reduce(
     def_outp_data: Dict[str, OutputVariableDef],
 ) -> Dict[str, OutputVariableDef]:
     def_redu: Dict[str, OutputVariableDef] = {}
     for kk, vv in def_outp_data.items():
         if vv.reduciable:
-            assert vv.category & OutputVariableOperation.REDU.value == 0
+            assert not check_operation_applied(vv, OutputVariableOperation.REDU)
             rk = get_reduce_name(kk)
             def_redu[rk] = OutputVariableDef(
                 rk,
@@ -303,7 +341,7 @@ def do_reduce(
                 reduciable=False,
                 differentiable=False,
                 atomic=False,
-                category=vv.category | OutputVariableOperation.REDU.value,
+                category=apply_operation(vv, OutputVariableOperation.REDU),
             )
     return def_redu
 
@@ -315,8 +353,8 @@ def do_derivative(
     def_derv_c: Dict[str, OutputVariableDef] = {}
     for kk, vv in def_outp_data.items():
         if vv.differentiable:
-            assert vv.category & OutputVariableOperation.DERV_R.value == 0
-            assert vv.category & OutputVariableOperation.DERV_C.value == 0
+            assert not check_operation_applied(vv, OutputVariableOperation.DERV_R)
+            assert not check_operation_applied(vv, OutputVariableOperation.DERV_C)
             rkr, rkc = get_deriv_name(kk)
             def_derv_r[rkr] = OutputVariableDef(
                 rkr,
@@ -324,7 +362,7 @@ def do_derivative(
                 reduciable=False,
                 differentiable=False,
                 atomic=True,
-                category=vv.category | OutputVariableOperation.DERV_R.value,
+                category=apply_operation(vv, OutputVariableOperation.DERV_R),
             )
             def_derv_c[rkc] = OutputVariableDef(
                 rkc,
@@ -332,6 +370,6 @@ def do_derivative(
                 reduciable=True,
                 differentiable=False,
                 atomic=True,
-                category=vv.category | OutputVariableOperation.DERV_C.value,
+                category=apply_operation(vv, OutputVariableOperation.DERV_C),
             )
     return def_derv_r, def_derv_c
