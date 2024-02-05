@@ -46,14 +46,6 @@ class LinearModel(BaseAtomicModel):
         self.rcut = self.get_rcut()
         self.sel = self.get_sel()
 
-    def get_fitting_output_def(self) -> FittingOutputDef:
-        """Get the output def of the fitting net."""
-        return (
-            self.fitting_net.output_def()
-            if self.fitting_net is not None
-            else self.coord_denoise_net.output_def()
-        )
-
     def get_rcut(self) -> float:
         """Get the cut-off radius."""
         return self.get_rcuts()[-1]
@@ -79,9 +71,9 @@ class LinearModel(BaseAtomicModel):
         extended_coord,
         extended_atype,
         nlist,
-        ra: float,
-        rb: float,
-        alpha: Optional[float] = 0.1,
+        sw_rmin: float,
+        sw_rmax: float,
+        smin_alpha: Optional[float] = 0.1,
         mapping: Optional[np.ndarray] = None,
     ) -> Dict[str, np.ndarray]:
         """Return atomic prediction.
@@ -100,11 +92,11 @@ class LinearModel(BaseAtomicModel):
             neighbor list, (nframes, nloc, nsel).
         mapping
             mapps the extended indices to local indices
-        ra : float
+        sw_rmin : float
             inclusive lower boundary of the range in which the ZBL potential and the deep potential are interpolated.
-        rb : float
+        sw_rmax : float
             exclusive upper boundary of the range in which the ZBL potential and the deep potential are interpolated.
-        alpha : float
+        smin_alpha : float
             a tunable scale of the distances between atoms.
 
         Returns
@@ -146,7 +138,7 @@ class LinearModel(BaseAtomicModel):
 
         rr = np.take_along_axis(pairwise_rr[:, :nloc, :], masked_nlist, 2)
         # (nframes, nloc, 1)
-        self.zbl_weight = self._compute_weight(nlist_, rr, ra, rb, alpha)
+        self.zbl_weight = self._compute_weight(nlist_, rr, sw_rmin, sw_rmax, smin_alpha)
         # (nframes, nloc, 1)
         dp_energy = self.dp_model.forward_atomic(
             extended_coord, extended_atype, dp_nlist
@@ -186,9 +178,9 @@ class LinearModel(BaseAtomicModel):
     def _compute_weight(
         nlist: np.ndarray,
         rr: np.ndarray,
-        ra: float,
-        rb: float,
-        alpha: Optional[float] = 0.1,
+        sw_rmin: float,
+        sw_rmax: float,
+        smin_alpha: Optional[float] = 0.1,
     ) -> np.ndarray:
         """ZBL weight.
 
@@ -198,11 +190,11 @@ class LinearModel(BaseAtomicModel):
             the neighbour list, (nframes, nloc, nnei).
         rr : np.ndarray
             pairwise distance between atom i and atom j, (nframes, nloc, nnei).
-        ra : float
+        sw_rmin : float
             inclusive lower boundary of the range in which the ZBL potential and the deep potential are interpolated.
-        rb : float
+        sw_rmax : float
             exclusive upper boundary of the range in which the ZBL potential and the deep potential are interpolated.
-        alpha : float
+        smin_alpha : float
             a tunable scale of the distances between atoms.
 
         Returns
@@ -211,22 +203,22 @@ class LinearModel(BaseAtomicModel):
             the atomic ZBL weight for interpolation. (nframes, nloc)
         """
         assert (
-            rb > ra
-        ), "The upper boundary `rb` must be greater than the lower boundary `ra`."
+            sw_rmax > sw_rmin
+        ), "The upper boundary `sw_rmax` must be greater than the lower boundary `sw_rmin`."
 
         numerator = np.sum(
-            rr * np.exp(-rr / alpha), axis=-1
+            rr * np.exp(-rr / smin_alpha), axis=-1
         )  # masked nnei will be zero, no need to handle
         denominator = np.sum(
-            np.where(nlist != -1, np.exp(-rr / alpha), np.zeros_like(nlist)),
+            np.where(nlist != -1, np.exp(-rr / smin_alpha), np.zeros_like(nlist)),
             axis=-1,
         )  # handle masked nnei.
         sigma = numerator / denominator
-        u = (sigma - ra) / (rb - ra)
+        u = (sigma - sw_rmin) / (sw_rmax - sw_rmin)
         coef = np.zeros_like(u)
-        left_mask = sigma < ra
-        mid_mask = (ra <= sigma) & (sigma < rb)
-        right_mask = sigma >= rb
+        left_mask = sigma < sw_rmin
+        mid_mask = (sw_rmin <= sigma) & (sigma < sw_rmax)
+        right_mask = sigma >= sw_rmax
         coef[left_mask] = 1
         smooth = -6 * u**5 + 15 * u**4 - 10 * u**3 + 1
         coef[mid_mask] = smooth[mid_mask]

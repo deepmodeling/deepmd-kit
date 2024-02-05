@@ -67,7 +67,7 @@ class TestWeightCalculation(unittest.TestCase):
             )
 
             wgt_model.forward_atomic(
-                extended_coord, extended_atype, nlist, ra=0.1, rb=0.25
+                extended_coord, extended_atype, nlist, sw_rmin=0.1, sw_rmax=0.25
             )
 
             wgt_res.append(wgt_model.zbl_weight)
@@ -146,10 +146,10 @@ class TestIntegration(unittest.TestCase):
 
     def test_self_consistency(self):
         ret0 = self.md0.forward_atomic(
-            self.coord_ext, self.atype_ext, self.nlist, ra=0.2, rb=0.5
+            self.coord_ext, self.atype_ext, self.nlist, sw_rmin=0.2, sw_rmax=0.5
         )
         ret1 = self.md1.forward_atomic(
-            self.coord_ext, self.atype_ext, self.nlist, ra=0.2, rb=0.5
+            self.coord_ext, self.atype_ext, self.nlist, sw_rmin=0.2, sw_rmax=0.5
         )
         np.testing.assert_allclose(
             ret0["energy"],

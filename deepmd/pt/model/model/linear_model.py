@@ -49,14 +49,6 @@ class LinearModel(BaseModel, BaseAtomicModel):
         self.rcut = self.get_rcut()
         self.sel = self.get_sel()
 
-    def get_fitting_output_def(self) -> FittingOutputDef:
-        """Get the output def of the fitting net."""
-        return (
-            self.fitting_net.output_def()
-            if self.fitting_net is not None
-            else self.coord_denoise_net.output_def()
-        )
-
     def get_rcut(self) -> float:
         """Get the cut-off radius."""
         return self.get_rcuts()[-1]
@@ -82,9 +74,9 @@ class LinearModel(BaseModel, BaseAtomicModel):
         extended_coord,
         extended_atype,
         nlist,
-        ra: float,
-        rb: float,
-        alpha: Optional[float] = 0.1,
+        sw_rmin: float,
+        sw_rmax: float,
+        smin_alpha: Optional[float] = 0.1,
         mapping: Optional[torch.Tensor] = None,
     ) -> Dict[str, torch.Tensor]:
         """Return atomic prediction.
@@ -103,11 +95,11 @@ class LinearModel(BaseModel, BaseAtomicModel):
             neighbor list, (nframes, nloc, nsel).
         mapping
             mapps the extended indices to local indices
-        ra : float
+        sw_rmin : float
             inclusive lower boundary of the range in which the ZBL potential and the deep potential are interpolated.
-        rb : float
+        sw_rmax : float
             exclusive upper boundary of the range in which the ZBL potential and the deep potential are interpolated.
-        alpha : float
+        smin_alpha : float
             a tunable scale of the distances between atoms.
 
         Returns
@@ -140,7 +132,7 @@ class LinearModel(BaseModel, BaseAtomicModel):
         )
         rr = torch.gather(pairwise_rr[:, :nloc, :], 2, masked_nlist)
         # (nframes, nloc, 1)
-        self.zbl_weight = self._compute_weight(nlist_, rr, ra, rb, alpha)
+        self.zbl_weight = self._compute_weight(nlist_, rr, sw_rmin, sw_rmax, smin_alpha)
         # (nframes, nloc, 1)
         dp_energy = self.dp_model.forward_atomic(
             extended_coord, extended_atype, dp_nlist
@@ -180,9 +172,9 @@ class LinearModel(BaseModel, BaseAtomicModel):
     def _compute_weight(
         nlist: torch.Tensor,
         rr: torch.Tensor,
-        ra: float,
-        rb: float,
-        alpha: Optional[float] = 0.1,
+        sw_rmin: float,
+        sw_rmax: float,
+        smin_alpha: Optional[float] = 0.1,
     ) -> torch.Tensor:
         """ZBL weight.
 
@@ -192,11 +184,11 @@ class LinearModel(BaseModel, BaseAtomicModel):
             the neighbour list, (nframes, nloc, nnei).
         rr : torch.Tensor
             pairwise distance between atom i and atom j, (nframes, nloc, nnei).
-        ra : float
+        sw_rmin : float
             inclusive lower boundary of the range in which the ZBL potential and the deep potential are interpolated.
-        rb : float
+        sw_rmax : float
             exclusive upper boundary of the range in which the ZBL potential and the deep potential are interpolated.
-        alpha : float
+        smin_alpha : float
             a tunable scale of the distances between atoms.
 
         Returns
@@ -205,22 +197,22 @@ class LinearModel(BaseModel, BaseAtomicModel):
             the atomic ZBL weight for interpolation. (nframes, nloc, 1)
         """
         assert (
-            rb > ra
-        ), "The upper boundary `rb` must be greater than the lower boundary `ra`."
+            sw_rmax > sw_rmin
+        ), "The upper boundary `sw_rmax` must be greater than the lower boundary `sw_rmin`."
 
         numerator = torch.sum(
-            rr * torch.exp(-rr / alpha), dim=-1
+            rr * torch.exp(-rr / smin_alpha), dim=-1
         )  # masked nnei will be zero, no need to handle
         denominator = torch.sum(
-            torch.where(nlist != -1, torch.exp(-rr / alpha), torch.zeros_like(nlist)),
+            torch.where(nlist != -1, torch.exp(-rr / smin_alpha), torch.zeros_like(nlist)),
             dim=-1,
         )  # handle masked nnei.
         sigma = numerator / denominator
-        u = (sigma - ra) / (rb - ra)
+        u = (sigma - sw_rmin) / (sw_rmax - sw_rmin)
         coef = torch.zeros_like(u)
-        left_mask = sigma < ra
-        mid_mask = (ra <= sigma) & (sigma < rb)
-        right_mask = sigma >= rb
+        left_mask = sigma < sw_rmin
+        mid_mask = (sw_rmin <= sigma) & (sigma < sw_rmax)
+        right_mask = sigma >= sw_rmax
         coef[left_mask] = 1
         smooth = -6 * u**5 + 15 * u**4 - 10 * u**3 + 1
         coef[mid_mask] = smooth[mid_mask]
