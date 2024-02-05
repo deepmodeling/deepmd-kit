@@ -72,7 +72,9 @@ class TestWeightCalculation(unittest.TestCase):
         dp_model = DPAtomicModel(ds, ft, type_map=type_map, resuming=True).to(
             env.DEVICE
         )
-        wgt_model = ZBLModel(models=[dp_model, zbl_model], sw_rmin=0.1, sw_rmax=0.25, weights='zbl')
+        wgt_model = ZBLModel(
+            models=[dp_model, zbl_model], sw_rmin=0.1, sw_rmax=0.25, weights="zbl"
+        )
         wgt_res = []
         for dist in np.linspace(0.05, 0.3, 10):
             extended_coord = torch.tensor(
@@ -84,9 +86,7 @@ class TestWeightCalculation(unittest.TestCase):
                 ]
             )
 
-            wgt_model.forward_atomic(
-                extended_coord, extended_atype, nlist
-            )
+            wgt_model.forward_atomic(extended_coord, extended_atype, nlist)
 
             wgt_res.append(wgt_model.zbl_weight)
         results = torch.stack(wgt_res).reshape(10, 2)
@@ -138,7 +138,9 @@ class TestIntegration(unittest.TestCase, TestCaseSingleFrameWithNlist):
             env.DEVICE
         )
         zbl_model = PairTabModel(file_path, self.rcut, sum(self.sel))
-        self.md0 = ZBLModel(models=[dp_model, zbl_model], sw_rmin=0.1, sw_rmax=0.25, weights='zbl').to(env.DEVICE)
+        self.md0 = ZBLModel(
+            models=[dp_model, zbl_model], sw_rmin=0.1, sw_rmax=0.25, weights="zbl"
+        ).to(env.DEVICE)
         self.md1 = ZBLModel.deserialize(self.md0.serialize()).to(env.DEVICE)
         self.md2 = DPZBLModel.deserialize(self.md0.serialize())
 
@@ -148,9 +150,7 @@ class TestIntegration(unittest.TestCase, TestCaseSingleFrameWithNlist):
         ]
         ret0 = self.md0.forward_atomic(*args)
         ret1 = self.md1.forward_atomic(*args)
-        ret2 = self.md2.forward_atomic(
-            self.coord_ext, self.atype_ext, self.nlist
-        )
+        ret2 = self.md2.forward_atomic(self.coord_ext, self.atype_ext, self.nlist)
         np.testing.assert_allclose(
             to_numpy_array(ret0["energy"]),
             to_numpy_array(ret1["energy"]),

@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Dict,
-    Optional,
     List,
+    Optional,
     Union,
 )
 
@@ -28,6 +28,7 @@ from .model import (
 from .pair_tab_model import (
     PairTabModel,
 )
+
 
 class LinearModel(BaseModel, BaseAtomicModel):
     """Linear model make linear combinations of several existing models.
@@ -56,7 +57,9 @@ class LinearModel(BaseModel, BaseAtomicModel):
             if len(models) != 2:
                 raise ValueError("ZBL only supports two models.")
             if not isinstance(models[1], PairTabModel):
-                raise ValueError("The PairTabModel must be placed after the DPAtomicModel in the input lists.")
+                raise ValueError(
+                    "The PairTabModel must be placed after the DPAtomicModel in the input lists."
+                )
 
         if isinstance(weights, list):
             if len(weights) != len(models):
@@ -73,7 +76,7 @@ class LinearModel(BaseModel, BaseAtomicModel):
             pass
         else:
             raise ValueError(f"Invalid weights {weights}")
-        
+
     def distinguish_types(self) -> bool:
         """If distinguish different types by sorting."""
         return all([model.distinguish_types() for model in self.models])
@@ -91,8 +94,13 @@ class LinearModel(BaseModel, BaseAtomicModel):
 
     def get_sels(self) -> List[int]:
         """Get the cut-off radius for each individual models in ascending order."""
-        return [sum(model.get_sel()) if isinstance(model.get_sel(), list) else model.get_sel() for model in self.models]
-    
+        return [
+            sum(model.get_sel())
+            if isinstance(model.get_sel(), list)
+            else model.get_sel()
+            for model in self.models
+        ]
+
     def forward_atomic(
         self,
         extended_coord,
@@ -118,7 +126,6 @@ class LinearModel(BaseModel, BaseAtomicModel):
         result_dict
             the result dict, defined by the fitting net output def.
         """
-
         nframes, nloc, nnei = nlist.shape
         extended_coord = extended_coord.view(nframes, -1, 3)
         nlists = build_multiple_neighbor_list(
@@ -127,14 +134,20 @@ class LinearModel(BaseModel, BaseAtomicModel):
             self.get_rcuts(),
             self.get_sels(),
         )
-        nlists_ = [nlists[str(rcut) + "_" + str(sel)] for rcut, sel in zip(self.get_rcuts(), self.get_sels())]
-        ener_list = [model.forward_atomic(
-            extended_coord,
-            extended_atype,
-            nlist,
-            mapping,
-        )["energy"] for model, nlist in zip(self.models, nlists_)]
-        
+        nlists_ = [
+            nlists[str(rcut) + "_" + str(sel)]
+            for rcut, sel in zip(self.get_rcuts(), self.get_sels())
+        ]
+        ener_list = [
+            model.forward_atomic(
+                extended_coord,
+                extended_atype,
+                nlist,
+                mapping,
+            )["energy"]
+            for model, nlist in zip(self.models, nlists_)
+        ]
+
         fit_ret = {
             "energy": sum([w * e for w, e in zip(self.weights, ener_list)]),
         }  # (nframes, nloc, 1)
@@ -148,7 +161,7 @@ class LinearModel(BaseModel, BaseAtomicModel):
                 )
             ]
         )
-    
+
     def serialize(self) -> dict:
         return {
             "models": [model.serialize() for model in self.models],
@@ -158,25 +171,23 @@ class LinearModel(BaseModel, BaseAtomicModel):
     @classmethod
     def deserialize(cls, data) -> "LinearModel":
         weights = data["weights"]
-        
+
         if weights == "zbl":
             if len(data["models"]) != 2:
                 raise ValueError("ZBL only supports two models.")
             try:
-                models = [DPAtomicModel.deserialize(data["models"][0]),
-                PairTabModel.deserialize(data["models"][1])]
+                models = [
+                    DPAtomicModel.deserialize(data["models"][0]),
+                    PairTabModel.deserialize(data["models"][1]),
+                ]
             except:
-                raise ValueError("The PairTabModel must be placed after the DPAtomicModel in the input lists.")
+                raise ValueError(
+                    "The PairTabModel must be placed after the DPAtomicModel in the input lists."
+                )
 
         else:
             models = [DPAtomicModel.deserialize(model) for model in data["models"]]
         return cls(models, weights)
-
-
-
-
-
-
 
 
 class ZBLModel(LinearModel):
@@ -193,7 +204,7 @@ class ZBLModel(LinearModel):
         models: List[Union[DPAtomicModel, PairTabModel]],
         sw_rmin: float,
         sw_rmax: float,
-        weights = "zbl",
+        weights="zbl",
         smin_alpha: Optional[float] = 0.1,
         **kwargs,
     ):
@@ -203,8 +214,13 @@ class ZBLModel(LinearModel):
         self.zbl_model = models[1]
         if weights != "zbl":
             raise ValueError("ZBLModel only supports weights 'zbl'.")
-        if not (isinstance(self.dp_model, DPAtomicModel) and isinstance(self.zbl_model, PairTabModel)):
-            raise ValueError("The input models for ZBLModel must be a DPAtomicModel and a PairTabModel in the exact order.")
+        if not (
+            isinstance(self.dp_model, DPAtomicModel)
+            and isinstance(self.zbl_model, PairTabModel)
+        ):
+            raise ValueError(
+                "The input models for ZBLModel must be a DPAtomicModel and a PairTabModel in the exact order."
+            )
         self.sw_rmin = sw_rmin
         self.sw_rmax = sw_rmax
         self.smin_alpha = smin_alpha
@@ -236,12 +252,6 @@ class ZBLModel(LinearModel):
             neighbor list, (nframes, nloc, nsel).
         mapping
             mapps the extended indices to local indices
-        sw_rmin : float
-            inclusive lower boundary of the range in which the ZBL potential and the deep potential are interpolated.
-        sw_rmax : float
-            exclusive upper boundary of the range in which the ZBL potential and the deep potential are interpolated.
-        smin_alpha : float
-            a tunable scale of the distances between atoms.
 
         Returns
         -------
@@ -273,7 +283,9 @@ class ZBLModel(LinearModel):
         )
         rr = torch.gather(pairwise_rr[:, :nloc, :], 2, masked_nlist)
         # (nframes, nloc, 1)
-        self.zbl_weight = self._compute_weight(nlist_, rr, self.sw_rmin, self.sw_rmax, self.smin_alpha)
+        self.zbl_weight = self._compute_weight(
+            nlist_, rr, self.sw_rmin, self.sw_rmax, self.smin_alpha
+        )
         # (nframes, nloc, 1)
         dp_energy = self.dp_model.forward_atomic(
             extended_coord, extended_atype, dp_nlist
@@ -286,7 +298,7 @@ class ZBLModel(LinearModel):
         fit_ret = {
             "energy": (self.zbl_weight * zbl_energy + (1 - self.zbl_weight) * dp_energy)
         }  # (nframes, nloc, 1)
-        return fit_ret 
+        return fit_ret
 
     def serialize(self) -> dict:
         return {
@@ -296,27 +308,37 @@ class ZBLModel(LinearModel):
             "sw_rmax": self.sw_rmax,
             "smin_alpha": self.smin_alpha,
         }
-    
+
     @classmethod
     def deserialize(cls, data) -> "ZBLModel":
         weights = data["weights"]
         sw_rmin = data["sw_rmin"]
         sw_rmax = data["sw_rmax"]
         smin_alpha = data["smin_alpha"]
-        
+
         if weights == "zbl":
             if len(data["models"]) != 2:
                 raise ValueError("ZBL only supports two models.")
             try:
-                models = [DPAtomicModel.deserialize(data["models"][0]),
-                PairTabModel.deserialize(data["models"][1])]
+                models = [
+                    DPAtomicModel.deserialize(data["models"][0]),
+                    PairTabModel.deserialize(data["models"][1]),
+                ]
             except:
-                raise ValueError("The PairTabModel must be placed after the DPAtomicModel in the input lists.")
+                raise ValueError(
+                    "The PairTabModel must be placed after the DPAtomicModel in the input lists."
+                )
 
         else:
             raise ValueError("ZBLModel only supports weights 'zbl'.")
-        return cls(models=models, weights=weights, sw_rmin=sw_rmin, sw_rmax=sw_rmax, smin_alpha=smin_alpha)
-    
+        return cls(
+            models=models,
+            weights=weights,
+            sw_rmin=sw_rmin,
+            sw_rmax=sw_rmax,
+            smin_alpha=smin_alpha,
+        )
+
     @staticmethod
     def _compute_weight(
         nlist: torch.Tensor,
