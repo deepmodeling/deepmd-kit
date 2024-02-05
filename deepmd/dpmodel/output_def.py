@@ -161,7 +161,7 @@ class OutputVariableDef:
           If the variable is differentiated with respect to coordinates
           of atoms and cell tensor (pbc case). Only reduciable variable
           are differentiable.
-    category : OutputVariableCategory
+    category : int
           The category of the output variable.
     """
 
@@ -172,7 +172,7 @@ class OutputVariableDef:
         reduciable: bool = False,
         differentiable: bool = False,
         atomic: bool = True,
-        category: int = OutputVariableCategory.OUT,
+        category: int = OutputVariableCategory.OUT.value,
     ):
         self.name = name
         self.shape = list(shape)
@@ -296,7 +296,7 @@ def do_reduce(
     def_redu: Dict[str, OutputVariableDef] = {}
     for kk, vv in def_outp_data.items():
         if vv.reduciable:
-            assert vv.category & OutputVariableOperation.REDU.value == 0
+            assert vv.category & int(OutputVariableOperation.REDU.value) == 0
             rk = get_reduce_name(kk)
             def_redu[rk] = OutputVariableDef(
                 rk,
@@ -304,7 +304,7 @@ def do_reduce(
                 reduciable=False,
                 differentiable=False,
                 atomic=False,
-                category=vv.category | OutputVariableOperation.REDU.value,
+                category=vv.category | int(OutputVariableOperation.REDU.value),
             )
     return def_redu
 
@@ -316,8 +316,8 @@ def do_derivative(
     def_derv_c: Dict[str, OutputVariableDef] = {}
     for kk, vv in def_outp_data.items():
         if vv.differentiable:
-            assert vv.category & OutputVariableOperation.DERV_R.value == 0
-            assert vv.category & OutputVariableOperation.DERV_C.value == 0
+            assert vv.category & int(OutputVariableOperation.DERV_R.value) == 0
+            assert vv.category & int(OutputVariableOperation.DERV_C.value) == 0
             rkr, rkc = get_deriv_name(kk)
             def_derv_r[rkr] = OutputVariableDef(
                 rkr,
@@ -325,7 +325,7 @@ def do_derivative(
                 reduciable=False,
                 differentiable=False,
                 atomic=True,
-                category=vv.category | OutputVariableOperation.DERV_R.value,
+                category=vv.category | int(OutputVariableOperation.DERV_R.value),
             )
             def_derv_c[rkc] = OutputVariableDef(
                 rkc,
@@ -333,6 +333,6 @@ def do_derivative(
                 reduciable=True,
                 differentiable=False,
                 atomic=True,
-                category=vv.category | OutputVariableOperation.DERV_C.value,
+                category=vv.category | int(OutputVariableOperation.DERV_C.value),
             )
     return def_derv_r, def_derv_c
