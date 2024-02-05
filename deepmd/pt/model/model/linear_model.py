@@ -79,7 +79,7 @@ class LinearModel(BaseModel, BaseAtomicModel):
 
     def distinguish_types(self) -> bool:
         """If distinguish different types by sorting."""
-        return all([model.distinguish_types() for model in self.models])
+        return all(model.distinguish_types() for model in self.models)
 
     def get_rcut(self) -> float:
         """Get the cut-off radius."""
@@ -209,7 +209,6 @@ class ZBLModel(LinearModel):
         **kwargs,
     ):
         super().__init__(models, weights)
-        self.models = models
         self.dp_model = models[0]
         self.zbl_model = models[1]
         if weights != "zbl":
