@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import unittest
+
 from unittest.mock import (
     patch,
 )
@@ -235,5 +236,5 @@ class TestPairTabTwoAtoms(unittest.TestCase):
 
         torch.testing.assert_close(results, expected_result, rtol=0.0001, atol=0.0001)
 
-    if __name__ == "__main__":
-        unittest.main()
+if __name__ == "__main__":
+    unittest.main(warnings="ignore")

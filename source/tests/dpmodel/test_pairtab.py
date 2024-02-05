@@ -199,5 +199,5 @@ class TestPairTabTwoAtoms(unittest.TestCase):
 
         np.testing.assert_allclose(results, expected_result, 0.0001, 0.0001)
 
-    if __name__ == "__main__":
-        unittest.main()
+if __name__ == "__main__":
+    unittest.main(warnings="ignore")

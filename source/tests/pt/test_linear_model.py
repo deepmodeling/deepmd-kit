@@ -162,3 +162,7 @@ class TestIntegration(unittest.TestCase, TestCaseSingleFrameWithNlist):
 
     def test_jit(self):
         torch.jit.script(self.md1)
+
+
+if __name__ == "__main__":
+    unittest.main(warnings="ignore")

@@ -156,3 +156,6 @@ class TestIntegration(unittest.TestCase):
             ret0["energy"],
             ret1["energy"],
         )
+
+if __name__ == "__main__":
+    unittest.main(warnings="ignore")
