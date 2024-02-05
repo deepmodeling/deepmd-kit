@@ -42,7 +42,7 @@ jobs:
     - run: pytest --cov=deepmd source/tests --durations=0
       env:
         NUM_WORKERS: 0
-    - uses: codecov/codecov-action@v3
+    - uses: codecov/codecov-action@v4
       with:
         gcov: true
   pass:
