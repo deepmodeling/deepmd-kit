@@ -204,7 +204,9 @@ class LinearModel(BaseModel, BaseAtomicModel):
             rr * torch.exp(-rr / smin_alpha), dim=-1
         )  # masked nnei will be zero, no need to handle
         denominator = torch.sum(
-            torch.where(nlist != -1, torch.exp(-rr / smin_alpha), torch.zeros_like(nlist)),
+            torch.where(
+                nlist != -1, torch.exp(-rr / smin_alpha), torch.zeros_like(nlist)
+            ),
             dim=-1,
         )  # handle masked nnei.
         sigma = numerator / denominator
