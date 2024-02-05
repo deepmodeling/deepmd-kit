@@ -55,7 +55,7 @@ class TestNativeLayer(unittest.TestCase):
         self.b1 = np.full((3,), 4.0)
         self.idt0 = np.full((2,), 4.0)
         with self.assertRaises(ValueError) as context:
-            network = NativeLayer.deserialize(
+            NativeLayer.deserialize(
                 {
                     "activation_function": "tanh",
                     "resnet": True,
@@ -64,7 +64,7 @@ class TestNativeLayer(unittest.TestCase):
             )
             assert "not equalt to shape of b" in context.exception
         with self.assertRaises(ValueError) as context:
-            network = NativeLayer.deserialize(
+            NativeLayer.deserialize(
                 {
                     "activation_function": "tanh",
                     "resnet": True,

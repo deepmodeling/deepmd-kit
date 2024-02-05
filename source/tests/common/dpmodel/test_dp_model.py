@@ -25,7 +25,6 @@ class TestDPModel(unittest.TestCase, TestCaseSingleFrameWithNlist):
     def test_self_consistency(
         self,
     ):
-        rng = np.random.default_rng()
         nf, nloc, nnei = self.nlist.shape
         ds = DescrptSeA(
             self.rcut,

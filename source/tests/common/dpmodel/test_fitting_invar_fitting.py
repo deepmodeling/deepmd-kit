@@ -113,7 +113,7 @@ class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
             if nap > 0:
                 iap = rng.normal(size=(self.nf, self.nloc, nap - 1))
                 with self.assertRaises(ValueError) as context:
-                    ret0 = ifn0(dd[0], atype, fparam=ifp, aparam=iap)
+                    ifn0(dd[0], atype, fparam=ifp, aparam=iap)
                     self.assertIn("input aparam", context.exception)
 
     def test_get_set(self):
