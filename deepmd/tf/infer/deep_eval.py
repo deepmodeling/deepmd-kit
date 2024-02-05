@@ -456,8 +456,6 @@ class DeepEval(DeepEvalBackend):
             Reverse mapped vector.
         """
         ret = np.zeros(vec.shape)
-        # for idx,ii in enumerate(imap) :
-        #     ret[:,ii,:] = vec[:,idx,:]
         ret[:, imap, :] = vec
         return ret
 
