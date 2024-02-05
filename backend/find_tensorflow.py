@@ -47,6 +47,8 @@ def find_tensorflow() -> Tuple[Optional[str], List[str]]:
     list of str
         TensorFlow requirement if not found. Empty if found.
     """
+    if os.environ.get("DP_ENABLE_TENSORFLOW", "1") == "0":
+        return None, []
     requires = []
 
     tf_spec = None
