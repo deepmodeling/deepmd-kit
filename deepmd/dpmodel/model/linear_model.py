@@ -2,6 +2,8 @@
 from typing import (
     Dict,
     Optional,
+    List,
+    Union,
 )
 
 import numpy as np
@@ -24,8 +26,150 @@ from .pair_tab_model import (
     PairTabModel,
 )
 
-
 class LinearModel(BaseAtomicModel):
+    """Linear model make linear combinations of several existing models.
+
+    Parameters
+    ----------
+    models : list[DPAtomicModel or PairTabModel]
+        A list of models to be combined. PairTabModel must be used together with a DPAtomicModel.
+    weights : list[float] or str
+        If the type is list[float], a list of weights for each model.
+        If "mean", the weights are set to be 1 / len(models).
+        If "sum", the weights are set to be 1.
+        If "zbl", the weights are calculated internally. This only allows the combination of a PairTabModel and a DPAtomicModel.
+    """
+
+    def __init__(
+        self,
+        models: List[Union[DPAtomicModel, PairTabModel]],
+        weights: Union[str, List[float]],
+        **kwargs,
+    ):
+        super().__init__()
+        self.models = models
+        self.weights = weights
+        if self.weights == "zbl":
+            if len(models) != 2:
+                raise ValueError("ZBL only supports two models.")
+            if not isinstance(models[1], PairTabModel):
+                raise ValueError("The PairTabModel must be placed after the DPAtomicModel in the input lists.")
+
+        if isinstance(weights, list):
+            if len(weights) != len(models):
+                raise ValueError(
+                    "The length of weights is not equal to the number of models"
+                )
+            self.weights = weights
+        elif weights == "mean":
+            self.weights = [1 / len(models) for _ in range(len(models))]
+        elif weights == "sum":
+            self.weights = [1 for _ in range(len(models))]
+        # TODO: add more weights, for example, so-called committee models
+        elif weights == "zbl":
+            pass
+        else:
+            raise ValueError(f"Invalid weights {weights}")
+        
+    def distinguish_types(self) -> bool:
+        """If distinguish different types by sorting."""
+        return all([model.distinguish_types() for model in self.models])
+
+    def get_rcut(self) -> float:
+        """Get the cut-off radius."""
+        return max(self.get_rcuts)
+
+    def get_rcuts(self) -> List[float]:
+        """Get the cut-off radius for each individual models in ascending order."""
+        return [model.get_rcut() for model in self.models]
+
+    def get_sel(self) -> List[int]:
+        return [max(self.get_sels)]
+
+    def get_sels(self) -> List[int]:
+        """Get the cut-off radius for each individual models in ascending order."""
+        return [sum(model.get_sel()) if isinstance(model.get_sel(), list) else model.get_sel() for model in self.models]
+    
+    def forward_atomic(
+        self,
+        extended_coord,
+        extended_atype,
+        nlist,
+        mapping: Optional[np.ndarray] = None,
+    ) -> Dict[str, np.ndarray]:
+        """Return atomic prediction.
+
+        Parameters
+        ----------
+        extended_coord
+            coodinates in extended region, (nframes, nall * 3)
+        extended_atype
+            atomic type in extended region, (nframes, nall)
+        nlist
+            neighbor list, (nframes, nloc, nsel).
+        mapping
+            mapps the extended indices to local indices.
+
+        Returns
+        -------
+        result_dict
+            the result dict, defined by the fitting net output def.
+        """
+
+        nframes, nloc, nnei = nlist.shape
+        extended_coord = extended_coord.reshape(nframes, -1, 3)
+        nlists = build_multiple_neighbor_list(
+            extended_coord,
+            nlist,
+            self.get_rcuts(),
+            self.get_sels(),
+        )
+        nlists_ = [nlists[str(rcut) + "_" + str(sel)] for rcut, sel in zip(self.get_rcuts(), self.get_sels())]
+        ener_list = [model.forward_atomic(
+            extended_coord,
+            extended_atype,
+            nlist,
+            mapping,
+        )["energy"] for model, nlist in zip(self.models, nlists_)]
+        
+        fit_ret = {
+            "energy": sum([w * e for w, e in zip(self.weights, ener_list)]),
+        }  # (nframes, nloc, 1)
+        return fit_ret
+
+    def fitting_output_def(self) -> FittingOutputDef:
+        return FittingOutputDef(
+            [
+                OutputVariableDef(
+                    name="energy", shape=[1], reduciable=True, differentiable=True
+                )
+            ]
+        )
+    
+    def serialize(self) -> dict:
+        return {
+            "models": [model.serialize() for model in self.models],
+            "weights": self.weights,
+        }
+
+    @classmethod
+    def deserialize(cls, data) -> "LinearModel":
+        weights = data["weights"]
+        
+        if weights == "zbl":
+            if len(data["models"]) != 2:
+                raise ValueError("ZBL only supports two models.")
+            try:
+                models = [DPAtomicModel.deserialize(data["models"][0]),
+                PairTabModel.deserialize(data["models"][1])]
+            except:
+                raise ValueError("The PairTabModel must be placed after the DPAtomicModel in the input lists.")
+
+        else:
+            models = [DPAtomicModel.deserialize(model) for model in data["models"]]
+        return cls(models, weights)
+
+class ZBLModel(LinearModel):
     """Model linearly combine a list of AtomicModels.
 
     Parameters
@@ -36,31 +180,24 @@ class LinearModel(BaseAtomicModel):
 
     def __init__(
         self,
-        dp_models: DPAtomicModel,
-        zbl_model: PairTabModel,
+        models: List[Union[DPAtomicModel, PairTabModel]],
+        sw_rmin: float,
+        sw_rmax: float,
+        weights = "zbl",
+        smin_alpha: Optional[float] = 0.1,
         **kwargs,
     ):
-        super().__init__()
-        self.dp_model = dp_models
-        self.zbl_model = zbl_model
-        self.rcut = self.get_rcut()
-        self.sel = self.get_sel()
-
-    def get_rcut(self) -> float:
-        """Get the cut-off radius."""
-        return self.get_rcuts()[-1]
-
-    def get_rcuts(self) -> float:
-        """Get the cut-off radius for each individual models in ascending order."""
-        return sorted([self.zbl_model.get_rcut(), self.dp_model.get_rcut()])
-
-    def get_sel(self) -> int:
-        """Get the neighbor selection."""
-        return self.get_sels()[-1]
-
-    def get_sels(self) -> int:
-        """Get the neighbor selection for each individual models in ascending order."""
-        return sorted([self.zbl_model.get_sel(), sum(self.dp_model.get_sel())])
+        super().__init__(models, weights)
+        self.models = models
+        self.dp_model = models[0]
+        self.zbl_model = models[1]
+        if weights != "zbl":
+            raise ValueError("ZBLModel only supports weights 'zbl'.")
+        if not (isinstance(self.dp_model, DPAtomicModel) and isinstance(self.zbl_model, PairTabModel)):
+            raise ValueError("The input models for ZBLModel must be a DPAtomicModel and a PairTabModel in the exact order.")
+        self.sw_rmin = sw_rmin
+        self.sw_rmax = sw_rmax
+        self.smin_alpha = smin_alpha
 
     def distinguish_types(self) -> bool:
         """If distinguish different types by sorting."""
@@ -71,9 +208,6 @@ class LinearModel(BaseAtomicModel):
         extended_coord,
         extended_atype,
         nlist,
-        sw_rmin: float,
-        sw_rmax: float,
-        smin_alpha: Optional[float] = 0.1,
         mapping: Optional[np.ndarray] = None,
     ) -> Dict[str, np.ndarray]:
         """Return atomic prediction.
@@ -91,13 +225,7 @@ class LinearModel(BaseAtomicModel):
         nlist
             neighbor list, (nframes, nloc, nsel).
         mapping
-            mapps the extended indices to local indices
-        sw_rmin : float
-            inclusive lower boundary of the range in which the ZBL potential and the deep potential are interpolated.
-        sw_rmax : float
-            exclusive upper boundary of the range in which the ZBL potential and the deep potential are interpolated.
-        smin_alpha : float
-            a tunable scale of the distances between atoms.
+            mapps the extended indices to local indices.
 
         Returns
         -------
@@ -138,7 +266,7 @@ class LinearModel(BaseAtomicModel):
 
         rr = np.take_along_axis(pairwise_rr[:, :nloc, :], masked_nlist, 2)
         # (nframes, nloc, 1)
-        self.zbl_weight = self._compute_weight(nlist_, rr, sw_rmin, sw_rmax, smin_alpha)
+        self.zbl_weight = self._compute_weight(nlist_, rr, self.sw_rmin, self.sw_rmax, self.smin_alpha)
         # (nframes, nloc, 1)
         dp_energy = self.dp_model.forward_atomic(
             extended_coord, extended_atype, dp_nlist
@@ -155,16 +283,33 @@ class LinearModel(BaseAtomicModel):
 
     def serialize(self) -> dict:
         return {
-            "dp_model": self.dp_model.serialize(),
-            "zbl_model": self.zbl_model.serialize(),
+            "models": [model.serialize() for model in self.models],
+            "weights": self.weights,
+            "sw_rmin": self.sw_rmin,
+            "sw_rmax": self.sw_rmax,
+            "smin_alpha": self.smin_alpha,
         }
-
+    
     @classmethod
-    def deserialize(cls, data) -> "LinearModel":
-        dp_model = DPAtomicModel.deserialize(data["dp_model"])
-        zbl_model = PairTabModel.deserialize(data["zbl_model"])
-        return cls(dp_model, zbl_model)
+    def deserialize(cls, data) -> "ZBLModel":
+        weights = data["weights"]
+        sw_rmin = data["sw_rmin"]
+        sw_rmax = data["sw_rmax"]
+        smin_alpha = data["smin_alpha"]
+        
+        if weights == "zbl":
+            if len(data["models"]) != 2:
+                raise ValueError("ZBL only supports two models.")
+            try:
+                models = [DPAtomicModel.deserialize(data["models"][0]),
+                PairTabModel.deserialize(data["models"][1])]
+            except:
+                raise ValueError("The PairTabModel must be placed after the DPAtomicModel in the input lists.")
 
+        else:
+            raise ValueError("ZBLModel only supports weights 'zbl'.")
+        return cls(models=models, weights=weights, sw_rmin=sw_rmin, sw_rmax=sw_rmax, smin_alpha=smin_alpha)
+    
     def fitting_output_def(self) -> FittingOutputDef:
         return FittingOutputDef(
             [

@@ -15,7 +15,7 @@ from deepmd.dpmodel.fitting.invar_fitting import (
 from deepmd.dpmodel.model.dp_atomic_model import (
     DPAtomicModel,
 )
-from deepmd.dpmodel.model.linear_model import LinearModel as LinearModel
+from deepmd.dpmodel.model.linear_model import ZBLModel
 from deepmd.dpmodel.model.pair_tab_model import (
     PairTabModel,
 )
@@ -54,7 +54,7 @@ class TestWeightCalculation(unittest.TestCase):
         zbl_model = PairTabModel(tab_file=file_path, rcut=0.3, sel=2)
         dp_model = DPAtomicModel(ds, ft, type_map=type_map)
 
-        wgt_model = LinearModel(dp_model, zbl_model)
+        wgt_model = ZBLModel(models=[dp_model, zbl_model], sw_rmin=0.1, sw_rmax=0.25, weights='zbl')
         wgt_res = []
         for dist in np.linspace(0.05, 0.3, 10):
             extended_coord = np.array(
@@ -67,7 +67,7 @@ class TestWeightCalculation(unittest.TestCase):
             )
 
             wgt_model.forward_atomic(
-                extended_coord, extended_atype, nlist, sw_rmin=0.1, sw_rmax=0.25
+                extended_coord, extended_atype, nlist
             )
 
             wgt_res.append(wgt_model.zbl_weight)
@@ -141,15 +141,15 @@ class TestIntegration(unittest.TestCase):
         type_map = ["foo", "bar"]
         dp_model = DPAtomicModel(ds, ft, type_map=type_map)
         zbl_model = PairTabModel(file_path, self.rcut, sum(self.sel))
-        self.md0 = LinearModel(dp_model, zbl_model)
-        self.md1 = LinearModel.deserialize(self.md0.serialize())
+        self.md0 = ZBLModel(models=[dp_model, zbl_model], sw_rmin=0.1, sw_rmax=0.25, weights='zbl')
+        self.md1 = ZBLModel.deserialize(self.md0.serialize())
 
     def test_self_consistency(self):
         ret0 = self.md0.forward_atomic(
-            self.coord_ext, self.atype_ext, self.nlist, sw_rmin=0.2, sw_rmax=0.5
+            self.coord_ext, self.atype_ext, self.nlist
         )
         ret1 = self.md1.forward_atomic(
-            self.coord_ext, self.atype_ext, self.nlist, sw_rmin=0.2, sw_rmax=0.5
+            self.coord_ext, self.atype_ext, self.nlist
         )
         np.testing.assert_allclose(
             ret0["energy"],
