@@ -7,7 +7,7 @@ from unittest.mock import (
 import numpy as np
 import torch
 
-from deepmd.dpmodel.model.linear_model import ZBLModel as DPZBLModel
+from deepmd.dpmodel.model.linear_model import ZBLAtomicModel as DPZBLAtomicModel
 from deepmd.pt.model.descriptor.se_a import (
     DescrptSeA,
 )
@@ -15,7 +15,7 @@ from deepmd.pt.model.model.dp_atomic_model import (
     DPAtomicModel,
 )
 from deepmd.pt.model.model.linear_model import (
-    ZBLModel,
+    ZBLAtomicModel,
 )
 from deepmd.pt.model.model.pair_tab_model import (
     PairTabModel,
@@ -72,7 +72,7 @@ class TestWeightCalculation(unittest.TestCase):
         dp_model = DPAtomicModel(ds, ft, type_map=type_map, resuming=True).to(
             env.DEVICE
         )
-        wgt_model = ZBLModel(
+        wgt_model = ZBLAtomicModel(
             dp_model, zbl_model, sw_rmin=0.1, sw_rmax=0.25, weights="zbl"
         )
         wgt_res = []
@@ -138,11 +138,11 @@ class TestIntegration(unittest.TestCase, TestCaseSingleFrameWithNlist):
             env.DEVICE
         )
         zbl_model = PairTabModel(file_path, self.rcut, sum(self.sel))
-        self.md0 = ZBLModel(
+        self.md0 = ZBLAtomicModel(
             dp_model, zbl_model, sw_rmin=0.1, sw_rmax=0.25, weights="zbl"
         ).to(env.DEVICE)
-        self.md1 = ZBLModel.deserialize(self.md0.serialize()).to(env.DEVICE)
-        self.md2 = DPZBLModel.deserialize(self.md0.serialize())
+        self.md1 = ZBLAtomicModel.deserialize(self.md0.serialize()).to(env.DEVICE)
+        self.md2 = DPZBLAtomicModel.deserialize(self.md0.serialize())
 
     def test_self_consistency(self):
         args = [

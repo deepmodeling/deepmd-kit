@@ -90,14 +90,14 @@ class LinearModel(BaseModel, BaseAtomicModel):
 
     def get_rcut(self) -> float:
         """Get the cut-off radius."""
-        return max(self.get_rcuts)
+        return max(self.get_rcuts())
 
     def get_rcuts(self) -> List[float]:
         """Get the cut-off radius for each individual models in ascending order."""
         return [model.get_rcut() for model in self.models]
 
     def get_sel(self) -> List[int]:
-        return [max(self.get_sels)]
+        return [max(self.get_sels())]
 
     def get_sels(self) -> List[int]:
         """Get the cut-off radius for each individual models in ascending order."""
@@ -122,6 +122,7 @@ class LinearModel(BaseModel, BaseAtomicModel):
         nlist,
         mapping: Optional[torch.Tensor] = None,
         atomic_bias: Optional[torch.Tensor] = None,
+        **kwargs,
     ) -> Dict[str, torch.Tensor]:
         """Return atomic prediction.
 
@@ -193,7 +194,7 @@ class LinearModel(BaseModel, BaseAtomicModel):
         weights = data["weights"]
 
         if weights == "zbl":
-            raise NotImplementedError("Use ZBLModel instead of LinearModel.")
+            raise NotImplementedError("Use ZBLAtomicModel instead of LinearModel.")
         else:
             models = [DPAtomicModel.deserialize(model) for model in data["models"]]
         return cls(models, weights)
@@ -211,12 +212,12 @@ class LinearModel(BaseModel, BaseAtomicModel):
             return [1 for _ in range(len(self.models))]
         # TODO: add more weights, for example, so-called committee models
         elif self.weights == "zbl":
-            raise NotImplementedError("Use ZBLModel instead of LinearModel.")
+            raise NotImplementedError("Use ZBLAtomicModel instead of LinearModel.")
         else:
             raise ValueError(f"Invalid weights {self.weights}")
 
 
-class ZBLModel(LinearModel):
+class ZBLAtomicModel(LinearModel):
     """Model linearly combine a list of AtomicModels.
 
     Parameters
@@ -240,7 +241,7 @@ class ZBLModel(LinearModel):
         self.dp_model = dp_model
         self.zbl_model = zbl_model
         if weights != "zbl":
-            raise ValueError("ZBLModel only supports weights 'zbl'.")
+            raise ValueError("ZBLAtomicModel only supports weights 'zbl'.")
 
         self.sw_rmin = sw_rmin
         self.sw_rmax = sw_rmax
@@ -257,7 +258,7 @@ class ZBLModel(LinearModel):
         }
 
     @classmethod
-    def deserialize(cls, data) -> "ZBLModel":
+    def deserialize(cls, data) -> "ZBLAtomicModel":
         weights = data["weights"]
         sw_rmin = data["sw_rmin"]
         sw_rmax = data["sw_rmax"]
@@ -267,7 +268,7 @@ class ZBLModel(LinearModel):
             dp_model = DPAtomicModel.deserialize(data["dp_model"])
             zbl_model = PairTabModel.deserialize(data["zbl_model"])
         else:
-            raise ValueError("ZBLModel only supports weights 'zbl'.")
+            raise ValueError("ZBLAtomicModel only supports weights 'zbl'.")
         return cls(
             dp_model=dp_model,
             zbl_model=zbl_model,
