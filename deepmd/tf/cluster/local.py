@@ -12,7 +12,7 @@ from typing import (
 from deepmd.tf.env import (
     tf,
 )
-from deepmd.utils import (
+from deepmd.utils.hostlist import (
     get_host_names,
 )
 
