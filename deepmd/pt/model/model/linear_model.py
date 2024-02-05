@@ -3,8 +3,8 @@ from typing import (
     Dict,
     List,
     Optional,
-    Union,
     Tuple,
+    Union,
 )
 
 import torch
@@ -101,9 +101,12 @@ class LinearModel(BaseModel, BaseAtomicModel):
             else model.get_sel()
             for model in self.models
         ]
+
     def _sort_rcuts_sels(self) -> Tuple[List[int], List[float]]:
         # sort the pair of rcut and sels in ascending order, first based on sel, then on rcut.
-        zipped = sorted(zip(self.get_rcuts(), self.get_sels()), key=lambda x: (x[1],x[0]))
+        zipped = sorted(
+            zip(self.get_rcuts(), self.get_sels()), key=lambda x: (x[1], x[0])
+        )
         return [p[0] for p in zipped], [p[1] for p in zipped]
 
     def forward_atomic(
