@@ -180,7 +180,7 @@ class LinearModel(BaseModel, BaseAtomicModel):
                     DPAtomicModel.deserialize(data["models"][0]),
                     PairTabModel.deserialize(data["models"][1]),
                 ]
-            except:
+            except KeyError:
                 raise ValueError(
                     "The PairTabModel must be placed after the DPAtomicModel in the input lists."
                 )
@@ -324,7 +324,7 @@ class ZBLModel(LinearModel):
                     DPAtomicModel.deserialize(data["models"][0]),
                     PairTabModel.deserialize(data["models"][1]),
                 ]
-            except:
+            except KeyError:
                 raise ValueError(
                     "The PairTabModel must be placed after the DPAtomicModel in the input lists."
                 )
