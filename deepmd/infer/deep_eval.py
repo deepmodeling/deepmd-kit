@@ -6,6 +6,7 @@ from abc import (
 from typing import (
     TYPE_CHECKING,
     Any,
+    ClassVar,
     Dict,
     List,
     Optional,
@@ -53,6 +54,26 @@ class DeepEvalBackend(ABC):
     **kwargs : dict
         Keyword arguments.
     """
+
+    _OUTDEF_DP2BACKEND: ClassVar[dict] = {
+        "energy": "atom_energy",
+        "energy_redu": "energy",
+        "energy_derv_r": "force",
+        "energy_derv_c": "atom_virial",
+        "energy_derv_c_redu": "virial",
+        "polar": "polar",
+        "polar_redu": "global_polar",
+        "polar_derv_r": "force",
+        "polar_derv_c": "atom_virial",
+        "polar_derv_c_redu": "virial",
+        "dipole": "dipole",
+        "dipole_redu": "global_dipole",
+        "dipole_derv_r": "force",
+        "dipole_derv_c": "atom_virial",
+        "dipole_derv_c_redu": "virial",
+        "dos": "atom_dos",
+        "dos_redu": "dos",
+    }
 
     @abstractmethod
     def __init__(

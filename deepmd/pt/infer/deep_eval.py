@@ -3,7 +3,6 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
-    ClassVar,
     Dict,
     List,
     Optional,
@@ -144,15 +143,6 @@ class DeepEval(DeepEvalBackend):
     def get_ntypes_spin(self):
         """Get the number of spin atom types of this model."""
         return 0
-
-    _OUTDEF_DP2PT: ClassVar[dict] = {
-        "energy": "atom_energy",
-        "energy_redu": "energy",
-        "energy_derv_r": "force",
-        # not same as TF...
-        "energy_derv_c": "atomic_virial",
-        "energy_derv_c_redu": "virial",
-    }
 
     def eval(
         self,
@@ -328,7 +318,7 @@ class DeepEval(DeepEvalBackend):
 
         results = []
         for odef in request_defs:
-            pt_name = self._OUTDEF_DP2PT[odef.name]
+            pt_name = self._OUTDEF_DP2BACKEND[odef.name]
             if pt_name in batch_output:
                 shape = self._get_output_shape(odef.name, nframes, natoms, odef.shape)
                 out = batch_output[pt_name].reshape(shape).detach().cpu().numpy()

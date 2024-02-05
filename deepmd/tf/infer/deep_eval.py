@@ -5,7 +5,6 @@ from functools import (
 from typing import (
     TYPE_CHECKING,
     Callable,
-    ClassVar,
     Dict,
     List,
     Optional,
@@ -169,26 +168,6 @@ class DeepEval(DeepEvalBackend):
                 ewald_beta=ewald_beta,
             )
 
-    _OUTDEF_DP2TF: ClassVar[dict] = {
-        "energy": "atom_energy",
-        "energy_redu": "energy",
-        "energy_derv_r": "force",
-        "energy_derv_c": "atom_virial",
-        "energy_derv_c_redu": "virial",
-        "polar": "polar",
-        "polar_redu": "global_polar",
-        "polar_derv_r": "force",
-        "polar_derv_c": "atom_virial",
-        "polar_derv_c_redu": "virial",
-        "dipole": "dipole",
-        "dipole_redu": "global_dipole",
-        "dipole_derv_r": "force",
-        "dipole_derv_c": "atom_virial",
-        "dipole_derv_c_redu": "virial",
-        "dos": "atom_dos",
-        "dos_redu": "dos",
-    }
-
     def _init_tensors(self):
         tensor_names = {
             # descrpt attrs
@@ -221,7 +200,7 @@ class DeepEval(DeepEvalBackend):
         # output tensors
         output_tensor_names = {}
         for vv in self.output_def.var_defs:
-            output_tensor_names[vv] = f"o_{self._OUTDEF_DP2TF[vv]}:0"
+            output_tensor_names[vv] = f"o_{self._OUTDEF_DP2BACKEND[vv]}:0"
 
         self.tensors = {}
         for tensor_key, tensor_name in tensor_names.items():
