@@ -54,13 +54,19 @@ class PairTabModel(nn.Module, BaseAtomicModel):
         super().__init__()
         self.tab_file = tab_file
         self.rcut = rcut
-
         self.tab = PairTab(self.tab_file, rcut=rcut)
-        self.ntypes = self.tab.ntypes
 
-        tab_info, tab_data = self.tab.get()  # this returns -> Tuple[np.array, np.array]
-        self.tab_info = torch.from_numpy(tab_info)
-        self.tab_data = torch.from_numpy(tab_data)
+        # handle deserialization with no input file
+        if self.tab_file is not None:
+            (
+                tab_info,
+                tab_data,
+            ) = self.tab.get()  # this returns -> Tuple[np.array, np.array]
+            self.tab_info = torch.from_numpy(tab_info)
+            self.tab_data = torch.from_numpy(tab_data)
+        else:
+            self.tab_info = None
+            self.tab_data = None
 
         # self.model_type = "ener"
         # self.model_version = MODEL_VERSION ## this shoud be in the parent class
@@ -92,12 +98,18 @@ class PairTabModel(nn.Module, BaseAtomicModel):
         return False
 
     def serialize(self) -> dict:
-        # place holder, implemantated in future PR
-        raise NotImplementedError
+        return {"tab": self.tab.serialize(), "rcut": self.rcut, "sel": self.sel}
 
-    def deserialize(cls):
-        # place holder, implemantated in future PR
-        raise NotImplementedError
+    @classmethod
+    def deserialize(cls, data) -> "PairTabModel":
+        rcut = data["rcut"]
+        sel = data["sel"]
+        tab = PairTab.deserialize(data["tab"])
+        tab_model = cls(None, rcut, sel)
+        tab_model.tab = tab
+        tab_model.tab_info = torch.from_numpy(tab_model.tab.tab_info)
+        tab_model.tab_data = torch.from_numpy(tab_model.tab.tab_data)
+        return tab_model
 
     def forward_atomic(
         self,
@@ -108,6 +120,7 @@ class PairTabModel(nn.Module, BaseAtomicModel):
         do_atomic_virial: bool = False,
     ) -> Dict[str, torch.Tensor]:
         self.nframes, self.nloc, self.nnei = nlist.shape
+        extended_coord = extended_coord.view(self.nframes, -1, 3)
 
         # this will mask all -1 in the nlist
         masked_nlist = torch.clamp(nlist, 0)
@@ -118,7 +131,7 @@ class PairTabModel(nn.Module, BaseAtomicModel):
         )  # (nframes, nall, nall, 3)
         pairwise_rr = pairwise_dr.pow(2).sum(-1).sqrt()  # (nframes, nall, nall)
 
-        self.tab_data = self.tab_data.reshape(
+        self.tab_data = self.tab_data.view(
             self.tab.ntypes, self.tab.ntypes, self.tab.nspline, 4
         )
 
@@ -139,7 +152,7 @@ class PairTabModel(nn.Module, BaseAtomicModel):
                 nlist != -1, raw_atomic_energy, torch.zeros_like(raw_atomic_energy)
             ),
             dim=-1,
-        )
+        ).unsqueeze(-1)
 
         return {"energy": atomic_energy}
 
@@ -200,7 +213,7 @@ class PairTabModel(nn.Module, BaseAtomicModel):
         table_coef = self._extract_spline_coefficient(
             i_type, j_type, idx, self.tab_data, self.nspline
         )
-        table_coef = table_coef.reshape(self.nframes, self.nloc, self.nnei, 4)
+        table_coef = table_coef.view(self.nframes, self.nloc, self.nnei, 4)
         ener = self._calcualte_ener(table_coef, uu)
 
         # here we need to overwrite energy to zero at rcut and beyond.
@@ -219,12 +232,12 @@ class PairTabModel(nn.Module, BaseAtomicModel):
         Parameters
         ----------
         coords : torch.Tensor
-            The coordinate of the atoms shape of (nframes * nall * 3).
+            The coordinate of the atoms shape of (nframes, nall, 3).
 
         Returns
         -------
         torch.Tensor
-            The pairwise distance between the atoms (nframes * nall * nall * 3).
+            The pairwise distance between the atoms (nframes, nall, nall, 3).
 
         Examples
         --------

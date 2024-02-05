@@ -40,6 +40,8 @@ from deepmd.pt.utils.utils import (
 dtype = env.GLOBAL_PT_FLOAT_PRECISION
 device = env.DEVICE
 
+log = logging.getLogger(__name__)
+
 
 @fitting_check_output
 class InvarFitting(Fitting):
@@ -153,7 +155,7 @@ class InvarFitting(Fitting):
 
         # very bad design...
         if "seed" in kwargs:
-            logging.info("Set seed to %d in fitting net.", kwargs["seed"])
+            log.info("Set seed to %d in fitting net.", kwargs["seed"])
             torch.manual_seed(kwargs["seed"])
 
     def output_def(self) -> FittingOutputDef:
@@ -451,7 +453,7 @@ class EnergyFittingNetDirect(Fitting):
         self.filter_layers = torch.nn.ModuleList(filter_layers)
 
         if "seed" in kwargs:
-            logging.info("Set seed to %d in fitting net.", kwargs["seed"])
+            log.info("Set seed to %d in fitting net.", kwargs["seed"])
             torch.manual_seed(kwargs["seed"])
 
     def output_def(self):

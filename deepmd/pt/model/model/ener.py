@@ -45,7 +45,7 @@ class EnergyModel(DPModel):
             if self.do_grad("energy"):
                 model_predict["force"] = model_ret["energy_derv_r"].squeeze(-2)
                 if do_atomic_virial:
-                    model_predict["atomic_virial"] = model_ret["energy_derv_c"].squeeze(
+                    model_predict["atom_virial"] = model_ret["energy_derv_c"].squeeze(
                         -3
                     )
                 model_predict["virial"] = model_ret["energy_derv_c_redu"].squeeze(-3)

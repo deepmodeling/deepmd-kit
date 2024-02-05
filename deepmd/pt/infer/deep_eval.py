@@ -438,9 +438,9 @@ def eval_model(
                 force_out.append(batch_output["force"].detach().cpu().numpy())
             if "virial" in batch_output:
                 virial_out.append(batch_output["virial"].detach().cpu().numpy())
-            if "atomic_virial" in batch_output:
+            if "atom_virial" in batch_output:
                 atomic_virial_out.append(
-                    batch_output["atomic_virial"].detach().cpu().numpy()
+                    batch_output["atom_virial"].detach().cpu().numpy()
                 )
             if "updated_coord" in batch_output:
                 updated_coord_out.append(
@@ -457,8 +457,8 @@ def eval_model(
                 force_out.append(batch_output["force"])
             if "virial" in batch_output:
                 virial_out.append(batch_output["virial"])
-            if "atomic_virial" in batch_output:
-                atomic_virial_out.append(batch_output["atomic_virial"])
+            if "atom_virial" in batch_output:
+                atomic_virial_out.append(batch_output["atom_virial"])
             if "updated_coord" in batch_output:
                 updated_coord_out.append(batch_output["updated_coord"])
             if "logits" in batch_output:

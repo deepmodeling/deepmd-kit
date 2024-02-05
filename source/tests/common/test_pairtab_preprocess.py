@@ -30,6 +30,18 @@ class TestPairTabPreprocessExtrapolate(unittest.TestCase):
         self.tab4 = PairTab(filename=file_path, rcut=0.03)
         self.tab5 = PairTab(filename=file_path, rcut=0.032)
 
+    def test_deserialize(self):
+        deserialized_tab = PairTab.deserialize(self.tab1.serialize())
+        np.testing.assert_allclose(self.tab1.vdata, deserialized_tab.vdata)
+        np.testing.assert_allclose(self.tab1.rmin, deserialized_tab.rmin)
+        np.testing.assert_allclose(self.tab1.rmax, deserialized_tab.rmax)
+        np.testing.assert_allclose(self.tab1.hh, deserialized_tab.hh)
+        np.testing.assert_allclose(self.tab1.ntypes, deserialized_tab.ntypes)
+        np.testing.assert_allclose(self.tab1.rcut, deserialized_tab.rcut)
+        np.testing.assert_allclose(self.tab1.nspline, deserialized_tab.nspline)
+        np.testing.assert_allclose(self.tab1.tab_info, deserialized_tab.tab_info)
+        np.testing.assert_allclose(self.tab1.tab_data, deserialized_tab.tab_data)
+
     def test_preprocess(self):
         np.testing.assert_allclose(
             self.tab1.vdata,
