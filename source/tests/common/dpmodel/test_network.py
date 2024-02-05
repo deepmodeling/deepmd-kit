@@ -134,7 +134,7 @@ class TestNativeNet(unittest.TestCase):
 
     def test_shape_error(self):
         with self.assertRaises(ValueError) as context:
-            network = NativeNet.deserialize(
+            NativeNet.deserialize(
                 {
                     "layers": [
                         {
