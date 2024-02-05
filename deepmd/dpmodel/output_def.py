@@ -3,7 +3,6 @@ import functools
 from enum import (
     IntEnum,
     IntFlag,
-    auto,
 )
 from typing import (
     Dict,
@@ -117,11 +116,11 @@ class OutputVariableOperation(IntFlag):
 
     NONE = 0
     """No operation."""
-    REDU = auto()
+    REDU = 1
     """Reduce the output variable."""
-    DERV_R = auto()
+    DERV_R = 2
     """Derivative w.r.t. coordinates."""
-    DERV_C = auto()
+    DERV_C = 4
     """Derivative w.r.t. cell."""
 
 
@@ -173,7 +172,7 @@ class OutputVariableDef:
         reduciable: bool = False,
         differentiable: bool = False,
         atomic: bool = True,
-        category: OutputVariableCategory = OutputVariableCategory.OUT,
+        category: int = OutputVariableCategory.OUT,
     ):
         self.name = name
         self.shape = list(shape)
@@ -297,7 +296,7 @@ def do_reduce(
     def_redu: Dict[str, OutputVariableDef] = {}
     for kk, vv in def_outp_data.items():
         if vv.reduciable:
-            assert vv.category & OutputVariableOperation.REDU == 0
+            assert vv.category & OutputVariableOperation.REDU.value == 0
             rk = get_reduce_name(kk)
             def_redu[rk] = OutputVariableDef(
                 rk,
@@ -305,9 +304,7 @@ def do_reduce(
                 reduciable=False,
                 differentiable=False,
                 atomic=False,
-                category=OutputVariableCategory(
-                    vv.category | OutputVariableOperation.REDU
-                ),
+                category=vv.category | OutputVariableOperation.REDU.value,
             )
     return def_redu
 
@@ -319,8 +316,8 @@ def do_derivative(
     def_derv_c: Dict[str, OutputVariableDef] = {}
     for kk, vv in def_outp_data.items():
         if vv.differentiable:
-            assert vv.category & OutputVariableOperation.DERV_R == 0
-            assert vv.category & OutputVariableOperation.DERV_C == 0
+            assert vv.category & OutputVariableOperation.DERV_R.value == 0
+            assert vv.category & OutputVariableOperation.DERV_C.value == 0
             rkr, rkc = get_deriv_name(kk)
             def_derv_r[rkr] = OutputVariableDef(
                 rkr,
@@ -328,9 +325,7 @@ def do_derivative(
                 reduciable=False,
                 differentiable=False,
                 atomic=True,
-                category=OutputVariableCategory(
-                    vv.category | OutputVariableOperation.DERV_R
-                ),
+                category=vv.category | OutputVariableOperation.DERV_R.value,
             )
             def_derv_c[rkc] = OutputVariableDef(
                 rkc,
@@ -338,8 +333,6 @@ def do_derivative(
                 reduciable=True,
                 differentiable=False,
                 atomic=True,
-                category=OutputVariableCategory(
-                    vv.category | OutputVariableOperation.DERV_C
-                ),
+                category=vv.category | OutputVariableOperation.DERV_C.value,
             )
     return def_derv_r, def_derv_c
