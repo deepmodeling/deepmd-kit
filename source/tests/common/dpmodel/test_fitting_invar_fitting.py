@@ -3,15 +3,16 @@ import itertools
 import unittest
 
 import numpy as np
-from case_single_frame_with_nlist import (
-    TestCaseSingleFrameWithNlist,
-)
 
 from deepmd.dpmodel.descriptor import (
     DescrptSeA,
 )
 from deepmd.dpmodel.fitting import (
     InvarFitting,
+)
+
+from .case_single_frame_with_nlist import (
+    TestCaseSingleFrameWithNlist,
 )
 
 

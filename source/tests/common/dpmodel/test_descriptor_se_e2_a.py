@@ -2,12 +2,13 @@
 import unittest
 
 import numpy as np
-from case_single_frame_with_nlist import (
-    TestCaseSingleFrameWithNlist,
-)
 
 from deepmd.dpmodel.descriptor import (
     DescrptSeA,
+)
+
+from .case_single_frame_with_nlist import (
+    TestCaseSingleFrameWithNlist,
 )
 
 

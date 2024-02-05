@@ -2,9 +2,6 @@
 import unittest
 
 import numpy as np
-from case_single_frame_with_nlist import (
-    TestCaseSingleFrameWithNlist,
-)
 
 from deepmd.dpmodel.descriptor import (
     DescrptSeA,
@@ -14,6 +11,10 @@ from deepmd.dpmodel.fitting import (
 )
 from deepmd.dpmodel.model import (
     DPAtomicModel,
+)
+
+from .case_single_frame_with_nlist import (
+    TestCaseSingleFrameWithNlist,
 )
 
 
