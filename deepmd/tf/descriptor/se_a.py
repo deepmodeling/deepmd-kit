@@ -708,7 +708,7 @@ class DescrptSeA(DescrptSe):
         tf.summary.histogram("net_derivative", net_deriv)
         net_deriv_reshape = tf.reshape(
             net_deriv,
-            [np.cast["int64"](-1), natoms[0] * np.cast["int64"](self.ndescrpt)],
+            [np.asarray(-1, dtype=np.int64), natoms[0] * np.asarray(self.ndescrpt, dtype=np.int64)],
         )
         force = op_module.prod_force_se_a(
             net_deriv_reshape,
