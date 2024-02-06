@@ -7,7 +7,6 @@ import torch
 
 from deepmd.pt.model.model import (
     get_model,
-    get_zbl_model,
 )
 from deepmd.pt.utils import (
     env,
