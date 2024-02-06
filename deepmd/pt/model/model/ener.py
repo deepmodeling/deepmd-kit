@@ -48,6 +48,15 @@ class ZBLModel(ZBLModel_):
         model_predict = {}
         model_predict["atom_energy"] = model_ret["energy"]
         model_predict["energy"] = model_ret["energy_redu"]
+        if self.do_grad("energy"):
+                model_predict["force"] = model_ret["energy_derv_r"].squeeze(-2)
+                if do_atomic_virial:
+                    model_predict["atom_virial"] = model_ret["energy_derv_c"].squeeze(
+                        -3
+                    )
+                model_predict["virial"] = model_ret["energy_derv_c_redu"].squeeze(-2)
+        else:
+            model_predict["force"] = model_ret["dforce"]
         return model_predict
 
     def forward_lower(
@@ -56,6 +65,7 @@ class ZBLModel(ZBLModel_):
         extended_atype,
         nlist,
         mapping: Optional[torch.Tensor] = None,
+         do_atomic_virial: bool = False,
     ):
         model_ret = self.forward_common_lower(
             extended_coord,
@@ -67,6 +77,16 @@ class ZBLModel(ZBLModel_):
         model_predict = {}
         model_predict["atom_energy"] = model_ret["energy"]
         model_predict["energy"] = model_ret["energy_redu"]
+        if self.do_grad("energy"):
+                model_predict["extended_force"] = model_ret["energy_derv_r"].squeeze(-2)
+                model_predict["virial"] = model_ret["energy_derv_c_redu"].squeeze(-2)
+                if do_atomic_virial:
+                    model_predict["extended_virial"] = model_ret[
+                        "energy_derv_c"
+                    ].squeeze(-2)
+        else:
+            assert model_ret["dforce"] is not None
+            model_predict["dforce"] = model_ret["dforce"]
 
         model_predict = model_ret
         return model_predict

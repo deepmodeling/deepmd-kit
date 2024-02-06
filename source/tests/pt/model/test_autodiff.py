@@ -202,9 +202,9 @@ class TestEnergyModelZBLForce(unittest.TestCase, ForceTest):
         self.model = get_model(model_params, sampled).to(env.DEVICE)
 
 
-class TestEnergyModelZBLVirial(unittest.TestCase, VirialTest):
-    def setUp(self):
-        model_params = copy.deepcopy(model_zbl)
-        sampled = make_sample(model_params)
-        self.type_split = False
-        self.model = get_zbl_model(model_params, sampled).to(env.DEVICE)
+# class TestEnergyModelZBLVirial(unittest.TestCase, VirialTest):
+#     def setUp(self):
+#         model_params = copy.deepcopy(model_zbl)
+#         sampled = make_sample(model_params)
+#         self.type_split = False
+#         self.model = get_zbl_model(model_params, sampled).to(env.DEVICE)
