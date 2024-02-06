@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import functools
+from enum import (
+    IntEnum,
+)
 from typing import (
     Dict,
     List,
@@ -107,6 +110,38 @@ def fitting_check_output(cls):
     return wrapper
 
 
+class OutputVariableOperation(IntEnum):
+    """Defines the operation of the output variable."""
+
+    _NONE = 0
+    """No operation."""
+    REDU = 1
+    """Reduce the output variable."""
+    DERV_R = 2
+    """Derivative w.r.t. coordinates."""
+    DERV_C = 4
+    """Derivative w.r.t. cell."""
+    _SEC_DERV_R = 8
+    """Second derivative w.r.t. coordinates."""
+
+
+class OutputVariableCategory(IntEnum):
+    """Defines the category of the output variable."""
+
+    OUT = OutputVariableOperation._NONE
+    """Output variable. (e.g. atom energy)"""
+    REDU = OutputVariableOperation.REDU
+    """Reduced output variable. (e.g. system energy)"""
+    DERV_R = OutputVariableOperation.DERV_R
+    """Negative derivative w.r.t. coordinates. (e.g. force)"""
+    DERV_C = OutputVariableOperation.DERV_C
+    """Atomic component of the virial, see PRB 104, 224202 (2021)  """
+    DERV_C_REDU = OutputVariableOperation.DERV_C | OutputVariableOperation.REDU
+    """Virial, the transposed negative gradient with cell tensor times cell tensor, see eq 40 JCP 159, 054801 (2023). """
+    DERV_R_DERV_R = OutputVariableOperation.DERV_R | OutputVariableOperation._SEC_DERV_R
+    """Hession matrix, the second derivative w.r.t. coordinates."""
+
+
 class OutputVariableDef:
     """Defines the shape and other properties of the one output variable.
 
@@ -129,7 +164,8 @@ class OutputVariableDef:
           If the variable is differentiated with respect to coordinates
           of atoms and cell tensor (pbc case). Only reduciable variable
           are differentiable.
-
+    category : int
+          The category of the output variable.
     """
 
     def __init__(
@@ -139,6 +175,7 @@ class OutputVariableDef:
         reduciable: bool = False,
         differentiable: bool = False,
         atomic: bool = True,
+        category: int = OutputVariableCategory.OUT.value,
     ):
         self.name = name
         self.shape = list(shape)
@@ -149,6 +186,7 @@ class OutputVariableDef:
             raise ValueError("only reduciable variable are differentiable")
         if self.reduciable and not self.atomic:
             raise ValueError("only reduciable variable should be atomic")
+        self.category = category
 
 
 class FittingOutputDef:
@@ -255,6 +293,60 @@ def get_deriv_name(name: str) -> Tuple[str, str]:
     return name + "_derv_r", name + "_derv_c"
 
 
+def apply_operation(var_def: OutputVariableDef, op: OutputVariableOperation) -> int:
+    """Apply a operation to the category of a variable definition.
+
+    Parameters
+    ----------
+    var_def : OutputVariableDef
+        The variable definition.
+    op : OutputVariableOperation
+        The operation to be applied.
+
+    Returns
+    -------
+    int
+        The new category of the variable definition.
+
+    Raises
+    ------
+    ValueError
+        If the operation has been applied to the variable definition,
+        and exceed the maximum limitation.
+    """
+    if op == OutputVariableOperation.REDU or op == OutputVariableOperation.DERV_C:
+        if check_operation_applied(var_def, op):
+            raise ValueError(f"operation {op} has been applied")
+    elif op == OutputVariableOperation.DERV_R:
+        if check_operation_applied(var_def, OutputVariableOperation.DERV_R):
+            op = OutputVariableOperation._SEC_DERV_R
+            if check_operation_applied(var_def, OutputVariableOperation._SEC_DERV_R):
+                raise ValueError(f"operation {op} has been applied twice")
+    else:
+        raise ValueError(f"operation {op} not supported")
+    return var_def.category | op.value
+
+
+def check_operation_applied(
+    var_def: OutputVariableDef, op: OutputVariableOperation
+) -> bool:
+    """Check if a operation has been applied to a variable definition.
+
+    Parameters
+    ----------
+    var_def : OutputVariableDef
+        The variable definition.
+    op : OutputVariableOperation
+        The operation to be checked.
+
+    Returns
+    -------
+    bool
+        True if the operation has been applied, False otherwise.
+    """
+    return var_def.category & op.value == op.value
+
+
 def do_reduce(
     def_outp_data: Dict[str, OutputVariableDef],
 ) -> Dict[str, OutputVariableDef]:
@@ -263,7 +355,12 @@ def do_reduce(
         if vv.reduciable:
             rk = get_reduce_name(kk)
             def_redu[rk] = OutputVariableDef(
-                rk, vv.shape, reduciable=False, differentiable=False, atomic=False
+                rk,
+                vv.shape,
+                reduciable=False,
+                differentiable=False,
+                atomic=False,
+                category=apply_operation(vv, OutputVariableOperation.REDU),
             )
     return def_redu
 
@@ -282,6 +379,7 @@ def do_derivative(
                 reduciable=False,
                 differentiable=False,
                 atomic=True,
+                category=apply_operation(vv, OutputVariableOperation.DERV_R),
             )
             def_derv_c[rkc] = OutputVariableDef(
                 rkc,
@@ -289,5 +387,6 @@ def do_derivative(
                 reduciable=True,
                 differentiable=False,
                 atomic=True,
+                category=apply_operation(vv, OutputVariableOperation.DERV_C),
             )
     return def_derv_r, def_derv_c
