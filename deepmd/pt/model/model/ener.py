@@ -35,6 +35,9 @@ class ZBLModel(ZBLModel_):
         coord,
         atype,
         box: Optional[torch.Tensor] = None,
+        fparam: Optional[torch.Tensor] = None,
+        aparam: Optional[torch.Tensor] = None,
+        do_atomic_virial: bool = False,
     ) -> Dict[str, torch.Tensor]:
         model_ret = self.forward_common(
             coord,

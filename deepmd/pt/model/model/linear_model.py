@@ -44,12 +44,12 @@ class LinearModel(BaseModel, BaseAtomicModel):
         If the type is list[float], a list of weights for each model.
         If "mean", the weights are set to be 1 / len(models).
         If "sum", the weights are set to be 1.
-        If "zbl", the weights are calculated internally. This only allows the combination of a PairTabModel and a DPAtomicModel.
+        If "switch_by_softmin_pair_distance", the weights are calculated internally. This only allows the combination of a PairTabModel and a DPAtomicModel.
     """
 
     def __init__(
         self,
-        models: List[Union[DPAtomicModel, PairTabModel]],
+        models: List[BaseAtomicModel],
         weights: Union[str, List[float]],
         **kwargs,
     ):
@@ -77,12 +77,7 @@ class LinearModel(BaseModel, BaseAtomicModel):
 
     def get_sels(self) -> List[int]:
         """Get the processed sels for each individual models. Not distinguishing types."""
-        return [
-            sum(model.get_sel())
-            if isinstance(model.get_sel(), list)
-            else model.get_sel()
-            for model in self.models
-        ]
+        return [model.get_nsel() for model in self.models]
 
     def get_original_sels(self) -> List[Union[int, List[int]]]:
         """Get the sels for each individual models."""
@@ -101,8 +96,8 @@ class LinearModel(BaseModel, BaseAtomicModel):
         extended_atype,
         nlist,
         mapping: Optional[torch.Tensor] = None,
-        atomic_bias: Optional[torch.Tensor] = None,
-        **kwargs,
+        fparam: Optional[torch.Tensor] = None,
+        aparam: Optional[torch.Tensor] = None,
     ) -> Dict[str, torch.Tensor]:
         """Return atomic prediction.
 
@@ -116,6 +111,10 @@ class LinearModel(BaseModel, BaseAtomicModel):
             neighbor list, (nframes, nloc, nsel).
         mapping
             mapps the extended indices to local indices.
+        fparam
+            frame parameter. (nframes, ndf)
+        aparam
+            atomic parameter. (nframes, nloc, nda)
 
         Returns
         -------
@@ -153,7 +152,8 @@ class LinearModel(BaseModel, BaseAtomicModel):
         ]
 
         weights = self._compute_weight()
-        if atomic_bias is not None:
+        self.atomic_bias = None
+        if self.atomic_bias is not None:
             raise NotImplementedError("Need to add bias in a future PR.")
         else:
             fit_ret = {
@@ -180,7 +180,7 @@ class LinearModel(BaseModel, BaseAtomicModel):
     def deserialize(cls, data) -> "LinearModel":
         weights = data["weights"]
 
-        if weights == "zbl":
+        if weights == "switch_by_softmin_pair_distance":
             raise NotImplementedError("Use ZBLAtomicModel instead of LinearModel.")
         else:
             models = [DPAtomicModel.deserialize(model) for model in data["models"]]
@@ -198,7 +198,7 @@ class LinearModel(BaseModel, BaseAtomicModel):
         elif self.weights == "sum":
             return [1 for _ in range(len(self.models))]
         # TODO: add more weights, for example, so-called committee models
-        elif self.weights == "zbl":
+        elif self.weights == "switch_by_softmin_pair_distance":
             raise NotImplementedError("Use ZBLAtomicModel instead of LinearModel.")
         else:
             raise ValueError(f"Invalid weights {self.weights}")
@@ -219,7 +219,7 @@ class ZBLAtomicModel(LinearModel):
         zbl_model: PairTabModel,
         sw_rmin: float,
         sw_rmax: float,
-        weights="zbl",
+        weights="switch_by_softmin_pair_distance",
         smin_alpha: Optional[float] = 0.1,
         **kwargs,
     ):
@@ -227,8 +227,8 @@ class ZBLAtomicModel(LinearModel):
         super().__init__(models, weights, **kwargs)
         self.dp_model = dp_model
         self.zbl_model = zbl_model
-        if weights != "zbl":
-            raise ValueError("ZBLAtomicModel only supports weights 'zbl'.")
+        if weights != "switch_by_softmin_pair_distance":
+            raise ValueError("ZBLAtomicModel only supports weights 'switch_by_softmin_pair_distance'.")
 
         self.sw_rmin = sw_rmin
         self.sw_rmax = sw_rmax
@@ -251,11 +251,11 @@ class ZBLAtomicModel(LinearModel):
         sw_rmax = data["sw_rmax"]
         smin_alpha = data["smin_alpha"]
 
-        if weights == "zbl":
+        if weights == "switch_by_softmin_pair_distance":
             dp_model = DPAtomicModel.deserialize(data["dp_model"])
             zbl_model = PairTabModel.deserialize(data["zbl_model"])
         else:
-            raise ValueError("ZBLAtomicModel only supports weights 'zbl'.")
+            raise ValueError("ZBLAtomicModel only supports weights 'switch_by_softmin_pair_distance'.")
         return cls(
             dp_model=dp_model,
             zbl_model=zbl_model,

@@ -90,7 +90,10 @@ class PairTabModel(nn.Module, BaseAtomicModel):
     def get_rcut(self) -> float:
         return self.rcut
 
-    def get_sel(self) -> int:
+    def get_sel(self) -> List[int]:
+        return [self.sel]
+    
+    def get_nsel(self) -> int:
         return self.sel
 
     def distinguish_types(self) -> bool:
