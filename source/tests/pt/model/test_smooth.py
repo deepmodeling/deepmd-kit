@@ -9,7 +9,6 @@ from deepmd.pt.infer.deep_eval import (
 )
 from deepmd.pt.model.model import (
     get_model,
-    get_zbl_model,
 )
 from deepmd.pt.utils import (
     env,
@@ -211,6 +210,7 @@ class TestEnergyModelHybrid(unittest.TestCase, SmoothTest):
         self.model = get_model(model_params, sampled).to(env.DEVICE)
         self.epsilon, self.aprec = None, None
 
+
 class TestEnergyModelZBL(unittest.TestCase, SmoothTest):
     def setUp(self):
         model_params = copy.deepcopy(model_zbl)
@@ -218,6 +218,7 @@ class TestEnergyModelZBL(unittest.TestCase, SmoothTest):
         self.type_split = False
         self.model = get_model(model_params, sampled).to(env.DEVICE)
         self.epsilon, self.aprec = None, None
+
 
 # class TestEnergyFoo(unittest.TestCase):
 #   def test(self):
