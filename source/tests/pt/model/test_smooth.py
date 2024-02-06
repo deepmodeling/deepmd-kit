@@ -211,15 +211,13 @@ class TestEnergyModelHybrid(unittest.TestCase, SmoothTest):
         self.model = get_model(model_params, sampled).to(env.DEVICE)
         self.epsilon, self.aprec = None, None
 
-
-class TestEnergyModelZBLForce(unittest.TestCase, SmoothTest):
+class TestEnergyModelZBL(unittest.TestCase, SmoothTest):
     def setUp(self):
         model_params = copy.deepcopy(model_zbl)
         sampled = make_sample(model_params)
-        self.type_split = True
-        self.model = get_zbl_model(model_params, sampled).to(env.DEVICE)
+        self.type_split = False
+        self.model = get_model(model_params, sampled).to(env.DEVICE)
         self.epsilon, self.aprec = None, None
-
 
 # class TestEnergyFoo(unittest.TestCase):
 #   def test(self):
