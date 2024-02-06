@@ -31,7 +31,7 @@ from deepmd.pt.utils.utils import (
     to_torch_tensor,
 )
 
-from .test_env_mat import (
+from .model.test_env_mat import (
     TestCaseSingleFrameWithNlist,
 )
 
