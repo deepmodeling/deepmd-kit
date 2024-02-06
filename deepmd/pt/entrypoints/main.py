@@ -14,6 +14,7 @@ from typing import (
 
 import torch
 import torch.distributed as dist
+import torch.version
 from torch.distributed.elastic.multiprocessing.errors import (
     record,
 )
@@ -48,6 +49,9 @@ from deepmd.pt.train import (
 from deepmd.pt.utils.dataloader import (
     DpLoaderSet,
 )
+from deepmd.pt.utils.env import (
+    DEVICE,
+)
 from deepmd.pt.utils.finetune import (
     change_finetune_model_params,
 )
@@ -57,6 +61,7 @@ from deepmd.pt.utils.multi_task import (
 from deepmd.pt.utils.stat import (
     make_stat_input,
 )
+from deepmd.utils.summary import SummaryPrinter as BaseSummaryPrinter
 
 log = logging.getLogger(__name__)
 
@@ -238,8 +243,33 @@ def get_trainer(
     return trainer
 
 
+class SummaryPrinter(BaseSummaryPrinter):
+    def is_built_with_cuda(self) -> bool:
+        """Check if the backend is built with CUDA."""
+        return torch.version.cuda is not None
+
+    def is_built_with_rocm(self) -> bool:
+        """Check if the backend is built with ROCm."""
+        return torch.version.hip is not None
+
+    def get_compute_device(self) -> str:
+        """Get Compute device."""
+        return str(DEVICE)
+
+    def get_ngpus(self) -> int:
+        """Get the number of GPUs."""
+        return torch.cuda.device_count()
+
+    def get_backend_info(self) -> dict:
+        """Get backend information."""
+        return {
+            "PT ver": f"v{torch.__version__}-g{torch.version.git_version[:11]}",
+        }
+
+
 def train(FLAGS):
     log.info("Configuration path: %s", FLAGS.INPUT)
+    SummaryPrinter()()
     with open(FLAGS.INPUT) as fin:
         config = json.load(fin)
     trainer = get_trainer(

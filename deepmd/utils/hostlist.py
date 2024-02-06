@@ -31,4 +31,4 @@ def get_host_names() -> Tuple[str, List[str]]:
     if comm.Get_size() == 1:
         return host_name, [host_name]
     host_names = comm.allgather(host_name)
-    return host_name, list(set(host_names))
+    return host_name, host_names
