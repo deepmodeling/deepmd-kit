@@ -199,7 +199,7 @@ class PairTabModel(BaseAtomicModel):
             i_type, j_type, idx, self.tab_data, self.nspline
         )
         table_coef = table_coef.reshape(self.nframes, self.nloc, self.nnei, 4)
-        ener = self._calcualte_ener(table_coef, uu)
+        ener = self._calculate_ener(table_coef, uu)
         # here we need to overwrite energy to zero at rcut and beyond.
         mask_beyond_rcut = rr >= self.rcut
         # also overwrite values beyond extrapolation to zero
@@ -278,7 +278,7 @@ class PairTabModel(BaseAtomicModel):
         return final_coef
 
     @staticmethod
-    def _calcualte_ener(coef: np.ndarray, uu: np.ndarray) -> np.ndarray:
+    def _calculate_ener(coef: np.ndarray, uu: np.ndarray) -> np.ndarray:
         """Calculate energy using spline coeeficients.
 
         Parameters

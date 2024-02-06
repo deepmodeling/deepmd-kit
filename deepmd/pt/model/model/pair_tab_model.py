@@ -217,7 +217,7 @@ class PairTabModel(nn.Module, BaseAtomicModel):
             i_type, j_type, idx, self.tab_data, self.nspline
         )
         table_coef = table_coef.view(self.nframes, self.nloc, self.nnei, 4)
-        ener = self._calcualte_ener(table_coef, uu)
+        ener = self._calculate_ener(table_coef, uu)
 
         # here we need to overwrite energy to zero at rcut and beyond.
         mask_beyond_rcut = rr >= self.rcut
@@ -315,7 +315,7 @@ class PairTabModel(nn.Module, BaseAtomicModel):
         return final_coef
 
     @staticmethod
-    def _calcualte_ener(coef: torch.Tensor, uu: torch.Tensor) -> torch.Tensor:
+    def _calculate_ener(coef: torch.Tensor, uu: torch.Tensor) -> torch.Tensor:
         """Calculate energy using spline coeeficients.
 
         Parameters

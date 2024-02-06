@@ -66,14 +66,10 @@ class LinearModel(BaseAtomicModel):
         return max(self.get_rcuts())
 
     def get_rcuts(self) -> List[float]:
-        """Get the cut-off radius for each individual models in ascending order."""
+        """Get the cut-off radius for each individual models."""
         return [model.get_rcut() for model in self.models]
 
     def get_sel(self) -> List[int]:
-        return [max(self.get_sels())]
-
-    def get_sels(self) -> List[int]:
-        """Get the cut-off radius for each individual models in ascending order."""
         return [model.get_nsel() for model in self.models]
 
     def get_original_sels(self) -> List[Union[int, List[int]]]:
@@ -83,7 +79,7 @@ class LinearModel(BaseAtomicModel):
     def _sort_rcuts_sels(self) -> Tuple[List[int], List[float]]:
         # sort the pair of rcut and sels in ascending order, first based on sel, then on rcut.
         zipped = sorted(
-            zip(self.get_rcuts(), self.get_sels()), key=lambda x: (x[1], x[0])
+            zip(self.get_rcuts(), self.get_sel()), key=lambda x: (x[1], x[0])
         )
         return [p[0] for p in zipped], [p[1] for p in zipped]
 
@@ -129,7 +125,7 @@ class LinearModel(BaseAtomicModel):
         )
         raw_nlists = [
             nlists[get_multiple_nlist_key(rcut, sel)]
-            for rcut, sel in zip(self.get_rcuts(), self.get_sels())
+            for rcut, sel in zip(self.get_rcuts(), self.get_sel())
         ]
         self.nlists_ = [
             nl if not dt else nlist_distinguish_types(nl, extended_atype, sel)
@@ -152,7 +148,7 @@ class LinearModel(BaseAtomicModel):
             raise NotImplementedError("Need to add bias in a future PR.")
         else:
             fit_ret = {
-                "energy": sum([w * e for w, e in zip(weights, ener_list)]),
+                "energy": sum(np.stack(ener_list) * np.stack(weights)),
             }  # (nframes, nloc, 1)
         return fit_ret
 
