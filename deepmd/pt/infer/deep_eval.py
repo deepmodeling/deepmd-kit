@@ -15,6 +15,7 @@ import torch
 
 from deepmd.dpmodel.output_def import (
     ModelOutputDef,
+    OutputVariableCategory,
     OutputVariableDef,
 )
 from deepmd.infer.deep_eval import (
@@ -234,7 +235,12 @@ class DeepEval(DeepEvalBackend):
             return [
                 x
                 for x in self.output_def.var_defs.values()
-                if x.name.endswith("_redu") or x.name.endswith("_derv_r")
+                if x.category
+                in (
+                    OutputVariableCategory.REDU,
+                    OutputVariableCategory.DERV_R,
+                    OutputVariableCategory.DERV_C_REDU,
+                )
             ]
 
     def _eval_func(self, inner_func: Callable, numb_test: int, natoms: int) -> Callable:
@@ -309,7 +315,9 @@ class DeepEval(DeepEvalBackend):
         else:
             box_input = None
 
-        do_atomic_virial = any(x.name.endswith("_derv_c") for x in request_defs)
+        do_atomic_virial = any(
+            x.category == OutputVariableCategory.DERV_C_REDU for x in request_defs
+        )
         batch_output = model(
             coord_input, type_input, box=box_input, do_atomic_virial=do_atomic_virial
         )
@@ -320,31 +328,31 @@ class DeepEval(DeepEvalBackend):
         for odef in request_defs:
             pt_name = self._OUTDEF_DP2BACKEND[odef.name]
             if pt_name in batch_output:
-                shape = self._get_output_shape(odef.name, nframes, natoms, odef.shape)
+                shape = self._get_output_shape(odef, nframes, natoms)
                 out = batch_output[pt_name].reshape(shape).detach().cpu().numpy()
                 results.append(out)
         return tuple(results)
 
-    def _get_output_shape(self, name, nframes, natoms, shape):
-        if "_redu" in name:
-            if "_derv_c" in name:
-                # virial
-                return [nframes, *shape[:-2], 9]
-            else:
-                # energy
-                return [nframes, *shape, 1]
+    def _get_output_shape(self, odef, nframes, natoms):
+        if odef.category == OutputVariableCategory.DERV_C_REDU:
+            # virial
+            return [nframes, *odef.shape[:-2], 9]
+        elif odef.category == OutputVariableCategory.REDU:
+            # energy
+            return [nframes, *odef.shape, 1]
+        elif odef.category == OutputVariableCategory.DERV_C:
+            # atom_virial
+            return [nframes, *odef.shape[:-2], natoms, 9]
+        elif odef.category == OutputVariableCategory.DERV_R:
+            # force
+            return [nframes, *odef.shape[:-1], natoms, 3]
+        elif odef.category == OutputVariableCategory.OUT:
+            # atom_energy, atom_tensor
+            # Something wrong here?
+            # return [nframes, *shape, natoms, 1]
+            return [nframes, natoms, *odef.shape, 1]
         else:
-            if "_derv_c" in name:
-                # atom_virial
-                return [nframes, *shape[:-2], natoms, 9]
-            elif "_derv_r" in name:
-                # force
-                return [nframes, *shape[:-1], natoms, 3]
-            else:
-                # atom_energy, atom_tensor
-                # Something wrong here?
-                # return [nframes, *shape, natoms, 1]
-                return [nframes, natoms, *shape, 1]
+            raise RuntimeError("unknown category")
 
 
 # For tests only

@@ -19,6 +19,7 @@ from deepmd.common import (
 )
 from deepmd.dpmodel.output_def import (
     ModelOutputDef,
+    OutputVariableCategory,
 )
 from deepmd.infer.deep_dipole import (
     DeepDipole,
@@ -932,60 +933,62 @@ class DeepEval(DeepEvalBackend):
             # add the value of ghost atoms to real atoms
             for ii, odef in enumerate(self.output_def.var_defs.values()):
                 # when the shape is nall
-                if "_redu" not in odef.name and "_derv" in odef.name:
-                    odef_shape = self._get_output_shape(
-                        odef.name, nframes, nall, odef.shape
-                    )
+                if odef.category in (
+                    OutputVariableCategory.DERV_R,
+                    OutputVariableCategory.DERV_C,
+                ):
+                    odef_shape = self._get_output_shape(odef, nframes, nall)
                     tmp_shape = [np.prod(odef_shape[:-2]), *odef_shape[-2:]]
                     v_out[ii] = np.reshape(v_out[ii], tmp_shape)
                     for jj in range(v_out[ii].shape[0]):
                         np.add.at(v_out[ii][jj], ghost_map, v_out[ii][jj, nloc:])
 
         for ii, odef in enumerate(self.output_def.var_defs.values()):
-            if "_redu" not in odef.name:
-                if "_derv" in odef.name:
-                    odef_shape = self._get_output_shape(
-                        odef.name, nframes, nall, odef.shape
-                    )
-                    tmp_shape = [np.prod(odef_shape[:-2]), *odef_shape[-2:]]
-                    # reverse map of the outputs
-                    v_out[ii] = self.reverse_map(np.reshape(v_out[ii], tmp_shape), imap)
-                    v_out[ii] = np.reshape(v_out[ii], odef_shape)
-                    if nloc < nall:
-                        v_out[ii] = v_out[ii][:, :, :nloc]
-                else:
-                    odef_shape = self._get_output_shape(
-                        odef.name, nframes, natoms_real, odef.shape
-                    )
-                    v_out[ii] = self.reverse_map(
-                        np.reshape(v_out[ii], odef_shape), sel_imap[:natoms_real]
-                    )
-                    v_out[ii] = np.reshape(v_out[ii], odef_shape)
-            else:
-                odef_shape = self._get_output_shape(odef.name, nframes, 0, odef.shape)
+            odef_shape = self._get_output_shape(odef, nframes, nall)
+            if odef.category in (
+                OutputVariableCategory.DERV_R,
+                OutputVariableCategory.DERV_C,
+            ):
+                tmp_shape = [np.prod(odef_shape[:-2]), *odef_shape[-2:]]
+                # reverse map of the outputs
+                v_out[ii] = self.reverse_map(np.reshape(v_out[ii], tmp_shape), imap)
                 v_out[ii] = np.reshape(v_out[ii], odef_shape)
+                if nloc < nall:
+                    v_out[ii] = v_out[ii][:, :, :nloc]
+            elif odef.category == OutputVariableCategory.OUT:
+                v_out[ii] = self.reverse_map(
+                    np.reshape(v_out[ii], odef_shape), sel_imap[:natoms_real]
+                )
+                v_out[ii] = np.reshape(v_out[ii], odef_shape)
+            elif odef.category in (
+                OutputVariableCategory.REDU,
+                OutputVariableCategory.DERV_C_REDU,
+            ):
+                v_out[ii] = np.reshape(v_out[ii], odef_shape)
+            else:
+                raise RuntimeError("unknown category")
         return tuple(v_out)
 
-    def _get_output_shape(self, name, nframes, natoms, shape):
-        if "_redu" in name:
-            if "_derv_c" in name:
-                # virial
-                return [nframes, *shape[:-2], 9]
-            else:
-                # energy
-                return [nframes, *shape, 1]
+    def _get_output_shape(self, odef, nframes, natoms):
+        if odef.category == OutputVariableCategory.DERV_C_REDU:
+            # virial
+            return [nframes, *odef.shape[:-2], 9]
+        elif odef.category == OutputVariableCategory.REDU:
+            # energy
+            return [nframes, *odef.shape, 1]
+        elif odef.category == OutputVariableCategory.DERV_C:
+            # atom_virial
+            return [nframes, *odef.shape[:-2], natoms, 9]
+        elif odef.category == OutputVariableCategory.DERV_R:
+            # force
+            return [nframes, *odef.shape[:-1], natoms, 3]
+        elif odef.category == OutputVariableCategory.OUT:
+            # atom_energy, atom_tensor
+            # Something wrong here?
+            # return [nframes, *shape, natoms, 1]
+            return [nframes, natoms, *odef.shape, 1]
         else:
-            if "_derv_c" in name:
-                # atom_virial
-                return [nframes, *shape[:-2], natoms, 9]
-            elif "_derv_r" in name:
-                # force
-                return [nframes, *shape[:-1], natoms, 3]
-            else:
-                # atom_energy, atom_tensor
-                # Something wrong here?
-                # return [nframes, *shape, natoms, 1]
-                return [nframes, natoms, *shape, 1]
+            raise RuntimeError("unknown category")
 
     def eval_descriptor(
         self,
