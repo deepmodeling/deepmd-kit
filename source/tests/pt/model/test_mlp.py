@@ -5,71 +5,24 @@ import unittest
 import numpy as np
 import torch
 
+from deepmd.dpmodel.utils import EmbeddingNet as DPEmbeddingNet
+from deepmd.dpmodel.utils import FittingNet as DPFittingNet
+from deepmd.dpmodel.utils import (
+    NativeLayer,
+    NativeNet,
+)
+from deepmd.pt.model.network.mlp import (
+    MLP,
+    EmbeddingNet,
+    FittingNet,
+    MLPLayer,
+)
 from deepmd.pt.utils import (
     env,
 )
 from deepmd.pt.utils.env import (
     PRECISION_DICT,
 )
-
-try:
-    from deepmd.pt.model.network.mlp import (
-        MLP,
-        MLPLayer,
-    )
-
-    support_native_net = True
-except ModuleNotFoundError:
-    support_native_net = False
-
-try:
-    from deepmd.pt.model.network.mlp import (
-        EmbeddingNet,
-    )
-
-    support_embedding_net = True
-except ModuleNotFoundError:
-    support_embedding_net = False
-
-try:
-    from deepmd.pt.model.network.mlp import (
-        FittingNet,
-    )
-
-    support_fitting_net = True
-except ModuleNotFoundError:
-    support_fitting_net = False
-
-
-try:
-    from deepmd.dpmodel import (
-        NativeLayer,
-        NativeNet,
-    )
-
-    support_native_net = True
-except ModuleNotFoundError:
-    support_native_net = False
-except ImportError:
-    support_native_net = False
-
-try:
-    from deepmd.dpmodel import EmbeddingNet as DPEmbeddingNet
-
-    support_embedding_net = True
-except ModuleNotFoundError:
-    support_embedding_net = False
-except ImportError:
-    support_embedding_net = False
-
-try:
-    from deepmd.dpmodel import FittingNet as DPFittingNet
-
-    support_fitting_net = True
-except ModuleNotFoundError:
-    support_fitting_net = False
-except ImportError:
-    support_fitting_net = False
 
 
 def get_tols(prec):
@@ -84,7 +37,6 @@ def get_tols(prec):
     return rtol, atol
 
 
-@unittest.skipIf(not support_native_net, "NativeLayer not supported")
 class TestMLPLayer(unittest.TestCase):
     def setUp(self):
         self.test_cases = itertools.product(
@@ -141,7 +93,6 @@ class TestMLPLayer(unittest.TestCase):
             model = torch.jit.script(ml1)
 
 
-@unittest.skipIf(not support_native_net, "NativeLayer not supported")
 class TestMLP(unittest.TestCase):
     def setUp(self):
         self.test_cases = itertools.product(
@@ -210,7 +161,6 @@ class TestMLP(unittest.TestCase):
             model = torch.jit.script(ml1)
 
 
-@unittest.skipIf(not support_embedding_net, "EmbeddingNet not supported")
 class TestEmbeddingNet(unittest.TestCase):
     def setUp(self):
         self.test_cases = itertools.product(
@@ -261,7 +211,6 @@ class TestEmbeddingNet(unittest.TestCase):
             model = torch.jit.script(ml1)
 
 
-@unittest.skipIf(not support_fitting_net, "FittingNet not supported")
 class TestFittingNet(unittest.TestCase):
     def setUp(self):
         self.test_cases = itertools.product(
