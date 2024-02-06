@@ -55,7 +55,6 @@ class TestWeightCalculation(unittest.TestCase):
         type_map = ["foo", "bar"]
         zbl_model = PairTabModel(tab_file=file_path, rcut=0.3, sel=2)
         dp_model = DPAtomicModel(ds, ft, type_map=type_map)
-        print(dp_model.distinguish_types())
 
         wgt_model = ZBLAtomicModel(
             dp_model, zbl_model, sw_rmin=0.1, sw_rmax=0.25, weights="zbl"

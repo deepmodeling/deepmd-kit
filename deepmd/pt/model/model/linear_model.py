@@ -293,7 +293,7 @@ class ZBLAtomicModel(LinearModel):
             .sum(-1)
             .sqrt()
         )
-        rr = torch.gather(pairwise_rr[:, :nloc, :], 2, masked_nlist)
+        rr = torch.gather(pairwise_rr[:, :nloc, :], 2, masked_nlist) # nframes, nloc, nnei
 
         numerator = torch.sum(
             rr * torch.exp(-rr / self.smin_alpha), dim=-1
@@ -306,7 +306,8 @@ class ZBLAtomicModel(LinearModel):
             ),
             dim=-1,
         )  # handle masked nnei.
-        sigma = numerator / denominator
+
+        sigma = numerator / denominator # nfrmes, nloc
         u = (sigma - self.sw_rmin) / (self.sw_rmax - self.sw_rmin)
         coef = torch.zeros_like(u)
         left_mask = sigma < self.sw_rmin
@@ -316,5 +317,5 @@ class ZBLAtomicModel(LinearModel):
         smooth = -6 * u**5 + 15 * u**4 - 10 * u**3 + 1
         coef[mid_mask] = smooth[mid_mask]
         coef[right_mask] = 0
-        self.zbl_weight = coef
+        self.zbl_weight = coef # nframes, nloc
         return [1 - coef.unsqueeze(-1), coef.unsqueeze(-1)]  # to match the model order.
