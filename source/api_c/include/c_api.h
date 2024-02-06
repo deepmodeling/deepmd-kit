@@ -1134,20 +1134,20 @@ extern void DP_DeleteDipoleChargeModifier(DP_DipoleChargeModifier* dcm);
  *modifier with the neighbor list. (double version)
  * @param[in] dcm The dipole charge modifier to use.
  * @param[in] natoms The number of atoms.
- * @param[in] coord The coordinates of atoms. The array should be of size natoms
+ * @param[in] coord The coordinates of atoms. The array should be of size nall
  *x 3.
- * @param[in] atype The atom types. The array should contain natoms ints.
+ * @param[in] atype The atom types. The array should contain nall ints.
  * @param[in] cell The cell of the region. The array should be of size 9. Pass
  *NULL if pbc is not used.
  * @param[in] pairs The pairs of atoms. The list should contain npairs pairs of
  *ints.
  * @param[in] npairs The number of pairs.
  * @param[in] delef_ The electric field on each atom. The array should be of
- *size nframes x natoms x 3.
+ *size nframes x nloc x 3.
  * @param[in] nghost The number of ghost atoms.
  * @param[in] nlist The neighbor list.
  * @param[out] dfcorr_ Output force correction. The array should be of size
- *natoms x 3.
+ *nall x 3.
  * @param[out] dvcorr_ Output virial correction. The array should be of size 9.
  * @warning The output arrays should be allocated before calling this function.
  *Pass NULL if not required.

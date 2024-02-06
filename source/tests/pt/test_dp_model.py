@@ -12,6 +12,7 @@ from deepmd.pt.model.descriptor.se_a import (
 )
 from deepmd.pt.model.model.ener import (
     DPModel,
+    EnergyModel,
 )
 from deepmd.pt.model.task.ener import (
     InvarFitting,
@@ -386,3 +387,145 @@ class TestDPModelFormatNlist(unittest.TestCase):
             to_torch_tensor(nlist),
         )
         np.testing.assert_allclose(self.expected_nlist, to_numpy_array(nlist1))
+
+
+class TestEnergyModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
+    def setUp(self):
+        TestCaseSingleFrameWithoutNlist.setUp(self)
+
+    def test_self_consistency(self):
+        nf, nloc = self.atype.shape
+        ds = DescrptSeA(
+            self.rcut,
+            self.rcut_smth,
+            self.sel,
+        ).to(env.DEVICE)
+        ft = InvarFitting(
+            "energy",
+            self.nt,
+            ds.get_dim_out(),
+            1,
+            distinguish_types=ds.distinguish_types(),
+        ).to(env.DEVICE)
+        type_map = ["foo", "bar"]
+        # TODO: dirty hack to avoid data stat!!!
+        md0 = EnergyModel(ds, ft, type_map=type_map, resuming=True).to(env.DEVICE)
+        md1 = EnergyModel.deserialize(md0.serialize()).to(env.DEVICE)
+        args = [to_torch_tensor(ii) for ii in [self.coord, self.atype, self.cell]]
+        ret0 = md0.forward(*args)
+        ret1 = md1.forward(*args)
+        np.testing.assert_allclose(
+            to_numpy_array(ret0["atom_energy"]),
+            to_numpy_array(ret1["atom_energy"]),
+        )
+        np.testing.assert_allclose(
+            to_numpy_array(ret0["energy"]),
+            to_numpy_array(ret1["energy"]),
+        )
+        np.testing.assert_allclose(
+            to_numpy_array(ret0["force"]),
+            to_numpy_array(ret1["force"]),
+        )
+        np.testing.assert_allclose(
+            to_numpy_array(ret0["virial"]),
+            to_numpy_array(ret1["virial"]),
+        )
+        ret0 = md0.forward(*args, do_atomic_virial=True)
+        ret1 = md1.forward(*args, do_atomic_virial=True)
+        np.testing.assert_allclose(
+            to_numpy_array(ret0["atom_virial"]),
+            to_numpy_array(ret1["atom_virial"]),
+        )
+
+        coord_ext, atype_ext, mapping = extend_coord_with_ghosts(
+            to_torch_tensor(self.coord),
+            to_torch_tensor(self.atype),
+            to_torch_tensor(self.cell),
+            self.rcut,
+        )
+        nlist = build_neighbor_list(
+            coord_ext,
+            atype_ext,
+            self.nloc,
+            self.rcut,
+            self.sel,
+            distinguish_types=md0.distinguish_types(),
+        )
+        args = [coord_ext, atype_ext, nlist]
+        ret2 = md0.forward_lower(*args, do_atomic_virial=True)
+        # check the consistency between the reduced virial from
+        # forward and forward_lower
+        np.testing.assert_allclose(
+            to_numpy_array(ret0["virial"]),
+            to_numpy_array(ret2["virial"]),
+        )
+
+
+class TestEnergyModelLower(unittest.TestCase, TestCaseSingleFrameWithNlist):
+    def setUp(self):
+        TestCaseSingleFrameWithNlist.setUp(self)
+
+    def test_self_consistency(self):
+        nf, nloc, nnei = self.nlist.shape
+        ds = DescrptSeA(
+            self.rcut,
+            self.rcut_smth,
+            self.sel,
+        ).to(env.DEVICE)
+        ft = InvarFitting(
+            "energy",
+            self.nt,
+            ds.get_dim_out(),
+            1,
+            distinguish_types=ds.distinguish_types(),
+        ).to(env.DEVICE)
+        type_map = ["foo", "bar"]
+        # TODO: dirty hack to avoid data stat!!!
+        md0 = EnergyModel(ds, ft, type_map=type_map, resuming=True).to(env.DEVICE)
+        md1 = EnergyModel.deserialize(md0.serialize()).to(env.DEVICE)
+        args = [
+            to_torch_tensor(ii) for ii in [self.coord_ext, self.atype_ext, self.nlist]
+        ]
+        ret0 = md0.forward_lower(*args)
+        ret1 = md1.forward_lower(*args)
+        np.testing.assert_allclose(
+            to_numpy_array(ret0["atom_energy"]),
+            to_numpy_array(ret1["atom_energy"]),
+        )
+        np.testing.assert_allclose(
+            to_numpy_array(ret0["energy"]),
+            to_numpy_array(ret1["energy"]),
+        )
+        np.testing.assert_allclose(
+            to_numpy_array(ret0["extended_force"]),
+            to_numpy_array(ret1["extended_force"]),
+        )
+        np.testing.assert_allclose(
+            to_numpy_array(ret0["virial"]),
+            to_numpy_array(ret1["virial"]),
+        )
+        ret0 = md0.forward_lower(*args, do_atomic_virial=True)
+        ret1 = md1.forward_lower(*args, do_atomic_virial=True)
+        np.testing.assert_allclose(
+            to_numpy_array(ret0["extended_virial"]),
+            to_numpy_array(ret1["extended_virial"]),
+        )
+
+    def test_jit(self):
+        nf, nloc, nnei = self.nlist.shape
+        ds = DescrptSeA(
+            self.rcut,
+            self.rcut_smth,
+            self.sel,
+        ).to(env.DEVICE)
+        ft = InvarFitting(
+            "energy",
+            self.nt,
+            ds.get_dim_out(),
+            1,
+            distinguish_types=ds.distinguish_types(),
+        ).to(env.DEVICE)
+        type_map = ["foo", "bar"]
+        # TODO: dirty hack to avoid data stat!!!
+        md0 = EnergyModel(ds, ft, type_map=type_map, resuming=True).to(env.DEVICE)
+        torch.jit.script(md0)

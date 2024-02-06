@@ -66,6 +66,6 @@ jobs:
         TF_INTER_OP_PARALLELISM_THREADS: 1
         LAMMPS_PLUGIN_PATH: ${{ github.workspace }}/dp_test/lib/deepmd_lmp
         CUDA_PATH: /usr/local/cuda-12.2
-    - uses: codecov/codecov-action@v3
-      with:
-        gcov: true
+    - uses: codecov/codecov-action@v4
+      env:
+        CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
