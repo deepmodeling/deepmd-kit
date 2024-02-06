@@ -54,7 +54,7 @@ class ZBLModel(ZBLModel_):
         nlist,
         mapping: Optional[torch.Tensor] = None,
     ):
-        model_ret = self.common_forward_lower(
+        model_ret = self.forward_common_lower(
             extended_coord,
             extended_atype,
             nlist,
@@ -117,7 +117,7 @@ class EnergyModel(DPModel):
         mapping: Optional[torch.Tensor] = None,
         do_atomic_virial: bool = False,
     ):
-        model_ret = self.common_forward_lower(
+        model_ret = self.forward_common_lower(
             extended_coord,
             extended_atype,
             nlist,

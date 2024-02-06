@@ -17,6 +17,7 @@ from deepmd.dpmodel import (
 from deepmd.pt.utils.nlist import (
     build_multiple_neighbor_list,
     get_multiple_nlist_key,
+    nlist_distinguish_types,
 )
 
 from .base_atomic_model import (
@@ -56,57 +57,34 @@ class LinearModel(BaseModel, BaseAtomicModel):
         super().__init__()
         self.models = models
         self.weights = weights
-        if any(model.distinguish_types() for model in self.models):
-            logging.warning("The LinearModel does not support distinguishing types.")
-        else:
-            self.distinguish_types = False
-        if self.weights == "zbl":
-            if len(models) != 2:
-                raise ValueError("ZBL only supports two models.")
-            if not isinstance(models[1], PairTabModel):
-                raise ValueError(
-                    "The PairTabModel must be placed after the DPAtomicModel in the input lists."
-                )
-
-        if isinstance(weights, list):
-            if len(weights) != len(models):
-                raise ValueError(
-                    "The length of weights is not equal to the number of models"
-                )
-            self.weights = weights
-        elif weights == "mean":
-            self.weights = [1 / len(models) for _ in range(len(models))]
-        elif weights == "sum":
-            self.weights = [1 for _ in range(len(models))]
-        # TODO: add more weights, for example, so-called committee models
-        elif weights == "zbl":
-            pass
-        else:
-            raise ValueError(f"Invalid weights {weights}")
+        self.distinguish_type_list = [model.distinguish_types() for model in self.models]
 
     def distinguish_types(self) -> bool:
         """If distinguish different types by sorting."""
-        return self.distinguish_types
+        return False
 
     def get_rcut(self) -> float:
         """Get the cut-off radius."""
         return max(self.get_rcuts())
 
     def get_rcuts(self) -> List[float]:
-        """Get the cut-off radius for each individual models in ascending order."""
+        """Get the cut-off radius for each individual models."""
         return [model.get_rcut() for model in self.models]
 
     def get_sel(self) -> List[int]:
         return [max(self.get_sels())]
 
     def get_sels(self) -> List[int]:
-        """Get the cut-off radius for each individual models in ascending order."""
+        """Get the processed sels for each individual models. Not distinguishing types."""
         return [
             sum(model.get_sel())
             if isinstance(model.get_sel(), list)
             else model.get_sel()
             for model in self.models
         ]
+    def get_original_sels(self) -> List[Union[int, List[int]]]:
+        """Get the sels for each individual models."""
+        return [model.get_sel() for model in self.models]
 
     def _sort_rcuts_sels(self) -> Tuple[List[int], List[float]]:
         # sort the pair of rcut and sels in ascending order, first based on sel, then on rcut.
@@ -151,10 +129,15 @@ class LinearModel(BaseModel, BaseAtomicModel):
             sorted_rcuts,
             sorted_sels,
         )
-        self.nlists_ = [
+        raw_nlists = [
             nlists[get_multiple_nlist_key(rcut, sel)]
             for rcut, sel in zip(self.get_rcuts(), self.get_sels())
         ]
+        self.nlists_ = [
+            nl if not dt else nlist_distinguish_types(nl, extended_atype, sel)
+            for dt, nl, sel in zip(self.distinguish_type_list, raw_nlists, self.get_original_sels())
+        ]
+        
         ener_list = [
             model.forward_atomic(
                 self.extended_coord,
@@ -330,4 +313,4 @@ class ZBLAtomicModel(LinearModel):
         coef[mid_mask] = smooth[mid_mask]
         coef[right_mask] = 0
         self.zbl_weight = coef
-        return coef.unsqueeze(-1)
+        return [1- coef.unsqueeze(-1), coef.unsqueeze(-1)] # to match the model order.

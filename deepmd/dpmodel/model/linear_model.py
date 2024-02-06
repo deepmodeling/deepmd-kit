@@ -17,6 +17,7 @@ from deepmd.dpmodel import (
 from deepmd.dpmodel.utils.nlist import (
     build_multiple_neighbor_list,
     get_multiple_nlist_key,
+    nlist_distinguish_types,
 )
 
 from .base_atomic_model import (
@@ -53,14 +54,11 @@ class LinearModel(BaseAtomicModel):
         super().__init__()
         self.models = models
         self.weights = weights
-        if any(model.distinguish_types() for model in self.models):
-            logging.warning("The LinearModel does not support distinguishing types.")
-        else:
-            self.distinguish_types = False
+        self.distinguish_type_list = [model.distinguish_types() for model in self.models]
 
     def distinguish_types(self) -> bool:
         """If distinguish different types by sorting."""
-        return self.distinguish_types
+        return False
 
     def get_rcut(self) -> float:
         """Get the cut-off radius."""
@@ -81,6 +79,10 @@ class LinearModel(BaseAtomicModel):
             else model.get_sel()
             for model in self.models
         ]
+    
+    def get_original_sels(self) -> List[Union[int, List[int]]]:
+        """Get the sels for each individual models."""
+        return [model.get_sel() for model in self.models]
 
     def _sort_rcuts_sels(self) -> Tuple[List[int], List[float]]:
         # sort the pair of rcut and sels in ascending order, first based on sel, then on rcut.
@@ -125,9 +127,13 @@ class LinearModel(BaseAtomicModel):
             sorted_rcuts,
             sorted_sels,
         )
-        self.nlists_ = [
+        raw_nlists = [
             nlists[get_multiple_nlist_key(rcut, sel)]
             for rcut, sel in zip(self.get_rcuts(), self.get_sels())
+        ]
+        self.nlists_ = [
+            nl if not dt else nlist_distinguish_types(nl, extended_atype, sel)
+            for dt, nl, sel in zip(self.distinguish_type_list, raw_nlists, self.get_original_sels())
         ]
         ener_list = [
             model.forward_atomic(
@@ -310,4 +316,4 @@ class ZBLAtomicModel(LinearModel):
         coef[mid_mask] = smooth[mid_mask]
         coef[right_mask] = 0
         self.zbl_weight = coef
-        return np.expand_dims(coef, -1)
+        return [1 - np.expand_dims(coef, -1), np.expand_dims(coef, -1)]
