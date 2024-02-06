@@ -265,6 +265,7 @@ class SummaryPrinter(BaseSummaryPrinter):
     def get_backend_info(self) -> dict:
         """Get backend information."""
         return {
+            "Backend": "PyTorch",
             "PT ver": f"v{torch.__version__}-g{torch.version.git_version[:11]}",
         }
 

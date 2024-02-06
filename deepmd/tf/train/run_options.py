@@ -67,6 +67,7 @@ class SummaryPrinter(BaseSummaryPrinter):
     def get_backend_info(self) -> dict:
         """Get backend information."""
         return {
+            "Backend": "TensorFlow",
             "TF ver": tf.version.GIT_VERSION,
             "build with TF ver": TF_VERSION,
             "build with TF inc": GLOBAL_CONFIG["tf_include_dir"].replace(";", "\n"),
