@@ -9,6 +9,7 @@ from deepmd.pt.infer.deep_eval import (
 )
 from deepmd.pt.model.model import (
     get_model,
+    get_zbl_model,
 )
 from deepmd.pt.utils import (
     env,
@@ -182,7 +183,7 @@ class TestEnergyModelZBL(unittest.TestCase, RotTest):
         model_params = copy.deepcopy(model_zbl)
         sampled = make_sample(model_params)
         self.type_split = False
-        self.model = get_model(model_params, sampled).to(env.DEVICE)
+        self.model = get_zbl_model(model_params, sampled).to(env.DEVICE)
 
 
 if __name__ == "__main__":
