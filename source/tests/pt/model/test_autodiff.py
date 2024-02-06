@@ -190,4 +190,3 @@ class TestEnergyModelDPAUniVirial(unittest.TestCase, VirialTest):
         model_params = copy.deepcopy(model_dpa2)
         self.type_split = True
         self.model = get_model(model_params, sampled).to(env.DEVICE)
-

@@ -52,7 +52,12 @@ def get_zbl_model(model_params, sampled=None):
 
     rmin = model_params["sw_rmin"]
     rmax = model_params["sw_rmax"]
-    return ZBLModel(dp_model, pt_model, rmin, rmax,)
+    return ZBLModel(
+        dp_model,
+        pt_model,
+        rmin,
+        rmax,
+    )
 
 
 def get_model(model_params, sampled=None):
