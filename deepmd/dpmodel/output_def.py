@@ -319,14 +319,9 @@ def apply_operation(var_def: OutputVariableDef, op: OutputVariableOperation) -> 
             raise ValueError(f"operation {op} has been applied")
     elif op == OutputVariableOperation.DERV_R:
         if check_operation_applied(var_def, OutputVariableOperation.DERV_R):
-            raise ValueError(f"operation {op} has been applied")
-    elif op == OutputVariableOperation.SEC_DERV_R:
-        if not check_operation_applied(var_def, OutputVariableOperation.DERV_R):
-            raise ValueError(
-                f"operation OutputVariableOperation.DERV_R should be applied before {op}"
-            )
-        if check_operation_applied(var_def, OutputVariableOperation.SEC_DERV_R):
-            raise ValueError(f"operation {op} has been applied")
+            op = OutputVariableOperation.SEC_DERV_R
+            if check_operation_applied(var_def, OutputVariableOperation.SEC_DERV_R):
+                raise ValueError(f"operation {op} has been applied twice")
     else:
         raise ValueError(f"operation {op} not supported")
     return var_def.category | op.value
