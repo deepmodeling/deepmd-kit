@@ -186,7 +186,7 @@ class TestDef(unittest.TestCase):
             apply_operation(md["energy_derv_c_redu"], OutputVariableOperation.REDU)
         # hession
         hession_cat = apply_operation(
-            md["energy_derv_r"], OutputVariableOperation.DERV_R
+            md["energy_derv_r"], OutputVariableOperation.SEC_DERV_R
         )
         self.assertEqual(
             hession_cat & OutputVariableOperation.DERV_R, OutputVariableOperation.DERV_R
