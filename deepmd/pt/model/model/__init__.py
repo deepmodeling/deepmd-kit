@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import copy
 
-import numpy as np
-
 from deepmd.pt.model.descriptor.descriptor import (
     Descriptor,
 )
