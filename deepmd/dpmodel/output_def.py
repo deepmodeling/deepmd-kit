@@ -320,7 +320,6 @@ def apply_operation(var_def: OutputVariableDef, op: OutputVariableOperation) -> 
     elif op == OutputVariableOperation.DERV_R:
         if check_operation_applied(var_def, OutputVariableOperation.DERV_R):
             op = OutputVariableOperation.SEC_DERV_R
-        else:
             if check_operation_applied(var_def, OutputVariableOperation.SEC_DERV_R):
                 raise ValueError(f"operation {op} has been applied twice")
     else:
