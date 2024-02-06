@@ -178,6 +178,7 @@ class TestForceModelHybrid(unittest.TestCase, RotTest):
         self.test_virial = False
         self.model = get_model(model_params, sampled).to(env.DEVICE)
 
+
 class TestEnergyModelZBL(unittest.TestCase, RotTest):
     def setUp(self):
         model_params = copy.deepcopy(model_zbl)
