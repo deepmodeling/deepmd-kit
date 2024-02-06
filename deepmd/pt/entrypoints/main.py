@@ -244,6 +244,8 @@ def get_trainer(
 
 
 class SummaryPrinter(BaseSummaryPrinter):
+    """Summary printer for PyTorch."""
+
     def is_built_with_cuda(self) -> bool:
         """Check if the backend is built with CUDA."""
         return torch.version.cuda is not None

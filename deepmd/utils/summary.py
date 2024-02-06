@@ -23,6 +23,11 @@ log = logging.getLogger(__name__)
 
 
 class SummaryPrinter(ABC):
+    """Base summary printer.
+
+    Backends should inherit from this class and implement the abstract methods.
+    """
+
     # http://patorjk.com/software/taag. Font:Big"
     WELCOME = (
         r" _____               _____   __  __  _____           _     _  _   ",

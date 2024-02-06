@@ -41,6 +41,8 @@ log = logging.getLogger(__name__)
 
 
 class SummaryPrinter(BaseSummaryPrinter):
+    """Summary printer for TensorFlow."""
+
     def __init__(self, compute_device: str, ngpus: int) -> None:
         super().__init__()
         self.compute_device = compute_device
