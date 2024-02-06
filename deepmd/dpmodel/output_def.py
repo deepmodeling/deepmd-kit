@@ -314,7 +314,7 @@ def apply_operation(var_def: OutputVariableDef, op: OutputVariableOperation) -> 
         If the operation has been applied to the variable definition,
         and exceed the maximum limitation.
     """
-    if op in (OutputVariableOperation.REDU, OutputVariableOperation.DERV_C):
+    if op == OutputVariableOperation.REDU or op == OutputVariableOperation.DERV_C:
         if check_operation_applied(var_def, op):
             raise ValueError(f"operation {op} has been applied")
     elif op == OutputVariableOperation.DERV_R:
