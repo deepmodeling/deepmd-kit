@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Get local GPU resources."""
 
-import socket
 import subprocess as sp
 import sys
 from typing import (
@@ -12,6 +11,9 @@ from typing import (
 
 from deepmd.tf.env import (
     tf,
+)
+from deepmd.utils.hostlist import (
+    get_host_names,
 )
 
 __all__ = ["get_gpus", "get_resource"]
@@ -57,7 +59,6 @@ def get_resource() -> Tuple[str, List[str], Optional[List[int]]]:
     Tuple[str, List[str], Optional[List[int]]]
         nodename, nodelist, and gpus
     """
-    nodename = socket.gethostname()
-    nodelist = [nodename]
+    nodename, nodelist = get_host_names()
     gpus = get_gpus()
     return nodename, nodelist, gpus

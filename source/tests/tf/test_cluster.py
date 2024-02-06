@@ -6,7 +6,6 @@ from unittest import (
 
 from deepmd.tf.cluster import (
     local,
-    slurm,
 )
 
 kHostName = "compute-b24-1"
@@ -70,75 +69,3 @@ class TestLocal(unittest.TestCase):
         nodename, nodelist, _ = local.get_resource()
         self.assertEqual(nodename, kHostName)
         self.assertEqual(nodelist, [kHostName])
-
-
-class TestSlurm(unittest.TestCase):
-    @mock.patch.dict(
-        "os.environ",
-        values={
-            "SLURM_JOB_NODELIST": kHostName,
-            "SLURMD_NODENAME": kHostName,
-            "SLURM_JOB_NUM_NODES": "1",
-        },
-    )
-    def test_single(self):
-        nodename, nodelist, _ = slurm.get_resource()
-        self.assertEqual(nodename, kHostName)
-        self.assertEqual(nodelist, [kHostName])
-
-    @mock.patch.dict(
-        "os.environ",
-        values={
-            "SLURM_JOB_NODELIST": "compute-b24-[1-3,5-9],compute-b25-[4,8]",
-            "SLURMD_NODENAME": "compute-b24-2",
-            "SLURM_JOB_NUM_NODES": "10",
-        },
-    )
-    def test_multiple(self):
-        nodename, nodelist, _ = slurm.get_resource()
-        self.assertEqual(nodename, "compute-b24-2")
-        self.assertEqual(
-            nodelist,
-            [
-                "compute-b24-1",
-                "compute-b24-2",
-                "compute-b24-3",
-                "compute-b24-5",
-                "compute-b24-6",
-                "compute-b24-7",
-                "compute-b24-8",
-                "compute-b24-9",
-                "compute-b25-4",
-                "compute-b25-8",
-            ],
-        )
-
-    def test_illegal(self):
-        environ = {
-            "SLURM_JOB_NODELIST": "compute-b24-[3-5]",
-            "SLURMD_NODENAME": "compute-b24-4",
-        }
-        with mock.patch.dict("os.environ", environ):
-            with self.assertRaises(RuntimeError) as cm:
-                _ = slurm.get_resource()
-                self.assertIn("Could not get SLURM number", str(cm.exception))
-
-        environ = {
-            "SLURM_JOB_NODELIST": "compute-b24-1,compute-b25-2",
-            "SLURMD_NODENAME": "compute-b25-2",
-            "SLURM_JOB_NUM_NODES": "4",
-        }
-        with mock.patch.dict("os.environ", environ):
-            with self.assertRaises(ValueError) as cm:
-                _ = slurm.get_resource()
-                self.assertIn("Number of slurm nodes 2", str(cm.exception))
-
-        environ = {
-            "SLURM_JOB_NODELIST": "compute-b24-1,compute-b25-3",
-            "SLURMD_NODENAME": "compute-b25-2",
-            "SLURM_JOB_NUM_NODES": "2",
-        }
-        with mock.patch.dict("os.environ", environ):
-            with self.assertRaises(ValueError) as cm:
-                _ = slurm.get_resource()
-                self.assertIn("Nodename(compute-b25-2", str(cm.exception))
