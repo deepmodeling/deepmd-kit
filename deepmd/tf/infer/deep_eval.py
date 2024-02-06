@@ -944,11 +944,11 @@ class DeepEval(DeepEvalBackend):
                         np.add.at(v_out[ii][jj], ghost_map, v_out[ii][jj, nloc:])
 
         for ii, odef in enumerate(self.output_def.var_defs.values()):
-            odef_shape = self._get_output_shape(odef, nframes, nall)
             if odef.category in (
                 OutputVariableCategory.DERV_R,
                 OutputVariableCategory.DERV_C,
             ):
+                odef_shape = self._get_output_shape(odef, nframes, nall)
                 tmp_shape = [np.prod(odef_shape[:-2]), *odef_shape[-2:]]
                 # reverse map of the outputs
                 v_out[ii] = self.reverse_map(np.reshape(v_out[ii], tmp_shape), imap)
@@ -956,6 +956,7 @@ class DeepEval(DeepEvalBackend):
                 if nloc < nall:
                     v_out[ii] = v_out[ii][:, :, :nloc]
             elif odef.category == OutputVariableCategory.OUT:
+                odef_shape = self._get_output_shape(odef, nframes, natoms_real)
                 v_out[ii] = self.reverse_map(
                     np.reshape(v_out[ii], odef_shape), sel_imap[:natoms_real]
                 )
@@ -964,6 +965,7 @@ class DeepEval(DeepEvalBackend):
                 OutputVariableCategory.REDU,
                 OutputVariableCategory.DERV_C_REDU,
             ):
+                odef_shape = self._get_output_shape(odef, nframes, 0)
                 v_out[ii] = np.reshape(v_out[ii], odef_shape)
             else:
                 raise RuntimeError("unknown category")
