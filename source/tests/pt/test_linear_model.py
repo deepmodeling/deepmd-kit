@@ -73,7 +73,11 @@ class TestWeightCalculation(unittest.TestCase):
             env.DEVICE
         )
         wgt_model = ZBLAtomicModel(
-            dp_model, zbl_model, sw_rmin=0.1, sw_rmax=0.25, weights="switch_by_softmin_pair_distance"
+            dp_model,
+            zbl_model,
+            sw_rmin=0.1,
+            sw_rmax=0.25,
+            weights="switch_by_softmin_pair_distance",
         )
         wgt_res = []
         for dist in np.linspace(0.05, 0.3, 10):
@@ -139,7 +143,11 @@ class TestIntegration(unittest.TestCase, TestCaseSingleFrameWithNlist):
         )
         zbl_model = PairTabModel(file_path, self.rcut, sum(self.sel))
         self.md0 = ZBLAtomicModel(
-            dp_model, zbl_model, sw_rmin=0.1, sw_rmax=0.25, weights="switch_by_softmin_pair_distance"
+            dp_model,
+            zbl_model,
+            sw_rmin=0.1,
+            sw_rmax=0.25,
+            weights="switch_by_softmin_pair_distance",
         ).to(env.DEVICE)
         self.md1 = ZBLAtomicModel.deserialize(self.md0.serialize()).to(env.DEVICE)
         self.md2 = DPZBLAtomicModel.deserialize(self.md0.serialize())

@@ -228,7 +228,9 @@ class ZBLAtomicModel(LinearModel):
         self.dp_model = dp_model
         self.zbl_model = zbl_model
         if weights != "switch_by_softmin_pair_distance":
-            raise ValueError("ZBLAtomicModel only supports weights 'switch_by_softmin_pair_distance'.")
+            raise ValueError(
+                "ZBLAtomicModel only supports weights 'switch_by_softmin_pair_distance'."
+            )
 
         self.sw_rmin = sw_rmin
         self.sw_rmax = sw_rmax
@@ -255,7 +257,9 @@ class ZBLAtomicModel(LinearModel):
             dp_model = DPAtomicModel.deserialize(data["dp_model"])
             zbl_model = PairTabModel.deserialize(data["zbl_model"])
         else:
-            raise ValueError("ZBLAtomicModel only supports weights 'switch_by_softmin_pair_distance'.")
+            raise ValueError(
+                "ZBLAtomicModel only supports weights 'switch_by_softmin_pair_distance'."
+            )
         return cls(
             dp_model=dp_model,
             zbl_model=zbl_model,

@@ -92,7 +92,7 @@ class PairTabModel(nn.Module, BaseAtomicModel):
 
     def get_sel(self) -> List[int]:
         return [self.sel]
-    
+
     def get_nsel(self) -> int:
         return self.sel
 
