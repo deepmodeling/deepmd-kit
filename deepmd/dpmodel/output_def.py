@@ -113,7 +113,7 @@ def fitting_check_output(cls):
 class OutputVariableOperation(IntEnum):
     """Defines the operation of the output variable."""
 
-    NONE = 0
+    _NONE = 0
     """No operation."""
     REDU = 1
     """Reduce the output variable."""
@@ -121,14 +121,14 @@ class OutputVariableOperation(IntEnum):
     """Derivative w.r.t. coordinates."""
     DERV_C = 4
     """Derivative w.r.t. cell."""
-    SEC_DERV_R = 8
+    _SEC_DERV_R = 8
     """Second derivative w.r.t. coordinates."""
 
 
 class OutputVariableCategory(IntEnum):
     """Defines the category of the output variable."""
 
-    OUT = OutputVariableOperation.NONE
+    OUT = OutputVariableOperation._NONE
     """Output variable. (e.g. atom energy)"""
     REDU = OutputVariableOperation.REDU
     """Reduced output variable. (e.g. system energy)"""
@@ -138,7 +138,7 @@ class OutputVariableCategory(IntEnum):
     """Atomic component of the virial, see PRB 104, 224202 (2021)  """
     DERV_C_REDU = OutputVariableOperation.DERV_C | OutputVariableOperation.REDU
     """Virial, the transposed negative gradient with cell tensor times cell tensor, see eq 40 JCP 159, 054801 (2023). """
-    DERV_R_DERV_R = OutputVariableOperation.DERV_R | OutputVariableOperation.SEC_DERV_R
+    DERV_R_DERV_R = OutputVariableOperation.DERV_R | OutputVariableOperation._SEC_DERV_R
     """Hession matrix, the second derivative w.r.t. coordinates."""
 
 
@@ -319,8 +319,8 @@ def apply_operation(var_def: OutputVariableDef, op: OutputVariableOperation) -> 
             raise ValueError(f"operation {op} has been applied")
     elif op == OutputVariableOperation.DERV_R:
         if check_operation_applied(var_def, OutputVariableOperation.DERV_R):
-            op = OutputVariableOperation.SEC_DERV_R
-            if check_operation_applied(var_def, OutputVariableOperation.SEC_DERV_R):
+            op = OutputVariableOperation._SEC_DERV_R
+            if check_operation_applied(var_def, OutputVariableOperation._SEC_DERV_R):
                 raise ValueError(f"operation {op} has been applied twice")
     else:
         raise ValueError(f"operation {op} not supported")

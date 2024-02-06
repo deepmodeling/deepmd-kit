@@ -192,8 +192,8 @@ class TestDef(unittest.TestCase):
             hession_cat & OutputVariableOperation.DERV_R, OutputVariableOperation.DERV_R
         )
         self.assertEqual(
-            hession_cat & OutputVariableOperation.SEC_DERV_R,
-            OutputVariableOperation.SEC_DERV_R,
+            hession_cat & OutputVariableOperation._SEC_DERV_R,
+            OutputVariableOperation._SEC_DERV_R,
         )
         self.assertEqual(hession_cat, OutputVariableCategory.DERV_R_DERV_R)
         hession_vardef = OutputVariableDef(
