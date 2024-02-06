@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import logging
 from typing import (
     Dict,
     List,
@@ -54,7 +53,9 @@ class LinearModel(BaseAtomicModel):
         super().__init__()
         self.models = models
         self.weights = weights
-        self.distinguish_type_list = [model.distinguish_types() for model in self.models]
+        self.distinguish_type_list = [
+            model.distinguish_types() for model in self.models
+        ]
 
     def distinguish_types(self) -> bool:
         """If distinguish different types by sorting."""
@@ -79,7 +80,7 @@ class LinearModel(BaseAtomicModel):
             else model.get_sel()
             for model in self.models
         ]
-    
+
     def get_original_sels(self) -> List[Union[int, List[int]]]:
         """Get the sels for each individual models."""
         return [model.get_sel() for model in self.models]
@@ -133,7 +134,9 @@ class LinearModel(BaseAtomicModel):
         ]
         self.nlists_ = [
             nl if not dt else nlist_distinguish_types(nl, extended_atype, sel)
-            for dt, nl, sel in zip(self.distinguish_type_list, raw_nlists, self.get_original_sels())
+            for dt, nl, sel in zip(
+                self.distinguish_type_list, raw_nlists, self.get_original_sels()
+            )
         ]
         ener_list = [
             model.forward_atomic(
