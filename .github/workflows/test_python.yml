@@ -42,9 +42,9 @@ jobs:
     - run: pytest --cov=deepmd source/tests --durations=0
       env:
         NUM_WORKERS: 0
-    - uses: codecov/codecov-action@v3
-      with:
-        gcov: true
+    - uses: codecov/codecov-action@v4
+      env:
+        CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
   pass:
     name: Pass testing Python
     needs: [testpython]

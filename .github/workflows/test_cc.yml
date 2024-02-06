@@ -61,9 +61,9 @@ jobs:
         PATH: ${{ github.workspace }}/dp_test/bin:$PATH
         LD_LIBRARY_PATH: ${{ github.workspace }}/dp_test/lib
       if: ${{ !matrix.check_memleak }}
-    - uses: codecov/codecov-action@v3
-      with:
-        gcov: true
+    - uses: codecov/codecov-action@v4
+      env:
+        CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
   pass:
     name: Pass testing C++
     needs: [testcc]
