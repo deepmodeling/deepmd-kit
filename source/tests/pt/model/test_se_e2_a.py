@@ -5,16 +5,7 @@ import unittest
 import numpy as np
 import torch
 
-try:
-    # from deepmd.dpmodel import PRECISION_DICT as DP_PRECISION_DICT
-    from deepmd.dpmodel import DescrptSeA as DPDescrptSeA
-
-    support_se_e2_a = True
-except ModuleNotFoundError:
-    support_se_e2_a = False
-except ImportError:
-    support_se_e2_a = False
-
+from deepmd.dpmodel.descriptor import DescrptSeA as DPDescrptSeA
 from deepmd.pt.model.descriptor.se_a import (
     DescrptSeA,
 )
@@ -36,7 +27,6 @@ dtype = env.GLOBAL_PT_FLOAT_PRECISION
 
 
 # to be merged with the tf test case
-@unittest.skipIf(not support_se_e2_a, "EnvMat not supported")
 class TestDescrptSeA(unittest.TestCase, TestCaseSingleFrameWithNlist):
     def setUp(self):
         TestCaseSingleFrameWithNlist.setUp(self)
