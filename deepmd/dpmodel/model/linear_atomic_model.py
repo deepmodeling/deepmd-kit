@@ -1,4 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from abc import (
+    abstractmethod,
+)
 from typing import (
     Dict,
     List,
@@ -8,7 +11,6 @@ from typing import (
 )
 
 import numpy as np
-from abc import abstractmethod
 
 from deepmd.dpmodel import (
     FittingOutputDef,
@@ -29,6 +31,7 @@ from .dp_atomic_model import (
 from .pairtab_atomic_model import (
     PairTabModel,
 )
+
 
 class LinearAtomicModel(BaseAtomicModel):
     """Linear model make linear combinations of several existing models.
@@ -161,7 +164,6 @@ class LinearAtomicModel(BaseAtomicModel):
 
     @classmethod
     def deserialize(cls, data) -> "LinearAtomicModel":
-
         models = [DPAtomicModel.deserialize(model) for model in data["models"]]
         return cls(models)
 
@@ -215,7 +217,7 @@ class DPZBLLinearAtomicModel(LinearAtomicModel):
 
         dp_model = DPAtomicModel.deserialize(data["dp_model"])
         zbl_model = PairTabModel.deserialize(data["zbl_model"])
-        
+
         return cls(
             dp_model=dp_model,
             zbl_model=zbl_model,

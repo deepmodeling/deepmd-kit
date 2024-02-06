@@ -151,7 +151,6 @@ class TestIntegration(unittest.TestCase):
             zbl_model,
             sw_rmin=0.1,
             sw_rmax=0.25,
-        
         )
         self.md1 = DPZBLLinearAtomicModel.deserialize(self.md0.serialize())
 

@@ -7,7 +7,9 @@ from unittest.mock import (
 import numpy as np
 import torch
 
-from deepmd.dpmodel.model.linear_atomic_model import DPZBLLinearAtomicModel as DPDPZBLLinearAtomicModel
+from deepmd.dpmodel.model.linear_atomic_model import (
+    DPZBLLinearAtomicModel as DPDPZBLLinearAtomicModel,
+)
 from deepmd.pt.model.descriptor.se_a import (
     DescrptSeA,
 )
@@ -147,7 +149,9 @@ class TestIntegration(unittest.TestCase, TestCaseSingleFrameWithNlist):
             sw_rmin=0.1,
             sw_rmax=0.25,
         ).to(env.DEVICE)
-        self.md1 = DPZBLLinearAtomicModel.deserialize(self.md0.serialize()).to(env.DEVICE)
+        self.md1 = DPZBLLinearAtomicModel.deserialize(self.md0.serialize()).to(
+            env.DEVICE
+        )
         self.md2 = DPDPZBLLinearAtomicModel.deserialize(self.md0.serialize())
 
     def test_self_consistency(self):
