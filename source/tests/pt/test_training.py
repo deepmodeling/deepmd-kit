@@ -14,7 +14,7 @@ from deepmd.pt.entrypoints.main import (
     get_trainer,
 )
 
-from .test_permutation import (
+from .model.test_permutation import (
     model_dpa1,
     model_dpa2,
     model_hybrid,
