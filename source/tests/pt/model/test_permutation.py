@@ -46,11 +46,11 @@ model_se_e2_a = {
 }
 
 model_zbl = {
-    "type_map": ["O", "H",  "B"],
+    "type_map": ["O", "H", "B"],
     "use_srtab": "source/tests/pt/model/water/data/zbl_tab_potential/H2O_tab_potential.txt",
     "smin_alpha": 0.1,
-    "sw_rmin":0.2,
-    "sw_rmax":1.0,
+    "sw_rmin": 0.2,
+    "sw_rmax": 1.0,
     "descriptor": {
         "type": "se_e2_a",
         "sel": [46, 92, 4],

@@ -1,8 +1,16 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import copy
 
+import numpy as np
+
 from deepmd.pt.model.descriptor.descriptor import (
     Descriptor,
+)
+from deepmd.pt.model.model.dp_atomic_model import (
+    DPAtomicModel,
+)
+from deepmd.pt.model.model.pair_tab_model import (
+    PairTabModel,
 )
 from deepmd.pt.model.task import (
     Fitting,
@@ -10,14 +18,12 @@ from deepmd.pt.model.task import (
 
 from .ener import (
     EnergyModel,
-    ZBLModel
+    ZBLModel,
 )
 from .model import (
     BaseModel,
 )
-import numpy as np
-from deepmd.pt.model.model.pair_tab_model import PairTabModel
-from deepmd.pt.model.model.dp_atomic_model import DPAtomicModel
+
 
 def get_zbl_model(model_params, sampled=None):
     model_params = copy.deepcopy(model_params)
@@ -37,14 +43,19 @@ def get_zbl_model(model_params, sampled=None):
         if "ener" in fitting_net["type"]:
             fitting_net["return_energy"] = True
     fitting = Fitting(**fitting_net)
-    dp_model = DPAtomicModel(descriptor, fitting, type_map=model_params["type_map"], resuming=True)
+    dp_model = DPAtomicModel(
+        descriptor, fitting, type_map=model_params["type_map"], resuming=True
+    )
     # pairtab
     filepath = model_params["use_srtab"]
-    pt_model = PairTabModel(filepath,model_params["descriptor"]["rcut"],model_params["descriptor"]["sel"])
+    pt_model = PairTabModel(
+        filepath, model_params["descriptor"]["rcut"], model_params["descriptor"]["sel"]
+    )
 
     rmin = model_params["sw_rmin"]
     rmax = model_params["sw_rmax"]
-    return ZBLModel(dp_model,pt_model,rmin,rmax,'switch_by_softmin_pair_distance')
+    return ZBLModel(dp_model, pt_model, rmin, rmax, "switch_by_softmin_pair_distance")
+
 
 def get_model(model_params, sampled=None):
     model_params = copy.deepcopy(model_params)

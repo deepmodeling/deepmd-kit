@@ -18,10 +18,10 @@ from deepmd.pt.utils import (
 from .test_permutation import (  # model_dpau,
     make_sample,
     model_dpa1,
-    model_zbl,
     model_dpa2,
     model_hybrid,
     model_se_e2_a,
+    model_zbl,
 )
 
 dtype = torch.float64
@@ -211,6 +211,7 @@ class TestEnergyModelHybrid(unittest.TestCase, SmoothTest):
         self.model = get_model(model_params, sampled).to(env.DEVICE)
         self.epsilon, self.aprec = None, None
 
+
 class TestEnergyModelZBLForce(unittest.TestCase, SmoothTest):
     def setUp(self):
         model_params = copy.deepcopy(model_zbl)
@@ -218,6 +219,7 @@ class TestEnergyModelZBLForce(unittest.TestCase, SmoothTest):
         self.type_split = True
         self.model = get_zbl_model(model_params, sampled).to(env.DEVICE)
         self.epsilon, self.aprec = None, None
+
 
 # class TestEnergyFoo(unittest.TestCase):
 #   def test(self):
