@@ -785,7 +785,7 @@ inline void DP_DipoleChargeModifierComputeNList_variant(
   for (int i = 0; i < npairs; i++) {
     pairs_.push_back(std::make_pair(pairs[i * 2], pairs[i * 2 + 1]));
   }
-  std::vector<VALUETYPE> delef_(delef, delef + natoms * 3);
+  std::vector<VALUETYPE> delef_(delef, delef + (natoms - nghost) * 3);
   std::vector<VALUETYPE> df, dv;
 
   DP_REQUIRES_OK(dcm, dcm->dcm.compute(df, dv, coord_, atype_, cell_, pairs_,
