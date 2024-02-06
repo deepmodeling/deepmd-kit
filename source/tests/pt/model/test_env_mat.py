@@ -4,17 +4,9 @@ import unittest
 import numpy as np
 import torch
 
-try:
-    from deepmd.dpmodel import (
-        EnvMat,
-    )
-
-    support_env_mat = True
-except ModuleNotFoundError:
-    support_env_mat = False
-except ImportError:
-    support_env_mat = False
-
+from deepmd.dpmodel.utils import (
+    EnvMat,
+)
 from deepmd.pt.model.descriptor.env_mat import (
     prod_env_mat_se_a,
 )
@@ -77,7 +69,6 @@ class TestCaseSingleFrameWithoutNlist:
 
 
 # to be merged with the tf test case
-@unittest.skipIf(not support_env_mat, "EnvMat not supported")
 class TestEnvMat(unittest.TestCase, TestCaseSingleFrameWithNlist):
     def setUp(self):
         TestCaseSingleFrameWithNlist.setUp(self)
