@@ -68,9 +68,11 @@ def model_check_output(cls):
                 if dd.reduciable:
                     rk = get_reduce_name(kk)
                     check_var(ret[rk], self.md[rk])
-                if dd.differentiable:
+                if dd.r_differentiable:
                     dnr, dnc = get_deriv_name(kk)
                     check_var(ret[dnr], self.md[dnr])
+                if dd.c_differentiable:
+                    assert dd.r_differentiable
                     check_var(ret[dnc], self.md[dnc])
             return ret
 
@@ -160,9 +162,12 @@ class OutputVariableDef:
           dipole should be [3], polarizabilty should be [3,3].
     reduciable
           If the variable is reduced.
-    differentiable
+    r_differentiable
           If the variable is differentiated with respect to coordinates
-          of atoms and cell tensor (pbc case). Only reduciable variable
+          of atoms. Only reduciable variable are differentiable.
+    c_differentiable
+          If the variable is differentiated with respect to the
+          cell tensor (pbc case). Only reduciable variable
           are differentiable.
     category : int
           The category of the output variable.
@@ -173,7 +178,8 @@ class OutputVariableDef:
         name: str,
         shape: List[int],
         reduciable: bool = False,
-        differentiable: bool = False,
+        r_differentiable: bool = False,
+        c_differentiable: bool = False,
         atomic: bool = True,
         category: int = OutputVariableCategory.OUT.value,
     ):
@@ -181,11 +187,16 @@ class OutputVariableDef:
         self.shape = list(shape)
         self.atomic = atomic
         self.reduciable = reduciable
-        self.differentiable = differentiable
-        if not self.reduciable and self.differentiable:
-            raise ValueError("only reduciable variable are differentiable")
+        self.r_differentiable = r_differentiable
+        self.c_differentiable = c_differentiable
+        if self.c_differentiable and not self.r_differentiable:
+            raise ValueError("c differentiable requires r_differentiable")
+        if not self.reduciable and self.r_differentiable:
+            raise ValueError("only reduciable variable are r differentiable")
+        if not self.reduciable and self.c_differentiable:
+            raise ValueError("only reduciable variable are c differentiable")
         if self.reduciable and not self.atomic:
-            raise ValueError("only reduciable variable should be atomic")
+            raise ValueError("a reduciable variable should be atomic")
         self.category = category
 
 
@@ -358,7 +369,8 @@ def do_reduce(
                 rk,
                 vv.shape,
                 reduciable=False,
-                differentiable=False,
+                r_differentiable=False,
+                c_differentiable=False,
                 atomic=False,
                 category=apply_operation(vv, OutputVariableOperation.REDU),
             )
@@ -371,21 +383,26 @@ def do_derivative(
     def_derv_r: Dict[str, OutputVariableDef] = {}
     def_derv_c: Dict[str, OutputVariableDef] = {}
     for kk, vv in def_outp_data.items():
-        if vv.differentiable:
-            rkr, rkc = get_deriv_name(kk)
+        rkr, rkc = get_deriv_name(kk)
+        if vv.r_differentiable:
             def_derv_r[rkr] = OutputVariableDef(
                 rkr,
                 vv.shape + [3],  # noqa: RUF005
                 reduciable=False,
-                differentiable=False,
+                r_differentiable=False,
+                c_differentiable=False,
                 atomic=True,
                 category=apply_operation(vv, OutputVariableOperation.DERV_R),
             )
+        if vv.c_differentiable:
+            assert vv.r_differentiable
+            rkr, rkc = get_deriv_name(kk)
             def_derv_c[rkc] = OutputVariableDef(
                 rkc,
-                vv.shape + [3, 3],  # noqa: RUF005
+                vv.shape + [9],  # noqa: RUF005
                 reduciable=True,
-                differentiable=False,
+                r_differentiable=False,
+                c_differentiable=False,
                 atomic=True,
                 category=apply_operation(vv, OutputVariableOperation.DERV_C),
             )

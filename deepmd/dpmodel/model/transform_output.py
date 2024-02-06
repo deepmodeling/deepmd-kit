@@ -31,10 +31,13 @@ def fit_output_to_model_output(
         if vdef.reduciable:
             kk_redu = get_reduce_name(kk)
             model_ret[kk_redu] = np.sum(vv, axis=atom_axis)
-            if vdef.differentiable:
+            if vdef.r_differentiable:
                 kk_derv_r, kk_derv_c = get_deriv_name(kk)
                 # name-holders
                 model_ret[kk_derv_r] = None
+            if vdef.c_differentiable:
+                assert vdef.r_differentiable
+                kk_derv_r, kk_derv_c = get_deriv_name(kk)
                 model_ret[kk_derv_c] = None
     return model_ret
 
@@ -57,10 +60,13 @@ def communicate_extended_output(
         if vdef.reduciable:
             kk_redu = get_reduce_name(kk)
             new_ret[kk_redu] = model_ret[kk_redu]
-            if vdef.differentiable:
+            if vdef.r_differentiable:
                 kk_derv_r, kk_derv_c = get_deriv_name(kk)
                 # name holders
                 new_ret[kk_derv_r] = None
+            if vdef.c_differentiable:
+                assert vdef.r_differentiable
+                kk_derv_r, kk_derv_c = get_deriv_name(kk)
                 new_ret[kk_derv_c] = None
                 new_ret[kk_derv_c + "_redu"] = None
                 if not do_atomic_virial:
