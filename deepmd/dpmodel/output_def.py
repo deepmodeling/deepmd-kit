@@ -165,10 +165,13 @@ class OutputVariableDef:
     r_differentiable
           If the variable is differentiated with respect to coordinates
           of atoms. Only reduciable variable are differentiable.
+          Negative derivative w.r.t. coordinates will be calcualted. (e.g. force)
     c_differentiable
           If the variable is differentiated with respect to the
           cell tensor (pbc case). Only reduciable variable
           are differentiable.
+          Virial, the transposed negative gradient with cell tensor times
+          cell tensor, will be calculated, see eq 40 JCP 159, 054801 (2023).
     category : int
           The category of the output variable.
     """
