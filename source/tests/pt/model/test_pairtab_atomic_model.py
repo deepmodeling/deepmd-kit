@@ -7,8 +7,8 @@ from unittest.mock import (
 import numpy as np
 import torch
 
-from deepmd.dpmodel.model.pair_tab_model import PairTabModel as DPPairTabModel
-from deepmd.pt.model.model.pair_tab_model import (
+from deepmd.dpmodel.model.pairtab_atomic_model import PairTabModel as DPPairTabModel
+from deepmd.pt.model.model.pairtab_atomic_model import (
     PairTabModel,
 )
 

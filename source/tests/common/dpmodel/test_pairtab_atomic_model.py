@@ -6,7 +6,7 @@ from unittest.mock import (
 
 import numpy as np
 
-from deepmd.dpmodel.model.pair_tab_model import (
+from deepmd.dpmodel.model.pairtab_atomic_model import (
     PairTabModel,
 )
 

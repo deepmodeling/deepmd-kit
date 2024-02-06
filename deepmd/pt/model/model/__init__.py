@@ -7,7 +7,7 @@ from deepmd.pt.model.descriptor.descriptor import (
 from deepmd.pt.model.model.dp_atomic_model import (
     DPAtomicModel,
 )
-from deepmd.pt.model.model.pair_tab_model import (
+from deepmd.pt.model.model.pairtab_atomic_model import (
     PairTabModel,
 )
 from deepmd.pt.model.task import (

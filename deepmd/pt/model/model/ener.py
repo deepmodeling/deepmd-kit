@@ -9,15 +9,15 @@ import torch
 from .dp_atomic_model import (
     DPAtomicModel,
 )
-from .linear_model import (
-    ZBLAtomicModel,
+from .linear_atomic_model import (
+    DPZBLLinearAtomicModel,
 )
 from .make_model import (
     make_model,
 )
 
 DPModel = make_model(DPAtomicModel)
-ZBLModel_ = make_model(ZBLAtomicModel)
+ZBLModel_ = make_model(DPZBLLinearAtomicModel)
 
 
 class ZBLModel(ZBLModel_):

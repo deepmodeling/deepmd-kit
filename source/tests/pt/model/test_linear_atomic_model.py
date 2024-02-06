@@ -7,17 +7,17 @@ from unittest.mock import (
 import numpy as np
 import torch
 
-from deepmd.dpmodel.model.linear_model import ZBLAtomicModel as DPZBLAtomicModel
+from deepmd.dpmodel.model.linear_atomic_model import DPZBLLinearAtomicModel as DPDPZBLLinearAtomicModel
 from deepmd.pt.model.descriptor.se_a import (
     DescrptSeA,
 )
 from deepmd.pt.model.model.dp_atomic_model import (
     DPAtomicModel,
 )
-from deepmd.pt.model.model.linear_model import (
-    ZBLAtomicModel,
+from deepmd.pt.model.model.linear_atomic_model import (
+    DPZBLLinearAtomicModel,
 )
-from deepmd.pt.model.model.pair_tab_model import (
+from deepmd.pt.model.model.pairtab_atomic_model import (
     PairTabModel,
 )
 from deepmd.pt.model.task.ener import (
@@ -31,7 +31,7 @@ from deepmd.pt.utils.utils import (
     to_torch_tensor,
 )
 
-from .model.test_env_mat import (
+from .test_env_mat import (
     TestCaseSingleFrameWithNlist,
 )
 
@@ -72,12 +72,11 @@ class TestWeightCalculation(unittest.TestCase):
         dp_model = DPAtomicModel(ds, ft, type_map=type_map, resuming=True).to(
             env.DEVICE
         )
-        wgt_model = ZBLAtomicModel(
+        wgt_model = DPZBLLinearAtomicModel(
             dp_model,
             zbl_model,
             sw_rmin=0.1,
             sw_rmax=0.25,
-            weights="switch_by_softmin_pair_distance",
         )
         wgt_res = []
         for dist in np.linspace(0.05, 0.3, 10):
@@ -142,15 +141,14 @@ class TestIntegration(unittest.TestCase, TestCaseSingleFrameWithNlist):
             env.DEVICE
         )
         zbl_model = PairTabModel(file_path, self.rcut, sum(self.sel))
-        self.md0 = ZBLAtomicModel(
+        self.md0 = DPZBLLinearAtomicModel(
             dp_model,
             zbl_model,
             sw_rmin=0.1,
             sw_rmax=0.25,
-            weights="switch_by_softmin_pair_distance",
         ).to(env.DEVICE)
-        self.md1 = ZBLAtomicModel.deserialize(self.md0.serialize()).to(env.DEVICE)
-        self.md2 = DPZBLAtomicModel.deserialize(self.md0.serialize())
+        self.md1 = DPZBLLinearAtomicModel.deserialize(self.md0.serialize()).to(env.DEVICE)
+        self.md2 = DPDPZBLLinearAtomicModel.deserialize(self.md0.serialize())
 
     def test_self_consistency(self):
         args = [

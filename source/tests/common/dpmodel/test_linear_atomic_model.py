@@ -15,10 +15,10 @@ from deepmd.dpmodel.fitting.invar_fitting import (
 from deepmd.dpmodel.model.dp_atomic_model import (
     DPAtomicModel,
 )
-from deepmd.dpmodel.model.linear_model import (
-    ZBLAtomicModel,
+from deepmd.dpmodel.model.linear_atomic_model import (
+    DPZBLLinearAtomicModel,
 )
-from deepmd.dpmodel.model.pair_tab_model import (
+from deepmd.dpmodel.model.pairtab_atomic_model import (
     PairTabModel,
 )
 
@@ -56,12 +56,11 @@ class TestWeightCalculation(unittest.TestCase):
         zbl_model = PairTabModel(tab_file=file_path, rcut=0.3, sel=2)
         dp_model = DPAtomicModel(ds, ft, type_map=type_map)
 
-        wgt_model = ZBLAtomicModel(
+        wgt_model = DPZBLLinearAtomicModel(
             dp_model,
             zbl_model,
             sw_rmin=0.1,
             sw_rmax=0.25,
-            weights="switch_by_softmin_pair_distance",
         )
         wgt_res = []
         for dist in np.linspace(0.05, 0.3, 10):
@@ -147,14 +146,14 @@ class TestIntegration(unittest.TestCase):
         type_map = ["foo", "bar"]
         dp_model = DPAtomicModel(ds, ft, type_map=type_map)
         zbl_model = PairTabModel(file_path, self.rcut, sum(self.sel))
-        self.md0 = ZBLAtomicModel(
+        self.md0 = DPZBLLinearAtomicModel(
             dp_model,
             zbl_model,
             sw_rmin=0.1,
             sw_rmax=0.25,
-            weights="switch_by_softmin_pair_distance",
+        
         )
-        self.md1 = ZBLAtomicModel.deserialize(self.md0.serialize())
+        self.md1 = DPZBLLinearAtomicModel.deserialize(self.md0.serialize())
 
     def test_self_consistency(self):
         ret0 = self.md0.forward_atomic(self.coord_ext, self.atype_ext, self.nlist)
