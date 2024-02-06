@@ -307,7 +307,24 @@ def apply_operation(var_def: OutputVariableDef, op: OutputVariableOperation) -> 
     -------
     int
         The new category of the variable definition.
+
+    Raises
+    ------
+    ValueError
+        If the operation has been applied to the variable definition,
+        and exceed the maximum limitation.
     """
+    if op in (OutputVariableOperation.REDU, OutputVariableOperation.DERV_C):
+        if check_operation_applied(var_def, op):
+            raise ValueError(f"operation {op} has been applied")
+    elif op == OutputVariableOperation.DERV_R:
+        if check_operation_applied(var_def, OutputVariableOperation.DERV_R):
+            op = OutputVariableOperation.SEC_DERV_R
+        else:
+            if check_operation_applied(var_def, OutputVariableOperation.SEC_DERV_R):
+                raise ValueError(f"operation {op} has been applied twice")
+    else:
+        raise ValueError(f"operation {op} not supported")
     return var_def.category | op.value
 
 
@@ -328,17 +345,6 @@ def check_operation_applied(
     bool
         True if the operation has been applied, False otherwise.
     """
-    if op in (OutputVariableOperation.DERV_REDU, OutputVariableOperation.DERV_C):
-        assert not check_operation_applied(var_def, op)
-    elif op == OutputVariableOperation.DERV_R:
-        if check_operation_applied(var_def, OutputVariableOperation.DERV_R):
-            op = OutputVariableOperation.SEC_DERV_R
-        else:
-            assert not check_operation_applied(
-                var_def, OutputVariableOperation.SEC_DERV_R
-            )
-    else:
-        raise ValueError(f"operation {op} not supported")
     return var_def.category & op.value == op.value
 
 
