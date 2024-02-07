@@ -165,7 +165,11 @@ class InvarFitting(Fitting):
         return FittingOutputDef(
             [
                 OutputVariableDef(
-                    self.var_name, [self.dim_out], reduciable=True, differentiable=True
+                    self.var_name,
+                    [self.dim_out],
+                    reduciable=True,
+                    r_differentiable=True,
+                    c_differentiable=True,
                 ),
             ]
         )
@@ -497,9 +501,19 @@ class EnergyFittingNetDirect(Fitting):
     def output_def(self):
         return FittingOutputDef(
             [
-                OutputVariableDef("energy", [1], reduciable=True, differentiable=False),
                 OutputVariableDef(
-                    "dforce", [3], reduciable=False, differentiable=False
+                    "energy",
+                    [1],
+                    reduciable=True,
+                    r_differentiable=False,
+                    c_differentiable=False,
+                ),
+                OutputVariableDef(
+                    "dforce",
+                    [3],
+                    reduciable=False,
+                    r_differentiable=False,
+                    c_differentiable=False,
                 ),
             ]
         )

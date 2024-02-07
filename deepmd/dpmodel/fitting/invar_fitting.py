@@ -199,7 +199,11 @@ class InvarFitting(NativeOP, BaseFitting):
         return FittingOutputDef(
             [
                 OutputVariableDef(
-                    self.var_name, [self.dim_out], reduciable=True, differentiable=True
+                    self.var_name,
+                    [self.dim_out],
+                    reduciable=True,
+                    r_differentiable=True,
+                    c_differentiable=True,
                 ),
             ]
         )

@@ -37,9 +37,30 @@ class VariableDef:
 class TestDef(unittest.TestCase):
     def test_model_output_def(self):
         defs = [
-            OutputVariableDef("energy", [1], True, True),
-            OutputVariableDef("dos", [10], True, False),
-            OutputVariableDef("foo", [3], False, False),
+            OutputVariableDef(
+                "energy",
+                [1],
+                reduciable=True,
+                r_differentiable=True,
+                c_differentiable=True,
+                atomic=True,
+            ),
+            OutputVariableDef(
+                "dos",
+                [10],
+                reduciable=True,
+                r_differentiable=False,
+                c_differentiable=False,
+                atomic=True,
+            ),
+            OutputVariableDef(
+                "foo",
+                [3],
+                reduciable=False,
+                r_differentiable=False,
+                c_differentiable=False,
+                atomic=True,
+            ),
         ]
         # fitting definition
         fd = FittingOutputDef(defs)
@@ -61,9 +82,12 @@ class TestDef(unittest.TestCase):
         self.assertEqual(fd["dos"].reduciable, True)
         self.assertEqual(fd["foo"].reduciable, False)
         # derivative
-        self.assertEqual(fd["energy"].differentiable, True)
-        self.assertEqual(fd["dos"].differentiable, False)
-        self.assertEqual(fd["foo"].differentiable, False)
+        self.assertEqual(fd["energy"].r_differentiable, True)
+        self.assertEqual(fd["energy"].c_differentiable, True)
+        self.assertEqual(fd["dos"].r_differentiable, False)
+        self.assertEqual(fd["foo"].r_differentiable, False)
+        self.assertEqual(fd["dos"].c_differentiable, False)
+        self.assertEqual(fd["foo"].c_differentiable, False)
         # model definition
         md = ModelOutputDef(fd)
         expected_keys = [
@@ -87,17 +111,20 @@ class TestDef(unittest.TestCase):
         self.assertEqual(md["dos"].reduciable, True)
         self.assertEqual(md["foo"].reduciable, False)
         # derivative
-        self.assertEqual(md["energy"].differentiable, True)
-        self.assertEqual(md["dos"].differentiable, False)
-        self.assertEqual(md["foo"].differentiable, False)
+        self.assertEqual(md["energy"].r_differentiable, True)
+        self.assertEqual(md["energy"].c_differentiable, True)
+        self.assertEqual(md["dos"].r_differentiable, False)
+        self.assertEqual(md["foo"].r_differentiable, False)
+        self.assertEqual(md["dos"].c_differentiable, False)
+        self.assertEqual(md["foo"].c_differentiable, False)
         # shape
         self.assertEqual(md["energy"].shape, [1])
         self.assertEqual(md["dos"].shape, [10])
         self.assertEqual(md["foo"].shape, [3])
         self.assertEqual(md["energy_redu"].shape, [1])
         self.assertEqual(md["energy_derv_r"].shape, [1, 3])
-        self.assertEqual(md["energy_derv_c"].shape, [1, 3, 3])
-        self.assertEqual(md["energy_derv_c_redu"].shape, [1, 3, 3])
+        self.assertEqual(md["energy_derv_c"].shape, [1, 9])
+        self.assertEqual(md["energy_derv_c_redu"].shape, [1, 9])
         # atomic
         self.assertEqual(md["energy"].atomic, True)
         self.assertEqual(md["dos"].atomic, True)
@@ -204,11 +231,27 @@ class TestDef(unittest.TestCase):
 
     def test_raise_no_redu_deriv(self):
         with self.assertRaises(ValueError) as context:
-            (OutputVariableDef("energy", [1], False, True),)
+            OutputVariableDef(
+                "energy",
+                [1],
+                reduciable=False,
+                r_differentiable=True,
+                c_differentiable=False,
+            )
+
+    def test_raise_requires_r_deriv(self):
+        with self.assertRaises(ValueError) as context:
+            OutputVariableDef(
+                "energy",
+                [1],
+                reduciable=True,
+                r_differentiable=False,
+                c_differentiable=True,
+            )
 
     def test_raise_redu_not_atomic(self):
         with self.assertRaises(ValueError) as context:
-            (OutputVariableDef("energy", [1], True, False, atomic=False),)
+            (OutputVariableDef("energy", [1], reduciable=True, atomic=False),)
 
     def test_model_decorator(self):
         nf = 2
@@ -219,7 +262,13 @@ class TestDef(unittest.TestCase):
         class Foo(NativeOP):
             def output_def(self):
                 defs = [
-                    OutputVariableDef("energy", [1], True, True),
+                    OutputVariableDef(
+                        "energy",
+                        [1],
+                        reduciable=True,
+                        r_differentiable=True,
+                        c_differentiable=True,
+                    ),
                 ]
                 return ModelOutputDef(FittingOutputDef(defs))
 
@@ -228,7 +277,7 @@ class TestDef(unittest.TestCase):
                     "energy": np.zeros([nf, nloc, 1]),
                     "energy_redu": np.zeros([nf, 1]),
                     "energy_derv_r": np.zeros([nf, nall, 1, 3]),
-                    "energy_derv_c": np.zeros([nf, nall, 1, 3, 3]),
+                    "energy_derv_c": np.zeros([nf, nall, 1, 9]),
                 }
 
         ff = Foo()
@@ -246,7 +295,13 @@ class TestDef(unittest.TestCase):
 
             def output_def(self):
                 defs = [
-                    OutputVariableDef("energy", [1], True, True),
+                    OutputVariableDef(
+                        "energy",
+                        [1],
+                        reduciable=True,
+                        r_differentiable=True,
+                        c_differentiable=True,
+                    ),
                 ]
                 return ModelOutputDef(FittingOutputDef(defs))
 
@@ -254,7 +309,7 @@ class TestDef(unittest.TestCase):
                 return {
                     "energy": np.zeros([nf, nloc, 1]),
                     "energy_redu": np.zeros([nf, 1]),
-                    "energy_derv_c": np.zeros([nf, nall, 1, 3, 3]),
+                    "energy_derv_c": np.zeros([nf, nall, 1, 9]),
                 }
 
         ff = Foo()
@@ -278,7 +333,13 @@ class TestDef(unittest.TestCase):
 
             def output_def(self):
                 defs = [
-                    OutputVariableDef("energy", [1], True, True),
+                    OutputVariableDef(
+                        "energy",
+                        [1],
+                        reduciable=True,
+                        r_differentiable=True,
+                        c_differentiable=True,
+                    ),
                 ]
                 return ModelOutputDef(FittingOutputDef(defs))
 
@@ -287,7 +348,7 @@ class TestDef(unittest.TestCase):
                     "energy": np.zeros([nf, nloc, 1]),
                     "energy_redu": np.zeros(self.shape_rd),
                     "energy_derv_r": np.zeros(self.shape_dr),
-                    "energy_derv_c": np.zeros([nf, nall, 1, 3, 3]),
+                    "energy_derv_c": np.zeros([nf, nall, 1, 9]),
                 }
 
         ff = Foo()
@@ -324,7 +385,13 @@ class TestDef(unittest.TestCase):
         class Foo(NativeOP):
             def output_def(self):
                 defs = [
-                    OutputVariableDef("energy", [1], True, True),
+                    OutputVariableDef(
+                        "energy",
+                        [1],
+                        reduciable=True,
+                        r_differentiable=True,
+                        c_differentiable=True,
+                    ),
                 ]
                 return FittingOutputDef(defs)
 
@@ -350,7 +417,13 @@ class TestDef(unittest.TestCase):
 
             def output_def(self):
                 defs = [
-                    OutputVariableDef("energy", [1], True, True),
+                    OutputVariableDef(
+                        "energy",
+                        [1],
+                        reduciable=True,
+                        r_differentiable=True,
+                        c_differentiable=True,
+                    ),
                 ]
                 return FittingOutputDef(defs)
 
