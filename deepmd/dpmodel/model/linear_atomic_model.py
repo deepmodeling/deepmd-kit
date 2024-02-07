@@ -264,28 +264,15 @@ class DPZBLLinearAtomicModel(LinearAtomicModel):
         nlist_larger = zbl_nlist if zbl_nnei >= dp_nnei else dp_nlist
         nloc = nlist_larger.shape[1]
         masked_nlist = np.clip(nlist_larger, 0, None)
-        pairwise_rr = np.sqrt(
-            np.sum(
-                np.power(
-                    (
-                        np.expand_dims(self.extended_coord, 2)
-                        - np.expand_dims(self.extended_coord, 1)
-                    ),
-                    2,
-                ),
-                axis=-1,
-            )
-        )
-
-        rr = np.take_along_axis(pairwise_rr[:, :nloc, :], masked_nlist, 2)
+        pairwise_rr = PairTabModel._get_pairwise_dist(self.extended_coord, masked_nlist)
 
         numerator = np.sum(
-            rr * np.exp(-rr / self.smin_alpha), axis=-1
+            pairwise_rr * np.exp(-pairwise_rr / self.smin_alpha), axis=-1
         )  # masked nnei will be zero, no need to handle
         denominator = np.sum(
             np.where(
                 nlist_larger != -1,
-                np.exp(-rr / self.smin_alpha),
+                np.exp(-pairwise_rr / self.smin_alpha),
                 np.zeros_like(nlist_larger),
             ),
             axis=-1,

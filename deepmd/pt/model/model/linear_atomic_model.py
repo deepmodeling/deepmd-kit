@@ -278,23 +278,14 @@ class DPZBLLinearAtomicModel(LinearAtomicModel):
         nlist_larger = zbl_nlist if zbl_nnei >= dp_nnei else dp_nlist
         nloc = nlist_larger.shape[1]
         masked_nlist = torch.clamp(nlist_larger, 0)
-        pairwise_rr = torch.clamp(
-            (self.extended_coord.unsqueeze(2) - self.extended_coord.unsqueeze(1))
-            .square()
-            .sum(-1),
-            1e-19,
-        ).sqrt()
-        rr = torch.gather(
-            pairwise_rr[:, :nloc, :], 2, masked_nlist
-        )  # nframes, nloc, nnei
-
+        pairwise_rr = PairTabModel._get_pairwise_dist(self.extended_coord, masked_nlist)
         numerator = torch.sum(
-            rr * torch.exp(-rr / self.smin_alpha), dim=-1
+            pairwise_rr * torch.exp(-pairwise_rr / self.smin_alpha), dim=-1
         )  # masked nnei will be zero, no need to handle
         denominator = torch.sum(
             torch.where(
                 nlist_larger != -1,
-                torch.exp(-rr / self.smin_alpha),
+                torch.exp(-pairwise_rr / self.smin_alpha),
                 torch.zeros_like(nlist_larger),
             ),
             dim=-1,

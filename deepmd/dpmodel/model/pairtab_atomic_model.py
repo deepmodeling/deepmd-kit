@@ -122,12 +122,9 @@ class PairTabModel(BaseAtomicModel):
         masked_nlist = np.clip(nlist, 0, None)
 
         atype = extended_atype[:, : self.nloc]  # (nframes, nloc)
-        pairwise_dr = self._get_pairwise_dist(
-            extended_coord
-        )  # (nframes, nall, nall, 3)
-        pairwise_rr = np.sqrt(
-            np.sum(np.power(pairwise_dr, 2), axis=-1)
-        )  # (nframes, nall, nall)
+        pairwise_rr = self._get_pairwise_dist(
+            extended_coord, masked_nlist
+        )  # (nframes, nloc, nnei)
         self.tab_data = self.tab_data.reshape(
             self.tab.ntypes, self.tab.ntypes, self.tab.nspline, 4
         )
@@ -137,9 +134,7 @@ class PairTabModel(BaseAtomicModel):
             np.arange(extended_atype.shape[0])[:, None, None], masked_nlist
         ]
 
-        # slice rr to get (nframes, nloc, nnei)
-        rr = np.take_along_axis(pairwise_rr[:, : self.nloc, :], masked_nlist, 2)
-        raw_atomic_energy = self._pair_tabulated_inter(nlist, atype, j_type, rr)
+        raw_atomic_energy = self._pair_tabulated_inter(nlist, atype, j_type, pairwise_rr)
         atomic_energy = 0.5 * np.sum(
             np.where(nlist != -1, raw_atomic_energy, np.zeros_like(raw_atomic_energy)),
             axis=-1,
@@ -215,20 +210,31 @@ class PairTabModel(BaseAtomicModel):
         return ener
 
     @staticmethod
-    def _get_pairwise_dist(coords: np.ndarray) -> np.ndarray:
+    def _get_pairwise_dist(coords: np.ndarray, nlist: np.ndarray) -> np.ndarray:
         """Get pairwise distance `dr`.
 
         Parameters
         ----------
         coords : np.ndarray
-            The coordinate of the atoms shape of (nframes, nall, 3).
+            The coordinate of the atoms, shape of (nframes, nall, 3).
+        nlist:
+            The masked nlist, shape of (nframes, nloc, nnei).
 
         Returns
         -------
         np.ndarray
-            The pairwise distance between the atoms (nframes, nall, nall, 3).
+            The pairwise distance between the atoms (nframes, nloc, nnei).
         """
-        return np.expand_dims(coords, 2) - np.expand_dims(coords, 1)
+
+        batch_indices = np.arange(nlist.shape[0])[:, None, None]
+        neighbor_atoms = coords[batch_indices, nlist]
+        loc_atoms = coords[:, :nlist.shape[1],:]
+        pairwise_dr = loc_atoms[:, :, None, :] - neighbor_atoms
+        pairwise_rr = np.sqrt(
+            np.sum(np.power(pairwise_dr, 2), axis=-1)
+        ) 
+
+        return pairwise_rr
 
     @staticmethod
     def _extract_spline_coefficient(

@@ -137,27 +137,21 @@ class PairTabModel(nn.Module, BaseAtomicModel):
         masked_nlist = torch.clamp(nlist, 0)
 
         atype = extended_atype[:, : self.nloc]  # (nframes, nloc)
-        pairwise_dr = self._get_pairwise_dist(
-            extended_coord
-        )  # (nframes, nall, nall, 3)
-        pairwise_rr = torch.clamp(
-            pairwise_dr.square().sum(-1), 1e-19
-        ).sqrt()  # (nframes, nall, nall)
+        pairwise_rr = self._get_pairwise_dist(
+            extended_coord, masked_nlist
+        )  # (nframes, nloc, nnei)
         self.tab_data = self.tab_data.view(
             self.tab.ntypes, self.tab.ntypes, self.tab.nspline, 4
         )
 
-        # to calculate the atomic_energy, we need 3 tensors, i_type, j_type, rr
+        # to calculate the atomic_energy, we need 3 tensors, i_type, j_type, pairwise_rr
         # i_type : (nframes, nloc), this is atype.
         # j_type : (nframes, nloc, nnei)
         j_type = extended_atype[
             torch.arange(extended_atype.size(0))[:, None, None], masked_nlist
-        ]
+        ]        
 
-        # slice rr to get (nframes, nloc, nnei)
-        rr = torch.gather(pairwise_rr[:, : self.nloc, :], 2, masked_nlist)
-
-        raw_atomic_energy = self._pair_tabulated_inter(nlist, atype, j_type, rr)
+        raw_atomic_energy = self._pair_tabulated_inter(nlist, atype, j_type, pairwise_rr)
 
         atomic_energy = 0.5 * torch.sum(
             torch.where(
@@ -238,42 +232,32 @@ class PairTabModel(nn.Module, BaseAtomicModel):
         return ener
 
     @staticmethod
-    def _get_pairwise_dist(coords: torch.Tensor) -> torch.Tensor:
+    def _get_pairwise_dist(coords: torch.Tensor, nlist: torch.Tensor) -> torch.Tensor:
         """Get pairwise distance `dr`.
 
         Parameters
         ----------
         coords : torch.Tensor
-            The coordinate of the atoms shape of (nframes, nall, 3).
+            The coordinate of the atoms, shape of (nframes, nall, 3).
+        nlist:
+            The masked nlist, shape of (nframes, nloc, nnei)
 
         Returns
         -------
         torch.Tensor
-            The pairwise distance between the atoms (nframes, nall, nall, 3).
-
-        Examples
-        --------
-        coords = torch.tensor([[
-                [0,0,0],
-                [1,3,5],
-                [2,4,6]
-            ]])
-
-        dist = tensor([[
-            [[ 0,  0,  0],
-            [-1, -3, -5],
-            [-2, -4, -6]],
-
-            [[ 1,  3,  5],
-            [ 0,  0,  0],
-            [-1, -1, -1]],
-
-            [[ 2,  4,  6],
-            [ 1,  1,  1],
-            [ 0,  0,  0]]
-            ]])
+            The pairwise distance between the atoms (nframes, nloc, nnei).
         """
-        return coords.unsqueeze(2) - coords.unsqueeze(1)
+
+        batch_indices = torch.arange(nlist.shape[0])[:, None, None]
+        expanded_batch_indices = batch_indices.expand_as(nlist)
+        neighbor_atoms = coords[expanded_batch_indices, nlist]
+        loc_atoms = coords[:, :nlist.shape[1],:]
+        loc_atoms = loc_atoms.unsqueeze(2).expand_as(neighbor_atoms)
+        pairwise_dr = loc_atoms - neighbor_atoms
+        # still have to add an epsilon to handle autograd, due to -1 in the nlist, 
+        # they don't contribute to the final energy since they are masked.
+        pairwise_rr = torch.clamp(pairwise_dr.square().sum(-1), 1E-20).sqrt() 
+        return pairwise_rr
 
     @staticmethod
     def _extract_spline_coefficient(

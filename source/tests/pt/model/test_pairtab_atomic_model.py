@@ -114,9 +114,8 @@ class TestPairTab(unittest.TestCase):
         expected_result = self.model.forward_atomic(
             self.extended_coord, self.extended_atype, torch.from_numpy(self.nlist)
         )
-
         np.testing.assert_allclose(
-            result["energy"], expected_result["energy"], 0.0001, 0.0001
+            result["energy"], expected_result["energy"].detach().numpy(), 0.0001, 0.0001
         )
 
 
