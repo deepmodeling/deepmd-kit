@@ -134,7 +134,9 @@ class PairTabModel(BaseAtomicModel):
             np.arange(extended_atype.shape[0])[:, None, None], masked_nlist
         ]
 
-        raw_atomic_energy = self._pair_tabulated_inter(nlist, atype, j_type, pairwise_rr)
+        raw_atomic_energy = self._pair_tabulated_inter(
+            nlist, atype, j_type, pairwise_rr
+        )
         atomic_energy = 0.5 * np.sum(
             np.where(nlist != -1, raw_atomic_energy, np.zeros_like(raw_atomic_energy)),
             axis=-1,
@@ -217,7 +219,7 @@ class PairTabModel(BaseAtomicModel):
         ----------
         coords : np.ndarray
             The coordinate of the atoms, shape of (nframes, nall, 3).
-        nlist:
+        nlist
             The masked nlist, shape of (nframes, nloc, nnei).
 
         Returns
@@ -225,14 +227,11 @@ class PairTabModel(BaseAtomicModel):
         np.ndarray
             The pairwise distance between the atoms (nframes, nloc, nnei).
         """
-
         batch_indices = np.arange(nlist.shape[0])[:, None, None]
         neighbor_atoms = coords[batch_indices, nlist]
-        loc_atoms = coords[:, :nlist.shape[1],:]
+        loc_atoms = coords[:, : nlist.shape[1], :]
         pairwise_dr = loc_atoms[:, :, None, :] - neighbor_atoms
-        pairwise_rr = np.sqrt(
-            np.sum(np.power(pairwise_dr, 2), axis=-1)
-        ) 
+        pairwise_rr = np.sqrt(np.sum(np.power(pairwise_dr, 2), axis=-1))
 
         return pairwise_rr
 

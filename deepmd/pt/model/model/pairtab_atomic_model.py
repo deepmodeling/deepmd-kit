@@ -149,9 +149,11 @@ class PairTabModel(nn.Module, BaseAtomicModel):
         # j_type : (nframes, nloc, nnei)
         j_type = extended_atype[
             torch.arange(extended_atype.size(0))[:, None, None], masked_nlist
-        ]        
+        ]
 
-        raw_atomic_energy = self._pair_tabulated_inter(nlist, atype, j_type, pairwise_rr)
+        raw_atomic_energy = self._pair_tabulated_inter(
+            nlist, atype, j_type, pairwise_rr
+        )
 
         atomic_energy = 0.5 * torch.sum(
             torch.where(
@@ -239,7 +241,7 @@ class PairTabModel(nn.Module, BaseAtomicModel):
         ----------
         coords : torch.Tensor
             The coordinate of the atoms, shape of (nframes, nall, 3).
-        nlist:
+        nlist
             The masked nlist, shape of (nframes, nloc, nnei)
 
         Returns
@@ -247,16 +249,15 @@ class PairTabModel(nn.Module, BaseAtomicModel):
         torch.Tensor
             The pairwise distance between the atoms (nframes, nloc, nnei).
         """
-
         batch_indices = torch.arange(nlist.shape[0])[:, None, None]
         expanded_batch_indices = batch_indices.expand_as(nlist)
         neighbor_atoms = coords[expanded_batch_indices, nlist]
-        loc_atoms = coords[:, :nlist.shape[1],:]
+        loc_atoms = coords[:, : nlist.shape[1], :]
         loc_atoms = loc_atoms.unsqueeze(2).expand_as(neighbor_atoms)
         pairwise_dr = loc_atoms - neighbor_atoms
-        # still have to add an epsilon to handle autograd, due to -1 in the nlist, 
+        # still have to add an epsilon to handle autograd, due to -1 in the nlist,
         # they don't contribute to the final energy since they are masked.
-        pairwise_rr = torch.clamp(pairwise_dr.square().sum(-1), 1E-20).sqrt() 
+        pairwise_rr = torch.clamp(pairwise_dr.square().sum(-1), 1e-20).sqrt()
         return pairwise_rr
 
     @staticmethod
