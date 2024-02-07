@@ -150,7 +150,9 @@ class LinearAtomicModel(BaseModel, BaseAtomicModel):
             raise NotImplementedError("Need to add bias in a future PR.")
         else:
             fit_ret = {
-                "energy": torch.sum(torch.stack(ener_list) * torch.stack(self.weights), dim=0),
+                "energy": torch.sum(
+                    torch.stack(ener_list) * torch.stack(self.weights), dim=0
+                ),
             }  # (nframes, nloc, 1)
         return fit_ret
 
