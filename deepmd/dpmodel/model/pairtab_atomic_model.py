@@ -112,7 +112,8 @@ class PairTabModel(BaseAtomicModel):
         extended_atype,
         nlist,
         mapping: Optional[np.ndarray] = None,
-        do_atomic_virial: bool = False,
+        fparam: Optional[np.ndarray] = None,
+        aparam: Optional[np.ndarray] = None,
     ) -> Dict[str, np.ndarray]:
         self.nframes, self.nloc, self.nnei = nlist.shape
         extended_coord = extended_coord.reshape(self.nframes, -1, 3)

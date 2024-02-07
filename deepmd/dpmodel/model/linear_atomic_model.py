@@ -9,7 +9,7 @@ from typing import (
     Tuple,
     Union,
 )
-
+import sys
 import numpy as np
 
 from deepmd.dpmodel import (
@@ -59,25 +59,30 @@ class LinearAtomicModel(BaseAtomicModel):
 
     def get_rcut(self) -> float:
         """Get the cut-off radius."""
-        return max(self.get_rcuts())
+        return max(self.get_model_rcuts())
 
-    def get_rcuts(self) -> List[float]:
+    def get_model_rcuts(self) -> List[float]:
         """Get the cut-off radius for each individual models."""
         return [model.get_rcut() for model in self.models]
 
     def get_sel(self) -> List[int]:
+        return [max([model.get_nsel() for model in self.models])]
+    
+    def get_model_nsels(self) -> List[int]:
+        """Get the processed sels for each individual models. Not distinguishing types."""
         return [model.get_nsel() for model in self.models]
 
-    def get_original_sels(self) -> List[Union[int, List[int]]]:
+    def get_model_sels(self) -> List[Union[int, List[int]]]:
         """Get the sels for each individual models."""
         return [model.get_sel() for model in self.models]
 
-    def _sort_rcuts_sels(self) -> Tuple[List[int], List[float]]:
+    def _sort_rcuts_sels(self) -> Tuple[List[float], List[int]]:
         # sort the pair of rcut and sels in ascending order, first based on sel, then on rcut.
         zipped = sorted(
-            zip(self.get_rcuts(), self.get_sel()), key=lambda x: (x[1], x[0])
+            zip(self.get_model_rcuts(), self.get_model_nsels()), key=lambda x: (x[1], x[0])
         )
         return [p[0] for p in zipped], [p[1] for p in zipped]
+    
 
     def forward_atomic(
         self,
@@ -121,12 +126,12 @@ class LinearAtomicModel(BaseAtomicModel):
         )
         raw_nlists = [
             nlists[get_multiple_nlist_key(rcut, sel)]
-            for rcut, sel in zip(self.get_rcuts(), self.get_sel())
+            for rcut, sel in zip(self.get_model_rcuts(), self.get_model_nsels())
         ]
         self.nlists_ = [
             nl if not dt else nlist_distinguish_types(nl, extended_atype, sel)
             for dt, nl, sel in zip(
-                self.distinguish_type_list, raw_nlists, self.get_original_sels()
+                self.distinguish_type_list, raw_nlists, self.get_model_sels()
             )
         ]
         ener_list = [
@@ -135,6 +140,8 @@ class LinearAtomicModel(BaseAtomicModel):
                 extended_atype,
                 nl,
                 mapping,
+                fparam,
+                aparam,
             )["energy"]
             for model, nl in zip(self.models, self.nlists_)
         ]
@@ -152,20 +159,23 @@ class LinearAtomicModel(BaseAtomicModel):
         return FittingOutputDef(
             [
                 OutputVariableDef(
-                    name="energy", shape=[1], reduciable=True, differentiable=True
+                    name="energy", shape=[1], reduciable=True, r_differentiable=True, c_differentiable=True
                 )
             ]
         )
-
-    def serialize(self) -> dict:
+    @staticmethod
+    def serialize(models) -> dict:
         return {
-            "models": [model.serialize() for model in self.models],
+            "models": [model.serialize() for model in models],
+            "model_name": [model.__class__.__name__ for model in models]
         }
 
-    @classmethod
-    def deserialize(cls, data) -> "LinearAtomicModel":
-        models = [DPAtomicModel.deserialize(model) for model in data["models"]]
-        return cls(models)
+    @staticmethod
+    def deserialize(data) -> List[BaseAtomicModel]:
+        
+        model_names = data["model_name"]
+        models = [getattr(sys.modules[__name__], name).deserialize(model) for name, model in zip(model_names, data["models"])]
+        return models
 
     @abstractmethod
     def _compute_weight(self) -> np.ndarray:
@@ -202,8 +212,7 @@ class DPZBLLinearAtomicModel(LinearAtomicModel):
 
     def serialize(self) -> dict:
         return {
-            "dp_model": self.dp_model.serialize(),
-            "zbl_model": self.zbl_model.serialize(),
+            "models": LinearAtomicModel.serialize([self.dp_model, self.zbl_model]),
             "sw_rmin": self.sw_rmin,
             "sw_rmax": self.sw_rmax,
             "smin_alpha": self.smin_alpha,
@@ -215,8 +224,7 @@ class DPZBLLinearAtomicModel(LinearAtomicModel):
         sw_rmax = data["sw_rmax"]
         smin_alpha = data["smin_alpha"]
 
-        dp_model = DPAtomicModel.deserialize(data["dp_model"])
-        zbl_model = PairTabModel.deserialize(data["zbl_model"])
+        dp_model, zbl_model = LinearAtomicModel.deserialize(data["models"])
 
         return cls(
             dp_model=dp_model,

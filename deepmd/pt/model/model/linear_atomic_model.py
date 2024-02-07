@@ -9,7 +9,7 @@ from typing import (
     Tuple,
     Union,
 )
-
+import sys
 import torch
 
 from deepmd.dpmodel import (
@@ -51,7 +51,7 @@ class LinearAtomicModel(BaseModel, BaseAtomicModel):
         **kwargs,
     ):
         super().__init__()
-        self.models = models
+        self.models = torch.nn.ModuleList(models)
         self.distinguish_type_list = [
             model.distinguish_types() for model in self.models
         ]
@@ -62,26 +62,35 @@ class LinearAtomicModel(BaseModel, BaseAtomicModel):
 
     def get_rcut(self) -> float:
         """Get the cut-off radius."""
-        return max(self.get_rcuts())
+        return max(self.get_model_rcuts())
 
-    def get_rcuts(self) -> List[float]:
+    def get_model_rcuts(self) -> List[float]:
         """Get the cut-off radius for each individual models."""
         return [model.get_rcut() for model in self.models]
 
     def get_sel(self) -> List[int]:
+        return [max([model.get_nsel() for model in self.models])]
+    
+    def get_model_nsels(self) -> List[int]:
         """Get the processed sels for each individual models. Not distinguishing types."""
         return [model.get_nsel() for model in self.models]
 
-    def get_original_sels(self) -> List[Union[int, List[int]]]:
+    def get_model_sels(self) -> List[List[int]]:
         """Get the sels for each individual models."""
         return [model.get_sel() for model in self.models]
 
-    def _sort_rcuts_sels(self) -> Tuple[List[int], List[float]]:
+    def _sort_rcuts_sels(self) -> Tuple[List[float], List[int]]:
         # sort the pair of rcut and sels in ascending order, first based on sel, then on rcut.
-        zipped = sorted(
-            zip(self.get_rcuts(), self.get_sel()), key=lambda x: (x[1], x[0])
-        )
-        return [p[0] for p in zipped], [p[1] for p in zipped]
+        rcuts = torch.tensor(self.get_model_rcuts(), dtype=torch.float64)
+        nsels = torch.tensor(self.get_model_nsels())
+        zipped = torch.stack([torch.tensor(rcuts), torch.tensor(nsels)], dim=0).T
+        inner_sorting = torch.argsort(zipped[:, 1],dim=0)
+        inner_sorted = zipped[inner_sorting]
+        outer_sorting = torch.argsort(inner_sorted[:, 0],stable=True)
+        outer_sorted = inner_sorted[outer_sorting]
+        sorted_rcuts: List[float] = outer_sorted[:,0].tolist()
+        sorted_sels: List[int] = outer_sorted[:,1].to(torch.int64).tolist()
+        return  sorted_rcuts, sorted_sels
 
     def forward_atomic(
         self,
@@ -127,23 +136,28 @@ class LinearAtomicModel(BaseModel, BaseAtomicModel):
         )
         raw_nlists = [
             nlists[get_multiple_nlist_key(rcut, sel)]
-            for rcut, sel in zip(self.get_rcuts(), self.get_sel())
+            for rcut, sel in zip(self.get_model_rcuts(), self.get_model_nsels())
         ]
         self.nlists_ = [
             nl if not dt else nlist_distinguish_types(nl, extended_atype, sel)
             for dt, nl, sel in zip(
-                self.distinguish_type_list, raw_nlists, self.get_original_sels()
+                self.distinguish_type_list, raw_nlists, self.get_model_sels()
             )
         ]
-        ener_list = [
-            model.forward_atomic(
-                self.extended_coord,
-                extended_atype,
-                nl,
-                mapping,
-            )["energy"]
-            for model, nl in zip(self.models, self.nlists_)
-        ]
+        ener_list = []
+        
+        for i, model in enumerate(self.models):
+            ener_list.append(
+                model.forward_atomic(
+                    self.extended_coord,
+                    extended_atype,
+                    self.nlists_[i],
+                    mapping,
+                    fparam,
+                    aparam,
+                )["energy"]
+            )
+
         self.weights = self._compute_weight()
         self.atomic_bias = None
         if self.atomic_bias is not None:
@@ -160,20 +174,24 @@ class LinearAtomicModel(BaseModel, BaseAtomicModel):
         return FittingOutputDef(
             [
                 OutputVariableDef(
-                    name="energy", shape=[1], reduciable=True, differentiable=True
+                    name="energy", shape=[1], reduciable=True, r_differentiable=True, c_differentiable=True
                 )
             ]
         )
 
-    def serialize(self) -> dict:
+    @staticmethod
+    def serialize(models) -> dict:
         return {
-            "models": [model.serialize() for model in self.models],
+            "models": [model.serialize() for model in models],
+            "model_name": [model.__class__.__name__ for model in models]
         }
 
-    @classmethod
-    def deserialize(cls, data) -> "LinearAtomicModel":
-        models = [DPAtomicModel.deserialize(model) for model in data["models"]]
-        return cls(models)
+    @staticmethod
+    def deserialize(data) -> List[BaseAtomicModel]:
+        
+        model_names = data["model_name"]
+        models = [getattr(sys.modules[__name__], name).deserialize(model) for name, model in zip(model_names, data["models"])]
+        return models
 
     @abstractmethod
     def _compute_weight(self) -> List[torch.Tensor]:
@@ -210,8 +228,7 @@ class DPZBLLinearAtomicModel(LinearAtomicModel):
 
     def serialize(self) -> dict:
         return {
-            "dp_model": self.dp_model.serialize(),
-            "zbl_model": self.zbl_model.serialize(),
+            "models": LinearAtomicModel.serialize([self.dp_model, self.zbl_model]),
             "sw_rmin": self.sw_rmin,
             "sw_rmax": self.sw_rmax,
             "smin_alpha": self.smin_alpha,
@@ -223,8 +240,7 @@ class DPZBLLinearAtomicModel(LinearAtomicModel):
         sw_rmax = data["sw_rmax"]
         smin_alpha = data["smin_alpha"]
 
-        dp_model = DPAtomicModel.deserialize(data["dp_model"])
-        zbl_model = PairTabModel.deserialize(data["zbl_model"])
+        dp_model, zbl_model = LinearAtomicModel.deserialize(data["models"])
 
         return cls(
             dp_model=dp_model,
@@ -257,9 +273,9 @@ class DPZBLLinearAtomicModel(LinearAtomicModel):
         nloc = nlist_larger.shape[1]
         masked_nlist = torch.clamp(nlist_larger, 0)
         pairwise_rr = (
-            (self.extended_coord.unsqueeze(2) - self.extended_coord.unsqueeze(1))
-            .pow(2)
-            .sum(-1)
+            torch.clamp((self.extended_coord.unsqueeze(2) - self.extended_coord.unsqueeze(1))
+            .square()
+            .sum(-1), 1E-19)
             .sqrt()
         )
         rr = torch.gather(

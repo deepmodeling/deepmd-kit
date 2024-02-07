@@ -124,10 +124,14 @@ class PairTabModel(nn.Module, BaseAtomicModel):
         extended_atype,
         nlist,
         mapping: Optional[torch.Tensor] = None,
+        fparam: Optional[torch.Tensor] = None,
+        aparam: Optional[torch.Tensor] = None,
         do_atomic_virial: bool = False,
     ) -> Dict[str, torch.Tensor]:
         self.nframes, self.nloc, self.nnei = nlist.shape
         extended_coord = extended_coord.view(self.nframes, -1, 3)
+        if self.do_grad():
+            extended_coord.requires_grad_(True)
 
         # this will mask all -1 in the nlist
         masked_nlist = torch.clamp(nlist, 0)
@@ -136,8 +140,7 @@ class PairTabModel(nn.Module, BaseAtomicModel):
         pairwise_dr = self._get_pairwise_dist(
             extended_coord
         )  # (nframes, nall, nall, 3)
-        pairwise_rr = pairwise_dr.pow(2).sum(-1).sqrt()  # (nframes, nall, nall)
-
+        pairwise_rr = torch.clamp(pairwise_dr.square().sum(-1), 1E-19).sqrt()  # (nframes, nall, nall)
         self.tab_data = self.tab_data.view(
             self.tab.ntypes, self.tab.ntypes, self.tab.nspline, 4
         )
