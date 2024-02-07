@@ -144,7 +144,7 @@ class LinearAtomicModel(BaseAtomicModel):
             raise NotImplementedError("Need to add bias in a future PR.")
         else:
             fit_ret = {
-                "energy": sum(np.stack(ener_list) * np.stack(self.weights)),
+                "energy": np.sum(np.stack(ener_list) * np.stack(self.weights), axis=0),
             }  # (nframes, nloc, 1)
         return fit_ret
 
