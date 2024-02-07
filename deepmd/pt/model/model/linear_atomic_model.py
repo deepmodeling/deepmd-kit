@@ -200,7 +200,7 @@ class LinearAtomicModel(BaseModel, BaseAtomicModel):
         return models
 
     @abstractmethod
-    def _compute_weight(self) -> List[torch.Tensor]:
+    def _compute_weight(self, **kwargs) -> List[torch.Tensor]:
         """This should be a list of user defined weights that matches the number of models to be combined."""
         raise NotImplementedError
 
