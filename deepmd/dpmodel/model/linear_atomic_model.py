@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import sys
 from abc import (
     abstractmethod,
 )
@@ -9,7 +10,7 @@ from typing import (
     Tuple,
     Union,
 )
-import sys
+
 import numpy as np
 
 from deepmd.dpmodel import (
@@ -67,7 +68,7 @@ class LinearAtomicModel(BaseAtomicModel):
 
     def get_sel(self) -> List[int]:
         return [max([model.get_nsel() for model in self.models])]
-    
+
     def get_model_nsels(self) -> List[int]:
         """Get the processed sels for each individual models. Not distinguishing types."""
         return [model.get_nsel() for model in self.models]
@@ -79,10 +80,10 @@ class LinearAtomicModel(BaseAtomicModel):
     def _sort_rcuts_sels(self) -> Tuple[List[float], List[int]]:
         # sort the pair of rcut and sels in ascending order, first based on sel, then on rcut.
         zipped = sorted(
-            zip(self.get_model_rcuts(), self.get_model_nsels()), key=lambda x: (x[1], x[0])
+            zip(self.get_model_rcuts(), self.get_model_nsels()),
+            key=lambda x: (x[1], x[0]),
         )
         return [p[0] for p in zipped], [p[1] for p in zipped]
-    
 
     def forward_atomic(
         self,
@@ -159,22 +160,29 @@ class LinearAtomicModel(BaseAtomicModel):
         return FittingOutputDef(
             [
                 OutputVariableDef(
-                    name="energy", shape=[1], reduciable=True, r_differentiable=True, c_differentiable=True
+                    name="energy",
+                    shape=[1],
+                    reduciable=True,
+                    r_differentiable=True,
+                    c_differentiable=True,
                 )
             ]
         )
+
     @staticmethod
     def serialize(models) -> dict:
         return {
             "models": [model.serialize() for model in models],
-            "model_name": [model.__class__.__name__ for model in models]
+            "model_name": [model.__class__.__name__ for model in models],
         }
 
     @staticmethod
     def deserialize(data) -> List[BaseAtomicModel]:
-        
         model_names = data["model_name"]
-        models = [getattr(sys.modules[__name__], name).deserialize(model) for name, model in zip(model_names, data["models"])]
+        models = [
+            getattr(sys.modules[__name__], name).deserialize(model)
+            for name, model in zip(model_names, data["models"])
+        ]
         return models
 
     @abstractmethod

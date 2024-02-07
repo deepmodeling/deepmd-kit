@@ -140,7 +140,9 @@ class PairTabModel(nn.Module, BaseAtomicModel):
         pairwise_dr = self._get_pairwise_dist(
             extended_coord
         )  # (nframes, nall, nall, 3)
-        pairwise_rr = torch.clamp(pairwise_dr.square().sum(-1), 1E-19).sqrt()  # (nframes, nall, nall)
+        pairwise_rr = torch.clamp(
+            pairwise_dr.square().sum(-1), 1e-19
+        ).sqrt()  # (nframes, nall, nall)
         self.tab_data = self.tab_data.view(
             self.tab.ntypes, self.tab.ntypes, self.tab.nspline, 4
         )

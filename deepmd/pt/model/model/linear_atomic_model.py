@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import sys
 from abc import (
     abstractmethod,
 )
@@ -7,9 +8,8 @@ from typing import (
     List,
     Optional,
     Tuple,
-    Union,
 )
-import sys
+
 import torch
 
 from deepmd.dpmodel import (
@@ -70,7 +70,7 @@ class LinearAtomicModel(BaseModel, BaseAtomicModel):
 
     def get_sel(self) -> List[int]:
         return [max([model.get_nsel() for model in self.models])]
-    
+
     def get_model_nsels(self) -> List[int]:
         """Get the processed sels for each individual models. Not distinguishing types."""
         return [model.get_nsel() for model in self.models]
@@ -84,13 +84,13 @@ class LinearAtomicModel(BaseModel, BaseAtomicModel):
         rcuts = torch.tensor(self.get_model_rcuts(), dtype=torch.float64)
         nsels = torch.tensor(self.get_model_nsels())
         zipped = torch.stack([torch.tensor(rcuts), torch.tensor(nsels)], dim=0).T
-        inner_sorting = torch.argsort(zipped[:, 1],dim=0)
+        inner_sorting = torch.argsort(zipped[:, 1], dim=0)
         inner_sorted = zipped[inner_sorting]
-        outer_sorting = torch.argsort(inner_sorted[:, 0],stable=True)
+        outer_sorting = torch.argsort(inner_sorted[:, 0], stable=True)
         outer_sorted = inner_sorted[outer_sorting]
-        sorted_rcuts: List[float] = outer_sorted[:,0].tolist()
-        sorted_sels: List[int] = outer_sorted[:,1].to(torch.int64).tolist()
-        return  sorted_rcuts, sorted_sels
+        sorted_rcuts: List[float] = outer_sorted[:, 0].tolist()
+        sorted_sels: List[int] = outer_sorted[:, 1].to(torch.int64).tolist()
+        return sorted_rcuts, sorted_sels
 
     def forward_atomic(
         self,
@@ -145,7 +145,7 @@ class LinearAtomicModel(BaseModel, BaseAtomicModel):
             )
         ]
         ener_list = []
-        
+
         for i, model in enumerate(self.models):
             ener_list.append(
                 model.forward_atomic(
@@ -174,7 +174,11 @@ class LinearAtomicModel(BaseModel, BaseAtomicModel):
         return FittingOutputDef(
             [
                 OutputVariableDef(
-                    name="energy", shape=[1], reduciable=True, r_differentiable=True, c_differentiable=True
+                    name="energy",
+                    shape=[1],
+                    reduciable=True,
+                    r_differentiable=True,
+                    c_differentiable=True,
                 )
             ]
         )
@@ -183,14 +187,16 @@ class LinearAtomicModel(BaseModel, BaseAtomicModel):
     def serialize(models) -> dict:
         return {
             "models": [model.serialize() for model in models],
-            "model_name": [model.__class__.__name__ for model in models]
+            "model_name": [model.__class__.__name__ for model in models],
         }
 
     @staticmethod
     def deserialize(data) -> List[BaseAtomicModel]:
-        
         model_names = data["model_name"]
-        models = [getattr(sys.modules[__name__], name).deserialize(model) for name, model in zip(model_names, data["models"])]
+        models = [
+            getattr(sys.modules[__name__], name).deserialize(model)
+            for name, model in zip(model_names, data["models"])
+        ]
         return models
 
     @abstractmethod
@@ -272,12 +278,12 @@ class DPZBLLinearAtomicModel(LinearAtomicModel):
         nlist_larger = zbl_nlist if zbl_nnei >= dp_nnei else dp_nlist
         nloc = nlist_larger.shape[1]
         masked_nlist = torch.clamp(nlist_larger, 0)
-        pairwise_rr = (
-            torch.clamp((self.extended_coord.unsqueeze(2) - self.extended_coord.unsqueeze(1))
+        pairwise_rr = torch.clamp(
+            (self.extended_coord.unsqueeze(2) - self.extended_coord.unsqueeze(1))
             .square()
-            .sum(-1), 1E-19)
-            .sqrt()
-        )
+            .sum(-1),
+            1e-19,
+        ).sqrt()
         rr = torch.gather(
             pairwise_rr[:, :nloc, :], 2, masked_nlist
         )  # nframes, nloc, nnei
