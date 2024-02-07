@@ -186,7 +186,7 @@ class LinearAtomicModel(BaseAtomicModel):
         return models
 
     @abstractmethod
-    def _compute_weight(self) -> np.ndarray:
+    def _compute_weight(self, **kwargs) -> np.ndarray:
         """This should be a list of user defined weights that matches the number of models to be combined."""
         raise NotImplementedError
 
