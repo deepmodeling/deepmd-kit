@@ -107,7 +107,10 @@ def make_base_atomic_model(
         ) -> bool:
             """Tell if the output variable `var_name` is differentiable."""
             assert var_name is not None
-            return self.fitting_output_def()[var_name].differentiable
+            return (
+                self.fitting_output_def()[var_name].r_differentiable
+                or self.fitting_output_def()[var_name].c_differentiable
+            )
 
     setattr(BAM, fwd_method_name, BAM.fwd)
     delattr(BAM, "fwd")

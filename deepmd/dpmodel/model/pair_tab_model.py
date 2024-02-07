@@ -70,7 +70,11 @@ class PairTabModel(BaseAtomicModel):
         return FittingOutputDef(
             [
                 OutputVariableDef(
-                    name="energy", shape=[1], reduciable=True, differentiable=True
+                    name="energy",
+                    shape=[1],
+                    reduciable=True,
+                    r_differentiable=True,
+                    c_differentiable=True,
                 )
             ]
         )
