@@ -94,6 +94,14 @@ class Fitting(torch.nn.Module, BaseFitting):
         else:
             raise NotImplementedError
 
+    def compute_output_stats(self, merged):
+        """Update the output bias for fitting net."""
+        raise NotImplementedError
+
+    def init_fitting_stat(self, result_dict):
+        """Initialize the model bias by the statistics."""
+        raise NotImplementedError
+
     @classmethod
     def get_stat_name(cls, config, ntypes):
         """

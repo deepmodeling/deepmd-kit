@@ -86,8 +86,8 @@ def make_stat_input(datasets, dataloaders, nbatches):
     return lst
 
 
-def compute_output_stats(energy, natoms, rcond=None):
-    """Update mean and stddev for descriptor elements.
+def compute_output_bias(energy, natoms, rcond=None):
+    """Update output bias for fitting net.
 
     Args:
     - energy: Batched energy with shape [nframes, 1].

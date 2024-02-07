@@ -304,13 +304,14 @@ class DescriptorBlock(torch.nn.Module, ABC):
                     self.sumr2,
                     self.suma2,
                 )
-                base_class.init_desc_stat(
-                    sumr_base + sumr,
-                    suma_base + suma,
-                    sumn_base + sumn,
-                    sumr2_base + sumr2,
-                    suma2_base + suma2,
-                )
+                stat_dict = {
+                    "sumr": sumr_base + sumr,
+                    "suma": suma_base + suma,
+                    "sumn": sumn_base + sumn,
+                    "sumr2": sumr2_base + sumr2,
+                    "suma2": suma2_base + suma2,
+                }
+                base_class.init_desc_stat(stat_dict)
                 self.mean = base_class.mean
                 self.stddev = base_class.stddev
             # self.load_state_dict(base_class.state_dict()) # this does not work, because it only inits the model

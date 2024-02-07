@@ -299,18 +299,12 @@ class DescrptDPA2(Descriptor):
                 }
                 for item in merged
             ]
-            (
-                sumr_tmp,
-                suma_tmp,
-                sumn_tmp,
-                sumr2_tmp,
-                suma2_tmp,
-            ) = descrpt.compute_input_stats(merged_tmp)
-            sumr.append(sumr_tmp["sumr"])
-            suma.append(suma_tmp["suma"])
-            sumn.append(sumn_tmp["sumn"])
-            sumr2.append(sumr2_tmp["sumr2"])
-            suma2.append(suma2_tmp["suma2"])
+            tmp_stat_dict = descrpt.compute_input_stats(merged_tmp)
+            sumr.append(tmp_stat_dict["sumr"])
+            suma.append(tmp_stat_dict["suma"])
+            sumn.append(tmp_stat_dict["sumn"])
+            sumr2.append(tmp_stat_dict["sumr2"])
+            suma2.append(tmp_stat_dict["suma2"])
         return {
             "sumr": sumr,
             "suma": suma,
@@ -328,7 +322,14 @@ class DescrptDPA2(Descriptor):
         sumr2 = stat_dict["sumr2"]
         suma2 = stat_dict["suma2"]
         for ii, descrpt in enumerate([self.repinit, self.repformers]):
-            descrpt.init_desc_stat(sumr[ii], suma[ii], sumn[ii], sumr2[ii], suma2[ii])
+            stat_dict_ii = {
+                "sumr": sumr[ii],
+                "suma": suma[ii],
+                "sumn": sumn[ii],
+                "sumr2": sumr2[ii],
+                "suma2": suma2[ii],
+            }
+            descrpt.init_desc_stat(stat_dict_ii)
 
     @classmethod
     def get_stat_name(cls, config, ntypes):

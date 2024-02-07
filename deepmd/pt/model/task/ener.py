@@ -33,7 +33,7 @@ from deepmd.pt.utils.env import (
     PRECISION_DICT,
 )
 from deepmd.pt.utils.stat import (
-    compute_output_stats,
+    compute_output_bias,
 )
 from deepmd.pt.utils.utils import (
     to_numpy_array,
@@ -213,7 +213,7 @@ class InvarFitting(Fitting):
             input_natoms = [item["real_natoms_vec"] for item in merged]
         else:
             input_natoms = [item["natoms"] for item in merged]
-        tmp = compute_output_stats(energy, input_natoms)
+        tmp = compute_output_bias(energy, input_natoms)
         bias_atom_e = tmp[:, 0]
         return {"bias_atom_e": bias_atom_e}
 

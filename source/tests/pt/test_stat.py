@@ -19,7 +19,7 @@ from deepmd.pt.utils.dataloader import (
     DpLoaderSet,
 )
 from deepmd.pt.utils.stat import (
-    compute_output_stats,
+    compute_output_bias,
 )
 from deepmd.pt.utils.stat import make_stat_input as my_make
 from deepmd.tf.common import (
@@ -124,7 +124,7 @@ class TestDataset(unittest.TestCase):
         energy, natoms = my_merge(energy, natoms)
         dp_fn = EnerFitting(self.dp_d, self.n_neuron)
         dp_fn.compute_output_stats(self.dp_sampled)
-        bias_atom_e = compute_output_stats(energy, natoms)
+        bias_atom_e = compute_output_bias(energy, natoms)
         self.assertTrue(np.allclose(dp_fn.bias_atom_e, bias_atom_e[:, 0]))
 
     # temporarily delete this function for performance of seeds in tf and pytorch may be different
@@ -172,8 +172,8 @@ class TestDataset(unittest.TestCase):
             ]:
                 if key in sys.keys():
                     sys[key] = sys[key].to(env.DEVICE)
-        sumr, suma, sumn, sumr2, suma2 = my_en.compute_input_stats(sampled)
-        my_en.init_desc_stat(sumr, suma, sumn, sumr2, suma2)
+        stat_dict = my_en.compute_input_stats(sampled)
+        my_en.init_desc_stat(stat_dict)
         my_en.mean = my_en.mean
         my_en.stddev = my_en.stddev
         self.assertTrue(
