@@ -109,14 +109,13 @@ class TestSaveLoadDPA1(unittest.TestCase):
 
     def create_wrapper(self, read: bool):
         model_config = copy.deepcopy(self.config["model"])
-        sampled = copy.deepcopy(self.sampled)
         model_config["resuming"] = read
         model_config["stat_file_dir"] = "stat_files"
         model_config["stat_file"] = "stat.npz"
         model_config["stat_file_path"] = os.path.join(
             model_config["stat_file_dir"], model_config["stat_file"]
         )
-        model = get_model(model_config, sampled).to(env.DEVICE)
+        model = get_model(model_config).to(env.DEVICE)
         return ModelWrapper(model, self.loss)
 
     def get_data(self):

@@ -53,6 +53,16 @@ def make_base_fitting(
             pass
 
         @abstractmethod
+        def compute_output_stats(self, merged):
+            """Update the output bias for fitting net."""
+            pass
+
+        @abstractmethod
+        def init_fitting_stat(self, result_dict):
+            """Initialize the model bias by the statistics."""
+            pass
+
+        @abstractmethod
         def serialize(self) -> dict:
             """Serialize the obj to dict."""
             pass

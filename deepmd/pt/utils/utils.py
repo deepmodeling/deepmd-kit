@@ -81,3 +81,12 @@ def to_torch_tensor(
     if prec is None:
         raise ValueError(f"unknown precision {xx.dtype}")
     return torch.tensor(xx, dtype=prec, device=DEVICE)
+
+
+def dict_to_device(sample_dict):
+    for key in sample_dict:
+        if isinstance(sample_dict[key], list):
+            sample_dict[key] = [item.to(DEVICE) for item in sample_dict[key]]
+        else:
+            if sample_dict[key] is not None:
+                sample_dict[key] = sample_dict[key].to(DEVICE)

@@ -30,9 +30,6 @@ from deepmd.pt.utils.env import (
     DEVICE,
 )
 from deepmd.pt.utils.learning_rate import LearningRateExp as MyLRExp
-from deepmd.pt.utils.stat import (
-    make_stat_input,
-)
 from deepmd.tf.common import (
     data_requirement,
     expand_sys_str,
@@ -282,9 +279,6 @@ class TestEnergy(unittest.TestCase):
                 "type_map": self.type_map,
             },
         )
-        sampled = make_stat_input(
-            my_ds.systems, my_ds.dataloaders, self.data_stat_nbatch
-        )
         my_model = get_model(
             model_params={
                 "descriptor": {
@@ -299,7 +293,6 @@ class TestEnergy(unittest.TestCase):
                 "data_stat_nbatch": self.data_stat_nbatch,
                 "type_map": self.type_map,
             },
-            sampled=sampled,
         )
         my_model.to(DEVICE)
         my_lr = MyLRExp(self.start_lr, self.stop_lr, self.decay_steps, self.stop_steps)

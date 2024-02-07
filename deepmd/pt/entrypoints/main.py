@@ -42,6 +42,9 @@ from deepmd.pt.infer import (
 from deepmd.pt.model.descriptor import (
     Descriptor,
 )
+from deepmd.pt.model.task import (
+    Fitting,
+)
 from deepmd.pt.train import (
     training,
 )
@@ -122,49 +125,39 @@ def get_trainer(
         hybrid_descrpt = model_params_single["descriptor"]["type"] == "hybrid"
         has_stat_file_path = True
         if not hybrid_descrpt:
-            ### this design requires "rcut", "rcut_smth" and "sel" in the descriptor
-            ### VERY BAD DESIGN!!!!
-            ### not all descriptors provides these parameter in their constructor
-            default_stat_file_name = Descriptor.get_stat_name(
-                model_params_single["descriptor"]
-            )
             model_params_single["stat_file_dir"] = data_dict_single.get(
                 "stat_file_dir", f"stat_files{suffix}"
             )
-            model_params_single["stat_file"] = data_dict_single.get(
-                "stat_file", default_stat_file_name
-            )
-            model_params_single["stat_file_path"] = os.path.join(
-                model_params_single["stat_file_dir"], model_params_single["stat_file"]
-            )
-            if not os.path.exists(model_params_single["stat_file_path"]):
+            stat_file = data_dict_single.get("stat_file", None)
+            if stat_file is None:
+                stat_file = {}
+                if "descriptor" in model_params_single:
+                    default_stat_file_name_descrpt = Descriptor.get_stat_name(
+                        model_params_single["descriptor"],
+                        len(model_params_single["type_map"]),
+                    )
+                    stat_file["descriptor"] = default_stat_file_name_descrpt
+                if "fitting_net" in model_params_single:
+                    default_stat_file_name_fitting = Fitting.get_stat_name(
+                        model_params_single["fitting_net"],
+                        len(model_params_single["type_map"]),
+                    )
+                    stat_file["fitting_net"] = default_stat_file_name_fitting
+            model_params_single["stat_file_path"] = {
+                key: os.path.join(model_params_single["stat_file_dir"], stat_file[key])
+                for key in stat_file
+            }
+
+            has_stat_file_path_list = [
+                os.path.exists(model_params_single["stat_file_path"][key])
+                for key in stat_file
+            ]
+            if False in has_stat_file_path_list:
                 has_stat_file_path = False
-        else:  ### need to remove this
-            default_stat_file_name = []
-            for descrpt in model_params_single["descriptor"]["list"]:
-                default_stat_file_name.append(
-                    f'stat_file_rcut{descrpt["rcut"]:.2f}_'
-                    f'smth{descrpt["rcut_smth"]:.2f}_'
-                    f'sel{descrpt["sel"]}_{descrpt["type"]}.npz'
-                )
-            model_params_single["stat_file_dir"] = data_dict_single.get(
-                "stat_file_dir", f"stat_files{suffix}"
+        else:  ### TODO hybrid descriptor not implemented
+            raise NotImplementedError(
+                "data stat for hybrid descriptor is not implemented!"
             )
-            model_params_single["stat_file"] = data_dict_single.get(
-                "stat_file", default_stat_file_name
-            )
-            assert isinstance(
-                model_params_single["stat_file"], list
-            ), "Stat file of hybrid descriptor must be a list!"
-            stat_file_path = []
-            for stat_file_path_item in model_params_single["stat_file"]:
-                single_file_path = os.path.join(
-                    model_params_single["stat_file_dir"], stat_file_path_item
-                )
-                stat_file_path.append(single_file_path)
-                if not os.path.exists(single_file_path):
-                    has_stat_file_path = False
-            model_params_single["stat_file_path"] = stat_file_path
 
         # validation and training data
         validation_data_single = DpLoaderSet(
@@ -227,7 +220,7 @@ def get_trainer(
     trainer = training.Trainer(
         config,
         train_data,
-        sampled,
+        sampled=sampled,
         validation_data=validation_data,
         init_model=init_model,
         restart_model=restart_model,

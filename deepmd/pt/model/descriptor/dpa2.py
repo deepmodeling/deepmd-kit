@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import logging
 from typing import (
     List,
     Optional,
@@ -25,6 +26,8 @@ from .repformers import (
 from .se_atten import (
     DescrptBlockSeAtten,
 )
+
+log = logging.getLogger(__name__)
 
 
 @Descriptor.register("dpa2")
@@ -303,34 +306,63 @@ class DescrptDPA2(Descriptor):
                 sumr2_tmp,
                 suma2_tmp,
             ) = descrpt.compute_input_stats(merged_tmp)
-            sumr.append(sumr_tmp)
-            suma.append(suma_tmp)
-            sumn.append(sumn_tmp)
-            sumr2.append(sumr2_tmp)
-            suma2.append(suma2_tmp)
-        return sumr, suma, sumn, sumr2, suma2
+            sumr.append(sumr_tmp["sumr"])
+            suma.append(suma_tmp["suma"])
+            sumn.append(sumn_tmp["sumn"])
+            sumr2.append(sumr2_tmp["sumr2"])
+            suma2.append(suma2_tmp["suma2"])
+        return {
+            "sumr": sumr,
+            "suma": suma,
+            "sumn": sumn,
+            "sumr2": sumr2,
+            "suma2": suma2,
+        }
 
-    def init_desc_stat(self, sumr, suma, sumn, sumr2, suma2):
+    def init_desc_stat(self, stat_dict):
+        for key in ["sumr", "suma", "sumn", "sumr2", "suma2"]:
+            assert key in stat_dict, f"Statistics {key} not found in the dictionary!"
+        sumr = stat_dict["sumr"]
+        suma = stat_dict["suma"]
+        sumn = stat_dict["sumn"]
+        sumr2 = stat_dict["sumr2"]
+        suma2 = stat_dict["suma2"]
         for ii, descrpt in enumerate([self.repinit, self.repformers]):
             descrpt.init_desc_stat(sumr[ii], suma[ii], sumn[ii], sumr2[ii], suma2[ii])
 
     @classmethod
-    def get_stat_name(cls, config):
+    def get_stat_name(cls, config, ntypes):
+        """
+        Get the name for the statistic file of the descriptor.
+        Usually use the combination of descriptor name, rcut, rcut_smth and sel as the statistic file name.
+        """
         descrpt_type = config["type"]
         assert descrpt_type in ["dpa2"]
         return (
-            f'stat_file_dpa2_repinit_rcut{config["repinit_rcut"]:.2f}_smth{config["repinit_rcut_smth"]:.2f}_sel{config["repinit_nsel"]}'
-            f'_repformer_rcut{config["repformer_rcut"]:.2f}_smth{config["repformer_rcut_smth"]:.2f}_sel{config["repformer_nsel"]}.npz'
+            f'stat_file_descrpt_dpa2_repinit_rcut{config["repinit_rcut"]:.2f}_smth{config["repinit_rcut_smth"]:.2f}_sel{config["repinit_nsel"]}'
+            f'_repformer_rcut{config["repformer_rcut"]:.2f}_smth{config["repformer_rcut_smth"]:.2f}_sel{config["repformer_nsel"]}_ntypes{ntypes}.npz'
         )
 
     @classmethod
     def get_data_process_key(cls, config):
+        """
+        Get the keys for the data preprocess.
+        Usually need the information of rcut and sel.
+        TODO Need to be deprecated when the dataloader has been cleaned up.
+        """
         descrpt_type = config["type"]
         assert descrpt_type in ["dpa2"]
         return {
             "sel": [config["repinit_nsel"], config["repformer_nsel"]],
             "rcut": [config["repinit_rcut"], config["repformer_rcut"]],
         }
+
+    def get_data_stat_key(self):
+        """
+        Get the keys for the data statistic of the descriptor.
+        Return a list of statistic names needed, such as "sumr", "suma" or "sumn".
+        """
+        return ["sumr", "suma", "sumn", "sumr2", "suma2"]
 
     def serialize(self) -> dict:
         """Serialize the obj to dict."""

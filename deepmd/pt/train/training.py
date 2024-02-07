@@ -67,7 +67,7 @@ class Trainer:
         self,
         config: Dict[str, Any],
         training_data,
-        sampled,
+        sampled=None,
         validation_data=None,
         init_model=None,
         restart_model=None,
@@ -91,6 +91,8 @@ class Trainer:
         self.model_keys = (
             list(model_params["model_dict"]) if self.multi_task else ["Default"]
         )
+        if self.multi_task and sampled is None:
+            sampled = {key: None for key in self.model_keys}
         self.rank = dist.get_rank() if dist.is_initialized() else 0
         self.world_size = dist.get_world_size() if dist.is_initialized() else 1
         self.num_model = len(self.model_keys)
@@ -179,7 +181,13 @@ class Trainer:
             )
 
         def get_single_model(_model_params, _sampled):
-            model = get_model(deepcopy(_model_params), _sampled).to(DEVICE)
+            model = get_model(deepcopy(_model_params)).to(DEVICE)
+            if not model_params.get("resuming", False):
+                model.compute_or_load_stat(
+                    type_map=_model_params["type_map"],
+                    sampled=_sampled,
+                    stat_file_path_dict=model_params.get("stat_file_path", None),
+                )
             return model
 
         def get_lr(lr_params):

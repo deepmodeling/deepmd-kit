@@ -32,6 +32,9 @@ from deepmd.pt.utils.env import (
     DEFAULT_PRECISION,
     PRECISION_DICT,
 )
+from deepmd.pt.utils.stat import (
+    compute_output_stats,
+)
 from deepmd.pt.utils.utils import (
     to_numpy_array,
     to_torch_tensor,
@@ -169,7 +172,7 @@ class InvarFitting(Fitting):
 
     def __setitem__(self, key, value):
         if key in ["bias_atom_e"]:
-            # correct bias_atom_e shape. user may provide stupid  shape
+            value = value.view([self.ntypes, self.dim_out])
             self.bias_atom_e = value
         elif key in ["fparam_avg"]:
             self.fparam_avg = value
@@ -195,6 +198,31 @@ class InvarFitting(Fitting):
             return self.aparam_inv_std
         else:
             raise KeyError(key)
+
+    def get_data_stat_key(self):
+        """
+        Get the keys for the data statistic of the fitting.
+        Return a list of statistic names needed, such as "bias_atom_e".
+        """
+        return ["bias_atom_e"]
+
+    def compute_output_stats(self, merged):
+        energy = [item["energy"] for item in merged]
+        mixed_type = "real_natoms_vec" in merged[0]
+        if mixed_type:
+            input_natoms = [item["real_natoms_vec"] for item in merged]
+        else:
+            input_natoms = [item["natoms"] for item in merged]
+        tmp = compute_output_stats(energy, input_natoms)
+        bias_atom_e = tmp[:, 0]
+        return {"bias_atom_e": bias_atom_e}
+
+    def init_fitting_stat(self, result_dict):
+        self.bias_atom_e.copy_(
+            torch.tensor(result_dict["bias_atom_e"], device=env.DEVICE).view(
+                [self.ntypes, self.dim_out]
+            )
+        )
 
     def serialize(self) -> dict:
         """Serialize the fitting to dict."""
@@ -390,6 +418,16 @@ class EnergyFittingNet(InvarFitting):
             **kwargs,
         )
 
+    @classmethod
+    def get_stat_name(cls, config, ntypes):
+        """
+        Get the name for the statistic file of the fitting.
+        Usually use the combination of fitting net name and ntypes as the statistic file name.
+        """
+        fitting_type = config.get("type", "ener")
+        assert fitting_type in ["ener"]
+        return f"stat_file_fitting_ener_ntypes{ntypes}.npz"
+
 
 @Fitting.register("direct_force")
 @Fitting.register("direct_force_ener")
@@ -471,6 +509,16 @@ class EnergyFittingNetDirect(Fitting):
 
     def deserialize(cls) -> "EnergyFittingNetDirect":
         raise NotImplementedError
+
+    @classmethod
+    def get_stat_name(cls, config, ntypes):
+        """
+        Get the name for the statistic file of the fitting.
+        Usually use the combination of fitting net name and ntypes as the statistic file name.
+        """
+        fitting_type = config.get("type", "ener")
+        assert fitting_type in ["direct_force", "direct_force_ener"]
+        return f"stat_file_fitting_direct_ntypes{ntypes}.npz"
 
     def forward(
         self,

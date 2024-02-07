@@ -15,7 +15,6 @@ from deepmd.pt.utils import (
 )
 
 from .test_permutation_denoise import (
-    make_sample,
     model_dpa1,
     model_dpa2,
     model_hybrid,
@@ -60,9 +59,8 @@ class TransDenoiseTest:
 class TestDenoiseModelDPA1(unittest.TestCase, TransDenoiseTest):
     def setUp(self):
         model_params = copy.deepcopy(model_dpa1)
-        sampled = make_sample(model_params)
         self.type_split = True
-        self.model = get_model(model_params, sampled).to(env.DEVICE)
+        self.model = get_model(model_params).to(env.DEVICE)
 
 
 @unittest.skip("support of the denoise is temporally disabled")
@@ -75,19 +73,17 @@ class TestDenoiseModelDPA2(unittest.TestCase, TransDenoiseTest):
         model_params_sample["descriptor"]["sel"] = model_params_sample["descriptor"][
             "repinit_nsel"
         ]
-        sampled = make_sample(model_params_sample)
         model_params = copy.deepcopy(model_dpa2)
         self.type_split = True
-        self.model = get_model(model_params, sampled).to(env.DEVICE)
+        self.model = get_model(model_params).to(env.DEVICE)
 
 
 @unittest.skip("hybrid not supported at the moment")
 class TestDenoiseModelHybrid(unittest.TestCase, TransDenoiseTest):
     def setUp(self):
         model_params = copy.deepcopy(model_hybrid)
-        sampled = make_sample(model_params)
         self.type_split = True
-        self.model = get_model(model_params, sampled).to(env.DEVICE)
+        self.model = get_model(model_params).to(env.DEVICE)
 
 
 if __name__ == "__main__":

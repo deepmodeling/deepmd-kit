@@ -94,6 +94,99 @@ class Fitting(torch.nn.Module, BaseFitting):
         else:
             raise NotImplementedError
 
+    @classmethod
+    def get_stat_name(cls, config, ntypes):
+        """
+        Get the name for the statistic file of the fitting.
+        Usually use the combination of fitting net name and ntypes as the statistic file name.
+        """
+        if cls is not Fitting:
+            raise NotImplementedError("get_stat_name is not implemented!")
+        fitting_type = config.get("type", "ener")
+        return Fitting.__plugins.plugins[fitting_type].get_stat_name(config, ntypes)
+
+    def get_data_stat_key(self):
+        """
+        Get the keys for the data statistic of the fitting.
+        Return a list of statistic names needed, such as "bias_atom_e".
+        """
+        raise NotImplementedError("get_data_stat_key is not implemented!")
+
+    def set_stats(self, type_map, sampled, stat_file_path):
+        """
+        Set the statistics parameters for the fitting net.
+        Calculate and save the output bias to `stat_file_path`
+        if `sampled` is not None, otherwise load them from `stat_file_path`.
+
+        Parameters
+        ----------
+        type_map
+            Mapping atom type to the name (str) of the type.
+            For example `type_map[1]` gives the name of the type 1.
+        sampled
+            The sampled data frames from different data systems.
+        stat_file_path
+            The path to the statistics files.
+        """
+        fitting_stat_key = self.get_data_stat_key()
+        if sampled is not None:
+            tmp_dict = self.compute_output_stats(sampled)
+            result_dict = {key: tmp_dict[key] for key in fitting_stat_key}
+            result_dict["type_map"] = type_map
+            self.save_stats(result_dict, stat_file_path)
+        else:  # load the statistics results
+            assert stat_file_path is not None, "No stat file to load!"
+            result_dict = self.load_stats(type_map, stat_file_path)
+        self.init_fitting_stat(result_dict)
+
+    def save_stats(self, result_dict, stat_file_path: str):
+        """
+        Save the statistics results to `stat_file_path`.
+
+        Parameters
+        ----------
+        result_dict
+            The dictionary of statistics results.
+        stat_file_path
+            The path to the statistics file(s).
+        """
+        log.info(f"Saving stat file to {stat_file_path}")
+        np.savez_compressed(stat_file_path, **result_dict)
+
+    def load_stats(self, type_map, stat_file_path: str):
+        """
+        Load the statistics results to `stat_file_path`.
+
+        Parameters
+        ----------
+        type_map
+            Mapping atom type to the name (str) of the type.
+            For example `type_map[1]` gives the name of the type 1.
+        stat_file_path
+            The path to the statistics file(s).
+
+        Returns
+        -------
+        result_dict
+            The dictionary of statistics results.
+        """
+        fitting_stat_key = self.get_data_stat_key()
+        target_type_map = type_map
+        log.info(f"Loading stat file from {stat_file_path}")
+        stats = np.load(stat_file_path)
+        stat_type_map = list(stats["type_map"])
+        missing_type = [i for i in target_type_map if i not in stat_type_map]
+        assert not missing_type, (
+            f"These type are not in stat file {stat_file_path}: {missing_type}! "
+            f"Please change the stat file path!"
+        )
+        idx_map = [stat_type_map.index(i) for i in target_type_map]
+        if stats[fitting_stat_key[0]].size:  # not empty
+            result_dict = {key: stats[key][idx_map] for key in fitting_stat_key}
+        else:
+            result_dict = {key: [] for key in fitting_stat_key}
+        return result_dict
+
     def change_energy_bias(
         self, config, model, old_type_map, new_type_map, bias_shift="delta", ntest=10
     ):

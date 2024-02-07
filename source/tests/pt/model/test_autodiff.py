@@ -16,7 +16,6 @@ dtype = torch.float64
 
 from .test_permutation import (
     eval_model,
-    make_sample,
     model_dpa1,
     model_dpa2,
     model_se_e2_a,
@@ -133,33 +132,29 @@ class VirialTest:
 class TestEnergyModelSeAForce(unittest.TestCase, ForceTest):
     def setUp(self):
         model_params = copy.deepcopy(model_se_e2_a)
-        sampled = make_sample(model_params)
         self.type_split = False
-        self.model = get_model(model_params, sampled).to(env.DEVICE)
+        self.model = get_model(model_params).to(env.DEVICE)
 
 
 class TestEnergyModelSeAVirial(unittest.TestCase, VirialTest):
     def setUp(self):
         model_params = copy.deepcopy(model_se_e2_a)
-        sampled = make_sample(model_params)
         self.type_split = False
-        self.model = get_model(model_params, sampled).to(env.DEVICE)
+        self.model = get_model(model_params).to(env.DEVICE)
 
 
 class TestEnergyModelDPA1Force(unittest.TestCase, ForceTest):
     def setUp(self):
         model_params = copy.deepcopy(model_dpa1)
-        sampled = make_sample(model_params)
         self.type_split = True
-        self.model = get_model(model_params, sampled).to(env.DEVICE)
+        self.model = get_model(model_params).to(env.DEVICE)
 
 
 class TestEnergyModelDPA1Virial(unittest.TestCase, VirialTest):
     def setUp(self):
         model_params = copy.deepcopy(model_dpa1)
-        sampled = make_sample(model_params)
         self.type_split = True
-        self.model = get_model(model_params, sampled).to(env.DEVICE)
+        self.model = get_model(model_params).to(env.DEVICE)
 
 
 class TestEnergyModelDPA2Force(unittest.TestCase, ForceTest):
@@ -171,10 +166,9 @@ class TestEnergyModelDPA2Force(unittest.TestCase, ForceTest):
         model_params_sample["descriptor"]["sel"] = model_params_sample["descriptor"][
             "repinit_nsel"
         ]
-        sampled = make_sample(model_params_sample)
         model_params = copy.deepcopy(model_dpa2)
         self.type_split = True
-        self.model = get_model(model_params, sampled).to(env.DEVICE)
+        self.model = get_model(model_params).to(env.DEVICE)
 
 
 class TestEnergyModelDPAUniVirial(unittest.TestCase, VirialTest):
@@ -186,7 +180,6 @@ class TestEnergyModelDPAUniVirial(unittest.TestCase, VirialTest):
         model_params_sample["descriptor"]["sel"] = model_params_sample["descriptor"][
             "repinit_nsel"
         ]
-        sampled = make_sample(model_params_sample)
         model_params = copy.deepcopy(model_dpa2)
         self.type_split = True
-        self.model = get_model(model_params, sampled).to(env.DEVICE)
+        self.model = get_model(model_params).to(env.DEVICE)

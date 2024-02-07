@@ -15,7 +15,6 @@ from deepmd.pt.utils import (
 )
 
 from .test_permutation import (  # model_dpau,
-    make_sample,
     model_dpa1,
     model_dpa2,
     model_hybrid,
@@ -123,9 +122,8 @@ class SmoothTest:
 class TestEnergyModelSeA(unittest.TestCase, SmoothTest):
     def setUp(self):
         model_params = copy.deepcopy(model_se_e2_a)
-        sampled = make_sample(model_params)
         self.type_split = False
-        self.model = get_model(model_params, sampled).to(env.DEVICE)
+        self.model = get_model(model_params).to(env.DEVICE)
         self.epsilon, self.aprec = None, None
 
 
@@ -133,9 +131,8 @@ class TestEnergyModelSeA(unittest.TestCase, SmoothTest):
 class TestEnergyModelDPA1(unittest.TestCase, SmoothTest):
     def setUp(self):
         model_params = copy.deepcopy(model_dpa1)
-        sampled = make_sample(model_params)
         self.type_split = True
-        self.model = get_model(model_params, sampled).to(env.DEVICE)
+        self.model = get_model(model_params).to(env.DEVICE)
         # less degree of smoothness,
         # error can be systematically removed by reducing epsilon
         self.epsilon = 1e-5
@@ -158,9 +155,8 @@ class TestEnergyModelDPA2(unittest.TestCase, SmoothTest):
         model_params_sample["descriptor"]["sel"] = model_params_sample["descriptor"][
             "repinit_nsel"
         ]
-        sampled = make_sample(model_params_sample)
         self.type_split = True
-        self.model = get_model(model_params, sampled).to(env.DEVICE)
+        self.model = get_model(model_params).to(env.DEVICE)
         self.epsilon, self.aprec = 1e-5, 1e-4
 
 
@@ -175,10 +171,9 @@ class TestEnergyModelDPA2_1(unittest.TestCase, SmoothTest):
         model_params_sample["descriptor"]["sel"] = model_params_sample["descriptor"][
             "repinit_nsel"
         ]
-        sampled = make_sample(model_params_sample)
         self.type_split = True
         self.test_virial = False
-        self.model = get_model(model_params, sampled).to(env.DEVICE)
+        self.model = get_model(model_params).to(env.DEVICE)
         self.epsilon, self.aprec = None, None
 
 
@@ -193,10 +188,9 @@ class TestEnergyModelDPA2_2(unittest.TestCase, SmoothTest):
         model_params_sample["descriptor"]["sel"] = model_params_sample["descriptor"][
             "repinit_nsel"
         ]
-        sampled = make_sample(model_params_sample)
         self.type_split = True
         self.test_virial = False
-        self.model = get_model(model_params, sampled).to(env.DEVICE)
+        self.model = get_model(model_params).to(env.DEVICE)
         self.epsilon, self.aprec = None, None
 
 
@@ -204,17 +198,15 @@ class TestEnergyModelDPA2_2(unittest.TestCase, SmoothTest):
 class TestEnergyModelHybrid(unittest.TestCase, SmoothTest):
     def setUp(self):
         model_params = copy.deepcopy(model_hybrid)
-        sampled = make_sample(model_params)
         self.type_split = True
-        self.model = get_model(model_params, sampled).to(env.DEVICE)
+        self.model = get_model(model_params).to(env.DEVICE)
         self.epsilon, self.aprec = None, None
 
 
 # class TestEnergyFoo(unittest.TestCase):
 #   def test(self):
 #     model_params = model_dpau
-#     sampled = make_sample(model_params)
-#     self.model = EnergyModelDPAUni(model_params, sampled).to(env.DEVICE)
+#     self.model = EnergyModelDPAUni(model_params).to(env.DEVICE)
 
 #     natoms = 5
 #     cell = torch.rand([3, 3], dtype=dtype)

@@ -232,6 +232,14 @@ class InvarFitting(NativeOP, BaseFitting):
         else:
             raise KeyError(key)
 
+    def compute_output_stats(self, merged):
+        """Update the output bias for fitting net."""
+        raise NotImplementedError
+
+    def init_fitting_stat(self, result_dict):
+        """Initialize the model bias by the statistics."""
+        raise NotImplementedError
+
     def serialize(self) -> dict:
         """Serialize the fitting to dict."""
         return {
