@@ -117,10 +117,10 @@ class LinearAtomicModel(BaseAtomicModel):
             the result dict, defined by the fitting net output def.
         """
         nframes, nloc, nnei = nlist.shape
-        self.extended_coord = extended_coord.reshape(nframes, -1, 3)
+        extended_coord = extended_coord.reshape(nframes, -1, 3)
         sorted_rcuts, sorted_sels = self._sort_rcuts_sels()
         nlists = build_multiple_neighbor_list(
-            self.extended_coord,
+            extended_coord,
             nlist,
             sorted_rcuts,
             sorted_sels,
@@ -129,7 +129,7 @@ class LinearAtomicModel(BaseAtomicModel):
             nlists[get_multiple_nlist_key(rcut, sel)]
             for rcut, sel in zip(self.get_model_rcuts(), self.get_model_nsels())
         ]
-        self.nlists_ = [
+        nlists_ = [
             nl if not dt else nlist_distinguish_types(nl, extended_atype, sel)
             for dt, nl, sel in zip(
                 self.distinguish_type_list, raw_nlists, self.get_model_sels()
@@ -137,16 +137,16 @@ class LinearAtomicModel(BaseAtomicModel):
         ]
         ener_list = [
             model.forward_atomic(
-                self.extended_coord,
+                extended_coord,
                 extended_atype,
                 nl,
                 mapping,
                 fparam,
                 aparam,
             )["energy"]
-            for model, nl in zip(self.models, self.nlists_)
+            for model, nl in zip(self.models, nlists_)
         ]
-        self.weights = self._compute_weight()
+        self.weights = self._compute_weight(extended_coord, nlists_)
         self.atomic_bias = None
         if self.atomic_bias is not None:
             raise NotImplementedError("Need to add bias in a future PR.")
@@ -242,7 +242,7 @@ class DPZBLLinearAtomicModel(LinearAtomicModel):
             smin_alpha=smin_alpha,
         )
 
-    def _compute_weight(self) -> List[np.ndarray]:
+    def _compute_weight(self, extended_coord, nlists_) -> List[np.ndarray]:
         """ZBL weight.
 
         Returns
@@ -254,8 +254,8 @@ class DPZBLLinearAtomicModel(LinearAtomicModel):
             self.sw_rmax > self.sw_rmin
         ), "The upper boundary `sw_rmax` must be greater than the lower boundary `sw_rmin`."
 
-        dp_nlist = self.nlists_[0]
-        zbl_nlist = self.nlists_[1]
+        dp_nlist = nlists_[0]
+        zbl_nlist = nlists_[1]
 
         zbl_nnei = zbl_nlist.shape[-1]
         dp_nnei = dp_nlist.shape[-1]
@@ -263,7 +263,7 @@ class DPZBLLinearAtomicModel(LinearAtomicModel):
         # use the larger rr based on nlist
         nlist_larger = zbl_nlist if zbl_nnei >= dp_nnei else dp_nlist
         masked_nlist = np.clip(nlist_larger, 0, None)
-        pairwise_rr = PairTabModel._get_pairwise_dist(self.extended_coord, masked_nlist)
+        pairwise_rr = PairTabModel._get_pairwise_dist(extended_coord, masked_nlist)
 
         numerator = np.sum(
             pairwise_rr * np.exp(-pairwise_rr / self.smin_alpha), axis=-1
