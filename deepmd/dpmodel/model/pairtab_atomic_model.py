@@ -119,7 +119,8 @@ class PairTabModel(BaseAtomicModel):
         extended_coord = extended_coord.reshape(self.nframes, -1, 3)
 
         # this will mask all -1 in the nlist
-        masked_nlist = np.clip(nlist, 0, None)
+        mask = nlist >= 0
+        masked_nlist = nlist * mask
 
         atype = extended_atype[:, : self.nloc]  # (nframes, nloc)
         pairwise_rr = self._get_pairwise_dist(

@@ -262,7 +262,6 @@ class DPZBLLinearAtomicModel(LinearAtomicModel):
 
         # use the larger rr based on nlist
         nlist_larger = zbl_nlist if zbl_nnei >= dp_nnei else dp_nlist
-        nloc = nlist_larger.shape[1]
         masked_nlist = np.clip(nlist_larger, 0, None)
         pairwise_rr = PairTabModel._get_pairwise_dist(self.extended_coord, masked_nlist)
 

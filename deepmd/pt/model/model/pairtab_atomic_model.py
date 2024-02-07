@@ -134,7 +134,8 @@ class PairTabModel(nn.Module, BaseAtomicModel):
             extended_coord.requires_grad_(True)
 
         # this will mask all -1 in the nlist
-        masked_nlist = torch.clamp(nlist, 0)
+        mask = nlist >= 0
+        masked_nlist = nlist * mask
 
         atype = extended_atype[:, : self.nloc]  # (nframes, nloc)
         pairwise_rr = self._get_pairwise_dist(
@@ -249,15 +250,13 @@ class PairTabModel(nn.Module, BaseAtomicModel):
         torch.Tensor
             The pairwise distance between the atoms (nframes, nloc, nnei).
         """
-        batch_indices = torch.arange(nlist.shape[0])[:, None, None]
-        expanded_batch_indices = batch_indices.expand_as(nlist)
-        neighbor_atoms = coords[expanded_batch_indices, nlist]
-        loc_atoms = coords[:, : nlist.shape[1], :]
-        loc_atoms = loc_atoms.unsqueeze(2).expand_as(neighbor_atoms)
-        pairwise_dr = loc_atoms - neighbor_atoms
-        # still have to add an epsilon to handle autograd, due to -1 in the nlist,
-        # they don't contribute to the final energy since they are masked.
-        pairwise_rr = torch.clamp(pairwise_dr.square().sum(-1), 1e-20).sqrt()
+        nframes, nloc, nnei = nlist.shape
+        coord_l = coords[:, :nloc].view(nframes, -1, 1, 3)
+        index = nlist.view(nframes, -1).unsqueeze(-1).expand(-1, -1, 3)
+        coord_r = torch.gather(coords, 1, index)
+        coord_r = coord_r.view(nframes, nloc, nnei, 3)
+        diff = coord_r - coord_l
+        pairwise_rr = torch.linalg.norm(diff, dim=-1, keepdim=True).squeeze(-1)
         return pairwise_rr
 
     @staticmethod
