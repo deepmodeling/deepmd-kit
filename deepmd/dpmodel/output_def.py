@@ -172,8 +172,12 @@ class OutputVariableDef:
           are differentiable.
           Virial, the transposed negative gradient with cell tensor times
           cell tensor, will be calculated, see eq 40 JCP 159, 054801 (2023).
+    atomic : bool
+          If the variable is defined for each atom.
     category : int
           The category of the output variable.
+    hessian : bool
+          If hessian is requred
     """
 
     def __init__(
@@ -185,6 +189,7 @@ class OutputVariableDef:
         c_differentiable: bool = False,
         atomic: bool = True,
         category: int = OutputVariableCategory.OUT.value,
+        r_hessian: bool = False,
     ):
         self.name = name
         self.shape = list(shape)
@@ -194,13 +199,15 @@ class OutputVariableDef:
         self.c_differentiable = c_differentiable
         if self.c_differentiable and not self.r_differentiable:
             raise ValueError("c differentiable requires r_differentiable")
-        if not self.reduciable and self.r_differentiable:
-            raise ValueError("only reduciable variable are r differentiable")
-        if not self.reduciable and self.c_differentiable:
-            raise ValueError("only reduciable variable are c differentiable")
         if self.reduciable and not self.atomic:
             raise ValueError("a reduciable variable should be atomic")
         self.category = category
+        self.r_hessian = r_hessian
+        if self.r_hessian:
+            if not self.reduciable:
+                raise ValueError("only reduciable variable can calculate hessian")
+            if not self.r_differentiable:
+                raise ValueError("only r_differentiable variable can calculate hessian")
 
 
 class FittingOutputDef:
@@ -257,6 +264,7 @@ class ModelOutputDef:
         self.def_outp = fit_defs
         self.def_redu = do_reduce(self.def_outp.get_data())
         self.def_derv_r, self.def_derv_c = do_derivative(self.def_outp.get_data())
+        self.def_hess_r, _ = do_derivative(self.def_derv_r)
         self.def_derv_c_redu = do_reduce(self.def_derv_c)
         self.var_defs: Dict[str, OutputVariableDef] = {}
         for ii in [
@@ -265,6 +273,7 @@ class ModelOutputDef:
             self.def_derv_c,
             self.def_derv_r,
             self.def_derv_c_redu,
+            self.def_hess_r,
         ]:
             self.var_defs.update(ii)
 
@@ -291,6 +300,9 @@ class ModelOutputDef:
 
     def keys_derv_r(self):
         return self.def_derv_r.keys()
+
+    def keys_hess_r(self):
+        return self.def_hess_r.keys()
 
     def keys_derv_c(self):
         return self.def_derv_c.keys()
@@ -392,7 +404,9 @@ def do_derivative(
                 rkr,
                 vv.shape + [3],  # noqa: RUF005
                 reduciable=False,
-                r_differentiable=False,
+                r_differentiable=(
+                    vv.r_hessian and vv.category == OutputVariableCategory.OUT.value
+                ),
                 c_differentiable=False,
                 atomic=True,
                 category=apply_operation(vv, OutputVariableOperation.DERV_R),
