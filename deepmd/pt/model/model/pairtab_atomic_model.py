@@ -62,11 +62,11 @@ class PairTabModel(BaseModel, BaseAtomicModel):
                 tab_info,
                 tab_data,
             ) = self.tab.get()  # this returns -> Tuple[np.array, np.array]
-            self.tab_info = torch.from_numpy(tab_info)
-            self.tab_data = torch.from_numpy(tab_data)
+            self.register_buffer("tab_info", torch.from_numpy(tab_info))
+            self.register_buffer("tab_data", torch.from_numpy(tab_data))
         else:
-            self.tab_info = None
-            self.tab_data = None
+            self.register_buffer("tab_info", None)
+            self.register_buffer("tab_data", None)
 
         # self.model_type = "ener"
         # self.model_version = MODEL_VERSION ## this shoud be in the parent class
@@ -118,8 +118,8 @@ class PairTabModel(BaseModel, BaseAtomicModel):
         tab = PairTab.deserialize(data["tab"])
         tab_model = cls(None, rcut, sel)
         tab_model.tab = tab
-        tab_model.tab_info = torch.from_numpy(tab_model.tab.tab_info)
-        tab_model.tab_data = torch.from_numpy(tab_model.tab.tab_data)
+        tab_model.register_buffer("tab_info", torch.from_numpy(tab_model.tab.tab_info))
+        tab_model.register_buffer("tab_data", torch.from_numpy(tab_model.tab.tab_data))
         return tab_model
 
     def forward_atomic(
