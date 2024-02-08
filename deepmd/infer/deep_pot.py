@@ -2,8 +2,10 @@
 from typing import (
     Any,
     Dict,
+    List,
     Optional,
     Tuple,
+    Union,
 )
 
 import numpy as np
@@ -71,7 +73,7 @@ class DeepPot(DeepEval):
         self,
         coords: np.ndarray,
         cells: Optional[np.ndarray],
-        atom_types: np.ndarray,
+        atom_types: Union[List[int], np.ndarray],
         atomic: bool = False,
         fparam: Optional[np.ndarray] = None,
         aparam: Optional[np.ndarray] = None,
@@ -88,7 +90,7 @@ class DeepPot(DeepEval):
         cells : np.ndarray
             The cell vectors of the system, in shape (nframes, 9). If the system
             is not periodic, set it to None.
-        atom_types : List[int]
+        atom_types : List[int] or np.ndarray
             The types of the atoms. If mixed_type is False, the shape is (natoms,);
             otherwise, the shape is (nframes, natoms).
         atomic : bool, optional

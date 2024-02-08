@@ -3,8 +3,10 @@ from abc import (
     abstractmethod,
 )
 from typing import (
+    List,
     Optional,
     Tuple,
+    Union,
 )
 
 import numpy as np
@@ -42,7 +44,7 @@ class DeepTensor(DeepEval):
         self,
         coords: np.ndarray,
         cells: Optional[np.ndarray],
-        atom_types: np.ndarray,
+        atom_types: Union[List[int], np.ndarray],
         atomic: bool = True,
         fparam: Optional[np.ndarray] = None,
         aparam: Optional[np.ndarray] = None,
@@ -60,7 +62,7 @@ class DeepTensor(DeepEval):
             The cell of the region.
             If None then non-PBC is assumed, otherwise using PBC.
             The array should be of size nframes x 9
-        atom_types
+        atom_types : list[int] or np.ndarray
             The atom types
             The list should contain natoms ints
         atomic

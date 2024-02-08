@@ -130,7 +130,12 @@ class DeepEval(DeepEvalBackend):
         return DeepPot
 
     def get_sel_type(self) -> List[int]:
-        """Get the selected atom types of this model."""
+        """Get the selected atom types of this model.
+
+        Only atoms with selected atom types have atomic contribution
+        to the result of the model.
+        If returning an empty list, all atom types are selected.
+        """
         return []
 
     def get_numb_dos(self) -> int:

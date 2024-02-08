@@ -57,6 +57,8 @@ if TYPE_CHECKING:
         Path,
     )
 
+    from deepmd.infer.deep_eval import DeepEval as DeepEvalWrapper
+
 
 class DeepEval(DeepEvalBackend):
     """TensorFlow backend implementation for DeepEval.
@@ -259,7 +261,7 @@ class DeepEval(DeepEvalBackend):
 
     @property
     @lru_cache(maxsize=None)
-    def model_type(self) -> str:
+    def model_type(self) -> "DeepEvalWrapper":
         """Get type of model.
 
         :type:str
@@ -625,7 +627,12 @@ class DeepEval(DeepEvalBackend):
         return self.tmap
 
     def get_sel_type(self) -> Optional[np.ndarray]:
-        """Get selection type."""
+        """Get the selected atom types of this model.
+
+        Only atoms with selected atom types have atomic contribution
+        to the result of the model.
+        If returning an empty list, all atom types are selected.
+        """
         return np.array(self.sel_type).ravel()
 
     def get_dim_fparam(self) -> int:
@@ -681,7 +688,7 @@ class DeepEval(DeepEvalBackend):
         self,
         coords: np.ndarray,
         cells: np.ndarray,
-        atom_types: List[int],
+        atom_types: np.ndarray,
         atomic: bool = False,
         fparam: Optional[np.ndarray] = None,
         aparam: Optional[np.ndarray] = None,
@@ -996,7 +1003,7 @@ class DeepEval(DeepEvalBackend):
         self,
         coords: np.ndarray,
         cells: np.ndarray,
-        atom_types: List[int],
+        atom_types: np.ndarray,
         fparam: Optional[np.ndarray] = None,
         aparam: Optional[np.ndarray] = None,
         efield: Optional[np.ndarray] = None,
@@ -1053,7 +1060,7 @@ class DeepEval(DeepEvalBackend):
         self,
         coords: np.ndarray,
         cells: np.ndarray,
-        atom_types: List[int],
+        atom_types: np.ndarray,
         fparam: Optional[np.ndarray] = None,
         aparam: Optional[np.ndarray] = None,
         efield: Optional[np.ndarray] = None,

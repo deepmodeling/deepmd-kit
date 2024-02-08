@@ -107,7 +107,7 @@ class DeepEvalBackend(ABC):
         self,
         coords: np.ndarray,
         cells: np.ndarray,
-        atom_types: List[int],
+        atom_types: np.ndarray,
         atomic: bool = False,
         fparam: Optional[np.ndarray] = None,
         aparam: Optional[np.ndarray] = None,
@@ -174,7 +174,7 @@ class DeepEvalBackend(ABC):
         self,
         coords: np.ndarray,
         cells: np.ndarray,
-        atom_types: List[int],
+        atom_types: np.ndarray,
         fparam: Optional[np.ndarray] = None,
         aparam: Optional[np.ndarray] = None,
         efield: Optional[np.ndarray] = None,
@@ -258,7 +258,12 @@ class DeepEvalBackend(ABC):
 
     @abstractmethod
     def get_sel_type(self) -> List[int]:
-        """Get the selected atom types of this model."""
+        """Get the selected atom types of this model.
+
+        Only atoms with selected atom types have atomic contribution
+        to the result of the model.
+        If returning an empty list, all atom types are selected.
+        """
 
     def get_numb_dos(self) -> int:
         """Get the number of DOS."""
@@ -481,7 +486,12 @@ class DeepEval(ABC):
         return coords, cells, atom_types, fparam, aparam, nframes, natoms
 
     def get_sel_type(self) -> List[int]:
-        """Get the selected atom types of this model."""
+        """Get the selected atom types of this model.
+
+        Only atoms with selected atom types have atomic contribution
+        to the result of the model.
+        If returning an empty list, all atom types are selected.
+        """
         return self.deep_eval.get_sel_type()
 
     def _get_sel_natoms(self, atype) -> int:

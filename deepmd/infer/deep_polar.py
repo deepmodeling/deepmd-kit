@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    List,
     Optional,
+    Union,
 )
 
 import numpy as np
@@ -43,7 +45,7 @@ class DeepGlobalPolar(DeepTensor):
         self,
         coords: np.ndarray,
         cells: Optional[np.ndarray],
-        atom_types: np.ndarray,
+        atom_types: Union[List[int], np.ndarray],
         atomic: bool = False,
         fparam: Optional[np.ndarray] = None,
         aparam: Optional[np.ndarray] = None,
@@ -61,7 +63,7 @@ class DeepGlobalPolar(DeepTensor):
             The cell of the region.
             If None then non-PBC is assumed, otherwise using PBC.
             The array should be of size nframes x 9
-        atom_types
+        atom_types : list[int] or np.ndarray
             The atom types
             The list should contain natoms ints
         atomic
