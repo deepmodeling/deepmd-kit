@@ -341,13 +341,13 @@ class DeepEval(DeepEvalBackend):
     def _get_output_shape(self, odef, nframes, natoms):
         if odef.category == OutputVariableCategory.DERV_C_REDU:
             # virial
-            return [nframes, *odef.shape[:-2], 9]
+            return [nframes, *odef.shape[:-1], 9]
         elif odef.category == OutputVariableCategory.REDU:
             # energy
             return [nframes, *odef.shape, 1]
         elif odef.category == OutputVariableCategory.DERV_C:
             # atom_virial
-            return [nframes, *odef.shape[:-2], natoms, 9]
+            return [nframes, *odef.shape[:-1], natoms, 9]
         elif odef.category == OutputVariableCategory.DERV_R:
             # force
             return [nframes, *odef.shape[:-1], natoms, 3]
