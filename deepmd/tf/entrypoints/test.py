@@ -14,6 +14,22 @@ from typing import (
 
 import numpy as np
 
+from deepmd.infer.deep_dipole import (
+    DeepDipole,
+)
+from deepmd.infer.deep_dos import (
+    DeepDOS,
+)
+from deepmd.infer.deep_polar import (
+    DeepGlobalPolar,
+    DeepPolar,
+)
+from deepmd.infer.deep_pot import (
+    DeepPot,
+)
+from deepmd.infer.deep_wfc import (
+    DeepWFC,
+)
 from deepmd.tf import (
     DeepPotential,
 )
@@ -115,7 +131,7 @@ def test(
         log.info(f"# testing system : {system}")
 
         # create data class
-        tmap = dp.get_type_map() if dp.model_type == "ener" else None
+        tmap = dp.get_type_map() if isinstance(dp, DeepPot) else None
         data = DeepmdData(
             system,
             set_prefix,
@@ -124,7 +140,7 @@ def test(
             sort_atoms=False,
         )
 
-        if dp.model_type == "ener":
+        if isinstance(dp, DeepPot):
             err = test_ener(
                 dp,
                 data,
@@ -134,7 +150,7 @@ def test(
                 atomic,
                 append_detail=(cc != 0),
             )
-        elif dp.model_type == "dos":
+        elif isinstance(dp, DeepDOS):
             err = test_dos(
                 dp,
                 data,
@@ -144,11 +160,11 @@ def test(
                 atomic,
                 append_detail=(cc != 0),
             )
-        elif dp.model_type == "dipole":
+        elif isinstance(dp, DeepDipole):
             err = test_dipole(dp, data, numb_test, detail_file, atomic)
-        elif dp.model_type == "polar":
+        elif isinstance(dp, DeepPolar):
             err = test_polar(dp, data, numb_test, detail_file, atomic=atomic)
-        elif dp.model_type == "global_polar":  # should not appear in this new version
+        elif isinstance(dp, DeepGlobalPolar):  # should not appear in this new version
             log.warning(
                 "Global polar model is not currently supported. Please directly use the polar mode and change loss parameters."
             )
@@ -166,17 +182,17 @@ def test(
     if len(all_sys) > 1:
         log.info("# ----------weighted average of errors----------- ")
         log.info(f"# number of systems : {len(all_sys)}")
-        if dp.model_type == "ener":
+        if dp == "ener":
             print_ener_sys_avg(avg_err)
-        elif dp.model_type == "dos":
+        elif dp == "dos":
             print_dos_sys_avg(avg_err)
-        elif dp.model_type == "dipole":
+        elif dp == "dipole":
             print_dipole_sys_avg(avg_err)
-        elif dp.model_type == "polar":
+        elif dp == "polar":
             print_polar_sys_avg(avg_err)
-        elif dp.model_type == "global_polar":
+        elif dp == "global_polar":
             print_polar_sys_avg(avg_err)
-        elif dp.model_type == "wfc":
+        elif dp == "wfc":
             print_wfc_sys_avg(avg_err)
         log.info("# ----------------------------------------------- ")
 
