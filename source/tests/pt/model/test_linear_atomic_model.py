@@ -56,8 +56,8 @@ class TestWeightCalculation(unittest.TestCase):
                 [0.25, 0.0, 0.0, 0.0],
             ]
         )
-        extended_atype = torch.tensor([[0, 0]])
-        nlist = torch.tensor([[[1], [-1]]])
+        extended_atype = torch.tensor([[0, 0]]).to(env.DEVICE)
+        nlist = torch.tensor([[[1], [-1]]]).to(env.DEVICE)
 
         ds = DescrptSeA(
             rcut=0.3,
@@ -92,7 +92,7 @@ class TestWeightCalculation(unittest.TestCase):
                         [0.0, dist, 0.0],
                     ],
                 ]
-            )
+            ).to(env.DEVICE)
 
             wgt_model.forward_atomic(extended_coord, extended_atype, nlist)
 
