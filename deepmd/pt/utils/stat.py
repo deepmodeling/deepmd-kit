@@ -110,7 +110,6 @@ def compute_output_bias(energy, natoms, rcond=None):
 def process_stat_path(
     stat_file_dict, stat_file_dir, model_params_dict, descriptor_cls, fitting_cls
 ):
-    model_params_dict["stat_file_dir"] = stat_file_dir
     if stat_file_dict is None:
         stat_file_dict = {}
         if "descriptor" in model_params_dict:
@@ -127,13 +126,11 @@ def process_stat_path(
                 **model_params_dict["fitting_net"],
             )
             stat_file_dict["fitting_net"] = default_stat_file_name_fitting
-    model_params_dict["stat_file_path"] = {
-        key: os.path.join(model_params_dict["stat_file_dir"], stat_file_dict[key])
-        for key in stat_file_dict
+    stat_file_path = {
+        key: os.path.join(stat_file_dir, stat_file_dict[key]) for key in stat_file_dict
     }
 
     has_stat_file_path_list = [
-        os.path.exists(model_params_dict["stat_file_path"][key])
-        for key in stat_file_dict
+        os.path.exists(stat_file_path[key]) for key in stat_file_dict
     ]
-    return False not in has_stat_file_path_list
+    return stat_file_path, False not in has_stat_file_path_list

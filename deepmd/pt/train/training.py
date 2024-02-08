@@ -68,6 +68,7 @@ class Trainer:
         config: Dict[str, Any],
         training_data,
         sampled=None,
+        stat_file_path=None,
         validation_data=None,
         init_model=None,
         restart_model=None,
@@ -180,13 +181,13 @@ class Trainer:
                 valid_numb_batch,
             )
 
-        def get_single_model(_model_params, _sampled):
+        def get_single_model(_model_params, _sampled, _stat_file_path):
             model = get_model(deepcopy(_model_params)).to(DEVICE)
             if not model_params.get("resuming", False):
                 model.compute_or_load_stat(
                     type_map=_model_params["type_map"],
                     sampled=_sampled,
-                    stat_file_path_dict=model_params.get("stat_file_path", None),
+                    stat_file_path_dict=_stat_file_path,
                 )
             return model
 
@@ -237,7 +238,7 @@ class Trainer:
                 self.validation_data,
                 self.valid_numb_batch,
             ) = get_data_loader(training_data, validation_data, training_params)
-            self.model = get_single_model(model_params, sampled)
+            self.model = get_single_model(model_params, sampled, stat_file_path)
         else:
             (
                 self.training_dataloader,
@@ -260,7 +261,9 @@ class Trainer:
                     training_params["data_dict"][model_key],
                 )
                 self.model[model_key] = get_single_model(
-                    model_params["model_dict"][model_key], sampled[model_key]
+                    model_params["model_dict"][model_key],
+                    sampled[model_key],
+                    stat_file_path[model_key],
                 )
 
         # Learning rate

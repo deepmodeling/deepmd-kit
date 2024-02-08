@@ -130,7 +130,7 @@ def get_trainer(
         # stat files
         hybrid_descrpt = model_params_single["descriptor"]["type"] == "hybrid"
         if not hybrid_descrpt:
-            has_stat_file_path = process_stat_path(
+            stat_file_path_single, has_stat_file_path = process_stat_path(
                 data_dict_single.get("stat_file", None),
                 data_dict_single.get("stat_file_dir", f"stat_files{suffix}"),
                 model_params_single,
@@ -180,19 +180,30 @@ def get_trainer(
                     type_split=type_split,
                     noise_settings=noise_settings,
                 )
-        return train_data_single, validation_data_single, sampled_single
+        return (
+            train_data_single,
+            validation_data_single,
+            sampled_single,
+            stat_file_path_single,
+        )
 
     if not multi_task:
-        train_data, validation_data, sampled = prepare_trainer_input_single(
+        (
+            train_data,
+            validation_data,
+            sampled,
+            stat_file_path,
+        ) = prepare_trainer_input_single(
             config["model"], config["training"], config["loss"]
         )
     else:
-        train_data, validation_data, sampled = {}, {}, {}
+        train_data, validation_data, sampled, stat_file_path = {}, {}, {}, {}
         for model_key in config["model"]["model_dict"]:
             (
                 train_data[model_key],
                 validation_data[model_key],
                 sampled[model_key],
+                stat_file_path[model_key],
             ) = prepare_trainer_input_single(
                 config["model"]["model_dict"][model_key],
                 config["training"]["data_dict"][model_key],
@@ -204,6 +215,7 @@ def get_trainer(
         config,
         train_data,
         sampled=sampled,
+        stat_file_path=stat_file_path,
         validation_data=validation_data,
         init_model=init_model,
         restart_model=restart_model,
