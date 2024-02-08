@@ -7,9 +7,6 @@ from typing import (
 )
 
 import torch
-from .model import (
-    BaseModel,
-)
 
 from deepmd.dpmodel import (
     FittingOutputDef,
@@ -21,6 +18,9 @@ from deepmd.utils.pair_tab import (
 
 from .base_atomic_model import (
     BaseAtomicModel,
+)
+from .model import (
+    BaseModel,
 )
 
 
