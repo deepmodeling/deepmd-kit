@@ -109,4 +109,6 @@ class TestDPAtomicModel(unittest.TestCase, TestCaseSingleFrameWithNlist):
         type_map = ["foo", "bar"]
         # TODO: dirty hack to avoid data stat!!!
         md0 = DPAtomicModel(ds, ft, type_map=type_map, resuming=True).to(env.DEVICE)
-        torch.jit.script(md0)
+        md0 = torch.jit.script(md0)
+        self.assertEqual(md0.get_rcut(), self.rcut)
+        self.assertEqual(md0.get_type_map(), type_map)
