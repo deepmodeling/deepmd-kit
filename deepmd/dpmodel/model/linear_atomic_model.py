@@ -186,7 +186,12 @@ class LinearAtomicModel(BaseAtomicModel):
         return models
 
     @abstractmethod
-    def _compute_weight(self, extended_coord: np.ndarray, extended_atype: np.ndarray, nlists_: List[np.ndarray]) -> np.ndarray:
+    def _compute_weight(
+        self,
+        extended_coord: np.ndarray,
+        extended_atype: np.ndarray,
+        nlists_: List[np.ndarray],
+    ) -> np.ndarray:
         """This should be a list of user defined weights that matches the number of models to be combined."""
         raise NotImplementedError
 
@@ -242,7 +247,12 @@ class DPZBLLinearAtomicModel(LinearAtomicModel):
             smin_alpha=smin_alpha,
         )
 
-    def _compute_weight(self, extended_coord: np.ndarray, extended_atype: np.ndarray, nlists_: List[np.ndarray]) -> List[np.ndarray]:
+    def _compute_weight(
+        self,
+        extended_coord: np.ndarray,
+        extended_atype: np.ndarray,
+        nlists_: List[np.ndarray],
+    ) -> List[np.ndarray]:
         """ZBL weight.
 
         Returns

@@ -160,7 +160,7 @@ class LinearAtomicModel(BaseModel, BaseAtomicModel):
             )
 
         weights = self._compute_weight(extended_coord, extended_atype, nlists_)
-        
+
         if self.atomic_bias is not None:
             raise NotImplementedError("Need to add bias in a future PR.")
         else:
@@ -201,7 +201,9 @@ class LinearAtomicModel(BaseModel, BaseAtomicModel):
         return models
 
     @abstractmethod
-    def _compute_weight(self, extended_coord, extended_atype, nlists_) -> List[torch.Tensor]:
+    def _compute_weight(
+        self, extended_coord, extended_atype, nlists_
+    ) -> List[torch.Tensor]:
         """This should be a list of user defined weights that matches the number of models to be combined."""
         raise NotImplementedError
 
@@ -234,7 +236,7 @@ class DPZBLLinearAtomicModel(LinearAtomicModel):
         self.smin_alpha = smin_alpha
 
         # this is a placeholder being updated in _compute_weight, to handle Jit attribute init error.
-        self.zbl_weight = torch.empty(0, dtype=torch.float64) 
+        self.zbl_weight = torch.empty(0, dtype=torch.float64)
 
     def serialize(self) -> dict:
         return {
@@ -260,7 +262,12 @@ class DPZBLLinearAtomicModel(LinearAtomicModel):
             smin_alpha=smin_alpha,
         )
 
-    def _compute_weight(self, extended_coord: torch.Tensor, extended_atype: torch.Tensor, nlists_: List[torch.Tensor]) -> List[torch.Tensor]:
+    def _compute_weight(
+        self,
+        extended_coord: torch.Tensor,
+        extended_atype: torch.Tensor,
+        nlists_: List[torch.Tensor],
+    ) -> List[torch.Tensor]:
         """ZBL weight.
 
         Returns

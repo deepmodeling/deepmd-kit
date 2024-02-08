@@ -10,12 +10,14 @@ import torch
 from deepmd.dpmodel.model.linear_atomic_model import (
     DPZBLLinearAtomicModel as DPDPZBLLinearAtomicModel,
 )
-from deepmd.pt.model.model.ener import ZBLModel
 from deepmd.pt.model.descriptor.se_a import (
     DescrptSeA,
 )
 from deepmd.pt.model.model.dp_atomic_model import (
     DPAtomicModel,
+)
+from deepmd.pt.model.model.ener import (
+    ZBLModel,
 )
 from deepmd.pt.model.model.linear_atomic_model import (
     DPZBLLinearAtomicModel,

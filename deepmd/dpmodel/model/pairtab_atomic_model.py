@@ -122,7 +122,7 @@ class PairTabModel(BaseAtomicModel):
         mask = nlist >= 0
         masked_nlist = nlist * mask
 
-        atype = extended_atype[:, : nloc]  # (nframes, nloc)
+        atype = extended_atype[:, :nloc]  # (nframes, nloc)
         pairwise_rr = self._get_pairwise_dist(
             extended_coord, masked_nlist
         )  # (nframes, nloc, nnei)

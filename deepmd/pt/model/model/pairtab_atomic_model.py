@@ -77,7 +77,7 @@ class PairTabModel(nn.Module, BaseAtomicModel):
             self.sel = sum(sel)
         else:
             raise TypeError("sel must be int or list[int]")
-        
+
     @torch.jit.ignore
     def _set_pairtab(self, tab_file: str, rcut: float) -> PairTab:
         return PairTab(tab_file, rcut)
@@ -141,7 +141,7 @@ class PairTabModel(nn.Module, BaseAtomicModel):
         mask = nlist >= 0
         masked_nlist = nlist * mask
 
-        atype = extended_atype[:, : nloc]  # (nframes, nloc)
+        atype = extended_atype[:, :nloc]  # (nframes, nloc)
         pairwise_rr = self._get_pairwise_dist(
             extended_coord, masked_nlist
         )  # (nframes, nloc, nnei)
