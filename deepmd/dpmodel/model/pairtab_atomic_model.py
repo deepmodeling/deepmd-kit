@@ -115,14 +115,14 @@ class PairTabModel(BaseAtomicModel):
         fparam: Optional[np.ndarray] = None,
         aparam: Optional[np.ndarray] = None,
     ) -> Dict[str, np.ndarray]:
-        self.nframes, self.nloc, self.nnei = nlist.shape
-        extended_coord = extended_coord.reshape(self.nframes, -1, 3)
+        nframes, nloc, nnei = nlist.shape
+        extended_coord = extended_coord.reshape(nframes, -1, 3)
 
         # this will mask all -1 in the nlist
         mask = nlist >= 0
         masked_nlist = nlist * mask
 
-        atype = extended_atype[:, : self.nloc]  # (nframes, nloc)
+        atype = extended_atype[:, : nloc]  # (nframes, nloc)
         pairwise_rr = self._get_pairwise_dist(
             extended_coord, masked_nlist
         )  # (nframes, nloc, nnei)
@@ -141,7 +141,7 @@ class PairTabModel(BaseAtomicModel):
         atomic_energy = 0.5 * np.sum(
             np.where(nlist != -1, raw_atomic_energy, np.zeros_like(raw_atomic_energy)),
             axis=-1,
-        ).reshape(self.nframes, self.nloc, 1)
+        ).reshape(nframes, nloc, 1)
 
         return {"energy": atomic_energy}
 
@@ -180,17 +180,18 @@ class PairTabModel(BaseAtomicModel):
         This function is used to calculate the pairwise energy between two atoms.
         It uses a table containing cubic spline coefficients calculated in PairTab.
         """
+        nframes, nloc, nnei = nlist.shape
         rmin = self.tab_info[0]
         hh = self.tab_info[1]
         hi = 1.0 / hh
 
-        self.nspline = int(self.tab_info[2] + 0.1)
+        nspline = int(self.tab_info[2] + 0.1)
 
         uu = (rr - rmin) * hi  # this is broadcasted to (nframes,nloc,nnei)
 
         # if nnei of atom 0 has -1 in the nlist, uu would be 0.
         # this is to handle the nlist where the mask is set to 0, so that we don't raise exception for those atoms.
-        uu = np.where(nlist != -1, uu, self.nspline + 1)
+        uu = np.where(nlist != -1, uu, nspline + 1)
 
         if np.any(uu < 0):
             raise Exception("coord go beyond table lower boundary")
@@ -199,14 +200,14 @@ class PairTabModel(BaseAtomicModel):
 
         uu -= idx
         table_coef = self._extract_spline_coefficient(
-            i_type, j_type, idx, self.tab_data, self.nspline
+            i_type, j_type, idx, self.tab_data, nspline
         )
-        table_coef = table_coef.reshape(self.nframes, self.nloc, self.nnei, 4)
+        table_coef = table_coef.reshape(nframes, nloc, nnei, 4)
         ener = self._calculate_ener(table_coef, uu)
         # here we need to overwrite energy to zero at rcut and beyond.
         mask_beyond_rcut = rr >= self.rcut
         # also overwrite values beyond extrapolation to zero
-        extrapolation_mask = rr >= self.tab.rmin + self.nspline * self.tab.hh
+        extrapolation_mask = rr >= self.tab.rmin + nspline * self.tab.hh
         ener[mask_beyond_rcut] = 0
         ener[extrapolation_mask] = 0
 

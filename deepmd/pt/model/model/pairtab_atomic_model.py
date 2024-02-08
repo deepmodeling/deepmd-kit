@@ -54,7 +54,7 @@ class PairTabModel(nn.Module, BaseAtomicModel):
         super().__init__()
         self.tab_file = tab_file
         self.rcut = rcut
-        self.tab = PairTab(self.tab_file, rcut=rcut)
+        self.tab = self._set_pairtab(tab_file, rcut)
 
         # handle deserialization with no input file
         if self.tab_file is not None:
@@ -77,6 +77,10 @@ class PairTabModel(nn.Module, BaseAtomicModel):
             self.sel = sum(sel)
         else:
             raise TypeError("sel must be int or list[int]")
+        
+    @torch.jit.ignore
+    def _set_pairtab(self, tab_file: str, rcut: float) -> PairTab:
+        return PairTab(tab_file, rcut)
 
     def fitting_output_def(self) -> FittingOutputDef:
         return FittingOutputDef(
@@ -120,16 +124,16 @@ class PairTabModel(nn.Module, BaseAtomicModel):
 
     def forward_atomic(
         self,
-        extended_coord,
-        extended_atype,
-        nlist,
+        extended_coord: torch.Tensor,
+        extended_atype: torch.Tensor,
+        nlist: torch.Tensor,
         mapping: Optional[torch.Tensor] = None,
         fparam: Optional[torch.Tensor] = None,
         aparam: Optional[torch.Tensor] = None,
         do_atomic_virial: bool = False,
     ) -> Dict[str, torch.Tensor]:
-        self.nframes, self.nloc, self.nnei = nlist.shape
-        extended_coord = extended_coord.view(self.nframes, -1, 3)
+        nframes, nloc, nnei = nlist.shape
+        extended_coord = extended_coord.view(nframes, -1, 3)
         if self.do_grad():
             extended_coord.requires_grad_(True)
 
@@ -137,12 +141,12 @@ class PairTabModel(nn.Module, BaseAtomicModel):
         mask = nlist >= 0
         masked_nlist = nlist * mask
 
-        atype = extended_atype[:, : self.nloc]  # (nframes, nloc)
+        atype = extended_atype[:, : nloc]  # (nframes, nloc)
         pairwise_rr = self._get_pairwise_dist(
             extended_coord, masked_nlist
         )  # (nframes, nloc, nnei)
         self.tab_data = self.tab_data.view(
-            self.tab.ntypes, self.tab.ntypes, self.tab.nspline, 4
+            int(self.tab_info[-1]), int(self.tab_info[-1]), int(self.tab_info[2]), 4
         )
 
         # to calculate the atomic_energy, we need 3 tensors, i_type, j_type, pairwise_rr
@@ -200,17 +204,18 @@ class PairTabModel(nn.Module, BaseAtomicModel):
         This function is used to calculate the pairwise energy between two atoms.
         It uses a table containing cubic spline coefficients calculated in PairTab.
         """
+        nframes, nloc, nnei = nlist.shape
         rmin = self.tab_info[0]
         hh = self.tab_info[1]
         hi = 1.0 / hh
 
-        self.nspline = int(self.tab_info[2] + 0.1)
+        nspline = int(self.tab_info[2] + 0.1)
 
         uu = (rr - rmin) * hi  # this is broadcasted to (nframes,nloc,nnei)
 
         # if nnei of atom 0 has -1 in the nlist, uu would be 0.
         # this is to handle the nlist where the mask is set to 0, so that we don't raise exception for those atoms.
-        uu = torch.where(nlist != -1, uu, self.nspline + 1)
+        uu = torch.where(nlist != -1, uu, nspline + 1)
 
         if torch.any(uu < 0):
             raise Exception("coord go beyond table lower boundary")
@@ -220,15 +225,15 @@ class PairTabModel(nn.Module, BaseAtomicModel):
         uu -= idx
 
         table_coef = self._extract_spline_coefficient(
-            i_type, j_type, idx, self.tab_data, self.nspline
+            i_type, j_type, idx, self.tab_data, nspline
         )
-        table_coef = table_coef.view(self.nframes, self.nloc, self.nnei, 4)
+        table_coef = table_coef.view(nframes, nloc, nnei, 4)
         ener = self._calculate_ener(table_coef, uu)
 
         # here we need to overwrite energy to zero at rcut and beyond.
         mask_beyond_rcut = rr >= self.rcut
         # also overwrite values beyond extrapolation to zero
-        extrapolation_mask = rr >= self.tab.rmin + self.nspline * self.tab.hh
+        extrapolation_mask = rr >= rmin + nspline * hh
         ener[mask_beyond_rcut] = 0
         ener[extrapolation_mask] = 0
 

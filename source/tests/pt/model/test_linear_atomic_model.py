@@ -10,6 +10,7 @@ import torch
 from deepmd.dpmodel.model.linear_atomic_model import (
     DPZBLLinearAtomicModel as DPDPZBLLinearAtomicModel,
 )
+from deepmd.pt.model.model.ener import ZBLModel
 from deepmd.pt.model.descriptor.se_a import (
     DescrptSeA,
 )
@@ -153,6 +154,7 @@ class TestIntegration(unittest.TestCase, TestCaseSingleFrameWithNlist):
             env.DEVICE
         )
         self.md2 = DPDPZBLLinearAtomicModel.deserialize(self.md0.serialize())
+        self.md3 = ZBLModel(dp_model, zbl_model, sw_rmin=0.1, sw_rmax=0.25)
 
     def test_self_consistency(self):
         args = [
@@ -172,6 +174,7 @@ class TestIntegration(unittest.TestCase, TestCaseSingleFrameWithNlist):
 
     def test_jit(self):
         torch.jit.script(self.md1)
+        torch.jit.script(self.md3)
 
 
 if __name__ == "__main__":
