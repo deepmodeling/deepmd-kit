@@ -82,6 +82,9 @@ class PairTabModel(BaseAtomicModel):
     def get_rcut(self) -> float:
         return self.rcut
 
+    def get_type_map(self) -> Optional[List[str]]:
+        return None
+
     def get_sel(self) -> List[int]:
         return [self.sel]
 
