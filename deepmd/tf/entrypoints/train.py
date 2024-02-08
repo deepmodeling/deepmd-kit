@@ -31,9 +31,6 @@ from deepmd.tf.model.model import (
     Model,
 )
 from deepmd.tf.train.run_options import (
-    BUILD,
-    CITATION,
-    WELCOME,
     RunOptions,
 )
 from deepmd.tf.train.trainer import (
@@ -158,9 +155,6 @@ def train(
         name="train_attr/training_script",
         dtype=tf.string,
     )
-
-    for message in WELCOME + CITATION + BUILD:
-        log.info(message)
 
     run_opt.print_resource_summary()
     if origin_type_map is not None:

@@ -4,9 +4,6 @@
 import ctypes
 import os
 import platform
-from configparser import (
-    ConfigParser,
-)
 from importlib import (
     import_module,
     reload,
@@ -17,7 +14,6 @@ from pathlib import (
 from typing import (
     TYPE_CHECKING,
     Any,
-    Dict,
 )
 
 import numpy as np
@@ -25,10 +21,12 @@ from packaging.version import (
     Version,
 )
 
-import deepmd.lib
 from deepmd.env import (
+    GLOBAL_CONFIG,
     GLOBAL_ENER_FLOAT_PRECISION,
     GLOBAL_NP_FLOAT_PRECISION,
+    SHARED_LIB_DIR,
+    SHARED_LIB_MODULE,
 )
 from deepmd.env import get_default_nthreads as get_tf_default_nthreads
 from deepmd.env import (
@@ -112,11 +110,9 @@ __all__ = [
     "ATTENTION_LAYER_PATTERN",
     "REMOVE_SUFFIX_DICT",
     "TF_VERSION",
+    "tf_py_version",
 ]
 
-SHARED_LIB_MODULE = "lib"
-SHARED_LIB_DIR = Path(deepmd.lib.__path__[0])
-CONFIG_FILE = SHARED_LIB_DIR / "run_config.ini"
 
 # Python library version
 try:
@@ -398,27 +394,6 @@ def get_module(module_name: str) -> "ModuleType":
         return module
 
 
-def _get_package_constants(
-    config_file: Path = CONFIG_FILE,
-) -> Dict[str, str]:
-    """Read package constants set at compile time by CMake to dictionary.
-
-    Parameters
-    ----------
-    config_file : str, optional
-        path to CONFIG file, by default "run_config.ini"
-
-    Returns
-    -------
-    Dict[str, str]
-        dictionary with package constants
-    """
-    config = ConfigParser()
-    config.read(config_file)
-    return dict(config.items("CONFIG"))
-
-
-GLOBAL_CONFIG = _get_package_constants()
 if GLOBAL_CONFIG["enable_tensorflow"] == "0":
     raise RuntimeError(
         "TensorFlow backend is not built. To enable it, "

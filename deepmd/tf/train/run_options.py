@@ -22,57 +22,57 @@ from deepmd.tf.cluster import (
 from deepmd.tf.env import (
     GLOBAL_CONFIG,
     TF_VERSION,
-    get_tf_default_nthreads,
-    global_float_prec,
     tf,
 )
 from deepmd.tf.loggers import (
     set_log_handles,
 )
+from deepmd.utils.summary import SummaryPrinter as BaseSummaryPrinter
 
 if TYPE_CHECKING:
     import horovod.tensorflow as HVD
 
 
 __all__ = [
-    "WELCOME",
-    "CITATION",
-    "BUILD",
     "RunOptions",
 ]
 
 log = logging.getLogger(__name__)
 
 
-# http://patorjk.com/software/taag. Font:Big"
-WELCOME = (
-    r" _____               _____   __  __  _____           _     _  _   ",
-    r"|  __ \             |  __ \ |  \/  ||  __ \         | |   (_)| |  ",
-    r"| |  | |  ___   ___ | |__) || \  / || |  | | ______ | | __ _ | |_ ",
-    r"| |  | | / _ \ / _ \|  ___/ | |\/| || |  | ||______|| |/ /| || __|",
-    r"| |__| ||  __/|  __/| |     | |  | || |__| |        |   < | || |_ ",
-    r"|_____/  \___| \___||_|     |_|  |_||_____/         |_|\_\|_| \__|",
-)
+class SummaryPrinter(BaseSummaryPrinter):
+    """Summary printer for TensorFlow."""
 
-CITATION = (
-    "Please read and cite:",
-    "Wang, Zhang, Han and E, Comput.Phys.Comm. 228, 178-184 (2018)",
-    "Zeng et al, J. Chem. Phys., 159, 054801 (2023)",
-    "See https://deepmd.rtfd.io/credits/ for details.",
-)
+    def __init__(self, compute_device: str, ngpus: int) -> None:
+        super().__init__()
+        self.compute_device = compute_device
+        self.ngpus = ngpus
 
-_sep = "\n                      "
-BUILD = (
-    f"installed to:         {GLOBAL_CONFIG['install_prefix']}",
-    f"source :              {GLOBAL_CONFIG['git_summ']}",
-    f"source brach:         {GLOBAL_CONFIG['git_branch']}",
-    f"source commit:        {GLOBAL_CONFIG['git_hash']}",
-    f"source commit at:     {GLOBAL_CONFIG['git_date']}",
-    f"build float prec:     {global_float_prec}",
-    f"build variant:        {GLOBAL_CONFIG['dp_variant']}",
-    f"build with tf inc:    {GLOBAL_CONFIG['tf_include_dir']}",
-    f"build with tf lib:    {GLOBAL_CONFIG['tf_libs'].replace(';', _sep)}",
-)
+    def is_built_with_cuda(self) -> bool:
+        """Check if the backend is built with CUDA."""
+        return tf.test.is_built_with_cuda()
+
+    def is_built_with_rocm(self) -> bool:
+        """Check if the backend is built with ROCm."""
+        return tf.test.is_built_with_rocm()
+
+    def get_compute_device(self) -> str:
+        """Get Compute device."""
+        return self.compute_device
+
+    def get_ngpus(self) -> int:
+        """Get the number of GPUs."""
+        return self.ngpus
+
+    def get_backend_info(self) -> dict:
+        """Get backend information."""
+        return {
+            "Backend": "TensorFlow",
+            "TF ver": tf.version.GIT_VERSION,
+            "build with TF ver": TF_VERSION,
+            "build with TF inc": GLOBAL_CONFIG["tf_include_dir"].replace(";", "\n"),
+            "build with TF lib": GLOBAL_CONFIG["tf_libs"].replace(";", "\n"),
+        }
 
 
 class RunOptions:
@@ -148,25 +148,7 @@ class RunOptions:
 
     def print_resource_summary(self):
         """Print build and current running cluster configuration summary."""
-        log.info("---Summary of the training---------------------------------------")
-        if self.is_distrib:
-            log.info("distributed")
-            log.info(f"world size:           {self.world_size}")
-            log.info(f"my rank:              {self.my_rank}")
-            log.info(f"node list:            {self.nodelist}")
-        log.info(f"running on:           {self.nodename}")
-        log.info(f"computing device:     {self.my_device}")
-        if tf.test.is_built_with_cuda():
-            env_value = os.environ.get("CUDA_VISIBLE_DEVICES", "unset")
-            log.info(f"CUDA_VISIBLE_DEVICES: {env_value}")
-        if hasattr(tf.test, "is_built_with_rocm") and tf.test.is_built_with_rocm():
-            env_value = os.environ.get("HIP_VISIBLE_DEVICES", "unset")
-            log.info(f"HIP_VISIBLE_DEVICES:  {env_value}")
-        log.info(f"Count of visible GPU: {len(self.gpus or [])}")
-        intra, inter = get_tf_default_nthreads()
-        log.info(f"num_intra_threads:    {intra:d}")
-        log.info(f"num_inter_threads:    {inter:d}")
-        log.info("-----------------------------------------------------------------")
+        SummaryPrinter(self.my_device, len(self.gpus or []))()
 
     def _setup_logger(
         self,
