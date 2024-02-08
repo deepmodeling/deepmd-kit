@@ -2,6 +2,9 @@
 import logging
 from typing import (
     Callable,
+    List,
+    Optional,
+    Union,
 )
 
 import numpy as np
@@ -94,35 +97,35 @@ class Fitting(torch.nn.Module, BaseFitting):
         else:
             raise NotImplementedError
 
-    def compute_output_stats(self, merged):
-        """Update the output bias for fitting net."""
-        raise NotImplementedError
-
-    def init_fitting_stat(self, result_dict):
-        """Initialize the model bias by the statistics."""
-        raise NotImplementedError
-
     @classmethod
-    def get_stat_name(cls, config, ntypes):
+    def get_stat_name(cls, ntypes, type_name="ener", **kwargs):
         """
         Get the name for the statistic file of the fitting.
         Usually use the combination of fitting net name and ntypes as the statistic file name.
         """
         if cls is not Fitting:
             raise NotImplementedError("get_stat_name is not implemented!")
-        fitting_type = config.get("type", "ener")
-        return Fitting.__plugins.plugins[fitting_type].get_stat_name(config, ntypes)
+        fitting_type = type_name
+        return Fitting.__plugins.plugins[fitting_type].get_stat_name(
+            ntypes, type_name, **kwargs
+        )
 
-    def get_data_stat_key(self):
+    @property
+    def data_stat_key(self):
         """
         Get the keys for the data statistic of the fitting.
         Return a list of statistic names needed, such as "bias_atom_e".
         """
-        raise NotImplementedError("get_data_stat_key is not implemented!")
+        raise NotImplementedError("data_stat_key is not implemented!")
 
-    def set_stats(self, type_map, sampled, stat_file_path):
+    def compute_or_load_stat(
+        self,
+        type_map: List[str],
+        sampled=None,
+        stat_file_path: Optional[Union[str, List[str]]] = None,
+    ):
         """
-        Set the statistics parameters for the fitting net.
+        Compute or load the statistics parameters of the fitting net.
         Calculate and save the output bias to `stat_file_path`
         if `sampled` is not None, otherwise load them from `stat_file_path`.
 
@@ -136,7 +139,7 @@ class Fitting(torch.nn.Module, BaseFitting):
         stat_file_path
             The path to the statistics files.
         """
-        fitting_stat_key = self.get_data_stat_key()
+        fitting_stat_key = self.data_stat_key
         if sampled is not None:
             tmp_dict = self.compute_output_stats(sampled)
             result_dict = {key: tmp_dict[key] for key in fitting_stat_key}
@@ -145,7 +148,7 @@ class Fitting(torch.nn.Module, BaseFitting):
         else:  # load the statistics results
             assert stat_file_path is not None, "No stat file to load!"
             result_dict = self.load_stats(type_map, stat_file_path)
-        self.init_fitting_stat(result_dict)
+        self.init_fitting_stat(**result_dict)
 
     def save_stats(self, result_dict, stat_file_path: str):
         """
@@ -178,7 +181,7 @@ class Fitting(torch.nn.Module, BaseFitting):
         result_dict
             The dictionary of statistics results.
         """
-        fitting_stat_key = self.get_data_stat_key()
+        fitting_stat_key = self.data_stat_key
         target_type_map = type_map
         log.info(f"Loading stat file from {stat_file_path}")
         stats = np.load(stat_file_path)

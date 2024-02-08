@@ -52,15 +52,13 @@ def make_base_fitting(
             """Calculate fitting."""
             pass
 
-        @abstractmethod
         def compute_output_stats(self, merged):
             """Update the output bias for fitting net."""
-            pass
+            raise NotImplementedError
 
-        @abstractmethod
-        def init_fitting_stat(self, result_dict):
+        def init_fitting_stat(self, **kwargs):
             """Initialize the model bias by the statistics."""
-            pass
+            raise NotImplementedError
 
         @abstractmethod
         def serialize(self) -> dict:

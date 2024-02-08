@@ -208,9 +208,8 @@ class TestEnergyModelHybrid(unittest.TestCase, SmoothTest):
 class TestEnergyModelZBL(unittest.TestCase, SmoothTest):
     def setUp(self):
         model_params = copy.deepcopy(model_zbl)
-        sampled = make_sample(model_params)
         self.type_split = False
-        self.model = get_zbl_model(model_params, sampled).to(env.DEVICE)
+        self.model = get_zbl_model(model_params).to(env.DEVICE)
         self.epsilon, self.aprec = None, None
 
 

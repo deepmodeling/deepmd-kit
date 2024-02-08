@@ -63,6 +63,7 @@ from deepmd.pt.utils.multi_task import (
 )
 from deepmd.pt.utils.stat import (
     make_stat_input,
+    process_stat_path,
 )
 from deepmd.utils.summary import SummaryPrinter as BaseSummaryPrinter
 
@@ -128,37 +129,14 @@ def get_trainer(
 
         # stat files
         hybrid_descrpt = model_params_single["descriptor"]["type"] == "hybrid"
-        has_stat_file_path = True
         if not hybrid_descrpt:
-            model_params_single["stat_file_dir"] = data_dict_single.get(
-                "stat_file_dir", f"stat_files{suffix}"
+            has_stat_file_path = process_stat_path(
+                data_dict_single.get("stat_file", None),
+                data_dict_single.get("stat_file_dir", f"stat_files{suffix}"),
+                model_params_single,
+                Descriptor,
+                Fitting,
             )
-            stat_file = data_dict_single.get("stat_file", None)
-            if stat_file is None:
-                stat_file = {}
-                if "descriptor" in model_params_single:
-                    default_stat_file_name_descrpt = Descriptor.get_stat_name(
-                        model_params_single["descriptor"],
-                        len(model_params_single["type_map"]),
-                    )
-                    stat_file["descriptor"] = default_stat_file_name_descrpt
-                if "fitting_net" in model_params_single:
-                    default_stat_file_name_fitting = Fitting.get_stat_name(
-                        model_params_single["fitting_net"],
-                        len(model_params_single["type_map"]),
-                    )
-                    stat_file["fitting_net"] = default_stat_file_name_fitting
-            model_params_single["stat_file_path"] = {
-                key: os.path.join(model_params_single["stat_file_dir"], stat_file[key])
-                for key in stat_file
-            }
-
-            has_stat_file_path_list = [
-                os.path.exists(model_params_single["stat_file_path"][key])
-                for key in stat_file
-            ]
-            if False in has_stat_file_path_list:
-                has_stat_file_path = False
         else:  ### TODO hybrid descriptor not implemented
             raise NotImplementedError(
                 "data stat for hybrid descriptor is not implemented!"

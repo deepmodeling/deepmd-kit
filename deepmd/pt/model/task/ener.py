@@ -203,7 +203,8 @@ class InvarFitting(Fitting):
         else:
             raise KeyError(key)
 
-    def get_data_stat_key(self):
+    @property
+    def data_stat_key(self):
         """
         Get the keys for the data statistic of the fitting.
         Return a list of statistic names needed, such as "bias_atom_e".
@@ -221,9 +222,10 @@ class InvarFitting(Fitting):
         bias_atom_e = tmp[:, 0]
         return {"bias_atom_e": bias_atom_e}
 
-    def init_fitting_stat(self, result_dict):
+    def init_fitting_stat(self, bias_atom_e=None, **kwargs):
+        assert True not in [x is None for x in [bias_atom_e]]
         self.bias_atom_e.copy_(
-            torch.tensor(result_dict["bias_atom_e"], device=env.DEVICE).view(
+            torch.tensor(bias_atom_e, device=env.DEVICE).view(
                 [self.ntypes, self.dim_out]
             )
         )
@@ -423,12 +425,12 @@ class EnergyFittingNet(InvarFitting):
         )
 
     @classmethod
-    def get_stat_name(cls, config, ntypes):
+    def get_stat_name(cls, ntypes, type_name="ener", **kwargs):
         """
         Get the name for the statistic file of the fitting.
         Usually use the combination of fitting net name and ntypes as the statistic file name.
         """
-        fitting_type = config.get("type", "ener")
+        fitting_type = type_name
         assert fitting_type in ["ener"]
         return f"stat_file_fitting_ener_ntypes{ntypes}.npz"
 
@@ -525,12 +527,12 @@ class EnergyFittingNetDirect(Fitting):
         raise NotImplementedError
 
     @classmethod
-    def get_stat_name(cls, config, ntypes):
+    def get_stat_name(cls, ntypes, type_name="ener", **kwargs):
         """
         Get the name for the statistic file of the fitting.
         Usually use the combination of fitting net name and ntypes as the statistic file name.
         """
-        fitting_type = config.get("type", "ener")
+        fitting_type = type_name
         assert fitting_type in ["direct_force", "direct_force_ener"]
         return f"stat_file_fitting_direct_ntypes{ntypes}.npz"
 

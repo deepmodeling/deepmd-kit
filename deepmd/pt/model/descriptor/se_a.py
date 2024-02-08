@@ -111,18 +111,24 @@ class DescrptSeA(Descriptor):
         """Update mean and stddev for descriptor elements."""
         return self.sea.compute_input_stats(merged)
 
-    def init_desc_stat(self, stat_dict):
-        self.sea.init_desc_stat(stat_dict)
+    def init_desc_stat(
+        self, sumr=None, suma=None, sumn=None, sumr2=None, suma2=None, **kwargs
+    ):
+        assert True not in [x is None for x in [sumr, suma, sumn, sumr2, suma2]]
+        self.sea.init_desc_stat(sumr, suma, sumn, sumr2, suma2)
 
     @classmethod
-    def get_stat_name(cls, config, ntypes):
+    def get_stat_name(
+        cls, ntypes, type_name, rcut=None, rcut_smth=None, sel=None, **kwargs
+    ):
         """
         Get the name for the statistic file of the descriptor.
         Usually use the combination of descriptor name, rcut, rcut_smth and sel as the statistic file name.
         """
-        descrpt_type = config["type"]
+        descrpt_type = type_name
         assert descrpt_type in ["se_e2_a"]
-        return f'stat_file_descrpt_sea_rcut{config["rcut"]:.2f}_smth{config["rcut_smth"]:.2f}_sel{config["sel"]}_ntypes{ntypes}.npz'
+        assert True not in [x is None for x in [rcut, rcut_smth, sel]]
+        return f"stat_file_descrpt_sea_rcut{rcut:.2f}_smth{rcut_smth:.2f}_sel{sel}_ntypes{ntypes}.npz"
 
     @classmethod
     def get_data_process_key(cls, config):
@@ -135,7 +141,8 @@ class DescrptSeA(Descriptor):
         assert descrpt_type in ["se_e2_a"]
         return {"sel": config["sel"], "rcut": config["rcut"]}
 
-    def get_data_stat_key(self):
+    @property
+    def data_stat_key(self):
         """
         Get the keys for the data statistic of the descriptor.
         Return a list of statistic names needed, such as "sumr", "suma" or "sumn".
@@ -407,14 +414,7 @@ class DescrptBlockSeA(DescriptorBlock):
             "suma2": suma2,
         }
 
-    def init_desc_stat(self, stat_dict):
-        for key in ["sumr", "suma", "sumn", "sumr2", "suma2"]:
-            assert key in stat_dict, f"Statistics {key} not found in the dictionary!"
-        sumr = stat_dict["sumr"]
-        suma = stat_dict["suma"]
-        sumn = stat_dict["sumn"]
-        sumr2 = stat_dict["sumr2"]
-        suma2 = stat_dict["suma2"]
+    def init_desc_stat(self, sumr, suma, sumn, sumr2, suma2):
         all_davg = []
         all_dstd = []
         for type_i in range(self.ntypes):

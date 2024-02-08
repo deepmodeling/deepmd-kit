@@ -60,15 +60,17 @@ class Descriptor(torch.nn.Module, BaseDescriptor):
         return Descriptor.__plugins.register(key)
 
     @classmethod
-    def get_stat_name(cls, config, ntypes):
+    def get_stat_name(cls, ntypes, type_name, **kwargs):
         """
         Get the name for the statistic file of the descriptor.
         Usually use the combination of descriptor name, rcut, rcut_smth and sel as the statistic file name.
         """
         if cls is not Descriptor:
             raise NotImplementedError("get_stat_name is not implemented!")
-        descrpt_type = config["type"]
-        return Descriptor.__plugins.plugins[descrpt_type].get_stat_name(config, ntypes)
+        descrpt_type = type_name
+        return Descriptor.__plugins.plugins[descrpt_type].get_stat_name(
+            ntypes, type_name, **kwargs
+        )
 
     @classmethod
     def get_data_process_key(cls, config):
@@ -82,21 +84,22 @@ class Descriptor(torch.nn.Module, BaseDescriptor):
         descrpt_type = config["type"]
         return Descriptor.__plugins.plugins[descrpt_type].get_data_process_key(config)
 
-    def get_data_stat_key(self):
+    @property
+    def data_stat_key(self):
         """
         Get the keys for the data statistic of the descriptor.
         Return a list of statistic names needed, such as "sumr", "suma" or "sumn".
         """
-        raise NotImplementedError("get_data_stat_key is not implemented!")
+        raise NotImplementedError("data_stat_key is not implemented!")
 
-    def set_stats(
+    def compute_or_load_stat(
         self,
         type_map: List[str],
-        sampled,
+        sampled=None,
         stat_file_path: Optional[Union[str, List[str]]] = None,
     ):
         """
-        Set the statistics parameters for the descriptor.
+        Compute or load the statistics parameters of the descriptor.
         Calculate and save the mean and standard deviation of the descriptor to `stat_file_path`
         if `sampled` is not None, otherwise load them from `stat_file_path`.
 
@@ -111,7 +114,7 @@ class Descriptor(torch.nn.Module, BaseDescriptor):
             The path to the statistics files.
         """
         # TODO support hybrid descriptor
-        descrpt_stat_key = self.get_data_stat_key()
+        descrpt_stat_key = self.data_stat_key
         if sampled is not None:  # compute the statistics results
             tmp_dict = self.compute_input_stats(sampled)
             result_dict = {key: tmp_dict[key] for key in descrpt_stat_key}
@@ -121,7 +124,7 @@ class Descriptor(torch.nn.Module, BaseDescriptor):
         else:  # load the statistics results
             assert stat_file_path is not None, "No stat file to load!"
             result_dict = self.load_stats(type_map, stat_file_path)
-        self.init_desc_stat(result_dict)
+        self.init_desc_stat(**result_dict)
 
     def save_stats(self, result_dict, stat_file_path: Union[str, List[str]]):
         """
@@ -159,7 +162,7 @@ class Descriptor(torch.nn.Module, BaseDescriptor):
         result_dict
             The dictionary of statistics results.
         """
-        descrpt_stat_key = self.get_data_stat_key()
+        descrpt_stat_key = self.data_stat_key
         target_type_map = type_map
         if not isinstance(stat_file_path, list):
             log.info(f"Loading stat file from {stat_file_path}")
@@ -272,15 +275,13 @@ class DescriptorBlock(torch.nn.Module, ABC):
         """Returns the embedding dimension."""
         pass
 
-    @abstractmethod
     def compute_input_stats(self, merged):
         """Update mean and stddev for DescriptorBlock elements."""
-        pass
+        raise NotImplementedError
 
-    @abstractmethod
-    def init_desc_stat(self, stat_dict):
-        """Initialize the model bias by the statistics."""
-        pass
+    def init_desc_stat(self, **kwargs):
+        """Initialize mean and stddev by the statistics."""
+        raise NotImplementedError
 
     def share_params(self, base_class, shared_level, resume=False):
         assert (

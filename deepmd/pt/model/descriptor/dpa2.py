@@ -313,14 +313,10 @@ class DescrptDPA2(Descriptor):
             "suma2": suma2,
         }
 
-    def init_desc_stat(self, stat_dict):
-        for key in ["sumr", "suma", "sumn", "sumr2", "suma2"]:
-            assert key in stat_dict, f"Statistics {key} not found in the dictionary!"
-        sumr = stat_dict["sumr"]
-        suma = stat_dict["suma"]
-        sumn = stat_dict["sumn"]
-        sumr2 = stat_dict["sumr2"]
-        suma2 = stat_dict["suma2"]
+    def init_desc_stat(
+        self, sumr=None, suma=None, sumn=None, sumr2=None, suma2=None, **kwargs
+    ):
+        assert True not in [x is None for x in [sumr, suma, sumn, sumr2, suma2]]
         for ii, descrpt in enumerate([self.repinit, self.repformers]):
             stat_dict_ii = {
                 "sumr": sumr[ii],
@@ -329,19 +325,41 @@ class DescrptDPA2(Descriptor):
                 "sumr2": sumr2[ii],
                 "suma2": suma2[ii],
             }
-            descrpt.init_desc_stat(stat_dict_ii)
+            descrpt.init_desc_stat(**stat_dict_ii)
 
     @classmethod
-    def get_stat_name(cls, config, ntypes):
+    def get_stat_name(
+        cls,
+        ntypes,
+        type_name,
+        repinit_rcut=None,
+        repinit_rcut_smth=None,
+        repinit_nsel=None,
+        repformer_rcut=None,
+        repformer_rcut_smth=None,
+        repformer_nsel=None,
+        **kwargs,
+    ):
         """
         Get the name for the statistic file of the descriptor.
         Usually use the combination of descriptor name, rcut, rcut_smth and sel as the statistic file name.
         """
-        descrpt_type = config["type"]
+        descrpt_type = type_name
         assert descrpt_type in ["dpa2"]
+        assert True not in [
+            x is None
+            for x in [
+                repinit_rcut,
+                repinit_rcut_smth,
+                repinit_nsel,
+                repformer_rcut,
+                repformer_rcut_smth,
+                repformer_nsel,
+            ]
+        ]
         return (
-            f'stat_file_descrpt_dpa2_repinit_rcut{config["repinit_rcut"]:.2f}_smth{config["repinit_rcut_smth"]:.2f}_sel{config["repinit_nsel"]}'
-            f'_repformer_rcut{config["repformer_rcut"]:.2f}_smth{config["repformer_rcut_smth"]:.2f}_sel{config["repformer_nsel"]}_ntypes{ntypes}.npz'
+            f"stat_file_descrpt_dpa2_repinit_rcut{repinit_rcut:.2f}_smth{repinit_rcut_smth:.2f}_sel{repinit_nsel}"
+            f"_repformer_rcut{repformer_rcut:.2f}_smth{repformer_rcut_smth:.2f}_sel{repformer_nsel}_ntypes{ntypes}.npz"
         )
 
     @classmethod
@@ -358,7 +376,8 @@ class DescrptDPA2(Descriptor):
             "rcut": [config["repinit_rcut"], config["repformer_rcut"]],
         }
 
-    def get_data_stat_key(self):
+    @property
+    def data_stat_key(self):
         """
         Get the keys for the data statistic of the descriptor.
         Return a list of statistic names needed, such as "sumr", "suma" or "sumn".

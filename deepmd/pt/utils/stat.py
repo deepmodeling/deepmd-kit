@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
+import os
 
 import numpy as np
 import torch
@@ -104,3 +105,35 @@ def compute_output_bias(energy, natoms, rcond=None):
     sys_tynatom = torch.cat(natoms)[:, 2:].cpu()
     energy_coef, _, _, _ = np.linalg.lstsq(sys_tynatom, sys_ener, rcond)
     return energy_coef
+
+
+def process_stat_path(
+    stat_file_dict, stat_file_dir, model_params_dict, descriptor_cls, fitting_cls
+):
+    model_params_dict["stat_file_dir"] = stat_file_dir
+    if stat_file_dict is None:
+        stat_file_dict = {}
+        if "descriptor" in model_params_dict:
+            default_stat_file_name_descrpt = descriptor_cls.get_stat_name(
+                len(model_params_dict["type_map"]),
+                model_params_dict["descriptor"]["type"],
+                **model_params_dict["descriptor"],
+            )
+            stat_file_dict["descriptor"] = default_stat_file_name_descrpt
+        if "fitting_net" in model_params_dict:
+            default_stat_file_name_fitting = fitting_cls.get_stat_name(
+                len(model_params_dict["type_map"]),
+                model_params_dict["fitting_net"].get("type", "ener"),
+                **model_params_dict["fitting_net"],
+            )
+            stat_file_dict["fitting_net"] = default_stat_file_name_fitting
+    model_params_dict["stat_file_path"] = {
+        key: os.path.join(model_params_dict["stat_file_dir"], stat_file_dict[key])
+        for key in stat_file_dict
+    }
+
+    has_stat_file_path_list = [
+        os.path.exists(model_params_dict["stat_file_path"][key])
+        for key in stat_file_dict
+    ]
+    return False not in has_stat_file_path_list

@@ -189,8 +189,10 @@ class DPAtomicModel(BaseModel, BaseAtomicModel):
                 stat_file_dir = os.path.dirname(stat_file_path_dict["descriptor"][0])
             if not os.path.exists(stat_file_dir):
                 os.mkdir(stat_file_dir)
-        self.descriptor.set_stats(type_map, sampled, stat_file_path_dict["descriptor"])
+        self.descriptor.compute_or_load_stat(
+            type_map, sampled, stat_file_path_dict["descriptor"]
+        )
         if self.fitting_net is not None:
-            self.fitting_net.set_stats(
+            self.fitting_net.compute_or_load_stat(
                 type_map, sampled, stat_file_path_dict["fitting_net"]
             )

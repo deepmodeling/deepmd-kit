@@ -227,14 +227,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
             "suma2": suma2,
         }
 
-    def init_desc_stat(self, stat_dict):
-        for key in ["sumr", "suma", "sumn", "sumr2", "suma2"]:
-            assert key in stat_dict, f"Statistics {key} not found in the dictionary!"
-        sumr = stat_dict["sumr"]
-        suma = stat_dict["suma"]
-        sumn = stat_dict["sumn"]
-        sumr2 = stat_dict["sumr2"]
-        suma2 = stat_dict["suma2"]
+    def init_desc_stat(self, sumr, suma, sumn, sumr2, suma2):
         all_davg = []
         all_dstd = []
         for type_i in range(self.ntypes):

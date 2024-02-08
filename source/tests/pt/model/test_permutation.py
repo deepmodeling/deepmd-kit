@@ -299,9 +299,8 @@ class TestForceModelHybrid(unittest.TestCase, PermutationTest):
 class TestEnergyModelZBL(unittest.TestCase, PermutationTest):
     def setUp(self):
         model_params = copy.deepcopy(model_zbl)
-        sampled = make_sample(model_params)
         self.type_split = False
-        self.model = get_zbl_model(model_params, sampled).to(env.DEVICE)
+        self.model = get_zbl_model(model_params).to(env.DEVICE)
 
 
 # class TestEnergyFoo(unittest.TestCase):
