@@ -21,6 +21,7 @@ def detect_backend(filename: str) -> DPBackend:
     filename : str
         The model file name
     """
+    filename = str(filename).lower()
     if filename.endswith(".pb"):
         return DPBackend.TensorFlow
     elif filename.endswith(".pth") or filename.endswith(".pt"):

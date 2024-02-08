@@ -13,9 +13,7 @@ import numpy as np
 from deepmd.tf.common import (
     make_default_mesh,
 )
-from deepmd.tf.infer.deep_eval import (
-    DeepEval,
-)
+from deepmd.tf.infer.deep_eval import DeepEvalOld as DeepEval
 from deepmd.tf.utils.sess import (
     run_sess,
 )
