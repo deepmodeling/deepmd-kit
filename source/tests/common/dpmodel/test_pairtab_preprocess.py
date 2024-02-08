@@ -273,3 +273,7 @@ class TestPairTabPreprocessUneven(unittest.TestCase):
             rtol=1e-03,
             atol=1e-03,
         )
+
+
+if __name__ == "__main__":
+    unittest.main(warnings="ignore")

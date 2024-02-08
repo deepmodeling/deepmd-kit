@@ -7,6 +7,7 @@ import torch
 
 from deepmd.pt.model.model import (
     get_model,
+    get_zbl_model,
 )
 from deepmd.pt.utils import (
     env,
@@ -20,6 +21,7 @@ from .test_permutation import (
     model_dpa1,
     model_dpa2,
     model_se_e2_a,
+    model_zbl,
 )
 
 
@@ -190,3 +192,19 @@ class TestEnergyModelDPAUniVirial(unittest.TestCase, VirialTest):
         model_params = copy.deepcopy(model_dpa2)
         self.type_split = True
         self.model = get_model(model_params, sampled).to(env.DEVICE)
+
+
+class TestEnergyModelZBLForce(unittest.TestCase, ForceTest):
+    def setUp(self):
+        model_params = copy.deepcopy(model_zbl)
+        sampled = make_sample(model_params)
+        self.type_split = False
+        self.model = get_zbl_model(model_params, sampled).to(env.DEVICE)
+
+
+class TestEnergyModelZBLVirial(unittest.TestCase, VirialTest):
+    def setUp(self):
+        model_params = copy.deepcopy(model_zbl)
+        sampled = make_sample(model_params)
+        self.type_split = False
+        self.model = get_zbl_model(model_params, sampled).to(env.DEVICE)
