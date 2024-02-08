@@ -82,7 +82,10 @@ class PairTabModel(BaseAtomicModel):
     def get_rcut(self) -> float:
         return self.rcut
 
-    def get_sel(self) -> int:
+    def get_sel(self) -> List[int]:
+        return [self.sel]
+
+    def get_nsel(self) -> int:
         return self.sel
 
     def distinguish_types(self) -> bool:
@@ -109,21 +112,20 @@ class PairTabModel(BaseAtomicModel):
         extended_atype,
         nlist,
         mapping: Optional[np.ndarray] = None,
-        do_atomic_virial: bool = False,
+        fparam: Optional[np.ndarray] = None,
+        aparam: Optional[np.ndarray] = None,
     ) -> Dict[str, np.ndarray]:
-        self.nframes, self.nloc, self.nnei = nlist.shape
-        extended_coord = extended_coord.reshape(self.nframes, -1, 3)
+        nframes, nloc, nnei = nlist.shape
+        extended_coord = extended_coord.reshape(nframes, -1, 3)
 
         # this will mask all -1 in the nlist
-        masked_nlist = np.clip(nlist, 0, None)
+        mask = nlist >= 0
+        masked_nlist = nlist * mask
 
-        atype = extended_atype[:, : self.nloc]  # (nframes, nloc)
-        pairwise_dr = self._get_pairwise_dist(
-            extended_coord
-        )  # (nframes, nall, nall, 3)
-        pairwise_rr = np.sqrt(
-            np.sum(np.power(pairwise_dr, 2), axis=-1)
-        )  # (nframes, nall, nall)
+        atype = extended_atype[:, :nloc]  # (nframes, nloc)
+        pairwise_rr = self._get_pairwise_dist(
+            extended_coord, masked_nlist
+        )  # (nframes, nloc, nnei)
         self.tab_data = self.tab_data.reshape(
             self.tab.ntypes, self.tab.ntypes, self.tab.nspline, 4
         )
@@ -133,13 +135,13 @@ class PairTabModel(BaseAtomicModel):
             np.arange(extended_atype.shape[0])[:, None, None], masked_nlist
         ]
 
-        # slice rr to get (nframes, nloc, nnei)
-        rr = np.take_along_axis(pairwise_rr[:, : self.nloc, :], masked_nlist, 2)
-        raw_atomic_energy = self._pair_tabulated_inter(nlist, atype, j_type, rr)
+        raw_atomic_energy = self._pair_tabulated_inter(
+            nlist, atype, j_type, pairwise_rr
+        )
         atomic_energy = 0.5 * np.sum(
             np.where(nlist != -1, raw_atomic_energy, np.zeros_like(raw_atomic_energy)),
             axis=-1,
-        ).reshape(self.nframes, self.nloc, 1)
+        ).reshape(nframes, nloc, 1)
 
         return {"energy": atomic_energy}
 
@@ -178,17 +180,18 @@ class PairTabModel(BaseAtomicModel):
         This function is used to calculate the pairwise energy between two atoms.
         It uses a table containing cubic spline coefficients calculated in PairTab.
         """
+        nframes, nloc, nnei = nlist.shape
         rmin = self.tab_info[0]
         hh = self.tab_info[1]
         hi = 1.0 / hh
 
-        self.nspline = int(self.tab_info[2] + 0.1)
+        nspline = int(self.tab_info[2] + 0.1)
 
         uu = (rr - rmin) * hi  # this is broadcasted to (nframes,nloc,nnei)
 
         # if nnei of atom 0 has -1 in the nlist, uu would be 0.
         # this is to handle the nlist where the mask is set to 0, so that we don't raise exception for those atoms.
-        uu = np.where(nlist != -1, uu, self.nspline + 1)
+        uu = np.where(nlist != -1, uu, nspline + 1)
 
         if np.any(uu < 0):
             raise Exception("coord go beyond table lower boundary")
@@ -197,34 +200,42 @@ class PairTabModel(BaseAtomicModel):
 
         uu -= idx
         table_coef = self._extract_spline_coefficient(
-            i_type, j_type, idx, self.tab_data, self.nspline
+            i_type, j_type, idx, self.tab_data, nspline
         )
-        table_coef = table_coef.reshape(self.nframes, self.nloc, self.nnei, 4)
-        ener = self._calcualte_ener(table_coef, uu)
+        table_coef = table_coef.reshape(nframes, nloc, nnei, 4)
+        ener = self._calculate_ener(table_coef, uu)
         # here we need to overwrite energy to zero at rcut and beyond.
         mask_beyond_rcut = rr >= self.rcut
         # also overwrite values beyond extrapolation to zero
-        extrapolation_mask = rr >= self.tab.rmin + self.nspline * self.tab.hh
+        extrapolation_mask = rr >= self.tab.rmin + nspline * self.tab.hh
         ener[mask_beyond_rcut] = 0
         ener[extrapolation_mask] = 0
 
         return ener
 
     @staticmethod
-    def _get_pairwise_dist(coords: np.ndarray) -> np.ndarray:
+    def _get_pairwise_dist(coords: np.ndarray, nlist: np.ndarray) -> np.ndarray:
         """Get pairwise distance `dr`.
 
         Parameters
         ----------
         coords : np.ndarray
-            The coordinate of the atoms shape of (nframes, nall, 3).
+            The coordinate of the atoms, shape of (nframes, nall, 3).
+        nlist
+            The masked nlist, shape of (nframes, nloc, nnei).
 
         Returns
         -------
         np.ndarray
-            The pairwise distance between the atoms (nframes, nall, nall, 3).
+            The pairwise distance between the atoms (nframes, nloc, nnei).
         """
-        return np.expand_dims(coords, 2) - np.expand_dims(coords, 1)
+        batch_indices = np.arange(nlist.shape[0])[:, None, None]
+        neighbor_atoms = coords[batch_indices, nlist]
+        loc_atoms = coords[:, : nlist.shape[1], :]
+        pairwise_dr = loc_atoms[:, :, None, :] - neighbor_atoms
+        pairwise_rr = np.sqrt(np.sum(np.power(pairwise_dr, 2), axis=-1))
+
+        return pairwise_rr
 
     @staticmethod
     def _extract_spline_coefficient(
@@ -279,7 +290,7 @@ class PairTabModel(BaseAtomicModel):
         return final_coef
 
     @staticmethod
-    def _calcualte_ener(coef: np.ndarray, uu: np.ndarray) -> np.ndarray:
+    def _calculate_ener(coef: np.ndarray, uu: np.ndarray) -> np.ndarray:
         """Calculate energy using spline coeeficients.
 
         Parameters

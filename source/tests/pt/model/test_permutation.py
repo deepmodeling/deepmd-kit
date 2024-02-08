@@ -9,6 +9,7 @@ from deepmd.pt.infer.deep_eval import (
 )
 from deepmd.pt.model.model import (
     get_model,
+    get_zbl_model,
 )
 from deepmd.pt.utils import (
     env,
@@ -18,6 +19,30 @@ dtype = torch.float64
 
 model_se_e2_a = {
     "type_map": ["O", "H", "B"],
+    "descriptor": {
+        "type": "se_e2_a",
+        "sel": [46, 92, 4],
+        "rcut_smth": 0.50,
+        "rcut": 6.00,
+        "neuron": [25, 50, 100],
+        "resnet_dt": False,
+        "axis_neuron": 16,
+        "seed": 1,
+    },
+    "fitting_net": {
+        "neuron": [24, 24, 24],
+        "resnet_dt": True,
+        "seed": 1,
+    },
+    "data_stat_nbatch": 20,
+}
+
+model_zbl = {
+    "type_map": ["O", "H", "B"],
+    "use_srtab": "source/tests/pt/model/water/data/zbl_tab_potential/H2O_tab_potential.txt",
+    "smin_alpha": 0.1,
+    "sw_rmin": 0.2,
+    "sw_rmax": 1.0,
     "descriptor": {
         "type": "se_e2_a",
         "sel": [46, 92, 4],
@@ -269,6 +294,14 @@ class TestForceModelHybrid(unittest.TestCase, PermutationTest):
         self.type_split = True
         self.test_virial = False
         self.model = get_model(model_params).to(env.DEVICE)
+
+
+class TestEnergyModelZBL(unittest.TestCase, PermutationTest):
+    def setUp(self):
+        model_params = copy.deepcopy(model_zbl)
+        sampled = make_sample(model_params)
+        self.type_split = False
+        self.model = get_zbl_model(model_params, sampled).to(env.DEVICE)
 
 
 # class TestEnergyFoo(unittest.TestCase):
