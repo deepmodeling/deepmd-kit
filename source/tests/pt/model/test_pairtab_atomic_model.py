@@ -11,7 +11,9 @@ from deepmd.dpmodel.model.pairtab_atomic_model import PairTabModel as DPPairTabM
 from deepmd.pt.model.model.pairtab_atomic_model import (
     PairTabModel,
 )
-from deepmd.pt.utils.utils import to_numpy_array
+from deepmd.pt.utils.utils import (
+    to_numpy_array,
+)
 
 
 class TestPairTab(unittest.TestCase):
@@ -118,6 +120,7 @@ class TestPairTab(unittest.TestCase):
         np.testing.assert_allclose(
             result["energy"], to_numpy_array(expected_result["energy"]), 0.0001, 0.0001
         )
+
 
 class TestPairTabTwoAtoms(unittest.TestCase):
     @patch("numpy.loadtxt")
