@@ -62,7 +62,8 @@ class DeepPot(DeepEval):
                         "energy",
                         shape=[1],
                         reduciable=True,
-                        differentiable=True,
+                        r_differentiable=True,
+                        c_differentiable=True,
                         atomic=True,
                     ),
                 ]

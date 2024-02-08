@@ -229,7 +229,8 @@ class DeepTensor(DeepEval):
                         self.output_tensor_name,
                         shape=[-1],
                         reduciable=True,
-                        differentiable=True,
+                        r_differentiable=True,
+                        c_differentiable=True,
                         atomic=True,
                     ),
                 ]
