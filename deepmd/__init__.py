@@ -14,6 +14,31 @@ except ImportError:
         __version__,
     )
 
+
+def DeepPotential(*args, **kwargs):
+    """Factory function that forwards to DeepEval (for compatbility
+    and performance).
+
+    Parameters
+    ----------
+    *args
+        positional arguments
+    **kwargs
+        keyword arguments
+
+    Returns
+    -------
+    DeepEval
+        potentials
+    """
+    from deepmd.infer import (
+        DeepPotential,
+    )
+
+    return DeepPotential(*args, **kwargs)
+
+
 __all__ = [
     "__version__",
+    "DeepPotential",
 ]
