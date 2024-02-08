@@ -1,19 +1,37 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
 import os
+from configparser import (
+    ConfigParser,
+)
+from pathlib import (
+    Path,
+)
 from typing import (
+    Dict,
     Tuple,
 )
 
 import numpy as np
 
+import deepmd.lib
+
 __all__ = [
     "GLOBAL_NP_FLOAT_PRECISION",
     "GLOBAL_ENER_FLOAT_PRECISION",
     "global_float_prec",
+    "GLOBAL_CONFIG",
+    "SHARED_LIB_MODULE",
+    "SHARED_LIB_DIR",
 ]
 
 log = logging.getLogger(__name__)
+
+
+SHARED_LIB_MODULE = "lib"
+SHARED_LIB_DIR = Path(deepmd.lib.__path__[0])
+CONFIG_FILE = SHARED_LIB_DIR / "run_config.ini"
+
 
 # FLOAT_PREC
 dp_float_prec = os.environ.get("DP_INTERFACE_PREC", "high").lower()
@@ -111,3 +129,31 @@ def get_default_nthreads() -> Tuple[int, int]:
             os.environ.get("TF_INTRA_OP_PARALLELISM_THREADS", "0"),
         )
     )
+
+
+def _get_package_constants(
+    config_file: Path = CONFIG_FILE,
+) -> Dict[str, str]:
+    """Read package constants set at compile time by CMake to dictionary.
+
+    Parameters
+    ----------
+    config_file : str, optional
+        path to CONFIG file, by default "run_config.ini"
+
+    Returns
+    -------
+    Dict[str, str]
+        dictionary with package constants
+    """
+    if not config_file.is_file():
+        raise FileNotFoundError(
+            f"CONFIG file not found at {config_file}. "
+            "Please check if the package is installed correctly."
+        )
+    config = ConfigParser()
+    config.read(config_file)
+    return dict(config.items("CONFIG"))
+
+
+GLOBAL_CONFIG = _get_package_constants()

@@ -169,7 +169,7 @@ def build_multiple_neighbor_list(
     nall = coord1.shape[1]
     coord0 = coord1[:, :nloc, :]
     nlist_mask = nlist == -1
-    tnlist_0 = nlist
+    tnlist_0 = nlist.copy()
     tnlist_0[nlist_mask] = 0
     index = np.tile(tnlist_0.reshape(nb, nloc * nsel, 1), [1, 1, 3])
     coord2 = np.take_along_axis(coord1, index, axis=1).reshape(nb, nloc, nsel, 3)
