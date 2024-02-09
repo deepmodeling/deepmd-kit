@@ -18,11 +18,25 @@ from deepmd.dpmodel.output_def import (
     OutputVariableCategory,
     OutputVariableDef,
 )
+from deepmd.infer.deep_dipole import (
+    DeepDipole,
+)
+from deepmd.infer.deep_dos import (
+    DeepDOS,
+)
+from deepmd.infer.deep_eval import DeepEval as DeepEvalWrapper
 from deepmd.infer.deep_eval import (
     DeepEvalBackend,
 )
+from deepmd.infer.deep_polar import (
+    DeepGlobalPolar,
+    DeepPolar,
+)
 from deepmd.infer.deep_pot import (
     DeepPot,
+)
+from deepmd.infer.deep_wfc import (
+    DeepWFC,
 )
 from deepmd.pt.model.model import (
     get_model,
@@ -43,8 +57,6 @@ from deepmd.pt.utils.env import (
 
 if TYPE_CHECKING:
     import ase.neighborlist
-
-    from deepmd.infer.deep_eval import DeepEval as DeepEvalWrapper
 
 
 class DeepEval(DeepEvalBackend):
@@ -127,7 +139,22 @@ class DeepEval(DeepEvalBackend):
     @property
     def model_type(self) -> "DeepEvalWrapper":
         """The the evaluator of the model type."""
-        return DeepPot
+        output_def = self.dp.model["Default"].model_output_def()
+        var_defs = output_def.var_defs
+        if "energy" in var_defs:
+            return DeepPot
+        elif "dos" in var_defs:
+            return DeepDOS
+        elif "dipole" in var_defs:
+            return DeepDipole
+        elif "polar" in var_defs:
+            return DeepPolar
+        elif "global_polar" in var_defs:
+            return DeepGlobalPolar
+        elif "wfc" in var_defs:
+            return DeepWFC
+        else:
+            raise RuntimeError("Unknown model type")
 
     def get_sel_type(self) -> List[int]:
         """Get the selected atom types of this model.
