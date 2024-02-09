@@ -112,7 +112,7 @@ class TestWeightCalculation(unittest.TestCase):
                 [0.0, 0.0],
             ],
             dtype=torch.float64,
-        )
+        ).to(env.DEVICE)
         torch.testing.assert_close(results, excepted_res, rtol=0.0001, atol=0.0001)
 
 
