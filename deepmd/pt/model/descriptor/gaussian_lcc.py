@@ -158,7 +158,7 @@ class DescrptGaussianLcc(Descriptor):
         """Update mean and stddev for descriptor elements."""
         return [], [], [], [], []
 
-    def init_desc_stat(self, sumr, suma, sumn, sumr2, suma2):
+    def init_desc_stat(self, sumr, suma, sumn, sumr2, suma2, **kwargs):
         pass
 
     def forward(

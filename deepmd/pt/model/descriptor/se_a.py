@@ -414,7 +414,7 @@ class DescrptBlockSeA(DescriptorBlock):
             "suma2": suma2,
         }
 
-    def init_desc_stat(self, sumr, suma, sumn, sumr2, suma2):
+    def init_desc_stat(self, sumr, suma, sumn, sumr2, suma2, **kwargs):
         all_davg = []
         all_dstd = []
         for type_i in range(self.ntypes):
