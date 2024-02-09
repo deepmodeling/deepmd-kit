@@ -111,9 +111,8 @@ def test(
         # only float has inf, but should work for min
         numb_test = float("inf")
     if datafile is not None:
-        datalist = open(datafile)
-        all_sys = datalist.read().splitlines()
-        datalist.close()
+        with open(datafile) as datalist:
+            all_sys = datalist.read().splitlines()
     else:
         all_sys = expand_sys_str(system)
 
