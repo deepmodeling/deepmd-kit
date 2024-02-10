@@ -178,4 +178,6 @@ class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
             "aparam_inv_std",
         ]:
             ifn0[ii] = torch.tensor(foo, dtype=dtype, device=env.DEVICE)
-            np.testing.assert_allclose(foo, ifn0[ii].detach().cpu().numpy())
+            np.testing.assert_allclose(
+                foo, np.reshape(ifn0[ii].detach().cpu().numpy(), foo.shape)
+            )

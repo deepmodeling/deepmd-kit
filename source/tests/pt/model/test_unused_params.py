@@ -15,7 +15,6 @@ from deepmd.pt.utils import (
 )
 
 from .test_permutation import (
-    make_sample,
     model_dpa2,
 )
 
@@ -57,8 +56,7 @@ class TestUnusedParamsDPA2(unittest.TestCase):
             self._test_unused(model)
 
     def _test_unused(self, model_params):
-        sampled = make_sample(model_params)
-        self.model = get_model(model_params, sampled).to(env.DEVICE)
+        self.model = get_model(model_params).to(env.DEVICE)
         natoms = 5
         cell = torch.rand([3, 3], dtype=dtype).to(env.DEVICE)
         cell = (cell + cell.T) + 5.0 * torch.eye(3).to(env.DEVICE)

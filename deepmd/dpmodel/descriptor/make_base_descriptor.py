@@ -69,15 +69,13 @@ def make_base_descriptor(
             """
             pass
 
-        @abstractmethod
         def compute_input_stats(self, merged):
             """Update mean and stddev for descriptor elements."""
-            pass
+            raise NotImplementedError
 
-        @abstractmethod
-        def init_desc_stat(self, sumr, suma, sumn, sumr2, suma2):
+        def init_desc_stat(self, **kwargs):
             """Initialize the model bias by the statistics."""
-            pass
+            raise NotImplementedError
 
         @abstractmethod
         def fwd(

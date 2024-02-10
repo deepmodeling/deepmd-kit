@@ -15,7 +15,6 @@ from deepmd.pt.utils import (
 )
 
 from .test_permutation_denoise import (
-    make_sample,
     model_dpa2,
 )
 
@@ -106,12 +105,11 @@ class TestDenoiseModelDPA2(unittest.TestCase, SmoothDenoiseTest):
         model_params_sample["descriptor"]["sel"] = model_params_sample["descriptor"][
             "repinit_nsel"
         ]
-        sampled = make_sample(model_params_sample)
         model_params = copy.deepcopy(model_dpa2)
         model_params["descriptor"]["sel"] = 8
         model_params["descriptor"]["rcut_smth"] = 3.5
         self.type_split = True
-        self.model = get_model(model_params, sampled).to(env.DEVICE)
+        self.model = get_model(model_params).to(env.DEVICE)
         self.epsilon, self.aprec = None, None
         self.epsilon = 1e-7
         self.aprec = 1e-5
@@ -127,11 +125,10 @@ class TestDenoiseModelDPA2_1(unittest.TestCase, SmoothDenoiseTest):
         model_params_sample["descriptor"]["sel"] = model_params_sample["descriptor"][
             "repinit_nsel"
         ]
-        sampled = make_sample(model_params_sample)
         model_params = copy.deepcopy(model_dpa2)
         # model_params["descriptor"]["combine_grrg"] = True
         self.type_split = True
-        self.model = get_model(model_params, sampled).to(env.DEVICE)
+        self.model = get_model(model_params).to(env.DEVICE)
         self.epsilon, self.aprec = None, None
         self.epsilon = 1e-7
         self.aprec = 1e-5
@@ -141,9 +138,8 @@ class TestDenoiseModelDPA2_1(unittest.TestCase, SmoothDenoiseTest):
 # class TestDenoiseModelHybrid(unittest.TestCase, TestSmoothDenoise):
 #     def setUp(self):
 #         model_params = copy.deepcopy(model_hybrid_denoise)
-#         sampled = make_sample(model_params)
 #         self.type_split = True
-#         self.model = get_model(model_params, sampled).to(env.DEVICE)
+#         self.model = get_model(model_params).to(env.DEVICE)
 #         self.epsilon, self.aprec = None, None
 #         self.epsilon = 1e-7
 #         self.aprec = 1e-5

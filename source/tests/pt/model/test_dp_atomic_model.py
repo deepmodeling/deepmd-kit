@@ -50,8 +50,7 @@ class TestDPAtomicModel(unittest.TestCase, TestCaseSingleFrameWithNlist):
             distinguish_types=ds.distinguish_types(),
         ).to(env.DEVICE)
         type_map = ["foo", "bar"]
-        # TODO: dirty hack to avoid data stat!!!
-        md0 = DPAtomicModel(ds, ft, type_map=type_map, resuming=True).to(env.DEVICE)
+        md0 = DPAtomicModel(ds, ft, type_map=type_map).to(env.DEVICE)
         md1 = DPAtomicModel.deserialize(md0.serialize()).to(env.DEVICE)
         args = [
             to_torch_tensor(ii) for ii in [self.coord_ext, self.atype_ext, self.nlist]
@@ -107,6 +106,5 @@ class TestDPAtomicModel(unittest.TestCase, TestCaseSingleFrameWithNlist):
             distinguish_types=ds.distinguish_types(),
         ).to(env.DEVICE)
         type_map = ["foo", "bar"]
-        # TODO: dirty hack to avoid data stat!!!
-        md0 = DPAtomicModel(ds, ft, type_map=type_map, resuming=True).to(env.DEVICE)
+        md0 = DPAtomicModel(ds, ft, type_map=type_map).to(env.DEVICE)
         torch.jit.script(md0)

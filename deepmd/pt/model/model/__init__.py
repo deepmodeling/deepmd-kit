@@ -23,7 +23,7 @@ from .model import (
 )
 
 
-def get_zbl_model(model_params, sampled=None):
+def get_zbl_model(model_params):
     model_params = copy.deepcopy(model_params)
     ntypes = len(model_params["type_map"])
     # descriptor
@@ -41,9 +41,7 @@ def get_zbl_model(model_params, sampled=None):
         if "ener" in fitting_net["type"]:
             fitting_net["return_energy"] = True
     fitting = Fitting(**fitting_net)
-    dp_model = DPAtomicModel(
-        descriptor, fitting, type_map=model_params["type_map"], resuming=True
-    )
+    dp_model = DPAtomicModel(descriptor, fitting, type_map=model_params["type_map"])
     # pairtab
     filepath = model_params["use_srtab"]
     pt_model = PairTabModel(
@@ -60,7 +58,7 @@ def get_zbl_model(model_params, sampled=None):
     )
 
 
-def get_model(model_params, sampled=None):
+def get_model(model_params):
     model_params = copy.deepcopy(model_params)
     ntypes = len(model_params["type_map"])
     # descriptor
@@ -79,16 +77,7 @@ def get_model(model_params, sampled=None):
             fitting_net["return_energy"] = True
     fitting = Fitting(**fitting_net)
 
-    return EnergyModel(
-        descriptor,
-        fitting,
-        type_map=model_params["type_map"],
-        type_embedding=model_params.get("type_embedding", None),
-        resuming=model_params.get("resuming", False),
-        stat_file_dir=model_params.get("stat_file_dir", None),
-        stat_file_path=model_params.get("stat_file_path", None),
-        sampled=sampled,
-    )
+    return EnergyModel(descriptor, fitting, type_map=model_params["type_map"])
 
 
 __all__ = [
