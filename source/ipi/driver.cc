@@ -102,7 +102,6 @@ int main(int argc, char *argv[]) {
   std::vector<double> dcoord_tmp;
   std::vector<int> dtype = cvt.get_type();
   std::vector<double> dbox(9, 0);
-  SimulationRegion<double> region;
   double *msg_buff = NULL;
   double ener;
   double virial[9];
