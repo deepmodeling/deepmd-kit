@@ -159,7 +159,6 @@ int main(int argc, char *argv[]) {
       for (int dd = 0; dd < 9; ++dd) {
         dbox[dd] = cell_h[(dd % 3) * 3 + (dd / 3)] * cvt_len;
       }
-      region.reinitBox(&dbox[0]);
 
       // get number of atoms
       readbuffer_(&socket, (char *)(&cbuf), sizeof(int32_t));
