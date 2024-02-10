@@ -12,7 +12,6 @@ namespace deepmd_compat = deepmd;
 #include "deepmd.hpp"
 namespace deepmd_compat = deepmd::hpp;
 #endif
-#include "SimulationRegion.h"
 #include "XyzFileManager.h"
 #include "json.hpp"
 #include "sockets.h"
@@ -47,25 +46,6 @@ char *trimwhitespace(char *str) {
   // Write new null terminator
   *(end + 1) = 0;
   return str;
-}
-
-void normalize_coord(std::vector<double> &coord,
-                     const SimulationRegion<double> &region) {
-  int natoms = coord.size() / 3;
-
-  for (int ii = 0; ii < natoms; ++ii) {
-    double inter[3];
-    region.phys2Inter(inter, &coord[3 * ii]);
-    for (int dd = 0; dd < 3; ++dd) {
-      inter[dd] -= int(floor(inter[dd]));
-      if (inter[dd] < 0) {
-        inter[dd] += 1.;
-      } else if (inter[dd] >= 1) {
-        inter[dd] -= 1.;
-      }
-    }
-    region.inter2Phys(&coord[3 * ii], inter);
-  }
 }
 
 int main(int argc, char *argv[]) {
@@ -203,7 +183,6 @@ int main(int argc, char *argv[]) {
         dcoord_tmp[ii] = msg_buff[ii] * cvt_len;
       }
       cvt.forward(dcoord, dcoord_tmp, 3);
-      normalize_coord(dcoord, region);
 
       // nnp over writes ener, force and virial
       nnp_inter.compute(dener, dforce_tmp, dvirial, dcoord, dtype, dbox);
