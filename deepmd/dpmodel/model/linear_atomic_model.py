@@ -64,7 +64,7 @@ class LinearAtomicModel(BaseAtomicModel):
 
     def get_type_map(self) -> Optional[List[str]]:
         """Get the type map."""
-        return self.models[0].get_type_map()
+        raise NotImplementedError("TODO: get_type_map should be implemented")
 
     def get_model_rcuts(self) -> List[float]:
         """Get the cut-off radius for each individual models."""

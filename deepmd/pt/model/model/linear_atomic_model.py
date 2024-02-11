@@ -69,7 +69,7 @@ class LinearAtomicModel(BaseModel, BaseAtomicModel):
     @torch.jit.export
     def get_type_map(self) -> List[str]:
         """Get the type map."""
-        return self.models[0].get_type_map()
+        raise NotImplementedError("TODO: implement this method")
 
     def get_model_rcuts(self) -> List[float]:
         """Get the cut-off radius for each individual models."""

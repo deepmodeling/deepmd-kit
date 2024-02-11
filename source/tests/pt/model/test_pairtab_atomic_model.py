@@ -83,7 +83,8 @@ class TestPairTab(unittest.TestCase):
     def test_jit(self):
         model = torch.jit.script(self.model)
         self.assertEqual(model.get_rcut(), 0.02)
-        self.assertEqual(model.get_type_map(), None)
+        with self.assertRaises(torch.jit.Error):
+            self.assertEqual(model.get_type_map(), None)
 
     def test_deserialize(self):
         model1 = PairTabModel.deserialize(self.model.serialize())
@@ -104,7 +105,8 @@ class TestPairTab(unittest.TestCase):
 
         model1 = torch.jit.script(model1)
         self.assertEqual(model1.get_rcut(), 0.02)
-        self.assertEqual(model1.get_type_map(), None)
+        with self.assertRaises(torch.jit.Error):
+            self.assertEqual(model1.get_type_map(), None)
 
     def test_cross_deserialize(self):
         model_dict = self.model.serialize()  # pytorch model to dict

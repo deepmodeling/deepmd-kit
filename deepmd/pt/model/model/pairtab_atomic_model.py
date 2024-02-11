@@ -101,7 +101,7 @@ class PairTabModel(nn.Module, BaseAtomicModel):
 
     @torch.jit.export
     def get_type_map(self) -> Optional[List[str]]:
-        return None
+        raise NotImplementedError("TODO: implement this method")
 
     def get_sel(self) -> List[int]:
         return [self.sel]
