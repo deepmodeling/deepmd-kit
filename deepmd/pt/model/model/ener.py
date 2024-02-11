@@ -43,6 +43,9 @@ class ZBLModel(ZBLModel_):
             coord,
             atype,
             box,
+            fparam=fparam,
+            aparam=aparam,
+            do_atomic_virial=do_atomic_virial,
         )
 
         model_predict = {}
@@ -63,13 +66,18 @@ class ZBLModel(ZBLModel_):
         extended_atype,
         nlist,
         mapping: Optional[torch.Tensor] = None,
+        fparam: Optional[np.ndarray] = None,
+        aparam: Optional[np.ndarray] = None,
         do_atomic_virial: bool = False,
     ):
         model_ret = self.forward_common_lower(
             extended_coord,
             extended_atype,
             nlist,
-            mapping,
+            mapping=mapping,
+            fparam=fparam,
+            aparam=aparam,
+            do_atomic_virial=do_atomic_virial,
         )
 
         model_predict = {}
@@ -109,7 +117,12 @@ class EnergyModel(DPModel):
         do_atomic_virial: bool = False,
     ) -> Dict[str, torch.Tensor]:
         model_ret = self.forward_common(
-            coord, atype, box, do_atomic_virial=do_atomic_virial
+            coord, 
+            atype, 
+            box, 
+            fparam=fparam,
+            aparam=aparam,
+            do_atomic_virial=do_atomic_virial,
         )
         if self.fitting_net is not None:
             model_predict = {}
@@ -142,6 +155,8 @@ class EnergyModel(DPModel):
             extended_atype,
             nlist,
             mapping,
+            fparam=fparam,
+            aparam=aparam,
             do_atomic_virial=do_atomic_virial,
         )
         if self.fitting_net is not None:
