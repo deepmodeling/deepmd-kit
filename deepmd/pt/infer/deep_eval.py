@@ -130,11 +130,11 @@ class DeepEval(DeepEvalBackend):
 
     def get_dim_fparam(self) -> int:
         """Get the number (dimension) of frame parameters of this DP."""
-        return 0
+        return self.dp.model["Default"].get_dim_fparam()
 
     def get_dim_aparam(self) -> int:
         """Get the number (dimension) of atomic parameters of this DP."""
-        return 0
+        return self.dp.model["Default"].get_dim_aparam()
 
     @property
     def model_type(self) -> "DeepEvalWrapper":
@@ -163,19 +163,19 @@ class DeepEval(DeepEvalBackend):
         to the result of the model.
         If returning an empty list, all atom types are selected.
         """
-        return []
+        return self.dp.model["Default"].get_sel_type()
 
     def get_numb_dos(self) -> int:
         """Get the number of DOS."""
-        return 0
+        return self.dp.model["Default"].get_numb_dos()
 
     def get_has_efield(self):
         """Check if the model has efield."""
-        return False
+        return self.dp.model["Default"].get_has_efield()
 
     def get_ntypes_spin(self):
         """Get the number of spin atom types of this model."""
-        return 0
+        return self.dp.model["Default"].get_ntypes_spin()
 
     def eval(
         self,

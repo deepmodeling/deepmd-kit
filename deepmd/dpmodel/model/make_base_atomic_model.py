@@ -57,6 +57,42 @@ def make_base_atomic_model(
             """Returns the total number of selected neighboring atoms in the cut-off radius."""
             return self.get_nsel()
 
+        def get_dim_fparam(self) -> int:
+            """Get the number (dimension) of frame parameters of this DP."""
+            return 0
+
+        def get_dim_aparam(self) -> int:
+            """Get the number (dimension) of atomic parameters of this DP."""
+            return 0
+
+        def get_sel_type(self) -> List[int]:
+            """Get the selected atom types of this model.
+
+            Only atoms with selected atom types have atomic contribution
+            to the result of the model.
+            If returning an empty list, all atom types are selected.
+            """
+            return []
+
+        def get_numb_dos(self) -> int:
+            """Get the number of DOS."""
+            return 0
+
+        def get_has_efield(self) -> bool:
+            """Check if the model has efield."""
+            return False
+
+        def get_ntypes_spin(self) -> int:
+            """Get the number of spin atom types of this model."""
+            return 0
+
+        def is_aparam_nall(self) -> bool:
+            """Check whether the shape of atomic parameters is (nframes, nall, ndim).
+
+            If False, the shape is (nframes, nloc, ndim).
+            """
+            return False
+
         @abstractmethod
         def distinguish_types(self) -> bool:
             """Returns if the model requires a neighbor list that distinguish different
