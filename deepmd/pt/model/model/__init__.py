@@ -18,11 +18,11 @@ from .ener import (
     EnergyModel,
     ZBLModel,
 )
-from .model import (
-    BaseModel,
-)
 from .make_hessian_model import (
     make_hessian_model,
+)
+from .model import (
+    BaseModel,
 )
 
 
