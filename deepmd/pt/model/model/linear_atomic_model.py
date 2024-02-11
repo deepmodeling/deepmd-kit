@@ -207,6 +207,42 @@ class LinearAtomicModel(BaseModel, BaseAtomicModel):
         """This should be a list of user defined weights that matches the number of models to be combined."""
         raise NotImplementedError
 
+    def get_dim_fparam(self) -> int:
+        """Get the number (dimension) of frame parameters of this DP."""
+        return super().get_dim_fparam()
+
+    def get_dim_aparam(self) -> int:
+        """Get the number (dimension) of atomic parameters of this DP."""
+        return super().get_dim_aparam()
+
+    def get_sel_type(self) -> List[int]:
+        """Get the selected atom types of this model.
+
+        Only atoms with selected atom types have atomic contribution
+        to the result of the model.
+        If returning an empty list, all atom types are selected.
+        """
+        return super().get_sel_type()
+
+    def get_numb_dos(self) -> int:
+        """Get the number of DOS."""
+        return super().get_numb_dos()
+
+    def get_has_efield(self) -> bool:
+        """Check if the model has efield."""
+        return super().get_has_efield()
+
+    def get_ntypes_spin(self) -> int:
+        """Get the number of spin atom types of this model."""
+        return super().get_ntypes_spin()
+
+    def is_aparam_nall(self) -> bool:
+        """Check whether the shape of atomic parameters is (nframes, nall, ndim).
+
+        If False, the shape is (nframes, nloc, ndim).
+        """
+        return super().is_aparam_nall()
+
 
 class DPZBLLinearAtomicModel(LinearAtomicModel):
     """Model linearly combine a list of AtomicModels.
