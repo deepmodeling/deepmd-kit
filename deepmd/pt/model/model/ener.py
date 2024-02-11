@@ -66,8 +66,8 @@ class ZBLModel(ZBLModel_):
         extended_atype,
         nlist,
         mapping: Optional[torch.Tensor] = None,
-        fparam: Optional[np.ndarray] = None,
-        aparam: Optional[np.ndarray] = None,
+        fparam: Optional[torch.Tensor] = None,
+        aparam: Optional[torch.Tensor] = None,
         do_atomic_virial: bool = False,
     ):
         model_ret = self.forward_common_lower(
@@ -148,6 +148,8 @@ class EnergyModel(DPModel):
         extended_atype,
         nlist,
         mapping: Optional[torch.Tensor] = None,
+        fparam: Optional[torch.Tensor] = None,
+        aparam: Optional[torch.Tensor] = None,
         do_atomic_virial: bool = False,
     ):
         model_ret = self.forward_common_lower(
