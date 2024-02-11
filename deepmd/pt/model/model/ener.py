@@ -117,9 +117,9 @@ class EnergyModel(DPModel):
         do_atomic_virial: bool = False,
     ) -> Dict[str, torch.Tensor]:
         model_ret = self.forward_common(
-            coord, 
-            atype, 
-            box, 
+            coord,
+            atype,
+            box,
             fparam=fparam,
             aparam=aparam,
             do_atomic_virial=do_atomic_virial,
