@@ -43,6 +43,8 @@ from deepmd.pt.utils.nlist import (
 
 log = logging.getLogger(__name__)
 
+log = logging.getLogger(__name__)
+
 
 @Descriptor.register("se_e2_a")
 class DescrptSeA(Descriptor):

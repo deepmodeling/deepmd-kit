@@ -56,8 +56,8 @@ class TestWeightCalculation(unittest.TestCase):
                 [0.25, 0.0, 0.0, 0.0],
             ]
         )
-        extended_atype = torch.tensor([[0, 0]])
-        nlist = torch.tensor([[[1], [-1]]])
+        extended_atype = torch.tensor([[0, 0]]).to(env.DEVICE)
+        nlist = torch.tensor([[[1], [-1]]]).to(env.DEVICE)
 
         ds = DescrptSeA(
             rcut=0.3,
@@ -80,7 +80,7 @@ class TestWeightCalculation(unittest.TestCase):
             zbl_model,
             sw_rmin=0.1,
             sw_rmax=0.25,
-        )
+        ).to(env.DEVICE)
         wgt_res = []
         for dist in np.linspace(0.05, 0.3, 10):
             extended_coord = torch.tensor(
@@ -90,7 +90,7 @@ class TestWeightCalculation(unittest.TestCase):
                         [0.0, dist, 0.0],
                     ],
                 ]
-            )
+            ).to(env.DEVICE)
 
             wgt_model.forward_atomic(extended_coord, extended_atype, nlist)
 
@@ -110,7 +110,7 @@ class TestWeightCalculation(unittest.TestCase):
                 [0.0, 0.0],
             ],
             dtype=torch.float64,
-        )
+        ).to(env.DEVICE)
         torch.testing.assert_close(results, excepted_res, rtol=0.0001, atol=0.0001)
 
 

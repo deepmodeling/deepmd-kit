@@ -28,6 +28,9 @@ from deepmd.entrypoints.doc import (
 from deepmd.entrypoints.gui import (
     start_dpgui,
 )
+from deepmd.entrypoints.test import (
+    test,
+)
 from deepmd.infer.model_devi import (
     make_model_devi,
 )
@@ -269,20 +272,6 @@ def train(FLAGS):
     trainer.run()
 
 
-def test(FLAGS):
-    trainer = inference.Tester(
-        FLAGS.model,
-        input_script=FLAGS.input_script,
-        system=FLAGS.system,
-        datafile=FLAGS.datafile,
-        numb_test=FLAGS.numb_test,
-        detail_file=FLAGS.detail_file,
-        shuffle_test=FLAGS.shuffle_test,
-        head=FLAGS.head,
-    )
-    trainer.run()
-
-
 def freeze(FLAGS):
     model = torch.jit.script(
         inference.Tester(FLAGS.model, numb_test=1, head=FLAGS.head).model
@@ -312,8 +301,8 @@ def main(args: Optional[Union[List[str], argparse.Namespace]] = None):
     if FLAGS.command == "train":
         train(FLAGS)
     elif FLAGS.command == "test":
-        FLAGS.output = str(Path(FLAGS.model).with_suffix(".pt"))
-        test(FLAGS)
+        dict_args["output"] = str(Path(FLAGS.model).with_suffix(".pt"))
+        test(**dict_args)
     elif FLAGS.command == "freeze":
         if Path(FLAGS.checkpoint_folder).is_dir():
             checkpoint_path = Path(FLAGS.checkpoint_folder)

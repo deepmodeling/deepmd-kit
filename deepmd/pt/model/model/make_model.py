@@ -53,6 +53,7 @@ def make_model(T_AtomicModel):
                 **kwargs,
             )
 
+        @torch.jit.export
         def model_output_def(self):
             """Get the output def for the model."""
             return ModelOutputDef(self.fitting_output_def())
