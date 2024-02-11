@@ -21,6 +21,9 @@ from .ener import (
 from .model import (
     BaseModel,
 )
+from .make_hessian_model import (
+    make_hessian_model,
+)
 
 
 def get_zbl_model(model_params):

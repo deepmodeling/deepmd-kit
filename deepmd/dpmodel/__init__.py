@@ -15,6 +15,7 @@ from .output_def import (
     fitting_check_output,
     get_deriv_name,
     get_reduce_name,
+    get_hessian_name,
     model_check_output,
 )
 
@@ -31,4 +32,5 @@ __all__ = [
     "fitting_check_output",
     "get_reduce_name",
     "get_deriv_name",
+    "get_hessian_name",
 ]
