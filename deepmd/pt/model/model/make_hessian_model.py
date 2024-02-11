@@ -1,23 +1,25 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
+import copy
 from typing import (
     Dict,
+    List,
     Optional,
+    Union,
 )
 
 import torch
-import copy
 
 from deepmd.dpmodel import (
-    ModelOutputDef,
-    FittingOutputDef,
+    get_hessian_name,
 )
 
 
 def make_hessian_model(T_Model):
-    """Make a model that can compute Hessian. 
-    
+    """Make a model that can compute Hessian.
+
     LIMITATION: this model is not jitable due to the restrictions of torch jit script.
 
-    LIMITATION: only the hessian of `forward_common` is available. 
+    LIMITATION: only the hessian of `forward_common` is available.
 
     Parameters
     ----------
@@ -26,37 +28,37 @@ def make_hessian_model(T_Model):
 
     Returns
     -------
-        The model computes hessian. 
+    The model computes hessian.
 
     """
+
     class CM(T_Model):
         def __init__(
             self,
             *args,
-            
             **kwargs,
         ):
             super().__init__(
                 *args,
                 **kwargs,
             )
-            self.hess_fitting_def = copy.deepcopy(self.fitting_output_def())
-            
+            self.hess_fitting_def = copy.deepcopy(super().fitting_output_def())
+
         def requires_hessian(
             self,
             keys: Union[str, List[str]],
         ):
             """Set which output variable(s) requires hessian."""
-            if isinstance(keys, str): 
-              keys = [keys]
+            if isinstance(keys, str):
+                keys = [keys]
             for kk in self.hess_fitting_def.keys():
-              if kk in keys:
-                self.hess_fitting_def[kk].r_hessian = True
-        
+                if kk in keys:
+                    self.hess_fitting_def[kk].r_hessian = True
+
         def fitting_output_def(self):
             """Get the fitting output def."""
             return self.hess_fitting_def
-              
+
         def forward_common(
             self,
             coord,
@@ -111,8 +113,7 @@ def make_hessian_model(T_Model):
                 )
                 ret.update(hess)
             return ret
-            
-        
+
         def _cal_hessian_all(
             self,
             coord: torch.Tensor,
@@ -202,7 +203,7 @@ def make_hessian_model(T_Model):
         ):
             ci = self.ci
             atype, box, fparam, aparam = self.atype, self.box, self.fparam, self.aparam
-            res = self.obj.forward_common_(
+            res = super(CM, self.obj).forward_common(
                 xx.unsqueeze(0),
                 atype.unsqueeze(0),
                 box.unsqueeze(0) if box is not None else None,
@@ -212,6 +213,5 @@ def make_hessian_model(T_Model):
             )
             er = res["energy_redu"][0].view([-1])[ci]
             return er
-
 
     return CM

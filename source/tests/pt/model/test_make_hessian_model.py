@@ -4,14 +4,17 @@ import unittest
 import numpy as np
 import torch
 
+from deepmd.dpmodel.output_def import (
+    OutputVariableCategory,
+)
 from deepmd.pt.model.descriptor.se_a import (
     DescrptSeA,
 )
-from deepmd.pt.model.model.ener import (
-    DPModel,
-)
 from deepmd.pt.model.model import (
     make_hessian_model,
+)
+from deepmd.pt.model.model.ener import (
+    DPModel,
 )
 from deepmd.pt.model.task.ener import (
     InvarFitting,
@@ -59,7 +62,8 @@ class HessianTest:
     def test(
         self,
     ):
-        places = 8
+        # setup test case
+        places = 6
         delta = 1e-3
         natoms = self.nloc
         nf = self.nf
@@ -79,20 +83,17 @@ class HessianTest:
                 torch.IntTensor([1, 0, 1]),
             ]
         ).view([nf, natoms])
-        # assumes input to be numpy tensor
-        # coord = coord.numpy()
         nfp, nap = 2, 3
         fparam = torch.rand([nf, nfp], dtype=dtype)
         aparam = torch.rand([nf, natoms * nap], dtype=dtype)
-
+        # forward hess and valu models
         ret_dict0 = self.model_hess.forward_common(
             coord, atype, box=cell, fparam=fparam, aparam=aparam
         )
         ret_dict1 = self.model_valu.forward_common(
             coord, atype, box=cell, fparam=fparam, aparam=aparam
         )
-
-        # print(ret_dict0["energy"].shape, ret_dict1["energy"].shape)
+        # compare hess and value models
         torch.testing.assert_close(ret_dict0["energy"], ret_dict1["energy"])
         ana_hess = ret_dict0["energy_derv_r_derv_r"]
 
@@ -120,8 +121,11 @@ class HessianTest:
             xx = to_numpy_array(coord[ii])
             fnt_hess.append(finite_hessian(ff, xx, delta=delta).squeeze())
 
+        # compare finite difference with autodiff
         fnt_hess = np.stack(fnt_hess).reshape([nf, nv, natoms * 3, natoms * 3])
-        np.testing.assert_almost_equal(fnt_hess, to_numpy_array(ana_hess), decimal=6)
+        np.testing.assert_almost_equal(
+            fnt_hess, to_numpy_array(ana_hess), decimal=places
+        )
 
 
 class TestDPModel(unittest.TestCase, HessianTest):
@@ -155,14 +159,13 @@ class TestDPModel(unittest.TestCase, HessianTest):
             env.DEVICE
         )
         self.model_valu = DPModel.deserialize(self.model_hess.serialize())
-
         self.model_hess.requires_hessian("energy")
 
-
-        # args = [to_torch_tensor(ii) for ii in [self.coord, self.atype, self.cell]]
-        # ret0 = md0.forward_common(*args)
-
-        # print(ret0["energy_redu"].shape)
-        # print(ret0["energy_derv_r"].shape)
-        # print(ret0["energy_derv_r_derv_r"].shape)
-
+    def test_output_def(self):
+        self.assertTrue(self.model_hess.fitting_output_def()["energy"].r_hessian)
+        self.assertFalse(self.model_valu.fitting_output_def()["energy"].r_hessian)
+        self.assertTrue(self.model_hess.model_output_def()["energy"].r_hessian)
+        self.assertEqual(
+            self.model_hess.model_output_def()["energy_derv_r_derv_r"].category,
+            OutputVariableCategory.DERV_R_DERV_R,
+        )

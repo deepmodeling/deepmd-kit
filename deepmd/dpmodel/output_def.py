@@ -319,7 +319,7 @@ def get_deriv_name(name: str) -> Tuple[str, str]:
     return name + "_derv_r", name + "_derv_c"
 
 
-def get_hessian_name(name: str) -> str,
+def get_hessian_name(name: str) -> str:
     return name + "_derv_r_derv_r"
 
 
