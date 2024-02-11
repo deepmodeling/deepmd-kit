@@ -193,8 +193,8 @@ class TestDPIPI(unittest.TestCase):
                 cell=self.box.reshape((3, 3)),
                 calculator=calc,
             )
-        ee = water.get_potential_energy()
-        ff = water.get_forces()
+            ee = water.get_potential_energy()
+            ff = water.get_forces()
         nframes = 1
         np.testing.assert_almost_equal(
             ff.ravel(), self.expected_f.ravel(), default_places
@@ -213,8 +213,8 @@ class TestDPIPI(unittest.TestCase):
                 cell=self.box.reshape((3, 3)),
                 calculator=calc,
             )
-        ee = water.get_potential_energy()
-        ff = water.get_forces()
+            ee = water.get_potential_energy()
+            ff = water.get_forces()
         nframes = 1
         np.testing.assert_almost_equal(
             ff.ravel(), self.expected_f.ravel(), default_places
@@ -243,8 +243,8 @@ class TestDPIPI(unittest.TestCase):
                 cell=cell,
                 calculator=calc,
             )
-        ee = water.get_potential_energy()
-        ff = water.get_forces()
+            ee = water.get_potential_energy()
+            ff = water.get_forces()
         nframes = 1
         np.testing.assert_almost_equal(
             ff.ravel(), self.expected_f.ravel(), default_places
