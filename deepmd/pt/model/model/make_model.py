@@ -14,12 +14,8 @@ from deepmd.pt.model.model.transform_output import (
     fit_output_to_model_output,
 )
 from deepmd.pt.utils.nlist import (
-    build_neighbor_list,
-    extend_coord_with_ghosts,
     nlist_distinguish_types,
-)
-from deepmd.pt.utils.region import (
-    normalize_coord,
+    process_input,
 )
 
 
@@ -92,26 +88,14 @@ def make_model(T_AtomicModel):
                 The keys are defined by the `ModelOutputDef`.
 
             """
-            nframes, nloc = atype.shape[:2]
-            if box is not None:
-                coord_normalized = normalize_coord(
-                    coord.view(nframes, nloc, 3),
-                    box.reshape(nframes, 3, 3),
-                )
-            else:
-                coord_normalized = coord.clone()
-            extended_coord, extended_atype, mapping = extend_coord_with_ghosts(
-                coord_normalized, atype, box, self.get_rcut()
-            )
-            nlist = build_neighbor_list(
-                extended_coord,
-                extended_atype,
-                nloc,
+            extended_coord, extended_atype, mapping, nlist = process_input(
+                coord,
+                atype,
                 self.get_rcut(),
                 self.get_sel(),
                 distinguish_types=self.distinguish_types(),
+                box=box,
             )
-            extended_coord = extended_coord.view(nframes, -1, 3)
             model_predict_lower = self.forward_common_lower(
                 extended_coord,
                 extended_atype,

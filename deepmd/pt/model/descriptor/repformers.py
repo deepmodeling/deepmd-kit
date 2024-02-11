@@ -21,7 +21,7 @@ from deepmd.pt.utils import (
     env,
 )
 from deepmd.pt.utils.nlist import (
-    build_neighbor_list,
+    process_input,
 )
 from deepmd.pt.utils.utils import (
     get_activation_fn,
@@ -178,6 +178,12 @@ class DescrptBlockRepformers(DescriptorBlock):
         """Returns the embedding dimension g2."""
         return self.g2_dim
 
+    def distinguish_types(self) -> bool:
+        """Returns if the descriptor requires a neighbor list that distinguish different
+        atomic types or not.
+        """
+        return False
+
     @property
     def dim_out(self):
         """Returns the output dimension of this descriptor."""
@@ -272,28 +278,24 @@ class DescrptBlockRepformers(DescriptorBlock):
         suma2 = []
         mixed_type = "real_natoms_vec" in merged[0]
         for system in merged:
-            index = system["mapping"].unsqueeze(-1).expand(-1, -1, 3)
-            extended_coord = torch.gather(system["coord"], dim=1, index=index)
-            extended_coord = extended_coord - system["shift"]
-            index = system["mapping"]
-            extended_atype = torch.gather(system["atype"], dim=1, index=index)
-            nloc = system["atype"].shape[-1]
-            #######################################################
-            # dirty hack here! the interface of dataload should be
-            # redesigned to support descriptors like dpa2
-            #######################################################
-            nlist = build_neighbor_list(
-                extended_coord,
-                extended_atype,
-                nloc,
-                self.rcut,
+            coord, atype, box, natoms = (
+                system["coord"],
+                system["atype"],
+                system["box"],
+                system["natoms"],
+            )
+            extended_coord, extended_atype, mapping, nlist = process_input(
+                coord,
+                atype,
+                self.get_rcut(),
                 self.get_sel(),
-                distinguish_types=False,
+                distinguish_types=self.distinguish_types(),
+                box=box,
             )
             env_mat, _, _ = prod_env_mat_se_a(
                 extended_coord,
                 nlist,
-                system["atype"],
+                atype,
                 self.mean,
                 self.stddev,
                 self.rcut,
@@ -301,15 +303,16 @@ class DescrptBlockRepformers(DescriptorBlock):
             )
             if not mixed_type:
                 sysr, sysr2, sysa, sysa2, sysn = analyze_descrpt(
-                    env_mat.detach().cpu().numpy(), ndescrpt, system["natoms"]
+                    env_mat.detach().cpu().numpy(), ndescrpt, natoms
                 )
             else:
+                real_natoms_vec = system["real_natoms_vec"]
                 sysr, sysr2, sysa, sysa2, sysn = analyze_descrpt(
                     env_mat.detach().cpu().numpy(),
                     ndescrpt,
-                    system["real_natoms_vec"],
+                    real_natoms_vec,
                     mixed_type=mixed_type,
-                    real_atype=system["atype"].detach().cpu().numpy(),
+                    real_atype=atype.detach().cpu().numpy(),
                 )
             sumr.append(sysr)
             suma.append(sysa)

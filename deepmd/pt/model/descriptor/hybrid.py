@@ -103,6 +103,14 @@ class DescrptBlockHybrid(DescriptorBlock):
     def get_dim_emb(self):
         return self.dim_emb
 
+    def distinguish_types(self) -> bool:
+        """Returns if the descriptor requires a neighbor list that distinguish different
+        atomic types or not.
+        """
+        return True in [
+            descriptor.distinguish_types() for descriptor in self.descriptor_list
+        ]
+
     @property
     def dim_out(self):
         """Returns the output dimension of this descriptor."""

@@ -19,11 +19,9 @@ from deepmd.pt.utils import (
     env,
 )
 from deepmd.pt.utils.nlist import (
-    build_neighbor_list,
-    extend_coord_with_ghosts,
-)
-from deepmd.pt.utils.region import (
-    normalize_coord,
+    build_multiple_neighbor_list,
+    get_multiple_nlist_key,
+    process_input,
 )
 
 dtype = torch.float64
@@ -114,6 +112,7 @@ class TestDPA2(unittest.TestCase):
         self.file_model_param = Path(CUR_DIR) / "models" / "dpa2.pth"
         self.file_type_embed = Path(CUR_DIR) / "models" / "dpa2_tebd.pth"
 
+    # TODO This test for hybrid descriptor should be removed!
     def test_descriptor_hyb(self):
         # torch.manual_seed(0)
         model_hybrid_dpa2 = self.model_json
@@ -129,34 +128,13 @@ class TestDPA2(unittest.TestCase):
         # type_embd of repformer is removed
         model_dict.pop("descriptor_list.1.type_embd.embedding.weight")
         des.load_state_dict(model_dict)
-        all_rcut = [ii["rcut"] for ii in dlist]
-        all_nsel = [ii["sel"] for ii in dlist]
+        all_rcut = sorted([ii["rcut"] for ii in dlist])
+        all_nsel = sorted([ii["sel"] for ii in dlist])
         rcut_max = max(all_rcut)
+        sel_max = max(all_nsel)
         coord = self.coord
         atype = self.atype
         box = self.cell
-        nf, nloc = coord.shape[:2]
-        coord_normalized = normalize_coord(coord, box.reshape(-1, 3, 3))
-        extended_coord, extended_atype, mapping = extend_coord_with_ghosts(
-            coord_normalized, atype, box, rcut_max
-        )
-        ## single nlist
-        # nlist = build_neighbor_list(
-        #   extended_coord, extended_atype, nloc,
-        #   rcut_max, nsel, distinguish_types=False)
-        nlist_list = []
-        for rcut, sel in zip(all_rcut, all_nsel):
-            nlist_list.append(
-                build_neighbor_list(
-                    extended_coord,
-                    extended_atype,
-                    nloc,
-                    rcut,
-                    sel,
-                    distinguish_types=False,
-                )
-            )
-        nlist = torch.cat(nlist_list, -1)
         # handel type_embedding
         type_embedding = TypeEmbedNet(ntypes, 8).to(env.DEVICE)
         type_embedding.load_state_dict(torch.load(self.file_type_embed))
@@ -164,6 +142,26 @@ class TestDPA2(unittest.TestCase):
         ## to save model parameters
         # torch.save(des.state_dict(), 'model_weights.pth')
         # torch.save(type_embedding.state_dict(), 'model_weights.pth')
+        extended_coord, extended_atype, mapping, nlist_max = process_input(
+            coord,
+            atype,
+            rcut_max,
+            sel_max,
+            distinguish_types=des.distinguish_types(),
+            box=box,
+        )
+        nlist_dict = build_multiple_neighbor_list(
+            extended_coord,
+            nlist_max,
+            all_rcut,
+            all_nsel,
+        )
+        nlist_list = []
+        for ii in des.descriptor_list:
+            nlist_list.append(
+                nlist_dict[get_multiple_nlist_key(ii.get_rcut(), ii.get_nsel())]
+            )
+        nlist = torch.cat(nlist_list, -1)
         descriptor, env_mat, diff, rot_mat, sw = des(
             nlist,
             extended_coord,
@@ -202,18 +200,13 @@ class TestDPA2(unittest.TestCase):
         coord = self.coord
         atype = self.atype
         box = self.cell
-        nf, nloc = coord.shape[:2]
-        coord_normalized = normalize_coord(coord, box.reshape(-1, 3, 3))
-        extended_coord, extended_atype, mapping = extend_coord_with_ghosts(
-            coord_normalized, atype, box, des.repinit.rcut
-        )
-        nlist = build_neighbor_list(
-            extended_coord,
-            extended_atype,
-            nloc,
-            des.repinit.rcut,
-            des.repinit.sel,
-            distinguish_types=False,
+        extended_coord, extended_atype, mapping, nlist = process_input(
+            coord,
+            atype,
+            des.get_rcut(),
+            des.get_sel(),
+            distinguish_types=des.distinguish_types(),
+            box=box,
         )
         descriptor, env_mat, diff, rot_mat, sw = des(
             extended_coord,

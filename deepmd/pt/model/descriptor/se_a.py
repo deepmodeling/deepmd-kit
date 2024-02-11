@@ -37,6 +37,9 @@ from deepmd.pt.model.network.mlp import (
 from deepmd.pt.model.network.network import (
     TypeFilter,
 )
+from deepmd.pt.utils.nlist import (
+    process_input,
+)
 
 log = logging.getLogger(__name__)
 
@@ -100,7 +103,7 @@ class DescrptSeA(Descriptor):
         """Returns if the descriptor requires a neighbor list that distinguish different
         atomic types or not.
         """
-        return True
+        return self.sea.distinguish_types()
 
     @property
     def dim_out(self):
@@ -347,6 +350,12 @@ class DescrptBlockSeA(DescriptorBlock):
         """Returns the input dimension."""
         return self.dim_in
 
+    def distinguish_types(self) -> bool:
+        """Returns if the descriptor requires a neighbor list that distinguish different
+        atomic types or not.
+        """
+        return True
+
     @property
     def dim_out(self):
         """Returns the output dimension of this descriptor."""
@@ -381,20 +390,31 @@ class DescrptBlockSeA(DescriptorBlock):
         sumr2 = []
         suma2 = []
         for system in merged:
-            index = system["mapping"].unsqueeze(-1).expand(-1, -1, 3)
-            extended_coord = torch.gather(system["coord"], dim=1, index=index)
-            extended_coord = extended_coord - system["shift"]
+            coord, atype, box, natoms = (
+                system["coord"],
+                system["atype"],
+                system["box"],
+                system["natoms"],
+            )
+            extended_coord, extended_atype, mapping, nlist = process_input(
+                coord,
+                atype,
+                self.get_rcut(),
+                self.get_sel(),
+                distinguish_types=self.distinguish_types(),
+                box=box,
+            )
             env_mat, _, _ = prod_env_mat_se_a(
                 extended_coord,
-                system["nlist"],
-                system["atype"],
+                nlist,
+                atype,
                 self.mean,
                 self.stddev,
                 self.rcut,
                 self.rcut_smth,
             )
             sysr, sysr2, sysa, sysa2, sysn = analyze_descrpt(
-                env_mat.detach().cpu().numpy(), self.ndescrpt, system["natoms"]
+                env_mat.detach().cpu().numpy(), self.ndescrpt, natoms
             )
             sumr.append(sysr)
             suma.append(sysa)

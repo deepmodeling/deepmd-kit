@@ -112,7 +112,7 @@ class DescrptDPA1(Descriptor):
         """Returns if the descriptor requires a neighbor list that distinguish different
         atomic types or not.
         """
-        return False
+        return self.se_atten.distinguish_types()
 
     @property
     def dim_out(self):
