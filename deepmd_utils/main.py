@@ -201,7 +201,7 @@ def main_parser() -> argparse.ArgumentParser:
         "--checkpoint-folder",
         type=str,
         default=".",
-        help="path to checkpoint folder",
+        help="Path to checkpoint, either a folder containing checkpoint or the checkpoint prefix",
     )
     parser_frz.add_argument(
         "-o",
