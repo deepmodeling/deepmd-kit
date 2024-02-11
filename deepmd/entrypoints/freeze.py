@@ -12,6 +12,9 @@ import logging
 from os.path import (
     abspath,
 )
+from pathlib import (
+    Path,
+)
 from typing import (
     List,
     Optional,
@@ -479,7 +482,7 @@ def freeze(
     Parameters
     ----------
     checkpoint_folder : str
-        location of the folder with model
+        location of either the folder with checkpoint or the checkpoint prefix
     output : str
         output file name
     node_names : Optional[str], optional
@@ -492,8 +495,11 @@ def freeze(
         other arguments
     """
     # We retrieve our checkpoint fullpath
-    checkpoint = tf.train.get_checkpoint_state(checkpoint_folder)
-    input_checkpoint = checkpoint.model_checkpoint_path
+    if Path(checkpoint_folder).is_dir():
+        checkpoint = tf.train.get_checkpoint_state(checkpoint_folder)
+        input_checkpoint = checkpoint.model_checkpoint_path
+    else:
+        input_checkpoint = checkpoint_folder
 
     # expand the output file to full path
     output_graph = abspath(output)
