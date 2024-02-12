@@ -28,6 +28,9 @@ from deepmd.entrypoints.doc import (
 from deepmd.entrypoints.gui import (
     start_dpgui,
 )
+from deepmd.entrypoints.test import (
+    test,
+)
 from deepmd.infer.model_devi import (
     make_model_devi,
 )
@@ -42,6 +45,9 @@ from deepmd.pt.infer import (
 )
 from deepmd.pt.model.descriptor import (
     Descriptor,
+)
+from deepmd.pt.model.task import (
+    Fitting,
 )
 from deepmd.pt.train import (
     training,
@@ -60,6 +66,7 @@ from deepmd.pt.utils.multi_task import (
 )
 from deepmd.pt.utils.stat import (
     make_stat_input,
+    process_stat_path,
 )
 from deepmd.utils.summary import SummaryPrinter as BaseSummaryPrinter
 
@@ -125,51 +132,18 @@ def get_trainer(
 
         # stat files
         hybrid_descrpt = model_params_single["descriptor"]["type"] == "hybrid"
-        has_stat_file_path = True
         if not hybrid_descrpt:
-            ### this design requires "rcut", "rcut_smth" and "sel" in the descriptor
-            ### VERY BAD DESIGN!!!!
-            ### not all descriptors provides these parameter in their constructor
-            default_stat_file_name = Descriptor.get_stat_name(
-                model_params_single["descriptor"]
+            stat_file_path_single, has_stat_file_path = process_stat_path(
+                data_dict_single.get("stat_file", None),
+                data_dict_single.get("stat_file_dir", f"stat_files{suffix}"),
+                model_params_single,
+                Descriptor,
+                Fitting,
             )
-            model_params_single["stat_file_dir"] = data_dict_single.get(
-                "stat_file_dir", f"stat_files{suffix}"
+        else:  ### TODO hybrid descriptor not implemented
+            raise NotImplementedError(
+                "data stat for hybrid descriptor is not implemented!"
             )
-            model_params_single["stat_file"] = data_dict_single.get(
-                "stat_file", default_stat_file_name
-            )
-            model_params_single["stat_file_path"] = os.path.join(
-                model_params_single["stat_file_dir"], model_params_single["stat_file"]
-            )
-            if not os.path.exists(model_params_single["stat_file_path"]):
-                has_stat_file_path = False
-        else:  ### need to remove this
-            default_stat_file_name = []
-            for descrpt in model_params_single["descriptor"]["list"]:
-                default_stat_file_name.append(
-                    f'stat_file_rcut{descrpt["rcut"]:.2f}_'
-                    f'smth{descrpt["rcut_smth"]:.2f}_'
-                    f'sel{descrpt["sel"]}_{descrpt["type"]}.npz'
-                )
-            model_params_single["stat_file_dir"] = data_dict_single.get(
-                "stat_file_dir", f"stat_files{suffix}"
-            )
-            model_params_single["stat_file"] = data_dict_single.get(
-                "stat_file", default_stat_file_name
-            )
-            assert isinstance(
-                model_params_single["stat_file"], list
-            ), "Stat file of hybrid descriptor must be a list!"
-            stat_file_path = []
-            for stat_file_path_item in model_params_single["stat_file"]:
-                single_file_path = os.path.join(
-                    model_params_single["stat_file_dir"], stat_file_path_item
-                )
-                stat_file_path.append(single_file_path)
-                if not os.path.exists(single_file_path):
-                    has_stat_file_path = False
-            model_params_single["stat_file_path"] = stat_file_path
 
         # validation and training data
         validation_data_single = DpLoaderSet(
@@ -209,19 +183,30 @@ def get_trainer(
                     type_split=type_split,
                     noise_settings=noise_settings,
                 )
-        return train_data_single, validation_data_single, sampled_single
+        return (
+            train_data_single,
+            validation_data_single,
+            sampled_single,
+            stat_file_path_single,
+        )
 
     if not multi_task:
-        train_data, validation_data, sampled = prepare_trainer_input_single(
+        (
+            train_data,
+            validation_data,
+            sampled,
+            stat_file_path,
+        ) = prepare_trainer_input_single(
             config["model"], config["training"], config["loss"]
         )
     else:
-        train_data, validation_data, sampled = {}, {}, {}
+        train_data, validation_data, sampled, stat_file_path = {}, {}, {}, {}
         for model_key in config["model"]["model_dict"]:
             (
                 train_data[model_key],
                 validation_data[model_key],
                 sampled[model_key],
+                stat_file_path[model_key],
             ) = prepare_trainer_input_single(
                 config["model"]["model_dict"][model_key],
                 config["training"]["data_dict"][model_key],
@@ -232,7 +217,8 @@ def get_trainer(
     trainer = training.Trainer(
         config,
         train_data,
-        sampled,
+        sampled=sampled,
+        stat_file_path=stat_file_path,
         validation_data=validation_data,
         init_model=init_model,
         restart_model=restart_model,
@@ -286,20 +272,6 @@ def train(FLAGS):
     trainer.run()
 
 
-def test(FLAGS):
-    trainer = inference.Tester(
-        FLAGS.model,
-        input_script=FLAGS.input_script,
-        system=FLAGS.system,
-        datafile=FLAGS.datafile,
-        numb_test=FLAGS.numb_test,
-        detail_file=FLAGS.detail_file,
-        shuffle_test=FLAGS.shuffle_test,
-        head=FLAGS.head,
-    )
-    trainer.run()
-
-
 def freeze(FLAGS):
     model = torch.jit.script(
         inference.Tester(FLAGS.model, numb_test=1, head=FLAGS.head).model
@@ -329,8 +301,8 @@ def main(args: Optional[Union[List[str], argparse.Namespace]] = None):
     if FLAGS.command == "train":
         train(FLAGS)
     elif FLAGS.command == "test":
-        FLAGS.output = str(Path(FLAGS.model).with_suffix(".pt"))
-        test(FLAGS)
+        dict_args["output"] = str(Path(FLAGS.model).with_suffix(".pt"))
+        test(**dict_args)
     elif FLAGS.command == "freeze":
         if Path(FLAGS.checkpoint_folder).is_dir():
             checkpoint_path = Path(FLAGS.checkpoint_folder)

@@ -109,8 +109,7 @@ class TestSaveLoadSeA(unittest.TestCase):
 
     def create_wrapper(self):
         model_config = copy.deepcopy(self.config["model"])
-        sampled = copy.deepcopy(self.sampled)
-        model = get_model(model_config, sampled).to(env.DEVICE)
+        model = get_model(model_config).to(env.DEVICE)
         return ModelWrapper(model, self.loss)
 
     def get_data(self):

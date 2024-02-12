@@ -219,9 +219,15 @@ class DescrptBlockSeAtten(DescriptorBlock):
         sumn = np.sum(sumn, axis=0)
         sumr2 = np.sum(sumr2, axis=0)
         suma2 = np.sum(suma2, axis=0)
-        return sumr, suma, sumn, sumr2, suma2
+        return {
+            "sumr": sumr,
+            "suma": suma,
+            "sumn": sumn,
+            "sumr2": sumr2,
+            "suma2": suma2,
+        }
 
-    def init_desc_stat(self, sumr, suma, sumn, sumr2, suma2):
+    def init_desc_stat(self, sumr, suma, sumn, sumr2, suma2, **kwargs):
         all_davg = []
         all_dstd = []
         for type_i in range(self.ntypes):

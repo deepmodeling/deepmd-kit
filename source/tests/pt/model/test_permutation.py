@@ -1,9 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import copy
 import unittest
-from pathlib import (
-    Path,
-)
 
 import torch
 
@@ -16,12 +13,6 @@ from deepmd.pt.model.model import (
 )
 from deepmd.pt.utils import (
     env,
-)
-from deepmd.pt.utils.dataloader import (
-    DpLoaderSet,
-)
-from deepmd.pt.utils.stat import (
-    make_stat_input,
 )
 
 dtype = torch.float64
@@ -205,22 +196,6 @@ model_hybrid = {
 }
 
 
-def make_sample(model_params):
-    training_systems = [
-        str(Path(__file__).parent / "water/data/data_0"),
-    ]
-    data_stat_nbatch = model_params.get("data_stat_nbatch", 10)
-    train_data = DpLoaderSet(
-        training_systems,
-        batch_size=4,
-        model_params=model_params.copy(),
-    )
-    sampled = make_stat_input(
-        train_data.systems, train_data.dataloaders, data_stat_nbatch
-    )
-    return sampled
-
-
 class PermutationTest:
     def test(
         self,
@@ -262,17 +237,15 @@ class PermutationTest:
 class TestEnergyModelSeA(unittest.TestCase, PermutationTest):
     def setUp(self):
         model_params = copy.deepcopy(model_se_e2_a)
-        sampled = make_sample(model_params)
         self.type_split = False
-        self.model = get_model(model_params, sampled).to(env.DEVICE)
+        self.model = get_model(model_params).to(env.DEVICE)
 
 
 class TestEnergyModelDPA1(unittest.TestCase, PermutationTest):
     def setUp(self):
         model_params = copy.deepcopy(model_dpa1)
-        sampled = make_sample(model_params)
         self.type_split = True
-        self.model = get_model(model_params, sampled).to(env.DEVICE)
+        self.model = get_model(model_params).to(env.DEVICE)
 
 
 class TestEnergyModelDPA2(unittest.TestCase, PermutationTest):
@@ -284,10 +257,9 @@ class TestEnergyModelDPA2(unittest.TestCase, PermutationTest):
         model_params_sample["descriptor"]["sel"] = model_params_sample["descriptor"][
             "repinit_nsel"
         ]
-        sampled = make_sample(model_params_sample)
         model_params = copy.deepcopy(model_dpa2)
         self.type_split = True
-        self.model = get_model(model_params, sampled).to(env.DEVICE)
+        self.model = get_model(model_params).to(env.DEVICE)
 
 
 class TestForceModelDPA2(unittest.TestCase, PermutationTest):
@@ -299,21 +271,19 @@ class TestForceModelDPA2(unittest.TestCase, PermutationTest):
         model_params_sample["descriptor"]["sel"] = model_params_sample["descriptor"][
             "repinit_nsel"
         ]
-        sampled = make_sample(model_params_sample)
         model_params = copy.deepcopy(model_dpa2)
         model_params["fitting_net"]["type"] = "direct_force_ener"
         self.type_split = True
         self.test_virial = False
-        self.model = get_model(model_params, sampled).to(env.DEVICE)
+        self.model = get_model(model_params).to(env.DEVICE)
 
 
 @unittest.skip("hybrid not supported at the moment")
 class TestEnergyModelHybrid(unittest.TestCase, PermutationTest):
     def setUp(self):
         model_params = copy.deepcopy(model_hybrid)
-        sampled = make_sample(model_params)
         self.type_split = True
-        self.model = get_model(model_params, sampled).to(env.DEVICE)
+        self.model = get_model(model_params).to(env.DEVICE)
 
 
 @unittest.skip("hybrid not supported at the moment")
@@ -321,25 +291,22 @@ class TestForceModelHybrid(unittest.TestCase, PermutationTest):
     def setUp(self):
         model_params = copy.deepcopy(model_hybrid)
         model_params["fitting_net"]["type"] = "direct_force_ener"
-        sampled = make_sample(model_params)
         self.type_split = True
         self.test_virial = False
-        self.model = get_model(model_params, sampled).to(env.DEVICE)
+        self.model = get_model(model_params).to(env.DEVICE)
 
 
 class TestEnergyModelZBL(unittest.TestCase, PermutationTest):
     def setUp(self):
         model_params = copy.deepcopy(model_zbl)
-        sampled = make_sample(model_params)
         self.type_split = False
-        self.model = get_zbl_model(model_params, sampled).to(env.DEVICE)
+        self.model = get_zbl_model(model_params).to(env.DEVICE)
 
 
 # class TestEnergyFoo(unittest.TestCase):
 #   def test(self):
 #     model_params = model_dpau
-#     sampled = make_sample(model_params)
-#     self.model = EnergyModelDPAUni(model_params, sampled).to(env.DEVICE)
+#     self.model = EnergyModelDPAUni(model_params).to(env.DEVICE)
 
 #     natoms = 5
 #     cell = torch.rand([3, 3], dtype=dtype)

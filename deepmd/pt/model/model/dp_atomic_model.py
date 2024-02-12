@@ -1,10 +1,13 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import copy
+import logging
+import os
 import sys
 from typing import (
     Dict,
     List,
     Optional,
+    Union,
 )
 
 import torch
@@ -18,6 +21,9 @@ from deepmd.pt.model.descriptor.se_a import (  # noqa # TODO: should import all 
 from deepmd.pt.model.task.ener import (  # noqa # TODO: should import all fittings!
     InvarFitting,
 )
+from deepmd.pt.utils.utils import (
+    dict_to_device,
+)
 
 from .base_atomic_model import (
     BaseAtomicModel,
@@ -25,6 +31,8 @@ from .base_atomic_model import (
 from .model import (
     BaseModel,
 )
+
+log = logging.getLogger(__name__)
 
 
 class DPAtomicModel(BaseModel, BaseAtomicModel):
@@ -39,31 +47,9 @@ class DPAtomicModel(BaseModel, BaseAtomicModel):
     type_map
             Mapping atom type to the name (str) of the type.
             For example `type_map[1]` gives the name of the type 1.
-    type_embedding
-            Type embedding net
-    resuming
-            Whether to resume/fine-tune from checkpoint or not.
-    stat_file_dir
-            The directory to the state files.
-    stat_file_path
-            The path to the state files.
-    sampled
-            Sampled frames to compute the statistics.
     """
 
-    # I am enough with the shit interface!
-    def __init__(
-        self,
-        descriptor,
-        fitting,
-        type_map: Optional[List[str]],
-        type_embedding: Optional[dict] = None,
-        resuming: bool = False,
-        stat_file_dir=None,
-        stat_file_path=None,
-        sampled=None,
-        **kwargs,
-    ):
+    def __init__(self, descriptor, fitting, type_map: Optional[List[str]]):
         super().__init__()
         ntypes = len(type_map)
         self.type_map = type_map
@@ -72,17 +58,6 @@ class DPAtomicModel(BaseModel, BaseAtomicModel):
         self.rcut = self.descriptor.get_rcut()
         self.sel = self.descriptor.get_sel()
         self.fitting_net = fitting
-        # Statistics
-        fitting_net = None  # TODO: hack!!! not sure if it is correct.
-        self.compute_or_load_stat(
-            fitting_net,
-            ntypes,
-            resuming=resuming,
-            type_map=type_map,
-            stat_file_dir=stat_file_dir,
-            stat_file_path=stat_file_path,
-            sampled=sampled,
-        )
 
     def fitting_output_def(self) -> FittingOutputDef:
         """Get the output def of the fitting net."""
@@ -128,13 +103,7 @@ class DPAtomicModel(BaseModel, BaseAtomicModel):
         fitting_obj = getattr(sys.modules[__name__], data["fitting_name"]).deserialize(
             data["fitting"]
         )
-        # TODO: dirty hack to provide type_map and avoid data stat!!!
-        obj = cls(
-            descriptor_obj,
-            fitting_obj,
-            type_map=data["type_map"],
-            resuming=True,
-        )
+        obj = cls(descriptor_obj, fitting_obj, type_map=data["type_map"])
         return obj
 
     def forward_atomic(
@@ -191,3 +160,45 @@ class DPAtomicModel(BaseModel, BaseAtomicModel):
             aparam=aparam,
         )
         return fit_ret
+
+    def compute_or_load_stat(
+        self,
+        type_map: Optional[List[str]] = None,
+        sampled=None,
+        stat_file_path_dict: Optional[Dict[str, Union[str, List[str]]]] = None,
+    ):
+        """
+        Compute or load the statistics parameters of the model,
+        such as mean and standard deviation of descriptors or the energy bias of the fitting net.
+        When `sampled` is provided, all the statistics parameters will be calculated (or re-calculated for update),
+        and saved in the `stat_file_path`(s).
+        When `sampled` is not provided, it will check the existence of `stat_file_path`(s)
+        and load the calculated statistics parameters.
+
+        Parameters
+        ----------
+        type_map
+            Mapping atom type to the name (str) of the type.
+            For example `type_map[1]` gives the name of the type 1.
+        sampled
+            The sampled data frames from different data systems.
+        stat_file_path_dict
+            The dictionary of paths to the statistics files.
+        """
+        if sampled is not None:  # move data to device
+            for data_sys in sampled:
+                dict_to_device(data_sys)
+        if stat_file_path_dict is not None:
+            if not isinstance(stat_file_path_dict["descriptor"], list):
+                stat_file_dir = os.path.dirname(stat_file_path_dict["descriptor"])
+            else:
+                stat_file_dir = os.path.dirname(stat_file_path_dict["descriptor"][0])
+            if not os.path.exists(stat_file_dir):
+                os.mkdir(stat_file_dir)
+        self.descriptor.compute_or_load_stat(
+            type_map, sampled, stat_file_path_dict["descriptor"]
+        )
+        if self.fitting_net is not None:
+            self.fitting_net.compute_or_load_stat(
+                type_map, sampled, stat_file_path_dict["fitting_net"]
+            )

@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import logging
 from typing import (
     List,
     Optional,
@@ -16,6 +17,8 @@ from deepmd.pt.model.network.network import (
 from .se_atten import (
     DescrptBlockSeAtten,
 )
+
+log = logging.getLogger(__name__)
 
 
 @Descriptor.register("dpa1")
@@ -122,20 +125,42 @@ class DescrptDPA1(Descriptor):
     def compute_input_stats(self, merged):
         return self.se_atten.compute_input_stats(merged)
 
-    def init_desc_stat(self, sumr, suma, sumn, sumr2, suma2):
+    def init_desc_stat(
+        self, sumr=None, suma=None, sumn=None, sumr2=None, suma2=None, **kwargs
+    ):
+        assert True not in [x is None for x in [sumr, suma, sumn, sumr2, suma2]]
         self.se_atten.init_desc_stat(sumr, suma, sumn, sumr2, suma2)
 
     @classmethod
-    def get_stat_name(cls, config):
-        descrpt_type = config["type"]
+    def get_stat_name(
+        cls, ntypes, type_name, rcut=None, rcut_smth=None, sel=None, **kwargs
+    ):
+        """
+        Get the name for the statistic file of the descriptor.
+        Usually use the combination of descriptor name, rcut, rcut_smth and sel as the statistic file name.
+        """
+        descrpt_type = type_name
         assert descrpt_type in ["dpa1", "se_atten"]
-        return f'stat_file_dpa1_rcut{config["rcut"]:.2f}_smth{config["rcut_smth"]:.2f}_sel{config["sel"]}.npz'
+        return f"stat_file_descrpt_dpa1_rcut{rcut:.2f}_smth{rcut_smth:.2f}_sel{sel}_ntypes{ntypes}.npz"
 
     @classmethod
     def get_data_process_key(cls, config):
+        """
+        Get the keys for the data preprocess.
+        Usually need the information of rcut and sel.
+        TODO Need to be deprecated when the dataloader has been cleaned up.
+        """
         descrpt_type = config["type"]
         assert descrpt_type in ["dpa1", "se_atten"]
         return {"sel": config["sel"], "rcut": config["rcut"]}
+
+    @property
+    def data_stat_key(self):
+        """
+        Get the keys for the data statistic of the descriptor.
+        Return a list of statistic names needed, such as "sumr", "suma" or "sumn".
+        """
+        return ["sumr", "suma", "sumn", "sumr2", "suma2"]
 
     def serialize(self) -> dict:
         """Serialize the obj to dict."""

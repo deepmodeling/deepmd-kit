@@ -7,9 +7,6 @@ from typing import (
 )
 
 import torch
-from torch import (
-    nn,
-)
 
 from deepmd.dpmodel import (
     FittingOutputDef,
@@ -22,9 +19,12 @@ from deepmd.utils.pair_tab import (
 from .base_atomic_model import (
     BaseAtomicModel,
 )
+from .model import (
+    BaseModel,
+)
 
 
-class PairTabModel(nn.Module, BaseAtomicModel):
+class PairTabModel(BaseModel, BaseAtomicModel):
     """Pairwise tabulation energy model.
 
     This model can be used to tabulate the pairwise energy between atoms for either
@@ -62,11 +62,11 @@ class PairTabModel(nn.Module, BaseAtomicModel):
                 tab_info,
                 tab_data,
             ) = self.tab.get()  # this returns -> Tuple[np.array, np.array]
-            self.tab_info = torch.from_numpy(tab_info)
-            self.tab_data = torch.from_numpy(tab_data)
+            self.register_buffer("tab_info", torch.from_numpy(tab_info))
+            self.register_buffer("tab_data", torch.from_numpy(tab_data))
         else:
-            self.tab_info = None
-            self.tab_data = None
+            self.register_buffer("tab_info", None)
+            self.register_buffer("tab_data", None)
 
         # self.model_type = "ener"
         # self.model_version = MODEL_VERSION ## this shoud be in the parent class
@@ -123,8 +123,8 @@ class PairTabModel(nn.Module, BaseAtomicModel):
         tab = PairTab.deserialize(data["tab"])
         tab_model = cls(None, rcut, sel)
         tab_model.tab = tab
-        tab_model.tab_info = torch.from_numpy(tab_model.tab.tab_info)
-        tab_model.tab_data = torch.from_numpy(tab_model.tab.tab_data)
+        tab_model.register_buffer("tab_info", torch.from_numpy(tab_model.tab.tab_info))
+        tab_model.register_buffer("tab_data", torch.from_numpy(tab_model.tab.tab_data))
         return tab_model
 
     def forward_atomic(

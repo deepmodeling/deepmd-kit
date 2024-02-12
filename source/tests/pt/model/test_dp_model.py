@@ -56,8 +56,7 @@ class TestDPModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
             distinguish_types=ds.distinguish_types(),
         ).to(env.DEVICE)
         type_map = ["foo", "bar"]
-        # TODO: dirty hack to avoid data stat!!!
-        md0 = DPModel(ds, ft, type_map=type_map, resuming=True).to(env.DEVICE)
+        md0 = DPModel(ds, ft, type_map=type_map).to(env.DEVICE)
         md1 = DPModel.deserialize(md0.serialize()).to(env.DEVICE)
         args = [to_torch_tensor(ii) for ii in [self.coord, self.atype, self.cell]]
         ret0 = md0.forward_common(*args)
@@ -206,8 +205,7 @@ class TestDPModelLower(unittest.TestCase, TestCaseSingleFrameWithNlist):
             distinguish_types=ds.distinguish_types(),
         ).to(env.DEVICE)
         type_map = ["foo", "bar"]
-        # TODO: dirty hack to avoid data stat!!!
-        md0 = DPModel(ds, ft, type_map=type_map, resuming=True).to(env.DEVICE)
+        md0 = DPModel(ds, ft, type_map=type_map).to(env.DEVICE)
         md1 = DPModel.deserialize(md0.serialize()).to(env.DEVICE)
         args = [
             to_torch_tensor(ii) for ii in [self.coord_ext, self.atype_ext, self.nlist]
@@ -285,8 +283,7 @@ class TestDPModelLower(unittest.TestCase, TestCaseSingleFrameWithNlist):
             distinguish_types=ds.distinguish_types(),
         ).to(env.DEVICE)
         type_map = ["foo", "bar"]
-        # TODO: dirty hack to avoid data stat!!!
-        md0 = DPModel(ds, ft, type_map=type_map, resuming=True).to(env.DEVICE)
+        md0 = DPModel(ds, ft, type_map=type_map).to(env.DEVICE)
         md0 = torch.jit.script(md0)
         md0.get_rcut()
         md0.get_type_map()
@@ -336,8 +333,7 @@ class TestDPModelFormatNlist(unittest.TestCase):
             distinguish_types=ds.distinguish_types(),
         ).to(env.DEVICE)
         type_map = ["foo", "bar"]
-        # TODO: dirty hack to avoid data stat!!!
-        self.md = DPModel(ds, ft, type_map=type_map, resuming=True).to(env.DEVICE)
+        self.md = DPModel(ds, ft, type_map=type_map).to(env.DEVICE)
 
     def test_nlist_eq(self):
         # n_nnei == nnei
@@ -410,8 +406,7 @@ class TestEnergyModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
             distinguish_types=ds.distinguish_types(),
         ).to(env.DEVICE)
         type_map = ["foo", "bar"]
-        # TODO: dirty hack to avoid data stat!!!
-        md0 = EnergyModel(ds, ft, type_map=type_map, resuming=True).to(env.DEVICE)
+        md0 = EnergyModel(ds, ft, type_map=type_map).to(env.DEVICE)
         md1 = EnergyModel.deserialize(md0.serialize()).to(env.DEVICE)
         args = [to_torch_tensor(ii) for ii in [self.coord, self.atype, self.cell]]
         ret0 = md0.forward(*args)
@@ -482,8 +477,7 @@ class TestEnergyModelLower(unittest.TestCase, TestCaseSingleFrameWithNlist):
             distinguish_types=ds.distinguish_types(),
         ).to(env.DEVICE)
         type_map = ["foo", "bar"]
-        # TODO: dirty hack to avoid data stat!!!
-        md0 = EnergyModel(ds, ft, type_map=type_map, resuming=True).to(env.DEVICE)
+        md0 = EnergyModel(ds, ft, type_map=type_map).to(env.DEVICE)
         md1 = EnergyModel.deserialize(md0.serialize()).to(env.DEVICE)
         args = [
             to_torch_tensor(ii) for ii in [self.coord_ext, self.atype_ext, self.nlist]
@@ -528,8 +522,7 @@ class TestEnergyModelLower(unittest.TestCase, TestCaseSingleFrameWithNlist):
             distinguish_types=ds.distinguish_types(),
         ).to(env.DEVICE)
         type_map = ["foo", "bar"]
-        # TODO: dirty hack to avoid data stat!!!
-        md0 = EnergyModel(ds, ft, type_map=type_map, resuming=True).to(env.DEVICE)
+        md0 = EnergyModel(ds, ft, type_map=type_map).to(env.DEVICE)
         md0 = torch.jit.script(md0)
         self.assertEqual(md0.get_rcut(), self.rcut)
         self.assertEqual(md0.get_type_map(), type_map)
