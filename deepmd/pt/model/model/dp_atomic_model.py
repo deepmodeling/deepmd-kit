@@ -198,11 +198,11 @@ class DPAtomicModel(BaseModel, BaseAtomicModel):
             )
 
     def get_dim_fparam(self) -> int:
-        """Get the number (dimension) of frame parameters of this DP."""
+        """Get the number (dimension) of frame parameters of this atomic model."""
         return super().get_dim_fparam()
 
     def get_dim_aparam(self) -> int:
-        """Get the number (dimension) of atomic parameters of this DP."""
+        """Get the number (dimension) of atomic parameters of this atomic model."""
         return super().get_dim_aparam()
 
     def get_sel_type(self) -> List[int]:

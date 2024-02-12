@@ -59,12 +59,12 @@ def make_base_atomic_model(
 
         @abstractmethod
         def get_dim_fparam(self) -> int:
-            """Get the number (dimension) of frame parameters of this DP."""
+            """Get the number (dimension) of frame parameters of this atomic model."""
             return 0
 
         @abstractmethod
         def get_dim_aparam(self) -> int:
-            """Get the number (dimension) of atomic parameters of this DP."""
+            """Get the number (dimension) of atomic parameters of this atomic model."""
             return 0
 
         @abstractmethod
