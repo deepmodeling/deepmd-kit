@@ -108,8 +108,8 @@ class DeepEval(DeepEvalBackend):
             self.dp = ModelWrapper(model)
         else:
             raise ValueError("Unknown model file format!")
-        self.rcut = self.dp.model["Default"].rcut
-        self.type_map = self.dp.model["Default"].type_map
+        self.rcut = self.dp.model["Default"].get_rcut()
+        self.type_map = self.dp.model["Default"].get_type_map()
         if isinstance(auto_batch_size, bool):
             if auto_batch_size:
                 self.auto_batch_size = AutoBatchSize()
