@@ -133,6 +133,8 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
         spin: Optional[Any] = None,
+        # consistent with argcheck, not used though
+        seed: Optional[int] = None,
     ) -> None:
         ## seed, uniform_seed, multi_task, not included.
         if not type_one_side:

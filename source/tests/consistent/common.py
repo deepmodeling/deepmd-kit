@@ -3,6 +3,9 @@ from abc import (
     ABC,
     abstractmethod,
 )
+from enum import (
+    Enum,
+)
 from typing import (
     Any,
     ClassVar,
@@ -44,6 +47,8 @@ class CommonTest(ABC):
     """Arguments that maps to the `data`."""
     skip_dp: ClassVar[bool] = False
     """Whether to skip the native DP model."""
+    skip_tf: ClassVar[bool] = False
+    """Whether to skip the TensorFlow model."""
     skip_pt: ClassVar[bool] = False
     """Whether to skip the PyTorch model."""
 
@@ -51,8 +56,8 @@ class CommonTest(ABC):
         self.unique_id1 = uuid4().hex
         self.unique_id2 = uuid4().hex
 
-    def init_tf(self) -> Any:
-        """Initialize the TF model."""
+    def init_backend_cls(self, cls) -> Any:
+        """Initialize a backend model."""
         assert self.data is not None
         if self.args is None:
             data = self.data
@@ -60,7 +65,7 @@ class CommonTest(ABC):
             base = Argument("arg", dict, sub_fields=self.args)
             data = base.normalize_value(self.data, trim_pattern="_*")
             base.check_value(data, strict=True)
-        return self.tf_class(**data)
+        return cls(**data)
 
     @abstractmethod
     def build_tf(self, obj: Any, suffix: str) -> Tuple[list, dict]:
@@ -141,11 +146,8 @@ class CommonTest(ABC):
             feed_dict=feed_dict,
         )
 
-    def test_tf_dp_consistent(self):
-        """Test whether TF and DP are consistent."""
-        if self.skip_dp:
-            self.skipTest("Unsupported")
-        tf_obj1 = self.init_tf()
+    def get_tf_ret_serialization(self):
+        tf_obj1 = self.init_backend_cls(self.tf_class)
         with tf.Session(config=default_tf_session_config) as sess:
             graph = tf.get_default_graph()
             ret1 = self.build_eval_tf(sess, tf_obj1, suffix=self.unique_id1)
@@ -159,52 +161,85 @@ class CommonTest(ABC):
             tf_obj1.init_variables(new_graph, output_graph_def, suffix=self.unique_id1)
 
             data = tf_obj1.serialize(suffix=self.unique_id1)
+        return ret1, data
+
+    def get_pt_ret_serialization(self):
+        pt_obj = self.init_backend_cls(self.pt_class)
+        ret = self.eval_pt(pt_obj)
+        data = pt_obj.serialize()
+        return ret, data
+
+    def get_dp_ret_serialization(self):
+        dp_obj = self.init_backend_cls(self.dp_class)
+        ret = self.eval_dp(dp_obj)
+        data = dp_obj.serialize()
+        return ret, data
+
+    class RefBackend(Enum):
+        """Reference backend."""
+
+        TF = 1
+        DP = 2
+        PT = 3
+
+    def get_reference_backend(self):
+        if not self.skip_dp:
+            return self.RefBackend.DP
+        if not self.skip_tf:
+            return self.RefBackend.TF
+        if not self.skip_pt:
+            return self.RefBackend.PT
+        raise ValueError("No available reference")
+
+    def get_reference_ret_serialization(self, ref: RefBackend):
+        if ref == self.RefBackend.DP:
+            return self.get_dp_ret_serialization()
+        if ref == self.RefBackend.TF:
+            return self.get_tf_ret_serialization()
+        if ref == self.RefBackend.PT:
+            return self.get_pt_ret_serialization()
+        raise ValueError("No available reference")
+
+    def test_tf_consistent_with_ref(self):
+        """Test whether TF and reference are consistent."""
+        if self.skip_tf:
+            self.skipTest("Unsupported backend")
+        ref_backend = self.get_reference_backend()
+        if ref_backend == self.RefBackend.TF:
+            self.skipTest("Reference is self")
+        ret1, data = self.get_reference_ret_serialization(ref_backend)
         dp_obj = self.dp_class.deserialize(data)
         ret2 = self.eval_dp(dp_obj)
         self.compare_tf_dp_ret(ret1, ret2)
 
     def test_tf_self_consistent(self):
         """Test whether TF is self consistent."""
-        tf_obj1 = self.init_tf()
+        if self.skip_tf:
+            self.skipTest("Unsupported backend")
+        ret1, data = self.get_tf_ret_serialization()
+        tf_obj2 = self.tf_class.deserialize(data, suffix=self.unique_id2)
         with tf.Session(config=default_tf_session_config) as sess:
-            graph = tf.get_default_graph()
-            ret1 = self.build_eval_tf(sess, tf_obj1, suffix=self.unique_id1)
-            output_graph_def = tf.graph_util.convert_variables_to_constants(
-                sess,
-                graph.as_graph_def(),
-                [f"o_{ii}_{self.unique_id1}" for ii, _ in enumerate(ret1)],
-            )
-            with tf.Graph().as_default() as new_graph:
-                tf.import_graph_def(output_graph_def, name="")
-            tf_obj1.init_variables(new_graph, output_graph_def, suffix=self.unique_id1)
-
-            data = tf_obj1.serialize(suffix=self.unique_id1)
-            tf_obj2 = self.tf_class.deserialize(data, suffix=self.unique_id2)
             ret2 = self.build_eval_tf(sess, tf_obj2, suffix=self.unique_id2)
         for rr1, rr2 in zip(ret1, ret2):
             np.testing.assert_allclose(rr1, rr2)
 
+    def test_dp_consistent_with_ref(self):
+        """Test whether DP and reference are consistent."""
+        if self.skip_dp:
+            self.skipTest("Unsupported backend")
+        ref_backend = self.get_reference_backend()
+        if ref_backend == self.RefBackend.DP:
+            self.skipTest("Reference is self")
+        ret1, data = self.get_reference_ret_serialization(ref_backend)
+        dp_obj = self.dp_class.deserialize(data, suffix=self.unique_id2)
+        ret2 = self.eval_dp(dp_obj)
+        self.compare_tf_dp_ret(ret2, ret1)
+
     def test_dp_self_consistent(self):
         """Test whether DP is self consistent."""
         if self.skip_dp:
-            self.skipTest("Unsupported")
-        tf_obj1 = self.init_tf()
-        with tf.Session(config=default_tf_session_config) as sess:
-            graph = tf.get_default_graph()
-            ret1 = self.build_eval_tf(sess, tf_obj1, suffix=self.unique_id1)
-            output_graph_def = tf.graph_util.convert_variables_to_constants(
-                sess,
-                graph.as_graph_def(),
-                [f"o_{ii}_{self.unique_id1}" for ii, _ in enumerate(ret1)],
-            )
-            with tf.Graph().as_default() as new_graph:
-                tf.import_graph_def(output_graph_def, name="")
-            tf_obj1.init_variables(new_graph, output_graph_def, suffix=self.unique_id1)
-
-            data = tf_obj1.serialize(suffix=self.unique_id1)
-        dp_obj = self.dp_class.deserialize(data)
-        ret2 = self.eval_dp(dp_obj)
-        data2 = dp_obj.serialize()
+            self.skipTest("Unsupported backend")
+        ret2, data2 = self.get_dp_ret_serialization()
         dp_obj2 = self.dp_class.deserialize(data2)
         ret3 = self.eval_dp(dp_obj2)
         for rr2, rr3 in zip(ret2, ret3):
@@ -213,24 +248,14 @@ class CommonTest(ABC):
             else:
                 self.assertEqual(rr2, rr3)
 
-    def test_tf_pt_consistent(self):
+    def test_pt_consistent_with_ref(self):
         """Test whether TF and PT are consistent."""
         if self.skip_pt:
-            self.skipTest("Unsupported")
-        tf_obj1 = self.init_tf()
-        with tf.Session(config=default_tf_session_config) as sess:
-            graph = tf.get_default_graph()
-            ret1 = self.build_eval_tf(sess, tf_obj1, suffix=self.unique_id1)
-            output_graph_def = tf.graph_util.convert_variables_to_constants(
-                sess,
-                graph.as_graph_def(),
-                [f"o_{ii}_{self.unique_id1}" for ii, _ in enumerate(ret1)],
-            )
-            with tf.Graph().as_default() as new_graph:
-                tf.import_graph_def(output_graph_def, name="")
-            tf_obj1.init_variables(new_graph, output_graph_def, suffix=self.unique_id1)
-
-            data = tf_obj1.serialize(suffix=self.unique_id1)
+            self.skipTest("Unsupported backend")
+        ref_backend = self.get_reference_backend()
+        if ref_backend == self.RefBackend.TF:
+            self.skipTest("Reference is self")
+        ret1, data = self.get_reference_ret_serialization(ref_backend)
         pt_obj = self.pt_class.deserialize(data)
         ret2 = self.eval_pt(pt_obj)
         self.compare_tf_pt_ret(ret1, ret2)
@@ -238,24 +263,8 @@ class CommonTest(ABC):
     def test_pt_self_consistent(self):
         """Test whether PT is self consistent."""
         if self.skip_pt:
-            self.skipTest("Unsupported")
-        tf_obj1 = self.init_tf()
-        with tf.Session(config=default_tf_session_config) as sess:
-            graph = tf.get_default_graph()
-            ret1 = self.build_eval_tf(sess, tf_obj1, suffix=self.unique_id1)
-            output_graph_def = tf.graph_util.convert_variables_to_constants(
-                sess,
-                graph.as_graph_def(),
-                [f"o_{ii}_{self.unique_id1}" for ii, _ in enumerate(ret1)],
-            )
-            with tf.Graph().as_default() as new_graph:
-                tf.import_graph_def(output_graph_def, name="")
-            tf_obj1.init_variables(new_graph, output_graph_def, suffix=self.unique_id1)
-
-            data = tf_obj1.serialize(suffix=self.unique_id1)
-        pt_obj = self.pt_class.deserialize(data)
-        ret2 = self.eval_pt(pt_obj)
-        data2 = pt_obj.serialize()
+            self.skipTest("Unsupported backend")
+        ret2, data2 = self.get_pt_ret_serialization()
         pt_obj2 = self.pt_class.deserialize(data2)
         ret3 = self.eval_pt(pt_obj2)
         for rr2, rr3 in zip(ret2, ret3):

@@ -42,6 +42,7 @@ PRECISION_DICT = {
     "int64": torch.int64,
 }
 GLOBAL_PT_FLOAT_PRECISION = PRECISION_DICT[np.dtype(GLOBAL_NP_FLOAT_PRECISION).name]
+PRECISION_DICT["default"] = GLOBAL_PT_FLOAT_PRECISION
 DEFAULT_PRECISION = "float64"
 
 # throw warnings if threads not set
