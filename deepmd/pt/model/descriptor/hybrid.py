@@ -107,9 +107,9 @@ class DescrptBlockHybrid(DescriptorBlock):
         """Returns if the descriptor requires a neighbor list that distinguish different
         atomic types or not.
         """
-        return True in [
+        return any(
             descriptor.distinguish_types() for descriptor in self.descriptor_list
-        ]
+        )
 
     @property
     def dim_out(self):
@@ -178,7 +178,7 @@ class DescrptBlockHybrid(DescriptorBlock):
     def init_desc_stat(
         self, sumr=None, suma=None, sumn=None, sumr2=None, suma2=None, **kwargs
     ):
-        assert True not in [x is None for x in [sumr, suma, sumn, sumr2, suma2]]
+        assert all(x is not None for x in [sumr, suma, sumn, sumr2, suma2])
         for ii, descrpt in enumerate(self.descriptor_list):
             stat_dict_ii = {
                 "sumr": sumr[ii],

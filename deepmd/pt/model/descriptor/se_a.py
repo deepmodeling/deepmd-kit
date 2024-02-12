@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import logging
 from typing import (
     ClassVar,
     List,
@@ -40,10 +39,6 @@ from deepmd.pt.model.network.network import (
 from deepmd.pt.utils.nlist import (
     process_input,
 )
-
-log = logging.getLogger(__name__)
-
-log = logging.getLogger(__name__)
 
 
 @Descriptor.register("se_e2_a")
@@ -119,7 +114,7 @@ class DescrptSeA(Descriptor):
     def init_desc_stat(
         self, sumr=None, suma=None, sumn=None, sumr2=None, suma2=None, **kwargs
     ):
-        assert True not in [x is None for x in [sumr, suma, sumn, sumr2, suma2]]
+        assert all(x is not None for x in [sumr, suma, sumn, sumr2, suma2])
         self.sea.init_desc_stat(sumr, suma, sumn, sumr2, suma2)
 
     @classmethod
@@ -132,7 +127,7 @@ class DescrptSeA(Descriptor):
         """
         descrpt_type = type_name
         assert descrpt_type in ["se_e2_a"]
-        assert True not in [x is None for x in [rcut, rcut_smth, sel]]
+        assert all(x is not None for x in [rcut, rcut_smth, sel])
         return f"stat_file_descrpt_sea_rcut{rcut:.2f}_smth{rcut_smth:.2f}_sel{sel}_ntypes{ntypes}.npz"
 
     @classmethod

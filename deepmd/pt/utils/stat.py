@@ -105,4 +105,4 @@ def process_stat_path(
     has_stat_file_path_list = [
         os.path.exists(stat_file_path[key]) for key in stat_file_dict
     ]
-    return stat_file_path, False not in has_stat_file_path_list
+    return stat_file_path, all(has_stat_file_path_list)
