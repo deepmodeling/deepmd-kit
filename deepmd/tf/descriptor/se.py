@@ -2,6 +2,7 @@
 import re
 from typing import (
     List,
+    Set,
     Tuple,
 )
 
@@ -177,7 +178,7 @@ class DescrptSe(Descriptor):
         activation_function: str,
         resnet_dt: bool,
         variables: dict,
-        excluded_types: set[Tuple[int, int]] = set(),
+        excluded_types: Set[Tuple[int, int]] = set(),
         suffix: str = "",
     ) -> dict:
         """Serialize network.
@@ -198,6 +199,8 @@ class DescrptSe(Descriptor):
             Whether to use resnet
         variables : dict
             The input variables
+        excluded_types : Set[Tuple[int, int]], optional
+            The excluded types
         suffix : str, optional
             The suffix of the scope
 
