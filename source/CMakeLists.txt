@@ -297,10 +297,7 @@ if(BUILD_CPP_IF)
   endif()
   if(CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 4.8)
     # add_subdirectory (md/)
-    if(ENABLE_IPI
-       OR NOT BUILD_PY_IF
-       AND NOT DEEPMD_C_ROOT)
-      # ipi has a dependency on libdeepmd
+    if(ENABLE_IPI OR NOT BUILD_PY_IF)
       add_subdirectory(ipi/)
     endif()
     if(NOT BUILD_PY_IF)
