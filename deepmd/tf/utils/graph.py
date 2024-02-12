@@ -166,9 +166,9 @@ def get_embedding_net_nodes_from_graph_def(
     # embedding_net_pattern = f"filter_type_\d+{suffix}/matrix_\d+_\d+|filter_type_\d+{suffix}/bias_\d+_\d+|filter_type_\d+{suffix}/idt_\d+_\d+|filter_type_all{suffix}/matrix_\d+_\d+|filter_type_all{suffix}/matrix_\d+_\d+_\d+|filter_type_all{suffix}/bias_\d+_\d+|filter_type_all{suffix}/bias_\d+_\d+_\d+|filter_type_all{suffix}/idt_\d+_\d+"
     if suffix != "":
         embedding_net_pattern = (
-            EMBEDDING_NET_PATTERN.replace("/idt", suffix + "/idt")
-            .replace("/bias", suffix + "/bias")
-            .replace("/matrix", suffix + "/matrix")
+            EMBEDDING_NET_PATTERN.replace("/(idt)", suffix + "/(idt)")
+            .replace("/(bias)", suffix + "/(bias)")
+            .replace("/(matrix)", suffix + "/(matrix)")
         )
     else:
         embedding_net_pattern = EMBEDDING_NET_PATTERN
@@ -176,10 +176,6 @@ def get_embedding_net_nodes_from_graph_def(
     embedding_net_nodes = get_pattern_nodes_from_graph_def(
         graph_def, embedding_net_pattern
     )
-    for key in embedding_net_nodes.keys():
-        assert (
-            key.find("bias") > 0 or key.find("matrix") > 0
-        ), "currently, only support weight matrix and bias matrix at the tabulation op!"
     return embedding_net_nodes
 
 

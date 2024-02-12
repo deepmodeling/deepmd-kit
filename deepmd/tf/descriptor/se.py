@@ -1,9 +1,16 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import re
 from typing import (
+    List,
     Tuple,
 )
 
+from deepmd.dpmodel.utils.network import (
+    EmbeddingNet,
+    NetworkCollection,
+)
 from deepmd.tf.env import (
+    EMBEDDING_NET_PATTERN,
     tf,
 )
 from deepmd.tf.utils.graph import (
@@ -160,3 +167,155 @@ class DescrptSe(Descriptor):
         # default behavior is to update sel which is a list
         local_jdata_cpy = local_jdata.copy()
         return update_one_sel(global_jdata, local_jdata_cpy, False)
+
+    def serialize_network(
+        self,
+        ntypes: int,
+        ndim: int,
+        in_dim: int,
+        neuron: List[int],
+        activation_function: str,
+        resnet_dt: bool,
+        variables: dict,
+        excluded_types: set[Tuple[int, int]] = set(),
+        suffix: str = "",
+    ) -> dict:
+        """Serialize network.
+
+        Parameters
+        ----------
+        ntypes : int
+            The number of types
+        ndim : int
+            The dimension of elements
+        in_dim : int
+            The input dimension
+        neuron : List[int]
+            The neuron list
+        activation_function : str
+            The activation function
+        resnet_dt : bool
+            Whether to use resnet
+        variables : dict
+            The input variables
+        suffix : str, optional
+            The suffix of the scope
+
+        Returns
+        -------
+        dict
+            The converted network data
+        """
+        embeddings = NetworkCollection(
+            ntypes=ntypes,
+            ndim=ndim,
+            network_type="embedding_network",
+        )
+        if ndim == 2:
+            for type_i, type_j in excluded_types:
+                # initialize an empty network for the excluded types
+                embeddings[(type_i, type_j)] = EmbeddingNet(
+                    in_dim=in_dim,
+                    neuron=neuron,
+                    activation_function=activation_function,
+                    resnet_dt=resnet_dt,
+                    precision=self.precision.name,
+                )
+                embeddings[(type_j, type_i)] = EmbeddingNet(
+                    in_dim=in_dim,
+                    neuron=neuron,
+                    activation_function=activation_function,
+                    resnet_dt=resnet_dt,
+                    precision=self.precision.name,
+                )
+
+        if suffix != "":
+            embedding_net_pattern = (
+                EMBEDDING_NET_PATTERN.replace("/(idt)", suffix + "/(idt)")
+                .replace("/(bias)", suffix + "/(bias)")
+                .replace("/(matrix)", suffix + "/(matrix)")
+            )
+        else:
+            embedding_net_pattern = EMBEDDING_NET_PATTERN
+        for key, value in variables.items():
+            m = re.search(embedding_net_pattern, key)
+            m = [mm for mm in m.groups() if mm is not None]
+            typei = m[0]
+            typej = "_".join(m[3:]) if len(m[3:]) else "all"
+            layer_idx = int(m[2]) - 1
+            weight_name = m[1]
+            if ndim == 0:
+                network_idx = ()
+            elif ndim == 1:
+                network_idx = (int(typej),)
+            elif ndim == 2:
+                network_idx = (int(typei), int(typej))
+            else:
+                raise ValueError(f"Invalid ndim: {ndim}")
+            if embeddings[network_idx] is None:
+                # initialize the network if it is not initialized
+                embeddings[network_idx] = EmbeddingNet(
+                    in_dim=in_dim,
+                    neuron=neuron,
+                    activation_function=activation_function,
+                    resnet_dt=resnet_dt,
+                    precision=self.precision.name,
+                )
+            assert embeddings[network_idx] is not None
+            if weight_name == "idt":
+                value = value.ravel()
+            embeddings[network_idx][layer_idx][weight_name] = value
+        return embeddings.serialize()
+
+    @classmethod
+    def deserialize_network(cls, data: dict, suffix: str = "") -> dict:
+        """Deserialize network.
+
+        Parameters
+        ----------
+        data : dict
+            The input network data
+        suffix : str, optional
+            The suffix of the scope
+
+        Returns
+        -------
+        variables : dict
+            The input variables
+        """
+        embedding_net_variables = {}
+        embeddings = NetworkCollection.deserialize(data)
+        for ii in range(embeddings.ntypes**embeddings.ndim):
+            net_idx = []
+            rest_ii = ii
+            for _ in range(embeddings.ndim):
+                net_idx.append(rest_ii % embeddings.ntypes)
+                rest_ii //= embeddings.ntypes
+            net_idx = tuple(net_idx)
+            if embeddings.ndim in (0, 1):
+                key0 = "all"
+                key1 = f"_{ii}"
+            elif embeddings.ndim == 2:
+                key0 = f"{net_idx[0]}"
+                key1 = f"_{net_idx[1]}"
+            else:
+                raise ValueError(f"Invalid ndim: {embeddings.ndim}")
+            network = embeddings[net_idx]
+            assert network is not None
+            for layer_idx, layer in enumerate(network.layers):
+                embedding_net_variables[
+                    f"filter_type_{key0}{suffix}/matrix_{layer_idx + 1}{key1}"
+                ] = layer.w
+                embedding_net_variables[
+                    f"filter_type_{key0}{suffix}/bias_{layer_idx + 1}{key1}"
+                ] = layer.b
+                if layer.idt is not None:
+                    embedding_net_variables[
+                        f"filter_type_{key0}{suffix}/idt_{layer_idx + 1}{key1}"
+                    ] = layer.idt.reshape(1, -1)
+                else:
+                    # prevent keyError
+                    embedding_net_variables[
+                        f"filter_type_{key0}{suffix}/idt_{layer_idx + 1}{key1}"
+                    ] = 0.0
+        return embedding_net_variables

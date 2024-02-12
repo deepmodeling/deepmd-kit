@@ -163,6 +163,8 @@ class DescrptSeA(NativeOP, BaseDescriptor):
             ndim=(1 if self.type_one_side else 2),
             network_type="embedding_network",
         )
+        if not self.type_one_side:
+            raise NotImplementedError("type_one_side == False not implemented")
         for ii in range(self.ntypes):
             self.embeddings[(ii,)] = EmbeddingNet(
                 in_dim,
