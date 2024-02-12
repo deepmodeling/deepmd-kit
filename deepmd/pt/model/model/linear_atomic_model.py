@@ -207,14 +207,18 @@ class LinearAtomicModel(BaseModel, BaseAtomicModel):
         """This should be a list of user defined weights that matches the number of models to be combined."""
         raise NotImplementedError
 
+    @torch.jit.export
     def get_dim_fparam(self) -> int:
         """Get the number (dimension) of frame parameters of this atomic model."""
-        return super().get_dim_fparam()
+        # tricky...
+        return max([model.get_dim_fparam() for model in self.models])
 
+    @torch.jit.export
     def get_dim_aparam(self) -> int:
         """Get the number (dimension) of atomic parameters of this atomic model."""
-        return super().get_dim_aparam()
+        return max([model.get_dim_aparam() for model in self.models])
 
+    @torch.jit.export
     def get_sel_type(self) -> List[int]:
         """Get the selected atom types of this model.
 
@@ -222,18 +226,31 @@ class LinearAtomicModel(BaseModel, BaseAtomicModel):
         to the result of the model.
         If returning an empty list, all atom types are selected.
         """
-        return super().get_sel_type()
+        if any(model.get_sel_type() == [] for model in self.models):
+            return []
+        # join all the selected types
+        # make torch.jit happy...
+        return torch.unique(
+            torch.cat(
+                [
+                    torch.as_tensor(model.get_sel_type(), dtype=torch.int32)
+                    for model in self.models
+                ]
+            )
+        ).tolist()
 
+    @torch.jit.export
     def get_has_efield(self) -> bool:
         """Check if the model has efield."""
-        return super().get_has_efield()
+        return False
 
+    @torch.jit.export
     def is_aparam_nall(self) -> bool:
         """Check whether the shape of atomic parameters is (nframes, nall, ndim).
 
         If False, the shape is (nframes, nloc, ndim).
         """
-        return super().is_aparam_nall()
+        return False
 
 
 class DPZBLLinearAtomicModel(LinearAtomicModel):

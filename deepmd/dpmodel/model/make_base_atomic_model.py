@@ -60,12 +60,10 @@ def make_base_atomic_model(
         @abstractmethod
         def get_dim_fparam(self) -> int:
             """Get the number (dimension) of frame parameters of this atomic model."""
-            return 0
 
         @abstractmethod
         def get_dim_aparam(self) -> int:
             """Get the number (dimension) of atomic parameters of this atomic model."""
-            return 0
 
         @abstractmethod
         def get_sel_type(self) -> List[int]:
@@ -75,12 +73,10 @@ def make_base_atomic_model(
             to the result of the model.
             If returning an empty list, all atom types are selected.
             """
-            return []
 
         @abstractmethod
         def get_has_efield(self) -> bool:
             """Check if the model has efield."""
-            return False
 
         @abstractmethod
         def is_aparam_nall(self) -> bool:
@@ -88,7 +84,6 @@ def make_base_atomic_model(
 
             If False, the shape is (nframes, nloc, ndim).
             """
-            return False
 
         @abstractmethod
         def distinguish_types(self) -> bool:
