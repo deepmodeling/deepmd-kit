@@ -7,40 +7,24 @@ from typing import (
 )
 
 import numpy as np
-import torch
 
-from deepmd.common import (
-    make_default_mesh,
-)
 from deepmd.dpmodel.descriptor.se_e2_a import DescrptSeA as DescrptSeADP
-from deepmd.dpmodel.utils.nlist import (
-    build_neighbor_list,
-    extend_coord_with_ghosts,
-)
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
 )
 from deepmd.pt.model.descriptor.se_a import DescrptSeA as DescrptSeAPT
-from deepmd.pt.utils.env import DEVICE as PT_DEVICE
-from deepmd.pt.utils.nlist import build_neighbor_list as build_neighbor_list_pt
-from deepmd.pt.utils.nlist import (
-    extend_coord_with_ghosts as extend_coord_with_ghosts_pt,
-)
 from deepmd.tf.descriptor.se_a import DescrptSeA as DescrptSeATF
-from deepmd.tf.env import (
-    GLOBAL_TF_FLOAT_PRECISION,
-    tf,
-)
 from deepmd.utils.argcheck import (
     descrpt_se_a_args,
 )
 
 from .common import (
     CommonTest,
+    DescriptorTest,
 )
 
 
-class CommonTestSeATest(CommonTest):
+class CommonTestSeATest(CommonTest, DescriptorTest):
     tf_class = DescrptSeATF
     dp_class = DescrptSeADP
     pt_class = DescrptSeAPT
@@ -81,64 +65,32 @@ class CommonTestSeATest(CommonTest):
         self.natoms = np.array([6, 6, 2, 4], dtype=np.int32)
 
     def build_tf(self, obj: Any, suffix: str) -> Tuple[list, dict]:
-        t_coord = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None], name="i_coord")
-        t_type = tf.placeholder(tf.int32, [None], name="i_type")
-        t_natoms = tf.placeholder(tf.int32, [self.ntypes + 2], name="i_natoms")
-        t_box = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [9], name="i_box")
-        t_mesh = tf.placeholder(tf.int32, [None], name="i_mesh")
-        t_des = obj.build(
-            t_coord,
-            t_type,
-            t_natoms,
-            t_box,
-            t_mesh,
-            {},
-            suffix=suffix,
+        return self.build_tf_descriptor(
+            obj,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
+            suffix,
         )
-        return [t_des], {
-            t_coord: self.coords,
-            t_type: self.atype,
-            t_natoms: self.natoms,
-            t_box: self.box,
-            t_mesh: make_default_mesh(True, False),
-        }
 
     def eval_dp(self, dp_obj: Any) -> Any:
-        ext_coords, ext_atype, mapping = extend_coord_with_ghosts(
-            self.coords.reshape(1, -1, 3),
-            self.atype.reshape(1, -1),
-            self.box.reshape(1, 3, 3),
-            dp_obj.get_rcut(),
+        return self.eval_dp_descriptor(
+            dp_obj,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
         )
-        nlist = build_neighbor_list(
-            ext_coords,
-            ext_atype,
-            self.natoms[0],
-            dp_obj.get_rcut(),
-            dp_obj.get_sel(),
-            distinguish_types=True,
-        )
-        return dp_obj(ext_coords, ext_atype, nlist=nlist)
 
-    def eval_pt(self, dp_obj: Any) -> Any:
-        ext_coords, ext_atype, mapping = extend_coord_with_ghosts_pt(
-            torch.from_numpy(self.coords).to(PT_DEVICE).reshape(1, -1, 3),
-            torch.from_numpy(self.atype).to(PT_DEVICE).reshape(1, -1),
-            torch.from_numpy(self.box).to(PT_DEVICE).reshape(1, 3, 3),
-            dp_obj.get_rcut(),
+    def eval_pt(self, pt_obj: Any) -> Any:
+        return self.eval_pt_descriptor(
+            pt_obj,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
         )
-        nlist = build_neighbor_list_pt(
-            ext_coords,
-            ext_atype,
-            self.natoms[0],
-            dp_obj.get_rcut(),
-            dp_obj.get_sel(),
-            distinguish_types=True,
-        )
-        return [
-            x.detach().cpu().numpy() if torch.is_tensor(x) else x
-            for x in dp_obj(ext_coords, ext_atype, nlist=nlist)
-        ]
 
     def extract_ret(self, ret: Any, backend) -> Any:
         return ret[0]
