@@ -167,7 +167,7 @@ class DeepEval(DeepEvalBackend):
 
     def get_numb_dos(self) -> int:
         """Get the number of DOS."""
-        return self.dp.model["Default"].get_numb_dos()
+        return 0
 
     def get_has_efield(self):
         """Check if the model has efield."""
@@ -175,7 +175,7 @@ class DeepEval(DeepEvalBackend):
 
     def get_ntypes_spin(self):
         """Get the number of spin atom types of this model."""
-        return self.dp.model["Default"].get_ntypes_spin()
+        return 0
 
     def eval(
         self,

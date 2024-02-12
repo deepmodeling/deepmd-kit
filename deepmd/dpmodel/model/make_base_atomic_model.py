@@ -78,19 +78,9 @@ def make_base_atomic_model(
             return []
 
         @abstractmethod
-        def get_numb_dos(self) -> int:
-            """Get the number of DOS."""
-            return 0
-
-        @abstractmethod
         def get_has_efield(self) -> bool:
             """Check if the model has efield."""
             return False
-
-        @abstractmethod
-        def get_ntypes_spin(self) -> int:
-            """Get the number of spin atom types of this model."""
-            return 0
 
         @abstractmethod
         def is_aparam_nall(self) -> bool:

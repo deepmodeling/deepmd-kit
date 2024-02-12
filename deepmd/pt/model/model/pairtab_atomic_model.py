@@ -350,17 +350,9 @@ class PairTabModel(BaseModel, BaseAtomicModel):
         """
         return super().get_sel_type()
 
-    def get_numb_dos(self) -> int:
-        """Get the number of DOS."""
-        return super().get_numb_dos()
-
     def get_has_efield(self) -> bool:
         """Check if the model has efield."""
         return super().get_has_efield()
-
-    def get_ntypes_spin(self) -> int:
-        """Get the number of spin atom types of this model."""
-        return super().get_ntypes_spin()
 
     def is_aparam_nall(self) -> bool:
         """Check whether the shape of atomic parameters is (nframes, nall, ndim).
