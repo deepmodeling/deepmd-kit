@@ -1409,6 +1409,8 @@ class DescrptSeA(DescrptSe):
             )
         if self.embedding_net_variables is None:
             raise RuntimeError("init_variables must be called before serialize")
+        if self.spin is not None:
+            raise NotImplementedError("spin is unsupported")
         assert self.davg is not None
         assert self.dstd is not None
         # TODO: not sure how to handle type embedding - type embedding is not a model parameter,
@@ -1443,4 +1445,5 @@ class DescrptSeA(DescrptSe):
                 "davg": self.davg.reshape(self.ntypes, self.nnei_a, 4),
                 "dstd": self.dstd.reshape(self.ntypes, self.nnei_a, 4),
             },
+            "spin": self.spin,
         }

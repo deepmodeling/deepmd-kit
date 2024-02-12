@@ -15,6 +15,7 @@ from typing import (
 
 from deepmd.dpmodel import (
     DEFAULT_PRECISION,
+    PRECISION_DICT,
     NativeOP,
 )
 from deepmd.dpmodel.utils import (
@@ -320,7 +321,8 @@ class DescrptSeA(NativeOP, BaseDescriptor):
             "exclude_types": self.exclude_types,
             "set_davg_zero": self.set_davg_zero,
             "activation_function": self.activation_function,
-            "precision": self.precision,
+            # make deterministic
+            "precision": np.dtype(PRECISION_DICT[self.precision]).name,
             "spin": self.spin,
             "env_mat": self.env_mat.serialize(),
             "embeddings": self.embeddings.serialize(),

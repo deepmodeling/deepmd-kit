@@ -140,10 +140,8 @@ class CommonTestSeATest(CommonTest):
             for x in dp_obj(ext_coords, ext_atype, nlist=nlist)
         ]
 
-    def compare_tf_dp_ret(self, tf_ret: Any, dp_ret: Any) -> None:
-        np.testing.assert_allclose(tf_ret[0], dp_ret[0], rtol=1e-4)
-
-    compare_tf_pt_ret = compare_tf_dp_ret
+    def extract_ret(self, ret: Any, backend) -> Any:
+        return ret[0]
 
 
 class TestSeATypeOneSide(CommonTestSeATest, unittest.TestCase):

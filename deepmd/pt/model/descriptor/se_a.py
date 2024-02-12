@@ -223,6 +223,7 @@ class DescrptSeA(Descriptor):
 
     @classmethod
     def deserialize(cls, data: dict) -> "DescrptSeA":
+        data = data.copy()
         variables = data.pop("@variables")
         embeddings = data.pop("embeddings")
         env_mat = data.pop("env_mat")
