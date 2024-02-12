@@ -12,15 +12,24 @@ from deepmd.dpmodel.descriptor.se_e2_a import DescrptSeA as DescrptSeADP
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
 )
-from deepmd.pt.model.descriptor.se_a import DescrptSeA as DescrptSeAPT
-from deepmd.tf.descriptor.se_a import DescrptSeA as DescrptSeATF
-from deepmd.utils.argcheck import (
-    descrpt_se_a_args,
-)
 
 from .common import (
+    INSTALLED_PT,
+    INSTALLED_TF,
     CommonTest,
     DescriptorTest,
+)
+
+if INSTALLED_PT:
+    from deepmd.pt.model.descriptor.se_a import DescrptSeA as DescrptSeAPT
+else:
+    DescrptSeAPT = None
+if INSTALLED_TF:
+    from deepmd.tf.descriptor.se_a import DescrptSeA as DescrptSeATF
+else:
+    DescrptSeATF = None
+from deepmd.utils.argcheck import (
+    descrpt_se_a_args,
 )
 
 

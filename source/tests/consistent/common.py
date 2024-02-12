@@ -1,10 +1,14 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import os
 from abc import (
     ABC,
     abstractmethod,
 )
 from enum import (
     Enum,
+)
+from importlib.util import (
+    find_spec,
 )
 from typing import (
     Any,
@@ -18,7 +22,6 @@ from uuid import (
 )
 
 import numpy as np
-import torch
 from dargs import (
     Argument,
 )
@@ -30,22 +33,48 @@ from deepmd.dpmodel.utils.nlist import (
     build_neighbor_list,
     extend_coord_with_ghosts,
 )
-from deepmd.pt.utils.env import DEVICE as PT_DEVICE
-from deepmd.pt.utils.nlist import build_neighbor_list as build_neighbor_list_pt
-from deepmd.pt.utils.nlist import (
-    extend_coord_with_ghosts as extend_coord_with_ghosts_pt,
-)
-from deepmd.tf.common import (
-    clear_session,
-)
-from deepmd.tf.env import (
-    GLOBAL_TF_FLOAT_PRECISION,
-    default_tf_session_config,
-    tf,
-)
-from deepmd.tf.utils.sess import (
-    run_sess,
-)
+
+if find_spec("tensorflow") is None:
+    if os.environ.get("CI"):
+        raise ImportError("TensorFlow should be tested in the CI")
+    INSTALLED_TF = False
+else:
+    INSTALLED_TF = True
+try:
+    import torch
+except ImportError as e:
+    if os.environ.get("CI"):
+        raise ImportError("PyTorch should be tested in the CI") from e
+    INSTALLED_PT = False
+else:
+    INSTALLED_PT = True
+
+if INSTALLED_PT:
+    from deepmd.pt.utils.env import DEVICE as PT_DEVICE
+    from deepmd.pt.utils.nlist import build_neighbor_list as build_neighbor_list_pt
+    from deepmd.pt.utils.nlist import (
+        extend_coord_with_ghosts as extend_coord_with_ghosts_pt,
+    )
+if INSTALLED_TF:
+    from deepmd.tf.common import (
+        clear_session,
+    )
+    from deepmd.tf.env import (
+        GLOBAL_TF_FLOAT_PRECISION,
+        default_tf_session_config,
+        tf,
+    )
+    from deepmd.tf.utils.sess import (
+        run_sess,
+    )
+
+
+__all__ = [
+    "CommonTest",
+    "DescriptorTest",
+    "INSTALLED_TF",
+    "INSTALLED_PT",
+]
 
 
 class CommonTest(ABC):
@@ -61,9 +90,9 @@ class CommonTest(ABC):
     """Arguments that maps to the `data`."""
     skip_dp: ClassVar[bool] = False
     """Whether to skip the native DP model."""
-    skip_tf: ClassVar[bool] = False
+    skip_tf: ClassVar[bool] = not INSTALLED_TF
     """Whether to skip the TensorFlow model."""
-    skip_pt: ClassVar[bool] = False
+    skip_pt: ClassVar[bool] = not INSTALLED_PT
     """Whether to skip the PyTorch model."""
 
     def setUp(self):
@@ -147,7 +176,7 @@ class CommonTest(ABC):
         """
 
     def build_eval_tf(
-        self, sess: tf.Session, obj: Any, suffix: str
+        self, sess: "tf.Session", obj: Any, suffix: str
     ) -> List[np.ndarray]:
         """Build and evaluate the TF graph."""
         t_out, feed_dict = self.build_tf(obj, suffix)
@@ -307,7 +336,8 @@ class CommonTest(ABC):
 
     def tearDown(self) -> None:
         """Clear the TF session."""
-        clear_session()
+        if not self.skip_tf:
+            clear_session()
 
 
 class DescriptorTest:
