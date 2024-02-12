@@ -101,8 +101,8 @@ class CommonTestSeATest(CommonTest, DescriptorTest):
             self.box,
         )
 
-    def extract_ret(self, ret: Any, backend) -> Any:
-        return ret[0]
+    def extract_ret(self, ret: Any, backend) -> Tuple[np.ndarray, ...]:
+        return (ret[0],)
 
 
 class TestSeATypeOneSide(CommonTestSeATest, unittest.TestCase):

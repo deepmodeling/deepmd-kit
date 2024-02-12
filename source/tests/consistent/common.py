@@ -159,7 +159,7 @@ class CommonTest(ABC):
         PT = 3
 
     @abstractmethod
-    def extract_ret(self, ret: Any, backend: RefBackend) -> Any:
+    def extract_ret(self, ret: Any, backend: RefBackend) -> Tuple[np.ndarray, ...]:
         """Extract the return value when comparing with other backends.
 
         Parameters
@@ -171,7 +171,7 @@ class CommonTest(ABC):
 
         Returns
         -------
-        Any
+        tuple[np.ndarray, ...]
             The extracted return value
         """
 
