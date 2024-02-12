@@ -107,4 +107,6 @@ class TestDPAtomicModel(unittest.TestCase, TestCaseSingleFrameWithNlist):
         ).to(env.DEVICE)
         type_map = ["foo", "bar"]
         md0 = DPAtomicModel(ds, ft, type_map=type_map).to(env.DEVICE)
-        torch.jit.script(md0)
+        md0 = torch.jit.script(md0)
+        self.assertEqual(md0.get_rcut(), self.rcut)
+        self.assertEqual(md0.get_type_map(), type_map)
