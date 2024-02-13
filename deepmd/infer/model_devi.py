@@ -296,9 +296,9 @@ def calc_model_devi(
     >>> from deepmd.tf.infer import calc_model_devi
     >>> from deepmd.tf.infer import DeepPot as DP
     >>> import numpy as np
-    >>> coord = np.array([[1,0,0], [0,0,1.5], [1,0,3]]).reshape([1, -1])
+    >>> coord = np.array([[1, 0, 0], [0, 0, 1.5], [1, 0, 3]]).reshape([1, -1])
     >>> cell = np.diag(10 * np.ones(3)).reshape([1, -1])
-    >>> atype = [1,0,1]
+    >>> atype = [1, 0, 1]
     >>> graphs = [DP("graph.000.pb"), DP("graph.001.pb")]
     >>> model_devi = calc_model_devi(coord, cell, atype, graphs)
     """
