@@ -284,7 +284,9 @@ class TestDPModelLower(unittest.TestCase, TestCaseSingleFrameWithNlist):
         ).to(env.DEVICE)
         type_map = ["foo", "bar"]
         md0 = DPModel(ds, ft, type_map=type_map).to(env.DEVICE)
-        torch.jit.script(md0)
+        md0 = torch.jit.script(md0)
+        md0.get_rcut()
+        md0.get_type_map()
 
 
 class TestDPModelFormatNlist(unittest.TestCase):
@@ -521,4 +523,6 @@ class TestEnergyModelLower(unittest.TestCase, TestCaseSingleFrameWithNlist):
         ).to(env.DEVICE)
         type_map = ["foo", "bar"]
         md0 = EnergyModel(ds, ft, type_map=type_map).to(env.DEVICE)
-        torch.jit.script(md0)
+        md0 = torch.jit.script(md0)
+        self.assertEqual(md0.get_rcut(), self.rcut)
+        self.assertEqual(md0.get_type_map(), type_map)

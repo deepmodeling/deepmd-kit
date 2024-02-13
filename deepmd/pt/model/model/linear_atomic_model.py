@@ -61,9 +61,15 @@ class LinearAtomicModel(BaseModel, BaseAtomicModel):
         """If distinguish different types by sorting."""
         return False
 
+    @torch.jit.export
     def get_rcut(self) -> float:
         """Get the cut-off radius."""
         return max(self.get_model_rcuts())
+
+    @torch.jit.export
+    def get_type_map(self) -> List[str]:
+        """Get the type map."""
+        raise NotImplementedError("TODO: implement this method")
 
     def get_model_rcuts(self) -> List[float]:
         """Get the cut-off radius for each individual models."""

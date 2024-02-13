@@ -329,7 +329,7 @@ def main_parser() -> argparse.ArgumentParser:
         "--model",
         default="frozen_model",
         type=str,
-        help="Frozen model file (prefix) to import. TensorFlow backend: suffix is .pb; PyTorch backend: suffix is .pt",
+        help="Frozen model file (prefix) to import. TensorFlow backend: suffix is .pb; PyTorch backend: suffix is .pth.",
     )
     parser_tst_subgroup = parser_tst.add_mutually_exclusive_group()
     parser_tst_subgroup.add_argument(
@@ -512,7 +512,7 @@ def main_parser() -> argparse.ArgumentParser:
         default=["graph.000", "graph.001", "graph.002", "graph.003"],
         nargs="+",
         type=str,
-        help="Frozen models file (prefix) to import. TensorFlow backend: suffix is .pb; PyTorch backend: suffix is .pt.",
+        help="Frozen models file (prefix) to import. TensorFlow backend: suffix is .pb; PyTorch backend: suffix is .pth.",
     )
     parser_model_devi.add_argument(
         "-s",

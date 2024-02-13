@@ -1,6 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import json
 import unittest
+from argparse import (
+    Namespace,
+)
 from copy import (
     deepcopy,
 )
@@ -12,6 +15,7 @@ import numpy as np
 
 from deepmd.infer.deep_pot import DeepPot as DeepPotUni
 from deepmd.pt.entrypoints.main import (
+    freeze,
     get_trainer,
 )
 from deepmd.pt.infer.deep_eval import (
@@ -95,3 +99,16 @@ class TestDeepPot(unittest.TestCase):
         dp = DeepPotUni("model.pt")
         self.assertIsInstance(dp, DeepPot)
         # its methods has been tested in test_dp_test
+
+
+class TestDeepPotFrozen(TestDeepPot):
+    def setUp(self):
+        super().setUp()
+        frozen_model = "frozen_model.pth"
+        ns = Namespace(
+            model=self.model,
+            output=frozen_model,
+            head=None,
+        )
+        freeze(ns)
+        self.model = frozen_model

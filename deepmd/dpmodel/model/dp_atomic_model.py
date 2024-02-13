@@ -62,6 +62,10 @@ class DPAtomicModel(BaseAtomicModel):
         """Get the neighbor selection."""
         return self.descriptor.get_sel()
 
+    def get_type_map(self) -> Optional[List[str]]:
+        """Get the type map."""
+        return self.type_map
+
     def distinguish_types(self) -> bool:
         """Returns if model requires a neighbor list that distinguish different
         atomic types or not.
