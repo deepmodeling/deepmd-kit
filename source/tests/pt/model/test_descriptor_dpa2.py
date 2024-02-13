@@ -20,8 +20,8 @@ from deepmd.pt.utils import (
 )
 from deepmd.pt.utils.nlist import (
     build_multiple_neighbor_list,
+    extend_input_and_build_neighbor_list,
     get_multiple_nlist_key,
-    process_input,
 )
 
 dtype = torch.float64
@@ -142,7 +142,12 @@ class TestDPA2(unittest.TestCase):
         ## to save model parameters
         # torch.save(des.state_dict(), 'model_weights.pth')
         # torch.save(type_embedding.state_dict(), 'model_weights.pth')
-        extended_coord, extended_atype, mapping, nlist_max = process_input(
+        (
+            extended_coord,
+            extended_atype,
+            mapping,
+            nlist_max,
+        ) = extend_input_and_build_neighbor_list(
             coord,
             atype,
             rcut_max,
@@ -200,7 +205,12 @@ class TestDPA2(unittest.TestCase):
         coord = self.coord
         atype = self.atype
         box = self.cell
-        extended_coord, extended_atype, mapping, nlist = process_input(
+        (
+            extended_coord,
+            extended_atype,
+            mapping,
+            nlist,
+        ) = extend_input_and_build_neighbor_list(
             coord,
             atype,
             des.get_rcut(),

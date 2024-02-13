@@ -17,7 +17,7 @@ from deepmd.pt.utils.region import (
 )
 
 
-def process_input(
+def extend_input_and_build_neighbor_list(
     coord,
     atype,
     rcut: float,

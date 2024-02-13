@@ -22,7 +22,7 @@ from deepmd.pt.utils import (
     env,
 )
 from deepmd.pt.utils.nlist import (
-    process_input,
+    extend_input_and_build_neighbor_list,
 )
 
 
@@ -200,7 +200,12 @@ class DescrptBlockSeAtten(DescriptorBlock):
                 system["box"],
                 system["natoms"],
             )
-            extended_coord, extended_atype, mapping, nlist = process_input(
+            (
+                extended_coord,
+                extended_atype,
+                mapping,
+                nlist,
+            ) = extend_input_and_build_neighbor_list(
                 coord,
                 atype,
                 self.get_rcut(),

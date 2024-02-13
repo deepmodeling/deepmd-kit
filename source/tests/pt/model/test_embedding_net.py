@@ -32,7 +32,7 @@ from deepmd.pt.utils.env import (
     GLOBAL_NP_FLOAT_PRECISION,
 )
 from deepmd.pt.utils.nlist import (
-    process_input,
+    extend_input_and_build_neighbor_list,
 )
 from deepmd.tf.common import (
     expand_sys_str,
@@ -180,7 +180,12 @@ class TestSeA(unittest.TestCase):
 
         pt_coord = self.torch_batch["coord"].to(env.DEVICE)
         pt_coord.requires_grad_(True)
-        extended_coord, extended_atype, mapping, nlist = process_input(
+        (
+            extended_coord,
+            extended_atype,
+            mapping,
+            nlist,
+        ) = extend_input_and_build_neighbor_list(
             pt_coord,
             self.torch_batch["atype"].to(env.DEVICE),
             self.rcut,

@@ -14,8 +14,8 @@ from deepmd.pt.model.model.transform_output import (
     fit_output_to_model_output,
 )
 from deepmd.pt.utils.nlist import (
+    extend_input_and_build_neighbor_list,
     nlist_distinguish_types,
-    process_input,
 )
 
 
@@ -89,7 +89,12 @@ def make_model(T_AtomicModel):
                 The keys are defined by the `ModelOutputDef`.
 
             """
-            extended_coord, extended_atype, mapping, nlist = process_input(
+            (
+                extended_coord,
+                extended_atype,
+                mapping,
+                nlist,
+            ) = extend_input_and_build_neighbor_list(
                 coord,
                 atype,
                 self.get_rcut(),

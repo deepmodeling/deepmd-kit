@@ -23,7 +23,7 @@ from deepmd.pt.utils import (
 from deepmd.pt.utils.nlist import (
     build_neighbor_list,
     extend_coord_with_ghosts,
-    process_input,
+    extend_input_and_build_neighbor_list,
 )
 from deepmd.pt.utils.utils import (
     to_numpy_array,
@@ -434,7 +434,7 @@ class TestEnergyModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
             to_numpy_array(ret0["atom_virial"]),
             to_numpy_array(ret1["atom_virial"]),
         )
-        coord_ext, atype_ext, mapping, nlist = process_input(
+        coord_ext, atype_ext, mapping, nlist = extend_input_and_build_neighbor_list(
             to_torch_tensor(self.coord),
             to_torch_tensor(self.atype),
             self.rcut,
