@@ -7,23 +7,19 @@ from unittest.mock import (
 import numpy as np
 import torch
 
-from deepmd.dpmodel.model.linear_atomic_model import (
+from deepmd.dpmodel.atomic_model import (
     DPZBLLinearAtomicModel as DPDPZBLLinearAtomicModel,
+)
+from deepmd.pt.model.atomic_model import (
+    DPAtomicModel,
+    DPZBLLinearAtomicModel,
+    PairTabAtomicModel,
 )
 from deepmd.pt.model.descriptor.se_a import (
     DescrptSeA,
 )
-from deepmd.pt.model.model.dp_atomic_model import (
-    DPAtomicModel,
-)
-from deepmd.pt.model.model.ener import (
-    ZBLModel,
-)
-from deepmd.pt.model.model.linear_atomic_model import (
-    DPZBLLinearAtomicModel,
-)
-from deepmd.pt.model.model.pairtab_atomic_model import (
-    PairTabModel,
+from deepmd.pt.model.model import (
+    DPZBLModel,
 )
 from deepmd.pt.model.task.ener import (
     InvarFitting,
@@ -73,7 +69,7 @@ class TestWeightCalculation(unittest.TestCase):
         ).to(env.DEVICE)
 
         type_map = ["foo", "bar"]
-        zbl_model = PairTabModel(tab_file=file_path, rcut=0.3, sel=2)
+        zbl_model = PairTabAtomicModel(tab_file=file_path, rcut=0.3, sel=2)
         dp_model = DPAtomicModel(ds, ft, type_map=type_map).to(env.DEVICE)
         wgt_model = DPZBLLinearAtomicModel(
             dp_model,
@@ -141,7 +137,7 @@ class TestIntegration(unittest.TestCase, TestCaseSingleFrameWithNlist):
         ).to(env.DEVICE)
         type_map = ["foo", "bar"]
         dp_model = DPAtomicModel(ds, ft, type_map=type_map).to(env.DEVICE)
-        zbl_model = PairTabModel(file_path, self.rcut, sum(self.sel))
+        zbl_model = PairTabAtomicModel(file_path, self.rcut, sum(self.sel))
         self.md0 = DPZBLLinearAtomicModel(
             dp_model,
             zbl_model,
@@ -152,7 +148,7 @@ class TestIntegration(unittest.TestCase, TestCaseSingleFrameWithNlist):
             env.DEVICE
         )
         self.md2 = DPDPZBLLinearAtomicModel.deserialize(self.md0.serialize())
-        self.md3 = ZBLModel(dp_model, zbl_model, sw_rmin=0.1, sw_rmax=0.25)
+        self.md3 = DPZBLModel(dp_model, zbl_model, sw_rmin=0.1, sw_rmax=0.25)
 
     def test_self_consistency(self):
         args = [

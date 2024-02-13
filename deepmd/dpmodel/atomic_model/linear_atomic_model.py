@@ -13,16 +13,16 @@ from typing import (
 
 import numpy as np
 
-from deepmd.dpmodel import (
-    FittingOutputDef,
-    OutputVariableDef,
-)
 from deepmd.dpmodel.utils.nlist import (
     build_multiple_neighbor_list,
     get_multiple_nlist_key,
     nlist_distinguish_types,
 )
 
+from ..output_def import (
+    FittingOutputDef,
+    OutputVariableDef,
+)
 from .base_atomic_model import (
     BaseAtomicModel,
 )
@@ -30,7 +30,7 @@ from .dp_atomic_model import (
     DPAtomicModel,
 )
 from .pairtab_atomic_model import (
-    PairTabModel,
+    PairTabAtomicModel,
 )
 
 
@@ -39,8 +39,8 @@ class LinearAtomicModel(BaseAtomicModel):
 
     Parameters
     ----------
-    models : list[DPAtomicModel or PairTabModel]
-        A list of models to be combined. PairTabModel must be used together with a DPAtomicModel.
+    models : list[DPAtomicModel or PairTabAtomicModel]
+        A list of models to be combined. PairTabAtomicModel must be used together with a DPAtomicModel.
     """
 
     def __init__(
@@ -212,7 +212,7 @@ class DPZBLLinearAtomicModel(LinearAtomicModel):
     def __init__(
         self,
         dp_model: DPAtomicModel,
-        zbl_model: PairTabModel,
+        zbl_model: PairTabAtomicModel,
         sw_rmin: float,
         sw_rmax: float,
         smin_alpha: Optional[float] = 0.1,
@@ -277,7 +277,9 @@ class DPZBLLinearAtomicModel(LinearAtomicModel):
         # use the larger rr based on nlist
         nlist_larger = zbl_nlist if zbl_nnei >= dp_nnei else dp_nlist
         masked_nlist = np.clip(nlist_larger, 0, None)
-        pairwise_rr = PairTabModel._get_pairwise_dist(extended_coord, masked_nlist)
+        pairwise_rr = PairTabAtomicModel._get_pairwise_dist(
+            extended_coord, masked_nlist
+        )
 
         numerator = np.sum(
             pairwise_rr * np.exp(-pairwise_rr / self.smin_alpha), axis=-1

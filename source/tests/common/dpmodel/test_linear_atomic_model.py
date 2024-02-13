@@ -6,20 +6,20 @@ from unittest.mock import (
 
 import numpy as np
 
+from deepmd.dpmodel import (
+    DPAtomicModel,
+)
+from deepmd.dpmodel.atomic_model.linear_atomic_model import (
+    DPZBLLinearAtomicModel,
+)
+from deepmd.dpmodel.atomic_model.pairtab_atomic_model import (
+    PairTabAtomicModel,
+)
 from deepmd.dpmodel.descriptor.se_e2_a import (
     DescrptSeA,
 )
 from deepmd.dpmodel.fitting.invar_fitting import (
     InvarFitting,
-)
-from deepmd.dpmodel.model.dp_atomic_model import (
-    DPAtomicModel,
-)
-from deepmd.dpmodel.model.linear_atomic_model import (
-    DPZBLLinearAtomicModel,
-)
-from deepmd.dpmodel.model.pairtab_atomic_model import (
-    PairTabModel,
 )
 
 
@@ -53,7 +53,7 @@ class TestWeightCalculation(unittest.TestCase):
         )
 
         type_map = ["foo", "bar"]
-        zbl_model = PairTabModel(tab_file=file_path, rcut=0.3, sel=2)
+        zbl_model = PairTabAtomicModel(tab_file=file_path, rcut=0.3, sel=2)
         dp_model = DPAtomicModel(ds, ft, type_map=type_map)
 
         wgt_model = DPZBLLinearAtomicModel(
@@ -145,7 +145,7 @@ class TestIntegration(unittest.TestCase):
         )
         type_map = ["foo", "bar"]
         dp_model = DPAtomicModel(ds, ft, type_map=type_map)
-        zbl_model = PairTabModel(file_path, self.rcut, sum(self.sel))
+        zbl_model = PairTabAtomicModel(file_path, self.rcut, sum(self.sel))
         self.md0 = DPZBLLinearAtomicModel(
             dp_model,
             zbl_model,

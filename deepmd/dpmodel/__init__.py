@@ -1,11 +1,13 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from .atomic_model import (
+    DPAtomicModel,
+)
 from .common import (
     DEFAULT_PRECISION,
     PRECISION_DICT,
     NativeOP,
 )
 from .model import (
-    DPAtomicModel,
     DPModel,
 )
 from .output_def import (

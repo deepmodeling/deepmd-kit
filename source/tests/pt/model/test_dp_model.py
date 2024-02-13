@@ -10,7 +10,7 @@ from deepmd.dpmodel.fitting import InvarFitting as DPInvarFitting
 from deepmd.pt.model.descriptor.se_a import (
     DescrptSeA,
 )
-from deepmd.pt.model.model.ener import (
+from deepmd.pt.model.model import (
     DPModel,
     EnergyModel,
 )

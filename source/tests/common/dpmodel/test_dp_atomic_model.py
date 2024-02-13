@@ -3,14 +3,14 @@ import unittest
 
 import numpy as np
 
+from deepmd.dpmodel import (
+    DPAtomicModel,
+)
 from deepmd.dpmodel.descriptor import (
     DescrptSeA,
 )
 from deepmd.dpmodel.fitting import (
     InvarFitting,
-)
-from deepmd.dpmodel.model import (
-    DPAtomicModel,
 )
 
 from .case_single_frame_with_nlist import (

@@ -6,9 +6,9 @@ from typing import (
     Union,
 )
 
-import torch
+import numpy as np
 
-from deepmd.dpmodel import (
+from deepmd.dpmodel.output_def import (
     FittingOutputDef,
     OutputVariableDef,
 )
@@ -19,12 +19,9 @@ from deepmd.utils.pair_tab import (
 from .base_atomic_model import (
     BaseAtomicModel,
 )
-from .model import (
-    BaseModel,
-)
 
 
-class PairTabModel(BaseModel, BaseAtomicModel):
+class PairTabAtomicModel(BaseAtomicModel):
     """Pairwise tabulation energy model.
 
     This model can be used to tabulate the pairwise energy between atoms for either
@@ -54,22 +51,13 @@ class PairTabModel(BaseModel, BaseAtomicModel):
         super().__init__()
         self.tab_file = tab_file
         self.rcut = rcut
-        self.tab = self._set_pairtab(tab_file, rcut)
 
-        # handle deserialization with no input file
+        self.tab = PairTab(self.tab_file, rcut=rcut)
+
         if self.tab_file is not None:
-            (
-                tab_info,
-                tab_data,
-            ) = self.tab.get()  # this returns -> Tuple[np.array, np.array]
-            self.register_buffer("tab_info", torch.from_numpy(tab_info))
-            self.register_buffer("tab_data", torch.from_numpy(tab_data))
+            self.tab_info, self.tab_data = self.tab.get()
         else:
-            self.register_buffer("tab_info", None)
-            self.register_buffer("tab_data", None)
-
-        # self.model_type = "ener"
-        # self.model_version = MODEL_VERSION ## this shoud be in the parent class
+            self.tab_info, self.tab_data = None, None
 
         if isinstance(sel, int):
             self.sel = sel
@@ -77,10 +65,6 @@ class PairTabModel(BaseModel, BaseAtomicModel):
             self.sel = sum(sel)
         else:
             raise TypeError("sel must be int or list[int]")
-
-    @torch.jit.ignore
-    def _set_pairtab(self, tab_file: str, rcut: float) -> PairTab:
-        return PairTab(tab_file, rcut)
 
     def fitting_output_def(self) -> FittingOutputDef:
         return FittingOutputDef(
@@ -95,13 +79,11 @@ class PairTabModel(BaseModel, BaseAtomicModel):
             ]
         )
 
-    @torch.jit.export
     def get_rcut(self) -> float:
         return self.rcut
 
-    @torch.jit.export
     def get_type_map(self) -> Optional[List[str]]:
-        raise NotImplementedError("TODO: implement this method")
+        raise NotImplementedError("TODO: get_type_map should be implemented")
 
     def get_sel(self) -> List[int]:
         return [self.sel]
@@ -117,30 +99,27 @@ class PairTabModel(BaseModel, BaseAtomicModel):
         return {"tab": self.tab.serialize(), "rcut": self.rcut, "sel": self.sel}
 
     @classmethod
-    def deserialize(cls, data) -> "PairTabModel":
+    def deserialize(cls, data) -> "PairTabAtomicModel":
         rcut = data["rcut"]
         sel = data["sel"]
         tab = PairTab.deserialize(data["tab"])
         tab_model = cls(None, rcut, sel)
         tab_model.tab = tab
-        tab_model.register_buffer("tab_info", torch.from_numpy(tab_model.tab.tab_info))
-        tab_model.register_buffer("tab_data", torch.from_numpy(tab_model.tab.tab_data))
+        tab_model.tab_info = tab_model.tab.tab_info
+        tab_model.tab_data = tab_model.tab.tab_data
         return tab_model
 
     def forward_atomic(
         self,
-        extended_coord: torch.Tensor,
-        extended_atype: torch.Tensor,
-        nlist: torch.Tensor,
-        mapping: Optional[torch.Tensor] = None,
-        fparam: Optional[torch.Tensor] = None,
-        aparam: Optional[torch.Tensor] = None,
-        do_atomic_virial: bool = False,
-    ) -> Dict[str, torch.Tensor]:
+        extended_coord,
+        extended_atype,
+        nlist,
+        mapping: Optional[np.ndarray] = None,
+        fparam: Optional[np.ndarray] = None,
+        aparam: Optional[np.ndarray] = None,
+    ) -> Dict[str, np.ndarray]:
         nframes, nloc, nnei = nlist.shape
-        extended_coord = extended_coord.view(nframes, -1, 3)
-        if self.do_grad():
-            extended_coord.requires_grad_(True)
+        extended_coord = extended_coord.reshape(nframes, -1, 3)
 
         # this will mask all -1 in the nlist
         mask = nlist >= 0
@@ -150,53 +129,48 @@ class PairTabModel(BaseModel, BaseAtomicModel):
         pairwise_rr = self._get_pairwise_dist(
             extended_coord, masked_nlist
         )  # (nframes, nloc, nnei)
-        self.tab_data = self.tab_data.view(
-            int(self.tab_info[-1]), int(self.tab_info[-1]), int(self.tab_info[2]), 4
+        self.tab_data = self.tab_data.reshape(
+            self.tab.ntypes, self.tab.ntypes, self.tab.nspline, 4
         )
 
-        # to calculate the atomic_energy, we need 3 tensors, i_type, j_type, pairwise_rr
-        # i_type : (nframes, nloc), this is atype.
-        # j_type : (nframes, nloc, nnei)
+        # (nframes, nloc, nnei)
         j_type = extended_atype[
-            torch.arange(extended_atype.size(0))[:, None, None], masked_nlist
+            np.arange(extended_atype.shape[0])[:, None, None], masked_nlist
         ]
 
         raw_atomic_energy = self._pair_tabulated_inter(
             nlist, atype, j_type, pairwise_rr
         )
-
-        atomic_energy = 0.5 * torch.sum(
-            torch.where(
-                nlist != -1, raw_atomic_energy, torch.zeros_like(raw_atomic_energy)
-            ),
-            dim=-1,
-        ).unsqueeze(-1)
+        atomic_energy = 0.5 * np.sum(
+            np.where(nlist != -1, raw_atomic_energy, np.zeros_like(raw_atomic_energy)),
+            axis=-1,
+        ).reshape(nframes, nloc, 1)
 
         return {"energy": atomic_energy}
 
     def _pair_tabulated_inter(
         self,
-        nlist: torch.Tensor,
-        i_type: torch.Tensor,
-        j_type: torch.Tensor,
-        rr: torch.Tensor,
-    ) -> torch.Tensor:
+        nlist: np.ndarray,
+        i_type: np.ndarray,
+        j_type: np.ndarray,
+        rr: np.ndarray,
+    ) -> np.ndarray:
         """Pairwise tabulated energy.
 
         Parameters
         ----------
-        nlist : torch.Tensor
+        nlist : np.ndarray
             The unmasked neighbour list. (nframes, nloc)
-        i_type : torch.Tensor
+        i_type : np.ndarray
             The integer representation of atom type for all local atoms for all frames. (nframes, nloc)
-        j_type : torch.Tensor
+        j_type : np.ndarray
             The integer representation of atom type for all neighbour atoms of all local atoms for all frames. (nframes, nloc, nnei)
-        rr : torch.Tensor
+        rr : np.ndarray
             The salar distance vector between two atoms. (nframes, nloc, nnei)
 
         Returns
         -------
-        torch.Tensor
+        np.ndarray
             The masked atomic energy for all local atoms for all frames. (nframes, nloc, nnei)
 
         Raises
@@ -220,120 +194,121 @@ class PairTabModel(BaseModel, BaseAtomicModel):
 
         # if nnei of atom 0 has -1 in the nlist, uu would be 0.
         # this is to handle the nlist where the mask is set to 0, so that we don't raise exception for those atoms.
-        uu = torch.where(nlist != -1, uu, nspline + 1)
+        uu = np.where(nlist != -1, uu, nspline + 1)
 
-        if torch.any(uu < 0):
+        if np.any(uu < 0):
             raise Exception("coord go beyond table lower boundary")
 
-        idx = uu.to(torch.int)
+        idx = uu.astype(int)
 
         uu -= idx
-
         table_coef = self._extract_spline_coefficient(
             i_type, j_type, idx, self.tab_data, nspline
         )
-        table_coef = table_coef.view(nframes, nloc, nnei, 4)
+        table_coef = table_coef.reshape(nframes, nloc, nnei, 4)
         ener = self._calculate_ener(table_coef, uu)
-
         # here we need to overwrite energy to zero at rcut and beyond.
         mask_beyond_rcut = rr >= self.rcut
         # also overwrite values beyond extrapolation to zero
-        extrapolation_mask = rr >= rmin + nspline * hh
+        extrapolation_mask = rr >= self.tab.rmin + nspline * self.tab.hh
         ener[mask_beyond_rcut] = 0
         ener[extrapolation_mask] = 0
 
         return ener
 
     @staticmethod
-    def _get_pairwise_dist(coords: torch.Tensor, nlist: torch.Tensor) -> torch.Tensor:
+    def _get_pairwise_dist(coords: np.ndarray, nlist: np.ndarray) -> np.ndarray:
         """Get pairwise distance `dr`.
 
         Parameters
         ----------
-        coords : torch.Tensor
+        coords : np.ndarray
             The coordinate of the atoms, shape of (nframes, nall, 3).
         nlist
-            The masked nlist, shape of (nframes, nloc, nnei)
+            The masked nlist, shape of (nframes, nloc, nnei).
 
         Returns
         -------
-        torch.Tensor
+        np.ndarray
             The pairwise distance between the atoms (nframes, nloc, nnei).
         """
-        nframes, nloc, nnei = nlist.shape
-        coord_l = coords[:, :nloc].view(nframes, -1, 1, 3)
-        index = nlist.view(nframes, -1).unsqueeze(-1).expand(-1, -1, 3)
-        coord_r = torch.gather(coords, 1, index)
-        coord_r = coord_r.view(nframes, nloc, nnei, 3)
-        diff = coord_r - coord_l
-        pairwise_rr = torch.linalg.norm(diff, dim=-1, keepdim=True).squeeze(-1)
+        batch_indices = np.arange(nlist.shape[0])[:, None, None]
+        neighbor_atoms = coords[batch_indices, nlist]
+        loc_atoms = coords[:, : nlist.shape[1], :]
+        pairwise_dr = loc_atoms[:, :, None, :] - neighbor_atoms
+        pairwise_rr = np.sqrt(np.sum(np.power(pairwise_dr, 2), axis=-1))
+
         return pairwise_rr
 
     @staticmethod
     def _extract_spline_coefficient(
-        i_type: torch.Tensor,
-        j_type: torch.Tensor,
-        idx: torch.Tensor,
-        tab_data: torch.Tensor,
+        i_type: np.ndarray,
+        j_type: np.ndarray,
+        idx: np.ndarray,
+        tab_data: np.ndarray,
         nspline: int,
-    ) -> torch.Tensor:
+    ) -> np.ndarray:
         """Extract the spline coefficient from the table.
 
         Parameters
         ----------
-        i_type : torch.Tensor
+        i_type : np.ndarray
             The integer representation of atom type for all local atoms for all frames. (nframes, nloc)
-        j_type : torch.Tensor
+        j_type : np.ndarray
             The integer representation of atom type for all neighbour atoms of all local atoms for all frames. (nframes, nloc, nnei)
-        idx : torch.Tensor
+        idx : np.ndarray
             The index of the spline coefficient. (nframes, nloc, nnei)
-        tab_data : torch.Tensor
+        tab_data : np.ndarray
             The table storing all the spline coefficient. (ntype, ntype, nspline, 4)
         nspline : int
             The number of splines in the table.
 
         Returns
         -------
-        torch.Tensor
+        np.ndarray
             The spline coefficient. (nframes, nloc, nnei, 4), shape may be squeezed.
-
         """
         # (nframes, nloc, nnei)
-        expanded_i_type = i_type.unsqueeze(-1).expand(-1, -1, j_type.shape[-1])
+        expanded_i_type = np.broadcast_to(
+            i_type[:, :, np.newaxis],
+            (i_type.shape[0], i_type.shape[1], j_type.shape[-1]),
+        )
 
         # (nframes, nloc, nnei, nspline, 4)
         expanded_tab_data = tab_data[expanded_i_type, j_type]
 
         # (nframes, nloc, nnei, 1, 4)
-        expanded_idx = idx.unsqueeze(-1).unsqueeze(-1).expand(-1, -1, -1, -1, 4)
-
-        # handle the case where idx is beyond the number of splines
-        clipped_indices = torch.clamp(expanded_idx, 0, nspline - 1).to(torch.int64)
+        expanded_idx = np.broadcast_to(
+            idx[..., np.newaxis, np.newaxis], (*idx.shape, 1, 4)
+        )
+        clipped_indices = np.clip(expanded_idx, 0, nspline - 1).astype(int)
 
         # (nframes, nloc, nnei, 4)
-        final_coef = torch.gather(expanded_tab_data, 3, clipped_indices).squeeze()
+        final_coef = np.squeeze(
+            np.take_along_axis(expanded_tab_data, clipped_indices, 3)
+        )
 
         # when the spline idx is beyond the table, all spline coefficients are set to `0`, and the resulting ener corresponding to the idx is also `0`.
         final_coef[expanded_idx.squeeze() > nspline] = 0
         return final_coef
 
     @staticmethod
-    def _calculate_ener(coef: torch.Tensor, uu: torch.Tensor) -> torch.Tensor:
+    def _calculate_ener(coef: np.ndarray, uu: np.ndarray) -> np.ndarray:
         """Calculate energy using spline coeeficients.
 
         Parameters
         ----------
-        coef : torch.Tensor
+        coef : np.ndarray
             The spline coefficients. (nframes, nloc, nnei, 4)
-        uu : torch.Tensor
+        uu : np.ndarray
             The atom displancemnt used in interpolation and extrapolation (nframes, nloc, nnei)
 
         Returns
         -------
-        torch.Tensor
+        np.ndarray
             The atomic energy for all local atoms for all frames. (nframes, nloc, nnei)
         """
-        a3, a2, a1, a0 = torch.unbind(coef, dim=-1)
+        a3, a2, a1, a0 = coef[..., 0], coef[..., 1], coef[..., 2], coef[..., 3]
         etmp = (a3 * uu + a2) * uu + a1  # this should be elementwise operations.
         ener = etmp * uu + a0  # this energy has the extrapolated value when rcut > rmax
         return ener
