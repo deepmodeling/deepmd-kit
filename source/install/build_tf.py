@@ -294,7 +294,7 @@ def set_directory(path: Path):
     Examples
     --------
     >>> with set_directory("some_path"):
-    ...    do_something()
+    ...     do_something()
     """
     cwd = Path().absolute()
     path.mkdir(exist_ok=True, parents=True)

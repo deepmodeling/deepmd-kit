@@ -35,12 +35,10 @@ class ParallelOp:
     >>> def builder():
     ...     x = tf.placeholder(tf.int32, [1])
     ...     return {"x": x}, (x + 1)
-    ...
     >>> p = ParallelOp(builder, nthreads=4)
     >>> def feed():
     ...     for ii in range(10):
     ...         yield {"x": [ii]}
-    ...
     >>> print(*p.generate(tf.Session(), feed()))
     [1] [2] [3] [4] [5] [6] [7] [8] [9] [10]
     """
