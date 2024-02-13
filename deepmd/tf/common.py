@@ -243,13 +243,13 @@ def cast_precision(func: Callable) -> Callable:
     Examples
     --------
     >>> class A:
-    ...   @property
-    ...   def precision(self):
-    ...     return tf.float32
+    ...     @property
+    ...     def precision(self):
+    ...         return tf.float32
     ...
-    ...   @cast_precision
-    ...   def f(x: tf.Tensor, y: tf.Tensor) -> tf.Tensor:
-    ...     return x ** 2 + y
+    ...     @cast_precision
+    ...     def f(x: tf.Tensor, y: tf.Tensor) -> tf.Tensor:
+    ...         return x**2 + y
     """
 
     @wraps(func)
