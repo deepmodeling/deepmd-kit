@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import copy
+import math
 from typing import (
     Dict,
     List,
@@ -139,9 +140,7 @@ def make_hessian_model(T_Model):
             for kk in hess_keys:
                 vdef = fdef[kk]
                 vshape = vdef.shape
-                vsize = 1
-                for ii in vshape:
-                    vsize *= ii
+                vsize = math.prod(vdef.shape)
                 # loop over frames
                 for ii in range(nf):
                     icoord = coord[ii]
