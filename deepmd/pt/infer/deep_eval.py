@@ -91,19 +91,25 @@ class DeepEval(DeepEvalBackend):
     ):
         self.output_def = output_def
         self.model_path = model_file
-        state_dict = torch.load(model_file, map_location=env.DEVICE)
-        if "model" in state_dict:
-            state_dict = state_dict["model"]
-        self.input_param = state_dict["_extra_state"]["model_params"]
-        self.input_param["resuming"] = True
-        self.multi_task = "model_dict" in self.input_param
-        assert not self.multi_task, "multitask mode currently not supported!"
-        self.type_split = self.input_param["descriptor"]["type"] in ["se_e2_a"]
-        self.type_map = self.input_param["type_map"]
-        self.dp = ModelWrapper(get_model(self.input_param).to(DEVICE))
-        self.dp.load_state_dict(state_dict)
-        self.rcut = self.dp.model["Default"].descriptor.get_rcut()
-        self.sec = np.cumsum(self.dp.model["Default"].descriptor.get_sel())
+        if str(self.model_path).endswith(".pt"):
+            state_dict = torch.load(model_file, map_location=env.DEVICE)
+            if "model" in state_dict:
+                state_dict = state_dict["model"]
+            self.input_param = state_dict["_extra_state"]["model_params"]
+            self.input_param["resuming"] = True
+            self.multi_task = "model_dict" in self.input_param
+            assert not self.multi_task, "multitask mode currently not supported!"
+            model = get_model(self.input_param).to(DEVICE)
+            model = torch.jit.script(model)
+            self.dp = ModelWrapper(model)
+            self.dp.load_state_dict(state_dict)
+        elif str(self.model_path).endswith(".pth"):
+            model = torch.jit.load(model_file, map_location=env.DEVICE)
+            self.dp = ModelWrapper(model)
+        else:
+            raise ValueError("Unknown model file format!")
+        self.rcut = self.dp.model["Default"].get_rcut()
+        self.type_map = self.dp.model["Default"].get_type_map()
         if isinstance(auto_batch_size, bool):
             if auto_batch_size:
                 self.auto_batch_size = AutoBatchSize()

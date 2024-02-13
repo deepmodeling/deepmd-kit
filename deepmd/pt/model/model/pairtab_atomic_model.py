@@ -95,8 +95,13 @@ class PairTabModel(BaseModel, BaseAtomicModel):
             ]
         )
 
+    @torch.jit.export
     def get_rcut(self) -> float:
         return self.rcut
+
+    @torch.jit.export
+    def get_type_map(self) -> Optional[List[str]]:
+        raise NotImplementedError("TODO: implement this method")
 
     def get_sel(self) -> List[int]:
         return [self.sel]

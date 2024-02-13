@@ -82,6 +82,9 @@ class PairTabModel(BaseAtomicModel):
     def get_rcut(self) -> float:
         return self.rcut
 
+    def get_type_map(self) -> Optional[List[str]]:
+        raise NotImplementedError("TODO: get_type_map should be implemented")
+
     def get_sel(self) -> List[int]:
         return [self.sel]
 

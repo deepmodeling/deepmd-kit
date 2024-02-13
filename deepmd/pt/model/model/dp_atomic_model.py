@@ -67,9 +67,15 @@ class DPAtomicModel(BaseModel, BaseAtomicModel):
             else self.coord_denoise_net.output_def()
         )
 
+    @torch.jit.export
     def get_rcut(self) -> float:
         """Get the cut-off radius."""
         return self.rcut
+
+    @torch.jit.export
+    def get_type_map(self) -> List[str]:
+        """Get the type map."""
+        return self.type_map
 
     def get_sel(self) -> List[int]:
         """Get the neighbor selection."""

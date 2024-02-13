@@ -45,6 +45,10 @@ def make_base_atomic_model(
             pass
 
         @abstractmethod
+        def get_type_map(self) -> Optional[List[str]]:
+            """Get the type map."""
+
+        @abstractmethod
         def get_sel(self) -> List[int]:
             """Returns the number of selected atoms for each type."""
             pass
