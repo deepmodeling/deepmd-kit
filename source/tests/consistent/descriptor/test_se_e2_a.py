@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import unittest
 from typing import (
     Any,
     Tuple,
@@ -39,7 +40,7 @@ from deepmd.utils.argcheck import (
     (True, False),  # type_one_side
     ([], [[0, 1]]),  # excluded_types
 )
-class CommonTestSeATest(CommonTest, DescriptorTest):
+class TestSeA(CommonTest, DescriptorTest, unittest.TestCase):
     @property
     def data(self) -> dict:
         (

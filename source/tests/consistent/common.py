@@ -2,7 +2,6 @@
 import itertools
 import os
 import sys
-import unittest
 from abc import (
     ABC,
     abstractmethod,
@@ -60,11 +59,11 @@ __all__ = [
 class CommonTest(ABC):
     data: ClassVar[dict]
     """Arguments data."""
-    tf_class: ClassVar[type]
+    tf_class: ClassVar[Optional[type]]
     """TensorFlow model class."""
-    dp_class: ClassVar[type]
+    dp_class: ClassVar[Optional[type]]
     """Native DP model class."""
-    pt_class: ClassVar[type]
+    pt_class: ClassVar[Optional[type]]
     """PyTorch model class."""
     args: ClassVar[Optional[List[Argument]]]
     """Arguments that maps to the `data`."""
@@ -364,7 +363,7 @@ def parameterized(*attrs: tuple) -> Callable:
         class_module = sys.modules[base_class.__module__].__dict__
         for pp in itertools.product(*attrs):
 
-            class TestClass(base_class, unittest.TestCase):
+            class TestClass(base_class):
                 param: ClassVar = pp
 
             name = f"{base_class.__name__}_{'_'.join(str(x) for x in pp)}"
