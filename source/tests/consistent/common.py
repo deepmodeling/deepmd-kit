@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import itertools
 import os
+import sys
+import unittest
 from abc import (
     ABC,
     abstractmethod,
@@ -12,6 +15,7 @@ from importlib.util import (
 )
 from typing import (
     Any,
+    Callable,
     ClassVar,
     List,
     Optional,
@@ -318,3 +322,55 @@ class CommonTest(ABC):
         """Clear the TF session."""
         if not self.skip_tf:
             clear_session()
+
+
+def parameterized(*attrs: tuple) -> Callable:
+    """Parameterized test.
+
+    Orginal class will not be actually generated. Avoid inherbiting from it.
+    New classes are generated with the name of the original class and the
+    parameters.
+
+    Parameters
+    ----------
+    *attrs : tuple
+        The attributes to be parameterized.
+
+    Returns
+    -------
+    object
+        The decorator.
+
+    Examples
+    --------
+    >>> @parameterized(
+    ...     (True, False),
+    ...     (True, False),
+    ... )
+    ... class TestSeA(CommonTest, unittest.TestCase):
+    ...     @property
+    ...     def data(self) -> dict:
+    ...         (
+    ...             param1,
+    ...             param2,
+    ...         ) = self.param
+    ...         return {
+    ...             "param1": param1,
+    ...             "param2": param2,
+    ...         }
+    """
+
+    def decorator(base_class: type):
+        class_module = sys.modules[base_class.__module__].__dict__
+        for pp in itertools.product(*attrs):
+
+            class TestClass(base_class, unittest.TestCase):
+                param: ClassVar = pp
+
+            name = f"{base_class.__name__}_{'_'.join(str(x) for x in pp)}"
+
+            class_module[name] = TestClass
+        # make unittest module happy by ignoring the original one
+        return object
+
+    return decorator

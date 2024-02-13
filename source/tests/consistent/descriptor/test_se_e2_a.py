@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import unittest
 from typing import (
     Any,
-    ClassVar,
     Tuple,
 )
 
@@ -17,6 +15,7 @@ from ..common import (
     INSTALLED_PT,
     INSTALLED_TF,
     CommonTest,
+    parameterized,
 )
 from .common import (
     DescriptorTest,
@@ -35,7 +34,49 @@ from deepmd.utils.argcheck import (
 )
 
 
+@parameterized(
+    (True, False),  # resnet_dt
+    (True, False),  # type_one_side
+    ([], [[0, 1]]),  # excluded_types
+)
 class CommonTestSeATest(CommonTest, DescriptorTest):
+    @property
+    def data(self) -> dict:
+        (
+            resnet_dt,
+            type_one_side,
+            excluded_types,
+        ) = self.param
+        return {
+            "sel": [10, 10],
+            "rcut_smth": 5.80,
+            "rcut": 6.00,
+            "neuron": [6, 12, 24],
+            "axis_neuron": 3,
+            "resnet_dt": resnet_dt,
+            "type_one_side": type_one_side,
+            "exclude_types": excluded_types,
+            "seed": 1145141919810,
+        }
+
+    @property
+    def skip_pt(self) -> bool:
+        (
+            resnet_dt,
+            type_one_side,
+            excluded_types,
+        ) = self.param
+        return not type_one_side or excluded_types != [] or CommonTest.skip_pt
+
+    @property
+    def skip_dp(self) -> bool:
+        (
+            resnet_dt,
+            type_one_side,
+            excluded_types,
+        ) = self.param
+        return not type_one_side or excluded_types != [] or CommonTest.skip_dp
+
     tf_class = DescrptSeATF
     dp_class = DescrptSeADP
     pt_class = DescrptSeAPT
@@ -105,64 +146,3 @@ class CommonTestSeATest(CommonTest, DescriptorTest):
 
     def extract_ret(self, ret: Any, backend) -> Tuple[np.ndarray, ...]:
         return (ret[0],)
-
-
-class TestSeATypeOneSide(CommonTestSeATest, unittest.TestCase):
-    data: ClassVar[dict] = {
-        "sel": [46, 92],
-        "rcut_smth": 5.80,
-        "rcut": 6.00,
-        "neuron": [25, 50, 100],
-        "axis_neuron": 16,
-        "resnet_dt": True,
-        "type_one_side": True,
-        "seed": 1145141919810,
-    }
-
-
-class TestSeATypeTwoSide(CommonTestSeATest, unittest.TestCase):
-    data: ClassVar[dict] = {
-        "sel": [46, 92],
-        "rcut_smth": 5.80,
-        "rcut": 6.00,
-        "neuron": [25, 50, 100],
-        "axis_neuron": 16,
-        "resnet_dt": False,
-        "type_one_side": False,
-        "seed": 1145141919810,
-    }
-    skip_dp = True
-    skip_pt = True
-
-
-class TestSeAExcludeTypeOneSide(CommonTestSeATest, unittest.TestCase):
-    data: ClassVar[dict] = {
-        "sel": [46, 92],
-        "rcut_smth": 5.80,
-        "rcut": 6.00,
-        "neuron": [25, 50, 100],
-        "axis_neuron": 16,
-        "resnet_dt": False,
-        "type_one_side": True,
-        "exclude_types": [[0, 1]],
-        "seed": 1145141919810,
-    }
-    unittest.skip("Unsupported by native model")
-    skip_dp = True
-    skip_pt = True
-
-
-class TestSeAExcludeTypeTwoSide(CommonTestSeATest, unittest.TestCase):
-    data: ClassVar[dict] = {
-        "sel": [46, 92],
-        "rcut_smth": 5.80,
-        "rcut": 6.00,
-        "neuron": [25, 50, 100],
-        "axis_neuron": 16,
-        "resnet_dt": False,
-        "type_one_side": False,
-        "exclude_types": [[0, 1]],
-        "seed": 1145141919810,
-    }
-    skip_dp = True
-    skip_pt = True
