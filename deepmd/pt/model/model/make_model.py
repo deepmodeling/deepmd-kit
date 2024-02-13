@@ -79,6 +79,10 @@ def make_model(T_AtomicModel):
                 The type of atoms. shape: nf x nloc
             box
                 The simulation box. shape: nf x 9
+            fparam
+                frame parameter. nf x ndf
+            aparam
+                atomic parameter. nf x nloc x nda
             do_atomic_virial
                 If calculate the atomic virial.
 
@@ -144,6 +148,10 @@ def make_model(T_AtomicModel):
                 neighbor list. nf x nloc x nsel.
             mapping
                 mapps the extended indices to local indices. nf x nall.
+            fparam
+                frame parameter. nf x ndf
+            aparam
+                atomic parameter. nf x nloc x nda
             do_atomic_virial
                 whether calculate atomic virial.
 

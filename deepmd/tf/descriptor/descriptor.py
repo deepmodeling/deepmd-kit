@@ -32,7 +32,7 @@ class Descriptor(PluginVariant):
 
     Examples
     --------
-    >>> descript = Descriptor(type="se_e2_a", rcut=6., rcut_smth=0.5, sel=[50])
+    >>> descript = Descriptor(type="se_e2_a", rcut=6.0, rcut_smth=0.5, sel=[50])
     >>> type(descript)
     <class 'deepmd.tf.descriptor.se_a.DescrptSeA'>
 

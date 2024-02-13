@@ -514,7 +514,7 @@ class DeepEval(DeepEvalBackend):
         Get the output of type embedding network of `graph.pb`:
 
         >>> from deepmd.tf.infer import DeepPotential
-        >>> dp = DeepPotential('graph.pb')
+        >>> dp = DeepPotential("graph.pb")
         >>> dp.eval_typeebd()
         """
         t_typeebd = self._get_tensor("t_typeebd:0")
@@ -1429,7 +1429,7 @@ class DeepEvalOld:
         Get the output of type embedding network of `graph.pb`:
 
         >>> from deepmd.tf.infer import DeepPotential
-        >>> dp = DeepPotential('graph.pb')
+        >>> dp = DeepPotential("graph.pb")
         >>> dp.eval_typeebd()
         """
         t_typeebd = self._get_tensor("t_typeebd:0")
