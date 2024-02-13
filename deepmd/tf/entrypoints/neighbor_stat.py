@@ -42,7 +42,30 @@ def neighbor_stat(
 
     Examples
     --------
-    >>> neighbor_stat(system='.', rcut=6., type_map=["C", "H", "O", "N", "P", "S", "Mg", "Na", "HW", "OW", "mNa", "mCl", "mC", "mH", "mMg", "mN", "mO", "mP"])
+    >>> neighbor_stat(
+    ...     system=".",
+    ...     rcut=6.0,
+    ...     type_map=[
+    ...         "C",
+    ...         "H",
+    ...         "O",
+    ...         "N",
+    ...         "P",
+    ...         "S",
+    ...         "Mg",
+    ...         "Na",
+    ...         "HW",
+    ...         "OW",
+    ...         "mNa",
+    ...         "mCl",
+    ...         "mC",
+    ...         "mH",
+    ...         "mMg",
+    ...         "mN",
+    ...         "mO",
+    ...         "mP",
+    ...     ],
+    ... )
     min_nbor_dist: 0.6599510670195264
     max_nbor_size: [23, 26, 19, 16, 2, 2, 1, 1, 72, 37, 5, 0, 31, 29, 1, 21, 20, 5]
     """

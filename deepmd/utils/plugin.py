@@ -24,7 +24,7 @@ class Plugin:
     >>> @plugin.register("xx")
         def xxx():
             pass
-    >>> print(plugin.plugins['xx'])
+    >>> print(plugin.plugins["xx"])
     """
 
     def __init__(self):
