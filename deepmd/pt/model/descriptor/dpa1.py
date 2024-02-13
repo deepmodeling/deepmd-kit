@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import logging
 from typing import (
     List,
     Optional,
@@ -17,8 +16,6 @@ from deepmd.pt.model.network.network import (
 from .se_atten import (
     DescrptBlockSeAtten,
 )
-
-log = logging.getLogger(__name__)
 
 
 @Descriptor.register("dpa1")
@@ -112,7 +109,7 @@ class DescrptDPA1(Descriptor):
         """Returns if the descriptor requires a neighbor list that distinguish different
         atomic types or not.
         """
-        return False
+        return self.se_atten.distinguish_types()
 
     @property
     def dim_out(self):
@@ -128,7 +125,7 @@ class DescrptDPA1(Descriptor):
     def init_desc_stat(
         self, sumr=None, suma=None, sumn=None, sumr2=None, suma2=None, **kwargs
     ):
-        assert True not in [x is None for x in [sumr, suma, sumn, sumr2, suma2]]
+        assert all(x is not None for x in [sumr, suma, sumn, sumr2, suma2])
         self.se_atten.init_desc_stat(sumr, suma, sumn, sumr2, suma2)
 
     @classmethod
@@ -141,6 +138,7 @@ class DescrptDPA1(Descriptor):
         """
         descrpt_type = type_name
         assert descrpt_type in ["dpa1", "se_atten"]
+        assert all(x is not None for x in [rcut, rcut_smth, sel])
         return f"stat_file_descrpt_dpa1_rcut{rcut:.2f}_smth{rcut_smth:.2f}_sel{sel}_ntypes{ntypes}.npz"
 
     @classmethod

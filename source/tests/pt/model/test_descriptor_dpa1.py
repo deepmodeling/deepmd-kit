@@ -19,11 +19,7 @@ from deepmd.pt.utils import (
     env,
 )
 from deepmd.pt.utils.nlist import (
-    build_neighbor_list,
-    extend_coord_with_ghosts,
-)
-from deepmd.pt.utils.region import (
-    normalize_coord,
+    extend_input_and_build_neighbor_list,
 )
 
 dtype = torch.float64
@@ -245,20 +241,9 @@ class TestDPA1(unittest.TestCase):
             **dparams,
         ).to(env.DEVICE)
         des.load_state_dict(torch.load(self.file_model_param))
-        rcut = dparams["rcut"]
-        nsel = dparams["sel"]
         coord = self.coord
         atype = self.atype
         box = self.cell
-        nf, nloc = coord.shape[:2]
-        coord_normalized = normalize_coord(coord, box.reshape(-1, 3, 3))
-        extended_coord, extended_atype, mapping = extend_coord_with_ghosts(
-            coord_normalized, atype, box, rcut
-        )
-        # single nlist
-        nlist = build_neighbor_list(
-            extended_coord, extended_atype, nloc, rcut, nsel, distinguish_types=False
-        )
         # handel type_embedding
         type_embedding = TypeEmbedNet(ntypes, 8).to(env.DEVICE)
         type_embedding.load_state_dict(torch.load(self.file_type_embed))
@@ -266,6 +251,19 @@ class TestDPA1(unittest.TestCase):
         ## to save model parameters
         # torch.save(des.state_dict(), 'model_weights.pth')
         # torch.save(type_embedding.state_dict(), 'model_weights.pth')
+        (
+            extended_coord,
+            extended_atype,
+            mapping,
+            nlist,
+        ) = extend_input_and_build_neighbor_list(
+            coord,
+            atype,
+            des.get_rcut(),
+            des.get_sel(),
+            distinguish_types=des.distinguish_types(),
+            box=box,
+        )
         descriptor, env_mat, diff, rot_mat, sw = des(
             nlist,
             extended_coord,
@@ -307,18 +305,18 @@ class TestDPA1(unittest.TestCase):
         coord = self.coord
         atype = self.atype
         box = self.cell
-        nf, nloc = coord.shape[:2]
-        coord_normalized = normalize_coord(coord, box.reshape(-1, 3, 3))
-        extended_coord, extended_atype, mapping = extend_coord_with_ghosts(
-            coord_normalized, atype, box, des.get_rcut()
-        )
-        nlist = build_neighbor_list(
+        (
             extended_coord,
             extended_atype,
-            nloc,
+            mapping,
+            nlist,
+        ) = extend_input_and_build_neighbor_list(
+            coord,
+            atype,
             des.get_rcut(),
-            des.get_nsel(),
-            distinguish_types=False,
+            des.get_sel(),
+            distinguish_types=des.distinguish_types(),
+            box=box,
         )
         descriptor, env_mat, diff, rot_mat, sw = des(
             extended_coord,

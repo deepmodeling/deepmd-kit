@@ -9,7 +9,6 @@ from typing import (
 import h5py
 import numpy as np
 import torch
-import torch.distributed as dist
 from torch.utils.data import (
     Dataset,
 )
@@ -188,85 +187,6 @@ class DeepmdDataSystem:
             "must": must,
             "high_prec": high_prec,
         }
-
-    # deprecated TODO
-    def get_batch_for_train(self, batch_size: int):
-        """Get a batch of data with at most `batch_size` frames. The frames are randomly picked from the data system.
-
-        Args:
-        - batch_size: Frame count.
-        """
-        if not hasattr(self, "_frames"):
-            self.set_size = 0
-            self._set_count = 0
-            self._iterator = 0
-        if batch_size == "auto":
-            batch_size = -(-32 // self._natoms)
-        if self._iterator + batch_size > self.set_size:
-            set_idx = self._set_count % len(self._dirs)
-            if self.sets[set_idx] is None:
-                frames = self._load_set(self._dirs[set_idx])
-                frames = self.preprocess(frames)
-                cnt = 0
-                for item in self.sets:
-                    if item is not None:
-                        cnt += 1
-                if cnt < env.CACHE_PER_SYS:
-                    self.sets[set_idx] = frames
-            else:
-                frames = self.sets[set_idx]
-            self._frames = frames
-            self._shuffle_data()
-            if dist.is_initialized():
-                world_size = dist.get_world_size()
-                rank = dist.get_rank()
-                ssize = self._frames["coord"].shape[0]
-                subsize = ssize // world_size
-                self._iterator = rank * subsize
-                self.set_size = min((rank + 1) * subsize, ssize)
-            else:
-                self.set_size = self._frames["coord"].shape[0]
-                self._iterator = 0
-            self._set_count += 1
-        iterator = min(self._iterator + batch_size, self.set_size)
-        idx = np.arange(self._iterator, iterator)
-        self._iterator += batch_size
-        return self._get_subdata(idx)
-
-    # deprecated TODO
-    def get_batch(self, batch_size: int):
-        """Get a batch of data with at most `batch_size` frames. The frames are randomly picked from the data system.
-        Args:
-        - batch_size: Frame count.
-        """
-        if not hasattr(self, "_frames"):
-            self.set_size = 0
-            self._set_count = 0
-            self._iterator = 0
-        if batch_size == "auto":
-            batch_size = -(-32 // self._natoms)
-        if self._iterator + batch_size > self.set_size:
-            set_idx = self._set_count % len(self._dirs)
-            if self.sets[set_idx] is None:
-                frames = self._load_set(self._dirs[set_idx])
-                frames = self.preprocess(frames)
-                cnt = 0
-                for item in self.sets:
-                    if item is not None:
-                        cnt += 1
-                if cnt < env.CACHE_PER_SYS:
-                    self.sets[set_idx] = frames
-            else:
-                frames = self.sets[set_idx]
-            self._frames = frames
-            self._shuffle_data()
-            self.set_size = self._frames["coord"].shape[0]
-            self._iterator = 0
-            self._set_count += 1
-        iterator = min(self._iterator + batch_size, self.set_size)
-        idx = np.arange(self._iterator, iterator)
-        self._iterator += batch_size
-        return self._get_subdata(idx)
 
     def get_ntypes(self):
         """Number of atom types in the system."""
@@ -470,63 +390,6 @@ class DeepmdDataSystem:
                 data = np.zeros([nframes, ndof]).astype(env.GLOBAL_NP_FLOAT_PRECISION)
             return np.float32(0.0), data
 
-    # deprecated TODO
-    def preprocess(self, batch):
-        n_frames = batch["coord"].shape[0]
-        for kk in self._data_dict.keys():
-            if "find_" in kk:
-                pass
-            else:
-                batch[kk] = torch.tensor(batch[kk], dtype=env.GLOBAL_PT_FLOAT_PRECISION)
-                if self._data_dict[kk]["atomic"]:
-                    batch[kk] = batch[kk].view(
-                        n_frames, -1, self._data_dict[kk]["ndof"]
-                    )
-
-        for kk in ["type", "real_natoms_vec"]:
-            if kk in batch.keys():
-                batch[kk] = torch.tensor(batch[kk], dtype=torch.long)
-        batch["atype"] = batch.pop("type")
-
-        keys = ["nlist", "nlist_loc", "nlist_type", "shift", "mapping"]
-        coord = batch["coord"]
-        atype = batch["atype"]
-        box = batch["box"]
-        rcut = self.rcut
-        sec = self.sec
-        assert batch["atype"].max() < len(self._type_map)
-        nlist, nlist_loc, nlist_type, shift, mapping = [], [], [], [], []
-
-        for sid in range(n_frames):
-            region = Region3D(box[sid])
-            nloc = atype[sid].shape[0]
-            _coord = normalize_coord(coord[sid], region, nloc)
-            coord[sid] = _coord
-            a, b, c, d, e = make_env_mat(
-                _coord, atype[sid], region, rcut, sec, type_split=self.type_split
-            )
-            nlist.append(a)
-            nlist_loc.append(b)
-            nlist_type.append(c)
-            shift.append(d)
-            mapping.append(e)
-        nlist = torch.stack(nlist)
-        nlist_loc = torch.stack(nlist_loc)
-        nlist_type = torch.stack(nlist_type)
-        batch["nlist"] = nlist
-        batch["nlist_loc"] = nlist_loc
-        batch["nlist_type"] = nlist_type
-        natoms_extended = max([item.shape[0] for item in shift])
-        batch["shift"] = torch.zeros(
-            (n_frames, natoms_extended, 3), dtype=env.GLOBAL_PT_FLOAT_PRECISION
-        )
-        batch["mapping"] = torch.zeros((n_frames, natoms_extended), dtype=torch.long)
-        for i in range(len(shift)):
-            natoms_tmp = shift[i].shape[0]
-            batch["shift"][i, :natoms_tmp] = shift[i]
-            batch["mapping"][i, :natoms_tmp] = mapping[i]
-        return batch
-
     def _shuffle_data(self):
         nframes = self._frames["coord"].shape[0]
         idx = np.arange(nframes)
@@ -563,46 +426,21 @@ class DeepmdDataSystem:
         for kk in ["type", "real_natoms_vec"]:
             if kk in batch.keys():
                 batch[kk] = torch.tensor(batch[kk][sid], dtype=torch.long)
-        clean_coord = batch.pop("coord")
-        clean_type = batch.pop("type")
-        nloc = clean_type.shape[0]
+        batch["atype"] = batch["type"]
         rcut = self.rcut
         sec = self.sec
-        nlist, nlist_loc, nlist_type, shift, mapping = [], [], [], [], []
-        if self.pbc:
-            box = batch["box"]
-            region = Region3D(box)
-        else:
-            box = None
+        if not self.pbc:
             batch["box"] = None
-            region = None
         if self.noise_settings is None:
-            batch["atype"] = clean_type
-            batch["coord"] = clean_coord
-            coord = clean_coord
-            atype = batch["atype"]
-            if self.pbc:
-                _coord = normalize_coord(coord, region, nloc)
-
-            else:
-                _coord = coord.clone()
-            batch["coord"] = _coord
-            nlist, nlist_loc, nlist_type, shift, mapping = make_env_mat(
-                _coord,
-                atype,
-                region,
-                rcut,
-                sec,
-                pbc=self.pbc,
-                type_split=self.type_split,
-            )
-            batch["nlist"] = nlist
-            batch["nlist_loc"] = nlist_loc
-            batch["nlist_type"] = nlist_type
-            batch["shift"] = shift
-            batch["mapping"] = mapping
             return batch
-        else:
+        else:  # TODO need to clean up this method!
+            if self.pbc:
+                region = Region3D(batch["box"])
+            else:
+                region = None
+            clean_coord = batch.pop("coord")
+            clean_type = batch.pop("type")
+            nloc = clean_type.shape[0]
             batch["clean_type"] = clean_type
             if self.pbc:
                 _clean_coord = normalize_coord(clean_coord, region, nloc)
@@ -678,7 +516,7 @@ class DeepmdDataSystem:
                 else:
                     _coord = noised_coord.clone()
                 try:
-                    nlist, nlist_loc, nlist_type, shift, mapping = make_env_mat(
+                    _ = make_env_mat(
                         _coord,
                         masked_type,
                         region,
@@ -694,13 +532,8 @@ class DeepmdDataSystem:
                             f"Add noise times beyond max tries {self.max_fail_num}!"
                         )
                     continue
-                batch["atype"] = masked_type
+                batch["type"] = masked_type
                 batch["coord"] = noised_coord
-                batch["nlist"] = nlist
-                batch["nlist_loc"] = nlist_loc
-                batch["nlist_type"] = nlist_type
-                batch["shift"] = shift
-                batch["mapping"] = mapping
                 return batch
 
     def _get_item(self, index):
@@ -783,104 +616,3 @@ class DeepmdDataSetForLoader(Dataset):
         b_data = self._data_system._get_item(index)
         b_data["natoms"] = torch.tensor(self._natoms_vec)
         return b_data
-
-
-# deprecated TODO
-class DeepmdDataSet(Dataset):
-    def __init__(
-        self,
-        systems: List[str],
-        batch_size: int,
-        type_map: List[str],
-        rcut=None,
-        sel=None,
-        weight=None,
-        type_split=True,
-    ):
-        """Construct DeePMD-style dataset containing frames cross different systems.
-
-        Args:
-        - systems: Paths to systems.
-        - batch_size: Max frame count in a batch.
-        - type_map: Atom types.
-        """
-        self._batch_size = batch_size
-        self._type_map = type_map
-        if sel is not None:
-            if isinstance(sel, int):
-                sel = [sel]
-            sec = torch.cumsum(torch.tensor(sel), dim=0)
-        if isinstance(systems, str):
-            with h5py.File(systems) as file:
-                systems = [os.path.join(systems, item) for item in file.keys()]
-        self._data_systems = [
-            DeepmdDataSystem(
-                ii, rcut, sec, type_map=self._type_map, type_split=type_split
-            )
-            for ii in systems
-        ]
-        # check mix_type format
-        error_format_msg = (
-            "if one of the system is of mixed_type format, "
-            "then all of the systems in this dataset should be of mixed_type format!"
-        )
-        self.mixed_type = self._data_systems[0].mixed_type
-        for sys_item in self._data_systems[1:]:
-            assert sys_item.mixed_type == self.mixed_type, error_format_msg
-
-        if weight is None:
-
-            def weight(name, sys):
-                return sys.nframes
-
-        self.probs = [
-            weight(item, self._data_systems[i]) for i, item in enumerate(systems)
-        ]
-        self.probs = np.array(self.probs, dtype=float)
-        self.probs /= self.probs.sum()
-        self._ntypes = max([ii.get_ntypes() for ii in self._data_systems])
-        self._natoms_vec = [
-            ii.get_natoms_vec(self._ntypes) for ii in self._data_systems
-        ]
-        self.cache = [{} for _ in self._data_systems]
-
-    @property
-    def nsystems(self):
-        return len(self._data_systems)
-
-    def __len__(self):
-        return self.nsystems
-
-    def __getitem__(self, index=None):
-        """Get a batch of frames from the selected system."""
-        if index is None:
-            index = dp_random.choice(np.arange(self.nsystems), p=self.probs)
-        b_data = self._data_systems[index].get_batch(self._batch_size)
-        b_data["natoms"] = torch.tensor(self._natoms_vec[index])
-        batch_size = b_data["coord"].shape[0]
-        b_data["natoms"] = b_data["natoms"].unsqueeze(0).expand(batch_size, -1)
-        return b_data
-
-    # deprecated TODO
-    def get_training_batch(self, index=None):
-        """Get a batch of frames from the selected system."""
-        if index is None:
-            index = dp_random.choice(np.arange(self.nsystems), p=self.probs)
-        b_data = self._data_systems[index].get_batch_for_train(self._batch_size)
-        b_data["natoms"] = torch.tensor(self._natoms_vec[index])
-        batch_size = b_data["coord"].shape[0]
-        b_data["natoms"] = b_data["natoms"].unsqueeze(0).expand(batch_size, -1)
-        return b_data
-
-    def get_batch(self, sys_idx=None):
-        """TF-compatible batch for testing."""
-        pt_batch = self[sys_idx]
-        np_batch = {}
-        for key in ["coord", "box", "force", "energy", "virial", "atype", "natoms"]:
-            if key in pt_batch.keys():
-                np_batch[key] = pt_batch[key].cpu().numpy()
-        batch_size = pt_batch["coord"].shape[0]
-        np_batch["coord"] = np_batch["coord"].reshape(batch_size, -1)
-        np_batch["natoms"] = np_batch["natoms"][0]
-        np_batch["force"] = np_batch["force"].reshape(batch_size, -1)
-        return np_batch, pt_batch

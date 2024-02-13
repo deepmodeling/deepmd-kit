@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import logging
 from typing import (
     ClassVar,
     List,
@@ -37,8 +36,9 @@ from deepmd.pt.model.network.mlp import (
 from deepmd.pt.model.network.network import (
     TypeFilter,
 )
-
-log = logging.getLogger(__name__)
+from deepmd.pt.utils.nlist import (
+    extend_input_and_build_neighbor_list,
+)
 
 
 @Descriptor.register("se_e2_a")
@@ -100,7 +100,7 @@ class DescrptSeA(Descriptor):
         """Returns if the descriptor requires a neighbor list that distinguish different
         atomic types or not.
         """
-        return True
+        return self.sea.distinguish_types()
 
     @property
     def dim_out(self):
@@ -114,7 +114,7 @@ class DescrptSeA(Descriptor):
     def init_desc_stat(
         self, sumr=None, suma=None, sumn=None, sumr2=None, suma2=None, **kwargs
     ):
-        assert True not in [x is None for x in [sumr, suma, sumn, sumr2, suma2]]
+        assert all(x is not None for x in [sumr, suma, sumn, sumr2, suma2])
         self.sea.init_desc_stat(sumr, suma, sumn, sumr2, suma2)
 
     @classmethod
@@ -127,7 +127,7 @@ class DescrptSeA(Descriptor):
         """
         descrpt_type = type_name
         assert descrpt_type in ["se_e2_a"]
-        assert True not in [x is None for x in [rcut, rcut_smth, sel]]
+        assert all(x is not None for x in [rcut, rcut_smth, sel])
         return f"stat_file_descrpt_sea_rcut{rcut:.2f}_smth{rcut_smth:.2f}_sel{sel}_ntypes{ntypes}.npz"
 
     @classmethod
@@ -347,6 +347,12 @@ class DescrptBlockSeA(DescriptorBlock):
         """Returns the input dimension."""
         return self.dim_in
 
+    def distinguish_types(self) -> bool:
+        """Returns if the descriptor requires a neighbor list that distinguish different
+        atomic types or not.
+        """
+        return True
+
     @property
     def dim_out(self):
         """Returns the output dimension of this descriptor."""
@@ -381,20 +387,36 @@ class DescrptBlockSeA(DescriptorBlock):
         sumr2 = []
         suma2 = []
         for system in merged:
-            index = system["mapping"].unsqueeze(-1).expand(-1, -1, 3)
-            extended_coord = torch.gather(system["coord"], dim=1, index=index)
-            extended_coord = extended_coord - system["shift"]
+            coord, atype, box, natoms = (
+                system["coord"],
+                system["atype"],
+                system["box"],
+                system["natoms"],
+            )
+            (
+                extended_coord,
+                extended_atype,
+                mapping,
+                nlist,
+            ) = extend_input_and_build_neighbor_list(
+                coord,
+                atype,
+                self.get_rcut(),
+                self.get_sel(),
+                distinguish_types=self.distinguish_types(),
+                box=box,
+            )
             env_mat, _, _ = prod_env_mat_se_a(
                 extended_coord,
-                system["nlist"],
-                system["atype"],
+                nlist,
+                atype,
                 self.mean,
                 self.stddev,
                 self.rcut,
                 self.rcut_smth,
             )
             sysr, sysr2, sysa, sysa2, sysn = analyze_descrpt(
-                env_mat.detach().cpu().numpy(), self.ndescrpt, system["natoms"]
+                env_mat.detach().cpu().numpy(), self.ndescrpt, natoms
             )
             sumr.append(sysr)
             suma.append(sysa)

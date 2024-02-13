@@ -12,8 +12,40 @@ from deepmd.pt.utils import (
     env,
 )
 from deepmd.pt.utils.region import (
+    normalize_coord,
     to_face_distance,
 )
+
+
+def extend_input_and_build_neighbor_list(
+    coord,
+    atype,
+    rcut: float,
+    sel: List[int],
+    distinguish_types: bool = False,
+    box: Optional[torch.Tensor] = None,
+):
+    nframes, nloc = atype.shape[:2]
+    if box is not None:
+        coord_normalized = normalize_coord(
+            coord.view(nframes, nloc, 3),
+            box.reshape(nframes, 3, 3),
+        )
+    else:
+        coord_normalized = coord.clone()
+    extended_coord, extended_atype, mapping = extend_coord_with_ghosts(
+        coord_normalized, atype, box, rcut
+    )
+    nlist = build_neighbor_list(
+        extended_coord,
+        extended_atype,
+        nloc,
+        rcut,
+        sel,
+        distinguish_types=distinguish_types,
+    )
+    extended_coord = extended_coord.view(nframes, -1, 3)
+    return extended_coord, extended_atype, mapping, nlist
 
 
 def build_neighbor_list(
