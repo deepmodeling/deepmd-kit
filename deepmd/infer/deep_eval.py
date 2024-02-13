@@ -467,7 +467,7 @@ class DeepEval(ABC):
         Get the output of type embedding network of `graph.pb`:
 
         >>> from deepmd.infer import DeepPotential
-        >>> dp = DeepPotential("graph.pb")
+        >>> dp = DeepPotential('graph.pb')
         >>> dp.eval_typeebd()
         """
         return self.deep_eval.eval_typeebd()
