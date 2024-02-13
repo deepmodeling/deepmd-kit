@@ -1,7 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from .atomic_model import (
-    DPAtomicModel,
-)
 from .common import (
     DEFAULT_PRECISION,
     PRECISION_DICT,
@@ -22,7 +19,6 @@ from .output_def import (
 
 __all__ = [
     "DPModel",
-    "DPAtomicModel",
     "PRECISION_DICT",
     "DEFAULT_PRECISION",
     "NativeOP",
