@@ -194,6 +194,10 @@ class CommonTest(ABC):
         return ret, data
 
     def get_reference_backend(self):
+        """Get the reference backend.
+
+        Order of checking for ref: DP, TF, PT.
+        """
         if not self.skip_dp:
             return self.RefBackend.DP
         if not self.skip_tf:
