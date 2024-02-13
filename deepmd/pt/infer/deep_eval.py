@@ -177,7 +177,7 @@ class DeepEval(DeepEvalBackend):
 
     def get_has_efield(self):
         """Check if the model has efield."""
-        return self.dp.model["Default"].get_has_efield()
+        return False
 
     def get_ntypes_spin(self):
         """Get the number of spin atom types of this model."""

@@ -79,10 +79,6 @@ def make_base_atomic_model(
             """
 
         @abstractmethod
-        def get_has_efield(self) -> bool:
-            """Check if the model has efield."""
-
-        @abstractmethod
         def is_aparam_nall(self) -> bool:
             """Check whether the shape of atomic parameters is (nframes, nall, ndim).
 

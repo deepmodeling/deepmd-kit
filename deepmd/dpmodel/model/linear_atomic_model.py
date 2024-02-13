@@ -220,10 +220,6 @@ class LinearAtomicModel(BaseAtomicModel):
         # join all the selected types
         return list(set().union(*[model.get_sel_type() for model in self.models]))
 
-    def get_has_efield(self) -> bool:
-        """Check if the model has efield."""
-        return False
-
     def is_aparam_nall(self) -> bool:
         """Check whether the shape of atomic parameters is (nframes, nall, ndim).
 

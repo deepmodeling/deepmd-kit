@@ -359,11 +359,6 @@ class PairTabModel(BaseModel, BaseAtomicModel):
         return []
 
     @torch.jit.export
-    def get_has_efield(self) -> bool:
-        """Check if the model has efield."""
-        return False
-
-    @torch.jit.export
     def is_aparam_nall(self) -> bool:
         """Check whether the shape of atomic parameters is (nframes, nall, ndim).
 
