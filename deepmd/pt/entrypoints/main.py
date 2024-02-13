@@ -301,7 +301,11 @@ def main(args: Optional[Union[List[str], argparse.Namespace]] = None):
     if FLAGS.command == "train":
         train(FLAGS)
     elif FLAGS.command == "test":
-        dict_args["output"] = str(Path(FLAGS.model).with_suffix(".pt"))
+        dict_args["output"] = (
+            str(Path(FLAGS.model).with_suffix(".pth"))
+            if Path(FLAGS.model).suffix not in (".pt", ".pth")
+            else FLAGS.model
+        )
         test(**dict_args)
     elif FLAGS.command == "freeze":
         if Path(FLAGS.checkpoint_folder).is_dir():
@@ -316,8 +320,8 @@ def main(args: Optional[Union[List[str], argparse.Namespace]] = None):
         doc_train_input(**dict_args)
     elif FLAGS.command == "model-devi":
         dict_args["models"] = [
-            str(Path(mm).with_suffix(".pt"))
-            if Path(mm).suffix not in (".pb", ".pt")
+            str(Path(mm).with_suffix(".pth"))
+            if Path(mm).suffix not in (".pb", ".pt", ".pth")
             else mm
             for mm in dict_args["models"]
         ]
