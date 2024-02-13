@@ -13,10 +13,12 @@ from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
 )
 
-from .common import (
+from ..common import (
     INSTALLED_PT,
     INSTALLED_TF,
     CommonTest,
+)
+from .common import (
     DescriptorTest,
 )
 
