@@ -1,28 +1,25 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
-
-import torch
 from typing import (
     List,
     Optional,
-    Tuple,
+)
+
+import torch
+
+from deepmd.pt.model.network.mlp import (
+    FittingNet,
+    NetworkCollection,
+)
+from deepmd.pt.model.task.fitting import (
+    Fitting,
+)
+from deepmd.pt.utils import (
+    env,
 )
 from deepmd.pt.utils.env import (
     DEFAULT_PRECISION,
     PRECISION_DICT,
-)
-import numpy as np
-
-from deepmd.pt.utils import (
-    env,
-)
-
-from deepmd.pt.model.network.mlp import (
-    NetworkCollection,
-    FittingNet,
-)
-from deepmd.pt.model.task.fitting import (
-    Fitting,
 )
 
 dtype = env.GLOBAL_PT_FLOAT_PRECISION
@@ -193,8 +190,8 @@ class DipoleFittingNet(Fitting):
 
         outs = torch.zeros_like(atype).unsqueeze(-1)  # jit assertion
         if self.use_tebd:
-                atom_dipole = self.filter_layers.networks[0](xx)
-                outs = outs + atom_dipole  # Shape is [nframes, natoms[0], 3]
+            atom_dipole = self.filter_layers.networks[0](xx)
+            outs = outs + atom_dipole  # Shape is [nframes, natoms[0], 3]
         else:
             for type_i, ll in enumerate(self.filter_layers.networks):
                 mask = (atype == type_i).unsqueeze(-1)
