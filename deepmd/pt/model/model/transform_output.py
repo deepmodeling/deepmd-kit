@@ -128,10 +128,11 @@ def take_deriv(
             assert aviri is not None
             aviri = aviri.unsqueeze(-2)
             split_avir.append(aviri)
-    # nf x nloc x v_dim x 3, nf x nloc x v_dim x 9
-    ff = torch.concat(split_ff, dim=-2)
+    # nf x nall x v_dim x 3, nf x nall x v_dim x 9
+    out_lead_shape = list(coord_ext.shape[:-1]) + vdef.shape
+    ff = torch.concat(split_ff, dim=-2).view(out_lead_shape + [3])  # noqa: RUF005
     if do_virial:
-        avir = torch.concat(split_avir, dim=-2)
+        avir = torch.concat(split_avir, dim=-2).view(out_lead_shape + [9])  # noqa: RUF005
     else:
         avir = None
     return ff, avir
