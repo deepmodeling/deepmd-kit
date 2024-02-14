@@ -120,19 +120,25 @@ try:
 except AttributeError:
     tf_py_version = tf.__version__
 
+# subpatterns:
+# \1: type of centeral atom
+# \2: weight name
+# \3: layer index
+# The rest: types of neighbor atoms
+# IMPORTANT: the order is critical to match the pattern
 EMBEDDING_NET_PATTERN = str(
-    r"filter_type_\d+/matrix_\d+_\d+|"
-    r"filter_type_\d+/bias_\d+_\d+|"
-    r"filter_type_\d+/idt_\d+_\d+|"
-    r"filter_type_all/matrix_\d+|"
-    r"filter_type_all/matrix_\d+_\d+|"
-    r"filter_type_all/matrix_\d+_\d+_\d+|"
-    r"filter_type_all/bias_\d+|"
-    r"filter_type_all/bias_\d+_\d+|"
-    r"filter_type_all/bias_\d+_\d+_\d+|"
-    r"filter_type_all/idt_\d+|"
-    r"filter_type_all/idt_\d+_\d+|"
-)
+    r"filter_type_(\d+)/(matrix)_(\d+)_(\d+)|"
+    r"filter_type_(\d+)/(bias)_(\d+)_(\d+)|"
+    r"filter_type_(\d+)/(idt)_(\d+)_(\d+)|"
+    r"filter_type_(all)/(matrix)_(\d+)_(\d+)_(\d+)|"
+    r"filter_type_(all)/(matrix)_(\d+)_(\d+)|"
+    r"filter_type_(all)/(matrix)_(\d+)|"
+    r"filter_type_(all)/(bias)_(\d+)_(\d+)_(\d+)|"
+    r"filter_type_(all)/(bias)_(\d+)_(\d+)|"
+    r"filter_type_(all)/(bias)_(\d+)|"
+    r"filter_type_(all)/(idt)_(\d+)_(\d+)|"
+    r"filter_type_(all)/(idt)_(\d+)|"
+)[:-1]
 
 FITTING_NET_PATTERN = str(
     r"layer_\d+/matrix|"

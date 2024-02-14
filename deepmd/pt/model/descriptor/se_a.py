@@ -19,6 +19,7 @@ from deepmd.pt.utils import (
 )
 from deepmd.pt.utils.env import (
     PRECISION_DICT,
+    RESERVED_PRECISON_DICT,
 )
 
 try:
@@ -207,7 +208,8 @@ class DescrptSeA(Descriptor):
             "resnet_dt": obj.resnet_dt,
             "set_davg_zero": obj.set_davg_zero,
             "activation_function": obj.activation_function,
-            "precision": obj.precision,
+            # make deterministic
+            "precision": RESERVED_PRECISON_DICT[obj.prec],
             "embeddings": obj.filter_layers.serialize(),
             "env_mat": DPEnvMat(obj.rcut, obj.rcut_smth).serialize(),
             "@variables": {
@@ -223,6 +225,7 @@ class DescrptSeA(Descriptor):
 
     @classmethod
     def deserialize(cls, data: dict) -> "DescrptSeA":
+        data = data.copy()
         variables = data.pop("@variables")
         embeddings = data.pop("embeddings")
         env_mat = data.pop("env_mat")

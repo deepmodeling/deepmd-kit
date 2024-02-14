@@ -6,6 +6,10 @@ from abc import (
 
 import numpy as np
 
+from deepmd.common import (
+    GLOBAL_NP_FLOAT_PRECISION,
+)
+
 PRECISION_DICT = {
     "float16": np.float16,
     "float32": np.float32,
@@ -15,6 +19,7 @@ PRECISION_DICT = {
     "double": np.float64,
     "int32": np.int32,
     "int64": np.int64,
+    "default": GLOBAL_NP_FLOAT_PRECISION,
 }
 DEFAULT_PRECISION = "float64"
 

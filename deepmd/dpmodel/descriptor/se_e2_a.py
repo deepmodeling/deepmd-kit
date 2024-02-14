@@ -15,6 +15,7 @@ from typing import (
 
 from deepmd.dpmodel import (
     DEFAULT_PRECISION,
+    PRECISION_DICT,
     NativeOP,
 )
 from deepmd.dpmodel.utils import (
@@ -133,6 +134,8 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
         spin: Optional[Any] = None,
+        # consistent with argcheck, not used though
+        seed: Optional[int] = None,
     ) -> None:
         ## seed, uniform_seed, multi_task, not included.
         if not type_one_side:
@@ -163,6 +166,8 @@ class DescrptSeA(NativeOP, BaseDescriptor):
             ndim=(1 if self.type_one_side else 2),
             network_type="embedding_network",
         )
+        if not self.type_one_side:
+            raise NotImplementedError("type_one_side == False not implemented")
         for ii in range(self.ntypes):
             self.embeddings[(ii,)] = EmbeddingNet(
                 in_dim,
@@ -316,7 +321,8 @@ class DescrptSeA(NativeOP, BaseDescriptor):
             "exclude_types": self.exclude_types,
             "set_davg_zero": self.set_davg_zero,
             "activation_function": self.activation_function,
-            "precision": self.precision,
+            # make deterministic
+            "precision": np.dtype(PRECISION_DICT[self.precision]).name,
             "spin": self.spin,
             "env_mat": self.env_mat.serialize(),
             "embeddings": self.embeddings.serialize(),
