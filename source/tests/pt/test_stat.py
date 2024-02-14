@@ -165,10 +165,7 @@ class TestDataset(unittest.TestCase):
                 "energy",
                 "atype",
                 "natoms",
-                "extended_coord",
-                "nlist",
-                "shift",
-                "mapping",
+                "box",
             ]:
                 if key in sys.keys():
                     sys[key] = sys[key].to(env.DEVICE)

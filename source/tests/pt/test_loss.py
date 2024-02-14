@@ -16,13 +16,17 @@ from deepmd.pt.loss import (
     EnergyStdLoss,
 )
 from deepmd.pt.utils.dataset import (
-    DeepmdDataSet,
+    DeepmdDataSetForLoader,
 )
 from deepmd.tf.common import (
     expand_sys_str,
 )
 from deepmd.tf.loss.ener import (
     EnerStdLoss,
+)
+
+from .model.test_embedding_net import (
+    get_single_batch,
 )
 
 CUR_DIR = os.path.dirname(__file__)
@@ -39,12 +43,13 @@ def get_batch():
     rcut = model_config["descriptor"]["rcut"]
     # self.rcut_smth = model_config['descriptor']['rcut_smth']
     sel = model_config["descriptor"]["sel"]
-    batch_size = config["training"]["training_data"]["batch_size"]
     systems = config["training"]["validation_data"]["systems"]
     if isinstance(systems, str):
         systems = expand_sys_str(systems)
-    dataset = DeepmdDataSet(systems, batch_size, model_config["type_map"], rcut, sel)
-    np_batch, pt_batch = dataset.get_batch()
+    dataset = DeepmdDataSetForLoader(
+        systems[0], model_config["type_map"], rcut, sel, type_split=True
+    )
+    np_batch, pt_batch = get_single_batch(dataset)
     return np_batch, pt_batch
 
 

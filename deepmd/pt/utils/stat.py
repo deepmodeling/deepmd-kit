@@ -5,10 +5,6 @@ import os
 import numpy as np
 import torch
 
-from deepmd.pt.utils import (
-    env,
-)
-
 log = logging.getLogger(__name__)
 
 
@@ -31,11 +27,6 @@ def make_stat_input(datasets, dataloaders, nbatches):
         "atype",
         "box",
         "natoms",
-        "mapping",
-        "nlist",
-        "nlist_loc",
-        "nlist_type",
-        "shift",
     ]
     if datasets[0].mixed_type:
         keys.append("real_natoms_vec")
@@ -53,25 +44,6 @@ def make_stat_input(datasets, dataloaders, nbatches):
                 if dd in keys:
                     sys_stat[dd].append(stat_data[dd])
         for key in keys:
-            if key == "mapping" or key == "shift":
-                extend = max(d.shape[1] for d in sys_stat[key])
-                for jj in range(len(sys_stat[key])):
-                    l = []
-                    item = sys_stat[key][jj]
-                    for ii in range(item.shape[0]):
-                        l.append(item[ii])
-                    n_frames = len(item)
-                    if key == "shift":
-                        shape = torch.zeros(
-                            (n_frames, extend, 3),
-                            dtype=env.GLOBAL_PT_FLOAT_PRECISION,
-                        )
-                    else:
-                        shape = torch.zeros((n_frames, extend), dtype=torch.long)
-                    for i in range(len(item)):
-                        natoms_tmp = l[i].shape[0]
-                        shape[i, :natoms_tmp] = l[i]
-                    sys_stat[key][jj] = shape
             if not isinstance(sys_stat[key][0], list):
                 if sys_stat[key][0] is None:
                     sys_stat[key] = None
@@ -133,4 +105,4 @@ def process_stat_path(
     has_stat_file_path_list = [
         os.path.exists(stat_file_path[key]) for key in stat_file_dict
     ]
-    return stat_file_path, False not in has_stat_file_path_list
+    return stat_file_path, all(has_stat_file_path_list)

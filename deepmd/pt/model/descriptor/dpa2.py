@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import logging
 from typing import (
     List,
     Optional,
@@ -26,8 +25,6 @@ from .repformers import (
 from .se_atten import (
     DescrptBlockSeAtten,
 )
-
-log = logging.getLogger(__name__)
 
 
 @Descriptor.register("dpa2")
@@ -316,7 +313,7 @@ class DescrptDPA2(Descriptor):
     def init_desc_stat(
         self, sumr=None, suma=None, sumn=None, sumr2=None, suma2=None, **kwargs
     ):
-        assert True not in [x is None for x in [sumr, suma, sumn, sumr2, suma2]]
+        assert all(x is not None for x in [sumr, suma, sumn, sumr2, suma2])
         for ii, descrpt in enumerate([self.repinit, self.repformers]):
             stat_dict_ii = {
                 "sumr": sumr[ii],
@@ -346,8 +343,8 @@ class DescrptDPA2(Descriptor):
         """
         descrpt_type = type_name
         assert descrpt_type in ["dpa2"]
-        assert True not in [
-            x is None
+        assert all(
+            x is not None
             for x in [
                 repinit_rcut,
                 repinit_rcut_smth,
@@ -356,7 +353,7 @@ class DescrptDPA2(Descriptor):
                 repformer_rcut_smth,
                 repformer_nsel,
             ]
-        ]
+        )
         return (
             f"stat_file_descrpt_dpa2_repinit_rcut{repinit_rcut:.2f}_smth{repinit_rcut_smth:.2f}_sel{repinit_nsel}"
             f"_repformer_rcut{repformer_rcut:.2f}_smth{repformer_rcut_smth:.2f}_sel{repformer_nsel}_ntypes{ntypes}.npz"

@@ -223,7 +223,7 @@ class InvarFitting(Fitting):
         return {"bias_atom_e": bias_atom_e}
 
     def init_fitting_stat(self, bias_atom_e=None, **kwargs):
-        assert True not in [x is None for x in [bias_atom_e]]
+        assert all(x is not None for x in [bias_atom_e])
         self.bias_atom_e.copy_(
             torch.tensor(bias_atom_e, device=env.DEVICE).view(
                 [self.ntypes, self.dim_out]
