@@ -192,7 +192,7 @@ class GeneralFitting(Fitting):
         }
 
     @classmethod
-    def deserialize(cls, data: dict) -> "InvarFitting":
+    def deserialize(cls, data: dict) -> "GeneralFitting":
         data = copy.deepcopy(data)
         variables = data.pop("@variables")
         nets = data.pop("nets")
@@ -440,7 +440,7 @@ class InvarFitting(GeneralFitting):
         -------
         - `torch.Tensor`: Total energy with shape [nframes, natoms[0]].
         """
-        return super().forward(descriptor, atype, gr, g2, h2, fparam, aparam)
+        return super()._forward_common(descriptor, atype, gr, g2, h2, fparam, aparam)
 
 
 @Fitting.register("ener")
