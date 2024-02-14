@@ -53,7 +53,8 @@ def _make_env_mat(
     t0 = 1 / length
     t1 = diff / length**2
     weight = compute_smooth_weight(length, ruct_smth, rcut)
-    env_mat_se_a = np.concatenate([t0, t1], axis=-1) * weight * np.expand_dims(mask, -1)
+    weight = weight * np.expand_dims(mask, -1)
+    env_mat_se_a = np.concatenate([t0, t1], axis=-1) * weight
     return env_mat_se_a, diff * np.expand_dims(mask, -1), weight
 
 

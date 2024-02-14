@@ -18,6 +18,9 @@ from .ener import (
     EnergyModel,
     ZBLModel,
 )
+from .make_hessian_model import (
+    make_hessian_model,
+)
 from .model import (
     BaseModel,
 )
@@ -84,4 +87,5 @@ __all__ = [
     "BaseModel",
     "EnergyModel",
     "get_model",
+    "make_hessian_model",
 ]
