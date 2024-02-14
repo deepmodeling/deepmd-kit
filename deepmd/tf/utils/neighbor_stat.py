@@ -107,6 +107,12 @@ class NeighborStatOP:
             float("inf"), dtype=GLOBAL_TF_FLOAT_PRECISION, shape=[1, 1, 1]
         )
         inf_mask = tf.tile(inf_mask, [nframes, nloc, nall])
+        # virtual type (<0) are not counted
+        virtual_type_mask_i = tf.tile(tf.less(atype, 0)[:, :, None], [1, 1, nall])
+        virtual_type_mask_j = tf.tile(
+            tf.less(extend_atype, 0)[:, None, :], [1, nloc, 1]
+        )
+        mask = mask | virtual_type_mask_i | virtual_type_mask_j
         rr2 = tf.reduce_sum(tf.square(diff), axis=-1)
         rr2 = tf.where(mask, inf_mask, rr2)
         min_rr2 = tf.reduce_min(rr2, axis=(1, 2))
@@ -137,6 +143,9 @@ class NeighborStatOP:
                 ),
                 [nframes, nloc, 1],
             )
+        # nnei: nframes, nloc, ntypes
+        # virtual type i (<0) are not counted
+        nnei = tf.where(tf.less(atype, 0)[:, :, None], tf.zeros_like(nnei), nnei)
         max_nnei = tf.reduce_max(nnei, axis=1)
         return min_rr2, max_nnei
 
