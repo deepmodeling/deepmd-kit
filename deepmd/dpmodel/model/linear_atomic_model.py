@@ -318,14 +318,16 @@ class DPZBLLinearAtomicModel(LinearAtomicModel):
             ),
             axis=-1,
         )  # handle masked nnei.
-        sigma = numerator / denominator
+        with np.errstate(divide='ignore', invalid='ignore'):
+            sigma = numerator / denominator
         u = (sigma - self.sw_rmin) / (self.sw_rmax - self.sw_rmin)
         coef = np.zeros_like(u)
         left_mask = sigma < self.sw_rmin
         mid_mask = (self.sw_rmin <= sigma) & (sigma < self.sw_rmax)
         right_mask = sigma >= self.sw_rmax
         coef[left_mask] = 1
-        smooth = -6 * u**5 + 15 * u**4 - 10 * u**3 + 1
+        with np.errstate(invalid='ignore'):
+            smooth = -6 * u**5 + 15 * u**4 - 10 * u**3 + 1
         coef[mid_mask] = smooth[mid_mask]
         coef[right_mask] = 0
         self.zbl_weight = coef

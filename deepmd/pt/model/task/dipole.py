@@ -191,14 +191,14 @@ class DipoleFittingNet(Fitting):
         outs = torch.zeros_like(atype).unsqueeze(-1)  # jit assertion
         if self.use_tebd:
             atom_dipole = self.filter_layers.networks[0](xx)
-            outs = outs + atom_dipole  # Shape is [nframes, natoms[0], 3]
+            outs = outs + atom_dipole  # Shape is [nframes, nloc, 3]
         else:
             for type_i, ll in enumerate(self.filter_layers.networks):
                 mask = (atype == type_i).unsqueeze(-1)
                 mask = torch.tile(mask, (1, 1, self.dim_out))
                 atom_dipole = ll(xx)
                 atom_dipole = atom_dipole * mask
-                outs = outs + atom_dipole  # Shape is [nframes, natoms[0], 3]
+                outs = outs + atom_dipole  # Shape is [nframes, nloc, 3]
         outs = (
             torch.bmm(outs, gr).squeeze(-2).view(nframes, nloc, 3)
         )  # Shape is [nframes, nloc, 3]
