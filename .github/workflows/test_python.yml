@@ -27,8 +27,8 @@ jobs:
         mpi: openmpi
     # https://github.com/pypa/pip/issues/11770
     - run: python -m pip install -U "pip>=21.3.1,!=23.0.0"
-    - run: python -m pip install -U "torch==${{ matrix.torch }}" "numpy<1.20"
-      if: matrix.torch != ''
+    # See https://github.com/pytorch/pytorch/issues/43146
+    - run: python -m pip install "./source/3rdparty/coverage_plugins_package"
     - run: pip install -e .[cpu,test,torch]
       env:
         TENSORFLOW_VERSION: ${{ matrix.tf }}
