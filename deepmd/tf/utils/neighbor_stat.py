@@ -123,7 +123,7 @@ class NeighborStatOP:
                     )
                 )
             # shape: nframes, nloc, ntypes
-            nnei = tf.concat(nnei, axis=-1)
+            nnei = tf.stack(nnei, axis=-1)
         else:
             mask = rr2 < self.rcut**2
             # virtual types (<0) are not counted
