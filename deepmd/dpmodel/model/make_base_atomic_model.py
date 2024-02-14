@@ -62,6 +62,30 @@ def make_base_atomic_model(
             return self.get_nsel()
 
         @abstractmethod
+        def get_dim_fparam(self) -> int:
+            """Get the number (dimension) of frame parameters of this atomic model."""
+
+        @abstractmethod
+        def get_dim_aparam(self) -> int:
+            """Get the number (dimension) of atomic parameters of this atomic model."""
+
+        @abstractmethod
+        def get_sel_type(self) -> List[int]:
+            """Get the selected atom types of this model.
+
+            Only atoms with selected atom types have atomic contribution
+            to the result of the model.
+            If returning an empty list, all atom types are selected.
+            """
+
+        @abstractmethod
+        def is_aparam_nall(self) -> bool:
+            """Check whether the shape of atomic parameters is (nframes, nall, ndim).
+
+            If False, the shape is (nframes, nloc, ndim).
+            """
+
+        @abstractmethod
         def distinguish_types(self) -> bool:
             """Returns if the model requires a neighbor list that distinguish different
             atomic types or not.
