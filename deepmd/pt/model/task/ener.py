@@ -207,7 +207,7 @@ class GeneralFitting(Fitting):
     def _extend_a_avg_std(self, xx: torch.Tensor, nb: int, nloc: int) -> torch.Tensor:
         return torch.tile(xx.view([1, 1, self.numb_aparam]), [nb, nloc, 1])
 
-    def _foward_common(
+    def _forward_common(
         self,
         descriptor: torch.Tensor,
         atype: torch.Tensor,
@@ -452,7 +452,7 @@ class InvarFitting(GeneralFitting):
         -------
         - `torch.Tensor`: Total energy with shape [nframes, natoms[0]].
         """
-        return super()._forward_common(descriptor, atype, gr, g2, h2, fparam, aparam)
+        return self._forward_common(descriptor, atype, gr, g2, h2, fparam, aparam)
 
 
 @Fitting.register("ener")
