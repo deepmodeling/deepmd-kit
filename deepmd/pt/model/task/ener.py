@@ -46,8 +46,7 @@ device = env.DEVICE
 log = logging.getLogger(__name__)
 
 
-@fitting_check_output
-class InvarFitting(Fitting):
+class GeneralFitting(Fitting):
     def __init__(
         self,
         var_name: str,
@@ -87,13 +86,7 @@ class InvarFitting(Fitting):
         self.activation_function = activation_function
         self.precision = precision
         self.prec = PRECISION_DICT[self.precision]
-        if bias_atom_e is None:
-            bias_atom_e = np.zeros([self.ntypes, self.dim_out])
-        bias_atom_e = torch.tensor(bias_atom_e, dtype=self.prec, device=device)
-        bias_atom_e = bias_atom_e.view([self.ntypes, self.dim_out])
-        if not self.use_tebd:
-            assert self.ntypes == bias_atom_e.shape[0], "Element count mismatches!"
-        self.register_buffer("bias_atom_e", bias_atom_e)
+        
         # init constants
         if self.numb_fparam > 0:
             self.register_buffer(
@@ -119,7 +112,6 @@ class InvarFitting(Fitting):
             self.aparam_avg, self.aparam_inv_std = None, None
 
         in_dim = self.dim_descrpt + self.numb_fparam + self.numb_aparam
-        out_dim = 1
 
         self.old_impl = kwargs.get("old_impl", False)
         if self.old_impl:
@@ -144,7 +136,7 @@ class InvarFitting(Fitting):
                 networks=[
                     FittingNet(
                         in_dim,
-                        out_dim,
+                        self.dim_out,
                         self.neuron,
                         self.activation_function,
                         self.resnet_dt,
@@ -160,6 +152,192 @@ class InvarFitting(Fitting):
         if "seed" in kwargs:
             log.info("Set seed to %d in fitting net.", kwargs["seed"])
             torch.manual_seed(kwargs["seed"])
+
+    def serialize(self) -> dict:
+        """Serialize the fitting to dict."""
+        return {
+            "var_name": self.var_name,
+            "ntypes": self.ntypes,
+            "dim_descrpt": self.dim_descrpt,
+            "dim_out": self.dim_out,
+            "neuron": self.neuron,
+            "resnet_dt": self.resnet_dt,
+            "numb_fparam": self.numb_fparam,
+            "numb_aparam": self.numb_aparam,
+            "activation_function": self.activation_function,
+            "precision": self.precision,
+            "distinguish_types": self.distinguish_types,
+            "nets": self.filter_layers.serialize(),
+            "@variables": {
+                "fparam_avg": to_numpy_array(self.fparam_avg),
+                "fparam_inv_std": to_numpy_array(self.fparam_inv_std),
+                "aparam_avg": to_numpy_array(self.aparam_avg),
+                "aparam_inv_std": to_numpy_array(self.aparam_inv_std),
+            },
+            # "rcond": self.rcond ,
+            # "tot_ener_zero": self.tot_ener_zero ,
+            # "trainable": self.trainable ,
+            # "atom_ener": self.atom_ener ,
+            # "layer_name": self.layer_name ,
+            # "use_aparam_as_mask": self.use_aparam_as_mask ,
+            # "spin": self.spin ,
+            ## NOTICE:  not supported by far
+            "rcond": None,
+            "tot_ener_zero": False,
+            "trainable": True,
+            "atom_ener": None,
+            "layer_name": None,
+            "use_aparam_as_mask": False,
+            "spin": None,
+        }
+
+    @classmethod
+    def deserialize(cls, data: dict) -> "InvarFitting":
+        data = copy.deepcopy(data)
+        variables = data.pop("@variables")
+        nets = data.pop("nets")
+        obj = cls(**data)
+        for kk in variables.keys():
+            obj[kk] = to_torch_tensor(variables[kk])
+        obj.filter_layers = NetworkCollection.deserialize(nets)
+        return obj
+
+    def _extend_f_avg_std(self, xx: torch.Tensor, nb: int) -> torch.Tensor:
+        return torch.tile(xx.view([1, self.numb_fparam]), [nb, 1])
+
+    def _extend_a_avg_std(self, xx: torch.Tensor, nb: int, nloc: int) -> torch.Tensor:
+        return torch.tile(xx.view([1, 1, self.numb_aparam]), [nb, nloc, 1])
+
+    def _foward_common(
+        self,
+        descriptor: torch.Tensor,
+        atype: torch.Tensor,
+        gr: Optional[torch.Tensor] = None,
+        g2: Optional[torch.Tensor] = None,
+        h2: Optional[torch.Tensor] = None,
+        fparam: Optional[torch.Tensor] = None,
+        aparam: Optional[torch.Tensor] = None,
+    ):
+        
+        xx = descriptor
+        nf, nloc, nd = xx.shape
+        if hasattr(self, "bias_atom_e"):
+            self.bias_atom_e = self.bias_atom_e.view([self.ntypes, self.dim_out])
+
+        if nd != self.dim_descrpt:
+            raise ValueError(
+                "get an input descriptor of dim {nd},"
+                "which is not consistent with {self.dim_descrpt}."
+            )
+        # check fparam dim, concate to input descriptor
+        if self.numb_fparam > 0:
+            assert fparam is not None, "fparam should not be None"
+            assert self.fparam_avg is not None
+            assert self.fparam_inv_std is not None
+            if fparam.shape[-1] != self.numb_fparam:
+                raise ValueError(
+                    "get an input fparam of dim {fparam.shape[-1]}, ",
+                    "which is not consistent with {self.numb_fparam}.",
+                )
+            fparam = fparam.view([nf, self.numb_fparam])
+            nb, _ = fparam.shape
+            t_fparam_avg = self._extend_f_avg_std(self.fparam_avg, nb)
+            t_fparam_inv_std = self._extend_f_avg_std(self.fparam_inv_std, nb)
+            fparam = (fparam - t_fparam_avg) * t_fparam_inv_std
+            fparam = torch.tile(fparam.reshape([nf, 1, -1]), [1, nloc, 1])
+            xx = torch.cat(
+                [xx, fparam],
+                dim=-1,
+            )
+        # check aparam dim, concate to input descriptor
+        if self.numb_aparam > 0:
+            assert aparam is not None, "aparam should not be None"
+            assert self.aparam_avg is not None
+            assert self.aparam_inv_std is not None
+            if aparam.shape[-1] != self.numb_aparam:
+                raise ValueError(
+                    "get an input aparam of dim {aparam.shape[-1]}, ",
+                    "which is not consistent with {self.numb_aparam}.",
+                )
+            aparam = aparam.view([nf, nloc, self.numb_aparam])
+            nb, nloc, _ = aparam.shape
+            t_aparam_avg = self._extend_a_avg_std(self.aparam_avg, nb, nloc)
+            t_aparam_inv_std = self._extend_a_avg_std(self.aparam_inv_std, nb, nloc)
+            aparam = (aparam - t_aparam_avg) * t_aparam_inv_std
+            xx = torch.cat(
+                [xx, aparam],
+                dim=-1,
+            )
+
+        outs = torch.zeros_like(atype).unsqueeze(-1)  # jit assertion
+        if self.old_impl:
+            outs = torch.zeros_like(atype).unsqueeze(-1)  # jit assertion
+            assert self.filter_layers_old is not None
+            if self.use_tebd:
+                atom_property = self.filter_layers_old[0](xx) + self.bias_atom_e[
+                    atype
+                ].unsqueeze(-1)
+                outs = outs + atom_property  # Shape is [nframes, natoms[0], 1]
+            else:
+                for type_i, filter_layer in enumerate(self.filter_layers_old):
+                    mask = atype == type_i
+                    atom_property = filter_layer(xx)
+                    atom_property = atom_property + self.bias_atom_e[type_i] if hasattr(self, "bias_atom_e") else atom_property
+                    atom_property = atom_property * mask.unsqueeze(-1)
+                    outs = outs + atom_property  # Shape is [nframes, natoms[0], 1]
+            return {self.var_name: outs.to(env.GLOBAL_PT_FLOAT_PRECISION)}
+        else:
+            if self.use_tebd:
+                atom_property = (
+                    self.filter_layers.networks[0](xx) + self.bias_atom_e[atype]
+                )
+                outs = outs + atom_property  # Shape is [nframes, natoms[0], 1]
+            else:
+                for type_i, ll in enumerate(self.filter_layers.networks):
+                    mask = (atype == type_i).unsqueeze(-1)
+                    mask = torch.tile(mask, (1, 1, self.dim_out))
+                    atom_property = ll(xx)
+                    atom_property = atom_property + self.bias_atom_e[type_i] if hasattr(self, "bias_atom_e") else atom_property
+                    atom_property = atom_property * mask
+                    outs = outs + atom_property  # Shape is [nframes, natoms[0], 1]
+            return {self.var_name: outs.to(env.GLOBAL_PT_FLOAT_PRECISION)}
+        
+
+@fitting_check_output
+class InvarFitting(GeneralFitting):
+    def __init__(
+        self,
+        var_name: str,
+        ntypes: int,
+        dim_descrpt: int,
+        dim_out: int,
+        neuron: List[int] = [128, 128, 128],
+        bias_atom_e: Optional[torch.Tensor] = None,
+        resnet_dt: bool = True,
+        numb_fparam: int = 0,
+        numb_aparam: int = 0,
+        activation_function: str = "tanh",
+        precision: str = DEFAULT_PRECISION,
+        distinguish_types: bool = False,
+        **kwargs,
+    ):
+        """Construct a fitting net for energy.
+
+        Args:
+        - ntypes: Element count.
+        - embedding_width: Embedding width per atom.
+        - neuron: Number of neurons in each hidden layers of the fitting net.
+        - bias_atom_e: Average enery per atom for each element.
+        - resnet_dt: Using time-step in the ResNet construction.
+        """
+        super().__init__() 
+        if bias_atom_e is None:
+            bias_atom_e = np.zeros([self.ntypes, self.dim_out])
+        bias_atom_e = torch.tensor(bias_atom_e, dtype=self.prec, device=device)
+        bias_atom_e = bias_atom_e.view([self.ntypes, self.dim_out])
+        if not self.use_tebd:
+            assert self.ntypes == bias_atom_e.shape[0], "Element count mismatches!"
+        self.register_buffer("bias_atom_e", bias_atom_e)      
 
     def output_def(self) -> FittingOutputDef:
         return FittingOutputDef(
@@ -211,6 +389,11 @@ class InvarFitting(Fitting):
         """
         return ["bias_atom_e"]
 
+    def serialize(self):
+        data = super().serialize()
+        data["@variables"]["bias_atom_e"] = to_numpy_array(self.bias_atom_e)
+        return data
+
     def compute_output_stats(self, merged):
         energy = [item["energy"] for item in merged]
         mixed_type = "real_natoms_vec" in merged[0]
@@ -229,62 +412,6 @@ class InvarFitting(Fitting):
                 [self.ntypes, self.dim_out]
             )
         )
-
-    def serialize(self) -> dict:
-        """Serialize the fitting to dict."""
-        return {
-            "var_name": self.var_name,
-            "ntypes": self.ntypes,
-            "dim_descrpt": self.dim_descrpt,
-            "dim_out": self.dim_out,
-            "neuron": self.neuron,
-            "resnet_dt": self.resnet_dt,
-            "numb_fparam": self.numb_fparam,
-            "numb_aparam": self.numb_aparam,
-            "activation_function": self.activation_function,
-            "precision": self.precision,
-            "distinguish_types": self.distinguish_types,
-            "nets": self.filter_layers.serialize(),
-            "@variables": {
-                "bias_atom_e": to_numpy_array(self.bias_atom_e),
-                "fparam_avg": to_numpy_array(self.fparam_avg),
-                "fparam_inv_std": to_numpy_array(self.fparam_inv_std),
-                "aparam_avg": to_numpy_array(self.aparam_avg),
-                "aparam_inv_std": to_numpy_array(self.aparam_inv_std),
-            },
-            # "rcond": self.rcond ,
-            # "tot_ener_zero": self.tot_ener_zero ,
-            # "trainable": self.trainable ,
-            # "atom_ener": self.atom_ener ,
-            # "layer_name": self.layer_name ,
-            # "use_aparam_as_mask": self.use_aparam_as_mask ,
-            # "spin": self.spin ,
-            ## NOTICE:  not supported by far
-            "rcond": None,
-            "tot_ener_zero": False,
-            "trainable": True,
-            "atom_ener": None,
-            "layer_name": None,
-            "use_aparam_as_mask": False,
-            "spin": None,
-        }
-
-    @classmethod
-    def deserialize(cls, data: dict) -> "InvarFitting":
-        data = copy.deepcopy(data)
-        variables = data.pop("@variables")
-        nets = data.pop("nets")
-        obj = cls(**data)
-        for kk in variables.keys():
-            obj[kk] = to_torch_tensor(variables[kk])
-        obj.filter_layers = NetworkCollection.deserialize(nets)
-        return obj
-
-    def _extend_f_avg_std(self, xx: torch.Tensor, nb: int) -> torch.Tensor:
-        return torch.tile(xx.view([1, self.numb_fparam]), [nb, 1])
-
-    def _extend_a_avg_std(self, xx: torch.Tensor, nb: int, nloc: int) -> torch.Tensor:
-        return torch.tile(xx.view([1, 1, self.numb_aparam]), [nb, nloc, 1])
 
     def forward(
         self,
@@ -306,90 +433,8 @@ class InvarFitting(Fitting):
         -------
         - `torch.Tensor`: Total energy with shape [nframes, natoms[0]].
         """
-        xx = descriptor
-        nf, nloc, nd = xx.shape
-        # NOTICE in tests/pt/test_model.py
-        # it happens that the user directly access the data memeber self.bias_atom_e
-        # and set it to a wrong shape!
-        self.bias_atom_e = self.bias_atom_e.view([self.ntypes, self.dim_out])
-        # check input dim
-        if nd != self.dim_descrpt:
-            raise ValueError(
-                "get an input descriptor of dim {nd},"
-                "which is not consistent with {self.dim_descrpt}."
-            )
-        # check fparam dim, concate to input descriptor
-        if self.numb_fparam > 0:
-            assert fparam is not None, "fparam should not be None"
-            assert self.fparam_avg is not None
-            assert self.fparam_inv_std is not None
-            if fparam.shape[-1] != self.numb_fparam:
-                raise ValueError(
-                    "get an input fparam of dim {fparam.shape[-1]}, ",
-                    "which is not consistent with {self.numb_fparam}.",
-                )
-            fparam = fparam.view([nf, self.numb_fparam])
-            nb, _ = fparam.shape
-            t_fparam_avg = self._extend_f_avg_std(self.fparam_avg, nb)
-            t_fparam_inv_std = self._extend_f_avg_std(self.fparam_inv_std, nb)
-            fparam = (fparam - t_fparam_avg) * t_fparam_inv_std
-            fparam = torch.tile(fparam.reshape([nf, 1, -1]), [1, nloc, 1])
-            xx = torch.cat(
-                [xx, fparam],
-                dim=-1,
-            )
-        # check aparam dim, concate to input descriptor
-        if self.numb_aparam > 0:
-            assert aparam is not None, "aparam should not be None"
-            assert self.aparam_avg is not None
-            assert self.aparam_inv_std is not None
-            if aparam.shape[-1] != self.numb_aparam:
-                raise ValueError(
-                    "get an input aparam of dim {aparam.shape[-1]}, ",
-                    "which is not consistent with {self.numb_aparam}.",
-                )
-            aparam = aparam.view([nf, nloc, self.numb_aparam])
-            nb, nloc, _ = aparam.shape
-            t_aparam_avg = self._extend_a_avg_std(self.aparam_avg, nb, nloc)
-            t_aparam_inv_std = self._extend_a_avg_std(self.aparam_inv_std, nb, nloc)
-            aparam = (aparam - t_aparam_avg) * t_aparam_inv_std
-            xx = torch.cat(
-                [xx, aparam],
-                dim=-1,
-            )
-
-        outs = torch.zeros_like(atype).unsqueeze(-1)  # jit assertion
-        if self.old_impl:
-            outs = torch.zeros_like(atype).unsqueeze(-1)  # jit assertion
-            assert self.filter_layers_old is not None
-            if self.use_tebd:
-                atom_energy = self.filter_layers_old[0](xx) + self.bias_atom_e[
-                    atype
-                ].unsqueeze(-1)
-                outs = outs + atom_energy  # Shape is [nframes, natoms[0], 1]
-            else:
-                for type_i, filter_layer in enumerate(self.filter_layers_old):
-                    mask = atype == type_i
-                    atom_energy = filter_layer(xx)
-                    atom_energy = atom_energy + self.bias_atom_e[type_i]
-                    atom_energy = atom_energy * mask.unsqueeze(-1)
-                    outs = outs + atom_energy  # Shape is [nframes, natoms[0], 1]
-            return {"energy": outs.to(env.GLOBAL_PT_FLOAT_PRECISION)}
-        else:
-            if self.use_tebd:
-                atom_energy = (
-                    self.filter_layers.networks[0](xx) + self.bias_atom_e[atype]
-                )
-                outs = outs + atom_energy  # Shape is [nframes, natoms[0], 1]
-            else:
-                for type_i, ll in enumerate(self.filter_layers.networks):
-                    mask = (atype == type_i).unsqueeze(-1)
-                    mask = torch.tile(mask, (1, 1, self.dim_out))
-                    atom_energy = ll(xx)
-                    atom_energy = atom_energy + self.bias_atom_e[type_i]
-                    atom_energy = atom_energy * mask
-                    outs = outs + atom_energy  # Shape is [nframes, natoms[0], 1]
-            return {self.var_name: outs.to(env.GLOBAL_PT_FLOAT_PRECISION)}
+        return super().forward(descriptor, atype, gr, g2, h2, fparam, aparam)
+        
 
 
 @Fitting.register("ener")
