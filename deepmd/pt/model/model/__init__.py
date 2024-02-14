@@ -87,4 +87,5 @@ __all__ = [
     "BaseModel",
     "EnergyModel",
     "get_model",
+    "make_hessian_model",
 ]
