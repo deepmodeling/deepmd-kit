@@ -170,7 +170,16 @@ class NeighborStat(BaseNeighborStat):
             self.op = self.build()
         self.sub_sess = tf.Session(graph=sub_graph, config=default_tf_session_config)
 
-    def build(self):
+    def build(self) -> Tuple[tf.Tensor, tf.Tensor]:
+        """Build the graph.
+
+        Returns
+        -------
+        tf.Tensor
+            The minimal squared distance between two atoms, in the shape of (nframes,)
+        tf.Tensor
+            The maximal number of neighbors
+        """
         for ii in ["coord", "box"]:
             self.place_holders[ii] = tf.placeholder(
                 GLOBAL_NP_FLOAT_PRECISION, [None, None], name="t_" + ii
@@ -228,6 +237,19 @@ class NeighborStat(BaseNeighborStat):
         box: Optional[np.ndarray],
         pbc: bool,
     ):
+        """Execute the operation.
+
+        Parameters
+        ----------
+        coord
+            The coordinates of atoms.
+        atype
+            The atom types.
+        box
+            The box.
+        pbc
+            Whether the box is periodic.
+        """
         feed_dict = {
             self.place_holders["coord"]: coord,
             self.place_holders["type"]: atype,
