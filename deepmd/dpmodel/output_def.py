@@ -319,6 +319,10 @@ def get_deriv_name(name: str) -> Tuple[str, str]:
     return name + "_derv_r", name + "_derv_c"
 
 
+def get_hessian_name(name: str) -> str:
+    return name + "_derv_r_derv_r"
+
+
 def apply_operation(var_def: OutputVariableDef, op: OutputVariableOperation) -> int:
     """Apply a operation to the category of a variable definition.
 
