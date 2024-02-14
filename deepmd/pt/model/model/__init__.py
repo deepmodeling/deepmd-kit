@@ -101,9 +101,10 @@ def get_model(model_params):
 
 __all__ = [
     "BaseModel",
-    "EnergyModel",
     "get_model",
+    "get_zbl_model",
     "DPModel",
+    "EnergyModel",
     "DPZBLModel",
     "make_model",
     "make_hessian_model",

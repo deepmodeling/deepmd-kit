@@ -14,10 +14,6 @@ DPModel = make_model(DPAtomicModel)
 
 """
 
-from deepmd.dpmodel.atomic_model import (
-    make_base_atomic_model,
-)
-
 from .base_atomic_model import (
     BaseAtomicModel,
 )
@@ -33,7 +29,6 @@ from .pairtab_atomic_model import (
 )
 
 __all__ = [
-    "make_base_atomic_model",
     "BaseAtomicModel",
     "DPAtomicModel",
     "PairTabAtomicModel",
