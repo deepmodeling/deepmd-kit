@@ -348,7 +348,7 @@ class InvarFitting(GeneralFitting):
             activation_function=activation_function,
             precision=precision,
             distinguish_types=distinguish_types,
-            **kwargs
+            **kwargs,
         )
         if bias_atom_e is None:
             bias_atom_e = np.zeros([self.ntypes, self.dim_out])
