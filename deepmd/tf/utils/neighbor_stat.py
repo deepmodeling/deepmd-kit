@@ -145,7 +145,11 @@ class NeighborStatOP:
             )
         # nnei: nframes, nloc, ntypes
         # virtual type i (<0) are not counted
-        nnei = tf.where(tf.less(atype, 0)[:, :, None], tf.zeros_like(nnei), nnei)
+        nnei = tf.where(
+            tf.tile(tf.less(atype, 0)[:, :, None], [1, 1, self.ntypes]),
+            tf.zeros_like(nnei),
+            nnei,
+        )
         max_nnei = tf.reduce_max(nnei, axis=1)
         return min_rr2, max_nnei
 
