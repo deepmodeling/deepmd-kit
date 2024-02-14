@@ -54,7 +54,6 @@ class GeneralFitting(Fitting):
         dim_descrpt: int,
         dim_out: int,
         neuron: List[int] = [128, 128, 128],
-        bias_atom_e: Optional[torch.Tensor] = None,
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
@@ -337,7 +336,20 @@ class InvarFitting(GeneralFitting):
         - bias_atom_e: Average enery per atom for each element.
         - resnet_dt: Using time-step in the ResNet construction.
         """
-        super().__init__()
+        super().__init__(
+            var_name=var_name,
+            ntypes=ntypes,
+            dim_descrpt=dim_descrpt,
+            dim_out=dim_out,
+            neuron=neuron,
+            resnet_dt=resnet_dt,
+            numb_fparam=numb_fparam,
+            numb_aparam=numb_aparam,
+            activation_function=activation_function,
+            precision=precision,
+            distinguish_types=distinguish_types,
+            **kwargs
+        )
         if bias_atom_e is None:
             bias_atom_e = np.zeros([self.ntypes, self.dim_out])
         bias_atom_e = torch.tensor(bias_atom_e, dtype=self.prec, device=device)
