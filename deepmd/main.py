@@ -603,7 +603,7 @@ def main_parser() -> argparse.ArgumentParser:
     parser_neighbor_stat = subparsers.add_parser(
         "neighbor-stat",
         parents=[parser_log],
-        help="(Supported backend: TensorFlow) Calculate neighbor statistics",
+        help="Calculate neighbor statistics",
         formatter_class=RawTextArgumentDefaultsHelpFormatter,
         epilog=textwrap.dedent(
             """\

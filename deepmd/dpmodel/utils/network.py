@@ -192,7 +192,8 @@ class NativeLayer(NativeOP):
             "use_timestep": self.idt is not None,
             "activation_function": self.activation_function,
             "resnet": self.resnet,
-            "precision": self.precision,
+            # make deterministic
+            "precision": np.dtype(PRECISION_DICT[self.precision]).name,
             "@variables": data,
         }
 
@@ -464,7 +465,8 @@ def make_embedding_network(T_Network, T_NetworkLayer):
                 "neuron": self.neuron.copy(),
                 "activation_function": self.activation_function,
                 "resnet_dt": self.resnet_dt,
-                "precision": self.precision,
+                # make deterministic
+                "precision": np.dtype(PRECISION_DICT[self.precision]).name,
                 "layers": [layer.serialize() for layer in self.layers],
             }
 

@@ -25,11 +25,14 @@ from deepmd.pt.utils import (
     dp_random,
 )
 from deepmd.pt.utils.dataset import (
-    DeepmdDataSet,
+    DeepmdDataSetForLoader,
 )
 from deepmd.pt.utils.env import (
     DEVICE,
     GLOBAL_NP_FLOAT_PRECISION,
+)
+from deepmd.pt.utils.nlist import (
+    extend_input_and_build_neighbor_list,
 )
 from deepmd.tf.common import (
     expand_sys_str,
@@ -41,6 +44,25 @@ CUR_DIR = os.path.dirname(__file__)
 
 def gen_key(worb, depth, elemid):
     return (worb, depth, elemid)
+
+
+def get_single_batch(dataset, index=None):
+    if index is None:
+        index = dp_random.choice(np.arange(len(dataset)))
+    pt_batch = dataset[index]
+    np_batch = {}
+    # TODO deprecated
+    for key in ["mapping", "shift", "nlist"]:
+        if key in pt_batch.keys():
+            pt_batch[key] = pt_batch[key].unsqueeze(0)
+    for key in ["coord", "box", "force", "energy", "virial", "atype", "natoms"]:
+        if key in pt_batch.keys():
+            pt_batch[key] = pt_batch[key].unsqueeze(0)
+            np_batch[key] = pt_batch[key].cpu().numpy()
+    np_batch["coord"] = np_batch["coord"].reshape(1, -1)
+    np_batch["natoms"] = np_batch["natoms"][0]
+    np_batch["force"] = np_batch["force"].reshape(1, -1)
+    return np_batch, pt_batch
 
 
 def base_se_a(descriptor, coord, atype, natoms, box):
@@ -105,12 +127,16 @@ class TestSeA(unittest.TestCase):
         self.systems = config["training"]["validation_data"]["systems"]
         if isinstance(self.systems, str):
             self.systems = expand_sys_str(self.systems)
-        ds = DeepmdDataSet(
-            self.systems, self.bsz, model_config["type_map"], self.rcut, self.sel
+        ds = DeepmdDataSetForLoader(
+            self.systems[0],
+            model_config["type_map"],
+            self.rcut,
+            self.sel,
+            type_split=True,
         )
         self.filter_neuron = model_config["descriptor"]["neuron"]
         self.axis_neuron = model_config["descriptor"]["axis_neuron"]
-        self.np_batch, self.torch_batch = ds.get_batch()
+        self.np_batch, self.torch_batch = get_single_batch(ds)
 
     def test_consistency(self):
         dp_d = DescrptSeA_tf(
@@ -154,20 +180,23 @@ class TestSeA(unittest.TestCase):
 
         pt_coord = self.torch_batch["coord"].to(env.DEVICE)
         pt_coord.requires_grad_(True)
-        index = (
-            self.torch_batch["mapping"].unsqueeze(-1).expand(-1, -1, 3).to(env.DEVICE)
-        )
-        extended_coord = torch.gather(pt_coord, dim=1, index=index)
-        extended_coord = extended_coord - self.torch_batch["shift"].to(env.DEVICE)
-        extended_atype = torch.gather(
+        (
+            extended_coord,
+            extended_atype,
+            mapping,
+            nlist,
+        ) = extend_input_and_build_neighbor_list(
+            pt_coord,
             self.torch_batch["atype"].to(env.DEVICE),
-            dim=1,
-            index=self.torch_batch["mapping"].to(env.DEVICE),
+            self.rcut,
+            self.sel,
+            distinguish_types=True,
+            box=self.torch_batch["box"].to(env.DEVICE),
         )
         descriptor_out, _, _, _, _ = descriptor(
             extended_coord,
             extended_atype,
-            self.torch_batch["nlist"].to(env.DEVICE),
+            nlist,
         )
         my_embedding = descriptor_out.cpu().detach().numpy()
         fake_energy = torch.sum(descriptor_out)

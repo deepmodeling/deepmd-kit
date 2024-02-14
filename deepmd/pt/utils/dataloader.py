@@ -267,26 +267,7 @@ def collate_batch(batch):
     example = batch[0]
     result = example.copy()
     for key in example.keys():
-        if key == "shift" or key == "mapping":
-            natoms_extended = max([d[key].shape[0] for d in batch])
-            n_frames = len(batch)
-            list = []
-            for x in range(n_frames):
-                list.append(batch[x][key])
-            if key == "shift":
-                result[key] = torch.zeros(
-                    (n_frames, natoms_extended, 3),
-                    dtype=env.GLOBAL_PT_FLOAT_PRECISION,
-                )
-            else:
-                result[key] = torch.zeros(
-                    (n_frames, natoms_extended),
-                    dtype=torch.long,
-                )
-            for i in range(len(batch)):
-                natoms_tmp = list[i].shape[0]
-                result[key][i, :natoms_tmp] = list[i]
-        elif "find_" in key:
+        if "find_" in key:
             result[key] = batch[0][key]
         else:
             if batch[0][key] is None:

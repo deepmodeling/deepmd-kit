@@ -28,6 +28,9 @@ from deepmd.entrypoints.doc import (
 from deepmd.entrypoints.gui import (
     start_dpgui,
 )
+from deepmd.entrypoints.neighbor_stat import (
+    neighbor_stat,
+)
 from deepmd.entrypoints.test import (
     test,
 )
@@ -328,6 +331,8 @@ def main(args: Optional[Union[List[str], argparse.Namespace]] = None):
         make_model_devi(**dict_args)
     elif FLAGS.command == "gui":
         start_dpgui(**dict_args)
+    elif FLAGS.command == "neighbor-stat":
+        neighbor_stat(**dict_args)
     else:
         raise RuntimeError(f"Invalid command {FLAGS.command}!")
 

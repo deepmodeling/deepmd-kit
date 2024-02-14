@@ -21,18 +21,25 @@ from deepmd.pt.utils import (
     env,
 )
 from deepmd.pt.utils.dataset import (
-    DeepmdDataSet,
+    DeepmdDataSetForLoader,
 )
 from deepmd.pt.utils.env import (
     DEVICE,
     GLOBAL_NP_FLOAT_PRECISION,
     GLOBAL_PT_FLOAT_PRECISION,
 )
+from deepmd.pt.utils.nlist import (
+    extend_input_and_build_neighbor_list,
+)
 from deepmd.tf.common import (
     expand_sys_str,
 )
 from deepmd.tf.env import (
     op_module,
+)
+
+from .test_embedding_net import (
+    get_single_batch,
 )
 
 CUR_DIR = os.path.dirname(__file__)
@@ -103,10 +110,14 @@ class TestSeA(unittest.TestCase):
         self.systems = config["training"]["validation_data"]["systems"]
         if isinstance(self.systems, str):
             self.systems = expand_sys_str(self.systems)
-        ds = DeepmdDataSet(
-            self.systems, self.bsz, model_config["type_map"], self.rcut, self.sel
+        ds = DeepmdDataSetForLoader(
+            self.systems[0],
+            model_config["type_map"],
+            self.rcut,
+            self.sel,
+            type_split=True,
         )
-        self.np_batch, self.pt_batch = ds.get_batch()
+        self.np_batch, self.pt_batch = get_single_batch(ds)
         self.sec = np.cumsum(self.sel)
         self.ntypes = len(self.sel)
         self.nnei = sum(self.sel)
@@ -122,7 +133,7 @@ class TestSeA(unittest.TestCase):
             dtype=GLOBAL_PT_FLOAT_PRECISION,
             device=env.DEVICE,
         )
-        base_d, base_force, nlist = base_se_a(
+        base_d, base_force, base_nlist = base_se_a(
             rcut=self.rcut,
             rcut_smth=self.rcut_smth,
             sel=self.sel,
@@ -132,14 +143,25 @@ class TestSeA(unittest.TestCase):
         )
 
         pt_coord = self.pt_batch["coord"].to(env.DEVICE)
+        atype = self.pt_batch["atype"].to(env.DEVICE)
         pt_coord.requires_grad_(True)
-        index = self.pt_batch["mapping"].unsqueeze(-1).expand(-1, -1, 3).to(env.DEVICE)
-        extended_coord = torch.gather(pt_coord, dim=1, index=index)
-        extended_coord = extended_coord - self.pt_batch["shift"].to(env.DEVICE)
-        my_d, _, _ = prod_env_mat_se_a(
-            extended_coord.to(DEVICE),
-            self.pt_batch["nlist"].to(env.DEVICE),
+        (
+            extended_coord,
+            extended_atype,
+            mapping,
+            nlist,
+        ) = extend_input_and_build_neighbor_list(
+            pt_coord,
             self.pt_batch["atype"].to(env.DEVICE),
+            self.rcut,
+            self.sel,
+            distinguish_types=True,
+            box=self.pt_batch["box"].to(env.DEVICE),
+        )
+        my_d, _, _ = prod_env_mat_se_a(
+            extended_coord,
+            nlist,
+            atype,
             avg_zero.reshape([-1, self.nnei, 4]).to(DEVICE),
             std_ones.reshape([-1, self.nnei, 4]).to(DEVICE),
             self.rcut,
@@ -151,16 +173,16 @@ class TestSeA(unittest.TestCase):
         base_force = base_force.reshape(bsz, -1, 3)
         base_d = base_d.reshape(bsz, -1, self.nnei, 4)
         my_d = my_d.view(bsz, -1, self.nnei, 4).cpu().detach().numpy()
-        nlist = nlist.reshape(bsz, -1, self.nnei)
+        base_nlist = base_nlist.reshape(bsz, -1, self.nnei)
 
-        mapping = self.pt_batch["mapping"].cpu()
-        my_nlist = self.pt_batch["nlist"].view(bsz, -1).cpu()
+        mapping = mapping.cpu()
+        my_nlist = nlist.view(bsz, -1).cpu()
         mask = my_nlist == -1
         my_nlist = my_nlist * ~mask
         my_nlist = torch.gather(mapping, dim=-1, index=my_nlist)
         my_nlist = my_nlist * ~mask - mask.long()
         my_nlist = my_nlist.cpu().view(bsz, -1, self.nnei).numpy()
-        self.assertTrue(np.allclose(nlist, my_nlist))
+        self.assertTrue(np.allclose(base_nlist, my_nlist))
         self.assertTrue(np.allclose(np.mean(base_d, axis=2), np.mean(my_d, axis=2)))
         self.assertTrue(np.allclose(np.std(base_d, axis=2), np.std(my_d, axis=2)))
         # descriptors may be different when there are multiple neighbors in the same distance

@@ -334,3 +334,31 @@ class PairTabAtomicModel(torch.nn.Module, BaseAtomicModel):
         etmp = (a3 * uu + a2) * uu + a1  # this should be elementwise operations.
         ener = etmp * uu + a0  # this energy has the extrapolated value when rcut > rmax
         return ener
+
+    @torch.jit.export
+    def get_dim_fparam(self) -> int:
+        """Get the number (dimension) of frame parameters of this atomic model."""
+        return 0
+
+    @torch.jit.export
+    def get_dim_aparam(self) -> int:
+        """Get the number (dimension) of atomic parameters of this atomic model."""
+        return 0
+
+    @torch.jit.export
+    def get_sel_type(self) -> List[int]:
+        """Get the selected atom types of this model.
+
+        Only atoms with selected atom types have atomic contribution
+        to the result of the model.
+        If returning an empty list, all atom types are selected.
+        """
+        return []
+
+    @torch.jit.export
+    def is_aparam_nall(self) -> bool:
+        """Check whether the shape of atomic parameters is (nframes, nall, ndim).
+
+        If False, the shape is (nframes, nloc, ndim).
+        """
+        return False
