@@ -7,6 +7,9 @@ from typing import (
 
 import numpy as np
 
+from deepmd.dpmodel.utils.env_mat import (
+    EnvMat,
+)
 from deepmd.tf.common import (
     cast_precision,
     get_activation_func,
@@ -195,6 +198,7 @@ class DescrptSeA(DescrptSe):
         self.trainable = trainable
         self.compress_activation_fn = get_activation_func(activation_function)
         self.filter_activation_fn = get_activation_func(activation_function)
+        self.activation_function_name = activation_function
         self.filter_precision = get_precision(precision)
         self.filter_np_precision = get_np_precision(precision)
         self.exclude_types = set()
@@ -1345,3 +1349,101 @@ class DescrptSeA(DescrptSe):
         if self.stripped_type_embedding:
             return True
         return False
+
+    @classmethod
+    def deserialize(cls, data: dict, suffix: str = ""):
+        """Deserialize the model.
+
+        Parameters
+        ----------
+        data : dict
+            The serialized data
+
+        Returns
+        -------
+        Model
+            The deserialized model
+        """
+        if cls is not DescrptSeA:
+            raise NotImplementedError("Not implemented in class %s" % cls.__name__)
+        data = data.copy()
+        embedding_net_variables = cls.deserialize_network(
+            data.pop("embeddings"), suffix=suffix
+        )
+        data.pop("env_mat")
+        variables = data.pop("@variables")
+        descriptor = cls(**data)
+        descriptor.embedding_net_variables = embedding_net_variables
+        descriptor.davg = variables["davg"].reshape(
+            descriptor.ntypes, descriptor.ndescrpt
+        )
+        descriptor.dstd = variables["dstd"].reshape(
+            descriptor.ntypes, descriptor.ndescrpt
+        )
+        return descriptor
+
+    def serialize(self, suffix: str = "") -> dict:
+        """Serialize the model.
+
+        Parameters
+        ----------
+        suffix : str, optional
+            The suffix of the scope
+
+        Returns
+        -------
+        dict
+            The serialized data
+        """
+        if type(self) is not DescrptSeA:
+            raise NotImplementedError(
+                "Not implemented in class %s" % self.__class__.__name__
+            )
+        if self.stripped_type_embedding:
+            raise NotImplementedError(
+                "stripped_type_embedding is unsupported by the native model"
+            )
+        if (self.original_sel != self.sel_a).any():
+            raise NotImplementedError(
+                "Adjusting sel is unsupported by the native model"
+            )
+        if self.embedding_net_variables is None:
+            raise RuntimeError("init_variables must be called before serialize")
+        if self.spin is not None:
+            raise NotImplementedError("spin is unsupported")
+        assert self.davg is not None
+        assert self.dstd is not None
+        # TODO: not sure how to handle type embedding - type embedding is not a model parameter,
+        # but instead a part of the input data. Maybe the interface should be refactored...
+
+        return {
+            "rcut": self.rcut_r,
+            "rcut_smth": self.rcut_r_smth,
+            "sel": self.sel_a,
+            "neuron": self.filter_neuron,
+            "axis_neuron": self.n_axis_neuron,
+            "resnet_dt": self.filter_resnet_dt,
+            "trainable": self.trainable,
+            "type_one_side": self.type_one_side,
+            "exclude_types": list(self.exclude_types),
+            "set_davg_zero": self.set_davg_zero,
+            "activation_function": self.activation_function_name,
+            "precision": self.filter_precision.name,
+            "embeddings": self.serialize_network(
+                ntypes=self.ntypes,
+                ndim=(1 if self.type_one_side else 2),
+                in_dim=1,
+                neuron=self.filter_neuron,
+                activation_function=self.activation_function_name,
+                resnet_dt=self.filter_resnet_dt,
+                variables=self.embedding_net_variables,
+                excluded_types=self.exclude_types,
+                suffix=suffix,
+            ),
+            "env_mat": EnvMat(self.rcut_r, self.rcut_r_smth).serialize(),
+            "@variables": {
+                "davg": self.davg.reshape(self.ntypes, self.nnei_a, 4),
+                "dstd": self.dstd.reshape(self.ntypes, self.nnei_a, 4),
+            },
+            "spin": self.spin,
+        }

@@ -1,8 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
-import math
 from typing import (
-    List,
+    Iterator,
     Tuple,
 )
 
@@ -20,11 +19,12 @@ from deepmd.tf.utils.data_system import (
 from deepmd.tf.utils.parallel_op import (
     ParallelOp,
 )
+from deepmd.utils.neighbor_stat import NeighborStat as BaseNeighborStat
 
 log = logging.getLogger(__name__)
 
 
-class NeighborStat:
+class NeighborStat(BaseNeighborStat):
     """Class for getting training data information.
 
     It loads data from DeepmdData object, and measures the data info, including neareest nbor distance between atoms, max nbor size of atoms and the output data range of the environment matrix.
@@ -46,9 +46,7 @@ class NeighborStat:
         one_type: bool = False,
     ) -> None:
         """Constructor."""
-        self.rcut = rcut
-        self.ntypes = ntypes
-        self.one_type = one_type
+        super().__init__(ntypes, rcut, one_type)
         sub_graph = tf.Graph()
 
         def builder():
@@ -91,25 +89,20 @@ class NeighborStat:
 
         self.sub_sess = tf.Session(graph=sub_graph, config=default_tf_session_config)
 
-    def get_stat(self, data: DeepmdDataSystem) -> Tuple[float, List[int]]:
-        """Get the data statistics of the training data, including nearest nbor distance between atoms, max nbor size of atoms.
+    def iterator(
+        self, data: DeepmdDataSystem
+    ) -> Iterator[Tuple[np.ndarray, float, str]]:
+        """Abstract method for producing data.
 
-        Parameters
-        ----------
-        data
-            Class for manipulating many data systems. It is implemented with the help of DeepmdData.
-
-        Returns
-        -------
-        min_nbor_dist
-            The nearest distance between neighbor atoms
-        max_nbor_size
-            A list with ntypes integers, denotes the actual achieved max sel
+        Yields
+        ------
+        np.ndarray
+            The maximal number of neighbors
+        float
+            The squared minimal distance between two atoms
+        str
+            The directory of the data system
         """
-        self.min_nbor_dist = 100.0
-        self.max_nbor_size = [0]
-        if not self.one_type:
-            self.max_nbor_size *= self.ntypes
 
         def feed():
             for ii in range(len(data.system_dirs)):
@@ -129,25 +122,4 @@ class NeighborStat:
                             "dir": str(jj),
                         }
 
-        for mn, dt, jj in self.p.generate(self.sub_sess, feed()):
-            if np.isinf(dt):
-                log.warning(
-                    "Atoms with no neighbors found in %s. Please make sure it's what you expected."
-                    % jj
-                )
-            if dt < self.min_nbor_dist:
-                if math.isclose(dt, 0.0, rel_tol=1e-6):
-                    # it's unexpected that the distance between two atoms is zero
-                    # zero distance will cause nan (#874)
-                    raise RuntimeError(
-                        "Some atoms are overlapping in %s. Please check your"
-                        " training data to remove duplicated atoms." % jj
-                    )
-                self.min_nbor_dist = dt
-            self.max_nbor_size = np.maximum(mn, self.max_nbor_size)
-
-        # do sqrt in the final
-        self.min_nbor_dist = math.sqrt(self.min_nbor_dist)
-        log.info("training data with min nbor dist: " + str(self.min_nbor_dist))
-        log.info("training data with max nbor size: " + str(self.max_nbor_size))
-        return self.min_nbor_dist, self.max_nbor_size
+        return self.p.generate(self.sub_sess, feed())
