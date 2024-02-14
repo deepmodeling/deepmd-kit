@@ -6,7 +6,7 @@ from unittest.mock import (
 
 import numpy as np
 
-from deepmd.dpmodel import (
+from deepmd.dpmodel.atomic_model import (
     DPAtomicModel,
 )
 from deepmd.dpmodel.atomic_model.linear_atomic_model import (
