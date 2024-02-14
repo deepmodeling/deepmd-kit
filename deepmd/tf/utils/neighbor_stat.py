@@ -219,7 +219,6 @@ class NeighborStat(BaseNeighborStat):
                     data_set_data["box"],
                     data_set.pbc,
                 )
-                print(minrr2, max_nnei)
                 yield np.max(max_nnei, axis=0), np.min(minrr2), jj
 
     def _execute(
