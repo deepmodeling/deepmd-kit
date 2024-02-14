@@ -119,7 +119,6 @@ class InvarFitting(Fitting):
             self.aparam_avg, self.aparam_inv_std = None, None
 
         in_dim = self.dim_descrpt + self.numb_fparam + self.numb_aparam
-        out_dim = self.dim_out
 
         self.old_impl = kwargs.get("old_impl", False)
         if self.old_impl:
@@ -144,7 +143,7 @@ class InvarFitting(Fitting):
                 networks=[
                     FittingNet(
                         in_dim,
-                        out_dim,
+                        self.dim_out,
                         self.neuron,
                         self.activation_function,
                         self.resnet_dt,
