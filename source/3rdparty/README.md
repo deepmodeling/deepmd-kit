@@ -4,4 +4,4 @@
 | ------------------------- | ---------------------------------- | ------- | ------- |
 | json                      | https://github.com/nlohmann/json   | 3.9.1   | MIT     |
 | Implib.so                 | https://github.com/yugr/Implib.so  | 0ddaa71 | MIT     |
-| coverage_plugins_packages | https://github.com/pytorch/pytorch | 2.2.0   | BSD-3   |
+| coverage_plugins          | https://github.com/pytorch/pytorch | 2.2.0   | BSD-3   |

@@ -261,4 +261,4 @@ convention = "numpy"
 markers = "run"
 
 [tool.coverage.run]
-plugins = ["coverage_plugins.jit_plugin"]
+plugins = ["source.3rdparty.coverage_plugins.jit_plugin"]
