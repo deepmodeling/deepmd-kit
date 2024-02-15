@@ -40,9 +40,10 @@ class TestDescrptSeA(unittest.TestCase, TestCaseSingleFrameWithNlist):
         dstd = rng.normal(size=(self.nt, nnei, 4))
         dstd = 0.1 + np.abs(dstd)
 
-        for idt, prec in itertools.product(
+        for idt, prec, em in itertools.product(
             [False, True],
             ["float64", "float32"],
+            [[[0, 1]], [[1, 1]]],
         ):
             dtype = PRECISION_DICT[prec]
             rtol, atol = get_tols(prec)
@@ -55,6 +56,7 @@ class TestDescrptSeA(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 precision=prec,
                 resnet_dt=idt,
                 old_impl=False,
+                exclude_mask=em,
             ).to(env.DEVICE)
             dd0.sea.mean = torch.tensor(davg, dtype=dtype, device=env.DEVICE)
             dd0.sea.dstd = torch.tensor(dstd, dtype=dtype, device=env.DEVICE)

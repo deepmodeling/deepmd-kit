@@ -27,6 +27,9 @@ from deepmd.dpmodel.utils import (
 from .base_descriptor import (
     BaseDescriptor,
 )
+from .exclude_mask import (
+    ExcludeMask,
+)
 
 
 class DescrptSeA(NativeOP, BaseDescriptor):
@@ -140,8 +143,6 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         ## seed, uniform_seed, multi_task, not included.
         if not type_one_side:
             raise NotImplementedError("type_one_side == False not implemented")
-        if exclude_types != []:
-            raise NotImplementedError("exclude_types is not implemented")
         if spin is not None:
             raise NotImplementedError("spin is not implemented")
 
@@ -159,6 +160,7 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         self.activation_function = activation_function
         self.precision = precision
         self.spin = spin
+        self.emask = ExcludeMask(self.ntypes, self.exclude_types)
 
         in_dim = 1  # not considiering type embedding
         self.embeddings = NetworkCollection(
@@ -292,8 +294,11 @@ class DescrptSeA(NativeOP, BaseDescriptor):
 
         ng = self.neuron[-1]
         gr = np.zeros([nf, nloc, ng, 4])
+        exclude_mask = self.emask.build_type_exclude_mask(nlist, atype_ext)
         for tt in range(self.ntypes):
+            mm = exclude_mask[:, :, sec[tt] : sec[tt + 1]]
             tr = rr[:, :, sec[tt] : sec[tt + 1], :]
+            tr = tr * mm[:, :, :, None]
             ss = tr[..., 0:1]
             gg = self.cal_g(ss, tt)
             # nf x nloc x ng x 4

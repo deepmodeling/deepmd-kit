@@ -3,6 +3,7 @@ from typing import (
     ClassVar,
     List,
     Optional,
+    Tuple,
 )
 
 import numpy as np
@@ -55,6 +56,7 @@ class DescrptSeA(Descriptor):
         activation_function: str = "tanh",
         precision: str = "float64",
         resnet_dt: bool = False,
+        exclude_types: List[Tuple[int, int]] = [],
         old_impl: bool = False,
         **kwargs,
     ):
@@ -63,13 +65,14 @@ class DescrptSeA(Descriptor):
             rcut,
             rcut_smth,
             sel,
-            neuron,
-            axis_neuron,
-            set_davg_zero,
-            activation_function,
-            precision,
-            resnet_dt,
-            old_impl,
+            neuron=neuron,
+            axis_neuron=axis_neuron,
+            set_davg_zero=set_davg_zero,
+            activation_function=activation_function,
+            precision=precision,
+            resnet_dt=resnet_dt,
+            exclude_types=exclude_types,
+            old_impl=old_impl,
             **kwargs,
         )
 
@@ -212,6 +215,7 @@ class DescrptSeA(Descriptor):
             "precision": RESERVED_PRECISON_DICT[obj.prec],
             "embeddings": obj.filter_layers.serialize(),
             "env_mat": DPEnvMat(obj.rcut, obj.rcut_smth).serialize(),
+            "exclude_types": obj.exclude_types,
             "@variables": {
                 "davg": obj["davg"].detach().cpu().numpy(),
                 "dstd": obj["dstd"].detach().cpu().numpy(),
@@ -219,7 +223,6 @@ class DescrptSeA(Descriptor):
             ## to be updated when the options are supported.
             "trainable": True,
             "type_one_side": True,
-            "exclude_types": [],
             "spin": None,
         }
 
@@ -256,6 +259,7 @@ class DescrptBlockSeA(DescriptorBlock):
         activation_function: str = "tanh",
         precision: str = "float64",
         resnet_dt: bool = False,
+        exclude_types: List[Tuple[int, int]] = [],
         old_impl: bool = False,
         **kwargs,
     ):
@@ -268,7 +272,7 @@ class DescrptBlockSeA(DescriptorBlock):
         - filter_neuron: Number of neurons in each hidden layers of the embedding net.
         - axis_neuron: Number of columns of the sub-matrix of the embedding matrix.
         """
-        super().__init__()
+        super().__init__(len(sel), exclude_types=exclude_types)
         self.rcut = rcut
         self.rcut_smth = rcut_smth
         self.neuron = neuron
@@ -280,8 +284,9 @@ class DescrptBlockSeA(DescriptorBlock):
         self.prec = PRECISION_DICT[self.precision]
         self.resnet_dt = resnet_dt
         self.old_impl = old_impl
-
+        self.exclude_types = exclude_types
         self.ntypes = len(sel)
+
         self.sel = sel
         self.sec = torch.tensor(
             np.append([0], np.cumsum(self.sel)), dtype=int, device=env.DEVICE
@@ -522,9 +527,16 @@ class DescrptBlockSeA(DescriptorBlock):
             xyz_scatter = torch.zeros(
                 [nfnl, 4, self.filter_neuron[-1]], dtype=self.prec, device=env.DEVICE
             )
+            # nfnl x nnei
+            exclude_mask = self.build_type_exclude_mask(nlist, extended_atype).view(
+                nfnl, -1
+            )
             for ii, ll in enumerate(self.filter_layers.networks):
+                # nfnl x nt
+                mm = exclude_mask[:, self.sec[ii] : self.sec[ii + 1]]
                 # nfnl x nt x 4
                 rr = dmatrix[:, self.sec[ii] : self.sec[ii + 1], :]
+                rr = rr * mm[:, :, None]
                 ss = rr[:, :, :1]
                 # nfnl x nt x ng
                 gg = ll.forward(ss)
