@@ -80,7 +80,7 @@ class InvarFitting(GeneralFitting):
             activation_function=activation_function,
             precision=precision,
             distinguish_types=distinguish_types,
-            rcond = rcond,
+            rcond=rcond,
             **kwargs,
         )
 
