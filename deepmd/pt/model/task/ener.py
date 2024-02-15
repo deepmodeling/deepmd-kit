@@ -56,7 +56,6 @@ class InvarFitting(GeneralFitting):
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
         distinguish_types: bool = False,
-        rcond: Optional[float] = None,
         **kwargs,
     ):
         """Construct a fitting net for energy.

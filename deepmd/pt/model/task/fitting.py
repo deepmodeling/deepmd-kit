@@ -356,6 +356,7 @@ class GeneralFitting(Fitting):
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
         distinguish_types: bool = False,
+        rcond: Optional[float] = None,
         **kwargs,
     ):
         """Construct a fitting net for energy.
@@ -381,6 +382,7 @@ class GeneralFitting(Fitting):
         self.activation_function = activation_function
         self.precision = precision
         self.prec = PRECISION_DICT[self.precision]
+        self.rcond = rcond
 
         # init constants
         if self.numb_fparam > 0:
