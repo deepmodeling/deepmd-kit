@@ -43,7 +43,7 @@ class TestDescrptSeA(unittest.TestCase, TestCaseSingleFrameWithNlist):
         for idt, prec, em in itertools.product(
             [False, True],
             ["float64", "float32"],
-            [[[0, 1]], [[1, 1]]],
+            [[], [[0, 1]], [[1, 1]]],
         ):
             dtype = PRECISION_DICT[prec]
             rtol, atol = get_tols(prec)
