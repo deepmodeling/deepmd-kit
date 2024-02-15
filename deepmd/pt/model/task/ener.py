@@ -267,7 +267,7 @@ class GeneralFitting(Fitting):
                 dim=-1,
             )
 
-        outs = torch.zeros_like(atype).unsqueeze(-1)  # jit assertion
+        outs = torch.zeros(nf, nloc, self.dim_out)  # jit assertion
         if self.old_impl:
             outs = torch.zeros_like(atype).unsqueeze(-1)  # jit assertion
             assert self.filter_layers_old is not None
