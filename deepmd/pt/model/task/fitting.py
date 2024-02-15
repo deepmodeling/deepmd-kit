@@ -545,6 +545,9 @@ class GeneralFitting(Fitting):
     ):
         xx = descriptor
         nf, nloc, nd = xx.shape
+        if gr is not None:
+            gr = gr.view(nf, nloc, -1, 3)
+            self.dim_out = gr.shape[2]
         if hasattr(self, "bias_atom_e"):
             self.bias_atom_e = self.bias_atom_e.view([self.ntypes, self.dim_out])
 

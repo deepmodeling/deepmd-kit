@@ -118,6 +118,7 @@ class DipoleFittingNet(GeneralFitting):
         ]
         # (nframes * nloc, 1, m1)
         out = out.view(-1, 1, out_dim)
+        gr = gr.view(nframes * nloc, -1, 3)
         # (nframes, nloc, 3)
         out = torch.bmm(out, gr).squeeze(-2).view(nframes, nloc, 3)
         return {self.var_name: out.to(env.GLOBAL_PT_FLOAT_PRECISION)}
