@@ -63,16 +63,15 @@ class InvarFitting(GeneralFitting):
 
         Parameters
         ----------
-        
-        var_name: The atomic property to fit, 'energy', 'dipole', and 'polar'
-        ntypes: Element count.
-        dim_descrpt: Embedding width per atom.
-        dim_out: The output dimension of the fitting net.
-        neuron: Number of neurons in each hidden layers of the fitting net.
-        bias_atom_e: Average enery per atom for each element.
-        resnet_dt: Using time-step in the ResNet construction.
-        numb_fparam: Number of frame parameters.
-        numb_aparam: Number of atomic parameters.
+        var_name : The atomic property to fit, 'energy', 'dipole', and 'polar'
+        ntypes : Element count.
+        dim_descrpt : Embedding width per atom.
+        dim_out : The output dimension of the fitting net.
+        neuron : Number of neurons in each hidden layers of the fitting net.
+        bias_atom_e : Average enery per atom for each element.
+        resnet_dt : Using time-step in the ResNet construction.
+        numb_fparam : Number of frame parameters.
+        numb_aparam : Number of atomic parameters.
         """
         super().__init__(
             var_name=var_name,

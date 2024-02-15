@@ -1,13 +1,15 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import copy
 import logging
+from abc import (
+    abstractmethod,
+)
 from typing import (
     Callable,
     List,
     Optional,
     Union,
 )
-from abc import abstractmethod
 
 import numpy as np
 import torch
@@ -364,14 +366,14 @@ class GeneralFitting(Fitting):
 
         Parameters
         ----------
-        var_name: The atomic property to fit, 'energy', 'dipole', and 'polar'
-        ntypes: Element count.
-        dim_descrpt: Embedding width per atom.
-        dim_out: The output dimension of the fitting net.
-        neuron: Number of neurons in each hidden layers of the fitting net.
-        resnet_dt: Using time-step in the ResNet construction.
-        numb_fparam: Number of frame parameters.
-        numb_aparam: Number of atomic parameters.
+        var_name : The atomic property to fit, 'energy', 'dipole', and 'polar'
+        ntypes : Element count.
+        dim_descrpt : Embedding width per atom.
+        dim_out : The output dimension of the fitting net.
+        neuron : Number of neurons in each hidden layers of the fitting net.
+        resnet_dt : Using time-step in the ResNet construction.
+        numb_fparam : Number of frame parameters.
+        numb_aparam : Number of atomic parameters.
         """
         super().__init__()
         self.var_name = var_name
@@ -521,7 +523,7 @@ class GeneralFitting(Fitting):
         If returning an empty list, all atom types are selected.
         """
         return []
-    
+
     @abstractmethod
     def _net_out_dim(self):
         """Set the FittingNet output dim."""
