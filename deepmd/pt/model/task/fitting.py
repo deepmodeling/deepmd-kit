@@ -11,42 +11,40 @@ from typing import (
 import numpy as np
 import torch
 
-from deepmd.pt.model.task.base_fitting import (
-    BaseFitting,
-)
-from deepmd.pt.model.network.network import (
-    ResidualDeep,
+from deepmd.dpmodel import (
+    FittingOutputDef,
+    OutputVariableDef,
 )
 from deepmd.pt.model.network.mlp import (
     FittingNet,
     NetworkCollection,
 )
-from deepmd.pt.utils.utils import (
-    to_numpy_array,
-    to_torch_tensor,
+from deepmd.pt.model.network.network import (
+    ResidualDeep,
 )
-from deepmd.dpmodel import (
-    FittingOutputDef,
-    OutputVariableDef,
+from deepmd.pt.model.task.base_fitting import (
+    BaseFitting,
+)
+from deepmd.pt.utils import (
+    env,
 )
 from deepmd.pt.utils.dataloader import (
     DpLoaderSet,
 )
 from deepmd.pt.utils.env import (
+    DEFAULT_PRECISION,
     DEVICE,
+    PRECISION_DICT,
 )
 from deepmd.pt.utils.plugin import (
     Plugin,
 )
-from deepmd.pt.utils import (
-    env,
-)
 from deepmd.pt.utils.stat import (
     make_stat_input,
 )
-from deepmd.pt.utils.env import (
-    DEFAULT_PRECISION,
-    PRECISION_DICT,
+from deepmd.pt.utils.utils import (
+    to_numpy_array,
+    to_torch_tensor,
 )
 
 dtype = env.GLOBAL_PT_FLOAT_PRECISION
@@ -343,6 +341,7 @@ class Fitting(torch.nn.Module, BaseFitting):
         )
         return None
 
+
 class GeneralFitting(Fitting):
     def __init__(
         self,
@@ -498,23 +497,23 @@ class GeneralFitting(Fitting):
         obj.filter_layers = NetworkCollection.deserialize(nets)
         return obj
 
-    def get_dim_fparam(self) -> int: 
-        """Get the number (dimension) of frame parameters of this atomic model.""" 
+    def get_dim_fparam(self) -> int:
+        """Get the number (dimension) of frame parameters of this atomic model."""
         return self.numb_fparam
-  
-    def get_dim_aparam(self) -> int: 
-        """Get the number (dimension) of atomic parameters of this atomic model.""" 
-        return self.numb_aparam
-  
-    def get_sel_type(self) -> List[int]: 
-        """Get the selected atom types of this model. 
 
-        Only atoms with selected atom types have atomic contribution 
-        to the result of the model. 
-        If returning an empty list, all atom types are selected. 
-        """ 
-        return [] 
-    
+    def get_dim_aparam(self) -> int:
+        """Get the number (dimension) of atomic parameters of this atomic model."""
+        return self.numb_aparam
+
+    def get_sel_type(self) -> List[int]:
+        """Get the selected atom types of this model.
+
+        Only atoms with selected atom types have atomic contribution
+        to the result of the model.
+        If returning an empty list, all atom types are selected.
+        """
+        return []
+
     def output_def(self) -> FittingOutputDef:
         return FittingOutputDef(
             [
@@ -527,6 +526,7 @@ class GeneralFitting(Fitting):
                 ),
             ]
         )
+
     def _extend_f_avg_std(self, xx: torch.Tensor, nb: int) -> torch.Tensor:
         return torch.tile(xx.view([1, self.numb_fparam]), [nb, 1])
 
@@ -633,4 +633,3 @@ class GeneralFitting(Fitting):
                     atom_property = atom_property * mask
                     outs = outs + atom_property  # Shape is [nframes, natoms[0], 1]
             return {self.var_name: outs.to(env.GLOBAL_PT_FLOAT_PRECISION)}
-

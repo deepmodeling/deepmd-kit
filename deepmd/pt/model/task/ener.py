@@ -14,7 +14,6 @@ from deepmd.dpmodel import (
     OutputVariableDef,
     fitting_check_output,
 )
-
 from deepmd.pt.model.network.network import (
     ResidualDeep,
 )
