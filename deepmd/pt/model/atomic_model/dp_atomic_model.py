@@ -28,14 +28,11 @@ from deepmd.pt.utils.utils import (
 from .base_atomic_model import (
     BaseAtomicModel,
 )
-from .model import (
-    BaseModel,
-)
 
 log = logging.getLogger(__name__)
 
 
-class DPAtomicModel(BaseModel, BaseAtomicModel):
+class DPAtomicModel(torch.nn.Module, BaseAtomicModel):
     """Model give atomic prediction of some physical property.
 
     Parameters

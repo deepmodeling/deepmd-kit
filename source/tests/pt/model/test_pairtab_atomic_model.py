@@ -7,9 +7,9 @@ from unittest.mock import (
 import numpy as np
 import torch
 
-from deepmd.dpmodel.model.pairtab_atomic_model import PairTabModel as DPPairTabModel
-from deepmd.pt.model.model.pairtab_atomic_model import (
-    PairTabModel,
+from deepmd.dpmodel.atomic_model import PairTabAtomicModel as DPPairTabAtomicModel
+from deepmd.pt.model.atomic_model import (
+    PairTabAtomicModel,
 )
 from deepmd.pt.utils.utils import (
     to_numpy_array,
@@ -29,7 +29,7 @@ class TestPairTab(unittest.TestCase):
             ]
         )
 
-        self.model = PairTabModel(tab_file=file_path, rcut=0.02, sel=2)
+        self.model = PairTabAtomicModel(tab_file=file_path, rcut=0.02, sel=2)
 
         self.extended_coord = torch.tensor(
             [
@@ -87,7 +87,7 @@ class TestPairTab(unittest.TestCase):
             self.assertEqual(model.get_type_map(), None)
 
     def test_deserialize(self):
-        model1 = PairTabModel.deserialize(self.model.serialize())
+        model1 = PairTabAtomicModel.deserialize(self.model.serialize())
         torch.testing.assert_close(self.model.tab_data, model1.tab_data)
         torch.testing.assert_close(self.model.tab_info, model1.tab_info)
 
@@ -110,7 +110,7 @@ class TestPairTab(unittest.TestCase):
 
     def test_cross_deserialize(self):
         model_dict = self.model.serialize()  # pytorch model to dict
-        model1 = DPPairTabModel.deserialize(model_dict)  # dict to numpy model
+        model1 = DPPairTabAtomicModel.deserialize(model_dict)  # dict to numpy model
         np.testing.assert_allclose(self.model.tab_data, model1.tab_data)
         np.testing.assert_allclose(self.model.tab_info, model1.tab_info)
 
@@ -209,7 +209,7 @@ class TestPairTabTwoAtoms(unittest.TestCase):
                 ]
             )
 
-            model = PairTabModel(tab_file=file_path, rcut=rcut, sel=2)
+            model = PairTabAtomicModel(tab_file=file_path, rcut=rcut, sel=2)
             results.append(
                 model.forward_atomic(extended_coord, extended_atype, nlist)["energy"]
             )

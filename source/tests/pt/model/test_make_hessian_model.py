@@ -13,7 +13,7 @@ from deepmd.pt.model.descriptor.se_a import (
 from deepmd.pt.model.model import (
     make_hessian_model,
 )
-from deepmd.pt.model.model.ener import (
+from deepmd.pt.model.model.dp_model import (
     DPModel,
 )
 from deepmd.pt.model.task.ener import (

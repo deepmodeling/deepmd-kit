@@ -5,7 +5,6 @@ from .common import (
     NativeOP,
 )
 from .model import (
-    DPAtomicModel,
     DPModel,
 )
 from .output_def import (
@@ -21,7 +20,6 @@ from .output_def import (
 
 __all__ = [
     "DPModel",
-    "DPAtomicModel",
     "PRECISION_DICT",
     "DEFAULT_PRECISION",
     "NativeOP",

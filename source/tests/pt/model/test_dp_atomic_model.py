@@ -4,14 +4,14 @@ import unittest
 import numpy as np
 import torch
 
-from deepmd.dpmodel import DPAtomicModel as DPDPAtomicModel
+from deepmd.dpmodel.atomic_model import DPAtomicModel as DPDPAtomicModel
 from deepmd.dpmodel.descriptor import DescrptSeA as DPDescrptSeA
 from deepmd.dpmodel.fitting import InvarFitting as DPInvarFitting
+from deepmd.pt.model.atomic_model import (
+    DPAtomicModel,
+)
 from deepmd.pt.model.descriptor.se_a import (
     DescrptSeA,
-)
-from deepmd.pt.model.model.dp_atomic_model import (
-    DPAtomicModel,
 )
 from deepmd.pt.model.task.ener import (
     InvarFitting,

@@ -1,25 +1,41 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+"""The model that takes the coordinates, cell and atom types as input
+and predicts some property. The models are automatically generated from
+atomic models by the `deepmd.dpmodel.make_model` method.
+
+The `make_model` method does the reduction, auto-differentiation and
+communication of the atomic properties according to output variable
+definition `deepmd.dpmodel.OutputVariableDef`.
+
+"""
+
 import copy
 
+from deepmd.pt.model.atomic_model import (
+    DPAtomicModel,
+    PairTabAtomicModel,
+)
 from deepmd.pt.model.descriptor.descriptor import (
     Descriptor,
-)
-from deepmd.pt.model.model.dp_atomic_model import (
-    DPAtomicModel,
-)
-from deepmd.pt.model.model.pairtab_atomic_model import (
-    PairTabModel,
 )
 from deepmd.pt.model.task import (
     Fitting,
 )
 
-from .ener import (
+from .dp_model import (
+    DPModel,
+)
+from .dp_zbl_model import (
+    DPZBLModel,
+)
+from .ener_model import (
     EnergyModel,
-    ZBLModel,
 )
 from .make_hessian_model import (
     make_hessian_model,
+)
+from .make_model import (
+    make_model,
 )
 from .model import (
     BaseModel,
@@ -47,13 +63,13 @@ def get_zbl_model(model_params):
     dp_model = DPAtomicModel(descriptor, fitting, type_map=model_params["type_map"])
     # pairtab
     filepath = model_params["use_srtab"]
-    pt_model = PairTabModel(
+    pt_model = PairTabAtomicModel(
         filepath, model_params["descriptor"]["rcut"], model_params["descriptor"]["sel"]
     )
 
     rmin = model_params["sw_rmin"]
     rmax = model_params["sw_rmax"]
-    return ZBLModel(
+    return DPZBLModel(
         dp_model,
         pt_model,
         rmin,
@@ -85,7 +101,11 @@ def get_model(model_params):
 
 __all__ = [
     "BaseModel",
-    "EnergyModel",
     "get_model",
+    "get_zbl_model",
+    "DPModel",
+    "EnergyModel",
+    "DPZBLModel",
+    "make_model",
     "make_hessian_model",
 ]
