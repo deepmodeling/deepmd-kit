@@ -545,7 +545,7 @@ class GeneralFitting(Fitting):
     ):
         xx = descriptor
         nf, nloc, nd = xx.shape
-        
+
         if hasattr(self, "bias_atom_e"):
             self.bias_atom_e = self.bias_atom_e.view([self.ntypes, self.dim_out])
 
