@@ -463,6 +463,7 @@ class GeneralFitting(Fitting):
             "precision": self.precision,
             "distinguish_types": self.distinguish_types,
             "nets": self.filter_layers.serialize(),
+            "rcond": self.rcond,
             "@variables": {
                 "fparam_avg": to_numpy_array(self.fparam_avg),
                 "fparam_inv_std": to_numpy_array(self.fparam_inv_std),
