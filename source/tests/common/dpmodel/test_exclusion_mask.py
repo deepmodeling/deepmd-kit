@@ -23,7 +23,7 @@ class TestExcludeMask(unittest.TestCase, TestCaseSingleFrameWithNlist):
             [
                 [1, 1, 1, 1, 1, 0, 1],
                 [1, 1, 1, 1, 1, 0, 1],
-                [1, 1, 1, 1, 1, 1, 1],
+                [0, 0, 1, 1, 1, 1, 1],
             ]
         ).reshape(self.nf, self.nloc, sum(self.sel))
         des = ExcludeMask(self.nt, exclude_types=exclude_types)

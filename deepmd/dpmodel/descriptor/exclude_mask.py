@@ -67,7 +67,7 @@ class ExcludeMask:
         ae = np.concatenate(
             [atype_ext, self.ntypes * np.ones([nf, 1], dtype=atype_ext.dtype)], axis=-1
         )
-        type_i = atype_ext[:, :nloc].reshape(nf, nloc) * self.ntypes
+        type_i = atype_ext[:, :nloc].reshape(nf, nloc) * (self.ntypes + 1)
         # nf x nloc x nnei
         index = np.where(nlist == -1, nall, nlist).reshape(nf, nloc * nnei)
         type_j = np.take_along_axis(ae, index, axis=1).reshape(nf, nloc, nnei)

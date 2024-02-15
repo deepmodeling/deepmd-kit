@@ -395,7 +395,7 @@ class DescriptorBlock(torch.nn.Module, ABC):
             [atype_ext, self.get_ntypes() * torch.ones([nf, 1], dtype=atype_ext.dtype)],
             dim=-1,
         )
-        type_i = atype_ext[:, :nloc].view(nf, nloc) * self.get_ntypes()
+        type_i = atype_ext[:, :nloc].view(nf, nloc) * (self.get_ntypes() + 1)
         # nf x nloc x nnei
         index = torch.where(nlist == -1, nall, nlist).view(nf, nloc * nnei)
         type_j = torch.gather(ae, 1, index).view(nf, nloc, nnei)
