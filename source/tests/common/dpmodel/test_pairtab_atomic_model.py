@@ -6,8 +6,8 @@ from unittest.mock import (
 
 import numpy as np
 
-from deepmd.dpmodel.model.pairtab_atomic_model import (
-    PairTabModel,
+from deepmd.dpmodel.atomic_model.pairtab_atomic_model import (
+    PairTabAtomicModel,
 )
 
 
@@ -24,7 +24,7 @@ class TestPairTab(unittest.TestCase):
             ]
         )
 
-        self.model = PairTabModel(tab_file=file_path, rcut=0.02, sel=2)
+        self.model = PairTabAtomicModel(tab_file=file_path, rcut=0.02, sel=2)
 
         self.extended_coord = np.array(
             [
@@ -68,7 +68,7 @@ class TestPairTab(unittest.TestCase):
         np.testing.assert_allclose(result["energy"], expected_result, 0.0001, 0.0001)
 
     def test_deserialize(self):
-        model1 = PairTabModel.deserialize(self.model.serialize())
+        model1 = PairTabAtomicModel.deserialize(self.model.serialize())
         np.testing.assert_allclose(self.model.tab_data, model1.tab_data)
         np.testing.assert_allclose(self.model.tab_info, model1.tab_info)
 
@@ -166,7 +166,7 @@ class TestPairTabTwoAtoms(unittest.TestCase):
                 ]
             )
 
-            model = PairTabModel(tab_file=file_path, rcut=rcut, sel=2)
+            model = PairTabAtomicModel(tab_file=file_path, rcut=rcut, sel=2)
             results.append(
                 model.forward_atomic(extended_coord, extended_atype, nlist)["energy"]
             )
