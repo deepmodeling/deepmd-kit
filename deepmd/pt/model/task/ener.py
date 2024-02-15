@@ -63,19 +63,32 @@ class InvarFitting(GeneralFitting):
 
         Parameters
         ----------
-        var_name : The atomic property to fit, 'energy', 'dipole', and 'polar'.
-        ntypes : Element count.
-        dim_descrpt : Embedding width per atom.
-        dim_out : The output dimension of the fitting net.
-        neuron : Number of neurons in each hidden layers of the fitting net.
-        bias_atom_e : Average enery per atom for each element.
-        resnet_dt : Using time-step in the ResNet construction.
-        numb_fparam : Number of frame parameters.
-        numb_aparam : Number of atomic parameters.
-        activation_function : Activation function.
-        precision : Numerical precision.
-        distinguish_types : Neighbor list that distinguish different atomic types or not.
-        rcond : The condition number for the regression of atomic energy.
+        var_name : str
+            The atomic property to fit, 'energy', 'dipole', and 'polar'.
+        ntypes : int
+            Element count.
+        dim_descrpt : int
+            Embedding width per atom.
+        dim_out : int
+            The output dimension of the fitting net.
+        neuron : List[int]
+            Number of neurons in each hidden layers of the fitting net.
+        bias_atom_e : torch.Tensor, optional
+            Average enery per atom for each element.
+        resnet_dt : bool
+            Using time-step in the ResNet construction.
+        numb_fparam : int
+            Number of frame parameters.
+        numb_aparam : int
+            Number of atomic parameters.
+        activation_function : str
+            Activation function.
+        precision : str
+            Numerical precision.
+        distinguish_types : bool
+            Neighbor list that distinguish different atomic types or not.
+        rcond : float, optional
+            The condition number for the regression of atomic energy.
         """
         super().__init__(
             var_name=var_name,
@@ -83,6 +96,7 @@ class InvarFitting(GeneralFitting):
             dim_descrpt=dim_descrpt,
             dim_out=dim_out,
             neuron=neuron,
+            bias_atom_e = bias_atom_e,
             resnet_dt=resnet_dt,
             numb_fparam=numb_fparam,
             numb_aparam=numb_aparam,
@@ -92,14 +106,6 @@ class InvarFitting(GeneralFitting):
             rcond=rcond,
             **kwargs,
         )
-
-        if bias_atom_e is None:
-            bias_atom_e = np.zeros([self.ntypes, self.dim_out])
-        bias_atom_e = torch.tensor(bias_atom_e, dtype=self.prec, device=device)
-        bias_atom_e = bias_atom_e.view([self.ntypes, self.dim_out])
-        if not self.use_tebd:
-            assert self.ntypes == bias_atom_e.shape[0], "Element count mismatches!"
-        self.register_buffer("bias_atom_e", bias_atom_e)
 
     def _net_out_dim(self):
         """Set the FittingNet output dim."""
@@ -141,11 +147,6 @@ class InvarFitting(GeneralFitting):
         Return a list of statistic names needed, such as "bias_atom_e".
         """
         return ["bias_atom_e"]
-
-    def serialize(self):
-        data = super().serialize()
-        data["@variables"]["bias_atom_e"] = to_numpy_array(self.bias_atom_e)
-        return data
 
     def compute_output_stats(self, merged):
         energy = [item["energy"] for item in merged]

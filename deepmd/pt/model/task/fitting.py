@@ -353,6 +353,7 @@ class GeneralFitting(Fitting):
         dim_descrpt: int,
         dim_out: int,
         neuron: List[int] = [128, 128, 128],
+        bias_atom_e: Optional[torch.Tensor] = None,
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
@@ -366,18 +367,32 @@ class GeneralFitting(Fitting):
 
         Parameters
         ----------
-        var_name : The atomic property to fit, 'energy', 'dipole', and 'polar'.
-        ntypes : Element count.
-        dim_descrpt : Embedding width per atom.
-        dim_out : The output dimension of the fitting net.
-        neuron : Number of neurons in each hidden layers of the fitting net.
-        resnet_dt : Using time-step in the ResNet construction.
-        numb_fparam : Number of frame parameters.
-        numb_aparam : Number of atomic parameters.
-        activation_function : Activation function.
-        precision : Numerical precision.
-        distinguish_types : Neighbor list that distinguish different atomic types or not.
-        rcond : The condition number for the regression of atomic energy.
+        var_name : str
+            The atomic property to fit, 'energy', 'dipole', and 'polar'.
+        ntypes : int
+            Element count.
+        dim_descrpt : int
+            Embedding width per atom.
+        dim_out : int
+            The output dimension of the fitting net.
+        neuron : List[int]
+            Number of neurons in each hidden layers of the fitting net.
+        bias_atom_e : torch.Tensor, optional
+            Average enery per atom for each element.
+        resnet_dt : bool
+            Using time-step in the ResNet construction.
+        numb_fparam : int
+            Number of frame parameters.
+        numb_aparam : int
+            Number of atomic parameters.
+        activation_function : str
+            Activation function.
+        precision : str
+            Numerical precision.
+        distinguish_types : bool
+            Neighbor list that distinguish different atomic types or not.
+        rcond : float, optional
+            The condition number for the regression of atomic energy.
         """
         super().__init__()
         self.var_name = var_name
@@ -396,6 +411,14 @@ class GeneralFitting(Fitting):
         self.rcond = rcond
 
         # init constants
+        if bias_atom_e is None:
+            bias_atom_e = np.zeros([self.ntypes, self.dim_out])
+        bias_atom_e = torch.tensor(bias_atom_e, dtype=self.prec, device=device)
+        bias_atom_e = bias_atom_e.view([self.ntypes, self.dim_out])
+        if not self.use_tebd:
+            assert self.ntypes == bias_atom_e.shape[0], "Element count mismatches!"
+        self.register_buffer("bias_atom_e", bias_atom_e)
+
         if self.numb_fparam > 0:
             self.register_buffer(
                 "fparam_avg",
@@ -479,6 +502,7 @@ class GeneralFitting(Fitting):
             "nets": self.filter_layers.serialize(),
             "rcond": self.rcond,
             "@variables": {
+                "bias_atom_e": to_numpy_array(self.bias_atom_e),
                 "fparam_avg": to_numpy_array(self.fparam_avg),
                 "fparam_inv_std": to_numpy_array(self.fparam_inv_std),
                 "aparam_avg": to_numpy_array(self.aparam_avg),
@@ -565,9 +589,6 @@ class GeneralFitting(Fitting):
         xx = descriptor
         nf, nloc, nd = xx.shape
 
-        if hasattr(self, "bias_atom_e"):
-            self.bias_atom_e = self.bias_atom_e.view([self.ntypes, self.dim_out])
-
         if nd != self.dim_descrpt:
             raise ValueError(
                 "get an input descriptor of dim {nd},"
@@ -613,7 +634,7 @@ class GeneralFitting(Fitting):
                 dim=-1,
             )
 
-        outs = torch.zeros(nf, nloc, self.dim_out)  # jit assertion
+        outs = torch.zeros((nf, nloc, self.dim_out), dtype=env.GLOBAL_PT_FLOAT_PRECISION).to(env.DEVICE)  # jit assertion
         if self.old_impl:
             outs = torch.zeros_like(atype).unsqueeze(-1)  # jit assertion
             assert self.filter_layers_old is not None
@@ -628,8 +649,6 @@ class GeneralFitting(Fitting):
                     atom_property = filter_layer(xx)
                     atom_property = (
                         atom_property + self.bias_atom_e[type_i]
-                        if hasattr(self, "bias_atom_e")
-                        else atom_property
                     )
                     atom_property = atom_property * mask.unsqueeze(-1)
                     outs = outs + atom_property  # Shape is [nframes, natoms[0], 1]
@@ -638,8 +657,6 @@ class GeneralFitting(Fitting):
             if self.use_tebd:
                 atom_property = (
                     (self.filter_layers.networks[0](xx) + self.bias_atom_e[atype])
-                    if hasattr(self, "bias_atom_e")
-                    else self.filter_layers.networks[0](xx)
                 )
                 outs = outs + atom_property  # Shape is [nframes, natoms[0], 1]
             else:
@@ -650,8 +667,6 @@ class GeneralFitting(Fitting):
                     atom_property = ll(xx)
                     atom_property = (
                         atom_property + self.bias_atom_e[type_i]
-                        if hasattr(self, "bias_atom_e")
-                        else atom_property
                     )
                     atom_property = atom_property * mask
                     outs = outs + atom_property  # Shape is [nframes, natoms[0], 1]
