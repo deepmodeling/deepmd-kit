@@ -56,6 +56,7 @@ class InvarFitting(GeneralFitting):
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
         distinguish_types: bool = False,
+        rcond: Optional[float] = None,
         **kwargs,
     ):
         """Construct a fitting net for energy.
@@ -79,8 +80,10 @@ class InvarFitting(GeneralFitting):
             activation_function=activation_function,
             precision=precision,
             distinguish_types=distinguish_types,
+            rcond = rcond,
             **kwargs,
         )
+
         if bias_atom_e is None:
             bias_atom_e = np.zeros([self.ntypes, self.dim_out])
         bias_atom_e = torch.tensor(bias_atom_e, dtype=self.prec, device=device)
@@ -138,8 +141,7 @@ class InvarFitting(GeneralFitting):
             input_natoms = [item["real_natoms_vec"] for item in merged]
         else:
             input_natoms = [item["natoms"] for item in merged]
-        tmp = compute_output_bias(energy, input_natoms)
-        bias_atom_e = tmp[:, 0]
+        bias_atom_e = compute_output_bias(energy, input_natoms, rcond=self.rcond)
         return {"bias_atom_e": bias_atom_e}
 
     def init_fitting_stat(self, bias_atom_e=None, **kwargs):
