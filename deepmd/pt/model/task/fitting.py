@@ -480,7 +480,6 @@ class GeneralFitting(Fitting):
             # "use_aparam_as_mask": self.use_aparam_as_mask ,
             # "spin": self.spin ,
             ## NOTICE:  not supported by far
-            "rcond": None,
             "tot_ener_zero": False,
             "trainable": True,
             "atom_ener": None,
