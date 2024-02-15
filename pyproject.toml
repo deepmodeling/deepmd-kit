@@ -259,3 +259,6 @@ convention = "numpy"
 
 [tool.pytest.ini_options]
 markers = "run"
+
+[tool.coverage.run]
+plugins = ["source.3rdparty.coverage_plugins.jit_plugin"]
