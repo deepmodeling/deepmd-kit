@@ -5,7 +5,6 @@ import unittest
 import numpy as np
 import torch
 
-from deepmd.dpmodel.fitting import InvarFitting as DPInvarFitting
 from deepmd.pt.model.descriptor.se_a import (
     DescrptSeA,
 )
@@ -70,7 +69,7 @@ class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 new_kk = new_kk.replace("final_layer", "layers.3")
                 dd1[kk] = dd0[new_kk]
                 # if kk.split(".")[-1] in ["idt", "bias"]:
-                    # dd1[kk] = dd1[kk].unsqueeze(0)
+                # dd1[kk] = dd1[kk].unsqueeze(0)
             ft1.load_state_dict(dd1)
             ret0 = ft0(rd0, atype, gr)
             ret1 = ft1(rd0, atype, gr)
@@ -78,5 +77,3 @@ class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 to_numpy_array(ret0["dipole"]),
                 to_numpy_array(ret1["dipole"]),
             )
-
-    

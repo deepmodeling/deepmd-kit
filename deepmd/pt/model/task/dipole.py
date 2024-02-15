@@ -66,7 +66,7 @@ class DipoleFittingNet(GeneralFitting):
             distinguish_types=distinguish_types,
             **kwargs,
         )
-        self.old_impl = False # this only supports the new implementation.
+        self.old_impl = False  # this only supports the new implementation.
 
     def forward(
         self,
@@ -91,10 +91,10 @@ class DipoleFittingNet(GeneralFitting):
         - vec_out: output vector. Its shape is [nframes, nloc, 3].
         """
         in_dim = self.dim_descrpt + self.numb_fparam + self.numb_aparam
-        
+
         nframes, nloc, _ = descriptor.shape
         gr = gr.view(nframes, nloc, -1, 3)
-        out_dim = gr.shape[2] # m1
+        out_dim = gr.shape[2]  # m1
         self.filter_layers = NetworkCollection(
             1 if self.distinguish_types else 0,
             self.ntypes,
@@ -113,11 +113,11 @@ class DipoleFittingNet(GeneralFitting):
             ],
         )
         # (nframes, nloc, m1)
-        out = self._forward_common(descriptor, atype, gr, g2, h2, fparam, aparam)[self.var_name]
+        out = self._forward_common(descriptor, atype, gr, g2, h2, fparam, aparam)[
+            self.var_name
+        ]
         # (nframes * nloc, 1, m1)
         out = out.view(-1, 1, out_dim)
         # (nframes, nloc, 3)
-        out = (
-            torch.bmm(out, gr).squeeze(-2).view(nframes, nloc, 3)
-        )  
+        out = torch.bmm(out, gr).squeeze(-2).view(nframes, nloc, 3)
         return {self.var_name: out.to(env.GLOBAL_PT_FLOAT_PRECISION)}

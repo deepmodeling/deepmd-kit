@@ -617,8 +617,10 @@ class GeneralFitting(Fitting):
         else:
             if self.use_tebd:
                 atom_property = (
-                    self.filter_layers.networks[0](xx) + self.bias_atom_e[atype]
-                ) if hasattr(self, "bias_atom_e") else self.filter_layers.networks[0](xx)
+                    (self.filter_layers.networks[0](xx) + self.bias_atom_e[atype])
+                    if hasattr(self, "bias_atom_e")
+                    else self.filter_layers.networks[0](xx)
+                )
                 outs = outs + atom_property  # Shape is [nframes, natoms[0], 1]
             else:
                 for type_i, ll in enumerate(self.filter_layers.networks):
