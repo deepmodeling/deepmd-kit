@@ -54,6 +54,7 @@ class InvarFitting(GeneralFitting):
         precision: str = DEFAULT_PRECISION,
         distinguish_types: bool = False,
         rcond: Optional[float] = None,
+        seed: Optional[int] = None,
         **kwargs,
     ):
         """Construct a fitting net for energy.
@@ -86,6 +87,8 @@ class InvarFitting(GeneralFitting):
             Neighbor list that distinguish different atomic types or not.
         rcond : float, optional
             The condition number for the regression of atomic energy.
+        seed : int, optional
+            Random seed.
         """
         super().__init__(
             var_name=var_name,
@@ -101,6 +104,7 @@ class InvarFitting(GeneralFitting):
             precision=precision,
             distinguish_types=distinguish_types,
             rcond=rcond,
+            seed=seed,
             **kwargs,
         )
 

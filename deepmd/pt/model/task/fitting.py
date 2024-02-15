@@ -361,6 +361,7 @@ class GeneralFitting(Fitting):
         precision: str = DEFAULT_PRECISION,
         distinguish_types: bool = False,
         rcond: Optional[float] = None,
+        seed: Optional[int] = None,
         **kwargs,
     ):
         """Construct a general fitting net.
@@ -393,6 +394,8 @@ class GeneralFitting(Fitting):
             Neighbor list that distinguish different atomic types or not.
         rcond : float, optional
             The condition number for the regression of atomic energy.
+        seed : int, optional
+            Random seed.
         """
         super().__init__()
         self.var_name = var_name
@@ -480,10 +483,9 @@ class GeneralFitting(Fitting):
             )
             self.filter_layers_old = None
 
-        # very bad design...
-        if "seed" in kwargs:
-            log.info("Set seed to %d in fitting net.", kwargs["seed"])
-            torch.manual_seed(kwargs["seed"])
+        if seed is not None:
+            log.info("Set seed to %d in fitting net.", seed)
+            torch.manual_seed(seed)
 
     def serialize(self) -> dict:
         """Serialize the fitting to dict."""
@@ -635,8 +637,8 @@ class GeneralFitting(Fitting):
             )
 
         outs = torch.zeros(
-            (nf, nloc, self.dim_out), dtype=env.GLOBAL_PT_FLOAT_PRECISION
-        ).to(env.DEVICE)  # jit assertion
+            (nf, nloc, self.dim_out)
+        )  # jit assertion
         if self.old_impl:
             outs = torch.zeros_like(atype).unsqueeze(-1)  # jit assertion
             assert self.filter_layers_old is not None
