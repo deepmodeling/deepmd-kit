@@ -235,8 +235,6 @@ class CommonTest(ABC):
         tf_obj = self.tf_class.deserialize(data1, suffix=self.unique_id)
         ret2, data2 = self.get_tf_ret_serialization_from_cls(tf_obj)
         ret2 = self.extract_ret(ret2, self.RefBackend.TF)
-        print(data1["excluded_types"])
-        print(data2["excluded_types"])
         np.testing.assert_equal(data1, data2)
         for rr1, rr2 in zip(ret1, ret2):
             np.testing.assert_allclose(rr1, rr2)
