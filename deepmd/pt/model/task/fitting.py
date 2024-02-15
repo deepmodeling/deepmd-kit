@@ -366,7 +366,7 @@ class GeneralFitting(Fitting):
 
         Parameters
         ----------
-        var_name : The atomic property to fit, 'energy', 'dipole', and 'polar'
+        var_name : The atomic property to fit, 'energy', 'dipole', and 'polar'.
         ntypes : Element count.
         dim_descrpt : Embedding width per atom.
         dim_out : The output dimension of the fitting net.
@@ -374,6 +374,10 @@ class GeneralFitting(Fitting):
         resnet_dt : Using time-step in the ResNet construction.
         numb_fparam : Number of frame parameters.
         numb_aparam : Number of atomic parameters.
+        activation_function: Activation function.
+        precision: Numerical precision.
+        distinguish_types: Neighbor list that distinguish different atomic types or not.
+        rcond: The condition number for the regression of atomic energy.
         """
         super().__init__()
         self.var_name = var_name
@@ -527,7 +531,7 @@ class GeneralFitting(Fitting):
     @abstractmethod
     def _net_out_dim(self):
         """Set the FittingNet output dim."""
-        raise NotImplementedError
+        pass
 
     def output_def(self) -> FittingOutputDef:
         return FittingOutputDef(
@@ -639,9 +643,10 @@ class GeneralFitting(Fitting):
                 )
                 outs = outs + atom_property  # Shape is [nframes, natoms[0], 1]
             else:
+                net_dim_out = self._net_out_dim()
                 for type_i, ll in enumerate(self.filter_layers.networks):
                     mask = (atype == type_i).unsqueeze(-1)
-                    mask = torch.tile(mask, (1, 1, self.dim_out))
+                    mask = torch.tile(mask, (1, 1, net_dim_out))
                     atom_property = ll(xx)
                     atom_property = (
                         atom_property + self.bias_atom_e[type_i]

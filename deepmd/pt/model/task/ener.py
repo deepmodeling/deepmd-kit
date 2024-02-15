@@ -63,7 +63,7 @@ class InvarFitting(GeneralFitting):
 
         Parameters
         ----------
-        var_name : The atomic property to fit, 'energy', 'dipole', and 'polar'
+        var_name : The atomic property to fit, 'energy', 'dipole', and 'polar'.
         ntypes : Element count.
         dim_descrpt : Embedding width per atom.
         dim_out : The output dimension of the fitting net.
@@ -72,6 +72,10 @@ class InvarFitting(GeneralFitting):
         resnet_dt : Using time-step in the ResNet construction.
         numb_fparam : Number of frame parameters.
         numb_aparam : Number of atomic parameters.
+        activation_function: Activation function.
+        precision: Numerical precision.
+        distinguish_types: Neighbor list that distinguish different atomic types or not.
+        rcond: The condition number for the regression of atomic energy.
         """
         super().__init__(
             var_name=var_name,
