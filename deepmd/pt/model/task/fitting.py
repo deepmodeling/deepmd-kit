@@ -634,7 +634,9 @@ class GeneralFitting(Fitting):
                 dim=-1,
             )
 
-        outs = torch.zeros((nf, nloc, self.dim_out), dtype=env.GLOBAL_PT_FLOAT_PRECISION).to(env.DEVICE)  # jit assertion
+        outs = torch.zeros(
+            (nf, nloc, self.dim_out), dtype=env.GLOBAL_PT_FLOAT_PRECISION
+        ).to(env.DEVICE)  # jit assertion
         if self.old_impl:
             outs = torch.zeros_like(atype).unsqueeze(-1)  # jit assertion
             assert self.filter_layers_old is not None
@@ -647,16 +649,14 @@ class GeneralFitting(Fitting):
                 for type_i, filter_layer in enumerate(self.filter_layers_old):
                     mask = atype == type_i
                     atom_property = filter_layer(xx)
-                    atom_property = (
-                        atom_property + self.bias_atom_e[type_i]
-                    )
+                    atom_property = atom_property + self.bias_atom_e[type_i]
                     atom_property = atom_property * mask.unsqueeze(-1)
                     outs = outs + atom_property  # Shape is [nframes, natoms[0], 1]
             return {self.var_name: outs.to(env.GLOBAL_PT_FLOAT_PRECISION)}
         else:
             if self.use_tebd:
                 atom_property = (
-                    (self.filter_layers.networks[0](xx) + self.bias_atom_e[atype])
+                    self.filter_layers.networks[0](xx) + self.bias_atom_e[atype]
                 )
                 outs = outs + atom_property  # Shape is [nframes, natoms[0], 1]
             else:
@@ -665,9 +665,7 @@ class GeneralFitting(Fitting):
                     mask = (atype == type_i).unsqueeze(-1)
                     mask = torch.tile(mask, (1, 1, net_dim_out))
                     atom_property = ll(xx)
-                    atom_property = (
-                        atom_property + self.bias_atom_e[type_i]
-                    )
+                    atom_property = atom_property + self.bias_atom_e[type_i]
                     atom_property = atom_property * mask
                     outs = outs + atom_property  # Shape is [nframes, natoms[0], 1]
             return {self.var_name: outs.to(env.GLOBAL_PT_FLOAT_PRECISION)}

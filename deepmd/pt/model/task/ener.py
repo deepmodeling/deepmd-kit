@@ -30,9 +30,6 @@ from deepmd.pt.utils.env import (
 from deepmd.pt.utils.stat import (
     compute_output_bias,
 )
-from deepmd.pt.utils.utils import (
-    to_numpy_array,
-)
 
 dtype = env.GLOBAL_PT_FLOAT_PRECISION
 device = env.DEVICE
@@ -96,7 +93,7 @@ class InvarFitting(GeneralFitting):
             dim_descrpt=dim_descrpt,
             dim_out=dim_out,
             neuron=neuron,
-            bias_atom_e = bias_atom_e,
+            bias_atom_e=bias_atom_e,
             resnet_dt=resnet_dt,
             numb_fparam=numb_fparam,
             numb_aparam=numb_aparam,
