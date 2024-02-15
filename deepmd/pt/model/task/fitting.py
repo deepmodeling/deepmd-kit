@@ -374,10 +374,10 @@ class GeneralFitting(Fitting):
         resnet_dt : Using time-step in the ResNet construction.
         numb_fparam : Number of frame parameters.
         numb_aparam : Number of atomic parameters.
-        activation_function: Activation function.
-        precision: Numerical precision.
-        distinguish_types: Neighbor list that distinguish different atomic types or not.
-        rcond: The condition number for the regression of atomic energy.
+        activation_function : Activation function.
+        precision : Numerical precision.
+        distinguish_types : Neighbor list that distinguish different atomic types or not.
+        rcond : The condition number for the regression of atomic energy.
         """
         super().__init__()
         self.var_name = var_name
