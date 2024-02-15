@@ -7,6 +7,7 @@ from typing import (
     Optional,
     Union,
 )
+from abc import abstractmethod
 
 import numpy as np
 import torch
@@ -359,14 +360,18 @@ class GeneralFitting(Fitting):
         rcond: Optional[float] = None,
         **kwargs,
     ):
-        """Construct a fitting net for energy.
+        """Construct a general fitting net.
 
-        Args:
-        - ntypes: Element count.
-        - embedding_width: Embedding width per atom.
-        - neuron: Number of neurons in each hidden layers of the fitting net.
-        - bias_atom_e: Average enery per atom for each element.
-        - resnet_dt: Using time-step in the ResNet construction.
+        Parameters
+        ----------
+        var_name: The atomic property to fit, 'energy', 'dipole', and 'polar'
+        ntypes: Element count.
+        dim_descrpt: Embedding width per atom.
+        dim_out: The output dimension of the fitting net.
+        neuron: Number of neurons in each hidden layers of the fitting net.
+        resnet_dt: Using time-step in the ResNet construction.
+        numb_fparam: Number of frame parameters.
+        numb_aparam: Number of atomic parameters.
         """
         super().__init__()
         self.var_name = var_name
@@ -411,6 +416,7 @@ class GeneralFitting(Fitting):
         in_dim = self.dim_descrpt + self.numb_fparam + self.numb_aparam
 
         self.old_impl = kwargs.get("old_impl", False)
+        net_dim_out = self._net_out_dim()
         if self.old_impl:
             filter_layers = []
             for type_i in range(self.ntypes):
@@ -433,7 +439,7 @@ class GeneralFitting(Fitting):
                 networks=[
                     FittingNet(
                         in_dim,
-                        self.dim_out,
+                        net_dim_out,
                         self.neuron,
                         self.activation_function,
                         self.resnet_dt,
@@ -515,6 +521,11 @@ class GeneralFitting(Fitting):
         If returning an empty list, all atom types are selected.
         """
         return []
+    
+    @abstractmethod
+    def _net_out_dim(self):
+        """Set the FittingNet output dim."""
+        raise NotImplementedError
 
     def output_def(self) -> FittingOutputDef:
         return FittingOutputDef(

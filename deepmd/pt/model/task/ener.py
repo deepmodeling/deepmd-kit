@@ -61,12 +61,18 @@ class InvarFitting(GeneralFitting):
     ):
         """Construct a fitting net for energy.
 
-        Args:
-        - ntypes: Element count.
-        - embedding_width: Embedding width per atom.
-        - neuron: Number of neurons in each hidden layers of the fitting net.
-        - bias_atom_e: Average enery per atom for each element.
-        - resnet_dt: Using time-step in the ResNet construction.
+        Parameters
+        ----------
+        
+        var_name: The atomic property to fit, 'energy', 'dipole', and 'polar'
+        ntypes: Element count.
+        dim_descrpt: Embedding width per atom.
+        dim_out: The output dimension of the fitting net.
+        neuron: Number of neurons in each hidden layers of the fitting net.
+        bias_atom_e: Average enery per atom for each element.
+        resnet_dt: Using time-step in the ResNet construction.
+        numb_fparam: Number of frame parameters.
+        numb_aparam: Number of atomic parameters.
         """
         super().__init__(
             var_name=var_name,
@@ -91,6 +97,10 @@ class InvarFitting(GeneralFitting):
         if not self.use_tebd:
             assert self.ntypes == bias_atom_e.shape[0], "Element count mismatches!"
         self.register_buffer("bias_atom_e", bias_atom_e)
+
+    def _net_out_dim(self):
+        """Set the FittingNet output dim."""
+        return self.dim_out
 
     def __setitem__(self, key, value):
         if key in ["bias_atom_e"]:
