@@ -62,6 +62,7 @@ class InvarFitting(Fitting):
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
         distinguish_types: bool = False,
+        rcond: Optional[float] = None,
         **kwargs,
     ):
         """Construct a fitting net for energy.
@@ -87,6 +88,7 @@ class InvarFitting(Fitting):
         self.activation_function = activation_function
         self.precision = precision
         self.prec = PRECISION_DICT[self.precision]
+        self.rcond = rcond
         if bias_atom_e is None:
             bias_atom_e = np.zeros([self.ntypes, self.dim_out])
         bias_atom_e = torch.tensor(bias_atom_e, dtype=self.prec, device=device)
@@ -217,8 +219,7 @@ class InvarFitting(Fitting):
             input_natoms = [item["real_natoms_vec"] for item in merged]
         else:
             input_natoms = [item["natoms"] for item in merged]
-        tmp = compute_output_bias(energy, input_natoms)
-        bias_atom_e = tmp[:, 0]
+        bias_atom_e = compute_output_bias(energy, input_natoms, rcond=self.rcond)
         return {"bias_atom_e": bias_atom_e}
 
     def init_fitting_stat(self, bias_atom_e=None, **kwargs):
@@ -244,6 +245,7 @@ class InvarFitting(Fitting):
             "precision": self.precision,
             "distinguish_types": self.distinguish_types,
             "nets": self.filter_layers.serialize(),
+            "rcond": self.rcond,
             "@variables": {
                 "bias_atom_e": to_numpy_array(self.bias_atom_e),
                 "fparam_avg": to_numpy_array(self.fparam_avg),
@@ -259,7 +261,6 @@ class InvarFitting(Fitting):
             # "use_aparam_as_mask": self.use_aparam_as_mask ,
             # "spin": self.spin ,
             ## NOTICE:  not supported by far
-            "rcond": None,
             "tot_ener_zero": False,
             "trainable": True,
             "atom_ener": None,
