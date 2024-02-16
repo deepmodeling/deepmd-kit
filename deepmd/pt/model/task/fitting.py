@@ -414,11 +414,12 @@ class GeneralFitting(Fitting):
         self.prec = PRECISION_DICT[self.precision]
         self.rcond = rcond
 
+        net_dim_out = self._net_out_dim()
         # init constants
         if bias_atom_e is None:
-            bias_atom_e = np.zeros([self.ntypes, self.dim_out])
+            bias_atom_e = np.zeros([self.ntypes, net_dim_out])
         bias_atom_e = torch.tensor(bias_atom_e, dtype=self.prec, device=device)
-        bias_atom_e = bias_atom_e.view([self.ntypes, self.dim_out])
+        bias_atom_e = bias_atom_e.view([self.ntypes, net_dim_out])
         if not self.use_tebd:
             assert self.ntypes == bias_atom_e.shape[0], "Element count mismatches!"
         self.register_buffer("bias_atom_e", bias_atom_e)
@@ -449,7 +450,6 @@ class GeneralFitting(Fitting):
         in_dim = self.dim_descrpt + self.numb_fparam + self.numb_aparam
 
         self.old_impl = kwargs.get("old_impl", False)
-        net_dim_out = self._net_out_dim()
         if self.old_impl:
             filter_layers = []
             for type_i in range(self.ntypes):
@@ -591,6 +591,7 @@ class GeneralFitting(Fitting):
     ):
         xx = descriptor
         nf, nloc, nd = xx.shape
+        net_dim_out = self._net_out_dim()
 
         if nd != self.dim_descrpt:
             raise ValueError(
@@ -638,7 +639,7 @@ class GeneralFitting(Fitting):
             )
 
         outs = torch.zeros(
-            (nf, nloc, self.dim_out),
+            (nf, nloc, net_dim_out),
             dtype=env.GLOBAL_PT_FLOAT_PRECISION,
             device=env.DEVICE,
         )  # jit assertion
@@ -665,7 +666,6 @@ class GeneralFitting(Fitting):
                 )
                 outs = outs + atom_property  # Shape is [nframes, natoms[0], 1]
             else:
-                net_dim_out = self._net_out_dim()
                 for type_i, ll in enumerate(self.filter_layers.networks):
                     mask = (atype == type_i).unsqueeze(-1)
                     mask = torch.tile(mask, (1, 1, net_dim_out))
