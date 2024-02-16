@@ -63,6 +63,16 @@ class DPPath(ABC):
         """
 
     @abstractmethod
+    def save_numpy(self, arr: np.ndarray) -> None:
+        """Save NumPy array.
+
+        Parameters
+        ----------
+        arr : np.ndarray
+            NumPy array
+        """
+
+    @abstractmethod
     def glob(self, pattern: str) -> List["DPPath"]:
         """Search path using the glob pattern.
 
@@ -122,6 +132,11 @@ class DPPath(ABC):
     def __hash__(self):
         return hash(str(self))
 
+    @property
+    @abstractmethod
+    def name(self) -> str:
+        """Name of the path."""
+
 
 class DPOSPath(DPPath):
     """The OS path class to data system (DeepmdData) for real directories.
@@ -158,6 +173,16 @@ class DPOSPath(DPPath):
             loaded NumPy array
         """
         return np.loadtxt(str(self.path), **kwargs)
+
+    def save_numpy(self, arr: np.ndarray) -> None:
+        """Save NumPy array.
+
+        Parameters
+        ----------
+        arr : np.ndarray
+            NumPy array
+        """
+        np.save(str(self.path), arr)
 
     def glob(self, pattern: str) -> List["DPPath"]:
         """Search path using the glob pattern.
@@ -211,6 +236,11 @@ class DPOSPath(DPPath):
     def __str__(self) -> str:
         """Represent string."""
         return str(self.path)
+
+    @property
+    def name(self) -> str:
+        """Name of the path."""
+        return self.path.name
 
 
 class DPH5Path(DPPath):
@@ -275,6 +305,18 @@ class DPH5Path(DPPath):
         if dtype:
             arr = arr.astype(dtype)
         return arr
+
+    def save_numpy(self, arr: np.ndarray) -> None:
+        """Save NumPy array.
+
+        Parameters
+        ----------
+        arr : np.ndarray
+            NumPy array
+        """
+        if self.name in self._keys:
+            del self.root[self.name]
+        self.root.create_dataset(self.name, data=arr)
 
     def glob(self, pattern: str) -> List["DPPath"]:
         """Search path using the glob pattern.
@@ -356,3 +398,7 @@ class DPH5Path(DPPath):
     def __str__(self) -> str:
         """Returns path of self."""
         return f"{self.root_path}#{self.name}"
+
+    def name(self) -> str:
+        """Name of the path."""
+        return self.name.split("/")[-1]

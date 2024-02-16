@@ -10,9 +10,14 @@ from typing import (
     Dict,
     Iterator,
     List,
+    Optional,
 )
 
 import numpy as np
+
+from deepmd.utils.path import (
+    DPPath,
+)
 
 
 class StatItem:
@@ -69,24 +74,23 @@ class StatItem:
 class EnvMatStat(ABC):
     """A base class to store and calculate the statistics of the environment matrix."""
 
-    def compute_stats(self, data: List[Dict[str, np.ndarray]]) -> Dict[str, StatItem]:
+    def __init__(self) -> None:
+        super().__init__()
+        self.stats = defaultdict(StatItem)
+
+    def compute_stats(self, data: List[Dict[str, np.ndarray]]) -> None:
         """Compute the statistics of the environment matrix.
 
         Parameters
         ----------
         data : List[Dict[str, np.ndarray]]
             The environment matrix.
-
-        Returns
-        -------
-        Dict[str, StatItem]
-            The statistics of the environment matrix.
         """
-        stats = defaultdict(StatItem)
+        if len(self.stats) > 0:
+            raise ValueError("The statistics has already been computed.")
         for iter_stats in self.iter(data):
             for kk in iter_stats:
-                stats[kk] += iter_stats[kk]
-        return stats
+                self.stats[kk] += iter_stats[kk]
 
     @abstractmethod
     def iter(self, data: List[Dict[str, np.ndarray]]) -> Iterator[Dict[str, StatItem]]:
@@ -102,3 +106,54 @@ class EnvMatStat(ABC):
         Dict[str, StatItem]
             The statistics of the environment matrix.
         """
+
+    def save_stats(self, path: DPPath) -> None:
+        """Save the statistics of the environment matrix.
+
+        Parameters
+        ----------
+        path : DPH5Path
+            The path to save the statistics of the environment matrix.
+        """
+        if len(self.stats) == 0:
+            raise ValueError("The statistics hasn't been computed.")
+        for kk, vv in self.stats.items():
+            (path / kk / "number").save(vv.number)
+            (path / kk / "sum").save(vv.sum)
+            (path / kk / "squared_sum").save(vv.squared_sum)
+
+    def load_stats(self, path: DPPath) -> None:
+        """Load the statistics of the environment matrix.
+
+        Parameters
+        ----------
+        path : DPH5Path
+            The path to load the statistics of the environment matrix.
+        """
+        if len(self.stats) > 0:
+            raise ValueError("The statistics has already been computed.")
+        for kk in path.glob("*"):
+            self.stats[kk.name] = StatItem(
+                number=(kk / "number").load_numpy().item(),
+                sum=(kk / "sum").load_numpy().item(),
+                squared_sum=(kk / "squared_sum").load_numpy().item(),
+            )
+
+    def load_or_compute_stats(
+        self, data: List[Dict[str, np.ndarray]], path: Optional[DPPath] = None
+    ) -> None:
+        """Load the statistics of the environment matrix if it exists, otherwise compute and save it.
+
+        Parameters
+        ----------
+        path : DPH5Path
+            The path to load the statistics of the environment matrix.
+        data : List[Dict[str, np.ndarray]]
+            The environment matrix.
+        """
+        if path is not None and path.is_dir():
+            self.load_stats(path)
+        else:
+            self.compute_stats(data)
+            if path is not None:
+                self.save_stats(path)
