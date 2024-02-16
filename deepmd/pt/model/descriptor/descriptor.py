@@ -112,64 +112,6 @@ class Descriptor(torch.nn.Module, BaseDescriptor):
         assert sampled is not None
         tmp_dict = self.compute_input_stats(sampled, None)
 
-    def save_stats(self, result_dict, stat_file_path: Union[str, List[str]]):
-        """
-        Save the statistics results to `stat_file_path`.
-
-        Parameters
-        ----------
-        result_dict
-            The dictionary of statistics results.
-        stat_file_path
-            The path to the statistics file(s).
-        """
-        if not isinstance(stat_file_path, list):
-            log.info(f"Saving stat file to {stat_file_path}")
-            np.savez_compressed(stat_file_path, **result_dict)
-        else:  # TODO hybrid descriptor not implemented
-            raise NotImplementedError(
-                "save_stats for hybrid descriptor is not implemented!"
-            )
-
-    def load_stats(self, type_map, stat_file_path: Union[str, List[str]]):
-        """
-        Load the statistics results to `stat_file_path`.
-
-        Parameters
-        ----------
-        type_map
-            Mapping atom type to the name (str) of the type.
-            For example `type_map[1]` gives the name of the type 1.
-        stat_file_path
-            The path to the statistics file(s).
-
-        Returns
-        -------
-        result_dict
-            The dictionary of statistics results.
-        """
-        descrpt_stat_key = self.data_stat_key
-        target_type_map = type_map
-        if not isinstance(stat_file_path, list):
-            log.info(f"Loading stat file from {stat_file_path}")
-            stats = np.load(stat_file_path)
-            stat_type_map = list(stats["type_map"])
-            missing_type = [i for i in target_type_map if i not in stat_type_map]
-            assert not missing_type, (
-                f"These type are not in stat file {stat_file_path}: {missing_type}! "
-                f"Please change the stat file path!"
-            )
-            idx_map = [stat_type_map.index(i) for i in target_type_map]
-            if stats[descrpt_stat_key[0]].size:  # not empty
-                result_dict = {key: stats[key][idx_map] for key in descrpt_stat_key}
-            else:
-                result_dict = {key: [] for key in descrpt_stat_key}
-        else:  # TODO hybrid descriptor not implemented
-            raise NotImplementedError(
-                "load_stats for hybrid descriptor is not implemented!"
-            )
-        return result_dict
-
     def __new__(cls, *args, **kwargs):
         if cls is Descriptor:
             try:
