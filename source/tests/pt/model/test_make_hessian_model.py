@@ -69,9 +69,9 @@ class HessianTest:
         nf = self.nf
         nv = self.nv
         cell0 = torch.rand([3, 3], dtype=dtype, device=env.DEVICE)
-        cell0 = 1.0 * (cell0 + cell0.T) + 5.0 * torch.eye(3)
+        cell0 = 1.0 * (cell0 + cell0.T) + 5.0 * torch.eye(3, device=env.DEVICE)
         cell1 = torch.rand([3, 3], dtype=dtype, device=env.DEVICE)
-        cell1 = 1.0 * (cell1 + cell1.T) + 5.0 * torch.eye(3)
+        cell1 = 1.0 * (cell1 + cell1.T) + 5.0 * torch.eye(3, device=env.DEVICE)
         cell = torch.stack([cell0, cell1])
         coord = torch.rand([nf, natoms, 3], dtype=dtype, device=env.DEVICE)
         coord = torch.matmul(coord, cell)
