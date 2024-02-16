@@ -13,6 +13,7 @@ from deepmd.dpmodel import (
     DEFAULT_PRECISION,
     NativeOP,
 )
+from .general_fitting import GeneralFitting
 from deepmd.dpmodel.output_def import (
     FittingOutputDef,
     OutputVariableDef,
@@ -29,7 +30,7 @@ from .base_fitting import (
 
 
 @fitting_check_output
-class InvarFitting(NativeOP, BaseFitting):
+class InvarFitting(GeneralFitting):
     r"""Fitting the energy (or a rotationally invariant porperty of `dim_out`) of the system. The force and the virial can also be trained.
 
     Lets take the energy fitting task as an example.
@@ -141,71 +142,25 @@ class InvarFitting(NativeOP, BaseFitting):
         if atom_ener is not None:
             raise NotImplementedError("atom_ener is not implemented")
 
-        self.var_name = var_name
-        self.ntypes = ntypes
-        self.dim_descrpt = dim_descrpt
-        self.dim_out = dim_out
-        self.neuron = neuron
-        self.resnet_dt = resnet_dt
-        self.numb_fparam = numb_fparam
-        self.numb_aparam = numb_aparam
-        self.rcond = rcond
-        self.tot_ener_zero = tot_ener_zero
-        self.trainable = trainable
-        self.atom_ener = atom_ener
-        self.activation_function = activation_function
-        self.precision = precision
-        self.layer_name = layer_name
-        self.use_aparam_as_mask = use_aparam_as_mask
-        self.spin = spin
-        self.distinguish_types = distinguish_types
-        if self.spin is not None:
-            raise NotImplementedError("spin is not supported")
-
-        # init constants
-        self.bias_atom_e = np.zeros([self.ntypes, self.dim_out])
-        if self.numb_fparam > 0:
-            self.fparam_avg = np.zeros(self.numb_fparam)
-            self.fparam_inv_std = np.ones(self.numb_fparam)
-        else:
-            self.fparam_avg, self.fparam_inv_std = None, None
-        if self.numb_aparam > 0:
-            self.aparam_avg = np.zeros(self.numb_aparam)
-            self.aparam_inv_std = np.ones(self.numb_aparam)
-        else:
-            self.aparam_avg, self.aparam_inv_std = None, None
-        # init networks
-        in_dim = self.dim_descrpt + self.numb_fparam + self.numb_aparam
-        out_dim = self.dim_out
-        self.nets = NetworkCollection(
-            1 if self.distinguish_types else 0,
-            self.ntypes,
-            network_type="fitting_network",
-            networks=[
-                FittingNet(
-                    in_dim,
-                    out_dim,
-                    self.neuron,
-                    self.activation_function,
-                    self.resnet_dt,
-                    self.precision,
-                    bias_out=True,
-                )
-                for ii in range(self.ntypes if self.distinguish_types else 1)
-            ],
-        )
-
-    def output_def(self):
-        return FittingOutputDef(
-            [
-                OutputVariableDef(
-                    self.var_name,
-                    [self.dim_out],
-                    reduciable=True,
-                    r_differentiable=True,
-                    c_differentiable=True,
-                ),
-            ]
+        super().__init__(
+            var_name = var_name,
+            ntypes = ntypes,
+            dim_descrpt = dim_descrpt,
+            dim_out = dim_out,
+            neuron = neuron,
+            resnet_dt = resnet_dt,
+            numb_fparam = numb_fparam,
+            numb_aparam = numb_aparam,
+            rcond = rcond,
+            tot_ener_zero = tot_ener_zero,
+            trainable = trainable,
+            atom_ener = atom_ener,
+            activation_function = activation_function,
+            precision = precision,
+            layer_name = layer_name,
+            use_aparam_as_mask = use_aparam_as_mask,
+            spin = spin,
+            distinguish_types = distinguish_types,
         )
 
     def __setitem__(self, key, value):
@@ -236,6 +191,10 @@ class InvarFitting(NativeOP, BaseFitting):
         else:
             raise KeyError(key)
 
+    def _net_out_dim(self):
+        """Set the FittingNet output dim."""
+        return self.dim_out
+
     def compute_output_stats(self, merged):
         """Update the output bias for fitting net."""
         raise NotImplementedError
@@ -243,49 +202,6 @@ class InvarFitting(NativeOP, BaseFitting):
     def init_fitting_stat(self, result_dict):
         """Initialize the model bias by the statistics."""
         raise NotImplementedError
-
-    def serialize(self) -> dict:
-        """Serialize the fitting to dict."""
-        return {
-            "var_name": self.var_name,
-            "ntypes": self.ntypes,
-            "dim_descrpt": self.dim_descrpt,
-            "dim_out": self.dim_out,
-            "neuron": self.neuron,
-            "resnet_dt": self.resnet_dt,
-            "numb_fparam": self.numb_fparam,
-            "numb_aparam": self.numb_aparam,
-            "rcond": self.rcond,
-            "activation_function": self.activation_function,
-            "precision": self.precision,
-            "distinguish_types": self.distinguish_types,
-            "nets": self.nets.serialize(),
-            "@variables": {
-                "bias_atom_e": self.bias_atom_e,
-                "fparam_avg": self.fparam_avg,
-                "fparam_inv_std": self.fparam_inv_std,
-                "aparam_avg": self.aparam_avg,
-                "aparam_inv_std": self.aparam_inv_std,
-            },
-            # not supported
-            "tot_ener_zero": self.tot_ener_zero,
-            "trainable": self.trainable,
-            "atom_ener": self.atom_ener,
-            "layer_name": self.layer_name,
-            "use_aparam_as_mask": self.use_aparam_as_mask,
-            "spin": self.spin,
-        }
-
-    @classmethod
-    def deserialize(cls, data: dict) -> "InvarFitting":
-        data = copy.deepcopy(data)
-        variables = data.pop("@variables")
-        nets = data.pop("nets")
-        obj = cls(**data)
-        for kk in variables.keys():
-            obj[kk] = variables[kk]
-        obj.nets = NetworkCollection.deserialize(nets)
-        return obj
 
     def call(
         self,
@@ -320,54 +236,4 @@ class InvarFitting(NativeOP, BaseFitting):
             The atomic parameter. shape: nf x nloc x nap. nap being `numb_aparam`
 
         """
-        nf, nloc, nd = descriptor.shape
-        # check input dim
-        if nd != self.dim_descrpt:
-            raise ValueError(
-                "get an input descriptor of dim {nd},"
-                "which is not consistent with {self.dim_descrpt}."
-            )
-        xx = descriptor
-        # check fparam dim, concate to input descriptor
-        if self.numb_fparam > 0:
-            assert fparam is not None, "fparam should not be None"
-            if fparam.shape[-1] != self.numb_fparam:
-                raise ValueError(
-                    "get an input fparam of dim {fparam.shape[-1]}, ",
-                    "which is not consistent with {self.numb_fparam}.",
-                )
-            fparam = (fparam - self.fparam_avg) * self.fparam_inv_std
-            fparam = np.tile(fparam.reshape([nf, 1, self.numb_fparam]), [1, nloc, 1])
-            xx = np.concatenate(
-                [xx, fparam],
-                axis=-1,
-            )
-        # check aparam dim, concate to input descriptor
-        if self.numb_aparam > 0:
-            assert aparam is not None, "aparam should not be None"
-            if aparam.shape[-1] != self.numb_aparam:
-                raise ValueError(
-                    "get an input aparam of dim {aparam.shape[-1]}, ",
-                    "which is not consistent with {self.numb_aparam}.",
-                )
-            aparam = aparam.reshape([nf, nloc, self.numb_aparam])
-            aparam = (aparam - self.aparam_avg) * self.aparam_inv_std
-            xx = np.concatenate(
-                [xx, aparam],
-                axis=-1,
-            )
-
-        # calcualte the prediction
-        if self.distinguish_types:
-            outs = np.zeros([nf, nloc, self.dim_out])
-            for type_i in range(self.ntypes):
-                mask = np.tile(
-                    (atype == type_i).reshape([nf, nloc, 1]), [1, 1, self.dim_out]
-                )
-                atom_energy = self.nets[(type_i,)](xx)
-                atom_energy = atom_energy + self.bias_atom_e[type_i]
-                atom_energy = atom_energy * mask
-                outs = outs + atom_energy  # Shape is [nframes, natoms[0], 1]
-        else:
-            outs = self.nets[()](xx) + self.bias_atom_e[atype]
-        return {self.var_name: outs}
+        return self._call_common(descriptor, atype, gr, g2, h2, fparam, aparam)
