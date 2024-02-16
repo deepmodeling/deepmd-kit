@@ -9,7 +9,7 @@ from .denoise import (
     DenoiseNet,
 )
 from .dipole import (
-    DipoleFittingNetType,
+    DipoleFittingNet,
 )
 from .ener import (
     EnergyFittingNet,
@@ -25,7 +25,7 @@ from .type_predict import (
 __all__ = [
     "FittingNetAttenLcc",
     "DenoiseNet",
-    "DipoleFittingNetType",
+    "DipoleFittingNet",
     "EnergyFittingNet",
     "EnergyFittingNetDirect",
     "Fitting",
