@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import copy
 from typing import (
     Any,
     Dict,
@@ -11,21 +10,13 @@ import numpy as np
 
 from deepmd.dpmodel import (
     DEFAULT_PRECISION,
-    NativeOP,
 )
-from .general_fitting import GeneralFitting
 from deepmd.dpmodel.output_def import (
-    FittingOutputDef,
-    OutputVariableDef,
     fitting_check_output,
 )
-from deepmd.dpmodel.utils import (
-    FittingNet,
-    NetworkCollection,
-)
 
-from .base_fitting import (
-    BaseFitting,
+from .general_fitting import (
+    GeneralFitting,
 )
 
 
@@ -143,24 +134,24 @@ class InvarFitting(GeneralFitting):
             raise NotImplementedError("atom_ener is not implemented")
 
         super().__init__(
-            var_name = var_name,
-            ntypes = ntypes,
-            dim_descrpt = dim_descrpt,
-            dim_out = dim_out,
-            neuron = neuron,
-            resnet_dt = resnet_dt,
-            numb_fparam = numb_fparam,
-            numb_aparam = numb_aparam,
-            rcond = rcond,
-            tot_ener_zero = tot_ener_zero,
-            trainable = trainable,
-            atom_ener = atom_ener,
-            activation_function = activation_function,
-            precision = precision,
-            layer_name = layer_name,
-            use_aparam_as_mask = use_aparam_as_mask,
-            spin = spin,
-            distinguish_types = distinguish_types,
+            var_name=var_name,
+            ntypes=ntypes,
+            dim_descrpt=dim_descrpt,
+            dim_out=dim_out,
+            neuron=neuron,
+            resnet_dt=resnet_dt,
+            numb_fparam=numb_fparam,
+            numb_aparam=numb_aparam,
+            rcond=rcond,
+            tot_ener_zero=tot_ener_zero,
+            trainable=trainable,
+            atom_ener=atom_ener,
+            activation_function=activation_function,
+            precision=precision,
+            layer_name=layer_name,
+            use_aparam_as_mask=use_aparam_as_mask,
+            spin=spin,
+            distinguish_types=distinguish_types,
         )
 
     def __setitem__(self, key, value):

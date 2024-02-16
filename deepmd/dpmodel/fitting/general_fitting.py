@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import copy
+from abc import (
+    abstractmethod,
+)
 from typing import (
     Any,
     Dict,
@@ -8,8 +11,6 @@ from typing import (
 )
 
 import numpy as np
-
-from abc import abstractmethod
 
 from deepmd.dpmodel import (
     DEFAULT_PRECISION,
