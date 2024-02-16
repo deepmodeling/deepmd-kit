@@ -201,6 +201,7 @@ class DescrptSeA(DescrptSe):
         self.activation_function_name = activation_function
         self.filter_precision = get_precision(precision)
         self.filter_np_precision = get_np_precision(precision)
+        self.orig_exclude_types = exclude_types
         self.exclude_types = set()
         for tt in exclude_types:
             assert len(tt) == 2
@@ -1425,7 +1426,7 @@ class DescrptSeA(DescrptSe):
             "resnet_dt": self.filter_resnet_dt,
             "trainable": self.trainable,
             "type_one_side": self.type_one_side,
-            "exclude_types": list(self.exclude_types),
+            "exclude_types": list(self.orig_exclude_types),
             "set_davg_zero": self.set_davg_zero,
             "activation_function": self.activation_function_name,
             "precision": self.filter_precision.name,
