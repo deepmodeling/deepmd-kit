@@ -274,7 +274,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
                     end_indexes = torch.cumsum(natoms[0, 2:], 0)
                     start_indexes = torch.cat(
                         [
-                            torch.zeros([], dtype=torch.int32, device=env.DEVICE),
+                            torch.zeros(1, dtype=torch.int32, device=env.DEVICE),
                             end_indexes[:-1],
                         ]
                     )
