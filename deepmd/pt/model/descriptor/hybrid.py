@@ -32,7 +32,7 @@ class DescrptBlockHybrid(DescriptorBlock):
         - descriptor_list: list of descriptors.
         - descriptor_param: descriptor configs.
         """
-        super().__init__()
+        super().__init__(ntypes)
         supported_descrpt = ["se_atten", "se_uni"]
         descriptor_list = []
         for descriptor_param_item in list:
