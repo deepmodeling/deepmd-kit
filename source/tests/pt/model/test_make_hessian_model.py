@@ -68,12 +68,12 @@ class HessianTest:
         natoms = self.nloc
         nf = self.nf
         nv = self.nv
-        cell0 = torch.rand([3, 3], dtype=dtype)
+        cell0 = torch.rand([3, 3], dtype=dtype, device=env.DEVICE)
         cell0 = 1.0 * (cell0 + cell0.T) + 5.0 * torch.eye(3)
-        cell1 = torch.rand([3, 3], dtype=dtype)
+        cell1 = torch.rand([3, 3], dtype=dtype, device=env.DEVICE)
         cell1 = 1.0 * (cell1 + cell1.T) + 5.0 * torch.eye(3)
-        cell = torch.stack([cell0, cell1]).to(env.DEVICE)
-        coord = torch.rand([nf, natoms, 3], dtype=dtype).to(env.DEVICE)
+        cell = torch.stack([cell0, cell1])
+        coord = torch.rand([nf, natoms, 3], dtype=dtype, device=env.DEVICE)
         coord = torch.matmul(coord, cell)
         cell = cell.view([nf, 9])
         coord = coord.view([nf, natoms * 3])
@@ -88,8 +88,8 @@ class HessianTest:
             .to(env.DEVICE)
         )
         nfp, nap = 2, 3
-        fparam = torch.rand([nf, nfp], dtype=dtype).to(env.DEVICE)
-        aparam = torch.rand([nf, natoms * nap], dtype=dtype).to(env.DEVICE)
+        fparam = torch.rand([nf, nfp], dtype=dtype, device=env.DEVICE)
+        aparam = torch.rand([nf, natoms * nap], dtype=dtype, device=env.DEVICE)
         # forward hess and valu models
         ret_dict0 = self.model_hess.forward_common(
             coord, atype, box=cell, fparam=fparam, aparam=aparam
