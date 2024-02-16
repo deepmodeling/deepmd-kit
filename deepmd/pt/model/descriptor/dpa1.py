@@ -12,6 +12,9 @@ from deepmd.pt.model.descriptor import (
 from deepmd.pt.model.network.network import (
     TypeEmbedNet,
 )
+from deepmd.utils.path import (
+    DPPath,
+)
 
 from .se_atten import (
     DescrptBlockSeAtten,
@@ -119,8 +122,8 @@ class DescrptDPA1(Descriptor):
     def dim_emb(self):
         return self.get_dim_emb()
 
-    def compute_input_stats(self, merged):
-        return self.se_atten.compute_input_stats(merged)
+    def compute_input_stats(self, merged: list[dict], path: Optional[DPPath] = None):
+        return self.se_atten.compute_input_stats(merged, path)
 
     @classmethod
     def get_data_process_key(cls, config):

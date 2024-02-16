@@ -26,6 +26,9 @@ from deepmd.pt.utils.nlist import (
 from deepmd.pt.utils.utils import (
     get_activation_fn,
 )
+from deepmd.utils.path import (
+    DPPath,
+)
 
 from .repformer_layer import (
     RepformerLayer,
@@ -268,7 +271,7 @@ class DescrptBlockRepformers(DescriptorBlock):
 
         return g1, g2, h2, rot_mat.view(-1, nloc, self.dim_emb, 3), sw
 
-    def compute_input_stats(self, merged):
+    def compute_input_stats(self, merged: list[dict], path: Optional[DPPath] = None):
         """Update mean and stddev for descriptor elements."""
         ndescrpt = self.nnei * 4
         sumr = []

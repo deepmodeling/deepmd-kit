@@ -18,6 +18,9 @@ from deepmd.pt.utils.nlist import (
     build_multiple_neighbor_list,
     get_multiple_nlist_key,
 )
+from deepmd.utils.path import (
+    DPPath,
+)
 
 from .repformers import (
     DescrptBlockRepformers,
@@ -286,7 +289,7 @@ class DescrptDPA2(Descriptor):
         """Returns the embedding dimension g2."""
         return self.get_dim_emb()
 
-    def compute_input_stats(self, merged):
+    def compute_input_stats(self, merged: list[dict], path: Optional[DPPath] = None):
         sumr, suma, sumn, sumr2, suma2 = [], [], [], [], []
         for ii, descrpt in enumerate([self.repinit, self.repformers]):
             merged_tmp = [

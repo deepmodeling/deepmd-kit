@@ -13,6 +13,9 @@ from deepmd.pt.model.network.network import (
     Identity,
     Linear,
 )
+from deepmd.utils.path import (
+    DPPath,
+)
 
 
 @DescriptorBlock.register("hybrid")
@@ -150,7 +153,7 @@ class DescrptBlockHybrid(DescriptorBlock):
         else:
             raise NotImplementedError
 
-    def compute_input_stats(self, merged):
+    def compute_input_stats(self, merged: list[dict], path: Optional[DPPath] = None):
         """Update mean and stddev for descriptor elements."""
         sumr, suma, sumn, sumr2, suma2 = [], [], [], [], []
         for ii, descrpt in enumerate(self.descriptor_list):

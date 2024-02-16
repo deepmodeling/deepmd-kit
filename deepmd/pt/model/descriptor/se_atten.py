@@ -24,6 +24,9 @@ from deepmd.pt.utils import (
 from deepmd.pt.utils.nlist import (
     extend_input_and_build_neighbor_list,
 )
+from deepmd.utils.path import (
+    DPPath,
+)
 
 
 @DescriptorBlock.register("se_atten")
@@ -185,7 +188,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         """Returns the output dimension of embedding."""
         return self.get_dim_emb()
 
-    def compute_input_stats(self, merged):
+    def compute_input_stats(self, merged: list[dict], path: Optional[DPPath] = None):
         """Update mean and stddev for descriptor elements."""
         sumr = []
         suma = []

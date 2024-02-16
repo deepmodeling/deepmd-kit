@@ -122,9 +122,9 @@ class DescrptSeA(Descriptor):
         """Returns the output dimension of this descriptor."""
         return self.sea.dim_out
 
-    def compute_input_stats(self, merged):
+    def compute_input_stats(self, merged: list[dict], path: Optional[DPPath] = None):
         """Update mean and stddev for descriptor elements."""
-        return self.sea.compute_input_stats(merged)
+        return self.sea.compute_input_stats(merged, path)
 
     @classmethod
     def get_data_process_key(cls, config):

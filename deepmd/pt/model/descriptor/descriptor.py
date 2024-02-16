@@ -25,6 +25,9 @@ from deepmd.pt.utils.plugin import (
 from deepmd.pt.utils.utils import (
     to_torch_tensor,
 )
+from deepmd.utils.path import (
+    DPPath,
+)
 
 from .base_descriptor import (
     BaseDescriptor,
@@ -105,17 +108,7 @@ class Descriptor(torch.nn.Module, BaseDescriptor):
         stat_file_path
             The path to the statistics files.
         """
-        # TODO support hybrid descriptor
-        descrpt_stat_key = self.data_stat_key
-        if sampled is not None:  # compute the statistics results
-            tmp_dict = self.compute_input_stats(sampled)
-            result_dict = {key: tmp_dict[key] for key in descrpt_stat_key}
-            result_dict["type_map"] = type_map
-            if stat_file_path is not None:
-                self.save_stats(result_dict, stat_file_path)
-        else:  # load the statistics results
-            assert stat_file_path is not None, "No stat file to load!"
-            result_dict = self.load_stats(type_map, stat_file_path)
+        raise NotImplementedError("to rewrite")
 
     def save_stats(self, result_dict, stat_file_path: Union[str, List[str]]):
         """
@@ -292,7 +285,7 @@ class DescriptorBlock(torch.nn.Module, ABC):
         """Returns the embedding dimension."""
         pass
 
-    def compute_input_stats(self, merged):
+    def compute_input_stats(self, merged: list[dict], path: Optional[DPPath] = None):
         """Update mean and stddev for DescriptorBlock elements."""
         raise NotImplementedError
 
