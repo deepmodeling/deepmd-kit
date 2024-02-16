@@ -11,10 +11,12 @@ from typing import (
 import numpy as np
 import torch
 
+from deepmd.common import (
+    get_hash,
+)
 from deepmd.pt.model.descriptor import (
     Descriptor,
     DescriptorBlock,
-    compute_std,
     prod_env_mat_se_a,
 )
 from deepmd.pt.utils import (
@@ -27,6 +29,9 @@ from deepmd.pt.utils.env import (
 from deepmd.pt.utils.env_mat_stat import EnvMatStat as BaseEnvMatStat
 from deepmd.utils.env_mat_stat import (
     StatItem,
+)
+from deepmd.utils.path import (
+    DPPath,
 )
 
 try:
@@ -476,32 +481,38 @@ class DescrptBlockSeA(DescriptorBlock):
                     env_mats[f"a_{type_i}"] = dd[:, 1:]
                 yield self.compute_stat(env_mats)
 
-    def compute_input_stats(self, merged: list[dict]):
+    def compute_input_stats(self, merged: list[dict], path: Optional[DPPath] = None):
         """Update mean and stddev for descriptor elements."""
-        stats = self.EnvMatStat(self).compute_stats(merged)
+        if path is not None:
+            path = path / get_hash(
+                {
+                    "ntypes": self.ntypes,
+                    "rcut": round(self.rcut, 2),
+                    "rcut_smth": round(self.rcut_smth, 2),
+                    "sel": self.nsel,
+                }
+            )
+        env_mat_stat = self.EnvMatStat(self)
+        env_mat_stat.load_or_compute_stats(merged, path)
+        avgs = env_mat_stat.get_avg()
+        stds = env_mat_stat.get_std()
 
-    def init_desc_stat(self, sumr, suma, sumn, sumr2, suma2, **kwargs):
         all_davg = []
         all_dstd = []
         for type_i in range(self.ntypes):
-            davgunit = [[sumr[type_i] / (sumn[type_i] + 1e-15), 0, 0, 0]]
+            davgunit = [[avgs[f"r_{type_i}"], 0, 0, 0]]
             dstdunit = [
                 [
-                    compute_std(sumr2[type_i], sumr[type_i], sumn[type_i], self.rcut),
-                    compute_std(suma2[type_i], suma[type_i], sumn[type_i], self.rcut),
-                    compute_std(suma2[type_i], suma[type_i], sumn[type_i], self.rcut),
-                    compute_std(suma2[type_i], suma[type_i], sumn[type_i], self.rcut),
+                    stds[f"r_{type_i}"],
+                    stds[f"a_{type_i}"],
+                    stds[f"a_{type_i}"],
+                    stds[f"a_{type_i}"],
                 ]
             ]
             davg = np.tile(davgunit, [self.nnei, 1])
             dstd = np.tile(dstdunit, [self.nnei, 1])
             all_davg.append(davg)
             all_dstd.append(dstd)
-        self.sumr = sumr
-        self.suma = suma
-        self.sumn = sumn
-        self.sumr2 = sumr2
-        self.suma2 = suma2
         if not self.set_davg_zero:
             mean = np.stack(all_davg)
             self.mean.copy_(torch.tensor(mean, device=env.DEVICE))
