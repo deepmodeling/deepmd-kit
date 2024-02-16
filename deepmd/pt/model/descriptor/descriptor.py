@@ -390,12 +390,16 @@ class DescriptorBlock(torch.nn.Module, ABC):
         """
         if self.no_exclusion:
             # safely return 1 if nothing is excluded.
-            return torch.ones_like(nlist, dtype=torch.int32)
+            return torch.ones_like(nlist, dtype=torch.int32, device=nlist.device)
         nf, nloc, nnei = nlist.shape
         nall = atype_ext.shape[1]
         # add virtual atom of type ntypes. nf x nall+1
         ae = torch.cat(
-            [atype_ext, self.get_ntypes() * torch.ones([nf, 1], dtype=atype_ext.dtype)],
+            [
+                atype_ext,
+                self.get_ntypes()
+                * torch.ones([nf, 1], dtype=atype_ext.dtype, device=atype_ext.device),
+            ],
             dim=-1,
         )
         type_i = atype_ext[:, :nloc].view(nf, nloc) * (self.get_ntypes() + 1)
