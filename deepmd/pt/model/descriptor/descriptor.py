@@ -108,7 +108,6 @@ class Descriptor(torch.nn.Module, BaseDescriptor):
         stat_file_path
             The path to the statistics files.
         """
-        raise NotImplementedError("to rewrite")
 
     def save_stats(self, result_dict, stat_file_path: Union[str, List[str]]):
         """

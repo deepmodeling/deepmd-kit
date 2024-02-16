@@ -81,4 +81,5 @@ def compute_output_bias(energy, natoms, rcond=None):
 def process_stat_path(
     stat_file_dict, stat_file_dir, model_params_dict, descriptor_cls, fitting_cls
 ):
-    raise NotImplementedError("to rewrite")
+    # TODO: to rewrite
+    return

@@ -46,12 +46,6 @@ from deepmd.main import (
 from deepmd.pt.infer import (
     inference,
 )
-from deepmd.pt.model.descriptor import (
-    Descriptor,
-)
-from deepmd.pt.model.task import (
-    Fitting,
-)
 from deepmd.pt.train import (
     training,
 )
@@ -69,7 +63,6 @@ from deepmd.pt.utils.multi_task import (
 )
 from deepmd.pt.utils.stat import (
     make_stat_input,
-    process_stat_path,
 )
 from deepmd.utils.summary import SummaryPrinter as BaseSummaryPrinter
 
@@ -134,19 +127,8 @@ def get_trainer(
         # noise_settings = None
 
         # stat files
-        hybrid_descrpt = model_params_single["descriptor"]["type"] == "hybrid"
-        if not hybrid_descrpt:
-            stat_file_path_single, has_stat_file_path = process_stat_path(
-                data_dict_single.get("stat_file", None),
-                data_dict_single.get("stat_file_dir", f"stat_files{suffix}"),
-                model_params_single,
-                Descriptor,
-                Fitting,
-            )
-        else:  ### TODO hybrid descriptor not implemented
-            raise NotImplementedError(
-                "data stat for hybrid descriptor is not implemented!"
-            )
+        # TODO: rewrite
+        stat_file_path_single = {"descriptor": "", "fitting": ""}
 
         # validation and training data
         validation_data_single = DpLoaderSet(
@@ -156,7 +138,7 @@ def get_trainer(
             type_split=type_split,
             noise_settings=noise_settings,
         )
-        if ckpt or finetune_model or has_stat_file_path:
+        if ckpt or finetune_model:
             train_data_single = DpLoaderSet(
                 training_systems,
                 training_dataset_params["batch_size"],
