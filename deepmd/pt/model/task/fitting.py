@@ -158,7 +158,6 @@ class Fitting(torch.nn.Module, BaseFitting):
             tmp_dict = self.compute_output_stats(sampled)
             result_dict = {key: tmp_dict[key] for key in fitting_stat_key}
             result_dict["type_map"] = type_map
-            self.save_stats(result_dict, stat_file_path)
         else:  # load the statistics results
             assert stat_file_path is not None, "No stat file to load!"
             result_dict = self.load_stats(type_map, stat_file_path)

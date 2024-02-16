@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import copy
 import logging
-import os
 import sys
 from typing import (
     Dict,
@@ -185,20 +184,9 @@ class DPAtomicModel(torch.nn.Module, BaseAtomicModel):
         if sampled is not None:  # move data to device
             for data_sys in sampled:
                 dict_to_device(data_sys)
-        if stat_file_path_dict is not None:
-            if not isinstance(stat_file_path_dict["descriptor"], list):
-                stat_file_dir = os.path.dirname(stat_file_path_dict["descriptor"])
-            else:
-                stat_file_dir = os.path.dirname(stat_file_path_dict["descriptor"][0])
-            # if not os.path.exists(stat_file_dir):
-            #    os.mkdir(stat_file_dir)
-        self.descriptor.compute_or_load_stat(
-            type_map, sampled, stat_file_path_dict["descriptor"]
-        )
+        self.descriptor.compute_or_load_stat(type_map, sampled, None)
         if self.fitting_net is not None:
-            self.fitting_net.compute_or_load_stat(
-                type_map, sampled, stat_file_path_dict["fitting_net"]
-            )
+            self.fitting_net.compute_or_load_stat(type_map, sampled, None)
 
     @torch.jit.export
     def get_dim_fparam(self) -> int:
