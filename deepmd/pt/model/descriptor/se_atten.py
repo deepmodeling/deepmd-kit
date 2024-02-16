@@ -202,6 +202,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         """A class to calculate the statistics of the environment matrix."""
 
         def __init__(self, descriptor: "DescrptBlockSeAtten"):
+            super().__init__()
             self.descriptor = descriptor
             self.ntypes = descriptor.get_ntypes()
             self.rcut = descriptor.get_rcut()
