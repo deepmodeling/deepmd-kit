@@ -4,6 +4,7 @@ from typing import (
     List,
     Optional,
 )
+
 import torch
 
 from deepmd.pt.model.task.fitting import (
@@ -15,6 +16,7 @@ from deepmd.pt.utils import (
 from deepmd.pt.utils.env import (
     DEFAULT_PRECISION,
 )
+
 log = logging.getLogger(__name__)
 
 
@@ -52,6 +54,7 @@ class DipoleFittingNet(GeneralFitting):
     seed : int, optional
         Random seed.
     """
+
     def __init__(
         self,
         var_name: str,
@@ -92,7 +95,7 @@ class DipoleFittingNet(GeneralFitting):
     def _net_out_dim(self):
         """Set the FittingNet output dim."""
         return self.dim_rot_mat
-    
+
     def serialize(self) -> dict:
         data = super().serialize()
         data["dim_rot_mat"] = self.dim_rot_mat
