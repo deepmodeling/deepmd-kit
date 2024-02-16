@@ -40,6 +40,29 @@ class StatItem:
             squared_sum=self.squared_sum + other.squared_sum,
         )
 
+    def compute_std(self, default: float = 1e-1) -> float:
+        """Compute the standard deviation of the environment matrix.
+
+        Parameters
+        ----------
+        default : float, optional
+            The default value of the standard deviation, by default 1e-1.
+
+        Returns
+        -------
+        float
+            The standard deviation of the environment matrix.
+        """
+        if self.number == 0:
+            return default
+        val = np.sqrt(
+            self.squared_sum / self.number
+            - np.multiply(self.sum / self.number, self.sum / self.number)
+        )
+        if np.abs(val) < 1e-2:
+            val = 1e-2
+        return val
+
 
 class EnvMatStat(ABC):
     """A base class to store and calculate the statistics of the environment matrix."""
