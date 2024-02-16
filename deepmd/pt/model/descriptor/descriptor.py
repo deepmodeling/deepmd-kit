@@ -22,6 +22,9 @@ from deepmd.pt.model.network.network import (
 from deepmd.pt.utils.plugin import (
     Plugin,
 )
+from deepmd.pt.utils.utils import (
+    to_torch_tensor,
+)
 
 from .base_descriptor import (
     BaseDescriptor,
@@ -231,7 +234,7 @@ class DescriptorBlock(torch.nn.Module, ABC):
             dtype=np.int32,
         )
         # (ntypes+1 x ntypes+1)
-        self.type_mask = torch.from_numpy(self.type_mask).view([-1])
+        self.type_mask = to_torch_tensor(self.type_mask).view([-1])
         self.no_exclusion = len(_exclude_types) == 0
 
     @staticmethod

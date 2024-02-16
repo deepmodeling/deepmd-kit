@@ -37,7 +37,7 @@ class TestExcludeMask(unittest.TestCase, TestCaseSingleFrameWithNlist):
         ).reshape(self.nf, self.nloc, sum(self.sel))
         des = DescrptBlockSeA(
             self.rcut, self.rcut_smth, self.sel, exclude_types=exclude_types
-        )
+        ).to(env.DEVICE)
         mask = des.build_type_exclude_mask(
             to_torch_tensor(self.nlist),
             to_torch_tensor(self.atype_ext),
