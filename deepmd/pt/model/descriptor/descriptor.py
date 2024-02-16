@@ -108,6 +108,9 @@ class Descriptor(torch.nn.Module, BaseDescriptor):
         stat_file_path
             The path to the statistics files.
         """
+        # TODO
+        assert sampled is not None
+        tmp_dict = self.compute_input_stats(sampled, None)
 
     def save_stats(self, result_dict, stat_file_path: Union[str, List[str]]):
         """
