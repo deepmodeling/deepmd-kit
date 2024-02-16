@@ -41,37 +41,38 @@ log = logging.getLogger(__name__)
 class InvarFitting(GeneralFitting):
     """Construct a fitting net for energy.
 
-        Parameters
-        ----------
-        var_name : str
-            The atomic property to fit, 'energy', 'dipole', and 'polar'.
-        ntypes : int
-            Element count.
-        dim_descrpt : int
-            Embedding width per atom.
-        dim_out : int
-            The output dimension of the fitting net.
-        neuron : List[int]
-            Number of neurons in each hidden layers of the fitting net.
-        bias_atom_e : torch.Tensor, optional
-            Average enery per atom for each element.
-        resnet_dt : bool
-            Using time-step in the ResNet construction.
-        numb_fparam : int
-            Number of frame parameters.
-        numb_aparam : int
-            Number of atomic parameters.
-        activation_function : str
-            Activation function.
-        precision : str
-            Numerical precision.
-        distinguish_types : bool
-            Neighbor list that distinguish different atomic types or not.
-        rcond : float, optional
-            The condition number for the regression of atomic energy.
-        seed : int, optional
-            Random seed.
+    Parameters
+    ----------
+    var_name : str
+        The atomic property to fit, 'energy', 'dipole', and 'polar'.
+    ntypes : int
+        Element count.
+    dim_descrpt : int
+        Embedding width per atom.
+    dim_out : int
+        The output dimension of the fitting net.
+    neuron : List[int]
+        Number of neurons in each hidden layers of the fitting net.
+    bias_atom_e : torch.Tensor, optional
+        Average enery per atom for each element.
+    resnet_dt : bool
+        Using time-step in the ResNet construction.
+    numb_fparam : int
+        Number of frame parameters.
+    numb_aparam : int
+        Number of atomic parameters.
+    activation_function : str
+        Activation function.
+    precision : str
+        Numerical precision.
+    distinguish_types : bool
+        Neighbor list that distinguish different atomic types or not.
+    rcond : float, optional
+        The condition number for the regression of atomic energy.
+    seed : int, optional
+        Random seed.
     """
+
     def __init__(
         self,
         var_name: str,
