@@ -4,6 +4,12 @@ on:
   pull_request:
     types:
       - "labeled"
+      # to let the PR pass the test
+      - "synchronize"
+  merge_group:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref || github.run_id }}
+  cancel-in-progress: true
 name: Test CUDA
 jobs:
   test_cuda:
@@ -13,7 +19,7 @@ jobs:
     container:
       image: nvidia/cuda:12.2.0-devel-ubuntu22.04
       options: --gpus all
-    if: github.repository_owner == 'deepmodeling' && github.event.label.name == 'Test CUDA' || github.event_name == 'workflow_dispatch'
+    if: github.repository_owner == 'deepmodeling' && (github.event_name == 'pull_request' && github.event.label && github.event.label.name == 'Test CUDA' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group')
     steps:
     - name: Make sudo and git work
       run: apt-get update && apt-get install -y sudo git
@@ -69,3 +75,13 @@ jobs:
     - uses: codecov/codecov-action@v4
       env:
         CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+  pass:
+    name: Pass testing on CUDA
+    needs: [test_cuda]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+    - name: Decide whether the needed jobs succeeded or failed
+      uses: re-actors/alls-green@release/v1
+      with:
+        jobs: ${{ toJSON(needs) }}

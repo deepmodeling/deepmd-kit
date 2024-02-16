@@ -1,6 +1,10 @@
 on:
   push:
   pull_request:
+  merge_group:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref || github.run_id }}
+  cancel-in-progress: true
 name: Test Python
 jobs:
   testpython:
@@ -27,8 +31,6 @@ jobs:
         mpi: openmpi
     # https://github.com/pypa/pip/issues/11770
     - run: python -m pip install -U "pip>=21.3.1,!=23.0.0"
-    - run: python -m pip install -U "torch==${{ matrix.torch }}" "numpy<1.20"
-      if: matrix.torch != ''
     - run: pip install -e .[cpu,test,torch]
       env:
         TENSORFLOW_VERSION: ${{ matrix.tf }}
