@@ -77,12 +77,16 @@ class HessianTest:
         coord = torch.matmul(coord, cell)
         cell = cell.view([nf, 9])
         coord = coord.view([nf, natoms * 3])
-        atype = torch.stack(
-            [
-                torch.IntTensor([0, 0, 1]),
-                torch.IntTensor([1, 0, 1]),
-            ]
-        ).view([nf, natoms]).to(env.DEVICE)
+        atype = (
+            torch.stack(
+                [
+                    torch.IntTensor([0, 0, 1]),
+                    torch.IntTensor([1, 0, 1]),
+                ]
+            )
+            .view([nf, natoms])
+            .to(env.DEVICE)
+        )
         nfp, nap = 2, 3
         fparam = torch.rand([nf, nfp], dtype=dtype).to(env.DEVICE)
         aparam = torch.rand([nf, natoms * nap], dtype=dtype).to(env.DEVICE)
