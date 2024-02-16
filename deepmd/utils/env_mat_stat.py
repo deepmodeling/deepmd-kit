@@ -45,6 +45,23 @@ class StatItem:
             squared_sum=self.squared_sum + other.squared_sum,
         )
 
+    def compute_avg(self, default: float = 0) -> float:
+        """Compute the average of the environment matrix.
+
+        Parameters
+        ----------
+        default : float, optional
+            The default value of the average, by default 0.
+
+        Returns
+        -------
+        float
+            The average of the environment matrix.
+        """
+        if self.number == 0:
+            return default
+        return self.sum / self.number
+
     def compute_std(self, default: float = 1e-1, protection: float = 1e-2) -> float:
         """Compute the standard deviation of the environment matrix.
 
@@ -157,6 +174,21 @@ class EnvMatStat(ABC):
             self.compute_stats(data)
             if path is not None:
                 self.save_stats(path)
+
+    def get_avg(self, default: float = 0) -> Dict[str, float]:
+        """Get the average of the environment matrix.
+
+        Parameters
+        ----------
+        default : float, optional
+            The default value of the average, by default 0.
+
+        Returns
+        -------
+        Dict[str, float]
+            The average of the environment matrix.
+        """
+        return {kk: vv.compute_avg(default=default) for kk, vv in self.stats.items()}
 
     def get_std(
         self, default: float = 1e-1, protection: float = 1e-2
