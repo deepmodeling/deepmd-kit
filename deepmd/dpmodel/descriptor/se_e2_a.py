@@ -235,10 +235,6 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         """Update mean and stddev for descriptor elements."""
         raise NotImplementedError
 
-    def init_desc_stat(self, sumr, suma, sumn, sumr2, suma2):
-        """Initialize the model bias by the statistics."""
-        raise NotImplementedError
-
     def cal_g(
         self,
         ss,

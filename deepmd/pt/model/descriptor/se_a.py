@@ -126,12 +126,6 @@ class DescrptSeA(Descriptor):
         """Update mean and stddev for descriptor elements."""
         return self.sea.compute_input_stats(merged)
 
-    def init_desc_stat(
-        self, sumr=None, suma=None, sumn=None, sumr2=None, suma2=None, **kwargs
-    ):
-        assert all(x is not None for x in [sumr, suma, sumn, sumr2, suma2])
-        self.sea.init_desc_stat(sumr, suma, sumn, sumr2, suma2)
-
     @classmethod
     def get_stat_name(
         cls, ntypes, type_name, rcut=None, rcut_smth=None, sel=None, **kwargs

@@ -170,7 +170,6 @@ class TestDataset(unittest.TestCase):
                 if key in sys.keys():
                     sys[key] = sys[key].to(env.DEVICE)
         stat_dict = my_en.compute_input_stats(sampled)
-        my_en.init_desc_stat(**stat_dict)
         my_en.mean = my_en.mean
         my_en.stddev = my_en.stddev
         self.assertTrue(

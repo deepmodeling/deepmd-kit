@@ -129,7 +129,6 @@ class Descriptor(torch.nn.Module, BaseDescriptor):
         else:  # load the statistics results
             assert stat_file_path is not None, "No stat file to load!"
             result_dict = self.load_stats(type_map, stat_file_path)
-        self.init_desc_stat(**result_dict)
 
     def save_stats(self, result_dict, stat_file_path: Union[str, List[str]]):
         """
@@ -310,10 +309,6 @@ class DescriptorBlock(torch.nn.Module, ABC):
         """Update mean and stddev for DescriptorBlock elements."""
         raise NotImplementedError
 
-    def init_desc_stat(self, **kwargs):
-        """Initialize mean and stddev by the statistics."""
-        raise NotImplementedError
-
     def share_params(self, base_class, shared_level, resume=False):
         assert (
             self.__class__ == base_class.__class__
@@ -343,7 +338,6 @@ class DescriptorBlock(torch.nn.Module, ABC):
                     "sumr2": sumr2_base + sumr2,
                     "suma2": suma2_base + suma2,
                 }
-                base_class.init_desc_stat(**stat_dict)
                 self.mean = base_class.mean
                 self.stddev = base_class.stddev
             # self.load_state_dict(base_class.state_dict()) # this does not work, because it only inits the model
