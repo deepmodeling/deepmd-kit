@@ -22,27 +22,22 @@ class StatItem:
     ----------
     number : int
         The total size of given array.
-    mean : float
-        The mean value of the matrix.
-    squared_mean : float
-        The mean squared value of the matrix.
+    sum : float
+        The sum value of the matrix.
+    squared_sum : float
+        The sum squared value of the matrix.
     """
 
-    def __init__(
-        self, number: int = 0, mean: float = 0, squared_mean: float = 0
-    ) -> None:
+    def __init__(self, number: int = 0, sum: float = 0, squared_sum: float = 0) -> None:
         self.number = number
-        self.mean = mean
-        self.squared_mean = squared_mean
+        self.sum = sum
+        self.squared_sum = squared_sum
 
     def __add__(self, other: "StatItem") -> "StatItem":
-        self_frac = self.number / (self.number + other.number)
-        other_frac = 1 - self_frac
         return StatItem(
             number=self.number + other.number,
-            mean=self_frac * self.mean + other_frac * other.mean,
-            squared_mean=self_frac * self.squared_mean
-            + other_frac * other.squared_mean,
+            sum=self.sum + other.sum,
+            squared_sum=self.squared_sum + other.squared_sum,
         )
 
 

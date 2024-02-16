@@ -29,7 +29,7 @@ class EnvMatStat(BaseEnvMatStat):
         for kk, vv in env_mat.items():
             stats[kk] = StatItem(
                 number=vv.numel(),
-                mean=vv.mean().item(),
-                squared_mean=torch.square(vv).mean().item(),
+                sum=vv.sum().item(),
+                squared_sum=torch.square(vv).sum().item(),
             )
         return stats
