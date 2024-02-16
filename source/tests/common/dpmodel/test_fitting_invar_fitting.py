@@ -34,11 +34,13 @@ class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
             od,
             nfp,
             nap,
+            et,
         ) in itertools.product(
             [True, False],
             [1, 2],
             [0, 3],
             [0, 4],
+            [[], [0], [1]],
         ):
             ifn0 = InvarFitting(
                 "energy",
@@ -48,6 +50,7 @@ class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 numb_fparam=nfp,
                 numb_aparam=nap,
                 distinguish_types=distinguish_types,
+                exclude_types=et,
             )
             ifn1 = InvarFitting.deserialize(ifn0.serialize())
             if nfp > 0:
@@ -61,6 +64,32 @@ class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
             ret0 = ifn0(dd[0], atype, fparam=ifp, aparam=iap)
             ret1 = ifn1(dd[0], atype, fparam=ifp, aparam=iap)
             np.testing.assert_allclose(ret0["energy"], ret1["energy"])
+
+    def test_mask(self):
+        rng = np.random.default_rng()
+        nf, nloc, nnei = self.nlist.shape
+        ds = DescrptSeA(self.rcut, self.rcut_smth, self.sel)
+        dd = ds.call(self.coord_ext, self.atype_ext, self.nlist)
+        atype = self.atype_ext[:, :nloc]
+        od = 2
+        distinguish_types = False
+        # exclude type 1
+        et = [1]
+        ifn0 = InvarFitting(
+            "energy",
+            self.nt,
+            ds.dim_out,
+            od,
+            distinguish_types=distinguish_types,
+            exclude_types=et,
+        )
+        ret0 = ifn0(dd[0], atype)
+        # atom index 2 is of type 1 that is excluded
+        zero_idx = 2
+        np.testing.assert_allclose(
+            ret0["energy"][:, zero_idx, :],
+            np.zeros_like(ret0["energy"][:, zero_idx, :]),
+        )
 
     def test_self_exception(
         self,

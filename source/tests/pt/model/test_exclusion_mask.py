@@ -3,11 +3,12 @@ import unittest
 
 import numpy as np
 
-from deepmd.pt.model.descriptor.se_a import (
-    DescrptBlockSeA,
-)
 from deepmd.pt.utils import (
     env,
+)
+from deepmd.pt.utils.exclude_types import (
+    AtomExcludeMask,
+    PairExcludeMask,
 )
 from deepmd.pt.utils.utils import (
     to_numpy_array,
@@ -21,8 +22,31 @@ from .test_env_mat import (
 dtype = env.GLOBAL_PT_FLOAT_PRECISION
 
 
+class TestAtomExcludeMask(unittest.TestCase):
+    def test_build_type_exclude_mask(self):
+        nf = 2
+        nt = 3
+        exclude_types = [0, 2]
+        atype = np.array(
+            [
+                [0, 2, 1, 2, 0, 1, 0],
+                [1, 2, 0, 0, 2, 2, 1],
+            ],
+            dtype=np.int32,
+        ).reshape([1, -1])
+        expected_mask = np.array(
+            [
+                [0, 0, 1, 0, 0, 1, 0],
+                [1, 0, 0, 0, 0, 0, 1],
+            ]
+        ).reshape([1, -1])
+        des = AtomExcludeMask(nt, exclude_types=exclude_types)
+        mask = des(to_torch_tensor(atype))
+        np.testing.assert_equal(to_numpy_array(mask), expected_mask)
+
+
 # to be merged with the tf test case
-class TestExcludeMask(unittest.TestCase, TestCaseSingleFrameWithNlist):
+class TestPairExcludeMask(unittest.TestCase, TestCaseSingleFrameWithNlist):
     def setUp(self):
         TestCaseSingleFrameWithNlist.setUp(self)
 
@@ -35,10 +59,8 @@ class TestExcludeMask(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 [0, 0, 1, 1, 1, 1, 1],
             ]
         ).reshape(self.nf, self.nloc, sum(self.sel))
-        des = DescrptBlockSeA(
-            self.rcut, self.rcut_smth, self.sel, exclude_types=exclude_types
-        ).to(env.DEVICE)
-        mask = des.build_type_exclude_mask(
+        des = PairExcludeMask(self.nt, exclude_types=exclude_types).to(env.DEVICE)
+        mask = des(
             to_torch_tensor(self.nlist),
             to_torch_tensor(self.atype_ext),
         )

@@ -7,15 +7,54 @@ from typing import (
 import numpy as np
 
 
-class ExcludeMask:
-    """Computes the atom type exclusion mask."""
+class AtomExcludeMask:
+    """Computes the type exclusion mask for atoms."""
+
+    def __init__(
+        self,
+        ntypes: int,
+        exclude_types: List[int] = [],
+    ):
+        self.ntypes = ntypes
+        self.exclude_types = exclude_types
+        self.type_mask = np.array(
+            [1 if tt_i not in self.exclude_types else 0 for tt_i in range(ntypes)],
+            dtype=np.int32,
+        )
+        # (ntypes)
+        self.type_mask = self.type_mask.reshape([-1])
+
+    def build_type_exclude_mask(
+        self,
+        atype: np.ndarray,
+    ):
+        """Compute type exclusion mask for atom pairs.
+
+        Parameters
+        ----------
+        atype
+            The extended aotm types. shape: nf x natom
+
+        Returns
+        -------
+        mask
+            The type exclusion mask for atoms. shape: nf x natom
+            Element [ff,ii] being 0 if type(ii) is excluded,
+            otherwise being 1.
+
+        """
+        nf, natom = atype.shape
+        return self.type_mask[atype].reshape(nf, natom)
+
+
+class PairExcludeMask:
+    """Computes the type exclusion mask for atom pairs."""
 
     def __init__(
         self,
         ntypes: int,
         exclude_types: List[Tuple[int, int]] = [],
     ):
-        super().__init__()
         self.ntypes = ntypes
         self.exclude_types = set()
         for tt in exclude_types:
@@ -41,7 +80,7 @@ class ExcludeMask:
         nlist: np.ndarray,
         atype_ext: np.ndarray,
     ):
-        """Compute type exclusion mask.
+        """Compute type exclusion mask for atom pairs.
 
         Parameters
         ----------
@@ -53,7 +92,7 @@ class ExcludeMask:
         Returns
         -------
         mask
-            The type exclusion mask of shape: nf x nloc x nnei.
+            The type exclusion mask for pair atoms of shape: nf x nloc x nnei.
             Element [ff,ii,jj] being 0 if type(ii), type(nlist[ff,ii,jj]) is excluded,
             otherwise being 1.
 
