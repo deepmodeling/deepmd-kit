@@ -346,25 +346,7 @@ class Fitting(torch.nn.Module, BaseFitting):
 
 
 class GeneralFitting(Fitting):
-    def __init__(
-        self,
-        var_name: str,
-        ntypes: int,
-        dim_descrpt: int,
-        dim_out: int,
-        neuron: List[int] = [128, 128, 128],
-        bias_atom_e: Optional[torch.Tensor] = None,
-        resnet_dt: bool = True,
-        numb_fparam: int = 0,
-        numb_aparam: int = 0,
-        activation_function: str = "tanh",
-        precision: str = DEFAULT_PRECISION,
-        distinguish_types: bool = False,
-        rcond: Optional[float] = None,
-        seed: Optional[int] = None,
-        **kwargs,
-    ):
-        """Construct a general fitting net.
+    """Construct a general fitting net.
 
         Parameters
         ----------
@@ -396,7 +378,25 @@ class GeneralFitting(Fitting):
             The condition number for the regression of atomic energy.
         seed : int, optional
             Random seed.
-        """
+    """
+    def __init__(
+        self,
+        var_name: str,
+        ntypes: int,
+        dim_descrpt: int,
+        dim_out: int,
+        neuron: List[int] = [128, 128, 128],
+        bias_atom_e: Optional[torch.Tensor] = None,
+        resnet_dt: bool = True,
+        numb_fparam: int = 0,
+        numb_aparam: int = 0,
+        activation_function: str = "tanh",
+        precision: str = DEFAULT_PRECISION,
+        distinguish_types: bool = False,
+        rcond: Optional[float] = None,
+        seed: Optional[int] = None,
+        **kwargs,
+    ):
         super().__init__()
         self.var_name = var_name
         self.ntypes = ntypes
@@ -636,7 +636,9 @@ class GeneralFitting(Fitting):
                 dim=-1,
             )
 
-        outs = torch.zeros((nf, nloc, self.dim_out))  # jit assertion
+        outs = torch.zeros(
+            (nf, nloc, self.dim_out), dtype=env.GLOBAL_PT_FLOAT_PRECISION
+        ).to(env.DEVICE)  # jit assertion
         if self.old_impl:
             outs = torch.zeros_like(atype).unsqueeze(-1)  # jit assertion
             assert self.filter_layers_old is not None

@@ -39,25 +39,7 @@ log = logging.getLogger(__name__)
 
 @fitting_check_output
 class InvarFitting(GeneralFitting):
-    def __init__(
-        self,
-        var_name: str,
-        ntypes: int,
-        dim_descrpt: int,
-        dim_out: int,
-        neuron: List[int] = [128, 128, 128],
-        bias_atom_e: Optional[torch.Tensor] = None,
-        resnet_dt: bool = True,
-        numb_fparam: int = 0,
-        numb_aparam: int = 0,
-        activation_function: str = "tanh",
-        precision: str = DEFAULT_PRECISION,
-        distinguish_types: bool = False,
-        rcond: Optional[float] = None,
-        seed: Optional[int] = None,
-        **kwargs,
-    ):
-        """Construct a fitting net for energy.
+    """Construct a fitting net for energy.
 
         Parameters
         ----------
@@ -89,7 +71,25 @@ class InvarFitting(GeneralFitting):
             The condition number for the regression of atomic energy.
         seed : int, optional
             Random seed.
-        """
+    """
+    def __init__(
+        self,
+        var_name: str,
+        ntypes: int,
+        dim_descrpt: int,
+        dim_out: int,
+        neuron: List[int] = [128, 128, 128],
+        bias_atom_e: Optional[torch.Tensor] = None,
+        resnet_dt: bool = True,
+        numb_fparam: int = 0,
+        numb_aparam: int = 0,
+        activation_function: str = "tanh",
+        precision: str = DEFAULT_PRECISION,
+        distinguish_types: bool = False,
+        rcond: Optional[float] = None,
+        seed: Optional[int] = None,
+        **kwargs,
+    ):
         super().__init__(
             var_name=var_name,
             ntypes=ntypes,
