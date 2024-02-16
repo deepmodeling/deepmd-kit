@@ -638,8 +638,8 @@ class GeneralFitting(Fitting):
             )
 
         outs = torch.zeros(
-            (nf, nloc, self.dim_out), dtype=env.GLOBAL_PT_FLOAT_PRECISION
-        ).to(env.DEVICE)  # jit assertion
+            (nf, nloc, self.dim_out), dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE
+        )  # jit assertion
         if self.old_impl:
             outs = torch.zeros_like(atype).unsqueeze(-1)  # jit assertion
             assert self.filter_layers_old is not None
