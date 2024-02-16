@@ -470,7 +470,9 @@ class DescrptBlockSeA(DescriptorBlock):
                     "ntypes": self.ntypes,
                     "rcut": round(self.rcut, 2),
                     "rcut_smth": round(self.rcut_smth, 2),
-                    "sel": self.nsel,
+                    "nsel": self.nsel,
+                    "sel": self.get_sel(),
+                    "distinguish_types": self.distinguish_types(),
                 }
             )
         env_mat_stat = self.EnvMatStat(self)
