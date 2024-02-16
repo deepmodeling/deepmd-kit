@@ -157,3 +157,25 @@ class EnvMatStat(ABC):
             self.compute_stats(data)
             if path is not None:
                 self.save_stats(path)
+
+    def get_std(
+        self, default: float = 1e-1, protection: float = 1e-2
+    ) -> Dict[str, float]:
+        """Get the standard deviation of the environment matrix.
+
+        Parameters
+        ----------
+        default : float, optional
+            The default value of the standard deviation, by default 1e-1.
+        protection : float, optional
+            The protection value for the standard deviation, by default 1e-2.
+
+        Returns
+        -------
+        Dict[str, float]
+            The standard deviation of the environment matrix.
+        """
+        return {
+            kk: vv.compute_std(default=default, protection=protection)
+            for kk, vv in self.stats.items()
+        }
