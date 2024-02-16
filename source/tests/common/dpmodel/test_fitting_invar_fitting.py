@@ -66,7 +66,6 @@ class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
             np.testing.assert_allclose(ret0["energy"], ret1["energy"])
 
     def test_mask(self):
-        rng = np.random.default_rng()
         nf, nloc, nnei = self.nlist.shape
         ds = DescrptSeA(self.rcut, self.rcut_smth, self.sel)
         dd = ds.call(self.coord_ext, self.atype_ext, self.nlist)
