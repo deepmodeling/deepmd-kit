@@ -314,41 +314,6 @@ class DescrptDPA2(Descriptor):
             }
 
     @classmethod
-    def get_stat_name(
-        cls,
-        ntypes,
-        type_name,
-        repinit_rcut=None,
-        repinit_rcut_smth=None,
-        repinit_nsel=None,
-        repformer_rcut=None,
-        repformer_rcut_smth=None,
-        repformer_nsel=None,
-        **kwargs,
-    ):
-        """
-        Get the name for the statistic file of the descriptor.
-        Usually use the combination of descriptor name, rcut, rcut_smth and sel as the statistic file name.
-        """
-        descrpt_type = type_name
-        assert descrpt_type in ["dpa2"]
-        assert all(
-            x is not None
-            for x in [
-                repinit_rcut,
-                repinit_rcut_smth,
-                repinit_nsel,
-                repformer_rcut,
-                repformer_rcut_smth,
-                repformer_nsel,
-            ]
-        )
-        return (
-            f"stat_file_descrpt_dpa2_repinit_rcut{repinit_rcut:.2f}_smth{repinit_rcut_smth:.2f}_sel{repinit_nsel}"
-            f"_repformer_rcut{repformer_rcut:.2f}_smth{repformer_rcut_smth:.2f}_sel{repformer_nsel}_ntypes{ntypes}.npz"
-        )
-
-    @classmethod
     def get_data_process_key(cls, config):
         """
         Get the keys for the data preprocess.

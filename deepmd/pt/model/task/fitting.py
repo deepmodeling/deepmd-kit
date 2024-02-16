@@ -124,19 +124,6 @@ class Fitting(torch.nn.Module, BaseFitting):
         else:
             raise NotImplementedError
 
-    @classmethod
-    def get_stat_name(cls, ntypes, type_name="ener", **kwargs):
-        """
-        Get the name for the statistic file of the fitting.
-        Usually use the combination of fitting net name and ntypes as the statistic file name.
-        """
-        if cls is not Fitting:
-            raise NotImplementedError("get_stat_name is not implemented!")
-        fitting_type = type_name
-        return Fitting.__plugins.plugins[fitting_type].get_stat_name(
-            ntypes, type_name, **kwargs
-        )
-
     @property
     def data_stat_key(self):
         """

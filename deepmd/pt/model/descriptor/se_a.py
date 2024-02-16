@@ -127,19 +127,6 @@ class DescrptSeA(Descriptor):
         return self.sea.compute_input_stats(merged)
 
     @classmethod
-    def get_stat_name(
-        cls, ntypes, type_name, rcut=None, rcut_smth=None, sel=None, **kwargs
-    ):
-        """
-        Get the name for the statistic file of the descriptor.
-        Usually use the combination of descriptor name, rcut, rcut_smth and sel as the statistic file name.
-        """
-        descrpt_type = type_name
-        assert descrpt_type in ["se_e2_a"]
-        assert all(x is not None for x in [rcut, rcut_smth, sel])
-        return f"stat_file_descrpt_sea_rcut{rcut:.2f}_smth{rcut_smth:.2f}_sel{sel}_ntypes{ntypes}.npz"
-
-    @classmethod
     def get_data_process_key(cls, config):
         """
         Get the keys for the data preprocess.

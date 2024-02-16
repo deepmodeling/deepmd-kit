@@ -65,19 +65,6 @@ class Descriptor(torch.nn.Module, BaseDescriptor):
         return Descriptor.__plugins.register(key)
 
     @classmethod
-    def get_stat_name(cls, ntypes, type_name, **kwargs):
-        """
-        Get the name for the statistic file of the descriptor.
-        Usually use the combination of descriptor name, rcut, rcut_smth and sel as the statistic file name.
-        """
-        if cls is not Descriptor:
-            raise NotImplementedError("get_stat_name is not implemented!")
-        descrpt_type = type_name
-        return Descriptor.__plugins.plugins[descrpt_type].get_stat_name(
-            ntypes, type_name, **kwargs
-        )
-
-    @classmethod
     def get_data_process_key(cls, config):
         """
         Get the keys for the data preprocess.

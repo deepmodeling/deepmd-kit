@@ -223,16 +223,6 @@ class EnergyFittingNet(InvarFitting):
             **kwargs,
         )
 
-    @classmethod
-    def get_stat_name(cls, ntypes, type_name="ener", **kwargs):
-        """
-        Get the name for the statistic file of the fitting.
-        Usually use the combination of fitting net name and ntypes as the statistic file name.
-        """
-        fitting_type = type_name
-        assert fitting_type in ["ener"]
-        return f"stat_file_fitting_ener_ntypes{ntypes}.npz"
-
 
 @Fitting.register("direct_force")
 @Fitting.register("direct_force_ener")
@@ -324,16 +314,6 @@ class EnergyFittingNetDirect(Fitting):
 
     def deserialize(cls) -> "EnergyFittingNetDirect":
         raise NotImplementedError
-
-    @classmethod
-    def get_stat_name(cls, ntypes, type_name="ener", **kwargs):
-        """
-        Get the name for the statistic file of the fitting.
-        Usually use the combination of fitting net name and ntypes as the statistic file name.
-        """
-        fitting_type = type_name
-        assert fitting_type in ["direct_force", "direct_force_ener"]
-        return f"stat_file_fitting_direct_ntypes{ntypes}.npz"
 
     def forward(
         self,
