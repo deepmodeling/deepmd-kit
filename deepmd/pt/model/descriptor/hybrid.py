@@ -155,7 +155,6 @@ class DescrptBlockHybrid(DescriptorBlock):
 
     def compute_input_stats(self, merged: list[dict], path: Optional[DPPath] = None):
         """Update mean and stddev for descriptor elements."""
-        sumr, suma, sumn, sumr2, suma2 = [], [], [], [], []
         for ii, descrpt in enumerate(self.descriptor_list):
             merged_tmp = [
                 {
@@ -164,12 +163,7 @@ class DescrptBlockHybrid(DescriptorBlock):
                 }
                 for item in merged
             ]
-            tmp_stat_dict = descrpt.compute_input_stats(merged_tmp)
-            sumr.append(tmp_stat_dict["sumr"])
-            suma.append(tmp_stat_dict["suma"])
-            sumn.append(tmp_stat_dict["sumn"])
-            sumr2.append(tmp_stat_dict["sumr2"])
-            suma2.append(tmp_stat_dict["suma2"])
+            descrpt.compute_input_stats(merged_tmp, path)
 
     def forward(
         self,
