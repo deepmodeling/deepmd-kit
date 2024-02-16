@@ -38,7 +38,7 @@ from deepmd.pt.model.network.mlp import (
 from deepmd.pt.model.network.network import (
     TypeFilter,
 )
-from deepmd.pt.utils.exclude_types import (
+from deepmd.pt.utils.exclude_mask import (
     PairExcludeMask,
 )
 from deepmd.pt.utils.nlist import (

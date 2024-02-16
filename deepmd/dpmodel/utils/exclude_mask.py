@@ -28,7 +28,7 @@ class AtomExcludeMask:
         self,
         atype: np.ndarray,
     ):
-        """Compute type exclusion mask for atom pairs.
+        """Compute type exclusion mask for atoms.
 
         Parameters
         ----------

@@ -39,7 +39,7 @@ from deepmd.pt.utils.env import (
     DEVICE,
     PRECISION_DICT,
 )
-from deepmd.pt.utils.exclude_types import (
+from deepmd.pt.utils.exclude_mask import (
     AtomExcludeMask,
 )
 from deepmd.pt.utils.plugin import (

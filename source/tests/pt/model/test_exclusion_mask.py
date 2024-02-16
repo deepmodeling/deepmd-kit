@@ -6,7 +6,7 @@ import numpy as np
 from deepmd.pt.utils import (
     env,
 )
-from deepmd.pt.utils.exclude_types import (
+from deepmd.pt.utils.exclude_mask import (
     AtomExcludeMask,
     PairExcludeMask,
 )

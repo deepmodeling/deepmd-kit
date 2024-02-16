@@ -34,6 +34,21 @@ class AtomExcludeMask(torch.nn.Module):
         self,
         atype: torch.Tensor,
     ) -> torch.Tensor:
+        """Compute type exclusion mask for atoms.
+
+        Parameters
+        ----------
+        atype
+            The extended aotm types. shape: nf x natom
+
+        Returns
+        -------
+        mask
+            The type exclusion mask for atoms. shape: nf x natom
+            Element [ff,ii] being 0 if type(ii) is excluded,
+            otherwise being 1.
+
+        """
         nf, natom = atype.shape
         return self.type_mask[atype].view(nf, natom)
 
