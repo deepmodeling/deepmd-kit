@@ -226,13 +226,15 @@ class DescrptBlockSeAtten(DescriptorBlock):
             """
             zero_mean = torch.zeros(
                 self.ntypes,
-                self.nsel * 4,
+                self.nsel,
+                4,
                 dtype=env.GLOBAL_PT_FLOAT_PRECISION,
                 device=env.DEVICE,
             )
             one_stddev = torch.ones(
                 self.ntypes,
-                self.nsel * 4,
+                self.nsel,
+                4,
                 dtype=env.GLOBAL_PT_FLOAT_PRECISION,
                 device=env.DEVICE,
             )
