@@ -33,13 +33,13 @@ class TestAtomExcludeMask(unittest.TestCase):
                 [1, 2, 0, 0, 2, 2, 1],
             ],
             dtype=np.int32,
-        ).reshape([1, -1])
+        ).reshape([nf, -1])
         expected_mask = np.array(
             [
                 [0, 0, 1, 0, 0, 1, 0],
                 [1, 0, 0, 0, 0, 0, 1],
             ]
-        ).reshape([1, -1])
+        ).reshape([nf, -1])
         des = AtomExcludeMask(nt, exclude_types=exclude_types)
         mask = des(to_torch_tensor(atype))
         np.testing.assert_equal(to_numpy_array(mask), expected_mask)
