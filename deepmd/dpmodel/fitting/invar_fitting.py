@@ -19,6 +19,7 @@ from deepmd.dpmodel.output_def import (
     fitting_check_output,
 )
 from deepmd.dpmodel.utils import (
+    AtomExcludeMask,
     FittingNet,
     NetworkCollection,
 )
@@ -126,6 +127,7 @@ class InvarFitting(NativeOP, BaseFitting):
         use_aparam_as_mask: bool = False,
         spin: Any = None,
         distinguish_types: bool = False,
+        exclude_types: List[int] = [],
     ):
         # seed, uniform_seed are not included
         if tot_ener_zero:
@@ -163,8 +165,10 @@ class InvarFitting(NativeOP, BaseFitting):
         self.use_aparam_as_mask = use_aparam_as_mask
         self.spin = spin
         self.distinguish_types = distinguish_types
+        self.exclude_types = exclude_types
         if self.spin is not None:
             raise NotImplementedError("spin is not supported")
+        self.emask = AtomExcludeMask(self.ntypes, exclude_types=self.exclude_types)
 
         # init constants
         self.bias_atom_e = np.zeros([self.ntypes, self.dim_out])
@@ -264,6 +268,7 @@ class InvarFitting(NativeOP, BaseFitting):
             "precision": self.precision,
             "distinguish_types": self.distinguish_types,
             "nets": self.nets.serialize(),
+            "exclude_types": self.exclude_types,
             "@variables": {
                 "bias_atom_e": self.bias_atom_e,
                 "fparam_avg": self.fparam_avg,
@@ -376,6 +381,12 @@ class InvarFitting(NativeOP, BaseFitting):
                 outs = outs + atom_energy  # Shape is [nframes, natoms[0], 1]
         else:
             outs = self.nets[()](xx) + self.bias_atom_e[atype]
+
+        # nf x nloc
+        exclude_mask = self.emask.build_type_exclude_mask(atype)
+        # nf x nloc x nod
+        outs = outs * exclude_mask[:, :, None]
+
         return {self.var_name: outs}
 
 

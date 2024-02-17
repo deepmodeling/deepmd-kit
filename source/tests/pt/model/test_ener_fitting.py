@@ -44,11 +44,12 @@ class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
         )
         atype = torch.tensor(self.atype_ext[:, :nloc], dtype=int, device=env.DEVICE)
 
-        for od, distinguish_types, nfp, nap in itertools.product(
+        for od, distinguish_types, nfp, nap, et in itertools.product(
             [1, 3],
             [True, False],
             [0, 3],
             [0, 4],
+            [[], [0], [1]],
         ):
             ft0 = InvarFitting(
                 "foo",
@@ -58,6 +59,7 @@ class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 numb_fparam=nfp,
                 numb_aparam=nap,
                 use_tebd=(not distinguish_types),
+                exclude_types=et,
             ).to(env.DEVICE)
             ft1 = DPInvarFitting.deserialize(ft0.serialize())
             ft2 = InvarFitting.deserialize(ft0.serialize())
@@ -144,11 +146,12 @@ class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
     def test_jit(
         self,
     ):
-        for od, distinguish_types, nfp, nap in itertools.product(
+        for od, distinguish_types, nfp, nap, et in itertools.product(
             [1, 3],
             [True, False],
             [0, 3],
             [0, 4],
+            [[], [0]],
         ):
             ft0 = InvarFitting(
                 "foo",
@@ -158,6 +161,7 @@ class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 numb_fparam=nfp,
                 numb_aparam=nap,
                 use_tebd=(not distinguish_types),
+                exclude_types=et,
             ).to(env.DEVICE)
             torch.jit.script(ft0)
 

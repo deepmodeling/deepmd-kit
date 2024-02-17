@@ -2,6 +2,10 @@
 from .env_mat import (
     EnvMat,
 )
+from .exclude_mask import (
+    AtomExcludeMask,
+    PairExcludeMask,
+)
 from .network import (
     EmbeddingNet,
     FittingNet,
@@ -53,4 +57,6 @@ __all__ = [
     "inter2phys",
     "phys2inter",
     "to_face_distance",
+    "AtomExcludeMask",
+    "PairExcludeMask",
 ]

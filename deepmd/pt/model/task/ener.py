@@ -89,6 +89,7 @@ class InvarFitting(GeneralFitting):
         distinguish_types: bool = False,
         rcond: Optional[float] = None,
         seed: Optional[int] = None,
+        exclude_types: List[int] = [],
         **kwargs,
     ):
         super().__init__(
@@ -106,6 +107,7 @@ class InvarFitting(GeneralFitting):
             distinguish_types=distinguish_types,
             rcond=rcond,
             seed=seed,
+            exclude_types=exclude_types,
             **kwargs,
         )
 
