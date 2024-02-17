@@ -214,7 +214,7 @@ class GeneralFitting(NativeOP, BaseFitting):
             return self.aparam_inv_std
         else:
             raise KeyError(key)
-        
+
     def serialize(self) -> dict:
         """Serialize the fitting to dict."""
         return {

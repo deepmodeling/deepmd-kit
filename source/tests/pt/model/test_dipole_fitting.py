@@ -6,11 +6,12 @@ import numpy as np
 import torch
 
 from deepmd.dpmodel.fitting import DipoleFitting as DPDipoleFitting
-from deepmd.pt.model.task.dipole import DipoleFittingNet
 from deepmd.pt.model.descriptor.se_a import (
     DescrptSeA,
 )
-
+from deepmd.pt.model.task.dipole import (
+    DipoleFittingNet,
+)
 from deepmd.pt.utils import (
     env,
 )
@@ -93,7 +94,6 @@ class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 to_numpy_array(ret2["foo"]),
             )
 
-
     def test_jit(
         self,
     ):
@@ -114,4 +114,3 @@ class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 use_tebd=(not distinguish_types),
             ).to(env.DEVICE)
             torch.jit.script(ft0)
-

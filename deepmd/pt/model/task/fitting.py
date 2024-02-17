@@ -583,7 +583,7 @@ class GeneralFitting(Fitting):
             return self.aparam_inv_std
         else:
             raise KeyError(key)
-        
+
     @abstractmethod
     def _net_out_dim(self):
         """Set the FittingNet output dim."""

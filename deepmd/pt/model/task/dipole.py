@@ -109,7 +109,7 @@ class DipoleFittingNet(GeneralFitting):
         Return a list of statistic names needed, such as "bias_atom_e".
         """
         return []
-    
+
     def forward(
         self,
         descriptor: torch.Tensor,

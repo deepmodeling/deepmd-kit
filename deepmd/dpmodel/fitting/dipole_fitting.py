@@ -11,9 +11,12 @@ import numpy as np
 from deepmd.dpmodel import (
     DEFAULT_PRECISION,
 )
-from .general_fitting import GeneralFitting
 from deepmd.dpmodel.output_def import (
     fitting_check_output,
+)
+
+from .general_fitting import (
+    GeneralFitting,
 )
 
 
@@ -118,7 +121,7 @@ class DipoleFitting(GeneralFitting):
         use_aparam_as_mask: bool = False,
         spin: Any = None,
         distinguish_types: bool = False,
-        old_impl = False,
+        old_impl=False,
     ):
         # seed, uniform_seed are not included
         if tot_ener_zero:
@@ -136,24 +139,24 @@ class DipoleFitting(GeneralFitting):
 
         self.dim_rot_mat = dim_rot_mat
         super().__init__(
-            var_name = var_name,
-            ntypes = ntypes,
-            dim_descrpt = dim_descrpt,
-            dim_out = dim_out,
-            neuron = neuron,
-            resnet_dt = resnet_dt,
-            numb_fparam = numb_fparam,
-            numb_aparam = numb_aparam,
-            rcond = rcond,
-            tot_ener_zero = tot_ener_zero,
-            trainable = trainable,
-            atom_ener = atom_ener,
-            activation_function = activation_function,
-            precision = precision,
-            layer_name = layer_name,
-            use_aparam_as_mask = use_aparam_as_mask,
-            spin = spin,
-            distinguish_types = distinguish_types,
+            var_name=var_name,
+            ntypes=ntypes,
+            dim_descrpt=dim_descrpt,
+            dim_out=dim_out,
+            neuron=neuron,
+            resnet_dt=resnet_dt,
+            numb_fparam=numb_fparam,
+            numb_aparam=numb_aparam,
+            rcond=rcond,
+            tot_ener_zero=tot_ener_zero,
+            trainable=trainable,
+            atom_ener=atom_ener,
+            activation_function=activation_function,
+            precision=precision,
+            layer_name=layer_name,
+            use_aparam_as_mask=use_aparam_as_mask,
+            spin=spin,
+            distinguish_types=distinguish_types,
         )
         self.old_impl = False
 
@@ -166,7 +169,7 @@ class DipoleFitting(GeneralFitting):
         data["dim_rot_mat"] = self.dim_rot_mat
         data["old_impl"] = self.old_impl
         return data
-    
+
     def call(
         self,
         descriptor: np.array,
@@ -211,5 +214,5 @@ class DipoleFitting(GeneralFitting):
         # (nframes * nloc, m1, 3)
         gr = gr.reshape(nframes * nloc, -1, 3)
         # (nframes, nloc, 3)
-        out = np.einsum('bim,bmj->bij', out, gr).squeeze(-2).reshape(nframes, nloc, 3)
+        out = np.einsum("bim,bmj->bij", out, gr).squeeze(-2).reshape(nframes, nloc, 3)
         return {self.var_name: out}
