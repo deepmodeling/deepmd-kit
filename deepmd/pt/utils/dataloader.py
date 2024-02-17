@@ -12,10 +12,7 @@ from threading import (
 from typing import (
     List,
 )
-<<<<<<< HEAD
-=======
 
->>>>>>> 90dcd5bd5cf46ac492446452026085219cc0b8de
 import h5py
 import torch
 import torch.distributed as dist
