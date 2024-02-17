@@ -131,7 +131,6 @@ class EnvMatStatSeA(EnvMatStat):
             env_mat = env_mat.view(
                 coord.shape[0], coord.shape[1], self.descriptor.get_nsel(), 4
             )
-            env_mats = {}
 
             if "real_natoms_vec" not in system:
                 end_indexes = torch.cumsum(natoms[0, 2:], 0)
@@ -145,6 +144,7 @@ class EnvMatStatSeA(EnvMatStat):
                     dd = env_mat[
                         :, start_indexes[type_i] : end_indexes[type_i], :, :
                     ]  # all descriptors for this element
+                    env_mats = {}
                     env_mats[f"r_{type_i}"] = dd[:, :, :, :1]
                     env_mats[f"a_{type_i}"] = dd[:, :, :, 1:]
                     yield self.compute_stat(env_mats)
@@ -156,6 +156,7 @@ class EnvMatStatSeA(EnvMatStat):
                         type_idx = atype_frame == type_i
                         dd = dd_ff[type_idx]
                         dd = dd.reshape([-1, 4])  # typen_atoms * nnei, 4
+                        env_mats = {}
                         env_mats[f"r_{type_i}"] = dd[:, :1]
                         env_mats[f"a_{type_i}"] = dd[:, 1:]
                         yield self.compute_stat(env_mats)
