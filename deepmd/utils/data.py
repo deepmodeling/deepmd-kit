@@ -257,7 +257,8 @@ class DeepmdData:
             return self.test_dir, tmpe.shape[0]
         else:
             return None
-    def get_item(self,index:int) -> dict:
+
+    def get_item(self, index: int) -> dict:
         """Get a single frame data . The frame is picked from the data system by index.
 
         Parameters
@@ -275,7 +276,7 @@ class DeepmdData:
         frame = self.preprocess(frame)
         frame["fid"] = index
         return frame
-    
+
     def get_batch(self, batch_size: int) -> dict:
         """Get a batch of data with `batch_size` frames. The frames are randomly picked from the data system.
 
@@ -466,8 +467,8 @@ class DeepmdData:
             else:
                 ret[kk] = data[kk]
         return ret, idx
-    
-    def _get_nframes(self,set_name:DPPath):
+
+    def _get_nframes(self, set_name: DPPath):
         # get nframes
         if not isinstance(set_name, DPPath):
             set_name = DPPath(set_name)
@@ -480,7 +481,7 @@ class DeepmdData:
             coord = coord.reshape([1, -1])
         nframes = coord.shape[0]
         return nframes
-    
+
     def preprocess(self, data):
         for kk in self.data_dict.keys():
             if "find_" in kk:

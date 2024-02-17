@@ -29,6 +29,7 @@ from deepmd.utils.data import (
     DeepmdData,
 )
 
+
 class DeepmdDataSystem:
     def __init__(
         self,
@@ -574,9 +575,7 @@ class DeepmdDataSetForLoader(Dataset):
         """
         self._type_map = type_map
         self._data_system = DeepmdData(
-            sys_path=system,
-            shuffle_test=shuffle,
-            type_map=self._type_map
+            sys_path=system, shuffle_test=shuffle, type_map=self._type_map
         )
         self._data_system.add("energy", 1, atomic=False, must=False, high_prec=True)
         self._data_system.add("force", 3, atomic=True, must=False, high_prec=False)
