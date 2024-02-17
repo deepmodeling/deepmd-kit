@@ -17,7 +17,7 @@ jobs:
     runs-on: nvidia
     # https://github.com/deepmodeling/deepmd-kit/pull/2884#issuecomment-1744216845
     container:
-      image: nvidia/cuda:12.2.0-devel-ubuntu22.04
+      image: nvidia/cuda:12.3.1-devel-ubuntu22.04
       options: --gpus all
     if: github.repository_owner == 'deepmodeling' && (github.event_name == 'pull_request' && github.event.label && github.event.label.name == 'Test CUDA' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group')
     steps:
@@ -33,24 +33,24 @@ jobs:
       with:
         mpi: mpich
     - uses: lukka/get-cmake@latest
+      with:
+        useLocalCache: true
+        useCloudCache: false
     - run: |
          wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.0-1_all.deb \
          && sudo dpkg -i cuda-keyring_1.0-1_all.deb \
          && sudo apt-get update \
-         && sudo apt-get -y install cuda-12-2 libcudnn8=8.9.5.*-1+cuda12.2
+         && sudo apt-get -y install cuda-12-3 libcudnn8=8.9.5.*-1+cuda12.3
       if: false  # skip as we use nvidia image
-    - name: Set PyPI mirror for Aliyun cloud machine
-      run: python -m pip config --user set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple/
     - run: python -m pip install -U "pip>=21.3.1,!=23.0.0"
     - run: python -m pip install "tensorflow>=2.15.0rc0" "torch>=2.2.0"
     - run: python -m pip install -v -e .[gpu,test,lmp,cu12,torch] "ase @ https://gitlab.com/ase/ase/-/archive/8c5aa5fd6448c5cfb517a014dccf2b214a9dfa8f/ase-8c5aa5fd6448c5cfb517a014dccf2b214a9dfa8f.tar.gz"
       env:
-        DP_BUILD_TESTING: 1
         DP_VARIANT: cuda
-        CUDA_PATH: /usr/local/cuda-12.2
         NUM_WORKERS: 0
+        DP_ENABLE_NATIVE_OPTIMIZATION: 1
     - run: dp --version
-    - run: python -m pytest --cov=deepmd source/tests --durations=0
+    - run: python -m pytest source/tests --durations=0
     - run: source/install/test_cc_local.sh
       env:
         OMP_NUM_THREADS: 1
@@ -60,21 +60,16 @@ jobs:
         CMAKE_GENERATOR: Ninja
         DP_VARIANT: cuda
         DP_USE_MPICH2: 1
-        CUDA_PATH: /usr/local/cuda-12.2
     - run: |
         export LD_LIBRARY_PATH=$GITHUB_WORKSPACE/dp_test/lib:$CUDA_PATH/lib64:$LD_LIBRARY_PATH
         export PATH=$GITHUB_WORKSPACE/dp_test/bin:$PATH
-        python -m pytest --cov=deepmd source/lmp/tests
-        python -m pytest --cov=deepmd source/ipi/tests
+        python -m pytest source/lmp/tests
+        python -m pytest source/ipi/tests
       env:
         OMP_NUM_THREADS: 1
         TF_INTRA_OP_PARALLELISM_THREADS: 1
         TF_INTER_OP_PARALLELISM_THREADS: 1
         LAMMPS_PLUGIN_PATH: ${{ github.workspace }}/dp_test/lib/deepmd_lmp
-        CUDA_PATH: /usr/local/cuda-12.2
-    - uses: codecov/codecov-action@v4
-      env:
-        CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
   pass:
     name: Pass testing on CUDA
     needs: [test_cuda]
