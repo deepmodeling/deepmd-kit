@@ -13,7 +13,7 @@ from deepmd.pt.model.task.fitting import (
 log = logging.getLogger(__name__)
 
 
-class DipoleFittingNetType(Fitting):
+class DipoleFittingNet(Fitting):
     def __init__(
         self, ntypes, embedding_width, neuron, out_dim, resnet_dt=True, **kwargs
     ):

@@ -67,7 +67,7 @@ class TestSeA(CommonTest, DescriptorTest, unittest.TestCase):
             type_one_side,
             excluded_types,
         ) = self.param
-        return not type_one_side or excluded_types != [] or CommonTest.skip_pt
+        return not type_one_side or CommonTest.skip_pt
 
     @property
     def skip_dp(self) -> bool:
@@ -76,7 +76,7 @@ class TestSeA(CommonTest, DescriptorTest, unittest.TestCase):
             type_one_side,
             excluded_types,
         ) = self.param
-        return not type_one_side or excluded_types != [] or CommonTest.skip_dp
+        return not type_one_side or CommonTest.skip_dp
 
     tf_class = DescrptSeATF
     dp_class = DescrptSeADP

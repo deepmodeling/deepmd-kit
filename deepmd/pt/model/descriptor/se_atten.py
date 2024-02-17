@@ -64,7 +64,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         - filter_neuron: Number of neurons in each hidden layers of the embedding net.
         - axis_neuron: Number of columns of the sub-matrix of the embedding matrix.
         """
-        super().__init__()
+        super().__init__(ntypes)
         del type
         self.rcut = rcut
         self.rcut_smth = rcut_smth

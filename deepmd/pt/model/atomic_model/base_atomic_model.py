@@ -3,7 +3,7 @@
 
 import torch
 
-from deepmd.dpmodel.model import (
+from deepmd.dpmodel.atomic_model import (
     make_base_atomic_model,
 )
 

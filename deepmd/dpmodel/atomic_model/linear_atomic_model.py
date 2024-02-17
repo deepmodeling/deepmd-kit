@@ -13,16 +13,16 @@ from typing import (
 
 import numpy as np
 
-from deepmd.dpmodel import (
-    FittingOutputDef,
-    OutputVariableDef,
-)
 from deepmd.dpmodel.utils.nlist import (
     build_multiple_neighbor_list,
     get_multiple_nlist_key,
     nlist_distinguish_types,
 )
 
+from ..output_def import (
+    FittingOutputDef,
+    OutputVariableDef,
+)
 from .base_atomic_model import (
     BaseAtomicModel,
 )
@@ -30,7 +30,7 @@ from .dp_atomic_model import (
     DPAtomicModel,
 )
 from .pairtab_atomic_model import (
-    PairTabModel,
+    PairTabAtomicModel,
 )
 
 
@@ -39,8 +39,8 @@ class LinearAtomicModel(BaseAtomicModel):
 
     Parameters
     ----------
-    models : list[DPAtomicModel or PairTabModel]
-        A list of models to be combined. PairTabModel must be used together with a DPAtomicModel.
+    models : list[DPAtomicModel or PairTabAtomicModel]
+        A list of models to be combined. PairTabAtomicModel must be used together with a DPAtomicModel.
     """
 
     def __init__(
@@ -240,7 +240,7 @@ class DPZBLLinearAtomicModel(LinearAtomicModel):
     def __init__(
         self,
         dp_model: DPAtomicModel,
-        zbl_model: PairTabModel,
+        zbl_model: PairTabAtomicModel,
         sw_rmin: float,
         sw_rmax: float,
         smin_alpha: Optional[float] = 0.1,
@@ -305,7 +305,9 @@ class DPZBLLinearAtomicModel(LinearAtomicModel):
         # use the larger rr based on nlist
         nlist_larger = zbl_nlist if zbl_nnei >= dp_nnei else dp_nlist
         masked_nlist = np.clip(nlist_larger, 0, None)
-        pairwise_rr = PairTabModel._get_pairwise_dist(extended_coord, masked_nlist)
+        pairwise_rr = PairTabAtomicModel._get_pairwise_dist(
+            extended_coord, masked_nlist
+        )
 
         numerator = np.sum(
             pairwise_rr * np.exp(-pairwise_rr / self.smin_alpha), axis=-1
@@ -318,14 +320,16 @@ class DPZBLLinearAtomicModel(LinearAtomicModel):
             ),
             axis=-1,
         )  # handle masked nnei.
-        sigma = numerator / denominator
+        with np.errstate(divide="ignore", invalid="ignore"):
+            sigma = numerator / denominator
         u = (sigma - self.sw_rmin) / (self.sw_rmax - self.sw_rmin)
         coef = np.zeros_like(u)
         left_mask = sigma < self.sw_rmin
         mid_mask = (self.sw_rmin <= sigma) & (sigma < self.sw_rmax)
         right_mask = sigma >= self.sw_rmax
         coef[left_mask] = 1
-        smooth = -6 * u**5 + 15 * u**4 - 10 * u**3 + 1
+        with np.errstate(invalid="ignore"):
+            smooth = -6 * u**5 + 15 * u**4 - 10 * u**3 + 1
         coef[mid_mask] = smooth[mid_mask]
         coef[right_mask] = 0
         self.zbl_weight = coef

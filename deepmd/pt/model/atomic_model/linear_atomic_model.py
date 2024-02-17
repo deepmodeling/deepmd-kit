@@ -28,21 +28,18 @@ from .base_atomic_model import (
 from .dp_atomic_model import (
     DPAtomicModel,
 )
-from .model import (
-    BaseModel,
-)
 from .pairtab_atomic_model import (
-    PairTabModel,
+    PairTabAtomicModel,
 )
 
 
-class LinearAtomicModel(BaseModel, BaseAtomicModel):
+class LinearAtomicModel(torch.nn.Module, BaseAtomicModel):
     """Linear model make linear combinations of several existing models.
 
     Parameters
     ----------
-    models : list[DPAtomicModel or PairTabModel]
-        A list of models to be combined. PairTabModel must be used together with a DPAtomicModel.
+    models : list[DPAtomicModel or PairTabAtomicModel]
+        A list of models to be combined. PairTabAtomicModel must be used together with a DPAtomicModel.
     """
 
     def __init__(
@@ -266,7 +263,7 @@ class DPZBLLinearAtomicModel(LinearAtomicModel):
     def __init__(
         self,
         dp_model: DPAtomicModel,
-        zbl_model: PairTabModel,
+        zbl_model: PairTabAtomicModel,
         sw_rmin: float,
         sw_rmax: float,
         smin_alpha: Optional[float] = 0.1,
@@ -334,7 +331,9 @@ class DPZBLLinearAtomicModel(LinearAtomicModel):
         # use the larger rr based on nlist
         nlist_larger = zbl_nlist if zbl_nnei >= dp_nnei else dp_nlist
         masked_nlist = torch.clamp(nlist_larger, 0)
-        pairwise_rr = PairTabModel._get_pairwise_dist(extended_coord, masked_nlist)
+        pairwise_rr = PairTabAtomicModel._get_pairwise_dist(
+            extended_coord, masked_nlist
+        )
         numerator = torch.sum(
             pairwise_rr * torch.exp(-pairwise_rr / self.smin_alpha), dim=-1
         )  # masked nnei will be zero, no need to handle
