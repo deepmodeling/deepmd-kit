@@ -5,6 +5,7 @@ on:
     types:
       - "labeled"
       # to let the PR pass the test
+      - "created"
       - "synchronize"
   merge_group:
 concurrency:
@@ -80,3 +81,4 @@ jobs:
       uses: re-actors/alls-green@release/v1
       with:
         jobs: ${{ toJSON(needs) }}
+        allowed-skips: test_cuda
