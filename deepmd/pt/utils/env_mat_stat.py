@@ -6,8 +6,12 @@ from typing import (
     List,
 )
 
+import numpy as np
 import torch
 
+from deepmd.common import (
+    get_hash,
+)
 from deepmd.pt.model.descriptor.env_mat import (
     prod_env_mat_se_a,
 )
@@ -155,3 +159,47 @@ class EnvMatStatSeA(EnvMatStat):
                         env_mats[f"r_{type_i}"] = dd[:, :1]
                         env_mats[f"a_{type_i}"] = dd[:, 1:]
                         yield self.compute_stat(env_mats)
+
+    def get_hash(self) -> str:
+        """Get the hash of the environment matrix.
+
+        Returns
+        -------
+        str
+            The hash of the environment matrix.
+        """
+        return get_hash(
+            {
+                "type": "se_a",
+                "ntypes": self.descriptor.get_ntypes(),
+                "rcut": round(self.descriptor.get_rcut(), 2),
+                "rcut_smth": round(self.descriptor.rcut_smth, 2),
+                "nsel": self.descriptor.get_nsel(),
+                "sel": self.descriptor.get_sel(),
+                "distinguish_types": self.descriptor.distinguish_types(),
+            }
+        )
+
+    def __call__(self):
+        avgs = self.get_avg()
+        stds = self.get_std()
+
+        all_davg = []
+        all_dstd = []
+        for type_i in range(self.descriptor.get_ntypes()):
+            davgunit = [[avgs[f"r_{type_i}"], 0, 0, 0]]
+            dstdunit = [
+                [
+                    stds[f"r_{type_i}"],
+                    stds[f"a_{type_i}"],
+                    stds[f"a_{type_i}"],
+                    stds[f"a_{type_i}"],
+                ]
+            ]
+            davg = np.tile(davgunit, [self.descriptor.get_nsel(), 1])
+            dstd = np.tile(dstdunit, [self.descriptor.get_nsel(), 1])
+            all_davg.append(davg)
+            all_dstd.append(dstd)
+        mean = np.stack(all_davg)
+        stddev = np.stack(all_dstd)
+        return mean, stddev

@@ -9,9 +9,6 @@ from typing import (
 import numpy as np
 import torch
 
-from deepmd.common import (
-    get_hash,
-)
 from deepmd.pt.model.descriptor import (
     Descriptor,
     DescriptorBlock,
@@ -375,43 +372,16 @@ class DescrptBlockSeA(DescriptorBlock):
 
     def compute_input_stats(self, merged: list[dict], path: Optional[DPPath] = None):
         """Update mean and stddev for descriptor elements."""
-        if path is not None:
-            path = path / get_hash(
-                {
-                    "type": "se_a",
-                    "ntypes": self.ntypes,
-                    "rcut": round(self.rcut, 2),
-                    "rcut_smth": round(self.rcut_smth, 2),
-                    "nsel": self.nsel,
-                    "sel": self.get_sel(),
-                    "distinguish_types": self.distinguish_types(),
-                }
-            )
         env_mat_stat = EnvMatStatSeA(self)
+        if path is not None:
+            path = path / env_mat_stat.get_hash()
         env_mat_stat.load_or_compute_stats(merged, path)
-        avgs = env_mat_stat.get_avg()
-        stds = env_mat_stat.get_std()
-
-        all_davg = []
-        all_dstd = []
-        for type_i in range(self.ntypes):
-            davgunit = [[avgs[f"r_{type_i}"], 0, 0, 0]]
-            dstdunit = [
-                [
-                    stds[f"r_{type_i}"],
-                    stds[f"a_{type_i}"],
-                    stds[f"a_{type_i}"],
-                    stds[f"a_{type_i}"],
-                ]
-            ]
-            davg = np.tile(davgunit, [self.nnei, 1])
-            dstd = np.tile(dstdunit, [self.nnei, 1])
-            all_davg.append(davg)
-            all_dstd.append(dstd)
+        mean, stddev = env_mat_stat()
         if not self.set_davg_zero:
-            mean = np.stack(all_davg)
             self.mean.copy_(torch.tensor(mean, device=env.DEVICE))
-        stddev = np.stack(all_dstd)
+        self.stddev.copy_(torch.tensor(stddev, device=env.DEVICE))
+        if not self.set_davg_zero:
+            self.mean.copy_(torch.tensor(mean, device=env.DEVICE))
         self.stddev.copy_(torch.tensor(stddev, device=env.DEVICE))
 
     def forward(
