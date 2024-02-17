@@ -12,6 +12,7 @@ from threading import (
 from typing import (
     List,
 )
+
 import h5py
 import torch
 import torch.distributed as dist
@@ -28,9 +29,6 @@ from torch.utils.data.distributed import (
     DistributedSampler,
 )
 
-from deepmd.pt.model.descriptor import (
-    Descriptor,
-)
 from deepmd.pt.utils import (
     env,
 )

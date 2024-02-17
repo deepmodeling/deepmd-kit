@@ -1,20 +1,13 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import glob
-import os
-from typing import (
-    List,
-    Optional,
-)
 
-import h5py
-import numpy as np
-import torch
 from torch.utils.data import (
     Dataset,
 )
+
 from deepmd.utils.data import (
     DeepmdData,
 )
+
 
 class DeepmdDataSetForLoader(Dataset):
     def __init__(
@@ -41,7 +34,6 @@ class DeepmdDataSetForLoader(Dataset):
         self._ntypes = self._data_system.get_ntypes()
         self._natoms = self._data_system.natoms
         self._natoms_vec = self._data_system.get_natoms_vec(self._ntypes)
-
 
     def __len__(self):
         return self._data_system.nframes

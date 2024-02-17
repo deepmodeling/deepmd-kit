@@ -46,9 +46,7 @@ def get_batch():
     systems = config["training"]["validation_data"]["systems"]
     if isinstance(systems, str):
         systems = expand_sys_str(systems)
-    dataset = DeepmdDataSetForLoader(
-        systems[0], model_config["type_map"]
-    )
+    dataset = DeepmdDataSetForLoader(systems[0], model_config["type_map"])
     np_batch, pt_batch = get_single_batch(dataset)
     return np_batch, pt_batch
 
