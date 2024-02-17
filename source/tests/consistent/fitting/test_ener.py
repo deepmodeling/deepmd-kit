@@ -42,6 +42,7 @@ from deepmd.utils.argcheck import (
     (True, False),  # resnet_dt
     ("float64", "float32"),  # precision
     (True, False),  # distinguish_types
+    (0, 1),  # numb_fparam
 )
 class TestEner(CommonTest, FittingTest, unittest.TestCase):
     @property
@@ -50,11 +51,13 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
             resnet_dt,
             precision,
             distinguish_types,
+            numb_fparam,
         ) = self.param
         return {
             "neuron": [5, 5, 5],
             "resnet_dt": resnet_dt,
             "precision": precision,
+            "numb_fparam": numb_fparam,
             "seed": 20240217,
         }
 
@@ -64,6 +67,7 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
             resnet_dt,
             precision,
             distinguish_types,
+            numb_fparam,
         ) = self.param
         # TODO: distinguish_types
         return not distinguish_types or CommonTest.skip_pt
@@ -74,6 +78,7 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
             resnet_dt,
             precision,
             distinguish_types,
+            numb_fparam,
         ) = self.param
         # TODO: float32 has bug
         return precision == "float32" or CommonTest.skip_pt
@@ -84,6 +89,7 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
             resnet_dt,
             precision,
             distinguish_types,
+            numb_fparam,
         ) = self.param
         # TODO: float32 has bug
         return precision == "float32" or CommonTest.skip_dp
@@ -102,6 +108,7 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
         self.atype = np.array([0, 1, 1, 0, 1, 1], dtype=np.int32)
         # inconsistent if not sorted
         self.atype.sort()
+        self.fparam = -np.ones((1,), dtype=GLOBAL_NP_FLOAT_PRECISION)
 
     @property
     def addtional_data(self) -> dict:
@@ -109,6 +116,7 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
             resnet_dt,
             precision,
             distinguish_types,
+            numb_fparam,
         ) = self.param
         return {
             "ntypes": self.ntypes,
@@ -117,19 +125,35 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
         }
 
     def build_tf(self, obj: Any, suffix: str) -> Tuple[list, dict]:
+        (
+            resnet_dt,
+            precision,
+            distinguish_types,
+            numb_fparam,
+        ) = self.param
         return self.build_tf_fitting(
             obj,
             self.inputs.ravel(),
             self.natoms,
             self.atype,
+            self.fparam if numb_fparam else None,
             suffix,
         )
 
     def eval_pt(self, pt_obj: Any) -> Any:
+        (
+            resnet_dt,
+            precision,
+            distinguish_types,
+            numb_fparam,
+        ) = self.param
         return (
             pt_obj(
                 torch.from_numpy(self.inputs).to(device=PT_DEVICE),
                 torch.from_numpy(self.atype).to(device=PT_DEVICE),
+                fparam=torch.from_numpy(self.fparam).to(device=PT_DEVICE)
+                if numb_fparam
+                else None,
             )["energy"]
             .detach()
             .cpu()
@@ -137,9 +161,16 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
         )
 
     def eval_dp(self, dp_obj: Any) -> Any:
+        (
+            resnet_dt,
+            precision,
+            distinguish_types,
+            numb_fparam,
+        ) = self.param
         return dp_obj(
             self.inputs,
             self.atype,
+            fparam=self.fparam if numb_fparam else None,
         )["energy"]
 
     def extract_ret(self, ret: Any, backend) -> Tuple[np.ndarray, ...]:

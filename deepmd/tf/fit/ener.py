@@ -989,7 +989,7 @@ class EnerFitting(Fitting):
                 ntypes=self.ntypes,
                 # TODO: consider type embeddings
                 ndim=1,
-                in_dim=self.dim_descrpt,
+                in_dim=self.dim_descrpt + self.numb_fparam + self.numb_aparam,
                 neuron=self.n_neuron,
                 activation_function=self.activation_function_name,
                 resnet_dt=self.resnet_dt,
