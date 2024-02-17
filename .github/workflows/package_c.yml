@@ -2,8 +2,13 @@ name: Build C library
 
 on:
   push:
+    branches-ignore:
+      - "gh-readonly-queue/*"
   pull_request:
-
+  merge_group:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref || github.run_id }}
+  cancel-in-progress: true
 jobs:
   build_c:
     name: Build C library
