@@ -76,10 +76,3 @@ def compute_output_bias(energy, natoms, rcond=None):
     sys_tynatom = torch.cat(natoms)[:, 2:].cpu()
     energy_coef, _, _, _ = np.linalg.lstsq(sys_tynatom, sys_ener, rcond)
     return energy_coef
-
-
-def process_stat_path(
-    stat_file_dict, stat_file_dir, model_params_dict, descriptor_cls, fitting_cls
-):
-    # TODO: to rewrite
-    return
