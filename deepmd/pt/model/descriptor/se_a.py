@@ -113,7 +113,7 @@ class DescrptSeA(Descriptor):
         """Returns the output dimension of this descriptor."""
         return self.sea.dim_out
 
-    def compute_input_stats(self, merged: list[dict], path: Optional[DPPath] = None):
+    def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
         """Update mean and stddev for descriptor elements."""
         return self.sea.compute_input_stats(merged, path)
 
@@ -370,7 +370,7 @@ class DescrptBlockSeA(DescriptorBlock):
         else:
             raise KeyError(key)
 
-    def compute_input_stats(self, merged: list[dict], path: Optional[DPPath] = None):
+    def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
         """Update mean and stddev for descriptor elements."""
         env_mat_stat = EnvMatStatSeA(self)
         if path is not None:

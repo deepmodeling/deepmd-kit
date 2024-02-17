@@ -289,7 +289,7 @@ class DescrptDPA2(Descriptor):
         """Returns the embedding dimension g2."""
         return self.get_dim_emb()
 
-    def compute_input_stats(self, merged: list[dict], path: Optional[DPPath] = None):
+    def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
         for ii, descrpt in enumerate([self.repinit, self.repformers]):
             merged_tmp = [
                 {

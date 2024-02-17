@@ -266,7 +266,7 @@ class DescrptBlockRepformers(DescriptorBlock):
 
         return g1, g2, h2, rot_mat.view(-1, nloc, self.dim_emb, 3), sw
 
-    def compute_input_stats(self, merged: list[dict], path: Optional[DPPath] = None):
+    def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
         """Update mean and stddev for descriptor elements."""
         env_mat_stat = EnvMatStatSeA(self)
         if path is not None:

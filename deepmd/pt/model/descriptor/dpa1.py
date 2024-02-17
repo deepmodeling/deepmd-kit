@@ -122,7 +122,7 @@ class DescrptDPA1(Descriptor):
     def dim_emb(self):
         return self.get_dim_emb()
 
-    def compute_input_stats(self, merged: list[dict], path: Optional[DPPath] = None):
+    def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
         return self.se_atten.compute_input_stats(merged, path)
 
     @classmethod

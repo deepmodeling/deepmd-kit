@@ -74,7 +74,7 @@ def make_base_descriptor(
             pass
 
         def compute_input_stats(
-            self, merged: list[dict], path: Optional[DPPath] = None
+            self, merged: List[dict], path: Optional[DPPath] = None
         ):
             """Update mean and stddev for descriptor elements."""
             raise NotImplementedError
