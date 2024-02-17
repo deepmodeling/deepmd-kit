@@ -12,7 +12,7 @@ from threading import (
 from typing import (
     List,
 )
-import numpy as np
+
 import h5py
 import torch
 import torch.distributed as dist
@@ -22,12 +22,13 @@ from torch.utils.data import (
     Dataset,
     WeightedRandomSampler,
 )
+from torch.utils.data._utils.collate import (
+    collate_tensor_fn,
+)
 from torch.utils.data.distributed import (
     DistributedSampler,
 )
-from torch.utils.data._utils.collate import (
-    collate_tensor_fn
-)
+
 from deepmd.pt.model.descriptor import (
     Descriptor,
 )
@@ -231,6 +232,7 @@ class BufferedIterator:
             raise StopIteration
         return item
 
+
 def collate_batch(batch):
     example = batch[0]
     result = {}
@@ -242,10 +244,14 @@ def collate_batch(batch):
                 result[key] = None
             elif key == "fid":
                 result[key] = [d[key] for d in batch]
-            elif key == 'type':
-                result['atype'] = collate_tensor_fn([torch.as_tensor(d[key]) for d in batch])
+            elif key == "type":
+                result["atype"] = collate_tensor_fn(
+                    [torch.as_tensor(d[key]) for d in batch]
+                )
             else:
-                result[key] = collate_tensor_fn([torch.as_tensor(d[key]) for d in batch])
+                result[key] = collate_tensor_fn(
+                    [torch.as_tensor(d[key]) for d in batch]
+                )
     return result
 
 
