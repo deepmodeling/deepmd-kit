@@ -290,7 +290,6 @@ class DescrptDPA2(Descriptor):
         return self.get_dim_emb()
 
     def compute_input_stats(self, merged: list[dict], path: Optional[DPPath] = None):
-        sumr, suma, sumn, sumr2, suma2 = [], [], [], [], []
         for ii, descrpt in enumerate([self.repinit, self.repformers]):
             merged_tmp = [
                 {
@@ -299,22 +298,7 @@ class DescrptDPA2(Descriptor):
                 }
                 for item in merged
             ]
-            tmp_stat_dict = descrpt.compute_input_stats(merged_tmp)
-            sumr.append(tmp_stat_dict["sumr"])
-            suma.append(tmp_stat_dict["suma"])
-            sumn.append(tmp_stat_dict["sumn"])
-            sumr2.append(tmp_stat_dict["sumr2"])
-            suma2.append(tmp_stat_dict["suma2"])
-
-        assert all(x is not None for x in [sumr, suma, sumn, sumr2, suma2])
-        for ii, descrpt in enumerate([self.repinit, self.repformers]):
-            stat_dict_ii = {
-                "sumr": sumr[ii],
-                "suma": suma[ii],
-                "sumn": sumn[ii],
-                "sumr2": sumr2[ii],
-                "suma2": suma2[ii],
-            }
+            descrpt.compute_input_stats(merged_tmp)
 
     @classmethod
     def get_data_process_key(cls, config):

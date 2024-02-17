@@ -4,12 +4,10 @@ from typing import (
     Optional,
 )
 
-import numpy as np
 import torch
 
 from deepmd.pt.model.descriptor.descriptor import (
     DescriptorBlock,
-    compute_std,
 )
 from deepmd.pt.model.descriptor.env_mat import (
     prod_env_mat_se_a,
@@ -20,8 +18,8 @@ from deepmd.pt.model.network.network import (
 from deepmd.pt.utils import (
     env,
 )
-from deepmd.pt.utils.nlist import (
-    extend_input_and_build_neighbor_list,
+from deepmd.pt.utils.env_mat_stat import (
+    EnvMatStatSeA,
 )
 from deepmd.pt.utils.utils import (
     get_activation_fn,
@@ -32,9 +30,6 @@ from deepmd.utils.path import (
 
 from .repformer_layer import (
     RepformerLayer,
-)
-from .se_atten import (
-    analyze_descrpt,
 )
 
 mydtype = env.GLOBAL_PT_FLOAT_PRECISION
@@ -273,89 +268,11 @@ class DescrptBlockRepformers(DescriptorBlock):
 
     def compute_input_stats(self, merged: list[dict], path: Optional[DPPath] = None):
         """Update mean and stddev for descriptor elements."""
-        ndescrpt = self.nnei * 4
-        sumr = []
-        suma = []
-        sumn = []
-        sumr2 = []
-        suma2 = []
-        mixed_type = "real_natoms_vec" in merged[0]
-        for system in merged:
-            coord, atype, box, natoms = (
-                system["coord"],
-                system["atype"],
-                system["box"],
-                system["natoms"],
-            )
-            (
-                extended_coord,
-                extended_atype,
-                mapping,
-                nlist,
-            ) = extend_input_and_build_neighbor_list(
-                coord,
-                atype,
-                self.get_rcut(),
-                self.get_sel(),
-                distinguish_types=self.distinguish_types(),
-                box=box,
-            )
-            env_mat, _, _ = prod_env_mat_se_a(
-                extended_coord,
-                nlist,
-                atype,
-                self.mean,
-                self.stddev,
-                self.rcut,
-                self.rcut_smth,
-            )
-            if not mixed_type:
-                sysr, sysr2, sysa, sysa2, sysn = analyze_descrpt(
-                    env_mat.detach().cpu().numpy(), ndescrpt, natoms
-                )
-            else:
-                real_natoms_vec = system["real_natoms_vec"]
-                sysr, sysr2, sysa, sysa2, sysn = analyze_descrpt(
-                    env_mat.detach().cpu().numpy(),
-                    ndescrpt,
-                    real_natoms_vec,
-                    mixed_type=mixed_type,
-                    real_atype=atype.detach().cpu().numpy(),
-                )
-            sumr.append(sysr)
-            suma.append(sysa)
-            sumn.append(sysn)
-            sumr2.append(sysr2)
-            suma2.append(sysa2)
-        sumr = np.sum(sumr, axis=0)
-        suma = np.sum(suma, axis=0)
-        sumn = np.sum(sumn, axis=0)
-        sumr2 = np.sum(sumr2, axis=0)
-        suma2 = np.sum(suma2, axis=0)
-
-        all_davg = []
-        all_dstd = []
-        for type_i in range(self.ntypes):
-            davgunit = [[sumr[type_i] / (sumn[type_i] + 1e-15), 0, 0, 0]]
-            dstdunit = [
-                [
-                    compute_std(sumr2[type_i], sumr[type_i], sumn[type_i], self.rcut),
-                    compute_std(suma2[type_i], suma[type_i], sumn[type_i], self.rcut),
-                    compute_std(suma2[type_i], suma[type_i], sumn[type_i], self.rcut),
-                    compute_std(suma2[type_i], suma[type_i], sumn[type_i], self.rcut),
-                ]
-            ]
-            davg = np.tile(davgunit, [self.nnei, 1])
-            dstd = np.tile(dstdunit, [self.nnei, 1])
-            all_davg.append(davg)
-            all_dstd.append(dstd)
-        self.sumr = sumr
-        self.suma = suma
-        self.sumn = sumn
-        self.sumr2 = sumr2
-        self.suma2 = suma2
+        env_mat_stat = EnvMatStatSeA(self)
+        if path is not None:
+            path = path / env_mat_stat.get_hash()
+        env_mat_stat.load_or_compute_stats(merged, path)
+        mean, stddev = env_mat_stat()
         if not self.set_davg_zero:
-            mean = np.stack(all_davg)
             self.mean.copy_(torch.tensor(mean, device=env.DEVICE))
-        stddev = np.stack(all_dstd)
         self.stddev.copy_(torch.tensor(stddev, device=env.DEVICE))
