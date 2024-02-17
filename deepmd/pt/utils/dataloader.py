@@ -12,7 +12,7 @@ from threading import (
 from typing import (
     List,
 )
-
+import numpy as np
 import h5py
 import torch
 import torch.distributed as dist
@@ -25,7 +25,9 @@ from torch.utils.data import (
 from torch.utils.data.distributed import (
     DistributedSampler,
 )
-
+from torch.utils.data._utils.collate import (
+    collate_tensor_fn
+)
 from deepmd.pt.model.descriptor import (
     Descriptor,
 )
@@ -89,9 +91,6 @@ class DpLoaderSet(Dataset):
             return DeepmdDataSetForLoader(
                 system=system,
                 type_map=model_params["type_map"],
-                rcut=rcut,
-                sel=sel,
-                type_split=type_split,
                 noise_settings=noise_settings,
                 shuffle=shuffle,
             )
@@ -232,40 +231,9 @@ class BufferedIterator:
             raise StopIteration
         return item
 
-
-def collate_tensor_fn(batch):
-    elem = batch[0]
-    if not isinstance(elem, list):
-        out = None
-        if torch.utils.data.get_worker_info() is not None:
-            # If we're in a background process, concatenate directly into a
-            # shared memory tensor to avoid an extra copy
-            numel = sum(x.numel() for x in batch)
-            storage = elem._typed_storage()._new_shared(numel, device=elem.device)
-            out = elem.new(storage).resize_(len(batch), *list(elem.size()))
-        return torch.stack(batch, 0, out=out)
-    else:
-        out_hybrid = []
-        for ii, hybrid_item in enumerate(elem):
-            out = None
-            tmp_batch = [x[ii] for x in batch]
-            if torch.utils.data.get_worker_info() is not None:
-                # If we're in a background process, concatenate directly into a
-                # shared memory tensor to avoid an extra copy
-                numel = sum(x.numel() for x in tmp_batch)
-                storage = hybrid_item._typed_storage()._new_shared(
-                    numel, device=hybrid_item.device
-                )
-                out = hybrid_item.new(storage).resize_(
-                    len(tmp_batch), *list(hybrid_item.size())
-                )
-            out_hybrid.append(torch.stack(tmp_batch, 0, out=out))
-        return out_hybrid
-
-
 def collate_batch(batch):
     example = batch[0]
-    result = example.copy()
+    result = {}
     for key in example.keys():
         if "find_" in key:
             result[key] = batch[0][key]
@@ -274,8 +242,10 @@ def collate_batch(batch):
                 result[key] = None
             elif key == "fid":
                 result[key] = [d[key] for d in batch]
+            elif key == 'type':
+                result['atype'] = collate_tensor_fn([torch.as_tensor(d[key]) for d in batch])
             else:
-                result[key] = collate_tensor_fn([d[key] for d in batch])
+                result[key] = collate_tensor_fn([torch.as_tensor(d[key]) for d in batch])
     return result
 
 

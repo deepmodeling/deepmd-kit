@@ -129,6 +129,15 @@ class DeepmdData:
         self.shuffle_test = shuffle_test
         # set modifier
         self.modifier = modifier
+        # calculate prefix sum for get_item method
+        self.nframes = 0
+        i = 1
+        self.prefix_sum = [0] * (len(self.dirs) + 1)
+        for item in self.dirs:
+            frames = self._get_nframes(item)
+            self.prefix_sum[i] = self.prefix_sum[i - 1] + frames
+            i += 1
+            self.nframes += frames
 
     def add(
         self,
@@ -248,7 +257,25 @@ class DeepmdData:
             return self.test_dir, tmpe.shape[0]
         else:
             return None
+    def get_item(self,index:int) -> dict:
+        """Get a single frame data . The frame is picked from the data system by index.
 
+        Parameters
+        ----------
+        index
+            index of the frame
+        """
+        for i in range(
+            0, len(self.dirs) + 1
+        ):  # note: if different sets can be merged, prefix sum is unused to calculate
+            if index < self.prefix_sum[i]:
+                break
+        frames = self._load_set(self.dirs[i - 1])
+        frame = self._get_subdata(frames, index - self.prefix_sum[i - 1])
+        frame = self.preprocess(frame)
+        frame["fid"] = index
+        return frame
+    
     def get_batch(self, batch_size: int) -> dict:
         """Get a batch of data with `batch_size` frames. The frames are randomly picked from the data system.
 
@@ -439,6 +466,29 @@ class DeepmdData:
             else:
                 ret[kk] = data[kk]
         return ret, idx
+    
+    def _get_nframes(self,set_name:DPPath):
+        # get nframes
+        if not isinstance(set_name, DPPath):
+            set_name = DPPath(set_name)
+        path = set_name / "coord.npy"
+        if self.data_dict["coord"]["high_prec"]:
+            coord = path.load_numpy().astype(GLOBAL_ENER_FLOAT_PRECISION)
+        else:
+            coord = path.load_numpy().astype(GLOBAL_NP_FLOAT_PRECISION)
+        if coord.ndim == 1:
+            coord = coord.reshape([1, -1])
+        nframes = coord.shape[0]
+        return nframes
+    
+    def preprocess(self, data):
+        for kk in self.data_dict.keys():
+            if "find_" in kk:
+                pass
+            else:
+                if self.data_dict[kk]["atomic"]:
+                    data[kk] = data[kk].reshape(-1, self.data_dict[kk]["ndof"])
+        return data
 
     def _load_set(self, set_name: DPPath):
         # get nframes
