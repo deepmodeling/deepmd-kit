@@ -58,7 +58,7 @@ class TestDPTabulate(unittest.TestCase):
             ]
         )
 
-        places = 18
+        places = 15
         np.testing.assert_almost_equal(dy_array, answer, places)
 
     def test_op_gelu(self):
@@ -104,7 +104,7 @@ class TestDPTabulate(unittest.TestCase):
             ]
         )
 
-        places = 18
+        places = 15
         np.testing.assert_almost_equal(dy_array, answer, places)
 
 

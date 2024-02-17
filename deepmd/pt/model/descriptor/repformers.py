@@ -87,7 +87,7 @@ class DescrptBlockRepformers(DescriptorBlock):
             whether or not add an type embedding to seq_input.
             If no seq_input is given, it has no effect.
         """
-        super().__init__(ntypes)
+        super().__init__()
         del type
         self.epsilon = 1e-4  # protection of 1./nnei
         self.rcut = rcut

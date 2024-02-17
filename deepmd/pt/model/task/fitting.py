@@ -38,6 +38,9 @@ from deepmd.pt.utils.env import (
     DEVICE,
     PRECISION_DICT,
 )
+from deepmd.pt.utils.exclude_mask import (
+    AtomExcludeMask,
+)
 from deepmd.pt.utils.plugin import (
     Plugin,
 )
@@ -302,6 +305,7 @@ class GeneralFitting(Fitting):
         distinguish_types: bool = False,
         rcond: Optional[float] = None,
         seed: Optional[int] = None,
+        exclude_types: List[int] = [],
         **kwargs,
     ):
         super().__init__()
@@ -319,6 +323,9 @@ class GeneralFitting(Fitting):
         self.precision = precision
         self.prec = PRECISION_DICT[self.precision]
         self.rcond = rcond
+        self.exclude_types = exclude_types
+
+        self.emask = AtomExcludeMask(self.ntypes, self.exclude_types)
 
         # init constants
         if bias_atom_e is None:
@@ -410,6 +417,7 @@ class GeneralFitting(Fitting):
             "distinguish_types": self.distinguish_types,
             "nets": self.filter_layers.serialize(),
             "rcond": self.rcond,
+            "exclude_types": self.exclude_types,
             "@variables": {
                 "bias_atom_e": to_numpy_array(self.bias_atom_e),
                 "fparam_avg": to_numpy_array(self.fparam_avg),
@@ -417,7 +425,6 @@ class GeneralFitting(Fitting):
                 "aparam_avg": to_numpy_array(self.aparam_avg),
                 "aparam_inv_std": to_numpy_array(self.aparam_inv_std),
             },
-            # "rcond": self.rcond ,
             # "tot_ener_zero": self.tot_ener_zero ,
             # "trainable": self.trainable ,
             # "atom_ener": self.atom_ener ,
@@ -563,7 +570,6 @@ class GeneralFitting(Fitting):
                     atom_property = atom_property + self.bias_atom_e[type_i]
                     atom_property = atom_property * mask.unsqueeze(-1)
                     outs = outs + atom_property  # Shape is [nframes, natoms[0], 1]
-            return {self.var_name: outs.to(env.GLOBAL_PT_FLOAT_PRECISION)}
         else:
             if self.use_tebd:
                 atom_property = (
@@ -579,4 +585,8 @@ class GeneralFitting(Fitting):
                     atom_property = atom_property + self.bias_atom_e[type_i]
                     atom_property = atom_property * mask
                     outs = outs + atom_property  # Shape is [nframes, natoms[0], 1]
-            return {self.var_name: outs.to(env.GLOBAL_PT_FLOAT_PRECISION)}
+        # nf x nloc
+        mask = self.emask(atype)
+        # nf x nloc x nod
+        outs = outs * mask[:, :, None]
+        return {self.var_name: outs.to(env.GLOBAL_PT_FLOAT_PRECISION)}

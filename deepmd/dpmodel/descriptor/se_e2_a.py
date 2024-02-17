@@ -26,13 +26,11 @@ from deepmd.dpmodel.utils import (
     EmbeddingNet,
     EnvMat,
     NetworkCollection,
+    PairExcludeMask,
 )
 
 from .base_descriptor import (
     BaseDescriptor,
-)
-from .exclude_mask import (
-    ExcludeMask,
 )
 
 
@@ -164,7 +162,7 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         self.activation_function = activation_function
         self.precision = precision
         self.spin = spin
-        self.emask = ExcludeMask(self.ntypes, self.exclude_types)
+        self.emask = PairExcludeMask(self.ntypes, self.exclude_types)
 
         in_dim = 1  # not considiering type embedding
         self.embeddings = NetworkCollection(

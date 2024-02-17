@@ -43,6 +43,9 @@ from deepmd.pt.model.network.mlp import (
 from deepmd.pt.model.network.network import (
     TypeFilter,
 )
+from deepmd.pt.utils.exclude_mask import (
+    PairExcludeMask,
+)
 
 
 @Descriptor.register("se_e2_a")
@@ -255,7 +258,7 @@ class DescrptBlockSeA(DescriptorBlock):
         - filter_neuron: Number of neurons in each hidden layers of the embedding net.
         - axis_neuron: Number of columns of the sub-matrix of the embedding matrix.
         """
-        super().__init__(len(sel), exclude_types=exclude_types)
+        super().__init__()
         self.rcut = rcut
         self.rcut_smth = rcut_smth
         self.neuron = neuron
@@ -269,6 +272,7 @@ class DescrptBlockSeA(DescriptorBlock):
         self.old_impl = old_impl
         self.exclude_types = exclude_types
         self.ntypes = len(sel)
+        self.emask = PairExcludeMask(len(sel), exclude_types=exclude_types)
 
         self.sel = sel
         self.sec = torch.tensor(
@@ -440,9 +444,7 @@ class DescrptBlockSeA(DescriptorBlock):
                 [nfnl, 4, self.filter_neuron[-1]], dtype=self.prec, device=env.DEVICE
             )
             # nfnl x nnei
-            exclude_mask = self.build_type_exclude_mask(nlist, extended_atype).view(
-                nfnl, -1
-            )
+            exclude_mask = self.emask(nlist, extended_atype).view(nfnl, -1)
             for ii, ll in enumerate(self.filter_layers.networks):
                 # nfnl x nt
                 mm = exclude_mask[:, self.sec[ii] : self.sec[ii + 1]]
