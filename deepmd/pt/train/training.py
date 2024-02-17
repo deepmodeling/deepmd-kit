@@ -185,9 +185,8 @@ class Trainer:
             model = get_model(deepcopy(_model_params)).to(DEVICE)
             if not model_params.get("resuming", False):
                 model.compute_or_load_stat(
-                    type_map=_model_params["type_map"],
                     sampled=_sampled,
-                    stat_file_path_dict=_stat_file_path,
+                    stat_file_path=_stat_file_path,
                 )
             return model
 

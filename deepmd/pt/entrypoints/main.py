@@ -12,6 +12,7 @@ from typing import (
     Union,
 )
 
+import h5py
 import torch
 import torch.distributed as dist
 import torch.version
@@ -127,8 +128,13 @@ def get_trainer(
         # noise_settings = None
 
         # stat files
-        # TODO: rewrite
-        stat_file_path_single = {"descriptor": "", "fitting": ""}
+        stat_file_path_single = data_dict_single.get("stat_file", None)
+        if (
+            stat_file_path_single is not None
+            and not Path(stat_file_path_single).is_file()
+        ):
+            with h5py.File(stat_file_path_single, "w") as f:
+                pass
 
         # validation and training data
         validation_data_single = DpLoaderSet(

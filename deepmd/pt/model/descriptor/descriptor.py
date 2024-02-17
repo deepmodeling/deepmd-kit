@@ -10,7 +10,6 @@ from typing import (
     Optional,
     Set,
     Tuple,
-    Union,
 )
 
 import numpy as np
@@ -86,31 +85,6 @@ class Descriptor(torch.nn.Module, BaseDescriptor):
         Return a list of statistic names needed, such as "sumr", "suma" or "sumn".
         """
         raise NotImplementedError("data_stat_key is not implemented!")
-
-    def compute_or_load_stat(
-        self,
-        type_map: List[str],
-        sampled=None,
-        stat_file_path: Optional[Union[str, List[str]]] = None,
-    ):
-        """
-        Compute or load the statistics parameters of the descriptor.
-        Calculate and save the mean and standard deviation of the descriptor to `stat_file_path`
-        if `sampled` is not None, otherwise load them from `stat_file_path`.
-
-        Parameters
-        ----------
-        type_map
-            Mapping atom type to the name (str) of the type.
-            For example `type_map[1]` gives the name of the type 1.
-        sampled
-            The sampled data frames from different data systems.
-        stat_file_path
-            The path to the statistics files.
-        """
-        # TODO
-        assert sampled is not None
-        tmp_dict = self.compute_input_stats(sampled, None)
 
     def __new__(cls, *args, **kwargs):
         if cls is Descriptor:

@@ -6,7 +6,6 @@ from typing import (
     Dict,
     List,
     Optional,
-    Union,
 )
 
 import torch
@@ -22,6 +21,9 @@ from deepmd.pt.model.task.ener import (  # noqa # TODO: should import all fittin
 )
 from deepmd.pt.utils.utils import (
     dict_to_device,
+)
+from deepmd.utils.path import (
+    DPPath,
 )
 
 from .base_atomic_model import (
@@ -159,9 +161,8 @@ class DPAtomicModel(torch.nn.Module, BaseAtomicModel):
 
     def compute_or_load_stat(
         self,
-        type_map: Optional[List[str]] = None,
-        sampled=None,
-        stat_file_path_dict: Optional[Dict[str, Union[str, List[str]]]] = None,
+        sampled,
+        stat_file_path: Optional[DPPath] = None,
     ):
         """
         Compute or load the statistics parameters of the model,
@@ -173,20 +174,18 @@ class DPAtomicModel(torch.nn.Module, BaseAtomicModel):
 
         Parameters
         ----------
-        type_map
-            Mapping atom type to the name (str) of the type.
-            For example `type_map[1]` gives the name of the type 1.
         sampled
             The sampled data frames from different data systems.
-        stat_file_path_dict
+        stat_file_path
             The dictionary of paths to the statistics files.
         """
-        if sampled is not None:  # move data to device
-            for data_sys in sampled:
-                dict_to_device(data_sys)
-        self.descriptor.compute_or_load_stat(type_map, sampled, None)
+        for data_sys in sampled:
+            dict_to_device(data_sys)
+        if sampled is None:
+            sampled = []
+        self.descriptor.compute_input_stats(sampled, stat_file_path)
         if self.fitting_net is not None:
-            self.fitting_net.compute_or_load_stat(type_map, sampled, None)
+            self.fitting_net.compute_output_stats(sampled, stat_file_path)
 
     @torch.jit.export
     def get_dim_fparam(self) -> int:

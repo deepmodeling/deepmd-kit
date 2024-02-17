@@ -30,6 +30,9 @@ from deepmd.pt.utils.env import (
 from deepmd.pt.utils.stat import (
     compute_output_bias,
 )
+from deepmd.utils.path import (
+    DPPath,
+)
 
 dtype = env.GLOBAL_PT_FLOAT_PRECISION
 device = env.DEVICE
@@ -150,17 +153,21 @@ class InvarFitting(GeneralFitting):
         """
         return ["bias_atom_e"]
 
-    def compute_output_stats(self, merged):
+    def compute_output_stats(self, merged, stat_file_path: Optional[DPPath] = None):
         energy = [item["energy"] for item in merged]
         mixed_type = "real_natoms_vec" in merged[0]
         if mixed_type:
             input_natoms = [item["real_natoms_vec"] for item in merged]
         else:
             input_natoms = [item["natoms"] for item in merged]
-        bias_atom_e = compute_output_bias(energy, input_natoms, rcond=self.rcond)
-        return {"bias_atom_e": bias_atom_e}
-
-    def init_fitting_stat(self, bias_atom_e=None, **kwargs):
+        if stat_file_path is not None:
+            stat_file_path = stat_file_path / "bias_atom_e"
+        if stat_file_path is not None and stat_file_path.is_file():
+            bias_atom_e = stat_file_path.load_numpy()
+        else:
+            bias_atom_e = compute_output_bias(energy, input_natoms, rcond=self.rcond)
+            if stat_file_path is not None:
+                stat_file_path.save_numpy(bias_atom_e)
         assert all(x is not None for x in [bias_atom_e])
         self.bias_atom_e.copy_(
             torch.tensor(bias_atom_e, device=env.DEVICE).view(
