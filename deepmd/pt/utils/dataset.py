@@ -563,6 +563,9 @@ class DeepmdDataSetForLoader(Dataset):
         self,
         system: str,
         type_map: str,
+        rcut,
+        sel,
+        type_split=True,
         noise_settings=None,
         shuffle=True,
     ):
