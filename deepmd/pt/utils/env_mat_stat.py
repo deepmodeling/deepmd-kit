@@ -133,7 +133,7 @@ class EnvMatStatSeA(EnvMatStat):
             )
             env_mats = {}
 
-            if "real_natoms_vec" in system:
+            if "real_natoms_vec" not in system:
                 end_indexes = torch.cumsum(natoms[0, 2:], 0)
                 start_indexes = torch.cat(
                     [
