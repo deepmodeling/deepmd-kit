@@ -407,6 +407,7 @@ class EnergyFittingNet(InvarFitting):
         use_aparam_as_mask: bool = False,
         spin: Any = None,
         distinguish_types: bool = False,
+        exclude_types: List[int] = [],
         # not used
         seed: Optional[int] = None,
     ):

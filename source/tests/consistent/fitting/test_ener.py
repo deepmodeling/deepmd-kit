@@ -150,7 +150,7 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
         return (
             pt_obj(
                 torch.from_numpy(self.inputs).to(device=PT_DEVICE),
-                torch.from_numpy(self.atype).to(device=PT_DEVICE),
+                torch.from_numpy(self.atype.reshape(1, -1)).to(device=PT_DEVICE),
                 fparam=torch.from_numpy(self.fparam).to(device=PT_DEVICE)
                 if numb_fparam
                 else None,
@@ -169,7 +169,7 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
         ) = self.param
         return dp_obj(
             self.inputs,
-            self.atype,
+            self.atype.reshape(1, -1),
             fparam=self.fparam if numb_fparam else None,
         )["energy"]
 

@@ -985,6 +985,7 @@ class EnerFitting(Fitting):
             "layer_name": self.layer_name,
             "use_aparam_as_mask": self.use_aparam_as_mask,
             "spin": self.spin,
+            "exclude_types": [],
             "nets": self.serialize_network(
                 ntypes=self.ntypes,
                 # TODO: consider type embeddings
