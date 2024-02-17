@@ -132,7 +132,7 @@ class DeepmdData:
         # calculate prefix sum for get_item method
         self.nframes = 0
         i = 1
-        #The prefix sum stores the range of indices contained in each directory, which is needed by get_item method
+        # The prefix sum stores the range of indices contained in each directory, which is needed by get_item method
         self.prefix_sum = [0] * (len(self.dirs) + 1)
         for item in self.dirs:
             frames = self._get_nframes(item)
@@ -484,12 +484,12 @@ class DeepmdData:
         return nframes
 
     def reformat_data_torch(self, data):
-        """modify the data format for the requirements of Torch backend.
+        """Modify the data format for the requirements of Torch backend.
 
         Parameters
         ----------
         data
-            original data 
+            original data
         """
         for kk in self.data_dict.keys():
             if "find_" in kk:
