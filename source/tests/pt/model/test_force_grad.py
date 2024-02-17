@@ -46,7 +46,7 @@ class CheckSymmetry(DeepmdData):
         tmp[:, atom_index, axis_index] += delta
         frames["coord"] = tmp
         frame = self._get_subdata(frames, index - self.prefix_sum[i - 1])
-        frame = self.preprocess(frame)
+        frame = self.reformat_data_torch(frame)
         return frame
 
 

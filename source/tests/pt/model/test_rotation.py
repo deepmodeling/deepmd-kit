@@ -54,7 +54,7 @@ class CheckSymmetry(DeepmdData):
             rotation_matrix, frames["force"].reshape(-1, 3).T
         ).T.reshape(self.nframes, -1)
         frame = self._get_subdata(frames, index - self.prefix_sum[i - 1])
-        frame = self.preprocess(frame)
+        frame = self.reformat_data_torch(frame)
         return frame
 
 
