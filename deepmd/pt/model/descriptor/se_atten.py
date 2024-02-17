@@ -267,7 +267,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
                     self.descriptor.get_rcut(),
                     self.descriptor.rcut_smth,
                 )
-                env_mat = env_mat.view(-1, self.nsel, 4)
+                env_mat = env_mat.view(coord.shape[0], coord.shape[1], self.nsel, 4)
                 env_mats = {}
 
                 if "real_natoms_vec" in system:
@@ -280,10 +280,10 @@ class DescrptBlockSeAtten(DescriptorBlock):
                     )
                     for type_i in range(self.ntypes):
                         dd = env_mat[
-                            :, start_indexes[type_i] : end_indexes[type_i], :
+                            :, start_indexes[type_i] : end_indexes[type_i], :, :
                         ]  # all descriptors for this element
-                        env_mats[f"r_{type_i}"] = dd[:, :1]
-                        env_mats[f"a_{type_i}"] = dd[:, 1:]
+                        env_mats[f"r_{type_i}"] = dd[:, :, :, :1]
+                        env_mats[f"a_{type_i}"] = dd[:, :, :, 1:]
                         yield self.compute_stat(env_mats)
                 else:
                     for frame_item in range(env_mat.shape[0]):

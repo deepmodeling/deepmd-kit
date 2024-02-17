@@ -448,7 +448,7 @@ class DescrptBlockSeA(DescriptorBlock):
                     self.descriptor.get_rcut(),
                     self.descriptor.rcut_smth,
                 )
-                env_mat = env_mat.view(-1, self.nsel, 4)
+                env_mat = env_mat.view(coord.shape[0], coord.shape[1], self.nsel, 4)
                 env_mats = {}
                 end_indexes = torch.cumsum(natoms[0, 2:], 0)
                 start_indexes = torch.cat(
@@ -459,10 +459,10 @@ class DescrptBlockSeA(DescriptorBlock):
                 )
                 for type_i in range(self.ntypes):
                     dd = env_mat[
-                        :, start_indexes[type_i] : end_indexes[type_i], :
+                        :, start_indexes[type_i] : end_indexes[type_i], :, :
                     ]  # all descriptors for this element
-                    env_mats[f"r_{type_i}"] = dd[:, :1]
-                    env_mats[f"a_{type_i}"] = dd[:, 1:]
+                    env_mats[f"r_{type_i}"] = dd[:, :, :, :1]
+                    env_mats[f"a_{type_i}"] = dd[:, :, :, 1:]
                 yield self.compute_stat(env_mats)
 
     def compute_input_stats(self, merged: list[dict], path: Optional[DPPath] = None):
@@ -495,6 +495,7 @@ class DescrptBlockSeA(DescriptorBlock):
                     stds[f"a_{type_i}"],
                 ]
             ]
+            print(type_i, davgunit, dstdunit, avgs, stds)
             davg = np.tile(davgunit, [self.nnei, 1])
             dstd = np.tile(dstdunit, [self.nnei, 1])
             all_davg.append(davg)
