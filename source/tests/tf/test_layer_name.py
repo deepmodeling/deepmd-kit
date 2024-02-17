@@ -67,7 +67,7 @@ class TestModel(tf.test.TestCase):
             item_fitting_param.pop("type", None)
             item_fitting_param.pop("fit_diag", None)
             item_fitting_param["ntypes"] = descrpt.get_ntypes()
-            item_fitting_param["dim_descript"] = descrpt.get_dim_out()
+            item_fitting_param["dim_descrpt"] = descrpt.get_dim_out()
             if item_fitting_type == "ener":
                 fitting_dict[fitting_key] = EnerFitting(
                     **item_fitting_param, uniform_seed=True

@@ -55,7 +55,7 @@ class TestModel(tf.test.TestCase):
             **jdata["model"]["descriptor"],
         )
         jdata["model"]["fitting_net"]["ntypes"] = descrpt.get_ntypes()
-        jdata["model"]["fitting_net"]["dim_descript"] = descrpt.get_dim_out()
+        jdata["model"]["fitting_net"]["dim_descrpt"] = descrpt.get_dim_out()
         fitting = EnerFitting(
             **jdata["model"]["fitting_net"],
         )

@@ -113,7 +113,7 @@ class TestDataLargeBatch(tf.test.TestCase):
         jdata["model"]["descriptor"]["ntypes"] = 2
         descrpt = DescrptSeAtten(**jdata["model"]["descriptor"], uniform_seed=True)
         jdata["model"]["fitting_net"]["ntypes"] = descrpt.get_ntypes()
-        jdata["model"]["fitting_net"]["dim_descript"] = descrpt.get_dim_out()
+        jdata["model"]["fitting_net"]["dim_descrpt"] = descrpt.get_dim_out()
         fitting = EnerFitting(**jdata["model"]["fitting_net"], uniform_seed=True)
         typeebd_param = jdata["model"]["type_embedding"]
         typeebd = TypeEmbedNet(
@@ -310,7 +310,7 @@ class TestDataLargeBatch(tf.test.TestCase):
         jdata["model"]["descriptor"]["stripped_type_embedding"] = True
         descrpt = DescrptSeAtten(**jdata["model"]["descriptor"], uniform_seed=True)
         jdata["model"]["fitting_net"]["ntypes"] = descrpt.get_ntypes()
-        jdata["model"]["fitting_net"]["dim_descript"] = descrpt.get_dim_out()
+        jdata["model"]["fitting_net"]["dim_descrpt"] = descrpt.get_dim_out()
         fitting = EnerFitting(**jdata["model"]["fitting_net"], uniform_seed=True)
         typeebd_param = jdata["model"]["type_embedding"]
         typeebd = TypeEmbedNet(
@@ -507,7 +507,7 @@ class TestDataLargeBatch(tf.test.TestCase):
         jdata["model"]["descriptor"]["attn_layer"] = 0
         descrpt = DescrptSeAtten(**jdata["model"]["descriptor"], uniform_seed=True)
         jdata["model"]["fitting_net"]["ntypes"] = descrpt.get_ntypes()
-        jdata["model"]["fitting_net"]["dim_descript"] = descrpt.get_dim_out()
+        jdata["model"]["fitting_net"]["dim_descrpt"] = descrpt.get_dim_out()
         fitting = EnerFitting(**jdata["model"]["fitting_net"], uniform_seed=True)
         typeebd_param = jdata["model"]["type_embedding"]
         typeebd = TypeEmbedNet(
