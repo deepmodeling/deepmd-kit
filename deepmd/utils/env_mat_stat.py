@@ -135,9 +135,8 @@ class EnvMatStat(ABC):
         if len(self.stats) == 0:
             raise ValueError("The statistics hasn't been computed.")
         for kk, vv in self.stats.items():
-            (path / kk / "number").save(vv.number)
-            (path / kk / "sum").save(vv.sum)
-            (path / kk / "squared_sum").save(vv.squared_sum)
+            path.mkdir(parents=True, exist_ok=True)
+            (path / kk).save_numpy(np.array([vv.number, vv.sum, vv.squared_sum]))
 
     def load_stats(self, path: DPPath) -> None:
         """Load the statistics of the environment matrix.
@@ -150,10 +149,11 @@ class EnvMatStat(ABC):
         if len(self.stats) > 0:
             raise ValueError("The statistics has already been computed.")
         for kk in path.glob("*"):
+            arr = kk.load_numpy()
             self.stats[kk.name] = StatItem(
-                number=(kk / "number").load_numpy().item(),
-                sum=(kk / "sum").load_numpy().item(),
-                squared_sum=(kk / "squared_sum").load_numpy().item(),
+                number=arr[0],
+                sum=arr[1],
+                squared_sum=arr[2],
             )
 
     def load_or_compute_stats(

@@ -65,6 +65,9 @@ from deepmd.pt.utils.multi_task import (
 from deepmd.pt.utils.stat import (
     make_stat_input,
 )
+from deepmd.utils.path import (
+    DPPath,
+)
 from deepmd.utils.summary import SummaryPrinter as BaseSummaryPrinter
 
 log = logging.getLogger(__name__)
@@ -129,12 +132,15 @@ def get_trainer(
 
         # stat files
         stat_file_path_single = data_dict_single.get("stat_file", None)
-        if (
-            stat_file_path_single is not None
-            and not Path(stat_file_path_single).is_file()
-        ):
-            with h5py.File(stat_file_path_single, "w") as f:
-                pass
+        if stat_file_path_single is not None:
+            if Path(stat_file_path_single).is_dir():
+                raise ValueError(
+                    f"stat_file should be a file, not a directory: {stat_file_path_single}"
+                )
+            if not Path(stat_file_path_single).is_file():
+                with h5py.File(stat_file_path_single, "w") as f:
+                    pass
+            stat_file_path_single = DPPath(stat_file_path_single, "a")
 
         # validation and training data
         validation_data_single = DpLoaderSet(
