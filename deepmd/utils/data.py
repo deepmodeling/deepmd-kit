@@ -489,6 +489,7 @@ class DeepmdData:
             else:
                 if self.data_dict[kk]["atomic"]:
                     data[kk] = data[kk].reshape(-1, self.data_dict[kk]["ndof"])
+        data["atype"] = data["type"]
         return data
 
     def _load_set(self, set_name: DPPath):

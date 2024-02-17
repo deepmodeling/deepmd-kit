@@ -255,7 +255,7 @@ class Fitting(torch.nn.Module, BaseFitting):
         # data
         systems = config["training"]["training_data"]["systems"]
         finetune_data = DpLoaderSet(
-            systems, ntest, config["model"], type_split=False, noise_settings=None
+            systems, ntest, config["model"]
         )
         sampled = make_stat_input(finetune_data.systems, finetune_data.dataloaders, 1)
         # map

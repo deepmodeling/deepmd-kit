@@ -12,7 +12,6 @@ from threading import (
 from typing import (
     List,
 )
-
 import h5py
 import torch
 import torch.distributed as dist
@@ -62,8 +61,6 @@ class DpLoaderSet(Dataset):
         batch_size,
         model_params,
         seed=10,
-        type_split=True,
-        noise_settings=None,
         shuffle=True,
     ):
         setup_seed(seed)
@@ -76,23 +73,9 @@ class DpLoaderSet(Dataset):
             log.info(f"Constructing DataLoaders from {len(systems)} systems")
 
         def construct_dataset(system):
-            ### this design requires "rcut" and "sel" in the descriptor
-            ### VERY BAD DESIGN!!!!
-            ### not all descriptors provides these parameter in their constructor
-            if model_params["descriptor"].get("type") != "hybrid":
-                info_dict = Descriptor.get_data_process_key(model_params["descriptor"])
-                rcut = info_dict["rcut"]
-                sel = info_dict["sel"]
-            else:  ### need to remove this
-                rcut = []
-                sel = []
-                for ii in model_params["descriptor"]["list"]:
-                    rcut.append(ii["rcut"])
-                    sel.append(ii["sel"])
             return DeepmdDataSetForLoader(
                 system=system,
                 type_map=model_params["type_map"],
-                noise_settings=noise_settings,
                 shuffle=shuffle,
             )
 
@@ -245,9 +228,7 @@ def collate_batch(batch):
             elif key == "fid":
                 result[key] = [d[key] for d in batch]
             elif key == "type":
-                result["atype"] = collate_tensor_fn(
-                    [torch.as_tensor(d[key]) for d in batch]
-                )
+                continue
             else:
                 result[key] = collate_tensor_fn(
                     [torch.as_tensor(d[key]) for d in batch]

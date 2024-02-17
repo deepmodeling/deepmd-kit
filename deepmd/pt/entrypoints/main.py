@@ -153,16 +153,12 @@ def get_trainer(
             validation_systems,
             validation_dataset_params["batch_size"],
             model_params_single,
-            type_split=type_split,
-            noise_settings=noise_settings,
         )
         if ckpt or finetune_model or has_stat_file_path:
             train_data_single = DpLoaderSet(
                 training_systems,
                 training_dataset_params["batch_size"],
                 model_params_single,
-                type_split=type_split,
-                noise_settings=noise_settings,
             )
             sampled_single = None
         else:
@@ -170,7 +166,6 @@ def get_trainer(
                 training_systems,
                 training_dataset_params["batch_size"],
                 model_params_single,
-                type_split=type_split,
             )
             data_stat_nbatch = model_params_single.get("data_stat_nbatch", 10)
             sampled_single = make_stat_input(
@@ -183,8 +178,6 @@ def get_trainer(
                     training_systems,
                     training_dataset_params["batch_size"],
                     model_params_single,
-                    type_split=type_split,
-                    noise_settings=noise_settings,
                 )
         return (
             train_data_single,
