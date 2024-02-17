@@ -1,7 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
-    Dict,
-    Iterator,
     List,
     Optional,
 )
@@ -26,13 +24,7 @@ from deepmd.pt.utils import (
     env,
 )
 from deepmd.pt.utils.env_mat_stat import (
-    BaseEnvMatStat,
-)
-from deepmd.pt.utils.nlist import (
-    extend_input_and_build_neighbor_list,
-)
-from deepmd.utils.env_mat_stat import (
-    StatItem,
+    EnvMatStatSeA,
 )
 from deepmd.utils.path import (
     DPPath,
@@ -198,105 +190,6 @@ class DescrptBlockSeAtten(DescriptorBlock):
         """Returns the output dimension of embedding."""
         return self.get_dim_emb()
 
-    class EnvMatStat(BaseEnvMatStat):
-        """A class to calculate the statistics of the environment matrix."""
-
-        def __init__(self, descriptor: "DescrptBlockSeAtten"):
-            super().__init__()
-            self.descriptor = descriptor
-            self.ntypes = descriptor.get_ntypes()
-            self.rcut = descriptor.get_rcut()
-            self.rcut_smth = descriptor.rcut_smth
-            self.nsel = descriptor.get_nsel()
-
-        def iter(
-            self, data: List[Dict[str, torch.Tensor]]
-        ) -> Iterator[Dict[str, StatItem]]:
-            """Get the iterator of the environment matrix.
-
-            Parameters
-            ----------
-            data : List[Dict[str, torch.Tensor]]
-                The environment matrix.
-
-            Yields
-            ------
-            Dict[str, StatItem]
-                The statistics of the environment matrix.
-            """
-            zero_mean = torch.zeros(
-                self.ntypes,
-                self.nsel,
-                4,
-                dtype=env.GLOBAL_PT_FLOAT_PRECISION,
-                device=env.DEVICE,
-            )
-            one_stddev = torch.ones(
-                self.ntypes,
-                self.nsel,
-                4,
-                dtype=env.GLOBAL_PT_FLOAT_PRECISION,
-                device=env.DEVICE,
-            )
-            for system in data:
-                coord, atype, box, natoms = (
-                    system["coord"],
-                    system["atype"],
-                    system["box"],
-                    system["natoms"],
-                )
-                (
-                    extended_coord,
-                    extended_atype,
-                    mapping,
-                    nlist,
-                ) = extend_input_and_build_neighbor_list(
-                    coord,
-                    atype,
-                    self.rcut,
-                    self.descriptor.get_sel(),
-                    distinguish_types=self.descriptor.distinguish_types(),
-                    box=box,
-                )
-                env_mat, _, _ = prod_env_mat_se_a(
-                    extended_coord,
-                    nlist,
-                    atype,
-                    zero_mean,
-                    one_stddev,
-                    self.descriptor.get_rcut(),
-                    self.descriptor.rcut_smth,
-                )
-                env_mat = env_mat.view(coord.shape[0], coord.shape[1], self.nsel, 4)
-                env_mats = {}
-
-                if "real_natoms_vec" in system:
-                    end_indexes = torch.cumsum(natoms[0, 2:], 0)
-                    start_indexes = torch.cat(
-                        [
-                            torch.zeros(1, dtype=torch.int32, device=env.DEVICE),
-                            end_indexes[:-1],
-                        ]
-                    )
-                    for type_i in range(self.ntypes):
-                        dd = env_mat[
-                            :, start_indexes[type_i] : end_indexes[type_i], :, :
-                        ]  # all descriptors for this element
-                        env_mats[f"r_{type_i}"] = dd[:, :, :, :1]
-                        env_mats[f"a_{type_i}"] = dd[:, :, :, 1:]
-                        yield self.compute_stat(env_mats)
-                else:
-                    for frame_item in range(env_mat.shape[0]):
-                        dd_ff = env_mat[frame_item]
-                        atype_frame = atype[frame_item]
-                        for type_i in range(self.ntypes):
-                            type_idx = atype_frame == type_i
-                            dd = dd_ff[type_idx]
-                            dd = np.reshape(dd, [-1, 4])  # typen_atoms * nnei, 4
-                            env_mats[f"r_{type_i}"] = dd[:, :1]
-                            env_mats[f"a_{type_i}"] = dd[:, 1:]
-                            yield self.compute_stat(env_mats)
-
     def compute_input_stats(self, merged: list[dict], path: Optional[DPPath] = None):
         """Update mean and stddev for descriptor elements."""
         if path is not None:
@@ -311,7 +204,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
                     "distinguish_types": self.distinguish_types(),
                 }
             )
-        env_mat_stat = self.EnvMatStat(self)
+        env_mat_stat = EnvMatStatSeA(self)
         env_mat_stat.load_or_compute_stats(merged, path)
         avgs = env_mat_stat.get_avg()
         stds = env_mat_stat.get_std()
