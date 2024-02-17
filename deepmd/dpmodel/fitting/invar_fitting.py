@@ -290,8 +290,6 @@ class InvarFitting(NativeOP, BaseFitting):
         data = copy.deepcopy(data)
         variables = data.pop("@variables")
         nets = data.pop("nets")
-        data.pop("var_name")
-        data.pop("dim_out")
         obj = cls(**data)
         for kk in variables.keys():
             obj[kk] = variables[kk]
@@ -432,3 +430,10 @@ class EnergyFittingNet(InvarFitting):
             spin=spin,
             distinguish_types=distinguish_types,
         )
+
+    @classmethod
+    def deserialize(cls, data: dict) -> "InvarFitting":
+        data = copy.deepcopy(data)
+        data.pop("var_name")
+        data.pop("dim_out")
+        return super().deserialize(data)

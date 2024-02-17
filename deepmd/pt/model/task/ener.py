@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import copy
 import logging
 from typing import (
     List,
@@ -234,6 +235,13 @@ class EnergyFittingNet(InvarFitting):
         fitting_type = type_name
         assert fitting_type in ["ener"]
         return f"stat_file_fitting_ener_ntypes{ntypes}.npz"
+
+    @classmethod
+    def deserialize(cls, data: dict) -> "GeneralFitting":
+        data = copy.deepcopy(data)
+        data.pop("var_name")
+        data.pop("dim_out")
+        return super().deserialize(data)
 
 
 @Fitting.register("direct_force")
