@@ -496,7 +496,6 @@ class DescrptBlockSeA(DescriptorBlock):
                     stds[f"a_{type_i}"],
                 ]
             ]
-            print(type_i, davgunit, dstdunit, avgs, stds)
             davg = np.tile(davgunit, [self.nnei, 1])
             dstd = np.tile(dstdunit, [self.nnei, 1])
             all_davg.append(davg)
