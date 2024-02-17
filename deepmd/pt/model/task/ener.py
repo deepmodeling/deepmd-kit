@@ -196,7 +196,7 @@ class EnergyFittingNet(InvarFitting):
     def __init__(
         self,
         ntypes: int,
-        embedding_width: int,
+        dim_descrpt: int,
         neuron: List[int] = [128, 128, 128],
         bias_atom_e: Optional[torch.Tensor] = None,
         resnet_dt: bool = True,
@@ -210,7 +210,7 @@ class EnergyFittingNet(InvarFitting):
         super().__init__(
             "energy",
             ntypes,
-            embedding_width,
+            dim_descrpt,
             1,
             neuron=neuron,
             bias_atom_e=bias_atom_e,

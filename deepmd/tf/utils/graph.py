@@ -356,9 +356,9 @@ def get_fitting_net_nodes_from_graph_def(
     """
     if suffix != "":
         fitting_net_pattern = (
-            FITTING_NET_PATTERN.replace("/idt", suffix + "/idt")
-            .replace("/bias", suffix + "/bias")
-            .replace("/matrix", suffix + "/matrix")
+            FITTING_NET_PATTERN.replace("/(idt)", suffix + "/(idt)")
+            .replace("/(bias)", suffix + "/(bias)")
+            .replace("/(matrix)", suffix + "/(matrix)")
         )
     else:
         fitting_net_pattern = FITTING_NET_PATTERN

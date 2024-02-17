@@ -59,6 +59,8 @@ __all__ = [
 class CommonTest(ABC):
     data: ClassVar[dict]
     """Arguments data."""
+    addtional_data: ClassVar[dict] = {}
+    """Additional data that will not be checked."""
     tf_class: ClassVar[Optional[type]]
     """TensorFlow model class."""
     dp_class: ClassVar[Optional[type]]
@@ -89,7 +91,7 @@ class CommonTest(ABC):
             base = Argument("arg", dict, sub_fields=self.args)
             data = base.normalize_value(self.data, trim_pattern="_*")
             base.check_value(data, strict=True)
-        return cls(**data)
+        return cls(**data, **self.addtional_data)
 
     @abstractmethod
     def build_tf(self, obj: Any, suffix: str) -> Tuple[list, dict]:

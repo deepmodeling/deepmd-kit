@@ -7,7 +7,7 @@ from typing import (
 
 import numpy as np
 
-from deepmd.dpmodel.descriptor.se_e2_a import DescrptSeA as DescrptSeADP
+from deepmd.dpmodel.fitting.invar_fitting import EnergyFittingNet as EnerFittingDP
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
 )
@@ -19,131 +19,131 @@ from ..common import (
     parameterized,
 )
 from .common import (
-    DescriptorTest,
+    FittingTest,
 )
 
 if INSTALLED_PT:
-    from deepmd.pt.model.descriptor.se_a import DescrptSeA as DescrptSeAPT
+    import torch
+
+    from deepmd.pt.model.task.ener import EnergyFittingNet as EnerFittingPT
+    from deepmd.pt.utils.env import DEVICE as PT_DEVICE
 else:
-    DescrptSeAPT = None
+    EnerFittingPT = object
 if INSTALLED_TF:
-    from deepmd.tf.descriptor.se_a import DescrptSeA as DescrptSeATF
+    from deepmd.tf.fit.ener import EnerFitting as EnerFittingTF
 else:
-    DescrptSeATF = None
+    EnerFittingTF = object
 from deepmd.utils.argcheck import (
-    descrpt_se_a_args,
+    fitting_ener,
 )
 
 
 @parameterized(
     (True, False),  # resnet_dt
-    (True, False),  # type_one_side
-    ([], [[0, 1]]),  # excluded_types
+    ("float64", "float32"),  # precision
+    (True, False),  # distinguish_types
 )
-class TestEner(CommonTest, DescriptorTest, unittest.TestCase):
+class TestEner(CommonTest, FittingTest, unittest.TestCase):
     @property
     def data(self) -> dict:
         (
             resnet_dt,
-            type_one_side,
-            excluded_types,
+            precision,
+            distinguish_types,
         ) = self.param
         return {
-            "sel": [10, 10],
-            "rcut_smth": 5.80,
-            "rcut": 6.00,
-            "neuron": [6, 12, 24],
-            "axis_neuron": 3,
+            "neuron": [5, 5, 5],
             "resnet_dt": resnet_dt,
-            "type_one_side": type_one_side,
-            "exclude_types": excluded_types,
-            "seed": 1145141919810,
+            "precision": precision,
+            "seed": 20240217,
         }
+
+    @property
+    def skip_tf(self) -> bool:
+        (
+            resnet_dt,
+            precision,
+            distinguish_types,
+        ) = self.param
+        # TODO: distinguish_types
+        return not distinguish_types or CommonTest.skip_pt
 
     @property
     def skip_pt(self) -> bool:
         (
             resnet_dt,
-            type_one_side,
-            excluded_types,
+            precision,
+            distinguish_types,
         ) = self.param
-        return not type_one_side or excluded_types != [] or CommonTest.skip_pt
+        # TODO: float32 has bug
+        return precision == "float32" or CommonTest.skip_pt
 
     @property
     def skip_dp(self) -> bool:
         (
             resnet_dt,
-            type_one_side,
-            excluded_types,
+            precision,
+            distinguish_types,
         ) = self.param
-        return not type_one_side or excluded_types != [] or CommonTest.skip_dp
+        # TODO: float32 has bug
+        return precision == "float32" or CommonTest.skip_dp
 
-    tf_class = DescrptSeATF
-    dp_class = DescrptSeADP
-    pt_class = DescrptSeAPT
-    args = descrpt_se_a_args()
+    tf_class = EnerFittingTF
+    dp_class = EnerFittingDP
+    pt_class = EnerFittingPT
+    args = fitting_ener()
 
     def setUp(self):
         CommonTest.setUp(self)
 
         self.ntypes = 2
-        self.coords = np.array(
-            [
-                12.83,
-                2.56,
-                2.18,
-                12.09,
-                2.87,
-                2.74,
-                00.25,
-                3.32,
-                1.68,
-                3.36,
-                3.00,
-                1.81,
-                3.51,
-                2.51,
-                2.60,
-                4.27,
-                3.22,
-                1.56,
-            ],
-            dtype=GLOBAL_NP_FLOAT_PRECISION,
-        )
-        self.atype = np.array([0, 1, 1, 0, 1, 1], dtype=np.int32)
-        self.box = np.array(
-            [13.0, 0.0, 0.0, 0.0, 13.0, 0.0, 0.0, 0.0, 13.0],
-            dtype=GLOBAL_NP_FLOAT_PRECISION,
-        )
         self.natoms = np.array([6, 6, 2, 4], dtype=np.int32)
+        self.inputs = np.ones((1, 6, 20), dtype=GLOBAL_NP_FLOAT_PRECISION)
+        self.atype = np.array([0, 1, 1, 0, 1, 1], dtype=np.int32)
+        # inconsistent if not sorted
+        self.atype.sort()
+
+    @property
+    def addtional_data(self) -> dict:
+        (
+            resnet_dt,
+            precision,
+            distinguish_types,
+        ) = self.param
+        return {
+            "ntypes": self.ntypes,
+            "dim_descrpt": self.inputs.shape[-1],
+            "distinguish_types": distinguish_types,
+        }
 
     def build_tf(self, obj: Any, suffix: str) -> Tuple[list, dict]:
-        return self.build_tf_descriptor(
+        return self.build_tf_fitting(
             obj,
+            self.inputs.ravel(),
             self.natoms,
-            self.coords,
             self.atype,
-            self.box,
             suffix,
         )
 
-    def eval_dp(self, dp_obj: Any) -> Any:
-        return self.eval_dp_descriptor(
-            dp_obj,
-            self.natoms,
-            self.coords,
-            self.atype,
-            self.box,
+    def eval_pt(self, pt_obj: Any) -> Any:
+        return (
+            pt_obj(
+                torch.from_numpy(self.inputs).to(device=PT_DEVICE),
+                torch.from_numpy(self.atype).to(device=PT_DEVICE),
+            )["energy"]
+            .detach()
+            .cpu()
+            .numpy()
         )
 
-    def eval_pt(self, pt_obj: Any) -> Any:
-        return self.eval_pt_descriptor(
-            pt_obj,
-            self.natoms,
-            self.coords,
+    def eval_dp(self, dp_obj: Any) -> Any:
+        return dp_obj(
+            self.inputs,
             self.atype,
-            self.box,
-        )
+        )["energy"]
 
     def extract_ret(self, ret: Any, backend) -> Tuple[np.ndarray, ...]:
-        return (ret[0],)
+        if backend == self.RefBackend.TF:
+            # shape is not same
+            ret = ret[0].reshape(-1, self.natoms[0], 1)
+        return (ret,)

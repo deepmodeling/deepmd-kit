@@ -204,35 +204,35 @@ class Fitting(PluginVariant):
         variables : dict
             The input variables
         """
-        embedding_net_variables = {}
-        embeddings = NetworkCollection.deserialize(data)
-        for ii in range(embeddings.ntypes**embeddings.ndim):
+        fitting_net_variables = {}
+        fittings = NetworkCollection.deserialize(data)
+        for ii in range(fittings.ntypes**fittings.ndim):
             net_idx = []
             rest_ii = ii
-            for _ in range(embeddings.ndim):
-                net_idx.append(rest_ii % embeddings.ntypes)
-                rest_ii //= embeddings.ntypes
+            for _ in range(fittings.ndim):
+                net_idx.append(rest_ii % fittings.ntypes)
+                rest_ii //= fittings.ntypes
             net_idx = tuple(net_idx)
-            if embeddings.ndim == 0:
+            if fittings.ndim == 0:
                 key = ""
-            elif embeddings.ndim == 1:
-                key = "_type_" + key[5:]
+            elif fittings.ndim == 1:
+                key = "_type_" + str(net_idx[0])
             else:
-                raise ValueError(f"Invalid ndim: {embeddings.ndim}")
-            network = embeddings[net_idx]
+                raise ValueError(f"Invalid ndim: {fittings.ndim}")
+            network = fittings[net_idx]
             assert network is not None
             for layer_idx, layer in enumerate(network.layers):
                 if layer_idx == len(network.layers) - 1:
                     layer_name = "final_layer"
                 else:
                     layer_name = f"layer_{layer_idx}"
-                embedding_net_variables[f"{layer_name}{key}{suffix}/matrix"] = layer.w
-                embedding_net_variables[f"{layer_name}{key}{suffix}/bias"] = layer.b
+                fitting_net_variables[f"{layer_name}{key}{suffix}/matrix"] = layer.w
+                fitting_net_variables[f"{layer_name}{key}{suffix}/bias"] = layer.b
                 if layer.idt is not None:
-                    embedding_net_variables[
+                    fitting_net_variables[
                         f"{layer_name}{key}{suffix}/idt"
                     ] = layer.idt.reshape(1, -1)
                 else:
                     # prevent keyError
-                    embedding_net_variables[f"{layer_name}{key}{suffix}/idt_"] = 0.0
-        return embedding_net_variables
+                    fitting_net_variables[f"{layer_name}{key}{suffix}/idt"] = 0.0
+        return fitting_net_variables

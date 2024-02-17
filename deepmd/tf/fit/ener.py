@@ -55,9 +55,7 @@ from deepmd.tf.utils.spin import (
 )
 
 if TYPE_CHECKING:
-    from deepmd.tf.descriptor import (
-        Descriptor,
-    )
+    pass
 
 log = logging.getLogger(__name__)
 
@@ -136,7 +134,8 @@ class EnerFitting(Fitting):
 
     def __init__(
         self,
-        descrpt: "Descriptor",
+        ntypes: int,
+        dim_descrpt: int,
         neuron: List[int] = [120, 120, 120],
         resnet_dt: bool = True,
         numb_fparam: int = 0,
@@ -156,8 +155,8 @@ class EnerFitting(Fitting):
     ) -> None:
         """Constructor."""
         # model param
-        self.ntypes = descrpt.get_ntypes()
-        self.dim_descrpt = descrpt.get_dim_out()
+        self.ntypes = ntypes
+        self.dim_descrpt = dim_descrpt
         self.use_aparam_as_mask = use_aparam_as_mask
         # args = ()\
         #        .add('numb_fparam',      int,    default = 0)\
@@ -944,8 +943,9 @@ class EnerFitting(Fitting):
             The deserialized model
         """
         fitting = cls(**data)
-        fitting.fitting_net_variables = cls.from_dp_variables(
-            data["@variables"]["networks"]
+        fitting.fitting_net_variables = cls.deserialize_network(
+            data["nets"],
+            suffix=suffix,
         )
         fitting.bias_atom_e = data["@variables"]["bias_atom_e"]
         if fitting.numb_fparam > 0:
@@ -1004,10 +1004,4 @@ class EnerFitting(Fitting):
                 "aparam_inv_std": self.aparam_inv_std,
             },
         }
-        if self.numb_fparam > 0:
-            data["@variables"]["fparam_avg"] = self.fparam_avg
-            data["@variables"]["fparam_inv_std"] = self.fparam_inv_std
-        if self.numb_aparam > 0:
-            data["@variables"]["aparam_avg"] = self.aparam_avg
-            data["@variables"]["aparam_inv_std"] = self.aparam_inv_std
         return data

@@ -138,7 +138,7 @@ class InvarFitting(NativeOP, BaseFitting):
             raise NotImplementedError("use_aparam_as_mask is not implemented")
         if layer_name is not None:
             raise NotImplementedError("layer_name is not implemented")
-        if atom_ener is not None:
+        if atom_ener is not None and atom_ener != []:
             raise NotImplementedError("atom_ener is not implemented")
 
         self.var_name = var_name
@@ -152,6 +152,10 @@ class InvarFitting(NativeOP, BaseFitting):
         self.rcond = rcond
         self.tot_ener_zero = tot_ener_zero
         self.trainable = trainable
+        if self.trainable is None:
+            self.trainable = [True for ii in range(len(self.neuron) + 1)]
+        if isinstance(self.trainable, bool):
+            self.trainable = [self.trainable] * (len(self.neuron) + 1)
         self.atom_ener = atom_ener
         self.activation_function = activation_function
         self.precision = precision
@@ -281,6 +285,8 @@ class InvarFitting(NativeOP, BaseFitting):
         data = copy.deepcopy(data)
         variables = data.pop("@variables")
         nets = data.pop("nets")
+        data.pop("var_name")
+        data.pop("dim_out")
         obj = cls(**data)
         for kk in variables.keys():
             obj[kk] = variables[kk]
@@ -289,14 +295,14 @@ class InvarFitting(NativeOP, BaseFitting):
 
     def call(
         self,
-        descriptor: np.array,
-        atype: np.array,
-        gr: Optional[np.array] = None,
-        g2: Optional[np.array] = None,
-        h2: Optional[np.array] = None,
-        fparam: Optional[np.array] = None,
-        aparam: Optional[np.array] = None,
-    ) -> Dict[str, np.array]:
+        descriptor: np.ndarray,
+        atype: np.ndarray,
+        gr: Optional[np.ndarray] = None,
+        g2: Optional[np.ndarray] = None,
+        h2: Optional[np.ndarray] = None,
+        fparam: Optional[np.ndarray] = None,
+        aparam: Optional[np.ndarray] = None,
+    ) -> Dict[str, np.ndarray]:
         """Calculate the fitting.
 
         Parameters
@@ -392,6 +398,8 @@ class EnergyFittingNet(InvarFitting):
         use_aparam_as_mask: bool = False,
         spin: Any = None,
         distinguish_types: bool = False,
+        # not used
+        seed: Optional[int] = None,
     ):
         super().__init__(
             var_name="energy",
