@@ -11,17 +11,14 @@ import numpy as np
 from deepmd.dpmodel import (
     DEFAULT_PRECISION,
 )
+from .general_fitting import GeneralFitting
 from deepmd.dpmodel.output_def import (
     fitting_check_output,
 )
 
-from .general_fitting import (
-    GeneralFitting,
-)
-
 
 @fitting_check_output
-class InvarFitting(GeneralFitting):
+class DipoleFitting(GeneralFitting):
     r"""Fitting the energy (or a rotationally invariant porperty of `dim_out`) of the system. The force and the virial can also be trained.
 
     Lets take the energy fitting task as an example.
@@ -64,6 +61,8 @@ class InvarFitting(GeneralFitting):
             The dimension of the input descriptor.
     dim_out
             The dimension of the output fit property.
+    dim_rot_mat : int
+        The dimension of rotation matrix, m1.
     neuron
             Number of neurons :math:`N` in each hidden layer of the fitting net
     resnet_dt
@@ -104,6 +103,7 @@ class InvarFitting(GeneralFitting):
         ntypes: int,
         dim_descrpt: int,
         dim_out: int,
+        dim_rot_mat: int,
         neuron: List[int] = [120, 120, 120],
         resnet_dt: bool = True,
         numb_fparam: int = 0,
@@ -118,6 +118,7 @@ class InvarFitting(GeneralFitting):
         use_aparam_as_mask: bool = False,
         spin: Any = None,
         distinguish_types: bool = False,
+        old_impl = False,
     ):
         # seed, uniform_seed are not included
         if tot_ener_zero:
@@ -133,39 +134,39 @@ class InvarFitting(GeneralFitting):
         if atom_ener is not None:
             raise NotImplementedError("atom_ener is not implemented")
 
+        self.dim_rot_mat = dim_rot_mat
         super().__init__(
-            var_name=var_name,
-            ntypes=ntypes,
-            dim_descrpt=dim_descrpt,
-            dim_out=dim_out,
-            neuron=neuron,
-            resnet_dt=resnet_dt,
-            numb_fparam=numb_fparam,
-            numb_aparam=numb_aparam,
-            rcond=rcond,
-            tot_ener_zero=tot_ener_zero,
-            trainable=trainable,
-            atom_ener=atom_ener,
-            activation_function=activation_function,
-            precision=precision,
-            layer_name=layer_name,
-            use_aparam_as_mask=use_aparam_as_mask,
-            spin=spin,
-            distinguish_types=distinguish_types,
+            var_name = var_name,
+            ntypes = ntypes,
+            dim_descrpt = dim_descrpt,
+            dim_out = dim_out,
+            neuron = neuron,
+            resnet_dt = resnet_dt,
+            numb_fparam = numb_fparam,
+            numb_aparam = numb_aparam,
+            rcond = rcond,
+            tot_ener_zero = tot_ener_zero,
+            trainable = trainable,
+            atom_ener = atom_ener,
+            activation_function = activation_function,
+            precision = precision,
+            layer_name = layer_name,
+            use_aparam_as_mask = use_aparam_as_mask,
+            spin = spin,
+            distinguish_types = distinguish_types,
         )
+        self.old_impl = False
 
     def _net_out_dim(self):
         """Set the FittingNet output dim."""
-        return self.dim_out
+        return self.dim_rot_mat
 
-    def compute_output_stats(self, merged):
-        """Update the output bias for fitting net."""
-        raise NotImplementedError
-
-    def init_fitting_stat(self, result_dict):
-        """Initialize the model bias by the statistics."""
-        raise NotImplementedError
-
+    def serialize(self) -> dict:
+        data = super().serialize()
+        data["dim_rot_mat"] = self.dim_rot_mat
+        data["old_impl"] = self.old_impl
+        return data
+    
     def call(
         self,
         descriptor: np.array,
@@ -199,4 +200,16 @@ class InvarFitting(GeneralFitting):
             The atomic parameter. shape: nf x nloc x nap. nap being `numb_aparam`
 
         """
-        return self._call_common(descriptor, atype, gr, g2, h2, fparam, aparam)
+        nframes, nloc, _ = descriptor.shape
+        assert gr is not None, "Must provide the rotation matrix for dipole fitting."
+        # (nframes, nloc, m1)
+        out = self._call_common(descriptor, atype, gr, g2, h2, fparam, aparam)[
+            self.var_name
+        ]
+        # (nframes * nloc, 1, m1)
+        out = out.reshape(-1, 1, self.dim_rot_mat)
+        # (nframes * nloc, m1, 3)
+        gr = gr.reshape(nframes * nloc, -1, 3)
+        # (nframes, nloc, 3)
+        out = np.einsum('bim,bmj->bij', out, gr).squeeze(-2).reshape(nframes, nloc, 3)
+        return {self.var_name: out}

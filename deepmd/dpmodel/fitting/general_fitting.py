@@ -31,7 +31,7 @@ from .base_fitting import (
 
 
 class GeneralFitting(NativeOP, BaseFitting):
-    """General fitting class.
+    r"""General fitting class.
 
     Parameters
     ----------
@@ -187,6 +187,34 @@ class GeneralFitting(NativeOP, BaseFitting):
         """
         return []
 
+    def __setitem__(self, key, value):
+        if key in ["bias_atom_e"]:
+            self.bias_atom_e = value
+        elif key in ["fparam_avg"]:
+            self.fparam_avg = value
+        elif key in ["fparam_inv_std"]:
+            self.fparam_inv_std = value
+        elif key in ["aparam_avg"]:
+            self.aparam_avg = value
+        elif key in ["aparam_inv_std"]:
+            self.aparam_inv_std = value
+        else:
+            raise KeyError(key)
+
+    def __getitem__(self, key):
+        if key in ["bias_atom_e"]:
+            return self.bias_atom_e
+        elif key in ["fparam_avg"]:
+            return self.fparam_avg
+        elif key in ["fparam_inv_std"]:
+            return self.fparam_inv_std
+        elif key in ["aparam_avg"]:
+            return self.aparam_avg
+        elif key in ["aparam_inv_std"]:
+            return self.aparam_inv_std
+        else:
+            raise KeyError(key)
+        
     def serialize(self) -> dict:
         """Serialize the fitting to dict."""
         return {
