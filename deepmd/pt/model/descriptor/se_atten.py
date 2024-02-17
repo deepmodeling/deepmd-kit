@@ -302,6 +302,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         if path is not None:
             path = path / get_hash(
                 {
+                    "type": "se_a",
                     "ntypes": self.ntypes,
                     "rcut": round(self.rcut, 2),
                     "rcut_smth": round(self.rcut_smth, 2),
