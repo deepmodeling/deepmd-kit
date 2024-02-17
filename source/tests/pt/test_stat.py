@@ -172,17 +172,13 @@ class TestDataset(unittest.TestCase):
         stat_dict = my_en.compute_input_stats(sampled)
         my_en.mean = my_en.mean
         my_en.stddev = my_en.stddev
-        self.assertTrue(
-            np.allclose(
-                self.dp_d.davg.reshape([-1]), my_en.mean.cpu().reshape([-1]), rtol=0.01
-            )
+        np.testing.assert_allclose(
+            self.dp_d.davg.reshape([-1]), my_en.mean.cpu().reshape([-1]), rtol=0.01
         )
-        self.assertTrue(
-            np.allclose(
-                self.dp_d.dstd.reshape([-1]),
-                my_en.stddev.cpu().reshape([-1]),
-                rtol=0.01,
-            )
+        np.testing.assert_allclose(
+            self.dp_d.dstd.reshape([-1]),
+            my_en.stddev.cpu().reshape([-1]),
+            rtol=0.01,
         )
 
 
