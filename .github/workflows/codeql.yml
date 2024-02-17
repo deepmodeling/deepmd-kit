@@ -2,6 +2,8 @@ name: "CodeQL"
 
 on:
   push:
+    branches-ignore:
+      - "gh-readonly-queue/*"
   pull_request:
   schedule:
     - cron: '45 2 * * 2'
