@@ -130,15 +130,10 @@ class DeepmdData:
         # set modifier
         self.modifier = modifier
         # calculate prefix sum for get_item method
-        self.nframes = 0
-        i = 1
+        frames_list = [self._get_nframes(item) for item in self.dirs]
+        self.nframes = np.sum(frames_list)
         # The prefix sum stores the range of indices contained in each directory, which is needed by get_item method
-        self.prefix_sum = [0] * (len(self.dirs) + 1)
-        for item in self.dirs:
-            frames = self._get_nframes(item)
-            self.prefix_sum[i] = self.prefix_sum[i - 1] + frames
-            i += 1
-            self.nframes += frames
+        self.prefix_sum = np.cumsum(frames_list).tolist()
 
     def add(
         self,
@@ -268,12 +263,12 @@ class DeepmdData:
             index of the frame
         """
         for i in range(
-            0, len(self.dirs) + 1
+            0, len(self.dirs) 
         ):  # note: if different sets can be merged, prefix sum is unused to calculate
             if index < self.prefix_sum[i]:
                 break
-        frames = self._load_set(self.dirs[i - 1])
-        frame = self._get_subdata(frames, index - self.prefix_sum[i - 1])
+        frames = self._load_set(self.dirs[i])
+        frame = self._get_subdata(frames, index - self.prefix_sum[i])
         frame = self.reformat_data_torch(frame)
         frame["fid"] = index
         return frame
