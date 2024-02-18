@@ -197,6 +197,7 @@ class DescriptorBlock(torch.nn.Module, ABC):
             if hasattr(self, "mean") and not resume:
                 # in case of change params during resume
                 base_env = EnvMatStatSeA(base_class)
+                base_env.stats = base_class.stats
                 for kk in base_class.get_stats():
                     base_env.stats[kk] += self.get_stats()[kk]
                 mean, stddev = base_env()
