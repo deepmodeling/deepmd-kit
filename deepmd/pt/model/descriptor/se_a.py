@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     ClassVar,
+    Dict,
     List,
     Optional,
     Tuple,
@@ -393,7 +394,7 @@ class DescrptBlockSeA(DescriptorBlock):
             self.mean.copy_(torch.tensor(mean, device=env.DEVICE))
         self.stddev.copy_(torch.tensor(stddev, device=env.DEVICE))
 
-    def get_stats(self) -> dict[str, StatItem]:
+    def get_stats(self) -> Dict[str, StatItem]:
         """Get the statistics of the descriptor."""
         if self.stats is None:
             raise RuntimeError(

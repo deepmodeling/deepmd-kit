@@ -6,6 +6,7 @@ from abc import (
 )
 from typing import (
     Callable,
+    Dict,
     List,
     Optional,
 )
@@ -184,7 +185,7 @@ class DescriptorBlock(torch.nn.Module, ABC):
         """Update mean and stddev for DescriptorBlock elements."""
         raise NotImplementedError
 
-    def get_stats(self) -> dict[str, StatItem]:
+    def get_stats(self) -> Dict[str, StatItem]:
         """Get the statistics of the descriptor."""
         raise NotImplementedError
 
