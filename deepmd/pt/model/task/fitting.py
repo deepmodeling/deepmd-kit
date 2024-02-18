@@ -266,12 +266,12 @@ class Fitting(torch.nn.Module, BaseFitting):
         idx_type_map = sorter[
             np.searchsorted(old_type_map, new_type_map, sorter=sorter)
         ]
-        mixed_type = np.all([i.mixed_type for i in finetune_data.systems])
+        data_mixed_types = np.all([i.mixed_type for i in finetune_data.systems])
         numb_type = len(old_type_map)
         type_numbs, energy_ground_truth, energy_predict = [], [], []
         for test_data in sampled:
             nframes = test_data["energy"].shape[0]
-            if mixed_type:
+            if data_mixed_types:
                 atype = test_data["atype"].detach().cpu().numpy()
             else:
                 atype = test_data["atype"][0].detach().cpu().numpy()
@@ -279,7 +279,7 @@ class Fitting(torch.nn.Module, BaseFitting):
                 [i.item() in idx_type_map for i in list(set(atype.reshape(-1)))]
             ).all(), "Some types are not in 'type_map'!"
             energy_ground_truth.append(test_data["energy"].cpu().numpy())
-            if mixed_type:
+            if data_mixed_types:
                 type_numbs.append(
                     np.array(
                         [(atype == i).sum(axis=-1) for i in idx_type_map],

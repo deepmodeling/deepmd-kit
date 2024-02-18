@@ -198,7 +198,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         sumn = []
         sumr2 = []
         suma2 = []
-        data_mixed_type = "real_natoms_vec" in merged[0]
+        data_mixed_types = "real_natoms_vec" in merged[0]
         for system in merged:
             coord, atype, box, natoms = (
                 system["coord"],
@@ -228,7 +228,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
                 self.rcut,
                 self.rcut_smth,
             )
-            if not data_mixed_type:
+            if not data_mixed_types:
                 sysr, sysr2, sysa, sysa2, sysn = analyze_descrpt(
                     env_mat.detach().cpu().numpy(), self.ndescrpt, natoms
                 )
@@ -238,7 +238,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
                     env_mat.detach().cpu().numpy(),
                     self.ndescrpt,
                     real_natoms_vec,
-                    mixed_type=True,
+                    mixed_types=data_mixed_types,
                     real_atype=atype.detach().cpu().numpy(),
                 )
             sumr.append(sysr)
@@ -375,10 +375,10 @@ class DescrptBlockSeAtten(DescriptorBlock):
         )
 
 
-def analyze_descrpt(matrix, ndescrpt, natoms, mixed_type=False, real_atype=None):
+def analyze_descrpt(matrix, ndescrpt, natoms, mixed_types=False, real_atype=None):
     """Collect avg, square avg and count of descriptors in a batch."""
     ntypes = natoms.shape[1] - 2
-    if not mixed_type:
+    if not mixed_types:
         sysr = []
         sysa = []
         sysn = []

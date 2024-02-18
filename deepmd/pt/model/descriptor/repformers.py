@@ -282,7 +282,7 @@ class DescrptBlockRepformers(DescriptorBlock):
         sumn = []
         sumr2 = []
         suma2 = []
-        data_mixed_type = "real_natoms_vec" in merged[0]
+        data_mixed_types = "real_natoms_vec" in merged[0]
         for system in merged:
             coord, atype, box, natoms = (
                 system["coord"],
@@ -312,7 +312,7 @@ class DescrptBlockRepformers(DescriptorBlock):
                 self.rcut,
                 self.rcut_smth,
             )
-            if not data_mixed_type:
+            if not data_mixed_types:
                 sysr, sysr2, sysa, sysa2, sysn = analyze_descrpt(
                     env_mat.detach().cpu().numpy(), ndescrpt, natoms
                 )
@@ -322,7 +322,7 @@ class DescrptBlockRepformers(DescriptorBlock):
                     env_mat.detach().cpu().numpy(),
                     ndescrpt,
                     real_natoms_vec,
-                    mixed_type=True,
+                    mixed_types=True,
                     real_atype=atype.detach().cpu().numpy(),
                 )
             sumr.append(sysr)
