@@ -15,6 +15,12 @@ from deepmd.dpmodel.output_def import (
     fitting_check_output,
 )
 
+from deepmd.dpmodel.utils import (
+    AtomExcludeMask,
+    FittingNet,
+    NetworkCollection,
+)
+
 from .general_fitting import (
     GeneralFitting,
 )
@@ -118,6 +124,7 @@ class InvarFitting(GeneralFitting):
         use_aparam_as_mask: bool = False,
         spin: Any = None,
         distinguish_types: bool = False,
+        exclude_types: List[int] = [],
     ):
         # seed, uniform_seed are not included
         if tot_ener_zero:
@@ -152,7 +159,11 @@ class InvarFitting(GeneralFitting):
             use_aparam_as_mask=use_aparam_as_mask,
             spin=spin,
             distinguish_types=distinguish_types,
+            exclude_types = exclude_types,
         )
+        if self.spin is not None:
+            raise NotImplementedError("spin is not supported")
+        self.emask = AtomExcludeMask(self.ntypes, exclude_types=self.exclude_types)
 
     def _net_out_dim(self):
         """Set the FittingNet output dim."""
@@ -199,4 +210,6 @@ class InvarFitting(GeneralFitting):
             The atomic parameter. shape: nf x nloc x nap. nap being `numb_aparam`
 
         """
+
         return self._call_common(descriptor, atype, gr, g2, h2, fparam, aparam)
+
