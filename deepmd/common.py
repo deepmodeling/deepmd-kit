@@ -5,6 +5,9 @@ import os
 import platform
 import shutil
 import warnings
+from hashlib import (
+    sha1,
+)
 from pathlib import (
     Path,
 )
@@ -299,3 +302,14 @@ def symlink_prefix_files(old_prefix: str, new_prefix: str):
             os.symlink(os.path.relpath(ori_ff, os.path.dirname(new_ff)), new_ff)
         else:
             shutil.copyfile(ori_ff, new_ff)
+
+
+def get_hash(obj) -> str:
+    """Get hash of object.
+
+    Parameters
+    ----------
+    obj
+        object to hash
+    """
+    return sha1(json.dumps(obj).encode("utf-8")).hexdigest()

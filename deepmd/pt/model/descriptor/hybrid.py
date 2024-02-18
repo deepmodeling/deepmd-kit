@@ -13,6 +13,9 @@ from deepmd.pt.model.network.network import (
     Identity,
     Linear,
 )
+from deepmd.utils.path import (
+    DPPath,
+)
 
 
 @DescriptorBlock.register("hybrid")
@@ -154,9 +157,8 @@ class DescrptBlockHybrid(DescriptorBlock):
         else:
             raise NotImplementedError
 
-    def compute_input_stats(self, merged):
+    def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
         """Update mean and stddev for descriptor elements."""
-        sumr, suma, sumn, sumr2, suma2 = [], [], [], [], []
         for ii, descrpt in enumerate(self.descriptor_list):
             merged_tmp = [
                 {
@@ -165,33 +167,7 @@ class DescrptBlockHybrid(DescriptorBlock):
                 }
                 for item in merged
             ]
-            tmp_stat_dict = descrpt.compute_input_stats(merged_tmp)
-            sumr.append(tmp_stat_dict["sumr"])
-            suma.append(tmp_stat_dict["suma"])
-            sumn.append(tmp_stat_dict["sumn"])
-            sumr2.append(tmp_stat_dict["sumr2"])
-            suma2.append(tmp_stat_dict["suma2"])
-        return {
-            "sumr": sumr,
-            "suma": suma,
-            "sumn": sumn,
-            "sumr2": sumr2,
-            "suma2": suma2,
-        }
-
-    def init_desc_stat(
-        self, sumr=None, suma=None, sumn=None, sumr2=None, suma2=None, **kwargs
-    ):
-        assert all(x is not None for x in [sumr, suma, sumn, sumr2, suma2])
-        for ii, descrpt in enumerate(self.descriptor_list):
-            stat_dict_ii = {
-                "sumr": sumr[ii],
-                "suma": suma[ii],
-                "sumn": sumn[ii],
-                "sumr2": sumr2[ii],
-                "suma2": suma2[ii],
-            }
-            descrpt.init_desc_stat(**stat_dict_ii)
+            descrpt.compute_input_stats(merged_tmp, path)
 
     def forward(
         self,

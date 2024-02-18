@@ -1,4 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from typing import (
+    List,
+    Optional,
+)
+
 import torch
 import torch.nn as nn
 
@@ -12,6 +17,9 @@ from deepmd.pt.model.network.network import (
 )
 from deepmd.pt.utils import (
     env,
+)
+from deepmd.utils.path import (
+    DPPath,
 )
 
 
@@ -154,11 +162,8 @@ class DescrptGaussianLcc(Descriptor):
         """Returns the output dimension of pair representation."""
         return self.pair_embed_dim
 
-    def compute_input_stats(self, merged):
+    def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
         """Update mean and stddev for descriptor elements."""
-        return [], [], [], [], []
-
-    def init_desc_stat(self, sumr, suma, sumn, sumr2, suma2, **kwargs):
         pass
 
     def forward(

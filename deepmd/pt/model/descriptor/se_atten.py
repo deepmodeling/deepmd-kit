@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    Dict,
     List,
     Optional,
 )
@@ -9,7 +10,6 @@ import torch
 
 from deepmd.pt.model.descriptor.descriptor import (
     DescriptorBlock,
-    compute_std,
 )
 from deepmd.pt.model.descriptor.env_mat import (
     prod_env_mat_se_a,
@@ -21,8 +21,14 @@ from deepmd.pt.model.network.network import (
 from deepmd.pt.utils import (
     env,
 )
-from deepmd.pt.utils.nlist import (
-    extend_input_and_build_neighbor_list,
+from deepmd.pt.utils.env_mat_stat import (
+    EnvMatStatSeA,
+)
+from deepmd.utils.env_mat_stat import (
+    StatItem,
+)
+from deepmd.utils.path import (
+    DPPath,
 )
 
 
@@ -135,6 +141,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         )
         filter_layers.append(one)
         self.filter_layers = torch.nn.ModuleList(filter_layers)
+        self.stats = None
 
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
@@ -191,101 +198,25 @@ class DescrptBlockSeAtten(DescriptorBlock):
         """Returns the output dimension of embedding."""
         return self.get_dim_emb()
 
-    def compute_input_stats(self, merged):
+    def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
         """Update mean and stddev for descriptor elements."""
-        sumr = []
-        suma = []
-        sumn = []
-        sumr2 = []
-        suma2 = []
-        data_mixed_types = "real_natoms_vec" in merged[0]
-        for system in merged:
-            coord, atype, box, natoms = (
-                system["coord"],
-                system["atype"],
-                system["box"],
-                system["natoms"],
-            )
-            (
-                extended_coord,
-                extended_atype,
-                mapping,
-                nlist,
-            ) = extend_input_and_build_neighbor_list(
-                coord,
-                atype,
-                self.get_rcut(),
-                self.get_sel(),
-                mixed_types=self.mixed_types(),
-                box=box,
-            )
-            env_mat, _, _ = prod_env_mat_se_a(
-                extended_coord,
-                nlist,
-                atype,
-                self.mean,
-                self.stddev,
-                self.rcut,
-                self.rcut_smth,
-            )
-            if not data_mixed_types:
-                sysr, sysr2, sysa, sysa2, sysn = analyze_descrpt(
-                    env_mat.detach().cpu().numpy(), self.ndescrpt, natoms
-                )
-            else:
-                real_natoms_vec = system["real_natoms_vec"]
-                sysr, sysr2, sysa, sysa2, sysn = analyze_descrpt(
-                    env_mat.detach().cpu().numpy(),
-                    self.ndescrpt,
-                    real_natoms_vec,
-                    mixed_types=data_mixed_types,
-                    real_atype=atype.detach().cpu().numpy(),
-                )
-            sumr.append(sysr)
-            suma.append(sysa)
-            sumn.append(sysn)
-            sumr2.append(sysr2)
-            suma2.append(sysa2)
-        sumr = np.sum(sumr, axis=0)
-        suma = np.sum(suma, axis=0)
-        sumn = np.sum(sumn, axis=0)
-        sumr2 = np.sum(sumr2, axis=0)
-        suma2 = np.sum(suma2, axis=0)
-        return {
-            "sumr": sumr,
-            "suma": suma,
-            "sumn": sumn,
-            "sumr2": sumr2,
-            "suma2": suma2,
-        }
-
-    def init_desc_stat(self, sumr, suma, sumn, sumr2, suma2, **kwargs):
-        all_davg = []
-        all_dstd = []
-        for type_i in range(self.ntypes):
-            davgunit = [[sumr[type_i] / (sumn[type_i] + 1e-15), 0, 0, 0]]
-            dstdunit = [
-                [
-                    compute_std(sumr2[type_i], sumr[type_i], sumn[type_i], self.rcut),
-                    compute_std(suma2[type_i], suma[type_i], sumn[type_i], self.rcut),
-                    compute_std(suma2[type_i], suma[type_i], sumn[type_i], self.rcut),
-                    compute_std(suma2[type_i], suma[type_i], sumn[type_i], self.rcut),
-                ]
-            ]
-            davg = np.tile(davgunit, [self.nnei, 1])
-            dstd = np.tile(dstdunit, [self.nnei, 1])
-            all_davg.append(davg)
-            all_dstd.append(dstd)
-        self.sumr = sumr
-        self.suma = suma
-        self.sumn = sumn
-        self.sumr2 = sumr2
-        self.suma2 = suma2
+        env_mat_stat = EnvMatStatSeA(self)
+        if path is not None:
+            path = path / env_mat_stat.get_hash()
+        env_mat_stat.load_or_compute_stats(merged, path)
+        self.stats = env_mat_stat.stats
+        mean, stddev = env_mat_stat()
         if not self.set_davg_zero:
-            mean = np.stack(all_davg)
             self.mean.copy_(torch.tensor(mean, device=env.DEVICE))
-        stddev = np.stack(all_dstd)
         self.stddev.copy_(torch.tensor(stddev, device=env.DEVICE))
+
+    def get_stats(self) -> Dict[str, StatItem]:
+        """Get the statistics of the descriptor."""
+        if self.stats is None:
+            raise RuntimeError(
+                "The statistics of the descriptor has not been computed."
+            )
+        return self.stats
 
     def forward(
         self,

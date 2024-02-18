@@ -18,6 +18,9 @@ from deepmd.pt.utils.nlist import (
     build_multiple_neighbor_list,
     get_multiple_nlist_key,
 )
+from deepmd.utils.path import (
+    DPPath,
+)
 
 from .repformers import (
     DescrptBlockRepformers,
@@ -292,8 +295,7 @@ class DescrptDPA2(Descriptor):
         """Returns the embedding dimension g2."""
         return self.get_dim_emb()
 
-    def compute_input_stats(self, merged):
-        sumr, suma, sumn, sumr2, suma2 = [], [], [], [], []
+    def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
         for ii, descrpt in enumerate([self.repinit, self.repformers]):
             merged_tmp = [
                 {
@@ -302,68 +304,7 @@ class DescrptDPA2(Descriptor):
                 }
                 for item in merged
             ]
-            tmp_stat_dict = descrpt.compute_input_stats(merged_tmp)
-            sumr.append(tmp_stat_dict["sumr"])
-            suma.append(tmp_stat_dict["suma"])
-            sumn.append(tmp_stat_dict["sumn"])
-            sumr2.append(tmp_stat_dict["sumr2"])
-            suma2.append(tmp_stat_dict["suma2"])
-        return {
-            "sumr": sumr,
-            "suma": suma,
-            "sumn": sumn,
-            "sumr2": sumr2,
-            "suma2": suma2,
-        }
-
-    def init_desc_stat(
-        self, sumr=None, suma=None, sumn=None, sumr2=None, suma2=None, **kwargs
-    ):
-        assert all(x is not None for x in [sumr, suma, sumn, sumr2, suma2])
-        for ii, descrpt in enumerate([self.repinit, self.repformers]):
-            stat_dict_ii = {
-                "sumr": sumr[ii],
-                "suma": suma[ii],
-                "sumn": sumn[ii],
-                "sumr2": sumr2[ii],
-                "suma2": suma2[ii],
-            }
-            descrpt.init_desc_stat(**stat_dict_ii)
-
-    @classmethod
-    def get_stat_name(
-        cls,
-        ntypes,
-        type_name,
-        repinit_rcut=None,
-        repinit_rcut_smth=None,
-        repinit_nsel=None,
-        repformer_rcut=None,
-        repformer_rcut_smth=None,
-        repformer_nsel=None,
-        **kwargs,
-    ):
-        """
-        Get the name for the statistic file of the descriptor.
-        Usually use the combination of descriptor name, rcut, rcut_smth and sel as the statistic file name.
-        """
-        descrpt_type = type_name
-        assert descrpt_type in ["dpa2"]
-        assert all(
-            x is not None
-            for x in [
-                repinit_rcut,
-                repinit_rcut_smth,
-                repinit_nsel,
-                repformer_rcut,
-                repformer_rcut_smth,
-                repformer_nsel,
-            ]
-        )
-        return (
-            f"stat_file_descrpt_dpa2_repinit_rcut{repinit_rcut:.2f}_smth{repinit_rcut_smth:.2f}_sel{repinit_nsel}"
-            f"_repformer_rcut{repformer_rcut:.2f}_smth{repformer_rcut_smth:.2f}_sel{repformer_nsel}_ntypes{ntypes}.npz"
-        )
+            descrpt.compute_input_stats(merged_tmp)
 
     @classmethod
     def get_data_process_key(cls, config):
