@@ -262,11 +262,7 @@ class DeepmdData:
         index
             index of the frame
         """
-        for i in range(
-            0, len(self.dirs)
-        ):  # note: if different sets can be merged, prefix sum is unused to calculate
-            if index < self.prefix_sum[i]:
-                break
+        i = bisect.bisect_right(self.prefix_sum, index)
         frames = self._load_set(self.dirs[i])
         frame = self._get_subdata(frames, index - self.prefix_sum[i])
         frame = self.reformat_data_torch(frame)
