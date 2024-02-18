@@ -158,7 +158,7 @@ class DipoleFitting(GeneralFitting):
             use_aparam_as_mask=use_aparam_as_mask,
             spin=spin,
             distinguish_types=distinguish_types,
-            exclude_types = exclude_types,
+            exclude_types=exclude_types,
         )
         self.old_impl = False
 
