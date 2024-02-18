@@ -146,11 +146,11 @@ class DPAtomicModel(BaseAtomicModel):
 
     def get_dim_fparam(self) -> int:
         """Get the number (dimension) of frame parameters of this atomic model."""
-        return 0
+        return self.fitting.get_dim_fparam()
 
     def get_dim_aparam(self) -> int:
         """Get the number (dimension) of atomic parameters of this atomic model."""
-        return 0
+        return self.fitting.get_dim_aparam()
 
     def get_sel_type(self) -> List[int]:
         """Get the selected atom types of this model.
@@ -159,7 +159,7 @@ class DPAtomicModel(BaseAtomicModel):
         to the result of the model.
         If returning an empty list, all atom types are selected.
         """
-        return []
+        return self.fitting.get_sel_type()
 
     def is_aparam_nall(self) -> bool:
         """Check whether the shape of atomic parameters is (nframes, nall, ndim).
