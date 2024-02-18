@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import bisect
 import logging
 from typing import (
     List,
@@ -8,7 +9,6 @@ from typing import (
 )
 
 import numpy as np
-import bisect
 
 from deepmd.env import (
     GLOBAL_ENER_FLOAT_PRECISION,
