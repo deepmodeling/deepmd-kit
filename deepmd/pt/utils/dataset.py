@@ -32,7 +32,7 @@ class DeepmdDataSetForLoader(Dataset):
         self._data_system.add("virial", 9, atomic=False, must=False, high_prec=False)
         self.mixed_type = self._data_system.mixed_type
         self._ntypes = self._data_system.get_ntypes()
-        self._natoms = self._data_system.natoms
+        self._natoms = self._data_system.get_natoms()
         self._natoms_vec = self._data_system.get_natoms_vec(self._ntypes)
 
     def __len__(self):
