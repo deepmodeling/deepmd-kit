@@ -240,6 +240,7 @@ class EnergyFittingNet(InvarFitting):
         data.pop("dim_out")
         return super().deserialize(data)
 
+
 @Fitting.register("direct_force")
 @Fitting.register("direct_force_ener")
 @fitting_check_output
