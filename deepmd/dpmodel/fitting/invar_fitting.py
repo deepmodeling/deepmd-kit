@@ -14,11 +14,8 @@ from deepmd.dpmodel import (
 from deepmd.dpmodel.output_def import (
     fitting_check_output,
 )
-
 from deepmd.dpmodel.utils import (
     AtomExcludeMask,
-    FittingNet,
-    NetworkCollection,
 )
 
 from .general_fitting import (
@@ -159,7 +156,7 @@ class InvarFitting(GeneralFitting):
             use_aparam_as_mask=use_aparam_as_mask,
             spin=spin,
             distinguish_types=distinguish_types,
-            exclude_types = exclude_types,
+            exclude_types=exclude_types,
         )
         if self.spin is not None:
             raise NotImplementedError("spin is not supported")
@@ -210,6 +207,4 @@ class InvarFitting(GeneralFitting):
             The atomic parameter. shape: nf x nloc x nap. nap being `numb_aparam`
 
         """
-
         return self._call_common(descriptor, atype, gr, g2, h2, fparam, aparam)
-
