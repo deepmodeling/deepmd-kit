@@ -83,17 +83,6 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
         # TODO: float32 has bug
         return precision == "float32" or CommonTest.skip_pt
 
-    @property
-    def skip_dp(self) -> bool:
-        (
-            resnet_dt,
-            precision,
-            distinguish_types,
-            numb_fparam,
-        ) = self.param
-        # TODO: float32 has bug
-        return precision == "float32" or CommonTest.skip_dp
-
     tf_class = EnerFittingTF
     dp_class = EnerFittingDP
     pt_class = EnerFittingPT
@@ -178,3 +167,19 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
             # shape is not same
             ret = ret[0].reshape(-1, self.natoms[0], 1)
         return (ret,)
+
+    @property
+    def rtol(self) -> float:
+        """Relative tolerance for comparing the return value."""
+        (
+            resnet_dt,
+            precision,
+            distinguish_types,
+            numb_fparam,
+        ) = self.param
+        if precision == "float64":
+            return 1e-10
+        elif precision == "float32":
+            return 1e-6
+        else:
+            raise ValueError(f"Unknown precision: {precision}")
