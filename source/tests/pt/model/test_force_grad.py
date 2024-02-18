@@ -81,7 +81,7 @@ class TestForceGrad(unittest.TestCase):
         self.dpdatasystem = CheckSymmetry(
             sys_path=systems[system_index], type_map=type_map
         )
-        self.origin_batch = self.dpdatasystem.get_item(batch_index)
+        self.origin_batch = self.dpdatasystem.get_item_torch(batch_index)
 
     @unittest.skip("it can be replaced by autodiff")
     def test_force_grad(self, threshold=1e-2, delta0=1e-6, seed=20):

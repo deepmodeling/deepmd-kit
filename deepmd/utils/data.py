@@ -8,6 +8,7 @@ from typing import (
 )
 
 import numpy as np
+import bisect
 
 from deepmd.env import (
     GLOBAL_ENER_FLOAT_PRECISION,
@@ -254,7 +255,7 @@ class DeepmdData:
         else:
             return None
 
-    def get_item(self, index: int) -> dict:
+    def get_item_torch(self, index: int) -> dict:
         """Get a single frame data . The frame is picked from the data system by index. The index is coded across all the sets.
 
         Parameters

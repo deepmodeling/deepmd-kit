@@ -84,7 +84,7 @@ class TestRotation(unittest.TestCase):
         systems = self.config["training"]["training_data"]["systems"]
         type_map = self.config["model"]["type_map"]
         dpdatasystem = CheckSymmetry(sys_path=systems[system_index], type_map=type_map)
-        self.origin_batch = dpdatasystem.get_item(batch_index)
+        self.origin_batch = dpdatasystem.get_item_torch(batch_index)
         self.rotated_batch = dpdatasystem.get_rotation(batch_index, self.rotation)
 
     def test_rotation(self):
