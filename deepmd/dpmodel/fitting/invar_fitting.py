@@ -14,9 +14,6 @@ from deepmd.dpmodel import (
 from deepmd.dpmodel.output_def import (
     fitting_check_output,
 )
-from deepmd.dpmodel.utils import (
-    AtomExcludeMask,
-)
 
 from .general_fitting import (
     GeneralFitting,
@@ -158,7 +155,6 @@ class InvarFitting(GeneralFitting):
             distinguish_types=distinguish_types,
             exclude_types=exclude_types,
         )
-        self.emask = AtomExcludeMask(self.ntypes, exclude_types=self.exclude_types)
 
     def _net_out_dim(self):
         """Set the FittingNet output dim."""
