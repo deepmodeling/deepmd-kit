@@ -158,8 +158,6 @@ class InvarFitting(GeneralFitting):
             distinguish_types=distinguish_types,
             exclude_types=exclude_types,
         )
-        if self.spin is not None:
-            raise NotImplementedError("spin is not supported")
         self.emask = AtomExcludeMask(self.ntypes, exclude_types=self.exclude_types)
 
     def _net_out_dim(self):

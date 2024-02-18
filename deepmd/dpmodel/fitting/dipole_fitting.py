@@ -121,6 +121,7 @@ class DipoleFitting(GeneralFitting):
         use_aparam_as_mask: bool = False,
         spin: Any = None,
         distinguish_types: bool = False,
+        exclude_types: List[int] = [],
         old_impl=False,
     ):
         # seed, uniform_seed are not included
@@ -157,6 +158,7 @@ class DipoleFitting(GeneralFitting):
             use_aparam_as_mask=use_aparam_as_mask,
             spin=spin,
             distinguish_types=distinguish_types,
+            exclude_types = exclude_types,
         )
         self.old_impl = False
 

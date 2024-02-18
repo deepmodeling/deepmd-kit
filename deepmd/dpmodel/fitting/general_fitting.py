@@ -97,6 +97,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         use_aparam_as_mask: bool = False,
         spin: Any = None,
         distinguish_types: bool = False,
+        exclude_types: List[int] = [],
     ):
         self.var_name = var_name
         self.ntypes = ntypes
@@ -116,6 +117,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         self.use_aparam_as_mask = use_aparam_as_mask
         self.spin = spin
         self.distinguish_types = distinguish_types
+        self.exclude_types = exclude_types
         if self.spin is not None:
             raise NotImplementedError("spin is not supported")
 
@@ -230,6 +232,7 @@ class GeneralFitting(NativeOP, BaseFitting):
             "activation_function": self.activation_function,
             "precision": self.precision,
             "distinguish_types": self.distinguish_types,
+            "exclude_types": self.exclude_types,
             "nets": self.nets.serialize(),
             "@variables": {
                 "bias_atom_e": self.bias_atom_e,
