@@ -7,7 +7,7 @@ from typing import (
 
 import numpy as np
 
-from deepmd.dpmodel.fitting.invar_fitting import EnergyFittingNet as EnerFittingDP
+from deepmd.dpmodel.fitting.ener_fitting import EnergyFittingNet as EnerFittingDP
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
 )
