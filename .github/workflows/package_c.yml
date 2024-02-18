@@ -3,7 +3,7 @@ name: Build C library
 on:
   push:
     branches-ignore:
-      - "gh-readonly-queue/*"
+      - "gh-readonly-queue/**"
   pull_request:
   merge_group:
 concurrency:
