@@ -255,7 +255,7 @@ class DeepmdData:
             return None
 
     def get_item(self, index: int) -> dict:
-        """Get a single frame data . The frame is picked from the data system by index.
+        """Get a single frame data . The frame is picked from the data system by index. The index is coded across all the sets.
 
         Parameters
         ----------
