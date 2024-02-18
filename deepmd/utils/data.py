@@ -263,7 +263,7 @@ class DeepmdData:
             index of the frame
         """
         for i in range(
-            0, len(self.dirs) 
+            0, len(self.dirs)
         ):  # note: if different sets can be merged, prefix sum is unused to calculate
             if index < self.prefix_sum[i]:
                 break
