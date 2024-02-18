@@ -1,5 +1,13 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from typing import (
+    Optional,
+)
+
 import torch
+
+from deepmd.utils.path import (
+    DPPath,
+)
 
 
 class BaseModel(torch.nn.Module):
@@ -9,9 +17,8 @@ class BaseModel(torch.nn.Module):
 
     def compute_or_load_stat(
         self,
-        type_map=None,
-        sampled=None,
-        stat_file_path=None,
+        sampled,
+        stat_file_path: Optional[DPPath] = None,
     ):
         """
         Compute or load the statistics parameters of the model,
@@ -23,9 +30,6 @@ class BaseModel(torch.nn.Module):
 
         Parameters
         ----------
-        type_map
-            Mapping atom type to the name (str) of the type.
-            For example `type_map[1]` gives the name of the type 1.
         sampled
             The sampled data frames from different data systems.
         stat_file_path
