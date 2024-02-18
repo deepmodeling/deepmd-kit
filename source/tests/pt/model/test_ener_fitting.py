@@ -114,9 +114,6 @@ class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
             [True],
             [True, False],
         ):
-            if mixed_types:
-                # notice old impl only supports not mixed_types
-                continue
             ft0 = EnergyFittingNet(
                 self.nt,
                 dd.dim_out,

@@ -368,7 +368,7 @@ class GeneralFitting(Fitting):
         net_dim_out = self._net_out_dim()
         if self.old_impl:
             filter_layers = []
-            for type_i in range(self.ntypes):
+            for type_i in range(self.ntypes if not self.mixed_types else 1):
                 bias_type = 0.0
                 one = ResidualDeep(
                     type_i,
@@ -559,12 +559,9 @@ class GeneralFitting(Fitting):
             device=env.DEVICE,
         )  # jit assertion
         if self.old_impl:
-            outs = torch.zeros_like(atype).unsqueeze(-1)  # jit assertion
             assert self.filter_layers_old is not None
             if self.mixed_types:
-                atom_property = self.filter_layers_old[0](xx) + self.bias_atom_e[
-                    atype
-                ].unsqueeze(-1)
+                atom_property = self.filter_layers_old[0](xx) + self.bias_atom_e[atype]
                 outs = outs + atom_property  # Shape is [nframes, natoms[0], 1]
             else:
                 for type_i, filter_layer in enumerate(self.filter_layers_old):
