@@ -103,6 +103,10 @@ class GeneralFitting(NativeOP, BaseFitting):
         self.rcond = rcond
         self.tot_ener_zero = tot_ener_zero
         self.trainable = trainable
+        if self.trainable is None:
+            self.trainable = [True for ii in range(len(self.neuron) + 1)]
+        if isinstance(self.trainable, bool):
+            self.trainable = [self.trainable] * (len(self.neuron) + 1)
         self.atom_ener = atom_ener
         self.activation_function = activation_function
         self.precision = precision

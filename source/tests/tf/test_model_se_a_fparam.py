@@ -52,7 +52,8 @@ class TestModel(tf.test.TestCase):
 
         jdata["model"]["descriptor"].pop("type", None)
         descrpt = DescrptSeA(**jdata["model"]["descriptor"], uniform_seed=True)
-        jdata["model"]["fitting_net"]["descrpt"] = descrpt
+        jdata["model"]["fitting_net"]["ntypes"] = descrpt.get_ntypes()
+        jdata["model"]["fitting_net"]["dim_descrpt"] = descrpt.get_dim_out()
         fitting = EnerFitting(**jdata["model"]["fitting_net"], uniform_seed=True)
         # descrpt = DescrptSeA(jdata['model']['descriptor'])
         # fitting = EnerFitting(jdata['model']['fitting_net'], descrpt)

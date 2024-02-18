@@ -426,8 +426,8 @@ class GeneralFitting(Fitting):
             # "spin": self.spin ,
             ## NOTICE:  not supported by far
             "tot_ener_zero": False,
-            "trainable": True,
-            "atom_ener": None,
+            "trainable": [True] * (len(self.neuron) + 1),
+            "atom_ener": [],
             "layer_name": None,
             "use_aparam_as_mask": False,
             "spin": None,

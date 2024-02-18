@@ -54,6 +54,7 @@ def get_zbl_model(model_params):
     fitting_net["ntypes"] = descriptor.get_ntypes()
     fitting_net["distinguish_types"] = descriptor.distinguish_types()
     fitting_net["embedding_width"] = descriptor.get_dim_out()
+    fitting_net["dim_descrpt"] = descriptor.get_dim_out()
     grad_force = "direct" not in fitting_net["type"]
     if not grad_force:
         fitting_net["out_dim"] = descriptor.get_dim_emb()
@@ -89,6 +90,7 @@ def get_model(model_params):
     fitting_net["ntypes"] = descriptor.get_ntypes()
     fitting_net["distinguish_types"] = descriptor.distinguish_types()
     fitting_net["embedding_width"] = descriptor.get_dim_out()
+    fitting_net["dim_descrpt"] = descriptor.get_dim_out()
     grad_force = "direct" not in fitting_net["type"]
     if not grad_force:
         fitting_net["out_dim"] = descriptor.get_dim_emb()

@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import copy
 import logging
 from typing import (
     List,
@@ -194,7 +195,7 @@ class EnergyFittingNet(InvarFitting):
     def __init__(
         self,
         ntypes: int,
-        embedding_width: int,
+        dim_descrpt: int,
         neuron: List[int] = [128, 128, 128],
         bias_atom_e: Optional[torch.Tensor] = None,
         resnet_dt: bool = True,
@@ -208,7 +209,7 @@ class EnergyFittingNet(InvarFitting):
         super().__init__(
             "energy",
             ntypes,
-            embedding_width,
+            dim_descrpt,
             1,
             neuron=neuron,
             bias_atom_e=bias_atom_e,
@@ -220,6 +221,13 @@ class EnergyFittingNet(InvarFitting):
             use_tebd=use_tebd,
             **kwargs,
         )
+
+    @classmethod
+    def deserialize(cls, data: dict) -> "GeneralFitting":
+        data = copy.deepcopy(data)
+        data.pop("var_name")
+        data.pop("dim_out")
+        return super().deserialize(data)
 
 
 @Fitting.register("direct_force")
