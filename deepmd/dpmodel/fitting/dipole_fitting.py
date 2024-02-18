@@ -155,11 +155,11 @@ class DipoleFitting(GeneralFitting):
         self,
         descriptor: np.ndarray,
         atype: np.ndarray,
-        gr: np.ndarray = None,
-        g2: np.ndarray = None,
-        h2: np.ndarray = None,
-        fparam: np.ndarray = None,
-        aparam: np.ndarray = None,
+        gr: Optional[np.ndarray] = None,
+        g2: Optional[np.ndarray] = None,
+        h2: Optional[np.ndarray] = None,
+        fparam: Optional[np.ndarray] = None,
+        aparam: Optional[np.ndarray] = None,
     ) -> Dict[str, np.ndarray]:
         """Calculate the fitting.
 

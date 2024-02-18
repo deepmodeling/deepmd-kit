@@ -190,14 +190,14 @@ class InvarFitting(GeneralFitting):
 
     def call(
         self,
-        descriptor: np.array,
-        atype: np.array,
-        gr: Optional[np.array] = None,
-        g2: Optional[np.array] = None,
-        h2: Optional[np.array] = None,
-        fparam: Optional[np.array] = None,
-        aparam: Optional[np.array] = None,
-    ) -> Dict[str, np.array]:
+        descriptor: np.ndarray,
+        atype: np.ndarray,
+        gr: Optional[np.ndarray] = None,
+        g2: Optional[np.ndarray] = None,
+        h2: Optional[np.ndarray] = None,
+        fparam: Optional[np.ndarray] = None,
+        aparam: Optional[np.ndarray] = None,
+    ) -> Dict[str, np.ndarray]:
         """Calculate the fitting.
 
         Parameters
