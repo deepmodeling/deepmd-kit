@@ -179,6 +179,10 @@ class DPAtomicModel(torch.nn.Module, BaseAtomicModel):
         stat_file_path
             The dictionary of paths to the statistics files.
         """
+        if stat_file_path is not None and self.type_map is not None:
+            # descriptors and fitting net with different type_map
+            # should not share the same parameters
+            stat_file_path /= " ".join(self.type_map)
         for data_sys in sampled:
             dict_to_device(data_sys)
         if sampled is None:
