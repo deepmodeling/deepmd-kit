@@ -14,7 +14,6 @@ from typing import (
 import numpy as np
 import torch
 
-
 from deepmd.pt.model.network.mlp import (
     FittingNet,
     NetworkCollection,

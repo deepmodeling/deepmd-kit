@@ -47,7 +47,9 @@ class TestDipoleFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
             torch.tensor(self.atype_ext, dtype=int, device=env.DEVICE),
             torch.tensor(self.nlist, dtype=int, device=env.DEVICE),
         )
-        atype = torch.tensor(self.atype_ext[:, :self.nloc], dtype=int, device=env.DEVICE)
+        atype = torch.tensor(
+            self.atype_ext[:, : self.nloc], dtype=int, device=env.DEVICE
+        )
 
         for distinguish_types, nfp, nap in itertools.product(
             [True, False],

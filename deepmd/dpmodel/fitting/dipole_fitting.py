@@ -8,15 +8,12 @@ from typing import (
 
 import numpy as np
 
-from deepmd.dpmodel.output_def import (
-    FittingOutputDef,
-    OutputVariableDef,
-)
-
 from deepmd.dpmodel import (
     DEFAULT_PRECISION,
 )
 from deepmd.dpmodel.output_def import (
+    FittingOutputDef,
+    OutputVariableDef,
     fitting_check_output,
 )
 
@@ -140,7 +137,7 @@ class DipoleFitting(GeneralFitting):
         data["dim_rot_mat"] = self.dim_rot_mat
         data["old_impl"] = self.old_impl
         return data
-    
+
     def output_def(self):
         return FittingOutputDef(
             [
@@ -153,7 +150,6 @@ class DipoleFitting(GeneralFitting):
                 ),
             ]
         )
-
 
     def call(
         self,

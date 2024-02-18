@@ -6,17 +6,14 @@ from typing import (
     Optional,
 )
 
-from deepmd.dpmodel.output_def import (
-    FittingOutputDef,
-    OutputVariableDef,
-)
-
 import numpy as np
 
 from deepmd.dpmodel import (
     DEFAULT_PRECISION,
 )
 from deepmd.dpmodel.output_def import (
+    FittingOutputDef,
+    OutputVariableDef,
     fitting_check_output,
 )
 
@@ -177,7 +174,6 @@ class InvarFitting(GeneralFitting):
     def init_fitting_stat(self, result_dict):
         """Initialize the model bias by the statistics."""
         raise NotImplementedError
-    
 
     def output_def(self):
         return FittingOutputDef(

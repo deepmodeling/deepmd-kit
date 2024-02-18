@@ -16,7 +16,6 @@ from deepmd.dpmodel import (
     DEFAULT_PRECISION,
     NativeOP,
 )
-
 from deepmd.dpmodel.utils import (
     AtomExcludeMask,
     FittingNet,

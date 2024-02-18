@@ -4,13 +4,13 @@ from typing import (
     List,
     Optional,
 )
+
+import torch
+
 from deepmd.dpmodel import (
     FittingOutputDef,
     OutputVariableDef,
 )
-
-import torch
-
 from deepmd.pt.model.task.fitting import (
     GeneralFitting,
 )
@@ -118,7 +118,7 @@ class DipoleFittingNet(GeneralFitting):
                 ),
             ]
         )
-    
+
     @property
     def data_stat_key(self):
         """

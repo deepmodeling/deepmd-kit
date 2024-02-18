@@ -110,7 +110,6 @@ class InvarFitting(GeneralFitting):
             exclude_types=exclude_types,
             **kwargs,
         )
-        
 
     def _net_out_dim(self):
         """Set the FittingNet output dim."""
@@ -120,7 +119,7 @@ class InvarFitting(GeneralFitting):
         data = super().serialize()
         data["dim_out"] = self.dim_out
         return data
-    
+
     @property
     def data_stat_key(self):
         """
@@ -146,7 +145,7 @@ class InvarFitting(GeneralFitting):
                 [self.ntypes, self.dim_out]
             )
         )
-    
+
     def output_def(self) -> FittingOutputDef:
         return FittingOutputDef(
             [
