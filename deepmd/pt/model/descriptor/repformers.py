@@ -178,11 +178,17 @@ class DescrptBlockRepformers(DescriptorBlock):
         """Returns the embedding dimension g2."""
         return self.g2_dim
 
-    def distinguish_types(self) -> bool:
-        """Returns if the descriptor requires a neighbor list that distinguish different
-        atomic types or not.
+    def mixed_types(self) -> bool:
+        """If true, the discriptor
+        1. assumes total numbe of atoms aligned across frames;
+        2. requires a neighbor list that does not distinguish different atomic types.
+
+        If false, the discriptor
+        1. assumes total numbe of atoms of each atom type aligned across frames;
+        2. requires a neighbor list that distinguishes different atomic types.
+
         """
-        return False
+        return True
 
     @property
     def dim_out(self):
@@ -276,7 +282,7 @@ class DescrptBlockRepformers(DescriptorBlock):
         sumn = []
         sumr2 = []
         suma2 = []
-        mixed_type = "real_natoms_vec" in merged[0]
+        data_mixed_type = "real_natoms_vec" in merged[0]
         for system in merged:
             coord, atype, box, natoms = (
                 system["coord"],
@@ -294,7 +300,7 @@ class DescrptBlockRepformers(DescriptorBlock):
                 atype,
                 self.get_rcut(),
                 self.get_sel(),
-                distinguish_types=self.distinguish_types(),
+                mixed_types=self.mixed_types(),
                 box=box,
             )
             env_mat, _, _ = prod_env_mat_se_a(
@@ -306,7 +312,7 @@ class DescrptBlockRepformers(DescriptorBlock):
                 self.rcut,
                 self.rcut_smth,
             )
-            if not mixed_type:
+            if not data_mixed_type:
                 sysr, sysr2, sysa, sysa2, sysn = analyze_descrpt(
                     env_mat.detach().cpu().numpy(), ndescrpt, natoms
                 )
@@ -316,7 +322,7 @@ class DescrptBlockRepformers(DescriptorBlock):
                     env_mat.detach().cpu().numpy(),
                     ndescrpt,
                     real_natoms_vec,
-                    mixed_type=mixed_type,
+                    mixed_type=True,
                     real_atype=atype.detach().cpu().numpy(),
                 )
             sumr.append(sysr)

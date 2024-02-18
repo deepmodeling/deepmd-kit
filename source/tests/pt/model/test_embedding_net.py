@@ -190,7 +190,7 @@ class TestSeA(unittest.TestCase):
             self.torch_batch["atype"].to(env.DEVICE),
             self.rcut,
             self.sel,
-            distinguish_types=True,
+            mixed_types=False,
             box=self.torch_batch["box"].to(env.DEVICE),
         )
         descriptor_out, _, _, _, _ = descriptor(

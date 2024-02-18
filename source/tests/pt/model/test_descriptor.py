@@ -155,7 +155,7 @@ class TestSeA(unittest.TestCase):
             self.pt_batch["atype"].to(env.DEVICE),
             self.rcut,
             self.sel,
-            distinguish_types=True,
+            mixed_types=False,
             box=self.pt_batch["box"].to(env.DEVICE),
         )
         my_d, _, _ = prod_env_mat_se_a(

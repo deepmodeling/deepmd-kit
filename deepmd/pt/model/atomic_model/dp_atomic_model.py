@@ -78,9 +78,9 @@ class DPAtomicModel(torch.nn.Module, BaseAtomicModel):
         """Get the neighbor selection."""
         return self.sel
 
-    def distinguish_types(self) -> bool:
+    def mixed_types(self) -> bool:
         """If distinguish different types by sorting."""
-        return self.descriptor.distinguish_types()
+        return self.descriptor.mixed_types()
 
     def serialize(self) -> dict:
         return {

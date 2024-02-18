@@ -30,7 +30,7 @@ class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
         atype = self.atype_ext[:, :nloc]
 
         for (
-            distinguish_types,
+            mixed_types,
             od,
             nfp,
             nap,
@@ -49,7 +49,7 @@ class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 od,
                 numb_fparam=nfp,
                 numb_aparam=nap,
-                distinguish_types=distinguish_types,
+                mixed_types=mixed_types,
                 exclude_types=et,
             )
             ifn1 = InvarFitting.deserialize(ifn0.serialize())
@@ -71,7 +71,7 @@ class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
         dd = ds.call(self.coord_ext, self.atype_ext, self.nlist)
         atype = self.atype_ext[:, :nloc]
         od = 2
-        distinguish_types = False
+        mixed_types = True
         # exclude type 1
         et = [1]
         ifn0 = InvarFitting(
@@ -79,7 +79,7 @@ class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
             self.nt,
             ds.dim_out,
             od,
-            distinguish_types=distinguish_types,
+            mixed_types=mixed_types,
             exclude_types=et,
         )
         ret0 = ifn0(dd[0], atype)
@@ -100,7 +100,7 @@ class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
         atype = self.atype_ext[:, :nloc]
 
         for (
-            distinguish_types,
+            mixed_types,
             od,
             nfp,
             nap,
@@ -117,7 +117,7 @@ class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 od,
                 numb_fparam=nfp,
                 numb_aparam=nap,
-                distinguish_types=distinguish_types,
+                mixed_types=mixed_types,
             )
 
             if nfp > 0:

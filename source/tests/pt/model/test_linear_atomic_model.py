@@ -65,7 +65,7 @@ class TestWeightCalculation(unittest.TestCase):
             2,
             ds.get_dim_out(),
             1,
-            distinguish_types=ds.distinguish_types(),
+            mixed_types=ds.mixed_types(),
         ).to(env.DEVICE)
 
         type_map = ["foo", "bar"]
@@ -133,7 +133,7 @@ class TestIntegration(unittest.TestCase, TestCaseSingleFrameWithNlist):
             self.nt,
             ds.get_dim_out(),
             1,
-            distinguish_types=ds.distinguish_types(),
+            mixed_types=ds.mixed_types(),
         ).to(env.DEVICE)
         type_map = ["foo", "bar"]
         dp_model = DPAtomicModel(ds, ft, type_map=type_map).to(env.DEVICE)

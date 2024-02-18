@@ -32,20 +32,20 @@ class NeighborStatOP(torch.nn.Module):
         The num of atom types
     rcut
         The cut-off radius
-    distinguish_types : bool, optional
-        If False, treat all types as a single type.
+    mixed_types : bool, optional
+        If True, treat neighbors of all types as a single type.
     """
 
     def __init__(
         self,
         ntypes: int,
         rcut: float,
-        distinguish_types: bool,
+        mixed_types: bool,
     ) -> None:
         super().__init__()
         self.rcut = rcut
         self.ntypes = ntypes
-        self.distinguish_types = distinguish_types
+        self.mixed_types = mixed_types
 
     def forward(
         self,
@@ -94,7 +94,7 @@ class NeighborStatOP(torch.nn.Module):
         rr2 = torch.sum(torch.square(diff), dim=-1)
         min_rr2, _ = torch.min(rr2, dim=-1)
         # count the number of neighbors
-        if self.distinguish_types:
+        if not self.mixed_types:
             mask = rr2 < self.rcut**2
             nnei = torch.zeros((nframes, nloc, self.ntypes), dtype=torch.int32)
             for ii in range(self.ntypes):

@@ -102,8 +102,8 @@ class InvarFitting(NativeOP, BaseFitting):
     use_aparam_as_mask: bool, optional
             If True, the atomic parameters will be used as a mask that determines the atom is real/virtual.
             And the aparam will not be used as the atomic parameters for embedding.
-    distinguish_types
-            Different atomic types uses different fitting net.
+    mixed_types
+            If false, different atomic types uses different fitting net, otherwise different atom types share the same fitting net.
 
     """
 
@@ -126,7 +126,7 @@ class InvarFitting(NativeOP, BaseFitting):
         layer_name: Optional[List[Optional[str]]] = None,
         use_aparam_as_mask: bool = False,
         spin: Any = None,
-        distinguish_types: bool = False,
+        mixed_types: bool = False,
         exclude_types: List[int] = [],
     ):
         # seed, uniform_seed are not included
@@ -160,7 +160,7 @@ class InvarFitting(NativeOP, BaseFitting):
         self.layer_name = layer_name
         self.use_aparam_as_mask = use_aparam_as_mask
         self.spin = spin
-        self.distinguish_types = distinguish_types
+        self.mixed_types = mixed_types
         self.exclude_types = exclude_types
         if self.spin is not None:
             raise NotImplementedError("spin is not supported")
@@ -182,7 +182,7 @@ class InvarFitting(NativeOP, BaseFitting):
         in_dim = self.dim_descrpt + self.numb_fparam + self.numb_aparam
         out_dim = self.dim_out
         self.nets = NetworkCollection(
-            1 if self.distinguish_types else 0,
+            1 if not self.mixed_types else 0,
             self.ntypes,
             network_type="fitting_network",
             networks=[
@@ -195,7 +195,7 @@ class InvarFitting(NativeOP, BaseFitting):
                     self.precision,
                     bias_out=True,
                 )
-                for ii in range(self.ntypes if self.distinguish_types else 1)
+                for ii in range(self.ntypes if not self.mixed_types else 1)
             ],
         )
 
@@ -262,7 +262,7 @@ class InvarFitting(NativeOP, BaseFitting):
             "rcond": self.rcond,
             "activation_function": self.activation_function,
             "precision": self.precision,
-            "distinguish_types": self.distinguish_types,
+            "mixed_types": self.mixed_types,
             "nets": self.nets.serialize(),
             "exclude_types": self.exclude_types,
             "@variables": {
@@ -363,7 +363,7 @@ class InvarFitting(NativeOP, BaseFitting):
             )
 
         # calcualte the prediction
-        if self.distinguish_types:
+        if not self.mixed_types:
             outs = np.zeros([nf, nloc, self.dim_out])
             for type_i in range(self.ntypes):
                 mask = np.tile(

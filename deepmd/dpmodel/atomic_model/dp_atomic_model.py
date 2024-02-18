@@ -66,11 +66,11 @@ class DPAtomicModel(BaseAtomicModel):
         """Get the type map."""
         return self.type_map
 
-    def distinguish_types(self) -> bool:
+    def mixed_types(self) -> bool:
         """Returns if model requires a neighbor list that distinguish different
         atomic types or not.
         """
-        return self.descriptor.distinguish_types()
+        return self.descriptor.mixed_types()
 
     def forward_atomic(
         self,

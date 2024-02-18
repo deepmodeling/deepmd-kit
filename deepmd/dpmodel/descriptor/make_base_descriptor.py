@@ -63,7 +63,7 @@ def make_base_descriptor(
             pass
 
         @abstractmethod
-        def distinguish_types(self) -> bool:
+        def mixed_types(self) -> bool:
             """Returns if the descriptor requires a neighbor list that distinguish different
             atomic types or not.
             """

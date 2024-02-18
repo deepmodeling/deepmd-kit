@@ -86,7 +86,7 @@ def make_base_atomic_model(
             """
 
         @abstractmethod
-        def distinguish_types(self) -> bool:
+        def mixed_types(self) -> bool:
             """Returns if the model requires a neighbor list that distinguish different
             atomic types or not.
             """

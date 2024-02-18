@@ -106,9 +106,9 @@ class PairTabAtomicModel(torch.nn.Module, BaseAtomicModel):
     def get_nsel(self) -> int:
         return self.sel
 
-    def distinguish_types(self) -> bool:
+    def mixed_types(self) -> bool:
         # to match DPA1 and DPA2.
-        return False
+        return True
 
     def serialize(self) -> dict:
         return {"tab": self.tab.serialize(), "rcut": self.rcut, "sel": self.sel}

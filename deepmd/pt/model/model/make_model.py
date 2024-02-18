@@ -103,7 +103,7 @@ def make_model(T_AtomicModel):
                 atype,
                 self.get_rcut(),
                 self.get_sel(),
-                distinguish_types=self.distinguish_types(),
+                mixed_types=self.mixed_types(),
                 box=box,
             )
             model_predict_lower = self.forward_common_lower(
@@ -199,7 +199,7 @@ def make_model(T_AtomicModel):
 
             Known limitations:
 
-            In the case of self.distinguish_types, the nlist is always formatted.
+            In the case of not self.mixed_types, the nlist is always formatted.
             May have side effact on the efficiency.
 
             Parameters
@@ -217,9 +217,9 @@ def make_model(T_AtomicModel):
                 the formated nlist.
 
             """
-            distinguish_types = self.distinguish_types()
+            mixed_types = self.mixed_types()
             nlist = self._format_nlist(extended_coord, nlist, sum(self.get_sel()))
-            if distinguish_types:
+            if not mixed_types:
                 nlist = nlist_distinguish_types(nlist, extended_atype, self.get_sel())
             return nlist
 

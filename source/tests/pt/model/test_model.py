@@ -289,7 +289,7 @@ class TestEnergy(unittest.TestCase):
                     "neuron": self.filter_neuron,
                     "axis_neuron": self.axis_neuron,
                 },
-                "fitting_net": {"neuron": self.n_neuron, "distinguish_types": True},
+                "fitting_net": {"neuron": self.n_neuron, "mixed_types": False},
                 "data_stat_nbatch": self.data_stat_nbatch,
                 "type_map": self.type_map,
             },

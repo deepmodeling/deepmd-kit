@@ -50,13 +50,11 @@ class LinearAtomicModel(torch.nn.Module, BaseAtomicModel):
         super().__init__()
         self.models = torch.nn.ModuleList(models)
         self.atomic_bias = None
-        self.distinguish_type_list = [
-            model.distinguish_types() for model in self.models
-        ]
+        self.mixed_types_list = [model.mixed_types() for model in self.models]
 
-    def distinguish_types(self) -> bool:
+    def mixed_types(self) -> bool:
         """If distinguish different types by sorting."""
-        return False
+        return True
 
     @torch.jit.export
     def get_rcut(self) -> float:
@@ -143,9 +141,9 @@ class LinearAtomicModel(torch.nn.Module, BaseAtomicModel):
             for rcut, sel in zip(self.get_model_rcuts(), self.get_model_nsels())
         ]
         nlists_ = [
-            nl if not dt else nlist_distinguish_types(nl, extended_atype, sel)
-            for dt, nl, sel in zip(
-                self.distinguish_type_list, raw_nlists, self.get_model_sels()
+            nl if mt else nlist_distinguish_types(nl, extended_atype, sel)
+            for mt, nl, sel in zip(
+                self.mixed_types_list, raw_nlists, self.get_model_sels()
             )
         ]
         ener_list = []

@@ -375,12 +375,16 @@ class GeneralFitting(Fitting):
         Activation function.
     precision : str
         Numerical precision.
-    distinguish_types : bool
-        Neighbor list that distinguish different atomic types or not.
+    mixed_types : bool
+        If true, use a uniform fitting net for all atom types, otherwise use
+        different fitting nets for different atom types.
     rcond : float, optional
         The condition number for the regression of atomic energy.
     seed : int, optional
         Random seed.
+    exclude_types: List[int]
+        Atomic contributions of the excluded atom types are set zero.
+
     """
 
     def __init__(
@@ -396,7 +400,7 @@ class GeneralFitting(Fitting):
         numb_aparam: int = 0,
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
-        distinguish_types: bool = False,
+        mixed_types: bool = False,
         rcond: Optional[float] = None,
         seed: Optional[int] = None,
         exclude_types: List[int] = [],
@@ -408,8 +412,7 @@ class GeneralFitting(Fitting):
         self.dim_descrpt = dim_descrpt
         self.dim_out = dim_out
         self.neuron = neuron
-        self.distinguish_types = distinguish_types
-        self.use_tebd = not self.distinguish_types
+        self.mixed_types = mixed_types
         self.resnet_dt = resnet_dt
         self.numb_fparam = numb_fparam
         self.numb_aparam = numb_aparam
@@ -426,7 +429,7 @@ class GeneralFitting(Fitting):
             bias_atom_e = np.zeros([self.ntypes, self.dim_out])
         bias_atom_e = torch.tensor(bias_atom_e, dtype=self.prec, device=device)
         bias_atom_e = bias_atom_e.view([self.ntypes, self.dim_out])
-        if not self.use_tebd:
+        if not self.mixed_types:
             assert self.ntypes == bias_atom_e.shape[0], "Element count mismatches!"
         self.register_buffer("bias_atom_e", bias_atom_e)
 
@@ -473,7 +476,7 @@ class GeneralFitting(Fitting):
             self.filter_layers = None
         else:
             self.filter_layers = NetworkCollection(
-                1 if self.distinguish_types else 0,
+                1 if not self.mixed_types else 0,
                 self.ntypes,
                 network_type="fitting_network",
                 networks=[
@@ -486,7 +489,7 @@ class GeneralFitting(Fitting):
                         self.precision,
                         bias_out=True,
                     )
-                    for ii in range(self.ntypes if self.distinguish_types else 1)
+                    for ii in range(self.ntypes if not self.mixed_types else 1)
                 ],
             )
             self.filter_layers_old = None
@@ -508,7 +511,7 @@ class GeneralFitting(Fitting):
             "numb_aparam": self.numb_aparam,
             "activation_function": self.activation_function,
             "precision": self.precision,
-            "distinguish_types": self.distinguish_types,
+            "mixed_types": self.mixed_types,
             "nets": self.filter_layers.serialize(),
             "rcond": self.rcond,
             "exclude_types": self.exclude_types,
@@ -652,7 +655,7 @@ class GeneralFitting(Fitting):
         if self.old_impl:
             outs = torch.zeros_like(atype).unsqueeze(-1)  # jit assertion
             assert self.filter_layers_old is not None
-            if self.use_tebd:
+            if self.mixed_types:
                 atom_property = self.filter_layers_old[0](xx) + self.bias_atom_e[
                     atype
                 ].unsqueeze(-1)
@@ -665,7 +668,7 @@ class GeneralFitting(Fitting):
                     atom_property = atom_property * mask.unsqueeze(-1)
                     outs = outs + atom_property  # Shape is [nframes, natoms[0], 1]
         else:
-            if self.use_tebd:
+            if self.mixed_types:
                 atom_property = (
                     self.filter_layers.networks[0](xx) + self.bias_atom_e[atype]
                 )

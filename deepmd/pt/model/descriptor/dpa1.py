@@ -105,11 +105,17 @@ class DescrptDPA1(Descriptor):
     def get_dim_emb(self) -> int:
         return self.se_atten.dim_emb
 
-    def distinguish_types(self) -> bool:
-        """Returns if the descriptor requires a neighbor list that distinguish different
-        atomic types or not.
+    def mixed_types(self) -> bool:
+        """If true, the discriptor
+        1. assumes total numbe of atoms aligned across frames;
+        2. requires a neighbor list that does not distinguish different atomic types.
+
+        If false, the discriptor
+        1. assumes total numbe of atoms of each atom type aligned across frames;
+        2. requires a neighbor list that distinguishes different atomic types.
+
         """
-        return self.se_atten.distinguish_types()
+        return self.se_atten.mixed_types()
 
     @property
     def dim_out(self):
