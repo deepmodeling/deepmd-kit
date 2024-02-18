@@ -8,6 +8,11 @@ from typing import (
 
 import numpy as np
 
+from deepmd.dpmodel.output_def import (
+    FittingOutputDef,
+    OutputVariableDef,
+)
+
 from deepmd.dpmodel import (
     DEFAULT_PRECISION,
 )
@@ -22,37 +27,7 @@ from .general_fitting import (
 
 @fitting_check_output
 class DipoleFitting(GeneralFitting):
-    r"""Fitting the energy (or a rotationally invariant porperty of `dim_out`) of the system. The force and the virial can also be trained.
-
-    Lets take the energy fitting task as an example.
-    The potential energy :math:`E` is a fitting network function of the descriptor :math:`\mathcal{D}`:
-
-    .. math::
-        E(\mathcal{D}) = \mathcal{L}^{(n)} \circ \mathcal{L}^{(n-1)}
-        \circ \cdots \circ \mathcal{L}^{(1)} \circ \mathcal{L}^{(0)}
-
-    The first :math:`n` hidden layers :math:`\mathcal{L}^{(0)}, \cdots, \mathcal{L}^{(n-1)}` are given by
-
-    .. math::
-        \mathbf{y}=\mathcal{L}(\mathbf{x};\mathbf{w},\mathbf{b})=
-            \boldsymbol{\phi}(\mathbf{x}^T\mathbf{w}+\mathbf{b})
-
-    where :math:`\mathbf{x} \in \mathbb{R}^{N_1}` is the input vector and :math:`\mathbf{y} \in \mathbb{R}^{N_2}`
-    is the output vector. :math:`\mathbf{w} \in \mathbb{R}^{N_1 \times N_2}` and
-    :math:`\mathbf{b} \in \mathbb{R}^{N_2}` are weights and biases, respectively,
-    both of which are trainable if `trainable[i]` is `True`. :math:`\boldsymbol{\phi}`
-    is the activation function.
-
-    The output layer :math:`\mathcal{L}^{(n)}` is given by
-
-    .. math::
-        \mathbf{y}=\mathcal{L}^{(n)}(\mathbf{x};\mathbf{w},\mathbf{b})=
-            \mathbf{x}^T\mathbf{w}+\mathbf{b}
-
-    where :math:`\mathbf{x} \in \mathbb{R}^{N_{n-1}}` is the input vector and :math:`\mathbf{y} \in \mathbb{R}`
-    is the output scalar. :math:`\mathbf{w} \in \mathbb{R}^{N_{n-1}}` and
-    :math:`\mathbf{b} \in \mathbb{R}` are weights and bias, respectively,
-    both of which are trainable if `trainable[n]` is `True`.
+    r"""Fitting rotationally invariant diploe of the system.
 
     Parameters
     ----------
@@ -62,8 +37,6 @@ class DipoleFitting(GeneralFitting):
             The number of atom types.
     dim_descrpt
             The dimension of the input descriptor.
-    dim_out
-            The dimension of the output fit property.
     dim_rot_mat : int
         The dimension of rotation matrix, m1.
     neuron
@@ -105,7 +78,6 @@ class DipoleFitting(GeneralFitting):
         var_name: str,
         ntypes: int,
         dim_descrpt: int,
-        dim_out: int,
         dim_rot_mat: int,
         neuron: List[int] = [120, 120, 120],
         resnet_dt: bool = True,
@@ -114,7 +86,7 @@ class DipoleFitting(GeneralFitting):
         rcond: Optional[float] = None,
         tot_ener_zero: bool = False,
         trainable: Optional[List[bool]] = None,
-        atom_ener: Optional[List[float]] = None,
+        atom_ener: Optional[List[Optional[float]]] = None,
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
         layer_name: Optional[List[Optional[str]]] = None,
@@ -131,8 +103,6 @@ class DipoleFitting(GeneralFitting):
             raise NotImplementedError("spin is not implemented")
         if use_aparam_as_mask:
             raise NotImplementedError("use_aparam_as_mask is not implemented")
-        if use_aparam_as_mask:
-            raise NotImplementedError("use_aparam_as_mask is not implemented")
         if layer_name is not None:
             raise NotImplementedError("layer_name is not implemented")
         if atom_ener is not None:
@@ -143,7 +113,6 @@ class DipoleFitting(GeneralFitting):
             var_name=var_name,
             ntypes=ntypes,
             dim_descrpt=dim_descrpt,
-            dim_out=dim_out,
             neuron=neuron,
             resnet_dt=resnet_dt,
             numb_fparam=numb_fparam,
@@ -171,17 +140,31 @@ class DipoleFitting(GeneralFitting):
         data["dim_rot_mat"] = self.dim_rot_mat
         data["old_impl"] = self.old_impl
         return data
+    
+    def output_def(self):
+        return FittingOutputDef(
+            [
+                OutputVariableDef(
+                    self.var_name,
+                    [3],
+                    reduciable=True,
+                    r_differentiable=True,
+                    c_differentiable=True,
+                ),
+            ]
+        )
+
 
     def call(
         self,
-        descriptor: np.array,
-        atype: np.array,
-        gr: Optional[np.array] = None,
-        g2: Optional[np.array] = None,
-        h2: Optional[np.array] = None,
-        fparam: Optional[np.array] = None,
-        aparam: Optional[np.array] = None,
-    ) -> Dict[str, np.array]:
+        descriptor: np.ndarray,
+        atype: np.ndarray,
+        gr: np.ndarray = None,
+        g2: np.ndarray = None,
+        h2: np.ndarray = None,
+        fparam: np.ndarray = None,
+        aparam: np.ndarray = None,
+    ) -> Dict[str, np.ndarray]:
         """Calculate the fitting.
 
         Parameters

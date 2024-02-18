@@ -35,19 +35,19 @@ dtype = env.GLOBAL_PT_FLOAT_PRECISION
 class TestDipoleFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
     def setUp(self):
         TestCaseSingleFrameWithNlist.setUp(self)
+        self.rng = np.random.default_rng()
+        self.nf, self.nloc, nnei = self.nlist.shape
+        self.dd0 = DescrptSeA(self.rcut, self.rcut_smth, self.sel).to(env.DEVICE)
 
     def test_consistency(
         self,
     ):
-        rng = np.random.default_rng()
-        nf, nloc, nnei = self.nlist.shape
-        dd0 = DescrptSeA(self.rcut, self.rcut_smth, self.sel).to(env.DEVICE)
-        rd0, gr, _, _, _ = dd0(
+        rd0, gr, _, _, _ = self.dd0(
             torch.tensor(self.coord_ext, dtype=dtype, device=env.DEVICE),
             torch.tensor(self.atype_ext, dtype=int, device=env.DEVICE),
             torch.tensor(self.nlist, dtype=int, device=env.DEVICE),
         )
-        atype = torch.tensor(self.atype_ext[:, :nloc], dtype=int, device=env.DEVICE)
+        atype = torch.tensor(self.atype_ext[:, :self.nloc], dtype=int, device=env.DEVICE)
 
         for distinguish_types, nfp, nap in itertools.product(
             [True, False],
@@ -57,9 +57,8 @@ class TestDipoleFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
             ft0 = DipoleFittingNet(
                 "foo",
                 self.nt,
-                dd0.dim_out,
-                3,
-                dim_rot_mat=100,
+                self.dd0.dim_out,
+                dim_rot_mat=self.dd0.get_dim_emb(),
                 numb_fparam=nfp,
                 numb_aparam=nap,
                 use_tebd=(not distinguish_types),
@@ -69,13 +68,13 @@ class TestDipoleFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
 
             if nfp > 0:
                 ifp = torch.tensor(
-                    rng.normal(size=(self.nf, nfp)), dtype=dtype, device=env.DEVICE
+                    self.rng.normal(size=(self.nf, nfp)), dtype=dtype, device=env.DEVICE
                 )
             else:
                 ifp = None
             if nap > 0:
                 iap = torch.tensor(
-                    rng.normal(size=(self.nf, self.nloc, nap)),
+                    self.rng.normal(size=(self.nf, self.nloc, nap)),
                     dtype=dtype,
                     device=env.DEVICE,
                 )
@@ -103,8 +102,7 @@ class TestDipoleFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
     def test_jit(
         self,
     ):
-        for od, distinguish_types, nfp, nap in itertools.product(
-            [1, 3],
+        for distinguish_types, nfp, nap in itertools.product(
             [True, False],
             [0, 3],
             [0, 4],
@@ -112,9 +110,8 @@ class TestDipoleFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
             ft0 = DipoleFittingNet(
                 "foo",
                 self.nt,
-                9,
-                od,
-                dim_rot_mat=100,
+                self.dd0.dim_out,
+                dim_rot_mat=self.dd0.get_dim_emb(),
                 numb_fparam=nfp,
                 numb_aparam=nap,
                 use_tebd=(not distinguish_types),
@@ -149,9 +146,8 @@ class TestEquivalence(unittest.TestCase):
             ft0 = DipoleFittingNet(
                 "foo",
                 3,  # ntype
-                self.dd0.dim_out,
-                3,
-                dim_rot_mat=100,
+                self.dd0.dim_out,  # dim_descrpt
+                dim_rot_mat=self.dd0.get_dim_emb(),
                 numb_fparam=nfp,
                 numb_aparam=nap,
                 use_tebd=False,
@@ -201,8 +197,7 @@ class TestEquivalence(unittest.TestCase):
             "foo",
             3,  # ntype
             self.dd0.dim_out,
-            3,
-            dim_rot_mat=100,
+            dim_rot_mat=self.dd0.get_dim_emb(),
             numb_fparam=0,
             numb_aparam=0,
             use_tebd=False,
@@ -244,8 +239,7 @@ class TestEquivalence(unittest.TestCase):
             "foo",
             3,  # ntype
             self.dd0.dim_out,
-            3,
-            dim_rot_mat=100,
+            dim_rot_mat=self.dd0.get_dim_emb(),
             numb_fparam=0,
             numb_aparam=0,
             use_tebd=False,

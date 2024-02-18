@@ -16,10 +16,7 @@ from deepmd.dpmodel import (
     DEFAULT_PRECISION,
     NativeOP,
 )
-from deepmd.dpmodel.output_def import (
-    FittingOutputDef,
-    OutputVariableDef,
-)
+
 from deepmd.dpmodel.utils import (
     AtomExcludeMask,
     FittingNet,
@@ -42,8 +39,6 @@ class GeneralFitting(NativeOP, BaseFitting):
             The number of atom types.
     dim_descrpt
             The dimension of the input descriptor.
-    dim_out
-            The dimension of the output fit property.
     neuron
             Number of neurons :math:`N` in each hidden layer of the fitting net
     resnet_dt
@@ -83,7 +78,6 @@ class GeneralFitting(NativeOP, BaseFitting):
         var_name: str,
         ntypes: int,
         dim_descrpt: int,
-        dim_out: int,
         neuron: List[int] = [120, 120, 120],
         resnet_dt: bool = True,
         numb_fparam: int = 0,
@@ -103,7 +97,6 @@ class GeneralFitting(NativeOP, BaseFitting):
         self.var_name = var_name
         self.ntypes = ntypes
         self.dim_descrpt = dim_descrpt
-        self.dim_out = dim_out
         self.neuron = neuron
         self.resnet_dt = resnet_dt
         self.numb_fparam = numb_fparam
@@ -155,19 +148,6 @@ class GeneralFitting(NativeOP, BaseFitting):
                 )
                 for ii in range(self.ntypes if self.distinguish_types else 1)
             ],
-        )
-
-    def output_def(self):
-        return FittingOutputDef(
-            [
-                OutputVariableDef(
-                    self.var_name,
-                    [self.dim_out],
-                    reduciable=True,
-                    r_differentiable=True,
-                    c_differentiable=True,
-                ),
-            ]
         )
 
     @abstractmethod
@@ -226,7 +206,6 @@ class GeneralFitting(NativeOP, BaseFitting):
             "var_name": self.var_name,
             "ntypes": self.ntypes,
             "dim_descrpt": self.dim_descrpt,
-            "dim_out": self.dim_out,
             "neuron": self.neuron,
             "resnet_dt": self.resnet_dt,
             "numb_fparam": self.numb_fparam,
@@ -266,14 +245,14 @@ class GeneralFitting(NativeOP, BaseFitting):
 
     def _call_common(
         self,
-        descriptor: np.array,
-        atype: np.array,
-        gr: Optional[np.array] = None,
-        g2: Optional[np.array] = None,
-        h2: Optional[np.array] = None,
-        fparam: Optional[np.array] = None,
-        aparam: Optional[np.array] = None,
-    ) -> Dict[str, np.array]:
+        descriptor: np.ndarray,
+        atype: np.ndarray,
+        gr: np.ndarray = None,
+        g2: np.ndarray = None,
+        h2: np.ndarray = None,
+        fparam: np.ndarray = None,
+        aparam: np.ndarray = None,
+    ) -> Dict[str, np.ndarray]:
         """Calculate the fitting.
 
         Parameters

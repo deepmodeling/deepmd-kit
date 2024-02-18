@@ -6,6 +6,11 @@ from typing import (
     Optional,
 )
 
+from deepmd.dpmodel.output_def import (
+    FittingOutputDef,
+    OutputVariableDef,
+)
+
 import numpy as np
 
 from deepmd.dpmodel import (
@@ -134,11 +139,11 @@ class InvarFitting(GeneralFitting):
         if atom_ener is not None:
             raise NotImplementedError("atom_ener is not implemented")
 
+        self.dim_out = dim_out
         super().__init__(
             var_name=var_name,
             ntypes=ntypes,
             dim_descrpt=dim_descrpt,
-            dim_out=dim_out,
             neuron=neuron,
             resnet_dt=resnet_dt,
             numb_fparam=numb_fparam,
@@ -156,6 +161,11 @@ class InvarFitting(GeneralFitting):
             exclude_types=exclude_types,
         )
 
+    def serialize(self) -> dict:
+        data = super().serialize()
+        data["dim_out"] = self.dim_out
+        return data
+
     def _net_out_dim(self):
         """Set the FittingNet output dim."""
         return self.dim_out
@@ -167,6 +177,20 @@ class InvarFitting(GeneralFitting):
     def init_fitting_stat(self, result_dict):
         """Initialize the model bias by the statistics."""
         raise NotImplementedError
+    
+
+    def output_def(self):
+        return FittingOutputDef(
+            [
+                OutputVariableDef(
+                    self.var_name,
+                    [self.dim_out],
+                    reduciable=True,
+                    r_differentiable=True,
+                    c_differentiable=True,
+                ),
+            ]
+        )
 
     def call(
         self,

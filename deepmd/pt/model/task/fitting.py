@@ -14,10 +14,7 @@ from typing import (
 import numpy as np
 import torch
 
-from deepmd.dpmodel import (
-    FittingOutputDef,
-    OutputVariableDef,
-)
+
 from deepmd.pt.model.network.mlp import (
     FittingNet,
     NetworkCollection,
@@ -388,7 +385,6 @@ class GeneralFitting(Fitting):
         var_name: str,
         ntypes: int,
         dim_descrpt: int,
-        dim_out: int,
         neuron: List[int] = [128, 128, 128],
         bias_atom_e: Optional[torch.Tensor] = None,
         resnet_dt: bool = True,
@@ -406,7 +402,6 @@ class GeneralFitting(Fitting):
         self.var_name = var_name
         self.ntypes = ntypes
         self.dim_descrpt = dim_descrpt
-        self.dim_out = dim_out
         self.neuron = neuron
         self.distinguish_types = distinguish_types
         self.use_tebd = not self.distinguish_types
@@ -424,7 +419,7 @@ class GeneralFitting(Fitting):
         net_dim_out = self._net_out_dim()
         # init constants
         if bias_atom_e is None:
-            bias_atom_e = np.zeros([self.ntypes, net_dim_out])
+            bias_atom_e = np.zeros([self.ntypes, net_dim_out], dtype=np.float64)
         bias_atom_e = torch.tensor(bias_atom_e, dtype=self.prec, device=device)
         bias_atom_e = bias_atom_e.view([self.ntypes, net_dim_out])
         if not self.use_tebd:
@@ -501,7 +496,6 @@ class GeneralFitting(Fitting):
             "var_name": self.var_name,
             "ntypes": self.ntypes,
             "dim_descrpt": self.dim_descrpt,
-            "dim_out": self.dim_out,
             "neuron": self.neuron,
             "resnet_dt": self.resnet_dt,
             "numb_fparam": self.numb_fparam,
@@ -595,19 +589,6 @@ class GeneralFitting(Fitting):
     def _net_out_dim(self):
         """Set the FittingNet output dim."""
         pass
-
-    def output_def(self) -> FittingOutputDef:
-        return FittingOutputDef(
-            [
-                OutputVariableDef(
-                    self.var_name,
-                    [self.dim_out],
-                    reduciable=True,
-                    r_differentiable=True,
-                    c_differentiable=True,
-                ),
-            ]
-        )
 
     def _extend_f_avg_std(self, xx: torch.Tensor, nb: int) -> torch.Tensor:
         return torch.tile(xx.view([1, self.numb_fparam]), [nb, 1])

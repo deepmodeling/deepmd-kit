@@ -4,6 +4,10 @@ from typing import (
     List,
     Optional,
 )
+from deepmd.dpmodel import (
+    FittingOutputDef,
+    OutputVariableDef,
+)
 
 import torch
 
@@ -60,7 +64,6 @@ class DipoleFittingNet(GeneralFitting):
         var_name: str,
         ntypes: int,
         dim_descrpt: int,
-        dim_out: int,
         dim_rot_mat: int,
         neuron: List[int] = [128, 128, 128],
         resnet_dt: bool = True,
@@ -71,6 +74,7 @@ class DipoleFittingNet(GeneralFitting):
         distinguish_types: bool = False,
         rcond: Optional[float] = None,
         seed: Optional[int] = None,
+        exclude_types: List[int] = [],
         **kwargs,
     ):
         self.dim_rot_mat = dim_rot_mat
@@ -78,7 +82,6 @@ class DipoleFittingNet(GeneralFitting):
             var_name=var_name,
             ntypes=ntypes,
             dim_descrpt=dim_descrpt,
-            dim_out=dim_out,
             neuron=neuron,
             resnet_dt=resnet_dt,
             numb_fparam=numb_fparam,
@@ -88,6 +91,7 @@ class DipoleFittingNet(GeneralFitting):
             distinguish_types=distinguish_types,
             rcond=rcond,
             seed=seed,
+            exclude_types=exclude_types,
             **kwargs,
         )
         self.old_impl = False  # this only supports the new implementation.
@@ -102,6 +106,19 @@ class DipoleFittingNet(GeneralFitting):
         data["old_impl"] = self.old_impl
         return data
 
+    def output_def(self) -> FittingOutputDef:
+        return FittingOutputDef(
+            [
+                OutputVariableDef(
+                    self.var_name,
+                    [3],
+                    reduciable=True,
+                    r_differentiable=True,
+                    c_differentiable=True,
+                ),
+            ]
+        )
+    
     @property
     def data_stat_key(self):
         """

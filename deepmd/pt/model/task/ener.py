@@ -92,11 +92,11 @@ class InvarFitting(GeneralFitting):
         exclude_types: List[int] = [],
         **kwargs,
     ):
+        self.dim_out = dim_out
         super().__init__(
             var_name=var_name,
             ntypes=ntypes,
             dim_descrpt=dim_descrpt,
-            dim_out=dim_out,
             neuron=neuron,
             bias_atom_e=bias_atom_e,
             resnet_dt=resnet_dt,
@@ -110,11 +110,17 @@ class InvarFitting(GeneralFitting):
             exclude_types=exclude_types,
             **kwargs,
         )
+        
 
     def _net_out_dim(self):
         """Set the FittingNet output dim."""
         return self.dim_out
 
+    def serialize(self) -> dict:
+        data = super().serialize()
+        data["dim_out"] = self.dim_out
+        return data
+    
     @property
     def data_stat_key(self):
         """
@@ -139,6 +145,19 @@ class InvarFitting(GeneralFitting):
             torch.tensor(bias_atom_e, device=env.DEVICE).view(
                 [self.ntypes, self.dim_out]
             )
+        )
+    
+    def output_def(self) -> FittingOutputDef:
+        return FittingOutputDef(
+            [
+                OutputVariableDef(
+                    self.var_name,
+                    [self.dim_out],
+                    reduciable=True,
+                    r_differentiable=True,
+                    c_differentiable=True,
+                ),
+            ]
         )
 
     def forward(
