@@ -21,9 +21,9 @@ from deepmd.dpmodel.output_def import (
     OutputVariableDef,
 )
 from deepmd.dpmodel.utils import (
+    AtomExcludeMask,
     FittingNet,
     NetworkCollection,
-    AtomExcludeMask,
 )
 
 from .base_fitting import (
@@ -121,7 +121,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         self.exclude_types = exclude_types
         if self.spin is not None:
             raise NotImplementedError("spin is not supported")
-        
+
         self.emask = AtomExcludeMask(self.ntypes, self.exclude_types)
 
         net_dim_out = self._net_out_dim()
