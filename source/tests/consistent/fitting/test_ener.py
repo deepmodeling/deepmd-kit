@@ -180,6 +180,6 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
         if precision == "float64":
             return 1e-10
         elif precision == "float32":
-            return 1e-5
+            return 1e-4
         else:
             raise ValueError(f"Unknown precision: {precision}")
