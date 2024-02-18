@@ -6,19 +6,30 @@ from abc import (
 )
 from typing import (
     Callable,
+    Dict,
     List,
     Optional,
-    Union,
 )
 
-import numpy as np
 import torch
 
 from deepmd.pt.model.network.network import (
     TypeEmbedNet,
 )
+from deepmd.pt.utils import (
+    env,
+)
+from deepmd.pt.utils.env_mat_stat import (
+    EnvMatStatSeA,
+)
 from deepmd.pt.utils.plugin import (
     Plugin,
+)
+from deepmd.utils.env_mat_stat import (
+    StatItem,
+)
+from deepmd.utils.path import (
+    DPPath,
 )
 
 from .base_descriptor import (
@@ -60,19 +71,6 @@ class Descriptor(torch.nn.Module, BaseDescriptor):
         return Descriptor.__plugins.register(key)
 
     @classmethod
-    def get_stat_name(cls, ntypes, type_name, **kwargs):
-        """
-        Get the name for the statistic file of the descriptor.
-        Usually use the combination of descriptor name, rcut, rcut_smth and sel as the statistic file name.
-        """
-        if cls is not Descriptor:
-            raise NotImplementedError("get_stat_name is not implemented!")
-        descrpt_type = type_name
-        return Descriptor.__plugins.plugins[descrpt_type].get_stat_name(
-            ntypes, type_name, **kwargs
-        )
-
-    @classmethod
     def get_data_process_key(cls, config):
         """
         Get the keys for the data preprocess.
@@ -91,98 +89,6 @@ class Descriptor(torch.nn.Module, BaseDescriptor):
         Return a list of statistic names needed, such as "sumr", "suma" or "sumn".
         """
         raise NotImplementedError("data_stat_key is not implemented!")
-
-    def compute_or_load_stat(
-        self,
-        type_map: List[str],
-        sampled=None,
-        stat_file_path: Optional[Union[str, List[str]]] = None,
-    ):
-        """
-        Compute or load the statistics parameters of the descriptor.
-        Calculate and save the mean and standard deviation of the descriptor to `stat_file_path`
-        if `sampled` is not None, otherwise load them from `stat_file_path`.
-
-        Parameters
-        ----------
-        type_map
-            Mapping atom type to the name (str) of the type.
-            For example `type_map[1]` gives the name of the type 1.
-        sampled
-            The sampled data frames from different data systems.
-        stat_file_path
-            The path to the statistics files.
-        """
-        # TODO support hybrid descriptor
-        descrpt_stat_key = self.data_stat_key
-        if sampled is not None:  # compute the statistics results
-            tmp_dict = self.compute_input_stats(sampled)
-            result_dict = {key: tmp_dict[key] for key in descrpt_stat_key}
-            result_dict["type_map"] = type_map
-            if stat_file_path is not None:
-                self.save_stats(result_dict, stat_file_path)
-        else:  # load the statistics results
-            assert stat_file_path is not None, "No stat file to load!"
-            result_dict = self.load_stats(type_map, stat_file_path)
-        self.init_desc_stat(**result_dict)
-
-    def save_stats(self, result_dict, stat_file_path: Union[str, List[str]]):
-        """
-        Save the statistics results to `stat_file_path`.
-
-        Parameters
-        ----------
-        result_dict
-            The dictionary of statistics results.
-        stat_file_path
-            The path to the statistics file(s).
-        """
-        if not isinstance(stat_file_path, list):
-            log.info(f"Saving stat file to {stat_file_path}")
-            np.savez_compressed(stat_file_path, **result_dict)
-        else:  # TODO hybrid descriptor not implemented
-            raise NotImplementedError(
-                "save_stats for hybrid descriptor is not implemented!"
-            )
-
-    def load_stats(self, type_map, stat_file_path: Union[str, List[str]]):
-        """
-        Load the statistics results to `stat_file_path`.
-
-        Parameters
-        ----------
-        type_map
-            Mapping atom type to the name (str) of the type.
-            For example `type_map[1]` gives the name of the type 1.
-        stat_file_path
-            The path to the statistics file(s).
-
-        Returns
-        -------
-        result_dict
-            The dictionary of statistics results.
-        """
-        descrpt_stat_key = self.data_stat_key
-        target_type_map = type_map
-        if not isinstance(stat_file_path, list):
-            log.info(f"Loading stat file from {stat_file_path}")
-            stats = np.load(stat_file_path)
-            stat_type_map = list(stats["type_map"])
-            missing_type = [i for i in target_type_map if i not in stat_type_map]
-            assert not missing_type, (
-                f"These type are not in stat file {stat_file_path}: {missing_type}! "
-                f"Please change the stat file path!"
-            )
-            idx_map = [stat_type_map.index(i) for i in target_type_map]
-            if stats[descrpt_stat_key[0]].size:  # not empty
-                result_dict = {key: stats[key][idx_map] for key in descrpt_stat_key}
-            else:
-                result_dict = {key: [] for key in descrpt_stat_key}
-        else:  # TODO hybrid descriptor not implemented
-            raise NotImplementedError(
-                "load_stats for hybrid descriptor is not implemented!"
-            )
-        return result_dict
 
     def __new__(cls, *args, **kwargs):
         if cls is Descriptor:
@@ -275,12 +181,12 @@ class DescriptorBlock(torch.nn.Module, ABC):
         """Returns the embedding dimension."""
         pass
 
-    def compute_input_stats(self, merged):
+    def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
         """Update mean and stddev for DescriptorBlock elements."""
         raise NotImplementedError
 
-    def init_desc_stat(self, **kwargs):
-        """Initialize mean and stddev by the statistics."""
+    def get_stats(self) -> Dict[str, StatItem]:
+        """Get the statistics of the descriptor."""
         raise NotImplementedError
 
     def share_params(self, base_class, shared_level, resume=False):
@@ -291,28 +197,14 @@ class DescriptorBlock(torch.nn.Module, ABC):
             # link buffers
             if hasattr(self, "mean") and not resume:
                 # in case of change params during resume
-                sumr_base, suma_base, sumn_base, sumr2_base, suma2_base = (
-                    base_class.sumr,
-                    base_class.suma,
-                    base_class.sumn,
-                    base_class.sumr2,
-                    base_class.suma2,
-                )
-                sumr, suma, sumn, sumr2, suma2 = (
-                    self.sumr,
-                    self.suma,
-                    self.sumn,
-                    self.sumr2,
-                    self.suma2,
-                )
-                stat_dict = {
-                    "sumr": sumr_base + sumr,
-                    "suma": suma_base + suma,
-                    "sumn": sumn_base + sumn,
-                    "sumr2": sumr2_base + sumr2,
-                    "suma2": suma2_base + suma2,
-                }
-                base_class.init_desc_stat(**stat_dict)
+                base_env = EnvMatStatSeA(base_class)
+                base_env.stats = base_class.stats
+                for kk in base_class.get_stats():
+                    base_env.stats[kk] += self.get_stats()[kk]
+                mean, stddev = base_env()
+                if not base_class.set_davg_zero:
+                    base_class.mean.copy_(torch.tensor(mean, device=env.DEVICE))
+                base_class.stddev.copy_(torch.tensor(stddev, device=env.DEVICE))
                 self.mean = base_class.mean
                 self.stddev = base_class.stddev
             # self.load_state_dict(base_class.state_dict()) # this does not work, because it only inits the model
@@ -333,16 +225,6 @@ class DescriptorBlock(torch.nn.Module, ABC):
     ):
         """Calculate DescriptorBlock."""
         pass
-
-
-def compute_std(sumv2, sumv, sumn, rcut_r):
-    """Compute standard deviation."""
-    if sumn == 0:
-        return 1.0 / rcut_r
-    val = np.sqrt(sumv2 / sumn - np.multiply(sumv / sumn, sumv / sumn))
-    if np.abs(val) < 1e-2:
-        val = 1e-2
-    return val
 
 
 def make_default_type_embedding(

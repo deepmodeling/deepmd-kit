@@ -9,6 +9,10 @@ from typing import (
     Optional,
 )
 
+from deepmd.utils.path import (
+    DPPath,
+)
+
 
 def make_base_descriptor(
     t_tensor,
@@ -69,12 +73,10 @@ def make_base_descriptor(
             """
             pass
 
-        def compute_input_stats(self, merged):
+        def compute_input_stats(
+            self, merged: List[dict], path: Optional[DPPath] = None
+        ):
             """Update mean and stddev for descriptor elements."""
-            raise NotImplementedError
-
-        def init_desc_stat(self, **kwargs):
-            """Initialize the model bias by the statistics."""
             raise NotImplementedError
 
         @abstractmethod

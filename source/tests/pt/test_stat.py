@@ -2,15 +2,23 @@
 import json
 import os
 import unittest
+from abc import (
+    ABC,
+    abstractmethod,
+)
 from pathlib import (
     Path,
 )
 
+import dpdata
 import numpy as np
 import torch
 
 from deepmd.pt.model.descriptor import (
     DescrptSeA,
+)
+from deepmd.pt.model.descriptor.dpa1 import (
+    DescrptDPA1,
 )
 from deepmd.pt.utils import (
     env,
@@ -26,6 +34,7 @@ from deepmd.tf.common import (
     expand_sys_str,
 )
 from deepmd.tf.descriptor.se_a import DescrptSeA as DescrptSeA_tf
+from deepmd.tf.descriptor.se_atten import DescrptSeAtten as DescrptSeAtten_tf
 from deepmd.tf.fit.ener import (
     EnerFitting,
 )
@@ -50,12 +59,29 @@ def compare(ut, base, given):
         ut.assertEqual(base, given)
 
 
-class TestDataset(unittest.TestCase):
+class DatasetTest(ABC):
+    @abstractmethod
+    def setup_data(self):
+        pass
+
+    @abstractmethod
+    def setup_tf(self):
+        pass
+
+    @abstractmethod
+    def setup_pt(self):
+        pass
+
+    @abstractmethod
+    def tf_compute_input_stats(self):
+        pass
+
     def setUp(self):
         with open(str(Path(__file__).parent / "water/se_e2_a.json")) as fin:
             content = fin.read()
         config = json.loads(content)
-        data_file = [str(Path(__file__).parent / "water/data/data_0")]
+        data_file = [self.setup_data()]
+
         config["training"]["training_data"]["systems"] = data_file
         config["training"]["validation_data"]["systems"] = data_file
         model_config = config["model"]
@@ -97,13 +123,7 @@ class TestDataset(unittest.TestCase):
         self.dp_sampled = dp_make(dp_dataset, self.data_stat_nbatch, False)
         self.dp_merged = dp_merge(self.dp_sampled)
         self.dp_mesh = self.dp_merged.pop("default_mesh")
-        self.dp_d = DescrptSeA_tf(
-            rcut=self.rcut,
-            rcut_smth=self.rcut_smth,
-            sel=self.sel,
-            neuron=self.filter_neuron,
-            axis_neuron=self.axis_neuron,
-        )
+        self.dp_d = self.setup_tf()
 
     def test_stat_output(self):
         def my_merge(energy, natoms):
@@ -147,16 +167,9 @@ class TestDataset(unittest.TestCase):
     """
 
     def test_descriptor(self):
-        coord = self.dp_merged["coord"]
-        atype = self.dp_merged["type"]
-        natoms = self.dp_merged["natoms_vec"]
-        box = self.dp_merged["box"]
-        self.dp_d.compute_input_stats(coord, box, atype, natoms, self.dp_mesh, {})
+        self.tf_compute_input_stats()
 
-        my_en = DescrptSeA(
-            self.rcut, self.rcut_smth, self.sel, self.filter_neuron, self.axis_neuron
-        )
-        my_en = my_en.sea  # get the block who has stat as private vars
+        my_en = self.setup_pt()
         sampled = self.my_sampled
         for sys in sampled:
             for key in [
@@ -170,20 +183,102 @@ class TestDataset(unittest.TestCase):
                 if key in sys.keys():
                     sys[key] = sys[key].to(env.DEVICE)
         stat_dict = my_en.compute_input_stats(sampled)
-        my_en.init_desc_stat(**stat_dict)
         my_en.mean = my_en.mean
         my_en.stddev = my_en.stddev
-        self.assertTrue(
-            np.allclose(
-                self.dp_d.davg.reshape([-1]), my_en.mean.cpu().reshape([-1]), rtol=0.01
-            )
+        np.testing.assert_allclose(
+            self.dp_d.davg.reshape([-1]),
+            my_en.mean.cpu().reshape([-1]),
+            rtol=1e-14,
+            atol=1e-14,
         )
-        self.assertTrue(
-            np.allclose(
-                self.dp_d.dstd.reshape([-1]),
-                my_en.stddev.cpu().reshape([-1]),
-                rtol=0.01,
-            )
+        np.testing.assert_allclose(
+            self.dp_d.dstd.reshape([-1]),
+            my_en.stddev.cpu().reshape([-1]),
+            rtol=1e-14,
+            atol=1e-14,
+        )
+
+
+class TestDatasetNoMixed(DatasetTest, unittest.TestCase):
+    def setup_data(self):
+        original_data = str(Path(__file__).parent / "water/data/data_0")
+        picked_data = str(Path(__file__).parent / "picked_data_for_test_stat")
+        dpdata.LabeledSystem(original_data, fmt="deepmd/npy")[:2].to_deepmd_npy(
+            picked_data
+        )
+        self.mixed_type = False
+        return picked_data
+
+    def setup_tf(self):
+        return DescrptSeA_tf(
+            rcut=self.rcut,
+            rcut_smth=self.rcut_smth,
+            sel=self.sel,
+            neuron=self.filter_neuron,
+            axis_neuron=self.axis_neuron,
+        )
+
+    def setup_pt(self):
+        return DescrptSeA(
+            self.rcut, self.rcut_smth, self.sel, self.filter_neuron, self.axis_neuron
+        ).sea  # get the block who has stat as private vars
+
+    def tf_compute_input_stats(self):
+        coord = self.dp_merged["coord"]
+        atype = self.dp_merged["type"]
+        natoms = self.dp_merged["natoms_vec"]
+        box = self.dp_merged["box"]
+        self.dp_d.compute_input_stats(coord, box, atype, natoms, self.dp_mesh, {})
+
+
+class TestDatasetMixed(DatasetTest, unittest.TestCase):
+    def setup_data(self):
+        original_data = str(Path(__file__).parent / "water/data/data_0")
+        picked_data = str(Path(__file__).parent / "picked_data_for_test_stat")
+        dpdata.LabeledSystem(original_data, fmt="deepmd/npy")[:2].to_deepmd_npy_mixed(
+            picked_data
+        )
+        self.mixed_type = True
+        return picked_data
+
+    def setup_tf(self):
+        return DescrptSeAtten_tf(
+            ntypes=2,
+            rcut=self.rcut,
+            rcut_smth=self.rcut_smth,
+            sel=sum(self.sel),
+            neuron=self.filter_neuron,
+            axis_neuron=self.axis_neuron,
+            set_davg_zero=False,
+        )
+
+    def setup_pt(self):
+        return DescrptDPA1(
+            self.rcut,
+            self.rcut_smth,
+            sum(self.sel),
+            2,
+            self.filter_neuron,
+            self.axis_neuron,
+            set_davg_zero=False,
+        ).se_atten
+
+    def tf_compute_input_stats(self):
+        coord = self.dp_merged["coord"]
+        atype = self.dp_merged["type"]
+        natoms = self.dp_merged["natoms_vec"]
+        box = self.dp_merged["box"]
+        real_natoms_vec = self.dp_merged["real_natoms_vec"]
+
+        self.dp_d.compute_input_stats(
+            coord,
+            box,
+            atype,
+            natoms,
+            self.dp_mesh,
+            {},
+            mixed_type=True,
+            real_natoms_vec=real_natoms_vec,
         )
 
 

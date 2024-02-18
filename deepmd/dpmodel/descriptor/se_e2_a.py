@@ -1,6 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import numpy as np
 
+from deepmd.utils.path import (
+    DPPath,
+)
+
 try:
     from deepmd._version import version as __version__
 except ImportError:
@@ -229,12 +233,8 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         """Returns the number of element types."""
         return self.ntypes
 
-    def compute_input_stats(self, merged):
+    def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
         """Update mean and stddev for descriptor elements."""
-        raise NotImplementedError
-
-    def init_desc_stat(self, sumr, suma, sumn, sumr2, suma2):
-        """Initialize the model bias by the statistics."""
         raise NotImplementedError
 
     def cal_g(

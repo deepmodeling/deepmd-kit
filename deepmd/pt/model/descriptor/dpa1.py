@@ -12,6 +12,9 @@ from deepmd.pt.model.descriptor import (
 from deepmd.pt.model.network.network import (
     TypeEmbedNet,
 )
+from deepmd.utils.path import (
+    DPPath,
+)
 
 from .se_atten import (
     DescrptBlockSeAtten,
@@ -119,27 +122,8 @@ class DescrptDPA1(Descriptor):
     def dim_emb(self):
         return self.get_dim_emb()
 
-    def compute_input_stats(self, merged):
-        return self.se_atten.compute_input_stats(merged)
-
-    def init_desc_stat(
-        self, sumr=None, suma=None, sumn=None, sumr2=None, suma2=None, **kwargs
-    ):
-        assert all(x is not None for x in [sumr, suma, sumn, sumr2, suma2])
-        self.se_atten.init_desc_stat(sumr, suma, sumn, sumr2, suma2)
-
-    @classmethod
-    def get_stat_name(
-        cls, ntypes, type_name, rcut=None, rcut_smth=None, sel=None, **kwargs
-    ):
-        """
-        Get the name for the statistic file of the descriptor.
-        Usually use the combination of descriptor name, rcut, rcut_smth and sel as the statistic file name.
-        """
-        descrpt_type = type_name
-        assert descrpt_type in ["dpa1", "se_atten"]
-        assert all(x is not None for x in [rcut, rcut_smth, sel])
-        return f"stat_file_descrpt_dpa1_rcut{rcut:.2f}_smth{rcut_smth:.2f}_sel{sel}_ntypes{ntypes}.npz"
+    def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
+        return self.se_atten.compute_input_stats(merged, path)
 
     @classmethod
     def get_data_process_key(cls, config):
