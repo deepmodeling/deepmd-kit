@@ -115,7 +115,6 @@ class EnvMatStatSeA(EnvMatStat):
                 atype,
                 self.descriptor.get_rcut(),
                 self.descriptor.get_sel(),
-
                 mixed_types=self.descriptor.mixed_types(),
                 box=box,
             )
