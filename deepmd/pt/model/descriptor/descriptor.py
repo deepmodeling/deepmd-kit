@@ -15,8 +15,17 @@ import torch
 from deepmd.pt.model.network.network import (
     TypeEmbedNet,
 )
+from deepmd.pt.utils import (
+    env,
+)
+from deepmd.pt.utils.env_mat_stat import (
+    EnvMatStatSeA,
+)
 from deepmd.pt.utils.plugin import (
     Plugin,
+)
+from deepmd.utils.env_mat_stat import (
+    StatItem,
 )
 from deepmd.utils.path import (
     DPPath,
@@ -175,6 +184,10 @@ class DescriptorBlock(torch.nn.Module, ABC):
         """Update mean and stddev for DescriptorBlock elements."""
         raise NotImplementedError
 
+    def get_stats(self) -> dict[str, StatItem]:
+        """Get the statistics of the descriptor."""
+        raise NotImplementedError
+
     def share_params(self, base_class, shared_level, resume=False):
         assert (
             self.__class__ == base_class.__class__
@@ -183,27 +196,13 @@ class DescriptorBlock(torch.nn.Module, ABC):
             # link buffers
             if hasattr(self, "mean") and not resume:
                 # in case of change params during resume
-                sumr_base, suma_base, sumn_base, sumr2_base, suma2_base = (
-                    base_class.sumr,
-                    base_class.suma,
-                    base_class.sumn,
-                    base_class.sumr2,
-                    base_class.suma2,
-                )
-                sumr, suma, sumn, sumr2, suma2 = (
-                    self.sumr,
-                    self.suma,
-                    self.sumn,
-                    self.sumr2,
-                    self.suma2,
-                )
-                stat_dict = {
-                    "sumr": sumr_base + sumr,
-                    "suma": suma_base + suma,
-                    "sumn": sumn_base + sumn,
-                    "sumr2": sumr2_base + sumr2,
-                    "suma2": suma2_base + suma2,
-                }
+                base_env = EnvMatStatSeA(base_class)
+                for kk in base_class.get_stats():
+                    base_env.stats[kk] += self.get_stats()[kk]
+                mean, stddev = base_env()
+                if not base_class.set_davg_zero:
+                    base_class.mean.copy_(torch.tensor(mean, device=env.DEVICE))
+                base_class.stddev.copy_(torch.tensor(stddev, device=env.DEVICE))
                 self.mean = base_class.mean
                 self.stddev = base_class.stddev
             # self.load_state_dict(base_class.state_dict()) # this does not work, because it only inits the model

@@ -24,6 +24,9 @@ from deepmd.pt.utils.env import (
 from deepmd.pt.utils.env_mat_stat import (
     EnvMatStatSeA,
 )
+from deepmd.utils.env_mat_stat import (
+    StatItem,
+)
 from deepmd.utils.path import (
     DPPath,
 )
@@ -313,6 +316,7 @@ class DescrptBlockSeA(DescriptorBlock):
                     resnet_dt=self.resnet_dt,
                 )
             self.filter_layers = filter_layers
+        self.stats = None
 
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
@@ -380,6 +384,7 @@ class DescrptBlockSeA(DescriptorBlock):
         if path is not None:
             path = path / env_mat_stat.get_hash()
         env_mat_stat.load_or_compute_stats(merged, path)
+        self.stats = env_mat_stat.stats
         mean, stddev = env_mat_stat()
         if not self.set_davg_zero:
             self.mean.copy_(torch.tensor(mean, device=env.DEVICE))
@@ -387,6 +392,14 @@ class DescrptBlockSeA(DescriptorBlock):
         if not self.set_davg_zero:
             self.mean.copy_(torch.tensor(mean, device=env.DEVICE))
         self.stddev.copy_(torch.tensor(stddev, device=env.DEVICE))
+
+    def get_stats(self) -> dict[str, StatItem]:
+        """Get the statistics of the descriptor."""
+        if self.stats is None:
+            raise RuntimeError(
+                "The statistics of the descriptor has not been computed."
+            )
+        return self.stats
 
     def forward(
         self,
