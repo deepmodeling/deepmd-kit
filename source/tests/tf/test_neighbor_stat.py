@@ -41,18 +41,25 @@ class TestNeighborStat(unittest.TestCase):
         # set rcut to 0. will cause a core dumped
         # TODO: check what is wrong
         for rcut in (1.0, 2.0, 4.0):
-            with self.subTest():
-                rcut += 1e-3  # prevent numerical errors
-                min_nbor_dist, max_nbor_size = neighbor_stat(
-                    system="system_0", rcut=rcut, type_map=["TYPE"]
-                )
-                upper = np.ceil(rcut) + 1
-                X, Y, Z = np.mgrid[-upper:upper, -upper:upper, -upper:upper]
-                positions = np.vstack([X.ravel(), Y.ravel(), Z.ravel()]).T
-                # distance to (0,0,0)
-                distance = np.linalg.norm(positions, axis=1)
-                expected_neighbors = np.count_nonzero(
-                    np.logical_and(distance > 0, distance <= rcut)
-                )
-                self.assertAlmostEqual(min_nbor_dist, 1.0, 6)
-                self.assertEqual(max_nbor_size, [expected_neighbors])
+            for one_type in (True, False):
+                with self.subTest(rcut=rcut, one_type=one_type):
+                    rcut += 1e-3  # prevent numerical errors
+                    min_nbor_dist, max_nbor_size = neighbor_stat(
+                        system="system_0",
+                        rcut=rcut,
+                        type_map=["TYPE", "NO_THIS_TYPE"],
+                        one_type=one_type,
+                    )
+                    upper = np.ceil(rcut) + 1
+                    X, Y, Z = np.mgrid[-upper:upper, -upper:upper, -upper:upper]
+                    positions = np.vstack([X.ravel(), Y.ravel(), Z.ravel()]).T
+                    # distance to (0,0,0)
+                    distance = np.linalg.norm(positions, axis=1)
+                    expected_neighbors = np.count_nonzero(
+                        np.logical_and(distance > 0, distance <= rcut)
+                    )
+                    self.assertAlmostEqual(min_nbor_dist, 1.0, 6)
+                    ret = [expected_neighbors]
+                    if not one_type:
+                        ret.append(0)
+                    np.testing.assert_array_equal(max_nbor_size, ret)

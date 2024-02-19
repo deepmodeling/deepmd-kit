@@ -126,7 +126,7 @@ class NeighborStat(BaseNeighborStat):
         one_type: bool = False,
     ) -> None:
         super().__init__(ntypes, rcut, one_type)
-        self.op = NeighborStatOP(ntypes, rcut, not one_type)
+        self.op = NeighborStatOP(ntypes, rcut, one_type)
 
     def iterator(
         self, data: DeepmdDataSystem

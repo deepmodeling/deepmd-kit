@@ -45,7 +45,7 @@ class TestNeighborStat(unittest.TestCase):
                     min_nbor_dist, max_nbor_size = neighbor_stat(
                         system="system_0",
                         rcut=rcut,
-                        type_map=["TYPE"],
+                        type_map=["TYPE", "NO_THIS_TYPE"],
                         one_type=one_type,
                         backend="pytorch",
                     )
@@ -58,4 +58,7 @@ class TestNeighborStat(unittest.TestCase):
                         np.logical_and(distance > 0, distance <= rcut)
                     )
                     self.assertAlmostEqual(min_nbor_dist, 1.0, 6)
-                    self.assertEqual(max_nbor_size, [expected_neighbors])
+                    ret = [expected_neighbors]
+                    if not one_type:
+                        ret.append(0)
+                    np.testing.assert_array_equal(max_nbor_size, ret)

@@ -181,7 +181,7 @@ class NeighborStat(BaseNeighborStat):
         """Constructor."""
         super().__init__(ntypes, rcut, one_type)
         self.auto_batch_size = AutoBatchSize()
-        self.neighbor_stat = NeighborStatOP(ntypes, rcut, not one_type)
+        self.neighbor_stat = NeighborStatOP(ntypes, rcut, one_type)
         self.place_holders = {}
         with tf.Graph().as_default() as sub_graph:
             self.op = self.build()
