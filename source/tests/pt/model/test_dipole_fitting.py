@@ -63,7 +63,7 @@ class TestDipoleFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 embedding_width=self.dd0.get_dim_emb(),
                 numb_fparam=nfp,
                 numb_aparam=nap,
-                mixed_types= mixed_types,
+                mixed_types=mixed_types,
             ).to(env.DEVICE)
             ft1 = DPDipoleFitting.deserialize(ft0.serialize())
             ft2 = DipoleFittingNet.deserialize(ft1.serialize())
@@ -116,7 +116,7 @@ class TestDipoleFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 embedding_width=self.dd0.get_dim_emb(),
                 numb_fparam=nfp,
                 numb_aparam=nap,
-                mixed_types= mixed_types,
+                mixed_types=mixed_types,
             ).to(env.DEVICE)
             torch.jit.script(ft0)
 
