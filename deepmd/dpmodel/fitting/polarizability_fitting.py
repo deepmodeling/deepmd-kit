@@ -69,7 +69,7 @@ class PolarFitting(GeneralFitting):
             If true, use a uniform fitting net for all atom types, otherwise use
             different fitting nets for different atom types.
     fit_diag : bool
-            Fit the diagonal part of the rotational invariant polarizability matrix, which will be converted to 
+            Fit the diagonal part of the rotational invariant polarizability matrix, which will be converted to
             normal polarizability matrix by contracting with the rotation matrix.
     scale : List[float]
             The output of the fitting net (polarizability matrix) for type i atom will be scaled by scale[i]
