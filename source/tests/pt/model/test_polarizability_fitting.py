@@ -56,7 +56,7 @@ class TestDipoleFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
             [0, 3],
             [0, 4],
             [True, False],
-            [None, np.random.rand(self.nt).tolist()]
+            [None, np.random.rand(self.nt).tolist()],
         ):
             ft0 = PolarFittingNet(
                 "foo",
@@ -153,7 +153,7 @@ class TestEquivalence(unittest.TestCase):
             [0, 3],
             [0, 4],
             [True, False],
-            [None, np.random.rand(self.nt).tolist()]
+            [None, np.random.rand(self.nt).tolist()],
         ):
             ft0 = PolarFittingNet(
                 "foo",
@@ -214,8 +214,7 @@ class TestEquivalence(unittest.TestCase):
     def test_permu(self):
         coord = torch.matmul(self.coord, self.cell)
         for fit_diag, scale in itertools.product(
-            [True, False],
-            [None, np.random.rand(self.nt).tolist()]
+            [True, False], [None, np.random.rand(self.nt).tolist()]
         ):
             ft0 = PolarFittingNet(
                 "foo",
@@ -263,8 +262,7 @@ class TestEquivalence(unittest.TestCase):
             self.cell,
         )
         for fit_diag, scale in itertools.product(
-            [True, False],
-            [None, np.random.rand(self.nt).tolist()]
+            [True, False], [None, np.random.rand(self.nt).tolist()]
         ):
             ft0 = PolarFittingNet(
                 "foo",

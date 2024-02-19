@@ -119,7 +119,9 @@ class PolarFitting(GeneralFitting):
         if self.scale is None:
             self.scale = [1.0 for _ in range(ntypes)]
         else:
-            assert isinstance(self.scale, list) and len(self.scale) == ntypes, "Scale should be a list of length ntypes."
+            assert (
+                isinstance(self.scale, list) and len(self.scale) == ntypes
+            ), "Scale should be a list of length ntypes."
         self.scale = np.array(self.scale).reshape(ntypes, 1)
         self.shift_diag = shift_diag
         super().__init__(

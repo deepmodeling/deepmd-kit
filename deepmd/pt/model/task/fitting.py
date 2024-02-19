@@ -589,7 +589,9 @@ class GeneralFitting(Fitting):
                 atom_property = (
                     self.filter_layers.networks[0](xx) + self.bias_atom_e[atype]
                 )
-                outs = outs + atom_property  # Shape is [nframes, natoms[0], net_dim_out]
+                outs = (
+                    outs + atom_property
+                )  # Shape is [nframes, natoms[0], net_dim_out]
                 if hasattr(self, "scale"):
                     outs = outs * self.scale[atype]
             else:
@@ -601,7 +603,9 @@ class GeneralFitting(Fitting):
                     if hasattr(self, "scale"):
                         atom_property = atom_property * self.scale[type_i]
                     atom_property = atom_property * mask
-                    outs = outs + atom_property  # Shape is [nframes, natoms[0], net_dim_out]
+                    outs = (
+                        outs + atom_property
+                    )  # Shape is [nframes, natoms[0], net_dim_out]
         # nf x nloc
         mask = self.emask(atype)
         # nf x nloc x nod

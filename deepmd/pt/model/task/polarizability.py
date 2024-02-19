@@ -95,8 +95,12 @@ class PolarFittingNet(GeneralFitting):
         if self.scale is None:
             self.scale = [1.0 for _ in range(ntypes)]
         else:
-            assert isinstance(self.scale, list) and len(self.scale) == ntypes, "Scale should be a list of length ntypes."
-        self.scale = torch.tensor(self.scale, dtype = env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE).view(ntypes, 1)
+            assert (
+                isinstance(self.scale, list) and len(self.scale) == ntypes
+            ), "Scale should be a list of length ntypes."
+        self.scale = torch.tensor(
+            self.scale, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE
+        ).view(ntypes, 1)
         self.shift_diag = shift_diag
         super().__init__(
             var_name=var_name,
