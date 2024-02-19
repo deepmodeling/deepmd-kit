@@ -194,14 +194,12 @@ class DPAtomicModel(torch.nn.Module, BaseAtomicModel):
     @torch.jit.export
     def get_dim_fparam(self) -> int:
         """Get the number (dimension) of frame parameters of this atomic model."""
-        # TODO: self.fitting_net.get_dim_fparam()
-        return 0
+        return self.fitting_net.get_dim_fparam()
 
     @torch.jit.export
     def get_dim_aparam(self) -> int:
         """Get the number (dimension) of atomic parameters of this atomic model."""
-        # TODO: self.fitting_net.get_dim_aparam()
-        return 0
+        return self.fitting_net.get_dim_aparam()
 
     @torch.jit.export
     def get_sel_type(self) -> List[int]:
@@ -211,8 +209,7 @@ class DPAtomicModel(torch.nn.Module, BaseAtomicModel):
         to the result of the model.
         If returning an empty list, all atom types are selected.
         """
-        # TODO: self.fitting_net.get_sel_type()
-        return []
+        return self.fitting_net.get_sel_type()
 
     @torch.jit.export
     def is_aparam_nall(self) -> bool:
