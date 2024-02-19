@@ -1,0 +1,19 @@
+on:
+  push:
+  pull_request:
+name: Type checker
+jobs:
+  test:
+    name: pyright
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+    - run: pip install -e .[cpu,torch,gui]
+    - uses: jakebailey/pyright-action@v1
+      with:
+        version: 1.1.350
+      continue-on-error: true

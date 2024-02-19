@@ -262,3 +262,8 @@ markers = "run"
 
 [tool.coverage.run]
 plugins = ["source.3rdparty.coverage_plugins.jit_plugin"]
+
+[tool.pyright]
+include = [
+    "deepmd",
+]
