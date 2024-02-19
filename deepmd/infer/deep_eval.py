@@ -16,17 +16,15 @@ from typing import (
 
 import numpy as np
 
+from deepmd.backend.backend import (
+    Backend,
+)
 from deepmd.dpmodel.output_def import (
     FittingOutputDef,
     ModelOutputDef,
 )
 from deepmd.utils.batch_size import (
     AutoBatchSize,
-)
-
-from .backend import (
-    DPBackend,
-    detect_backend,
 )
 
 if TYPE_CHECKING:
@@ -89,17 +87,8 @@ class DeepEvalBackend(ABC):
 
     def __new__(cls, model_file: str, *args, **kwargs):
         if cls is DeepEvalBackend:
-            backend = detect_backend(model_file)
-            if backend == DPBackend.TensorFlow:
-                from deepmd.tf.infer.deep_eval import DeepEval as DeepEvalTF
-
-                return super().__new__(DeepEvalTF)
-            elif backend == DPBackend.PyTorch:
-                from deepmd.pt.infer.deep_eval import DeepEval as DeepEvalPT
-
-                return super().__new__(DeepEvalPT)
-            else:
-                raise NotImplementedError("Unsupported backend: " + str(backend))
+            backend = Backend.detect_backend_by_model(model_file)
+            return super().__new__(backend().deep_eval)
         return super().__new__(cls)
 
     @abstractmethod
