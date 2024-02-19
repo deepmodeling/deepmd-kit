@@ -53,7 +53,15 @@ class LinearAtomicModel(BaseAtomicModel):
         self.mixed_types_list = [model.mixed_types() for model in self.models]
 
     def mixed_types(self) -> bool:
-        """If distinguish different types by sorting."""
+        """If true, the model
+        1. assumes total numbe of atoms aligned across frames;
+        2. uses a neighbor list that does not distinguish different atomic types.
+
+        If false, the model
+        1. assumes total numbe of atoms of each atom type aligned across frames;
+        2. uses a neighbor list that distinguishes different atomic types.
+
+        """
         return True
 
     def get_rcut(self) -> float:

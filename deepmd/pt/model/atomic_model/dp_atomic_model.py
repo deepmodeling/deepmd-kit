@@ -80,7 +80,15 @@ class DPAtomicModel(torch.nn.Module, BaseAtomicModel):
         return self.sel
 
     def mixed_types(self) -> bool:
-        """If distinguish different types by sorting."""
+        """If true, the model
+        1. assumes total numbe of atoms aligned across frames;
+        2. uses a neighbor list that does not distinguish different atomic types.
+
+        If false, the model
+        1. assumes total numbe of atoms of each atom type aligned across frames;
+        2. uses a neighbor list that distinguishes different atomic types.
+
+        """
         return self.descriptor.mixed_types()
 
     def serialize(self) -> dict:
