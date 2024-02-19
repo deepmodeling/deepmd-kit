@@ -473,6 +473,8 @@ class GeneralFitting(Fitting):
             self.aparam_avg = value
         elif key in ["aparam_inv_std"]:
             self.aparam_inv_std = value
+        elif key in ["scale"]:
+            self.scale = value
         else:
             raise KeyError(key)
 
@@ -487,6 +489,8 @@ class GeneralFitting(Fitting):
             return self.aparam_avg
         elif key in ["aparam_inv_std"]:
             return self.aparam_inv_std
+        elif key in ["scale"]:
+            return self.scale
         else:
             raise KeyError(key)
 
@@ -585,15 +589,19 @@ class GeneralFitting(Fitting):
                 atom_property = (
                     self.filter_layers.networks[0](xx) + self.bias_atom_e[atype]
                 )
-                outs = outs + atom_property  # Shape is [nframes, natoms[0], 1]
+                outs = outs + atom_property  # Shape is [nframes, natoms[0], net_dim_out]
+                if hasattr(self, "scale"):
+                    outs = outs * self.scale[atype]
             else:
                 for type_i, ll in enumerate(self.filter_layers.networks):
                     mask = (atype == type_i).unsqueeze(-1)
                     mask = torch.tile(mask, (1, 1, net_dim_out))
                     atom_property = ll(xx)
                     atom_property = atom_property + self.bias_atom_e[type_i]
+                    if hasattr(self, "scale"):
+                        atom_property = atom_property * self.scale[type_i]
                     atom_property = atom_property * mask
-                    outs = outs + atom_property  # Shape is [nframes, natoms[0], 1]
+                    outs = outs + atom_property  # Shape is [nframes, natoms[0], net_dim_out]
         # nf x nloc
         mask = self.emask(atype)
         # nf x nloc x nod

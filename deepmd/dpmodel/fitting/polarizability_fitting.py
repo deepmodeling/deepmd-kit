@@ -69,7 +69,10 @@ class PolarFitting(GeneralFitting):
             Different atomic types uses different fitting net.
     fit_diag : bool
         Fit the diagonal part of the rotational invariant polarizability matrix, which will be converted to normal polarizability matrix by contracting with the rotation matrix.
-
+    scale : List[float]
+        The output of the fitting net (polarizability matrix) for type i atom will be scaled by scale[i]
+    shift_diag : bool
+        Whether to shift the diagonal part of the polarizability matrix. The shift operation is carried out after scale.
     """
 
     def __init__(
@@ -95,6 +98,8 @@ class PolarFitting(GeneralFitting):
         exclude_types: List[int] = [],
         old_impl: bool = False,
         fit_diag: bool = True,
+        scale: Optional[List[float]] = None,
+        shift_diag: bool = True,
     ):
         # seed, uniform_seed are not included
         if tot_ener_zero:
@@ -110,6 +115,13 @@ class PolarFitting(GeneralFitting):
 
         self.embedding_width = embedding_width
         self.fit_diag = fit_diag
+        self.scale = scale
+        if self.scale is None:
+            self.scale = [1.0 for _ in range(ntypes)]
+        else:
+            assert isinstance(self.scale, list) and len(self.scale) == ntypes, "Scale should be a list of length ntypes."
+        self.scale = np.array(self.scale).reshape(ntypes, 1)
+        self.shift_diag = shift_diag
         super().__init__(
             var_name=var_name,
             ntypes=ntypes,
@@ -145,6 +157,7 @@ class PolarFitting(GeneralFitting):
         data["embedding_width"] = self.embedding_width
         data["old_impl"] = self.old_impl
         data["fit_diag"] = self.fit_diag
+        data["@variables"]["scale"] = self.scale
         return data
 
     def output_def(self):

@@ -186,6 +186,8 @@ class GeneralFitting(NativeOP, BaseFitting):
             self.aparam_avg = value
         elif key in ["aparam_inv_std"]:
             self.aparam_inv_std = value
+        elif key in ["scale"]:
+            self.scale = value
         else:
             raise KeyError(key)
 
@@ -200,6 +202,8 @@ class GeneralFitting(NativeOP, BaseFitting):
             return self.aparam_avg
         elif key in ["aparam_inv_std"]:
             return self.aparam_inv_std
+        elif key in ["scale"]:
+            return self.scale
         else:
             raise KeyError(key)
 
@@ -326,10 +330,14 @@ class GeneralFitting(NativeOP, BaseFitting):
                 )
                 atom_energy = self.nets[(type_i,)](xx)
                 atom_energy = atom_energy + self.bias_atom_e[type_i]
+                if hasattr(self, "scale"):
+                    atom_property = atom_property * self.scale[type_i]
                 atom_energy = atom_energy * mask
                 outs = outs + atom_energy  # Shape is [nframes, natoms[0], 1]
         else:
             outs = self.nets[()](xx) + self.bias_atom_e[atype]
+            if hasattr(self, "scale"):
+                outs = outs * self.scale[atype]
         # nf x nloc
         exclude_mask = self.emask.build_type_exclude_mask(atype)
         # nf x nloc x nod

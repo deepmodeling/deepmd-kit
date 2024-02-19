@@ -51,11 +51,12 @@ class TestDipoleFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
             self.atype_ext[:, : self.nloc], dtype=int, device=env.DEVICE
         )
 
-        for distinguish_types, nfp, nap, fit_diag in itertools.product(
+        for distinguish_types, nfp, nap, fit_diag, scale in itertools.product(
             [True, False],
             [0, 3],
             [0, 4],
             [True, False],
+            [None, np.random.rand(self.nt).tolist()]
         ):
             ft0 = PolarFittingNet(
                 "foo",
@@ -66,6 +67,7 @@ class TestDipoleFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 numb_aparam=nap,
                 use_tebd=(not distinguish_types),
                 fit_diag=fit_diag,
+                scale=scale,
             ).to(env.DEVICE)
             ft1 = DPPolarFitting.deserialize(ft0.serialize())
             ft2 = PolarFittingNet.deserialize(ft1.serialize())
@@ -132,6 +134,7 @@ class TestEquivalence(unittest.TestCase):
         self.rcut_smth = 0.5
         self.sel = [46, 92, 4]
         self.nf = 1
+        self.nt = 3
         self.rng = np.random.default_rng()
         self.coord = 2 * torch.rand([self.natoms, 3], dtype=dtype).to(env.DEVICE)
         self.shift = torch.tensor([4, 4, 4], dtype=dtype).to(env.DEVICE)
@@ -145,21 +148,23 @@ class TestEquivalence(unittest.TestCase):
         rmat = torch.tensor(special_ortho_group.rvs(3), dtype=dtype).to(env.DEVICE)
         coord_rot = torch.matmul(self.coord, rmat)
 
-        for distinguish_types, nfp, nap, fit_diag in itertools.product(
+        for distinguish_types, nfp, nap, fit_diag, scale in itertools.product(
             [True, False],
             [0, 3],
             [0, 4],
             [True, False],
+            [None, np.random.rand(self.nt).tolist()]
         ):
             ft0 = PolarFittingNet(
                 "foo",
-                3,  # ntype
+                self.nt,
                 self.dd0.dim_out,  # dim_descrpt
                 embedding_width=self.dd0.get_dim_emb(),
                 numb_fparam=nfp,
                 numb_aparam=nap,
                 use_tebd=False,
                 fit_diag=fit_diag,
+                scale=scale,
             ).to(env.DEVICE)
             if nfp > 0:
                 ifp = torch.tensor(
@@ -208,16 +213,20 @@ class TestEquivalence(unittest.TestCase):
 
     def test_permu(self):
         coord = torch.matmul(self.coord, self.cell)
-        for fit_diag in [True, False]:
+        for fit_diag, scale in itertools.product(
+            [True, False],
+            [None, np.random.rand(self.nt).tolist()]
+        ):
             ft0 = PolarFittingNet(
                 "foo",
-                3,  # ntype
+                self.nt,
                 self.dd0.dim_out,
                 embedding_width=self.dd0.get_dim_emb(),
                 numb_fparam=0,
                 numb_aparam=0,
                 use_tebd=False,
                 fit_diag=fit_diag,
+                scale=scale,
             ).to(env.DEVICE)
             res = []
             for idx_perm in [[0, 1, 2, 3, 4], [1, 0, 4, 3, 2]]:
@@ -253,18 +262,20 @@ class TestEquivalence(unittest.TestCase):
             ),
             self.cell,
         )
-        for fit_diag in itertools.product(
+        for fit_diag, scale in itertools.product(
             [True, False],
+            [None, np.random.rand(self.nt).tolist()]
         ):
             ft0 = PolarFittingNet(
                 "foo",
-                3,  # ntype
+                self.nt,
                 self.dd0.dim_out,
                 embedding_width=self.dd0.get_dim_emb(),
                 numb_fparam=0,
                 numb_aparam=0,
                 use_tebd=False,
                 fit_diag=fit_diag,
+                scale=scale,
             ).to(env.DEVICE)
             res = []
             for xyz in [self.coord, coord_s]:

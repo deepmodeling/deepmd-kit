@@ -20,6 +20,9 @@ from deepmd.pt.utils import (
 from deepmd.pt.utils.env import (
     DEFAULT_PRECISION,
 )
+from deepmd.pt.utils.utils import (
+    to_numpy_array,
+)
 
 log = logging.getLogger(__name__)
 
@@ -59,6 +62,10 @@ class PolarFittingNet(GeneralFitting):
         Random seed.
     fit_diag : bool
         Fit the diagonal part of the rotational invariant polarizability matrix, which will be converted to normal polarizability matrix by contracting with the rotation matrix.
+    scale : List[float]
+        The output of the fitting net (polarizability matrix) for type i atom will be scaled by scale[i]
+    shift_diag : bool
+        Whether to shift the diagonal part of the polarizability matrix. The shift operation is carried out after scale.
     """
 
     def __init__(
@@ -78,10 +85,19 @@ class PolarFittingNet(GeneralFitting):
         seed: Optional[int] = None,
         exclude_types: List[int] = [],
         fit_diag: bool = True,
+        scale: Optional[List[float]] = None,
+        shift_diag: bool = True,
         **kwargs,
     ):
         self.embedding_width = embedding_width
         self.fit_diag = fit_diag
+        self.scale = scale
+        if self.scale is None:
+            self.scale = [1.0 for _ in range(ntypes)]
+        else:
+            assert isinstance(self.scale, list) and len(self.scale) == ntypes, "Scale should be a list of length ntypes."
+        self.scale = torch.tensor(self.scale, dtype = env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE).view(ntypes, 1)
+        self.shift_diag = shift_diag
         super().__init__(
             var_name=var_name,
             ntypes=ntypes,
@@ -113,6 +129,8 @@ class PolarFittingNet(GeneralFitting):
         data["embedding_width"] = self.embedding_width
         data["old_impl"] = self.old_impl
         data["fit_diag"] = self.fit_diag
+        data["fit_diag"] = self.fit_diag
+        data["@variables"]["scale"] = to_numpy_array(self.scale)
         return data
 
     def output_def(self) -> FittingOutputDef:
