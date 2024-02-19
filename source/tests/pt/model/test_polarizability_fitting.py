@@ -190,10 +190,14 @@ class TestEquivalence(unittest.TestCase):
                 res.append(ret0["foo"])
             print(res[1].shape)
             np.testing.assert_allclose(
-                to_numpy_array(res[1]), to_numpy_array(torch.matmul(rmat.T, torch.matmul(res[0].reshape(self.nf * self.natoms, 3, 3), rmat)).reshape(self.nf, self.natoms,9))
+                to_numpy_array(res[1]),
+                to_numpy_array(
+                    torch.matmul(
+                        rmat.T,
+                        torch.matmul(res[0].reshape(self.nf * self.natoms, 3, 3), rmat),
+                    ).reshape(self.nf, self.natoms, 9)
+                ),
             )
-            
-        
 
     def test_permu(self):
         coord = torch.matmul(self.coord, self.cell)

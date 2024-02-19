@@ -185,7 +185,9 @@ class PolarFitting(GeneralFitting):
 
         """
         nframes, nloc, _ = descriptor.shape
-        assert gr is not None, "Must provide the rotation matrix for polarizability fitting."
+        assert (
+            gr is not None
+        ), "Must provide the rotation matrix for polarizability fitting."
         # (nframes, nloc, m1)
         out = self._call_common(descriptor, atype, gr, g2, h2, fparam, aparam)[
             self.var_name
@@ -196,8 +198,10 @@ class PolarFitting(GeneralFitting):
 
         # (nframes * nloc, m1, 3)
         gr = gr.reshape(nframes * nloc, -1, 3)
-        
-        out = np.einsum("bim,bmj->bij", out, gr) # (nframes * nloc, m1, 3)
-        out = np.einsum("bim,bmj->bij",np.transpose(gr, axes=(0, 2, 1)), out) # (nframes * nloc, 3, 3)
+
+        out = np.einsum("bim,bmj->bij", out, gr)  # (nframes * nloc, m1, 3)
+        out = np.einsum(
+            "bim,bmj->bij", np.transpose(gr, axes=(0, 2, 1)), out
+        )  # (nframes * nloc, 3, 3)
         out = out.reshape(nframes, nloc, 9)
         return {self.var_name: out}

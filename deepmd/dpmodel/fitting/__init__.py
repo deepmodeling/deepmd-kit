@@ -9,7 +9,7 @@ from .make_base_fitting import (
     make_base_fitting,
 )
 from .polarizability_fitting import (
-    PolarFitting
+    PolarFitting,
 )
 
 __all__ = [

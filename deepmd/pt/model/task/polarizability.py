@@ -98,7 +98,7 @@ class PolarFittingNet(GeneralFitting):
 
     def _net_out_dim(self):
         """Set the FittingNet output dim."""
-        return self.embedding_width * self.embedding_width 
+        return self.embedding_width * self.embedding_width
 
     def serialize(self) -> dict:
         data = super().serialize()
@@ -138,7 +138,9 @@ class PolarFittingNet(GeneralFitting):
         aparam: Optional[torch.Tensor] = None,
     ):
         nframes, nloc, _ = descriptor.shape
-        assert gr is not None, "Must provide the rotation matrix for polarizability fitting."
+        assert (
+            gr is not None
+        ), "Must provide the rotation matrix for polarizability fitting."
         # (nframes, nloc, m1)
         out = self._forward_common(descriptor, atype, gr, g2, h2, fparam, aparam)[
             self.var_name
@@ -146,10 +148,10 @@ class PolarFittingNet(GeneralFitting):
         # (nframes * nloc, m1, m1)
         out = out.view(-1, self.embedding_width, self.embedding_width)
         out = out + out.transpose(1, 2)
-        gr = gr.view(nframes * nloc, -1, 3) # (nframes * nloc, m1, 3)
-        out = torch.bmm(out, gr) # (nframes * nloc, m1, 3)
+        gr = gr.view(nframes * nloc, -1, 3)  # (nframes * nloc, m1, 3)
+        out = torch.bmm(out, gr)  # (nframes * nloc, m1, 3)
 
-        out = torch.bmm(gr.transpose(1, 2), out) # (nframes * nloc, 3, 3)
+        out = torch.bmm(gr.transpose(1, 2), out)  # (nframes * nloc, 3, 3)
         out = out.view(nframes, nloc, 9)
-        
+
         return {self.var_name: out.to(env.GLOBAL_PT_FLOAT_PRECISION)}
