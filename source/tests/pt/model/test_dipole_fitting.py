@@ -60,7 +60,7 @@ class TestDipoleFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 "foo",
                 self.nt,
                 self.dd0.dim_out,
-                dim_rot_mat=self.dd0.get_dim_emb(),
+                embedding_width=self.dd0.get_dim_emb(),
                 numb_fparam=nfp,
                 numb_aparam=nap,
                 use_tebd=(not distinguish_types),
@@ -113,7 +113,7 @@ class TestDipoleFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 "foo",
                 self.nt,
                 self.dd0.dim_out,
-                dim_rot_mat=self.dd0.get_dim_emb(),
+                embedding_width=self.dd0.get_dim_emb(),
                 numb_fparam=nfp,
                 numb_aparam=nap,
                 use_tebd=(not distinguish_types),
@@ -149,7 +149,7 @@ class TestEquivalence(unittest.TestCase):
                 "foo",
                 3,  # ntype
                 self.dd0.dim_out,  # dim_descrpt
-                dim_rot_mat=self.dd0.get_dim_emb(),
+                embedding_width=self.dd0.get_dim_emb(),
                 numb_fparam=nfp,
                 numb_aparam=nap,
                 use_tebd=False,
@@ -199,7 +199,7 @@ class TestEquivalence(unittest.TestCase):
             "foo",
             3,  # ntype
             self.dd0.dim_out,
-            dim_rot_mat=self.dd0.get_dim_emb(),
+            embedding_width=self.dd0.get_dim_emb(),
             numb_fparam=0,
             numb_aparam=0,
             use_tebd=False,
@@ -241,7 +241,7 @@ class TestEquivalence(unittest.TestCase):
             "foo",
             3,  # ntype
             self.dd0.dim_out,
-            dim_rot_mat=self.dd0.get_dim_emb(),
+            embedding_width=self.dd0.get_dim_emb(),
             numb_fparam=0,
             numb_aparam=0,
             use_tebd=False,

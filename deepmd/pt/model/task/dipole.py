@@ -25,7 +25,7 @@ log = logging.getLogger(__name__)
 
 
 class DipoleFittingNet(GeneralFitting):
-    """Construct a general fitting net.
+    """Construct a dipole fitting net.
 
     Parameters
     ----------
@@ -37,7 +37,7 @@ class DipoleFittingNet(GeneralFitting):
         Embedding width per atom.
     dim_out : int
         The output dimension of the fitting net.
-    dim_rot_mat : int
+    embedding_width : int
         The dimension of rotation matrix, m1.
     neuron : List[int]
         Number of neurons in each hidden layers of the fitting net.
@@ -64,7 +64,7 @@ class DipoleFittingNet(GeneralFitting):
         var_name: str,
         ntypes: int,
         dim_descrpt: int,
-        dim_rot_mat: int,
+        embedding_width: int,
         neuron: List[int] = [128, 128, 128],
         resnet_dt: bool = True,
         numb_fparam: int = 0,
@@ -77,7 +77,7 @@ class DipoleFittingNet(GeneralFitting):
         exclude_types: List[int] = [],
         **kwargs,
     ):
-        self.dim_rot_mat = dim_rot_mat
+        self.embedding_width = embedding_width
         super().__init__(
             var_name=var_name,
             ntypes=ntypes,
@@ -98,11 +98,11 @@ class DipoleFittingNet(GeneralFitting):
 
     def _net_out_dim(self):
         """Set the FittingNet output dim."""
-        return self.dim_rot_mat
+        return self.embedding_width
 
     def serialize(self) -> dict:
         data = super().serialize()
-        data["dim_rot_mat"] = self.dim_rot_mat
+        data["embedding_width"] = self.embedding_width
         data["old_impl"] = self.old_impl
         return data
 
@@ -144,7 +144,7 @@ class DipoleFittingNet(GeneralFitting):
             self.var_name
         ]
         # (nframes * nloc, 1, m1)
-        out = out.view(-1, 1, self.dim_rot_mat)
+        out = out.view(-1, 1, self.embedding_width)
         # (nframes * nloc, m1, 3)
         gr = gr.view(nframes * nloc, -1, 3)
         # (nframes, nloc, 3)

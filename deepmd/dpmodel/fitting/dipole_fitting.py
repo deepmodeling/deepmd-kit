@@ -34,7 +34,7 @@ class DipoleFitting(GeneralFitting):
             The number of atom types.
     dim_descrpt
             The dimension of the input descriptor.
-    dim_rot_mat : int
+    embedding_width : int
         The dimension of rotation matrix, m1.
     neuron
             Number of neurons :math:`N` in each hidden layer of the fitting net
@@ -75,7 +75,7 @@ class DipoleFitting(GeneralFitting):
         var_name: str,
         ntypes: int,
         dim_descrpt: int,
-        dim_rot_mat: int,
+        embedding_width: int,
         neuron: List[int] = [120, 120, 120],
         resnet_dt: bool = True,
         numb_fparam: int = 0,
@@ -105,7 +105,7 @@ class DipoleFitting(GeneralFitting):
         if atom_ener is not None and atom_ener != []:
             raise NotImplementedError("atom_ener is not implemented")
 
-        self.dim_rot_mat = dim_rot_mat
+        self.embedding_width = embedding_width
         super().__init__(
             var_name=var_name,
             ntypes=ntypes,
@@ -130,11 +130,11 @@ class DipoleFitting(GeneralFitting):
 
     def _net_out_dim(self):
         """Set the FittingNet output dim."""
-        return self.dim_rot_mat
+        return self.embedding_width
 
     def serialize(self) -> dict:
         data = super().serialize()
-        data["dim_rot_mat"] = self.dim_rot_mat
+        data["embedding_width"] = self.embedding_width
         data["old_impl"] = self.old_impl
         return data
 
@@ -191,7 +191,7 @@ class DipoleFitting(GeneralFitting):
             self.var_name
         ]
         # (nframes * nloc, 1, m1)
-        out = out.reshape(-1, 1, self.dim_rot_mat)
+        out = out.reshape(-1, 1, self.embedding_width)
         # (nframes * nloc, m1, 3)
         gr = gr.reshape(nframes * nloc, -1, 3)
         # (nframes, nloc, 3)
