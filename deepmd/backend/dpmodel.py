@@ -35,7 +35,7 @@ class DPModelBackend(Backend):
     """The formal name of the backend."""
     features: ClassVar[Backend.Feature] = Backend.Feature.NEIGHBOR_STAT
     """The features of the backend."""
-    suffixes: ClassVar[List[str]] = ["dp"]
+    suffixes: ClassVar[List[str]] = [".dp"]
     """The suffixes of the backend."""
 
     def is_available(self) -> bool:

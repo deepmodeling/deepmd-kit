@@ -40,7 +40,7 @@ class TensorFlowBackend(Backend):
         | Backend.Feature.NEIGHBOR_STAT
     )
     """The features of the backend."""
-    suffixes: ClassVar[List[str]] = ["pb"]
+    suffixes: ClassVar[List[str]] = [".pb"]
     """The suffixes of the backend."""
 
     def is_available(self) -> bool:

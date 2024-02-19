@@ -127,8 +127,9 @@ class Backend(PluginVariant):
         """
         filename = str(filename).lower()
         for backend in Backend.get_backends().values():
-            if filename.endswith(backend.suffixes[0]):
-                return backend
+            for suffix in backend.suffixes:
+                if filename.endswith(suffix):
+                    return backend
         raise ValueError(f"Cannot detect the backend of the model file {filename}.")
 
     class Feature(Flag):
