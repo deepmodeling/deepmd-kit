@@ -40,20 +40,20 @@ class NeighborStatOP:
         The num of atom types
     rcut
         The cut-off radius
-    distinguish_types : bool, optional
-        If False, treat all types as a single type.
+    mixed_types : bool, optional
+        If True, treat neighbors of all types as a single type.
     """
 
     def __init__(
         self,
         ntypes: int,
         rcut: float,
-        distinguish_types: bool,
+        mixed_types: bool,
     ) -> None:
         super().__init__()
         self.rcut = rcut
         self.ntypes = ntypes
-        self.distinguish_types = distinguish_types
+        self.mixed_types = mixed_types
 
     def build(
         self,
@@ -117,7 +117,7 @@ class NeighborStatOP:
         rr2 = tf.where(mask, inf_mask, rr2)
         min_rr2 = tf.reduce_min(rr2, axis=(1, 2))
         # count the number of neighbors
-        if self.distinguish_types:
+        if not self.mixed_types:
             mask = rr2 < self.rcut**2
             nnei = []
             for ii in range(self.ntypes):
@@ -148,7 +148,7 @@ class NeighborStatOP:
         nnei = tf.where(
             tf.tile(
                 tf.less(atype, 0)[:, :, None],
-                [1, 1, self.ntypes if self.distinguish_types else 1],
+                [1, 1, self.ntypes if not self.mixed_types else 1],
             ),
             tf.zeros_like(nnei, dtype=tf.int32),
             nnei,

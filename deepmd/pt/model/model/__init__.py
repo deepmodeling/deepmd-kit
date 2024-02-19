@@ -52,7 +52,7 @@ def get_zbl_model(model_params):
     fitting_net = model_params.get("fitting_net", None)
     fitting_net["type"] = fitting_net.get("type", "ener")
     fitting_net["ntypes"] = descriptor.get_ntypes()
-    fitting_net["distinguish_types"] = descriptor.distinguish_types()
+    fitting_net["mixed_types"] = descriptor.mixed_types()
     fitting_net["embedding_width"] = descriptor.get_dim_out()
     fitting_net["dim_descrpt"] = descriptor.get_dim_out()
     grad_force = "direct" not in fitting_net["type"]
@@ -88,7 +88,7 @@ def get_model(model_params):
     fitting_net = model_params.get("fitting_net", None)
     fitting_net["type"] = fitting_net.get("type", "ener")
     fitting_net["ntypes"] = descriptor.get_ntypes()
-    fitting_net["distinguish_types"] = descriptor.distinguish_types()
+    fitting_net["mixed_types"] = descriptor.mixed_types()
     fitting_net["embedding_width"] = descriptor.get_dim_out()
     fitting_net["dim_descrpt"] = descriptor.get_dim_out()
     grad_force = "direct" not in fitting_net["type"]

@@ -109,7 +109,7 @@ class TestFittingNet(unittest.TestCase):
             self.embedding_width,
             neuron=self.n_neuron,
             bias_atom_e=self.dp_fn.bias_atom_e,
-            distinguish_types=True,
+            mixed_types=False,
         ).to(env.DEVICE)
         for name, param in my_fn.named_parameters():
             matched = re.match(

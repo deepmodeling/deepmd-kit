@@ -109,11 +109,11 @@ class DescrptSeA(Descriptor):
         """Returns the output dimension."""
         return self.sea.get_dim_emb()
 
-    def distinguish_types(self):
+    def mixed_types(self):
         """Returns if the descriptor requires a neighbor list that distinguish different
         atomic types or not.
         """
-        return self.sea.distinguish_types()
+        return self.sea.mixed_types()
 
     @property
     def dim_out(self):
@@ -347,11 +347,17 @@ class DescrptBlockSeA(DescriptorBlock):
         """Returns the input dimension."""
         return self.dim_in
 
-    def distinguish_types(self) -> bool:
-        """Returns if the descriptor requires a neighbor list that distinguish different
-        atomic types or not.
+    def mixed_types(self) -> bool:
+        """If true, the discriptor
+        1. assumes total number of atoms aligned across frames;
+        2. requires a neighbor list that does not distinguish different atomic types.
+
+        If false, the discriptor
+        1. assumes total number of atoms of each atom type aligned across frames;
+        2. requires a neighbor list that distinguishes different atomic types.
+
         """
-        return True
+        return False
 
     @property
     def dim_out(self):

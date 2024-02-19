@@ -69,12 +69,16 @@ class InvarFitting(GeneralFitting):
         Activation function.
     precision : str
         Numerical precision.
-    distinguish_types : bool
-        Neighbor list that distinguish different atomic types or not.
+    mixed_types : bool
+        If true, use a uniform fitting net for all atom types, otherwise use
+        different fitting nets for different atom types.
     rcond : float, optional
         The condition number for the regression of atomic energy.
     seed : int, optional
         Random seed.
+    exclude_types: List[int]
+        Atomic contributions of the excluded atom types are set zero.
+
     """
 
     def __init__(
@@ -90,7 +94,7 @@ class InvarFitting(GeneralFitting):
         numb_aparam: int = 0,
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
-        distinguish_types: bool = False,
+        mixed_types: bool = True,
         rcond: Optional[float] = None,
         seed: Optional[int] = None,
         exclude_types: List[int] = [],
@@ -108,7 +112,7 @@ class InvarFitting(GeneralFitting):
             numb_aparam=numb_aparam,
             activation_function=activation_function,
             precision=precision,
-            distinguish_types=distinguish_types,
+            mixed_types=mixed_types,
             rcond=rcond,
             seed=seed,
             exclude_types=exclude_types,
@@ -134,8 +138,8 @@ class InvarFitting(GeneralFitting):
 
     def compute_output_stats(self, merged, stat_file_path: Optional[DPPath] = None):
         energy = [item["energy"] for item in merged]
-        mixed_type = "real_natoms_vec" in merged[0]
-        if mixed_type:
+        data_mixed_type = "real_natoms_vec" in merged[0]
+        if data_mixed_type:
             input_natoms = [item["real_natoms_vec"] for item in merged]
         else:
             input_natoms = [item["natoms"] for item in merged]
@@ -203,7 +207,7 @@ class EnergyFittingNet(InvarFitting):
         numb_aparam: int = 0,
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
-        use_tebd: bool = True,
+        mixed_types: bool = True,
         **kwargs,
     ):
         super().__init__(
@@ -218,7 +222,7 @@ class EnergyFittingNet(InvarFitting):
             numb_aparam=numb_aparam,
             activation_function=activation_function,
             precision=precision,
-            use_tebd=use_tebd,
+            mixed_types=mixed_types,
             **kwargs,
         )
 

@@ -154,7 +154,7 @@ class TestDPModel(unittest.TestCase, HessianTest):
             self.nt,
             ds.get_dim_out(),
             self.nv,
-            distinguish_types=ds.distinguish_types(),
+            mixed_types=ds.mixed_types(),
             do_hessian=True,
             neuron=[4, 4, 4],
         ).to(env.DEVICE)

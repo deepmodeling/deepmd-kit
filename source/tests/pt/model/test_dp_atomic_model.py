@@ -47,7 +47,7 @@ class TestDPAtomicModel(unittest.TestCase, TestCaseSingleFrameWithNlist):
             self.nt,
             ds.get_dim_out(),
             1,
-            distinguish_types=ds.distinguish_types(),
+            mixed_types=ds.mixed_types(),
         ).to(env.DEVICE)
         type_map = ["foo", "bar"]
         md0 = DPAtomicModel(ds, ft, type_map=type_map).to(env.DEVICE)
@@ -75,7 +75,7 @@ class TestDPAtomicModel(unittest.TestCase, TestCaseSingleFrameWithNlist):
             self.nt,
             ds.get_dim_out(),
             1,
-            distinguish_types=ds.distinguish_types(),
+            mixed_types=ds.mixed_types(),
         )
         type_map = ["foo", "bar"]
         md0 = DPDPAtomicModel(ds, ft, type_map=type_map)
@@ -103,7 +103,7 @@ class TestDPAtomicModel(unittest.TestCase, TestCaseSingleFrameWithNlist):
             self.nt,
             ds.get_dim_out(),
             1,
-            distinguish_types=ds.distinguish_types(),
+            mixed_types=ds.mixed_types(),
         ).to(env.DEVICE)
         type_map = ["foo", "bar"]
         md0 = DPAtomicModel(ds, ft, type_map=type_map).to(env.DEVICE)

@@ -171,11 +171,17 @@ class DescrptBlockSeAtten(DescriptorBlock):
         """Returns the output dimension of embedding."""
         return self.filter_neuron[-1]
 
-    def distinguish_types(self) -> bool:
-        """Returns if the descriptor requires a neighbor list that distinguish different
-        atomic types or not.
+    def mixed_types(self) -> bool:
+        """If true, the discriptor
+        1. assumes total number of atoms aligned across frames;
+        2. requires a neighbor list that does not distinguish different atomic types.
+
+        If false, the discriptor
+        1. assumes total number of atoms of each atom type aligned across frames;
+        2. requires a neighbor list that distinguishes different atomic types.
+
         """
-        return False
+        return True
 
     @property
     def dim_out(self):
@@ -300,10 +306,10 @@ class DescrptBlockSeAtten(DescriptorBlock):
         )
 
 
-def analyze_descrpt(matrix, ndescrpt, natoms, mixed_type=False, real_atype=None):
+def analyze_descrpt(matrix, ndescrpt, natoms, mixed_types=False, real_atype=None):
     """Collect avg, square avg and count of descriptors in a batch."""
     ntypes = natoms.shape[1] - 2
-    if not mixed_type:
+    if not mixed_types:
         sysr = []
         sysa = []
         sysn = []
