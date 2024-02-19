@@ -79,6 +79,13 @@ class TestDescrptSeA(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 atol=atol,
                 err_msg=err_msg,
             )
+            np.testing.assert_allclose(
+                rd0.detach().cpu().numpy()[0][self.perm[: self.nloc]],
+                rd0.detach().cpu().numpy()[1],
+                rtol=rtol,
+                atol=atol,
+                err_msg=err_msg,
+            )
             # dp impl
             dd2 = DPDescrptSeA.deserialize(dd0.serialize())
             rd2, gr2, _, _, sw2 = dd2.call(
