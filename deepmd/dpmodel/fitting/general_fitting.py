@@ -328,12 +328,12 @@ class GeneralFitting(NativeOP, BaseFitting):
                 mask = np.tile(
                     (atype == type_i).reshape([nf, nloc, 1]), [1, 1, net_dim_out]
                 )
-                atom_energy = self.nets[(type_i,)](xx)
-                atom_energy = atom_energy + self.bias_atom_e[type_i]
+                atom_property = self.nets[(type_i,)](xx)
+                atom_property = atom_property + self.bias_atom_e[type_i]
                 if hasattr(self, "scale"):
                     atom_property = atom_property * self.scale[type_i]
-                atom_energy = atom_energy * mask
-                outs = outs + atom_energy  # Shape is [nframes, natoms[0], 1]
+                atom_property = atom_property * mask
+                outs = outs + atom_property  # Shape is [nframes, natoms[0], 1]
         else:
             outs = self.nets[()](xx) + self.bias_atom_e[atype]
             if hasattr(self, "scale"):
