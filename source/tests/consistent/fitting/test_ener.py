@@ -41,7 +41,7 @@ from deepmd.utils.argcheck import (
 @parameterized(
     (True, False),  # resnet_dt
     ("float64", "float32"),  # precision
-    (True, False),  # distinguish_types
+    (True, False),  # mixed_types
     (0, 1),  # numb_fparam
 )
 class TestEner(CommonTest, FittingTest, unittest.TestCase):
@@ -50,7 +50,7 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
         (
             resnet_dt,
             precision,
-            distinguish_types,
+            mixed_types,
             numb_fparam,
         ) = self.param
         return {
@@ -66,18 +66,18 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
         (
             resnet_dt,
             precision,
-            distinguish_types,
+            mixed_types,
             numb_fparam,
         ) = self.param
-        # TODO: distinguish_types
-        return not distinguish_types or CommonTest.skip_pt
+        # TODO: mixed_types
+        return mixed_types or CommonTest.skip_pt
 
     @property
     def skip_pt(self) -> bool:
         (
             resnet_dt,
             precision,
-            distinguish_types,
+            mixed_types,
             numb_fparam,
         ) = self.param
         # TODO: float32 has bug
@@ -104,20 +104,20 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
         (
             resnet_dt,
             precision,
-            distinguish_types,
+            mixed_types,
             numb_fparam,
         ) = self.param
         return {
             "ntypes": self.ntypes,
             "dim_descrpt": self.inputs.shape[-1],
-            "distinguish_types": distinguish_types,
+            "mixed_types": mixed_types,
         }
 
     def build_tf(self, obj: Any, suffix: str) -> Tuple[list, dict]:
         (
             resnet_dt,
             precision,
-            distinguish_types,
+            mixed_types,
             numb_fparam,
         ) = self.param
         return self.build_tf_fitting(
@@ -133,7 +133,7 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
         (
             resnet_dt,
             precision,
-            distinguish_types,
+            mixed_types,
             numb_fparam,
         ) = self.param
         return (
@@ -153,7 +153,7 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
         (
             resnet_dt,
             precision,
-            distinguish_types,
+            mixed_types,
             numb_fparam,
         ) = self.param
         return dp_obj(
@@ -174,7 +174,7 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
         (
             resnet_dt,
             precision,
-            distinguish_types,
+            mixed_types,
             numb_fparam,
         ) = self.param
         if precision == "float64":

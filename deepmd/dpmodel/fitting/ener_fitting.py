@@ -38,7 +38,7 @@ class EnergyFittingNet(InvarFitting):
         layer_name: Optional[List[Optional[str]]] = None,
         use_aparam_as_mask: bool = False,
         spin: Any = None,
-        distinguish_types: bool = False,
+        mixed_types: bool = False,
         exclude_types: List[int] = [],
         # not used
         seed: Optional[int] = None,
@@ -61,7 +61,7 @@ class EnergyFittingNet(InvarFitting):
             layer_name=layer_name,
             use_aparam_as_mask=use_aparam_as_mask,
             spin=spin,
-            distinguish_types=distinguish_types,
+            mixed_types=mixed_types,
         )
 
     @classmethod
