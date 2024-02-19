@@ -333,14 +333,10 @@ class GeneralFitting(NativeOP, BaseFitting):
                 )
                 atom_property = self.nets[(type_i,)](xx)
                 atom_property = atom_property + self.bias_atom_e[type_i]
-                if hasattr(self, "scale"):
-                    atom_property = atom_property * self.scale[type_i]
                 atom_property = atom_property * mask
                 outs = outs + atom_property  # Shape is [nframes, natoms[0], 1]
         else:
             outs = self.nets[()](xx) + self.bias_atom_e[atype]
-            if hasattr(self, "scale"):
-                outs = outs * self.scale[atype]
         # nf x nloc
         exclude_mask = self.emask.build_type_exclude_mask(atype)
         # nf x nloc x nod

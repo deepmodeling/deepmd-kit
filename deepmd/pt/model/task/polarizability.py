@@ -38,8 +38,6 @@ class PolarFittingNet(GeneralFitting):
         Element count.
     dim_descrpt : int
         Embedding width per atom.
-    dim_out : int
-        The output dimension of the fitting net.
     embedding_width : int
         The dimension of rotation matrix, m1.
     neuron : List[int]
@@ -178,6 +176,7 @@ class PolarFittingNet(GeneralFitting):
         out = self._forward_common(descriptor, atype, gr, g2, h2, fparam, aparam)[
             self.var_name
         ]
+        out = out * self.scale[atype]
         if self.fit_diag:
             out = out.view(-1, self.embedding_width)  # (nframes * nloc, m1)
             out = torch.diag_embed(out)  # (nframes * nloc, m1, m1)

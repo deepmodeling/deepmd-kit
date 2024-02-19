@@ -35,8 +35,6 @@ class DipoleFittingNet(GeneralFitting):
         Element count.
     dim_descrpt : int
         Embedding width per atom.
-    dim_out : int
-        The output dimension of the fitting net.
     embedding_width : int
         The dimension of rotation matrix, m1.
     neuron : List[int]

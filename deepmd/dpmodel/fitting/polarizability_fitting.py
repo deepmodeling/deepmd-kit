@@ -11,6 +11,9 @@ import numpy as np
 from deepmd.dpmodel import (
     DEFAULT_PRECISION,
 )
+from deepmd.common import (
+    GLOBAL_NP_FLOAT_PRECISION,
+)
 from deepmd.dpmodel.output_def import (
     FittingOutputDef,
     OutputVariableDef,
@@ -124,7 +127,7 @@ class PolarFitting(GeneralFitting):
             assert (
                 isinstance(self.scale, list) and len(self.scale) == ntypes
             ), "Scale should be a list of length ntypes."
-        self.scale = np.array(self.scale).reshape(ntypes, 1)
+        self.scale = np.array(self.scale, dtype=GLOBAL_NP_FLOAT_PRECISION).reshape(ntypes, 1)
         self.shift_diag = shift_diag
         super().__init__(
             var_name=var_name,
@@ -218,6 +221,7 @@ class PolarFitting(GeneralFitting):
         out = self._call_common(descriptor, atype, gr, g2, h2, fparam, aparam)[
             self.var_name
         ]
+        out = out * self.scale[atype]
         if self.fit_diag:
             out = out.reshape(-1, self.embedding_width)  # (nframes * nloc, m1)
             out = np.stack([np.diag(v) for v in out])  # (nframes * nloc, m1, m1)
