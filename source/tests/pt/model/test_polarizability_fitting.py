@@ -208,7 +208,7 @@ class TestEquivalence(unittest.TestCase):
 
     def test_permu(self):
         coord = torch.matmul(self.coord, self.cell)
-        for  fit_diag in [True, False]:
+        for fit_diag in [True, False]:
             ft0 = PolarFittingNet(
                 "foo",
                 3,  # ntype
