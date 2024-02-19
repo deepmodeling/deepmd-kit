@@ -57,6 +57,9 @@ class TestPairExcludeMask(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 [1, 1, 1, 1, 1, 0, 1],
                 [1, 1, 1, 1, 1, 0, 1],
                 [0, 0, 1, 1, 1, 1, 1],
+                [0, 0, 1, 1, 1, 1, 1],
+                [1, 1, 1, 1, 1, 0, 1],
+                [1, 1, 1, 1, 1, 0, 1],
             ]
         ).reshape(self.nf, self.nloc, sum(self.sel))
         des = PairExcludeMask(self.nt, exclude_types=exclude_types).to(env.DEVICE)

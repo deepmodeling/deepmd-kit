@@ -86,8 +86,13 @@ class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
         # atom index 2 is of type 1 that is excluded
         zero_idx = 2
         np.testing.assert_allclose(
-            ret0["energy"][:, zero_idx, :],
-            np.zeros_like(ret0["energy"][:, zero_idx, :]),
+            ret0["energy"][0, zero_idx, :],
+            np.zeros_like(ret0["energy"][0, zero_idx, :]),
+        )
+        zero_idx = 0
+        np.testing.assert_allclose(
+            ret0["energy"][1, zero_idx, :],
+            np.zeros_like(ret0["energy"][1, zero_idx, :]),
         )
 
     def test_self_exception(
