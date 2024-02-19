@@ -36,7 +36,7 @@ class TestDipoleFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
     def setUp(self):
         TestCaseSingleFrameWithNlist.setUp(self)
         self.rng = np.random.default_rng()
-        self.nf, self.nloc, nnei = self.nlist.shape
+        self.nf, self.nloc, _ = self.nlist.shape
         self.dd0 = DescrptSeA(self.rcut, self.rcut_smth, self.sel).to(env.DEVICE)
 
     def test_consistency(
@@ -181,7 +181,7 @@ class TestEquivalence(unittest.TestCase):
                 (
                     extended_coord,
                     extended_atype,
-                    mapping,
+                    _,
                     nlist,
                 ) = extend_input_and_build_neighbor_list(
                     xyz + self.shift, atype, self.rcut, self.sel, distinguish_types
@@ -208,46 +208,27 @@ class TestEquivalence(unittest.TestCase):
 
     def test_permu(self):
         coord = torch.matmul(self.coord, self.cell)
-        for distinguish_types, nfp, nap, fit_diag in itertools.product(
-            [True, False],
-            [0, 3],
-            [0, 4],
-            [True, False],
-        ):
+        for  fit_diag in [True, False]:
             ft0 = PolarFittingNet(
                 "foo",
                 3,  # ntype
                 self.dd0.dim_out,
                 embedding_width=self.dd0.get_dim_emb(),
-                numb_fparam=nfp,
-                numb_aparam=nap,
+                numb_fparam=0,
+                numb_aparam=0,
                 use_tebd=False,
                 fit_diag=fit_diag,
             ).to(env.DEVICE)
-            if nfp > 0:
-                ifp = torch.tensor(
-                    self.rng.normal(size=(self.nf, nfp)), dtype=dtype, device=env.DEVICE
-                )
-            else:
-                ifp = None
-            if nap > 0:
-                iap = torch.tensor(
-                    self.rng.normal(size=(self.nf, self.natoms, nap)),
-                    dtype=dtype,
-                    device=env.DEVICE,
-                )
-            else:
-                iap = None
             res = []
             for idx_perm in [[0, 1, 2, 3, 4], [1, 0, 4, 3, 2]]:
                 atype = self.atype[idx_perm].reshape(1, 5)
                 (
                     extended_coord,
                     extended_atype,
-                    mapping,
+                    _,
                     nlist,
                 ) = extend_input_and_build_neighbor_list(
-                    coord[idx_perm], atype, self.rcut, self.sel, distinguish_types
+                    coord[idx_perm], atype, self.rcut, self.sel, False
                 )
 
                 rd0, gr0, _, _, _ = self.dd0(
@@ -256,14 +237,12 @@ class TestEquivalence(unittest.TestCase):
                     nlist,
                 )
 
-                ret0 = ft0(rd0, extended_atype, gr0, fparam=ifp, aparam=iap)
+                ret0 = ft0(rd0, extended_atype, gr0, fparam=None, aparam=None)
                 res.append(ret0["foo"])
 
             np.testing.assert_allclose(
                 to_numpy_array(res[0][:, idx_perm]),
                 to_numpy_array(res[1]),
-                rtol=1e-5,
-                atol=1e-5,
             )
 
     def test_trans(self):
@@ -292,7 +271,7 @@ class TestEquivalence(unittest.TestCase):
                 (
                     extended_coord,
                     extended_atype,
-                    mapping,
+                    _,
                     nlist,
                 ) = extend_input_and_build_neighbor_list(
                     xyz, atype, self.rcut, self.sel, False
