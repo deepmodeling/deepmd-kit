@@ -144,7 +144,7 @@ class TestEquivalence(unittest.TestCase):
         atype = self.atype.reshape(1, 5)
         rmat = torch.tensor(special_ortho_group.rvs(3), dtype=dtype).to(env.DEVICE)
         coord_rot = torch.matmul(self.coord, rmat)
-        
+
         for distinguish_types, nfp, nap, fit_diag in itertools.product(
             [True, False],
             [0, 3],
@@ -260,7 +260,10 @@ class TestEquivalence(unittest.TestCase):
                 res.append(ret0["foo"])
 
             np.testing.assert_allclose(
-                to_numpy_array(res[0][:, idx_perm]), to_numpy_array(res[1]), rtol=1e-5, atol=1e-5
+                to_numpy_array(res[0][:, idx_perm]),
+                to_numpy_array(res[1]),
+                rtol=1e-5,
+                atol=1e-5,
             )
 
     def test_trans(self):

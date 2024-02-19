@@ -134,7 +134,11 @@ class PolarFitting(GeneralFitting):
 
     def _net_out_dim(self):
         """Set the FittingNet output dim."""
-        return self.embedding_width if self.fit_diag else self.embedding_width * self.embedding_width
+        return (
+            self.embedding_width
+            if self.fit_diag
+            else self.embedding_width * self.embedding_width
+        )
 
     def serialize(self) -> dict:
         data = super().serialize()
@@ -198,10 +202,12 @@ class PolarFitting(GeneralFitting):
             self.var_name
         ]
         if self.fit_diag:
-            out = out.reshape(-1, self.embedding_width) # (nframes * nloc, m1)
-            out = np.stack([np.diag(v) for v in out]) # (nframes * nloc, m1, m1)
+            out = out.reshape(-1, self.embedding_width)  # (nframes * nloc, m1)
+            out = np.stack([np.diag(v) for v in out])  # (nframes * nloc, m1, m1)
         else:
-            out = out.reshape(-1, self.embedding_width, self.embedding_width) # (nframes * nloc, m1, m1)
+            out = out.reshape(
+                -1, self.embedding_width, self.embedding_width
+            )  # (nframes * nloc, m1, m1)
         out = out + np.transpose(out, axes=(0, 2, 1))
 
         # (nframes * nloc, m1, 3)

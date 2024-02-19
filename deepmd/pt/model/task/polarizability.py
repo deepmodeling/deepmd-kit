@@ -102,7 +102,11 @@ class PolarFittingNet(GeneralFitting):
 
     def _net_out_dim(self):
         """Set the FittingNet output dim."""
-        return self.embedding_width if self.fit_diag else self.embedding_width * self.embedding_width
+        return (
+            self.embedding_width
+            if self.fit_diag
+            else self.embedding_width * self.embedding_width
+        )
 
     def serialize(self) -> dict:
         data = super().serialize()
@@ -151,10 +155,12 @@ class PolarFittingNet(GeneralFitting):
             self.var_name
         ]
         if self.fit_diag:
-            out = out.view(-1, self.embedding_width) # (nframes * nloc, m1)
-            out = torch.diag_embed(out) # (nframes * nloc, m1, m1)
+            out = out.view(-1, self.embedding_width)  # (nframes * nloc, m1)
+            out = torch.diag_embed(out)  # (nframes * nloc, m1, m1)
         else:
-            out = out.view(-1, self.embedding_width, self.embedding_width) # (nframes * nloc, m1, m1)
+            out = out.view(
+                -1, self.embedding_width, self.embedding_width
+            )  # (nframes * nloc, m1, m1)
 
         out = out + out.transpose(1, 2)
         gr = gr.view(nframes * nloc, -1, 3)  # (nframes * nloc, m1, 3)
