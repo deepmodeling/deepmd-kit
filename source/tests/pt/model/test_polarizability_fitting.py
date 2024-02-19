@@ -194,8 +194,8 @@ class TestEquivalence(unittest.TestCase):
                 to_numpy_array(
                     torch.matmul(
                         rmat.T,
-                        torch.matmul(res[0].reshape(self.nf * self.natoms, 3, 3), rmat),
-                    ).reshape(self.nf, self.natoms, 9)
+                        torch.matmul(res[0], rmat),
+                    )
                 ),
             )
 
@@ -231,6 +231,8 @@ class TestEquivalence(unittest.TestCase):
             ret0 = ft0(rd0, extended_atype, gr0, fparam=0, aparam=0)
             res.append(ret0["foo"])
 
+        print(res[0],"\n",res[1])
+        print(res[0].shape, res[1].shape)
         np.testing.assert_allclose(
             to_numpy_array(res[0][:, idx_perm]), to_numpy_array(res[1])
         )

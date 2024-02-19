@@ -143,7 +143,7 @@ class PolarFitting(GeneralFitting):
             [
                 OutputVariableDef(
                     self.var_name,
-                    [9],
+                    [3, 3],
                     reduciable=True,
                     r_differentiable=True,
                     c_differentiable=True,
@@ -203,5 +203,5 @@ class PolarFitting(GeneralFitting):
         out = np.einsum(
             "bim,bmj->bij", np.transpose(gr, axes=(0, 2, 1)), out
         )  # (nframes * nloc, 3, 3)
-        out = out.reshape(nframes, nloc, 9)
+        out = out.reshape(nframes, nloc, 3, 3)
         return {self.var_name: out}

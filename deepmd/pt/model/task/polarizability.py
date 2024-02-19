@@ -111,7 +111,7 @@ class PolarFittingNet(GeneralFitting):
             [
                 OutputVariableDef(
                     self.var_name,
-                    [9],
+                    [3, 3],
                     reduciable=True,
                     r_differentiable=True,
                     c_differentiable=True,
@@ -152,6 +152,6 @@ class PolarFittingNet(GeneralFitting):
         out = torch.bmm(out, gr)  # (nframes * nloc, m1, 3)
 
         out = torch.bmm(gr.transpose(1, 2), out)  # (nframes * nloc, 3, 3)
-        out = out.view(nframes, nloc, 9)
+        out = out.view(nframes, nloc, 3, 3)
 
         return {self.var_name: out.to(env.GLOBAL_PT_FLOAT_PRECISION)}
