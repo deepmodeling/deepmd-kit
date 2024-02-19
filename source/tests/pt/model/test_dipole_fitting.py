@@ -36,7 +36,7 @@ class TestDipoleFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
     def setUp(self):
         TestCaseSingleFrameWithNlist.setUp(self)
         self.rng = np.random.default_rng()
-        self.nf, self.nloc, nnei = self.nlist.shape
+        self.nf, self.nloc, _ = self.nlist.shape
         self.dd0 = DescrptSeA(self.rcut, self.rcut_smth, self.sel).to(env.DEVICE)
 
     def test_consistency(
@@ -174,7 +174,7 @@ class TestEquivalence(unittest.TestCase):
                 (
                     extended_coord,
                     extended_atype,
-                    mapping,
+                    _,
                     nlist,
                 ) = extend_input_and_build_neighbor_list(
                     xyz + self.shift, atype, self.rcut, self.sel, mixed_types
@@ -210,7 +210,7 @@ class TestEquivalence(unittest.TestCase):
             (
                 extended_coord,
                 extended_atype,
-                mapping,
+                _,
                 nlist,
             ) = extend_input_and_build_neighbor_list(
                 coord[idx_perm], atype, self.rcut, self.sel, False
@@ -244,14 +244,14 @@ class TestEquivalence(unittest.TestCase):
             embedding_width=self.dd0.get_dim_emb(),
             numb_fparam=0,
             numb_aparam=0,
-            mixed_types=False,
+            mixed_types=True,
         ).to(env.DEVICE)
         res = []
         for xyz in [self.coord, coord_s]:
             (
                 extended_coord,
                 extended_atype,
-                mapping,
+                _,
                 nlist,
             ) = extend_input_and_build_neighbor_list(
                 xyz, atype, self.rcut, self.sel, False
