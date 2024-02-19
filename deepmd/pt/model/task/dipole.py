@@ -51,8 +51,9 @@ class DipoleFittingNet(GeneralFitting):
         Activation function.
     precision : str
         Numerical precision.
-    distinguish_types : bool
-        Neighbor list that distinguish different atomic types or not.
+    mixed_types : bool
+        If true, use a uniform fitting net for all atom types, otherwise use
+        different fitting nets for different atom types.
     rcond : float, optional
         The condition number for the regression of atomic energy.
     seed : int, optional
@@ -71,7 +72,7 @@ class DipoleFittingNet(GeneralFitting):
         numb_aparam: int = 0,
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
-        distinguish_types: bool = False,
+        mixed_types: bool = True,
         rcond: Optional[float] = None,
         seed: Optional[int] = None,
         exclude_types: List[int] = [],
@@ -88,7 +89,7 @@ class DipoleFittingNet(GeneralFitting):
             numb_aparam=numb_aparam,
             activation_function=activation_function,
             precision=precision,
-            distinguish_types=distinguish_types,
+            mixed_types=mixed_types,
             rcond=rcond,
             seed=seed,
             exclude_types=exclude_types,
