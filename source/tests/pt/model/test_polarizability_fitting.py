@@ -38,7 +38,7 @@ class TestDipoleFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
         self.rng = np.random.default_rng()
         self.nf, self.nloc, _ = self.nlist.shape
         self.dd0 = DescrptSeA(self.rcut, self.rcut_smth, self.sel).to(env.DEVICE)
-        self.scale = self.rng.uniform(0,1,self.nt).tolist()
+        self.scale = self.rng.uniform(0, 1, self.nt).tolist()
 
     def test_consistency(
         self,
@@ -143,7 +143,7 @@ class TestEquivalence(unittest.TestCase):
         self.dd0 = DescrptSeA(self.rcut, self.rcut_smth, self.sel).to(env.DEVICE)
         self.cell = torch.rand([3, 3], dtype=dtype).to(env.DEVICE)
         self.cell = (self.cell + self.cell.T) + 5.0 * torch.eye(3).to(env.DEVICE)
-        self.scale = self.rng.uniform(0,1,self.nt).tolist()
+        self.scale = self.rng.uniform(0, 1, self.nt).tolist()
 
     def test_rot(self):
         atype = self.atype.reshape(1, 5)
@@ -215,9 +215,7 @@ class TestEquivalence(unittest.TestCase):
 
     def test_permu(self):
         coord = torch.matmul(self.coord, self.cell)
-        for fit_diag, scale in itertools.product(
-            [True, False], [None, self.scale]
-        ):
+        for fit_diag, scale in itertools.product([True, False], [None, self.scale]):
             ft0 = PolarFittingNet(
                 "foo",
                 self.nt,
@@ -263,9 +261,7 @@ class TestEquivalence(unittest.TestCase):
             ),
             self.cell,
         )
-        for fit_diag, scale in itertools.product(
-            [True, False], [None, self.scale]
-        ):
+        for fit_diag, scale in itertools.product([True, False], [None, self.scale]):
             ft0 = PolarFittingNet(
                 "foo",
                 self.nt,
