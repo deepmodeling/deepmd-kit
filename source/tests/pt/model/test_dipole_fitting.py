@@ -152,7 +152,7 @@ class TestEquivalence(unittest.TestCase):
                 embedding_width=self.dd0.get_dim_emb(),
                 numb_fparam=nfp,
                 numb_aparam=nap,
-                mixed_types=False,
+                mixed_types=mixed_types,
             ).to(env.DEVICE)
             if nfp > 0:
                 ifp = torch.tensor(
@@ -177,7 +177,7 @@ class TestEquivalence(unittest.TestCase):
                     _,
                     nlist,
                 ) = extend_input_and_build_neighbor_list(
-                    xyz + self.shift, atype, self.rcut, self.sel, mixed_types
+                    xyz + self.shift, atype, self.rcut, self.sel, not mixed_types
                 )
 
                 rd0, gr0, _, _, _ = self.dd0(
@@ -213,7 +213,7 @@ class TestEquivalence(unittest.TestCase):
                 _,
                 nlist,
             ) = extend_input_and_build_neighbor_list(
-                coord[idx_perm], atype, self.rcut, self.sel, False
+                coord[idx_perm], atype, self.rcut, self.sel, True
             )
 
             rd0, gr0, _, _, _ = self.dd0(
