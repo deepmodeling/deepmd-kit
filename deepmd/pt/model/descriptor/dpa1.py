@@ -110,11 +110,11 @@ class DescrptDPA1(Descriptor):
 
     def mixed_types(self) -> bool:
         """If true, the discriptor
-        1. assumes total numbe of atoms aligned across frames;
+        1. assumes total number of atoms aligned across frames;
         2. requires a neighbor list that does not distinguish different atomic types.
 
         If false, the discriptor
-        1. assumes total numbe of atoms of each atom type aligned across frames;
+        1. assumes total number of atoms of each atom type aligned across frames;
         2. requires a neighbor list that distinguishes different atomic types.
 
         """
