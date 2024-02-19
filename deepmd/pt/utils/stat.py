@@ -26,6 +26,8 @@ def make_stat_input(datasets, dataloaders, nbatches):
         "atype",
         "box",
         "natoms",
+        "spin",
+        "force_mag",
     ]
     if datasets[0].mixed_type:
         keys.append("real_natoms_vec")

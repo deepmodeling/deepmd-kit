@@ -35,6 +35,7 @@ class DPZBLModel(DPZBLModel_):
         fparam: Optional[torch.Tensor] = None,
         aparam: Optional[torch.Tensor] = None,
         do_atomic_virial: bool = False,
+        **kwargs,
     ) -> Dict[str, torch.Tensor]:
         model_ret = self.forward_common(
             coord,

@@ -120,6 +120,8 @@ class DeepmdDataSystem:
         self.add("energy", 1, atomic=False, must=False, high_prec=True)
         self.add("force", 3, atomic=True, must=False, high_prec=False)
         self.add("virial", 9, atomic=False, must=False, high_prec=False)
+        self.add("spin", 3, atomic=True, must=False, high_prec=False)
+        self.add("force_mag", 3, atomic=True, must=False, high_prec=False)
 
         self._sys_path = sys_path
         self.rcut = rcut

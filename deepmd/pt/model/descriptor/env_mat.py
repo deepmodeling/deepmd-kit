@@ -6,7 +6,9 @@ from deepmd.pt.utils.preprocess import (
 )
 
 
-def _make_env_mat_se_a(nlist, coord, rcut: float, ruct_smth: float):
+def _make_env_mat_se_a(
+    nlist, coord, rcut: float, ruct_smth: float, protection: float = 1e-6
+):
     """Make smooth environment matrix."""
     bsz, natoms, nnei = nlist.shape
     coord = coord.view(bsz, -1, 3)
@@ -22,8 +24,8 @@ def _make_env_mat_se_a(nlist, coord, rcut: float, ruct_smth: float):
     length = torch.linalg.norm(diff, dim=-1, keepdim=True)
     # for index 0 nloc atom
     length = length + ~mask.unsqueeze(-1)
-    t0 = 1 / length
-    t1 = diff / length**2
+    t0 = 1 / (length + protection)
+    t1 = diff / (length + protection) ** 2
     weight = compute_smooth_weight(length, ruct_smth, rcut)
     weight = weight * mask.unsqueeze(-1)
     env_mat_se_a = torch.cat([t0, t1], dim=-1) * weight

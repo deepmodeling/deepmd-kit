@@ -20,6 +20,7 @@ from deepmd.common import (
 )
 from deepmd.pt.loss import (
     DenoiseLoss,
+    EnergySpinLoss,
     EnergyStdLoss,
 )
 from deepmd.pt.model.model import (
@@ -183,11 +184,11 @@ class Trainer:
 
         def get_single_model(_model_params, _sampled, _stat_file_path):
             model = get_model(deepcopy(_model_params)).to(DEVICE)
-            if not model_params.get("resuming", False):
-                model.compute_or_load_stat(
-                    sampled=_sampled,
-                    stat_file_path=_stat_file_path,
-                )
+            # if not model_params.get("resuming", False):
+            #     model.compute_or_load_stat(
+            #         sampled=_sampled,
+            #         stat_file_path=_stat_file_path,
+            #     )
             return model
 
         def get_lr(lr_params):
@@ -203,6 +204,9 @@ class Trainer:
             if loss_type == "ener":
                 loss_params["starter_learning_rate"] = start_lr
                 return EnergyStdLoss(**loss_params)
+            elif loss_type == "ener_spin":
+                loss_params["starter_learning_rate"] = start_lr
+                return EnergySpinLoss(**loss_params)
             elif loss_type == "denoise":
                 loss_params["ntypes"] = _ntypes
                 return DenoiseLoss(**loss_params)
@@ -800,6 +804,7 @@ class Trainer:
             "coord",
             "atype",
             "box",
+            "spin",
         ]:
             if item in batch_data:
                 input_dict[item] = batch_data[item]
@@ -810,6 +815,7 @@ class Trainer:
             "energy",
             "force",
             "virial",
+            "force_mag",
             "clean_coord",
             "clean_type",
             "coord_mask",

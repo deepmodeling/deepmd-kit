@@ -32,6 +32,10 @@ from .region import (
     phys2inter,
     to_face_distance,
 )
+from .spin import (
+    BaseSpin,
+    Spin,
+)
 
 __all__ = [
     "EnvMat",
@@ -59,4 +63,6 @@ __all__ = [
     "to_face_distance",
     "AtomExcludeMask",
     "PairExcludeMask",
+    "BaseSpin",
+    "Spin",
 ]
