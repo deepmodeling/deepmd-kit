@@ -53,7 +53,11 @@ class TestModel(tf.test.TestCase):
         jdata["model"]["descriptor"].pop("_comment", None)
         descrpt = DescrptLocFrame(**jdata["model"]["descriptor"])
         fitting = EnerFitting(
-            descrpt, neuron=[240, 120, 60, 30, 10], seed=1, uniform_seed=True
+            descrpt.get_ntypes(),
+            descrpt.get_dim_out(),
+            neuron=[240, 120, 60, 30, 10],
+            seed=1,
+            uniform_seed=True,
         )
         model = EnerModel(
             descrpt,

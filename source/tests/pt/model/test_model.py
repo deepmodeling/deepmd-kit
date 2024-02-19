@@ -195,7 +195,9 @@ class DpTrainer:
             neuron=self.filter_neuron,
             axis_neuron=self.axis_neuron,
         )
-        dp_fitting = EnerFitting(descrpt=dp_descrpt, neuron=self.n_neuron)
+        dp_fitting = EnerFitting(
+            dp_descrpt.get_ntypes(), dp_descrpt.get_dim_out(), neuron=self.n_neuron
+        )
         return EnerModel(
             dp_descrpt,
             dp_fitting,

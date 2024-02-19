@@ -5,7 +5,8 @@ on:
     types:
       - "labeled"
       # to let the PR pass the test
-      - "created"
+      - "opened"
+      - "reopened"
       - "synchronize"
   merge_group:
 concurrency:

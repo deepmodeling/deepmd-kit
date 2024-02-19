@@ -142,7 +142,9 @@ class DatasetTest(ABC):
         energy = self.dp_sampled["energy"]
         natoms = self.dp_sampled["natoms_vec"]
         energy, natoms = my_merge(energy, natoms)
-        dp_fn = EnerFitting(self.dp_d, self.n_neuron)
+        dp_fn = EnerFitting(
+            self.dp_d.get_ntypes(), self.dp_d.get_dim_out(), self.n_neuron
+        )
         dp_fn.compute_output_stats(self.dp_sampled)
         bias_atom_e = compute_output_bias(energy, natoms)
         self.assertTrue(np.allclose(dp_fn.bias_atom_e, bias_atom_e[:, 0]))

@@ -81,7 +81,8 @@ class TestEnerFittingStat(unittest.TestCase):
         # fitting = EnerFitting(jdata['fitting_net'], descrpt)
         descrpt = DescrptSeA(6.0, 5.8, [46, 92], neuron=[25, 50, 100], axis_neuron=16)
         fitting = EnerFitting(
-            descrpt,
+            descrpt.get_ntypes(),
+            descrpt.get_dim_out(),
             neuron=[240, 240, 240],
             resnet_dt=True,
             numb_fparam=2,

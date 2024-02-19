@@ -71,7 +71,8 @@ class TestModelSpin(tf.test.TestCase):
         descrpt_param["spin"] = spin
         descrpt = DescrptSeA(**descrpt_param, uniform_seed=True)
         fitting_param.pop("type", None)
-        fitting_param["descrpt"] = descrpt
+        fitting_param["ntypes"] = descrpt.get_ntypes()
+        fitting_param["dim_descrpt"] = descrpt.get_dim_out()
         fitting_param["spin"] = spin
         fitting = EnerFitting(**fitting_param, uniform_seed=True)
         model = EnerModel(descrpt, fitting, spin=spin)
