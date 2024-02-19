@@ -4,6 +4,9 @@ from typing import (
     List,
 )
 
+from deepmd.backend.backend import (
+    Backend,
+)
 from deepmd.common import (
     expand_sys_str,
 )
@@ -69,20 +72,12 @@ def neighbor_stat(
     min_nbor_dist: 0.6599510670195264
     max_nbor_size: [23, 26, 19, 16, 2, 2, 1, 1, 72, 37, 5, 0, 31, 29, 1, 21, 20, 5]
     """
-    if backend == "tensorflow":
-        from deepmd.tf.utils.neighbor_stat import (
-            NeighborStat,
-        )
-    elif backend == "pytorch":
-        from deepmd.pt.utils.neighbor_stat import (
-            NeighborStat,
-        )
-    elif backend == "numpy":
-        from deepmd.dpmodel.utils.neighbor_stat import (
-            NeighborStat,
-        )
-    else:
+    backends = Backend.get_backends_by_feature(Backend.Feature.NEIGHBOR_STAT)
+    try:
+        backend_obj = backends[backend]()
+    except KeyError:
         raise ValueError(f"Invalid backend {backend}")
+    NeighborStat = backend_obj.neighbor_stat
     all_sys = expand_sys_str(system)
     if not len(all_sys):
         raise RuntimeError("Did not find valid system")

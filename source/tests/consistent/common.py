@@ -9,9 +9,6 @@ from abc import (
 from enum import (
     Enum,
 )
-from importlib.util import (
-    find_spec,
-)
 from typing import (
     Any,
     Callable,
@@ -29,8 +26,12 @@ from dargs import (
     Argument,
 )
 
-INSTALLED_TF = find_spec("tensorflow") is not None
-INSTALLED_PT = find_spec("torch") is not None
+from deepmd.backend.tensorflow import (
+    Backend,
+)
+
+INSTALLED_TF = Backend.get_backend("tensorflow")().is_available()
+INSTALLED_PT = Backend.get_backend("pytorch")().is_available()
 
 if os.environ.get("CI") and not (INSTALLED_TF and INSTALLED_PT):
     raise ImportError("TensorFlow or PyTorch should be tested in the CI")
