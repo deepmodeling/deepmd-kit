@@ -23,8 +23,8 @@ from .general_fitting import (
 
 
 @fitting_check_output
-class DipoleFitting(GeneralFitting):
-    r"""Fitting rotationally equivariant diploe of the system.
+class PolarFitting(GeneralFitting):
+    r"""Fitting rotationally equivariant polarizability of the system.
 
     Parameters
     ----------
@@ -130,7 +130,7 @@ class DipoleFitting(GeneralFitting):
 
     def _net_out_dim(self):
         """Set the FittingNet output dim."""
-        return self.embedding_width
+        return self.embedding_width * self.embedding_width
 
     def serialize(self) -> dict:
         data = super().serialize()
@@ -143,7 +143,7 @@ class DipoleFitting(GeneralFitting):
             [
                 OutputVariableDef(
                     self.var_name,
-                    [3],
+                    [9],
                     reduciable=True,
                     r_differentiable=True,
                     c_differentiable=True,
@@ -185,15 +185,19 @@ class DipoleFitting(GeneralFitting):
 
         """
         nframes, nloc, _ = descriptor.shape
-        assert gr is not None, "Must provide the rotation matrix for dipole fitting."
+        assert gr is not None, "Must provide the rotation matrix for polarizability fitting."
         # (nframes, nloc, m1)
         out = self._call_common(descriptor, atype, gr, g2, h2, fparam, aparam)[
             self.var_name
         ]
-        # (nframes * nloc, 1, m1)
-        out = out.reshape(-1, 1, self.embedding_width)
+        # (nframes * nloc, m1, m1)
+        out = out.reshape(-1, self.embedding_width, self.embedding_width)
+        out = out + np.transpose(out, axes=(0, 2, 1))
+
         # (nframes * nloc, m1, 3)
         gr = gr.reshape(nframes * nloc, -1, 3)
-        # (nframes, nloc, 3)
-        out = np.einsum("bim,bmj->bij", out, gr).squeeze(-2).reshape(nframes, nloc, 3)
+        
+        out = np.einsum("bim,bmj->bij", out, gr) # (nframes * nloc, m1, 3)
+        out = np.einsum("bim,bmj->bij",np.transpose(gr, axes=(0, 2, 1)), out) # (nframes * nloc, 3, 3)
+        out = out.reshape(nframes, nloc, 9)
         return {self.var_name: out}
