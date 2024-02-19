@@ -38,9 +38,7 @@ class TestNeighborStat(unittest.TestCase):
         shutil.rmtree("system_0")
 
     def test_neighbor_stat(self):
-        # set rcut to 0. will cause a core dumped
-        # TODO: check what is wrong
-        for rcut in (1.0, 2.0, 4.0):
+        for rcut in (0.0, 1.0, 2.0, 4.0):
             for one_type in (True, False):
                 with self.subTest(rcut=rcut, one_type=one_type):
                     rcut += 1e-3  # prevent numerical errors
