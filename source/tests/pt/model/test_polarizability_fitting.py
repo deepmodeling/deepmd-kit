@@ -51,10 +51,11 @@ class TestDipoleFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
             self.atype_ext[:, : self.nloc], dtype=int, device=env.DEVICE
         )
 
-        for distinguish_types, nfp, nap in itertools.product(
+        for distinguish_types, nfp, nap, fit_diag in itertools.product(
             [True, False],
             [0, 3],
             [0, 4],
+            [True, False],
         ):
             ft0 = PolarFittingNet(
                 "foo",
@@ -64,6 +65,7 @@ class TestDipoleFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 numb_fparam=nfp,
                 numb_aparam=nap,
                 use_tebd=(not distinguish_types),
+                fit_diag=fit_diag,
             ).to(env.DEVICE)
             ft1 = DPPolarFitting.deserialize(ft0.serialize())
             ft2 = PolarFittingNet.deserialize(ft1.serialize())
@@ -104,10 +106,11 @@ class TestDipoleFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
     def test_jit(
         self,
     ):
-        for distinguish_types, nfp, nap in itertools.product(
+        for distinguish_types, nfp, nap, fit_diag in itertools.product(
             [True, False],
             [0, 3],
             [0, 4],
+            [True, False],
         ):
             ft0 = PolarFittingNet(
                 "foo",
@@ -117,6 +120,7 @@ class TestDipoleFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 numb_fparam=nfp,
                 numb_aparam=nap,
                 use_tebd=(not distinguish_types),
+                fit_diag=fit_diag,
             ).to(env.DEVICE)
             torch.jit.script(ft0)
 
@@ -128,6 +132,7 @@ class TestEquivalence(unittest.TestCase):
         self.rcut_smth = 0.5
         self.sel = [46, 92, 4]
         self.nf = 1
+        self.rng = np.random.default_rng()
         self.coord = 2 * torch.rand([self.natoms, 3], dtype=dtype).to(env.DEVICE)
         self.shift = torch.tensor([4, 4, 4], dtype=dtype).to(env.DEVICE)
         self.atype = torch.IntTensor([0, 0, 0, 1, 1]).to(env.DEVICE)
@@ -139,11 +144,12 @@ class TestEquivalence(unittest.TestCase):
         atype = self.atype.reshape(1, 5)
         rmat = torch.tensor(special_ortho_group.rvs(3), dtype=dtype).to(env.DEVICE)
         coord_rot = torch.matmul(self.coord, rmat)
-        rng = np.random.default_rng()
-        for distinguish_types, nfp, nap in itertools.product(
+        
+        for distinguish_types, nfp, nap, fit_diag in itertools.product(
             [True, False],
             [0, 3],
             [0, 4],
+            [True, False],
         ):
             ft0 = PolarFittingNet(
                 "foo",
@@ -153,16 +159,17 @@ class TestEquivalence(unittest.TestCase):
                 numb_fparam=nfp,
                 numb_aparam=nap,
                 use_tebd=False,
+                fit_diag=fit_diag,
             ).to(env.DEVICE)
             if nfp > 0:
                 ifp = torch.tensor(
-                    rng.normal(size=(self.nf, nfp)), dtype=dtype, device=env.DEVICE
+                    self.rng.normal(size=(self.nf, nfp)), dtype=dtype, device=env.DEVICE
                 )
             else:
                 ifp = None
             if nap > 0:
                 iap = torch.tensor(
-                    rng.normal(size=(self.nf, self.natoms, nap)),
+                    self.rng.normal(size=(self.nf, self.natoms, nap)),
                     dtype=dtype,
                     device=env.DEVICE,
                 )
@@ -201,39 +208,60 @@ class TestEquivalence(unittest.TestCase):
 
     def test_permu(self):
         coord = torch.matmul(self.coord, self.cell)
-        ft0 = PolarFittingNet(
-            "foo",
-            3,  # ntype
-            self.dd0.dim_out,
-            embedding_width=self.dd0.get_dim_emb(),
-            numb_fparam=0,
-            numb_aparam=0,
-            use_tebd=False,
-        ).to(env.DEVICE)
-        res = []
-        for idx_perm in [[0, 1, 2, 3, 4], [1, 0, 4, 3, 2]]:
-            atype = self.atype[idx_perm].reshape(1, 5)
-            (
-                extended_coord,
-                extended_atype,
-                mapping,
-                nlist,
-            ) = extend_input_and_build_neighbor_list(
-                coord[idx_perm], atype, self.rcut, self.sel, False
+        for distinguish_types, nfp, nap, fit_diag in itertools.product(
+            [True, False],
+            [0, 3],
+            [0, 4],
+            [True, False],
+        ):
+            ft0 = PolarFittingNet(
+                "foo",
+                3,  # ntype
+                self.dd0.dim_out,
+                embedding_width=self.dd0.get_dim_emb(),
+                numb_fparam=nfp,
+                numb_aparam=nap,
+                use_tebd=False,
+                fit_diag=fit_diag,
+            ).to(env.DEVICE)
+            if nfp > 0:
+                ifp = torch.tensor(
+                    self.rng.normal(size=(self.nf, nfp)), dtype=dtype, device=env.DEVICE
+                )
+            else:
+                ifp = None
+            if nap > 0:
+                iap = torch.tensor(
+                    self.rng.normal(size=(self.nf, self.natoms, nap)),
+                    dtype=dtype,
+                    device=env.DEVICE,
+                )
+            else:
+                iap = None
+            res = []
+            for idx_perm in [[0, 1, 2, 3, 4], [1, 0, 4, 3, 2]]:
+                atype = self.atype[idx_perm].reshape(1, 5)
+                (
+                    extended_coord,
+                    extended_atype,
+                    mapping,
+                    nlist,
+                ) = extend_input_and_build_neighbor_list(
+                    coord[idx_perm], atype, self.rcut, self.sel, distinguish_types
+                )
+
+                rd0, gr0, _, _, _ = self.dd0(
+                    extended_coord,
+                    extended_atype,
+                    nlist,
+                )
+
+                ret0 = ft0(rd0, extended_atype, gr0, fparam=ifp, aparam=iap)
+                res.append(ret0["foo"])
+
+            np.testing.assert_allclose(
+                to_numpy_array(res[0][:, idx_perm]), to_numpy_array(res[1]), rtol=1e-5, atol=1e-5
             )
-
-            rd0, gr0, _, _, _ = self.dd0(
-                extended_coord,
-                extended_atype,
-                nlist,
-            )
-
-            ret0 = ft0(rd0, extended_atype, gr0, fparam=0, aparam=0)
-            res.append(ret0["foo"])
-
-        np.testing.assert_allclose(
-            to_numpy_array(res[0][:, idx_perm]), to_numpy_array(res[1])
-        )
 
     def test_trans(self):
         atype = self.atype.reshape(1, 5)
@@ -243,36 +271,40 @@ class TestEquivalence(unittest.TestCase):
             ),
             self.cell,
         )
-        ft0 = PolarFittingNet(
-            "foo",
-            3,  # ntype
-            self.dd0.dim_out,
-            embedding_width=self.dd0.get_dim_emb(),
-            numb_fparam=0,
-            numb_aparam=0,
-            use_tebd=False,
-        ).to(env.DEVICE)
-        res = []
-        for xyz in [self.coord, coord_s]:
-            (
-                extended_coord,
-                extended_atype,
-                mapping,
-                nlist,
-            ) = extend_input_and_build_neighbor_list(
-                xyz, atype, self.rcut, self.sel, False
-            )
+        for fit_diag in itertools.product(
+            [True, False],
+        ):
+            ft0 = PolarFittingNet(
+                "foo",
+                3,  # ntype
+                self.dd0.dim_out,
+                embedding_width=self.dd0.get_dim_emb(),
+                numb_fparam=0,
+                numb_aparam=0,
+                use_tebd=False,
+                fit_diag=fit_diag,
+            ).to(env.DEVICE)
+            res = []
+            for xyz in [self.coord, coord_s]:
+                (
+                    extended_coord,
+                    extended_atype,
+                    mapping,
+                    nlist,
+                ) = extend_input_and_build_neighbor_list(
+                    xyz, atype, self.rcut, self.sel, False
+                )
 
-            rd0, gr0, _, _, _ = self.dd0(
-                extended_coord,
-                extended_atype,
-                nlist,
-            )
+                rd0, gr0, _, _, _ = self.dd0(
+                    extended_coord,
+                    extended_atype,
+                    nlist,
+                )
 
-            ret0 = ft0(rd0, extended_atype, gr0, fparam=0, aparam=0)
-            res.append(ret0["foo"])
+                ret0 = ft0(rd0, extended_atype, gr0, fparam=0, aparam=0)
+                res.append(ret0["foo"])
 
-        np.testing.assert_allclose(to_numpy_array(res[0]), to_numpy_array(res[1]))
+            np.testing.assert_allclose(to_numpy_array(res[0]), to_numpy_array(res[1]))
 
 
 if __name__ == "__main__":

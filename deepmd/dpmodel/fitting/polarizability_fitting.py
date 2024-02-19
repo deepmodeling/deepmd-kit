@@ -67,6 +67,8 @@ class PolarFitting(GeneralFitting):
             And the aparam will not be used as the atomic parameters for embedding.
     distinguish_types
             Different atomic types uses different fitting net.
+    fit_diag : bool
+        Fit the diagonal part of the rotational invariant polarizability matrix, which will be converted to normal polarizability matrix by contracting with the rotation matrix.
 
     """
 
@@ -91,7 +93,8 @@ class PolarFitting(GeneralFitting):
         spin: Any = None,
         distinguish_types: bool = False,
         exclude_types: List[int] = [],
-        old_impl=False,
+        old_impl: bool = False,
+        fit_diag: bool = True,
     ):
         # seed, uniform_seed are not included
         if tot_ener_zero:
@@ -106,6 +109,7 @@ class PolarFitting(GeneralFitting):
             raise NotImplementedError("atom_ener is not implemented")
 
         self.embedding_width = embedding_width
+        self.fit_diag = fit_diag
         super().__init__(
             var_name=var_name,
             ntypes=ntypes,
@@ -130,12 +134,13 @@ class PolarFitting(GeneralFitting):
 
     def _net_out_dim(self):
         """Set the FittingNet output dim."""
-        return self.embedding_width * self.embedding_width
+        return self.embedding_width if self.fit_diag else self.embedding_width * self.embedding_width
 
     def serialize(self) -> dict:
         data = super().serialize()
         data["embedding_width"] = self.embedding_width
         data["old_impl"] = self.old_impl
+        data["fit_diag"] = self.fit_diag
         return data
 
     def output_def(self):
@@ -192,8 +197,11 @@ class PolarFitting(GeneralFitting):
         out = self._call_common(descriptor, atype, gr, g2, h2, fparam, aparam)[
             self.var_name
         ]
-        # (nframes * nloc, m1, m1)
-        out = out.reshape(-1, self.embedding_width, self.embedding_width)
+        if self.fit_diag:
+            out = out.reshape(-1, self.embedding_width) # (nframes * nloc, m1)
+            out = np.stack([np.diag(v) for v in out]) # (nframes * nloc, m1, m1)
+        else:
+            out = out.reshape(-1, self.embedding_width, self.embedding_width) # (nframes * nloc, m1, m1)
         out = out + np.transpose(out, axes=(0, 2, 1))
 
         # (nframes * nloc, m1, 3)

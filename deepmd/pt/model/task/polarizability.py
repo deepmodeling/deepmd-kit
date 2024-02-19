@@ -57,6 +57,8 @@ class PolarFittingNet(GeneralFitting):
         The condition number for the regression of atomic energy.
     seed : int, optional
         Random seed.
+    fit_diag : bool
+        Fit the diagonal part of the rotational invariant polarizability matrix, which will be converted to normal polarizability matrix by contracting with the rotation matrix.
     """
 
     def __init__(
@@ -75,9 +77,11 @@ class PolarFittingNet(GeneralFitting):
         rcond: Optional[float] = None,
         seed: Optional[int] = None,
         exclude_types: List[int] = [],
+        fit_diag: bool = True,
         **kwargs,
     ):
         self.embedding_width = embedding_width
+        self.fit_diag = fit_diag
         super().__init__(
             var_name=var_name,
             ntypes=ntypes,
@@ -98,12 +102,13 @@ class PolarFittingNet(GeneralFitting):
 
     def _net_out_dim(self):
         """Set the FittingNet output dim."""
-        return self.embedding_width * self.embedding_width
+        return self.embedding_width if self.fit_diag else self.embedding_width * self.embedding_width
 
     def serialize(self) -> dict:
         data = super().serialize()
         data["embedding_width"] = self.embedding_width
         data["old_impl"] = self.old_impl
+        data["fit_diag"] = self.fit_diag
         return data
 
     def output_def(self) -> FittingOutputDef:
@@ -145,8 +150,12 @@ class PolarFittingNet(GeneralFitting):
         out = self._forward_common(descriptor, atype, gr, g2, h2, fparam, aparam)[
             self.var_name
         ]
-        # (nframes * nloc, m1, m1)
-        out = out.view(-1, self.embedding_width, self.embedding_width)
+        if self.fit_diag:
+            out = out.view(-1, self.embedding_width) # (nframes * nloc, m1)
+            out = torch.diag_embed(out) # (nframes * nloc, m1, m1)
+        else:
+            out = out.view(-1, self.embedding_width, self.embedding_width) # (nframes * nloc, m1, m1)
+
         out = out + out.transpose(1, 2)
         gr = gr.view(nframes * nloc, -1, 3)  # (nframes * nloc, m1, 3)
         out = torch.bmm(out, gr)  # (nframes * nloc, m1, 3)
