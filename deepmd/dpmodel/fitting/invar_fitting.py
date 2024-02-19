@@ -95,8 +95,10 @@ class InvarFitting(GeneralFitting):
     use_aparam_as_mask: bool, optional
             If True, the atomic parameters will be used as a mask that determines the atom is real/virtual.
             And the aparam will not be used as the atomic parameters for embedding.
-    distinguish_types
-            Different atomic types uses different fitting net.
+    mixed_types
+            If false, different atomic types uses different fitting net, otherwise different atom types share the same fitting net.
+    exclude_types: List[int]
+            Atomic contributions of the excluded atom types are set zero.
 
     """
 
@@ -119,7 +121,7 @@ class InvarFitting(GeneralFitting):
         layer_name: Optional[List[Optional[str]]] = None,
         use_aparam_as_mask: bool = False,
         spin: Any = None,
-        distinguish_types: bool = False,
+        mixed_types: bool = True,
         exclude_types: List[int] = [],
     ):
         # seed, uniform_seed are not included
@@ -154,7 +156,7 @@ class InvarFitting(GeneralFitting):
             layer_name=layer_name,
             use_aparam_as_mask=use_aparam_as_mask,
             spin=spin,
-            distinguish_types=distinguish_types,
+            mixed_types=mixed_types,
             exclude_types=exclude_types,
         )
 

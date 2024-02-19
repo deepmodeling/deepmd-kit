@@ -115,7 +115,7 @@ class EnvMatStatSeA(EnvMatStat):
                 atype,
                 self.descriptor.get_rcut(),
                 self.descriptor.get_sel(),
-                distinguish_types=self.descriptor.distinguish_types(),
+                mixed_types=self.descriptor.mixed_types(),
                 box=box,
             )
             env_mat, _, _ = prod_env_mat_se_a(
@@ -177,7 +177,7 @@ class EnvMatStatSeA(EnvMatStat):
                 "rcut_smth": round(self.descriptor.rcut_smth, 2),
                 "nsel": self.descriptor.get_nsel(),
                 "sel": self.descriptor.get_sel(),
-                "distinguish_types": self.descriptor.distinguish_types(),
+                "mixed_types": self.descriptor.mixed_types(),
             }
         )
 

@@ -54,7 +54,7 @@ class TestDPModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
             self.nt,
             ds.get_dim_out(),
             1,
-            distinguish_types=ds.distinguish_types(),
+            mixed_types=ds.mixed_types(),
         ).to(env.DEVICE)
         type_map = ["foo", "bar"]
         md0 = DPModel(ds, ft, type_map=type_map).to(env.DEVICE)
@@ -97,7 +97,7 @@ class TestDPModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
             self.nloc,
             self.rcut,
             self.sel,
-            distinguish_types=md0.distinguish_types(),
+            distinguish_types=(not md0.mixed_types()),
         )
         args = [coord_ext, atype_ext, nlist]
         ret2 = md0.forward_common_lower(*args, do_atomic_virial=True)
@@ -121,7 +121,7 @@ class TestDPModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
             self.nt,
             ds.get_dim_out(),
             1,
-            distinguish_types=ds.distinguish_types(),
+            mixed_types=ds.mixed_types(),
             numb_fparam=nfp,
             numb_aparam=nap,
         )
@@ -160,7 +160,7 @@ class TestDPModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
             self.nt,
             ds.get_dim_out(),
             1,
-            distinguish_types=ds.distinguish_types(),
+            mixed_types=ds.mixed_types(),
             numb_fparam=nfp,
             numb_aparam=nap,
         )
@@ -203,7 +203,7 @@ class TestDPModelLower(unittest.TestCase, TestCaseSingleFrameWithNlist):
             self.nt,
             ds.get_dim_out(),
             1,
-            distinguish_types=ds.distinguish_types(),
+            mixed_types=ds.mixed_types(),
         ).to(env.DEVICE)
         type_map = ["foo", "bar"]
         md0 = DPModel(ds, ft, type_map=type_map).to(env.DEVICE)
@@ -249,7 +249,7 @@ class TestDPModelLower(unittest.TestCase, TestCaseSingleFrameWithNlist):
             self.nt,
             ds.get_dim_out(),
             1,
-            distinguish_types=ds.distinguish_types(),
+            mixed_types=ds.mixed_types(),
         )
         type_map = ["foo", "bar"]
         md0 = DPDPModel(ds, ft, type_map=type_map)
@@ -281,7 +281,7 @@ class TestDPModelLower(unittest.TestCase, TestCaseSingleFrameWithNlist):
             self.nt,
             ds.get_dim_out(),
             1,
-            distinguish_types=ds.distinguish_types(),
+            mixed_types=ds.mixed_types(),
         ).to(env.DEVICE)
         type_map = ["foo", "bar"]
         md0 = DPModel(ds, ft, type_map=type_map).to(env.DEVICE)
@@ -331,7 +331,7 @@ class TestDPModelFormatNlist(unittest.TestCase):
             self.nt,
             ds.get_dim_out(),
             1,
-            distinguish_types=ds.distinguish_types(),
+            mixed_types=ds.mixed_types(),
         ).to(env.DEVICE)
         type_map = ["foo", "bar"]
         self.md = DPModel(ds, ft, type_map=type_map).to(env.DEVICE)
@@ -404,7 +404,7 @@ class TestEnergyModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
             self.nt,
             ds.get_dim_out(),
             1,
-            distinguish_types=ds.distinguish_types(),
+            mixed_types=ds.mixed_types(),
         ).to(env.DEVICE)
         type_map = ["foo", "bar"]
         md0 = EnergyModel(ds, ft, type_map=type_map).to(env.DEVICE)
@@ -439,7 +439,7 @@ class TestEnergyModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
             to_torch_tensor(self.atype),
             self.rcut,
             self.sel,
-            distinguish_types=md0.distinguish_types(),
+            mixed_types=md0.mixed_types(),
             box=to_torch_tensor(self.cell),
         )
         args = [coord_ext, atype_ext, nlist]
@@ -468,7 +468,7 @@ class TestEnergyModelLower(unittest.TestCase, TestCaseSingleFrameWithNlist):
             self.nt,
             ds.get_dim_out(),
             1,
-            distinguish_types=ds.distinguish_types(),
+            mixed_types=ds.mixed_types(),
         ).to(env.DEVICE)
         type_map = ["foo", "bar"]
         md0 = EnergyModel(ds, ft, type_map=type_map).to(env.DEVICE)
@@ -513,7 +513,7 @@ class TestEnergyModelLower(unittest.TestCase, TestCaseSingleFrameWithNlist):
             self.nt,
             ds.get_dim_out(),
             1,
-            distinguish_types=ds.distinguish_types(),
+            mixed_types=ds.mixed_types(),
         ).to(env.DEVICE)
         type_map = ["foo", "bar"]
         md0 = EnergyModel(ds, ft, type_map=type_map).to(env.DEVICE)

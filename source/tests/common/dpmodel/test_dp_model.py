@@ -36,7 +36,7 @@ class TestDPModel(unittest.TestCase, TestCaseSingleFrameWithNlist):
             self.nt,
             ds.get_dim_out(),
             1,
-            distinguish_types=ds.distinguish_types(),
+            mixed_types=ds.mixed_types(),
         )
         type_map = ["foo", "bar"]
         md0 = DPModel(ds, ft, type_map=type_map)

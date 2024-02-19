@@ -970,7 +970,7 @@ class EnerFitting(Fitting):
             "dim_descrpt": self.dim_descrpt,
             # very bad design: type embedding is not passed to the class
             # TODO: refactor the class
-            "distinguish_types": True,
+            "mixed_types": False,
             "dim_out": 1,
             "neuron": self.n_neuron,
             "resnet_dt": self.resnet_dt,

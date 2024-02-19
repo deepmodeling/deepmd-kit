@@ -261,7 +261,7 @@ class TestDPA1(unittest.TestCase):
             atype,
             des.get_rcut(),
             des.get_sel(),
-            distinguish_types=des.distinguish_types(),
+            mixed_types=des.mixed_types(),
             box=box,
         )
         descriptor, env_mat, diff, rot_mat, sw = des(
@@ -315,7 +315,7 @@ class TestDPA1(unittest.TestCase):
             atype,
             des.get_rcut(),
             des.get_sel(),
-            distinguish_types=des.distinguish_types(),
+            mixed_types=des.mixed_types(),
             box=box,
         )
         descriptor, env_mat, diff, rot_mat, sw = des(

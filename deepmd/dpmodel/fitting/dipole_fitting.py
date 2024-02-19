@@ -65,8 +65,11 @@ class DipoleFitting(GeneralFitting):
     use_aparam_as_mask: bool, optional
             If True, the atomic parameters will be used as a mask that determines the atom is real/virtual.
             And the aparam will not be used as the atomic parameters for embedding.
-    distinguish_types
-            Different atomic types uses different fitting net.
+    mixed_types
+            If true, use a uniform fitting net for all atom types, otherwise use
+            different fitting nets for different atom types.
+    exclude_types: List[int]
+            Atomic contributions of the excluded atom types are set zero.
 
     """
 
@@ -89,7 +92,7 @@ class DipoleFitting(GeneralFitting):
         layer_name: Optional[List[Optional[str]]] = None,
         use_aparam_as_mask: bool = False,
         spin: Any = None,
-        distinguish_types: bool = False,
+        mixed_types: bool = False,
         exclude_types: List[int] = [],
         old_impl=False,
     ):
@@ -123,7 +126,7 @@ class DipoleFitting(GeneralFitting):
             layer_name=layer_name,
             use_aparam_as_mask=use_aparam_as_mask,
             spin=spin,
-            distinguish_types=distinguish_types,
+            mixed_types=mixed_types,
             exclude_types=exclude_types,
         )
         self.old_impl = False

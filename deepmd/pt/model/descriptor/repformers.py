@@ -181,11 +181,17 @@ class DescrptBlockRepformers(DescriptorBlock):
         """Returns the embedding dimension g2."""
         return self.g2_dim
 
-    def distinguish_types(self) -> bool:
-        """Returns if the descriptor requires a neighbor list that distinguish different
-        atomic types or not.
+    def mixed_types(self) -> bool:
+        """If true, the discriptor
+        1. assumes total number of atoms aligned across frames;
+        2. requires a neighbor list that does not distinguish different atomic types.
+
+        If false, the discriptor
+        1. assumes total number of atoms of each atom type aligned across frames;
+        2. requires a neighbor list that distinguishes different atomic types.
+
         """
-        return False
+        return True
 
     @property
     def dim_out(self):

@@ -28,19 +28,19 @@ class NeighborStatOP(NativeOP):
         The num of atom types
     rcut
         The cut-off radius
-    distinguish_types : bool, optional
-        If False, treat all types as a single type.
+    mixed_types : bool, optional
+        If True, treat all types as a single type.
     """
 
     def __init__(
         self,
         ntypes: int,
         rcut: float,
-        distinguish_types: bool,
+        mixed_types: bool,
     ) -> None:
         self.rcut = rcut
         self.ntypes = ntypes
-        self.distinguish_types = distinguish_types
+        self.mixed_types = mixed_types
 
     def call(
         self,
@@ -89,7 +89,7 @@ class NeighborStatOP(NativeOP):
         rr2 = np.sum(np.square(diff), axis=-1)
         min_rr2 = np.min(rr2, axis=-1)
         # count the number of neighbors
-        if self.distinguish_types:
+        if not self.mixed_types:
             mask = rr2 < self.rcut**2
             nnei = np.zeros((nframes, nloc, self.ntypes), dtype=int)
             for ii in range(self.ntypes):

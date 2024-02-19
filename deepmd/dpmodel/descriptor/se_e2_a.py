@@ -223,11 +223,11 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         """Returns cutoff radius."""
         return self.sel
 
-    def distinguish_types(self):
+    def mixed_types(self):
         """Returns if the descriptor requires a neighbor list that distinguish different
         atomic types or not.
         """
-        return True
+        return False
 
     def get_ntypes(self) -> int:
         """Returns the number of element types."""
