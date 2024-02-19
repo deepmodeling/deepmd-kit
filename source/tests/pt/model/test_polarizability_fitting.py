@@ -66,7 +66,7 @@ class TestDipoleFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 embedding_width=self.dd0.get_dim_emb(),
                 numb_fparam=nfp,
                 numb_aparam=nap,
-                use_tebd=mixed_types,
+                mixed_types=mixed_types,
                 fit_diag=fit_diag,
                 scale=scale,
             ).to(env.DEVICE)
@@ -122,7 +122,7 @@ class TestDipoleFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 embedding_width=self.dd0.get_dim_emb(),
                 numb_fparam=nfp,
                 numb_aparam=nap,
-                use_tebd=mixed_types,
+                mixed_types=mixed_types,
                 fit_diag=fit_diag,
             ).to(env.DEVICE)
             torch.jit.script(ft0)
@@ -164,7 +164,7 @@ class TestEquivalence(unittest.TestCase):
                 embedding_width=self.dd0.get_dim_emb(),
                 numb_fparam=nfp,
                 numb_aparam=nap,
-                use_tebd=False,
+                mixed_types=True,
                 fit_diag=fit_diag,
                 scale=scale,
             ).to(env.DEVICE)
@@ -223,7 +223,7 @@ class TestEquivalence(unittest.TestCase):
                 embedding_width=self.dd0.get_dim_emb(),
                 numb_fparam=0,
                 numb_aparam=0,
-                use_tebd=False,
+                mixed_types=True,
                 fit_diag=fit_diag,
                 scale=scale,
             ).to(env.DEVICE)
@@ -269,7 +269,7 @@ class TestEquivalence(unittest.TestCase):
                 embedding_width=self.dd0.get_dim_emb(),
                 numb_fparam=0,
                 numb_aparam=0,
-                use_tebd=False,
+                mixed_types=True,
                 fit_diag=fit_diag,
                 scale=scale,
             ).to(env.DEVICE)

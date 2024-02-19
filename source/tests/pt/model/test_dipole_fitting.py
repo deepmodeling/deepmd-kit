@@ -51,7 +51,7 @@ class TestDipoleFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
             self.atype_ext[:, : self.nloc], dtype=int, device=env.DEVICE
         )
 
-        for distinguish_types, nfp, nap in itertools.product(
+        for mixed_types, nfp, nap in itertools.product(
             [True, False],
             [0, 3],
             [0, 4],
@@ -63,7 +63,7 @@ class TestDipoleFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 embedding_width=self.dd0.get_dim_emb(),
                 numb_fparam=nfp,
                 numb_aparam=nap,
-                use_tebd=(not distinguish_types),
+                mixed_types= mixed_types,
             ).to(env.DEVICE)
             ft1 = DPDipoleFitting.deserialize(ft0.serialize())
             ft2 = DipoleFittingNet.deserialize(ft1.serialize())
@@ -104,7 +104,7 @@ class TestDipoleFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
     def test_jit(
         self,
     ):
-        for distinguish_types, nfp, nap in itertools.product(
+        for mixed_types, nfp, nap in itertools.product(
             [True, False],
             [0, 3],
             [0, 4],
@@ -116,7 +116,7 @@ class TestDipoleFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 embedding_width=self.dd0.get_dim_emb(),
                 numb_fparam=nfp,
                 numb_aparam=nap,
-                use_tebd=(not distinguish_types),
+                mixed_types= mixed_types,
             ).to(env.DEVICE)
             torch.jit.script(ft0)
 
@@ -140,7 +140,7 @@ class TestEquivalence(unittest.TestCase):
         rmat = torch.tensor(special_ortho_group.rvs(3), dtype=dtype).to(env.DEVICE)
         coord_rot = torch.matmul(self.coord, rmat)
         rng = np.random.default_rng()
-        for distinguish_types, nfp, nap in itertools.product(
+        for mixed_types, nfp, nap in itertools.product(
             [True, False],
             [0, 3],
             [0, 4],
@@ -152,7 +152,7 @@ class TestEquivalence(unittest.TestCase):
                 embedding_width=self.dd0.get_dim_emb(),
                 numb_fparam=nfp,
                 numb_aparam=nap,
-                use_tebd=False,
+                mixed_types=False,
             ).to(env.DEVICE)
             if nfp > 0:
                 ifp = torch.tensor(
@@ -177,7 +177,7 @@ class TestEquivalence(unittest.TestCase):
                     mapping,
                     nlist,
                 ) = extend_input_and_build_neighbor_list(
-                    xyz + self.shift, atype, self.rcut, self.sel, distinguish_types
+                    xyz + self.shift, atype, self.rcut, self.sel, mixed_types
                 )
 
                 rd0, gr0, _, _, _ = self.dd0(
@@ -202,7 +202,7 @@ class TestEquivalence(unittest.TestCase):
             embedding_width=self.dd0.get_dim_emb(),
             numb_fparam=0,
             numb_aparam=0,
-            use_tebd=False,
+            mixed_types=False,
         ).to(env.DEVICE)
         res = []
         for idx_perm in [[0, 1, 2, 3, 4], [1, 0, 4, 3, 2]]:
@@ -244,7 +244,7 @@ class TestEquivalence(unittest.TestCase):
             embedding_width=self.dd0.get_dim_emb(),
             numb_fparam=0,
             numb_aparam=0,
-            use_tebd=False,
+            mixed_types=False,
         ).to(env.DEVICE)
         res = []
         for xyz in [self.coord, coord_s]:
