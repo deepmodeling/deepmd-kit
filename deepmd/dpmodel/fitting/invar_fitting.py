@@ -126,7 +126,7 @@ class InvarFitting(NativeOP, BaseFitting):
         layer_name: Optional[List[Optional[str]]] = None,
         use_aparam_as_mask: bool = False,
         spin: Any = None,
-        mixed_types: bool = False,
+        mixed_types: bool = True,
         exclude_types: List[int] = [],
     ):
         # seed, uniform_seed are not included

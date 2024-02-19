@@ -93,7 +93,7 @@ class InvarFitting(GeneralFitting):
         numb_aparam: int = 0,
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
-        mixed_types: bool = False,
+        mixed_types: bool = True,
         rcond: Optional[float] = None,
         seed: Optional[int] = None,
         exclude_types: List[int] = [],
