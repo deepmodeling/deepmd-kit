@@ -8,11 +8,11 @@ from typing import (
 
 import numpy as np
 
-from deepmd.dpmodel import (
-    DEFAULT_PRECISION,
-)
 from deepmd.common import (
     GLOBAL_NP_FLOAT_PRECISION,
+)
+from deepmd.dpmodel import (
+    DEFAULT_PRECISION,
 )
 from deepmd.dpmodel.output_def import (
     FittingOutputDef,
@@ -127,7 +127,9 @@ class PolarFitting(GeneralFitting):
             assert (
                 isinstance(self.scale, list) and len(self.scale) == ntypes
             ), "Scale should be a list of length ntypes."
-        self.scale = np.array(self.scale, dtype=GLOBAL_NP_FLOAT_PRECISION).reshape(ntypes, 1)
+        self.scale = np.array(self.scale, dtype=GLOBAL_NP_FLOAT_PRECISION).reshape(
+            ntypes, 1
+        )
         self.shift_diag = shift_diag
         super().__init__(
             var_name=var_name,
