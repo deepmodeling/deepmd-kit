@@ -50,13 +50,19 @@ class LinearAtomicModel(BaseAtomicModel):
     ):
         super().__init__()
         self.models = models
-        self.distinguish_type_list = [
-            model.distinguish_types() for model in self.models
-        ]
+        self.mixed_types_list = [model.mixed_types() for model in self.models]
 
-    def distinguish_types(self) -> bool:
-        """If distinguish different types by sorting."""
-        return False
+    def mixed_types(self) -> bool:
+        """If true, the model
+        1. assumes total number of atoms aligned across frames;
+        2. uses a neighbor list that does not distinguish different atomic types.
+
+        If false, the model
+        1. assumes total number of atoms of each atom type aligned across frames;
+        2. uses a neighbor list that distinguishes different atomic types.
+
+        """
+        return True
 
     def get_rcut(self) -> float:
         """Get the cut-off radius."""
@@ -134,9 +140,9 @@ class LinearAtomicModel(BaseAtomicModel):
             for rcut, sel in zip(self.get_model_rcuts(), self.get_model_nsels())
         ]
         nlists_ = [
-            nl if not dt else nlist_distinguish_types(nl, extended_atype, sel)
-            for dt, nl, sel in zip(
-                self.distinguish_type_list, raw_nlists, self.get_model_sels()
+            nl if mt else nlist_distinguish_types(nl, extended_atype, sel)
+            for mt, nl, sel in zip(
+                self.mixed_types_list, raw_nlists, self.get_model_sels()
             )
         ]
         ener_list = [

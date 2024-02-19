@@ -30,7 +30,7 @@ class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
         atype = self.atype_ext[:, :nloc]
 
         for (
-            distinguish_types,
+            mixed_types,
             od,
             nfp,
             nap,
@@ -49,7 +49,7 @@ class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 od,
                 numb_fparam=nfp,
                 numb_aparam=nap,
-                distinguish_types=distinguish_types,
+                mixed_types=mixed_types,
                 exclude_types=et,
             )
             ifn1 = InvarFitting.deserialize(ifn0.serialize())
@@ -71,7 +71,7 @@ class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
         dd = ds.call(self.coord_ext, self.atype_ext, self.nlist)
         atype = self.atype_ext[:, :nloc]
         od = 2
-        distinguish_types = False
+        mixed_types = True
         # exclude type 1
         et = [1]
         ifn0 = InvarFitting(
@@ -79,15 +79,20 @@ class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
             self.nt,
             ds.dim_out,
             od,
-            distinguish_types=distinguish_types,
+            mixed_types=mixed_types,
             exclude_types=et,
         )
         ret0 = ifn0(dd[0], atype)
         # atom index 2 is of type 1 that is excluded
         zero_idx = 2
         np.testing.assert_allclose(
-            ret0["energy"][:, zero_idx, :],
-            np.zeros_like(ret0["energy"][:, zero_idx, :]),
+            ret0["energy"][0, zero_idx, :],
+            np.zeros_like(ret0["energy"][0, zero_idx, :]),
+        )
+        zero_idx = 0
+        np.testing.assert_allclose(
+            ret0["energy"][1, zero_idx, :],
+            np.zeros_like(ret0["energy"][1, zero_idx, :]),
         )
 
     def test_self_exception(
@@ -100,7 +105,7 @@ class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
         atype = self.atype_ext[:, :nloc]
 
         for (
-            distinguish_types,
+            mixed_types,
             od,
             nfp,
             nap,
@@ -117,7 +122,7 @@ class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 od,
                 numb_fparam=nfp,
                 numb_aparam=nap,
-                distinguish_types=distinguish_types,
+                mixed_types=mixed_types,
             )
 
             if nfp > 0:

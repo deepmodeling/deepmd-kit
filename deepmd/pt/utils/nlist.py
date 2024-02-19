@@ -22,7 +22,7 @@ def extend_input_and_build_neighbor_list(
     atype,
     rcut: float,
     sel: List[int],
-    distinguish_types: bool = False,
+    mixed_types: bool = False,
     box: Optional[torch.Tensor] = None,
 ):
     nframes, nloc = atype.shape[:2]
@@ -42,7 +42,7 @@ def extend_input_and_build_neighbor_list(
         nloc,
         rcut,
         sel,
-        distinguish_types=distinguish_types,
+        distinguish_types=(not mixed_types),
     )
     extended_coord = extended_coord.view(nframes, -1, 3)
     return extended_coord, extended_atype, mapping, nlist

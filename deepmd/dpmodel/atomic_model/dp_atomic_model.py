@@ -66,11 +66,17 @@ class DPAtomicModel(BaseAtomicModel):
         """Get the type map."""
         return self.type_map
 
-    def distinguish_types(self) -> bool:
-        """Returns if model requires a neighbor list that distinguish different
-        atomic types or not.
+    def mixed_types(self) -> bool:
+        """If true, the model
+        1. assumes total number of atoms aligned across frames;
+        2. uses a neighbor list that does not distinguish different atomic types.
+
+        If false, the model
+        1. assumes total number of atoms of each atom type aligned across frames;
+        2. uses a neighbor list that distinguishes different atomic types.
+
         """
-        return self.descriptor.distinguish_types()
+        return self.descriptor.mixed_types()
 
     def forward_atomic(
         self,
@@ -146,11 +152,11 @@ class DPAtomicModel(BaseAtomicModel):
 
     def get_dim_fparam(self) -> int:
         """Get the number (dimension) of frame parameters of this atomic model."""
-        return 0
+        return self.fitting.get_dim_fparam()
 
     def get_dim_aparam(self) -> int:
         """Get the number (dimension) of atomic parameters of this atomic model."""
-        return 0
+        return self.fitting.get_dim_aparam()
 
     def get_sel_type(self) -> List[int]:
         """Get the selected atom types of this model.
@@ -159,7 +165,7 @@ class DPAtomicModel(BaseAtomicModel):
         to the result of the model.
         If returning an empty list, all atom types are selected.
         """
-        return []
+        return self.fitting.get_sel_type()
 
     def is_aparam_nall(self) -> bool:
         """Check whether the shape of atomic parameters is (nframes, nall, ndim).

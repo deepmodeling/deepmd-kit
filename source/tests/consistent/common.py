@@ -9,9 +9,6 @@ from abc import (
 from enum import (
     Enum,
 )
-from importlib.util import (
-    find_spec,
-)
 from typing import (
     Any,
     Callable,
@@ -29,8 +26,12 @@ from dargs import (
     Argument,
 )
 
-INSTALLED_TF = find_spec("tensorflow") is not None
-INSTALLED_PT = find_spec("torch") is not None
+from deepmd.backend.tensorflow import (
+    Backend,
+)
+
+INSTALLED_TF = Backend.get_backend("tensorflow")().is_available()
+INSTALLED_PT = Backend.get_backend("pytorch")().is_available()
 
 if os.environ.get("CI") and not (INSTALLED_TF and INSTALLED_PT):
     raise ImportError("TensorFlow or PyTorch should be tested in the CI")
@@ -59,6 +60,8 @@ __all__ = [
 class CommonTest(ABC):
     data: ClassVar[dict]
     """Arguments data."""
+    addtional_data: ClassVar[dict] = {}
+    """Additional data that will not be checked."""
     tf_class: ClassVar[Optional[type]]
     """TensorFlow model class."""
     dp_class: ClassVar[Optional[type]]
@@ -73,6 +76,8 @@ class CommonTest(ABC):
     """Whether to skip the TensorFlow model."""
     skip_pt: ClassVar[bool] = not INSTALLED_PT
     """Whether to skip the PyTorch model."""
+    rtol = 1e-10
+    """Relative tolerance for comparing the return value. Override for float32."""
 
     def setUp(self):
         self.unique_id = uuid4().hex
@@ -89,7 +94,7 @@ class CommonTest(ABC):
             base = Argument("arg", dict, sub_fields=self.args)
             data = base.normalize_value(self.data, trim_pattern="_*")
             base.check_value(data, strict=True)
-        return cls(**data)
+        return cls(**data, **self.addtional_data)
 
     @abstractmethod
     def build_tf(self, obj: Any, suffix: str) -> Tuple[list, dict]:
@@ -237,7 +242,7 @@ class CommonTest(ABC):
         ret2 = self.extract_ret(ret2, self.RefBackend.TF)
         np.testing.assert_equal(data1, data2)
         for rr1, rr2 in zip(ret1, ret2):
-            np.testing.assert_allclose(rr1, rr2)
+            np.testing.assert_allclose(rr1, rr2, rtol=self.rtol)
 
     def test_tf_self_consistent(self):
         """Test whether TF is self consistent."""
@@ -251,7 +256,7 @@ class CommonTest(ABC):
         ret2, data2 = self.get_tf_ret_serialization_from_cls(obj2)
         np.testing.assert_equal(data1, data2)
         for rr1, rr2 in zip(ret1, ret2):
-            np.testing.assert_allclose(rr1, rr2)
+            np.testing.assert_allclose(rr1, rr2, rtol=self.rtol)
 
     def test_dp_consistent_with_ref(self):
         """Test whether DP and reference are consistent."""
@@ -268,7 +273,7 @@ class CommonTest(ABC):
         data2 = dp_obj.serialize()
         np.testing.assert_equal(data1, data2)
         for rr1, rr2 in zip(ret1, ret2):
-            np.testing.assert_allclose(rr1, rr2)
+            np.testing.assert_allclose(rr1, rr2, rtol=self.rtol)
 
     def test_dp_self_consistent(self):
         """Test whether DP is self consistent."""
@@ -281,7 +286,7 @@ class CommonTest(ABC):
         np.testing.assert_equal(data1, data2)
         for rr1, rr2 in zip(ret1, ret2):
             if isinstance(rr1, np.ndarray) and isinstance(rr2, np.ndarray):
-                np.testing.assert_allclose(rr1, rr2)
+                np.testing.assert_allclose(rr1, rr2, rtol=self.rtol)
             else:
                 self.assertEqual(rr1, rr2)
 
@@ -300,7 +305,7 @@ class CommonTest(ABC):
         data2 = obj.serialize()
         np.testing.assert_equal(data1, data2)
         for rr1, rr2 in zip(ret1, ret2):
-            np.testing.assert_allclose(rr1, rr2)
+            np.testing.assert_allclose(rr1, rr2, rtol=self.rtol)
 
     def test_pt_self_consistent(self):
         """Test whether PT is self consistent."""
@@ -313,7 +318,7 @@ class CommonTest(ABC):
         np.testing.assert_equal(data1, data2)
         for rr1, rr2 in zip(ret1, ret2):
             if isinstance(rr1, np.ndarray) and isinstance(rr2, np.ndarray):
-                np.testing.assert_allclose(rr1, rr2)
+                np.testing.assert_allclose(rr1, rr2, rtol=self.rtol)
             else:
                 self.assertEqual(rr1, rr2)
 

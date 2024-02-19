@@ -134,7 +134,11 @@ class MultiModel(Model):
                 fitting_dict[item] = item_fitting_param
             else:
                 fitting_dict[item] = Fitting(
-                    **item_fitting_param, descrpt=self.descrpt, spin=self.spin
+                    **item_fitting_param,
+                    descrpt=self.descrpt,
+                    spin=self.spin,
+                    ntypes=self.descrpt.get_ntypes(),
+                    dim_descrpt=self.descrpt.get_dim_out(),
                 )
 
         # type embedding

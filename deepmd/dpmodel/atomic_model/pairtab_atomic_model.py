@@ -91,9 +91,18 @@ class PairTabAtomicModel(BaseAtomicModel):
     def get_nsel(self) -> int:
         return self.sel
 
-    def distinguish_types(self) -> bool:
+    def mixed_types(self) -> bool:
+        """If true, the model
+        1. assumes total number of atoms aligned across frames;
+        2. uses a neighbor list that does not distinguish different atomic types.
+
+        If false, the model
+        1. assumes total number of atoms of each atom type aligned across frames;
+        2. uses a neighbor list that distinguishes different atomic types.
+
+        """
         # to match DPA1 and DPA2.
-        return False
+        return True
 
     def serialize(self) -> dict:
         return {"tab": self.tab.serialize(), "rcut": self.rcut, "sel": self.sel}

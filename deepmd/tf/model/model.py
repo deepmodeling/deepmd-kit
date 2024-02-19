@@ -631,7 +631,13 @@ class StandardModel(Model):
         if isinstance(fitting_net, Fitting):
             self.fitting = fitting_net
         else:
-            self.fitting = Fitting(**fitting_net, descrpt=self.descrpt, spin=self.spin)
+            self.fitting = Fitting(
+                **fitting_net,
+                descrpt=self.descrpt,
+                spin=self.spin,
+                ntypes=self.descrpt.get_ntypes(),
+                dim_descrpt=self.descrpt.get_dim_out(),
+            )
         self.rcut = self.descrpt.get_rcut()
         self.ntypes = self.descrpt.get_ntypes()
 

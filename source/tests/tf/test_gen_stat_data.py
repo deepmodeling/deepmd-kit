@@ -119,7 +119,12 @@ class TestEnerShift(unittest.TestCase):
         ener_shift0 = data.compute_energy_shift(rcond=1)
         all_stat = make_stat_input(data, 4, merge_sys=False)
         descrpt = DescrptSeA(6.0, 5.8, [46, 92], neuron=[25, 50, 100], axis_neuron=16)
-        fitting = EnerFitting(descrpt, neuron=[240, 240, 240], resnet_dt=True)
+        fitting = EnerFitting(
+            descrpt.get_ntypes(),
+            descrpt.get_dim_out(),
+            neuron=[240, 240, 240],
+            resnet_dt=True,
+        )
         ener_shift1 = fitting._compute_output_stats(all_stat, rcond=1)
         np.testing.assert_almost_equal(ener_shift0, ener_shift1)
 
@@ -131,7 +136,11 @@ class TestEnerShift(unittest.TestCase):
         all_stat = make_stat_input(data, 4, merge_sys=False)
         descrpt = DescrptSeA(6.0, 5.8, [46, 92], neuron=[25, 50, 100], axis_neuron=16)
         fitting = EnerFitting(
-            descrpt, neuron=[240, 240, 240], resnet_dt=True, atom_ener=[ae0, None, None]
+            descrpt.get_ntypes(),
+            descrpt.get_dim_out(),
+            neuron=[240, 240, 240],
+            resnet_dt=True,
+            atom_ener=[ae0, None, None],
         )
         ener_shift1 = fitting._compute_output_stats(all_stat, rcond=1)
         # check assigned energy

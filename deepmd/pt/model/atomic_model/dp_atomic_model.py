@@ -79,9 +79,17 @@ class DPAtomicModel(torch.nn.Module, BaseAtomicModel):
         """Get the neighbor selection."""
         return self.sel
 
-    def distinguish_types(self) -> bool:
-        """If distinguish different types by sorting."""
-        return self.descriptor.distinguish_types()
+    def mixed_types(self) -> bool:
+        """If true, the model
+        1. assumes total number of atoms aligned across frames;
+        2. uses a neighbor list that does not distinguish different atomic types.
+
+        If false, the model
+        1. assumes total number of atoms of each atom type aligned across frames;
+        2. uses a neighbor list that distinguishes different atomic types.
+
+        """
+        return self.descriptor.mixed_types()
 
     def serialize(self) -> dict:
         return {
@@ -194,14 +202,12 @@ class DPAtomicModel(torch.nn.Module, BaseAtomicModel):
     @torch.jit.export
     def get_dim_fparam(self) -> int:
         """Get the number (dimension) of frame parameters of this atomic model."""
-        # TODO: self.fitting_net.get_dim_fparam()
-        return 0
+        return self.fitting_net.get_dim_fparam()
 
     @torch.jit.export
     def get_dim_aparam(self) -> int:
         """Get the number (dimension) of atomic parameters of this atomic model."""
-        # TODO: self.fitting_net.get_dim_aparam()
-        return 0
+        return self.fitting_net.get_dim_aparam()
 
     @torch.jit.export
     def get_sel_type(self) -> List[int]:
@@ -211,8 +217,7 @@ class DPAtomicModel(torch.nn.Module, BaseAtomicModel):
         to the result of the model.
         If returning an empty list, all atom types are selected.
         """
-        # TODO: self.fitting_net.get_sel_type()
-        return []
+        return self.fitting_net.get_sel_type()
 
     @torch.jit.export
     def is_aparam_nall(self) -> bool:

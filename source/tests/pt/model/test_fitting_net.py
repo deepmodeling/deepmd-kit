@@ -95,7 +95,9 @@ class TestFittingNet(unittest.TestCase):
             cnt += self.natoms[i + 2]
 
         fake_d = FakeDescriptor(2, 30)
-        self.dp_fn = EnerFitting(fake_d, self.n_neuron)
+        self.dp_fn = EnerFitting(
+            fake_d.get_ntypes(), fake_d.get_dim_out(), self.n_neuron
+        )
         self.dp_fn.bias_atom_e = rng.uniform(size=[self.ntypes])
 
     def test_consistency(self):
@@ -107,7 +109,7 @@ class TestFittingNet(unittest.TestCase):
             self.embedding_width,
             neuron=self.n_neuron,
             bias_atom_e=self.dp_fn.bias_atom_e,
-            distinguish_types=True,
+            mixed_types=False,
         ).to(env.DEVICE)
         for name, param in my_fn.named_parameters():
             matched = re.match(

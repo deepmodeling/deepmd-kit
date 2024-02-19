@@ -140,17 +140,22 @@ EMBEDDING_NET_PATTERN = str(
     r"filter_type_(all)/(idt)_(\d+)|"
 )[:-1]
 
+# subpatterns:
+# \1: layer index or "final"
+# \2: type of centeral atom, optional
+# the last: weight name
 FITTING_NET_PATTERN = str(
-    r"layer_\d+/matrix|"
-    r"layer_\d+_type_\d+/matrix|"
-    r"layer_\d+/bias|"
-    r"layer_\d+_type_\d+/bias|"
-    r"layer_\d+/idt|"
-    r"layer_\d+_type_\d+/idt|"
-    r"final_layer/matrix|"
-    r"final_layer_type_\d+/matrix|"
-    r"final_layer/bias|"
-    r"final_layer_type_\d+/bias|"
+    r"layer_(\d+)/(matrix)|"
+    r"layer_(\d+)_type_(\d+)/(matrix)|"
+    r"layer_(\d+)/(bias)|"
+    r"layer_(\d+)_type_(\d+)/(bias)|"
+    r"layer_(\d+)/(idt)|"
+    r"layer_(\d+)_type_(\d+)/(idt)|"
+    r"(final)_layer/(matrix)|"
+    r"(final)_layer_type_(\d+)/(matrix)|"
+    r"(final)_layer/(bias)|"
+    r"(final)_layer_type_(\d+)/(bias)|"
+    # TODO: not sure how to parse for shared layers...
     # layer_name
     r"share_.+_type_\d/matrix|"
     r"share_.+_type_\d/bias|"
@@ -158,7 +163,7 @@ FITTING_NET_PATTERN = str(
     r"share_.+/matrix|"
     r"share_.+/bias|"
     r"share_.+/idt|"
-)
+)[:-1]
 
 TYPE_EMBEDDING_PATTERN = str(
     r"type_embed_net+/matrix_\d+|"

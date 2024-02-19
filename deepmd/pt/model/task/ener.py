@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import copy
 import logging
 from typing import (
     List,
@@ -68,12 +69,16 @@ class InvarFitting(GeneralFitting):
         Activation function.
     precision : str
         Numerical precision.
-    distinguish_types : bool
-        Neighbor list that distinguish different atomic types or not.
+    mixed_types : bool
+        If true, use a uniform fitting net for all atom types, otherwise use
+        different fitting nets for different atom types.
     rcond : float, optional
         The condition number for the regression of atomic energy.
     seed : int, optional
         Random seed.
+    exclude_types: List[int]
+        Atomic contributions of the excluded atom types are set zero.
+
     """
 
     def __init__(
@@ -89,17 +94,17 @@ class InvarFitting(GeneralFitting):
         numb_aparam: int = 0,
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
-        distinguish_types: bool = False,
+        mixed_types: bool = True,
         rcond: Optional[float] = None,
         seed: Optional[int] = None,
         exclude_types: List[int] = [],
         **kwargs,
     ):
+        self.dim_out = dim_out
         super().__init__(
             var_name=var_name,
             ntypes=ntypes,
             dim_descrpt=dim_descrpt,
-            dim_out=dim_out,
             neuron=neuron,
             bias_atom_e=bias_atom_e,
             resnet_dt=resnet_dt,
@@ -107,7 +112,7 @@ class InvarFitting(GeneralFitting):
             numb_aparam=numb_aparam,
             activation_function=activation_function,
             precision=precision,
-            distinguish_types=distinguish_types,
+            mixed_types=mixed_types,
             rcond=rcond,
             seed=seed,
             exclude_types=exclude_types,
@@ -118,34 +123,10 @@ class InvarFitting(GeneralFitting):
         """Set the FittingNet output dim."""
         return self.dim_out
 
-    def __setitem__(self, key, value):
-        if key in ["bias_atom_e"]:
-            value = value.view([self.ntypes, self.dim_out])
-            self.bias_atom_e = value
-        elif key in ["fparam_avg"]:
-            self.fparam_avg = value
-        elif key in ["fparam_inv_std"]:
-            self.fparam_inv_std = value
-        elif key in ["aparam_avg"]:
-            self.aparam_avg = value
-        elif key in ["aparam_inv_std"]:
-            self.aparam_inv_std = value
-        else:
-            raise KeyError(key)
-
-    def __getitem__(self, key):
-        if key in ["bias_atom_e"]:
-            return self.bias_atom_e
-        elif key in ["fparam_avg"]:
-            return self.fparam_avg
-        elif key in ["fparam_inv_std"]:
-            return self.fparam_inv_std
-        elif key in ["aparam_avg"]:
-            return self.aparam_avg
-        elif key in ["aparam_inv_std"]:
-            return self.aparam_inv_std
-        else:
-            raise KeyError(key)
+    def serialize(self) -> dict:
+        data = super().serialize()
+        data["dim_out"] = self.dim_out
+        return data
 
     @property
     def data_stat_key(self):
@@ -157,8 +138,8 @@ class InvarFitting(GeneralFitting):
 
     def compute_output_stats(self, merged, stat_file_path: Optional[DPPath] = None):
         energy = [item["energy"] for item in merged]
-        mixed_type = "real_natoms_vec" in merged[0]
-        if mixed_type:
+        data_mixed_type = "real_natoms_vec" in merged[0]
+        if data_mixed_type:
             input_natoms = [item["real_natoms_vec"] for item in merged]
         else:
             input_natoms = [item["natoms"] for item in merged]
@@ -175,6 +156,19 @@ class InvarFitting(GeneralFitting):
             torch.tensor(bias_atom_e, device=env.DEVICE).view(
                 [self.ntypes, self.dim_out]
             )
+        )
+
+    def output_def(self) -> FittingOutputDef:
+        return FittingOutputDef(
+            [
+                OutputVariableDef(
+                    self.var_name,
+                    [self.dim_out],
+                    reduciable=True,
+                    r_differentiable=True,
+                    c_differentiable=True,
+                ),
+            ]
         )
 
     def forward(
@@ -205,7 +199,7 @@ class EnergyFittingNet(InvarFitting):
     def __init__(
         self,
         ntypes: int,
-        embedding_width: int,
+        dim_descrpt: int,
         neuron: List[int] = [128, 128, 128],
         bias_atom_e: Optional[torch.Tensor] = None,
         resnet_dt: bool = True,
@@ -213,13 +207,13 @@ class EnergyFittingNet(InvarFitting):
         numb_aparam: int = 0,
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
-        use_tebd: bool = True,
+        mixed_types: bool = True,
         **kwargs,
     ):
         super().__init__(
             "energy",
             ntypes,
-            embedding_width,
+            dim_descrpt,
             1,
             neuron=neuron,
             bias_atom_e=bias_atom_e,
@@ -228,9 +222,16 @@ class EnergyFittingNet(InvarFitting):
             numb_aparam=numb_aparam,
             activation_function=activation_function,
             precision=precision,
-            use_tebd=use_tebd,
+            mixed_types=mixed_types,
             **kwargs,
         )
+
+    @classmethod
+    def deserialize(cls, data: dict) -> "GeneralFitting":
+        data = copy.deepcopy(data)
+        data.pop("var_name")
+        data.pop("dim_out")
+        return super().deserialize(data)
 
 
 @Fitting.register("direct_force")

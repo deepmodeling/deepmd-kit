@@ -8,9 +8,18 @@ import argparse
 import logging
 import os
 import textwrap
+from collections import (
+    defaultdict,
+)
 from typing import (
+    Dict,
     List,
     Optional,
+    Type,
+)
+
+from deepmd.backend.backend import (
+    Backend,
 )
 
 try:
@@ -46,12 +55,10 @@ class RawTextArgumentDefaultsHelpFormatter(
     """This formatter is used to print multile-line help message with default value."""
 
 
-BACKEND_TABLE = {
-    "tensorflow": "tensorflow",
-    "tf": "tensorflow",
-    "pytorch": "pytorch",
-    "pt": "pytorch",
-}
+BACKENDS: Dict[str, Type[Backend]] = Backend.get_backends_by_feature(
+    Backend.Feature.ENTRY_POINT
+)
+BACKEND_TABLE: Dict[str, str] = {kk: vv.name.lower() for kk, vv in BACKENDS.items()}
 
 
 class BackendOption(argparse.Action):
@@ -102,20 +109,18 @@ def main_parser() -> argparse.ArgumentParser:
             "DP_BACKEND."
         ),
     )
-    parser_backend.add_argument(
-        "--tf",
-        action="store_const",
-        dest="backend",
-        const="tensorflow",
-        help="Alias for --backend tensorflow",
-    )
-    parser_backend.add_argument(
-        "--pt",
-        action="store_const",
-        dest="backend",
-        const="pytorch",
-        help="Alias for --backend pytorch",
-    )
+
+    BACKEND_ALIAS: Dict[str, List[str]] = defaultdict(list)
+    for alias, backend in BACKEND_TABLE.items():
+        BACKEND_ALIAS[backend].append(alias)
+    for backend, alias in BACKEND_ALIAS.items():
+        parser_backend.add_argument(
+            *[f"--{aa}" for aa in alias],
+            action="store_const",
+            dest="backend",
+            const=backend,
+            help=f"Alias for --backend {backend}",
+        )
 
     subparsers = parser.add_subparsers(title="Valid subcommands", dest="command")
 
@@ -752,11 +757,8 @@ def main():
     """
     args = parse_args()
 
-    if args.backend == "tensorflow":
-        from deepmd.tf.entrypoints.main import main as deepmd_main
-    elif args.backend == "pytorch":
-        from deepmd.pt.entrypoints.main import main as deepmd_main
-    else:
+    if args.backend not in BACKEND_TABLE:
         raise ValueError(f"Unknown backend {args.backend}")
+    deepmd_main = BACKENDS[args.backend]().entry_point_hook
 
     deepmd_main(args)

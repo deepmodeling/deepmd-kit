@@ -195,7 +195,9 @@ class DpTrainer:
             neuron=self.filter_neuron,
             axis_neuron=self.axis_neuron,
         )
-        dp_fitting = EnerFitting(descrpt=dp_descrpt, neuron=self.n_neuron)
+        dp_fitting = EnerFitting(
+            dp_descrpt.get_ntypes(), dp_descrpt.get_dim_out(), neuron=self.n_neuron
+        )
         return EnerModel(
             dp_descrpt,
             dp_fitting,
@@ -289,7 +291,7 @@ class TestEnergy(unittest.TestCase):
                     "neuron": self.filter_neuron,
                     "axis_neuron": self.axis_neuron,
                 },
-                "fitting_net": {"neuron": self.n_neuron, "distinguish_types": True},
+                "fitting_net": {"neuron": self.n_neuron, "mixed_types": False},
                 "data_stat_nbatch": self.data_stat_nbatch,
                 "type_map": self.type_map,
             },

@@ -67,7 +67,8 @@ class TestModel(tf.test.TestCase):
         jdata["model"]["descriptor"].pop("type", None)
         jdata["model"]["descriptor"]["ntypes"] = 2
         descrpt = DescrptSeAtten(**jdata["model"]["descriptor"], uniform_seed=True)
-        jdata["model"]["fitting_net"]["descrpt"] = descrpt
+        jdata["model"]["fitting_net"]["ntypes"] = descrpt.get_ntypes()
+        jdata["model"]["fitting_net"]["dim_descrpt"] = descrpt.get_dim_out()
         fitting = EnerFitting(**jdata["model"]["fitting_net"], uniform_seed=True)
         typeebd_param = jdata["model"]["type_embedding"]
         typeebd = TypeEmbedNet(
@@ -292,7 +293,8 @@ class TestModel(tf.test.TestCase):
         jdata["model"]["descriptor"]["stripped_type_embedding"] = True
         jdata["model"]["descriptor"]["attn_layer"] = 0
         descrpt = DescrptSeAtten(**jdata["model"]["descriptor"], uniform_seed=True)
-        jdata["model"]["fitting_net"]["descrpt"] = descrpt
+        jdata["model"]["fitting_net"]["ntypes"] = descrpt.get_ntypes()
+        jdata["model"]["fitting_net"]["dim_descrpt"] = descrpt.get_dim_out()
         fitting = EnerFitting(**jdata["model"]["fitting_net"], uniform_seed=True)
         typeebd_param = jdata["model"]["type_embedding"]
         typeebd = TypeEmbedNet(
@@ -519,7 +521,8 @@ class TestModel(tf.test.TestCase):
         jdata["model"]["descriptor"]["stripped_type_embedding"] = True
         jdata["model"]["descriptor"]["attn_layer"] = 2
         descrpt = DescrptSeAtten(**jdata["model"]["descriptor"], uniform_seed=True)
-        jdata["model"]["fitting_net"]["descrpt"] = descrpt
+        jdata["model"]["fitting_net"]["ntypes"] = descrpt.get_ntypes()
+        jdata["model"]["fitting_net"]["dim_descrpt"] = descrpt.get_dim_out()
         fitting = EnerFitting(**jdata["model"]["fitting_net"], uniform_seed=True)
         typeebd_param = jdata["model"]["type_embedding"]
         typeebd = TypeEmbedNet(
@@ -757,7 +760,8 @@ class TestModel(tf.test.TestCase):
         jdata["model"]["descriptor"]["rcut"] = 6.0
         jdata["model"]["descriptor"]["rcut_smth"] = 4.0
         descrpt = DescrptSeAtten(**jdata["model"]["descriptor"], uniform_seed=True)
-        jdata["model"]["fitting_net"]["descrpt"] = descrpt
+        jdata["model"]["fitting_net"]["ntypes"] = descrpt.get_ntypes()
+        jdata["model"]["fitting_net"]["dim_descrpt"] = descrpt.get_dim_out()
         fitting = EnerFitting(**jdata["model"]["fitting_net"], uniform_seed=True)
         typeebd_param = jdata["model"]["type_embedding"]
         typeebd = TypeEmbedNet(

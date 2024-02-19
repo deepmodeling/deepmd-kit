@@ -44,7 +44,7 @@ class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
         )
         atype = torch.tensor(self.atype_ext[:, :nloc], dtype=int, device=env.DEVICE)
 
-        for od, distinguish_types, nfp, nap, et in itertools.product(
+        for od, mixed_types, nfp, nap, et in itertools.product(
             [1, 3],
             [True, False],
             [0, 3],
@@ -58,7 +58,7 @@ class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 od,
                 numb_fparam=nfp,
                 numb_aparam=nap,
-                use_tebd=(not distinguish_types),
+                mixed_types=mixed_types,
                 exclude_types=et,
             ).to(env.DEVICE)
             ft1 = DPInvarFitting.deserialize(ft0.serialize())
@@ -110,18 +110,19 @@ class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
         atype = torch.tensor(self.atype_ext[:, :nloc], dtype=int, device=env.DEVICE)
 
         od = 1
-        for distinguish_types in itertools.product(
+        for foo, mixed_types in itertools.product(
+            [True],
             [True, False],
         ):
             ft0 = EnergyFittingNet(
                 self.nt,
                 dd.dim_out,
-                distinguish_types=distinguish_types,
+                mixed_types=mixed_types,
             ).to(env.DEVICE)
             ft1 = EnergyFittingNet(
                 self.nt,
                 dd.dim_out,
-                distinguish_types=distinguish_types,
+                mixed_types=mixed_types,
                 old_impl=True,
             ).to(env.DEVICE)
             dd0 = ft0.state_dict()
@@ -146,7 +147,7 @@ class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
     def test_jit(
         self,
     ):
-        for od, distinguish_types, nfp, nap, et in itertools.product(
+        for od, mixed_types, nfp, nap, et in itertools.product(
             [1, 3],
             [True, False],
             [0, 3],
@@ -160,7 +161,7 @@ class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 od,
                 numb_fparam=nfp,
                 numb_aparam=nap,
-                use_tebd=(not distinguish_types),
+                mixed_types=mixed_types,
                 exclude_types=et,
             ).to(env.DEVICE)
             torch.jit.script(ft0)
