@@ -52,7 +52,7 @@ class TestDipoleFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
             self.atype_ext[:, : self.nloc], dtype=int, device=env.DEVICE
         )
 
-        for distinguish_types, nfp, nap, fit_diag, scale in itertools.product(
+        for mixed_types, nfp, nap, fit_diag, scale in itertools.product(
             [True, False],
             [0, 3],
             [0, 4],
@@ -66,7 +66,7 @@ class TestDipoleFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 embedding_width=self.dd0.get_dim_emb(),
                 numb_fparam=nfp,
                 numb_aparam=nap,
-                use_tebd=(not distinguish_types),
+                use_tebd=mixed_types,
                 fit_diag=fit_diag,
                 scale=scale,
             ).to(env.DEVICE)
@@ -109,7 +109,7 @@ class TestDipoleFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
     def test_jit(
         self,
     ):
-        for distinguish_types, nfp, nap, fit_diag in itertools.product(
+        for mixed_types, nfp, nap, fit_diag in itertools.product(
             [True, False],
             [0, 3],
             [0, 4],
@@ -122,7 +122,7 @@ class TestDipoleFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 embedding_width=self.dd0.get_dim_emb(),
                 numb_fparam=nfp,
                 numb_aparam=nap,
-                use_tebd=(not distinguish_types),
+                use_tebd=mixed_types,
                 fit_diag=fit_diag,
             ).to(env.DEVICE)
             torch.jit.script(ft0)
@@ -150,7 +150,7 @@ class TestEquivalence(unittest.TestCase):
         rmat = torch.tensor(special_ortho_group.rvs(3), dtype=dtype).to(env.DEVICE)
         coord_rot = torch.matmul(self.coord, rmat)
 
-        for distinguish_types, nfp, nap, fit_diag, scale in itertools.product(
+        for mixed_types, nfp, nap, fit_diag, scale in itertools.product(
             [True, False],
             [0, 3],
             [0, 4],
@@ -191,7 +191,7 @@ class TestEquivalence(unittest.TestCase):
                     _,
                     nlist,
                 ) = extend_input_and_build_neighbor_list(
-                    xyz + self.shift, atype, self.rcut, self.sel, distinguish_types
+                    xyz + self.shift, atype, self.rcut, self.sel, mixed_types
                 )
 
                 rd0, gr0, _, _, _ = self.dd0(

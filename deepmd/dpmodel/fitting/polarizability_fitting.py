@@ -65,14 +65,16 @@ class PolarFitting(GeneralFitting):
     use_aparam_as_mask: bool, optional
             If True, the atomic parameters will be used as a mask that determines the atom is real/virtual.
             And the aparam will not be used as the atomic parameters for embedding.
-    distinguish_types
-            Different atomic types uses different fitting net.
+    mixed_types
+            If true, use a uniform fitting net for all atom types, otherwise use
+            different fitting nets for different atom types.
     fit_diag : bool
-        Fit the diagonal part of the rotational invariant polarizability matrix, which will be converted to normal polarizability matrix by contracting with the rotation matrix.
+            Fit the diagonal part of the rotational invariant polarizability matrix, which will be converted to 
+            normal polarizability matrix by contracting with the rotation matrix.
     scale : List[float]
-        The output of the fitting net (polarizability matrix) for type i atom will be scaled by scale[i]
+            The output of the fitting net (polarizability matrix) for type i atom will be scaled by scale[i]
     shift_diag : bool
-        Whether to shift the diagonal part of the polarizability matrix. The shift operation is carried out after scale.
+            Whether to shift the diagonal part of the polarizability matrix. The shift operation is carried out after scale.
     """
 
     def __init__(
@@ -94,7 +96,7 @@ class PolarFitting(GeneralFitting):
         layer_name: Optional[List[Optional[str]]] = None,
         use_aparam_as_mask: bool = False,
         spin: Any = None,
-        distinguish_types: bool = False,
+        mixed_types: bool = False,
         exclude_types: List[int] = [],
         old_impl: bool = False,
         fit_diag: bool = True,
@@ -141,7 +143,7 @@ class PolarFitting(GeneralFitting):
             layer_name=layer_name,
             use_aparam_as_mask=use_aparam_as_mask,
             spin=spin,
-            distinguish_types=distinguish_types,
+            mixed_types=mixed_types,
             exclude_types=exclude_types,
         )
         self.old_impl = False
