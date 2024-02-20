@@ -29,6 +29,7 @@ from .dp_model import (
     DPModel,
 )
 from .dp_spin_model import (
+    SpinEnergyModel,
     SpinModel,
 )
 from .dp_zbl_model import (
@@ -136,18 +137,17 @@ def get_spin_model(model_params):
     fitting_net = model_params.get("fitting_net", None)
     fitting_net["type"] = fitting_net.get("type", "ener")
     fitting_net["ntypes"] = descriptor.get_ntypes()
-    fitting_net["distinguish_types"] = descriptor.distinguish_types()
+    fitting_net["mixed_types"] = descriptor.mixed_types()
     fitting_net["embedding_width"] = descriptor.get_dim_out()
+    fitting_net["dim_descrpt"] = descriptor.get_dim_out()
     grad_force = "direct" not in fitting_net["type"]
     if not grad_force:
         fitting_net["out_dim"] = descriptor.get_dim_emb()
         if "ener" in fitting_net["type"]:
             fitting_net["return_energy"] = True
     fitting = Fitting(**fitting_net)
-    backbone_model = DPAtomicModel(
-        descriptor, fitting, type_map=model_params["type_map"]
-    )
-    return SpinModel(backbone_model=backbone_model, spin=spin)
+    backbone_model = DPModel(descriptor, fitting, type_map=model_params["type_map"])
+    return SpinEnergyModel(backbone_model=backbone_model, spin=spin)
 
 
 def get_model(model_params):
@@ -166,6 +166,7 @@ __all__ = [
     "DPModel",
     "EnergyModel",
     "SpinModel",
+    "SpinEnergyModel",
     "DPZBLModel",
     "make_model",
     "make_hessian_model",

@@ -27,10 +27,6 @@ from .linear_atomic_model import (
 from .pairtab_atomic_model import (
     PairTabAtomicModel,
 )
-from .wrapper_atomic_model import (
-    DPSpinWrapperAtomicModel,
-    WrapperAtomicModel,
-)
 
 __all__ = [
     "BaseAtomicModel",
@@ -38,6 +34,4 @@ __all__ = [
     "PairTabAtomicModel",
     "LinearAtomicModel",
     "DPZBLLinearAtomicModel",
-    "WrapperAtomicModel",
-    "DPSpinWrapperAtomicModel",
 ]

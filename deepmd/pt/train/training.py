@@ -803,8 +803,8 @@ class Trainer:
         for item in [
             "coord",
             "atype",
-            "box",
             "spin",
+            "box",
         ]:
             if item in batch_data:
                 input_dict[item] = batch_data[item]
