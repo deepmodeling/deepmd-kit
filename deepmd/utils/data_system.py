@@ -22,6 +22,9 @@ from deepmd.env import (
 from deepmd.utils.data import (
     DeepmdData,
 )
+from deepmd.utils.out_stat import (
+    compute_output_stat,
+)
 
 log = logging.getLogger(__name__)
 
@@ -248,10 +251,11 @@ class DeepmdDataSystem:
         sys_tynatom = np.array(self.natoms_vec, dtype=GLOBAL_NP_FLOAT_PRECISION)
         sys_tynatom = np.reshape(sys_tynatom, [self.nsystems, -1])
         sys_tynatom = sys_tynatom[:, 2:]
-        energy_shift, resd, rank, s_value = np.linalg.lstsq(
-            sys_tynatom, sys_ener, rcond=rcond
+        energy_shift = compute_output_stat(
+            sys_ener.reshape(-1, 1),
+            sys_tynatom,
         )
-        return energy_shift
+        return energy_shift.ravel()
 
     def add_dict(self, adict: dict) -> None:
         """Add items to the data system by a `dict`.

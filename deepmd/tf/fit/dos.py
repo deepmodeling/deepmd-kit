@@ -43,6 +43,9 @@ from deepmd.tf.utils.network import one_layer as one_layer_deepmd
 from deepmd.tf.utils.network import (
     one_layer_rand_seed_shift,
 )
+from deepmd.utils.out_stat import (
+    compute_output_stat,
+)
 
 log = logging.getLogger(__name__)
 
@@ -225,8 +228,10 @@ class DOSFitting(Fitting):
         sys_tynatom = np.reshape(sys_tynatom, [nsys, -1])
         sys_tynatom = sys_tynatom[:, 2:]
 
-        dos_shift, resd, rank, s_value = np.linalg.lstsq(
-            sys_tynatom, sys_dos, rcond=rcond
+        dos_shift = compute_output_stat(
+            sys_dos,
+            sys_tynatom,
+            rcond=rcond,
         )
 
         return dos_shift
