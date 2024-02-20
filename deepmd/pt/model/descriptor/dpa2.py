@@ -320,14 +320,6 @@ class DescrptDPA2(Descriptor):
             "rcut": [config["repinit_rcut"], config["repformer_rcut"]],
         }
 
-    @property
-    def data_stat_key(self):
-        """
-        Get the keys for the data statistic of the descriptor.
-        Return a list of statistic names needed, such as "sumr", "suma" or "sumn".
-        """
-        return ["sumr", "suma", "sumn", "sumr2", "suma2"]
-
     def serialize(self) -> dict:
         """Serialize the obj to dict."""
         raise NotImplementedError

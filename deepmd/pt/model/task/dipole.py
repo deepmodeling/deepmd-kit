@@ -118,14 +118,6 @@ class DipoleFittingNet(GeneralFitting):
             ]
         )
 
-    @property
-    def data_stat_key(self):
-        """
-        Get the keys for the data statistic of the fitting.
-        Return a list of statistic names needed, such as "bias_atom_e".
-        """
-        return []
-
     def forward(
         self,
         descriptor: torch.Tensor,

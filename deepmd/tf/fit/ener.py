@@ -298,11 +298,11 @@ class EnerFitting(Fitting):
         else:
             assigned_atom_ener = None
         energy_shift = compute_output_stat(
-            sys_ener,
+            sys_ener.reshape(-1, 1),
             sys_tynatom,
             assigned_bias=assigned_atom_ener,
             rcond=rcond,
-        )
+        ).ravel()
         return energy_shift
 
     def compute_input_stats(self, all_stat: dict, protection: float = 1e-2) -> None:

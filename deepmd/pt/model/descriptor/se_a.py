@@ -135,14 +135,6 @@ class DescrptSeA(Descriptor):
         assert descrpt_type in ["se_e2_a"]
         return {"sel": config["sel"], "rcut": config["rcut"]}
 
-    @property
-    def data_stat_key(self):
-        """
-        Get the keys for the data statistic of the descriptor.
-        Return a list of statistic names needed, such as "sumr", "suma" or "sumn".
-        """
-        return ["sumr", "suma", "sumn", "sumr2", "suma2"]
-
     def forward(
         self,
         coord_ext: torch.Tensor,

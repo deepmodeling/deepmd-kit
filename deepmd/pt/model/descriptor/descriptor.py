@@ -82,14 +82,6 @@ class Descriptor(torch.nn.Module, BaseDescriptor):
         descrpt_type = config["type"]
         return Descriptor.__plugins.plugins[descrpt_type].get_data_process_key(config)
 
-    @property
-    def data_stat_key(self):
-        """
-        Get the keys for the data statistic of the descriptor.
-        Return a list of statistic names needed, such as "sumr", "suma" or "sumn".
-        """
-        raise NotImplementedError("data_stat_key is not implemented!")
-
     def __new__(cls, *args, **kwargs):
         if cls is Descriptor:
             try:
