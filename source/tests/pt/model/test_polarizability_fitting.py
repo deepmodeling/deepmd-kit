@@ -71,7 +71,8 @@ class TestDipoleFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 scale=scale,
             ).to(env.DEVICE)
             ft1 = DPPolarFitting.deserialize(ft0.serialize())
-            ft2 = PolarFittingNet.deserialize(ft1.serialize())
+            ft2 = PolarFittingNet.deserialize(ft0.serialize())
+            ft3 = DPPolarFitting.deserialize(ft1.serialize())
 
             if nfp > 0:
                 ifp = torch.tensor(
@@ -97,6 +98,13 @@ class TestDipoleFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 aparam=to_numpy_array(iap),
             )
             ret2 = ft2(rd0, atype, gr, fparam=ifp, aparam=iap)
+            ret3 = ft3(
+                rd0.detach().cpu().numpy(),
+                atype.detach().cpu().numpy(),
+                gr.detach().cpu().numpy(),
+                fparam=to_numpy_array(ifp),
+                aparam=to_numpy_array(iap),
+            )
             np.testing.assert_allclose(
                 to_numpy_array(ret0["foo"]),
                 ret1["foo"],
@@ -104,6 +112,10 @@ class TestDipoleFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
             np.testing.assert_allclose(
                 to_numpy_array(ret0["foo"]),
                 to_numpy_array(ret2["foo"]),
+            )
+            np.testing.assert_allclose(
+                to_numpy_array(ret0["foo"]),
+                ret3["foo"],
             )
 
     def test_jit(
