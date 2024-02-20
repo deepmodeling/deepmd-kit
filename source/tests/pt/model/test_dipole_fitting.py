@@ -12,6 +12,9 @@ from deepmd.dpmodel.fitting import DipoleFitting as DPDipoleFitting
 from deepmd.pt.model.descriptor.se_a import (
     DescrptSeA,
 )
+from deepmd.pt.model.model.dipole_model import (
+    DipoleModel,
+)
 from deepmd.pt.model.task.dipole import (
     DipoleFittingNet,
 )
@@ -28,11 +31,9 @@ from deepmd.pt.utils.utils import (
 from .test_env_mat import (
     TestCaseSingleFrameWithNlist,
 )
-from deepmd.pt.model.model.dipole_model import (
-    DipoleModel
-)
 
 dtype = env.GLOBAL_PT_FLOAT_PRECISION
+
 
 def finite_difference(f, x, a, delta=1e-6):
     in_shape = x.shape
@@ -46,6 +47,7 @@ def finite_difference(f, x, a, delta=1e-6):
         y1n = f(x - diff, a)
         res[(Ellipsis, *idx)] = (y1p - y1n) / (2 * delta)
     return res
+
 
 class TestDipoleFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
     def setUp(self):
@@ -134,6 +136,7 @@ class TestDipoleFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 mixed_types=mixed_types,
             ).to(env.DEVICE)
             torch.jit.script(ft0)
+
 
 class TestEquivalence(unittest.TestCase):
     def setUp(self) -> None:
@@ -295,14 +298,14 @@ class TestDipoleModel(unittest.TestCase):
         self.atype = torch.IntTensor([0, 0, 0, 1, 1]).to(env.DEVICE)
         self.dd0 = DescrptSeA(self.rcut, self.rcut_smth, self.sel).to(env.DEVICE)
         self.ft0 = DipoleFittingNet(
-                "dipole",
-                self.nt,
-                self.dd0.dim_out,
-                embedding_width=self.dd0.get_dim_emb(),
-                numb_fparam=0,
-                numb_aparam=0,
-                mixed_types=True,
-            ).to(env.DEVICE)
+            "dipole",
+            self.nt,
+            self.dd0.dim_out,
+            embedding_width=self.dd0.get_dim_emb(),
+            numb_fparam=0,
+            numb_aparam=0,
+            mixed_types=True,
+        ).to(env.DEVICE)
         self.type_mapping = ["O", "H", "B"]
         self.model = DipoleModel(self.dd0, self.ft0, self.type_mapping)
 
@@ -310,12 +313,15 @@ class TestDipoleModel(unittest.TestCase):
         places = 5
         delta = 1e-5
         atype = self.atype.view(self.nf, self.natoms)
+
         def ff(coord, atype):
             return self.model(coord, atype)["dipole"].detach().numpy()
+
         fdf = -finite_difference(ff, self.coord, atype, delta=delta)
         rff = self.model(self.coord, atype)["dipole_grad_r"].detach().numpy()
 
         np.testing.assert_almost_equal(fdf, rff.transpose(0, 2, 1, 3), decimal=places)
+
 
 if __name__ == "__main__":
     unittest.main()

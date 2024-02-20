@@ -71,10 +71,10 @@ class DipoleFitting(GeneralFitting):
     exclude_types
             Atomic contributions of the excluded atom types are set zero.
     r_differentiable
-            If the variable is differentiated with respect to coordinates of atoms. 
+            If the variable is differentiated with respect to coordinates of atoms.
             Only reduciable variable are differentiable.
     c_differentiable
-            If the variable is differentiated with respect to the cell tensor (pbc case). 
+            If the variable is differentiated with respect to the cell tensor (pbc case).
             Only reduciable variable are differentiable.
     """
 
