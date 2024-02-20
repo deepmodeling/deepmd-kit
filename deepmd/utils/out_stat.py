@@ -42,10 +42,9 @@ def compute_output_stat(
     assert natoms.ndim == 2
     assert output_redu.shape[0] == natoms.shape[0]  # nframes
     if assigned_bias is not None:
-        assigned_bias = np.array(assigned_bias)
-        assert assigned_bias.ndim == 2
-        assert assigned_bias.shape[0] == natoms.shape[1]  # ntypes
-        assert assigned_bias.shape[1] == output_redu.shape[1]  # ndim
+        assigned_bias = np.array(assigned_bias).reshape(
+            natoms.shape[1], output_redu.shape[1]
+        )
     # compute output bias
     if assigned_bias is not None:
         # Atomic energies stats are incorrect if atomic energies are assigned.
