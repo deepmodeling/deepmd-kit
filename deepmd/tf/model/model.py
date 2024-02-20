@@ -14,15 +14,15 @@ from typing import (
     Union,
 )
 
-from deepmd.dpmodel.fitting.dipole_fitting import (
-    DipoleFitting,
-)
 from deepmd.tf.descriptor.descriptor import (
     Descriptor,
 )
 from deepmd.tf.env import (
     GLOBAL_TF_FLOAT_PRECISION,
     tf,
+)
+from deepmd.tf.fit.dipole import (
+    DipoleFittingSeA,
 )
 from deepmd.tf.fit.dos import (
     DOSFitting,
@@ -651,13 +651,14 @@ class StandardModel(Model):
                 fitting_type = type(kwargs["fitting_net"])
             else:
                 raise RuntimeError("get unknown fitting type when building model")
+            print(fitting_type)
             # init model
             # infer model type by fitting_type
             if issubclass(fitting_type, EnerFitting):
                 cls = EnerModel
             elif issubclass(fitting_type, DOSFitting):
                 cls = DOSModel
-            elif issubclass(fitting_type, DipoleFitting):
+            elif issubclass(fitting_type, DipoleFittingSeA):
                 cls = DipoleModel
             elif issubclass(fitting_type, PolarFittingSeA):
                 cls = PolarModel
