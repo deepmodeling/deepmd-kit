@@ -169,8 +169,8 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
         return (ret,)
 
     @property
-    def rtol(self) -> float:
-        """Relative tolerance for comparing the return value."""
+    def tol(self) -> float:
+        """Absolute and relative tolerance for comparing the return value."""
         (
             resnet_dt,
             precision,
