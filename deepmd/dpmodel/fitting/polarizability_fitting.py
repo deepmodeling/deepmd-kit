@@ -8,6 +8,9 @@ from typing import (
 
 import numpy as np
 
+from deepmd.common import (
+    GLOBAL_NP_FLOAT_PRECISION,
+)
 from deepmd.dpmodel import (
     DEFAULT_PRECISION,
 )
@@ -23,8 +26,8 @@ from .general_fitting import (
 
 
 @fitting_check_output
-class DipoleFitting(GeneralFitting):
-    r"""Fitting rotationally equivariant diploe of the system.
+class PolarFitting(GeneralFitting):
+    r"""Fitting rotationally equivariant polarizability of the system.
 
     Parameters
     ----------
@@ -68,9 +71,13 @@ class DipoleFitting(GeneralFitting):
     mixed_types
             If true, use a uniform fitting net for all atom types, otherwise use
             different fitting nets for different atom types.
-    exclude_types: List[int]
-            Atomic contributions of the excluded atom types are set zero.
-
+    fit_diag : bool
+            Fit the diagonal part of the rotational invariant polarizability matrix, which will be converted to
+            normal polarizability matrix by contracting with the rotation matrix.
+    scale : List[float]
+            The output of the fitting net (polarizability matrix) for type i atom will be scaled by scale[i]
+    shift_diag : bool
+            Whether to shift the diagonal part of the polarizability matrix. The shift operation is carried out after scale.
     """
 
     def __init__(
@@ -94,7 +101,10 @@ class DipoleFitting(GeneralFitting):
         spin: Any = None,
         mixed_types: bool = False,
         exclude_types: List[int] = [],
-        old_impl=False,
+        old_impl: bool = False,
+        fit_diag: bool = True,
+        scale: Optional[List[float]] = None,
+        shift_diag: bool = True,
     ):
         # seed, uniform_seed are not included
         if tot_ener_zero:
@@ -109,6 +119,18 @@ class DipoleFitting(GeneralFitting):
             raise NotImplementedError("atom_ener is not implemented")
 
         self.embedding_width = embedding_width
+        self.fit_diag = fit_diag
+        self.scale = scale
+        if self.scale is None:
+            self.scale = [1.0 for _ in range(ntypes)]
+        else:
+            assert (
+                isinstance(self.scale, list) and len(self.scale) == ntypes
+            ), "Scale should be a list of length ntypes."
+        self.scale = np.array(self.scale, dtype=GLOBAL_NP_FLOAT_PRECISION).reshape(
+            ntypes, 1
+        )
+        self.shift_diag = shift_diag
         super().__init__(
             var_name=var_name,
             ntypes=ntypes,
@@ -133,12 +155,18 @@ class DipoleFitting(GeneralFitting):
 
     def _net_out_dim(self):
         """Set the FittingNet output dim."""
-        return self.embedding_width
+        return (
+            self.embedding_width
+            if self.fit_diag
+            else self.embedding_width * self.embedding_width
+        )
 
     def serialize(self) -> dict:
         data = super().serialize()
         data["embedding_width"] = self.embedding_width
         data["old_impl"] = self.old_impl
+        data["fit_diag"] = self.fit_diag
+        data["@variables"]["scale"] = self.scale
         return data
 
     def output_def(self):
@@ -146,7 +174,7 @@ class DipoleFitting(GeneralFitting):
             [
                 OutputVariableDef(
                     self.var_name,
-                    [3],
+                    [3, 3],
                     reduciable=True,
                     r_differentiable=True,
                     c_differentiable=True,
@@ -188,15 +216,26 @@ class DipoleFitting(GeneralFitting):
 
         """
         nframes, nloc, _ = descriptor.shape
-        assert gr is not None, "Must provide the rotation matrix for dipole fitting."
-        # (nframes, nloc, m1)
+        assert (
+            gr is not None
+        ), "Must provide the rotation matrix for polarizability fitting."
+        # (nframes, nloc, _net_out_dim)
         out = self._call_common(descriptor, atype, gr, g2, h2, fparam, aparam)[
             self.var_name
         ]
-        # (nframes * nloc, 1, m1)
-        out = out.reshape(-1, 1, self.embedding_width)
+        out = out * self.scale[atype]
         # (nframes * nloc, m1, 3)
         gr = gr.reshape(nframes * nloc, -1, 3)
-        # (nframes, nloc, 3)
-        out = np.einsum("bim,bmj->bij", out, gr).squeeze(-2).reshape(nframes, nloc, 3)
+
+        if self.fit_diag:
+            out = out.reshape(-1, self.embedding_width)
+            out = np.einsum("ij,ijk->ijk", out, gr)
+        else:
+            out = out.reshape(-1, self.embedding_width, self.embedding_width)
+            out = (out + np.transpose(out, axes=(0, 2, 1))) / 2
+            out = np.einsum("bim,bmj->bij", out, gr)  # (nframes * nloc, m1, 3)
+        out = np.einsum(
+            "bim,bmj->bij", np.transpose(gr, axes=(0, 2, 1)), out
+        )  # (nframes * nloc, 3, 3)
+        out = out.reshape(nframes, nloc, 3, 3)
         return {self.var_name: out}
