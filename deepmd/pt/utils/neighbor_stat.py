@@ -89,14 +89,16 @@ class NeighborStatOP(torch.nn.Module):
         )
         assert list(diff.shape) == [nframes, nloc, nall, 3]
         # remove the diagonal elements
-        mask = torch.eye(nloc, nall, dtype=torch.bool)
+        mask = torch.eye(nloc, nall, dtype=torch.bool, device=diff.device)
         diff[:, mask] = torch.inf
         rr2 = torch.sum(torch.square(diff), dim=-1)
         min_rr2, _ = torch.min(rr2, dim=-1)
         # count the number of neighbors
         if not self.mixed_types:
             mask = rr2 < self.rcut**2
-            nnei = torch.zeros((nframes, nloc, self.ntypes), dtype=torch.int32)
+            nnei = torch.zeros(
+                (nframes, nloc, self.ntypes), dtype=torch.int32, device=mask.device
+            )
             for ii in range(self.ntypes):
                 nnei[:, :, ii] = torch.sum(
                     mask & extend_atype.eq(ii)[:, None, :], dim=-1
@@ -120,7 +122,7 @@ class NeighborStat(BaseNeighborStat):
         The num of atom types
     rcut : float
         The cut-off radius
-    one_type : bool, optional, default=False
+    mixed_type : bool, optional, default=False
         Treat all types as a single type.
     """
 
@@ -128,10 +130,10 @@ class NeighborStat(BaseNeighborStat):
         self,
         ntypes: int,
         rcut: float,
-        one_type: bool = False,
+        mixed_type: bool = False,
     ) -> None:
-        super().__init__(ntypes, rcut, one_type)
-        op = NeighborStatOP(ntypes, rcut, not one_type)
+        super().__init__(ntypes, rcut, mixed_type)
+        op = NeighborStatOP(ntypes, rcut, mixed_type)
         self.op = torch.jit.script(op)
         self.auto_batch_size = AutoBatchSize()
 
