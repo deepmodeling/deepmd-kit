@@ -181,14 +181,14 @@ class PolarFittingNet(GeneralFitting):
 
         if self.fit_diag:
             out = out.reshape(-1, self.embedding_width)
-            out = torch.einsum('ij,ijk->ijk', out, gr)
+            out = torch.einsum("ij,ijk->ijk", out, gr)
         else:
-            out = out.reshape(
-                -1, self.embedding_width, self.embedding_width
-            )
+            out = out.reshape(-1, self.embedding_width, self.embedding_width)
             out = out + out.transpose(1, 2)
             out = torch.einsum("bim,bmj->bij", out, gr)  # (nframes * nloc, m1, 3)
-        out = torch.einsum("bim,bmj->bij", gr.transpose(1, 2), out)  # (nframes * nloc, 3, 3)
+        out = torch.einsum(
+            "bim,bmj->bij", gr.transpose(1, 2), out
+        )  # (nframes * nloc, 3, 3)
         out = out.view(nframes, nloc, 3, 3)
 
         return {self.var_name: out.to(env.GLOBAL_PT_FLOAT_PRECISION)}

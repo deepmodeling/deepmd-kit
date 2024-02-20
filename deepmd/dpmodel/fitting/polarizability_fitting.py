@@ -229,13 +229,13 @@ class PolarFitting(GeneralFitting):
 
         if self.fit_diag:
             out = out.reshape(-1, self.embedding_width)
-            out = np.einsum('ij,ijk->ijk', out, gr)
+            out = np.einsum("ij,ijk->ijk", out, gr)
         else:
-            out = out.reshape(
-                -1, self.embedding_width, self.embedding_width
-            )
+            out = out.reshape(-1, self.embedding_width, self.embedding_width)
             out = out + np.transpose(out, axes=(0, 2, 1))
             out = np.einsum("bim,bmj->bij", out, gr)  # (nframes * nloc, m1, 3)
-        out = np.einsum("bim,bmj->bij", np.transpose(gr, axes=(0, 2, 1)), out) # (nframes * nloc, 3, 3)
+        out = np.einsum(
+            "bim,bmj->bij", np.transpose(gr, axes=(0, 2, 1)), out
+        )  # (nframes * nloc, 3, 3)
         out = out.reshape(nframes, nloc, 3, 3)
         return {self.var_name: out}
