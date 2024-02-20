@@ -24,9 +24,6 @@ from deepmd.pt.utils.nlist import (
     get_multiple_nlist_key,
 )
 
-dtype = torch.float64
-torch.set_default_dtype(dtype)
-
 CUR_DIR = os.path.dirname(__file__)
 
 
@@ -43,7 +40,11 @@ class TestDPA2(unittest.TestCase):
             8.178091365465004481e-01,
             6.159552512682983760e00,
         ]
-        self.cell = torch.Tensor(cell).view(1, 3, 3).to(env.DEVICE)
+        self.cell = (
+            torch.tensor(cell, dtype=env.GLOBAL_PT_FLOAT_PRECISION)
+            .view(1, 3, 3)
+            .to(env.DEVICE)
+        )
         coord = [
             2.978060152121375648e00,
             3.588469695887098077e00,
@@ -61,9 +62,13 @@ class TestDPA2(unittest.TestCase):
             6.575011420004332585e00,
             6.825240650611076099e00,
         ]
-        self.coord = torch.Tensor(coord).view(1, -1, 3).to(env.DEVICE)
+        self.coord = (
+            torch.tensor(coord, dtype=env.GLOBAL_PT_FLOAT_PRECISION)
+            .view(1, -1, 3)
+            .to(env.DEVICE)
+        )
         self.atype = torch.IntTensor([0, 0, 0, 1, 1]).view(1, -1).to(env.DEVICE)
-        self.ref_d = torch.Tensor(
+        self.ref_d = torch.tensor(
             [
                 8.435412613327306630e-01,
                 -4.717109614540972440e-01,
@@ -105,7 +110,8 @@ class TestDPA2(unittest.TestCase):
                 -5.384371277650709109e-01,
                 -1.490368056268364549e00,
                 -3.073744832541754762e-02,
-            ]
+            ],
+            dtype=env.GLOBAL_PT_FLOAT_PRECISION,
         ).to(env.DEVICE)
         with open(Path(CUR_DIR) / "models" / "dpa2_hyb.json") as fp:
             self.model_json = json.load(fp)
