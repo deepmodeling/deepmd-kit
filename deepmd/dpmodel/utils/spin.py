@@ -2,7 +2,6 @@
 import copy
 from abc import (
     ABC,
-    abstractclassmethod,
     abstractmethod,
 )
 from typing import (
@@ -176,7 +175,8 @@ class BaseSpin(ABC):
     ) -> dict:
         pass
 
-    @abstractclassmethod
+    @classmethod
+    @abstractmethod
     def deserialize(
         cls,
         data: dict,
