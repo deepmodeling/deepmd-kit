@@ -172,7 +172,7 @@ class PolarFittingNet(GeneralFitting):
         assert (
             gr is not None
         ), "Must provide the rotation matrix for polarizability fitting."
-        # (nframes, nloc, m1)
+        # (nframes, nloc, _net_out_dim)
         out = self._forward_common(descriptor, atype, gr, g2, h2, fparam, aparam)[
             self.var_name
         ]
@@ -184,7 +184,7 @@ class PolarFittingNet(GeneralFitting):
             out = torch.einsum("ij,ijk->ijk", out, gr)
         else:
             out = out.reshape(-1, self.embedding_width, self.embedding_width)
-            out = out + out.transpose(1, 2)
+            out = (out + out.transpose(1, 2))/2
             out = torch.einsum("bim,bmj->bij", out, gr)  # (nframes * nloc, m1, 3)
         out = torch.einsum(
             "bim,bmj->bij", gr.transpose(1, 2), out

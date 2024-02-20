@@ -219,7 +219,7 @@ class PolarFitting(GeneralFitting):
         assert (
             gr is not None
         ), "Must provide the rotation matrix for polarizability fitting."
-        # (nframes, nloc, m1)
+        # (nframes, nloc, _net_out_dim)
         out = self._call_common(descriptor, atype, gr, g2, h2, fparam, aparam)[
             self.var_name
         ]
@@ -232,7 +232,7 @@ class PolarFitting(GeneralFitting):
             out = np.einsum("ij,ijk->ijk", out, gr)
         else:
             out = out.reshape(-1, self.embedding_width, self.embedding_width)
-            out = out + np.transpose(out, axes=(0, 2, 1))
+            out = (out + np.transpose(out, axes=(0, 2, 1)))/2
             out = np.einsum("bim,bmj->bij", out, gr)  # (nframes * nloc, m1, 3)
         out = np.einsum(
             "bim,bmj->bij", np.transpose(gr, axes=(0, 2, 1)), out
