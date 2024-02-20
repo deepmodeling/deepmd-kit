@@ -40,13 +40,15 @@ class TestDataSystem(unittest.TestCase):
                 set_name = os.path.join(sys_name, "set.%03d" % jj)
                 os.makedirs(set_name, exist_ok=True)
                 path = os.path.join(set_name, "coord.npy")
-                val = np.random.random([self.nframes[ii] + jj, self.natoms[ii] * 3])
+                val = np.random.default_rng().random(
+                    [self.nframes[ii] + jj, self.natoms[ii] * 3]
+                )
                 np.save(path, val)
                 path = os.path.join(set_name, "box.npy")
-                val = np.random.random([self.nframes[ii] + jj, 9]) * 10
+                val = np.random.default_rng().random([self.nframes[ii] + jj, 9]) * 10
                 np.save(path, val)
                 path = os.path.join(set_name, "test.npy")
-                val = np.random.random(
+                val = np.random.default_rng().random(
                     [self.nframes[ii] + jj, self.natoms[ii] * self.test_ndof]
                 )
                 np.save(path, val)
