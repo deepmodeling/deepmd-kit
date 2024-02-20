@@ -139,6 +139,11 @@ class TestSeA(CommonTest, ModelTest, unittest.TestCase):
         ).reshape(1, 9)
         self.natoms = np.array([6, 6, 2, 4], dtype=np.int32)
 
+        # TF requires the atype to be sort
+        idx_map = np.argsort(self.atype.ravel())
+        self.atype = self.atype[:, idx_map]
+        self.coords = self.coords[:, idx_map]
+
     def build_tf(self, obj: Any, suffix: str) -> Tuple[list, dict]:
         return self.build_tf_model(
             obj,
@@ -168,10 +173,11 @@ class TestSeA(CommonTest, ModelTest, unittest.TestCase):
         )
 
     def extract_ret(self, ret: Any, backend) -> Tuple[np.ndarray, ...]:
+        # shape not matched. ravel...
         if backend is self.RefBackend.DP:
-            return (ret["energy_redu"].ravel(), ret["energy"])
+            return (ret["energy_redu"].ravel(), ret["energy"].ravel())
         elif backend is self.RefBackend.PT:
-            return (ret["energy"].ravel(), ret["atom_energy"])
+            return (ret["energy"].ravel(), ret["atom_energy"].ravel())
         elif backend is self.RefBackend.TF:
-            return (ret[0], ret[1])
+            return (ret[0].ravel(), ret[1].ravel())
         raise ValueError(f"Unknown backend: {backend}")
