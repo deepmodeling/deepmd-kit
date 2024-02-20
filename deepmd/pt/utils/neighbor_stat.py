@@ -122,7 +122,7 @@ class NeighborStat(BaseNeighborStat):
         The num of atom types
     rcut : float
         The cut-off radius
-    one_type : bool, optional, default=False
+    mixed_type : bool, optional, default=False
         Treat all types as a single type.
     """
 
@@ -130,10 +130,10 @@ class NeighborStat(BaseNeighborStat):
         self,
         ntypes: int,
         rcut: float,
-        one_type: bool = False,
+        mixed_type: bool = False,
     ) -> None:
-        super().__init__(ntypes, rcut, one_type)
-        op = NeighborStatOP(ntypes, rcut, one_type)
+        super().__init__(ntypes, rcut, mixed_type)
+        op = NeighborStatOP(ntypes, rcut, mixed_type)
         self.op = torch.jit.script(op)
         self.auto_batch_size = AutoBatchSize()
 

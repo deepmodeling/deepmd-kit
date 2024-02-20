@@ -138,5 +138,5 @@ class TestTrainVirtualType(unittest.TestCase):
         data = DeepmdDataSystem(systems, batch_size, test_size, rcut, type_map=type_map)
         data.get_batch()
         # neighbor stat
-        nei_stat = NeighborStat(len(type_map), rcut, one_type=True)
+        nei_stat = NeighborStat(len(type_map), rcut, mixed_type=True)
         min_nbor_dist, max_nbor_size = nei_stat.get_stat(data)

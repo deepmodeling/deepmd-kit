@@ -168,7 +168,7 @@ class NeighborStat(BaseNeighborStat):
             The num of atom types
     rcut
             The cut-off radius
-    one_type : bool, optional, default=False
+    mixed_type : bool, optional, default=False
         Treat all types as a single type.
     """
 
@@ -176,12 +176,12 @@ class NeighborStat(BaseNeighborStat):
         self,
         ntypes: int,
         rcut: float,
-        one_type: bool = False,
+        mixed_type: bool = False,
     ) -> None:
         """Constructor."""
-        super().__init__(ntypes, rcut, one_type)
+        super().__init__(ntypes, rcut, mixed_type)
         self.auto_batch_size = AutoBatchSize()
-        self.neighbor_stat = NeighborStatOP(ntypes, rcut, one_type)
+        self.neighbor_stat = NeighborStatOP(ntypes, rcut, mixed_type)
         self.place_holders = {}
         with tf.Graph().as_default() as sub_graph:
             self.op = self.build()

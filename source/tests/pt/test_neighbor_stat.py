@@ -39,14 +39,14 @@ class TestNeighborStat(unittest.TestCase):
 
     def test_neighbor_stat(self):
         for rcut in (0.0, 1.0, 2.0, 4.0):
-            for one_type in (True, False):
-                with self.subTest(rcut=rcut, one_type=one_type):
+            for mixed_type in (True, False):
+                with self.subTest(rcut=rcut, mixed_type=mixed_type):
                     rcut += 1e-3  # prevent numerical errors
                     min_nbor_dist, max_nbor_size = neighbor_stat(
                         system="system_0",
                         rcut=rcut,
                         type_map=["TYPE", "NO_THIS_TYPE"],
-                        one_type=one_type,
+                        mixed_type=mixed_type,
                         backend="pytorch",
                     )
                     upper = np.ceil(rcut) + 1
@@ -59,6 +59,6 @@ class TestNeighborStat(unittest.TestCase):
                     )
                     self.assertAlmostEqual(min_nbor_dist, 1.0, 6)
                     ret = [expected_neighbors]
-                    if not one_type:
+                    if not mixed_type:
                         ret.append(0)
                     np.testing.assert_array_equal(max_nbor_size, ret)
