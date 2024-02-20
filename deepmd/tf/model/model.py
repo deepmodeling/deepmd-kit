@@ -646,20 +646,20 @@ class StandardModel(Model):
 
         if cls is StandardModel:
             if isinstance(kwargs["fitting_net"], dict):
-                fitting_type = Fitting.get_class_by_input(kwargs["fitting_net"]["type"])
+                fitting_type = Fitting.get_class_by_input(kwargs["fitting_net"])
             elif isinstance(kwargs["fitting_net"], Fitting):
-                fitting_type = fitting_type
+                fitting_type = type(kwargs["fitting_net"])
             else:
                 raise RuntimeError("get unknown fitting type when building model")
             # init model
             # infer model type by fitting_type
-            if isinstance(fitting_type, EnerFitting):
+            if issubclass(fitting_type, EnerFitting):
                 cls = EnerModel
-            elif isinstance(fitting_type, DOSFitting):
+            elif issubclass(fitting_type, DOSFitting):
                 cls = DOSModel
-            elif isinstance(fitting_type, DipoleFitting):
+            elif issubclass(fitting_type, DipoleFitting):
                 cls = DipoleModel
-            elif isinstance(fitting_type, PolarFittingSeA):
+            elif issubclass(fitting_type, PolarFittingSeA):
                 cls = PolarModel
             else:
                 raise RuntimeError("get unknown fitting type when building model")

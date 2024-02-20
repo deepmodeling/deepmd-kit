@@ -6,6 +6,7 @@ from abc import (
 from typing import (
     Callable,
     List,
+    Type,
 )
 
 from deepmd.dpmodel.utils.network import (
@@ -51,7 +52,7 @@ class Fitting(PluginVariant):
         return Fitting.__plugins.register(key)
 
     @classmethod
-    def get_class_by_input(cls, data: dict) -> "Fitting":
+    def get_class_by_input(cls, data: dict) -> Type["Fitting"]:
         """Get the fitting class by the input data.
 
         Parameters
