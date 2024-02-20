@@ -370,7 +370,7 @@ def get_type_map(jdata):
     return jdata["model"].get("type_map", None)
 
 
-def get_nbor_stat(jdata, rcut, one_type: bool = False):
+def get_nbor_stat(jdata, rcut, mixed_type: bool = False):
     # it seems that DeepmdDataSystem does not need rcut
     # it's not clear why there is an argument...
     # max_rcut = get_rcut(jdata)
@@ -414,7 +414,7 @@ def get_nbor_stat(jdata, rcut, one_type: bool = False):
         map_ntypes = data_ntypes
     ntypes = max([map_ntypes, data_ntypes])
 
-    neistat = NeighborStat(ntypes, rcut, one_type=one_type)
+    neistat = NeighborStat(ntypes, rcut, mixed_type=mixed_type)
 
     min_nbor_dist, max_nbor_size = neistat.get_stat(train_data)
 
@@ -430,8 +430,8 @@ def get_nbor_stat(jdata, rcut, one_type: bool = False):
     return min_nbor_dist, max_nbor_size
 
 
-def get_sel(jdata, rcut, one_type: bool = False):
-    _, max_nbor_size = get_nbor_stat(jdata, rcut, one_type=one_type)
+def get_sel(jdata, rcut, mixed_type: bool = False):
+    _, max_nbor_size = get_nbor_stat(jdata, rcut, mixed_type=mixed_type)
     return max_nbor_size
 
 
@@ -468,12 +468,12 @@ def wrap_up_4(xx):
     return 4 * ((int(xx) + 3) // 4)
 
 
-def update_one_sel(jdata, descriptor, one_type: bool = False):
+def update_one_sel(jdata, descriptor, mixed_type: bool = False):
     rcut = descriptor["rcut"]
     tmp_sel = get_sel(
         jdata,
         rcut,
-        one_type=one_type,
+        mixed_type=mixed_type,
     )
     sel = descriptor["sel"]
     if isinstance(sel, int):
@@ -493,7 +493,7 @@ def update_one_sel(jdata, descriptor, one_type: bool = False):
                     "not less than %d, but you set it to %d. The accuracy"
                     " of your model may get worse." % (ii, tt, dd)
                 )
-    if one_type:
+    if mixed_type:
         descriptor["sel"] = sel = sum(sel)
     return descriptor
 
