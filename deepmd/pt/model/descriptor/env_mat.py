@@ -10,8 +10,10 @@ def _make_env_mat_se_a(nlist, coord, rcut: float, ruct_smth: float):
     """Make smooth environment matrix."""
     bsz, natoms, nnei = nlist.shape
     coord = coord.view(bsz, -1, 3)
+    nall = coord.shape[1]
     mask = nlist >= 0
-    nlist = nlist * mask
+    # nlist = nlist * mask  ## this impl will contribute nans in Hessian calculation.
+    nlist = torch.where(mask, nlist, nall - 1)
     coord_l = coord[:, :natoms].view(bsz, -1, 1, 3)
     index = nlist.view(bsz, -1).unsqueeze(-1).expand(-1, -1, 3)
     coord_r = torch.gather(coord, 1, index)
@@ -23,7 +25,8 @@ def _make_env_mat_se_a(nlist, coord, rcut: float, ruct_smth: float):
     t0 = 1 / length
     t1 = diff / length**2
     weight = compute_smooth_weight(length, ruct_smth, rcut)
-    env_mat_se_a = torch.cat([t0, t1], dim=-1) * weight * mask.unsqueeze(-1)
+    weight = weight * mask.unsqueeze(-1)
+    env_mat_se_a = torch.cat([t0, t1], dim=-1) * weight
     return env_mat_se_a, diff * mask.unsqueeze(-1), weight
 
 

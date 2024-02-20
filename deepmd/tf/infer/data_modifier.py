@@ -17,9 +17,7 @@ from deepmd.tf.env import (
     op_module,
     tf,
 )
-from deepmd.tf.infer.deep_dipole import (
-    DeepDipole,
-)
+from deepmd.tf.infer.deep_dipole import DeepDipoleOld as DeepDipole
 from deepmd.tf.infer.ewald_recp import (
     EwaldRecp,
 )

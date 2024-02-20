@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import logging
 from typing import (
     Dict,
     Optional,
@@ -9,6 +10,9 @@ import torch
 
 if torch.__version__.startswith("2"):
     import torch._dynamo
+
+
+log = logging.getLogger(__name__)
 
 
 class ModelWrapper(torch.nn.Module):
@@ -124,7 +128,7 @@ class ModelWrapper(torch.nn.Module):
                     link_class.share_params(
                         base_class, shared_level_link, resume=resume
                     )
-                    print(
+                    log.warning(
                         f"Shared params of {model_key_base}.{class_type_base} and {model_key_link}.{class_type_link}!"
                     )
             else:
@@ -146,7 +150,7 @@ class ModelWrapper(torch.nn.Module):
                         link_class.share_params(
                             base_class, shared_level_link, resume=resume
                         )
-                        print(
+                        log.warning(
                             f"Shared params of {model_key_base}.{class_type_base} and {model_key_link}.{class_type_link}!"
                         )
 

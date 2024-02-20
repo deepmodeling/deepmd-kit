@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    Dict,
     List,
     Optional,
 )
@@ -9,7 +10,6 @@ import torch
 
 from deepmd.pt.model.descriptor.descriptor import (
     DescriptorBlock,
-    compute_std,
 )
 from deepmd.pt.model.descriptor.env_mat import (
     prod_env_mat_se_a,
@@ -20,6 +20,15 @@ from deepmd.pt.model.network.network import (
 )
 from deepmd.pt.utils import (
     env,
+)
+from deepmd.pt.utils.env_mat_stat import (
+    EnvMatStatSeA,
+)
+from deepmd.utils.env_mat_stat import (
+    StatItem,
+)
+from deepmd.utils.path import (
+    DPPath,
 )
 
 
@@ -132,6 +141,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         )
         filter_layers.append(one)
         self.filter_layers = torch.nn.ModuleList(filter_layers)
+        self.stats = None
 
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
@@ -161,6 +171,18 @@ class DescrptBlockSeAtten(DescriptorBlock):
         """Returns the output dimension of embedding."""
         return self.filter_neuron[-1]
 
+    def mixed_types(self) -> bool:
+        """If true, the discriptor
+        1. assumes total number of atoms aligned across frames;
+        2. requires a neighbor list that does not distinguish different atomic types.
+
+        If false, the discriptor
+        1. assumes total number of atoms of each atom type aligned across frames;
+        2. requires a neighbor list that distinguishes different atomic types.
+
+        """
+        return True
+
     @property
     def dim_out(self):
         """Returns the output dimension of this descriptor."""
@@ -176,78 +198,25 @@ class DescrptBlockSeAtten(DescriptorBlock):
         """Returns the output dimension of embedding."""
         return self.get_dim_emb()
 
-    def compute_input_stats(self, merged):
+    def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
         """Update mean and stddev for descriptor elements."""
-        sumr = []
-        suma = []
-        sumn = []
-        sumr2 = []
-        suma2 = []
-        mixed_type = "real_natoms_vec" in merged[0]
-        for system in merged:
-            index = system["mapping"].unsqueeze(-1).expand(-1, -1, 3)
-            extended_coord = torch.gather(system["coord"], dim=1, index=index)
-            extended_coord = extended_coord - system["shift"]
-            env_mat, _, _ = prod_env_mat_se_a(
-                extended_coord,
-                system["nlist"],
-                system["atype"],
-                self.mean,
-                self.stddev,
-                self.rcut,
-                self.rcut_smth,
-            )
-            if not mixed_type:
-                sysr, sysr2, sysa, sysa2, sysn = analyze_descrpt(
-                    env_mat.detach().cpu().numpy(), self.ndescrpt, system["natoms"]
-                )
-            else:
-                sysr, sysr2, sysa, sysa2, sysn = analyze_descrpt(
-                    env_mat.detach().cpu().numpy(),
-                    self.ndescrpt,
-                    system["real_natoms_vec"],
-                    mixed_type=mixed_type,
-                    real_atype=system["atype"].detach().cpu().numpy(),
-                )
-            sumr.append(sysr)
-            suma.append(sysa)
-            sumn.append(sysn)
-            sumr2.append(sysr2)
-            suma2.append(sysa2)
-        sumr = np.sum(sumr, axis=0)
-        suma = np.sum(suma, axis=0)
-        sumn = np.sum(sumn, axis=0)
-        sumr2 = np.sum(sumr2, axis=0)
-        suma2 = np.sum(suma2, axis=0)
-        return sumr, suma, sumn, sumr2, suma2
-
-    def init_desc_stat(self, sumr, suma, sumn, sumr2, suma2):
-        all_davg = []
-        all_dstd = []
-        for type_i in range(self.ntypes):
-            davgunit = [[sumr[type_i] / (sumn[type_i] + 1e-15), 0, 0, 0]]
-            dstdunit = [
-                [
-                    compute_std(sumr2[type_i], sumr[type_i], sumn[type_i], self.rcut),
-                    compute_std(suma2[type_i], suma[type_i], sumn[type_i], self.rcut),
-                    compute_std(suma2[type_i], suma[type_i], sumn[type_i], self.rcut),
-                    compute_std(suma2[type_i], suma[type_i], sumn[type_i], self.rcut),
-                ]
-            ]
-            davg = np.tile(davgunit, [self.nnei, 1])
-            dstd = np.tile(dstdunit, [self.nnei, 1])
-            all_davg.append(davg)
-            all_dstd.append(dstd)
-        self.sumr = sumr
-        self.suma = suma
-        self.sumn = sumn
-        self.sumr2 = sumr2
-        self.suma2 = suma2
+        env_mat_stat = EnvMatStatSeA(self)
+        if path is not None:
+            path = path / env_mat_stat.get_hash()
+        env_mat_stat.load_or_compute_stats(merged, path)
+        self.stats = env_mat_stat.stats
+        mean, stddev = env_mat_stat()
         if not self.set_davg_zero:
-            mean = np.stack(all_davg)
             self.mean.copy_(torch.tensor(mean, device=env.DEVICE))
-        stddev = np.stack(all_dstd)
         self.stddev.copy_(torch.tensor(stddev, device=env.DEVICE))
+
+    def get_stats(self) -> Dict[str, StatItem]:
+        """Get the statistics of the descriptor."""
+        if self.stats is None:
+            raise RuntimeError(
+                "The statistics of the descriptor has not been computed."
+            )
+        return self.stats
 
     def forward(
         self,
@@ -337,10 +306,10 @@ class DescrptBlockSeAtten(DescriptorBlock):
         )
 
 
-def analyze_descrpt(matrix, ndescrpt, natoms, mixed_type=False, real_atype=None):
+def analyze_descrpt(matrix, ndescrpt, natoms, mixed_types=False, real_atype=None):
     """Collect avg, square avg and count of descriptors in a batch."""
     ntypes = natoms.shape[1] - 2
-    if not mixed_type:
+    if not mixed_types:
         sysr = []
         sysa = []
         sysn = []

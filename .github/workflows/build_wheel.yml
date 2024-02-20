@@ -2,7 +2,14 @@ name: Build and upload to PyPI
 
 on:
   push:
+    branches-ignore:
+      - "gh-readonly-queue/**"
   pull_request:
+  merge_group:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref || github.run_id }}
+  cancel-in-progress: true
 
 jobs:
   determine-arm64-runner:
@@ -147,7 +154,7 @@ jobs:
           path: source/install/docker/dist
           merge-multiple: true
       - name: Log in to the Container registry
-        uses: docker/login-action@343f7c4344506bcbf9b4de18042ae17996df046d
+        uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -155,12 +162,12 @@ jobs:
 
       - name: Extract metadata (tags, labels) for Docker
         id: meta
-        uses: docker/metadata-action@dbef88086f6cef02e264edb7dbf63250c17cef6c
+        uses: docker/metadata-action@v5
         with:
           images: ghcr.io/deepmodeling/deepmd-kit
 
       - name: Build and push Docker image
-        uses: docker/build-push-action@4a13e500e55cf31b7a5d59a38ab2040ab0f42f56
+        uses: docker/build-push-action@v5
         with:
           context: source/install/docker
           push: ${{ github.repository_owner == 'deepmodeling' && github.event_name == 'push' && github.actor != 'dependabot[bot]' }}

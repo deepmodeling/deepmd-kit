@@ -1,6 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import numpy as np
 
+from deepmd.utils.path import (
+    DPPath,
+)
+
 try:
     from deepmd._version import version as __version__
 except ImportError:
@@ -15,12 +19,14 @@ from typing import (
 
 from deepmd.dpmodel import (
     DEFAULT_PRECISION,
+    PRECISION_DICT,
     NativeOP,
 )
 from deepmd.dpmodel.utils import (
     EmbeddingNet,
     EnvMat,
     NetworkCollection,
+    PairExcludeMask,
 )
 
 from .base_descriptor import (
@@ -133,12 +139,12 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
         spin: Optional[Any] = None,
+        # consistent with argcheck, not used though
+        seed: Optional[int] = None,
     ) -> None:
         ## seed, uniform_seed, multi_task, not included.
         if not type_one_side:
             raise NotImplementedError("type_one_side == False not implemented")
-        if exclude_types != []:
-            raise NotImplementedError("exclude_types is not implemented")
         if spin is not None:
             raise NotImplementedError("spin is not implemented")
 
@@ -156,6 +162,7 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         self.activation_function = activation_function
         self.precision = precision
         self.spin = spin
+        self.emask = PairExcludeMask(self.ntypes, self.exclude_types)
 
         in_dim = 1  # not considiering type embedding
         self.embeddings = NetworkCollection(
@@ -163,6 +170,8 @@ class DescrptSeA(NativeOP, BaseDescriptor):
             ndim=(1 if self.type_one_side else 2),
             network_type="embedding_network",
         )
+        if not self.type_one_side:
+            raise NotImplementedError("type_one_side == False not implemented")
         for ii in range(self.ntypes):
             self.embeddings[(ii,)] = EmbeddingNet(
                 in_dim,
@@ -214,22 +223,18 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         """Returns cutoff radius."""
         return self.sel
 
-    def distinguish_types(self):
+    def mixed_types(self):
         """Returns if the descriptor requires a neighbor list that distinguish different
         atomic types or not.
         """
-        return True
+        return False
 
     def get_ntypes(self) -> int:
         """Returns the number of element types."""
         return self.ntypes
 
-    def compute_input_stats(self, merged):
+    def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
         """Update mean and stddev for descriptor elements."""
-        raise NotImplementedError
-
-    def init_desc_stat(self, sumr, suma, sumn, sumr2, suma2):
-        """Initialize the model bias by the statistics."""
         raise NotImplementedError
 
     def cal_g(
@@ -287,8 +292,11 @@ class DescrptSeA(NativeOP, BaseDescriptor):
 
         ng = self.neuron[-1]
         gr = np.zeros([nf, nloc, ng, 4])
+        exclude_mask = self.emask.build_type_exclude_mask(nlist, atype_ext)
         for tt in range(self.ntypes):
+            mm = exclude_mask[:, :, sec[tt] : sec[tt + 1]]
             tr = rr[:, :, sec[tt] : sec[tt + 1], :]
+            tr = tr * mm[:, :, :, None]
             ss = tr[..., 0:1]
             gg = self.cal_g(ss, tt)
             # nf x nloc x ng x 4
@@ -316,7 +324,8 @@ class DescrptSeA(NativeOP, BaseDescriptor):
             "exclude_types": self.exclude_types,
             "set_davg_zero": self.set_davg_zero,
             "activation_function": self.activation_function,
-            "precision": self.precision,
+            # make deterministic
+            "precision": np.dtype(PRECISION_DICT[self.precision]).name,
             "spin": self.spin,
             "env_mat": self.env_mat.serialize(),
             "embeddings": self.embeddings.serialize(),

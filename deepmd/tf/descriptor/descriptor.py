@@ -32,7 +32,7 @@ class Descriptor(PluginVariant):
 
     Examples
     --------
-    >>> descript = Descriptor(type="se_e2_a", rcut=6., rcut_smth=0.5, sel=[50])
+    >>> descript = Descriptor(type="se_e2_a", rcut=6.0, rcut_smth=0.5, sel=[50])
     >>> type(descript)
     <class 'deepmd.tf.descriptor.se_a.DescrptSeA'>
 
@@ -509,3 +509,41 @@ class Descriptor(PluginVariant):
         # call subprocess
         cls = cls.get_class_by_input(local_jdata)
         return cls.update_sel(global_jdata, local_jdata)
+
+    @classmethod
+    def deserialize(cls, data: dict, suffix: str = "") -> "Descriptor":
+        """Deserialize the model.
+
+        There is no suffix in a native DP model, but it is important
+        for the TF backend.
+
+        Parameters
+        ----------
+        data : dict
+            The serialized data
+        suffix : str, optional
+            Name suffix to identify this descriptor
+
+        Returns
+        -------
+        Descriptor
+            The deserialized descriptor
+        """
+        if cls is Descriptor:
+            return Descriptor.get_class_by_input(data).deserialize(data)
+        raise NotImplementedError("Not implemented in class %s" % cls.__name__)
+
+    def serialize(self, suffix: str = "") -> dict:
+        """Serialize the model.
+
+        There is no suffix in a native DP model, but it is important
+        for the TF backend.
+
+        Returns
+        -------
+        dict
+            The serialized data
+        suffix : str, optional
+            Name suffix to identify this descriptor
+        """
+        raise NotImplementedError("Not implemented in class %s" % self.__name__)

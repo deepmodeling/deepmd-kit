@@ -9,6 +9,10 @@ from typing import (
     Optional,
 )
 
+from deepmd.utils.path import (
+    DPPath,
+)
+
 
 def make_base_descriptor(
     t_tensor,
@@ -63,21 +67,17 @@ def make_base_descriptor(
             pass
 
         @abstractmethod
-        def distinguish_types(self) -> bool:
+        def mixed_types(self) -> bool:
             """Returns if the descriptor requires a neighbor list that distinguish different
             atomic types or not.
             """
             pass
 
-        @abstractmethod
-        def compute_input_stats(self, merged):
+        def compute_input_stats(
+            self, merged: List[dict], path: Optional[DPPath] = None
+        ):
             """Update mean and stddev for descriptor elements."""
-            pass
-
-        @abstractmethod
-        def init_desc_stat(self, sumr, suma, sumn, sumr2, suma2):
-            """Initialize the model bias by the statistics."""
-            pass
+            raise NotImplementedError
 
         @abstractmethod
         def fwd(

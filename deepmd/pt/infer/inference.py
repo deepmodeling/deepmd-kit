@@ -40,6 +40,7 @@ from deepmd.pt.utils.env import (
 
 if torch.__version__.startswith("2"):
     import torch._dynamo
+log = logging.getLogger(__name__)
 
 
 class Tester:
@@ -95,9 +96,7 @@ class Tester:
                 ), f"Validation systems not found in {input_script}!"
                 self.systems = training_params["validation_data"]["systems"]
                 self.batchsize = training_params["validation_data"]["batch_size"]
-                logging.info(
-                    f"Testing validation systems in input script: {input_script}"
-                )
+                log.info(f"Testing validation systems in input script: {input_script}")
             else:
                 assert (
                     "data_dict" in training_params
@@ -115,18 +114,18 @@ class Tester:
                 self.batchsize = training_params["data_dict"][head]["validation_data"][
                     "batch_size"
                 ]
-                logging.info(
+                log.info(
                     f"Testing validation systems in head {head} of input script: {input_script}"
                 )
         elif system is not None:
             self.systems = expand_sys_str(system)
             self.batchsize = "auto"
-            logging.info("Testing systems in path: %s", system)
+            log.info("Testing systems in path: %s", system)
         elif datafile is not None:
             with open(datafile) as fin:
                 self.systems = fin.read().splitlines()
             self.batchsize = "auto"
-            logging.info("Testing systems in file: %s", datafile)
+            log.info("Testing systems in file: %s", datafile)
         else:
             self.systems = None
             self.batchsize = None
@@ -210,8 +209,8 @@ class Tester:
         system_results = {}
         global_sum_natoms = 0
         for cc, system in enumerate(systems):
-            logging.info("# ---------------output of dp test--------------- ")
-            logging.info(f"# testing system : {system}")
+            log.info("# ---------------output of dp test--------------- ")
+            log.info(f"# testing system : {system}")
             system_pred = []
             system_label = []
             dataset = DpLoaderSet(
@@ -226,7 +225,7 @@ class Tester:
                 dataset, replacement=True, num_samples=dataset.total_batch
             )
             if sampler is None:
-                logging.warning(
+                log.warning(
                     "Sampler not specified!"
                 )  # None sampler will lead to a premature stop iteration. Replacement should be True in attribute of the sampler to produce expected number of items in one iteration.
             dataloader = DataLoader(
@@ -296,8 +295,8 @@ class Tester:
                 for k, v in single_results.items()
             }
             for item in sorted(results.keys()):
-                logging.info(f"{item}: {results[item]:.4f}")
-            logging.info("# ----------------------------------------------- ")
+                log.info(f"{item}: {results[item]:.4f}")
+            log.info("# ----------------------------------------------- ")
             for k, v in single_results.items():
                 system_results[k] = system_results.get(k, 0.0) + v
             global_sum_natoms += sum_natoms
@@ -306,14 +305,14 @@ class Tester:
             k: v / global_sum_natoms if "mae" in k else math.sqrt(v / global_sum_natoms)
             for k, v in system_results.items()
         }
-        logging.info("# ----------weighted average of errors----------- ")
+        log.info("# ----------weighted average of errors----------- ")
         if not self.multi_task:
-            logging.info(f"# number of systems : {len(systems)}")
+            log.info(f"# number of systems : {len(systems)}")
         else:
-            logging.info(f"# number of systems for {self.head}: {len(systems)}")
+            log.info(f"# number of systems for {self.head}: {len(systems)}")
         for item in sorted(global_results.keys()):
-            logging.info(f"{item}: {global_results[item]:.4f}")
-        logging.info("# ----------------------------------------------- ")
+            log.info(f"{item}: {global_results[item]:.4f}")
+        log.info("# ----------------------------------------------- ")
         return global_results
 
 

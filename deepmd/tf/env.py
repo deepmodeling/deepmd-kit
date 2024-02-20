@@ -4,9 +4,6 @@
 import ctypes
 import os
 import platform
-from configparser import (
-    ConfigParser,
-)
 from importlib import (
     import_module,
     reload,
@@ -17,7 +14,6 @@ from pathlib import (
 from typing import (
     TYPE_CHECKING,
     Any,
-    Dict,
 )
 
 import numpy as np
@@ -25,10 +21,12 @@ from packaging.version import (
     Version,
 )
 
-import deepmd.lib
 from deepmd.env import (
+    GLOBAL_CONFIG,
     GLOBAL_ENER_FLOAT_PRECISION,
     GLOBAL_NP_FLOAT_PRECISION,
+    SHARED_LIB_DIR,
+    SHARED_LIB_MODULE,
 )
 from deepmd.env import get_default_nthreads as get_tf_default_nthreads
 from deepmd.env import (
@@ -112,11 +110,9 @@ __all__ = [
     "ATTENTION_LAYER_PATTERN",
     "REMOVE_SUFFIX_DICT",
     "TF_VERSION",
+    "tf_py_version",
 ]
 
-SHARED_LIB_MODULE = "lib"
-SHARED_LIB_DIR = Path(deepmd.lib.__path__[0])
-CONFIG_FILE = SHARED_LIB_DIR / "run_config.ini"
 
 # Python library version
 try:
@@ -124,31 +120,42 @@ try:
 except AttributeError:
     tf_py_version = tf.__version__
 
+# subpatterns:
+# \1: type of centeral atom
+# \2: weight name
+# \3: layer index
+# The rest: types of neighbor atoms
+# IMPORTANT: the order is critical to match the pattern
 EMBEDDING_NET_PATTERN = str(
-    r"filter_type_\d+/matrix_\d+_\d+|"
-    r"filter_type_\d+/bias_\d+_\d+|"
-    r"filter_type_\d+/idt_\d+_\d+|"
-    r"filter_type_all/matrix_\d+|"
-    r"filter_type_all/matrix_\d+_\d+|"
-    r"filter_type_all/matrix_\d+_\d+_\d+|"
-    r"filter_type_all/bias_\d+|"
-    r"filter_type_all/bias_\d+_\d+|"
-    r"filter_type_all/bias_\d+_\d+_\d+|"
-    r"filter_type_all/idt_\d+|"
-    r"filter_type_all/idt_\d+_\d+|"
-)
+    r"filter_type_(\d+)/(matrix)_(\d+)_(\d+)|"
+    r"filter_type_(\d+)/(bias)_(\d+)_(\d+)|"
+    r"filter_type_(\d+)/(idt)_(\d+)_(\d+)|"
+    r"filter_type_(all)/(matrix)_(\d+)_(\d+)_(\d+)|"
+    r"filter_type_(all)/(matrix)_(\d+)_(\d+)|"
+    r"filter_type_(all)/(matrix)_(\d+)|"
+    r"filter_type_(all)/(bias)_(\d+)_(\d+)_(\d+)|"
+    r"filter_type_(all)/(bias)_(\d+)_(\d+)|"
+    r"filter_type_(all)/(bias)_(\d+)|"
+    r"filter_type_(all)/(idt)_(\d+)_(\d+)|"
+    r"filter_type_(all)/(idt)_(\d+)|"
+)[:-1]
 
+# subpatterns:
+# \1: layer index or "final"
+# \2: type of centeral atom, optional
+# the last: weight name
 FITTING_NET_PATTERN = str(
-    r"layer_\d+/matrix|"
-    r"layer_\d+_type_\d+/matrix|"
-    r"layer_\d+/bias|"
-    r"layer_\d+_type_\d+/bias|"
-    r"layer_\d+/idt|"
-    r"layer_\d+_type_\d+/idt|"
-    r"final_layer/matrix|"
-    r"final_layer_type_\d+/matrix|"
-    r"final_layer/bias|"
-    r"final_layer_type_\d+/bias|"
+    r"layer_(\d+)/(matrix)|"
+    r"layer_(\d+)_type_(\d+)/(matrix)|"
+    r"layer_(\d+)/(bias)|"
+    r"layer_(\d+)_type_(\d+)/(bias)|"
+    r"layer_(\d+)/(idt)|"
+    r"layer_(\d+)_type_(\d+)/(idt)|"
+    r"(final)_layer/(matrix)|"
+    r"(final)_layer_type_(\d+)/(matrix)|"
+    r"(final)_layer/(bias)|"
+    r"(final)_layer_type_(\d+)/(bias)|"
+    # TODO: not sure how to parse for shared layers...
     # layer_name
     r"share_.+_type_\d/matrix|"
     r"share_.+_type_\d/bias|"
@@ -156,7 +163,7 @@ FITTING_NET_PATTERN = str(
     r"share_.+/matrix|"
     r"share_.+/bias|"
     r"share_.+/idt|"
-)
+)[:-1]
 
 TYPE_EMBEDDING_PATTERN = str(
     r"type_embed_net+/matrix_\d+|"
@@ -398,27 +405,6 @@ def get_module(module_name: str) -> "ModuleType":
         return module
 
 
-def _get_package_constants(
-    config_file: Path = CONFIG_FILE,
-) -> Dict[str, str]:
-    """Read package constants set at compile time by CMake to dictionary.
-
-    Parameters
-    ----------
-    config_file : str, optional
-        path to CONFIG file, by default "run_config.ini"
-
-    Returns
-    -------
-    Dict[str, str]
-        dictionary with package constants
-    """
-    config = ConfigParser()
-    config.read(config_file)
-    return dict(config.items("CONFIG"))
-
-
-GLOBAL_CONFIG = _get_package_constants()
 if GLOBAL_CONFIG["enable_tensorflow"] == "0":
     raise RuntimeError(
         "TensorFlow backend is not built. To enable it, "

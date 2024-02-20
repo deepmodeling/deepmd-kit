@@ -4,9 +4,7 @@ import logging
 import numpy as np
 import torch
 
-from deepmd.pt.utils import (
-    env,
-)
+log = logging.getLogger(__name__)
 
 
 def make_stat_input(datasets, dataloaders, nbatches):
@@ -28,15 +26,10 @@ def make_stat_input(datasets, dataloaders, nbatches):
         "atype",
         "box",
         "natoms",
-        "mapping",
-        "nlist",
-        "nlist_loc",
-        "nlist_type",
-        "shift",
     ]
     if datasets[0].mixed_type:
         keys.append("real_natoms_vec")
-    logging.info(f"Packing data for statistics from {len(datasets)} systems")
+    log.info(f"Packing data for statistics from {len(datasets)} systems")
     for i in range(len(datasets)):
         sys_stat = {key: [] for key in keys}
         iterator = iter(dataloaders[i])
@@ -50,25 +43,6 @@ def make_stat_input(datasets, dataloaders, nbatches):
                 if dd in keys:
                     sys_stat[dd].append(stat_data[dd])
         for key in keys:
-            if key == "mapping" or key == "shift":
-                extend = max(d.shape[1] for d in sys_stat[key])
-                for jj in range(len(sys_stat[key])):
-                    l = []
-                    item = sys_stat[key][jj]
-                    for ii in range(item.shape[0]):
-                        l.append(item[ii])
-                    n_frames = len(item)
-                    if key == "shift":
-                        shape = torch.zeros(
-                            (n_frames, extend, 3),
-                            dtype=env.GLOBAL_PT_FLOAT_PRECISION,
-                        )
-                    else:
-                        shape = torch.zeros((n_frames, extend), dtype=torch.long)
-                    for i in range(len(item)):
-                        natoms_tmp = l[i].shape[0]
-                        shape[i, :natoms_tmp] = l[i]
-                    sys_stat[key][jj] = shape
             if not isinstance(sys_stat[key][0], list):
                 if sys_stat[key][0] is None:
                     sys_stat[key] = None
@@ -84,8 +58,8 @@ def make_stat_input(datasets, dataloaders, nbatches):
     return lst
 
 
-def compute_output_stats(energy, natoms, rcond=None):
-    """Update mean and stddev for descriptor elements.
+def compute_output_bias(energy, natoms, rcond=None):
+    """Update output bias for fitting net.
 
     Args:
     - energy: Batched energy with shape [nframes, 1].

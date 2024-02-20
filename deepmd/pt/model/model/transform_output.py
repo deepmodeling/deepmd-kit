@@ -56,6 +56,7 @@ def task_deriv_one(
     atom_energy: torch.Tensor,
     energy: torch.Tensor,
     extended_coord: torch.Tensor,
+    do_virial: bool = True,
     do_atomic_virial: bool = False,
 ):
     faked_grad = torch.ones_like(energy)
@@ -65,13 +66,16 @@ def task_deriv_one(
     )[0]
     assert extended_force is not None
     extended_force = -extended_force
-    extended_virial = extended_force.unsqueeze(-1) @ extended_coord.unsqueeze(-2)
-    # the correction sums to zero, which does not contribute to global virial
-    if do_atomic_virial:
-        extended_virial_corr = atomic_virial_corr(extended_coord, atom_energy)
-        extended_virial = extended_virial + extended_virial_corr
-    # to [...,3,3] -> [...,9]
-    extended_virial = extended_virial.view(list(extended_virial.shape[:-2]) + [9])  # noqa:RUF005
+    if do_virial:
+        extended_virial = extended_force.unsqueeze(-1) @ extended_coord.unsqueeze(-2)
+        # the correction sums to zero, which does not contribute to global virial
+        if do_atomic_virial:
+            extended_virial_corr = atomic_virial_corr(extended_coord, atom_energy)
+            extended_virial = extended_virial + extended_virial_corr
+        # to [...,3,3] -> [...,9]
+        extended_virial = extended_virial.view(list(extended_virial.shape[:-2]) + [9])  # noqa:RUF005
+    else:
+        extended_virial = None
     return extended_force, extended_virial
 
 
@@ -97,6 +101,7 @@ def take_deriv(
     svv: torch.Tensor,
     vdef: OutputVariableDef,
     coord_ext: torch.Tensor,
+    do_virial: bool = False,
     do_atomic_virial: bool = False,
 ):
     size = 1
@@ -110,16 +115,26 @@ def take_deriv(
     for vvi, svvi in zip(split_vv1, split_svv1):
         # nf x nloc x 3, nf x nloc x 9
         ffi, aviri = task_deriv_one(
-            vvi, svvi, coord_ext, do_atomic_virial=do_atomic_virial
+            vvi,
+            svvi,
+            coord_ext,
+            do_virial=do_virial,
+            do_atomic_virial=do_atomic_virial,
         )
         # nf x nloc x 1 x 3, nf x nloc x 1 x 9
         ffi = ffi.unsqueeze(-2)
-        aviri = aviri.unsqueeze(-2)
         split_ff.append(ffi)
-        split_avir.append(aviri)
-    # nf x nloc x v_dim x 3, nf x nloc x v_dim x 9
-    ff = torch.concat(split_ff, dim=-2)
-    avir = torch.concat(split_avir, dim=-2)
+        if do_virial:
+            assert aviri is not None
+            aviri = aviri.unsqueeze(-2)
+            split_avir.append(aviri)
+    # nf x nall x v_dim x 3, nf x nall x v_dim x 9
+    out_lead_shape = list(coord_ext.shape[:-1]) + vdef.shape
+    ff = torch.concat(split_ff, dim=-2).view(out_lead_shape + [3])  # noqa: RUF005
+    if do_virial:
+        avir = torch.concat(split_avir, dim=-2).view(out_lead_shape + [9])  # noqa: RUF005
+    else:
+        avir = None
     return ff, avir
 
 
@@ -141,18 +156,23 @@ def fit_output_to_model_output(
         if vdef.reduciable:
             kk_redu = get_reduce_name(kk)
             model_ret[kk_redu] = torch.sum(vv, dim=atom_axis)
-            if vdef.differentiable:
+            if vdef.r_differentiable:
                 kk_derv_r, kk_derv_c = get_deriv_name(kk)
                 dr, dc = take_deriv(
                     vv,
                     model_ret[kk_redu],
                     vdef,
                     coord_ext,
+                    do_virial=vdef.c_differentiable,
                     do_atomic_virial=do_atomic_virial,
                 )
                 model_ret[kk_derv_r] = dr
-                model_ret[kk_derv_c] = dc
-                model_ret[kk_derv_c + "_redu"] = torch.sum(model_ret[kk_derv_c], dim=1)
+                if vdef.c_differentiable:
+                    assert dc is not None
+                    model_ret[kk_derv_c] = dc
+                    model_ret[kk_derv_c + "_redu"] = torch.sum(
+                        model_ret[kk_derv_c], dim=1
+                    )
     return model_ret
 
 
@@ -174,12 +194,12 @@ def communicate_extended_output(
         if vdef.reduciable:
             kk_redu = get_reduce_name(kk)
             new_ret[kk_redu] = model_ret[kk_redu]
-            if vdef.differentiable:
-                # nf x nloc
-                vldims = get_leading_dims(vv, vdef)
-                # nf x nall
-                mldims = list(mapping.shape)
-                kk_derv_r, kk_derv_c = get_deriv_name(kk)
+            # nf x nloc
+            vldims = get_leading_dims(vv, vdef)
+            # nf x nall
+            mldims = list(mapping.shape)
+            kk_derv_r, kk_derv_c = get_deriv_name(kk)
+            if vdef.r_differentiable:
                 # vdim x 3
                 derv_r_ext_dims = list(vdef.shape) + [3]  # noqa:RUF005
                 mapping = mapping.view(mldims + [1] * len(derv_r_ext_dims)).expand(
@@ -196,10 +216,13 @@ def communicate_extended_output(
                     src=model_ret[kk_derv_r],
                     reduce="sum",
                 )
+            if vdef.c_differentiable:
+                assert vdef.r_differentiable
                 derv_c_ext_dims = list(vdef.shape) + [9]  # noqa:RUF005
                 # nf x nloc x nvar x 3 -> nf x nloc x nvar x 9
                 mapping = torch.tile(
-                    mapping, [1] * (len(mldims) + len(vdef.shape)) + [3]
+                    mapping,
+                    [1] * (len(mldims) + len(vdef.shape)) + [3],
                 )
                 virial = torch.zeros(
                     vldims + derv_c_ext_dims, dtype=vv.dtype, device=vv.device

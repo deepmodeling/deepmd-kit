@@ -12,8 +12,10 @@ from typing import (
     Union,
 )
 
+import h5py
 import torch
 import torch.distributed as dist
+import torch.version
 from torch.distributed.elastic.multiprocessing.errors import (
     record,
 )
@@ -27,8 +29,17 @@ from deepmd.entrypoints.doc import (
 from deepmd.entrypoints.gui import (
     start_dpgui,
 )
+from deepmd.entrypoints.neighbor_stat import (
+    neighbor_stat,
+)
+from deepmd.entrypoints.test import (
+    test,
+)
 from deepmd.infer.model_devi import (
     make_model_devi,
+)
+from deepmd.loggers.loggers import (
+    set_log_handles,
 )
 from deepmd.main import (
     parse_args,
@@ -36,17 +47,14 @@ from deepmd.main import (
 from deepmd.pt.infer import (
     inference,
 )
-from deepmd.pt.model.descriptor import (
-    Descriptor,
-)
 from deepmd.pt.train import (
     training,
 )
-from deepmd.pt.utils import (
-    env,
-)
 from deepmd.pt.utils.dataloader import (
     DpLoaderSet,
+)
+from deepmd.pt.utils.env import (
+    DEVICE,
 )
 from deepmd.pt.utils.finetune import (
     change_finetune_model_params,
@@ -57,6 +65,12 @@ from deepmd.pt.utils.multi_task import (
 from deepmd.pt.utils.stat import (
     make_stat_input,
 )
+from deepmd.utils.path import (
+    DPPath,
+)
+from deepmd.utils.summary import SummaryPrinter as BaseSummaryPrinter
+
+log = logging.getLogger(__name__)
 
 
 def get_trainer(
@@ -117,52 +131,16 @@ def get_trainer(
         # noise_settings = None
 
         # stat files
-        hybrid_descrpt = model_params_single["descriptor"]["type"] == "hybrid"
-        has_stat_file_path = True
-        if not hybrid_descrpt:
-            ### this design requires "rcut", "rcut_smth" and "sel" in the descriptor
-            ### VERY BAD DESIGN!!!!
-            ### not all descriptors provides these parameter in their constructor
-            default_stat_file_name = Descriptor.get_stat_name(
-                model_params_single["descriptor"]
-            )
-            model_params_single["stat_file_dir"] = data_dict_single.get(
-                "stat_file_dir", f"stat_files{suffix}"
-            )
-            model_params_single["stat_file"] = data_dict_single.get(
-                "stat_file", default_stat_file_name
-            )
-            model_params_single["stat_file_path"] = os.path.join(
-                model_params_single["stat_file_dir"], model_params_single["stat_file"]
-            )
-            if not os.path.exists(model_params_single["stat_file_path"]):
-                has_stat_file_path = False
-        else:  ### need to remove this
-            default_stat_file_name = []
-            for descrpt in model_params_single["descriptor"]["list"]:
-                default_stat_file_name.append(
-                    f'stat_file_rcut{descrpt["rcut"]:.2f}_'
-                    f'smth{descrpt["rcut_smth"]:.2f}_'
-                    f'sel{descrpt["sel"]}_{descrpt["type"]}.npz'
+        stat_file_path_single = data_dict_single.get("stat_file", None)
+        if stat_file_path_single is not None:
+            if Path(stat_file_path_single).is_dir():
+                raise ValueError(
+                    f"stat_file should be a file, not a directory: {stat_file_path_single}"
                 )
-            model_params_single["stat_file_dir"] = data_dict_single.get(
-                "stat_file_dir", f"stat_files{suffix}"
-            )
-            model_params_single["stat_file"] = data_dict_single.get(
-                "stat_file", default_stat_file_name
-            )
-            assert isinstance(
-                model_params_single["stat_file"], list
-            ), "Stat file of hybrid descriptor must be a list!"
-            stat_file_path = []
-            for stat_file_path_item in model_params_single["stat_file"]:
-                single_file_path = os.path.join(
-                    model_params_single["stat_file_dir"], stat_file_path_item
-                )
-                stat_file_path.append(single_file_path)
-                if not os.path.exists(single_file_path):
-                    has_stat_file_path = False
-            model_params_single["stat_file_path"] = stat_file_path
+            if not Path(stat_file_path_single).is_file():
+                with h5py.File(stat_file_path_single, "w") as f:
+                    pass
+            stat_file_path_single = DPPath(stat_file_path_single, "a")
 
         # validation and training data
         validation_data_single = DpLoaderSet(
@@ -172,7 +150,7 @@ def get_trainer(
             type_split=type_split,
             noise_settings=noise_settings,
         )
-        if ckpt or finetune_model or has_stat_file_path:
+        if ckpt or finetune_model:
             train_data_single = DpLoaderSet(
                 training_systems,
                 training_dataset_params["batch_size"],
@@ -202,19 +180,30 @@ def get_trainer(
                     type_split=type_split,
                     noise_settings=noise_settings,
                 )
-        return train_data_single, validation_data_single, sampled_single
+        return (
+            train_data_single,
+            validation_data_single,
+            sampled_single,
+            stat_file_path_single,
+        )
 
     if not multi_task:
-        train_data, validation_data, sampled = prepare_trainer_input_single(
+        (
+            train_data,
+            validation_data,
+            sampled,
+            stat_file_path,
+        ) = prepare_trainer_input_single(
             config["model"], config["training"], config["loss"]
         )
     else:
-        train_data, validation_data, sampled = {}, {}, {}
+        train_data, validation_data, sampled, stat_file_path = {}, {}, {}, {}
         for model_key in config["model"]["model_dict"]:
             (
                 train_data[model_key],
                 validation_data[model_key],
                 sampled[model_key],
+                stat_file_path[model_key],
             ) = prepare_trainer_input_single(
                 config["model"]["model_dict"][model_key],
                 config["training"]["data_dict"][model_key],
@@ -225,7 +214,8 @@ def get_trainer(
     trainer = training.Trainer(
         config,
         train_data,
-        sampled,
+        sampled=sampled,
+        stat_file_path=stat_file_path,
         validation_data=validation_data,
         init_model=init_model,
         restart_model=restart_model,
@@ -236,8 +226,36 @@ def get_trainer(
     return trainer
 
 
+class SummaryPrinter(BaseSummaryPrinter):
+    """Summary printer for PyTorch."""
+
+    def is_built_with_cuda(self) -> bool:
+        """Check if the backend is built with CUDA."""
+        return torch.version.cuda is not None
+
+    def is_built_with_rocm(self) -> bool:
+        """Check if the backend is built with ROCm."""
+        return torch.version.hip is not None
+
+    def get_compute_device(self) -> str:
+        """Get Compute device."""
+        return str(DEVICE)
+
+    def get_ngpus(self) -> int:
+        """Get the number of GPUs."""
+        return torch.cuda.device_count()
+
+    def get_backend_info(self) -> dict:
+        """Get backend information."""
+        return {
+            "Backend": "PyTorch",
+            "PT ver": f"v{torch.__version__}-g{torch.version.git_version[:11]}",
+        }
+
+
 def train(FLAGS):
-    logging.info("Configuration path: %s", FLAGS.INPUT)
+    log.info("Configuration path: %s", FLAGS.INPUT)
+    SummaryPrinter()()
     with open(FLAGS.INPUT) as fin:
         config = json.load(fin)
     trainer = get_trainer(
@@ -247,20 +265,6 @@ def train(FLAGS):
         FLAGS.finetune,
         FLAGS.model_branch,
         FLAGS.force_load,
-    )
-    trainer.run()
-
-
-def test(FLAGS):
-    trainer = inference.Tester(
-        FLAGS.model,
-        input_script=FLAGS.input_script,
-        system=FLAGS.system,
-        datafile=FLAGS.datafile,
-        numb_test=FLAGS.numb_test,
-        detail_file=FLAGS.detail_file,
-        shuffle_test=FLAGS.shuffle_test,
-        head=FLAGS.head,
     )
     trainer.run()
 
@@ -278,34 +282,28 @@ def freeze(FLAGS):
     )
 
 
-# avoid logger conflicts of tf version
-def clean_loggers():
-    logger = logging.getLogger()
-    while logger.hasHandlers():
-        logger.removeHandler(logger.handlers[0])
-
-
 @record
 def main(args: Optional[Union[List[str], argparse.Namespace]] = None):
-    clean_loggers()
-
     if not isinstance(args, argparse.Namespace):
         FLAGS = parse_args(args=args)
     else:
         FLAGS = args
     dict_args = vars(FLAGS)
 
-    logging.basicConfig(
-        level=logging.WARNING if env.LOCAL_RANK else logging.INFO,
-        format=f"%(asctime)-15s {os.environ.get('RANK') or ''} [%(filename)s:%(lineno)d] %(levelname)s %(message)s",
-    )
-    logging.info("DeepMD version: %s", __version__)
+    set_log_handles(FLAGS.log_level, FLAGS.log_path, mpi_log=None)
+    log.debug("Log handles were successfully set")
+
+    log.info("DeepMD version: %s", __version__)
 
     if FLAGS.command == "train":
         train(FLAGS)
     elif FLAGS.command == "test":
-        FLAGS.output = str(Path(FLAGS.model).with_suffix(".pt"))
-        test(FLAGS)
+        dict_args["output"] = (
+            str(Path(FLAGS.model).with_suffix(".pth"))
+            if Path(FLAGS.model).suffix not in (".pt", ".pth")
+            else FLAGS.model
+        )
+        test(**dict_args)
     elif FLAGS.command == "freeze":
         if Path(FLAGS.checkpoint_folder).is_dir():
             checkpoint_path = Path(FLAGS.checkpoint_folder)
@@ -315,18 +313,20 @@ def main(args: Optional[Union[List[str], argparse.Namespace]] = None):
             FLAGS.model = FLAGS.checkpoint_folder
         FLAGS.output = str(Path(FLAGS.output).with_suffix(".pth"))
         freeze(FLAGS)
-    elif args.command == "doc-train-input":
+    elif FLAGS.command == "doc-train-input":
         doc_train_input(**dict_args)
-    elif args.command == "model-devi":
+    elif FLAGS.command == "model-devi":
         dict_args["models"] = [
-            str(Path(mm).with_suffix(".pt"))
-            if Path(mm).suffix not in (".pb", ".pt")
+            str(Path(mm).with_suffix(".pth"))
+            if Path(mm).suffix not in (".pb", ".pt", ".pth")
             else mm
             for mm in dict_args["models"]
         ]
         make_model_devi(**dict_args)
-    elif args.command == "gui":
+    elif FLAGS.command == "gui":
         start_dpgui(**dict_args)
+    elif FLAGS.command == "neighbor-stat":
+        neighbor_stat(**dict_args)
     else:
         raise RuntimeError(f"Invalid command {FLAGS.command}!")
 

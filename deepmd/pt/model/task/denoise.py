@@ -75,10 +75,18 @@ class DenoiseNet(Fitting):
         return FittingOutputDef(
             [
                 OutputVariableDef(
-                    "updated_coord", [3], reduciable=False, differentiable=False
+                    "updated_coord",
+                    [3],
+                    reduciable=False,
+                    r_differentiable=False,
+                    c_differentiable=False,
                 ),
                 OutputVariableDef(
-                    "logits", [-1], reduciable=False, differentiable=False
+                    "logits",
+                    [-1],
+                    reduciable=False,
+                    r_differentiable=False,
+                    c_differentiable=False,
                 ),
             ]
         )

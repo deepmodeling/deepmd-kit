@@ -1,20 +1,25 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from pathlib import (
+    Path,
+)
 from typing import (
-    TYPE_CHECKING,
     Optional,
 )
 
+from deepmd.infer.deep_dipole import (
+    DeepDipole,
+)
 from deepmd.tf.infer.deep_tensor import (
     DeepTensor,
 )
 
-if TYPE_CHECKING:
-    from pathlib import (
-        Path,
-    )
+__all__ = [
+    "DeepDipole",
+]
 
 
-class DeepDipole(DeepTensor):
+class DeepDipoleOld(DeepTensor):
+    # used for DipoleChargeModifier only
     """Constructor.
 
     Parameters

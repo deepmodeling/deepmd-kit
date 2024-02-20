@@ -14,12 +14,8 @@ from deepmd.pt.model.model.transform_output import (
     fit_output_to_model_output,
 )
 from deepmd.pt.utils.nlist import (
-    build_neighbor_list,
-    extend_coord_with_ghosts,
+    extend_input_and_build_neighbor_list,
     nlist_distinguish_types,
-)
-from deepmd.pt.utils.region import (
-    normalize_coord,
 )
 
 
@@ -57,6 +53,7 @@ def make_model(T_AtomicModel):
                 **kwargs,
             )
 
+        @torch.jit.export
         def model_output_def(self):
             """Get the output def for the model."""
             return ModelOutputDef(self.fitting_output_def())
@@ -82,6 +79,10 @@ def make_model(T_AtomicModel):
                 The type of atoms. shape: nf x nloc
             box
                 The simulation box. shape: nf x 9
+            fparam
+                frame parameter. nf x ndf
+            aparam
+                atomic parameter. nf x nloc x nda
             do_atomic_virial
                 If calculate the atomic virial.
 
@@ -92,26 +93,19 @@ def make_model(T_AtomicModel):
                 The keys are defined by the `ModelOutputDef`.
 
             """
-            nframes, nloc = atype.shape[:2]
-            if box is not None:
-                coord_normalized = normalize_coord(
-                    coord.view(nframes, nloc, 3),
-                    box.reshape(nframes, 3, 3),
-                )
-            else:
-                coord_normalized = coord.clone()
-            extended_coord, extended_atype, mapping = extend_coord_with_ghosts(
-                coord_normalized, atype, box, self.get_rcut()
-            )
-            nlist = build_neighbor_list(
+            (
                 extended_coord,
                 extended_atype,
-                nloc,
+                mapping,
+                nlist,
+            ) = extend_input_and_build_neighbor_list(
+                coord,
+                atype,
                 self.get_rcut(),
                 self.get_sel(),
-                distinguish_types=self.distinguish_types(),
+                mixed_types=self.mixed_types(),
+                box=box,
             )
-            extended_coord = extended_coord.view(nframes, -1, 3)
             model_predict_lower = self.forward_common_lower(
                 extended_coord,
                 extended_atype,
@@ -147,15 +141,19 @@ def make_model(T_AtomicModel):
             Parameters
             ----------
             extended_coord
-                coodinates in extended region
+                coodinates in extended region. nf x (nall x 3)
             extended_atype
-                atomic type in extended region
+                atomic type in extended region. nf x nall
             nlist
-                neighbor list. nf x nloc x nsel
+                neighbor list. nf x nloc x nsel.
             mapping
-                mapps the extended indices to local indices
+                mapps the extended indices to local indices. nf x nall.
+            fparam
+                frame parameter. nf x ndf
+            aparam
+                atomic parameter. nf x nloc x nda
             do_atomic_virial
-                whether calculate atomic virial
+                whether calculate atomic virial.
 
             Returns
             -------
@@ -201,7 +199,7 @@ def make_model(T_AtomicModel):
 
             Known limitations:
 
-            In the case of self.distinguish_types, the nlist is always formatted.
+            In the case of not self.mixed_types, the nlist is always formatted.
             May have side effact on the efficiency.
 
             Parameters
@@ -219,9 +217,9 @@ def make_model(T_AtomicModel):
                 the formated nlist.
 
             """
-            distinguish_types = self.distinguish_types()
+            mixed_types = self.mixed_types()
             nlist = self._format_nlist(extended_coord, nlist, sum(self.get_sel()))
-            if distinguish_types:
+            if not mixed_types:
                 nlist = nlist_distinguish_types(nlist, extended_atype, self.get_sel())
             return nlist
 

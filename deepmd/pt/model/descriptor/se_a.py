@@ -1,8 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     ClassVar,
+    Dict,
     List,
     Optional,
+    Tuple,
 )
 
 import numpy as np
@@ -11,7 +13,6 @@ import torch
 from deepmd.pt.model.descriptor import (
     Descriptor,
     DescriptorBlock,
-    compute_std,
     prod_env_mat_se_a,
 )
 from deepmd.pt.utils import (
@@ -19,6 +20,16 @@ from deepmd.pt.utils import (
 )
 from deepmd.pt.utils.env import (
     PRECISION_DICT,
+    RESERVED_PRECISON_DICT,
+)
+from deepmd.pt.utils.env_mat_stat import (
+    EnvMatStatSeA,
+)
+from deepmd.utils.env_mat_stat import (
+    StatItem,
+)
+from deepmd.utils.path import (
+    DPPath,
 )
 
 try:
@@ -36,6 +47,9 @@ from deepmd.pt.model.network.mlp import (
 from deepmd.pt.model.network.network import (
     TypeFilter,
 )
+from deepmd.pt.utils.exclude_mask import (
+    PairExcludeMask,
+)
 
 
 @Descriptor.register("se_e2_a")
@@ -51,6 +65,7 @@ class DescrptSeA(Descriptor):
         activation_function: str = "tanh",
         precision: str = "float64",
         resnet_dt: bool = False,
+        exclude_types: List[Tuple[int, int]] = [],
         old_impl: bool = False,
         **kwargs,
     ):
@@ -59,13 +74,14 @@ class DescrptSeA(Descriptor):
             rcut,
             rcut_smth,
             sel,
-            neuron,
-            axis_neuron,
-            set_davg_zero,
-            activation_function,
-            precision,
-            resnet_dt,
-            old_impl,
+            neuron=neuron,
+            axis_neuron=axis_neuron,
+            set_davg_zero=set_davg_zero,
+            activation_function=activation_function,
+            precision=precision,
+            resnet_dt=resnet_dt,
+            exclude_types=exclude_types,
+            old_impl=old_impl,
             **kwargs,
         )
 
@@ -93,35 +109,39 @@ class DescrptSeA(Descriptor):
         """Returns the output dimension."""
         return self.sea.get_dim_emb()
 
-    def distinguish_types(self):
+    def mixed_types(self):
         """Returns if the descriptor requires a neighbor list that distinguish different
         atomic types or not.
         """
-        return True
+        return self.sea.mixed_types()
 
     @property
     def dim_out(self):
         """Returns the output dimension of this descriptor."""
         return self.sea.dim_out
 
-    def compute_input_stats(self, merged):
+    def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
         """Update mean and stddev for descriptor elements."""
-        return self.sea.compute_input_stats(merged)
-
-    def init_desc_stat(self, sumr, suma, sumn, sumr2, suma2):
-        self.sea.init_desc_stat(sumr, suma, sumn, sumr2, suma2)
-
-    @classmethod
-    def get_stat_name(cls, config):
-        descrpt_type = config["type"]
-        assert descrpt_type in ["se_e2_a"]
-        return f'stat_file_sea_rcut{config["rcut"]:.2f}_smth{config["rcut_smth"]:.2f}_sel{config["sel"]}.npz'
+        return self.sea.compute_input_stats(merged, path)
 
     @classmethod
     def get_data_process_key(cls, config):
+        """
+        Get the keys for the data preprocess.
+        Usually need the information of rcut and sel.
+        TODO Need to be deprecated when the dataloader has been cleaned up.
+        """
         descrpt_type = config["type"]
         assert descrpt_type in ["se_e2_a"]
         return {"sel": config["sel"], "rcut": config["rcut"]}
+
+    @property
+    def data_stat_key(self):
+        """
+        Get the keys for the data statistic of the descriptor.
+        Return a list of statistic names needed, such as "sumr", "suma" or "sumn".
+        """
+        return ["sumr", "suma", "sumn", "sumr2", "suma2"]
 
     def forward(
         self,
@@ -181,9 +201,11 @@ class DescrptSeA(Descriptor):
             "resnet_dt": obj.resnet_dt,
             "set_davg_zero": obj.set_davg_zero,
             "activation_function": obj.activation_function,
-            "precision": obj.precision,
+            # make deterministic
+            "precision": RESERVED_PRECISON_DICT[obj.prec],
             "embeddings": obj.filter_layers.serialize(),
             "env_mat": DPEnvMat(obj.rcut, obj.rcut_smth).serialize(),
+            "exclude_types": obj.exclude_types,
             "@variables": {
                 "davg": obj["davg"].detach().cpu().numpy(),
                 "dstd": obj["dstd"].detach().cpu().numpy(),
@@ -191,12 +213,12 @@ class DescrptSeA(Descriptor):
             ## to be updated when the options are supported.
             "trainable": True,
             "type_one_side": True,
-            "exclude_types": [],
             "spin": None,
         }
 
     @classmethod
     def deserialize(cls, data: dict) -> "DescrptSeA":
+        data = data.copy()
         variables = data.pop("@variables")
         embeddings = data.pop("embeddings")
         env_mat = data.pop("env_mat")
@@ -227,6 +249,7 @@ class DescrptBlockSeA(DescriptorBlock):
         activation_function: str = "tanh",
         precision: str = "float64",
         resnet_dt: bool = False,
+        exclude_types: List[Tuple[int, int]] = [],
         old_impl: bool = False,
         **kwargs,
     ):
@@ -251,8 +274,10 @@ class DescrptBlockSeA(DescriptorBlock):
         self.prec = PRECISION_DICT[self.precision]
         self.resnet_dt = resnet_dt
         self.old_impl = old_impl
-
+        self.exclude_types = exclude_types
         self.ntypes = len(sel)
+        self.emask = PairExcludeMask(len(sel), exclude_types=exclude_types)
+
         self.sel = sel
         self.sec = torch.tensor(
             np.append([0], np.cumsum(self.sel)), dtype=int, device=env.DEVICE
@@ -292,6 +317,7 @@ class DescrptBlockSeA(DescriptorBlock):
                     resnet_dt=self.resnet_dt,
                 )
             self.filter_layers = filter_layers
+        self.stats = None
 
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
@@ -321,6 +347,18 @@ class DescrptBlockSeA(DescriptorBlock):
         """Returns the input dimension."""
         return self.dim_in
 
+    def mixed_types(self) -> bool:
+        """If true, the discriptor
+        1. assumes total number of atoms aligned across frames;
+        2. requires a neighbor list that does not distinguish different atomic types.
+
+        If false, the discriptor
+        1. assumes total number of atoms of each atom type aligned across frames;
+        2. requires a neighbor list that distinguishes different atomic types.
+
+        """
+        return False
+
     @property
     def dim_out(self):
         """Returns the output dimension of this descriptor."""
@@ -347,68 +385,28 @@ class DescrptBlockSeA(DescriptorBlock):
         else:
             raise KeyError(key)
 
-    def compute_input_stats(self, merged):
+    def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
         """Update mean and stddev for descriptor elements."""
-        sumr = []
-        suma = []
-        sumn = []
-        sumr2 = []
-        suma2 = []
-        for system in merged:
-            index = system["mapping"].unsqueeze(-1).expand(-1, -1, 3)
-            extended_coord = torch.gather(system["coord"], dim=1, index=index)
-            extended_coord = extended_coord - system["shift"]
-            env_mat, _, _ = prod_env_mat_se_a(
-                extended_coord,
-                system["nlist"],
-                system["atype"],
-                self.mean,
-                self.stddev,
-                self.rcut,
-                self.rcut_smth,
-            )
-            sysr, sysr2, sysa, sysa2, sysn = analyze_descrpt(
-                env_mat.detach().cpu().numpy(), self.ndescrpt, system["natoms"]
-            )
-            sumr.append(sysr)
-            suma.append(sysa)
-            sumn.append(sysn)
-            sumr2.append(sysr2)
-            suma2.append(sysa2)
-        sumr = np.sum(sumr, axis=0)
-        suma = np.sum(suma, axis=0)
-        sumn = np.sum(sumn, axis=0)
-        sumr2 = np.sum(sumr2, axis=0)
-        suma2 = np.sum(suma2, axis=0)
-        return sumr, suma, sumn, sumr2, suma2
-
-    def init_desc_stat(self, sumr, suma, sumn, sumr2, suma2):
-        all_davg = []
-        all_dstd = []
-        for type_i in range(self.ntypes):
-            davgunit = [[sumr[type_i] / (sumn[type_i] + 1e-15), 0, 0, 0]]
-            dstdunit = [
-                [
-                    compute_std(sumr2[type_i], sumr[type_i], sumn[type_i], self.rcut),
-                    compute_std(suma2[type_i], suma[type_i], sumn[type_i], self.rcut),
-                    compute_std(suma2[type_i], suma[type_i], sumn[type_i], self.rcut),
-                    compute_std(suma2[type_i], suma[type_i], sumn[type_i], self.rcut),
-                ]
-            ]
-            davg = np.tile(davgunit, [self.nnei, 1])
-            dstd = np.tile(dstdunit, [self.nnei, 1])
-            all_davg.append(davg)
-            all_dstd.append(dstd)
-        self.sumr = sumr
-        self.suma = suma
-        self.sumn = sumn
-        self.sumr2 = sumr2
-        self.suma2 = suma2
+        env_mat_stat = EnvMatStatSeA(self)
+        if path is not None:
+            path = path / env_mat_stat.get_hash()
+        env_mat_stat.load_or_compute_stats(merged, path)
+        self.stats = env_mat_stat.stats
+        mean, stddev = env_mat_stat()
         if not self.set_davg_zero:
-            mean = np.stack(all_davg)
             self.mean.copy_(torch.tensor(mean, device=env.DEVICE))
-        stddev = np.stack(all_dstd)
         self.stddev.copy_(torch.tensor(stddev, device=env.DEVICE))
+        if not self.set_davg_zero:
+            self.mean.copy_(torch.tensor(mean, device=env.DEVICE))
+        self.stddev.copy_(torch.tensor(stddev, device=env.DEVICE))
+
+    def get_stats(self) -> Dict[str, StatItem]:
+        """Get the statistics of the descriptor."""
+        if self.stats is None:
+            raise RuntimeError(
+                "The statistics of the descriptor has not been computed."
+            )
+        return self.stats
 
     def forward(
         self,
@@ -465,9 +463,14 @@ class DescrptBlockSeA(DescriptorBlock):
             xyz_scatter = torch.zeros(
                 [nfnl, 4, self.filter_neuron[-1]], dtype=self.prec, device=env.DEVICE
             )
+            # nfnl x nnei
+            exclude_mask = self.emask(nlist, extended_atype).view(nfnl, -1)
             for ii, ll in enumerate(self.filter_layers.networks):
+                # nfnl x nt
+                mm = exclude_mask[:, self.sec[ii] : self.sec[ii + 1]]
                 # nfnl x nt x 4
                 rr = dmatrix[:, self.sec[ii] : self.sec[ii + 1], :]
+                rr = rr * mm[:, :, None]
                 ss = rr[:, :, :1]
                 # nfnl x nt x ng
                 gg = ll.forward(ss)

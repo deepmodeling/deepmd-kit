@@ -12,6 +12,9 @@ from deepmd.pt.model.descriptor import (
 from deepmd.pt.model.network.network import (
     TypeEmbedNet,
 )
+from deepmd.utils.path import (
+    DPPath,
+)
 
 from .se_atten import (
     DescrptBlockSeAtten,
@@ -105,11 +108,17 @@ class DescrptDPA1(Descriptor):
     def get_dim_emb(self) -> int:
         return self.se_atten.dim_emb
 
-    def distinguish_types(self) -> bool:
-        """Returns if the descriptor requires a neighbor list that distinguish different
-        atomic types or not.
+    def mixed_types(self) -> bool:
+        """If true, the discriptor
+        1. assumes total number of atoms aligned across frames;
+        2. requires a neighbor list that does not distinguish different atomic types.
+
+        If false, the discriptor
+        1. assumes total number of atoms of each atom type aligned across frames;
+        2. requires a neighbor list that distinguishes different atomic types.
+
         """
-        return False
+        return self.se_atten.mixed_types()
 
     @property
     def dim_out(self):
@@ -119,23 +128,27 @@ class DescrptDPA1(Descriptor):
     def dim_emb(self):
         return self.get_dim_emb()
 
-    def compute_input_stats(self, merged):
-        return self.se_atten.compute_input_stats(merged)
-
-    def init_desc_stat(self, sumr, suma, sumn, sumr2, suma2):
-        self.se_atten.init_desc_stat(sumr, suma, sumn, sumr2, suma2)
-
-    @classmethod
-    def get_stat_name(cls, config):
-        descrpt_type = config["type"]
-        assert descrpt_type in ["dpa1", "se_atten"]
-        return f'stat_file_dpa1_rcut{config["rcut"]:.2f}_smth{config["rcut_smth"]:.2f}_sel{config["sel"]}.npz'
+    def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
+        return self.se_atten.compute_input_stats(merged, path)
 
     @classmethod
     def get_data_process_key(cls, config):
+        """
+        Get the keys for the data preprocess.
+        Usually need the information of rcut and sel.
+        TODO Need to be deprecated when the dataloader has been cleaned up.
+        """
         descrpt_type = config["type"]
         assert descrpt_type in ["dpa1", "se_atten"]
         return {"sel": config["sel"], "rcut": config["rcut"]}
+
+    @property
+    def data_stat_key(self):
+        """
+        Get the keys for the data statistic of the descriptor.
+        Return a list of statistic names needed, such as "sumr", "suma" or "sumn".
+        """
+        return ["sumr", "suma", "sumn", "sumr2", "suma2"]
 
     def serialize(self) -> dict:
         """Serialize the obj to dict."""

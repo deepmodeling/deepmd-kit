@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
 from typing import (
+    TYPE_CHECKING,
     List,
     Optional,
 )
@@ -52,6 +53,9 @@ from deepmd.tf.utils.network import (
 from deepmd.tf.utils.spin import (
     Spin,
 )
+
+if TYPE_CHECKING:
+    pass
 
 log = logging.getLogger(__name__)
 
@@ -130,7 +134,8 @@ class EnerFitting(Fitting):
 
     def __init__(
         self,
-        descrpt: tf.Tensor,
+        ntypes: int,
+        dim_descrpt: int,
         neuron: List[int] = [120, 120, 120],
         resnet_dt: bool = True,
         numb_fparam: int = 0,
@@ -150,8 +155,8 @@ class EnerFitting(Fitting):
     ) -> None:
         """Constructor."""
         # model param
-        self.ntypes = descrpt.get_ntypes()
-        self.dim_descrpt = descrpt.get_dim_out()
+        self.ntypes = ntypes
+        self.dim_descrpt = dim_descrpt
         self.use_aparam_as_mask = use_aparam_as_mask
         # args = ()\
         #        .add('numb_fparam',      int,    default = 0)\
@@ -176,6 +181,7 @@ class EnerFitting(Fitting):
         self.ntypes_spin = self.spin.get_ntypes_spin() if self.spin is not None else 0
         self.seed_shift = one_layer_rand_seed_shift()
         self.tot_ener_zero = tot_ener_zero
+        self.activation_function_name = activation_function
         self.fitting_activation_fn = get_activation_func(activation_function)
         self.fitting_precision = get_precision(precision)
         self.trainable = trainable
@@ -202,16 +208,16 @@ class EnerFitting(Fitting):
             add_data_requirement(
                 "fparam", self.numb_fparam, atomic=False, must=True, high_prec=False
             )
-            self.fparam_avg = None
-            self.fparam_std = None
-            self.fparam_inv_std = None
+        self.fparam_avg = None
+        self.fparam_std = None
+        self.fparam_inv_std = None
         if self.numb_aparam > 0:
             add_data_requirement(
                 "aparam", self.numb_aparam, atomic=True, must=True, high_prec=False
             )
-            self.aparam_avg = None
-            self.aparam_std = None
-            self.aparam_inv_std = None
+        self.aparam_avg = None
+        self.aparam_std = None
+        self.aparam_inv_std = None
 
         self.fitting_net_variables = None
         self.mixed_prec = None
@@ -921,3 +927,82 @@ class EnerFitting(Fitting):
             return EnerSpinLoss(**loss, use_spin=self.spin.use_spin)
         else:
             raise RuntimeError("unknown loss type")
+
+    @classmethod
+    def deserialize(cls, data: dict, suffix: str):
+        """Deserialize the model.
+
+        Parameters
+        ----------
+        data : dict
+            The serialized data
+
+        Returns
+        -------
+        Model
+            The deserialized model
+        """
+        fitting = cls(**data)
+        fitting.fitting_net_variables = cls.deserialize_network(
+            data["nets"],
+            suffix=suffix,
+        )
+        fitting.bias_atom_e = data["@variables"]["bias_atom_e"]
+        if fitting.numb_fparam > 0:
+            fitting.fparam_avg = data["@variables"]["fparam_avg"]
+            fitting.fparam_inv_std = data["@variables"]["fparam_inv_std"]
+        if fitting.numb_aparam > 0:
+            fitting.aparam_avg = data["@variables"]["aparam_avg"]
+            fitting.aparam_inv_std = data["@variables"]["aparam_inv_std"]
+        return fitting
+
+    def serialize(self, suffix: str) -> dict:
+        """Serialize the model.
+
+        Returns
+        -------
+        dict
+            The serialized data
+        """
+        data = {
+            "var_name": "energy",
+            "ntypes": self.ntypes,
+            "dim_descrpt": self.dim_descrpt,
+            # very bad design: type embedding is not passed to the class
+            # TODO: refactor the class
+            "mixed_types": False,
+            "dim_out": 1,
+            "neuron": self.n_neuron,
+            "resnet_dt": self.resnet_dt,
+            "numb_fparam": self.numb_fparam,
+            "numb_aparam": self.numb_aparam,
+            "rcond": self.rcond,
+            "tot_ener_zero": self.tot_ener_zero,
+            "trainable": self.trainable,
+            "atom_ener": self.atom_ener,
+            "activation_function": self.activation_function_name,
+            "precision": self.fitting_precision.name,
+            "layer_name": self.layer_name,
+            "use_aparam_as_mask": self.use_aparam_as_mask,
+            "spin": self.spin,
+            "exclude_types": [],
+            "nets": self.serialize_network(
+                ntypes=self.ntypes,
+                # TODO: consider type embeddings
+                ndim=1,
+                in_dim=self.dim_descrpt + self.numb_fparam + self.numb_aparam,
+                neuron=self.n_neuron,
+                activation_function=self.activation_function_name,
+                resnet_dt=self.resnet_dt,
+                variables=self.fitting_net_variables,
+                suffix=suffix,
+            ),
+            "@variables": {
+                "bias_atom_e": self.bias_atom_e,
+                "fparam_avg": self.fparam_avg,
+                "fparam_inv_std": self.fparam_inv_std,
+                "aparam_avg": self.aparam_avg,
+                "aparam_inv_std": self.aparam_inv_std,
+            },
+        }
+        return data

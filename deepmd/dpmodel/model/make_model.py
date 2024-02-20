@@ -111,7 +111,7 @@ def make_model(T_AtomicModel):
                 nloc,
                 self.get_rcut(),
                 self.get_sel(),
-                distinguish_types=self.distinguish_types(),
+                distinguish_types=not self.mixed_types(),
             )
             extended_coord = extended_coord.reshape(nframes, -1, 3)
             model_predict_lower = self.call_lower(
@@ -149,13 +149,13 @@ def make_model(T_AtomicModel):
             Parameters
             ----------
             extended_coord
-                coodinates in extended region
+                coodinates in extended region. nf x (nall x 3).
             extended_atype
-                atomic type in extended region
+                atomic type in extended region. nf x nall.
             nlist
-                neighbor list. nf x nloc x nsel
+                neighbor list. nf x nloc x nsel.
             mapping
-                mapps the extended indices to local indices
+                mapps the extended indices to local indices. nf x nall.
             fparam
                 frame parameter. nf x ndf
             aparam
@@ -207,7 +207,7 @@ def make_model(T_AtomicModel):
 
             Known limitations:
 
-            In the case of self.distinguish_types, the nlist is always formatted.
+            In the case of not self.mixed_types, the nlist is always formatted.
             May have side effact on the efficiency.
 
             Parameters
@@ -226,9 +226,9 @@ def make_model(T_AtomicModel):
 
             """
             n_nf, n_nloc, n_nnei = nlist.shape
-            distinguish_types = self.distinguish_types()
+            mixed_types = self.mixed_types()
             ret = self._format_nlist(extended_coord, nlist, sum(self.get_sel()))
-            if distinguish_types:
+            if not mixed_types:
                 ret = nlist_distinguish_types(ret, extended_atype, self.get_sel())
             return ret
 

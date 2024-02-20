@@ -2,7 +2,6 @@
 from .descriptor import (
     Descriptor,
     DescriptorBlock,
-    compute_std,
     make_default_type_embedding,
 )
 from .dpa1 import (
@@ -32,7 +31,6 @@ from .se_a import (
 __all__ = [
     "Descriptor",
     "DescriptorBlock",
-    "compute_std",
     "make_default_type_embedding",
     "DescrptBlockSeA",
     "DescrptBlockSeAtten",

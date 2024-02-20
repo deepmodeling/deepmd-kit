@@ -25,6 +25,8 @@ DP_Nlist* DP_NewNlist(int inum_,
             DP_Nlist* new_nl = new DP_Nlist(nl); return new_nl;)
 }
 
+void DP_DeleteNlist(DP_Nlist* nl) { delete nl; }
+
 DP_DeepPot::DP_DeepPot() {}
 DP_DeepPot::DP_DeepPot(deepmd::DeepPot& dp) : dp(dp) {
   dfparam = dp.dim_fparam();
@@ -60,6 +62,8 @@ DP_DeepPot* DP_NewDeepPotWithParam2(const char* c_model,
   DP_NEW_OK(DP_DeepPot, deepmd::DeepPot dp(model, gpu_rank, file_content);
             DP_DeepPot* new_dp = new DP_DeepPot(dp); return new_dp;)
 }
+
+void DP_DeleteDeepPot(DP_DeepPot* dp) { delete dp; }
 
 DP_DeepPotModelDevi::DP_DeepPotModelDevi() {}
 DP_DeepPotModelDevi::DP_DeepPotModelDevi(deepmd::DeepPotModelDevi& dp)
@@ -97,6 +101,8 @@ DP_DeepPotModelDevi* DP_NewDeepPotModelDeviWithParam(
             return new_dp;)
 }
 
+void DP_DeleteDeepPotModelDevi(DP_DeepPotModelDevi* dp) { delete dp; }
+
 DP_DeepTensor::DP_DeepTensor() {}
 DP_DeepTensor::DP_DeepTensor(deepmd::DeepTensor& dt) : dt(dt) {}
 
@@ -114,6 +120,8 @@ DP_DeepTensor* DP_NewDeepTensorWithParam(const char* c_model,
   DP_NEW_OK(DP_DeepTensor, deepmd::DeepTensor dt(model, gpu_rank, name_scope);
             DP_DeepTensor* new_dt = new DP_DeepTensor(dt); return new_dt;)
 }
+
+void DP_DeleteDeepTensor(DP_DeepTensor* dt) { delete dt; }
 
 DP_DipoleChargeModifier::DP_DipoleChargeModifier() {}
 DP_DipoleChargeModifier::DP_DipoleChargeModifier(
@@ -136,6 +144,8 @@ DP_DipoleChargeModifier* DP_NewDipoleChargeModifierWithParam(
             DP_DipoleChargeModifier* new_dcm = new DP_DipoleChargeModifier(dcm);
             return new_dcm;)
 }
+
+void DP_DeleteDipoleChargeModifier(DP_DipoleChargeModifier* dcm) { delete dcm; }
 
 }  // extern "C"
 
@@ -775,7 +785,7 @@ inline void DP_DipoleChargeModifierComputeNList_variant(
   for (int i = 0; i < npairs; i++) {
     pairs_.push_back(std::make_pair(pairs[i * 2], pairs[i * 2 + 1]));
   }
-  std::vector<VALUETYPE> delef_(delef, delef + natoms * 3);
+  std::vector<VALUETYPE> delef_(delef, delef + (natoms - nghost) * 3);
   std::vector<VALUETYPE> df, dv;
 
   DP_REQUIRES_OK(dcm, dcm->dcm.compute(df, dv, coord_, atype_, cell_, pairs_,

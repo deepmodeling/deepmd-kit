@@ -13,6 +13,9 @@ from deepmd.pt.model.network.network import (
     Identity,
     Linear,
 )
+from deepmd.utils.path import (
+    DPPath,
+)
 
 
 @DescriptorBlock.register("hybrid")
@@ -103,6 +106,18 @@ class DescrptBlockHybrid(DescriptorBlock):
     def get_dim_emb(self):
         return self.dim_emb
 
+    def mixed_types(self) -> bool:
+        """If true, the discriptor
+        1. assumes total number of atoms aligned across frames;
+        2. requires a neighbor list that does not distinguish different atomic types.
+
+        If false, the discriptor
+        1. assumes total number of atoms of each atom type aligned across frames;
+        2. requires a neighbor list that distinguishes different atomic types.
+
+        """
+        return all(descriptor.mixed_types() for descriptor in self.descriptor_list)
+
     @property
     def dim_out(self):
         """Returns the output dimension of this descriptor."""
@@ -142,9 +157,8 @@ class DescrptBlockHybrid(DescriptorBlock):
         else:
             raise NotImplementedError
 
-    def compute_input_stats(self, merged):
+    def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
         """Update mean and stddev for descriptor elements."""
-        sumr, suma, sumn, sumr2, suma2 = [], [], [], [], []
         for ii, descrpt in enumerate(self.descriptor_list):
             merged_tmp = [
                 {
@@ -153,23 +167,7 @@ class DescrptBlockHybrid(DescriptorBlock):
                 }
                 for item in merged
             ]
-            (
-                sumr_tmp,
-                suma_tmp,
-                sumn_tmp,
-                sumr2_tmp,
-                suma2_tmp,
-            ) = descrpt.compute_input_stats(merged_tmp)
-            sumr.append(sumr_tmp)
-            suma.append(suma_tmp)
-            sumn.append(sumn_tmp)
-            sumr2.append(sumr2_tmp)
-            suma2.append(suma2_tmp)
-        return sumr, suma, sumn, sumr2, suma2
-
-    def init_desc_stat(self, sumr, suma, sumn, sumr2, suma2):
-        for ii, descrpt in enumerate(self.descriptor_list):
-            descrpt.init_desc_stat(sumr[ii], suma[ii], sumn[ii], sumr2[ii], suma2[ii])
+            descrpt.compute_input_stats(merged_tmp, path)
 
     def forward(
         self,

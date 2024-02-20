@@ -1,27 +1,42 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import logging
 from abc import (
     ABC,
     abstractmethod,
 )
 from typing import (
     Callable,
+    Dict,
     List,
     Optional,
 )
 
-import numpy as np
 import torch
 
 from deepmd.pt.model.network.network import (
     TypeEmbedNet,
 )
+from deepmd.pt.utils import (
+    env,
+)
+from deepmd.pt.utils.env_mat_stat import (
+    EnvMatStatSeA,
+)
 from deepmd.pt.utils.plugin import (
     Plugin,
+)
+from deepmd.utils.env_mat_stat import (
+    StatItem,
+)
+from deepmd.utils.path import (
+    DPPath,
 )
 
 from .base_descriptor import (
     BaseDescriptor,
 )
+
+log = logging.getLogger(__name__)
 
 
 class Descriptor(torch.nn.Module, BaseDescriptor):
@@ -56,14 +71,24 @@ class Descriptor(torch.nn.Module, BaseDescriptor):
         return Descriptor.__plugins.register(key)
 
     @classmethod
-    def get_stat_name(cls, config):
-        descrpt_type = config["type"]
-        return Descriptor.__plugins.plugins[descrpt_type].get_stat_name(config)
-
-    @classmethod
     def get_data_process_key(cls, config):
+        """
+        Get the keys for the data preprocess.
+        Usually need the information of rcut and sel.
+        TODO Need to be deprecated when the dataloader has been cleaned up.
+        """
+        if cls is not Descriptor:
+            raise NotImplementedError("get_data_process_key is not implemented!")
         descrpt_type = config["type"]
         return Descriptor.__plugins.plugins[descrpt_type].get_data_process_key(config)
+
+    @property
+    def data_stat_key(self):
+        """
+        Get the keys for the data statistic of the descriptor.
+        Return a list of statistic names needed, such as "sumr", "suma" or "sumn".
+        """
+        raise NotImplementedError("data_stat_key is not implemented!")
 
     def __new__(cls, *args, **kwargs):
         if cls is Descriptor:
@@ -156,15 +181,13 @@ class DescriptorBlock(torch.nn.Module, ABC):
         """Returns the embedding dimension."""
         pass
 
-    @abstractmethod
-    def compute_input_stats(self, merged):
+    def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
         """Update mean and stddev for DescriptorBlock elements."""
-        pass
+        raise NotImplementedError
 
-    @abstractmethod
-    def init_desc_stat(self, sumr, suma, sumn, sumr2, suma2):
-        """Initialize the model bias by the statistics."""
-        pass
+    def get_stats(self) -> Dict[str, StatItem]:
+        """Get the statistics of the descriptor."""
+        raise NotImplementedError
 
     def share_params(self, base_class, shared_level, resume=False):
         assert (
@@ -174,27 +197,14 @@ class DescriptorBlock(torch.nn.Module, ABC):
             # link buffers
             if hasattr(self, "mean") and not resume:
                 # in case of change params during resume
-                sumr_base, suma_base, sumn_base, sumr2_base, suma2_base = (
-                    base_class.sumr,
-                    base_class.suma,
-                    base_class.sumn,
-                    base_class.sumr2,
-                    base_class.suma2,
-                )
-                sumr, suma, sumn, sumr2, suma2 = (
-                    self.sumr,
-                    self.suma,
-                    self.sumn,
-                    self.sumr2,
-                    self.suma2,
-                )
-                base_class.init_desc_stat(
-                    sumr_base + sumr,
-                    suma_base + suma,
-                    sumn_base + sumn,
-                    sumr2_base + sumr2,
-                    suma2_base + suma2,
-                )
+                base_env = EnvMatStatSeA(base_class)
+                base_env.stats = base_class.stats
+                for kk in base_class.get_stats():
+                    base_env.stats[kk] += self.get_stats()[kk]
+                mean, stddev = base_env()
+                if not base_class.set_davg_zero:
+                    base_class.mean.copy_(torch.tensor(mean, device=env.DEVICE))
+                base_class.stddev.copy_(torch.tensor(stddev, device=env.DEVICE))
                 self.mean = base_class.mean
                 self.stddev = base_class.stddev
             # self.load_state_dict(base_class.state_dict()) # this does not work, because it only inits the model
@@ -214,17 +224,7 @@ class DescriptorBlock(torch.nn.Module, ABC):
         mapping: Optional[torch.Tensor] = None,
     ):
         """Calculate DescriptorBlock."""
-        raise NotImplementedError
-
-
-def compute_std(sumv2, sumv, sumn, rcut_r):
-    """Compute standard deviation."""
-    if sumn == 0:
-        return 1.0 / rcut_r
-    val = np.sqrt(sumv2 / sumn - np.multiply(sumv / sumn, sumv / sumn))
-    if np.abs(val) < 1e-2:
-        val = 1e-2
-    return val
+        pass
 
 
 def make_default_type_embedding(

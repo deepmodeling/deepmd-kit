@@ -18,6 +18,9 @@ from deepmd.pt.utils.nlist import (
     build_multiple_neighbor_list,
     get_multiple_nlist_key,
 )
+from deepmd.utils.path import (
+    DPPath,
+)
 
 from .repformers import (
     DescrptBlockRepformers,
@@ -271,11 +274,17 @@ class DescrptDPA2(Descriptor):
         """Returns the embedding dimension of this descriptor."""
         return self.repformers.dim_emb
 
-    def distinguish_types(self) -> bool:
-        """Returns if the descriptor requires a neighbor list that distinguish different
-        atomic types or not.
+    def mixed_types(self) -> bool:
+        """If true, the discriptor
+        1. assumes total number of atoms aligned across frames;
+        2. requires a neighbor list that does not distinguish different atomic types.
+
+        If false, the discriptor
+        1. assumes total number of atoms of each atom type aligned across frames;
+        2. requires a neighbor list that distinguishes different atomic types.
+
         """
-        return False
+        return True
 
     @property
     def dim_out(self):
@@ -286,8 +295,7 @@ class DescrptDPA2(Descriptor):
         """Returns the embedding dimension g2."""
         return self.get_dim_emb()
 
-    def compute_input_stats(self, merged):
-        sumr, suma, sumn, sumr2, suma2 = [], [], [], [], []
+    def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
         for ii, descrpt in enumerate([self.repinit, self.repformers]):
             merged_tmp = [
                 {
@@ -296,41 +304,29 @@ class DescrptDPA2(Descriptor):
                 }
                 for item in merged
             ]
-            (
-                sumr_tmp,
-                suma_tmp,
-                sumn_tmp,
-                sumr2_tmp,
-                suma2_tmp,
-            ) = descrpt.compute_input_stats(merged_tmp)
-            sumr.append(sumr_tmp)
-            suma.append(suma_tmp)
-            sumn.append(sumn_tmp)
-            sumr2.append(sumr2_tmp)
-            suma2.append(suma2_tmp)
-        return sumr, suma, sumn, sumr2, suma2
-
-    def init_desc_stat(self, sumr, suma, sumn, sumr2, suma2):
-        for ii, descrpt in enumerate([self.repinit, self.repformers]):
-            descrpt.init_desc_stat(sumr[ii], suma[ii], sumn[ii], sumr2[ii], suma2[ii])
-
-    @classmethod
-    def get_stat_name(cls, config):
-        descrpt_type = config["type"]
-        assert descrpt_type in ["dpa2"]
-        return (
-            f'stat_file_dpa2_repinit_rcut{config["repinit_rcut"]:.2f}_smth{config["repinit_rcut_smth"]:.2f}_sel{config["repinit_nsel"]}'
-            f'_repformer_rcut{config["repformer_rcut"]:.2f}_smth{config["repformer_rcut_smth"]:.2f}_sel{config["repformer_nsel"]}.npz'
-        )
+            descrpt.compute_input_stats(merged_tmp)
 
     @classmethod
     def get_data_process_key(cls, config):
+        """
+        Get the keys for the data preprocess.
+        Usually need the information of rcut and sel.
+        TODO Need to be deprecated when the dataloader has been cleaned up.
+        """
         descrpt_type = config["type"]
         assert descrpt_type in ["dpa2"]
         return {
             "sel": [config["repinit_nsel"], config["repformer_nsel"]],
             "rcut": [config["repinit_rcut"], config["repformer_rcut"]],
         }
+
+    @property
+    def data_stat_key(self):
+        """
+        Get the keys for the data statistic of the descriptor.
+        Return a list of statistic names needed, such as "sumr", "suma" or "sumn".
+        """
+        return ["sumr", "suma", "sumn", "sumr2", "suma2"]
 
     def serialize(self) -> dict:
         """Serialize the obj to dict."""
