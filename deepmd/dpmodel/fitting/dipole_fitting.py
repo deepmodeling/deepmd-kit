@@ -68,9 +68,14 @@ class DipoleFitting(GeneralFitting):
     mixed_types
             If true, use a uniform fitting net for all atom types, otherwise use
             different fitting nets for different atom types.
-    exclude_types: List[int]
+    exclude_types
             Atomic contributions of the excluded atom types are set zero.
-
+    r_differentiable
+            If the variable is differentiated with respect to coordinates of atoms. 
+            Only reduciable variable are differentiable.
+    c_differentiable
+            If the variable is differentiated with respect to the cell tensor (pbc case). 
+            Only reduciable variable are differentiable.
     """
 
     def __init__(
@@ -94,6 +99,8 @@ class DipoleFitting(GeneralFitting):
         spin: Any = None,
         mixed_types: bool = False,
         exclude_types: List[int] = [],
+        r_differentiable: bool = True,
+        c_differentiable: bool = False,
         old_impl=False,
     ):
         # seed, uniform_seed are not included
@@ -109,6 +116,8 @@ class DipoleFitting(GeneralFitting):
             raise NotImplementedError("atom_ener is not implemented")
 
         self.embedding_width = embedding_width
+        self.r_differentiable = r_differentiable
+        self.c_differentiable = c_differentiable
         super().__init__(
             var_name=var_name,
             ntypes=ntypes,
@@ -139,6 +148,8 @@ class DipoleFitting(GeneralFitting):
         data = super().serialize()
         data["embedding_width"] = self.embedding_width
         data["old_impl"] = self.old_impl
+        data["r_differentiable"] = self.r_differentiable
+        data["c_differentiable"] = self.c_differentiable
         return data
 
     def output_def(self):
@@ -148,8 +159,8 @@ class DipoleFitting(GeneralFitting):
                     self.var_name,
                     [3],
                     reduciable=True,
-                    r_differentiable=True,
-                    c_differentiable=True,
+                    r_differentiable=self.r_differentiable,
+                    c_differentiable=self.c_differentiable,
                 ),
             ]
         )

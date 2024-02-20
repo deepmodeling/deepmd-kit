@@ -176,8 +176,8 @@ class PolarFitting(GeneralFitting):
                     self.var_name,
                     [3, 3],
                     reduciable=True,
-                    r_differentiable=True,
-                    c_differentiable=True,
+                    r_differentiable=False,
+                    c_differentiable=False,
                 ),
             ]
         )
