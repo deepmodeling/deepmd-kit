@@ -9,7 +9,6 @@ from deepmd.pt.infer.deep_eval import (
 )
 from deepmd.pt.model.model import (
     get_model,
-    get_zbl_model,
 )
 from deepmd.pt.utils import (
     env,
@@ -38,6 +37,7 @@ model_se_e2_a = {
 }
 
 model_zbl = {
+    "type": "zbl",
     "type_map": ["O", "H", "B"],
     "use_srtab": "source/tests/pt/model/water/data/zbl_tab_potential/H2O_tab_potential.txt",
     "smin_alpha": 0.1,
@@ -300,7 +300,7 @@ class TestEnergyModelZBL(unittest.TestCase, PermutationTest):
     def setUp(self):
         model_params = copy.deepcopy(model_zbl)
         self.type_split = False
-        self.model = get_zbl_model(model_params).to(env.DEVICE)
+        self.model = get_model(model_params).to(env.DEVICE)
 
 
 # class TestEnergyFoo(unittest.TestCase):

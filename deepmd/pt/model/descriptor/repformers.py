@@ -81,6 +81,7 @@ class DescrptBlockRepformers(DescriptorBlock):
         set_davg_zero: bool = True,  # TODO
         smooth: bool = True,
         add_type_ebd_to_seq: bool = False,
+        env_protection: float = 0.0,
         type: Optional[str] = None,
     ):
         """
@@ -111,6 +112,7 @@ class DescrptBlockRepformers(DescriptorBlock):
         self.act = get_activation_fn(activation)
         self.direct_dist = direct_dist
         self.add_type_ebd_to_seq = add_type_ebd_to_seq
+        self.env_protection = env_protection
 
         self.g2_embd = mylinear(1, self.g2_dim)
         layers = []
@@ -230,6 +232,7 @@ class DescrptBlockRepformers(DescriptorBlock):
             self.stddev,
             self.rcut,
             self.rcut_smth,
+            protection=self.env_protection,
         )
         nlist_mask = nlist != -1
         sw = torch.squeeze(sw, -1)

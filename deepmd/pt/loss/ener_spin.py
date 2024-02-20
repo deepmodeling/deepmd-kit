@@ -29,7 +29,7 @@ class EnergySpinLoss(TaskLoss):
         inference=False,
         **kwargs,
     ):
-        """Construct a layer to compute loss on energy, force and virial."""
+        """Construct a layer to compute loss on energy, real force, magnetic force and virial."""
         super().__init__()
         self.starter_learning_rate = starter_learning_rate
         self.has_e = (start_pref_e != 0.0 and limit_pref_e != 0.0) or inference
@@ -115,6 +115,9 @@ class EnergySpinLoss(TaskLoss):
                 loss += (pref_fr * l2_force_real_loss).to(GLOBAL_PT_FLOAT_PRECISION)
                 rmse_fr = l2_force_real_loss.sqrt()
                 more_loss["rmse_fr"] = rmse_fr.detach()
+                if mae:
+                    mae_fr = torch.mean(torch.abs(diff_fr))
+                    more_loss["mae_fr"] = mae_fr.detach()
             else:
                 l1_force_real_loss = F.l1_loss(
                     label["force"], model_pred["force_real"], reduction="none"
@@ -122,9 +125,6 @@ class EnergySpinLoss(TaskLoss):
                 more_loss["mae_fr"] = l1_force_real_loss.mean().detach()
                 l1_force_real_loss = l1_force_real_loss.sum(-1).mean(-1).sum()
                 loss += (pref_fr * l1_force_real_loss).to(GLOBAL_PT_FLOAT_PRECISION)
-            if mae:
-                mae_fr = torch.mean(torch.abs(diff_fr))
-                more_loss["mae_fr"] = mae_fr.detach()
 
         if self.has_fm and "force_mag" in model_pred and "force_mag" in label:
             nframes = model_pred["force_mag"].shape[0]
@@ -141,6 +141,9 @@ class EnergySpinLoss(TaskLoss):
                 loss += (pref_fm * l2_force_mag_loss).to(GLOBAL_PT_FLOAT_PRECISION)
                 rmse_fm = l2_force_mag_loss.sqrt()
                 more_loss["rmse_fm"] = rmse_fm.detach()
+                if mae:
+                    mae_fm = torch.mean(torch.abs(diff_fm))
+                    more_loss["mae_fm"] = mae_fm.detach()
             else:
                 l1_force_mag_loss = F.l1_loss(
                     label_force_mag, model_pred_force_mag, reduction="none"
@@ -148,9 +151,6 @@ class EnergySpinLoss(TaskLoss):
                 more_loss["mae_fm"] = l1_force_mag_loss.mean().detach()
                 l1_force_mag_loss = l1_force_mag_loss.sum(-1).mean(-1).sum()
                 loss += (pref_fm * l1_force_mag_loss).to(GLOBAL_PT_FLOAT_PRECISION)
-            if mae:
-                mae_fm = torch.mean(torch.abs(diff_fm))
-                more_loss["mae_fm"] = mae_fm.detach()
 
         if self.has_v and "virial" in model_pred and "virial" in label:
             diff_v = label["virial"] - model_pred["virial"].reshape(-1, 9)

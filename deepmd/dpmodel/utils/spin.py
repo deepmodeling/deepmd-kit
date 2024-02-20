@@ -68,11 +68,11 @@ class BaseSpin(ABC):
         else:
             raise ValueError(f"Invalid virtual scale type: {type(virtual_scale)}")
         self.virtual_scale = np.array(self.virtual_scale)
-        self.pair_exclude_types = None
+        self.pair_exclude_types = []
         self.init_pair_exclude_types_placeholder()
-        self.atom_exclude_types_ps = None
+        self.atom_exclude_types_ps = []
         self.init_atom_exclude_types_placeholder_spin()
-        self.atom_exclude_types_p = None
+        self.atom_exclude_types_p = []
         self.init_atom_exclude_types_placeholder()
 
     def get_ntypes_real(self) -> int:

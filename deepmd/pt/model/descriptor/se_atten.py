@@ -59,6 +59,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         normalize=True,
         temperature=None,
         return_rot=False,
+        env_protection: float = 0.0,
         type: Optional[str] = None,
     ):
         """Construct an embedding net of type `se_atten`.
@@ -92,6 +93,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         self.normalize = normalize
         self.temperature = temperature
         self.return_rot = return_rot
+        self.env_protection = env_protection
 
         if isinstance(sel, int):
             sel = [sel]
@@ -253,6 +255,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
             self.stddev,
             self.rcut,
             self.rcut_smth,
+            protection=self.env_protection,
         )
         # [nfxnlocxnnei, self.ndescrpt]
         dmatrix = dmatrix.view(-1, self.ndescrpt)

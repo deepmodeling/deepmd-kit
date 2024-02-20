@@ -50,6 +50,7 @@ class DescrptDPA1(Descriptor):
         temperature=None,
         return_rot=False,
         concat_output_tebd: bool = True,
+        env_protection: float = 0.0,
         type: Optional[str] = None,
     ):
         super().__init__()
@@ -77,6 +78,7 @@ class DescrptDPA1(Descriptor):
             normalize=normalize,
             temperature=temperature,
             return_rot=return_rot,
+            env_protection=env_protection,
         )
         self.type_embedding = TypeEmbedNet(ntypes, tebd_dim)
         self.tebd_dim = tebd_dim

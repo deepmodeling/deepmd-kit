@@ -72,6 +72,7 @@ class DescrptDPA2(Descriptor):
         repformer_update_style: str = "res_avg",
         repformer_set_davg_zero: bool = True,  # TODO
         repformer_add_type_ebd_to_seq: bool = False,
+        env_protection: float = 0.0,
         type: Optional[
             str
         ] = None,  # work around the bad design in get_trainer and DpLoaderSet!
@@ -198,6 +199,7 @@ class DescrptDPA2(Descriptor):
             # tebd_input_mode='dot_residual_s',
             set_davg_zero=repinit_set_davg_zero,
             activation=repinit_activation,
+            env_protection=env_protection,
         )
         self.repformers = DescrptBlockRepformers(
             repformer_rcut,
@@ -228,6 +230,7 @@ class DescrptDPA2(Descriptor):
             set_davg_zero=repformer_set_davg_zero,
             smooth=True,
             add_type_ebd_to_seq=repformer_add_type_ebd_to_seq,
+            env_protection=env_protection,
         )
         self.type_embedding = TypeEmbedNet(ntypes, tebd_dim)
         if self.repinit.dim_out == self.repformers.dim_in:

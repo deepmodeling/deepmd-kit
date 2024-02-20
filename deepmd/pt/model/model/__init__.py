@@ -121,14 +121,14 @@ def get_spin_model(model_params):
         exclude_types=model_params["descriptor"].get("exclude_types", None)
     )
     model_params["descriptor"]["exclude_types"] = pair_exclude_types
+    if "env_protection" not in model_params["descriptor"]:
+        model_params["descriptor"]["env_protection"] = 1e-6
     if model_params["descriptor"]["type"] in ["se_e2_a"]:
         model_params["descriptor"]["sel"] += model_params["descriptor"]["sel"]
 
     atom_exclude_types = spin.get_atom_exclude_types(
         exclude_types=model_params["fitting_net"].get("exclude_types", None)
     )
-    # pair_exclude_types_placeholder = spin.get_atom_exclude_types_placeholder(exclude_types=model_params["fitting_net"]
-    #                                                                          .get("exclude_types", None))
     model_params["fitting_net"]["exclude_types"] = atom_exclude_types
     # descriptor
     model_params["descriptor"]["ntypes"] = ntypes
@@ -151,18 +151,20 @@ def get_spin_model(model_params):
 
 
 def get_model(model_params):
-    if "spin" in model_params:
+    model_type = model_params.get("type", "standard")
+    if model_type == "standard":
+        return get_ener_model(model_params)
+    elif model_type == "spin":
         return get_spin_model(model_params)
-    elif "use_srtab" in model_params:
+    elif model_type == "zbl":
         return get_zbl_model(model_params)
     else:
-        return get_ener_model(model_params)
+        raise ValueError(f"unknown model type: {model_type}")
 
 
 __all__ = [
     "BaseModel",
     "get_model",
-    "get_zbl_model",
     "DPModel",
     "EnergyModel",
     "SpinModel",

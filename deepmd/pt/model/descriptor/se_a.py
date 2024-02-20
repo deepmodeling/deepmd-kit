@@ -66,6 +66,7 @@ class DescrptSeA(Descriptor):
         precision: str = "float64",
         resnet_dt: bool = False,
         exclude_types: List[Tuple[int, int]] = [],
+        env_protection: float = 0.0,
         old_impl: bool = False,
         **kwargs,
     ):
@@ -81,6 +82,7 @@ class DescrptSeA(Descriptor):
             precision=precision,
             resnet_dt=resnet_dt,
             exclude_types=exclude_types,
+            env_protection=env_protection,
             old_impl=old_impl,
             **kwargs,
         )
@@ -250,6 +252,7 @@ class DescrptBlockSeA(DescriptorBlock):
         precision: str = "float64",
         resnet_dt: bool = False,
         exclude_types: List[Tuple[int, int]] = [],
+        env_protection: float = 0.0,
         old_impl: bool = False,
         **kwargs,
     ):
@@ -275,6 +278,7 @@ class DescrptBlockSeA(DescriptorBlock):
         self.resnet_dt = resnet_dt
         self.old_impl = old_impl
         self.exclude_types = exclude_types
+        self.env_protection = env_protection
         self.ntypes = len(sel)
         self.emask = PairExcludeMask(len(sel), exclude_types=exclude_types)
 
@@ -439,6 +443,7 @@ class DescrptBlockSeA(DescriptorBlock):
             self.stddev,
             self.rcut,
             self.rcut_smth,
+            protection=self.env_protection,
         )
 
         if self.old_impl:
