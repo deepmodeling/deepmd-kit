@@ -929,7 +929,7 @@ class EnerFitting(Fitting):
             raise RuntimeError("unknown loss type")
 
     @classmethod
-    def deserialize(cls, data: dict, suffix: str):
+    def deserialize(cls, data: dict, suffix: str = ""):
         """Deserialize the model.
 
         Parameters
@@ -956,7 +956,7 @@ class EnerFitting(Fitting):
             fitting.aparam_inv_std = data["@variables"]["aparam_inv_std"]
         return fitting
 
-    def serialize(self, suffix: str) -> dict:
+    def serialize(self, suffix: str = "") -> dict:
         """Serialize the model.
 
         Returns

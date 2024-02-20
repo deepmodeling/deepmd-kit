@@ -50,16 +50,33 @@ class Fitting(PluginVariant):
         """
         return Fitting.__plugins.register(key)
 
+    @classmethod
+    def get_class_by_input(cls, data: dict) -> "Fitting":
+        """Get the fitting class by the input data.
+
+        Parameters
+        ----------
+        data : dict
+            The input data
+
+        Returns
+        -------
+        Fitting
+            The fitting class
+        """
+        try:
+            fitting_type = data["type"]
+        except KeyError:
+            raise KeyError("the type of fitting should be set by `type`")
+        if fitting_type in Fitting.__plugins.plugins:
+            cls = Fitting.__plugins.plugins[fitting_type]
+        else:
+            raise RuntimeError("Unknown descriptor type: " + fitting_type)
+        return cls
+
     def __new__(cls, *args, **kwargs):
         if cls is Fitting:
-            try:
-                fitting_type = kwargs["type"]
-            except KeyError:
-                raise KeyError("the type of fitting should be set by `type`")
-            if fitting_type in Fitting.__plugins.plugins:
-                cls = Fitting.__plugins.plugins[fitting_type]
-            else:
-                raise RuntimeError("Unknown descriptor type: " + fitting_type)
+            cls = cls.get_class_by_input(kwargs)
         return super().__new__(cls)
 
     @property
@@ -109,6 +126,44 @@ class Fitting(PluginVariant):
         Loss
             the loss function
         """
+
+    @classmethod
+    def deserialize(cls, data: dict, suffix: str = "") -> "Fitting":
+        """Deserialize the fitting.
+
+        There is no suffix in a native DP model, but it is important
+        for the TF backend.
+
+        Parameters
+        ----------
+        data : dict
+            The serialized data
+        suffix : str, optional
+            Name suffix to identify this fitting
+
+        Returns
+        -------
+        Fitting
+            The deserialized fitting
+        """
+        if cls is Fitting:
+            return Fitting.get_class_by_input(data).deserialize(data, suffix=suffix)
+        raise NotImplementedError("Not implemented in class %s" % cls.__name__)
+
+    def serialize(self, suffix: str = "") -> dict:
+        """Serialize the fitting.
+
+        There is no suffix in a native DP model, but it is important
+        for the TF backend.
+
+        Returns
+        -------
+        dict
+            The serialized data
+        suffix : str, optional
+            Name suffix to identify this fitting
+        """
+        raise NotImplementedError("Not implemented in class %s" % self.__name__)
 
     def serialize_network(
         self,

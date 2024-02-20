@@ -16,6 +16,7 @@ from typing import (
     List,
     Optional,
     Tuple,
+    Union,
 )
 from uuid import (
     uuid4,
@@ -68,7 +69,7 @@ class CommonTest(ABC):
     """Native DP model class."""
     pt_class: ClassVar[Optional[type]]
     """PyTorch model class."""
-    args: ClassVar[Optional[List[Argument]]]
+    args: ClassVar[Optional[Union[Argument, List[Argument]]]]
     """Arguments that maps to the `data`."""
     skip_dp: ClassVar[bool] = False
     """Whether to skip the native DP model."""
@@ -91,9 +92,18 @@ class CommonTest(ABC):
         if self.args is None:
             data = self.data
         else:
-            base = Argument("arg", dict, sub_fields=self.args)
+            if isinstance(self.args, list):
+                base = Argument("arg", dict, sub_fields=self.args)
+            elif isinstance(self.args, Argument):
+                base = self.args
+            else:
+                raise ValueError("Invalid type for args")
             data = base.normalize_value(self.data, trim_pattern="_*")
             base.check_value(data, strict=True)
+        return self.pass_data_to_cls(cls, data)
+
+    def pass_data_to_cls(self, cls, data) -> Any:
+        """Pass data to the class."""
         return cls(**data, **self.addtional_data)
 
     @abstractmethod

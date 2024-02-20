@@ -17,6 +17,7 @@ from deepmd.pt.model.descriptor.se_a import (  # noqa # TODO: should import all 
     DescrptSeA,
 )
 from deepmd.pt.model.task.ener import (  # noqa # TODO: should import all fittings!
+    EnergyFittingNet,
     InvarFitting,
 )
 from deepmd.pt.utils.utils import (
