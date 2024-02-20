@@ -89,7 +89,7 @@ class TestForceGrad(unittest.TestCase):
         errors = np.zeros((self.dpdatasystem._natoms, 3))
         for atom_index in range(self.dpdatasystem._natoms):
             for axis_index in range(3):
-                delta = np.random.random() * delta0
+                delta = np.random.default_rng().random() * delta0
                 disturb_batch = self.dpdatasystem.get_disturb(
                     self.batch_index, atom_index, axis_index, delta
                 )

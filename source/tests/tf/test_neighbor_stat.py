@@ -16,11 +16,11 @@ def gen_sys(nframes):
     X, Y, Z = np.mgrid[0:2:3j, 0:2:3j, 0:2:3j]
     positions = np.vstack([X.ravel(), Y.ravel(), Z.ravel()]).T  # + 0.1
     data["coords"] = np.repeat(positions[np.newaxis, :, :], nframes, axis=0)
-    data["forces"] = np.random.random([nframes, natoms, 3])
+    data["forces"] = np.random.default_rng().random([nframes, natoms, 3])
     data["cells"] = np.array([3.0, 0.0, 0.0, 0.0, 3.0, 0.0, 0.0, 0.0, 3.0]).reshape(
         1, 3, 3
     )
-    data["energies"] = np.random.random([nframes, 1])
+    data["energies"] = np.random.default_rng().random([nframes, 1])
     data["atom_names"] = ["TYPE"]
     data["atom_numbs"] = [27]
     data["atom_types"] = np.repeat(0, 27)
