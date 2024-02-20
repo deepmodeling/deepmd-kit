@@ -139,8 +139,9 @@ class DpLoaderSet(Dataset):
             self.total_batch += len(system_dataloader)
         # Initialize iterator instances for DataLoader
         self.iters = []
-        for item in self.dataloaders:
-            self.iters.append(iter(item))
+        with torch.device("cpu"):
+            for item in self.dataloaders:
+                self.iters.append(iter(item))
 
     def set_noise(self, noise_settings):
         # noise_settings['noise_type'] # "trunc_normal", "normal", "uniform"
@@ -295,5 +296,6 @@ def get_weighted_sampler(training_data, prob_style, sys_prob=False):
     log.info("Generated weighted sampler with prob array: " + str(probs))
     # training_data.total_batch is the size of one epoch, you can increase it to avoid too many  rebuilding of iteraters
     len_sampler = training_data.total_batch * max(env.NUM_WORKERS, 1)
-    sampler = WeightedRandomSampler(probs, len_sampler, replacement=True)
+    with torch.device("cpu"):
+        sampler = WeightedRandomSampler(probs, len_sampler, replacement=True)
     return sampler

@@ -128,16 +128,16 @@ class TestEquivalence(unittest.TestCase):
         self.rcut_smth = 0.5
         self.sel = [46, 92, 4]
         self.nf = 1
-        self.coord = 2 * torch.rand([self.natoms, 3], dtype=dtype).to(env.DEVICE)
-        self.shift = torch.tensor([4, 4, 4], dtype=dtype).to(env.DEVICE)
-        self.atype = torch.IntTensor([0, 0, 0, 1, 1]).to(env.DEVICE)
+        self.coord = 2 * torch.rand([self.natoms, 3], dtype=dtype, device=env.DEVICE)
+        self.shift = torch.tensor([4, 4, 4], dtype=dtype, device=env.DEVICE)
+        self.atype = torch.tensor([0, 0, 0, 1, 1], dtype=torch.int32, device=env.DEVICE)
         self.dd0 = DescrptSeA(self.rcut, self.rcut_smth, self.sel).to(env.DEVICE)
-        self.cell = torch.rand([3, 3], dtype=dtype).to(env.DEVICE)
-        self.cell = (self.cell + self.cell.T) + 5.0 * torch.eye(3).to(env.DEVICE)
+        self.cell = torch.rand([3, 3], dtype=dtype, device=env.DEVICE)
+        self.cell = (self.cell + self.cell.T) + 5.0 * torch.eye(3, device=env.DEVICE)
 
     def test_rot(self):
         atype = self.atype.reshape(1, 5)
-        rmat = torch.tensor(special_ortho_group.rvs(3), dtype=dtype).to(env.DEVICE)
+        rmat = torch.tensor(special_ortho_group.rvs(3), dtype=dtype, device=env.DEVICE)
         coord_rot = torch.matmul(self.coord, rmat)
         rng = np.random.default_rng()
         for distinguish_types, nfp, nap in itertools.product(

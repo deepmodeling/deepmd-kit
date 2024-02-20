@@ -419,13 +419,13 @@ class DeepmdDataSystem:
                 pass
             else:
                 batch[kk] = torch.tensor(
-                    batch[kk][sid], dtype=env.GLOBAL_PT_FLOAT_PRECISION
+                    batch[kk][sid], dtype=env.GLOBAL_PT_FLOAT_PRECISION, device="cpu"
                 )
                 if self._data_dict[kk]["atomic"]:
                     batch[kk] = batch[kk].view(-1, self._data_dict[kk]["ndof"])
         for kk in ["type", "real_natoms_vec"]:
             if kk in batch.keys():
-                batch[kk] = torch.tensor(batch[kk][sid], dtype=torch.long)
+                batch[kk] = torch.tensor(batch[kk][sid], dtype=torch.long, device="cpu")
         batch["atype"] = batch["type"]
         rcut = self.rcut
         sec = self.sec
@@ -578,7 +578,7 @@ class DeepmdDataSetForLoader(Dataset):
         if not isinstance(rcut, list):
             if isinstance(sel, int):
                 sel = [sel]
-            sec = torch.cumsum(torch.tensor(sel), dim=0)
+            sec = torch.cumsum(torch.tensor(sel, device="cpu"), dim=0)
         else:
             sec = []
             for sel_item in sel:
@@ -614,5 +614,5 @@ class DeepmdDataSetForLoader(Dataset):
     def __getitem__(self, index):
         """Get a frame from the selected system."""
         b_data = self._data_system._get_item(index)
-        b_data["natoms"] = torch.tensor(self._natoms_vec)
+        b_data["natoms"] = torch.tensor(self._natoms_vec, device="cpu")
         return b_data

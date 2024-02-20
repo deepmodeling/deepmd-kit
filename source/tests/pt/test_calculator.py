@@ -8,6 +8,7 @@ from pathlib import (
     Path,
 )
 
+import numpy as np
 import torch
 
 from deepmd.pt.entrypoints.main import (
@@ -50,8 +51,8 @@ class TestCalculator(unittest.TestCase):
         )
 
         natoms = 5
-        cell = torch.eye(3, dtype=dtype) * 10
-        coord = torch.rand([natoms, 3], dtype=dtype)
+        cell = torch.eye(3, dtype=dtype, device="cpu") * 10
+        coord = torch.rand([natoms, 3], dtype=dtype, device="cpu")
         coord = torch.matmul(coord, cell)
         atype = torch.IntTensor([0, 0, 0, 1, 1])
         atomic_numbers = [1, 1, 1, 8, 8]
@@ -91,7 +92,7 @@ class TestCalculator(unittest.TestCase):
         assert isinstance(e0, float)
         assert f0.shape == (natoms, 3)
         assert v0.shape == (3, 3)
-        torch.testing.assert_close(e0, e1, rtol=low_prec, atol=prec)
-        torch.testing.assert_close(f0[idx_perm, :], f1, rtol=low_prec, atol=prec)
-        torch.testing.assert_close(s0, s1, rtol=low_prec, atol=prec)
-        torch.testing.assert_close(v0, v1, rtol=low_prec, atol=prec)
+        np.testing.assert_allclose(e0, e1, rtol=low_prec, atol=prec)
+        np.testing.assert_allclose(f0[idx_perm, :], f1, rtol=low_prec, atol=prec)
+        np.testing.assert_allclose(s0, s1, rtol=low_prec, atol=prec)
+        np.testing.assert_allclose(v0, v1, rtol=low_prec, atol=prec)

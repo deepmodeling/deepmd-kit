@@ -415,7 +415,7 @@ class TestEnergy(unittest.TestCase):
             var_name = torch2tf(name, last_layer_id=len(self.n_neuron))
             var_grad = vs_dict[var_name].gradient
             param_grad = param.grad.cpu()
-            var_grad = torch.tensor(var_grad)
+            var_grad = torch.tensor(var_grad, device="cpu")
             assert np.allclose(var_grad, param_grad, rtol=rtol, atol=atol)
 
 
