@@ -171,7 +171,8 @@ class Tester:
 
     @staticmethod
     def get_data(data):
-        batch_data = next(iter(data))
+        with torch.device("cpu"):
+            batch_data = next(iter(data))
         for key in batch_data.keys():
             if key == "sid" or key == "fid":
                 continue
