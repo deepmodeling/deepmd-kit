@@ -487,7 +487,7 @@ class DeepmdData:
             if "find_" in kk:
                 pass
             else:
-                if self.data_dict[kk]["atomic"]:
+                if kk in data and self.data_dict[kk]["atomic"]:
                     data[kk] = data[kk].reshape(-1, self.data_dict[kk]["ndof"])
         data["atype"] = data["type"]
         return data
