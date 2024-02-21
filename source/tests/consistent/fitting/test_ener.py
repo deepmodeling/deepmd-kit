@@ -80,7 +80,6 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
             mixed_types,
             numb_fparam,
         ) = self.param
-        # TODO: float32 has bug
         return CommonTest.skip_pt
 
     tf_class = EnerFittingTF
