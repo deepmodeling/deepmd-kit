@@ -2,6 +2,7 @@
 import itertools
 import unittest
 
+import os
 import numpy as np
 import torch
 from scipy.stats import (
@@ -15,8 +16,14 @@ from deepmd.pt.model.descriptor.se_a import (
 from deepmd.pt.model.task.polarizability import (
     PolarFittingNet,
 )
+from deepmd.infer.deep_polar import (
+    DeepPolar,
+)
 from deepmd.pt.utils import (
     env,
+)
+from deepmd.pt.model.model.polar_model import (
+    PolarModel,
 )
 from deepmd.pt.utils.nlist import (
     extend_input_and_build_neighbor_list,
@@ -307,6 +314,45 @@ class TestEquivalence(unittest.TestCase):
 
             np.testing.assert_allclose(to_numpy_array(res[0]), to_numpy_array(res[1]))
 
+class TestDipoleModel(unittest.TestCase):
+    def setUp(self):
+        self.natoms = 5
+        self.rcut = 4.0
+        self.nt = 3
+        self.rcut_smth = 0.5
+        self.sel = [46, 92, 4]
+        self.nf = 1
+        self.coord = 2 * torch.rand([self.natoms, 3], dtype=dtype, device=env.DEVICE)
+        cell = torch.rand([3, 3], dtype=dtype, device=env.DEVICE)
+        self.cell = (cell + cell.T) + 5.0 * torch.eye(3, device=env.DEVICE)
+        self.atype = torch.IntTensor([0, 0, 0, 1, 1], device=env.DEVICE)
+        self.dd0 = DescrptSeA(self.rcut, self.rcut_smth, self.sel).to(env.DEVICE)
+        self.ft0 = PolarFittingNet(
+            "polar",
+            self.nt,
+            self.dd0.dim_out,
+            embedding_width=self.dd0.get_dim_emb(),
+            numb_fparam=0,
+            numb_aparam=0,
+            mixed_types=True,
+        ).to(env.DEVICE)
+        self.type_mapping = ["O", "H", "B"]
+        self.model = PolarModel(self.dd0, self.ft0, self.type_mapping)
+        self.file_path = "model_output.pth"
+    
+    def test_deepdipole_infer(self):
+        atype = self.atype.view(self.nf, self.natoms)
+        coord = self.coord.reshape(1, 5, 3)
+        cell = self.cell.reshape(1, 9)
+        jit_md = torch.jit.script(self.model)
+        torch.jit.save(jit_md, self.file_path)
+        load_md = DeepPolar(self.file_path)
+        load_md.eval(coords=coord, atom_types=atype, cells=cell, atomic=True)
+        load_md.eval(coords=coord, atom_types=atype, cells=cell, atomic=False)
+
+    def tearDown(self) -> None:
+        if os.path.exists(self.file_path):
+            os.remove(self.file_path)
 
 if __name__ == "__main__":
     unittest.main()
