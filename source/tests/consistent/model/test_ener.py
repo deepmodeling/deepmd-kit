@@ -7,9 +7,8 @@ from typing import (
 
 import numpy as np
 
-from deepmd.dpmodel.descriptor.se_e2_a import DescrptSeA as DescrptSeADP
-from deepmd.dpmodel.fitting.ener_fitting import EnergyFittingNet as EnerFittingDP
 from deepmd.dpmodel.model.dp_model import DPModel as EnergyModelDP
+from deepmd.dpmodel.model.model import get_model as get_model_dp
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
 )
@@ -24,9 +23,7 @@ from .common import (
 )
 
 if INSTALLED_PT:
-    from deepmd.pt.model.model import (
-        get_model,
-    )
+    from deepmd.pt.model.model import get_model as get_model_pt
     from deepmd.pt.model.model.ener_model import EnergyModel as EnergyModelPT
 
 else:
@@ -40,12 +37,7 @@ from deepmd.utils.argcheck import (
 )
 
 
-# @parameterized(
-#     (True, False),  # resnet_dt
-#     (True, False),  # type_one_side
-#     ([], [[0, 1]]),  # excluded_types
-# )
-class TestSeA(CommonTest, ModelTest, unittest.TestCase):
+class TestEner(CommonTest, ModelTest, unittest.TestCase):
     @property
     def data(self) -> dict:
         return {
@@ -85,24 +77,9 @@ class TestSeA(CommonTest, ModelTest, unittest.TestCase):
         """Pass data to the class."""
         data = data.copy()
         if cls is EnergyModelDP:
-            # should not do it here...
-            data["descriptor"].pop("type")
-            data["fitting_net"].pop("type")
-            descriptor = DescrptSeADP(
-                **data["descriptor"],
-            )
-            fitting = EnerFittingDP(
-                ntypes=descriptor.get_ntypes(),
-                dim_descrpt=descriptor.get_dim_out(),
-                **data["fitting_net"],
-            )
-            return cls(
-                descriptor=descriptor,
-                fitting=fitting,
-                type_map=data["type_map"],
-            )
+            return get_model_dp(data)
         elif cls is EnergyModelPT:
-            return get_model(data)
+            return get_model_pt(data)
         return cls(**data, **self.addtional_data)
 
     def setUp(self):

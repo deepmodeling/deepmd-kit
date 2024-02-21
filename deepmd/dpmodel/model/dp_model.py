@@ -7,4 +7,7 @@ from .make_model import (
     make_model,
 )
 
-DPModel = make_model(DPAtomicModel)
+
+# use "class" to resolve "Variable not allowed in type expression"
+class DPModel(make_model(DPAtomicModel)):
+    pass
