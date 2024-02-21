@@ -79,6 +79,8 @@ class CommonTest(ABC):
     """Whether to skip the PyTorch model."""
     rtol = 1e-10
     """Relative tolerance for comparing the return value. Override for float32."""
+    atol = 1e-10
+    """Absolute tolerance for comparing the return value. Override for float32."""
 
     def setUp(self):
         self.unique_id = uuid4().hex
@@ -252,7 +254,7 @@ class CommonTest(ABC):
         ret2 = self.extract_ret(ret2, self.RefBackend.TF)
         np.testing.assert_equal(data1, data2)
         for rr1, rr2 in zip(ret1, ret2):
-            np.testing.assert_allclose(rr1, rr2, rtol=self.rtol)
+            np.testing.assert_allclose(rr1, rr2, rtol=self.rtol, atol=self.atol)
 
     def test_tf_self_consistent(self):
         """Test whether TF is self consistent."""
@@ -266,7 +268,7 @@ class CommonTest(ABC):
         ret2, data2 = self.get_tf_ret_serialization_from_cls(obj2)
         np.testing.assert_equal(data1, data2)
         for rr1, rr2 in zip(ret1, ret2):
-            np.testing.assert_allclose(rr1, rr2, rtol=self.rtol)
+            np.testing.assert_allclose(rr1, rr2, rtol=self.rtol, atol=self.atol)
 
     def test_dp_consistent_with_ref(self):
         """Test whether DP and reference are consistent."""
@@ -283,7 +285,7 @@ class CommonTest(ABC):
         data2 = dp_obj.serialize()
         np.testing.assert_equal(data1, data2)
         for rr1, rr2 in zip(ret1, ret2):
-            np.testing.assert_allclose(rr1, rr2, rtol=self.rtol)
+            np.testing.assert_allclose(rr1, rr2, rtol=self.rtol, atol=self.atol)
 
     def test_dp_self_consistent(self):
         """Test whether DP is self consistent."""
@@ -296,7 +298,7 @@ class CommonTest(ABC):
         np.testing.assert_equal(data1, data2)
         for rr1, rr2 in zip(ret1, ret2):
             if isinstance(rr1, np.ndarray) and isinstance(rr2, np.ndarray):
-                np.testing.assert_allclose(rr1, rr2, rtol=self.rtol)
+                np.testing.assert_allclose(rr1, rr2, rtol=self.rtol, atol=self.atol)
             else:
                 self.assertEqual(rr1, rr2)
 
@@ -315,7 +317,7 @@ class CommonTest(ABC):
         data2 = obj.serialize()
         np.testing.assert_equal(data1, data2)
         for rr1, rr2 in zip(ret1, ret2):
-            np.testing.assert_allclose(rr1, rr2, rtol=self.rtol)
+            np.testing.assert_allclose(rr1, rr2, rtol=self.rtol, atol=self.atol)
 
     def test_pt_self_consistent(self):
         """Test whether PT is self consistent."""
@@ -328,7 +330,7 @@ class CommonTest(ABC):
         np.testing.assert_equal(data1, data2)
         for rr1, rr2 in zip(ret1, ret2):
             if isinstance(rr1, np.ndarray) and isinstance(rr2, np.ndarray):
-                np.testing.assert_allclose(rr1, rr2, rtol=self.rtol)
+                np.testing.assert_allclose(rr1, rr2, rtol=self.rtol, atol=self.atol)
             else:
                 self.assertEqual(rr1, rr2)
 

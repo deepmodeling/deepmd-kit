@@ -640,6 +640,7 @@ def main_parser() -> argparse.ArgumentParser:
         help="type map",
     )
     parser_neighbor_stat.add_argument(
+        "--mixed-type",
         "--one-type",
         action="store_true",
         default=False,
