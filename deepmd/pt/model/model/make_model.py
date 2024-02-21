@@ -240,8 +240,10 @@ def make_model(T_AtomicModel):
                         nlist,
                         -1
                         * torch.ones(
-                            [n_nf, n_nloc, nnei - n_nnei], dtype=nlist.dtype
-                        ).to(nlist.device),
+                            [n_nf, n_nloc, nnei - n_nnei],
+                            dtype=nlist.dtype,
+                            device=nlist.device,
+                        ),
                     ],
                     dim=-1,
                 )

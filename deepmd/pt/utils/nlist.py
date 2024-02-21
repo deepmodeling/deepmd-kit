@@ -116,14 +116,14 @@ def build_neighbor_list(
         nlist = nlist[:, :, :nsel]
     else:
         rr = torch.cat(
-            [rr, torch.ones([batch_size, nloc, nsel - nnei]).to(rr.device) + rcut],
+            [rr, torch.ones([batch_size, nloc, nsel - nnei], device=rr.device) + rcut],
             dim=-1,
         )
         nlist = torch.cat(
             [
                 nlist,
-                torch.ones([batch_size, nloc, nsel - nnei], dtype=nlist.dtype).to(
-                    rr.device
+                torch.ones(
+                    [batch_size, nloc, nsel - nnei], dtype=nlist.dtype, device=rr.device
                 ),
             ],
             dim=-1,
@@ -289,7 +289,7 @@ def extend_coord_with_ghosts(
 
     """
     nf, nloc = atype.shape
-    aidx = torch.tile(torch.arange(nloc).unsqueeze(0), [nf, 1])
+    aidx = torch.tile(torch.arange(nloc, device=env.DEVICE).unsqueeze(0), [nf, 1])
     if cell is None:
         nall = nloc
         extend_coord = coord.clone()

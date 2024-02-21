@@ -12,6 +12,7 @@ from pathlib import (
 )
 
 import numpy as np
+import torch
 
 from deepmd.infer.deep_pot import DeepPot as DeepPotUni
 from deepmd.pt.entrypoints.main import (
@@ -43,7 +44,8 @@ class TestDeepPot(unittest.TestCase):
         trainer = get_trainer(deepcopy(self.config))
         trainer.run()
 
-        input_dict, label_dict, _ = trainer.get_data(is_train=False)
+        with torch.device("cpu"):
+            input_dict, label_dict, _ = trainer.get_data(is_train=False)
         trainer.wrapper(**input_dict, label=label_dict, cur_lr=1.0)
         self.model = "model.pt"
 

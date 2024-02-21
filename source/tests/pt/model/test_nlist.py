@@ -26,12 +26,12 @@ class TestNeighList(unittest.TestCase):
         self.ns = 5 * 5 * 3
         self.nall = self.ns * self.nloc
         self.cell = torch.tensor(
-            [[1, 0, 0], [0.4, 0.8, 0], [0.1, 0.3, 2.1]], dtype=dtype
-        ).to(env.DEVICE)
-        self.icoord = torch.tensor([[0, 0, 0], [0.5, 0.5, 0.1]], dtype=dtype).to(
-            env.DEVICE
+            [[1, 0, 0], [0.4, 0.8, 0], [0.1, 0.3, 2.1]], dtype=dtype, device=env.DEVICE
         )
-        self.atype = torch.tensor([0, 1], dtype=torch.int).to(env.DEVICE)
+        self.icoord = torch.tensor(
+            [[0, 0, 0], [0.5, 0.5, 0.1]], dtype=dtype, device=env.DEVICE
+        )
+        self.atype = torch.tensor([0, 1], dtype=torch.int, device=env.DEVICE)
         [self.cell, self.icoord, self.atype] = [
             ii.unsqueeze(0) for ii in [self.cell, self.icoord, self.atype]
         ]
@@ -53,8 +53,9 @@ class TestNeighList(unittest.TestCase):
             [
                 [0, 0, 0, 0, 0, 0, -1, -1, -1, -1, 1, 1, 1, 1, -1, -1, -1, -1, -1, -1],
                 [0, 0, 0, 0, -1, -1, -1, -1, -1, -1, 1, 1, 1, 1, 1, 1, -1, -1, -1, -1],
-            ]
-        ).to(env.DEVICE)
+            ],
+            device=env.DEVICE,
+        )
 
     def test_build_notype(self):
         ecoord, eatype, mapping = extend_coord_with_ghosts(
@@ -174,39 +175,39 @@ class TestNeighList(unittest.TestCase):
         mm, cc = torch.unique(shift_vec[0][:, 0], dim=-1, return_counts=True)
         torch.testing.assert_close(
             mm,
-            torch.tensor([-2, -1, 0, 1, 2], dtype=dtype).to(env.DEVICE),
+            torch.tensor([-2, -1, 0, 1, 2], dtype=dtype, device=env.DEVICE),
             rtol=self.prec,
             atol=self.prec,
         )
         torch.testing.assert_close(
             cc,
-            torch.tensor([30, 30, 30, 30, 30], dtype=torch.long).to(env.DEVICE),
+            torch.tensor([30, 30, 30, 30, 30], dtype=torch.long, device=env.DEVICE),
             rtol=self.prec,
             atol=self.prec,
         )
         mm, cc = torch.unique(shift_vec[1][:, 1], dim=-1, return_counts=True)
         torch.testing.assert_close(
             mm,
-            torch.tensor([-2, -1, 0, 1, 2], dtype=dtype).to(env.DEVICE),
+            torch.tensor([-2, -1, 0, 1, 2], dtype=dtype, device=env.DEVICE),
             rtol=self.prec,
             atol=self.prec,
         )
         torch.testing.assert_close(
             cc,
-            torch.tensor([30, 30, 30, 30, 30], dtype=torch.long).to(env.DEVICE),
+            torch.tensor([30, 30, 30, 30, 30], dtype=torch.long, device=env.DEVICE),
             rtol=self.prec,
             atol=self.prec,
         )
         mm, cc = torch.unique(shift_vec[1][:, 2], dim=-1, return_counts=True)
         torch.testing.assert_close(
             mm,
-            torch.tensor([-1, 0, 1], dtype=dtype).to(env.DEVICE),
+            torch.tensor([-1, 0, 1], dtype=dtype, device=env.DEVICE),
             rtol=self.prec,
             atol=self.prec,
         )
         torch.testing.assert_close(
             cc,
-            torch.tensor([50, 50, 50], dtype=torch.long).to(env.DEVICE),
+            torch.tensor([50, 50, 50], dtype=torch.long, device=env.DEVICE),
             rtol=self.prec,
             atol=self.prec,
         )

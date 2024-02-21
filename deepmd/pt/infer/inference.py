@@ -171,7 +171,8 @@ class Tester:
 
     @staticmethod
     def get_data(data):
-        batch_data = next(iter(data))
+        with torch.device("cpu"):
+            batch_data = next(iter(data))
         for key in batch_data.keys():
             if key == "sid" or key == "fid":
                 continue
@@ -235,7 +236,8 @@ class Tester:
                 ),  # setting to 0 diverges the behavior of its iterator; should be >=1
                 drop_last=False,
             )
-            data = iter(dataloader)
+            with torch.device("cpu"):
+                data = iter(dataloader)
 
             single_results = {}
             sum_natoms = 0
