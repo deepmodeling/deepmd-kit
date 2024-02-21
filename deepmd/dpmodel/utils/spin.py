@@ -95,7 +95,7 @@ class BaseSpin(ABC):
         """Returns the list of whether to use spin for each atom type."""
         return self.use_spin
 
-    def get_virtual_scale(self) -> List[float]:
+    def get_virtual_scale(self) -> np.ndarray:
         """Returns the list of magnitude of atomic spin for each atom type."""
         return self.virtual_scale
 
@@ -104,28 +104,26 @@ class BaseSpin(ABC):
         Initialize the pair-wise exclusion types for descriptor.
         The placeholder types for those without spin are excluded.
         """
-        self.pair_exclude_types = []
-        for ti in self.placeholder_type:
-            for tj in self.input_type:
-                self.pair_exclude_types.append((ti, tj))
+        ti_grid, tj_grid = np.meshgrid(
+            self.placeholder_type, self.input_type, indexing="ij"
+        )
+        self.pair_exclude_types = (
+            np.stack((ti_grid, tj_grid), axis=-1).reshape(-1, 2).tolist()
+        )
 
     def init_atom_exclude_types_placeholder_spin(self) -> None:
         """
         Initialize the atom-wise exclusion types for fitting.
         Both the placeholder types and spin types are excluded.
         """
-        self.atom_exclude_types_ps = []
-        for ti in self.spin_placeholder_type:
-            self.atom_exclude_types_ps.append(ti)
+        self.atom_exclude_types_ps = self.spin_placeholder_type.tolist()
 
     def init_atom_exclude_types_placeholder(self) -> None:
         """
         Initialize the atom-wise exclusion types for fitting.
         The placeholder types for those without spin are excluded.
         """
-        self.atom_exclude_types_p = []
-        for ti in self.placeholder_type:
-            self.atom_exclude_types_p.append(ti)
+        self.atom_exclude_types_p = self.placeholder_type.tolist()
 
     def get_pair_exclude_types(self, exclude_types=None) -> List[Tuple[int, int]]:
         """
