@@ -102,3 +102,24 @@ class TensorFlowBackend(Backend):
         )
 
         return NeighborStat
+
+    @property
+    def serialize_hook(self) -> Callable[[str], dict]:
+        """The serialize hook to convert the model file to a dictionary.
+
+        Returns
+        -------
+        Callable[[str], dict]
+            The serialize hook of the backend.
+        """
+
+    @property
+    def deserialize_hook(self) -> Callable[[dict], str]:
+        """The deserialize hook to convert the dictionary to a model file.
+
+        Returns
+        -------
+        Callable[[dict], str]
+            The deserialize hook of the backend.
+        """
+        pass
