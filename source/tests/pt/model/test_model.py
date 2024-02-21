@@ -333,10 +333,14 @@ class TestEnergy(unittest.TestCase):
                 # print(dst.mean(), dst.std())
                 dst.copy_(src)
         # Start forward computing
-        batch = my_ds.systems[0]._data_system.single_preprocess(batch, 0)
+        tmp = np.copy(batch["natoms_vec"])
+        batch = my_ds.systems[0]._data_system._get_subdata(batch, 0)
+        batch = my_ds.systems[0]._data_system.reformat_data_torch(batch)
         for key in ["coord", "atype", "box", "energy", "force"]:
+            batch[key] = torch.as_tensor(batch[key])
             batch[key] = batch[key].unsqueeze(0)
         batch["coord"].requires_grad_(True)
+        batch["natoms_vec"] = tmp
         batch["natoms"] = torch.tensor(
             batch["natoms_vec"], device=batch["coord"].device
         ).unsqueeze(0)
