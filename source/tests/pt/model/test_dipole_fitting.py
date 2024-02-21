@@ -298,10 +298,10 @@ class TestDipoleModel(unittest.TestCase):
         self.rcut_smth = 0.5
         self.sel = [46, 92, 4]
         self.nf = 1
-        self.coord = 2 * torch.rand([self.natoms, 3], dtype=dtype).to(env.DEVICE)
-        cell = torch.rand([3, 3], dtype=dtype).to(env.DEVICE)
-        self.cell = (cell + cell.T) + 5.0 * torch.eye(3).to(env.DEVICE)
-        self.atype = torch.IntTensor([0, 0, 0, 1, 1]).to(env.DEVICE)
+        self.coord = 2 * torch.rand([self.natoms, 3], dtype=dtype, device=env.DEVICE)
+        cell = torch.rand([3, 3], dtype=dtype, device=env.DEVICE)
+        self.cell = (cell + cell.T) + 5.0 * torch.eye(3, device=env.DEVICE)
+        self.atype = torch.IntTensor([0, 0, 0, 1, 1], device=env.DEVICE)
         self.dd0 = DescrptSeA(self.rcut, self.rcut_smth, self.sel).to(env.DEVICE)
         self.ft0 = DipoleFittingNet(
             "dipole",
