@@ -36,14 +36,19 @@ class DipoleModel(DPModel):
             box,
             fparam=fparam,
             aparam=aparam,
-            do_atomic_virial=False,
+            do_atomic_virial=do_atomic_virial,
         )
         if self.fitting_net is not None:
             model_predict = {}
-            model_predict["atom_dipole"] = model_ret["dipole"]
-            model_predict["dipole"] = model_ret["dipole_redu"]
+            model_predict["dipole"] = model_ret["dipole"]
+            model_predict["global_dipole"] = model_ret["dipole_redu"]
             if self.do_grad("dipole"):
-                model_predict["dipole_grad_r"] = model_ret["dipole_derv_r"].squeeze(-2)
+                model_predict["force"] = model_ret["dipole_derv_r"].squeeze(-2)
+                if do_atomic_virial:
+                    model_predict["atom_virial"] = model_ret["dipole_derv_c"].squeeze(
+                        -3
+                    )
+                model_predict["virial"] = model_ret["dipole_derv_c_redu"].squeeze(-2)
         else:
             model_predict = model_ret
             model_predict["updated_coord"] += coord
@@ -70,8 +75,15 @@ class DipoleModel(DPModel):
         )
         if self.fitting_net is not None:
             model_predict = {}
-            model_predict["atom_dipole"] = model_ret["dipole"]
-            model_predict["energy"] = model_ret["energy_redu"]
+            model_predict["dipole"] = model_ret["dipole"]
+            model_predict["global_dipole"] = model_ret["dipole_redu"]
+            if self.do_grad("dipole"):
+                model_predict["force"] = model_ret["dipole_derv_r"].squeeze(-2)
+                if do_atomic_virial:
+                    model_predict["atom_virial"] = model_ret["dipole_derv_c"].squeeze(
+                        -3
+                    )
+                model_predict["virial"] = model_ret["dipole_derv_c_redu"].squeeze(-2)
         else:
             model_predict = model_ret
         return model_predict

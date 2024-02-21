@@ -81,7 +81,7 @@ class DipoleFittingNet(GeneralFitting):
         seed: Optional[int] = None,
         exclude_types: List[int] = [],
         r_differentiable: bool = True,
-        c_differentiable: bool = False,
+        c_differentiable: bool = True,
         **kwargs,
     ):
         self.embedding_width = embedding_width

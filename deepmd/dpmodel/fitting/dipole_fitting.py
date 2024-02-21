@@ -100,7 +100,7 @@ class DipoleFitting(GeneralFitting):
         mixed_types: bool = False,
         exclude_types: List[int] = [],
         r_differentiable: bool = True,
-        c_differentiable: bool = False,
+        c_differentiable: bool = True,
         old_impl=False,
     ):
         # seed, uniform_seed are not included
