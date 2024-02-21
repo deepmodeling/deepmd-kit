@@ -30,6 +30,8 @@ class DeepmdDataSetForLoader(Dataset):
         self._data_system.add("energy", 1, atomic=False, must=False, high_prec=True)
         self._data_system.add("force", 3, atomic=True, must=False, high_prec=False)
         self._data_system.add("virial", 9, atomic=False, must=False, high_prec=False)
+        self._data_system.add("spin", 3, atomic=True, must=False, high_prec=False)
+        self._data_system.add("force_mag", 3, atomic=True, must=False, high_prec=False)
         self.mixed_type = self._data_system.mixed_type
         self._ntypes = self._data_system.get_ntypes()
         self._natoms = self._data_system.get_natoms()
