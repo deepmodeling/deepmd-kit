@@ -61,7 +61,7 @@ class CheckSymmetry(DeepmdData):
 def get_data(batch):
     inputs = {}
     for key in ["coord", "atype", "box"]:
-        inputs[key] = torch.as_tensor(batch[key])
+        inputs[key] = torch.as_tensor(batch[key], device=env.DEVICE)
         inputs[key] = inputs[key].unsqueeze(0).to(env.DEVICE)
     return inputs
 
