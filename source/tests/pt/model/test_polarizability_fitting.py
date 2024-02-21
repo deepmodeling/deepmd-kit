@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import itertools
+import os
 import unittest
 
-import os
 import numpy as np
 import torch
 from scipy.stats import (
@@ -10,20 +10,20 @@ from scipy.stats import (
 )
 
 from deepmd.dpmodel.fitting import PolarFitting as DPPolarFitting
+from deepmd.infer.deep_polar import (
+    DeepPolar,
+)
 from deepmd.pt.model.descriptor.se_a import (
     DescrptSeA,
+)
+from deepmd.pt.model.model.polar_model import (
+    PolarModel,
 )
 from deepmd.pt.model.task.polarizability import (
     PolarFittingNet,
 )
-from deepmd.infer.deep_polar import (
-    DeepPolar,
-)
 from deepmd.pt.utils import (
     env,
-)
-from deepmd.pt.model.model.polar_model import (
-    PolarModel,
 )
 from deepmd.pt.utils.nlist import (
     extend_input_and_build_neighbor_list,
@@ -314,6 +314,7 @@ class TestEquivalence(unittest.TestCase):
 
             np.testing.assert_allclose(to_numpy_array(res[0]), to_numpy_array(res[1]))
 
+
 class TestDipoleModel(unittest.TestCase):
     def setUp(self):
         self.natoms = 5
@@ -339,7 +340,7 @@ class TestDipoleModel(unittest.TestCase):
         self.type_mapping = ["O", "H", "B"]
         self.model = PolarModel(self.dd0, self.ft0, self.type_mapping)
         self.file_path = "model_output.pth"
-    
+
     def test_deepdipole_infer(self):
         atype = self.atype.view(self.nf, self.natoms)
         coord = self.coord.reshape(1, 5, 3)
@@ -353,6 +354,7 @@ class TestDipoleModel(unittest.TestCase):
     def tearDown(self) -> None:
         if os.path.exists(self.file_path):
             os.remove(self.file_path)
+
 
 if __name__ == "__main__":
     unittest.main()
