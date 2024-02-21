@@ -13,9 +13,8 @@ from ..common import (
 )
 
 if INSTALLED_PT:
-    import torch
-
-    from deepmd.pt.utils.env import DEVICE as PT_DEVICE
+    from deepmd.pt.utils.utils import to_numpy_array as torch_to_numpy
+    from deepmd.pt.utils.utils import to_torch_tensor as numpy_to_torch
 if INSTALLED_TF:
     from deepmd.tf.env import (
         GLOBAL_TF_FLOAT_PRECISION,
@@ -56,10 +55,10 @@ class ModelTest:
 
     def eval_pt_model(self, pt_obj: Any, natoms, coords, atype, box) -> Any:
         return {
-            kk: vv.detach().cpu().numpy() if torch.is_tensor(vv) else vv
+            kk: torch_to_numpy(vv)
             for kk, vv in pt_obj(
-                torch.from_numpy(coords).to(PT_DEVICE),
-                torch.from_numpy(atype).to(PT_DEVICE),
-                box=torch.from_numpy(box).to(PT_DEVICE),
+                numpy_to_torch(coords),
+                numpy_to_torch(atype),
+                box=numpy_to_torch(box),
             ).items()
         }
