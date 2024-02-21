@@ -146,7 +146,7 @@ class DPAtomicModel(torch.nn.Module, BaseAtomicModel):
         """
         nframes, nloc, nnei = nlist.shape
         atype = extended_atype[:, :nloc]
-        if self.do_grad():
+        if self.do_grad_r() or self.do_grad_c():
             extended_coord.requires_grad_(True)
         descriptor, rot_mat, g2, h2, sw = self.descriptor(
             extended_coord,

@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import itertools
+import os
 import unittest
 
 import numpy as np
@@ -9,8 +10,14 @@ from scipy.stats import (
 )
 
 from deepmd.dpmodel.fitting import DipoleFitting as DPDipoleFitting
+from deepmd.infer.deep_dipole import (
+    DeepDipole,
+)
 from deepmd.pt.model.descriptor.se_a import (
     DescrptSeA,
+)
+from deepmd.pt.model.model.dipole_model import (
+    DipoleModel,
 )
 from deepmd.pt.model.task.dipole import (
     DipoleFittingNet,
@@ -30,6 +37,20 @@ from .test_env_mat import (
 )
 
 dtype = env.GLOBAL_PT_FLOAT_PRECISION
+
+
+def finite_difference(f, x, a, delta=1e-6):
+    in_shape = x.shape
+    y0 = f(x, a)
+    out_shape = y0.shape
+    res = np.empty(out_shape + in_shape)
+    for idx in np.ndindex(*in_shape):
+        diff = np.zeros(in_shape)
+        diff[idx] += delta
+        y1p = f(x + diff, a)
+        y1n = f(x - diff, a)
+        res[(Ellipsis, *idx)] = (y1p - y1n) / (2 * delta)
+    return res
 
 
 class TestDipoleFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
@@ -267,6 +288,62 @@ class TestEquivalence(unittest.TestCase):
             res.append(ret0["foo"])
 
         np.testing.assert_allclose(to_numpy_array(res[0]), to_numpy_array(res[1]))
+
+
+class TestDipoleModel(unittest.TestCase):
+    def setUp(self):
+        self.natoms = 5
+        self.rcut = 4.0
+        self.nt = 3
+        self.rcut_smth = 0.5
+        self.sel = [46, 92, 4]
+        self.nf = 1
+        self.coord = 2 * torch.rand([self.natoms, 3], dtype=dtype, device="cpu")
+        cell = torch.rand([3, 3], dtype=dtype, device="cpu")
+        self.cell = (cell + cell.T) + 5.0 * torch.eye(3, device="cpu")
+        self.atype = torch.IntTensor([0, 0, 0, 1, 1], device="cpu")
+        self.dd0 = DescrptSeA(self.rcut, self.rcut_smth, self.sel).to(env.DEVICE)
+        self.ft0 = DipoleFittingNet(
+            "dipole",
+            self.nt,
+            self.dd0.dim_out,
+            embedding_width=self.dd0.get_dim_emb(),
+            numb_fparam=0,
+            numb_aparam=0,
+            mixed_types=True,
+        ).to(env.DEVICE)
+        self.type_mapping = ["O", "H", "B"]
+        self.model = DipoleModel(self.dd0, self.ft0, self.type_mapping)
+        self.file_path = "model_output.pth"
+
+    def test_auto_diff(self):
+        places = 5
+        delta = 1e-5
+        atype = self.atype.view(self.nf, self.natoms)
+
+        def ff(coord, atype):
+            return self.model(coord, atype)["global_dipole"].detach().cpu().numpy()
+
+        fdf = -finite_difference(ff, self.coord, atype, delta=delta)
+        rff = self.model(self.coord, atype)["force"].detach().cpu().numpy()
+
+        np.testing.assert_almost_equal(fdf, rff.transpose(0, 2, 1, 3), decimal=places)
+
+    def test_deepdipole_infer(self):
+        atype = self.atype.view(self.nf, self.natoms)
+        coord = self.coord.reshape(1, 5, 3)
+        cell = self.cell.reshape(1, 9)
+        jit_md = torch.jit.script(self.model)
+        torch.jit.save(jit_md, self.file_path)
+        load_md = DeepDipole(self.file_path)
+        load_md.eval(coords=coord, atom_types=atype, cells=cell, atomic=True)
+        load_md.eval(coords=coord, atom_types=atype, cells=cell, atomic=False)
+        load_md.eval_full(coords=coord, atom_types=atype, cells=cell, atomic=True)
+        load_md.eval_full(coords=coord, atom_types=atype, cells=cell, atomic=False)
+
+    def tearDown(self) -> None:
+        if os.path.exists(self.file_path):
+            os.remove(self.file_path)
 
 
 if __name__ == "__main__":

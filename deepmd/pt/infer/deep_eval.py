@@ -373,6 +373,9 @@ class DeepEval(DeepEvalBackend):
                 shape = self._get_output_shape(odef, nframes, natoms)
                 out = batch_output[pt_name].reshape(shape).detach().cpu().numpy()
                 results.append(out)
+            else:
+                shape = self._get_output_shape(odef, nframes, natoms)
+                results.append(np.full(np.abs(shape), np.nan))  # this is kinda hacky
         return tuple(results)
 
     def _get_output_shape(self, odef, nframes, natoms):
