@@ -375,7 +375,7 @@ class DeepEval(DeepEvalBackend):
                 results.append(out)
             else:
                 shape = self._get_output_shape(odef, nframes, natoms)
-                results.append(np.full(np.abs(shape), np.nan)) # this is kinda hacky
+                results.append(np.full(np.abs(shape), np.nan))  # this is kinda hacky
         return tuple(results)
 
     def _get_output_shape(self, odef, nframes, natoms):
