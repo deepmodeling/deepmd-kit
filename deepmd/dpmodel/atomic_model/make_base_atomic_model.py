@@ -134,7 +134,7 @@ def make_base_atomic_model(
                 return any(require)
             else:
                 return self.do_grad_(var_name, "r")
-        
+
         def do_grad_c(
             self,
             var_name: Optional[str] = None,
@@ -152,11 +152,7 @@ def make_base_atomic_model(
             else:
                 return self.do_grad_(var_name, "c")
 
-        def do_grad_(
-            self,
-            var_name: str,
-            base: str
-        ) -> bool:
+        def do_grad_(self, var_name: str, base: str) -> bool:
             """Tell if the output variable `var_name` is differentiable."""
             assert var_name is not None
             assert base in ["c", "r"]
