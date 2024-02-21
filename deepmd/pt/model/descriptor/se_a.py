@@ -448,6 +448,7 @@ class DescrptBlockSeA(DescriptorBlock):
             )  # shape is [nframes*nall, self.ndescrpt]
             xyz_scatter = torch.empty(
                 1,
+                device=env.DEVICE,
             )
             ret = self.filter_layers_old[0](dmatrix)
             xyz_scatter = ret

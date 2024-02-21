@@ -343,13 +343,17 @@ class DeepEval(DeepEvalBackend):
             natoms = len(atom_types[0])
 
         coord_input = torch.tensor(
-            coords.reshape([-1, natoms, 3]), dtype=GLOBAL_PT_FLOAT_PRECISION
-        ).to(DEVICE)
-        type_input = torch.tensor(atom_types, dtype=torch.long).to(DEVICE)
+            coords.reshape([-1, natoms, 3]),
+            dtype=GLOBAL_PT_FLOAT_PRECISION,
+            device=DEVICE,
+        )
+        type_input = torch.tensor(atom_types, dtype=torch.long, device=DEVICE)
         if cells is not None:
             box_input = torch.tensor(
-                cells.reshape([-1, 3, 3]), dtype=GLOBAL_PT_FLOAT_PRECISION
-            ).to(DEVICE)
+                cells.reshape([-1, 3, 3]),
+                dtype=GLOBAL_PT_FLOAT_PRECISION,
+                device=DEVICE,
+            )
         else:
             box_input = None
 
@@ -420,7 +424,7 @@ def eval_model(
         if cells is not None:
             assert isinstance(cells, torch.Tensor), err_msg
         assert isinstance(atom_types, torch.Tensor) or isinstance(atom_types, list)
-        atom_types = torch.tensor(atom_types, dtype=torch.long).to(DEVICE)
+        atom_types = torch.tensor(atom_types, dtype=torch.long, device=DEVICE)
     elif isinstance(coords, np.ndarray):
         if cells is not None:
             assert isinstance(cells, np.ndarray), err_msg
@@ -441,17 +445,17 @@ def eval_model(
         natoms = len(atom_types[0])
 
     coord_input = torch.tensor(
-        coords.reshape([-1, natoms, 3]), dtype=GLOBAL_PT_FLOAT_PRECISION
-    ).to(DEVICE)
-    type_input = torch.tensor(atom_types, dtype=torch.long).to(DEVICE)
+        coords.reshape([-1, natoms, 3]), dtype=GLOBAL_PT_FLOAT_PRECISION, device=DEVICE
+    )
+    type_input = torch.tensor(atom_types, dtype=torch.long, device=DEVICE)
     box_input = None
     if cells is None:
         pbc = False
     else:
         pbc = True
         box_input = torch.tensor(
-            cells.reshape([-1, 3, 3]), dtype=GLOBAL_PT_FLOAT_PRECISION
-        ).to(DEVICE)
+            cells.reshape([-1, 3, 3]), dtype=GLOBAL_PT_FLOAT_PRECISION, device=DEVICE
+        )
     num_iter = int((nframes + infer_batch_size - 1) / infer_batch_size)
 
     for ii in range(num_iter):
@@ -527,35 +531,37 @@ def eval_model(
         energy_out = (
             torch.cat(energy_out)
             if energy_out
-            else torch.zeros([nframes, 1], dtype=GLOBAL_PT_FLOAT_PRECISION).to(DEVICE)
+            else torch.zeros(
+                [nframes, 1], dtype=GLOBAL_PT_FLOAT_PRECISION, device=DEVICE
+            )
         )
         atomic_energy_out = (
             torch.cat(atomic_energy_out)
             if atomic_energy_out
-            else torch.zeros([nframes, natoms, 1], dtype=GLOBAL_PT_FLOAT_PRECISION).to(
-                DEVICE
+            else torch.zeros(
+                [nframes, natoms, 1], dtype=GLOBAL_PT_FLOAT_PRECISION, device=DEVICE
             )
         )
         force_out = (
             torch.cat(force_out)
             if force_out
-            else torch.zeros([nframes, natoms, 3], dtype=GLOBAL_PT_FLOAT_PRECISION).to(
-                DEVICE
+            else torch.zeros(
+                [nframes, natoms, 3], dtype=GLOBAL_PT_FLOAT_PRECISION, device=DEVICE
             )
         )
         virial_out = (
             torch.cat(virial_out)
             if virial_out
-            else torch.zeros([nframes, 3, 3], dtype=GLOBAL_PT_FLOAT_PRECISION).to(
-                DEVICE
+            else torch.zeros(
+                [nframes, 3, 3], dtype=GLOBAL_PT_FLOAT_PRECISION, device=DEVICE
             )
         )
         atomic_virial_out = (
             torch.cat(atomic_virial_out)
             if atomic_virial_out
             else torch.zeros(
-                [nframes, natoms, 3, 3], dtype=GLOBAL_PT_FLOAT_PRECISION
-            ).to(DEVICE)
+                [nframes, natoms, 3, 3], dtype=GLOBAL_PT_FLOAT_PRECISION, device=DEVICE
+            )
         )
         updated_coord_out = torch.cat(updated_coord_out) if updated_coord_out else None
         logits_out = torch.cat(logits_out) if logits_out else None
