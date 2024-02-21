@@ -322,10 +322,10 @@ class TestDipoleModel(unittest.TestCase):
         atype = self.atype.view(self.nf, self.natoms)
 
         def ff(coord, atype):
-            return self.model(coord, atype)["global_dipole"].detach().numpy()
+            return self.model(coord, atype)["global_dipole"].detach().cpu().numpy()
 
         fdf = -finite_difference(ff, self.coord, atype, delta=delta)
-        rff = self.model(self.coord, atype)["force"].detach().numpy()
+        rff = self.model(self.coord, atype)["force"].detach().cpu().numpy()
 
         np.testing.assert_almost_equal(fdf, rff.transpose(0, 2, 1, 3), decimal=places)
 
