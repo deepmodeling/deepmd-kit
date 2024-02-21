@@ -256,7 +256,6 @@ class DescrptBlockSeAtten(DescriptorBlock):
         )
         # [nfxnlocxnnei, self.ndescrpt]
         dmatrix = dmatrix.view(-1, self.ndescrpt)
-        dmatrix = dmatrix.to(dtype=self.prec)
         nlist_mask = nlist != -1
         nlist[nlist == -1] = 0
         sw = torch.squeeze(sw, -1)
@@ -299,18 +298,10 @@ class DescrptBlockSeAtten(DescriptorBlock):
             xyz_scatter_1, xyz_scatter_2
         )  # shape is [nframes*nloc, self.filter_neuron[-1], self.axis_neuron]
         return (
-            result.view(-1, nloc, self.filter_neuron[-1] * self.axis_neuron).to(
-                dtype=env.GLOBAL_PT_FLOAT_PRECISION
-            ),
-            ret.view(-1, nloc, self.nnei, self.filter_neuron[-1]).to(
-                dtype=env.GLOBAL_PT_FLOAT_PRECISION
-            ),
-            dmatrix.view(-1, nloc, self.nnei, 4)[..., 1:].to(
-                dtype=env.GLOBAL_PT_FLOAT_PRECISION
-            ),
-            rot_mat.view(-1, self.filter_neuron[-1], 3).to(
-                dtype=env.GLOBAL_PT_FLOAT_PRECISION
-            ),
+            result.view(-1, nloc, self.filter_neuron[-1] * self.axis_neuron),
+            ret.view(-1, nloc, self.nnei, self.filter_neuron[-1]),
+            dmatrix.view(-1, nloc, self.nnei, 4)[..., 1:],
+            rot_mat.view(-1, self.filter_neuron[-1], 3),
             sw,
         )
 
