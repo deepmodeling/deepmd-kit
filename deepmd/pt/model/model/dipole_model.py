@@ -42,13 +42,14 @@ class DipoleModel(DPModel):
             model_predict = {}
             model_predict["dipole"] = model_ret["dipole"]
             model_predict["global_dipole"] = model_ret["dipole_redu"]
-            if self.do_grad("dipole"):
+            if self.do_grad_r("dipole"):
                 model_predict["force"] = model_ret["dipole_derv_r"].squeeze(-2)
+            if self.do_grad_c("dipole"):
+                model_predict["virial"] = model_ret["dipole_derv_c_redu"].squeeze(-2)
                 if do_atomic_virial:
                     model_predict["atom_virial"] = model_ret["dipole_derv_c"].squeeze(
                         -3
                     )
-                model_predict["virial"] = model_ret["dipole_derv_c_redu"].squeeze(-2)
         else:
             model_predict = model_ret
             model_predict["updated_coord"] += coord
@@ -77,13 +78,14 @@ class DipoleModel(DPModel):
             model_predict = {}
             model_predict["dipole"] = model_ret["dipole"]
             model_predict["global_dipole"] = model_ret["dipole_redu"]
-            if self.do_grad("dipole"):
+            if self.do_grad_r("dipole"):
                 model_predict["force"] = model_ret["dipole_derv_r"].squeeze(-2)
+            if self.do_grad_c("dipole"):
+                model_predict["virial"] = model_ret["dipole_derv_c_redu"].squeeze(-2)
                 if do_atomic_virial:
                     model_predict["atom_virial"] = model_ret["dipole_derv_c"].squeeze(
                         -3
                     )
-                model_predict["virial"] = model_ret["dipole_derv_c_redu"].squeeze(-2)
         else:
             model_predict = model_ret
         return model_predict

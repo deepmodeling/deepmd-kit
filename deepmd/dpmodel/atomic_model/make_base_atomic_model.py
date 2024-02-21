@@ -118,33 +118,51 @@ def make_base_atomic_model(
         def deserialize(cls):
             pass
 
-        def do_grad(
+        def do_grad_r(
             self,
             var_name: Optional[str] = None,
         ) -> bool:
-            """Tell if the output variable `var_name` is differentiable.
-            if var_name is None, returns if any of the variable is differentiable.
+            """Tell if the output variable `var_name` is r_differentiable.
+            if var_name is None, returns if any of the variable is r_differentiable.
 
             """
             odef = self.fitting_output_def()
             if var_name is None:
                 require: List[bool] = []
                 for vv in odef.keys():
-                    require.append(self.do_grad_(vv))
+                    require.append(self.do_grad_(vv, "r"))
                 return any(require)
             else:
-                return self.do_grad_(var_name)
+                return self.do_grad_(var_name, "r")
+        
+        def do_grad_c(
+            self,
+            var_name: Optional[str] = None,
+        ) -> bool:
+            """Tell if the output variable `var_name` is c_differentiable.
+            if var_name is None, returns if any of the variable is c_differentiable.
+
+            """
+            odef = self.fitting_output_def()
+            if var_name is None:
+                require: List[bool] = []
+                for vv in odef.keys():
+                    require.append(self.do_grad_(vv, "c"))
+                return any(require)
+            else:
+                return self.do_grad_(var_name, "c")
 
         def do_grad_(
             self,
             var_name: str,
+            base: str
         ) -> bool:
             """Tell if the output variable `var_name` is differentiable."""
             assert var_name is not None
-            return (
-                self.fitting_output_def()[var_name].r_differentiable
-                or self.fitting_output_def()[var_name].c_differentiable
-            )
+            assert base in ["c", "r"]
+            if base == "c":
+                return self.fitting_output_def()[var_name].c_differentiable
+            return self.fitting_output_def()[var_name].r_differentiable
 
     setattr(BAM, fwd_method_name, BAM.fwd)
     delattr(BAM, "fwd")
