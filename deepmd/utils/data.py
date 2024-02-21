@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import bisect
 import logging
 from typing import (
     List,
@@ -129,6 +130,11 @@ class DeepmdData:
         self.shuffle_test = shuffle_test
         # set modifier
         self.modifier = modifier
+        # calculate prefix sum for get_item method
+        frames_list = [self._get_nframes(item) for item in self.dirs]
+        self.nframes = np.sum(frames_list)
+        # The prefix sum stores the range of indices contained in each directory, which is needed by get_item method
+        self.prefix_sum = np.cumsum(frames_list).tolist()
 
     def add(
         self,
@@ -248,6 +254,21 @@ class DeepmdData:
             return self.test_dir, tmpe.shape[0]
         else:
             return None
+
+    def get_item_torch(self, index: int) -> dict:
+        """Get a single frame data . The frame is picked from the data system by index. The index is coded across all the sets.
+
+        Parameters
+        ----------
+        index
+            index of the frame
+        """
+        i = bisect.bisect_right(self.prefix_sum, index)
+        frames = self._load_set(self.dirs[i])
+        frame = self._get_subdata(frames, index - self.prefix_sum[i])
+        frame = self.reformat_data_torch(frame)
+        frame["fid"] = index
+        return frame
 
     def get_batch(self, batch_size: int) -> dict:
         """Get a batch of data with `batch_size` frames. The frames are randomly picked from the data system.
@@ -439,6 +460,37 @@ class DeepmdData:
             else:
                 ret[kk] = data[kk]
         return ret, idx
+
+    def _get_nframes(self, set_name: DPPath):
+        # get nframes
+        if not isinstance(set_name, DPPath):
+            set_name = DPPath(set_name)
+        path = set_name / "coord.npy"
+        if self.data_dict["coord"]["high_prec"]:
+            coord = path.load_numpy().astype(GLOBAL_ENER_FLOAT_PRECISION)
+        else:
+            coord = path.load_numpy().astype(GLOBAL_NP_FLOAT_PRECISION)
+        if coord.ndim == 1:
+            coord = coord.reshape([1, -1])
+        nframes = coord.shape[0]
+        return nframes
+
+    def reformat_data_torch(self, data):
+        """Modify the data format for the requirements of Torch backend.
+
+        Parameters
+        ----------
+        data
+            original data
+        """
+        for kk in self.data_dict.keys():
+            if "find_" in kk:
+                pass
+            else:
+                if self.data_dict[kk]["atomic"]:
+                    data[kk] = data[kk].reshape(-1, self.data_dict[kk]["ndof"])
+        data["atype"] = data["type"]
+        return data
 
     def _load_set(self, set_name: DPPath):
         # get nframes

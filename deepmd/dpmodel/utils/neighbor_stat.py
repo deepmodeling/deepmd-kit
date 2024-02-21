@@ -115,7 +115,7 @@ class NeighborStat(BaseNeighborStat):
         The num of atom types
     rcut : float
         The cut-off radius
-    one_type : bool, optional, default=False
+    mixed_type : bool, optional, default=False
         Treat all types as a single type.
     """
 
@@ -123,10 +123,10 @@ class NeighborStat(BaseNeighborStat):
         self,
         ntypes: int,
         rcut: float,
-        one_type: bool = False,
+        mixed_type: bool = False,
     ) -> None:
-        super().__init__(ntypes, rcut, one_type)
-        self.op = NeighborStatOP(ntypes, rcut, not one_type)
+        super().__init__(ntypes, rcut, mixed_type)
+        self.op = NeighborStatOP(ntypes, rcut, mixed_type)
 
     def iterator(
         self, data: DeepmdDataSystem

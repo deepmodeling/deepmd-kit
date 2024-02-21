@@ -8,9 +8,13 @@ from .invar_fitting import (
 from .make_base_fitting import (
     make_base_fitting,
 )
+from .polarizability_fitting import (
+    PolarFitting,
+)
 
 __all__ = [
     "InvarFitting",
     "make_base_fitting",
     "DipoleFitting",
+    "PolarFitting",
 ]
