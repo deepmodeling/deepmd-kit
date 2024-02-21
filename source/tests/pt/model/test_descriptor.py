@@ -113,9 +113,6 @@ class TestSeA(unittest.TestCase):
         ds = DeepmdDataSetForLoader(
             self.systems[0],
             model_config["type_map"],
-            self.rcut,
-            self.sel,
-            type_split=True,
         )
         self.np_batch, self.pt_batch = get_single_batch(ds)
         self.sec = np.cumsum(self.sel)

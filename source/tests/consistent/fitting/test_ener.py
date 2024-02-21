@@ -183,3 +183,19 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
             return 1e-4
         else:
             raise ValueError(f"Unknown precision: {precision}")
+
+    @property
+    def atol(self) -> float:
+        """Absolute tolerance for comparing the return value."""
+        (
+            resnet_dt,
+            precision,
+            mixed_types,
+            numb_fparam,
+        ) = self.param
+        if precision == "float64":
+            return 1e-10
+        elif precision == "float32":
+            return 1e-4
+        else:
+            raise ValueError(f"Unknown precision: {precision}")
