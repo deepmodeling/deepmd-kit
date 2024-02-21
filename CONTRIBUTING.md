@@ -38,7 +38,7 @@ Currently, we maintain two main branch:
 - devel :  branch for developers
 
 ### Developer guide
-See [here](doc/development/index.md) for coding conventions, API and other needs-to-know of the code.
+See [documentation](https://deepmd.readthedocs.io/) for coding conventions, API and other needs-to-know of the code.
 
 ## How to contribute
 Please perform the following steps to create your Pull Request to this repository. If don't like to use commands, you can also use [GitHub Desktop](https://desktop.github.com/), which is easier to get started. Go to [git documentation](https://git-scm.com/doc) if you want to really master git.

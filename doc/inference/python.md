@@ -26,9 +26,14 @@ graphs = [DP("graph.000.pb"), DP("graph.001.pb")]
 model_devi = calc_model_devi(coord, cell, atype, graphs)
 ```
 
-Note that if the model inference or model deviation is performed cyclically, one should avoid calling the same model multiple times. Otherwise, tensorFlow will never release the memory and this may lead to an out-of-memory (OOM) error.
+Note that if the model inference or model deviation is performed cyclically, one should avoid calling the same model multiple times.
+Otherwise, TensorFlow or PyTorch will never release the memory, and this may lead to an out-of-memory (OOM) error.
 
-## External neighbor list algorithm
+## External neighbor list algorithm {{ tensorflow_icon }}
+
+:::{note}
+**Supported backends**: TensorFlow {{ tensorflow_icon }}
+:::
 
 The native neighbor list algorithm of the DeePMD-kit is in $O(N^2)$ complexity ($N$ is the number of atoms).
 While this is not a problem for small systems that quantum methods can afford, the large systems for molecular dynamics have slow performance.

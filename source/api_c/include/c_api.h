@@ -26,6 +26,13 @@ extern DP_Nlist* DP_NewNlist(int inum_,
                              int** firstneigh_);
 
 /**
+ * @brief Delete a neighbor list.
+ *
+ * @param nl Neighbor list to delete.
+ */
+extern void DP_DeleteNlist(DP_Nlist* nl);
+
+/**
  * @brief Check if there is any exceptions throw.
  *
  * @param dp The neighbor list to use.
@@ -71,6 +78,13 @@ extern DP_DeepPot* DP_NewDeepPotWithParam2(const char* c_model,
                                            const int gpu_rank,
                                            const char* c_file_content,
                                            const int size_file_content);
+
+/**
+ * @brief Delete a Deep Potential.
+ *
+ * @param dp Deep Potential to delete.
+ */
+extern void DP_DeleteDeepPot(DP_DeepPot* dp);
 
 /**
  * @brief Evaluate the energy, force and virial by using a DP. (double version)
@@ -492,6 +506,13 @@ extern DP_DeepPotModelDevi* DP_NewDeepPotModelDeviWithParam(
     const int* size_file_contents);
 
 /**
+ * @brief Delete a Deep Potential Model Deviation.
+ *
+ * @param dp Deep Potential to delete.
+ */
+extern void DP_DeleteDeepPotModelDevi(DP_DeepPotModelDevi* dp);
+
+/**
  * @brief Evaluate the energy, force and virial by using a DP model deviation
  *with neighbor list. (double version)
  * @param[in] dp The DP model deviation to use.
@@ -791,6 +812,13 @@ extern DP_DeepTensor* DP_NewDeepTensor(const char* c_model);
 extern DP_DeepTensor* DP_NewDeepTensorWithParam(const char* c_model,
                                                 const int gpu_rank,
                                                 const char* c_name_scope);
+
+/**
+ * @brief Delete a Deep Tensor.
+ *
+ * @param dp Deep Tensor to delete.
+ */
+extern void DP_DeleteDeepTensor(DP_DeepTensor* dt);
 
 /**
  * @brief Evaluate the tensor by using a DP. (double version)
@@ -1095,24 +1123,31 @@ extern DP_DipoleChargeModifier* DP_NewDipoleChargeModifierWithParam(
     const char* c_model, const int gpu_rank, const char* c_name_scope);
 
 /**
+ * @brief Delete a Dipole Charge Modifier.
+ *
+ * @param dp Dipole Charge Modifier to delete.
+ */
+extern void DP_DeleteDipoleChargeModifier(DP_DipoleChargeModifier* dcm);
+
+/**
  * @brief Evaluate the force and virial correction by using a dipole charge
  *modifier with the neighbor list. (double version)
  * @param[in] dcm The dipole charge modifier to use.
  * @param[in] natoms The number of atoms.
- * @param[in] coord The coordinates of atoms. The array should be of size natoms
+ * @param[in] coord The coordinates of atoms. The array should be of size nall
  *x 3.
- * @param[in] atype The atom types. The array should contain natoms ints.
+ * @param[in] atype The atom types. The array should contain nall ints.
  * @param[in] cell The cell of the region. The array should be of size 9. Pass
  *NULL if pbc is not used.
  * @param[in] pairs The pairs of atoms. The list should contain npairs pairs of
  *ints.
  * @param[in] npairs The number of pairs.
  * @param[in] delef_ The electric field on each atom. The array should be of
- *size nframes x natoms x 3.
+ *size nframes x nloc x 3.
  * @param[in] nghost The number of ghost atoms.
  * @param[in] nlist The neighbor list.
  * @param[out] dfcorr_ Output force correction. The array should be of size
- *natoms x 3.
+ *nall x 3.
  * @param[out] dvcorr_ Output virial correction. The array should be of size 9.
  * @warning The output arrays should be allocated before calling this function.
  *Pass NULL if not required.

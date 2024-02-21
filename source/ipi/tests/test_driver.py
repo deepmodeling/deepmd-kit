@@ -18,7 +18,7 @@ from ase.calculators.socketio import (
     SocketIOCalculator,
 )
 
-from deepmd.utils.convert import (
+from deepmd.tf.utils.convert import (
     convert_pbtxt_to_pb,
 )
 
@@ -53,7 +53,7 @@ class DPiPICalculator(FileIOCalculator):
         atoms.write(self.xyz_file, format="xyz")
 
 
-class TestDeepPotALargeBoxNoPBC(unittest.TestCase):
+class TestDPIPI(unittest.TestCase):
     # copy from test_deeppot_a.py
     @classmethod
     def setUpClass(cls):
@@ -193,8 +193,8 @@ class TestDeepPotALargeBoxNoPBC(unittest.TestCase):
                 cell=self.box.reshape((3, 3)),
                 calculator=calc,
             )
-        ee = water.get_potential_energy()
-        ff = water.get_forces()
+            ee = water.get_potential_energy()
+            ff = water.get_forces()
         nframes = 1
         np.testing.assert_almost_equal(
             ff.ravel(), self.expected_f.ravel(), default_places
@@ -213,8 +213,38 @@ class TestDeepPotALargeBoxNoPBC(unittest.TestCase):
                 cell=self.box.reshape((3, 3)),
                 calculator=calc,
             )
-        ee = water.get_potential_energy()
-        ff = water.get_forces()
+            ee = water.get_potential_energy()
+            ff = water.get_forces()
+        nframes = 1
+        np.testing.assert_almost_equal(
+            ff.ravel(), self.expected_f.ravel(), default_places
+        )
+        expected_se = np.sum(self.expected_e.reshape([nframes, -1]), axis=1)
+        np.testing.assert_almost_equal(ee.ravel(), expected_se.ravel(), default_places)
+
+    def test_normalize_coords(self):
+        # coordinate nomarlization should happen inside the interface
+        cell = self.box.reshape((3, 3))
+        coord = self.coords.reshape((-1, 3))
+        # random unwrap coords
+        coord[0] += np.array([3, 0, 0]) @ cell
+        coord[1] += np.array([0, -3, 0]) @ cell
+        coord[2] += np.array([0, 0, 3]) @ cell
+        coord[3] += np.array([-3, 0, 0]) @ cell
+        coord[4] += np.array([0, 3, 0]) @ cell
+        coord[5] += np.array([0, 0, -3]) @ cell
+        with SocketIOCalculator(
+            DPiPICalculator(self.model_file, use_unix=False),
+            log=sys.stdout,
+        ) as calc:
+            water = Atoms(
+                "OHHOHH",
+                positions=coord,
+                cell=cell,
+                calculator=calc,
+            )
+            ee = water.get_potential_energy()
+            ff = water.get_forces()
         nframes = 1
         np.testing.assert_almost_equal(
             ff.ravel(), self.expected_f.ravel(), default_places

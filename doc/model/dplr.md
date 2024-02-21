@@ -1,4 +1,8 @@
-# Deep potential long-range (DPLR)
+# Deep potential long-range (DPLR) {{ tensorflow_icon }}
+
+:::{note}
+**Supported backends**: TensorFlow {{ tensorflow_icon }}
+:::
 
 Notice: **The interfaces of DPLR are not stable and subject to change**
 

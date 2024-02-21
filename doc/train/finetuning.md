@@ -1,4 +1,8 @@
-# Finetune the pretrained model
+# Finetune the pretrained model {{ tensorflow_icon }} {{ pytorch_icon }}
+
+:::{note}
+**Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}
+:::
 
 Pretraining-and-finetuning is a widely used approach in other fields such as Computer Vision (CV) or Natural Language Processing (NLP)
 to vastly reduce the training cost, while it's not trivial in potential models.
