@@ -218,8 +218,6 @@ class Tester:
                 [system],
                 self.batchsize,
                 self.model_params,
-                type_split=self.type_split,
-                noise_settings=self.noise_settings,
                 shuffle=self.shuffle_test,
             )
             sampler = RandomSampler(
