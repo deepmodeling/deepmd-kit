@@ -530,7 +530,7 @@ class Descriptor(PluginVariant):
             The deserialized descriptor
         """
         if cls is Descriptor:
-            return Descriptor.get_class_by_input(data).deserialize(data)
+            return Descriptor.get_class_by_input(data).deserialize(data, suffix=suffix)
         raise NotImplementedError("Not implemented in class %s" % cls.__name__)
 
     def serialize(self, suffix: str = "") -> dict:

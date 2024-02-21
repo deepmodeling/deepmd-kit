@@ -2,6 +2,7 @@
 from typing import (
     Callable,
     Optional,
+    overload,
 )
 
 import numpy as np
@@ -51,9 +52,19 @@ class ActivationFn(torch.nn.Module):
             raise RuntimeError(f"activation function {self.activation} not supported")
 
 
+@overload
+def to_numpy_array(xx: torch.Tensor) -> np.ndarray:
+    ...
+
+
+@overload
+def to_numpy_array(xx: None) -> None:
+    ...
+
+
 def to_numpy_array(
-    xx: torch.Tensor,
-) -> np.ndarray:
+    xx,
+):
     if xx is None:
         return None
     assert xx is not None
@@ -67,9 +78,19 @@ def to_numpy_array(
     return xx.detach().cpu().numpy().astype(prec)
 
 
+@overload
+def to_torch_tensor(xx: np.ndarray) -> torch.Tensor:
+    ...
+
+
+@overload
+def to_torch_tensor(xx: None) -> None:
+    ...
+
+
 def to_torch_tensor(
-    xx: np.ndarray,
-) -> torch.Tensor:
+    xx,
+):
     if xx is None:
         return None
     assert xx is not None
