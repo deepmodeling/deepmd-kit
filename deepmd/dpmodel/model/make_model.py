@@ -6,6 +6,9 @@ from typing import (
 
 import numpy as np
 
+from deepmd.dpmodel.common import (
+    NativeOP,
+)
 from deepmd.dpmodel.output_def import (
     ModelOutputDef,
 )
@@ -45,7 +48,7 @@ def make_model(T_AtomicModel):
 
     """
 
-    class CM(T_AtomicModel):
+    class CM(T_AtomicModel, NativeOP):
         def __init__(
             self,
             *args,

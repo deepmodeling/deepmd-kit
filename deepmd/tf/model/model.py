@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import copy
 from abc import (
     ABC,
     abstractmethod,
@@ -20,8 +21,20 @@ from deepmd.tf.env import (
     GLOBAL_TF_FLOAT_PRECISION,
     tf,
 )
+from deepmd.tf.fit.dipole import (
+    DipoleFittingSeA,
+)
+from deepmd.tf.fit.dos import (
+    DOSFitting,
+)
+from deepmd.tf.fit.ener import (
+    EnerFitting,
+)
 from deepmd.tf.fit.fitting import (
     Fitting,
+)
+from deepmd.tf.fit.polar import (
+    PolarFittingSeA,
 )
 from deepmd.tf.loss.loss import (
     Loss,
@@ -565,6 +578,44 @@ class Model(ABC):
         cls = cls.get_class_by_input(local_jdata)
         return cls.update_sel(global_jdata, local_jdata)
 
+    @classmethod
+    def deserialize(cls, data: dict, suffix: str = "") -> "Descriptor":
+        """Deserialize the model.
+
+        There is no suffix in a native DP model, but it is important
+        for the TF backend.
+
+        Parameters
+        ----------
+        data : dict
+            The serialized data
+        suffix : str, optional
+            Name suffix to identify this descriptor
+
+        Returns
+        -------
+        Descriptor
+            The deserialized descriptor
+        """
+        if cls is Descriptor:
+            return Descriptor.get_class_by_input(data).deserialize(data)
+        raise NotImplementedError("Not implemented in class %s" % cls.__name__)
+
+    def serialize(self, suffix: str = "") -> dict:
+        """Serialize the model.
+
+        There is no suffix in a native DP model, but it is important
+        for the TF backend.
+
+        Returns
+        -------
+        dict
+            The serialized data
+        suffix : str, optional
+            Name suffix to identify this descriptor
+        """
+        raise NotImplementedError("Not implemented in class %s" % self.__name__)
+
 
 class StandardModel(Model):
     """Standard model, which must contain a descriptor and a fitting.
@@ -594,16 +645,22 @@ class StandardModel(Model):
         )
 
         if cls is StandardModel:
-            fitting_type = kwargs["fitting_net"]["type"]
+            if isinstance(kwargs["fitting_net"], dict):
+                fitting_type = Fitting.get_class_by_input(kwargs["fitting_net"])
+            elif isinstance(kwargs["fitting_net"], Fitting):
+                fitting_type = type(kwargs["fitting_net"])
+            else:
+                raise RuntimeError("get unknown fitting type when building model")
+            print(fitting_type)
             # init model
             # infer model type by fitting_type
-            if fitting_type == "ener":
+            if issubclass(fitting_type, EnerFitting):
                 cls = EnerModel
-            elif fitting_type == "dos":
+            elif issubclass(fitting_type, DOSFitting):
                 cls = DOSModel
-            elif fitting_type == "dipole":
+            elif issubclass(fitting_type, DipoleFittingSeA):
                 cls = DipoleModel
-            elif fitting_type == "polar":
+            elif issubclass(fitting_type, PolarFittingSeA):
                 cls = PolarModel
             else:
                 raise RuntimeError("get unknown fitting type when building model")
@@ -730,3 +787,65 @@ class StandardModel(Model):
             global_jdata, local_jdata["descriptor"]
         )
         return local_jdata_cpy
+
+    @classmethod
+    def deserialize(cls, data: dict, suffix: str = "") -> "Descriptor":
+        """Deserialize the model.
+
+        There is no suffix in a native DP model, but it is important
+        for the TF backend.
+
+        Parameters
+        ----------
+        data : dict
+            The serialized data
+        suffix : str, optional
+            Name suffix to identify this descriptor
+
+        Returns
+        -------
+        Descriptor
+            The deserialized descriptor
+        """
+        data = copy.deepcopy(data)
+
+        data["descriptor"]["type"] = {
+            "DescrptSeA": "se_e2_a",
+        }[data.pop("descriptor_name")]
+        data["fitting"]["type"] = {
+            "EnergyFittingNet": "ener",
+        }[data.pop("fitting_name")]
+        descriptor = Descriptor.deserialize(data.pop("descriptor"), suffix=suffix)
+        fitting = Fitting.deserialize(data.pop("fitting"), suffix=suffix)
+        return cls(
+            descriptor=descriptor,
+            fitting_net=fitting,
+            **data,
+        )
+
+    def serialize(self, suffix: str = "") -> dict:
+        """Serialize the model.
+
+        There is no suffix in a native DP model, but it is important
+        for the TF backend.
+
+        Returns
+        -------
+        dict
+            The serialized data
+        suffix : str, optional
+            Name suffix to identify this descriptor
+        """
+        if self.typeebd is not None:
+            raise NotImplementedError("type embedding is not supported")
+        if self.spin is not None:
+            raise NotImplementedError("spin is not supported")
+        return {
+            "type_map": self.type_map,
+            "descriptor": self.descrpt.serialize(suffix=suffix),
+            "fitting": self.fitting.serialize(suffix=suffix),
+            "descriptor_name": self.descrpt.__class__.__name__,
+            "fitting_name": {"EnerFitting": "EnergyFittingNet"}[
+                self.fitting.__class__.__name__
+            ],
+        }

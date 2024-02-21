@@ -157,7 +157,8 @@ class Trainer:
                 drop_last=False,
                 pin_memory=True,
             )
-            training_data_buffered = BufferedIterator(iter(training_dataloader))
+            with torch.device("cpu"):
+                training_data_buffered = BufferedIterator(iter(training_dataloader))
             validation_dataloader = DataLoader(
                 _validation_data,
                 sampler=valid_sampler,
@@ -167,7 +168,8 @@ class Trainer:
                 pin_memory=True,
             )
 
-            validation_data_buffered = BufferedIterator(iter(validation_dataloader))
+            with torch.device("cpu"):
+                validation_data_buffered = BufferedIterator(iter(validation_dataloader))
             if _training_params.get("validation_data", None) is not None:
                 valid_numb_batch = _training_params["validation_data"].get(
                     "numb_btch", 1
@@ -523,7 +525,8 @@ class Trainer:
                     if not torch.isfinite(grad_norm).all():
                         # check local gradnorm single GPU case, trigger NanDetector
                         raise FloatingPointError("gradients are Nan/Inf")
-                self.optimizer.step()
+                with torch.device("cpu"):
+                    self.optimizer.step()
                 self.scheduler.step()
             elif self.opt_type == "LKF":
                 if isinstance(self.loss, EnergyStdLoss):

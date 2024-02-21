@@ -31,15 +31,15 @@ class RotTest:
     ):
         prec = 1e-10
         natoms = 5
-        cell = 10.0 * torch.eye(3, dtype=dtype).to(env.DEVICE)
-        coord = 2 * torch.rand([natoms, 3], dtype=dtype).to(env.DEVICE)
-        shift = torch.tensor([4, 4, 4], dtype=dtype).to(env.DEVICE)
-        atype = torch.IntTensor([0, 0, 0, 1, 1]).to(env.DEVICE)
+        cell = 10.0 * torch.eye(3, dtype=dtype, device=env.DEVICE)
+        coord = 2 * torch.rand([natoms, 3], dtype=dtype, device=env.DEVICE)
+        shift = torch.tensor([4, 4, 4], dtype=dtype, device=env.DEVICE)
+        atype = torch.tensor([0, 0, 0, 1, 1], dtype=torch.int32, device=env.DEVICE)
         from scipy.stats import (
             special_ortho_group,
         )
 
-        rmat = torch.tensor(special_ortho_group.rvs(3), dtype=dtype).to(env.DEVICE)
+        rmat = torch.tensor(special_ortho_group.rvs(3), dtype=dtype, device=env.DEVICE)
 
         # rotate only coord and shift to the center of cell
         coord_rot = torch.matmul(coord, rmat)
@@ -73,11 +73,11 @@ class RotTest:
 
         # rotate coord and cell
         torch.manual_seed(0)
-        cell = torch.rand([3, 3], dtype=dtype).to(env.DEVICE)
-        cell = (cell + cell.T) + 5.0 * torch.eye(3).to(env.DEVICE)
-        coord = torch.rand([natoms, 3], dtype=dtype).to(env.DEVICE)
+        cell = torch.rand([3, 3], dtype=dtype, device=env.DEVICE)
+        cell = (cell + cell.T) + 5.0 * torch.eye(3, device=env.DEVICE)
+        coord = torch.rand([natoms, 3], dtype=dtype, device=env.DEVICE)
         coord = torch.matmul(coord, cell)
-        atype = torch.IntTensor([0, 0, 0, 1, 1]).to(env.DEVICE)
+        atype = torch.tensor([0, 0, 0, 1, 1], dtype=torch.int32, device=env.DEVICE)
         coord_rot = torch.matmul(coord, rmat)
         cell_rot = torch.matmul(cell, rmat)
         e0, f0, v0 = eval_model(

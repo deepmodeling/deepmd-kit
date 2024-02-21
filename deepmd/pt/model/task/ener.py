@@ -268,7 +268,7 @@ class EnergyFittingNetDirect(Fitting):
             bias_atom_e = np.zeros([self.ntypes])
         if not use_tebd:
             assert self.ntypes == len(bias_atom_e), "Element count mismatches!"
-        bias_atom_e = torch.tensor(bias_atom_e)
+        bias_atom_e = torch.tensor(bias_atom_e, device=env.DEVICE)
         self.register_buffer("bias_atom_e", bias_atom_e)
 
         filter_layers_dipole = []

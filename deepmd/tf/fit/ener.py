@@ -856,7 +856,22 @@ class EnerFitting(Fitting):
                     box = test_data["box"][:numb_test]
                 else:
                     box = None
-                ret = dp.eval(coord, box, atype, mixed_type=mixed_type)
+                if dp.get_dim_fparam() > 0:
+                    fparam = test_data["fparam"][:numb_test]
+                else:
+                    fparam = None
+                if dp.get_dim_aparam() > 0:
+                    aparam = test_data["aparam"][:numb_test]
+                else:
+                    aparam = None
+                ret = dp.eval(
+                    coord,
+                    box,
+                    atype,
+                    mixed_type=mixed_type,
+                    fparam=fparam,
+                    aparam=aparam,
+                )
                 energy_predict.append(ret[0].reshape([numb_test, 1]))
         type_numbs = np.concatenate(type_numbs)
         energy_ground_truth = np.concatenate(energy_ground_truth)
@@ -929,7 +944,7 @@ class EnerFitting(Fitting):
             raise RuntimeError("unknown loss type")
 
     @classmethod
-    def deserialize(cls, data: dict, suffix: str):
+    def deserialize(cls, data: dict, suffix: str = ""):
         """Deserialize the model.
 
         Parameters
@@ -956,7 +971,7 @@ class EnerFitting(Fitting):
             fitting.aparam_inv_std = data["@variables"]["aparam_inv_std"]
         return fitting
 
-    def serialize(self, suffix: str) -> dict:
+    def serialize(self, suffix: str = "") -> dict:
         """Serialize the model.
 
         Returns

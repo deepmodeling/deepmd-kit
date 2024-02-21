@@ -53,9 +53,9 @@ class ForceTest:
         places = 8
         delta = 1e-5
         natoms = 5
-        cell = torch.rand([3, 3], dtype=dtype)
-        cell = (cell + cell.T) + 5.0 * torch.eye(3)
-        coord = torch.rand([natoms, 3], dtype=dtype)
+        cell = torch.rand([3, 3], dtype=dtype, device="cpu")
+        cell = (cell + cell.T) + 5.0 * torch.eye(3, device="cpu")
+        coord = torch.rand([natoms, 3], dtype=dtype, device="cpu")
         coord = torch.matmul(coord, cell)
         atype = torch.IntTensor([0, 0, 0, 1, 1])
         # assumes input to be numpy tensor
@@ -65,7 +65,10 @@ class ForceTest:
             coord,
         ):
             e0, f0, v0 = eval_model(
-                self.model, torch.tensor(coord).unsqueeze(0), cell.unsqueeze(0), atype
+                self.model,
+                torch.tensor(coord, device=env.DEVICE).unsqueeze(0),
+                cell.unsqueeze(0),
+                atype,
             )
             ret = {
                 "energy": e0.squeeze(0),
@@ -91,9 +94,9 @@ class VirialTest:
         places = 8
         delta = 1e-4
         natoms = 5
-        cell = torch.rand([3, 3], dtype=dtype)
-        cell = (cell) + 5.0 * torch.eye(3)
-        coord = torch.rand([natoms, 3], dtype=dtype)
+        cell = torch.rand([3, 3], dtype=dtype, device="cpu")
+        cell = (cell) + 5.0 * torch.eye(3, device="cpu")
+        coord = torch.rand([natoms, 3], dtype=dtype, device="cpu")
         coord = torch.matmul(coord, cell)
         atype = torch.IntTensor([0, 0, 0, 1, 1])
         # assumes input to be numpy tensor
@@ -105,8 +108,10 @@ class VirialTest:
         ):
             e0, f0, v0 = eval_model(
                 self.model,
-                torch.tensor(stretch_box(coord, cell, new_cell)).unsqueeze(0),
-                torch.tensor(new_cell).unsqueeze(0),
+                torch.tensor(
+                    stretch_box(coord, cell, new_cell), device="cpu"
+                ).unsqueeze(0),
+                torch.tensor(new_cell, device="cpu").unsqueeze(0),
                 atype,
             )
             ret = {

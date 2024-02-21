@@ -2,6 +2,9 @@
 from .dipole_fitting import (
     DipoleFitting,
 )
+from .ener_fitting import (
+    EnergyFittingNet,
+)
 from .invar_fitting import (
     InvarFitting,
 )
@@ -16,5 +19,6 @@ __all__ = [
     "InvarFitting",
     "make_base_fitting",
     "DipoleFitting",
+    "EnergyFittingNet",
     "PolarFitting",
 ]

@@ -30,12 +30,12 @@ class TransTest:
         self,
     ):
         natoms = 5
-        cell = torch.rand([3, 3], dtype=dtype).to(env.DEVICE)
-        cell = (cell + cell.T) + 5.0 * torch.eye(3).to(env.DEVICE)
-        coord = torch.rand([natoms, 3], dtype=dtype).to(env.DEVICE)
+        cell = torch.rand([3, 3], dtype=dtype, device=env.DEVICE)
+        cell = (cell + cell.T) + 5.0 * torch.eye(3, device=env.DEVICE)
+        coord = torch.rand([natoms, 3], dtype=dtype, device=env.DEVICE)
         coord = torch.matmul(coord, cell)
-        atype = torch.IntTensor([0, 0, 0, 1, 1]).to(env.DEVICE)
-        shift = (torch.rand([3], dtype=dtype) - 0.5).to(env.DEVICE) * 2.0
+        atype = torch.tensor([0, 0, 0, 1, 1], dtype=torch.int32, device=env.DEVICE)
+        shift = (torch.rand([3], dtype=dtype, device=env.DEVICE) - 0.5) * 2.0
         coord_s = torch.matmul(
             torch.remainder(torch.matmul(coord + shift, torch.linalg.inv(cell)), 1.0),
             cell,

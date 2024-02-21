@@ -100,14 +100,14 @@ class TestEnvMat(unittest.TestCase, TestCaseSingleFrameWithNlist):
         em0 = EnvMat(self.rcut, self.rcut_smth)
         mm0, ww0 = em0.call(self.coord_ext, self.atype_ext, self.nlist, davg, dstd)
         mm1, _, ww1 = prod_env_mat_se_a(
-            torch.tensor(self.coord_ext, dtype=dtype),
-            torch.tensor(self.nlist, dtype=int),
-            torch.tensor(self.atype_ext[:, :nloc], dtype=int),
-            davg,
-            dstd,
+            torch.tensor(self.coord_ext, dtype=dtype, device=env.DEVICE),
+            torch.tensor(self.nlist, dtype=int, device=env.DEVICE),
+            torch.tensor(self.atype_ext[:, :nloc], dtype=int, device=env.DEVICE),
+            torch.tensor(davg, device=env.DEVICE),
+            torch.tensor(dstd, device=env.DEVICE),
             self.rcut,
             self.rcut_smth,
         )
-        np.testing.assert_allclose(mm0, mm1)
-        np.testing.assert_allclose(ww0, ww1)
+        np.testing.assert_allclose(mm0, mm1.detach().cpu().numpy())
+        np.testing.assert_allclose(ww0, ww1.detach().cpu().numpy())
         np.testing.assert_allclose(mm0[0][self.perm[: self.nloc]], mm0[1])

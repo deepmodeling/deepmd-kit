@@ -55,7 +55,7 @@ def get_single_batch(dataset, index=None):
     for key in ["coord", "box", "force", "energy", "virial", "atype", "natoms"]:
         if key in np_batch.keys():
             np_batch[key] = np.expand_dims(np_batch[key], axis=0)
-            pt_batch[key] = torch.as_tensor(np_batch[key])
+            pt_batch[key] = torch.as_tensor(np_batch[key], device=env.DEVICE)
     np_batch["coord"] = np_batch["coord"].reshape(1, -1)
     np_batch["natoms"] = np_batch["natoms"][0]
     np_batch["force"] = np_batch["force"].reshape(1, -1)

@@ -11,6 +11,9 @@ from deepmd.dpmodel.atomic_model import PairTabAtomicModel as DPPairTabAtomicMod
 from deepmd.pt.model.atomic_model import (
     PairTabAtomicModel,
 )
+from deepmd.pt.utils import (
+    env,
+)
 from deepmd.pt.utils.utils import (
     to_numpy_array,
 )
@@ -45,21 +48,28 @@ class TestPairTab(unittest.TestCase):
                     [0.01, 0.01, 0.02],
                     [0.05, 0.01, 0.01],
                 ],
-            ]
+            ],
+            device=env.DEVICE,
         )
 
         # nframes=2, nall=4
-        self.extended_atype = torch.tensor([[0, 1, 0, 1], [0, 0, 1, 1]])
+        self.extended_atype = torch.tensor(
+            [[0, 1, 0, 1], [0, 0, 1, 1]], device=env.DEVICE
+        )
 
         # nframes=2, nloc=2, nnei=2
-        self.nlist = torch.tensor([[[1, 2], [0, 2]], [[1, 2], [0, 3]]])
+        self.nlist = torch.tensor(
+            [[[1, 2], [0, 2]], [[1, 2], [0, 3]]], device=env.DEVICE
+        )
 
     def test_without_mask(self):
         result = self.model.forward_atomic(
             self.extended_coord, self.extended_atype, self.nlist
         )
         expected_result = torch.tensor(
-            [[[1.2000], [1.3614]], [[1.2000], [0.4000]]], dtype=torch.float64
+            [[[1.2000], [1.3614]], [[1.2000], [0.4000]]],
+            dtype=torch.float64,
+            device=env.DEVICE,
         )
 
         torch.testing.assert_close(
@@ -67,13 +77,17 @@ class TestPairTab(unittest.TestCase):
         )
 
     def test_with_mask(self):
-        self.nlist = torch.tensor([[[1, -1], [0, 2]], [[1, 2], [0, 3]]])
+        self.nlist = torch.tensor(
+            [[[1, -1], [0, 2]], [[1, 2], [0, 3]]], device=env.DEVICE
+        )
 
         result = self.model.forward_atomic(
             self.extended_coord, self.extended_atype, self.nlist
         )
         expected_result = torch.tensor(
-            [[[0.8000], [1.3614]], [[1.2000], [0.4000]]], dtype=torch.float64
+            [[[0.8000], [1.3614]], [[1.2000], [0.4000]]],
+            dtype=torch.float64,
+            device=env.DEVICE,
         )
 
         torch.testing.assert_close(
@@ -91,7 +105,9 @@ class TestPairTab(unittest.TestCase):
         torch.testing.assert_close(self.model.tab_data, model1.tab_data)
         torch.testing.assert_close(self.model.tab_info, model1.tab_info)
 
-        self.nlist = torch.tensor([[[1, -1], [0, 2]], [[1, 2], [0, 3]]])
+        self.nlist = torch.tensor(
+            [[[1, -1], [0, 2]], [[1, 2], [0, 3]]], device=env.DEVICE
+        )
         result = model1.forward_atomic(
             self.extended_coord, self.extended_atype, self.nlist
         )
@@ -116,12 +132,14 @@ class TestPairTab(unittest.TestCase):
 
         self.nlist = np.array([[[1, -1], [0, 2]], [[1, 2], [0, 3]]])
         result = model1.forward_atomic(
-            self.extended_coord.numpy(),
-            self.extended_atype.numpy(),
+            self.extended_coord.cpu().numpy(),
+            self.extended_atype.cpu().numpy(),
             self.nlist,
         )
         expected_result = self.model.forward_atomic(
-            self.extended_coord, self.extended_atype, torch.from_numpy(self.nlist)
+            self.extended_coord,
+            self.extended_atype,
+            torch.from_numpy(self.nlist).to(device=env.DEVICE),
         )
         np.testing.assert_allclose(
             result["energy"], to_numpy_array(expected_result["energy"]), 0.0001, 0.0001
@@ -159,10 +177,10 @@ class TestPairTabTwoAtoms(unittest.TestCase):
         )
 
         # nframes=1, nall=2
-        extended_atype = torch.tensor([[0, 0]])
+        extended_atype = torch.tensor([[0, 0]], device=env.DEVICE)
 
         # nframes=1, nloc=2, nnei=1
-        nlist = torch.tensor([[[1], [-1]]])
+        nlist = torch.tensor([[[1], [-1]]], device=env.DEVICE)
 
         results = []
 
@@ -206,7 +224,8 @@ class TestPairTabTwoAtoms(unittest.TestCase):
                         [0.0, 0.0, 0.0],
                         [0.0, dist, 0.0],
                     ],
-                ]
+                ],
+                device=env.DEVICE,
             )
 
             model = PairTabAtomicModel(tab_file=file_path, rcut=rcut, sel=2)
@@ -236,6 +255,7 @@ class TestPairTabTwoAtoms(unittest.TestCase):
                         ]
                     ],
                     dtype=torch.float64,
+                    device=env.DEVICE,
                 )
             ]
         ).reshape(14, 2)

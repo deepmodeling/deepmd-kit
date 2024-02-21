@@ -16,6 +16,9 @@ from deepmd.dpmodel import (
     FittingOutputDef,
     OutputVariableDef,
 )
+from deepmd.pt.utils import (
+    env,
+)
 from deepmd.pt.utils.nlist import (
     build_multiple_neighbor_list,
     get_multiple_nlist_key,
@@ -91,9 +94,17 @@ class LinearAtomicModel(torch.nn.Module, BaseAtomicModel):
 
     def _sort_rcuts_sels(self) -> Tuple[List[float], List[int]]:
         # sort the pair of rcut and sels in ascending order, first based on sel, then on rcut.
-        rcuts = torch.tensor(self.get_model_rcuts(), dtype=torch.float64)
-        nsels = torch.tensor(self.get_model_nsels())
-        zipped = torch.stack([torch.tensor(rcuts), torch.tensor(nsels)], dim=0).T
+        rcuts = torch.tensor(
+            self.get_model_rcuts(), dtype=torch.float64, device=env.DEVICE
+        )
+        nsels = torch.tensor(self.get_model_nsels(), device=env.DEVICE)
+        zipped = torch.stack(
+            [
+                torch.tensor(rcuts, device=env.DEVICE),
+                torch.tensor(nsels, device=env.DEVICE),
+            ],
+            dim=0,
+        ).T
         inner_sorting = torch.argsort(zipped[:, 1], dim=0)
         inner_sorted = zipped[inner_sorting]
         outer_sorting = torch.argsort(inner_sorted[:, 0], stable=True)
@@ -134,7 +145,7 @@ class LinearAtomicModel(torch.nn.Module, BaseAtomicModel):
             the result dict, defined by the fitting net output def.
         """
         nframes, nloc, nnei = nlist.shape
-        if self.do_grad():
+        if self.do_grad_r() or self.do_grad_c():
             extended_coord.requires_grad_(True)
         extended_coord = extended_coord.view(nframes, -1, 3)
         sorted_rcuts, sorted_sels = self._sort_rcuts_sels()
@@ -285,7 +296,7 @@ class DPZBLLinearAtomicModel(LinearAtomicModel):
         self.smin_alpha = smin_alpha
 
         # this is a placeholder being updated in _compute_weight, to handle Jit attribute init error.
-        self.zbl_weight = torch.empty(0, dtype=torch.float64)
+        self.zbl_weight = torch.empty(0, dtype=torch.float64, device=env.DEVICE)
 
     def serialize(self) -> dict:
         return {
