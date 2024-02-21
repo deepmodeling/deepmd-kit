@@ -106,7 +106,7 @@ class DeepTensor(DeepEval):
         )
         sel_natoms = self._get_sel_natoms(atom_types[0])
         if sel_natoms == 0:
-            sel_natoms = atom_types.shape[-1] # set to natoms
+            sel_natoms = atom_types.shape[-1]  # set to natoms
         if atomic:
             return results[self.output_tensor_name].reshape(nframes, sel_natoms, -1)
         else:
@@ -186,10 +186,10 @@ class DeepTensor(DeepEval):
             aparam=aparam,
             **kwargs,
         )
-        
+
         sel_natoms = self._get_sel_natoms(atom_types[0])
         if sel_natoms == 0:
-            sel_natoms = atom_types.shape[-1] # set to natoms
+            sel_natoms = atom_types.shape[-1]  # set to natoms
         energy = results[f"{self.output_tensor_name}_redu"].reshape(nframes, -1)
         force = results[f"{self.output_tensor_name}_derv_r"].reshape(
             nframes, -1, natoms, 3
