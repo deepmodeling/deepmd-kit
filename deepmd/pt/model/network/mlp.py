@@ -114,6 +114,7 @@ class MLPLayer(nn.Module):
         yy: torch.Tensor
             The output.
         """
+        xx = xx.to(self.prec)
         yy = (
             torch.matmul(xx, self.matrix) + self.bias
             if self.bias is not None

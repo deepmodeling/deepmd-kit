@@ -81,7 +81,7 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
             numb_fparam,
         ) = self.param
         # TODO: float32 has bug
-        return precision == "float32" or CommonTest.skip_pt
+        return CommonTest.skip_pt
 
     tf_class = EnerFittingTF
     dp_class = EnerFittingDP
