@@ -36,7 +36,7 @@ def serialize_from_file(model_file: str) -> dict:
     Returns
     -------
     dict
-        The serialized model file.
+        The serialized model data.
     """
     graph, graph_def = load_graph_def(model_file)
     t_jdata = get_tensor_by_name_from_graph(graph, "train_attr/training_script")
@@ -47,6 +47,7 @@ def serialize_from_file(model_file: str) -> dict:
     model_dict = model.serialize()
     data = {
         "backend": "TensorFlow",
+        "tf_version": tf.__version__,
         "model": model_dict,
     }
     # neighbor stat information
@@ -62,15 +63,15 @@ def serialize_from_file(model_file: str) -> dict:
     return model_dict
 
 
-def deserialize_to_file(data: dict, model_file: str) -> None:
+def deserialize_to_file(model_file: str, data: dict) -> None:
     """Deserialize the dictionary to a model file.
 
     Parameters
     ----------
-    data : dict
-        The dictionary to be deserialized.
     model_file : str
         The model file to be saved.
+    data : dict
+        The dictionary to be deserialized.
     """
     model = Model.deserialize(data["model"])
     with tf.Session() as sess:

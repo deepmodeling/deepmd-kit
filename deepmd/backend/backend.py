@@ -141,6 +141,8 @@ class Backend(PluginVariant):
         """Support Deep Eval backend."""
         NEIGHBOR_STAT = auto()
         """Support neighbor statistics."""
+        IO = auto()
+        """Support IO hook."""
 
     name: ClassVar[str] = "Unknown"
     """The formal name of the backend.
@@ -214,12 +216,12 @@ class Backend(PluginVariant):
 
     @property
     @abstractmethod
-    def deserialize_hook(self) -> Callable[[dict], str]:
+    def deserialize_hook(self) -> Callable[[str, dict], None]:
         """The deserialize hook to convert the dictionary to a model file.
 
         Returns
         -------
-        Callable[[dict], str]
+        Callable[[str, dict], None]
             The deserialize hook of the backend.
         """
         pass
