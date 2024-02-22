@@ -137,7 +137,9 @@ class DatasetTest(ABC):
                         .unsqueeze(0)
                         .expand(energy[i][j].shape[0], -1)
                     )
-            return energy_lst, natoms_lst
+            energy_merge = torch.cat(energy_lst)
+            natoms_merge = torch.cat(natoms_lst)
+            return energy_merge, natoms_merge
 
         energy = self.dp_sampled["energy"]
         natoms = self.dp_sampled["natoms_vec"]

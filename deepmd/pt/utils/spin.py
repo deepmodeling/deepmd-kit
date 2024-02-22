@@ -11,9 +11,13 @@ class Spin(DPBaseSpin):
         self.virtual_scale_mask = to_torch_tensor(
             self.virtual_scale * self.use_spin
         ).view([-1])
+        self.spin_mask = to_torch_tensor(self.spin_mask)
 
     def get_virtual_scale_mask(self):
         return self.virtual_scale_mask
+
+    def get_spin_mask(self):
+        return self.spin_mask
 
     def serialize(
         self,

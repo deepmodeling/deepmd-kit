@@ -39,7 +39,7 @@ class AtomExcludeMask(torch.nn.Module):
         Parameters
         ----------
         atype
-            The extended aotm types. shape: nf x natom
+            The extended atom types. shape: nf x natom
 
         Returns
         -------

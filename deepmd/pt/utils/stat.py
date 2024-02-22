@@ -61,21 +61,20 @@ def make_stat_input(datasets, dataloaders, nbatches):
     return lst
 
 
-def compute_output_bias(energy, natoms, rcond=None):
+def compute_output_bias(energy, natoms, rcond=None, type_mask=None):
     """Update output bias for fitting net.
 
     Args:
     - energy: Batched energy with shape [nframes, 1].
-    - natoms: Batched atom statisics with shape [self.ntypes+2].
+    - natoms: Batched atom statisics with shape [nframes, self.ntypes+2].
 
     Returns
     -------
     - energy_coef: Average enery per atom for each element.
     """
-    for i in range(len(energy)):
-        energy[i] = energy[i].mean(dim=0, keepdim=True)
-        natoms[i] = natoms[i].double().mean(dim=0, keepdim=True)
-    sys_ener = torch.cat(energy).cpu()
-    sys_tynatom = torch.cat(natoms)[:, 2:].cpu()
-    energy_coef, _, _, _ = np.linalg.lstsq(sys_tynatom, sys_ener, rcond)
+    natoms = natoms[:, 2:].double()
+    if type_mask is not None:
+        natoms = natoms * type_mask
+    # need help: torch.linalg.lstsq error on cuda!!
+    energy_coef, _, _, _ = np.linalg.lstsq(natoms.cpu(), energy.cpu(), rcond)
     return energy_coef

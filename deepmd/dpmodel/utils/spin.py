@@ -45,6 +45,7 @@ class BaseSpin(ABC):
         self.ntypes_real = len(use_spin)
         self.ntypes_spin = use_spin.count(True)
         self.use_spin = np.array(use_spin)
+        self.spin_mask = self.use_spin.astype(np.int64)
         self.ntypes_real_and_spin = self.ntypes_real + self.ntypes_spin
         self.ntypes_placeholder = self.ntypes_real - self.ntypes_spin
         self.ntypes_input = 2 * self.ntypes_real  # with placeholder for input types
@@ -185,6 +186,10 @@ class BaseSpin(ABC):
     def get_virtual_scale_mask(self):
         pass
 
+    @abstractmethod
+    def get_spin_mask(self):
+        pass
+
 
 class Spin(BaseSpin):
     def __init__(self, *args, **kwargs):
@@ -193,6 +198,9 @@ class Spin(BaseSpin):
 
     def get_virtual_scale_mask(self):
         return self.virtual_scale_mask
+
+    def get_spin_mask(self):
+        return self.spin_mask
 
     def serialize(
         self,

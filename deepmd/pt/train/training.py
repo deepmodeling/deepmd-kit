@@ -186,11 +186,11 @@ class Trainer:
 
         def get_single_model(_model_params, _sampled, _stat_file_path):
             model = get_model(deepcopy(_model_params)).to(DEVICE)
-            # if not model_params.get("resuming", False):
-            #     model.compute_or_load_stat(
-            #         sampled=_sampled,
-            #         stat_file_path=_stat_file_path,
-            #     )
+            if not model_params.get("resuming", False):
+                model.compute_or_load_stat(
+                    sampled=_sampled,
+                    stat_file_path=_stat_file_path,
+                )
             return model
 
         def get_lr(lr_params):
