@@ -344,7 +344,7 @@ class DipoleFittingSeA(Fitting):
             The serialized data
         """
         data = {
-            "var_name": "energy",
+            "var_name": "dipole",
             "ntypes": self.ntypes,
             "dim_descrpt": self.dim_descrpt,
             "embedding_width": self.dim_rot_mat_1,
@@ -362,6 +362,7 @@ class DipoleFittingSeA(Fitting):
                 # TODO: consider type embeddings
                 ndim=1,
                 in_dim=self.dim_descrpt,
+                out_dim = self.dim_rot_mat_1,
                 neuron=self.n_neuron,
                 activation_function=self.activation_function_name,
                 resnet_dt=self.resnet_dt,
