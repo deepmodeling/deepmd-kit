@@ -19,7 +19,7 @@ from ..common import (
     parameterized,
 )
 from .common import (
-    FittingTest,
+    DipoleFittingTest,
 )
 
 if INSTALLED_PT:
@@ -43,7 +43,7 @@ from deepmd.utils.argcheck import (
     ("float64", "float32"),  # precision
     (True, False),  # mixed_types
 )
-class TestDipole(CommonTest, FittingTest, unittest.TestCase):
+class TestDipole(CommonTest, DipoleFittingTest, unittest.TestCase):
     @property
     def data(self) -> dict:
         (
