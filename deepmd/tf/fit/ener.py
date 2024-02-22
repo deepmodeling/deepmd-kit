@@ -95,8 +95,10 @@ class EnerFitting(Fitting):
 
     Parameters
     ----------
-    descrpt
-            The descrptor :math:`\mathcal{D}`
+    ntypes
+            The ntypes of the descrptor :math:`\mathcal{D}`
+    dim_descrpt
+            The dimension of the descrptor :math:`\mathcal{D}`
     neuron
             Number of neurons :math:`N` in each hidden layer of the fitting net
     resnet_dt

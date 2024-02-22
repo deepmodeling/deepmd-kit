@@ -38,8 +38,12 @@ class DipoleFittingSeA(Fitting):
 
     Parameters
     ----------
-    descrpt : tf.Tensor
-            The descrptor
+    ntypes
+            The ntypes of the descrptor :math:`\mathcal{D}`
+    dim_descrpt
+            The dimension of the descrptor :math:`\mathcal{D}`
+    embedding_width
+            The rotation matrix dimension of the descrptor :math:`\mathcal{D}`
     neuron : List[int]
             Number of neurons in each hidden layer of the fitting net
     resnet_dt : bool
@@ -59,7 +63,9 @@ class DipoleFittingSeA(Fitting):
 
     def __init__(
         self,
-        descrpt: tf.Tensor,
+        ntypes: int,
+        dim_descrpt: int,
+        embedding_width: int, 
         neuron: List[int] = [120, 120, 120],
         resnet_dt: bool = True,
         sel_type: Optional[List[int]] = None,
@@ -70,8 +76,8 @@ class DipoleFittingSeA(Fitting):
         **kwargs,
     ) -> None:
         """Constructor."""
-        self.ntypes = descrpt.get_ntypes()
-        self.dim_descrpt = descrpt.get_dim_out()
+        self.ntypes = ntypes
+        self.dim_descrpt = dim_descrpt
         self.n_neuron = neuron
         self.resnet_dt = resnet_dt
         self.sel_type = sel_type
@@ -85,7 +91,7 @@ class DipoleFittingSeA(Fitting):
         self.seed_shift = one_layer_rand_seed_shift()
         self.fitting_activation_fn = get_activation_func(activation_function)
         self.fitting_precision = get_precision(precision)
-        self.dim_rot_mat_1 = descrpt.get_dim_rot_mat_1()
+        self.dim_rot_mat_1 = embedding_width
         self.dim_rot_mat = self.dim_rot_mat_1 * 3
         self.useBN = False
         self.fitting_net_variables = None

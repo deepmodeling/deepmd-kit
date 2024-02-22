@@ -102,6 +102,8 @@ class DipoleFitting(GeneralFitting):
         r_differentiable: bool = True,
         c_differentiable: bool = True,
         old_impl=False,
+        # not used
+        seed: Optional[int] = None,
     ):
         # seed, uniform_seed are not included
         if tot_ener_zero:
