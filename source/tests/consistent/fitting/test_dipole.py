@@ -117,6 +117,7 @@ class TestDipole(CommonTest, DipoleFittingTest, unittest.TestCase):
         return self.build_tf_fitting(
             obj,
             self.inputs.ravel(),
+            self.gr,
             self.natoms,
             self.atype,
             None,
