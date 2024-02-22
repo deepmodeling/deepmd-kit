@@ -49,6 +49,7 @@ def serialize_from_file(model_file: str) -> dict:
         "backend": "TensorFlow",
         "tf_version": tf.__version__,
         "model": model_dict,
+        "model_param": jdata["model"],
     }
     # neighbor stat information
     try:
@@ -85,18 +86,41 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
             tf.int32, [model.get_ntypes() + 2], name="t_natoms"
         )
         place_holders["default_mesh"] = tf.placeholder(tf.int32, [None], name="t_mesh")
-        # TODO: fparam, aparam
-
+        inputs = {}
+        # fparam, aparam
+        if model.get_numb_fparam() > 0:
+            inputs["fparam"] = tf.placeholder(
+                GLOBAL_TF_FLOAT_PRECISION,
+                [None, model.get_numb_fparam()],
+                name="t_fparam",
+            )
+        if model.get_numb_aparam() > 0:
+            inputs["aparam"] = tf.placeholder(
+                GLOBAL_TF_FLOAT_PRECISION,
+                [None, model.get_numb_aparam()],
+                name="t_aparam",
+            )
         model.build(
             place_holders["coord"],
             place_holders["type"],
             place_holders["natoms_vec"],
             place_holders["box"],
             place_holders["default_mesh"],
-            place_holders,
+            inputs,
             reuse=False,
         )
         init = tf.global_variables_initializer()
+        tf.constant(
+            json.dumps({"model": data["model_param"]}, separators=(",", ":")),
+            name="train_attr/training_script",
+            dtype=tf.string,
+        )
+        if "min_nbor_dist" in data.get("@variables", {}):
+            tf.constant(
+                data["@variables"]["min_nbor_dist"],
+                name="train_attr/min_nbor_dist",
+                dtype=GLOBAL_TF_FLOAT_PRECISION,
+            )
         run_sess(sess, init)
         saver = tf.train.Saver()
         with tempfile.TemporaryDirectory() as nt:
