@@ -254,7 +254,7 @@ class CommonTest(ABC):
         ret2 = self.extract_ret(ret2, self.RefBackend.TF)
         data2 = tf_obj.serialize()
         if not tf_obj.__class__.__name__.startswith(("Dipole", "Polar")):
-            np.testing.assert_equal(data1, data2) # tf, pt serialization mismatch
+            np.testing.assert_equal(data1, data2)  # tf, pt serialization mismatch
         for rr1, rr2 in zip(ret1, ret2):
             np.testing.assert_allclose(
                 rr1.ravel(), rr2.ravel(), rtol=self.rtol, atol=self.atol
@@ -320,7 +320,7 @@ class CommonTest(ABC):
         ret2 = self.extract_ret(ret2, self.RefBackend.PT)
         data2 = obj.serialize()
         if not obj.__class__.__name__.startswith(("Dipole", "Polar")):
-            np.testing.assert_equal(data1, data2) # tf, pt serialization mismatch
+            np.testing.assert_equal(data1, data2)  # tf, pt serialization mismatch
         for rr1, rr2 in zip(ret1, ret2):
             np.testing.assert_allclose(rr1, rr2, rtol=self.rtol, atol=self.atol)
 
