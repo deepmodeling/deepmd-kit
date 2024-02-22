@@ -775,7 +775,7 @@ def main():
         "freeze",
         "transfer",
         "compress",
-        "convert_from",
+        "convert-from",
         "train-nvnmd",
     ):
         deepmd_main = BACKENDS[args.backend]().entry_point_hook
