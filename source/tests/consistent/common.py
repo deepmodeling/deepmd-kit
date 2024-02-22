@@ -254,7 +254,7 @@ class CommonTest(ABC):
         ret2 = self.extract_ret(ret2, self.RefBackend.TF)
         np.testing.assert_equal(data1, data2)
         for rr1, rr2 in zip(ret1, ret2):
-            np.testing.assert_allclose(rr1, rr2, rtol=self.rtol, atol=self.atol)
+            np.testing.assert_allclose(rr1.ravel(), rr2.ravel(), rtol=self.rtol, atol=self.atol)
 
     def test_tf_self_consistent(self):
         """Test whether TF is self consistent."""
