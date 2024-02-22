@@ -53,10 +53,19 @@ def make_model(T_AtomicModel):
                 **kwargs,
             )
 
-        @torch.jit.export
         def model_output_def(self):
             """Get the output def for the model."""
             return ModelOutputDef(self.fitting_output_def())
+
+        @torch.jit.export
+        def model_output_type(self) -> str:
+            """Get the output type for the model."""
+            output_def = self.model_output_def()
+            var_defs = output_def.var_defs
+            for var in ["energy", "dos", "dipole", "polar", "global_polar", "wfc"]:
+                if var in var_defs:
+                    return var
+            raise ValueError("No valid output type found")
 
         # cannot use the name forward. torch script does not work
         def forward_common(
