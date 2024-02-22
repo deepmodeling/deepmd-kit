@@ -23,6 +23,7 @@
       "seed": 1
     },
     "fitting_net": {
+      "embedding_width": 100,
       "type": "dipole",
       "sel_type": [
         0

@@ -153,6 +153,7 @@ class TestDataModifier(tf.test.TestCase):
                 },
                 "fitting_net": {
                     "type": "dipole",
+                    "embedding_width": 4,
                     "sel_type": [1, 3],
                     "neuron": [10],
                     "resnet_dt": True,
