@@ -727,7 +727,14 @@ def main_parser() -> argparse.ArgumentParser:
         "convert-backend",
         parents=[parser_log],
         help="Convert model to another backend.",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        formatter_class=RawTextArgumentDefaultsHelpFormatter,
+        epilog=textwrap.dedent(
+            """\
+        examples:
+            dp convert-backend model.pb model.pth
+            dp convert-backend model.pb model.dp
+        """
+        ),
     )
     parser_convert_backend.add_argument("INPUT", help="The input model file.")
     parser_convert_backend.add_argument("OUTPUT", help="The output model file.")
