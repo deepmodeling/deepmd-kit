@@ -11,6 +11,7 @@ from deepmd.dpmodel.common import (
 )
 from deepmd.dpmodel.output_def import (
     ModelOutputDef,
+    OutputVariableCategory,
 )
 from deepmd.dpmodel.utils import (
     build_neighbor_list,
@@ -68,9 +69,9 @@ def make_model(T_AtomicModel):
             output_def = self.model_output_def()
             var_defs = output_def.var_defs
             vars = [
-                var
-                for var in ["energy", "dos", "dipole", "polar", "wfc"]
-                if var in var_defs
+                kk
+                for kk, vv in var_defs.items()
+                if vv.category == OutputVariableCategory.OUT
             ]
             if len(vars) == 1:
                 return vars[0]

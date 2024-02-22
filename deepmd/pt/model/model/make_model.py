@@ -10,6 +10,9 @@ import torch
 from deepmd.dpmodel import (
     ModelOutputDef,
 )
+from deepmd.dpmodel.output_def import (
+    OutputVariableCategory,
+)
 from deepmd.pt.model.model.transform_output import (
     communicate_extended_output,
     fit_output_to_model_output,
@@ -66,9 +69,10 @@ def make_model(T_AtomicModel):
             # jit: Comprehension ifs are not supported yet
             # type hint is critical for JIT
             vars: List[str] = []
-            for var in ["energy", "dos", "dipole", "polar", "wfc"]:
-                if var in var_defs:
-                    vars.append(var)
+            for kk, vv in var_defs.items():
+                # .value is critical for JIT
+                if vv.category == OutputVariableCategory.OUT.value:
+                    vars.append(kk)
             if len(vars) == 1:
                 return vars[0]
             elif len(vars) == 0:
