@@ -119,6 +119,7 @@ class TestDipole(CommonTest, FittingTest, unittest.TestCase):
             self.inputs.ravel(),
             self.natoms,
             self.atype,
+            None,
             suffix,
         )
 
