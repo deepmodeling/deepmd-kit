@@ -65,7 +65,7 @@ class DipoleFittingSeA(Fitting):
         self,
         ntypes: int,
         dim_descrpt: int,
-        embedding_width: int, 
+        embedding_width: int,
         neuron: List[int] = [120, 120, 120],
         resnet_dt: bool = True,
         sel_type: Optional[List[int]] = None,
