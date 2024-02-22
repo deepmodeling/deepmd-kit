@@ -252,7 +252,6 @@ class CommonTest(ABC):
         tf_obj = self.tf_class.deserialize(data1, suffix=self.unique_id)
         ret2, data2 = self.get_tf_ret_serialization_from_cls(tf_obj)
         ret2 = self.extract_ret(ret2, self.RefBackend.TF)
-        data2 = tf_obj.serialize()
         if not tf_obj.__class__.__name__.startswith(("Dipole", "Polar")):
             np.testing.assert_equal(data1, data2)  # tf, pt serialization mismatch
         for rr1, rr2 in zip(ret1, ret2):
