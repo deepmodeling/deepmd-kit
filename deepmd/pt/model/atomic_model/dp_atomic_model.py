@@ -13,8 +13,8 @@ import torch
 from deepmd.dpmodel import (
     FittingOutputDef,
 )
-from deepmd.pt.model.descriptor.se_a import (  # noqa # TODO: should import all descriptors!!!
-    DescrptSeA,
+from deepmd.pt.model.descriptor.descriptor import (
+    Descriptor,
 )
 from deepmd.pt.model.task.ener import (  # noqa # TODO: should import all fittings!
     EnergyFittingNet,
@@ -97,16 +97,13 @@ class DPAtomicModel(torch.nn.Module, BaseAtomicModel):
             "type_map": self.type_map,
             "descriptor": self.descriptor.serialize(),
             "fitting": self.fitting_net.serialize(),
-            "descriptor_name": self.descriptor.__class__.__name__,
             "fitting_name": self.fitting_net.__class__.__name__,
         }
 
     @classmethod
     def deserialize(cls, data) -> "DPAtomicModel":
         data = copy.deepcopy(data)
-        descriptor_obj = getattr(
-            sys.modules[__name__], data["descriptor_name"]
-        ).deserialize(data["descriptor"])
+        descriptor_obj = Descriptor.deserialize(data["descriptor"])
         fitting_obj = getattr(sys.modules[__name__], data["fitting_name"]).deserialize(
             data["fitting"]
         )

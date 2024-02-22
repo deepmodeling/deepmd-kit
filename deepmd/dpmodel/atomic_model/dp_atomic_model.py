@@ -9,8 +9,8 @@ from typing import (
 
 import numpy as np
 
-from deepmd.dpmodel.descriptor import (  # noqa # TODO: should import all descriptors!
-    DescrptSeA,
+from deepmd.dpmodel.descriptor.base_descriptor import (
+    BaseDescriptor,
 )
 from deepmd.dpmodel.fitting import (  # noqa # TODO: should import all fittings!
     EnergyFittingNet,
@@ -135,16 +135,13 @@ class DPAtomicModel(BaseAtomicModel):
             "type_map": self.type_map,
             "descriptor": self.descriptor.serialize(),
             "fitting": self.fitting.serialize(),
-            "descriptor_name": self.descriptor.__class__.__name__,
             "fitting_name": self.fitting.__class__.__name__,
         }
 
     @classmethod
     def deserialize(cls, data) -> "DPAtomicModel":
         data = copy.deepcopy(data)
-        descriptor_obj = getattr(
-            sys.modules[__name__], data["descriptor_name"]
-        ).deserialize(data["descriptor"])
+        descriptor_obj = BaseDescriptor.deserialize(data["descriptor"])
         fitting_obj = getattr(sys.modules[__name__], data["fitting_name"]).deserialize(
             data["fitting"]
         )

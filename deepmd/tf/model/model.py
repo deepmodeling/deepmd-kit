@@ -808,9 +808,6 @@ class StandardModel(Model):
         """
         data = copy.deepcopy(data)
 
-        data["descriptor"]["type"] = {
-            "DescrptSeA": "se_e2_a",
-        }[data.pop("descriptor_name")]
         data["fitting"]["type"] = {
             "EnergyFittingNet": "ener",
         }[data.pop("fitting_name")]
@@ -843,7 +840,6 @@ class StandardModel(Model):
             "type_map": self.type_map,
             "descriptor": self.descrpt.serialize(suffix=suffix),
             "fitting": self.fitting.serialize(suffix=suffix),
-            "descriptor_name": self.descrpt.__class__.__name__,
             "fitting_name": {"EnerFitting": "EnergyFittingNet"}[
                 self.fitting.__class__.__name__
             ],

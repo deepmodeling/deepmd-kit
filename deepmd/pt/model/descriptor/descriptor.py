@@ -9,6 +9,7 @@ from typing import (
     Dict,
     List,
     Optional,
+    Type,
 )
 
 import torch
@@ -92,15 +93,40 @@ class Descriptor(torch.nn.Module, BaseDescriptor):
 
     def __new__(cls, *args, **kwargs):
         if cls is Descriptor:
-            try:
-                descrpt_type = kwargs["type"]
-            except KeyError:
-                raise KeyError("the type of descriptor should be set by `type`")
-            if descrpt_type in Descriptor.__plugins.plugins:
-                cls = Descriptor.__plugins.plugins[descrpt_type]
-            else:
-                raise RuntimeError("Unknown descriptor type: " + descrpt_type)
+            cls = cls.get_class_by_input(kwargs)
         return super().__new__(cls)
+
+    @classmethod
+    def get_class_by_input(cls, input: dict) -> Type["Descriptor"]:
+        try:
+            descrpt_type = input["type"]
+        except KeyError:
+            raise KeyError("the type of descriptor should be set by `type`")
+        if descrpt_type in Descriptor.__plugins.plugins:
+            return Descriptor.__plugins.plugins[descrpt_type]
+        else:
+            raise RuntimeError("Unknown descriptor type: " + descrpt_type)
+
+    @classmethod
+    def deserialize(cls, data: dict) -> "Descriptor":
+        """Deserialize the model.
+
+        There is no suffix in a native DP model, but it is important
+        for the TF backend.
+
+        Parameters
+        ----------
+        data : dict
+            The serialized data
+
+        Returns
+        -------
+        Descriptor
+            The deserialized descriptor
+        """
+        if cls is Descriptor:
+            return Descriptor.get_class_by_input(data).deserialize(data)
+        raise NotImplementedError("Not implemented in class %s" % cls.__name__)
 
 
 class DescriptorBlock(torch.nn.Module, ABC):
