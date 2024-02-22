@@ -149,7 +149,9 @@ class InvarFitting(GeneralFitting):
             bias_atom_e = stat_file_path.load_numpy()
         else:
             if hasattr(self, "emask"):
-                type_mask = self.emask(torch.arange(0, self.ntypes).unsqueeze(0))
+                type_mask = self.emask(
+                    torch.arange(0, self.ntypes, device=env.DEVICE).unsqueeze(0)
+                )
             else:
                 type_mask = None
             bias_atom_e = compute_output_bias(
