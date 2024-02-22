@@ -9,6 +9,9 @@ from deepmd.pt.model.model import (
 from deepmd.pt.model.model.ener_model import (
     EnergyModel,
 )
+from deepmd.pt.train.wrapper import (
+    ModelWrapper,
+)
 
 
 def serialize_from_file(model_file: str) -> dict:
@@ -24,12 +27,23 @@ def serialize_from_file(model_file: str) -> dict:
     dict
         The serialized model data.
     """
-    if not model_file.endswith(".pth"):
-        raise ValueError("PyTorch backend only supports converting .pth file")
-    jit_model = torch.jit.load(model_file, map_location="cpu")
-    model_def_script = json.loads(jit_model.model_def_script)
-    model = get_model(model_def_script)
-    model.load_state_dict(jit_model.state_dict())
+    if model_file.endswith(".pth"):
+        saved_model = torch.jit.load(model_file, map_location="cpu")
+        model_def_script = json.loads(saved_model.model_def_script)
+        model = get_model(model_def_script)
+        model.load_state_dict(saved_model.state_dict())
+    elif model_file.endswith(".pt"):
+        state_dict = torch.load(model_file, map_location="cpu")
+        if "model" in state_dict:
+            state_dict = state_dict["model"]
+        model_def_script = state_dict["_extra_state"]["model_params"]
+        model = get_model(model_def_script)
+        modelwrapper = ModelWrapper(model)
+        modelwrapper.load_state_dict(state_dict)
+        model = modelwrapper.model["Default"]
+    else:
+        raise ValueError("PyTorch backend only supports converting .pth or .pt file")
+
     model_dict = model.serialize()
     data = {
         "backend": "PyTorch",
