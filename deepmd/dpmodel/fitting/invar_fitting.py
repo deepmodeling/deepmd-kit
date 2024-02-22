@@ -139,7 +139,7 @@ class InvarFitting(GeneralFitting):
             raise NotImplementedError("atom_ener is not implemented")
 
         self.dim_out = dim_out
-        self.atom_ener=atom_ener,
+        self.atom_ener = (atom_ener,)
         super().__init__(
             var_name=var_name,
             ntypes=ntypes,
