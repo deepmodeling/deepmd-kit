@@ -362,7 +362,7 @@ class DipoleFittingSeA(Fitting):
                 # TODO: consider type embeddings
                 ndim=1,
                 in_dim=self.dim_descrpt,
-                out_dim = self.dim_rot_mat_1,
+                out_dim=self.dim_rot_mat_1,
                 neuron=self.n_neuron,
                 activation_function=self.activation_function_name,
                 resnet_dt=self.resnet_dt,

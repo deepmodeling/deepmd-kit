@@ -257,7 +257,7 @@ class CommonTest(ABC):
             common_keys = set(data1.keys()) & set(data2.keys())
             data1 = {k: data1[k] for k in common_keys}
             data2 = {k: data2[k] for k in common_keys}
-        np.testing.assert_equal(data1, data2)  
+        np.testing.assert_equal(data1, data2)
         for rr1, rr2 in zip(ret1, ret2):
             np.testing.assert_allclose(
                 rr1.ravel(), rr2.ravel(), rtol=self.rtol, atol=self.atol
@@ -327,7 +327,7 @@ class CommonTest(ABC):
             common_keys = set(data1.keys()) & set(data2.keys())
             data1 = {k: data1[k] for k in common_keys}
             data2 = {k: data2[k] for k in common_keys}
-        np.testing.assert_equal(data1, data2)  
+        np.testing.assert_equal(data1, data2)
         for rr1, rr2 in zip(ret1, ret2):
             np.testing.assert_allclose(rr1, rr2, rtol=self.rtol, atol=self.atol)
 

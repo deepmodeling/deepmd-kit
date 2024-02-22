@@ -6,8 +6,8 @@ from abc import (
 from typing import (
     Callable,
     List,
-    Type,
     Optional,
+    Type,
 )
 
 from deepmd.dpmodel.utils.network import (
