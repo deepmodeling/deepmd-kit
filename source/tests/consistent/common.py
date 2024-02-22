@@ -322,7 +322,7 @@ class CommonTest(ABC):
         ret2 = self.eval_pt(obj)
         ret2 = self.extract_ret(ret2, self.RefBackend.PT)
         data2 = obj.serialize()
-        if obj.__class__.__name__.startswith(("Polar","Dipole")):
+        if obj.__class__.__name__.startswith(("Polar", "Dipole")):
             # tf, pt serialization mismatch
             common_keys = set(data1.keys()) & set(data2.keys())
             data1 = {k: data1[k] for k in common_keys}
