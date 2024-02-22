@@ -49,7 +49,7 @@ class DipoleFittingTest:
 
     def build_tf_fitting(self, obj, inputs, rot_mat, natoms, atype, fparam, suffix):
         t_inputs = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None], name="i_inputs")
-        t_rot_mat = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None], name="i_rot_mat")
+        t_rot_mat = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, rot_mat.shape, name="i_rot_mat")
         t_natoms = tf.placeholder(tf.int32, natoms.shape, name="i_natoms")
         t_atype = tf.placeholder(tf.int32, [None], name="i_atype")
         extras = {}
