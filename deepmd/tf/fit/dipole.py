@@ -337,6 +337,7 @@ class DipoleFittingSeA(Fitting):
 
     def serialize(self, suffix: str) -> dict:
         """Serialize the model.
+
         Returns
         -------
         dict
@@ -365,10 +366,10 @@ class DipoleFittingSeA(Fitting):
                 resnet_dt=self.resnet_dt,
                 variables=self.fitting_net_variables,
                 suffix=suffix,
-            )
+            ),
         }
         return data
-    
+
     @classmethod
     def deserialize(cls, data: dict, suffix: str):
         """Deserialize the model.
