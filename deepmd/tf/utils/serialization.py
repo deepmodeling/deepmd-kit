@@ -75,11 +75,11 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
         The dictionary to be deserialized.
     """
     model = Model.deserialize(data["model"])
-    with tf.Session() as sess:
+    with tf.Graph().as_default() as graph, tf.Session(graph=graph) as sess:
         place_holders = {}
         for ii in ["coord", "box"]:
             place_holders[ii] = tf.placeholder(
-                GLOBAL_TF_FLOAT_PRECISION, [None, None], name="t_" + ii
+                GLOBAL_TF_FLOAT_PRECISION, [None], name="t_" + ii
             )
         place_holders["type"] = tf.placeholder(tf.int32, [None], name="t_type")
         place_holders["natoms_vec"] = tf.placeholder(

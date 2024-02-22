@@ -13,6 +13,12 @@ from deepmd.backend.backend import (
 from deepmd.dpmodel.model.model import (
     get_model,
 )
+from deepmd.env import (
+    GLOBAL_NP_FLOAT_PRECISION,
+)
+from deepmd.infer.deep_pot import (
+    DeepPot,
+)
 
 infer_path = Path(__file__).parent.parent.parent / "infer"
 
@@ -77,6 +83,54 @@ class IOTest:
                     data.pop(kk, None)
                     reference_data.pop(kk, None)
                 np.testing.assert_equal(data, reference_data)
+
+    def test_deep_eval(self):
+        self.coords = np.array(
+            [
+                12.83,
+                2.56,
+                2.18,
+                12.09,
+                2.87,
+                2.74,
+                00.25,
+                3.32,
+                1.68,
+                3.36,
+                3.00,
+                1.81,
+                3.51,
+                2.51,
+                2.60,
+                4.27,
+                3.22,
+                1.56,
+            ],
+            dtype=GLOBAL_NP_FLOAT_PRECISION,
+        ).reshape(1, -1, 3)
+        self.atype = np.array([0, 1, 1, 0, 1, 1], dtype=np.int32).reshape(1, -1)
+        self.box = np.array(
+            [13.0, 0.0, 0.0, 0.0, 13.0, 0.0, 0.0, 0.0, 13.0],
+            dtype=GLOBAL_NP_FLOAT_PRECISION,
+        ).reshape(1, 9)
+        prefix = "test_consistent_io_" + self.__class__.__name__.lower()
+        rets = []
+        for backend_name in ("tensorflow", "pytorch"):
+            backend = Backend.get_backend(backend_name)()
+            if not backend.is_available:
+                continue
+            reference_data = copy.deepcopy(self.data)
+            self.save_data_to_model(prefix + backend.suffixes[0], reference_data)
+            deep_eval = DeepPot(prefix + backend.suffixes[0])
+            ret = deep_eval.eval(
+                self.coords,
+                self.box,
+                self.atype,
+            )
+            rets.append(ret)
+        for ret in rets[1:]:
+            for vv1, vv2 in zip(rets[0], ret):
+                np.testing.assert_allclose(vv1, vv2, rtol=1e-12, atol=1e-12)
 
 
 class TestDeepPot(unittest.TestCase, IOTest):

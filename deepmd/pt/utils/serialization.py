@@ -6,8 +6,8 @@ import torch
 from deepmd.pt.model.model import (
     get_model,
 )
-from deepmd.pt.model.model.dp_model import (
-    DPModel,
+from deepmd.pt.model.model.ener_model import (
+    EnergyModel,
 )
 
 
@@ -54,8 +54,8 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
     """
     if not model_file.endswith(".pth"):
         raise ValueError("PyTorch backend only supports converting .pth file")
-    # TODO: see #3319
-    model = DPModel.deserialize(data["model"])
+    # TODO: read class type from data; see #3319
+    model = EnergyModel.deserialize(data["model"])
     # JIT will happy in this way...
     model.model_param = json.dumps(data["model_param"])
     model = torch.jit.script(model)
