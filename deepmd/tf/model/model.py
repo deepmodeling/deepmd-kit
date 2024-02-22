@@ -651,7 +651,6 @@ class StandardModel(Model):
                 fitting_type = type(kwargs["fitting_net"])
             else:
                 raise RuntimeError("get unknown fitting type when building model")
-            print(fitting_type)
             # init model
             # infer model type by fitting_type
             if issubclass(fitting_type, EnerFitting):
