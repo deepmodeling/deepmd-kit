@@ -67,10 +67,17 @@ def make_model(T_AtomicModel):
             """Get the output type for the model."""
             output_def = self.model_output_def()
             var_defs = output_def.var_defs
-            for var in ["energy", "dos", "dipole", "polar", "global_polar", "wfc"]:
-                if var in var_defs:
-                    return var
-            raise ValueError("No valid output type found")
+            vars = [
+                var
+                for var in ["energy", "dos", "dipole", "polar", "wfc"]
+                if var in var_defs
+            ]
+            if len(vars) == 1:
+                return vars[0]
+            elif len(vars) == 0:
+                raise ValueError("No valid output type found")
+            else:
+                raise ValueError(f"Multiple valid output types found: {vars}")
 
         def call(
             self,
