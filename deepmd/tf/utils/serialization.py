@@ -60,7 +60,7 @@ def serialize_from_file(model_file: str) -> dict:
     else:
         data.setdefault("@variables", {})
         data["@variables"]["min_nbor_dist"] = t_min_nbor_dist
-    return model_dict
+    return data
 
 
 def deserialize_to_file(model_file: str, data: dict) -> None:
