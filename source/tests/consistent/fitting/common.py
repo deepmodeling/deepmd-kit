@@ -43,6 +43,7 @@ class FittingTest:
             **feed_dict,
         }
 
+
 class DipoleFittingTest:
     """Useful utilities for descriptor tests."""
 
