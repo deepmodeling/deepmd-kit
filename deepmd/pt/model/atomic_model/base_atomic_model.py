@@ -16,5 +16,5 @@ class BaseAtomicModel(BaseAtomicModel_):
     get_nnei = torch.jit.export(BaseAtomicModel_.get_nnei)
 
     @torch.jit.export
-    def get_model_param(self) -> str:
-        return self.model_param
+    def get_model_def_script(self) -> str:
+        return self.model_def_script

@@ -49,7 +49,7 @@ def serialize_from_file(model_file: str) -> dict:
         "backend": "TensorFlow",
         "tf_version": tf.__version__,
         "model": model_dict,
-        "model_param": jdata["model"],
+        "model_def_script": jdata["model"],
     }
     # neighbor stat information
     try:
@@ -111,7 +111,7 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
         )
         init = tf.global_variables_initializer()
         tf.constant(
-            json.dumps({"model": data["model_param"]}, separators=(",", ":")),
+            json.dumps({"model": data["model_def_script"]}, separators=(",", ":")),
             name="train_attr/training_script",
             dtype=tf.string,
         )

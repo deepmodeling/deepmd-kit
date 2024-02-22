@@ -100,7 +100,7 @@ def get_model(model_params):
     fitting = Fitting(**fitting_net)
 
     model = EnergyModel(descriptor, fitting, type_map=model_params["type_map"])
-    model.model_param = json.dumps(model_params)
+    model.model_def_script = json.dumps(model_params)
     return model
 
 

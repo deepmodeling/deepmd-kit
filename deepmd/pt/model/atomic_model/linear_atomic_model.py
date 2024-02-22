@@ -288,7 +288,7 @@ class DPZBLLinearAtomicModel(LinearAtomicModel):
     ):
         models = [dp_model, zbl_model]
         super().__init__(models, **kwargs)
-        self.model_param = ""
+        self.model_def_script = ""
         self.dp_model = dp_model
         self.zbl_model = zbl_model
 

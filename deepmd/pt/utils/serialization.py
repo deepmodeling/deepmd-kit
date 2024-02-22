@@ -27,15 +27,15 @@ def serialize_from_file(model_file: str) -> dict:
     if not model_file.endswith(".pth"):
         raise ValueError("PyTorch backend only supports converting .pth file")
     jit_model = torch.jit.load(model_file, map_location="cpu")
-    model_param = json.loads(jit_model.model_param)
-    model = get_model(model_param)
+    model_def_script = json.loads(jit_model.model_def_script)
+    model = get_model(model_def_script)
     model.load_state_dict(jit_model.state_dict())
     model_dict = model.serialize()
     data = {
         "backend": "PyTorch",
         "pt_version": torch.__version__,
         "model": model_dict,
-        "model_param": model_param,
+        "model_def_script": model_def_script,
         # TODO
         "@variables": {},
     }
@@ -57,6 +57,6 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
     # TODO: read class type from data; see #3319
     model = EnergyModel.deserialize(data["model"])
     # JIT will happy in this way...
-    model.model_param = json.dumps(data["model_param"])
+    model.model_def_script = json.dumps(data["model_def_script"])
     model = torch.jit.script(model)
     torch.jit.save(model, model_file)

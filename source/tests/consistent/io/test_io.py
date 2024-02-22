@@ -135,7 +135,7 @@ class IOTest:
 
 class TestDeepPot(unittest.TestCase, IOTest):
     def setUp(self):
-        param = {
+        model_def_script = {
             "type_map": ["O", "H"],
             "descriptor": {
                 "type": "se_e2_a",
@@ -164,9 +164,9 @@ class TestDeepPot(unittest.TestCase, IOTest):
                 "seed": 1,
             },
         }
-        model = get_model(copy.deepcopy(param))
+        model = get_model(copy.deepcopy(model_def_script))
         self.data = {
             "model": model.serialize(),
             "backend": "test",
-            "model_param": param,
+            "model_def_script": model_def_script,
         }
