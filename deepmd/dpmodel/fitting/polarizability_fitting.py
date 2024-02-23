@@ -102,6 +102,8 @@ class PolarFitting(GeneralFitting):
         fit_diag: bool = True,
         scale: Optional[List[float]] = None,
         shift_diag: bool = True,
+        # not used
+        seed: Optional[int] = None,
     ):
         # seed, uniform_seed are not included
         if tot_ener_zero:
@@ -119,9 +121,16 @@ class PolarFitting(GeneralFitting):
         if self.scale is None:
             self.scale = [1.0 for _ in range(ntypes)]
         else:
-            assert (
-                isinstance(self.scale, list) and len(self.scale) == ntypes
-            ), "Scale should be a list of length ntypes."
+            if isinstance(self.scale, list):
+                assert (
+                    len(self.scale) == ntypes
+                ), "Scale should be a list of length ntypes."
+            elif isinstance(self.scale, float):
+                self.scale = [self.scale for _ in range(ntypes)]
+            else:
+                raise ValueError(
+                    "Scale must be a list of float of length ntypes or a float."
+                )
         self.scale = np.array(self.scale, dtype=GLOBAL_NP_FLOAT_PRECISION).reshape(
             ntypes, 1
         )
