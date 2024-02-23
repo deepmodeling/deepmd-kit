@@ -78,6 +78,8 @@ class InvarFitting(GeneralFitting):
         Random seed.
     exclude_types: List[int]
         Atomic contributions of the excluded atom types are set zero.
+    atom_ener
+            Specifying atomic energy contribution in vacuum. The `set_davg_zero` key in the descrptor should be set.
 
     """
 
@@ -98,9 +100,11 @@ class InvarFitting(GeneralFitting):
         rcond: Optional[float] = None,
         seed: Optional[int] = None,
         exclude_types: List[int] = [],
+        atom_ener: Optional[List[float]] = None,
         **kwargs,
     ):
         self.dim_out = dim_out
+        self.atom_ener = atom_ener
         super().__init__(
             var_name=var_name,
             ntypes=ntypes,
@@ -126,6 +130,7 @@ class InvarFitting(GeneralFitting):
     def serialize(self) -> dict:
         data = super().serialize()
         data["dim_out"] = self.dim_out
+        data["atom_ener"] = self.atom_ener
         return data
 
     @property

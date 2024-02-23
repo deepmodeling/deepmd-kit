@@ -56,8 +56,6 @@ class PolarFitting(GeneralFitting):
             If the weights of fitting net are trainable.
             Suppose that we have :math:`N_l` hidden layers in the fitting net,
             this list is of length :math:`N_l + 1`, specifying if the hidden layers and the output layer are trainable.
-    atom_ener
-            Specifying atomic energy contribution in vacuum. The `set_davg_zero` key in the descrptor should be set.
     activation_function
             The activation function :math:`\boldsymbol{\phi}` in the embedding net. Supported options are |ACTIVATION_FN|
     precision
@@ -93,7 +91,6 @@ class PolarFitting(GeneralFitting):
         rcond: Optional[float] = None,
         tot_ener_zero: bool = False,
         trainable: Optional[List[bool]] = None,
-        atom_ener: Optional[List[Optional[float]]] = None,
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
         layer_name: Optional[List[Optional[str]]] = None,
@@ -115,8 +112,6 @@ class PolarFitting(GeneralFitting):
             raise NotImplementedError("use_aparam_as_mask is not implemented")
         if layer_name is not None:
             raise NotImplementedError("layer_name is not implemented")
-        if atom_ener is not None and atom_ener != []:
-            raise NotImplementedError("atom_ener is not implemented")
 
         self.embedding_width = embedding_width
         self.fit_diag = fit_diag
@@ -142,7 +137,6 @@ class PolarFitting(GeneralFitting):
             rcond=rcond,
             tot_ener_zero=tot_ener_zero,
             trainable=trainable,
-            atom_ener=atom_ener,
             activation_function=activation_function,
             precision=precision,
             layer_name=layer_name,

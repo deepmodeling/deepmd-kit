@@ -6,6 +6,7 @@ from abc import (
 from typing import (
     Callable,
     List,
+    Optional,
     Type,
 )
 
@@ -175,6 +176,7 @@ class Fitting(PluginVariant):
         activation_function: str,
         resnet_dt: bool,
         variables: dict,
+        out_dim: Optional[int] = 1,
         suffix: str = "",
     ) -> dict:
         """Serialize network.
@@ -197,6 +199,8 @@ class Fitting(PluginVariant):
             The input variables
         suffix : str, optional
             The suffix of the scope
+        out_dim : int, optional
+            The output dimension
 
         Returns
         -------
@@ -231,7 +235,7 @@ class Fitting(PluginVariant):
                 # initialize the network if it is not initialized
                 fittings[network_idx] = FittingNet(
                     in_dim=in_dim,
-                    out_dim=1,
+                    out_dim=out_dim,
                     neuron=neuron,
                     activation_function=activation_function,
                     resnet_dt=resnet_dt,

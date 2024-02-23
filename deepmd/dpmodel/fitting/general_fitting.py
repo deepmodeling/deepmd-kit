@@ -55,8 +55,6 @@ class GeneralFitting(NativeOP, BaseFitting):
             If the weights of fitting net are trainable.
             Suppose that we have :math:`N_l` hidden layers in the fitting net,
             this list is of length :math:`N_l + 1`, specifying if the hidden layers and the output layer are trainable.
-    atom_ener
-            Specifying atomic energy contribution in vacuum. The `set_davg_zero` key in the descrptor should be set.
     activation_function
             The activation function :math:`\boldsymbol{\phi}` in the embedding net. Supported options are |ACTIVATION_FN|
     precision
@@ -87,7 +85,6 @@ class GeneralFitting(NativeOP, BaseFitting):
         rcond: Optional[float] = None,
         tot_ener_zero: bool = False,
         trainable: Optional[List[bool]] = None,
-        atom_ener: Optional[List[float]] = None,
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
         layer_name: Optional[List[Optional[str]]] = None,
@@ -110,7 +107,6 @@ class GeneralFitting(NativeOP, BaseFitting):
             self.trainable = [True for ii in range(len(self.neuron) + 1)]
         if isinstance(self.trainable, bool):
             self.trainable = [self.trainable] * (len(self.neuron) + 1)
-        self.atom_ener = atom_ener
         self.activation_function = activation_function
         self.precision = precision
         self.layer_name = layer_name
@@ -236,7 +232,6 @@ class GeneralFitting(NativeOP, BaseFitting):
             # not supported
             "tot_ener_zero": self.tot_ener_zero,
             "trainable": self.trainable,
-            "atom_ener": self.atom_ener,
             "layer_name": self.layer_name,
             "use_aparam_as_mask": self.use_aparam_as_mask,
             "spin": self.spin,
