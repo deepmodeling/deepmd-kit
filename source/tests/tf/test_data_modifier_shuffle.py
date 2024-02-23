@@ -59,7 +59,7 @@ class TestDataModifier(tf.test.TestCase):
         )
         jdata = self._setUp_jdata()
         self._setUp_data()
-        
+
         # init model
         model = DPTrainer(jdata, run_opt=run_opt)
         rcut = model.model.get_rcut()
