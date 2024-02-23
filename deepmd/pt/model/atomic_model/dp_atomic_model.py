@@ -50,6 +50,7 @@ class DPAtomicModel(torch.nn.Module, BaseAtomicModel):
 
     def __init__(self, descriptor, fitting, type_map: Optional[List[str]]):
         super().__init__()
+        self.model_def_script = ""
         ntypes = len(type_map)
         self.type_map = type_map
         self.ntypes = ntypes
