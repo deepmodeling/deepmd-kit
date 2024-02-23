@@ -6,6 +6,9 @@ See issue #2982 for more information.
 import copy
 import itertools
 import json
+from datetime import (
+    datetime,
+)
 from typing import (
     ClassVar,
     Dict,
@@ -54,6 +57,8 @@ def traverse_model_dict(model_obj, callback: callable, is_variable: bool = False
     elif isinstance(model_obj, list):
         for ii, vv in enumerate(model_obj):
             model_obj[ii] = traverse_model_dict(vv, callback, is_variable=is_variable)
+    elif model_obj is None:
+        return model_obj
     elif is_variable:
         model_obj = callback(model_obj)
     return model_obj
@@ -79,7 +84,8 @@ class Counter:
         return self.count
 
 
-def save_dp_model(filename: str, model_dict: dict, extra_info: Optional[dict] = None):
+# TODO: should be moved to otherwhere...
+def save_dp_model(filename: str, model_dict: dict) -> None:
     """Save a DP model to a file in the native format.
 
     Parameters
@@ -88,15 +94,9 @@ def save_dp_model(filename: str, model_dict: dict, extra_info: Optional[dict] = 
         The filename to save to.
     model_dict : dict
         The model dict to save.
-    extra_info : dict, optional
-        Extra meta information to save.
     """
     model_dict = model_dict.copy()
     variable_counter = Counter()
-    if extra_info is not None:
-        extra_info = extra_info.copy()
-    else:
-        extra_info = {}
     with h5py.File(filename, "w") as f:
         model_dict = traverse_model_dict(
             model_dict,
@@ -105,10 +105,11 @@ def save_dp_model(filename: str, model_dict: dict, extra_info: Optional[dict] = 
             ).name,
         )
         save_dict = {
-            "model": model_dict,
             "software": "deepmd-kit",
             "version": __version__,
-            **extra_info,
+            # use UTC+0 time
+            "time": str(datetime.utcnow()),
+            **model_dict,
         }
         f.attrs["json"] = json.dumps(save_dict, separators=(",", ":"))
 
