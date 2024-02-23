@@ -718,9 +718,7 @@ def fitting_polar():
         Argument("resnet_dt", bool, optional=True, default=True, doc=doc_resnet_dt),
         Argument("precision", str, optional=True, default="default", doc=doc_precision),
         Argument("fit_diag", bool, optional=True, default=True, doc=doc_fit_diag),
-        Argument(
-            "scale", [List[float], float], optional=True, default=1.0, doc=doc_scale
-        ),
+        Argument("scale", List[float], optional=True, default=None, doc=doc_scale),
         # Argument("diag_shift", [list,float], optional = True, default = 0.0, doc = doc_diag_shift),
         Argument("shift_diag", bool, optional=True, default=True, doc=doc_shift_diag),
         Argument(

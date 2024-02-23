@@ -102,6 +102,8 @@ class PolarFitting(GeneralFitting):
         fit_diag: bool = True,
         scale: Optional[List[float]] = None,
         shift_diag: bool = True,
+        # not used
+        seed: Optional[int] = None,
     ):
         # seed, uniform_seed are not included
         if tot_ener_zero:
