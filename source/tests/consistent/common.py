@@ -255,6 +255,7 @@ class CommonTest(ABC):
         np.testing.assert_equal(data1, data2)
         for rr1, rr2 in zip(ret1, ret2):
             np.testing.assert_allclose(rr1, rr2, rtol=self.rtol, atol=self.atol)
+            assert rr1.dtype == rr2.dtype, f"{rr1.dtype} != {rr2.dtype}"
 
     def test_tf_self_consistent(self):
         """Test whether TF is self consistent."""
@@ -269,6 +270,7 @@ class CommonTest(ABC):
         np.testing.assert_equal(data1, data2)
         for rr1, rr2 in zip(ret1, ret2):
             np.testing.assert_allclose(rr1, rr2, rtol=self.rtol, atol=self.atol)
+            assert rr1.dtype == rr2.dtype, f"{rr1.dtype} != {rr2.dtype}"
 
     def test_dp_consistent_with_ref(self):
         """Test whether DP and reference are consistent."""
@@ -286,6 +288,7 @@ class CommonTest(ABC):
         np.testing.assert_equal(data1, data2)
         for rr1, rr2 in zip(ret1, ret2):
             np.testing.assert_allclose(rr1, rr2, rtol=self.rtol, atol=self.atol)
+            assert rr1.dtype == rr2.dtype, f"{rr1.dtype} != {rr2.dtype}"
 
     def test_dp_self_consistent(self):
         """Test whether DP is self consistent."""
@@ -299,6 +302,7 @@ class CommonTest(ABC):
         for rr1, rr2 in zip(ret1, ret2):
             if isinstance(rr1, np.ndarray) and isinstance(rr2, np.ndarray):
                 np.testing.assert_allclose(rr1, rr2, rtol=self.rtol, atol=self.atol)
+                assert rr1.dtype == rr2.dtype, f"{rr1.dtype} != {rr2.dtype}"
             else:
                 self.assertEqual(rr1, rr2)
 
@@ -318,6 +322,7 @@ class CommonTest(ABC):
         np.testing.assert_equal(data1, data2)
         for rr1, rr2 in zip(ret1, ret2):
             np.testing.assert_allclose(rr1, rr2, rtol=self.rtol, atol=self.atol)
+            assert rr1.dtype == rr2.dtype, f"{rr1.dtype} != {rr2.dtype}"
 
     def test_pt_self_consistent(self):
         """Test whether PT is self consistent."""
@@ -331,6 +336,7 @@ class CommonTest(ABC):
         for rr1, rr2 in zip(ret1, ret2):
             if isinstance(rr1, np.ndarray) and isinstance(rr2, np.ndarray):
                 np.testing.assert_allclose(rr1, rr2, rtol=self.rtol, atol=self.atol)
+                assert rr1.dtype == rr2.dtype, f"{rr1.dtype} != {rr2.dtype}"
             else:
                 self.assertEqual(rr1, rr2)
 

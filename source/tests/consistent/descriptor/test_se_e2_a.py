@@ -39,6 +39,7 @@ from deepmd.utils.argcheck import (
     (True, False),  # resnet_dt
     (True, False),  # type_one_side
     ([], [[0, 1]]),  # excluded_types
+    ("float32", "float64"),  # precision
 )
 class TestSeA(CommonTest, DescriptorTest, unittest.TestCase):
     @property
@@ -47,6 +48,7 @@ class TestSeA(CommonTest, DescriptorTest, unittest.TestCase):
             resnet_dt,
             type_one_side,
             excluded_types,
+            precision,
         ) = self.param
         return {
             "sel": [10, 10],
@@ -57,6 +59,7 @@ class TestSeA(CommonTest, DescriptorTest, unittest.TestCase):
             "resnet_dt": resnet_dt,
             "type_one_side": type_one_side,
             "exclude_types": excluded_types,
+            "precision": precision,
             "seed": 1145141919810,
         }
 
@@ -66,6 +69,7 @@ class TestSeA(CommonTest, DescriptorTest, unittest.TestCase):
             resnet_dt,
             type_one_side,
             excluded_types,
+            precision,
         ) = self.param
         return not type_one_side or CommonTest.skip_pt
 
@@ -75,6 +79,7 @@ class TestSeA(CommonTest, DescriptorTest, unittest.TestCase):
             resnet_dt,
             type_one_side,
             excluded_types,
+            precision,
         ) = self.param
         return not type_one_side or CommonTest.skip_dp
 
@@ -147,3 +152,35 @@ class TestSeA(CommonTest, DescriptorTest, unittest.TestCase):
 
     def extract_ret(self, ret: Any, backend) -> Tuple[np.ndarray, ...]:
         return (ret[0],)
+
+    @property
+    def rtol(self) -> float:
+        """Relative tolerance for comparing the return value."""
+        (
+            resnet_dt,
+            type_one_side,
+            excluded_types,
+            precision,
+        ) = self.param
+        if precision == "float64":
+            return 1e-10
+        elif precision == "float32":
+            return 1e-4
+        else:
+            raise ValueError(f"Unknown precision: {precision}")
+
+    @property
+    def atol(self) -> float:
+        """Absolute tolerance for comparing the return value."""
+        (
+            resnet_dt,
+            type_one_side,
+            excluded_types,
+            precision,
+        ) = self.param
+        if precision == "float64":
+            return 1e-10
+        elif precision == "float32":
+            return 1e-4
+        else:
+            raise ValueError(f"Unknown precision: {precision}")
