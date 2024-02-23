@@ -57,9 +57,6 @@ class TestDataModifier(tf.test.TestCase):
             restart=None, init_model=None, log_path=None, log_level=30, mpi_log="master"
         )
         jdata = j_loader(INPUT)
-        jdata["model"]["fitting_net"]["embedding_width"] = jdata["model"]["descriptor"][
-            "neuron"
-        ][-1]
         # init model
         model = DPTrainer(jdata, run_opt=run_opt)
         rcut = model.model.get_rcut()
