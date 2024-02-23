@@ -145,19 +145,18 @@ class DeepEval(DeepEvalBackend):
     @property
     def model_type(self) -> "DeepEvalWrapper":
         """The the evaluator of the model type."""
-        output_def = self.dp.model["Default"].model_output_def()
-        var_defs = output_def.var_defs
-        if "energy" in var_defs:
+        model_type = self.dp.model["Default"].model_output_type()
+        if model_type == "energy":
             return DeepPot
-        elif "dos" in var_defs:
+        elif model_type == "dos":
             return DeepDOS
-        elif "dipole" in var_defs:
+        elif model_type == "dipole":
             return DeepDipole
-        elif "polar" in var_defs:
+        elif model_type == "polar":
             return DeepPolar
-        elif "global_polar" in var_defs:
+        elif model_type == "global_polar":
             return DeepGlobalPolar
-        elif "wfc" in var_defs:
+        elif model_type == "wfc":
             return DeepWFC
         else:
             raise RuntimeError("Unknown model type")
