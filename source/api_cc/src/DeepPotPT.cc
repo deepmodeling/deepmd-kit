@@ -25,15 +25,20 @@ void DeepPotPT::init(const std::string& model,
               << std::endl;
     return;
   }
-  std::cout << "load model from: " << model << " to gpu " << gpu_rank
-            << std::endl;
   gpu_id = gpu_rank;
   torch::Device device(torch::kCUDA, gpu_rank);
   gpu_enabled = torch::cuda::is_available();
   if (!gpu_enabled) {
     device = torch::Device(torch::kCPU);
+    std::cout << "load model from: " << model << " to cpu " << gpu_rank
+            << std::endl;
+  }
+  else{
+      std::cout << "load model from: " << model << " to gpu " << gpu_rank
+            << std::endl;
   }
   module = torch::jit::load(model, device);
+
   torch::jit::FusionStrategy strategy;
   strategy = {{torch::jit::FusionBehavior::DYNAMIC, 10}};
   torch::jit::setFusionStrategy(strategy);
