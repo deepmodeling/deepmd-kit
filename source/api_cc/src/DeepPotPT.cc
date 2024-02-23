@@ -42,16 +42,16 @@ void DeepPotPT::init(const std::string& model,
                    num_inter_nthreads);  // need to be fixed as
                                          // DP_INTRA_OP_PARALLELISM_THREADS
   if (num_inter_nthreads) {
-    try{
+    try {
       at::set_num_interop_threads(num_inter_nthreads);
+    } catch (...) {
     }
-    catch (...) {}
   }
   if (num_intra_nthreads) {
-    try{
-    at::set_num_threads(num_intra_nthreads);
+    try {
+      at::set_num_threads(num_intra_nthreads);
+    } catch (...) {
     }
-    catch (...) {}
   }
 
   auto rcut_ = module.run_method("get_rcut").toDouble();
@@ -115,7 +115,8 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
   c10::Dict<c10::IValue, c10::IValue> outputs =
       module
           .run_method("forward_lower", coord_wrapped_Tensor, atype_Tensor,
-                      firstneigh_tensor,optional_tensor,optional_tensor,optional_tensor,do_atom_virial_tensor)
+                      firstneigh_tensor, optional_tensor, optional_tensor,
+                      optional_tensor, do_atom_virial_tensor)
           .toGenericDict();
   c10::IValue energy_ = outputs.at("energy");
   c10::IValue force_ = outputs.at("extended_force");
