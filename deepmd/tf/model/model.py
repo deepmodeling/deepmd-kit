@@ -14,6 +14,9 @@ from typing import (
     Union,
 )
 
+from deepmd.common import (
+    j_get_type,
+)
 from deepmd.tf.descriptor.descriptor import (
     Descriptor,
 )
@@ -92,13 +95,13 @@ class Model(ABC):
     """
 
     @classmethod
-    def get_class_by_input(cls, input: dict):
-        """Get the class by input data.
+    def get_class_by_type(cls, model_type: str):
+        """Get the class by input type.
 
         Parameters
         ----------
-        input : dict
-            The input data
+        model_type : str
+            The input type
         """
         # infer model type by fitting_type
         from deepmd.tf.model.frozen import (
@@ -136,7 +139,7 @@ class Model(ABC):
     def __new__(cls, *args, **kwargs):
         if cls is Model:
             # init model
-            cls = cls.get_class_by_input(kwargs)
+            cls = cls.get_class_by_type(j_get_type(kwargs, cls.__name__))
             return cls.__new__(cls, *args, **kwargs)
         return super().__new__(cls)
 
@@ -575,7 +578,7 @@ class Model(ABC):
         dict
             The updated local data
         """
-        cls = cls.get_class_by_input(local_jdata)
+        cls = cls.get_class_by_type(j_get_type(local_jdata, cls.__name__))
         return cls.update_sel(global_jdata, local_jdata)
 
     @classmethod
@@ -598,7 +601,9 @@ class Model(ABC):
             The deserialized descriptor
         """
         if cls is Descriptor:
-            return Descriptor.get_class_by_input(data).deserialize(data)
+            return Descriptor.get_class_by_type(
+                j_get_type(data, cls.__name__)
+            ).deserialize(data)
         raise NotImplementedError("Not implemented in class %s" % cls.__name__)
 
     def serialize(self, suffix: str = "") -> dict:
@@ -646,7 +651,9 @@ class StandardModel(Model):
 
         if cls is StandardModel:
             if isinstance(kwargs["fitting_net"], dict):
-                fitting_type = Fitting.get_class_by_input(kwargs["fitting_net"])
+                fitting_type = Fitting.get_class_by_type(
+                    j_get_type(kwargs["fitting_net"], cls.__name__)
+                )
             elif isinstance(kwargs["fitting_net"], Fitting):
                 fitting_type = type(kwargs["fitting_net"])
             else:

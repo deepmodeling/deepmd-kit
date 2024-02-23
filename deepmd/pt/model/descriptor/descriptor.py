@@ -14,6 +14,9 @@ from typing import (
 
 import torch
 
+from deepmd.common import (
+    j_get_type,
+)
 from deepmd.pt.model.network.network import (
     TypeEmbedNet,
 )
@@ -93,15 +96,11 @@ class Descriptor(torch.nn.Module, BaseDescriptor):
 
     def __new__(cls, *args, **kwargs):
         if cls is Descriptor:
-            cls = cls.get_class_by_input(kwargs)
+            cls = cls.get_class_by_type(j_get_type(kwargs, cls.__name__))
         return super().__new__(cls)
 
     @classmethod
-    def get_class_by_input(cls, input: dict) -> Type["Descriptor"]:
-        try:
-            descrpt_type = input["type"]
-        except KeyError:
-            raise KeyError("the type of descriptor should be set by `type`")
+    def get_class_by_type(cls, descrpt_type: str) -> Type["Descriptor"]:
         if descrpt_type in Descriptor.__plugins.plugins:
             return Descriptor.__plugins.plugins[descrpt_type]
         else:
@@ -125,7 +124,7 @@ class Descriptor(torch.nn.Module, BaseDescriptor):
             The deserialized descriptor
         """
         if cls is Descriptor:
-            return Descriptor.get_class_by_input(data).deserialize(data)
+            return Descriptor.get_class_by_type(data["type"]).deserialize(data)
         raise NotImplementedError("Not implemented in class %s" % cls.__name__)
 
 

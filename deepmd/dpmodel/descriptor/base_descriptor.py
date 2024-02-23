@@ -6,6 +6,9 @@ from typing import (
 
 import numpy as np
 
+from deepmd.common import (
+    j_get_type,
+)
 from deepmd.utils.plugin import (
     Plugin,
 )
@@ -42,15 +45,11 @@ class BaseDescriptor(make_base_descriptor(np.ndarray, "call")):
 
     def __new__(cls, *args, **kwargs):
         if cls is BaseDescriptor:
-            cls = cls.get_class_by_input(kwargs)
+            cls = cls.get_class_by_type(j_get_type(kwargs, cls.__name__))
         return super().__new__(cls)
 
     @classmethod
-    def get_class_by_input(cls, input: dict) -> Type["BaseDescriptor"]:
-        try:
-            descrpt_type = input["type"]
-        except KeyError:
-            raise KeyError("the type of descriptor should be set by `type`")
+    def get_class_by_type(cls, descrpt_type: str) -> Type["BaseDescriptor"]:
         if descrpt_type in BaseDescriptor.__plugins.plugins:
             return BaseDescriptor.__plugins.plugins[descrpt_type]
         else:
@@ -74,5 +73,5 @@ class BaseDescriptor(make_base_descriptor(np.ndarray, "call")):
             The deserialized descriptor
         """
         if cls is BaseDescriptor:
-            return BaseDescriptor.get_class_by_input(data).deserialize(data)
+            return BaseDescriptor.get_class_by_type(data["type"]).deserialize(data)
         raise NotImplementedError("Not implemented in class %s" % cls.__name__)
