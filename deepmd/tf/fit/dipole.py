@@ -350,7 +350,7 @@ class DipoleFittingSeA(Fitting):
             "embedding_width": self.dim_rot_mat_1,
             # very bad design: type embedding is not passed to the class
             # TODO: refactor the class
-            "distinguish_types": True,
+            "mixed_types": False,
             "dim_out": 3,
             "neuron": self.n_neuron,
             "resnet_dt": self.resnet_dt,
