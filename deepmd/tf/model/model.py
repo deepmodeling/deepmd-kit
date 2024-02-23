@@ -687,13 +687,14 @@ class StandardModel(Model):
         if isinstance(fitting_net, Fitting):
             self.fitting = fitting_net
         else:
+            if fitting_net["type"] in ["dipole", "polar"]:
+                fitting_net["embedding_width"] = self.descrpt.get_dim_rot_mat_1()
             self.fitting = Fitting(
                 **fitting_net,
                 descrpt=self.descrpt,
                 spin=self.spin,
                 ntypes=self.descrpt.get_ntypes(),
                 dim_descrpt=self.descrpt.get_dim_out(),
-                embedding_width=self.descrpt.get_dim_rot_mat_1(),
             )
         self.rcut = self.descrpt.get_rcut()
         self.ntypes = self.descrpt.get_ntypes()

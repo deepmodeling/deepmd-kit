@@ -133,13 +133,14 @@ class MultiModel(Model):
             if isinstance(item_fitting_param, Fitting):
                 fitting_dict[item] = item_fitting_param
             else:
+                if fitting_net["type"] in ["dipole", "polar"]:
+                    fitting_net["embedding_width"] = self.descrpt.get_dim_rot_mat_1()
                 fitting_dict[item] = Fitting(
                     **item_fitting_param,
                     descrpt=self.descrpt,
                     spin=self.spin,
                     ntypes=self.descrpt.get_ntypes(),
                     dim_descrpt=self.descrpt.get_dim_out(),
-                    embedding_width=self.descrpt.get_dim_rot_mat_1(),
                 )
 
         # type embedding
