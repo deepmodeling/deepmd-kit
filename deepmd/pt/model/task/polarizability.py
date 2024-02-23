@@ -3,6 +3,7 @@ import logging
 from typing import (
     List,
     Optional,
+    Union,
 )
 
 import torch
@@ -85,7 +86,7 @@ class PolarFittingNet(GeneralFitting):
         seed: Optional[int] = None,
         exclude_types: List[int] = [],
         fit_diag: bool = True,
-        scale: Optional[List[float]] = None,
+        scale: Optional[Union[List[float],float]] = None,
         shift_diag: bool = True,
         **kwargs,
     ):
@@ -95,9 +96,12 @@ class PolarFittingNet(GeneralFitting):
         if self.scale is None:
             self.scale = [1.0 for _ in range(ntypes)]
         else:
-            assert (
-                isinstance(self.scale, list) and len(self.scale) == ntypes
-            ), "Scale should be a list of length ntypes."
+            if isinstance(self.scale, list):
+                assert len(self.scale) == ntypes, "Scale should be a list of length ntypes."
+            elif isinstance(self.scale, float):
+                self.scale = [self.scale for _ in range(ntypes)]
+            else:
+                raise ValueError("Scale must be a list of float of length ntypes or a float.")
         self.scale = torch.tensor(
             self.scale, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE
         ).view(ntypes, 1)

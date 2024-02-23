@@ -113,9 +113,12 @@ class PolarFittingSeA(Fitting):
         if self.scale is None:
             self.scale = np.array([1.0 for ii in range(self.ntypes)])
         else:
-            assert (
-                isinstance(self.scale, list) and len(self.scale) == self.ntypes
-            ), "Scale should be a list of length ntypes."
+            if isinstance(self.scale, list):
+                assert len(self.scale) == ntypes, "Scale should be a list of length ntypes."
+            elif isinstance(self.scale, float):
+                self.scale = [self.scale for _ in range(ntypes)]
+            else:
+                raise ValueError("Scale must be a list of float of length ntypes or a float.")
             self.scale = np.array(self.scale)
         # if self.diag_shift is None:
         #    self.diag_shift = [0.0 for ii in range(self.ntypes)]
