@@ -325,7 +325,7 @@ class DeepPotPT : public DeepPotBase {
   NeighborListDataPT nlist_data;
   int max_num_neighbors;
   int gpu_id;
-  bool cpu_enabled;
+  bool gpu_enabled;
   at::Tensor firstneigh_tensor;
 };
 

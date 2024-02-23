@@ -2,6 +2,7 @@
 #ifdef BUILD_PYTORCH
 #include "commonPT.h"
 using namespace deepmd;
+NeighborListDataPT::~NeighborListDataPT() {free(jlist);}
 void NeighborListDataPT::copy_from_nlist(const InputNlist& inlist,
                                          int& max_num_neighbors,
                                          int nnei) {

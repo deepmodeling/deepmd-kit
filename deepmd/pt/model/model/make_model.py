@@ -179,7 +179,7 @@ def make_model(T_AtomicModel):
                 do_atomic_virial=do_atomic_virial,
             )
             return model_predict
-
+        @torch.jit.export
         def format_nlist(
             self,
             extended_coord: torch.Tensor,

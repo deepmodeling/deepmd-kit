@@ -29,16 +29,11 @@ void DeepPotPT::init(const std::string& model,
             << std::endl;
   gpu_id = gpu_rank;
   torch::Device device(torch::kCUDA, gpu_rank);
-  cpu_enabled = false;
-  // This may be implemented as something like DPErrcheck(DPSetDevice(gpu_rank %
-  // gpu_num));
-  try {
-    module = torch::jit::load(model, device);
-  } catch (const c10::Error& e) {
-    torch::Device device(torch::kCPU);
-    module = torch::jit::load(model, device);
-    cpu_enabled = true;
+  gpu_enabled = torch::cuda::is_available();
+  if (!gpu_enabled) {
+    device = torch::Device(torch::kCPU);
   }
+  module = torch::jit::load(model, device);
   torch::jit::FusionStrategy strategy;
   strategy = {{torch::jit::FusionBehavior::DYNAMIC, 10}};
   torch::jit::setFusionStrategy(strategy);
@@ -76,7 +71,7 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
                         const InputNlist& lmp_list,
                         const int& ago) {
   torch::Device device(torch::kCUDA, gpu_id);
-  if (cpu_enabled) {
+  if (!gpu_enabled) {
     device = torch::Device(torch::kCPU);
   }
   std::vector<VALUETYPE> coord_wrapped = coord;
@@ -95,7 +90,7 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
     nlist_data.copy_from_nlist(lmp_list, max_num_neighbors, nnei);
     if (max_num_neighbors > nnei) {
       at::Tensor firstneigh = torch::from_blob(
-          nlist_data.jlist, {lmp_list.inum, max_num_neighbors}, int32_options);
+          nlist_data.jlist, {1, lmp_list.inum, max_num_neighbors}, int32_options);
       at::Tensor nlist = firstneigh.to(torch::kInt64).to(device);
       firstneigh_tensor = module
                               .run_method("format_nlist", coord_wrapped_Tensor,
@@ -199,7 +194,7 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
                         const std::vector<int>& atype,
                         const std::vector<VALUETYPE>& box) {
   torch::Device device(torch::kCUDA, gpu_id);
-  if (cpu_enabled) {
+  if (!gpu_enabled) {
     device = torch::Device(torch::kCPU);
   }
   std::vector<VALUETYPE> coord_wrapped = coord;
