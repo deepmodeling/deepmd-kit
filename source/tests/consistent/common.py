@@ -263,7 +263,7 @@ class CommonTest(ABC):
                 rr1.ravel(), rr2.ravel(), rtol=self.rtol, atol=self.atol
             )
             assert rr1.dtype == rr2.dtype, f"{rr1.dtype} != {rr2.dtype}"
-            
+
     def test_tf_self_consistent(self):
         """Test whether TF is self consistent."""
         if self.skip_tf:

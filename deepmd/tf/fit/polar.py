@@ -517,7 +517,7 @@ class PolarFittingSeA(Fitting):
             tensor_size=9,
             label_name="polarizability",
         )
-    
+
     def serialize(self, suffix: str) -> dict:
         """Serialize the model.
 
@@ -541,7 +541,7 @@ class PolarFittingSeA(Fitting):
             "precision": self.fitting_precision.name,
             "exclude_types": [],
             "fit_diag": self.fit_diag,
-        "scale": list(self.scale),
+            "scale": list(self.scale),
             "shift_diag": self.shift_diag,
             "nets": self.serialize_network(
                 ntypes=self.ntypes,
