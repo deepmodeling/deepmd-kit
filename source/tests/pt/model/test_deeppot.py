@@ -96,6 +96,7 @@ class TestDeepPot(unittest.TestCase):
         self.assertEqual(dp.get_ntypes(), 2)
         self.assertEqual(dp.get_dim_fparam(), 0)
         self.assertEqual(dp.get_dim_aparam(), 0)
+        self.assertEqual(dp.deep_eval.model_type, DeepPot)
 
     def test_uni(self):
         dp = DeepPotUni("model.pt")
