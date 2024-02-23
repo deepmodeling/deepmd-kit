@@ -40,11 +40,9 @@ class TestDPA2(unittest.TestCase):
             8.178091365465004481e-01,
             6.159552512682983760e00,
         ]
-        self.cell = (
-            torch.tensor(cell, dtype=env.GLOBAL_PT_FLOAT_PRECISION)
-            .view(1, 3, 3)
-            .to(env.DEVICE)
-        )
+        self.cell = torch.tensor(
+            cell, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE
+        ).view(1, 3, 3)
         coord = [
             2.978060152121375648e00,
             3.588469695887098077e00,
@@ -62,12 +60,12 @@ class TestDPA2(unittest.TestCase):
             6.575011420004332585e00,
             6.825240650611076099e00,
         ]
-        self.coord = (
-            torch.tensor(coord, dtype=env.GLOBAL_PT_FLOAT_PRECISION)
-            .view(1, -1, 3)
-            .to(env.DEVICE)
-        )
-        self.atype = torch.IntTensor([0, 0, 0, 1, 1]).view(1, -1).to(env.DEVICE)
+        self.coord = torch.tensor(
+            coord, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE
+        ).view(1, -1, 3)
+        self.atype = torch.tensor(
+            [0, 0, 0, 1, 1], dtype=torch.int32, device=env.DEVICE
+        ).view(1, -1)
         self.ref_d = torch.tensor(
             [
                 8.435412613327306630e-01,
@@ -112,7 +110,8 @@ class TestDPA2(unittest.TestCase):
                 -3.073744832541754762e-02,
             ],
             dtype=env.GLOBAL_PT_FLOAT_PRECISION,
-        ).to(env.DEVICE)
+            device=env.DEVICE,
+        )
         with open(Path(CUR_DIR) / "models" / "dpa2_hyb.json") as fp:
             self.model_json = json.load(fp)
         self.file_model_param = Path(CUR_DIR) / "models" / "dpa2.pth"

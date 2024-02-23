@@ -13,6 +13,7 @@ from deepmd.dpmodel.descriptor import (  # noqa # TODO: should import all descri
     DescrptSeA,
 )
 from deepmd.dpmodel.fitting import (  # noqa # TODO: should import all fittings!
+    EnergyFittingNet,
     InvarFitting,
 )
 from deepmd.dpmodel.output_def import (

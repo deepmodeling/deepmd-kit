@@ -61,7 +61,7 @@ class CheckSymmetry(DeepmdData):
 def get_data(batch):
     inputs = {}
     for key in ["coord", "atype", "box"]:
-        inputs[key] = torch.as_tensor(batch[key])
+        inputs[key] = torch.as_tensor(batch[key], device=env.DEVICE)
         inputs[key] = inputs[key].unsqueeze(0).to(env.DEVICE)
     return inputs
 
@@ -74,7 +74,8 @@ class TestRotation(unittest.TestCase):
         self.config["training"]["training_data"]["systems"] = data_file
         self.config["training"]["validation_data"]["systems"] = data_file
         self.rotation = special_ortho_group.rvs(3)
-        self.get_dataset(0)
+        with torch.device("cpu"):
+            self.get_dataset(0)
         self.get_model()
 
     def get_model(self):

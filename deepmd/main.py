@@ -760,6 +760,28 @@ def main():
 
     if args.backend not in BACKEND_TABLE:
         raise ValueError(f"Unknown backend {args.backend}")
-    deepmd_main = BACKENDS[args.backend]().entry_point_hook
+
+    if args.command in (
+        "test",
+        "doc-train-input",
+        "model-devi",
+        "neighbor-stat",
+        "gui",
+    ):
+        # common entrypoints
+        from deepmd.entrypoints.main import main as deepmd_main
+    elif args.command in (
+        "train",
+        "freeze",
+        "transfer",
+        "compress",
+        "convert-from",
+        "train-nvnmd",
+    ):
+        deepmd_main = BACKENDS[args.backend]().entry_point_hook
+    elif args.command is None:
+        pass
+    else:
+        raise RuntimeError(f"unknown command {args.command}")
 
     deepmd_main(args)

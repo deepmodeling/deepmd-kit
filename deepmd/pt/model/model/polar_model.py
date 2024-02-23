@@ -11,8 +11,8 @@ from .dp_model import (
 )
 
 
-class EnergyModel(DPModel):
-    model_type = "ener"
+class PolarModel(DPModel):
+    model_type = "polar"
 
     def __init__(
         self,
@@ -40,23 +40,13 @@ class EnergyModel(DPModel):
         )
         if self.fitting_net is not None:
             model_predict = {}
-            model_predict["atom_energy"] = model_ret["energy"]
-            model_predict["energy"] = model_ret["energy_redu"]
-            if self.do_grad_r("energy"):
-                model_predict["force"] = model_ret["energy_derv_r"].squeeze(-2)
-            if self.do_grad_c("energy"):
-                model_predict["virial"] = model_ret["energy_derv_c_redu"].squeeze(-2)
-                if do_atomic_virial:
-                    model_predict["atom_virial"] = model_ret["energy_derv_c"].squeeze(
-                        -3
-                    )
-            else:
-                model_predict["force"] = model_ret["dforce"]
+            model_predict["polar"] = model_ret["polar"]
+            model_predict["global_polar"] = model_ret["polar_redu"]
         else:
             model_predict = model_ret
             model_predict["updated_coord"] += coord
         return model_predict
-    @torch.jit.export
+
     def forward_lower(
         self,
         extended_coord,
@@ -78,19 +68,8 @@ class EnergyModel(DPModel):
         )
         if self.fitting_net is not None:
             model_predict = {}
-            model_predict["atom_energy"] = model_ret["energy"]
-            model_predict["energy"] = model_ret["energy_redu"]
-            if self.do_grad_r("energy"):
-                model_predict["extended_force"] = model_ret["energy_derv_r"].squeeze(-2)
-            if self.do_grad_c("energy"):
-                model_predict["virial"] = model_ret["energy_derv_c_redu"].squeeze(-2)
-                if do_atomic_virial:
-                    model_predict["extended_virial"] = model_ret[
-                        "energy_derv_c"
-                    ].squeeze(-3)
-            else:
-                assert model_ret["dforce"] is not None
-                model_predict["dforce"] = model_ret["dforce"]
+            model_predict["polar"] = model_ret["polar"]
+            model_predict["global_polar"] = model_ret["polar_redu"]
         else:
             model_predict = model_ret
         return model_predict

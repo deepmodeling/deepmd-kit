@@ -326,7 +326,7 @@ class RepformerLayer(torch.nn.Module):
         sel = [sel] if isinstance(sel, int) else sel
         self.nnei = sum(sel)
         assert len(sel) == 1
-        self.sel = torch.tensor(sel)
+        self.sel = torch.tensor(sel, device=env.DEVICE)
         self.sec = self.sel
         self.axis_dim = axis_dim
         self.set_davg_zero = set_davg_zero

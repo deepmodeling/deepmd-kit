@@ -201,11 +201,11 @@ class PermutationTest:
         self,
     ):
         natoms = 5
-        cell = torch.rand([3, 3], dtype=dtype).to(env.DEVICE)
-        cell = (cell + cell.T) + 5.0 * torch.eye(3).to(env.DEVICE)
-        coord = torch.rand([natoms, 3], dtype=dtype).to(env.DEVICE)
+        cell = torch.rand([3, 3], dtype=dtype, device=env.DEVICE)
+        cell = (cell + cell.T) + 5.0 * torch.eye(3, device=env.DEVICE)
+        coord = torch.rand([natoms, 3], dtype=dtype, device=env.DEVICE)
         coord = torch.matmul(coord, cell)
-        atype = torch.IntTensor([0, 0, 0, 1, 1]).to(env.DEVICE)
+        atype = torch.tensor([0, 0, 0, 1, 1], dtype=torch.int32, device=env.DEVICE)
         idx_perm = [1, 0, 4, 3, 2]
         e0, f0, v0 = eval_model(
             self.model, coord.unsqueeze(0), cell.unsqueeze(0), atype

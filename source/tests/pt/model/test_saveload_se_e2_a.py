@@ -83,7 +83,8 @@ class TestSaveLoadSeA(unittest.TestCase):
             drop_last=False,
             pin_memory=True,
         )
-        self.training_data = BufferedIterator(iter(self.training_dataloader))
+        with torch.device("cpu"):
+            self.training_data = BufferedIterator(iter(self.training_dataloader))
         self.loss = EnergyStdLoss(**self.config["loss"])
         self.cur_lr = 1
         self.task_key = "Default"

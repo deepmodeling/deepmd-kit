@@ -37,27 +37,26 @@ class SmoothTest:
         aprec = 1e-5 if self.aprec is None else self.aprec
 
         natoms = 10
-        cell = 8.6 * torch.eye(3, dtype=dtype).to(env.DEVICE)
-        atype = torch.randint(0, 3, [natoms])
-        coord0 = (
-            torch.tensor(
-                [
-                    0.0,
-                    0.0,
-                    0.0,
-                    4.0 - 0.5 * epsilon,
-                    0.0,
-                    0.0,
-                    0.0,
-                    4.0 - 0.5 * epsilon,
-                    0.0,
-                ],
-                dtype=dtype,
-            )
-            .view([-1, 3])
-            .to(env.DEVICE)
+        cell = 8.6 * torch.eye(3, dtype=dtype, device=env.DEVICE)
+        atype = torch.randint(0, 3, [natoms], device=env.DEVICE)
+        coord0 = torch.tensor(
+            [
+                0.0,
+                0.0,
+                0.0,
+                4.0 - 0.5 * epsilon,
+                0.0,
+                0.0,
+                0.0,
+                4.0 - 0.5 * epsilon,
+                0.0,
+            ],
+            dtype=dtype,
+            device=env.DEVICE,
+        ).view([-1, 3])
+        coord1 = torch.rand(
+            [natoms - coord0.shape[0], 3], dtype=dtype, device=env.DEVICE
         )
-        coord1 = torch.rand([natoms - coord0.shape[0], 3], dtype=dtype).to(env.DEVICE)
         coord1 = torch.matmul(coord1, cell)
         coord = torch.concat([coord0, coord1], dim=0)
 
