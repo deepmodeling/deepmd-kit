@@ -14,6 +14,9 @@ from typing import (
     Union,
 )
 
+from deepmd.common import (
+    j_get_type,
+)
 from deepmd.tf.descriptor.descriptor import (
     Descriptor,
 )
@@ -92,13 +95,13 @@ class Model(ABC):
     """
 
     @classmethod
-    def get_class_by_input(cls, input: dict):
-        """Get the class by input data.
+    def get_class_by_type(cls, model_type: str):
+        """Get the class by input type.
 
         Parameters
         ----------
-        input : dict
-            The input data
+        model_type : str
+            The input type
         """
         # infer model type by fitting_type
         from deepmd.tf.model.frozen import (
@@ -117,7 +120,6 @@ class Model(ABC):
             PairwiseDPRc,
         )
 
-        model_type = input.get("type", "standard")
         if model_type == "standard":
             return StandardModel
         elif model_type == "multi":
@@ -136,7 +138,7 @@ class Model(ABC):
     def __new__(cls, *args, **kwargs):
         if cls is Model:
             # init model
-            cls = cls.get_class_by_input(kwargs)
+            cls = cls.get_class_by_type(kwargs.get("type", "standard"))
             return cls.__new__(cls, *args, **kwargs)
         return super().__new__(cls)
 
@@ -575,7 +577,7 @@ class Model(ABC):
         dict
             The updated local data
         """
-        cls = cls.get_class_by_input(local_jdata)
+        cls = cls.get_class_by_type(local_jdata.get("type", "standard"))
         return cls.update_sel(global_jdata, local_jdata)
 
     @classmethod
@@ -598,7 +600,9 @@ class Model(ABC):
             The deserialized Model
         """
         if cls is Model:
-            return Model.get_class_by_input(data).deserialize(data)
+            return Model.get_class_by_type(data.get("type", "standard")).deserialize(
+                data
+            )
         raise NotImplementedError("Not implemented in class %s" % cls.__name__)
 
     def serialize(self, suffix: str = "") -> dict:
@@ -646,7 +650,9 @@ class StandardModel(Model):
 
         if cls is StandardModel:
             if isinstance(kwargs["fitting_net"], dict):
-                fitting_type = Fitting.get_class_by_input(kwargs["fitting_net"])
+                fitting_type = Fitting.get_class_by_type(
+                    j_get_type(kwargs["fitting_net"], cls.__name__)
+                )
             elif isinstance(kwargs["fitting_net"], Fitting):
                 fitting_type = type(kwargs["fitting_net"])
             else:
@@ -810,9 +816,6 @@ class StandardModel(Model):
         """
         data = copy.deepcopy(data)
 
-        data["descriptor"]["type"] = {
-            "DescrptSeA": "se_e2_a",
-        }[data.pop("descriptor_name")]
         data["fitting"]["type"] = {
             "EnergyFittingNet": "ener",
         }[data.pop("fitting_name")]
@@ -845,7 +848,6 @@ class StandardModel(Model):
             "type_map": self.type_map,
             "descriptor": self.descrpt.serialize(suffix=suffix),
             "fitting": self.fitting.serialize(suffix=suffix),
-            "descriptor_name": self.descrpt.__class__.__name__,
             "fitting_name": {"EnerFitting": "EnergyFittingNet"}[
                 self.fitting.__class__.__name__
             ],
