@@ -120,7 +120,6 @@ class Model(ABC):
             PairwiseDPRc,
         )
 
-        model_type = input.get("type", "standard")
         if model_type == "standard":
             return StandardModel
         elif model_type == "multi":
@@ -139,7 +138,7 @@ class Model(ABC):
     def __new__(cls, *args, **kwargs):
         if cls is Model:
             # init model
-            cls = cls.get_class_by_type(j_get_type(kwargs, cls.__name__))
+            cls = cls.get_class_by_type(kwargs.get("type", "standard"))
             return cls.__new__(cls, *args, **kwargs)
         return super().__new__(cls)
 
@@ -578,7 +577,7 @@ class Model(ABC):
         dict
             The updated local data
         """
-        cls = cls.get_class_by_type(j_get_type(local_jdata, cls.__name__))
+        cls = cls.get_class_by_type(local_jdata.get("type", "standard"))
         return cls.update_sel(global_jdata, local_jdata)
 
     @classmethod
@@ -602,7 +601,7 @@ class Model(ABC):
         """
         if cls is Descriptor:
             return Descriptor.get_class_by_type(
-                j_get_type(data, cls.__name__)
+                data.get("type", "standard")
             ).deserialize(data)
         raise NotImplementedError("Not implemented in class %s" % cls.__name__)
 
