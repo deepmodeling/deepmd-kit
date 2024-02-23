@@ -579,7 +579,7 @@ class Model(ABC):
         return cls.update_sel(global_jdata, local_jdata)
 
     @classmethod
-    def deserialize(cls, data: dict, suffix: str = "") -> "Descriptor":
+    def deserialize(cls, data: dict, suffix: str = "") -> "Model":
         """Deserialize the model.
 
         There is no suffix in a native DP model, but it is important
@@ -590,15 +590,15 @@ class Model(ABC):
         data : dict
             The serialized data
         suffix : str, optional
-            Name suffix to identify this descriptor
+            Name suffix to identify this model
 
         Returns
         -------
-        Descriptor
-            The deserialized descriptor
+        Model
+            The deserialized Model
         """
-        if cls is Descriptor:
-            return Descriptor.get_class_by_input(data).deserialize(data)
+        if cls is Model:
+            return Model.get_class_by_input(data).deserialize(data)
         raise NotImplementedError("Not implemented in class %s" % cls.__name__)
 
     def serialize(self, suffix: str = "") -> dict:
@@ -687,6 +687,8 @@ class StandardModel(Model):
         if isinstance(fitting_net, Fitting):
             self.fitting = fitting_net
         else:
+            if fitting_net["type"] in ["dipole", "polar"]:
+                fitting_net["embedding_width"] = self.descrpt.get_dim_rot_mat_1()
             self.fitting = Fitting(
                 **fitting_net,
                 descrpt=self.descrpt,

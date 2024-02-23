@@ -196,7 +196,7 @@ class EnerFitting(Fitting):
         ), "length of trainable should be that of n_neuron + 1"
         self.atom_ener = []
         self.atom_ener_v = atom_ener
-        for at, ae in enumerate(atom_ener):
+        for at, ae in enumerate(atom_ener if atom_ener is not None else []):
             if ae is not None:
                 self.atom_ener.append(
                     tf.constant(ae, GLOBAL_TF_FLOAT_PRECISION, name="atom_%d_ener" % at)
