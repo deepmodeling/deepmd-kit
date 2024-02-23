@@ -90,7 +90,8 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
     nlist_data.copy_from_nlist(lmp_list, max_num_neighbors, nnei);
     if (max_num_neighbors > nnei) {
       at::Tensor firstneigh = torch::from_blob(
-          nlist_data.jlist, {1, lmp_list.inum, max_num_neighbors}, int32_options);
+          nlist_data.jlist, {1, lmp_list.inum, max_num_neighbors},
+          int32_options);
       at::Tensor nlist = firstneigh.to(torch::kInt64).to(device);
       firstneigh_tensor = module
                               .run_method("format_nlist", coord_wrapped_Tensor,
