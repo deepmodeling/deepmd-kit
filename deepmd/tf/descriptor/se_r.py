@@ -205,7 +205,7 @@ class DescrptSeR(DescrptSe):
         return self.filter_neuron[-1]
 
     def get_dim_rot_mat_1(self) -> int:
-        """To accommodate dipole fitting, which needs embeeding_width."""
+        """To accommodate dipole fitting, which needs embedding_width."""
         return self.get_dim_out()
 
     def get_nlist(self):
