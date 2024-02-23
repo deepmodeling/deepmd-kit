@@ -203,7 +203,7 @@ class DescrptSeR(DescrptSe):
     def get_dim_out(self):
         """Returns the output dimension of this descriptor."""
         return self.filter_neuron[-1]
-    
+
     def get_dim_rot_mat_1(self) -> int:
         """To accommodate dipole fitting, which needs embeeding_width."""
         return self.get_dim_out()
