@@ -31,11 +31,10 @@ void DeepPotPT::init(const std::string& model,
   if (!gpu_enabled) {
     device = torch::Device(torch::kCPU);
     std::cout << "load model from: " << model << " to cpu " << gpu_rank
-            << std::endl;
-  }
-  else{
-      std::cout << "load model from: " << model << " to gpu " << gpu_rank
-            << std::endl;
+              << std::endl;
+  } else {
+    std::cout << "load model from: " << model << " to gpu " << gpu_rank
+              << std::endl;
   }
   module = torch::jit::load(model, device);
 
