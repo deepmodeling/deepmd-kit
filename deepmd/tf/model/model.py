@@ -693,6 +693,7 @@ class StandardModel(Model):
                 spin=self.spin,
                 ntypes=self.descrpt.get_ntypes(),
                 dim_descrpt=self.descrpt.get_dim_out(),
+                embedding_width=self.descrpt.get_dim_rot_mat_1(),
             )
         self.rcut = self.descrpt.get_rcut()
         self.ntypes = self.descrpt.get_ntypes()

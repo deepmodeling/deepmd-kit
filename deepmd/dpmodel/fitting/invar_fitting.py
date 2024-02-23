@@ -139,7 +139,7 @@ class InvarFitting(GeneralFitting):
             raise NotImplementedError("atom_ener is not implemented")
 
         self.dim_out = dim_out
-        self.atom_ener = (atom_ener,)
+        self.atom_ener = atom_ener
         super().__init__(
             var_name=var_name,
             ntypes=ntypes,
@@ -163,7 +163,7 @@ class InvarFitting(GeneralFitting):
     def serialize(self) -> dict:
         data = super().serialize()
         data["dim_out"] = self.dim_out
-        data["atom_ener"] = []
+        data["atom_ener"] = self.atom_ener
         return data
 
     def _net_out_dim(self):

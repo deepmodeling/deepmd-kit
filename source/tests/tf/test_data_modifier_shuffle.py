@@ -59,7 +59,7 @@ class TestDataModifier(tf.test.TestCase):
         )
         jdata = self._setUp_jdata()
         self._setUp_data()
-
+        jdata["model"]["fitting_net"]["embedding_width"] = jdata["model"]["descriptor"]["neuron"][-1]
         # init model
         model = DPTrainer(jdata, run_opt=run_opt)
         rcut = model.model.get_rcut()
@@ -153,7 +153,6 @@ class TestDataModifier(tf.test.TestCase):
                 },
                 "fitting_net": {
                     "type": "dipole",
-                    "embedding_width": 4,
                     "sel_type": [1, 3],
                     "neuron": [10],
                     "resnet_dt": True,
