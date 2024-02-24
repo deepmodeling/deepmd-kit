@@ -6,6 +6,7 @@ dependencies:
   - doxygen>=1.9.1
   - python=3.9
   - pip>=20.1
+  - pytorch
   - pip:
     - ..[docs,cpu]
     - "exhale @ https://github.com/svenevs/exhale/archive/2759a394268307b88f5440487ae0920ee4ebf81e.zip"
