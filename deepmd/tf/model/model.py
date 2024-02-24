@@ -816,9 +816,6 @@ class StandardModel(Model):
         """
         data = copy.deepcopy(data)
 
-        data["fitting"]["type"] = {
-            "EnergyFittingNet": "ener",
-        }[data.pop("fitting_name")]
         descriptor = Descriptor.deserialize(data.pop("descriptor"), suffix=suffix)
         fitting = Fitting.deserialize(data.pop("fitting"), suffix=suffix)
         return cls(
@@ -848,7 +845,4 @@ class StandardModel(Model):
             "type_map": self.type_map,
             "descriptor": self.descrpt.serialize(suffix=suffix),
             "fitting": self.fitting.serialize(suffix=suffix),
-            "fitting_name": {"EnerFitting": "EnergyFittingNet"}[
-                self.fitting.__class__.__name__
-            ],
         }

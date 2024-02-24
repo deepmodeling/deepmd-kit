@@ -982,6 +982,8 @@ class EnerFitting(Fitting):
             The serialized data
         """
         data = {
+            "@class": "Fitting",
+            "type": "ener",
             "var_name": "energy",
             "ntypes": self.ntypes,
             "dim_descrpt": self.dim_descrpt,

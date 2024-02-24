@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import copy
-import sys
 from typing import (
     Dict,
     List,
@@ -12,9 +11,8 @@ import numpy as np
 from deepmd.dpmodel.descriptor.base_descriptor import (
     BaseDescriptor,
 )
-from deepmd.dpmodel.fitting import (  # noqa # TODO: should import all fittings!
-    EnergyFittingNet,
-    InvarFitting,
+from deepmd.dpmodel.fitting.base_fitting import (
+    BaseFitting,
 )
 from deepmd.dpmodel.output_def import (
     FittingOutputDef,
@@ -135,16 +133,13 @@ class DPAtomicModel(BaseAtomicModel):
             "type_map": self.type_map,
             "descriptor": self.descriptor.serialize(),
             "fitting": self.fitting.serialize(),
-            "fitting_name": self.fitting.__class__.__name__,
         }
 
     @classmethod
     def deserialize(cls, data) -> "DPAtomicModel":
         data = copy.deepcopy(data)
         descriptor_obj = BaseDescriptor.deserialize(data["descriptor"])
-        fitting_obj = getattr(sys.modules[__name__], data["fitting_name"]).deserialize(
-            data["fitting"]
-        )
+        fitting_obj = BaseFitting.deserialize(data["fitting"])
         obj = cls(descriptor_obj, fitting_obj, type_map=data["type_map"])
         return obj
 

@@ -24,6 +24,7 @@ from deepmd.pt.utils.env import (
 log = logging.getLogger(__name__)
 
 
+@GeneralFitting.register("dipole")
 class DipoleFittingNet(GeneralFitting):
     """Construct a dipole fitting net.
 
@@ -111,6 +112,7 @@ class DipoleFittingNet(GeneralFitting):
 
     def serialize(self) -> dict:
         data = super().serialize()
+        data["type"] = "dipole"
         data["embedding_width"] = self.embedding_width
         data["old_impl"] = self.old_impl
         data["r_differentiable"] = self.r_differentiable

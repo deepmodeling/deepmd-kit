@@ -14,6 +14,9 @@ from deepmd.common import (
 from deepmd.dpmodel import (
     DEFAULT_PRECISION,
 )
+from deepmd.dpmodel.fitting.base_fitting import (
+    BaseFitting,
+)
 from deepmd.dpmodel.output_def import (
     FittingOutputDef,
     OutputVariableDef,
@@ -25,6 +28,7 @@ from .general_fitting import (
 )
 
 
+@BaseFitting.register("polar")
 @fitting_check_output
 class PolarFitting(GeneralFitting):
     r"""Fitting rotationally equivariant polarizability of the system.
@@ -166,6 +170,7 @@ class PolarFitting(GeneralFitting):
 
     def serialize(self) -> dict:
         data = super().serialize()
+        data["type"] = "polar"
         data["embedding_width"] = self.embedding_width
         data["old_impl"] = self.old_impl
         data["fit_diag"] = self.fit_diag

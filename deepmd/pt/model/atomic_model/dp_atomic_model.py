@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import copy
 import logging
-import sys
 from typing import (
     Dict,
     List,
@@ -16,9 +15,8 @@ from deepmd.dpmodel import (
 from deepmd.pt.model.descriptor.descriptor import (
     Descriptor,
 )
-from deepmd.pt.model.task.ener import (  # noqa # TODO: should import all fittings!
-    EnergyFittingNet,
-    InvarFitting,
+from deepmd.pt.model.task.base_fitting import (
+    BaseFitting,
 )
 from deepmd.pt.utils.utils import (
     dict_to_device,
@@ -98,16 +96,13 @@ class DPAtomicModel(torch.nn.Module, BaseAtomicModel):
             "type_map": self.type_map,
             "descriptor": self.descriptor.serialize(),
             "fitting": self.fitting_net.serialize(),
-            "fitting_name": self.fitting_net.__class__.__name__,
         }
 
     @classmethod
     def deserialize(cls, data) -> "DPAtomicModel":
         data = copy.deepcopy(data)
         descriptor_obj = Descriptor.deserialize(data["descriptor"])
-        fitting_obj = getattr(sys.modules[__name__], data["fitting_name"]).deserialize(
-            data["fitting"]
-        )
+        fitting_obj = BaseFitting.deserialize(data["fitting"])
         obj = cls(descriptor_obj, fitting_obj, type_map=data["type_map"])
         return obj
 
