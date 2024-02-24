@@ -115,3 +115,11 @@ class TestDeepPotFrozen(TestDeepPot):
         )
         freeze(ns)
         self.model = frozen_model
+
+    # Note: this can not actually disable cuda device to be used
+    # only can be used to test whether devices are dismatched
+    @unittest.skipIf(not torch.cuda.is_available(), "CUDA not available")
+    @unittest.mock.patch("deepmd.pt.utils.env.DEVICE", torch.device("cpu"))
+    @unittest.mock.patch("deepmd.pt.infer.deep_eval.DEVICE", torch.device("cpu"))
+    def test_dp_test_cpu(self):
+        self.test_dp_test()
