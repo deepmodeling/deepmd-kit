@@ -41,6 +41,7 @@ device = env.DEVICE
 log = logging.getLogger(__name__)
 
 
+@GeneralFitting.register("invar")
 @fitting_check_output
 class InvarFitting(GeneralFitting):
     """Construct a fitting net for energy.
@@ -129,6 +130,7 @@ class InvarFitting(GeneralFitting):
 
     def serialize(self) -> dict:
         data = super().serialize()
+        data["type"] = "invar"
         data["dim_out"] = self.dim_out
         data["atom_ener"] = self.atom_ener
         return data

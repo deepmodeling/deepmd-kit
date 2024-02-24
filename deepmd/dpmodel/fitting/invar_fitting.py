@@ -22,6 +22,7 @@ from .general_fitting import (
 )
 
 
+@GeneralFitting.register("invar")
 @fitting_check_output
 class InvarFitting(GeneralFitting):
     r"""Fitting the energy (or a rotationally invariant porperty of `dim_out`) of the system. The force and the virial can also be trained.
@@ -162,6 +163,7 @@ class InvarFitting(GeneralFitting):
 
     def serialize(self) -> dict:
         data = super().serialize()
+        data["type"] = "invar"
         data["dim_out"] = self.dim_out
         data["atom_ener"] = self.atom_ener
         return data
