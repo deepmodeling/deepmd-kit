@@ -34,7 +34,7 @@ class DPModelBackend(Backend):
     name = "DPModel"
     """The formal name of the backend."""
     features: ClassVar[Backend.Feature] = (
-        Backend.Feature.NEIGHBOR_STAT | Backend.Feature.IO
+        Backend.Feature.DEEP_EVAL | Backend.Feature.NEIGHBOR_STAT | Backend.Feature.IO
     )
     """The features of the backend."""
     suffixes: ClassVar[List[str]] = [".dp"]
@@ -70,7 +70,11 @@ class DPModelBackend(Backend):
         type[DeepEvalBackend]
             The Deep Eval backend of the backend.
         """
-        raise NotImplementedError(f"Unsupported backend: {self.name}")
+        from deepmd.dpmodel.infer.deep_eval import (
+            DeepEval,
+        )
+
+        return DeepEval
 
     @property
     def neighbor_stat(self) -> Type["NeighborStat"]:

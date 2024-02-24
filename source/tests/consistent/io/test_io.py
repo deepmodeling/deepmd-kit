@@ -115,7 +115,7 @@ class IOTest:
         ).reshape(1, 9)
         prefix = "test_consistent_io_" + self.__class__.__name__.lower()
         rets = []
-        for backend_name in ("tensorflow", "pytorch"):
+        for backend_name in ("tensorflow", "pytorch", "dpmodel"):
             backend = Backend.get_backend(backend_name)()
             if not backend.is_available:
                 continue
@@ -130,6 +130,9 @@ class IOTest:
             rets.append(ret)
         for ret in rets[1:]:
             for vv1, vv2 in zip(rets[0], ret):
+                if np.isnan(vv2).all():
+                    # expect all nan if not supported
+                    continue
                 np.testing.assert_allclose(vv1, vv2, rtol=1e-12, atol=1e-12)
 
 
