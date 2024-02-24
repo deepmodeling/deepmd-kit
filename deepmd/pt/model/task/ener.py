@@ -243,8 +243,8 @@ class EnergyFittingNet(InvarFitting):
     def serialize(self) -> dict:
         """Serialize the fitting to dict."""
         return {
-            "type": "ener",
             **super().serialize(),
+            "type": "ener",
         }
 
 
