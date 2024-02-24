@@ -28,6 +28,7 @@ from deepmd.pt.utils.utils import (
 log = logging.getLogger(__name__)
 
 
+@GeneralFitting.register("polar")
 class PolarFittingNet(GeneralFitting):
     """Construct a polar fitting net.
 
@@ -138,6 +139,7 @@ class PolarFittingNet(GeneralFitting):
 
     def serialize(self) -> dict:
         data = super().serialize()
+        data["type"] = "polar"
         data["embedding_width"] = self.embedding_width
         data["old_impl"] = self.old_impl
         data["fit_diag"] = self.fit_diag

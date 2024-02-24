@@ -344,6 +344,8 @@ class DipoleFittingSeA(Fitting):
             The serialized data
         """
         data = {
+            "@class": "Fitting",
+            "type": "dipole",
             "var_name": "dipole",
             "ntypes": self.ntypes,
             "dim_descrpt": self.dim_descrpt,

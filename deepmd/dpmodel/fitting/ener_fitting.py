@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     )
 
 
+@InvarFitting.register("ener")
 class EnergyFittingNet(InvarFitting):
     def __init__(
         self,
@@ -70,3 +71,10 @@ class EnergyFittingNet(InvarFitting):
         data.pop("var_name")
         data.pop("dim_out")
         return super().deserialize(data)
+
+    def serialize(self) -> dict:
+        """Serialize the fitting to dict."""
+        return {
+            "type": "ener",
+            **super().serialize(),
+        }

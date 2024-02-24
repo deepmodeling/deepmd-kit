@@ -238,6 +238,13 @@ class EnergyFittingNet(InvarFitting):
         data.pop("dim_out")
         return super().deserialize(data)
 
+    def serialize(self) -> dict:
+        """Serialize the fitting to dict."""
+        return {
+            "type": "ener",
+            **super().serialize(),
+        }
+
 
 @Fitting.register("direct_force")
 @Fitting.register("direct_force_ener")

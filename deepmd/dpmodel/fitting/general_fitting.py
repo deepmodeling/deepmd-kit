@@ -209,6 +209,7 @@ class GeneralFitting(NativeOP, BaseFitting):
     def serialize(self) -> dict:
         """Serialize the fitting to dict."""
         return {
+            "@class": "Fitting",
             "var_name": self.var_name,
             "ntypes": self.ntypes,
             "dim_descrpt": self.dim_descrpt,
@@ -240,6 +241,8 @@ class GeneralFitting(NativeOP, BaseFitting):
     @classmethod
     def deserialize(cls, data: dict) -> "GeneralFitting":
         data = copy.deepcopy(data)
+        data.pop("@class")
+        data.pop("type")
         variables = data.pop("@variables")
         nets = data.pop("nets")
         obj = cls(**data)

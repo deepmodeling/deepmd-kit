@@ -534,6 +534,8 @@ class PolarFittingSeA(Fitting):
             The serialized data
         """
         data = {
+            "@class": "Fitting",
+            "type": "polar",
             "var_name": "polar",
             "ntypes": self.ntypes,
             "dim_descrpt": self.dim_descrpt,

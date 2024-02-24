@@ -11,6 +11,9 @@ import numpy as np
 from deepmd.dpmodel import (
     DEFAULT_PRECISION,
 )
+from deepmd.dpmodel.fitting.base_fitting import (
+    BaseFitting,
+)
 from deepmd.dpmodel.output_def import (
     FittingOutputDef,
     OutputVariableDef,
@@ -22,6 +25,7 @@ from .general_fitting import (
 )
 
 
+@BaseFitting.register("dipole")
 @fitting_check_output
 class DipoleFitting(GeneralFitting):
     r"""Fitting rotationally equivariant diploe of the system.
@@ -142,6 +146,7 @@ class DipoleFitting(GeneralFitting):
 
     def serialize(self) -> dict:
         data = super().serialize()
+        data["type"] = "dipole"
         data["embedding_width"] = self.embedding_width
         data["old_impl"] = self.old_impl
         data["r_differentiable"] = self.r_differentiable
