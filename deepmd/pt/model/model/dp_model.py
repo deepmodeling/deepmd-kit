@@ -22,7 +22,7 @@ from .make_model import (
 
 @BaseModel.register("standard")
 class DPModel(make_model(DPAtomicModel), BaseModel):
-    def __new__(cls, descriptor, fitting, **kwargs):
+    def __new__(cls, descriptor, fitting, *args, **kwargs):
         from deepmd.pt.model.model.dipole_model import (
             DipoleModel,
         )
