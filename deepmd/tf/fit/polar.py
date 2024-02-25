@@ -42,8 +42,12 @@ class PolarFittingSeA(Fitting):
 
     Parameters
     ----------
-    descrpt : tf.Tensor
-            The descrptor
+    ntypes
+            The ntypes of the descrptor :math:`\mathcal{D}`
+    dim_descrpt
+            The dimension of the descrptor :math:`\mathcal{D}`
+    embedding_width
+            The rotation matrix dimension of the descrptor :math:`\mathcal{D}`
     neuron : List[int]
             Number of neurons in each hidden layer of the fitting net
     resnet_dt : bool
@@ -69,7 +73,9 @@ class PolarFittingSeA(Fitting):
 
     def __init__(
         self,
-        descrpt: tf.Tensor,
+        ntypes: int,
+        dim_descrpt: int,
+        embedding_width: int,
         neuron: List[int] = [120, 120, 120],
         resnet_dt: bool = True,
         sel_type: Optional[List[int]] = None,
@@ -84,8 +90,8 @@ class PolarFittingSeA(Fitting):
         **kwargs,
     ) -> None:
         """Constructor."""
-        self.ntypes = descrpt.get_ntypes()
-        self.dim_descrpt = descrpt.get_dim_out()
+        self.ntypes = ntypes
+        self.dim_descrpt = dim_descrpt
         self.n_neuron = neuron
         self.resnet_dt = resnet_dt
         self.sel_type = sel_type
@@ -96,6 +102,7 @@ class PolarFittingSeA(Fitting):
         # self.diag_shift = diag_shift
         self.shift_diag = shift_diag
         self.scale = scale
+        self.activation_function_name = activation_function
         self.fitting_activation_fn = get_activation_func(activation_function)
         self.fitting_precision = get_precision(precision)
         if self.sel_type is None:
@@ -104,7 +111,19 @@ class PolarFittingSeA(Fitting):
             [ii in self.sel_type for ii in range(self.ntypes)], dtype=bool
         )
         if self.scale is None:
-            self.scale = [1.0 for ii in range(self.ntypes)]
+            self.scale = np.array([1.0 for ii in range(self.ntypes)])
+        else:
+            if isinstance(self.scale, list):
+                assert (
+                    len(self.scale) == ntypes
+                ), "Scale should be a list of length ntypes."
+            elif isinstance(self.scale, float):
+                self.scale = [self.scale for _ in range(ntypes)]
+            else:
+                raise ValueError(
+                    "Scale must be a list of float of length ntypes or a float."
+                )
+            self.scale = np.array(self.scale)
         # if self.diag_shift is None:
         #    self.diag_shift = [0.0 for ii in range(self.ntypes)]
         if not isinstance(self.sel_type, list):
@@ -115,10 +134,7 @@ class PolarFittingSeA(Fitting):
         )  # self.ntypes x 1, store the average diagonal value
         # if type(self.diag_shift) is not list:
         #    self.diag_shift = [self.diag_shift]
-        if not isinstance(self.scale, list):
-            self.scale = [self.scale for ii in range(self.ntypes)]
-        self.scale = np.array(self.scale)
-        self.dim_rot_mat_1 = descrpt.get_dim_rot_mat_1()
+        self.dim_rot_mat_1 = embedding_width
         self.dim_rot_mat = self.dim_rot_mat_1 * 3
         self.useBN = False
         self.fitting_net_variables = None
@@ -508,6 +524,69 @@ class PolarFittingSeA(Fitting):
             tensor_size=9,
             label_name="polarizability",
         )
+
+    def serialize(self, suffix: str) -> dict:
+        """Serialize the model.
+
+        Returns
+        -------
+        dict
+            The serialized data
+        """
+        data = {
+            "@class": "Fitting",
+            "type": "polar",
+            "var_name": "polar",
+            "ntypes": self.ntypes,
+            "dim_descrpt": self.dim_descrpt,
+            "embedding_width": self.dim_rot_mat_1,
+            # very bad design: type embedding is not passed to the class
+            # TODO: refactor the class
+            "mixed_types": False,
+            "dim_out": 3,
+            "neuron": self.n_neuron,
+            "resnet_dt": self.resnet_dt,
+            "activation_function": self.activation_function_name,
+            "precision": self.fitting_precision.name,
+            "exclude_types": [],
+            "fit_diag": self.fit_diag,
+            "scale": list(self.scale),
+            "shift_diag": self.shift_diag,
+            "nets": self.serialize_network(
+                ntypes=self.ntypes,
+                # TODO: consider type embeddings
+                ndim=1,
+                in_dim=self.dim_descrpt,
+                out_dim=self.dim_rot_mat_1,
+                neuron=self.n_neuron,
+                activation_function=self.activation_function_name,
+                resnet_dt=self.resnet_dt,
+                variables=self.fitting_net_variables,
+                suffix=suffix,
+            ),
+        }
+        return data
+
+    @classmethod
+    def deserialize(cls, data: dict, suffix: str):
+        """Deserialize the model.
+
+        Parameters
+        ----------
+        data : dict
+            The serialized data
+
+        Returns
+        -------
+        Model
+            The deserialized model
+        """
+        fitting = cls(**data)
+        fitting.fitting_net_variables = cls.deserialize_network(
+            data["nets"],
+            suffix=suffix,
+        )
+        return fitting
 
 
 class GlobalPolarFittingSeA:

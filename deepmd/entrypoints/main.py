@@ -12,6 +12,9 @@ from deepmd.backend.backend import (
 from deepmd.backend.suffix import (
     format_model_suffix,
 )
+from deepmd.entrypoints.convert_backend import (
+    convert_backend,
+)
 from deepmd.entrypoints.doc import (
     doc_train_input,
 )
@@ -76,5 +79,7 @@ def main(args: argparse.Namespace):
         neighbor_stat(**dict_args)
     elif args.command == "gui":
         start_dpgui(**dict_args)
+    elif args.command == "convert-backend":
+        convert_backend(**dict_args)
     else:
         raise ValueError(f"Unknown command: {args.command}")

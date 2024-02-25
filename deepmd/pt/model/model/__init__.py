@@ -10,6 +10,7 @@ definition `deepmd.dpmodel.OutputVariableDef`.
 """
 
 import copy
+import json
 
 from deepmd.pt.model.atomic_model import (
     DPAtomicModel,
@@ -105,7 +106,9 @@ def get_ener_model(model_params):
             fitting_net["return_energy"] = True
     fitting = Fitting(**fitting_net)
 
-    return EnergyModel(descriptor, fitting, type_map=model_params["type_map"])
+    model = EnergyModel(descriptor, fitting, type_map=model_params["type_map"])
+    model.model_def_script = json.dumps(model_params)
+    return model
 
 
 def get_spin_model(model_params):

@@ -95,8 +95,10 @@ class EnerFitting(Fitting):
 
     Parameters
     ----------
-    descrpt
-            The descrptor :math:`\mathcal{D}`
+    ntypes
+            The ntypes of the descrptor :math:`\mathcal{D}`
+    dim_descrpt
+            The dimension of the descrptor :math:`\mathcal{D}`
     neuron
             Number of neurons :math:`N` in each hidden layer of the fitting net
     resnet_dt
@@ -194,7 +196,7 @@ class EnerFitting(Fitting):
         ), "length of trainable should be that of n_neuron + 1"
         self.atom_ener = []
         self.atom_ener_v = atom_ener
-        for at, ae in enumerate(atom_ener):
+        for at, ae in enumerate(atom_ener if atom_ener is not None else []):
             if ae is not None:
                 self.atom_ener.append(
                     tf.constant(ae, GLOBAL_TF_FLOAT_PRECISION, name="atom_%d_ener" % at)
@@ -980,6 +982,8 @@ class EnerFitting(Fitting):
             The serialized data
         """
         data = {
+            "@class": "Fitting",
+            "type": "ener",
             "var_name": "energy",
             "ntypes": self.ntypes,
             "dim_descrpt": self.dim_descrpt,

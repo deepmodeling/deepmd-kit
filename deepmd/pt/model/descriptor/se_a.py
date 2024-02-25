@@ -195,6 +195,8 @@ class DescrptSeA(Descriptor):
     def serialize(self) -> dict:
         obj = self.sea
         return {
+            "@class": "Descriptor",
+            "type": "se_e2_a",
             "rcut": obj.rcut,
             "rcut_smth": obj.rcut_smth,
             "sel": obj.sel,
@@ -222,6 +224,8 @@ class DescrptSeA(Descriptor):
     @classmethod
     def deserialize(cls, data: dict) -> "DescrptSeA":
         data = data.copy()
+        data.pop("@class", None)
+        data.pop("type", None)
         variables = data.pop("@variables")
         embeddings = data.pop("embeddings")
         env_mat = data.pop("env_mat")
@@ -465,6 +469,7 @@ class DescrptBlockSeA(DescriptorBlock):
         else:
             assert self.filter_layers is not None
             dmatrix = dmatrix.view(-1, self.nnei, 4)
+            dmatrix = dmatrix.to(dtype=self.prec)
             nfnl = dmatrix.shape[0]
             # pre-allocate a shape to pass jit
             xyz_scatter = torch.zeros(
@@ -495,8 +500,8 @@ class DescrptBlockSeA(DescriptorBlock):
         result = result.view(-1, nloc, self.filter_neuron[-1] * self.axis_neuron)
         rot_mat = rot_mat.view([-1, nloc] + list(rot_mat.shape[1:]))  # noqa:RUF005
         return (
-            result,
-            rot_mat,
+            result.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION),
+            rot_mat.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION),
             None,
             None,
             sw,
