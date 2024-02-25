@@ -202,6 +202,7 @@ def make_model(T_AtomicModel):
             )
             return model_predict
 
+        @torch.jit.export
         def format_nlist(
             self,
             extended_coord: torch.Tensor,
