@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import inspect
 from abc import (
     ABC,
     abstractmethod,
@@ -88,6 +89,40 @@ class BaseBaseModel(ABC):
     def model_output_type(self) -> str:
         """Get the output type for the model."""
 
+    @abstractmethod
+    @classmethod
+    def get_class_by_type(cls, model_type: str) -> Type["BaseBaseModel"]:
+        """Get the class by the type of the model.
+
+        Parameters
+        ----------
+        model_type : str
+            The type of the model.
+
+        Returns
+        -------
+        Type["BaseBaseModel"]
+            The class of the model.
+        """
+
+    @classmethod
+    def deserialize(cls, data: dict) -> "BaseBaseModel":
+        """Deserialize the model.
+
+        Parameters
+        ----------
+        data : dict
+            The serialized data
+
+        Returns
+        -------
+        BaseModel
+            The deserialized model
+        """
+        if inspect.isabstract(cls):
+            return cls.get_class_by_type(data["type"]).deserialize(data)
+        raise NotImplementedError("Not implemented in class %s" % cls.__name__)
+
 
 class BaseModel(BaseBaseModel):
     """Base class for final exported model that will be directly used for inference.
@@ -123,8 +158,8 @@ class BaseModel(BaseBaseModel):
 
         Examples
         --------
-        >>> @Fitting.register("some_fitting")
-            class SomeFitting(Fitting):
+        >>> @Model.register("some_model")
+            class SomeModel(Model):
                 pass
         """
         return BaseModel.__plugins.register(key)
@@ -140,21 +175,3 @@ class BaseModel(BaseBaseModel):
             return BaseModel.__plugins.plugins[model_type]
         else:
             raise RuntimeError("Unknown model type: " + model_type)
-
-    @classmethod
-    def deserialize(cls, data: dict) -> "BaseModel":
-        """Deserialize the model.
-
-        Parameters
-        ----------
-        data : dict
-            The serialized data
-
-        Returns
-        -------
-        BaseModel
-            The deserialized model
-        """
-        if cls is BaseModel:
-            return BaseModel.get_class_by_type(data["type"]).deserialize(data)
-        raise NotImplementedError("Not implemented in class %s" % cls.__name__)

@@ -106,24 +106,6 @@ class BaseModel(BaseBaseModel):
         else:
             raise RuntimeError("Unknown model type: " + model_type)
 
-    @classmethod
-    def deserialize(cls, data: dict) -> "BaseModel":
-        """Deserialize the model.
-
-        Parameters
-        ----------
-        data : dict
-            The serialized data
-
-        Returns
-        -------
-        BaseModel
-            The deserialized model
-        """
-        if cls is BaseModel:
-            return BaseModel.get_class_by_type(data["type"]).deserialize(data)
-        raise NotImplementedError("Not implemented in class %s" % cls.__name__)
-
     def __init__(self):
         """Construct a basic model for different tasks."""
         super().__init__()
