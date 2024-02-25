@@ -16,8 +16,8 @@ from deepmd.dpmodel.model.model import (
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
 )
-from deepmd.infer.deep_pot import (
-    DeepPot,
+from deepmd.infer.deep_eval import (
+    DeepEval,
 )
 
 infer_path = Path(__file__).parent.parent.parent / "infer"
@@ -121,7 +121,7 @@ class IOTest:
                 continue
             reference_data = copy.deepcopy(self.data)
             self.save_data_to_model(prefix + backend.suffixes[0], reference_data)
-            deep_eval = DeepPot(prefix + backend.suffixes[0])
+            deep_eval = DeepEval(prefix + backend.suffixes[0])
             ret = deep_eval.eval(
                 self.coords,
                 self.box,
