@@ -22,7 +22,7 @@ class BaseBaseModel(ABC):
     """Base class for final exported model that will be directly used for inference.
 
     The class defines some abstractmethods that will be directly called by the
-    inference interface. If the final model class inherbits some of those methods
+    inference interface. If the final model class inherits some of those methods
     from other classes, `BaseModel` should be inherited as the last class to ensure
     the correct method resolution order.
 
