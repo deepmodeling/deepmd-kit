@@ -46,7 +46,7 @@ class PolarModel(DPModel):
             model_predict = model_ret
             model_predict["updated_coord"] += coord
         return model_predict
-
+    @torch.jit.export
     def forward_lower(
         self,
         extended_coord,
