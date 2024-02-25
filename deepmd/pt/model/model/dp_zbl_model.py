@@ -57,6 +57,7 @@ class DPZBLModel(DPZBLModel_):
         else:
             model_predict["force"] = model_ret["dforce"]
         return model_predict
+
     @torch.jit.export
     def forward_lower(
         self,
