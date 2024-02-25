@@ -42,6 +42,5 @@ class DPModel(make_model(DPAtomicModel), BaseModel):
                 cls = DipoleModel
             elif isinstance(fitting, PolarFittingNet):
                 cls = PolarModel
-            else:
-                raise ValueError(f"Unknown fitting type {fitting}")
+            # else: unknown fitting type, fall back to DPModel
         return super().__new__(cls)
