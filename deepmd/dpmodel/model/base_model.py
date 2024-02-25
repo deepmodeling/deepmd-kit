@@ -8,7 +8,6 @@ from typing import (
     Any,
     Callable,
     List,
-    Self,
     Type,
 )
 
@@ -92,7 +91,7 @@ class BaseBaseModel(ABC):
 
     @classmethod
     @abstractmethod
-    def get_class_by_type(cls, model_type: str) -> type[Self]:
+    def get_class_by_type(cls, model_type: str) -> Type["BaseBaseModel"]:
         """Get the class by the type of the model.
 
         Parameters
@@ -107,7 +106,7 @@ class BaseBaseModel(ABC):
         """
 
     @classmethod
-    def deserialize(cls, data: dict) -> Self:
+    def deserialize(cls, data: dict) -> "BaseBaseModel":
         """Deserialize the model.
 
         Parameters
