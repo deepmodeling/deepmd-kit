@@ -105,6 +105,17 @@ class BaseBaseModel(ABC):
             The class of the model.
         """
 
+    @abstractmethod
+    def serialize(self) -> dict:
+        """Serialize the model.
+
+        Returns
+        -------
+        dict
+            The serialized data
+        """
+        pass
+
     @classmethod
     def deserialize(cls, data: dict) -> "BaseBaseModel":
         """Deserialize the model.
