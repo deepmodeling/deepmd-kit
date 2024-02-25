@@ -93,6 +93,8 @@ class DPAtomicModel(torch.nn.Module, BaseAtomicModel):
 
     def serialize(self) -> dict:
         return {
+            "@class": "Model",
+            "type": "standard",
             "type_map": self.type_map,
             "descriptor": self.descriptor.serialize(),
             "fitting": self.fitting_net.serialize(),

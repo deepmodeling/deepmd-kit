@@ -130,6 +130,8 @@ class DPAtomicModel(BaseAtomicModel):
 
     def serialize(self) -> dict:
         return {
+            "@class": "Model",
+            "type": "standard",
             "type_map": self.type_map,
             "descriptor": self.descriptor.serialize(),
             "fitting": self.fitting.serialize(),
@@ -138,6 +140,8 @@ class DPAtomicModel(BaseAtomicModel):
     @classmethod
     def deserialize(cls, data) -> "DPAtomicModel":
         data = copy.deepcopy(data)
+        data.pop("@class")
+        data.pop("type")
         descriptor_obj = BaseDescriptor.deserialize(data["descriptor"])
         fitting_obj = BaseFitting.deserialize(data["fitting"])
         obj = cls(descriptor_obj, fitting_obj, type_map=data["type_map"])

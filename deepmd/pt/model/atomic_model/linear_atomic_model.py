@@ -207,6 +207,8 @@ class LinearAtomicModel(torch.nn.Module, BaseAtomicModel):
     @staticmethod
     def serialize(models) -> dict:
         return {
+            "@class": "Model",
+            "type": "linear",
             "models": [model.serialize() for model in models],
             "model_name": [model.__class__.__name__ for model in models],
         }
@@ -301,6 +303,8 @@ class DPZBLLinearAtomicModel(LinearAtomicModel):
 
     def serialize(self) -> dict:
         return {
+            "@class": "Model",
+            "type": "zbl",
             "models": LinearAtomicModel.serialize([self.dp_model, self.zbl_model]),
             "sw_rmin": self.sw_rmin,
             "sw_rmax": self.sw_rmax,

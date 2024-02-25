@@ -124,7 +124,13 @@ class PairTabAtomicModel(torch.nn.Module, BaseAtomicModel):
         return True
 
     def serialize(self) -> dict:
-        return {"tab": self.tab.serialize(), "rcut": self.rcut, "sel": self.sel}
+        return {
+            "@class": "Model",
+            "type": "pairtab",
+            "tab": self.tab.serialize(),
+            "rcut": self.rcut,
+            "sel": self.sel,
+        }
 
     @classmethod
     def deserialize(cls, data) -> "PairTabAtomicModel":
