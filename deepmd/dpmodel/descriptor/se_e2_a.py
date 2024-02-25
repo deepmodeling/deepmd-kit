@@ -34,6 +34,7 @@ from .base_descriptor import (
 )
 
 
+@BaseDescriptor.register("se_e2_a")
 class DescrptSeA(NativeOP, BaseDescriptor):
     r"""DeepPot-SE constructed from all information (both angular and radial) of
     atomic configurations. The embedding takes the distance between atoms as input.
@@ -313,6 +314,8 @@ class DescrptSeA(NativeOP, BaseDescriptor):
     def serialize(self) -> dict:
         """Serialize the descriptor to dict."""
         return {
+            "@class": "Descriptor",
+            "type": "se_e2_a",
             "rcut": self.rcut,
             "rcut_smth": self.rcut_smth,
             "sel": self.sel,
@@ -339,6 +342,8 @@ class DescrptSeA(NativeOP, BaseDescriptor):
     def deserialize(cls, data: dict) -> "DescrptSeA":
         """Deserialize from dict."""
         data = copy.deepcopy(data)
+        data.pop("@class", None)
+        data.pop("type", None)
         variables = data.pop("@variables")
         embeddings = data.pop("embeddings")
         env_mat = data.pop("env_mat")

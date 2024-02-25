@@ -24,8 +24,9 @@ from deepmd.pt.utils.env import (
 log = logging.getLogger(__name__)
 
 
+@GeneralFitting.register("dipole")
 class DipoleFittingNet(GeneralFitting):
-    """Construct a general fitting net.
+    """Construct a dipole fitting net.
 
     Parameters
     ----------
@@ -35,9 +36,7 @@ class DipoleFittingNet(GeneralFitting):
         Element count.
     dim_descrpt : int
         Embedding width per atom.
-    dim_out : int
-        The output dimension of the fitting net.
-    dim_rot_mat : int
+    embedding_width : int
         The dimension of rotation matrix, m1.
     neuron : List[int]
         Number of neurons in each hidden layers of the fitting net.
@@ -51,12 +50,19 @@ class DipoleFittingNet(GeneralFitting):
         Activation function.
     precision : str
         Numerical precision.
-    distinguish_types : bool
-        Neighbor list that distinguish different atomic types or not.
+    mixed_types : bool
+        If true, use a uniform fitting net for all atom types, otherwise use
+        different fitting nets for different atom types.
     rcond : float, optional
         The condition number for the regression of atomic energy.
     seed : int, optional
         Random seed.
+    r_differentiable
+        If the variable is differentiated with respect to coordinates of atoms.
+        Only reduciable variable are differentiable.
+    c_differentiable
+        If the variable is differentiated with respect to the cell tensor (pbc case).
+        Only reduciable variable are differentiable.
     """
 
     def __init__(
@@ -64,20 +70,24 @@ class DipoleFittingNet(GeneralFitting):
         var_name: str,
         ntypes: int,
         dim_descrpt: int,
-        dim_rot_mat: int,
+        embedding_width: int,
         neuron: List[int] = [128, 128, 128],
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
-        distinguish_types: bool = False,
+        mixed_types: bool = True,
         rcond: Optional[float] = None,
         seed: Optional[int] = None,
         exclude_types: List[int] = [],
+        r_differentiable: bool = True,
+        c_differentiable: bool = True,
         **kwargs,
     ):
-        self.dim_rot_mat = dim_rot_mat
+        self.embedding_width = embedding_width
+        self.r_differentiable = r_differentiable
+        self.c_differentiable = c_differentiable
         super().__init__(
             var_name=var_name,
             ntypes=ntypes,
@@ -88,7 +98,7 @@ class DipoleFittingNet(GeneralFitting):
             numb_aparam=numb_aparam,
             activation_function=activation_function,
             precision=precision,
-            distinguish_types=distinguish_types,
+            mixed_types=mixed_types,
             rcond=rcond,
             seed=seed,
             exclude_types=exclude_types,
@@ -98,12 +108,15 @@ class DipoleFittingNet(GeneralFitting):
 
     def _net_out_dim(self):
         """Set the FittingNet output dim."""
-        return self.dim_rot_mat
+        return self.embedding_width
 
     def serialize(self) -> dict:
         data = super().serialize()
-        data["dim_rot_mat"] = self.dim_rot_mat
+        data["type"] = "dipole"
+        data["embedding_width"] = self.embedding_width
         data["old_impl"] = self.old_impl
+        data["r_differentiable"] = self.r_differentiable
+        data["c_differentiable"] = self.c_differentiable
         return data
 
     def output_def(self) -> FittingOutputDef:
@@ -113,8 +126,8 @@ class DipoleFittingNet(GeneralFitting):
                     self.var_name,
                     [3],
                     reduciable=True,
-                    r_differentiable=True,
-                    c_differentiable=True,
+                    r_differentiable=self.r_differentiable,
+                    c_differentiable=self.c_differentiable,
                 ),
             ]
         )
@@ -144,7 +157,7 @@ class DipoleFittingNet(GeneralFitting):
             self.var_name
         ]
         # (nframes * nloc, 1, m1)
-        out = out.view(-1, 1, self.dim_rot_mat)
+        out = out.view(-1, 1, self.embedding_width)
         # (nframes * nloc, m1, 3)
         gr = gr.view(nframes * nloc, -1, 3)
         # (nframes, nloc, 3)

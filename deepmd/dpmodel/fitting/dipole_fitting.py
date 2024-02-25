@@ -11,6 +11,9 @@ import numpy as np
 from deepmd.dpmodel import (
     DEFAULT_PRECISION,
 )
+from deepmd.dpmodel.fitting.base_fitting import (
+    BaseFitting,
+)
 from deepmd.dpmodel.output_def import (
     FittingOutputDef,
     OutputVariableDef,
@@ -22,9 +25,10 @@ from .general_fitting import (
 )
 
 
+@BaseFitting.register("dipole")
 @fitting_check_output
 class DipoleFitting(GeneralFitting):
-    r"""Fitting rotationally invariant diploe of the system.
+    r"""Fitting rotationally equivariant diploe of the system.
 
     Parameters
     ----------
@@ -34,7 +38,7 @@ class DipoleFitting(GeneralFitting):
             The number of atom types.
     dim_descrpt
             The dimension of the input descriptor.
-    dim_rot_mat : int
+    embedding_width : int
         The dimension of rotation matrix, m1.
     neuron
             Number of neurons :math:`N` in each hidden layer of the fitting net
@@ -53,8 +57,6 @@ class DipoleFitting(GeneralFitting):
             If the weights of fitting net are trainable.
             Suppose that we have :math:`N_l` hidden layers in the fitting net,
             this list is of length :math:`N_l + 1`, specifying if the hidden layers and the output layer are trainable.
-    atom_ener
-            Specifying atomic energy contribution in vacuum. The `set_davg_zero` key in the descrptor should be set.
     activation_function
             The activation function :math:`\boldsymbol{\phi}` in the embedding net. Supported options are |ACTIVATION_FN|
     precision
@@ -68,9 +70,14 @@ class DipoleFitting(GeneralFitting):
     mixed_types
             If true, use a uniform fitting net for all atom types, otherwise use
             different fitting nets for different atom types.
-    exclude_types: List[int]
+    exclude_types
             Atomic contributions of the excluded atom types are set zero.
-
+    r_differentiable
+            If the variable is differentiated with respect to coordinates of atoms.
+            Only reduciable variable are differentiable.
+    c_differentiable
+            If the variable is differentiated with respect to the cell tensor (pbc case).
+            Only reduciable variable are differentiable.
     """
 
     def __init__(
@@ -78,7 +85,7 @@ class DipoleFitting(GeneralFitting):
         var_name: str,
         ntypes: int,
         dim_descrpt: int,
-        dim_rot_mat: int,
+        embedding_width: int,
         neuron: List[int] = [120, 120, 120],
         resnet_dt: bool = True,
         numb_fparam: int = 0,
@@ -86,7 +93,6 @@ class DipoleFitting(GeneralFitting):
         rcond: Optional[float] = None,
         tot_ener_zero: bool = False,
         trainable: Optional[List[bool]] = None,
-        atom_ener: Optional[List[Optional[float]]] = None,
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
         layer_name: Optional[List[Optional[str]]] = None,
@@ -94,7 +100,11 @@ class DipoleFitting(GeneralFitting):
         spin: Any = None,
         mixed_types: bool = False,
         exclude_types: List[int] = [],
+        r_differentiable: bool = True,
+        c_differentiable: bool = True,
         old_impl=False,
+        # not used
+        seed: Optional[int] = None,
     ):
         # seed, uniform_seed are not included
         if tot_ener_zero:
@@ -105,10 +115,10 @@ class DipoleFitting(GeneralFitting):
             raise NotImplementedError("use_aparam_as_mask is not implemented")
         if layer_name is not None:
             raise NotImplementedError("layer_name is not implemented")
-        if atom_ener is not None and atom_ener != []:
-            raise NotImplementedError("atom_ener is not implemented")
 
-        self.dim_rot_mat = dim_rot_mat
+        self.embedding_width = embedding_width
+        self.r_differentiable = r_differentiable
+        self.c_differentiable = c_differentiable
         super().__init__(
             var_name=var_name,
             ntypes=ntypes,
@@ -120,7 +130,6 @@ class DipoleFitting(GeneralFitting):
             rcond=rcond,
             tot_ener_zero=tot_ener_zero,
             trainable=trainable,
-            atom_ener=atom_ener,
             activation_function=activation_function,
             precision=precision,
             layer_name=layer_name,
@@ -133,12 +142,15 @@ class DipoleFitting(GeneralFitting):
 
     def _net_out_dim(self):
         """Set the FittingNet output dim."""
-        return self.dim_rot_mat
+        return self.embedding_width
 
     def serialize(self) -> dict:
         data = super().serialize()
-        data["dim_rot_mat"] = self.dim_rot_mat
+        data["type"] = "dipole"
+        data["embedding_width"] = self.embedding_width
         data["old_impl"] = self.old_impl
+        data["r_differentiable"] = self.r_differentiable
+        data["c_differentiable"] = self.c_differentiable
         return data
 
     def output_def(self):
@@ -148,8 +160,8 @@ class DipoleFitting(GeneralFitting):
                     self.var_name,
                     [3],
                     reduciable=True,
-                    r_differentiable=True,
-                    c_differentiable=True,
+                    r_differentiable=self.r_differentiable,
+                    c_differentiable=self.c_differentiable,
                 ),
             ]
         )
@@ -194,7 +206,7 @@ class DipoleFitting(GeneralFitting):
             self.var_name
         ]
         # (nframes * nloc, 1, m1)
-        out = out.reshape(-1, 1, self.dim_rot_mat)
+        out = out.reshape(-1, 1, self.embedding_width)
         # (nframes * nloc, m1, 3)
         gr = gr.reshape(nframes * nloc, -1, 3)
         # (nframes, nloc, 3)

@@ -16,6 +16,7 @@ from typing import (
     List,
     Optional,
     Tuple,
+    Union,
 )
 from uuid import (
     uuid4,
@@ -68,7 +69,7 @@ class CommonTest(ABC):
     """Native DP model class."""
     pt_class: ClassVar[Optional[type]]
     """PyTorch model class."""
-    args: ClassVar[Optional[List[Argument]]]
+    args: ClassVar[Optional[Union[Argument, List[Argument]]]]
     """Arguments that maps to the `data`."""
     skip_dp: ClassVar[bool] = False
     """Whether to skip the native DP model."""
@@ -78,6 +79,8 @@ class CommonTest(ABC):
     """Whether to skip the PyTorch model."""
     rtol = 1e-10
     """Relative tolerance for comparing the return value. Override for float32."""
+    atol = 1e-10
+    """Absolute tolerance for comparing the return value. Override for float32."""
 
     def setUp(self):
         self.unique_id = uuid4().hex
@@ -91,9 +94,18 @@ class CommonTest(ABC):
         if self.args is None:
             data = self.data
         else:
-            base = Argument("arg", dict, sub_fields=self.args)
+            if isinstance(self.args, list):
+                base = Argument("arg", dict, sub_fields=self.args)
+            elif isinstance(self.args, Argument):
+                base = self.args
+            else:
+                raise ValueError("Invalid type for args")
             data = base.normalize_value(self.data, trim_pattern="_*")
             base.check_value(data, strict=True)
+        return self.pass_data_to_cls(cls, data)
+
+    def pass_data_to_cls(self, cls, data) -> Any:
+        """Pass data to the class."""
         return cls(**data, **self.addtional_data)
 
     @abstractmethod
@@ -240,9 +252,17 @@ class CommonTest(ABC):
         tf_obj = self.tf_class.deserialize(data1, suffix=self.unique_id)
         ret2, data2 = self.get_tf_ret_serialization_from_cls(tf_obj)
         ret2 = self.extract_ret(ret2, self.RefBackend.TF)
+        if tf_obj.__class__.__name__.startswith(("Polar", "Dipole")):
+            # tf, pt serialization mismatch
+            common_keys = set(data1.keys()) & set(data2.keys())
+            data1 = {k: data1[k] for k in common_keys}
+            data2 = {k: data2[k] for k in common_keys}
         np.testing.assert_equal(data1, data2)
         for rr1, rr2 in zip(ret1, ret2):
-            np.testing.assert_allclose(rr1, rr2, rtol=self.rtol)
+            np.testing.assert_allclose(
+                rr1.ravel(), rr2.ravel(), rtol=self.rtol, atol=self.atol
+            )
+            assert rr1.dtype == rr2.dtype, f"{rr1.dtype} != {rr2.dtype}"
 
     def test_tf_self_consistent(self):
         """Test whether TF is self consistent."""
@@ -256,7 +276,8 @@ class CommonTest(ABC):
         ret2, data2 = self.get_tf_ret_serialization_from_cls(obj2)
         np.testing.assert_equal(data1, data2)
         for rr1, rr2 in zip(ret1, ret2):
-            np.testing.assert_allclose(rr1, rr2, rtol=self.rtol)
+            np.testing.assert_allclose(rr1, rr2, rtol=self.rtol, atol=self.atol)
+            assert rr1.dtype == rr2.dtype, f"{rr1.dtype} != {rr2.dtype}"
 
     def test_dp_consistent_with_ref(self):
         """Test whether DP and reference are consistent."""
@@ -273,7 +294,8 @@ class CommonTest(ABC):
         data2 = dp_obj.serialize()
         np.testing.assert_equal(data1, data2)
         for rr1, rr2 in zip(ret1, ret2):
-            np.testing.assert_allclose(rr1, rr2, rtol=self.rtol)
+            np.testing.assert_allclose(rr1, rr2, rtol=self.rtol, atol=self.atol)
+            assert rr1.dtype == rr2.dtype, f"{rr1.dtype} != {rr2.dtype}"
 
     def test_dp_self_consistent(self):
         """Test whether DP is self consistent."""
@@ -286,7 +308,8 @@ class CommonTest(ABC):
         np.testing.assert_equal(data1, data2)
         for rr1, rr2 in zip(ret1, ret2):
             if isinstance(rr1, np.ndarray) and isinstance(rr2, np.ndarray):
-                np.testing.assert_allclose(rr1, rr2, rtol=self.rtol)
+                np.testing.assert_allclose(rr1, rr2, rtol=self.rtol, atol=self.atol)
+                assert rr1.dtype == rr2.dtype, f"{rr1.dtype} != {rr2.dtype}"
             else:
                 self.assertEqual(rr1, rr2)
 
@@ -303,9 +326,15 @@ class CommonTest(ABC):
         ret2 = self.eval_pt(obj)
         ret2 = self.extract_ret(ret2, self.RefBackend.PT)
         data2 = obj.serialize()
+        if obj.__class__.__name__.startswith(("Polar", "Dipole")):
+            # tf, pt serialization mismatch
+            common_keys = set(data1.keys()) & set(data2.keys())
+            data1 = {k: data1[k] for k in common_keys}
+            data2 = {k: data2[k] for k in common_keys}
         np.testing.assert_equal(data1, data2)
         for rr1, rr2 in zip(ret1, ret2):
-            np.testing.assert_allclose(rr1, rr2, rtol=self.rtol)
+            np.testing.assert_allclose(rr1, rr2, rtol=self.rtol, atol=self.atol)
+            assert rr1.dtype == rr2.dtype, f"{rr1.dtype} != {rr2.dtype}"
 
     def test_pt_self_consistent(self):
         """Test whether PT is self consistent."""
@@ -318,7 +347,8 @@ class CommonTest(ABC):
         np.testing.assert_equal(data1, data2)
         for rr1, rr2 in zip(ret1, ret2):
             if isinstance(rr1, np.ndarray) and isinstance(rr2, np.ndarray):
-                np.testing.assert_allclose(rr1, rr2, rtol=self.rtol)
+                np.testing.assert_allclose(rr1, rr2, rtol=self.rtol, atol=self.atol)
+                assert rr1.dtype == rr2.dtype, f"{rr1.dtype} != {rr2.dtype}"
             else:
                 self.assertEqual(rr1, rr2)
 

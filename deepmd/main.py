@@ -640,6 +640,7 @@ def main_parser() -> argparse.ArgumentParser:
         help="type map",
     )
     parser_neighbor_stat.add_argument(
+        "--mixed-type",
         "--one-type",
         action="store_true",
         default=False,
@@ -720,6 +721,23 @@ def main_parser() -> argparse.ArgumentParser:
             "to the network on both IPv4 and IPv6 (where available)."
         ),
     )
+
+    # convert_backend
+    parser_convert_backend = subparsers.add_parser(
+        "convert-backend",
+        parents=[parser_log],
+        help="Convert model to another backend.",
+        formatter_class=RawTextArgumentDefaultsHelpFormatter,
+        epilog=textwrap.dedent(
+            """\
+        examples:
+            dp convert-backend model.pb model.pth
+            dp convert-backend model.pb model.dp
+        """
+        ),
+    )
+    parser_convert_backend.add_argument("INPUT", help="The input model file.")
+    parser_convert_backend.add_argument("OUTPUT", help="The output model file.")
     return parser
 
 
@@ -759,6 +777,29 @@ def main():
 
     if args.backend not in BACKEND_TABLE:
         raise ValueError(f"Unknown backend {args.backend}")
-    deepmd_main = BACKENDS[args.backend]().entry_point_hook
+
+    if args.command in (
+        "test",
+        "doc-train-input",
+        "model-devi",
+        "neighbor-stat",
+        "gui",
+        "convert-backend",
+    ):
+        # common entrypoints
+        from deepmd.entrypoints.main import main as deepmd_main
+    elif args.command in (
+        "train",
+        "freeze",
+        "transfer",
+        "compress",
+        "convert-from",
+        "train-nvnmd",
+    ):
+        deepmd_main = BACKENDS[args.backend]().entry_point_hook
+    elif args.command is None:
+        pass
+    else:
+        raise RuntimeError(f"unknown command {args.command}")
 
     deepmd_main(args)

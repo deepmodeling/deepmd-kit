@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import itertools
+import os
 import unittest
 
 import numpy as np
@@ -9,8 +10,14 @@ from scipy.stats import (
 )
 
 from deepmd.dpmodel.fitting import DipoleFitting as DPDipoleFitting
+from deepmd.infer.deep_dipole import (
+    DeepDipole,
+)
 from deepmd.pt.model.descriptor.se_a import (
     DescrptSeA,
+)
+from deepmd.pt.model.model.dipole_model import (
+    DipoleModel,
 )
 from deepmd.pt.model.task.dipole import (
     DipoleFittingNet,
@@ -32,11 +39,25 @@ from .test_env_mat import (
 dtype = env.GLOBAL_PT_FLOAT_PRECISION
 
 
+def finite_difference(f, x, a, delta=1e-6):
+    in_shape = x.shape
+    y0 = f(x, a)
+    out_shape = y0.shape
+    res = np.empty(out_shape + in_shape)
+    for idx in np.ndindex(*in_shape):
+        diff = np.zeros(in_shape)
+        diff[idx] += delta
+        y1p = f(x + diff, a)
+        y1n = f(x - diff, a)
+        res[(Ellipsis, *idx)] = (y1p - y1n) / (2 * delta)
+    return res
+
+
 class TestDipoleFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
     def setUp(self):
         TestCaseSingleFrameWithNlist.setUp(self)
         self.rng = np.random.default_rng()
-        self.nf, self.nloc, nnei = self.nlist.shape
+        self.nf, self.nloc, _ = self.nlist.shape
         self.dd0 = DescrptSeA(self.rcut, self.rcut_smth, self.sel).to(env.DEVICE)
 
     def test_consistency(
@@ -51,7 +72,7 @@ class TestDipoleFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
             self.atype_ext[:, : self.nloc], dtype=int, device=env.DEVICE
         )
 
-        for distinguish_types, nfp, nap in itertools.product(
+        for mixed_types, nfp, nap in itertools.product(
             [True, False],
             [0, 3],
             [0, 4],
@@ -60,10 +81,10 @@ class TestDipoleFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 "foo",
                 self.nt,
                 self.dd0.dim_out,
-                dim_rot_mat=self.dd0.get_dim_emb(),
+                embedding_width=self.dd0.get_dim_emb(),
                 numb_fparam=nfp,
                 numb_aparam=nap,
-                use_tebd=(not distinguish_types),
+                mixed_types=mixed_types,
             ).to(env.DEVICE)
             ft1 = DPDipoleFitting.deserialize(ft0.serialize())
             ft2 = DipoleFittingNet.deserialize(ft1.serialize())
@@ -104,7 +125,7 @@ class TestDipoleFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
     def test_jit(
         self,
     ):
-        for distinguish_types, nfp, nap in itertools.product(
+        for mixed_types, nfp, nap in itertools.product(
             [True, False],
             [0, 3],
             [0, 4],
@@ -113,10 +134,10 @@ class TestDipoleFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 "foo",
                 self.nt,
                 self.dd0.dim_out,
-                dim_rot_mat=self.dd0.get_dim_emb(),
+                embedding_width=self.dd0.get_dim_emb(),
                 numb_fparam=nfp,
                 numb_aparam=nap,
-                use_tebd=(not distinguish_types),
+                mixed_types=mixed_types,
             ).to(env.DEVICE)
             torch.jit.script(ft0)
 
@@ -128,19 +149,19 @@ class TestEquivalence(unittest.TestCase):
         self.rcut_smth = 0.5
         self.sel = [46, 92, 4]
         self.nf = 1
-        self.coord = 2 * torch.rand([self.natoms, 3], dtype=dtype).to(env.DEVICE)
-        self.shift = torch.tensor([4, 4, 4], dtype=dtype).to(env.DEVICE)
-        self.atype = torch.IntTensor([0, 0, 0, 1, 1]).to(env.DEVICE)
+        self.coord = 2 * torch.rand([self.natoms, 3], dtype=dtype, device=env.DEVICE)
+        self.shift = torch.tensor([4, 4, 4], dtype=dtype, device=env.DEVICE)
+        self.atype = torch.tensor([0, 0, 0, 1, 1], dtype=torch.int32, device=env.DEVICE)
         self.dd0 = DescrptSeA(self.rcut, self.rcut_smth, self.sel).to(env.DEVICE)
-        self.cell = torch.rand([3, 3], dtype=dtype).to(env.DEVICE)
-        self.cell = (self.cell + self.cell.T) + 5.0 * torch.eye(3).to(env.DEVICE)
+        self.cell = torch.rand([3, 3], dtype=dtype, device=env.DEVICE)
+        self.cell = (self.cell + self.cell.T) + 5.0 * torch.eye(3, device=env.DEVICE)
 
     def test_rot(self):
         atype = self.atype.reshape(1, 5)
-        rmat = torch.tensor(special_ortho_group.rvs(3), dtype=dtype).to(env.DEVICE)
+        rmat = torch.tensor(special_ortho_group.rvs(3), dtype=dtype, device=env.DEVICE)
         coord_rot = torch.matmul(self.coord, rmat)
         rng = np.random.default_rng()
-        for distinguish_types, nfp, nap in itertools.product(
+        for mixed_types, nfp, nap in itertools.product(
             [True, False],
             [0, 3],
             [0, 4],
@@ -149,10 +170,10 @@ class TestEquivalence(unittest.TestCase):
                 "foo",
                 3,  # ntype
                 self.dd0.dim_out,  # dim_descrpt
-                dim_rot_mat=self.dd0.get_dim_emb(),
+                embedding_width=self.dd0.get_dim_emb(),
                 numb_fparam=nfp,
                 numb_aparam=nap,
-                use_tebd=False,
+                mixed_types=mixed_types,
             ).to(env.DEVICE)
             if nfp > 0:
                 ifp = torch.tensor(
@@ -174,10 +195,10 @@ class TestEquivalence(unittest.TestCase):
                 (
                     extended_coord,
                     extended_atype,
-                    mapping,
+                    _,
                     nlist,
                 ) = extend_input_and_build_neighbor_list(
-                    xyz + self.shift, atype, self.rcut, self.sel, distinguish_types
+                    xyz + self.shift, atype, self.rcut, self.sel, not mixed_types
                 )
 
                 rd0, gr0, _, _, _ = self.dd0(
@@ -199,10 +220,10 @@ class TestEquivalence(unittest.TestCase):
             "foo",
             3,  # ntype
             self.dd0.dim_out,
-            dim_rot_mat=self.dd0.get_dim_emb(),
+            embedding_width=self.dd0.get_dim_emb(),
             numb_fparam=0,
             numb_aparam=0,
-            use_tebd=False,
+            mixed_types=False,
         ).to(env.DEVICE)
         res = []
         for idx_perm in [[0, 1, 2, 3, 4], [1, 0, 4, 3, 2]]:
@@ -210,10 +231,10 @@ class TestEquivalence(unittest.TestCase):
             (
                 extended_coord,
                 extended_atype,
-                mapping,
+                _,
                 nlist,
             ) = extend_input_and_build_neighbor_list(
-                coord[idx_perm], atype, self.rcut, self.sel, False
+                coord[idx_perm], atype, self.rcut, self.sel, True
             )
 
             rd0, gr0, _, _, _ = self.dd0(
@@ -241,17 +262,17 @@ class TestEquivalence(unittest.TestCase):
             "foo",
             3,  # ntype
             self.dd0.dim_out,
-            dim_rot_mat=self.dd0.get_dim_emb(),
+            embedding_width=self.dd0.get_dim_emb(),
             numb_fparam=0,
             numb_aparam=0,
-            use_tebd=False,
+            mixed_types=True,
         ).to(env.DEVICE)
         res = []
         for xyz in [self.coord, coord_s]:
             (
                 extended_coord,
                 extended_atype,
-                mapping,
+                _,
                 nlist,
             ) = extend_input_and_build_neighbor_list(
                 xyz, atype, self.rcut, self.sel, False
@@ -267,6 +288,62 @@ class TestEquivalence(unittest.TestCase):
             res.append(ret0["foo"])
 
         np.testing.assert_allclose(to_numpy_array(res[0]), to_numpy_array(res[1]))
+
+
+class TestDipoleModel(unittest.TestCase):
+    def setUp(self):
+        self.natoms = 5
+        self.rcut = 4.0
+        self.nt = 3
+        self.rcut_smth = 0.5
+        self.sel = [46, 92, 4]
+        self.nf = 1
+        self.coord = 2 * torch.rand([self.natoms, 3], dtype=dtype, device="cpu")
+        cell = torch.rand([3, 3], dtype=dtype, device="cpu")
+        self.cell = (cell + cell.T) + 5.0 * torch.eye(3, device="cpu")
+        self.atype = torch.IntTensor([0, 0, 0, 1, 1], device="cpu")
+        self.dd0 = DescrptSeA(self.rcut, self.rcut_smth, self.sel).to(env.DEVICE)
+        self.ft0 = DipoleFittingNet(
+            "dipole",
+            self.nt,
+            self.dd0.dim_out,
+            embedding_width=self.dd0.get_dim_emb(),
+            numb_fparam=0,
+            numb_aparam=0,
+            mixed_types=True,
+        ).to(env.DEVICE)
+        self.type_mapping = ["O", "H", "B"]
+        self.model = DipoleModel(self.dd0, self.ft0, self.type_mapping)
+        self.file_path = "model_output.pth"
+
+    def test_auto_diff(self):
+        places = 5
+        delta = 1e-5
+        atype = self.atype.view(self.nf, self.natoms)
+
+        def ff(coord, atype):
+            return self.model(coord, atype)["global_dipole"].detach().cpu().numpy()
+
+        fdf = -finite_difference(ff, self.coord, atype, delta=delta)
+        rff = self.model(self.coord, atype)["force"].detach().cpu().numpy()
+
+        np.testing.assert_almost_equal(fdf, rff.transpose(0, 2, 1, 3), decimal=places)
+
+    def test_deepdipole_infer(self):
+        atype = self.atype.view(self.nf, self.natoms)
+        coord = self.coord.reshape(1, 5, 3)
+        cell = self.cell.reshape(1, 9)
+        jit_md = torch.jit.script(self.model)
+        torch.jit.save(jit_md, self.file_path)
+        load_md = DeepDipole(self.file_path)
+        load_md.eval(coords=coord, atom_types=atype, cells=cell, atomic=True)
+        load_md.eval(coords=coord, atom_types=atype, cells=cell, atomic=False)
+        load_md.eval_full(coords=coord, atom_types=atype, cells=cell, atomic=True)
+        load_md.eval_full(coords=coord, atom_types=atype, cells=cell, atomic=False)
+
+    def tearDown(self) -> None:
+        if os.path.exists(self.file_path):
+            os.remove(self.file_path)
 
 
 if __name__ == "__main__":

@@ -19,33 +19,34 @@ from deepmd.pt.model.model import (
 from deepmd.pt.utils import (
     env,
 )
-from deepmd.pt.utils.dataset import (
-    DeepmdDataSystem,
+from deepmd.utils.data import (
+    DeepmdData,
 )
 
 
-class CheckSymmetry(DeepmdDataSystem):
+class CheckSymmetry(DeepmdData):
     def __init__(
         self,
         sys_path: str,
-        rcut,
-        sec,
         type_map: Optional[List[str]] = None,
-        type_split=True,
     ):
-        super().__init__(sys_path, rcut, sec, type_map, type_split)
+        super().__init__(sys_path=sys_path, type_map=type_map)
+        self.add("energy", 1, atomic=False, must=False, high_prec=True)
+        self.add("force", 3, atomic=True, must=False, high_prec=False)
+        self.add("virial", 9, atomic=False, must=False, high_prec=False)
 
     def get_disturb(self, index, atom_index, axis_index, delta):
         for i in range(
-            0, len(self._dirs) + 1
+            0, len(self.dirs) + 1
         ):  # note: if different sets can be merged, prefix sum is unused to calculate
             if index < self.prefix_sum[i]:
                 break
-        frames = self._load_set(self._dirs[i - 1])
+        frames = self._load_set(self.dirs[i - 1])
         tmp = copy.deepcopy(frames["coord"].reshape(self.nframes, -1, 3))
         tmp[:, atom_index, axis_index] += delta
         frames["coord"] = tmp
-        frame = self.single_preprocess(frames, index - self.prefix_sum[i - 1])
+        frame = self._get_subdata(frames, index - self.prefix_sum[i - 1])
+        frame = self.reformat_data_torch(frame)
         return frame
 
 
@@ -78,18 +79,18 @@ class TestForceGrad(unittest.TestCase):
         sec = torch.cumsum(torch.tensor(sel), dim=0)
         type_map = self.config["model"]["type_map"]
         self.dpdatasystem = CheckSymmetry(
-            sys_path=systems[system_index], rcut=rcut, sec=sec, type_map=type_map
+            sys_path=systems[system_index], type_map=type_map
         )
-        self.origin_batch = self.dpdatasystem._get_item(batch_index)
+        self.origin_batch = self.dpdatasystem.get_item_torch(batch_index)
 
     @unittest.skip("it can be replaced by autodiff")
     def test_force_grad(self, threshold=1e-2, delta0=1e-6, seed=20):
         result0 = self.model(**get_data(self.origin_batch))
         np.random.default_rng(seed)
-        errors = np.zeros((self.dpdatasystem._natoms, 3))
-        for atom_index in range(self.dpdatasystem._natoms):
+        errors = np.zeros((self.dpdatasystem.natoms, 3))
+        for atom_index in range(self.dpdatasystem.natoms):
             for axis_index in range(3):
-                delta = np.random.random() * delta0
+                delta = np.random.default_rng().random() * delta0
                 disturb_batch = self.dpdatasystem.get_disturb(
                     self.batch_index, atom_index, axis_index, delta
                 )

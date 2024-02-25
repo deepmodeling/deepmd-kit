@@ -23,21 +23,6 @@ from torch.distributed.elastic.multiprocessing.errors import (
 from deepmd import (
     __version__,
 )
-from deepmd.entrypoints.doc import (
-    doc_train_input,
-)
-from deepmd.entrypoints.gui import (
-    start_dpgui,
-)
-from deepmd.entrypoints.neighbor_stat import (
-    neighbor_stat,
-)
-from deepmd.entrypoints.test import (
-    test,
-)
-from deepmd.infer.model_devi import (
-    make_model_devi,
-)
 from deepmd.loggers.loggers import (
     set_log_handles,
 )
@@ -147,16 +132,12 @@ def get_trainer(
             validation_systems,
             validation_dataset_params["batch_size"],
             model_params_single,
-            type_split=type_split,
-            noise_settings=noise_settings,
         )
         if ckpt or finetune_model:
             train_data_single = DpLoaderSet(
                 training_systems,
                 training_dataset_params["batch_size"],
                 model_params_single,
-                type_split=type_split,
-                noise_settings=noise_settings,
             )
             sampled_single = None
         else:
@@ -164,7 +145,6 @@ def get_trainer(
                 training_systems,
                 training_dataset_params["batch_size"],
                 model_params_single,
-                type_split=type_split,
             )
             data_stat_nbatch = model_params_single.get("data_stat_nbatch", 10)
             sampled_single = make_stat_input(
@@ -177,8 +157,6 @@ def get_trainer(
                     training_systems,
                     training_dataset_params["batch_size"],
                     model_params_single,
-                    type_split=type_split,
-                    noise_settings=noise_settings,
                 )
         return (
             train_data_single,
@@ -288,22 +266,13 @@ def main(args: Optional[Union[List[str], argparse.Namespace]] = None):
         FLAGS = parse_args(args=args)
     else:
         FLAGS = args
-    dict_args = vars(FLAGS)
 
     set_log_handles(FLAGS.log_level, FLAGS.log_path, mpi_log=None)
     log.debug("Log handles were successfully set")
-
     log.info("DeepMD version: %s", __version__)
 
     if FLAGS.command == "train":
         train(FLAGS)
-    elif FLAGS.command == "test":
-        dict_args["output"] = (
-            str(Path(FLAGS.model).with_suffix(".pth"))
-            if Path(FLAGS.model).suffix not in (".pt", ".pth")
-            else FLAGS.model
-        )
-        test(**dict_args)
     elif FLAGS.command == "freeze":
         if Path(FLAGS.checkpoint_folder).is_dir():
             checkpoint_path = Path(FLAGS.checkpoint_folder)
@@ -313,20 +282,6 @@ def main(args: Optional[Union[List[str], argparse.Namespace]] = None):
             FLAGS.model = FLAGS.checkpoint_folder
         FLAGS.output = str(Path(FLAGS.output).with_suffix(".pth"))
         freeze(FLAGS)
-    elif FLAGS.command == "doc-train-input":
-        doc_train_input(**dict_args)
-    elif FLAGS.command == "model-devi":
-        dict_args["models"] = [
-            str(Path(mm).with_suffix(".pth"))
-            if Path(mm).suffix not in (".pb", ".pt", ".pth")
-            else mm
-            for mm in dict_args["models"]
-        ]
-        make_model_devi(**dict_args)
-    elif FLAGS.command == "gui":
-        start_dpgui(**dict_args)
-    elif FLAGS.command == "neighbor-stat":
-        neighbor_stat(**dict_args)
     else:
         raise RuntimeError(f"Invalid command {FLAGS.command}!")
 

@@ -55,8 +55,6 @@ class GeneralFitting(NativeOP, BaseFitting):
             If the weights of fitting net are trainable.
             Suppose that we have :math:`N_l` hidden layers in the fitting net,
             this list is of length :math:`N_l + 1`, specifying if the hidden layers and the output layer are trainable.
-    atom_ener
-            Specifying atomic energy contribution in vacuum. The `set_davg_zero` key in the descrptor should be set.
     activation_function
             The activation function :math:`\boldsymbol{\phi}` in the embedding net. Supported options are |ACTIVATION_FN|
     precision
@@ -87,7 +85,6 @@ class GeneralFitting(NativeOP, BaseFitting):
         rcond: Optional[float] = None,
         tot_ener_zero: bool = False,
         trainable: Optional[List[bool]] = None,
-        atom_ener: Optional[List[float]] = None,
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
         layer_name: Optional[List[Optional[str]]] = None,
@@ -110,7 +107,6 @@ class GeneralFitting(NativeOP, BaseFitting):
             self.trainable = [True for ii in range(len(self.neuron) + 1)]
         if isinstance(self.trainable, bool):
             self.trainable = [self.trainable] * (len(self.neuron) + 1)
-        self.atom_ener = atom_ener
         self.activation_function = activation_function
         self.precision = precision
         self.layer_name = layer_name
@@ -189,6 +185,8 @@ class GeneralFitting(NativeOP, BaseFitting):
             self.aparam_avg = value
         elif key in ["aparam_inv_std"]:
             self.aparam_inv_std = value
+        elif key in ["scale"]:
+            self.scale = value
         else:
             raise KeyError(key)
 
@@ -203,12 +201,15 @@ class GeneralFitting(NativeOP, BaseFitting):
             return self.aparam_avg
         elif key in ["aparam_inv_std"]:
             return self.aparam_inv_std
+        elif key in ["scale"]:
+            return self.scale
         else:
             raise KeyError(key)
 
     def serialize(self) -> dict:
         """Serialize the fitting to dict."""
         return {
+            "@class": "Fitting",
             "var_name": self.var_name,
             "ntypes": self.ntypes,
             "dim_descrpt": self.dim_descrpt,
@@ -232,7 +233,6 @@ class GeneralFitting(NativeOP, BaseFitting):
             # not supported
             "tot_ener_zero": self.tot_ener_zero,
             "trainable": self.trainable,
-            "atom_ener": self.atom_ener,
             "layer_name": self.layer_name,
             "use_aparam_as_mask": self.use_aparam_as_mask,
             "spin": self.spin,
@@ -241,6 +241,8 @@ class GeneralFitting(NativeOP, BaseFitting):
     @classmethod
     def deserialize(cls, data: dict) -> "GeneralFitting":
         data = copy.deepcopy(data)
+        data.pop("@class")
+        data.pop("type")
         variables = data.pop("@variables")
         nets = data.pop("nets")
         obj = cls(**data)
@@ -327,10 +329,10 @@ class GeneralFitting(NativeOP, BaseFitting):
                 mask = np.tile(
                     (atype == type_i).reshape([nf, nloc, 1]), [1, 1, net_dim_out]
                 )
-                atom_energy = self.nets[(type_i,)](xx)
-                atom_energy = atom_energy + self.bias_atom_e[type_i]
-                atom_energy = atom_energy * mask
-                outs = outs + atom_energy  # Shape is [nframes, natoms[0], 1]
+                atom_property = self.nets[(type_i,)](xx)
+                atom_property = atom_property + self.bias_atom_e[type_i]
+                atom_property = atom_property * mask
+                outs = outs + atom_property  # Shape is [nframes, natoms[0], 1]
         else:
             outs = self.nets[()](xx) + self.bias_atom_e[atype]
         # nf x nloc

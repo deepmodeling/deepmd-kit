@@ -5,7 +5,6 @@ from abc import (
     abstractmethod,
 )
 from typing import (
-    Callable,
     List,
     Optional,
 )
@@ -37,9 +36,6 @@ from deepmd.pt.utils.env import (
 from deepmd.pt.utils.exclude_mask import (
     AtomExcludeMask,
 )
-from deepmd.pt.utils.plugin import (
-    Plugin,
-)
 from deepmd.pt.utils.stat import (
     make_stat_input,
 )
@@ -55,40 +51,11 @@ log = logging.getLogger(__name__)
 
 
 class Fitting(torch.nn.Module, BaseFitting):
-    __plugins = Plugin()
-
-    @staticmethod
-    def register(key: str) -> Callable:
-        """Register a Fitting plugin.
-
-        Parameters
-        ----------
-        key : str
-            the key of a Fitting
-
-        Returns
-        -------
-        Fitting
-            the registered Fitting
-
-        Examples
-        --------
-        >>> @Fitting.register("some_fitting")
-            class SomeFitting(Fitting):
-                pass
-        """
-        return Fitting.__plugins.register(key)
+    # plugin moved to BaseFitting
 
     def __new__(cls, *args, **kwargs):
         if cls is Fitting:
-            try:
-                fitting_type = kwargs["type"]
-            except KeyError:
-                raise KeyError("the type of fitting should be set by `type`")
-            if fitting_type in Fitting.__plugins.plugins:
-                cls = Fitting.__plugins.plugins[fitting_type]
-            else:
-                raise RuntimeError("Unknown fitting type: " + fitting_type)
+            return BaseFitting.__new__(BaseFitting, *args, **kwargs)
         return super().__new__(cls)
 
     def share_params(self, base_class, shared_level, resume=False):
@@ -159,9 +126,7 @@ class Fitting(torch.nn.Module, BaseFitting):
         )
         # data
         systems = config["training"]["training_data"]["systems"]
-        finetune_data = DpLoaderSet(
-            systems, ntest, config["model"], type_split=False, noise_settings=None
-        )
+        finetune_data = DpLoaderSet(systems, ntest, config["model"])
         sampled = make_stat_input(finetune_data.systems, finetune_data.dataloaders, 1)
         # map
         sorter = np.argsort(old_type_map)
@@ -401,6 +366,7 @@ class GeneralFitting(Fitting):
     def serialize(self) -> dict:
         """Serialize the fitting to dict."""
         return {
+            "@class": "Fitting",
             "var_name": self.var_name,
             "ntypes": self.ntypes,
             "dim_descrpt": self.dim_descrpt,
@@ -430,7 +396,6 @@ class GeneralFitting(Fitting):
             ## NOTICE:  not supported by far
             "tot_ener_zero": False,
             "trainable": [True] * (len(self.neuron) + 1),
-            "atom_ener": [],
             "layer_name": None,
             "use_aparam_as_mask": False,
             "spin": None,
@@ -476,6 +441,8 @@ class GeneralFitting(Fitting):
             self.aparam_avg = value
         elif key in ["aparam_inv_std"]:
             self.aparam_inv_std = value
+        elif key in ["scale"]:
+            self.scale = value
         else:
             raise KeyError(key)
 
@@ -490,6 +457,8 @@ class GeneralFitting(Fitting):
             return self.aparam_avg
         elif key in ["aparam_inv_std"]:
             return self.aparam_inv_std
+        elif key in ["scale"]:
+            return self.scale
         else:
             raise KeyError(key)
 
@@ -585,7 +554,9 @@ class GeneralFitting(Fitting):
                 atom_property = (
                     self.filter_layers.networks[0](xx) + self.bias_atom_e[atype]
                 )
-                outs = outs + atom_property  # Shape is [nframes, natoms[0], 1]
+                outs = (
+                    outs + atom_property
+                )  # Shape is [nframes, natoms[0], net_dim_out]
             else:
                 for type_i, ll in enumerate(self.filter_layers.networks):
                     mask = (atype == type_i).unsqueeze(-1)
@@ -593,7 +564,9 @@ class GeneralFitting(Fitting):
                     atom_property = ll(xx)
                     atom_property = atom_property + self.bias_atom_e[type_i]
                     atom_property = atom_property * mask
-                    outs = outs + atom_property  # Shape is [nframes, natoms[0], 1]
+                    outs = (
+                        outs + atom_property
+                    )  # Shape is [nframes, natoms[0], net_dim_out]
         # nf x nloc
         mask = self.emask(atype)
         # nf x nloc x nod

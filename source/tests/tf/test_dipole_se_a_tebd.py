@@ -66,7 +66,9 @@ class TestModel(tf.test.TestCase):
         descrpt = DescrptSeA(**jdata["model"]["descriptor"], uniform_seed=True)
         jdata["model"]["fitting_net"].pop("type", None)
         jdata["model"]["fitting_net"].pop("fit_diag", None)
-        jdata["model"]["fitting_net"]["descrpt"] = descrpt
+        jdata["model"]["fitting_net"]["ntypes"] = descrpt.get_ntypes()
+        jdata["model"]["fitting_net"]["dim_descrpt"] = descrpt.get_dim_out()
+        jdata["model"]["fitting_net"]["embedding_width"] = descrpt.get_dim_rot_mat_1()
         fitting = DipoleFittingSeA(**jdata["model"]["fitting_net"], uniform_seed=True)
         typeebd_param = jdata["model"]["type_embedding"]
         typeebd = TypeEmbedNet(

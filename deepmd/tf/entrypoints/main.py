@@ -11,6 +11,9 @@ from typing import (
     Union,
 )
 
+from deepmd.backend.suffix import (
+    format_model_suffix,
+)
 from deepmd.main import (
     get_ll,
     main_parser,
@@ -22,12 +25,7 @@ from deepmd.tf.common import (
 from deepmd.tf.entrypoints import (
     compress,
     convert,
-    doc_train_input,
     freeze,
-    make_model_devi,
-    neighbor_stat,
-    start_dpgui,
-    test,
     train_dp,
     transfer,
 )
@@ -73,33 +71,18 @@ def main(args: Optional[Union[List[str], argparse.Namespace]] = None):
     if args.command == "train":
         train_dp(**dict_args)
     elif args.command == "freeze":
-        dict_args["output"] = str(Path(dict_args["output"]).with_suffix(".pb"))
+        dict_args["output"] = format_model_suffix(
+            dict_args["output"], preferred_backend=args.backend, strict_prefer=True
+        )
         freeze(**dict_args)
-    elif args.command == "test":
-        dict_args["model"] = str(Path(dict_args["model"]).with_suffix(".pb"))
-        test(**dict_args)
     elif args.command == "transfer":
         transfer(**dict_args)
     elif args.command == "compress":
         compress(**dict_args)
-    elif args.command == "doc-train-input":
-        doc_train_input(**dict_args)
-    elif args.command == "model-devi":
-        dict_args["models"] = [
-            str(Path(mm).with_suffix(".pb"))
-            if Path(mm).suffix not in (".pb", ".pt")
-            else mm
-            for mm in dict_args["models"]
-        ]
-        make_model_devi(**dict_args)
     elif args.command == "convert-from":
         convert(**dict_args)
-    elif args.command == "neighbor-stat":
-        neighbor_stat(**dict_args)
     elif args.command == "train-nvnmd":  # nvnmd
         train_nvnmd(**dict_args)
-    elif args.command == "gui":
-        start_dpgui(**dict_args)
     elif args.command is None:
         pass
     else:

@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Dict,
+    List,
     Optional,
 )
 
@@ -8,6 +9,9 @@ import torch
 
 from deepmd.dpmodel import (
     ModelOutputDef,
+)
+from deepmd.dpmodel.output_def import (
+    OutputVariableCategory,
 )
 from deepmd.pt.model.model.transform_output import (
     communicate_extended_output,
@@ -53,10 +57,28 @@ def make_model(T_AtomicModel):
                 **kwargs,
             )
 
-        @torch.jit.export
         def model_output_def(self):
             """Get the output def for the model."""
             return ModelOutputDef(self.fitting_output_def())
+
+        @torch.jit.export
+        def model_output_type(self) -> str:
+            """Get the output type for the model."""
+            output_def = self.model_output_def()
+            var_defs = output_def.var_defs
+            # jit: Comprehension ifs are not supported yet
+            # type hint is critical for JIT
+            vars: List[str] = []
+            for kk, vv in var_defs.items():
+                # .value is critical for JIT
+                if vv.category == OutputVariableCategory.OUT.value:
+                    vars.append(kk)
+            if len(vars) == 1:
+                return vars[0]
+            elif len(vars) == 0:
+                raise ValueError("No valid output type found")
+            else:
+                raise ValueError(f"Multiple valid output types found: {vars}")
 
         # cannot use the name forward. torch script does not work
         def forward_common(
@@ -240,8 +262,10 @@ def make_model(T_AtomicModel):
                         nlist,
                         -1
                         * torch.ones(
-                            [n_nf, n_nloc, nnei - n_nnei], dtype=nlist.dtype
-                        ).to(nlist.device),
+                            [n_nf, n_nloc, nnei - n_nnei],
+                            dtype=nlist.dtype,
+                            device=nlist.device,
+                        ),
                     ],
                     dim=-1,
                 )

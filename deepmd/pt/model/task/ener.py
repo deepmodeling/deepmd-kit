@@ -41,6 +41,7 @@ device = env.DEVICE
 log = logging.getLogger(__name__)
 
 
+@GeneralFitting.register("invar")
 @fitting_check_output
 class InvarFitting(GeneralFitting):
     """Construct a fitting net for energy.
@@ -78,6 +79,8 @@ class InvarFitting(GeneralFitting):
         Random seed.
     exclude_types: List[int]
         Atomic contributions of the excluded atom types are set zero.
+    atom_ener
+            Specifying atomic energy contribution in vacuum. The `set_davg_zero` key in the descrptor should be set.
 
     """
 
@@ -98,9 +101,11 @@ class InvarFitting(GeneralFitting):
         rcond: Optional[float] = None,
         seed: Optional[int] = None,
         exclude_types: List[int] = [],
+        atom_ener: Optional[List[float]] = None,
         **kwargs,
     ):
         self.dim_out = dim_out
+        self.atom_ener = atom_ener
         super().__init__(
             var_name=var_name,
             ntypes=ntypes,
@@ -125,7 +130,9 @@ class InvarFitting(GeneralFitting):
 
     def serialize(self) -> dict:
         data = super().serialize()
+        data["type"] = "invar"
         data["dim_out"] = self.dim_out
+        data["atom_ener"] = self.atom_ener
         return data
 
     @property
@@ -233,6 +240,13 @@ class EnergyFittingNet(InvarFitting):
         data.pop("dim_out")
         return super().deserialize(data)
 
+    def serialize(self) -> dict:
+        """Serialize the fitting to dict."""
+        return {
+            **super().serialize(),
+            "type": "ener",
+        }
+
 
 @Fitting.register("direct_force")
 @Fitting.register("direct_force_ener")
@@ -268,7 +282,7 @@ class EnergyFittingNetDirect(Fitting):
             bias_atom_e = np.zeros([self.ntypes])
         if not use_tebd:
             assert self.ntypes == len(bias_atom_e), "Element count mismatches!"
-        bias_atom_e = torch.tensor(bias_atom_e)
+        bias_atom_e = torch.tensor(bias_atom_e, device=env.DEVICE)
         self.register_buffer("bias_atom_e", bias_atom_e)
 
         filter_layers_dipole = []

@@ -131,9 +131,9 @@ class DatasetTest(ABC):
             natoms_lst = []
             for i in range(len(energy)):
                 for j in range(len(energy[i])):
-                    energy_lst.append(torch.tensor(energy[i][j]))
+                    energy_lst.append(torch.tensor(energy[i][j], device="cpu"))
                     natoms_lst.append(
-                        torch.tensor(natoms[i][j])
+                        torch.tensor(natoms[i][j], device="cpu")
                         .unsqueeze(0)
                         .expand(energy[i][j].shape[0], -1)
                     )

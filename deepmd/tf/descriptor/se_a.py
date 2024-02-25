@@ -1368,6 +1368,8 @@ class DescrptSeA(DescrptSe):
         if cls is not DescrptSeA:
             raise NotImplementedError("Not implemented in class %s" % cls.__name__)
         data = data.copy()
+        data.pop("@class", None)
+        data.pop("type", None)
         embedding_net_variables = cls.deserialize_network(
             data.pop("embeddings"), suffix=suffix
         )
@@ -1418,6 +1420,8 @@ class DescrptSeA(DescrptSe):
         # but instead a part of the input data. Maybe the interface should be refactored...
 
         return {
+            "@class": "Descriptor",
+            "type": "se_e2_a",
             "rcut": self.rcut_r,
             "rcut_smth": self.rcut_r_smth,
             "sel": self.sel_a,

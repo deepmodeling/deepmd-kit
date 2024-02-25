@@ -12,6 +12,9 @@ from deepmd.dpmodel import (
     FittingOutputDef,
     OutputVariableDef,
 )
+from deepmd.pt.utils import (
+    env,
+)
 from deepmd.utils.pair_tab import (
     PairTab,
 )
@@ -49,6 +52,7 @@ class PairTabAtomicModel(torch.nn.Module, BaseAtomicModel):
         self, tab_file: str, rcut: float, sel: Union[int, List[int]], **kwargs
     ):
         super().__init__()
+        self.model_def_script = ""
         self.tab_file = tab_file
         self.rcut = rcut
         self.tab = self._set_pairtab(tab_file, rcut)
@@ -145,7 +149,7 @@ class PairTabAtomicModel(torch.nn.Module, BaseAtomicModel):
     ) -> Dict[str, torch.Tensor]:
         nframes, nloc, nnei = nlist.shape
         extended_coord = extended_coord.view(nframes, -1, 3)
-        if self.do_grad():
+        if self.do_grad_r() or self.do_grad_c():
             extended_coord.requires_grad_(True)
 
         # this will mask all -1 in the nlist
@@ -156,7 +160,7 @@ class PairTabAtomicModel(torch.nn.Module, BaseAtomicModel):
         pairwise_rr = self._get_pairwise_dist(
             extended_coord, masked_nlist
         )  # (nframes, nloc, nnei)
-        self.tab_data = self.tab_data.view(
+        self.tab_data = self.tab_data.to(device=env.DEVICE).view(
             int(self.tab_info[-1]), int(self.tab_info[-1]), int(self.tab_info[2]), 4
         )
 
@@ -164,7 +168,8 @@ class PairTabAtomicModel(torch.nn.Module, BaseAtomicModel):
         # i_type : (nframes, nloc), this is atype.
         # j_type : (nframes, nloc, nnei)
         j_type = extended_atype[
-            torch.arange(extended_atype.size(0))[:, None, None], masked_nlist
+            torch.arange(extended_atype.size(0), device=env.DEVICE)[:, None, None],
+            masked_nlist,
         ]
 
         raw_atomic_energy = self._pair_tabulated_inter(

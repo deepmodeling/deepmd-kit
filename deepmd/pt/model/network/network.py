@@ -32,7 +32,7 @@ from deepmd.pt.utils.utils import (
 
 
 def Tensor(*shape):
-    return torch.empty(shape, dtype=env.GLOBAL_PT_FLOAT_PRECISION)
+    return torch.empty(shape, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE)
 
 
 class Dropout(nn.Module):
@@ -332,7 +332,13 @@ class Linear(nn.Linear):
         bias: bool = True,
         init: str = "default",
     ):
-        super().__init__(d_in, d_out, bias=bias, dtype=env.GLOBAL_PT_FLOAT_PRECISION)
+        super().__init__(
+            d_in,
+            d_out,
+            bias=bias,
+            dtype=env.GLOBAL_PT_FLOAT_PRECISION,
+            device=env.DEVICE,
+        )
 
         self.use_bias = bias
 
@@ -552,6 +558,7 @@ class TypeEmbedNet(nn.Module):
             embed_dim,
             padding_idx=type_nums,
             dtype=env.GLOBAL_PT_FLOAT_PRECISION,
+            device=env.DEVICE,
         )
         # nn.init.normal_(self.embedding.weight[:-1], mean=bavg, std=stddev)
 
@@ -799,7 +806,7 @@ class NeighborWiseAttentionLayer(nn.Module):
             temperature=temperature,
         )
         self.attn_layer_norm = nn.LayerNorm(
-            self.embed_dim, dtype=env.GLOBAL_PT_FLOAT_PRECISION
+            self.embed_dim, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE
         )
         if self.ffn:
             self.ffn_embed_dim = ffn_embed_dim

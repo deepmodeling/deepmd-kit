@@ -32,7 +32,7 @@ class NeighborStat(ABC):
         The num of atom types
     rcut : float
         The cut-off radius
-    one_type : bool, optional, default=False
+    mixed_type : bool, optional, default=False
         Treat all types as a single type.
     """
 
@@ -40,11 +40,11 @@ class NeighborStat(ABC):
         self,
         ntypes: int,
         rcut: float,
-        one_type: bool = False,
+        mixed_type: bool = False,
     ) -> None:
         self.rcut = rcut
         self.ntypes = ntypes
-        self.one_type = one_type
+        self.mixed_type = mixed_type
 
     def get_stat(self, data: DeepmdDataSystem) -> Tuple[float, np.ndarray]:
         """Get the data statistics of the training data, including nearest nbor distance between atoms, max nbor size of atoms.
@@ -62,7 +62,7 @@ class NeighborStat(ABC):
             An array with ntypes integers, denotes the actual achieved max sel
         """
         min_nbor_dist = 100.0
-        max_nbor_size = np.zeros(1 if self.one_type else self.ntypes, dtype=int)
+        max_nbor_size = np.zeros(1 if self.mixed_type else self.ntypes, dtype=int)
 
         for mn, dt, jj in self.iterator(data):
             if np.isinf(dt):
