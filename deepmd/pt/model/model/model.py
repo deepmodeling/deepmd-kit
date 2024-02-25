@@ -156,15 +156,15 @@ class BaseModel(BaseBaseModel):
     @abstractmethod
     def get_model_def_script(self) -> str:
         """Get the model definition script."""
-        raise NotImplementedError
+        pass
 
     @abstractmethod
     def get_nnei(self) -> int:
         """Returns the total number of selected neighboring atoms in the cut-off radius."""
         # for C++ interface
-        raise NotImplementedError
+              pass
 
     @abstractmethod
     def get_nsel(self) -> int:
         """Returns the total number of selected neighboring atoms in the cut-off radius."""
-        raise NotImplementedError
+        pass
