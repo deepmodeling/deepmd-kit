@@ -55,6 +55,7 @@ class DipoleModel(DPModel):
             model_predict["updated_coord"] += coord
         return model_predict
 
+    @torch.jit.export
     def forward_lower(
         self,
         extended_coord,

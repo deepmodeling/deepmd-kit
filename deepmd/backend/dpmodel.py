@@ -33,7 +33,9 @@ class DPModelBackend(Backend):
 
     name = "DPModel"
     """The formal name of the backend."""
-    features: ClassVar[Backend.Feature] = Backend.Feature.NEIGHBOR_STAT
+    features: ClassVar[Backend.Feature] = (
+        Backend.Feature.DEEP_EVAL | Backend.Feature.NEIGHBOR_STAT | Backend.Feature.IO
+    )
     """The features of the backend."""
     suffixes: ClassVar[List[str]] = [".dp"]
     """The suffixes of the backend."""
@@ -68,7 +70,11 @@ class DPModelBackend(Backend):
         type[DeepEvalBackend]
             The Deep Eval backend of the backend.
         """
-        raise NotImplementedError(f"Unsupported backend: {self.name}")
+        from deepmd.dpmodel.infer.deep_eval import (
+            DeepEval,
+        )
+
+        return DeepEval
 
     @property
     def neighbor_stat(self) -> Type["NeighborStat"]:
@@ -84,3 +90,33 @@ class DPModelBackend(Backend):
         )
 
         return NeighborStat
+
+    @property
+    def serialize_hook(self) -> Callable[[str], dict]:
+        """The serialize hook to convert the model file to a dictionary.
+
+        Returns
+        -------
+        Callable[[str], dict]
+            The serialize hook of the backend.
+        """
+        from deepmd.dpmodel.utils.network import (
+            load_dp_model,
+        )
+
+        return load_dp_model
+
+    @property
+    def deserialize_hook(self) -> Callable[[str, dict], None]:
+        """The deserialize hook to convert the dictionary to a model file.
+
+        Returns
+        -------
+        Callable[[str, dict], None]
+            The deserialize hook of the backend.
+        """
+        from deepmd.dpmodel.utils.network import (
+            save_dp_model,
+        )
+
+        return save_dp_model

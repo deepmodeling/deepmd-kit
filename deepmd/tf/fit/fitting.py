@@ -6,9 +6,13 @@ from abc import (
 from typing import (
     Callable,
     List,
+    Optional,
     Type,
 )
 
+from deepmd.common import (
+    j_get_type,
+)
 from deepmd.dpmodel.utils.network import (
     FittingNet,
     NetworkCollection,
@@ -52,23 +56,19 @@ class Fitting(PluginVariant):
         return Fitting.__plugins.register(key)
 
     @classmethod
-    def get_class_by_input(cls, data: dict) -> Type["Fitting"]:
-        """Get the fitting class by the input data.
+    def get_class_by_type(cls, fitting_type: str) -> Type["Fitting"]:
+        """Get the fitting class by the input type.
 
         Parameters
         ----------
-        data : dict
-            The input data
+        fitting_type : str
+            The input type
 
         Returns
         -------
         Fitting
             The fitting class
         """
-        try:
-            fitting_type = data["type"]
-        except KeyError:
-            raise KeyError("the type of fitting should be set by `type`")
         if fitting_type in Fitting.__plugins.plugins:
             cls = Fitting.__plugins.plugins[fitting_type]
         else:
@@ -77,7 +77,7 @@ class Fitting(PluginVariant):
 
     def __new__(cls, *args, **kwargs):
         if cls is Fitting:
-            cls = cls.get_class_by_input(kwargs)
+            cls = cls.get_class_by_type(j_get_type(kwargs, cls.__name__))
         return super().__new__(cls)
 
     @property
@@ -148,7 +148,9 @@ class Fitting(PluginVariant):
             The deserialized fitting
         """
         if cls is Fitting:
-            return Fitting.get_class_by_input(data).deserialize(data, suffix=suffix)
+            return Fitting.get_class_by_type(
+                j_get_type(data, cls.__name__)
+            ).deserialize(data, suffix=suffix)
         raise NotImplementedError("Not implemented in class %s" % cls.__name__)
 
     def serialize(self, suffix: str = "") -> dict:
@@ -175,6 +177,7 @@ class Fitting(PluginVariant):
         activation_function: str,
         resnet_dt: bool,
         variables: dict,
+        out_dim: Optional[int] = 1,
         suffix: str = "",
     ) -> dict:
         """Serialize network.
@@ -197,6 +200,8 @@ class Fitting(PluginVariant):
             The input variables
         suffix : str, optional
             The suffix of the scope
+        out_dim : int, optional
+            The output dimension
 
         Returns
         -------
@@ -231,7 +236,7 @@ class Fitting(PluginVariant):
                 # initialize the network if it is not initialized
                 fittings[network_idx] = FittingNet(
                     in_dim=in_dim,
-                    out_dim=1,
+                    out_dim=out_dim,
                     neuron=neuron,
                     activation_function=activation_function,
                     resnet_dt=resnet_dt,
