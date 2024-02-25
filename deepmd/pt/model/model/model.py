@@ -162,7 +162,7 @@ class BaseModel(BaseBaseModel):
     def get_nnei(self) -> int:
         """Returns the total number of selected neighboring atoms in the cut-off radius."""
         # for C++ interface
-              pass
+        pass
 
     @abstractmethod
     def get_nsel(self) -> int:
