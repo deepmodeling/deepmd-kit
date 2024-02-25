@@ -276,9 +276,9 @@ class TestEnergyModelSpinSeAForce(unittest.TestCase, ForceTest):
         self.model = get_model(model_params).to(env.DEVICE)
 
 
-# class TestEnergyModelSpinSeAVirial(unittest.TestCase, VirialTest):
-#     def setUp(self):
-#         model_params = copy.deepcopy(model_spin)
-#         self.type_split = False
-#         self.test_spin = True
-#         self.model = get_model(model_params).to(env.DEVICE)
+class TestEnergyModelSpinSeAVirial(unittest.TestCase, VirialTest):
+    def setUp(self):
+        model_params = copy.deepcopy(model_spin)
+        self.type_split = False
+        self.test_spin = True
+        self.model = get_model(model_params).to(env.DEVICE)
