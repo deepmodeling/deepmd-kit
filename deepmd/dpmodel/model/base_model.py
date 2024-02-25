@@ -89,8 +89,8 @@ class BaseBaseModel(ABC):
     def model_output_type(self) -> str:
         """Get the output type for the model."""
 
-    @abstractmethod
     @classmethod
+    @abstractmethod
     def get_class_by_type(cls, model_type: str) -> Type["BaseBaseModel"]:
         """Get the class by the type of the model.
 
