@@ -49,6 +49,7 @@ class SpinTest:
     def setUp(self):
         self.prec = 1e-10
         natoms = 5
+        self.ntypes = 3  # ["O", "H", "B"] for test
         self.cell = 4.0 * torch.eye(3, dtype=dtype, device=env.DEVICE).unsqueeze(0)
         self.coord = 3.0 * torch.rand(
             [natoms, 3], dtype=dtype, device=env.DEVICE
