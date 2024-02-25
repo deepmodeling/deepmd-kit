@@ -189,6 +189,20 @@ class DescriptorBlock(torch.nn.Module, ABC):
         """Get the statistics of the descriptor."""
         raise NotImplementedError
 
+    def get_emask(self, nlist: torch.Tensor, atype: torch.Tensor) -> torch.Tensor:
+        """
+        Compute the pair-wise type mask for given nlist and atype,
+        with shape same as nlist.
+        1 for include and 0 for exclude.
+        """
+        if hasattr(self, "emask"):
+            exclude_mask = self.emask(nlist, atype)
+        else:
+            exclude_mask = torch.ones_like(
+                nlist, dtype=torch.int32, device=nlist.device
+            )
+        return exclude_mask
+
     def share_params(self, base_class, shared_level, resume=False):
         assert (
             self.__class__ == base_class.__class__

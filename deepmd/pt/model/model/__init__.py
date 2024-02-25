@@ -21,16 +21,12 @@ from deepmd.pt.model.descriptor.descriptor import (
 from deepmd.pt.model.task import (
     Fitting,
 )
-from deepmd.pt.utils.spin import (
+from deepmd.utils.spin import (
     Spin,
 )
 
 from .dp_model import (
     DPModel,
-)
-from .dp_spin_model import (
-    SpinEnergyModel,
-    SpinModel,
 )
 from .dp_zbl_model import (
     DPZBLModel,
@@ -46,6 +42,10 @@ from .make_model import (
 )
 from .model import (
     BaseModel,
+)
+from .spin_model import (
+    SpinEnergyModel,
+    SpinModel,
 )
 
 

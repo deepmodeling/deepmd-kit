@@ -148,12 +148,7 @@ class InvarFitting(GeneralFitting):
         if stat_file_path is not None and stat_file_path.is_file():
             bias_atom_e = stat_file_path.load_numpy()
         else:
-            if hasattr(self, "emask"):
-                type_mask = self.emask(
-                    torch.arange(0, self.ntypes, device=env.DEVICE).unsqueeze(0)
-                )
-            else:
-                type_mask = None
+            type_mask = self.get_emask
             bias_atom_e = compute_output_bias(
                 energy, input_natoms, rcond=self.rcond, type_mask=type_mask
             )

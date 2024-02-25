@@ -8,9 +8,17 @@ import torch
 
 from deepmd.pt.utils.utils import (
     dict_to_device,
+    to_torch_tensor,
 )
 from deepmd.utils.path import (
     DPPath,
+)
+from deepmd.utils.spin import (
+    Spin,
+)
+
+from .dp_model import (
+    DPModel,
 )
 
 
@@ -22,34 +30,110 @@ class SpinModel(torch.nn.Module):
     def __init__(
         self,
         backbone_model,
-        spin,
+        spin: Spin,
     ):
         super().__init__()
         self.backbone_model = backbone_model
         self.spin = spin
+        self.ntypes_real = self.spin.ntypes_real
+        self.virtual_scale_mask = to_torch_tensor(self.spin.get_virtual_scale_mask())
+        self.spin_mask = to_torch_tensor(self.spin.get_spin_mask())
 
     def process_spin_input(self, coord, atype, spin):
         """Generate virtual coordinates and types, concat into the input."""
-        nframes, natom = coord.shape[:-1]
-        atype_spin = torch.concat([atype, atype + self.spin.ntypes_real], dim=-1)
-        virtual_scale_mask = self.spin.get_virtual_scale_mask()
-        virtual_coord = coord + spin * virtual_scale_mask[atype].reshape(
-            [nframes, natom, 1]
+        nframes, nloc = coord.shape[:-1]
+        atype_spin = torch.concat([atype, atype + self.ntypes_real], dim=-1)
+        virtual_coord = coord + spin * self.virtual_scale_mask[atype].reshape(
+            [nframes, nloc, 1]
         )
         coord_spin = torch.concat([coord, virtual_coord], dim=-2)
         return coord_spin, atype_spin
 
-    def process_spin_output(self, atype, force):
-        """Split the output gradient of both real and virtual atoms, and scale the latter."""
-        nframes, natom_double = force.shape[:2]
-        natom = natom_double // 2
-        virtual_scale_mask = self.spin.get_virtual_scale_mask()
-        atmoic_mask = virtual_scale_mask[atype].reshape([nframes, natom, 1])
-        force_real, force_mag = torch.split(force, [natom, natom], dim=1)
-        force_mag = (force_mag.view([nframes, natom, -1]) * atmoic_mask).view(
-            force_mag.shape
+    def process_spin_input_lower(
+        self,
+        extended_coord,
+        extended_atype,
+        extended_spin,
+        nlist,
+        mapping: Optional[torch.Tensor] = None,
+    ):
+        """
+        Add `extended_spin` into `extended_coord` to generate virtual atoms, and extend `nlist` and `mapping`.
+        Note that the final `extended_coord_updated` with shape [nframes, nall + nall, 3] has the following order:
+        - [:, :nloc]: original nloc real atoms.
+        - [:, nloc: nloc + nloc]: virtual atoms corresponding to nloc real atoms.
+        - [:, nloc + nloc: nloc + nall]: ghost real atoms.
+        - [:, nloc + nall: nall + nall]: virtual atoms corresponding to ghost real atoms.
+        """
+        nframes, nall = extended_coord.shape[:2]
+        nloc = nlist.shape[1]
+        virtual_extended_coord = (
+            extended_coord
+            + extended_spin
+            * self.virtual_scale_mask[extended_atype].reshape([nframes, nall, 1])
         )
-        return force_real, force_mag, atmoic_mask > 0.0
+        virtual_extended_atype = extended_atype + self.ntypes_real
+        extended_coord_updated = self.concat_switch_virtual(
+            extended_coord, virtual_extended_coord, nloc
+        )
+        extended_atype_updated = self.concat_switch_virtual(
+            extended_atype, virtual_extended_atype, nloc
+        )
+        mapping_updated = None
+        if mapping is not None:
+            virtual_mapping = mapping + nloc
+            mapping_updated = self.concat_switch_virtual(mapping, virtual_mapping, nloc)
+        # extend the nlist
+        nlist_updated = self.extend_nlist(extended_atype, nlist)
+        return (
+            extended_coord_updated,
+            extended_atype_updated,
+            nlist_updated,
+            mapping_updated,
+        )
+
+    def process_spin_output(self, atype, out_tensor, virtual_scale: bool = True):
+        """Split the output both real and virtual atoms, and scale the latter."""
+        nframes, nloc_double = out_tensor.shape[:2]
+        nloc = nloc_double // 2
+        if virtual_scale:
+            virtual_scale_mask = self.virtual_scale_mask
+        else:
+            virtual_scale_mask = self.spin_mask
+        atomic_mask = virtual_scale_mask[atype].reshape([nframes, nloc, 1])
+        out_real, out_mag = torch.split(out_tensor, [nloc, nloc], dim=1)
+        out_mag = (out_mag.view([nframes, nloc, -1]) * atomic_mask).view(out_mag.shape)
+        return out_real, out_mag, atomic_mask > 0.0
+
+    def process_spin_output_lower(
+        self, extended_atype, extended_out_tensor, nloc: int, virtual_scale: bool = True
+    ):
+        """Split the extended output of both real and virtual atoms with switch, and scale the latter."""
+        nframes, nall_double = extended_out_tensor.shape[:2]
+        nall = nall_double // 2
+        if virtual_scale:
+            virtual_scale_mask = self.virtual_scale_mask
+        else:
+            virtual_scale_mask = self.spin_mask
+        atomic_mask = virtual_scale_mask[extended_atype].reshape([nframes, nall, 1])
+        extended_out_real = torch.cat(
+            [
+                extended_out_tensor[:, :nloc],
+                extended_out_tensor[:, nloc + nloc : nloc + nall],
+            ],
+            dim=1,
+        )
+        extended_out_mag = torch.cat(
+            [
+                extended_out_tensor[:, nloc : nloc + nloc],
+                extended_out_tensor[:, nloc + nall :],
+            ],
+            dim=1,
+        )
+        extended_out_mag = (
+            extended_out_mag.view([nframes, nall, -1]) * atomic_mask
+        ).view(extended_out_mag.shape)
+        return extended_out_real, extended_out_mag, atomic_mask > 0.0
 
     @staticmethod
     def extend_nlist(extended_atype, nlist):
@@ -69,75 +153,35 @@ class SpinModel(torch.nn.Module):
         extended_nlist = torch.cat(
             [extended_nlist, -1 * torch.ones_like(extended_nlist)], dim=-2
         )
+        # update the index for switch
+        first_part_index = (nloc <= extended_nlist) & (extended_nlist < nall)
+        second_part_index = (nall <= extended_nlist) & (extended_nlist < (nall + nloc))
+        extended_nlist[first_part_index] += nloc
+        extended_nlist[second_part_index] -= nall - nloc
         return extended_nlist
 
     @staticmethod
-    def extend_mapping(mapping, nloc: int):
-        return torch.cat([mapping, mapping + nloc], dim=-1)
-
-    @staticmethod
-    def switch_virtual_loc(extended_tensor, nloc: int):
+    def concat_switch_virtual(extended_tensor, extended_tensor_virtual, nloc: int):
         """
-        Switch the virtual atoms of nloc ones from [nall: nall+nloc] to [nloc: nloc+nloc],
-        to assure the atom types of first nloc * 2 atoms in nall * 2 to be right.
-        """
-        nframes, nall_double = extended_tensor.shape[:2]
-        nall = nall_double // 2
-        swithed_tensor = torch.zeros_like(extended_tensor)
-        swithed_tensor[:, :nloc] = extended_tensor[:, :nloc]
-        swithed_tensor[:, nloc : nloc + nloc] = extended_tensor[:, nall : nall + nloc]
-        swithed_tensor[:, nloc + nloc : nloc + nall] = extended_tensor[:, nloc:nall]
-        swithed_tensor[:, nloc + nall :] = extended_tensor[:, nloc + nall :]
-        return swithed_tensor
-
-    @staticmethod
-    def switch_nlist(nlist_updated, nall: int):
-        nframes, nloc_double = nlist_updated.shape[:2]
-        nloc = nloc_double // 2
-        first_part_index = (nloc <= nlist_updated) & (nlist_updated < nall)
-        second_part_index = (nall <= nlist_updated) & (nlist_updated < (nall + nloc))
-        nlist_updated[first_part_index] += nloc
-        nlist_updated[second_part_index] -= nall - nloc
-        return nlist_updated
-
-    def extend_switch_input(
-        self,
-        extended_coord,
-        extended_atype,
-        extended_spin,
-        nlist,
-        mapping: Optional[torch.Tensor] = None,
-    ):
-        """
-        Add `extended_spin` into `extended_coord` to generate virtual atoms, and extend `nlist` and `mapping`.
-        Note that the final `extended_coord_updated` with shape [nframes, nall + nall, 3] has the following order:
+        Concat real and virtual extended tensors, and switch all the local ones to the first nloc * 2 atoms.
         - [:, :nloc]: original nloc real atoms.
         - [:, nloc: nloc + nloc]: virtual atoms corresponding to nloc real atoms.
         - [:, nloc + nloc: nloc + nall]: ghost real atoms.
         - [:, nloc + nall: nall + nall]: virtual atoms corresponding to ghost real atoms.
         """
-        nframes, nall = extended_coord.shape[:2]
-        nloc = nlist.shape[1]
-        # add spin but ignore the index switch
-        extended_coord_updated, extended_atype_updated = self.process_spin_input(
-            extended_coord, extended_atype, extended_spin
+        nframes, nall = extended_tensor.shape[:2]
+        extended_atype_updated = torch.zeros(
+            [nframes, nall * 2, *extended_tensor.shape[2:]],
+            dtype=extended_tensor.dtype,
+            device=extended_tensor.device,
         )
-        # extend the nlist and mapping but ignore the index switch
-        nlist_updated = self.extend_nlist(extended_atype, nlist)
-        mapping_updated = None
-        if mapping is not None:
-            mapping_updated = self.extend_mapping(mapping, nloc)
-        # process the index switch
-        extended_coord_updated = self.switch_virtual_loc(extended_coord_updated, nloc)
-        extended_atype_updated = self.switch_virtual_loc(extended_atype_updated, nloc)
-        mapping_updated = self.switch_virtual_loc(mapping_updated, nloc)
-        nlist_updated = self.switch_nlist(nlist_updated, nall)
-        return (
-            extended_coord_updated,
-            extended_atype_updated,
-            nlist_updated,
-            mapping_updated,
-        )
+        extended_atype_updated[:, :nloc] = extended_tensor[:, :nloc]
+        extended_atype_updated[:, nloc : nloc + nloc] = extended_tensor_virtual[
+            :, :nloc
+        ]
+        extended_atype_updated[:, nloc + nloc : nloc + nall] = extended_tensor[:, nloc:]
+        extended_atype_updated[:, nloc + nall :] = extended_tensor_virtual[:, nloc:]
+        return extended_atype_updated
 
     def __getattr__(self, name):
         """Get attribute from the wrapped model."""
@@ -201,6 +245,7 @@ class SpinModel(torch.nn.Module):
         aparam: Optional[torch.Tensor] = None,
         do_atomic_virial: bool = False,
     ) -> Dict[str, torch.Tensor]:
+        nframes, nloc = coord.shape[:2]
         coord_updated, atype_updated = self.process_spin_input(coord, atype, spin)
         model_ret = self.backbone_model.forward_common(
             coord_updated,
@@ -210,22 +255,33 @@ class SpinModel(torch.nn.Module):
             aparam=aparam,
             do_atomic_virial=do_atomic_virial,
         )
-        if self.fitting_net is not None:
-            var_name = self.fitting_net.var_name
-            if self.do_grad_r(var_name):
+        if self.backbone_model.fitting_net is not None:
+            var_name = self.backbone_model.fitting_net.var_name
+            model_ret[f"{var_name}"] = torch.split(
+                model_ret[f"{var_name}"], [nloc, nloc], dim=1
+            )[0]
+            if self.backbone_model.do_grad_r(var_name):
                 force_all = model_ret[f"{var_name}_derv_r"]
                 (
-                    model_ret[f"{var_name}_derv_r_real"],
+                    model_ret[f"{var_name}_derv_r"],
                     model_ret[f"{var_name}_derv_r_mag"],
-                    model_ret["atmoic_mask"],
+                    model_ret["mask_mag"],
                 ) = self.process_spin_output(atype, force_all)
             else:
                 force_all = model_ret["dforce"]
                 (
                     model_ret["dforce_real"],
                     model_ret["dforce_mag"],
-                    model_ret["atmoic_mask"],
+                    model_ret["mask_mag"],
                 ) = self.process_spin_output(atype, force_all)
+            if self.backbone_model.do_grad_c(var_name) and do_atomic_virial:
+                (
+                    model_ret[f"{var_name}_derv_c"],
+                    model_ret[f"{var_name}_derv_c_mag"],
+                    model_ret["mask_mag"],
+                ) = self.process_spin_output(
+                    atype, model_ret[f"{var_name}_derv_c"], virtual_scale=False
+                )
         return model_ret
 
     def forward_common_lower(
@@ -239,12 +295,13 @@ class SpinModel(torch.nn.Module):
         aparam: Optional[torch.Tensor] = None,
         do_atomic_virial: bool = False,
     ):
+        nframes, nloc = nlist.shape[:2]
         (
             extended_coord_updated,
             extended_atype_updated,
             nlist_updated,
             mapping_updated,
-        ) = self.extend_switch_input(
+        ) = self.process_spin_input_lower(
             extended_coord, extended_atype, extended_spin, nlist, mapping=mapping
         )
         model_ret = self.backbone_model.forward_common_lower(
@@ -256,23 +313,52 @@ class SpinModel(torch.nn.Module):
             aparam=aparam,
             do_atomic_virial=do_atomic_virial,
         )
-        if self.fitting_net is not None:
-            var_name = self.fitting_net.var_name
-            if self.do_grad_r(var_name):
+        if self.backbone_model.fitting_net is not None:
+            var_name = self.backbone_model.fitting_net.var_name
+            model_ret[f"{var_name}"] = torch.split(
+                model_ret[f"{var_name}"], [nloc, nloc], dim=1
+            )[0]
+            if self.backbone_model.do_grad_r(var_name):
                 force_all = model_ret[f"{var_name}_derv_r"]
                 (
-                    model_ret[f"{var_name}_derv_r_real"],
+                    model_ret[f"{var_name}_derv_r"],
                     model_ret[f"{var_name}_derv_r_mag"],
-                    model_ret["atmoic_mask"],
-                ) = self.process_spin_output(extended_atype, force_all)
+                    model_ret["mask_mag"],
+                ) = self.process_spin_output_lower(extended_atype, force_all, nloc)
             else:
                 force_all = model_ret["dforce"]
                 (
                     model_ret["dforce_real"],
                     model_ret["dforce_mag"],
-                    model_ret["atmoic_mask"],
-                ) = self.process_spin_output(extended_atype, force_all)
+                    model_ret["mask_mag"],
+                ) = self.process_spin_output_lower(extended_atype, force_all, nloc)
+            if self.backbone_model.do_grad_c(var_name) and do_atomic_virial:
+                (
+                    model_ret[f"{var_name}_derv_c"],
+                    model_ret[f"{var_name}_derv_c_mag"],
+                    model_ret["mask_mag"],
+                ) = self.process_spin_output_lower(
+                    extended_atype,
+                    model_ret[f"{var_name}_derv_c"],
+                    nloc,
+                    virtual_scale=False,
+                )
         return model_ret
+
+    def serialize(self) -> dict:
+        return {
+            "backbone_model": self.backbone_model.serialize(),
+            "spin": self.spin.serialize(),
+        }
+
+    @classmethod
+    def deserialize(cls, data) -> "SpinModel":
+        backbone_model_obj = DPModel.deserialize(data["backbone_model"])
+        spin = Spin.deserialize(data["spin"])
+        return cls(
+            backbone_model=backbone_model_obj,
+            spin=spin,
+        )
 
 
 class SpinEnergyModel(SpinModel):
@@ -283,7 +369,7 @@ class SpinEnergyModel(SpinModel):
     def __init__(
         self,
         backbone_model,
-        spin,
+        spin: Spin,
     ):
         super().__init__(backbone_model, spin)
 
@@ -309,11 +395,11 @@ class SpinEnergyModel(SpinModel):
         model_predict = {}
         model_predict["atom_energy"] = model_ret["energy"]
         model_predict["energy"] = model_ret["energy_redu"]
-        model_predict["atmoic_mask"] = model_ret["atmoic_mask"]
-        if self.do_grad_r("energy"):
-            model_predict["force_real"] = model_ret["energy_derv_r_real"].squeeze(-2)
+        model_predict["mask_mag"] = model_ret["mask_mag"]
+        if self.backbone_model.do_grad_r("energy"):
+            model_predict["force_real"] = model_ret["energy_derv_r"].squeeze(-2)
             model_predict["force_mag"] = model_ret["energy_derv_r_mag"].squeeze(-2)
-        if self.do_grad_c("energy"):
+        if self.backbone_model.do_grad_c("energy"):
             model_predict["virial"] = model_ret["energy_derv_c_redu"].squeeze(-2)
             if do_atomic_virial:
                 model_predict["atom_virial"] = model_ret["energy_derv_c"].squeeze(-3)
@@ -345,18 +431,19 @@ class SpinEnergyModel(SpinModel):
             aparam=aparam,
             do_atomic_virial=do_atomic_virial,
         )
-        if self.fitting_net is not None:
+        if self.backbone_model.fitting_net is not None:
             model_predict = {}
             model_predict["atom_energy"] = model_ret["energy"]
             model_predict["energy"] = model_ret["energy_redu"]
-            if self.do_grad_r("energy"):
+            model_predict["mask_mag"] = model_ret["mask_mag"]
+            if self.backbone_model.do_grad_r("energy"):
                 model_predict["extended_force_real"] = model_ret[
-                    "energy_derv_r_real"
+                    "energy_derv_r"
                 ].squeeze(-2)
                 model_predict["extended_force_mag"] = model_ret[
                     "energy_derv_r_mag"
                 ].squeeze(-2)
-            if self.do_grad_c("energy"):
+            if self.backbone_model.do_grad_c("energy"):
                 model_predict["virial"] = model_ret["energy_derv_c_redu"].squeeze(-2)
                 if do_atomic_virial:
                     model_predict["extended_virial"] = model_ret[

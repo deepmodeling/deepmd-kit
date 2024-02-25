@@ -128,9 +128,9 @@ class EnergySpinLoss(TaskLoss):
 
         if self.has_fm and "force_mag" in model_pred and "force_mag" in label:
             nframes = model_pred["force_mag"].shape[0]
-            atmoic_mask = model_pred["atmoic_mask"].expand([-1, -1, 3])
-            label_force_mag = label["force_mag"][atmoic_mask].view(nframes, -1, 3)
-            model_pred_force_mag = model_pred["force_mag"][atmoic_mask].view(
+            atomic_mask = model_pred["mask_mag"].expand([-1, -1, 3])
+            label_force_mag = label["force_mag"][atomic_mask].view(nframes, -1, 3)
+            model_pred_force_mag = model_pred["force_mag"][atomic_mask].view(
                 nframes, -1, 3
             )
             if not self.use_l1_all:

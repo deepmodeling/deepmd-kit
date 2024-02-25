@@ -208,6 +208,7 @@ class DescrptSeA(Descriptor):
             "embeddings": obj.filter_layers.serialize(),
             "env_mat": DPEnvMat(obj.rcut, obj.rcut_smth).serialize(),
             "exclude_types": obj.exclude_types,
+            "env_protection": obj.env_protection,
             "@variables": {
                 "davg": obj["davg"].detach().cpu().numpy(),
                 "dstd": obj["dstd"].detach().cpu().numpy(),

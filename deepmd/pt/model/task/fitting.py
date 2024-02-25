@@ -321,6 +321,9 @@ class GeneralFitting(Fitting):
         self.exclude_types = exclude_types
 
         self.emask = AtomExcludeMask(self.ntypes, self.exclude_types)
+        self.type_mask = self.emask(
+            torch.arange(0, self.ntypes, device=device).unsqueeze(0)
+        )
 
         net_dim_out = self._net_out_dim()
         # init constants
@@ -494,6 +497,14 @@ class GeneralFitting(Fitting):
             return self.scale
         else:
             raise KeyError(key)
+
+    @property
+    def get_emask(self):
+        """
+        Compute the atom-wise type mask for each type with shape [ntypes].
+        1 for include and 0 for exclude.
+        """
+        return self.type_mask
 
     @abstractmethod
     def _net_out_dim(self):

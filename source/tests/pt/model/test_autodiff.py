@@ -19,6 +19,7 @@ from .test_permutation import (
     model_dpa1,
     model_dpa2,
     model_se_e2_a,
+    model_spin,
     model_zbl,
 )
 
@@ -46,6 +47,23 @@ def stretch_box(old_coord, old_box, new_box):
     return ncoord.reshape(old_coord.shape)
 
 
+def fix_virtual(spin, coord, new_coord, atype, model, protection=1e-8):
+    """
+    Fix the virtual atom when doing perturbations on the real atom.
+    The corresponding spin will be updated to assure this.
+    """
+    if not getattr(model, "__USE_SPIN_INPUT__", False):
+        return spin
+    else:
+        spin_compensation = (coord - new_coord) / (
+            model.spin.get_virtual_scale_mask()[atype] + protection
+        ).reshape(-1, 1)
+        spin_compensation = spin_compensation * model.spin.get_spin_mask()[
+            atype
+        ].reshape(-1, 1)
+        return spin + spin_compensation
+
+
 class ForceTest:
     def test(
         self,
@@ -57,34 +75,71 @@ class ForceTest:
         cell = (cell + cell.T) + 5.0 * torch.eye(3, device="cpu")
         coord = torch.rand([natoms, 3], dtype=dtype, device="cpu")
         coord = torch.matmul(coord, cell)
+        spin = torch.rand([natoms, 3], dtype=dtype, device="cpu")
         atype = torch.IntTensor([0, 0, 0, 1, 1])
         # assumes input to be numpy tensor
         coord = coord.numpy()
+        spin = spin.numpy()
+        test_spin = getattr(self, "test_spin", False)
+        if not test_spin:
+            test_keys = ["energy", "force", "virial"]
+        else:
+            test_keys = ["energy", "force_real", "force_mag", "virial"]
 
-        def np_infer(
-            coord,
+        def np_infer_coord(
+            new_coord,
         ):
-            e0, f0, v0 = eval_model(
+            result = eval_model(
+                self.model,
+                torch.tensor(new_coord, device=env.DEVICE).unsqueeze(0),
+                cell.unsqueeze(0),
+                atype,
+                spins=torch.tensor(
+                    fix_virtual(spin, coord, new_coord, atype, self.model),
+                    device=env.DEVICE,
+                ).unsqueeze(0),
+            )
+            # detach
+            ret = {
+                key: result[key].squeeze(0).detach().cpu().numpy() for key in test_keys
+            }
+            return ret
+
+        def np_infer_spin(
+            spin,
+        ):
+            result = eval_model(
                 self.model,
                 torch.tensor(coord, device=env.DEVICE).unsqueeze(0),
                 cell.unsqueeze(0),
                 atype,
+                spins=torch.tensor(spin, device=env.DEVICE).unsqueeze(0),
             )
-            ret = {
-                "energy": e0.squeeze(0),
-                "force": f0.squeeze(0),
-                "virial": v0.squeeze(0),
-            }
             # detach
-            ret = {kk: ret[kk].detach().cpu().numpy() for kk in ret}
+            ret = {
+                key: result[key].squeeze(0).detach().cpu().numpy() for key in test_keys
+            }
             return ret
 
-        def ff(_coord):
-            return np_infer(_coord)["energy"]
+        def ff_coord(_coord):
+            return np_infer_coord(_coord)["energy"]
 
-        fdf = -finite_difference(ff, coord, delta=delta).squeeze()
-        rff = np_infer(coord)["force"]
-        np.testing.assert_almost_equal(fdf, rff, decimal=places)
+        def ff_spin(_spin):
+            return np_infer_spin(_spin)["energy"]
+
+        if not test_spin:
+            fdf = -finite_difference(ff_coord, coord, delta=delta).squeeze()
+            rff = np_infer_coord(coord)["force"]
+            np.testing.assert_almost_equal(fdf, rff, decimal=places)
+        else:
+            # real force
+            fdf = -finite_difference(ff_coord, coord, delta=delta).squeeze()
+            rff = np_infer_coord(coord)["force_real"]
+            np.testing.assert_almost_equal(fdf, rff, decimal=places)
+            # magnetic force
+            fdf = -finite_difference(ff_spin, spin, delta=delta).squeeze()
+            rff = np_infer_spin(spin)["force_mag"]
+            np.testing.assert_almost_equal(fdf, rff, decimal=places)
 
 
 class VirialTest:
@@ -98,29 +153,37 @@ class VirialTest:
         cell = (cell) + 5.0 * torch.eye(3, device="cpu")
         coord = torch.rand([natoms, 3], dtype=dtype, device="cpu")
         coord = torch.matmul(coord, cell)
+        spin = torch.rand([natoms, 3], dtype=dtype, device="cpu")
         atype = torch.IntTensor([0, 0, 0, 1, 1])
         # assumes input to be numpy tensor
         coord = coord.numpy()
         cell = cell.numpy()
+        spin = spin.numpy()
+        test_spin = getattr(self, "test_spin", False)
+        if not test_spin:
+            test_keys = ["energy", "force", "virial"]
+        else:
+            test_keys = ["energy", "force_real", "force_mag", "virial"]
 
         def np_infer(
             new_cell,
         ):
-            e0, f0, v0 = eval_model(
+            result = eval_model(
                 self.model,
                 torch.tensor(
                     stretch_box(coord, cell, new_cell), device="cpu"
                 ).unsqueeze(0),
                 torch.tensor(new_cell, device="cpu").unsqueeze(0),
                 atype,
+                spins=torch.tensor(
+                    stretch_box(spin, cell, new_cell), device="cpu"
+                ).unsqueeze(0),
             )
+            # detach
             ret = {
-                "energy": e0.squeeze(0),
-                "force": f0.squeeze(0),
-                "virial": v0.squeeze(0),
+                key: result[key].squeeze(0).detach().cpu().numpy() for key in test_keys
             }
             # detach
-            ret = {kk: ret[kk].detach().cpu().numpy() for kk in ret}
             return ret
 
         def ff(bb):
@@ -203,3 +266,19 @@ class TestEnergyModelZBLVirial(unittest.TestCase, VirialTest):
         model_params = copy.deepcopy(model_zbl)
         self.type_split = False
         self.model = get_model(model_params).to(env.DEVICE)
+
+
+class TestEnergyModelSpinSeAForce(unittest.TestCase, ForceTest):
+    def setUp(self):
+        model_params = copy.deepcopy(model_spin)
+        self.type_split = False
+        self.test_spin = True
+        self.model = get_model(model_params).to(env.DEVICE)
+
+
+# class TestEnergyModelSpinSeAVirial(unittest.TestCase, VirialTest):
+#     def setUp(self):
+#         model_params = copy.deepcopy(model_spin)
+#         self.type_split = False
+#         self.test_spin = True
+#         self.model = get_model(model_params).to(env.DEVICE)

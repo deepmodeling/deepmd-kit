@@ -133,14 +133,9 @@ class EnvMatStatSeA(EnvMatStat):
             env_mat = env_mat.view(
                 coord.shape[0] * coord.shape[1], self.descriptor.get_nsel(), 4
             )
-            if hasattr(self.descriptor, "emask"):
-                exclude_mask = self.descriptor.emask(nlist, extended_atype).view(
-                    coord.shape[0] * coord.shape[1], -1
-                )
-            else:
-                exclude_mask = torch.ones_like(
-                    nlist, dtype=torch.int32, device=nlist.device
-                ).view(coord.shape[0] * coord.shape[1], -1)
+            exclude_mask = self.descriptor.get_emask(nlist, extended_atype).view(
+                coord.shape[0] * coord.shape[1], -1
+            )
             atype = atype.view(coord.shape[0] * coord.shape[1])
             # (1, nloc) eq (ntypes, 1), so broadcast is possible
             # shape: (ntypes, nloc)

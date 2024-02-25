@@ -1,9 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import copy
-from abc import (
-    ABC,
-    abstractmethod,
-)
 from typing import (
     List,
     Tuple,
@@ -13,8 +9,8 @@ from typing import (
 import numpy as np
 
 
-class BaseSpin(ABC):
-    """Abstract class for spin, mainly processes the spin type-related information.
+class Spin:
+    """Class for spin, mainly processes the spin type-related information.
     Atom types can be split into three kinds:
     1. Real types: real atom species, "Fe", "H", "O", etc.
     2. Spin types: atom species with spin, as virtual atoms in input, "Fe_spin", etc.
@@ -64,11 +60,17 @@ class BaseSpin(ABC):
                 self.virtual_scale = virtual_scale + [
                     0.0 for _ in range(self.ntypes_real - self.ntypes_spin)
                 ]
+            else:
+                raise ValueError(
+                    f"Invalid length of virtual_scale for spin atoms"
+                    f": Expected {self.ntypes_real} or { self.ntypes_spin} but got {len(virtual_scale)}!"
+                )
         elif isinstance(virtual_scale, float):
             self.virtual_scale = [virtual_scale for _ in range(self.ntypes_real)]
         else:
             raise ValueError(f"Invalid virtual scale type: {type(virtual_scale)}")
         self.virtual_scale = np.array(self.virtual_scale)
+        self.virtual_scale_mask = (self.virtual_scale * self.use_spin).reshape([-1])
         self.pair_exclude_types = []
         self.init_pair_exclude_types_placeholder()
         self.atom_exclude_types_ps = []
@@ -168,46 +170,26 @@ class BaseSpin(ABC):
             _exclude_types = list(set(_exclude_types))
             return _exclude_types
 
-    @abstractmethod
-    def serialize(
-        self,
-    ) -> dict:
-        pass
-
-    @classmethod
-    @abstractmethod
-    def deserialize(
-        cls,
-        data: dict,
-    ) -> "BaseSpin":
-        pass
-
-    @abstractmethod
-    def get_virtual_scale_mask(self):
-        pass
-
-    @abstractmethod
     def get_spin_mask(self):
-        pass
-
-
-class Spin(BaseSpin):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.virtual_scale_mask = (self.virtual_scale * self.use_spin).reshape([-1])
-
-    def get_virtual_scale_mask(self):
-        return self.virtual_scale_mask
-
-    def get_spin_mask(self):
+        """
+        Return the spin mask of shape [ntypes],
+        with spin types being 1, and non-spin types being 0.
+        """
         return self.spin_mask
+
+    def get_virtual_scale_mask(self):
+        """
+        Return the virtual scale mask of shape [ntypes],
+        with spin types being its virtual scale, and non-spin types being 0.
+        """
+        return self.virtual_scale_mask
 
     def serialize(
         self,
     ) -> dict:
         return {
-            "use_spin": self.use_spin,
-            "virtual_scale": self.virtual_scale,
+            "use_spin": self.use_spin.tolist(),
+            "virtual_scale": self.virtual_scale.tolist(),
         }
 
     @classmethod

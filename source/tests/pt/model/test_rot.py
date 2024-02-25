@@ -17,9 +17,8 @@ from deepmd.pt.utils import (
 from .test_permutation import (  # model_dpau,
     model_dpa1,
     model_dpa2,
-    model_hybrid,
     model_se_e2_a,
-    model_zbl,
+    model_spin,
 )
 
 dtype = torch.float64
@@ -33,80 +32,102 @@ class RotTest:
         natoms = 5
         cell = 10.0 * torch.eye(3, dtype=dtype, device=env.DEVICE)
         coord = 2 * torch.rand([natoms, 3], dtype=dtype, device=env.DEVICE)
+        spin = 2 * torch.rand([natoms, 3], dtype=dtype, device=env.DEVICE)
         shift = torch.tensor([4, 4, 4], dtype=dtype, device=env.DEVICE)
         atype = torch.tensor([0, 0, 0, 1, 1], dtype=torch.int32, device=env.DEVICE)
         from scipy.stats import (
             special_ortho_group,
         )
 
+        test_spin = getattr(self, "test_spin", False)
+        if not test_spin:
+            test_keys = ["energy", "force", "virial"]
+        else:
+            test_keys = ["energy", "force_real", "force_mag", "virial"]
         rmat = torch.tensor(special_ortho_group.rvs(3), dtype=dtype, device=env.DEVICE)
 
         # rotate only coord and shift to the center of cell
         coord_rot = torch.matmul(coord, rmat)
-        e0, f0, v0 = eval_model(
-            self.model, (coord + shift).unsqueeze(0), cell.unsqueeze(0), atype
+        spin_rot = torch.matmul(spin, rmat)
+        result_0 = eval_model(
+            self.model,
+            (coord + shift).unsqueeze(0),
+            cell.unsqueeze(0),
+            atype,
+            spins=spin.unsqueeze(0),
         )
-        ret0 = {
-            "energy": e0.squeeze(0),
-            "force": f0.squeeze(0),
-            "virial": v0.squeeze(0),
-        }
-        e1, f1, v1 = eval_model(
-            self.model, (coord_rot + shift).unsqueeze(0), cell.unsqueeze(0), atype
+        ret0 = {key: result_0[key].squeeze(0) for key in test_keys}
+        result_1 = eval_model(
+            self.model,
+            (coord_rot + shift).unsqueeze(0),
+            cell.unsqueeze(0),
+            atype,
+            spins=spin_rot.unsqueeze(0),
         )
-        ret1 = {
-            "energy": e1.squeeze(0),
-            "force": f1.squeeze(0),
-            "virial": v1.squeeze(0),
-        }
-        torch.testing.assert_close(ret0["energy"], ret1["energy"], rtol=prec, atol=prec)
-        torch.testing.assert_close(
-            torch.matmul(ret0["force"], rmat), ret1["force"], rtol=prec, atol=prec
-        )
-        if not hasattr(self, "test_virial") or self.test_virial:
-            torch.testing.assert_close(
-                torch.matmul(rmat.T, torch.matmul(ret0["virial"].view([3, 3]), rmat)),
-                ret1["virial"].view([3, 3]),
-                rtol=prec,
-                atol=prec,
-            )
-
+        ret1 = {key: result_1[key].squeeze(0) for key in test_keys}
+        for key in test_keys:
+            if key in ["energy"]:
+                torch.testing.assert_close(ret0[key], ret1[key], rtol=prec, atol=prec)
+            elif key in ["force", "force_real", "force_mag"]:
+                torch.testing.assert_close(
+                    torch.matmul(ret0[key], rmat), ret1[key], rtol=prec, atol=prec
+                )
+            elif key == "virial":
+                if not hasattr(self, "test_virial") or self.test_virial:
+                    torch.testing.assert_close(
+                        torch.matmul(
+                            rmat.T, torch.matmul(ret0[key].view([3, 3]), rmat)
+                        ),
+                        ret1[key].view([3, 3]),
+                        rtol=prec,
+                        atol=prec,
+                    )
+            else:
+                raise RuntimeError(f"Unexpected test key {key}")
         # rotate coord and cell
         torch.manual_seed(0)
         cell = torch.rand([3, 3], dtype=dtype, device=env.DEVICE)
         cell = (cell + cell.T) + 5.0 * torch.eye(3, device=env.DEVICE)
         coord = torch.rand([natoms, 3], dtype=dtype, device=env.DEVICE)
         coord = torch.matmul(coord, cell)
+        spin = torch.rand([natoms, 3], dtype=dtype, device=env.DEVICE)
         atype = torch.tensor([0, 0, 0, 1, 1], dtype=torch.int32, device=env.DEVICE)
         coord_rot = torch.matmul(coord, rmat)
+        spin_rot = torch.matmul(spin, rmat)
         cell_rot = torch.matmul(cell, rmat)
-        e0, f0, v0 = eval_model(
-            self.model, coord.unsqueeze(0), cell.unsqueeze(0), atype
+        result_0 = eval_model(
+            self.model,
+            coord.unsqueeze(0),
+            cell.unsqueeze(0),
+            atype,
+            spins=spin.unsqueeze(0),
         )
-        ret0 = {
-            "energy": e0.squeeze(0),
-            "force": f0.squeeze(0),
-            "virial": v0.squeeze(0),
-        }
-        e1, f1, v1 = eval_model(
-            self.model, coord_rot.unsqueeze(0), cell_rot.unsqueeze(0), atype
+        ret0 = {key: result_0[key].squeeze(0) for key in test_keys}
+        result_1 = eval_model(
+            self.model,
+            coord_rot.unsqueeze(0),
+            cell_rot.unsqueeze(0),
+            atype,
+            spins=spin_rot.unsqueeze(0),
         )
-        ret1 = {
-            "energy": e1.squeeze(0),
-            "force": f1.squeeze(0),
-            "virial": v1.squeeze(0),
-        }
-        torch.testing.assert_close(ret0["energy"], ret1["energy"], rtol=prec, atol=prec)
-        torch.testing.assert_close(
-            torch.matmul(ret0["force"], rmat), ret1["force"], rtol=prec, atol=prec
-        )
-        if not hasattr(self, "test_virial") or self.test_virial:
-            torch.testing.assert_close(
-                torch.matmul(rmat.T, torch.matmul(ret0["virial"].view([3, 3]), rmat)),
-                ret1["virial"].view([3, 3]),
-                rtol=prec,
-                atol=prec,
-            )
+        ret1 = {key: result_1[key].squeeze(0) for key in test_keys}
+        for key in test_keys:
+            if key in ["energy"]:
+                torch.testing.assert_close(ret0[key], ret1[key], rtol=prec, atol=prec)
+            elif key in ["force", "force_real", "force_mag"]:
+                torch.testing.assert_close(
+                    torch.matmul(ret0[key], rmat), ret1[key], rtol=prec, atol=prec
+                )
+            elif key == "virial":
+                if not hasattr(self, "test_virial") or self.test_virial:
+                    torch.testing.assert_close(
+                        torch.matmul(
+                            rmat.T, torch.matmul(ret0[key].view([3, 3]), rmat)
+                        ),
+                        ret1[key].view([3, 3]),
+                        rtol=prec,
+                        atol=prec,
+                    )
 
 
 class TestEnergyModelSeA(unittest.TestCase, RotTest):
@@ -153,28 +174,11 @@ class TestForceModelDPA2(unittest.TestCase, RotTest):
         self.model = get_model(model_params).to(env.DEVICE)
 
 
-@unittest.skip("hybrid not supported at the moment")
-class TestEnergyModelHybrid(unittest.TestCase, RotTest):
+class TestEnergyModelSpinSeA(unittest.TestCase, RotTest):
     def setUp(self):
-        model_params = copy.deepcopy(model_hybrid)
-        self.type_split = True
-        self.model = get_model(model_params).to(env.DEVICE)
-
-
-@unittest.skip("hybrid not supported at the moment")
-class TestForceModelHybrid(unittest.TestCase, RotTest):
-    def setUp(self):
-        model_params = copy.deepcopy(model_hybrid)
-        model_params["fitting_net"]["type"] = "direct_force_ener"
-        self.type_split = True
-        self.test_virial = False
-        self.model = get_model(model_params).to(env.DEVICE)
-
-
-class TestEnergyModelZBL(unittest.TestCase, RotTest):
-    def setUp(self):
-        model_params = copy.deepcopy(model_zbl)
+        model_params = copy.deepcopy(model_spin)
         self.type_split = False
+        self.test_spin = True
         self.model = get_model(model_params).to(env.DEVICE)
 
 
