@@ -76,7 +76,7 @@ class DescrptSeR(Descriptor):
         self.precision = precision
         self.prec = PRECISION_DICT[self.precision]
         self.resnet_dt = resnet_dt
-        self.old_impl = False # this does not support old implementation.
+        self.old_impl = False  # this does not support old implementation.
         self.exclude_types = exclude_types
         self.ntypes = len(sel)
         self.emask = PairExcludeMask(len(sel), exclude_types=exclude_types)
@@ -270,7 +270,6 @@ class DescrptSeR(Descriptor):
             self.rcut_smth,
         )
 
-        
         assert self.filter_layers is not None
         dmatrix = dmatrix.view(-1, self.nnei, 1)
         dmatrix = dmatrix.to(dtype=self.prec)

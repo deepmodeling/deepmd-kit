@@ -102,7 +102,6 @@ class TestDescrptSeR(unittest.TestCase, TestCaseSingleFrameWithNlist):
             #         atol=atol,
             #         err_msg=err_msg,
             #     )
-            
 
     def test_jit(
         self,
