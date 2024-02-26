@@ -100,6 +100,7 @@ class DescrptBlockRepformers(DescriptorBlock):
         self.nlayers = nlayers
         sel = [sel] if isinstance(sel, int) else sel
         self.nnei = sum(sel)
+        self.ndescrpt = self.nnei * 4 # use full descriptor.
         assert len(sel) == 1
         self.sel = sel
         self.sec = self.sel

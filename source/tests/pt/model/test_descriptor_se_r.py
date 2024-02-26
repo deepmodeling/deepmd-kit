@@ -5,7 +5,7 @@ import unittest
 import numpy as np
 import torch
 
-# from deepmd.dpmodel.descriptor import DescrptSeR as DPDescrptSeR
+from deepmd.dpmodel.descriptor import DescrptSeR as DPDescrptSeR
 from deepmd.pt.model.descriptor.se_r import (
     DescrptSeR,
 )
@@ -68,7 +68,7 @@ class TestDescrptSeR(unittest.TestCase, TestCaseSingleFrameWithNlist):
             )
             # serialization
             dd1 = DescrptSeR.deserialize(dd0.serialize())
-            rd1, gr1, _, _, sw1 = dd1(
+            rd1, _, _, _, sw1 = dd1(
                 torch.tensor(self.coord_ext, dtype=dtype, device=env.DEVICE),
                 torch.tensor(self.atype_ext, dtype=int, device=env.DEVICE),
                 torch.tensor(self.nlist, dtype=int, device=env.DEVICE),
@@ -88,20 +88,20 @@ class TestDescrptSeR(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 err_msg=err_msg,
             )
             # dp impl
-            # dd2 = DPDescrptSeR.deserialize(dd0.serialize())
-            # rd2, gr2, _, _, sw2 = dd2.call(
-            #     self.coord_ext,
-            #     self.atype_ext,
-            #     self.nlist,
-            # )
-            # for aa, bb in zip([rd1, gr1, sw1], [rd2, gr2, sw2]):
-            #     np.testing.assert_allclose(
-            #         aa.detach().cpu().numpy(),
-            #         bb,
-            #         rtol=rtol,
-            #         atol=atol,
-            #         err_msg=err_msg,
-            #     )
+            dd2 = DPDescrptSeR.deserialize(dd0.serialize())
+            rd2, _, _, _, sw2 = dd2.call(
+                self.coord_ext,
+                self.atype_ext,
+                self.nlist,
+            )
+            for aa, bb in zip([rd1, sw1], [rd2, sw2]):
+                np.testing.assert_allclose(
+                    aa.detach().cpu().numpy(),
+                    bb,
+                    rtol=rtol,
+                    atol=atol,
+                    err_msg=err_msg,
+                )
 
     def test_jit(
         self,

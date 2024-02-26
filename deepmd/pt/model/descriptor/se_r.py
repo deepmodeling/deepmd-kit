@@ -40,6 +40,7 @@ from deepmd.utils.path import (
 
 
 @Descriptor.register("se_e2_r")
+@Descriptor.register("se_r")
 class DescrptSeR(Descriptor):
     def __init__(
         self,
