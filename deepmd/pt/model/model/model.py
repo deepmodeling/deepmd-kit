@@ -1,24 +1,13 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from abc import (
-    abstractmethod,
-)
 from typing import (
-    Callable,
     Optional,
-    Type,
 )
 
-from deepmd.common import (
-    j_get_type,
-)
 from deepmd.dpmodel.model.base_model import (
-    BaseBaseModel,
+    make_base_model,
 )
 from deepmd.utils.path import (
     DPPath,
-)
-from deepmd.utils.plugin import (
-    Plugin,
 )
 
 
@@ -26,8 +15,8 @@ from deepmd.utils.plugin import (
 # the abstract method will override the method from the atomic model
 # as Python resolves method lookups using the C3 linearisation.
 # See https://stackoverflow.com/a/47117600/9567349
-# Take an example, this is the situation for only inheriting BaseBaseModel:
-#       torch.nn.Module        BaseAtomicModel        BaseBaseModel
+# Take an example, this is the situation for only inheriting make_model():
+#       torch.nn.Module        BaseAtomicModel        make_model()
 #             |                       |                    |
 #             -------------------------                    |
 #                         |                                |
@@ -40,10 +29,10 @@ from deepmd.utils.plugin import (
 #                                         DPModel
 #
 # The order is: DPModel -> make_model(DPAtomicModel) -> DPAtomicModel ->
-# torch.nn.Module -> BaseAtomicModel -> BaseModel -> BaseBaseModel
+# torch.nn.Module -> BaseAtomicModel -> BaseModel -> make_model()
 #
 # However, if BaseModel also inherbits from torch.nn.Module:
-#         torch.nn.Module                      BaseBaseModel
+#         torch.nn.Module                      make_model()
 #                |                                   |
 #                |---------------------------        |
 #                |                          |        |
@@ -63,49 +52,13 @@ from deepmd.utils.plugin import (
 #                      DPModel
 #
 # The order is DPModel -> make_model(DPAtomicModel) -> DPAtomicModel ->
-# BaseModel -> torch.nn.Module -> BaseAtomicModel -> BaseBaseModel
+# BaseModel -> torch.nn.Module -> BaseAtomicModel -> make_model()
 # BaseModel has higher proirity than BaseAtomicModel, which is not what
 # we want.
 # Alternatively, we can also make BaseAtomicModel in front of torch.nn.Module
 # in DPAtomicModel (and other classes), but this requires the developer aware
 # of it when developing it...
-class BaseModel(BaseBaseModel):
-    __plugins = Plugin()
-
-    @staticmethod
-    def register(key: str) -> Callable[[object], object]:
-        """Register a descriptor plugin.
-
-        Parameters
-        ----------
-        key : str
-            the key of a descriptor
-
-        Returns
-        -------
-        callable[[object], object]
-            the registered descriptor
-
-        Examples
-        --------
-        >>> @Fitting.register("some_fitting")
-            class SomeFitting(Fitting):
-                pass
-        """
-        return BaseModel.__plugins.register(key)
-
-    def __new__(cls, *args, **kwargs):
-        if cls is BaseModel:
-            cls = cls.get_class_by_type(j_get_type(kwargs, cls.__name__))
-        return super().__new__(cls)
-
-    @classmethod
-    def get_class_by_type(cls, model_type: str) -> Type["BaseModel"]:
-        if model_type in BaseModel.__plugins.plugins:
-            return BaseModel.__plugins.plugins[model_type]
-        else:
-            raise RuntimeError("Unknown model type: " + model_type)
-
+class BaseModel(make_base_model()):
     def __init__(self):
         """Construct a basic model for different tasks."""
         super().__init__()
@@ -131,22 +84,3 @@ class BaseModel(BaseBaseModel):
             The path to the statistics files.
         """
         raise NotImplementedError
-
-    model_def_script: str
-
-    # currently, only pt needs the following methods
-    @abstractmethod
-    def get_model_def_script(self) -> str:
-        """Get the model definition script."""
-        pass
-
-    @abstractmethod
-    def get_nnei(self) -> int:
-        """Returns the total number of selected neighboring atoms in the cut-off radius."""
-        # for C++ interface
-        pass
-
-    @abstractmethod
-    def get_nsel(self) -> int:
-        """Returns the total number of selected neighboring atoms in the cut-off radius."""
-        pass
