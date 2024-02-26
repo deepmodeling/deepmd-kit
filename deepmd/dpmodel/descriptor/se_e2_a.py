@@ -331,12 +331,7 @@ class DescrptSeA(NativeOP, BaseDescriptor):
             for embedding_idx in itertools.product(range(self.ntypes), repeat=2):
                 # not actually used; to match serilization data from TF to pass the test
                 if embedding_idx in self.emask:
-                    for ilayer in range(len(self.neuron)):
-                        layer = self.embeddings[embedding_idx][ilayer]
-                        layer.w.fill(0.0)
-                        layer.b.fill(0.0)
-                        if layer.idt is not None:
-                            layer.idt.fill(0.0)
+                    self.embeddings[embedding_idx].clear()
 
         return {
             "@class": "Descriptor",
