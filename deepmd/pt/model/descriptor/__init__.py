@@ -28,8 +28,8 @@ from .se_a import (
     DescrptBlockSeA,
     DescrptSeA,
 )
-from .se_r import(
-    DescrptSeR
+from .se_r import (
+    DescrptSeR,
 )
 
 __all__ = [

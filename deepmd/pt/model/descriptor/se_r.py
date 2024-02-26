@@ -35,7 +35,7 @@ try:
         Final,
     )
 except ImportError:
-    from torch.jit import Final
+    pass
 
 from deepmd.dpmodel.utils import EnvMat as DPEnvMat
 from deepmd.pt.model.network.mlp import (
@@ -184,7 +184,7 @@ class DescrptSeR(Descriptor):
                 "The statistics of the descriptor has not been computed."
             )
         return self.stats
-    
+
     def __setitem__(self, key, value):
         if key in ("avg", "data_avg", "davg"):
             self.mean = value
@@ -257,7 +257,6 @@ class DescrptSeR(Descriptor):
             The smooth switch function.
 
         """
-        
         del mapping
         nloc = nlist.shape[1]
         atype = atype_ext[:, :nloc]
@@ -270,7 +269,7 @@ class DescrptSeR(Descriptor):
             self.rcut,
             self.rcut_smth,
         )
-        assert dmatrix.shape == (2,3,7,1)
+        assert dmatrix.shape == (2, 3, 7, 1)
 
         if self.old_impl:
             assert self.filter_layers_old is not None
@@ -374,6 +373,7 @@ class DescrptSeR(Descriptor):
         obj["dstd"] = t_cvt(variables["dstd"])
         obj.filter_layers = NetworkCollection.deserialize(embeddings)
         return obj
+
 
 def analyze_descrpt(matrix, ndescrpt, natoms):
     """Collect avg, square avg and count of descriptors in a batch."""

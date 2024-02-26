@@ -317,11 +317,7 @@ class EnvMatStatSeR(EnvMatStat):
         all_dstd = []
         for type_i in range(self.descriptor.get_ntypes()):
             davgunit = [[avgs[f"r_{type_i}"]]]
-            dstdunit = [
-                [
-                    stds[f"r_{type_i}"]
-                ]
-            ]
+            dstdunit = [[stds[f"r_{type_i}"]]]
             davg = np.tile(davgunit, [self.descriptor.get_nsel(), 1])
             dstd = np.tile(dstdunit, [self.descriptor.get_nsel(), 1])
             all_davg.append(davg)

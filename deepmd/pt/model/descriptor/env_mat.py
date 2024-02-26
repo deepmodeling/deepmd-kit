@@ -29,6 +29,7 @@ def _make_env_mat_se_a(nlist, coord, rcut: float, ruct_smth: float):
     env_mat_se_a = torch.cat([t0, t1], dim=-1) * weight
     return env_mat_se_a, diff * mask.unsqueeze(-1), weight
 
+
 def _make_env_mat_se_r(nlist, coord, rcut: float, ruct_smth: float):
     """Make smooth environment matrix."""
     bsz, natoms, nnei = nlist.shape
@@ -50,6 +51,7 @@ def _make_env_mat_se_r(nlist, coord, rcut: float, ruct_smth: float):
     weight = weight * mask.unsqueeze(-1)
     env_mat_se_r = t0 * weight
     return env_mat_se_r, diff * mask.unsqueeze(-1), weight
+
 
 def prod_env_mat_se_a(
     extended_coord, nlist, atype, mean, stddev, rcut: float, rcut_smth: float
@@ -79,6 +81,7 @@ def prod_env_mat_se_a(
     t_std = stddev[atype]  # [n_atom, dim, 4]
     env_mat_se_a = (_env_mat_se_a - t_avg) / t_std
     return env_mat_se_a, diff, switch
+
 
 def prod_env_mat_se_r(
     extended_coord, nlist, atype, mean, stddev, rcut: float, rcut_smth: float
