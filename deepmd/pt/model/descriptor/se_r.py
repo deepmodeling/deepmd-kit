@@ -9,9 +9,17 @@ from typing import (
 import numpy as np
 import torch
 
+from deepmd.dpmodel.utils import EnvMat as DPEnvMat
 from deepmd.pt.model.descriptor import (
     Descriptor,
     prod_env_mat_se_r,
+)
+from deepmd.pt.model.network.mlp import (
+    EmbeddingNet,
+    NetworkCollection,
+)
+from deepmd.pt.model.network.network import (
+    TypeFilter,
 )
 from deepmd.pt.utils import (
     env,
@@ -23,24 +31,14 @@ from deepmd.pt.utils.env import (
 from deepmd.pt.utils.env_mat_stat import (
     EnvMatStatSeR,
 )
+from deepmd.pt.utils.exclude_mask import (
+    PairExcludeMask,
+)
 from deepmd.utils.env_mat_stat import (
     StatItem,
 )
 from deepmd.utils.path import (
     DPPath,
-)
-
-
-from deepmd.dpmodel.utils import EnvMat as DPEnvMat
-from deepmd.pt.model.network.mlp import (
-    EmbeddingNet,
-    NetworkCollection,
-)
-from deepmd.pt.model.network.network import (
-    TypeFilter,
-)
-from deepmd.pt.utils.exclude_mask import (
-    PairExcludeMask,
 )
 
 
