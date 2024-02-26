@@ -76,7 +76,7 @@ class DescrptSeR(Descriptor):
         self.precision = precision
         self.prec = PRECISION_DICT[self.precision]
         self.resnet_dt = resnet_dt
-        self.old_impl = old_impl
+        self.old_impl = False # this does not support old implementation.
         self.exclude_types = exclude_types
         self.ntypes = len(sel)
         self.emask = PairExcludeMask(len(sel), exclude_types=exclude_types)
@@ -269,47 +269,31 @@ class DescrptSeR(Descriptor):
             self.rcut,
             self.rcut_smth,
         )
-        assert dmatrix.shape == (2, 3, 7, 1)
 
-        if self.old_impl:
-            assert self.filter_layers_old is not None
-            dmatrix = dmatrix.view(
-                -1, self.ndescrpt
-            )  # shape is [nframes*nall, self.ndescrpt]
-            xyz_scatter = torch.empty(
-                1,
-                device=env.DEVICE,
-            )
-            ret = self.filter_layers_old[0](dmatrix)
-            xyz_scatter = ret
-            for ii, transform in enumerate(self.filter_layers_old[1:]):
-                # shape is [nframes*nall, 1, self.filter_neuron[-1]]
-                ret = transform.forward(dmatrix)
-                xyz_scatter = xyz_scatter + ret
-        else:
-            assert self.filter_layers is not None
-            dmatrix = dmatrix.view(-1, self.nnei, 1)
-            dmatrix = dmatrix.to(dtype=self.prec)
-            nfnl = dmatrix.shape[0]
-            # pre-allocate a shape to pass jit
-            xyz_scatter = torch.zeros(
-                [nfnl, 1, self.filter_neuron[-1]], dtype=self.prec, device=env.DEVICE
-            )
+        
+        assert self.filter_layers is not None
+        dmatrix = dmatrix.view(-1, self.nnei, 1)
+        dmatrix = dmatrix.to(dtype=self.prec)
+        nfnl = dmatrix.shape[0]
+        # pre-allocate a shape to pass jit
+        xyz_scatter = torch.zeros(
+            [nfnl, 1, self.filter_neuron[-1]], dtype=self.prec, device=env.DEVICE
+        )
 
-            # nfnl x nnei
-            exclude_mask = self.emask(nlist, atype_ext).view(nfnl, -1)
-            for ii, ll in enumerate(self.filter_layers.networks):
-                # nfnl x nt
-                mm = exclude_mask[:, self.sec[ii] : self.sec[ii + 1]]
-                # nfnl x nt x 1
-                rr = dmatrix[:, self.sec[ii] : self.sec[ii + 1], :]
-                rr = rr * mm[:, :, None]
-                ss = rr[:, :, :1]
-                # nfnl x nt x ng
-                gg = ll.forward(ss)
-                # nfnl x 1 x ng
-                gr = torch.matmul(rr.permute(0, 2, 1), gg)
-                xyz_scatter += gr
+        # nfnl x nnei
+        exclude_mask = self.emask(nlist, atype_ext).view(nfnl, -1)
+        for ii, ll in enumerate(self.filter_layers.networks):
+            # nfnl x nt
+            mm = exclude_mask[:, self.sec[ii] : self.sec[ii + 1]]
+            # nfnl x nt x 1
+            rr = dmatrix[:, self.sec[ii] : self.sec[ii + 1], :]
+            rr = rr * mm[:, :, None]
+            ss = rr[:, :, :1]
+            # nfnl x nt x ng
+            gg = ll.forward(ss)
+            # nfnl x 1 x ng
+            gr = torch.matmul(rr.permute(0, 2, 1), gg)
+            xyz_scatter += gr
 
         xyz_scatter /= self.nnei
         xyz_scatter_1 = xyz_scatter.permute(0, 2, 1)
@@ -317,7 +301,7 @@ class DescrptSeR(Descriptor):
         result = torch.matmul(
             xyz_scatter_1, xyz_scatter
         )  # shape is [nframes*nall, self.filter_neuron[-1], 1]
-        result = result.view(-1, nloc, self.filter_neuron[-1] * 1)
+        result = result.view(-1, nloc, self.filter_neuron[-1] * self.filter_neuron[-1])
         return (
             result.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION),
             None,

@@ -102,45 +102,7 @@ class TestDescrptSeR(unittest.TestCase, TestCaseSingleFrameWithNlist):
             #         atol=atol,
             #         err_msg=err_msg,
             #     )
-            # old impl
-            if idt is False and prec == "float64":
-                dd3 = DescrptSeR(
-                    self.rcut,
-                    self.rcut_smth,
-                    self.sel,
-                    precision=prec,
-                    resnet_dt=idt,
-                    old_impl=True,
-                ).to(env.DEVICE)
-                dd0_state_dict = dd0.state_dict()
-                dd3_state_dict = dd3.state_dict()
-                for i in dd3_state_dict:
-                    dd3_state_dict[i] = (
-                        dd0_state_dict[
-                            i.replace(".deep_layers.", ".layers.").replace(
-                                "filter_layers_old.", "filter_layers.networks."
-                            )
-                        ]
-                        .detach()
-                        .clone()
-                    )
-                    if ".bias" in i:
-                        dd3_state_dict[i] = dd3_state_dict[i].unsqueeze(0)
-                dd3.load_state_dict(dd3_state_dict)
-
-                rd3, gr3, _, _, sw3 = dd3(
-                    torch.tensor(self.coord_ext, dtype=dtype, device=env.DEVICE),
-                    torch.tensor(self.atype_ext, dtype=int, device=env.DEVICE),
-                    torch.tensor(self.nlist, dtype=int, device=env.DEVICE),
-                )
-                for aa, bb in zip([rd1, gr1, sw1], [rd3, gr3, sw3]):
-                    np.testing.assert_allclose(
-                        aa.detach().cpu().numpy(),
-                        bb.detach().cpu().numpy(),
-                        rtol=rtol,
-                        atol=atol,
-                        err_msg=err_msg,
-                    )
+            
 
     def test_jit(
         self,
