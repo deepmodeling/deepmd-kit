@@ -40,6 +40,7 @@ from deepmd.utils.argcheck import (
     (True, False),  # type_one_side
     ([], [[0, 1]]),  # excluded_types
     ("float32", "float64"),  # precision
+    (0.0, 1e-8),  # env_protection
 )
 class TestSeA(CommonTest, DescriptorTest, unittest.TestCase):
     @property
@@ -49,6 +50,7 @@ class TestSeA(CommonTest, DescriptorTest, unittest.TestCase):
             type_one_side,
             excluded_types,
             precision,
+            env_protection,
         ) = self.param
         return {
             "sel": [10, 10],
@@ -59,6 +61,7 @@ class TestSeA(CommonTest, DescriptorTest, unittest.TestCase):
             "resnet_dt": resnet_dt,
             "type_one_side": type_one_side,
             "exclude_types": excluded_types,
+            "env_protection": env_protection,
             "precision": precision,
             "seed": 1145141919810,
         }
@@ -70,6 +73,7 @@ class TestSeA(CommonTest, DescriptorTest, unittest.TestCase):
             type_one_side,
             excluded_types,
             precision,
+            env_protection,
         ) = self.param
         return not type_one_side or CommonTest.skip_pt
 
@@ -80,8 +84,20 @@ class TestSeA(CommonTest, DescriptorTest, unittest.TestCase):
             type_one_side,
             excluded_types,
             precision,
+            env_protection,
         ) = self.param
         return not type_one_side or CommonTest.skip_dp
+
+    @property
+    def skip_tf(self) -> bool:
+        (
+            resnet_dt,
+            type_one_side,
+            excluded_types,
+            precision,
+            env_protection,
+        ) = self.param
+        return env_protection != 0.0
 
     tf_class = DescrptSeATF
     dp_class = DescrptSeADP
@@ -161,6 +177,7 @@ class TestSeA(CommonTest, DescriptorTest, unittest.TestCase):
             type_one_side,
             excluded_types,
             precision,
+            env_protection,
         ) = self.param
         if precision == "float64":
             return 1e-10
@@ -177,6 +194,7 @@ class TestSeA(CommonTest, DescriptorTest, unittest.TestCase):
             type_one_side,
             excluded_types,
             precision,
+            env_protection,
         ) = self.param
         if precision == "float64":
             return 1e-10
