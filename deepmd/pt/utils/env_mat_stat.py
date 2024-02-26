@@ -146,7 +146,7 @@ class EnvMatStatSeA(EnvMatStat):
                 ).view(-1, 1),
             )
             # shape: (ntypes, nloc, nnei)
-            type_idx = (type_idx.unsqueeze(-1) * exclude_mask) == 1
+            type_idx = torch.logical_and(type_idx.unsqueeze(-1), exclude_mask)
             for type_i in range(self.descriptor.get_ntypes()):
                 dd = env_mat[type_idx[type_i]]
                 dd = dd.reshape([-1, 4])  # typen_atoms * unmasked_nnei, 4
