@@ -30,7 +30,7 @@ def _make_env_mat(
     coord,
     rcut: float,
     ruct_smth: float,
-    radial_only: bool=False,
+    radial_only: bool = False,
 ):
     """Make smooth environment matrix."""
     nf, nloc, nnei = nlist.shape
@@ -116,13 +116,10 @@ class EnvMat(NativeOP):
             em /= dstd[atype]
         return em, sw
 
-    def _call(
-        self,
-        nlist,
-        coord_ext,
-        radial_only
-    ):
-        em, diff, ww = _make_env_mat(nlist, coord_ext, self.rcut, self.rcut_smth, radial_only)
+    def _call(self, nlist, coord_ext, radial_only):
+        em, diff, ww = _make_env_mat(
+            nlist, coord_ext, self.rcut, self.rcut_smth, radial_only
+        )
         return em, ww
 
     def serialize(

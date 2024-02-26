@@ -6,7 +6,7 @@ from .se_e2_a import (
     DescrptSeA,
 )
 from .se_r import (
-    DescrptSeR
+    DescrptSeR,
 )
 
 __all__ = [

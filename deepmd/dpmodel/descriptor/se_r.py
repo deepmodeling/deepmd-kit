@@ -286,7 +286,9 @@ class DescrptSeR(NativeOP, BaseDescriptor):
         """
         del mapping
         # nf x nloc x nnei x 1
-        rr, ww = self.env_mat.call(coord_ext, atype_ext, nlist, self.davg, self.dstd,True)
+        rr, ww = self.env_mat.call(
+            coord_ext, atype_ext, nlist, self.davg, self.dstd, True
+        )
         nf, nloc, nnei, _ = rr.shape
         sec = np.append([0], np.cumsum(self.sel))
 
@@ -301,7 +303,7 @@ class DescrptSeR(NativeOP, BaseDescriptor):
             gg = self.cal_g(ss, tt)
             # nf x nloc x ng x 1
             gr += np.einsum("flni,flnj->flij", gg, tr)
-        
+
         res_rescale = 1.0 / 5.0
         res = gr * res_rescale
         res = res.reshape(nf, nloc, -1)
