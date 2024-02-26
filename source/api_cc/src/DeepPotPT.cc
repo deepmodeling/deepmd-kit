@@ -87,6 +87,9 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
   std::vector<VALUETYPE> coord_wrapped = coord;
   int natoms = atype.size();
   auto options = torch::TensorOptions().dtype(torch::kFloat64);
+  if(std::is_same_v<VALUETYPE, float>){
+    options = torch::TensorOptions().dtype(torch::kFloat32);
+  }
   auto int_options = torch::TensorOptions().dtype(torch::kInt64);
   auto int32_options = torch::TensorOptions().dtype(torch::kInt32);
   at::Tensor coord_wrapped_Tensor =
@@ -212,6 +215,9 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
   std::vector<VALUETYPE> coord_wrapped = coord;
   int natoms = atype.size();
   auto options = torch::TensorOptions().dtype(torch::kFloat64);
+  if(std::is_same_v<VALUETYPE, float>){
+    options = torch::TensorOptions().dtype(torch::kFloat32);
+  }
   auto int_options = torch::TensorOptions().dtype(torch::kInt64);
   std::vector<torch::jit::IValue> inputs;
   at::Tensor coord_wrapped_Tensor =
