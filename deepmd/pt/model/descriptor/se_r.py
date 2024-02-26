@@ -12,7 +12,7 @@ import torch
 from deepmd.dpmodel.utils import EnvMat as DPEnvMat
 from deepmd.pt.model.descriptor import (
     Descriptor,
-    prod_env_mat_se_r,
+    prod_env_mat,
 )
 from deepmd.pt.model.network.mlp import (
     EmbeddingNet,
@@ -29,7 +29,7 @@ from deepmd.pt.utils.env import (
     RESERVED_PRECISON_DICT,
 )
 from deepmd.pt.utils.env_mat_stat import (
-    EnvMatStatSeR,
+    EnvMatStatSe,
 )
 from deepmd.pt.utils.exclude_mask import (
     PairExcludeMask,
@@ -89,29 +89,20 @@ class DescrptSeR(Descriptor):
         self.filter_layers_old = None
         self.filter_layers = None
 
-        if self.old_impl:
-            filter_layers = []
-            # TODO: remove
-            start_index = 0
-            for type_i in range(self.ntypes):
-                one = TypeFilter(start_index, sel[type_i], self.filter_neuron)
-                filter_layers.append(one)
-                start_index += sel[type_i]
-            self.filter_layers_old = torch.nn.ModuleList(filter_layers)
-        else:
-            filter_layers = NetworkCollection(
-                ndim=1, ntypes=len(sel), network_type="embedding_network"
+        
+        filter_layers = NetworkCollection(
+            ndim=1, ntypes=len(sel), network_type="embedding_network"
+        )
+        # TODO: ndim=2 if type_one_side=False
+        for ii in range(self.ntypes):
+            filter_layers[(ii,)] = EmbeddingNet(
+                1,
+                self.filter_neuron,
+                activation_function=self.activation_function,
+                precision=self.precision,
+                resnet_dt=self.resnet_dt,
             )
-            # TODO: ndim=2 if type_one_side=False
-            for ii in range(self.ntypes):
-                filter_layers[(ii,)] = EmbeddingNet(
-                    1,
-                    self.filter_neuron,
-                    activation_function=self.activation_function,
-                    precision=self.precision,
-                    resnet_dt=self.resnet_dt,
-                )
-            self.filter_layers = filter_layers
+        self.filter_layers = filter_layers
         self.stats = None
 
     def get_rcut(self) -> float:
@@ -156,7 +147,7 @@ class DescrptSeR(Descriptor):
 
     def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
         """Update mean and stddev for descriptor elements."""
-        env_mat_stat = EnvMatStatSeR(self)
+        env_mat_stat = EnvMatStatSe(self)
         if path is not None:
             path = path / env_mat_stat.get_hash()
         env_mat_stat.load_or_compute_stats(merged, path)
@@ -252,7 +243,7 @@ class DescrptSeR(Descriptor):
         del mapping
         nloc = nlist.shape[1]
         atype = atype_ext[:, :nloc]
-        dmatrix, diff, sw = prod_env_mat_se_r(
+        dmatrix, diff, sw = prod_env_mat(
             coord_ext,
             nlist,
             atype,
@@ -260,6 +251,7 @@ class DescrptSeR(Descriptor):
             self.stddev,
             self.rcut,
             self.rcut_smth,
+            True,
         )
 
         assert self.filter_layers is not None
