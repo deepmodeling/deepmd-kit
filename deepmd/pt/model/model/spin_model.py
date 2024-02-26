@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Dict,
+    List,
     Optional,
 )
 
@@ -79,10 +80,11 @@ class SpinModel(torch.nn.Module):
         extended_atype_updated = self.concat_switch_virtual(
             extended_atype, virtual_extended_atype, nloc
         )
-        mapping_updated = None
         if mapping is not None:
             virtual_mapping = mapping + nloc
             mapping_updated = self.concat_switch_virtual(mapping, virtual_mapping, nloc)
+        else:
+            mapping_updated = None
         # extend the nlist
         nlist_updated = self.extend_nlist(extended_atype, nlist)
         return (
@@ -92,8 +94,16 @@ class SpinModel(torch.nn.Module):
             mapping_updated,
         )
 
-    def process_spin_output(self, atype, out_tensor, virtual_scale: bool = True):
-        """Split the output both real and virtual atoms, and scale the latter."""
+    def process_spin_output(
+        self, atype, out_tensor, add_mag: bool = True, virtual_scale: bool = True
+    ):
+        """
+        Split the output both real and virtual atoms, and scale the latter.
+        add_mag: whether to add magnetic tensor onto the real tensor.
+            Default: True. e.g. Ture for forces and False for atomic virials on real atoms.
+        virtual_scale: whether to scale the magnetic tensor with virtual scale factor.
+            Default: True. e.g. Ture for forces and False for atomic virials on virtual atoms.
+        """
         nframes, nloc_double = out_tensor.shape[:2]
         nloc = nloc_double // 2
         if virtual_scale:
@@ -102,13 +112,26 @@ class SpinModel(torch.nn.Module):
             virtual_scale_mask = self.spin_mask
         atomic_mask = virtual_scale_mask[atype].reshape([nframes, nloc, 1])
         out_real, out_mag = torch.split(out_tensor, [nloc, nloc], dim=1)
+        if add_mag:
+            out_real = out_real + out_mag
         out_mag = (out_mag.view([nframes, nloc, -1]) * atomic_mask).view(out_mag.shape)
         return out_real, out_mag, atomic_mask > 0.0
 
     def process_spin_output_lower(
-        self, extended_atype, extended_out_tensor, nloc: int, virtual_scale: bool = True
+        self,
+        extended_atype,
+        extended_out_tensor,
+        nloc: int,
+        add_mag: bool = True,
+        virtual_scale: bool = True,
     ):
-        """Split the extended output of both real and virtual atoms with switch, and scale the latter."""
+        """
+        Split the extended output of both real and virtual atoms with switch, and scale the latter.
+        add_mag: whether to add magnetic tensor onto the real tensor.
+            Default: True. e.g. Ture for forces and False for atomic virials on real atoms.
+        virtual_scale: whether to scale the magnetic tensor with virtual scale factor.
+            Default: True. e.g. Ture for forces and False for atomic virials on virtual atoms.
+        """
         nframes, nall_double = extended_out_tensor.shape[:2]
         nall = nall_double // 2
         if virtual_scale:
@@ -130,6 +153,8 @@ class SpinModel(torch.nn.Module):
             ],
             dim=1,
         )
+        if add_mag:
+            extended_out_real = extended_out_real + extended_out_mag
         extended_out_mag = (
             extended_out_mag.view([nframes, nall, -1]) * atomic_mask
         ).view(extended_out_mag.shape)
@@ -170,18 +195,81 @@ class SpinModel(torch.nn.Module):
         - [:, nloc + nall: nall + nall]: virtual atoms corresponding to ghost real atoms.
         """
         nframes, nall = extended_tensor.shape[:2]
-        extended_atype_updated = torch.zeros(
-            [nframes, nall * 2, *extended_tensor.shape[2:]],
+        out_shape = list(extended_tensor.shape)
+        out_shape[1] *= 2
+        extended_tensor_updated = torch.zeros(
+            out_shape,
             dtype=extended_tensor.dtype,
             device=extended_tensor.device,
         )
-        extended_atype_updated[:, :nloc] = extended_tensor[:, :nloc]
-        extended_atype_updated[:, nloc : nloc + nloc] = extended_tensor_virtual[
+        extended_tensor_updated[:, :nloc] = extended_tensor[:, :nloc]
+        extended_tensor_updated[:, nloc : nloc + nloc] = extended_tensor_virtual[
             :, :nloc
         ]
-        extended_atype_updated[:, nloc + nloc : nloc + nall] = extended_tensor[:, nloc:]
-        extended_atype_updated[:, nloc + nall :] = extended_tensor_virtual[:, nloc:]
-        return extended_atype_updated
+        extended_tensor_updated[:, nloc + nloc : nloc + nall] = extended_tensor[
+            :, nloc:
+        ]
+        extended_tensor_updated[:, nloc + nall :] = extended_tensor_virtual[:, nloc:]
+        return extended_tensor_updated.view(out_shape)
+
+    @torch.jit.export
+    def get_type_map(self) -> List[str]:
+        """Get the type map."""
+        tmap = self.backbone_model.get_type_map()
+        ntypes = len(tmap) // 2  # ignore the virtual type
+        return tmap[:ntypes]
+
+    @torch.jit.export
+    def get_rcut(self):
+        """Get the cut-off radius."""
+        return self.backbone_model.get_rcut()
+
+    @torch.jit.export
+    def get_dim_fparam(self):
+        """Get the number (dimension) of frame parameters of this atomic model."""
+        return self.backbone_model.get_dim_fparam()
+
+    @torch.jit.export
+    def get_dim_aparam(self):
+        """Get the number (dimension) of atomic parameters of this atomic model."""
+        return self.backbone_model.get_dim_aparam()
+
+    @torch.jit.export
+    def get_sel_type(self) -> List[int]:
+        """Get the selected atom types of this model.
+        Only atoms with selected atom types have atomic contribution
+        to the result of the model.
+        If returning an empty list, all atom types are selected.
+        """
+        return self.backbone_model.get_sel_type()
+
+    @torch.jit.export
+    def is_aparam_nall(self) -> bool:
+        """Check whether the shape of atomic parameters is (nframes, nall, ndim).
+        If False, the shape is (nframes, nloc, ndim).
+        """
+        return self.backbone_model.is_aparam_nall()
+
+    @torch.jit.export
+    def model_output_type(self) -> str:
+        """Get the output type for the model."""
+        return self.backbone_model.model_output_type()
+
+    @torch.jit.export
+    def get_model_def_script(self) -> str:
+        """Get the model definition script."""
+        return self.backbone_model.get_model_def_script()
+
+    @torch.jit.export
+    def get_nnei(self) -> int:
+        """Returns the total number of selected neighboring atoms in the cut-off radius."""
+        # for C++ interface
+        return self.backbone_model.get_nnei() // 2  # ignore the virtual selected
+
+    @torch.jit.export
+    def get_nsel(self) -> int:
+        """Returns the total number of selected neighboring atoms in the cut-off radius."""
+        return self.backbone_model.get_nsel() // 2  # ignore the virtual selected
 
     def __getattr__(self, name):
         """Get attribute from the wrapped model."""
@@ -280,7 +368,10 @@ class SpinModel(torch.nn.Module):
                     model_ret[f"{var_name}_derv_c_mag"],
                     model_ret["mask_mag"],
                 ) = self.process_spin_output(
-                    atype, model_ret[f"{var_name}_derv_c"], virtual_scale=False
+                    atype,
+                    model_ret[f"{var_name}_derv_c"],
+                    add_mag=False,
+                    virtual_scale=False,
                 )
         return model_ret
 
@@ -341,6 +432,7 @@ class SpinModel(torch.nn.Module):
                     extended_atype,
                     model_ret[f"{var_name}_derv_c"],
                     nloc,
+                    add_mag=False,
                     virtual_scale=False,
                 )
         return model_ret
@@ -410,6 +502,7 @@ class SpinEnergyModel(SpinModel):
             model_predict["force_mag"] = model_ret["dforce_mag"]
         return model_predict
 
+    @torch.jit.export
     def forward_lower(
         self,
         extended_coord,

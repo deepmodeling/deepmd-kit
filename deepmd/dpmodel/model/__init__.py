@@ -16,8 +16,12 @@ from .dp_model import (
 from .make_model import (
     make_model,
 )
+from .spin_model import (
+    SpinModel,
+)
 
 __all__ = [
     "DPModel",
+    "SpinModel",
     "make_model",
 ]

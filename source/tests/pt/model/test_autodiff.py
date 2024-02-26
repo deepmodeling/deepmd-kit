@@ -47,23 +47,6 @@ def stretch_box(old_coord, old_box, new_box):
     return ncoord.reshape(old_coord.shape)
 
 
-def fix_virtual(spin, coord, new_coord, atype, model, protection=1e-8):
-    """
-    Fix the virtual atom when doing perturbations on the real atom.
-    The corresponding spin will be updated to assure this.
-    """
-    if not getattr(model, "__USE_SPIN_INPUT__", False):
-        return spin
-    else:
-        spin_compensation = (coord - new_coord) / (
-            model.spin.get_virtual_scale_mask()[atype] + protection
-        ).reshape(-1, 1)
-        spin_compensation = spin_compensation * model.spin.get_spin_mask()[
-            atype
-        ].reshape(-1, 1)
-        return spin + spin_compensation
-
-
 class ForceTest:
     def test(
         self,
@@ -87,17 +70,14 @@ class ForceTest:
             test_keys = ["energy", "force_real", "force_mag", "virial"]
 
         def np_infer_coord(
-            new_coord,
+            coord,
         ):
             result = eval_model(
                 self.model,
-                torch.tensor(new_coord, device=env.DEVICE).unsqueeze(0),
+                torch.tensor(coord, device=env.DEVICE).unsqueeze(0),
                 cell.unsqueeze(0),
                 atype,
-                spins=torch.tensor(
-                    fix_virtual(spin, coord, new_coord, atype, self.model),
-                    device=env.DEVICE,
-                ).unsqueeze(0),
+                spins=torch.tensor(spin, device=env.DEVICE).unsqueeze(0),
             )
             # detach
             ret = {

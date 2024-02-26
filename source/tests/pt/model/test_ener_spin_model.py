@@ -2,8 +2,10 @@
 import copy
 import unittest
 
+import numpy as np
 import torch
 
+from deepmd.dpmodel.model import SpinModel as DPSpinModel
 from deepmd.pt.model.model import (
     SpinEnergyModel,
     get_model,
@@ -13,6 +15,9 @@ from deepmd.pt.utils import (
 )
 from deepmd.pt.utils.nlist import (
     extend_input_and_build_neighbor_list,
+)
+from deepmd.pt.utils.utils import (
+    to_numpy_array,
 )
 
 from .test_permutation import (
@@ -132,14 +137,16 @@ class SpinTest:
             force_real, force_mag, _ = self.model.process_spin_output(
                 self.atype, force_all
             )
-            torch.testing.assert_close(force_real, force_all[:, :nloc])
+            torch.testing.assert_close(
+                force_real, force_all[:, :nloc] + force_all[:, nloc:]
+            )
             torch.testing.assert_close(
                 force_mag, force_all[:, nloc:] * virtual_scale.unsqueeze(-1)
             )
         if self.model.do_grad_c("energy"):
             atom_virial_all = model_ret["energy_derv_c"].squeeze(-2)
             atom_virial_real, atom_virial_mag, _ = self.model.process_spin_output(
-                self.atype, atom_virial_all, virtual_scale=False
+                self.atype, atom_virial_all, add_mag=False, virtual_scale=False
             )
             torch.testing.assert_close(atom_virial_real, atom_virial_all[:, :nloc])
             torch.testing.assert_close(atom_virial_mag, atom_virial_all[:, nloc:])
@@ -265,14 +272,20 @@ class SpinTest:
             force_all_switched[:, nloc:nall] = force_all[:, nloc + nloc : nloc + nall]
             force_all_switched[:, nall : nall + nloc] = force_all[:, nloc : nloc + nloc]
             force_all_switched[:, nall + nloc :] = force_all[:, nloc + nall :]
-            torch.testing.assert_close(force_real, force_all_switched[:, :nall])
+            torch.testing.assert_close(
+                force_real, force_all_switched[:, :nall] + force_all_switched[:, nall:]
+            )
             torch.testing.assert_close(
                 force_mag, force_all_switched[:, nall:] * virtual_scale.unsqueeze(-1)
             )
         if self.model.do_grad_c("energy"):
             atom_virial_all = model_ret["energy_derv_c"].squeeze(-2)
             atom_virial_real, atom_virial_mag, _ = self.model.process_spin_output_lower(
-                extended_atype, atom_virial_all, nloc, virtual_scale=False
+                extended_atype,
+                atom_virial_all,
+                nloc,
+                add_mag=False,
+                virtual_scale=False,
             )
             atom_virial_all_switched = torch.zeros_like(atom_virial_all)
             atom_virial_all_switched[:, :nloc] = atom_virial_all[:, :nloc]
@@ -294,10 +307,12 @@ class SpinTest:
 
     def test_jit(self):
         model = torch.jit.script(self.model)
+        self.assertEqual(model.get_rcut(), self.rcut)
+        self.assertEqual(model.get_nsel(), self.nsel)
+        self.assertEqual(model.get_type_map(), self.type_map)
 
     def test_self_consistency(self):
-        a = self.model.serialize()
-        model1 = SpinEnergyModel.deserialize(a)
+        model1 = SpinEnergyModel.deserialize(self.model.serialize())
         result = model1(
             self.coord,
             self.atype,
@@ -316,13 +331,86 @@ class SpinTest:
             )
         model1 = torch.jit.script(model1)
 
-    # def test_dp_consistency(self):
+    def test_dp_consistency(self):
+        dp_model = DPSpinModel.deserialize(self.model.serialize())
+        # test call
+        dp_ret = dp_model.call(
+            self.coord.detach().cpu().numpy(),
+            self.atype.detach().cpu().numpy(),
+            self.spin.detach().cpu().numpy(),
+            self.cell.detach().cpu().numpy(),
+        )
+        result = self.model.forward_common(
+            self.coord,
+            self.atype,
+            self.spin,
+            self.cell,
+        )
+        np.testing.assert_allclose(
+            to_numpy_array(result["energy"]),
+            dp_ret["energy"],
+            rtol=self.prec,
+            atol=self.prec,
+        )
+        np.testing.assert_allclose(
+            to_numpy_array(result["energy_redu"]),
+            dp_ret["energy_redu"],
+            rtol=self.prec,
+            atol=self.prec,
+        )
+
+        # test call_lower
+        (
+            extended_coord,
+            extended_atype,
+            mapping,
+            nlist,
+        ) = extend_input_and_build_neighbor_list(
+            self.coord,
+            self.atype,
+            self.model.get_rcut(),
+            self.model.get_sel(),
+            mixed_types=self.model.mixed_types(),
+            box=self.cell,
+        )
+        extended_spin = torch.gather(
+            self.spin, index=mapping.unsqueeze(-1).tile((1, 1, 3)), dim=1
+        )
+        dp_ret_lower = dp_model.call_lower(
+            extended_coord.detach().cpu().numpy(),
+            extended_atype.detach().cpu().numpy(),
+            extended_spin.detach().cpu().numpy(),
+            nlist.detach().cpu().numpy(),
+            mapping.detach().cpu().numpy(),
+        )
+        result_lower = self.model.forward_common_lower(
+            extended_coord,
+            extended_atype,
+            extended_spin,
+            nlist,
+            mapping,
+        )
+        np.testing.assert_allclose(
+            to_numpy_array(result_lower["energy"]),
+            dp_ret_lower["energy"],
+            rtol=self.prec,
+            atol=self.prec,
+        )
+        np.testing.assert_allclose(
+            to_numpy_array(result_lower["energy_redu"]),
+            dp_ret_lower["energy_redu"],
+            rtol=self.prec,
+            atol=self.prec,
+        )
 
 
 class TestEnergyModelSpinSeA(unittest.TestCase, SpinTest):
     def setUp(self):
         SpinTest.setUp(self)
         model_params = copy.deepcopy(model_spin)
+        self.rcut = model_params["descriptor"]["rcut"]
+        self.nsel = sum(model_params["descriptor"]["sel"])
+        self.type_map = model_params["type_map"]
         self.model = get_model(model_params).to(env.DEVICE)
 
 

@@ -25,12 +25,7 @@ def compute_smooth_weight(
     return vv * mid_mask + min_mask
 
 
-def _make_env_mat(
-    nlist,
-    coord,
-    rcut: float,
-    ruct_smth: float,
-):
+def _make_env_mat(nlist, coord, rcut: float, ruct_smth: float, protection: float = 0.0):
     """Make smooth environment matrix."""
     nf, nloc, nnei = nlist.shape
     # nf x nall x 3
@@ -50,8 +45,8 @@ def _make_env_mat(
     length = np.linalg.norm(diff, axis=-1, keepdims=True)
     # for index 0 nloc atom
     length = length + ~np.expand_dims(mask, -1)
-    t0 = 1 / length
-    t1 = diff / length**2
+    t0 = 1 / (length + protection)
+    t1 = diff / (length + protection) ** 2
     weight = compute_smooth_weight(length, ruct_smth, rcut)
     weight = weight * np.expand_dims(mask, -1)
     env_mat_se_a = np.concatenate([t0, t1], axis=-1) * weight
@@ -63,9 +58,11 @@ class EnvMat(NativeOP):
         self,
         rcut,
         rcut_smth,
+        protection: float = 0.0,
     ):
         self.rcut = rcut
         self.rcut_smth = rcut_smth
+        self.protection = protection
 
     def call(
         self,
@@ -111,7 +108,9 @@ class EnvMat(NativeOP):
         nlist,
         coord_ext,
     ):
-        em, diff, ww = _make_env_mat(nlist, coord_ext, self.rcut, self.rcut_smth)
+        em, diff, ww = _make_env_mat(
+            nlist, coord_ext, self.rcut, self.rcut_smth, protection=self.protection
+        )
         return em, ww
 
     def serialize(

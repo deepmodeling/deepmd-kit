@@ -98,6 +98,8 @@ class DescrptSeA(NativeOP, BaseDescriptor):
     exclude_types : List[List[int]]
             The excluded pairs of types which have no interaction with each other.
             For example, `[[0, 1]]` means no interaction between type 0 and type 1.
+    env_protection: float
+            Protection parameter to prevent division by zero errors during environment matrix calculations.
     set_davg_zero
             Set the shift of embedding net input to zero.
     activation_function
@@ -136,6 +138,7 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         trainable: bool = True,
         type_one_side: bool = True,
         exclude_types: List[List[int]] = [],
+        env_protection: float = 0.0,
         set_davg_zero: bool = False,
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
@@ -159,6 +162,7 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         self.trainable = trainable
         self.type_one_side = type_one_side
         self.exclude_types = exclude_types
+        self.env_protection = env_protection
         self.set_davg_zero = set_davg_zero
         self.activation_function = activation_function
         self.precision = precision
@@ -181,7 +185,7 @@ class DescrptSeA(NativeOP, BaseDescriptor):
                 self.resnet_dt,
                 self.precision,
             )
-        self.env_mat = EnvMat(self.rcut, self.rcut_smth)
+        self.env_mat = EnvMat(self.rcut, self.rcut_smth, protection=self.env_protection)
         self.nnei = np.sum(self.sel)
         self.davg = np.zeros([self.ntypes, self.nnei, 4])
         self.dstd = np.ones([self.ntypes, self.nnei, 4])
@@ -325,6 +329,7 @@ class DescrptSeA(NativeOP, BaseDescriptor):
             "trainable": self.trainable,
             "type_one_side": self.type_one_side,
             "exclude_types": self.exclude_types,
+            "env_protection": self.env_protection,
             "set_davg_zero": self.set_davg_zero,
             "activation_function": self.activation_function,
             # make deterministic
@@ -352,5 +357,4 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         obj["davg"] = variables["davg"]
         obj["dstd"] = variables["dstd"]
         obj.embeddings = NetworkCollection.deserialize(embeddings)
-        obj.env_mat = EnvMat.deserialize(env_mat)
         return obj
