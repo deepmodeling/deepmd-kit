@@ -5,7 +5,6 @@ from abc import (
     abstractmethod,
 )
 from typing import (
-    Callable,
     List,
     Optional,
 )
@@ -37,9 +36,6 @@ from deepmd.pt.utils.env import (
 from deepmd.pt.utils.exclude_mask import (
     AtomExcludeMask,
 )
-from deepmd.pt.utils.plugin import (
-    Plugin,
-)
 from deepmd.pt.utils.stat import (
     make_stat_input,
 )
@@ -55,40 +51,11 @@ log = logging.getLogger(__name__)
 
 
 class Fitting(torch.nn.Module, BaseFitting):
-    __plugins = Plugin()
-
-    @staticmethod
-    def register(key: str) -> Callable:
-        """Register a Fitting plugin.
-
-        Parameters
-        ----------
-        key : str
-            the key of a Fitting
-
-        Returns
-        -------
-        Fitting
-            the registered Fitting
-
-        Examples
-        --------
-        >>> @Fitting.register("some_fitting")
-            class SomeFitting(Fitting):
-                pass
-        """
-        return Fitting.__plugins.register(key)
+    # plugin moved to BaseFitting
 
     def __new__(cls, *args, **kwargs):
         if cls is Fitting:
-            try:
-                fitting_type = kwargs["type"]
-            except KeyError:
-                raise KeyError("the type of fitting should be set by `type`")
-            if fitting_type in Fitting.__plugins.plugins:
-                cls = Fitting.__plugins.plugins[fitting_type]
-            else:
-                raise RuntimeError("Unknown fitting type: " + fitting_type)
+            return BaseFitting.__new__(BaseFitting, *args, **kwargs)
         return super().__new__(cls)
 
     def share_params(self, base_class, shared_level, resume=False):
@@ -399,6 +366,7 @@ class GeneralFitting(Fitting):
     def serialize(self) -> dict:
         """Serialize the fitting to dict."""
         return {
+            "@class": "Fitting",
             "var_name": self.var_name,
             "ntypes": self.ntypes,
             "dim_descrpt": self.dim_descrpt,
@@ -428,7 +396,6 @@ class GeneralFitting(Fitting):
             ## NOTICE:  not supported by far
             "tot_ener_zero": False,
             "trainable": [True] * (len(self.neuron) + 1),
-            "atom_ener": [],
             "layer_name": None,
             "use_aparam_as_mask": False,
             "spin": None,

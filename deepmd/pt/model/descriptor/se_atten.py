@@ -87,6 +87,8 @@ class DescrptBlockSeAtten(DescriptorBlock):
         self.ffn = ffn
         self.ffn_embed_dim = ffn_embed_dim
         self.activation = activation
+        # TODO: To be fixed: precision should be given from inputs
+        self.prec = torch.float64
         self.scaling_factor = scaling_factor
         self.head_num = head_num
         self.normalize = normalize

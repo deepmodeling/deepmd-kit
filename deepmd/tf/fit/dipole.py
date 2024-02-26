@@ -38,8 +38,12 @@ class DipoleFittingSeA(Fitting):
 
     Parameters
     ----------
-    descrpt : tf.Tensor
-            The descrptor
+    ntypes
+            The ntypes of the descrptor :math:`\mathcal{D}`
+    dim_descrpt
+            The dimension of the descrptor :math:`\mathcal{D}`
+    embedding_width
+            The rotation matrix dimension of the descrptor :math:`\mathcal{D}`
     neuron : List[int]
             Number of neurons in each hidden layer of the fitting net
     resnet_dt : bool
@@ -59,7 +63,9 @@ class DipoleFittingSeA(Fitting):
 
     def __init__(
         self,
-        descrpt: tf.Tensor,
+        ntypes: int,
+        dim_descrpt: int,
+        embedding_width: int,
         neuron: List[int] = [120, 120, 120],
         resnet_dt: bool = True,
         sel_type: Optional[List[int]] = None,
@@ -70,8 +76,8 @@ class DipoleFittingSeA(Fitting):
         **kwargs,
     ) -> None:
         """Constructor."""
-        self.ntypes = descrpt.get_ntypes()
-        self.dim_descrpt = descrpt.get_dim_out()
+        self.ntypes = ntypes
+        self.dim_descrpt = dim_descrpt
         self.n_neuron = neuron
         self.resnet_dt = resnet_dt
         self.sel_type = sel_type
@@ -83,9 +89,10 @@ class DipoleFittingSeA(Fitting):
         self.seed = seed
         self.uniform_seed = uniform_seed
         self.seed_shift = one_layer_rand_seed_shift()
+        self.activation_function_name = activation_function
         self.fitting_activation_fn = get_activation_func(activation_function)
         self.fitting_precision = get_precision(precision)
-        self.dim_rot_mat_1 = descrpt.get_dim_rot_mat_1()
+        self.dim_rot_mat_1 = embedding_width
         self.dim_rot_mat = self.dim_rot_mat_1 * 3
         self.useBN = False
         self.fitting_net_variables = None
@@ -327,3 +334,63 @@ class DipoleFittingSeA(Fitting):
             tensor_size=3,
             label_name="dipole",
         )
+
+    def serialize(self, suffix: str) -> dict:
+        """Serialize the model.
+
+        Returns
+        -------
+        dict
+            The serialized data
+        """
+        data = {
+            "@class": "Fitting",
+            "type": "dipole",
+            "var_name": "dipole",
+            "ntypes": self.ntypes,
+            "dim_descrpt": self.dim_descrpt,
+            "embedding_width": self.dim_rot_mat_1,
+            # very bad design: type embedding is not passed to the class
+            # TODO: refactor the class
+            "mixed_types": False,
+            "dim_out": 3,
+            "neuron": self.n_neuron,
+            "resnet_dt": self.resnet_dt,
+            "activation_function": self.activation_function_name,
+            "precision": self.fitting_precision.name,
+            "exclude_types": [],
+            "nets": self.serialize_network(
+                ntypes=self.ntypes,
+                # TODO: consider type embeddings
+                ndim=1,
+                in_dim=self.dim_descrpt,
+                out_dim=self.dim_rot_mat_1,
+                neuron=self.n_neuron,
+                activation_function=self.activation_function_name,
+                resnet_dt=self.resnet_dt,
+                variables=self.fitting_net_variables,
+                suffix=suffix,
+            ),
+        }
+        return data
+
+    @classmethod
+    def deserialize(cls, data: dict, suffix: str):
+        """Deserialize the model.
+
+        Parameters
+        ----------
+        data : dict
+            The serialized data
+
+        Returns
+        -------
+        Model
+            The deserialized model
+        """
+        fitting = cls(**data)
+        fitting.fitting_net_variables = cls.deserialize_network(
+            data["nets"],
+            suffix=suffix,
+        )
+        return fitting

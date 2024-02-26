@@ -22,6 +22,7 @@ from .general_fitting import (
 )
 
 
+@GeneralFitting.register("invar")
 @fitting_check_output
 class InvarFitting(GeneralFitting):
     r"""Fitting the energy (or a rotationally invariant porperty of `dim_out`) of the system. The force and the virial can also be trained.
@@ -115,7 +116,7 @@ class InvarFitting(GeneralFitting):
         rcond: Optional[float] = None,
         tot_ener_zero: bool = False,
         trainable: Optional[List[bool]] = None,
-        atom_ener: Optional[List[float]] = None,
+        atom_ener: Optional[List[float]] = [],
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
         layer_name: Optional[List[Optional[str]]] = None,
@@ -139,6 +140,7 @@ class InvarFitting(GeneralFitting):
             raise NotImplementedError("atom_ener is not implemented")
 
         self.dim_out = dim_out
+        self.atom_ener = atom_ener
         super().__init__(
             var_name=var_name,
             ntypes=ntypes,
@@ -150,7 +152,6 @@ class InvarFitting(GeneralFitting):
             rcond=rcond,
             tot_ener_zero=tot_ener_zero,
             trainable=trainable,
-            atom_ener=atom_ener,
             activation_function=activation_function,
             precision=precision,
             layer_name=layer_name,
@@ -162,7 +163,9 @@ class InvarFitting(GeneralFitting):
 
     def serialize(self) -> dict:
         data = super().serialize()
+        data["type"] = "invar"
         data["dim_out"] = self.dim_out
+        data["atom_ener"] = self.atom_ener
         return data
 
     def _net_out_dim(self):

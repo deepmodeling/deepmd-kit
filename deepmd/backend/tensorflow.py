@@ -38,6 +38,7 @@ class TensorFlowBackend(Backend):
         Backend.Feature.ENTRY_POINT
         | Backend.Feature.DEEP_EVAL
         | Backend.Feature.NEIGHBOR_STAT
+        | Backend.Feature.IO
     )
     """The features of the backend."""
     suffixes: ClassVar[List[str]] = [".pb"]
@@ -102,3 +103,33 @@ class TensorFlowBackend(Backend):
         )
 
         return NeighborStat
+
+    @property
+    def serialize_hook(self) -> Callable[[str], dict]:
+        """The serialize hook to convert the model file to a dictionary.
+
+        Returns
+        -------
+        Callable[[str], dict]
+            The serialize hook of the backend.
+        """
+        from deepmd.tf.utils.serialization import (
+            serialize_from_file,
+        )
+
+        return serialize_from_file
+
+    @property
+    def deserialize_hook(self) -> Callable[[str, dict], None]:
+        """The deserialize hook to convert the dictionary to a model file.
+
+        Returns
+        -------
+        Callable[[str, dict], None]
+            The deserialize hook of the backend.
+        """
+        from deepmd.tf.utils.serialization import (
+            deserialize_to_file,
+        )
+
+        return deserialize_to_file

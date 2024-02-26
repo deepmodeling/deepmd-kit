@@ -285,7 +285,7 @@ class TestSaveLoadDPModel(unittest.TestCase):
         self.filename = "test_dp_dpmodel.dp"
 
     def test_save_load_model(self):
-        save_dp_model(self.filename, deepcopy(self.model_dict))
+        save_dp_model(self.filename, {"model": deepcopy(self.model_dict)})
         model = load_dp_model(self.filename)
         np.testing.assert_equal(model["model"], self.model_dict)
         assert "software" in model
