@@ -11,7 +11,6 @@ import numpy as np
 import torch
 
 from deepmd.pt.model.descriptor import (
-    Descriptor,
     DescriptorBlock,
     prod_env_mat_se_a,
 )
@@ -51,9 +50,13 @@ from deepmd.pt.utils.exclude_mask import (
     PairExcludeMask,
 )
 
+from .base_descriptor import (
+    BaseDescriptor,
+)
 
-@Descriptor.register("se_e2_a")
-class DescrptSeA(Descriptor):
+
+@BaseDescriptor.register("se_e2_a")
+class DescrptSeA(BaseDescriptor, torch.nn.Module):
     def __init__(
         self,
         rcut,

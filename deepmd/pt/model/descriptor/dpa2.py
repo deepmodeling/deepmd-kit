@@ -6,9 +6,6 @@ from typing import (
 
 import torch
 
-from deepmd.pt.model.descriptor import (
-    Descriptor,
-)
 from deepmd.pt.model.network.network import (
     Identity,
     Linear,
@@ -22,6 +19,9 @@ from deepmd.utils.path import (
     DPPath,
 )
 
+from .base_descriptor import (
+    BaseDescriptor,
+)
 from .repformers import (
     DescrptBlockRepformers,
 )
@@ -30,8 +30,8 @@ from .se_atten import (
 )
 
 
-@Descriptor.register("dpa2")
-class DescrptDPA2(Descriptor):
+@BaseDescriptor.register("dpa2")
+class DescrptDPA2(torch.nn.Module, BaseDescriptor):
     def __init__(
         self,
         ntypes: int,

@@ -6,9 +6,6 @@ from typing import (
 
 import torch
 
-from deepmd.pt.model.descriptor import (
-    Descriptor,
-)
 from deepmd.pt.model.network.network import (
     TypeEmbedNet,
 )
@@ -16,14 +13,17 @@ from deepmd.utils.path import (
     DPPath,
 )
 
+from .base_descriptor import (
+    BaseDescriptor,
+)
 from .se_atten import (
     DescrptBlockSeAtten,
 )
 
 
-@Descriptor.register("dpa1")
-@Descriptor.register("se_atten")
-class DescrptDPA1(Descriptor):
+@BaseDescriptor.register("dpa1")
+@BaseDescriptor.register("se_atten")
+class DescrptDPA1(BaseDescriptor, torch.nn.Module):
     def __init__(
         self,
         rcut,
