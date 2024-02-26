@@ -286,13 +286,9 @@ class DescrptSeR(Descriptor):
             gr = torch.matmul(rr.permute(0, 2, 1), gg)
             xyz_scatter += gr
 
-        xyz_scatter /= self.nnei
-        xyz_scatter_1 = xyz_scatter.permute(0, 2, 1)
-
-        result = torch.matmul(
-            xyz_scatter_1, xyz_scatter
-        )  # shape is [nframes*nall, self.filter_neuron[-1], 1]
-        result = result.view(-1, nloc, self.filter_neuron[-1] * self.filter_neuron[-1])
+        res_rescale = 1.0 / 5.0
+        result = torch.mean(xyz_scatter, dim=1) * res_rescale
+        result = result.view(-1, nloc, self.filter_neuron[-1])
         return (
             result.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION),
             None,
