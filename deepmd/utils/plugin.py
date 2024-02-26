@@ -149,7 +149,7 @@ def make_plugin_registry(name: Optional[str] = None) -> Type[object]:
                 matches = difflib.get_close_matches(
                     class_type, PR.__plugins.plugins.keys()
                 )
-                dym_message = f"Did you mean: {matches}" if matches else ""
+                dym_message = f"Did you mean: {matches[0]}?" if matches else ""
                 raise RuntimeError(f"Unknown {name} type: {class_type}. {dym_message}")
 
     return PR
