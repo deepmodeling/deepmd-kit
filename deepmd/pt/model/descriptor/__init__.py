@@ -13,6 +13,7 @@ from .dpa2 import (
 )
 from .env_mat import (
     prod_env_mat_se_a,
+    prod_env_mat_se_r,
 )
 from .gaussian_lcc import (
     DescrptGaussianLcc,
@@ -27,6 +28,9 @@ from .se_a import (
     DescrptBlockSeA,
     DescrptSeA,
 )
+from .se_r import(
+    DescrptSeR
+)
 
 __all__ = [
     "Descriptor",
@@ -35,9 +39,11 @@ __all__ = [
     "DescrptBlockSeA",
     "DescrptBlockSeAtten",
     "DescrptSeA",
+    "DescrptSeR",
     "DescrptDPA1",
     "DescrptDPA2",
     "prod_env_mat_se_a",
+    "prod_env_mat_se_r",
     "DescrptGaussianLcc",
     "DescrptBlockHybrid",
     "DescrptBlockRepformers",
