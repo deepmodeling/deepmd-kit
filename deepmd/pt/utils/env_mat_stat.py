@@ -68,7 +68,9 @@ class EnvMatStatSe(EnvMatStat):
     def __init__(self, descriptor: "DescriptorBlock"):
         super().__init__()
         self.descriptor = descriptor
-        self.last_dim = self.descriptor.ndescrpt// self.descriptor.nnei # se_r=1, se_a=4
+        self.last_dim = (
+            self.descriptor.ndescrpt // self.descriptor.nnei
+        )  # se_r=1, se_a=4
 
     def iter(
         self, data: List[Dict[str, torch.Tensor]]
@@ -132,7 +134,9 @@ class EnvMatStatSe(EnvMatStat):
             # reshape to nframes * nloc at the atom level,
             # so nframes/mixed_type do not matter
             env_mat = env_mat.view(
-                coord.shape[0] * coord.shape[1], self.descriptor.get_nsel(), self.last_dim
+                coord.shape[0] * coord.shape[1],
+                self.descriptor.get_nsel(),
+                self.last_dim,
             )
             atype = atype.view(coord.shape[0] * coord.shape[1])
             # (1, nloc) eq (ntypes, 1), so broadcast is possible
@@ -179,7 +183,7 @@ class EnvMatStatSe(EnvMatStat):
 
         all_davg = []
         all_dstd = []
-        
+
         for type_i in range(self.descriptor.get_ntypes()):
             if self.last_dim == 4:
                 davgunit = [[avgs[f"r_{type_i}"], 0, 0, 0]]

@@ -18,9 +18,6 @@ from deepmd.pt.model.network.mlp import (
     EmbeddingNet,
     NetworkCollection,
 )
-from deepmd.pt.model.network.network import (
-    TypeFilter,
-)
 from deepmd.pt.utils import (
     env,
 )
@@ -89,7 +86,6 @@ class DescrptSeR(Descriptor):
         self.filter_layers_old = None
         self.filter_layers = None
 
-        
         filter_layers = NetworkCollection(
             ndim=1, ntypes=len(sel), network_type="embedding_network"
         )
