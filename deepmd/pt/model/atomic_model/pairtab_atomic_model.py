@@ -12,9 +12,6 @@ from deepmd.dpmodel import (
     FittingOutputDef,
     OutputVariableDef,
 )
-from deepmd.pt.utils import (
-    env,
-)
 from deepmd.utils.pair_tab import (
     PairTab,
 )
@@ -160,7 +157,7 @@ class PairTabAtomicModel(torch.nn.Module, BaseAtomicModel):
         pairwise_rr = self._get_pairwise_dist(
             extended_coord, masked_nlist
         )  # (nframes, nloc, nnei)
-        self.tab_data = self.tab_data.to(device=env.DEVICE).view(
+        self.tab_data = self.tab_data.to(device=extended_coord.device).view(
             int(self.tab_info[-1]), int(self.tab_info[-1]), int(self.tab_info[2]), 4
         )
 
@@ -168,7 +165,9 @@ class PairTabAtomicModel(torch.nn.Module, BaseAtomicModel):
         # i_type : (nframes, nloc), this is atype.
         # j_type : (nframes, nloc, nnei)
         j_type = extended_atype[
-            torch.arange(extended_atype.size(0), device=env.DEVICE)[:, None, None],
+            torch.arange(extended_atype.size(0), device=extended_coord.device)[
+                :, None, None
+            ],
             masked_nlist,
         ]
 
