@@ -38,8 +38,8 @@ jobs:
       with:
         useLocalCache: true
         useCloudCache: false
-    - name: Install wget
-      run: apt-get update && apt-get install -y wget
+    - name: Install wget and unzip
+      run: apt-get update && apt-get install -y wget unzip
     - run: |
          wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.0-1_all.deb \
          && sudo dpkg -i cuda-keyring_1.0-1_all.deb \
