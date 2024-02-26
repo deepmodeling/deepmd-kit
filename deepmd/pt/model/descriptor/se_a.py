@@ -483,13 +483,13 @@ class DescrptBlockSeA(DescriptorBlock):
             for embedding_idx, ll in enumerate(self.filter_layers.networks):
                 if self.type_one_side:
                     ii = embedding_idx
-                    ti_mask = slice(None)
+                    # torch.jit is not happy with slice(None)
+                    ti_mask = torch.ones(nfnl, dtype=torch.bool, device=dmatrix.device)
                 else:
                     # ti: center atom type, ii: neighbor type...
                     ii = embedding_idx // self.ntypes
                     ti = embedding_idx % self.ntypes
                     ti_mask = atype.ravel().eq(ti)
-                    print(ii, ti, ti_mask.shape, exclude_mask.shape, self.sec)
                 # nfnl x nt
                 mm = exclude_mask[ti_mask, self.sec[ii] : self.sec[ii + 1]]
                 # nfnl x nt x 4
