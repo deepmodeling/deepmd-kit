@@ -473,7 +473,9 @@ class DescrptBlockSeA(DescriptorBlock):
             nfnl = dmatrix.shape[0]
             # pre-allocate a shape to pass jit
             xyz_scatter = torch.zeros(
-                [nfnl, 4, self.filter_neuron[-1]], dtype=self.prec, device=env.DEVICE
+                [nfnl, 4, self.filter_neuron[-1]],
+                dtype=self.prec,
+                device=extended_coord.device,
             )
             # nfnl x nnei
             exclude_mask = self.emask(nlist, extended_atype).view(nfnl, -1)

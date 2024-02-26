@@ -92,16 +92,14 @@ class LinearAtomicModel(torch.nn.Module, BaseAtomicModel):
         """Get the sels for each individual models."""
         return [model.get_sel() for model in self.models]
 
-    def _sort_rcuts_sels(self) -> Tuple[List[float], List[int]]:
+    def _sort_rcuts_sels(self, device: torch.device) -> Tuple[List[float], List[int]]:
         # sort the pair of rcut and sels in ascending order, first based on sel, then on rcut.
-        rcuts = torch.tensor(
-            self.get_model_rcuts(), dtype=torch.float64, device=env.DEVICE
-        )
-        nsels = torch.tensor(self.get_model_nsels(), device=env.DEVICE)
+        rcuts = torch.tensor(self.get_model_rcuts(), dtype=torch.float64, device=device)
+        nsels = torch.tensor(self.get_model_nsels(), device=device)
         zipped = torch.stack(
             [
-                torch.tensor(rcuts, device=env.DEVICE),
-                torch.tensor(nsels, device=env.DEVICE),
+                torch.tensor(rcuts, device=device),
+                torch.tensor(nsels, device=device),
             ],
             dim=0,
         ).T
@@ -148,7 +146,7 @@ class LinearAtomicModel(torch.nn.Module, BaseAtomicModel):
         if self.do_grad_r() or self.do_grad_c():
             extended_coord.requires_grad_(True)
         extended_coord = extended_coord.view(nframes, -1, 3)
-        sorted_rcuts, sorted_sels = self._sort_rcuts_sels()
+        sorted_rcuts, sorted_sels = self._sort_rcuts_sels(device=extended_coord.device)
         nlists = build_multiple_neighbor_list(
             extended_coord,
             nlist,

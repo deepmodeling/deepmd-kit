@@ -290,8 +290,9 @@ def extend_coord_with_ghosts(
         maping extended index to the local index
 
     """
+    device = coord.device
     nf, nloc = atype.shape
-    aidx = torch.tile(torch.arange(nloc, device=env.DEVICE).unsqueeze(0), [nf, 1])
+    aidx = torch.tile(torch.arange(nloc, device=device).unsqueeze(0), [nf, 1])
     if cell is None:
         nall = nloc
         extend_coord = coord.clone()
@@ -308,17 +309,17 @@ def extend_coord_with_ghosts(
         nbuff = torch.ceil(rcut / to_face).to(torch.long)
         # 3
         nbuff = torch.max(nbuff, dim=0, keepdim=False).values
-        xi = torch.arange(-nbuff[0], nbuff[0] + 1, 1, device=env.DEVICE)
-        yi = torch.arange(-nbuff[1], nbuff[1] + 1, 1, device=env.DEVICE)
-        zi = torch.arange(-nbuff[2], nbuff[2] + 1, 1, device=env.DEVICE)
+        xi = torch.arange(-nbuff[0], nbuff[0] + 1, 1, device=device)
+        yi = torch.arange(-nbuff[1], nbuff[1] + 1, 1, device=device)
+        zi = torch.arange(-nbuff[2], nbuff[2] + 1, 1, device=device)
         xyz = xi.view(-1, 1, 1, 1) * torch.tensor(
-            [1, 0, 0], dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE
+            [1, 0, 0], dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=device
         )
         xyz = xyz + yi.view(1, -1, 1, 1) * torch.tensor(
-            [0, 1, 0], dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE
+            [0, 1, 0], dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=device
         )
         xyz = xyz + zi.view(1, 1, -1, 1) * torch.tensor(
-            [0, 0, 1], dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE
+            [0, 0, 1], dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=device
         )
         xyz = xyz.view(-1, 3)
         # ns x 3
@@ -334,7 +335,7 @@ def extend_coord_with_ghosts(
         # nf x ns x nloc
         extend_aidx = torch.tile(aidx.unsqueeze(-2), [1, ns, 1])
     return (
-        extend_coord.reshape([nf, nall * 3]).to(env.DEVICE),
-        extend_atype.view([nf, nall]).to(env.DEVICE),
-        extend_aidx.view([nf, nall]).to(env.DEVICE),
+        extend_coord.reshape([nf, nall * 3]).to(device),
+        extend_atype.view([nf, nall]).to(device),
+        extend_aidx.view([nf, nall]).to(device),
     )
