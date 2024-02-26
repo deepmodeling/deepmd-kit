@@ -26,7 +26,7 @@ from deepmd.utils.plugin import (
 # the abstract method will override the method from the atomic model
 # as Python resolves method lookups using the C3 linearisation.
 # See https://stackoverflow.com/a/47117600/9567349
-# Take an example, this is sitatuion for only inherbiting BaseBaseModel:
+# Take an example, this is the situation for only inheriting BaseBaseModel:
 #       torch.nn.Module        BaseAtomicModel        BaseBaseModel
 #             |                       |                    |
 #             -------------------------                    |
@@ -40,7 +40,7 @@ from deepmd.utils.plugin import (
 #                                         DPModel
 #
 # The order is: DPModel -> make_model(DPAtomicModel) -> DPAtomicModel ->
-# torch.nn.Module -> BaseAtomicModel -> BaseBaseModel
+# torch.nn.Module -> BaseAtomicModel -> BaseModel -> BaseBaseModel
 #
 # However, if BaseModel also inherbits from torch.nn.Module:
 #         torch.nn.Module                      BaseBaseModel
