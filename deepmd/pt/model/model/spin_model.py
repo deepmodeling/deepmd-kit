@@ -489,7 +489,7 @@ class SpinEnergyModel(SpinModel):
         model_predict["energy"] = model_ret["energy_redu"]
         model_predict["mask_mag"] = model_ret["mask_mag"]
         if self.backbone_model.do_grad_r("energy"):
-            model_predict["force_real"] = model_ret["energy_derv_r"].squeeze(-2)
+            model_predict["force"] = model_ret["energy_derv_r"].squeeze(-2)
             model_predict["force_mag"] = model_ret["energy_derv_r_mag"].squeeze(-2)
         if self.backbone_model.do_grad_c("energy"):
             model_predict["virial"] = model_ret["energy_derv_c_redu"].squeeze(-2)
@@ -498,7 +498,7 @@ class SpinEnergyModel(SpinModel):
         else:
             assert model_ret["dforce_real"] is not None
             assert model_ret["dforce_mag"] is not None
-            model_predict["force_real"] = model_ret["dforce_real"]
+            model_predict["force"] = model_ret["dforce_real"]
             model_predict["force_mag"] = model_ret["dforce_mag"]
         return model_predict
 
@@ -530,9 +530,7 @@ class SpinEnergyModel(SpinModel):
             model_predict["energy"] = model_ret["energy_redu"]
             model_predict["mask_mag"] = model_ret["mask_mag"]
             if self.backbone_model.do_grad_r("energy"):
-                model_predict["extended_force_real"] = model_ret[
-                    "energy_derv_r"
-                ].squeeze(-2)
+                model_predict["extended_force"] = model_ret["energy_derv_r"].squeeze(-2)
                 model_predict["extended_force_mag"] = model_ret[
                     "energy_derv_r_mag"
                 ].squeeze(-2)
@@ -545,7 +543,7 @@ class SpinEnergyModel(SpinModel):
             else:
                 assert model_ret["dforce_real"] is not None
                 assert model_ret["dforce_mag"] is not None
-                model_predict["extended_force_real"] = model_ret["dforce_real"]
+                model_predict["extended_force"] = model_ret["dforce_real"]
                 model_predict["extended_force_mag"] = model_ret["dforce_mag"]
         else:
             model_predict = model_ret

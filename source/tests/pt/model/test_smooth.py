@@ -73,7 +73,7 @@ class SmoothTest:
         if not test_spin:
             test_keys = ["energy", "force", "virial"]
         else:
-            test_keys = ["energy", "force_real", "force_mag", "virial"]
+            test_keys = ["energy", "force", "force_mag", "virial"]
 
         result_0 = eval_model(
             self.model,
@@ -114,7 +114,7 @@ class SmoothTest:
                     torch.testing.assert_close(
                         ret0[key], ret1[key], rtol=rprec, atol=aprec
                     )
-                elif key in ["force", "force_real", "force_mag"]:
+                elif key in ["force", "force_mag"]:
                     # plus 1. to avoid the divided-by-zero issue
                     torch.testing.assert_close(
                         1.0 + ret0[key], 1.0 + ret1[key], rtol=rprec, atol=aprec

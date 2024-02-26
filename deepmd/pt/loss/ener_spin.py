@@ -106,9 +106,9 @@ class EnergySpinLoss(TaskLoss):
                 )
                 more_loss["mae_e_all"] = mae_e_all.detach()
 
-        if self.has_fr and "force_real" in model_pred and "force" in label:
+        if self.has_fr and "force" in model_pred and "force" in label:
             if not self.use_l1_all:
-                diff_fr = label["force"] - model_pred["force_real"]
+                diff_fr = label["force"] - model_pred["force"]
                 l2_force_real_loss = torch.mean(torch.square(diff_fr))
                 if not self.inference:
                     more_loss["l2_force_r_loss"] = l2_force_real_loss.detach()
@@ -120,7 +120,7 @@ class EnergySpinLoss(TaskLoss):
                     more_loss["mae_fr"] = mae_fr.detach()
             else:
                 l1_force_real_loss = F.l1_loss(
-                    label["force"], model_pred["force_real"], reduction="none"
+                    label["force"], model_pred["force"], reduction="none"
                 )
                 more_loss["mae_fr"] = l1_force_real_loss.mean().detach()
                 l1_force_real_loss = l1_force_real_loss.sum(-1).mean(-1).sum()

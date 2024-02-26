@@ -141,8 +141,6 @@ class DescrptSeA(DescrptSe):
     exclude_types : List[List[int]]
             The excluded pairs of types which have no interaction with each other.
             For example, `[[0, 1]]` means no interaction between type 0 and type 1.
-    env_protection: float
-            Protection parameter to prevent division by zero errors during environment matrix calculations.
     set_davg_zero
             Set the shift of embedding net input to zero.
     activation_function
@@ -153,6 +151,8 @@ class DescrptSeA(DescrptSe):
             Only for the purpose of backward compatibility, retrieves the old behavior of using the random seed
     multi_task
             If the model has multi fitting nets to train.
+    env_protection: float
+            Protection parameter to prevent division by zero errors during environment matrix calculations.
 
     References
     ----------
@@ -174,7 +174,6 @@ class DescrptSeA(DescrptSe):
         seed: Optional[int] = None,
         type_one_side: bool = True,
         exclude_types: List[List[int]] = [],
-        env_protection: float = 0.0,  # not implement!!
         set_davg_zero: bool = False,
         activation_function: str = "tanh",
         precision: str = "default",
@@ -182,6 +181,7 @@ class DescrptSeA(DescrptSe):
         multi_task: bool = False,
         spin: Optional[Spin] = None,
         stripped_type_embedding: bool = False,
+        env_protection: float = 0.0,  # not implement!!
         **kwargs,
     ) -> None:
         """Constructor."""

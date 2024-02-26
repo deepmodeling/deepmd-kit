@@ -238,7 +238,7 @@ class PermutationTest:
         if not test_spin:
             test_keys = ["energy", "force", "virial"]
         else:
-            test_keys = ["energy", "force_real", "force_mag", "virial"]
+            test_keys = ["energy", "force", "force_mag", "virial"]
         result_0 = eval_model(
             self.model,
             coord.unsqueeze(0),
@@ -259,7 +259,7 @@ class PermutationTest:
         for key in test_keys:
             if key in ["energy"]:
                 torch.testing.assert_close(ret0[key], ret1[key], rtol=prec, atol=prec)
-            elif key in ["force", "force_real", "force_mag"]:
+            elif key in ["force", "force_mag"]:
                 torch.testing.assert_close(
                     ret0[key][idx_perm], ret1[key], rtol=prec, atol=prec
                 )

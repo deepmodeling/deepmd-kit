@@ -43,7 +43,7 @@ class RotTest:
         if not test_spin:
             test_keys = ["energy", "force", "virial"]
         else:
-            test_keys = ["energy", "force_real", "force_mag", "virial"]
+            test_keys = ["energy", "force", "force_mag", "virial"]
         rmat = torch.tensor(special_ortho_group.rvs(3), dtype=dtype, device=env.DEVICE)
 
         # rotate only coord and shift to the center of cell
@@ -68,7 +68,7 @@ class RotTest:
         for key in test_keys:
             if key in ["energy"]:
                 torch.testing.assert_close(ret0[key], ret1[key], rtol=prec, atol=prec)
-            elif key in ["force", "force_real", "force_mag"]:
+            elif key in ["force", "force_mag"]:
                 torch.testing.assert_close(
                     torch.matmul(ret0[key], rmat), ret1[key], rtol=prec, atol=prec
                 )
@@ -114,7 +114,7 @@ class RotTest:
         for key in test_keys:
             if key in ["energy"]:
                 torch.testing.assert_close(ret0[key], ret1[key], rtol=prec, atol=prec)
-            elif key in ["force", "force_real", "force_mag"]:
+            elif key in ["force", "force_mag"]:
                 torch.testing.assert_close(
                     torch.matmul(ret0[key], rmat), ret1[key], rtol=prec, atol=prec
                 )

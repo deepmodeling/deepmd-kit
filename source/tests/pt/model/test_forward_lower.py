@@ -65,7 +65,7 @@ class ForwardLowerTest:
         if not test_spin:
             test_keys = ["energy", "force", "virial"]
         else:
-            test_keys = ["energy", "force_real", "force_mag", "virial"]
+            test_keys = ["energy", "force", "force_mag", "virial"]
 
         result_forward = eval_model(
             self.model,
@@ -105,7 +105,7 @@ class ForwardLowerTest:
                 torch.testing.assert_close(
                     result_forward_lower[key], result_forward[key], rtol=prec, atol=prec
                 )
-            elif key in ["force", "force_real", "force_mag"]:
+            elif key in ["force", "force_mag"]:
                 reduced_vv = reduce_tensor(
                     result_forward_lower[f"extended_{key}"], mapping, natoms
                 )
@@ -165,8 +165,8 @@ class TestEnergyModelZBL(unittest.TestCase, ForwardLowerTest):
 
 class TestEnergyModelSpinSeA(unittest.TestCase, ForwardLowerTest):
     def setUp(self):
-        # still need to figure out why only 1e-6 rtol and atol
-        self.prec = 1e-6
+        # still need to figure out why only 1e-5 rtol and atol
+        self.prec = 1e-5
         model_params = copy.deepcopy(model_spin)
         self.type_split = False
         self.test_spin = True

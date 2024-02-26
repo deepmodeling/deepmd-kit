@@ -414,7 +414,6 @@ def eval_model(
     energy_out = []
     atomic_energy_out = []
     force_out = []
-    force_real_out = []
     force_mag_out = []
     virial_out = []
     atomic_virial_out = []
@@ -502,8 +501,6 @@ def eval_model(
                 )
             if "force" in batch_output:
                 force_out.append(batch_output["force"].detach().cpu().numpy())
-            if "force_real" in batch_output:
-                force_real_out.append(batch_output["force_real"].detach().cpu().numpy())
             if "force_mag" in batch_output:
                 force_mag_out.append(batch_output["force_mag"].detach().cpu().numpy())
             if "virial" in batch_output:
@@ -525,8 +522,6 @@ def eval_model(
                 atomic_energy_out.append(batch_output["atom_energy"])
             if "force" in batch_output:
                 force_out.append(batch_output["force"])
-            if "force_real" in batch_output:
-                force_real_out.append(batch_output["force_real"])
             if "force_mag" in batch_output:
                 force_mag_out.append(batch_output["force_mag"])
             if "virial" in batch_output:
@@ -548,11 +543,6 @@ def eval_model(
         )
         force_out = (
             np.concatenate(force_out) if force_out else np.zeros([nframes, natoms, 3])
-        )
-        force_real_out = (
-            np.concatenate(force_real_out)
-            if force_real_out
-            else np.zeros([nframes, natoms, 3])
         )
         force_mag_out = (
             np.concatenate(force_mag_out)
@@ -593,13 +583,6 @@ def eval_model(
                 [nframes, natoms, 3], dtype=GLOBAL_PT_FLOAT_PRECISION, device=DEVICE
             )
         )
-        force_real_out = (
-            torch.cat(force_real_out)
-            if force_real_out
-            else torch.zeros(
-                [nframes, natoms, 3], dtype=GLOBAL_PT_FLOAT_PRECISION, device=DEVICE
-            )
-        )
         force_mag_out = (
             torch.cat(force_mag_out)
             if force_mag_out
@@ -628,12 +611,10 @@ def eval_model(
     else:
         results_dict = {
             "energy": energy_out,
+            "force": force_out,
             "virial": virial_out,
         }
-        if not getattr(model, "__USE_SPIN_INPUT__", False):
-            results_dict["force"] = force_out
-        else:
-            results_dict["force_real"] = force_real_out
+        if getattr(model, "__USE_SPIN_INPUT__", False):
             results_dict["force_mag"] = force_mag_out
         if atomic:
             results_dict["atom_energy"] = atomic_energy_out

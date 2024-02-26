@@ -67,7 +67,7 @@ class ForceTest:
         if not test_spin:
             test_keys = ["energy", "force", "virial"]
         else:
-            test_keys = ["energy", "force_real", "force_mag", "virial"]
+            test_keys = ["energy", "force", "force_mag", "virial"]
 
         def np_infer_coord(
             coord,
@@ -114,7 +114,7 @@ class ForceTest:
         else:
             # real force
             fdf = -finite_difference(ff_coord, coord, delta=delta).squeeze()
-            rff = np_infer_coord(coord)["force_real"]
+            rff = np_infer_coord(coord)["force"]
             np.testing.assert_almost_equal(fdf, rff, decimal=places)
             # magnetic force
             fdf = -finite_difference(ff_spin, spin, delta=delta).squeeze()
@@ -143,7 +143,7 @@ class VirialTest:
         if not test_spin:
             test_keys = ["energy", "force", "virial"]
         else:
-            test_keys = ["energy", "force_real", "force_mag", "virial"]
+            test_keys = ["energy", "force", "force_mag", "virial"]
 
         def np_infer(
             new_cell,

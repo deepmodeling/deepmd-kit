@@ -101,7 +101,7 @@ class SpinTest:
         nframes, nloc = self.coord.shape[:2]
         torch.testing.assert_close(result["energy"].shape, [nframes, 1])
         torch.testing.assert_close(result["atom_energy"].shape, [nframes, nloc, 1])
-        torch.testing.assert_close(result["force_real"].shape, [nframes, nloc, 3])
+        torch.testing.assert_close(result["force"].shape, [nframes, nloc, 3])
         torch.testing.assert_close(result["force_mag"].shape, [nframes, nloc, 3])
         torch.testing.assert_close(result["virial"].shape, [nframes, 9])
 

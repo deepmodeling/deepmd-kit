@@ -46,7 +46,7 @@ class TransTest:
         if not test_spin:
             test_keys = ["energy", "force", "virial"]
         else:
-            test_keys = ["energy", "force_real", "force_mag", "virial"]
+            test_keys = ["energy", "force", "force_mag", "virial"]
         result_0 = eval_model(
             self.model,
             coord.unsqueeze(0),
@@ -65,7 +65,7 @@ class TransTest:
         ret1 = {key: result_1[key].squeeze(0) for key in test_keys}
         prec = 1e-10
         for key in test_keys:
-            if key in ["energy", "force", "force_real", "force_mag"]:
+            if key in ["energy", "force", "force_mag"]:
                 torch.testing.assert_close(ret0[key], ret1[key], rtol=prec, atol=prec)
             elif key == "virial":
                 if not hasattr(self, "test_virial") or self.test_virial:
