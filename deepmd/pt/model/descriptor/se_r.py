@@ -30,12 +30,6 @@ from deepmd.utils.path import (
     DPPath,
 )
 
-try:
-    from typing import (
-        Final,
-    )
-except ImportError:
-    pass
 
 from deepmd.dpmodel.utils import EnvMat as DPEnvMat
 from deepmd.pt.model.network.mlp import (

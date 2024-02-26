@@ -35,7 +35,7 @@ class TestDescrptSeR(unittest.TestCase, TestCaseSingleFrameWithNlist):
         self,
     ):
         rng = np.random.default_rng()
-        nf, nloc, nnei = self.nlist.shape
+        _, _, nnei = self.nlist.shape
         davg = rng.normal(size=(self.nt, nnei, 1))
         dstd = rng.normal(size=(self.nt, nnei, 1))
         dstd = 0.1 + np.abs(dstd)
@@ -107,7 +107,7 @@ class TestDescrptSeR(unittest.TestCase, TestCaseSingleFrameWithNlist):
         self,
     ):
         rng = np.random.default_rng()
-        nf, nloc, nnei = self.nlist.shape
+        _, _, nnei = self.nlist.shape
         davg = rng.normal(size=(self.nt, nnei, 4))
         dstd = rng.normal(size=(self.nt, nnei, 4))
         dstd = 0.1 + np.abs(dstd)
@@ -117,8 +117,7 @@ class TestDescrptSeR(unittest.TestCase, TestCaseSingleFrameWithNlist):
             ["float64", "float32"],
         ):
             dtype = PRECISION_DICT[prec]
-            rtol, atol = get_tols(prec)
-            err_msg = f"idt={idt} prec={prec}"
+
             # sea new impl
             dd0 = DescrptSeR(
                 self.rcut,
@@ -131,5 +130,5 @@ class TestDescrptSeR(unittest.TestCase, TestCaseSingleFrameWithNlist):
             dd0.mean = torch.tensor(davg, dtype=dtype, device=env.DEVICE)
             dd0.dstd = torch.tensor(dstd, dtype=dtype, device=env.DEVICE)
             dd1 = DescrptSeR.deserialize(dd0.serialize())
-            model = torch.jit.script(dd0)
-            model = torch.jit.script(dd1)
+            torch.jit.script(dd0)
+            torch.jit.script(dd1)

@@ -73,7 +73,6 @@ def prod_env_mat_se_a(
     -------
     - env_mat_se_a: Shape is [nframes, natoms[1]*nnei*4].
     """
-    nframes = extended_coord.shape[0]
     _env_mat_se_a, diff, switch = _make_env_mat_se_a(
         nlist, extended_coord, rcut, rcut_smth
     )  # shape [n_atom, dim, 4]
@@ -103,7 +102,6 @@ def prod_env_mat_se_r(
     -------
     - env_mat_se_r: Shape is [nframes, natoms[1]*nnei*1].
     """
-    nframes = extended_coord.shape[0]
     _env_mat_se_r, diff, switch = _make_env_mat_se_r(
         nlist, extended_coord, rcut, rcut_smth
     )  # shape [n_atom, dim, 1]
