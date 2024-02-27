@@ -130,7 +130,6 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
   atom_energy.assign(
       cpu_atom_energy_.data_ptr<VALUETYPE>(),
       cpu_atom_energy_.data_ptr<VALUETYPE>() + cpu_atom_energy_.numel());
-  std::cout << atom_energy << std::endl;
   torch::Tensor flat_force_ = force_.toTensor().view({-1}).to(floatType);
   torch::Tensor cpu_force_ = flat_force_.to(torch::kCPU);
   force.assign(cpu_force_.data_ptr<VALUETYPE>(),
