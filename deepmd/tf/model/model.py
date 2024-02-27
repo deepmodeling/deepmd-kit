@@ -842,6 +842,8 @@ class StandardModel(Model):
         if self.spin is not None:
             raise NotImplementedError("spin is not supported")
         return {
+            "@class": "Model",
+            "type": "standard",
             "type_map": self.type_map,
             "descriptor": self.descrpt.serialize(suffix=suffix),
             "fitting": self.fitting.serialize(suffix=suffix),

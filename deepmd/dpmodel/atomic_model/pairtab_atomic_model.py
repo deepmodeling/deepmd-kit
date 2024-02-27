@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import copy
 from typing import (
     Dict,
     List,
@@ -105,10 +106,19 @@ class PairTabAtomicModel(BaseAtomicModel):
         return True
 
     def serialize(self) -> dict:
-        return {"tab": self.tab.serialize(), "rcut": self.rcut, "sel": self.sel}
+        return {
+            "@class": "Model",
+            "type": "pairtab",
+            "tab": self.tab.serialize(),
+            "rcut": self.rcut,
+            "sel": self.sel,
+        }
 
     @classmethod
     def deserialize(cls, data) -> "PairTabAtomicModel":
+        data = copy.deepcopy(data)
+        data.pop("@class")
+        data.pop("type")
         rcut = data["rcut"]
         sel = data["sel"]
         tab = PairTab.deserialize(data["tab"])
