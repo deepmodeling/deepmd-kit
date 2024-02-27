@@ -115,3 +115,6 @@ class PairExcludeMask:
         type_ij = type_ij.reshape(nf, nloc * nnei)
         mask = self.type_mask[type_ij].reshape(nf, nloc, nnei)
         return mask
+
+    def __contains__(self, item):
+        return item in self.exclude_types

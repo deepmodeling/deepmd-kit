@@ -1018,6 +1018,7 @@ class DescrptSeAtten(DescrptSeA):
                 input_xyz = tf.keras.layers.LayerNormalization(
                     beta_initializer=tf.constant_initializer(self.beta[i]),
                     gamma_initializer=tf.constant_initializer(self.gamma[i]),
+                    dtype=self.filter_precision,
                 )(input_xyz)
                 # input_xyz = self._feedforward(input_xyz, outputs_size[-1], self.att_n)
         return input_xyz

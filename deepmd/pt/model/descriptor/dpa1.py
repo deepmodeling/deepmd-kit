@@ -6,9 +6,6 @@ from typing import (
 
 import torch
 
-from deepmd.pt.model.descriptor import (
-    Descriptor,
-)
 from deepmd.pt.model.network.network import (
     TypeEmbedNet,
 )
@@ -16,14 +13,17 @@ from deepmd.utils.path import (
     DPPath,
 )
 
+from .base_descriptor import (
+    BaseDescriptor,
+)
 from .se_atten import (
     DescrptBlockSeAtten,
 )
 
 
-@Descriptor.register("dpa1")
-@Descriptor.register("se_atten")
-class DescrptDPA1(Descriptor):
+@BaseDescriptor.register("dpa1")
+@BaseDescriptor.register("se_atten")
+class DescrptDPA1(BaseDescriptor, torch.nn.Module):
     def __init__(
         self,
         rcut,
@@ -152,25 +152,6 @@ class DescrptDPA1(Descriptor):
 
     def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
         return self.se_atten.compute_input_stats(merged, path)
-
-    @classmethod
-    def get_data_process_key(cls, config):
-        """
-        Get the keys for the data preprocess.
-        Usually need the information of rcut and sel.
-        TODO Need to be deprecated when the dataloader has been cleaned up.
-        """
-        descrpt_type = config["type"]
-        assert descrpt_type in ["dpa1", "se_atten"]
-        return {"sel": config["sel"], "rcut": config["rcut"]}
-
-    @property
-    def data_stat_key(self):
-        """
-        Get the keys for the data statistic of the descriptor.
-        Return a list of statistic names needed, such as "sumr", "suma" or "sumn".
-        """
-        return ["sumr", "suma", "sumn", "sumr2", "suma2"]
 
     def serialize(self) -> dict:
         """Serialize the obj to dict."""

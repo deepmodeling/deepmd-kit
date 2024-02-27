@@ -221,7 +221,6 @@ class TestEquivalence(unittest.TestCase):
 
                 ret0 = ft0(rd0, extended_atype, gr0, fparam=ifp, aparam=iap)
                 res.append(ret0["foo"])
-            print(res[1].shape)
             np.testing.assert_allclose(
                 to_numpy_array(res[1]),
                 to_numpy_array(

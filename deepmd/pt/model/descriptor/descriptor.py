@@ -9,14 +9,10 @@ from typing import (
     Dict,
     List,
     Optional,
-    Type,
 )
 
 import torch
 
-from deepmd.common import (
-    j_get_type,
-)
 from deepmd.pt.model.network.network import (
     TypeEmbedNet,
 )
@@ -36,96 +32,7 @@ from deepmd.utils.path import (
     DPPath,
 )
 
-from .base_descriptor import (
-    BaseDescriptor,
-)
-
 log = logging.getLogger(__name__)
-
-
-class Descriptor(torch.nn.Module, BaseDescriptor):
-    """The descriptor.
-    Given the atomic coordinates, atomic types and neighbor list,
-    calculate the descriptor.
-    """
-
-    __plugins = Plugin()
-    local_cluster = False
-
-    @staticmethod
-    def register(key: str) -> Callable:
-        """Register a descriptor plugin.
-
-        Parameters
-        ----------
-        key : str
-            the key of a descriptor
-
-        Returns
-        -------
-        Descriptor
-            the registered descriptor
-
-        Examples
-        --------
-        >>> @Descriptor.register("some_descrpt")
-            class SomeDescript(Descriptor):
-                pass
-        """
-        return Descriptor.__plugins.register(key)
-
-    @classmethod
-    def get_data_process_key(cls, config):
-        """
-        Get the keys for the data preprocess.
-        Usually need the information of rcut and sel.
-        TODO Need to be deprecated when the dataloader has been cleaned up.
-        """
-        if cls is not Descriptor:
-            raise NotImplementedError("get_data_process_key is not implemented!")
-        descrpt_type = config["type"]
-        return Descriptor.__plugins.plugins[descrpt_type].get_data_process_key(config)
-
-    @property
-    def data_stat_key(self):
-        """
-        Get the keys for the data statistic of the descriptor.
-        Return a list of statistic names needed, such as "sumr", "suma" or "sumn".
-        """
-        raise NotImplementedError("data_stat_key is not implemented!")
-
-    def __new__(cls, *args, **kwargs):
-        if cls is Descriptor:
-            cls = cls.get_class_by_type(j_get_type(kwargs, cls.__name__))
-        return super().__new__(cls)
-
-    @classmethod
-    def get_class_by_type(cls, descrpt_type: str) -> Type["Descriptor"]:
-        if descrpt_type in Descriptor.__plugins.plugins:
-            return Descriptor.__plugins.plugins[descrpt_type]
-        else:
-            raise RuntimeError("Unknown descriptor type: " + descrpt_type)
-
-    @classmethod
-    def deserialize(cls, data: dict) -> "Descriptor":
-        """Deserialize the model.
-
-        There is no suffix in a native DP model, but it is important
-        for the TF backend.
-
-        Parameters
-        ----------
-        data : dict
-            The serialized data
-
-        Returns
-        -------
-        Descriptor
-            The deserialized descriptor
-        """
-        if cls is Descriptor:
-            return Descriptor.get_class_by_type(data["type"]).deserialize(data)
-        raise NotImplementedError("Not implemented in class %s" % cls.__name__)
 
 
 class DescriptorBlock(torch.nn.Module, ABC):
