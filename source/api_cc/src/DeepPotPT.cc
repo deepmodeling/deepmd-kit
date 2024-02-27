@@ -99,24 +99,12 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
   at::Tensor atype_Tensor =
       torch::from_blob(atype_64.data(), {1, natoms}, int_options).to(device);
   if (ago == 0) {
-    int64_t nnei = module.run_method("get_nnei").toInt();
-    nlist_data.copy_from_nlist(lmp_list, max_num_neighbors, nnei);
-    if (max_num_neighbors > nnei) {
-      at::Tensor firstneigh = torch::from_blob(
-          nlist_data.jlist, {1, lmp_list.inum, max_num_neighbors},
-          int32_options);
-      at::Tensor nlist = firstneigh.to(torch::kInt64).to(device);
-      firstneigh_tensor = module
-                              .run_method("format_nlist", coord_wrapped_Tensor,
-                                          atype_Tensor, nlist)
-                              .toTensor();
-    } else {
-      at::Tensor firstneigh = torch::from_blob(
-          nlist_data.jlist, {1, lmp_list.inum, max_num_neighbors},
-          int32_options);
-      firstneigh_tensor = firstneigh.to(torch::kInt64).to(device);
-    }
+    nlist_data.copy_from_nlist(lmp_list, max_num_neighbors);
   }
+  at::Tensor firstneigh = torch::from_blob(
+          nlist_data.jlist.data(), {1, lmp_list.inum, max_num_neighbors},
+          int32_options);
+  firstneigh_tensor = firstneigh.to(torch::kInt64).to(device);
   bool do_atom_virial_tensor = true;
   c10::optional<torch::Tensor> optional_tensor;
   c10::Dict<c10::IValue, c10::IValue> outputs =
@@ -240,7 +228,6 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
   inputs.push_back(do_atom_virial_tensor);
   c10::Dict<c10::IValue, c10::IValue> outputs =
       module.forward(inputs).toGenericDict();
-
   c10::IValue energy_ = outputs.at("energy");
   c10::IValue force_ = outputs.at("force");
   c10::IValue virial_ = outputs.at("virial");
@@ -255,23 +242,21 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
   atom_energy.assign(
       cpu_atom_energy_.data_ptr<VALUETYPE>(),
       cpu_atom_energy_.data_ptr<VALUETYPE>() + cpu_atom_energy_.numel());
-
   torch::Tensor flat_force_ = force_.toTensor().view({-1});
   torch::Tensor cpu_force_ = flat_force_.to(torch::kCPU);
   force.assign(cpu_force_.data_ptr<VALUETYPE>(),
                cpu_force_.data_ptr<VALUETYPE>() + cpu_force_.numel());
-
   torch::Tensor flat_virial_ = virial_.toTensor().view({-1});
   torch::Tensor cpu_virial_ = flat_virial_.to(torch::kCPU);
   virial.assign(cpu_virial_.data_ptr<VALUETYPE>(),
                 cpu_virial_.data_ptr<VALUETYPE>() + cpu_virial_.numel());
-
   torch::Tensor flat_atom_virial_ = atom_virial_.toTensor().view({-1});
   torch::Tensor cpu_atom_virial_ = flat_atom_virial_.to(torch::kCPU);
   atom_virial.assign(
       cpu_atom_virial_.data_ptr<VALUETYPE>(),
       cpu_atom_virial_.data_ptr<VALUETYPE>() + cpu_atom_virial_.numel());
 }
+
 // template void DeepPotPT::compute<double, ENERGYTYPE>(
 //     ENERGYTYPE& ener,
 //     std::vector<double>& force,
