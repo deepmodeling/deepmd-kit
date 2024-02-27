@@ -10,9 +10,6 @@ import numpy as np
 import torch
 
 from deepmd.dpmodel.utils import EnvMat as DPEnvMat
-from .base_descriptor import (
-    BaseDescriptor
-)
 from deepmd.pt.model.descriptor import (
     prod_env_mat,
 )
@@ -38,6 +35,10 @@ from deepmd.utils.env_mat_stat import (
 )
 from deepmd.utils.path import (
     DPPath,
+)
+
+from .base_descriptor import (
+    BaseDescriptor,
 )
 
 
