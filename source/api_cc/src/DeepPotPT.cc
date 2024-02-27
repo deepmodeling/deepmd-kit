@@ -104,7 +104,7 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
     nlist_data.copy_from_nlist(lmp_list, max_num_neighbors);
     std::cout << "Vector content:" << std::endl;
     for (const auto& element : nlist_data.jlist) {
-        std::cout << element << " ";
+      std::cout << element << " ";
     }
     std::cout << std::endl;
   }
