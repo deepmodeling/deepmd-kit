@@ -121,6 +121,9 @@ class DeepEval(DeepEvalBackend):
             self.auto_batch_size = auto_batch_size
         else:
             raise TypeError("auto_batch_size should be bool, int, or AutoBatchSize")
+        self.has_spin = getattr(self.dp.model["Default"], "has_spin", False)
+        if callable(self.has_spin):
+            self.has_spin = self.has_spin()
 
     def get_rcut(self) -> float:
         """Get the cutoff radius of this model."""
@@ -239,9 +242,14 @@ class DeepEval(DeepEvalBackend):
             coords, atom_types, len(atom_types.shape) > 1
         )
         request_defs = self._get_request_defs(atomic)
-        out = self._eval_func(self._eval_model, numb_test, natoms)(
-            coords, cells, atom_types, request_defs
-        )
+        if "spin" not in kwargs:
+            out = self._eval_func(self._eval_model, numb_test, natoms)(
+                coords, cells, atom_types, request_defs
+            )
+        else:
+            out = self._eval_func(self._eval_model_spin, numb_test, natoms)(
+                coords, cells, atom_types, np.array(kwargs["spin"]), request_defs
+            )
         return dict(
             zip(
                 [x.name for x in request_defs],
@@ -361,6 +369,68 @@ class DeepEval(DeepEvalBackend):
         )
         batch_output = model(
             coord_input, type_input, box=box_input, do_atomic_virial=do_atomic_virial
+        )
+        if isinstance(batch_output, tuple):
+            batch_output = batch_output[0]
+
+        results = []
+        for odef in request_defs:
+            pt_name = self._OUTDEF_DP2BACKEND[odef.name]
+            if pt_name in batch_output:
+                shape = self._get_output_shape(odef, nframes, natoms)
+                out = batch_output[pt_name].reshape(shape).detach().cpu().numpy()
+                results.append(out)
+            else:
+                shape = self._get_output_shape(odef, nframes, natoms)
+                results.append(np.full(np.abs(shape), np.nan))  # this is kinda hacky
+        return tuple(results)
+
+    def _eval_model_spin(
+        self,
+        coords: np.ndarray,
+        cells: Optional[np.ndarray],
+        atom_types: np.ndarray,
+        spins: np.ndarray,
+        request_defs: List[OutputVariableDef],
+    ):
+        model = self.dp.to(DEVICE)
+
+        nframes = coords.shape[0]
+        if len(atom_types.shape) == 1:
+            natoms = len(atom_types)
+            atom_types = np.tile(atom_types, nframes).reshape(nframes, -1)
+        else:
+            natoms = len(atom_types[0])
+
+        coord_input = torch.tensor(
+            coords.reshape([-1, natoms, 3]),
+            dtype=GLOBAL_PT_FLOAT_PRECISION,
+            device=DEVICE,
+        )
+        type_input = torch.tensor(atom_types, dtype=torch.long, device=DEVICE)
+        spin_input = torch.tensor(
+            spins.reshape([-1, natoms, 3]),
+            dtype=GLOBAL_PT_FLOAT_PRECISION,
+            device=DEVICE,
+        )
+        if cells is not None:
+            box_input = torch.tensor(
+                cells.reshape([-1, 3, 3]),
+                dtype=GLOBAL_PT_FLOAT_PRECISION,
+                device=DEVICE,
+            )
+        else:
+            box_input = None
+
+        do_atomic_virial = any(
+            x.category == OutputVariableCategory.DERV_C_REDU for x in request_defs
+        )
+        batch_output = model(
+            coord_input,
+            type_input,
+            spin=spin_input,
+            box=box_input,
+            do_atomic_virial=do_atomic_virial,
         )
         if isinstance(batch_output, tuple):
             batch_output = batch_output[0]

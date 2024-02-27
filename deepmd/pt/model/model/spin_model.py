@@ -26,7 +26,7 @@ from .dp_model import (
 class SpinModel(torch.nn.Module):
     """A spin model wrapper, with spin input preprocess and output split."""
 
-    __USE_SPIN_INPUT__ = True
+    __USE_SPIN_INPUT__: bool = True
 
     def __init__(
         self,
@@ -270,6 +270,11 @@ class SpinModel(torch.nn.Module):
     def get_nsel(self) -> int:
         """Returns the total number of selected neighboring atoms in the cut-off radius."""
         return self.backbone_model.get_nsel() // 2  # ignore the virtual selected
+
+    @torch.jit.export
+    def has_spin(self) -> bool:
+        """Returns whether it has spin input and output."""
+        return True
 
     def __getattr__(self, name):
         """Get attribute from the wrapped model."""

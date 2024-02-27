@@ -178,7 +178,10 @@ class ModelWrapper(torch.nn.Module):
             "box": box,
             "do_atomic_virial": do_atomic_virial,
         }
-        if getattr(self.model[task_key], "__USE_SPIN_INPUT__", False):
+        has_spin = getattr(self.model[task_key], "has_spin", False)
+        if callable(has_spin):
+            has_spin = has_spin()
+        if has_spin:
             input_dict["spin"] = spin
         model_pred = self.model[task_key](**input_dict)
         natoms = atype.shape[-1]
