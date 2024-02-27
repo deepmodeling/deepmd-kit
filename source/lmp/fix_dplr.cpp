@@ -313,11 +313,6 @@ void FixDPLR::setup(int vflag) {
   // else {
   //   error->all(FLERR, "respa is not supported by this fix");
   // }
-  if (vflag) {
-    v_setup(vflag);
-  } else {
-    evflag = 0;
-  }
 }
 
 /* ---------------------------------------------------------------------- */
