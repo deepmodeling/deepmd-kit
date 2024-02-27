@@ -102,6 +102,11 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
       torch::from_blob(atype_64.data(), {1, natoms}, int_options).to(device);
   if (ago == 0) {
     nlist_data.copy_from_nlist(lmp_list, max_num_neighbors);
+    std::cout << "Vector content:" << std::endl;
+    for (const auto& element : nlist_data.jlist) {
+        std::cout << element << " ";
+    }
+    std::cout << std::endl;
   }
   at::Tensor firstneigh =
       torch::from_blob(nlist_data.jlist.data(),
@@ -127,6 +132,7 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
   torch::Tensor flat_atom_energy_ =
       atom_energy_.toTensor().view({-1}).to(floatType);
   torch::Tensor cpu_atom_energy_ = flat_atom_energy_.to(torch::kCPU);
+  std::cout << cpu_atom_energy_ << std::endl;
   atom_energy.assign(
       cpu_atom_energy_.data_ptr<VALUETYPE>(),
       cpu_atom_energy_.data_ptr<VALUETYPE>() + cpu_atom_energy_.numel());

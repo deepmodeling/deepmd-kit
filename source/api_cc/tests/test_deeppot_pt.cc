@@ -279,14 +279,12 @@ TYPED_TEST(TestInferDeepPotAPt, cpu_lmp_nlist_atomic) {
   std::vector<int> ilist(nloc), numneigh(nloc);
   std::vector<int*> firstneigh(nloc);
   deepmd::InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]);
-  std::cout << nlist_data << std::endl;
   convert_nlist(inlist, nlist_data);
   double ener;
   std::vector<VALUETYPE> force_, atom_ener_, atom_vir_, virial;
   std::vector<VALUETYPE> force, atom_ener, atom_vir;
   dp.compute(ener, force_, virial, atom_ener_, atom_vir_, coord_cpy, atype_cpy,
              box, nall - nloc, inlist, 0);
-  std::cout << atom_ener_ << std::endl;
   _fold_back<VALUETYPE>(force, force_, mapping, nloc, nall, 3);
   _fold_back<VALUETYPE>(atom_ener, atom_ener_, mapping, nloc, nall, 1);
   _fold_back<VALUETYPE>(atom_vir, atom_vir_, mapping, nloc, nall, 9);
