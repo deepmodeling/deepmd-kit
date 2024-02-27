@@ -80,12 +80,12 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
                         const std::vector<VALUETYPE>& box,
                         const InputNlist& lmp_list,
                         const int& ago) {
-   for (auto element : coord) {
-        std::cout << element << ", ";
+  for (auto element : coord) {
+    std::cout << element << ", ";
   }
   std::cout << std::endl;
   for (auto element : atype) {
-        std::cout << element << ", ";
+    std::cout << element << ", ";
   }
   std::cout << std::endl;
   torch::Device device(torch::kCUDA, gpu_id);
