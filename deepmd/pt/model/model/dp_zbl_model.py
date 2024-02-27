@@ -9,6 +9,9 @@ import torch
 from deepmd.pt.model.atomic_model import (
     DPZBLLinearAtomicModel,
 )
+from deepmd.pt.model.model.model import (
+    BaseModel,
+)
 
 from .make_model import (
     make_model,
@@ -17,7 +20,8 @@ from .make_model import (
 DPZBLModel_ = make_model(DPZBLLinearAtomicModel)
 
 
-class DPZBLModel(DPZBLModel_):
+@BaseModel.register("zbl")
+class DPZBLModel(DPZBLModel_, BaseModel):
     model_type = "ener"
 
     def __init__(
