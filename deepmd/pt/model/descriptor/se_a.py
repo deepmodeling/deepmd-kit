@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import itertools
 from typing import (
     ClassVar,
     Dict,
@@ -67,6 +68,7 @@ class DescrptSeA(Descriptor):
         resnet_dt: bool = False,
         exclude_types: List[Tuple[int, int]] = [],
         old_impl: bool = False,
+        type_one_side: bool = True,
         **kwargs,
     ):
         super().__init__()
@@ -82,6 +84,7 @@ class DescrptSeA(Descriptor):
             resnet_dt=resnet_dt,
             exclude_types=exclude_types,
             old_impl=old_impl,
+            type_one_side=type_one_side,
             **kwargs,
         )
 
@@ -214,7 +217,7 @@ class DescrptSeA(Descriptor):
             },
             ## to be updated when the options are supported.
             "trainable": True,
-            "type_one_side": True,
+            "type_one_side": obj.type_one_side,
             "spin": None,
         }
 
@@ -255,6 +258,7 @@ class DescrptBlockSeA(DescriptorBlock):
         resnet_dt: bool = False,
         exclude_types: List[Tuple[int, int]] = [],
         old_impl: bool = False,
+        type_one_side: bool = True,
         **kwargs,
     ):
         """Construct an embedding net of type `se_a`.
@@ -281,6 +285,7 @@ class DescrptBlockSeA(DescriptorBlock):
         self.exclude_types = exclude_types
         self.ntypes = len(sel)
         self.emask = PairExcludeMask(len(sel), exclude_types=exclude_types)
+        self.type_one_side = type_one_side
 
         self.sel = sel
         self.sec = torch.tensor(
@@ -299,6 +304,10 @@ class DescrptBlockSeA(DescriptorBlock):
         self.filter_layers = None
 
         if self.old_impl:
+            if not self.type_one_side:
+                raise ValueError(
+                    "The old implementation does not support type_one_side=False."
+                )
             filter_layers = []
             # TODO: remove
             start_index = 0
@@ -308,12 +317,12 @@ class DescrptBlockSeA(DescriptorBlock):
                 start_index += sel[type_i]
             self.filter_layers_old = torch.nn.ModuleList(filter_layers)
         else:
+            ndim = 1 if self.type_one_side else 2
             filter_layers = NetworkCollection(
-                ndim=1, ntypes=len(sel), network_type="embedding_network"
+                ndim=ndim, ntypes=len(sel), network_type="embedding_network"
             )
-            # TODO: ndim=2 if type_one_side=False
-            for ii in range(self.ntypes):
-                filter_layers[(ii,)] = EmbeddingNet(
+            for embedding_idx in itertools.product(range(self.ntypes), repeat=ndim):
+                filter_layers[embedding_idx] = EmbeddingNet(
                     1,
                     self.filter_neuron,
                     activation_function=self.activation_function,
@@ -473,18 +482,27 @@ class DescrptBlockSeA(DescriptorBlock):
             )
             # nfnl x nnei
             exclude_mask = self.emask(nlist, extended_atype).view(nfnl, -1)
-            for ii, ll in enumerate(self.filter_layers.networks):
+            for embedding_idx, ll in enumerate(self.filter_layers.networks):
+                if self.type_one_side:
+                    ii = embedding_idx
+                    # torch.jit is not happy with slice(None)
+                    ti_mask = torch.ones(nfnl, dtype=torch.bool, device=dmatrix.device)
+                else:
+                    # ti: center atom type, ii: neighbor type...
+                    ii = embedding_idx // self.ntypes
+                    ti = embedding_idx % self.ntypes
+                    ti_mask = atype.ravel().eq(ti)
                 # nfnl x nt
-                mm = exclude_mask[:, self.sec[ii] : self.sec[ii + 1]]
+                mm = exclude_mask[ti_mask, self.sec[ii] : self.sec[ii + 1]]
                 # nfnl x nt x 4
-                rr = dmatrix[:, self.sec[ii] : self.sec[ii + 1], :]
+                rr = dmatrix[ti_mask, self.sec[ii] : self.sec[ii + 1], :]
                 rr = rr * mm[:, :, None]
                 ss = rr[:, :, :1]
                 # nfnl x nt x ng
                 gg = ll.forward(ss)
                 # nfnl x 4 x ng
                 gr = torch.matmul(rr.permute(0, 2, 1), gg)
-                xyz_scatter += gr
+                xyz_scatter[ti_mask] += gr
 
         xyz_scatter /= self.nnei
         xyz_scatter_1 = xyz_scatter.permute(0, 2, 1)
