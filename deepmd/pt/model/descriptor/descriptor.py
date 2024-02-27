@@ -20,7 +20,7 @@ from deepmd.pt.utils import (
     env,
 )
 from deepmd.pt.utils.env_mat_stat import (
-    EnvMatStatSeA,
+    EnvMatStatSe,
 )
 from deepmd.pt.utils.plugin import (
     Plugin,
@@ -129,7 +129,7 @@ class DescriptorBlock(torch.nn.Module, ABC):
             # link buffers
             if hasattr(self, "mean") and not resume:
                 # in case of change params during resume
-                base_env = EnvMatStatSeA(base_class)
+                base_env = EnvMatStatSe(base_class)
                 base_env.stats = base_class.stats
                 for kk in base_class.get_stats():
                     base_env.stats[kk] += self.get_stats()[kk]

@@ -13,7 +13,7 @@ import torch
 
 from deepmd.pt.model.descriptor import (
     DescriptorBlock,
-    prod_env_mat_se_a,
+    prod_env_mat,
 )
 from deepmd.pt.utils import (
     env,
@@ -23,7 +23,7 @@ from deepmd.pt.utils.env import (
     RESERVED_PRECISON_DICT,
 )
 from deepmd.pt.utils.env_mat_stat import (
-    EnvMatStatSeA,
+    EnvMatStatSe,
 )
 from deepmd.utils.env_mat_stat import (
     StatItem,
@@ -384,15 +384,12 @@ class DescrptBlockSeA(DescriptorBlock):
 
     def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
         """Update mean and stddev for descriptor elements."""
-        env_mat_stat = EnvMatStatSeA(self)
+        env_mat_stat = EnvMatStatSe(self)
         if path is not None:
             path = path / env_mat_stat.get_hash()
         env_mat_stat.load_or_compute_stats(merged, path)
         self.stats = env_mat_stat.stats
         mean, stddev = env_mat_stat()
-        if not self.set_davg_zero:
-            self.mean.copy_(torch.tensor(mean, device=env.DEVICE))
-        self.stddev.copy_(torch.tensor(stddev, device=env.DEVICE))
         if not self.set_davg_zero:
             self.mean.copy_(torch.tensor(mean, device=env.DEVICE))
         self.stddev.copy_(torch.tensor(stddev, device=env.DEVICE))
@@ -428,7 +425,7 @@ class DescrptBlockSeA(DescriptorBlock):
         del extended_atype_embd, mapping
         nloc = nlist.shape[1]
         atype = extended_atype[:, :nloc]
-        dmatrix, diff, sw = prod_env_mat_se_a(
+        dmatrix, diff, sw = prod_env_mat(
             extended_coord,
             nlist,
             atype,
