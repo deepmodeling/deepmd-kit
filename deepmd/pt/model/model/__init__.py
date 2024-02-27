@@ -16,8 +16,8 @@ from deepmd.pt.model.atomic_model import (
     DPAtomicModel,
     PairTabAtomicModel,
 )
-from deepmd.pt.model.descriptor.descriptor import (
-    Descriptor,
+from deepmd.pt.model.descriptor.base_descriptor import (
+    BaseDescriptor,
 )
 from deepmd.pt.model.task import (
     Fitting,
@@ -55,7 +55,7 @@ def get_zbl_model(model_params):
     ntypes = len(model_params["type_map"])
     # descriptor
     model_params["descriptor"]["ntypes"] = ntypes
-    descriptor = Descriptor(**model_params["descriptor"])
+    descriptor = BaseDescriptor(**model_params["descriptor"])
     # fitting
     fitting_net = model_params.get("fitting_net", None)
     fitting_net["type"] = fitting_net.get("type", "ener")
@@ -91,7 +91,7 @@ def get_ener_model(model_params):
     ntypes = len(model_params["type_map"])
     # descriptor
     model_params["descriptor"]["ntypes"] = ntypes
-    descriptor = Descriptor(**model_params["descriptor"])
+    descriptor = BaseDescriptor(**model_params["descriptor"])
     # fitting
     fitting_net = model_params.get("fitting_net", None)
     fitting_net["type"] = fitting_net.get("type", "ener")

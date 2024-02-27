@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import itertools
 from typing import (
     ClassVar,
     Dict,
@@ -11,7 +12,6 @@ import numpy as np
 import torch
 
 from deepmd.pt.model.descriptor import (
-    Descriptor,
     DescriptorBlock,
     prod_env_mat_se_a,
 )
@@ -51,9 +51,13 @@ from deepmd.pt.utils.exclude_mask import (
     PairExcludeMask,
 )
 
+from .base_descriptor import (
+    BaseDescriptor,
+)
 
-@Descriptor.register("se_e2_a")
-class DescrptSeA(Descriptor):
+
+@BaseDescriptor.register("se_e2_a")
+class DescrptSeA(BaseDescriptor, torch.nn.Module):
     def __init__(
         self,
         rcut,
@@ -68,6 +72,7 @@ class DescrptSeA(Descriptor):
         exclude_types: List[Tuple[int, int]] = [],
         env_protection: float = 0.0,
         old_impl: bool = False,
+        type_one_side: bool = True,
         **kwargs,
     ):
         super().__init__()
@@ -84,6 +89,7 @@ class DescrptSeA(Descriptor):
             exclude_types=exclude_types,
             env_protection=env_protection,
             old_impl=old_impl,
+            type_one_side=type_one_side,
             **kwargs,
         )
 
@@ -125,25 +131,6 @@ class DescrptSeA(Descriptor):
     def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
         """Update mean and stddev for descriptor elements."""
         return self.sea.compute_input_stats(merged, path)
-
-    @classmethod
-    def get_data_process_key(cls, config):
-        """
-        Get the keys for the data preprocess.
-        Usually need the information of rcut and sel.
-        TODO Need to be deprecated when the dataloader has been cleaned up.
-        """
-        descrpt_type = config["type"]
-        assert descrpt_type in ["se_e2_a"]
-        return {"sel": config["sel"], "rcut": config["rcut"]}
-
-    @property
-    def data_stat_key(self):
-        """
-        Get the keys for the data statistic of the descriptor.
-        Return a list of statistic names needed, such as "sumr", "suma" or "sumn".
-        """
-        return ["sumr", "suma", "sumn", "sumr2", "suma2"]
 
     def forward(
         self,
@@ -217,7 +204,7 @@ class DescrptSeA(Descriptor):
             },
             ## to be updated when the options are supported.
             "trainable": True,
-            "type_one_side": True,
+            "type_one_side": obj.type_one_side,
             "spin": None,
         }
 
@@ -259,6 +246,7 @@ class DescrptBlockSeA(DescriptorBlock):
         exclude_types: List[Tuple[int, int]] = [],
         env_protection: float = 0.0,
         old_impl: bool = False,
+        type_one_side: bool = True,
         **kwargs,
     ):
         """Construct an embedding net of type `se_a`.
@@ -286,6 +274,7 @@ class DescrptBlockSeA(DescriptorBlock):
         self.env_protection = env_protection
         self.ntypes = len(sel)
         self.emask = PairExcludeMask(len(sel), exclude_types=exclude_types)
+        self.type_one_side = type_one_side
 
         self.sel = sel
         self.sec = torch.tensor(
@@ -304,6 +293,10 @@ class DescrptBlockSeA(DescriptorBlock):
         self.filter_layers = None
 
         if self.old_impl:
+            if not self.type_one_side:
+                raise ValueError(
+                    "The old implementation does not support type_one_side=False."
+                )
             filter_layers = []
             # TODO: remove
             start_index = 0
@@ -313,12 +306,12 @@ class DescrptBlockSeA(DescriptorBlock):
                 start_index += sel[type_i]
             self.filter_layers_old = torch.nn.ModuleList(filter_layers)
         else:
+            ndim = 1 if self.type_one_side else 2
             filter_layers = NetworkCollection(
-                ndim=1, ntypes=len(sel), network_type="embedding_network"
+                ndim=ndim, ntypes=len(sel), network_type="embedding_network"
             )
-            # TODO: ndim=2 if type_one_side=False
-            for ii in range(self.ntypes):
-                filter_layers[(ii,)] = EmbeddingNet(
+            for embedding_idx in itertools.product(range(self.ntypes), repeat=ndim):
+                filter_layers[embedding_idx] = EmbeddingNet(
                     1,
                     self.filter_neuron,
                     activation_function=self.activation_function,
@@ -479,18 +472,27 @@ class DescrptBlockSeA(DescriptorBlock):
             )
             # nfnl x nnei
             exclude_mask = self.emask(nlist, extended_atype).view(nfnl, -1)
-            for ii, ll in enumerate(self.filter_layers.networks):
+            for embedding_idx, ll in enumerate(self.filter_layers.networks):
+                if self.type_one_side:
+                    ii = embedding_idx
+                    # torch.jit is not happy with slice(None)
+                    ti_mask = torch.ones(nfnl, dtype=torch.bool, device=dmatrix.device)
+                else:
+                    # ti: center atom type, ii: neighbor type...
+                    ii = embedding_idx // self.ntypes
+                    ti = embedding_idx % self.ntypes
+                    ti_mask = atype.ravel().eq(ti)
                 # nfnl x nt
-                mm = exclude_mask[:, self.sec[ii] : self.sec[ii + 1]]
+                mm = exclude_mask[ti_mask, self.sec[ii] : self.sec[ii + 1]]
                 # nfnl x nt x 4
-                rr = dmatrix[:, self.sec[ii] : self.sec[ii + 1], :]
+                rr = dmatrix[ti_mask, self.sec[ii] : self.sec[ii + 1], :]
                 rr = rr * mm[:, :, None]
                 ss = rr[:, :, :1]
                 # nfnl x nt x ng
                 gg = ll.forward(ss)
                 # nfnl x 4 x ng
                 gr = torch.matmul(rr.permute(0, 2, 1), gg)
-                xyz_scatter += gr
+                xyz_scatter[ti_mask] += gr
 
         xyz_scatter /= self.nnei
         xyz_scatter_1 = xyz_scatter.permute(0, 2, 1)

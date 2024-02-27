@@ -7,8 +7,8 @@ from typing import (
 import torch
 import torch.nn as nn
 
-from deepmd.pt.model.descriptor import (
-    Descriptor,
+from deepmd.pt.model.descriptor.base_descriptor import (
+    BaseDescriptor,
 )
 from deepmd.pt.model.network.network import (
     Evoformer3bEncoder,
@@ -23,7 +23,7 @@ from deepmd.utils.path import (
 )
 
 
-class DescrptGaussianLcc(Descriptor):
+class DescrptGaussianLcc(torch.nn.Module, BaseDescriptor):
     def __init__(
         self,
         rcut,

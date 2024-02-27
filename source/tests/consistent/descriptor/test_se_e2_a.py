@@ -75,7 +75,7 @@ class TestSeA(CommonTest, DescriptorTest, unittest.TestCase):
             precision,
             env_protection,
         ) = self.param
-        return not type_one_side or CommonTest.skip_pt
+        return CommonTest.skip_pt
 
     @property
     def skip_dp(self) -> bool:
@@ -86,7 +86,7 @@ class TestSeA(CommonTest, DescriptorTest, unittest.TestCase):
             precision,
             env_protection,
         ) = self.param
-        return not type_one_side or CommonTest.skip_dp
+        return CommonTest.skip_dp
 
     @property
     def skip_tf(self) -> bool:
@@ -137,6 +137,17 @@ class TestSeA(CommonTest, DescriptorTest, unittest.TestCase):
             dtype=GLOBAL_NP_FLOAT_PRECISION,
         )
         self.natoms = np.array([6, 6, 2, 4], dtype=np.int32)
+        # TF se_e2_a type_one_side=False requires atype sorted
+        (
+            resnet_dt,
+            type_one_side,
+            excluded_types,
+            precision,
+        ) = self.param
+        if not type_one_side:
+            idx = np.argsort(self.atype)
+            self.atype = self.atype[idx]
+            self.coords = self.coords.reshape(-1, 3)[idx].ravel()
 
     def build_tf(self, obj: Any, suffix: str) -> Tuple[list, dict]:
         return self.build_tf_descriptor(
