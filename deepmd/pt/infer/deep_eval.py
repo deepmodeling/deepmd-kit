@@ -121,9 +121,9 @@ class DeepEval(DeepEvalBackend):
             self.auto_batch_size = auto_batch_size
         else:
             raise TypeError("auto_batch_size should be bool, int, or AutoBatchSize")
-        self.has_spin = getattr(self.dp.model["Default"], "has_spin", False)
-        if callable(self.has_spin):
-            self.has_spin = self.has_spin()
+        self.has_spin_pt = getattr(self.dp.model["Default"], "has_spin", False)
+        if callable(self.has_spin_pt):
+            self.has_spin_pt = self.has_spin_pt()
 
     def get_rcut(self) -> float:
         """Get the cutoff radius of this model."""
