@@ -231,15 +231,8 @@ class DescrptSe(Descriptor):
                     resnet_dt=resnet_dt,
                     precision=self.precision.name,
                 )
-                for layer in range(len(neuron)):
-                    embeddings[(type_i, type_j)][layer]["w"][:] = 0.0
-                    embeddings[(type_i, type_j)][layer]["b"][:] = 0.0
-                    if embeddings[(type_i, type_j)][layer]["idt"] is not None:
-                        embeddings[(type_i, type_j)][layer]["idt"][:] = 0.0
-                    embeddings[(type_j, type_i)][layer]["w"][:] = 0.0
-                    embeddings[(type_j, type_i)][layer]["b"][:] = 0.0
-                    if embeddings[(type_j, type_i)][layer]["idt"] is not None:
-                        embeddings[(type_j, type_i)][layer]["idt"][:] = 0.0
+                embeddings[(type_i, type_j)].clear()
+                embeddings[(type_j, type_i)].clear()
 
         if suffix != "":
             embedding_net_pattern = (
