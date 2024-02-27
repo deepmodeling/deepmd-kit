@@ -257,7 +257,7 @@ class DescrptSeR(Descriptor):
         nfnl = dmatrix.shape[0]
         # pre-allocate a shape to pass jit
         xyz_scatter = torch.zeros(
-            [nfnl, 1, self.filter_neuron[-1]], dtype=self.prec, device=env.DEVICE
+            [nfnl, 1, self.filter_neuron[-1]], dtype=self.prec, device=coord_ext.DEVICE
         )
 
         # nfnl x nnei
