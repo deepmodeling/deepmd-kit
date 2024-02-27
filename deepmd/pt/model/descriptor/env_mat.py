@@ -8,7 +8,12 @@ from deepmd.pt.utils.preprocess import (
 
 
 def _make_env_mat(
-    nlist, coord, rcut: float, ruct_smth: float, radial_only: bool = False, protection: float = 0.0
+    nlist,
+    coord,
+    rcut: float,
+    ruct_smth: float,
+    radial_only: bool = False,
+    protection: float = 0.0,
 ):
     """Make smooth environment matrix."""
     bsz, natoms, nnei = nlist.shape
@@ -64,7 +69,12 @@ def prod_env_mat(
     - env_mat: Shape is [nframes, natoms[1]*nnei*4].
     """
     _env_mat_se_a, diff, switch = _make_env_mat(
-        nlist, extended_coord, rcut, rcut_smth, radial_only, protection=protection,
+        nlist,
+        extended_coord,
+        rcut,
+        rcut_smth,
+        radial_only,
+        protection=protection,
     )  # shape [n_atom, dim, 4 or 1]
     t_avg = mean[atype]  # [n_atom, dim, 4 or 1]
     t_std = stddev[atype]  # [n_atom, dim, 4 or 1]

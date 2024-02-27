@@ -119,10 +119,14 @@ class EnvMat(NativeOP):
             em /= dstd[atype]
         return em, sw
 
-      
     def _call(self, nlist, coord_ext, radial_only):
         em, diff, ww = _make_env_mat(
-            nlist, coord_ext, self.rcut, self.rcut_smth, radial_only=radial_only, protection=self.protection
+            nlist,
+            coord_ext,
+            self.rcut,
+            self.rcut_smth,
+            radial_only=radial_only,
+            protection=self.protection,
         )
         return em, ww
 
