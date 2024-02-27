@@ -18,7 +18,6 @@ from deepmd.tf.common import (
     j_must_have,
 )
 from deepmd.tf.env import (
-    GLOBAL_ENER_FLOAT_PRECISION,
     reset_default_tf_session_config,
     tf,
 )
@@ -46,9 +45,6 @@ from deepmd.tf.utils.finetune import (
 )
 from deepmd.tf.utils.multi_init import (
     replace_model_params_with_frz_multi_model,
-)
-from deepmd.tf.utils.neighbor_stat import (
-    NeighborStat,
 )
 from deepmd.utils.data_system import (
     get_data,
@@ -296,91 +292,6 @@ def get_modifier(modi_data=None):
     else:
         modifier = None
     return modifier
-
-
-def get_rcut(jdata):
-    if jdata["model"].get("type") == "pairwise_dprc":
-        return max(
-            jdata["model"]["qm_model"]["descriptor"]["rcut"],
-            jdata["model"]["qmmm_model"]["descriptor"]["rcut"],
-        )
-    descrpt_data = jdata["model"]["descriptor"]
-    rcut_list = []
-    if descrpt_data["type"] == "hybrid":
-        for ii in descrpt_data["list"]:
-            rcut_list.append(ii["rcut"])
-    else:
-        rcut_list.append(descrpt_data["rcut"])
-    return max(rcut_list)
-
-
-def get_type_map(jdata):
-    return jdata["model"].get("type_map", None)
-
-
-def get_nbor_stat(jdata, rcut, mixed_type: bool = False):
-    # it seems that DeepmdDataSystem does not need rcut
-    # it's not clear why there is an argument...
-    # max_rcut = get_rcut(jdata)
-    max_rcut = rcut
-    type_map = get_type_map(jdata)
-
-    if type_map and len(type_map) == 0:
-        type_map = None
-    multi_task_mode = "data_dict" in jdata["training"]
-    if not multi_task_mode:
-        train_data = get_data(
-            jdata["training"]["training_data"], max_rcut, type_map, None
-        )
-        train_data.get_batch()
-    else:
-        assert (
-            type_map is not None
-        ), "Data stat in multi-task mode must have available type_map! "
-        train_data = None
-        for systems in jdata["training"]["data_dict"]:
-            tmp_data = get_data(
-                jdata["training"]["data_dict"][systems]["training_data"],
-                max_rcut,
-                type_map,
-                None,
-            )
-            tmp_data.get_batch()
-            assert tmp_data.get_type_map(), f"In multi-task mode, 'type_map.raw' must be defined in data systems {systems}! "
-            if train_data is None:
-                train_data = tmp_data
-            else:
-                train_data.system_dirs += tmp_data.system_dirs
-                train_data.data_systems += tmp_data.data_systems
-                train_data.natoms += tmp_data.natoms
-                train_data.natoms_vec += tmp_data.natoms_vec
-                train_data.default_mesh += tmp_data.default_mesh
-    data_ntypes = train_data.get_ntypes()
-    if type_map is not None:
-        map_ntypes = len(type_map)
-    else:
-        map_ntypes = data_ntypes
-    ntypes = max([map_ntypes, data_ntypes])
-
-    neistat = NeighborStat(ntypes, rcut, mixed_type=mixed_type)
-
-    min_nbor_dist, max_nbor_size = neistat.get_stat(train_data)
-
-    # moved from traier.py as duplicated
-    # TODO: this is a simple fix but we should have a clear
-    #       architecture to call neighbor stat
-    tf.constant(
-        min_nbor_dist,
-        name="train_attr/min_nbor_dist",
-        dtype=GLOBAL_ENER_FLOAT_PRECISION,
-    )
-    tf.constant(max_nbor_size, name="train_attr/max_nbor_size", dtype=tf.int32)
-    return min_nbor_dist, max_nbor_size
-
-
-def get_min_nbor_dist(jdata, rcut):
-    min_nbor_dist, _ = get_nbor_stat(jdata, rcut)
-    return min_nbor_dist
 
 
 def update_sel(jdata):

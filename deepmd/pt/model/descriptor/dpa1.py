@@ -9,6 +9,9 @@ import torch
 from deepmd.pt.model.network.network import (
     TypeEmbedNet,
 )
+from deepmd.pt.utils.update_sel import (
+    UpdateSel,
+)
 from deepmd.utils.path import (
     DPPath,
 )
@@ -193,3 +196,17 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
             g1 = torch.cat([g1, g1_inp], dim=-1)
 
         return g1, rot_mat, g2, h2, sw
+
+    @classmethod
+    def update_sel(cls, global_jdata: dict, local_jdata: dict):
+        """Update the selection and perform neighbor statistics.
+
+        Parameters
+        ----------
+        global_jdata : dict
+            The global data, containing the training section
+        local_jdata : dict
+            The local data refer to the current class
+        """
+        local_jdata_cpy = local_jdata.copy()
+        return UpdateSel().update_one_sel(global_jdata, local_jdata_cpy, True)

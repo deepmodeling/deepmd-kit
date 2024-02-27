@@ -57,6 +57,9 @@ from deepmd.tf.utils.sess import (
 from deepmd.tf.utils.tabulate import (
     DPTabulate,
 )
+from deepmd.tf.utils.update_sel import (
+    UpdateSel,
+)
 
 from .descriptor import (
     Descriptor,
@@ -1425,9 +1428,5 @@ class DescrptSeAtten(DescrptSeA):
         local_jdata : dict
             The local data refer to the current class
         """
-        from deepmd.tf.entrypoints.train import (
-            update_one_sel,
-        )
-
         local_jdata_cpy = local_jdata.copy()
-        return update_one_sel(global_jdata, local_jdata_cpy, True)
+        return UpdateSel().update_one_sel(global_jdata, local_jdata_cpy, True)
