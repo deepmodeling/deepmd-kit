@@ -107,7 +107,7 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
       torch::from_blob(nlist_data.jlist.data(),
                        {1, lmp_list.inum, max_num_neighbors}, int32_options);
   firstneigh_tensor = firstneigh.to(torch::kInt64).to(device);
-  std::cout << firstneigh_tensor <<std::endl;
+  std::cout << firstneigh_tensor << std::endl;
   bool do_atom_virial_tensor = true;
   c10::optional<torch::Tensor> optional_tensor;
   c10::Dict<c10::IValue, c10::IValue> outputs =
