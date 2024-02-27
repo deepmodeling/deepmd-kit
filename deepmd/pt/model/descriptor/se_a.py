@@ -394,7 +394,6 @@ class DescrptBlockSeA(DescriptorBlock):
             self.mean.copy_(torch.tensor(mean, device=env.DEVICE))
         self.stddev.copy_(torch.tensor(stddev, device=env.DEVICE))
 
-
     def get_stats(self) -> Dict[str, StatItem]:
         """Get the statistics of the descriptor."""
         if self.stats is None:

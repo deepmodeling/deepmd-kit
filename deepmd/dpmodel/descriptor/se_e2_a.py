@@ -3,12 +3,13 @@ import itertools
 
 import numpy as np
 
+from deepmd.env import (
+    GLOBAL_NP_FLOAT_PRECISION,
+)
 from deepmd.utils.path import (
     DPPath,
 )
-from deepmd.env import (
-    GLOBAL_NP_FLOAT_PRECISION
-)
+
 try:
     from deepmd._version import version as __version__
 except ImportError:
@@ -185,8 +186,12 @@ class DescrptSeA(NativeOP, BaseDescriptor):
             )
         self.env_mat = EnvMat(self.rcut, self.rcut_smth)
         self.nnei = np.sum(self.sel)
-        self.davg = np.zeros([self.ntypes, self.nnei, 4], dtype=PRECISION_DICT[self.precision])
-        self.dstd = np.ones([self.ntypes, self.nnei, 4], dtype=PRECISION_DICT[self.precision])
+        self.davg = np.zeros(
+            [self.ntypes, self.nnei, 4], dtype=PRECISION_DICT[self.precision]
+        )
+        self.dstd = np.ones(
+            [self.ntypes, self.nnei, 4], dtype=PRECISION_DICT[self.precision]
+        )
         self.orig_sel = self.sel
 
     def __setitem__(self, key, value):
@@ -324,7 +329,9 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         # nf x nloc x ng x ng1
         grrg = np.einsum("flid,fljd->flij", gr, gr1)
         # nf x nloc x (ng x ng1)
-        grrg = grrg.reshape(nf, nloc, ng * self.axis_neuron).astype(GLOBAL_NP_FLOAT_PRECISION)
+        grrg = grrg.reshape(nf, nloc, ng * self.axis_neuron).astype(
+            GLOBAL_NP_FLOAT_PRECISION
+        )
         return grrg, gr[..., 1:], None, None, ww
 
     def serialize(self) -> dict:

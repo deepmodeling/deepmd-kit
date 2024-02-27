@@ -16,7 +16,6 @@ from typing import (
     List,
     Optional,
 )
-from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
 
 from deepmd.dpmodel import (
     DEFAULT_PRECISION,
@@ -28,6 +27,9 @@ from deepmd.dpmodel.utils import (
     EnvMat,
     NetworkCollection,
     PairExcludeMask,
+)
+from deepmd.env import (
+    GLOBAL_NP_FLOAT_PRECISION,
 )
 
 from .base_descriptor import (
@@ -144,8 +146,12 @@ class DescrptSeR(NativeOP, BaseDescriptor):
             )
         self.env_mat = EnvMat(self.rcut, self.rcut_smth)
         self.nnei = np.sum(self.sel)
-        self.davg = np.zeros([self.ntypes, self.nnei, 1], dtype=PRECISION_DICT[self.precision])
-        self.dstd = np.ones([self.ntypes, self.nnei, 1], dtype=PRECISION_DICT[self.precision])
+        self.davg = np.zeros(
+            [self.ntypes, self.nnei, 1], dtype=PRECISION_DICT[self.precision]
+        )
+        self.dstd = np.ones(
+            [self.ntypes, self.nnei, 1], dtype=PRECISION_DICT[self.precision]
+        )
         self.orig_sel = self.sel
 
     def __setitem__(self, key, value):
