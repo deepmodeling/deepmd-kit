@@ -31,9 +31,7 @@ class SmoothTest:
         self,
     ):
         # displacement of atoms
-        epsilon = (
-            torch.finfo(torch.float32).eps if self.epsilon is None else self.epsilon
-        )
+        epsilon = 1e-5 if self.epsilon is None else self.epsilon
         # required prec. relative prec is not checked.
         rprec = 0
         aprec = 1e-5 if self.aprec is None else self.aprec
@@ -62,7 +60,6 @@ class SmoothTest:
         coord1 = torch.matmul(coord1, cell)
         coord = torch.concat([coord0, coord1], dim=0)
         spin = torch.rand([natoms, 3], dtype=dtype, device=env.DEVICE)
-
         coord0 = torch.clone(coord)
         coord1 = torch.clone(coord)
         coord1[1][0] += epsilon
@@ -223,7 +220,7 @@ class TestEnergyModelZBL(unittest.TestCase, SmoothTest):
         model_params = copy.deepcopy(model_zbl)
         self.type_split = False
         self.model = get_model(model_params).to(env.DEVICE)
-        self.epsilon, self.aprec = 1e-4, None
+        self.epsilon, self.aprec = 1e-10, None
 
 
 class TestEnergyModelSpinSeA(unittest.TestCase, SmoothTest):
