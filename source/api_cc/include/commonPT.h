@@ -19,6 +19,7 @@ struct NeighborListDataPT {
   std::vector<int*> firstneigh;
 
  public:
-  void copy_from_nlist(const InputNlist& inlist, unsigned long int& max_num_neighbors);
+  void copy_from_nlist(const InputNlist& inlist,
+                       unsigned long int& max_num_neighbors);
 };
 }  // namespace deepmd
