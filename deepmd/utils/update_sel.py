@@ -55,7 +55,7 @@ class BaseUpdateSel:
                         " of your model may get worse." % (ii, tt, dd)
                     )
         if mixed_type:
-            descriptor[sel_key] = sel = sum(sel)
+            descriptor[sel_key] = sum(sel)
         return descriptor
 
     def parse_auto_sel(self, sel):
