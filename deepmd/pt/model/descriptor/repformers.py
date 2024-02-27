@@ -11,7 +11,7 @@ from deepmd.pt.model.descriptor.descriptor import (
     DescriptorBlock,
 )
 from deepmd.pt.model.descriptor.env_mat import (
-    prod_env_mat_se_a,
+    prod_env_mat,
 )
 from deepmd.pt.model.network.network import (
     SimpleLinear,
@@ -20,7 +20,7 @@ from deepmd.pt.utils import (
     env,
 )
 from deepmd.pt.utils.env_mat_stat import (
-    EnvMatStatSeA,
+    EnvMatStatSe,
 )
 from deepmd.pt.utils.utils import (
     get_activation_fn,
@@ -101,6 +101,7 @@ class DescrptBlockRepformers(DescriptorBlock):
         self.nlayers = nlayers
         sel = [sel] if isinstance(sel, int) else sel
         self.nnei = sum(sel)
+        self.ndescrpt = self.nnei * 4  # use full descriptor.
         assert len(sel) == 1
         self.sel = sel
         self.sec = self.sel
@@ -224,7 +225,7 @@ class DescrptBlockRepformers(DescriptorBlock):
         nall = extended_coord.view(nframes, -1).shape[1] // 3
         atype = extended_atype[:, :nloc]
         # nb x nloc x nnei x 4, nb x nloc x nnei x 3, nb x nloc x nnei x 1
-        dmatrix, diff, sw = prod_env_mat_se_a(
+        dmatrix, diff, sw = prod_env_mat(
             extended_coord,
             nlist,
             atype,
@@ -282,7 +283,7 @@ class DescrptBlockRepformers(DescriptorBlock):
 
     def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
         """Update mean and stddev for descriptor elements."""
-        env_mat_stat = EnvMatStatSeA(self)
+        env_mat_stat = EnvMatStatSe(self)
         if path is not None:
             path = path / env_mat_stat.get_hash()
         env_mat_stat.load_or_compute_stats(merged, path)

@@ -14,7 +14,7 @@ from pathlib import (
 )
 
 from deepmd.pt.model.descriptor import (
-    prod_env_mat_se_a,
+    prod_env_mat,
 )
 from deepmd.pt.utils import (
     dp_random,
@@ -155,7 +155,7 @@ class TestSeA(unittest.TestCase):
             mixed_types=False,
             box=self.pt_batch["box"].to(env.DEVICE),
         )
-        my_d, _, _ = prod_env_mat_se_a(
+        my_d, _, _ = prod_env_mat(
             extended_coord,
             nlist,
             atype,
