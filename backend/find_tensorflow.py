@@ -28,7 +28,7 @@ from packaging.specifiers import (
 )
 
 
-@lru_cache()
+@lru_cache
 def find_tensorflow() -> Tuple[Optional[str], List[str]]:
     """Find TensorFlow library.
 
@@ -47,15 +47,11 @@ def find_tensorflow() -> Tuple[Optional[str], List[str]]:
     list of str
         TensorFlow requirement if not found. Empty if found.
     """
+    if os.environ.get("DP_ENABLE_TENSORFLOW", "1") == "0":
+        return None, []
     requires = []
 
     tf_spec = None
-    if os.environ.get("CIBUILDWHEEL", "0") == "1" and os.environ.get(
-        "CIBW_BUILD", ""
-    ).endswith("macosx_arm64"):
-        # cibuildwheel cross build
-        site_packages = Path(os.environ.get("RUNNER_TEMP")) / "tensorflow"
-        tf_spec = FileFinder(str(site_packages)).find_spec("tensorflow")
 
     if (tf_spec is None or not tf_spec) and os.environ.get(
         "TENSORFLOW_ROOT"
@@ -111,7 +107,7 @@ def find_tensorflow() -> Tuple[Optional[str], List[str]]:
     return tf_install_dir, requires
 
 
-@lru_cache()
+@lru_cache
 def get_tf_requirement(tf_version: str = "") -> dict:
     """Get TensorFlow requirement (CPU) when TF is not installed.
 
@@ -127,6 +123,12 @@ def get_tf_requirement(tf_version: str = "") -> dict:
     dict
         TensorFlow requirement, including cpu and gpu.
     """
+    if tf_version is None:
+        return {
+            "cpu": [],
+            "gpu": [],
+            "mpi": [],
+        }
     if tf_version == "":
         tf_version = os.environ.get("TENSORFLOW_VERSION", "")
 
@@ -189,7 +191,7 @@ def get_tf_requirement(tf_version: str = "") -> dict:
         }
 
 
-@lru_cache()
+@lru_cache
 def get_tf_version(tf_path: Union[str, Path]) -> str:
     """Get TF version from a TF Python library path.
 

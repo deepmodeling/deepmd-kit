@@ -294,7 +294,7 @@ def set_directory(path: Path):
     Examples
     --------
     >>> with set_directory("some_path"):
-    ...    do_something()
+    ...     do_something()
     """
     cwd = Path().absolute()
     path.mkdir(exist_ok=True, parents=True)
@@ -423,14 +423,14 @@ class BuildBazelisk(Build):
         self.version = version
 
     @property
-    @lru_cache()
+    @lru_cache
     def resources(self) -> Dict[str, OnlineResource]:
         return {
             "bazelisk": RESOURCES["bazelisk-" + self.version],
         }
 
     @property
-    @lru_cache()
+    @lru_cache
     def dependencies(self) -> Dict[str, Build]:
         return {}
 
@@ -449,12 +449,12 @@ class BuildNumpy(Build):
     """Build NumPy."""
 
     @property
-    @lru_cache()
+    @lru_cache
     def resources(self) -> Dict[str, OnlineResource]:
         return {}
 
     @property
-    @lru_cache()
+    @lru_cache
     def dependencies(self) -> Dict[str, Build]:
         return {}
 
@@ -481,12 +481,12 @@ class BuildCUDA(Build):
     """Find CUDA."""
 
     @property
-    @lru_cache()
+    @lru_cache
     def resources(self) -> Dict[str, OnlineResource]:
         return {}
 
     @property
-    @lru_cache()
+    @lru_cache
     def dependencies(self) -> Dict[str, Build]:
         return {}
 
@@ -536,7 +536,7 @@ class BuildCUDA(Build):
         )
 
     @property
-    @lru_cache()
+    @lru_cache
     def cuda_compute_capabilities(self):
         """Get cuda compute capabilities."""
         cuda_version = tuple(map(int, self.cuda_version.split(".")))
@@ -554,12 +554,12 @@ class BuildROCM(Build):
     """Find ROCm."""
 
     @property
-    @lru_cache()
+    @lru_cache
     def resources(self) -> Dict[str, OnlineResource]:
         return {}
 
     @property
-    @lru_cache()
+    @lru_cache
     def dependencies(self) -> Dict[str, Build]:
         return {}
 
@@ -599,14 +599,14 @@ class BuildTensorFlow(Build):
         self.enable_rocm = enable_rocm
 
     @property
-    @lru_cache()
+    @lru_cache
     def resources(self) -> Dict[str, OnlineResource]:
         return {
             "tensorflow": RESOURCES["tensorflow-" + self.version],
         }
 
     @property
-    @lru_cache()
+    @lru_cache
     def dependencies(self) -> Dict[str, Build]:
         optional_dep = {}
         if self.enable_cuda:

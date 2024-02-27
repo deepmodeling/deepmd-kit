@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
+#ifdef BUILD_TENSORFLOW
 #include "DataModifierTF.h"
 
 #include "common.h"
@@ -361,3 +362,4 @@ void DipoleChargeModifierTF::computew(
   compute(dfcorr_, dvcorr_, dcoord_, datype_, dbox, pairs, delef_, nghost,
           lmp_list);
 }
+#endif  // BUILD_TENSORFLOW

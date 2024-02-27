@@ -84,7 +84,7 @@ class DipoleChargeModifierBase {
    * @brief Get the list of sel types.
    * @return The list of sel types.
    */
-  virtual std::vector<int> sel_types() const = 0;
+  virtual const std::vector<int>& sel_types() const = 0;
 };
 
 /**
@@ -127,13 +127,13 @@ class DipoleChargeModifier {
    * @param[out] dfcorr_ The force correction on each atom.
    * @param[out] dvcorr_ The virial correction.
    * @param[in] dcoord_ The coordinates of atoms. The array should be of size
-   *natoms x 3.
-   * @param[in] datype_ The atom types. The list should contain natoms ints.
+   *nall x 3.
+   * @param[in] datype_ The atom types. The list should contain nall ints.
    * @param[in] dbox The cell of the region. The array should be of size 9.
    * @param[in] pairs The pairs of atoms. The list should contain npairs pairs
    *of ints.
    * @param[in] delef_ The electric field on each atom. The array should be of
-   *size natoms x 3.
+   *size nloc x 3.
    * @param[in] nghost The number of ghost atoms.
    * @param[in] lmp_list The neighbor list.
    **/
@@ -161,7 +161,7 @@ class DipoleChargeModifier {
    * @brief Get the list of sel types.
    * @return The list of sel types.
    */
-  std::vector<int> sel_types() const;
+  const std::vector<int>& sel_types() const;
 
  private:
   bool inited;

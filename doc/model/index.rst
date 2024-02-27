@@ -9,6 +9,7 @@ Model
    train-se-e2-r
    train-se-e3
    train-se-atten
+   dpa2
    train-hybrid
    sel
    train-energy

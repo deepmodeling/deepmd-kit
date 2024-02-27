@@ -1,4 +1,8 @@
-# Fit electronic density of states (DOS)
+# Fit electronic density of states (DOS) {{ tensorflow_icon }}
+
+:::{note}
+**Supported backends**: TensorFlow {{ tensorflow_icon }}
+:::
 
 Here we present an API to DeepDOS model, which can be used to fit electronic density of state (DOS) (which is a vector).
 

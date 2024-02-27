@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
+#ifdef BUILD_TENSORFLOW
 #include "DeepTensorTF.h"
 
 using namespace deepmd;
@@ -844,3 +845,4 @@ void DeepTensorTF::computew(std::vector<float> &global_tensor,
     atom_virial.clear();
   }
 }
+#endif
