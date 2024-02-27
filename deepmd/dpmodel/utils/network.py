@@ -20,6 +20,10 @@ from typing import (
 import h5py
 import numpy as np
 
+from deepmd.dpmodel.utils.version import (
+    check_version_compatibility,
+)
+
 try:
     from deepmd._version import version as __version__
 except ImportError:
@@ -189,6 +193,8 @@ class NativeLayer(NativeOP):
             "idt": self.idt,
         }
         return {
+            "@class": "Layer",
+            "@version": 1,
             "bias": self.b is not None,
             "use_timestep": self.idt is not None,
             "activation_function": self.activation_function,
@@ -208,6 +214,8 @@ class NativeLayer(NativeOP):
             The dict to deserialize from.
         """
         data = copy.deepcopy(data)
+        check_version_compatibility(data.pop("@version", 1), 1, 1)
+        data.pop("@class")
         variables = data.pop("@variables")
         assert variables["w"] is not None and len(variables["w"].shape) == 2
         num_in, num_out = variables["w"].shape
@@ -349,7 +357,11 @@ def make_multilayer_network(T_NetworkLayer, ModuleBase):
             dict
                 The serialized network.
             """
-            return {"layers": [layer.serialize() for layer in self.layers]}
+            return {
+                "@class": "NN",
+                "@version": 1,
+                "layers": [layer.serialize() for layer in self.layers],
+            }
 
         @classmethod
         def deserialize(cls, data: dict) -> "NN":
@@ -360,6 +372,9 @@ def make_multilayer_network(T_NetworkLayer, ModuleBase):
             data : dict
                 The dict to deserialize from.
             """
+            data = data.copy()
+            check_version_compatibility(data.pop("@version", 1), 1, 1)
+            data.pop("@class")
             return cls(data["layers"])
 
         def __getitem__(self, key):
@@ -471,6 +486,8 @@ def make_embedding_network(T_Network, T_NetworkLayer):
                 The serialized network.
             """
             return {
+                "@class": "EmbeddingNetwork",
+                "@version": 1,
                 "in_dim": self.in_dim,
                 "neuron": self.neuron.copy(),
                 "activation_function": self.activation_function,
@@ -490,6 +507,8 @@ def make_embedding_network(T_Network, T_NetworkLayer):
                 The dict to deserialize from.
             """
             data = copy.deepcopy(data)
+            check_version_compatibility(data.pop("@version", 1), 1, 1)
+            data.pop("@class")
             layers = data.pop("layers")
             obj = cls(**data)
             super(EN, obj).__init__(layers)
@@ -566,6 +585,8 @@ def make_fitting_network(T_EmbeddingNet, T_Network, T_NetworkLayer):
                 The serialized network.
             """
             return {
+                "@class": "FittingNetwork",
+                "@version": 1,
                 "in_dim": self.in_dim,
                 "out_dim": self.out_dim,
                 "neuron": self.neuron.copy(),
@@ -586,6 +607,8 @@ def make_fitting_network(T_EmbeddingNet, T_Network, T_NetworkLayer):
                 The dict to deserialize from.
             """
             data = copy.deepcopy(data)
+            check_version_compatibility(data.pop("@version", 1), 1, 1)
+            data.pop("@class")
             layers = data.pop("layers")
             obj = cls(**data)
             T_Network.__init__(obj, layers)
@@ -688,6 +711,8 @@ class NetworkCollection:
         network_type_map_inv = {v: k for k, v in self.NETWORK_TYPE_MAP.items()}
         network_type_name = network_type_map_inv[self.network_type]
         return {
+            "@class": "NetworkCollection",
+            "@version": 1,
             "ndim": self.ndim,
             "ntypes": self.ntypes,
             "network_type": network_type_name,
@@ -703,4 +728,7 @@ class NetworkCollection:
         data : dict
             The dict to deserialize from.
         """
+        data = data.copy()
+        check_version_compatibility(data.pop("@version", 1), 1, 1)
+        data.pop("@class")
         return cls(**data)
