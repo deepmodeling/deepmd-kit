@@ -238,7 +238,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
             The local data refer to the current class
         """
         local_jdata_cpy = local_jdata.copy()
-        return UpdateSel().update_one_sel(global_jdata, local_jdata_cpy, True)
+        return UpdateSel().update_one_sel(global_jdata, local_jdata_cpy, False)
 
 
 @DescriptorBlock.register("se_e2_a")

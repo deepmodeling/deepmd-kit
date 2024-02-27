@@ -32,6 +32,9 @@ from deepmd.main import (
 from deepmd.pt.infer import (
     inference,
 )
+from deepmd.pt.model.model import (
+    BaseModel,
+)
 from deepmd.pt.train import (
     training,
 )
@@ -236,6 +239,12 @@ def train(FLAGS):
     SummaryPrinter()()
     with open(FLAGS.INPUT) as fin:
         config = json.load(fin)
+    if not FLAGS.skip_neighbor_stat:
+        log.info(
+            "Calculate neighbor statistics... (add --skip-neighbor-stat to skip this step)"
+        )
+        config["model"] = BaseModel.update_sel(config, config["model"])
+
     trainer = get_trainer(
         config,
         FLAGS.init_model,

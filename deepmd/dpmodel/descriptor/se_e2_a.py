@@ -3,6 +3,9 @@ import itertools
 
 import numpy as np
 
+from deepmd.dpmodel.utils.update_sel import (
+    UpdateSel,
+)
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
 )
@@ -383,3 +386,17 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         obj.embeddings = NetworkCollection.deserialize(embeddings)
         obj.env_mat = EnvMat.deserialize(env_mat)
         return obj
+
+    @classmethod
+    def update_sel(cls, global_jdata: dict, local_jdata: dict):
+        """Update the selection and perform neighbor statistics.
+
+        Parameters
+        ----------
+        global_jdata : dict
+            The global data, containing the training section
+        local_jdata : dict
+            The local data refer to the current class
+        """
+        local_jdata_cpy = local_jdata.copy()
+        return UpdateSel().update_one_sel(global_jdata, local_jdata_cpy, False)
