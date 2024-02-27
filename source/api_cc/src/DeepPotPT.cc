@@ -87,8 +87,10 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
   std::vector<VALUETYPE> coord_wrapped = coord;
   int natoms = atype.size();
   auto options = torch::TensorOptions().dtype(torch::kFloat64);
+  torch::ScalarType floatType = torch::kFloat64;
   if (std::is_same_v<VALUETYPE, float>) {
     options = torch::TensorOptions().dtype(torch::kFloat32);
+    floatType = torch::kFloat32;
   }
   auto int_options = torch::TensorOptions().dtype(torch::kInt64);
   auto int32_options = torch::TensorOptions().dtype(torch::kInt32);
@@ -120,24 +122,22 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
   c10::IValue atom_energy_ = outputs.at("atom_energy");
   torch::Tensor flat_energy_ = energy_.toTensor().view({-1});
   torch::Tensor cpu_energy_ = flat_energy_.to(torch::kCPU);
-  ener.assign(cpu_energy_.data_ptr<VALUETYPE>(),
-              cpu_energy_.data_ptr<VALUETYPE>() + cpu_energy_.numel());
-  torch::Tensor flat_atom_energy_ = atom_energy_.toTensor().view({-1});
+  ener.assign(cpu_energy_.data_ptr<ENERGYTYPE>(),
+              cpu_energy_.data_ptr<ENERGYTYPE>() + cpu_energy_.numel());
+  torch::Tensor flat_atom_energy_ = atom_energy_.toTensor().view({-1}).to(floatType);
   torch::Tensor cpu_atom_energy_ = flat_atom_energy_.to(torch::kCPU);
   atom_energy.assign(
       cpu_atom_energy_.data_ptr<VALUETYPE>(),
       cpu_atom_energy_.data_ptr<VALUETYPE>() + cpu_atom_energy_.numel());
-  torch::Tensor flat_force_ = force_.toTensor().view({-1});
+  torch::Tensor flat_force_ = force_.toTensor().view({-1}).to(floatType);
   torch::Tensor cpu_force_ = flat_force_.to(torch::kCPU);
   force.assign(cpu_force_.data_ptr<VALUETYPE>(),
                cpu_force_.data_ptr<VALUETYPE>() + cpu_force_.numel());
-
-  torch::Tensor flat_virial_ = virial_.toTensor().view({-1});
+  torch::Tensor flat_virial_ = virial_.toTensor().view({-1}).to(floatType);
   torch::Tensor cpu_virial_ = flat_virial_.to(torch::kCPU);
   virial.assign(cpu_virial_.data_ptr<VALUETYPE>(),
                 cpu_virial_.data_ptr<VALUETYPE>() + cpu_virial_.numel());
-
-  torch::Tensor flat_atom_virial_ = atom_virial_.toTensor().view({-1});
+  torch::Tensor flat_atom_virial_ = atom_virial_.toTensor().view({-1}).to(floatType);
   torch::Tensor cpu_atom_virial_ = flat_atom_virial_.to(torch::kCPU);
   atom_virial.assign(
       cpu_atom_virial_.data_ptr<VALUETYPE>(),
@@ -203,8 +203,10 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
   std::vector<VALUETYPE> coord_wrapped = coord;
   int natoms = atype.size();
   auto options = torch::TensorOptions().dtype(torch::kFloat64);
+  torch::ScalarType floatType = torch::kFloat64;
   if (std::is_same_v<VALUETYPE, float>) {
     options = torch::TensorOptions().dtype(torch::kFloat32);
+    floatType = torch::kFloat32;
   }
   auto int_options = torch::TensorOptions().dtype(torch::kInt64);
   std::vector<torch::jit::IValue> inputs;
@@ -235,22 +237,22 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
   c10::IValue atom_energy_ = outputs.at("atom_energy");
   torch::Tensor flat_energy_ = energy_.toTensor().view({-1});
   torch::Tensor cpu_energy_ = flat_energy_.to(torch::kCPU);
-  ener.assign(cpu_energy_.data_ptr<VALUETYPE>(),
-              cpu_energy_.data_ptr<VALUETYPE>() + cpu_energy_.numel());
-  torch::Tensor flat_atom_energy_ = atom_energy_.toTensor().view({-1});
+  ener.assign(cpu_energy_.data_ptr<ENERGYTYPE>(),
+              cpu_energy_.data_ptr<ENERGYTYPE>() + cpu_energy_.numel());
+  torch::Tensor flat_atom_energy_ = atom_energy_.toTensor().view({-1}).to(floatType);
   torch::Tensor cpu_atom_energy_ = flat_atom_energy_.to(torch::kCPU);
   atom_energy.assign(
       cpu_atom_energy_.data_ptr<VALUETYPE>(),
       cpu_atom_energy_.data_ptr<VALUETYPE>() + cpu_atom_energy_.numel());
-  torch::Tensor flat_force_ = force_.toTensor().view({-1});
+  torch::Tensor flat_force_ = force_.toTensor().view({-1}).to(floatType);
   torch::Tensor cpu_force_ = flat_force_.to(torch::kCPU);
   force.assign(cpu_force_.data_ptr<VALUETYPE>(),
                cpu_force_.data_ptr<VALUETYPE>() + cpu_force_.numel());
-  torch::Tensor flat_virial_ = virial_.toTensor().view({-1});
+  torch::Tensor flat_virial_ = virial_.toTensor().view({-1}).to(floatType);
   torch::Tensor cpu_virial_ = flat_virial_.to(torch::kCPU);
   virial.assign(cpu_virial_.data_ptr<VALUETYPE>(),
                 cpu_virial_.data_ptr<VALUETYPE>() + cpu_virial_.numel());
-  torch::Tensor flat_atom_virial_ = atom_virial_.toTensor().view({-1});
+  torch::Tensor flat_atom_virial_ = atom_virial_.toTensor().view({-1}).to(floatType);
   torch::Tensor cpu_atom_virial_ = flat_atom_virial_.to(torch::kCPU);
   atom_virial.assign(
       cpu_atom_virial_.data_ptr<VALUETYPE>(),
