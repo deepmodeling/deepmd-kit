@@ -16,6 +16,7 @@ from typing import (
     List,
     Optional,
 )
+from deepmd.env import GLOBAL_NP_FLOAT_PRECISION
 
 from deepmd.dpmodel import (
     DEFAULT_PRECISION,
@@ -37,45 +38,8 @@ from .base_descriptor import (
 @BaseDescriptor.register("se_e2_r")
 @BaseDescriptor.register("se_r")
 class DescrptSeR(NativeOP, BaseDescriptor):
-    r"""DeepPot-SE constructed from all information (both angular and radial) of
-    atomic configurations. The embedding takes the distance between atoms as input.
+    r"""DeepPot-SE_R constructed from only the radial imformation of atomic configurations.
 
-    The descriptor :math:`\mathcal{D}^i \in \mathcal{R}^{M_1 \times M_2}` is given by [1]_
-
-    .. math::
-        \mathcal{D}^i = (\mathcal{G}^i)^T \mathcal{R}^i (\mathcal{R}^i)^T \mathcal{G}^i_<
-
-    where :math:`\mathcal{R}^i \in \mathbb{R}^{N \times 4}` is the coordinate
-    matrix, and each row of :math:`\mathcal{R}^i` can be constructed as follows
-
-    .. math::
-        (\mathcal{R}^i)_j = [
-        \begin{array}{c}
-            s(r_{ji}) & \frac{s(r_{ji})x_{ji}}{r_{ji}} & \frac{s(r_{ji})y_{ji}}{r_{ji}} & \frac{s(r_{ji})z_{ji}}{r_{ji}}
-        \end{array}
-        ]
-
-    where :math:`\mathbf{R}_{ji}=\mathbf{R}_j-\mathbf{R}_i = (x_{ji}, y_{ji}, z_{ji})` is
-    the relative coordinate and :math:`r_{ji}=\lVert \mathbf{R}_{ji} \lVert` is its norm.
-    The switching function :math:`s(r)` is defined as:
-
-    .. math::
-        s(r)=
-        \begin{cases}
-        \frac{1}{r}, & r<r_s \\
-        \frac{1}{r} \{ {(\frac{r - r_s}{ r_c - r_s})}^3 (-6 {(\frac{r - r_s}{ r_c - r_s})}^2 +15 \frac{r - r_s}{ r_c - r_s} -10) +1 \}, & r_s \leq r<r_c \\
-        0, & r \geq r_c
-        \end{cases}
-
-    Each row of the embedding matrix  :math:`\mathcal{G}^i \in \mathbb{R}^{N \times M_1}` consists of outputs
-    of a embedding network :math:`\mathcal{N}` of :math:`s(r_{ji})`:
-
-    .. math::
-        (\mathcal{G}^i)_j = \mathcal{N}(s(r_{ji}))
-
-    :math:`\mathcal{G}^i_< \in \mathbb{R}^{N \times M_2}` takes first :math:`M_2` columns of
-    :math:`\mathcal{G}^i`. The equation of embedding network :math:`\mathcal{N}` can be found at
-    :meth:`deepmd.tf.utils.network.embedding_net`.
 
     Parameters
     ----------
@@ -87,8 +51,6 @@ class DescrptSeR(NativeOP, BaseDescriptor):
             sel[i] specifies the maxmum number of type i atoms in the cut-off radius
     neuron : list[int]
             Number of neurons in each hidden layers of the embedding net :math:`\mathcal{N}`
-    axis_neuron
-            Number of the axis neuron :math:`M_2` (number of columns of the sub-matrix of the embedding matrix)
     resnet_dt
             Time-step `dt` in the resnet construction:
             y = x + dt * \phi (Wx + b)
@@ -182,8 +144,8 @@ class DescrptSeR(NativeOP, BaseDescriptor):
             )
         self.env_mat = EnvMat(self.rcut, self.rcut_smth)
         self.nnei = np.sum(self.sel)
-        self.davg = np.zeros([self.ntypes, self.nnei, 1])
-        self.dstd = np.ones([self.ntypes, self.nnei, 1])
+        self.davg = np.zeros([self.ntypes, self.nnei, 1], dtype=PRECISION_DICT[self.precision])
+        self.dstd = np.ones([self.ntypes, self.nnei, 1], dtype=PRECISION_DICT[self.precision])
         self.orig_sel = self.sel
 
     def __setitem__(self, key, value):
@@ -293,7 +255,7 @@ class DescrptSeR(NativeOP, BaseDescriptor):
         sec = np.append([0], np.cumsum(self.sel))
 
         ng = self.neuron[-1]
-        xyz_scatter = np.zeros([nf, nloc, ng])
+        xyz_scatter = np.zeros([nf, nloc, ng], dtype=PRECISION_DICT[self.precision])
         exclude_mask = self.emask.build_type_exclude_mask(nlist, atype_ext)
         for tt in range(self.ntypes):
             mm = exclude_mask[:, :, sec[tt] : sec[tt + 1]]
@@ -306,7 +268,7 @@ class DescrptSeR(NativeOP, BaseDescriptor):
 
         res_rescale = 1.0 / 10.0
         res = xyz_scatter * res_rescale
-        res = res.reshape(nf, nloc, -1)
+        res = res.reshape(nf, nloc, -1).astype(GLOBAL_NP_FLOAT_PRECISION)
         return res, None, None, None, ww
 
     def serialize(self) -> dict:

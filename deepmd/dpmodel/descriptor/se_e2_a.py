@@ -6,7 +6,9 @@ import numpy as np
 from deepmd.utils.path import (
     DPPath,
 )
-
+from deepmd.env import (
+    GLOBAL_NP_FLOAT_PRECISION
+)
 try:
     from deepmd._version import version as __version__
 except ImportError:
@@ -183,8 +185,8 @@ class DescrptSeA(NativeOP, BaseDescriptor):
             )
         self.env_mat = EnvMat(self.rcut, self.rcut_smth)
         self.nnei = np.sum(self.sel)
-        self.davg = np.zeros([self.ntypes, self.nnei, 4])
-        self.dstd = np.ones([self.ntypes, self.nnei, 4])
+        self.davg = np.zeros([self.ntypes, self.nnei, 4], dtype=PRECISION_DICT[self.precision])
+        self.dstd = np.ones([self.ntypes, self.nnei, 4], dtype=PRECISION_DICT[self.precision])
         self.orig_sel = self.sel
 
     def __setitem__(self, key, value):
@@ -292,7 +294,7 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         sec = np.append([0], np.cumsum(self.sel))
 
         ng = self.neuron[-1]
-        gr = np.zeros([nf * nloc, ng, 4])
+        gr = np.zeros([nf * nloc, ng, 4], dtype=PRECISION_DICT[self.precision])
         exclude_mask = self.emask.build_type_exclude_mask(nlist, atype_ext)
         # merge nf and nloc axis, so for type_one_side == False,
         # we don't require atype is the same in all frames
@@ -322,7 +324,7 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         # nf x nloc x ng x ng1
         grrg = np.einsum("flid,fljd->flij", gr, gr1)
         # nf x nloc x (ng x ng1)
-        grrg = grrg.reshape(nf, nloc, ng * self.axis_neuron)
+        grrg = grrg.reshape(nf, nloc, ng * self.axis_neuron).astype(GLOBAL_NP_FLOAT_PRECISION)
         return grrg, gr[..., 1:], None, None, ww
 
     def serialize(self) -> dict:

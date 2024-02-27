@@ -156,9 +156,6 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
         if not self.set_davg_zero:
             self.mean.copy_(torch.tensor(mean, device=env.DEVICE))
         self.stddev.copy_(torch.tensor(stddev, device=env.DEVICE))
-        if not self.set_davg_zero:
-            self.mean.copy_(torch.tensor(mean, device=env.DEVICE))
-        self.stddev.copy_(torch.tensor(stddev, device=env.DEVICE))
 
     def get_stats(self) -> Dict[str, StatItem]:
         """Get the statistics of the descriptor."""
@@ -317,27 +314,3 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
         obj["dstd"] = t_cvt(variables["dstd"])
         obj.filter_layers = NetworkCollection.deserialize(embeddings)
         return obj
-
-
-def analyze_descrpt(matrix, ndescrpt, natoms):
-    """Collect avg, square avg and count of descriptors in a batch."""
-    ntypes = natoms.shape[1] - 2
-    start_index = 0
-    sysr = []
-    sysn = []
-    sysr2 = []
-    for type_i in range(ntypes):
-        end_index = start_index + natoms[0, 2 + type_i]
-        dd = matrix[:, start_index:end_index]  # all descriptors for this element
-        start_index = end_index
-        dd = np.reshape(
-            dd, [-1, 1]
-        )  # Shape is [nframes*natoms[2+type_id]*self.nnei, 1]
-        ddr = dd[:, :1]
-        sumr = np.sum(ddr)
-        sumn = dd.shape[0]  # Value is nframes*natoms[2+type_id]*self.nnei
-        sumr2 = np.sum(np.multiply(ddr, ddr))
-        sysr.append(sumr)
-        sysn.append(sumn)
-        sysr2.append(sumr2)
-    return sysr, sysr2, sysn
