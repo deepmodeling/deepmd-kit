@@ -396,6 +396,15 @@ def make_multilayer_network(T_NetworkLayer, ModuleBase):
                 x = layer(x)
             return x
 
+        def clear(self):
+            """Clear the network parameters to zero."""
+            for layer in self.layers:
+                layer.w.fill(0.0)
+                if layer.b is not None:
+                    layer.b.fill(0.0)
+                if layer.idt is not None:
+                    layer.idt.fill(0.0)
+
     return NN
 
 

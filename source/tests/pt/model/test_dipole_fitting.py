@@ -30,6 +30,7 @@ from deepmd.pt.utils.nlist import (
 )
 from deepmd.pt.utils.utils import (
     to_numpy_array,
+    to_torch_tensor,
 )
 
 from .test_env_mat import (
@@ -298,10 +299,10 @@ class TestDipoleModel(unittest.TestCase):
         self.rcut_smth = 0.5
         self.sel = [46, 92, 4]
         self.nf = 1
-        self.coord = 2 * torch.rand([self.natoms, 3], dtype=dtype, device="cpu")
-        cell = torch.rand([3, 3], dtype=dtype, device="cpu")
-        self.cell = (cell + cell.T) + 5.0 * torch.eye(3, device="cpu")
-        self.atype = torch.IntTensor([0, 0, 0, 1, 1], device="cpu")
+        self.coord = 2 * torch.rand([self.natoms, 3], dtype=dtype, device=env.DEVICE)
+        cell = torch.rand([3, 3], dtype=dtype, device=env.DEVICE)
+        self.cell = (cell + cell.T) + 5.0 * torch.eye(3, device=env.DEVICE)
+        self.atype = torch.IntTensor([0, 0, 0, 1, 1], device="cpu").to(env.DEVICE)
         self.dd0 = DescrptSeA(self.rcut, self.rcut_smth, self.sel).to(env.DEVICE)
         self.ft0 = DipoleFittingNet(
             "dipole",
@@ -322,17 +323,26 @@ class TestDipoleModel(unittest.TestCase):
         atype = self.atype.view(self.nf, self.natoms)
 
         def ff(coord, atype):
-            return self.model(coord, atype)["global_dipole"].detach().cpu().numpy()
+            return (
+                self.model(to_torch_tensor(coord), to_torch_tensor(atype))[
+                    "global_dipole"
+                ]
+                .detach()
+                .cpu()
+                .numpy()
+            )
 
-        fdf = -finite_difference(ff, self.coord, atype, delta=delta)
+        fdf = -finite_difference(
+            ff, to_numpy_array(self.coord), to_numpy_array(atype), delta=delta
+        )
         rff = self.model(self.coord, atype)["force"].detach().cpu().numpy()
 
         np.testing.assert_almost_equal(fdf, rff.transpose(0, 2, 1, 3), decimal=places)
 
     def test_deepdipole_infer(self):
-        atype = self.atype.view(self.nf, self.natoms)
-        coord = self.coord.reshape(1, 5, 3)
-        cell = self.cell.reshape(1, 9)
+        atype = to_numpy_array(self.atype.view(self.nf, self.natoms))
+        coord = to_numpy_array(self.coord.reshape(1, 5, 3))
+        cell = to_numpy_array(self.cell.reshape(1, 9))
         jit_md = torch.jit.script(self.model)
         torch.jit.save(jit_md, self.file_path)
         load_md = DeepDipole(self.file_path)

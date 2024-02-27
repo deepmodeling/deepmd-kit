@@ -535,7 +535,7 @@ class GeneralFitting(Fitting):
         outs = torch.zeros(
             (nf, nloc, net_dim_out),
             dtype=env.GLOBAL_PT_FLOAT_PRECISION,
-            device=env.DEVICE,
+            device=descriptor.device,
         )  # jit assertion
         if self.old_impl:
             assert self.filter_layers_old is not None
