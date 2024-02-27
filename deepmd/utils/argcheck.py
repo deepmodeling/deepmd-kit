@@ -302,7 +302,7 @@ def descrpt_se_a_tpe_args():
     ]
 
 
-@descrpt_args_plugin.register("se_e2_r", alias=["se_r"], doc=doc_only_tf_supported)
+@descrpt_args_plugin.register("se_e2_r", alias=["se_r"])
 def descrpt_se_r_args():
     doc_sel = 'This parameter set the number of selected neighbors for each type of atom. It can be:\n\n\
     - `List[int]`. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius. It is noted that the total sel value must be less than 4096 in a GPU environment.\n\n\
