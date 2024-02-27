@@ -17,8 +17,7 @@ void NeighborListDataPT::copy_from_nlist(const InputNlist& inlist,
     int jnum = inlist.numneigh[ii];
     numneigh[ii] = inlist.numneigh[ii];
     unsigned long start_loc = ii * max_num_neighbors;
-    memcpy(&jlist[start_loc], inlist.firstneigh[ii],
-           jnum * sizeof(int));
+    memcpy(&jlist[start_loc], inlist.firstneigh[ii], jnum * sizeof(int));
   }
 }
 #endif
