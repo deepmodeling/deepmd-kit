@@ -1,4 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import itertools
+
 import numpy as np
 
 from deepmd.utils.path import (
@@ -144,8 +146,6 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         seed: Optional[int] = None,
     ) -> None:
         ## seed, uniform_seed, multi_task, not included.
-        if not type_one_side:
-            raise NotImplementedError("type_one_side == False not implemented")
         if spin is not None:
             raise NotImplementedError("spin is not implemented")
 
@@ -171,10 +171,10 @@ class DescrptSeA(NativeOP, BaseDescriptor):
             ndim=(1 if self.type_one_side else 2),
             network_type="embedding_network",
         )
-        if not self.type_one_side:
-            raise NotImplementedError("type_one_side == False not implemented")
-        for ii in range(self.ntypes):
-            self.embeddings[(ii,)] = EmbeddingNet(
+        for embedding_idx in itertools.product(
+            range(self.ntypes), repeat=self.embeddings.ndim
+        ):
+            self.embeddings[embedding_idx] = EmbeddingNet(
                 in_dim,
                 self.neuron,
                 self.activation_function,
@@ -241,12 +241,12 @@ class DescrptSeA(NativeOP, BaseDescriptor):
     def cal_g(
         self,
         ss,
-        ll,
+        embedding_idx,
     ):
-        nf, nloc, nnei = ss.shape[0:3]
-        ss = ss.reshape(nf, nloc, nnei, 1)
-        # nf x nloc x nnei x ng
-        gg = self.embeddings[(ll,)].call(ss)
+        nf_times_nloc, nnei = ss.shape[0:2]
+        ss = ss.reshape(nf_times_nloc, nnei, 1)
+        # (nf x nloc) x nnei x ng
+        gg = self.embeddings[embedding_idx].call(ss)
         return gg
 
     def call(
@@ -292,16 +292,30 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         sec = np.append([0], np.cumsum(self.sel))
 
         ng = self.neuron[-1]
-        gr = np.zeros([nf, nloc, ng, 4])
+        gr = np.zeros([nf * nloc, ng, 4])
         exclude_mask = self.emask.build_type_exclude_mask(nlist, atype_ext)
-        for tt in range(self.ntypes):
-            mm = exclude_mask[:, :, sec[tt] : sec[tt + 1]]
-            tr = rr[:, :, sec[tt] : sec[tt + 1], :]
-            tr = tr * mm[:, :, :, None]
+        # merge nf and nloc axis, so for type_one_side == False,
+        # we don't require atype is the same in all frames
+        exclude_mask = exclude_mask.reshape(nf * nloc, nnei)
+        rr = rr.reshape(nf * nloc, nnei, 4)
+
+        for embedding_idx in itertools.product(
+            range(self.ntypes), repeat=self.embeddings.ndim
+        ):
+            if self.type_one_side:
+                (tt,) = embedding_idx
+                ti_mask = np.s_[:]
+            else:
+                ti, tt = embedding_idx
+                ti_mask = atype_ext[:, :nloc].ravel() == ti
+            mm = exclude_mask[ti_mask, sec[tt] : sec[tt + 1]]
+            tr = rr[ti_mask, sec[tt] : sec[tt + 1], :]
+            tr = tr * mm[:, :, None]
             ss = tr[..., 0:1]
-            gg = self.cal_g(ss, tt)
-            # nf x nloc x ng x 4
-            gr += np.einsum("flni,flnj->flij", gg, tr)
+            gg = self.cal_g(ss, embedding_idx)
+            gr_tmp = np.einsum("lni,lnj->lij", gg, tr)
+            gr[ti_mask] += gr_tmp
+        gr = gr.reshape(nf, nloc, ng, 4)
         # nf x nloc x ng x 4
         gr /= self.nnei
         gr1 = gr[:, :, : self.axis_neuron, :]
@@ -313,6 +327,12 @@ class DescrptSeA(NativeOP, BaseDescriptor):
 
     def serialize(self) -> dict:
         """Serialize the descriptor to dict."""
+        if not self.type_one_side and self.exclude_types:
+            for embedding_idx in itertools.product(range(self.ntypes), repeat=2):
+                # not actually used; to match serilization data from TF to pass the test
+                if embedding_idx in self.emask:
+                    self.embeddings[embedding_idx].clear()
+
         return {
             "@class": "Descriptor",
             "type": "se_e2_a",
