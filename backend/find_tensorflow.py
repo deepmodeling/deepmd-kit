@@ -128,6 +128,11 @@ def get_tf_requirement(tf_version: str = "") -> dict:
     extra_select = {}
     if not (tf_version == "" or tf_version in SpecifierSet(">=2.12", prereleases=True)):
         extra_requires.append("protobuf<3.20")
+    # keras 3 is not compatible with tf.compat.v1
+    if tf_version == "" or tf_version in SpecifierSet(">=2.15.0rc0", prereleases=True):
+        extra_requires.append("tf-keras; python_version>='3.9'")
+        # only TF>=2.16 is compatible with Python 3.12
+        extra_requires.append("tf-keras>=2.16.0rc0; python_version>='3.12'")
     if tf_version == "" or tf_version in SpecifierSet(">=1.15", prereleases=True):
         extra_select["mpi"] = [
             "horovod",
