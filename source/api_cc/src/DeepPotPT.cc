@@ -220,9 +220,12 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
   at::Tensor atype_Tensor =
       torch::from_blob(atype_64.data(), {1, natoms}, int_options).to(device);
   inputs.push_back(atype_Tensor);
-  at::Tensor box_Tensor =
-      torch::from_blob(const_cast<VALUETYPE*>(box.data()), {1, 9}, options)
+  c10::optional<torch::Tensor> box_Tensor;
+  if(!box.empty())
+  {
+    box_Tensor = torch::from_blob(const_cast<VALUETYPE*>(box.data()), {1, 9}, options)
           .to(device);
+  }
   inputs.push_back(box_Tensor);
   c10::optional<torch::Tensor> fparam_tensor;
   inputs.push_back(fparam_tensor);
