@@ -143,6 +143,7 @@ class TestSeA(CommonTest, DescriptorTest, unittest.TestCase):
             type_one_side,
             excluded_types,
             precision,
+            env_protection,
         ) = self.param
         if not type_one_side:
             idx = np.argsort(self.atype)
