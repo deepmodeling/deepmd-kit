@@ -156,7 +156,3 @@ class BaseModel(make_base_model()):
     deepmd.dpmodel.model.base_model.BaseBaseModel
         Backend-independent BaseModel class.
     """
-
-    def get_model_def_script(self) -> str:
-        # TODO: implement this method; saved to model
-        raise NotImplementedError
