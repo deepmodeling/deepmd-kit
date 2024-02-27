@@ -293,19 +293,19 @@ class DescrptSeR(NativeOP, BaseDescriptor):
         sec = np.append([0], np.cumsum(self.sel))
 
         ng = self.neuron[-1]
-        gr = np.zeros([nf, nloc, ng, 1])
+        xyz_scatter = np.zeros([nf, nloc, ng])
         exclude_mask = self.emask.build_type_exclude_mask(nlist, atype_ext)
         for tt in range(self.ntypes):
             mm = exclude_mask[:, :, sec[tt] : sec[tt + 1]]
             tr = rr[:, :, sec[tt] : sec[tt + 1], :]
             tr = tr * mm[:, :, :, None]
-            ss = tr[..., 0:1]
-            gg = self.cal_g(ss, tt)
+            gg = self.cal_g(tr, tt)
+            gg = np.mean(gg, axis=2)
             # nf x nloc x ng x 1
-            gr += np.einsum("flni,flnj->flij", gg, tr)
+            xyz_scatter += gg
 
-        res_rescale = 1.0 / 5.0
-        res = gr * res_rescale
+        res_rescale = 1.0 / 10.0
+        res = xyz_scatter * res_rescale
         res = res.reshape(nf, nloc, -1)
         return res, None, None, None, ww
 

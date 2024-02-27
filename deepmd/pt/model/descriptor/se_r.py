@@ -10,8 +10,10 @@ import numpy as np
 import torch
 
 from deepmd.dpmodel.utils import EnvMat as DPEnvMat
+from .base_descriptor import (
+    BaseDescriptor
+)
 from deepmd.pt.model.descriptor import (
-    Descriptor,
     prod_env_mat,
 )
 from deepmd.pt.model.network.mlp import (
@@ -39,9 +41,9 @@ from deepmd.utils.path import (
 )
 
 
-@Descriptor.register("se_e2_r")
-@Descriptor.register("se_r")
-class DescrptSeR(Descriptor):
+@BaseDescriptor.register("se_e2_r")
+@BaseDescriptor.register("se_r")
+class DescrptSeR(BaseDescriptor, torch.nn.Module):
     def __init__(
         self,
         rcut,
@@ -181,25 +183,6 @@ class DescrptSeR(Descriptor):
         else:
             raise KeyError(key)
 
-    @classmethod
-    def get_data_process_key(cls, config):
-        """
-        Get the keys for the data preprocess.
-        Usually need the information of rcut and sel.
-        TODO Need to be deprecated when the dataloader has been cleaned up.
-        """
-        descrpt_type = config["type"]
-        assert descrpt_type in ["se_e2_r"]
-        return {"sel": config["sel"], "rcut": config["rcut"]}
-
-    @property
-    def data_stat_key(self):
-        """
-        Get the keys for the data statistic of the descriptor.
-        Return a list of statistic names needed, such as "sumr", "sumr2" or "sumn".
-        """
-        return ["sumr", "sumn", "sumr2"]
-
     def forward(
         self,
         coord_ext: torch.Tensor,
@@ -266,17 +249,15 @@ class DescrptSeR(Descriptor):
             # nfnl x nt
             mm = exclude_mask[:, self.sec[ii] : self.sec[ii + 1]]
             # nfnl x nt x 1
-            rr = dmatrix[:, self.sec[ii] : self.sec[ii + 1], :]
-            rr = rr * mm[:, :, None]
-            ss = rr[:, :, :1]
+            ss = dmatrix[:, self.sec[ii] : self.sec[ii + 1], :]
+            ss = ss * mm[:, :, None]
             # nfnl x nt x ng
             gg = ll.forward(ss)
-            # nfnl x 1 x ng
-            gr = torch.matmul(rr.permute(0, 2, 1), gg)
-            xyz_scatter += gr
+            gg = torch.mean(gg, dim=1).unsqueeze(1)
+            xyz_scatter += gg
 
-        res_rescale = 1.0 / 5.0
-        result = torch.mean(xyz_scatter, dim=1) * res_rescale
+        res_rescale = 1.0 / 10.0
+        result = xyz_scatter * res_rescale
         result = result.view(-1, nloc, self.filter_neuron[-1])
         return (
             result.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION),
