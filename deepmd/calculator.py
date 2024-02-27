@@ -19,8 +19,8 @@ from ase.calculators.calculator import (
     all_changes,
 )
 
-from deepmd import (
-    DeepPotential,
+from deepmd.infer import (
+    DeepPot,
 )
 
 if TYPE_CHECKING:
@@ -53,7 +53,7 @@ class DP(Calculator):
     Compute potential energy
 
     >>> from ase import Atoms
-    >>> from deepmd.calculator import DP
+    >>> from deepmd.tf.calculator import DP
     >>> water = Atoms('H2O',
     >>>             positions=[(0.7601, 1.9270, 1),
     >>>                        (1.9575, 1, 1),
@@ -89,7 +89,7 @@ class DP(Calculator):
         **kwargs,
     ) -> None:
         Calculator.__init__(self, label=label, **kwargs)
-        self.dp = DeepPotential(str(Path(model).resolve()), neighbor_list=neighbor_list)
+        self.dp = DeepPot(str(Path(model).resolve()), neighbor_list=neighbor_list)
         if type_dict:
             self.type_dict = type_dict
         else:

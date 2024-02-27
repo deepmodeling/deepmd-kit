@@ -1,4 +1,8 @@
-# Compress a model
+# Compress a model {{ tensorflow_icon }}
+
+:::{note}
+**Supported backends**: TensorFlow {{ tensorflow_icon }}
+:::
 
 ## Theory
 

@@ -10,15 +10,11 @@ import numpy as np
 from deepmd.common import (
     expand_sys_str,
 )
-
-from ..utils.batch_size import (
-    AutoBatchSize,
-)
-from ..utils.data import (
-    DeepmdData,
-)
-from .deep_pot import (
+from deepmd.infer.deep_pot import (
     DeepPot,
+)
+from deepmd.utils.data import (
+    DeepmdData,
 )
 
 try:
@@ -297,12 +293,12 @@ def calc_model_devi(
 
     Examples
     --------
-    >>> from deepmd.infer import calc_model_devi
-    >>> from deepmd.infer import DeepPot as DP
+    >>> from deepmd.tf.infer import calc_model_devi
+    >>> from deepmd.tf.infer import DeepPot as DP
     >>> import numpy as np
-    >>> coord = np.array([[1,0,0], [0,0,1.5], [1,0,3]]).reshape([1, -1])
+    >>> coord = np.array([[1, 0, 0], [0, 0, 1.5], [1, 0, 3]]).reshape([1, -1])
     >>> cell = np.diag(10 * np.ones(3)).reshape([1, -1])
-    >>> atype = [1,0,1]
+    >>> atype = [1, 0, 1]
     >>> graphs = [DP("graph.000.pb"), DP("graph.001.pb")]
     >>> model_devi = calc_model_devi(coord, cell, atype, graphs)
     """
@@ -396,9 +392,8 @@ def make_model_devi(
     **kwargs
         Arbitrary keyword arguments.
     """
-    auto_batch_size = AutoBatchSize()
     # init models
-    dp_models = [DeepPot(model, auto_batch_size=auto_batch_size) for model in models]
+    dp_models = [DeepPot(model, auto_batch_size=True) for model in models]
 
     # check type maps
     tmaps = [dp.get_type_map() for dp in dp_models]

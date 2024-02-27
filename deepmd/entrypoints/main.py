@@ -1,47 +1,41 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""DeePMD-Kit entry point module."""
+"""Common entrypoints."""
 
 import argparse
 from pathlib import (
     Path,
 )
-from typing import (
-    List,
-    Optional,
-    Union,
-)
 
-from deepmd.common import (
-    clear_session,
+from deepmd.backend.backend import (
+    Backend,
 )
-from deepmd.entrypoints import (
-    compress,
-    convert,
+from deepmd.backend.suffix import (
+    format_model_suffix,
+)
+from deepmd.entrypoints.convert_backend import (
+    convert_backend,
+)
+from deepmd.entrypoints.doc import (
     doc_train_input,
-    freeze,
-    make_model_devi,
-    neighbor_stat,
-    start_dpgui,
-    test,
-    train_dp,
-    transfer,
 )
-from deepmd.loggers import (
+from deepmd.entrypoints.gui import (
+    start_dpgui,
+)
+from deepmd.entrypoints.neighbor_stat import (
+    neighbor_stat,
+)
+from deepmd.entrypoints.test import (
+    test,
+)
+from deepmd.infer.model_devi import (
+    make_model_devi,
+)
+from deepmd.loggers.loggers import (
     set_log_handles,
 )
-from deepmd.nvnmd.entrypoints.train import (
-    train_nvnmd,
-)
-from deepmd_utils.main import (
-    get_ll,
-    main_parser,
-    parse_args,
-)
-
-__all__ = ["main", "parse_args", "get_ll", "main_parser"]
 
 
-def main(args: Optional[Union[List[str], argparse.Namespace]] = None):
+def main(args: argparse.Namespace):
     """DeePMD-Kit entry point.
 
     Parameters
@@ -56,46 +50,36 @@ def main(args: Optional[Union[List[str], argparse.Namespace]] = None):
     RuntimeError
         if no command was input
     """
-    if args is not None:
-        clear_session()
-
-    if not isinstance(args, argparse.Namespace):
-        args = parse_args(args=args)
-
-    # do not set log handles for None, it is useless
-    # log handles for train will be set separatelly
-    # when the use of MPI will be determined in `RunOptions`
-    if args.command not in (None, "train"):
-        set_log_handles(args.log_level, Path(args.log_path) if args.log_path else None)
+    set_log_handles(args.log_level, Path(args.log_path) if args.log_path else None)
 
     dict_args = vars(args)
 
-    if args.command == "train":
-        train_dp(**dict_args)
-    elif args.command == "freeze":
-        freeze(**dict_args)
-    elif args.command == "test":
+    if args.command == "test":
+        dict_args["model"] = format_model_suffix(
+            dict_args["model"],
+            feature=Backend.Feature.DEEP_EVAL,
+            preferred_backend=args.backend,
+            strict_prefer=False,
+        )
         test(**dict_args)
-    elif args.command == "transfer":
-        transfer(**dict_args)
-    elif args.command == "compress":
-        compress(**dict_args)
     elif args.command == "doc-train-input":
         doc_train_input(**dict_args)
     elif args.command == "model-devi":
+        dict_args["models"] = [
+            format_model_suffix(
+                mm,
+                feature=Backend.Feature.DEEP_EVAL,
+                preferred_backend=args.backend,
+                strict_prefer=False,
+            )
+            for mm in dict_args["models"]
+        ]
         make_model_devi(**dict_args)
-    elif args.command == "convert-from":
-        convert(**dict_args)
     elif args.command == "neighbor-stat":
         neighbor_stat(**dict_args)
-    elif args.command == "train-nvnmd":  # nvnmd
-        train_nvnmd(**dict_args)
     elif args.command == "gui":
         start_dpgui(**dict_args)
-    elif args.command is None:
-        pass
+    elif args.command == "convert-backend":
+        convert_backend(**dict_args)
     else:
-        raise RuntimeError(f"unknown command {args.command}")
-
-    if args is not None:
-        clear_session()
+        raise ValueError(f"Unknown command: {args.command}")

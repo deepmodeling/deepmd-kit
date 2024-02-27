@@ -1,4 +1,8 @@
-# Interpolation or combination with a pairwise potential
+# Interpolation or combination with a pairwise potential {{ tensorflow_icon }}
+
+:::{note}
+**Supported backends**: TensorFlow {{ tensorflow_icon }}
+:::
 
 ## Theory
 In applications like the radiation damage simulation, the interatomic distance may become too close, so that the DFT calculations fail.
