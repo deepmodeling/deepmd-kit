@@ -20,6 +20,7 @@ from deepmd.pt.utils import (
     env,
 )
 
+
 class DPZBLModel(DPZBLModel_):
     model_type = "ener"
 
@@ -40,7 +41,7 @@ class DPZBLModel(DPZBLModel_):
         do_atomic_virial: bool = False,
     ) -> Dict[str, torch.Tensor]:
         coord = coord.to(env.GLOBAL_PT_FLOAT_PRECISION)
-        if(box is not None):
+        if box is not None:
             box = box.to(env.GLOBAL_PT_FLOAT_PRECISION)
         model_ret = self.forward_common(
             coord,
