@@ -127,25 +127,6 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         """Update mean and stddev for descriptor elements."""
         return self.sea.compute_input_stats(merged, path)
 
-    @classmethod
-    def get_data_process_key(cls, config):
-        """
-        Get the keys for the data preprocess.
-        Usually need the information of rcut and sel.
-        TODO Need to be deprecated when the dataloader has been cleaned up.
-        """
-        descrpt_type = config["type"]
-        assert descrpt_type in ["se_e2_a"]
-        return {"sel": config["sel"], "rcut": config["rcut"]}
-
-    @property
-    def data_stat_key(self):
-        """
-        Get the keys for the data statistic of the descriptor.
-        Return a list of statistic names needed, such as "sumr", "suma" or "sumn".
-        """
-        return ["sumr", "suma", "sumn", "sumr2", "suma2"]
-
     def forward(
         self,
         coord_ext: torch.Tensor,

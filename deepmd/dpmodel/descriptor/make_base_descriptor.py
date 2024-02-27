@@ -156,26 +156,6 @@ def make_base_descriptor(
                 return BD.get_class_by_type(data["type"]).deserialize(data)
             raise NotImplementedError("Not implemented in class %s" % cls.__name__)
 
-        @classmethod
-        def get_data_process_key(cls, config):
-            """
-            Get the keys for the data preprocess.
-            Usually need the information of rcut and sel.
-            TODO Need to be deprecated when the dataloader has been cleaned up.
-            """
-            if cls is not BD:
-                raise NotImplementedError("get_data_process_key is not implemented!")
-            descrpt_type = config["type"]
-            return BD.__plugins.plugins[descrpt_type].get_data_process_key(config)
-
-        @property
-        def data_stat_key(self):
-            """
-            Get the keys for the data statistic of the descriptor.
-            Return a list of statistic names needed, such as "sumr", "suma" or "sumn".
-            """
-            raise NotImplementedError("data_stat_key is not implemented!")
-
     setattr(BD, fwd_method_name, BD.fwd)
     delattr(BD, "fwd")
 
