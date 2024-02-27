@@ -761,6 +761,8 @@ class DescrptSeR(DescrptSe):
         # TODO: not sure how to handle type embedding - type embedding is not a model parameter,
         # but instead a part of the input data. Maybe the interface should be refactored...
         return {
+            "@class": "Descriptor",
+            "type": "se_r",
             "rcut": self.rcut,
             "rcut_smth": self.rcut_smth,
             "sel": self.sel_r,

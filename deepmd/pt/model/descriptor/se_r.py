@@ -296,6 +296,8 @@ class DescrptSeR(Descriptor):
 
     def serialize(self) -> dict:
         return {
+            "@class": "Descriptor",
+            "type": "se_r",
             "rcut": self.rcut,
             "rcut_smth": self.rcut_smth,
             "sel": self.sel,
