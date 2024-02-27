@@ -10,7 +10,6 @@ import numpy as np
 from deepmd.dpmodel.utils.env_mat import (
     EnvMat,
 )
-
 from deepmd.tf.common import (
     cast_precision,
     get_activation_func,
