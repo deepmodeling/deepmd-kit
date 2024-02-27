@@ -3,6 +3,9 @@ import logging
 from abc import (
     abstractmethod,
 )
+from typing import (
+    Type,
+)
 
 from deepmd.utils.data_system import (
     get_data,
@@ -155,7 +158,7 @@ class BaseUpdateSel:
 
     @property
     @abstractmethod
-    def neighbor_stat(self) -> type[NeighborStat]:
+    def neighbor_stat(self) -> Type[NeighborStat]:
         pass
 
     @abstractmethod
