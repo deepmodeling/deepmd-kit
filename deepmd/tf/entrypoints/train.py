@@ -14,8 +14,6 @@ from typing import (
 )
 
 from deepmd.tf.common import (
-    data_requirement,
-    expand_sys_str,
     j_loader,
     j_must_have,
 )
@@ -43,9 +41,6 @@ from deepmd.tf.utils.argcheck import (
 from deepmd.tf.utils.compat import (
     update_deepmd_input,
 )
-from deepmd.tf.utils.data_system import (
-    DeepmdDataSystem,
-)
 from deepmd.tf.utils.finetune import (
     replace_model_params_with_pretrained_model,
 )
@@ -55,8 +50,8 @@ from deepmd.tf.utils.multi_init import (
 from deepmd.tf.utils.neighbor_stat import (
     NeighborStat,
 )
-from deepmd.tf.utils.path import (
-    DPPath,
+from deepmd.utils.data_system import (
+    get_data,
 )
 
 __all__ = ["train"]
@@ -285,53 +280,6 @@ def _do_work(jdata: Dict[str, Any], run_opt: RunOptions, is_compress: bool = Fal
         log.info("finished compressing")
 
 
-def get_data(jdata: Dict[str, Any], rcut, type_map, modifier, multi_task_mode=False):
-    systems = j_must_have(jdata, "systems")
-    if isinstance(systems, str):
-        systems = expand_sys_str(systems)
-    elif isinstance(systems, list):
-        systems = systems.copy()
-    help_msg = "Please check your setting for data systems"
-    # check length of systems
-    if len(systems) == 0:
-        msg = "cannot find valid a data system"
-        log.fatal(msg)
-        raise OSError(msg, help_msg)
-    # rougly check all items in systems are valid
-    for ii in systems:
-        ii = DPPath(ii)
-        if not ii.is_dir():
-            msg = f"dir {ii} is not a valid dir"
-            log.fatal(msg)
-            raise OSError(msg, help_msg)
-        if not (ii / "type.raw").is_file():
-            msg = f"dir {ii} is not a valid data system dir"
-            log.fatal(msg)
-            raise OSError(msg, help_msg)
-
-    batch_size = j_must_have(jdata, "batch_size")
-    sys_probs = jdata.get("sys_probs", None)
-    auto_prob = jdata.get("auto_prob", "prob_sys_size")
-    optional_type_map = not multi_task_mode
-
-    data = DeepmdDataSystem(
-        systems=systems,
-        batch_size=batch_size,
-        test_size=1,  # to satisfy the old api
-        shuffle_test=True,  # to satisfy the old api
-        rcut=rcut,
-        type_map=type_map,
-        optional_type_map=optional_type_map,
-        modifier=modifier,
-        trn_all_set=True,  # sample from all sets
-        sys_probs=sys_probs,
-        auto_prob_style=auto_prob,
-    )
-    data.add_dict(data_requirement)
-
-    return data
-
-
 def get_modifier(modi_data=None):
     modifier: Optional[DipoleChargeModifier]
     if modi_data is not None:
@@ -430,72 +378,9 @@ def get_nbor_stat(jdata, rcut, mixed_type: bool = False):
     return min_nbor_dist, max_nbor_size
 
 
-def get_sel(jdata, rcut, mixed_type: bool = False):
-    _, max_nbor_size = get_nbor_stat(jdata, rcut, mixed_type=mixed_type)
-    return max_nbor_size
-
-
 def get_min_nbor_dist(jdata, rcut):
     min_nbor_dist, _ = get_nbor_stat(jdata, rcut)
     return min_nbor_dist
-
-
-def parse_auto_sel(sel):
-    if not isinstance(sel, str):
-        return False
-    words = sel.split(":")
-    if words[0] == "auto":
-        return True
-    else:
-        return False
-
-
-def parse_auto_sel_ratio(sel):
-    if not parse_auto_sel(sel):
-        raise RuntimeError(f"invalid auto sel format {sel}")
-    else:
-        words = sel.split(":")
-        if len(words) == 1:
-            ratio = 1.1
-        elif len(words) == 2:
-            ratio = float(words[1])
-        else:
-            raise RuntimeError(f"invalid auto sel format {sel}")
-        return ratio
-
-
-def wrap_up_4(xx):
-    return 4 * ((int(xx) + 3) // 4)
-
-
-def update_one_sel(jdata, descriptor, mixed_type: bool = False):
-    rcut = descriptor["rcut"]
-    tmp_sel = get_sel(
-        jdata,
-        rcut,
-        mixed_type=mixed_type,
-    )
-    sel = descriptor["sel"]
-    if isinstance(sel, int):
-        # convert to list and finnally convert back to int
-        sel = [sel]
-    if parse_auto_sel(descriptor["sel"]):
-        ratio = parse_auto_sel_ratio(descriptor["sel"])
-        descriptor["sel"] = sel = [int(wrap_up_4(ii * ratio)) for ii in tmp_sel]
-    else:
-        # sel is set by user
-        for ii, (tt, dd) in enumerate(zip(tmp_sel, sel)):
-            if dd and tt > dd:
-                # we may skip warning for sel=0, where the user is likely
-                # to exclude such type in the descriptor
-                log.warning(
-                    "sel of type %d is not enough! The expected value is "
-                    "not less than %d, but you set it to %d. The accuracy"
-                    " of your model may get worse." % (ii, tt, dd)
-                )
-    if mixed_type:
-        descriptor["sel"] = sel = sum(sel)
-    return descriptor
 
 
 def update_sel(jdata):

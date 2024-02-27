@@ -6,6 +6,8 @@ from functools import (
     lru_cache,
 )
 from typing import (
+    Any,
+    Dict,
     List,
     Optional,
 )
@@ -14,6 +16,9 @@ import numpy as np
 
 import deepmd.utils.random as dp_random
 from deepmd.common import (
+    data_requirement,
+    expand_sys_str,
+    j_must_have,
     make_default_mesh,
 )
 from deepmd.env import (
@@ -21,6 +26,9 @@ from deepmd.env import (
 )
 from deepmd.utils.data import (
     DeepmdData,
+)
+from deepmd.utils.path import (
+    DPPath,
 )
 
 log = logging.getLogger(__name__)
@@ -652,3 +660,72 @@ def prob_sys_size_ext(keywords, nsystems, nbatch):
         tmp_prob = [float(i) for i in nbatch_block] / np.sum(nbatch_block)
         sys_probs[block_stt[ii] : block_end[ii]] = tmp_prob * block_probs[ii]
     return sys_probs
+
+
+def get_data(
+    jdata: Dict[str, Any], rcut, type_map, modifier, multi_task_mode=False
+) -> DeepmdDataSystem:
+    """Get the data system.
+
+    Parameters
+    ----------
+    jdata
+        The json data
+    rcut
+        The cut-off radius, not used
+    type_map
+        The type map
+    modifier
+        The data modifier
+    multi_task_mode
+        If in multi task mode
+
+    Returns
+    -------
+    DeepmdDataSystem
+        The data system
+    """
+    systems = j_must_have(jdata, "systems")
+    if isinstance(systems, str):
+        systems = expand_sys_str(systems)
+    elif isinstance(systems, list):
+        systems = systems.copy()
+    help_msg = "Please check your setting for data systems"
+    # check length of systems
+    if len(systems) == 0:
+        msg = "cannot find valid a data system"
+        log.fatal(msg)
+        raise OSError(msg, help_msg)
+    # rougly check all items in systems are valid
+    for ii in systems:
+        ii = DPPath(ii)
+        if not ii.is_dir():
+            msg = f"dir {ii} is not a valid dir"
+            log.fatal(msg)
+            raise OSError(msg, help_msg)
+        if not (ii / "type.raw").is_file():
+            msg = f"dir {ii} is not a valid data system dir"
+            log.fatal(msg)
+            raise OSError(msg, help_msg)
+
+    batch_size = j_must_have(jdata, "batch_size")
+    sys_probs = jdata.get("sys_probs", None)
+    auto_prob = jdata.get("auto_prob", "prob_sys_size")
+    optional_type_map = not multi_task_mode
+
+    data = DeepmdDataSystem(
+        systems=systems,
+        batch_size=batch_size,
+        test_size=1,  # to satisfy the old api
+        shuffle_test=True,  # to satisfy the old api
+        rcut=rcut,
+        type_map=type_map,
+        optional_type_map=optional_type_map,
+        modifier=modifier,
+        trn_all_set=True,  # sample from all sets
+        sys_probs=sys_probs,
+        auto_prob_style=auto_prob,
+    )
+    data.add_dict(data_requirement)
+
+    return data
