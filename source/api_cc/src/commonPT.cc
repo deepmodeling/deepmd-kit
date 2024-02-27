@@ -10,14 +10,13 @@ void NeighborListDataPT::copy_from_nlist(const InputNlist& inlist,
   memcpy(&ilist[0], inlist.ilist, inum * sizeof(int));
   int* max_element = std::max_element(inlist.numneigh, inlist.numneigh + inum);
   max_num_neighbors = *max_element;
-  unsigned long nlist_size = inum * max_num_neighbors;
+  unsigned long nlist_size = (unsigned long)inum * max_num_neighbors;
   jlist.resize(nlist_size);
   memset(&jlist[0], -1, nlist_size * sizeof(int));
   for (int ii = 0; ii < inum; ++ii) {
     int jnum = inlist.numneigh[ii];
     numneigh[ii] = inlist.numneigh[ii];
-    unsigned long start_loc = ii * max_num_neighbors;
-    memcpy(&jlist[start_loc], inlist.firstneigh[ii], jnum * sizeof(int));
+    memcpy(&jlist[(unsigned long)ii * max_num_neighbors], inlist.firstneigh[ii], jnum * sizeof(int));
   }
 }
 #endif
