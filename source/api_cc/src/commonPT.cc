@@ -17,7 +17,7 @@ void NeighborListDataPT::copy_from_nlist(const InputNlist& inlist,
     int jnum = inlist.numneigh[ii];
     numneigh[ii] = inlist.numneigh[ii];
     for (int j = 0; j < jnum; ++j) {
-        std::cout << inlist.firstneigh[ii][j] << " ";
+      std::cout << inlist.firstneigh[ii][j] << " ";
     }
     std::cout << std::endl;
     memcpy(&jlist[(unsigned long)ii * max_num_neighbors], inlist.firstneigh[ii],
