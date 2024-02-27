@@ -189,6 +189,8 @@ class DescrptSeA(DescrptSe):
             raise RuntimeError(
                 f"rcut_smth ({rcut_smth:f}) should be no more than rcut ({rcut:f})!"
             )
+        if env_protection != 0.0:
+            raise NotImplementedError("env_protection != 0.0 is not supported.")
         self.sel_a = sel
         self.rcut_r = rcut
         self.rcut_r_smth = rcut_smth
