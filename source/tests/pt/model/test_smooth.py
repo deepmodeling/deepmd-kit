@@ -31,7 +31,9 @@ class SmoothTest:
         self,
     ):
         # displacement of atoms
-        epsilon = 1e-5 if self.epsilon is None else self.epsilon
+        epsilon = (
+            torch.finfo(torch.float32).eps if self.epsilon is None else self.epsilon
+        )
         # required prec. relative prec is not checked.
         rprec = 0
         aprec = 1e-5 if self.aprec is None else self.aprec
