@@ -16,6 +16,7 @@
         100
       ],
       "axis_neuron": 16,
+      "type_one_side": true,
       "attn": 64,
       "attn_layer": 2,
       "attn_dotr": true,

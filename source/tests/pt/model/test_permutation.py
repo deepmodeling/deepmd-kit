@@ -121,6 +121,7 @@ model_dpa1 = {
         "normalize": False,
         "temperature": 1.0,
         "set_davg_zero": True,
+        "type_one_side": True,
     },
     "fitting_net": {
         "neuron": [24, 24, 24],

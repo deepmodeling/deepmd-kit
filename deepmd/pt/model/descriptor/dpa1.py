@@ -93,7 +93,7 @@ class DescrptDPA1(Descriptor):
             post_ln=post_ln,
             ffn=ffn,
             ffn_embed_dim=ffn_embed_dim,
-            activation=activation_function,
+            activation_function=activation_function,
             scaling_factor=scaling_factor,
             head_num=head_num,
             normalize=normalize,

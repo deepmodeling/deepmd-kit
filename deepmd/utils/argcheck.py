@@ -2118,9 +2118,34 @@ def training_args():  # ! modified by Ziyao: data configuration isolated.
         Argument("warmup_steps", int, optional=True, doc=doc_only_pt_supported),
         Argument("gradient_max_norm", float, optional=True, doc=doc_only_pt_supported),
     ]
+    variants = [
+        Variant(
+            "opt_type",
+            choices=[
+                Argument("Adam", dict, [], [], optional=True),
+                Argument(
+                    "LKF",
+                    dict,
+                    [
+                        Argument(
+                            "kf_blocksize",
+                            int,
+                            optional=True,
+                            doc=doc_only_pt_supported,
+                        ),
+                    ],
+                    [],
+                    optional=True,
+                ),
+            ],
+            optional=True,
+            default_tag="Adam",
+            doc=doc_only_pt_supported,
+        )
+    ]
 
     doc_training = "The training options."
-    return Argument("training", dict, args, [], doc=doc_training)
+    return Argument("training", dict, args, variants, doc=doc_training)
 
 
 def make_index(keys):
