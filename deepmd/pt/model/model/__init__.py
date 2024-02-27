@@ -135,7 +135,7 @@ def get_spin_model(model_params):
     model_params["fitting_net"]["exclude_types"] = atom_exclude_types
     # descriptor
     model_params["descriptor"]["ntypes"] = ntypes
-    descriptor = Descriptor(**model_params["descriptor"])
+    descriptor = BaseDescriptor(**model_params["descriptor"])
     # fitting
     fitting_net = model_params.get("fitting_net", None)
     fitting_net["type"] = fitting_net.get("type", "ener")
