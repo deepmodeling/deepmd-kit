@@ -11,6 +11,9 @@ from typing import (
 import numpy as np
 import torch
 
+from deepmd.dpmodel.utils.version import (
+    check_version_compatibility,
+)
 from deepmd.pt.model.descriptor import (
     DescriptorBlock,
     prod_env_mat,
@@ -182,6 +185,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         return {
             "@class": "Descriptor",
             "type": "se_e2_a",
+            "@version": 1,
             "rcut": obj.rcut,
             "rcut_smth": obj.rcut_smth,
             "sel": obj.sel,
@@ -208,6 +212,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
     @classmethod
     def deserialize(cls, data: dict) -> "DescrptSeA":
         data = data.copy()
+        check_version_compatibility(data.pop("@version", 1), 1, 1)
         data.pop("@class", None)
         data.pop("type", None)
         variables = data.pop("@variables")

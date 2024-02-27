@@ -10,6 +10,9 @@ import numpy as np
 import torch
 
 from deepmd.dpmodel.utils import EnvMat as DPEnvMat
+from deepmd.dpmodel.utils.version import (
+    check_version_compatibility,
+)
 from deepmd.pt.model.descriptor import (
     prod_env_mat,
 )
@@ -277,6 +280,7 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
         return {
             "@class": "Descriptor",
             "type": "se_r",
+            "@version": 1,
             "rcut": self.rcut,
             "rcut_smth": self.rcut_smth,
             "sel": self.sel,
@@ -302,6 +306,7 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
     @classmethod
     def deserialize(cls, data: dict) -> "DescrptSeR":
         data = data.copy()
+        check_version_compatibility(data.pop("@version", 1), 1, 1)
         variables = data.pop("@variables")
         embeddings = data.pop("embeddings")
         env_mat = data.pop("env_mat")

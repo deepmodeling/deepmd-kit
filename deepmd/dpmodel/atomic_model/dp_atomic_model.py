@@ -17,6 +17,9 @@ from deepmd.dpmodel.fitting.base_fitting import (
 from deepmd.dpmodel.output_def import (
     FittingOutputDef,
 )
+from deepmd.dpmodel.utils.version import (
+    check_version_compatibility,
+)
 
 from .base_atomic_model import (
     BaseAtomicModel,
@@ -132,6 +135,7 @@ class DPAtomicModel(BaseAtomicModel):
         return {
             "@class": "Model",
             "type": "standard",
+            "@version": 1,
             "type_map": self.type_map,
             "descriptor": self.descriptor.serialize(),
             "fitting": self.fitting.serialize(),
@@ -140,6 +144,7 @@ class DPAtomicModel(BaseAtomicModel):
     @classmethod
     def deserialize(cls, data) -> "DPAtomicModel":
         data = copy.deepcopy(data)
+        check_version_compatibility(data.pop("@version", 1), 1, 1)
         data.pop("@class")
         data.pop("type")
         descriptor_obj = BaseDescriptor.deserialize(data["descriptor"])

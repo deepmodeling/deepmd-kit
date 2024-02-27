@@ -12,6 +12,9 @@ import torch
 from deepmd.dpmodel import (
     FittingOutputDef,
 )
+from deepmd.dpmodel.utils.version import (
+    check_version_compatibility,
+)
 from deepmd.pt.model.descriptor.base_descriptor import (
     BaseDescriptor,
 )
@@ -95,6 +98,7 @@ class DPAtomicModel(torch.nn.Module, BaseAtomicModel):
         return {
             "@class": "Model",
             "type": "standard",
+            "@version": 1,
             "type_map": self.type_map,
             "descriptor": self.descriptor.serialize(),
             "fitting": self.fitting_net.serialize(),
@@ -103,6 +107,7 @@ class DPAtomicModel(torch.nn.Module, BaseAtomicModel):
     @classmethod
     def deserialize(cls, data) -> "DPAtomicModel":
         data = copy.deepcopy(data)
+        check_version_compatibility(data.pop("@version", 1), 1, 1)
         descriptor_obj = BaseDescriptor.deserialize(data["descriptor"])
         fitting_obj = BaseFitting.deserialize(data["fitting"])
         obj = cls(descriptor_obj, fitting_obj, type_map=data["type_map"])

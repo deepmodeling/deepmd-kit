@@ -7,6 +7,9 @@ from typing import (
 
 import numpy as np
 
+from deepmd.dpmodel.utils.version import (
+    check_version_compatibility,
+)
 from deepmd.tf.common import (
     cast_precision,
     get_activation_func,
@@ -536,6 +539,7 @@ class PolarFittingSeA(Fitting):
         data = {
             "@class": "Fitting",
             "type": "polar",
+            "@version": 1,
             "var_name": "polar",
             "ntypes": self.ntypes,
             "dim_descrpt": self.dim_descrpt,
@@ -581,6 +585,8 @@ class PolarFittingSeA(Fitting):
         Model
             The deserialized model
         """
+        data = data.copy()
+        check_version_compatibility(data.pop("@version", 1), 1, 1)
         fitting = cls(**data)
         fitting.fitting_net_variables = cls.deserialize_network(
             data["nets"],

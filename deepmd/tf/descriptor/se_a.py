@@ -10,6 +10,9 @@ import numpy as np
 from deepmd.dpmodel.utils.env_mat import (
     EnvMat,
 )
+from deepmd.dpmodel.utils.version import (
+    check_version_compatibility,
+)
 from deepmd.tf.common import (
     cast_precision,
     get_activation_func,
@@ -1368,6 +1371,7 @@ class DescrptSeA(DescrptSe):
         if cls is not DescrptSeA:
             raise NotImplementedError("Not implemented in class %s" % cls.__name__)
         data = data.copy()
+        check_version_compatibility(data.pop("@version", 1), 1, 1)
         data.pop("@class", None)
         data.pop("type", None)
         embedding_net_variables = cls.deserialize_network(
@@ -1422,6 +1426,7 @@ class DescrptSeA(DescrptSe):
         return {
             "@class": "Descriptor",
             "type": "se_e2_a",
+            "@version": 1,
             "rcut": self.rcut_r,
             "rcut_smth": self.rcut_r_smth,
             "sel": self.sel_a,

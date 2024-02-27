@@ -17,6 +17,9 @@ from typing import (
 from deepmd.common import (
     j_get_type,
 )
+from deepmd.dpmodel.utils.version import (
+    check_version_compatibility,
+)
 from deepmd.tf.descriptor.descriptor import (
     Descriptor,
 )
@@ -815,7 +818,7 @@ class StandardModel(Model):
             The deserialized descriptor
         """
         data = copy.deepcopy(data)
-
+        check_version_compatibility(data.pop("@version", 1), 1, 1)
         descriptor = Descriptor.deserialize(data.pop("descriptor"), suffix=suffix)
         fitting = Fitting.deserialize(data.pop("fitting"), suffix=suffix)
         return cls(
@@ -844,6 +847,7 @@ class StandardModel(Model):
         return {
             "@class": "Model",
             "type": "standard",
+            "@version": 1,
             "type_map": self.type_map,
             "descriptor": self.descrpt.serialize(suffix=suffix),
             "fitting": self.fitting.serialize(suffix=suffix),

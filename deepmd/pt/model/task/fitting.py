@@ -12,6 +12,9 @@ from typing import (
 import numpy as np
 import torch
 
+from deepmd.dpmodel.utils.version import (
+    check_version_compatibility,
+)
 from deepmd.pt.model.network.mlp import (
     FittingNet,
     NetworkCollection,
@@ -367,6 +370,7 @@ class GeneralFitting(Fitting):
         """Serialize the fitting to dict."""
         return {
             "@class": "Fitting",
+            "@version": 1,
             "var_name": self.var_name,
             "ntypes": self.ntypes,
             "dim_descrpt": self.dim_descrpt,
@@ -404,6 +408,7 @@ class GeneralFitting(Fitting):
     @classmethod
     def deserialize(cls, data: dict) -> "GeneralFitting":
         data = copy.deepcopy(data)
+        check_version_compatibility(data.pop("@version", 1), 1, 1)
         variables = data.pop("@variables")
         nets = data.pop("nets")
         obj = cls(**data)
