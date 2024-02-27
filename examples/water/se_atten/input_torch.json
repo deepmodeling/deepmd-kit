@@ -16,6 +16,7 @@
         100
       ],
       "axis_neuron": 16,
+      "type_one_side": true,
       "attn": 128,
       "attn_layer": 2,
       "attn_dotr": true,
@@ -23,7 +24,7 @@
       "post_ln": true,
       "ffn": false,
       "ffn_embed_dim": 1024,
-      "activation": "tanh",
+      "activation_function": "tanh",
       "scaling_factor": 1.0,
       "head_num": 1,
       "normalize": true,
@@ -75,11 +76,6 @@
       "batch_size": 1,
       "numb_btch": 3,
       "_comment": "that's all"
-    },
-    "wandb_config": {
-      "wandb_enabled": false,
-      "entity": "dp_model_engineering",
-      "project": "DPA"
     },
     "numb_steps": 1000000,
     "seed": 10,

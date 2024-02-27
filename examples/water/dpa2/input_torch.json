@@ -4,8 +4,7 @@
     "type_embedding": {
       "neuron": [
         8
-      ],
-      "tebd_input_mode": "concat"
+      ]
     },
     "type_map": [
       "O",
