@@ -5,7 +5,6 @@ from abc import (
     abstractmethod,
 )
 from typing import (
-    Callable,
     Dict,
     List,
     Optional,
@@ -22,49 +21,26 @@ from deepmd.pt.utils import (
 from deepmd.pt.utils.env_mat_stat import (
     EnvMatStatSe,
 )
-from deepmd.pt.utils.plugin import (
-    Plugin,
-)
 from deepmd.utils.env_mat_stat import (
     StatItem,
 )
 from deepmd.utils.path import (
     DPPath,
 )
+from deepmd.utils.plugin import (
+    make_plugin_registry,
+)
 
 log = logging.getLogger(__name__)
 
 
-class DescriptorBlock(torch.nn.Module, ABC):
+class DescriptorBlock(torch.nn.Module, ABC, make_plugin_registry("DescriptorBlock")):
     """The building block of descriptor.
     Given the input descriptor, provide with the atomic coordinates,
     atomic types and neighbor list, calculate the new descriptor.
     """
 
-    __plugins = Plugin()
     local_cluster = False
-
-    @staticmethod
-    def register(key: str) -> Callable:
-        """Register a DescriptorBlock plugin.
-
-        Parameters
-        ----------
-        key : str
-            the key of a DescriptorBlock
-
-        Returns
-        -------
-        DescriptorBlock
-            the registered DescriptorBlock
-
-        Examples
-        --------
-        >>> @DescriptorBlock.register("some_descrpt")
-            class SomeDescript(DescriptorBlock):
-                pass
-        """
-        return DescriptorBlock.__plugins.register(key)
 
     def __new__(cls, *args, **kwargs):
         if cls is DescriptorBlock:
@@ -72,10 +48,7 @@ class DescriptorBlock(torch.nn.Module, ABC):
                 descrpt_type = kwargs["type"]
             except KeyError:
                 raise KeyError("the type of DescriptorBlock should be set by `type`")
-            if descrpt_type in DescriptorBlock.__plugins.plugins:
-                cls = DescriptorBlock.__plugins.plugins[descrpt_type]
-            else:
-                raise RuntimeError("Unknown DescriptorBlock type: " + descrpt_type)
+            cls = cls.get_class_by_type(descrpt_type)
         return super().__new__(cls)
 
     @abstractmethod

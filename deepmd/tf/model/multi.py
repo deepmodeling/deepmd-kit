@@ -55,6 +55,7 @@ from .model_stat import (
 )
 
 
+@Model.register("multi")
 class MultiModel(Model):
     """Multi-task model.
 

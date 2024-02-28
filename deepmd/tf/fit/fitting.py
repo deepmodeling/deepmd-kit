@@ -4,10 +4,8 @@ from abc import (
     abstractmethod,
 )
 from typing import (
-    Callable,
     List,
     Optional,
-    Type,
 )
 
 from deepmd.common import (
@@ -25,56 +23,14 @@ from deepmd.tf.loss.loss import (
     Loss,
 )
 from deepmd.tf.utils import (
-    Plugin,
     PluginVariant,
+)
+from deepmd.utils.plugin import (
+    make_plugin_registry,
 )
 
 
-class Fitting(PluginVariant):
-    __plugins = Plugin()
-
-    @staticmethod
-    def register(key: str) -> Callable:
-        """Register a Fitting plugin.
-
-        Parameters
-        ----------
-        key : str
-            the key of a Fitting
-
-        Returns
-        -------
-        Fitting
-            the registered Fitting
-
-        Examples
-        --------
-        >>> @Fitting.register("some_fitting")
-            class SomeFitting(Fitting):
-                pass
-        """
-        return Fitting.__plugins.register(key)
-
-    @classmethod
-    def get_class_by_type(cls, fitting_type: str) -> Type["Fitting"]:
-        """Get the fitting class by the input type.
-
-        Parameters
-        ----------
-        fitting_type : str
-            The input type
-
-        Returns
-        -------
-        Fitting
-            The fitting class
-        """
-        if fitting_type in Fitting.__plugins.plugins:
-            cls = Fitting.__plugins.plugins[fitting_type]
-        else:
-            raise RuntimeError("Unknown descriptor type: " + fitting_type)
-        return cls
-
+class Fitting(PluginVariant, make_plugin_registry("fitting")):
     def __new__(cls, *args, **kwargs):
         if cls is Fitting:
             cls = cls.get_class_by_type(j_get_type(kwargs, cls.__name__))
