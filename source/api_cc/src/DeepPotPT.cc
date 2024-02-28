@@ -113,15 +113,17 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
   c10::optional<torch::Tensor> optional_tensor;
   c10::optional<torch::Tensor> fparam_tensor;
   if (!fparam.empty()) {
-    fparam_tensor = torch::from_blob(const_cast<VALUETYPE*>(fparam.data()),
-                                     {1, fparam.size()}, options)
-                        .to(device);
+    fparam_tensor =
+        torch::from_blob(const_cast<VALUETYPE*>(fparam.data()),
+                         {1, static_cast<long int>(fparam.size())}, options)
+            .to(device);
   }
   c10::optional<torch::Tensor> aparam_tensor;
   if (!aparam.empty()) {
-    aparam_tensor = torch::from_blob(const_cast<VALUETYPE*>(aparam.data()),
-                                     {1, aparam.size()}, options)
-                        .to(device);
+    aparam_tensor =
+        torch::from_blob(const_cast<VALUETYPE*>(aparam.data()),
+                         {1, static_cast<long int>(aparam.size())}, options)
+            .to(device);
   }
   c10::Dict<c10::IValue, c10::IValue> outputs =
       module
