@@ -60,7 +60,7 @@ void DeepPotPT::init(const std::string& model,
 
   auto rcut_ = module.run_method("get_rcut").toDouble();
   rcut = static_cast<double>(rcut_);
-  ntypes = module.run_method("get_ntypes").toInt();
+  ntypes = 0;
   ntypes_spin = 0;
   dfparam = module.run_method("get_dim_fparam").toInt();
   daparam = module.run_method("get_dim_aparam").toInt();
