@@ -109,8 +109,6 @@ class DeepPotPT : public DeepPotBase {
                //    const int nghost,
                const InputNlist& lmp_list,
                const int& ago,
-               const std::vector<VALUETYPE>& fparam,
-               const std::vector<VALUETYPE>& aparam,
                const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
                const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
   /**
