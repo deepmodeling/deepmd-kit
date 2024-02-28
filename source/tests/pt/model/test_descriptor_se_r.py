@@ -23,6 +23,7 @@ from .test_mlp import (
     get_tols,
 )
 
+from deepmd.pt.utils.env_mat_stat import EnvMatStatSe
 dtype = env.GLOBAL_PT_FLOAT_PRECISION
 
 
@@ -102,14 +103,50 @@ class TestDescrptSeR(unittest.TestCase, TestCaseSingleFrameWithNlist):
                     atol=atol,
                     err_msg=err_msg,
                 )
+    
+    def test_load_stat(self):
+        rng = np.random.default_rng()
+        _, _, nnei = self.nlist.shape
+        davg = rng.normal(size=(self.nt, nnei, 1))
+        dstd = rng.normal(size=(self.nt, nnei, 1))
+        dstd = 0.1 + np.abs(dstd)
 
+        for idt, prec in itertools.product(
+            [False, True],
+            ["float64", "float32"],
+        ):
+            dtype = PRECISION_DICT[prec]
+
+            # sea new impl
+            dd0 = DescrptSeR(
+                self.rcut,
+                self.rcut_smth,
+                self.sel,
+                precision=prec,
+                resnet_dt=idt,
+                old_impl=False,
+            )
+            dd0.mean = torch.tensor(davg, dtype=dtype, device=env.DEVICE)
+            dd0.dstd = torch.tensor(dstd, dtype=dtype, device=env.DEVICE)
+            dd1 = DescrptSeR.deserialize(dd0.serialize())
+            dd1.compute_input_stats([{'r0':None, 'coord':torch.from_numpy(self.coord_ext).reshape(-1, self.nall, 3), "atype": torch.from_numpy(self.atype_ext),"box":None, "natoms":self.nall}])
+            
+            with self.assertRaises(ValueError) as cm:
+                ev = EnvMatStatSe(dd1)
+                ev.last_dim =3
+                ev.load_or_compute_stats([])
+            self.assertEqual(
+                'last_dim should be 1 for raial-only or 4 for full descriptor.',
+                str(cm.exception)
+)
+            
     def test_jit(
         self,
     ):
         rng = np.random.default_rng()
         _, _, nnei = self.nlist.shape
-        davg = rng.normal(size=(self.nt, nnei, 4))
-        dstd = rng.normal(size=(self.nt, nnei, 4))
+        davg = rng.normal(size=(self.nt, nnei, 1))
+        dstd = rng.normal(size=(self.nt, nnei, 1))
         dstd = 0.1 + np.abs(dstd)
 
         for idt, prec in itertools.product(
