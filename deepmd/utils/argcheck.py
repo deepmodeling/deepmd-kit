@@ -2117,6 +2117,7 @@ def training_args():  # ! modified by Ziyao: data configuration isolated.
         Argument("fitting_weight", dict, optional=True, doc=doc_fitting_weight),
         Argument("warmup_steps", int, optional=True, doc=doc_only_pt_supported),
         Argument("gradient_max_norm", float, optional=True, doc=doc_only_pt_supported),
+        Argument("stat_file", str, optional=True, doc=doc_only_pt_supported),
     ]
     variants = [
         Variant(
