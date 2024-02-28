@@ -4,7 +4,7 @@ from typing import (
 )
 
 from deepmd.env import (
-    MODEL_VERSION,
+    paddle,
     tf,
 )
 
@@ -17,7 +17,7 @@ from .model_stat import (
 )
 
 
-class TensorModel(Model):
+class TensorModel(Model, paddle.nn.Layer):
     """Tensor model.
 
     Parameters
@@ -49,6 +49,7 @@ class TensorModel(Model):
         data_stat_nbatch: int = 10,
         data_stat_protect: float = 1e-2,
     ) -> None:
+        super().__init__()
         """Constructor."""
         self.model_type = tensor_name
         # descriptor
@@ -104,7 +105,7 @@ class TensorModel(Model):
         if hasattr(self.fitting, "compute_output_stats"):
             self.fitting.compute_output_stats(all_stat)
 
-    def build(
+    def forward(
         self,
         coord_,
         atype_,
@@ -119,63 +120,68 @@ class TensorModel(Model):
     ):
         if input_dict is None:
             input_dict = {}
-        with tf.variable_scope("model_attr" + suffix, reuse=reuse):
-            t_tmap = tf.constant(" ".join(self.type_map), name="tmap", dtype=tf.string)
-            t_st = tf.constant(self.get_sel_type(), name="sel_type", dtype=tf.int32)
-            t_mt = tf.constant(self.model_type, name="model_type", dtype=tf.string)
-            t_ver = tf.constant(MODEL_VERSION, name="model_version", dtype=tf.string)
-            t_od = tf.constant(self.get_out_size(), name="output_dim", dtype=tf.int32)
+        # with tf.variable_scope("model_attr" + suffix, reuse=reuse):
+        #     t_tmap = tf.constant(" ".join(self.type_map), name="tmap", dtype=tf.string)
+        #     t_st = tf.constant(self.get_sel_type(), name="sel_type", dtype=tf.int32)
+        #     t_mt = tf.constant(self.model_type, name="model_type", dtype=tf.string)
+        #     t_ver = tf.constant(MODEL_VERSION, name="model_version", dtype=tf.string)
+        #     t_od = tf.constant(self.get_out_size(), name="output_dim", dtype=tf.int32)
 
-        natomsel = sum(natoms[2 + type_i] for type_i in self.get_sel_type())
-        nout = self.get_out_size()
+        natomsel = sum(
+            natoms[2 + type_i] for type_i in self.get_sel_type()
+        )  # n_atom_selected
+        nout = self.get_out_size()  # 3
 
-        coord = tf.reshape(coord_, [-1, natoms[1] * 3])
-        atype = tf.reshape(atype_, [-1, natoms[1]])
-        input_dict["nframes"] = tf.shape(coord)[0]
+        coord = paddle.reshape(coord_, [-1, natoms[1] * 3])
+        atype = paddle.reshape(atype_, [-1, natoms[1]])
+        # input_dict["nframes"] = paddle.shape(coord)[0]# 推理模型导出的时候注释掉这里,否则会报错
 
         # type embedding if any
-        if self.typeebd is not None:
-            type_embedding = self.typeebd.build(
-                self.ntypes,
-                reuse=reuse,
-                suffix=suffix,
-            )
-            input_dict["type_embedding"] = type_embedding
-            input_dict["atype"] = atype_
+        # if self.typeebd is not None:
+        #     type_embedding = self.typeebd.build(
+        #         self.ntypes,
+        #         reuse=reuse,
+        #         suffix=suffix,
+        #     )
+        #     input_dict["type_embedding"] = type_embedding
+        input_dict["atype"] = atype_
 
-        dout = self.build_descrpt(
+        dout = self.descrpt(
             coord,
             atype,
             natoms,
             box,
             mesh,
             input_dict,
-            frz_model=frz_model,
-            ckpt_meta=ckpt_meta,
+            # frz_model=frz_model,
+            # ckpt_meta=ckpt_meta,
             suffix=suffix,
             reuse=reuse,
         )
 
         rot_mat = self.descrpt.get_rot_mat()
-        rot_mat = tf.identity(rot_mat, name="o_rot_mat" + suffix)
+        rot_mat = paddle.clone(rot_mat, name="o_rot_mat" + suffix)
 
-        output = self.fitting.build(
+        output = self.fitting(
             dout, rot_mat, natoms, input_dict, reuse=reuse, suffix=suffix
         )
+
         framesize = nout if "global" in self.model_type else natomsel * nout
-        output = tf.reshape(
+        output = paddle.reshape(
             output, [-1, framesize], name="o_" + self.model_type + suffix
         )
 
         model_dict = {self.model_type: output}
 
         if "global" not in self.model_type:
-            gname = "global_" + self.model_type
-            atom_out = tf.reshape(output, [-1, natomsel, nout])
-            global_out = tf.reduce_sum(atom_out, axis=1)
-            global_out = tf.reshape(global_out, [-1, nout], name="o_" + gname + suffix)
+            gname = "global_" + self.model_type  # "global_dipole"
+            atom_out = paddle.reshape(output, [-1, natomsel, nout])  #  nout=3
+            global_out = paddle.sum(atom_out, axis=1)
+            global_out = paddle.reshape(
+                global_out, [-1, nout], name="o_" + gname + suffix
+            )
 
-            out_cpnts = tf.split(atom_out, nout, axis=-1)
+            out_cpnts = paddle.split(atom_out, nout, axis=-1)
             force_cpnts = []
             virial_cpnts = []
             atom_virial_cpnts = []
@@ -184,16 +190,18 @@ class TensorModel(Model):
                 force_i, virial_i, atom_virial_i = self.descrpt.prod_force_virial(
                     out_i, natoms
                 )
-                force_cpnts.append(tf.reshape(force_i, [-1, 3 * natoms[1]]))
-                virial_cpnts.append(tf.reshape(virial_i, [-1, 9]))
-                atom_virial_cpnts.append(tf.reshape(atom_virial_i, [-1, 9 * natoms[1]]))
+                force_cpnts.append(paddle.reshape(force_i, [-1, 3 * natoms[1]]))
+                virial_cpnts.append(paddle.reshape(virial_i, [-1, 9]))
+                atom_virial_cpnts.append(
+                    paddle.reshape(atom_virial_i, [-1, 9 * natoms[1]])
+                )
 
             # [nframe x nout x (natom x 3)]
-            force = tf.concat(force_cpnts, axis=1, name="o_force" + suffix)
+            force = paddle.concat(force_cpnts, axis=1, name="o_force" + suffix)
             # [nframe x nout x 9]
-            virial = tf.concat(virial_cpnts, axis=1, name="o_virial" + suffix)
+            virial = paddle.concat(virial_cpnts, axis=1, name="o_virial" + suffix)
             # [nframe x nout x (natom x 9)]
-            atom_virial = tf.concat(
+            atom_virial = paddle.concat(
                 atom_virial_cpnts, axis=1, name="o_atom_virial" + suffix
             )
 
