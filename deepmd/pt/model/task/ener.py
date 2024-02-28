@@ -331,7 +331,6 @@ class EnergyFittingNetDirect(Fitting):
         self.filter_layers = torch.nn.ModuleList(filter_layers)
 
         if "seed" in kwargs:
-            log.info("Set seed to %d in fitting net.", kwargs["seed"])
             torch.manual_seed(kwargs["seed"])
 
     def output_def(self):

@@ -343,7 +343,6 @@ class GeneralFitting(Fitting):
             self.filter_layers_old = None
 
         if seed is not None:
-            log.info("Set seed to %d in fitting net.", seed)
             torch.manual_seed(seed)
 
     def serialize(self) -> dict:
