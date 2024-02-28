@@ -20,7 +20,7 @@ from typing import (
 import h5py
 import numpy as np
 
-from deepmd.dpmodel.utils.version import (
+from deepmd.utils.version import (
     check_version_compatibility,
 )
 

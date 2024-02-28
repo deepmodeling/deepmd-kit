@@ -17,9 +17,6 @@ from typing import (
 from deepmd.common import (
     j_get_type,
 )
-from deepmd.dpmodel.utils.version import (
-    check_version_compatibility,
-)
 from deepmd.tf.descriptor.descriptor import (
     Descriptor,
 )
@@ -62,6 +59,9 @@ from deepmd.tf.utils.spin import (
 )
 from deepmd.tf.utils.type_embed import (
     TypeEmbedNet,
+)
+from deepmd.utils.version import (
+    check_version_compatibility,
 )
 
 

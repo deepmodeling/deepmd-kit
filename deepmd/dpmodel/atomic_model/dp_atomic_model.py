@@ -17,7 +17,7 @@ from deepmd.dpmodel.fitting.base_fitting import (
 from deepmd.dpmodel.output_def import (
     FittingOutputDef,
 )
-from deepmd.dpmodel.utils.version import (
+from deepmd.utils.version import (
     check_version_compatibility,
 )
 

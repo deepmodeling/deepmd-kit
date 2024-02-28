@@ -3,14 +3,14 @@ import itertools
 
 import numpy as np
 
-from deepmd.dpmodel.utils.version import (
-    check_version_compatibility,
-)
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
 )
 from deepmd.utils.path import (
     DPPath,
+)
+from deepmd.utils.version import (
+    check_version_compatibility,
 )
 
 try:

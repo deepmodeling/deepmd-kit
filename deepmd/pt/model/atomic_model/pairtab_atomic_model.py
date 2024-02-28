@@ -13,11 +13,11 @@ from deepmd.dpmodel import (
     FittingOutputDef,
     OutputVariableDef,
 )
-from deepmd.dpmodel.utils.version import (
-    check_version_compatibility,
-)
 from deepmd.utils.pair_tab import (
     PairTab,
+)
+from deepmd.utils.version import (
+    check_version_compatibility,
 )
 
 from .base_atomic_model import (

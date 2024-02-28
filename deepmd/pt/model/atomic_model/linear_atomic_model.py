@@ -17,9 +17,6 @@ from deepmd.dpmodel import (
     FittingOutputDef,
     OutputVariableDef,
 )
-from deepmd.dpmodel.utils.version import (
-    check_version_compatibility,
-)
 from deepmd.pt.utils import (
     env,
 )
@@ -27,6 +24,9 @@ from deepmd.pt.utils.nlist import (
     build_multiple_neighbor_list,
     get_multiple_nlist_key,
     nlist_distinguish_types,
+)
+from deepmd.utils.version import (
+    check_version_compatibility,
 )
 
 from .base_atomic_model import (

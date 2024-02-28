@@ -11,9 +11,6 @@ from typing import (
 import numpy as np
 import torch
 
-from deepmd.dpmodel.utils.version import (
-    check_version_compatibility,
-)
 from deepmd.pt.model.descriptor import (
     DescriptorBlock,
     prod_env_mat,
@@ -33,6 +30,9 @@ from deepmd.utils.env_mat_stat import (
 )
 from deepmd.utils.path import (
     DPPath,
+)
+from deepmd.utils.version import (
+    check_version_compatibility,
 )
 
 try:

@@ -8,9 +8,6 @@ from typing import (
 
 import numpy as np
 
-from deepmd.dpmodel.utils.version import (
-    check_version_compatibility,
-)
 from deepmd.tf.common import (
     add_data_requirement,
     cast_precision,
@@ -55,6 +52,9 @@ from deepmd.tf.utils.network import (
 )
 from deepmd.tf.utils.spin import (
     Spin,
+)
+from deepmd.utils.version import (
+    check_version_compatibility,
 )
 
 if TYPE_CHECKING:

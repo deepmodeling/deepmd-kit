@@ -12,7 +12,7 @@ from scipy.interpolate import (
     CubicSpline,
 )
 
-from deepmd.dpmodel.utils.version import (
+from deepmd.utils.version import (
     check_version_compatibility,
 )
 

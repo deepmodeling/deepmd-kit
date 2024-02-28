@@ -6,9 +6,6 @@ from typing import (
 
 import numpy as np
 
-from deepmd.dpmodel.utils.version import (
-    check_version_compatibility,
-)
 from deepmd.tf.common import (
     cast_precision,
     get_activation_func,
@@ -32,6 +29,9 @@ from deepmd.tf.utils.graph import (
 from deepmd.tf.utils.network import (
     one_layer,
     one_layer_rand_seed_shift,
+)
+from deepmd.utils.version import (
+    check_version_compatibility,
 )
 
 

@@ -12,9 +12,6 @@ import torch
 from deepmd.dpmodel import (
     FittingOutputDef,
 )
-from deepmd.dpmodel.utils.version import (
-    check_version_compatibility,
-)
 from deepmd.pt.model.descriptor.base_descriptor import (
     BaseDescriptor,
 )
@@ -26,6 +23,9 @@ from deepmd.pt.utils.utils import (
 )
 from deepmd.utils.path import (
     DPPath,
+)
+from deepmd.utils.version import (
+    check_version_compatibility,
 )
 
 from .base_atomic_model import (

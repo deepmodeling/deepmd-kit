@@ -10,9 +10,6 @@ import numpy as np
 from deepmd.dpmodel.utils.env_mat import (
     EnvMat,
 )
-from deepmd.dpmodel.utils.version import (
-    check_version_compatibility,
-)
 from deepmd.tf.common import (
     cast_precision,
     get_activation_func,
@@ -67,6 +64,9 @@ from deepmd.tf.utils.tabulate import (
 )
 from deepmd.tf.utils.type_embed import (
     embed_atom_type,
+)
+from deepmd.utils.version import (
+    check_version_compatibility,
 )
 
 from .descriptor import (

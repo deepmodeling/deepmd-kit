@@ -19,7 +19,7 @@ from deepmd.dpmodel.utils.nlist import (
     get_multiple_nlist_key,
     nlist_distinguish_types,
 )
-from deepmd.dpmodel.utils.version import (
+from deepmd.utils.version import (
     check_version_compatibility,
 )
 

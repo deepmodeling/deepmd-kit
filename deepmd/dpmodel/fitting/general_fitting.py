@@ -21,7 +21,7 @@ from deepmd.dpmodel.utils import (
     FittingNet,
     NetworkCollection,
 )
-from deepmd.dpmodel.utils.version import (
+from deepmd.utils.version import (
     check_version_compatibility,
 )
 

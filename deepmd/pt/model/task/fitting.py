@@ -12,9 +12,6 @@ from typing import (
 import numpy as np
 import torch
 
-from deepmd.dpmodel.utils.version import (
-    check_version_compatibility,
-)
 from deepmd.pt.model.network.mlp import (
     FittingNet,
     NetworkCollection,
@@ -45,6 +42,9 @@ from deepmd.pt.utils.stat import (
 from deepmd.pt.utils.utils import (
     to_numpy_array,
     to_torch_tensor,
+)
+from deepmd.utils.version import (
+    check_version_compatibility,
 )
 
 dtype = env.GLOBAL_PT_FLOAT_PRECISION
