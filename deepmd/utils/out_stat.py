@@ -2,21 +2,22 @@
 """Output statistics."""
 from typing import (
     Optional,
+    Tuple,
 )
 
 import numpy as np
 
 
-def compute_output_stat(
+def compute_bias_from_redu(
     output_redu: np.ndarray,
     natoms: np.ndarray,
     assigned_bias: Optional[np.ndarray] = None,
     rcond: Optional[float] = None,
-) -> np.ndarray:
+) -> Tuple[np.ndarray, np.ndarray]:
     """Compute the output statistics.
 
     Given the reduced output value and the number of atoms for each atom,
-    compute the least-squares solution as the atomic output bais.
+    compute the least-squares solution as the atomic output bais and std.
 
     Parameters
     ----------
@@ -34,6 +35,8 @@ def compute_output_stat(
     -------
     np.ndarray
         The computed output bias, shape is [ntypes, ndim].
+    np.ndarray
+        The computed output std, shape is [ntypes, ndim].
     """
     output_redu = np.array(output_redu)
     natoms = np.array(natoms)
@@ -67,4 +70,48 @@ def compute_output_stat(
     if assigned_bias is not None:
         # add back assigned atom; this might not be required
         computed_output_bias[assigned_bias_atom_mask] = assigned_bias_masked
-    return computed_output_bias
+    # rest_redu: nframes, ndim
+    rest_redu = output_redu - np.einsum("ij,jk->ik", natoms, computed_output_bias)
+    output_std = rest_redu.std(axis=0)
+    return computed_output_bias, output_std
+
+
+def compute_stats_from_atomic(
+    output: np.ndarray,
+    atype: np.ndarray,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Compute the output statistics.
+
+    Given the output value and the type of atoms,
+    compute the atomic output bais and std.
+
+    Parameters
+    ----------
+    output
+        The output value, shape is [nframes, nloc, ndim].
+    atype
+        The type of atoms, shape is [nframes, nloc].
+
+    Returns
+    -------
+    np.ndarray
+        The computed output bias, shape is [ntypes, ndim].
+    np.ndarray
+        The computed output std, shape is [ntypes, ndim].
+    """
+    output = np.array(output)
+    atype = np.array(atype)
+    # check shape
+    assert output.ndim == 3
+    assert atype.ndim == 2
+    assert output.shape[:2] == atype.shape
+    # compute output bias
+    nframes, nloc, ndim = output.shape
+    ntypes = atype.max() + 1
+    output_bias = np.zeros((ntypes, ndim))
+    output_std = np.zeros((ntypes, ndim))
+    for type_i in range(ntypes):
+        mask = atype == type_i
+        output_bias[type_i] = output[mask].mean(axis=0)
+        output_std[type_i] = output[mask].std(axis=0)
+    return output_bias, output_std
