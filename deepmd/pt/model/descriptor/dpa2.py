@@ -298,7 +298,7 @@ class DescrptDPA2(torch.nn.Module, BaseDescriptor):
         return self.get_dim_emb()
 
     def compute_input_stats(
-        self, merged: Union[Callable, List], path: Optional[DPPath] = None
+        self, merged: Union[Callable, List[dict]], path: Optional[DPPath] = None
     ):
         for ii, descrpt in enumerate([self.repinit, self.repformers]):
             descrpt.compute_input_stats(merged, path)

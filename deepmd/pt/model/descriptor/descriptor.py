@@ -89,7 +89,7 @@ class DescriptorBlock(torch.nn.Module, ABC, make_plugin_registry("DescriptorBloc
         pass
 
     def compute_input_stats(
-        self, merged: Union[Callable, List], path: Optional[DPPath] = None
+        self, merged: Union[Callable, List[dict]], path: Optional[DPPath] = None
     ):
         """Update mean and stddev for DescriptorBlock elements."""
         raise NotImplementedError

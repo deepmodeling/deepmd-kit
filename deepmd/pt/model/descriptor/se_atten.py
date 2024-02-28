@@ -203,7 +203,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         return self.get_dim_emb()
 
     def compute_input_stats(
-        self, merged: Union[Callable, List], path: Optional[DPPath] = None
+        self, merged: Union[Callable, List[dict]], path: Optional[DPPath] = None
     ):
         """Update mean and stddev for descriptor elements."""
         env_mat_stat = EnvMatStatSe(self)
