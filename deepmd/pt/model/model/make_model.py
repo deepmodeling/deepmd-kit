@@ -239,13 +239,18 @@ def make_model(T_AtomicModel):
             ###
             ### type checking would not pass jit, convert to coord prec anyway
             ###
-            # for vv, kk in zip([fp, ap], ["frame", "atomic"]):
-            #     if fp is not None and self.reverse_precision_dict[fp.dtype] != input_prec:
+            # for vv, kk in zip([fparam, aparam], ["frame", "atomic"]):
+            #     if vv is not None and self.reverse_precision_dict[vv.dtype] != input_prec:
             #         log.warning(
-            #           f"type of {kk} parameter {self.reverse_precision_dict[fp.dtype]}"
+            #           f"type of {kk} parameter {self.reverse_precision_dict[vv.dtype]}"
             #           " does not match"
             #           f" that of the coordinate {input_prec}"
             #         )
+            _lst: List[Optional[torch.Tensor]] = [
+                vv.to(coord.dtype) if vv is not None else None
+                for vv in [box, fparam, aparam]
+            ]
+            box, fparam, aparam = _lst
             if (
                 input_prec
                 == self.reverse_precision_dict[self.global_pt_float_precision]
