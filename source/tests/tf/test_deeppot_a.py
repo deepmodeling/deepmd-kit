@@ -1147,6 +1147,7 @@ class TestFparamAparam(FparamAparamCommonTest, unittest.TestCase):
         os.remove("fparam_aparam.pb")
         cls.dp = None
 
+
 class TestDeepPotAPBCNeighborList(TestDeepPotAPBC):
     @classmethod
     def setUpClass(cls):
