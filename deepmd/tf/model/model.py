@@ -63,6 +63,9 @@ from deepmd.tf.utils.type_embed import (
 from deepmd.utils.plugin import (
     make_plugin_registry,
 )
+from deepmd.utils.version import (
+    check_version_compatibility,
+)
 
 
 class Model(ABC, make_plugin_registry("model")):
@@ -778,7 +781,7 @@ class StandardModel(Model):
             The deserialized descriptor
         """
         data = copy.deepcopy(data)
-
+        check_version_compatibility(data.pop("@version", 1), 1, 1)
         descriptor = Descriptor.deserialize(data.pop("descriptor"), suffix=suffix)
         fitting = Fitting.deserialize(data.pop("fitting"), suffix=suffix)
         return cls(
@@ -807,6 +810,7 @@ class StandardModel(Model):
         return {
             "@class": "Model",
             "type": "standard",
+            "@version": 1,
             "type_map": self.type_map,
             "descriptor": self.descrpt.serialize(suffix=suffix),
             "fitting": self.fitting.serialize(suffix=suffix),
