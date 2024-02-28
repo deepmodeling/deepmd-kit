@@ -4,8 +4,10 @@ from abc import (
     abstractmethod,
 )
 from typing import (
+    Callable,
     List,
     Optional,
+    Union,
 )
 
 from deepmd.common import (
@@ -84,7 +86,9 @@ def make_base_descriptor(
             """
             pass
 
-        def compute_input_stats(self, merged: callable, path: Optional[DPPath] = None):
+        def compute_input_stats(
+            self, merged: Union[Callable, List], path: Optional[DPPath] = None
+        ):
             """Update mean and stddev for descriptor elements."""
             raise NotImplementedError
 
