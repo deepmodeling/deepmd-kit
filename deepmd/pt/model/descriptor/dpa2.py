@@ -288,6 +288,41 @@ class DescrptDPA2(torch.nn.Module, BaseDescriptor):
         """
         return True
 
+    def share_params(self, base_class, shared_level, resume=False):
+        assert (
+            self.__class__ == base_class.__class__
+        ), "Only descriptors of the same type can share params!"
+        # For DPA2 descriptors, the user-defined share-level
+        # shared_level: 0
+        # share all parameters in type_embedding, repinit and repformers
+        if shared_level == 0:
+            self._modules["type_embedding"] = base_class._modules["type_embedding"]
+            self.repinit.share_params(base_class.repinit, 0, resume=resume)
+            self._modules["g1_shape_tranform"] = base_class._modules[
+                "g1_shape_tranform"
+            ]
+            self.repformers.share_params(base_class.repformers, 0, resume=resume)
+        # shared_level: 1
+        # share all parameters in type_embedding and repinit
+        elif shared_level == 1:
+            self._modules["type_embedding"] = base_class._modules["type_embedding"]
+            self.repinit.share_params(base_class.repinit, 0, resume=resume)
+        # shared_level: 2
+        # share all parameters in type_embedding and repformers
+        elif shared_level == 2:
+            self._modules["type_embedding"] = base_class._modules["type_embedding"]
+            self._modules["g1_shape_tranform"] = base_class._modules[
+                "g1_shape_tranform"
+            ]
+            self.repformers.share_params(base_class.repformers, 0, resume=resume)
+        # shared_level: 3
+        # share all parameters in type_embedding
+        elif shared_level == 3:
+            self._modules["type_embedding"] = base_class._modules["type_embedding"]
+        # Other shared levels
+        else:
+            raise NotImplementedError
+
     @property
     def dim_out(self):
         return self.get_dim_out()

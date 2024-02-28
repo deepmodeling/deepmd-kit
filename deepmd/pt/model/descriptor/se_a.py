@@ -126,6 +126,19 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         """
         return self.sea.mixed_types()
 
+    def share_params(self, base_class, shared_level, resume=False):
+        assert (
+            self.__class__ == base_class.__class__
+        ), "Only descriptors of the same type can share params!"
+        # For SeA descriptors, the user-defined share-level
+        # shared_level: 0
+        # share all parameters in sea
+        if shared_level == 0:
+            self.sea.share_params(base_class.sea, 0, resume=resume)
+        # Other shared levels
+        else:
+            raise NotImplementedError
+
     @property
     def dim_out(self):
         """Returns the output dimension of this descriptor."""

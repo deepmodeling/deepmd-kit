@@ -1,4 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from .base_descriptor import (
+    BaseDescriptor,
+)
 from .descriptor import (
     DescriptorBlock,
     make_default_type_embedding,
@@ -31,6 +34,7 @@ from .se_r import (
 )
 
 __all__ = [
+    "BaseDescriptor",
     "DescriptorBlock",
     "make_default_type_embedding",
     "DescrptBlockSeA",

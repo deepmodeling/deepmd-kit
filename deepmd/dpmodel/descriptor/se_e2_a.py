@@ -240,6 +240,10 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         """
         return False
 
+    def share_params(self, base_class, shared_level, resume=False):
+        """Share the parameters of self to the base_class with shared_level."""
+        raise NotImplementedError
+
     def get_ntypes(self) -> int:
         """Returns the number of element types."""
         return self.ntypes

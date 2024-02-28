@@ -86,6 +86,11 @@ def make_base_descriptor(
             """
             pass
 
+        @abstractmethod
+        def share_params(self, base_class, shared_level, resume=False):
+            """Share the parameters of self to the base_class with shared_level."""
+            pass
+
         def compute_input_stats(
             self, merged: Union[Callable, List[dict]], path: Optional[DPPath] = None
         ):

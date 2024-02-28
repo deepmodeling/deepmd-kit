@@ -77,18 +77,6 @@ class Fitting(torch.nn.Module, BaseFitting):
             # the following will successfully link all the params except buffers, which need manually link.
             for item in self._modules:
                 self._modules[item] = base_class._modules[item]
-        elif shared_level == 2:
-            # share all the layers before final layer
-            # the following will successfully link all the params except buffers, which need manually link.
-            self._modules["filter_layers"][0].deep_layers = base_class._modules[
-                "filter_layers"
-            ][0].deep_layers
-        elif shared_level == 3:
-            # share the first layers
-            # the following will successfully link all the params except buffers, which need manually link.
-            self._modules["filter_layers"][0].deep_layers[0] = base_class._modules[
-                "filter_layers"
-            ][0].deep_layers[0]
         else:
             raise NotImplementedError
 

@@ -154,8 +154,6 @@ class DescrptBlockHybrid(DescriptorBlock):
                 self.descriptor_list[ii].share_params(
                     base_class.descriptor_list[ii], shared_level, resume=resume
                 )
-            if self.hybrid_mode == "sequential":
-                self.sequential_transform = base_class.sequential_transform
         else:
             raise NotImplementedError
 
