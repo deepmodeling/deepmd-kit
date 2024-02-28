@@ -150,6 +150,34 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
         """
         return False
 
+    def share_params(self, base_class, shared_level, resume=False):
+        assert (
+            self.__class__ == base_class.__class__
+        ), "Only descriptors of the same type can share params!"
+        # For SeR descriptors, the user-defined share-level
+        # shared_level: 0
+        if shared_level == 0:
+            # link buffers
+            if hasattr(self, "mean") and not resume:
+                # in case of change params during resume
+                base_env = EnvMatStatSe(base_class)
+                base_env.stats = base_class.stats
+                for kk in base_class.get_stats():
+                    base_env.stats[kk] += self.get_stats()[kk]
+                mean, stddev = base_env()
+                if not base_class.set_davg_zero:
+                    base_class.mean.copy_(torch.tensor(mean, device=env.DEVICE))
+                base_class.stddev.copy_(torch.tensor(stddev, device=env.DEVICE))
+                self.mean = base_class.mean
+                self.stddev = base_class.stddev
+            # self.load_state_dict(base_class.state_dict()) # this does not work, because it only inits the model
+            # the following will successfully link all the params except buffers
+            for item in self._modules:
+                self._modules[item] = base_class._modules[item]
+        # Other shared levels
+        else:
+            raise NotImplementedError
+
     def compute_input_stats(
         self, merged: Union[Callable, List[dict]], path: Optional[DPPath] = None
     ):
