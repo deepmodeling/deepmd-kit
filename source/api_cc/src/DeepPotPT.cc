@@ -171,8 +171,8 @@ template void DeepPotPT::compute<double, std::vector<ENERGYTYPE>>(
     const std::vector<double>& box,
     const InputNlist& lmp_list,
     const int& ago,
-    const std::vector<VALUETYPE>& fparam,
-    const std::vector<VALUETYPE>& aparam);
+    const std::vector<double>& fparam,
+    const std::vector<double>& aparam);
 template void DeepPotPT::compute<float, std::vector<ENERGYTYPE>>(
     std::vector<ENERGYTYPE>& ener,
     std::vector<float>& force,
@@ -184,8 +184,8 @@ template void DeepPotPT::compute<float, std::vector<ENERGYTYPE>>(
     const std::vector<float>& box,
     const InputNlist& lmp_list,
     const int& ago,
-    const std::vector<VALUETYPE>& fparam,
-    const std::vector<VALUETYPE>& aparam);
+    const std::vector<float>& fparam,
+    const std::vector<float>& aparam);
 template <typename VALUETYPE, typename ENERGYVTYPE>
 void DeepPotPT::compute(ENERGYVTYPE& ener,
                         std::vector<VALUETYPE>& force,
@@ -284,8 +284,8 @@ template void DeepPotPT::compute<double, std::vector<ENERGYTYPE>>(
     const std::vector<double>& coord,
     const std::vector<int>& atype,
     const std::vector<double>& box,
-    const std::vector<VALUETYPE>& fparam,
-    const std::vector<VALUETYPE>& aparam);
+    const std::vector<double>& fparam,
+    const std::vector<double>& aparam);
 template void DeepPotPT::compute<float, std::vector<ENERGYTYPE>>(
     std::vector<ENERGYTYPE>& ener,
     std::vector<float>& force,
@@ -295,8 +295,8 @@ template void DeepPotPT::compute<float, std::vector<ENERGYTYPE>>(
     const std::vector<float>& coord,
     const std::vector<int>& atype,
     const std::vector<float>& box,
-    const std::vector<VALUETYPE>& fparam,
-    const std::vector<VALUETYPE>& aparam);
+    const std::vector<float>& fparam,
+    const std::vector<float>& aparam);
 void DeepPotPT::get_type_map(std::string& type_map) {
   auto ret = module.run_method("get_type_map").toList();
   for (const torch::IValue& element : ret) {
