@@ -60,11 +60,11 @@ void DeepPotPT::init(const std::string& model,
 
   auto rcut_ = module.run_method("get_rcut").toDouble();
   rcut = static_cast<double>(rcut_);
-  ntypes = 0;
+  ntypes = module.run_method("get_ntypes").toInt();
   ntypes_spin = 0;
-  dfparam = 0;
-  daparam = 0;
-  aparam_nall = false;
+  dfparam = module.run_method("get_dim_fparam").toInt();
+  daparam = module.run_method("get_dim_aparam").toInt();
+  aparam_nall = module.run_method("is_aparam_nall").toBool();
   inited = true;
 }
 DeepPotPT::~DeepPotPT() {}
@@ -79,7 +79,9 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
                         const std::vector<int>& atype,
                         const std::vector<VALUETYPE>& box,
                         const InputNlist& lmp_list,
-                        const int& ago) {
+                        const int& ago,
+                        const std::vector<VALUETYPE>& fparam,
+                        const std::vector<VALUETYPE>& aparam) {
   torch::Device device(torch::kCUDA, gpu_id);
   if (!gpu_enabled) {
     device = torch::Device(torch::kCPU);
@@ -109,11 +111,23 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
   firstneigh_tensor = firstneigh.to(torch::kInt64).to(device);
   bool do_atom_virial_tensor = true;
   c10::optional<torch::Tensor> optional_tensor;
+  c10::optional<torch::Tensor> fparam_tensor;
+  if (!fparam.empty()) {
+    fparam_tensor = torch::from_blob(const_cast<VALUETYPE*>(fparam.data()),
+                                     {1, fparam.size()}, options)
+                        .to(device);
+  }
+  c10::optional<torch::Tensor> aparam_tensor;
+  if (!aparam.empty()) {
+    aparam_tensor = torch::from_blob(const_cast<VALUETYPE*>(aparam.data()),
+                                     {1, aparam.size()}, options)
+                        .to(device);
+  }
   c10::Dict<c10::IValue, c10::IValue> outputs =
       module
           .run_method("forward_lower", coord_wrapped_Tensor, atype_Tensor,
-                      firstneigh_tensor, optional_tensor, optional_tensor,
-                      optional_tensor, do_atom_virial_tensor)
+                      firstneigh_tensor, optional_tensor, fparam_tensor,
+                      aparam_tensor, do_atom_virial_tensor)
           .toGenericDict();
   c10::IValue energy_ = outputs.at("energy");
   c10::IValue force_ = outputs.at("extended_force");
@@ -156,7 +170,9 @@ template void DeepPotPT::compute<double, std::vector<ENERGYTYPE>>(
     const std::vector<int>& atype,
     const std::vector<double>& box,
     const InputNlist& lmp_list,
-    const int& ago);
+    const int& ago,
+    const std::vector<VALUETYPE>& fparam,
+    const std::vector<VALUETYPE>& aparam);
 template void DeepPotPT::compute<float, std::vector<ENERGYTYPE>>(
     std::vector<ENERGYTYPE>& ener,
     std::vector<float>& force,
@@ -167,7 +183,9 @@ template void DeepPotPT::compute<float, std::vector<ENERGYTYPE>>(
     const std::vector<int>& atype,
     const std::vector<float>& box,
     const InputNlist& lmp_list,
-    const int& ago);
+    const int& ago,
+    const std::vector<VALUETYPE>& fparam,
+    const std::vector<VALUETYPE>& aparam);
 template <typename VALUETYPE, typename ENERGYVTYPE>
 void DeepPotPT::compute(ENERGYVTYPE& ener,
                         std::vector<VALUETYPE>& force,
@@ -176,7 +194,9 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
                         std::vector<VALUETYPE>& atom_virial,
                         const std::vector<VALUETYPE>& coord,
                         const std::vector<int>& atype,
-                        const std::vector<VALUETYPE>& box) {
+                        const std::vector<VALUETYPE>& box,
+                        const std::vector<VALUETYPE>& fparam,
+                        const std::vector<VALUETYPE>& aparam) {
   torch::Device device(torch::kCUDA, gpu_id);
   if (!gpu_enabled) {
     device = torch::Device(torch::kCPU);
@@ -207,8 +227,18 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
   }
   inputs.push_back(box_Tensor);
   c10::optional<torch::Tensor> fparam_tensor;
+  if (!fparam.empty()) {
+    fparam_tensor = torch::from_blob(const_cast<VALUETYPE*>(fparam.data()),
+                                     {1, fparam.size()}, options)
+                        .to(device);
+  }
   inputs.push_back(fparam_tensor);
   c10::optional<torch::Tensor> aparam_tensor;
+  if (!aparam.empty()) {
+    aparam_tensor = torch::from_blob(const_cast<VALUETYPE*>(aparam.data()),
+                                     {1, aparam.size()}, options)
+                        .to(device);
+  }
   inputs.push_back(aparam_tensor);
   bool do_atom_virial_tensor = true;
   inputs.push_back(do_atom_virial_tensor);
@@ -253,7 +283,9 @@ template void DeepPotPT::compute<double, std::vector<ENERGYTYPE>>(
     std::vector<double>& atom_virial,
     const std::vector<double>& coord,
     const std::vector<int>& atype,
-    const std::vector<double>& box);
+    const std::vector<double>& box,
+    const std::vector<VALUETYPE>& fparam,
+    const std::vector<VALUETYPE>& aparam);
 template void DeepPotPT::compute<float, std::vector<ENERGYTYPE>>(
     std::vector<ENERGYTYPE>& ener,
     std::vector<float>& force,
@@ -262,7 +294,9 @@ template void DeepPotPT::compute<float, std::vector<ENERGYTYPE>>(
     std::vector<float>& atom_virial,
     const std::vector<float>& coord,
     const std::vector<int>& atype,
-    const std::vector<float>& box);
+    const std::vector<float>& box,
+    const std::vector<VALUETYPE>& fparam,
+    const std::vector<VALUETYPE>& aparam);
 void DeepPotPT::get_type_map(std::string& type_map) {
   auto ret = module.run_method("get_type_map").toList();
   for (const torch::IValue& element : ret) {
@@ -282,7 +316,8 @@ void DeepPotPT::computew(std::vector<double>& ener,
                          const std::vector<double>& box,
                          const std::vector<double>& fparam,
                          const std::vector<double>& aparam) {
-  compute(ener, force, virial, atom_energy, atom_virial, coord, atype, box);
+  compute(ener, force, virial, atom_energy, atom_virial, coord, atype, box,
+          fparam, aparam);
 }
 void DeepPotPT::computew(std::vector<double>& ener,
                          std::vector<float>& force,
@@ -294,7 +329,8 @@ void DeepPotPT::computew(std::vector<double>& ener,
                          const std::vector<float>& box,
                          const std::vector<float>& fparam,
                          const std::vector<float>& aparam) {
-  compute(ener, force, virial, atom_energy, atom_virial, coord, atype, box);
+  compute(ener, force, virial, atom_energy, atom_virial, coord, atype, box,
+          fparam, aparam);
 }
 void DeepPotPT::computew(std::vector<double>& ener,
                          std::vector<double>& force,
@@ -311,7 +347,7 @@ void DeepPotPT::computew(std::vector<double>& ener,
                          const std::vector<double>& aparam) {
   // TODO: atomic compute unsupported
   compute(ener, force, virial, atom_energy, atom_virial, coord, atype, box,
-          inlist, ago);
+          inlist, ago, fparam, aparam);
 }
 void DeepPotPT::computew(std::vector<double>& ener,
                          std::vector<float>& force,

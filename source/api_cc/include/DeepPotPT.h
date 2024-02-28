@@ -69,9 +69,9 @@ class DeepPotPT : public DeepPotBase {
                std::vector<VALUETYPE>& atom_virial,
                const std::vector<VALUETYPE>& coord,
                const std::vector<int>& atype,
-               const std::vector<VALUETYPE>& box);
-  //    const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
-  //    const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
+               const std::vector<VALUETYPE>& box,
+               const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
+               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
   /**
    * @brief Evaluate the energy, force, virial, atomic energy, and atomic virial
    *by using this DP.
@@ -108,9 +108,11 @@ class DeepPotPT : public DeepPotBase {
                const std::vector<VALUETYPE>& box,
                //    const int nghost,
                const InputNlist& lmp_list,
-               const int& ago);
-  //    const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
-  //    const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
+               const int& ago,
+               const std::vector<VALUETYPE>& fparam,
+               const std::vector<VALUETYPE>& aparam,
+               const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
+               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
   /**
    * @brief Evaluate the energy, force, and virial with the mixed type
    *by using this DP.
