@@ -39,6 +39,7 @@ from deepmd.utils.argcheck import (
     (True, False),  # resnet_dt
     (True, False),  # type_one_side
     ([], [[0, 1]]),  # excluded_types
+    ("float32", "float64"),  # precision
 )
 class TestSeA(CommonTest, DescriptorTest, unittest.TestCase):
     @property
@@ -47,6 +48,7 @@ class TestSeA(CommonTest, DescriptorTest, unittest.TestCase):
             resnet_dt,
             type_one_side,
             excluded_types,
+            precision,
         ) = self.param
         return {
             "sel": [10, 10],
@@ -57,6 +59,7 @@ class TestSeA(CommonTest, DescriptorTest, unittest.TestCase):
             "resnet_dt": resnet_dt,
             "type_one_side": type_one_side,
             "exclude_types": excluded_types,
+            "precision": precision,
             "seed": 1145141919810,
         }
 
@@ -66,8 +69,9 @@ class TestSeA(CommonTest, DescriptorTest, unittest.TestCase):
             resnet_dt,
             type_one_side,
             excluded_types,
+            precision,
         ) = self.param
-        return not type_one_side or CommonTest.skip_pt
+        return CommonTest.skip_pt
 
     @property
     def skip_dp(self) -> bool:
@@ -75,8 +79,9 @@ class TestSeA(CommonTest, DescriptorTest, unittest.TestCase):
             resnet_dt,
             type_one_side,
             excluded_types,
+            precision,
         ) = self.param
-        return not type_one_side or CommonTest.skip_dp
+        return CommonTest.skip_dp
 
     tf_class = DescrptSeATF
     dp_class = DescrptSeADP
@@ -116,6 +121,17 @@ class TestSeA(CommonTest, DescriptorTest, unittest.TestCase):
             dtype=GLOBAL_NP_FLOAT_PRECISION,
         )
         self.natoms = np.array([6, 6, 2, 4], dtype=np.int32)
+        # TF se_e2_a type_one_side=False requires atype sorted
+        (
+            resnet_dt,
+            type_one_side,
+            excluded_types,
+            precision,
+        ) = self.param
+        if not type_one_side:
+            idx = np.argsort(self.atype)
+            self.atype = self.atype[idx]
+            self.coords = self.coords.reshape(-1, 3)[idx].ravel()
 
     def build_tf(self, obj: Any, suffix: str) -> Tuple[list, dict]:
         return self.build_tf_descriptor(
@@ -147,3 +163,35 @@ class TestSeA(CommonTest, DescriptorTest, unittest.TestCase):
 
     def extract_ret(self, ret: Any, backend) -> Tuple[np.ndarray, ...]:
         return (ret[0],)
+
+    @property
+    def rtol(self) -> float:
+        """Relative tolerance for comparing the return value."""
+        (
+            resnet_dt,
+            type_one_side,
+            excluded_types,
+            precision,
+        ) = self.param
+        if precision == "float64":
+            return 1e-10
+        elif precision == "float32":
+            return 1e-4
+        else:
+            raise ValueError(f"Unknown precision: {precision}")
+
+    @property
+    def atol(self) -> float:
+        """Absolute tolerance for comparing the return value."""
+        (
+            resnet_dt,
+            type_one_side,
+            excluded_types,
+            precision,
+        ) = self.param
+        if precision == "float64":
+            return 1e-10
+        elif precision == "float32":
+            return 1e-4
+        else:
+            raise ValueError(f"Unknown precision: {precision}")

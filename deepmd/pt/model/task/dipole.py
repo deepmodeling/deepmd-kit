@@ -24,6 +24,7 @@ from deepmd.pt.utils.env import (
 log = logging.getLogger(__name__)
 
 
+@GeneralFitting.register("dipole")
 class DipoleFittingNet(GeneralFitting):
     """Construct a dipole fitting net.
 
@@ -56,6 +57,12 @@ class DipoleFittingNet(GeneralFitting):
         The condition number for the regression of atomic energy.
     seed : int, optional
         Random seed.
+    r_differentiable
+        If the variable is differentiated with respect to coordinates of atoms.
+        Only reduciable variable are differentiable.
+    c_differentiable
+        If the variable is differentiated with respect to the cell tensor (pbc case).
+        Only reduciable variable are differentiable.
     """
 
     def __init__(
@@ -74,9 +81,13 @@ class DipoleFittingNet(GeneralFitting):
         rcond: Optional[float] = None,
         seed: Optional[int] = None,
         exclude_types: List[int] = [],
+        r_differentiable: bool = True,
+        c_differentiable: bool = True,
         **kwargs,
     ):
         self.embedding_width = embedding_width
+        self.r_differentiable = r_differentiable
+        self.c_differentiable = c_differentiable
         super().__init__(
             var_name=var_name,
             ntypes=ntypes,
@@ -101,8 +112,11 @@ class DipoleFittingNet(GeneralFitting):
 
     def serialize(self) -> dict:
         data = super().serialize()
+        data["type"] = "dipole"
         data["embedding_width"] = self.embedding_width
         data["old_impl"] = self.old_impl
+        data["r_differentiable"] = self.r_differentiable
+        data["c_differentiable"] = self.c_differentiable
         return data
 
     def output_def(self) -> FittingOutputDef:
@@ -112,8 +126,8 @@ class DipoleFittingNet(GeneralFitting):
                     self.var_name,
                     [3],
                     reduciable=True,
-                    r_differentiable=True,
-                    c_differentiable=True,
+                    r_differentiable=self.r_differentiable,
+                    c_differentiable=self.c_differentiable,
                 ),
             ]
         )

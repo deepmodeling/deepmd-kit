@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import copy
 import logging
-import sys
 from typing import (
     Dict,
     List,
@@ -13,11 +12,11 @@ import torch
 from deepmd.dpmodel import (
     FittingOutputDef,
 )
-from deepmd.pt.model.descriptor.se_a import (  # noqa # TODO: should import all descriptors!!!
-    DescrptSeA,
+from deepmd.pt.model.descriptor.base_descriptor import (
+    BaseDescriptor,
 )
-from deepmd.pt.model.task.ener import (  # noqa # TODO: should import all fittings!
-    InvarFitting,
+from deepmd.pt.model.task.base_fitting import (
+    BaseFitting,
 )
 from deepmd.pt.utils.utils import (
     dict_to_device,
@@ -49,6 +48,7 @@ class DPAtomicModel(torch.nn.Module, BaseAtomicModel):
 
     def __init__(self, descriptor, fitting, type_map: Optional[List[str]]):
         super().__init__()
+        self.model_def_script = ""
         ntypes = len(type_map)
         self.type_map = type_map
         self.ntypes = ntypes
@@ -93,22 +93,18 @@ class DPAtomicModel(torch.nn.Module, BaseAtomicModel):
 
     def serialize(self) -> dict:
         return {
+            "@class": "Model",
+            "type": "standard",
             "type_map": self.type_map,
             "descriptor": self.descriptor.serialize(),
             "fitting": self.fitting_net.serialize(),
-            "descriptor_name": self.descriptor.__class__.__name__,
-            "fitting_name": self.fitting_net.__class__.__name__,
         }
 
     @classmethod
     def deserialize(cls, data) -> "DPAtomicModel":
         data = copy.deepcopy(data)
-        descriptor_obj = getattr(
-            sys.modules[__name__], data["descriptor_name"]
-        ).deserialize(data["descriptor"])
-        fitting_obj = getattr(sys.modules[__name__], data["fitting_name"]).deserialize(
-            data["fitting"]
-        )
+        descriptor_obj = BaseDescriptor.deserialize(data["descriptor"])
+        fitting_obj = BaseFitting.deserialize(data["fitting"])
         obj = cls(descriptor_obj, fitting_obj, type_map=data["type_map"])
         return obj
 
@@ -146,7 +142,7 @@ class DPAtomicModel(torch.nn.Module, BaseAtomicModel):
         """
         nframes, nloc, nnei = nlist.shape
         atype = extended_atype[:, :nloc]
-        if self.do_grad():
+        if self.do_grad_r() or self.do_grad_c():
             extended_coord.requires_grad_(True)
         descriptor, rot_mat, g2, h2, sw = self.descriptor(
             extended_coord,

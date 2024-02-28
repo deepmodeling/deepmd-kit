@@ -9,6 +9,9 @@ import torch
 from deepmd.pt.model.atomic_model import (
     DPZBLLinearAtomicModel,
 )
+from deepmd.pt.model.model.model import (
+    BaseModel,
+)
 
 from .make_model import (
     make_model,
@@ -17,7 +20,8 @@ from .make_model import (
 DPZBLModel_ = make_model(DPZBLLinearAtomicModel)
 
 
-class DPZBLModel(DPZBLModel_):
+@BaseModel.register("zbl")
+class DPZBLModel(DPZBLModel_, BaseModel):
     model_type = "ener"
 
     def __init__(
@@ -48,15 +52,17 @@ class DPZBLModel(DPZBLModel_):
         model_predict = {}
         model_predict["atom_energy"] = model_ret["energy"]
         model_predict["energy"] = model_ret["energy_redu"]
-        if self.do_grad("energy"):
+        if self.do_grad_r("energy"):
             model_predict["force"] = model_ret["energy_derv_r"].squeeze(-2)
+        if self.do_grad_c("energy"):
+            model_predict["virial"] = model_ret["energy_derv_c_redu"].squeeze(-2)
             if do_atomic_virial:
                 model_predict["atom_virial"] = model_ret["energy_derv_c"].squeeze(-3)
-            model_predict["virial"] = model_ret["energy_derv_c_redu"].squeeze(-2)
         else:
             model_predict["force"] = model_ret["dforce"]
         return model_predict
 
+    @torch.jit.export
     def forward_lower(
         self,
         extended_coord,
@@ -80,13 +86,12 @@ class DPZBLModel(DPZBLModel_):
         model_predict = {}
         model_predict["atom_energy"] = model_ret["energy"]
         model_predict["energy"] = model_ret["energy_redu"]
-        if self.do_grad("energy"):
-            model_predict["extended_force"] = model_ret["energy_derv_r"].squeeze(-2)
+        if self.do_grad_r("energy"):
+            model_predict["force"] = model_ret["energy_derv_r"].squeeze(-2)
+        if self.do_grad_c("energy"):
             model_predict["virial"] = model_ret["energy_derv_c_redu"].squeeze(-2)
             if do_atomic_virial:
-                model_predict["extended_virial"] = model_ret["energy_derv_c"].squeeze(
-                    -2
-                )
+                model_predict["atom_virial"] = model_ret["energy_derv_c"].squeeze(-3)
         else:
             assert model_ret["dforce"] is not None
             model_predict["dforce"] = model_ret["dforce"]

@@ -12,6 +12,7 @@ from pathlib import (
 
 import dpdata
 import numpy as np
+import torch
 
 from deepmd.pt.model.descriptor import (
     DescrptSeA,
@@ -125,6 +126,22 @@ class DatasetTest(ABC):
         self.dp_d = self.setup_tf()
 
     def test_stat_output(self):
+        def my_merge(energy, natoms):
+            energy_lst = []
+            natoms_lst = []
+            for i in range(len(energy)):
+                for j in range(len(energy[i])):
+                    energy_lst.append(torch.tensor(energy[i][j], device="cpu"))
+                    natoms_lst.append(
+                        torch.tensor(natoms[i][j], device="cpu")
+                        .unsqueeze(0)
+                        .expand(energy[i][j].shape[0], -1)
+                    )
+            return energy_lst, natoms_lst
+
+        energy = self.dp_sampled["energy"]
+        natoms = self.dp_sampled["natoms_vec"]
+        energy, natoms = my_merge(energy, natoms)
         dp_fn = EnerFitting(
             self.dp_d.get_ntypes(), self.dp_d.get_dim_out(), self.n_neuron
         )

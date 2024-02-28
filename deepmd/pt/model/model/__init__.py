@@ -10,13 +10,14 @@ definition `deepmd.dpmodel.OutputVariableDef`.
 """
 
 import copy
+import json
 
 from deepmd.pt.model.atomic_model import (
     DPAtomicModel,
     PairTabAtomicModel,
 )
-from deepmd.pt.model.descriptor.descriptor import (
-    Descriptor,
+from deepmd.pt.model.descriptor.base_descriptor import (
+    BaseDescriptor,
 )
 from deepmd.pt.model.task import (
     Fitting,
@@ -47,7 +48,7 @@ def get_zbl_model(model_params):
     ntypes = len(model_params["type_map"])
     # descriptor
     model_params["descriptor"]["ntypes"] = ntypes
-    descriptor = Descriptor(**model_params["descriptor"])
+    descriptor = BaseDescriptor(**model_params["descriptor"])
     # fitting
     fitting_net = model_params.get("fitting_net", None)
     fitting_net["type"] = fitting_net.get("type", "ener")
@@ -83,7 +84,7 @@ def get_model(model_params):
     ntypes = len(model_params["type_map"])
     # descriptor
     model_params["descriptor"]["ntypes"] = ntypes
-    descriptor = Descriptor(**model_params["descriptor"])
+    descriptor = BaseDescriptor(**model_params["descriptor"])
     # fitting
     fitting_net = model_params.get("fitting_net", None)
     fitting_net["type"] = fitting_net.get("type", "ener")
@@ -98,7 +99,9 @@ def get_model(model_params):
             fitting_net["return_energy"] = True
     fitting = Fitting(**fitting_net)
 
-    return EnergyModel(descriptor, fitting, type_map=model_params["type_map"])
+    model = EnergyModel(descriptor, fitting, type_map=model_params["type_map"])
+    model.model_def_script = json.dumps(model_params)
+    return model
 
 
 __all__ = [

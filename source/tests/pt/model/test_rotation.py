@@ -21,29 +21,29 @@ from deepmd.pt.model.model import (
 from deepmd.pt.utils import (
     env,
 )
-from deepmd.pt.utils.dataset import (
-    DeepmdDataSystem,
+from deepmd.utils.data import (
+    DeepmdData,
 )
 
 
-class CheckSymmetry(DeepmdDataSystem):
+class CheckSymmetry(DeepmdData):
     def __init__(
         self,
         sys_path: str,
-        rcut,
-        sec,
         type_map: Optional[List[str]] = None,
-        type_split=True,
     ):
-        super().__init__(sys_path, rcut, sec, type_map, type_split)
+        super().__init__(sys_path=sys_path, type_map=type_map)
+        self.add("energy", 1, atomic=False, must=False, high_prec=True)
+        self.add("force", 3, atomic=True, must=False, high_prec=False)
+        self.add("virial", 9, atomic=False, must=False, high_prec=False)
 
     def get_rotation(self, index, rotation_matrix):
         for i in range(
-            0, len(self._dirs) + 1
+            0, len(self.dirs) + 1
         ):  # note: if different sets can be merged, prefix sum is unused to calculate
             if index < self.prefix_sum[i]:
                 break
-        frames = self._load_set(self._dirs[i - 1])
+        frames = self._load_set(self.dirs[i - 1])
         frames["coord"] = np.dot(
             rotation_matrix, frames["coord"].reshape(-1, 3).T
         ).T.reshape(self.nframes, -1)
@@ -53,14 +53,16 @@ class CheckSymmetry(DeepmdDataSystem):
         frames["force"] = np.dot(
             rotation_matrix, frames["force"].reshape(-1, 3).T
         ).T.reshape(self.nframes, -1)
-        frame = self.single_preprocess(frames, index - self.prefix_sum[i - 1])
+        frame = self._get_subdata(frames, index - self.prefix_sum[i - 1])
+        frame = self.reformat_data_torch(frame)
         return frame
 
 
 def get_data(batch):
     inputs = {}
     for key in ["coord", "atype", "box"]:
-        inputs[key] = batch[key].unsqueeze(0).to(env.DEVICE)
+        inputs[key] = torch.as_tensor(batch[key], device=env.DEVICE)
+        inputs[key] = inputs[key].unsqueeze(0).to(env.DEVICE)
     return inputs
 
 
@@ -72,7 +74,8 @@ class TestRotation(unittest.TestCase):
         self.config["training"]["training_data"]["systems"] = data_file
         self.config["training"]["validation_data"]["systems"] = data_file
         self.rotation = special_ortho_group.rvs(3)
-        self.get_dataset(0)
+        with torch.device("cpu"):
+            self.get_dataset(0)
         self.get_model()
 
     def get_model(self):
@@ -80,14 +83,9 @@ class TestRotation(unittest.TestCase):
 
     def get_dataset(self, system_index=0, batch_index=0):
         systems = self.config["training"]["training_data"]["systems"]
-        rcut = self.config["model"]["descriptor"]["rcut"]
-        sel = self.config["model"]["descriptor"]["sel"]
-        sec = torch.cumsum(torch.tensor(sel), dim=0)
         type_map = self.config["model"]["type_map"]
-        dpdatasystem = CheckSymmetry(
-            sys_path=systems[system_index], rcut=rcut, sec=sec, type_map=type_map
-        )
-        self.origin_batch = dpdatasystem._get_item(batch_index)
+        dpdatasystem = CheckSymmetry(sys_path=systems[system_index], type_map=type_map)
+        self.origin_batch = dpdatasystem.get_item_torch(batch_index)
         self.rotated_batch = dpdatasystem.get_rotation(batch_index, self.rotation)
 
     def test_rotation(self):

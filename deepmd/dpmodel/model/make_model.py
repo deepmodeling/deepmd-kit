@@ -6,8 +6,12 @@ from typing import (
 
 import numpy as np
 
+from deepmd.dpmodel.common import (
+    NativeOP,
+)
 from deepmd.dpmodel.output_def import (
     ModelOutputDef,
+    OutputVariableCategory,
 )
 from deepmd.dpmodel.utils import (
     build_neighbor_list,
@@ -45,7 +49,7 @@ def make_model(T_AtomicModel):
 
     """
 
-    class CM(T_AtomicModel):
+    class CM(T_AtomicModel, NativeOP):
         def __init__(
             self,
             *args,
@@ -59,6 +63,22 @@ def make_model(T_AtomicModel):
         def model_output_def(self):
             """Get the output def for the model."""
             return ModelOutputDef(self.fitting_output_def())
+
+        def model_output_type(self) -> str:
+            """Get the output type for the model."""
+            output_def = self.model_output_def()
+            var_defs = output_def.var_defs
+            vars = [
+                kk
+                for kk, vv in var_defs.items()
+                if vv.category == OutputVariableCategory.OUT
+            ]
+            if len(vars) == 1:
+                return vars[0]
+            elif len(vars) == 0:
+                raise ValueError("No valid output type found")
+            else:
+                raise ValueError(f"Multiple valid output types found: {vars}")
 
         def call(
             self,

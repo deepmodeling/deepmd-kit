@@ -16,6 +16,9 @@ from deepmd.dpmodel import (
     FittingOutputDef,
     OutputVariableDef,
 )
+from deepmd.pt.utils import (
+    env,
+)
 from deepmd.pt.utils.nlist import (
     build_multiple_neighbor_list,
     get_multiple_nlist_key,
@@ -89,11 +92,17 @@ class LinearAtomicModel(torch.nn.Module, BaseAtomicModel):
         """Get the sels for each individual models."""
         return [model.get_sel() for model in self.models]
 
-    def _sort_rcuts_sels(self) -> Tuple[List[float], List[int]]:
+    def _sort_rcuts_sels(self, device: torch.device) -> Tuple[List[float], List[int]]:
         # sort the pair of rcut and sels in ascending order, first based on sel, then on rcut.
-        rcuts = torch.tensor(self.get_model_rcuts(), dtype=torch.float64)
-        nsels = torch.tensor(self.get_model_nsels())
-        zipped = torch.stack([torch.tensor(rcuts), torch.tensor(nsels)], dim=0).T
+        rcuts = torch.tensor(self.get_model_rcuts(), dtype=torch.float64, device=device)
+        nsels = torch.tensor(self.get_model_nsels(), device=device)
+        zipped = torch.stack(
+            [
+                torch.tensor(rcuts, device=device),
+                torch.tensor(nsels, device=device),
+            ],
+            dim=0,
+        ).T
         inner_sorting = torch.argsort(zipped[:, 1], dim=0)
         inner_sorted = zipped[inner_sorting]
         outer_sorting = torch.argsort(inner_sorted[:, 0], stable=True)
@@ -134,10 +143,10 @@ class LinearAtomicModel(torch.nn.Module, BaseAtomicModel):
             the result dict, defined by the fitting net output def.
         """
         nframes, nloc, nnei = nlist.shape
-        if self.do_grad():
+        if self.do_grad_r() or self.do_grad_c():
             extended_coord.requires_grad_(True)
         extended_coord = extended_coord.view(nframes, -1, 3)
-        sorted_rcuts, sorted_sels = self._sort_rcuts_sels()
+        sorted_rcuts, sorted_sels = self._sort_rcuts_sels(device=extended_coord.device)
         nlists = build_multiple_neighbor_list(
             extended_coord,
             nlist,
@@ -196,6 +205,8 @@ class LinearAtomicModel(torch.nn.Module, BaseAtomicModel):
     @staticmethod
     def serialize(models) -> dict:
         return {
+            "@class": "Model",
+            "type": "linear",
             "models": [model.serialize() for model in models],
             "model_name": [model.__class__.__name__ for model in models],
         }
@@ -277,6 +288,7 @@ class DPZBLLinearAtomicModel(LinearAtomicModel):
     ):
         models = [dp_model, zbl_model]
         super().__init__(models, **kwargs)
+        self.model_def_script = ""
         self.dp_model = dp_model
         self.zbl_model = zbl_model
 
@@ -285,10 +297,12 @@ class DPZBLLinearAtomicModel(LinearAtomicModel):
         self.smin_alpha = smin_alpha
 
         # this is a placeholder being updated in _compute_weight, to handle Jit attribute init error.
-        self.zbl_weight = torch.empty(0, dtype=torch.float64)
+        self.zbl_weight = torch.empty(0, dtype=torch.float64, device=env.DEVICE)
 
     def serialize(self) -> dict:
         return {
+            "@class": "Model",
+            "type": "zbl",
             "models": LinearAtomicModel.serialize([self.dp_model, self.zbl_model]),
             "sw_rmin": self.sw_rmin,
             "sw_rmax": self.sw_rmax,

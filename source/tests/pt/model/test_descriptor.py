@@ -14,7 +14,7 @@ from pathlib import (
 )
 
 from deepmd.pt.model.descriptor import (
-    prod_env_mat_se_a,
+    prod_env_mat,
 )
 from deepmd.pt.utils import (
     dp_random,
@@ -113,9 +113,6 @@ class TestSeA(unittest.TestCase):
         ds = DeepmdDataSetForLoader(
             self.systems[0],
             model_config["type_map"],
-            self.rcut,
-            self.sel,
-            type_split=True,
         )
         self.np_batch, self.pt_batch = get_single_batch(ds)
         self.sec = np.cumsum(self.sel)
@@ -158,7 +155,7 @@ class TestSeA(unittest.TestCase):
             mixed_types=False,
             box=self.pt_batch["box"].to(env.DEVICE),
         )
-        my_d, _, _ = prod_env_mat_se_a(
+        my_d, _, _ = prod_env_mat(
             extended_coord,
             nlist,
             atype,

@@ -333,10 +333,14 @@ class TestEnergy(unittest.TestCase):
                 # print(dst.mean(), dst.std())
                 dst.copy_(src)
         # Start forward computing
-        batch = my_ds.systems[0]._data_system.single_preprocess(batch, 0)
+        tmp = np.copy(batch["natoms_vec"])
+        batch = my_ds.systems[0]._data_system._get_subdata(batch, 0)
+        batch = my_ds.systems[0]._data_system.reformat_data_torch(batch)
         for key in ["coord", "atype", "box", "energy", "force"]:
+            batch[key] = torch.as_tensor(batch[key], device=env.DEVICE)
             batch[key] = batch[key].unsqueeze(0)
         batch["coord"].requires_grad_(True)
+        batch["natoms_vec"] = tmp
         batch["natoms"] = torch.tensor(
             batch["natoms_vec"], device=batch["coord"].device
         ).unsqueeze(0)
@@ -415,7 +419,7 @@ class TestEnergy(unittest.TestCase):
             var_name = torch2tf(name, last_layer_id=len(self.n_neuron))
             var_grad = vs_dict[var_name].gradient
             param_grad = param.grad.cpu()
-            var_grad = torch.tensor(var_grad)
+            var_grad = torch.tensor(var_grad, device="cpu")
             assert np.allclose(var_grad, param_grad, rtol=rtol, atol=atol)
 
 

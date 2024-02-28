@@ -6,9 +6,6 @@ from typing import (
 
 import torch
 
-from deepmd.pt.model.descriptor import (
-    Descriptor,
-)
 from deepmd.pt.model.network.network import (
     Identity,
     Linear,
@@ -22,6 +19,9 @@ from deepmd.utils.path import (
     DPPath,
 )
 
+from .base_descriptor import (
+    BaseDescriptor,
+)
 from .repformers import (
     DescrptBlockRepformers,
 )
@@ -30,8 +30,8 @@ from .se_atten import (
 )
 
 
-@Descriptor.register("dpa2")
-class DescrptDPA2(Descriptor):
+@BaseDescriptor.register("dpa2")
+class DescrptDPA2(torch.nn.Module, BaseDescriptor):
     def __init__(
         self,
         ntypes: int,
@@ -305,20 +305,6 @@ class DescrptDPA2(Descriptor):
                 for item in merged
             ]
             descrpt.compute_input_stats(merged_tmp)
-
-    @classmethod
-    def get_data_process_key(cls, config):
-        """
-        Get the keys for the data preprocess.
-        Usually need the information of rcut and sel.
-        TODO Need to be deprecated when the dataloader has been cleaned up.
-        """
-        descrpt_type = config["type"]
-        assert descrpt_type in ["dpa2"]
-        return {
-            "sel": [config["repinit_nsel"], config["repformer_nsel"]],
-            "rcut": [config["repinit_rcut"], config["repformer_rcut"]],
-        }
 
     def serialize(self) -> dict:
         """Serialize the obj to dict."""

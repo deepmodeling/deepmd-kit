@@ -31,16 +31,17 @@ def make_stat_input(datasets, dataloaders, nbatches):
     log.info(f"Packing data for statistics from {len(datasets)} systems")
     for i in range(len(datasets)):
         sys_stat = {key: [] for key in keys}
-        iterator = iter(dataloaders[i])
-        for _ in range(nbatches):
-            try:
-                stat_data = next(iterator)
-            except StopIteration:
-                iterator = iter(dataloaders[i])
-                stat_data = next(iterator)
-            for dd in stat_data:
-                if dd in keys:
-                    sys_stat[dd].append(stat_data[dd])
+        with torch.device("cpu"):
+            iterator = iter(dataloaders[i])
+            for _ in range(nbatches):
+                try:
+                    stat_data = next(iterator)
+                except StopIteration:
+                    iterator = iter(dataloaders[i])
+                    stat_data = next(iterator)
+                for dd in stat_data:
+                    if dd in keys:
+                        sys_stat[dd].append(stat_data[dd])
         for key in keys:
             if not isinstance(sys_stat[key][0], list):
                 if sys_stat[key][0] is None:

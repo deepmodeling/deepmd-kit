@@ -49,16 +49,13 @@ def gen_key(worb, depth, elemid):
 def get_single_batch(dataset, index=None):
     if index is None:
         index = dp_random.choice(np.arange(len(dataset)))
-    pt_batch = dataset[index]
-    np_batch = {}
-    # TODO deprecated
-    for key in ["mapping", "shift", "nlist"]:
-        if key in pt_batch.keys():
-            pt_batch[key] = pt_batch[key].unsqueeze(0)
+    np_batch = dataset[index]
+    pt_batch = {}
+
     for key in ["coord", "box", "force", "energy", "virial", "atype", "natoms"]:
-        if key in pt_batch.keys():
-            pt_batch[key] = pt_batch[key].unsqueeze(0)
-            np_batch[key] = pt_batch[key].cpu().numpy()
+        if key in np_batch.keys():
+            np_batch[key] = np.expand_dims(np_batch[key], axis=0)
+            pt_batch[key] = torch.as_tensor(np_batch[key], device=env.DEVICE)
     np_batch["coord"] = np_batch["coord"].reshape(1, -1)
     np_batch["natoms"] = np_batch["natoms"][0]
     np_batch["force"] = np_batch["force"].reshape(1, -1)
@@ -130,9 +127,6 @@ class TestSeA(unittest.TestCase):
         ds = DeepmdDataSetForLoader(
             self.systems[0],
             model_config["type_map"],
-            self.rcut,
-            self.sel,
-            type_split=True,
         )
         self.filter_neuron = model_config["descriptor"]["neuron"]
         self.axis_neuron = model_config["descriptor"]["axis_neuron"]

@@ -20,7 +20,7 @@ from deepmd.pt.utils import (
     env,
 )
 from deepmd.pt.utils.env_mat_stat import (
-    EnvMatStatSeA,
+    EnvMatStatSe,
 )
 from deepmd.pt.utils.plugin import (
     Plugin,
@@ -32,67 +32,7 @@ from deepmd.utils.path import (
     DPPath,
 )
 
-from .base_descriptor import (
-    BaseDescriptor,
-)
-
 log = logging.getLogger(__name__)
-
-
-class Descriptor(torch.nn.Module, BaseDescriptor):
-    """The descriptor.
-    Given the atomic coordinates, atomic types and neighbor list,
-    calculate the descriptor.
-    """
-
-    __plugins = Plugin()
-    local_cluster = False
-
-    @staticmethod
-    def register(key: str) -> Callable:
-        """Register a descriptor plugin.
-
-        Parameters
-        ----------
-        key : str
-            the key of a descriptor
-
-        Returns
-        -------
-        Descriptor
-            the registered descriptor
-
-        Examples
-        --------
-        >>> @Descriptor.register("some_descrpt")
-            class SomeDescript(Descriptor):
-                pass
-        """
-        return Descriptor.__plugins.register(key)
-
-    @classmethod
-    def get_data_process_key(cls, config):
-        """
-        Get the keys for the data preprocess.
-        Usually need the information of rcut and sel.
-        TODO Need to be deprecated when the dataloader has been cleaned up.
-        """
-        if cls is not Descriptor:
-            raise NotImplementedError("get_data_process_key is not implemented!")
-        descrpt_type = config["type"]
-        return Descriptor.__plugins.plugins[descrpt_type].get_data_process_key(config)
-
-    def __new__(cls, *args, **kwargs):
-        if cls is Descriptor:
-            try:
-                descrpt_type = kwargs["type"]
-            except KeyError:
-                raise KeyError("the type of descriptor should be set by `type`")
-            if descrpt_type in Descriptor.__plugins.plugins:
-                cls = Descriptor.__plugins.plugins[descrpt_type]
-            else:
-                raise RuntimeError("Unknown descriptor type: " + descrpt_type)
-        return super().__new__(cls)
 
 
 class DescriptorBlock(torch.nn.Module, ABC):
@@ -189,7 +129,7 @@ class DescriptorBlock(torch.nn.Module, ABC):
             # link buffers
             if hasattr(self, "mean") and not resume:
                 # in case of change params during resume
-                base_env = EnvMatStatSeA(base_class)
+                base_env = EnvMatStatSe(base_class)
                 base_env.stats = base_class.stats
                 for kk in base_class.get_stats():
                     base_env.stats[kk] += self.get_stats()[kk]

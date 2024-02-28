@@ -18,6 +18,9 @@ from .ener import (
 from .fitting import (
     Fitting,
 )
+from .polarizability import (
+    PolarFittingNet,
+)
 from .type_predict import (
     TypePredictNet,
 )
@@ -31,4 +34,5 @@ __all__ = [
     "Fitting",
     "BaseFitting",
     "TypePredictNet",
+    "PolarFittingNet",
 ]

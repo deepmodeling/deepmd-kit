@@ -14,6 +14,9 @@ from deepmd.common import (
 from deepmd.dpmodel import (
     DEFAULT_PRECISION,
 )
+from deepmd.dpmodel.fitting.base_fitting import (
+    BaseFitting,
+)
 from deepmd.dpmodel.output_def import (
     FittingOutputDef,
     OutputVariableDef,
@@ -25,6 +28,7 @@ from .general_fitting import (
 )
 
 
+@BaseFitting.register("polar")
 @fitting_check_output
 class PolarFitting(GeneralFitting):
     r"""Fitting rotationally equivariant polarizability of the system.
@@ -56,8 +60,6 @@ class PolarFitting(GeneralFitting):
             If the weights of fitting net are trainable.
             Suppose that we have :math:`N_l` hidden layers in the fitting net,
             this list is of length :math:`N_l + 1`, specifying if the hidden layers and the output layer are trainable.
-    atom_ener
-            Specifying atomic energy contribution in vacuum. The `set_davg_zero` key in the descrptor should be set.
     activation_function
             The activation function :math:`\boldsymbol{\phi}` in the embedding net. Supported options are |ACTIVATION_FN|
     precision
@@ -93,7 +95,6 @@ class PolarFitting(GeneralFitting):
         rcond: Optional[float] = None,
         tot_ener_zero: bool = False,
         trainable: Optional[List[bool]] = None,
-        atom_ener: Optional[List[Optional[float]]] = None,
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
         layer_name: Optional[List[Optional[str]]] = None,
@@ -105,6 +106,8 @@ class PolarFitting(GeneralFitting):
         fit_diag: bool = True,
         scale: Optional[List[float]] = None,
         shift_diag: bool = True,
+        # not used
+        seed: Optional[int] = None,
     ):
         # seed, uniform_seed are not included
         if tot_ener_zero:
@@ -115,8 +118,6 @@ class PolarFitting(GeneralFitting):
             raise NotImplementedError("use_aparam_as_mask is not implemented")
         if layer_name is not None:
             raise NotImplementedError("layer_name is not implemented")
-        if atom_ener is not None and atom_ener != []:
-            raise NotImplementedError("atom_ener is not implemented")
 
         self.embedding_width = embedding_width
         self.fit_diag = fit_diag
@@ -124,9 +125,16 @@ class PolarFitting(GeneralFitting):
         if self.scale is None:
             self.scale = [1.0 for _ in range(ntypes)]
         else:
-            assert (
-                isinstance(self.scale, list) and len(self.scale) == ntypes
-            ), "Scale should be a list of length ntypes."
+            if isinstance(self.scale, list):
+                assert (
+                    len(self.scale) == ntypes
+                ), "Scale should be a list of length ntypes."
+            elif isinstance(self.scale, float):
+                self.scale = [self.scale for _ in range(ntypes)]
+            else:
+                raise ValueError(
+                    "Scale must be a list of float of length ntypes or a float."
+                )
         self.scale = np.array(self.scale, dtype=GLOBAL_NP_FLOAT_PRECISION).reshape(
             ntypes, 1
         )
@@ -142,7 +150,6 @@ class PolarFitting(GeneralFitting):
             rcond=rcond,
             tot_ener_zero=tot_ener_zero,
             trainable=trainable,
-            atom_ener=atom_ener,
             activation_function=activation_function,
             precision=precision,
             layer_name=layer_name,
@@ -163,6 +170,7 @@ class PolarFitting(GeneralFitting):
 
     def serialize(self) -> dict:
         data = super().serialize()
+        data["type"] = "polar"
         data["embedding_width"] = self.embedding_width
         data["old_impl"] = self.old_impl
         data["fit_diag"] = self.fit_diag
@@ -176,8 +184,8 @@ class PolarFitting(GeneralFitting):
                     self.var_name,
                     [3, 3],
                     reduciable=True,
-                    r_differentiable=True,
-                    c_differentiable=True,
+                    r_differentiable=False,
+                    c_differentiable=False,
                 ),
             ]
         )

@@ -12,7 +12,7 @@ from deepmd.pt.model.descriptor.descriptor import (
     DescriptorBlock,
 )
 from deepmd.pt.model.descriptor.env_mat import (
-    prod_env_mat_se_a,
+    prod_env_mat,
 )
 from deepmd.pt.model.network.network import (
     NeighborWiseAttention,
@@ -22,7 +22,7 @@ from deepmd.pt.utils import (
     env,
 )
 from deepmd.pt.utils.env_mat_stat import (
-    EnvMatStatSeA,
+    EnvMatStatSe,
 )
 from deepmd.utils.env_mat_stat import (
     StatItem,
@@ -87,6 +87,8 @@ class DescrptBlockSeAtten(DescriptorBlock):
         self.ffn = ffn
         self.ffn_embed_dim = ffn_embed_dim
         self.activation = activation
+        # TODO: To be fixed: precision should be given from inputs
+        self.prec = torch.float64
         self.scaling_factor = scaling_factor
         self.head_num = head_num
         self.normalize = normalize
@@ -200,7 +202,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
 
     def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
         """Update mean and stddev for descriptor elements."""
-        env_mat_stat = EnvMatStatSeA(self)
+        env_mat_stat = EnvMatStatSe(self)
         if path is not None:
             path = path / env_mat_stat.get_hash()
         env_mat_stat.load_or_compute_stats(merged, path)
@@ -245,7 +247,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         atype = extended_atype[:, :nloc]
         nb = nframes
         nall = extended_coord.view(nb, -1, 3).shape[1]
-        dmatrix, diff, sw = prod_env_mat_se_a(
+        dmatrix, diff, sw = prod_env_mat(
             extended_coord,
             nlist,
             atype,

@@ -98,8 +98,10 @@ class EnerFitting(Fitting):
 
     Parameters
     ----------
-    descrpt
-            The descrptor :math:`\mathcal{D}`
+    ntypes
+            The ntypes of the descrptor :math:`\mathcal{D}`
+    dim_descrpt
+            The dimension of the descrptor :math:`\mathcal{D}`
     neuron
             Number of neurons :math:`N` in each hidden layer of the fitting net
     resnet_dt
@@ -197,7 +199,7 @@ class EnerFitting(Fitting):
         ), "length of trainable should be that of n_neuron + 1"
         self.atom_ener = []
         self.atom_ener_v = atom_ener
-        for at, ae in enumerate(atom_ener):
+        for at, ae in enumerate(atom_ener if atom_ener is not None else []):
             if ae is not None:
                 self.atom_ener.append(
                     tf.constant(ae, GLOBAL_TF_FLOAT_PRECISION, name="atom_%d_ener" % at)
@@ -855,7 +857,22 @@ class EnerFitting(Fitting):
                     box = test_data["box"][:numb_test]
                 else:
                     box = None
-                ret = dp.eval(coord, box, atype, mixed_type=mixed_type)
+                if dp.get_dim_fparam() > 0:
+                    fparam = test_data["fparam"][:numb_test]
+                else:
+                    fparam = None
+                if dp.get_dim_aparam() > 0:
+                    aparam = test_data["aparam"][:numb_test]
+                else:
+                    aparam = None
+                ret = dp.eval(
+                    coord,
+                    box,
+                    atype,
+                    mixed_type=mixed_type,
+                    fparam=fparam,
+                    aparam=aparam,
+                )
                 energy_predict.append(ret[0].reshape([numb_test, 1]))
         type_numbs = np.concatenate(type_numbs)
         energy_ground_truth = np.concatenate(energy_ground_truth)
@@ -928,7 +945,7 @@ class EnerFitting(Fitting):
             raise RuntimeError("unknown loss type")
 
     @classmethod
-    def deserialize(cls, data: dict, suffix: str):
+    def deserialize(cls, data: dict, suffix: str = ""):
         """Deserialize the model.
 
         Parameters
@@ -955,7 +972,7 @@ class EnerFitting(Fitting):
             fitting.aparam_inv_std = data["@variables"]["aparam_inv_std"]
         return fitting
 
-    def serialize(self, suffix: str) -> dict:
+    def serialize(self, suffix: str = "") -> dict:
         """Serialize the model.
 
         Returns
@@ -964,6 +981,8 @@ class EnerFitting(Fitting):
             The serialized data
         """
         data = {
+            "@class": "Fitting",
+            "type": "ener",
             "var_name": "energy",
             "ntypes": self.ntypes,
             "dim_descrpt": self.dim_descrpt,

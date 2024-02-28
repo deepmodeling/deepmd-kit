@@ -7,6 +7,7 @@ from pathlib import (
 )
 
 import numpy as np
+import torch
 from torch.utils.data import (
     DataLoader,
 )
@@ -69,7 +70,8 @@ class TestSampler(unittest.TestCase):
             drop_last=False,
             pin_memory=True,
         )
-        batch_data = next(iter(dataloader))
+        with torch.device("cpu"):
+            batch_data = next(iter(dataloader))
         sid = batch_data["sid"]
         fid = batch_data["fid"][0]
         coord = batch_data["coord"].squeeze(0)

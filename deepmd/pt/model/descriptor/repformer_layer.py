@@ -326,7 +326,7 @@ class RepformerLayer(torch.nn.Module):
         sel = [sel] if isinstance(sel, int) else sel
         self.nnei = sum(sel)
         assert len(sel) == 1
-        self.sel = torch.tensor(sel)
+        self.sel = torch.tensor(sel, device=env.DEVICE)
         self.sec = self.sel
         self.axis_dim = axis_dim
         self.set_davg_zero = set_davg_zero
@@ -446,7 +446,7 @@ class RepformerLayer(torch.nn.Module):
         else:
             gg1 = _apply_switch(gg1, sw)
             invnnei = (1.0 / float(nnei)) * torch.ones(
-                (nb, nloc, 1), dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE
+                (nb, nloc, 1), dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=gg1.device
             )
         # nb x nloc x ng2
         g1_11 = torch.sum(g2 * gg1, dim=2) * invnnei
@@ -474,7 +474,7 @@ class RepformerLayer(torch.nn.Module):
         else:
             g2 = _apply_switch(g2, sw)
             invnnei = (1.0 / float(nnei)) * torch.ones(
-                (nb, nloc, 1, 1), dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE
+                (nb, nloc, 1, 1), dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=g2.device
             )
         # nb x nloc x 3 x ng2
         h2g2 = torch.matmul(torch.transpose(h2, -1, -2), g2) * invnnei

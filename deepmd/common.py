@@ -313,3 +313,24 @@ def get_hash(obj) -> str:
         object to hash
     """
     return sha1(json.dumps(obj).encode("utf-8")).hexdigest()
+
+
+def j_get_type(data: dict, class_name: str = "object") -> str:
+    """Get the type from the data.
+
+    Parameters
+    ----------
+    data : dict
+        the data
+    class_name : str, optional
+        the name of the class for error message, by default "object"
+
+    Returns
+    -------
+    str
+        the type
+    """
+    try:
+        return data["type"]
+    except KeyError as e:
+        raise KeyError(f"the type of the {class_name} should be set by `type`") from e

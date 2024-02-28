@@ -2,9 +2,16 @@
 from deepmd.dpmodel.atomic_model import (
     DPAtomicModel,
 )
+from deepmd.dpmodel.model.base_model import (
+    BaseModel,
+)
 
 from .make_model import (
     make_model,
 )
 
-DPModel = make_model(DPAtomicModel)
+
+# use "class" to resolve "Variable not allowed in type expression"
+@BaseModel.register("standard")
+class DPModel(make_model(DPAtomicModel), BaseModel):
+    pass

@@ -13,6 +13,9 @@ from typing import (
 
 import numpy as np
 
+from deepmd.common import (
+    j_get_type,
+)
 from deepmd.tf.env import (
     GLOBAL_TF_FLOAT_PRECISION,
     tf,
@@ -67,11 +70,7 @@ class Descriptor(PluginVariant):
         return Descriptor.__plugins.register(key)
 
     @classmethod
-    def get_class_by_input(cls, input: dict):
-        try:
-            descrpt_type = input["type"]
-        except KeyError:
-            raise KeyError("the type of descriptor should be set by `type`")
+    def get_class_by_type(cls, descrpt_type: str):
         if descrpt_type in Descriptor.__plugins.plugins:
             return Descriptor.__plugins.plugins[descrpt_type]
         else:
@@ -79,7 +78,7 @@ class Descriptor(PluginVariant):
 
     def __new__(cls, *args, **kwargs):
         if cls is Descriptor:
-            cls = cls.get_class_by_input(kwargs)
+            cls = cls.get_class_by_type(j_get_type(kwargs, cls.__name__))
         return super().__new__(cls)
 
     @abstractmethod
@@ -507,7 +506,7 @@ class Descriptor(PluginVariant):
             The local data refer to the current class
         """
         # call subprocess
-        cls = cls.get_class_by_input(local_jdata)
+        cls = cls.get_class_by_type(j_get_type(local_jdata, cls.__name__))
         return cls.update_sel(global_jdata, local_jdata)
 
     @classmethod
@@ -530,7 +529,9 @@ class Descriptor(PluginVariant):
             The deserialized descriptor
         """
         if cls is Descriptor:
-            return Descriptor.get_class_by_input(data).deserialize(data)
+            return Descriptor.get_class_by_type(
+                j_get_type(data, cls.__name__)
+            ).deserialize(data, suffix=suffix)
         raise NotImplementedError("Not implemented in class %s" % cls.__name__)
 
     def serialize(self, suffix: str = "") -> dict:
