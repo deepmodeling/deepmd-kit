@@ -254,6 +254,7 @@ class DeepmdDataSystem:
         energy_shift = compute_output_stat(
             sys_ener.reshape(-1, 1),
             sys_tynatom,
+            rcond=rcond,
         )
         return energy_shift.ravel()
 
