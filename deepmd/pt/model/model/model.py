@@ -84,3 +84,7 @@ class BaseModel(make_base_model()):
             The path to the statistics files.
         """
         raise NotImplementedError
+
+    def data_requirement(self) -> dict:
+        """Get the data requirement for the model."""
+        raise NotImplementedError

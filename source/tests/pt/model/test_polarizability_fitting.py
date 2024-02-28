@@ -323,7 +323,6 @@ class TestDipoleModel(unittest.TestCase):
         self.atype = torch.IntTensor([0, 0, 0, 1, 1], device="cpu")
         self.dd0 = DescrptSeA(self.rcut, self.rcut_smth, self.sel).to(env.DEVICE)
         self.ft0 = PolarFittingNet(
-            "polar",
             self.nt,
             self.dd0.dim_out,
             embedding_width=self.dd0.get_dim_emb(),
