@@ -261,6 +261,7 @@ class TestDPIPIPt(TestDPIPI):
     def setUp(self):
         super().setUp()
 
+        self.box = np.array([13.0, 0.0, 0.0, 0.0, 13.0, 0.0, 0.0, 0.0, 13.0])
         self.expected_e = np.array(
             [
                 -93.016873944029,
