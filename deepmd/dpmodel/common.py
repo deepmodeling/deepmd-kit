@@ -7,6 +7,7 @@ from abc import (
 import numpy as np
 
 from deepmd.env import (
+    GLOBAL_ENER_FLOAT_PRECISION,
     GLOBAL_NP_FLOAT_PRECISION,
 )
 
@@ -42,3 +43,13 @@ class NativeOP(ABC):
     def __call__(self, *args, **kwargs):
         """Forward pass in NumPy implementation."""
         return self.call(*args, **kwargs)
+
+
+__all__ = [
+    "GLOBAL_NP_FLOAT_PRECISION",
+    "GLOBAL_ENER_FLOAT_PRECISION",
+    "PRECISION_DICT",
+    "RESERVED_PRECISON_DICT",
+    "DEFAULT_PRECISION",
+    "NativeOP",
+]
