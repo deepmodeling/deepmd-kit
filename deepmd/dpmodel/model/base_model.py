@@ -11,12 +11,13 @@ from typing import (
 )
 
 from deepmd.utils.plugin import (
+    PluginVariant,
     make_plugin_registry,
 )
 
 
 def make_base_model() -> Type[object]:
-    class BaseBaseModel(ABC, make_plugin_registry("model")):
+    class BaseBaseModel(ABC, PluginVariant, make_plugin_registry("model")):
         """Base class for final exported model that will be directly used for inference.
 
         The class defines some abstractmethods that will be directly called by the

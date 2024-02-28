@@ -13,6 +13,7 @@ from deepmd.pt.model.task.dipole import (
 )
 from deepmd.pt.model.task.ener import (
     EnergyFittingNet,
+    EnergyFittingNetDirect,
 )
 from deepmd.pt.model.task.polarizability import (
     PolarFittingNet,
@@ -39,7 +40,9 @@ class DPModel(make_model(DPAtomicModel), BaseModel):
         # according to the fitting network to decide the type of the model
         if cls is DPModel:
             # map fitting to model
-            if isinstance(fitting, EnergyFittingNet):
+            if isinstance(fitting, EnergyFittingNet) or isinstance(
+                fitting, EnergyFittingNetDirect
+            ):
                 cls = EnergyModel
             elif isinstance(fitting, DipoleFittingNet):
                 cls = DipoleModel

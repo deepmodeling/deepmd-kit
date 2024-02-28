@@ -36,6 +36,7 @@ from deepmd.tf.utils.update_sel import (
 )
 
 
+@Model.register("pairwise_dprc")
 class PairwiseDPRc(Model):
     """Pairwise Deep Potential - Range Correction."""
 

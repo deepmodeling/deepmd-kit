@@ -17,6 +17,9 @@ from deepmd.pt.model.model.transform_output import (
     communicate_extended_output,
     fit_output_to_model_output,
 )
+from deepmd.pt.utils import (
+    env,
+)
 from deepmd.pt.utils.nlist import (
     extend_input_and_build_neighbor_list,
     nlist_distinguish_types,
@@ -115,6 +118,9 @@ def make_model(T_AtomicModel):
                 The keys are defined by the `ModelOutputDef`.
 
             """
+            coord = coord.to(env.GLOBAL_PT_FLOAT_PRECISION)
+            if box is not None:
+                box = box.to(env.GLOBAL_PT_FLOAT_PRECISION)
             (
                 extended_coord,
                 extended_atype,
@@ -183,6 +189,7 @@ def make_model(T_AtomicModel):
                 the result dict, defined by the `FittingOutputDef`.
 
             """
+            extended_coord = extended_coord.to(env.GLOBAL_PT_FLOAT_PRECISION)
             nframes, nall = extended_atype.shape[:2]
             extended_coord = extended_coord.view(nframes, -1, 3)
             nlist = self.format_nlist(extended_coord, extended_atype, nlist)

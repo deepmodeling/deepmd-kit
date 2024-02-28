@@ -12,6 +12,9 @@ from deepmd.env import (
 from deepmd.utils.path import (
     DPPath,
 )
+from deepmd.utils.version import (
+    check_version_compatibility,
+)
 
 try:
     from deepmd._version import version as __version__
@@ -348,6 +351,7 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         return {
             "@class": "Descriptor",
             "type": "se_e2_a",
+            "@version": 1,
             "rcut": self.rcut,
             "rcut_smth": self.rcut_smth,
             "sel": self.sel,
@@ -374,6 +378,7 @@ class DescrptSeA(NativeOP, BaseDescriptor):
     def deserialize(cls, data: dict) -> "DescrptSeA":
         """Deserialize from dict."""
         data = copy.deepcopy(data)
+        check_version_compatibility(data.pop("@version", 1), 1, 1)
         data.pop("@class", None)
         data.pop("type", None)
         variables = data.pop("@variables")
