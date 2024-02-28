@@ -44,7 +44,7 @@ from deepmd.tf.utils.network import (
     one_layer_rand_seed_shift,
 )
 from deepmd.utils.out_stat import (
-    compute_bias_from_redu,
+    compute_stats_from_redu,
 )
 
 log = logging.getLogger(__name__)
@@ -228,7 +228,7 @@ class DOSFitting(Fitting):
         sys_tynatom = np.reshape(sys_tynatom, [nsys, -1])
         sys_tynatom = sys_tynatom[:, 2:]
 
-        dos_shift, _ = compute_bias_from_redu(
+        dos_shift, _ = compute_stats_from_redu(
             sys_dos,
             sys_tynatom,
             rcond=rcond,

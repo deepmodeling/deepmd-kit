@@ -8,7 +8,7 @@ from typing import (
 import numpy as np
 
 
-def compute_bias_from_redu(
+def compute_stats_from_redu(
     output_redu: np.ndarray,
     natoms: np.ndarray,
     assigned_bias: Optional[np.ndarray] = None,

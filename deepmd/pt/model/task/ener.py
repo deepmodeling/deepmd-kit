@@ -32,7 +32,7 @@ from deepmd.pt.utils.utils import (
     to_numpy_array,
 )
 from deepmd.utils.out_stat import (
-    compute_bias_from_redu,
+    compute_stats_from_redu,
 )
 from deepmd.utils.path import (
     DPPath,
@@ -160,7 +160,7 @@ class InvarFitting(GeneralFitting):
                 )
             else:
                 assigned_atom_ener = None
-            bias_atom_e, _ = compute_bias_from_redu(
+            bias_atom_e, _ = compute_stats_from_redu(
                 merged_energy,
                 merged_natoms,
                 assigned_bias=assigned_atom_ener,

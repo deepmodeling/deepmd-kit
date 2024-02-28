@@ -54,7 +54,7 @@ from deepmd.tf.utils.spin import (
     Spin,
 )
 from deepmd.utils.out_stat import (
-    compute_bias_from_redu,
+    compute_stats_from_redu,
 )
 
 if TYPE_CHECKING:
@@ -299,7 +299,7 @@ class EnerFitting(Fitting):
             )
         else:
             assigned_atom_ener = None
-        energy_shift, _ = compute_bias_from_redu(
+        energy_shift, _ = compute_stats_from_redu(
             sys_ener.reshape(-1, 1),
             sys_tynatom,
             assigned_bias=assigned_atom_ener,
