@@ -123,7 +123,6 @@ class TestDPAtomicModel(unittest.TestCase, TestCaseSingleFrameWithNlist):
         self.assertEqual(md0.get_type_map(), type_map)
 
     def test_excl_consistency(self):
-        nf, nloc, nnei = self.nlist.shape
         type_map = ["foo", "bar"]
 
         # test the case of exclusion
