@@ -47,7 +47,7 @@ model_zbl = {
         "type": "se_e2_a",
         "sel": [46, 92, 4],
         "rcut_smth": 0.50,
-        "rcut": 4.00,
+        "rcut": 6.00,
         "neuron": [25, 50, 100],
         "resnet_dt": False,
         "axis_neuron": 16,
