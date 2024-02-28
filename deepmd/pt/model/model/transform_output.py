@@ -14,6 +14,9 @@ from deepmd.dpmodel import (
     get_deriv_name,
     get_reduce_name,
 )
+from deepmd.pt.utils import (
+    env,
+)
 
 
 def atomic_virial_corr(
@@ -148,8 +151,7 @@ def fit_output_to_model_output(
     the model output.
 
     """
-    ## should have been GLOBAL_PT_ENER_FLOAT_PRECISION, but does not pass jit!!!
-    redu_prec = torch.float64
+    redu_prec = env.GLOBAL_PT_ENER_FLOAT_PRECISION
     model_ret = dict(fit_ret.items())
     for kk, vv in fit_ret.items():
         vdef = fit_output_def[kk]
@@ -188,8 +190,7 @@ def communicate_extended_output(
     local and ghost (extended) atoms to local atoms.
 
     """
-    ## should have been GLOBAL_PT_ENER_FLOAT_PRECISION, but does not pass jit!!!
-    redu_prec = torch.float64
+    redu_prec = env.GLOBAL_PT_ENER_FLOAT_PRECISION
     new_ret = {}
     for kk in model_output_def.keys_outp():
         vv = model_ret[kk]
