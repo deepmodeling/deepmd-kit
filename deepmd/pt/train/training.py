@@ -105,8 +105,6 @@ class Trainer:
         self.model_keys = (
             list(model_params["model_dict"]) if self.multi_task else ["Default"]
         )
-        # if self.multi_task and sampled is None:
-        #     sampled = {key: None for key in self.model_keys}
         self.rank = dist.get_rank() if dist.is_initialized() else 0
         self.world_size = dist.get_world_size() if dist.is_initialized() else 1
         self.num_model = len(self.model_keys)
