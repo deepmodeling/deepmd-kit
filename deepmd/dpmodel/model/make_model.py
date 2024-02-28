@@ -9,6 +9,7 @@ from typing import (
 import numpy as np
 
 from deepmd.dpmodel.common import (
+    GLOBAL_ENER_FLOAT_PRECISION,
     GLOBAL_NP_FLOAT_PRECISION,
     PRECISION_DICT,
     RESERVED_PRECISON_DICT,
@@ -17,6 +18,8 @@ from deepmd.dpmodel.common import (
 from deepmd.dpmodel.output_def import (
     ModelOutputDef,
     OutputVariableCategory,
+    OutputVariableOperation,
+    check_operation_applied,
 )
 from deepmd.dpmodel.utils import (
     build_neighbor_list,
@@ -67,6 +70,7 @@ def make_model(T_AtomicModel):
             self.precision_dict = PRECISION_DICT
             self.reverse_precision_dict = RESERVED_PRECISON_DICT
             self.global_np_float_precision = GLOBAL_NP_FLOAT_PRECISION
+            self.global_ener_float_precision = GLOBAL_ENER_FLOAT_PRECISION
 
         def model_output_def(self):
             """Get the output def for the model."""
@@ -272,13 +276,26 @@ def make_model(T_AtomicModel):
             input_prec: str,
         ) -> Dict[str, np.ndarray]:
             """Convert the model output to the input prec."""
-            if (
+            do_cast = (
                 input_prec
                 != self.reverse_precision_dict[self.global_np_float_precision]
-            ):
-                pp = self.precision_dict[input_prec]
-                for kk, vv in model_ret.items():
-                    model_ret[kk] = vv.astype(pp) if vv is not None else None
+            )
+            pp = self.precision_dict[input_prec]
+            odef = self.model_output_def()
+            for kk in odef.keys():
+                if kk not in model_ret.keys():
+                    # do not return energy_derv_c if not do_atomic_virial
+                    continue
+                if check_operation_applied(odef[kk], OutputVariableOperation.REDU):
+                    model_ret[kk] = (
+                        model_ret[kk].astype(self.global_ener_float_precision)
+                        if model_ret[kk] is not None
+                        else None
+                    )
+                elif do_cast:
+                    model_ret[kk] = (
+                        model_ret[kk].astype(pp) if model_ret[kk] is not None else None
+                    )
             return model_ret
 
         def format_nlist(

@@ -13,12 +13,15 @@ from deepmd.dpmodel import (
 )
 from deepmd.dpmodel.output_def import (
     OutputVariableCategory,
+    OutputVariableOperation,
+    check_operation_applied,
 )
 from deepmd.pt.model.model.transform_output import (
     communicate_extended_output,
     fit_output_to_model_output,
 )
 from deepmd.pt.utils.env import (
+    GLOBAL_PT_ENER_FLOAT_PRECISION,
     GLOBAL_PT_FLOAT_PRECISION,
     PRECISION_DICT,
     RESERVED_PRECISON_DICT,
@@ -65,6 +68,7 @@ def make_model(T_AtomicModel):
             self.precision_dict = PRECISION_DICT
             self.reverse_precision_dict = RESERVED_PRECISON_DICT
             self.global_pt_float_precision = GLOBAL_PT_FLOAT_PRECISION
+            self.global_pt_ener_float_precision = GLOBAL_PT_ENER_FLOAT_PRECISION
 
         def model_output_def(self):
             """Get the output def for the model."""
@@ -272,13 +276,26 @@ def make_model(T_AtomicModel):
             input_prec: str,
         ) -> Dict[str, torch.Tensor]:
             """Convert the model output to the input prec."""
-            if (
+            do_cast = (
                 input_prec
                 != self.reverse_precision_dict[self.global_pt_float_precision]
-            ):
-                pp = self.precision_dict[input_prec]
-                for kk, vv in model_ret.items():
-                    model_ret[kk] = vv.to(pp) if vv is not None else None
+            )
+            pp = self.precision_dict[input_prec]
+            odef = self.model_output_def()
+            for kk in odef.keys():
+                if kk not in model_ret.keys():
+                    # do not return energy_derv_c if not do_atomic_virial
+                    continue
+                if check_operation_applied(odef[kk], OutputVariableOperation.REDU):
+                    model_ret[kk] = (
+                        model_ret[kk].to(self.global_pt_ener_float_precision)
+                        if model_ret[kk] is not None
+                        else None
+                    )
+                elif do_cast:
+                    model_ret[kk] = (
+                        model_ret[kk].to(pp) if model_ret[kk] is not None else None
+                    )
             return model_ret
 
         @torch.jit.export

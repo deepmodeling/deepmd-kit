@@ -3,9 +3,6 @@ import unittest
 
 import numpy as np
 
-from deepmd.dpmodel.common import (
-    RESERVED_PRECISON_DICT,
-)
 from deepmd.dpmodel.descriptor import (
     DescrptSeA,
 )
@@ -86,9 +83,11 @@ class TestDPModelLower(unittest.TestCase, TestCaseSingleFrameWithNlist):
         for ii in model_l_ret_32.keys():
             if model_l_ret_32[ii] is None:
                 continue
-            self.assertEqual(
-                model_l_ret_32[ii].dtype.name, RESERVED_PRECISON_DICT[np.float32]
-            )
+            if ii[-4:] == "redu":
+                self.assertEqual(model_l_ret_32[ii].dtype, np.float64)
+            else:
+                self.assertEqual(model_l_ret_32[ii].dtype, np.float32)
+            self.assertEqual(model_l_ret_64[ii].dtype, np.float64)
             np.testing.assert_allclose(
                 model_l_ret_32[ii],
                 model_l_ret_64[ii],
@@ -135,7 +134,12 @@ class TestDPModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
         for ii in model_l_ret_32.keys():
             if model_l_ret_32[ii] is None:
                 continue
-            self.assertEqual(model_l_ret_32[ii].dtype, np.float32)
+            if ii[-4:] == "redu":
+                self.assertEqual(model_l_ret_32[ii].dtype, np.float64)
+            else:
+                self.assertEqual(model_l_ret_32[ii].dtype, np.float32)
+            self.assertEqual(model_l_ret_64[ii].dtype, np.float64)
+            self.assertEqual(model_l_ret_64[ii].dtype, np.float64)
             np.testing.assert_allclose(
                 model_l_ret_32[ii],
                 model_l_ret_64[ii],

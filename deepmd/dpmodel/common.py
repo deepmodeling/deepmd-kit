@@ -6,7 +6,7 @@ from abc import (
 
 import numpy as np
 
-from deepmd.common import (
+from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
 )
 
