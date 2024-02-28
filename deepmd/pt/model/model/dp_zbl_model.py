@@ -16,9 +16,6 @@ from .make_model import (
 
 DPZBLModel_ = make_model(DPZBLLinearAtomicModel)
 
-from deepmd.pt.utils import (
-    env,
-)
 
 
 class DPZBLModel(DPZBLModel_):
@@ -40,9 +37,6 @@ class DPZBLModel(DPZBLModel_):
         aparam: Optional[torch.Tensor] = None,
         do_atomic_virial: bool = False,
     ) -> Dict[str, torch.Tensor]:
-        coord = coord.to(env.GLOBAL_PT_FLOAT_PRECISION)
-        if box is not None:
-            box = box.to(env.GLOBAL_PT_FLOAT_PRECISION)
         model_ret = self.forward_common(
             coord,
             atype,
@@ -76,7 +70,6 @@ class DPZBLModel(DPZBLModel_):
         aparam: Optional[torch.Tensor] = None,
         do_atomic_virial: bool = False,
     ):
-        extended_coord = extended_coord.to(env.GLOBAL_PT_FLOAT_PRECISION)
         model_ret = self.forward_common_lower(
             extended_coord,
             extended_atype,

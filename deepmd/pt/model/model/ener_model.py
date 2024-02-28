@@ -6,10 +6,6 @@ from typing import (
 
 import torch
 
-from deepmd.pt.utils import (
-    env,
-)
-
 from .dp_model import (
     DPModel,
 )
@@ -75,7 +71,6 @@ class EnergyModel(DPModel):
         aparam: Optional[torch.Tensor] = None,
         do_atomic_virial: bool = False,
     ):
-        extended_coord = extended_coord.to(env.GLOBAL_PT_FLOAT_PRECISION)
         model_ret = self.forward_common_lower(
             extended_coord,
             extended_atype,
