@@ -230,16 +230,18 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
   inputs.push_back(box_Tensor);
   c10::optional<torch::Tensor> fparam_tensor;
   if (!fparam.empty()) {
-    fparam_tensor = torch::from_blob(const_cast<VALUETYPE*>(fparam.data()),
-                                     {1, fparam.size()}, options)
-                        .to(device);
+    fparam_tensor =
+        torch::from_blob(const_cast<VALUETYPE*>(fparam.data()),
+                         {1, static_cast<long int>(fparam.size())}, options)
+            .to(device);
   }
   inputs.push_back(fparam_tensor);
   c10::optional<torch::Tensor> aparam_tensor;
   if (!aparam.empty()) {
-    aparam_tensor = torch::from_blob(const_cast<VALUETYPE*>(aparam.data()),
-                                     {1, aparam.size()}, options)
-                        .to(device);
+    aparam_tensor =
+        torch::from_blob(const_cast<VALUETYPE*>(aparam.data()),
+                         {1, static_cast<long int>(aparam.size())}, options)
+            .to(device);
   }
   inputs.push_back(aparam_tensor);
   bool do_atom_virial_tensor = true;
