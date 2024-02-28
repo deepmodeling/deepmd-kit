@@ -59,9 +59,9 @@ from deepmd.utils.path import (
 # in DPAtomicModel (and other classes), but this requires the developer aware
 # of it when developing it...
 class BaseModel(make_base_model()):
-    def __init__(self):
+    def __init__(self, *args, **kwargs):
         """Construct a basic model for different tasks."""
-        super().__init__()
+        super().__init__(*args, **kwargs)
 
     def compute_or_load_stat(
         self,

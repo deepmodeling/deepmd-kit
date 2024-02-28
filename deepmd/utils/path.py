@@ -355,6 +355,7 @@ class DPH5Path(DPPath):
         if self._name in self._keys:
             del self.root[self._name]
         self.root.create_dataset(self._name, data=arr)
+        self.root.flush()
 
     def glob(self, pattern: str) -> List["DPPath"]:
         """Search path using the glob pattern.
