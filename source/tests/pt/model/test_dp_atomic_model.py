@@ -95,7 +95,7 @@ class TestDPAtomicModel(unittest.TestCase, TestCaseSingleFrameWithNlist):
         args1 = [
             to_torch_tensor(ii) for ii in [self.coord_ext, self.atype_ext, self.nlist]
         ]
-        ret0 = md0.forward_atomic(*args0)
+        ret0 = md0.forward_common_atomic(*args0)
         ret1 = md1.forward_common_atomic(*args1)
         np.testing.assert_allclose(
             ret0["energy"],

@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import itertools
 import unittest
 
 import numpy as np
@@ -38,10 +39,14 @@ class TestDPAtomicModel(unittest.TestCase, TestCaseSingleFrameWithNlist):
             mixed_types=ds.mixed_types(),
         )
         type_map = ["foo", "bar"]
-        md0 = DPAtomicModel(ds, ft, type_map=type_map)
-        md1 = DPAtomicModel.deserialize(md0.serialize())
 
-        ret0 = md0.forward_atomic(self.coord_ext, self.atype_ext, self.nlist)
-        ret1 = md1.forward_atomic(self.coord_ext, self.atype_ext, self.nlist)
+        for atom_excl, pair_excl in itertools.product([[], [1]], [[], [[0, 1]]]):
+            md0 = DPAtomicModel(ds, ft, type_map=type_map)
+            md0.reinit_atom_exclude(atom_excl)
+            md0.reinit_pair_exclude(pair_excl)
+            md1 = DPAtomicModel.deserialize(md0.serialize())
 
-        np.testing.assert_allclose(ret0["energy"], ret1["energy"])
+            ret0 = md0.forward_common_atomic(self.coord_ext, self.atype_ext, self.nlist)
+            ret1 = md1.forward_common_atomic(self.coord_ext, self.atype_ext, self.nlist)
+
+            np.testing.assert_allclose(ret0["energy"], ret1["energy"])

@@ -192,7 +192,7 @@ def make_model(T_AtomicModel):
             nframes, nall = extended_atype.shape[:2]
             extended_coord = extended_coord.reshape(nframes, -1, 3)
             nlist = self.format_nlist(extended_coord, extended_atype, nlist)
-            atomic_ret = self.forward_atomic(
+            atomic_ret = self.forward_common_atomic(
                 extended_coord,
                 extended_atype,
                 nlist,
