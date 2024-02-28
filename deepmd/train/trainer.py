@@ -29,6 +29,7 @@ from deepmd.env import (
 )
 from deepmd.fit import (
     Fitting,
+    dipole,
     ener,
 )
 from deepmd.loss import (
@@ -169,7 +170,12 @@ class DPTrainer:
             fitting_param["mixed_prec"] = self.mixed_prec
             if fitting_param["mixed_prec"] is not None:
                 fitting_param["precision"]: str = self.mixed_prec["output_prec"]
-            self.fitting = ener.EnerFitting(**fitting_param)
+                self.fitting = ener.EnerFitting(**fitting_param)
+            elif fitting_type == "dipole":
+                fitting_param.pop("type")
+                self.fitting = dipole.DipoleFittingSeA(**fitting_param)
+            else:
+                raise NotImplementedError
         else:
             raise NotImplementedError("multi-task mode is not supported")
             self.fitting_dict = {}
