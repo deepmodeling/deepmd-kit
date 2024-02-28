@@ -186,6 +186,49 @@ class TestDPModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
             to_numpy_array(ret1["energy_redu"]),
         )
 
+    def test_prec_consistency(self):
+        rng = np.random.default_rng()
+        nf, nloc = self.atype.shape
+        ds = DPDescrptSeA(
+            self.rcut,
+            self.rcut_smth,
+            self.sel,
+        )
+        ft = DPInvarFitting(
+            "energy",
+            self.nt,
+            ds.get_dim_out(),
+            1,
+            mixed_types=ds.mixed_types(),
+        )
+        nfp, nap = 2, 3
+        type_map = ["foo", "bar"]
+        fparam = rng.normal(size=[self.nf, nfp])
+        aparam = rng.normal(size=[self.nf, nloc, nap])
+
+        md0 = DPDPModel(ds, ft, type_map=type_map)
+        md1 = DPModel.deserialize(md0.serialize()).to(env.DEVICE)
+
+        args64 = [to_torch_tensor(ii) for ii in [self.coord, self.atype, self.cell]]
+        args64[0] = args64[0].to(torch.float64)
+        args64[2] = args64[2].to(torch.float64)
+        args32 = [to_torch_tensor(ii) for ii in [self.coord, self.atype, self.cell]]
+        args32[0] = args32[0].to(torch.float32)
+        args32[2] = args32[2].to(torch.float32)
+        # fparam, aparam are converted to coordinate precision by model
+        fparam = to_torch_tensor(fparam)
+        aparam = to_torch_tensor(aparam)
+
+        model_l_ret_64 = md1.forward_common(*args64, fparam=fparam, aparam=aparam)
+        model_l_ret_32 = md1.forward_common(*args32, fparam=fparam, aparam=aparam)
+
+        for ii in model_l_ret_32.keys():
+            self.assertEqual(model_l_ret_32[ii].dtype, torch.float32)
+            np.testing.assert_allclose(
+                to_numpy_array(model_l_ret_32[ii]),
+                to_numpy_array(model_l_ret_64[ii]),
+            )
+
 
 class TestDPModelLower(unittest.TestCase, TestCaseSingleFrameWithNlist):
     def setUp(self):
@@ -268,6 +311,51 @@ class TestDPModelLower(unittest.TestCase, TestCaseSingleFrameWithNlist):
             ret0["energy_redu"],
             to_numpy_array(ret1["energy_redu"]),
         )
+
+    def test_prec_consistency(self):
+        rng = np.random.default_rng()
+        nf, nloc, nnei = self.nlist.shape
+        ds = DPDescrptSeA(
+            self.rcut,
+            self.rcut_smth,
+            self.sel,
+        )
+        ft = DPInvarFitting(
+            "energy",
+            self.nt,
+            ds.get_dim_out(),
+            1,
+            mixed_types=ds.mixed_types(),
+        )
+        nfp, nap = 2, 3
+        type_map = ["foo", "bar"]
+        fparam = rng.normal(size=[self.nf, nfp])
+        aparam = rng.normal(size=[self.nf, nloc, nap])
+
+        md0 = DPDPModel(ds, ft, type_map=type_map)
+        md1 = DPModel.deserialize(md0.serialize()).to(env.DEVICE)
+
+        args64 = [
+            to_torch_tensor(ii) for ii in [self.coord_ext, self.atype_ext, self.nlist]
+        ]
+        args64[0] = args64[0].to(torch.float64)
+        args32 = [
+            to_torch_tensor(ii) for ii in [self.coord_ext, self.atype_ext, self.nlist]
+        ]
+        args32[0] = args32[0].to(torch.float32)
+        # fparam, aparam are converted to coordinate precision by model
+        fparam = to_torch_tensor(fparam)
+        aparam = to_torch_tensor(aparam)
+
+        model_l_ret_64 = md1.forward_common_lower(*args64, fparam=fparam, aparam=aparam)
+        model_l_ret_32 = md1.forward_common_lower(*args32, fparam=fparam, aparam=aparam)
+
+        for ii in model_l_ret_32.keys():
+            self.assertEqual(model_l_ret_32[ii].dtype, torch.float32)
+            np.testing.assert_allclose(
+                to_numpy_array(model_l_ret_32[ii]),
+                to_numpy_array(model_l_ret_64[ii]),
+            )
 
     def test_jit(self):
         nf, nloc, nnei = self.nlist.shape
