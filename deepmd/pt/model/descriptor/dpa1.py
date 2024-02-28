@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    Callable,
     List,
     Optional,
+    Union,
 )
 
 import torch
@@ -128,7 +130,9 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
     def dim_emb(self):
         return self.get_dim_emb()
 
-    def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
+    def compute_input_stats(
+        self, merged: Union[Callable, List], path: Optional[DPPath] = None
+    ):
         return self.se_atten.compute_input_stats(merged, path)
 
     def serialize(self) -> dict:

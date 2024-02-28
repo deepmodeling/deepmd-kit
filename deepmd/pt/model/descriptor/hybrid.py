@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    Callable,
     List,
     Optional,
+    Union,
 )
 
 import torch
@@ -157,17 +159,13 @@ class DescrptBlockHybrid(DescriptorBlock):
         else:
             raise NotImplementedError
 
-    def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
+    def compute_input_stats(
+        self, merged: Union[Callable, List], path: Optional[DPPath] = None
+    ):
         """Update mean and stddev for descriptor elements."""
         for ii, descrpt in enumerate(self.descriptor_list):
-            merged_tmp = [
-                {
-                    key: item[key] if not isinstance(item[key], list) else item[key][ii]
-                    for key in item
-                }
-                for item in merged
-            ]
-            descrpt.compute_input_stats(merged_tmp, path)
+            # need support for hybrid descriptors
+            descrpt.compute_input_stats(merged, path)
 
     def forward(
         self,

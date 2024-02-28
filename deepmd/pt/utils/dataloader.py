@@ -147,6 +147,11 @@ class DpLoaderSet(Dataset):
         batch["sid"] = idx
         return batch
 
+    def add_data_requirement(self, dict_of_keys):
+        """Add data requirement for each system in multiple systems."""
+        for system in self.systems:
+            system.add_data_requirement(dict_of_keys)
+
 
 _sentinel = object()
 QUEUESIZE = 32
@@ -254,3 +259,20 @@ def get_weighted_sampler(training_data, prob_style, sys_prob=False):
     with torch.device("cpu"):
         sampler = WeightedRandomSampler(probs, len_sampler, replacement=True)
     return sampler
+
+
+class LazyFunction:
+    def __init__(self, func):
+        self.func = func
+        self.result = None
+        self.called = False
+
+    def __call__(self, *args, **kwargs):
+        if not self.called:
+            self.result = self.func(*args, **kwargs)
+            self.called = True
+        return self.result
+
+
+def lazy(func):
+    return LazyFunction(func)

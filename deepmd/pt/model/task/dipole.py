@@ -20,6 +20,9 @@ from deepmd.pt.utils import (
 from deepmd.pt.utils.env import (
     DEFAULT_PRECISION,
 )
+from deepmd.utils.path import (
+    DPPath,
+)
 
 log = logging.getLogger(__name__)
 
@@ -67,7 +70,6 @@ class DipoleFittingNet(GeneralFitting):
 
     def __init__(
         self,
-        var_name: str,
         ntypes: int,
         dim_descrpt: int,
         embedding_width: int,
@@ -89,7 +91,7 @@ class DipoleFittingNet(GeneralFitting):
         self.r_differentiable = r_differentiable
         self.c_differentiable = c_differentiable
         super().__init__(
-            var_name=var_name,
+            var_name="dipole",
             ntypes=ntypes,
             dim_descrpt=dim_descrpt,
             neuron=neuron,
@@ -139,6 +141,9 @@ class DipoleFittingNet(GeneralFitting):
         Return a list of statistic names needed, such as "bias_atom_e".
         """
         return []
+
+    def compute_output_stats(self, merged, stat_file_path: Optional[DPPath] = None):
+        raise NotImplementedError
 
     def forward(
         self,

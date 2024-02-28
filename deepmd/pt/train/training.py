@@ -38,6 +38,7 @@ from deepmd.pt.utils import (
 from deepmd.pt.utils.dataloader import (
     BufferedIterator,
     get_weighted_sampler,
+    lazy,
 )
 from deepmd.pt.utils.env import (
     DEVICE,
@@ -49,9 +50,13 @@ from deepmd.pt.utils.env import (
 from deepmd.pt.utils.learning_rate import (
     LearningRateExp,
 )
+from deepmd.pt.utils.stat import (
+    make_stat_input,
+)
 
 if torch.__version__.startswith("2"):
     import torch._dynamo
+
 
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
@@ -67,7 +72,6 @@ class Trainer:
         self,
         config: Dict[str, Any],
         training_data,
-        sampled=None,
         stat_file_path=None,
         validation_data=None,
         init_model=None,
@@ -82,7 +86,15 @@ class Trainer:
         Args:
         - config: The Dict-like configuration with training options.
         """
-        resume_model = init_model if init_model is not None else restart_model
+        if init_model is not None:
+            resume_model = init_model
+        elif restart_model is not None:
+            resume_model = restart_model
+        elif finetune_model is not None:
+            resume_model = finetune_model
+        else:
+            resume_model = None
+        resuming = resume_model is not None
         self.restart_training = restart_model is not None
         model_params = config["model"]
         training_params = config["training"]
@@ -93,8 +105,8 @@ class Trainer:
         self.model_keys = (
             list(model_params["model_dict"]) if self.multi_task else ["Default"]
         )
-        if self.multi_task and sampled is None:
-            sampled = {key: None for key in self.model_keys}
+        # if self.multi_task and sampled is None:
+        #     sampled = {key: None for key in self.model_keys}
         self.rank = dist.get_rank() if dist.is_initialized() else 0
         self.world_size = dist.get_world_size() if dist.is_initialized() else 1
         self.num_model = len(self.model_keys)
@@ -184,11 +196,26 @@ class Trainer:
                 valid_numb_batch,
             )
 
-        def get_single_model(_model_params, _sampled, _stat_file_path):
+        def get_single_model(
+            _model_params, _training_data, _validation_data, _stat_file_path
+        ):
             model = get_model(deepcopy(_model_params)).to(DEVICE)
-            if not model_params.get("resuming", False):
+            _training_data.add_data_requirement(model.data_requirement)
+            if _validation_data is not None:
+                _validation_data.add_data_requirement(model.data_requirement)
+            if not resuming:
+
+                @lazy
+                def get_sample():
+                    sampled = make_stat_input(
+                        _training_data.systems,
+                        _training_data.dataloaders,
+                        _model_params.get("data_stat_nbatch", 10),
+                    )
+                    return sampled
+
                 model.compute_or_load_stat(
-                    sampled=_sampled,
+                    sampled_func=get_sample,
                     stat_file_path=_stat_file_path,
                 )
             return model
@@ -233,6 +260,9 @@ class Trainer:
         # Data + Model
         dp_random.seed(training_params["seed"])
         if not self.multi_task:
+            self.model = get_single_model(
+                model_params, training_data, validation_data, stat_file_path
+            )
             (
                 self.training_dataloader,
                 self.training_data,
@@ -240,7 +270,6 @@ class Trainer:
                 self.validation_data,
                 self.valid_numb_batch,
             ) = get_data_loader(training_data, validation_data, training_params)
-            self.model = get_single_model(model_params, sampled, stat_file_path)
         else:
             (
                 self.training_dataloader,
@@ -251,6 +280,12 @@ class Trainer:
                 self.model,
             ) = {}, {}, {}, {}, {}, {}
             for model_key in self.model_keys:
+                self.model[model_key] = get_single_model(
+                    model_params["model_dict"][model_key],
+                    training_data[model_key],
+                    validation_data[model_key],
+                    stat_file_path[model_key],
+                )
                 (
                     self.training_dataloader[model_key],
                     self.training_data[model_key],
@@ -261,11 +296,6 @@ class Trainer:
                     training_data[model_key],
                     validation_data[model_key],
                     training_params["data_dict"][model_key],
-                )
-                self.model[model_key] = get_single_model(
-                    model_params["model_dict"][model_key],
-                    sampled[model_key],
-                    stat_file_path[model_key],
                 )
 
         # Learning rate
@@ -309,7 +339,7 @@ class Trainer:
 
         # resuming and finetune
         optimizer_state_dict = None
-        if model_params["resuming"]:
+        if resuming:
             ntest = model_params.get("data_bias_nsample", 1)
             origin_model = (
                 finetune_model if finetune_model is not None else resume_model
@@ -404,7 +434,7 @@ class Trainer:
 
         # Multi-task share params
         if shared_links is not None:
-            self.wrapper.share_params(shared_links, resume=model_params["resuming"])
+            self.wrapper.share_params(shared_links, resume=resuming)
 
         if dist.is_initialized():
             torch.cuda.set_device(LOCAL_RANK)
@@ -812,28 +842,22 @@ class Trainer:
                     batch_data[key] = batch_data[key].to(DEVICE)
             else:
                 batch_data[key] = [item.to(DEVICE) for item in batch_data[key]]
-        input_dict = {}
-        for item in [
+        # we may need a better way to classify which are inputs and which are labels
+        # now wrapper only supports the following inputs:
+        input_keys = [
             "coord",
             "atype",
             "box",
-        ]:
-            if item in batch_data:
-                input_dict[item] = batch_data[item]
-            else:
-                input_dict[item] = None
+            "spin",
+        ]
+        input_dict = {item_key: None for item_key in input_keys}
         label_dict = {}
-        for item in [
-            "energy",
-            "force",
-            "virial",
-            "clean_coord",
-            "clean_type",
-            "coord_mask",
-            "type_mask",
-        ]:
-            if item in batch_data:
-                label_dict[item] = batch_data[item]
+        for item_key in batch_data:
+            if item_key in input_keys:
+                input_dict[item_key] = batch_data[item_key]
+            else:
+                if item_key not in ["sid", "fid"] and "find_" not in item_key:
+                    label_dict[item_key] = batch_data[item_key]
         log_dict = {}
         if "fid" in batch_data:
             log_dict["fid"] = batch_data["fid"]

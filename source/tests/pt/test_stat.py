@@ -176,8 +176,6 @@ class DatasetTest(ABC):
         for sys in sampled:
             for key in [
                 "coord",
-                "force",
-                "energy",
                 "atype",
                 "natoms",
                 "box",

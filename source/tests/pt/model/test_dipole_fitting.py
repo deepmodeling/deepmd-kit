@@ -79,7 +79,6 @@ class TestDipoleFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
             [0, 4],
         ):
             ft0 = DipoleFittingNet(
-                "foo",
                 self.nt,
                 self.dd0.dim_out,
                 embedding_width=self.dd0.get_dim_emb(),
@@ -132,7 +131,6 @@ class TestDipoleFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
             [0, 4],
         ):
             ft0 = DipoleFittingNet(
-                "foo",
                 self.nt,
                 self.dd0.dim_out,
                 embedding_width=self.dd0.get_dim_emb(),
@@ -168,7 +166,6 @@ class TestEquivalence(unittest.TestCase):
             [0, 4],
         ):
             ft0 = DipoleFittingNet(
-                "foo",
                 3,  # ntype
                 self.dd0.dim_out,  # dim_descrpt
                 embedding_width=self.dd0.get_dim_emb(),
@@ -218,7 +215,6 @@ class TestEquivalence(unittest.TestCase):
     def test_permu(self):
         coord = torch.matmul(self.coord, self.cell)
         ft0 = DipoleFittingNet(
-            "foo",
             3,  # ntype
             self.dd0.dim_out,
             embedding_width=self.dd0.get_dim_emb(),
@@ -260,7 +256,6 @@ class TestEquivalence(unittest.TestCase):
             self.cell,
         )
         ft0 = DipoleFittingNet(
-            "foo",
             3,  # ntype
             self.dd0.dim_out,
             embedding_width=self.dd0.get_dim_emb(),
@@ -305,7 +300,6 @@ class TestDipoleModel(unittest.TestCase):
         self.atype = torch.IntTensor([0, 0, 0, 1, 1], device="cpu").to(env.DEVICE)
         self.dd0 = DescrptSeA(self.rcut, self.rcut_smth, self.sel).to(env.DEVICE)
         self.ft0 = DipoleFittingNet(
-            "dipole",
             self.nt,
             self.dd0.dim_out,
             embedding_width=self.dd0.get_dim_emb(),

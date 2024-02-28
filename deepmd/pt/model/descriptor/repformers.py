@@ -1,8 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    Callable,
     Dict,
     List,
     Optional,
+    Union,
 )
 
 import torch
@@ -278,12 +280,22 @@ class DescrptBlockRepformers(DescriptorBlock):
 
         return g1, g2, h2, rot_mat.view(-1, nloc, self.dim_emb, 3), sw
 
-    def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
+    def compute_input_stats(
+        self, merged: Union[Callable, List], path: Optional[DPPath] = None
+    ):
         """Update mean and stddev for descriptor elements."""
         env_mat_stat = EnvMatStatSe(self)
         if path is not None:
             path = path / env_mat_stat.get_hash()
-        env_mat_stat.load_or_compute_stats(merged, path)
+        if path is None or not path.is_dir():
+            if callable(merged):
+                # only get data for once
+                sampled = merged()
+            else:
+                sampled = merged
+        else:
+            sampled = []
+        env_mat_stat.load_or_compute_stats(sampled, path)
         self.stats = env_mat_stat.stats
         mean, stddev = env_mat_stat()
         if not self.set_davg_zero:

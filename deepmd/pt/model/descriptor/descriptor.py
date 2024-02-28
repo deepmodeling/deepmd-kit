@@ -5,9 +5,11 @@ from abc import (
     abstractmethod,
 )
 from typing import (
+    Callable,
     Dict,
     List,
     Optional,
+    Union,
 )
 
 import torch
@@ -86,7 +88,9 @@ class DescriptorBlock(torch.nn.Module, ABC, make_plugin_registry("DescriptorBloc
         """Returns the embedding dimension."""
         pass
 
-    def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
+    def compute_input_stats(
+        self, merged: Union[Callable, List], path: Optional[DPPath] = None
+    ):
         """Update mean and stddev for DescriptorBlock elements."""
         raise NotImplementedError
 

@@ -159,6 +159,7 @@ class ModelWrapper(torch.nn.Module):
         coord,
         atype,
         box: Optional[torch.Tensor] = None,
+        spin: Optional[torch.Tensor] = None,
         cur_lr: Optional[torch.Tensor] = None,
         label: Optional[torch.Tensor] = None,
         task_key: Optional[torch.Tensor] = None,

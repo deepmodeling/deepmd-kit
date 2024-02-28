@@ -97,3 +97,40 @@ class DPZBLModel(DPZBLModel_, BaseModel):
             model_predict["dforce"] = model_ret["dforce"]
         model_predict = model_ret
         return model_predict
+
+    @property
+    def data_requirement(self):
+        data_requirement = {
+            "energy": {
+                "ndof": 1,
+                "atomic": False,
+                "must": False,
+                "high_prec": True,
+            },
+            "force": {
+                "ndof": 3,
+                "atomic": True,
+                "must": False,
+                "high_prec": False,
+            },
+            "virial": {
+                "ndof": 9,
+                "atomic": False,
+                "must": False,
+                "high_prec": False,
+            },
+            "atom_ener": {
+                "ndof": 1,
+                "atomic": True,
+                "must": False,
+                "high_prec": False,
+            },
+            "atom_pref": {
+                "ndof": 1,
+                "atomic": True,
+                "must": False,
+                "high_prec": False,
+                "repeat": 3,
+            },
+        }
+        return data_requirement

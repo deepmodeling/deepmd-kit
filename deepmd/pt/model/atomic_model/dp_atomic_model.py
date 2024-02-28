@@ -18,9 +18,6 @@ from deepmd.pt.model.descriptor.base_descriptor import (
 from deepmd.pt.model.task.base_fitting import (
     BaseFitting,
 )
-from deepmd.pt.utils.utils import (
-    dict_to_device,
-)
 from deepmd.utils.path import (
     DPPath,
 )
@@ -170,7 +167,7 @@ class DPAtomicModel(torch.nn.Module, BaseAtomicModel):
 
     def compute_or_load_stat(
         self,
-        sampled,
+        sampled_func,
         stat_file_path: Optional[DPPath] = None,
     ):
         """
@@ -183,8 +180,8 @@ class DPAtomicModel(torch.nn.Module, BaseAtomicModel):
 
         Parameters
         ----------
-        sampled
-            The sampled data frames from different data systems.
+        sampled_func
+            The lazy sampled function to get data frames from different data systems.
         stat_file_path
             The dictionary of paths to the statistics files.
         """
@@ -192,13 +189,9 @@ class DPAtomicModel(torch.nn.Module, BaseAtomicModel):
             # descriptors and fitting net with different type_map
             # should not share the same parameters
             stat_file_path /= " ".join(self.type_map)
-        for data_sys in sampled:
-            dict_to_device(data_sys)
-        if sampled is None:
-            sampled = []
-        self.descriptor.compute_input_stats(sampled, stat_file_path)
+        self.descriptor.compute_input_stats(sampled_func, stat_file_path)
         if self.fitting_net is not None:
-            self.fitting_net.compute_output_stats(sampled, stat_file_path)
+            self.fitting_net.compute_output_stats(sampled_func, stat_file_path)
 
     @torch.jit.export
     def get_dim_fparam(self) -> int:

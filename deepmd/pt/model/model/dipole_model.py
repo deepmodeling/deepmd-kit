@@ -90,3 +90,23 @@ class DipoleModel(DPModel):
         else:
             model_predict = model_ret
         return model_predict
+
+    @property
+    def data_requirement(self):
+        data_requirement = {
+            "dipole": {
+                "ndof": 3,
+                "atomic": False,
+                "must": False,
+                "high_prec": False,
+                "type_sel": self.get_sel_type(),
+            },
+            "atomic_dipole": {
+                "ndof": 3,
+                "atomic": True,
+                "must": False,
+                "high_prec": False,
+                "type_sel": self.get_sel_type(),
+            },
+        }
+        return data_requirement

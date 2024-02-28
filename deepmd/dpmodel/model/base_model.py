@@ -93,6 +93,10 @@ def make_base_model() -> Type[object]:
             """Get the output type for the model."""
 
         @abstractmethod
+        def data_requirement(self) -> dict:
+            """Get the data requirement for the model."""
+
+        @abstractmethod
         def serialize(self) -> dict:
             """Serialize the model.
 

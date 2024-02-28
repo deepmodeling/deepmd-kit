@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    Callable,
     List,
     Optional,
+    Union,
 )
 
 import torch
@@ -295,16 +297,11 @@ class DescrptDPA2(torch.nn.Module, BaseDescriptor):
         """Returns the embedding dimension g2."""
         return self.get_dim_emb()
 
-    def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
+    def compute_input_stats(
+        self, merged: Union[Callable, List], path: Optional[DPPath] = None
+    ):
         for ii, descrpt in enumerate([self.repinit, self.repformers]):
-            merged_tmp = [
-                {
-                    key: item[key] if not isinstance(item[key], list) else item[key][ii]
-                    for key in item
-                }
-                for item in merged
-            ]
-            descrpt.compute_input_stats(merged_tmp, path)
+            descrpt.compute_input_stats(merged, path)
 
     def serialize(self) -> dict:
         """Serialize the obj to dict."""

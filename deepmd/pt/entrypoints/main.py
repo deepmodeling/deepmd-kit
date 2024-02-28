@@ -47,9 +47,6 @@ from deepmd.pt.utils.finetune import (
 from deepmd.pt.utils.multi_task import (
     preprocess_shared_params,
 )
-from deepmd.pt.utils.stat import (
-    make_stat_input,
-)
 from deepmd.utils.path import (
     DPPath,
 )
@@ -83,7 +80,6 @@ def get_trainer(
         multi_task=multi_task,
         model_branch=model_branch,
     )
-    config["model"]["resuming"] = (finetune_model is not None) or (ckpt is not None)
     shared_links = None
     if multi_task:
         config["model"], shared_links = preprocess_shared_params(config["model"])
@@ -98,24 +94,6 @@ def get_trainer(
         validation_dataset_params = data_dict_single["validation_data"]
         training_systems = training_dataset_params["systems"]
         validation_systems = validation_dataset_params["systems"]
-
-        # noise params
-        noise_settings = None
-        if loss_dict_single.get("type", "ener") == "denoise":
-            noise_settings = {
-                "noise_type": loss_dict_single.pop("noise_type", "uniform"),
-                "noise": loss_dict_single.pop("noise", 1.0),
-                "noise_mode": loss_dict_single.pop("noise_mode", "fix_num"),
-                "mask_num": loss_dict_single.pop("mask_num", 8),
-                "mask_prob": loss_dict_single.pop("mask_prob", 0.15),
-                "same_mask": loss_dict_single.pop("same_mask", False),
-                "mask_coord": loss_dict_single.pop("mask_coord", False),
-                "mask_type": loss_dict_single.pop("mask_type", False),
-                "max_fail_num": loss_dict_single.pop("max_fail_num", 10),
-                "mask_type_idx": len(model_params_single["type_map"]) - 1,
-            }
-        # noise_settings = None
-
         # stat files
         stat_file_path_single = data_dict_single.get("stat_file", None)
         if stat_file_path_single is not None:
@@ -140,29 +118,15 @@ def get_trainer(
                 training_dataset_params["batch_size"],
                 model_params_single,
             )
-            sampled_single = None
         else:
             train_data_single = DpLoaderSet(
                 training_systems,
                 training_dataset_params["batch_size"],
                 model_params_single,
             )
-            data_stat_nbatch = model_params_single.get("data_stat_nbatch", 10)
-            sampled_single = make_stat_input(
-                train_data_single.systems,
-                train_data_single.dataloaders,
-                data_stat_nbatch,
-            )
-            if noise_settings is not None:
-                train_data_single = DpLoaderSet(
-                    training_systems,
-                    training_dataset_params["batch_size"],
-                    model_params_single,
-                )
         return (
             train_data_single,
             validation_data_single,
-            sampled_single,
             stat_file_path_single,
         )
 
@@ -170,18 +134,16 @@ def get_trainer(
         (
             train_data,
             validation_data,
-            sampled,
             stat_file_path,
         ) = prepare_trainer_input_single(
             config["model"], config["training"], config["loss"]
         )
     else:
-        train_data, validation_data, sampled, stat_file_path = {}, {}, {}, {}
+        train_data, validation_data, stat_file_path = {}, {}, {}
         for model_key in config["model"]["model_dict"]:
             (
                 train_data[model_key],
                 validation_data[model_key],
-                sampled[model_key],
                 stat_file_path[model_key],
             ) = prepare_trainer_input_single(
                 config["model"]["model_dict"][model_key],
@@ -193,7 +155,6 @@ def get_trainer(
     trainer = training.Trainer(
         config,
         train_data,
-        sampled=sampled,
         stat_file_path=stat_file_path,
         validation_data=validation_data,
         init_model=init_model,
