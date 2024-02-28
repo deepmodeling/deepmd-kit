@@ -75,7 +75,9 @@ if platform.system() == "Linux":
     dlopen_library("nvidia.cusparse.lib", "libcusparse.so*")
     dlopen_library("nvidia.cudnn.lib", "libcudnn.so*")
 
-
+# keras 3 is incompatible with tf.compat.v1
+# https://keras.io/getting_started/#tensorflow--keras-2-backwards-compatibility
+os.environ["TF_USE_LEGACY_KERAS"] = "1"
 # import tensorflow v1 compatability
 try:
     import tensorflow.compat.v1 as tf

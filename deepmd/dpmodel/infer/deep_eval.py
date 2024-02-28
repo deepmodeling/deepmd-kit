@@ -13,8 +13,8 @@ from typing import (
 
 import numpy as np
 
-from deepmd.dpmodel.model.dp_model import (
-    DPModel,
+from deepmd.dpmodel.model.base_model import (
+    BaseModel,
 )
 from deepmd.dpmodel.output_def import (
     ModelOutputDef,
@@ -85,7 +85,7 @@ class DeepEval(DeepEvalBackend):
         self.model_path = model_file
 
         model_data = load_dp_model(model_file)
-        self.dp = DPModel.deserialize(model_data["model"])
+        self.dp = BaseModel.deserialize(model_data["model"])
         self.rcut = self.dp.get_rcut()
         self.type_map = self.dp.get_type_map()
         if isinstance(auto_batch_size, bool):
