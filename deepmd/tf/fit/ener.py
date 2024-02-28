@@ -53,6 +53,9 @@ from deepmd.tf.utils.network import (
 from deepmd.tf.utils.spin import (
     Spin,
 )
+from deepmd.utils.version import (
+    check_version_compatibility,
+)
 
 if TYPE_CHECKING:
     pass
@@ -959,6 +962,8 @@ class EnerFitting(Fitting):
         Model
             The deserialized model
         """
+        data = data.copy()
+        check_version_compatibility(data.pop("@version", 1), 1, 1)
         fitting = cls(**data)
         fitting.fitting_net_variables = cls.deserialize_network(
             data["nets"],
@@ -984,6 +989,7 @@ class EnerFitting(Fitting):
         data = {
             "@class": "Fitting",
             "type": "ener",
+            "@version": 1,
             "var_name": "energy",
             "ntypes": self.ntypes,
             "dim_descrpt": self.dim_descrpt,
