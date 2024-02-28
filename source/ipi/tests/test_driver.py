@@ -254,10 +254,9 @@ class TestDPIPI(unittest.TestCase):
 
 
 class TestDPIPIPt(TestDPIPI):
-    # copy from test_deeppot_a.py
     @classmethod
     def setUpClass(cls):
-        cls.model_file = "deeppot_sea.pth"
+        cls.model_file = str(tests_path / "infer" / "deeppot_sea.pth")
 
     def setUp(self):
         super().setUp()
