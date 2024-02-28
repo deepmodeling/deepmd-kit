@@ -30,6 +30,7 @@ from .model import (
 )
 
 
+@Model.register("frozen")
 class FrozenModel(Model):
     """Load model from a frozen model, which cannot be trained.
 

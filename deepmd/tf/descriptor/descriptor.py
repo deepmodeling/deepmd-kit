@@ -4,7 +4,6 @@ from abc import (
 )
 from typing import (
     Any,
-    Callable,
     Dict,
     List,
     Optional,
@@ -21,12 +20,14 @@ from deepmd.tf.env import (
     tf,
 )
 from deepmd.tf.utils import (
-    Plugin,
     PluginVariant,
+)
+from deepmd.utils.plugin import (
+    make_plugin_registry,
 )
 
 
-class Descriptor(PluginVariant):
+class Descriptor(PluginVariant, make_plugin_registry("descriptor")):
     r"""The abstract class for descriptors. All specific descriptors should
     be based on this class.
 
@@ -44,37 +45,6 @@ class Descriptor(PluginVariant):
     Only methods and attributes defined in this class are generally public,
     that can be called by other classes.
     """
-
-    __plugins = Plugin()
-
-    @staticmethod
-    def register(key: str) -> Callable:
-        """Register a descriptor plugin.
-
-        Parameters
-        ----------
-        key : str
-            the key of a descriptor
-
-        Returns
-        -------
-        Descriptor
-            the registered descriptor
-
-        Examples
-        --------
-        >>> @Descriptor.register("some_descrpt")
-            class SomeDescript(Descriptor):
-                pass
-        """
-        return Descriptor.__plugins.register(key)
-
-    @classmethod
-    def get_class_by_type(cls, descrpt_type: str):
-        if descrpt_type in Descriptor.__plugins.plugins:
-            return Descriptor.__plugins.plugins[descrpt_type]
-        else:
-            raise RuntimeError("Unknown descriptor type: " + descrpt_type)
 
     def __new__(cls, *args, **kwargs):
         if cls is Descriptor:

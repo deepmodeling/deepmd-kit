@@ -8,6 +8,7 @@ from abc import (
 )
 from typing import (
     Callable,
+    Dict,
     Optional,
     Type,
 )
@@ -151,5 +152,10 @@ def make_plugin_registry(name: Optional[str] = None) -> Type[object]:
                 )
                 dym_message = f"Did you mean: {matches[0]}?" if matches else ""
                 raise RuntimeError(f"Unknown {name} type: {class_type}. {dym_message}")
+
+        @classmethod
+        def get_plugins(cls) -> Dict[str, Type[object]]:
+            """Get all the registered plugins."""
+            return PR.__plugins.plugins
 
     return PR

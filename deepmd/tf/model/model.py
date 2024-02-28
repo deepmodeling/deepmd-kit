@@ -60,9 +60,12 @@ from deepmd.tf.utils.spin import (
 from deepmd.tf.utils.type_embed import (
     TypeEmbedNet,
 )
+from deepmd.utils.plugin import (
+    make_plugin_registry,
+)
 
 
-class Model(ABC):
+class Model(ABC, make_plugin_registry("model")):
     """Abstract base model.
 
     Parameters
@@ -93,47 +96,6 @@ class Model(ABC):
     compress
         Compression information for internal use
     """
-
-    @classmethod
-    def get_class_by_type(cls, model_type: str):
-        """Get the class by input type.
-
-        Parameters
-        ----------
-        model_type : str
-            The input type
-        """
-        # infer model type by fitting_type
-        from deepmd.tf.model.frozen import (
-            FrozenModel,
-        )
-        from deepmd.tf.model.linear import (
-            LinearEnergyModel,
-        )
-        from deepmd.tf.model.multi import (
-            MultiModel,
-        )
-        from deepmd.tf.model.pairtab import (
-            PairTabModel,
-        )
-        from deepmd.tf.model.pairwise_dprc import (
-            PairwiseDPRc,
-        )
-
-        if model_type == "standard":
-            return StandardModel
-        elif model_type == "multi":
-            return MultiModel
-        elif model_type == "pairwise_dprc":
-            return PairwiseDPRc
-        elif model_type == "frozen":
-            return FrozenModel
-        elif model_type == "linear_ener":
-            return LinearEnergyModel
-        elif model_type == "pairtab":
-            return PairTabModel
-        else:
-            raise ValueError(f"unknown model type: {model_type}")
 
     def __new__(cls, *args, **kwargs):
         if cls is Model:
@@ -621,6 +583,7 @@ class Model(ABC):
         raise NotImplementedError("Not implemented in class %s" % self.__name__)
 
 
+@Model.register("standard")
 class StandardModel(Model):
     """Standard model, which must contain a descriptor and a fitting.
 
