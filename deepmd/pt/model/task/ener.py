@@ -28,6 +28,9 @@ from deepmd.pt.utils import (
 from deepmd.pt.utils.env import (
     DEFAULT_PRECISION,
 )
+from deepmd.pt.utils.utils import (
+    to_numpy_array,
+)
 from deepmd.utils.out_stat import (
     compute_output_stat,
 )
@@ -148,9 +151,9 @@ class InvarFitting(GeneralFitting):
             bias_atom_e = stat_file_path.load_numpy()
         else:
             # shape: (nframes, ndim)
-            merged_energy = torch.cat(energy).detach().cpu().numpy()
+            merged_energy = to_numpy_array(torch.cat(energy))
             # shape: (nframes, ntypes)
-            merged_natoms = torch.cat(input_natoms)[:, 2:].detach().cpu().numpy()
+            merged_natoms = to_numpy_array(torch.cat(input_natoms)[:, 2:])
             if self.atom_ener is not None and len(self.atom_ener) > 0:
                 assigned_atom_ener = np.array(
                     [ee if ee is not None else np.nan for ee in self.atom_ener]
