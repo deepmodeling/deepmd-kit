@@ -272,7 +272,7 @@ class Trainer:
         self.warmup_steps = training_params.get("warmup_steps", 0)
         self.gradient_max_norm = training_params.get("gradient_max_norm", 0.0)
         assert (
-            self.num_steps - self.warmup_steps > 0
+            self.num_steps - self.warmup_steps > 0 or self.warmup_steps == 0
         ), "Warm up steps must be less than total training steps!"
         if self.multi_task and config.get("learning_rate_dict", None) is not None:
             self.lr_exp = {}
@@ -728,6 +728,15 @@ class Trainer:
         if (
             self.rank == 0 or dist.get_rank() == 0
         ):  # Handle the case if rank 0 aborted and re-assigned
+            if self.num_steps == 0:
+                # when num_steps is 0, the checkpoint is never not saved
+                self.latest_model = Path(self.save_ckpt + "-0.pt")
+                self.save_model(self.latest_model, lr=0, step=0)
+                log.info(f"Saved model to {self.latest_model}")
+                symlink_prefix_files(self.latest_model.stem, self.save_ckpt)
+                with open("checkpoint", "w") as f:
+                    f.write(str(self.latest_model))
+
             if JIT:
                 pth_model_path = (
                     "frozen_model.pth"  # We use .pth to denote the frozen model
@@ -763,9 +772,10 @@ class Trainer:
                     batch_data = next(iter(self.training_data))
                 except StopIteration:
                     # Refresh the status of the dataloader to start from a new epoch
-                    self.training_data = BufferedIterator(
-                        iter(self.training_dataloader)
-                    )
+                    with torch.device("cpu"):
+                        self.training_data = BufferedIterator(
+                            iter(self.training_dataloader)
+                        )
                     batch_data = next(iter(self.training_data))
             else:
                 try:
