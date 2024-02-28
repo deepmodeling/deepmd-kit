@@ -17,13 +17,14 @@ from deepmd.pt.model.model.transform_output import (
     communicate_extended_output,
     fit_output_to_model_output,
 )
+from deepmd.pt.utils import (
+    env,
+)
 from deepmd.pt.utils.nlist import (
     extend_input_and_build_neighbor_list,
     nlist_distinguish_types,
 )
-from deepmd.pt.utils import (
-    env,
-)
+
 
 def make_model(T_AtomicModel):
     """Make a model as a derived class of an atomic model.
