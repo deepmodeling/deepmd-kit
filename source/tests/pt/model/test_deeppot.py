@@ -23,7 +23,9 @@ from deepmd.pt.infer.deep_eval import (
     DeepPot,
 )
 
-from ...tf.test_deeppot_a import TestFparamAparam as TestFparamAparamTF
+from ...tf.test_deeppot_a import (
+    FparamAparamCommonTest,
+)
 
 
 class TestDeepPot(unittest.TestCase):
@@ -127,7 +129,7 @@ class TestDeepPotFrozen(TestDeepPot):
         self.test_dp_test()
 
 
-class TestFparamAparamPT(TestFparamAparamTF):
+class TestFparamAparamPT(FparamAparamCommonTest, unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.dp = DeepPot(

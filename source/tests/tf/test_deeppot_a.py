@@ -894,16 +894,8 @@ class TestTypeEmbed(unittest.TestCase):
         np.testing.assert_almost_equal(eval_typeebd, expected_typeebd, default_places)
 
 
-class TestFparamAparam(unittest.TestCase):
+class FparamAparamCommonTest:
     """Test fparam and aparam."""
-
-    @classmethod
-    def setUpClass(cls):
-        convert_pbtxt_to_pb(
-            str(infer_path / os.path.join("fparam_aparam.pbtxt")),
-            "fparam_aparam.pb",
-        )
-        cls.dp = DeepPot("fparam_aparam.pb")
 
     def setUp(self):
         self.coords = np.array(
@@ -1144,6 +1136,16 @@ class TestFparamAparam(unittest.TestCase):
         np.testing.assert_almost_equal(ee.ravel(), expected_se.ravel(), self.places)
         expected_sv = np.sum(expected_v.reshape([nframes, -1, 9]), axis=1)
         np.testing.assert_almost_equal(vv.ravel(), expected_sv.ravel(), self.places)
+
+
+class TestFparamAparam(FparamAparamCommonTest, unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        convert_pbtxt_to_pb(
+            str(infer_path / os.path.join("fparam_aparam.pbtxt")),
+            "fparam_aparam.pb",
+        )
+        cls.dp = DeepPot("fparam_aparam.pb")
 
 
 class TestDeepPotAPBCNeighborList(TestDeepPotAPBC):
