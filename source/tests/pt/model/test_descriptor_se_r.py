@@ -135,9 +135,9 @@ class TestDescrptSeR(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 [
                     {
                         "r0": None,
-                        "coord": torch.from_numpy(self.coord_ext).reshape(
-                            -1, self.nall, 3
-                        ).to(env.DEVICE),
+                        "coord": torch.from_numpy(self.coord_ext)
+                        .reshape(-1, self.nall, 3)
+                        .to(env.DEVICE),
                         "atype": torch.from_numpy(self.atype_ext).to(env.DEVICE),
                         "box": None,
                         "natoms": self.nall,
