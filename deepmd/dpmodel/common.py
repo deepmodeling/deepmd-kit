@@ -21,6 +21,13 @@ PRECISION_DICT = {
     "int64": np.int64,
     "default": GLOBAL_NP_FLOAT_PRECISION,
 }
+RESERVED_PRECISON_DICT = {
+    np.float16: "float16",
+    np.float32: "float32",
+    np.float64: "float64",
+    np.int32: "int32",
+    np.int64: "int64",
+}
 DEFAULT_PRECISION = "float64"
 
 
