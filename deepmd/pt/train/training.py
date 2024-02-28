@@ -57,7 +57,6 @@ from deepmd.pt.utils.stat import (
 if torch.__version__.startswith("2"):
     import torch._dynamo
 
-
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import (
@@ -142,20 +141,7 @@ class Trainer:
             else:
                 train_sampler = get_weighted_sampler(_training_data, "prob_sys_size")
 
-            if "auto_prob" in _training_params["validation_data"]:
-                valid_sampler = get_weighted_sampler(
-                    _validation_data, _training_params["validation_data"]["auto_prob"]
-                )
-            elif "sys_probs" in _training_params["validation_data"]:
-                valid_sampler = get_weighted_sampler(
-                    _validation_data,
-                    _training_params["validation_data"]["sys_probs"],
-                    sys_prob=True,
-                )
-            else:
-                valid_sampler = get_weighted_sampler(_validation_data, "prob_sys_size")
-
-            if train_sampler is None or valid_sampler is None:
+            if train_sampler is None:
                 log.warning(
                     "Sampler not specified!"
                 )  # None sampler will lead to a premature stop iteration. Replacement should be True in attribute of the sampler to produce expected number of items in one iteration.
@@ -169,22 +155,43 @@ class Trainer:
             )
             with torch.device("cpu"):
                 training_data_buffered = BufferedIterator(iter(training_dataloader))
-            validation_dataloader = DataLoader(
-                _validation_data,
-                sampler=valid_sampler,
-                batch_size=None,
-                num_workers=min(NUM_WORKERS, 1),
-                drop_last=False,
-                pin_memory=True,
-            )
-
-            with torch.device("cpu"):
-                validation_data_buffered = BufferedIterator(iter(validation_dataloader))
-            if _training_params.get("validation_data", None) is not None:
-                valid_numb_batch = _training_params["validation_data"].get(
-                    "numb_btch", 1
+            if _validation_data is not None:
+                if "auto_prob" in _training_params["validation_data"]:
+                    valid_sampler = get_weighted_sampler(
+                        _validation_data,
+                        _training_params["validation_data"]["auto_prob"],
+                    )
+                elif "sys_probs" in _training_params["validation_data"]:
+                    valid_sampler = get_weighted_sampler(
+                        _validation_data,
+                        _training_params["validation_data"]["sys_probs"],
+                        sys_prob=True,
+                    )
+                else:
+                    valid_sampler = get_weighted_sampler(
+                        _validation_data, "prob_sys_size"
+                    )
+                validation_dataloader = DataLoader(
+                    _validation_data,
+                    sampler=valid_sampler,
+                    batch_size=None,
+                    num_workers=min(NUM_WORKERS, 1),
+                    drop_last=False,
+                    pin_memory=True,
                 )
+                with torch.device("cpu"):
+                    validation_data_buffered = BufferedIterator(
+                        iter(validation_dataloader)
+                    )
+                if _training_params.get("validation_data", None) is not None:
+                    valid_numb_batch = _training_params["validation_data"].get(
+                        "numb_btch", 1
+                    )
+                else:
+                    valid_numb_batch = 1
             else:
+                validation_dataloader = None
+                validation_data_buffered = None
                 valid_numb_batch = 1
             return (
                 training_dataloader,
@@ -645,6 +652,9 @@ class Trainer:
                         input_dict, label_dict, _ = self.get_data(
                             is_train=False, task_key=_task_key
                         )
+                        if input_dict == {}:
+                            # no validation data
+                            return "", None
                         _, loss, more_loss = self.wrapper(
                             **input_dict,
                             cur_lr=pref_lr,
@@ -806,6 +816,8 @@ class Trainer:
                         )
                     batch_data = next(iter(self.training_data))
             else:
+                if self.validation_data is None:
+                    return {}, {}, {}
                 try:
                     batch_data = next(iter(self.validation_data))
                 except StopIteration:
@@ -824,6 +836,8 @@ class Trainer:
                     )
                     batch_data = next(iter(self.training_data[task_key]))
             else:
+                if self.validation_data[task_key] is None:
+                    return {}, {}, {}
                 try:
                     batch_data = next(iter(self.validation_data[task_key]))
                 except StopIteration:

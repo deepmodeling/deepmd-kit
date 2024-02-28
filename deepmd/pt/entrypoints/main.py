@@ -91,9 +91,12 @@ def get_trainer(
         type_split = False
         if model_params_single["descriptor"]["type"] in ["se_e2_a"]:
             type_split = True
-        validation_dataset_params = data_dict_single["validation_data"]
+        validation_dataset_params = data_dict_single.get("validation_data", None)
+        validation_systems = (
+            validation_dataset_params["systems"] if validation_dataset_params else None
+        )
         training_systems = training_dataset_params["systems"]
-        validation_systems = validation_dataset_params["systems"]
+
         # stat files
         stat_file_path_single = data_dict_single.get("stat_file", None)
         if stat_file_path_single is not None:
@@ -107,10 +110,14 @@ def get_trainer(
             stat_file_path_single = DPPath(stat_file_path_single, "a")
 
         # validation and training data
-        validation_data_single = DpLoaderSet(
-            validation_systems,
-            validation_dataset_params["batch_size"],
-            model_params_single,
+        validation_data_single = (
+            DpLoaderSet(
+                validation_systems,
+                validation_dataset_params["batch_size"],
+                model_params_single,
+            )
+            if validation_systems
+            else None
         )
         if ckpt or finetune_model:
             train_data_single = DpLoaderSet(
