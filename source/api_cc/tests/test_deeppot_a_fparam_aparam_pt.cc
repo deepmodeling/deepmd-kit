@@ -13,6 +13,9 @@
 #include "neighbor_list.h"
 #include "test_utils.h"
 
+#undef EPSILON
+#define EPSILON (std::is_same<VALUETYPE, double>::value ? 1e-7 : 1e-4)
+
 template <class VALUETYPE>
 class TestInferDeepPotAFParamAParamPt : public ::testing::Test {
  protected:
