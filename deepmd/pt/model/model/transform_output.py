@@ -148,6 +148,8 @@ def fit_output_to_model_output(
     the model output.
 
     """
+    ## should have been GLOBAL_PT_ENER_FLOAT_PRECISION, but does not pass jit!!!
+    redu_prec = torch.float64
     model_ret = dict(fit_ret.items())
     for kk, vv in fit_ret.items():
         vdef = fit_output_def[kk]
@@ -155,7 +157,7 @@ def fit_output_to_model_output(
         atom_axis = -(len(shap) + 1)
         if vdef.reduciable:
             kk_redu = get_reduce_name(kk)
-            model_ret[kk_redu] = torch.sum(vv, dim=atom_axis)
+            model_ret[kk_redu] = torch.sum(vv.to(redu_prec), dim=atom_axis)
             if vdef.r_differentiable:
                 kk_derv_r, kk_derv_c = get_deriv_name(kk)
                 dr, dc = take_deriv(
@@ -171,7 +173,7 @@ def fit_output_to_model_output(
                     assert dc is not None
                     model_ret[kk_derv_c] = dc
                     model_ret[kk_derv_c + "_redu"] = torch.sum(
-                        model_ret[kk_derv_c], dim=1
+                        model_ret[kk_derv_c].to(redu_prec), dim=1
                     )
     return model_ret
 
@@ -186,6 +188,8 @@ def communicate_extended_output(
     local and ghost (extended) atoms to local atoms.
 
     """
+    ## should have been GLOBAL_PT_ENER_FLOAT_PRECISION, but does not pass jit!!!
+    redu_prec = torch.float64
     new_ret = {}
     for kk in model_output_def.keys_outp():
         vv = model_ret[kk]
@@ -235,7 +239,9 @@ def communicate_extended_output(
                     src=model_ret[kk_derv_c],
                     reduce="sum",
                 )
-                new_ret[kk_derv_c + "_redu"] = torch.sum(new_ret[kk_derv_c], dim=1)
+                new_ret[kk_derv_c + "_redu"] = torch.sum(
+                    new_ret[kk_derv_c].to(redu_prec), dim=1
+                )
                 if not do_atomic_virial:
                     # pop atomic virial, because it is not correctly calculated.
                     new_ret.pop(kk_derv_c)

@@ -5,6 +5,9 @@ from typing import (
 
 import numpy as np
 
+from deepmd.dpmodel.common import (
+    GLOBAL_ENER_FLOAT_PRECISION,
+)
 from deepmd.dpmodel.output_def import (
     FittingOutputDef,
     ModelOutputDef,
@@ -30,7 +33,10 @@ def fit_output_to_model_output(
         atom_axis = -(len(shap) + 1)
         if vdef.reduciable:
             kk_redu = get_reduce_name(kk)
-            model_ret[kk_redu] = np.sum(vv, axis=atom_axis)
+            # cast to energy prec brefore reduction
+            model_ret[kk_redu] = np.sum(
+                vv.astype(GLOBAL_ENER_FLOAT_PRECISION), axis=atom_axis
+            )
             if vdef.r_differentiable:
                 kk_derv_r, kk_derv_c = get_deriv_name(kk)
                 # name-holders
