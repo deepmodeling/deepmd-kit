@@ -31,6 +31,7 @@ from deepmd.tf.utils.pair_tab import (
 )
 
 
+@Model.register("pairtab")
 class PairTabModel(Model):
     """Pairwise tabulation energy model.
 
