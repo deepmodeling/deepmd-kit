@@ -34,7 +34,7 @@ This backend is only for development and should not take into production.
 DPModel is a reference backend for development, which uses pure [NumPy](https://numpy.org/) to implement models without using any heavy deep-learning frameworks.
 Due to the limitation of NumPy, it doesn't support gradient calculation and thus cannot be used for training.
 As a reference backend, it is not aimed at the best performance, but only the correct results.
-The DPModel backend uses HDF5 to store model serialization data, which is backend-independent.
+The DPModel backend uses [HDF5](https://docs.h5py.org/) to store model serialization data, which is backend-independent.
 Only Python inference interface can load this format.
 
 ## Switch the backend
