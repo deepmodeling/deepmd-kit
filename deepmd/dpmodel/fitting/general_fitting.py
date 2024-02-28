@@ -21,6 +21,9 @@ from deepmd.dpmodel.utils import (
     FittingNet,
     NetworkCollection,
 )
+from deepmd.utils.version import (
+    check_version_compatibility,
+)
 
 from .base_fitting import (
     BaseFitting,
@@ -210,6 +213,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         """Serialize the fitting to dict."""
         return {
             "@class": "Fitting",
+            "@version": 1,
             "var_name": self.var_name,
             "ntypes": self.ntypes,
             "dim_descrpt": self.dim_descrpt,
@@ -241,6 +245,7 @@ class GeneralFitting(NativeOP, BaseFitting):
     @classmethod
     def deserialize(cls, data: dict) -> "GeneralFitting":
         data = copy.deepcopy(data)
+        check_version_compatibility(data.pop("@version", 1), 1, 1)
         data.pop("@class")
         data.pop("type")
         variables = data.pop("@variables")

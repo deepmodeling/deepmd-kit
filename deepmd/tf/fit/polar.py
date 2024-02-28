@@ -34,6 +34,9 @@ from deepmd.tf.utils.network import (
     one_layer,
     one_layer_rand_seed_shift,
 )
+from deepmd.utils.version import (
+    check_version_compatibility,
+)
 
 
 @Fitting.register("polar")
@@ -148,16 +151,14 @@ class PolarFittingSeA(Fitting):
         """Get the output size. Should be 9."""
         return 9
 
-    def compute_input_stats(self, all_stat, protection=1e-2):
-        """Compute the input statistics.
+    def compute_output_stats(self, all_stat):
+        """Compute the output statistics.
 
         Parameters
         ----------
         all_stat
             Dictionary of inputs.
             can be prepared by model.make_stat_input
-        protection
-            Divided-by-zero protection
         """
         if "polarizability" not in all_stat.keys():
             self.avgeig = np.zeros([9])
@@ -536,6 +537,7 @@ class PolarFittingSeA(Fitting):
         data = {
             "@class": "Fitting",
             "type": "polar",
+            "@version": 1,
             "var_name": "polar",
             "ntypes": self.ntypes,
             "dim_descrpt": self.dim_descrpt,
@@ -581,6 +583,8 @@ class PolarFittingSeA(Fitting):
         Model
             The deserialized model
         """
+        data = data.copy()
+        check_version_compatibility(data.pop("@version", 1), 1, 1)
         fitting = cls(**data)
         fitting.fitting_net_variables = cls.deserialize_network(
             data["nets"],

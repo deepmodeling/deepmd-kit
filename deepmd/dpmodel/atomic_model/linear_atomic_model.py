@@ -19,6 +19,9 @@ from deepmd.dpmodel.utils.nlist import (
     get_multiple_nlist_key,
     nlist_distinguish_types,
 )
+from deepmd.utils.version import (
+    check_version_compatibility,
+)
 
 from ..output_def import (
     FittingOutputDef,
@@ -185,6 +188,7 @@ class LinearAtomicModel(BaseAtomicModel):
         return {
             "@class": "Model",
             "type": "linear",
+            "@version": 1,
             "models": [model.serialize() for model in models],
             "model_name": [model.__class__.__name__ for model in models],
         }
@@ -192,6 +196,7 @@ class LinearAtomicModel(BaseAtomicModel):
     @staticmethod
     def deserialize(data) -> List[BaseAtomicModel]:
         data = copy.deepcopy(data)
+        check_version_compatibility(data.pop("@version", 1), 1, 1)
         data.pop("@class")
         data.pop("type")
         model_names = data["model_name"]
@@ -271,6 +276,7 @@ class DPZBLLinearAtomicModel(LinearAtomicModel):
         return {
             "@class": "Model",
             "type": "zbl",
+            "@version": 1,
             "models": LinearAtomicModel.serialize([self.dp_model, self.zbl_model]),
             "sw_rmin": self.sw_rmin,
             "sw_rmax": self.sw_rmax,
@@ -280,6 +286,7 @@ class DPZBLLinearAtomicModel(LinearAtomicModel):
     @classmethod
     def deserialize(cls, data) -> "DPZBLLinearAtomicModel":
         data = copy.deepcopy(data)
+        check_version_compatibility(data.pop("@version", 1), 1, 1)
         data.pop("@class")
         data.pop("type")
         sw_rmin = data["sw_rmin"]
