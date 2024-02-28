@@ -16,8 +16,8 @@ from typing import (
 )
 
 from deepmd.utils.plugin import (
-    Plugin,
     PluginVariant,
+    make_plugin_registry,
 )
 
 if TYPE_CHECKING:
@@ -33,7 +33,7 @@ if TYPE_CHECKING:
     )
 
 
-class Backend(PluginVariant):
+class Backend(PluginVariant, make_plugin_registry("backend")):
     r"""General backend class.
 
     Examples
@@ -43,24 +43,6 @@ class Backend(PluginVariant):
     >>> class TensorFlowBackend(Backend):
     ...     pass
     """
-
-    __plugins = Plugin()
-
-    @staticmethod
-    def register(key: str) -> Callable[[object], object]:
-        """Register a backend plugin.
-
-        Parameters
-        ----------
-        key : str
-            the key of a backend
-
-        Returns
-        -------
-        Callable[[object], object]
-            the decorator to register backend
-        """
-        return Backend.__plugins.register(key.lower())
 
     @staticmethod
     def get_backend(key: str) -> Type["Backend"]:
@@ -76,12 +58,7 @@ class Backend(PluginVariant):
         Backend
             the backend
         """
-        try:
-            backend = Backend.__plugins.get_plugin(key.lower())
-        except KeyError:
-            raise KeyError(f"Backend {key} is not registered.")
-        assert isinstance(backend, type)
-        return backend
+        return Backend.get_class_by_type(key)
 
     @staticmethod
     def get_backends() -> Dict[str, Type["Backend"]]:
@@ -92,7 +69,7 @@ class Backend(PluginVariant):
         list
             all the registered backends
         """
-        return Backend.__plugins.plugins
+        return Backend.get_plugins()
 
     @staticmethod
     def get_backends_by_feature(
@@ -112,7 +89,7 @@ class Backend(PluginVariant):
         """
         return {
             key: backend
-            for key, backend in Backend.__plugins.plugins.items()
+            for key, backend in Backend.get_backends().items()
             if backend.features & feature
         }
 
