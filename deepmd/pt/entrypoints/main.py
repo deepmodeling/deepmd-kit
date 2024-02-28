@@ -65,6 +65,7 @@ def get_trainer(
     finetune_model=None,
     model_branch="",
     force_load=False,
+    init_frz_model=None,
 ):
     # Initialize DDP
     local_rank = os.environ.get("LOCAL_RANK")
@@ -200,6 +201,7 @@ def get_trainer(
         finetune_model=finetune_model,
         force_load=force_load,
         shared_links=shared_links,
+        init_frz_model=init_frz_model,
     )
     return trainer
 
@@ -243,6 +245,7 @@ def train(FLAGS):
         FLAGS.finetune,
         FLAGS.model_branch,
         FLAGS.force_load,
+        FLAGS.init_frz_model,
     )
     trainer.run()
 

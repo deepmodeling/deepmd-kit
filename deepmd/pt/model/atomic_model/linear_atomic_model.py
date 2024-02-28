@@ -25,6 +25,9 @@ from deepmd.pt.utils.nlist import (
     get_multiple_nlist_key,
     nlist_distinguish_types,
 )
+from deepmd.utils.version import (
+    check_version_compatibility,
+)
 
 from .base_atomic_model import (
     BaseAtomicModel,
@@ -208,6 +211,7 @@ class LinearAtomicModel(torch.nn.Module, BaseAtomicModel):
     def serialize(models) -> dict:
         return {
             "@class": "Model",
+            "@version": 1,
             "type": "linear",
             "models": [model.serialize() for model in models],
             "model_name": [model.__class__.__name__ for model in models],
@@ -215,6 +219,8 @@ class LinearAtomicModel(torch.nn.Module, BaseAtomicModel):
 
     @staticmethod
     def deserialize(data) -> List[BaseAtomicModel]:
+        data = copy.deepcopy(data)
+        check_version_compatibility(data.pop("@version", 1), 1, 1)
         model_names = data["model_name"]
         models = [
             getattr(sys.modules[__name__], name).deserialize(model)
@@ -306,6 +312,7 @@ class DPZBLLinearAtomicModel(LinearAtomicModel):
         dd.update(
             {
                 "@class": "Model",
+                "@version": 1,
                 "type": "zbl",
                 "models": LinearAtomicModel.serialize([self.dp_model, self.zbl_model]),
                 "sw_rmin": self.sw_rmin,
@@ -318,6 +325,7 @@ class DPZBLLinearAtomicModel(LinearAtomicModel):
     @classmethod
     def deserialize(cls, data) -> "DPZBLLinearAtomicModel":
         data = copy.deepcopy(data)
+        check_version_compatibility(data.pop("@version", 1), 1, 1)
         sw_rmin = data.pop("sw_rmin")
         sw_rmax = data.pop("sw_rmax")
         smin_alpha = data.pop("smin_alpha")

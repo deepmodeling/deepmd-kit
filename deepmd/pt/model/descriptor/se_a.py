@@ -31,6 +31,9 @@ from deepmd.utils.env_mat_stat import (
 from deepmd.utils.path import (
     DPPath,
 )
+from deepmd.utils.version import (
+    check_version_compatibility,
+)
 
 try:
     from typing import (
@@ -189,6 +192,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         return {
             "@class": "Descriptor",
             "type": "se_e2_a",
+            "@version": 1,
             "rcut": obj.rcut,
             "rcut_smth": obj.rcut_smth,
             "sel": obj.sel,
@@ -215,6 +219,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
     @classmethod
     def deserialize(cls, data: dict) -> "DescrptSeA":
         data = data.copy()
+        check_version_compatibility(data.pop("@version", 1), 1, 1)
         data.pop("@class", None)
         data.pop("type", None)
         variables = data.pop("@variables")

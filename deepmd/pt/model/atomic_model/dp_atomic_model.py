@@ -24,6 +24,9 @@ from deepmd.pt.utils.utils import (
 from deepmd.utils.path import (
     DPPath,
 )
+from deepmd.utils.version import (
+    check_version_compatibility,
+)
 
 from .base_atomic_model import (
     BaseAtomicModel,
@@ -104,6 +107,7 @@ class DPAtomicModel(torch.nn.Module, BaseAtomicModel):
         dd.update(
             {
                 "@class": "Model",
+                "@version": 1,
                 "type": "standard",
                 "type_map": self.type_map,
                 "descriptor": self.descriptor.serialize(),
@@ -115,6 +119,7 @@ class DPAtomicModel(torch.nn.Module, BaseAtomicModel):
     @classmethod
     def deserialize(cls, data) -> "DPAtomicModel":
         data = copy.deepcopy(data)
+        check_version_compatibility(data.pop("@version", 1), 1, 1)
         data.pop("@class", None)
         data.pop("type", None)
         descriptor_obj = BaseDescriptor.deserialize(data.pop("descriptor"))
