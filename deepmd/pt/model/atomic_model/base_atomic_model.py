@@ -71,6 +71,7 @@ class BaseAtomicModel(BaseAtomicModel_):
         nf, nloc, nnei = nlist.shape
         nf, nall = extended_atype.shape
         atype = extended_atype[:, :nloc]
+
         if self.pair_excl is not None:
             pair_mask = self.pair_excl(nlist, extended_atype)
             # exclude neighbors in the nlist

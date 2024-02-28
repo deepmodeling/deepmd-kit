@@ -866,6 +866,9 @@ def model_args(exclude_hybrid=False):
     doc_srtab_add_bias = "Whether add energy bias from the statistics of the data to short-range tabulated atomic energy. It only takes effect when `use_srtab` is provided."
     doc_compress_config = "Model compression configurations"
     doc_spin = "The settings for systems with spin."
+    doc_atom_exclude_types = "Exclude the atomic contribution of the listed atom types"
+    doc_pair_exclude_types = "The atom pairs of the listed types are not treated to be neighbors, i.e. they do not see each other."
+
     hybrid_models = []
     if not exclude_hybrid:
         hybrid_models.extend(
@@ -904,6 +907,20 @@ def model_args(exclude_hybrid=False):
             Argument("smin_alpha", float, optional=True, doc=doc_smin_alpha),
             Argument("sw_rmin", float, optional=True, doc=doc_sw_rmin),
             Argument("sw_rmax", float, optional=True, doc=doc_sw_rmax),
+            Argument(
+                "pair_exclude_types",
+                list,
+                optional=True,
+                default=[],
+                doc=doc_pair_exclude_types,
+            ),
+            Argument(
+                "atom_exclude_types",
+                list,
+                optional=True,
+                default=[],
+                doc=doc_atom_exclude_types,
+            ),
             Argument(
                 "srtab_add_bias",
                 bool,
