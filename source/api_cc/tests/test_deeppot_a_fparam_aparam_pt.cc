@@ -14,7 +14,7 @@
 #include "test_utils.h"
 
 template <class VALUETYPE>
-class TestInferDeepPotAFParamAParam : public ::testing::Test {
+class TestInferDeepPotAFParamAParamPt : public ::testing::Test {
  protected:
   std::vector<VALUETYPE> coord = {12.83, 2.56, 2.18, 12.09, 2.87, 2.74,
                                   00.25, 3.32, 1.68, 3.36,  3.00, 1.81,
@@ -94,9 +94,9 @@ class TestInferDeepPotAFParamAParam : public ::testing::Test {
   void TearDown() override { remove("fparam_aparam.pb"); };
 };
 
-TYPED_TEST_SUITE(TestInferDeepPotAFParamAParam, ValueTypes);
+TYPED_TEST_SUITE(TestInferDeepPotAFParamAParamPt, ValueTypes);
 
-TYPED_TEST(TestInferDeepPotAFParamAParam, cpu_build_nlist) {
+TYPED_TEST(TestInferDeepPotAFParamAParamPt, cpu_build_nlist) {
   using VALUETYPE = TypeParam;
   std::vector<VALUETYPE>& coord = this->coord;
   std::vector<int>& atype = this->atype;
@@ -126,7 +126,7 @@ TYPED_TEST(TestInferDeepPotAFParamAParam, cpu_build_nlist) {
   }
 }
 
-TYPED_TEST(TestInferDeepPotAFParamAParam, cpu_build_nlist_atomic) {
+TYPED_TEST(TestInferDeepPotAFParamAParamPt, cpu_build_nlist_atomic) {
   using VALUETYPE = TypeParam;
   std::vector<VALUETYPE>& coord = this->coord;
   std::vector<int>& atype = this->atype;
@@ -165,7 +165,7 @@ TYPED_TEST(TestInferDeepPotAFParamAParam, cpu_build_nlist_atomic) {
   }
 }
 
-TYPED_TEST(TestInferDeepPotAFParamAParam, cpu_lmp_nlist) {
+TYPED_TEST(TestInferDeepPotAFParamAParamPt, cpu_lmp_nlist) {
   using VALUETYPE = TypeParam;
   std::vector<VALUETYPE>& coord = this->coord;
   std::vector<int>& atype = this->atype;
@@ -229,7 +229,7 @@ TYPED_TEST(TestInferDeepPotAFParamAParam, cpu_lmp_nlist) {
   }
 }
 
-TYPED_TEST(TestInferDeepPotAFParamAParam, cpu_lmp_nlist_atomic) {
+TYPED_TEST(TestInferDeepPotAFParamAParamPt, cpu_lmp_nlist_atomic) {
   using VALUETYPE = TypeParam;
   std::vector<VALUETYPE>& coord = this->coord;
   std::vector<int>& atype = this->atype;
@@ -315,7 +315,7 @@ TYPED_TEST(TestInferDeepPotAFParamAParam, cpu_lmp_nlist_atomic) {
   }
 }
 
-TYPED_TEST(TestInferDeepPotAFParamAParam, cpu_lmp_nlist_2rc) {
+TYPED_TEST(TestInferDeepPotAFParamAParamPt, cpu_lmp_nlist_2rc) {
   using VALUETYPE = TypeParam;
   std::vector<VALUETYPE>& coord = this->coord;
   std::vector<int>& atype = this->atype;
