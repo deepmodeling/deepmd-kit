@@ -71,7 +71,7 @@ jobs:
         DP_VARIANT: cuda
         DP_USE_MPICH2: 1
     - run: |
-        export LD_LIBRARY_PATH=$GITHUB_WORKSPACE/dp_test/lib:$CUDA_PATH/lib64:$LD_LIBRARY_PATH
+        export LD_LIBRARY_PATH=$GITHUB_WORKSPACE/dp_test/lib:$GITHUB_WORKSPACE/libtorch/lib:$CUDA_PATH/lib64:$LD_LIBRARY_PATH
         export PATH=$GITHUB_WORKSPACE/dp_test/bin:$PATH
         python -m pytest source/lmp/tests
         python -m pytest source/ipi/tests
