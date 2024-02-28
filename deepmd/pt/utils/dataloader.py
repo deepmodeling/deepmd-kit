@@ -253,7 +253,7 @@ def get_weighted_sampler(training_data, prob_style, sys_prob=False):
             probs = prob_sys_size_ext(style, len(training_data), training_data.index)
     else:
         probs = process_sys_probs(prob_style, training_data.index)
-    log.info("Generated weighted sampler with prob array: " + str(probs))
+    log.debug("Generated weighted sampler with prob array: " + str(probs))
     # training_data.total_batch is the size of one epoch, you can increase it to avoid too many  rebuilding of iteraters
     len_sampler = training_data.total_batch * max(env.NUM_WORKERS, 1)
     with torch.device("cpu"):
