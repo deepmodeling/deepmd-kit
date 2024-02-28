@@ -134,10 +134,8 @@ class DipoleFittingNet(GeneralFitting):
             ]
         )
 
-
     def compute_output_stats(self, merged, stat_file_path: Optional[DPPath] = None):
         raise NotImplementedError
-
 
     def forward(
         self,
