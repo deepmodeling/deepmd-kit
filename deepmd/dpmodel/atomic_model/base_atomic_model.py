@@ -59,8 +59,7 @@ class BaseAtomicModel(BaseAtomicModel_):
         fparam: Optional[np.ndarray] = None,
         aparam: Optional[np.ndarray] = None,
     ) -> Dict[str, np.ndarray]:
-        nf, nloc, nnei = nlist.shape
-        nf, nall = extended_atype.shape
+        _, nloc, _ = nlist.shape
         atype = extended_atype[:, :nloc]
         if self.pair_excl is not None:
             pair_mask = self.pair_excl.build_type_exclude_mask(nlist, extended_atype)

@@ -68,8 +68,7 @@ class BaseAtomicModel(BaseAtomicModel_):
         fparam: Optional[torch.Tensor] = None,
         aparam: Optional[torch.Tensor] = None,
     ) -> Dict[str, torch.Tensor]:
-        nf, nloc, nnei = nlist.shape
-        nf, nall = extended_atype.shape
+        _, nloc, _ = nlist.shape
         atype = extended_atype[:, :nloc]
 
         if self.pair_excl is not None:
