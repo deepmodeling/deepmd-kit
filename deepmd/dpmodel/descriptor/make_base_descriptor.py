@@ -4,10 +4,8 @@ from abc import (
     abstractmethod,
 )
 from typing import (
-    Callable,
     List,
     Optional,
-    Type,
 )
 
 from deepmd.common import (
@@ -17,7 +15,8 @@ from deepmd.utils.path import (
     DPPath,
 )
 from deepmd.utils.plugin import (
-    Plugin,
+    PluginVariant,
+    make_plugin_registry,
 )
 
 
@@ -37,44 +36,13 @@ def make_base_descriptor(
 
     """
 
-    class BD(ABC):
+    class BD(ABC, PluginVariant, make_plugin_registry("descriptor")):
         """Base descriptor provides the interfaces of descriptor."""
-
-        __plugins = Plugin()
-
-        @staticmethod
-        def register(key: str) -> Callable:
-            """Register a descriptor plugin.
-
-            Parameters
-            ----------
-            key : str
-                the key of a descriptor
-
-            Returns
-            -------
-            Descriptor
-                the registered descriptor
-
-            Examples
-            --------
-            >>> @Descriptor.register("some_descrpt")
-                class SomeDescript(Descriptor):
-                    pass
-            """
-            return BD.__plugins.register(key)
 
         def __new__(cls, *args, **kwargs):
             if cls is BD:
                 cls = cls.get_class_by_type(j_get_type(kwargs, cls.__name__))
             return super().__new__(cls)
-
-        @classmethod
-        def get_class_by_type(cls, descrpt_type: str) -> Type["BD"]:
-            if descrpt_type in BD.__plugins.plugins:
-                return BD.__plugins.plugins[descrpt_type]
-            else:
-                raise RuntimeError("Unknown descriptor type: " + descrpt_type)
 
         @abstractmethod
         def get_rcut(self) -> float:
