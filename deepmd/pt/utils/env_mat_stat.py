@@ -106,7 +106,9 @@ class EnvMatStatSe(EnvMatStat):
         elif self.last_dim == 1:
             radial_only = True
         else:
-            raise ValueError("last_dim should be 1 for raial-only or 4 for full descriptor.")
+            raise ValueError(
+                "last_dim should be 1 for raial-only or 4 for full descriptor."
+            )
         for system in data:
             coord, atype, box, natoms = (
                 system["coord"],
