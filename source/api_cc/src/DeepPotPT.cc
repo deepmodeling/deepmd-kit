@@ -124,9 +124,10 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
   torch::Tensor cpu_energy_ = flat_energy_.to(torch::kCPU);
   ener.assign(cpu_energy_.data_ptr<ENERGYTYPE>(),
               cpu_energy_.data_ptr<ENERGYTYPE>() + cpu_energy_.numel());
-  torch::Tensor flat_atom_energy_ = atom_energy_.toTensor().view({-1}).to(floatType);
+  torch::Tensor flat_atom_energy_ =
+      atom_energy_.toTensor().view({-1}).to(floatType);
   torch::Tensor cpu_atom_energy_ = flat_atom_energy_.to(torch::kCPU);
-  atom_energy.resize(natoms,0.0);//resize to nall to be consistenet with TF.
+  atom_energy.resize(natoms, 0.0);  // resize to nall to be consistenet with TF.
   atom_energy.assign(
       cpu_atom_energy_.data_ptr<VALUETYPE>(),
       cpu_atom_energy_.data_ptr<VALUETYPE>() + cpu_atom_energy_.numel());
