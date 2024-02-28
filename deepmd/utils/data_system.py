@@ -27,11 +27,11 @@ from deepmd.env import (
 from deepmd.utils.data import (
     DeepmdData,
 )
-from deepmd.utils.path import (
-    DPPath,
-)
 from deepmd.utils.out_stat import (
     compute_stats_from_redu,
+)
+from deepmd.utils.path import (
+    DPPath,
 )
 
 log = logging.getLogger(__name__)
