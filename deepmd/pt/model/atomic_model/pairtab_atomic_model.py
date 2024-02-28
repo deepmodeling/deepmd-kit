@@ -48,11 +48,12 @@ class PairTabAtomicModel(torch.nn.Module, BaseAtomicModel):
     def __init__(
         self, tab_file: str, rcut: float, sel: Union[int, List[int]], **kwargs
     ):
-        super().__init__()
+        torch.nn.Module.__init__(self)
         self.model_def_script = ""
         self.tab_file = tab_file
         self.rcut = rcut
         self.tab = self._set_pairtab(tab_file, rcut)
+        BaseAtomicModel.__init__(self, **kwargs)
 
         # handle deserialization with no input file
         if self.tab_file is not None:
@@ -121,20 +122,26 @@ class PairTabAtomicModel(torch.nn.Module, BaseAtomicModel):
         return True
 
     def serialize(self) -> dict:
-        return {
-            "@class": "Model",
-            "type": "pairtab",
-            "tab": self.tab.serialize(),
-            "rcut": self.rcut,
-            "sel": self.sel,
-        }
+        dd = BaseAtomicModel.serialize(self)
+        dd.update(
+            {
+                "@class": "Model",
+                "type": "pairtab",
+                "tab": self.tab.serialize(),
+                "rcut": self.rcut,
+                "sel": self.sel,
+            }
+        )
+        return dd
 
     @classmethod
     def deserialize(cls, data) -> "PairTabAtomicModel":
-        rcut = data["rcut"]
-        sel = data["sel"]
-        tab = PairTab.deserialize(data["tab"])
-        tab_model = cls(None, rcut, sel)
+        rcut = data.pop("rcut")
+        sel = data.pop("sel")
+        tab = PairTab.deserialize(data.pop("tab"))
+        data.pop("@class", None)
+        data.pop("type", None)
+        tab_model = cls(None, rcut, sel, **data)
         tab_model.tab = tab
         tab_model.register_buffer("tab_info", torch.from_numpy(tab_model.tab.tab_info))
         tab_model.register_buffer("tab_data", torch.from_numpy(tab_model.tab.tab_data))
