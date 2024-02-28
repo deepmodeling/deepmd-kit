@@ -60,11 +60,11 @@ from deepmd.tf.utils.spin import (
 from deepmd.tf.utils.type_embed import (
     TypeEmbedNet,
 )
-from deepmd.utils.version import (
-    check_version_compatibility,
-)
 from deepmd.utils.plugin import (
     make_plugin_registry,
+)
+from deepmd.utils.version import (
+    check_version_compatibility,
 )
 
 
