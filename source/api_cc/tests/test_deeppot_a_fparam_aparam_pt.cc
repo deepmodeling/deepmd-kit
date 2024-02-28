@@ -13,6 +13,7 @@
 #include "neighbor_list.h"
 #include "test_utils.h"
 
+// 1e-10 cannot pass; unclear bug or not
 #undef EPSILON
 #define EPSILON (std::is_same<VALUETYPE, double>::value ? 1e-7 : 1e-4)
 
