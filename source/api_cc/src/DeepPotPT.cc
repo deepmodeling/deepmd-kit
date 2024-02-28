@@ -146,28 +146,6 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
       cpu_atom_virial_.data_ptr<VALUETYPE>(),
       cpu_atom_virial_.data_ptr<VALUETYPE>() + cpu_atom_virial_.numel());
 }
-// template void DeepPotPT::compute<double, ENERGYTYPE>(
-//     ENERGYTYPE& ener,
-//     std::vector<double>& force,
-//     std::vector<double>& virial,
-//     std::vector<double>& atom_energy,
-//     std::vector<double>& atom_virial,
-//     const std::vector<double>& coord,
-//     const std::vector<int>& atype,
-//     const std::vector<double>& box,
-//     const InputNlist& lmp_list,
-//     const int& ago);
-// template void DeepPotPT::compute<float, ENERGYTYPE>(
-//     ENERGYTYPE& ener,
-//     std::vector<float>& force,
-//     std::vector<float>& virial,
-//     std::vector<float>& atom_energy,
-//     std::vector<float>& atom_virial,
-//     const std::vector<float>& coord,
-//     const std::vector<int>& atype,
-//     const std::vector<float>& box,
-//     const InputNlist& lmp_list,
-//     const int& ago);
 template void DeepPotPT::compute<double, std::vector<ENERGYTYPE>>(
     std::vector<ENERGYTYPE>& ener,
     std::vector<double>& force,
@@ -267,24 +245,6 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
       cpu_atom_virial_.data_ptr<VALUETYPE>() + cpu_atom_virial_.numel());
 }
 
-// template void DeepPotPT::compute<double, ENERGYTYPE>(
-//     ENERGYTYPE& ener,
-//     std::vector<double>& force,
-//     std::vector<double>& virial,
-//     std::vector<double>& atom_energy,
-//     std::vector<double>& atom_virial,
-//     const std::vector<double>& coord,
-//     const std::vector<int>& atype,
-//     const std::vector<double>& box);
-// template void DeepPotPT::compute<float, ENERGYTYPE>(
-//     ENERGYTYPE& ener,
-//     std::vector<float>& force,
-//     std::vector<float>& virial,
-//     std::vector<float>& atom_energy,
-//     std::vector<float>& atom_virial,
-//     const std::vector<float>& coord,
-//     const std::vector<int>& atype,
-//     const std::vector<float>& box);
 template void DeepPotPT::compute<double, std::vector<ENERGYTYPE>>(
     std::vector<ENERGYTYPE>& ener,
     std::vector<double>& force,
