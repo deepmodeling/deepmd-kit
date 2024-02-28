@@ -165,6 +165,8 @@ class ModelWrapper(torch.nn.Module):
         task_key: Optional[torch.Tensor] = None,
         inference_only=False,
         do_atomic_virial=False,
+        fparam: Optional[torch.Tensor] = None,
+        aparam: Optional[torch.Tensor] = None,
     ):
         if not self.multi_task:
             task_key = "Default"
@@ -173,7 +175,12 @@ class ModelWrapper(torch.nn.Module):
                 task_key is not None
             ), f"Multitask model must specify the inference task! Supported tasks are {list(self.model.keys())}."
         model_pred = self.model[task_key](
-            coord, atype, box=box, do_atomic_virial=do_atomic_virial
+            coord,
+            atype,
+            box=box,
+            do_atomic_virial=do_atomic_virial,
+            fparam=fparam,
+            aparam=aparam,
         )
         natoms = atype.shape[-1]
         if not self.inference_only and not inference_only:
