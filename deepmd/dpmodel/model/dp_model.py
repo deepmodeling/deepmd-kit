@@ -14,4 +14,6 @@ from .make_model import (
 # use "class" to resolve "Variable not allowed in type expression"
 @BaseModel.register("standard")
 class DPModel(make_model(DPAtomicModel), BaseModel):
-    pass
+    def data_requirement(self) -> dict:
+        """Get the data requirement for the model."""
+        raise NotImplementedError

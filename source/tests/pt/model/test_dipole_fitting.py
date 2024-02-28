@@ -114,12 +114,12 @@ class TestDipoleFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
             )
             ret2 = ft2(rd0, atype, gr, fparam=ifp, aparam=iap)
             np.testing.assert_allclose(
-                to_numpy_array(ret0["foo"]),
-                ret1["foo"],
+                to_numpy_array(ret0["dipole"]),
+                ret1["dipole"],
             )
             np.testing.assert_allclose(
-                to_numpy_array(ret0["foo"]),
-                to_numpy_array(ret2["foo"]),
+                to_numpy_array(ret0["dipole"]),
+                to_numpy_array(ret2["dipole"]),
             )
 
     def test_jit(
@@ -206,7 +206,7 @@ class TestEquivalence(unittest.TestCase):
                 )
 
                 ret0 = ft0(rd0, extended_atype, gr0, fparam=ifp, aparam=iap)
-                res.append(ret0["foo"])
+                res.append(ret0["dipole"])
 
             np.testing.assert_allclose(
                 to_numpy_array(res[1]), to_numpy_array(torch.matmul(res[0], rmat))
@@ -241,7 +241,7 @@ class TestEquivalence(unittest.TestCase):
             )
 
             ret0 = ft0(rd0, extended_atype, gr0, fparam=0, aparam=0)
-            res.append(ret0["foo"])
+            res.append(ret0["dipole"])
 
         np.testing.assert_allclose(
             to_numpy_array(res[0][:, idx_perm]), to_numpy_array(res[1])
@@ -281,7 +281,7 @@ class TestEquivalence(unittest.TestCase):
             )
 
             ret0 = ft0(rd0, extended_atype, gr0, fparam=0, aparam=0)
-            res.append(ret0["foo"])
+            res.append(ret0["dipole"])
 
         np.testing.assert_allclose(to_numpy_array(res[0]), to_numpy_array(res[1]))
 

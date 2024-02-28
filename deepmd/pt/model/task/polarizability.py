@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
 from typing import (
+    Callable,
     List,
     Optional,
     Union,
@@ -23,6 +24,9 @@ from deepmd.pt.utils.env import (
 )
 from deepmd.pt.utils.utils import (
     to_numpy_array,
+)
+from deepmd.utils.path import (
+    DPPath,
 )
 
 log = logging.getLogger(__name__)
@@ -72,7 +76,6 @@ class PolarFittingNet(GeneralFitting):
 
     def __init__(
         self,
-        var_name: str,
         ntypes: int,
         dim_descrpt: int,
         embedding_width: int,
@@ -112,7 +115,7 @@ class PolarFittingNet(GeneralFitting):
         ).view(ntypes, 1)
         self.shift_diag = shift_diag
         super().__init__(
-            var_name=var_name,
+            var_name="polar" if "var_name" not in kwargs else kwargs.pop("var_name"),
             ntypes=ntypes,
             dim_descrpt=dim_descrpt,
             neuron=neuron,
@@ -159,6 +162,13 @@ class PolarFittingNet(GeneralFitting):
                 ),
             ]
         )
+
+    def compute_output_stats(
+        self,
+        merged: Union[Callable, List[dict]],
+        stat_file_path: Optional[DPPath] = None,
+    ):
+        raise NotImplementedError
 
     def forward(
         self,

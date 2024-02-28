@@ -1,8 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
 from typing import (
+    Callable,
     List,
     Optional,
+    Union,
 )
 
 import torch
@@ -91,7 +93,7 @@ class DipoleFittingNet(GeneralFitting):
         self.r_differentiable = r_differentiable
         self.c_differentiable = c_differentiable
         super().__init__(
-            var_name="dipole",
+            var_name="dipole" if "var_name" not in kwargs else kwargs.pop("var_name"),
             ntypes=ntypes,
             dim_descrpt=dim_descrpt,
             neuron=neuron,
@@ -134,7 +136,11 @@ class DipoleFittingNet(GeneralFitting):
             ]
         )
 
-    def compute_output_stats(self, merged, stat_file_path: Optional[DPPath] = None):
+    def compute_output_stats(
+        self,
+        merged: Union[Callable, List[dict]],
+        stat_file_path: Optional[DPPath] = None,
+    ):
         raise NotImplementedError
 
     def forward(

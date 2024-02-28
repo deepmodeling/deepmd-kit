@@ -47,6 +47,40 @@ from deepmd.tf.utils.data_system import (
 
 CUR_DIR = os.path.dirname(__file__)
 
+energy_data_requirement = {
+    "energy": {
+        "ndof": 1,
+        "atomic": False,
+        "must": False,
+        "high_prec": True,
+    },
+    "force": {
+        "ndof": 3,
+        "atomic": True,
+        "must": False,
+        "high_prec": False,
+    },
+    "virial": {
+        "ndof": 9,
+        "atomic": False,
+        "must": False,
+        "high_prec": False,
+    },
+    "atom_ener": {
+        "ndof": 1,
+        "atomic": True,
+        "must": False,
+        "high_prec": False,
+    },
+    "atom_pref": {
+        "ndof": 1,
+        "atomic": True,
+        "must": False,
+        "high_prec": False,
+        "repeat": 3,
+    },
+}
+
 
 def compare(ut, base, given):
     if isinstance(base, list):
@@ -111,6 +145,7 @@ class DatasetTest(ABC):
         self.filter_neuron = model_config["descriptor"]["neuron"]
         self.axis_neuron = model_config["descriptor"]["axis_neuron"]
         self.n_neuron = model_config["fitting_net"]["neuron"]
+        self.my_dataset.add_data_requirement(energy_data_requirement)
 
         self.my_sampled = my_make(
             self.my_dataset.systems, self.my_dataset.dataloaders, self.data_stat_nbatch
