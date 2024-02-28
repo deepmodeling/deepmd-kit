@@ -28,8 +28,11 @@ from deepmd.pt.utils import (
 from deepmd.pt.utils.env import (
     DEFAULT_PRECISION,
 )
-from deepmd.pt.utils.stat import (
-    compute_output_bias,
+from deepmd.pt.utils.utils import (
+    to_numpy_array,
+)
+from deepmd.utils.out_stat import (
+    compute_stats_from_redu,
 )
 from deepmd.utils.path import (
     DPPath,
@@ -135,14 +138,6 @@ class InvarFitting(GeneralFitting):
         data["atom_ener"] = self.atom_ener
         return data
 
-    @property
-    def data_stat_key(self):
-        """
-        Get the keys for the data statistic of the fitting.
-        Return a list of statistic names needed, such as "bias_atom_e".
-        """
-        return ["bias_atom_e"]
-
     def compute_output_stats(self, merged, stat_file_path: Optional[DPPath] = None):
         if stat_file_path is not None:
             stat_file_path = stat_file_path / "bias_atom_e"
@@ -156,7 +151,22 @@ class InvarFitting(GeneralFitting):
                 input_natoms = [item["real_natoms_vec"] for item in sampled]
             else:
                 input_natoms = [item["natoms"] for item in sampled]
-            bias_atom_e = compute_output_bias(energy, input_natoms, rcond=self.rcond)
+            # shape: (nframes, ndim)
+            merged_energy = to_numpy_array(torch.cat(energy))
+            # shape: (nframes, ntypes)
+            merged_natoms = to_numpy_array(torch.cat(input_natoms)[:, 2:])
+            if self.atom_ener is not None and len(self.atom_ener) > 0:
+                assigned_atom_ener = np.array(
+                    [ee if ee is not None else np.nan for ee in self.atom_ener]
+                )
+            else:
+                assigned_atom_ener = None
+            bias_atom_e, _ = compute_stats_from_redu(
+                merged_energy,
+                merged_natoms,
+                assigned_bias=assigned_atom_ener,
+                rcond=self.rcond,
+            )
             if stat_file_path is not None:
                 stat_file_path.save_numpy(bias_atom_e)
         assert all(x is not None for x in [bias_atom_e])

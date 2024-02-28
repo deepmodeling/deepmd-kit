@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
 
-import numpy as np
 import torch
 
 from deepmd.pt.utils.utils import (
@@ -47,23 +46,3 @@ def make_stat_input(datasets, dataloaders, nbatches):
         dict_to_device(sys_stat)
         lst.append(sys_stat)
     return lst
-
-
-def compute_output_bias(energy, natoms, rcond=None):
-    """Update output bias for fitting net.
-
-    Args:
-    - energy: Batched energy with shape [nframes, 1].
-    - natoms: Batched atom statisics with shape [self.ntypes+2].
-
-    Returns
-    -------
-    - energy_coef: Average enery per atom for each element.
-    """
-    for i in range(len(energy)):
-        energy[i] = energy[i].mean(dim=0, keepdim=True)
-        natoms[i] = natoms[i].double().mean(dim=0, keepdim=True)
-    sys_ener = torch.cat(energy).cpu()
-    sys_tynatom = torch.cat(natoms)[:, 2:].cpu()
-    energy_coef, _, _, _ = np.linalg.lstsq(sys_tynatom, sys_ener, rcond)
-    return energy_coef
