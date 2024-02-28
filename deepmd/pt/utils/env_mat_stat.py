@@ -101,6 +101,12 @@ class EnvMatStatSe(EnvMatStat):
             dtype=env.GLOBAL_PT_FLOAT_PRECISION,
             device=env.DEVICE,
         )
+        if self.last_dim == 4:
+            radial_only = False
+        elif self.last_dim == 1:
+            radial_only = True
+        else:
+            raise ValueError("last_dim should be 1 for raial-only or 4 for full descriptor.")
         for system in data:
             coord, atype, box, natoms = (
                 system["coord"],
@@ -130,6 +136,7 @@ class EnvMatStatSe(EnvMatStat):
                 self.descriptor.get_rcut(),
                 # TODO: export rcut_smth from DescriptorBlock
                 self.descriptor.rcut_smth,
+                radial_only,
             )
             # reshape to nframes * nloc at the atom level,
             # so nframes/mixed_type do not matter
