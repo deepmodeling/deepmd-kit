@@ -20,14 +20,14 @@ from deepmd.pt.model.descriptor import (
 from deepmd.pt.model.descriptor.dpa1 import (
     DescrptDPA1,
 )
+from deepmd.pt.model.task.ener import (
+    EnergyFittingNet,
+)
 from deepmd.pt.utils import (
     env,
 )
 from deepmd.pt.utils.dataloader import (
     DpLoaderSet,
-)
-from deepmd.pt.utils.stat import (
-    compute_output_bias,
 )
 from deepmd.pt.utils.stat import make_stat_input as my_make
 from deepmd.tf.common import (
@@ -145,9 +145,14 @@ class DatasetTest(ABC):
         dp_fn = EnerFitting(
             self.dp_d.get_ntypes(), self.dp_d.get_dim_out(), self.n_neuron
         )
-        dp_fn.compute_output_stats(self.dp_sampled)
-        bias_atom_e = compute_output_bias(energy, natoms)
-        self.assertTrue(np.allclose(dp_fn.bias_atom_e, bias_atom_e[:, 0]))
+        dp_fn.compute_output_stats(self.dp_sampled, mixed_type=self.mixed_type)
+        pt_fn = EnergyFittingNet(
+            self.dp_d.get_ntypes(), self.dp_d.get_dim_out(), self.n_neuron
+        )
+        pt_fn.compute_output_stats(self.my_sampled)
+        np.testing.assert_allclose(
+            dp_fn.bias_atom_e, pt_fn.bias_atom_e.detach().cpu().numpy().ravel()
+        )
 
     # temporarily delete this function for performance of seeds in tf and pytorch may be different
     """

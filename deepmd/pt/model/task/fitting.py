@@ -92,14 +92,6 @@ class Fitting(torch.nn.Module, BaseFitting):
         else:
             raise NotImplementedError
 
-    @property
-    def data_stat_key(self):
-        """
-        Get the keys for the data statistic of the fitting.
-        Return a list of statistic names needed, such as "bias_atom_e".
-        """
-        raise NotImplementedError("data_stat_key is not implemented!")
-
     def change_energy_bias(
         self, config, model, old_type_map, new_type_map, bias_shift="delta", ntest=10
     ):

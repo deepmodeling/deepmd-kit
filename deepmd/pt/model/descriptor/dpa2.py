@@ -304,7 +304,7 @@ class DescrptDPA2(torch.nn.Module, BaseDescriptor):
                 }
                 for item in merged
             ]
-            descrpt.compute_input_stats(merged_tmp)
+            descrpt.compute_input_stats(merged_tmp, path)
 
     def serialize(self) -> dict:
         """Serialize the obj to dict."""

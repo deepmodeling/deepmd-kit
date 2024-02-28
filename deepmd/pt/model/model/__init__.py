@@ -20,7 +20,7 @@ from deepmd.pt.model.descriptor.base_descriptor import (
     BaseDescriptor,
 )
 from deepmd.pt.model.task import (
-    Fitting,
+    BaseFitting,
 )
 
 from .dp_model import (
@@ -61,7 +61,7 @@ def get_zbl_model(model_params):
         fitting_net["out_dim"] = descriptor.get_dim_emb()
         if "ener" in fitting_net["type"]:
             fitting_net["return_energy"] = True
-    fitting = Fitting(**fitting_net)
+    fitting = BaseFitting(**fitting_net)
     dp_model = DPAtomicModel(descriptor, fitting, type_map=model_params["type_map"])
     # pairtab
     filepath = model_params["use_srtab"]
@@ -101,11 +101,11 @@ def get_model(model_params):
         fitting_net["out_dim"] = descriptor.get_dim_emb()
         if "ener" in fitting_net["type"]:
             fitting_net["return_energy"] = True
-    fitting = Fitting(**fitting_net)
+    fitting = BaseFitting(**fitting_net)
     atom_exclude_types = model_params.get("atom_exclude_types", [])
     pair_exclude_types = model_params.get("pair_exclude_types", [])
 
-    model = EnergyModel(
+    model = DPModel(
         descriptor,
         fitting,
         type_map=model_params["type_map"],

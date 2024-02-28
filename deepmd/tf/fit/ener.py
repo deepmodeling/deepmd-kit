@@ -53,6 +53,9 @@ from deepmd.tf.utils.network import (
 from deepmd.tf.utils.spin import (
     Spin,
 )
+from deepmd.utils.out_stat import (
+    compute_stats_from_redu,
+)
 from deepmd.utils.version import (
     check_version_compatibility,
 )
@@ -295,21 +298,17 @@ class EnerFitting(Fitting):
             # In this situation, we directly use these assigned energies instead of computing stats.
             # This will make the loss decrease quickly
             assigned_atom_ener = np.array(
-                [ee for ee in self.atom_ener_v if ee is not None]
+                [ee if ee is not None else np.nan for ee in self.atom_ener_v]
             )
-            assigned_ener_idx = [
-                ii for ii, ee in enumerate(self.atom_ener_v) if ee is not None
-            ]
-            # np.dot out size: nframe
-            sys_ener -= np.dot(sys_tynatom[:, assigned_ener_idx], assigned_atom_ener)
-            sys_tynatom[:, assigned_ener_idx] = 0.0
-        energy_shift, resd, rank, s_value = np.linalg.lstsq(
-            sys_tynatom, sys_ener, rcond=rcond
+        else:
+            assigned_atom_ener = None
+        energy_shift, _ = compute_stats_from_redu(
+            sys_ener.reshape(-1, 1),
+            sys_tynatom,
+            assigned_bias=assigned_atom_ener,
+            rcond=rcond,
         )
-        if len(self.atom_ener) > 0:
-            for ii in assigned_ener_idx:
-                energy_shift[ii] = self.atom_ener_v[ii]
-        return energy_shift
+        return energy_shift.ravel()
 
     def compute_input_stats(self, all_stat: dict, protection: float = 1e-2) -> None:
         """Compute the input statistics.
