@@ -1016,11 +1016,6 @@ class FparamAparamCommonTest:
         )
         self.places = default_places
 
-    @classmethod
-    def tearDownClass(cls):
-        os.remove("fparam_aparam.pb")
-        cls.dp = None
-
     def test_attrs(self):
         self.assertEqual(self.dp.get_ntypes(), 1)
         self.assertAlmostEqual(self.dp.get_rcut(), 6.0, places=self.places)
@@ -1147,6 +1142,10 @@ class TestFparamAparam(FparamAparamCommonTest, unittest.TestCase):
         )
         cls.dp = DeepPot("fparam_aparam.pb")
 
+    @classmethod
+    def tearDownClass(cls):
+        os.remove("fparam_aparam.pb")
+        cls.dp = None
 
 class TestDeepPotAPBCNeighborList(TestDeepPotAPBC):
     @classmethod
