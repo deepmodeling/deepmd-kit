@@ -148,16 +148,14 @@ class PolarFittingSeA(Fitting):
         """Get the output size. Should be 9."""
         return 9
 
-    def compute_input_stats(self, all_stat, protection=1e-2):
-        """Compute the input statistics.
+    def compute_output_stats(self, all_stat):
+        """Compute the output statistics.
 
         Parameters
         ----------
         all_stat
             Dictionary of inputs.
             can be prepared by model.make_stat_input
-        protection
-            Divided-by-zero protection
         """
         if "polarizability" not in all_stat.keys():
             self.avgeig = np.zeros([9])
