@@ -75,6 +75,7 @@ class Trainer:
         finetune_model=None,
         force_load=False,
         shared_links=None,
+        init_frz_model=None,
     ):
         """Construct a DeePMD trainer.
 
@@ -394,6 +395,9 @@ class Trainer:
                         ntest=ntest,
                         bias_shift=model_params.get("bias_shift", "delta"),
                     )
+        if init_frz_model is not None:
+            frz_model = torch.jit.load(init_frz_model, map_location=DEVICE)
+            self.model.load_state_dict(frz_model.state_dict())
 
         # Set trainable params
         self.wrapper.set_trainable_params()
