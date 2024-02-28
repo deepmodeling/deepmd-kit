@@ -1022,6 +1022,7 @@ class TestFparamAparam(unittest.TestCase):
                 2.875323131744185121e-02,
             ]
         )
+        self.places = default_places
 
     @classmethod
     def tearDownClass(cls):
@@ -1030,7 +1031,7 @@ class TestFparamAparam(unittest.TestCase):
 
     def test_attrs(self):
         self.assertEqual(self.dp.get_ntypes(), 1)
-        self.assertAlmostEqual(self.dp.get_rcut(), 6.0, places=default_places)
+        self.assertAlmostEqual(self.dp.get_rcut(), 6.0, places=self.places)
         self.assertEqual(self.dp.get_dim_fparam(), 1)
         self.assertEqual(self.dp.get_dim_aparam(), 1)
 
@@ -1050,13 +1051,11 @@ class TestFparamAparam(unittest.TestCase):
         self.assertEqual(ff.shape, (nframes, natoms, 3))
         self.assertEqual(vv.shape, (nframes, 9))
         # check values
-        np.testing.assert_almost_equal(
-            ff.ravel(), self.expected_f.ravel(), default_places
-        )
+        np.testing.assert_almost_equal(ff.ravel(), self.expected_f.ravel(), self.places)
         expected_se = np.sum(self.expected_e.reshape([nframes, -1]), axis=1)
-        np.testing.assert_almost_equal(ee.ravel(), expected_se.ravel(), default_places)
+        np.testing.assert_almost_equal(ee.ravel(), expected_se.ravel(), self.places)
         expected_sv = np.sum(self.expected_v.reshape([nframes, -1, 9]), axis=1)
-        np.testing.assert_almost_equal(vv.ravel(), expected_sv.ravel(), default_places)
+        np.testing.assert_almost_equal(vv.ravel(), expected_sv.ravel(), self.places)
 
     def test_1frame_atm(self):
         ee, ff, vv, ae, av = self.dp.eval(
@@ -1076,19 +1075,13 @@ class TestFparamAparam(unittest.TestCase):
         self.assertEqual(ae.shape, (nframes, natoms, 1))
         self.assertEqual(av.shape, (nframes, natoms, 9))
         # check values
-        np.testing.assert_almost_equal(
-            ff.ravel(), self.expected_f.ravel(), default_places
-        )
-        np.testing.assert_almost_equal(
-            ae.ravel(), self.expected_e.ravel(), default_places
-        )
-        np.testing.assert_almost_equal(
-            av.ravel(), self.expected_v.ravel(), default_places
-        )
+        np.testing.assert_almost_equal(ff.ravel(), self.expected_f.ravel(), self.places)
+        np.testing.assert_almost_equal(ae.ravel(), self.expected_e.ravel(), self.places)
+        np.testing.assert_almost_equal(av.ravel(), self.expected_v.ravel(), self.places)
         expected_se = np.sum(self.expected_e.reshape([nframes, -1]), axis=1)
-        np.testing.assert_almost_equal(ee.ravel(), expected_se.ravel(), default_places)
+        np.testing.assert_almost_equal(ee.ravel(), expected_se.ravel(), self.places)
         expected_sv = np.sum(self.expected_v.reshape([nframes, -1, 9]), axis=1)
-        np.testing.assert_almost_equal(vv.ravel(), expected_sv.ravel(), default_places)
+        np.testing.assert_almost_equal(vv.ravel(), expected_sv.ravel(), self.places)
 
     def test_2frame_atm_single_param(self):
         coords2 = np.concatenate((self.coords, self.coords))
@@ -1113,13 +1106,13 @@ class TestFparamAparam(unittest.TestCase):
         expected_f = np.concatenate((self.expected_f, self.expected_f), axis=0)
         expected_e = np.concatenate((self.expected_e, self.expected_e), axis=0)
         expected_v = np.concatenate((self.expected_v, self.expected_v), axis=0)
-        np.testing.assert_almost_equal(ff.ravel(), expected_f.ravel(), default_places)
-        np.testing.assert_almost_equal(ae.ravel(), expected_e.ravel(), default_places)
-        np.testing.assert_almost_equal(av.ravel(), expected_v.ravel(), default_places)
+        np.testing.assert_almost_equal(ff.ravel(), expected_f.ravel(), self.places)
+        np.testing.assert_almost_equal(ae.ravel(), expected_e.ravel(), self.places)
+        np.testing.assert_almost_equal(av.ravel(), expected_v.ravel(), self.places)
         expected_se = np.sum(expected_e.reshape([nframes, -1]), axis=1)
-        np.testing.assert_almost_equal(ee.ravel(), expected_se.ravel(), default_places)
+        np.testing.assert_almost_equal(ee.ravel(), expected_se.ravel(), self.places)
         expected_sv = np.sum(expected_v.reshape([nframes, -1, 9]), axis=1)
-        np.testing.assert_almost_equal(vv.ravel(), expected_sv.ravel(), default_places)
+        np.testing.assert_almost_equal(vv.ravel(), expected_sv.ravel(), self.places)
 
     def test_2frame_atm_all_param(self):
         coords2 = np.concatenate((self.coords, self.coords))
@@ -1144,13 +1137,13 @@ class TestFparamAparam(unittest.TestCase):
         expected_f = np.concatenate((self.expected_f, self.expected_f), axis=0)
         expected_e = np.concatenate((self.expected_e, self.expected_e), axis=0)
         expected_v = np.concatenate((self.expected_v, self.expected_v), axis=0)
-        np.testing.assert_almost_equal(ff.ravel(), expected_f.ravel(), default_places)
-        np.testing.assert_almost_equal(ae.ravel(), expected_e.ravel(), default_places)
-        np.testing.assert_almost_equal(av.ravel(), expected_v.ravel(), default_places)
+        np.testing.assert_almost_equal(ff.ravel(), expected_f.ravel(), self.places)
+        np.testing.assert_almost_equal(ae.ravel(), expected_e.ravel(), self.places)
+        np.testing.assert_almost_equal(av.ravel(), expected_v.ravel(), self.places)
         expected_se = np.sum(expected_e.reshape([nframes, -1]), axis=1)
-        np.testing.assert_almost_equal(ee.ravel(), expected_se.ravel(), default_places)
+        np.testing.assert_almost_equal(ee.ravel(), expected_se.ravel(), self.places)
         expected_sv = np.sum(expected_v.reshape([nframes, -1, 9]), axis=1)
-        np.testing.assert_almost_equal(vv.ravel(), expected_sv.ravel(), default_places)
+        np.testing.assert_almost_equal(vv.ravel(), expected_sv.ravel(), self.places)
 
 
 class TestDeepPotAPBCNeighborList(TestDeepPotAPBC):
