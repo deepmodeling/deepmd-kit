@@ -304,8 +304,8 @@ class EnerFitting(Fitting):
             sys_tynatom,
             assigned_bias=assigned_atom_ener,
             rcond=rcond,
-        ).ravel()
-        return energy_shift
+        )
+        return energy_shift.ravel()
 
     def compute_input_stats(self, all_stat: dict, protection: float = 1e-2) -> None:
         """Compute the input statistics.
