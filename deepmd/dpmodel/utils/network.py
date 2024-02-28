@@ -215,7 +215,7 @@ class NativeLayer(NativeOP):
         """
         data = copy.deepcopy(data)
         check_version_compatibility(data.pop("@version", 1), 1, 1)
-        data.pop("@class")
+        data.pop("@class", None)
         variables = data.pop("@variables")
         assert variables["w"] is not None and len(variables["w"].shape) == 2
         num_in, num_out = variables["w"].shape
@@ -374,7 +374,7 @@ def make_multilayer_network(T_NetworkLayer, ModuleBase):
             """
             data = data.copy()
             check_version_compatibility(data.pop("@version", 1), 1, 1)
-            data.pop("@class")
+            data.pop("@class", None)
             return cls(data["layers"])
 
         def __getitem__(self, key):
@@ -508,7 +508,7 @@ def make_embedding_network(T_Network, T_NetworkLayer):
             """
             data = copy.deepcopy(data)
             check_version_compatibility(data.pop("@version", 1), 1, 1)
-            data.pop("@class")
+            data.pop("@class", None)
             layers = data.pop("layers")
             obj = cls(**data)
             super(EN, obj).__init__(layers)
@@ -608,7 +608,7 @@ def make_fitting_network(T_EmbeddingNet, T_Network, T_NetworkLayer):
             """
             data = copy.deepcopy(data)
             check_version_compatibility(data.pop("@version", 1), 1, 1)
-            data.pop("@class")
+            data.pop("@class", None)
             layers = data.pop("layers")
             obj = cls(**data)
             T_Network.__init__(obj, layers)
@@ -730,5 +730,5 @@ class NetworkCollection:
         """
         data = data.copy()
         check_version_compatibility(data.pop("@version", 1), 1, 1)
-        data.pop("@class")
+        data.pop("@class", None)
         return cls(**data)
