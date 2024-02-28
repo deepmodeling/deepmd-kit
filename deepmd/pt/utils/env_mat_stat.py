@@ -80,7 +80,7 @@ class EnvMatStatSe(EnvMatStat):
         Parameters
         ----------
         data : List[Dict[str, torch.Tensor]]
-            The environment matrix.
+            The data.
 
         Yields
         ------

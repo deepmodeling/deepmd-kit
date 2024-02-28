@@ -15,6 +15,7 @@
         50,
         100
       ],
+      "tebd_dim": 8,
       "axis_neuron": 16,
       "attn": 128,
       "attn_layer": 2,
@@ -59,6 +60,7 @@
     "_comment": " that's all"
   },
   "training": {
+    "stat_file": "./dpa1",
     "training_data": {
       "systems": [
         "../data/data_0",
