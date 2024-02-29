@@ -1,7 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    Any,
+    Dict,
     List,
     Optional,
+    Union,
 )
 
 import numpy as np
@@ -34,13 +37,14 @@ class DescrptHybrid(BaseDescriptor, torch.nn.Module):
 
     Parameters
     ----------
-    list : list
-            Build a descriptor from the concatenation of the list of descriptors.
+    list : list : List[Union[BaseDescriptor, Dict[str, Any]]]
+        Build a descriptor from the concatenation of the list of descriptors.
+        The descriptor can be either an object or a dictionary.
     """
 
     def __init__(
         self,
-        list: list,
+        list: List[Union[BaseDescriptor, Dict[str, Any]]],
         **kwargs,
     ) -> None:
         super().__init__()

@@ -1,8 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    Any,
+    Dict,
     List,
     Optional,
     Tuple,
+    Union,
 )
 
 import numpy as np
@@ -35,13 +38,14 @@ class DescrptHybrid(Descriptor):
 
     Parameters
     ----------
-    list : list
+    list : list : List[Union[Descriptor, Dict[str, Any]]]
             Build a descriptor from the concatenation of the list of descriptors.
+            The descriptor can be either an object or a dictionary.
     """
 
     def __init__(
         self,
-        list: list,
+        list: List[Union[Descriptor, Dict[str, Any]]],
         multi_task: bool = False,
         ntypes: Optional[int] = None,
         spin: Optional[Spin] = None,
