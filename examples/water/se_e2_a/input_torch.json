@@ -19,6 +19,7 @@
       ],
       "resnet_dt": false,
       "axis_neuron": 16,
+      "type_one_side": true,
       "seed": 1,
       "_comment": " that's all"
     },
