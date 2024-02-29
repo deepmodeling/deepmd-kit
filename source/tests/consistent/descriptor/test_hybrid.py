@@ -41,18 +41,19 @@ class TestHybrid(CommonTest, DescriptorTest, unittest.TestCase):
             "list": [
                 {
                     "type": "se_e2_r",
+                    # test the case that sel are different!
                     "sel": [10, 10],
                     "rcut_smth": 5.80,
                     "rcut": 6.00,
                     "neuron": [6, 12, 24],
-                    "resnet_dt": True,
+                    "resnet_dt": False,
                     "type_one_side": True,
                     "precision": "float64",
                     "seed": 20240229,
                 },
                 {
                     "type": "se_e2_a",
-                    "sel": [10, 10],
+                    "sel": [9, 11],
                     "rcut_smth": 2.80,
                     "rcut": 3.00,
                     "neuron": [6, 12, 24],

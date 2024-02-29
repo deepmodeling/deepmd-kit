@@ -17,6 +17,9 @@ from deepmd.pt.model.network.network import (
     Identity,
     Linear,
 )
+from deepmd.pt.utils.utils import (
+    to_torch_tensor,
+)
 from deepmd.utils.path import (
     DPPath,
 )
@@ -64,6 +67,17 @@ class DescrptHybrid(BaseDescriptor, torch.nn.Module):
             assert (
                 self.descrpt_list[ii].get_ntypes() == self.descrpt_list[0].get_ntypes()
             ), f"number of atom types in {ii}th descrptor does not match others"
+        # if hybrid sel is larger than sub sel, the nlist needs to be cut for each type
+        hybrid_sel = self.get_sel()
+        self.nlist_cut_idx: List[torch.Tensor] = []
+        for ii in range(self.numb_descrpt):
+            sub_sel = self.descrpt_list[ii].get_sel()
+            start_idx = np.cumsum(np.pad(hybrid_sel, (1, 0), "constant"))[:-1]
+            end_idx = start_idx + np.array(sub_sel)
+            cut_idx = np.concatenate(
+                [range(ss, ee) for ss, ee in zip(start_idx, end_idx)]
+            )
+            self.nlist_cut_idx.append(to_torch_tensor(cut_idx))
 
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
@@ -135,8 +149,11 @@ class DescrptHybrid(BaseDescriptor, torch.nn.Module):
             The smooth switch function. this descriptor returns None
         """
         out_descriptor = []
-        for descrpt in self.descrpt_list:
-            odescriptor, _, _, _, _ = descrpt(coord_ext, atype_ext, nlist, mapping)
+        for descrpt, nci in zip(self.descrpt_list, self.nlist_cut_idx):
+            # cut the nlist to the correct length
+            odescriptor, _, _, _, _ = descrpt(
+                coord_ext, atype_ext, nlist[:, :, nci], mapping
+            )
             out_descriptor.append(odescriptor)
         out_descriptor = torch.cat(out_descriptor, dim=-1)
         return out_descriptor, None, None, None, None
