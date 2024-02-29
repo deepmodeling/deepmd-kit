@@ -34,12 +34,16 @@ def make_stat_input(datasets, dataloaders, nbatches):
                     iterator = iter(dataloaders[i])
                     stat_data = next(iterator)
                 for dd in stat_data:
-                    if isinstance(stat_data[dd], torch.Tensor):
+                    if stat_data[dd] is None:
+                        sys_stat[dd] = None
+                    elif isinstance(stat_data[dd], torch.Tensor):
                         if dd not in sys_stat:
                             sys_stat[dd] = []
                         sys_stat[dd].append(stat_data[dd])
+                    else:
+                        pass
         for key in sys_stat:
-            if sys_stat[key][0] is None:
+            if sys_stat[key] is None or sys_stat[key][0] is None:
                 sys_stat[key] = None
             else:
                 sys_stat[key] = torch.cat(sys_stat[key], dim=0)
