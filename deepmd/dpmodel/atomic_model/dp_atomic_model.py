@@ -46,11 +46,12 @@ class DPAtomicModel(BaseAtomicModel):
         descriptor,
         fitting,
         type_map: Optional[List[str]] = None,
+        **kwargs,
     ):
-        super().__init__()
         self.type_map = type_map
         self.descriptor = descriptor
         self.fitting = fitting
+        super().__init__(**kwargs)
 
     def fitting_output_def(self) -> FittingOutputDef:
         """Get the output def of the fitting net."""
@@ -132,14 +133,18 @@ class DPAtomicModel(BaseAtomicModel):
         return ret
 
     def serialize(self) -> dict:
-        return {
-            "@class": "Model",
-            "type": "standard",
-            "@version": 1,
-            "type_map": self.type_map,
-            "descriptor": self.descriptor.serialize(),
-            "fitting": self.fitting.serialize(),
-        }
+        dd = super().serialize()
+        dd.update(
+            {
+                "@class": "Model",
+                "type": "standard",
+                "@version": 1,
+                "type_map": self.type_map,
+                "descriptor": self.descriptor.serialize(),
+                "fitting": self.fitting.serialize(),
+            }
+        )
+        return dd
 
     @classmethod
     def deserialize(cls, data) -> "DPAtomicModel":
@@ -147,9 +152,10 @@ class DPAtomicModel(BaseAtomicModel):
         check_version_compatibility(data.pop("@version", 1), 1, 1)
         data.pop("@class")
         data.pop("type")
-        descriptor_obj = BaseDescriptor.deserialize(data["descriptor"])
-        fitting_obj = BaseFitting.deserialize(data["fitting"])
-        obj = cls(descriptor_obj, fitting_obj, type_map=data["type_map"])
+        descriptor_obj = BaseDescriptor.deserialize(data.pop("descriptor"))
+        fitting_obj = BaseFitting.deserialize(data.pop("fitting"))
+        type_map = data.pop("type_map", None)
+        obj = cls(descriptor_obj, fitting_obj, type_map=type_map, **data)
         return obj
 
     def get_dim_fparam(self) -> int:
