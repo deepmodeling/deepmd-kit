@@ -70,15 +70,16 @@ You can first train a multi-task model using input script with the following {re
             "rcut_smth":    0.5,
             "rcut":     6.0,
             "neuron":       [25, 50, 100],
+            "type_one_side": true
         },
         "fitting_net_dict": {
             "water_dipole": {
                 "type":         "dipole",
-                "neuron":       [100, 100, 100],
+                "neuron":       [100, 100, 100]
             },
             "water_ener": {
                 "neuron":       [240, 240, 240],
-                "resnet_dt":    true,
+                "resnet_dt":    true
             }
         },
     }
