@@ -202,12 +202,16 @@ class Trainer:
             )
 
         def get_single_model(
-            _model_params, _training_data, _validation_data, _stat_file_path
+            _model_params,
+            _training_data,
+            _validation_data,
+            _stat_file_path,
+            _data_requirement,
         ):
             model = get_model(deepcopy(_model_params)).to(DEVICE)
-            _training_data.add_data_requirement(model.data_requirement)
+            _training_data.add_data_requirement(_data_requirement)
             if _validation_data is not None:
-                _validation_data.add_data_requirement(model.data_requirement)
+                _validation_data.add_data_requirement(_data_requirement)
             if not resuming:
 
                 @lazy
@@ -262,11 +266,33 @@ class Trainer:
         else:
             self.opt_type, self.opt_param = get_opt_param(training_params)
 
+        # Loss
+        if not self.multi_task:
+            self.loss = get_loss(
+                config["loss"],
+                config["learning_rate"]["start_lr"],
+                len(model_params["type_map"]),
+            )
+        else:
+            self.loss = {}
+            for model_key in self.model_keys:
+                loss_param = config["loss_dict"][model_key]
+                if config.get("learning_rate_dict", None) is not None:
+                    lr_param = config["learning_rate_dict"][model_key]["start_lr"]
+                else:
+                    lr_param = config["learning_rate"]["start_lr"]
+                ntypes = len(model_params["model_dict"][model_key]["type_map"])
+                self.loss[model_key] = get_loss(loss_param, lr_param, ntypes)
+
         # Data + Model
         dp_random.seed(training_params["seed"])
         if not self.multi_task:
             self.model = get_single_model(
-                model_params, training_data, validation_data, stat_file_path
+                model_params,
+                training_data,
+                validation_data,
+                stat_file_path,
+                self.loss.label_requirement,
             )
             (
                 self.training_dataloader,
@@ -290,6 +316,7 @@ class Trainer:
                     training_data[model_key],
                     validation_data[model_key],
                     stat_file_path[model_key],
+                    self.loss[model_key].label_requirement,
                 )
                 (
                     self.training_dataloader[model_key],
@@ -315,24 +342,6 @@ class Trainer:
                 self.lr_exp[model_key] = get_lr(config["learning_rate_dict"][model_key])
         else:
             self.lr_exp = get_lr(config["learning_rate"])
-
-        # Loss
-        if not self.multi_task:
-            self.loss = get_loss(
-                config["loss"],
-                config["learning_rate"]["start_lr"],
-                len(model_params["type_map"]),
-            )
-        else:
-            self.loss = {}
-            for model_key in self.model_keys:
-                loss_param = config["loss_dict"][model_key]
-                if config.get("learning_rate_dict", None) is not None:
-                    lr_param = config["learning_rate_dict"][model_key]["start_lr"]
-                else:
-                    lr_param = config["learning_rate"]["start_lr"]
-                ntypes = len(model_params["model_dict"][model_key]["type_map"])
-                self.loss[model_key] = get_loss(loss_param, lr_param, ntypes)
 
         # JIT
         if JIT:

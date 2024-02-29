@@ -44,42 +44,50 @@ from deepmd.tf.utils import random as tf_random
 from deepmd.tf.utils.data_system import (
     DeepmdDataSystem,
 )
+from deepmd.utils.data import (
+    DataRequirementItem,
+)
 
 CUR_DIR = os.path.dirname(__file__)
 
-energy_data_requirement = {
-    "energy": {
-        "ndof": 1,
-        "atomic": False,
-        "must": False,
-        "high_prec": True,
-    },
-    "force": {
-        "ndof": 3,
-        "atomic": True,
-        "must": False,
-        "high_prec": False,
-    },
-    "virial": {
-        "ndof": 9,
-        "atomic": False,
-        "must": False,
-        "high_prec": False,
-    },
-    "atom_ener": {
-        "ndof": 1,
-        "atomic": True,
-        "must": False,
-        "high_prec": False,
-    },
-    "atom_pref": {
-        "ndof": 1,
-        "atomic": True,
-        "must": False,
-        "high_prec": False,
-        "repeat": 3,
-    },
-}
+energy_data_requirement = [
+    DataRequirementItem(
+        "energy",
+        ndof=1,
+        atomic=False,
+        must=False,
+        high_prec=True,
+    ),
+    DataRequirementItem(
+        "force",
+        ndof=3,
+        atomic=True,
+        must=False,
+        high_prec=False,
+    ),
+    DataRequirementItem(
+        "virial",
+        ndof=9,
+        atomic=False,
+        must=False,
+        high_prec=False,
+    ),
+    DataRequirementItem(
+        "atom_ener",
+        ndof=1,
+        atomic=True,
+        must=False,
+        high_prec=False,
+    ),
+    DataRequirementItem(
+        "atom_pref",
+        ndof=1,
+        atomic=True,
+        must=False,
+        high_prec=False,
+        repeat=3,
+    ),
+]
 
 
 def compare(ut, base, given):

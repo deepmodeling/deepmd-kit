@@ -10,9 +10,6 @@ from typing import (
     Type,
 )
 
-from deepmd.utils.data import (
-    DataRequirementItem,
-)
 from deepmd.utils.plugin import (
     PluginVariant,
     make_plugin_registry,
@@ -94,10 +91,6 @@ def make_base_model() -> Type[object]:
         @abstractmethod
         def model_output_type(self) -> str:
             """Get the output type for the model."""
-
-        @abstractmethod
-        def data_requirement(self) -> List[DataRequirementItem]:
-            """Get the data requirement for the model."""
 
         @abstractmethod
         def serialize(self) -> dict:

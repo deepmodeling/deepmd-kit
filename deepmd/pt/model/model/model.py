@@ -1,14 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
-    List,
     Optional,
 )
 
 from deepmd.dpmodel.model.base_model import (
     make_base_model,
-)
-from deepmd.utils.data import (
-    DataRequirementItem,
 )
 from deepmd.utils.path import (
     DPPath,
@@ -87,8 +83,4 @@ class BaseModel(make_base_model()):
         stat_file_path
             The path to the statistics files.
         """
-        raise NotImplementedError
-
-    def data_requirement(self) -> List[DataRequirementItem]:
-        """Get the data requirement for the model."""
         raise NotImplementedError

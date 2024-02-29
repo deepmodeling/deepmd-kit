@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Dict,
-    List,
     Optional,
 )
 
@@ -15,9 +14,6 @@ from deepmd.pt.model.atomic_model import (
 )
 from deepmd.pt.model.model.model import (
     BaseModel,
-)
-from deepmd.utils.data import (
-    DataRequirementItem,
 )
 
 from .make_model import (
@@ -104,48 +100,6 @@ class DPZBLModel(DPZBLModel_, BaseModel):
             model_predict["dforce"] = model_ret["dforce"]
         model_predict = model_ret
         return model_predict
-
-    @property
-    def data_requirement(self) -> List[DataRequirementItem]:
-        data_requirement = [
-            DataRequirementItem(
-                "energy",
-                ndof=1,
-                atomic=False,
-                must=False,
-                high_prec=True,
-            ),
-            DataRequirementItem(
-                "force",
-                ndof=3,
-                atomic=True,
-                must=False,
-                high_prec=False,
-            ),
-            DataRequirementItem(
-                "virial",
-                ndof=9,
-                atomic=False,
-                must=False,
-                high_prec=False,
-            ),
-            DataRequirementItem(
-                "atom_ener",
-                ndof=1,
-                atomic=True,
-                must=False,
-                high_prec=False,
-            ),
-            DataRequirementItem(
-                "atom_pref",
-                ndof=1,
-                atomic=True,
-                must=False,
-                high_prec=False,
-                repeat=3,
-            ),
-        ]
-        return data_requirement
 
     @classmethod
     def update_sel(cls, global_jdata: dict, local_jdata: dict):

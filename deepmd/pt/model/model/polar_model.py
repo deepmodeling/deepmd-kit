@@ -1,15 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Dict,
-    List,
     Optional,
 )
 
 import torch
-
-from deepmd.utils.data import (
-    DataRequirementItem,
-)
 
 from .dp_model import (
     DPModel,
@@ -79,25 +74,3 @@ class PolarModel(DPModel):
         else:
             model_predict = model_ret
         return model_predict
-
-    @property
-    def get_data_requirement(self) -> List[DataRequirementItem]:
-        data_requirement = [
-            DataRequirementItem(
-                "polar",
-                ndof=9,
-                atomic=False,
-                must=False,
-                high_prec=False,
-                type_sel=self.get_sel_type(),
-            ),
-            DataRequirementItem(
-                "atomic_polar",
-                ndof=9,
-                atomic=True,
-                must=False,
-                high_prec=False,
-                type_sel=self.get_sel_type(),
-            ),
-        ]
-        return data_requirement

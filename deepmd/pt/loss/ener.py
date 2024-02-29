@@ -1,4 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from typing import (
+    List,
+)
+
 import torch
 import torch.nn.functional as F
 
@@ -10,6 +14,9 @@ from deepmd.pt.utils import (
 )
 from deepmd.pt.utils.env import (
     GLOBAL_PT_FLOAT_PRECISION,
+)
+from deepmd.utils.data import (
+    DataRequirementItem,
 )
 
 
@@ -153,3 +160,46 @@ class EnergyStdLoss(TaskLoss):
         if not self.inference:
             more_loss["rmse"] = torch.sqrt(loss.detach())
         return loss, more_loss
+
+    @property
+    def label_requirement(self) -> List[DataRequirementItem]:
+        """Return data label requirements needed for this loss calculation."""
+        data_requirement = [
+            DataRequirementItem(
+                "energy",
+                ndof=1,
+                atomic=False,
+                must=False,
+                high_prec=True,
+            ),
+            DataRequirementItem(
+                "force",
+                ndof=3,
+                atomic=True,
+                must=False,
+                high_prec=False,
+            ),
+            DataRequirementItem(
+                "virial",
+                ndof=9,
+                atomic=False,
+                must=False,
+                high_prec=False,
+            ),
+            DataRequirementItem(
+                "atom_ener",
+                ndof=1,
+                atomic=True,
+                must=False,
+                high_prec=False,
+            ),
+            DataRequirementItem(
+                "atom_pref",
+                ndof=1,
+                atomic=True,
+                must=False,
+                high_prec=False,
+                repeat=3,
+            ),
+        ]
+        return data_requirement
