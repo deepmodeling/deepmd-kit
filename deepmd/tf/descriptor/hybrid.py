@@ -14,6 +14,9 @@ from deepmd.tf.env import (
 from deepmd.tf.utils.spin import (
     Spin,
 )
+from deepmd.utils.version import (
+    check_version_compatibility,
+)
 
 # from deepmd.tf.descriptor import DescrptLocFrame
 # from deepmd.tf.descriptor import DescrptSeA
@@ -434,3 +437,28 @@ class DescrptHybrid(Descriptor):
             for sub_jdata in local_jdata["list"]
         ]
         return local_jdata_cpy
+
+    def serialize(self, suffix: str = "") -> dict:
+        return {
+            "@class": "Descriptor",
+            "type": "hybrid",
+            "@version": 1,
+            "list": [
+                descrpt.serialize(suffix=f"{suffix}_{idx}")
+                for idx, descrpt in enumerate(self.descrpt_list)
+            ],
+        }
+
+    @classmethod
+    def deserialize(cls, data: dict, suffix: str = "") -> "DescrptHybrid":
+        data = data.copy()
+        assert data.pop("@class") == "Descriptor"
+        assert data.pop("type") == "hybrid"
+        check_version_compatibility(data.pop("@version"), 1, 1)
+        obj = cls(
+            list=[
+                Descriptor.deserialize(ii, suffix=f"{suffix}_{idx}")
+                for idx, ii in enumerate(data["list"])
+            ],
+        )
+        return obj
