@@ -73,8 +73,9 @@ def get_trainer(
     force_load=False,
 ):
     # argcheck
-    config = update_deepmd_input(config, warning=True, dump="input_v2_compat.json")
-    config = normalize(config)
+    if "model_dict" not in config.get("model", {}):
+        config = update_deepmd_input(config, warning=True, dump="input_v2_compat.json")
+        config = normalize(config)
 
     # Initialize DDP
     local_rank = os.environ.get("LOCAL_RANK")
