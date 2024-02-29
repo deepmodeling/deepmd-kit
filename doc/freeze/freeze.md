@@ -2,9 +2,13 @@
 
 The trained neural network is extracted from a checkpoint and dumped into a protobuf(.pb) file. This process is called "freezing" a model. The idea and part of our code are from [Morgan](https://blog.metaflow.fr/tensorflow-how-to-freeze-a-model-and-serve-it-with-a-python-api-d4f3596b3adc). To freeze a model, typically one does
 ```bash
-$ dp freeze -o graph.pb
+$ dp freeze -o model.pb
 ```
-in the folder where the model is trained. The output model is called `graph.pb`.
+or
+```bash
+$ dp --pt freeze -o model.pth
+```
+in the folder where the model is trained. The output model is called `model.pb` or `model.pth`.
 
 In [multi-task mode](../train/multi-task-training.md):
 - This process will in default output several models, each of which contains the common descriptor and
