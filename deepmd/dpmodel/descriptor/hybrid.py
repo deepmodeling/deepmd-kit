@@ -175,8 +175,10 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
     @classmethod
     def deserialize(cls, data: dict) -> "DescrptHybrid":
         data = data.copy()
-        assert data.pop("@class") == "Descriptor"
-        assert data.pop("type") == "hybrid"
+        class_name = data.pop("@class")
+        assert class_name == "Descriptor"
+        class_type = data.pop("type")
+        assert class_type == "hybrid"
         check_version_compatibility(data.pop("@version"), 1, 1)
         obj = cls(
             list=[BaseDescriptor.deserialize(ii) for ii in data["list"]],
