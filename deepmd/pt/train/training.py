@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import functools
 import logging
 import time
 from copy import (
@@ -38,7 +39,6 @@ from deepmd.pt.utils import (
 from deepmd.pt.utils.dataloader import (
     BufferedIterator,
     get_weighted_sampler,
-    lazy,
 )
 from deepmd.pt.utils.env import (
     DEVICE,
@@ -214,7 +214,7 @@ class Trainer:
                 _validation_data.add_data_requirement(_data_requirement)
             if not resuming:
 
-                @lazy
+                @functools.lru_cache
                 def get_sample():
                     sampled = make_stat_input(
                         _training_data.systems,
