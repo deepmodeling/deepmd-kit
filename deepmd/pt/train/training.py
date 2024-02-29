@@ -167,7 +167,9 @@ class Trainer:
                     validation_dataloader,
                     validation_data_buffered,
                 ) = get_dataloader_and_buffer(_validation_data, _training_params)
-                valid_numb_batch = _training_params["validation_data"].get("numb_btch", 1)
+                valid_numb_batch = _training_params["validation_data"].get(
+                    "numb_btch", 1
+                )
             else:
                 validation_dataloader = None
                 validation_data_buffered = None
