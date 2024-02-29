@@ -226,7 +226,7 @@ def main_parser() -> argparse.ArgumentParser:
         "--init-frz-model",
         type=str,
         default=None,
-        help="(Supported backend: TensorFlow) Initialize the training from the frozen model.",
+        help="Initialize the training from the frozen model.",
     )
     parser_train_subgroup.add_argument(
         "-t",

@@ -4,10 +4,8 @@ from abc import (
     abstractmethod,
 )
 from typing import (
-    Callable,
     Dict,
     Optional,
-    Type,
 )
 
 from deepmd.common import (
@@ -17,7 +15,8 @@ from deepmd.dpmodel.output_def import (
     FittingOutputDef,
 )
 from deepmd.utils.plugin import (
-    Plugin,
+    PluginVariant,
+    make_plugin_registry,
 )
 
 
@@ -37,44 +36,13 @@ def make_base_fitting(
 
     """
 
-    class BF(ABC):
+    class BF(ABC, PluginVariant, make_plugin_registry("fitting")):
         """Base fitting provides the interfaces of fitting net."""
-
-        __plugins = Plugin()
-
-        @staticmethod
-        def register(key: str) -> Callable[[object], object]:
-            """Register a descriptor plugin.
-
-            Parameters
-            ----------
-            key : str
-                the key of a descriptor
-
-            Returns
-            -------
-            callable[[object], object]
-                the registered descriptor
-
-            Examples
-            --------
-            >>> @Fitting.register("some_fitting")
-                class SomeFitting(Fitting):
-                    pass
-            """
-            return BF.__plugins.register(key)
 
         def __new__(cls, *args, **kwargs):
             if cls is BF:
                 cls = cls.get_class_by_type(j_get_type(kwargs, cls.__name__))
             return super().__new__(cls)
-
-        @classmethod
-        def get_class_by_type(cls, fitting_type: str) -> Type["BF"]:
-            if fitting_type in BF.__plugins.plugins:
-                return BF.__plugins.plugins[fitting_type]
-            else:
-                raise RuntimeError("Unknown fitting type: " + fitting_type)
 
         @abstractmethod
         def output_def(self) -> FittingOutputDef:

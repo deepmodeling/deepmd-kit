@@ -1,17 +1,13 @@
 {
   "_comment": "that's all",
   "model": {
-    "type_embedding": {
-      "neuron": [
-        8
-      ]
-    },
     "type_map": [
       "O",
       "H"
     ],
     "descriptor": {
       "type": "dpa2",
+      "tebd_dim": 8,
       "repinit_rcut": 9.0,
       "repinit_rcut_smth": 8.0,
       "repinit_nsel": 120,
@@ -73,6 +69,7 @@
     "_comment": " that's all"
   },
   "training": {
+    "stat_file": "./dpa2",
     "training_data": {
       "systems": [
         "../data/data_0",

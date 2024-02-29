@@ -147,6 +147,7 @@ class LinearModel(Model):
         return local_jdata_cpy
 
 
+@Model.register("linear_ener")
 class LinearEnergyModel(LinearModel):
     """Linear energy model make linear combinations of several existing energy models."""
 

@@ -7,6 +7,9 @@ from typing import (
 
 import numpy as np
 
+from deepmd.dpmodel.utils.env_mat import (
+    EnvMat,
+)
 from deepmd.tf.common import (
     cast_precision,
     get_activation_func,
@@ -34,6 +37,9 @@ from deepmd.tf.utils.spin import (
 )
 from deepmd.tf.utils.tabulate import (
     DPTabulate,
+)
+from deepmd.utils.version import (
+    check_version_compatibility,
 )
 
 from .descriptor import (
@@ -115,8 +121,9 @@ class DescrptSeR(DescrptSe):
         self.seed_shift = embedding_net_rand_seed_shift(self.filter_neuron)
         self.trainable = trainable
         self.filter_activation_fn = get_activation_func(activation_function)
+        self.activation_function_name = activation_function
         self.filter_precision = get_precision(precision)
-        exclude_types = exclude_types
+        self.orig_exclude_types = exclude_types
         self.exclude_types = set()
         for tt in exclude_types:
             assert len(tt) == 2
@@ -698,3 +705,95 @@ class DescrptSeR(DescrptSe):
             result = tf.reduce_mean(xyz_scatter, axis=1) * res_rescale
 
         return result
+
+    @classmethod
+    def deserialize(cls, data: dict, suffix: str = ""):
+        """Deserialize the model.
+
+        Parameters
+        ----------
+        data : dict
+            The serialized data
+
+        Returns
+        -------
+        Model
+            The deserialized model
+        """
+        if cls is not DescrptSeR:
+            raise NotImplementedError("Not implemented in class %s" % cls.__name__)
+        data = data.copy()
+        check_version_compatibility(data.pop("@version", 1), 1, 1)
+        embedding_net_variables = cls.deserialize_network(
+            data.pop("embeddings"), suffix=suffix
+        )
+        data.pop("env_mat")
+        variables = data.pop("@variables")
+        descriptor = cls(**data)
+        descriptor.embedding_net_variables = embedding_net_variables
+        descriptor.davg = variables["davg"].reshape(
+            descriptor.ntypes, descriptor.ndescrpt
+        )
+        descriptor.dstd = variables["dstd"].reshape(
+            descriptor.ntypes, descriptor.ndescrpt
+        )
+        return descriptor
+
+    def serialize(self, suffix: str = "") -> dict:
+        """Serialize the model.
+
+        Parameters
+        ----------
+        suffix : str, optional
+            The suffix of the scope
+
+        Returns
+        -------
+        dict
+            The serialized data
+        """
+        if type(self) is not DescrptSeR:
+            raise NotImplementedError(
+                "Not implemented in class %s" % self.__class__.__name__
+            )
+        if self.embedding_net_variables is None:
+            raise RuntimeError("init_variables must be called before serialize")
+        if self.spin is not None:
+            raise NotImplementedError("spin is unsupported")
+        assert self.davg is not None
+        assert self.dstd is not None
+        # TODO: not sure how to handle type embedding - type embedding is not a model parameter,
+        # but instead a part of the input data. Maybe the interface should be refactored...
+        return {
+            "@class": "Descriptor",
+            "type": "se_r",
+            "@version": 1,
+            "rcut": self.rcut,
+            "rcut_smth": self.rcut_smth,
+            "sel": self.sel_r,
+            "neuron": self.filter_neuron,
+            "resnet_dt": self.filter_resnet_dt,
+            "trainable": self.trainable,
+            "type_one_side": self.type_one_side,
+            "exclude_types": list(self.orig_exclude_types),
+            "set_davg_zero": self.set_davg_zero,
+            "activation_function": self.activation_function_name,
+            "precision": self.filter_precision.name,
+            "embeddings": self.serialize_network(
+                ntypes=self.ntypes,
+                ndim=(1 if self.type_one_side else 2),
+                in_dim=1,
+                neuron=self.filter_neuron,
+                activation_function=self.activation_function_name,
+                resnet_dt=self.filter_resnet_dt,
+                variables=self.embedding_net_variables,
+                excluded_types=self.exclude_types,
+                suffix=suffix,
+            ),
+            "env_mat": EnvMat(self.rcut, self.rcut_smth).serialize(),
+            "@variables": {
+                "davg": self.davg.reshape(self.ntypes, self.nnei_r, 1),
+                "dstd": self.dstd.reshape(self.ntypes, self.nnei_r, 1),
+            },
+            "spin": self.spin,
+        }

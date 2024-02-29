@@ -13,7 +13,7 @@ import torch
 
 from deepmd.pt.model.descriptor import (
     DescriptorBlock,
-    prod_env_mat_se_a,
+    prod_env_mat,
 )
 from deepmd.pt.utils import (
     env,
@@ -23,13 +23,16 @@ from deepmd.pt.utils.env import (
     RESERVED_PRECISON_DICT,
 )
 from deepmd.pt.utils.env_mat_stat import (
-    EnvMatStatSeA,
+    EnvMatStatSe,
 )
 from deepmd.utils.env_mat_stat import (
     StatItem,
 )
 from deepmd.utils.path import (
     DPPath,
+)
+from deepmd.utils.version import (
+    check_version_compatibility,
 )
 
 try:
@@ -182,6 +185,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         return {
             "@class": "Descriptor",
             "type": "se_e2_a",
+            "@version": 1,
             "rcut": obj.rcut,
             "rcut_smth": obj.rcut_smth,
             "sel": obj.sel,
@@ -208,6 +212,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
     @classmethod
     def deserialize(cls, data: dict) -> "DescrptSeA":
         data = data.copy()
+        check_version_compatibility(data.pop("@version", 1), 1, 1)
         data.pop("@class", None)
         data.pop("type", None)
         variables = data.pop("@variables")
@@ -384,15 +389,12 @@ class DescrptBlockSeA(DescriptorBlock):
 
     def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
         """Update mean and stddev for descriptor elements."""
-        env_mat_stat = EnvMatStatSeA(self)
+        env_mat_stat = EnvMatStatSe(self)
         if path is not None:
             path = path / env_mat_stat.get_hash()
         env_mat_stat.load_or_compute_stats(merged, path)
         self.stats = env_mat_stat.stats
         mean, stddev = env_mat_stat()
-        if not self.set_davg_zero:
-            self.mean.copy_(torch.tensor(mean, device=env.DEVICE))
-        self.stddev.copy_(torch.tensor(stddev, device=env.DEVICE))
         if not self.set_davg_zero:
             self.mean.copy_(torch.tensor(mean, device=env.DEVICE))
         self.stddev.copy_(torch.tensor(stddev, device=env.DEVICE))
@@ -428,7 +430,7 @@ class DescrptBlockSeA(DescriptorBlock):
         del extended_atype_embd, mapping
         nloc = nlist.shape[1]
         atype = extended_atype[:, :nloc]
-        dmatrix, diff, sw = prod_env_mat_se_a(
+        dmatrix, diff, sw = prod_env_mat(
             extended_coord,
             nlist,
             atype,
@@ -470,23 +472,34 @@ class DescrptBlockSeA(DescriptorBlock):
                 if self.type_one_side:
                     ii = embedding_idx
                     # torch.jit is not happy with slice(None)
-                    ti_mask = torch.ones(nfnl, dtype=torch.bool, device=dmatrix.device)
+                    # ti_mask = torch.ones(nfnl, dtype=torch.bool, device=dmatrix.device)
+                    # applying a mask seems to cause performance degradation
+                    ti_mask = None
                 else:
                     # ti: center atom type, ii: neighbor type...
                     ii = embedding_idx // self.ntypes
                     ti = embedding_idx % self.ntypes
                     ti_mask = atype.ravel().eq(ti)
                 # nfnl x nt
-                mm = exclude_mask[ti_mask, self.sec[ii] : self.sec[ii + 1]]
+                if ti_mask is not None:
+                    mm = exclude_mask[ti_mask, self.sec[ii] : self.sec[ii + 1]]
+                else:
+                    mm = exclude_mask[:, self.sec[ii] : self.sec[ii + 1]]
                 # nfnl x nt x 4
-                rr = dmatrix[ti_mask, self.sec[ii] : self.sec[ii + 1], :]
+                if ti_mask is not None:
+                    rr = dmatrix[ti_mask, self.sec[ii] : self.sec[ii + 1], :]
+                else:
+                    rr = dmatrix[:, self.sec[ii] : self.sec[ii + 1], :]
                 rr = rr * mm[:, :, None]
                 ss = rr[:, :, :1]
                 # nfnl x nt x ng
                 gg = ll.forward(ss)
                 # nfnl x 4 x ng
                 gr = torch.matmul(rr.permute(0, 2, 1), gg)
-                xyz_scatter[ti_mask] += gr
+                if ti_mask is not None:
+                    xyz_scatter[ti_mask] += gr
+                else:
+                    xyz_scatter += gr
 
         xyz_scatter /= self.nnei
         xyz_scatter_1 = xyz_scatter.permute(0, 2, 1)

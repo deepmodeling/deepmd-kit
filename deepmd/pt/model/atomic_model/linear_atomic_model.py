@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import copy
 import sys
 from abc import (
     abstractmethod,
@@ -23,6 +24,9 @@ from deepmd.pt.utils.nlist import (
     build_multiple_neighbor_list,
     get_multiple_nlist_key,
     nlist_distinguish_types,
+)
+from deepmd.utils.version import (
+    check_version_compatibility,
 )
 
 from .base_atomic_model import (
@@ -205,12 +209,17 @@ class LinearAtomicModel(torch.nn.Module, BaseAtomicModel):
     @staticmethod
     def serialize(models) -> dict:
         return {
+            "@class": "Model",
+            "@version": 1,
+            "type": "linear",
             "models": [model.serialize() for model in models],
             "model_name": [model.__class__.__name__ for model in models],
         }
 
     @staticmethod
     def deserialize(data) -> List[BaseAtomicModel]:
+        data = copy.deepcopy(data)
+        check_version_compatibility(data.pop("@version", 1), 1, 1)
         model_names = data["model_name"]
         models = [
             getattr(sys.modules[__name__], name).deserialize(model)
@@ -299,6 +308,9 @@ class DPZBLLinearAtomicModel(LinearAtomicModel):
 
     def serialize(self) -> dict:
         return {
+            "@class": "Model",
+            "type": "zbl",
+            "@version": 1,
             "models": LinearAtomicModel.serialize([self.dp_model, self.zbl_model]),
             "sw_rmin": self.sw_rmin,
             "sw_rmax": self.sw_rmax,
@@ -307,6 +319,8 @@ class DPZBLLinearAtomicModel(LinearAtomicModel):
 
     @classmethod
     def deserialize(cls, data) -> "DPZBLLinearAtomicModel":
+        data = copy.deepcopy(data)
+        check_version_compatibility(data.pop("@version", 1), 1, 1)
         sw_rmin = data["sw_rmin"]
         sw_rmax = data["sw_rmax"]
         smin_alpha = data["smin_alpha"]

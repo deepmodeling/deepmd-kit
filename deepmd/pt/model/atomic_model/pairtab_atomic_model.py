@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import copy
 from typing import (
     Dict,
     List,
@@ -14,6 +15,9 @@ from deepmd.dpmodel import (
 )
 from deepmd.utils.pair_tab import (
     PairTab,
+)
+from deepmd.utils.version import (
+    check_version_compatibility,
 )
 
 from .base_atomic_model import (
@@ -121,10 +125,19 @@ class PairTabAtomicModel(torch.nn.Module, BaseAtomicModel):
         return True
 
     def serialize(self) -> dict:
-        return {"tab": self.tab.serialize(), "rcut": self.rcut, "sel": self.sel}
+        return {
+            "@class": "Model",
+            "type": "pairtab",
+            "@version": 1,
+            "tab": self.tab.serialize(),
+            "rcut": self.rcut,
+            "sel": self.sel,
+        }
 
     @classmethod
     def deserialize(cls, data) -> "PairTabAtomicModel":
+        data = copy.deepcopy(data)
+        check_version_compatibility(data.pop("@version", 1), 1, 1)
         rcut = data["rcut"]
         sel = data["sel"]
         tab = PairTab.deserialize(data["tab"])
