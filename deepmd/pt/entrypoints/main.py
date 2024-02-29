@@ -101,7 +101,7 @@ def get_trainer(
     config["model"]["resuming"] = (finetune_model is not None) or (ckpt is not None)
 
     def prepare_trainer_input_single(
-        model_params_single, data_dict_single, loss_dict_single, suffix=""
+        model_params_single, data_dict_single, loss_dict_single, suffix="", rank=0
     ):
         training_dataset_params = data_dict_single["training_data"]
         type_split = False
@@ -115,7 +115,9 @@ def get_trainer(
 
         # stat files
         stat_file_path_single = data_dict_single.get("stat_file", None)
-        if stat_file_path_single is not None:
+        if rank != 0:
+            stat_file_path_single = None
+        elif stat_file_path_single is not None:
             if Path(stat_file_path_single).is_dir():
                 raise ValueError(
                     f"stat_file should be a file, not a directory: {stat_file_path_single}"
@@ -153,13 +155,17 @@ def get_trainer(
             stat_file_path_single,
         )
 
+    rank = dist.get_rank() if dist.is_initialized() else 0
     if not multi_task:
         (
             train_data,
             validation_data,
             stat_file_path,
         ) = prepare_trainer_input_single(
-            config["model"], config["training"], config["loss"]
+            config["model"],
+            config["training"],
+            config["loss"],
+            rank=rank,
         )
     else:
         train_data, validation_data, stat_file_path = {}, {}, {}
@@ -173,6 +179,7 @@ def get_trainer(
                 config["training"]["data_dict"][model_key],
                 config["loss_dict"][model_key],
                 suffix=f"_{model_key}",
+                rank=rank,
             )
 
     trainer = training.Trainer(

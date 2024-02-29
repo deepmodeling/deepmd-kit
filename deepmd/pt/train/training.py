@@ -193,7 +193,7 @@ class Trainer:
             _training_data.add_data_requirement(_data_requirement)
             if _validation_data is not None:
                 _validation_data.add_data_requirement(_data_requirement)
-            if not resuming:
+            if not resuming and self.rank == 0:
 
                 @functools.lru_cache
                 def get_sample():
@@ -429,7 +429,7 @@ class Trainer:
 
         # Multi-task share params
         if shared_links is not None:
-            self.wrapper.share_params(shared_links, resume=resuming)
+            self.wrapper.share_params(shared_links, resume=resuming or self.rank != 0)
 
         if dist.is_initialized():
             torch.cuda.set_device(LOCAL_RANK)
