@@ -35,6 +35,9 @@ from deepmd.pt.utils import (
 from deepmd.pt.utils.dataset import (
     DeepmdDataSetForLoader,
 )
+from deepmd.utils.data import (
+    DataRequirementItem,
+)
 from deepmd.utils.data_system import (
     prob_sys_size_ext,
     process_sys_probs,
@@ -147,10 +150,10 @@ class DpLoaderSet(Dataset):
         batch["sid"] = idx
         return batch
 
-    def add_data_requirement(self, dict_of_keys):
+    def add_data_requirement(self, data_requirement: List[DataRequirementItem]):
         """Add data requirement for each system in multiple systems."""
         for system in self.systems:
-            system.add_data_requirement(dict_of_keys)
+            system.add_data_requirement(data_requirement)
 
 
 _sentinel = object()

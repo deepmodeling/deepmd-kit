@@ -666,3 +666,73 @@ class DeepmdData:
 
     def _check_mode(self, set_path: DPPath):
         return (set_path / "real_atom_types.npy").is_file()
+
+
+class DataRequirementItem:
+    """A class to store the data requirement for data systems.
+
+    Parameters
+    ----------
+    key
+        The key of the item. The corresponding data is stored in `sys_path/set.*/key.npy`
+    ndof
+        The number of dof
+    atomic
+        The item is an atomic property.
+        If False, the size of the data should be nframes x ndof
+        If True, the size of data should be nframes x natoms x ndof
+    must
+        The data file `sys_path/set.*/key.npy` must exist.
+        If must is False and the data file does not exist, the `data_dict[find_key]` is set to 0.0
+    high_prec
+        Load the data and store in float64, otherwise in float32
+    type_sel
+        Select certain type of atoms
+    repeat
+        The data will be repeated `repeat` times.
+    default : float, default=0.
+        default value of data
+    dtype : np.dtype, optional
+        the dtype of data, overwrites `high_prec` if provided
+    """
+
+    def __init__(
+        self,
+        key: str,
+        ndof: int,
+        atomic: bool = False,
+        must: bool = False,
+        high_prec: bool = False,
+        type_sel: Optional[List[int]] = None,
+        repeat: int = 1,
+        default: float = 0.0,
+        dtype: Optional[np.dtype] = None,
+    ) -> None:
+        self.key = key
+        self.ndof = ndof
+        self.atomic = atomic
+        self.must = must
+        self.high_prec = high_prec
+        self.type_sel = type_sel
+        self.repeat = repeat
+        self.default = default
+        self.dtype = dtype
+        self.dict = self.to_dict()
+
+    def to_dict(self) -> dict:
+        return {
+            "key": self.key,
+            "ndof": self.ndof,
+            "atomic": self.atomic,
+            "must": self.must,
+            "high_prec": self.high_prec,
+            "type_sel": self.type_sel,
+            "repeat": self.repeat,
+            "default": self.default,
+            "dtype": self.dtype,
+        }
+
+    def __getitem__(self, key: str):
+        if key not in self.dict:
+            raise KeyError(key)
+        return self.dict[key]

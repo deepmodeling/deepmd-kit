@@ -1,11 +1,16 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
 
+from typing import (
+    List,
+)
+
 from torch.utils.data import (
     Dataset,
 )
 
 from deepmd.utils.data import (
+    DataRequirementItem,
     DeepmdData,
 )
 
@@ -42,17 +47,17 @@ class DeepmdDataSetForLoader(Dataset):
         b_data["natoms"] = self._natoms_vec
         return b_data
 
-    def add_data_requirement(self, dict_of_keys):
+    def add_data_requirement(self, data_requirement: List[DataRequirementItem]):
         """Add data requirement for this data system."""
-        for data_key in dict_of_keys:
+        for data_item in data_requirement:
             self._data_system.add(
-                data_key,
-                dict_of_keys[data_key]["ndof"],
-                atomic=dict_of_keys[data_key].get("atomic", False),
-                must=dict_of_keys[data_key].get("must", False),
-                high_prec=dict_of_keys[data_key].get("high_prec", False),
-                type_sel=dict_of_keys[data_key].get("type_sel", None),
-                repeat=dict_of_keys[data_key].get("repeat", 1),
-                default=dict_of_keys[data_key].get("default", 0.0),
-                dtype=dict_of_keys[data_key].get("dtype", None),
+                data_item["key"],
+                data_item["ndof"],
+                atomic=data_item["atomic"],
+                must=data_item["must"],
+                high_prec=data_item["high_prec"],
+                type_sel=data_item["type_sel"],
+                repeat=data_item["repeat"],
+                default=data_item["default"],
+                dtype=data_item["dtype"],
             )
