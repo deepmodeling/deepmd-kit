@@ -320,9 +320,9 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
             # nfnl x nt x ng
             gg = ll.forward(ss)
             gg = torch.mean(gg, dim=1).unsqueeze(1)
-            xyz_scatter += gg
+            xyz_scatter += gg * (self.sel[ii] / self.nnei)
 
-        res_rescale = 1.0 / 10.0
+        res_rescale = 1.0 / 5.0
         result = xyz_scatter * res_rescale
         result = result.view(-1, nloc, self.filter_neuron[-1])
         return (
