@@ -21,7 +21,7 @@ DeePMD-kit does not use the TensorFlow v2 API but uses the TensorFlow v1 API (`t
 - Checkpoint filename extension: `.pt`
 
 [PyTorch](https://pytorch.org/) 2.0 or above is required.
-While `.pth` and `.pt` are have no difference in the PyTorch package, they have different meanings in the DeePMD-kit to distinguish the model and the checkpoint.
+While `.pth` and `.pt` are the same in the PyTorch package, they have different meanings in the DeePMD-kit to distinguish the model and the checkpoint.
 
 ### DPModel {{ dpmodel_icon }}
 
