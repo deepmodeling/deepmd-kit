@@ -165,7 +165,7 @@ class PolarFittingNet(GeneralFitting):
 
     def compute_output_stats(
         self,
-        merged: Union[Callable, List[dict]],
+        merged: Union[Callable[[], List[dict]], List[dict]],
         stat_file_path: Optional[DPPath] = None,
     ):
         raise NotImplementedError

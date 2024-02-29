@@ -145,7 +145,9 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         return self.sea.dim_out
 
     def compute_input_stats(
-        self, merged: Union[Callable, List[dict]], path: Optional[DPPath] = None
+        self,
+        merged: Union[Callable[[], List[dict]], List[dict]],
+        path: Optional[DPPath] = None,
     ):
         """Update mean and stddev for descriptor elements."""
         return self.sea.compute_input_stats(merged, path)
@@ -405,7 +407,9 @@ class DescrptBlockSeA(DescriptorBlock):
             raise KeyError(key)
 
     def compute_input_stats(
-        self, merged: Union[Callable, List[dict]], path: Optional[DPPath] = None
+        self,
+        merged: Union[Callable[[], List[dict]], List[dict]],
+        path: Optional[DPPath] = None,
     ):
         """Update mean and stddev for descriptor elements."""
         env_mat_stat = EnvMatStatSe(self)

@@ -149,7 +149,9 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         return self.get_dim_emb()
 
     def compute_input_stats(
-        self, merged: Union[Callable, List[dict]], path: Optional[DPPath] = None
+        self,
+        merged: Union[Callable[[], List[dict]], List[dict]],
+        path: Optional[DPPath] = None,
     ):
         return self.se_atten.compute_input_stats(merged, path)
 

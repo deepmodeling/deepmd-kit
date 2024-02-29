@@ -158,7 +158,9 @@ class DescrptBlockHybrid(DescriptorBlock):
             raise NotImplementedError
 
     def compute_input_stats(
-        self, merged: Union[Callable, List[dict]], path: Optional[DPPath] = None
+        self,
+        merged: Union[Callable[[], List[dict]], List[dict]],
+        path: Optional[DPPath] = None,
     ):
         """Update mean and stddev for descriptor elements."""
         for ii, descrpt in enumerate(self.descriptor_list):
