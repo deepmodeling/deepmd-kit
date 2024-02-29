@@ -15,6 +15,9 @@ from deepmd.dpmodel.common import (
 from deepmd.dpmodel.descriptor.base_descriptor import (
     BaseDescriptor,
 )
+from deepmd.dpmodel.utils.nlist import (
+    nlist_distinguish_types,
+)
 from deepmd.utils.path import (
     DPPath,
 )
@@ -62,7 +65,25 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
         # if hybrid sel is larger than sub sel, the nlist needs to be cut for each type
         hybrid_sel = self.get_sel()
         self.nlist_cut_idx: List[np.ndarray] = []
+        if self.mixed_types() and not all(
+            descrpt.mixed_types() for descrpt in self.descrpt_list
+        ):
+            self.sel_no_mixed_types = np.max(
+                [
+                    descrpt.get_sel()
+                    for descrpt in self.descrpt_list
+                    if not descrpt.mixed_types()
+                ],
+                axis=0,
+            ).tolist()
+        else:
+            self.sel_no_mixed_types = None
         for ii in range(self.numb_descrpt):
+            if self.mixed_types() == self.descrpt_list[ii].mixed_types():
+                hybrid_sel = self.get_sel()
+            else:
+                assert self.sel_no_mixed_types is not None
+                hybrid_sel = self.sel_no_mixed_types
             sub_sel = self.descrpt_list[ii].get_sel()
             start_idx = np.cumsum(np.pad(hybrid_sel, (1, 0), "constant"))[:-1]
             end_idx = start_idx + np.array(sub_sel)
@@ -77,9 +98,16 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
 
     def get_sel(self) -> List[int]:
         """Returns the number of selected atoms for each type."""
-        return np.max(
-            [descrpt.get_sel() for descrpt in self.descrpt_list], axis=0
-        ).tolist()
+        if self.mixed_types():
+            return [
+                np.max(
+                    [descrpt.get_nsel() for descrpt in self.descrpt_list], axis=0
+                ).item()
+            ]
+        else:
+            return np.max(
+                [descrpt.get_sel() for descrpt in self.descrpt_list], axis=0
+            ).tolist()
 
     def get_ntypes(self) -> int:
         """Returns the number of element types."""
@@ -97,7 +125,7 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
         """Returns if the descriptor requires a neighbor list that distinguish different
         atomic types or not.
         """
-        return all(descrpt.mixed_types() for descrpt in self.descrpt_list)
+        return any(descrpt.mixed_types() for descrpt in self.descrpt_list)
 
     def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
         """Update mean and stddev for descriptor elements."""
@@ -141,11 +169,23 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
             The smooth switch function. this descriptor returns None
         """
         out_descriptor = []
+        if self.sel_no_mixed_types is not None:
+            nl_distinguish_types = nlist_distinguish_types(
+                nlist,
+                atype_ext,
+                self.sel_no_mixed_types,
+            )
+        else:
+            nl_distinguish_types = None
         for descrpt, nci in zip(self.descrpt_list, self.nlist_cut_idx):
             # cut the nlist to the correct length
-            odescriptor, _, _, _, _ = descrpt(
-                coord_ext, atype_ext, nlist[:, :, nci], mapping
-            )
+            if self.mixed_types() == descrpt.mixed_types():
+                nl = nlist[:, :, nci]
+            else:
+                # mixed_types is True, but descrpt.mixed_types is False
+                assert nl_distinguish_types is not None
+                nl = nl_distinguish_types[:, :, nci]
+            odescriptor, _, _, _, _ = descrpt(coord_ext, atype_ext, nl, mapping)
             out_descriptor.append(odescriptor)
         out_descriptor = np.concatenate(out_descriptor, axis=-1)
         return out_descriptor, None, None, None, None
