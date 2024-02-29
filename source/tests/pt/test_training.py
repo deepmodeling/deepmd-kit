@@ -79,15 +79,15 @@ class TestEnergyModelDPA2(unittest.TestCase, DPTrainTest):
         self.config["training"]["training_data"]["systems"] = data_file
         self.config["training"]["validation_data"]["systems"] = data_file
         self.config["model"] = deepcopy(model_dpa2)
-        self.config["model"]["descriptor"]["rcut"] = self.config["model"]["descriptor"][
-            "repinit_rcut"
-        ]
-        self.config["model"]["descriptor"]["rcut_smth"] = self.config["model"][
-            "descriptor"
-        ]["repinit_rcut_smth"]
-        self.config["model"]["descriptor"]["sel"] = self.config["model"]["descriptor"][
-            "repinit_nsel"
-        ]
+        # self.config["model"]["descriptor"]["rcut"] = self.config["model"]["descriptor"][
+        #     "repinit_rcut"
+        # ]
+        # self.config["model"]["descriptor"]["rcut_smth"] = self.config["model"][
+        #     "descriptor"
+        # ]["repinit_rcut_smth"]
+        # self.config["model"]["descriptor"]["sel"] = self.config["model"]["descriptor"][
+        #     "repinit_nsel"
+        # ]
         self.config["training"]["numb_steps"] = 1
         self.config["training"]["save_freq"] = 1
 

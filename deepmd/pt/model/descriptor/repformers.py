@@ -76,7 +76,7 @@ class DescrptBlockRepformers(DescriptorBlock):
         attn2_hidden: int = 16,
         attn2_nhead: int = 4,
         attn2_has_gate: bool = False,
-        activation: str = "tanh",
+        activation_function: str = "tanh",
         update_style: str = "res_avg",
         set_davg_zero: bool = True,  # TODO
         smooth: bool = True,
@@ -109,7 +109,7 @@ class DescrptBlockRepformers(DescriptorBlock):
         self.set_davg_zero = set_davg_zero
         self.g1_dim = g1_dim
         self.g2_dim = g2_dim
-        self.act = get_activation_fn(activation)
+        self.act = get_activation_fn(activation_function)
         self.direct_dist = direct_dist
         self.add_type_ebd_to_seq = add_type_ebd_to_seq
 
@@ -140,7 +140,7 @@ class DescrptBlockRepformers(DescriptorBlock):
                     attn2_has_gate=attn2_has_gate,
                     attn2_hidden=attn2_hidden,
                     attn2_nhead=attn2_nhead,
-                    activation=activation,
+                    activation_function=activation_function,
                     update_style=update_style,
                     smooth=smooth,
                 )
