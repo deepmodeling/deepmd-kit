@@ -276,9 +276,9 @@ class DescrptSeR(NativeOP, BaseDescriptor):
             gg = self.cal_g(tr, tt)
             gg = np.mean(gg, axis=2)
             # nf x nloc x ng x 1
-            xyz_scatter += gg
+            xyz_scatter += gg * (self.sel[tt] / self.nnei)
 
-        res_rescale = 1.0 / 10.0
+        res_rescale = 1.0 / 5.0
         res = xyz_scatter * res_rescale
         res = res.reshape(nf, nloc, -1).astype(GLOBAL_NP_FLOAT_PRECISION)
         return res, None, None, None, ww
