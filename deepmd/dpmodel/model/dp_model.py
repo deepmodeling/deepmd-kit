@@ -27,7 +27,7 @@ class DPModel(make_model(DPAtomicModel), BaseModel):
     def data_requirement(self) -> List[DataRequirementItem]:
         """Get the data requirement for the model."""
         raise NotImplementedError
-        
+
     @classmethod
     def update_sel(cls, global_jdata: dict, local_jdata: dict):
         """Update the selection and perform neighbor statistics.

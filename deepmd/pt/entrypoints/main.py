@@ -50,9 +50,6 @@ from deepmd.pt.utils.finetune import (
 from deepmd.pt.utils.multi_task import (
     preprocess_shared_params,
 )
-from deepmd.pt.utils.stat import (
-    make_stat_input,
-)
 from deepmd.utils.argcheck import (
     normalize,
 )
