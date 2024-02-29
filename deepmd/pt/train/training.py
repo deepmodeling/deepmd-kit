@@ -63,6 +63,10 @@ from torch.utils.data import (
     DataLoader,
 )
 
+from deepmd.utils.path import (
+    DPH5Path,
+)
+
 log = logging.getLogger(__name__)
 
 
@@ -208,6 +212,8 @@ class Trainer:
                     sampled_func=get_sample,
                     stat_file_path=_stat_file_path,
                 )
+                if isinstance(_stat_file_path, DPH5Path):
+                    _stat_file_path.root.close()
             return model
 
         def get_lr(lr_params):
