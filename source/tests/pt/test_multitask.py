@@ -15,6 +15,9 @@ import torch
 from deepmd.pt.entrypoints.main import (
     get_trainer,
 )
+from deepmd.pt.utils.multi_task import (
+    preprocess_shared_params,
+)
 
 from .model.test_permutation import (
     model_dpa1,
@@ -29,7 +32,7 @@ with open(multitask_template_json) as f:
 
 class MultiTaskTrainTest:
     def test_multitask_train(self):
-        trainer = get_trainer(deepcopy(self.config))
+        trainer = get_trainer(deepcopy(self.config), shared_links=self.shared_links)
         trainer.run()
         # check model keys
         self.assertEqual(len(trainer.wrapper.model), 2)
@@ -90,6 +93,9 @@ class TestMultiTaskSeA(unittest.TestCase, MultiTaskTrainTest):
         ] = f"{self.stat_files}/model_2"
         self.config["training"]["numb_steps"] = 1
         self.config["training"]["save_freq"] = 1
+        self.config["model"], self.shared_links = preprocess_shared_params(
+            self.config["model"]
+        )
 
     def tearDown(self) -> None:
         MultiTaskTrainTest.tearDown(self)
@@ -125,6 +131,9 @@ class TestMultiTaskDPA1(unittest.TestCase, MultiTaskTrainTest):
         ] = f"{self.stat_files}/model_2"
         self.config["training"]["numb_steps"] = 1
         self.config["training"]["save_freq"] = 1
+        self.config["model"], self.shared_links = preprocess_shared_params(
+            self.config["model"]
+        )
 
     def tearDown(self) -> None:
         MultiTaskTrainTest.tearDown(self)
@@ -160,6 +169,9 @@ class TestMultiTaskDPA2(unittest.TestCase, MultiTaskTrainTest):
         ] = f"{self.stat_files}/model_2"
         self.config["training"]["numb_steps"] = 1
         self.config["training"]["save_freq"] = 1
+        self.config["model"], self.shared_links = preprocess_shared_params(
+            self.config["model"]
+        )
 
     def tearDown(self) -> None:
         MultiTaskTrainTest.tearDown(self)
