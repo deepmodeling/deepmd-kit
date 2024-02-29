@@ -149,10 +149,12 @@ class DescrptHybrid(BaseDescriptor, torch.nn.Module):
             The smooth switch function. this descriptor returns None
         """
         out_descriptor = []
-        for descrpt, nci in zip(self.descrpt_list, self.nlist_cut_idx):
+        # make jit happy
+        # for descrpt, nci in zip(self.descrpt_list, self.nlist_cut_idx):
+        for ii, descrpt in enumerate(self.descrpt_list):
             # cut the nlist to the correct length
             odescriptor, _, _, _, _ = descrpt(
-                coord_ext, atype_ext, nlist[:, :, nci], mapping
+                coord_ext, atype_ext, nlist[:, :, self.nlist_cut_idx[ii]], mapping
             )
             out_descriptor.append(odescriptor)
         out_descriptor = torch.cat(out_descriptor, dim=-1)
