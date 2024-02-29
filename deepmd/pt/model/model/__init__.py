@@ -71,11 +71,15 @@ def get_zbl_model(model_params):
 
     rmin = model_params["sw_rmin"]
     rmax = model_params["sw_rmax"]
+    atom_exclude_types = model_params.get("atom_exclude_types", [])
+    pair_exclude_types = model_params.get("pair_exclude_types", [])
     return DPZBLModel(
         dp_model,
         pt_model,
         rmin,
         rmax,
+        atom_exclude_types=atom_exclude_types,
+        pair_exclude_types=pair_exclude_types,
     )
 
 
@@ -98,7 +102,16 @@ def get_model(model_params):
         if "ener" in fitting_net["type"]:
             fitting_net["return_energy"] = True
     fitting = BaseFitting(**fitting_net)
-    model = DPModel(descriptor, fitting, type_map=model_params["type_map"])
+    atom_exclude_types = model_params.get("atom_exclude_types", [])
+    pair_exclude_types = model_params.get("pair_exclude_types", [])
+
+    model = DPModel(
+        descriptor,
+        fitting,
+        type_map=model_params["type_map"],
+        atom_exclude_types=atom_exclude_types,
+        pair_exclude_types=pair_exclude_types,
+    )
     model.model_def_script = json.dumps(model_params)
     return model
 

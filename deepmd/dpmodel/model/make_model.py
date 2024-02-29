@@ -213,7 +213,7 @@ def make_model(T_AtomicModel):
                 extended_coord, fparam=fparam, aparam=aparam
             )
             del extended_coord, fparam, aparam
-            atomic_ret = self.forward_atomic(
+            atomic_ret = self.forward_common_atomic(
                 cc_ext,
                 extended_atype,
                 nlist,
