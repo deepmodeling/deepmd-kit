@@ -158,17 +158,19 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
             The descriptor. shape: nf x nloc x (ng x axis_neuron)
         gr
             The rotationally equivariant and permutationally invariant single particle
-            representation. shape: nf x nloc x ng x 3. This descriptor returns None
+            representation. shape: nf x nloc x ng x 3.
         g2
             The rotationally invariant pair-partical representation.
-            this descriptor returns None
         h2
             The rotationally equivariant pair-partical representation.
-            this descriptor returns None
         sw
-            The smooth switch function. this descriptor returns None
+            The smooth switch function.
         """
         out_descriptor = []
+        out_gr = []
+        out_g2 = []
+        out_h2 = None
+        out_sw = None
         if self.sel_no_mixed_types is not None:
             nl_distinguish_types = nlist_distinguish_types(
                 nlist,
@@ -185,10 +187,20 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
                 # mixed_types is True, but descrpt.mixed_types is False
                 assert nl_distinguish_types is not None
                 nl = nl_distinguish_types[:, :, nci]
-            odescriptor, _, _, _, _ = descrpt(coord_ext, atype_ext, nl, mapping)
+            odescriptor, gr, g2, h2, sw = descrpt(coord_ext, atype_ext, nl, mapping)
             out_descriptor.append(odescriptor)
+            if gr is not None:
+                out_gr.append(gr)
+            if g2 is not None:
+                out_g2.append(g2)
+            if self.get_rcut() == descrpt.get_rcut():
+                out_h2 = h2
+                out_sw = sw
+
         out_descriptor = np.concatenate(out_descriptor, axis=-1)
-        return out_descriptor, None, None, None, None
+        out_gr = np.concatenate(out_gr, axis=-2) if out_gr else None
+        out_g2 = np.concatenate(out_g2, axis=-1) if out_g2 else None
+        return out_descriptor, out_gr, out_g2, out_h2, out_sw
 
     @classmethod
     def update_sel(cls, global_jdata: dict, local_jdata: dict) -> dict:
