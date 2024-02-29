@@ -68,15 +68,15 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
 
     def get_ntypes(self) -> int:
         """Returns the number of element types."""
-        return self.descrpt_list[0].get_ntypes().item()
+        return self.descrpt_list[0].get_ntypes()
 
     def get_dim_out(self) -> int:
         """Returns the output dimension."""
-        return np.sum([descrpt.get_dim_out() for descrpt in self.descrpt_list])
+        return np.sum([descrpt.get_dim_out() for descrpt in self.descrpt_list]).item()
 
     def get_dim_emb(self) -> int:
         """Returns the output dimension."""
-        return np.sum([descrpt.get_dim_emb() for descrpt in self.descrpt_list])
+        return np.sum([descrpt.get_dim_emb() for descrpt in self.descrpt_list]).item()
 
     def mixed_types(self):
         """Returns if the descriptor requires a neighbor list that distinguish different
@@ -126,7 +126,7 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
             The smooth switch function. this descriptor returns None
         """
         out_descriptor = []
-        for ii, descrpt in enumerate(self.descrpt_list):
+        for descrpt in self.descrpt_list:
             odescriptor, _, _, _, _ = descrpt(coord_ext, atype_ext, nlist, mapping)
             out_descriptor.append(odescriptor)
         out_descriptor = np.concatenate(out_descriptor, axis=-1)
