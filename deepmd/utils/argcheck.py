@@ -1242,14 +1242,14 @@ def model_args(exclude_hybrid=False):
                 list,
                 optional=True,
                 default=[],
-                doc=doc_pair_exclude_types,
+                doc=doc_only_pt_supported + doc_pair_exclude_types,
             ),
             Argument(
                 "atom_exclude_types",
                 list,
                 optional=True,
                 default=[],
-                doc=doc_atom_exclude_types,
+                doc=doc_only_pt_supported + doc_atom_exclude_types,
             ),
             Argument(
                 "srtab_add_bias",
