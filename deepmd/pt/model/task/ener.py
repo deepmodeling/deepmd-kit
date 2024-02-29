@@ -145,6 +145,22 @@ class InvarFitting(GeneralFitting):
         merged: Union[Callable[[], List[dict]], List[dict]],
         stat_file_path: Optional[DPPath] = None,
     ):
+        """
+        Compute the output statistics (e.g. energy bias) for the fitting net from packed data.
+
+        Parameters
+        ----------
+        merged : Union[Callable[[], List[dict]], List[dict]]
+            - List[dict]: A list of data samples from various data systems.
+                Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
+                originating from the `i`-th data system.
+            - Callable[[], List[dict]]: A lazy function that returns data samples in the above format
+                only when needed. Since the sampling process can be slow and memory-intensive,
+                the lazy function helps by only sampling once.
+        stat_file_path : Optional[DPPath]
+            The path to the stat file.
+
+        """
         if stat_file_path is not None:
             stat_file_path = stat_file_path / "bias_atom_e"
         if stat_file_path is not None and stat_file_path.is_file():

@@ -183,6 +183,22 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         merged: Union[Callable[[], List[dict]], List[dict]],
         path: Optional[DPPath] = None,
     ):
+        """
+        Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
+
+        Parameters
+        ----------
+        merged : Union[Callable[[], List[dict]], List[dict]]
+            - List[dict]: A list of data samples from various data systems.
+                Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
+                originating from the `i`-th data system.
+            - Callable[[], List[dict]]: A lazy function that returns data samples in the above format
+                only when needed. Since the sampling process can be slow and memory-intensive,
+                the lazy function helps by only sampling once.
+        path : Optional[DPPath]
+            The path to the stat file.
+
+        """
         return self.se_atten.compute_input_stats(merged, path)
 
     def serialize(self) -> dict:
