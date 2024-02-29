@@ -54,7 +54,7 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
         for ii in range(1, self.numb_descrpt):
             assert (
                 self.descrpt_list[ii].get_ntypes() == self.descrpt_list[0].get_ntypes()
-            ), f"number of atom types in {ii}th descrptor does not match others"
+            ), f"number of atom types in {ii}th descrptor {self.descrpt_list[0].__class__.__name__} does not match others"
         # if hybrid sel is larger than sub sel, the nlist needs to be cut for each type
         hybrid_sel = self.get_sel()
         self.nlist_cut_idx: List[np.ndarray] = []
