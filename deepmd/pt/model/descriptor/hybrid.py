@@ -105,7 +105,8 @@ class DescrptHybrid(BaseDescriptor, torch.nn.Module):
 
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
-        return np.max([descrpt.get_rcut() for descrpt in self.descrpt_list]).item()
+        # do not use numpy here - jit is not happy
+        return max([descrpt.get_rcut() for descrpt in self.descrpt_list])
 
     def get_sel(self) -> List[int]:
         """Returns the number of selected atoms for each type."""
@@ -126,11 +127,11 @@ class DescrptHybrid(BaseDescriptor, torch.nn.Module):
 
     def get_dim_out(self) -> int:
         """Returns the output dimension."""
-        return np.sum([descrpt.get_dim_out() for descrpt in self.descrpt_list]).item()
+        return sum([descrpt.get_dim_out() for descrpt in self.descrpt_list])
 
     def get_dim_emb(self) -> int:
         """Returns the output dimension."""
-        return np.sum([descrpt.get_dim_emb() for descrpt in self.descrpt_list]).item()
+        return sum([descrpt.get_dim_emb() for descrpt in self.descrpt_list])
 
     def mixed_types(self):
         """Returns if the descriptor requires a neighbor list that distinguish different
@@ -180,6 +181,10 @@ class DescrptHybrid(BaseDescriptor, torch.nn.Module):
             The smooth switch function. this descriptor returns None
         """
         out_descriptor = []
+        out_gr = []
+        out_g2 = []
+        out_h2: Optional[torch.Tensor] = None
+        out_sw: Optional[torch.Tensor] = None
         if self.sel_no_mixed_types is not None:
             nl_distinguish_types = nlist_distinguish_types(
                 nlist,
@@ -198,10 +203,19 @@ class DescrptHybrid(BaseDescriptor, torch.nn.Module):
                 # mixed_types is True, but descrpt.mixed_types is False
                 assert nl_distinguish_types is not None
                 nl = nl_distinguish_types[:, :, self.nlist_cut_idx[ii]]
-            odescriptor, _, _, _, _ = descrpt(coord_ext, atype_ext, nl, mapping)
+            odescriptor, gr, g2, h2, sw = descrpt(coord_ext, atype_ext, nl, mapping)
             out_descriptor.append(odescriptor)
+            if gr is not None:
+                out_gr.append(gr)
+            if g2 is not None:
+                out_g2.append(g2)
+            if self.get_rcut() == descrpt.get_rcut():
+                out_h2 = h2
+                out_sw = sw
         out_descriptor = torch.cat(out_descriptor, dim=-1)
-        return out_descriptor, None, None, None, None
+        out_gr = torch.cat(out_gr, dim=-2) if out_gr else None
+        out_g2 = torch.cat(out_g2, dim=-1) if out_g2 else None
+        return out_descriptor, out_gr, out_g2, out_h2, out_sw
 
     @classmethod
     def update_sel(cls, global_jdata: dict, local_jdata: dict) -> dict:
