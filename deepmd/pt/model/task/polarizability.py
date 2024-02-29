@@ -115,7 +115,7 @@ class PolarFittingNet(GeneralFitting):
         ).view(ntypes, 1)
         self.shift_diag = shift_diag
         super().__init__(
-            var_name="polar" if "var_name" not in kwargs else kwargs.pop("var_name"),
+            var_name=kwargs.pop("var_name", "polar"),
             ntypes=ntypes,
             dim_descrpt=dim_descrpt,
             neuron=neuron,

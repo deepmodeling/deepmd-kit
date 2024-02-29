@@ -93,7 +93,7 @@ class DipoleFittingNet(GeneralFitting):
         self.r_differentiable = r_differentiable
         self.c_differentiable = c_differentiable
         super().__init__(
-            var_name="dipole" if "var_name" not in kwargs else kwargs.pop("var_name"),
+            var_name=kwargs.pop("var_name", "dipole"),
             ntypes=ntypes,
             dim_descrpt=dim_descrpt,
             neuron=neuron,

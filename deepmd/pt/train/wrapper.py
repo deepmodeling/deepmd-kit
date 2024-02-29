@@ -83,6 +83,11 @@ class ModelWrapper(torch.nn.Module):
                         param.requires_grad = trainable
 
     def share_params(self, shared_links, resume=False):
+        """
+        Share the parameters of classes following rules defined in shared_links during multitask training.
+        If not start from checkpoint (resume is False),
+        some seperated parameters (e.g. mean and stddev) will be re-calculated across different classes.
+        """
         supported_types = ["descriptor", "fitting_net"]
         for shared_item in shared_links:
             class_name = shared_links[shared_item]["type"]

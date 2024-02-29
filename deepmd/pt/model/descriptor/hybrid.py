@@ -146,6 +146,11 @@ class DescrptBlockHybrid(DescriptorBlock):
             raise RuntimeError
 
     def share_params(self, base_class, shared_level, resume=False):
+        """
+        Share the parameters of self to the base_class with shared_level during multitask training.
+        If not start from checkpoint (resume is False),
+        some seperated parameters (e.g. mean and stddev) will be re-calculated across different classes.
+        """
         assert (
             self.__class__ == base_class.__class__
         ), "Only descriptors of the same type can share params!"
