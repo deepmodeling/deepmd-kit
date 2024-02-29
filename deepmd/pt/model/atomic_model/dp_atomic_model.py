@@ -46,8 +46,14 @@ class DPAtomicModel(torch.nn.Module, BaseAtomicModel):
             For example `type_map[1]` gives the name of the type 1.
     """
 
-    def __init__(self, descriptor, fitting, type_map: Optional[List[str]]):
-        super().__init__()
+    def __init__(
+        self,
+        descriptor,
+        fitting,
+        type_map: Optional[List[str]],
+        **kwargs,
+    ):
+        torch.nn.Module.__init__(self)
         self.model_def_script = ""
         ntypes = len(type_map)
         self.type_map = type_map
@@ -56,6 +62,8 @@ class DPAtomicModel(torch.nn.Module, BaseAtomicModel):
         self.rcut = self.descriptor.get_rcut()
         self.sel = self.descriptor.get_sel()
         self.fitting_net = fitting
+        # order matters ntypes and type_map should be initialized first.
+        BaseAtomicModel.__init__(self, **kwargs)
 
     def fitting_output_def(self) -> FittingOutputDef:
         """Get the output def of the fitting net."""
@@ -92,22 +100,29 @@ class DPAtomicModel(torch.nn.Module, BaseAtomicModel):
         return self.descriptor.mixed_types()
 
     def serialize(self) -> dict:
-        return {
-            "@class": "Model",
-            "type": "standard",
-            "@version": 1,
-            "type_map": self.type_map,
-            "descriptor": self.descriptor.serialize(),
-            "fitting": self.fitting_net.serialize(),
-        }
+        dd = BaseAtomicModel.serialize(self)
+        dd.update(
+            {
+                "@class": "Model",
+                "@version": 1,
+                "type": "standard",
+                "type_map": self.type_map,
+                "descriptor": self.descriptor.serialize(),
+                "fitting": self.fitting_net.serialize(),
+            }
+        )
+        return dd
 
     @classmethod
     def deserialize(cls, data) -> "DPAtomicModel":
         data = copy.deepcopy(data)
         check_version_compatibility(data.pop("@version", 1), 1, 1)
-        descriptor_obj = BaseDescriptor.deserialize(data["descriptor"])
-        fitting_obj = BaseFitting.deserialize(data["fitting"])
-        obj = cls(descriptor_obj, fitting_obj, type_map=data["type_map"])
+        data.pop("@class", None)
+        data.pop("type", None)
+        descriptor_obj = BaseDescriptor.deserialize(data.pop("descriptor"))
+        fitting_obj = BaseFitting.deserialize(data.pop("fitting"))
+        type_map = data.pop("type_map", None)
+        obj = cls(descriptor_obj, fitting_obj, type_map=type_map, **data)
         return obj
 
     def forward_atomic(

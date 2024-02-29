@@ -27,6 +27,9 @@ from deepmd.pt.utils.env import (
 from deepmd.pt.utils.env_mat_stat import (
     EnvMatStatSe,
 )
+from deepmd.pt.utils.update_sel import (
+    UpdateSel,
+)
 from deepmd.utils.env_mat_stat import (
     StatItem,
 )
@@ -152,6 +155,13 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         """Update mean and stddev for descriptor elements."""
         return self.sea.compute_input_stats(merged, path)
 
+    def reinit_exclude(
+        self,
+        exclude_types: List[Tuple[int, int]] = [],
+    ):
+        """Update the type exclusions."""
+        self.sea.reinit_exclude(exclude_types)
+
     def forward(
         self,
         coord_ext: torch.Tensor,
@@ -247,6 +257,20 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         obj.sea.filter_layers = NetworkCollection.deserialize(embeddings)
         return obj
 
+    @classmethod
+    def update_sel(cls, global_jdata: dict, local_jdata: dict):
+        """Update the selection and perform neighbor statistics.
+
+        Parameters
+        ----------
+        global_jdata : dict
+            The global data, containing the training section
+        local_jdata : dict
+            The local data refer to the current class
+        """
+        local_jdata_cpy = local_jdata.copy()
+        return UpdateSel().update_one_sel(global_jdata, local_jdata_cpy, False)
+
 
 @DescriptorBlock.register("se_e2_a")
 class DescrptBlockSeA(DescriptorBlock):
@@ -290,10 +314,10 @@ class DescrptBlockSeA(DescriptorBlock):
         self.prec = PRECISION_DICT[self.precision]
         self.resnet_dt = resnet_dt
         self.old_impl = old_impl
-        self.exclude_types = exclude_types
         self.ntypes = len(sel)
-        self.emask = PairExcludeMask(len(sel), exclude_types=exclude_types)
         self.type_one_side = type_one_side
+        # order matters, placed after the assignment of self.ntypes
+        self.reinit_exclude(exclude_types)
 
         self.sel = sel
         self.sec = torch.tensor(
@@ -437,6 +461,13 @@ class DescrptBlockSeA(DescriptorBlock):
                 "The statistics of the descriptor has not been computed."
             )
         return self.stats
+
+    def reinit_exclude(
+        self,
+        exclude_types: List[Tuple[int, int]] = [],
+    ):
+        self.exclude_types = exclude_types
+        self.emask = PairExcludeMask(self.ntypes, exclude_types=exclude_types)
 
     def forward(
         self,

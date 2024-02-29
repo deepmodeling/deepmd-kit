@@ -268,9 +268,8 @@ class GeneralFitting(Fitting):
         self.precision = precision
         self.prec = PRECISION_DICT[self.precision]
         self.rcond = rcond
-        self.exclude_types = exclude_types
-
-        self.emask = AtomExcludeMask(self.ntypes, self.exclude_types)
+        # order matters, should be place after the assignment of ntypes
+        self.reinit_exclude(exclude_types)
 
         net_dim_out = self._net_out_dim()
         # init constants
@@ -344,6 +343,13 @@ class GeneralFitting(Fitting):
 
         if seed is not None:
             torch.manual_seed(seed)
+
+    def reinit_exclude(
+        self,
+        exclude_types: List[int] = [],
+    ):
+        self.exclude_types = exclude_types
+        self.emask = AtomExcludeMask(self.ntypes, self.exclude_types)
 
     def serialize(self) -> dict:
         """Serialize the fitting to dict."""

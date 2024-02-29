@@ -32,6 +32,9 @@ from deepmd.main import (
 from deepmd.pt.infer import (
     inference,
 )
+from deepmd.pt.model.model import (
+    BaseModel,
+)
 from deepmd.pt.train import (
     training,
 )
@@ -46,6 +49,15 @@ from deepmd.pt.utils.finetune import (
 )
 from deepmd.pt.utils.multi_task import (
     preprocess_shared_params,
+)
+from deepmd.pt.utils.stat import (
+    make_stat_input,
+)
+from deepmd.utils.argcheck import (
+    normalize,
+)
+from deepmd.utils.compat import (
+    update_deepmd_input,
 )
 from deepmd.utils.path import (
     DPPath,
@@ -64,6 +76,11 @@ def get_trainer(
     force_load=False,
     init_frz_model=None,
 ):
+    # argcheck
+    if "model_dict" not in config.get("model", {}):
+        config = update_deepmd_input(config, warning=True, dump="input_v2_compat.json")
+        config = normalize(config)
+
     # Initialize DDP
     local_rank = os.environ.get("LOCAL_RANK")
     if local_rank is not None:
@@ -206,6 +223,12 @@ def train(FLAGS):
     SummaryPrinter()()
     with open(FLAGS.INPUT) as fin:
         config = json.load(fin)
+    if not FLAGS.skip_neighbor_stat:
+        log.info(
+            "Calculate neighbor statistics... (add --skip-neighbor-stat to skip this step)"
+        )
+        config["model"] = BaseModel.update_sel(config, config["model"])
+
     trainer = get_trainer(
         config,
         FLAGS.init_model,

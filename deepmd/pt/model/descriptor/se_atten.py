@@ -55,7 +55,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         post_ln=True,
         ffn=False,
         ffn_embed_dim=1024,
-        activation="tanh",
+        activation_function="tanh",
         scaling_factor=1.0,
         head_num=1,
         normalize=True,
@@ -88,7 +88,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         self.post_ln = post_ln
         self.ffn = ffn
         self.ffn_embed_dim = ffn_embed_dim
-        self.activation = activation
+        self.activation = activation_function
         # TODO: To be fixed: precision should be given from inputs
         self.prec = torch.float64
         self.scaling_factor = scaling_factor

@@ -29,13 +29,14 @@ from deepmd.tf.utils.graph import (
     get_tensor_by_name_from_graph,
     load_graph_def,
 )
+from deepmd.tf.utils.update_sel import (
+    UpdateSel,
+)
 
 from .freeze import (
     freeze,
 )
 from .train import (
-    get_min_nbor_dist,
-    get_rcut,
     train,
 )
 
@@ -115,7 +116,10 @@ def compress(
             log.info("stage 0: compute the min_nbor_dist")
             jdata = j_loader(training_script)
             jdata = update_deepmd_input(jdata)
-            t_min_nbor_dist = get_min_nbor_dist(jdata, get_rcut(jdata))
+            update_sel = UpdateSel()
+            t_min_nbor_dist = update_sel.get_min_nbor_dist(
+                jdata, update_sel.get_rcut(jdata)
+            )
 
     _check_compress_type(graph)
 

@@ -17,6 +17,9 @@ from deepmd.pt.utils.nlist import (
     build_multiple_neighbor_list,
     get_multiple_nlist_key,
 )
+from deepmd.pt.utils.update_sel import (
+    UpdateSel,
+)
 from deepmd.utils.path import (
     DPPath,
 )
@@ -199,7 +202,7 @@ class DescrptDPA2(torch.nn.Module, BaseDescriptor):
             tebd_input_mode="concat",
             # tebd_input_mode='dot_residual_s',
             set_davg_zero=repinit_set_davg_zero,
-            activation=repinit_activation,
+            activation_function=repinit_activation,
         )
         self.repformers = DescrptBlockRepformers(
             repformer_rcut,
@@ -225,7 +228,7 @@ class DescrptDPA2(torch.nn.Module, BaseDescriptor):
             attn2_hidden=repformer_attn2_hidden,
             attn2_nhead=repformer_attn2_nhead,
             attn2_has_gate=repformer_attn2_has_gate,
-            activation=repformer_activation,
+            activation_function=repformer_activation,
             update_style=repformer_update_style,
             set_davg_zero=repformer_set_davg_zero,
             smooth=True,
@@ -430,3 +433,32 @@ class DescrptDPA2(torch.nn.Module, BaseDescriptor):
         if self.concat_output_tebd:
             g1 = torch.cat([g1, g1_inp], dim=-1)
         return g1, rot_mat, g2, h2, sw
+
+    @classmethod
+    def update_sel(cls, global_jdata: dict, local_jdata: dict):
+        """Update the selection and perform neighbor statistics.
+
+        Parameters
+        ----------
+        global_jdata : dict
+            The global data, containing the training section
+        local_jdata : dict
+            The local data refer to the current class
+        """
+        local_jdata_cpy = local_jdata.copy()
+        update_sel = UpdateSel()
+        local_jdata_cpy = update_sel.update_one_sel(
+            global_jdata,
+            local_jdata_cpy,
+            True,
+            rcut_key="repinit_rcut",
+            sel_key="repinit_nsel",
+        )
+        local_jdata_cpy = update_sel.update_one_sel(
+            global_jdata,
+            local_jdata_cpy,
+            True,
+            rcut_key="repformer_rcut",
+            sel_key="repformer_nsel",
+        )
+        return local_jdata_cpy

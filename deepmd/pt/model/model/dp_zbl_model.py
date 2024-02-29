@@ -7,6 +7,9 @@ from typing import (
 
 import torch
 
+from deepmd.dpmodel.model.dp_model import (
+    DPModel,
+)
 from deepmd.pt.model.atomic_model import (
     DPZBLLinearAtomicModel,
 )
@@ -143,3 +146,20 @@ class DPZBLModel(DPZBLModel_, BaseModel):
             ),
         ]
         return data_requirement
+
+    @classmethod
+    def update_sel(cls, global_jdata: dict, local_jdata: dict):
+        """Update the selection and perform neighbor statistics.
+
+        Parameters
+        ----------
+        global_jdata : dict
+            The global data, containing the training section
+        local_jdata : dict
+            The local data refer to the current class
+        """
+        local_jdata_cpy = local_jdata.copy()
+        local_jdata_cpy["dpmodel"] = DPModel.update_sel(
+            global_jdata, local_jdata["dpmodel"]
+        )
+        return local_jdata_cpy

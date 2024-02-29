@@ -17,6 +17,7 @@ from ..common import (
     INSTALLED_PT,
     INSTALLED_TF,
     CommonTest,
+    parameterized,
 )
 from .common import (
     ModelTest,
@@ -37,11 +38,24 @@ from deepmd.utils.argcheck import (
 )
 
 
+@parameterized(
+    (
+        [],
+        [[0, 1]],
+    ),
+    (
+        [],
+        [1],
+    ),
+)
 class TestEner(CommonTest, ModelTest, unittest.TestCase):
     @property
     def data(self) -> dict:
+        pair_exclude_types, atom_exclude_types = self.param
         return {
             "type_map": ["O", "H"],
+            "pair_exclude_types": pair_exclude_types,
+            "atom_exclude_types": atom_exclude_types,
             "descriptor": {
                 "type": "se_e2_a",
                 "sel": [20, 20],
@@ -72,6 +86,12 @@ class TestEner(CommonTest, ModelTest, unittest.TestCase):
     dp_class = EnergyModelDP
     pt_class = EnergyModelPT
     args = model_args()
+
+    def skip_tf(self):
+        return (
+            self.data["pair_exclude_types"] != []
+            or self.data["atom_exclude_types"] != []
+        )
 
     def pass_data_to_cls(self, cls, data) -> Any:
         """Pass data to the class."""
