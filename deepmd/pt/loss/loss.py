@@ -1,4 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from abc import (
+    ABC,
+    abstractmethod,
+)
 from typing import (
     List,
 )
@@ -10,7 +14,7 @@ from deepmd.utils.data import (
 )
 
 
-class TaskLoss(torch.nn.Module):
+class TaskLoss(torch.nn.Module, ABC):
     def __init__(self, **kwargs):
         """Construct loss."""
         super().__init__()
@@ -20,6 +24,7 @@ class TaskLoss(torch.nn.Module):
         raise NotImplementedError
 
     @property
+    @abstractmethod
     def label_requirement(self) -> List[DataRequirementItem]:
         """Return data label requirements needed for this loss calculation."""
-        raise NotImplementedError
+        pass
