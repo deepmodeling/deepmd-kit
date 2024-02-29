@@ -70,6 +70,11 @@ $deepmd_source_dir/examples/water/se_atten/input.json
 With the training input script, data are also provided in the example directory. One may train the model with the DeePMD-kit from the directory.
 
 An example of the DPA-1 descriptor is provided as follows
+
+::::{tab-set}
+
+:::{tab-item} TensorFlow {{ tensorflow_icon }}
+
 ```json
 	"descriptor" :{
           "type":		"se_atten",
@@ -86,6 +91,7 @@ An example of the DPA-1 descriptor is provided as follows
           "seed":	1
 	}
 ```
+
 * The {ref}`type <model/descriptor/type>` of the descriptor is set to `"se_atten"`, which will use DPA-1 structures.
 * {ref}`rcut <model/descriptor[se_atten]/rcut>` is the cut-off radius for neighbor searching, and the {ref}`rcut_smth <model/descriptor[se_atten]/rcut_smth>` gives where the smoothing starts.
 * **{ref}`sel <model/descriptor[se_atten]/sel>`** gives the maximum possible number of neighbors in the cut-off radius. It is an int. Note that this number highly affects the efficiency of training, which we usually use less than 200. (We use 120 for training 56 elements in [OC2M dataset](https://github.com/Open-Catalyst-Project/ocp/blob/main/DATASET.md))
@@ -97,6 +103,43 @@ An example of the DPA-1 descriptor is provided as follows
 * {ref}`attn_layer <model/descriptor[se_atten]/attn_layer>` sets the number of layers in attention mechanism.
 * {ref}`attn_mask <model/descriptor[se_atten]/attn_mask>` determines whether to mask the diagonal in the attention weights and False is recommended.
 * {ref}`attn_dotr <model/descriptor[se_atten]/attn_dotr>` determines whether to dot the relative coordinates on the attention weights as a gated scheme, True is recommended.
+
+:::
+
+:::{tab-item} PyTorch {{ pytorch_icon }}
+
+```json
+	"descriptor" :{
+          "type":		"dpa1",
+          "rcut_smth":	0.50,
+          "rcut":		6.00,
+          "sel":		120,
+          "neuron":		[25, 50, 100],
+          "tebd_dim": 8,
+          "axis_neuron":	16,
+          "attn":	128,
+          "attn_layer":	2,
+          "attn_mask": false,
+          "attn_dotr": true,
+          "post_ln": true,
+	}
+```
+
+* The {ref}`type <model/descriptor/type>` of the descriptor is set to `"se_atten"`, which will use DPA-1 structures.
+* {ref}`rcut <model/descriptor[se_atten]/rcut>` is the cut-off radius for neighbor searching, and the {ref}`rcut_smth <model/descriptor[se_atten]/rcut_smth>` gives where the smoothing starts.
+* **{ref}`sel <model/descriptor[se_atten]/sel>`** gives the maximum possible number of neighbors in the cut-off radius. It is an int. Note that this number highly affects the efficiency of training, which we usually use less than 200. (We use 120 for training 56 elements in [OC2M dataset](https://github.com/Open-Catalyst-Project/ocp/blob/main/DATASET.md))
+* The {ref}`neuron <model/descriptor[se_atten]/neuron>` specifies the size of the embedding net. From left to right the members denote the sizes of each hidden layer from the input end to the output end, respectively. If the outer layer is twice the size of the inner layer, then the inner layer is copied and concatenated, then a [ResNet architecture](https://arxiv.org/abs/1512.03385) is built between them.
+* The {ref}`tebd_dim <model/descriptor[se_atten]/tebd_dim>` specifies the dimension of the type embedding.
+* The {ref}`axis_neuron <model/descriptor[se_atten]/axis_neuron>` specifies the size of the submatrix of the embedding matrix, the axis matrix as explained in the [DeepPot-SE paper](https://arxiv.org/abs/1805.09003)
+* {ref}`attn <model/descriptor[se_atten]/attn>` sets the length of a hidden vector during scale-dot attention computation.
+* {ref}`attn_layer <model/descriptor[se_atten]/attn_layer>` sets the number of layers in attention mechanism.
+* {ref}`attn_mask <model/descriptor[se_atten]/attn_mask>` determines whether to mask the diagonal in the attention weights and False is recommended.
+* {ref}`attn_dotr <model/descriptor[se_atten]/attn_dotr>` determines whether to dot the relative coordinates on the attention weights as a gated scheme, True is recommended.
+* {ref}`post_ln <model/descriptor[se_atten]/post_ln>` determines whether to perform post layer norm.
+
+:::
+
+::::
 
 ### Descriptor `"se_atten_v2"`
 We highly recommend using the version 2.0 of the attention-based descriptor `"se_atten_v2"`, which is inherited from `"se_atten"` but with the following parameter modifications:
