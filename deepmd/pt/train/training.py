@@ -861,6 +861,8 @@ class Trainer:
             "atype",
             "box",
             "spin",
+            "fparam",
+            "aparam",
         ]
         input_dict = {item_key: None for item_key in input_keys}
         label_dict = {}

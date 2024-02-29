@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import logging
 from abc import (
     ABC,
     abstractmethod,
@@ -18,6 +19,8 @@ import numpy as np
 from deepmd.utils.path import (
     DPPath,
 )
+
+log = logging.getLogger(__name__)
 
 
 class StatItem:
@@ -170,10 +173,12 @@ class EnvMatStat(ABC):
         """
         if path is not None and path.is_dir():
             self.load_stats(path)
+            log.info(f"Load stats from {path}.")
         else:
             self.compute_stats(data)
             if path is not None:
                 self.save_stats(path)
+                log.info(f"Save stats to {path}.")
 
     def get_avg(self, default: float = 0) -> Dict[str, float]:
         """Get the average of the environment matrix.
