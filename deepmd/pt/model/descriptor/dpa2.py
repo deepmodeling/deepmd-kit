@@ -15,6 +15,9 @@ from deepmd.pt.utils.nlist import (
     build_multiple_neighbor_list,
     get_multiple_nlist_key,
 )
+from deepmd.pt.utils.update_sel import (
+    UpdateSel,
+)
 from deepmd.utils.path import (
     DPPath,
 )
@@ -396,3 +399,32 @@ class DescrptDPA2(torch.nn.Module, BaseDescriptor):
         if self.concat_output_tebd:
             g1 = torch.cat([g1, g1_inp], dim=-1)
         return g1, rot_mat, g2, h2, sw
+
+    @classmethod
+    def update_sel(cls, global_jdata: dict, local_jdata: dict):
+        """Update the selection and perform neighbor statistics.
+
+        Parameters
+        ----------
+        global_jdata : dict
+            The global data, containing the training section
+        local_jdata : dict
+            The local data refer to the current class
+        """
+        local_jdata_cpy = local_jdata.copy()
+        update_sel = UpdateSel()
+        local_jdata_cpy = update_sel.update_one_sel(
+            global_jdata,
+            local_jdata_cpy,
+            True,
+            rcut_key="repinit_rcut",
+            sel_key="repinit_nsel",
+        )
+        local_jdata_cpy = update_sel.update_one_sel(
+            global_jdata,
+            local_jdata_cpy,
+            True,
+            rcut_key="repformer_rcut",
+            sel_key="repformer_nsel",
+        )
+        return local_jdata_cpy
