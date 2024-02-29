@@ -121,7 +121,7 @@ An example of the DPA-1 descriptor is provided as follows
           "attn_layer":	2,
           "attn_mask": false,
           "attn_dotr": true,
-          "post_ln": true,
+          "post_ln": true
 	}
 ```
 
