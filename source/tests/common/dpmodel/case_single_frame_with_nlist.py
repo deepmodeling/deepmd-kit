@@ -2,6 +2,27 @@
 import numpy as np
 
 
+class TestCaseSingleFrameWithoutNlist:
+    def setUp(self):
+        # nloc == 3, nall == 4
+        self.nloc = 3
+        self.nf, self.nt = 1, 2
+        self.coord = np.array(
+            [
+                [0, 0, 0],
+                [0, 1, 0],
+                [0, 0, 1],
+            ],
+            dtype=np.float64,
+        ).reshape([1, self.nloc * 3])
+        self.atype = np.array([0, 0, 1], dtype=int).reshape([1, self.nloc])
+        self.cell = 2.0 * np.eye(3).reshape([1, 9])
+        # sel = [5, 2]
+        self.sel = [5, 2]
+        self.rcut = 0.4
+        self.rcut_smth = 2.2
+
+
 class TestCaseSingleFrameWithNlist:
     def setUp(self):
         # nloc == 3, nall == 4
@@ -17,7 +38,9 @@ class TestCaseSingleFrameWithNlist:
             ],
             dtype=np.float64,
         ).reshape([1, self.nall, 3])
+        self.coord = self.coord_ext[:, : self.nloc, :]
         self.atype_ext = np.array([0, 0, 1, 0], dtype=int).reshape([1, self.nall])
+        self.atype = self.atype_ext[:, : self.nloc]
         # sel = [5, 2]
         self.sel = [5, 2]
         self.nlist = np.array(
