@@ -197,7 +197,7 @@ class DescrptDPA2(torch.nn.Module, BaseDescriptor):
             tebd_input_mode="concat",
             # tebd_input_mode='dot_residual_s',
             set_davg_zero=repinit_set_davg_zero,
-            activation=repinit_activation,
+            activation_function=repinit_activation,
         )
         self.repformers = DescrptBlockRepformers(
             repformer_rcut,
@@ -223,7 +223,7 @@ class DescrptDPA2(torch.nn.Module, BaseDescriptor):
             attn2_hidden=repformer_attn2_hidden,
             attn2_nhead=repformer_attn2_nhead,
             attn2_has_gate=repformer_attn2_has_gate,
-            activation=repformer_activation,
+            activation_function=repformer_activation,
             update_style=repformer_update_style,
             set_davg_zero=repformer_set_davg_zero,
             smooth=True,
