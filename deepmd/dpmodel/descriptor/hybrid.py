@@ -132,6 +132,24 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
         out_descriptor = np.concatenate(out_descriptor, axis=-1)
         return out_descriptor, None, None, None, None
 
+    @classmethod
+    def update_sel(cls, global_jdata: dict, local_jdata: dict) -> dict:
+        """Update the selection and perform neighbor statistics.
+
+        Parameters
+        ----------
+        global_jdata : dict
+            The global data, containing the training section
+        local_jdata : dict
+            The local data refer to the current class
+        """
+        local_jdata_cpy = local_jdata.copy()
+        local_jdata_cpy["list"] = [
+            BaseDescriptor.update_sel(global_jdata, sub_jdata)
+            for sub_jdata in local_jdata["list"]
+        ]
+        return local_jdata_cpy
+
     def serialize(self) -> dict:
         return {
             "@class": "Descriptor",
