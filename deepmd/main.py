@@ -245,7 +245,7 @@ def main_parser() -> argparse.ArgumentParser:
     parser_train.add_argument(
         "--skip-neighbor-stat",
         action="store_true",
-        help="(Supported backend: TensorFlow) Skip calculating neighbor statistics. Sel checking, automatic sel, and model compression will be disabled.",
+        help="Skip calculating neighbor statistics. Sel checking, automatic sel, and model compression will be disabled.",
     )
     parser_train.add_argument(
         # -m has been used by mpi-log

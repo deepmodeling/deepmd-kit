@@ -18,6 +18,9 @@ from deepmd.tf.utils.graph import (
     get_embedding_net_variables_from_graph_def,
     get_tensor_by_name_from_graph,
 )
+from deepmd.tf.utils.update_sel import (
+    UpdateSel,
+)
 
 from .descriptor import (
     Descriptor,
@@ -161,13 +164,9 @@ class DescrptSe(Descriptor):
         local_jdata : dict
             The local data refer to the current class
         """
-        from deepmd.tf.entrypoints.train import (
-            update_one_sel,
-        )
-
         # default behavior is to update sel which is a list
         local_jdata_cpy = local_jdata.copy()
-        return update_one_sel(global_jdata, local_jdata_cpy, False)
+        return UpdateSel().update_one_sel(global_jdata, local_jdata_cpy, False)
 
     def serialize_network(
         self,

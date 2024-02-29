@@ -124,6 +124,22 @@ def make_base_descriptor(
                 return BD.get_class_by_type(data["type"]).deserialize(data)
             raise NotImplementedError("Not implemented in class %s" % cls.__name__)
 
+        @classmethod
+        @abstractmethod
+        def update_sel(cls, global_jdata: dict, local_jdata: dict):
+            """Update the selection and perform neighbor statistics.
+
+            Parameters
+            ----------
+            global_jdata : dict
+                The global data, containing the training section
+            local_jdata : dict
+                The local data refer to the current class
+            """
+            # call subprocess
+            cls = cls.get_class_by_type(j_get_type(local_jdata, cls.__name__))
+            return cls.update_sel(global_jdata, local_jdata)
+
     setattr(BD, fwd_method_name, BD.fwd)
     delattr(BD, "fwd")
 
