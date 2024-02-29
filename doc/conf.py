@@ -188,6 +188,7 @@ rst_epilog = f"""
 myst_substitutions = {
     "tensorflow_icon": """![TensorFlow](/_static/tensorflow.svg){class=platform-icon}""",
     "pytorch_icon": """![PyTorch](/_static/pytorch.svg){class=platform-icon}""",
+    "dpmodel_icon": """![DPModel](/_static/logo_icon.svg){class=platform-icon}""",
 }
 
 # -- Options for HTML output -------------------------------------------------
