@@ -201,7 +201,6 @@ def make_model(T_AtomicModel):
                 the result dict, defined by the `FittingOutputDef`.
 
             """
-            extended_coord = extended_coord.to(env.GLOBAL_PT_FLOAT_PRECISION)
             nframes, nall = extended_atype.shape[:2]
             extended_coord = extended_coord.view(nframes, -1, 3)
             nlist = self.format_nlist(extended_coord, extended_atype, nlist)
