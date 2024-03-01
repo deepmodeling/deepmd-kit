@@ -8,7 +8,6 @@ from typing import (
     Dict,
     List,
     Optional,
-    Union,
 )
 
 import numpy as np
@@ -74,9 +73,9 @@ class GeneralFitting(NativeOP, BaseFitting):
             different fitting nets for different atom types.
     exclude_types: List[int]
             Atomic contributions of the excluded atom types are set zero.
-    remove_vaccum_contribution: bool or List[bool]
-        Remove vaccum contribution before the bias is added. If it is a list and
-        not mixed_types, only remove the vaccum contribution for the atom types
+    remove_vaccum_contribution: List[bool], optional
+        Remove vaccum contribution before the bias is added. The list assigned each
+        type. If not mixed_types, only remove the vaccum contribution for the atom types
         in the list.
     """
 
@@ -99,7 +98,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         spin: Any = None,
         mixed_types: bool = True,
         exclude_types: List[int] = [],
-        remove_vaccum_contribution: Union[bool, List[bool]] = False,
+        remove_vaccum_contribution: Optional[List[bool]] = None,
     ):
         self.var_name = var_name
         self.ntypes = ntypes
@@ -304,7 +303,7 @@ class GeneralFitting(NativeOP, BaseFitting):
                 "which is not consistent with {self.dim_descrpt}."
             )
         xx = descriptor
-        if self.remove_vaccum_contribution is not False:
+        if self.remove_vaccum_contribution is not None:
             # TODO: Idealy, the input for vaccum should be computed;
             # we consider it as always zero for convenience.
             # Needs a compute_input_stats for vaccum passed from the
@@ -359,11 +358,11 @@ class GeneralFitting(NativeOP, BaseFitting):
                     (atype == type_i).reshape([nf, nloc, 1]), [1, 1, net_dim_out]
                 )
                 atom_property = self.nets[(type_i,)](xx)
-                if xx_zeros is not None and not (
-                    isinstance(self.remove_vaccum_contribution, list)
-                    and len(self.remove_vaccum_contribution) > type_i
+                if self.remove_vaccum_contribution is not None and not (
+                    len(self.remove_vaccum_contribution) > type_i
                     and not self.remove_vaccum_contribution[type_i]
                 ):
+                    assert xx_zeros is not None
                     atom_property -= self.nets[(type_i,)](xx_zeros)
                 atom_property = atom_property + self.bias_atom_e[type_i]
                 atom_property = atom_property * mask
