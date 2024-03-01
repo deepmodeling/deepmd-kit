@@ -359,7 +359,13 @@ def freeze_graph(
     output_node = _make_node_names(
         freeze_type, modifier, out_suffix=out_suffix, node_names=node_names
     )
-    different_set = set(output_node) - set(input_node)
+    # see #3334
+    optional_node = [
+        "train_attr/min_nbor_dist",
+        "fitting_attr/aparam_nall",
+        "spin_attr/ntypes_spin",
+    ]
+    different_set = set(output_node) - set(input_node) - set(optional_node)
     if different_set:
         log.warning(
             "The following nodes are not in the graph: %s. "
