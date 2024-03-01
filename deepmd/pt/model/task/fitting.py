@@ -286,6 +286,10 @@ class GeneralFitting(Fitting):
         # order matters, should be place after the assignment of ntypes
         self.reinit_exclude(exclude_types)
         self.trainable = trainable
+        # need support for each layer settings
+        self.trainable = (
+            all(self.trainable) if isinstance(self.trainable, list) else self.trainable
+        )
 
         net_dim_out = self._net_out_dim()
         # init constants
@@ -362,12 +366,7 @@ class GeneralFitting(Fitting):
             torch.manual_seed(seed)
         # set trainable
         for param in self.parameters():
-            # need support for each layer settings
-            param.requires_grad = (
-                all(self.trainable)
-                if isinstance(self.trainable, list)
-                else self.trainable
-            )
+            param.requires_grad = self.trainable
 
     def reinit_exclude(
         self,
@@ -409,7 +408,7 @@ class GeneralFitting(Fitting):
             # "spin": self.spin ,
             ## NOTICE:  not supported by far
             "tot_ener_zero": False,
-            "trainable": self.trainable,
+            "trainable": [self.trainable] * (len(self.neuron) + 1),
             "layer_name": None,
             "use_aparam_as_mask": False,
             "spin": None,
