@@ -367,7 +367,8 @@ def freeze_graph(
     ]
     different_set = set(output_node) - set(input_node)
     if different_set:
-        if different_set - set(optional_node):
+        different_set -= set(optional_node)
+        if different_set:
             log.warning(
                 "The following nodes are not in the graph: %s. "
                 "Skip freezeing these nodes. You may be freezing "
