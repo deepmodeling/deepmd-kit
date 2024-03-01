@@ -46,6 +46,7 @@ from .base_descriptor import (
 
 
 @BaseDescriptor.register("se_e2_a")
+@BaseDescriptor.register("se_a")
 class DescrptSeA(NativeOP, BaseDescriptor):
     r"""DeepPot-SE constructed from all information (both angular and radial) of
     atomic configurations. The embedding takes the distance between atoms as input.
@@ -242,6 +243,14 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         atomic types or not.
         """
         return False
+
+    def share_params(self, base_class, shared_level, resume=False):
+        """
+        Share the parameters of self to the base_class with shared_level during multitask training.
+        If not start from checkpoint (resume is False),
+        some seperated parameters (e.g. mean and stddev) will be re-calculated across different classes.
+        """
+        raise NotImplementedError
 
     def get_ntypes(self) -> int:
         """Returns the number of element types."""

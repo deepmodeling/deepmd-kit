@@ -127,6 +127,14 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
         """
         return any(descrpt.mixed_types() for descrpt in self.descrpt_list)
 
+    def share_params(self, base_class, shared_level, resume=False):
+        """
+        Share the parameters of self to the base_class with shared_level during multitask training.
+        If not start from checkpoint (resume is False),
+        some seperated parameters (e.g. mean and stddev) will be re-calculated across different classes.
+        """
+        raise NotImplementedError
+
     def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
         """Update mean and stddev for descriptor elements."""
         for descrpt in self.descrpt_list:

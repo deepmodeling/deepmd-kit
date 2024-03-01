@@ -1,11 +1,13 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import itertools
 from typing import (
+    Callable,
     ClassVar,
     Dict,
     List,
     Optional,
     Tuple,
+    Union,
 )
 
 import numpy as np
@@ -63,6 +65,7 @@ from .base_descriptor import (
 
 
 @BaseDescriptor.register("se_e2_a")
+@BaseDescriptor.register("se_a")
 class DescrptSeA(BaseDescriptor, torch.nn.Module):
     def __init__(
         self,
@@ -127,13 +130,50 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         """
         return self.sea.mixed_types()
 
+    def share_params(self, base_class, shared_level, resume=False):
+        """
+        Share the parameters of self to the base_class with shared_level during multitask training.
+        If not start from checkpoint (resume is False),
+        some seperated parameters (e.g. mean and stddev) will be re-calculated across different classes.
+        """
+        assert (
+            self.__class__ == base_class.__class__
+        ), "Only descriptors of the same type can share params!"
+        # For SeA descriptors, the user-defined share-level
+        # shared_level: 0
+        # share all parameters in sea
+        if shared_level == 0:
+            self.sea.share_params(base_class.sea, 0, resume=resume)
+        # Other shared levels
+        else:
+            raise NotImplementedError
+
     @property
     def dim_out(self):
         """Returns the output dimension of this descriptor."""
         return self.sea.dim_out
 
-    def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
-        """Update mean and stddev for descriptor elements."""
+    def compute_input_stats(
+        self,
+        merged: Union[Callable[[], List[dict]], List[dict]],
+        path: Optional[DPPath] = None,
+    ):
+        """
+        Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
+
+        Parameters
+        ----------
+        merged : Union[Callable[[], List[dict]], List[dict]]
+            - List[dict]: A list of data samples from various data systems.
+                Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
+                originating from the `i`-th data system.
+            - Callable[[], List[dict]]: A lazy function that returns data samples in the above format
+                only when needed. Since the sampling process can be slow and memory-intensive,
+                the lazy function helps by only sampling once.
+        path : Optional[DPPath]
+            The path to the stat file.
+
+        """
         return self.sea.compute_input_stats(merged, path)
 
     def reinit_exclude(
@@ -411,12 +451,39 @@ class DescrptBlockSeA(DescriptorBlock):
         else:
             raise KeyError(key)
 
-    def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
-        """Update mean and stddev for descriptor elements."""
+    def compute_input_stats(
+        self,
+        merged: Union[Callable[[], List[dict]], List[dict]],
+        path: Optional[DPPath] = None,
+    ):
+        """
+        Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
+
+        Parameters
+        ----------
+        merged : Union[Callable[[], List[dict]], List[dict]]
+            - List[dict]: A list of data samples from various data systems.
+                Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
+                originating from the `i`-th data system.
+            - Callable[[], List[dict]]: A lazy function that returns data samples in the above format
+                only when needed. Since the sampling process can be slow and memory-intensive,
+                the lazy function helps by only sampling once.
+        path : Optional[DPPath]
+            The path to the stat file.
+
+        """
         env_mat_stat = EnvMatStatSe(self)
         if path is not None:
             path = path / env_mat_stat.get_hash()
-        env_mat_stat.load_or_compute_stats(merged, path)
+        if path is None or not path.is_dir():
+            if callable(merged):
+                # only get data for once
+                sampled = merged()
+            else:
+                sampled = merged
+        else:
+            sampled = []
+        env_mat_stat.load_or_compute_stats(sampled, path)
         self.stats = env_mat_stat.stats
         mean, stddev = env_mat_stat()
         if not self.set_davg_zero:

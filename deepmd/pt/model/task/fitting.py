@@ -62,6 +62,11 @@ class Fitting(torch.nn.Module, BaseFitting):
         return super().__new__(cls)
 
     def share_params(self, base_class, shared_level, resume=False):
+        """
+        Share the parameters of self to the base_class with shared_level during multitask training.
+        If not start from checkpoint (resume is False),
+        some seperated parameters (e.g. mean and stddev) will be re-calculated across different classes.
+        """
         assert (
             self.__class__ == base_class.__class__
         ), "Only fitting nets of the same type can share params!"
@@ -77,18 +82,6 @@ class Fitting(torch.nn.Module, BaseFitting):
             # the following will successfully link all the params except buffers, which need manually link.
             for item in self._modules:
                 self._modules[item] = base_class._modules[item]
-        elif shared_level == 2:
-            # share all the layers before final layer
-            # the following will successfully link all the params except buffers, which need manually link.
-            self._modules["filter_layers"][0].deep_layers = base_class._modules[
-                "filter_layers"
-            ][0].deep_layers
-        elif shared_level == 3:
-            # share the first layers
-            # the following will successfully link all the params except buffers, which need manually link.
-            self._modules["filter_layers"][0].deep_layers[0] = base_class._modules[
-                "filter_layers"
-            ][0].deep_layers[0]
         else:
             raise NotImplementedError
 
@@ -354,7 +347,6 @@ class GeneralFitting(Fitting):
             self.filter_layers_old = None
 
         if seed is not None:
-            log.info("Set seed to %d in fitting net.", seed)
             torch.manual_seed(seed)
 
     def reinit_exclude(

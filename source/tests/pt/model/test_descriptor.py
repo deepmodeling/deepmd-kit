@@ -38,6 +38,9 @@ from deepmd.tf.env import (
     op_module,
 )
 
+from ..test_stat import (
+    energy_data_requirement,
+)
 from .test_embedding_net import (
     get_single_batch,
 )
@@ -114,6 +117,7 @@ class TestSeA(unittest.TestCase):
             self.systems[0],
             model_config["type_map"],
         )
+        ds.add_data_requirement(energy_data_requirement)
         self.np_batch, self.pt_batch = get_single_batch(ds)
         self.sec = np.cumsum(self.sel)
         self.ntypes = len(self.sel)

@@ -28,6 +28,9 @@ from deepmd.tf.loss.ener import (
 from .model.test_embedding_net import (
     get_single_batch,
 )
+from .test_stat import (
+    energy_data_requirement,
+)
 
 CUR_DIR = os.path.dirname(__file__)
 
@@ -47,6 +50,7 @@ def get_batch():
     if isinstance(systems, str):
         systems = expand_sys_str(systems)
     dataset = DeepmdDataSetForLoader(systems[0], model_config["type_map"])
+    dataset.add_data_requirement(energy_data_requirement)
     np_batch, pt_batch = get_single_batch(dataset)
     return np_batch, pt_batch
 

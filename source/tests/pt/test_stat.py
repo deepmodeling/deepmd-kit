@@ -44,8 +44,50 @@ from deepmd.tf.utils import random as tf_random
 from deepmd.tf.utils.data_system import (
     DeepmdDataSystem,
 )
+from deepmd.utils.data import (
+    DataRequirementItem,
+)
 
 CUR_DIR = os.path.dirname(__file__)
+
+energy_data_requirement = [
+    DataRequirementItem(
+        "energy",
+        ndof=1,
+        atomic=False,
+        must=False,
+        high_prec=True,
+    ),
+    DataRequirementItem(
+        "force",
+        ndof=3,
+        atomic=True,
+        must=False,
+        high_prec=False,
+    ),
+    DataRequirementItem(
+        "virial",
+        ndof=9,
+        atomic=False,
+        must=False,
+        high_prec=False,
+    ),
+    DataRequirementItem(
+        "atom_ener",
+        ndof=1,
+        atomic=True,
+        must=False,
+        high_prec=False,
+    ),
+    DataRequirementItem(
+        "atom_pref",
+        ndof=1,
+        atomic=True,
+        must=False,
+        high_prec=False,
+        repeat=3,
+    ),
+]
 
 
 def compare(ut, base, given):
@@ -111,6 +153,7 @@ class DatasetTest(ABC):
         self.filter_neuron = model_config["descriptor"]["neuron"]
         self.axis_neuron = model_config["descriptor"]["axis_neuron"]
         self.n_neuron = model_config["fitting_net"]["neuron"]
+        self.my_dataset.add_data_requirement(energy_data_requirement)
 
         self.my_sampled = my_make(
             self.my_dataset.systems, self.my_dataset.dataloaders, self.data_stat_nbatch
@@ -181,8 +224,6 @@ class DatasetTest(ABC):
         for sys in sampled:
             for key in [
                 "coord",
-                "force",
-                "energy",
                 "atype",
                 "natoms",
                 "box",

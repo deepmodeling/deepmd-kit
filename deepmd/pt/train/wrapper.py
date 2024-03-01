@@ -61,7 +61,7 @@ class ModelWrapper(torch.nn.Module):
         self.inference_only = self.loss is None
 
     def set_trainable_params(self):
-        supported_types = ["type_embedding", "descriptor", "fitting_net"]
+        supported_types = ["descriptor", "fitting_net"]
         for model_item in self.model:
             for net_type in supported_types:
                 trainable = True
@@ -83,7 +83,12 @@ class ModelWrapper(torch.nn.Module):
                         param.requires_grad = trainable
 
     def share_params(self, shared_links, resume=False):
-        supported_types = ["type_embedding", "descriptor", "fitting_net"]
+        """
+        Share the parameters of classes following rules defined in shared_links during multitask training.
+        If not start from checkpoint (resume is False),
+        some seperated parameters (e.g. mean and stddev) will be re-calculated across different classes.
+        """
+        supported_types = ["descriptor", "fitting_net"]
         for shared_item in shared_links:
             class_name = shared_links[shared_item]["type"]
             shared_base = shared_links[shared_item]["links"][0]
@@ -159,6 +164,7 @@ class ModelWrapper(torch.nn.Module):
         coord,
         atype,
         box: Optional[torch.Tensor] = None,
+        spin: Optional[torch.Tensor] = None,
         cur_lr: Optional[torch.Tensor] = None,
         label: Optional[torch.Tensor] = None,
         task_key: Optional[torch.Tensor] = None,

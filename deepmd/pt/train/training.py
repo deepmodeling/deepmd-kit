@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import functools
 import logging
 import time
 from copy import (
@@ -49,6 +50,9 @@ from deepmd.pt.utils.env import (
 from deepmd.pt.utils.learning_rate import (
     LearningRateExp,
 )
+from deepmd.pt.utils.stat import (
+    make_stat_input,
+)
 
 if torch.__version__.startswith("2"):
     import torch._dynamo
@@ -59,6 +63,10 @@ from torch.utils.data import (
     DataLoader,
 )
 
+from deepmd.utils.path import (
+    DPH5Path,
+)
+
 log = logging.getLogger(__name__)
 
 
@@ -67,7 +75,6 @@ class Trainer:
         self,
         config: Dict[str, Any],
         training_data,
-        sampled=None,
         stat_file_path=None,
         validation_data=None,
         init_model=None,
@@ -82,7 +89,15 @@ class Trainer:
         Args:
         - config: The Dict-like configuration with training options.
         """
-        resume_model = init_model if init_model is not None else restart_model
+        if init_model is not None:
+            resume_model = init_model
+        elif restart_model is not None:
+            resume_model = restart_model
+        elif finetune_model is not None:
+            resume_model = finetune_model
+        else:
+            resume_model = None
+        resuming = resume_model is not None
         self.restart_training = restart_model is not None
         model_params = config["model"]
         training_params = config["training"]
@@ -93,8 +108,6 @@ class Trainer:
         self.model_keys = (
             list(model_params["model_dict"]) if self.multi_task else ["Default"]
         )
-        if self.multi_task and sampled is None:
-            sampled = {key: None for key in self.model_keys}
         self.rank = dist.get_rank() if dist.is_initialized() else 0
         self.world_size = dist.get_world_size() if dist.is_initialized() else 1
         self.num_model = len(self.model_keys)
@@ -119,62 +132,51 @@ class Trainer:
             return opt_type, opt_param
 
         def get_data_loader(_training_data, _validation_data, _training_params):
-            if "auto_prob" in _training_params["training_data"]:
-                train_sampler = get_weighted_sampler(
-                    _training_data, _training_params["training_data"]["auto_prob"]
-                )
-            elif "sys_probs" in _training_params["training_data"]:
-                train_sampler = get_weighted_sampler(
-                    _training_data,
-                    _training_params["training_data"]["sys_probs"],
-                    sys_prob=True,
-                )
-            else:
-                train_sampler = get_weighted_sampler(_training_data, "prob_sys_size")
+            def get_dataloader_and_buffer(_data, _params):
+                if "auto_prob" in _training_params["training_data"]:
+                    _sampler = get_weighted_sampler(
+                        _data, _params["training_data"]["auto_prob"]
+                    )
+                elif "sys_probs" in _training_params["training_data"]:
+                    _sampler = get_weighted_sampler(
+                        _data,
+                        _params["training_data"]["sys_probs"],
+                        sys_prob=True,
+                    )
+                else:
+                    _sampler = get_weighted_sampler(_data, "prob_sys_size")
 
-            if "auto_prob" in _training_params["validation_data"]:
-                valid_sampler = get_weighted_sampler(
-                    _validation_data, _training_params["validation_data"]["auto_prob"]
+                if _sampler is None:
+                    log.warning(
+                        "Sampler not specified!"
+                    )  # None sampler will lead to a premature stop iteration. Replacement should be True in attribute of the sampler to produce expected number of items in one iteration.
+                _dataloader = DataLoader(
+                    _data,
+                    sampler=_sampler,
+                    batch_size=None,
+                    num_workers=NUM_WORKERS,  # setting to 0 diverges the behavior of its iterator; should be >=1
+                    drop_last=False,
+                    pin_memory=True,
                 )
-            elif "sys_probs" in _training_params["validation_data"]:
-                valid_sampler = get_weighted_sampler(
-                    _validation_data,
-                    _training_params["validation_data"]["sys_probs"],
-                    sys_prob=True,
-                )
-            else:
-                valid_sampler = get_weighted_sampler(_validation_data, "prob_sys_size")
+                with torch.device("cpu"):
+                    _data_buffered = BufferedIterator(iter(_dataloader))
+                return _dataloader, _data_buffered
 
-            if train_sampler is None or valid_sampler is None:
-                log.warning(
-                    "Sampler not specified!"
-                )  # None sampler will lead to a premature stop iteration. Replacement should be True in attribute of the sampler to produce expected number of items in one iteration.
-            training_dataloader = DataLoader(
-                _training_data,
-                sampler=train_sampler,
-                batch_size=None,
-                num_workers=NUM_WORKERS,  # setting to 0 diverges the behavior of its iterator; should be >=1
-                drop_last=False,
-                pin_memory=True,
-            )
-            with torch.device("cpu"):
-                training_data_buffered = BufferedIterator(iter(training_dataloader))
-            validation_dataloader = DataLoader(
-                _validation_data,
-                sampler=valid_sampler,
-                batch_size=None,
-                num_workers=min(NUM_WORKERS, 1),
-                drop_last=False,
-                pin_memory=True,
+            training_dataloader, training_data_buffered = get_dataloader_and_buffer(
+                _training_data, _training_params
             )
 
-            with torch.device("cpu"):
-                validation_data_buffered = BufferedIterator(iter(validation_dataloader))
-            if _training_params.get("validation_data", None) is not None:
+            if _validation_data is not None:
+                (
+                    validation_dataloader,
+                    validation_data_buffered,
+                ) = get_dataloader_and_buffer(_validation_data, _training_params)
                 valid_numb_batch = _training_params["validation_data"].get(
                     "numb_btch", 1
                 )
             else:
+                validation_dataloader = None
+                validation_data_buffered = None
                 valid_numb_batch = 1
             return (
                 training_dataloader,
@@ -184,13 +186,34 @@ class Trainer:
                 valid_numb_batch,
             )
 
-        def get_single_model(_model_params, _sampled, _stat_file_path):
+        def get_single_model(
+            _model_params,
+            _training_data,
+            _validation_data,
+            _stat_file_path,
+            _data_requirement,
+        ):
             model = get_model(deepcopy(_model_params)).to(DEVICE)
-            if not model_params.get("resuming", False):
+            _training_data.add_data_requirement(_data_requirement)
+            if _validation_data is not None:
+                _validation_data.add_data_requirement(_data_requirement)
+            if not resuming and self.rank == 0:
+
+                @functools.lru_cache
+                def get_sample():
+                    sampled = make_stat_input(
+                        _training_data.systems,
+                        _training_data.dataloaders,
+                        _model_params.get("data_stat_nbatch", 10),
+                    )
+                    return sampled
+
                 model.compute_or_load_stat(
-                    sampled=_sampled,
+                    sampled_func=get_sample,
                     stat_file_path=_stat_file_path,
                 )
+                if isinstance(_stat_file_path, DPH5Path):
+                    _stat_file_path.root.close()
             return model
 
         def get_lr(lr_params):
@@ -230,57 +253,6 @@ class Trainer:
         else:
             self.opt_type, self.opt_param = get_opt_param(training_params)
 
-        # Data + Model
-        dp_random.seed(training_params["seed"])
-        if not self.multi_task:
-            (
-                self.training_dataloader,
-                self.training_data,
-                self.validation_dataloader,
-                self.validation_data,
-                self.valid_numb_batch,
-            ) = get_data_loader(training_data, validation_data, training_params)
-            self.model = get_single_model(model_params, sampled, stat_file_path)
-        else:
-            (
-                self.training_dataloader,
-                self.training_data,
-                self.validation_dataloader,
-                self.validation_data,
-                self.valid_numb_batch,
-                self.model,
-            ) = {}, {}, {}, {}, {}, {}
-            for model_key in self.model_keys:
-                (
-                    self.training_dataloader[model_key],
-                    self.training_data[model_key],
-                    self.validation_dataloader[model_key],
-                    self.validation_data[model_key],
-                    self.valid_numb_batch[model_key],
-                ) = get_data_loader(
-                    training_data[model_key],
-                    validation_data[model_key],
-                    training_params["data_dict"][model_key],
-                )
-                self.model[model_key] = get_single_model(
-                    model_params["model_dict"][model_key],
-                    sampled[model_key],
-                    stat_file_path[model_key],
-                )
-
-        # Learning rate
-        self.warmup_steps = training_params.get("warmup_steps", 0)
-        self.gradient_max_norm = training_params.get("gradient_max_norm", 0.0)
-        assert (
-            self.num_steps - self.warmup_steps > 0 or self.warmup_steps == 0
-        ), "Warm up steps must be less than total training steps!"
-        if self.multi_task and config.get("learning_rate_dict", None) is not None:
-            self.lr_exp = {}
-            for model_key in self.model_keys:
-                self.lr_exp[model_key] = get_lr(config["learning_rate_dict"][model_key])
-        else:
-            self.lr_exp = get_lr(config["learning_rate"])
-
         # Loss
         if not self.multi_task:
             self.loss = get_loss(
@@ -299,6 +271,65 @@ class Trainer:
                 ntypes = len(model_params["model_dict"][model_key]["type_map"])
                 self.loss[model_key] = get_loss(loss_param, lr_param, ntypes)
 
+        # Data + Model
+        dp_random.seed(training_params["seed"])
+        if not self.multi_task:
+            self.model = get_single_model(
+                model_params,
+                training_data,
+                validation_data,
+                stat_file_path,
+                self.loss.label_requirement,
+            )
+            (
+                self.training_dataloader,
+                self.training_data,
+                self.validation_dataloader,
+                self.validation_data,
+                self.valid_numb_batch,
+            ) = get_data_loader(training_data, validation_data, training_params)
+        else:
+            (
+                self.training_dataloader,
+                self.training_data,
+                self.validation_dataloader,
+                self.validation_data,
+                self.valid_numb_batch,
+                self.model,
+            ) = {}, {}, {}, {}, {}, {}
+            for model_key in self.model_keys:
+                self.model[model_key] = get_single_model(
+                    model_params["model_dict"][model_key],
+                    training_data[model_key],
+                    validation_data[model_key],
+                    stat_file_path[model_key],
+                    self.loss[model_key].label_requirement,
+                )
+                (
+                    self.training_dataloader[model_key],
+                    self.training_data[model_key],
+                    self.validation_dataloader[model_key],
+                    self.validation_data[model_key],
+                    self.valid_numb_batch[model_key],
+                ) = get_data_loader(
+                    training_data[model_key],
+                    validation_data[model_key],
+                    training_params["data_dict"][model_key],
+                )
+
+        # Learning rate
+        self.warmup_steps = training_params.get("warmup_steps", 0)
+        self.gradient_max_norm = training_params.get("gradient_max_norm", 0.0)
+        assert (
+            self.num_steps - self.warmup_steps > 0 or self.warmup_steps == 0
+        ), "Warm up steps must be less than total training steps!"
+        if self.multi_task and config.get("learning_rate_dict", None) is not None:
+            self.lr_exp = {}
+            for model_key in self.model_keys:
+                self.lr_exp[model_key] = get_lr(config["learning_rate_dict"][model_key])
+        else:
+            self.lr_exp = get_lr(config["learning_rate"])
+
         # JIT
         if JIT:
             self.model = torch.jit.script(self.model)
@@ -309,7 +340,7 @@ class Trainer:
 
         # resuming and finetune
         optimizer_state_dict = None
-        if model_params["resuming"]:
+        if resuming:
             ntest = model_params.get("data_bias_nsample", 1)
             origin_model = (
                 finetune_model if finetune_model is not None else resume_model
@@ -404,7 +435,7 @@ class Trainer:
 
         # Multi-task share params
         if shared_links is not None:
-            self.wrapper.share_params(shared_links, resume=model_params["resuming"])
+            self.wrapper.share_params(shared_links, resume=resuming or self.rank != 0)
 
         if dist.is_initialized():
             torch.cuda.set_device(LOCAL_RANK)
@@ -617,6 +648,9 @@ class Trainer:
                         input_dict, label_dict, _ = self.get_data(
                             is_train=False, task_key=_task_key
                         )
+                        if input_dict == {}:
+                            # no validation data
+                            return "", None
                         _, loss, more_loss = self.wrapper(
                             **input_dict,
                             cur_lr=pref_lr,
@@ -778,6 +812,8 @@ class Trainer:
                         )
                     batch_data = next(iter(self.training_data))
             else:
+                if self.validation_data is None:
+                    return {}, {}, {}
                 try:
                     batch_data = next(iter(self.validation_data))
                 except StopIteration:
@@ -796,6 +832,8 @@ class Trainer:
                     )
                     batch_data = next(iter(self.training_data[task_key]))
             else:
+                if self.validation_data[task_key] is None:
+                    return {}, {}, {}
                 try:
                     batch_data = next(iter(self.validation_data[task_key]))
                 except StopIteration:
@@ -812,28 +850,24 @@ class Trainer:
                     batch_data[key] = batch_data[key].to(DEVICE)
             else:
                 batch_data[key] = [item.to(DEVICE) for item in batch_data[key]]
-        input_dict = {}
-        for item in [
+        # we may need a better way to classify which are inputs and which are labels
+        # now wrapper only supports the following inputs:
+        input_keys = [
             "coord",
             "atype",
             "box",
-        ]:
-            if item in batch_data:
-                input_dict[item] = batch_data[item]
-            else:
-                input_dict[item] = None
+            "spin",
+            "fparam",
+            "aparam",
+        ]
+        input_dict = {item_key: None for item_key in input_keys}
         label_dict = {}
-        for item in [
-            "energy",
-            "force",
-            "virial",
-            "clean_coord",
-            "clean_type",
-            "coord_mask",
-            "type_mask",
-        ]:
-            if item in batch_data:
-                label_dict[item] = batch_data[item]
+        for item_key in batch_data:
+            if item_key in input_keys:
+                input_dict[item_key] = batch_data[item_key]
+            else:
+                if item_key not in ["sid", "fid"] and "find_" not in item_key:
+                    label_dict[item_key] = batch_data[item_key]
         log_dict = {}
         if "fid" in batch_data:
             log_dict["fid"] = batch_data["fid"]
