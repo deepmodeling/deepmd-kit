@@ -65,6 +65,7 @@ from .base_descriptor import (
 
 
 @BaseDescriptor.register("se_e2_a")
+@BaseDescriptor.register("se_a")
 class DescrptSeA(BaseDescriptor, torch.nn.Module):
     def __init__(
         self,
