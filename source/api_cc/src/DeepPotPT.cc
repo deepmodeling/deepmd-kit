@@ -94,6 +94,14 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
                         const int& ago,
                         const std::vector<VALUETYPE>& fparam,
                         const std::vector<VALUETYPE>& aparam) {
+  for (int i = 0; i < coord.size(); ++i) {
+      std::cout << coord[i] << ", ";
+  }
+  std::cout << std::endl;
+  for (int i = 0; i < atype.size(); ++i) {
+        std::cout << atype[i] << ", ";
+    }
+  std::cout << std::endl;
   torch::Device device(torch::kCUDA, gpu_id);
   if (!gpu_enabled) {
     device = torch::Device(torch::kCPU);
@@ -126,6 +134,15 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
       torch::from_blob(atype_64.data(), {1, natoms}, int_options).to(device);
   if (ago == 0) {
     nlist_data.copy_from_nlist(lmp_list);
+    std::cout << "nlist content:" << std::endl;
+    for (size_t i = 0; i < nlist_data.jlist.size(); ++i) {
+        for (size_t j = 0; j < nlist_data.jlist[i].size(); ++j) {
+            std::cout << nlist_data.jlist[i][j] << ", ";
+        }
+        std::cout << std::endl;
+    }
+
+    return 0;
     nlist_data.shuffle_exclude_empty(fwd_map);
     nlist_data.padding();
   }
