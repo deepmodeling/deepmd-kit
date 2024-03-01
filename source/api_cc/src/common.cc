@@ -293,15 +293,15 @@ void deepmd::NeighborListData::shuffle_exclude_empty(
   ilist = new_ilist;
   jlist = new_jlist;
 }
-void deepmd::NeighborListData::padding(){
+void deepmd::NeighborListData::padding() {
   size_t max_length = 0;
-    for (const auto& row : jlist) {
-        max_length = std::max(max_length, row.size());
-    }
+  for (const auto& row : jlist) {
+    max_length = std::max(max_length, row.size());
+  }
 
-    for (int i = 0; i < jlist.size();i++) {
-        jlist[i].resize(max_length, -1);
-    }
+  for (int i = 0; i < jlist.size(); i++) {
+    jlist[i].resize(max_length, -1);
+  }
 }
 
 void deepmd::NeighborListData::make_inlist(InputNlist& inlist) {
