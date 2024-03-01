@@ -1,44 +1,49 @@
-# Create a model
+# Create a model in PyTorch
 
 If you'd like to create a new model that isn't covered by the existing DeePMD-kit library, but reuse DeePMD-kit's other efficient modules such as data processing, trainner, etc, you may want to read this section.
 
 To incorporate your custom model you'll need to:
-1. Register and implement new components (e.g. descriptor) in a Python file. You may also want to register new TensorFlow OPs if necessary.
+1. Register and implement new components (e.g. descriptor) in a Python file.
 2. Register new arguments for user inputs.
 3. Package new codes into a Python package.
 4. Test new models.
 
 ## Design a new component
 
-::::{tab-set}
+With DeePMD-kit v3, we have expanded support to include two additional backends alongside TensorFlow: the PyTorch backend and the DPModel backend. The PyTorch backend adopts a highly modularized design to provide flexibility and extensibility. It ensures a consistent experience for both training and inference, aligning with the TensorFlow backend.
 
-:::{tab-item} TensorFlow {{ tensorflow_icon }}
-When creating a new component, take descriptor as the example, you should inherit from {py:class}`deepmd.tf.descriptor.descriptor.Descriptor` class and override several methods. Abstract methods such as {py:class}`deepmd.tf.descriptor.descriptor.Descriptor.build` must be implemented and others are not. You should keep arguments of these methods unchanged.
+The DPModel backend is implemented in pure NumPy, serving as a reference backend to ensure consistency in tests. Its design pattern closely parallels that of the PyTorch backend.
 
-After implementation, you need to register the component with a key:
-```py
-from deepmd.tf.descriptor import Descriptor
+### New descriptors
 
-
-@Descriptor.register("some_descrpt")
-class SomeDescript(Descriptor):
-    def __init__(self, arg1: bool, arg2: float) -> None:
-        pass
-```
-:::
-
-:::{tab-item} PyTorch {{ pytorch_icon }}
-The PyTorch backend follows a meticulously structured inheritance pattern. When creating a new descriptor, it is essential to inherit from both the {py:class}`deepmd.pt.model.descriptor.base_descriptor.BaseDescriptor` class and the {py:class}`torch.nn.Module` class. Abstract methods, including {py:class}`deepmd.pt.model.descriptor.base_descriptor.BaseDescriptor.fwd`, must be implemented, while others remain optional. It is crucial to adhere to the original method arguments without any modifications. Once the implementation is complete, the next step involves registering the component with a designated key:
+When creating a new descriptor, it is essential to inherit from both the {py:class}`deepmd.pt.model.descriptor.base_descriptor.BaseDescriptor` class and the {py:class}`torch.nn.Module` class. Abstract methods, including {py:class}`deepmd.pt.model.descriptor.base_descriptor.BaseDescriptor.forward`, must be implemented, while others remain optional. It is crucial to adhere to the original method arguments without any modifications. Once the implementation is complete, the next step involves registering the component with a designated key:
 
 ```py
 from deepmd.pt.model.descriptor.base_descriptor import (
     BaseDescriptor,
 )
 
-
 @BaseDescriptor.register("some_descrpt")
 class SomeDescript(BaseDescriptor, torch.nn.Module):
     def __init__(self, arg1: bool, arg2: float) -> None:
+        pass
+
+    def get_rcut(self) -> float:
+        pass
+
+    def get_nnei(self) -> int:
+        pass
+
+    def get_ntypes(self) -> int:
+        pass
+
+    def get_dim_out(self) -> int:
+        pass
+
+    def get_dim_emb(self) -> int:
+        pass
+
+    def mixed_types(self) -> bool:
         pass
 
     def forward(
@@ -53,13 +58,16 @@ class SomeDescript(BaseDescriptor, torch.nn.Module):
     def serialize(self) -> dict:
         pass
 
-    @classmethod
     def deserialize(cls, data: dict) -> "SomeDescript":
+        pass
+
+    def update_sel(cls, global_jdata: dict, local_jdata: dict):
         pass
 ```
 
 The serialize and deserialize methods are important for cross-backend model conversion.
 
+### New fitting nets
 
 In many instances, there is no requirement to create a new fitting net. For fitting user-defined scalar properties, the {py:class}`deepmd.pt.model.task.ener.InvarFitting` class can be utilized. However, if there is a need for a new fitting net, one should inherit from both the {py:class}`deepmd.pt.model.task.base_fitting.BaseFitting` class and the {py:class}`torch.nn.Module` class. Alternatively, for a more straightforward approach, inheritance from the {py:class}`deepmd.pt.model.task.fitting.GeneralFitting` class is also an option.
 
@@ -95,12 +103,13 @@ class SomeFittingNet(GeneralFitting):
     def output_def(self) -> FittingOutputDef:
         pass
 ```
+### New models
+The PyTorch backend's model architecture is meticulously structured with multiple layers of abstraction, ensuring a high degree of flexibility. Typically, the process commences with an atomic model responsible for atom-wise property calculations. This atomic model inherits from both the {py:class}`deepmd.pt.model.atomic_model.base_atomic_model.BaseAtomicModel` class and the {py:class}`torch.nn.Module` class.
 
-The model architecture within the PyTorch backend is structured with multiple layers of abstraction to provide a high degree of flexibility. Generally, the process begins with an atomic model responsible for handling atom-wise property calculations. This atomic model should inherit from the {py:class}`deepmd.pt.model.atomic_model.base_atomic_model.BaseAtomicModel` class and the {py:class}`torch.nn.Module` class.
+Subsequently, the `AtomicModel` is encapsulated using the `make_model(AtomicModel)` function, which leverages the `deepmd.pt.model.model.make_model.make_model` function.  The purpose of the `make_model` wrapper is to facilitate the translation between atomic property predictions and the extended property predictions and differentiation , e.g. the reduction of atomic energy contribution and the autodiff for calculating the forces and virial. The developers usually need to implement an `AtomicModel` not a `Model`.
 
-Subsequently, the `AtomicModel` is encapsulated using the `make_model(AtomicModel)` function, employing the `deepmd.pt.model.model.make_model.make_model` function. The purpose of the `make_model` wrapper is to facilitate the translation between the original system and the extended system.
+Finally, the entire model is enveloped within a `DPModel`, necessitating inheritance from the {py:class}`deepmd.pt.model.model.model.BaseModel` class and the inclusion of the aforementioned `make_model(AtomicModel)`. In most cases, there is no need to reconstruct a `DPModel`; one can directly utilize the {py:class}`deepmd.pt.model.model.dp_model.DPModel` class by providing the corresponding fitting net. For models without a fitting net, like the `PairTableModel`, a new `DPModel` needs to be designed. Users seamlessly interact with a wrapper built on top of the `DPModel` to handle key translations of the returned dictionary.
 
-Finally, the entire model is wrapped within a `DPModel`, which must inherit from the {py:class}`deepmd.pt.model.model.model.BaseModel` class and include the aforementioned `make_model(AtomicModel)`. The user directly interacts with a wrapper built on top of the `DPModel` to seamlessly handle result translations.
 
 ```py
 from deepmd.pt.model.atomic_model.base_atomic_model import (
@@ -131,13 +140,6 @@ class SomeModel(SomeDPModel):
     pass
 ```
 
-:::
-:::{tab-item} DPModel {{ dpmodel_icon }}
-
-The DPModel backend is implemented using pure NumPy, serving as a reference backend for maintaining consistency in tests. The design pattern closely mirrors that of the PyTorch backend, and developers can refer to the PyTorch development guide for detailed instructions.
-
-:::
-::::
 ## Register new arguments
 
 To let someone uses your new component in their input file, you need to create a new method that returns some `Argument` of your new component, and then register new arguments. For example, the code below
@@ -187,4 +189,10 @@ where `deepmd_some_descrtpt` is the module of your codes. It is equivalent to `f
 
 If you place `SomeDescript` and `descrpt_some_args` into different modules, you are also expected to add `descrpt_some_args` to `entry_points`.
 
-After you install your new package, you can now use `dp train` to run your new model.
+After you install your new package, you can now use `dp --pt train` to run your new model.
+
+## Unit tests
+
+When transferring features from another backend to the PyTorch backend, it is essential to include a regression test in `/source/tests/consistent` to validate the consistency of the PyTorch backend with other backends. Presently, the regression tests cover self-consistency and cross-backend consistency between TensorFlow, PyTorch, and DPModel (Numpy) through the serialization/deserialization technique.
+
+During the development of new components within the PyTorch backend, it is necessary to provide a DPModel (Numpy) implementation and incorporate corresponding regression tests. For PyTorch components, developers are also required to include a unit test using `torch.jit`.
