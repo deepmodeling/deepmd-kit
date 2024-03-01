@@ -32,6 +32,7 @@ struct NeighborListData {
   void shuffle(const deepmd::AtomMap& map);
   void shuffle_exclude_empty(const std::vector<int>& fwd_map);
   void make_inlist(InputNlist& inlist);
+  void padding();
 };
 
 /**

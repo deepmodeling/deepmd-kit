@@ -402,7 +402,6 @@ TYPED_TEST(TestInferDeepPotAPt, cpu_lmp_nlist_2rc) {
 }
 
 TYPED_TEST(TestInferDeepPotAPt, cpu_lmp_nlist_type_sel) {
-  GTEST_SKIP() << "Skipping this test for unsupported";
   using VALUETYPE = TypeParam;
   std::vector<VALUETYPE>& coord = this->coord;
   std::vector<int>& atype = this->atype;
@@ -465,7 +464,6 @@ TYPED_TEST(TestInferDeepPotAPt, cpu_lmp_nlist_type_sel) {
 }
 
 TYPED_TEST(TestInferDeepPotAPt, cpu_lmp_nlist_type_sel_atomic) {
-  GTEST_SKIP() << "Skipping this test for unsupported";
   using VALUETYPE = TypeParam;
   std::vector<VALUETYPE>& coord = this->coord;
   std::vector<int>& atype = this->atype;

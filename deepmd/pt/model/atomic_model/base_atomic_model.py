@@ -54,6 +54,7 @@ class BaseAtomicModel(BaseAtomicModel_):
     # export public methods that are not abstract
     get_nsel = torch.jit.export(BaseAtomicModel_.get_nsel)
     get_nnei = torch.jit.export(BaseAtomicModel_.get_nnei)
+    get_ntypes = torch.jit.export(BaseAtomicModel_.get_ntypes)
 
     @torch.jit.export
     def get_model_def_script(self) -> str:
