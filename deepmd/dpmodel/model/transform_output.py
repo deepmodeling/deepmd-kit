@@ -28,6 +28,8 @@ def fit_output_to_model_output(
     """
     model_ret = dict(fit_ret.items())
     for kk, vv in fit_ret.items():
+        if kk in ["mask"]:
+            continue
         vdef = fit_output_def[kk]
         shap = vdef.shape
         atom_axis = -(len(shap) + 1)
@@ -59,6 +61,8 @@ def communicate_extended_output(
 
     """
     new_ret = {}
+    if "mask" in model_ret:
+        new_ret["mask"] = model_ret["mask"]
     for kk in model_output_def.keys_outp():
         vv = model_ret[kk]
         vdef = model_output_def[kk]

@@ -103,5 +103,182 @@ class TestEnergyModelHybrid(unittest.TestCase, DPTrainTest):
         DPTrainTest.tearDown(self)
 
 
+class TestDipoleModelSeA(unittest.TestCase, DPTrainTest):
+    def setUp(self):
+        input_json = str(Path(__file__).parent / "water_tensor/se_e2_a.json")
+        with open(input_json) as f:
+            self.config = json.load(f)
+        data_file_atomic = str(
+            Path(__file__).parent / "water_tensor/dipole/atomic_system"
+        )
+        data_file_global = str(
+            Path(__file__).parent / "water_tensor/dipole/global_system"
+        )
+        self.config["training"]["training_data"]["systems"] = [
+            data_file_atomic,
+            data_file_global,
+        ]
+        self.config["training"]["validation_data"]["systems"] = [
+            data_file_atomic,
+            data_file_global,
+        ]
+        self.config["model"] = deepcopy(model_se_e2_a)
+        self.config["model"]["atom_exclude_types"] = [1]
+        self.config["model"]["fitting_net"]["type"] = "dipole"
+        self.config["training"]["numb_steps"] = 1
+        self.config["training"]["save_freq"] = 1
+
+    def tearDown(self) -> None:
+        DPTrainTest.tearDown(self)
+
+
+class TestDipoleModelDPA1(unittest.TestCase, DPTrainTest):
+    def setUp(self):
+        input_json = str(Path(__file__).parent / "water_tensor/se_e2_a.json")
+        with open(input_json) as f:
+            self.config = json.load(f)
+        data_file_atomic = str(
+            Path(__file__).parent / "water_tensor/dipole/atomic_system"
+        )
+        data_file_global = str(
+            Path(__file__).parent / "water_tensor/dipole/global_system"
+        )
+        self.config["training"]["training_data"]["systems"] = [
+            data_file_atomic,
+            data_file_global,
+        ]
+        self.config["training"]["validation_data"]["systems"] = [
+            data_file_atomic,
+            data_file_global,
+        ]
+        self.config["model"] = deepcopy(model_dpa1)
+        self.config["model"]["atom_exclude_types"] = [1]
+        self.config["model"]["fitting_net"]["type"] = "dipole"
+        self.config["training"]["numb_steps"] = 1
+        self.config["training"]["save_freq"] = 1
+
+    def tearDown(self) -> None:
+        DPTrainTest.tearDown(self)
+
+
+class TestDipoleModelDPA2(unittest.TestCase, DPTrainTest):
+    def setUp(self):
+        input_json = str(Path(__file__).parent / "water_tensor/se_e2_a.json")
+        with open(input_json) as f:
+            self.config = json.load(f)
+        data_file_atomic = str(
+            Path(__file__).parent / "water_tensor/dipole/atomic_system"
+        )
+        data_file_global = str(
+            Path(__file__).parent / "water_tensor/dipole/global_system"
+        )
+        self.config["training"]["training_data"]["systems"] = [
+            data_file_atomic,
+            data_file_global,
+        ]
+        self.config["training"]["validation_data"]["systems"] = [
+            data_file_atomic,
+            data_file_global,
+        ]
+        self.config["model"] = deepcopy(model_dpa2)
+        self.config["model"]["atom_exclude_types"] = [1]
+        self.config["model"]["fitting_net"]["type"] = "dipole"
+        self.config["training"]["numb_steps"] = 1
+        self.config["training"]["save_freq"] = 1
+
+    def tearDown(self) -> None:
+        DPTrainTest.tearDown(self)
+
+
+class TestPolarModelSeA(unittest.TestCase, DPTrainTest):
+    def setUp(self):
+        input_json = str(Path(__file__).parent / "water_tensor/se_e2_a.json")
+        with open(input_json) as f:
+            self.config = json.load(f)
+        data_file_atomic = str(
+            Path(__file__).parent / "water_tensor/polar/atomic_system"
+        )
+        data_file_global = str(
+            Path(__file__).parent / "water_tensor/polar/global_system"
+        )
+        self.config["training"]["training_data"]["systems"] = [
+            data_file_atomic,
+            data_file_global,
+        ]
+        self.config["training"]["validation_data"]["systems"] = [
+            data_file_atomic,
+            data_file_global,
+        ]
+        self.config["model"] = deepcopy(model_se_e2_a)
+        self.config["model"]["atom_exclude_types"] = [1]
+        self.config["model"]["fitting_net"]["type"] = "polar"
+        self.config["model"]["fitting_net"]["fit_diag"] = False
+        self.config["training"]["numb_steps"] = 1
+        self.config["training"]["save_freq"] = 1
+
+    def tearDown(self) -> None:
+        DPTrainTest.tearDown(self)
+
+
+class TestPolarModelDPA1(unittest.TestCase, DPTrainTest):
+    def setUp(self):
+        input_json = str(Path(__file__).parent / "water_tensor/se_e2_a.json")
+        with open(input_json) as f:
+            self.config = json.load(f)
+        data_file_atomic = str(
+            Path(__file__).parent / "water_tensor/polar/atomic_system"
+        )
+        data_file_global = str(
+            Path(__file__).parent / "water_tensor/polar/global_system"
+        )
+        self.config["training"]["training_data"]["systems"] = [
+            data_file_atomic,
+            data_file_global,
+        ]
+        self.config["training"]["validation_data"]["systems"] = [
+            data_file_atomic,
+            data_file_global,
+        ]
+        self.config["model"] = deepcopy(model_dpa1)
+        self.config["model"]["atom_exclude_types"] = [1]
+        self.config["model"]["fitting_net"]["type"] = "polar"
+        self.config["model"]["fitting_net"]["fit_diag"] = False
+        self.config["training"]["numb_steps"] = 1
+        self.config["training"]["save_freq"] = 1
+
+    def tearDown(self) -> None:
+        DPTrainTest.tearDown(self)
+
+
+class TestPolarModelDPA2(unittest.TestCase, DPTrainTest):
+    def setUp(self):
+        input_json = str(Path(__file__).parent / "water_tensor/se_e2_a.json")
+        with open(input_json) as f:
+            self.config = json.load(f)
+        data_file_atomic = str(
+            Path(__file__).parent / "water_tensor/polar/atomic_system"
+        )
+        data_file_global = str(
+            Path(__file__).parent / "water_tensor/polar/global_system"
+        )
+        self.config["training"]["training_data"]["systems"] = [
+            data_file_atomic,
+            data_file_global,
+        ]
+        self.config["training"]["validation_data"]["systems"] = [
+            data_file_atomic,
+            data_file_global,
+        ]
+        self.config["model"] = deepcopy(model_dpa2)
+        self.config["model"]["atom_exclude_types"] = [1]
+        self.config["model"]["fitting_net"]["type"] = "polar"
+        self.config["model"]["fitting_net"]["fit_diag"] = False
+        self.config["training"]["numb_steps"] = 1
+        self.config["training"]["save_freq"] = 1
+
+    def tearDown(self) -> None:
+        DPTrainTest.tearDown(self)
+
+
 if __name__ == "__main__":
     unittest.main()

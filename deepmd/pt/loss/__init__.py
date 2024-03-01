@@ -8,9 +8,13 @@ from .ener import (
 from .loss import (
     TaskLoss,
 )
+from .tensor import (
+    TensorLoss,
+)
 
 __all__ = [
     "DenoiseLoss",
     "EnergyStdLoss",
+    "TensorLoss",
     "TaskLoss",
 ]

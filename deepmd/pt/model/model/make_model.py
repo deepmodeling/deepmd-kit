@@ -154,6 +154,9 @@ def make_model(T_AtomicModel):
                 fparam=fp,
                 aparam=ap,
             )
+            nf, nloc = nlist.shape[:2]
+            if "mask" in model_predict_lower:
+                model_predict_lower["mask"] = model_predict_lower["mask"][:, :nloc]
             model_predict = communicate_extended_output(
                 model_predict_lower,
                 self.model_output_def(),

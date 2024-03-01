@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import functools
 import logging
+import math
 import time
 from copy import (
     deepcopy,
@@ -22,6 +23,7 @@ from deepmd.common import (
 from deepmd.pt.loss import (
     DenoiseLoss,
     EnergyStdLoss,
+    TensorLoss,
 )
 from deepmd.pt.model.model import (
     get_model,
@@ -186,14 +188,14 @@ class Trainer:
                 valid_numb_batch,
             )
 
-        def get_single_model(
-            _model_params,
+        def single_model_stat(
+            _model,
+            _data_stat_nbatch,
             _training_data,
             _validation_data,
             _stat_file_path,
             _data_requirement,
         ):
-            model = get_model(deepcopy(_model_params)).to(DEVICE)
             _training_data.add_data_requirement(_data_requirement)
             if _validation_data is not None:
                 _validation_data.add_data_requirement(_data_requirement)
@@ -204,16 +206,21 @@ class Trainer:
                     sampled = make_stat_input(
                         _training_data.systems,
                         _training_data.dataloaders,
-                        _model_params.get("data_stat_nbatch", 10),
+                        _data_stat_nbatch,
                     )
                     return sampled
 
-                model.compute_or_load_stat(
+                _model.compute_or_load_stat(
                     sampled_func=get_sample,
                     stat_file_path=_stat_file_path,
                 )
                 if isinstance(_stat_file_path, DPH5Path):
                     _stat_file_path.root.close()
+
+        def get_single_model(
+            _model_params,
+        ):
+            model = get_model(deepcopy(_model_params)).to(DEVICE)
             return model
 
         def get_lr(lr_params):
@@ -224,7 +231,7 @@ class Trainer:
             lr_exp = LearningRateExp(**lr_params)
             return lr_exp
 
-        def get_loss(loss_params, start_lr, _ntypes):
+        def get_loss(loss_params, start_lr, _ntypes, _model):
             loss_type = loss_params.get("type", "ener")
             if loss_type == "ener":
                 loss_params["starter_learning_rate"] = start_lr
@@ -232,6 +239,17 @@ class Trainer:
             elif loss_type == "denoise":
                 loss_params["ntypes"] = _ntypes
                 return DenoiseLoss(**loss_params)
+            elif loss_type == "tensor":
+                tensor_name = _model.model_output_type()
+                loss_params["tensor_name"] = tensor_name
+                loss_params["tensor_size"] = math.prod(
+                    _model.model_output_def()[tensor_name].shape
+                )
+                label_name = tensor_name
+                if label_name == "polar":
+                    label_name = "polarizability"
+                loss_params["label_name"] = label_name
+                return TensorLoss(**loss_params)
             else:
                 raise NotImplementedError
 
@@ -253,12 +271,26 @@ class Trainer:
         else:
             self.opt_type, self.opt_param = get_opt_param(training_params)
 
+        # Model
+        dp_random.seed(training_params["seed"])
+        if not self.multi_task:
+            self.model = get_single_model(
+                model_params,
+            )
+        else:
+            self.model = {}
+            for model_key in self.model_keys:
+                self.model[model_key] = get_single_model(
+                    model_params["model_dict"][model_key],
+                )
+
         # Loss
         if not self.multi_task:
             self.loss = get_loss(
                 config["loss"],
                 config["learning_rate"]["start_lr"],
                 len(model_params["type_map"]),
+                self.model,
             )
         else:
             self.loss = {}
@@ -269,13 +301,16 @@ class Trainer:
                 else:
                     lr_param = config["learning_rate"]["start_lr"]
                 ntypes = len(model_params["model_dict"][model_key]["type_map"])
-                self.loss[model_key] = get_loss(loss_param, lr_param, ntypes)
+                self.loss[model_key] = get_loss(
+                    loss_param, lr_param, ntypes, self.model[model_key]
+                )
 
-        # Data + Model
+        # Data
         dp_random.seed(training_params["seed"])
         if not self.multi_task:
-            self.model = get_single_model(
-                model_params,
+            single_model_stat(
+                self.model,
+                model_params.get("data_stat_nbatch", 10),
                 training_data,
                 validation_data,
                 stat_file_path,
@@ -295,11 +330,11 @@ class Trainer:
                 self.validation_dataloader,
                 self.validation_data,
                 self.valid_numb_batch,
-                self.model,
-            ) = {}, {}, {}, {}, {}, {}
+            ) = {}, {}, {}, {}, {}
             for model_key in self.model_keys:
-                self.model[model_key] = get_single_model(
-                    model_params["model_dict"][model_key],
+                single_model_stat(
+                    self.model[model_key],
+                    model_params["model_dict"][model_key].get("data_stat_nbatch", 10),
                     training_data[model_key],
                     validation_data[model_key],
                     stat_file_path[model_key],

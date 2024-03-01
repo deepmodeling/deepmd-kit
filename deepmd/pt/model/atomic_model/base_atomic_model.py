@@ -88,7 +88,12 @@ class BaseAtomicModel(BaseAtomicModel_):
         if self.atom_excl is not None:
             atom_mask = self.atom_excl(atype)
             for kk in ret_dict.keys():
-                ret_dict[kk] = ret_dict[kk] * atom_mask[:, :, None]
+                out_shape = ret_dict[kk].shape
+                ret_dict[kk] = (
+                    ret_dict[kk].reshape([out_shape[0], out_shape[1], -1])
+                    * atom_mask[:, :, None]
+                ).reshape(out_shape)
+            ret_dict["mask"] = atom_mask
 
         return ret_dict
 
