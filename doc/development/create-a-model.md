@@ -35,6 +35,7 @@ from deepmd.pt.model.descriptor.base_descriptor import (
     BaseDescriptor,
 )
 
+
 @BaseDescriptor.register("some_descrpt")
 class SomeDescript(BaseDescriptor, torch.nn.Module):
     def __init__(self, arg1: bool, arg2: float) -> None:
@@ -71,6 +72,7 @@ from deepmd.dpmodel import (
     FittingOutputDef,
     fitting_check_output,
 )
+
 
 @GeneralFitting.register("some_fitting")
 @fitting_check_output
@@ -111,6 +113,7 @@ from deepmd.pt.model.model.model import (
     BaseModel,
 )
 
+
 class SomeAtomicModel(BaseAtomicModel, torch.nn.Module):
     def __init__(self, arg1: bool, arg2: float) -> None:
         pass
@@ -118,9 +121,11 @@ class SomeAtomicModel(BaseAtomicModel, torch.nn.Module):
     def forward_atomic(self):
         pass
 
+
 @BaseModel.register("some_model")
 class SomeDPModel(make_model(SomeAtomicModel), BaseModel):
     pass
+
 
 class SomeModel(SomeDPModel):
     pass
