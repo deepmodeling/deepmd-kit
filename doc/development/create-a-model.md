@@ -56,9 +56,12 @@ class SomeDescript(BaseDescriptor, torch.nn.Module):
     def deserialize(cls, data: dict) -> "SomeDescript":
         pass
 ```
+
 The serialize and deserialize methods are important for cross-backend model conversion.
 
+
 In many instances, there is no requirement to create a new fitting net. For fitting user-defined scalar properties, the {py:class}`deepmd.pt.model.task.ener.InvarFitting` class can be utilized. However, if there is a need for a new fitting net, one should inherit from both the {py:class}`deepmd.pt.model.task.base_fitting.BaseFitting` class and the {py:class}`torch.nn.Module` class. Alternatively, for a more straightforward approach, inheritance from the {py:class}`deepmd.pt.model.task.fitting.GeneralFitting` class is also an option.
+
 
 ```py
 from deepmd.pt.model.task.fitting import (
