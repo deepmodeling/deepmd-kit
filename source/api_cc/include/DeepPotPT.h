@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 #pragma once
 
-#include <torch/torch.h>
 #include <torch/script.h>
+#include <torch/torch.h>
+
 #include "DeepPot.h"
-
-
 
 namespace deepmd {
 /**
