@@ -77,6 +77,7 @@ class DescrptDPA2(torch.nn.Module, BaseDescriptor):
         repformer_update_style: str = "res_avg",
         repformer_set_davg_zero: bool = True,  # TODO
         repformer_add_type_ebd_to_seq: bool = False,
+        trainable: bool = True,
         type: Optional[
             str
         ] = None,  # work around the bad design in get_trainer and DpLoaderSet!
