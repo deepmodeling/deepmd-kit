@@ -146,7 +146,7 @@ To let someone uses your new component in their input file, you need to create a
 from typing import List
 
 from dargs import Argument
-from deepmd.tf.utils.argcheck import descrpt_args_plugin
+from deepmd.utils.argcheck import descrpt_args_plugin
 
 
 @descrpt_args_plugin.register("some_descrpt")
