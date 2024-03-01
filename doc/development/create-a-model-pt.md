@@ -10,9 +10,9 @@ To incorporate your custom model you'll need to:
 
 ## Design a new component
 
-With DeePMD-kit v3, we have expanded support to include two additional backends alongside TensorFlow: the PyTorch backend and the DPModel backend. The PyTorch backend adopts a highly modularized design to provide flexibility and extensibility. It ensures a consistent experience for both training and inference, aligning with the TensorFlow backend.
+With DeePMD-kit v3, we have expanded support to include two additional backends alongside TensorFlow: the PyTorch backend and the framework-independent backend (dpmodel). The PyTorch backend adopts a highly modularized design to provide flexibility and extensibility. It ensures a consistent experience for both training and inference, aligning with the TensorFlow backend.
 
-The DPModel backend is implemented in pure NumPy, serving as a reference backend to ensure consistency in tests. Its design pattern closely parallels that of the PyTorch backend.
+The framework-independent backend is implemented in pure NumPy, serving as a reference backend to ensure consistency in tests. Its design pattern closely parallels that of the PyTorch backend.
 
 ### New descriptors
 
@@ -109,20 +109,10 @@ The PyTorch backend's model architecture is meticulously structured with multipl
 
 Subsequently, the `AtomicModel` is encapsulated using the `make_model(AtomicModel)` function, which leverages the `deepmd.pt.model.model.make_model.make_model` function.  The purpose of the `make_model` wrapper is to facilitate the translation between atomic property predictions and the extended property predictions and differentiation , e.g. the reduction of atomic energy contribution and the autodiff for calculating the forces and virial. The developers usually need to implement an `AtomicModel` not a `Model`.
 
-Finally, the entire model is enveloped within a `DPModel`, necessitating inheritance from the {py:class}`deepmd.pt.model.model.model.BaseModel` class and the inclusion of the aforementioned `make_model(AtomicModel)`. In most cases, there is no need to reconstruct a `DPModel`; one can directly utilize the {py:class}`deepmd.pt.model.model.dp_model.DPModel` class by providing the corresponding fitting net. For models without a fitting net, like the `PairTableModel`, a new `DPModel` needs to be designed. Users seamlessly interact with a wrapper built on top of the `DPModel` to handle key translations of the returned dictionary.
-
-
 ```py
 from deepmd.pt.model.atomic_model.base_atomic_model import (
     BaseAtomicModel,
 )
-from deepmd.pt.model.model.make_model import (
-    make_model,
-)
-from deepmd.pt.model.model.model import (
-    BaseModel,
-)
-
 
 class SomeAtomicModel(BaseAtomicModel, torch.nn.Module):
     def __init__(self, arg1: bool, arg2: float) -> None:
@@ -131,14 +121,6 @@ class SomeAtomicModel(BaseAtomicModel, torch.nn.Module):
     def forward_atomic(self):
         pass
 
-
-@BaseModel.register("some_model")
-class SomeDPModel(make_model(SomeAtomicModel), BaseModel):
-    pass
-
-
-class SomeModel(SomeDPModel):
-    pass
 ```
 
 ## Register new arguments
@@ -174,6 +156,6 @@ The arguments here should be consistent with the class arguments of your new com
 
 ## Unit tests
 
-When transferring features from another backend to the PyTorch backend, it is essential to include a regression test in `/source/tests/consistent` to validate the consistency of the PyTorch backend with other backends. Presently, the regression tests cover self-consistency and cross-backend consistency between TensorFlow, PyTorch, and DPModel (Numpy) through the serialization/deserialization technique.
+When transferring features from another backend to the PyTorch backend, it is essential to include a regression test in `/source/tests/consistent` to validate the consistency of the PyTorch backend with other backends. Presently, the regression tests cover self-consistency and cross-backend consistency between TensorFlow, PyTorch, and dpmodel (Numpy) through the serialization/deserialization technique.
 
-During the development of new components within the PyTorch backend, it is necessary to provide a DPModel (Numpy) implementation and incorporate corresponding regression tests. For PyTorch components, developers are also required to include a unit test using `torch.jit`.
+During the development of new components within the PyTorch backend, it is necessary to provide a dpmodel (Numpy) implementation and incorporate corresponding regression tests. For PyTorch components, developers are also required to include a unit test using `torch.jit`.
