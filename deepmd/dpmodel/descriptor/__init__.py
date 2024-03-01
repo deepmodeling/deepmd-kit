@@ -1,4 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from .hybrid import (
+    DescrptHybrid,
+)
 from .make_base_descriptor import (
     make_base_descriptor,
 )
@@ -12,5 +15,6 @@ from .se_r import (
 __all__ = [
     "DescrptSeA",
     "DescrptSeR",
+    "DescrptHybrid",
     "make_base_descriptor",
 ]

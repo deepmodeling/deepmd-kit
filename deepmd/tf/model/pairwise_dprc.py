@@ -31,6 +31,9 @@ from deepmd.tf.utils.spin import (
 from deepmd.tf.utils.type_embed import (
     TypeEmbedNet,
 )
+from deepmd.tf.utils.update_sel import (
+    UpdateSel,
+)
 
 
 @Model.register("pairwise_dprc")
@@ -413,13 +416,9 @@ class PairwiseDPRc(Model):
         local_jdata : dict
             The local data refer to the current class
         """
-        from deepmd.tf.entrypoints.train import (
-            get_min_nbor_dist,
-        )
-
         # do not update sel; only find min distance
         # rcut is not important here
-        get_min_nbor_dist(global_jdata, 6.0)
+        UpdateSel().get_min_nbor_dist(global_jdata, 6.0)
         return local_jdata
 
 

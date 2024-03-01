@@ -19,6 +19,7 @@
       ],
       "resnet_dt": false,
       "axis_neuron": 16,
+      "type_one_side": true,
       "seed": 1,
       "_comment": " that's all"
     },
@@ -51,6 +52,7 @@
     "_comment": " that's all"
   },
   "training": {
+    "stat_file": "./se_e2_a",
     "training_data": {
       "systems": [
         "../data/data_0",

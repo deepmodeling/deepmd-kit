@@ -472,6 +472,33 @@ class DeepEval(ABC):
             aparam = np.array(aparam)
         natoms, nframes = self._get_natoms_and_nframes(coords, atom_types, mixed_type)
         atom_types = self._expande_atype(atom_types, nframes, mixed_type)
+        coords = coords.reshape(nframes, natoms, 3)
+        if cells is not None:
+            cells = cells.reshape(nframes, 3, 3)
+        if fparam is not None:
+            fdim = self.get_dim_fparam()
+            if fparam.size == nframes * fdim:
+                fparam = np.reshape(fparam, [nframes, fdim])
+            elif fparam.size == fdim:
+                fparam = np.tile(fparam.reshape([-1]), [nframes, 1])
+            else:
+                raise RuntimeError(
+                    "got wrong size of frame param, should be either %d x %d or %d"
+                    % (nframes, fdim, fdim)
+                )
+        if aparam is not None:
+            fdim = self.get_dim_aparam()
+            if aparam.size == nframes * natoms * fdim:
+                aparam = np.reshape(aparam, [nframes, natoms * fdim])
+            elif aparam.size == natoms * fdim:
+                aparam = np.tile(aparam.reshape([-1]), [nframes, 1])
+            elif aparam.size == fdim:
+                aparam = np.tile(aparam.reshape([-1]), [nframes, natoms])
+            else:
+                raise RuntimeError(
+                    "got wrong size of frame param, should be either %d x %d x %d or %d x %d or %d"
+                    % (nframes, natoms, fdim, natoms, fdim, fdim)
+                )
         return coords, cells, atom_types, fparam, aparam, nframes, natoms
 
     def get_sel_type(self) -> List[int]:

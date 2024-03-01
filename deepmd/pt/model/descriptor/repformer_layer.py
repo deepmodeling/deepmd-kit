@@ -313,7 +313,7 @@ class RepformerLayer(torch.nn.Module):
         attn2_hidden: int = 16,
         attn2_nhead: int = 4,
         attn2_has_gate: bool = False,
-        activation: str = "tanh",
+        activation_function: str = "tanh",
         update_style: str = "res_avg",
         set_davg_zero: bool = True,  # TODO
         smooth: bool = True,
@@ -332,7 +332,7 @@ class RepformerLayer(torch.nn.Module):
         self.set_davg_zero = set_davg_zero
         self.do_bn_mode = do_bn_mode
         self.bn_momentum = bn_momentum
-        self.act = get_activation_fn(activation)
+        self.act = get_activation_fn(activation_function)
         self.update_g1_has_grrg = update_g1_has_grrg
         self.update_g1_has_drrd = update_g1_has_drrd
         self.update_g1_has_conv = update_g1_has_conv

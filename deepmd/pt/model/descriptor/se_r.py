@@ -30,11 +30,17 @@ from deepmd.pt.utils.env_mat_stat import (
 from deepmd.pt.utils.exclude_mask import (
     PairExcludeMask,
 )
+from deepmd.pt.utils.update_sel import (
+    UpdateSel,
+)
 from deepmd.utils.env_mat_stat import (
     StatItem,
 )
 from deepmd.utils.path import (
     DPPath,
+)
+from deepmd.utils.version import (
+    check_version_compatibility,
 )
 
 from .base_descriptor import (
@@ -252,9 +258,9 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
             # nfnl x nt x ng
             gg = ll.forward(ss)
             gg = torch.mean(gg, dim=1).unsqueeze(1)
-            xyz_scatter += gg
+            xyz_scatter += gg * (self.sel[ii] / self.nnei)
 
-        res_rescale = 1.0 / 10.0
+        res_rescale = 1.0 / 5.0
         result = xyz_scatter * res_rescale
         result = result.view(-1, nloc, self.filter_neuron[-1])
         return (
@@ -277,6 +283,7 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
         return {
             "@class": "Descriptor",
             "type": "se_r",
+            "@version": 1,
             "rcut": self.rcut,
             "rcut_smth": self.rcut_smth,
             "sel": self.sel,
@@ -302,6 +309,7 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
     @classmethod
     def deserialize(cls, data: dict) -> "DescrptSeR":
         data = data.copy()
+        check_version_compatibility(data.pop("@version", 1), 1, 1)
         variables = data.pop("@variables")
         embeddings = data.pop("embeddings")
         env_mat = data.pop("env_mat")
@@ -314,3 +322,17 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
         obj["dstd"] = t_cvt(variables["dstd"])
         obj.filter_layers = NetworkCollection.deserialize(embeddings)
         return obj
+
+    @classmethod
+    def update_sel(cls, global_jdata: dict, local_jdata: dict):
+        """Update the selection and perform neighbor statistics.
+
+        Parameters
+        ----------
+        global_jdata : dict
+            The global data, containing the training section
+        local_jdata : dict
+            The local data refer to the current class
+        """
+        local_jdata_cpy = local_jdata.copy()
+        return UpdateSel().update_one_sel(global_jdata, local_jdata_cpy, False)

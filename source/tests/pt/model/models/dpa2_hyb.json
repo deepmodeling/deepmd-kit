@@ -25,7 +25,7 @@
         "post_ln": true,
         "ffn": false,
         "ffn_embed_dim": 10,
-        "activation": "tanh",
+        "activation_function": "tanh",
         "scaling_factor": 1.0,
         "head_num": 1,
         "normalize": true,

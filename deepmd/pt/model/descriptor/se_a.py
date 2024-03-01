@@ -25,11 +25,17 @@ from deepmd.pt.utils.env import (
 from deepmd.pt.utils.env_mat_stat import (
     EnvMatStatSe,
 )
+from deepmd.pt.utils.update_sel import (
+    UpdateSel,
+)
 from deepmd.utils.env_mat_stat import (
     StatItem,
 )
 from deepmd.utils.path import (
     DPPath,
+)
+from deepmd.utils.version import (
+    check_version_compatibility,
 )
 
 try:
@@ -130,6 +136,13 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         """Update mean and stddev for descriptor elements."""
         return self.sea.compute_input_stats(merged, path)
 
+    def reinit_exclude(
+        self,
+        exclude_types: List[Tuple[int, int]] = [],
+    ):
+        """Update the type exclusions."""
+        self.sea.reinit_exclude(exclude_types)
+
     def forward(
         self,
         coord_ext: torch.Tensor,
@@ -182,6 +195,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         return {
             "@class": "Descriptor",
             "type": "se_e2_a",
+            "@version": 1,
             "rcut": obj.rcut,
             "rcut_smth": obj.rcut_smth,
             "sel": obj.sel,
@@ -208,6 +222,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
     @classmethod
     def deserialize(cls, data: dict) -> "DescrptSeA":
         data = data.copy()
+        check_version_compatibility(data.pop("@version", 1), 1, 1)
         data.pop("@class", None)
         data.pop("type", None)
         variables = data.pop("@variables")
@@ -222,6 +237,20 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         obj.sea["dstd"] = t_cvt(variables["dstd"])
         obj.sea.filter_layers = NetworkCollection.deserialize(embeddings)
         return obj
+
+    @classmethod
+    def update_sel(cls, global_jdata: dict, local_jdata: dict):
+        """Update the selection and perform neighbor statistics.
+
+        Parameters
+        ----------
+        global_jdata : dict
+            The global data, containing the training section
+        local_jdata : dict
+            The local data refer to the current class
+        """
+        local_jdata_cpy = local_jdata.copy()
+        return UpdateSel().update_one_sel(global_jdata, local_jdata_cpy, False)
 
 
 @DescriptorBlock.register("se_e2_a")
@@ -266,10 +295,10 @@ class DescrptBlockSeA(DescriptorBlock):
         self.prec = PRECISION_DICT[self.precision]
         self.resnet_dt = resnet_dt
         self.old_impl = old_impl
-        self.exclude_types = exclude_types
         self.ntypes = len(sel)
-        self.emask = PairExcludeMask(len(sel), exclude_types=exclude_types)
         self.type_one_side = type_one_side
+        # order matters, placed after the assignment of self.ntypes
+        self.reinit_exclude(exclude_types)
 
         self.sel = sel
         self.sec = torch.tensor(
@@ -402,6 +431,13 @@ class DescrptBlockSeA(DescriptorBlock):
             )
         return self.stats
 
+    def reinit_exclude(
+        self,
+        exclude_types: List[Tuple[int, int]] = [],
+    ):
+        self.exclude_types = exclude_types
+        self.emask = PairExcludeMask(self.ntypes, exclude_types=exclude_types)
+
     def forward(
         self,
         nlist: torch.Tensor,
@@ -467,23 +503,34 @@ class DescrptBlockSeA(DescriptorBlock):
                 if self.type_one_side:
                     ii = embedding_idx
                     # torch.jit is not happy with slice(None)
-                    ti_mask = torch.ones(nfnl, dtype=torch.bool, device=dmatrix.device)
+                    # ti_mask = torch.ones(nfnl, dtype=torch.bool, device=dmatrix.device)
+                    # applying a mask seems to cause performance degradation
+                    ti_mask = None
                 else:
                     # ti: center atom type, ii: neighbor type...
                     ii = embedding_idx // self.ntypes
                     ti = embedding_idx % self.ntypes
                     ti_mask = atype.ravel().eq(ti)
                 # nfnl x nt
-                mm = exclude_mask[ti_mask, self.sec[ii] : self.sec[ii + 1]]
+                if ti_mask is not None:
+                    mm = exclude_mask[ti_mask, self.sec[ii] : self.sec[ii + 1]]
+                else:
+                    mm = exclude_mask[:, self.sec[ii] : self.sec[ii + 1]]
                 # nfnl x nt x 4
-                rr = dmatrix[ti_mask, self.sec[ii] : self.sec[ii + 1], :]
+                if ti_mask is not None:
+                    rr = dmatrix[ti_mask, self.sec[ii] : self.sec[ii + 1], :]
+                else:
+                    rr = dmatrix[:, self.sec[ii] : self.sec[ii + 1], :]
                 rr = rr * mm[:, :, None]
                 ss = rr[:, :, :1]
                 # nfnl x nt x ng
                 gg = ll.forward(ss)
                 # nfnl x 4 x ng
                 gr = torch.matmul(rr.permute(0, 2, 1), gg)
-                xyz_scatter[ti_mask] += gr
+                if ti_mask is not None:
+                    xyz_scatter[ti_mask] += gr
+                else:
+                    xyz_scatter += gr
 
         xyz_scatter /= self.nnei
         xyz_scatter_1 = xyz_scatter.permute(0, 2, 1)

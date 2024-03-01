@@ -43,6 +43,9 @@ from deepmd.pt.utils.utils import (
     to_numpy_array,
     to_torch_tensor,
 )
+from deepmd.utils.version import (
+    check_version_compatibility,
+)
 
 dtype = env.GLOBAL_PT_FLOAT_PRECISION
 device = env.DEVICE
@@ -88,14 +91,6 @@ class Fitting(torch.nn.Module, BaseFitting):
             ][0].deep_layers[0]
         else:
             raise NotImplementedError
-
-    @property
-    def data_stat_key(self):
-        """
-        Get the keys for the data statistic of the fitting.
-        Return a list of statistic names needed, such as "bias_atom_e".
-        """
-        raise NotImplementedError("data_stat_key is not implemented!")
 
     def change_energy_bias(
         self, config, model, old_type_map, new_type_map, bias_shift="delta", ntest=10
@@ -285,9 +280,8 @@ class GeneralFitting(Fitting):
         self.precision = precision
         self.prec = PRECISION_DICT[self.precision]
         self.rcond = rcond
-        self.exclude_types = exclude_types
-
-        self.emask = AtomExcludeMask(self.ntypes, self.exclude_types)
+        # order matters, should be place after the assignment of ntypes
+        self.reinit_exclude(exclude_types)
 
         net_dim_out = self._net_out_dim()
         # init constants
@@ -363,10 +357,18 @@ class GeneralFitting(Fitting):
             log.info("Set seed to %d in fitting net.", seed)
             torch.manual_seed(seed)
 
+    def reinit_exclude(
+        self,
+        exclude_types: List[int] = [],
+    ):
+        self.exclude_types = exclude_types
+        self.emask = AtomExcludeMask(self.ntypes, self.exclude_types)
+
     def serialize(self) -> dict:
         """Serialize the fitting to dict."""
         return {
             "@class": "Fitting",
+            "@version": 1,
             "var_name": self.var_name,
             "ntypes": self.ntypes,
             "dim_descrpt": self.dim_descrpt,
@@ -404,6 +406,7 @@ class GeneralFitting(Fitting):
     @classmethod
     def deserialize(cls, data: dict) -> "GeneralFitting":
         data = copy.deepcopy(data)
+        check_version_compatibility(data.pop("@version", 1), 1, 1)
         variables = data.pop("@variables")
         nets = data.pop("nets")
         obj = cls(**data)

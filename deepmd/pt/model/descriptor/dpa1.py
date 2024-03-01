@@ -9,6 +9,9 @@ import torch
 from deepmd.pt.model.network.network import (
     TypeEmbedNet,
 )
+from deepmd.pt.utils.update_sel import (
+    UpdateSel,
+)
 from deepmd.utils.path import (
     DPPath,
 )
@@ -43,7 +46,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         post_ln=True,
         ffn=False,
         ffn_embed_dim=1024,
-        activation="tanh",
+        activation_function="tanh",
         scaling_factor=1.0,
         head_num=1,
         normalize=True,
@@ -51,8 +54,30 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         return_rot=False,
         concat_output_tebd: bool = True,
         type: Optional[str] = None,
+        # not implemented
+        resnet_dt: bool = False,
+        type_one_side: bool = True,
+        precision: str = "default",
+        trainable: bool = True,
+        exclude_types: Optional[List[List[int]]] = None,
+        stripped_type_embedding: bool = False,
+        smooth_type_embdding: bool = False,
     ):
         super().__init__()
+        if resnet_dt:
+            raise NotImplementedError("resnet_dt is not supported.")
+        if not type_one_side:
+            raise NotImplementedError("type_one_side is not supported.")
+        if precision != "default" and precision != "float64":
+            raise NotImplementedError("precison is not supported.")
+        if not trainable:
+            raise NotImplementedError("trainable == False is not supported.")
+        if exclude_types is not None and exclude_types != []:
+            raise NotImplementedError("exclude_types is not supported.")
+        if stripped_type_embedding:
+            raise NotImplementedError("stripped_type_embedding is not supported.")
+        if smooth_type_embdding:
+            raise NotImplementedError("smooth_type_embdding is not supported.")
         del type
         self.se_atten = DescrptBlockSeAtten(
             rcut,
@@ -71,7 +96,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
             post_ln=post_ln,
             ffn=ffn,
             ffn_embed_dim=ffn_embed_dim,
-            activation=activation,
+            activation_function=activation_function,
             scaling_factor=scaling_factor,
             head_num=head_num,
             normalize=normalize,
@@ -193,3 +218,17 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
             g1 = torch.cat([g1, g1_inp], dim=-1)
 
         return g1, rot_mat, g2, h2, sw
+
+    @classmethod
+    def update_sel(cls, global_jdata: dict, local_jdata: dict):
+        """Update the selection and perform neighbor statistics.
+
+        Parameters
+        ----------
+        global_jdata : dict
+            The global data, containing the training section
+        local_jdata : dict
+            The local data refer to the current class
+        """
+        local_jdata_cpy = local_jdata.copy()
+        return UpdateSel().update_one_sel(global_jdata, local_jdata_cpy, True)
