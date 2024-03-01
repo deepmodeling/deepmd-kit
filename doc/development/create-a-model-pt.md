@@ -23,6 +23,7 @@ from deepmd.pt.model.descriptor.base_descriptor import (
     BaseDescriptor,
 )
 
+
 @BaseDescriptor.register("some_descrpt")
 class SomeDescript(BaseDescriptor, torch.nn.Module):
     def __init__(self, arg1: bool, arg2: float) -> None:
