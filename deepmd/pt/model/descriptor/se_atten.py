@@ -332,7 +332,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
             result.view(-1, nloc, self.filter_neuron[-1] * self.axis_neuron),
             ret.view(-1, nloc, self.nnei, self.filter_neuron[-1]),
             dmatrix.view(-1, nloc, self.nnei, 4)[..., 1:],
-            rot_mat.view(-1, self.filter_neuron[-1], 3),
+            rot_mat.view(-1, nloc, self.filter_neuron[-1], 3),
             sw,
         )
 

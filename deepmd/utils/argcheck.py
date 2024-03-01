@@ -353,7 +353,7 @@ def descrpt_se_r_args():
     ]
 
 
-@descrpt_args_plugin.register("hybrid", doc=doc_only_tf_supported)
+@descrpt_args_plugin.register("hybrid")
 def descrpt_hybrid_args():
     doc_list = "A list of descriptor definitions"
 

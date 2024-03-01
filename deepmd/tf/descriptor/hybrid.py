@@ -1,8 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    Any,
+    Dict,
     List,
     Optional,
     Tuple,
+    Union,
 )
 
 import numpy as np
@@ -13,6 +16,9 @@ from deepmd.tf.env import (
 )
 from deepmd.tf.utils.spin import (
     Spin,
+)
+from deepmd.utils.version import (
+    check_version_compatibility,
 )
 
 # from deepmd.tf.descriptor import DescrptLocFrame
@@ -32,13 +38,14 @@ class DescrptHybrid(Descriptor):
 
     Parameters
     ----------
-    list : list
+    list : list : List[Union[Descriptor, Dict[str, Any]]]
             Build a descriptor from the concatenation of the list of descriptors.
+            The descriptor can be either an object or a dictionary.
     """
 
     def __init__(
         self,
-        list: list,
+        list: List[Union[Descriptor, Dict[str, Any]]],
         multi_task: bool = False,
         ntypes: Optional[int] = None,
         spin: Optional[Spin] = None,
@@ -434,3 +441,30 @@ class DescrptHybrid(Descriptor):
             for sub_jdata in local_jdata["list"]
         ]
         return local_jdata_cpy
+
+    def serialize(self, suffix: str = "") -> dict:
+        return {
+            "@class": "Descriptor",
+            "type": "hybrid",
+            "@version": 1,
+            "list": [
+                descrpt.serialize(suffix=f"{suffix}_{idx}")
+                for idx, descrpt in enumerate(self.descrpt_list)
+            ],
+        }
+
+    @classmethod
+    def deserialize(cls, data: dict, suffix: str = "") -> "DescrptHybrid":
+        data = data.copy()
+        class_name = data.pop("@class")
+        assert class_name == "Descriptor"
+        class_type = data.pop("type")
+        assert class_type == "hybrid"
+        check_version_compatibility(data.pop("@version"), 1, 1)
+        obj = cls(
+            list=[
+                Descriptor.deserialize(ii, suffix=f"{suffix}_{idx}")
+                for idx, ii in enumerate(data["list"])
+            ],
+        )
+        return obj
