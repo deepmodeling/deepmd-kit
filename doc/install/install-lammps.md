@@ -11,7 +11,7 @@ DeePMD-kit provides an easy installation script, one can simply run the followin
 $deepmd_source_dir/source/install/build_lammps.sh
 ```
 
-Alternatively, manual installation is also supported. DeePMD-kit provides a module for running MD simulations with LAMMPS. Now make the DeePMD-kit module for LAMMPS.
+Manual installation is also supported. DeePMD-kit provides a module for running MD simulations with LAMMPS. Now make the DeePMD-kit module for LAMMPS.
 
 ```bash
 cd $deepmd_source_dir/source/build
