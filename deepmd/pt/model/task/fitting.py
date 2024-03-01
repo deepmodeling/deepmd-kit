@@ -285,6 +285,8 @@ class GeneralFitting(Fitting):
         self.rcond = rcond
         # order matters, should be place after the assignment of ntypes
         self.reinit_exclude(exclude_types)
+        # need support for each layer settings
+        self.trainable = all(trainable) if isinstance(trainable, list) else trainable
 
         net_dim_out = self._net_out_dim()
         # init constants
@@ -361,7 +363,7 @@ class GeneralFitting(Fitting):
             torch.manual_seed(seed)
         # set trainable
         for param in self.parameters():
-            param.requires_grad = trainable
+            param.requires_grad = self.trainable
 
     def reinit_exclude(
         self,
