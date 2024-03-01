@@ -136,8 +136,6 @@ class InvarFitting(GeneralFitting):
             raise NotImplementedError("use_aparam_as_mask is not implemented")
         if layer_name is not None:
             raise NotImplementedError("layer_name is not implemented")
-        if atom_ener is not None and atom_ener != []:
-            raise NotImplementedError("atom_ener is not implemented")
 
         self.dim_out = dim_out
         self.atom_ener = atom_ener
@@ -159,6 +157,9 @@ class InvarFitting(GeneralFitting):
             spin=spin,
             mixed_types=mixed_types,
             exclude_types=exclude_types,
+            remove_vaccum_contribution=False
+            if atom_ener is None or len([x for x in atom_ener if x is not None]) == 0
+            else [x is not None for x in atom_ener],
         )
 
     def serialize(self) -> dict:

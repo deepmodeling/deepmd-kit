@@ -7,6 +7,7 @@ from abc import (
 from typing import (
     List,
     Optional,
+    Union,
 )
 
 import numpy as np
@@ -246,7 +247,10 @@ class GeneralFitting(Fitting):
         Random seed.
     exclude_types: List[int]
         Atomic contributions of the excluded atom types are set zero.
-
+    remove_vaccum_contribution: bool or List[bool]
+        Remove vaccum contribution before the bias is added. If it is a list and
+        not mixed_types, only remove the vaccum contribution for the atom types
+        in the list.
     """
 
     def __init__(
@@ -265,6 +269,7 @@ class GeneralFitting(Fitting):
         rcond: Optional[float] = None,
         seed: Optional[int] = None,
         exclude_types: List[int] = [],
+        remove_vaccum_contribution: Union[bool, List[bool]] = False,
         **kwargs,
     ):
         super().__init__()
@@ -282,6 +287,7 @@ class GeneralFitting(Fitting):
         self.rcond = rcond
         # order matters, should be place after the assignment of ntypes
         self.reinit_exclude(exclude_types)
+        self.remove_vaccum_contribution = remove_vaccum_contribution
 
         net_dim_out = self._net_out_dim()
         # init constants
@@ -487,6 +493,14 @@ class GeneralFitting(Fitting):
         aparam: Optional[torch.Tensor] = None,
     ):
         xx = descriptor
+        if self.remove_vaccum_contribution:
+            # TODO: Idealy, the input for vaccum should be computed;
+            # we consider it as always zero for convenience.
+            # Needs a compute_input_stats for vaccum passed from the
+            # descriptor.
+            xx_zeros = torch.zeros_like(xx)
+        else:
+            xx_zeros = None
         nf, nloc, nd = xx.shape
         net_dim_out = self._net_out_dim()
 
@@ -515,6 +529,11 @@ class GeneralFitting(Fitting):
                 [xx, fparam],
                 dim=-1,
             )
+            if xx_zeros is not None:
+                xx_zeros = torch.cat(
+                    [xx_zeros, fparam],
+                    dim=-1,
+                )
         # check aparam dim, concate to input descriptor
         if self.numb_aparam > 0:
             assert aparam is not None, "aparam should not be None"
@@ -534,6 +553,11 @@ class GeneralFitting(Fitting):
                 [xx, aparam],
                 dim=-1,
             )
+            if xx_zeros is not None:
+                xx_zeros = torch.cat(
+                    [xx_zeros, aparam],
+                    dim=-1,
+                )
 
         outs = torch.zeros(
             (nf, nloc, net_dim_out),
@@ -542,6 +566,7 @@ class GeneralFitting(Fitting):
         )  # jit assertion
         if self.old_impl:
             assert self.filter_layers_old is not None
+            assert xx_zeros is None
             if self.mixed_types:
                 atom_property = self.filter_layers_old[0](xx) + self.bias_atom_e[atype]
                 outs = outs + atom_property  # Shape is [nframes, natoms[0], 1]
@@ -557,6 +582,8 @@ class GeneralFitting(Fitting):
                 atom_property = (
                     self.filter_layers.networks[0](xx) + self.bias_atom_e[atype]
                 )
+                if xx_zeros is not None:
+                    atom_property -= self.filter_layers.networks[0](xx_zeros)
                 outs = (
                     outs + atom_property
                 )  # Shape is [nframes, natoms[0], net_dim_out]
@@ -565,6 +592,12 @@ class GeneralFitting(Fitting):
                     mask = (atype == type_i).unsqueeze(-1)
                     mask = torch.tile(mask, (1, 1, net_dim_out))
                     atom_property = ll(xx)
+                    if xx_zeros is not None and not (
+                        isinstance(self.remove_vaccum_contribution, list)
+                        and len(self.remove_vaccum_contribution) > type_i
+                        and not self.remove_vaccum_contribution[type_i]
+                    ):
+                        atom_property -= ll(xx_zeros)
                     atom_property = atom_property + self.bias_atom_e[type_i]
                     atom_property = atom_property * mask
                     outs = (

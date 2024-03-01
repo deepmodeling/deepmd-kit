@@ -124,6 +124,9 @@ class InvarFitting(GeneralFitting):
             rcond=rcond,
             seed=seed,
             exclude_types=exclude_types,
+            remove_vaccum_contribution=False
+            if atom_ener is None or len([x for x in atom_ener if x is not None]) == 0
+            else [x is not None for x in atom_ener],
             **kwargs,
         )
 
