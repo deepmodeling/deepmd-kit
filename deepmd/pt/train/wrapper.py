@@ -60,28 +60,6 @@ class ModelWrapper(torch.nn.Module):
                     self.loss[task_key] = loss[task_key]
         self.inference_only = self.loss is None
 
-    def set_trainable_params(self):
-        supported_types = ["type_embedding", "descriptor", "fitting_net"]
-        for model_item in self.model:
-            for net_type in supported_types:
-                trainable = True
-                if not self.multi_task:
-                    if net_type in self.model_params:
-                        trainable = self.model_params[net_type].get("trainable", True)
-                else:
-                    if net_type in self.model_params["model_dict"][model_item]:
-                        trainable = self.model_params["model_dict"][model_item][
-                            net_type
-                        ].get("trainable", True)
-                if (
-                    hasattr(self.model[model_item], net_type)
-                    and getattr(self.model[model_item], net_type) is not None
-                ):
-                    for param in (
-                        self.model[model_item].__getattr__(net_type).parameters()
-                    ):
-                        param.requires_grad = trainable
-
     def share_params(self, shared_links, resume=False):
         supported_types = ["type_embedding", "descriptor", "fitting_net"]
         for shared_item in shared_links:

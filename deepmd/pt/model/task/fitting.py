@@ -246,6 +246,8 @@ class GeneralFitting(Fitting):
         Random seed.
     exclude_types: List[int]
         Atomic contributions of the excluded atom types are set zero.
+    trainable : bool
+            If the parameters in the fitting net are trainable.
 
     """
 
@@ -265,6 +267,7 @@ class GeneralFitting(Fitting):
         rcond: Optional[float] = None,
         seed: Optional[int] = None,
         exclude_types: List[int] = [],
+        trainable: bool = True,
         **kwargs,
     ):
         super().__init__()
@@ -356,6 +359,9 @@ class GeneralFitting(Fitting):
         if seed is not None:
             log.info("Set seed to %d in fitting net.", seed)
             torch.manual_seed(seed)
+        # set trainable
+        for param in self.parameters():
+            param.requires_grad = trainable
 
     def reinit_exclude(
         self,

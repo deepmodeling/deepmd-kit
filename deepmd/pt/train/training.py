@@ -399,9 +399,6 @@ class Trainer:
             frz_model = torch.jit.load(init_frz_model, map_location=DEVICE)
             self.model.load_state_dict(frz_model.state_dict())
 
-        # Set trainable params
-        self.wrapper.set_trainable_params()
-
         # Multi-task share params
         if shared_links is not None:
             self.wrapper.share_params(shared_links, resume=model_params["resuming"])

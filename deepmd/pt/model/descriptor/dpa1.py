@@ -70,8 +70,6 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
             raise NotImplementedError("type_one_side is not supported.")
         if precision != "default" and precision != "float64":
             raise NotImplementedError("precison is not supported.")
-        if not trainable:
-            raise NotImplementedError("trainable == False is not supported.")
         if exclude_types is not None and exclude_types != []:
             raise NotImplementedError("exclude_types is not supported.")
         if stripped_type_embedding:
@@ -106,6 +104,9 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         self.type_embedding = TypeEmbedNet(ntypes, tebd_dim)
         self.tebd_dim = tebd_dim
         self.concat_output_tebd = concat_output_tebd
+        # set trainable
+        for param in self.parameters():
+            param.requires_grad = trainable
 
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""

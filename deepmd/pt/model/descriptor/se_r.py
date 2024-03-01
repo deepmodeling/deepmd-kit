@@ -63,6 +63,7 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
         resnet_dt: bool = False,
         exclude_types: List[Tuple[int, int]] = [],
         old_impl: bool = False,
+        trainable: bool = True,
         **kwargs,
     ):
         super().__init__()
@@ -110,6 +111,9 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
             )
         self.filter_layers = filter_layers
         self.stats = None
+        # set trainable
+        for param in self.parameters():
+            param.requires_grad = trainable
 
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
