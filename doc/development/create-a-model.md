@@ -68,7 +68,7 @@ from deepmd.pt.model.task.fitting import (
     GeneralFitting,
 )
 from deepmd.dpmodel import (
-    FittingOutputDef
+    FittingOutputDef,
     fitting_check_output,
 )
 
