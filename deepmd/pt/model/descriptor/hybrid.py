@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Any,
+    Callable,
     Dict,
     List,
     Optional,
@@ -138,6 +139,23 @@ class DescrptHybrid(BaseDescriptor, torch.nn.Module):
         atomic types or not.
         """
         return any(descrpt.mixed_types() for descrpt in self.descrpt_list)
+
+    def share_params(self, base_class, shared_level, resume=False):
+        """
+        Share the parameters of self to the base_class with shared_level during multitask training.
+        If not start from checkpoint (resume is False),
+        some seperated parameters (e.g. mean and stddev) will be re-calculated across different classes.
+        """
+        assert (
+            self.__class__ == base_class.__class__
+        ), "Only descriptors of the same type can share params!"
+        if shared_level == 0:
+            for ii, des in enumerate(self.descrpt_list):
+                self.descrpt_list[ii].share_params(
+                    base_class.descrpt_list[ii], shared_level, resume=resume
+                )
+        else:
+            raise NotImplementedError
 
     def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
         """Update mean and stddev for descriptor elements."""
@@ -383,6 +401,11 @@ class DescrptBlockHybrid(DescriptorBlock):
             raise RuntimeError
 
     def share_params(self, base_class, shared_level, resume=False):
+        """
+        Share the parameters of self to the base_class with shared_level during multitask training.
+        If not start from checkpoint (resume is False),
+        some seperated parameters (e.g. mean and stddev) will be re-calculated across different classes.
+        """
         assert (
             self.__class__ == base_class.__class__
         ), "Only descriptors of the same type can share params!"
@@ -391,22 +414,33 @@ class DescrptBlockHybrid(DescriptorBlock):
                 self.descriptor_list[ii].share_params(
                     base_class.descriptor_list[ii], shared_level, resume=resume
                 )
-            if self.hybrid_mode == "sequential":
-                self.sequential_transform = base_class.sequential_transform
         else:
             raise NotImplementedError
 
-    def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
-        """Update mean and stddev for descriptor elements."""
+    def compute_input_stats(
+        self,
+        merged: Union[Callable[[], List[dict]], List[dict]],
+        path: Optional[DPPath] = None,
+    ):
+        """
+        Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
+
+        Parameters
+        ----------
+        merged : Union[Callable[[], List[dict]], List[dict]]
+            - List[dict]: A list of data samples from various data systems.
+                Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
+                originating from the `i`-th data system.
+            - Callable[[], List[dict]]: A lazy function that returns data samples in the above format
+                only when needed. Since the sampling process can be slow and memory-intensive,
+                the lazy function helps by only sampling once.
+        path : Optional[DPPath]
+            The path to the stat file.
+
+        """
         for ii, descrpt in enumerate(self.descriptor_list):
-            merged_tmp = [
-                {
-                    key: item[key] if not isinstance(item[key], list) else item[key][ii]
-                    for key in item
-                }
-                for item in merged
-            ]
-            descrpt.compute_input_stats(merged_tmp, path)
+            # need support for hybrid descriptors
+            descrpt.compute_input_stats(merged, path)
 
     def forward(
         self,

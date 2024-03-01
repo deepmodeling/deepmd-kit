@@ -19,9 +19,7 @@ def change_finetune_model_params(
     - ckpt & finetune_model: origin model.
     - config: Read from json file.
     """
-    if multi_task:
-        # TODO
-        log.error("finetune mode need modification for multitask mode!")
+    # TODO need support for multitask mode
     if finetune_model is not None:
         state_dict = torch.load(finetune_model, map_location=env.DEVICE)
         if "model" in state_dict:
