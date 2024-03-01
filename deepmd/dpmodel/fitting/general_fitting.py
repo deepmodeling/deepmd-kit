@@ -75,8 +75,8 @@ class GeneralFitting(NativeOP, BaseFitting):
             Atomic contributions of the excluded atom types are set zero.
     remove_vaccum_contribution: List[bool], optional
         Remove vaccum contribution before the bias is added. The list assigned each
-        type. If not mixed_types, only remove the vaccum contribution for the atom types
-        in the list.
+        type. For `mixed_types` provide `[True]`, otherwise it should be a list of the same
+        length as `ntypes` signaling if or not removing the vaccum contribution for the atom types in the list.
     """
 
     def __init__(
