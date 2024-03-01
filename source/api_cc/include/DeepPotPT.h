@@ -4,7 +4,6 @@
 #include <torch/torch.h>
 
 #include "DeepPot.h"
-#include "commonPT.h"
 
 namespace deepmd {
 /**
