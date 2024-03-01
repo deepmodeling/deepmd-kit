@@ -141,8 +141,6 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
       }
       std::cout << std::endl;
     }
-
-    return 0;
     nlist_data.shuffle_exclude_empty(fwd_map);
     nlist_data.padding();
   }
