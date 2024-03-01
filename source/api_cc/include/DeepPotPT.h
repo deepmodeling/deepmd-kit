@@ -2,8 +2,10 @@
 #pragma once
 
 #include <torch/torch.h>
-
+#include <torch/script.h>
 #include "DeepPot.h"
+
+
 
 namespace deepmd {
 /**
