@@ -10,6 +10,8 @@ from pathlib import (
     Path,
 )
 
+import torch
+
 from deepmd.pt.entrypoints.main import (
     get_trainer,
 )
@@ -26,6 +28,20 @@ class DPTrainTest:
     def test_dp_train(self):
         trainer = get_trainer(deepcopy(self.config))
         trainer.run()
+        self.tearDown()
+
+    def test_trainable(self):
+        fix_params = deepcopy(self.config)
+        fix_params["model"]["descriptor"]["trainable"] = False
+        fix_params["model"]["fitting_net"]["trainable"] = False
+        trainer_fix = get_trainer(fix_params)
+        model_dict_before_training = deepcopy(trainer_fix.model.state_dict())
+        trainer_fix.run()
+        model_dict_after_training = deepcopy(trainer_fix.model.state_dict())
+        for key in model_dict_before_training:
+            torch.testing.assert_allclose(
+                model_dict_before_training[key], model_dict_after_training[key]
+            )
         self.tearDown()
 
     def tearDown(self):
