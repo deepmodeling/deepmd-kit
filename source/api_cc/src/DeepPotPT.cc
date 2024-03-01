@@ -94,14 +94,6 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
                         const int& ago,
                         const std::vector<VALUETYPE>& fparam,
                         const std::vector<VALUETYPE>& aparam) {
-  for (int i = 0; i < coord.size(); ++i) {
-    std::cout << coord[i] << ", ";
-  }
-  std::cout << std::endl;
-  for (int i = 0; i < atype.size(); ++i) {
-    std::cout << atype[i] << ", ";
-  }
-  std::cout << std::endl;
   torch::Device device(torch::kCUDA, gpu_id);
   if (!gpu_enabled) {
     device = torch::Device(torch::kCPU);
@@ -124,29 +116,19 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
   select_real_atoms_coord(dcoord, datype, aparam_, nghost_real, fwd_map,
                           bkw_map, nall_real, nloc_real, coord, atype, aparam,
                           nghost, ntypes, 1, daparam, nall, aparam_nall);
-
+  std::cout << datype.size()<< std::endl;
   std::vector<VALUETYPE> coord_wrapped = dcoord;
   at::Tensor coord_wrapped_Tensor =
-      torch::from_blob(coord_wrapped.data(), {1, natoms, 3}, options)
+      torch::from_blob(coord_wrapped.data(), {1, nall_real, 3}, options)
           .to(device);
   std::vector<int64_t> atype_64(datype.begin(), datype.end());
   at::Tensor atype_Tensor =
-      torch::from_blob(atype_64.data(), {1, natoms}, int_options).to(device);
+      torch::from_blob(atype_64.data(), {1, nall_real}, int_options).to(device);
   if (ago == 0) {
     nlist_data.copy_from_nlist(lmp_list);
-    std::cout << "nlist content:" << std::endl;
-    for (size_t i = 0; i < nlist_data.jlist.size(); ++i) {
-      for (size_t j = 0; j < nlist_data.jlist[i].size(); ++j) {
-        std::cout << nlist_data.jlist[i][j] << ", ";
-      }
-      std::cout << std::endl;
-    }
     nlist_data.shuffle_exclude_empty(fwd_map);
     nlist_data.padding();
   }
-  // at::Tensor firstneigh =
-  //     torch::from_blob(nlist_data.jlist.data(),
-  //                      {1, lmp_list.inum, max_num_neighbors}, int32_options);
   at::Tensor firstneigh = createNlistTensor(nlist_data.jlist);
   firstneigh_tensor = firstneigh.to(torch::kInt64).to(device);
   bool do_atom_virial_tensor = true;
@@ -185,7 +167,7 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
   torch::Tensor flat_atom_energy_ =
       atom_energy_.toTensor().view({-1}).to(floatType);
   torch::Tensor cpu_atom_energy_ = flat_atom_energy_.to(torch::kCPU);
-  datom_energy.resize(natoms,
+  datom_energy.resize(nall_real,
                       0.0);  // resize to nall to be consistenet with TF.
   datom_energy.assign(
       cpu_atom_energy_.data_ptr<VALUETYPE>(),
@@ -204,7 +186,6 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
   datom_virial.assign(
       cpu_atom_virial_.data_ptr<VALUETYPE>(),
       cpu_atom_virial_.data_ptr<VALUETYPE>() + cpu_atom_virial_.numel());
-
   int nframes = 1;
   // bkw map
   force.resize(static_cast<size_t>(nframes) * fwd_map.size() * 3);
