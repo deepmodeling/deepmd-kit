@@ -250,10 +250,23 @@ If you specify `-DUSE_TF_PYTHON_LIBS=FALSE`, you need to give the location where
 
 I assume you have installed the PyTorch (either Python or C++ interface) to `$torch_root`, then execute CMake
 ```bash
-cmake -DENABLE_PYTORCH=TRUE -DCMAKE_PREFIX_PATH=$torch_root -DCMAKE_INSTALL_PREFIX=$deepmd_root ..
+cmake -DENABLE_PYTORCH=TRUE -DCMAKE_PREFIX_PATH=$torch_root -DCMAKE_INSTALL_PREFIX=$deepmd_source_dir ..
+```
+
+Alternatively, one can use the installation scripts provided by DeepMD-kit by executing the following commands:
+```bash
+export CMAKE_PREFIX_PATH=$libtorch_root
+```
+and if use GPU, add
+```bash
+export DP_VARIANT=cuda
+```
+then
+
+```bash
+$deepmd_source_dir/source/install/build_cc.sh
 ```
 :::
-
 ::::
 
 One may add the following arguments to `cmake`:

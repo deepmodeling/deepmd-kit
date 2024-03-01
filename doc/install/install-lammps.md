@@ -5,7 +5,13 @@ There are two ways to install LAMMPS: the built-in mode and the plugin mode. The
 ## Install LAMMPS's DeePMD-kit module (built-in mode)
 Before following this section, [DeePMD-kit C++ interface](install-from-source.md) should have be installed.
 
-DeePMD-kit provides a module for running MD simulations with LAMMPS. Now make the DeePMD-kit module for LAMMPS.
+DeePMD-kit provides an easy installation script, one can simply run the following command to isntall LAMMPS:
+
+```bash
+$deepmd_source_dir/source/install/build_lammps.sh
+```
+
+Alternatively, manual installation is also supported. DeePMD-kit provides a module for running MD simulations with LAMMPS. Now make the DeePMD-kit module for LAMMPS.
 
 ```bash
 cd $deepmd_source_dir/source/build
