@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 #pragma once
 
+#include <torch/script.h>
 #include <torch/torch.h>
 
 #include "DeepPot.h"
-#include "commonPT.h"
 
 namespace deepmd {
 /**
@@ -106,7 +106,7 @@ class DeepPotPT : public DeepPotBase {
                const std::vector<VALUETYPE>& coord,
                const std::vector<int>& atype,
                const std::vector<VALUETYPE>& box,
-               //    const int nghost,
+               const int nghost,
                const InputNlist& lmp_list,
                const int& ago,
                const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
@@ -322,7 +322,7 @@ class DeepPotPT : public DeepPotBase {
   // copy neighbor list info from host
   torch::jit::script::Module module;
   double rcut;
-  NeighborListDataPT nlist_data;
+  NeighborListData nlist_data;
   int max_num_neighbors;
   int gpu_id;
   bool gpu_enabled;

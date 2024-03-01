@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    Callable,
     List,
     Optional,
+    Union,
 )
 
 import torch
@@ -295,6 +297,46 @@ class DescrptDPA2(torch.nn.Module, BaseDescriptor):
         """
         return True
 
+    def share_params(self, base_class, shared_level, resume=False):
+        """
+        Share the parameters of self to the base_class with shared_level during multitask training.
+        If not start from checkpoint (resume is False),
+        some seperated parameters (e.g. mean and stddev) will be re-calculated across different classes.
+        """
+        assert (
+            self.__class__ == base_class.__class__
+        ), "Only descriptors of the same type can share params!"
+        # For DPA2 descriptors, the user-defined share-level
+        # shared_level: 0
+        # share all parameters in type_embedding, repinit and repformers
+        if shared_level == 0:
+            self._modules["type_embedding"] = base_class._modules["type_embedding"]
+            self.repinit.share_params(base_class.repinit, 0, resume=resume)
+            self._modules["g1_shape_tranform"] = base_class._modules[
+                "g1_shape_tranform"
+            ]
+            self.repformers.share_params(base_class.repformers, 0, resume=resume)
+        # shared_level: 1
+        # share all parameters in type_embedding and repinit
+        elif shared_level == 1:
+            self._modules["type_embedding"] = base_class._modules["type_embedding"]
+            self.repinit.share_params(base_class.repinit, 0, resume=resume)
+        # shared_level: 2
+        # share all parameters in type_embedding and repformers
+        elif shared_level == 2:
+            self._modules["type_embedding"] = base_class._modules["type_embedding"]
+            self._modules["g1_shape_tranform"] = base_class._modules[
+                "g1_shape_tranform"
+            ]
+            self.repformers.share_params(base_class.repformers, 0, resume=resume)
+        # shared_level: 3
+        # share all parameters in type_embedding
+        elif shared_level == 3:
+            self._modules["type_embedding"] = base_class._modules["type_embedding"]
+        # Other shared levels
+        else:
+            raise NotImplementedError
+
     @property
     def dim_out(self):
         return self.get_dim_out()
@@ -304,16 +346,29 @@ class DescrptDPA2(torch.nn.Module, BaseDescriptor):
         """Returns the embedding dimension g2."""
         return self.get_dim_emb()
 
-    def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
+    def compute_input_stats(
+        self,
+        merged: Union[Callable[[], List[dict]], List[dict]],
+        path: Optional[DPPath] = None,
+    ):
+        """
+        Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
+
+        Parameters
+        ----------
+        merged : Union[Callable[[], List[dict]], List[dict]]
+            - List[dict]: A list of data samples from various data systems.
+                Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
+                originating from the `i`-th data system.
+            - Callable[[], List[dict]]: A lazy function that returns data samples in the above format
+                only when needed. Since the sampling process can be slow and memory-intensive,
+                the lazy function helps by only sampling once.
+        path : Optional[DPPath]
+            The path to the stat file.
+
+        """
         for ii, descrpt in enumerate([self.repinit, self.repformers]):
-            merged_tmp = [
-                {
-                    key: item[key] if not isinstance(item[key], list) else item[key][ii]
-                    for key in item
-                }
-                for item in merged
-            ]
-            descrpt.compute_input_stats(merged_tmp, path)
+            descrpt.compute_input_stats(merged, path)
 
     def serialize(self) -> dict:
         """Serialize the obj to dict."""

@@ -62,6 +62,11 @@ class Fitting(torch.nn.Module, BaseFitting):
         return super().__new__(cls)
 
     def share_params(self, base_class, shared_level, resume=False):
+        """
+        Share the parameters of self to the base_class with shared_level during multitask training.
+        If not start from checkpoint (resume is False),
+        some seperated parameters (e.g. mean and stddev) will be re-calculated across different classes.
+        """
         assert (
             self.__class__ == base_class.__class__
         ), "Only fitting nets of the same type can share params!"
@@ -77,18 +82,6 @@ class Fitting(torch.nn.Module, BaseFitting):
             # the following will successfully link all the params except buffers, which need manually link.
             for item in self._modules:
                 self._modules[item] = base_class._modules[item]
-        elif shared_level == 2:
-            # share all the layers before final layer
-            # the following will successfully link all the params except buffers, which need manually link.
-            self._modules["filter_layers"][0].deep_layers = base_class._modules[
-                "filter_layers"
-            ][0].deep_layers
-        elif shared_level == 3:
-            # share the first layers
-            # the following will successfully link all the params except buffers, which need manually link.
-            self._modules["filter_layers"][0].deep_layers[0] = base_class._modules[
-                "filter_layers"
-            ][0].deep_layers[0]
         else:
             raise NotImplementedError
 
@@ -248,7 +241,10 @@ class GeneralFitting(Fitting):
         Atomic contributions of the excluded atom types are set zero.
     trainable : bool
             If the parameters in the fitting net are trainable.
-
+    remove_vaccum_contribution: List[bool], optional
+        Remove vaccum contribution before the bias is added. The list assigned each
+        type. For `mixed_types` provide `[True]`, otherwise it should be a list of the same
+        length as `ntypes` signaling if or not removing the vaccum contribution for the atom types in the list.
     """
 
     def __init__(
@@ -268,6 +264,7 @@ class GeneralFitting(Fitting):
         seed: Optional[int] = None,
         exclude_types: List[int] = [],
         trainable: bool = True,
+        remove_vaccum_contribution: Optional[List[bool]] = None,
         **kwargs,
     ):
         super().__init__()
@@ -290,6 +287,7 @@ class GeneralFitting(Fitting):
         self.trainable = (
             all(self.trainable) if isinstance(self.trainable, list) else self.trainable
         )
+        self.remove_vaccum_contribution = remove_vaccum_contribution
 
         net_dim_out = self._net_out_dim()
         # init constants
@@ -362,7 +360,6 @@ class GeneralFitting(Fitting):
             self.filter_layers_old = None
 
         if seed is not None:
-            log.info("Set seed to %d in fitting net.", seed)
             torch.manual_seed(seed)
         # set trainable
         for param in self.parameters():
@@ -498,6 +495,14 @@ class GeneralFitting(Fitting):
         aparam: Optional[torch.Tensor] = None,
     ):
         xx = descriptor
+        if self.remove_vaccum_contribution is not None:
+            # TODO: Idealy, the input for vaccum should be computed;
+            # we consider it as always zero for convenience.
+            # Needs a compute_input_stats for vaccum passed from the
+            # descriptor.
+            xx_zeros = torch.zeros_like(xx)
+        else:
+            xx_zeros = None
         nf, nloc, nd = xx.shape
         net_dim_out = self._net_out_dim()
 
@@ -526,6 +531,11 @@ class GeneralFitting(Fitting):
                 [xx, fparam],
                 dim=-1,
             )
+            if xx_zeros is not None:
+                xx_zeros = torch.cat(
+                    [xx_zeros, fparam],
+                    dim=-1,
+                )
         # check aparam dim, concate to input descriptor
         if self.numb_aparam > 0:
             assert aparam is not None, "aparam should not be None"
@@ -545,6 +555,11 @@ class GeneralFitting(Fitting):
                 [xx, aparam],
                 dim=-1,
             )
+            if xx_zeros is not None:
+                xx_zeros = torch.cat(
+                    [xx_zeros, aparam],
+                    dim=-1,
+                )
 
         outs = torch.zeros(
             (nf, nloc, net_dim_out),
@@ -553,6 +568,7 @@ class GeneralFitting(Fitting):
         )  # jit assertion
         if self.old_impl:
             assert self.filter_layers_old is not None
+            assert xx_zeros is None
             if self.mixed_types:
                 atom_property = self.filter_layers_old[0](xx) + self.bias_atom_e[atype]
                 outs = outs + atom_property  # Shape is [nframes, natoms[0], 1]
@@ -568,6 +584,8 @@ class GeneralFitting(Fitting):
                 atom_property = (
                     self.filter_layers.networks[0](xx) + self.bias_atom_e[atype]
                 )
+                if xx_zeros is not None:
+                    atom_property -= self.filter_layers.networks[0](xx_zeros)
                 outs = (
                     outs + atom_property
                 )  # Shape is [nframes, natoms[0], net_dim_out]
@@ -576,6 +594,14 @@ class GeneralFitting(Fitting):
                     mask = (atype == type_i).unsqueeze(-1)
                     mask = torch.tile(mask, (1, 1, net_dim_out))
                     atom_property = ll(xx)
+                    if xx_zeros is not None:
+                        # must assert, otherwise jit is not happy
+                        assert self.remove_vaccum_contribution is not None
+                        if not (
+                            len(self.remove_vaccum_contribution) > type_i
+                            and not self.remove_vaccum_contribution[type_i]
+                        ):
+                            atom_property -= ll(xx_zeros)
                     atom_property = atom_property + self.bias_atom_e[type_i]
                     atom_property = atom_property * mask
                     outs = (

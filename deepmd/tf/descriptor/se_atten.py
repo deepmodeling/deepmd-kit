@@ -71,6 +71,7 @@ from .se_a import (
 log = logging.getLogger(__name__)
 
 
+@Descriptor.register("dpa1")
 @Descriptor.register("se_atten")
 class DescrptSeAtten(DescrptSeA):
     r"""Smooth version descriptor with attention.

@@ -2,9 +2,11 @@
 import copy
 import logging
 from typing import (
+    Callable,
     List,
     Optional,
     Tuple,
+    Union,
 )
 
 import numpy as np
@@ -124,6 +126,9 @@ class InvarFitting(GeneralFitting):
             rcond=rcond,
             seed=seed,
             exclude_types=exclude_types,
+            remove_vaccum_contribution=None
+            if atom_ener is None or len([x for x in atom_ener if x is not None]) == 0
+            else [x is not None for x in atom_ener],
             **kwargs,
         )
 
@@ -138,18 +143,43 @@ class InvarFitting(GeneralFitting):
         data["atom_ener"] = self.atom_ener
         return data
 
-    def compute_output_stats(self, merged, stat_file_path: Optional[DPPath] = None):
-        energy = [item[self.var_name] for item in merged]
-        data_mixed_type = "real_natoms_vec" in merged[0]
-        if data_mixed_type:
-            input_natoms = [item["real_natoms_vec"] for item in merged]
-        else:
-            input_natoms = [item["natoms"] for item in merged]
+    def compute_output_stats(
+        self,
+        merged: Union[Callable[[], List[dict]], List[dict]],
+        stat_file_path: Optional[DPPath] = None,
+    ):
+        """
+        Compute the output statistics (e.g. energy bias) for the fitting net from packed data.
+
+        Parameters
+        ----------
+        merged : Union[Callable[[], List[dict]], List[dict]]
+            - List[dict]: A list of data samples from various data systems.
+                Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
+                originating from the `i`-th data system.
+            - Callable[[], List[dict]]: A lazy function that returns data samples in the above format
+                only when needed. Since the sampling process can be slow and memory-intensive,
+                the lazy function helps by only sampling once.
+        stat_file_path : Optional[DPPath]
+            The path to the stat file.
+
+        """
         if stat_file_path is not None:
             stat_file_path = stat_file_path / "bias_atom_e"
         if stat_file_path is not None and stat_file_path.is_file():
             bias_atom_e = stat_file_path.load_numpy()
         else:
+            if callable(merged):
+                # only get data for once
+                sampled = merged()
+            else:
+                sampled = merged
+            energy = [item["energy"] for item in sampled]
+            data_mixed_type = "real_natoms_vec" in sampled[0]
+            if data_mixed_type:
+                input_natoms = [item["real_natoms_vec"] for item in sampled]
+            else:
+                input_natoms = [item["natoms"] for item in sampled]
             # shape: (nframes, ndim)
             merged_energy = to_numpy_array(torch.cat(energy))
             # shape: (nframes, ntypes)
@@ -320,7 +350,6 @@ class EnergyFittingNetDirect(Fitting):
         self.filter_layers = torch.nn.ModuleList(filter_layers)
 
         if "seed" in kwargs:
-            log.info("Set seed to %d in fitting net.", kwargs["seed"])
             torch.manual_seed(kwargs["seed"])
 
     def output_def(self):

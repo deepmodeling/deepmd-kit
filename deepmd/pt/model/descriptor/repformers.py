@@ -1,8 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    Callable,
     Dict,
     List,
     Optional,
+    Union,
 )
 
 import torch
@@ -278,12 +280,39 @@ class DescrptBlockRepformers(DescriptorBlock):
 
         return g1, g2, h2, rot_mat.view(-1, nloc, self.dim_emb, 3), sw
 
-    def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
-        """Update mean and stddev for descriptor elements."""
+    def compute_input_stats(
+        self,
+        merged: Union[Callable[[], List[dict]], List[dict]],
+        path: Optional[DPPath] = None,
+    ):
+        """
+        Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
+
+        Parameters
+        ----------
+        merged : Union[Callable[[], List[dict]], List[dict]]
+            - List[dict]: A list of data samples from various data systems.
+                Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
+                originating from the `i`-th data system.
+            - Callable[[], List[dict]]: A lazy function that returns data samples in the above format
+                only when needed. Since the sampling process can be slow and memory-intensive,
+                the lazy function helps by only sampling once.
+        path : Optional[DPPath]
+            The path to the stat file.
+
+        """
         env_mat_stat = EnvMatStatSe(self)
         if path is not None:
             path = path / env_mat_stat.get_hash()
-        env_mat_stat.load_or_compute_stats(merged, path)
+        if path is None or not path.is_dir():
+            if callable(merged):
+                # only get data for once
+                sampled = merged()
+            else:
+                sampled = merged
+        else:
+            sampled = []
+        env_mat_stat.load_or_compute_stats(sampled, path)
         self.stats = env_mat_stat.stats
         mean, stddev = env_mat_stat()
         if not self.set_davg_zero:

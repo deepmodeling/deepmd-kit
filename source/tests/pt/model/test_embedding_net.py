@@ -39,6 +39,10 @@ from deepmd.tf.common import (
 )
 from deepmd.tf.descriptor import DescrptSeA as DescrptSeA_tf
 
+from ..test_stat import (
+    energy_data_requirement,
+)
+
 CUR_DIR = os.path.dirname(__file__)
 
 
@@ -128,6 +132,7 @@ class TestSeA(unittest.TestCase):
             self.systems[0],
             model_config["type_map"],
         )
+        ds.add_data_requirement(energy_data_requirement)
         self.filter_neuron = model_config["descriptor"]["neuron"]
         self.axis_neuron = model_config["descriptor"]["axis_neuron"]
         self.np_batch, self.torch_batch = get_single_batch(ds)

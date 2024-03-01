@@ -4,8 +4,10 @@ from abc import (
     abstractmethod,
 )
 from typing import (
+    Callable,
     List,
     Optional,
+    Union,
 )
 
 from deepmd.common import (
@@ -84,8 +86,19 @@ def make_base_descriptor(
             """
             pass
 
+        @abstractmethod
+        def share_params(self, base_class, shared_level, resume=False):
+            """
+            Share the parameters of self to the base_class with shared_level during multitask training.
+            If not start from checkpoint (resume is False),
+            some seperated parameters (e.g. mean and stddev) will be re-calculated across different classes.
+            """
+            pass
+
         def compute_input_stats(
-            self, merged: List[dict], path: Optional[DPPath] = None
+            self,
+            merged: Union[Callable[[], List[dict]], List[dict]],
+            path: Optional[DPPath] = None,
         ):
             """Update mean and stddev for descriptor elements."""
             raise NotImplementedError
