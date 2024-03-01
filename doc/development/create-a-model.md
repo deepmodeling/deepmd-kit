@@ -98,7 +98,7 @@ class SomeFittingNet(GeneralFitting):
 
 The model architecture within the PyTorch backend is structured with multiple layers of abstraction to provide a high degree of flexibility. Generally, the process begins with an atomic model responsible for handling atom-wise property calculations. This atomic model should inherit from the {py:class}`deepmd.pt.model.atomic_model.base_atomic_model.BaseAtomicModel` class and the {py:class}`torch.nn.Module` class.
 
-Subsequently, the `AtomicModel` is encapsulated using the `make_model(AtomicModel)` function, employing the {py:class}`deepmd.pt.model.model.make_model.make_model`. The purpose of the `make_model` method is to facilitate the translation between the original system and the extended system.
+Subsequently, the `AtomicModel` is encapsulated using the `make_model(AtomicModel)` function, employing the `deepmd.pt.model.model.make_model.make_model` function. The purpose of the `make_model` wrapper is to facilitate the translation between the original system and the extended system.
 
 Finally, the entire model is wrapped within a `DPModel`, which must inherit from the {py:class}`deepmd.pt.model.model.model.BaseModel` class and include the aforementioned `make_model(AtomicModel)`. The user directly interacts with a wrapper built on top of the `DPModel` to seamlessly handle result translations.
 
