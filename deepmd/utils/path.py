@@ -414,6 +414,8 @@ class DPH5Path(DPPath):
 
     def is_dir(self) -> bool:
         """Check if self is directory."""
+        if self._name == "/":
+            return True
         if self._name not in self._keys:
             return False
         return isinstance(self.root[self._name], h5py.Group)

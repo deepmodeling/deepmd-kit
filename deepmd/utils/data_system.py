@@ -10,6 +10,7 @@ from typing import (
     Dict,
     List,
     Optional,
+    Union,
 )
 
 import numpy as np
@@ -667,6 +668,46 @@ def prob_sys_size_ext(keywords, nsystems, nbatch):
     return sys_probs
 
 
+def process_systems(systems: Union[str, List[str]]) -> List[str]:
+    """Process the user-input systems.
+
+    If it is a single directory, search for all the systems in the directory.
+    Check if the systems are valid.
+
+    Parameters
+    ----------
+    systems : str or list of str
+        The user-input systems
+
+    Returns
+    -------
+    list of str
+        The valid systems
+    """
+    if isinstance(systems, str):
+        systems = expand_sys_str(systems)
+    elif isinstance(systems, list):
+        systems = systems.copy()
+    help_msg = "Please check your setting for data systems"
+    # check length of systems
+    if len(systems) == 0:
+        msg = "cannot find valid a data system"
+        log.fatal(msg)
+        raise OSError(msg, help_msg)
+    # rougly check all items in systems are valid
+    for ii in systems:
+        ii = DPPath(ii)
+        if not ii.is_dir():
+            msg = f"dir {ii} is not a valid dir"
+            log.fatal(msg)
+            raise OSError(msg, help_msg)
+        if not (ii / "type.raw").is_file():
+            msg = f"dir {ii} is not a valid data system dir"
+            log.fatal(msg)
+            raise OSError(msg, help_msg)
+    return systems
+
+
 def get_data(
     jdata: Dict[str, Any], rcut, type_map, modifier, multi_task_mode=False
 ) -> DeepmdDataSystem:
@@ -691,27 +732,7 @@ def get_data(
         The data system
     """
     systems = j_must_have(jdata, "systems")
-    if isinstance(systems, str):
-        systems = expand_sys_str(systems)
-    elif isinstance(systems, list):
-        systems = systems.copy()
-    help_msg = "Please check your setting for data systems"
-    # check length of systems
-    if len(systems) == 0:
-        msg = "cannot find valid a data system"
-        log.fatal(msg)
-        raise OSError(msg, help_msg)
-    # rougly check all items in systems are valid
-    for ii in systems:
-        ii = DPPath(ii)
-        if not ii.is_dir():
-            msg = f"dir {ii} is not a valid dir"
-            log.fatal(msg)
-            raise OSError(msg, help_msg)
-        if not (ii / "type.raw").is_file():
-            msg = f"dir {ii} is not a valid data system dir"
-            log.fatal(msg)
-            raise OSError(msg, help_msg)
+    systems = process_systems(systems)
 
     batch_size = j_must_have(jdata, "batch_size")
     sys_probs = jdata.get("sys_probs", None)

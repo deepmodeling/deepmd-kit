@@ -59,6 +59,9 @@ from deepmd.utils.argcheck import (
 from deepmd.utils.compat import (
     update_deepmd_input,
 )
+from deepmd.utils.data_system import (
+    process_systems,
+)
 from deepmd.utils.path import (
     DPPath,
 )
@@ -108,6 +111,9 @@ def get_trainer(
             validation_dataset_params["systems"] if validation_dataset_params else None
         )
         training_systems = training_dataset_params["systems"]
+        training_systems = process_systems(training_systems)
+        if validation_systems is not None:
+            validation_systems = process_systems(validation_systems)
 
         # stat files
         stat_file_path_single = data_dict_single.get("stat_file", None)
