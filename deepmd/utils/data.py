@@ -147,6 +147,7 @@ class DeepmdData:
         repeat: int = 1,
         default: float = 0.0,
         dtype: Optional[np.dtype] = None,
+        output_natoms_for_type_sel: bool = False,
     ):
         """Add a data item that to be loaded.
 
@@ -173,6 +174,8 @@ class DeepmdData:
             default value of data
         dtype : np.dtype, optional
             the dtype of data, overwrites `high_prec` if provided
+        output_natoms_for_type_sel : bool, optional
+            if True and type_sel is True, the atomic dimension will be natoms instead of nsel
         """
         self.data_dict[key] = {
             "ndof": ndof,
@@ -184,6 +187,7 @@ class DeepmdData:
             "reduce": None,
             "default": default,
             "dtype": dtype,
+            "output_natoms_for_type_sel": output_natoms_for_type_sel,
         }
         return self
 
@@ -523,6 +527,9 @@ class DeepmdData:
                     repeat=self.data_dict[kk]["repeat"],
                     default=self.data_dict[kk]["default"],
                     dtype=self.data_dict[kk]["dtype"],
+                    output_natoms_for_type_sel=self.data_dict[kk][
+                        "output_natoms_for_type_sel"
+                    ],
                 )
         for kk in self.data_dict.keys():
             if self.data_dict[kk]["reduce"] is not None:
@@ -600,6 +607,9 @@ class DeepmdData:
                 for jj in type_sel:
                     natoms_sel += np.sum(self.atom_type == jj)
                 idx_map_sel = self._idx_map_sel(self.atom_type, type_sel)
+            else:
+                natoms_sel = natoms
+                idx_map_sel = idx_map
             ndof = ndof_ * natoms
         else:
             ndof = ndof_
@@ -618,18 +628,21 @@ class DeepmdData:
                 if atomic:
                     if type_sel is not None:
                         # check the data shape is nsel or natoms
-                        if data.size == nframes * natoms_sel * ndof:
+                        if data.size == nframes * natoms_sel * ndof_:
                             if output_natoms_for_type_sel:
                                 tmp = np.zeros(
-                                    [nframes, natoms, ndof], dtype=data.dtype
+                                    [nframes, natoms, ndof_], dtype=data.dtype
                                 )
                                 sel_mask = np.isin(self.atom_type, type_sel)
-                                tmp[:, sel_mask] = data.reshape([nframes, -1])
+                                tmp[:, sel_mask] = data.reshape(
+                                    [nframes, natoms_sel, ndof_]
+                                )
+                                data = tmp
                             else:
                                 natoms = natoms_sel
                                 idx_map = idx_map_sel
                                 ndof = ndof_ * natoms
-                        elif data.size == nframes * natoms * ndof:
+                        elif data.size == nframes * natoms * ndof_:
                             if output_natoms_for_type_sel:
                                 pass
                             else:
@@ -642,8 +655,8 @@ class DeepmdData:
                             raise ValueError(
                                 f"The shape of the data {key} in {set_name}"
                                 f"is {data.shape}, which doesn't match either"
-                                f"({nframes}, {natoms_sel}, {ndof}) or"
-                                f"({nframes}, {natoms}, {ndof})"
+                                f"({nframes}, {natoms_sel}, {ndof_}) or"
+                                f"({nframes}, {natoms}, {ndof_})"
                             )
                     data = data.reshape([nframes, natoms, -1])
                     data = data[:, idx_map, :]
@@ -653,7 +666,7 @@ class DeepmdData:
                 explanation = "This error may occur when your label mismatch it's name, i.e. you might store global tensor in `atomic_tensor.npy` or atomic tensor in `tensor.npy`."
                 log.error(str(err_message))
                 log.error(explanation)
-                raise ValueError(str(err_message) + ". " + explanation)
+                raise ValueError(str(err_message) + ". " + explanation) from err_message
             if repeat != 1:
                 data = np.repeat(data, repeat).reshape([nframes, -1])
             return np.float32(1.0), data
