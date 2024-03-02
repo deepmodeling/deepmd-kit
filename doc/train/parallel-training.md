@@ -162,7 +162,7 @@ To start training with multiple GPUs in one node, set parameter `nproc_per_node`
 ```bash
 torchrun --nproc_per_node=4 --no-python dp --pt train input.json
 # Not setting `nproc_per_node` uses only 1 GPU
-torchrun --no-python dp_pt train input.json
+torchrun --no-python dp --pt train input.json
 ```
 
 To train a model with a cluster, one can manually launch the task using the commands below (usually this should be done by your job management system). Set `nnodes` as the number of available nodes, `node_rank` as the rank of the current node among all nodes (not the rank of processes!), and `nproc_per_node` as the number of available GPUs in one node. Please make sure that every node can access the rendezvous address and port (`rdzv_endpoint` in the command), and has a same amount of GPUs.
