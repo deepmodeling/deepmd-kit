@@ -589,19 +589,22 @@ class DeepmdData:
         type_sel=None,
         default: float = 0.0,
         dtype: Optional[np.dtype] = None,
+        output_natoms_for_type_sel: bool = False,
     ):
         if atomic:
             natoms = self.natoms
             idx_map = self.idx_map
             # if type_sel, then revise natoms and idx_map
             if type_sel is not None:
-                natoms = 0
+                natoms_sel = 0
                 for jj in type_sel:
-                    natoms += np.sum(self.atom_type == jj)
-                idx_map = self._idx_map_sel(self.atom_type, type_sel)
+                    natoms_sel += np.sum(self.atom_type == jj)
+                idx_map_sel = self._idx_map_sel(self.atom_type, type_sel)
             ndof = ndof_ * natoms
         else:
             ndof = ndof_
+            natoms_sel = 0
+            idx_map_sel = None
         if dtype is not None:
             pass
         elif high_prec:
@@ -613,6 +616,35 @@ class DeepmdData:
             data = path.load_numpy().astype(dtype)
             try:  # YWolfeee: deal with data shape error
                 if atomic:
+                    if type_sel is not None:
+                        # check the data shape is nsel or natoms
+                        if data.size == nframes * natoms_sel * ndof:
+                            if output_natoms_for_type_sel:
+                                tmp = np.zeros(
+                                    [nframes, natoms, ndof], dtype=data.dtype
+                                )
+                                sel_mask = np.isin(self.atom_type, type_sel)
+                                tmp[:, sel_mask] = data.reshape([nframes, -1])
+                            else:
+                                natoms = natoms_sel
+                                idx_map = idx_map_sel
+                                ndof = ndof_ * natoms
+                        elif data.size == nframes * natoms * ndof:
+                            if output_natoms_for_type_sel:
+                                pass
+                            else:
+                                sel_mask = np.isin(self.atom_type, type_sel)
+                                data = data[:, sel_mask]
+                                natoms = natoms_sel
+                                idx_map = idx_map_sel
+                                ndof = ndof_ * natoms
+                        else:
+                            raise ValueError(
+                                f"The shape of the data {key} in {set_name}"
+                                f"is {data.shape}, which doesn't match either"
+                                f"({nframes}, {natoms_sel}, {ndof}) or"
+                                f"({nframes}, {natoms}, {ndof})"
+                            )
                     data = data.reshape([nframes, natoms, -1])
                     data = data[:, idx_map, :]
                     data = data.reshape([nframes, -1])
@@ -628,6 +660,8 @@ class DeepmdData:
         elif must:
             raise RuntimeError("%s not found!" % path)
         else:
+            if type_sel is not None and not output_natoms_for_type_sel:
+                ndof = ndof_ * natoms_sel
             data = np.full([nframes, ndof], default, dtype=dtype)
             if repeat != 1:
                 data = np.repeat(data, repeat).reshape([nframes, -1])
