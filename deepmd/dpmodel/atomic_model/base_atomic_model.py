@@ -8,6 +8,10 @@ from typing import (
 
 import numpy as np
 
+from deepmd.dpmodel.output_def import (
+    FittingOutputDef,
+    OutputVariableDef,
+)
 from deepmd.dpmodel.utils import (
     AtomExcludeMask,
     PairExcludeMask,
@@ -50,6 +54,24 @@ class BaseAtomicModel(BaseAtomicModel_):
         else:
             self.pair_excl = PairExcludeMask(self.get_ntypes(), self.pair_exclude_types)
 
+    def atomic_output_def(self) -> FittingOutputDef:
+        old_def = self.fitting_output_def()
+        if self.atom_excl is None:
+            return old_def
+        else:
+            old_list = list(old_def.get_data().values())
+            return FittingOutputDef(
+                old_list.append(
+                    OutputVariableDef(
+                        name="mask",
+                        shape=[1],
+                        reduciable=False,
+                        r_differentiable=False,
+                        c_differentiable=False,
+                    )
+                )
+            )
+
     def forward_common_atomic(
         self,
         extended_coord: np.ndarray,
@@ -79,6 +101,7 @@ class BaseAtomicModel(BaseAtomicModel_):
             atom_mask = self.atom_excl.build_type_exclude_mask(atype)
             for kk in ret_dict.keys():
                 ret_dict[kk] = ret_dict[kk] * atom_mask[:, :, None]
+            ret_dict["mask"] = atom_mask
 
         return ret_dict
 

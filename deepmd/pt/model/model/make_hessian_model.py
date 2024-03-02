@@ -25,7 +25,7 @@ def make_hessian_model(T_Model):
     Parameters
     ----------
     T_Model
-        The model. Should provide the `forward_common` and `fitting_output_def` methods
+        The model. Should provide the `forward_common` and `atomic_output_def` methods
 
     Returns
     -------
@@ -43,7 +43,7 @@ def make_hessian_model(T_Model):
                 *args,
                 **kwargs,
             )
-            self.hess_fitting_def = copy.deepcopy(super().fitting_output_def())
+            self.hess_fitting_def = copy.deepcopy(super().atomic_output_def())
 
         def requires_hessian(
             self,
@@ -56,7 +56,7 @@ def make_hessian_model(T_Model):
                 if kk in keys:
                     self.hess_fitting_def[kk].r_hessian = True
 
-        def fitting_output_def(self):
+        def atomic_output_def(self):
             """Get the fitting output def."""
             return self.hess_fitting_def
 
@@ -102,7 +102,7 @@ def make_hessian_model(T_Model):
                 aparam=aparam,
                 do_atomic_virial=do_atomic_virial,
             )
-            vdef = self.fitting_output_def()
+            vdef = self.atomic_output_def()
             hess_yes = [vdef[kk].r_hessian for kk in vdef.keys()]
             if any(hess_yes):
                 hess = self._cal_hessian_all(
@@ -128,7 +128,7 @@ def make_hessian_model(T_Model):
             box = box.view([nf, 9]) if box is not None else None
             fparam = fparam.view([nf, -1]) if fparam is not None else None
             aparam = aparam.view([nf, nloc, -1]) if aparam is not None else None
-            fdef = self.fitting_output_def()
+            fdef = self.atomic_output_def()
             # keys of values that require hessian
             hess_keys: List[str] = []
             for kk in fdef.keys():

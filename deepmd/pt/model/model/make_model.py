@@ -72,7 +72,7 @@ def make_model(T_AtomicModel):
 
         def model_output_def(self):
             """Get the output def for the model."""
-            return ModelOutputDef(self.fitting_output_def())
+            return ModelOutputDef(self.atomic_output_def())
 
         @torch.jit.export
         def model_output_type(self) -> str:
@@ -218,7 +218,7 @@ def make_model(T_AtomicModel):
             )
             model_predict = fit_output_to_model_output(
                 atomic_ret,
-                self.fitting_output_def(),
+                self.atomic_output_def(),
                 cc_ext,
                 do_atomic_virial=do_atomic_virial,
             )
