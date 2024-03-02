@@ -34,10 +34,25 @@ class DPTrainTest:
         fix_params = deepcopy(self.config)
         fix_params["model"]["descriptor"]["trainable"] = False
         fix_params["model"]["fitting_net"]["trainable"] = False
-        trainer_fix = get_trainer(fix_params)
-        model_dict_before_training = deepcopy(trainer_fix.model.state_dict())
-        trainer_fix.run()
-        model_dict_after_training = deepcopy(trainer_fix.model.state_dict())
+        free_descriptor = hasattr(self, "not_all_grad") and self.not_all_grad
+        if free_descriptor:
+            # can not set requires_grad false for all parameters,
+            # because the input coord has no grad, thus the loss if all set to false
+            # we only check trainable for fitting net
+            fix_params["model"]["descriptor"]["trainable"] = True
+            trainer_fix = get_trainer(fix_params)
+            model_dict_before_training = deepcopy(
+                trainer_fix.model.fitting_net.state_dict()
+            )
+            trainer_fix.run()
+            model_dict_after_training = deepcopy(
+                trainer_fix.model.fitting_net.state_dict()
+            )
+        else:
+            trainer_fix = get_trainer(fix_params)
+            model_dict_before_training = deepcopy(trainer_fix.model.state_dict())
+            trainer_fix.run()
+            model_dict_after_training = deepcopy(trainer_fix.model.state_dict())
         for key in model_dict_before_training:
             torch.testing.assert_allclose(
                 model_dict_before_training[key], model_dict_after_training[key]
@@ -253,6 +268,9 @@ class TestPolarModelSeA(unittest.TestCase, DPTrainTest):
         self.config["model"]["fitting_net"]["fit_diag"] = False
         self.config["training"]["numb_steps"] = 1
         self.config["training"]["save_freq"] = 1
+        # can not set requires_grad false for all parameters,
+        # because the input coord has no grad, thus the loss if all set to false
+        self.not_all_grad = True
 
     def tearDown(self) -> None:
         DPTrainTest.tearDown(self)
@@ -283,6 +301,9 @@ class TestPolarModelDPA1(unittest.TestCase, DPTrainTest):
         self.config["model"]["fitting_net"]["fit_diag"] = False
         self.config["training"]["numb_steps"] = 1
         self.config["training"]["save_freq"] = 1
+        # can not set requires_grad false for all parameters,
+        # because the input coord has no grad, thus the loss if all set to false
+        self.not_all_grad = True
 
     def tearDown(self) -> None:
         DPTrainTest.tearDown(self)
@@ -313,6 +334,9 @@ class TestPolarModelDPA2(unittest.TestCase, DPTrainTest):
         self.config["model"]["fitting_net"]["fit_diag"] = False
         self.config["training"]["numb_steps"] = 1
         self.config["training"]["save_freq"] = 1
+        # can not set requires_grad false for all parameters,
+        # because the input coord has no grad, thus the loss if all set to false
+        self.not_all_grad = True
 
     def tearDown(self) -> None:
         DPTrainTest.tearDown(self)
