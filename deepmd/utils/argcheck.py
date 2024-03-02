@@ -458,8 +458,8 @@ def descrpt_se_atten_args():
     doc_tebd_dim = "The dimension of atom type embedding."
     doc_temperature = "The scaling factor of normalization in calculations of attention weights, which is used to scale the matmul(Q, K)."
     doc_scaling_factor = (
-        "The scaling factor of normalization in calculations of attention weights, which is used to scale the matmul(Q, K)."
-        "If `temperature` is None, the scaling of attention weights is (N_hidden_dim * scaling_factor)**0.5."
+        "The scaling factor of normalization in calculations of attention weights, which is used to scale the matmul(Q, K). "
+        "If `temperature` is None, the scaling of attention weights is (N_hidden_dim * scaling_factor)**0.5. "
         "Else, the scaling of attention weights is setting to `temperature`."
     )
     doc_normalize = (
