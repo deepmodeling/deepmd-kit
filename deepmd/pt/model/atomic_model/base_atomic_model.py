@@ -71,7 +71,8 @@ class BaseAtomicModel(BaseAtomicModel_):
         else:
             old_list = list(old_def.get_data().values())
             return FittingOutputDef(
-                old_list.append(
+                old_list  # noqa:RUF005
+                + [
                     OutputVariableDef(
                         name="mask",
                         shape=[1],
@@ -79,7 +80,7 @@ class BaseAtomicModel(BaseAtomicModel_):
                         r_differentiable=False,
                         c_differentiable=False,
                     )
-                )
+                ]
             )
 
     def forward_common_atomic(
