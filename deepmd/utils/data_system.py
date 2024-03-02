@@ -556,40 +556,16 @@ class DeepmdDataSystem:
         """Get the batch size."""
         return self.batch_size
 
-    def _format_name_length(self, name, width):
-        if len(name) <= width:
-            return "{: >{}}".format(name, width)
-        else:
-            name = name[-(width - 3) :]
-            name = "-- " + name
-            return name
-
-    def print_summary(self, name):
-        # width 65
-        sys_width = 42
-        log.info(
-            f"---Summary of DataSystem: {name:13s}-----------------------------------------------"
-        )
-        log.info("found %d system(s):" % self.nsystems)
-        log.info(
-            ("%s  " % self._format_name_length("system", sys_width))
-            + ("%6s  %6s  %6s  %9s  %3s" % ("natoms", "bch_sz", "n_bch", "prob", "pbc"))
-        )
-        for ii in range(self.nsystems):
-            log.info(
-                "%s  %6d  %6d  %6d  %9.3e  %3s"
-                % (
-                    self._format_name_length(self.system_dirs[ii], sys_width),
-                    self.natoms[ii],
-                    # TODO batch size * nbatches = number of structures
-                    self.batch_size[ii],
-                    self.nbatches[ii],
-                    self.sys_probs[ii],
-                    "T" if self.data_systems[ii].pbc else "F",
-                )
-            )
-        log.info(
-            "--------------------------------------------------------------------------------------"
+    def print_summary(self, name: str):
+        print_summary(
+            name,
+            self.nsystems,
+            self.system_dirs,
+            self.natoms,
+            self.batch_size,
+            self.nbatches,
+            self.sys_probs,
+            [ii.pbc for ii in self.data_systems],
         )
 
     def _make_auto_bs(self, rule):
@@ -623,6 +599,74 @@ class DeepmdDataSystem:
                 if len(ii) > len(ret):
                     ret = ii
         return ret
+
+
+def _format_name_length(name, width):
+    if len(name) <= width:
+        return "{: >{}}".format(name, width)
+    else:
+        name = name[-(width - 3) :]
+        name = "-- " + name
+        return name
+
+
+def print_summary(
+    name: str,
+    nsystems: int,
+    system_dirs: List[str],
+    natoms: List[int],
+    batch_size: List[int],
+    nbatches: List[int],
+    sys_probs: List[float],
+    pbc: List[bool],
+):
+    """Print summary of systems.
+
+    Parameters
+    ----------
+    name : str
+        The name of the system
+    nsystems : int
+        The number of systems
+    system_dirs : list of str
+        The directories of the systems
+    natoms : list of int
+        The number of atoms
+    batch_size : list of int
+        The batch size
+    nbatches : list of int
+        The number of batches
+    sys_probs : list of float
+        The probabilities
+    pbc : list of bool
+        The periodic boundary conditions
+    """
+    # width 65
+    sys_width = 42
+    log.info(
+        f"---Summary of DataSystem: {name:13s}-----------------------------------------------"
+    )
+    log.info("found %d system(s):" % nsystems)
+    log.info(
+        ("%s  " % _format_name_length("system", sys_width))
+        + ("%6s  %6s  %6s  %9s  %3s" % ("natoms", "bch_sz", "n_bch", "prob", "pbc"))
+    )
+    for ii in range(nsystems):
+        log.info(
+            "%s  %6d  %6d  %6d  %9.3e  %3s"
+            % (
+                _format_name_length(system_dirs[ii], sys_width),
+                natoms[ii],
+                # TODO batch size * nbatches = number of structures
+                batch_size[ii],
+                nbatches[ii],
+                sys_probs[ii],
+                "T" if pbc[ii] else "F",
+            )
+        )
+    log.info(
+        "--------------------------------------------------------------------------------------"
+    )
 
 
 def process_sys_probs(sys_probs, nbatch):
