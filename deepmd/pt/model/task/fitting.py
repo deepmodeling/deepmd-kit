@@ -133,6 +133,10 @@ class Fitting(torch.nn.Module, BaseFitting):
         )
         finetune_data.add("energy", ndof=1, atomic=False, must=True, high_prec=True)
         model = torch.jit.script(model)
+        if model.get_dim_fparam() > 0:
+            finetune_data.add("fparam", model.get_dim_fparam(), atomic=False, must=True)
+        if model.get_dim_aparam() > 0:
+            finetune_data.add("aparam", model.get_dim_aparam(), atomic=True, must=True)
         tmp_model = tempfile.NamedTemporaryFile(delete=False, suffix=".pth")
         torch.jit.save(model, tmp_model.name)
         dp = DeepEval(tmp_model.name)
