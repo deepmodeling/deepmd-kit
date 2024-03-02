@@ -166,8 +166,8 @@ class TestDPModel(unittest.TestCase, HessianTest):
         self.model_hess.requires_hessian("energy")
 
     def test_output_def(self):
-        self.assertTrue(self.model_hess.fitting_output_def()["energy"].r_hessian)
-        self.assertFalse(self.model_valu.fitting_output_def()["energy"].r_hessian)
+        self.assertTrue(self.model_hess.atomic_output_def()["energy"].r_hessian)
+        self.assertFalse(self.model_valu.atomic_output_def()["energy"].r_hessian)
         self.assertTrue(self.model_hess.model_output_def()["energy"].r_hessian)
         self.assertEqual(
             self.model_hess.model_output_def()["energy_derv_r_derv_r"].category,

@@ -26,6 +26,7 @@ from typing import (
     Any,
     List,
     Optional,
+    Tuple,
 )
 
 from deepmd.dpmodel import (
@@ -168,12 +169,12 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         self.resnet_dt = resnet_dt
         self.trainable = trainable
         self.type_one_side = type_one_side
-        self.exclude_types = exclude_types
         self.set_davg_zero = set_davg_zero
         self.activation_function = activation_function
         self.precision = precision
         self.spin = spin
-        self.emask = PairExcludeMask(self.ntypes, self.exclude_types)
+        # order matters, placed after the assignment of self.ntypes
+        self.reinit_exclude(exclude_types)
 
         in_dim = 1  # not considiering type embedding
         self.embeddings = NetworkCollection(
@@ -270,6 +271,13 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         # (nf x nloc) x nnei x ng
         gg = self.embeddings[embedding_idx].call(ss)
         return gg
+
+    def reinit_exclude(
+        self,
+        exclude_types: List[Tuple[int, int]] = [],
+    ):
+        self.exclude_types = exclude_types
+        self.emask = PairExcludeMask(self.ntypes, exclude_types=exclude_types)
 
     def call(
         self,

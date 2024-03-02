@@ -152,6 +152,7 @@ class TestDPAtomicModel(unittest.TestCase, TestCaseSingleFrameWithNlist):
             md1.descriptor.reinit_exclude(pair_excl)
             md1.fitting_net.reinit_exclude(atom_excl)
 
+            # check energy consistency
             args = [
                 to_torch_tensor(ii)
                 for ii in [self.coord_ext, self.atype_ext, self.nlist]
@@ -162,3 +163,29 @@ class TestDPAtomicModel(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 to_numpy_array(ret0["energy"]),
                 to_numpy_array(ret1["energy"]),
             )
+
+            # check output def
+            out_names = [vv.name for vv in md0.atomic_output_def().get_data().values()]
+            if atom_excl == []:
+                self.assertEqual(out_names, ["energy"])
+            else:
+                self.assertEqual(out_names, ["energy", "mask"])
+                for ii in md0.atomic_output_def().get_data().values():
+                    if ii.name == "mask":
+                        self.assertEqual(ii.shape, [1])
+                        self.assertFalse(ii.reduciable)
+                        self.assertFalse(ii.r_differentiable)
+                        self.assertFalse(ii.c_differentiable)
+
+            # check mask
+            if atom_excl == []:
+                pass
+            elif atom_excl == [1]:
+                self.assertIn("mask", ret0.keys())
+                expected = np.array([1, 1, 0], dtype=int)
+                expected = np.concatenate(
+                    [expected, expected[self.perm[: self.nloc]]]
+                ).reshape(2, 3)
+                np.testing.assert_array_equal(to_numpy_array(ret0["mask"]), expected)
+            else:
+                raise ValueError(f"not expected atom_excl {atom_excl}")
