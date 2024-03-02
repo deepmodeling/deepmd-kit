@@ -1,4 +1,4 @@
-# Create a model
+# Create a model in TensorFlow
 
 If you'd like to create a new model that isn't covered by the existing DeePMD-kit library, but reuse DeePMD-kit's other efficient modules such as data processing, trainner, etc, you may want to read this section.
 
@@ -10,7 +10,7 @@ To incorporate your custom model you'll need to:
 
 ## Design a new component
 
-When creating a new component, take descriptor as the example, you should inherit {py:class}`deepmd.tf.descriptor.descriptor.Descriptor` class and override several methods. Abstract methods such as {py:class}`deepmd.tf.descriptor.descriptor.Descriptor.build` must be implemented and others are not. You should keep arguments of these methods unchanged.
+When creating a new component, take descriptor as the example, one should inherit from the {py:class}`deepmd.tf.descriptor.descriptor.Descriptor` class and override several methods. Abstract methods such as {py:class}`deepmd.tf.descriptor.descriptor.Descriptor.build` must be implemented and others are not. You should keep arguments of these methods unchanged.
 
 After implementation, you need to register the component with a key:
 ```py
@@ -31,7 +31,7 @@ To let someone uses your new component in their input file, you need to create a
 from typing import List
 
 from dargs import Argument
-from deepmd.tf.utils.argcheck import descrpt_args_plugin
+from deepmd.utils.argcheck import descrpt_args_plugin
 
 
 @descrpt_args_plugin.register("some_descrpt")

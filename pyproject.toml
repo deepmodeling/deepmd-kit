@@ -237,6 +237,7 @@ select = [
     "C4", # flake8-comprehensions
     "RUF", # ruff
     "NPY", # numpy
+    "TID253", # banned-module-level-imports
 ]
 
 ignore = [
@@ -256,8 +257,29 @@ ignore = [
 ]
 ignore-init-module-imports = true
 
+exclude = [
+    "source/3rdparty/**",
+]
+
 [tool.ruff.lint.pydocstyle]
 convention = "numpy"
+
+[tool.ruff.lint.flake8-tidy-imports]
+banned-module-level-imports = [
+    "deepmd.tf",
+    "deepmd.pt",
+    "tensorflow",
+    "torch",
+]
+
+[tool.ruff.lint.extend-per-file-ignores]
+# Also ignore `E402` in all `__init__.py` files.
+"deepmd/tf/**" = ["TID253"]
+"deepmd/pt/**" = ["TID253"]
+"source/tests/tf/**" = ["TID253"]
+"source/tests/pt/**" = ["TID253"]
+"source/ipi/tests/**" = ["TID253"]
+"source/lmp/tests/**" = ["TID253"]
 
 [tool.pytest.ini_options]
 markers = "run"

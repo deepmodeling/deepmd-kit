@@ -77,6 +77,7 @@ class DescrptDPA2(torch.nn.Module, BaseDescriptor):
         repformer_update_style: str = "res_avg",
         repformer_set_davg_zero: bool = True,  # TODO
         repformer_add_type_ebd_to_seq: bool = False,
+        trainable: bool = True,
         type: Optional[
             str
         ] = None,  # work around the bad design in get_trainer and DpLoaderSet!
@@ -172,6 +173,8 @@ class DescrptDPA2(torch.nn.Module, BaseDescriptor):
             repformers block: set the avg to zero in statistics
         repformer_add_type_ebd_to_seq : bool
             repformers block: concatenate the type embedding at the output.
+        trainable : bool
+            If the parameters in the descriptor are trainable.
 
         Returns
         -------
@@ -251,6 +254,9 @@ class DescrptDPA2(torch.nn.Module, BaseDescriptor):
         self.rcut = self.repinit.get_rcut()
         self.ntypes = ntypes
         self.sel = self.repinit.sel
+        # set trainable
+        for param in self.parameters():
+            param.requires_grad = trainable
 
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""

@@ -312,6 +312,7 @@ class DescrptBlockSeA(DescriptorBlock):
         exclude_types: List[Tuple[int, int]] = [],
         old_impl: bool = False,
         type_one_side: bool = True,
+        trainable: bool = True,
         **kwargs,
     ):
         """Construct an embedding net of type `se_a`.
@@ -384,6 +385,9 @@ class DescrptBlockSeA(DescriptorBlock):
                 )
             self.filter_layers = filter_layers
         self.stats = None
+        # set trainable
+        for param in self.parameters():
+            param.requires_grad = trainable
 
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""

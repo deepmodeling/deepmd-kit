@@ -73,7 +73,10 @@ class GeneralFitting(NativeOP, BaseFitting):
             different fitting nets for different atom types.
     exclude_types: List[int]
             Atomic contributions of the excluded atom types are set zero.
-
+    remove_vaccum_contribution: List[bool], optional
+        Remove vaccum contribution before the bias is added. The list assigned each
+        type. For `mixed_types` provide `[True]`, otherwise it should be a list of the same
+        length as `ntypes` signaling if or not removing the vaccum contribution for the atom types in the list.
     """
 
     def __init__(
@@ -95,6 +98,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         spin: Any = None,
         mixed_types: bool = True,
         exclude_types: List[int] = [],
+        remove_vaccum_contribution: Optional[List[bool]] = None,
     ):
         self.var_name = var_name
         self.ntypes = ntypes
@@ -119,6 +123,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         self.exclude_types = exclude_types
         if self.spin is not None:
             raise NotImplementedError("spin is not supported")
+        self.remove_vaccum_contribution = remove_vaccum_contribution
 
         self.emask = AtomExcludeMask(self.ntypes, self.exclude_types)
 
@@ -298,6 +303,14 @@ class GeneralFitting(NativeOP, BaseFitting):
                 "which is not consistent with {self.dim_descrpt}."
             )
         xx = descriptor
+        if self.remove_vaccum_contribution is not None:
+            # TODO: Idealy, the input for vaccum should be computed;
+            # we consider it as always zero for convenience.
+            # Needs a compute_input_stats for vaccum passed from the
+            # descriptor.
+            xx_zeros = np.zeros_like(xx)
+        else:
+            xx_zeros = None
         # check fparam dim, concate to input descriptor
         if self.numb_fparam > 0:
             assert fparam is not None, "fparam should not be None"
@@ -312,6 +325,11 @@ class GeneralFitting(NativeOP, BaseFitting):
                 [xx, fparam],
                 axis=-1,
             )
+            if xx_zeros is not None:
+                xx_zeros = np.concatenate(
+                    [xx_zeros, fparam],
+                    axis=-1,
+                )
         # check aparam dim, concate to input descriptor
         if self.numb_aparam > 0:
             assert aparam is not None, "aparam should not be None"
@@ -326,6 +344,11 @@ class GeneralFitting(NativeOP, BaseFitting):
                 [xx, aparam],
                 axis=-1,
             )
+            if xx_zeros is not None:
+                xx_zeros = np.concatenate(
+                    [xx_zeros, aparam],
+                    axis=-1,
+                )
 
         # calcualte the prediction
         if not self.mixed_types:
@@ -335,11 +358,19 @@ class GeneralFitting(NativeOP, BaseFitting):
                     (atype == type_i).reshape([nf, nloc, 1]), [1, 1, net_dim_out]
                 )
                 atom_property = self.nets[(type_i,)](xx)
+                if self.remove_vaccum_contribution is not None and not (
+                    len(self.remove_vaccum_contribution) > type_i
+                    and not self.remove_vaccum_contribution[type_i]
+                ):
+                    assert xx_zeros is not None
+                    atom_property -= self.nets[(type_i,)](xx_zeros)
                 atom_property = atom_property + self.bias_atom_e[type_i]
                 atom_property = atom_property * mask
                 outs = outs + atom_property  # Shape is [nframes, natoms[0], 1]
         else:
             outs = self.nets[()](xx) + self.bias_atom_e[atype]
+            if xx_zeros is not None:
+                outs -= self.nets[()](xx_zeros)
         # nf x nloc
         exclude_mask = self.emask.build_type_exclude_mask(atype)
         # nf x nloc x nod
