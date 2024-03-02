@@ -1,7 +1,7 @@
 # Parallel training {{ tensorflow_icon }} {{ pytorch_icon }}
 
 :::{note}
-**Supported backends**: TensorFlow {{ tensorflow_icon }} PyTorch {{ pytorch_icon }}
+**Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}
 :::
 
 ## TensorFlow Implementation
