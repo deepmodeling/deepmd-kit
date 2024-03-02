@@ -53,11 +53,11 @@ from deepmd.pt.utils.learning_rate import (
 from deepmd.pt.utils.stat import (
     make_stat_input,
 )
-from deepmd.utils.data import (
-    DataRequirementItem,
-)
 from deepmd.pt.utils.utils import (
     to_numpy_array,
+)
+from deepmd.utils.data import (
+    DataRequirementItem,
 )
 
 if torch.__version__.startswith("2"):
