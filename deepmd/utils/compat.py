@@ -16,7 +16,7 @@ from typing import (
 
 import numpy as np
 
-from deepmd.tf.common import (
+from deepmd.common import (
     j_must_have,
 )
 
