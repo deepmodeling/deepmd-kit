@@ -1011,7 +1011,6 @@ def fitting_polar():
     doc_fit_diag = "Fit the diagonal part of the rotational invariant polarizability matrix, which will be converted to normal polarizability matrix by contracting with the rotation matrix."
     doc_sel_type = "The atom types for which the atomic polarizability will be provided. If not set, all types will be selected."
     doc_seed = "Random seed for parameter initialization of the fitting net"
-    doc_exclude_types = "Atomic contributions of the excluded atom types are set zero."
 
     # YWolfeee: user can decide whether to use shift diag
     doc_shift_diag = "Whether to shift the diagonal of polar, which is beneficial to training. Default is true."
@@ -1047,13 +1046,6 @@ def fitting_polar():
             alias=["pol_type"],
             doc=doc_sel_type + doc_only_tf_supported,
         ),
-        Argument(
-            "exclude_types",
-            [List[int], None],
-            optional=True,
-            default=[],
-            doc=doc_exclude_types + doc_only_pt_supported,
-        ),
         Argument("seed", [int, None], optional=True, doc=doc_seed),
     ]
 
@@ -1070,7 +1062,6 @@ def fitting_dipole():
     doc_precision = f"The precision of the fitting net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
     doc_sel_type = "The atom types for which the atomic dipole will be provided. If not set, all types will be selected."
     doc_seed = "Random seed for parameter initialization of the fitting net"
-    doc_exclude_types = "Atomic contributions of the excluded atom types are set zero."
     return [
         Argument(
             "neuron",
@@ -1095,13 +1086,6 @@ def fitting_dipole():
             optional=True,
             alias=["dipole_type"],
             doc=doc_sel_type + doc_only_tf_supported,
-        ),
-        Argument(
-            "exclude_types",
-            [List[int], None],
-            optional=True,
-            default=[],
-            doc=doc_exclude_types + doc_only_pt_supported,
         ),
         Argument("seed", [int, None], optional=True, doc=doc_seed),
     ]
