@@ -127,6 +127,8 @@ class TestDataModifier(tf.test.TestCase):
         self.coords1 = np.reshape(self.coords1, [self.nframes, self.natoms * 3])
         self.dipoles1 = self.dipoles0[:, self.sel_idx_map]
         self.box1 = self.box0
+        self.sel_mask0 = np.isin(self.atom_types0, self.sel_type)
+        self.sel_mask1 = np.isin(self.atom_types1, self.sel_type)
 
     def _write_sys_data(self, dirname, atom_types, coords, dipoles, box):
         os.makedirs(dirname, exist_ok=True)
@@ -185,8 +187,8 @@ class TestDataModifier(tf.test.TestCase):
     def test_z_dipole(self):
         dd = DeepDipole(os.path.join(modifier_datapath, "dipole.pb"))
 
-        dv0 = dd.eval(self.coords0, self.box0, self.atom_types0)
-        dv1 = dd.eval(self.coords1, self.box1, self.atom_types1)
+        dv0 = dd.eval(self.coords0, self.box0, self.atom_types0)[:, self.sel_mask0]
+        dv1 = dd.eval(self.coords1, self.box1, self.atom_types1)[:, self.sel_mask1]
 
         dv01 = dv0.reshape([self.nframes, -1, 3])
         dv01 = dv01[:, self.sel_idx_map, :]
