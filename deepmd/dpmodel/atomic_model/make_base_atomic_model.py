@@ -36,8 +36,17 @@ def make_base_atomic_model(
 
         @abstractmethod
         def fitting_output_def(self) -> FittingOutputDef:
-            """Get the fitting output def."""
+            """Get the output def of developer implemented atomic models."""
             pass
+
+        def atomic_output_def(self) -> FittingOutputDef:
+            """Get the output def of the atomic model.
+
+            By default it is the same as FittingOutputDef, but it
+            allows model level wrapper of the output defined by the developer.
+
+            """
+            return self.fitting_output_def()
 
         @abstractmethod
         def get_rcut(self) -> float:
