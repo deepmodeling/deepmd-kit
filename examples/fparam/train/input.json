@@ -1,6 +1,9 @@
 {
   "_comment1": " model parameters",
   "model": {
+    "type_map": [
+      "Be"
+    ],
     "data_stat_nbatch": 1,
     "descriptor": {
       "type": "se_a",

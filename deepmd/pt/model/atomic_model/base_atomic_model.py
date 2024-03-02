@@ -13,6 +13,10 @@ import torch
 from deepmd.dpmodel.atomic_model import (
     make_base_atomic_model,
 )
+from deepmd.dpmodel.output_def import (
+    FittingOutputDef,
+    OutputVariableDef,
+)
 from deepmd.pt.utils import (
     AtomExcludeMask,
     PairExcludeMask,
@@ -59,6 +63,25 @@ class BaseAtomicModel(BaseAtomicModel_):
     @torch.jit.export
     def get_model_def_script(self) -> str:
         return self.model_def_script
+
+    def atomic_output_def(self) -> FittingOutputDef:
+        old_def = self.fitting_output_def()
+        if self.atom_excl is None:
+            return old_def
+        else:
+            old_list = list(old_def.get_data().values())
+            return FittingOutputDef(
+                old_list  # noqa:RUF005
+                + [
+                    OutputVariableDef(
+                        name="mask",
+                        shape=[1],
+                        reduciable=False,
+                        r_differentiable=False,
+                        c_differentiable=False,
+                    )
+                ]
+            )
 
     def forward_common_atomic(
         self,

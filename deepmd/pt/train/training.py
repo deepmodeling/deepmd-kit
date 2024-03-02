@@ -55,6 +55,12 @@ from deepmd.pt.utils.learning_rate import (
 from deepmd.pt.utils.stat import (
     make_stat_input,
 )
+from deepmd.pt.utils.utils import (
+    to_numpy_array,
+)
+from deepmd.utils.data import (
+    DataRequirementItem,
+)
 
 if torch.__version__.startswith("2"):
     import torch._dynamo
@@ -199,6 +205,24 @@ class Trainer:
             _training_data.add_data_requirement(_data_requirement)
             if _validation_data is not None:
                 _validation_data.add_data_requirement(_data_requirement)
+            if model.get_dim_fparam() > 0:
+                fparam_requirement_items = [
+                    DataRequirementItem(
+                        "fparam", model.get_dim_fparam(), atomic=False, must=True
+                    )
+                ]
+                _training_data.add_data_requirement(fparam_requirement_items)
+                if _validation_data is not None:
+                    _validation_data.add_data_requirement(fparam_requirement_items)
+            if model.get_dim_aparam() > 0:
+                aparam_requirement_items = [
+                    DataRequirementItem(
+                        "aparam", model.get_dim_aparam(), atomic=True, must=True
+                    )
+                ]
+                _training_data.add_data_requirement(aparam_requirement_items)
+                if _validation_data is not None:
+                    _validation_data.add_data_requirement(aparam_requirement_items)
             if not resuming and self.rank == 0:
 
                 @functools.lru_cache
@@ -323,6 +347,14 @@ class Trainer:
                 self.validation_data,
                 self.valid_numb_batch,
             ) = get_data_loader(training_data, validation_data, training_params)
+            training_data.print_summary(
+                "training", to_numpy_array(self.training_dataloader.sampler.weights)
+            )
+            if validation_data is not None:
+                validation_data.print_summary(
+                    "validation",
+                    to_numpy_array(self.validation_dataloader.sampler.weights),
+                )
         else:
             (
                 self.training_dataloader,
@@ -351,6 +383,18 @@ class Trainer:
                     validation_data[model_key],
                     training_params["data_dict"][model_key],
                 )
+
+                training_data[model_key].print_summary(
+                    f"training in {model_key}",
+                    to_numpy_array(self.training_dataloader[model_key].sampler.weights),
+                )
+                if validation_data is not None:
+                    validation_data[model_key].print_summary(
+                        f"validation in {model_key}",
+                        to_numpy_array(
+                            self.validation_dataloader[model_key].sampler.weights
+                        ),
+                    )
 
         # Learning rate
         self.warmup_steps = training_params.get("warmup_steps", 0)

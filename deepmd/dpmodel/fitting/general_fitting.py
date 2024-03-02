@@ -120,12 +120,11 @@ class GeneralFitting(NativeOP, BaseFitting):
         self.use_aparam_as_mask = use_aparam_as_mask
         self.spin = spin
         self.mixed_types = mixed_types
-        self.exclude_types = exclude_types
+        # order matters, should be place after the assignment of ntypes
+        self.reinit_exclude(exclude_types)
         if self.spin is not None:
             raise NotImplementedError("spin is not supported")
         self.remove_vaccum_contribution = remove_vaccum_contribution
-
-        self.emask = AtomExcludeMask(self.ntypes, self.exclude_types)
 
         net_dim_out = self._net_out_dim()
         # init constants
@@ -213,6 +212,13 @@ class GeneralFitting(NativeOP, BaseFitting):
             return self.scale
         else:
             raise KeyError(key)
+
+    def reinit_exclude(
+        self,
+        exclude_types: List[int] = [],
+    ):
+        self.exclude_types = exclude_types
+        self.emask = AtomExcludeMask(self.ntypes, self.exclude_types)
 
     def serialize(self) -> dict:
         """Serialize the fitting to dict."""

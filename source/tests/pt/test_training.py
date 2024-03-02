@@ -70,6 +70,28 @@ class TestEnergyModelSeA(unittest.TestCase, DPTrainTest):
         DPTrainTest.tearDown(self)
 
 
+class TestFparam(unittest.TestCase, DPTrainTest):
+    """Test if `fparam` can be loaded correctly."""
+
+    def setUp(self):
+        input_json = str(Path(__file__).parent / "water/se_atten.json")
+        with open(input_json) as f:
+            self.config = json.load(f)
+        data_file = [str(Path(__file__).parent / "water/data/data_0")]
+        self.config["training"]["training_data"]["systems"] = data_file
+        self.config["training"]["validation_data"]["systems"] = data_file
+        self.config["model"] = deepcopy(model_se_e2_a)
+        self.config["model"]["fitting_net"]["numb_fparam"] = 1
+        self.config["training"]["numb_steps"] = 1
+        self.config["training"]["save_freq"] = 1
+        self.set_path = Path(__file__).parent / "water/data/data_0" / "set.000"
+        shutil.copyfile(self.set_path / "energy.npy", self.set_path / "fparam.npy")
+
+    def tearDown(self) -> None:
+        (self.set_path / "fparam.npy").unlink(missing_ok=True)
+        DPTrainTest.tearDown(self)
+
+
 class TestEnergyModelDPA1(unittest.TestCase, DPTrainTest):
     def setUp(self):
         input_json = str(Path(__file__).parent / "water/se_atten.json")

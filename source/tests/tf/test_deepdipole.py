@@ -72,6 +72,7 @@ class TestDeepDipolePBC(unittest.TestCase):
                 1.667785136187720063e00,
             ]
         )
+        self.sel_mask = np.isin(self.atype, self.dp.get_sel_type())
 
     @classmethod
     def tearDownClass(cls):
@@ -85,7 +86,7 @@ class TestDeepDipolePBC(unittest.TestCase):
         self.assertEqual(self.dp.get_sel_type(), [0])
 
     def test_1frame_atm(self):
-        dd = self.dp.eval(self.coords, self.box, self.atype)
+        dd = self.dp.eval(self.coords, self.box, self.atype)[:, self.sel_mask]
         # check shape of the returns
         nframes = 1
         natoms = len(self.atype)
@@ -97,7 +98,7 @@ class TestDeepDipolePBC(unittest.TestCase):
     def test_2frame_atm(self):
         coords2 = np.concatenate((self.coords, self.coords))
         box2 = np.concatenate((self.box, self.box))
-        dd = self.dp.eval(coords2, box2, self.atype)
+        dd = self.dp.eval(coords2, box2, self.atype)[:, self.sel_mask]
         # check shape of the returns
         nframes = 2
         natoms = len(self.atype)
@@ -151,6 +152,7 @@ class TestDeepDipoleNoPBC(unittest.TestCase):
                 1.667798310054391e00,
             ]
         )
+        self.sel_mask = np.isin(self.atype, self.dp.get_sel_type())
 
     @classmethod
     def tearDownClass(cls):
@@ -158,7 +160,7 @@ class TestDeepDipoleNoPBC(unittest.TestCase):
         cls.dp = None
 
     def test_1frame_atm(self):
-        dd = self.dp.eval(self.coords, None, self.atype)
+        dd = self.dp.eval(self.coords, None, self.atype)[:, self.sel_mask]
         # check shape of the returns
         nframes = 1
         natoms = len(self.atype)
@@ -168,7 +170,7 @@ class TestDeepDipoleNoPBC(unittest.TestCase):
         np.testing.assert_almost_equal(dd.ravel(), self.expected_d, default_places)
 
     def test_1frame_atm_large_box(self):
-        dd = self.dp.eval(self.coords, self.box, self.atype)
+        dd = self.dp.eval(self.coords, self.box, self.atype)[:, self.sel_mask]
         # check shape of the returns
         nframes = 1
         natoms = len(self.atype)
@@ -455,6 +457,7 @@ class TestDeepDipoleNewPBC(unittest.TestCase):
         self.expected_gv = (
             self.expected_v.reshape(1, self.nout, 6, 9).sum(-2).reshape(-1)
         )
+        self.sel_mask = np.isin(self.atype, self.dp.get_sel_type())
 
     @classmethod
     def tearDownClass(cls):
@@ -476,7 +479,7 @@ class TestDeepDipoleNewPBC(unittest.TestCase):
         np.testing.assert_almost_equal(gt.ravel(), self.expected_gt, default_places)
 
     def test_1frame_old_atm(self):
-        at = self.dp.eval(self.coords, self.box, self.atype)
+        at = self.dp.eval(self.coords, self.box, self.atype)[:, self.sel_mask]
         # check shape of the returns
         nframes = 1
         natoms = len(self.atype)
@@ -488,7 +491,7 @@ class TestDeepDipoleNewPBC(unittest.TestCase):
     def test_2frame_old_atm(self):
         coords2 = np.concatenate((self.coords, self.coords))
         box2 = np.concatenate((self.box, self.box))
-        at = self.dp.eval(coords2, box2, self.atype)
+        at = self.dp.eval(coords2, box2, self.atype)[:, self.sel_mask]
         # check shape of the returns
         nframes = 2
         natoms = len(self.atype)
@@ -515,6 +518,7 @@ class TestDeepDipoleNewPBC(unittest.TestCase):
         gt, ff, vv, at, av = self.dp.eval_full(
             self.coords, self.box, self.atype, atomic=True
         )
+        at = at[:, self.sel_mask]
         # check shape of the returns
         nframes = 1
         natoms = len(self.atype)
@@ -550,6 +554,7 @@ class TestDeepDipoleNewPBC(unittest.TestCase):
             self.atype[i_sf],
             atomic=True,
         )
+        at = at[:, self.sel_mask[i_sf]]
         # check shape of the returns
         nframes = 1
         natoms = len(self.atype)
@@ -617,6 +622,7 @@ class TestDeepDipoleNewPBC(unittest.TestCase):
         coords2 = np.concatenate((self.coords, self.coords))
         box2 = np.concatenate((self.box, self.box))
         gt, ff, vv, at, av = self.dp.eval_full(coords2, box2, self.atype, atomic=True)
+        at = at[:, self.sel_mask]
         # check shape of the returns
         nframes = 2
         natoms = len(self.atype)
@@ -949,6 +955,7 @@ class TestDeepDipoleFakePBC(unittest.TestCase):
         )
         fake_target = fake_target - 13 * np.rint(fake_target / 13)
         self.target_t = fake_target.reshape(-1)
+        self.sel_mask = np.isin(self.atype, self.dp.get_sel_type())
 
     @classmethod
     def tearDownClass(cls):
@@ -966,6 +973,7 @@ class TestDeepDipoleFakePBC(unittest.TestCase):
         gt, ff, vv, at, av = self.dp.eval_full(
             self.coords, self.box, self.atype, atomic=True
         )
+        at = at[:, self.sel_mask]
         # check shape of the returns
         nframes = 1
         natoms = len(self.atype)
@@ -1001,6 +1009,7 @@ class TestDeepDipoleFakePBC(unittest.TestCase):
             self.atype[i_sf],
             atomic=True,
         )
+        at = at[:, self.sel_mask[i_sf]]
         # check shape of the returns
         nframes = 1
         natoms = len(self.atype)

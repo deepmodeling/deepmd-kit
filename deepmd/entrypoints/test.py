@@ -860,6 +860,10 @@ def test_polar(
         rmse_fs = rmse_f / np.sqrt(sel_natoms)
         rmse_fa = rmse_f / sel_natoms
     else:
+        sel_mask = np.isin(atype, sel_type)
+        polar = polar.reshape((polar.shape[0], -1, 9))[:, sel_mask, :].reshape(
+            (polar.shape[0], -1)
+        )
         rmse_f = rmse(polar - test_data["atomic_polarizability"][:numb_test])
 
     log.info(f"# number of test data : {numb_test:d} ")
@@ -996,6 +1000,10 @@ def test_dipole(
         rmse_fs = rmse_f / np.sqrt(sel_natoms)
         rmse_fa = rmse_f / sel_natoms
     else:
+        sel_mask = np.isin(atype, sel_type)
+        dipole = dipole.reshape((dipole.shape[0], -1, 3))[:, sel_mask, :].reshape(
+            (dipole.shape[0], -1)
+        )
         rmse_f = rmse(dipole - test_data["atomic_dipole"][:numb_test])
 
     log.info(f"# number of test data : {numb_test:d}")

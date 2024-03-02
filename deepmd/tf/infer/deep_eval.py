@@ -967,6 +967,18 @@ class DeepEval(DeepEvalBackend):
                 v_out[ii] = self.reverse_map(
                     np.reshape(v_out[ii], odef_shape), sel_imap[:natoms_real]
                 )
+                if nloc_sel < nloc:
+                    # convert shape from nsel to nloc
+                    # sel_atoms was applied before sort; see sort_input
+                    # do not consider mixed_types here (as it is never supported)
+                    sel_mask = np.isin(atom_types[0], self.sel_type)
+                    out_nsel = v_out[ii]
+                    out_nloc = np.zeros(
+                        (nframes, nloc, *out_nsel.shape[2:]), dtype=out_nsel.dtype
+                    )
+                    out_nloc[:, sel_mask] = out_nsel
+                    v_out[ii] = out_nloc
+                    odef_shape = self._get_output_shape(odef, nframes, nloc)
                 v_out[ii] = np.reshape(v_out[ii], odef_shape)
             elif odef.category in (
                 OutputVariableCategory.REDU,
