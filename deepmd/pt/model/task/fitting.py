@@ -9,6 +9,7 @@ from abc import (
 from typing import (
     List,
     Optional,
+    Union,
 )
 
 import numpy as np
@@ -189,6 +190,10 @@ class GeneralFitting(Fitting):
         Random seed.
     exclude_types: List[int]
         Atomic contributions of the excluded atom types are set zero.
+    trainable : Union[List[bool], bool]
+        If the parameters in the fitting net are trainable.
+        Now this only supports setting all the parameters in the fitting net at one state.
+        When in List[bool], the trainable will be True only if all the boolean parameters are True.
     remove_vaccum_contribution: List[bool], optional
         Remove vaccum contribution before the bias is added. The list assigned each
         type. For `mixed_types` provide `[True]`, otherwise it should be a list of the same
@@ -211,6 +216,7 @@ class GeneralFitting(Fitting):
         rcond: Optional[float] = None,
         seed: Optional[int] = None,
         exclude_types: List[int] = [],
+        trainable: Union[bool, List[bool]] = True,
         remove_vaccum_contribution: Optional[List[bool]] = None,
         **kwargs,
     ):
@@ -229,6 +235,11 @@ class GeneralFitting(Fitting):
         self.rcond = rcond
         # order matters, should be place after the assignment of ntypes
         self.reinit_exclude(exclude_types)
+        self.trainable = trainable
+        # need support for each layer settings
+        self.trainable = (
+            all(self.trainable) if isinstance(self.trainable, list) else self.trainable
+        )
         self.remove_vaccum_contribution = remove_vaccum_contribution
 
         net_dim_out = self._net_out_dim()
@@ -303,6 +314,9 @@ class GeneralFitting(Fitting):
 
         if seed is not None:
             torch.manual_seed(seed)
+        # set trainable
+        for param in self.parameters():
+            param.requires_grad = self.trainable
 
     def reinit_exclude(
         self,
@@ -344,7 +358,7 @@ class GeneralFitting(Fitting):
             # "spin": self.spin ,
             ## NOTICE:  not supported by far
             "tot_ener_zero": False,
-            "trainable": [True] * (len(self.neuron) + 1),
+            "trainable": [self.trainable] * (len(self.neuron) + 1),
             "layer_name": None,
             "use_aparam_as_mask": False,
             "spin": None,

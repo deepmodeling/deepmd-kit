@@ -240,7 +240,7 @@ def main_parser() -> argparse.ArgumentParser:
         "--output",
         type=str,
         default="out.json",
-        help="(Supported backend: TensorFlow) The output file of the parameters used in training.",
+        help="The output file of the parameters used in training.",
     )
     parser_train.add_argument(
         "--skip-neighbor-stat",

@@ -455,6 +455,20 @@ def descrpt_se_atten_args():
     doc_stripped_type_embedding = "Whether to strip the type embedding into a separated embedding network. Setting it to `False` will fall back to the previous version of `se_atten` which is non-compressible."
     doc_smooth_type_embdding = "When using stripped type embedding, whether to dot smooth factor on the network output of type embedding to keep the network smooth, instead of setting `set_davg_zero` to be True."
     doc_set_davg_zero = "Set the normalization average to zero. This option should be set when `se_atten` descriptor or `atom_ener` in the energy fitting is used"
+    doc_tebd_dim = "The dimension of atom type embedding."
+    doc_temperature = "The scaling factor of normalization in calculations of attention weights, which is used to scale the matmul(Q, K)."
+    doc_scaling_factor = (
+        "The scaling factor of normalization in calculations of attention weights, which is used to scale the matmul(Q, K). "
+        "If `temperature` is None, the scaling of attention weights is (N_hidden_dim * scaling_factor)**0.5. "
+        "Else, the scaling of attention weights is setting to `temperature`."
+    )
+    doc_normalize = (
+        "Whether to normalize the hidden vectors during attention calculation."
+    )
+    doc_concat_output_tebd = (
+        "Whether to concat type embedding at the output of the descriptor."
+    )
+    doc_deprecated = "This feature will be removed in a future release."
 
     return [
         *descrpt_se_atten_common_args(),
@@ -476,42 +490,81 @@ def descrpt_se_atten_args():
             "set_davg_zero", bool, optional=True, default=True, doc=doc_set_davg_zero
         ),
         # pt only
-        Argument("tebd_dim", int, optional=True, default=8, doc=doc_only_pt_supported),
+        Argument(
+            "tebd_dim",
+            int,
+            optional=True,
+            default=8,
+            doc=doc_only_pt_supported + doc_tebd_dim,
+        ),
         Argument(
             "tebd_input_mode",
             str,
             optional=True,
             default="concat",
-            doc=doc_only_pt_supported,
+            doc=doc_only_pt_supported + doc_deprecated,
         ),
         Argument(
-            "post_ln", bool, optional=True, default=True, doc=doc_only_pt_supported
+            "post_ln",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_only_pt_supported + doc_deprecated,
         ),
-        Argument("ffn", bool, optional=True, default=False, doc=doc_only_pt_supported),
         Argument(
-            "ffn_embed_dim", int, optional=True, default=1024, doc=doc_only_pt_supported
+            "ffn",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_only_pt_supported + doc_deprecated,
+        ),
+        Argument(
+            "ffn_embed_dim",
+            int,
+            optional=True,
+            default=1024,
+            doc=doc_only_pt_supported + doc_deprecated,
         ),
         Argument(
             "scaling_factor",
             float,
             optional=True,
             default=1.0,
-            doc=doc_only_pt_supported,
+            doc=doc_only_pt_supported + doc_scaling_factor,
         ),
-        Argument("head_num", int, optional=True, default=1, doc=doc_only_pt_supported),
         Argument(
-            "normalize", bool, optional=True, default=True, doc=doc_only_pt_supported
+            "head_num",
+            int,
+            optional=True,
+            default=1,
+            doc=doc_only_pt_supported + doc_deprecated,
         ),
-        Argument("temperature", float, optional=True, doc=doc_only_pt_supported),
         Argument(
-            "return_rot", bool, optional=True, default=False, doc=doc_only_pt_supported
+            "normalize",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_only_pt_supported + doc_normalize,
+        ),
+        Argument(
+            "temperature",
+            float,
+            optional=True,
+            doc=doc_only_pt_supported + doc_temperature,
+        ),
+        Argument(
+            "return_rot",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_only_pt_supported + doc_deprecated,
         ),
         Argument(
             "concat_output_tebd",
             bool,
             optional=True,
             default=True,
-            doc=doc_only_pt_supported,
+            doc=doc_only_pt_supported + doc_concat_output_tebd,
         ),
     ]
 
@@ -885,9 +938,9 @@ def fitting_ener():
     doc_activation_function = f'The activation function in the fitting net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version. If you set "None" or "none" here, no activation function will be used.'
     doc_precision = f"The precision of the fitting net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
-    doc_trainable = "Whether the parameters in the fitting net are trainable. This option can be\n\n\
+    doc_trainable = f"Whether the parameters in the fitting net are trainable. This option can be\n\n\
 - bool: True if all parameters of the fitting net are trainable, False otherwise.\n\n\
-- list of bool: Specifies if each layer is trainable. Since the fitting net is composed by hidden layers followed by a output layer, the length of this list should be equal to len(`neuron`)+1."
+- list of bool{doc_only_tf_supported}: Specifies if each layer is trainable. Since the fitting net is composed by hidden layers followed by a output layer, the length of this list should be equal to len(`neuron`)+1."
     doc_rcond = "The condition number used to determine the inital energy shift for each type of atoms. See `rcond` in :py:meth:`numpy.linalg.lstsq` for more details."
     doc_seed = "Random seed for parameter initialization of the fitting net"
     doc_atom_ener = "Specify the atomic energy in vacuum for each type"
@@ -2069,6 +2122,23 @@ def training_args():  # ! modified by Ziyao: data configuration isolated.
         "Weights will be normalized and minus ones will be ignored. "
         "If not set, each fitting net will be equally selected when training."
     )
+    doc_warmup_steps = (
+        "The number of steps for learning rate warmup. During warmup, "
+        "the learning rate begins at zero and progressively increases linearly to `start_lr`, "
+        "rather than starting directly from `start_lr`"
+    )
+    doc_gradient_max_norm = (
+        "Clips the gradient norm to a maximum value. "
+        "If the gradient norm exceeds this value, it will be clipped to this limit. "
+        "No gradient clipping will occur if set to 0."
+    )
+    doc_stat_file = (
+        "The file path for saving the data statistics results. "
+        "If set, the results will be saved and directly loaded during the next training session, "
+        "avoiding the need to recalculate the statistics"
+    )
+    doc_opt_type = "The type of optimizer to use."
+    doc_kf_blocksize = "The blocksize for the Kalman filter."
 
     arg_training_data = training_data_args()
     arg_validation_data = validation_data_args()
@@ -2132,9 +2202,21 @@ def training_args():  # ! modified by Ziyao: data configuration isolated.
         ),
         Argument("data_dict", dict, optional=True, doc=doc_data_dict),
         Argument("fitting_weight", dict, optional=True, doc=doc_fitting_weight),
-        Argument("warmup_steps", int, optional=True, doc=doc_only_pt_supported),
-        Argument("gradient_max_norm", float, optional=True, doc=doc_only_pt_supported),
-        Argument("stat_file", str, optional=True, doc=doc_only_pt_supported),
+        Argument(
+            "warmup_steps",
+            int,
+            optional=True,
+            doc=doc_only_pt_supported + doc_warmup_steps,
+        ),
+        Argument(
+            "gradient_max_norm",
+            float,
+            optional=True,
+            doc=doc_only_pt_supported + doc_gradient_max_norm,
+        ),
+        Argument(
+            "stat_file", str, optional=True, doc=doc_only_pt_supported + doc_stat_file
+        ),
     ]
     variants = [
         Variant(
@@ -2149,7 +2231,7 @@ def training_args():  # ! modified by Ziyao: data configuration isolated.
                             "kf_blocksize",
                             int,
                             optional=True,
-                            doc=doc_only_pt_supported,
+                            doc=doc_only_pt_supported + doc_kf_blocksize,
                         ),
                     ],
                     [],
@@ -2158,7 +2240,7 @@ def training_args():  # ! modified by Ziyao: data configuration isolated.
             ],
             optional=True,
             default_tag="Adam",
-            doc=doc_only_pt_supported,
+            doc=doc_only_pt_supported + doc_opt_type,
         )
     ]
 
