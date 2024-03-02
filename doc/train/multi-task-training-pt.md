@@ -64,7 +64,11 @@ which are the same as the definition in single-task training {ref}`training_data
 You can specify any positive real number weight for each task. The higher the weight, the higher the probability of being sampled in each training.
 This setting is optional, and if not set, tasks will be sampled with equal weights.
 
-An example input for multi-task training two models in water system can be found here: [multi-task input on water](../../examples/water_multi_task/pytorch_example/input_torch.json).
+An example input for multi-task training two models in water system is shown as following:
+```{literalinclude} ../../examples/water_multi_task/pytorch_example/input_torch.json
+:language: json
+:linenos:
+```
 
 ## Finetune from the pretrained multi-task model
 
