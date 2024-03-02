@@ -53,6 +53,9 @@ from deepmd.pt.utils.learning_rate import (
 from deepmd.pt.utils.stat import (
     make_stat_input,
 )
+from deepmd.utils.data import (
+    DataRequirementItem,
+)
 
 if torch.__version__.startswith("2"):
     import torch._dynamo
@@ -197,6 +200,24 @@ class Trainer:
             _training_data.add_data_requirement(_data_requirement)
             if _validation_data is not None:
                 _validation_data.add_data_requirement(_data_requirement)
+            if model.get_dim_fparam() > 0:
+                fparam_requirement_items = [
+                    DataRequirementItem(
+                        "fparam", model.get_dim_fparam(), atomic=False, must=True
+                    )
+                ]
+                _training_data.add_data_requirement(fparam_requirement_items)
+                if _validation_data is not None:
+                    _validation_data.add_data_requirement(fparam_requirement_items)
+            if model.get_dim_aparam() > 0:
+                aparam_requirement_items = [
+                    DataRequirementItem(
+                        "aparam", model.get_dim_aparam(), atomic=True, must=True
+                    )
+                ]
+                _training_data.add_data_requirement(aparam_requirement_items)
+                if _validation_data is not None:
+                    _validation_data.add_data_requirement(aparam_requirement_items)
             if not resuming and self.rank == 0:
 
                 @functools.lru_cache
