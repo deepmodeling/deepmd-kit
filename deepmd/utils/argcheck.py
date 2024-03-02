@@ -1000,7 +1000,7 @@ def fitting_dos():
     ]
 
 
-@fitting_args_plugin.register("polar", doc=doc_only_tf_supported)
+@fitting_args_plugin.register("polar")
 def fitting_polar():
     doc_neuron = "The number of neurons in each hidden layers of the fitting net. When two hidden layers are of the same size, a skip connection is built."
     doc_activation_function = f'The activation function in the fitting net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version. If you set "None" or "none" here, no activation function will be used.'
@@ -1011,6 +1011,7 @@ def fitting_polar():
     doc_fit_diag = "Fit the diagonal part of the rotational invariant polarizability matrix, which will be converted to normal polarizability matrix by contracting with the rotation matrix."
     doc_sel_type = "The atom types for which the atomic polarizability will be provided. If not set, all types will be selected."
     doc_seed = "Random seed for parameter initialization of the fitting net"
+    doc_exclude_types = "Atomic contributions of the excluded atom types are set zero."
 
     # YWolfeee: user can decide whether to use shift diag
     doc_shift_diag = "Whether to shift the diagonal of polar, which is beneficial to training. Default is true."
@@ -1044,7 +1045,14 @@ def fitting_polar():
             [List[int], int, None],
             optional=True,
             alias=["pol_type"],
-            doc=doc_sel_type,
+            doc=doc_sel_type + doc_only_tf_supported,
+        ),
+        Argument(
+            "exclude_types",
+            [List[int], None],
+            optional=True,
+            default=[],
+            doc=doc_exclude_types + doc_only_pt_supported,
         ),
         Argument("seed", [int, None], optional=True, doc=doc_seed),
     ]
@@ -1054,7 +1062,7 @@ def fitting_polar():
 #    return fitting_polar()
 
 
-@fitting_args_plugin.register("dipole", doc=doc_only_tf_supported)
+@fitting_args_plugin.register("dipole")
 def fitting_dipole():
     doc_neuron = "The number of neurons in each hidden layers of the fitting net. When two hidden layers are of the same size, a skip connection is built."
     doc_activation_function = f'The activation function in the fitting net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version. If you set "None" or "none" here, no activation function will be used.'
@@ -1062,6 +1070,7 @@ def fitting_dipole():
     doc_precision = f"The precision of the fitting net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
     doc_sel_type = "The atom types for which the atomic dipole will be provided. If not set, all types will be selected."
     doc_seed = "Random seed for parameter initialization of the fitting net"
+    doc_exclude_types = "Atomic contributions of the excluded atom types are set zero."
     return [
         Argument(
             "neuron",
@@ -1085,7 +1094,14 @@ def fitting_dipole():
             [List[int], int, None],
             optional=True,
             alias=["dipole_type"],
-            doc=doc_sel_type,
+            doc=doc_sel_type + doc_only_tf_supported,
+        ),
+        Argument(
+            "exclude_types",
+            [List[int], None],
+            optional=True,
+            default=[],
+            doc=doc_exclude_types + doc_only_pt_supported,
         ),
         Argument("seed", [int, None], optional=True, doc=doc_seed),
     ]
