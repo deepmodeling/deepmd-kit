@@ -344,6 +344,7 @@ class DeepmdDataSystem:
                 repeat=repeat,
                 type_sel=type_sel,
                 default=default,
+                output_natoms_for_type_sel=output_natoms_for_type_sel,
             )
 
     def reduce(self, key_out, key_in):
