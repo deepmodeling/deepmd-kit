@@ -29,6 +29,7 @@ class DeepmdDataSetForLoader(Dataset):
         - batch_size: Max frame count in a batch.
         - type_map: Atom types.
         """
+        self.system = system
         self._type_map = type_map
         self._data_system = DeepmdData(
             sys_path=system, shuffle_test=shuffle, type_map=self._type_map
