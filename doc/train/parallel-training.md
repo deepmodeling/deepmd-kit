@@ -86,7 +86,7 @@ optional arguments:
                         master)
 ```
 
-## PyTorch Implementation
+## PyTorch Implementation {{ pytorch_icon }}
 
 Currently, parallel training in pytorch version is implemented  in the form of PyTorch Distributed Data Parallelism [DDP](https://pytorch.org/docs/stable/generated/torch.nn.parallel.DistributedDataParallel.html).
 DeePMD-kit will decide whether to launch the training in parallel (distributed) mode or in serial mode depending on your execution command.
