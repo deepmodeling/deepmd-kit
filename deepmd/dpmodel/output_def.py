@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import functools
+import math
 from enum import (
     IntEnum,
 )
@@ -193,6 +194,7 @@ class OutputVariableDef:
     ):
         self.name = name
         self.shape = list(shape)
+        self.output_size = math.prod(self.shape)
         self.atomic = atomic
         self.reduciable = reduciable
         self.r_differentiable = r_differentiable

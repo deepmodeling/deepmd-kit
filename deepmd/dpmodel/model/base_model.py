@@ -89,7 +89,7 @@ def make_base_model() -> Type[object]:
             """
 
         @abstractmethod
-        def model_output_type(self) -> str:
+        def model_output_type(self) -> List[str]:
             """Get the output type for the model."""
 
         @abstractmethod

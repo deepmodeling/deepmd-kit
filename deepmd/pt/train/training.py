@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import functools
 import logging
-import math
 import time
 from copy import (
     deepcopy,
@@ -264,11 +263,14 @@ class Trainer:
                 loss_params["ntypes"] = _ntypes
                 return DenoiseLoss(**loss_params)
             elif loss_type == "tensor":
-                tensor_name = _model.model_output_type()
+                model_output_type = _model.model_output_type()
+                if "mask" in model_output_type:
+                    model_output_type.pop(model_output_type.index("mask"))
+                tensor_name = model_output_type[0]
                 loss_params["tensor_name"] = tensor_name
-                loss_params["tensor_size"] = math.prod(
-                    _model.model_output_def()[tensor_name].shape
-                )
+                loss_params["tensor_size"] = _model.model_output_def()[
+                    tensor_name
+                ].output_size
                 label_name = tensor_name
                 if label_name == "polar":
                     label_name = "polarizability"
