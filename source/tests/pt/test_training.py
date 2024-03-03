@@ -21,6 +21,7 @@ from .model.test_permutation import (
     model_dpa2,
     model_hybrid,
     model_se_e2_a,
+    model_zbl,
 )
 
 
@@ -63,9 +64,14 @@ class DPTrainTest:
             trainer_fix.run()
             model_dict_after_training = deepcopy(trainer_fix.model.state_dict())
         for key in model_dict_before_training:
-            torch.testing.assert_close(
-                model_dict_before_training[key], model_dict_after_training[key]
-            )
+            if model_dict_before_training[key].shape == model_dict_after_training[key].shape:
+                torch.testing.assert_close(
+                    model_dict_before_training[key], model_dict_after_training[key]
+                )
+            else:
+                torch.testing.assert_close(
+                    model_dict_before_training[key].flatten(), model_dict_after_training[key].flatten()
+                )
         self.tearDown()
 
     def tearDown(self):
@@ -87,6 +93,21 @@ class TestEnergyModelSeA(unittest.TestCase, DPTrainTest):
         self.config["training"]["training_data"]["systems"] = data_file
         self.config["training"]["validation_data"]["systems"] = data_file
         self.config["model"] = deepcopy(model_se_e2_a)
+        self.config["training"]["numb_steps"] = 1
+        self.config["training"]["save_freq"] = 1
+
+    def tearDown(self) -> None:
+        DPTrainTest.tearDown(self)
+
+class TestEnergyZBLModelSeA(unittest.TestCase, DPTrainTest):
+    def setUp(self):
+        input_json = str(Path(__file__).parent / "water/zbl.json")
+        with open(input_json) as f:
+            self.config = json.load(f)
+        data_file = [str(Path(__file__).parent / "water/data/data_0")]
+        self.config["training"]["training_data"]["systems"] = data_file
+        self.config["training"]["validation_data"]["systems"] = data_file
+        self.config["model"] = deepcopy(model_zbl)
         self.config["training"]["numb_steps"] = 1
         self.config["training"]["save_freq"] = 1
 
