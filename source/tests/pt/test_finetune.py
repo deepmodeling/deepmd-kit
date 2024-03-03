@@ -3,6 +3,9 @@ import os
 import shutil
 import tempfile
 import unittest
+from copy import (
+    deepcopy,
+)
 from pathlib import (
     Path,
 )
@@ -35,10 +38,10 @@ class FinetuneTest:
         # get model
         model = get_model(self.model_config)
         model.fitting_net.bias_atom_e = torch.rand_like(model.fitting_net.bias_atom_e)
-        energy_bias_before = (
+        energy_bias_before = deepcopy(
             model.fitting_net.bias_atom_e.detach().cpu().numpy().reshape(-1)
         )
-        bias_atom_e_input = (
+        bias_atom_e_input = deepcopy(
             model.fitting_net.bias_atom_e.detach().cpu().numpy().reshape(-1)
         )
         model = torch.jit.script(model)
