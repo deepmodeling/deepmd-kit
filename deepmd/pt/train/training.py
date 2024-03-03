@@ -727,9 +727,7 @@ class Trainer:
                 else:
                     train_results = {_key: {} for _key in self.model_keys}
                     valid_results = {_key: {} for _key in self.model_keys}
-                    train_msg = {}
-                    valid_msg = {}
-                    train_msg[task_key], train_results[task_key] = log_loss_train(
+                    train_results[task_key] = log_loss_train(
                         loss, more_loss, _task_key=task_key
                     )
                     for _key in self.model_keys:
@@ -744,10 +742,10 @@ class Trainer:
                                 label=label_dict,
                                 task_key=_key,
                             )
-                            train_msg[_key], train_results[_key] = log_loss_train(
+                            train_results[_key] = log_loss_train(
                                 loss, more_loss, _task_key=_key
                             )
-                        valid_msg[_key], valid_results[_key] = log_loss_valid(
+                        valid_results[_key] = log_loss_valid(
                             _task_key=_key
                         )
                         log.info(
