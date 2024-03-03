@@ -18,7 +18,6 @@ from deepmd.infer.deep_eval import (
 )
 from deepmd.pt.model.model import (
     get_model,
-    get_zbl_model,
 )
 from deepmd.utils.data_system import (
     DeepmdDataSystem,
@@ -109,6 +108,7 @@ class TestEnergyModelSeA(unittest.TestCase, FinetuneTest):
 
     def tearDown(self) -> None:
         FinetuneTest.tearDown(self)
+
 
 class TestEnergyZBLModelSeA(unittest.TestCase, FinetuneTest):
     def setUp(self):
