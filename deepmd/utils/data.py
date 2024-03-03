@@ -741,6 +741,8 @@ class DataRequirementItem:
         default value of data
     dtype : np.dtype, optional
         the dtype of data, overwrites `high_prec` if provided
+    output_natoms_for_type_sel : bool, optional
+        if True and type_sel is True, the atomic dimension will be natoms instead of nsel
     """
 
     def __init__(
@@ -754,6 +756,7 @@ class DataRequirementItem:
         repeat: int = 1,
         default: float = 0.0,
         dtype: Optional[np.dtype] = None,
+        output_natoms_for_type_sel: bool = False,
     ) -> None:
         self.key = key
         self.ndof = ndof
@@ -764,6 +767,7 @@ class DataRequirementItem:
         self.repeat = repeat
         self.default = default
         self.dtype = dtype
+        self.output_natoms_for_type_sel = output_natoms_for_type_sel
         self.dict = self.to_dict()
 
     def to_dict(self) -> dict:
@@ -777,6 +781,7 @@ class DataRequirementItem:
             "repeat": self.repeat,
             "default": self.default,
             "dtype": self.dtype,
+            "output_natoms_for_type_sel": self.output_natoms_for_type_sel,
         }
 
     def __getitem__(self, key: str):
