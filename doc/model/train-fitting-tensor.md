@@ -1,15 +1,32 @@
-# Fit `tensor` like `Dipole` and `Polarizability` {{ tensorflow_icon }}
+# Fit `tensor` like `Dipole` and `Polarizability` {{ tensorflow_icon }} {{ pytorch_icon }} {{ dpmodel_icon }}
 
 :::{note}
-**Supported backends**: TensorFlow {{ tensorflow_icon }}
+**Supported backends**: TensorFlow {{ tensorflow_icon }} {{ pytorch_icon }} {{ dpmodel_icon }}
 :::
 
 Unlike `energy`, which is a scalar, one may want to fit some high dimensional physical quantity, like `dipole` (vector) and `polarizability` (matrix, shorted as `polar`). Deep Potential has provided different APIs to do this. In this example, we will show you how to train a model to fit a water system. A complete training input script of the examples can be found in
+
+::::{tab-set}
+
+:::{tab-item} TensorFlow {{ tensorflow_icon }}
 
 ```bash
 $deepmd_source_dir/examples/water_tensor/dipole/dipole_input.json
 $deepmd_source_dir/examples/water_tensor/polar/polar_input.json
 ```
+
+:::
+
+:::{tab-item} PyTorch {{ pytorch_icon }}
+
+```bash
+$deepmd_source_dir/examples/water_tensor/dipole/dipole_input_torch.json
+$deepmd_source_dir/examples/water_tensor/polar/polar_input_torch.json
+```
+
+:::
+
+::::
 
 The training and validation data are also provided our examples. But note that **the data provided along with the examples are of limited amount, and should not be used to train a production model.**
 
@@ -53,6 +70,10 @@ The tensorial models can be used to calculate IR spectrum and Raman spectrum.[^1
 
 The {ref}`fitting_net <model/fitting_net>` section tells DP which fitting net to use.
 
+::::{tab-set}
+
+:::{tab-item} TensorFlow {{ tensorflow_icon }}
+
 The JSON of `dipole` type should be provided like
 
 ```json
@@ -81,9 +102,48 @@ The JSON of `polar` type should be provided like
 -   `sel_type` is a list specifying which type of atoms have the quantity you want to fit. For example, in the water system, `sel_type` is `[0]` since `0` represents atom `O`. If left unset, all types of atoms will be fitted.
 -   The rest arguments have the same meaning as they do in `ener` mode.
 
+:::
+
+:::{tab-item} PyTorch {{ pytorch_icon }}
+
+The JSON of `dipole` type should be provided like
+```json
+	"atom_exclude_types": [
+      1
+    ],
+	"fitting_net" : {
+		"type": "dipole",
+		"neuron": [100,100,100],
+		"resnet_dt": true,
+		"seed": 1,
+	},
+```
+
+The JSON of `polar` type should be provided like
+
+```json
+	"atom_exclude_types": [
+      1
+    ],
+	"fitting_net" : {
+	   	"type": "polar",
+		"neuron": [100,100,100],
+		"resnet_dt": true,
+		"seed": 1,
+	},
+```
+-   `type` specifies which type of fitting net should be used. It should be either `dipole` or `polar`. Note that `global_polar` mode in version 1.x is already **deprecated** and is merged into `polar`. To specify whether a system is global or atomic, please see [here](train-se-e2-a.md).
+-   `atom_exclude_types` is a list specifying the which type of atoms have the quantity you want to set to zero. For example, in the water system, `atom_exclude_types` is `[1]` since `1` represents atom `H`.
+-   The rest arguments have the same meaning as they do in `ener` mode.
+:::
+
+::::
+
+
+
 ## Loss
 
-DP supports a combinational training of the global system (only a global `tensor` label, i.e. dipole or polar, is provided in a frame) and atomic system (labels for **each** atom included in `sel_type` are provided). In a global system, each frame has just **one** `tensor` label. For example, when fitting `polar`, each frame will just provide a `1 x 9` vector which gives the elements of the polarizability tensor of that frame in order XX, XY, XZ, YX, YY, YZ, XZ, ZY, ZZ. By contrast, in an atomic system, each atom in `sel_type` has a `tensor` label. For example, when fitting a dipole, each frame will provide a `#sel_atom x 3` matrices, where `#sel_atom` is the number of atoms whose type are in `sel_type`.
+DP supports a combinational training of the global system (only a global `tensor` label, i.e. dipole or polar, is provided in a frame) and atomic system (labels for **each** atom included in `sel_type`/ not included in `atom_exclude_types` are provided). In a global system, each frame has just **one** `tensor` label. For example, when fitting `polar`, each frame will just provide a `1 x 9` vector which gives the elements of the polarizability tensor of that frame in order XX, XY, XZ, YX, YY, YZ, XZ, ZY, ZZ. By contrast, in an atomic system, each atom in `sel_type` has a `tensor` label. For example, when fitting a dipole, each frame will provide a `#sel_atom x 3` matrices, where `#sel_atom` is the number of atoms whose type are in `sel_type`.
 
 The {ref}`loss <loss>` section tells DP the weight of these two kinds of loss, i.e.
 
@@ -118,9 +178,24 @@ In this case, please check the file name of the label.
 
 The training command is the same as `ener` mode, i.e.
 
+::::{tab-set}
+
+:::{tab-item} TensorFlow {{ tensorflow_icon }}
+
 ```bash
 dp train input.json
 ```
+:::
+
+:::{tab-item} PyTorch {{ pytorch_icon }}
+
+```bash
+dp --pt train input.json
+```
+:::
+
+::::
+
 
 The detailed loss can be found in `lcurve.out`:
 

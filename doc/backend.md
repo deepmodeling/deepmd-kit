@@ -23,7 +23,7 @@ DeePMD-kit does not use the TensorFlow v2 API but uses the TensorFlow v1 API (`t
 [PyTorch](https://pytorch.org/) 2.0 or above is required.
 While `.pth` and `.pt` are the same in the PyTorch package, they have different meanings in the DeePMD-kit to distinguish the model and the checkpoint.
 
-### DPModel {{ dpmodel_icon }}
+### DP {{ dpmodel_icon }}
 
 :::{note}
 This backend is only for development and should not take into production.
@@ -31,10 +31,10 @@ This backend is only for development and should not take into production.
 
 - Model filename extension: `.dp`
 
-DPModel is a reference backend for development, which uses pure [NumPy](https://numpy.org/) to implement models without using any heavy deep-learning frameworks.
+DP is a reference backend for development, which uses pure [NumPy](https://numpy.org/) to implement models without using any heavy deep-learning frameworks.
 Due to the limitation of NumPy, it doesn't support gradient calculation and thus cannot be used for training.
 As a reference backend, it is not aimed at the best performance, but only the correct results.
-The DPModel backend uses [HDF5](https://docs.h5py.org/) to store model serialization data, which is backend-independent.
+The DP backend uses [HDF5](https://docs.h5py.org/) to store model serialization data, which is backend-independent.
 Only Python inference interface can load this format.
 
 ## Switch the backend
