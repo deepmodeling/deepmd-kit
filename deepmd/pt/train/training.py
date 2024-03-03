@@ -19,6 +19,10 @@ import torch
 from deepmd.common import (
     symlink_prefix_files,
 )
+from deepmd.loggers.training import (
+    format_training_message,
+    format_training_message_per_task,
+)
 from deepmd.pt.loss import (
     DenoiseLoss,
     EnergyStdLoss,
@@ -697,33 +701,24 @@ class Trainer:
             # Log and persist
             if _step_id % self.disp_freq == 0:
                 self.wrapper.eval()
-                msg = f"step={_step_id}, lr={cur_lr:.2e}"
 
                 def log_loss_train(_loss, _more_loss, _task_key="Default"):
                     results = {}
-                    if not self.multi_task:
-                        suffix = ""
-                    else:
-                        suffix = f"_{_task_key}"
-                    _msg = f"loss{suffix}={_loss:.4f}"
                     rmse_val = {
                         item: _more_loss[item]
                         for item in _more_loss
                         if "l2_" not in item
                     }
                     for item in sorted(rmse_val.keys()):
-                        _msg += f", {item}_train{suffix}={rmse_val[item]:.4f}"
                         results[item] = rmse_val[item]
-                    return _msg, results
+                    return results
 
                 def log_loss_valid(_task_key="Default"):
                     single_results = {}
                     sum_natoms = 0
                     if not self.multi_task:
-                        suffix = ""
                         valid_numb_batch = self.valid_numb_batch
                     else:
-                        suffix = f"_{_task_key}"
                         valid_numb_batch = self.valid_numb_batch[_task_key]
                     for ii in range(valid_numb_batch):
                         self.optimizer.zero_grad()
@@ -748,22 +743,32 @@ class Trainer:
                                     single_results.get(k, 0.0) + v * natoms
                                 )
                     results = {k: v / sum_natoms for k, v in single_results.items()}
-                    _msg = ""
-                    for item in sorted(results.keys()):
-                        _msg += f", {item}_valid{suffix}={results[item]:.4f}"
-                    return _msg, results
+                    return results
 
                 if not self.multi_task:
-                    temp_msg, train_results = log_loss_train(loss, more_loss)
-                    msg += "\n" + temp_msg
-                    temp_msg, valid_results = log_loss_valid()
-                    msg += temp_msg
+                    train_results = log_loss_train(loss, more_loss)
+                    valid_results = log_loss_valid()
+                    log.info(
+                        format_training_message_per_task(
+                            batch=_step_id,
+                            task_name="trn",
+                            rmse=train_results,
+                            learning_rate=cur_lr,
+                        )
+                    )
+                    if valid_results is not None:
+                        log.info(
+                            format_training_message_per_task(
+                                batch=_step_id,
+                                task_name="val",
+                                rmse=valid_results,
+                                learning_rate=None,
+                            )
+                        )
                 else:
                     train_results = {_key: {} for _key in self.model_keys}
                     valid_results = {_key: {} for _key in self.model_keys}
-                    train_msg = {}
-                    valid_msg = {}
-                    train_msg[task_key], train_results[task_key] = log_loss_train(
+                    train_results[task_key] = log_loss_train(
                         loss, more_loss, _task_key=task_key
                     )
                     for _key in self.model_keys:
@@ -778,19 +783,37 @@ class Trainer:
                                 label=label_dict,
                                 task_key=_key,
                             )
-                            train_msg[_key], train_results[_key] = log_loss_train(
+                            train_results[_key] = log_loss_train(
                                 loss, more_loss, _task_key=_key
                             )
-                        valid_msg[_key], valid_results[_key] = log_loss_valid(
-                            _task_key=_key
+                        valid_results[_key] = log_loss_valid(_task_key=_key)
+                        log.info(
+                            format_training_message_per_task(
+                                batch=_step_id,
+                                task_name=_key + "_trn",
+                                rmse=train_results[_key],
+                                learning_rate=cur_lr,
+                            )
                         )
-                        msg += "\n" + train_msg[_key]
-                        msg += valid_msg[_key]
+                        if valid_results is not None:
+                            log.info(
+                                format_training_message_per_task(
+                                    batch=_step_id,
+                                    task_name=_key + "_val",
+                                    rmse=valid_results[_key],
+                                    learning_rate=None,
+                                )
+                            )
 
-                train_time = time.time() - self.t0
-                self.t0 = time.time()
-                msg += f", speed={train_time:.2f} s/{self.disp_freq if _step_id else 1} batches"
-                log.info(msg)
+                current_time = time.time()
+                train_time = current_time - self.t0
+                self.t0 = current_time
+                log.info(
+                    format_training_message(
+                        batch=_step_id,
+                        wall_time=train_time,
+                    )
+                )
 
                 if fout:
                     if self.lcurve_should_print_header:

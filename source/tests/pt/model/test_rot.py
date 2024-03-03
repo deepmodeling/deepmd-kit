@@ -154,7 +154,6 @@ class TestForceModelDPA2(unittest.TestCase, RotTest):
         self.model = get_model(model_params).to(env.DEVICE)
 
 
-@unittest.skip("hybrid not supported at the moment")
 class TestEnergyModelHybrid(unittest.TestCase, RotTest):
     def setUp(self):
         model_params = copy.deepcopy(model_hybrid)
@@ -162,7 +161,6 @@ class TestEnergyModelHybrid(unittest.TestCase, RotTest):
         self.model = get_model(model_params).to(env.DEVICE)
 
 
-@unittest.skip("hybrid not supported at the moment")
 class TestForceModelHybrid(unittest.TestCase, RotTest):
     def setUp(self):
         model_params = copy.deepcopy(model_hybrid)
