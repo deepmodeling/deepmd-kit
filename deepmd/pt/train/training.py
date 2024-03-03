@@ -745,9 +745,7 @@ class Trainer:
                             train_results[_key] = log_loss_train(
                                 loss, more_loss, _task_key=_key
                             )
-                        valid_results[_key] = log_loss_valid(
-                            _task_key=_key
-                        )
+                        valid_results[_key] = log_loss_valid(_task_key=_key)
                         log.info(
                             format_training_message_per_task(
                                 batch=_step_id,
