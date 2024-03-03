@@ -28,7 +28,9 @@ from deepmd.pt.utils.nlist import (
 from deepmd.utils.version import (
     check_version_compatibility,
 )
-
+from deepmd.utils.path import (
+    DPPath,
+)
 from .base_atomic_model import (
     BaseAtomicModel,
 )
@@ -306,6 +308,34 @@ class DPZBLLinearAtomicModel(LinearAtomicModel):
 
         # this is a placeholder being updated in _compute_weight, to handle Jit attribute init error.
         self.zbl_weight = torch.empty(0, dtype=torch.float64, device=env.DEVICE)
+
+    def compute_or_load_stat(
+        self,
+        sampled_func,
+        stat_file_path: Optional[DPPath] = None,
+    ):
+        """
+        Compute or load the statistics parameters of the model,
+        such as mean and standard deviation of descriptors or the energy bias of the fitting net.
+        When `sampled` is provided, all the statistics parameters will be calculated (or re-calculated for update),
+        and saved in the `stat_file_path`(s).
+        When `sampled` is not provided, it will check the existence of `stat_file_path`(s)
+        and load the calculated statistics parameters.
+
+        Parameters
+        ----------
+        sampled_func
+            The lazy sampled function to get data frames from different data systems.
+        stat_file_path
+            The dictionary of paths to the statistics files.
+        """
+        if stat_file_path is not None and self.type_map is not None:
+            # descriptors and fitting net with different type_map
+            # should not share the same parameters
+            stat_file_path /= " ".join(self.type_map)
+        self.dp_model.descriptor.compute_input_stats(sampled_func, stat_file_path)
+        if self.dp_model.fitting_net is not None:
+            self.dp_model.fitting_net.compute_output_stats(sampled_func, stat_file_path)
 
     def serialize(self) -> dict:
         dd = BaseAtomicModel.serialize(self)

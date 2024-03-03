@@ -26,6 +26,7 @@ from deepmd.pt.loss import (
 )
 from deepmd.pt.model.model import (
     get_model,
+    get_zbl_model,
 )
 from deepmd.pt.optimizer import (
     KFOptimizerWrapper,
@@ -243,7 +244,10 @@ class Trainer:
         def get_single_model(
             _model_params,
         ):
-            model = get_model(deepcopy(_model_params)).to(DEVICE)
+            if "use_srtab" in _model_params:
+                model = get_zbl_model(deepcopy(_model_params)).to(DEVICE)
+            else:
+                model = get_model(deepcopy(_model_params)).to(DEVICE)
             return model
 
         def get_lr(lr_params):
