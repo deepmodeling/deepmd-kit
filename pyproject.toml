@@ -237,6 +237,7 @@ select = [
     "C4", # flake8-comprehensions
     "RUF", # ruff
     "NPY", # numpy
+    "TID251", # banned-api
     "TID253", # banned-module-level-imports
 ]
 
@@ -271,6 +272,9 @@ banned-module-level-imports = [
     "tensorflow",
     "torch",
 ]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"torch.testing.assert_allclose".msg = "Use `torch.testing.assert_close()` instead, see https://github.com/pytorch/pytorch/issues/61844."
 
 [tool.ruff.lint.extend-per-file-ignores]
 # Also ignore `E402` in all `__init__.py` files.
