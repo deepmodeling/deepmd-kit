@@ -40,7 +40,7 @@ class NullTest:
         # large box to exclude images
         cell = (cell + cell.T) + 100.0 * torch.eye(3, device=env.DEVICE)
         coord = torch.rand([natoms, 3], dtype=dtype, device=env.DEVICE)
-        atype = torch.Tensor([0], device=env.DEVICE)
+        atype = torch.tensor([0], dtype=torch.int32, device=env.DEVICE)
         e0, f0, v0 = eval_model(
             self.model, coord.unsqueeze(0), cell.unsqueeze(0), atype
         )
@@ -69,7 +69,7 @@ class NullTest:
         coord = torch.rand([1, 3], dtype=dtype, device=env.DEVICE)
         # 2 far-away atoms
         coord = torch.cat([coord, coord + 100.0], dim=0)
-        atype = torch.Tensor([0, 2], device=env.DEVICE)
+        atype = torch.tensor([0, 2], dtype=torch.int32, device=env.DEVICE)
         e0, f0, v0 = eval_model(
             self.model, coord.unsqueeze(0), cell.unsqueeze(0), atype
         )
