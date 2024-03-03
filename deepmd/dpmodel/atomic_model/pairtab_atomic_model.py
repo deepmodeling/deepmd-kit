@@ -61,7 +61,7 @@ class PairTabAtomicModel(BaseAtomicModel):
         if self.tab_file is not None:
             self.tab_info, self.tab_data = self.tab.get()
             nspline, ntypes = self.tab_info.astype(int)
-            self.tab_data = self.tab_data.reshape(ntypes,ntypes,nspline,4)
+            self.tab_data = self.tab_data.reshape(ntypes, ntypes, nspline, 4)
         else:
             self.tab_info, self.tab_data = None, None
 
@@ -137,7 +137,7 @@ class PairTabAtomicModel(BaseAtomicModel):
         tab_model.tab = tab
         tab_model.tab_info = tab_model.tab.tab_info
         nspline, ntypes = tab_model.tab_info[-2:].astype(int)
-        tab_model.tab_data = tab_model.tab.tab_data.reshape(ntypes,ntypes,nspline,4)
+        tab_model.tab_data = tab_model.tab.tab_data.reshape(ntypes, ntypes, nspline, 4)
         return tab_model
 
     def forward_atomic(

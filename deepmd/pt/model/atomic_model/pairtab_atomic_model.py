@@ -171,7 +171,12 @@ class PairTabAtomicModel(torch.nn.Module, BaseAtomicModel):
         tab_model.tab = tab
         tab_model.register_buffer("tab_info", torch.from_numpy(tab_model.tab.tab_info))
         nspline, ntypes = tab_model.tab.tab_info[-2:].astype(int)
-        tab_model.register_buffer("tab_data", torch.from_numpy(tab_model.tab.tab_data).reshape(ntypes,ntypes,nspline,4))
+        tab_model.register_buffer(
+            "tab_data",
+            torch.from_numpy(tab_model.tab.tab_data).reshape(
+                ntypes, ntypes, nspline, 4
+            ),
+        )
         return tab_model
 
     def compute_output_stats(
