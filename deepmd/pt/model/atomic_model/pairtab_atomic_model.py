@@ -7,21 +7,15 @@ from typing import (
     Optional,
     Union,
 )
-from deepmd.pt.utils import (
-    env,
-)
+
 import torch
-import numpy as np
 
 from deepmd.dpmodel import (
     FittingOutputDef,
     OutputVariableDef,
 )
-from deepmd.utils.pair_tab import (
-    PairTab,
-)
-from deepmd.utils.version import (
-    check_version_compatibility,
+from deepmd.pt.utils import (
+    env,
 )
 from deepmd.pt.utils.utils import (
     to_numpy_array,
@@ -29,13 +23,20 @@ from deepmd.pt.utils.utils import (
 from deepmd.utils.out_stat import (
     compute_stats_from_redu,
 )
-
-from .base_atomic_model import (
-    BaseAtomicModel,
+from deepmd.utils.pair_tab import (
+    PairTab,
 )
 from deepmd.utils.path import (
     DPPath,
 )
+from deepmd.utils.version import (
+    check_version_compatibility,
+)
+
+from .base_atomic_model import (
+    BaseAtomicModel,
+)
+
 
 class PairTabAtomicModel(torch.nn.Module, BaseAtomicModel):
     """Pairwise tabulation energy model.
@@ -69,7 +70,7 @@ class PairTabAtomicModel(torch.nn.Module, BaseAtomicModel):
         self.tab_file = tab_file
         self.rcut = rcut
         self.tab = self._set_pairtab(tab_file, rcut)
-        
+
         BaseAtomicModel.__init__(self, **kwargs)
 
         # handle deserialization with no input file
@@ -167,7 +168,7 @@ class PairTabAtomicModel(torch.nn.Module, BaseAtomicModel):
         tab_model.register_buffer("tab_info", torch.from_numpy(tab_model.tab.tab_info))
         tab_model.register_buffer("tab_data", torch.from_numpy(tab_model.tab.tab_data))
         return tab_model
-    
+
     def compute_output_stats(
         self,
         merged: Union[Callable[[], List[dict]], List[dict]],
@@ -209,7 +210,7 @@ class PairTabAtomicModel(torch.nn.Module, BaseAtomicModel):
             merged_energy = to_numpy_array(torch.cat(energy))
             # shape: (nframes, ntypes)
             merged_natoms = to_numpy_array(torch.cat(input_natoms)[:, 2:])
-            
+
             bias_atom_e, _ = compute_stats_from_redu(
                 merged_energy,
                 merged_natoms,
@@ -220,11 +221,11 @@ class PairTabAtomicModel(torch.nn.Module, BaseAtomicModel):
                 stat_file_path.save_numpy(bias_atom_e)
         assert all(x is not None for x in [bias_atom_e])
         ntypes = merged_natoms.shape[1]
-        self.bias_atom_e = torch.empty([ntypes, 1], dtype=torch.float64, device=env.DEVICE)
+        self.bias_atom_e = torch.empty(
+            [ntypes, 1], dtype=torch.float64, device=env.DEVICE
+        )
         self.bias_atom_e.copy_(
-            torch.tensor(bias_atom_e, device=env.DEVICE).view(
-                [ntypes, 1]
-            )
+            torch.tensor(bias_atom_e, device=env.DEVICE).view([ntypes, 1])
         )
 
     def forward_atomic(
