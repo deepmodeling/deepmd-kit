@@ -31,7 +31,11 @@ class DPTrainTest:
         trainer.run()
 
         # test fine-tuning
-        trainer_finetune = get_trainer(deepcopy(self.config), finetune_model="model.pt")
+        trainer_finetune = get_trainer(
+            deepcopy(self.config),
+            finetune_model=self.config["training"].get("save_ckpt", "model.ckpt")
+            + ".pt",
+        )
         trainer_finetune.run()
         self.tearDown()
 
