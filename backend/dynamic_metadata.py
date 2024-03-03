@@ -57,7 +57,7 @@ def dynamic_metadata(
                 "sphinxcontrib-bibtex",
             ],
             "lmp": [
-                "lammps~=2023.8.2.2.0",
+                "lammps~=2023.8.2.3.0",
                 *find_libpython_requires,
             ],
             "ipi": [
