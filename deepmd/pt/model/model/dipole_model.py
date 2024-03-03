@@ -50,6 +50,8 @@ class DipoleModel(DPModel):
                     model_predict["atom_virial"] = model_ret["dipole_derv_c"].squeeze(
                         -3
                     )
+            if "mask" in model_ret:
+                model_predict["mask"] = model_ret["mask"]
         else:
             model_predict = model_ret
             model_predict["updated_coord"] += coord
