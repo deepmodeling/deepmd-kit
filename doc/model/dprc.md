@@ -1,7 +1,7 @@
 # Deep Potential - Range Correction (DPRc) {{ tensorflow_icon }} {{ pytorch_icon }} {{ dpmodel_icon }}
 
 :::{note}
-**Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}, DPModel {{ dpmodel_icon }}
+**Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}, DP {{ dpmodel_icon }}
 :::
 
 Deep Potential - Range Correction (DPRc) is designed to combine with QM/MM method, and corrects energies from a low-level QM/MM method to a high-level QM/MM method:
