@@ -23,6 +23,10 @@ import deepmd.tf.op  # noqa: F401
 from deepmd.common import (
     symlink_prefix_files,
 )
+from deepmd.loggers.training import (
+    format_training_message,
+    format_training_message_per_task,
+)
 from deepmd.tf.common import (
     data_requirement,
     get_precision,
@@ -774,8 +778,10 @@ class DPTrainer:
                     test_time = toc - tic
                     wall_time = toc - wall_time_tic
                     log.info(
-                        "batch %7d training time %.2f s, testing time %.2f s, total wall time %.2f s"
-                        % (cur_batch, train_time, test_time, wall_time)
+                        format_training_message(
+                            batch=cur_batch,
+                            wall_time=wall_time,
+                        )
                     )
                     # the first training time is not accurate
                     if cur_batch > self.disp_freq or stop_batch < 2 * self.disp_freq:
@@ -959,6 +965,23 @@ class DPTrainer:
                 for k in train_results.keys():
                     print_str += prop_fmt % (train_results[k])
             print_str += "   %8.1e\n" % cur_lr
+            log.info(
+                format_training_message_per_task(
+                    batch=cur_batch,
+                    task_name="trn",
+                    rmse=train_results,
+                    learning_rate=cur_lr,
+                )
+            )
+            if valid_results is not None:
+                log.info(
+                    format_training_message_per_task(
+                        batch=cur_batch,
+                        task_name="val",
+                        rmse=valid_results,
+                        learning_rate=None,
+                    )
+                )
         else:
             for fitting_key in train_results:
                 if valid_results[fitting_key] is not None:
@@ -974,6 +997,23 @@ class DPTrainer:
                     for k in train_results[fitting_key].keys():
                         print_str += prop_fmt % (train_results[fitting_key][k])
                 print_str += "   %8.1e\n" % cur_lr_dict[fitting_key]
+                log.info(
+                    format_training_message_per_task(
+                        batch=cur_batch,
+                        task_name=f"{fitting_key}_trn",
+                        rmse=train_results[fitting_key],
+                        learning_rate=cur_lr_dict[fitting_key],
+                    )
+                )
+                if valid_results is not None:
+                    log.info(
+                        format_training_message_per_task(
+                            batch=cur_batch,
+                            task_name=f"{fitting_key}_val",
+                            rmse=valid_results[fitting_key],
+                            learning_rate=None,
+                        )
+                    )
         fp.write(print_str)
         fp.flush()
 
