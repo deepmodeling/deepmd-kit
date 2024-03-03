@@ -26,8 +26,17 @@ from .model.test_permutation import (
 
 class DPTrainTest:
     def test_dp_train(self):
+        # test training from scratch
         trainer = get_trainer(deepcopy(self.config))
         trainer.run()
+
+        # test fine-tuning
+        trainer_finetune = get_trainer(
+            deepcopy(self.config),
+            finetune_model=self.config["training"].get("save_ckpt", "model.ckpt")
+            + ".pt",
+        )
+        trainer_finetune.run()
         self.tearDown()
 
     def test_trainable(self):
