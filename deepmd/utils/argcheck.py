@@ -1053,7 +1053,7 @@ def fitting_dos():
     ]
 
 
-@fitting_args_plugin.register("polar", doc=doc_only_tf_supported)
+@fitting_args_plugin.register("polar")
 def fitting_polar():
     doc_neuron = "The number of neurons in each hidden layers of the fitting net. When two hidden layers are of the same size, a skip connection is built."
     doc_activation_function = f'The activation function in the fitting net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version. If you set "None" or "none" here, no activation function will be used.'
@@ -1097,7 +1097,7 @@ def fitting_polar():
             [List[int], int, None],
             optional=True,
             alias=["pol_type"],
-            doc=doc_sel_type,
+            doc=doc_sel_type + doc_only_tf_supported,
         ),
         Argument("seed", [int, None], optional=True, doc=doc_seed),
     ]
@@ -1107,7 +1107,7 @@ def fitting_polar():
 #    return fitting_polar()
 
 
-@fitting_args_plugin.register("dipole", doc=doc_only_tf_supported)
+@fitting_args_plugin.register("dipole")
 def fitting_dipole():
     doc_neuron = "The number of neurons in each hidden layers of the fitting net. When two hidden layers are of the same size, a skip connection is built."
     doc_activation_function = f'The activation function in the fitting net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version. If you set "None" or "none" here, no activation function will be used.'
@@ -1138,7 +1138,7 @@ def fitting_dipole():
             [List[int], int, None],
             optional=True,
             alias=["dipole_type"],
-            doc=doc_sel_type,
+            doc=doc_sel_type + doc_only_tf_supported,
         ),
         Argument("seed", [int, None], optional=True, doc=doc_seed),
     ]

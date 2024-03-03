@@ -63,6 +63,8 @@ class DPZBLModel(DPZBLModel_, BaseModel):
                 model_predict["atom_virial"] = model_ret["energy_derv_c"].squeeze(-3)
         else:
             model_predict["force"] = model_ret["dforce"]
+        if "mask" in model_ret:
+            model_predict["mask"] = model_ret["mask"]
         return model_predict
 
     @torch.jit.export

@@ -295,7 +295,7 @@ class EnergyFittingNetDirect(Fitting):
     def __init__(
         self,
         ntypes,
-        embedding_width,
+        dim_descrpt,
         neuron,
         bias_atom_e=None,
         out_dim=1,
@@ -315,7 +315,7 @@ class EnergyFittingNetDirect(Fitting):
         """
         super().__init__()
         self.ntypes = ntypes
-        self.dim_descrpt = embedding_width
+        self.dim_descrpt = dim_descrpt
         self.use_tebd = use_tebd
         self.out_dim = out_dim
         if bias_atom_e is None:
@@ -329,7 +329,7 @@ class EnergyFittingNetDirect(Fitting):
         for type_i in range(self.ntypes):
             one = ResidualDeep(
                 type_i,
-                embedding_width,
+                dim_descrpt,
                 neuron,
                 0.0,
                 out_dim=out_dim,
@@ -344,7 +344,7 @@ class EnergyFittingNetDirect(Fitting):
             for type_i in range(self.ntypes):
                 bias_type = 0.0 if self.use_tebd else bias_atom_e[type_i]
                 one = ResidualDeep(
-                    type_i, embedding_width, neuron, bias_type, resnet_dt=resnet_dt
+                    type_i, dim_descrpt, neuron, bias_type, resnet_dt=resnet_dt
                 )
                 filter_layers.append(one)
         self.filter_layers = torch.nn.ModuleList(filter_layers)

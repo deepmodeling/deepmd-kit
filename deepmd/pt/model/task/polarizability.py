@@ -184,7 +184,7 @@ class PolarFittingNet(GeneralFitting):
             The path to the stat file.
 
         """
-        raise NotImplementedError
+        pass
 
     def forward(
         self,
