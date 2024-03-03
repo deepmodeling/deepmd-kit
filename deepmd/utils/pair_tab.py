@@ -72,7 +72,9 @@ class PairTab:
             self.vdata.shape[0] - 1
         )  # this nspline is updated based on the expanded table.
         self.tab_info = np.array([self.rmin, self.hh, self.nspline, self.ntypes])
-        self.tab_data = self._make_data().reshape(self.ntypes, self.ntypes, self.nspline, 4)
+        self.tab_data = self._make_data().reshape(
+            self.ntypes, self.ntypes, self.nspline, 4
+        )
 
     def serialize(self) -> dict:
         return {
