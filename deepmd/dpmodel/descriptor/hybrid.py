@@ -176,7 +176,7 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
         """
         out_descriptor = []
         out_gr = []
-        out_g2 = []
+        out_g2 = None
         out_h2 = None
         out_sw = None
         if self.sel_no_mixed_types is not None:
@@ -199,15 +199,9 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
             out_descriptor.append(odescriptor)
             if gr is not None:
                 out_gr.append(gr)
-            if g2 is not None:
-                out_g2.append(g2)
-            if self.get_rcut() == descrpt.get_rcut():
-                out_h2 = h2
-                out_sw = sw
 
         out_descriptor = np.concatenate(out_descriptor, axis=-1)
         out_gr = np.concatenate(out_gr, axis=-2) if out_gr else None
-        out_g2 = np.concatenate(out_g2, axis=-1) if out_g2 else None
         return out_descriptor, out_gr, out_g2, out_h2, out_sw
 
     @classmethod

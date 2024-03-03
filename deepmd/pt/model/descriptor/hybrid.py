@@ -200,7 +200,7 @@ class DescrptHybrid(BaseDescriptor, torch.nn.Module):
         """
         out_descriptor = []
         out_gr = []
-        out_g2 = []
+        out_g2: Optional[torch.Tensor] = None
         out_h2: Optional[torch.Tensor] = None
         out_sw: Optional[torch.Tensor] = None
         if self.sel_no_mixed_types is not None:
@@ -225,14 +225,8 @@ class DescrptHybrid(BaseDescriptor, torch.nn.Module):
             out_descriptor.append(odescriptor)
             if gr is not None:
                 out_gr.append(gr)
-            if g2 is not None:
-                out_g2.append(g2)
-            if self.get_rcut() == descrpt.get_rcut():
-                out_h2 = h2
-                out_sw = sw
         out_descriptor = torch.cat(out_descriptor, dim=-1)
         out_gr = torch.cat(out_gr, dim=-2) if out_gr else None
-        out_g2 = torch.cat(out_g2, dim=-1) if out_g2 else None
         return out_descriptor, out_gr, out_g2, out_h2, out_sw
 
     @classmethod
