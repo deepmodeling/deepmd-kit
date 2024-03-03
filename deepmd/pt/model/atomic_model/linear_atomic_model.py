@@ -25,12 +25,13 @@ from deepmd.pt.utils.nlist import (
     get_multiple_nlist_key,
     nlist_distinguish_types,
 )
-from deepmd.utils.version import (
-    check_version_compatibility,
-)
 from deepmd.utils.path import (
     DPPath,
 )
+from deepmd.utils.version import (
+    check_version_compatibility,
+)
+
 from .base_atomic_model import (
     BaseAtomicModel,
 )
