@@ -60,7 +60,7 @@ class PairTabAtomicModel(BaseAtomicModel):
 
         if self.tab_file is not None:
             self.tab_info, self.tab_data = self.tab.get()
-            nspline, ntypes = self.tab_info.astype(int)
+            nspline, ntypes = self.tab_info[-2:].astype(int)
             self.tab_data = self.tab_data.reshape(ntypes, ntypes, nspline, 4)
         else:
             self.tab_info, self.tab_data = None, None
