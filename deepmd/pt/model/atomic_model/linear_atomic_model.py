@@ -188,17 +188,15 @@ class LinearAtomicModel(torch.nn.Module, BaseAtomicModel):
         weights = self._compute_weight(extended_coord, extended_atype, nlists_)
 
         if self.models[0].fitting_net.bias_atom_e is not None:
-            self.atomic_bias  = self.models[0].fitting_net.bias_atom_e 
+            self.atomic_bias = self.models[0].fitting_net.bias_atom_e
         if self.atomic_bias is not None:
             # nf, nloc, 1; ntype, 1
             # need to add bias to corresponding types
-            atype = extended_atype[:,:nloc]
+            atype = extended_atype[:, :nloc]
             ener_list[1] += self.atomic_bias[atype]
             # raise NotImplementedError("Need to add bias in a future PR.")
         fit_ret = {
-            "energy": torch.sum(
-                torch.stack(ener_list) * torch.stack(weights), dim=0
-            ),
+            "energy": torch.sum(torch.stack(ener_list) * torch.stack(weights), dim=0),
         }  # (nframes, nloc, 1)
         return fit_ret
 
