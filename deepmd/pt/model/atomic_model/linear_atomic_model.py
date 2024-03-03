@@ -188,12 +188,15 @@ class LinearAtomicModel(torch.nn.Module, BaseAtomicModel):
         weights = self._compute_weight(extended_coord, extended_atype, nlists_)
 
         atype = extended_atype[:, :nloc]
-        for idx, m in enumerate(self.models):
-            if isinstance(m, DPAtomicModel) and m.fitting_net is not None:
-                bias_atom_e = m.fitting_net.bias_atom_e
-            elif isinstance(m, PairTabAtomicModel):
-                bias_atom_e = m.bias_atom_e
-            ener_list[idx] += bias_atom_e[atype]
+        for idx, model in enumerate(self.models):
+            if isinstance(model, DPAtomicModel):
+                bias_atom_e = model.fitting_net.bias_atom_e
+            elif isinstance(model, PairTabAtomicModel):
+                bias_atom_e = model.bias_atom_e
+            else:
+                bias_atom_e = None
+            if bias_atom_e is not None:
+                ener_list[idx] += bias_atom_e[atype]
 
         fit_ret = {
             "energy": torch.sum(torch.stack(ener_list) * torch.stack(weights), dim=0),
