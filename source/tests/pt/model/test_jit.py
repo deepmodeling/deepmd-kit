@@ -101,7 +101,6 @@ class TestEnergyModelDPA2(unittest.TestCase, JITTest):
         JITTest.tearDown(self)
 
 
-@unittest.skip("hybrid not supported at the moment")
 class TestEnergyModelHybrid(unittest.TestCase, JITTest):
     def setUp(self):
         input_json = str(Path(__file__).parent / "water/se_atten.json")
@@ -118,7 +117,6 @@ class TestEnergyModelHybrid(unittest.TestCase, JITTest):
         JITTest.tearDown(self)
 
 
-@unittest.skip("hybrid not supported at the moment")
 class TestEnergyModelHybrid2(unittest.TestCase, JITTest):
     def setUp(self):
         input_json = str(Path(__file__).parent / "water/se_atten.json")
@@ -128,7 +126,7 @@ class TestEnergyModelHybrid2(unittest.TestCase, JITTest):
         self.config["training"]["training_data"]["systems"] = data_file
         self.config["training"]["validation_data"]["systems"] = data_file
         self.config["model"] = deepcopy(model_hybrid)
-        self.config["model"]["descriptor"]["hybrid_mode"] = "sequential"
+        # self.config["model"]["descriptor"]["hybrid_mode"] = "sequential"
         self.config["training"]["numb_steps"] = 10
         self.config["training"]["save_freq"] = 10
 
