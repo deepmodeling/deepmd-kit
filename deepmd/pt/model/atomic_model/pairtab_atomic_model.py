@@ -81,7 +81,10 @@ class PairTabAtomicModel(torch.nn.Module, BaseAtomicModel):
             ) = self.tab.get()  # this returns -> Tuple[np.array, np.array]
             nspline, ntypes = tab_info[-2:].astype(int)
             self.register_buffer("tab_info", torch.from_numpy(tab_info))
-            self.register_buffer("tab_data", torch.from_numpy(tab_data).reshape(ntypes,ntypes,nspline,4))
+            self.register_buffer(
+                "tab_data",
+                torch.from_numpy(tab_data).reshape(ntypes, ntypes, nspline, 4),
+            )
         else:
             self.register_buffer("tab_info", None)
             self.register_buffer("tab_data", None)
