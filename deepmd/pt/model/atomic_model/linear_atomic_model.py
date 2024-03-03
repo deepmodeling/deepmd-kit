@@ -333,13 +333,7 @@ class DPZBLLinearAtomicModel(LinearAtomicModel):
         stat_file_path
             The dictionary of paths to the statistics files.
         """
-        if stat_file_path is not None and self.type_map is not None:
-            # descriptors and fitting net with different type_map
-            # should not share the same parameters
-            stat_file_path /= " ".join(self.type_map)
-        self.dp_model.descriptor.compute_input_stats(sampled_func, stat_file_path)
-        if self.dp_model.fitting_net is not None:
-            self.dp_model.fitting_net.compute_output_stats(sampled_func, stat_file_path)
+        self.dp_model.compute_or_load(sampled_func, stat_file_path)
 
     def serialize(self) -> dict:
         dd = BaseAtomicModel.serialize(self)
