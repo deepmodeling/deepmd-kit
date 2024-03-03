@@ -64,13 +64,17 @@ class DPTrainTest:
             trainer_fix.run()
             model_dict_after_training = deepcopy(trainer_fix.model.state_dict())
         for key in model_dict_before_training:
-            if model_dict_before_training[key].shape == model_dict_after_training[key].shape:
+            if (
+                model_dict_before_training[key].shape
+                == model_dict_after_training[key].shape
+            ):
                 torch.testing.assert_close(
                     model_dict_before_training[key], model_dict_after_training[key]
                 )
             else:
                 torch.testing.assert_close(
-                    model_dict_before_training[key].flatten(), model_dict_after_training[key].flatten()
+                    model_dict_before_training[key].flatten(),
+                    model_dict_after_training[key].flatten(),
                 )
         self.tearDown()
 
@@ -98,6 +102,7 @@ class TestEnergyModelSeA(unittest.TestCase, DPTrainTest):
 
     def tearDown(self) -> None:
         DPTrainTest.tearDown(self)
+
 
 class TestEnergyZBLModelSeA(unittest.TestCase, DPTrainTest):
     def setUp(self):
