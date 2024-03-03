@@ -1,13 +1,17 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import copy
 from typing import (
+    Callable,
     Dict,
     List,
     Optional,
     Union,
 )
-
+from deepmd.pt.utils import (
+    env,
+)
 import torch
+import numpy as np
 
 from deepmd.dpmodel import (
     FittingOutputDef,
@@ -19,11 +23,19 @@ from deepmd.utils.pair_tab import (
 from deepmd.utils.version import (
     check_version_compatibility,
 )
+from deepmd.pt.utils.utils import (
+    to_numpy_array,
+)
+from deepmd.utils.out_stat import (
+    compute_stats_from_redu,
+)
 
 from .base_atomic_model import (
     BaseAtomicModel,
 )
-
+from deepmd.utils.path import (
+    DPPath,
+)
 
 class PairTabAtomicModel(torch.nn.Module, BaseAtomicModel):
     """Pairwise tabulation energy model.
@@ -57,6 +69,7 @@ class PairTabAtomicModel(torch.nn.Module, BaseAtomicModel):
         self.tab_file = tab_file
         self.rcut = rcut
         self.tab = self._set_pairtab(tab_file, rcut)
+        
         BaseAtomicModel.__init__(self, **kwargs)
 
         # handle deserialization with no input file
@@ -70,6 +83,7 @@ class PairTabAtomicModel(torch.nn.Module, BaseAtomicModel):
         else:
             self.register_buffer("tab_info", None)
             self.register_buffer("tab_data", None)
+        self.bias_atom_e = None
 
         # self.model_type = "ener"
         # self.model_version = MODEL_VERSION ## this shoud be in the parent class
@@ -153,6 +167,65 @@ class PairTabAtomicModel(torch.nn.Module, BaseAtomicModel):
         tab_model.register_buffer("tab_info", torch.from_numpy(tab_model.tab.tab_info))
         tab_model.register_buffer("tab_data", torch.from_numpy(tab_model.tab.tab_data))
         return tab_model
+    
+    def compute_output_stats(
+        self,
+        merged: Union[Callable[[], List[dict]], List[dict]],
+        stat_file_path: Optional[DPPath] = None,
+    ):
+        """
+        Compute the output statistics (e.g. energy bias) for the fitting net from packed data.
+
+        Parameters
+        ----------
+        merged : Union[Callable[[], List[dict]], List[dict]]
+            - List[dict]: A list of data samples from various data systems.
+                Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
+                originating from the `i`-th data system.
+            - Callable[[], List[dict]]: A lazy function that returns data samples in the above format
+                only when needed. Since the sampling process can be slow and memory-intensive,
+                the lazy function helps by only sampling once.
+        stat_file_path : Optional[DPPath]
+            The path to the stat file.
+
+        """
+        if stat_file_path is not None:
+            stat_file_path = stat_file_path / "bias_atom_e"
+        if stat_file_path is not None and stat_file_path.is_file():
+            bias_atom_e = stat_file_path.load_numpy()
+        else:
+            if callable(merged):
+                # only get data for once
+                sampled = merged()
+            else:
+                sampled = merged
+            energy = [item["energy"] for item in sampled]
+            data_mixed_type = "real_natoms_vec" in sampled[0]
+            if data_mixed_type:
+                input_natoms = [item["real_natoms_vec"] for item in sampled]
+            else:
+                input_natoms = [item["natoms"] for item in sampled]
+            # shape: (nframes, ndim)
+            merged_energy = to_numpy_array(torch.cat(energy))
+            # shape: (nframes, ntypes)
+            merged_natoms = to_numpy_array(torch.cat(input_natoms)[:, 2:])
+            
+            bias_atom_e, _ = compute_stats_from_redu(
+                merged_energy,
+                merged_natoms,
+                assigned_bias=None,
+                rcond=None,
+            )
+            if stat_file_path is not None:
+                stat_file_path.save_numpy(bias_atom_e)
+        assert all(x is not None for x in [bias_atom_e])
+        ntypes = merged_natoms.shape[1]
+        self.bias_atom_e = torch.empty([ntypes, 1], dtype=torch.float64, device=env.DEVICE)
+        self.bias_atom_e.copy_(
+            torch.tensor(bias_atom_e, device=env.DEVICE).view(
+                [ntypes, 1]
+            )
+        )
 
     def forward_atomic(
         self,

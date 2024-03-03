@@ -187,14 +187,14 @@ class LinearAtomicModel(torch.nn.Module, BaseAtomicModel):
 
         weights = self._compute_weight(extended_coord, extended_atype, nlists_)
 
-        if self.models[0].fitting_net.bias_atom_e is not None:
-            self.atomic_bias = self.models[0].fitting_net.bias_atom_e
-        if self.atomic_bias is not None:
-            # nf, nloc, 1; ntype, 1
-            # need to add bias to corresponding types
-            atype = extended_atype[:, :nloc]
-            ener_list[1] += self.atomic_bias[atype]
-            # raise NotImplementedError("Need to add bias in a future PR.")
+        atype = extended_atype[:, :nloc]
+        for idx, m in enumerate(self.models):
+            if isinstance(m, DPAtomicModel) and m.fitting_net is not None:
+                bias_atom_e = m.fitting_net.bias_atom_e
+            elif isinstance(m, PairTabAtomicModel):
+                bias_atom_e = m.bias_atom_e
+            ener_list[idx] += bias_atom_e[atype]
+
         fit_ret = {
             "energy": torch.sum(torch.stack(ener_list) * torch.stack(weights), dim=0),
         }  # (nframes, nloc, 1)
@@ -333,7 +333,8 @@ class DPZBLLinearAtomicModel(LinearAtomicModel):
         stat_file_path
             The dictionary of paths to the statistics files.
         """
-        self.dp_model.compute_or_load(sampled_func, stat_file_path)
+        self.dp_model.compute_or_load_stat(sampled_func, stat_file_path)
+        self.zbl_model.compute_output_stats(sampled_func, stat_file_path)
 
     def serialize(self) -> dict:
         dd = BaseAtomicModel.serialize(self)
