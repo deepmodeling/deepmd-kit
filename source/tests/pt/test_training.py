@@ -67,7 +67,7 @@ class DPTrainTest:
             torch.testing.assert_close(
                 model_dict_before_training[key], model_dict_after_training[key]
             )
-           
+
         self.tearDown()
 
     def tearDown(self):
