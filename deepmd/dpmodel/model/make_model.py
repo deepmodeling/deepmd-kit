@@ -76,7 +76,7 @@ def make_model(T_AtomicModel):
             """Get the output def for the model."""
             return ModelOutputDef(self.atomic_output_def())
 
-        def model_output_type(self) -> str:
+        def model_output_type(self) -> List[str]:
             """Get the output type for the model."""
             output_def = self.model_output_def()
             var_defs = output_def.var_defs
@@ -85,12 +85,7 @@ def make_model(T_AtomicModel):
                 for kk, vv in var_defs.items()
                 if vv.category == OutputVariableCategory.OUT
             ]
-            if len(vars) == 1:
-                return vars[0]
-            elif len(vars) == 0:
-                raise ValueError("No valid output type found")
-            else:
-                raise ValueError(f"Multiple valid output types found: {vars}")
+            return vars
 
         def call(
             self,
