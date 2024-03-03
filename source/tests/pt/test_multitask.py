@@ -47,7 +47,7 @@ class MultiTaskTrainTest:
             if "model_2" in state_key:
                 self.assertIn(state_key.replace("model_2", "model_1"), multi_state_dict)
             if "model_1.descriptor" in state_key:
-                torch.testing.assert_allclose(
+                torch.testing.assert_close(
                     multi_state_dict[state_key],
                     multi_state_dict[state_key.replace("model_1", "model_2")],
                 )

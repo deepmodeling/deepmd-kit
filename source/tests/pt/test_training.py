@@ -44,7 +44,7 @@ class DPTrainTest:
         trainer_fix.run()
         model_dict_after_training = deepcopy(trainer_fix.model.state_dict())
         for key in model_dict_before_training:
-            torch.testing.assert_allclose(
+            torch.testing.assert_close(
                 model_dict_before_training[key], model_dict_after_training[key]
             )
         self.tearDown()
