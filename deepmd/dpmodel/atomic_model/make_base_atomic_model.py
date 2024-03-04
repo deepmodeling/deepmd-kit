@@ -5,19 +5,15 @@ from abc import (
     abstractmethod,
 )
 from typing import (
-    Callable,
     Dict,
     List,
     Optional,
-    Union,
 )
 
 from deepmd.dpmodel.output_def import (
     FittingOutputDef,
 )
-from deepmd.utils.path import (
-    DPPath,
-)
+
 
 
 def make_base_atomic_model(
@@ -120,14 +116,6 @@ def make_base_atomic_model(
             2. uses a neighbor list that distinguishes different atomic types.
 
             """
-            pass
-
-        @abstractmethod
-        def compute_or_load_stat(
-            self,
-            merged: Union[Callable[[], List[dict]], List[dict]],
-            stat_file_path: Optional[DPPath] = None,
-        ):
             pass
 
         @abstractmethod
