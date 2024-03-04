@@ -747,23 +747,24 @@ class Trainer:
                 if not self.multi_task:
                     train_results = log_loss_train(loss, more_loss)
                     valid_results = log_loss_valid()
-                    log.info(
-                        format_training_message_per_task(
-                            batch=_step_id,
-                            task_name="trn",
-                            rmse=train_results,
-                            learning_rate=cur_lr,
-                        )
-                    )
-                    if valid_results is not None:
+                    if self.rank == 0:
                         log.info(
                             format_training_message_per_task(
                                 batch=_step_id,
-                                task_name="val",
-                                rmse=valid_results,
-                                learning_rate=None,
+                                task_name="trn",
+                                rmse=train_results,
+                                learning_rate=cur_lr,
                             )
                         )
+                        if valid_results:
+                            log.info(
+                                format_training_message_per_task(
+                                    batch=_step_id,
+                                    task_name="val",
+                                    rmse=valid_results,
+                                    learning_rate=None,
+                                )
+                            )
                 else:
                     train_results = {_key: {} for _key in self.model_keys}
                     valid_results = {_key: {} for _key in self.model_keys}
@@ -786,33 +787,35 @@ class Trainer:
                                 loss, more_loss, _task_key=_key
                             )
                         valid_results[_key] = log_loss_valid(_task_key=_key)
-                        log.info(
-                            format_training_message_per_task(
-                                batch=_step_id,
-                                task_name=_key + "_trn",
-                                rmse=train_results[_key],
-                                learning_rate=cur_lr,
-                            )
-                        )
-                        if valid_results is not None and valid_results[_key]:
+                        if self.rank == 0:
                             log.info(
                                 format_training_message_per_task(
                                     batch=_step_id,
-                                    task_name=_key + "_val",
-                                    rmse=valid_results[_key],
-                                    learning_rate=None,
+                                    task_name=_key + "_trn",
+                                    rmse=train_results[_key],
+                                    learning_rate=cur_lr,
                                 )
                             )
+                            if valid_results is not None and valid_results[_key]:
+                                log.info(
+                                    format_training_message_per_task(
+                                        batch=_step_id,
+                                        task_name=_key + "_val",
+                                        rmse=valid_results[_key],
+                                        learning_rate=None,
+                                    )
+                                )
 
                 current_time = time.time()
                 train_time = current_time - self.t0
                 self.t0 = current_time
-                log.info(
-                    format_training_message(
-                        batch=_step_id,
-                        wall_time=train_time,
+                if self.rank == 0:
+                    log.info(
+                        format_training_message(
+                            batch=_step_id,
+                            wall_time=train_time,
+                        )
                     )
-                )
 
                 if fout:
                     if self.lcurve_should_print_header:
