@@ -25,9 +25,6 @@ from deepmd.pt.utils.nlist import (
     get_multiple_nlist_key,
     nlist_distinguish_types,
 )
-from deepmd.utils.path import (
-    DPPath,
-)
 from deepmd.utils.version import (
     check_version_compatibility,
 )
@@ -80,9 +77,10 @@ class LinearAtomicModel(torch.nn.Module, BaseAtomicModel):
         """Get the cut-off radius."""
         return max(self.get_model_rcuts())
 
-    @abstractmethod
+    @torch.jit.export
     def get_type_map(self) -> List[str]:
         """Get the type map."""
+        raise NotImplementedError("TODO: implement this method")
 
     def get_model_rcuts(self) -> List[float]:
         """Get the cut-off radius for each individual models."""
@@ -105,8 +103,8 @@ class LinearAtomicModel(torch.nn.Module, BaseAtomicModel):
         nsels = torch.tensor(self.get_model_nsels(), device=device)
         zipped = torch.stack(
             [
-                rcuts,
-                nsels,
+                torch.tensor(rcuts, device=device),
+                torch.tensor(nsels, device=device),
             ],
             dim=0,
         ).T
@@ -186,20 +184,14 @@ class LinearAtomicModel(torch.nn.Module, BaseAtomicModel):
 
         weights = self._compute_weight(extended_coord, extended_atype, nlists_)
 
-        atype = extended_atype[:, :nloc]
-        for idx, model in enumerate(self.models):
-            if isinstance(model, DPAtomicModel):
-                bias_atom_e = model.fitting_net.bias_atom_e
-            elif isinstance(model, PairTabAtomicModel):
-                bias_atom_e = model.bias_atom_e
-            else:
-                bias_atom_e = None
-            if bias_atom_e is not None:
-                ener_list[idx] += bias_atom_e[atype]
-
-        fit_ret = {
-            "energy": torch.sum(torch.stack(ener_list) * torch.stack(weights), dim=0),
-        }  # (nframes, nloc, 1)
+        if self.atomic_bias is not None:
+            raise NotImplementedError("Need to add bias in a future PR.")
+        else:
+            fit_ret = {
+                "energy": torch.sum(
+                    torch.stack(ener_list) * torch.stack(weights), dim=0
+                ),
+            }  # (nframes, nloc, 1)
         return fit_ret
 
     def fitting_output_def(self) -> FittingOutputDef:
@@ -314,39 +306,6 @@ class DPZBLLinearAtomicModel(LinearAtomicModel):
 
         # this is a placeholder being updated in _compute_weight, to handle Jit attribute init error.
         self.zbl_weight = torch.empty(0, dtype=torch.float64, device=env.DEVICE)
-
-    @torch.jit.export
-    def get_type_map(self) -> List[str]:
-        dp_map = self.dp_model.get_type_map()
-        zbl_map = self.zbl_model.get_type_map()
-        return self.dp_model.get_type_map()
-
-    def compute_or_load_stat(
-        self,
-        sampled_func,
-        stat_file_path: Optional[DPPath] = None,
-    ):
-        """
-        Compute or load the statistics parameters of the model,
-        such as mean and standard deviation of descriptors or the energy bias of the fitting net.
-        When `sampled` is provided, all the statistics parameters will be calculated (or re-calculated for update),
-        and saved in the `stat_file_path`(s).
-        When `sampled` is not provided, it will check the existence of `stat_file_path`(s)
-        and load the calculated statistics parameters.
-
-        Parameters
-        ----------
-        sampled_func
-            The lazy sampled function to get data frames from different data systems.
-        stat_file_path
-            The dictionary of paths to the statistics files.
-        """
-        self.dp_model.compute_or_load_stat(sampled_func, stat_file_path)
-        self.zbl_model.compute_or_load_stat(sampled_func, stat_file_path)
-
-    def change_energy_bias(self):
-        # need to implement
-        pass
 
     def serialize(self) -> dict:
         dd = BaseAtomicModel.serialize(self)

@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import copy
 from typing import (
-    Callable,
     Dict,
     List,
     Optional,
@@ -14,17 +13,8 @@ from deepmd.dpmodel import (
     FittingOutputDef,
     OutputVariableDef,
 )
-from deepmd.pt.utils import (
-    env,
-)
-from deepmd.pt.utils.stat import (
-    compute_output_stats,
-)
 from deepmd.utils.pair_tab import (
     PairTab,
-)
-from deepmd.utils.path import (
-    DPPath,
 )
 from deepmd.utils.version import (
     check_version_compatibility,
@@ -57,36 +47,17 @@ class PairTabAtomicModel(torch.nn.Module, BaseAtomicModel):
         The cutoff radius.
     sel : int or list[int]
         The maxmum number of atoms in the cut-off radius.
-    type_map: List[str]
-        Mapping atom type to the name (str) of the type.
-        For example `type_map[1]` gives the name of the type 1.
-    rcond : float, optional
-        The condition number for the regression of atomic energy.
-    atom_ener
-        Specifying atomic energy contribution in vacuum. The `set_davg_zero` key in the descrptor should be set.
     """
 
     def __init__(
-        self,
-        tab_file: str,
-        rcut: float,
-        sel: Union[int, List[int]],
-        type_map: List[str],
-        rcond: Optional[float] = None,
-        atom_ener: Optional[List[float]] = None,
-        **kwargs,
+        self, tab_file: str, rcut: float, sel: Union[int, List[int]], **kwargs
     ):
         torch.nn.Module.__init__(self)
         self.model_def_script = ""
         self.tab_file = tab_file
         self.rcut = rcut
         self.tab = self._set_pairtab(tab_file, rcut)
-
         BaseAtomicModel.__init__(self, **kwargs)
-        self.rcond = rcond
-        self.atom_ener = atom_ener
-        self.type_map = type_map
-        self.ntypes = len(type_map)
 
         # handle deserialization with no input file
         if self.tab_file is not None:
@@ -94,22 +65,11 @@ class PairTabAtomicModel(torch.nn.Module, BaseAtomicModel):
                 tab_info,
                 tab_data,
             ) = self.tab.get()  # this returns -> Tuple[np.array, np.array]
-            nspline, ntypes_tab = tab_info[-2:].astype(int)
             self.register_buffer("tab_info", torch.from_numpy(tab_info))
-            self.register_buffer(
-                "tab_data",
-                torch.from_numpy(tab_data).reshape(ntypes_tab, ntypes_tab, nspline, 4),
-            )
-            if self.ntypes != ntypes_tab:
-                raise ValueError(
-                    "The `type_map` provided does not match the number of columns in the table."
-                )
+            self.register_buffer("tab_data", torch.from_numpy(tab_data))
         else:
             self.register_buffer("tab_info", None)
             self.register_buffer("tab_data", None)
-        self.bias_atom_e = torch.zeros(
-            self.ntypes, 1, dtype=env.GLOBAL_PT_ENER_FLOAT_PRECISION, device=env.DEVICE
-        )
 
         # self.model_type = "ener"
         # self.model_version = MODEL_VERSION ## this shoud be in the parent class
@@ -143,8 +103,8 @@ class PairTabAtomicModel(torch.nn.Module, BaseAtomicModel):
         return self.rcut
 
     @torch.jit.export
-    def get_type_map(self) -> List[str]:
-        return self.type_map
+    def get_type_map(self) -> Optional[List[str]]:
+        raise NotImplementedError("TODO: implement this method")
 
     def get_sel(self) -> List[int]:
         return [self.sel]
@@ -175,9 +135,6 @@ class PairTabAtomicModel(torch.nn.Module, BaseAtomicModel):
                 "tab": self.tab.serialize(),
                 "rcut": self.rcut,
                 "sel": self.sel,
-                "type_map": self.type_map,
-                "rcond": self.rcond,
-                "atom_ener": self.atom_ener,
             }
         )
         return dd
@@ -188,55 +145,14 @@ class PairTabAtomicModel(torch.nn.Module, BaseAtomicModel):
         check_version_compatibility(data.pop("@version", 1), 1, 1)
         rcut = data.pop("rcut")
         sel = data.pop("sel")
-        type_map = data.pop("type_map")
-        rcond = data.pop("rcond")
-        atom_ener = data.pop("atom_ener")
         tab = PairTab.deserialize(data.pop("tab"))
         data.pop("@class", None)
         data.pop("type", None)
-        tab_model = cls(None, rcut, sel, type_map, rcond, atom_ener, **data)
+        tab_model = cls(None, rcut, sel, **data)
         tab_model.tab = tab
         tab_model.register_buffer("tab_info", torch.from_numpy(tab_model.tab.tab_info))
-        nspline, ntypes = tab_model.tab.tab_info[-2:].astype(int)
-        tab_model.register_buffer(
-            "tab_data",
-            torch.from_numpy(tab_model.tab.tab_data).reshape(
-                ntypes, ntypes, nspline, 4
-            ),
-        )
+        tab_model.register_buffer("tab_data", torch.from_numpy(tab_model.tab.tab_data))
         return tab_model
-
-    def compute_or_load_stat(
-        self,
-        merged: Union[Callable[[], List[dict]], List[dict]],
-        stat_file_path: Optional[DPPath] = None,
-    ):
-        """
-        Compute the output statistics (e.g. energy bias) for the fitting net from packed data.
-
-        Parameters
-        ----------
-        merged : Union[Callable[[], List[dict]], List[dict]]
-            - List[dict]: A list of data samples from various data systems.
-                Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
-                originating from the `i`-th data system.
-            - Callable[[], List[dict]]: A lazy function that returns data samples in the above format
-                only when needed. Since the sampling process can be slow and memory-intensive,
-                the lazy function helps by only sampling once.
-        stat_file_path : Optional[DPPath]
-            The path to the stat file.
-
-        """
-        bias_atom_e = compute_output_stats(
-            merged, stat_file_path, self.rcond, self.atom_ener
-        )
-        self.bias_atom_e.copy_(
-            torch.tensor(bias_atom_e, device=env.DEVICE).view([self.ntypes, 1])
-        )
-
-    def change_energy_bias(self) -> None:
-        # need to implement
-        pass
 
     def forward_atomic(
         self,

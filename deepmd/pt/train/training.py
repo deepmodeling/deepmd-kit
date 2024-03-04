@@ -29,9 +29,7 @@ from deepmd.pt.loss import (
     TensorLoss,
 )
 from deepmd.pt.model.model import (
-    DPZBLModel,
     get_model,
-    get_zbl_model,
 )
 from deepmd.pt.optimizer import (
     KFOptimizerWrapper,
@@ -249,10 +247,7 @@ class Trainer:
         def get_single_model(
             _model_params,
         ):
-            if "use_srtab" in _model_params:
-                model = get_zbl_model(deepcopy(_model_params)).to(DEVICE)
-            else:
-                model = get_model(deepcopy(_model_params)).to(DEVICE)
+            model = get_model(deepcopy(_model_params)).to(DEVICE)
             return model
 
         def get_lr(lr_params):
@@ -508,20 +503,14 @@ class Trainer:
                         model_params["type_map"],
                         model_params["new_type_map"],
                     )
-                    if hasattr(self.model, "fitting_net"):
-                        self.model.fitting_net.change_energy_bias(
-                            config,
-                            self.model,
-                            old_type_map,
-                            new_type_map,
-                            ntest=ntest,
-                            bias_shift=model_params.get("bias_shift", "delta"),
-                        )
-                    elif isinstance(self.model, DPZBLModel):
-                        # need to updated
-                        self.model.change_energy_bias()
-                    else:
-                        raise NotImplementedError
+                    self.model.fitting_net.change_energy_bias(
+                        config,
+                        self.model,
+                        old_type_map,
+                        new_type_map,
+                        ntest=ntest,
+                        bias_shift=model_params.get("bias_shift", "delta"),
+                    )
         if init_frz_model is not None:
             frz_model = torch.jit.load(init_frz_model, map_location=DEVICE)
             self.model.load_state_dict(frz_model.state_dict())

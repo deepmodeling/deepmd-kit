@@ -17,10 +17,7 @@ from deepmd.infer.deep_eval import (
     DeepEval,
 )
 from deepmd.pt.model.model import (
-    DPZBLModel,
-    EnergyModel,
     get_model,
-    get_zbl_model,
 )
 from deepmd.utils.data_system import (
     DeepmdDataSystem,
@@ -30,6 +27,7 @@ from deepmd.utils.finetune import (
 )
 
 from .model.test_permutation import (
+    model_dpa1,
     model_dpa2,
     model_se_e2_a,
 )
@@ -38,39 +36,14 @@ from .model.test_permutation import (
 class FinetuneTest:
     def test_finetune_change_energy_bias(self):
         # get model
-        if "use_srtab" in self.model_config:
-            model = get_zbl_model(self.model_config)
-        else:
-            model = get_model(self.model_config)
-        if isinstance(model, EnergyModel):
-            model.fitting_net.bias_atom_e = torch.rand_like(
-                model.fitting_net.bias_atom_e
-            )
-            energy_bias_before = deepcopy(
-                model.fitting_net.bias_atom_e.detach().cpu().numpy().reshape(-1)
-            )
-            bias_atom_e_input = deepcopy(
-                model.fitting_net.bias_atom_e.detach().cpu().numpy().reshape(-1)
-            )
-        elif isinstance(model, DPZBLModel):
-            model.dp_model.fitting_net.bias_atom_e = torch.rand_like(
-                model.dp_model.fitting_net.bias_atom_e
-            )
-            energy_bias_before = deepcopy(
-                model.dp_model.fitting_net.bias_atom_e.detach()
-                .cpu()
-                .numpy()
-                .reshape(-1)
-            )
-            bias_atom_e_input = deepcopy(
-                model.dp_model.fitting_net.bias_atom_e.detach()
-                .cpu()
-                .numpy()
-                .reshape(-1)
-            )
-        else:
-            bias_atom_e_input = None
-
+        model = get_model(self.model_config)
+        model.fitting_net.bias_atom_e = torch.rand_like(model.fitting_net.bias_atom_e)
+        energy_bias_before = deepcopy(
+            model.fitting_net.bias_atom_e.detach().cpu().numpy().reshape(-1)
+        )
+        bias_atom_e_input = deepcopy(
+            model.fitting_net.bias_atom_e.detach().cpu().numpy().reshape(-1)
+        )
         model = torch.jit.script(model)
         tmp_model = tempfile.NamedTemporaryFile(delete=False, suffix=".pth")
         torch.jit.save(model, tmp_model.name)
@@ -136,20 +109,19 @@ class TestEnergyModelSeA(unittest.TestCase, FinetuneTest):
         FinetuneTest.tearDown(self)
 
 
-## Disabled for now.
-# class TestEnergyZBLModelSeA(unittest.TestCase, FinetuneTest):
-#     def setUp(self):
-#         self.data_file = [str(Path(__file__).parent / "water/data/data_0")]
-#         self.data = DeepmdDataSystem(
-#             self.data_file,
-#             batch_size=1,
-#             test_size=1,
-#         )
-#         self.data.add("energy", ndof=1, atomic=False, must=True, high_prec=True)
-#         self.model_config = model_zbl
+class TestEnergyModelDPA1(unittest.TestCase, FinetuneTest):
+    def setUp(self):
+        self.data_file = [str(Path(__file__).parent / "water/data/data_0")]
+        self.data = DeepmdDataSystem(
+            self.data_file,
+            batch_size=1,
+            test_size=1,
+        )
+        self.data.add("energy", ndof=1, atomic=False, must=True, high_prec=True)
+        self.model_config = model_dpa1
 
-#     def tearDown(self) -> None:
-#         FinetuneTest.tearDown(self)
+    def tearDown(self) -> None:
+        FinetuneTest.tearDown(self)
 
 
 class TestEnergyModelDPA2(unittest.TestCase, FinetuneTest):
