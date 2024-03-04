@@ -12,12 +12,11 @@ from typing import (
     Union,
 )
 
-from deepmd.utils.path import (
-    DPPath,
-)
-
 from deepmd.dpmodel.output_def import (
     FittingOutputDef,
+)
+from deepmd.utils.path import (
+    DPPath,
 )
 
 
@@ -130,7 +129,6 @@ def make_base_atomic_model(
             stat_file_path: Optional[DPPath] = None,
         ):
             pass
-
 
         @abstractmethod
         def fwd(

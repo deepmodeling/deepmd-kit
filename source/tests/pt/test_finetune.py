@@ -33,7 +33,6 @@ from .model.test_permutation import (
     model_dpa1,
     model_dpa2,
     model_se_e2_a,
-    model_zbl,
 )
 
 
@@ -137,6 +136,7 @@ class TestEnergyModelSeA(unittest.TestCase, FinetuneTest):
 
     def tearDown(self) -> None:
         FinetuneTest.tearDown(self)
+
 
 ## disabled for now.
 # class TestEnergyZBLModelSeA(unittest.TestCase, FinetuneTest):
