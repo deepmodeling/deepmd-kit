@@ -520,6 +520,8 @@ class Trainer:
                     elif isinstance(self.model, DPZBLModel):
                         # need to updated
                         self.model.change_energy_bias()
+                    else:
+                        raise NotImplementedError
         if init_frz_model is not None:
             frz_model = torch.jit.load(init_frz_model, map_location=DEVICE)
             self.model.load_state_dict(frz_model.state_dict())

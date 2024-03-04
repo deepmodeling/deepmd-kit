@@ -33,6 +33,7 @@ from .model.test_permutation import (
     model_dpa1,
     model_dpa2,
     model_se_e2_a,
+    model_zbl,
 )
 
 
@@ -69,7 +70,6 @@ class FinetuneTest:
                 .numpy()
                 .reshape(-1)
             )
-            print(f"here: {bias_atom_e_input}")
         else:
             bias_atom_e_input = None
 
@@ -138,23 +138,7 @@ class TestEnergyModelSeA(unittest.TestCase, FinetuneTest):
         FinetuneTest.tearDown(self)
 
 
-## disabled for now.
-# class TestEnergyZBLModelSeA(unittest.TestCase, FinetuneTest):
-#     def setUp(self):
-#         self.data_file = [str(Path(__file__).parent / "water/data/data_0")]
-#         self.data = DeepmdDataSystem(
-#             self.data_file,
-#             batch_size=1,
-#             test_size=1,
-#         )
-#         self.data.add("energy", ndof=1, atomic=False, must=True, high_prec=True)
-#         self.model_config = model_zbl
-
-#     def tearDown(self) -> None:
-#         FinetuneTest.tearDown(self)
-
-
-class TestEnergyModelDPA1(unittest.TestCase, FinetuneTest):
+class TestEnergyZBLModelSeA(unittest.TestCase, FinetuneTest):
     def setUp(self):
         self.data_file = [str(Path(__file__).parent / "water/data/data_0")]
         self.data = DeepmdDataSystem(
@@ -163,7 +147,7 @@ class TestEnergyModelDPA1(unittest.TestCase, FinetuneTest):
             test_size=1,
         )
         self.data.add("energy", ndof=1, atomic=False, must=True, high_prec=True)
-        self.model_config = model_dpa1
+        self.model_config = model_zbl
 
     def tearDown(self) -> None:
         FinetuneTest.tearDown(self)
