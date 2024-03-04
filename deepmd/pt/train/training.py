@@ -29,9 +29,7 @@ from deepmd.pt.loss import (
     TensorLoss,
 )
 from deepmd.pt.model.model import (
-    DPZBLModel
-)
-from deepmd.pt.model.model import (
+    DPZBLModel,
     get_model,
     get_zbl_model,
 )

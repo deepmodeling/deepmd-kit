@@ -345,7 +345,6 @@ class DPZBLLinearAtomicModel(LinearAtomicModel):
     def change_energy_bias(self):
         # need to implement
         pass
-                        
 
     def serialize(self) -> dict:
         dd = BaseAtomicModel.serialize(self)
