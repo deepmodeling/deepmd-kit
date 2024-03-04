@@ -29,6 +29,9 @@ from deepmd.pt.loss import (
     TensorLoss,
 )
 from deepmd.pt.model.model import (
+    DPZBLModel
+)
+from deepmd.pt.model.model import (
     get_model,
     get_zbl_model,
 )
@@ -516,6 +519,9 @@ class Trainer:
                             ntest=ntest,
                             bias_shift=model_params.get("bias_shift", "delta"),
                         )
+                    elif isinstance(self.model, DPZBLModel):
+                        # need to updated
+                        self.model.change_energy_bias()
         if init_frz_model is not None:
             frz_model = torch.jit.load(init_frz_model, map_location=DEVICE)
             self.model.load_state_dict(frz_model.state_dict())
