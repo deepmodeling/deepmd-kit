@@ -19,6 +19,11 @@ from deepmd.infer.deep_eval import (
 from deepmd.pt.model.model import (
     get_model,
 )
+from deepmd.pt.model.model import (
+    EnergyModel,
+    DPZBLModel,
+)
+
 from deepmd.utils.data_system import (
     DeepmdDataSystem,
 )
@@ -37,14 +42,30 @@ from .model.test_permutation import (
 class FinetuneTest:
     def test_finetune_change_energy_bias(self):
         # get model
-        model = get_model(self.model_config)
-        model.fitting_net.bias_atom_e = torch.rand_like(model.fitting_net.bias_atom_e)
-        energy_bias_before = deepcopy(
-            model.fitting_net.bias_atom_e.detach().cpu().numpy().reshape(-1)
-        )
-        bias_atom_e_input = deepcopy(
-            model.fitting_net.bias_atom_e.detach().cpu().numpy().reshape(-1)
-        )
+        if "use_srtab" in self.model_config:
+            model = get_zbl_model(self.model_config)
+        else:
+            model = get_model(self.model_config)
+        if isinstance(model, EnergyModel):
+            model.fitting_net.bias_atom_e = torch.rand_like(model.fitting_net.bias_atom_e)
+            energy_bias_before = deepcopy(
+                model.fitting_net.bias_atom_e.detach().cpu().numpy().reshape(-1)
+            )
+            bias_atom_e_input = deepcopy(
+                model.fitting_net.bias_atom_e.detach().cpu().numpy().reshape(-1)
+            )
+        elif isinstance(model, DPZBLModel):
+            model.dp_model.fitting_net.bias_atom_e = torch.rand_like(model.dp_model.fitting_net.bias_atom_e)
+            energy_bias_before = deepcopy(
+                model.dp_model.fitting_net.bias_atom_e.detach().cpu().numpy().reshape(-1)
+            )
+            bias_atom_e_input = deepcopy(
+                model.dp_model.fitting_net.bias_atom_e.detach().cpu().numpy().reshape(-1)
+            )
+            print(f"here: {bias_atom_e_input}")
+        else:
+            bias_atom_e_input = None
+        
         model = torch.jit.script(model)
         tmp_model = tempfile.NamedTemporaryFile(delete=False, suffix=".pth")
         torch.jit.save(model, tmp_model.name)

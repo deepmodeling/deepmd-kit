@@ -80,10 +80,9 @@ class LinearAtomicModel(torch.nn.Module, BaseAtomicModel):
         """Get the cut-off radius."""
         return max(self.get_model_rcuts())
 
-    @torch.jit.export
+    @abstractmethod
     def get_type_map(self) -> List[str]:
         """Get the type map."""
-        raise NotImplementedError("TODO: implement this method")
 
     def get_model_rcuts(self) -> List[float]:
         """Get the cut-off radius for each individual models."""
@@ -106,8 +105,8 @@ class LinearAtomicModel(torch.nn.Module, BaseAtomicModel):
         nsels = torch.tensor(self.get_model_nsels(), device=device)
         zipped = torch.stack(
             [
-                torch.tensor(rcuts, device=device),
-                torch.tensor(nsels, device=device),
+                rcuts,
+                nsels,
             ],
             dim=0,
         ).T
@@ -315,6 +314,10 @@ class DPZBLLinearAtomicModel(LinearAtomicModel):
 
         # this is a placeholder being updated in _compute_weight, to handle Jit attribute init error.
         self.zbl_weight = torch.empty(0, dtype=torch.float64, device=env.DEVICE)
+
+    @torch.jit.export
+    def get_type_map(self):
+        return self.dp_model.get_type_map()
 
     def compute_or_load_stat(
         self,
