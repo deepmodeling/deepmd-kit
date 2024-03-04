@@ -15,7 +15,6 @@ from deepmd.dpmodel.output_def import (
 )
 
 
-
 def make_base_atomic_model(
     t_tensor,
     fwd_method_name: str = "forward_atomic",
