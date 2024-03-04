@@ -6,17 +6,16 @@ from typing import (
     Optional,
     Union,
 )
+
 import numpy as np
+import torch
+
 from deepmd.pt.utils import (
     env,
 )
 from deepmd.pt.utils.utils import (
-    to_numpy_array,
-)
-import torch
-
-from deepmd.pt.utils.utils import (
     dict_to_device,
+    to_numpy_array,
 )
 from deepmd.utils.out_stat import (
     compute_stats_from_redu,
