@@ -155,7 +155,7 @@ endif()
 if(ENABLE_PYTORCH AND NOT DEEPMD_C_ROOT)
   find_package(Torch REQUIRED)
   string(REGEX MATCH "_GLIBCXX_USE_CXX11_ABI=([0-9]+)" CXXABI_PT_MATCH
-               ${TORCH_CXX_FLAGS})
+               "${TORCH_CXX_FLAGS}")
   if(CXXABI_PT_MATCH)
     message(STATUS "PyTorch CXX11 ABI: ${CMAKE_MATCH_1}")
     if(DEFINED OP_CXX_ABI)
