@@ -20,6 +20,7 @@ from deepmd.pt.model.model import (
     DPZBLModel,
     EnergyModel,
     get_model,
+    get_zbl_model,
 )
 from deepmd.utils.data_system import (
     DeepmdDataSystem,
