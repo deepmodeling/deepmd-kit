@@ -6,7 +6,13 @@ from typing import (
     Optional,
     Union,
 )
-
+import numpy as np
+from deepmd.pt.utils import (
+    env,
+)
+from deepmd.pt.utils.utils import (
+    to_numpy_array,
+)
 import torch
 
 from deepmd.pt.utils.utils import (
