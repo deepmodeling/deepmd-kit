@@ -394,7 +394,10 @@ class Trainer:
                     f"training in {model_key}",
                     to_numpy_array(self.training_dataloader[model_key].sampler.weights),
                 )
-                if validation_data is not None:
+                if (
+                    validation_data is not None
+                    and validation_data[model_key] is not None
+                ):
                     validation_data[model_key].print_summary(
                         f"validation in {model_key}",
                         to_numpy_array(
@@ -723,7 +726,7 @@ class Trainer:
                         )
                         if input_dict == {}:
                             # no validation data
-                            return "", None
+                            return {}
                         _, loss, more_loss = self.wrapper(
                             **input_dict,
                             cur_lr=pref_lr,
@@ -791,7 +794,7 @@ class Trainer:
                                 learning_rate=cur_lr,
                             )
                         )
-                        if valid_results is not None:
+                        if valid_results is not None and valid_results[_key]:
                             log.info(
                                 format_training_message_per_task(
                                     batch=_step_id,
