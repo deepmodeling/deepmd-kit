@@ -30,7 +30,6 @@ from deepmd.utils.finetune import (
 )
 
 from .model.test_permutation import (
-    model_dpa1,
     model_dpa2,
     model_se_e2_a,
     model_zbl,
