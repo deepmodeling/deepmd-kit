@@ -131,4 +131,4 @@ def compute_output_stats(
         if stat_file_path is not None:
             stat_file_path.save_numpy(bias_atom_e)
     assert all(x is not None for x in [bias_atom_e])
-    return torch.tensor(bias_atom_e, device=env.DEVICE).view([ntypes, 1])
+    return torch.tensor(bias_atom_e, device=env.DEVICE)

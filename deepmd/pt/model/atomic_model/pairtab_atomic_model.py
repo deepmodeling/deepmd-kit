@@ -194,7 +194,7 @@ class PairTabAtomicModel(torch.nn.Module, BaseAtomicModel):
         tab = PairTab.deserialize(data.pop("tab"))
         data.pop("@class", None)
         data.pop("type", None)
-        tab_model = cls(None, rcut, sel, type_map, **data)
+        tab_model = cls(None, rcut, sel, type_map, rcond, atom_ener, **data)
         tab_model.tab = tab
         tab_model.register_buffer("tab_info", torch.from_numpy(tab_model.tab.tab_info))
         nspline, ntypes = tab_model.tab.tab_info[-2:].astype(int)
