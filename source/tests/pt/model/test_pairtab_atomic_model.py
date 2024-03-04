@@ -31,8 +31,8 @@ class TestPairTab(unittest.TestCase):
                 [0.02, 0.25, 0.4, 0.75],
             ]
         )
-
-        self.model = PairTabAtomicModel(tab_file=file_path, rcut=0.02, sel=2)
+        self.type_map = ['H', "O"]
+        self.model = PairTabAtomicModel(tab_file=file_path, rcut=0.02, sel=2, type_map=self.type_map)
 
         self.extended_coord = torch.tensor(
             [
@@ -61,6 +61,7 @@ class TestPairTab(unittest.TestCase):
         self.nlist = torch.tensor(
             [[[1, 2], [0, 2]], [[1, 2], [0, 3]]], device=env.DEVICE
         )
+        
 
     def test_without_mask(self):
         result = self.model.forward_atomic(
@@ -97,8 +98,7 @@ class TestPairTab(unittest.TestCase):
     def test_jit(self):
         model = torch.jit.script(self.model)
         self.assertEqual(model.get_rcut(), 0.02)
-        with self.assertRaises(torch.jit.Error):
-            self.assertEqual(model.get_type_map(), None)
+        self.assertEqual(model.get_type_map(), ["H", "O"])
 
     def test_deserialize(self):
         model1 = PairTabAtomicModel.deserialize(self.model.serialize())
@@ -121,8 +121,7 @@ class TestPairTab(unittest.TestCase):
 
         model1 = torch.jit.script(model1)
         self.assertEqual(model1.get_rcut(), 0.02)
-        with self.assertRaises(torch.jit.Error):
-            self.assertEqual(model1.get_type_map(), None)
+        self.assertEqual(model1.get_type_map(), ["H", "O"])
 
     def test_cross_deserialize(self):
         model_dict = self.model.serialize()  # pytorch model to dict
@@ -228,7 +227,7 @@ class TestPairTabTwoAtoms(unittest.TestCase):
                 device=env.DEVICE,
             )
 
-            model = PairTabAtomicModel(tab_file=file_path, rcut=rcut, sel=2)
+            model = PairTabAtomicModel(tab_file=file_path, rcut=rcut, sel=2, type_map=["H"])
             results.append(
                 model.forward_atomic(extended_coord, extended_atype, nlist)["energy"]
             )

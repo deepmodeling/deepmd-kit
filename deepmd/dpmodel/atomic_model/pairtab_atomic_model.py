@@ -47,21 +47,28 @@ class PairTabAtomicModel(BaseAtomicModel):
         The cutoff radius.
     sel : int or list[int]
         The maxmum number of atoms in the cut-off radius.
+    type_map: List[str]
+        Mapping atom type to the name (str) of the type.
+        For example `type_map[1]` gives the name of the type 1.
     """
 
     def __init__(
-        self, tab_file: str, rcut: float, sel: Union[int, List[int]], **kwargs
+        self, tab_file: str, rcut: float, sel: Union[int, List[int]], type_map: List[str], **kwargs
     ):
         super().__init__()
         self.tab_file = tab_file
         self.rcut = rcut
 
         self.tab = PairTab(self.tab_file, rcut=rcut)
+        self.type_map = type_map
+        self.ntypes = len(type_map)
 
         if self.tab_file is not None:
             self.tab_info, self.tab_data = self.tab.get()
-            nspline, ntypes = self.tab_info[-2:].astype(int)
-            self.tab_data = self.tab_data.reshape(ntypes, ntypes, nspline, 4)
+            nspline, ntypes_tab = self.tab_info[-2:].astype(int)
+            self.tab_data = self.tab_data.reshape(ntypes_tab, ntypes_tab, nspline, 4)
+            if self.ntypes != ntypes_tab:
+                raise ValueError("The `type_map` provided does not match the number of columns in the table.")
         else:
             self.tab_info, self.tab_data = None, None
 
@@ -120,6 +127,7 @@ class PairTabAtomicModel(BaseAtomicModel):
                 "tab": self.tab.serialize(),
                 "rcut": self.rcut,
                 "sel": self.sel,
+                "type_map": self.type_map,
             }
         )
         return dd
@@ -132,8 +140,9 @@ class PairTabAtomicModel(BaseAtomicModel):
         data.pop("type")
         rcut = data.pop("rcut")
         sel = data.pop("sel")
+        type_map = data.pop("type_map")
         tab = PairTab.deserialize(data.pop("tab"))
-        tab_model = cls(None, rcut, sel, **data)
+        tab_model = cls(None, rcut, sel, type_map, **data)
         tab_model.tab = tab
         tab_model.tab_info = tab_model.tab.tab_info
         nspline, ntypes = tab_model.tab_info[-2:].astype(int)

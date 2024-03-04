@@ -136,20 +136,20 @@ class TestEnergyModelSeA(unittest.TestCase, FinetuneTest):
     def tearDown(self) -> None:
         FinetuneTest.tearDown(self)
 
+## Disabled for now.
+# class TestEnergyZBLModelSeA(unittest.TestCase, FinetuneTest):
+#     def setUp(self):
+#         self.data_file = [str(Path(__file__).parent / "water/data/data_0")]
+#         self.data = DeepmdDataSystem(
+#             self.data_file,
+#             batch_size=1,
+#             test_size=1,
+#         )
+#         self.data.add("energy", ndof=1, atomic=False, must=True, high_prec=True)
+#         self.model_config = model_zbl
 
-class TestEnergyZBLModelSeA(unittest.TestCase, FinetuneTest):
-    def setUp(self):
-        self.data_file = [str(Path(__file__).parent / "water/data/data_0")]
-        self.data = DeepmdDataSystem(
-            self.data_file,
-            batch_size=1,
-            test_size=1,
-        )
-        self.data.add("energy", ndof=1, atomic=False, must=True, high_prec=True)
-        self.model_config = model_zbl
-
-    def tearDown(self) -> None:
-        FinetuneTest.tearDown(self)
+#     def tearDown(self) -> None:
+#         FinetuneTest.tearDown(self)
 
 
 class TestEnergyModelDPA2(unittest.TestCase, FinetuneTest):

@@ -316,7 +316,9 @@ class DPZBLLinearAtomicModel(LinearAtomicModel):
         self.zbl_weight = torch.empty(0, dtype=torch.float64, device=env.DEVICE)
 
     @torch.jit.export
-    def get_type_map(self):
+    def get_type_map(self) -> List[str]:
+        dp_map = self.dp_model.get_type_map()
+        zbl_map = self.zbl_model.get_type_map()
         return self.dp_model.get_type_map()
 
     def compute_or_load_stat(

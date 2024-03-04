@@ -20,8 +20,8 @@ from deepmd.pt.utils import (
 from deepmd.pt.utils.utils import (
     to_numpy_array,
 )
-from deepmd.utils.out_stat import (
-    compute_stats_from_redu,
+from deepmd.pt.utils.stat import (
+    compute_output_stats,
 )
 from deepmd.utils.pair_tab import (
     PairTab,
@@ -60,10 +60,17 @@ class PairTabAtomicModel(torch.nn.Module, BaseAtomicModel):
         The cutoff radius.
     sel : int or list[int]
         The maxmum number of atoms in the cut-off radius.
+    type_map: List[str]
+        Mapping atom type to the name (str) of the type.
+        For example `type_map[1]` gives the name of the type 1.
+    rcond : float, optional
+        The condition number for the regression of atomic energy.
+    atom_ener
+        Specifying atomic energy contribution in vacuum. The `set_davg_zero` key in the descrptor should be set.
     """
 
     def __init__(
-        self, tab_file: str, rcut: float, sel: Union[int, List[int]], **kwargs
+        self, tab_file: str, rcut: float, sel: Union[int, List[int]], type_map: List[str], rcond: Optional[float] = None, atom_ener: Optional[List[float]] = None, **kwargs
     ):
         torch.nn.Module.__init__(self)
         self.model_def_script = ""
@@ -72,6 +79,10 @@ class PairTabAtomicModel(torch.nn.Module, BaseAtomicModel):
         self.tab = self._set_pairtab(tab_file, rcut)
 
         BaseAtomicModel.__init__(self, **kwargs)
+        self.rcond = rcond
+        self.atom_ener = atom_ener
+        self.type_map = type_map
+        self.ntypes = len(type_map)
 
         # handle deserialization with no input file
         if self.tab_file is not None:
@@ -79,16 +90,18 @@ class PairTabAtomicModel(torch.nn.Module, BaseAtomicModel):
                 tab_info,
                 tab_data,
             ) = self.tab.get()  # this returns -> Tuple[np.array, np.array]
-            nspline, ntypes = tab_info[-2:].astype(int)
+            nspline, ntypes_tab = tab_info[-2:].astype(int)
             self.register_buffer("tab_info", torch.from_numpy(tab_info))
             self.register_buffer(
                 "tab_data",
-                torch.from_numpy(tab_data).reshape(ntypes, ntypes, nspline, 4),
+                torch.from_numpy(tab_data).reshape(ntypes_tab, ntypes_tab, nspline, 4),
             )
+            if self.ntypes != ntypes_tab:
+                raise ValueError("The `type_map` provided does not match the number of columns in the table.")
         else:
             self.register_buffer("tab_info", None)
             self.register_buffer("tab_data", None)
-        self.bias_atom_e = None
+        self.bias_atom_e = torch.zeros(self.ntypes,1, dtype=env.GLOBAL_PT_ENER_FLOAT_PRECISION, device=env.DEVICE)
 
         # self.model_type = "ener"
         # self.model_version = MODEL_VERSION ## this shoud be in the parent class
@@ -122,8 +135,8 @@ class PairTabAtomicModel(torch.nn.Module, BaseAtomicModel):
         return self.rcut
 
     @torch.jit.export
-    def get_type_map(self) -> Optional[List[str]]:
-        raise NotImplementedError("TODO: implement this method")
+    def get_type_map(self) -> List[str]:
+        return self.type_map
 
     def get_sel(self) -> List[int]:
         return [self.sel]
@@ -154,6 +167,9 @@ class PairTabAtomicModel(torch.nn.Module, BaseAtomicModel):
                 "tab": self.tab.serialize(),
                 "rcut": self.rcut,
                 "sel": self.sel,
+                "type_map": self.type_map,
+                "rcond": self.rcond,
+                "atom_ener": self.atom_ener
             }
         )
         return dd
@@ -164,10 +180,13 @@ class PairTabAtomicModel(torch.nn.Module, BaseAtomicModel):
         check_version_compatibility(data.pop("@version", 1), 1, 1)
         rcut = data.pop("rcut")
         sel = data.pop("sel")
+        type_map = data.pop("type_map")
+        rcond = data.pop("rcond")
+        atom_ener = data.pop("atom_ener")
         tab = PairTab.deserialize(data.pop("tab"))
         data.pop("@class", None)
         data.pop("type", None)
-        tab_model = cls(None, rcut, sel, **data)
+        tab_model = cls(None, rcut, sel, type_map, **data)
         tab_model.tab = tab
         tab_model.register_buffer("tab_info", torch.from_numpy(tab_model.tab.tab_info))
         nspline, ntypes = tab_model.tab.tab_info[-2:].astype(int)
@@ -200,42 +219,16 @@ class PairTabAtomicModel(torch.nn.Module, BaseAtomicModel):
             The path to the stat file.
 
         """
-        if stat_file_path is not None:
-            stat_file_path = stat_file_path / "bias_atom_e"
-        if stat_file_path is not None and stat_file_path.is_file():
-            bias_atom_e = stat_file_path.load_numpy()
-        else:
-            if callable(merged):
-                # only get data for once
-                sampled = merged()
-            else:
-                sampled = merged
-            energy = [item["energy"] for item in sampled]
-            data_mixed_type = "real_natoms_vec" in sampled[0]
-            if data_mixed_type:
-                input_natoms = [item["real_natoms_vec"] for item in sampled]
-            else:
-                input_natoms = [item["natoms"] for item in sampled]
-            # shape: (nframes, ndim)
-            merged_energy = to_numpy_array(torch.cat(energy))
-            # shape: (nframes, ntypes)
-            merged_natoms = to_numpy_array(torch.cat(input_natoms)[:, 2:])
-
-            bias_atom_e, _ = compute_stats_from_redu(
-                merged_energy,
-                merged_natoms,
-                assigned_bias=None,
-                rcond=None,
-            )
-            if stat_file_path is not None:
-                stat_file_path.save_numpy(bias_atom_e)
-        assert all(x is not None for x in [bias_atom_e])
-        ntypes = merged_natoms.shape[1]
-        self.bias_atom_e = torch.empty(
-            [ntypes, 1], dtype=torch.float64, device=env.DEVICE
+        bias_atom_e = compute_output_stats(
+            merged,
+            stat_file_path,
+            self.rcond,
+            self.atom_ener
         )
         self.bias_atom_e.copy_(
-            torch.tensor(bias_atom_e, device=env.DEVICE).view([ntypes, 1])
+            torch.tensor(bias_atom_e, device=env.DEVICE).view(
+                [self.ntypes, self.dim_out]
+            )
         )
 
     def change_energy_bias(self) -> None:

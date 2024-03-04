@@ -69,7 +69,7 @@ class TestWeightCalculation(unittest.TestCase):
         ).to(env.DEVICE)
 
         type_map = ["foo", "bar"]
-        zbl_model = PairTabAtomicModel(tab_file=file_path, rcut=0.3, sel=2)
+        zbl_model = PairTabAtomicModel(tab_file=file_path, rcut=0.3, sel=2, type_map=["H", "O"])
         dp_model = DPAtomicModel(ds, ft, type_map=type_map).to(env.DEVICE)
         wgt_model = DPZBLLinearAtomicModel(
             dp_model,
@@ -139,7 +139,7 @@ class TestIntegration(unittest.TestCase, TestCaseSingleFrameWithNlist):
         ).to(env.DEVICE)
         type_map = ["foo", "bar"]
         dp_model = DPAtomicModel(ds, ft, type_map=type_map).to(env.DEVICE)
-        zbl_model = PairTabAtomicModel(file_path, self.rcut, sum(self.sel))
+        zbl_model = PairTabAtomicModel(file_path, self.rcut, sum(self.sel), type_map=["H", "O"])
         self.md0 = DPZBLLinearAtomicModel(
             dp_model,
             zbl_model,
