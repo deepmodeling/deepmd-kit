@@ -141,12 +141,13 @@ model_dpa1 = {
         "post_ln": True,
         "ffn": False,
         "ffn_embed_dim": 512,
-        "activation": "tanh",
+        "activation_function": "tanh",
         "scaling_factor": 1.0,
         "head_num": 1,
         "normalize": False,
         "temperature": 1.0,
         "set_davg_zero": True,
+        "type_one_side": True,
     },
     "fitting_net": {
         "neuron": [24, 24, 24],
@@ -175,7 +176,7 @@ model_hybrid = {
                 "post_ln": True,
                 "ffn": False,
                 "ffn_embed_dim": 1024,
-                "activation": "tanh",
+                "activation_function": "tanh",
                 "scaling_factor": 1.0,
                 "head_num": 1,
                 "normalize": True,
@@ -316,7 +317,6 @@ class TestForceModelDPA2(unittest.TestCase, PermutationTest):
         self.model = get_model(model_params).to(env.DEVICE)
 
 
-@unittest.skip("hybrid not supported at the moment")
 class TestEnergyModelHybrid(unittest.TestCase, PermutationTest):
     def setUp(self):
         model_params = copy.deepcopy(model_hybrid)
@@ -324,7 +324,6 @@ class TestEnergyModelHybrid(unittest.TestCase, PermutationTest):
         self.model = get_model(model_params).to(env.DEVICE)
 
 
-@unittest.skip("hybrid not supported at the moment")
 class TestForceModelHybrid(unittest.TestCase, PermutationTest):
     def setUp(self):
         model_params = copy.deepcopy(model_hybrid)

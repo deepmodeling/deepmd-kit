@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import copy
 import sys
 from abc import (
     abstractmethod,
@@ -23,6 +24,9 @@ from deepmd.pt.utils.nlist import (
     build_multiple_neighbor_list,
     get_multiple_nlist_key,
     nlist_distinguish_types,
+)
+from deepmd.utils.version import (
+    check_version_compatibility,
 )
 
 from .base_atomic_model import (
@@ -50,10 +54,11 @@ class LinearAtomicModel(torch.nn.Module, BaseAtomicModel):
         models: List[BaseAtomicModel],
         **kwargs,
     ):
-        super().__init__()
+        torch.nn.Module.__init__(self)
         self.models = torch.nn.ModuleList(models)
         self.atomic_bias = None
         self.mixed_types_list = [model.mixed_types() for model in self.models]
+        BaseAtomicModel.__init__(self, **kwargs)
 
     def mixed_types(self) -> bool:
         """If true, the model
@@ -206,6 +211,7 @@ class LinearAtomicModel(torch.nn.Module, BaseAtomicModel):
     def serialize(models) -> dict:
         return {
             "@class": "Model",
+            "@version": 1,
             "type": "linear",
             "models": [model.serialize() for model in models],
             "model_name": [model.__class__.__name__ for model in models],
@@ -213,6 +219,8 @@ class LinearAtomicModel(torch.nn.Module, BaseAtomicModel):
 
     @staticmethod
     def deserialize(data) -> List[BaseAtomicModel]:
+        data = copy.deepcopy(data)
+        check_version_compatibility(data.pop("@version", 1), 1, 1)
         model_names = data["model_name"]
         models = [
             getattr(sys.modules[__name__], name).deserialize(model)
@@ -300,29 +308,39 @@ class DPZBLLinearAtomicModel(LinearAtomicModel):
         self.zbl_weight = torch.empty(0, dtype=torch.float64, device=env.DEVICE)
 
     def serialize(self) -> dict:
-        return {
-            "@class": "Model",
-            "type": "zbl",
-            "models": LinearAtomicModel.serialize([self.dp_model, self.zbl_model]),
-            "sw_rmin": self.sw_rmin,
-            "sw_rmax": self.sw_rmax,
-            "smin_alpha": self.smin_alpha,
-        }
+        dd = BaseAtomicModel.serialize(self)
+        dd.update(
+            {
+                "@class": "Model",
+                "@version": 1,
+                "type": "zbl",
+                "models": LinearAtomicModel.serialize([self.dp_model, self.zbl_model]),
+                "sw_rmin": self.sw_rmin,
+                "sw_rmax": self.sw_rmax,
+                "smin_alpha": self.smin_alpha,
+            }
+        )
+        return dd
 
     @classmethod
     def deserialize(cls, data) -> "DPZBLLinearAtomicModel":
-        sw_rmin = data["sw_rmin"]
-        sw_rmax = data["sw_rmax"]
-        smin_alpha = data["smin_alpha"]
+        data = copy.deepcopy(data)
+        check_version_compatibility(data.pop("@version", 1), 1, 1)
+        sw_rmin = data.pop("sw_rmin")
+        sw_rmax = data.pop("sw_rmax")
+        smin_alpha = data.pop("smin_alpha")
 
-        dp_model, zbl_model = LinearAtomicModel.deserialize(data["models"])
+        dp_model, zbl_model = LinearAtomicModel.deserialize(data.pop("models"))
 
+        data.pop("@class", None)
+        data.pop("type", None)
         return cls(
             dp_model=dp_model,
             zbl_model=zbl_model,
             sw_rmin=sw_rmin,
             sw_rmax=sw_rmax,
             smin_alpha=smin_alpha,
+            **data,
         )
 
     def _compute_weight(

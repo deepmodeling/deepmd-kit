@@ -51,6 +51,10 @@ from deepmd.tf.utils.learning_rate import (
     LearningRateExp,
 )
 
+from ..test_stat import (
+    energy_data_requirement,
+)
+
 VariableState = collections.namedtuple("VariableState", ["value", "gradient"])
 
 
@@ -281,6 +285,7 @@ class TestEnergy(unittest.TestCase):
                 "type_map": self.type_map,
             },
         )
+        my_ds.add_data_requirement(energy_data_requirement)
         my_model = get_model(
             model_params={
                 "descriptor": {

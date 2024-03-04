@@ -65,6 +65,9 @@ from deepmd.tf.utils.tabulate import (
 from deepmd.tf.utils.type_embed import (
     embed_atom_type,
 )
+from deepmd.utils.version import (
+    check_version_compatibility,
+)
 
 from .descriptor import (
     Descriptor,
@@ -1374,6 +1377,7 @@ class DescrptSeA(DescrptSe):
         if cls is not DescrptSeA:
             raise NotImplementedError("Not implemented in class %s" % cls.__name__)
         data = data.copy()
+        check_version_compatibility(data.pop("@version", 1), 1, 1)
         data.pop("@class", None)
         data.pop("type", None)
         embedding_net_variables = cls.deserialize_network(
@@ -1428,6 +1432,7 @@ class DescrptSeA(DescrptSe):
         return {
             "@class": "Descriptor",
             "type": "se_e2_a",
+            "@version": 1,
             "rcut": self.rcut_r,
             "rcut_smth": self.rcut_r_smth,
             "sel": self.sel_a,

@@ -2,9 +2,11 @@
 import copy
 import logging
 from typing import (
+    Callable,
     List,
     Optional,
     Tuple,
+    Union,
 )
 
 import numpy as np
@@ -28,8 +30,11 @@ from deepmd.pt.utils import (
 from deepmd.pt.utils.env import (
     DEFAULT_PRECISION,
 )
-from deepmd.pt.utils.stat import (
-    compute_output_bias,
+from deepmd.pt.utils.utils import (
+    to_numpy_array,
+)
+from deepmd.utils.out_stat import (
+    compute_stats_from_redu,
 )
 from deepmd.utils.path import (
     DPPath,
@@ -121,6 +126,9 @@ class InvarFitting(GeneralFitting):
             rcond=rcond,
             seed=seed,
             exclude_types=exclude_types,
+            remove_vaccum_contribution=None
+            if atom_ener is None or len([x for x in atom_ener if x is not None]) == 0
+            else [x is not None for x in atom_ener],
             **kwargs,
         )
 
@@ -135,29 +143,58 @@ class InvarFitting(GeneralFitting):
         data["atom_ener"] = self.atom_ener
         return data
 
-    @property
-    def data_stat_key(self):
+    def compute_output_stats(
+        self,
+        merged: Union[Callable[[], List[dict]], List[dict]],
+        stat_file_path: Optional[DPPath] = None,
+    ):
         """
-        Get the keys for the data statistic of the fitting.
-        Return a list of statistic names needed, such as "bias_atom_e".
-        """
-        return ["bias_atom_e"]
+        Compute the output statistics (e.g. energy bias) for the fitting net from packed data.
 
-    def compute_output_stats(self, merged, stat_file_path: Optional[DPPath] = None):
-        energy = torch.cat([item["energy"] for item in merged])
-        data_mixed_type = "real_natoms_vec" in merged[0]
-        if data_mixed_type:
-            input_natoms = torch.cat([item["real_natoms_vec"] for item in merged])
-        else:
-            input_natoms = torch.cat([item["natoms"] for item in merged])
+        Parameters
+        ----------
+        merged : Union[Callable[[], List[dict]], List[dict]]
+            - List[dict]: A list of data samples from various data systems.
+                Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
+                originating from the `i`-th data system.
+            - Callable[[], List[dict]]: A lazy function that returns data samples in the above format
+                only when needed. Since the sampling process can be slow and memory-intensive,
+                the lazy function helps by only sampling once.
+        stat_file_path : Optional[DPPath]
+            The path to the stat file.
+
+        """
         if stat_file_path is not None:
             stat_file_path = stat_file_path / "bias_atom_e"
         if stat_file_path is not None and stat_file_path.is_file():
             bias_atom_e = stat_file_path.load_numpy()
         else:
-            type_mask = self.get_emask
-            bias_atom_e = compute_output_bias(
-                energy, input_natoms, rcond=self.rcond, type_mask=type_mask
+            if callable(merged):
+                # only get data for once
+                sampled = merged()
+            else:
+                sampled = merged
+            energy = [item["energy"] for item in sampled]
+            data_mixed_type = "real_natoms_vec" in sampled[0]
+            if data_mixed_type:
+                input_natoms = [item["real_natoms_vec"] for item in sampled]
+            else:
+                input_natoms = [item["natoms"] for item in sampled]
+            # shape: (nframes, ndim)
+            merged_energy = to_numpy_array(torch.cat(energy))
+            # shape: (nframes, ntypes)
+            merged_natoms = to_numpy_array(torch.cat(input_natoms)[:, 2:])
+            if self.atom_ener is not None and len(self.atom_ener) > 0:
+                assigned_atom_ener = np.array(
+                    [ee if ee is not None else np.nan for ee in self.atom_ener]
+                )
+            else:
+                assigned_atom_ener = None
+            bias_atom_e, _ = compute_stats_from_redu(
+                merged_energy,
+                merged_natoms,
+                assigned_bias=assigned_atom_ener,
+                rcond=self.rcond,
             )
             if stat_file_path is not None:
                 stat_file_path.save_numpy(bias_atom_e)
@@ -258,7 +295,7 @@ class EnergyFittingNetDirect(Fitting):
     def __init__(
         self,
         ntypes,
-        embedding_width,
+        dim_descrpt,
         neuron,
         bias_atom_e=None,
         out_dim=1,
@@ -278,7 +315,7 @@ class EnergyFittingNetDirect(Fitting):
         """
         super().__init__()
         self.ntypes = ntypes
-        self.dim_descrpt = embedding_width
+        self.dim_descrpt = dim_descrpt
         self.use_tebd = use_tebd
         self.out_dim = out_dim
         if bias_atom_e is None:
@@ -292,7 +329,7 @@ class EnergyFittingNetDirect(Fitting):
         for type_i in range(self.ntypes):
             one = ResidualDeep(
                 type_i,
-                embedding_width,
+                dim_descrpt,
                 neuron,
                 0.0,
                 out_dim=out_dim,
@@ -307,13 +344,12 @@ class EnergyFittingNetDirect(Fitting):
             for type_i in range(self.ntypes):
                 bias_type = 0.0 if self.use_tebd else bias_atom_e[type_i]
                 one = ResidualDeep(
-                    type_i, embedding_width, neuron, bias_type, resnet_dt=resnet_dt
+                    type_i, dim_descrpt, neuron, bias_type, resnet_dt=resnet_dt
                 )
                 filter_layers.append(one)
         self.filter_layers = torch.nn.ModuleList(filter_layers)
 
         if "seed" in kwargs:
-            log.info("Set seed to %d in fitting net.", kwargs["seed"])
             torch.manual_seed(kwargs["seed"])
 
     def output_def(self):

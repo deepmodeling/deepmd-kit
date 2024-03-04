@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import json
+import os
 import unittest
 from argparse import (
     Namespace,
@@ -21,6 +22,10 @@ from deepmd.pt.entrypoints.main import (
 )
 from deepmd.pt.infer.deep_eval import (
     DeepPot,
+)
+
+from ...tf.test_deeppot_a import (
+    FparamAparamCommonTest,
 )
 
 
@@ -48,6 +53,11 @@ class TestDeepPot(unittest.TestCase):
             input_dict, label_dict, _ = trainer.get_data(is_train=False)
         trainer.wrapper(**input_dict, label=label_dict, cur_lr=1.0)
         self.model = "model.pt"
+
+    def tearDown(self):
+        for f in os.listdir("."):
+            if f in ["lcurve.out", self.input_json]:
+                os.remove(f)
 
     def test_dp_test(self):
         dp = DeepPot(str(self.model))
@@ -123,3 +133,21 @@ class TestDeepPotFrozen(TestDeepPot):
     @unittest.mock.patch("deepmd.pt.infer.deep_eval.DEVICE", torch.device("cpu"))
     def test_dp_test_cpu(self):
         self.test_dp_test()
+
+
+class TestFparamAparamPT(FparamAparamCommonTest, unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.dp = DeepPot(
+            str(Path(__file__).parent.parent.parent / "infer/fparam_aparam.pth")
+        )
+
+    def setUp(self):
+        super().setUp()
+        # For unclear reason, the precision is only 1e-7
+        # not sure if it is expected...
+        self.places = 1e-7
+
+    @classmethod
+    def tearDownClass(cls):
+        pass

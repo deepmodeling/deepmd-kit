@@ -54,6 +54,9 @@ from deepmd.pt.utils.env import (
     DEVICE,
     GLOBAL_PT_FLOAT_PRECISION,
 )
+from deepmd.pt.utils.utils import (
+    to_torch_tensor,
+)
 
 if TYPE_CHECKING:
     import ase.neighborlist
@@ -148,18 +151,18 @@ class DeepEval(DeepEvalBackend):
     @property
     def model_type(self) -> "DeepEvalWrapper":
         """The the evaluator of the model type."""
-        model_type = self.dp.model["Default"].model_output_type()
-        if model_type == "energy":
+        model_output_type = self.dp.model["Default"].model_output_type()
+        if "energy" in model_output_type:
             return DeepPot
-        elif model_type == "dos":
+        elif "dos" in model_output_type:
             return DeepDOS
-        elif model_type == "dipole":
+        elif "dipole" in model_output_type:
             return DeepDipole
-        elif model_type == "polar":
+        elif "polar" in model_output_type:
             return DeepPolar
-        elif model_type == "global_polar":
+        elif "global_polar" in model_output_type:
             return DeepGlobalPolar
-        elif model_type == "wfc":
+        elif "wfc" in model_output_type:
             return DeepWFC
         else:
             raise RuntimeError("Unknown model type")
@@ -231,8 +234,6 @@ class DeepEval(DeepEvalBackend):
             The output of the evaluation. The keys are the names of the output
             variables, and the values are the corresponding output arrays.
         """
-        if fparam is not None or aparam is not None:
-            raise NotImplementedError
         # convert all of the input to numpy array
         atom_types = np.array(atom_types, dtype=np.int32)
         coords = np.array(coords)
@@ -244,11 +245,17 @@ class DeepEval(DeepEvalBackend):
         request_defs = self._get_request_defs(atomic)
         if "spin" not in kwargs:
             out = self._eval_func(self._eval_model, numb_test, natoms)(
-                coords, cells, atom_types, request_defs
+                coords, cells, atom_types, fparam, aparam, request_defs
             )
         else:
             out = self._eval_func(self._eval_model_spin, numb_test, natoms)(
-                coords, cells, atom_types, np.array(kwargs["spin"]), request_defs
+                coords,
+                cells,
+                atom_types,
+                np.array(kwargs["spin"]),
+                fparam,
+                aparam,
+                request_defs,
             )
         return dict(
             zip(
@@ -338,6 +345,8 @@ class DeepEval(DeepEvalBackend):
         coords: np.ndarray,
         cells: Optional[np.ndarray],
         atom_types: np.ndarray,
+        fparam: Optional[np.ndarray],
+        aparam: Optional[np.ndarray],
         request_defs: List[OutputVariableDef],
     ):
         model = self.dp.to(DEVICE)
@@ -363,12 +372,26 @@ class DeepEval(DeepEvalBackend):
             )
         else:
             box_input = None
-
+        if fparam is not None:
+            fparam_input = to_torch_tensor(fparam.reshape(-1, self.get_dim_fparam()))
+        else:
+            fparam_input = None
+        if aparam is not None:
+            aparam_input = to_torch_tensor(
+                aparam.reshape(-1, natoms, self.get_dim_aparam())
+            )
+        else:
+            aparam_input = None
         do_atomic_virial = any(
             x.category == OutputVariableCategory.DERV_C_REDU for x in request_defs
         )
         batch_output = model(
-            coord_input, type_input, box=box_input, do_atomic_virial=do_atomic_virial
+            coord_input,
+            type_input,
+            box=box_input,
+            do_atomic_virial=do_atomic_virial,
+            fparam=fparam_input,
+            aparam=aparam_input,
         )
         if isinstance(batch_output, tuple):
             batch_output = batch_output[0]
@@ -391,6 +414,8 @@ class DeepEval(DeepEvalBackend):
         cells: Optional[np.ndarray],
         atom_types: np.ndarray,
         spins: np.ndarray,
+        fparam: Optional[np.ndarray],
+        aparam: Optional[np.ndarray],
         request_defs: List[OutputVariableDef],
     ):
         model = self.dp.to(DEVICE)
@@ -421,6 +446,16 @@ class DeepEval(DeepEvalBackend):
             )
         else:
             box_input = None
+        if fparam is not None:
+            fparam_input = to_torch_tensor(fparam.reshape(-1, self.get_dim_fparam()))
+        else:
+            fparam_input = None
+        if aparam is not None:
+            aparam_input = to_torch_tensor(
+                aparam.reshape(-1, natoms, self.get_dim_aparam())
+            )
+        else:
+            aparam_input = None
 
         do_atomic_virial = any(
             x.category == OutputVariableCategory.DERV_C_REDU for x in request_defs
@@ -431,6 +466,8 @@ class DeepEval(DeepEvalBackend):
             spin=spin_input,
             box=box_input,
             do_atomic_virial=do_atomic_virial,
+            fparam=fparam_input,
+            aparam=aparam_input,
         )
         if isinstance(batch_output, tuple):
             batch_output = batch_output[0]

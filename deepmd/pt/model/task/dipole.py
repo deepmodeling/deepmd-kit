@@ -1,8 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
 from typing import (
+    Callable,
     List,
     Optional,
+    Union,
 )
 
 import torch
@@ -19,6 +21,9 @@ from deepmd.pt.utils import (
 )
 from deepmd.pt.utils.env import (
     DEFAULT_PRECISION,
+)
+from deepmd.utils.path import (
+    DPPath,
 )
 
 log = logging.getLogger(__name__)
@@ -67,7 +72,6 @@ class DipoleFittingNet(GeneralFitting):
 
     def __init__(
         self,
-        var_name: str,
         ntypes: int,
         dim_descrpt: int,
         embedding_width: int,
@@ -89,7 +93,7 @@ class DipoleFittingNet(GeneralFitting):
         self.r_differentiable = r_differentiable
         self.c_differentiable = c_differentiable
         super().__init__(
-            var_name=var_name,
+            var_name=kwargs.pop("var_name", "dipole"),
             ntypes=ntypes,
             dim_descrpt=dim_descrpt,
             neuron=neuron,
@@ -132,13 +136,28 @@ class DipoleFittingNet(GeneralFitting):
             ]
         )
 
-    @property
-    def data_stat_key(self):
+    def compute_output_stats(
+        self,
+        merged: Union[Callable[[], List[dict]], List[dict]],
+        stat_file_path: Optional[DPPath] = None,
+    ):
         """
-        Get the keys for the data statistic of the fitting.
-        Return a list of statistic names needed, such as "bias_atom_e".
+        Compute the output statistics (e.g. energy bias) for the fitting net from packed data.
+
+        Parameters
+        ----------
+        merged : Union[Callable[[], List[dict]], List[dict]]
+            - List[dict]: A list of data samples from various data systems.
+                Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
+                originating from the `i`-th data system.
+            - Callable[[], List[dict]]: A lazy function that returns data samples in the above format
+                only when needed. Since the sampling process can be slow and memory-intensive,
+                the lazy function helps by only sampling once.
+        stat_file_path : Optional[DPPath]
+            The path to the stat file.
+
         """
-        return []
+        pass
 
     def forward(
         self,

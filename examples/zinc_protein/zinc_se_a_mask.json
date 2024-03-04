@@ -27,6 +27,7 @@
       ],
       "resnet_dt": true,
       "axis_neuron": 16,
+      "type_one_side": true,
       "precision": "float64",
       "seed": 1,
       "_comment2": " that's all"

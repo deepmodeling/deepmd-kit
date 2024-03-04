@@ -45,6 +45,9 @@ PRECISION_DICT = {
     "bfloat16": None,
 }
 
+doc_only_tf_supported = "(Supported Backend: TensorFlow) "
+doc_only_pt_supported = "(Supported Backend: PyTorch) "
+
 
 def list_to_doc(xx):
     items = []
@@ -109,7 +112,7 @@ class ArgsPlugin:
         self.__plugin = Plugin()
 
     def register(
-        self, name: str, alias: Optional[List[str]] = None
+        self, name: str, alias: Optional[List[str]] = None, doc: str = ""
     ) -> Callable[[], List[Argument]]:
         """Register a descriptor argument plugin.
 
@@ -135,7 +138,7 @@ class ArgsPlugin:
         # convert alias to hashed item
         if isinstance(alias, list):
             alias = tuple(alias)
-        return self.__plugin.register((name, alias))
+        return self.__plugin.register((name, alias, doc))
 
     def get_all_argument(self, exclude_hybrid: bool = False) -> List[Argument]:
         """Get all arguments.
@@ -151,11 +154,11 @@ class ArgsPlugin:
             all arguments
         """
         arguments = []
-        for (name, alias), metd in self.__plugin.plugins.items():
+        for (name, alias, doc), metd in self.__plugin.plugins.items():
             if exclude_hybrid and name == "hybrid":
                 continue
             arguments.append(
-                Argument(name=name, dtype=dict, sub_fields=metd(), alias=alias)
+                Argument(name=name, dtype=dict, sub_fields=metd(), alias=alias, doc=doc)
             )
         return arguments
 
@@ -163,7 +166,7 @@ class ArgsPlugin:
 descrpt_args_plugin = ArgsPlugin()
 
 
-@descrpt_args_plugin.register("loc_frame")
+@descrpt_args_plugin.register("loc_frame", doc=doc_only_tf_supported)
 def descrpt_local_frame_args():
     doc_sel_a = "A list of integers. The length of the list should be the same as the number of atom types in the system. `sel_a[i]` gives the selected number of type-i neighbors. The full relative coordinates of the neighbors are used by the descriptor."
     doc_sel_r = "A list of integers. The length of the list should be the same as the number of atom types in the system. `sel_r[i]` gives the selected number of type-i neighbors. Only relative distance of the neighbors are used by the descriptor. sel_a[i] + sel_r[i] is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius."
@@ -248,7 +251,9 @@ def descrpt_se_a_args():
     ]
 
 
-@descrpt_args_plugin.register("se_e3", alias=["se_at", "se_a_3be", "se_t"])
+@descrpt_args_plugin.register(
+    "se_e3", alias=["se_at", "se_a_3be", "se_t"], doc=doc_only_tf_supported
+)
 def descrpt_se_t_args():
     doc_sel = 'This parameter set the number of selected neighbors for each type of atom. It can be:\n\n\
     - `List[int]`. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius. It is noted that the total sel value must be less than 4096 in a GPU environment.\n\n\
@@ -287,7 +292,7 @@ def descrpt_se_t_args():
     ]
 
 
-@descrpt_args_plugin.register("se_a_tpe", alias=["se_a_ebd"])
+@descrpt_args_plugin.register("se_a_tpe", alias=["se_a_ebd"], doc=doc_only_tf_supported)
 def descrpt_se_a_tpe_args():
     doc_type_nchanl = "number of channels for type embedding"
     doc_type_nlayer = "number of hidden layers of type embedding net"
@@ -380,12 +385,25 @@ def descrpt_se_atten_common_args():
     doc_neuron = "Number of neurons in each hidden layers of the embedding net. When two layers are of the same size or one layer is twice as large as the previous layer, a skip connection is built."
     doc_axis_neuron = "Size of the submatrix of G (embedding matrix)."
     doc_activation_function = f'The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version. If you set "None" or "none" here, no activation function will be used.'
-    doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
-    doc_type_one_side = r"If true, the embedding network parameters vary by types of neighbor atoms only, so there will be $N_\text{types}$ sets of embedding network parameters. Otherwise, the embedding network parameters vary by types of centric atoms and types of neighbor atoms, so there will be $N_\text{types}^2$ sets of embedding network parameters."
-    doc_precision = f"The precision of the embedding net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
-    doc_trainable = "If the parameters in the embedding net is trainable"
+    doc_resnet_dt = (
+        doc_only_tf_supported + 'Whether to use a "Timestep" in the skip connection'
+    )
+    doc_type_one_side = (
+        doc_only_tf_supported
+        + r"If true, the embedding network parameters vary by types of neighbor atoms only, so there will be $N_\text{types}$ sets of embedding network parameters. Otherwise, the embedding network parameters vary by types of centric atoms and types of neighbor atoms, so there will be $N_\text{types}^2$ sets of embedding network parameters."
+    )
+    doc_precision = (
+        doc_only_tf_supported
+        + f"The precision of the embedding net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
+    )
+    doc_trainable = (
+        doc_only_tf_supported + "If the parameters in the embedding net is trainable"
+    )
     doc_seed = "Random seed for parameter initialization"
-    doc_exclude_types = "The excluded pairs of types which have no interaction with each other. For example, `[[0, 1]]` means no interaction between type 0 and type 1."
+    doc_exclude_types = (
+        doc_only_tf_supported
+        + "The excluded pairs of types which have no interaction with each other. For example, `[[0, 1]]` means no interaction between type 0 and type 1."
+    )
     doc_attn = "The length of hidden vectors in attention layers"
     doc_attn_layer = "The number of attention layers. Note that model compression of `se_atten` is only enabled when attn_layer==0 and stripped_type_embedding is True"
     doc_attn_dotr = "Whether to do dot product with the normalized relative coordinates"
@@ -436,11 +454,25 @@ def descrpt_se_atten_common_args():
     ]
 
 
-@descrpt_args_plugin.register("se_atten")
+@descrpt_args_plugin.register("se_atten", alias=["dpa1"])
 def descrpt_se_atten_args():
     doc_stripped_type_embedding = "Whether to strip the type embedding into a separated embedding network. Setting it to `False` will fall back to the previous version of `se_atten` which is non-compressible."
     doc_smooth_type_embdding = "When using stripped type embedding, whether to dot smooth factor on the network output of type embedding to keep the network smooth, instead of setting `set_davg_zero` to be True."
     doc_set_davg_zero = "Set the normalization average to zero. This option should be set when `se_atten` descriptor or `atom_ener` in the energy fitting is used"
+    doc_tebd_dim = "The dimension of atom type embedding."
+    doc_temperature = "The scaling factor of normalization in calculations of attention weights, which is used to scale the matmul(Q, K)."
+    doc_scaling_factor = (
+        "The scaling factor of normalization in calculations of attention weights, which is used to scale the matmul(Q, K). "
+        "If `temperature` is None, the scaling of attention weights is (N_hidden_dim * scaling_factor)**0.5. "
+        "Else, the scaling of attention weights is setting to `temperature`."
+    )
+    doc_normalize = (
+        "Whether to normalize the hidden vectors during attention calculation."
+    )
+    doc_concat_output_tebd = (
+        "Whether to concat type embedding at the output of the descriptor."
+    )
+    doc_deprecated = "This feature will be removed in a future release."
 
     return [
         *descrpt_se_atten_common_args(),
@@ -449,22 +481,99 @@ def descrpt_se_atten_args():
             bool,
             optional=True,
             default=False,
-            doc=doc_stripped_type_embedding,
+            doc=doc_only_tf_supported + doc_stripped_type_embedding,
         ),
         Argument(
             "smooth_type_embdding",
             bool,
             optional=True,
             default=False,
-            doc=doc_smooth_type_embdding,
+            doc=doc_only_tf_supported + doc_smooth_type_embdding,
         ),
         Argument(
             "set_davg_zero", bool, optional=True, default=True, doc=doc_set_davg_zero
         ),
+        # pt only
+        Argument(
+            "tebd_dim",
+            int,
+            optional=True,
+            default=8,
+            doc=doc_only_pt_supported + doc_tebd_dim,
+        ),
+        Argument(
+            "tebd_input_mode",
+            str,
+            optional=True,
+            default="concat",
+            doc=doc_only_pt_supported + doc_deprecated,
+        ),
+        Argument(
+            "post_ln",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_only_pt_supported + doc_deprecated,
+        ),
+        Argument(
+            "ffn",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_only_pt_supported + doc_deprecated,
+        ),
+        Argument(
+            "ffn_embed_dim",
+            int,
+            optional=True,
+            default=1024,
+            doc=doc_only_pt_supported + doc_deprecated,
+        ),
+        Argument(
+            "scaling_factor",
+            float,
+            optional=True,
+            default=1.0,
+            doc=doc_only_pt_supported + doc_scaling_factor,
+        ),
+        Argument(
+            "head_num",
+            int,
+            optional=True,
+            default=1,
+            doc=doc_only_pt_supported + doc_deprecated,
+        ),
+        Argument(
+            "normalize",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_only_pt_supported + doc_normalize,
+        ),
+        Argument(
+            "temperature",
+            float,
+            optional=True,
+            doc=doc_only_pt_supported + doc_temperature,
+        ),
+        Argument(
+            "return_rot",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_only_pt_supported + doc_deprecated,
+        ),
+        Argument(
+            "concat_output_tebd",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_only_pt_supported + doc_concat_output_tebd,
+        ),
     ]
 
 
-@descrpt_args_plugin.register("se_atten_v2")
+@descrpt_args_plugin.register("se_atten_v2", doc=doc_only_tf_supported)
 def descrpt_se_atten_v2_args():
     doc_set_davg_zero = "Set the normalization average to zero. This option should be set when `se_atten` descriptor or `atom_ener` in the energy fitting is used"
 
@@ -476,12 +585,272 @@ def descrpt_se_atten_v2_args():
     ]
 
 
-@descrpt_args_plugin.register("se_a_ebd_v2", alias=["se_a_tpe_v2"])
+@descrpt_args_plugin.register("dpa2", doc=doc_only_pt_supported)
+def descrpt_dpa2_args():
+    # Generate by GitHub Copilot
+    doc_repinit_rcut = "The cut-off radius of the repinit block"
+    doc_repinit_rcut_smth = "From this position the inverse distance smoothly decays to 0 at the cut-off. Use in the repinit block."
+    doc_repinit_nsel = "Maximally possible number of neighbors for repinit block."
+    doc_repformer_rcut = "The cut-off radius of the repformer block"
+    doc_repformer_rcut_smth = "From this position the inverse distance smoothly decays to 0 at the cut-off. Use in the repformer block."
+    doc_repformer_nsel = "Maximally possible number of neighbors for repformer block."
+    doc_tebd_dim = "The dimension of atom type embedding"
+    doc_concat_output_tebd = (
+        "Whether to concat type embedding at the output of the descriptor."
+    )
+    doc_repinit_neuron = "repinit block: the number of neurons in the embedding net."
+    doc_repinit_axis_neuron = (
+        "repinit block: the number of dimension of split in the symmetrization op."
+    )
+    doc_repinit_activation = (
+        "repinit block: the activation function in the embedding net"
+    )
+    doc_repformer_nlayers = "repformers block: the number of repformer layers"
+    doc_repformer_g1_dim = "repformers block: the dimension of single-atom rep"
+    doc_repformer_g2_dim = "repformers block: the dimension of invariant pair-atom rep"
+    doc_repformer_axis_dim = (
+        "repformers block: the number of dimension of split in the symmetrization ops."
+    )
+    doc_repformer_do_bn_mode = "repformers block: do batch norm in the repformer layers"
+    doc_repformer_bn_momentum = "repformers block: moment in the batch normalization"
+    doc_repformer_update_g1_has_conv = (
+        "repformers block: update the g1 rep with convolution term"
+    )
+    doc_repformer_update_g1_has_drrd = (
+        "repformers block: update the g1 rep with the drrd term"
+    )
+    doc_repformer_update_g1_has_grrg = (
+        "repformers block: update the g1 rep with the grrg term"
+    )
+    doc_repformer_update_g1_has_attn = (
+        "repformers block: update the g1 rep with the localized self-attention"
+    )
+    doc_repformer_update_g2_has_g1g1 = (
+        "repformers block: update the g2 rep with the g1xg1 term"
+    )
+    doc_repformer_update_g2_has_attn = (
+        "repformers block: update the g2 rep with the gated self-attention"
+    )
+    doc_repformer_update_h2 = "repformers block: update the h2 rep"
+    doc_repformer_attn1_hidden = (
+        "repformers block: the hidden dimension of localized self-attention"
+    )
+    doc_repformer_attn1_nhead = (
+        "repformers block: the number of heads in localized self-attention"
+    )
+    doc_repformer_attn2_hidden = (
+        "repformers block: the hidden dimension of gated self-attention"
+    )
+    doc_repformer_attn2_nhead = (
+        "repformers block: the number of heads in gated self-attention"
+    )
+    doc_repformer_attn2_has_gate = (
+        "repformers block: has gate in the gated self-attention"
+    )
+    doc_repformer_activation = "repformers block: the activation function in the MLPs."
+    doc_repformer_update_style = "repformers block: style of update a rep. can be res_avg or res_incr. res_avg updates a rep `u` with: u = 1/\\sqrt{n+1} (u + u_1 + u_2 + ... + u_n) res_incr updates a rep `u` with: u = u + 1/\\sqrt{n} (u_1 + u_2 + ... + u_n)"
+    doc_repformer_set_davg_zero = "repformers block: set the avg to zero in statistics"
+    doc_repformer_add_type_ebd_to_seq = (
+        "repformers block: concatenate the type embedding at the output"
+    )
+    return [
+        Argument("repinit_rcut", float, doc=doc_repinit_rcut),
+        Argument("repinit_rcut_smth", float, doc=doc_repinit_rcut_smth),
+        Argument("repinit_nsel", int, doc=doc_repinit_nsel),
+        Argument("repformer_rcut", float, doc=doc_repformer_rcut),
+        Argument("repformer_rcut_smth", float, doc=doc_repformer_rcut_smth),
+        Argument("repformer_nsel", int, doc=doc_repformer_nsel),
+        Argument("tebd_dim", int, optional=True, default=8, doc=doc_tebd_dim),
+        Argument(
+            "concat_output_tebd",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_concat_output_tebd,
+        ),
+        Argument(
+            "repinit_neuron",
+            list,
+            optional=True,
+            default=[25, 50, 100],
+            doc=doc_repinit_neuron,
+        ),
+        Argument(
+            "repinit_axis_neuron",
+            int,
+            optional=True,
+            default=16,
+            doc=doc_repinit_axis_neuron,
+        ),
+        Argument("repinit_set_davg_zero", bool, optional=True, default=True),
+        Argument(
+            "repinit_activation",
+            str,
+            optional=True,
+            default="tanh",
+            doc=doc_repinit_activation,
+        ),
+        Argument(
+            "repformer_nlayers",
+            int,
+            optional=True,
+            default=3,
+            doc=doc_repformer_nlayers,
+        ),
+        Argument(
+            "repformer_g1_dim",
+            int,
+            optional=True,
+            default=128,
+            doc=doc_repformer_g1_dim,
+        ),
+        Argument(
+            "repformer_g2_dim", int, optional=True, default=16, doc=doc_repformer_g2_dim
+        ),
+        Argument(
+            "repformer_axis_dim",
+            int,
+            optional=True,
+            default=4,
+            doc=doc_repformer_axis_dim,
+        ),
+        Argument(
+            "repformer_do_bn_mode",
+            str,
+            optional=True,
+            default="no",
+            doc=doc_repformer_do_bn_mode,
+        ),
+        Argument(
+            "repformer_bn_momentum",
+            float,
+            optional=True,
+            default=0.1,
+            doc=doc_repformer_bn_momentum,
+        ),
+        Argument(
+            "repformer_update_g1_has_conv",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_repformer_update_g1_has_conv,
+        ),
+        Argument(
+            "repformer_update_g1_has_drrd",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_repformer_update_g1_has_drrd,
+        ),
+        Argument(
+            "repformer_update_g1_has_grrg",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_repformer_update_g1_has_grrg,
+        ),
+        Argument(
+            "repformer_update_g1_has_attn",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_repformer_update_g1_has_attn,
+        ),
+        Argument(
+            "repformer_update_g2_has_g1g1",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_repformer_update_g2_has_g1g1,
+        ),
+        Argument(
+            "repformer_update_g2_has_attn",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_repformer_update_g2_has_attn,
+        ),
+        Argument(
+            "repformer_update_h2",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_repformer_update_h2,
+        ),
+        Argument(
+            "repformer_attn1_hidden",
+            int,
+            optional=True,
+            default=64,
+            doc=doc_repformer_attn1_hidden,
+        ),
+        Argument(
+            "repformer_attn1_nhead",
+            int,
+            optional=True,
+            default=4,
+            doc=doc_repformer_attn1_nhead,
+        ),
+        Argument(
+            "repformer_attn2_hidden",
+            int,
+            optional=True,
+            default=16,
+            doc=doc_repformer_attn2_hidden,
+        ),
+        Argument(
+            "repformer_attn2_nhead",
+            int,
+            optional=True,
+            default=4,
+            doc=doc_repformer_attn2_nhead,
+        ),
+        Argument(
+            "repformer_attn2_has_gate",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_repformer_attn2_has_gate,
+        ),
+        Argument(
+            "repformer_activation",
+            str,
+            optional=True,
+            default="tanh",
+            doc=doc_repformer_activation,
+        ),
+        Argument(
+            "repformer_update_style",
+            str,
+            optional=True,
+            default="res_avg",
+            doc=doc_repformer_update_style,
+        ),
+        Argument(
+            "repformer_set_davg_zero",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_repformer_set_davg_zero,
+        ),
+        Argument(
+            "repformer_add_type_ebd_to_seq",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_repformer_add_type_ebd_to_seq,
+        ),
+    ]
+
+
+@descrpt_args_plugin.register(
+    "se_a_ebd_v2", alias=["se_a_tpe_v2"], doc=doc_only_tf_supported
+)
 def descrpt_se_a_ebd_v2_args():
     return descrpt_se_a_args()
 
 
-@descrpt_args_plugin.register("se_a_mask")
+@descrpt_args_plugin.register("se_a_mask", doc=doc_only_tf_supported)
 def descrpt_se_a_mask_args():
     doc_sel = 'This parameter sets the number of selected neighbors for each type of atom. It can be:\n\n\
     - `List[int]`. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius. It is noted that the total sel value must be less than 4096 in a GPU environment.\n\n\
@@ -573,9 +942,9 @@ def fitting_ener():
     doc_activation_function = f'The activation function in the fitting net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version. If you set "None" or "none" here, no activation function will be used.'
     doc_precision = f"The precision of the fitting net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
-    doc_trainable = "Whether the parameters in the fitting net are trainable. This option can be\n\n\
+    doc_trainable = f"Whether the parameters in the fitting net are trainable. This option can be\n\n\
 - bool: True if all parameters of the fitting net are trainable, False otherwise.\n\n\
-- list of bool: Specifies if each layer is trainable. Since the fitting net is composed by hidden layers followed by a output layer, the length of this list should be equal to len(`neuron`)+1."
+- list of bool{doc_only_tf_supported}: Specifies if each layer is trainable. Since the fitting net is composed by hidden layers followed by a output layer, the length of this list should be equal to len(`neuron`)+1."
     doc_rcond = "The condition number used to determine the inital energy shift for each type of atoms. See `rcond` in :py:meth:`numpy.linalg.lstsq` for more details."
     doc_seed = "Random seed for parameter initialization of the fitting net"
     doc_atom_ener = "Specify the atomic energy in vacuum for each type"
@@ -641,7 +1010,7 @@ def fitting_ener():
     ]
 
 
-@fitting_args_plugin.register("dos")
+@fitting_args_plugin.register("dos", doc=doc_only_tf_supported)
 def fitting_dos():
     doc_numb_fparam = "The dimension of the frame parameter. If set to >0, file `fparam.npy` should be included to provided the input fparams."
     doc_numb_aparam = "The dimension of the atomic parameter. If set to >0, file `aparam.npy` should be included to provided the input aparams."
@@ -732,7 +1101,7 @@ def fitting_polar():
             [List[int], int, None],
             optional=True,
             alias=["pol_type"],
-            doc=doc_sel_type,
+            doc=doc_sel_type + doc_only_tf_supported,
         ),
         Argument("seed", [int, None], optional=True, doc=doc_seed),
     ]
@@ -773,7 +1142,7 @@ def fitting_dipole():
             [List[int], int, None],
             optional=True,
             alias=["dipole_type"],
-            doc=doc_sel_type,
+            doc=doc_sel_type + doc_only_tf_supported,
         ),
         Argument("seed", [int, None], optional=True, doc=doc_seed),
     ]
@@ -870,6 +1239,9 @@ def model_args(exclude_hybrid=False):
     doc_srtab_add_bias = "Whether add energy bias from the statistics of the data to short-range tabulated atomic energy. It only takes effect when `use_srtab` is provided."
     doc_compress_config = "Model compression configurations"
     doc_spin = "The settings for systems with spin."
+    doc_atom_exclude_types = "Exclude the atomic contribution of the listed atom types"
+    doc_pair_exclude_types = "The atom pairs of the listed types are not treated to be neighbors, i.e. they do not see each other."
+
     hybrid_models = []
     if not exclude_hybrid:
         hybrid_models.extend(
@@ -904,16 +1276,44 @@ def model_args(exclude_hybrid=False):
                 default=10,
                 doc=doc_data_bias_nsample,
             ),
-            Argument("use_srtab", str, optional=True, doc=doc_use_srtab),
-            Argument("smin_alpha", float, optional=True, doc=doc_smin_alpha),
-            Argument("sw_rmin", float, optional=True, doc=doc_sw_rmin),
-            Argument("sw_rmax", float, optional=True, doc=doc_sw_rmax),
+            Argument(
+                "use_srtab",
+                str,
+                optional=True,
+                doc=doc_only_tf_supported + doc_use_srtab,
+            ),
+            Argument(
+                "smin_alpha",
+                float,
+                optional=True,
+                doc=doc_only_tf_supported + doc_smin_alpha,
+            ),
+            Argument(
+                "sw_rmin", float, optional=True, doc=doc_only_tf_supported + doc_sw_rmin
+            ),
+            Argument(
+                "sw_rmax", float, optional=True, doc=doc_only_tf_supported + doc_sw_rmax
+            ),
+            Argument(
+                "pair_exclude_types",
+                list,
+                optional=True,
+                default=[],
+                doc=doc_only_pt_supported + doc_pair_exclude_types,
+            ),
+            Argument(
+                "atom_exclude_types",
+                list,
+                optional=True,
+                default=[],
+                doc=doc_only_pt_supported + doc_atom_exclude_types,
+            ),
             Argument(
                 "srtab_add_bias",
                 bool,
                 optional=True,
                 default=True,
-                doc=doc_srtab_add_bias,
+                doc=doc_only_tf_supported + doc_srtab_add_bias,
             ),
             Argument(
                 "type_embedding",
@@ -921,7 +1321,7 @@ def model_args(exclude_hybrid=False):
                 type_embedding_args(),
                 [],
                 optional=True,
-                doc=doc_type_embedding,
+                doc=doc_only_tf_supported + doc_type_embedding,
             ),
             Argument(
                 "modifier",
@@ -929,7 +1329,7 @@ def model_args(exclude_hybrid=False):
                 [],
                 [modifier_variant_type_args()],
                 optional=True,
-                doc=doc_modifier,
+                doc=doc_only_tf_supported + doc_modifier,
             ),
             Argument(
                 "compress",
@@ -937,7 +1337,7 @@ def model_args(exclude_hybrid=False):
                 [],
                 [model_compression_type_args()],
                 optional=True,
-                doc=doc_compress_config,
+                doc=doc_only_tf_supported + doc_compress_config,
                 fold_subdoc=True,
             ),
             Argument("spin", dict, spin_args(), [], optional=True, doc=doc_spin),
@@ -1001,7 +1401,7 @@ def multi_model_args() -> Argument:
             ),
             Argument("fitting_net_dict", dict, doc=doc_fitting_net_dict),
         ],
-        doc="Multiple-task model.",
+        doc=doc_only_tf_supported + "Multiple-task model.",
     )
     return ca
 
@@ -1020,6 +1420,7 @@ def pairwise_dprc() -> Argument:
             qm_model_args,
             qmmm_model_args,
         ],
+        doc=doc_only_tf_supported,
     )
     return ca
 
@@ -1032,6 +1433,7 @@ def frozen_model_args() -> Argument:
         [
             Argument("model_file", str, optional=False, doc=doc_model_file),
         ],
+        doc=doc_only_tf_supported,
     )
     return ca
 
@@ -1051,7 +1453,7 @@ def pairtab_model_args() -> Argument:
             Argument("rcut", float, optional=False, doc=doc_rcut),
             Argument("sel", [int, List[int], str], optional=False, doc=doc_sel),
         ],
-        doc="Pairwise tabulation energy model.",
+        doc=doc_only_tf_supported + "Pairwise tabulation energy model.",
     )
     return ca
 
@@ -1080,6 +1482,7 @@ def linear_ener_model_args() -> Argument:
                 doc=doc_weights,
             ),
         ],
+        doc=doc_only_tf_supported,
     )
     return ca
 
@@ -1394,7 +1797,7 @@ def loss_ener_spin():
     ]
 
 
-@loss_args_plugin.register("dos")
+@loss_args_plugin.register("dos", doc=doc_only_tf_supported)
 def loss_dos():
     doc_start_pref_dos = start_pref("Density of State (DOS)")
     doc_limit_pref_dos = limit_pref("Density of State (DOS)")
@@ -1469,7 +1872,7 @@ def loss_dos():
 
 
 # YWolfeee: Modified to support tensor type of loss args.
-@loss_args_plugin.register("tensor")
+@loss_args_plugin.register("tensor", doc=doc_only_tf_supported)
 def loss_tensor():
     # doc_global_weight = "The prefactor of the weight of global loss. It should be larger than or equal to 0. If only `pref` is provided or both are not provided, training will be global mode, i.e. the shape of 'polarizability.npy` or `dipole.npy` should be #frams x [9 or 3]."
     # doc_local_weight =  "The prefactor of the weight of atomic loss. It should be larger than or equal to 0. If only `pref_atomic` is provided, training will be atomic mode, i.e. the shape of `polarizability.npy` or `dipole.npy` should be #frames x ([9 or 3] x #selected atoms). If both `pref` and `pref_atomic` are provided, training will be combined mode, and atomic label should be provided as well."
@@ -1723,6 +2126,23 @@ def training_args():  # ! modified by Ziyao: data configuration isolated.
         "Weights will be normalized and minus ones will be ignored. "
         "If not set, each fitting net will be equally selected when training."
     )
+    doc_warmup_steps = (
+        "The number of steps for learning rate warmup. During warmup, "
+        "the learning rate begins at zero and progressively increases linearly to `start_lr`, "
+        "rather than starting directly from `start_lr`"
+    )
+    doc_gradient_max_norm = (
+        "Clips the gradient norm to a maximum value. "
+        "If the gradient norm exceeds this value, it will be clipped to this limit. "
+        "No gradient clipping will occur if set to 0."
+    )
+    doc_stat_file = (
+        "The file path for saving the data statistics results. "
+        "If set, the results will be saved and directly loaded during the next training session, "
+        "avoiding the need to recalculate the statistics"
+    )
+    doc_opt_type = "The type of optimizer to use."
+    doc_kf_blocksize = "The blocksize for the Kalman filter."
 
     arg_training_data = training_data_args()
     arg_validation_data = validation_data_args()
@@ -1750,13 +2170,19 @@ def training_args():  # ! modified by Ziyao: data configuration isolated.
         Argument(
             "time_training", bool, optional=True, default=True, doc=doc_time_training
         ),
-        Argument("profiling", bool, optional=True, default=False, doc=doc_profiling),
+        Argument(
+            "profiling",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_only_tf_supported + doc_profiling,
+        ),
         Argument(
             "profiling_file",
             str,
             optional=True,
             default="timeline.json",
-            doc=doc_profiling_file,
+            doc=doc_only_tf_supported + doc_profiling_file,
         ),
         Argument(
             "enable_profiler",
@@ -1780,10 +2206,50 @@ def training_args():  # ! modified by Ziyao: data configuration isolated.
         ),
         Argument("data_dict", dict, optional=True, doc=doc_data_dict),
         Argument("fitting_weight", dict, optional=True, doc=doc_fitting_weight),
+        Argument(
+            "warmup_steps",
+            int,
+            optional=True,
+            doc=doc_only_pt_supported + doc_warmup_steps,
+        ),
+        Argument(
+            "gradient_max_norm",
+            float,
+            optional=True,
+            doc=doc_only_pt_supported + doc_gradient_max_norm,
+        ),
+        Argument(
+            "stat_file", str, optional=True, doc=doc_only_pt_supported + doc_stat_file
+        ),
+    ]
+    variants = [
+        Variant(
+            "opt_type",
+            choices=[
+                Argument("Adam", dict, [], [], optional=True),
+                Argument(
+                    "LKF",
+                    dict,
+                    [
+                        Argument(
+                            "kf_blocksize",
+                            int,
+                            optional=True,
+                            doc=doc_only_pt_supported + doc_kf_blocksize,
+                        ),
+                    ],
+                    [],
+                    optional=True,
+                ),
+            ],
+            optional=True,
+            default_tag="Adam",
+            doc=doc_only_pt_supported + doc_opt_type,
+        )
     ]
 
     doc_training = "The training options."
-    return Argument("training", dict, args, [], doc=doc_training)
+    return Argument("training", dict, args, variants, doc=doc_training)
 
 
 def make_index(keys):

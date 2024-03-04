@@ -22,6 +22,13 @@ class AtomExcludeMask(torch.nn.Module):
         exclude_types: List[int] = [],
     ):
         super().__init__()
+        self.reinit(ntypes, exclude_types)
+
+    def reinit(
+        self,
+        ntypes: int,
+        exclude_types: List[int] = [],
+    ):
         self.ntypes = ntypes
         self.exclude_types = exclude_types
         self.type_mask = np.array(
@@ -62,6 +69,13 @@ class PairExcludeMask(torch.nn.Module):
         exclude_types: List[Tuple[int, int]] = [],
     ):
         super().__init__()
+        self.reinit(ntypes, exclude_types)
+
+    def reinit(
+        self,
+        ntypes: int,
+        exclude_types: List[Tuple[int, int]] = [],
+    ):
         self.ntypes = ntypes
         self._exclude_types: Set[Tuple[int, int]] = set()
         for tt in exclude_types:

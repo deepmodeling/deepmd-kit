@@ -57,6 +57,9 @@ from deepmd.tf.utils.sess import (
 from deepmd.tf.utils.tabulate import (
     DPTabulate,
 )
+from deepmd.tf.utils.update_sel import (
+    UpdateSel,
+)
 
 from .descriptor import (
     Descriptor,
@@ -68,6 +71,7 @@ from .se_a import (
 log = logging.getLogger(__name__)
 
 
+@Descriptor.register("dpa1")
 @Descriptor.register("se_atten")
 class DescrptSeAtten(DescrptSeA):
     r"""Smooth version descriptor with attention.
@@ -152,6 +156,16 @@ class DescrptSeAtten(DescrptSeA):
         multi_task: bool = False,
         stripped_type_embedding: bool = False,
         smooth_type_embdding: bool = False,
+        # not implemented
+        post_ln=True,
+        ffn=False,
+        ffn_embed_dim=1024,
+        scaling_factor=1.0,
+        head_num=1,
+        normalize=True,
+        temperature=None,
+        return_rot=False,
+        concat_output_tebd: bool = True,
         **kwargs,
     ) -> None:
         if not set_davg_zero and not (stripped_type_embedding and smooth_type_embdding):
@@ -159,6 +173,24 @@ class DescrptSeAtten(DescrptSeA):
                 "Set 'set_davg_zero' False in descriptor 'se_atten' "
                 "may cause unexpected incontinuity during model inference!"
             )
+        if not post_ln:
+            raise NotImplementedError("post_ln is not supported.")
+        if ffn:
+            raise NotImplementedError("ffn is not supported.")
+        if ffn_embed_dim != 1024:
+            raise NotImplementedError("ffn_embed_dim is not supported.")
+        if scaling_factor != 1.0:
+            raise NotImplementedError("scaling_factor is not supported.")
+        if head_num != 1:
+            raise NotImplementedError("head_num is not supported.")
+        if not normalize:
+            raise NotImplementedError("normalize is not supported.")
+        if temperature is not None:
+            raise NotImplementedError("temperature is not supported.")
+        if return_rot:
+            raise NotImplementedError("return_rot is not supported.")
+        if not concat_output_tebd:
+            raise NotImplementedError("concat_output_tebd is not supported.")
         DescrptSeA.__init__(
             self,
             rcut,
@@ -1425,9 +1457,5 @@ class DescrptSeAtten(DescrptSeA):
         local_jdata : dict
             The local data refer to the current class
         """
-        from deepmd.tf.entrypoints.train import (
-            update_one_sel,
-        )
-
         local_jdata_cpy = local_jdata.copy()
-        return update_one_sel(global_jdata, local_jdata_cpy, True)
+        return UpdateSel().update_one_sel(global_jdata, local_jdata_cpy, True)

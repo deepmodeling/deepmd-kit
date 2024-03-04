@@ -11,10 +11,14 @@ from .ener_spin import (
 from .loss import (
     TaskLoss,
 )
+from .tensor import (
+    TensorLoss,
+)
 
 __all__ = [
     "DenoiseLoss",
     "EnergyStdLoss",
     "EnergySpinLoss",
+    "TensorLoss",
     "TaskLoss",
 ]

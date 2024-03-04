@@ -16,6 +16,9 @@ from deepmd.dpmodel.output_def import (
 from deepmd.utils.pair_tab import (
     PairTab,
 )
+from deepmd.utils.version import (
+    check_version_compatibility,
+)
 
 from .base_atomic_model import (
     BaseAtomicModel,
@@ -106,23 +109,29 @@ class PairTabAtomicModel(BaseAtomicModel):
         return True
 
     def serialize(self) -> dict:
-        return {
-            "@class": "Model",
-            "type": "pairtab",
-            "tab": self.tab.serialize(),
-            "rcut": self.rcut,
-            "sel": self.sel,
-        }
+        dd = BaseAtomicModel.serialize(self)
+        dd.update(
+            {
+                "@class": "Model",
+                "type": "pairtab",
+                "@version": 1,
+                "tab": self.tab.serialize(),
+                "rcut": self.rcut,
+                "sel": self.sel,
+            }
+        )
+        return dd
 
     @classmethod
     def deserialize(cls, data) -> "PairTabAtomicModel":
         data = copy.deepcopy(data)
+        check_version_compatibility(data.pop("@version", 1), 1, 1)
         data.pop("@class")
         data.pop("type")
-        rcut = data["rcut"]
-        sel = data["sel"]
-        tab = PairTab.deserialize(data["tab"])
-        tab_model = cls(None, rcut, sel)
+        rcut = data.pop("rcut")
+        sel = data.pop("sel")
+        tab = PairTab.deserialize(data.pop("tab"))
+        tab_model = cls(None, rcut, sel, **data)
         tab_model.tab = tab
         tab_model.tab_info = tab_model.tab.tab_info
         tab_model.tab_data = tab_model.tab.tab_data

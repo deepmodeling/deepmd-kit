@@ -3,11 +3,17 @@ import itertools
 
 import numpy as np
 
+from deepmd.dpmodel.utils.update_sel import (
+    UpdateSel,
+)
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
 )
 from deepmd.utils.path import (
     DPPath,
+)
+from deepmd.utils.version import (
+    check_version_compatibility,
 )
 
 try:
@@ -20,6 +26,7 @@ from typing import (
     Any,
     List,
     Optional,
+    Tuple,
 )
 
 from deepmd.dpmodel import (
@@ -40,6 +47,7 @@ from .base_descriptor import (
 
 
 @BaseDescriptor.register("se_e2_a")
+@BaseDescriptor.register("se_a")
 class DescrptSeA(NativeOP, BaseDescriptor):
     r"""DeepPot-SE constructed from all information (both angular and radial) of
     atomic configurations. The embedding takes the distance between atoms as input.
@@ -164,13 +172,13 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         self.resnet_dt = resnet_dt
         self.trainable = trainable
         self.type_one_side = type_one_side
-        self.exclude_types = exclude_types
         self.env_protection = env_protection
         self.set_davg_zero = set_davg_zero
         self.activation_function = activation_function
         self.precision = precision
         self.spin = spin
-        self.emask = PairExcludeMask(self.ntypes, self.exclude_types)
+        # order matters, placed after the assignment of self.ntypes
+        self.reinit_exclude(exclude_types)
 
         in_dim = 1  # not considiering type embedding
         self.embeddings = NetworkCollection(
@@ -241,6 +249,14 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         """
         return False
 
+    def share_params(self, base_class, shared_level, resume=False):
+        """
+        Share the parameters of self to the base_class with shared_level during multitask training.
+        If not start from checkpoint (resume is False),
+        some seperated parameters (e.g. mean and stddev) will be re-calculated across different classes.
+        """
+        raise NotImplementedError
+
     def get_ntypes(self) -> int:
         """Returns the number of element types."""
         return self.ntypes
@@ -259,6 +275,13 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         # (nf x nloc) x nnei x ng
         gg = self.embeddings[embedding_idx].call(ss)
         return gg
+
+    def reinit_exclude(
+        self,
+        exclude_types: List[Tuple[int, int]] = [],
+    ):
+        self.exclude_types = exclude_types
+        self.emask = PairExcludeMask(self.ntypes, exclude_types=exclude_types)
 
     def call(
         self,
@@ -349,6 +372,7 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         return {
             "@class": "Descriptor",
             "type": "se_e2_a",
+            "@version": 1,
             "rcut": self.rcut,
             "rcut_smth": self.rcut_smth,
             "sel": self.sel,
@@ -376,6 +400,7 @@ class DescrptSeA(NativeOP, BaseDescriptor):
     def deserialize(cls, data: dict) -> "DescrptSeA":
         """Deserialize from dict."""
         data = copy.deepcopy(data)
+        check_version_compatibility(data.pop("@version", 1), 1, 1)
         data.pop("@class", None)
         data.pop("type", None)
         variables = data.pop("@variables")
@@ -387,3 +412,17 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         obj["dstd"] = variables["dstd"]
         obj.embeddings = NetworkCollection.deserialize(embeddings)
         return obj
+
+    @classmethod
+    def update_sel(cls, global_jdata: dict, local_jdata: dict):
+        """Update the selection and perform neighbor statistics.
+
+        Parameters
+        ----------
+        global_jdata : dict
+            The global data, containing the training section
+        local_jdata : dict
+            The local data refer to the current class
+        """
+        local_jdata_cpy = local_jdata.copy()
+        return UpdateSel().update_one_sel(global_jdata, local_jdata_cpy, False)

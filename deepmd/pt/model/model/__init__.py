@@ -20,7 +20,7 @@ from deepmd.pt.model.descriptor.base_descriptor import (
     BaseDescriptor,
 )
 from deepmd.pt.model.task import (
-    Fitting,
+    BaseFitting,
 )
 from deepmd.utils.spin import (
     Spin,
@@ -68,7 +68,7 @@ def get_zbl_model(model_params):
         fitting_net["out_dim"] = descriptor.get_dim_emb()
         if "ener" in fitting_net["type"]:
             fitting_net["return_energy"] = True
-    fitting = Fitting(**fitting_net)
+    fitting = BaseFitting(**fitting_net)
     dp_model = DPAtomicModel(descriptor, fitting, type_map=model_params["type_map"])
     # pairtab
     filepath = model_params["use_srtab"]
@@ -78,11 +78,15 @@ def get_zbl_model(model_params):
 
     rmin = model_params["sw_rmin"]
     rmax = model_params["sw_rmax"]
+    atom_exclude_types = model_params.get("atom_exclude_types", [])
+    pair_exclude_types = model_params.get("pair_exclude_types", [])
     return DPZBLModel(
         dp_model,
         pt_model,
         rmin,
         rmax,
+        atom_exclude_types=atom_exclude_types,
+        pair_exclude_types=pair_exclude_types,
     )
 
 
@@ -97,16 +101,24 @@ def get_ener_model(model_params):
     fitting_net["type"] = fitting_net.get("type", "ener")
     fitting_net["ntypes"] = descriptor.get_ntypes()
     fitting_net["mixed_types"] = descriptor.mixed_types()
-    fitting_net["embedding_width"] = descriptor.get_dim_out()
+    fitting_net["embedding_width"] = descriptor.get_dim_emb()
     fitting_net["dim_descrpt"] = descriptor.get_dim_out()
     grad_force = "direct" not in fitting_net["type"]
     if not grad_force:
         fitting_net["out_dim"] = descriptor.get_dim_emb()
         if "ener" in fitting_net["type"]:
             fitting_net["return_energy"] = True
-    fitting = Fitting(**fitting_net)
+    fitting = BaseFitting(**fitting_net)
+    atom_exclude_types = model_params.get("atom_exclude_types", [])
+    pair_exclude_types = model_params.get("pair_exclude_types", [])
 
-    model = EnergyModel(descriptor, fitting, type_map=model_params["type_map"])
+    model = DPModel(
+        descriptor,
+        fitting,
+        type_map=model_params["type_map"],
+        atom_exclude_types=atom_exclude_types,
+        pair_exclude_types=pair_exclude_types,
+    )
     model.model_def_script = json.dumps(model_params)
     return model
 
@@ -148,7 +160,7 @@ def get_spin_model(model_params):
         fitting_net["out_dim"] = descriptor.get_dim_emb()
         if "ener" in fitting_net["type"]:
             fitting_net["return_energy"] = True
-    fitting = Fitting(**fitting_net)
+    fitting = BaseFitting(**fitting_net)
     backbone_model = DPModel(descriptor, fitting, type_map=model_params["type_map"])
     return SpinEnergyModel(backbone_model=backbone_model, spin=spin)
 

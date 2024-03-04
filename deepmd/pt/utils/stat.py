@@ -1,8 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
 
-import numpy as np
 import torch
+
+from deepmd.pt.utils.utils import (
+    dict_to_device,
+)
 
 log = logging.getLogger(__name__)
 
@@ -19,21 +22,9 @@ def make_stat_input(datasets, dataloaders, nbatches):
     - a list of dicts, each of which contains data from a system
     """
     lst = []
-    keys = [
-        "coord",
-        "force",
-        "energy",
-        "atype",
-        "box",
-        "natoms",
-        "spin",
-        "force_mag",
-    ]
-    if datasets[0].mixed_type:
-        keys.append("real_natoms_vec")
     log.info(f"Packing data for statistics from {len(datasets)} systems")
     for i in range(len(datasets)):
-        sys_stat = {key: [] for key in keys}
+        sys_stat = {}
         with torch.device("cpu"):
             iterator = iter(dataloaders[i])
             for _ in range(nbatches):
@@ -43,38 +34,19 @@ def make_stat_input(datasets, dataloaders, nbatches):
                     iterator = iter(dataloaders[i])
                     stat_data = next(iterator)
                 for dd in stat_data:
-                    if dd in keys:
+                    if stat_data[dd] is None:
+                        sys_stat[dd] = None
+                    elif isinstance(stat_data[dd], torch.Tensor):
+                        if dd not in sys_stat:
+                            sys_stat[dd] = []
                         sys_stat[dd].append(stat_data[dd])
-        for key in keys:
-            if not isinstance(sys_stat[key][0], list):
-                if sys_stat[key][0] is None:
-                    sys_stat[key] = None
-                else:
-                    sys_stat[key] = torch.cat(sys_stat[key], dim=0)
+                    else:
+                        pass
+        for key in sys_stat:
+            if sys_stat[key] is None or sys_stat[key][0] is None:
+                sys_stat[key] = None
             else:
-                sys_stat_list = []
-                for ii, _ in enumerate(sys_stat[key][0]):
-                    tmp_stat = [x[ii] for x in sys_stat[key]]
-                    sys_stat_list.append(torch.cat(tmp_stat, dim=0))
-                sys_stat[key] = sys_stat_list
+                sys_stat[key] = torch.cat(sys_stat[key], dim=0)
+        dict_to_device(sys_stat)
         lst.append(sys_stat)
     return lst
-
-
-def compute_output_bias(energy, natoms, rcond=None, type_mask=None):
-    """Update output bias for fitting net.
-
-    Args:
-    - energy: Batched energy with shape [nframes, 1].
-    - natoms: Batched atom statisics with shape [nframes, self.ntypes+2].
-
-    Returns
-    -------
-    - energy_coef: Average enery per atom for each element.
-    """
-    natoms = natoms[:, 2:].double()
-    if type_mask is not None:
-        natoms = natoms * type_mask
-    # need help: torch.linalg.lstsq error on cuda!!
-    energy_coef, _, _, _ = np.linalg.lstsq(natoms.cpu(), energy.cpu(), rcond)
-    return energy_coef

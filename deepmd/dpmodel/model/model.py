@@ -44,6 +44,8 @@ def get_standard_model(data: dict) -> DPModel:
         descriptor=descriptor,
         fitting=fitting,
         type_map=data["type_map"],
+        atom_exclude_types=data.get("atom_exclude_types", []),
+        pair_exclude_types=data.get("pair_exclude_types", []),
     )
 
 

@@ -16,3 +16,4 @@ class TestDataRequirement(unittest.TestCase):
         self.assertEqual(data_requirement["test"]["high_prec"], False)
         self.assertEqual(data_requirement["test"]["repeat"], 1)
         self.assertEqual(data_requirement["test"]["default"], 0.0)
+        self.assertEqual(data_requirement["test"]["output_natoms_for_type_sel"], False)

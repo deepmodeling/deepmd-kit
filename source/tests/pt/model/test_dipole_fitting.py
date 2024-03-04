@@ -79,7 +79,6 @@ class TestDipoleFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
             [0, 4],
         ):
             ft0 = DipoleFittingNet(
-                "foo",
                 self.nt,
                 self.dd0.dim_out,
                 embedding_width=self.dd0.get_dim_emb(),
@@ -115,12 +114,12 @@ class TestDipoleFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
             )
             ret2 = ft2(rd0, atype, gr, fparam=ifp, aparam=iap)
             np.testing.assert_allclose(
-                to_numpy_array(ret0["foo"]),
-                ret1["foo"],
+                to_numpy_array(ret0["dipole"]),
+                ret1["dipole"],
             )
             np.testing.assert_allclose(
-                to_numpy_array(ret0["foo"]),
-                to_numpy_array(ret2["foo"]),
+                to_numpy_array(ret0["dipole"]),
+                to_numpy_array(ret2["dipole"]),
             )
 
     def test_jit(
@@ -132,7 +131,6 @@ class TestDipoleFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
             [0, 4],
         ):
             ft0 = DipoleFittingNet(
-                "foo",
                 self.nt,
                 self.dd0.dim_out,
                 embedding_width=self.dd0.get_dim_emb(),
@@ -168,7 +166,6 @@ class TestEquivalence(unittest.TestCase):
             [0, 4],
         ):
             ft0 = DipoleFittingNet(
-                "foo",
                 3,  # ntype
                 self.dd0.dim_out,  # dim_descrpt
                 embedding_width=self.dd0.get_dim_emb(),
@@ -209,7 +206,7 @@ class TestEquivalence(unittest.TestCase):
                 )
 
                 ret0 = ft0(rd0, extended_atype, gr0, fparam=ifp, aparam=iap)
-                res.append(ret0["foo"])
+                res.append(ret0["dipole"])
 
             np.testing.assert_allclose(
                 to_numpy_array(res[1]), to_numpy_array(torch.matmul(res[0], rmat))
@@ -218,7 +215,6 @@ class TestEquivalence(unittest.TestCase):
     def test_permu(self):
         coord = torch.matmul(self.coord, self.cell)
         ft0 = DipoleFittingNet(
-            "foo",
             3,  # ntype
             self.dd0.dim_out,
             embedding_width=self.dd0.get_dim_emb(),
@@ -245,7 +241,7 @@ class TestEquivalence(unittest.TestCase):
             )
 
             ret0 = ft0(rd0, extended_atype, gr0, fparam=0, aparam=0)
-            res.append(ret0["foo"])
+            res.append(ret0["dipole"])
 
         np.testing.assert_allclose(
             to_numpy_array(res[0][:, idx_perm]), to_numpy_array(res[1])
@@ -260,7 +256,6 @@ class TestEquivalence(unittest.TestCase):
             self.cell,
         )
         ft0 = DipoleFittingNet(
-            "foo",
             3,  # ntype
             self.dd0.dim_out,
             embedding_width=self.dd0.get_dim_emb(),
@@ -286,7 +281,7 @@ class TestEquivalence(unittest.TestCase):
             )
 
             ret0 = ft0(rd0, extended_atype, gr0, fparam=0, aparam=0)
-            res.append(ret0["foo"])
+            res.append(ret0["dipole"])
 
         np.testing.assert_allclose(to_numpy_array(res[0]), to_numpy_array(res[1]))
 
@@ -305,7 +300,6 @@ class TestDipoleModel(unittest.TestCase):
         self.atype = torch.IntTensor([0, 0, 0, 1, 1], device="cpu").to(env.DEVICE)
         self.dd0 = DescrptSeA(self.rcut, self.rcut_smth, self.sel).to(env.DEVICE)
         self.ft0 = DipoleFittingNet(
-            "dipole",
             self.nt,
             self.dd0.dim_out,
             embedding_width=self.dd0.get_dim_emb(),

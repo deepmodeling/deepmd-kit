@@ -1,8 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    Callable,
     Dict,
     List,
     Optional,
+    Union,
 )
 
 import numpy as np
@@ -53,7 +55,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         post_ln=True,
         ffn=False,
         ffn_embed_dim=1024,
-        activation="tanh",
+        activation_function="tanh",
         scaling_factor=1.0,
         head_num=1,
         normalize=True,
@@ -87,7 +89,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         self.post_ln = post_ln
         self.ffn = ffn
         self.ffn_embed_dim = ffn_embed_dim
-        self.activation = activation
+        self.activation = activation_function
         # TODO: To be fixed: precision should be given from inputs
         self.prec = torch.float64
         self.scaling_factor = scaling_factor
@@ -202,12 +204,39 @@ class DescrptBlockSeAtten(DescriptorBlock):
         """Returns the output dimension of embedding."""
         return self.get_dim_emb()
 
-    def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
-        """Update mean and stddev for descriptor elements."""
+    def compute_input_stats(
+        self,
+        merged: Union[Callable[[], List[dict]], List[dict]],
+        path: Optional[DPPath] = None,
+    ):
+        """
+        Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
+
+        Parameters
+        ----------
+        merged : Union[Callable[[], List[dict]], List[dict]]
+            - List[dict]: A list of data samples from various data systems.
+                Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
+                originating from the `i`-th data system.
+            - Callable[[], List[dict]]: A lazy function that returns data samples in the above format
+                only when needed. Since the sampling process can be slow and memory-intensive,
+                the lazy function helps by only sampling once.
+        path : Optional[DPPath]
+            The path to the stat file.
+
+        """
         env_mat_stat = EnvMatStatSe(self)
         if path is not None:
             path = path / env_mat_stat.get_hash()
-        env_mat_stat.load_or_compute_stats(merged, path)
+        if path is None or not path.is_dir():
+            if callable(merged):
+                # only get data for once
+                sampled = merged()
+            else:
+                sampled = merged
+        else:
+            sampled = []
+        env_mat_stat.load_or_compute_stats(sampled, path)
         self.stats = env_mat_stat.stats
         mean, stddev = env_mat_stat()
         if not self.set_davg_zero:
@@ -306,7 +335,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
             result.view(-1, nloc, self.filter_neuron[-1] * self.axis_neuron),
             ret.view(-1, nloc, self.nnei, self.filter_neuron[-1]),
             dmatrix.view(-1, nloc, self.nnei, 4)[..., 1:],
-            rot_mat.view(-1, self.filter_neuron[-1], 3),
+            rot_mat.view(-1, nloc, self.filter_neuron[-1], 3),
             sw,
         )
 

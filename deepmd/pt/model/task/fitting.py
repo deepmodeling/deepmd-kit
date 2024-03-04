@@ -1,17 +1,23 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import copy
 import logging
+import os
+import tempfile
 from abc import (
     abstractmethod,
 )
 from typing import (
     List,
     Optional,
+    Union,
 )
 
 import numpy as np
 import torch
 
+from deepmd.infer.deep_eval import (
+    DeepEval,
+)
 from deepmd.pt.model.network.mlp import (
     FittingNet,
     NetworkCollection,
@@ -25,9 +31,6 @@ from deepmd.pt.model.task.base_fitting import (
 from deepmd.pt.utils import (
     env,
 )
-from deepmd.pt.utils.dataloader import (
-    DpLoaderSet,
-)
 from deepmd.pt.utils.env import (
     DEFAULT_PRECISION,
     DEVICE,
@@ -36,12 +39,18 @@ from deepmd.pt.utils.env import (
 from deepmd.pt.utils.exclude_mask import (
     AtomExcludeMask,
 )
-from deepmd.pt.utils.stat import (
-    make_stat_input,
-)
 from deepmd.pt.utils.utils import (
     to_numpy_array,
     to_torch_tensor,
+)
+from deepmd.utils.data_system import (
+    DeepmdDataSystem,
+)
+from deepmd.utils.finetune import (
+    change_energy_bias_lower,
+)
+from deepmd.utils.version import (
+    check_version_compatibility,
 )
 
 dtype = env.GLOBAL_PT_FLOAT_PRECISION
@@ -59,6 +68,11 @@ class Fitting(torch.nn.Module, BaseFitting):
         return super().__new__(cls)
 
     def share_params(self, base_class, shared_level, resume=False):
+        """
+        Share the parameters of self to the base_class with shared_level during multitask training.
+        If not start from checkpoint (resume is False),
+        some seperated parameters (e.g. mean and stddev) will be re-calculated across different classes.
+        """
         assert (
             self.__class__ == base_class.__class__
         ), "Only fitting nets of the same type can share params!"
@@ -74,31 +88,17 @@ class Fitting(torch.nn.Module, BaseFitting):
             # the following will successfully link all the params except buffers, which need manually link.
             for item in self._modules:
                 self._modules[item] = base_class._modules[item]
-        elif shared_level == 2:
-            # share all the layers before final layer
-            # the following will successfully link all the params except buffers, which need manually link.
-            self._modules["filter_layers"][0].deep_layers = base_class._modules[
-                "filter_layers"
-            ][0].deep_layers
-        elif shared_level == 3:
-            # share the first layers
-            # the following will successfully link all the params except buffers, which need manually link.
-            self._modules["filter_layers"][0].deep_layers[0] = base_class._modules[
-                "filter_layers"
-            ][0].deep_layers[0]
         else:
             raise NotImplementedError
 
-    @property
-    def data_stat_key(self):
-        """
-        Get the keys for the data statistic of the fitting.
-        Return a list of statistic names needed, such as "bias_atom_e".
-        """
-        raise NotImplementedError("data_stat_key is not implemented!")
-
     def change_energy_bias(
-        self, config, model, old_type_map, new_type_map, bias_shift="delta", ntest=10
+        self,
+        config,
+        model,
+        old_type_map: List[str],
+        new_type_map: List[str],
+        bias_shift="delta",
+        ntest=10,
     ):
         """Change the energy bias according to the input data and the pretrained model.
 
@@ -108,9 +108,9 @@ class Fitting(torch.nn.Module, BaseFitting):
             The configuration.
         model : EnergyModel
             Energy model loaded pre-trained model.
-        new_type_map : list
+        new_type_map : List[str]
             The original type_map in dataset, they are targets to change the energy bias.
-        old_type_map : str
+        old_type_map : List[str]
             The full type_map in pretrained model
         bias_shift : str
             The mode for changing energy bias : ['delta', 'statistic']
@@ -126,93 +126,36 @@ class Fitting(torch.nn.Module, BaseFitting):
         )
         # data
         systems = config["training"]["training_data"]["systems"]
-        finetune_data = DpLoaderSet(systems, ntest, config["model"])
-        sampled = make_stat_input(finetune_data.systems, finetune_data.dataloaders, 1)
-        # map
-        sorter = np.argsort(old_type_map)
-        idx_type_map = sorter[
-            np.searchsorted(old_type_map, new_type_map, sorter=sorter)
-        ]
-        data_mixed_types = np.all([i.mixed_type for i in finetune_data.systems])
-        numb_type = len(old_type_map)
-        type_numbs, energy_ground_truth, energy_predict = [], [], []
-        for test_data in sampled:
-            nframes = test_data["energy"].shape[0]
-            if data_mixed_types:
-                atype = test_data["atype"].detach().cpu().numpy()
-            else:
-                atype = test_data["atype"][0].detach().cpu().numpy()
-            assert np.array(
-                [i.item() in idx_type_map for i in list(set(atype.reshape(-1)))]
-            ).all(), "Some types are not in 'type_map'!"
-            energy_ground_truth.append(test_data["energy"].cpu().numpy())
-            if data_mixed_types:
-                type_numbs.append(
-                    np.array(
-                        [(atype == i).sum(axis=-1) for i in idx_type_map],
-                        dtype=np.int32,
-                    ).T
-                )
-            else:
-                type_numbs.append(
-                    np.tile(
-                        np.bincount(atype, minlength=numb_type)[idx_type_map],
-                        (nframes, 1),
-                    )
-                )
-            if bias_shift == "delta":
-                coord = test_data["coord"].to(DEVICE)
-                atype = test_data["atype"].to(DEVICE)
-                box = (
-                    test_data["box"].to(DEVICE)
-                    if test_data["box"] is not None
-                    else None
-                )
-                ret = model(coord, atype, box)
-                energy_predict.append(
-                    ret["energy"].reshape([nframes, 1]).detach().cpu().numpy()
-                )
-        type_numbs = np.concatenate(type_numbs)
-        energy_ground_truth = np.concatenate(energy_ground_truth)
-        old_bias = self.bias_atom_e[idx_type_map]
-        if bias_shift == "delta":
-            energy_predict = np.concatenate(energy_predict)
-            bias_diff = energy_ground_truth - energy_predict
-            delta_bias = np.linalg.lstsq(type_numbs, bias_diff, rcond=None)[0]
-            unbias_e = energy_predict + type_numbs @ delta_bias
-            atom_numbs = type_numbs.sum(-1)
-            rmse_ae = np.sqrt(
-                np.mean(
-                    np.square(
-                        (unbias_e.ravel() - energy_ground_truth.ravel()) / atom_numbs
-                    )
-                )
-            )
-            self.bias_atom_e[idx_type_map] += torch.from_numpy(
-                delta_bias.reshape(-1)
-            ).to(DEVICE)
-            log.info(
-                f"RMSE of atomic energy after linear regression is: {rmse_ae:10.5e} eV/atom."
-            )
-        elif bias_shift == "statistic":
-            statistic_bias = np.linalg.lstsq(
-                type_numbs, energy_ground_truth, rcond=None
-            )[0]
-            self.bias_atom_e[idx_type_map] = (
-                torch.from_numpy(statistic_bias.reshape(-1))
-                .type_as(self.bias_atom_e[idx_type_map])
-                .to(DEVICE)
-            )
-        else:
-            raise RuntimeError("Unknown bias_shift mode: " + bias_shift)
-        log.info(
-            "Change energy bias of {} from {} to {}.".format(
-                str(new_type_map),
-                str(old_bias.detach().cpu().numpy()),
-                str(self.bias_atom_e[idx_type_map].detach().cpu().numpy()),
-            )
+        finetune_data = DeepmdDataSystem(
+            systems=systems,
+            batch_size=config["training"]["training_data"].get("batch_size", "auto"),
+            test_size=1,
         )
-        return None
+        finetune_data.add("energy", ndof=1, atomic=False, must=True, high_prec=True)
+        model = torch.jit.script(model)
+        if model.get_dim_fparam() > 0:
+            finetune_data.add("fparam", model.get_dim_fparam(), atomic=False, must=True)
+        if model.get_dim_aparam() > 0:
+            finetune_data.add("aparam", model.get_dim_aparam(), atomic=True, must=True)
+        tmp_model = tempfile.NamedTemporaryFile(delete=False, suffix=".pth")
+        torch.jit.save(model, tmp_model.name)
+        dp = DeepEval(tmp_model.name)
+        os.unlink(tmp_model.name)
+        bias = change_energy_bias_lower(
+            finetune_data,
+            dp,
+            new_type_map,
+            old_type_map,
+            self.bias_atom_e.detach().cpu().numpy().reshape(-1),
+            bias_shift=bias_shift,
+            ntest=ntest,
+        )
+        self.bias_atom_e = (
+            torch.from_numpy(bias)
+            .type_as(self.bias_atom_e)
+            .reshape(self.bias_atom_e.shape)
+            .to(DEVICE)
+        )
 
 
 class GeneralFitting(Fitting):
@@ -251,7 +194,14 @@ class GeneralFitting(Fitting):
         Random seed.
     exclude_types: List[int]
         Atomic contributions of the excluded atom types are set zero.
-
+    trainable : Union[List[bool], bool]
+        If the parameters in the fitting net are trainable.
+        Now this only supports setting all the parameters in the fitting net at one state.
+        When in List[bool], the trainable will be True only if all the boolean parameters are True.
+    remove_vaccum_contribution: List[bool], optional
+        Remove vaccum contribution before the bias is added. The list assigned each
+        type. For `mixed_types` provide `[True]`, otherwise it should be a list of the same
+        length as `ntypes` signaling if or not removing the vaccum contribution for the atom types in the list.
     """
 
     def __init__(
@@ -270,6 +220,8 @@ class GeneralFitting(Fitting):
         rcond: Optional[float] = None,
         seed: Optional[int] = None,
         exclude_types: List[int] = [],
+        trainable: Union[bool, List[bool]] = True,
+        remove_vaccum_contribution: Optional[List[bool]] = None,
         **kwargs,
     ):
         super().__init__()
@@ -285,12 +237,14 @@ class GeneralFitting(Fitting):
         self.precision = precision
         self.prec = PRECISION_DICT[self.precision]
         self.rcond = rcond
-        self.exclude_types = exclude_types
-
-        self.emask = AtomExcludeMask(self.ntypes, self.exclude_types)
-        self.type_mask = self.emask(
-            torch.arange(0, self.ntypes, device=device).unsqueeze(0)
+        # order matters, should be place after the assignment of ntypes
+        self.reinit_exclude(exclude_types)
+        self.trainable = trainable
+        # need support for each layer settings
+        self.trainable = (
+            all(self.trainable) if isinstance(self.trainable, list) else self.trainable
         )
+        self.remove_vaccum_contribution = remove_vaccum_contribution
 
         net_dim_out = self._net_out_dim()
         # init constants
@@ -363,13 +317,23 @@ class GeneralFitting(Fitting):
             self.filter_layers_old = None
 
         if seed is not None:
-            log.info("Set seed to %d in fitting net.", seed)
             torch.manual_seed(seed)
+        # set trainable
+        for param in self.parameters():
+            param.requires_grad = self.trainable
+
+    def reinit_exclude(
+        self,
+        exclude_types: List[int] = [],
+    ):
+        self.exclude_types = exclude_types
+        self.emask = AtomExcludeMask(self.ntypes, self.exclude_types)
 
     def serialize(self) -> dict:
         """Serialize the fitting to dict."""
         return {
             "@class": "Fitting",
+            "@version": 1,
             "var_name": self.var_name,
             "ntypes": self.ntypes,
             "dim_descrpt": self.dim_descrpt,
@@ -398,7 +362,7 @@ class GeneralFitting(Fitting):
             # "spin": self.spin ,
             ## NOTICE:  not supported by far
             "tot_ener_zero": False,
-            "trainable": [True] * (len(self.neuron) + 1),
+            "trainable": [self.trainable] * (len(self.neuron) + 1),
             "layer_name": None,
             "use_aparam_as_mask": False,
             "spin": None,
@@ -407,6 +371,7 @@ class GeneralFitting(Fitting):
     @classmethod
     def deserialize(cls, data: dict) -> "GeneralFitting":
         data = copy.deepcopy(data)
+        check_version_compatibility(data.pop("@version", 1), 1, 1)
         variables = data.pop("@variables")
         nets = data.pop("nets")
         obj = cls(**data)
@@ -495,6 +460,14 @@ class GeneralFitting(Fitting):
         aparam: Optional[torch.Tensor] = None,
     ):
         xx = descriptor
+        if self.remove_vaccum_contribution is not None:
+            # TODO: Idealy, the input for vaccum should be computed;
+            # we consider it as always zero for convenience.
+            # Needs a compute_input_stats for vaccum passed from the
+            # descriptor.
+            xx_zeros = torch.zeros_like(xx)
+        else:
+            xx_zeros = None
         nf, nloc, nd = xx.shape
         net_dim_out = self._net_out_dim()
 
@@ -523,6 +496,11 @@ class GeneralFitting(Fitting):
                 [xx, fparam],
                 dim=-1,
             )
+            if xx_zeros is not None:
+                xx_zeros = torch.cat(
+                    [xx_zeros, fparam],
+                    dim=-1,
+                )
         # check aparam dim, concate to input descriptor
         if self.numb_aparam > 0:
             assert aparam is not None, "aparam should not be None"
@@ -562,6 +540,11 @@ class GeneralFitting(Fitting):
                 [xx, aparam],
                 dim=-1,
             )
+            if xx_zeros is not None:
+                xx_zeros = torch.cat(
+                    [xx_zeros, aparam],
+                    dim=-1,
+                )
 
         outs = torch.zeros(
             (nf, nloc, net_dim_out),
@@ -570,6 +553,7 @@ class GeneralFitting(Fitting):
         )  # jit assertion
         if self.old_impl:
             assert self.filter_layers_old is not None
+            assert xx_zeros is None
             if self.mixed_types:
                 atom_property = self.filter_layers_old[0](xx) + self.bias_atom_e[atype]
                 outs = outs + atom_property  # Shape is [nframes, natoms[0], 1]
@@ -585,6 +569,8 @@ class GeneralFitting(Fitting):
                 atom_property = (
                     self.filter_layers.networks[0](xx) + self.bias_atom_e[atype]
                 )
+                if xx_zeros is not None:
+                    atom_property -= self.filter_layers.networks[0](xx_zeros)
                 outs = (
                     outs + atom_property
                 )  # Shape is [nframes, natoms[0], net_dim_out]
@@ -593,6 +579,14 @@ class GeneralFitting(Fitting):
                     mask = (atype == type_i).unsqueeze(-1)
                     mask = torch.tile(mask, (1, 1, net_dim_out))
                     atom_property = ll(xx)
+                    if xx_zeros is not None:
+                        # must assert, otherwise jit is not happy
+                        assert self.remove_vaccum_contribution is not None
+                        if not (
+                            len(self.remove_vaccum_contribution) > type_i
+                            and not self.remove_vaccum_contribution[type_i]
+                        ):
+                            atom_property -= ll(xx_zeros)
                     atom_property = atom_property + self.bias_atom_e[type_i]
                     atom_property = atom_property * mask
                     outs = (

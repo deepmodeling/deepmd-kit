@@ -6,6 +6,9 @@ from typing import (
 
 import torch
 
+from deepmd.dpmodel.model.dp_model import (
+    DPModel,
+)
 from deepmd.pt.model.atomic_model import (
     DPZBLLinearAtomicModel,
 )
@@ -60,6 +63,8 @@ class DPZBLModel(DPZBLModel_, BaseModel):
                 model_predict["atom_virial"] = model_ret["energy_derv_c"].squeeze(-3)
         else:
             model_predict["force"] = model_ret["dforce"]
+        if "mask" in model_ret:
+            model_predict["mask"] = model_ret["mask"]
         return model_predict
 
     @torch.jit.export
@@ -98,3 +103,20 @@ class DPZBLModel(DPZBLModel_, BaseModel):
             assert model_ret["dforce"] is not None
             model_predict["dforce"] = model_ret["dforce"]
         return model_predict
+
+    @classmethod
+    def update_sel(cls, global_jdata: dict, local_jdata: dict):
+        """Update the selection and perform neighbor statistics.
+
+        Parameters
+        ----------
+        global_jdata : dict
+            The global data, containing the training section
+        local_jdata : dict
+            The local data refer to the current class
+        """
+        local_jdata_cpy = local_jdata.copy()
+        local_jdata_cpy["dpmodel"] = DPModel.update_sel(
+            global_jdata, local_jdata["dpmodel"]
+        )
+        return local_jdata_cpy

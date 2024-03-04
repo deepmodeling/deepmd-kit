@@ -1,9 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    Callable,
     Dict,
     List,
     Optional,
     Tuple,
+    Union,
 )
 
 import numpy as np
@@ -30,11 +32,17 @@ from deepmd.pt.utils.env_mat_stat import (
 from deepmd.pt.utils.exclude_mask import (
     PairExcludeMask,
 )
+from deepmd.pt.utils.update_sel import (
+    UpdateSel,
+)
 from deepmd.utils.env_mat_stat import (
     StatItem,
 )
 from deepmd.utils.path import (
     DPPath,
+)
+from deepmd.utils.version import (
+    check_version_compatibility,
 )
 
 from .base_descriptor import (
@@ -57,6 +65,7 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
         resnet_dt: bool = False,
         exclude_types: List[Tuple[int, int]] = [],
         old_impl: bool = False,
+        trainable: bool = True,
         **kwargs,
     ):
         super().__init__()
@@ -104,6 +113,9 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
             )
         self.filter_layers = filter_layers
         self.stats = None
+        # set trainable
+        for param in self.parameters():
+            param.requires_grad = trainable
 
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
@@ -145,12 +157,72 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
         """
         return False
 
-    def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
-        """Update mean and stddev for descriptor elements."""
+    def share_params(self, base_class, shared_level, resume=False):
+        """
+        Share the parameters of self to the base_class with shared_level during multitask training.
+        If not start from checkpoint (resume is False),
+        some seperated parameters (e.g. mean and stddev) will be re-calculated across different classes.
+        """
+        assert (
+            self.__class__ == base_class.__class__
+        ), "Only descriptors of the same type can share params!"
+        # For SeR descriptors, the user-defined share-level
+        # shared_level: 0
+        if shared_level == 0:
+            # link buffers
+            if hasattr(self, "mean") and not resume:
+                # in case of change params during resume
+                base_env = EnvMatStatSe(base_class)
+                base_env.stats = base_class.stats
+                for kk in base_class.get_stats():
+                    base_env.stats[kk] += self.get_stats()[kk]
+                mean, stddev = base_env()
+                if not base_class.set_davg_zero:
+                    base_class.mean.copy_(torch.tensor(mean, device=env.DEVICE))
+                base_class.stddev.copy_(torch.tensor(stddev, device=env.DEVICE))
+                self.mean = base_class.mean
+                self.stddev = base_class.stddev
+            # self.load_state_dict(base_class.state_dict()) # this does not work, because it only inits the model
+            # the following will successfully link all the params except buffers
+            for item in self._modules:
+                self._modules[item] = base_class._modules[item]
+        # Other shared levels
+        else:
+            raise NotImplementedError
+
+    def compute_input_stats(
+        self,
+        merged: Union[Callable[[], List[dict]], List[dict]],
+        path: Optional[DPPath] = None,
+    ):
+        """
+        Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
+
+        Parameters
+        ----------
+        merged : Union[Callable[[], List[dict]], List[dict]]
+            - List[dict]: A list of data samples from various data systems.
+                Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
+                originating from the `i`-th data system.
+            - Callable[[], List[dict]]: A lazy function that returns data samples in the above format
+                only when needed. Since the sampling process can be slow and memory-intensive,
+                the lazy function helps by only sampling once.
+        path : Optional[DPPath]
+            The path to the stat file.
+
+        """
         env_mat_stat = EnvMatStatSe(self)
         if path is not None:
             path = path / env_mat_stat.get_hash()
-        env_mat_stat.load_or_compute_stats(merged, path)
+        if path is None or not path.is_dir():
+            if callable(merged):
+                # only get data for once
+                sampled = merged()
+            else:
+                sampled = merged
+        else:
+            sampled = []
+        env_mat_stat.load_or_compute_stats(sampled, path)
         self.stats = env_mat_stat.stats
         mean, stddev = env_mat_stat()
         if not self.set_davg_zero:
@@ -252,9 +324,9 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
             # nfnl x nt x ng
             gg = ll.forward(ss)
             gg = torch.mean(gg, dim=1).unsqueeze(1)
-            xyz_scatter += gg
+            xyz_scatter += gg * (self.sel[ii] / self.nnei)
 
-        res_rescale = 1.0 / 10.0
+        res_rescale = 1.0 / 5.0
         result = xyz_scatter * res_rescale
         result = result.view(-1, nloc, self.filter_neuron[-1])
         return (
@@ -277,6 +349,7 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
         return {
             "@class": "Descriptor",
             "type": "se_r",
+            "@version": 1,
             "rcut": self.rcut,
             "rcut_smth": self.rcut_smth,
             "sel": self.sel,
@@ -302,6 +375,7 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
     @classmethod
     def deserialize(cls, data: dict) -> "DescrptSeR":
         data = data.copy()
+        check_version_compatibility(data.pop("@version", 1), 1, 1)
         variables = data.pop("@variables")
         embeddings = data.pop("embeddings")
         env_mat = data.pop("env_mat")
@@ -314,3 +388,17 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
         obj["dstd"] = t_cvt(variables["dstd"])
         obj.filter_layers = NetworkCollection.deserialize(embeddings)
         return obj
+
+    @classmethod
+    def update_sel(cls, global_jdata: dict, local_jdata: dict):
+        """Update the selection and perform neighbor statistics.
+
+        Parameters
+        ----------
+        global_jdata : dict
+            The global data, containing the training section
+        local_jdata : dict
+            The local data refer to the current class
+        """
+        local_jdata_cpy = local_jdata.copy()
+        return UpdateSel().update_one_sel(global_jdata, local_jdata_cpy, False)

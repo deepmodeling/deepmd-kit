@@ -62,11 +62,10 @@ class TestDPTest(unittest.TestCase):
         for f in os.listdir("."):
             if f.startswith("model") and f.endswith(".pt"):
                 os.remove(f)
-            if f in ["lcurve.out"]:
+            if f in ["lcurve.out", self.input_json]:
                 os.remove(f)
             if f in ["stat_files"]:
                 shutil.rmtree(f)
-        os.remove(self.input_json)
 
 
 if __name__ == "__main__":

@@ -3,6 +3,7 @@ from typing import (
     Dict,
     List,
     Optional,
+    Tuple,
 )
 
 import torch
@@ -12,10 +13,18 @@ from deepmd.dpmodel import (
 )
 from deepmd.dpmodel.output_def import (
     OutputVariableCategory,
+    OutputVariableOperation,
+    check_operation_applied,
 )
 from deepmd.pt.model.model.transform_output import (
     communicate_extended_output,
     fit_output_to_model_output,
+)
+from deepmd.pt.utils.env import (
+    GLOBAL_PT_ENER_FLOAT_PRECISION,
+    GLOBAL_PT_FLOAT_PRECISION,
+    PRECISION_DICT,
+    RESERVED_PRECISON_DICT,
 )
 from deepmd.pt.utils.nlist import (
     extend_input_and_build_neighbor_list,
@@ -56,13 +65,17 @@ def make_model(T_AtomicModel):
                 *args,
                 **kwargs,
             )
+            self.precision_dict = PRECISION_DICT
+            self.reverse_precision_dict = RESERVED_PRECISON_DICT
+            self.global_pt_float_precision = GLOBAL_PT_FLOAT_PRECISION
+            self.global_pt_ener_float_precision = GLOBAL_PT_ENER_FLOAT_PRECISION
 
         def model_output_def(self):
             """Get the output def for the model."""
-            return ModelOutputDef(self.fitting_output_def())
+            return ModelOutputDef(self.atomic_output_def())
 
         @torch.jit.export
-        def model_output_type(self) -> str:
+        def model_output_type(self) -> List[str]:
             """Get the output type for the model."""
             output_def = self.model_output_def()
             var_defs = output_def.var_defs
@@ -73,12 +86,7 @@ def make_model(T_AtomicModel):
                 # .value is critical for JIT
                 if vv.category == OutputVariableCategory.OUT.value:
                     vars.append(kk)
-            if len(vars) == 1:
-                return vars[0]
-            elif len(vars) == 0:
-                raise ValueError("No valid output type found")
-            else:
-                raise ValueError(f"Multiple valid output types found: {vars}")
+            return vars
 
         # cannot use the name forward. torch script does not work
         def forward_common(
@@ -115,18 +123,22 @@ def make_model(T_AtomicModel):
                 The keys are defined by the `ModelOutputDef`.
 
             """
+            cc, bb, fp, ap, input_prec = self.input_type_cast(
+                coord, box=box, fparam=fparam, aparam=aparam
+            )
+            del coord, box, fparam, aparam
             (
                 extended_coord,
                 extended_atype,
                 mapping,
                 nlist,
             ) = extend_input_and_build_neighbor_list(
-                coord,
+                cc,
                 atype,
                 self.get_rcut(),
                 self.get_sel(),
                 mixed_types=self.mixed_types(),
-                box=box,
+                box=bb,
             )
             model_predict_lower = self.forward_common_lower(
                 extended_coord,
@@ -134,8 +146,8 @@ def make_model(T_AtomicModel):
                 nlist,
                 mapping,
                 do_atomic_virial=do_atomic_virial,
-                fparam=fparam,
-                aparam=aparam,
+                fparam=fp,
+                aparam=ap,
             )
             model_predict = communicate_extended_output(
                 model_predict_lower,
@@ -143,6 +155,7 @@ def make_model(T_AtomicModel):
                 mapping,
                 do_atomic_virial=do_atomic_virial,
             )
+            model_predict = self.output_type_cast(model_predict, input_prec)
             return model_predict
 
         def forward_common_lower(
@@ -186,23 +199,100 @@ def make_model(T_AtomicModel):
             nframes, nall = extended_atype.shape[:2]
             extended_coord = extended_coord.view(nframes, -1, 3)
             nlist = self.format_nlist(extended_coord, extended_atype, nlist)
-            atomic_ret = self.forward_atomic(
-                extended_coord,
+            cc_ext, _, fp, ap, input_prec = self.input_type_cast(
+                extended_coord, fparam=fparam, aparam=aparam
+            )
+            del extended_coord, fparam, aparam
+            atomic_ret = self.forward_common_atomic(
+                cc_ext,
                 extended_atype,
                 nlist,
                 mapping=mapping,
-                fparam=fparam,
-                aparam=aparam,
+                fparam=fp,
+                aparam=ap,
             )
             model_predict = fit_output_to_model_output(
                 atomic_ret,
-                self.fitting_output_def(),
-                extended_coord,
+                self.atomic_output_def(),
+                cc_ext,
                 do_atomic_virial=do_atomic_virial,
             )
+            model_predict = self.output_type_cast(model_predict, input_prec)
             return model_predict
 
-        @torch.jit.export
+        def input_type_cast(
+            self,
+            coord: torch.Tensor,
+            box: Optional[torch.Tensor] = None,
+            fparam: Optional[torch.Tensor] = None,
+            aparam: Optional[torch.Tensor] = None,
+        ) -> Tuple[
+            torch.Tensor,
+            Optional[torch.Tensor],
+            Optional[torch.Tensor],
+            Optional[torch.Tensor],
+            str,
+        ]:
+            """Cast the input data to global float type."""
+            input_prec = self.reverse_precision_dict[coord.dtype]
+            ###
+            ### type checking would not pass jit, convert to coord prec anyway
+            ###
+            # for vv, kk in zip([fparam, aparam], ["frame", "atomic"]):
+            #     if vv is not None and self.reverse_precision_dict[vv.dtype] != input_prec:
+            #         log.warning(
+            #           f"type of {kk} parameter {self.reverse_precision_dict[vv.dtype]}"
+            #           " does not match"
+            #           f" that of the coordinate {input_prec}"
+            #         )
+            _lst: List[Optional[torch.Tensor]] = [
+                vv.to(coord.dtype) if vv is not None else None
+                for vv in [box, fparam, aparam]
+            ]
+            box, fparam, aparam = _lst
+            if (
+                input_prec
+                == self.reverse_precision_dict[self.global_pt_float_precision]
+            ):
+                return coord, box, fparam, aparam, input_prec
+            else:
+                pp = self.global_pt_float_precision
+                return (
+                    coord.to(pp),
+                    box.to(pp) if box is not None else None,
+                    fparam.to(pp) if fparam is not None else None,
+                    aparam.to(pp) if aparam is not None else None,
+                    input_prec,
+                )
+
+        def output_type_cast(
+            self,
+            model_ret: Dict[str, torch.Tensor],
+            input_prec: str,
+        ) -> Dict[str, torch.Tensor]:
+            """Convert the model output to the input prec."""
+            do_cast = (
+                input_prec
+                != self.reverse_precision_dict[self.global_pt_float_precision]
+            )
+            pp = self.precision_dict[input_prec]
+            odef = self.model_output_def()
+            for kk in odef.keys():
+                if kk not in model_ret.keys():
+                    # do not return energy_derv_c if not do_atomic_virial
+                    continue
+                if check_operation_applied(odef[kk], OutputVariableOperation.REDU):
+                    model_ret[kk] = (
+                        model_ret[kk].to(self.global_pt_ener_float_precision)
+                        if model_ret[kk] is not None
+                        else None
+                    )
+                elif do_cast:
+                    model_ret[kk] = (
+                        model_ret[kk].to(pp) if model_ret[kk] is not None else None
+                    )
+            return model_ret
+
         def format_nlist(
             self,
             extended_coord: torch.Tensor,

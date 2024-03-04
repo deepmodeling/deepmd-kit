@@ -53,7 +53,7 @@ class TestSeA(CommonTest, DescriptorTest, unittest.TestCase):
             env_protection,
         ) = self.param
         return {
-            "sel": [10, 10],
+            "sel": [9, 10],
             "rcut_smth": 5.80,
             "rcut": 6.00,
             "neuron": [6, 12, 24],

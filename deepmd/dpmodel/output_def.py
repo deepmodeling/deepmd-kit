@@ -202,6 +202,11 @@ class OutputVariableDef:
     ):
         self.name = name
         self.shape = list(shape)
+        # jit doesn't support math.prod(self.shape)
+        self.output_size = 1
+        len_shape = len(self.shape)
+        for i in range(len_shape):
+            self.output_size *= self.shape[i]
         self.atomic = atomic
         self.reduciable = reduciable
         self.r_differentiable = r_differentiable

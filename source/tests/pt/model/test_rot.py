@@ -17,8 +17,10 @@ from deepmd.pt.utils import (
 from .test_permutation import (  # model_dpau,
     model_dpa1,
     model_dpa2,
+    model_hybrid,
     model_se_e2_a,
     model_spin,
+    model_zbl,
 )
 
 dtype = torch.float64
@@ -177,6 +179,27 @@ class TestForceModelDPA2(unittest.TestCase, RotTest):
 class TestEnergyModelSpinSeA(unittest.TestCase, RotTest):
     def setUp(self):
         model_params = copy.deepcopy(model_spin)
+
+
+class TestEnergyModelHybrid(unittest.TestCase, RotTest):
+    def setUp(self):
+        model_params = copy.deepcopy(model_hybrid)
+        self.type_split = True
+        self.model = get_model(model_params).to(env.DEVICE)
+
+
+class TestForceModelHybrid(unittest.TestCase, RotTest):
+    def setUp(self):
+        model_params = copy.deepcopy(model_hybrid)
+        model_params["fitting_net"]["type"] = "direct_force_ener"
+        self.type_split = True
+        self.test_virial = False
+        self.model = get_model(model_params).to(env.DEVICE)
+
+
+class TestEnergyModelZBL(unittest.TestCase, RotTest):
+    def setUp(self):
+        model_params = copy.deepcopy(model_zbl)
         self.type_split = False
         self.test_spin = True
         self.model = get_model(model_params).to(env.DEVICE)

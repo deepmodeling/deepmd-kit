@@ -1,8 +1,14 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import numpy as np
 
+from deepmd.dpmodel.utils.update_sel import (
+    UpdateSel,
+)
 from deepmd.utils.path import (
     DPPath,
+)
+from deepmd.utils.version import (
+    check_version_compatibility,
 )
 
 try:
@@ -197,6 +203,14 @@ class DescrptSeR(NativeOP, BaseDescriptor):
         """
         return False
 
+    def share_params(self, base_class, shared_level, resume=False):
+        """
+        Share the parameters of self to the base_class with shared_level during multitask training.
+        If not start from checkpoint (resume is False),
+        some seperated parameters (e.g. mean and stddev) will be re-calculated across different classes.
+        """
+        raise NotImplementedError
+
     def get_ntypes(self) -> int:
         """Returns the number of element types."""
         return self.ntypes
@@ -270,9 +284,9 @@ class DescrptSeR(NativeOP, BaseDescriptor):
             gg = self.cal_g(tr, tt)
             gg = np.mean(gg, axis=2)
             # nf x nloc x ng x 1
-            xyz_scatter += gg
+            xyz_scatter += gg * (self.sel[tt] / self.nnei)
 
-        res_rescale = 1.0 / 10.0
+        res_rescale = 1.0 / 5.0
         res = xyz_scatter * res_rescale
         res = res.reshape(nf, nloc, -1).astype(GLOBAL_NP_FLOAT_PRECISION)
         return res, None, None, None, ww
@@ -282,6 +296,7 @@ class DescrptSeR(NativeOP, BaseDescriptor):
         return {
             "@class": "Descriptor",
             "type": "se_r",
+            "@version": 1,
             "rcut": self.rcut,
             "rcut_smth": self.rcut_smth,
             "sel": self.sel,
@@ -307,6 +322,7 @@ class DescrptSeR(NativeOP, BaseDescriptor):
     def deserialize(cls, data: dict) -> "DescrptSeR":
         """Deserialize from dict."""
         data = copy.deepcopy(data)
+        check_version_compatibility(data.pop("@version", 1), 1, 1)
         data.pop("@class", None)
         data.pop("type", None)
         variables = data.pop("@variables")
@@ -319,3 +335,17 @@ class DescrptSeR(NativeOP, BaseDescriptor):
         obj.embeddings = NetworkCollection.deserialize(embeddings)
         obj.env_mat = EnvMat.deserialize(env_mat)
         return obj
+
+    @classmethod
+    def update_sel(cls, global_jdata: dict, local_jdata: dict):
+        """Update the selection and perform neighbor statistics.
+
+        Parameters
+        ----------
+        global_jdata : dict
+            The global data, containing the training section
+        local_jdata : dict
+            The local data refer to the current class
+        """
+        local_jdata_cpy = local_jdata.copy()
+        return UpdateSel().update_one_sel(global_jdata, local_jdata_cpy, False)

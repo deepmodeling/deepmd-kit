@@ -4,17 +4,10 @@ from copy import (
 )
 
 from deepmd.pt.model.descriptor import (
-    DescrptDPA1,
-    DescrptDPA2,
-    DescrptSeA,
-)
-from deepmd.pt.model.network.network import (
-    TypeEmbedNet,
+    BaseDescriptor,
 )
 from deepmd.pt.model.task import (
-    EnergyFittingNet,
-    EnergyFittingNetDirect,
-    FittingNetAttenLcc,
+    BaseFitting,
 )
 
 
@@ -37,9 +30,68 @@ def preprocess_shared_params(model_config):
             - "shared_level": Shared level (int) of this item in this model.
                 Lower for more params to share, 0 means to share all params in this item.
             This list are sorted by "shared_level".
+    For example, if one has `model_config` like this:
+    "model": {
+        "shared_dict": {
+            "my_type_map": ["foo", "bar"],
+            "my_des1": {
+                "type": "se_e2_a",
+                "neuron": [10, 20, 40]
+                },
+        },
+        "model_dict": {
+            "model_1": {
+                "type_map": "my_type_map",
+                "descriptor": "my_des1",
+                "fitting_net": {
+                    "neuron": [100, 100, 100]
+                }
+            },
+            "model_2": {
+                "type_map": "my_type_map",
+                "descriptor": "my_des1",
+                "fitting_net": {
+                    "neuron": [100, 100, 100]
+                }
+            }
+            "model_3": {
+                "type_map": "my_type_map",
+                "descriptor": "my_des1:1",
+                "fitting_net": {
+                    "neuron": [100, 100, 100]
+                }
+            }
+        }
+    }
+    The above config will init three model branches named `model_1` and `model_2` and `model_3`,
+    in which:
+        - `model_2` and `model_3` will have the same `type_map` as that in `model_1`.
+        - `model_2` will share all the parameters of `descriptor` with `model_1`,
+        while `model_3` will share part of parameters of `descriptor` with `model_1`
+        on human-defined share-level `1` (default is `0`, meaning share all the parameters).
+        - `model_1`, `model_2` and `model_3` have three different `fitting_net`s.
+    The returned `model_config` will automatically fulfill the input `model_config` as if there's no sharing,
+    and the `shared_links` will keep all the sharing information with looking:
+    {
+    'my_des1': {
+        'type': 'DescrptSeA',
+        'links': [
+            {'model_key': 'model_1',
+            'shared_type': 'descriptor',
+            'shared_level': 0},
+            {'model_key': 'model_2',
+            'shared_type': 'descriptor',
+            'shared_level': 0},
+            {'model_key': 'model_3',
+            'shared_type': 'descriptor',
+            'shared_level': 1}
+            ]
+        }
+    }
+
     """
     assert "model_dict" in model_config, "only multi-task model can use this method!"
-    supported_types = ["type_map", "type_embedding", "descriptor", "fitting_net"]
+    supported_types = ["type_map", "descriptor", "fitting_net"]
     shared_dict = model_config.get("shared_dict", {})
     shared_links = {}
     type_map_keys = []
@@ -98,32 +150,9 @@ def preprocess_shared_params(model_config):
 
 
 def get_class_name(item_key, item_params):
-    if item_key == "type_embedding":
-        return TypeEmbedNet.__name__
-    elif item_key == "descriptor":
-        item_type = item_params.get("type", "se_e2_a")
-        if item_type == "se_e2_a":
-            return DescrptSeA.__name__
-        elif item_type in ["se_atten", "dpa1"]:
-            return DescrptDPA1.__name__
-        elif item_type in ["dpa2"]:
-            return DescrptDPA2.__name__
-        # todo add support for other combination
-        # elif item_type == "gaussian_lcc":
-        #     return DescrptGaussianLcc.__name__
-        # elif item_type == "hybrid":
-        #     return DescrptHybrid.__name__
-        else:
-            raise RuntimeError(f"Unknown descriptor type {item_type}")
+    if item_key == "descriptor":
+        return BaseDescriptor.get_class_by_type(item_params.get("type", "se_e2_a"))
     elif item_key == "fitting_net":
-        item_type = item_params.get("type", "ener")
-        if item_type == "ener":
-            return EnergyFittingNet.__name__
-        elif item_type in ["direct_force", "direct_force_ener"]:
-            return EnergyFittingNetDirect.__name__
-        elif item_type == "atten_vec_lcc":
-            return FittingNetAttenLcc.__name__
-        else:
-            raise RuntimeError(f"Unknown fitting_net type {item_type}")
+        return BaseFitting.get_class_by_type(item_params.get("type", "ener"))
     else:
         raise RuntimeError(f"Unknown class_name type {item_key}")

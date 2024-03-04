@@ -36,8 +36,17 @@ def make_base_atomic_model(
 
         @abstractmethod
         def fitting_output_def(self) -> FittingOutputDef:
-            """Get the fitting output def."""
+            """Get the output def of developer implemented atomic models."""
             pass
+
+        def atomic_output_def(self) -> FittingOutputDef:
+            """Get the output def of the atomic model.
+
+            By default it is the same as FittingOutputDef, but it
+            allows model level wrapper of the output defined by the developer.
+
+            """
+            return self.fitting_output_def()
 
         @abstractmethod
         def get_rcut(self) -> float:
@@ -47,6 +56,16 @@ def make_base_atomic_model(
         @abstractmethod
         def get_type_map(self) -> Optional[List[str]]:
             """Get the type map."""
+
+        def get_ntypes(self) -> int:
+            """Get the number of atom types."""
+            tmap = self.get_type_map()
+            if tmap is not None:
+                return len(tmap)
+            else:
+                raise ValueError(
+                    "cannot infer the number of types from a None type map"
+                )
 
         @abstractmethod
         def get_sel(self) -> List[int]:

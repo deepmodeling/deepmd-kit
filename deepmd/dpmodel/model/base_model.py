@@ -89,7 +89,7 @@ def make_base_model() -> Type[object]:
             """
 
         @abstractmethod
-        def model_output_type(self) -> str:
+        def model_output_type(self) -> List[str]:
             """Get the output type for the model."""
 
         @abstractmethod
@@ -138,6 +138,21 @@ def make_base_model() -> Type[object]:
         def get_nsel(self) -> int:
             """Returns the total number of selected neighboring atoms in the cut-off radius."""
             pass
+
+        @classmethod
+        @abstractmethod
+        def update_sel(cls, global_jdata: dict, local_jdata: dict):
+            """Update the selection and perform neighbor statistics.
+
+            Parameters
+            ----------
+            global_jdata : dict
+                The global data, containing the training section
+            local_jdata : dict
+                The local data refer to the current class
+            """
+            cls = cls.get_class_by_type(local_jdata.get("type", "standard"))
+            return cls.update_sel(global_jdata, local_jdata)
 
     return BaseBaseModel
 

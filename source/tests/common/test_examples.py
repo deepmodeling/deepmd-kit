@@ -33,6 +33,8 @@ input_files = (
     p_examples / "nopbc" / "train" / "input.json",
     p_examples / "water_tensor" / "dipole" / "dipole_input.json",
     p_examples / "water_tensor" / "polar" / "polar_input.json",
+    p_examples / "water_tensor" / "dipole" / "dipole_input_torch.json",
+    p_examples / "water_tensor" / "polar" / "polar_input_torch.json",
     p_examples / "water_multi_task" / "ener_dipole" / "input.json",
     p_examples / "fparam" / "train" / "input.json",
     p_examples / "fparam" / "train" / "input_aparam.json",
@@ -42,6 +44,9 @@ input_files = (
     p_examples / "dprc" / "normal" / "input.json",
     p_examples / "dprc" / "pairwise" / "input.json",
     p_examples / "dprc" / "generalized_force" / "input.json",
+    p_examples / "water" / "se_e2_a" / "input_torch.json",
+    p_examples / "water" / "se_atten" / "input_torch.json",
+    p_examples / "water" / "dpa2" / "input_torch.json",
 )
 
 

@@ -43,6 +43,7 @@ from deepmd.utils.argcheck import (
     ("float64", "float32"),  # precision
     (True, False),  # mixed_types
     (0, 1),  # numb_fparam
+    ([], [-12345.6, None]),  # atom_ener
 )
 class TestEner(CommonTest, FittingTest, unittest.TestCase):
     @property
@@ -52,6 +53,7 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
             precision,
             mixed_types,
             numb_fparam,
+            atom_ener,
         ) = self.param
         return {
             "neuron": [5, 5, 5],
@@ -59,6 +61,7 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
             "precision": precision,
             "numb_fparam": numb_fparam,
             "seed": 20240217,
+            "atom_ener": atom_ener,
         }
 
     @property
@@ -68,6 +71,7 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
             precision,
             mixed_types,
             numb_fparam,
+            atom_ener,
         ) = self.param
         # TODO: mixed_types
         return mixed_types or CommonTest.skip_pt
@@ -79,6 +83,7 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
             precision,
             mixed_types,
             numb_fparam,
+            atom_ener,
         ) = self.param
         return CommonTest.skip_pt
 
@@ -105,6 +110,7 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
             precision,
             mixed_types,
             numb_fparam,
+            atom_ener,
         ) = self.param
         return {
             "ntypes": self.ntypes,
@@ -118,6 +124,7 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
             precision,
             mixed_types,
             numb_fparam,
+            atom_ener,
         ) = self.param
         return self.build_tf_fitting(
             obj,
@@ -134,6 +141,7 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
             precision,
             mixed_types,
             numb_fparam,
+            atom_ener,
         ) = self.param
         return (
             pt_obj(
@@ -154,6 +162,7 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
             precision,
             mixed_types,
             numb_fparam,
+            atom_ener,
         ) = self.param
         return dp_obj(
             self.inputs,
@@ -175,6 +184,7 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
             precision,
             mixed_types,
             numb_fparam,
+            atom_ener,
         ) = self.param
         if precision == "float64":
             return 1e-10
@@ -191,6 +201,7 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
             precision,
             mixed_types,
             numb_fparam,
+            atom_ener,
         ) = self.param
         if precision == "float64":
             return 1e-10

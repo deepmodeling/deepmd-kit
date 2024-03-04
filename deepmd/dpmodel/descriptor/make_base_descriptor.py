@@ -4,8 +4,10 @@ from abc import (
     abstractmethod,
 )
 from typing import (
+    Callable,
     List,
     Optional,
+    Union,
 )
 
 from deepmd.common import (
@@ -84,8 +86,19 @@ def make_base_descriptor(
             """
             pass
 
+        @abstractmethod
+        def share_params(self, base_class, shared_level, resume=False):
+            """
+            Share the parameters of self to the base_class with shared_level during multitask training.
+            If not start from checkpoint (resume is False),
+            some seperated parameters (e.g. mean and stddev) will be re-calculated across different classes.
+            """
+            pass
+
         def compute_input_stats(
-            self, merged: List[dict], path: Optional[DPPath] = None
+            self,
+            merged: Union[Callable[[], List[dict]], List[dict]],
+            path: Optional[DPPath] = None,
         ):
             """Update mean and stddev for descriptor elements."""
             raise NotImplementedError
@@ -123,6 +136,22 @@ def make_base_descriptor(
             if cls is BD:
                 return BD.get_class_by_type(data["type"]).deserialize(data)
             raise NotImplementedError("Not implemented in class %s" % cls.__name__)
+
+        @classmethod
+        @abstractmethod
+        def update_sel(cls, global_jdata: dict, local_jdata: dict):
+            """Update the selection and perform neighbor statistics.
+
+            Parameters
+            ----------
+            global_jdata : dict
+                The global data, containing the training section
+            local_jdata : dict
+                The local data refer to the current class
+            """
+            # call subprocess
+            cls = cls.get_class_by_type(j_get_type(local_jdata, cls.__name__))
+            return cls.update_sel(global_jdata, local_jdata)
 
     setattr(BD, fwd_method_name, BD.fwd)
     delattr(BD, "fwd")
