@@ -232,7 +232,7 @@ class PairTabAtomicModel(torch.nn.Module, BaseAtomicModel):
         )
         self.bias_atom_e.copy_(
             torch.tensor(bias_atom_e, device=env.DEVICE).view(
-                [self.ntypes, self.dim_out]
+                [self.ntypes, 1]
             )
         )
 
