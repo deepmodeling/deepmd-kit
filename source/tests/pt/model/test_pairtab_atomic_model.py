@@ -31,8 +31,10 @@ class TestPairTab(unittest.TestCase):
                 [0.02, 0.25, 0.4, 0.75],
             ]
         )
-        self.type_map = ['H', "O"]
-        self.model = PairTabAtomicModel(tab_file=file_path, rcut=0.02, sel=2, type_map=self.type_map)
+        self.type_map = ["H", "O"]
+        self.model = PairTabAtomicModel(
+            tab_file=file_path, rcut=0.02, sel=2, type_map=self.type_map
+        )
 
         self.extended_coord = torch.tensor(
             [
@@ -61,7 +63,6 @@ class TestPairTab(unittest.TestCase):
         self.nlist = torch.tensor(
             [[[1, 2], [0, 2]], [[1, 2], [0, 3]]], device=env.DEVICE
         )
-        
 
     def test_without_mask(self):
         result = self.model.forward_atomic(
@@ -227,7 +228,9 @@ class TestPairTabTwoAtoms(unittest.TestCase):
                 device=env.DEVICE,
             )
 
-            model = PairTabAtomicModel(tab_file=file_path, rcut=rcut, sel=2, type_map=["H"])
+            model = PairTabAtomicModel(
+                tab_file=file_path, rcut=rcut, sel=2, type_map=["H"]
+            )
             results.append(
                 model.forward_atomic(extended_coord, extended_atype, nlist)["energy"]
             )

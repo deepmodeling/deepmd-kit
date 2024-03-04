@@ -32,7 +32,6 @@ from deepmd.utils.finetune import (
 from .model.test_permutation import (
     model_dpa2,
     model_se_e2_a,
-    model_zbl,
 )
 
 
@@ -135,6 +134,7 @@ class TestEnergyModelSeA(unittest.TestCase, FinetuneTest):
 
     def tearDown(self) -> None:
         FinetuneTest.tearDown(self)
+
 
 ## Disabled for now.
 # class TestEnergyZBLModelSeA(unittest.TestCase, FinetuneTest):

@@ -17,9 +17,6 @@ from deepmd.dpmodel import (
 from deepmd.pt.utils import (
     env,
 )
-from deepmd.pt.utils.utils import (
-    to_numpy_array,
-)
 from deepmd.pt.utils.stat import (
     compute_output_stats,
 )
@@ -70,7 +67,14 @@ class PairTabAtomicModel(torch.nn.Module, BaseAtomicModel):
     """
 
     def __init__(
-        self, tab_file: str, rcut: float, sel: Union[int, List[int]], type_map: List[str], rcond: Optional[float] = None, atom_ener: Optional[List[float]] = None, **kwargs
+        self,
+        tab_file: str,
+        rcut: float,
+        sel: Union[int, List[int]],
+        type_map: List[str],
+        rcond: Optional[float] = None,
+        atom_ener: Optional[List[float]] = None,
+        **kwargs,
     ):
         torch.nn.Module.__init__(self)
         self.model_def_script = ""
@@ -97,11 +101,15 @@ class PairTabAtomicModel(torch.nn.Module, BaseAtomicModel):
                 torch.from_numpy(tab_data).reshape(ntypes_tab, ntypes_tab, nspline, 4),
             )
             if self.ntypes != ntypes_tab:
-                raise ValueError("The `type_map` provided does not match the number of columns in the table.")
+                raise ValueError(
+                    "The `type_map` provided does not match the number of columns in the table."
+                )
         else:
             self.register_buffer("tab_info", None)
             self.register_buffer("tab_data", None)
-        self.bias_atom_e = torch.zeros(self.ntypes,1, dtype=env.GLOBAL_PT_ENER_FLOAT_PRECISION, device=env.DEVICE)
+        self.bias_atom_e = torch.zeros(
+            self.ntypes, 1, dtype=env.GLOBAL_PT_ENER_FLOAT_PRECISION, device=env.DEVICE
+        )
 
         # self.model_type = "ener"
         # self.model_version = MODEL_VERSION ## this shoud be in the parent class
@@ -169,7 +177,7 @@ class PairTabAtomicModel(torch.nn.Module, BaseAtomicModel):
                 "sel": self.sel,
                 "type_map": self.type_map,
                 "rcond": self.rcond,
-                "atom_ener": self.atom_ener
+                "atom_ener": self.atom_ener,
             }
         )
         return dd
@@ -220,10 +228,7 @@ class PairTabAtomicModel(torch.nn.Module, BaseAtomicModel):
 
         """
         bias_atom_e = compute_output_stats(
-            merged,
-            stat_file_path,
-            self.rcond,
-            self.atom_ener
+            merged, stat_file_path, self.rcond, self.atom_ener
         )
         self.bias_atom_e.copy_(
             torch.tensor(bias_atom_e, device=env.DEVICE).view(

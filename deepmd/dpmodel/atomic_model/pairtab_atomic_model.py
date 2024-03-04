@@ -53,7 +53,12 @@ class PairTabAtomicModel(BaseAtomicModel):
     """
 
     def __init__(
-        self, tab_file: str, rcut: float, sel: Union[int, List[int]], type_map: List[str], **kwargs
+        self,
+        tab_file: str,
+        rcut: float,
+        sel: Union[int, List[int]],
+        type_map: List[str],
+        **kwargs,
     ):
         super().__init__()
         self.tab_file = tab_file
@@ -68,7 +73,9 @@ class PairTabAtomicModel(BaseAtomicModel):
             nspline, ntypes_tab = self.tab_info[-2:].astype(int)
             self.tab_data = self.tab_data.reshape(ntypes_tab, ntypes_tab, nspline, 4)
             if self.ntypes != ntypes_tab:
-                raise ValueError("The `type_map` provided does not match the number of columns in the table.")
+                raise ValueError(
+                    "The `type_map` provided does not match the number of columns in the table."
+                )
         else:
             self.tab_info, self.tab_data = None, None
 

@@ -30,9 +30,6 @@ from deepmd.pt.utils import (
 from deepmd.pt.utils.env import (
     DEFAULT_PRECISION,
 )
-from deepmd.pt.utils.utils import (
-    to_numpy_array,
-)
 from deepmd.pt.utils.stat import (
     compute_output_stats,
 )
@@ -165,10 +162,7 @@ class InvarFitting(GeneralFitting):
 
         """
         bias_atom_e = compute_output_stats(
-            merged,
-            stat_file_path,
-            self.rcond,
-            self.atom_ener
+            merged, stat_file_path, self.rcond, self.atom_ener
         )
         self.bias_atom_e.copy_(
             torch.tensor(bias_atom_e, device=env.DEVICE).view(

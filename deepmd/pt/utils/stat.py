@@ -1,20 +1,19 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
-
-import torch
 from typing import (
     Callable,
-    Dict,
     List,
     Optional,
     Union,
 )
-from deepmd.utils.out_stat import (
-    compute_stats_from_redu,
-)
+
+import torch
 
 from deepmd.pt.utils.utils import (
     dict_to_device,
+)
+from deepmd.utils.out_stat import (
+    compute_stats_from_redu,
 )
 from deepmd.utils.path import (
     DPPath,
@@ -64,13 +63,14 @@ def make_stat_input(datasets, dataloaders, nbatches):
         lst.append(sys_stat)
     return lst
 
+
 def compute_output_stats(
-        self,
-        merged: Union[Callable[[], List[dict]], List[dict]],
-        stat_file_path: Optional[DPPath] = None,
-        rcond: Optional[float] = None,
-        atom_ener: Optional[List[float]] = None
-    ):
+    self,
+    merged: Union[Callable[[], List[dict]], List[dict]],
+    stat_file_path: Optional[DPPath] = None,
+    rcond: Optional[float] = None,
+    atom_ener: Optional[List[float]] = None,
+):
     """
     Compute the output statistics (e.g. energy bias) for the fitting net from packed data.
 
