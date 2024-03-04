@@ -70,7 +70,6 @@ def make_stat_input(datasets, dataloaders, nbatches):
 
 
 def compute_output_stats(
-    self,
     merged: Union[Callable[[], List[dict]], List[dict]],
     stat_file_path: Optional[DPPath] = None,
     rcond: Optional[float] = None,
