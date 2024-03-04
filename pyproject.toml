@@ -152,7 +152,7 @@ environment-pass = [
     "DP_VARIANT",
     "CUDA_VERSION",
     "DP_PKG_NAME",
-    "SETUPTOOLS_SCM_PRETEND_VERSION_FOR_DEEPMD-KIT-CU11",
+    "SETUPTOOLS_SCM_PRETEND_VERSION",
 ]
 environment = { PIP_PREFER_BINARY="1", DP_LAMMPS_VERSION="stable_2Aug2023_update3", DP_ENABLE_IPI="1", MPI_HOME="/usr/lib64/mpich", PATH="/usr/lib64/mpich/bin:$PATH" }
 before-all = [
