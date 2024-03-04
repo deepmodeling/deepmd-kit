@@ -340,7 +340,7 @@ class DPZBLLinearAtomicModel(LinearAtomicModel):
             The dictionary of paths to the statistics files.
         """
         self.dp_model.compute_or_load_stat(sampled_func, stat_file_path)
-        self.zbl_model.compute_output_stats(sampled_func, stat_file_path)
+        self.zbl_model.compute_or_load_stat(sampled_func, stat_file_path)
 
     def change_energy_bias(self):
         # need to implement

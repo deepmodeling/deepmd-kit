@@ -171,12 +171,10 @@ class TestIntegration(unittest.TestCase, TestCaseSingleFrameWithNlist):
     def test_jit(self):
         md1 = torch.jit.script(self.md1)
         self.assertEqual(md1.get_rcut(), self.rcut)
-        with self.assertRaises(torch.jit.Error):
-            self.assertEqual(md1.get_type_map(), ["foo", "bar"])
+        self.assertEqual(md1.get_type_map(), ["foo", "bar"])
         md3 = torch.jit.script(self.md3)
         self.assertEqual(md3.get_rcut(), self.rcut)
-        with self.assertRaises(torch.jit.Error):
-            self.assertEqual(md3.get_type_map(), ["foo", "bar"])
+        self.assertEqual(md3.get_type_map(), ["foo", "bar"])
 
 
 if __name__ == "__main__":

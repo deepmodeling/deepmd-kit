@@ -5,9 +5,15 @@ from abc import (
     abstractmethod,
 )
 from typing import (
+    Callable,
     Dict,
     List,
     Optional,
+    Union,
+)
+
+from deepmd.utils.path import (
+    DPPath,
 )
 
 from deepmd.dpmodel.output_def import (
@@ -116,6 +122,15 @@ def make_base_atomic_model(
 
             """
             pass
+
+        @abstractmethod
+        def compute_or_load_stat(
+            self,
+            merged: Union[Callable[[], List[dict]], List[dict]],
+            stat_file_path: Optional[DPPath] = None,
+        ):
+            pass
+
 
         @abstractmethod
         def fwd(
