@@ -50,7 +50,7 @@ class DPAtomicModel(torch.nn.Module, BaseAtomicModel):
         self,
         descriptor,
         fitting,
-        type_map: Optional[List[str]],
+        type_map: List[str],
         **kwargs,
     ):
         torch.nn.Module.__init__(self)
