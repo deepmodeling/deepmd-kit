@@ -106,6 +106,7 @@ class DescrptSeR(NativeOP, BaseDescriptor):
         trainable: bool = True,
         type_one_side: bool = True,
         exclude_types: List[List[int]] = [],
+        env_protection: float = 0.0,
         set_davg_zero: bool = False,
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
@@ -133,6 +134,7 @@ class DescrptSeR(NativeOP, BaseDescriptor):
         self.precision = precision
         self.spin = spin
         self.emask = PairExcludeMask(self.ntypes, self.exclude_types)
+        self.env_protection = env_protection
 
         in_dim = 1  # not considiering type embedding
         self.embeddings = NetworkCollection(
@@ -150,7 +152,7 @@ class DescrptSeR(NativeOP, BaseDescriptor):
                 self.resnet_dt,
                 self.precision,
             )
-        self.env_mat = EnvMat(self.rcut, self.rcut_smth)
+        self.env_mat = EnvMat(self.rcut, self.rcut_smth, protection=self.env_protection)
         self.nnei = np.sum(self.sel)
         self.davg = np.zeros(
             [self.ntypes, self.nnei, 1], dtype=PRECISION_DICT[self.precision]
@@ -305,6 +307,7 @@ class DescrptSeR(NativeOP, BaseDescriptor):
             "trainable": self.trainable,
             "type_one_side": self.type_one_side,
             "exclude_types": self.exclude_types,
+            "env_protection": self.env_protection,
             "set_davg_zero": self.set_davg_zero,
             "activation_function": self.activation_function,
             # make deterministic

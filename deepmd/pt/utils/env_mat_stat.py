@@ -139,6 +139,7 @@ class EnvMatStatSe(EnvMatStat):
                 # TODO: export rcut_smth from DescriptorBlock
                 self.descriptor.rcut_smth,
                 radial_only,
+                protection=self.descriptor.env_protection,
             )
             # reshape to nframes * nloc at the atom level,
             # so nframes/mixed_type do not matter

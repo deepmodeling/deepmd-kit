@@ -36,6 +36,7 @@ def get_standard_model(data: dict) -> DPModel:
         fitting = EnergyFittingNet(
             ntypes=descriptor.get_ntypes(),
             dim_descrpt=descriptor.get_dim_out(),
+            mixed_types=descriptor.mixed_types(),
             **data["fitting_net"],
         )
     else:
@@ -57,49 +58,25 @@ def get_spin_model(data: dict) -> SpinModel:
     data : dict
         The data to construct the model.
     """
-    descriptor_type = data["descriptor"].pop("type")
-    fitting_type = data["fitting_net"].pop("type")
+    # include virtual spin and placeholder types
     data["type_map"] += [item + "_spin" for item in data["type_map"]]
-    ntypes = len(data["type_map"])  # include virtual spin and placeholder types
     spin = Spin(
         use_spin=data["spin"]["use_spin"],
         virtual_scale=data["spin"]["virtual_scale"],
     )
     pair_exclude_types = spin.get_pair_exclude_types(
-        exclude_types=data["descriptor"].get("exclude_types", None)
+        exclude_types=data.get("pair_exclude_types", None)
     )
-    data["descriptor"]["exclude_types"] = pair_exclude_types
+    data["pair_exclude_types"] = pair_exclude_types
+    atom_exclude_types = spin.get_atom_exclude_types(
+        exclude_types=data.get("atom_exclude_types", None)
+    )
+    data["atom_exclude_types"] = atom_exclude_types
     if "env_protection" not in data["descriptor"]:
         data["descriptor"]["env_protection"] = 1e-6
-    if descriptor_type in ["se_e2_a"]:
+    if data["descriptor"]["type"] in ["se_e2_a"]:
         data["descriptor"]["sel"] += data["descriptor"]["sel"]
-
-    atom_exclude_types = spin.get_atom_exclude_types(
-        exclude_types=data["fitting_net"].get("exclude_types", None)
-    )
-    data["fitting_net"]["exclude_types"] = atom_exclude_types
-    data["descriptor"]["ntypes"] = ntypes
-    if descriptor_type == "se_e2_a":
-        data["descriptor"].pop("ntypes")
-        descriptor = DescrptSeA(
-            **data["descriptor"],
-        )
-    else:
-        raise ValueError(f"Unknown descriptor type {descriptor_type}")
-    if fitting_type == "ener":
-        fitting = EnergyFittingNet(
-            ntypes=descriptor.get_ntypes(),
-            dim_descrpt=descriptor.get_dim_out(),
-            mixed_types=descriptor.mixed_types(),
-            **data["fitting_net"],
-        )
-    else:
-        raise ValueError(f"Unknown fitting type {fitting_type}")
-    backbone_model = DPModel(
-        descriptor=descriptor,
-        fitting=fitting,
-        type_map=data["type_map"],
-    )
+    backbone_model = get_standard_model(data)
     return SpinModel(backbone_model=backbone_model, spin=spin)
 
 
@@ -111,10 +88,7 @@ def get_model(data: dict):
     data : dict
         The data to construct the model.
     """
-    model_type = data.get("type", "standard")
-    if model_type == "standard":
-        return get_standard_model(data)
-    elif model_type == "spin":
+    if "spin" in data:
         return get_spin_model(data)
     else:
-        raise ValueError(f"unknown model type: {model_type}")
+        return get_standard_model(data)

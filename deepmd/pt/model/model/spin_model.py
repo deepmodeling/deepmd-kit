@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import functools
 from typing import (
     Dict,
     List,
@@ -8,7 +9,6 @@ from typing import (
 import torch
 
 from deepmd.pt.utils.utils import (
-    dict_to_device,
     to_torch_tensor,
 )
 from deepmd.utils.path import (
@@ -289,7 +289,7 @@ class SpinModel(torch.nn.Module):
 
     def compute_or_load_stat(
         self,
-        sampled,
+        sampled_func,
         stat_file_path: Optional[DPPath] = None,
     ):
         """
@@ -302,31 +302,36 @@ class SpinModel(torch.nn.Module):
 
         Parameters
         ----------
-        sampled
-            The sampled data frames from different data systems.
+        sampled_func
+            The lazy sampled function to get data frames from different data systems.
         stat_file_path
             The dictionary of paths to the statistics files.
         """
-        spin_sampled = []
-        for sys in sampled:
-            dict_to_device(sys)
-            coord_updated, atype_updated = self.process_spin_input(
-                sys["coord"], sys["atype"], sys["spin"]
-            )
-            tmp_dict = {
-                "coord": coord_updated,
-                "atype": atype_updated,
-            }
-            if "natoms" in sys:
-                natoms = sys["natoms"]
-                tmp_dict["natoms"] = torch.cat(
-                    [2 * natoms[:, :2], natoms[:, 2:], natoms[:, 2:]], dim=-1
+
+        @functools.lru_cache
+        def spin_sampled_func():
+            sampled = sampled_func()
+            spin_sampled = []
+            for sys in sampled:
+                coord_updated, atype_updated = self.process_spin_input(
+                    sys["coord"], sys["atype"], sys["spin"]
                 )
-            for item_key in sys.keys():
-                if item_key not in ["coord", "atype", "spin", "natoms"]:
-                    tmp_dict[item_key] = sys[item_key]
-            spin_sampled.append(tmp_dict)
-        self.backbone_model.compute_or_load_stat(spin_sampled, stat_file_path)
+                tmp_dict = {
+                    "coord": coord_updated,
+                    "atype": atype_updated,
+                }
+                if "natoms" in sys:
+                    natoms = sys["natoms"]
+                    tmp_dict["natoms"] = torch.cat(
+                        [2 * natoms[:, :2], natoms[:, 2:], natoms[:, 2:]], dim=-1
+                    )
+                for item_key in sys.keys():
+                    if item_key not in ["coord", "atype", "spin", "natoms"]:
+                        tmp_dict[item_key] = sys[item_key]
+                spin_sampled.append(tmp_dict)
+            return spin_sampled
+
+        self.backbone_model.compute_or_load_stat(spin_sampled_func, stat_file_path)
 
     def forward_common(
         self,
@@ -348,36 +353,30 @@ class SpinModel(torch.nn.Module):
             aparam=aparam,
             do_atomic_virial=do_atomic_virial,
         )
-        if self.backbone_model.fitting_net is not None:
-            var_name = self.backbone_model.fitting_net.var_name
-            model_ret[f"{var_name}"] = torch.split(
-                model_ret[f"{var_name}"], [nloc, nloc], dim=1
-            )[0]
-            if self.backbone_model.do_grad_r(var_name):
-                force_all = model_ret[f"{var_name}_derv_r"]
-                (
-                    model_ret[f"{var_name}_derv_r"],
-                    model_ret[f"{var_name}_derv_r_mag"],
-                    model_ret["mask_mag"],
-                ) = self.process_spin_output(atype, force_all)
-            else:
-                force_all = model_ret["dforce"]
-                (
-                    model_ret["dforce_real"],
-                    model_ret["dforce_mag"],
-                    model_ret["mask_mag"],
-                ) = self.process_spin_output(atype, force_all)
-            if self.backbone_model.do_grad_c(var_name) and do_atomic_virial:
-                (
-                    model_ret[f"{var_name}_derv_c"],
-                    model_ret[f"{var_name}_derv_c_mag"],
-                    model_ret["mask_mag"],
-                ) = self.process_spin_output(
-                    atype,
-                    model_ret[f"{var_name}_derv_c"],
-                    add_mag=False,
-                    virtual_scale=False,
-                )
+        model_output_type = self.backbone_model.model_output_type()
+        if "mask" in model_output_type:
+            model_output_type.pop(model_output_type.index("mask"))
+        var_name = model_output_type[0]
+        model_ret[f"{var_name}"] = torch.split(
+            model_ret[f"{var_name}"], [nloc, nloc], dim=1
+        )[0]
+        if self.backbone_model.do_grad_r(var_name):
+            (
+                model_ret[f"{var_name}_derv_r"],
+                model_ret[f"{var_name}_derv_r_mag"],
+                model_ret["mask_mag"],
+            ) = self.process_spin_output(atype, model_ret[f"{var_name}_derv_r"])
+        if self.backbone_model.do_grad_c(var_name) and do_atomic_virial:
+            (
+                model_ret[f"{var_name}_derv_c"],
+                model_ret[f"{var_name}_derv_c_mag"],
+                model_ret["mask_mag"],
+            ) = self.process_spin_output(
+                atype,
+                model_ret[f"{var_name}_derv_c"],
+                add_mag=False,
+                virtual_scale=False,
+            )
         return model_ret
 
     def forward_common_lower(
@@ -409,37 +408,33 @@ class SpinModel(torch.nn.Module):
             aparam=aparam,
             do_atomic_virial=do_atomic_virial,
         )
-        if self.backbone_model.fitting_net is not None:
-            var_name = self.backbone_model.fitting_net.var_name
-            model_ret[f"{var_name}"] = torch.split(
-                model_ret[f"{var_name}"], [nloc, nloc], dim=1
-            )[0]
-            if self.backbone_model.do_grad_r(var_name):
-                force_all = model_ret[f"{var_name}_derv_r"]
-                (
-                    model_ret[f"{var_name}_derv_r"],
-                    model_ret[f"{var_name}_derv_r_mag"],
-                    model_ret["mask_mag"],
-                ) = self.process_spin_output_lower(extended_atype, force_all, nloc)
-            else:
-                force_all = model_ret["dforce"]
-                (
-                    model_ret["dforce_real"],
-                    model_ret["dforce_mag"],
-                    model_ret["mask_mag"],
-                ) = self.process_spin_output_lower(extended_atype, force_all, nloc)
-            if self.backbone_model.do_grad_c(var_name) and do_atomic_virial:
-                (
-                    model_ret[f"{var_name}_derv_c"],
-                    model_ret[f"{var_name}_derv_c_mag"],
-                    model_ret["mask_mag"],
-                ) = self.process_spin_output_lower(
-                    extended_atype,
-                    model_ret[f"{var_name}_derv_c"],
-                    nloc,
-                    add_mag=False,
-                    virtual_scale=False,
-                )
+        model_output_type = self.backbone_model.model_output_type()
+        if "mask" in model_output_type:
+            model_output_type.pop(model_output_type.index("mask"))
+        var_name = model_output_type[0]
+        model_ret[f"{var_name}"] = torch.split(
+            model_ret[f"{var_name}"], [nloc, nloc], dim=1
+        )[0]
+        if self.backbone_model.do_grad_r(var_name):
+            (
+                model_ret[f"{var_name}_derv_r"],
+                model_ret[f"{var_name}_derv_r_mag"],
+                model_ret["mask_mag"],
+            ) = self.process_spin_output_lower(
+                extended_atype, model_ret[f"{var_name}_derv_r"], nloc
+            )
+        if self.backbone_model.do_grad_c(var_name) and do_atomic_virial:
+            (
+                model_ret[f"{var_name}_derv_c"],
+                model_ret[f"{var_name}_derv_c_mag"],
+                model_ret["mask_mag"],
+            ) = self.process_spin_output_lower(
+                extended_atype,
+                model_ret[f"{var_name}_derv_c"],
+                nloc,
+                add_mag=False,
+                virtual_scale=False,
+            )
         return model_ret
 
     def serialize(self) -> dict:

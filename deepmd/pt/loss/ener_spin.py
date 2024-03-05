@@ -1,4 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from typing import (
+    List,
+)
+
 import torch
 import torch.nn.functional as F
 
@@ -10,6 +14,9 @@ from deepmd.pt.utils import (
 )
 from deepmd.pt.utils.env import (
     GLOBAL_PT_FLOAT_PRECISION,
+)
+from deepmd.utils.data import (
+    DataRequirementItem,
 )
 
 
@@ -25,6 +32,10 @@ class EnergySpinLoss(TaskLoss):
         limit_pref_fm=0.0,
         start_pref_v=0.0,
         limit_pref_v=0.0,
+        start_pref_ae: float = 0.0,
+        limit_pref_ae: float = 0.0,
+        start_pref_pf: float = 0.0,
+        limit_pref_pf: float = 0.0,
         use_l1_all: bool = False,
         inference=False,
         **kwargs,
@@ -36,6 +47,10 @@ class EnergySpinLoss(TaskLoss):
         self.has_fr = (start_pref_fr != 0.0 and limit_pref_fr != 0.0) or inference
         self.has_fm = (start_pref_fm != 0.0 and limit_pref_fm != 0.0) or inference
         self.has_v = (start_pref_v != 0.0 and limit_pref_v != 0.0) or inference
+        # TODO need support for atomic energy and atomic pref
+        self.has_ae = (start_pref_ae != 0.0 and limit_pref_ae != 0.0) or inference
+        self.has_pf = (start_pref_pf != 0.0 and limit_pref_pf != 0.0) or inference
+
         self.start_pref_e = start_pref_e
         self.limit_pref_e = limit_pref_e
         self.start_pref_fr = start_pref_fr
@@ -48,18 +63,23 @@ class EnergySpinLoss(TaskLoss):
         self.inference = inference
 
     def forward(self, model_pred, label, natoms, learning_rate, mae=False):
-        """Return loss on loss and force.
+        """Return energy loss with magnetic labels.
 
-        Args:
-        - natoms: Tell atom count.
-        - p_energy: Predicted energy of all atoms.
-        - p_force: Predicted force per atom.
-        - l_energy: Actual energy of all atoms.
-        - l_force: Actual force per atom.
+        Parameters
+        ----------
+        model_pred : dict[str, torch.Tensor]
+            Model predictions.
+        label : dict[str, torch.Tensor]
+            Labels.
+        natoms : int
+            The local atom number.
 
         Returns
         -------
-        - loss: Loss to minimize.
+        loss: torch.Tensor
+            Loss for model to minimize.
+        more_loss: dict[str, torch.Tensor]
+            Other losses for display.
         """
         coef = learning_rate / self.starter_learning_rate
         pref_e = self.limit_pref_e + (self.start_pref_e - self.limit_pref_e) * coef
@@ -166,3 +186,70 @@ class EnergySpinLoss(TaskLoss):
         if not self.inference:
             more_loss["rmse"] = torch.sqrt(loss.detach())
         return loss, more_loss
+
+    @property
+    def label_requirement(self) -> List[DataRequirementItem]:
+        """Return data label requirements needed for this loss calculation."""
+        label_requirement = []
+        if self.has_e:
+            label_requirement.append(
+                DataRequirementItem(
+                    "energy",
+                    ndof=1,
+                    atomic=False,
+                    must=False,
+                    high_prec=True,
+                )
+            )
+        if self.has_fr:
+            label_requirement.append(
+                DataRequirementItem(
+                    "force",
+                    ndof=3,
+                    atomic=True,
+                    must=False,
+                    high_prec=False,
+                )
+            )
+        if self.has_fm:
+            label_requirement.append(
+                DataRequirementItem(
+                    "force_mag",
+                    ndof=3,
+                    atomic=True,
+                    must=False,
+                    high_prec=False,
+                )
+            )
+        if self.has_v:
+            label_requirement.append(
+                DataRequirementItem(
+                    "virial",
+                    ndof=9,
+                    atomic=False,
+                    must=False,
+                    high_prec=False,
+                )
+            )
+        if self.has_ae:
+            label_requirement.append(
+                DataRequirementItem(
+                    "atom_ener",
+                    ndof=1,
+                    atomic=True,
+                    must=False,
+                    high_prec=False,
+                )
+            )
+        if self.has_pf:
+            label_requirement.append(
+                DataRequirementItem(
+                    "atom_pref",
+                    ndof=1,
+                    atomic=True,
+                    must=False,
+                    high_prec=False,
+                    repeat=3,
+                )
+            )
+        return label_requirement
