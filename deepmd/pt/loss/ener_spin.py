@@ -46,8 +46,9 @@ class EnergySpinLoss(TaskLoss):
         self.has_e = (start_pref_e != 0.0 and limit_pref_e != 0.0) or inference
         self.has_fr = (start_pref_fr != 0.0 and limit_pref_fr != 0.0) or inference
         self.has_fm = (start_pref_fm != 0.0 and limit_pref_fm != 0.0) or inference
+
+        # TODO need support for virial, atomic energy and atomic pref
         self.has_v = (start_pref_v != 0.0 and limit_pref_v != 0.0) or inference
-        # TODO need support for atomic energy and atomic pref
         self.has_ae = (start_pref_ae != 0.0 and limit_pref_ae != 0.0) or inference
         self.has_pf = (start_pref_pf != 0.0 and limit_pref_pf != 0.0) or inference
 
@@ -172,17 +173,6 @@ class EnergySpinLoss(TaskLoss):
                 l1_force_mag_loss = l1_force_mag_loss.sum(-1).mean(-1).sum()
                 loss += (pref_fm * l1_force_mag_loss).to(GLOBAL_PT_FLOAT_PRECISION)
 
-        if self.has_v and "virial" in model_pred and "virial" in label:
-            diff_v = label["virial"] - model_pred["virial"].reshape(-1, 9)
-            l2_virial_loss = torch.mean(torch.square(diff_v))
-            if not self.inference:
-                more_loss["l2_virial_loss"] = l2_virial_loss.detach()
-            loss += atom_norm * (pref_v * l2_virial_loss)
-            rmse_v = l2_virial_loss.sqrt() * atom_norm
-            more_loss["rmse_v"] = rmse_v.detach()
-            if mae:
-                mae_v = torch.mean(torch.abs(diff_v)) * atom_norm
-                more_loss["mae_v"] = mae_v.detach()
         if not self.inference:
             more_loss["rmse"] = torch.sqrt(loss.detach())
         return loss, more_loss

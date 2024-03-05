@@ -74,6 +74,7 @@ def get_spin_model(model_params):
     ):
         model_params["descriptor"]["env_protection"] = 1e-6
     if model_params["descriptor"]["type"] in ["se_e2_a"]:
+        # only expand sel for se_e2_a
         model_params["descriptor"]["sel"] += model_params["descriptor"]["sel"]
     backbone_model = get_standard_model(model_params)
     return SpinEnergyModel(backbone_model=backbone_model, spin=spin)

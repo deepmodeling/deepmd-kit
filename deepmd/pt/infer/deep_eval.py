@@ -124,9 +124,9 @@ class DeepEval(DeepEvalBackend):
             self.auto_batch_size = auto_batch_size
         else:
             raise TypeError("auto_batch_size should be bool, int, or AutoBatchSize")
-        self.has_spin_pt = getattr(self.dp.model["Default"], "has_spin", False)
-        if callable(self.has_spin_pt):
-            self.has_spin_pt = self.has_spin_pt()
+        self._has_spin = getattr(self.dp.model["Default"], "has_spin", False)
+        if callable(self._has_spin):
+            self._has_spin = self._has_spin()
 
     def get_rcut(self) -> float:
         """Get the cutoff radius of this model."""
@@ -243,7 +243,7 @@ class DeepEval(DeepEvalBackend):
             coords, atom_types, len(atom_types.shape) > 1
         )
         request_defs = self._get_request_defs(atomic)
-        if "spin" not in kwargs:
+        if "spin" not in kwargs or kwargs["spin"] is None:
             out = self._eval_func(self._eval_model, numb_test, natoms)(
                 coords, cells, atom_types, fparam, aparam, request_defs
             )
@@ -570,6 +570,9 @@ def eval_model(
             dtype=GLOBAL_PT_FLOAT_PRECISION,
             device=DEVICE,
         )
+    has_spin = getattr(model, "has_spin", False)
+    if callable(has_spin):
+        has_spin = has_spin()
     type_input = torch.tensor(atom_types, dtype=torch.long, device=DEVICE)
     box_input = None
     if cells is None:
@@ -596,7 +599,7 @@ def eval_model(
             "box": batch_box,
             "do_atomic_virial": atomic,
         }
-        if getattr(model, "__USE_SPIN_INPUT__", False):
+        if has_spin:
             input_dict["spin"] = batch_spin
         batch_output = model(**input_dict)
         if isinstance(batch_output, tuple):
@@ -723,7 +726,7 @@ def eval_model(
             "force": force_out,
             "virial": virial_out,
         }
-        if getattr(model, "__USE_SPIN_INPUT__", False):
+        if has_spin:
             results_dict["force_mag"] = force_mag_out
         if atomic:
             results_dict["atom_energy"] = atomic_energy_out

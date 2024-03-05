@@ -1,6 +1,5 @@
 {
   "model": {
-    "type": "spin",
     "type_map": [
       "Ni",
       "O"

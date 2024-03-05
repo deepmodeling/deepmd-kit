@@ -194,7 +194,7 @@ class DeepPot(DeepEval):
                 force,
                 virial,
             )
-        if getattr(self.deep_eval, "has_spin_pt", False):
+        if getattr(self.deep_eval, "_has_spin", False):
             force_mag = results["energy_derv_r_mag"].reshape(nframes, natoms, 3)
             mask_mag = results["mask_mag"].reshape(nframes, natoms, 1)
             result = (*list(result), force_mag, mask_mag)

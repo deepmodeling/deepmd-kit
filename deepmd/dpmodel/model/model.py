@@ -77,6 +77,7 @@ def get_spin_model(data: dict) -> SpinModel:
     if "env_protection" not in data["descriptor"]:
         data["descriptor"]["env_protection"] = 1e-6
     if data["descriptor"]["type"] in ["se_e2_a"]:
+        # only expand sel for se_e2_a
         data["descriptor"]["sel"] += data["descriptor"]["sel"]
     backbone_model = get_standard_model(data)
     return SpinModel(backbone_model=backbone_model, spin=spin)

@@ -117,7 +117,7 @@ class DescriptorBlock(torch.nn.Module, ABC, make_plugin_registry("DescriptorBloc
 
     def get_emask(self, nlist: torch.Tensor, atype: torch.Tensor) -> torch.Tensor:
         """
-        Compute the pair-wise type mask for given nlist and atype,
+        Compute the pair-wise type mask for given nlist and atype, for data stat
         with shape same as nlist.
         1 for include and 0 for exclude.
         """

@@ -321,7 +321,7 @@ class DeepEval(ABC):
             neighbor_list=neighbor_list,
             **kwargs,
         )
-        if getattr(self.deep_eval, "has_spin_pt", False) and hasattr(
+        if getattr(self.deep_eval, "_has_spin", False) and hasattr(
             self, "output_def_mag"
         ):
             self.deep_eval.output_def = self.output_def_mag
@@ -529,7 +529,8 @@ class DeepEval(ABC):
     @property
     def has_spin(self) -> bool:
         """Check if the model has spin."""
-        return getattr(self.deep_eval, "has_spin_pt", False)
+        # use _has_spin to differentiate from has_spin form the old tf implementation
+        return getattr(self.deep_eval, "_has_spin", False)
 
     def get_ntypes_spin(self) -> int:
         """Get the number of spin atom types of this model."""

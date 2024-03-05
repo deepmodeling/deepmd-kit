@@ -18,8 +18,6 @@ from deepmd.utils.spin import (
 class SpinModel:
     """A spin model wrapper, with spin input preprocess and output split."""
 
-    __USE_SPIN_INPUT__: bool = True
-
     def __init__(
         self,
         backbone_model,

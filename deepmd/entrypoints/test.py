@@ -393,12 +393,12 @@ def test_ener(
         else:  # pt support for spin
             force_r = force
             test_force_r = test_data["force"][:numb_test]
-            force_m = force_m.reshape(-1, 3)[mask_mag.reshape(-1)].reshape(nframes, -1)
-            test_force_m = (
-                test_data["force_mag"][:numb_test]
-                .reshape(-1, 3)[mask_mag.reshape(-1)]
-                .reshape(nframes, -1)
-            )
+            # The shape of force_m and test_force_m are [-1, 3],
+            # which is designed for mixed_type cases
+            force_m = force_m.reshape(-1, 3)[mask_mag.reshape(-1)]
+            test_force_m = test_data["force_mag"][:numb_test].reshape(-1, 3)[
+                mask_mag.reshape(-1)
+            ]
 
     diff_e = energy - test_data["energy"][:numb_test].reshape([-1, 1])
     mae_e = mae(diff_e)
