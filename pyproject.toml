@@ -238,6 +238,7 @@ select = [
     "NPY", # numpy
     "TID251", # banned-api
     "TID253", # banned-module-level-imports
+    "T20", # ban print
 ]
 
 ignore = [
@@ -283,6 +284,7 @@ banned-module-level-imports = [
 "source/tests/pt/**" = ["TID253"]
 "source/ipi/tests/**" = ["TID253"]
 "source/lmp/tests/**" = ["TID253"]
+"**/*.ipynb" = ["T20"]  # printing in a nb file is expected
 
 [tool.pytest.ini_options]
 markers = "run"

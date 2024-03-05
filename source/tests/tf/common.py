@@ -4,6 +4,7 @@ import glob
 import os
 import pathlib
 import shutil
+import warnings
 
 import dpdata
 import numpy as np
@@ -969,7 +970,7 @@ class DataSystem:
                 )
             chk_ret = self.data_systems[ii].check_test_size(test_size)
             if chk_ret is not None:
-                print(
+                warnings.warn(
                     "WARNNING: system %s required test size %d is larger than the size %d of the dataset %s"
                     % (self.system_dirs[ii], test_size, chk_ret[1], chk_ret[0])
                 )

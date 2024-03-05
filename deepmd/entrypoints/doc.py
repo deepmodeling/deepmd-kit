@@ -17,4 +17,4 @@ def doc_train_input(*, out_type: str = "rst", **kwargs):
         doc_str = gen_json()
     else:
         raise RuntimeError("Unsupported out type %s" % out_type)
-    print(doc_str)
+    print(doc_str)  # noqa: T201
