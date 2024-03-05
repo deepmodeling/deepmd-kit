@@ -119,8 +119,8 @@ class TestIntegration(unittest.TestCase):
             ],
             dtype=int,
         ).reshape([1, self.nloc, sum(self.sel)])
-        self.rcut = 0.4
-        self.rcut_smth = 2.2
+        self.rcut_smth = 0.4
+        self.rcut = 2.2
 
         file_path = "dummy_path"
         mock_loadtxt.return_value = np.array(

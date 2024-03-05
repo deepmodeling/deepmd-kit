@@ -43,8 +43,8 @@ class TestCaseSingleFrameWithNlist:
             ],
             dtype=int,
         ).reshape([1, self.nloc, sum(self.sel)])
-        self.rcut = 0.4
-        self.rcut_smth = 2.2
+        self.rcut_smth = 0.4
+        self.rcut = 2.2
         # permutations
         self.perm = np.array([2, 0, 1, 3], dtype=np.int32)
         inv_perm = np.array([1, 2, 0, 3], dtype=np.int32)
@@ -80,8 +80,8 @@ class TestCaseSingleFrameWithoutNlist:
         self.cell = 2.0 * np.eye(3).reshape([1, 9])
         # sel = [5, 2]
         self.sel = [5, 2]
-        self.rcut = 0.4
-        self.rcut_smth = 2.2
+        self.rcut_smth = 0.4
+        self.rcut = 2.2
 
 
 # to be merged with the tf test case
