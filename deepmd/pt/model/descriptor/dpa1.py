@@ -3,6 +3,7 @@ from typing import (
     Callable,
     List,
     Optional,
+    Tuple,
     Union,
 )
 
@@ -62,7 +63,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         type_one_side: bool = True,
         precision: str = "default",
         trainable: bool = True,
-        exclude_types: Optional[List[List[int]]] = None,
+        exclude_types: List[Tuple[int, int]] = [],
         stripped_type_embedding: bool = False,
         smooth_type_embdding: bool = False,
     ):
@@ -73,8 +74,6 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
             raise NotImplementedError("type_one_side is not supported.")
         if precision != "default" and precision != "float64":
             raise NotImplementedError("precison is not supported.")
-        if exclude_types is not None and exclude_types != []:
-            raise NotImplementedError("exclude_types is not supported.")
         if stripped_type_embedding:
             raise NotImplementedError("stripped_type_embedding is not supported.")
         if smooth_type_embdding:
@@ -103,6 +102,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
             normalize=normalize,
             temperature=temperature,
             return_rot=return_rot,
+            exclude_types=exclude_types,
             env_protection=env_protection,
         )
         self.type_embedding = TypeEmbedNet(ntypes, tebd_dim)

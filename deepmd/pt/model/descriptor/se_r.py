@@ -82,7 +82,8 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
         self.old_impl = False  # this does not support old implementation.
         self.exclude_types = exclude_types
         self.ntypes = len(sel)
-        self.emask = PairExcludeMask(len(sel), exclude_types=exclude_types)
+        # order matters, placed after the assignment of self.ntypes
+        self.reinit_exclude(exclude_types)
         self.env_protection = env_protection
 
         self.sel = sel
@@ -254,6 +255,13 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
             return self.stddev
         else:
             raise KeyError(key)
+
+    def reinit_exclude(
+        self,
+        exclude_types: List[Tuple[int, int]] = [],
+    ):
+        self.exclude_types = exclude_types
+        self.emask = PairExcludeMask(self.ntypes, exclude_types=exclude_types)
 
     def forward(
         self,

@@ -4,6 +4,7 @@ from typing import (
     Dict,
     List,
     Optional,
+    Tuple,
     Union,
 )
 
@@ -25,6 +26,9 @@ from deepmd.pt.utils import (
 )
 from deepmd.pt.utils.env_mat_stat import (
     EnvMatStatSe,
+)
+from deepmd.pt.utils.exclude_mask import (
+    PairExcludeMask,
 )
 from deepmd.utils.env_mat_stat import (
     StatItem,
@@ -61,6 +65,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         normalize=True,
         temperature=None,
         return_rot=False,
+        exclude_types: List[Tuple[int, int]] = [],
         env_protection: float = 0.0,
         type: Optional[str] = None,
     ):
@@ -108,6 +113,8 @@ class DescrptBlockSeAtten(DescriptorBlock):
         self.split_sel = self.sel
         self.nnei = sum(sel)
         self.ndescrpt = self.nnei * 4
+        # order matters, placed after the assignment of self.ntypes
+        self.reinit_exclude(exclude_types)
         self.dpa1_attention = NeighborWiseAttention(
             self.attn_layer,
             self.nnei,
@@ -250,6 +257,13 @@ class DescrptBlockSeAtten(DescriptorBlock):
                 "The statistics of the descriptor has not been computed."
             )
         return self.stats
+
+    def reinit_exclude(
+        self,
+        exclude_types: List[Tuple[int, int]] = [],
+    ):
+        self.exclude_types = exclude_types
+        self.emask = PairExcludeMask(self.ntypes, exclude_types=exclude_types)
 
     def forward(
         self,

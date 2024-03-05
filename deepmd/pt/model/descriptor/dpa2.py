@@ -3,6 +3,7 @@ from typing import (
     Callable,
     List,
     Optional,
+    Tuple,
     Union,
 )
 
@@ -79,6 +80,7 @@ class DescrptDPA2(torch.nn.Module, BaseDescriptor):
         repformer_add_type_ebd_to_seq: bool = False,
         env_protection: float = 0.0,
         trainable: bool = True,
+        exclude_types: List[Tuple[int, int]] = [],
         type: Optional[
             str
         ] = None,  # work around the bad design in get_trainer and DpLoaderSet!
@@ -176,6 +178,9 @@ class DescrptDPA2(torch.nn.Module, BaseDescriptor):
             repformers block: concatenate the type embedding at the output.
         trainable : bool
             If the parameters in the descriptor are trainable.
+        exclude_types : List[Tuple[int, int]] = [],
+            The excluded pairs of types which have no interaction with each other.
+            For example, `[[0, 1]]` means no interaction between type 0 and type 1.
 
         Returns
         -------
@@ -206,6 +211,7 @@ class DescrptDPA2(torch.nn.Module, BaseDescriptor):
             tebd_input_mode="concat",
             # tebd_input_mode='dot_residual_s',
             set_davg_zero=repinit_set_davg_zero,
+            exclude_types=exclude_types,
             env_protection=env_protection,
             activation_function=repinit_activation,
         )
@@ -238,6 +244,7 @@ class DescrptDPA2(torch.nn.Module, BaseDescriptor):
             set_davg_zero=repformer_set_davg_zero,
             smooth=True,
             add_type_ebd_to_seq=repformer_add_type_ebd_to_seq,
+            exclude_types=exclude_types,
             env_protection=env_protection,
         )
         self.type_embedding = TypeEmbedNet(ntypes, tebd_dim)
