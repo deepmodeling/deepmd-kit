@@ -32,6 +32,7 @@ from deepmd.utils.finetune import (
 from .model.test_permutation import (
     model_dpa2,
     model_se_e2_a,
+    model_zbl,
 )
 
 
@@ -135,21 +136,20 @@ class TestEnergyModelSeA(unittest.TestCase, FinetuneTest):
     def tearDown(self) -> None:
         FinetuneTest.tearDown(self)
 
+@unittest.skip("change bias not implemented yet.")
+class TestEnergyZBLModelSeA(unittest.TestCase, FinetuneTest):
+    def setUp(self):
+        self.data_file = [str(Path(__file__).parent / "water/data/data_0")]
+        self.data = DeepmdDataSystem(
+            self.data_file,
+            batch_size=1,
+            test_size=1,
+        )
+        self.data.add("energy", ndof=1, atomic=False, must=True, high_prec=True)
+        self.model_config = model_zbl
 
-## Disabled for now.
-# class TestEnergyZBLModelSeA(unittest.TestCase, FinetuneTest):
-#     def setUp(self):
-#         self.data_file = [str(Path(__file__).parent / "water/data/data_0")]
-#         self.data = DeepmdDataSystem(
-#             self.data_file,
-#             batch_size=1,
-#             test_size=1,
-#         )
-#         self.data.add("energy", ndof=1, atomic=False, must=True, high_prec=True)
-#         self.model_config = model_zbl
-
-#     def tearDown(self) -> None:
-#         FinetuneTest.tearDown(self)
+    def tearDown(self) -> None:
+        FinetuneTest.tearDown(self)
 
 
 class TestEnergyModelDPA2(unittest.TestCase, FinetuneTest):
