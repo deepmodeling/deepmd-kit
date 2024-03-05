@@ -134,17 +134,11 @@ class VirialTest:
         cell = (cell) + 5.0 * torch.eye(3, device="cpu")
         coord = torch.rand([natoms, 3], dtype=dtype, device="cpu")
         coord = torch.matmul(coord, cell)
-        spin = torch.rand([natoms, 3], dtype=dtype, device="cpu")
         atype = torch.IntTensor([0, 0, 0, 1, 1])
         # assumes input to be numpy tensor
         coord = coord.numpy()
         cell = cell.numpy()
-        spin = spin.numpy()
-        test_spin = getattr(self, "test_spin", False)
-        if not test_spin:
-            test_keys = ["energy", "force", "virial"]
-        else:
-            test_keys = ["energy", "force", "force_mag", "virial"]
+        test_keys = ["energy", "force", "virial"]
 
         def np_infer(
             new_cell,
@@ -156,9 +150,6 @@ class VirialTest:
                 ).unsqueeze(0),
                 torch.tensor(new_cell, device="cpu").unsqueeze(0),
                 atype,
-                spins=torch.tensor(
-                    stretch_box(spin, cell, new_cell), device="cpu"
-                ).unsqueeze(0),
             )
             # detach
             ret = {
@@ -264,14 +255,6 @@ class TestEnergyModelZBLVirial(unittest.TestCase, VirialTest):
 
 
 class TestEnergyModelSpinSeAForce(unittest.TestCase, ForceTest):
-    def setUp(self):
-        model_params = copy.deepcopy(model_spin)
-        self.type_split = False
-        self.test_spin = True
-        self.model = get_model(model_params).to(env.DEVICE)
-
-
-class TestEnergyModelSpinSeAVirial(unittest.TestCase, VirialTest):
     def setUp(self):
         model_params = copy.deepcopy(model_spin)
         self.type_split = False

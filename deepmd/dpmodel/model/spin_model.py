@@ -218,7 +218,7 @@ class SpinModel:
         """
         return self.backbone_model.is_aparam_nall()
 
-    def model_output_type(self) -> str:
+    def model_output_type(self) -> List[str]:
         """Get the output type for the model."""
         return self.backbone_model.model_output_type()
 
@@ -310,7 +310,10 @@ class SpinModel:
             aparam=aparam,
             do_atomic_virial=do_atomic_virial,
         )
-        var_name = self.backbone_model.fitting.var_name
+        model_output_type = self.backbone_model.model_output_type()
+        if "mask" in model_output_type:
+            model_output_type.pop(model_output_type.index("mask"))
+        var_name = model_output_type[0]
         model_predict[f"{var_name}"] = np.split(
             model_predict[f"{var_name}"], [nloc], axis=1
         )[0]
@@ -376,7 +379,10 @@ class SpinModel:
             aparam=aparam,
             do_atomic_virial=do_atomic_virial,
         )
-        var_name = self.backbone_model.fitting.var_name
+        model_output_type = self.backbone_model.model_output_type()
+        if "mask" in model_output_type:
+            model_output_type.pop(model_output_type.index("mask"))
+        var_name = model_output_type[0]
         model_predict[f"{var_name}"] = np.split(
             model_predict[f"{var_name}"], [nloc], axis=1
         )[0]
