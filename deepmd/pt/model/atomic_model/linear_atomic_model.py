@@ -96,7 +96,7 @@ class LinearAtomicModel(torch.nn.Module, BaseAtomicModel):
 
     @torch.jit.export
     def get_type_map(self) -> List[str]:
-        self.type_map
+        return self.type_map
 
     def get_model_rcuts(self) -> List[float]:
         """Get the cut-off radius for each individual models."""
@@ -240,15 +240,11 @@ class LinearAtomicModel(torch.nn.Module, BaseAtomicModel):
         -------
         torch.Tensor
         """
-        assert max(atype) < len(
-            new_map
-        ), "The input `atype` cannot be handled by the type_map."
-        idx_2_type = {k: new_map[k] for k in range(len(new_map))}
+        assert torch.max(atype) < len(new_map), "The input `atype` cannot be handled by the type_map."
         type_2_idx = {atp: idx for idx, atp in enumerate(ori_map)}
         # this maps the atype in the new map to the original map
-        mapping = {idx: type_2_idx[idx_2_type[idx]] for idx in range(len(new_map))}
-        updated_atype = atype.clone()
-        updated_atype.apply_(mapping.get)
+        mapping = torch.tensor([type_2_idx[new_map[idx]] for idx in range(len(new_map))]).to(atype.device)
+        updated_atype = mapping[atype.long()]
         return updated_atype
 
     def fitting_output_def(self) -> FittingOutputDef:

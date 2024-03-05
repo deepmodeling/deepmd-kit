@@ -54,18 +54,13 @@ def make_base_atomic_model(
             pass
 
         @abstractmethod
-        def get_type_map(self) -> Optional[List[str]]:
+        def get_type_map(self) -> List[str]:
             """Get the type map."""
+            pass
 
         def get_ntypes(self) -> int:
             """Get the number of atom types."""
-            tmap = self.get_type_map()
-            if tmap is not None:
-                return len(tmap)
-            else:
-                raise ValueError(
-                    "cannot infer the number of types from a None type map"
-                )
+            return len(self.get_type_map())
 
         @abstractmethod
         def get_sel(self) -> List[int]:

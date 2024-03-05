@@ -187,26 +187,25 @@ class TestIntegration(unittest.TestCase, TestCaseSingleFrameWithNlist):
 
 class TestRemmapMethod(unittest.TestCase):
     def test_invalid(self):
-        atype = torch.randint(2, 4, (2, 5))
+        atype = torch.randint(2,4, (2,5), device=env.DEVICE)
         commonl = ["H"]
-        originl = ["Si", "H", "O", "S"]
-        with self.assertRaises():
-            new_atype = remap_atype(atype, originl, commonl)
-
+        originl = ["Si","H","O", "S"]
+        with self.assertRaises(AssertionError):
+            new_atype = DPZBLLinearAtomicModel.remap_atype(atype, originl, commonl)
+    
     def test_valid(self):
-        atype = torch.randint(0, 3, (4, 20))
-        nl = ["H", "O", "S"]
-        ol = ["Si", "H", "O", "S"]
-        new_atype = remap_atype(atype, originl, commonl)
-
+        atype = torch.randint(0,3, (4,20), device=env.DEVICE)
+        commonl = ["H", "O", "S"]
+        originl = ["Si","H","O", "S"]
+        new_atype = DPZBLLinearAtomicModel.remap_atype(atype, originl, commonl)
         def trans(atype, map):
             idx = atype.flatten().tolist()
             res = []
             for i in idx:
                 res.append(map[i])
             return res
-
-        assert trans(atype, nl) == trans(new_atype, ol)
+        
+        assert trans(atype,commonl) == trans(new_atype, originl)
 
 
 if __name__ == "__main__":
