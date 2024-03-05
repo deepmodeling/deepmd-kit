@@ -136,6 +136,7 @@ class TestEnergyModelSeA(unittest.TestCase, FinetuneTest):
     def tearDown(self) -> None:
         FinetuneTest.tearDown(self)
 
+
 @unittest.skip("change bias not implemented yet.")
 class TestEnergyZBLModelSeA(unittest.TestCase, FinetuneTest):
     def setUp(self):
