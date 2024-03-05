@@ -70,7 +70,7 @@ class TestWeightCalculation(unittest.TestCase):
 
         type_map = ["foo", "bar"]
         zbl_model = PairTabAtomicModel(
-            tab_file=file_path, rcut=0.3, sel=2, type_map=type_map
+            tab_file=file_path, rcut=0.3, sel=2, type_map=type_map[::-1]
         )
         dp_model = DPAtomicModel(ds, ft, type_map=type_map).to(env.DEVICE)
         wgt_model = DPZBLLinearAtomicModel(
