@@ -24,7 +24,7 @@ def compute_smooth_weight(
         uu = (distance - rmin) / (rmax - rmin)
     with np.errstate(invalid="ignore"):
         vv = uu * uu * uu * (-6.0 * uu * uu + 15.0 * uu - 10.0) + 1.0
-    return np.where(mid_mask, vv, min_mask.astype(distance.dtype))
+    return np.where(mid_mask, vv, min_mask)
 
 
 def _make_env_mat(
