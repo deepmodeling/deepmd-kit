@@ -45,12 +45,13 @@ class DPAtomicModel(BaseAtomicModel):
         self,
         descriptor,
         fitting,
-        type_map: Optional[List[str]] = None,
+        type_map: List[str],
         **kwargs,
     ):
         self.type_map = type_map
         self.descriptor = descriptor
         self.fitting = fitting
+        self.type_map = type_map
         super().__init__(**kwargs)
 
     def fitting_output_def(self) -> FittingOutputDef:
@@ -142,6 +143,7 @@ class DPAtomicModel(BaseAtomicModel):
                 "type_map": self.type_map,
                 "descriptor": self.descriptor.serialize(),
                 "fitting": self.fitting.serialize(),
+                "type_map": self.type_map,
             }
         )
         return dd
@@ -154,7 +156,7 @@ class DPAtomicModel(BaseAtomicModel):
         data.pop("type")
         descriptor_obj = BaseDescriptor.deserialize(data.pop("descriptor"))
         fitting_obj = BaseFitting.deserialize(data.pop("fitting"))
-        type_map = data.pop("type_map", None)
+        type_map = data.pop("type_map")
         obj = cls(descriptor_obj, fitting_obj, type_map=type_map, **data)
         return obj
 

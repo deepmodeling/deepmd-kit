@@ -47,14 +47,18 @@ class PairTabAtomicModel(BaseAtomicModel):
         The cutoff radius.
     sel : int or list[int]
         The maxmum number of atoms in the cut-off radius.
+    type_map : list[str]
+        Mapping atom type to the name (str) of the type.
+        For example `type_map[1]` gives the name of the type 1.
     """
 
     def __init__(
-        self, tab_file: str, rcut: float, sel: Union[int, List[int]], **kwargs
+        self, tab_file: str, rcut: float, sel: Union[int, List[int]], type_map: List[str], **kwargs
     ):
         super().__init__()
         self.tab_file = tab_file
         self.rcut = rcut
+        self.type_map = type_map
 
         self.tab = PairTab(self.tab_file, rcut=rcut)
 
@@ -87,7 +91,7 @@ class PairTabAtomicModel(BaseAtomicModel):
         return self.rcut
 
     def get_type_map(self) -> Optional[List[str]]:
-        raise NotImplementedError("TODO: get_type_map should be implemented")
+        return self.type_map
 
     def get_sel(self) -> List[int]:
         return [self.sel]
@@ -118,6 +122,7 @@ class PairTabAtomicModel(BaseAtomicModel):
                 "tab": self.tab.serialize(),
                 "rcut": self.rcut,
                 "sel": self.sel,
+                "type_map": self.type_map,
             }
         )
         return dd
@@ -130,8 +135,9 @@ class PairTabAtomicModel(BaseAtomicModel):
         data.pop("type")
         rcut = data.pop("rcut")
         sel = data.pop("sel")
+        type_map = data.pop("type_map")
         tab = PairTab.deserialize(data.pop("tab"))
-        tab_model = cls(None, rcut, sel, **data)
+        tab_model = cls(None, rcut, sel, type, **data)
         tab_model.tab = tab
         tab_model.tab_info = tab_model.tab.tab_info
         tab_model.tab_data = tab_model.tab.tab_data

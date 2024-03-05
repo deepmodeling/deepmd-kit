@@ -47,15 +47,27 @@ class LinearAtomicModel(torch.nn.Module, BaseAtomicModel):
     ----------
     models : list[DPAtomicModel or PairTabAtomicModel]
         A list of models to be combined. PairTabAtomicModel must be used together with a DPAtomicModel.
+    type_map : list[str]
+        Mapping atom type to the name (str) of the type.
+        For example `type_map[1]` gives the name of the type 1.
     """
 
     def __init__(
         self,
         models: List[BaseAtomicModel],
+        type_map: List[str],
         **kwargs,
     ):
         torch.nn.Module.__init__(self)
         self.models = torch.nn.ModuleList(models)
+        sub_model_type_maps = [md.get_type_map() for md in models]
+        err_msg = []
+        common_type_map = set(type_map)
+        for tpmp in sub_model_type_maps:
+            if not common_type_map.issubset(set(tpmp)):
+                err_msg.append(f"type_map {tpmp} is not a subset of type_map {type_map}")
+        assert len(err_msg) == 0, '\n'.join(err_msg)
+        self.type_map = type_map
         self.atomic_bias = None
         self.mixed_types_list = [model.mixed_types() for model in self.models]
         BaseAtomicModel.__init__(self, **kwargs)
@@ -80,7 +92,7 @@ class LinearAtomicModel(torch.nn.Module, BaseAtomicModel):
     @torch.jit.export
     def get_type_map(self) -> List[str]:
         """Get the type map."""
-        raise NotImplementedError("TODO: implement this method")
+        return self.type_map
 
     def get_model_rcuts(self) -> List[float]:
         """Get the cut-off radius for each individual models."""
@@ -208,25 +220,27 @@ class LinearAtomicModel(torch.nn.Module, BaseAtomicModel):
         )
 
     @staticmethod
-    def serialize(models) -> dict:
+    def serialize(models, type_map) -> dict:
         return {
             "@class": "Model",
             "@version": 1,
             "type": "linear",
             "models": [model.serialize() for model in models],
             "model_name": [model.__class__.__name__ for model in models],
+            "type_map": type_map,
         }
 
     @staticmethod
-    def deserialize(data) -> List[BaseAtomicModel]:
+    def deserialize(data) -> Tuple[List[BaseAtomicModel], List[str]]:
         data = copy.deepcopy(data)
         check_version_compatibility(data.pop("@version", 1), 1, 1)
         model_names = data["model_name"]
+        type_map = data["type_map"]
         models = [
             getattr(sys.modules[__name__], name).deserialize(model)
             for name, model in zip(model_names, data["models"])
         ]
-        return models
+        return models, type_map
 
     @abstractmethod
     def _compute_weight(
@@ -281,8 +295,20 @@ class DPZBLLinearAtomicModel(LinearAtomicModel):
 
     Parameters
     ----------
-    models
-            This linear model should take a DPAtomicModel and a PairTable model.
+    dp_model
+        The DPAtomicModel being combined.
+    zbl_model
+        The PairTable model being combined.
+    sw_rmin
+        The lower boundary of the interpolation between short-range tabulated interaction and DP.
+    sw_rmax
+        The upper boundary of the interpolation between short-range tabulated interaction and DP.
+    type_map
+        Mapping atom type to the name (str) of the type.
+        For example `type_map[1]` gives the name of the type 1.
+    smin_alpha
+        The short-range tabulated interaction will be swithed according to the distance of the nearest neighbor. 
+        This distance is calculated by softmin.
     """
 
     def __init__(
@@ -291,11 +317,12 @@ class DPZBLLinearAtomicModel(LinearAtomicModel):
         zbl_model: PairTabAtomicModel,
         sw_rmin: float,
         sw_rmax: float,
+        type_map: List[str],
         smin_alpha: Optional[float] = 0.1,
         **kwargs,
     ):
         models = [dp_model, zbl_model]
-        super().__init__(models, **kwargs)
+        super().__init__(models, type_map, **kwargs)
         self.model_def_script = ""
         self.dp_model = dp_model
         self.zbl_model = zbl_model
@@ -314,7 +341,7 @@ class DPZBLLinearAtomicModel(LinearAtomicModel):
                 "@class": "Model",
                 "@version": 1,
                 "type": "zbl",
-                "models": LinearAtomicModel.serialize([self.dp_model, self.zbl_model]),
+                "models": LinearAtomicModel.serialize([self.dp_model, self.zbl_model], self.type_map),
                 "sw_rmin": self.sw_rmin,
                 "sw_rmax": self.sw_rmax,
                 "smin_alpha": self.smin_alpha,
@@ -330,7 +357,7 @@ class DPZBLLinearAtomicModel(LinearAtomicModel):
         sw_rmax = data.pop("sw_rmax")
         smin_alpha = data.pop("smin_alpha")
 
-        dp_model, zbl_model = LinearAtomicModel.deserialize(data.pop("models"))
+        [dp_model, zbl_model], type_map = LinearAtomicModel.deserialize(data.pop("models"))
 
         data.pop("@class", None)
         data.pop("type", None)
@@ -339,6 +366,7 @@ class DPZBLLinearAtomicModel(LinearAtomicModel):
             zbl_model=zbl_model,
             sw_rmin=sw_rmin,
             sw_rmax=sw_rmax,
+            type_map=type_map,
             smin_alpha=smin_alpha,
             **data,
         )
