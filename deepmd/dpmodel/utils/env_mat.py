@@ -17,6 +17,8 @@ def compute_smooth_weight(
     rmax: float,
 ):
     """Compute smooth weight for descriptor elements."""
+    if rmin >= rmax:
+        raise ValueError("rmin should be less than rmax.")
     min_mask = distance <= rmin
     max_mask = distance >= rmax
     mid_mask = np.logical_not(np.logical_or(min_mask, max_mask))
