@@ -69,7 +69,9 @@ class TestWeightCalculation(unittest.TestCase):
         ).to(env.DEVICE)
 
         type_map = ["foo", "bar"]
-        zbl_model = PairTabAtomicModel(tab_file=file_path, rcut=0.3, sel=2, type_map=type_map)
+        zbl_model = PairTabAtomicModel(
+            tab_file=file_path, rcut=0.3, sel=2, type_map=type_map
+        )
         dp_model = DPAtomicModel(ds, ft, type_map=type_map).to(env.DEVICE)
         wgt_model = DPZBLLinearAtomicModel(
             dp_model,
@@ -140,7 +142,9 @@ class TestIntegration(unittest.TestCase, TestCaseSingleFrameWithNlist):
         ).to(env.DEVICE)
         type_map = ["foo", "bar"]
         dp_model = DPAtomicModel(ds, ft, type_map=type_map).to(env.DEVICE)
-        zbl_model = PairTabAtomicModel(file_path, self.rcut, sum(self.sel), type_map=type_map)
+        zbl_model = PairTabAtomicModel(
+            file_path, self.rcut, sum(self.sel), type_map=type_map
+        )
         self.md0 = DPZBLLinearAtomicModel(
             dp_model,
             zbl_model,
@@ -153,7 +157,9 @@ class TestIntegration(unittest.TestCase, TestCaseSingleFrameWithNlist):
             env.DEVICE
         )
         self.md2 = DPDPZBLLinearAtomicModel.deserialize(self.md0.serialize())
-        self.md3 = DPZBLModel(dp_model, zbl_model, sw_rmin=0.1, sw_rmax=0.25, type_map=type_map)
+        self.md3 = DPZBLModel(
+            dp_model, zbl_model, sw_rmin=0.1, sw_rmax=0.25, type_map=type_map
+        )
 
     def test_self_consistency(self):
         args = [

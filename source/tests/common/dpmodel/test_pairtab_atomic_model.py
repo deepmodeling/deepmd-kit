@@ -24,7 +24,9 @@ class TestPairTab(unittest.TestCase):
             ]
         )
 
-        self.model = PairTabAtomicModel(tab_file=file_path, rcut=0.02, sel=2, type_map=["H", "O"])
+        self.model = PairTabAtomicModel(
+            tab_file=file_path, rcut=0.02, sel=2, type_map=["H", "O"]
+        )
 
         self.extended_coord = np.array(
             [
@@ -166,7 +168,9 @@ class TestPairTabTwoAtoms(unittest.TestCase):
                 ]
             )
 
-            model = PairTabAtomicModel(tab_file=file_path, rcut=rcut, sel=2, type_map=["S"])
+            model = PairTabAtomicModel(
+                tab_file=file_path, rcut=rcut, sel=2, type_map=["S"]
+            )
             results.append(
                 model.forward_atomic(extended_coord, extended_atype, nlist)["energy"]
             )
