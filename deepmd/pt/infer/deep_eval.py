@@ -289,6 +289,7 @@ class DeepEval(DeepEvalBackend):
                 for x in self.output_def.var_defs.values()
                 if x.category
                 in (
+                    OutputVariableCategory.OUT,
                     OutputVariableCategory.REDU,
                     OutputVariableCategory.DERV_R,
                     OutputVariableCategory.DERV_C_REDU,

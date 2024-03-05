@@ -358,12 +358,14 @@ def test_ener(
         if dp.has_spin:
             force_m = ret[5]
             force_m = force_m.reshape([numb_test, -1])
-            avm = ret[6]
-            avm = avm.reshape([numb_test, -1])
+            mask_mag = ret[6]
+            mask_mag = mask_mag.reshape([numb_test, -1])
     else:
         if dp.has_spin:
             force_m = ret[3]
             force_m = force_m.reshape([numb_test, -1])
+            mask_mag = ret[4]
+            mask_mag = mask_mag.reshape([numb_test, -1])
     out_put_spin = dp.get_ntypes_spin() != 0 or dp.has_spin
     if out_put_spin:
         if dp.get_ntypes_spin() != 0:  # old tf support for spin
@@ -391,8 +393,12 @@ def test_ener(
         else:  # pt support for spin
             force_r = force
             test_force_r = test_data["force"][:numb_test]
-            force_m = force_m
-            test_force_m = test_data["force_mag"][:numb_test]
+            force_m = force_m.reshape(-1, 3)[mask_mag.reshape(-1)].reshape(nframes, -1)
+            test_force_m = (
+                test_data["force_mag"][:numb_test]
+                .reshape(-1, 3)[mask_mag.reshape(-1)]
+                .reshape(nframes, -1)
+            )
 
     diff_e = energy - test_data["energy"][:numb_test].reshape([-1, 1])
     mae_e = mae(diff_e)
@@ -431,7 +437,7 @@ def test_ener(
         log.info(f"Force spin MAE      : {mae_fm:e} eV/uB")
         log.info(f"Force spin RMSE     : {rmse_fm:e} eV/uB")
 
-    if data.pbc:
+    if data.pbc and not out_put_spin:
         log.info(f"Virial MAE         : {mae_v:e} eV")
         log.info(f"Virial RMSE        : {rmse_v:e} eV")
         log.info(f"Virial MAE/Natoms  : {mae_va:e} eV")

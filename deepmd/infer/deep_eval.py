@@ -73,6 +73,8 @@ class DeepEvalBackend(ABC):
         "dipole_derv_c_redu": "virial",
         "dos": "atom_dos",
         "dos_redu": "dos",
+        "mask_mag": "mask_mag",
+        "mask": "mask",
     }
 
     @abstractmethod

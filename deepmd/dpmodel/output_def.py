@@ -281,6 +281,7 @@ class ModelOutputDef:
         self.def_derv_r, self.def_derv_c = do_derivative(self.def_outp.get_data())
         self.def_hess_r, _ = do_derivative(self.def_derv_r)
         self.def_derv_c_redu = do_reduce(self.def_derv_c)
+        self.def_mask = do_mask(self.def_outp.get_data())
         self.var_defs: Dict[str, OutputVariableDef] = {}
         for ii in [
             self.def_outp.get_data(),
@@ -289,6 +290,7 @@ class ModelOutputDef:
             self.def_derv_r,
             self.def_derv_c_redu,
             self.def_hess_r,
+            self.def_mask,
         ]:
             self.var_defs.update(ii)
 
@@ -413,6 +415,31 @@ def do_reduce(
                 category=apply_operation(vv, OutputVariableOperation.REDU),
             )
     return def_redu
+
+
+def do_mask(
+    def_outp_data: Dict[str, OutputVariableDef],
+) -> Dict[str, OutputVariableDef]:
+    def_mask: Dict[str, OutputVariableDef] = {}
+    # for deep eval when has atomic mask
+    def_mask["mask"] = OutputVariableDef(
+        name="mask",
+        shape=[1],
+        reduciable=False,
+        r_differentiable=False,
+        c_differentiable=False,
+    )
+    for kk, vv in def_outp_data.items():
+        if vv.magnetic:
+            # for deep eval when has atomic mask for magnetic atoms
+            def_mask["mask_mag"] = OutputVariableDef(
+                name="mask_mag",
+                shape=[1],
+                reduciable=False,
+                r_differentiable=False,
+                c_differentiable=False,
+            )
+    return def_mask
 
 
 def do_derivative(
