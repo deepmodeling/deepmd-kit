@@ -44,7 +44,6 @@ class TestSingleMachine(unittest.TestCase):
             if hasattr(line, "decode"):
                 line = line.decode("utf-8")
             line = line.rstrip()
-            print(line)
         popen.wait()
         self.assertEqual(0, popen.returncode, "Parallel training failed!")
 

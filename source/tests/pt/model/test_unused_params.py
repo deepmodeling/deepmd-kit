@@ -87,8 +87,6 @@ class TestUnusedParamsDPA2(unittest.TestCase):
         contributing_parameters = set(get_contributing_params(ret0["energy"]))
         all_parameters = set(self.model.parameters())
         non_contributing = all_parameters - contributing_parameters
-        for ii in non_contributing:
-            print(ii.shape)
         self.assertEqual(len(non_contributing), 0)
 
 

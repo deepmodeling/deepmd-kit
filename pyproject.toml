@@ -238,6 +238,7 @@ select = [
     "NPY", # numpy
     "TID251", # banned-api
     "TID253", # banned-module-level-imports
+    "T20", # ban print
 ]
 
 ignore = [
