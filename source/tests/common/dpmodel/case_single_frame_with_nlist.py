@@ -17,7 +17,7 @@ class TestCaseSingleFrameWithoutNlist:
         ).reshape([1, self.nloc * 3])
         self.atype = np.array([0, 0, 1], dtype=int).reshape([1, self.nloc])
         self.cell = 2.0 * np.eye(3).reshape([1, 9])
-        # sel = [5, 2]=======
+        # sel = [5, 2]
         self.sel = [16, 8]
         self.rcut = 2.2
         self.rcut_smth = 0.4
