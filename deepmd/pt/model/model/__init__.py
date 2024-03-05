@@ -66,7 +66,10 @@ def get_zbl_model(model_params):
     # pairtab
     filepath = model_params["use_srtab"]
     pt_model = PairTabAtomicModel(
-        filepath, model_params["descriptor"]["rcut"], model_params["descriptor"]["sel"]
+        filepath,
+        model_params["descriptor"]["rcut"],
+        model_params["descriptor"]["sel"],
+        type_map=model_params["type_map"],
     )
 
     rmin = model_params["sw_rmin"]
@@ -78,6 +81,7 @@ def get_zbl_model(model_params):
         pt_model,
         rmin,
         rmax,
+        type_map=model_params["type_map"],
         atom_exclude_types=atom_exclude_types,
         pair_exclude_types=pair_exclude_types,
     )
@@ -94,7 +98,7 @@ def get_model(model_params):
     fitting_net["type"] = fitting_net.get("type", "ener")
     fitting_net["ntypes"] = descriptor.get_ntypes()
     fitting_net["mixed_types"] = descriptor.mixed_types()
-    fitting_net["embedding_width"] = descriptor.get_dim_out()
+    fitting_net["embedding_width"] = descriptor.get_dim_emb()
     fitting_net["dim_descrpt"] = descriptor.get_dim_out()
     grad_force = "direct" not in fitting_net["type"]
     if not grad_force:

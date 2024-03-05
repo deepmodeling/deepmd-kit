@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import copy
 import logging
+import os
+import tempfile
 from abc import (
     abstractmethod,
 )
@@ -13,6 +15,9 @@ from typing import (
 import numpy as np
 import torch
 
+from deepmd.infer.deep_eval import (
+    DeepEval,
+)
 from deepmd.pt.model.network.mlp import (
     FittingNet,
     NetworkCollection,
@@ -26,9 +31,6 @@ from deepmd.pt.model.task.base_fitting import (
 from deepmd.pt.utils import (
     env,
 )
-from deepmd.pt.utils.dataloader import (
-    DpLoaderSet,
-)
 from deepmd.pt.utils.env import (
     DEFAULT_PRECISION,
     DEVICE,
@@ -37,12 +39,15 @@ from deepmd.pt.utils.env import (
 from deepmd.pt.utils.exclude_mask import (
     AtomExcludeMask,
 )
-from deepmd.pt.utils.stat import (
-    make_stat_input,
-)
 from deepmd.pt.utils.utils import (
     to_numpy_array,
     to_torch_tensor,
+)
+from deepmd.utils.data_system import (
+    DeepmdDataSystem,
+)
+from deepmd.utils.finetune import (
+    change_energy_bias_lower,
 )
 from deepmd.utils.version import (
     check_version_compatibility,
@@ -87,7 +92,13 @@ class Fitting(torch.nn.Module, BaseFitting):
             raise NotImplementedError
 
     def change_energy_bias(
-        self, config, model, old_type_map, new_type_map, bias_shift="delta", ntest=10
+        self,
+        config,
+        model,
+        old_type_map: List[str],
+        new_type_map: List[str],
+        bias_shift="delta",
+        ntest=10,
     ):
         """Change the energy bias according to the input data and the pretrained model.
 
@@ -97,9 +108,9 @@ class Fitting(torch.nn.Module, BaseFitting):
             The configuration.
         model : EnergyModel
             Energy model loaded pre-trained model.
-        new_type_map : list
+        new_type_map : List[str]
             The original type_map in dataset, they are targets to change the energy bias.
-        old_type_map : str
+        old_type_map : List[str]
             The full type_map in pretrained model
         bias_shift : str
             The mode for changing energy bias : ['delta', 'statistic']
@@ -115,93 +126,36 @@ class Fitting(torch.nn.Module, BaseFitting):
         )
         # data
         systems = config["training"]["training_data"]["systems"]
-        finetune_data = DpLoaderSet(systems, ntest, config["model"])
-        sampled = make_stat_input(finetune_data.systems, finetune_data.dataloaders, 1)
-        # map
-        sorter = np.argsort(old_type_map)
-        idx_type_map = sorter[
-            np.searchsorted(old_type_map, new_type_map, sorter=sorter)
-        ]
-        data_mixed_types = np.all([i.mixed_type for i in finetune_data.systems])
-        numb_type = len(old_type_map)
-        type_numbs, energy_ground_truth, energy_predict = [], [], []
-        for test_data in sampled:
-            nframes = test_data["energy"].shape[0]
-            if data_mixed_types:
-                atype = test_data["atype"].detach().cpu().numpy()
-            else:
-                atype = test_data["atype"][0].detach().cpu().numpy()
-            assert np.array(
-                [i.item() in idx_type_map for i in list(set(atype.reshape(-1)))]
-            ).all(), "Some types are not in 'type_map'!"
-            energy_ground_truth.append(test_data["energy"].cpu().numpy())
-            if data_mixed_types:
-                type_numbs.append(
-                    np.array(
-                        [(atype == i).sum(axis=-1) for i in idx_type_map],
-                        dtype=np.int32,
-                    ).T
-                )
-            else:
-                type_numbs.append(
-                    np.tile(
-                        np.bincount(atype, minlength=numb_type)[idx_type_map],
-                        (nframes, 1),
-                    )
-                )
-            if bias_shift == "delta":
-                coord = test_data["coord"].to(DEVICE)
-                atype = test_data["atype"].to(DEVICE)
-                box = (
-                    test_data["box"].to(DEVICE)
-                    if test_data["box"] is not None
-                    else None
-                )
-                ret = model(coord, atype, box)
-                energy_predict.append(
-                    ret["energy"].reshape([nframes, 1]).detach().cpu().numpy()
-                )
-        type_numbs = np.concatenate(type_numbs)
-        energy_ground_truth = np.concatenate(energy_ground_truth)
-        old_bias = self.bias_atom_e[idx_type_map]
-        if bias_shift == "delta":
-            energy_predict = np.concatenate(energy_predict)
-            bias_diff = energy_ground_truth - energy_predict
-            delta_bias = np.linalg.lstsq(type_numbs, bias_diff, rcond=None)[0]
-            unbias_e = energy_predict + type_numbs @ delta_bias
-            atom_numbs = type_numbs.sum(-1)
-            rmse_ae = np.sqrt(
-                np.mean(
-                    np.square(
-                        (unbias_e.ravel() - energy_ground_truth.ravel()) / atom_numbs
-                    )
-                )
-            )
-            self.bias_atom_e[idx_type_map] += torch.from_numpy(
-                delta_bias.reshape(-1)
-            ).to(DEVICE)
-            log.info(
-                f"RMSE of atomic energy after linear regression is: {rmse_ae:10.5e} eV/atom."
-            )
-        elif bias_shift == "statistic":
-            statistic_bias = np.linalg.lstsq(
-                type_numbs, energy_ground_truth, rcond=None
-            )[0]
-            self.bias_atom_e[idx_type_map] = (
-                torch.from_numpy(statistic_bias.reshape(-1))
-                .type_as(self.bias_atom_e[idx_type_map])
-                .to(DEVICE)
-            )
-        else:
-            raise RuntimeError("Unknown bias_shift mode: " + bias_shift)
-        log.info(
-            "Change energy bias of {} from {} to {}.".format(
-                str(new_type_map),
-                str(old_bias.detach().cpu().numpy()),
-                str(self.bias_atom_e[idx_type_map].detach().cpu().numpy()),
-            )
+        finetune_data = DeepmdDataSystem(
+            systems=systems,
+            batch_size=config["training"]["training_data"].get("batch_size", "auto"),
+            test_size=1,
         )
-        return None
+        finetune_data.add("energy", ndof=1, atomic=False, must=True, high_prec=True)
+        model = torch.jit.script(model)
+        if model.get_dim_fparam() > 0:
+            finetune_data.add("fparam", model.get_dim_fparam(), atomic=False, must=True)
+        if model.get_dim_aparam() > 0:
+            finetune_data.add("aparam", model.get_dim_aparam(), atomic=True, must=True)
+        tmp_model = tempfile.NamedTemporaryFile(delete=False, suffix=".pth")
+        torch.jit.save(model, tmp_model.name)
+        dp = DeepEval(tmp_model.name)
+        os.unlink(tmp_model.name)
+        bias = change_energy_bias_lower(
+            finetune_data,
+            dp,
+            new_type_map,
+            old_type_map,
+            self.bias_atom_e.detach().cpu().numpy().reshape(-1),
+            bias_shift=bias_shift,
+            ntest=ntest,
+        )
+        self.bias_atom_e = (
+            torch.from_numpy(bias)
+            .type_as(self.bias_atom_e)
+            .reshape(self.bias_atom_e.shape)
+            .to(DEVICE)
+        )
 
 
 class GeneralFitting(Fitting):

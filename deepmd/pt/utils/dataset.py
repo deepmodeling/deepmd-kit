@@ -61,4 +61,5 @@ class DeepmdDataSetForLoader(Dataset):
                 repeat=data_item["repeat"],
                 default=data_item["default"],
                 dtype=data_item["dtype"],
+                output_natoms_for_type_sel=data_item["output_natoms_for_type_sel"],
             )

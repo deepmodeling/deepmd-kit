@@ -293,6 +293,10 @@ class DeepmdDataSystem:
                 type_sel=adict[kk]["type_sel"],
                 repeat=adict[kk]["repeat"],
                 default=adict[kk]["default"],
+                dtype=adict[kk].get("dtype"),
+                output_natoms_for_type_sel=adict[kk].get(
+                    "output_natoms_for_type_sel", False
+                ),
             )
 
     def add(
@@ -305,6 +309,8 @@ class DeepmdDataSystem:
         type_sel: Optional[List[int]] = None,
         repeat: int = 1,
         default: float = 0.0,
+        dtype: Optional[np.dtype] = None,
+        output_natoms_for_type_sel: bool = False,
     ):
         """Add a data item that to be loaded.
 
@@ -329,6 +335,10 @@ class DeepmdDataSystem:
             The data will be repeated `repeat` times.
         default, default=0.
             Default value of data
+        dtype
+            The dtype of data, overwrites `high_prec` if provided
+        output_natoms_for_type_sel : bool
+            If True and type_sel is True, the atomic dimension will be natoms instead of nsel
         """
         for ii in self.data_systems:
             ii.add(
@@ -340,6 +350,8 @@ class DeepmdDataSystem:
                 repeat=repeat,
                 type_sel=type_sel,
                 default=default,
+                dtype=dtype,
+                output_natoms_for_type_sel=output_natoms_for_type_sel,
             )
 
     def reduce(self, key_out, key_in):

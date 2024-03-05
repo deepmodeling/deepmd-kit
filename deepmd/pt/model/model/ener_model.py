@@ -52,6 +52,8 @@ class EnergyModel(DPModel):
                     )
             else:
                 model_predict["force"] = model_ret["dforce"]
+            if "mask" in model_ret:
+                model_predict["mask"] = model_ret["mask"]
         else:
             model_predict = model_ret
             model_predict["updated_coord"] += coord

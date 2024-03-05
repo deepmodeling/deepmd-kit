@@ -72,10 +72,10 @@ def make_model(T_AtomicModel):
 
         def model_output_def(self):
             """Get the output def for the model."""
-            return ModelOutputDef(self.fitting_output_def())
+            return ModelOutputDef(self.atomic_output_def())
 
         @torch.jit.export
-        def model_output_type(self) -> str:
+        def model_output_type(self) -> List[str]:
             """Get the output type for the model."""
             output_def = self.model_output_def()
             var_defs = output_def.var_defs
@@ -86,12 +86,7 @@ def make_model(T_AtomicModel):
                 # .value is critical for JIT
                 if vv.category == OutputVariableCategory.OUT.value:
                     vars.append(kk)
-            if len(vars) == 1:
-                return vars[0]
-            elif len(vars) == 0:
-                raise ValueError("No valid output type found")
-            else:
-                raise ValueError(f"Multiple valid output types found: {vars}")
+            return vars
 
         # cannot use the name forward. torch script does not work
         def forward_common(
@@ -218,7 +213,7 @@ def make_model(T_AtomicModel):
             )
             model_predict = fit_output_to_model_output(
                 atomic_ret,
-                self.fitting_output_def(),
+                self.atomic_output_def(),
                 cc_ext,
                 do_atomic_virial=do_atomic_virial,
             )

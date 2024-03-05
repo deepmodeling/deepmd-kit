@@ -195,7 +195,6 @@ class TestEnergyModelDPA2_2(unittest.TestCase, SmoothTest):
         self.epsilon, self.aprec = None, None
 
 
-@unittest.skip("hybrid not supported at the moment")
 class TestEnergyModelHybrid(unittest.TestCase, SmoothTest):
     def setUp(self):
         model_params = copy.deepcopy(model_hybrid)

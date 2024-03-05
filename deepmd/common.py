@@ -78,6 +78,7 @@ def add_data_requirement(
     repeat: int = 1,
     default: float = 0.0,
     dtype: Optional[np.dtype] = None,
+    output_natoms_for_type_sel: bool = False,
 ):
     """Specify data requirements for training.
 
@@ -103,6 +104,8 @@ def add_data_requirement(
         default value of data
     dtype : np.dtype, optional
         the dtype of data, overwrites `high_prec` if provided
+    output_natoms_for_type_sel : bool, optional
+        if True and type_sel is True, the atomic dimension will be natoms instead of nsel
     """
     data_requirement[key] = {
         "ndof": ndof,
@@ -113,6 +116,7 @@ def add_data_requirement(
         "repeat": repeat,
         "default": default,
         "dtype": dtype,
+        "output_natoms_for_type_sel": output_natoms_for_type_sel,
     }
 
 

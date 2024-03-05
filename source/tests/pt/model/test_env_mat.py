@@ -43,8 +43,8 @@ class TestCaseSingleFrameWithNlist:
             ],
             dtype=int,
         ).reshape([1, self.nloc, sum(self.sel)])
-        self.rcut_smth = 0.4
         self.rcut = 2.2
+        self.rcut_smth = 0.4
         # permutations
         self.perm = np.array([2, 0, 1, 3], dtype=np.int32)
         inv_perm = np.array([1, 2, 0, 3], dtype=np.int32)
@@ -61,6 +61,7 @@ class TestCaseSingleFrameWithNlist:
         nlist1 = inv_perm[nlist1]
         nlist1 = np.where(mask, -1, nlist1)
         self.nlist = np.concatenate([self.nlist, nlist1], axis=0)
+        self.atol = 1e-12
 
 
 class TestCaseSingleFrameWithoutNlist:
@@ -79,9 +80,10 @@ class TestCaseSingleFrameWithoutNlist:
         self.atype = np.array([0, 0, 1], dtype=int).reshape([1, self.nloc])
         self.cell = 2.0 * np.eye(3).reshape([1, 9])
         # sel = [5, 2]
-        self.sel = [5, 2]
-        self.rcut_smth = 0.4
+        self.sel = [16, 8]
         self.rcut = 2.2
+        self.rcut_smth = 0.4
+        self.atol = 1e-12
 
 
 # to be merged with the tf test case

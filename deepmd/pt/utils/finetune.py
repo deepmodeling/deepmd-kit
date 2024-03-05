@@ -27,7 +27,6 @@ def change_finetune_model_params(
         last_model_params = state_dict["_extra_state"]["model_params"]
         finetune_multi_task = "model_dict" in last_model_params
         trainable_param = {
-            "type_embedding": True,
             "descriptor": True,
             "fitting_net": True,
         }
@@ -74,7 +73,7 @@ def change_finetune_model_params(
             assert set(new_type_map).issubset(
                 old_type_map
             ), "Only support for smaller type map when finetuning or resuming."
-            for key_item in ["type_map", "type_embedding", "descriptor"]:
+            for key_item in ["type_map", "descriptor"]:
                 if key_item in model_dict_params[model_branch_chosen]:
                     model_config[key_item] = model_dict_params[model_branch_chosen][
                         key_item

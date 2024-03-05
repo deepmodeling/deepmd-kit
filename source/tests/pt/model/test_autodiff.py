@@ -19,6 +19,7 @@ from .test_permutation import (
     eval_model,
     model_dpa1,
     model_dpa2,
+    model_hybrid,
     model_se_e2_a,
     model_zbl,
 )
@@ -188,6 +189,20 @@ class TestEnergyModelDPAUniVirial(unittest.TestCase, VirialTest):
             "repinit_nsel"
         ]
         model_params = copy.deepcopy(model_dpa2)
+        self.type_split = True
+        self.model = get_model(model_params).to(env.DEVICE)
+
+
+class TestEnergyModelHybridForce(unittest.TestCase, ForceTest):
+    def setUp(self):
+        model_params = copy.deepcopy(model_hybrid)
+        self.type_split = True
+        self.model = get_model(model_params).to(env.DEVICE)
+
+
+class TestEnergyModelHybridVirial(unittest.TestCase, VirialTest):
+    def setUp(self):
+        model_params = copy.deepcopy(model_hybrid)
         self.type_split = True
         self.model = get_model(model_params).to(env.DEVICE)
 
