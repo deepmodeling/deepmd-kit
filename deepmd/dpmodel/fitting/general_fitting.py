@@ -179,7 +179,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         to the result of the model.
         If returning an empty list, all atom types are selected.
         """
-        return []
+        return [ii for ii in range(self.ntypes) if ii not in self.exclude_types]
 
     def __setitem__(self, key, value):
         if key in ["bias_atom_e"]:

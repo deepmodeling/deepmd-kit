@@ -64,6 +64,10 @@ class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
             ret0 = ifn0(dd[0], atype, fparam=ifp, aparam=iap)
             ret1 = ifn1(dd[0], atype, fparam=ifp, aparam=iap)
             np.testing.assert_allclose(ret0["energy"], ret1["energy"])
+            sel_set = set(ifn0.get_sel_type())
+            exclude_set = set(et)
+            self.assertEqual(sel_set | exclude_set, set(range(self.nt)))
+            self.assertEqual(sel_set & exclude_set, set())
 
     def test_mask(self):
         nf, nloc, nnei = self.nlist.shape
