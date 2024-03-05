@@ -86,7 +86,7 @@ class LinearAtomicModel(BaseAtomicModel):
         """Get the cut-off radius."""
         return max(self.get_model_rcuts())
 
-    def get_type_map(self) -> Optional[List[str]]:
+    def get_type_map(self) -> List[str]:
         """Get the type map."""
         raise self.type_map
 
