@@ -316,7 +316,6 @@ class DPZBLLinearAtomicModel(LinearAtomicModel):
                 "smin_alpha": self.smin_alpha,
             }
         )
-        print(f"here I am: {set(self.type_map)}")
         return dd
 
     @classmethod
