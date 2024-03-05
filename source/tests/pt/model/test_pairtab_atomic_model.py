@@ -31,9 +31,9 @@ class TestPairTab(unittest.TestCase):
                 [0.02, 0.25, 0.4, 0.75],
             ]
         )
-        self.type_map = ["H", "O"]
+
         self.model = PairTabAtomicModel(
-            tab_file=file_path, rcut=0.02, sel=2, type_map=self.type_map
+            tab_file=file_path, rcut=0.02, sel=2, type_map=["H", "O"]
         )
 
         self.extended_coord = torch.tensor(

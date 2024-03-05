@@ -81,6 +81,7 @@ def get_zbl_model(model_params):
         pt_model,
         rmin,
         rmax,
+        type_map=model_params["type_map"],
         atom_exclude_types=atom_exclude_types,
         pair_exclude_types=pair_exclude_types,
     )

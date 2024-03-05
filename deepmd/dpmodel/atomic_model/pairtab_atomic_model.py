@@ -47,7 +47,7 @@ class PairTabAtomicModel(BaseAtomicModel):
         The cutoff radius.
     sel : int or list[int]
         The maxmum number of atoms in the cut-off radius.
-    type_map: List[str]
+    type_map : list[str]
         Mapping atom type to the name (str) of the type.
         For example `type_map[1]` gives the name of the type 1.
     """
@@ -63,6 +63,7 @@ class PairTabAtomicModel(BaseAtomicModel):
         super().__init__()
         self.tab_file = tab_file
         self.rcut = rcut
+        self.type_map = type_map
 
         self.tab = PairTab(self.tab_file, rcut=rcut)
         self.type_map = type_map
@@ -102,8 +103,8 @@ class PairTabAtomicModel(BaseAtomicModel):
     def get_rcut(self) -> float:
         return self.rcut
 
-    def get_type_map(self) -> Optional[List[str]]:
-        raise NotImplementedError("TODO: get_type_map should be implemented")
+    def get_type_map(self) -> List[str]:
+        return self.type_map
 
     def get_sel(self) -> List[int]:
         return [self.sel]

@@ -57,13 +57,14 @@ class PairTabAtomicModel(torch.nn.Module, BaseAtomicModel):
         The cutoff radius.
     sel : int or list[int]
         The maxmum number of atoms in the cut-off radius.
-    type_map: List[str]
+    type_map : List[str]
         Mapping atom type to the name (str) of the type.
         For example `type_map[1]` gives the name of the type 1.
     rcond : float, optional
         The condition number for the regression of atomic energy.
     atom_ener
         Specifying atomic energy contribution in vacuum. The `set_davg_zero` key in the descrptor should be set.
+
     """
 
     def __init__(
@@ -195,6 +196,7 @@ class PairTabAtomicModel(torch.nn.Module, BaseAtomicModel):
         data.pop("@class", None)
         data.pop("type", None)
         tab_model = cls(None, rcut, sel, type_map, rcond, atom_ener, **data)
+
         tab_model.tab = tab
         tab_model.register_buffer("tab_info", torch.from_numpy(tab_model.tab.tab_info))
         nspline, ntypes = tab_model.tab.tab_info[-2:].astype(int)

@@ -63,6 +63,7 @@ class TestWeightCalculation(unittest.TestCase):
             zbl_model,
             sw_rmin=0.1,
             sw_rmax=0.25,
+            type_map=type_map,
         )
         wgt_res = []
         for dist in np.linspace(0.05, 0.3, 10):
@@ -155,6 +156,7 @@ class TestIntegration(unittest.TestCase):
             zbl_model,
             sw_rmin=0.1,
             sw_rmax=0.25,
+            type_map=type_map,
         )
         self.md1 = DPZBLLinearAtomicModel.deserialize(self.md0.serialize())
 
