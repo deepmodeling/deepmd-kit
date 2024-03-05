@@ -40,8 +40,8 @@ class TestWeightCalculation(unittest.TestCase):
         nlist = np.array([[[1], [-1]]])
 
         ds = DescrptSeA(
-            rcut=0.3,
-            rcut_smth=0.4,
+            rcut_smth=0.3,
+            rcut=0.4,
             sel=[3],
         )
         ft = InvarFitting(
