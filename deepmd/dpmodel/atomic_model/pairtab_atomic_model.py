@@ -95,7 +95,7 @@ class PairTabAtomicModel(BaseAtomicModel):
     def get_rcut(self) -> float:
         return self.rcut
 
-    def get_type_map(self) -> Optional[List[str]]:
+    def get_type_map(self) -> List[str]:
         return self.type_map
 
     def get_sel(self) -> List[int]:
@@ -142,7 +142,7 @@ class PairTabAtomicModel(BaseAtomicModel):
         sel = data.pop("sel")
         type_map = data.pop("type_map")
         tab = PairTab.deserialize(data.pop("tab"))
-        tab_model = cls(None, rcut, sel, type, **data)
+        tab_model = cls(None, rcut, sel, type_map, **data)
         tab_model.tab = tab
         tab_model.tab_info = tab_model.tab.tab_info
         tab_model.tab_data = tab_model.tab.tab_data

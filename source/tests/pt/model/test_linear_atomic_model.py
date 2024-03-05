@@ -69,13 +69,14 @@ class TestWeightCalculation(unittest.TestCase):
         ).to(env.DEVICE)
 
         type_map = ["foo", "bar"]
-        zbl_model = PairTabAtomicModel(tab_file=file_path, rcut=0.3, sel=2)
+        zbl_model = PairTabAtomicModel(tab_file=file_path, rcut=0.3, sel=2, type_map=type_map)
         dp_model = DPAtomicModel(ds, ft, type_map=type_map).to(env.DEVICE)
         wgt_model = DPZBLLinearAtomicModel(
             dp_model,
             zbl_model,
             sw_rmin=0.1,
             sw_rmax=0.25,
+            type_map=type_map,
         ).to(env.DEVICE)
         wgt_res = []
         for dist in np.linspace(0.05, 0.3, 10):
@@ -139,18 +140,20 @@ class TestIntegration(unittest.TestCase, TestCaseSingleFrameWithNlist):
         ).to(env.DEVICE)
         type_map = ["foo", "bar"]
         dp_model = DPAtomicModel(ds, ft, type_map=type_map).to(env.DEVICE)
-        zbl_model = PairTabAtomicModel(file_path, self.rcut, sum(self.sel))
+        zbl_model = PairTabAtomicModel(file_path, self.rcut, sum(self.sel), type_map=type_map)
         self.md0 = DPZBLLinearAtomicModel(
             dp_model,
             zbl_model,
             sw_rmin=0.1,
             sw_rmax=0.25,
+            type_map=type_map,
         ).to(env.DEVICE)
+        # print(self.md0.serialize()["models"]["models"][1])
         self.md1 = DPZBLLinearAtomicModel.deserialize(self.md0.serialize()).to(
             env.DEVICE
         )
         self.md2 = DPDPZBLLinearAtomicModel.deserialize(self.md0.serialize())
-        self.md3 = DPZBLModel(dp_model, zbl_model, sw_rmin=0.1, sw_rmax=0.25)
+        self.md3 = DPZBLModel(dp_model, zbl_model, sw_rmin=0.1, sw_rmax=0.25, type_map=type_map)
 
     def test_self_consistency(self):
         args = [
@@ -171,12 +174,10 @@ class TestIntegration(unittest.TestCase, TestCaseSingleFrameWithNlist):
     def test_jit(self):
         md1 = torch.jit.script(self.md1)
         self.assertEqual(md1.get_rcut(), self.rcut)
-        with self.assertRaises(torch.jit.Error):
-            self.assertEqual(md1.get_type_map(), ["foo", "bar"])
+        self.assertEqual(md1.get_type_map(), ["foo", "bar"])
         md3 = torch.jit.script(self.md3)
         self.assertEqual(md3.get_rcut(), self.rcut)
-        with self.assertRaises(torch.jit.Error):
-            self.assertEqual(md3.get_type_map(), ["foo", "bar"])
+        self.assertEqual(md3.get_type_map(), ["foo", "bar"])
 
 
 if __name__ == "__main__":

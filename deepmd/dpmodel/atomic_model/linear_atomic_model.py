@@ -59,6 +59,7 @@ class LinearAtomicModel(BaseAtomicModel):
         self.models = models
         sub_model_type_maps = [md.get_type_map() for md in models]
         err_msg = []
+        print(type_map)
         common_type_map = set(type_map)
         for tpmp in sub_model_type_maps:
             if not common_type_map.issubset(set(tpmp)):
@@ -314,7 +315,6 @@ class DPZBLLinearAtomicModel(LinearAtomicModel):
                 "sw_rmin": self.sw_rmin,
                 "sw_rmax": self.sw_rmax,
                 "smin_alpha": self.smin_alpha,
-                "type_map": self.type_map,
             }
         )
         return dd
