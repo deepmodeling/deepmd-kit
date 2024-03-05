@@ -65,24 +65,29 @@ class TestDPModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
         np.testing.assert_allclose(
             to_numpy_array(ret0["energy"]),
             to_numpy_array(ret1["energy"]),
+            atol=self.atol,
         )
         np.testing.assert_allclose(
             to_numpy_array(ret0["energy_redu"]),
             to_numpy_array(ret1["energy_redu"]),
+            atol=self.atol,
         )
         np.testing.assert_allclose(
             to_numpy_array(ret0["energy_derv_r"]),
             to_numpy_array(ret1["energy_derv_r"]),
+            atol=self.atol,
         )
         np.testing.assert_allclose(
             to_numpy_array(ret0["energy_derv_c_redu"]),
             to_numpy_array(ret1["energy_derv_c_redu"]),
+            atol=self.atol,
         )
         ret0 = md0.forward_common(*args, do_atomic_virial=True)
         ret1 = md1.forward_common(*args, do_atomic_virial=True)
         np.testing.assert_allclose(
             to_numpy_array(ret0["energy_derv_c"]),
             to_numpy_array(ret1["energy_derv_c"]),
+            atol=self.atol,
         )
 
         coord_ext, atype_ext, mapping = extend_coord_with_ghosts(
@@ -106,6 +111,7 @@ class TestDPModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
         np.testing.assert_allclose(
             to_numpy_array(ret0["energy_derv_c_redu"]),
             to_numpy_array(ret2["energy_derv_c_redu"]),
+            atol=self.atol,
         )
 
     def test_dp_consistency(self):
@@ -141,10 +147,12 @@ class TestDPModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
         np.testing.assert_allclose(
             ret0["energy"],
             to_numpy_array(ret1["energy"]),
+            atol=self.atol,
         )
         np.testing.assert_allclose(
             ret0["energy_redu"],
             to_numpy_array(ret1["energy_redu"]),
+            atol=self.atol,
         )
 
     def test_dp_consistency_nopbc(self):
@@ -180,10 +188,12 @@ class TestDPModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
         np.testing.assert_allclose(
             ret0["energy"],
             to_numpy_array(ret1["energy"]),
+            atol=self.atol,
         )
         np.testing.assert_allclose(
             ret0["energy_redu"],
             to_numpy_array(ret1["energy_redu"]),
+            atol=self.atol,
         )
 
     def test_prec_consistency(self):
@@ -231,6 +241,7 @@ class TestDPModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
             np.testing.assert_allclose(
                 to_numpy_array(model_l_ret_32[ii]),
                 to_numpy_array(model_l_ret_64[ii]),
+                atol=self.atol,
             )
 
 
@@ -263,24 +274,29 @@ class TestDPModelLower(unittest.TestCase, TestCaseSingleFrameWithNlist):
         np.testing.assert_allclose(
             to_numpy_array(ret0["energy"]),
             to_numpy_array(ret1["energy"]),
+            atol=self.atol,
         )
         np.testing.assert_allclose(
             to_numpy_array(ret0["energy_redu"]),
             to_numpy_array(ret1["energy_redu"]),
+            atol=self.atol,
         )
         np.testing.assert_allclose(
             to_numpy_array(ret0["energy_derv_r"]),
             to_numpy_array(ret1["energy_derv_r"]),
+            atol=self.atol,
         )
         np.testing.assert_allclose(
             to_numpy_array(ret0["energy_derv_c_redu"]),
             to_numpy_array(ret1["energy_derv_c_redu"]),
+            atol=self.atol,
         )
         ret0 = md0.forward_common_lower(*args, do_atomic_virial=True)
         ret1 = md1.forward_common_lower(*args, do_atomic_virial=True)
         np.testing.assert_allclose(
             to_numpy_array(ret0["energy_derv_c"]),
             to_numpy_array(ret1["energy_derv_c"]),
+            atol=self.atol,
         )
 
     def test_dp_consistency(self):
@@ -310,10 +326,12 @@ class TestDPModelLower(unittest.TestCase, TestCaseSingleFrameWithNlist):
         np.testing.assert_allclose(
             ret0["energy"],
             to_numpy_array(ret1["energy"]),
+            atol=self.atol,
         )
         np.testing.assert_allclose(
             ret0["energy_redu"],
             to_numpy_array(ret1["energy_redu"]),
+            atol=self.atol,
         )
 
     def test_prec_consistency(self):
@@ -363,6 +381,7 @@ class TestDPModelLower(unittest.TestCase, TestCaseSingleFrameWithNlist):
             np.testing.assert_allclose(
                 to_numpy_array(model_l_ret_32[ii]),
                 to_numpy_array(model_l_ret_64[ii]),
+                atol=self.atol,
             )
 
     def test_jit(self):
@@ -447,7 +466,7 @@ class TestDPModelFormatNlist(unittest.TestCase):
             to_torch_tensor(self.atype_ext),
             to_torch_tensor(nlist),
         )
-        np.testing.assert_allclose(self.expected_nlist, to_numpy_array(nlist1))
+        np.testing.assert_equal(self.expected_nlist, to_numpy_array(nlist1))
 
     def test_nlist_st(self):
         # n_nnei < nnei
@@ -464,7 +483,7 @@ class TestDPModelFormatNlist(unittest.TestCase):
             to_torch_tensor(self.atype_ext),
             to_torch_tensor(nlist),
         )
-        np.testing.assert_allclose(self.expected_nlist, to_numpy_array(nlist1))
+        np.testing.assert_equal(self.expected_nlist, to_numpy_array(nlist1))
 
     def test_nlist_lt(self):
         # n_nnei > nnei
@@ -481,7 +500,7 @@ class TestDPModelFormatNlist(unittest.TestCase):
             to_torch_tensor(self.atype_ext),
             to_torch_tensor(nlist),
         )
-        np.testing.assert_allclose(self.expected_nlist, to_numpy_array(nlist1))
+        np.testing.assert_equal(self.expected_nlist, to_numpy_array(nlist1))
 
 
 class TestEnergyModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
@@ -511,24 +530,29 @@ class TestEnergyModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
         np.testing.assert_allclose(
             to_numpy_array(ret0["atom_energy"]),
             to_numpy_array(ret1["atom_energy"]),
+            atol=self.atol,
         )
         np.testing.assert_allclose(
             to_numpy_array(ret0["energy"]),
             to_numpy_array(ret1["energy"]),
+            atol=self.atol,
         )
         np.testing.assert_allclose(
             to_numpy_array(ret0["force"]),
             to_numpy_array(ret1["force"]),
+            atol=self.atol,
         )
         np.testing.assert_allclose(
             to_numpy_array(ret0["virial"]),
             to_numpy_array(ret1["virial"]),
+            atol=self.atol,
         )
         ret0 = md0.forward(*args, do_atomic_virial=True)
         ret1 = md1.forward(*args, do_atomic_virial=True)
         np.testing.assert_allclose(
             to_numpy_array(ret0["atom_virial"]),
             to_numpy_array(ret1["atom_virial"]),
+            atol=self.atol,
         )
         coord_ext, atype_ext, mapping, nlist = extend_input_and_build_neighbor_list(
             to_torch_tensor(self.coord),
@@ -545,6 +569,7 @@ class TestEnergyModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
         np.testing.assert_allclose(
             to_numpy_array(ret0["virial"]),
             to_numpy_array(ret2["virial"]),
+            atol=self.atol,
         )
 
 
@@ -577,24 +602,29 @@ class TestEnergyModelLower(unittest.TestCase, TestCaseSingleFrameWithNlist):
         np.testing.assert_allclose(
             to_numpy_array(ret0["atom_energy"]),
             to_numpy_array(ret1["atom_energy"]),
+            atol=self.atol,
         )
         np.testing.assert_allclose(
             to_numpy_array(ret0["energy"]),
             to_numpy_array(ret1["energy"]),
+            atol=self.atol,
         )
         np.testing.assert_allclose(
             to_numpy_array(ret0["extended_force"]),
             to_numpy_array(ret1["extended_force"]),
+            atol=self.atol,
         )
         np.testing.assert_allclose(
             to_numpy_array(ret0["virial"]),
             to_numpy_array(ret1["virial"]),
+            atol=self.atol,
         )
         ret0 = md0.forward_lower(*args, do_atomic_virial=True)
         ret1 = md1.forward_lower(*args, do_atomic_virial=True)
         np.testing.assert_allclose(
             to_numpy_array(ret0["extended_virial"]),
             to_numpy_array(ret1["extended_virial"]),
+            atol=self.atol,
         )
 
     def test_jit(self):
