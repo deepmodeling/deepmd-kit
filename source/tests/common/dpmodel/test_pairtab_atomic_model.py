@@ -169,7 +169,6 @@ class TestPairTabTwoAtoms(unittest.TestCase):
             )
 
             model = PairTabAtomicModel(
-
                 tab_file=file_path, rcut=rcut, sel=2, type_map=["S"]
             )
             results.append(
