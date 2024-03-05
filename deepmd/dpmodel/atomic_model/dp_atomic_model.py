@@ -143,7 +143,6 @@ class DPAtomicModel(BaseAtomicModel):
                 "type_map": self.type_map,
                 "descriptor": self.descriptor.serialize(),
                 "fitting": self.fitting.serialize(),
-                "type_map": self.type_map,
             }
         )
         return dd

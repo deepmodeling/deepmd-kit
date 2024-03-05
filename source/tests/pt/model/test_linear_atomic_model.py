@@ -152,7 +152,6 @@ class TestIntegration(unittest.TestCase, TestCaseSingleFrameWithNlist):
             sw_rmax=0.25,
             type_map=type_map,
         ).to(env.DEVICE)
-        # print(self.md0.serialize()["models"]["models"][1])
         self.md1 = DPZBLLinearAtomicModel.deserialize(self.md0.serialize()).to(
             env.DEVICE
         )
