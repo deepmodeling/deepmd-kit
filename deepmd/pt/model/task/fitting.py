@@ -430,14 +430,6 @@ class GeneralFitting(Fitting):
         else:
             raise KeyError(key)
 
-    @property
-    def get_emask(self):
-        """
-        Compute the atom-wise type mask for each type with shape [ntypes].
-        1 for include and 0 for exclude.
-        """
-        return self.type_mask
-
     @abstractmethod
     def _net_out_dim(self):
         """Set the FittingNet output dim."""

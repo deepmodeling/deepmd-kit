@@ -593,6 +593,7 @@ def eval_model(
             "coord": batch_coord,
             "atype": batch_atype,
             "box": batch_box,
+            "do_atomic_virial": atomic,
         }
         if getattr(model, "__USE_SPIN_INPUT__", False):
             input_dict["spin"] = batch_spin

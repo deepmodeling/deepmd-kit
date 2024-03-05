@@ -251,7 +251,7 @@ class SpinModel(torch.nn.Module):
         return self.backbone_model.is_aparam_nall()
 
     @torch.jit.export
-    def model_output_type(self) -> str:
+    def model_output_type(self) -> List[str]:
         """Get the output type for the model."""
         return self.backbone_model.model_output_type()
 
