@@ -53,7 +53,12 @@ class PairTabAtomicModel(torch.nn.Module, BaseAtomicModel):
     """
 
     def __init__(
-        self, tab_file: str, rcut: float, sel: Union[int, List[int]], type_map: List[str], **kwargs
+        self,
+        tab_file: str,
+        rcut: float,
+        sel: Union[int, List[int]],
+        type_map: List[str],
+        **kwargs,
     ):
         torch.nn.Module.__init__(self)
         self.model_def_script = ""

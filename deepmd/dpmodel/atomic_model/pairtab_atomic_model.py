@@ -53,7 +53,12 @@ class PairTabAtomicModel(BaseAtomicModel):
     """
 
     def __init__(
-        self, tab_file: str, rcut: float, sel: Union[int, List[int]], type_map: List[str], **kwargs
+        self,
+        tab_file: str,
+        rcut: float,
+        sel: Union[int, List[int]],
+        type_map: List[str],
+        **kwargs,
     ):
         super().__init__()
         self.tab_file = tab_file

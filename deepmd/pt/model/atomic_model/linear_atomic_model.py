@@ -65,8 +65,10 @@ class LinearAtomicModel(torch.nn.Module, BaseAtomicModel):
         common_type_map = set(type_map)
         for tpmp in sub_model_type_maps:
             if not common_type_map.issubset(set(tpmp)):
-                err_msg.append(f"type_map {tpmp} is not a subset of type_map {type_map}")
-        assert len(err_msg) == 0, '\n'.join(err_msg)
+                err_msg.append(
+                    f"type_map {tpmp} is not a subset of type_map {type_map}"
+                )
+        assert len(err_msg) == 0, "\n".join(err_msg)
         self.type_map = type_map
         self.atomic_bias = None
         self.mixed_types_list = [model.mixed_types() for model in self.models]
@@ -307,7 +309,7 @@ class DPZBLLinearAtomicModel(LinearAtomicModel):
         Mapping atom type to the name (str) of the type.
         For example `type_map[1]` gives the name of the type 1.
     smin_alpha
-        The short-range tabulated interaction will be swithed according to the distance of the nearest neighbor. 
+        The short-range tabulated interaction will be swithed according to the distance of the nearest neighbor.
         This distance is calculated by softmin.
     """
 
@@ -341,7 +343,9 @@ class DPZBLLinearAtomicModel(LinearAtomicModel):
                 "@class": "Model",
                 "@version": 1,
                 "type": "zbl",
-                "models": LinearAtomicModel.serialize([self.dp_model, self.zbl_model], self.type_map),
+                "models": LinearAtomicModel.serialize(
+                    [self.dp_model, self.zbl_model], self.type_map
+                ),
                 "sw_rmin": self.sw_rmin,
                 "sw_rmax": self.sw_rmax,
                 "smin_alpha": self.smin_alpha,
@@ -357,7 +361,9 @@ class DPZBLLinearAtomicModel(LinearAtomicModel):
         sw_rmax = data.pop("sw_rmax")
         smin_alpha = data.pop("smin_alpha")
 
-        [dp_model, zbl_model], type_map = LinearAtomicModel.deserialize(data.pop("models"))
+        [dp_model, zbl_model], type_map = LinearAtomicModel.deserialize(
+            data.pop("models")
+        )
 
         data.pop("@class", None)
         data.pop("type", None)
