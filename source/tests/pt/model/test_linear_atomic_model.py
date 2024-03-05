@@ -191,7 +191,9 @@ class TestRemmapMethod(unittest.TestCase):
         commonl = ["H"]
         originl = ["Si", "H", "O", "S"]
         with self.assertRaises(AssertionError):
-            new_atype = DPZBLLinearEnergyAtomicModel.remap_atype(atype, originl, commonl)
+            new_atype = DPZBLLinearEnergyAtomicModel.remap_atype(
+                atype, originl, commonl
+            )
 
     def test_valid(self):
         atype = torch.randint(0, 3, (4, 20), device=env.DEVICE)
