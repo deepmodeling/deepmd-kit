@@ -188,7 +188,7 @@ class LinearAtomicModel(torch.nn.Module, BaseAtomicModel):
 
         for i, model in enumerate(self.models):
             ori_map = model.get_type_map()
-            updated_atype = self.remap_atype(extended_atype,ori_map,self.type_map)
+            updated_atype = self.remap_atype(extended_atype, ori_map, self.type_map)
             ener_list.append(
                 model.forward_atomic(
                     extended_coord,
@@ -219,30 +219,34 @@ class LinearAtomicModel(torch.nn.Module, BaseAtomicModel):
         return fit_ret
 
     @staticmethod
-    def remap_atype(atype:torch.Tensor, ori_map: List[str], new_map: List[str]) -> torch.Tensor:
-        """ 
-        This method is used to map the atype from the common type_map to the original type_map of 
+    def remap_atype(
+        atype: torch.Tensor, ori_map: List[str], new_map: List[str]
+    ) -> torch.Tensor:
+        """
+        This method is used to map the atype from the common type_map to the original type_map of
         indivial AtomicModels.
 
         Parameters
         ----------
-        atype: torch.Tensor
+        atype : torch.Tensor
             The atom type tensor being updated, shape of (nframes, natoms)
-        ori_map: List[str]
+        ori_map : List[str]
             The original type map of an AtomicModel.
-        new_map: List[str]
+        new_map : List[str]
             The common type map of the DPZBLLinearAtomicModel, created by the `get_type_map` method,
             must be a subset of the ori_map.
-        
-        Return
+
+        Returns
         -------
         torch.Tensor
         """
-        assert max(atype) < len(new_map), "The input `atype` cannot be handled by the type_map."
+        assert max(atype) < len(
+            new_map
+        ), "The input `atype` cannot be handled by the type_map."
         idx_2_type = {k: new_map[k] for k in range(len(new_map))}
-        type_2_idx = {atp: idx for idx, atp in enumerate(ori_map)} 
+        type_2_idx = {atp: idx for idx, atp in enumerate(ori_map)}
         # this maps the atype in the new map to the original map
-        mapping = {idx: type_2_idx[idx_2_type[idx]] for idx in range(len(new_map))} 
+        mapping = {idx: type_2_idx[idx_2_type[idx]] for idx in range(len(new_map))}
         updated_atype = atype.clone()
         updated_atype.apply_(mapping.get)
         return updated_atype
@@ -374,7 +378,7 @@ class DPZBLLinearAtomicModel(LinearAtomicModel):
 
         # this is a placeholder being updated in _compute_weight, to handle Jit attribute init error.
         self.zbl_weight = torch.empty(0, dtype=torch.float64, device=env.DEVICE)
-    
+
     def compute_or_load_stat(
         self,
         sampled_func,
