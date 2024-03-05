@@ -336,7 +336,6 @@ class DescrptSeR(NativeOP, BaseDescriptor):
         obj["davg"] = variables["davg"]
         obj["dstd"] = variables["dstd"]
         obj.embeddings = NetworkCollection.deserialize(embeddings)
-        obj.env_mat = EnvMat.deserialize(env_mat)
         return obj
 
     @classmethod

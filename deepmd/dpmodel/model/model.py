@@ -68,6 +68,8 @@ def get_spin_model(data: dict) -> SpinModel:
         exclude_types=data.get("pair_exclude_types", None)
     )
     data["pair_exclude_types"] = pair_exclude_types
+    # for descriptor data stat
+    data["descriptor"]["exclude_types"] = pair_exclude_types
     atom_exclude_types = spin.get_atom_exclude_types(
         exclude_types=data.get("atom_exclude_types", None)
     )
