@@ -53,7 +53,9 @@ class TestWeightCalculation(unittest.TestCase):
         )
 
         type_map = ["foo", "bar"]
-        zbl_model = PairTabAtomicModel(tab_file=file_path, rcut=0.3, sel=2)
+        zbl_model = PairTabAtomicModel(
+            tab_file=file_path, rcut=0.3, sel=2, type_map=type_map
+        )
         dp_model = DPAtomicModel(ds, ft, type_map=type_map)
 
         wgt_model = DPZBLLinearAtomicModel(
@@ -61,6 +63,7 @@ class TestWeightCalculation(unittest.TestCase):
             zbl_model,
             sw_rmin=0.1,
             sw_rmax=0.25,
+            type_map=type_map,
         )
         wgt_res = []
         for dist in np.linspace(0.05, 0.3, 10):
@@ -145,12 +148,15 @@ class TestIntegration(unittest.TestCase):
         )
         type_map = ["foo", "bar"]
         dp_model = DPAtomicModel(ds, ft, type_map=type_map)
-        zbl_model = PairTabAtomicModel(file_path, self.rcut, sum(self.sel))
+        zbl_model = PairTabAtomicModel(
+            file_path, self.rcut, sum(self.sel), type_map=type_map
+        )
         self.md0 = DPZBLLinearAtomicModel(
             dp_model,
             zbl_model,
             sw_rmin=0.1,
             sw_rmax=0.25,
+            type_map=type_map,
         )
         self.md1 = DPZBLLinearAtomicModel.deserialize(self.md0.serialize())
 
