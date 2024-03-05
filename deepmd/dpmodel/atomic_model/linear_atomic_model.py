@@ -38,7 +38,7 @@ from .pairtab_atomic_model import (
 )
 
 
-class LinearAtomicModel(BaseAtomicModel):
+class LinearEnergyAtomicModel(BaseAtomicModel):
     """Linear model make linear combinations of several existing models.
 
     Parameters
@@ -203,7 +203,7 @@ class LinearAtomicModel(BaseAtomicModel):
         ori_map : List[str]
             The original type map of an AtomicModel.
         new_map : List[str]
-            The common type map of the DPZBLLinearAtomicModel, created by the `get_type_map` method,
+            The common type map of the DPZBLLinearEnergyAtomicModel, created by the `get_type_map` method,
             must be a subset of the ori_map.
 
         Returns
@@ -296,7 +296,7 @@ class LinearAtomicModel(BaseAtomicModel):
         return False
 
 
-class DPZBLLinearAtomicModel(LinearAtomicModel):
+class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
     """Model linearly combine a list of AtomicModels.
 
     Parameters
@@ -343,7 +343,7 @@ class DPZBLLinearAtomicModel(LinearAtomicModel):
                 "@class": "Model",
                 "type": "zbl",
                 "@version": 1,
-                "models": LinearAtomicModel.serialize(
+                "models": LinearEnergyAtomicModel.serialize(
                     [self.dp_model, self.zbl_model], self.type_map
                 ),
                 "sw_rmin": self.sw_rmin,
@@ -354,7 +354,7 @@ class DPZBLLinearAtomicModel(LinearAtomicModel):
         return dd
 
     @classmethod
-    def deserialize(cls, data) -> "DPZBLLinearAtomicModel":
+    def deserialize(cls, data) -> "DPZBLLinearEnergyAtomicModel":
         data = copy.deepcopy(data)
         check_version_compatibility(data.pop("@version", 1), 1, 1)
         data.pop("@class")
@@ -363,7 +363,7 @@ class DPZBLLinearAtomicModel(LinearAtomicModel):
         sw_rmax = data.pop("sw_rmax")
         smin_alpha = data.pop("smin_alpha")
 
-        ([dp_model, zbl_model], type_map) = LinearAtomicModel.deserialize(
+        ([dp_model, zbl_model], type_map) = LinearEnergyAtomicModel.deserialize(
             data.pop("models")
         )
 

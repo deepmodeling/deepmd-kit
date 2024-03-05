@@ -10,7 +10,7 @@ from deepmd.dpmodel.model.dp_model import (
     DPModel,
 )
 from deepmd.pt.model.atomic_model import (
-    DPZBLLinearAtomicModel,
+    DPZBLLinearEnergyAtomicModel,
 )
 from deepmd.pt.model.model.model import (
     BaseModel,
@@ -20,7 +20,7 @@ from .make_model import (
     make_model,
 )
 
-DPZBLModel_ = make_model(DPZBLLinearAtomicModel)
+DPZBLModel_ = make_model(DPZBLLinearEnergyAtomicModel)
 
 
 @BaseModel.register("zbl")
