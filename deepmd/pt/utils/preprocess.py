@@ -233,7 +233,7 @@ def compute_smooth_weight(distance, rmin: float, rmax: float):
     mid_mask = torch.logical_not(torch.logical_or(min_mask, max_mask))
     uu = (distance - rmin) / (rmax - rmin)
     vv = uu * uu * uu * (-6 * uu * uu + 15 * uu - 10) + 1
-    return torch.where(mid_mask, vv, min_mask)
+    return vv * mid_mask + min_mask
 
 
 def make_env_mat(

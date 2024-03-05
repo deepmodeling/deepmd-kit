@@ -20,11 +20,9 @@ def compute_smooth_weight(
     min_mask = distance <= rmin
     max_mask = distance >= rmax
     mid_mask = np.logical_not(np.logical_or(min_mask, max_mask))
-    with np.errstate(divide="ignore"):
-        uu = (distance - rmin) / (rmax - rmin)
-    with np.errstate(invalid="ignore"):
-        vv = uu * uu * uu * (-6.0 * uu * uu + 15.0 * uu - 10.0) + 1.0
-    return np.where(mid_mask, vv, min_mask)
+    uu = (distance - rmin) / (rmax - rmin)
+    vv = uu * uu * uu * (-6.0 * uu * uu + 15.0 * uu - 10.0) + 1.0
+    return vv * mid_mask + min_mask
 
 
 def _make_env_mat(
