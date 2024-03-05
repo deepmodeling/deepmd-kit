@@ -240,10 +240,14 @@ class LinearAtomicModel(torch.nn.Module, BaseAtomicModel):
         -------
         torch.Tensor
         """
-        assert torch.max(atype) < len(new_map), "The input `atype` cannot be handled by the type_map."
+        assert torch.max(atype) < len(
+            new_map
+        ), "The input `atype` cannot be handled by the type_map."
         type_2_idx = {atp: idx for idx, atp in enumerate(ori_map)}
         # this maps the atype in the new map to the original map
-        mapping = torch.tensor([type_2_idx[new_map[idx]] for idx in range(len(new_map))]).to(atype.device)
+        mapping = torch.tensor(
+            [type_2_idx[new_map[idx]] for idx in range(len(new_map))]
+        ).to(atype.device)
         updated_atype = mapping[atype.long()]
         return updated_atype
 
