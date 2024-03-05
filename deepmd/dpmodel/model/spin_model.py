@@ -229,11 +229,17 @@ class SpinModel:
     def get_nnei(self) -> int:
         """Returns the total number of selected neighboring atoms in the cut-off radius."""
         # for C++ interface
-        return self.backbone_model.get_nnei() // 2  # ignore the virtual selected
+        if not self.backbone_model.mixed_types():
+            return self.backbone_model.get_nnei() // 2  # ignore the virtual selected
+        else:
+            return self.backbone_model.get_nnei()
 
     def get_nsel(self) -> int:
         """Returns the total number of selected neighboring atoms in the cut-off radius."""
-        return self.backbone_model.get_nsel() // 2  # ignore the virtual selected
+        if not self.backbone_model.mixed_types():
+            return self.backbone_model.get_nsel() // 2  # ignore the virtual selected
+        else:
+            return self.backbone_model.get_nsel()
 
     @staticmethod
     def has_spin() -> bool:

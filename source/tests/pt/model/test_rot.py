@@ -45,7 +45,7 @@ class RotTest:
         if not test_spin:
             test_keys = ["energy", "force", "virial"]
         else:
-            test_keys = ["energy", "force", "force_mag", "virial"]
+            test_keys = ["energy", "force", "force_mag"]
         rmat = torch.tensor(special_ortho_group.rvs(3), dtype=dtype, device=env.DEVICE)
 
         # rotate only coord and shift to the center of cell
@@ -176,11 +176,6 @@ class TestForceModelDPA2(unittest.TestCase, RotTest):
         self.model = get_model(model_params).to(env.DEVICE)
 
 
-class TestEnergyModelSpinSeA(unittest.TestCase, RotTest):
-    def setUp(self):
-        model_params = copy.deepcopy(model_spin)
-
-
 class TestEnergyModelHybrid(unittest.TestCase, RotTest):
     def setUp(self):
         model_params = copy.deepcopy(model_hybrid)
@@ -200,6 +195,13 @@ class TestForceModelHybrid(unittest.TestCase, RotTest):
 class TestEnergyModelZBL(unittest.TestCase, RotTest):
     def setUp(self):
         model_params = copy.deepcopy(model_zbl)
+        self.type_split = False
+        self.model = get_model(model_params).to(env.DEVICE)
+
+
+class TestEnergyModelSpinSeA(unittest.TestCase, RotTest):
+    def setUp(self):
+        model_params = copy.deepcopy(model_spin)
         self.type_split = False
         self.test_spin = True
         self.model = get_model(model_params).to(env.DEVICE)

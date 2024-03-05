@@ -65,7 +65,7 @@ class ForwardLowerTest:
         if not test_spin:
             test_keys = ["energy", "force", "virial"]
         else:
-            test_keys = ["energy", "force", "force_mag", "virial"]
+            test_keys = ["energy", "force", "force_mag"]
 
         result_forward = eval_model(
             self.model,

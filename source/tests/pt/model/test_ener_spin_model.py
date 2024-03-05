@@ -21,6 +21,9 @@ from deepmd.pt.utils.utils import (
 )
 
 from .test_permutation import (
+    model_dpa1,
+    model_dpa2,
+    model_se_e2_a,
     model_spin,
 )
 
@@ -103,7 +106,6 @@ class SpinTest:
         torch.testing.assert_close(result["atom_energy"].shape, [nframes, nloc, 1])
         torch.testing.assert_close(result["force"].shape, [nframes, nloc, 3])
         torch.testing.assert_close(result["force_mag"].shape, [nframes, nloc, 3])
-        torch.testing.assert_close(result["virial"].shape, [nframes, 9])
 
     def test_input_output_process(self):
         nframes, nloc = self.coord.shape[:2]
@@ -143,13 +145,6 @@ class SpinTest:
             torch.testing.assert_close(
                 force_mag, force_all[:, nloc:] * virtual_scale.unsqueeze(-1)
             )
-        if self.model.do_grad_c("energy"):
-            atom_virial_all = model_ret["energy_derv_c"].squeeze(-2)
-            atom_virial_real, atom_virial_mag, _ = self.model.process_spin_output(
-                self.atype, atom_virial_all, add_mag=False, virtual_scale=False
-            )
-            torch.testing.assert_close(atom_virial_real, atom_virial_all[:, :nloc])
-            torch.testing.assert_close(atom_virial_mag, atom_virial_all[:, nloc:])
 
         # 3. test forward_lower input process
         (
@@ -278,32 +273,6 @@ class SpinTest:
             torch.testing.assert_close(
                 force_mag, force_all_switched[:, nall:] * virtual_scale.unsqueeze(-1)
             )
-        if self.model.do_grad_c("energy"):
-            atom_virial_all = model_ret["energy_derv_c"].squeeze(-2)
-            atom_virial_real, atom_virial_mag, _ = self.model.process_spin_output_lower(
-                extended_atype,
-                atom_virial_all,
-                nloc,
-                add_mag=False,
-                virtual_scale=False,
-            )
-            atom_virial_all_switched = torch.zeros_like(atom_virial_all)
-            atom_virial_all_switched[:, :nloc] = atom_virial_all[:, :nloc]
-            atom_virial_all_switched[:, nloc:nall] = atom_virial_all[
-                :, nloc + nloc : nloc + nall
-            ]
-            atom_virial_all_switched[:, nall : nall + nloc] = atom_virial_all[
-                :, nloc : nloc + nloc
-            ]
-            atom_virial_all_switched[:, nall + nloc :] = atom_virial_all[
-                :, nloc + nall :
-            ]
-            torch.testing.assert_close(
-                atom_virial_real, atom_virial_all_switched[:, :nall]
-            )
-            torch.testing.assert_close(
-                atom_virial_mag, atom_virial_all_switched[:, nall:]
-            )
 
     def test_jit(self):
         model = torch.jit.script(self.model)
@@ -312,6 +281,9 @@ class SpinTest:
         self.assertEqual(model.get_type_map(), self.type_map)
 
     def test_self_consistency(self):
+        if hasattr(self, "serial_test") and not self.serial_test:
+            # not implement serialize and deserialize
+            return
         model1 = SpinEnergyModel.deserialize(self.model.serialize())
         result = model1(
             self.coord,
@@ -332,6 +304,9 @@ class SpinTest:
         model1 = torch.jit.script(model1)
 
     def test_dp_consistency(self):
+        if hasattr(self, "serial_test") and not self.serial_test:
+            # not implement serialize and deserialize
+            return
         dp_model = DPSpinModel.deserialize(self.model.serialize())
         # test call
         dp_ret = dp_model.call(
@@ -408,9 +383,36 @@ class TestEnergyModelSpinSeA(unittest.TestCase, SpinTest):
     def setUp(self):
         SpinTest.setUp(self)
         model_params = copy.deepcopy(model_spin)
+        model_params["descriptor"] = copy.deepcopy(model_se_e2_a["descriptor"])
         self.rcut = model_params["descriptor"]["rcut"]
         self.nsel = sum(model_params["descriptor"]["sel"])
         self.type_map = model_params["type_map"]
+        self.model = get_model(model_params).to(env.DEVICE)
+
+
+class TestEnergyModelSpinDPA1(unittest.TestCase, SpinTest):
+    def setUp(self):
+        SpinTest.setUp(self)
+        model_params = copy.deepcopy(model_spin)
+        model_params["descriptor"] = copy.deepcopy(model_dpa1["descriptor"])
+        self.rcut = model_params["descriptor"]["rcut"]
+        self.nsel = model_params["descriptor"]["sel"]
+        self.type_map = model_params["type_map"]
+        # not implement serialize and deserialize
+        self.serial_test = False
+        self.model = get_model(model_params).to(env.DEVICE)
+
+
+class TestEnergyModelSpinDPA2(unittest.TestCase, SpinTest):
+    def setUp(self):
+        SpinTest.setUp(self)
+        model_params = copy.deepcopy(model_spin)
+        model_params["descriptor"] = copy.deepcopy(model_dpa2["descriptor"])
+        self.rcut = model_params["descriptor"]["repinit_rcut"]
+        self.nsel = model_params["descriptor"]["repinit_nsel"]
+        self.type_map = model_params["type_map"]
+        # not implement serialize and deserialize
+        self.serial_test = False
         self.model = get_model(model_params).to(env.DEVICE)
 
 

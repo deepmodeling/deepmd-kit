@@ -37,7 +37,6 @@ model_se_e2_a = {
 }
 
 model_zbl = {
-    "type": "zbl",
     "type_map": ["O", "H", "B"],
     "use_srtab": "source/tests/pt/model/water/data/zbl_tab_potential/H2O_tab_potential.txt",
     "smin_alpha": 0.1,
@@ -62,7 +61,6 @@ model_zbl = {
 }
 
 model_spin = {
-    "type": "spin",
     "type_map": ["O", "H", "B"],
     "descriptor": {
         "type": "se_e2_a",

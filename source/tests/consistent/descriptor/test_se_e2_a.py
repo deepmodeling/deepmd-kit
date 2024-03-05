@@ -40,7 +40,7 @@ from deepmd.utils.argcheck import (
     (True, False),  # type_one_side
     ([], [[0, 1]]),  # excluded_types
     ("float32", "float64"),  # precision
-    (0.0, 1e-8),  # env_protection
+    (0.0, 1e-8, 1e-2),  # env_protection
 )
 class TestSeA(CommonTest, DescriptorTest, unittest.TestCase):
     @property
