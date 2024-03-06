@@ -11,6 +11,9 @@ from deepmd.pt.model.model import (
 from deepmd.pt.utils import (
     env,
 )
+from deepmd.pt.utils.utils import (
+    to_numpy_array,
+)
 
 dtype = torch.float64
 
@@ -81,9 +84,7 @@ class ForceTest:
                 spins=torch.tensor(spin, device=env.DEVICE).unsqueeze(0),
             )
             # detach
-            ret = {
-                key: result[key].squeeze(0).detach().cpu().numpy() for key in test_keys
-            }
+            ret = {key: to_numpy_array(result[key].squeeze(0)) for key in test_keys}
             return ret
 
         def np_infer_spin(
@@ -97,9 +98,7 @@ class ForceTest:
                 spins=torch.tensor(spin, device=env.DEVICE).unsqueeze(0),
             )
             # detach
-            ret = {
-                key: result[key].squeeze(0).detach().cpu().numpy() for key in test_keys
-            }
+            ret = {key: to_numpy_array(result[key].squeeze(0)) for key in test_keys}
             return ret
 
         def ff_coord(_coord):
@@ -152,9 +151,7 @@ class VirialTest:
                 atype,
             )
             # detach
-            ret = {
-                key: result[key].squeeze(0).detach().cpu().numpy() for key in test_keys
-            }
+            ret = {key: to_numpy_array(result[key].squeeze(0)) for key in test_keys}
             # detach
             return ret
 

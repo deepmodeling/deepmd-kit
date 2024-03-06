@@ -310,10 +310,10 @@ class SpinTest:
         dp_model = DPSpinModel.deserialize(self.model.serialize())
         # test call
         dp_ret = dp_model.call(
-            self.coord.detach().cpu().numpy(),
-            self.atype.detach().cpu().numpy(),
-            self.spin.detach().cpu().numpy(),
-            self.cell.detach().cpu().numpy(),
+            to_numpy_array(self.coord),
+            to_numpy_array(self.atype),
+            to_numpy_array(self.spin),
+            to_numpy_array(self.cell),
         )
         result = self.model.forward_common(
             self.coord,
@@ -352,11 +352,11 @@ class SpinTest:
             self.spin, index=mapping.unsqueeze(-1).tile((1, 1, 3)), dim=1
         )
         dp_ret_lower = dp_model.call_lower(
-            extended_coord.detach().cpu().numpy(),
-            extended_atype.detach().cpu().numpy(),
-            extended_spin.detach().cpu().numpy(),
-            nlist.detach().cpu().numpy(),
-            mapping.detach().cpu().numpy(),
+            to_numpy_array(extended_coord),
+            to_numpy_array(extended_atype),
+            to_numpy_array(extended_spin),
+            to_numpy_array(nlist),
+            to_numpy_array(mapping),
         )
         result_lower = self.model.forward_common_lower(
             extended_coord,
