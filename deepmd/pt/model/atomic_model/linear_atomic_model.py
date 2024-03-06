@@ -115,7 +115,7 @@ class LinearAtomicModel(torch.nn.Module, BaseAtomicModel):
         """Get the sels for each individual models."""
         return [model.get_sel() for model in self.models]
 
-    def _sort_rcuts_sels(self, device: torch.device) -> Tuple[List[float], List[int]]:
+    def _sort_rcuts_sels(self) -> Tuple[List[float], List[int]]:
         # sort the pair of rcut and sels in ascending order, first based on sel, then on rcut.
         zipped = torch.stack(
             [
