@@ -49,8 +49,7 @@ class TestDPTest(unittest.TestCase):
         try:
             res = tester.run()
         except StopIteration:
-            print("Unexpected stop iteration.(test step < total batch)")
-            raise StopIteration
+            raise StopIteration("Unexpected stop iteration.(test step < total batch)")
         for k, v in res.items():
             if k == "rmse" or "mae" in k or k not in more_loss:
                 continue
