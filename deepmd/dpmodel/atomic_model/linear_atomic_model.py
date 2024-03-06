@@ -190,9 +190,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         return fit_ret
 
     @staticmethod
-    def remap_atype(
-        ori_map: List[str], new_map: List[str]
-    ) -> np.ndarray:
+    def remap_atype(ori_map: List[str], new_map: List[str]) -> np.ndarray:
         """
         This method is used to map the atype from the common type_map to the original type_map of
         indivial AtomicModels.

@@ -186,7 +186,6 @@ class TestIntegration(unittest.TestCase, TestCaseSingleFrameWithNlist):
 
 
 class TestRemmapMethod(unittest.TestCase):
-
     def test_valid(self):
         atype = torch.randint(0, 3, (4, 20), device=env.DEVICE)
         commonl = ["H", "O", "S"]

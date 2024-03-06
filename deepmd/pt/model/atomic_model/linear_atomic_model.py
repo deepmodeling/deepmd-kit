@@ -75,7 +75,7 @@ class LinearEnergyAtomicModel(torch.nn.Module, BaseAtomicModel):
                 )
             self.mapping_list.append(self.remap_atype(tpmp, self.type_map))
         assert len(err_msg) == 0, "\n".join(err_msg)
-        
+
         self.atomic_bias = None
         self.mixed_types_list = [model.mixed_types() for model in self.models]
         BaseAtomicModel.__init__(self, **kwargs)
@@ -223,8 +223,7 @@ class LinearEnergyAtomicModel(torch.nn.Module, BaseAtomicModel):
         return fit_ret
 
     @staticmethod
-    def remap_atype(ori_map: List[str], new_map: List[str]
-    ) -> torch.Tensor:
+    def remap_atype(ori_map: List[str], new_map: List[str]) -> torch.Tensor:
         """
         This method is used to map the atype from the common type_map to the original type_map of
         indivial AtomicModels. It creates a index mapping for the conversion.
@@ -241,12 +240,11 @@ class LinearEnergyAtomicModel(torch.nn.Module, BaseAtomicModel):
         -------
         torch.Tensor
         """
-
         type_2_idx = {atp: idx for idx, atp in enumerate(ori_map)}
         # this maps the atype in the new map to the original map
         mapping = torch.tensor(
-            [type_2_idx[new_map[idx]] for idx in range(len(new_map))],
-        device= env.DEVICE)
+            [type_2_idx[new_map[idx]] for idx in range(len(new_map))], device=env.DEVICE
+        )
         return mapping
 
     def fitting_output_def(self) -> FittingOutputDef:
