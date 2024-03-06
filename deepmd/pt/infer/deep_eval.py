@@ -185,8 +185,12 @@ class DeepEval(DeepEvalBackend):
         return False
 
     def get_ntypes_spin(self):
-        """Get the number of spin atom types of this model."""
+        """Get the number of spin atom types of this model. Only used in old implement."""
         return 0
+
+    def get_has_spin(self):
+        """Check if the model has spin atom types."""
+        return self._has_spin
 
     def eval(
         self,

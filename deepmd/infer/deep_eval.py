@@ -266,9 +266,13 @@ class DeepEvalBackend(ABC):
         """Check if the model has efield."""
         return False
 
+    def get_has_spin(self):
+        """Check if the model has spin atom types."""
+        return False
+
     @abstractmethod
     def get_ntypes_spin(self) -> int:
-        """Get the number of spin atom types of this model."""
+        """Get the number of spin atom types of this model. Only used in old implement."""
 
 
 class DeepEval(ABC):
@@ -321,9 +325,7 @@ class DeepEval(ABC):
             neighbor_list=neighbor_list,
             **kwargs,
         )
-        if getattr(self.deep_eval, "_has_spin", False) and hasattr(
-            self, "output_def_mag"
-        ):
+        if self.deep_eval.get_has_spin() and hasattr(self, "output_def_mag"):
             self.deep_eval.output_def = self.output_def_mag
 
     @property
@@ -529,9 +531,8 @@ class DeepEval(ABC):
     @property
     def has_spin(self) -> bool:
         """Check if the model has spin."""
-        # use _has_spin to differentiate from has_spin form the old tf implementation
-        return getattr(self.deep_eval, "_has_spin", False)
+        return self.deep_eval.get_has_spin()
 
     def get_ntypes_spin(self) -> int:
-        """Get the number of spin atom types of this model."""
+        """Get the number of spin atom types of this model. Only used in old implement."""
         return self.deep_eval.get_ntypes_spin()
