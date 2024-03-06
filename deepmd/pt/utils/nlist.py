@@ -307,18 +307,14 @@ def extend_coord_with_ghosts(
         nbuff = torch.ceil(rcut / to_face).to(torch.long)
         # 3
         nbuff = torch.max(nbuff, dim=0, keepdim=False).values
-        xi = torch.arange(-nbuff[0], nbuff[0] + 1, 1, device=device)
-        yi = torch.arange(-nbuff[1], nbuff[1] + 1, 1, device=device)
-        zi = torch.arange(-nbuff[2], nbuff[2] + 1, 1, device=device)
-        xyz = xi.view(-1, 1, 1, 1) * torch.tensor(
-            [1, 0, 0], dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=device
-        )
-        xyz = xyz + yi.view(1, -1, 1, 1) * torch.tensor(
-            [0, 1, 0], dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=device
-        )
-        xyz = xyz + zi.view(1, 1, -1, 1) * torch.tensor(
-            [0, 0, 1], dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=device
-        )
+        nbuff_cpu = nbuff.cpu()
+        xi = torch.arange(-nbuff_cpu[0], nbuff_cpu[0] + 1, 1, device=device)
+        yi = torch.arange(-nbuff_cpu[1], nbuff_cpu[1] + 1, 1, device=device)
+        zi = torch.arange(-nbuff_cpu[2], nbuff_cpu[2] + 1, 1, device=device)
+        eye_3 = torch.eye(3, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=device)
+        xyz = xi.view(-1, 1, 1, 1) * eye_3[0]
+        xyz = xyz + yi.view(1, -1, 1, 1) * eye_3[1]
+        xyz = xyz + zi.view(1, 1, -1, 1) * eye_3[2]
         xyz = xyz.view(-1, 3)
         # ns x 3
         shift_idx = xyz[torch.argsort(torch.norm(xyz, dim=1))]
