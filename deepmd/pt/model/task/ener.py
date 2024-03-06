@@ -25,7 +25,6 @@ from deepmd.pt.model.task.fitting import (
     GeneralFitting,
 )
 from deepmd.pt.utils import (
-    AtomExcludeMask,
     env,
 )
 from deepmd.pt.utils.env import (
