@@ -38,7 +38,7 @@ from .pairtab_atomic_model import (
 )
 
 
-class LinearAtomicModel(BaseAtomicModel):
+class LinearEnergyAtomicModel(BaseAtomicModel):
     """Linear model make linear combinations of several existing models.
 
     Parameters
@@ -59,14 +59,16 @@ class LinearAtomicModel(BaseAtomicModel):
         self.models = models
         sub_model_type_maps = [md.get_type_map() for md in models]
         err_msg = []
+        self.mapping_list = []
         common_type_map = set(type_map)
+        self.type_map = type_map
         for tpmp in sub_model_type_maps:
             if not common_type_map.issubset(set(tpmp)):
                 err_msg.append(
                     f"type_map {tpmp} is not a subset of type_map {type_map}"
                 )
+            self.mapping_list.append(self.remap_atype(tpmp, self.type_map))
         assert len(err_msg) == 0, "\n".join(err_msg)
-        self.type_map = type_map
         self.mixed_types_list = [model.mixed_types() for model in self.models]
         super().__init__(**kwargs)
 
@@ -163,17 +165,20 @@ class LinearAtomicModel(BaseAtomicModel):
                 self.mixed_types_list, raw_nlists, self.get_model_sels()
             )
         ]
-        ener_list = [
-            model.forward_atomic(
-                extended_coord,
-                extended_atype,
-                nl,
-                mapping,
-                fparam,
-                aparam,
-            )["energy"]
-            for model, nl in zip(self.models, nlists_)
-        ]
+        ener_list = []
+
+        for i, model in enumerate(self.models):
+            mapping = self.mapping_list[i]
+            ener_list.append(
+                model.forward_atomic(
+                    extended_coord,
+                    mapping[extended_atype],
+                    nlists_[i],
+                    mapping,
+                    fparam,
+                    aparam,
+                )["energy"]
+            )
         self.weights = self._compute_weight(extended_coord, extended_atype, nlists_)
         self.atomic_bias = None
         if self.atomic_bias is not None:
@@ -183,6 +188,29 @@ class LinearAtomicModel(BaseAtomicModel):
                 "energy": np.sum(np.stack(ener_list) * np.stack(self.weights), axis=0),
             }  # (nframes, nloc, 1)
         return fit_ret
+
+    @staticmethod
+    def remap_atype(ori_map: List[str], new_map: List[str]) -> np.ndarray:
+        """
+        This method is used to map the atype from the common type_map to the original type_map of
+        indivial AtomicModels.
+
+        Parameters
+        ----------
+        ori_map : List[str]
+            The original type map of an AtomicModel.
+        new_map : List[str]
+            The common type map of the DPZBLLinearEnergyAtomicModel, created by the `get_type_map` method,
+            must be a subset of the ori_map.
+
+        Returns
+        -------
+        np.ndarray
+        """
+        type_2_idx = {atp: idx for idx, atp in enumerate(ori_map)}
+        # this maps the atype in the new map to the original map
+        mapping = np.array([type_2_idx[new_map[idx]] for idx in range(len(new_map))])
+        return mapping
 
     def fitting_output_def(self) -> FittingOutputDef:
         return FittingOutputDef(
@@ -261,7 +289,7 @@ class LinearAtomicModel(BaseAtomicModel):
         return False
 
 
-class DPZBLLinearAtomicModel(LinearAtomicModel):
+class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
     """Model linearly combine a list of AtomicModels.
 
     Parameters
@@ -308,7 +336,7 @@ class DPZBLLinearAtomicModel(LinearAtomicModel):
                 "@class": "Model",
                 "type": "zbl",
                 "@version": 1,
-                "models": LinearAtomicModel.serialize(
+                "models": LinearEnergyAtomicModel.serialize(
                     [self.dp_model, self.zbl_model], self.type_map
                 ),
                 "sw_rmin": self.sw_rmin,
@@ -319,7 +347,7 @@ class DPZBLLinearAtomicModel(LinearAtomicModel):
         return dd
 
     @classmethod
-    def deserialize(cls, data) -> "DPZBLLinearAtomicModel":
+    def deserialize(cls, data) -> "DPZBLLinearEnergyAtomicModel":
         data = copy.deepcopy(data)
         check_version_compatibility(data.pop("@version", 1), 1, 1)
         data.pop("@class")
@@ -328,7 +356,7 @@ class DPZBLLinearAtomicModel(LinearAtomicModel):
         sw_rmax = data.pop("sw_rmax")
         smin_alpha = data.pop("smin_alpha")
 
-        ([dp_model, zbl_model], type_map) = LinearAtomicModel.deserialize(
+        ([dp_model, zbl_model], type_map) = LinearEnergyAtomicModel.deserialize(
             data.pop("models")
         )
 
