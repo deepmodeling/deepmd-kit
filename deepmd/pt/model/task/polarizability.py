@@ -276,6 +276,11 @@ class PolarFittingNet(GeneralFitting):
         )  # (nframes * nloc, 3, 3)
         out = out.view(nframes, nloc, 3, 3)
         if self.shift_diag:
-            out = out + self.constant_matrix[atype]*torch.eye(3, device=env.DEVICE)* self.scale[atype]
+            out = (
+                out
+                + self.constant_matrix[atype]
+                * torch.eye(3, device=env.DEVICE)
+                * self.scale[atype]
+            )
 
         return {self.var_name: out.to(env.GLOBAL_PT_FLOAT_PRECISION)}
