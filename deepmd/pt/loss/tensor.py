@@ -83,9 +83,7 @@ class TensorLoss(TaskLoss):
             Other losses for display.
         """
         del learning_rate, mae
-        loss = torch.zeros(
-            1, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE
-        )[0]
+        loss = torch.zeros(1, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE)[0]
         more_loss = {}
         if (
             self.has_local_weight
