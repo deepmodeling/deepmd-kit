@@ -196,7 +196,7 @@ class PolarFittingNet(GeneralFitting):
                     sampled = merged()
                 else:
                     sampled = merged
-                    
+
                 sys_matrix, polar_bias = [], []
                 for sys in len(sampled):
                     if sampled[sys]["find_atomic_polarizability"] > 0.0:
@@ -206,21 +206,28 @@ class PolarFittingNet(GeneralFitting):
                             sys_matrix.append(torch.zeros((1, self.ntypes)))
                             # this gives the number of atoms of type itype in the system
                             sys_matrix[-1][0, itype] = type_mask.sum().item()
-                            expanded_mask = type_mask.unsqueeze(-1).expand((*type_mask.shape, 9))
+                            expanded_mask = type_mask.unsqueeze(-1).expand(
+                                (*type_mask.shape, 9)
+                            )
                             polar_bias.append(
                                 torch.sum(
-                                    (sampled[sys]["atomic_polarizability"]*expanded_mask).reshape(-1,9),
+                                    (
+                                        sampled[sys]["atomic_polarizability"]
+                                        * expanded_mask
+                                    ).reshape(-1, 9),
                                     dim=0,
                                 ).reshape((1, 9))
                             )
                     else:
-                        if (not sampled[sys]["find_polarizability"] > 0.0):
+                        if not sampled[sys]["find_polarizability"] > 0.0:
                             continue
                         sys_matrix.append(torch.zeros((1, self.ntypes)))
                         for itype in range(self.ntypes):
                             type_mask = sampled[sys]["type"] == itype
                             sys_matrix[-1][0, itype] = type_mask.sum().item()
-                        polar_bias.append(sampled[sys]["polarizability"].reshape((1, 9)))
+                        polar_bias.append(
+                            sampled[sys]["polarizability"].reshape((1, 9))
+                        )
                 matrix, bias = (
                     torch.cat(sys_matrix, dim=0),
                     torch.cat(polar_bias, dim=0),
@@ -229,16 +236,12 @@ class PolarFittingNet(GeneralFitting):
                 constant_matrix = []
                 for itype in range(self.ntypes):
                     constant_matrix.append(
-                        torch.mean(torch.diagonal(atom_polar[itype].reshape(3,3)))
+                        torch.mean(torch.diagonal(atom_polar[itype].reshape(3, 3)))
                     )
-                
+
             self.constant_matrix = torch.tensor(constant_matrix, device=env.DEVICE)
             if stat_file_path is not None:
                 stat_file_path.save_numpy(self.constant_matrix.detach().cpu().numpy())
-
-
-            
-                
 
     def forward(
         self,
