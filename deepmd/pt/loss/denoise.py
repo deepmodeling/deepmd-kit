@@ -52,7 +52,7 @@ class DenoiseLoss(TaskLoss):
         coord_mask = label["coord_mask"]
         type_mask = label["type_mask"]
 
-        loss = torch.tensor(0.0, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE)
+        loss = torch.zeros(1, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE)[0]
         more_loss = {}
         if self.has_coord:
             if self.mask_loss_coord:
@@ -66,8 +66,8 @@ class DenoiseLoss(TaskLoss):
                         beta=self.beta,
                     )
                 else:
-                    coord_loss = torch.tensor(
-                        0.0, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE
+                    coord_loss = torch.zeros(
+                        1, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE
                     )
             else:
                 coord_loss = F.smooth_l1_loss(
@@ -89,8 +89,8 @@ class DenoiseLoss(TaskLoss):
                         reduction="mean",
                     )
                 else:
-                    token_loss = torch.tensor(
-                        0.0, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE
+                    token_loss = torch.zeros(
+                        1, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE
                     )
             else:
                 token_loss = F.nll_loss(

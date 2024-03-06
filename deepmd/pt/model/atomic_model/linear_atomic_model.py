@@ -72,6 +72,10 @@ class LinearAtomicModel(torch.nn.Module, BaseAtomicModel):
         self.type_map = type_map
         self.atomic_bias = None
         self.mixed_types_list = [model.mixed_types() for model in self.models]
+        self.rcuts = torch.tensor(
+            self.get_model_rcuts(), dtype=torch.float64, device=env.DEVICE
+        )
+        self.nsels = torch.tensor(self.get_model_nsels(), device=env.DEVICE)
         BaseAtomicModel.__init__(self, **kwargs)
 
     def mixed_types(self) -> bool:
@@ -113,12 +117,10 @@ class LinearAtomicModel(torch.nn.Module, BaseAtomicModel):
 
     def _sort_rcuts_sels(self, device: torch.device) -> Tuple[List[float], List[int]]:
         # sort the pair of rcut and sels in ascending order, first based on sel, then on rcut.
-        rcuts = torch.tensor(self.get_model_rcuts(), dtype=torch.float64, device=device)
-        nsels = torch.tensor(self.get_model_nsels(), device=device)
         zipped = torch.stack(
             [
-                torch.tensor(rcuts, device=device),
-                torch.tensor(nsels, device=device),
+                self.rcuts,
+                self.nsels,
             ],
             dim=0,
         ).T
@@ -165,7 +167,7 @@ class LinearAtomicModel(torch.nn.Module, BaseAtomicModel):
         if self.do_grad_r() or self.do_grad_c():
             extended_coord.requires_grad_(True)
         extended_coord = extended_coord.view(nframes, -1, 3)
-        sorted_rcuts, sorted_sels = self._sort_rcuts_sels(device=extended_coord.device)
+        sorted_rcuts, sorted_sels = self._sort_rcuts_sels()
         nlists = build_multiple_neighbor_list(
             extended_coord,
             nlist,
