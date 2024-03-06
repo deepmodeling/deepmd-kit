@@ -96,6 +96,7 @@ class LinearEnergyAtomicModel(torch.nn.Module, BaseAtomicModel):
 
     @torch.jit.export
     def get_type_map(self) -> List[str]:
+        """Get the type map."""
         return self.type_map
 
     def get_model_rcuts(self) -> List[float]:
@@ -204,6 +205,7 @@ class LinearEnergyAtomicModel(torch.nn.Module, BaseAtomicModel):
 
         atype = extended_atype[:, :nloc]
         for idx, model in enumerate(self.models):
+            #TODO: provide interfaces for atomic models to access bias_atom_e
             if isinstance(model, DPAtomicModel):
                 bias_atom_e = model.fitting_net.bias_atom_e
             elif isinstance(model, PairTabAtomicModel):
