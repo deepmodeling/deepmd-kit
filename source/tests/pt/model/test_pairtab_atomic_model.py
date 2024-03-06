@@ -229,7 +229,7 @@ class TestPairTabTwoAtoms(unittest.TestCase):
             )
 
             model = PairTabAtomicModel(
-                tab_file=file_path, rcut=rcut, sel=2, type_map=["S"]
+                tab_file=file_path, rcut=rcut, sel=2, type_map=["H"]
             )
             results.append(
                 model.forward_atomic(extended_coord, extended_atype, nlist)["energy"]

@@ -21,8 +21,8 @@ from .dp_atomic_model import (
     DPAtomicModel,
 )
 from .linear_atomic_model import (
-    DPZBLLinearAtomicModel,
-    LinearAtomicModel,
+    DPZBLLinearEnergyAtomicModel,
+    LinearEnergyAtomicModel,
 )
 from .pairtab_atomic_model import (
     PairTabAtomicModel,
@@ -32,6 +32,6 @@ __all__ = [
     "BaseAtomicModel",
     "DPAtomicModel",
     "PairTabAtomicModel",
-    "LinearAtomicModel",
-    "DPZBLLinearAtomicModel",
+    "LinearEnergyAtomicModel",
+    "DPZBLLinearEnergyAtomicModel",
 ]

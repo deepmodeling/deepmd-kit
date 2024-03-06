@@ -30,11 +30,8 @@ from deepmd.pt.utils import (
 from deepmd.pt.utils.env import (
     DEFAULT_PRECISION,
 )
-from deepmd.pt.utils.utils import (
-    to_numpy_array,
-)
-from deepmd.utils.out_stat import (
-    compute_stats_from_redu,
+from deepmd.pt.utils.stat import (
+    compute_output_stats,
 )
 from deepmd.utils.path import (
     DPPath,
@@ -84,8 +81,8 @@ class InvarFitting(GeneralFitting):
         Random seed.
     exclude_types: List[int]
         Atomic contributions of the excluded atom types are set zero.
-    atom_ener
-            Specifying atomic energy contribution in vacuum. The `set_davg_zero` key in the descrptor should be set.
+    atom_ener: List[float], optional
+        Specifying atomic energy contribution in vacuum. The `set_davg_zero` key in the descrptor should be set.
 
     """
 
@@ -164,41 +161,9 @@ class InvarFitting(GeneralFitting):
             The path to the stat file.
 
         """
-        if stat_file_path is not None:
-            stat_file_path = stat_file_path / "bias_atom_e"
-        if stat_file_path is not None and stat_file_path.is_file():
-            bias_atom_e = stat_file_path.load_numpy()
-        else:
-            if callable(merged):
-                # only get data for once
-                sampled = merged()
-            else:
-                sampled = merged
-            energy = [item["energy"] for item in sampled]
-            data_mixed_type = "real_natoms_vec" in sampled[0]
-            if data_mixed_type:
-                input_natoms = [item["real_natoms_vec"] for item in sampled]
-            else:
-                input_natoms = [item["natoms"] for item in sampled]
-            # shape: (nframes, ndim)
-            merged_energy = to_numpy_array(torch.cat(energy))
-            # shape: (nframes, ntypes)
-            merged_natoms = to_numpy_array(torch.cat(input_natoms)[:, 2:])
-            if self.atom_ener is not None and len(self.atom_ener) > 0:
-                assigned_atom_ener = np.array(
-                    [ee if ee is not None else np.nan for ee in self.atom_ener]
-                )
-            else:
-                assigned_atom_ener = None
-            bias_atom_e, _ = compute_stats_from_redu(
-                merged_energy,
-                merged_natoms,
-                assigned_bias=assigned_atom_ener,
-                rcond=self.rcond,
-            )
-            if stat_file_path is not None:
-                stat_file_path.save_numpy(bias_atom_e)
-        assert all(x is not None for x in [bias_atom_e])
+        bias_atom_e = compute_output_stats(
+            merged, stat_file_path, self.rcond, self.atom_ener
+        )
         self.bias_atom_e.copy_(
             torch.tensor(bias_atom_e, device=env.DEVICE).view(
                 [self.ntypes, self.dim_out]
