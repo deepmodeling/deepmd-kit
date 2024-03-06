@@ -512,26 +512,6 @@ class GeneralFitting(Fitting):
                     f"which is not consistent with {self.numb_aparam}.",
                 )
             aparam = aparam.view([nf, -1, self.numb_aparam])
-            natom = aparam.shape[1]
-            if natom == nloc:  # good
-                pass
-            elif natom < nloc:  # for spin or other methods with virtual atoms
-                aparam = torch.concat(
-                    [
-                        aparam,
-                        torch.zeros(
-                            [nf, nloc - natom, self.numb_aparam],
-                            device=aparam.device,
-                            dtype=aparam.dtype,
-                        ),
-                    ],
-                    dim=1,
-                )
-            else:
-                raise ValueError(
-                    f"get an input aparam with {aparam.shape[1]} inputs, ",
-                    f"which is larger than {nloc} atoms.",
-                )
             nb, nloc, _ = aparam.shape
             t_aparam_avg = self._extend_a_avg_std(self.aparam_avg, nb, nloc)
             t_aparam_inv_std = self._extend_a_avg_std(self.aparam_inv_std, nb, nloc)

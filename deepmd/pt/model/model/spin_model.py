@@ -210,6 +210,31 @@ class SpinModel(torch.nn.Module):
         extended_tensor_updated[:, nloc + nall :] = extended_tensor_virtual[:, nloc:]
         return extended_tensor_updated.view(out_shape)
 
+    @staticmethod
+    def expand_aparam(aparam, nloc: int):
+        """Expand the atom parameters for virtual atoms if necessary."""
+        nframes, natom, numb_aparam = aparam.shape[1:]
+        if natom == nloc:  # good
+            pass
+        elif natom < nloc:  # for spin with virtual atoms
+            aparam = torch.concat(
+                [
+                    aparam,
+                    torch.zeros(
+                        [nframes, nloc - natom, numb_aparam],
+                        device=aparam.device,
+                        dtype=aparam.dtype,
+                    ),
+                ],
+                dim=1,
+            )
+        else:
+            raise ValueError(
+                f"get an input aparam with {aparam.shape[1]} inputs, ",
+                f"which is larger than {nloc} atoms.",
+            )
+        return aparam
+
     @torch.jit.export
     def get_type_map(self) -> List[str]:
         """Get the type map."""
@@ -479,6 +504,8 @@ class SpinEnergyModel(SpinModel):
         aparam: Optional[torch.Tensor] = None,
         do_atomic_virial: bool = False,
     ) -> Dict[str, torch.Tensor]:
+        if aparam is not None:
+            aparam = self.expand_aparam(aparam, coord.shape[1])
         model_ret = self.forward_common(
             coord,
             atype,
