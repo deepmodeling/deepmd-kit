@@ -191,7 +191,7 @@ class LinearEnergyAtomicModel(torch.nn.Module, BaseAtomicModel):
         ener_list = []
 
         for i, model in enumerate(self.models):
-            mapping = self.mapping_list[i] if mapping is None else mapping
+            mapping = self.mapping_list[i]
             ener_list.append(
                 model.forward_atomic(
                     extended_coord,
