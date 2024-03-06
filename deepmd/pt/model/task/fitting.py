@@ -388,6 +388,9 @@ class GeneralFitting(Fitting):
         """Get the number (dimension) of atomic parameters of this atomic model."""
         return self.numb_aparam
 
+    # make jit happy
+    exclude_types: List[int]
+
     def get_sel_type(self) -> List[int]:
         """Get the selected atom types of this model.
 
@@ -395,7 +398,12 @@ class GeneralFitting(Fitting):
         to the result of the model.
         If returning an empty list, all atom types are selected.
         """
-        return []
+        # make jit happy
+        sel_type: List[int] = []
+        for ii in range(self.ntypes):
+            if ii not in self.exclude_types:
+                sel_type.append(ii)
+        return sel_type
 
     def __setitem__(self, key, value):
         if key in ["bias_atom_e"]:

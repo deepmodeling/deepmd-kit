@@ -347,9 +347,8 @@ class DescrptBlockSeA(DescriptorBlock):
         self.reinit_exclude(exclude_types)
 
         self.sel = sel
-        self.sec = torch.tensor(
-            np.append([0], np.cumsum(self.sel)), dtype=int, device=env.DEVICE
-        )
+        # should be on CPU to avoid D2H, as it is used as slice index
+        self.sec = [0, *np.cumsum(self.sel).tolist()]
         self.split_sel = self.sel
         self.nnei = sum(sel)
         self.ndescrpt = self.nnei * 4
