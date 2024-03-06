@@ -25,6 +25,7 @@ from deepmd.pt.model.task.fitting import (
     GeneralFitting,
 )
 from deepmd.pt.utils import (
+    AtomExcludeMask,
     env,
 )
 from deepmd.pt.utils.env import (
@@ -176,10 +177,14 @@ class InvarFitting(GeneralFitting):
                 sampled = merged
             energy = [item["energy"] for item in sampled]
             data_mixed_type = "real_natoms_vec" in sampled[0]
-            if data_mixed_type:
-                input_natoms = [item["real_natoms_vec"] for item in sampled]
-            else:
-                input_natoms = [item["natoms"] for item in sampled]
+            natoms_key = "natoms" if not data_mixed_type else "real_natoms_vec"
+            for system in sampled:
+                if "atom_exclude_types" in system:
+                    type_mask = AtomExcludeMask(
+                        self.ntypes, system["atom_exclude_types"]
+                    ).get_type_mask()
+                    system[natoms_key][:, 2:] *= type_mask.unsqueeze(0)
+            input_natoms = [item[natoms_key] for item in sampled]
             # shape: (nframes, ndim)
             merged_energy = to_numpy_array(torch.cat(energy))
             # shape: (nframes, ntypes)
