@@ -59,14 +59,16 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         self.models = models
         sub_model_type_maps = [md.get_type_map() for md in models]
         err_msg = []
+        self.mapping_list = []
         common_type_map = set(type_map)
+        self.type_map = type_map
         for tpmp in sub_model_type_maps:
             if not common_type_map.issubset(set(tpmp)):
                 err_msg.append(
                     f"type_map {tpmp} is not a subset of type_map {type_map}"
                 )
+            self.mapping_list.append(self.remap_atype(tpmp, self.type_map))
         assert len(err_msg) == 0, "\n".join(err_msg)
-        self.type_map = type_map
         self.mixed_types_list = [model.mixed_types() for model in self.models]
         super().__init__(**kwargs)
 
@@ -166,12 +168,11 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         ener_list = []
 
         for i, model in enumerate(self.models):
-            ori_map = model.get_type_map()
-            updated_atype = self.remap_atype(extended_atype, ori_map, self.type_map)
+            mapping = self.mapping_list[i]
             ener_list.append(
                 model.forward_atomic(
                     extended_coord,
-                    updated_atype,
+                    mapping[extended_atype],
                     nlists_[i],
                     mapping,
                     fparam,
@@ -190,7 +191,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
 
     @staticmethod
     def remap_atype(
-        atype: np.ndarray, ori_map: List[str], new_map: List[str]
+        ori_map: List[str], new_map: List[str]
     ) -> np.ndarray:
         """
         This method is used to map the atype from the common type_map to the original type_map of
@@ -198,8 +199,6 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
 
         Parameters
         ----------
-        atype : np.ndarray
-            The atom type tensor being updated, shape of (nframes, natoms)
         ori_map : List[str]
             The original type map of an AtomicModel.
         new_map : List[str]
@@ -210,14 +209,10 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         -------
         np.ndarray
         """
-        assert np.max(atype) < len(
-            new_map
-        ), "The input `atype` cannot be handled by the type_map."
         type_2_idx = {atp: idx for idx, atp in enumerate(ori_map)}
         # this maps the atype in the new map to the original map
         mapping = np.array([type_2_idx[new_map[idx]] for idx in range(len(new_map))])
-        updated_atype = mapping[atype]
-        return updated_atype
+        return mapping
 
     def fitting_output_def(self) -> FittingOutputDef:
         return FittingOutputDef(

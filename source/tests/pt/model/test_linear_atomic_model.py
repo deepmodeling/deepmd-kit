@@ -186,20 +186,13 @@ class TestIntegration(unittest.TestCase, TestCaseSingleFrameWithNlist):
 
 
 class TestRemmapMethod(unittest.TestCase):
-    def test_invalid(self):
-        atype = torch.randint(2, 4, (2, 5), device=env.DEVICE)
-        commonl = ["H"]
-        originl = ["Si", "H", "O", "S"]
-        with self.assertRaises(AssertionError):
-            new_atype = DPZBLLinearEnergyAtomicModel.remap_atype(
-                atype, originl, commonl
-            )
 
     def test_valid(self):
         atype = torch.randint(0, 3, (4, 20), device=env.DEVICE)
         commonl = ["H", "O", "S"]
         originl = ["Si", "H", "O", "S"]
-        new_atype = DPZBLLinearEnergyAtomicModel.remap_atype(atype, originl, commonl)
+        mapping = DPZBLLinearEnergyAtomicModel.remap_atype(originl, commonl)
+        new_atype = mapping[atype]
 
         def trans(atype, map):
             idx = atype.flatten().tolist()

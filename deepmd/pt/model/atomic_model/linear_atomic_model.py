@@ -65,14 +65,17 @@ class LinearEnergyAtomicModel(torch.nn.Module, BaseAtomicModel):
         self.models = torch.nn.ModuleList(models)
         sub_model_type_maps = [md.get_type_map() for md in models]
         err_msg = []
+        self.mapping_list = []
         common_type_map = set(type_map)
+        self.type_map = type_map
         for tpmp in sub_model_type_maps:
             if not common_type_map.issubset(set(tpmp)):
                 err_msg.append(
                     f"type_map {tpmp} is not a subset of type_map {type_map}"
                 )
+            self.mapping_list.append(self.remap_atype(tpmp, self.type_map))
         assert len(err_msg) == 0, "\n".join(err_msg)
-        self.type_map = type_map
+        
         self.atomic_bias = None
         self.mixed_types_list = [model.mixed_types() for model in self.models]
         BaseAtomicModel.__init__(self, **kwargs)
@@ -188,12 +191,11 @@ class LinearEnergyAtomicModel(torch.nn.Module, BaseAtomicModel):
         ener_list = []
 
         for i, model in enumerate(self.models):
-            ori_map = model.get_type_map()
-            updated_atype = self.remap_atype(extended_atype, ori_map, self.type_map)
+            mapping = self.mapping_list[i] if mapping is None else mapping
             ener_list.append(
                 model.forward_atomic(
                     extended_coord,
-                    updated_atype,
+                    mapping[extended_atype],
                     nlists_[i],
                     mapping,
                     fparam,
@@ -221,17 +223,14 @@ class LinearEnergyAtomicModel(torch.nn.Module, BaseAtomicModel):
         return fit_ret
 
     @staticmethod
-    def remap_atype(
-        atype: torch.Tensor, ori_map: List[str], new_map: List[str]
+    def remap_atype(ori_map: List[str], new_map: List[str]
     ) -> torch.Tensor:
         """
         This method is used to map the atype from the common type_map to the original type_map of
-        indivial AtomicModels.
+        indivial AtomicModels. It creates a index mapping for the conversion.
 
         Parameters
         ----------
-        atype : torch.Tensor
-            The atom type tensor being updated, shape of (nframes, natoms)
         ori_map : List[str]
             The original type map of an AtomicModel.
         new_map : List[str]
@@ -242,17 +241,13 @@ class LinearEnergyAtomicModel(torch.nn.Module, BaseAtomicModel):
         -------
         torch.Tensor
         """
-        assert torch.max(atype) < len(
-            new_map
-        ), "The input `atype` cannot be handled by the type_map."
+
         type_2_idx = {atp: idx for idx, atp in enumerate(ori_map)}
         # this maps the atype in the new map to the original map
         mapping = torch.tensor(
             [type_2_idx[new_map[idx]] for idx in range(len(new_map))],
-            device=atype.device,
-        )
-        updated_atype = mapping[atype.long()]
-        return updated_atype
+        device= env.DEVICE)
+        return mapping
 
     def fitting_output_def(self) -> FittingOutputDef:
         return FittingOutputDef(
