@@ -57,9 +57,8 @@ class Spin:
             if len(virtual_scale) == self.ntypes_real:
                 self.virtual_scale = virtual_scale
             elif len(virtual_scale) == self.ntypes_spin:
-                self.virtual_scale = virtual_scale + [
-                    0.0 for _ in range(self.ntypes_real - self.ntypes_spin)
-                ]
+                self.virtual_scale = np.zeros(self.ntypes_real)
+                self.virtual_scale[self.use_spin] = virtual_scale
             else:
                 raise ValueError(
                     f"Invalid length of virtual_scale for spin atoms"
