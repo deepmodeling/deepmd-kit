@@ -961,7 +961,7 @@ class Trainer:
                     batch_data = next(iter(self.validation_data[task_key]))
 
         for key in batch_data.keys():
-            if key == "sid" or key == "fid":
+            if key == "sid" or key == "fid" or key == "box":
                 continue
             elif not isinstance(batch_data[key], list):
                 if batch_data[key] is not None:
