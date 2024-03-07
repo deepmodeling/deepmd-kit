@@ -11,6 +11,7 @@ import numpy as np
 import torch
 
 from deepmd.pt.utils import (
+    AtomExcludeMask,
     env,
 )
 from deepmd.pt.utils.utils import (
@@ -71,6 +72,7 @@ def make_stat_input(datasets, dataloaders, nbatches):
 
 def compute_output_stats(
     merged: Union[Callable[[], List[dict]], List[dict]],
+    ntypes: int,
     stat_file_path: Optional[DPPath] = None,
     rcond: Optional[float] = None,
     atom_ener: Optional[List[float]] = None,
@@ -87,6 +89,8 @@ def compute_output_stats(
         - Callable[[], List[dict]]: A lazy function that returns data samples in the above format
             only when needed. Since the sampling process can be slow and memory-intensive,
             the lazy function helps by only sampling once.
+    ntypes : int
+        The number of atom types.
     stat_file_path : DPPath, optional
         The path to the stat file.
     rcond : float, optional
@@ -107,10 +111,14 @@ def compute_output_stats(
             sampled = merged
         energy = [item["energy"] for item in sampled]
         data_mixed_type = "real_natoms_vec" in sampled[0]
-        if data_mixed_type:
-            input_natoms = [item["real_natoms_vec"] for item in sampled]
-        else:
-            input_natoms = [item["natoms"] for item in sampled]
+        natoms_key = "natoms" if not data_mixed_type else "real_natoms_vec"
+        for system in sampled:
+            if "atom_exclude_types" in system:
+                type_mask = AtomExcludeMask(
+                    ntypes, system["atom_exclude_types"]
+                ).get_type_mask()
+                system[natoms_key][:, 2:] *= type_mask.unsqueeze(0)
+        input_natoms = [item[natoms_key] for item in sampled]
         # shape: (nframes, ndim)
         merged_energy = to_numpy_array(torch.cat(energy))
         # shape: (nframes, ntypes)

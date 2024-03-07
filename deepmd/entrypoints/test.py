@@ -298,6 +298,9 @@ def test_ener(
         )
     if dp.get_dim_aparam() > 0:
         data.add("aparam", dp.get_dim_aparam(), atomic=True, must=True, high_prec=False)
+    if dp.has_spin:
+        data.add("spin", 3, atomic=True, must=True, high_prec=False)
+        data.add("force_mag", 3, atomic=True, must=False, high_prec=False)
 
     test_data = data.get_test()
     mixed_type = data.mixed_type
@@ -311,6 +314,10 @@ def test_ener(
         efield = test_data["efield"][:numb_test].reshape([numb_test, -1])
     else:
         efield = None
+    if dp.has_spin:
+        spin = test_data["spin"][:numb_test].reshape([numb_test, -1])
+    else:
+        spin = None
     if not data.pbc:
         box = None
     if mixed_type:
@@ -335,6 +342,7 @@ def test_ener(
         atomic=has_atom_ener,
         efield=efield,
         mixed_type=mixed_type,
+        spin=spin,
     )
     energy = ret[0]
     force = ret[1]
@@ -347,26 +355,50 @@ def test_ener(
         av = ret[4]
         ae = ae.reshape([numb_test, -1])
         av = av.reshape([numb_test, -1])
-    if dp.get_ntypes_spin() != 0:
-        ntypes_real = dp.get_ntypes() - dp.get_ntypes_spin()
-        nloc = natoms
-        nloc_real = sum([np.count_nonzero(atype == ii) for ii in range(ntypes_real)])
-        force_r = np.split(
-            force, indices_or_sections=[nloc_real * 3, nloc * 3], axis=1
-        )[0]
-        force_m = np.split(
-            force, indices_or_sections=[nloc_real * 3, nloc * 3], axis=1
-        )[1]
-        test_force_r = np.split(
-            test_data["force"][:numb_test],
-            indices_or_sections=[nloc_real * 3, nloc * 3],
-            axis=1,
-        )[0]
-        test_force_m = np.split(
-            test_data["force"][:numb_test],
-            indices_or_sections=[nloc_real * 3, nloc * 3],
-            axis=1,
-        )[1]
+        if dp.has_spin:
+            force_m = ret[5]
+            force_m = force_m.reshape([numb_test, -1])
+            mask_mag = ret[6]
+            mask_mag = mask_mag.reshape([numb_test, -1])
+    else:
+        if dp.has_spin:
+            force_m = ret[3]
+            force_m = force_m.reshape([numb_test, -1])
+            mask_mag = ret[4]
+            mask_mag = mask_mag.reshape([numb_test, -1])
+    out_put_spin = dp.get_ntypes_spin() != 0 or dp.has_spin
+    if out_put_spin:
+        if dp.get_ntypes_spin() != 0:  # old tf support for spin
+            ntypes_real = dp.get_ntypes() - dp.get_ntypes_spin()
+            nloc = natoms
+            nloc_real = sum(
+                [np.count_nonzero(atype == ii) for ii in range(ntypes_real)]
+            )
+            force_r = np.split(
+                force, indices_or_sections=[nloc_real * 3, nloc * 3], axis=1
+            )[0]
+            force_m = np.split(
+                force, indices_or_sections=[nloc_real * 3, nloc * 3], axis=1
+            )[1]
+            test_force_r = np.split(
+                test_data["force"][:numb_test],
+                indices_or_sections=[nloc_real * 3, nloc * 3],
+                axis=1,
+            )[0]
+            test_force_m = np.split(
+                test_data["force"][:numb_test],
+                indices_or_sections=[nloc_real * 3, nloc * 3],
+                axis=1,
+            )[1]
+        else:  # pt support for spin
+            force_r = force
+            test_force_r = test_data["force"][:numb_test]
+            # The shape of force_m and test_force_m are [-1, 3],
+            # which is designed for mixed_type cases
+            force_m = force_m.reshape(-1, 3)[mask_mag.reshape(-1)]
+            test_force_m = test_data["force_mag"][:numb_test].reshape(-1, 3)[
+                mask_mag.reshape(-1)
+            ]
 
     diff_e = energy - test_data["energy"][:numb_test].reshape([-1, 1])
     mae_e = mae(diff_e)
@@ -385,7 +417,7 @@ def test_ener(
         diff_ae = test_data["atom_ener"][:numb_test].reshape([-1]) - ae.reshape([-1])
         mae_ae = mae(diff_ae)
         rmse_ae = rmse(diff_ae)
-    if dp.get_ntypes_spin() != 0:
+    if out_put_spin:
         mae_fr = mae(force_r - test_force_r)
         mae_fm = mae(force_m - test_force_m)
         rmse_fr = rmse(force_r - test_force_r)
@@ -396,16 +428,16 @@ def test_ener(
     log.info(f"Energy RMSE        : {rmse_e:e} eV")
     log.info(f"Energy MAE/Natoms  : {mae_ea:e} eV")
     log.info(f"Energy RMSE/Natoms : {rmse_ea:e} eV")
-    if dp.get_ntypes_spin() == 0:
+    if not out_put_spin:
         log.info(f"Force  MAE         : {mae_f:e} eV/A")
         log.info(f"Force  RMSE        : {rmse_f:e} eV/A")
     else:
         log.info(f"Force atom MAE      : {mae_fr:e} eV/A")
-        log.info(f"Force spin MAE      : {mae_fm:e} eV/uB")
         log.info(f"Force atom RMSE     : {rmse_fr:e} eV/A")
+        log.info(f"Force spin MAE      : {mae_fm:e} eV/uB")
         log.info(f"Force spin RMSE     : {rmse_fm:e} eV/uB")
 
-    if data.pbc:
+    if data.pbc and not out_put_spin:
         log.info(f"Virial MAE         : {mae_v:e} eV")
         log.info(f"Virial RMSE        : {rmse_v:e} eV")
         log.info(f"Virial MAE/Natoms  : {mae_va:e} eV")
@@ -437,7 +469,7 @@ def test_ener(
             header="%s: data_e pred_e" % system,
             append=append_detail,
         )
-        if dp.get_ntypes_spin() == 0:
+        if not out_put_spin:
             pf = np.concatenate(
                 (
                     np.reshape(test_data["force"][:numb_test], [-1, 3]),
@@ -497,7 +529,7 @@ def test_ener(
             "pred_vyy pred_vyz pred_vzx pred_vzy pred_vzz",
             append=append_detail,
         )
-    if dp.get_ntypes_spin() == 0:
+    if not out_put_spin:
         return {
             "mae_e": (mae_e, energy.size),
             "mae_ea": (mae_ea, energy.size),

@@ -79,6 +79,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         precision: str = "float64",
         resnet_dt: bool = False,
         exclude_types: List[Tuple[int, int]] = [],
+        env_protection: float = 0.0,
         old_impl: bool = False,
         type_one_side: bool = True,
         **kwargs,
@@ -95,6 +96,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
             precision=precision,
             resnet_dt=resnet_dt,
             exclude_types=exclude_types,
+            env_protection=env_protection,
             old_impl=old_impl,
             type_one_side=type_one_side,
             **kwargs,
@@ -249,6 +251,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
             "embeddings": obj.filter_layers.serialize(),
             "env_mat": DPEnvMat(obj.rcut, obj.rcut_smth).serialize(),
             "exclude_types": obj.exclude_types,
+            "env_protection": obj.env_protection,
             "@variables": {
                 "davg": obj["davg"].detach().cpu().numpy(),
                 "dstd": obj["dstd"].detach().cpu().numpy(),
@@ -310,6 +313,7 @@ class DescrptBlockSeA(DescriptorBlock):
         precision: str = "float64",
         resnet_dt: bool = False,
         exclude_types: List[Tuple[int, int]] = [],
+        env_protection: float = 0.0,
         old_impl: bool = False,
         type_one_side: bool = True,
         trainable: bool = True,
@@ -336,6 +340,7 @@ class DescrptBlockSeA(DescriptorBlock):
         self.prec = PRECISION_DICT[self.precision]
         self.resnet_dt = resnet_dt
         self.old_impl = old_impl
+        self.env_protection = env_protection
         self.ntypes = len(sel)
         self.type_one_side = type_one_side
         # order matters, placed after the assignment of self.ntypes
@@ -539,6 +544,7 @@ class DescrptBlockSeA(DescriptorBlock):
             self.stddev,
             self.rcut,
             self.rcut_smth,
+            protection=self.env_protection,
         )
 
         if self.old_impl:

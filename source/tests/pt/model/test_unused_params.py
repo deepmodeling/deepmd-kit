@@ -64,14 +64,9 @@ class TestUnusedParamsDPA2(unittest.TestCase):
         coord = torch.matmul(coord, cell)
         atype = torch.IntTensor([0, 0, 0, 1, 1]).to(env.DEVICE)
         idx_perm = [1, 0, 4, 3, 2]
-        e0, f0, v0 = eval_model(
-            self.model, coord.unsqueeze(0), cell.unsqueeze(0), atype
-        )
-        ret0 = {
-            "energy": e0.squeeze(0),
-            "force": f0.squeeze(0),
-            "virial": v0.squeeze(0),
-        }
+        result_0 = eval_model(self.model, coord.unsqueeze(0), cell.unsqueeze(0), atype)
+        test_keys = ["energy", "force", "virial"]
+        ret0 = {key: result_0[key].squeeze(0) for key in test_keys}
 
         # use computation graph to find all contributing tensors
         def get_contributing_params(y, top_level=True):

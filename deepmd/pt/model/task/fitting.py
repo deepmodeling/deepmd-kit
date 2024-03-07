@@ -508,10 +508,10 @@ class GeneralFitting(Fitting):
             assert self.aparam_inv_std is not None
             if aparam.shape[-1] != self.numb_aparam:
                 raise ValueError(
-                    "get an input aparam of dim {aparam.shape[-1]}, ",
-                    "which is not consistent with {self.numb_aparam}.",
+                    f"get an input aparam of dim {aparam.shape[-1]}, ",
+                    f"which is not consistent with {self.numb_aparam}.",
                 )
-            aparam = aparam.view([nf, nloc, self.numb_aparam])
+            aparam = aparam.view([nf, -1, self.numb_aparam])
             nb, nloc, _ = aparam.shape
             t_aparam_avg = self._extend_a_avg_std(self.aparam_avg, nb, nloc)
             t_aparam_inv_std = self._extend_a_avg_std(self.aparam_inv_std, nb, nloc)

@@ -4,6 +4,7 @@ from typing import (
     Dict,
     List,
     Optional,
+    Tuple,
     Union,
 )
 
@@ -23,6 +24,9 @@ from deepmd.pt.utils import (
 )
 from deepmd.pt.utils.env_mat_stat import (
     EnvMatStatSe,
+)
+from deepmd.pt.utils.exclude_mask import (
+    PairExcludeMask,
 )
 from deepmd.pt.utils.utils import (
     get_activation_fn,
@@ -83,6 +87,8 @@ class DescrptBlockRepformers(DescriptorBlock):
         set_davg_zero: bool = True,  # TODO
         smooth: bool = True,
         add_type_ebd_to_seq: bool = False,
+        exclude_types: List[Tuple[int, int]] = [],
+        env_protection: float = 0.0,
         type: Optional[str] = None,
     ):
         """
@@ -114,6 +120,9 @@ class DescrptBlockRepformers(DescriptorBlock):
         self.act = get_activation_fn(activation_function)
         self.direct_dist = direct_dist
         self.add_type_ebd_to_seq = add_type_ebd_to_seq
+        # order matters, placed after the assignment of self.ntypes
+        self.reinit_exclude(exclude_types)
+        self.env_protection = env_protection
 
         self.g2_embd = mylinear(1, self.g2_dim)
         layers = []
@@ -211,6 +220,13 @@ class DescrptBlockRepformers(DescriptorBlock):
         """Returns the embedding dimension g2."""
         return self.get_dim_emb()
 
+    def reinit_exclude(
+        self,
+        exclude_types: List[Tuple[int, int]] = [],
+    ):
+        self.exclude_types = exclude_types
+        self.emask = PairExcludeMask(self.ntypes, exclude_types=exclude_types)
+
     def forward(
         self,
         nlist: torch.Tensor,
@@ -233,6 +249,7 @@ class DescrptBlockRepformers(DescriptorBlock):
             self.stddev,
             self.rcut,
             self.rcut_smth,
+            protection=self.env_protection,
         )
         nlist_mask = nlist != -1
         sw = torch.squeeze(sw, -1)

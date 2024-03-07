@@ -96,11 +96,35 @@ def spin_args():
     doc_use_spin = "Whether to use atomic spin model for each atom type"
     doc_spin_norm = "The magnitude of atomic spin for each atom type with spin"
     doc_virtual_len = "The distance between virtual atom representing spin and its corresponding real atom for each atom type with spin"
+    doc_virtual_scale = (
+        "The scaling factor to determine the virtual distance between a virtual atom "
+        "representing spin and its corresponding real atom for each atom type with spin. "
+        "This factor is defined as the virtual distance divided by the magnitude of atomic spin "
+        "for each atom type with spin. The virtual coordinate is defined as the real coordinate "
+        "plus spin * virtual_scale. List of float values with shape of [ntypes] or [ntypes_spin] "
+        "or one single float value for all types, only used when use_spin is True for each atom type."
+    )
 
     return [
         Argument("use_spin", List[bool], doc=doc_use_spin),
-        Argument("spin_norm", List[float], doc=doc_spin_norm),
-        Argument("virtual_len", List[float], doc=doc_virtual_len),
+        Argument(
+            "spin_norm",
+            List[float],
+            optional=True,
+            doc=doc_only_tf_supported + doc_spin_norm,
+        ),
+        Argument(
+            "virtual_len",
+            List[float],
+            optional=True,
+            doc=doc_only_tf_supported + doc_virtual_len,
+        ),
+        Argument(
+            "virtual_scale",
+            List[float],
+            optional=True,
+            doc=doc_only_pt_supported + doc_virtual_scale,
+        ),
     ]
 
 
@@ -203,6 +227,7 @@ def descrpt_se_a_args():
     doc_trainable = "If the parameters in the embedding net is trainable"
     doc_seed = "Random seed for parameter initialization"
     doc_exclude_types = "The excluded pairs of types which have no interaction with each other. For example, `[[0, 1]]` means no interaction between type 0 and type 1."
+    doc_env_protection = "Protection parameter to prevent division by zero errors during environment matrix calculations. For example, when using paddings, there may be zero distances of neighbors, which may make division by zero error during environment matrix calculations without protection."
     doc_set_davg_zero = "Set the normalization average to zero. This option should be set when `atom_ener` in the energy fitting is used"
 
     return [
@@ -240,6 +265,13 @@ def descrpt_se_a_args():
             optional=True,
             default=[],
             doc=doc_exclude_types,
+        ),
+        Argument(
+            "env_protection",
+            float,
+            optional=True,
+            default=0.0,
+            doc=doc_only_tf_supported + doc_env_protection,
         ),
         Argument(
             "set_davg_zero", bool, optional=True, default=False, doc=doc_set_davg_zero

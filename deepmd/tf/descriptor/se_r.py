@@ -104,6 +104,7 @@ class DescrptSeR(DescrptSe):
         uniform_seed: bool = False,
         multi_task: bool = False,
         spin: Optional[Spin] = None,
+        env_protection: float = 0.0,  # not implement!!
         **kwargs,
     ) -> None:
         """Constructor."""
@@ -111,6 +112,8 @@ class DescrptSeR(DescrptSe):
             raise RuntimeError(
                 f"rcut_smth ({rcut_smth:f}) should be no more than rcut ({rcut:f})!"
             )
+        if env_protection != 0.0:
+            raise NotImplementedError("env_protection != 0.0 is not supported.")
         self.sel_r = sel
         self.rcut = rcut
         self.rcut_smth = rcut_smth
@@ -125,6 +128,7 @@ class DescrptSeR(DescrptSe):
         self.filter_precision = get_precision(precision)
         self.orig_exclude_types = exclude_types
         self.exclude_types = set()
+        self.env_protection = env_protection
         for tt in exclude_types:
             assert len(tt) == 2
             self.exclude_types.add((tt[0], tt[1]))
@@ -776,6 +780,7 @@ class DescrptSeR(DescrptSe):
             "trainable": self.trainable,
             "type_one_side": self.type_one_side,
             "exclude_types": list(self.orig_exclude_types),
+            "env_protection": self.env_protection,
             "set_davg_zero": self.set_davg_zero,
             "activation_function": self.activation_function_name,
             "precision": self.filter_precision.name,

@@ -107,6 +107,8 @@ def build_neighbor_list(
     assert list(diff.shape) == [batch_size, nloc, nall, 3]
     # nloc x nall
     rr = torch.linalg.norm(diff, dim=-1)
+    # if central atom has two zero distances, sorting sometimes can not exclude itself
+    rr -= torch.eye(nloc, nall, dtype=rr.dtype, device=rr.device).unsqueeze(0)
     rr, nlist = torch.sort(rr, dim=-1)
     # nloc x (nall-1)
     rr = rr[:, :, 1:]
@@ -335,7 +337,6 @@ def extend_coord_with_ghosts(
         extend_atype = torch.tile(atype.unsqueeze(-2), [1, ns, 1])
         # nf x ns x nloc
         extend_aidx = torch.tile(aidx.unsqueeze(-2), [1, ns, 1])
-
     return (
         extend_coord.reshape([nf, nall * 3]).to(device),
         extend_atype.view([nf, nall]).to(device),

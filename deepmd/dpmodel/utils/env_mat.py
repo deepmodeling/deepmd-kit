@@ -33,6 +33,7 @@ def _make_env_mat(
     rcut: float,
     ruct_smth: float,
     radial_only: bool = False,
+    protection: float = 0.0,
 ):
     """Make smooth environment matrix."""
     nf, nloc, nnei = nlist.shape
@@ -53,8 +54,8 @@ def _make_env_mat(
     length = np.linalg.norm(diff, axis=-1, keepdims=True)
     # for index 0 nloc atom
     length = length + ~np.expand_dims(mask, -1)
-    t0 = 1 / length
-    t1 = diff / length**2
+    t0 = 1 / (length + protection)
+    t1 = diff / (length + protection) ** 2
     weight = compute_smooth_weight(length, ruct_smth, rcut)
     weight = weight * np.expand_dims(mask, -1)
     if radial_only:
@@ -69,9 +70,11 @@ class EnvMat(NativeOP):
         self,
         rcut,
         rcut_smth,
+        protection: float = 0.0,
     ):
         self.rcut = rcut
         self.rcut_smth = rcut_smth
+        self.protection = protection
 
     def call(
         self,
@@ -120,7 +123,12 @@ class EnvMat(NativeOP):
 
     def _call(self, nlist, coord_ext, radial_only):
         em, diff, ww = _make_env_mat(
-            nlist, coord_ext, self.rcut, self.rcut_smth, radial_only
+            nlist,
+            coord_ext,
+            self.rcut,
+            self.rcut_smth,
+            radial_only=radial_only,
+            protection=self.protection,
         )
         return em, ww
 

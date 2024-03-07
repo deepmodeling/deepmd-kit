@@ -92,8 +92,10 @@ class TestInitFrzModel(unittest.TestCase):
         ).reshape(1, -1, 3)
         atype = np.array([0, 0, 0, 1, 1]).reshape(1, -1)
 
-        e1, f1, v1, ae1, av1 = dp1.eval(coord, cell, atype, atomic=True)
-        e2, f2, v2, ae2, av2 = dp2.eval(coord, cell, atype, atomic=True)
+        ret1 = dp1.eval(coord, cell, atype, atomic=True)
+        e1, f1, v1, ae1, av1 = ret1[0], ret1[1], ret1[2], ret1[3], ret1[4]
+        ret2 = dp2.eval(coord, cell, atype, atomic=True)
+        e2, f2, v2, ae2, av2 = ret2[0], ret2[1], ret2[2], ret2[3], ret2[4]
         np.testing.assert_allclose(e1, e2, rtol=1e-10, atol=1e-10)
         np.testing.assert_allclose(f1, f2, rtol=1e-10, atol=1e-10)
         np.testing.assert_allclose(v1, v2, rtol=1e-10, atol=1e-10)
