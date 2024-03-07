@@ -8,10 +8,14 @@ from typing import (
 )
 
 import torch
+import numpy as np
 
 from deepmd.dpmodel import (
     FittingOutputDef,
     OutputVariableDef,
+)
+from deepmd.utils.out_stat import (
+    compute_stats_from_redu
 )
 from deepmd.pt.model.task.fitting import (
     GeneralFitting,
@@ -197,47 +201,31 @@ class PolarFittingNet(GeneralFitting):
                 else:
                     sampled = merged
 
-                sys_matrix, polar_bias = [], []
+                sys_constant_matrix= []
                 for sys in range(len(sampled)):
+                    nframs = sampled[sys]["type"].shape[0]
+                    sys_type_count = np.zeros((nframs, self.ntypes))
+                    for itype in range(self.ntypes):
+                        type_mask = sampled[sys]["type"] == itype
+                        sys_type_count[:, itype] = type_mask.sum(dim=1)
+
                     if sampled[sys]["find_atomic_polarizability"] > 0.0:
-                        for itype in range(self.ntypes):
-                            # this is a tensor of shape nframes, nall
-                            type_mask = sampled[sys]["type"] == itype
-                            sys_matrix.append(torch.zeros((1, self.ntypes)))
-                            # this gives the number of atoms of type itype in the system
-                            sys_matrix[-1][0, itype] = type_mask.sum().item()
-                            expanded_mask = type_mask.unsqueeze(-1).expand(
-                                (*type_mask.shape, 9)
-                            )
-                            polar_bias.append(
-                                torch.sum(
-                                    (
-                                        sampled[sys]["atomic_polarizability"]
-                                        * expanded_mask
-                                    ).reshape(-1, 9),
-                                    dim=0,
-                                ).reshape((1, 9))
-                            )
+                        sys_bias_redu = sampled[sys]["atomic_polarizability"].sum(dim=1)
                     else:
                         if not sampled[sys]["find_polarizability"] > 0.0:
                             continue
-                        sys_matrix.append(torch.zeros((1, self.ntypes)))
-                        for itype in range(self.ntypes):
-                            type_mask = sampled[sys]["type"] == itype
-                            sys_matrix[-1][0, itype] = type_mask.sum().item()
-                        polar_bias.append(
-                            sampled[sys]["polarizability"].reshape((1, 9))
+                        
+                        sys_bias_redu = sampled[sys]["polarizability"]
+                        
+                    sys_atom_polar = compute_stats_from_redu(sys_type_count,sys_bias_redu)[0]
+                    cur_constant_matrix =  np.zeros((self.ntypes))
+                    for itype in range(self.ntypes):
+                        cur_constant_matrix[itype] = (
+                            torch.mean(torch.diagonal(sys_atom_polar.T[itype].reshape(3, 3)))
                         )
-                matrix, bias = (
-                    torch.cat(sys_matrix, dim=0),
-                    torch.cat(polar_bias, dim=0),
-                )
-                atom_polar, _, _, _ = torch.linalg.lstsq(matrix, bias, rcond=None)
-                constant_matrix = []
-                for itype in range(self.ntypes):
-                    constant_matrix.append(
-                        torch.mean(torch.diagonal(atom_polar[itype].reshape(3, 3)))
-                    )
+                    sys_constant_matrix.append(cur_constant_matrix)
+                constant_matrix = np.stack(sys_constant_matrix).mean(axis=0)
+
 
             self.constant_matrix = torch.tensor(constant_matrix, device=env.DEVICE)
             if stat_file_path is not None:
