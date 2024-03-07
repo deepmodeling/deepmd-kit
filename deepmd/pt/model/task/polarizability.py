@@ -27,8 +27,8 @@ from deepmd.pt.utils.utils import (
     to_numpy_array,
 )
 from deepmd.utils.out_stat import (
-    compute_stats_from_redu,
     compute_stats_from_atomic,
+    compute_stats_from_redu,
 )
 from deepmd.utils.path import (
     DPPath,
@@ -208,8 +208,7 @@ class PolarFittingNet(GeneralFitting):
 
                     if sampled[sys]["find_atomic_polarizability"] > 0.0:
                         sys_atom_polar = compute_stats_from_atomic(
-                            sampled[sys]["atomic_polarizability"],
-                            sampled[sys]["type"]
+                            sampled[sys]["atomic_polarizability"], sampled[sys]["type"]
                         )[0]
                     else:
                         if not sampled[sys]["find_polarizability"] > 0.0:
@@ -218,7 +217,7 @@ class PolarFittingNet(GeneralFitting):
                         for itype in range(self.ntypes):
                             type_mask = sampled[sys]["type"] == itype
                             sys_type_count[:, itype] = type_mask.sum(dim=1)
-                        
+
                         sys_bias_redu = sampled[sys]["polarizability"]
 
                         sys_atom_polar = compute_stats_from_redu(

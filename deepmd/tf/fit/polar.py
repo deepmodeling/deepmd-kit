@@ -202,7 +202,7 @@ class PolarFittingSeA(Fitting):
                         polar_bias.append(
                             np.sum(
                                 all_stat["atomic_polarizability"][ss][:, index_lis, :],
-                                axis=(0,1),
+                                axis=(0, 1),
                             ).reshape((1, 9))
                         )
                 else:  # No atomic polar in this system, so it should have global polar
