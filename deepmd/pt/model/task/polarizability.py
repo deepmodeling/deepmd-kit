@@ -173,7 +173,7 @@ class PolarFittingNet(GeneralFitting):
         self,
         merged: Union[Callable[[], List[dict]], List[dict]],
         stat_file_path: Optional[DPPath] = None,
-    ):
+    ) -> None:
         """
         Compute the output statistics (e.g. energy bias) for the fitting net from packed data.
 
@@ -277,14 +277,15 @@ class PolarFittingNet(GeneralFitting):
         )  # (nframes * nloc, 3, 3)
         out = out.view(nframes, nloc, 3, 3)
         if self.shift_diag:
-            # to handle nan in constant_matrix
+            
+            bias = self.constant_matrix[atype]
+            # (nframes, nloc, 1)
+            bias = bias.unsqueeze(-1) * self.scale[atype]
 
-            # (nframes, nloc, 1, 1)
-            bias = self.constant_matrix[atype].unsqueeze(-1).unsqueeze(-1)
             eye = torch.eye(3, device=env.DEVICE)
             eye = eye.repeat(nframes, nloc, 1, 1)
             # (nframes, nloc, 3, 3)
-            bias = bias * eye
-            out = out + bias * self.scale[atype]
+            bias = bias.unsqueeze(-1) * eye
+            out = out + bias 
 
         return {self.var_name: out.to(env.GLOBAL_PT_FLOAT_PRECISION)}

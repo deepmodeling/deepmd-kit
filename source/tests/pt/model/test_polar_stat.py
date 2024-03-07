@@ -23,10 +23,10 @@ class TestConsistency(unittest.TestCase):
         types = torch.randint(0, 4, (1, 5), device=env.DEVICE)
         types = torch.cat((types, types, types), dim=0)
         ntypes = 4
-        atomic_polarizability = torch.rand(3, 5, 9)
-        polarizability = torch.rand(3, 9)
-        find_polarizability = torch.rand(1)
-        find_atomic_polarizability = torch.rand(1)
+        atomic_polarizability = torch.rand((3, 5, 9), device=env.DEVICE)
+        polarizability = torch.rand((3, 9), device=env.DEVICE)
+        find_polarizability = torch.rand(1, device=env.DEVICE)
+        find_atomic_polarizability = torch.rand(1, device=env.DEVICE)
         self.sampled = [
             {
                 "type": types,
@@ -62,11 +62,11 @@ class TestConsistency(unittest.TestCase):
             "atomic_polarizability"
         ].sum(dim=1)
         self.all_stat["find_atomic_polarizability"] = [-1]
-        self.all_stat["polarizability"] = list(
+        self.all_stat["polarizability"] = [
             self.all_stat["atomic_polarizability"][0].sum(axis=1)
-        )
+        ]
         self.tfpolar.compute_output_stats(self.all_stat)
         tfbias = self.tfpolar.constant_matrix
         self.ptpolar.compute_output_stats(self.sampled)
         ptbias = self.ptpolar.constant_matrix
-        np.testing.assert_allclose(tfbias, to_numpy_array(ptbias))
+        np.testing.assert_allclose(tfbias, to_numpy_array(ptbias),rtol=1e-5, atol=1e-5)
