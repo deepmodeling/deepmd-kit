@@ -119,7 +119,7 @@ class PolarFittingNet(GeneralFitting):
             self.scale, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE
         ).view(ntypes, 1)
         self.shift_diag = shift_diag
-        self.constant_matrix = torch.zeros(ntypes)
+        self.constant_matrix = torch.zeros(ntypes, device=env.DEVICE)
         super().__init__(
             var_name=kwargs.pop("var_name", "polar"),
             ntypes=ntypes,
@@ -224,13 +224,17 @@ class PolarFittingNet(GeneralFitting):
                             sys_bias_redu, sys_type_count
                         )[0]
                     cur_constant_matrix = np.zeros(self.ntypes)
+                    if sys_atom_polar.shape[0] < self.ntypes:
+                        # pad zeros in case atype.max() + 1 != ntypes
+                        sys_atom_polar = np.concatenate([sys_atom_polar, np.zeros((self.ntypes - sys_atom_polar.shape[0], 9))])
                     for itype in range(self.ntypes):
-                        cur_constant_matrix[itype] = torch.mean(
-                            torch.diagonal(sys_atom_polar[itype].reshape(3, 3))
+                        cur_constant_matrix[itype] = np.mean(
+                            np.diagonal(sys_atom_polar[itype].reshape(3, 3))
                         )
                     sys_constant_matrix.append(cur_constant_matrix)
                 constant_matrix = np.stack(sys_constant_matrix).mean(axis=0)
-
+                # handle nan values.
+                constant_matrix = np.nan_to_num(constant_matrix)
             self.constant_matrix = torch.tensor(constant_matrix, device=env.DEVICE)
             if stat_file_path is not None:
                 stat_file_path.save_numpy(self.constant_matrix.detach().cpu().numpy())
@@ -268,10 +272,17 @@ class PolarFittingNet(GeneralFitting):
         )  # (nframes * nloc, 3, 3)
         out = out.view(nframes, nloc, 3, 3)
         if self.shift_diag:
+            # to handle nan in constant_matrix
+
+            # (nframes, nloc, 1, 1)
+            bias = self.constant_matrix[atype].unsqueeze(-1).unsqueeze(-1)
+            eye = torch.eye(3, device=env.DEVICE)
+            eye = eye.repeat(nframes, nloc, 1, 1)
+            # (nframes, nloc, 3, 3)
+            bias  = bias * eye
             out = (
                 out
-                + self.constant_matrix[atype]
-                * torch.eye(3, device=env.DEVICE)
+                + bias
                 * self.scale[atype]
             )
 
