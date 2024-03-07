@@ -226,7 +226,12 @@ class PolarFittingNet(GeneralFitting):
                     cur_constant_matrix = np.zeros(self.ntypes)
                     if sys_atom_polar.shape[0] < self.ntypes:
                         # pad zeros in case atype.max() + 1 != ntypes
-                        sys_atom_polar = np.concatenate([sys_atom_polar, np.zeros((self.ntypes - sys_atom_polar.shape[0], 9))])
+                        sys_atom_polar = np.concatenate(
+                            [
+                                sys_atom_polar,
+                                np.zeros((self.ntypes - sys_atom_polar.shape[0], 9)),
+                            ]
+                        )
                     for itype in range(self.ntypes):
                         cur_constant_matrix[itype] = np.mean(
                             np.diagonal(sys_atom_polar[itype].reshape(3, 3))
@@ -279,11 +284,7 @@ class PolarFittingNet(GeneralFitting):
             eye = torch.eye(3, device=env.DEVICE)
             eye = eye.repeat(nframes, nloc, 1, 1)
             # (nframes, nloc, 3, 3)
-            bias  = bias * eye
-            out = (
-                out
-                + bias
-                * self.scale[atype]
-            )
+            bias = bias * eye
+            out = out + bias * self.scale[atype]
 
         return {self.var_name: out.to(env.GLOBAL_PT_FLOAT_PRECISION)}
