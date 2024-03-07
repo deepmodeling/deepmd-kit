@@ -36,7 +36,9 @@ class TestConsistency(unittest.TestCase):
                 "find_polarizability": find_polarizability,
             }
         ]
-        self.all_stat = {k: [v.numpy(force=True)] for d in self.sampled for k, v in d.items()}
+        self.all_stat = {
+            k: [v.numpy(force=True)] for d in self.sampled for k, v in d.items()
+        }
         self.tfpolar = PolarFittingSeA(
             ntypes=ntypes,
             dim_descrpt=1,
