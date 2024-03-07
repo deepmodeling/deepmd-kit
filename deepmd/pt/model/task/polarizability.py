@@ -208,7 +208,7 @@ class PolarFittingNet(GeneralFitting):
 
                     if sampled[sys]["find_atomic_polarizability"] > 0.0:
                         sys_atom_polar = compute_stats_from_atomic(
-                            sampled[sys]["atomic_polarizability"], sampled[sys]["type"]
+                            sampled[sys]["atomic_polarizability"].numpy(force=True), sampled[sys]["type"].numpy(force=True)
                         )[0]
                     else:
                         if not sampled[sys]["find_polarizability"] > 0.0:
@@ -216,9 +216,9 @@ class PolarFittingNet(GeneralFitting):
                         sys_type_count = np.zeros((nframs, self.ntypes))
                         for itype in range(self.ntypes):
                             type_mask = sampled[sys]["type"] == itype
-                            sys_type_count[:, itype] = type_mask.sum(dim=1)
+                            sys_type_count[:, itype] = type_mask.sum(dim=1).numpy(force=True)
 
-                        sys_bias_redu = sampled[sys]["polarizability"]
+                        sys_bias_redu = sampled[sys]["polarizability"].numpy(force=True)
 
                         sys_atom_polar = compute_stats_from_redu(
                             sys_bias_redu, sys_type_count
