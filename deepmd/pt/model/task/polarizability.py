@@ -277,7 +277,6 @@ class PolarFittingNet(GeneralFitting):
         )  # (nframes * nloc, 3, 3)
         out = out.view(nframes, nloc, 3, 3)
         if self.shift_diag:
-            
             bias = self.constant_matrix[atype]
             # (nframes, nloc, 1)
             bias = bias.unsqueeze(-1) * self.scale[atype]
@@ -286,6 +285,6 @@ class PolarFittingNet(GeneralFitting):
             eye = eye.repeat(nframes, nloc, 1, 1)
             # (nframes, nloc, 3, 3)
             bias = bias.unsqueeze(-1) * eye
-            out = out + bias 
+            out = out + bias
 
         return {self.var_name: out.to(env.GLOBAL_PT_FLOAT_PRECISION)}

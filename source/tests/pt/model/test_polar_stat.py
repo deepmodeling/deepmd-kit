@@ -69,4 +69,4 @@ class TestConsistency(unittest.TestCase):
         tfbias = self.tfpolar.constant_matrix
         self.ptpolar.compute_output_stats(self.sampled)
         ptbias = self.ptpolar.constant_matrix
-        np.testing.assert_allclose(tfbias, to_numpy_array(ptbias),rtol=1e-5, atol=1e-5)
+        np.testing.assert_allclose(tfbias, to_numpy_array(ptbias), rtol=1e-5, atol=1e-5)
