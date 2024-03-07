@@ -983,7 +983,6 @@ class Trainer:
             "atype",
             "spin",
             "box",
-            "spin",
             "fparam",
             "aparam",
         ]
