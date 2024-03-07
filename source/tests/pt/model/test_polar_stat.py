@@ -41,7 +41,7 @@ class TestConsistency(unittest.TestCase):
             ntypes=ntypes,
             dim_descrpt=1,
             embedding_width=1,
-            sel_type=[i for i in range(ntypes)],
+            sel_type=list(range(ntypes)),
         )
         self.ptpolar = PolarFittingNet(
             ntypes=ntypes,
@@ -54,7 +54,6 @@ class TestConsistency(unittest.TestCase):
         tfbias = self.tfpolar.constant_matrix
         self.ptpolar.compute_output_stats(self.sampled)
         ptbias = self.ptpolar.constant_matrix
-        print(tfbias, to_numpy_array(ptbias))
         np.testing.assert_allclose(tfbias, to_numpy_array(ptbias))
 
     def test_global_consistency(self):
@@ -70,5 +69,4 @@ class TestConsistency(unittest.TestCase):
         tfbias = self.tfpolar.constant_matrix
         self.ptpolar.compute_output_stats(self.sampled)
         ptbias = self.ptpolar.constant_matrix
-        print(tfbias, to_numpy_array(ptbias))
         np.testing.assert_allclose(tfbias, to_numpy_array(ptbias))
