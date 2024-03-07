@@ -28,6 +28,7 @@ from deepmd.pt.utils.utils import (
 )
 from deepmd.utils.out_stat import (
     compute_stats_from_redu,
+    compute_stats_from_atomic,
 )
 from deepmd.utils.path import (
     DPPath,
@@ -204,26 +205,29 @@ class PolarFittingNet(GeneralFitting):
                 sys_constant_matrix = []
                 for sys in range(len(sampled)):
                     nframs = sampled[sys]["type"].shape[0]
-                    sys_type_count = np.zeros((nframs, self.ntypes))
-                    for itype in range(self.ntypes):
-                        type_mask = sampled[sys]["type"] == itype
-                        sys_type_count[:, itype] = type_mask.sum(dim=1)
 
                     if sampled[sys]["find_atomic_polarizability"] > 0.0:
-                        sys_bias_redu = sampled[sys]["atomic_polarizability"].sum(dim=1)
+                        sys_atom_polar = compute_stats_from_atomic(
+                            sampled[sys]["atomic_polarizability"],
+                            sampled[sys]["type"]
+                        )[0]
                     else:
                         if not sampled[sys]["find_polarizability"] > 0.0:
                             continue
-
+                        sys_type_count = np.zeros((nframs, self.ntypes))
+                        for itype in range(self.ntypes):
+                            type_mask = sampled[sys]["type"] == itype
+                            sys_type_count[:, itype] = type_mask.sum(dim=1)
+                        
                         sys_bias_redu = sampled[sys]["polarizability"]
 
-                    sys_atom_polar = compute_stats_from_redu(
-                        sys_type_count, sys_bias_redu
-                    )[0]
+                        sys_atom_polar = compute_stats_from_redu(
+                            sys_bias_redu, sys_type_count
+                        )[0]
                     cur_constant_matrix = np.zeros(self.ntypes)
                     for itype in range(self.ntypes):
                         cur_constant_matrix[itype] = torch.mean(
-                            torch.diagonal(sys_atom_polar.T[itype].reshape(3, 3))
+                            torch.diagonal(sys_atom_polar[itype].reshape(3, 3))
                         )
                     sys_constant_matrix.append(cur_constant_matrix)
                 constant_matrix = np.stack(sys_constant_matrix).mean(axis=0)

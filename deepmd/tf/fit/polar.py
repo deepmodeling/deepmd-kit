@@ -193,7 +193,7 @@ class PolarFittingSeA(Fitting):
                         index_lis = [
                             index
                             for index, w in enumerate(atom_has_polar)
-                            if atom_has_polar[index] == self.sel_type[itype]
+                            if w == self.sel_type[itype]
                         ]  # select index in this type
 
                         sys_matrix.append(np.zeros((1, len(self.sel_type))))
@@ -201,10 +201,8 @@ class PolarFittingSeA(Fitting):
 
                         polar_bias.append(
                             np.sum(
-                                all_stat["atomic_polarizability"][ss].reshape((-1, 9))[
-                                    index_lis
-                                ],
-                                axis=0,
+                                all_stat["atomic_polarizability"][ss][:, index_lis, :],
+                                axis=(0,1),
                             ).reshape((1, 9))
                         )
                 else:  # No atomic polar in this system, so it should have global polar
