@@ -104,7 +104,7 @@ class DPTest:
                 shutil.rmtree(f)
 
 
-class TestDPTestSeA(unittest.TestCase, DPTest):
+class TestDPTestSeA(DPTest, unittest.TestCase):
     def setUp(self):
         self.detail_file = "test_dp_test_ener_detail"
         input_json = str(Path(__file__).parent / "water/se_atten.json")
@@ -121,7 +121,7 @@ class TestDPTestSeA(unittest.TestCase, DPTest):
             json.dump(self.config, fp, indent=4)
 
 
-class TestDPTestSeASpin(unittest.TestCase, DPTest):
+class TestDPTestSeASpin(DPTest, unittest.TestCase):
     def setUp(self):
         self.detail_file = "test_dp_test_ener_spin_detail"
         input_json = str(Path(__file__).parent / "water/se_atten.json")
