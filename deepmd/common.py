@@ -52,7 +52,15 @@ if TYPE_CHECKING:
     _DICT_VAL = TypeVar("_DICT_VAL")
     _PRECISION = Literal["default", "float16", "float32", "float64"]
     _ACTIVATION = Literal[
-        "relu", "relu6", "softplus", "sigmoid", "tanh", "gelu", "gelu_tf"
+        "relu",
+        "relu6",
+        "softplus",
+        "sigmoid",
+        "tanh",
+        "gelu",
+        "gelu_tf",
+        "none",
+        "linear",
     ]
     __all__.extend(
         [
