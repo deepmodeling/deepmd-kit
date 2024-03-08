@@ -257,6 +257,11 @@ class CommonTest(ABC):
             common_keys = set(data1.keys()) & set(data2.keys())
             data1 = {k: data1[k] for k in common_keys}
             data2 = {k: data2[k] for k in common_keys}
+            
+        # not comparing version
+        data1.pop("@version")
+        data2.pop("@version")
+
         np.testing.assert_equal(data1, data2)
         for rr1, rr2 in zip(ret1, ret2):
             np.testing.assert_allclose(

@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import copy
 from typing import (
     Any,
     Dict,
@@ -20,7 +21,9 @@ from deepmd.dpmodel.output_def import (
 from .general_fitting import (
     GeneralFitting,
 )
-
+from deepmd.utils.version import (
+    check_version_compatibility,
+)
 
 @GeneralFitting.register("invar")
 @fitting_check_output
@@ -168,6 +171,12 @@ class InvarFitting(GeneralFitting):
         data["dim_out"] = self.dim_out
         data["atom_ener"] = self.atom_ener
         return data
+    
+    @classmethod
+    def deserialize(cls, data: dict) -> "GeneralFitting":
+        data = copy.deepcopy(data)
+        check_version_compatibility(data.pop("@version", 1), 1, 1)
+        return super().deserialize(data)
 
     def _net_out_dim(self):
         """Set the FittingNet output dim."""

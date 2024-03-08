@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import copy
 from typing import (
     Any,
     Dict,
@@ -27,6 +28,9 @@ from .general_fitting import (
     GeneralFitting,
 )
 
+from deepmd.utils.version import (
+    check_version_compatibility,
+)
 
 @BaseFitting.register("polar")
 @fitting_check_output
@@ -180,6 +184,12 @@ class PolarFitting(GeneralFitting):
         data["@variables"]["scale"] = self.scale
         data["@variables"]["constant_matrix"] = self.constant_matrix
         return data
+    
+    @classmethod
+    def deserialize(cls, data: dict) -> "GeneralFitting":
+        data = copy.deepcopy(data)
+        check_version_compatibility(data.pop("@version", 1), 2, 1)
+        return super().deserialize(data)
 
     def output_def(self):
         return FittingOutputDef(

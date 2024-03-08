@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import copy
 import logging
 from typing import (
     Callable,
@@ -32,6 +33,9 @@ from deepmd.utils.out_stat import (
 )
 from deepmd.utils.path import (
     DPPath,
+)
+from deepmd.utils.version import (
+    check_version_compatibility,
 )
 
 log = logging.getLogger(__name__)
@@ -159,6 +163,12 @@ class PolarFittingNet(GeneralFitting):
         data["@variables"]["scale"] = to_numpy_array(self.scale)
         data["@variables"]["constant_matrix"] = to_numpy_array(self.constant_matrix)
         return data
+    
+    @classmethod
+    def deserialize(cls, data: dict) -> "GeneralFitting":
+        data = copy.deepcopy(data)
+        check_version_compatibility(data.pop("@version", 1), 2, 1)
+        return super().deserialize(data)
 
     def output_def(self) -> FittingOutputDef:
         return FittingOutputDef(
