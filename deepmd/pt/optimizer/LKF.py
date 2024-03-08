@@ -185,8 +185,6 @@ class LKFOptimizer(Optimizer):
 
     def __update(self, H, error, weights):
         P = self._state.get("P")
-        # for item in P:
-        #     print(self.rank," size ",item.shape)
         kalman_lambda = self._state.get("kalman_lambda")
         weights_num = self._state.get("weights_num")
         params_packed_index = self._state.get("params_packed_index")
