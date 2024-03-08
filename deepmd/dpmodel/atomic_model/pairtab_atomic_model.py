@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import copy
 from typing import (
     Dict,
     List,
@@ -14,6 +15,9 @@ from deepmd.dpmodel.output_def import (
 )
 from deepmd.utils.pair_tab import (
     PairTab,
+)
+from deepmd.utils.version import (
+    check_version_compatibility,
 )
 
 from .base_atomic_model import (
@@ -43,19 +47,36 @@ class PairTabAtomicModel(BaseAtomicModel):
         The cutoff radius.
     sel : int or list[int]
         The maxmum number of atoms in the cut-off radius.
+    type_map : list[str]
+        Mapping atom type to the name (str) of the type.
+        For example `type_map[1]` gives the name of the type 1.
     """
 
     def __init__(
-        self, tab_file: str, rcut: float, sel: Union[int, List[int]], **kwargs
+        self,
+        tab_file: str,
+        rcut: float,
+        sel: Union[int, List[int]],
+        type_map: List[str],
+        **kwargs,
     ):
         super().__init__()
         self.tab_file = tab_file
         self.rcut = rcut
+        self.type_map = type_map
 
         self.tab = PairTab(self.tab_file, rcut=rcut)
+        self.type_map = type_map
+        self.ntypes = len(type_map)
 
         if self.tab_file is not None:
             self.tab_info, self.tab_data = self.tab.get()
+            nspline, ntypes_tab = self.tab_info[-2:].astype(int)
+            self.tab_data = self.tab_data.reshape(ntypes_tab, ntypes_tab, nspline, 4)
+            if self.ntypes != ntypes_tab:
+                raise ValueError(
+                    "The `type_map` provided does not match the number of columns in the table."
+                )
         else:
             self.tab_info, self.tab_data = None, None
 
@@ -82,8 +103,8 @@ class PairTabAtomicModel(BaseAtomicModel):
     def get_rcut(self) -> float:
         return self.rcut
 
-    def get_type_map(self) -> Optional[List[str]]:
-        raise NotImplementedError("TODO: get_type_map should be implemented")
+    def get_type_map(self) -> List[str]:
+        return self.type_map
 
     def get_sel(self) -> List[int]:
         return [self.sel]
@@ -105,17 +126,35 @@ class PairTabAtomicModel(BaseAtomicModel):
         return True
 
     def serialize(self) -> dict:
-        return {"tab": self.tab.serialize(), "rcut": self.rcut, "sel": self.sel}
+        dd = BaseAtomicModel.serialize(self)
+        dd.update(
+            {
+                "@class": "Model",
+                "type": "pairtab",
+                "@version": 1,
+                "tab": self.tab.serialize(),
+                "rcut": self.rcut,
+                "sel": self.sel,
+                "type_map": self.type_map,
+            }
+        )
+        return dd
 
     @classmethod
     def deserialize(cls, data) -> "PairTabAtomicModel":
-        rcut = data["rcut"]
-        sel = data["sel"]
-        tab = PairTab.deserialize(data["tab"])
-        tab_model = cls(None, rcut, sel)
+        data = copy.deepcopy(data)
+        check_version_compatibility(data.pop("@version", 1), 1, 1)
+        data.pop("@class")
+        data.pop("type")
+        rcut = data.pop("rcut")
+        sel = data.pop("sel")
+        type_map = data.pop("type_map")
+        tab = PairTab.deserialize(data.pop("tab"))
+        tab_model = cls(None, rcut, sel, type_map, **data)
         tab_model.tab = tab
         tab_model.tab_info = tab_model.tab.tab_info
-        tab_model.tab_data = tab_model.tab.tab_data
+        nspline, ntypes = tab_model.tab_info[-2:].astype(int)
+        tab_model.tab_data = tab_model.tab.tab_data.reshape(ntypes, ntypes, nspline, 4)
         return tab_model
 
     def forward_atomic(

@@ -20,14 +20,14 @@ from deepmd.pt.model.descriptor import (
 from deepmd.pt.model.descriptor.dpa1 import (
     DescrptDPA1,
 )
+from deepmd.pt.model.task.ener import (
+    EnergyFittingNet,
+)
 from deepmd.pt.utils import (
     env,
 )
 from deepmd.pt.utils.dataloader import (
     DpLoaderSet,
-)
-from deepmd.pt.utils.stat import (
-    compute_output_bias,
 )
 from deepmd.pt.utils.stat import make_stat_input as my_make
 from deepmd.tf.common import (
@@ -44,8 +44,50 @@ from deepmd.tf.utils import random as tf_random
 from deepmd.tf.utils.data_system import (
     DeepmdDataSystem,
 )
+from deepmd.utils.data import (
+    DataRequirementItem,
+)
 
 CUR_DIR = os.path.dirname(__file__)
+
+energy_data_requirement = [
+    DataRequirementItem(
+        "energy",
+        ndof=1,
+        atomic=False,
+        must=False,
+        high_prec=True,
+    ),
+    DataRequirementItem(
+        "force",
+        ndof=3,
+        atomic=True,
+        must=False,
+        high_prec=False,
+    ),
+    DataRequirementItem(
+        "virial",
+        ndof=9,
+        atomic=False,
+        must=False,
+        high_prec=False,
+    ),
+    DataRequirementItem(
+        "atom_ener",
+        ndof=1,
+        atomic=True,
+        must=False,
+        high_prec=False,
+    ),
+    DataRequirementItem(
+        "atom_pref",
+        ndof=1,
+        atomic=True,
+        must=False,
+        high_prec=False,
+        repeat=3,
+    ),
+]
 
 
 def compare(ut, base, given):
@@ -111,6 +153,7 @@ class DatasetTest(ABC):
         self.filter_neuron = model_config["descriptor"]["neuron"]
         self.axis_neuron = model_config["descriptor"]["axis_neuron"]
         self.n_neuron = model_config["fitting_net"]["neuron"]
+        self.my_dataset.add_data_requirement(energy_data_requirement)
 
         self.my_sampled = my_make(
             self.my_dataset.systems, self.my_dataset.dataloaders, self.data_stat_nbatch
@@ -137,7 +180,9 @@ class DatasetTest(ABC):
                         .unsqueeze(0)
                         .expand(energy[i][j].shape[0], -1)
                     )
-            return energy_lst, natoms_lst
+            energy_merge = torch.cat(energy_lst)
+            natoms_merge = torch.cat(natoms_lst)
+            return energy_merge, natoms_merge
 
         energy = self.dp_sampled["energy"]
         natoms = self.dp_sampled["natoms_vec"]
@@ -145,9 +190,14 @@ class DatasetTest(ABC):
         dp_fn = EnerFitting(
             self.dp_d.get_ntypes(), self.dp_d.get_dim_out(), self.n_neuron
         )
-        dp_fn.compute_output_stats(self.dp_sampled)
-        bias_atom_e = compute_output_bias(energy, natoms)
-        self.assertTrue(np.allclose(dp_fn.bias_atom_e, bias_atom_e[:, 0]))
+        dp_fn.compute_output_stats(self.dp_sampled, mixed_type=self.mixed_type)
+        pt_fn = EnergyFittingNet(
+            self.dp_d.get_ntypes(), self.dp_d.get_dim_out(), self.n_neuron
+        )
+        pt_fn.compute_output_stats(self.my_sampled)
+        np.testing.assert_allclose(
+            dp_fn.bias_atom_e, pt_fn.bias_atom_e.detach().cpu().numpy().ravel()
+        )
 
     # temporarily delete this function for performance of seeds in tf and pytorch may be different
     """
@@ -176,8 +226,6 @@ class DatasetTest(ABC):
         for sys in sampled:
             for key in [
                 "coord",
-                "force",
-                "energy",
                 "atype",
                 "natoms",
                 "box",

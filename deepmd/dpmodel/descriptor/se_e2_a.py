@@ -3,8 +3,17 @@ import itertools
 
 import numpy as np
 
+from deepmd.dpmodel.utils.update_sel import (
+    UpdateSel,
+)
+from deepmd.env import (
+    GLOBAL_NP_FLOAT_PRECISION,
+)
 from deepmd.utils.path import (
     DPPath,
+)
+from deepmd.utils.version import (
+    check_version_compatibility,
 )
 
 try:
@@ -17,6 +26,7 @@ from typing import (
     Any,
     List,
     Optional,
+    Tuple,
 )
 
 from deepmd.dpmodel import (
@@ -37,6 +47,7 @@ from .base_descriptor import (
 
 
 @BaseDescriptor.register("se_e2_a")
+@BaseDescriptor.register("se_a")
 class DescrptSeA(NativeOP, BaseDescriptor):
     r"""DeepPot-SE constructed from all information (both angular and radial) of
     atomic configurations. The embedding takes the distance between atoms as input.
@@ -100,6 +111,8 @@ class DescrptSeA(NativeOP, BaseDescriptor):
     exclude_types : List[List[int]]
             The excluded pairs of types which have no interaction with each other.
             For example, `[[0, 1]]` means no interaction between type 0 and type 1.
+    env_protection: float
+            Protection parameter to prevent division by zero errors during environment matrix calculations.
     set_davg_zero
             Set the shift of embedding net input to zero.
     activation_function
@@ -138,6 +151,7 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         trainable: bool = True,
         type_one_side: bool = True,
         exclude_types: List[List[int]] = [],
+        env_protection: float = 0.0,
         set_davg_zero: bool = False,
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
@@ -158,12 +172,13 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         self.resnet_dt = resnet_dt
         self.trainable = trainable
         self.type_one_side = type_one_side
-        self.exclude_types = exclude_types
+        self.env_protection = env_protection
         self.set_davg_zero = set_davg_zero
         self.activation_function = activation_function
         self.precision = precision
         self.spin = spin
-        self.emask = PairExcludeMask(self.ntypes, self.exclude_types)
+        # order matters, placed after the assignment of self.ntypes
+        self.reinit_exclude(exclude_types)
 
         in_dim = 1  # not considiering type embedding
         self.embeddings = NetworkCollection(
@@ -181,10 +196,14 @@ class DescrptSeA(NativeOP, BaseDescriptor):
                 self.resnet_dt,
                 self.precision,
             )
-        self.env_mat = EnvMat(self.rcut, self.rcut_smth)
+        self.env_mat = EnvMat(self.rcut, self.rcut_smth, protection=self.env_protection)
         self.nnei = np.sum(self.sel)
-        self.davg = np.zeros([self.ntypes, self.nnei, 4])
-        self.dstd = np.ones([self.ntypes, self.nnei, 4])
+        self.davg = np.zeros(
+            [self.ntypes, self.nnei, 4], dtype=PRECISION_DICT[self.precision]
+        )
+        self.dstd = np.ones(
+            [self.ntypes, self.nnei, 4], dtype=PRECISION_DICT[self.precision]
+        )
         self.orig_sel = self.sel
 
     def __setitem__(self, key, value):
@@ -230,6 +249,14 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         """
         return False
 
+    def share_params(self, base_class, shared_level, resume=False):
+        """
+        Share the parameters of self to the base_class with shared_level during multitask training.
+        If not start from checkpoint (resume is False),
+        some seperated parameters (e.g. mean and stddev) will be re-calculated across different classes.
+        """
+        raise NotImplementedError
+
     def get_ntypes(self) -> int:
         """Returns the number of element types."""
         return self.ntypes
@@ -248,6 +275,13 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         # (nf x nloc) x nnei x ng
         gg = self.embeddings[embedding_idx].call(ss)
         return gg
+
+    def reinit_exclude(
+        self,
+        exclude_types: List[Tuple[int, int]] = [],
+    ):
+        self.exclude_types = exclude_types
+        self.emask = PairExcludeMask(self.ntypes, exclude_types=exclude_types)
 
     def call(
         self,
@@ -292,7 +326,7 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         sec = np.append([0], np.cumsum(self.sel))
 
         ng = self.neuron[-1]
-        gr = np.zeros([nf * nloc, ng, 4])
+        gr = np.zeros([nf * nloc, ng, 4], dtype=PRECISION_DICT[self.precision])
         exclude_mask = self.emask.build_type_exclude_mask(nlist, atype_ext)
         # merge nf and nloc axis, so for type_one_side == False,
         # we don't require atype is the same in all frames
@@ -322,7 +356,9 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         # nf x nloc x ng x ng1
         grrg = np.einsum("flid,fljd->flij", gr, gr1)
         # nf x nloc x (ng x ng1)
-        grrg = grrg.reshape(nf, nloc, ng * self.axis_neuron)
+        grrg = grrg.reshape(nf, nloc, ng * self.axis_neuron).astype(
+            GLOBAL_NP_FLOAT_PRECISION
+        )
         return grrg, gr[..., 1:], None, None, ww
 
     def serialize(self) -> dict:
@@ -336,6 +372,7 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         return {
             "@class": "Descriptor",
             "type": "se_e2_a",
+            "@version": 1,
             "rcut": self.rcut,
             "rcut_smth": self.rcut_smth,
             "sel": self.sel,
@@ -345,6 +382,7 @@ class DescrptSeA(NativeOP, BaseDescriptor):
             "trainable": self.trainable,
             "type_one_side": self.type_one_side,
             "exclude_types": self.exclude_types,
+            "env_protection": self.env_protection,
             "set_davg_zero": self.set_davg_zero,
             "activation_function": self.activation_function,
             # make deterministic
@@ -362,6 +400,7 @@ class DescrptSeA(NativeOP, BaseDescriptor):
     def deserialize(cls, data: dict) -> "DescrptSeA":
         """Deserialize from dict."""
         data = copy.deepcopy(data)
+        check_version_compatibility(data.pop("@version", 1), 1, 1)
         data.pop("@class", None)
         data.pop("type", None)
         variables = data.pop("@variables")
@@ -372,5 +411,18 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         obj["davg"] = variables["davg"]
         obj["dstd"] = variables["dstd"]
         obj.embeddings = NetworkCollection.deserialize(embeddings)
-        obj.env_mat = EnvMat.deserialize(env_mat)
         return obj
+
+    @classmethod
+    def update_sel(cls, global_jdata: dict, local_jdata: dict):
+        """Update the selection and perform neighbor statistics.
+
+        Parameters
+        ----------
+        global_jdata : dict
+            The global data, containing the training section
+        local_jdata : dict
+            The local data refer to the current class
+        """
+        local_jdata_cpy = local_jdata.copy()
+        return UpdateSel().update_one_sel(global_jdata, local_jdata_cpy, False)

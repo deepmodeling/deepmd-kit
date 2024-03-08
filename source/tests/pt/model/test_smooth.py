@@ -9,7 +9,6 @@ from deepmd.pt.infer.deep_eval import (
 )
 from deepmd.pt.model.model import (
     get_model,
-    get_zbl_model,
 )
 from deepmd.pt.utils import (
     env,
@@ -20,6 +19,7 @@ from .test_permutation import (  # model_dpau,
     model_dpa2,
     model_hybrid,
     model_se_e2_a,
+    model_spin,
     model_zbl,
 )
 
@@ -59,7 +59,7 @@ class SmoothTest:
         )
         coord1 = torch.matmul(coord1, cell)
         coord = torch.concat([coord0, coord1], dim=0)
-
+        spin = torch.rand([natoms, 3], dtype=dtype, device=env.DEVICE)
         coord0 = torch.clone(coord)
         coord1 = torch.clone(coord)
         coord1[1][0] += epsilon
@@ -68,52 +68,63 @@ class SmoothTest:
         coord3 = torch.clone(coord)
         coord3[1][0] += epsilon
         coord3[2][1] += epsilon
+        test_spin = getattr(self, "test_spin", False)
+        if not test_spin:
+            test_keys = ["energy", "force", "virial"]
+        else:
+            test_keys = ["energy", "force", "force_mag", "virial"]
 
-        e0, f0, v0 = eval_model(
-            self.model, coord0.unsqueeze(0), cell.unsqueeze(0), atype
+        result_0 = eval_model(
+            self.model,
+            coord0.unsqueeze(0),
+            cell.unsqueeze(0),
+            atype,
+            spins=spin.unsqueeze(0),
         )
-        ret0 = {
-            "energy": e0.squeeze(0),
-            "force": f0.squeeze(0),
-            "virial": v0.squeeze(0),
-        }
-        e1, f1, v1 = eval_model(
-            self.model, coord1.unsqueeze(0), cell.unsqueeze(0), atype
+        ret0 = {key: result_0[key].squeeze(0) for key in test_keys}
+        result_1 = eval_model(
+            self.model,
+            coord1.unsqueeze(0),
+            cell.unsqueeze(0),
+            atype,
+            spins=spin.unsqueeze(0),
         )
-        ret1 = {
-            "energy": e1.squeeze(0),
-            "force": f1.squeeze(0),
-            "virial": v1.squeeze(0),
-        }
-        e2, f2, v2 = eval_model(
-            self.model, coord2.unsqueeze(0), cell.unsqueeze(0), atype
+        ret1 = {key: result_1[key].squeeze(0) for key in test_keys}
+        result_2 = eval_model(
+            self.model,
+            coord2.unsqueeze(0),
+            cell.unsqueeze(0),
+            atype,
+            spins=spin.unsqueeze(0),
         )
-        ret2 = {
-            "energy": e2.squeeze(0),
-            "force": f2.squeeze(0),
-            "virial": v2.squeeze(0),
-        }
-        e3, f3, v3 = eval_model(
-            self.model, coord3.unsqueeze(0), cell.unsqueeze(0), atype
+        ret2 = {key: result_2[key].squeeze(0) for key in test_keys}
+        result_3 = eval_model(
+            self.model,
+            coord3.unsqueeze(0),
+            cell.unsqueeze(0),
+            atype,
+            spins=spin.unsqueeze(0),
         )
-        ret3 = {
-            "energy": e3.squeeze(0),
-            "force": f3.squeeze(0),
-            "virial": v3.squeeze(0),
-        }
+        ret3 = {key: result_3[key].squeeze(0) for key in test_keys}
 
         def compare(ret0, ret1):
-            torch.testing.assert_close(
-                ret0["energy"], ret1["energy"], rtol=rprec, atol=aprec
-            )
-            # plus 1. to avoid the divided-by-zero issue
-            torch.testing.assert_close(
-                1.0 + ret0["force"], 1.0 + ret1["force"], rtol=rprec, atol=aprec
-            )
-            if not hasattr(self, "test_virial") or self.test_virial:
-                torch.testing.assert_close(
-                    1.0 + ret0["virial"], 1.0 + ret1["virial"], rtol=rprec, atol=aprec
-                )
+            for key in test_keys:
+                if key in ["energy"]:
+                    torch.testing.assert_close(
+                        ret0[key], ret1[key], rtol=rprec, atol=aprec
+                    )
+                elif key in ["force", "force_mag"]:
+                    # plus 1. to avoid the divided-by-zero issue
+                    torch.testing.assert_close(
+                        1.0 + ret0[key], 1.0 + ret1[key], rtol=rprec, atol=aprec
+                    )
+                elif key == "virial":
+                    if not hasattr(self, "test_virial") or self.test_virial:
+                        torch.testing.assert_close(
+                            1.0 + ret0[key], 1.0 + ret1[key], rtol=rprec, atol=aprec
+                        )
+                else:
+                    raise RuntimeError(f"Unexpected test key {key}")
 
         compare(ret0, ret1)
         compare(ret1, ret2)
@@ -195,7 +206,6 @@ class TestEnergyModelDPA2_2(unittest.TestCase, SmoothTest):
         self.epsilon, self.aprec = None, None
 
 
-@unittest.skip("hybrid not supported at the moment")
 class TestEnergyModelHybrid(unittest.TestCase, SmoothTest):
     def setUp(self):
         model_params = copy.deepcopy(model_hybrid)
@@ -208,7 +218,16 @@ class TestEnergyModelZBL(unittest.TestCase, SmoothTest):
     def setUp(self):
         model_params = copy.deepcopy(model_zbl)
         self.type_split = False
-        self.model = get_zbl_model(model_params).to(env.DEVICE)
+        self.model = get_model(model_params).to(env.DEVICE)
+        self.epsilon, self.aprec = 1e-10, None
+
+
+class TestEnergyModelSpinSeA(unittest.TestCase, SmoothTest):
+    def setUp(self):
+        model_params = copy.deepcopy(model_spin)
+        self.type_split = False
+        self.test_spin = True
+        self.model = get_model(model_params).to(env.DEVICE)
         self.epsilon, self.aprec = None, None
 
 

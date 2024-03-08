@@ -70,6 +70,25 @@ class DeepPot(DeepEval):
             )
         )
 
+    @property
+    def output_def_mag(self) -> ModelOutputDef:
+        """Get the output definition of this model with magnetic parts."""
+        return ModelOutputDef(
+            FittingOutputDef(
+                [
+                    OutputVariableDef(
+                        "energy",
+                        shape=[1],
+                        reduciable=True,
+                        r_differentiable=True,
+                        c_differentiable=True,
+                        atomic=True,
+                        magnetic=True,
+                    ),
+                ]
+            )
+        )
+
     def eval(
         self,
         coords: np.ndarray,
@@ -162,7 +181,7 @@ class DeepPot(DeepEval):
                 natoms_real = natoms
             atomic_energy = results["energy"].reshape(nframes, natoms_real, 1)
             atomic_virial = results["energy_derv_c"].reshape(nframes, natoms, 9)
-            return (
+            result = (
                 energy,
                 force,
                 virial,
@@ -170,11 +189,16 @@ class DeepPot(DeepEval):
                 atomic_virial,
             )
         else:
-            return (
+            result = (
                 energy,
                 force,
                 virial,
             )
+        if self.deep_eval.get_has_spin():
+            force_mag = results["energy_derv_r_mag"].reshape(nframes, natoms, 3)
+            mask_mag = results["mask_mag"].reshape(nframes, natoms, 1)
+            result = (*list(result), force_mag, mask_mag)
+        return result
 
 
 __all__ = ["DeepPot"]

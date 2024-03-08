@@ -8,7 +8,7 @@ from deepmd.dpmodel.utils import (
     EnvMat,
 )
 from deepmd.pt.model.descriptor.env_mat import (
-    prod_env_mat_se_a,
+    prod_env_mat,
 )
 from deepmd.pt.utils import (
     env,
@@ -43,8 +43,8 @@ class TestCaseSingleFrameWithNlist:
             ],
             dtype=int,
         ).reshape([1, self.nloc, sum(self.sel)])
-        self.rcut = 0.4
-        self.rcut_smth = 2.2
+        self.rcut = 2.2
+        self.rcut_smth = 0.4
         # permutations
         self.perm = np.array([2, 0, 1, 3], dtype=np.int32)
         inv_perm = np.array([1, 2, 0, 3], dtype=np.int32)
@@ -61,6 +61,7 @@ class TestCaseSingleFrameWithNlist:
         nlist1 = inv_perm[nlist1]
         nlist1 = np.where(mask, -1, nlist1)
         self.nlist = np.concatenate([self.nlist, nlist1], axis=0)
+        self.atol = 1e-12
 
 
 class TestCaseSingleFrameWithoutNlist:
@@ -79,9 +80,10 @@ class TestCaseSingleFrameWithoutNlist:
         self.atype = np.array([0, 0, 1], dtype=int).reshape([1, self.nloc])
         self.cell = 2.0 * np.eye(3).reshape([1, 9])
         # sel = [5, 2]
-        self.sel = [5, 2]
-        self.rcut = 0.4
-        self.rcut_smth = 2.2
+        self.sel = [16, 8]
+        self.rcut = 2.2
+        self.rcut_smth = 0.4
+        self.atol = 1e-12
 
 
 # to be merged with the tf test case
@@ -99,7 +101,7 @@ class TestEnvMat(unittest.TestCase, TestCaseSingleFrameWithNlist):
         dstd = 0.1 + np.abs(dstd)
         em0 = EnvMat(self.rcut, self.rcut_smth)
         mm0, ww0 = em0.call(self.coord_ext, self.atype_ext, self.nlist, davg, dstd)
-        mm1, _, ww1 = prod_env_mat_se_a(
+        mm1, _, ww1 = prod_env_mat(
             torch.tensor(self.coord_ext, dtype=dtype, device=env.DEVICE),
             torch.tensor(self.nlist, dtype=int, device=env.DEVICE),
             torch.tensor(self.atype_ext[:, :nloc], dtype=int, device=env.DEVICE),

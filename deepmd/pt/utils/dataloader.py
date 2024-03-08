@@ -35,7 +35,11 @@ from deepmd.pt.utils import (
 from deepmd.pt.utils.dataset import (
     DeepmdDataSetForLoader,
 )
+from deepmd.utils.data import (
+    DataRequirementItem,
+)
 from deepmd.utils.data_system import (
+    print_summary,
     prob_sys_size_ext,
     process_sys_probs,
 )
@@ -100,6 +104,7 @@ class DpLoaderSet(Dataset):
         self.total_batch = 0
 
         self.dataloaders = []
+        self.batch_sizes = []
         for system in self.systems:
             if dist.is_initialized():
                 system_sampler = DistributedSampler(system)
@@ -119,6 +124,7 @@ class DpLoaderSet(Dataset):
                     self.batch_size += 1
             else:
                 self.batch_size = batch_size
+            self.batch_sizes.append(self.batch_size)
             system_dataloader = DataLoader(
                 dataset=system,
                 batch_size=self.batch_size,
@@ -158,6 +164,30 @@ class DpLoaderSet(Dataset):
             batch = next(self.iters[idx])
         batch["sid"] = idx
         return batch
+
+    def add_data_requirement(self, data_requirement: List[DataRequirementItem]):
+        """Add data requirement for each system in multiple systems."""
+        for system in self.systems:
+            system.add_data_requirement(data_requirement)
+
+    def print_summary(
+        self,
+        name: str,
+        prob: List[float],
+    ):
+        print_summary(
+            name,
+            len(self.systems),
+            [ss.system for ss in self.systems],
+            [ss._natoms for ss in self.systems],
+            self.batch_sizes,
+            [
+                ss._data_system.get_sys_numb_batch(self.batch_sizes[ii])
+                for ii, ss in enumerate(self.systems)
+            ],
+            prob,
+            [ss._data_system.pbc for ss in self.systems],
+        )
 
 
 _sentinel = object()
@@ -260,7 +290,7 @@ def get_weighted_sampler(training_data, prob_style, sys_prob=False):
             probs = prob_sys_size_ext(style, len(training_data), training_data.index)
     else:
         probs = process_sys_probs(prob_style, training_data.index)
-    log.info("Generated weighted sampler with prob array: " + str(probs))
+    log.debug("Generated weighted sampler with prob array: " + str(probs))
     # training_data.total_batch is the size of one epoch, you can increase it to avoid too many  rebuilding of iteraters
     len_sampler = training_data.total_batch * max(env.NUM_WORKERS, 1)
     with torch.device("cpu"):

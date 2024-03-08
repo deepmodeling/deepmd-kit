@@ -65,24 +65,29 @@ class TestDPModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
         np.testing.assert_allclose(
             to_numpy_array(ret0["energy"]),
             to_numpy_array(ret1["energy"]),
+            atol=self.atol,
         )
         np.testing.assert_allclose(
             to_numpy_array(ret0["energy_redu"]),
             to_numpy_array(ret1["energy_redu"]),
+            atol=self.atol,
         )
         np.testing.assert_allclose(
             to_numpy_array(ret0["energy_derv_r"]),
             to_numpy_array(ret1["energy_derv_r"]),
+            atol=self.atol,
         )
         np.testing.assert_allclose(
             to_numpy_array(ret0["energy_derv_c_redu"]),
             to_numpy_array(ret1["energy_derv_c_redu"]),
+            atol=self.atol,
         )
         ret0 = md0.forward_common(*args, do_atomic_virial=True)
         ret1 = md1.forward_common(*args, do_atomic_virial=True)
         np.testing.assert_allclose(
             to_numpy_array(ret0["energy_derv_c"]),
             to_numpy_array(ret1["energy_derv_c"]),
+            atol=self.atol,
         )
 
         coord_ext, atype_ext, mapping = extend_coord_with_ghosts(
@@ -106,6 +111,7 @@ class TestDPModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
         np.testing.assert_allclose(
             to_numpy_array(ret0["energy_derv_c_redu"]),
             to_numpy_array(ret2["energy_derv_c_redu"]),
+            atol=self.atol,
         )
 
     def test_dp_consistency(self):
@@ -141,10 +147,12 @@ class TestDPModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
         np.testing.assert_allclose(
             ret0["energy"],
             to_numpy_array(ret1["energy"]),
+            atol=self.atol,
         )
         np.testing.assert_allclose(
             ret0["energy_redu"],
             to_numpy_array(ret1["energy_redu"]),
+            atol=self.atol,
         )
 
     def test_dp_consistency_nopbc(self):
@@ -180,11 +188,61 @@ class TestDPModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
         np.testing.assert_allclose(
             ret0["energy"],
             to_numpy_array(ret1["energy"]),
+            atol=self.atol,
         )
         np.testing.assert_allclose(
             ret0["energy_redu"],
             to_numpy_array(ret1["energy_redu"]),
+            atol=self.atol,
         )
+
+    def test_prec_consistency(self):
+        rng = np.random.default_rng()
+        nf, nloc = self.atype.shape
+        ds = DPDescrptSeA(
+            self.rcut,
+            self.rcut_smth,
+            self.sel,
+        )
+        ft = DPInvarFitting(
+            "energy",
+            self.nt,
+            ds.get_dim_out(),
+            1,
+            mixed_types=ds.mixed_types(),
+        )
+        nfp, nap = 2, 3
+        type_map = ["foo", "bar"]
+        fparam = rng.normal(size=[self.nf, nfp])
+        aparam = rng.normal(size=[self.nf, nloc, nap])
+
+        md0 = DPDPModel(ds, ft, type_map=type_map)
+        md1 = DPModel.deserialize(md0.serialize()).to(env.DEVICE)
+
+        args64 = [to_torch_tensor(ii) for ii in [self.coord, self.atype, self.cell]]
+        args64[0] = args64[0].to(torch.float64)
+        args64[2] = args64[2].to(torch.float64)
+        args32 = [to_torch_tensor(ii) for ii in [self.coord, self.atype, self.cell]]
+        args32[0] = args32[0].to(torch.float32)
+        args32[2] = args32[2].to(torch.float32)
+        # fparam, aparam are converted to coordinate precision by model
+        fparam = to_torch_tensor(fparam)
+        aparam = to_torch_tensor(aparam)
+
+        model_l_ret_64 = md1.forward_common(*args64, fparam=fparam, aparam=aparam)
+        model_l_ret_32 = md1.forward_common(*args32, fparam=fparam, aparam=aparam)
+
+        for ii in model_l_ret_32.keys():
+            if ii[-4:] == "redu":
+                self.assertEqual(model_l_ret_32[ii].dtype, torch.float64)
+            else:
+                self.assertEqual(model_l_ret_32[ii].dtype, torch.float32)
+            self.assertEqual(model_l_ret_64[ii].dtype, torch.float64)
+            np.testing.assert_allclose(
+                to_numpy_array(model_l_ret_32[ii]),
+                to_numpy_array(model_l_ret_64[ii]),
+                atol=self.atol,
+            )
 
 
 class TestDPModelLower(unittest.TestCase, TestCaseSingleFrameWithNlist):
@@ -216,24 +274,29 @@ class TestDPModelLower(unittest.TestCase, TestCaseSingleFrameWithNlist):
         np.testing.assert_allclose(
             to_numpy_array(ret0["energy"]),
             to_numpy_array(ret1["energy"]),
+            atol=self.atol,
         )
         np.testing.assert_allclose(
             to_numpy_array(ret0["energy_redu"]),
             to_numpy_array(ret1["energy_redu"]),
+            atol=self.atol,
         )
         np.testing.assert_allclose(
             to_numpy_array(ret0["energy_derv_r"]),
             to_numpy_array(ret1["energy_derv_r"]),
+            atol=self.atol,
         )
         np.testing.assert_allclose(
             to_numpy_array(ret0["energy_derv_c_redu"]),
             to_numpy_array(ret1["energy_derv_c_redu"]),
+            atol=self.atol,
         )
         ret0 = md0.forward_common_lower(*args, do_atomic_virial=True)
         ret1 = md1.forward_common_lower(*args, do_atomic_virial=True)
         np.testing.assert_allclose(
             to_numpy_array(ret0["energy_derv_c"]),
             to_numpy_array(ret1["energy_derv_c"]),
+            atol=self.atol,
         )
 
     def test_dp_consistency(self):
@@ -263,11 +326,63 @@ class TestDPModelLower(unittest.TestCase, TestCaseSingleFrameWithNlist):
         np.testing.assert_allclose(
             ret0["energy"],
             to_numpy_array(ret1["energy"]),
+            atol=self.atol,
         )
         np.testing.assert_allclose(
             ret0["energy_redu"],
             to_numpy_array(ret1["energy_redu"]),
+            atol=self.atol,
         )
+
+    def test_prec_consistency(self):
+        rng = np.random.default_rng()
+        nf, nloc, nnei = self.nlist.shape
+        ds = DPDescrptSeA(
+            self.rcut,
+            self.rcut_smth,
+            self.sel,
+        )
+        ft = DPInvarFitting(
+            "energy",
+            self.nt,
+            ds.get_dim_out(),
+            1,
+            mixed_types=ds.mixed_types(),
+        )
+        nfp, nap = 2, 3
+        type_map = ["foo", "bar"]
+        fparam = rng.normal(size=[self.nf, nfp])
+        aparam = rng.normal(size=[self.nf, nloc, nap])
+
+        md0 = DPDPModel(ds, ft, type_map=type_map)
+        md1 = DPModel.deserialize(md0.serialize()).to(env.DEVICE)
+
+        args64 = [
+            to_torch_tensor(ii) for ii in [self.coord_ext, self.atype_ext, self.nlist]
+        ]
+        args64[0] = args64[0].to(torch.float64)
+        args32 = [
+            to_torch_tensor(ii) for ii in [self.coord_ext, self.atype_ext, self.nlist]
+        ]
+        args32[0] = args32[0].to(torch.float32)
+        # fparam, aparam are converted to coordinate precision by model
+        fparam = to_torch_tensor(fparam)
+        aparam = to_torch_tensor(aparam)
+
+        model_l_ret_64 = md1.forward_common_lower(*args64, fparam=fparam, aparam=aparam)
+        model_l_ret_32 = md1.forward_common_lower(*args32, fparam=fparam, aparam=aparam)
+
+        for ii in model_l_ret_32.keys():
+            if ii[-4:] == "redu":
+                self.assertEqual(model_l_ret_32[ii].dtype, torch.float64)
+            else:
+                self.assertEqual(model_l_ret_32[ii].dtype, torch.float32)
+            self.assertEqual(model_l_ret_64[ii].dtype, torch.float64)
+            np.testing.assert_allclose(
+                to_numpy_array(model_l_ret_32[ii]),
+                to_numpy_array(model_l_ret_64[ii]),
+                atol=self.atol,
+            )
 
     def test_jit(self):
         nf, nloc, nnei = self.nlist.shape
@@ -351,7 +466,7 @@ class TestDPModelFormatNlist(unittest.TestCase):
             to_torch_tensor(self.atype_ext),
             to_torch_tensor(nlist),
         )
-        np.testing.assert_allclose(self.expected_nlist, to_numpy_array(nlist1))
+        np.testing.assert_equal(self.expected_nlist, to_numpy_array(nlist1))
 
     def test_nlist_st(self):
         # n_nnei < nnei
@@ -368,7 +483,7 @@ class TestDPModelFormatNlist(unittest.TestCase):
             to_torch_tensor(self.atype_ext),
             to_torch_tensor(nlist),
         )
-        np.testing.assert_allclose(self.expected_nlist, to_numpy_array(nlist1))
+        np.testing.assert_equal(self.expected_nlist, to_numpy_array(nlist1))
 
     def test_nlist_lt(self):
         # n_nnei > nnei
@@ -385,7 +500,7 @@ class TestDPModelFormatNlist(unittest.TestCase):
             to_torch_tensor(self.atype_ext),
             to_torch_tensor(nlist),
         )
-        np.testing.assert_allclose(self.expected_nlist, to_numpy_array(nlist1))
+        np.testing.assert_equal(self.expected_nlist, to_numpy_array(nlist1))
 
 
 class TestEnergyModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
@@ -415,24 +530,29 @@ class TestEnergyModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
         np.testing.assert_allclose(
             to_numpy_array(ret0["atom_energy"]),
             to_numpy_array(ret1["atom_energy"]),
+            atol=self.atol,
         )
         np.testing.assert_allclose(
             to_numpy_array(ret0["energy"]),
             to_numpy_array(ret1["energy"]),
+            atol=self.atol,
         )
         np.testing.assert_allclose(
             to_numpy_array(ret0["force"]),
             to_numpy_array(ret1["force"]),
+            atol=self.atol,
         )
         np.testing.assert_allclose(
             to_numpy_array(ret0["virial"]),
             to_numpy_array(ret1["virial"]),
+            atol=self.atol,
         )
         ret0 = md0.forward(*args, do_atomic_virial=True)
         ret1 = md1.forward(*args, do_atomic_virial=True)
         np.testing.assert_allclose(
             to_numpy_array(ret0["atom_virial"]),
             to_numpy_array(ret1["atom_virial"]),
+            atol=self.atol,
         )
         coord_ext, atype_ext, mapping, nlist = extend_input_and_build_neighbor_list(
             to_torch_tensor(self.coord),
@@ -449,6 +569,7 @@ class TestEnergyModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
         np.testing.assert_allclose(
             to_numpy_array(ret0["virial"]),
             to_numpy_array(ret2["virial"]),
+            atol=self.atol,
         )
 
 
@@ -481,24 +602,29 @@ class TestEnergyModelLower(unittest.TestCase, TestCaseSingleFrameWithNlist):
         np.testing.assert_allclose(
             to_numpy_array(ret0["atom_energy"]),
             to_numpy_array(ret1["atom_energy"]),
+            atol=self.atol,
         )
         np.testing.assert_allclose(
             to_numpy_array(ret0["energy"]),
             to_numpy_array(ret1["energy"]),
+            atol=self.atol,
         )
         np.testing.assert_allclose(
             to_numpy_array(ret0["extended_force"]),
             to_numpy_array(ret1["extended_force"]),
+            atol=self.atol,
         )
         np.testing.assert_allclose(
             to_numpy_array(ret0["virial"]),
             to_numpy_array(ret1["virial"]),
+            atol=self.atol,
         )
         ret0 = md0.forward_lower(*args, do_atomic_virial=True)
         ret1 = md1.forward_lower(*args, do_atomic_virial=True)
         np.testing.assert_allclose(
             to_numpy_array(ret0["extended_virial"]),
             to_numpy_array(ret1["extended_virial"]),
+            atol=self.atol,
         )
 
     def test_jit(self):

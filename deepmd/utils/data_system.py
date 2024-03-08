@@ -6,14 +6,20 @@ from functools import (
     lru_cache,
 )
 from typing import (
+    Any,
+    Dict,
     List,
     Optional,
+    Union,
 )
 
 import numpy as np
 
 import deepmd.utils.random as dp_random
 from deepmd.common import (
+    data_requirement,
+    expand_sys_str,
+    j_must_have,
     make_default_mesh,
 )
 from deepmd.env import (
@@ -21,6 +27,12 @@ from deepmd.env import (
 )
 from deepmd.utils.data import (
     DeepmdData,
+)
+from deepmd.utils.out_stat import (
+    compute_stats_from_redu,
+)
+from deepmd.utils.path import (
+    DPPath,
 )
 
 log = logging.getLogger(__name__)
@@ -248,10 +260,12 @@ class DeepmdDataSystem:
         sys_tynatom = np.array(self.natoms_vec, dtype=GLOBAL_NP_FLOAT_PRECISION)
         sys_tynatom = np.reshape(sys_tynatom, [self.nsystems, -1])
         sys_tynatom = sys_tynatom[:, 2:]
-        energy_shift, resd, rank, s_value = np.linalg.lstsq(
-            sys_tynatom, sys_ener, rcond=rcond
+        energy_shift, _ = compute_stats_from_redu(
+            sys_ener.reshape(-1, 1),
+            sys_tynatom,
+            rcond=rcond,
         )
-        return energy_shift
+        return energy_shift.ravel()
 
     def add_dict(self, adict: dict) -> None:
         """Add items to the data system by a `dict`.
@@ -279,6 +293,10 @@ class DeepmdDataSystem:
                 type_sel=adict[kk]["type_sel"],
                 repeat=adict[kk]["repeat"],
                 default=adict[kk]["default"],
+                dtype=adict[kk].get("dtype"),
+                output_natoms_for_type_sel=adict[kk].get(
+                    "output_natoms_for_type_sel", False
+                ),
             )
 
     def add(
@@ -291,6 +309,8 @@ class DeepmdDataSystem:
         type_sel: Optional[List[int]] = None,
         repeat: int = 1,
         default: float = 0.0,
+        dtype: Optional[np.dtype] = None,
+        output_natoms_for_type_sel: bool = False,
     ):
         """Add a data item that to be loaded.
 
@@ -315,6 +335,10 @@ class DeepmdDataSystem:
             The data will be repeated `repeat` times.
         default, default=0.
             Default value of data
+        dtype
+            The dtype of data, overwrites `high_prec` if provided
+        output_natoms_for_type_sel : bool
+            If True and type_sel is True, the atomic dimension will be natoms instead of nsel
         """
         for ii in self.data_systems:
             ii.add(
@@ -326,6 +350,8 @@ class DeepmdDataSystem:
                 repeat=repeat,
                 type_sel=type_sel,
                 default=default,
+                dtype=dtype,
+                output_natoms_for_type_sel=output_natoms_for_type_sel,
             )
 
     def reduce(self, key_out, key_in):
@@ -543,40 +569,16 @@ class DeepmdDataSystem:
         """Get the batch size."""
         return self.batch_size
 
-    def _format_name_length(self, name, width):
-        if len(name) <= width:
-            return "{: >{}}".format(name, width)
-        else:
-            name = name[-(width - 3) :]
-            name = "-- " + name
-            return name
-
-    def print_summary(self, name):
-        # width 65
-        sys_width = 42
-        log.info(
-            f"---Summary of DataSystem: {name:13s}-----------------------------------------------"
-        )
-        log.info("found %d system(s):" % self.nsystems)
-        log.info(
-            ("%s  " % self._format_name_length("system", sys_width))
-            + ("%6s  %6s  %6s  %9s  %3s" % ("natoms", "bch_sz", "n_bch", "prob", "pbc"))
-        )
-        for ii in range(self.nsystems):
-            log.info(
-                "%s  %6d  %6d  %6d  %9.3e  %3s"
-                % (
-                    self._format_name_length(self.system_dirs[ii], sys_width),
-                    self.natoms[ii],
-                    # TODO batch size * nbatches = number of structures
-                    self.batch_size[ii],
-                    self.nbatches[ii],
-                    self.sys_probs[ii],
-                    "T" if self.data_systems[ii].pbc else "F",
-                )
-            )
-        log.info(
-            "--------------------------------------------------------------------------------------"
+    def print_summary(self, name: str):
+        print_summary(
+            name,
+            self.nsystems,
+            self.system_dirs,
+            self.natoms,
+            self.batch_size,
+            self.nbatches,
+            self.sys_probs,
+            [ii.pbc for ii in self.data_systems],
         )
 
     def _make_auto_bs(self, rule):
@@ -610,6 +612,74 @@ class DeepmdDataSystem:
                 if len(ii) > len(ret):
                     ret = ii
         return ret
+
+
+def _format_name_length(name, width):
+    if len(name) <= width:
+        return "{: >{}}".format(name, width)
+    else:
+        name = name[-(width - 3) :]
+        name = "-- " + name
+        return name
+
+
+def print_summary(
+    name: str,
+    nsystems: int,
+    system_dirs: List[str],
+    natoms: List[int],
+    batch_size: List[int],
+    nbatches: List[int],
+    sys_probs: List[float],
+    pbc: List[bool],
+):
+    """Print summary of systems.
+
+    Parameters
+    ----------
+    name : str
+        The name of the system
+    nsystems : int
+        The number of systems
+    system_dirs : list of str
+        The directories of the systems
+    natoms : list of int
+        The number of atoms
+    batch_size : list of int
+        The batch size
+    nbatches : list of int
+        The number of batches
+    sys_probs : list of float
+        The probabilities
+    pbc : list of bool
+        The periodic boundary conditions
+    """
+    # width 65
+    sys_width = 42
+    log.info(
+        f"---Summary of DataSystem: {name:13s}-----------------------------------------------"
+    )
+    log.info("found %d system(s):" % nsystems)
+    log.info(
+        ("%s  " % _format_name_length("system", sys_width))
+        + ("%6s  %6s  %6s  %9s  %3s" % ("natoms", "bch_sz", "n_bch", "prob", "pbc"))
+    )
+    for ii in range(nsystems):
+        log.info(
+            "%s  %6d  %6d  %6d  %9.3e  %3s"
+            % (
+                _format_name_length(system_dirs[ii], sys_width),
+                natoms[ii],
+                # TODO batch size * nbatches = number of structures
+                batch_size[ii],
+                nbatches[ii],
+                sys_probs[ii],
+                "T" if pbc[ii] else "F",
+            )
+        )
+    log.info(
+        "--------------------------------------------------------------------------------------"
+    )
 
 
 def process_sys_probs(sys_probs, nbatch):
@@ -652,3 +722,92 @@ def prob_sys_size_ext(keywords, nsystems, nbatch):
         tmp_prob = [float(i) for i in nbatch_block] / np.sum(nbatch_block)
         sys_probs[block_stt[ii] : block_end[ii]] = tmp_prob * block_probs[ii]
     return sys_probs
+
+
+def process_systems(systems: Union[str, List[str]]) -> List[str]:
+    """Process the user-input systems.
+
+    If it is a single directory, search for all the systems in the directory.
+    Check if the systems are valid.
+
+    Parameters
+    ----------
+    systems : str or list of str
+        The user-input systems
+
+    Returns
+    -------
+    list of str
+        The valid systems
+    """
+    if isinstance(systems, str):
+        systems = expand_sys_str(systems)
+    elif isinstance(systems, list):
+        systems = systems.copy()
+    help_msg = "Please check your setting for data systems"
+    # check length of systems
+    if len(systems) == 0:
+        msg = "cannot find valid a data system"
+        log.fatal(msg)
+        raise OSError(msg, help_msg)
+    # rougly check all items in systems are valid
+    for ii in systems:
+        ii = DPPath(ii)
+        if not ii.is_dir():
+            msg = f"dir {ii} is not a valid dir"
+            log.fatal(msg)
+            raise OSError(msg, help_msg)
+        if not (ii / "type.raw").is_file():
+            msg = f"dir {ii} is not a valid data system dir"
+            log.fatal(msg)
+            raise OSError(msg, help_msg)
+    return systems
+
+
+def get_data(
+    jdata: Dict[str, Any], rcut, type_map, modifier, multi_task_mode=False
+) -> DeepmdDataSystem:
+    """Get the data system.
+
+    Parameters
+    ----------
+    jdata
+        The json data
+    rcut
+        The cut-off radius, not used
+    type_map
+        The type map
+    modifier
+        The data modifier
+    multi_task_mode
+        If in multi task mode
+
+    Returns
+    -------
+    DeepmdDataSystem
+        The data system
+    """
+    systems = j_must_have(jdata, "systems")
+    systems = process_systems(systems)
+
+    batch_size = j_must_have(jdata, "batch_size")
+    sys_probs = jdata.get("sys_probs", None)
+    auto_prob = jdata.get("auto_prob", "prob_sys_size")
+    optional_type_map = not multi_task_mode
+
+    data = DeepmdDataSystem(
+        systems=systems,
+        batch_size=batch_size,
+        test_size=1,  # to satisfy the old api
+        shuffle_test=True,  # to satisfy the old api
+        rcut=rcut,
+        type_map=type_map,
+        optional_type_map=optional_type_map,
+        modifier=modifier,
+        trn_all_set=True,  # sample from all sets
+        sys_probs=sys_probs,
+        auto_prob_style=auto_prob,
+    )
+    data.add_dict(data_requirement)
+
+    return data

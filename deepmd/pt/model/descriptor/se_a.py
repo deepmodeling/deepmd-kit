@@ -1,11 +1,13 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import itertools
 from typing import (
+    Callable,
     ClassVar,
     Dict,
     List,
     Optional,
     Tuple,
+    Union,
 )
 
 import numpy as np
@@ -13,7 +15,7 @@ import torch
 
 from deepmd.pt.model.descriptor import (
     DescriptorBlock,
-    prod_env_mat_se_a,
+    prod_env_mat,
 )
 from deepmd.pt.utils import (
     env,
@@ -23,13 +25,19 @@ from deepmd.pt.utils.env import (
     RESERVED_PRECISON_DICT,
 )
 from deepmd.pt.utils.env_mat_stat import (
-    EnvMatStatSeA,
+    EnvMatStatSe,
+)
+from deepmd.pt.utils.update_sel import (
+    UpdateSel,
 )
 from deepmd.utils.env_mat_stat import (
     StatItem,
 )
 from deepmd.utils.path import (
     DPPath,
+)
+from deepmd.utils.version import (
+    check_version_compatibility,
 )
 
 try:
@@ -57,6 +65,7 @@ from .base_descriptor import (
 
 
 @BaseDescriptor.register("se_e2_a")
+@BaseDescriptor.register("se_a")
 class DescrptSeA(BaseDescriptor, torch.nn.Module):
     def __init__(
         self,
@@ -70,6 +79,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         precision: str = "float64",
         resnet_dt: bool = False,
         exclude_types: List[Tuple[int, int]] = [],
+        env_protection: float = 0.0,
         old_impl: bool = False,
         type_one_side: bool = True,
         **kwargs,
@@ -86,6 +96,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
             precision=precision,
             resnet_dt=resnet_dt,
             exclude_types=exclude_types,
+            env_protection=env_protection,
             old_impl=old_impl,
             type_one_side=type_one_side,
             **kwargs,
@@ -121,14 +132,58 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         """
         return self.sea.mixed_types()
 
+    def share_params(self, base_class, shared_level, resume=False):
+        """
+        Share the parameters of self to the base_class with shared_level during multitask training.
+        If not start from checkpoint (resume is False),
+        some seperated parameters (e.g. mean and stddev) will be re-calculated across different classes.
+        """
+        assert (
+            self.__class__ == base_class.__class__
+        ), "Only descriptors of the same type can share params!"
+        # For SeA descriptors, the user-defined share-level
+        # shared_level: 0
+        # share all parameters in sea
+        if shared_level == 0:
+            self.sea.share_params(base_class.sea, 0, resume=resume)
+        # Other shared levels
+        else:
+            raise NotImplementedError
+
     @property
     def dim_out(self):
         """Returns the output dimension of this descriptor."""
         return self.sea.dim_out
 
-    def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
-        """Update mean and stddev for descriptor elements."""
+    def compute_input_stats(
+        self,
+        merged: Union[Callable[[], List[dict]], List[dict]],
+        path: Optional[DPPath] = None,
+    ):
+        """
+        Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
+
+        Parameters
+        ----------
+        merged : Union[Callable[[], List[dict]], List[dict]]
+            - List[dict]: A list of data samples from various data systems.
+                Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
+                originating from the `i`-th data system.
+            - Callable[[], List[dict]]: A lazy function that returns data samples in the above format
+                only when needed. Since the sampling process can be slow and memory-intensive,
+                the lazy function helps by only sampling once.
+        path : Optional[DPPath]
+            The path to the stat file.
+
+        """
         return self.sea.compute_input_stats(merged, path)
+
+    def reinit_exclude(
+        self,
+        exclude_types: List[Tuple[int, int]] = [],
+    ):
+        """Update the type exclusions."""
+        self.sea.reinit_exclude(exclude_types)
 
     def forward(
         self,
@@ -182,6 +237,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         return {
             "@class": "Descriptor",
             "type": "se_e2_a",
+            "@version": 1,
             "rcut": obj.rcut,
             "rcut_smth": obj.rcut_smth,
             "sel": obj.sel,
@@ -195,6 +251,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
             "embeddings": obj.filter_layers.serialize(),
             "env_mat": DPEnvMat(obj.rcut, obj.rcut_smth).serialize(),
             "exclude_types": obj.exclude_types,
+            "env_protection": obj.env_protection,
             "@variables": {
                 "davg": obj["davg"].detach().cpu().numpy(),
                 "dstd": obj["dstd"].detach().cpu().numpy(),
@@ -208,6 +265,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
     @classmethod
     def deserialize(cls, data: dict) -> "DescrptSeA":
         data = data.copy()
+        check_version_compatibility(data.pop("@version", 1), 1, 1)
         data.pop("@class", None)
         data.pop("type", None)
         variables = data.pop("@variables")
@@ -222,6 +280,20 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         obj.sea["dstd"] = t_cvt(variables["dstd"])
         obj.sea.filter_layers = NetworkCollection.deserialize(embeddings)
         return obj
+
+    @classmethod
+    def update_sel(cls, global_jdata: dict, local_jdata: dict):
+        """Update the selection and perform neighbor statistics.
+
+        Parameters
+        ----------
+        global_jdata : dict
+            The global data, containing the training section
+        local_jdata : dict
+            The local data refer to the current class
+        """
+        local_jdata_cpy = local_jdata.copy()
+        return UpdateSel().update_one_sel(global_jdata, local_jdata_cpy, False)
 
 
 @DescriptorBlock.register("se_e2_a")
@@ -241,8 +313,10 @@ class DescrptBlockSeA(DescriptorBlock):
         precision: str = "float64",
         resnet_dt: bool = False,
         exclude_types: List[Tuple[int, int]] = [],
+        env_protection: float = 0.0,
         old_impl: bool = False,
         type_one_side: bool = True,
+        trainable: bool = True,
         **kwargs,
     ):
         """Construct an embedding net of type `se_a`.
@@ -266,15 +340,15 @@ class DescrptBlockSeA(DescriptorBlock):
         self.prec = PRECISION_DICT[self.precision]
         self.resnet_dt = resnet_dt
         self.old_impl = old_impl
-        self.exclude_types = exclude_types
+        self.env_protection = env_protection
         self.ntypes = len(sel)
-        self.emask = PairExcludeMask(len(sel), exclude_types=exclude_types)
         self.type_one_side = type_one_side
+        # order matters, placed after the assignment of self.ntypes
+        self.reinit_exclude(exclude_types)
 
         self.sel = sel
-        self.sec = torch.tensor(
-            np.append([0], np.cumsum(self.sel)), dtype=int, device=env.DEVICE
-        )
+        # should be on CPU to avoid D2H, as it is used as slice index
+        self.sec = [0, *np.cumsum(self.sel).tolist()]
         self.split_sel = self.sel
         self.nnei = sum(sel)
         self.ndescrpt = self.nnei * 4
@@ -315,6 +389,9 @@ class DescrptBlockSeA(DescriptorBlock):
                 )
             self.filter_layers = filter_layers
         self.stats = None
+        # set trainable
+        for param in self.parameters():
+            param.requires_grad = trainable
 
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
@@ -382,17 +459,41 @@ class DescrptBlockSeA(DescriptorBlock):
         else:
             raise KeyError(key)
 
-    def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
-        """Update mean and stddev for descriptor elements."""
-        env_mat_stat = EnvMatStatSeA(self)
+    def compute_input_stats(
+        self,
+        merged: Union[Callable[[], List[dict]], List[dict]],
+        path: Optional[DPPath] = None,
+    ):
+        """
+        Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
+
+        Parameters
+        ----------
+        merged : Union[Callable[[], List[dict]], List[dict]]
+            - List[dict]: A list of data samples from various data systems.
+                Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
+                originating from the `i`-th data system.
+            - Callable[[], List[dict]]: A lazy function that returns data samples in the above format
+                only when needed. Since the sampling process can be slow and memory-intensive,
+                the lazy function helps by only sampling once.
+        path : Optional[DPPath]
+            The path to the stat file.
+
+        """
+        env_mat_stat = EnvMatStatSe(self)
         if path is not None:
             path = path / env_mat_stat.get_hash()
-        env_mat_stat.load_or_compute_stats(merged, path)
+        if path is None or not path.is_dir():
+            if callable(merged):
+                # only get data for once
+                sampled = merged()
+            else:
+                sampled = merged
+        else:
+            sampled = []
+        env_mat_stat.load_or_compute_stats(sampled, path)
         self.stats = env_mat_stat.stats
         mean, stddev = env_mat_stat()
-        if not self.set_davg_zero:
-            self.mean.copy_(torch.tensor(mean, device=env.DEVICE))
-        self.stddev.copy_(torch.tensor(stddev, device=env.DEVICE))
         if not self.set_davg_zero:
             self.mean.copy_(torch.tensor(mean, device=env.DEVICE))
         self.stddev.copy_(torch.tensor(stddev, device=env.DEVICE))
@@ -404,6 +505,13 @@ class DescrptBlockSeA(DescriptorBlock):
                 "The statistics of the descriptor has not been computed."
             )
         return self.stats
+
+    def reinit_exclude(
+        self,
+        exclude_types: List[Tuple[int, int]] = [],
+    ):
+        self.exclude_types = exclude_types
+        self.emask = PairExcludeMask(self.ntypes, exclude_types=exclude_types)
 
     def forward(
         self,
@@ -428,7 +536,7 @@ class DescrptBlockSeA(DescriptorBlock):
         del extended_atype_embd, mapping
         nloc = nlist.shape[1]
         atype = extended_atype[:, :nloc]
-        dmatrix, diff, sw = prod_env_mat_se_a(
+        dmatrix, diff, sw = prod_env_mat(
             extended_coord,
             nlist,
             atype,
@@ -436,6 +544,7 @@ class DescrptBlockSeA(DescriptorBlock):
             self.stddev,
             self.rcut,
             self.rcut_smth,
+            protection=self.env_protection,
         )
 
         if self.old_impl:
@@ -470,23 +579,34 @@ class DescrptBlockSeA(DescriptorBlock):
                 if self.type_one_side:
                     ii = embedding_idx
                     # torch.jit is not happy with slice(None)
-                    ti_mask = torch.ones(nfnl, dtype=torch.bool, device=dmatrix.device)
+                    # ti_mask = torch.ones(nfnl, dtype=torch.bool, device=dmatrix.device)
+                    # applying a mask seems to cause performance degradation
+                    ti_mask = None
                 else:
                     # ti: center atom type, ii: neighbor type...
                     ii = embedding_idx // self.ntypes
                     ti = embedding_idx % self.ntypes
                     ti_mask = atype.ravel().eq(ti)
                 # nfnl x nt
-                mm = exclude_mask[ti_mask, self.sec[ii] : self.sec[ii + 1]]
+                if ti_mask is not None:
+                    mm = exclude_mask[ti_mask, self.sec[ii] : self.sec[ii + 1]]
+                else:
+                    mm = exclude_mask[:, self.sec[ii] : self.sec[ii + 1]]
                 # nfnl x nt x 4
-                rr = dmatrix[ti_mask, self.sec[ii] : self.sec[ii + 1], :]
+                if ti_mask is not None:
+                    rr = dmatrix[ti_mask, self.sec[ii] : self.sec[ii + 1], :]
+                else:
+                    rr = dmatrix[:, self.sec[ii] : self.sec[ii + 1], :]
                 rr = rr * mm[:, :, None]
                 ss = rr[:, :, :1]
                 # nfnl x nt x ng
                 gg = ll.forward(ss)
                 # nfnl x 4 x ng
                 gr = torch.matmul(rr.permute(0, 2, 1), gg)
-                xyz_scatter[ti_mask] += gr
+                if ti_mask is not None:
+                    xyz_scatter[ti_mask] += gr
+                else:
+                    xyz_scatter += gr
 
         xyz_scatter /= self.nnei
         xyz_scatter_1 = xyz_scatter.permute(0, 2, 1)

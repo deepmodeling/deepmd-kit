@@ -69,6 +69,8 @@ def build_neighbor_list(
     )
     assert list(diff.shape) == [batch_size, nloc, nall, 3]
     rr = np.linalg.norm(diff, axis=-1)
+    # if central atom has two zero distances, sorting sometimes can not exclude itself
+    rr -= np.eye(nloc, nall, dtype=diff.dtype)[np.newaxis, :, :]
     nlist = np.argsort(rr, axis=-1)
     rr = np.sort(rr, axis=-1)
     rr = rr[:, :, 1:]

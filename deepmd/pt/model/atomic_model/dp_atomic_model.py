@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import copy
+import functools
 import logging
 from typing import (
     Dict,
@@ -18,11 +19,11 @@ from deepmd.pt.model.descriptor.base_descriptor import (
 from deepmd.pt.model.task.base_fitting import (
     BaseFitting,
 )
-from deepmd.pt.utils.utils import (
-    dict_to_device,
-)
 from deepmd.utils.path import (
     DPPath,
+)
+from deepmd.utils.version import (
+    check_version_compatibility,
 )
 
 from .base_atomic_model import (
@@ -46,8 +47,14 @@ class DPAtomicModel(torch.nn.Module, BaseAtomicModel):
             For example `type_map[1]` gives the name of the type 1.
     """
 
-    def __init__(self, descriptor, fitting, type_map: Optional[List[str]]):
-        super().__init__()
+    def __init__(
+        self,
+        descriptor,
+        fitting,
+        type_map: List[str],
+        **kwargs,
+    ):
+        torch.nn.Module.__init__(self)
         self.model_def_script = ""
         ntypes = len(type_map)
         self.type_map = type_map
@@ -56,6 +63,8 @@ class DPAtomicModel(torch.nn.Module, BaseAtomicModel):
         self.rcut = self.descriptor.get_rcut()
         self.sel = self.descriptor.get_sel()
         self.fitting_net = fitting
+        # order matters ntypes and type_map should be initialized first.
+        BaseAtomicModel.__init__(self, **kwargs)
 
     def fitting_output_def(self) -> FittingOutputDef:
         """Get the output def of the fitting net."""
@@ -92,18 +101,29 @@ class DPAtomicModel(torch.nn.Module, BaseAtomicModel):
         return self.descriptor.mixed_types()
 
     def serialize(self) -> dict:
-        return {
-            "type_map": self.type_map,
-            "descriptor": self.descriptor.serialize(),
-            "fitting": self.fitting_net.serialize(),
-        }
+        dd = BaseAtomicModel.serialize(self)
+        dd.update(
+            {
+                "@class": "Model",
+                "@version": 1,
+                "type": "standard",
+                "type_map": self.type_map,
+                "descriptor": self.descriptor.serialize(),
+                "fitting": self.fitting_net.serialize(),
+            }
+        )
+        return dd
 
     @classmethod
     def deserialize(cls, data) -> "DPAtomicModel":
         data = copy.deepcopy(data)
-        descriptor_obj = BaseDescriptor.deserialize(data["descriptor"])
-        fitting_obj = BaseFitting.deserialize(data["fitting"])
-        obj = cls(descriptor_obj, fitting_obj, type_map=data["type_map"])
+        check_version_compatibility(data.pop("@version", 1), 1, 1)
+        data.pop("@class", None)
+        data.pop("type", None)
+        descriptor_obj = BaseDescriptor.deserialize(data.pop("descriptor"))
+        fitting_obj = BaseFitting.deserialize(data.pop("fitting"))
+        type_map = data.pop("type_map", None)
+        obj = cls(descriptor_obj, fitting_obj, type_map=type_map, **data)
         return obj
 
     def forward_atomic(
@@ -163,7 +183,7 @@ class DPAtomicModel(torch.nn.Module, BaseAtomicModel):
 
     def compute_or_load_stat(
         self,
-        sampled,
+        sampled_func,
         stat_file_path: Optional[DPPath] = None,
     ):
         """
@@ -176,8 +196,8 @@ class DPAtomicModel(torch.nn.Module, BaseAtomicModel):
 
         Parameters
         ----------
-        sampled
-            The sampled data frames from different data systems.
+        sampled_func
+            The lazy sampled function to get data frames from different data systems.
         stat_file_path
             The dictionary of paths to the statistics files.
         """
@@ -185,13 +205,23 @@ class DPAtomicModel(torch.nn.Module, BaseAtomicModel):
             # descriptors and fitting net with different type_map
             # should not share the same parameters
             stat_file_path /= " ".join(self.type_map)
-        for data_sys in sampled:
-            dict_to_device(data_sys)
-        if sampled is None:
-            sampled = []
-        self.descriptor.compute_input_stats(sampled, stat_file_path)
+
+        @functools.lru_cache
+        def wrapped_sampler():
+            sampled = sampled_func()
+            if self.pair_excl is not None:
+                pair_exclude_types = self.pair_excl.get_exclude_types()
+                for sample in sampled:
+                    sample["pair_exclude_types"] = list(pair_exclude_types)
+            if self.atom_excl is not None:
+                atom_exclude_types = self.atom_excl.get_exclude_types()
+                for sample in sampled:
+                    sample["atom_exclude_types"] = list(atom_exclude_types)
+            return sampled
+
+        self.descriptor.compute_input_stats(wrapped_sampler, stat_file_path)
         if self.fitting_net is not None:
-            self.fitting_net.compute_output_stats(sampled, stat_file_path)
+            self.fitting_net.compute_output_stats(wrapped_sampler, stat_file_path)
 
     @torch.jit.export
     def get_dim_fparam(self) -> int:

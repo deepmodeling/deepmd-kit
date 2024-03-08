@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import copy
 import sys
 from abc import (
     abstractmethod,
@@ -24,6 +25,12 @@ from deepmd.pt.utils.nlist import (
     get_multiple_nlist_key,
     nlist_distinguish_types,
 )
+from deepmd.utils.path import (
+    DPPath,
+)
+from deepmd.utils.version import (
+    check_version_compatibility,
+)
 
 from .base_atomic_model import (
     BaseAtomicModel,
@@ -36,24 +43,42 @@ from .pairtab_atomic_model import (
 )
 
 
-class LinearAtomicModel(torch.nn.Module, BaseAtomicModel):
+class LinearEnergyAtomicModel(torch.nn.Module, BaseAtomicModel):
     """Linear model make linear combinations of several existing models.
 
     Parameters
     ----------
     models : list[DPAtomicModel or PairTabAtomicModel]
         A list of models to be combined. PairTabAtomicModel must be used together with a DPAtomicModel.
+    type_map : list[str]
+        Mapping atom type to the name (str) of the type.
+        For example `type_map[1]` gives the name of the type 1.
     """
 
     def __init__(
         self,
         models: List[BaseAtomicModel],
+        type_map: List[str],
         **kwargs,
     ):
-        super().__init__()
+        torch.nn.Module.__init__(self)
         self.models = torch.nn.ModuleList(models)
+        sub_model_type_maps = [md.get_type_map() for md in models]
+        err_msg = []
+        self.mapping_list = []
+        common_type_map = set(type_map)
+        self.type_map = type_map
+        for tpmp in sub_model_type_maps:
+            if not common_type_map.issubset(set(tpmp)):
+                err_msg.append(
+                    f"type_map {tpmp} is not a subset of type_map {type_map}"
+                )
+            self.mapping_list.append(self.remap_atype(tpmp, self.type_map))
+        assert len(err_msg) == 0, "\n".join(err_msg)
+
         self.atomic_bias = None
         self.mixed_types_list = [model.mixed_types() for model in self.models]
+        BaseAtomicModel.__init__(self, **kwargs)
 
     def mixed_types(self) -> bool:
         """If true, the model
@@ -75,7 +100,7 @@ class LinearAtomicModel(torch.nn.Module, BaseAtomicModel):
     @torch.jit.export
     def get_type_map(self) -> List[str]:
         """Get the type map."""
-        raise NotImplementedError("TODO: implement this method")
+        return self.type_map
 
     def get_model_rcuts(self) -> List[float]:
         """Get the cut-off radius for each individual models."""
@@ -98,8 +123,8 @@ class LinearAtomicModel(torch.nn.Module, BaseAtomicModel):
         nsels = torch.tensor(self.get_model_nsels(), device=device)
         zipped = torch.stack(
             [
-                torch.tensor(rcuts, device=device),
-                torch.tensor(nsels, device=device),
+                rcuts,
+                nsels,
             ],
             dim=0,
         ).T
@@ -166,10 +191,11 @@ class LinearAtomicModel(torch.nn.Module, BaseAtomicModel):
         ener_list = []
 
         for i, model in enumerate(self.models):
+            mapping = self.mapping_list[i]
             ener_list.append(
                 model.forward_atomic(
                     extended_coord,
-                    extended_atype,
+                    mapping[extended_atype],
                     nlists_[i],
                     mapping,
                     fparam,
@@ -179,15 +205,47 @@ class LinearAtomicModel(torch.nn.Module, BaseAtomicModel):
 
         weights = self._compute_weight(extended_coord, extended_atype, nlists_)
 
-        if self.atomic_bias is not None:
-            raise NotImplementedError("Need to add bias in a future PR.")
-        else:
-            fit_ret = {
-                "energy": torch.sum(
-                    torch.stack(ener_list) * torch.stack(weights), dim=0
-                ),
-            }  # (nframes, nloc, 1)
+        atype = extended_atype[:, :nloc]
+        for idx, model in enumerate(self.models):
+            # TODO: provide interfaces for atomic models to access bias_atom_e
+            if isinstance(model, DPAtomicModel):
+                bias_atom_e = model.fitting_net.bias_atom_e
+            elif isinstance(model, PairTabAtomicModel):
+                bias_atom_e = model.bias_atom_e
+            else:
+                bias_atom_e = None
+            if bias_atom_e is not None:
+                ener_list[idx] += bias_atom_e[atype]
+
+        fit_ret = {
+            "energy": torch.sum(torch.stack(ener_list) * torch.stack(weights), dim=0),
+        }  # (nframes, nloc, 1)
         return fit_ret
+
+    @staticmethod
+    def remap_atype(ori_map: List[str], new_map: List[str]) -> torch.Tensor:
+        """
+        This method is used to map the atype from the common type_map to the original type_map of
+        indivial AtomicModels. It creates a index mapping for the conversion.
+
+        Parameters
+        ----------
+        ori_map : List[str]
+            The original type map of an AtomicModel.
+        new_map : List[str]
+            The common type map of the DPZBLLinearEnergyAtomicModel, created by the `get_type_map` method,
+            must be a subset of the ori_map.
+
+        Returns
+        -------
+        torch.Tensor
+        """
+        type_2_idx = {atp: idx for idx, atp in enumerate(ori_map)}
+        # this maps the atype in the new map to the original map
+        mapping = torch.tensor(
+            [type_2_idx[new_map[idx]] for idx in range(len(new_map))], device=env.DEVICE
+        )
+        return mapping
 
     def fitting_output_def(self) -> FittingOutputDef:
         return FittingOutputDef(
@@ -203,20 +261,27 @@ class LinearAtomicModel(torch.nn.Module, BaseAtomicModel):
         )
 
     @staticmethod
-    def serialize(models) -> dict:
+    def serialize(models, type_map) -> dict:
         return {
+            "@class": "Model",
+            "@version": 1,
+            "type": "linear",
             "models": [model.serialize() for model in models],
             "model_name": [model.__class__.__name__ for model in models],
+            "type_map": type_map,
         }
 
     @staticmethod
-    def deserialize(data) -> List[BaseAtomicModel]:
+    def deserialize(data) -> Tuple[List[BaseAtomicModel], List[str]]:
+        data = copy.deepcopy(data)
+        check_version_compatibility(data.pop("@version", 1), 1, 1)
         model_names = data["model_name"]
+        type_map = data["type_map"]
         models = [
             getattr(sys.modules[__name__], name).deserialize(model)
             for name, model in zip(model_names, data["models"])
         ]
-        return models
+        return models, type_map
 
     @abstractmethod
     def _compute_weight(
@@ -266,13 +331,25 @@ class LinearAtomicModel(torch.nn.Module, BaseAtomicModel):
         return False
 
 
-class DPZBLLinearAtomicModel(LinearAtomicModel):
+class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
     """Model linearly combine a list of AtomicModels.
 
     Parameters
     ----------
-    models
-            This linear model should take a DPAtomicModel and a PairTable model.
+    dp_model
+        The DPAtomicModel being combined.
+    zbl_model
+        The PairTable model being combined.
+    sw_rmin
+        The lower boundary of the interpolation between short-range tabulated interaction and DP.
+    sw_rmax
+        The upper boundary of the interpolation between short-range tabulated interaction and DP.
+    type_map
+        Mapping atom type to the name (str) of the type.
+        For example `type_map[1]` gives the name of the type 1.
+    smin_alpha
+        The short-range tabulated interaction will be swithed according to the distance of the nearest neighbor.
+        This distance is calculated by softmin.
     """
 
     def __init__(
@@ -281,11 +358,12 @@ class DPZBLLinearAtomicModel(LinearAtomicModel):
         zbl_model: PairTabAtomicModel,
         sw_rmin: float,
         sw_rmax: float,
+        type_map: List[str],
         smin_alpha: Optional[float] = 0.1,
         **kwargs,
     ):
         models = [dp_model, zbl_model]
-        super().__init__(models, **kwargs)
+        super().__init__(models, type_map, **kwargs)
         self.model_def_script = ""
         self.dp_model = dp_model
         self.zbl_model = zbl_model
@@ -297,28 +375,72 @@ class DPZBLLinearAtomicModel(LinearAtomicModel):
         # this is a placeholder being updated in _compute_weight, to handle Jit attribute init error.
         self.zbl_weight = torch.empty(0, dtype=torch.float64, device=env.DEVICE)
 
+    def compute_or_load_stat(
+        self,
+        sampled_func,
+        stat_file_path: Optional[DPPath] = None,
+    ):
+        """
+        Compute or load the statistics parameters of the model,
+        such as mean and standard deviation of descriptors or the energy bias of the fitting net.
+        When `sampled` is provided, all the statistics parameters will be calculated (or re-calculated for update),
+        and saved in the `stat_file_path`(s).
+        When `sampled` is not provided, it will check the existence of `stat_file_path`(s)
+        and load the calculated statistics parameters.
+
+        Parameters
+        ----------
+        sampled_func
+            The lazy sampled function to get data frames from different data systems.
+        stat_file_path
+            The dictionary of paths to the statistics files.
+        """
+        self.dp_model.compute_or_load_stat(sampled_func, stat_file_path)
+        self.zbl_model.compute_or_load_stat(sampled_func, stat_file_path)
+
+    def change_energy_bias(self):
+        # need to implement
+        pass
+
     def serialize(self) -> dict:
-        return {
-            "models": LinearAtomicModel.serialize([self.dp_model, self.zbl_model]),
-            "sw_rmin": self.sw_rmin,
-            "sw_rmax": self.sw_rmax,
-            "smin_alpha": self.smin_alpha,
-        }
+        dd = BaseAtomicModel.serialize(self)
+        dd.update(
+            {
+                "@class": "Model",
+                "@version": 1,
+                "type": "zbl",
+                "models": LinearEnergyAtomicModel.serialize(
+                    [self.dp_model, self.zbl_model], self.type_map
+                ),
+                "sw_rmin": self.sw_rmin,
+                "sw_rmax": self.sw_rmax,
+                "smin_alpha": self.smin_alpha,
+            }
+        )
+        return dd
 
     @classmethod
-    def deserialize(cls, data) -> "DPZBLLinearAtomicModel":
-        sw_rmin = data["sw_rmin"]
-        sw_rmax = data["sw_rmax"]
-        smin_alpha = data["smin_alpha"]
+    def deserialize(cls, data) -> "DPZBLLinearEnergyAtomicModel":
+        data = copy.deepcopy(data)
+        check_version_compatibility(data.pop("@version", 1), 1, 1)
+        sw_rmin = data.pop("sw_rmin")
+        sw_rmax = data.pop("sw_rmax")
+        smin_alpha = data.pop("smin_alpha")
 
-        dp_model, zbl_model = LinearAtomicModel.deserialize(data["models"])
+        [dp_model, zbl_model], type_map = LinearEnergyAtomicModel.deserialize(
+            data.pop("models")
+        )
 
+        data.pop("@class", None)
+        data.pop("type", None)
         return cls(
             dp_model=dp_model,
             zbl_model=zbl_model,
             sw_rmin=sw_rmin,
             sw_rmax=sw_rmax,
+            type_map=type_map,
             smin_alpha=smin_alpha,
+            **data,
         )
 
     def _compute_weight(

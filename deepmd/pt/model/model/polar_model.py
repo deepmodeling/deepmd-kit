@@ -42,6 +42,8 @@ class PolarModel(DPModel):
             model_predict = {}
             model_predict["polar"] = model_ret["polar"]
             model_predict["global_polar"] = model_ret["polar_redu"]
+            if "mask" in model_ret:
+                model_predict["mask"] = model_ret["mask"]
         else:
             model_predict = model_ret
             model_predict["updated_coord"] += coord

@@ -313,11 +313,6 @@ void FixDPLR::setup(int vflag) {
   // else {
   //   error->all(FLERR, "respa is not supported by this fix");
   // }
-  if (vflag) {
-    v_setup(vflag);
-  } else {
-    evflag = 0;
-  }
 }
 
 /* ---------------------------------------------------------------------- */
@@ -527,6 +522,7 @@ void FixDPLR::pre_force(int vflag) {
     // int res_idx = sort_fwd_map[sel_fwd[idx0]];
     int res_idx = sel_fwd[idx0];
     // int ret_idx = dpl_bwd[res_idx];
+    atom->image[idx1] = atom->image[idx0];
     for (int dd = 0; dd < 3; ++dd) {
       x[idx1][dd] =
           x[idx0][dd] + tensor[res_idx * 3 + dd] * dist_unit_cvt_factor;

@@ -7,7 +7,7 @@ from typing import (
     Callable,
     List,
     Optional,
-    Type,
+    Union,
 )
 
 from deepmd.common import (
@@ -17,7 +17,8 @@ from deepmd.utils.path import (
     DPPath,
 )
 from deepmd.utils.plugin import (
-    Plugin,
+    PluginVariant,
+    make_plugin_registry,
 )
 
 
@@ -37,44 +38,13 @@ def make_base_descriptor(
 
     """
 
-    class BD(ABC):
+    class BD(ABC, PluginVariant, make_plugin_registry("descriptor")):
         """Base descriptor provides the interfaces of descriptor."""
-
-        __plugins = Plugin()
-
-        @staticmethod
-        def register(key: str) -> Callable:
-            """Register a descriptor plugin.
-
-            Parameters
-            ----------
-            key : str
-                the key of a descriptor
-
-            Returns
-            -------
-            Descriptor
-                the registered descriptor
-
-            Examples
-            --------
-            >>> @Descriptor.register("some_descrpt")
-                class SomeDescript(Descriptor):
-                    pass
-            """
-            return BD.__plugins.register(key)
 
         def __new__(cls, *args, **kwargs):
             if cls is BD:
                 cls = cls.get_class_by_type(j_get_type(kwargs, cls.__name__))
             return super().__new__(cls)
-
-        @classmethod
-        def get_class_by_type(cls, descrpt_type: str) -> Type["BD"]:
-            if descrpt_type in BD.__plugins.plugins:
-                return BD.__plugins.plugins[descrpt_type]
-            else:
-                raise RuntimeError("Unknown descriptor type: " + descrpt_type)
 
         @abstractmethod
         def get_rcut(self) -> float:
@@ -116,8 +86,19 @@ def make_base_descriptor(
             """
             pass
 
+        @abstractmethod
+        def share_params(self, base_class, shared_level, resume=False):
+            """
+            Share the parameters of self to the base_class with shared_level during multitask training.
+            If not start from checkpoint (resume is False),
+            some seperated parameters (e.g. mean and stddev) will be re-calculated across different classes.
+            """
+            pass
+
         def compute_input_stats(
-            self, merged: List[dict], path: Optional[DPPath] = None
+            self,
+            merged: Union[Callable[[], List[dict]], List[dict]],
+            path: Optional[DPPath] = None,
         ):
             """Update mean and stddev for descriptor elements."""
             raise NotImplementedError
@@ -155,6 +136,22 @@ def make_base_descriptor(
             if cls is BD:
                 return BD.get_class_by_type(data["type"]).deserialize(data)
             raise NotImplementedError("Not implemented in class %s" % cls.__name__)
+
+        @classmethod
+        @abstractmethod
+        def update_sel(cls, global_jdata: dict, local_jdata: dict):
+            """Update the selection and perform neighbor statistics.
+
+            Parameters
+            ----------
+            global_jdata : dict
+                The global data, containing the training section
+            local_jdata : dict
+                The local data refer to the current class
+            """
+            # call subprocess
+            cls = cls.get_class_by_type(j_get_type(local_jdata, cls.__name__))
+            return cls.update_sel(global_jdata, local_jdata)
 
     setattr(BD, fwd_method_name, BD.fwd)
     delattr(BD, "fwd")

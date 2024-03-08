@@ -12,6 +12,10 @@ from scipy.interpolate import (
     CubicSpline,
 )
 
+from deepmd.utils.version import (
+    check_version_compatibility,
+)
+
 log = logging.getLogger(__name__)
 
 
@@ -72,6 +76,8 @@ class PairTab:
 
     def serialize(self) -> dict:
         return {
+            "@class": "PairTab",
+            "@version": 1,
             "rmin": self.rmin,
             "rmax": self.rmax,
             "hh": self.hh,
@@ -87,6 +93,9 @@ class PairTab:
 
     @classmethod
     def deserialize(cls, data) -> "PairTab":
+        data = data.copy()
+        check_version_compatibility(data.pop("@version", 1), 1, 1)
+        data.pop("@class")
         variables = data.pop("@variables")
         tab = PairTab(None, None)
         tab.vdata = variables["vdata"]

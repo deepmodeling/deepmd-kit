@@ -13,8 +13,8 @@ from typing import (
 
 import numpy as np
 
-from deepmd.dpmodel.model.dp_model import (
-    DPModel,
+from deepmd.dpmodel.model.base_model import (
+    BaseModel,
 )
 from deepmd.dpmodel.output_def import (
     ModelOutputDef,
@@ -85,7 +85,7 @@ class DeepEval(DeepEvalBackend):
         self.model_path = model_file
 
         model_data = load_dp_model(model_file)
-        self.dp = DPModel.deserialize(model_data["model"])
+        self.dp = BaseModel.deserialize(model_data["model"])
         self.rcut = self.dp.get_rcut()
         self.type_map = self.dp.get_type_map()
         if isinstance(auto_batch_size, bool):
@@ -123,16 +123,16 @@ class DeepEval(DeepEvalBackend):
     @property
     def model_type(self) -> Type["DeepEvalWrapper"]:
         """The the evaluator of the model type."""
-        model_type = self.dp.model_output_type()
-        if model_type == "energy":
+        model_output_type = self.dp.model_output_type()
+        if "energy" in model_output_type:
             return DeepPot
-        elif model_type == "dos":
+        elif "dos" in model_output_type:
             return DeepDOS
-        elif model_type == "dipole":
+        elif "dipole" in model_output_type:
             return DeepDipole
-        elif model_type == "polar":
+        elif "polar" in model_output_type:
             return DeepPolar
-        elif model_type == "wfc":
+        elif "wfc" in model_output_type:
             return DeepWFC
         else:
             raise RuntimeError("Unknown model type")

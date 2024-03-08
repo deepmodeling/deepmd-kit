@@ -83,6 +83,7 @@ class TestData(unittest.TestCase):
         os.makedirs(os.path.join(self.data_name, "set.foo"), exist_ok=True)
         os.makedirs(os.path.join(self.data_name, "set.bar"), exist_ok=True)
         os.makedirs(os.path.join(self.data_name, "set.tar"), exist_ok=True)
+        os.makedirs(os.path.join(self.data_name, "set.foo"), exist_ok=True)
         np.savetxt(os.path.join(self.data_name, "type.raw"), np.array([1, 0]), fmt="%d")
         np.savetxt(
             os.path.join(self.data_name, "type_map.raw"),
@@ -141,6 +142,16 @@ class TestData(unittest.TestCase):
         np.save(path, self.test_frame_bar)
         # t n
         self.test_null = np.zeros([self.nframes, 2 * self.natoms])
+        # tensor shape
+        path = os.path.join(self.data_name, "set.foo", "tensor_natoms.npy")
+        self.tensor_natoms = np.random.default_rng().random(
+            [self.nframes, self.natoms, 6]
+        )
+        self.tensor_natoms[:, 0, :] = 0
+        np.save(path, self.tensor_natoms)
+        path = os.path.join(self.data_name, "set.foo", "tensor_nsel.npy")
+        self.tensor_nsel = self.tensor_natoms[:, 1, :]
+        np.save(path, self.tensor_nsel)
 
     def tearDown(self):
         shutil.rmtree(self.data_name)
@@ -291,6 +302,58 @@ class TestData(unittest.TestCase):
         self.assertEqual(nb, 5)
         nb = dd.get_numb_batch(2, 0)
         self.assertEqual(nb, 2)
+
+    def test_get_tensor(self):
+        dd_natoms = (
+            DeepmdData(self.data_name)
+            .add(
+                "tensor_nsel",
+                6,
+                atomic=True,
+                must=True,
+                type_sel=[0],
+                output_natoms_for_type_sel=True,
+            )
+            .add(
+                "tensor_natoms",
+                6,
+                atomic=True,
+                must=True,
+                type_sel=[0],
+                output_natoms_for_type_sel=True,
+            )
+        )
+        data_natoms = dd_natoms._load_set(os.path.join(self.data_name, "set.foo"))
+        dd_nsel = (
+            DeepmdData(self.data_name)
+            .add(
+                "tensor_nsel",
+                6,
+                atomic=True,
+                must=True,
+                type_sel=[0],
+                output_natoms_for_type_sel=False,
+            )
+            .add(
+                "tensor_natoms",
+                6,
+                atomic=True,
+                must=True,
+                type_sel=[0],
+                output_natoms_for_type_sel=False,
+            )
+        )
+        data_nsel = dd_nsel._load_set(os.path.join(self.data_name, "set.foo"))
+        np.testing.assert_allclose(
+            data_natoms["tensor_natoms"], data_natoms["tensor_nsel"]
+        )
+        np.testing.assert_allclose(data_nsel["tensor_natoms"], data_nsel["tensor_nsel"])
+        np.testing.assert_allclose(
+            data_natoms["tensor_natoms"].reshape(self.nframes, self.natoms, -1)[
+                :, 0, :
+            ],
+            data_nsel["tensor_natoms"],
+        )
 
     def _comp_np_mat2(self, first, second):
         np.testing.assert_almost_equal(first, second, places)

@@ -60,9 +60,15 @@ from deepmd.tf.utils.spin import (
 from deepmd.tf.utils.type_embed import (
     TypeEmbedNet,
 )
+from deepmd.utils.plugin import (
+    make_plugin_registry,
+)
+from deepmd.utils.version import (
+    check_version_compatibility,
+)
 
 
-class Model(ABC):
+class Model(ABC, make_plugin_registry("model")):
     """Abstract base model.
 
     Parameters
@@ -93,47 +99,6 @@ class Model(ABC):
     compress
         Compression information for internal use
     """
-
-    @classmethod
-    def get_class_by_type(cls, model_type: str):
-        """Get the class by input type.
-
-        Parameters
-        ----------
-        model_type : str
-            The input type
-        """
-        # infer model type by fitting_type
-        from deepmd.tf.model.frozen import (
-            FrozenModel,
-        )
-        from deepmd.tf.model.linear import (
-            LinearEnergyModel,
-        )
-        from deepmd.tf.model.multi import (
-            MultiModel,
-        )
-        from deepmd.tf.model.pairtab import (
-            PairTabModel,
-        )
-        from deepmd.tf.model.pairwise_dprc import (
-            PairwiseDPRc,
-        )
-
-        if model_type == "standard":
-            return StandardModel
-        elif model_type == "multi":
-            return MultiModel
-        elif model_type == "pairwise_dprc":
-            return PairwiseDPRc
-        elif model_type == "frozen":
-            return FrozenModel
-        elif model_type == "linear_ener":
-            return LinearEnergyModel
-        elif model_type == "pairtab":
-            return PairTabModel
-        else:
-            raise ValueError(f"unknown model type: {model_type}")
 
     def __new__(cls, *args, **kwargs):
         if cls is Model:
@@ -621,6 +586,7 @@ class Model(ABC):
         raise NotImplementedError("Not implemented in class %s" % self.__name__)
 
 
+@Model.register("standard")
 class StandardModel(Model):
     """Standard model, which must contain a descriptor and a fitting.
 
@@ -815,9 +781,11 @@ class StandardModel(Model):
             The deserialized descriptor
         """
         data = copy.deepcopy(data)
-
+        check_version_compatibility(data.pop("@version", 1), 1, 1)
         descriptor = Descriptor.deserialize(data.pop("descriptor"), suffix=suffix)
         fitting = Fitting.deserialize(data.pop("fitting"), suffix=suffix)
+        data.pop("atom_exclude_types")
+        data.pop("pair_exclude_types")
         return cls(
             descriptor=descriptor,
             fitting_net=fitting,
@@ -842,7 +810,13 @@ class StandardModel(Model):
         if self.spin is not None:
             raise NotImplementedError("spin is not supported")
         return {
+            "@class": "Model",
+            "type": "standard",
+            "@version": 1,
             "type_map": self.type_map,
             "descriptor": self.descrpt.serialize(suffix=suffix),
             "fitting": self.fitting.serialize(suffix=suffix),
+            # not supported yet
+            "atom_exclude_types": [],
+            "pair_exclude_types": [],
         }

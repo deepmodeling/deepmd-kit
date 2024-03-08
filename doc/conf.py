@@ -17,11 +17,9 @@ from datetime import (
     date,
 )
 
-from deepmd.tf.common import (
+from deepmd.utils.argcheck import (
     ACTIVATION_FN_DICT,
     PRECISION_DICT,
-)
-from deepmd.tf.utils.argcheck import (
     list_to_doc,
 )
 
@@ -188,6 +186,7 @@ rst_epilog = f"""
 myst_substitutions = {
     "tensorflow_icon": """![TensorFlow](/_static/tensorflow.svg){class=platform-icon}""",
     "pytorch_icon": """![PyTorch](/_static/pytorch.svg){class=platform-icon}""",
+    "dpmodel_icon": """![DP](/_static/logo_icon.svg){class=platform-icon}""",
 }
 
 # -- Options for HTML output -------------------------------------------------

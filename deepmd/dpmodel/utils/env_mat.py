@@ -17,6 +17,8 @@ def compute_smooth_weight(
     rmax: float,
 ):
     """Compute smooth weight for descriptor elements."""
+    if rmin >= rmax:
+        raise ValueError("rmin should be less than rmax.")
     min_mask = distance <= rmin
     max_mask = distance >= rmax
     mid_mask = np.logical_not(np.logical_or(min_mask, max_mask))
@@ -30,6 +32,8 @@ def _make_env_mat(
     coord,
     rcut: float,
     ruct_smth: float,
+    radial_only: bool = False,
+    protection: float = 0.0,
 ):
     """Make smooth environment matrix."""
     nf, nloc, nnei = nlist.shape
@@ -50,12 +54,15 @@ def _make_env_mat(
     length = np.linalg.norm(diff, axis=-1, keepdims=True)
     # for index 0 nloc atom
     length = length + ~np.expand_dims(mask, -1)
-    t0 = 1 / length
-    t1 = diff / length**2
+    t0 = 1 / (length + protection)
+    t1 = diff / (length + protection) ** 2
     weight = compute_smooth_weight(length, ruct_smth, rcut)
     weight = weight * np.expand_dims(mask, -1)
-    env_mat_se_a = np.concatenate([t0, t1], axis=-1) * weight
-    return env_mat_se_a, diff * np.expand_dims(mask, -1), weight
+    if radial_only:
+        env_mat = t0 * weight
+    else:
+        env_mat = np.concatenate([t0, t1], axis=-1) * weight
+    return env_mat, diff * np.expand_dims(mask, -1), weight
 
 
 class EnvMat(NativeOP):
@@ -63,9 +70,11 @@ class EnvMat(NativeOP):
         self,
         rcut,
         rcut_smth,
+        protection: float = 0.0,
     ):
         self.rcut = rcut
         self.rcut_smth = rcut_smth
+        self.protection = protection
 
     def call(
         self,
@@ -74,6 +83,7 @@ class EnvMat(NativeOP):
         nlist: np.ndarray,
         davg: Optional[np.ndarray] = None,
         dstd: Optional[np.ndarray] = None,
+        radial_only: bool = False,
     ) -> Union[np.ndarray, np.ndarray]:
         """Compute the environment matrix.
 
@@ -86,18 +96,23 @@ class EnvMat(NativeOP):
         atype_ext
             The extended aotm types. shape: nf x nall
         davg
-            The data avg. shape: nt x nnei x 4
+            The data avg. shape: nt x nnei x (4 or 1)
         dstd
-            The inverse of data std. shape: nt x nnei x 4
+            The inverse of data std. shape: nt x nnei x (4 or 1)
+        radial_only
+            Whether to only compute radial part of the environment matrix.
+            If True, the output will be of shape nf x nloc x nnei x 1.
+            Otherwise, the output will be of shape nf x nloc x nnei x 4.
+            Default: False.
 
         Returns
         -------
         env_mat
-            The environment matrix. shape: nf x nloc x nnei x 4
+            The environment matrix. shape: nf x nloc x nnei x (4 or 1)
         switch
             The value of switch function. shape: nf x nloc x nnei
         """
-        em, sw = self._call(nlist, coord_ext)
+        em, sw = self._call(nlist, coord_ext, radial_only)
         nf, nloc, nnei = nlist.shape
         atype = atype_ext[:, :nloc]
         if davg is not None:
@@ -106,12 +121,15 @@ class EnvMat(NativeOP):
             em /= dstd[atype]
         return em, sw
 
-    def _call(
-        self,
-        nlist,
-        coord_ext,
-    ):
-        em, diff, ww = _make_env_mat(nlist, coord_ext, self.rcut, self.rcut_smth)
+    def _call(self, nlist, coord_ext, radial_only):
+        em, diff, ww = _make_env_mat(
+            nlist,
+            coord_ext,
+            self.rcut,
+            self.rcut_smth,
+            radial_only=radial_only,
+            protection=self.protection,
+        )
         return em, ww
 
     def serialize(

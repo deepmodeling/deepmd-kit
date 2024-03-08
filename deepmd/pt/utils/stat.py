@@ -1,8 +1,29 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
+from typing import (
+    Callable,
+    List,
+    Optional,
+    Union,
+)
 
 import numpy as np
 import torch
+
+from deepmd.pt.utils import (
+    AtomExcludeMask,
+    env,
+)
+from deepmd.pt.utils.utils import (
+    dict_to_device,
+    to_numpy_array,
+)
+from deepmd.utils.out_stat import (
+    compute_stats_from_redu,
+)
+from deepmd.utils.path import (
+    DPPath,
+)
 
 log = logging.getLogger(__name__)
 
@@ -19,19 +40,9 @@ def make_stat_input(datasets, dataloaders, nbatches):
     - a list of dicts, each of which contains data from a system
     """
     lst = []
-    keys = [
-        "coord",
-        "force",
-        "energy",
-        "atype",
-        "box",
-        "natoms",
-    ]
-    if datasets[0].mixed_type:
-        keys.append("real_natoms_vec")
     log.info(f"Packing data for statistics from {len(datasets)} systems")
     for i in range(len(datasets)):
-        sys_stat = {key: [] for key in keys}
+        sys_stat = {}
         with torch.device("cpu"):
             iterator = iter(dataloaders[i])
             for _ in range(nbatches):
@@ -41,39 +52,90 @@ def make_stat_input(datasets, dataloaders, nbatches):
                     iterator = iter(dataloaders[i])
                     stat_data = next(iterator)
                 for dd in stat_data:
-                    if dd in keys:
+                    if stat_data[dd] is None:
+                        sys_stat[dd] = None
+                    elif isinstance(stat_data[dd], torch.Tensor):
+                        if dd not in sys_stat:
+                            sys_stat[dd] = []
                         sys_stat[dd].append(stat_data[dd])
-        for key in keys:
-            if not isinstance(sys_stat[key][0], list):
-                if sys_stat[key][0] is None:
-                    sys_stat[key] = None
-                else:
-                    sys_stat[key] = torch.cat(sys_stat[key], dim=0)
+                    else:
+                        pass
+        for key in sys_stat:
+            if sys_stat[key] is None or sys_stat[key][0] is None:
+                sys_stat[key] = None
             else:
-                sys_stat_list = []
-                for ii, _ in enumerate(sys_stat[key][0]):
-                    tmp_stat = [x[ii] for x in sys_stat[key]]
-                    sys_stat_list.append(torch.cat(tmp_stat, dim=0))
-                sys_stat[key] = sys_stat_list
+                sys_stat[key] = torch.cat(sys_stat[key], dim=0)
+        dict_to_device(sys_stat)
         lst.append(sys_stat)
     return lst
 
 
-def compute_output_bias(energy, natoms, rcond=None):
-    """Update output bias for fitting net.
-
-    Args:
-    - energy: Batched energy with shape [nframes, 1].
-    - natoms: Batched atom statisics with shape [self.ntypes+2].
-
-    Returns
-    -------
-    - energy_coef: Average enery per atom for each element.
+def compute_output_stats(
+    merged: Union[Callable[[], List[dict]], List[dict]],
+    ntypes: int,
+    stat_file_path: Optional[DPPath] = None,
+    rcond: Optional[float] = None,
+    atom_ener: Optional[List[float]] = None,
+):
     """
-    for i in range(len(energy)):
-        energy[i] = energy[i].mean(dim=0, keepdim=True)
-        natoms[i] = natoms[i].double().mean(dim=0, keepdim=True)
-    sys_ener = torch.cat(energy).cpu()
-    sys_tynatom = torch.cat(natoms)[:, 2:].cpu()
-    energy_coef, _, _, _ = np.linalg.lstsq(sys_tynatom, sys_ener, rcond)
-    return energy_coef
+    Compute the output statistics (e.g. energy bias) for the fitting net from packed data.
+
+    Parameters
+    ----------
+    merged : Union[Callable[[], List[dict]], List[dict]]
+        - List[dict]: A list of data samples from various data systems.
+            Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
+            originating from the `i`-th data system.
+        - Callable[[], List[dict]]: A lazy function that returns data samples in the above format
+            only when needed. Since the sampling process can be slow and memory-intensive,
+            the lazy function helps by only sampling once.
+    ntypes : int
+        The number of atom types.
+    stat_file_path : DPPath, optional
+        The path to the stat file.
+    rcond : float, optional
+        The condition number for the regression of atomic energy.
+    atom_ener : List[float], optional
+        Specifying atomic energy contribution in vacuum. The `set_davg_zero` key in the descrptor should be set.
+
+    """
+    if stat_file_path is not None:
+        stat_file_path = stat_file_path / "bias_atom_e"
+    if stat_file_path is not None and stat_file_path.is_file():
+        bias_atom_e = stat_file_path.load_numpy()
+    else:
+        if callable(merged):
+            # only get data for once
+            sampled = merged()
+        else:
+            sampled = merged
+        energy = [item["energy"] for item in sampled]
+        data_mixed_type = "real_natoms_vec" in sampled[0]
+        natoms_key = "natoms" if not data_mixed_type else "real_natoms_vec"
+        for system in sampled:
+            if "atom_exclude_types" in system:
+                type_mask = AtomExcludeMask(
+                    ntypes, system["atom_exclude_types"]
+                ).get_type_mask()
+                system[natoms_key][:, 2:] *= type_mask.unsqueeze(0)
+        input_natoms = [item[natoms_key] for item in sampled]
+        # shape: (nframes, ndim)
+        merged_energy = to_numpy_array(torch.cat(energy))
+        # shape: (nframes, ntypes)
+        merged_natoms = to_numpy_array(torch.cat(input_natoms)[:, 2:])
+        if atom_ener is not None and len(atom_ener) > 0:
+            assigned_atom_ener = np.array(
+                [ee if ee is not None else np.nan for ee in atom_ener]
+            )
+        else:
+            assigned_atom_ener = None
+        bias_atom_e, _ = compute_stats_from_redu(
+            merged_energy,
+            merged_natoms,
+            assigned_bias=assigned_atom_ener,
+            rcond=rcond,
+        )
+        if stat_file_path is not None:
+            stat_file_path.save_numpy(bias_atom_e)
+    assert all(x is not None for x in [bias_atom_e])
+    return torch.tensor(bias_atom_e, device=env.DEVICE)

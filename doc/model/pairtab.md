@@ -53,6 +53,10 @@ in the order of Type_0-Type_0, Type_0-Type_1, ..., Type_0-Type_N, Type_1-Type_1,
 
 The interaction should be smooth at the cut-off distance.
 
+:::{note}
+In instances where the interaction at the cut-off distance is not delineated within the table file, extrapolation will be conducted utilizing the available interaction data. This extrapolative procedure guarantees a smooth transition from the table-provided value to `0` whenever feasible.
+:::
+
 ## Interpolation with a short-range pairwise potential
 
 ```json

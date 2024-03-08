@@ -53,6 +53,15 @@ from deepmd.tf.utils.network import (
 from deepmd.tf.utils.spin import (
     Spin,
 )
+from deepmd.utils.finetune import (
+    change_energy_bias_lower,
+)
+from deepmd.utils.out_stat import (
+    compute_stats_from_redu,
+)
+from deepmd.utils.version import (
+    check_version_compatibility,
+)
 
 if TYPE_CHECKING:
     pass
@@ -292,21 +301,17 @@ class EnerFitting(Fitting):
             # In this situation, we directly use these assigned energies instead of computing stats.
             # This will make the loss decrease quickly
             assigned_atom_ener = np.array(
-                [ee for ee in self.atom_ener_v if ee is not None]
+                [ee if ee is not None else np.nan for ee in self.atom_ener_v]
             )
-            assigned_ener_idx = [
-                ii for ii, ee in enumerate(self.atom_ener_v) if ee is not None
-            ]
-            # np.dot out size: nframe
-            sys_ener -= np.dot(sys_tynatom[:, assigned_ener_idx], assigned_atom_ener)
-            sys_tynatom[:, assigned_ener_idx] = 0.0
-        energy_shift, resd, rank, s_value = np.linalg.lstsq(
-            sys_tynatom, sys_ener, rcond=rcond
+        else:
+            assigned_atom_ener = None
+        energy_shift, _ = compute_stats_from_redu(
+            sys_ener.reshape(-1, 1),
+            sys_tynatom,
+            assigned_bias=assigned_atom_ener,
+            rcond=rcond,
         )
-        if len(self.atom_ener) > 0:
-            for ii in assigned_ener_idx:
-                energy_shift[ii] = self.atom_ener_v[ii]
-        return energy_shift
+        return energy_shift.ravel()
 
     def compute_input_stats(self, all_stat: dict, protection: float = 1e-2) -> None:
         """Compute the input statistics.
@@ -791,121 +796,18 @@ class EnerFitting(Fitting):
         bias_shift="delta",
         ntest=10,
     ) -> None:
-        """Change the energy bias according to the input data and the pretrained model.
-
-        Parameters
-        ----------
-        data : DeepmdDataSystem
-            The training data.
-        frozen_model : str
-            The path file of frozen model.
-        origin_type_map : list
-            The original type_map in dataset, they are targets to change the energy bias.
-        full_type_map : str
-            The full type_map in pretrained model
-        bias_shift : str
-            The mode for changing energy bias : ['delta', 'statistic']
-            'delta' : perform predictions on energies of target dataset,
-                    and do least sqaure on the errors to obtain the target shift as bias.
-            'statistic' : directly use the statistic energy bias in the target dataset.
-        ntest : int
-            The number of test samples in a system to change the energy bias.
-        """
-        type_numbs = []
-        energy_ground_truth = []
-        energy_predict = []
-        sorter = np.argsort(full_type_map)
-        idx_type_map = sorter[
-            np.searchsorted(full_type_map, origin_type_map, sorter=sorter)
-        ]
-        mixed_type = data.mixed_type
-        numb_type = len(full_type_map)
         dp = None
         if bias_shift == "delta":
             # init model
             dp = DeepPotential(frozen_model)
-        for sys in data.data_systems:
-            test_data = sys.get_test()
-            nframes = test_data["box"].shape[0]
-            numb_test = min(nframes, ntest)
-            if mixed_type:
-                atype = test_data["type"][:numb_test].reshape([numb_test, -1])
-            else:
-                atype = test_data["type"][0]
-            assert np.array(
-                [i in idx_type_map for i in list(set(atype.reshape(-1)))]
-            ).all(), "Some types are not in 'type_map'!"
-            energy_ground_truth.append(
-                test_data["energy"][:numb_test].reshape([numb_test, 1])
-            )
-            if mixed_type:
-                type_numbs.append(
-                    np.array(
-                        [(atype == i).sum(axis=-1) for i in idx_type_map],
-                        dtype=np.int32,
-                    ).T
-                )
-            else:
-                type_numbs.append(
-                    np.tile(
-                        np.bincount(atype, minlength=numb_type)[idx_type_map],
-                        (numb_test, 1),
-                    )
-                )
-            if bias_shift == "delta":
-                coord = test_data["coord"][:numb_test].reshape([numb_test, -1])
-                if sys.pbc:
-                    box = test_data["box"][:numb_test]
-                else:
-                    box = None
-                if dp.get_dim_fparam() > 0:
-                    fparam = test_data["fparam"][:numb_test]
-                else:
-                    fparam = None
-                if dp.get_dim_aparam() > 0:
-                    aparam = test_data["aparam"][:numb_test]
-                else:
-                    aparam = None
-                ret = dp.eval(
-                    coord,
-                    box,
-                    atype,
-                    mixed_type=mixed_type,
-                    fparam=fparam,
-                    aparam=aparam,
-                )
-                energy_predict.append(ret[0].reshape([numb_test, 1]))
-        type_numbs = np.concatenate(type_numbs)
-        energy_ground_truth = np.concatenate(energy_ground_truth)
-        old_bias = self.bias_atom_e[idx_type_map]
-        if bias_shift == "delta":
-            energy_predict = np.concatenate(energy_predict)
-            bias_diff = energy_ground_truth - energy_predict
-            delta_bias = np.linalg.lstsq(type_numbs, bias_diff, rcond=None)[0]
-            unbias_e = energy_predict + type_numbs @ delta_bias
-            atom_numbs = type_numbs.sum(-1)
-            rmse_ae = np.sqrt(
-                np.mean(
-                    np.square(
-                        (unbias_e.ravel() - energy_ground_truth.ravel()) / atom_numbs
-                    )
-                )
-            )
-            self.bias_atom_e[idx_type_map] += delta_bias.reshape(-1)
-            log.info(
-                f"RMSE of atomic energy after linear regression is: {rmse_ae} eV/atom."
-            )
-        elif bias_shift == "statistic":
-            statistic_bias = np.linalg.lstsq(
-                type_numbs, energy_ground_truth, rcond=None
-            )[0]
-            self.bias_atom_e[idx_type_map] = statistic_bias.reshape(-1)
-        else:
-            raise RuntimeError("Unknown bias_shift mode: " + bias_shift)
-        log.info(
-            "Change energy bias of {} from {} to {}.".format(
-                str(origin_type_map), str(old_bias), str(self.bias_atom_e[idx_type_map])
-            )
+        self.bias_atom_e = change_energy_bias_lower(
+            data,
+            dp,
+            origin_type_map,
+            full_type_map,
+            self.bias_atom_e,
+            bias_shift=bias_shift,
+            ntest=ntest,
         )
 
     def enable_mixed_precision(self, mixed_prec: Optional[dict] = None) -> None:
@@ -959,6 +861,8 @@ class EnerFitting(Fitting):
         Model
             The deserialized model
         """
+        data = data.copy()
+        check_version_compatibility(data.pop("@version", 1), 1, 1)
         fitting = cls(**data)
         fitting.fitting_net_variables = cls.deserialize_network(
             data["nets"],
@@ -984,6 +888,7 @@ class EnerFitting(Fitting):
         data = {
             "@class": "Fitting",
             "type": "ener",
+            "@version": 1,
             "var_name": "energy",
             "ntypes": self.ntypes,
             "dim_descrpt": self.dim_descrpt,
@@ -998,7 +903,7 @@ class EnerFitting(Fitting):
             "rcond": self.rcond,
             "tot_ener_zero": self.tot_ener_zero,
             "trainable": self.trainable,
-            "atom_ener": self.atom_ener,
+            "atom_ener": self.atom_ener_v,
             "activation_function": self.activation_function_name,
             "precision": self.fitting_precision.name,
             "layer_name": self.layer_name,

@@ -1,8 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    Callable,
     Dict,
     List,
     Optional,
+    Tuple,
+    Union,
 )
 
 import numpy as np
@@ -12,7 +15,7 @@ from deepmd.pt.model.descriptor.descriptor import (
     DescriptorBlock,
 )
 from deepmd.pt.model.descriptor.env_mat import (
-    prod_env_mat_se_a,
+    prod_env_mat,
 )
 from deepmd.pt.model.network.network import (
     NeighborWiseAttention,
@@ -22,7 +25,10 @@ from deepmd.pt.utils import (
     env,
 )
 from deepmd.pt.utils.env_mat_stat import (
-    EnvMatStatSeA,
+    EnvMatStatSe,
+)
+from deepmd.pt.utils.exclude_mask import (
+    PairExcludeMask,
 )
 from deepmd.utils.env_mat_stat import (
     StatItem,
@@ -53,12 +59,14 @@ class DescrptBlockSeAtten(DescriptorBlock):
         post_ln=True,
         ffn=False,
         ffn_embed_dim=1024,
-        activation="tanh",
+        activation_function="tanh",
         scaling_factor=1.0,
         head_num=1,
         normalize=True,
         temperature=None,
         return_rot=False,
+        exclude_types: List[Tuple[int, int]] = [],
+        env_protection: float = 0.0,
         type: Optional[str] = None,
     ):
         """Construct an embedding net of type `se_atten`.
@@ -86,7 +94,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         self.post_ln = post_ln
         self.ffn = ffn
         self.ffn_embed_dim = ffn_embed_dim
-        self.activation = activation
+        self.activation = activation_function
         # TODO: To be fixed: precision should be given from inputs
         self.prec = torch.float64
         self.scaling_factor = scaling_factor
@@ -94,6 +102,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         self.normalize = normalize
         self.temperature = temperature
         self.return_rot = return_rot
+        self.env_protection = env_protection
 
         if isinstance(sel, int):
             sel = [sel]
@@ -104,6 +113,8 @@ class DescrptBlockSeAtten(DescriptorBlock):
         self.split_sel = self.sel
         self.nnei = sum(sel)
         self.ndescrpt = self.nnei * 4
+        # order matters, placed after the assignment of self.ntypes
+        self.reinit_exclude(exclude_types)
         self.dpa1_attention = NeighborWiseAttention(
             self.attn_layer,
             self.nnei,
@@ -200,12 +211,39 @@ class DescrptBlockSeAtten(DescriptorBlock):
         """Returns the output dimension of embedding."""
         return self.get_dim_emb()
 
-    def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
-        """Update mean and stddev for descriptor elements."""
-        env_mat_stat = EnvMatStatSeA(self)
+    def compute_input_stats(
+        self,
+        merged: Union[Callable[[], List[dict]], List[dict]],
+        path: Optional[DPPath] = None,
+    ):
+        """
+        Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
+
+        Parameters
+        ----------
+        merged : Union[Callable[[], List[dict]], List[dict]]
+            - List[dict]: A list of data samples from various data systems.
+                Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
+                originating from the `i`-th data system.
+            - Callable[[], List[dict]]: A lazy function that returns data samples in the above format
+                only when needed. Since the sampling process can be slow and memory-intensive,
+                the lazy function helps by only sampling once.
+        path : Optional[DPPath]
+            The path to the stat file.
+
+        """
+        env_mat_stat = EnvMatStatSe(self)
         if path is not None:
             path = path / env_mat_stat.get_hash()
-        env_mat_stat.load_or_compute_stats(merged, path)
+        if path is None or not path.is_dir():
+            if callable(merged):
+                # only get data for once
+                sampled = merged()
+            else:
+                sampled = merged
+        else:
+            sampled = []
+        env_mat_stat.load_or_compute_stats(sampled, path)
         self.stats = env_mat_stat.stats
         mean, stddev = env_mat_stat()
         if not self.set_davg_zero:
@@ -219,6 +257,13 @@ class DescrptBlockSeAtten(DescriptorBlock):
                 "The statistics of the descriptor has not been computed."
             )
         return self.stats
+
+    def reinit_exclude(
+        self,
+        exclude_types: List[Tuple[int, int]] = [],
+    ):
+        self.exclude_types = exclude_types
+        self.emask = PairExcludeMask(self.ntypes, exclude_types=exclude_types)
 
     def forward(
         self,
@@ -247,7 +292,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         atype = extended_atype[:, :nloc]
         nb = nframes
         nall = extended_coord.view(nb, -1, 3).shape[1]
-        dmatrix, diff, sw = prod_env_mat_se_a(
+        dmatrix, diff, sw = prod_env_mat(
             extended_coord,
             nlist,
             atype,
@@ -255,6 +300,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
             self.stddev,
             self.rcut,
             self.rcut_smth,
+            protection=self.env_protection,
         )
         # [nfxnlocxnnei, self.ndescrpt]
         dmatrix = dmatrix.view(-1, self.ndescrpt)
@@ -303,7 +349,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
             result.view(-1, nloc, self.filter_neuron[-1] * self.axis_neuron),
             ret.view(-1, nloc, self.nnei, self.filter_neuron[-1]),
             dmatrix.view(-1, nloc, self.nnei, 4)[..., 1:],
-            rot_mat.view(-1, self.filter_neuron[-1], 3),
+            rot_mat.view(-1, nloc, self.filter_neuron[-1], 3),
             sw,
         )
 

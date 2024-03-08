@@ -1,8 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    Callable,
     Dict,
     List,
     Optional,
+    Tuple,
+    Union,
 )
 
 import torch
@@ -11,7 +14,7 @@ from deepmd.pt.model.descriptor.descriptor import (
     DescriptorBlock,
 )
 from deepmd.pt.model.descriptor.env_mat import (
-    prod_env_mat_se_a,
+    prod_env_mat,
 )
 from deepmd.pt.model.network.network import (
     SimpleLinear,
@@ -20,7 +23,10 @@ from deepmd.pt.utils import (
     env,
 )
 from deepmd.pt.utils.env_mat_stat import (
-    EnvMatStatSeA,
+    EnvMatStatSe,
+)
+from deepmd.pt.utils.exclude_mask import (
+    PairExcludeMask,
 )
 from deepmd.pt.utils.utils import (
     get_activation_fn,
@@ -76,11 +82,13 @@ class DescrptBlockRepformers(DescriptorBlock):
         attn2_hidden: int = 16,
         attn2_nhead: int = 4,
         attn2_has_gate: bool = False,
-        activation: str = "tanh",
+        activation_function: str = "tanh",
         update_style: str = "res_avg",
         set_davg_zero: bool = True,  # TODO
         smooth: bool = True,
         add_type_ebd_to_seq: bool = False,
+        exclude_types: List[Tuple[int, int]] = [],
+        env_protection: float = 0.0,
         type: Optional[str] = None,
     ):
         """
@@ -100,6 +108,7 @@ class DescrptBlockRepformers(DescriptorBlock):
         self.nlayers = nlayers
         sel = [sel] if isinstance(sel, int) else sel
         self.nnei = sum(sel)
+        self.ndescrpt = self.nnei * 4  # use full descriptor.
         assert len(sel) == 1
         self.sel = sel
         self.sec = self.sel
@@ -108,9 +117,12 @@ class DescrptBlockRepformers(DescriptorBlock):
         self.set_davg_zero = set_davg_zero
         self.g1_dim = g1_dim
         self.g2_dim = g2_dim
-        self.act = get_activation_fn(activation)
+        self.act = get_activation_fn(activation_function)
         self.direct_dist = direct_dist
         self.add_type_ebd_to_seq = add_type_ebd_to_seq
+        # order matters, placed after the assignment of self.ntypes
+        self.reinit_exclude(exclude_types)
+        self.env_protection = env_protection
 
         self.g2_embd = mylinear(1, self.g2_dim)
         layers = []
@@ -139,7 +151,7 @@ class DescrptBlockRepformers(DescriptorBlock):
                     attn2_has_gate=attn2_has_gate,
                     attn2_hidden=attn2_hidden,
                     attn2_nhead=attn2_nhead,
-                    activation=activation,
+                    activation_function=activation_function,
                     update_style=update_style,
                     smooth=smooth,
                 )
@@ -208,6 +220,13 @@ class DescrptBlockRepformers(DescriptorBlock):
         """Returns the embedding dimension g2."""
         return self.get_dim_emb()
 
+    def reinit_exclude(
+        self,
+        exclude_types: List[Tuple[int, int]] = [],
+    ):
+        self.exclude_types = exclude_types
+        self.emask = PairExcludeMask(self.ntypes, exclude_types=exclude_types)
+
     def forward(
         self,
         nlist: torch.Tensor,
@@ -222,7 +241,7 @@ class DescrptBlockRepformers(DescriptorBlock):
         nall = extended_coord.view(nframes, -1).shape[1] // 3
         atype = extended_atype[:, :nloc]
         # nb x nloc x nnei x 4, nb x nloc x nnei x 3, nb x nloc x nnei x 1
-        dmatrix, diff, sw = prod_env_mat_se_a(
+        dmatrix, diff, sw = prod_env_mat(
             extended_coord,
             nlist,
             atype,
@@ -230,6 +249,7 @@ class DescrptBlockRepformers(DescriptorBlock):
             self.stddev,
             self.rcut,
             self.rcut_smth,
+            protection=self.env_protection,
         )
         nlist_mask = nlist != -1
         sw = torch.squeeze(sw, -1)
@@ -277,12 +297,39 @@ class DescrptBlockRepformers(DescriptorBlock):
 
         return g1, g2, h2, rot_mat.view(-1, nloc, self.dim_emb, 3), sw
 
-    def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
-        """Update mean and stddev for descriptor elements."""
-        env_mat_stat = EnvMatStatSeA(self)
+    def compute_input_stats(
+        self,
+        merged: Union[Callable[[], List[dict]], List[dict]],
+        path: Optional[DPPath] = None,
+    ):
+        """
+        Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
+
+        Parameters
+        ----------
+        merged : Union[Callable[[], List[dict]], List[dict]]
+            - List[dict]: A list of data samples from various data systems.
+                Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
+                originating from the `i`-th data system.
+            - Callable[[], List[dict]]: A lazy function that returns data samples in the above format
+                only when needed. Since the sampling process can be slow and memory-intensive,
+                the lazy function helps by only sampling once.
+        path : Optional[DPPath]
+            The path to the stat file.
+
+        """
+        env_mat_stat = EnvMatStatSe(self)
         if path is not None:
             path = path / env_mat_stat.get_hash()
-        env_mat_stat.load_or_compute_stats(merged, path)
+        if path is None or not path.is_dir():
+            if callable(merged):
+                # only get data for once
+                sampled = merged()
+            else:
+                sampled = merged
+        else:
+            sampled = []
+        env_mat_stat.load_or_compute_stats(sampled, path)
         self.stats = env_mat_stat.stats
         mean, stddev = env_mat_stat()
         if not self.set_davg_zero:

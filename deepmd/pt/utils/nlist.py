@@ -27,14 +27,16 @@ def extend_input_and_build_neighbor_list(
 ):
     nframes, nloc = atype.shape[:2]
     if box is not None:
+        box_gpu = box.to(coord.device, non_blocking=True)
         coord_normalized = normalize_coord(
             coord.view(nframes, nloc, 3),
-            box.reshape(nframes, 3, 3),
+            box_gpu.reshape(nframes, 3, 3),
         )
     else:
+        box_gpu = None
         coord_normalized = coord.clone()
     extended_coord, extended_atype, mapping = extend_coord_with_ghosts(
-        coord_normalized, atype, box, rcut
+        coord_normalized, atype, box_gpu, rcut, box
     )
     nlist = build_neighbor_list(
         extended_coord,
@@ -105,6 +107,8 @@ def build_neighbor_list(
     assert list(diff.shape) == [batch_size, nloc, nall, 3]
     # nloc x nall
     rr = torch.linalg.norm(diff, dim=-1)
+    # if central atom has two zero distances, sorting sometimes can not exclude itself
+    rr -= torch.eye(nloc, nall, dtype=rr.dtype, device=rr.device).unsqueeze(0)
     rr, nlist = torch.sort(rr, dim=-1)
     # nloc x (nall-1)
     rr = rr[:, :, 1:]
@@ -262,6 +266,7 @@ def extend_coord_with_ghosts(
     atype: torch.Tensor,
     cell: Optional[torch.Tensor],
     rcut: float,
+    cell_cpu: Optional[torch.Tensor] = None,
 ):
     """Extend the coordinates of the atoms by appending peridoc images.
     The number of images is large enough to ensure all the neighbors
@@ -277,6 +282,8 @@ def extend_coord_with_ghosts(
         simulation cell tensor of shape [-1, 9].
     rcut : float
         the cutoff radius
+    cell_cpu : torch.Tensor
+        cell on cpu for performance
 
     Returns
     -------
@@ -299,27 +306,25 @@ def extend_coord_with_ghosts(
     else:
         coord = coord.view([nf, nloc, 3])
         cell = cell.view([nf, 3, 3])
+        cell_cpu = cell_cpu.view([nf, 3, 3]) if cell_cpu is not None else cell
         # nf x 3
-        to_face = to_face_distance(cell)
+        to_face = to_face_distance(cell_cpu)
         # nf x 3
         # *2: ghost copies on + and - directions
         # +1: central cell
         nbuff = torch.ceil(rcut / to_face).to(torch.long)
         # 3
         nbuff = torch.max(nbuff, dim=0, keepdim=False).values
-        xi = torch.arange(-nbuff[0], nbuff[0] + 1, 1, device=device)
-        yi = torch.arange(-nbuff[1], nbuff[1] + 1, 1, device=device)
-        zi = torch.arange(-nbuff[2], nbuff[2] + 1, 1, device=device)
-        xyz = xi.view(-1, 1, 1, 1) * torch.tensor(
-            [1, 0, 0], dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=device
-        )
-        xyz = xyz + yi.view(1, -1, 1, 1) * torch.tensor(
-            [0, 1, 0], dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=device
-        )
-        xyz = xyz + zi.view(1, 1, -1, 1) * torch.tensor(
-            [0, 0, 1], dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=device
-        )
+        nbuff_cpu = nbuff.cpu()
+        xi = torch.arange(-nbuff_cpu[0], nbuff_cpu[0] + 1, 1, device="cpu")
+        yi = torch.arange(-nbuff_cpu[1], nbuff_cpu[1] + 1, 1, device="cpu")
+        zi = torch.arange(-nbuff_cpu[2], nbuff_cpu[2] + 1, 1, device="cpu")
+        eye_3 = torch.eye(3, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device="cpu")
+        xyz = xi.view(-1, 1, 1, 1) * eye_3[0]
+        xyz = xyz + yi.view(1, -1, 1, 1) * eye_3[1]
+        xyz = xyz + zi.view(1, 1, -1, 1) * eye_3[2]
         xyz = xyz.view(-1, 3)
+        xyz = xyz.to(device=device, non_blocking=True)
         # ns x 3
         shift_idx = xyz[torch.argsort(torch.norm(xyz, dim=1))]
         ns, _ = shift_idx.shape
@@ -332,7 +337,6 @@ def extend_coord_with_ghosts(
         extend_atype = torch.tile(atype.unsqueeze(-2), [1, ns, 1])
         # nf x ns x nloc
         extend_aidx = torch.tile(aidx.unsqueeze(-2), [1, ns, 1])
-
     return (
         extend_coord.reshape([nf, nall * 3]).to(device),
         extend_atype.view([nf, nall]).to(device),

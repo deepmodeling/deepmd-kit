@@ -39,6 +39,10 @@ from deepmd.tf.common import (
 )
 from deepmd.tf.descriptor import DescrptSeA as DescrptSeA_tf
 
+from ..test_stat import (
+    energy_data_requirement,
+)
+
 CUR_DIR = os.path.dirname(__file__)
 
 
@@ -52,13 +56,22 @@ def get_single_batch(dataset, index=None):
     np_batch = dataset[index]
     pt_batch = {}
 
-    for key in ["coord", "box", "force", "energy", "virial", "atype", "natoms"]:
+    for key in [
+        "coord",
+        "box",
+        "force",
+        "force_mag",
+        "energy",
+        "virial",
+        "atype",
+        "natoms",
+    ]:
         if key in np_batch.keys():
             np_batch[key] = np.expand_dims(np_batch[key], axis=0)
             pt_batch[key] = torch.as_tensor(np_batch[key], device=env.DEVICE)
-    np_batch["coord"] = np_batch["coord"].reshape(1, -1)
+            if key in ["coord", "force", "force_mag"]:
+                np_batch[key] = np_batch[key].reshape(1, -1)
     np_batch["natoms"] = np_batch["natoms"][0]
-    np_batch["force"] = np_batch["force"].reshape(1, -1)
     return np_batch, pt_batch
 
 
@@ -128,6 +141,7 @@ class TestSeA(unittest.TestCase):
             self.systems[0],
             model_config["type_map"],
         )
+        ds.add_data_requirement(energy_data_requirement)
         self.filter_neuron = model_config["descriptor"]["neuron"]
         self.axis_neuron = model_config["descriptor"]["axis_neuron"]
         self.np_batch, self.torch_batch = get_single_batch(ds)

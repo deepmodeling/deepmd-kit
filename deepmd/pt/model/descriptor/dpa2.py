@@ -1,7 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    Callable,
     List,
     Optional,
+    Tuple,
+    Union,
 )
 
 import torch
@@ -14,6 +17,9 @@ from deepmd.pt.model.network.network import (
 from deepmd.pt.utils.nlist import (
     build_multiple_neighbor_list,
     get_multiple_nlist_key,
+)
+from deepmd.pt.utils.update_sel import (
+    UpdateSel,
 )
 from deepmd.utils.path import (
     DPPath,
@@ -72,6 +78,9 @@ class DescrptDPA2(torch.nn.Module, BaseDescriptor):
         repformer_update_style: str = "res_avg",
         repformer_set_davg_zero: bool = True,  # TODO
         repformer_add_type_ebd_to_seq: bool = False,
+        env_protection: float = 0.0,
+        trainable: bool = True,
+        exclude_types: List[Tuple[int, int]] = [],
         type: Optional[
             str
         ] = None,  # work around the bad design in get_trainer and DpLoaderSet!
@@ -167,6 +176,11 @@ class DescrptDPA2(torch.nn.Module, BaseDescriptor):
             repformers block: set the avg to zero in statistics
         repformer_add_type_ebd_to_seq : bool
             repformers block: concatenate the type embedding at the output.
+        trainable : bool
+            If the parameters in the descriptor are trainable.
+        exclude_types : List[Tuple[int, int]] = [],
+            The excluded pairs of types which have no interaction with each other.
+            For example, `[[0, 1]]` means no interaction between type 0 and type 1.
 
         Returns
         -------
@@ -197,7 +211,9 @@ class DescrptDPA2(torch.nn.Module, BaseDescriptor):
             tebd_input_mode="concat",
             # tebd_input_mode='dot_residual_s',
             set_davg_zero=repinit_set_davg_zero,
-            activation=repinit_activation,
+            exclude_types=exclude_types,
+            env_protection=env_protection,
+            activation_function=repinit_activation,
         )
         self.repformers = DescrptBlockRepformers(
             repformer_rcut,
@@ -223,11 +239,13 @@ class DescrptDPA2(torch.nn.Module, BaseDescriptor):
             attn2_hidden=repformer_attn2_hidden,
             attn2_nhead=repformer_attn2_nhead,
             attn2_has_gate=repformer_attn2_has_gate,
-            activation=repformer_activation,
+            activation_function=repformer_activation,
             update_style=repformer_update_style,
             set_davg_zero=repformer_set_davg_zero,
             smooth=True,
             add_type_ebd_to_seq=repformer_add_type_ebd_to_seq,
+            exclude_types=exclude_types,
+            env_protection=env_protection,
         )
         self.type_embedding = TypeEmbedNet(ntypes, tebd_dim)
         if self.repinit.dim_out == self.repformers.dim_in:
@@ -246,6 +264,9 @@ class DescrptDPA2(torch.nn.Module, BaseDescriptor):
         self.rcut = self.repinit.get_rcut()
         self.ntypes = ntypes
         self.sel = self.repinit.sel
+        # set trainable
+        for param in self.parameters():
+            param.requires_grad = trainable
 
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
@@ -286,6 +307,46 @@ class DescrptDPA2(torch.nn.Module, BaseDescriptor):
         """
         return True
 
+    def share_params(self, base_class, shared_level, resume=False):
+        """
+        Share the parameters of self to the base_class with shared_level during multitask training.
+        If not start from checkpoint (resume is False),
+        some seperated parameters (e.g. mean and stddev) will be re-calculated across different classes.
+        """
+        assert (
+            self.__class__ == base_class.__class__
+        ), "Only descriptors of the same type can share params!"
+        # For DPA2 descriptors, the user-defined share-level
+        # shared_level: 0
+        # share all parameters in type_embedding, repinit and repformers
+        if shared_level == 0:
+            self._modules["type_embedding"] = base_class._modules["type_embedding"]
+            self.repinit.share_params(base_class.repinit, 0, resume=resume)
+            self._modules["g1_shape_tranform"] = base_class._modules[
+                "g1_shape_tranform"
+            ]
+            self.repformers.share_params(base_class.repformers, 0, resume=resume)
+        # shared_level: 1
+        # share all parameters in type_embedding and repinit
+        elif shared_level == 1:
+            self._modules["type_embedding"] = base_class._modules["type_embedding"]
+            self.repinit.share_params(base_class.repinit, 0, resume=resume)
+        # shared_level: 2
+        # share all parameters in type_embedding and repformers
+        elif shared_level == 2:
+            self._modules["type_embedding"] = base_class._modules["type_embedding"]
+            self._modules["g1_shape_tranform"] = base_class._modules[
+                "g1_shape_tranform"
+            ]
+            self.repformers.share_params(base_class.repformers, 0, resume=resume)
+        # shared_level: 3
+        # share all parameters in type_embedding
+        elif shared_level == 3:
+            self._modules["type_embedding"] = base_class._modules["type_embedding"]
+        # Other shared levels
+        else:
+            raise NotImplementedError
+
     @property
     def dim_out(self):
         return self.get_dim_out()
@@ -295,16 +356,29 @@ class DescrptDPA2(torch.nn.Module, BaseDescriptor):
         """Returns the embedding dimension g2."""
         return self.get_dim_emb()
 
-    def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
+    def compute_input_stats(
+        self,
+        merged: Union[Callable[[], List[dict]], List[dict]],
+        path: Optional[DPPath] = None,
+    ):
+        """
+        Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
+
+        Parameters
+        ----------
+        merged : Union[Callable[[], List[dict]], List[dict]]
+            - List[dict]: A list of data samples from various data systems.
+                Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
+                originating from the `i`-th data system.
+            - Callable[[], List[dict]]: A lazy function that returns data samples in the above format
+                only when needed. Since the sampling process can be slow and memory-intensive,
+                the lazy function helps by only sampling once.
+        path : Optional[DPPath]
+            The path to the stat file.
+
+        """
         for ii, descrpt in enumerate([self.repinit, self.repformers]):
-            merged_tmp = [
-                {
-                    key: item[key] if not isinstance(item[key], list) else item[key][ii]
-                    for key in item
-                }
-                for item in merged
-            ]
-            descrpt.compute_input_stats(merged_tmp)
+            descrpt.compute_input_stats(merged, path)
 
     def serialize(self) -> dict:
         """Serialize the obj to dict."""
@@ -396,3 +470,32 @@ class DescrptDPA2(torch.nn.Module, BaseDescriptor):
         if self.concat_output_tebd:
             g1 = torch.cat([g1, g1_inp], dim=-1)
         return g1, rot_mat, g2, h2, sw
+
+    @classmethod
+    def update_sel(cls, global_jdata: dict, local_jdata: dict):
+        """Update the selection and perform neighbor statistics.
+
+        Parameters
+        ----------
+        global_jdata : dict
+            The global data, containing the training section
+        local_jdata : dict
+            The local data refer to the current class
+        """
+        local_jdata_cpy = local_jdata.copy()
+        update_sel = UpdateSel()
+        local_jdata_cpy = update_sel.update_one_sel(
+            global_jdata,
+            local_jdata_cpy,
+            True,
+            rcut_key="repinit_rcut",
+            sel_key="repinit_nsel",
+        )
+        local_jdata_cpy = update_sel.update_one_sel(
+            global_jdata,
+            local_jdata_cpy,
+            True,
+            rcut_key="repformer_rcut",
+            sel_key="repformer_nsel",
+        )
+        return local_jdata_cpy

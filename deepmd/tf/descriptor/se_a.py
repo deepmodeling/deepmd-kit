@@ -65,6 +65,9 @@ from deepmd.tf.utils.tabulate import (
 from deepmd.tf.utils.type_embed import (
     embed_atom_type,
 )
+from deepmd.utils.version import (
+    check_version_compatibility,
+)
 
 from .descriptor import (
     Descriptor,
@@ -151,6 +154,8 @@ class DescrptSeA(DescrptSe):
             Only for the purpose of backward compatibility, retrieves the old behavior of using the random seed
     multi_task
             If the model has multi fitting nets to train.
+    env_protection: float
+            Protection parameter to prevent division by zero errors during environment matrix calculations.
 
     References
     ----------
@@ -179,6 +184,7 @@ class DescrptSeA(DescrptSe):
         multi_task: bool = False,
         spin: Optional[Spin] = None,
         stripped_type_embedding: bool = False,
+        env_protection: float = 0.0,  # not implement!!
         **kwargs,
     ) -> None:
         """Constructor."""
@@ -186,6 +192,8 @@ class DescrptSeA(DescrptSe):
             raise RuntimeError(
                 f"rcut_smth ({rcut_smth:f}) should be no more than rcut ({rcut:f})!"
             )
+        if env_protection != 0.0:
+            raise NotImplementedError("env_protection != 0.0 is not supported.")
         self.sel_a = sel
         self.rcut_r = rcut
         self.rcut_r_smth = rcut_smth
@@ -203,6 +211,7 @@ class DescrptSeA(DescrptSe):
         self.filter_np_precision = get_np_precision(precision)
         self.orig_exclude_types = exclude_types
         self.exclude_types = set()
+        self.env_protection = env_protection
         for tt in exclude_types:
             assert len(tt) == 2
             self.exclude_types.add((tt[0], tt[1]))
@@ -1368,6 +1377,7 @@ class DescrptSeA(DescrptSe):
         if cls is not DescrptSeA:
             raise NotImplementedError("Not implemented in class %s" % cls.__name__)
         data = data.copy()
+        check_version_compatibility(data.pop("@version", 1), 1, 1)
         data.pop("@class", None)
         data.pop("type", None)
         embedding_net_variables = cls.deserialize_network(
@@ -1422,6 +1432,7 @@ class DescrptSeA(DescrptSe):
         return {
             "@class": "Descriptor",
             "type": "se_e2_a",
+            "@version": 1,
             "rcut": self.rcut_r,
             "rcut_smth": self.rcut_r_smth,
             "sel": self.sel_a,
@@ -1431,6 +1442,7 @@ class DescrptSeA(DescrptSe):
             "trainable": self.trainable,
             "type_one_side": self.type_one_side,
             "exclude_types": list(self.orig_exclude_types),
+            "env_protection": self.env_protection,
             "set_davg_zero": self.set_davg_zero,
             "activation_function": self.activation_function_name,
             "precision": self.filter_precision.name,

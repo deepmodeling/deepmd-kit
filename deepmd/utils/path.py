@@ -355,6 +355,7 @@ class DPH5Path(DPPath):
         if self._name in self._keys:
             del self.root[self._name]
         self.root.create_dataset(self._name, data=arr)
+        self.root.flush()
 
     def glob(self, pattern: str) -> List["DPPath"]:
         """Search path using the glob pattern.
@@ -413,6 +414,8 @@ class DPH5Path(DPPath):
 
     def is_dir(self) -> bool:
         """Check if self is directory."""
+        if self._name == "/":
+            return True
         if self._name not in self._keys:
             return False
         return isinstance(self.root[self._name], h5py.Group)

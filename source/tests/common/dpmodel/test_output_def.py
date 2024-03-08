@@ -56,6 +56,15 @@ class TestDef(unittest.TestCase):
                 r_hessian=True,
             ),
             OutputVariableDef(
+                "energy3",
+                [1],
+                reduciable=True,
+                r_differentiable=True,
+                c_differentiable=True,
+                atomic=True,
+                magnetic=True,
+            ),
+            OutputVariableDef(
                 "dos",
                 [10],
                 reduciable=True,
@@ -74,7 +83,7 @@ class TestDef(unittest.TestCase):
         ]
         # fitting definition
         fd = FittingOutputDef(defs)
-        expected_keys = ["energy", "energy2", "dos", "foo"]
+        expected_keys = ["energy", "energy2", "energy3", "dos", "foo"]
         self.assertEqual(
             set(expected_keys),
             set(fd.keys()),
@@ -82,16 +91,19 @@ class TestDef(unittest.TestCase):
         # shape
         self.assertEqual(fd["energy"].shape, [1])
         self.assertEqual(fd["energy2"].shape, [1])
+        self.assertEqual(fd["energy3"].shape, [1])
         self.assertEqual(fd["dos"].shape, [10])
         self.assertEqual(fd["foo"].shape, [3])
         # atomic
         self.assertEqual(fd["energy"].atomic, True)
         self.assertEqual(fd["energy2"].atomic, True)
+        self.assertEqual(fd["energy3"].atomic, True)
         self.assertEqual(fd["dos"].atomic, True)
         self.assertEqual(fd["foo"].atomic, True)
         # reduce
         self.assertEqual(fd["energy"].reduciable, True)
         self.assertEqual(fd["energy2"].reduciable, True)
+        self.assertEqual(fd["energy3"].reduciable, True)
         self.assertEqual(fd["dos"].reduciable, True)
         self.assertEqual(fd["foo"].reduciable, False)
         # derivative
@@ -101,15 +113,25 @@ class TestDef(unittest.TestCase):
         self.assertEqual(fd["energy2"].r_differentiable, True)
         self.assertEqual(fd["energy2"].c_differentiable, True)
         self.assertEqual(fd["energy2"].r_hessian, True)
+        self.assertEqual(fd["energy3"].r_differentiable, True)
+        self.assertEqual(fd["energy3"].c_differentiable, True)
+        self.assertEqual(fd["energy3"].r_hessian, False)
         self.assertEqual(fd["dos"].r_differentiable, False)
         self.assertEqual(fd["foo"].r_differentiable, False)
         self.assertEqual(fd["dos"].c_differentiable, False)
         self.assertEqual(fd["foo"].c_differentiable, False)
+        # magnetic
+        self.assertEqual(fd["energy"].magnetic, False)
+        self.assertEqual(fd["energy2"].magnetic, False)
+        self.assertEqual(fd["energy3"].magnetic, True)
+        self.assertEqual(fd["dos"].magnetic, False)
+        self.assertEqual(fd["foo"].magnetic, False)
         # model definition
         md = ModelOutputDef(fd)
         expected_keys = [
             "energy",
             "energy2",
+            "energy3",
             "dos",
             "foo",
             "energy_redu",
@@ -121,7 +143,15 @@ class TestDef(unittest.TestCase):
             "energy2_derv_r_derv_r",
             "energy2_derv_c",
             "energy2_derv_c_redu",
+            "energy3_redu",
+            "energy3_derv_r",
+            "energy3_derv_c",
+            "energy3_derv_c_redu",
+            "energy3_derv_r_mag",
+            "energy3_derv_c_mag",
             "dos_redu",
+            "mask",
+            "mask_mag",
         ]
         self.assertEqual(
             set(expected_keys),
@@ -132,6 +162,7 @@ class TestDef(unittest.TestCase):
         # reduce
         self.assertEqual(md["energy"].reduciable, True)
         self.assertEqual(md["energy2"].reduciable, True)
+        self.assertEqual(md["energy3"].reduciable, True)
         self.assertEqual(md["dos"].reduciable, True)
         self.assertEqual(md["foo"].reduciable, False)
         # derivative
@@ -141,13 +172,19 @@ class TestDef(unittest.TestCase):
         self.assertEqual(md["energy2"].r_differentiable, True)
         self.assertEqual(md["energy2"].c_differentiable, True)
         self.assertEqual(md["energy2"].r_hessian, True)
+        self.assertEqual(md["energy3"].r_differentiable, True)
+        self.assertEqual(md["energy3"].c_differentiable, True)
+        self.assertEqual(md["energy3"].r_hessian, False)
         self.assertEqual(md["dos"].r_differentiable, False)
         self.assertEqual(md["foo"].r_differentiable, False)
         self.assertEqual(md["dos"].c_differentiable, False)
         self.assertEqual(md["foo"].c_differentiable, False)
         # shape
+        self.assertEqual(md["mask"].shape, [1])
+        self.assertEqual(md["mask_mag"].shape, [1])
         self.assertEqual(md["energy"].shape, [1])
         self.assertEqual(md["energy2"].shape, [1])
+        self.assertEqual(md["energy3"].shape, [1])
         self.assertEqual(md["dos"].shape, [10])
         self.assertEqual(md["foo"].shape, [3])
         self.assertEqual(md["energy_redu"].shape, [1])
@@ -159,6 +196,11 @@ class TestDef(unittest.TestCase):
         self.assertEqual(md["energy2_derv_c"].shape, [1, 9])
         self.assertEqual(md["energy2_derv_c_redu"].shape, [1, 9])
         self.assertEqual(md["energy2_derv_r_derv_r"].shape, [1, 3, 3])
+        self.assertEqual(md["energy3_derv_r"].shape, [1, 3])
+        self.assertEqual(md["energy3_derv_c"].shape, [1, 9])
+        self.assertEqual(md["energy3_derv_c_redu"].shape, [1, 9])
+        self.assertEqual(md["energy3_derv_r_mag"].shape, [1, 3])
+        self.assertEqual(md["energy3_derv_c_mag"].shape, [1, 9])
         # atomic
         self.assertEqual(md["energy"].atomic, True)
         self.assertEqual(md["energy2"].atomic, True)
@@ -173,9 +215,18 @@ class TestDef(unittest.TestCase):
         self.assertEqual(md["energy2_derv_c"].atomic, True)
         self.assertEqual(md["energy2_derv_c_redu"].atomic, False)
         self.assertEqual(md["energy2_derv_r_derv_r"].atomic, True)
+        self.assertEqual(md["energy3_redu"].atomic, False)
+        self.assertEqual(md["energy3_derv_r"].atomic, True)
+        self.assertEqual(md["energy3_derv_c"].atomic, True)
+        self.assertEqual(md["energy3_derv_r_mag"].atomic, True)
+        self.assertEqual(md["energy3_derv_c_mag"].atomic, True)
+        self.assertEqual(md["energy3_derv_c_redu"].atomic, False)
         # category
+        self.assertEqual(md["mask"].category, OutputVariableCategory.OUT)
+        self.assertEqual(md["mask_mag"].category, OutputVariableCategory.OUT)
         self.assertEqual(md["energy"].category, OutputVariableCategory.OUT)
         self.assertEqual(md["energy2"].category, OutputVariableCategory.OUT)
+        self.assertEqual(md["energy3"].category, OutputVariableCategory.OUT)
         self.assertEqual(md["dos"].category, OutputVariableCategory.OUT)
         self.assertEqual(md["foo"].category, OutputVariableCategory.OUT)
         self.assertEqual(md["energy_redu"].category, OutputVariableCategory.REDU)
@@ -193,6 +244,18 @@ class TestDef(unittest.TestCase):
         self.assertEqual(
             md["energy2_derv_r_derv_r"].category, OutputVariableCategory.DERV_R_DERV_R
         )
+        self.assertEqual(md["energy3_redu"].category, OutputVariableCategory.REDU)
+        self.assertEqual(md["energy3_derv_r"].category, OutputVariableCategory.DERV_R)
+        self.assertEqual(md["energy3_derv_c"].category, OutputVariableCategory.DERV_C)
+        self.assertEqual(
+            md["energy3_derv_c_redu"].category, OutputVariableCategory.DERV_C_REDU
+        )
+        self.assertEqual(
+            md["energy3_derv_r_mag"].category, OutputVariableCategory.DERV_R
+        )
+        self.assertEqual(
+            md["energy3_derv_c_mag"].category, OutputVariableCategory.DERV_C
+        )
         # flag
         OVO = OutputVariableOperation
         self.assertEqual(md["energy"].category & OVO.REDU, 0)
@@ -201,6 +264,9 @@ class TestDef(unittest.TestCase):
         self.assertEqual(md["energy2"].category & OVO.REDU, 0)
         self.assertEqual(md["energy2"].category & OVO.DERV_R, 0)
         self.assertEqual(md["energy2"].category & OVO.DERV_C, 0)
+        self.assertEqual(md["energy3"].category & OVO.REDU, 0)
+        self.assertEqual(md["energy3"].category & OVO.DERV_R, 0)
+        self.assertEqual(md["energy3"].category & OVO.DERV_C, 0)
         self.assertEqual(md["dos"].category & OVO.REDU, 0)
         self.assertEqual(md["dos"].category & OVO.DERV_R, 0)
         self.assertEqual(md["dos"].category & OVO.DERV_C, 0)
@@ -261,6 +327,46 @@ class TestDef(unittest.TestCase):
         self.assertEqual(md[kk].category & OVO.DERV_R, OVO.DERV_R)
         self.assertEqual(md[kk].category & OVO.DERV_C, 0)
         self.assertEqual(md[kk].category & OVO._SEC_DERV_R, OVO._SEC_DERV_R)
+        # flag: energy3
+        self.assertEqual(
+            md["energy3_redu"].category & OVO.REDU,
+            OVO.REDU,
+        )
+        self.assertEqual(md["energy3_redu"].category & OVO.DERV_R, 0)
+        self.assertEqual(md["energy3_redu"].category & OVO.DERV_C, 0)
+        self.assertEqual(md["energy3_derv_r"].category & OVO.REDU, 0)
+        self.assertEqual(
+            md["energy3_derv_r"].category & OVO.DERV_R,
+            OVO.DERV_R,
+        )
+        self.assertEqual(md["energy3_derv_r"].category & OVO.DERV_C, 0)
+        self.assertEqual(md["energy3_derv_c"].category & OVO.REDU, 0)
+        self.assertEqual(md["energy3_derv_c"].category & OVO.DERV_R, 0)
+        self.assertEqual(
+            md["energy3_derv_c"].category & OVO.DERV_C,
+            OVO.DERV_C,
+        )
+        self.assertEqual(
+            md["energy3_derv_c_redu"].category & OVO.REDU,
+            OVO.REDU,
+        )
+        self.assertEqual(md["energy3_derv_c_redu"].category & OVO.DERV_R, 0)
+        self.assertEqual(
+            md["energy3_derv_c_redu"].category & OVO.DERV_C,
+            OVO.DERV_C,
+        )
+        self.assertEqual(md["energy3_derv_r_mag"].category & OVO.REDU, 0)
+        self.assertEqual(
+            md["energy3_derv_r_mag"].category & OVO.DERV_R,
+            OVO.DERV_R,
+        )
+        self.assertEqual(md["energy3_derv_r_mag"].category & OVO.DERV_C, 0)
+        self.assertEqual(md["energy3_derv_c_mag"].category & OVO.REDU, 0)
+        self.assertEqual(md["energy3_derv_c_mag"].category & OVO.DERV_R, 0)
+        self.assertEqual(
+            md["energy3_derv_c_mag"].category & OVO.DERV_C,
+            OVO.DERV_C,
+        )
         # apply_operation: energy
         self.assertEqual(
             apply_operation(md["energy"], OVO.REDU),
@@ -299,6 +405,31 @@ class TestDef(unittest.TestCase):
             apply_operation(md["energy2_derv_r"], OVO.DERV_R),
             md["energy2_derv_r_derv_r"].category,
         )
+        # apply_operation: energy3
+        self.assertEqual(
+            apply_operation(md["energy3"], OVO.REDU),
+            md["energy3_redu"].category,
+        )
+        self.assertEqual(
+            apply_operation(md["energy3"], OVO.DERV_R),
+            md["energy3_derv_r"].category,
+        )
+        self.assertEqual(
+            apply_operation(md["energy3"], OVO.DERV_C),
+            md["energy3_derv_c"].category,
+        )
+        self.assertEqual(
+            apply_operation(md["energy3_derv_c"], OVO.REDU),
+            md["energy3_derv_c_redu"].category,
+        )
+        self.assertEqual(
+            apply_operation(md["energy3"], OVO.DERV_R),
+            md["energy3_derv_r_mag"].category,
+        )
+        self.assertEqual(
+            apply_operation(md["energy3"], OVO.DERV_C),
+            md["energy3_derv_c_mag"].category,
+        )
         # raise ValueError
         with self.assertRaises(ValueError):
             apply_operation(md["energy_redu"], OVO.REDU)
@@ -315,6 +446,15 @@ class TestDef(unittest.TestCase):
             apply_operation(md["energy2_derv_c_redu"], OVO.REDU)
         with self.assertRaises(ValueError):
             apply_operation(md["energy2_derv_r_derv_r"], OVO.DERV_R)
+        # raise ValueError
+        with self.assertRaises(ValueError):
+            apply_operation(md["energy3_redu"], OVO.REDU)
+        with self.assertRaises(ValueError):
+            apply_operation(md["energy3_derv_c"], OVO.DERV_C)
+        with self.assertRaises(ValueError):
+            apply_operation(md["energy3_derv_c_redu"], OVO.REDU)
+        with self.assertRaises(ValueError):
+            apply_operation(md["energy3_derv_c_mag"], OVO.DERV_C)
         # hession
         hession_cat = apply_operation(md["energy_derv_r"], OVO.DERV_R)
         self.assertEqual(hession_cat & OVO.DERV_R, OVO.DERV_R)
@@ -375,6 +515,20 @@ class TestDef(unittest.TestCase):
                     atomic=False,
                     r_differentiable=False,
                     r_hessian=True,
+                ),
+            )
+
+    def test_energy_magnetic(self):
+        with self.assertRaises(ValueError) as context:
+            (
+                OutputVariableDef(
+                    "energy",
+                    [1],
+                    reduciable=False,
+                    atomic=False,
+                    r_differentiable=True,
+                    r_hessian=True,
+                    magnetic=True,
                 ),
             )
 

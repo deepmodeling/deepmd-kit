@@ -36,8 +36,17 @@ def make_base_atomic_model(
 
         @abstractmethod
         def fitting_output_def(self) -> FittingOutputDef:
-            """Get the fitting output def."""
+            """Get the output def of developer implemented atomic models."""
             pass
+
+        def atomic_output_def(self) -> FittingOutputDef:
+            """Get the output def of the atomic model.
+
+            By default it is the same as FittingOutputDef, but it
+            allows model level wrapper of the output defined by the developer.
+
+            """
+            return self.fitting_output_def()
 
         @abstractmethod
         def get_rcut(self) -> float:
@@ -45,8 +54,13 @@ def make_base_atomic_model(
             pass
 
         @abstractmethod
-        def get_type_map(self) -> Optional[List[str]]:
+        def get_type_map(self) -> List[str]:
             """Get the type map."""
+            pass
+
+        def get_ntypes(self) -> int:
+            """Get the number of atom types."""
+            return len(self.get_type_map())
 
         @abstractmethod
         def get_sel(self) -> List[int]:
@@ -159,6 +173,10 @@ def make_base_atomic_model(
             if base == "c":
                 return self.fitting_output_def()[var_name].c_differentiable
             return self.fitting_output_def()[var_name].r_differentiable
+
+        def get_model_def_script(self) -> str:
+            # TODO: implement this method; saved to model
+            raise NotImplementedError
 
     setattr(BAM, fwd_method_name, BAM.fwd)
     delattr(BAM, "fwd")

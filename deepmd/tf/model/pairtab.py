@@ -29,8 +29,12 @@ from deepmd.tf.model.model import (
 from deepmd.tf.utils.pair_tab import (
     PairTab,
 )
+from deepmd.tf.utils.update_sel import (
+    UpdateSel,
+)
 
 
+@Model.register("pairtab")
 class PairTabModel(Model):
     """Pairwise tabulation energy model.
 
@@ -280,9 +284,5 @@ class PairTabModel(Model):
         dict
             The updated local data
         """
-        from deepmd.tf.entrypoints.train import (
-            update_one_sel,
-        )
-
         local_jdata_cpy = local_jdata.copy()
-        return update_one_sel(global_jdata, local_jdata_cpy, True)
+        return UpdateSel().update_one_sel(global_jdata, local_jdata_cpy, True)

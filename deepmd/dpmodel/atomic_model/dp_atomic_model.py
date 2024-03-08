@@ -17,6 +17,9 @@ from deepmd.dpmodel.fitting.base_fitting import (
 from deepmd.dpmodel.output_def import (
     FittingOutputDef,
 )
+from deepmd.utils.version import (
+    check_version_compatibility,
+)
 
 from .base_atomic_model import (
     BaseAtomicModel,
@@ -42,12 +45,14 @@ class DPAtomicModel(BaseAtomicModel):
         self,
         descriptor,
         fitting,
-        type_map: Optional[List[str]] = None,
+        type_map: List[str],
+        **kwargs,
     ):
-        super().__init__()
         self.type_map = type_map
         self.descriptor = descriptor
         self.fitting = fitting
+        self.type_map = type_map
+        super().__init__(**kwargs)
 
     def fitting_output_def(self) -> FittingOutputDef:
         """Get the output def of the fitting net."""
@@ -61,7 +66,7 @@ class DPAtomicModel(BaseAtomicModel):
         """Get the neighbor selection."""
         return self.descriptor.get_sel()
 
-    def get_type_map(self) -> Optional[List[str]]:
+    def get_type_map(self) -> List[str]:
         """Get the type map."""
         return self.type_map
 
@@ -129,18 +134,29 @@ class DPAtomicModel(BaseAtomicModel):
         return ret
 
     def serialize(self) -> dict:
-        return {
-            "type_map": self.type_map,
-            "descriptor": self.descriptor.serialize(),
-            "fitting": self.fitting.serialize(),
-        }
+        dd = super().serialize()
+        dd.update(
+            {
+                "@class": "Model",
+                "type": "standard",
+                "@version": 1,
+                "type_map": self.type_map,
+                "descriptor": self.descriptor.serialize(),
+                "fitting": self.fitting.serialize(),
+            }
+        )
+        return dd
 
     @classmethod
     def deserialize(cls, data) -> "DPAtomicModel":
         data = copy.deepcopy(data)
-        descriptor_obj = BaseDescriptor.deserialize(data["descriptor"])
-        fitting_obj = BaseFitting.deserialize(data["fitting"])
-        obj = cls(descriptor_obj, fitting_obj, type_map=data["type_map"])
+        check_version_compatibility(data.pop("@version", 1), 1, 1)
+        data.pop("@class")
+        data.pop("type")
+        descriptor_obj = BaseDescriptor.deserialize(data.pop("descriptor"))
+        fitting_obj = BaseFitting.deserialize(data.pop("fitting"))
+        type_map = data.pop("type_map")
+        obj = cls(descriptor_obj, fitting_obj, type_map=type_map, **data)
         return obj
 
     def get_dim_fparam(self) -> int:

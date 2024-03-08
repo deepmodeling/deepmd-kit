@@ -226,7 +226,7 @@ def main_parser() -> argparse.ArgumentParser:
         "--init-frz-model",
         type=str,
         default=None,
-        help="(Supported backend: TensorFlow) Initialize the training from the frozen model.",
+        help="Initialize the training from the frozen model.",
     )
     parser_train_subgroup.add_argument(
         "-t",
@@ -240,12 +240,12 @@ def main_parser() -> argparse.ArgumentParser:
         "--output",
         type=str,
         default="out.json",
-        help="(Supported backend: TensorFlow) The output file of the parameters used in training.",
+        help="The output file of the parameters used in training.",
     )
     parser_train.add_argument(
         "--skip-neighbor-stat",
         action="store_true",
-        help="(Supported backend: TensorFlow) Skip calculating neighbor statistics. Sel checking, automatic sel, and model compression will be disabled.",
+        help="Skip calculating neighbor statistics. Sel checking, automatic sel, and model compression will be disabled.",
     )
     parser_train.add_argument(
         # -m has been used by mpi-log

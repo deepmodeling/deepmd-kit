@@ -60,30 +60,13 @@ class ModelWrapper(torch.nn.Module):
                     self.loss[task_key] = loss[task_key]
         self.inference_only = self.loss is None
 
-    def set_trainable_params(self):
-        supported_types = ["type_embedding", "descriptor", "fitting_net"]
-        for model_item in self.model:
-            for net_type in supported_types:
-                trainable = True
-                if not self.multi_task:
-                    if net_type in self.model_params:
-                        trainable = self.model_params[net_type].get("trainable", True)
-                else:
-                    if net_type in self.model_params["model_dict"][model_item]:
-                        trainable = self.model_params["model_dict"][model_item][
-                            net_type
-                        ].get("trainable", True)
-                if (
-                    hasattr(self.model[model_item], net_type)
-                    and getattr(self.model[model_item], net_type) is not None
-                ):
-                    for param in (
-                        self.model[model_item].__getattr__(net_type).parameters()
-                    ):
-                        param.requires_grad = trainable
-
     def share_params(self, shared_links, resume=False):
-        supported_types = ["type_embedding", "descriptor", "fitting_net"]
+        """
+        Share the parameters of classes following rules defined in shared_links during multitask training.
+        If not start from checkpoint (resume is False),
+        some seperated parameters (e.g. mean and stddev) will be re-calculated across different classes.
+        """
+        supported_types = ["descriptor", "fitting_net"]
         for shared_item in shared_links:
             class_name = shared_links[shared_item]["type"]
             shared_base = shared_links[shared_item]["links"][0]
@@ -158,12 +141,15 @@ class ModelWrapper(torch.nn.Module):
         self,
         coord,
         atype,
+        spin: Optional[torch.Tensor] = None,
         box: Optional[torch.Tensor] = None,
         cur_lr: Optional[torch.Tensor] = None,
         label: Optional[torch.Tensor] = None,
         task_key: Optional[torch.Tensor] = None,
         inference_only=False,
         do_atomic_virial=False,
+        fparam: Optional[torch.Tensor] = None,
+        aparam: Optional[torch.Tensor] = None,
     ):
         if not self.multi_task:
             task_key = "Default"
@@ -171,9 +157,20 @@ class ModelWrapper(torch.nn.Module):
             assert (
                 task_key is not None
             ), f"Multitask model must specify the inference task! Supported tasks are {list(self.model.keys())}."
-        model_pred = self.model[task_key](
-            coord, atype, box=box, do_atomic_virial=do_atomic_virial
-        )
+        input_dict = {
+            "coord": coord,
+            "atype": atype,
+            "box": box,
+            "do_atomic_virial": do_atomic_virial,
+            "fparam": fparam,
+            "aparam": aparam,
+        }
+        has_spin = getattr(self.model[task_key], "has_spin", False)
+        if callable(has_spin):
+            has_spin = has_spin()
+        if has_spin:
+            input_dict["spin"] = spin
+        model_pred = self.model[task_key](**input_dict)
         natoms = atype.shape[-1]
         if not self.inference_only and not inference_only:
             loss, more_loss = self.loss[task_key](
