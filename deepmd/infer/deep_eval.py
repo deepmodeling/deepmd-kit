@@ -25,9 +25,12 @@ from deepmd.env import (
 from deepmd.fit import (
     dipole,
     ener,
+    polar,
 )
 from deepmd.model import (
+    DipoleModel,
     EnerModel,
+    PolarModel,
 )
 from deepmd.utils.batch_size import (
     AutoBatchSize,
@@ -95,7 +98,11 @@ class DeepEval:
         auto_batch_size: Union[bool, int, AutoBatchSize] = False,
     ):
         jdata = j_loader(
-            "input.json" if os.path.exists("input.json") else "dipole_input.json"
+            "input.json"
+            if os.path.exists("input.json")
+            else "dipole_input.json"
+            if os.path.exists("dipole_input.json")
+            else "polar_input.json"
         )
         remove_comment_in_json(jdata)
         model_param = j_must_have(jdata, "model")
@@ -153,10 +160,11 @@ class DeepEval:
                 fitting_param.pop("type", None)
                 fitting = ener.EnerFitting(**fitting_param)
             elif fitting_type == "dipole":
-                fitting_param.pop("type", None)
+                fitting_param.pop("type")
                 fitting = dipole.DipoleFittingSeA(**fitting_param)
-            else:
-                raise NotImplementedError()
+            elif fitting_type == "polar":
+                fitting_param.pop("type")
+                fitting = polar.PolarFittingSeA(**fitting_param)
         else:
             self.fitting_dict = {}
             self.fitting_type_dict = {}
@@ -232,25 +240,24 @@ class DeepEval:
                 # )
 
             elif self.fitting_type == "dipole":
-                raise NotImplementedError()
-                # self.model = DipoleModel(
-                #     descrpt,
-                #     fitting,
-                #     typeebd,
-                #     model_param.get("type_map"),
-                #     model_param.get("data_stat_nbatch", 10),
-                #     model_param.get("data_stat_protect", 1e-2),
-                # )
+                self.model = DipoleModel(
+                    descrpt,
+                    fitting,
+                    typeebd,
+                    model_param.get("type_map"),
+                    model_param.get("data_stat_nbatch", 10),
+                    model_param.get("data_stat_protect", 1e-2),
+                )
             elif self.fitting_type == "polar":
-                raise NotImplementedError()
-                # self.model = PolarModel(
-                #     descrpt,
-                #     fitting,
-                #     typeebd,
-                #     model_param.get("type_map"),
-                #     model_param.get("data_stat_nbatch", 10),
-                #     model_param.get("data_stat_protect", 1e-2),
-                # )
+                # raise NotImplementedError()
+                self.model = PolarModel(
+                    descrpt,
+                    fitting,
+                    typeebd,
+                    model_param.get("type_map"),
+                    model_param.get("data_stat_nbatch", 10),
+                    model_param.get("data_stat_protect", 1e-2),
+                )
             # elif self.fitting_type == 'global_polar':
             #     self.model = GlobalPolarModel(
             #         descrpt,

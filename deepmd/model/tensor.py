@@ -174,7 +174,7 @@ class TensorModel(Model, paddle.nn.Layer):
         model_dict = {self.model_type: output}
 
         if "global" not in self.model_type:
-            gname = "global_" + self.model_type  # "global_dipole"
+            gname = "global_" + self.model_type
             atom_out = paddle.reshape(output, [-1, natomsel, nout])  #  nout=3
             global_out = paddle.sum(atom_out, axis=1)
             global_out = paddle.reshape(

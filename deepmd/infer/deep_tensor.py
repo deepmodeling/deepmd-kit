@@ -344,9 +344,12 @@ class DeepTensor(DeepEval):
                 suffix="",
                 reuse=False,
             )
-        dipole = eval_outputs["dipole"].numpy()
+        if "dipole" in eval_outputs:
+            tensor = eval_outputs["dipole"].numpy()
+        elif "polar" in eval_outputs:
+            tensor = eval_outputs["polar"].numpy()
 
-        return dipole
+        return tensor
 
         # if atomic:
         #     ae = eval_outputs["atom_ener"].numpy()
