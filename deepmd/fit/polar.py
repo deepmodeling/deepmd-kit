@@ -5,6 +5,9 @@ from typing import (
 )
 
 import numpy as np
+from paddle import (
+    nn,
+)
 
 from deepmd.common import (
     cast_precision,
@@ -15,10 +18,8 @@ from deepmd.descriptor import (
     DescrptSeA,
 )
 from deepmd.env import (
+    paddle,
     tf,
-)
-from deepmd.fit.fitting import (
-    Fitting,
 )
 from deepmd.utils.graph import (
     get_fitting_net_variables_from_graph_def,
@@ -29,8 +30,8 @@ from deepmd.utils.network import (
 )
 
 
-@Fitting.register("polar")
-class PolarFittingSeA(Fitting):
+# @Fitting.register("polar")
+class PolarFittingSeA(nn.Layer):
     r"""Fit the atomic polarizability with descriptor se_a.
 
     Parameters
@@ -62,7 +63,7 @@ class PolarFittingSeA(Fitting):
 
     def __init__(
         self,
-        descrpt: tf.Tensor,
+        descrpt: paddle.Tensor,
         neuron: List[int] = [120, 120, 120],
         resnet_dt: bool = True,
         sel_type: Optional[List[int]] = None,
