@@ -173,6 +173,18 @@ class PolarFitting(GeneralFitting):
             else self.embedding_width * self.embedding_width
         )
 
+    def __setitem__(self, key, value):
+        if key in ["constant_matrix"]:
+            self.constant_matrix = value
+        else:
+            super().__setitem__(key, value)
+    
+    def __getitem__(self, key):
+        if key in ["constant_matrix"]:
+            return self.constant_matrix
+        else:
+            super().__getitem__(key, value)
+            
     def serialize(self) -> dict:
         data = super().serialize()
         data["type"] = "polar"
