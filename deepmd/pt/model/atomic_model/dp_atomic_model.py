@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import copy
+import functools
 import logging
 from typing import (
     Dict,
@@ -204,9 +205,23 @@ class DPAtomicModel(torch.nn.Module, BaseAtomicModel):
             # descriptors and fitting net with different type_map
             # should not share the same parameters
             stat_file_path /= " ".join(self.type_map)
-        self.descriptor.compute_input_stats(sampled_func, stat_file_path)
+
+        @functools.lru_cache
+        def wrapped_sampler():
+            sampled = sampled_func()
+            if self.pair_excl is not None:
+                pair_exclude_types = self.pair_excl.get_exclude_types()
+                for sample in sampled:
+                    sample["pair_exclude_types"] = list(pair_exclude_types)
+            if self.atom_excl is not None:
+                atom_exclude_types = self.atom_excl.get_exclude_types()
+                for sample in sampled:
+                    sample["atom_exclude_types"] = list(atom_exclude_types)
+            return sampled
+
+        self.descriptor.compute_input_stats(wrapped_sampler, stat_file_path)
         if self.fitting_net is not None:
-            self.fitting_net.compute_output_stats(sampled_func, stat_file_path)
+            self.fitting_net.compute_output_stats(wrapped_sampler, stat_file_path)
 
     @torch.jit.export
     def get_dim_fparam(self) -> int:

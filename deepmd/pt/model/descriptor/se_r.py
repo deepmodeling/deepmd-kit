@@ -64,6 +64,7 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
         precision: str = "float64",
         resnet_dt: bool = False,
         exclude_types: List[Tuple[int, int]] = [],
+        env_protection: float = 0.0,
         old_impl: bool = False,
         trainable: bool = True,
         **kwargs,
@@ -81,7 +82,9 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
         self.old_impl = False  # this does not support old implementation.
         self.exclude_types = exclude_types
         self.ntypes = len(sel)
-        self.emask = PairExcludeMask(len(sel), exclude_types=exclude_types)
+        # order matters, placed after the assignment of self.ntypes
+        self.reinit_exclude(exclude_types)
+        self.env_protection = env_protection
 
         self.sel = sel
         self.sec = torch.tensor(
@@ -253,6 +256,13 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
         else:
             raise KeyError(key)
 
+    def reinit_exclude(
+        self,
+        exclude_types: List[Tuple[int, int]] = [],
+    ):
+        self.exclude_types = exclude_types
+        self.emask = PairExcludeMask(self.ntypes, exclude_types=exclude_types)
+
     def forward(
         self,
         coord_ext: torch.Tensor,
@@ -302,6 +312,7 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
             self.rcut,
             self.rcut_smth,
             True,
+            protection=self.env_protection,
         )
 
         assert self.filter_layers is not None
@@ -362,6 +373,7 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
             "embeddings": self.filter_layers.serialize(),
             "env_mat": DPEnvMat(self.rcut, self.rcut_smth).serialize(),
             "exclude_types": self.exclude_types,
+            "env_protection": self.env_protection,
             "@variables": {
                 "davg": self["davg"].detach().cpu().numpy(),
                 "dstd": self["dstd"].detach().cpu().numpy(),

@@ -4,6 +4,8 @@ from typing import (
     Dict,
     Iterator,
     List,
+    Tuple,
+    Union,
 )
 
 import numpy as np
@@ -17,6 +19,9 @@ from deepmd.pt.model.descriptor.env_mat import (
 )
 from deepmd.pt.utils import (
     env,
+)
+from deepmd.pt.utils.exclude_mask import (
+    PairExcludeMask,
 )
 from deepmd.pt.utils.nlist import (
     extend_input_and_build_neighbor_list,
@@ -73,13 +78,13 @@ class EnvMatStatSe(EnvMatStat):
         )  # se_r=1, se_a=4
 
     def iter(
-        self, data: List[Dict[str, torch.Tensor]]
+        self, data: List[Dict[str, Union[torch.Tensor, List[Tuple[int, int]]]]]
     ) -> Iterator[Dict[str, StatItem]]:
         """Get the iterator of the environment matrix.
 
         Parameters
         ----------
-        data : List[Dict[str, torch.Tensor]]
+        data : List[Dict[str, Union[torch.Tensor, List[Tuple[int, int]]]]]
             The data.
 
         Yields
@@ -139,6 +144,7 @@ class EnvMatStatSe(EnvMatStat):
                 # TODO: export rcut_smth from DescriptorBlock
                 self.descriptor.rcut_smth,
                 radial_only,
+                protection=self.descriptor.env_protection,
             )
             # reshape to nframes * nloc at the atom level,
             # so nframes/mixed_type do not matter
@@ -156,9 +162,16 @@ class EnvMatStatSe(EnvMatStat):
                     self.descriptor.get_ntypes(), device=env.DEVICE, dtype=torch.int32
                 ).view(-1, 1),
             )
+            if "pair_exclude_types" in system:
+                # shape: (1, nloc, nnei)
+                exclude_mask = PairExcludeMask(
+                    self.descriptor.get_ntypes(), system["pair_exclude_types"]
+                )(nlist, extended_atype).view(1, coord.shape[0] * coord.shape[1], -1)
+                # shape: (ntypes, nloc, nnei)
+                type_idx = torch.logical_and(type_idx.unsqueeze(-1), exclude_mask)
             for type_i in range(self.descriptor.get_ntypes()):
                 dd = env_mat[type_idx[type_i]]
-                dd = dd.reshape([-1, self.last_dim])  # typen_atoms * nnei, 4
+                dd = dd.reshape([-1, self.last_dim])  # typen_atoms * unmasked_nnei, 4
                 env_mats = {}
                 env_mats[f"r_{type_i}"] = dd[:, :1]
                 if self.last_dim == 4:

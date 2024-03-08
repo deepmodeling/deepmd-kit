@@ -9,7 +9,6 @@ from deepmd.pt.infer.deep_eval import (
 )
 from deepmd.pt.model.model import (
     get_model,
-    get_zbl_model,
 )
 from deepmd.pt.utils import (
     env,
@@ -23,7 +22,7 @@ model_se_e2_a = {
         "type": "se_e2_a",
         "sel": [46, 92, 4],
         "rcut_smth": 0.50,
-        "rcut": 6.00,
+        "rcut": 4.00,
         "neuron": [25, 50, 100],
         "resnet_dt": False,
         "axis_neuron": 16,
@@ -59,6 +58,31 @@ model_zbl = {
         "seed": 1,
     },
     "data_stat_nbatch": 20,
+}
+
+model_spin = {
+    "type_map": ["O", "H", "B"],
+    "descriptor": {
+        "type": "se_e2_a",
+        "sel": [46, 92, 4],
+        "rcut_smth": 0.50,
+        "rcut": 4.00,
+        "neuron": [25, 50, 100],
+        "resnet_dt": False,
+        "axis_neuron": 16,
+        "seed": 1,
+    },
+    "fitting_net": {
+        "neuron": [24, 24, 24],
+        "resnet_dt": True,
+        "seed": 1,
+    },
+    "data_stat_nbatch": 20,
+    "spin": {
+        "use_spin": [True, False, False],
+        "virtual_scale": [0.3140],
+        "_comment": " that's all",
+    },
 }
 
 model_dpa2 = {
@@ -205,34 +229,46 @@ class PermutationTest:
         cell = torch.rand([3, 3], dtype=dtype, device=env.DEVICE)
         cell = (cell + cell.T) + 5.0 * torch.eye(3, device=env.DEVICE)
         coord = torch.rand([natoms, 3], dtype=dtype, device=env.DEVICE)
+        spin = torch.rand([natoms, 3], dtype=dtype, device=env.DEVICE)
         coord = torch.matmul(coord, cell)
         atype = torch.tensor([0, 0, 0, 1, 1], dtype=torch.int32, device=env.DEVICE)
         idx_perm = [1, 0, 4, 3, 2]
-        e0, f0, v0 = eval_model(
-            self.model, coord.unsqueeze(0), cell.unsqueeze(0), atype
+        test_spin = getattr(self, "test_spin", False)
+        if not test_spin:
+            test_keys = ["energy", "force", "virial"]
+        else:
+            test_keys = ["energy", "force", "force_mag", "virial"]
+        result_0 = eval_model(
+            self.model,
+            coord.unsqueeze(0),
+            cell.unsqueeze(0),
+            atype,
+            spins=spin.unsqueeze(0),
         )
-        ret0 = {
-            "energy": e0.squeeze(0),
-            "force": f0.squeeze(0),
-            "virial": v0.squeeze(0),
-        }
-        e1, f1, v1 = eval_model(
-            self.model, coord[idx_perm].unsqueeze(0), cell.unsqueeze(0), atype[idx_perm]
+        ret0 = {key: result_0[key].squeeze(0) for key in test_keys}
+        result_1 = eval_model(
+            self.model,
+            coord[idx_perm].unsqueeze(0),
+            cell.unsqueeze(0),
+            atype[idx_perm],
+            spins=spin[idx_perm].unsqueeze(0),
         )
-        ret1 = {
-            "energy": e1.squeeze(0),
-            "force": f1.squeeze(0),
-            "virial": v1.squeeze(0),
-        }
+        ret1 = {key: result_1[key].squeeze(0) for key in test_keys}
         prec = 1e-10
-        torch.testing.assert_close(ret0["energy"], ret1["energy"], rtol=prec, atol=prec)
-        torch.testing.assert_close(
-            ret0["force"][idx_perm], ret1["force"], rtol=prec, atol=prec
-        )
-        if not hasattr(self, "test_virial") or self.test_virial:
-            torch.testing.assert_close(
-                ret0["virial"], ret1["virial"], rtol=prec, atol=prec
-            )
+        for key in test_keys:
+            if key in ["energy"]:
+                torch.testing.assert_close(ret0[key], ret1[key], rtol=prec, atol=prec)
+            elif key in ["force", "force_mag"]:
+                torch.testing.assert_close(
+                    ret0[key][idx_perm], ret1[key], rtol=prec, atol=prec
+                )
+            elif key == "virial":
+                if not hasattr(self, "test_virial") or self.test_virial:
+                    torch.testing.assert_close(
+                        ret0[key], ret1[key], rtol=prec, atol=prec
+                    )
+            else:
+                raise RuntimeError(f"Unexpected test key {key}")
 
 
 class TestEnergyModelSeA(unittest.TestCase, PermutationTest):
@@ -299,7 +335,15 @@ class TestEnergyModelZBL(unittest.TestCase, PermutationTest):
     def setUp(self):
         model_params = copy.deepcopy(model_zbl)
         self.type_split = False
-        self.model = get_zbl_model(model_params).to(env.DEVICE)
+        self.model = get_model(model_params).to(env.DEVICE)
+
+
+class TestEnergyModelSpinSeA(unittest.TestCase, PermutationTest):
+    def setUp(self):
+        model_params = copy.deepcopy(model_spin)
+        self.type_split = False
+        self.test_spin = True
+        self.model = get_model(model_params).to(env.DEVICE)
 
 
 # class TestEnergyFoo(unittest.TestCase):

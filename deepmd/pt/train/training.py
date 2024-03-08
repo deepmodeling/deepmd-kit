@@ -25,6 +25,7 @@ from deepmd.loggers.training import (
 )
 from deepmd.pt.loss import (
     DenoiseLoss,
+    EnergySpinLoss,
     EnergyStdLoss,
     TensorLoss,
 )
@@ -207,27 +208,31 @@ class Trainer:
             _stat_file_path,
             _data_requirement,
         ):
-            _training_data.add_data_requirement(_data_requirement)
-            if _validation_data is not None:
-                _validation_data.add_data_requirement(_data_requirement)
             if _model.get_dim_fparam() > 0:
                 fparam_requirement_items = [
                     DataRequirementItem(
                         "fparam", _model.get_dim_fparam(), atomic=False, must=True
                     )
                 ]
-                _training_data.add_data_requirement(fparam_requirement_items)
-                if _validation_data is not None:
-                    _validation_data.add_data_requirement(fparam_requirement_items)
+                _data_requirement += fparam_requirement_items
             if _model.get_dim_aparam() > 0:
                 aparam_requirement_items = [
                     DataRequirementItem(
                         "aparam", _model.get_dim_aparam(), atomic=True, must=True
                     )
                 ]
-                _training_data.add_data_requirement(aparam_requirement_items)
-                if _validation_data is not None:
-                    _validation_data.add_data_requirement(aparam_requirement_items)
+                _data_requirement += aparam_requirement_items
+            has_spin = getattr(_model, "has_spin", False)
+            if callable(has_spin):
+                has_spin = has_spin()
+            if has_spin:
+                spin_requirement_items = [
+                    DataRequirementItem("spin", ndof=3, atomic=True, must=True)
+                ]
+                _data_requirement += spin_requirement_items
+            _training_data.add_data_requirement(_data_requirement)
+            if _validation_data is not None:
+                _validation_data.add_data_requirement(_data_requirement)
             if not resuming and self.rank == 0:
 
                 @functools.lru_cache
@@ -268,6 +273,9 @@ class Trainer:
             if loss_type == "ener":
                 loss_params["starter_learning_rate"] = start_lr
                 return EnergyStdLoss(**loss_params)
+            elif loss_type == "ener_spin":
+                loss_params["starter_learning_rate"] = start_lr
+                return EnergySpinLoss(**loss_params)
             elif loss_type == "denoise":
                 loss_params["ntypes"] = _ntypes
                 return DenoiseLoss(**loss_params)
@@ -961,7 +969,7 @@ class Trainer:
                     batch_data = next(iter(self.validation_data[task_key]))
 
         for key in batch_data.keys():
-            if key == "sid" or key == "fid":
+            if key == "sid" or key == "fid" or key == "box":
                 continue
             elif not isinstance(batch_data[key], list):
                 if batch_data[key] is not None:
@@ -973,8 +981,8 @@ class Trainer:
         input_keys = [
             "coord",
             "atype",
-            "box",
             "spin",
+            "box",
             "fparam",
             "aparam",
         ]

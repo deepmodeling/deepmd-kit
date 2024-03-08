@@ -21,7 +21,7 @@ def phys2inter(
         the internal coordinates
 
     """
-    rec_cell = torch.linalg.inv(cell)
+    rec_cell, _ = torch.linalg.inv_ex(cell)
     return torch.matmul(coord, rec_cell)
 
 
