@@ -163,7 +163,7 @@ class PolarFittingNet(GeneralFitting):
         data["@variables"]["scale"] = to_numpy_array(self.scale)
         data["@variables"]["constant_matrix"] = to_numpy_array(self.constant_matrix)
         return data
-    
+
     @classmethod
     def deserialize(cls, data: dict) -> "GeneralFitting":
         data = copy.deepcopy(data)

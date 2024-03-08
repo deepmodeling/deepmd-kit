@@ -23,14 +23,14 @@ from deepmd.dpmodel.output_def import (
     OutputVariableDef,
     fitting_check_output,
 )
+from deepmd.utils.version import (
+    check_version_compatibility,
+)
 
 from .general_fitting import (
     GeneralFitting,
 )
 
-from deepmd.utils.version import (
-    check_version_compatibility,
-)
 
 @BaseFitting.register("polar")
 @fitting_check_output
@@ -184,7 +184,7 @@ class PolarFitting(GeneralFitting):
         data["@variables"]["scale"] = self.scale
         data["@variables"]["constant_matrix"] = self.constant_matrix
         return data
-    
+
     @classmethod
     def deserialize(cls, data: dict) -> "GeneralFitting":
         data = copy.deepcopy(data)

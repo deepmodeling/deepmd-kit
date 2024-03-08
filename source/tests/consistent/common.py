@@ -257,7 +257,7 @@ class CommonTest(ABC):
             common_keys = set(data1.keys()) & set(data2.keys())
             data1 = {k: data1[k] for k in common_keys}
             data2 = {k: data2[k] for k in common_keys}
-            
+
         # not comparing version
         data1.pop("@version")
         data2.pop("@version")

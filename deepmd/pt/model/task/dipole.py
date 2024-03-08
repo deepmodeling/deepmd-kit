@@ -26,7 +26,6 @@ from deepmd.pt.utils.env import (
 from deepmd.utils.path import (
     DPPath,
 )
-
 from deepmd.utils.version import (
     check_version_compatibility,
 )
@@ -127,7 +126,7 @@ class DipoleFittingNet(GeneralFitting):
         data["r_differentiable"] = self.r_differentiable
         data["c_differentiable"] = self.c_differentiable
         return data
-    
+
     @classmethod
     def deserialize(cls, data: dict) -> "GeneralFitting":
         data = copy.deepcopy(data)

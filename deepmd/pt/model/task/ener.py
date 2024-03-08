@@ -142,13 +142,12 @@ class InvarFitting(GeneralFitting):
         data["dim_out"] = self.dim_out
         data["atom_ener"] = self.atom_ener
         return data
-    
+
     @classmethod
     def deserialize(cls, data: dict) -> "GeneralFitting":
         data = copy.deepcopy(data)
         check_version_compatibility(data.pop("@version", 1), 1, 1)
         return super().deserialize(data)
-
 
     def compute_output_stats(
         self,

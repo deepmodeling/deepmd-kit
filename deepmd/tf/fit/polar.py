@@ -586,7 +586,9 @@ class PolarFittingSeA(Fitting):
             The deserialized model
         """
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 2, 1) # to allow PT version.
+        check_version_compatibility(
+            data.pop("@version", 1), 2, 1
+        )  # to allow PT version.
         fitting = cls(**data)
         fitting.fitting_net_variables = cls.deserialize_network(
             data["nets"],

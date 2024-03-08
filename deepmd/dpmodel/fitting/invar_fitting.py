@@ -17,13 +17,14 @@ from deepmd.dpmodel.output_def import (
     OutputVariableDef,
     fitting_check_output,
 )
+from deepmd.utils.version import (
+    check_version_compatibility,
+)
 
 from .general_fitting import (
     GeneralFitting,
 )
-from deepmd.utils.version import (
-    check_version_compatibility,
-)
+
 
 @GeneralFitting.register("invar")
 @fitting_check_output
@@ -171,7 +172,7 @@ class InvarFitting(GeneralFitting):
         data["dim_out"] = self.dim_out
         data["atom_ener"] = self.atom_ener
         return data
-    
+
     @classmethod
     def deserialize(cls, data: dict) -> "GeneralFitting":
         data = copy.deepcopy(data)

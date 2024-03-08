@@ -21,6 +21,7 @@ from deepmd.dpmodel.utils import (
     FittingNet,
     NetworkCollection,
 )
+
 from .base_fitting import (
     BaseFitting,
 )
