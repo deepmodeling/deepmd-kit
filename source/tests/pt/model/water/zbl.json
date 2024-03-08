@@ -6,9 +6,18 @@
     "sw_rmin": 0.8,
     "sw_rmax": 1.0,
     "type_map": {
-      "pairtab":["O","H"],
-      "dp": ["O", "H"],
-      "zbl": ["O", "H"]
+      "pairtab": [
+        "O",
+        "H"
+      ],
+      "dp": [
+        "O",
+        "H"
+      ],
+      "zbl": [
+        "O",
+        "H"
+      ]
     },
     "descriptor": {
       "type": "se_e2_a",

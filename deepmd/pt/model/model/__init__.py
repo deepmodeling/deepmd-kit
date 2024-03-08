@@ -99,7 +99,9 @@ def get_zbl_model(model_params):
         if "ener" in fitting_net["type"]:
             fitting_net["return_energy"] = True
     fitting = BaseFitting(**fitting_net)
-    dp_model = DPAtomicModel(descriptor, fitting, type_map=model_params["type_map"]["dp"])
+    dp_model = DPAtomicModel(
+        descriptor, fitting, type_map=model_params["type_map"]["dp"]
+    )
     # pairtab
     filepath = model_params["use_srtab"]
     pt_model = PairTabAtomicModel(
