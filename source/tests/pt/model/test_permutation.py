@@ -37,7 +37,11 @@ model_se_e2_a = {
 }
 
 model_zbl = {
-    "type_map": ["O", "H", "B"],
+    "type_map": {
+        "zbl":["O", "H", "B"],
+        "pairtab":["B", "O", "H"],
+        "dp": ["H", "B", "O"]
+    },
     "use_srtab": "source/tests/pt/model/water/data/zbl_tab_potential/H2O_tab_potential.txt",
     "smin_alpha": 0.1,
     "sw_rmin": 0.2,
