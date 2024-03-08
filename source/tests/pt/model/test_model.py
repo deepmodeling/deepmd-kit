@@ -276,14 +276,7 @@ class TestEnergy(unittest.TestCase):
         my_ds = DpLoaderSet(
             self.systems,
             self.batch_size,
-            model_params={
-                "descriptor": {
-                    "type": "se_e2_a",
-                    "sel": self.sel,
-                    "rcut": self.rcut,
-                },
-                "type_map": self.type_map,
-            },
+            self.type_map
         )
         my_ds.add_data_requirement(energy_data_requirement)
         my_model = get_model(

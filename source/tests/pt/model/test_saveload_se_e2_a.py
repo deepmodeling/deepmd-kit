@@ -49,14 +49,7 @@ def get_dataset(config):
     dataset = DpLoaderSet(
         systems,
         batch_size,
-        model_params={
-            "descriptor": {
-                "type": "se_e2_a",
-                "sel": sel,
-                "rcut": rcut,
-            },
-            "type_map": type_map,
-        },
+        type_map
     )
     data_stat_nbatch = model_config.get("data_stat_nbatch", 10)
     sampled = make_stat_input(dataset.systems, dataset.dataloaders, data_stat_nbatch)
