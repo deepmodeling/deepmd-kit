@@ -128,7 +128,9 @@ class LKFOptimizer(Optimizer):
                     params_packed_index.append(param_num)
                     if self.rank == device_id:
                         dist_device = torch.device("cuda:" + str(device_id))
-                        P.append(torch.eye(param_num, dtype=data_type, device=dist_device))
+                        P.append(
+                            torch.eye(param_num, dtype=data_type, device=dist_device)
+                        )
         else:
             for param_num in param_nums:
                 if param_num >= block_size:
