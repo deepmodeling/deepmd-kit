@@ -178,13 +178,13 @@ class PolarFitting(GeneralFitting):
             self.constant_matrix = value
         else:
             super().__setitem__(key, value)
-    
+
     def __getitem__(self, key):
         if key in ["constant_matrix"]:
             return self.constant_matrix
         else:
             super().__getitem__(key, value)
-            
+
     def serialize(self) -> dict:
         data = super().serialize()
         data["type"] = "polar"

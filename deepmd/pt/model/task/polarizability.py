@@ -157,7 +157,7 @@ class PolarFittingNet(GeneralFitting):
             self.constant_matrix = value
         else:
             super().__setitem__(key, value)
-    
+
     def __getitem__(self, key):
         if key in ["constant_matrix"]:
             return self.constant_matrix
