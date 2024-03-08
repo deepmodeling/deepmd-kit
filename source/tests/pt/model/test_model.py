@@ -273,11 +273,7 @@ class TestEnergy(unittest.TestCase):
             self.wanted_step
         )
         # Build DeePMD graph
-        my_ds = DpLoaderSet(
-            self.systems,
-            self.batch_size,
-            self.type_map
-        )
+        my_ds = DpLoaderSet(self.systems, self.batch_size, self.type_map)
         my_ds.add_data_requirement(energy_data_requirement)
         my_model = get_model(
             model_params={
