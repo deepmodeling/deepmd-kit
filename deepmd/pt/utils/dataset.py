@@ -3,6 +3,7 @@
 
 from typing import (
     List,
+    Optional,
 )
 
 from torch.utils.data import (
@@ -16,24 +17,16 @@ from deepmd.utils.data import (
 
 
 class DeepmdDataSetForLoader(Dataset):
-    def __init__(
-        self,
-        system: str,
-        type_map: str,
-        shuffle=True,
-    ):
+    def __init__(self, system: str, type_map: Optional[List[str]] = None):
         """Construct DeePMD-style dataset containing frames cross different systems.
 
         Args:
         - systems: Paths to systems.
-        - batch_size: Max frame count in a batch.
         - type_map: Atom types.
         """
         self.system = system
         self._type_map = type_map
-        self._data_system = DeepmdData(
-            sys_path=system, shuffle_test=shuffle, type_map=self._type_map
-        )
+        self._data_system = DeepmdData(sys_path=system, type_map=self._type_map)
         self.mixed_type = self._data_system.mixed_type
         self._ntypes = self._data_system.get_ntypes()
         self._natoms = self._data_system.get_natoms()

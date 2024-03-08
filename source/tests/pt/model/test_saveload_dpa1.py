@@ -46,18 +46,7 @@ def get_dataset(config):
     batch_size = config["training"]["training_data"]["batch_size"]
     type_map = model_config["type_map"]
 
-    dataset = DpLoaderSet(
-        systems,
-        batch_size,
-        model_params={
-            "descriptor": {
-                "type": "dpa1",
-                "sel": sel,
-                "rcut": rcut,
-            },
-            "type_map": type_map,
-        },
-    )
+    dataset = DpLoaderSet(systems, batch_size, type_map)
     data_stat_nbatch = model_config.get("data_stat_nbatch", 10)
     sampled = make_stat_input(dataset.systems, dataset.dataloaders, data_stat_nbatch)
     return dataset, sampled
