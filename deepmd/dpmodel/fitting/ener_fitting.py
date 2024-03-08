@@ -63,6 +63,7 @@ class EnergyFittingNet(InvarFitting):
             use_aparam_as_mask=use_aparam_as_mask,
             spin=spin,
             mixed_types=mixed_types,
+            exclude_types=exclude_types,
         )
 
     @classmethod

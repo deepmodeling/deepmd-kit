@@ -8,11 +8,11 @@ import numpy as np
 import torch
 
 from deepmd.dpmodel.atomic_model import (
-    DPZBLLinearAtomicModel as DPDPZBLLinearAtomicModel,
+    DPZBLLinearEnergyAtomicModel as DPDPZBLLinearEnergyAtomicModel,
 )
 from deepmd.pt.model.atomic_model import (
     DPAtomicModel,
-    DPZBLLinearAtomicModel,
+    DPZBLLinearEnergyAtomicModel,
     PairTabAtomicModel,
 )
 from deepmd.pt.model.descriptor.se_a import (
@@ -70,10 +70,10 @@ class TestWeightCalculation(unittest.TestCase):
 
         type_map = ["foo", "bar"]
         zbl_model = PairTabAtomicModel(
-            tab_file=file_path, rcut=0.3, sel=2, type_map=type_map
+            tab_file=file_path, rcut=0.3, sel=2, type_map=type_map[::-1]
         )
         dp_model = DPAtomicModel(ds, ft, type_map=type_map).to(env.DEVICE)
-        wgt_model = DPZBLLinearAtomicModel(
+        wgt_model = DPZBLLinearEnergyAtomicModel(
             dp_model,
             zbl_model,
             sw_rmin=0.1,
@@ -145,17 +145,17 @@ class TestIntegration(unittest.TestCase, TestCaseSingleFrameWithNlist):
         zbl_model = PairTabAtomicModel(
             file_path, self.rcut, sum(self.sel), type_map=type_map
         )
-        self.md0 = DPZBLLinearAtomicModel(
+        self.md0 = DPZBLLinearEnergyAtomicModel(
             dp_model,
             zbl_model,
             sw_rmin=0.1,
             sw_rmax=0.25,
             type_map=type_map,
         ).to(env.DEVICE)
-        self.md1 = DPZBLLinearAtomicModel.deserialize(self.md0.serialize()).to(
+        self.md1 = DPZBLLinearEnergyAtomicModel.deserialize(self.md0.serialize()).to(
             env.DEVICE
         )
-        self.md2 = DPDPZBLLinearAtomicModel.deserialize(self.md0.serialize())
+        self.md2 = DPDPZBLLinearEnergyAtomicModel.deserialize(self.md0.serialize())
         self.md3 = DPZBLModel(
             dp_model, zbl_model, sw_rmin=0.1, sw_rmax=0.25, type_map=type_map
         )
@@ -183,6 +183,24 @@ class TestIntegration(unittest.TestCase, TestCaseSingleFrameWithNlist):
         md3 = torch.jit.script(self.md3)
         self.assertEqual(md3.get_rcut(), self.rcut)
         self.assertEqual(md3.get_type_map(), ["foo", "bar"])
+
+
+class TestRemmapMethod(unittest.TestCase):
+    def test_valid(self):
+        atype = torch.randint(0, 3, (4, 20), device=env.DEVICE)
+        commonl = ["H", "O", "S"]
+        originl = ["Si", "H", "O", "S"]
+        mapping = DPZBLLinearEnergyAtomicModel.remap_atype(originl, commonl)
+        new_atype = mapping[atype]
+
+        def trans(atype, map):
+            idx = atype.flatten().tolist()
+            res = []
+            for i in idx:
+                res.append(map[i])
+            return res
+
+        assert trans(atype, commonl) == trans(new_atype, originl)
 
 
 if __name__ == "__main__":

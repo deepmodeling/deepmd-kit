@@ -57,7 +57,9 @@ class DeepEvalBackend(ABC):
         "energy": "atom_energy",
         "energy_redu": "energy",
         "energy_derv_r": "force",
+        "energy_derv_r_mag": "force_mag",
         "energy_derv_c": "atom_virial",
+        "energy_derv_c_mag": "atom_virial_mag",
         "energy_derv_c_redu": "virial",
         "polar": "polar",
         "polar_redu": "global_polar",
@@ -71,6 +73,8 @@ class DeepEvalBackend(ABC):
         "dipole_derv_c_redu": "virial",
         "dos": "atom_dos",
         "dos_redu": "dos",
+        "mask_mag": "mask_mag",
+        "mask": "mask",
     }
 
     @abstractmethod
@@ -262,9 +266,13 @@ class DeepEvalBackend(ABC):
         """Check if the model has efield."""
         return False
 
+    def get_has_spin(self):
+        """Check if the model has spin atom types."""
+        return False
+
     @abstractmethod
     def get_ntypes_spin(self) -> int:
-        """Get the number of spin atom types of this model."""
+        """Get the number of spin atom types of this model. Only used in old implement."""
 
 
 class DeepEval(ABC):
@@ -317,6 +325,8 @@ class DeepEval(ABC):
             neighbor_list=neighbor_list,
             **kwargs,
         )
+        if self.deep_eval.get_has_spin() and hasattr(self, "output_def_mag"):
+            self.deep_eval.output_def = self.output_def_mag
 
     @property
     @abstractmethod
@@ -518,6 +528,11 @@ class DeepEval(ABC):
         """Check if the model has efield."""
         return self.deep_eval.get_has_efield()
 
+    @property
+    def has_spin(self) -> bool:
+        """Check if the model has spin."""
+        return self.deep_eval.get_has_spin()
+
     def get_ntypes_spin(self) -> int:
-        """Get the number of spin atom types of this model."""
+        """Get the number of spin atom types of this model. Only used in old implement."""
         return self.deep_eval.get_ntypes_spin()

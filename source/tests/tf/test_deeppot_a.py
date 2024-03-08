@@ -804,7 +804,7 @@ class TestModelConvert(unittest.TestCase):
         convert_pbtxt_to_pb(str(infer_path / "sea_012.pbtxt"), old_model)
         run_dp(f"dp convert-from 0.12 -i {old_model} -o {new_model}")
         dp = DeepPot(new_model)
-        _, _, _, _, _ = dp.eval(self.coords, self.box, self.atype, atomic=True)
+        _ = dp.eval(self.coords, self.box, self.atype, atomic=True)
         os.remove(old_model)
         os.remove(new_model)
 
@@ -814,7 +814,7 @@ class TestModelConvert(unittest.TestCase):
         convert_pbtxt_to_pb(str(infer_path / "sea_012.pbtxt"), old_model)
         run_dp(f"dp convert-from -i {old_model} -o {new_model}")
         dp = DeepPot(new_model)
-        _, _, _, _, _ = dp.eval(self.coords, self.box, self.atype, atomic=True)
+        _ = dp.eval(self.coords, self.box, self.atype, atomic=True)
         os.remove(old_model)
         os.remove(new_model)
 

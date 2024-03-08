@@ -66,9 +66,17 @@ class PairTabAtomicModel(BaseAtomicModel):
         self.type_map = type_map
 
         self.tab = PairTab(self.tab_file, rcut=rcut)
+        self.type_map = type_map
+        self.ntypes = len(type_map)
 
         if self.tab_file is not None:
             self.tab_info, self.tab_data = self.tab.get()
+            nspline, ntypes_tab = self.tab_info[-2:].astype(int)
+            self.tab_data = self.tab_data.reshape(ntypes_tab, ntypes_tab, nspline, 4)
+            if self.ntypes != ntypes_tab:
+                raise ValueError(
+                    "The `type_map` provided does not match the number of columns in the table."
+                )
         else:
             self.tab_info, self.tab_data = None, None
 
@@ -145,7 +153,8 @@ class PairTabAtomicModel(BaseAtomicModel):
         tab_model = cls(None, rcut, sel, type_map, **data)
         tab_model.tab = tab
         tab_model.tab_info = tab_model.tab.tab_info
-        tab_model.tab_data = tab_model.tab.tab_data
+        nspline, ntypes = tab_model.tab_info[-2:].astype(int)
+        tab_model.tab_data = tab_model.tab.tab_data.reshape(ntypes, ntypes, nspline, 4)
         return tab_model
 
     def forward_atomic(

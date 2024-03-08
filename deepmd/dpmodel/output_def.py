@@ -125,6 +125,8 @@ class OutputVariableOperation(IntEnum):
     """Derivative w.r.t. cell."""
     _SEC_DERV_R = 8
     """Second derivative w.r.t. coordinates."""
+    MAG = 16
+    """Magnetic output."""
 
 
 class OutputVariableCategory(IntEnum):
@@ -142,6 +144,10 @@ class OutputVariableCategory(IntEnum):
     """Virial, the transposed negative gradient with cell tensor times cell tensor, see eq 40 JCP 159, 054801 (2023). """
     DERV_R_DERV_R = OutputVariableOperation.DERV_R | OutputVariableOperation._SEC_DERV_R
     """Hession matrix, the second derivative w.r.t. coordinates."""
+    DERV_R_MAG = OutputVariableOperation.DERV_R | OutputVariableOperation.MAG
+    """Magnetic part of negative derivative w.r.t. coordinates. (e.g. magnetic force)"""
+    DERV_C_MAG = OutputVariableOperation.DERV_C | OutputVariableOperation.MAG
+    """Magnetic part of atomic component of the virial."""
 
 
 class OutputVariableDef:
@@ -176,8 +182,10 @@ class OutputVariableDef:
           If the variable is defined for each atom.
     category : int
           The category of the output variable.
-    hessian : bool
+    r_hessian : bool
           If hessian is requred
+    magnetic : bool
+          If the derivatives of variable have magnetic parts.
     """
 
     def __init__(
@@ -190,6 +198,7 @@ class OutputVariableDef:
         atomic: bool = True,
         category: int = OutputVariableCategory.OUT.value,
         r_hessian: bool = False,
+        magnetic: bool = False,
     ):
         self.name = name
         self.shape = list(shape)
@@ -208,6 +217,7 @@ class OutputVariableDef:
             raise ValueError("a reduciable variable should be atomic")
         self.category = category
         self.r_hessian = r_hessian
+        self.magnetic = magnetic
         if self.r_hessian:
             if not self.reduciable:
                 raise ValueError("only reduciable variable can calculate hessian")
@@ -271,6 +281,7 @@ class ModelOutputDef:
         self.def_derv_r, self.def_derv_c = do_derivative(self.def_outp.get_data())
         self.def_hess_r, _ = do_derivative(self.def_derv_r)
         self.def_derv_c_redu = do_reduce(self.def_derv_c)
+        self.def_mask = do_mask(self.def_outp.get_data())
         self.var_defs: Dict[str, OutputVariableDef] = {}
         for ii in [
             self.def_outp.get_data(),
@@ -279,6 +290,7 @@ class ModelOutputDef:
             self.def_derv_r,
             self.def_derv_c_redu,
             self.def_hess_r,
+            self.def_mask,
         ]:
             self.var_defs.update(ii)
 
@@ -324,12 +336,16 @@ def get_deriv_name(name: str) -> Tuple[str, str]:
     return name + "_derv_r", name + "_derv_c"
 
 
+def get_deriv_name_mag(name: str) -> Tuple[str, str]:
+    return name + "_derv_r_mag", name + "_derv_c_mag"
+
+
 def get_hessian_name(name: str) -> str:
     return name + "_derv_r_derv_r"
 
 
 def apply_operation(var_def: OutputVariableDef, op: OutputVariableOperation) -> int:
-    """Apply a operation to the category of a variable definition.
+    """Apply an operation to the category of a variable definition.
 
     Parameters
     ----------
@@ -401,6 +417,31 @@ def do_reduce(
     return def_redu
 
 
+def do_mask(
+    def_outp_data: Dict[str, OutputVariableDef],
+) -> Dict[str, OutputVariableDef]:
+    def_mask: Dict[str, OutputVariableDef] = {}
+    # for deep eval when has atomic mask
+    def_mask["mask"] = OutputVariableDef(
+        name="mask",
+        shape=[1],
+        reduciable=False,
+        r_differentiable=False,
+        c_differentiable=False,
+    )
+    for kk, vv in def_outp_data.items():
+        if vv.magnetic:
+            # for deep eval when has atomic mask for magnetic atoms
+            def_mask["mask_mag"] = OutputVariableDef(
+                name="mask_mag",
+                shape=[1],
+                reduciable=False,
+                r_differentiable=False,
+                c_differentiable=False,
+            )
+    return def_mask
+
+
 def do_derivative(
     def_outp_data: Dict[str, OutputVariableDef],
 ) -> Tuple[Dict[str, OutputVariableDef], Dict[str, OutputVariableDef]]:
@@ -408,6 +449,7 @@ def do_derivative(
     def_derv_c: Dict[str, OutputVariableDef] = {}
     for kk, vv in def_outp_data.items():
         rkr, rkc = get_deriv_name(kk)
+        rkrm, rkcm = get_deriv_name_mag(kk)
         if vv.r_differentiable:
             def_derv_r[rkr] = OutputVariableDef(
                 rkr,
@@ -420,9 +462,22 @@ def do_derivative(
                 atomic=True,
                 category=apply_operation(vv, OutputVariableOperation.DERV_R),
             )
+            if vv.magnetic:
+                def_derv_r[rkrm] = OutputVariableDef(
+                    rkrm,
+                    vv.shape + [3],  # noqa: RUF005
+                    reduciable=False,
+                    r_differentiable=(
+                        vv.r_hessian and vv.category == OutputVariableCategory.OUT.value
+                    ),
+                    c_differentiable=False,
+                    atomic=True,
+                    category=apply_operation(vv, OutputVariableOperation.DERV_R),
+                    magnetic=True,
+                )
+
         if vv.c_differentiable:
             assert vv.r_differentiable
-            rkr, rkc = get_deriv_name(kk)
             def_derv_c[rkc] = OutputVariableDef(
                 rkc,
                 vv.shape + [9],  # noqa: RUF005
@@ -432,4 +487,15 @@ def do_derivative(
                 atomic=True,
                 category=apply_operation(vv, OutputVariableOperation.DERV_C),
             )
+            if vv.magnetic:
+                def_derv_r[rkcm] = OutputVariableDef(
+                    rkcm,
+                    vv.shape + [9],  # noqa: RUF005
+                    reduciable=True,
+                    r_differentiable=False,
+                    c_differentiable=False,
+                    atomic=True,
+                    category=apply_operation(vv, OutputVariableOperation.DERV_C),
+                    magnetic=True,
+                )
     return def_derv_r, def_derv_c

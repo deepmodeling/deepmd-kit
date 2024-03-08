@@ -95,6 +95,7 @@ class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 to_numpy_array(ret0["foo"]),
                 to_numpy_array(ret2["foo"]),
             )
+            self.assertEqual(ft0.get_sel_type(), ft1.get_sel_type())
 
     def test_new_old(
         self,

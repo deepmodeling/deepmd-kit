@@ -141,8 +141,8 @@ class ModelWrapper(torch.nn.Module):
         self,
         coord,
         atype,
-        box: Optional[torch.Tensor] = None,
         spin: Optional[torch.Tensor] = None,
+        box: Optional[torch.Tensor] = None,
         cur_lr: Optional[torch.Tensor] = None,
         label: Optional[torch.Tensor] = None,
         task_key: Optional[torch.Tensor] = None,
@@ -157,14 +157,20 @@ class ModelWrapper(torch.nn.Module):
             assert (
                 task_key is not None
             ), f"Multitask model must specify the inference task! Supported tasks are {list(self.model.keys())}."
-        model_pred = self.model[task_key](
-            coord,
-            atype,
-            box=box,
-            do_atomic_virial=do_atomic_virial,
-            fparam=fparam,
-            aparam=aparam,
-        )
+        input_dict = {
+            "coord": coord,
+            "atype": atype,
+            "box": box,
+            "do_atomic_virial": do_atomic_virial,
+            "fparam": fparam,
+            "aparam": aparam,
+        }
+        has_spin = getattr(self.model[task_key], "has_spin", False)
+        if callable(has_spin):
+            has_spin = has_spin()
+        if has_spin:
+            input_dict["spin"] = spin
+        model_pred = self.model[task_key](**input_dict)
         natoms = atype.shape[-1]
         if not self.inference_only and not inference_only:
             loss, more_loss = self.loss[task_key](

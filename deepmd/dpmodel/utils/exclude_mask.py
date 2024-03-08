@@ -24,6 +24,12 @@ class AtomExcludeMask:
         # (ntypes)
         self.type_mask = self.type_mask.reshape([-1])
 
+    def get_exclude_types(self):
+        return self.exclude_types
+
+    def get_type_mask(self):
+        return self.type_mask
+
     def build_type_exclude_mask(
         self,
         atype: np.ndarray,
@@ -74,6 +80,9 @@ class PairExcludeMask:
         )
         # (ntypes+1 x ntypes+1)
         self.type_mask = self.type_mask.reshape([-1])
+
+    def get_exclude_types(self):
+        return self.exclude_types
 
     def build_type_exclude_mask(
         self,
