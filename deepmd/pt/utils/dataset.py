@@ -16,11 +16,7 @@ from deepmd.utils.data import (
 
 
 class DeepmdDataSetForLoader(Dataset):
-    def __init__(
-        self,
-        system: str,
-        type_map: str
-    ):
+    def __init__(self, system: str, type_map: str):
         """Construct DeePMD-style dataset containing frames cross different systems.
 
         Args:
@@ -29,9 +25,7 @@ class DeepmdDataSetForLoader(Dataset):
         """
         self.system = system
         self._type_map = type_map
-        self._data_system = DeepmdData(
-            sys_path=system,type_map=self._type_map
-        )
+        self._data_system = DeepmdData(sys_path=system, type_map=self._type_map)
         self.mixed_type = self._data_system.mixed_type
         self._ntypes = self._data_system.get_ntypes()
         self._natoms = self._data_system.get_natoms()

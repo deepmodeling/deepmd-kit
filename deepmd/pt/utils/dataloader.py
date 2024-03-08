@@ -62,14 +62,15 @@ class DpLoaderSet(Dataset):
     sys_path
             Path to the data system
     batch_size
-            Max frame count in a batch. 
+            Max frame count in a batch.
     type_map
             Gives the name of different atom types
-    seed    
+    seed
             Random seed for dataloader
     shuffle
             If the data are shuffled (Only effective in serial mode. Always shuffle in distributed data parallelism)
     """
+
     def __init__(
         self,
         systems,
