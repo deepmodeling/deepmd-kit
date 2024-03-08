@@ -31,6 +31,7 @@ from deepmd.fit import (
     Fitting,
     dipole,
     ener,
+    polar,
 )
 from deepmd.loss import (
     DOSLoss,
@@ -152,12 +153,11 @@ class DPTrainer:
             descrpt_param["multi_task"] = True
         if descrpt_param["type"] in ["se_e2_a", "se_a", "se_e2_r", "se_r", "hybrid"]:
             descrpt_param["spin"] = self.spin
+            descrpt_param.pop("type")
+            self.descrpt = deepmd.descriptor.se_a.DescrptSeA(**descrpt_param)
         elif descrpt_param["type"] == "se_a_mask":
             descrpt_param.pop("type")
             self.descrpt = deepmd.descriptor.se_a_mask.DescrptSeAMask(**descrpt_param)
-        else:
-            descrpt_param.pop("type")
-            self.descrpt = deepmd.descriptor.se_a.DescrptSeA(**descrpt_param)
 
         # fitting net
         if not self.multi_task_mode:
@@ -167,15 +167,20 @@ class DPTrainer:
             if fitting_type == "ener":
                 fitting_param["spin"] = self.spin
                 fitting_param.pop("type")
-            fitting_param["mixed_prec"] = self.mixed_prec
-            if fitting_param["mixed_prec"] is not None:
-                fitting_param["precision"]: str = self.mixed_prec["output_prec"]
                 self.fitting = ener.EnerFitting(**fitting_param)
             elif fitting_type == "dipole":
                 fitting_param.pop("type")
                 self.fitting = dipole.DipoleFittingSeA(**fitting_param)
+            elif fitting_type == "polar":
+                fitting_param.pop("type")
+                self.fitting = polar.PolarFittingSeA(**fitting_param)
             else:
                 raise NotImplementedError
+
+            fitting_param["mixed_prec"] = self.mixed_prec
+            if fitting_param["mixed_prec"] is not None:
+                fitting_param["precision"]: str = self.mixed_prec["output_prec"]
+
         else:
             raise NotImplementedError("multi-task mode is not supported")
             self.fitting_dict = {}

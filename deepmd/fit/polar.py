@@ -5,9 +5,11 @@ from typing import (
 )
 
 import numpy as np
+from paddle import (
+    nn,
+)
 
 from deepmd.common import (
-    cast_precision,
     get_activation_func,
     get_precision,
 )
@@ -15,22 +17,20 @@ from deepmd.descriptor import (
     DescrptSeA,
 )
 from deepmd.env import (
+    paddle,
     tf,
-)
-from deepmd.fit.fitting import (
-    Fitting,
 )
 from deepmd.utils.graph import (
     get_fitting_net_variables_from_graph_def,
 )
+from deepmd.utils.network import OneLayer as OneLayer_deepmd
 from deepmd.utils.network import (
-    one_layer,
     one_layer_rand_seed_shift,
 )
 
 
-@Fitting.register("polar")
-class PolarFittingSeA(Fitting):
+# @Fitting.register("polar")
+class PolarFittingSeA(nn.Layer):
     r"""Fit the atomic polarizability with descriptor se_a.
 
     Parameters
@@ -62,7 +62,7 @@ class PolarFittingSeA(Fitting):
 
     def __init__(
         self,
-        descrpt: tf.Tensor,
+        descrpt: paddle.Tensor,
         neuron: List[int] = [120, 120, 120],
         resnet_dt: bool = True,
         sel_type: Optional[List[int]] = None,
@@ -75,6 +75,7 @@ class PolarFittingSeA(Fitting):
         precision: str = "default",
         uniform_seed: bool = False,
     ) -> None:
+        super().__init__(name_scope="PolarFittingSeA")
         """Constructor."""
         self.ntypes = descrpt.get_ntypes()
         self.dim_descrpt = descrpt.get_dim_out()
@@ -84,6 +85,7 @@ class PolarFittingSeA(Fitting):
         self.fit_diag = fit_diag
         self.seed = seed
         self.uniform_seed = uniform_seed
+        self.ntypes_spin = 0
         self.seed_shift = one_layer_rand_seed_shift()
         # self.diag_shift = diag_shift
         self.shift_diag = shift_diag
@@ -115,6 +117,71 @@ class PolarFittingSeA(Fitting):
         self.useBN = False
         self.fitting_net_variables = None
         self.mixed_prec = None
+
+        type_suffix = ""
+        suffix = ""
+        self.one_layers = nn.LayerList()
+        self.final_layers = nn.LayerList()
+        ntypes_atom = self.ntypes - self.ntypes_spin
+        for type_i in range(0, ntypes_atom):
+            type_i_layers = nn.LayerList()
+            for ii in range(0, len(self.n_neuron)):
+                layer_suffix = "layer_" + str(ii) + type_suffix + suffix
+
+                if ii >= 1 and self.n_neuron[ii] == self.n_neuron[ii - 1]:
+                    type_i_layers.append(
+                        OneLayer_deepmd(
+                            self.n_neuron[ii - 1],
+                            self.n_neuron[ii],
+                            activation_fn=self.fitting_activation_fn,
+                            precision=self.fitting_precision,
+                            name=layer_suffix,
+                            seed=self.seed,
+                            use_timestep=self.resnet_dt,
+                        )
+                    )
+                else:
+                    type_i_layers.append(
+                        OneLayer_deepmd(
+                            self.dim_descrpt,
+                            self.n_neuron[ii],
+                            activation_fn=self.fitting_activation_fn,
+                            precision=self.fitting_precision,
+                            name=layer_suffix,
+                            seed=self.seed,
+                        )
+                    )
+                if (not self.uniform_seed) and (self.seed is not None):
+                    self.seed += self.seed_shift
+
+            self.one_layers.append(type_i_layers)
+            if self.fit_diag:
+                bavg = 0.0
+                self.final_layers.append(
+                    OneLayer_deepmd(
+                        self.n_neuron[-1],
+                        self.dim_rot_mat_1,
+                        activation_fn=None,
+                        precision=self.fitting_precision,
+                        name=layer_suffix,
+                        seed=self.seed,
+                        bavg=bavg,
+                    )
+                )
+            else:
+                # bavg = np.zeros(self.dim_rot_mat_1 * self.dim_rot_mat_1)
+                bavg = 0.0
+                self.final_layers.append(
+                    OneLayer_deepmd(
+                        self.n_neuron[-1],
+                        self.dim_rot_mat_1 * self.dim_rot_mat_1,
+                        activation_fn=None,
+                        precision=self.fitting_precision,
+                        name=layer_suffix,
+                        seed=self.seed,
+                        # bavg=bavg,
+                    )
+                )
 
     def get_sel_type(self) -> List[int]:
         """Get selected atom types."""
@@ -214,47 +281,45 @@ class PolarFittingSeA(Fitting):
                     np.diagonal(atom_polar[itype].reshape((3, 3)))
                 )
 
-    def _build_lower(self, start_index, natoms, inputs, rot_mat, suffix="", reuse=None):
+    def _build_lower(
+        self,
+        start_index,
+        natoms,
+        inputs,
+        rot_mat,
+        suffix="",
+        reuse=None,
+        type_i=None,
+    ):
         # cut-out inputs
-        inputs_i = tf.slice(
-            inputs, [0, start_index * self.dim_descrpt], [-1, natoms * self.dim_descrpt]
+        inputs_i = paddle.slice(
+            inputs,
+            [0, 1],
+            [0, start_index * self.dim_descrpt],
+            [
+                inputs.shape[0],
+                start_index * self.dim_descrpt + natoms * self.dim_descrpt,
+            ],
         )
-        inputs_i = tf.reshape(inputs_i, [-1, self.dim_descrpt])
-        rot_mat_i = tf.slice(
+        inputs_i = paddle.reshape(inputs_i, [-1, self.dim_descrpt])
+        rot_mat_i = paddle.slice(
             rot_mat,
+            [0, 1],
             [0, start_index * self.dim_rot_mat],
-            [-1, natoms * self.dim_rot_mat],
+            [
+                rot_mat.shape[0],
+                start_index * self.dim_rot_mat + natoms * self.dim_rot_mat,
+            ],
         )
-        rot_mat_i = tf.reshape(rot_mat_i, [-1, self.dim_rot_mat_1, 3])
+        rot_mat_i = paddle.reshape(rot_mat_i, [-1, self.dim_rot_mat_1, 3])
         layer = inputs_i
         for ii in range(0, len(self.n_neuron)):
             if ii >= 1 and self.n_neuron[ii] == self.n_neuron[ii - 1]:
-                layer += one_layer(
-                    layer,
-                    self.n_neuron[ii],
-                    name="layer_" + str(ii) + suffix,
-                    reuse=reuse,
-                    seed=self.seed,
-                    use_timestep=self.resnet_dt,
-                    activation_fn=self.fitting_activation_fn,
-                    precision=self.fitting_precision,
-                    uniform_seed=self.uniform_seed,
-                    initial_variables=self.fitting_net_variables,
-                    mixed_prec=self.mixed_prec,
-                )
+                layer += self.one_layers[type_i][ii](layer)
+
             else:
-                layer = one_layer(
-                    layer,
-                    self.n_neuron[ii],
-                    name="layer_" + str(ii) + suffix,
-                    reuse=reuse,
-                    seed=self.seed,
-                    activation_fn=self.fitting_activation_fn,
-                    precision=self.fitting_precision,
-                    uniform_seed=self.uniform_seed,
-                    initial_variables=self.fitting_net_variables,
-                    mixed_prec=self.mixed_prec,
-                )
+                layer = self.one_layers[type_i][ii](layer)
+
             if (not self.uniform_seed) and (self.seed is not None):
                 self.seed += self.seed_shift
         if self.fit_diag:
@@ -263,71 +328,57 @@ class PolarFittingSeA(Fitting):
             # bavg[1] = self.avgeig[1]
             # bavg[2] = self.avgeig[2]
             # (nframes x natoms) x naxis
-            final_layer = one_layer(
+            final_layer = self.final_layers[type_i](
                 layer,
-                self.dim_rot_mat_1,
-                activation_fn=None,
-                name="final_layer" + suffix,
-                reuse=reuse,
-                seed=self.seed,
-                bavg=bavg,
-                precision=self.fitting_precision,
-                uniform_seed=self.uniform_seed,
-                initial_variables=self.fitting_net_variables,
-                mixed_prec=self.mixed_prec,
-                final_layer=True,
+                # bavg=bavg,
             )
             if (not self.uniform_seed) and (self.seed is not None):
                 self.seed += self.seed_shift
             # (nframes x natoms) x naxis
-            final_layer = tf.reshape(
-                final_layer, [tf.shape(inputs)[0] * natoms, self.dim_rot_mat_1]
+            final_layer = paddle.reshape(
+                final_layer, [paddle.shape(inputs)[0] * natoms, self.dim_rot_mat_1]
             )
             # (nframes x natoms) x naxis x naxis
-            final_layer = tf.matrix_diag(final_layer)
+            # final_layer = tf.matrix_diag(final_layer)
+            final_layer = paddle.eye(final_layer.shape[0]) * final_layer
         else:
             bavg = np.zeros(self.dim_rot_mat_1 * self.dim_rot_mat_1)
             # bavg[0*self.dim_rot_mat_1+0] = self.avgeig[0]
             # bavg[1*self.dim_rot_mat_1+1] = self.avgeig[1]
             # bavg[2*self.dim_rot_mat_1+2] = self.avgeig[2]
             # (nframes x natoms) x (naxis x naxis)
-            final_layer = one_layer(
+            final_layer = self.final_layers[type_i](
                 layer,
-                self.dim_rot_mat_1 * self.dim_rot_mat_1,
-                activation_fn=None,
-                name="final_layer" + suffix,
-                reuse=reuse,
-                seed=self.seed,
-                bavg=bavg,
-                precision=self.fitting_precision,
-                uniform_seed=self.uniform_seed,
-                initial_variables=self.fitting_net_variables,
-                mixed_prec=self.mixed_prec,
-                final_layer=True,
+                # bavg=bavg,
             )
             if (not self.uniform_seed) and (self.seed is not None):
                 self.seed += self.seed_shift
             # (nframes x natoms) x naxis x naxis
-            final_layer = tf.reshape(
+            final_layer = paddle.reshape(
                 final_layer,
-                [tf.shape(inputs)[0] * natoms, self.dim_rot_mat_1, self.dim_rot_mat_1],
+                [
+                    paddle.shape(inputs)[0] * natoms,
+                    self.dim_rot_mat_1,
+                    self.dim_rot_mat_1,
+                ],
             )
             # (nframes x natoms) x naxis x naxis
-            final_layer = final_layer + tf.transpose(final_layer, perm=[0, 2, 1])
+            final_layer = final_layer + paddle.transpose(final_layer, perm=[0, 2, 1])
         # (nframes x natoms) x naxis x 3(coord)
-        final_layer = tf.matmul(final_layer, rot_mat_i)
+        final_layer = paddle.matmul(final_layer, rot_mat_i)
         # (nframes x natoms) x 3(coord) x 3(coord)
-        final_layer = tf.matmul(rot_mat_i, final_layer, transpose_a=True)
+        final_layer = paddle.matmul(rot_mat_i, final_layer, transpose_x=True)
         # nframes x natoms x 3 x 3
-        final_layer = tf.reshape(final_layer, [tf.shape(inputs)[0], natoms, 3, 3])
+        final_layer = paddle.reshape(
+            final_layer, [paddle.shape(inputs)[0], natoms, 3, 3]
+        )
         return final_layer
 
-    @cast_precision
-    def build(
+    def forward(
         self,
-        input_d: tf.Tensor,
-        rot_mat: tf.Tensor,
-        natoms: tf.Tensor,
+        input_d: paddle.Tensor,
+        rot_mat: paddle.Tensor,
+        natoms: paddle.Tensor,
         input_dict: Optional[dict] = None,
         reuse: Optional[bool] = None,
         suffix: str = "",
@@ -363,44 +414,57 @@ class PolarFittingSeA(Fitting):
         atype = input_dict.get("atype", None)
         nframes = input_dict.get("nframes")
         start_index = 0
-        inputs = tf.reshape(input_d, [-1, self.dim_descrpt * natoms[0]])
-        rot_mat = tf.reshape(rot_mat, [-1, self.dim_rot_mat * natoms[0]])
-
+        inputs = paddle.reshape(input_d, [-1, self.dim_descrpt * natoms[0]])
+        rot_mat = paddle.reshape(rot_mat, [-1, self.dim_rot_mat * natoms[0]])
         if type_embedding is not None:
             # nframes x nloc
-            nloc_mask = tf.reshape(
-                tf.tile(tf.repeat(self.sel_mask, natoms[2:]), [nframes]), [nframes, -1]
+            nloc_mask = paddle.reshape(
+                paddle.tile(
+                    paddle.repeat_interleave(self.sel_mask, natoms[2:]), [nframes]
+                ),
+                [nframes, -1],
             )
             # nframes x nloc_masked
-            scale = tf.reshape(
-                tf.reshape(
-                    tf.tile(tf.repeat(self.scale, natoms[2:]), [nframes]), [nframes, -1]
+            scale = paddle.reshape(
+                paddle.reshape(
+                    paddle.tile(
+                        paddle.repeat_interleave(self.scale, natoms[2:]), [nframes]
+                    ),
+                    [nframes, -1],
                 )[nloc_mask],
                 [nframes, -1],
             )
             if self.shift_diag:
                 # nframes x nloc_masked
-                constant_matrix = tf.reshape(
-                    tf.reshape(
-                        tf.tile(tf.repeat(self.constant_matrix, natoms[2:]), [nframes]),
+                constant_matrix = paddle.reshape(
+                    paddle.reshape(
+                        paddle.tile(
+                            paddle.repeat_interleave(self.constant_matrix, natoms[2:]),
+                            [nframes],
+                        ),
                         [nframes, -1],
                     )[nloc_mask],
                     [nframes, -1],
                 )
-            atype_nall = tf.reshape(atype, [-1, natoms[1]])
+            atype_nall = paddle.reshape(atype, [-1, natoms[1]])
             # (nframes x nloc_masked)
-            self.atype_nloc_masked = tf.reshape(
-                tf.slice(atype_nall, [0, 0], [-1, natoms[0]])[nloc_mask], [-1]
+            self.atype_nloc_masked = paddle.reshape(
+                paddle.slice(
+                    atype_nall, [0, 1], [0, 0], [atype_nall.shape[0], natoms[0]]
+                )[nloc_mask],
+                [-1],
             )  ## lammps will make error
-            self.nloc_masked = tf.shape(
-                tf.reshape(self.atype_nloc_masked, [nframes, -1])
+            self.nloc_masked = paddle.shape(
+                paddle.reshape(self.atype_nloc_masked, [nframes, -1])
             )[1]
-            atype_embed = tf.nn.embedding_lookup(type_embedding, self.atype_nloc_masked)
+            # atype_embed = tf.nn.embedding_lookup(type_embedding, self.atype_nloc_masked)
+            atype_embed = nn.functional.embedding(
+                self.atype_nloc_masked, type_embedding
+            )
         else:
             atype_embed = None
 
         self.atype_embed = atype_embed
-
         if atype_embed is None:
             count = 0
             outs_list = []
@@ -415,48 +479,58 @@ class PolarFittingSeA(Fitting):
                     rot_mat,
                     suffix="_type_" + str(type_i) + suffix,
                     reuse=reuse,
+                    type_i=type_i,
                 )
                 # shift and scale
                 sel_type_idx = self.sel_type.index(type_i)
                 final_layer = final_layer * self.scale[sel_type_idx]
-                final_layer = final_layer + self.constant_matrix[sel_type_idx] * tf.eye(
-                    3,
-                    batch_shape=[tf.shape(inputs)[0], natoms[2 + type_i]],
-                    dtype=self.fitting_precision,
+                final_layer = final_layer + self.constant_matrix[
+                    sel_type_idx
+                ] * paddle.expand(
+                    paddle.eye(
+                        3,
+                        dtype=self.fitting_precision,
+                    ),
+                    [paddle.shape(inputs)[0], natoms[2 + type_i], 3, 3],
                 )
                 start_index += natoms[2 + type_i]
 
                 # concat the results
                 outs_list.append(final_layer)
                 count += 1
-            outs = tf.concat(outs_list, axis=1)
+            outs = paddle.concat(outs_list, axis=1)
         else:
-            inputs = tf.reshape(
-                tf.reshape(inputs, [nframes, natoms[0], self.dim_descrpt])[nloc_mask],
+            inputs = paddle.reshape(
+                paddle.reshape(inputs, [nframes, natoms[0], self.dim_descrpt])[
+                    nloc_mask
+                ],
                 [-1, self.dim_descrpt],
             )
-            rot_mat = tf.reshape(
-                tf.reshape(rot_mat, [nframes, natoms[0], self.dim_rot_mat])[nloc_mask],
+            rot_mat = paddle.reshape(
+                paddle.reshape(rot_mat, [nframes, natoms[0], self.dim_rot_mat])[
+                    nloc_mask
+                ],
                 [-1, self.dim_rot_mat * self.nloc_masked],
             )
-            atype_embed = tf.cast(atype_embed, self.fitting_precision)
+            atype_embed = paddle.cast(atype_embed, self.fitting_precision)
             type_shape = atype_embed.get_shape().as_list()
-            inputs = tf.concat([inputs, atype_embed], axis=1)
+            inputs = paddle.concat([inputs, atype_embed], axis=1)
             self.dim_descrpt = self.dim_descrpt + type_shape[1]
-            inputs = tf.reshape(inputs, [-1, self.dim_descrpt * self.nloc_masked])
+            inputs = paddle.reshape(inputs, [-1, self.dim_descrpt * self.nloc_masked])
             final_layer = self._build_lower(
                 0, self.nloc_masked, inputs, rot_mat, suffix=suffix, reuse=reuse
             )
             # shift and scale
-            final_layer *= tf.expand_dims(tf.expand_dims(scale, -1), -1)
+            final_layer *= paddle.unsqueeze(paddle.unsqueeze(scale, -1), -1)
             if self.shift_diag:
-                final_layer += tf.expand_dims(
-                    tf.expand_dims(constant_matrix, -1), -1
-                ) * tf.eye(3, batch_shape=[1, 1], dtype=self.fitting_precision)
+                final_layer += paddle.unsqueeze(
+                    paddle.unsqueeze(constant_matrix, -1), -1
+                ) * paddle.expand(
+                    paddle.eye(3, dtype=self.fitting_precision), [1, 1, 3, 3]
+                )
             outs = final_layer
 
-        tf.summary.histogram("fitting_net_output", outs)
-        return tf.reshape(outs, [-1])
+        return paddle.reshape(outs, [-1])
 
     def init_variables(
         self,
