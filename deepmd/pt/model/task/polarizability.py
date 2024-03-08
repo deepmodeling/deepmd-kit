@@ -119,7 +119,7 @@ class PolarFittingNet(GeneralFitting):
             self.scale, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE
         ).view(ntypes, 1)
         self.shift_diag = shift_diag
-        self.constant_matrix = torch.zeros(ntypes, device=env.DEVICE)
+        self.constant_matrix = torch.zeros(ntypes, dtype = env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE)
         super().__init__(
             var_name=kwargs.pop("var_name", "polar"),
             ntypes=ntypes,
@@ -152,8 +152,9 @@ class PolarFittingNet(GeneralFitting):
         data["embedding_width"] = self.embedding_width
         data["old_impl"] = self.old_impl
         data["fit_diag"] = self.fit_diag
-        data["fit_diag"] = self.fit_diag
+        data["shift_diag"] = self.shift_diag
         data["@variables"]["scale"] = to_numpy_array(self.scale)
+        data["@variables"]["constant_matrix"] = to_numpy_array(self.constant_matrix)
         return data
 
     def output_def(self) -> FittingOutputDef:
@@ -214,7 +215,7 @@ class PolarFittingNet(GeneralFitting):
                     else:
                         if not sampled[sys]["find_polarizability"] > 0.0:
                             continue
-                        sys_type_count = np.zeros((nframs, self.ntypes))
+                        sys_type_count = np.zeros((nframs, self.ntypes), dtype=env.GLOBAL_NP_FLOAT_PRECISION)
                         for itype in range(self.ntypes):
                             type_mask = sampled[sys]["type"] == itype
                             sys_type_count[:, itype] = type_mask.sum(dim=1).numpy(
@@ -224,28 +225,23 @@ class PolarFittingNet(GeneralFitting):
                         sys_bias_redu = sampled[sys]["polarizability"].numpy(force=True)
 
                         sys_atom_polar = compute_stats_from_redu(
-                            sys_bias_redu, sys_type_count
+                            sys_bias_redu, sys_type_count, rcond=self.rcond
                         )[0]
-                    cur_constant_matrix = np.zeros(self.ntypes)
-                    if sys_atom_polar.shape[0] < self.ntypes:
-                        # pad zeros in case atype.max() + 1 != ntypes
-                        sys_atom_polar = np.concatenate(
-                            [
-                                sys_atom_polar,
-                                np.zeros((self.ntypes - sys_atom_polar.shape[0], 9)),
-                            ]
-                        )
+                    cur_constant_matrix = np.zeros(self.ntypes, dtype= env.GLOBAL_NP_FLOAT_PRECISION)
+                    
                     for itype in range(self.ntypes):
                         cur_constant_matrix[itype] = np.mean(
                             np.diagonal(sys_atom_polar[itype].reshape(3, 3))
                         )
                     sys_constant_matrix.append(cur_constant_matrix)
                 constant_matrix = np.stack(sys_constant_matrix).mean(axis=0)
+
                 # handle nan values.
                 constant_matrix = np.nan_to_num(constant_matrix)
-            self.constant_matrix = torch.tensor(constant_matrix, device=env.DEVICE)
             if stat_file_path is not None:
-                stat_file_path.save_numpy(self.constant_matrix.detach().cpu().numpy())
+                stat_file_path.save_numpy(self.constant_matrix)
+            self.constant_matrix = torch.tensor(constant_matrix, device=env.DEVICE)
+
 
     def forward(
         self,
@@ -281,6 +277,7 @@ class PolarFittingNet(GeneralFitting):
         out = out.view(nframes, nloc, 3, 3)
         if self.shift_diag:
             bias = self.constant_matrix[atype]
+
             # (nframes, nloc, 1)
             bias = bias.unsqueeze(-1) * self.scale[atype]
 

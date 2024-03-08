@@ -139,6 +139,7 @@ class PolarFitting(GeneralFitting):
             ntypes, 1
         )
         self.shift_diag = shift_diag
+        self.constant_matrix = np.zeros(ntypes, dtype=GLOBAL_NP_FLOAT_PRECISION)
         super().__init__(
             var_name=var_name,
             ntypes=ntypes,
@@ -174,7 +175,9 @@ class PolarFitting(GeneralFitting):
         data["embedding_width"] = self.embedding_width
         data["old_impl"] = self.old_impl
         data["fit_diag"] = self.fit_diag
+        data["shift_diag"] = self.shift_diag
         data["@variables"]["scale"] = self.scale
+        data["@variables"]["constant_matrix"] = self.constant_matrix
         return data
 
     def output_def(self):
@@ -246,4 +249,13 @@ class PolarFitting(GeneralFitting):
             "bim,bmj->bij", np.transpose(gr, axes=(0, 2, 1)), out
         )  # (nframes * nloc, 3, 3)
         out = out.reshape(nframes, nloc, 3, 3)
+        if self.shift_diag:
+            bias = self.constant_matrix[atype]
+            # (nframes, nloc, 1)
+            bias = np.expand_dims(bias, axis=-1) * self.scale[atype]
+            eye = np.eye(3)
+            eye = np.tile(eye, (nframes, nloc, 1, 1))
+            # (nframes, nloc, 3, 3)
+            bias = np.expand_dims(bias, axis=-1) * eye
+            out = out + bias
         return {self.var_name: out}

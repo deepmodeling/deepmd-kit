@@ -22,6 +22,7 @@ class TestConsistency(unittest.TestCase):
     def setUp(self) -> None:
         types = torch.randint(0, 4, (1, 5), device=env.DEVICE)
         types = torch.cat((types, types, types), dim=0)
+        types[:,-1] = 3
         ntypes = 4
         atomic_polarizability = torch.rand((3, 5, 9), device=env.DEVICE)
         polarizability = torch.rand((3, 9), device=env.DEVICE)

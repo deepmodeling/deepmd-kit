@@ -419,6 +419,8 @@ class GeneralFitting(Fitting):
             self.aparam_inv_std = value
         elif key in ["scale"]:
             self.scale = value
+        elif key in ["constant_matrix"]:
+            self.constant_matrix = value
         else:
             raise KeyError(key)
 
@@ -435,6 +437,8 @@ class GeneralFitting(Fitting):
             return self.aparam_inv_std
         elif key in ["scale"]:
             return self.scale
+        elif key in ["constant_matrix"]:
+            return self.constant_matrix
         else:
             raise KeyError(key)
 
