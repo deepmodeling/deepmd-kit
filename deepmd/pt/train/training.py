@@ -1037,7 +1037,7 @@ class Trainer:
         print_str = ""
         print_str += "%7d" % step_id
         if not self.multi_task:
-            if valid_results is not None:
+            if valid_results:
                 prop_fmt = "   %11.2e %11.2e"
                 for k in train_keys:
                     print_str += prop_fmt % (valid_results[k], train_results[k])
@@ -1047,7 +1047,7 @@ class Trainer:
                     print_str += prop_fmt % (train_results[k])
         else:
             for model_key in self.model_keys:
-                if valid_results[model_key] is not None:
+                if valid_results[model_key]:
                     prop_fmt = "   %11.2e %11.2e"
                     for k in sorted(valid_results[model_key].keys()):
                         print_str += prop_fmt % (
