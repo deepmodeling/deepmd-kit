@@ -13,19 +13,17 @@ class DeepmdDataSetForLoader(Dataset):
     def __init__(
         self,
         system: str,
-        type_map: str,
-        shuffle=True,
+        type_map: str
     ):
         """Construct DeePMD-style dataset containing frames cross different systems.
 
         Args:
         - systems: Paths to systems.
-        - batch_size: Max frame count in a batch.
         - type_map: Atom types.
         """
         self._type_map = type_map
         self._data_system = DeepmdData(
-            sys_path=system, shuffle_test=shuffle, type_map=self._type_map
+            sys_path=system,type_map=self._type_map
         )
         self._data_system.add("energy", 1, atomic=False, must=False, high_prec=True)
         self._data_system.add("force", 3, atomic=True, must=False, high_prec=False)

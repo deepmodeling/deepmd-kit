@@ -51,13 +51,26 @@ def setup_seed(seed):
 
 
 class DpLoaderSet(Dataset):
-    """A dataset for storing DataLoaders to multiple Systems."""
+    """A dataset for storing DataLoaders to multiple Systems.
 
+    Parameters
+    ----------
+    sys_path
+            Path to the data system
+    batch_size
+            Max frame count in a batch. 
+    type_map
+            Gives the name of different atom types
+    seed    
+            Random seed for dataloader
+    shuffle
+            If the data are shuffled (Only effective in serial mode. Always shuffle in distributed data parallelism)
+    """
     def __init__(
         self,
         systems,
         batch_size,
-        model_params,
+        type_map,
         seed=10,
         shuffle=True,
     ):
@@ -73,8 +86,7 @@ class DpLoaderSet(Dataset):
         def construct_dataset(system):
             return DeepmdDataSetForLoader(
                 system=system,
-                type_map=model_params["type_map"],
-                shuffle=shuffle,
+                type_map=type_map,
             )
 
         with Pool(

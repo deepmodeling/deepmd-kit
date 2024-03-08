@@ -131,20 +131,20 @@ def get_trainer(
         validation_data_single = DpLoaderSet(
             validation_systems,
             validation_dataset_params["batch_size"],
-            model_params_single,
+            model_params_single["type_map"],
         )
         if ckpt or finetune_model:
             train_data_single = DpLoaderSet(
                 training_systems,
                 training_dataset_params["batch_size"],
-                model_params_single,
+                model_params_single["type_map"],
             )
             sampled_single = None
         else:
             train_data_single = DpLoaderSet(
                 training_systems,
                 training_dataset_params["batch_size"],
-                model_params_single,
+                model_params_single["type_map"],
             )
             data_stat_nbatch = model_params_single.get("data_stat_nbatch", 10)
             sampled_single = make_stat_input(
@@ -156,7 +156,7 @@ def get_trainer(
                 train_data_single = DpLoaderSet(
                     training_systems,
                     training_dataset_params["batch_size"],
-                    model_params_single,
+                    model_params_single["type_map"],
                 )
         return (
             train_data_single,
