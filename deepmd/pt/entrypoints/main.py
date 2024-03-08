@@ -134,7 +134,7 @@ def get_trainer(
             DpLoaderSet(
                 validation_systems,
                 validation_dataset_params["batch_size"],
-                model_params_single,
+                model_params_single["type_map"],
             )
             if validation_systems
             else None
@@ -149,7 +149,7 @@ def get_trainer(
             train_data_single = DpLoaderSet(
                 training_systems,
                 training_dataset_params["batch_size"],
-                model_params_single,
+                model_params_single["type_map"],
             )
         return (
             train_data_single,
