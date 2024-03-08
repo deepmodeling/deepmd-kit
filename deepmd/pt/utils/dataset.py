@@ -3,6 +3,7 @@
 
 from typing import (
     List,
+    Optional,
 )
 
 from torch.utils.data import (
@@ -16,7 +17,7 @@ from deepmd.utils.data import (
 
 
 class DeepmdDataSetForLoader(Dataset):
-    def __init__(self, system: str, type_map: str):
+    def __init__(self, system: str, type_map: Optional[List[str]] = None):
         """Construct DeePMD-style dataset containing frames cross different systems.
 
         Args:
