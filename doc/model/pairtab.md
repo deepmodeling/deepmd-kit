@@ -1,7 +1,7 @@
-# Interpolation or combination with a pairwise potential {{ tensorflow_icon }}
+# Interpolation or combination with a pairwise potential {{ tensorflow_icon }} {{ pytorch_icon }} {{ dpmodel_icon }}
 
 :::{note}
-**Supported backends**: TensorFlow {{ tensorflow_icon }}
+**Supported backends**:  TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}, DP {{ dpmodel_icon }}
 :::
 
 ## Theory
@@ -59,6 +59,9 @@ In instances where the interaction at the cut-off distance is not delineated wit
 
 ## Interpolation with a short-range pairwise potential
 
+::::{tab-set}
+
+:::{tab-item} TensorFlow {{ tensorflow_icon }}
 ```json
 "model": {
   "use_srtab": "H2O_tab_potential.txt",
@@ -68,10 +71,32 @@ In instances where the interaction at the cut-off distance is not delineated wit
   "_comment": "Below uses a normal DP model"
 }
 ```
+:::
+
+:::{tab-item} PyTorch {{ pytorch_icon }}
+
+```json
+"model": {
+  "use_srtab": "H2O_tab_potential.txt",
+  "smin_alpha": 0.1,
+  "sw_rmin": 0.8,
+  "sw_rmax": 1.0,
+  "type_map":{
+    "pairtab": ["H", "O"],
+    "dp": ["O", "H"],
+    "zbl": ["H", "O"]
+  },
+  "_comment": "Below uses a normal DP model"
+}
+```
+In the PyTorch backend, the `ZBLModel` accommodates mismatched `type_map`. The ultimate `type_map` utilized by the combined model is a union of the `type_map` from the individual models.
+:::
+
+::::
 
 {ref}`sw_rmin <model/sw_rmin>` and {ref}`sw_rmax <model/sw_rmax>` must be smaller than the cutoff radius of the DP model.
 
-## Combination with a pairwise potential
+## Combination with a pairwise potential {{ tensorflow_icon }}
 
 To combine with a pairwise potential, use the [linear model](./linear.md):
 
