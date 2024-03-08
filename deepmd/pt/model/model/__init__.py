@@ -82,7 +82,7 @@ def get_spin_model(model_params):
 
 def get_zbl_model(model_params):
     model_params = copy.deepcopy(model_params)
-    ntypes = len(model_params["type_map"])
+    ntypes = len(model_params["type_map"]["zbl"])
     # descriptor
     model_params["descriptor"]["ntypes"] = ntypes
     descriptor = BaseDescriptor(**model_params["descriptor"])
@@ -99,14 +99,14 @@ def get_zbl_model(model_params):
         if "ener" in fitting_net["type"]:
             fitting_net["return_energy"] = True
     fitting = BaseFitting(**fitting_net)
-    dp_model = DPAtomicModel(descriptor, fitting, type_map=model_params["type_map"])
+    dp_model = DPAtomicModel(descriptor, fitting, type_map=model_params["type_map"]["dp"])
     # pairtab
     filepath = model_params["use_srtab"]
     pt_model = PairTabAtomicModel(
         filepath,
         model_params["descriptor"]["rcut"],
         model_params["descriptor"]["sel"],
-        type_map=model_params["type_map"],
+        type_map=model_params["type_map"]["pairtab"],
     )
 
     rmin = model_params["sw_rmin"]
@@ -118,7 +118,7 @@ def get_zbl_model(model_params):
         pt_model,
         rmin,
         rmax,
-        type_map=model_params["type_map"],
+        type_map=model_params["type_map"]["zbl"],
         atom_exclude_types=atom_exclude_types,
         pair_exclude_types=pair_exclude_types,
     )
