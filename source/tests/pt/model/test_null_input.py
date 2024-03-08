@@ -41,14 +41,9 @@ class NullTest:
         cell = (cell + cell.T) + 100.0 * torch.eye(3, device=env.DEVICE)
         coord = torch.rand([natoms, 3], dtype=dtype, device=env.DEVICE)
         atype = torch.tensor([0], dtype=torch.int32, device=env.DEVICE)
-        e0, f0, v0 = eval_model(
-            self.model, coord.unsqueeze(0), cell.unsqueeze(0), atype
-        )
-        ret0 = {
-            "energy": e0.squeeze(0),
-            "force": f0.squeeze(0),
-            "virial": v0.squeeze(0),
-        }
+        test_keys = ["energy", "force", "virial"]
+        result = eval_model(self.model, coord.unsqueeze(0), cell.unsqueeze(0), atype)
+        ret0 = {key: result[key].squeeze(0) for key in test_keys}
         prec = 1e-10
         expect_e_shape = [1]
         expect_f = torch.zeros([natoms, 3], dtype=dtype, device=env.DEVICE)
@@ -70,14 +65,9 @@ class NullTest:
         # 2 far-away atoms
         coord = torch.cat([coord, coord + 100.0], dim=0)
         atype = torch.tensor([0, 2], dtype=torch.int32, device=env.DEVICE)
-        e0, f0, v0 = eval_model(
-            self.model, coord.unsqueeze(0), cell.unsqueeze(0), atype
-        )
-        ret0 = {
-            "energy": e0.squeeze(0),
-            "force": f0.squeeze(0),
-            "virial": v0.squeeze(0),
-        }
+        test_keys = ["energy", "force", "virial"]
+        result = eval_model(self.model, coord.unsqueeze(0), cell.unsqueeze(0), atype)
+        ret0 = {key: result[key].squeeze(0) for key in test_keys}
         prec = 1e-10
         expect_e_shape = [1]
         expect_f = torch.zeros([natoms, 3], dtype=dtype, device=env.DEVICE)

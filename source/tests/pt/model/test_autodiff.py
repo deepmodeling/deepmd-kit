@@ -7,10 +7,12 @@ import torch
 
 from deepmd.pt.model.model import (
     get_model,
-    get_zbl_model,
 )
 from deepmd.pt.utils import (
     env,
+)
+from deepmd.pt.utils.utils import (
+    to_numpy_array,
 )
 
 dtype = torch.float64
@@ -21,6 +23,7 @@ from .test_permutation import (
     model_dpa2,
     model_hybrid,
     model_se_e2_a,
+    model_spin,
     model_zbl,
 )
 
@@ -59,34 +62,64 @@ class ForceTest:
         cell = (cell + cell.T) + 5.0 * torch.eye(3, device="cpu")
         coord = torch.rand([natoms, 3], dtype=dtype, device="cpu")
         coord = torch.matmul(coord, cell)
+        spin = torch.rand([natoms, 3], dtype=dtype, device="cpu")
         atype = torch.IntTensor([0, 0, 0, 1, 1])
         # assumes input to be numpy tensor
         coord = coord.numpy()
+        spin = spin.numpy()
+        test_spin = getattr(self, "test_spin", False)
+        if not test_spin:
+            test_keys = ["energy", "force", "virial"]
+        else:
+            test_keys = ["energy", "force", "force_mag", "virial"]
 
-        def np_infer(
+        def np_infer_coord(
             coord,
         ):
-            e0, f0, v0 = eval_model(
+            result = eval_model(
                 self.model,
                 torch.tensor(coord, device=env.DEVICE).unsqueeze(0),
                 cell.unsqueeze(0),
                 atype,
+                spins=torch.tensor(spin, device=env.DEVICE).unsqueeze(0),
             )
-            ret = {
-                "energy": e0.squeeze(0),
-                "force": f0.squeeze(0),
-                "virial": v0.squeeze(0),
-            }
             # detach
-            ret = {kk: ret[kk].detach().cpu().numpy() for kk in ret}
+            ret = {key: to_numpy_array(result[key].squeeze(0)) for key in test_keys}
             return ret
 
-        def ff(_coord):
-            return np_infer(_coord)["energy"]
+        def np_infer_spin(
+            spin,
+        ):
+            result = eval_model(
+                self.model,
+                torch.tensor(coord, device=env.DEVICE).unsqueeze(0),
+                cell.unsqueeze(0),
+                atype,
+                spins=torch.tensor(spin, device=env.DEVICE).unsqueeze(0),
+            )
+            # detach
+            ret = {key: to_numpy_array(result[key].squeeze(0)) for key in test_keys}
+            return ret
 
-        fdf = -finite_difference(ff, coord, delta=delta).squeeze()
-        rff = np_infer(coord)["force"]
-        np.testing.assert_almost_equal(fdf, rff, decimal=places)
+        def ff_coord(_coord):
+            return np_infer_coord(_coord)["energy"]
+
+        def ff_spin(_spin):
+            return np_infer_spin(_spin)["energy"]
+
+        if not test_spin:
+            fdf = -finite_difference(ff_coord, coord, delta=delta).squeeze()
+            rff = np_infer_coord(coord)["force"]
+            np.testing.assert_almost_equal(fdf, rff, decimal=places)
+        else:
+            # real force
+            fdf = -finite_difference(ff_coord, coord, delta=delta).squeeze()
+            rff = np_infer_coord(coord)["force"]
+            np.testing.assert_almost_equal(fdf, rff, decimal=places)
+            # magnetic force
+            fdf = -finite_difference(ff_spin, spin, delta=delta).squeeze()
+            rff = np_infer_spin(spin)["force_mag"]
+            np.testing.assert_almost_equal(fdf, rff, decimal=places)
 
 
 class VirialTest:
@@ -104,11 +137,12 @@ class VirialTest:
         # assumes input to be numpy tensor
         coord = coord.numpy()
         cell = cell.numpy()
+        test_keys = ["energy", "force", "virial"]
 
         def np_infer(
             new_cell,
         ):
-            e0, f0, v0 = eval_model(
+            result = eval_model(
                 self.model,
                 torch.tensor(
                     stretch_box(coord, cell, new_cell), device="cpu"
@@ -116,13 +150,9 @@ class VirialTest:
                 torch.tensor(new_cell, device="cpu").unsqueeze(0),
                 atype,
             )
-            ret = {
-                "energy": e0.squeeze(0),
-                "force": f0.squeeze(0),
-                "virial": v0.squeeze(0),
-            }
             # detach
-            ret = {kk: ret[kk].detach().cpu().numpy() for kk in ret}
+            ret = {key: to_numpy_array(result[key].squeeze(0)) for key in test_keys}
+            # detach
             return ret
 
         def ff(bb):
@@ -211,11 +241,19 @@ class TestEnergyModelZBLForce(unittest.TestCase, ForceTest):
     def setUp(self):
         model_params = copy.deepcopy(model_zbl)
         self.type_split = False
-        self.model = get_zbl_model(model_params).to(env.DEVICE)
+        self.model = get_model(model_params).to(env.DEVICE)
 
 
 class TestEnergyModelZBLVirial(unittest.TestCase, VirialTest):
     def setUp(self):
         model_params = copy.deepcopy(model_zbl)
         self.type_split = False
-        self.model = get_zbl_model(model_params).to(env.DEVICE)
+        self.model = get_model(model_params).to(env.DEVICE)
+
+
+class TestEnergyModelSpinSeAForce(unittest.TestCase, ForceTest):
+    def setUp(self):
+        model_params = copy.deepcopy(model_spin)
+        self.type_split = False
+        self.test_spin = True
+        self.model = get_model(model_params).to(env.DEVICE)

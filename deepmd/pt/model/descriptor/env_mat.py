@@ -8,7 +8,12 @@ from deepmd.pt.utils.preprocess import (
 
 
 def _make_env_mat(
-    nlist, coord, rcut: float, ruct_smth: float, radial_only: bool = False
+    nlist,
+    coord,
+    rcut: float,
+    ruct_smth: float,
+    radial_only: bool = False,
+    protection: float = 0.0,
 ):
     """Make smooth environment matrix."""
     bsz, natoms, nnei = nlist.shape
@@ -25,8 +30,8 @@ def _make_env_mat(
     length = torch.linalg.norm(diff, dim=-1, keepdim=True)
     # for index 0 nloc atom
     length = length + ~mask.unsqueeze(-1)
-    t0 = 1 / length
-    t1 = diff / length**2
+    t0 = 1 / (length + protection)
+    t1 = diff / (length + protection) ** 2
     weight = compute_smooth_weight(length, ruct_smth, rcut)
     weight = weight * mask.unsqueeze(-1)
     if radial_only:
@@ -45,6 +50,7 @@ def prod_env_mat(
     rcut: float,
     rcut_smth: float,
     radial_only: bool = False,
+    protection: float = 0.0,
 ):
     """Generate smooth environment matrix from atom coordinates and other context.
 
@@ -56,13 +62,19 @@ def prod_env_mat(
     - rcut: Cut-off radius.
     - rcut_smth: Smooth hyper-parameter for pair force & energy.
     - radial_only: Whether to return a full description or a radial-only descriptor.
+    - protection: Protection parameter to prevent division by zero errors during calculations.
 
     Returns
     -------
     - env_mat: Shape is [nframes, natoms[1]*nnei*4].
     """
     _env_mat_se_a, diff, switch = _make_env_mat(
-        nlist, extended_coord, rcut, rcut_smth, radial_only
+        nlist,
+        extended_coord,
+        rcut,
+        rcut_smth,
+        radial_only,
+        protection=protection,
     )  # shape [n_atom, dim, 4 or 1]
     t_avg = mean[atype]  # [n_atom, dim, 4 or 1]
     t_std = stddev[atype]  # [n_atom, dim, 4 or 1]

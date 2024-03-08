@@ -4,6 +4,7 @@ from functools import (
 )
 from typing import (
     TYPE_CHECKING,
+    Any,
     Callable,
     Dict,
     List,
@@ -693,6 +694,7 @@ class DeepEval(DeepEvalBackend):
         fparam: Optional[np.ndarray] = None,
         aparam: Optional[np.ndarray] = None,
         efield: Optional[np.ndarray] = None,
+        **kwargs: Dict[str, Any],
     ) -> Dict[str, np.ndarray]:
         """Evaluate the energy, force and virial by using this DP.
 
@@ -724,6 +726,8 @@ class DeepEval(DeepEvalBackend):
         efield
             The external field on atoms.
             The array should be of size nframes x natoms x 3
+        **kwargs
+            Other parameters
 
         Returns
         -------

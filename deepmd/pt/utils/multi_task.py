@@ -143,8 +143,12 @@ def preprocess_shared_params(model_config):
                             )
     for shared_key in shared_links:
         shared_links[shared_key]["links"] = sorted(
-            shared_links[shared_key]["links"], key=lambda x: x["shared_level"]
+            shared_links[shared_key]["links"],
+            key=lambda x: x["shared_level"]
+            - ("spin" in model_config["model_dict"][x["model_key"]]) * 100,
         )
+        # little trick to make spin models in the front to be the base models,
+        # because its type embeddings are more general.
     assert len(type_map_keys) == 1, "Multitask model must have only one type_map!"
     return model_config, shared_links
 

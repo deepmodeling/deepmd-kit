@@ -124,6 +124,9 @@ class DeepEval(DeepEvalBackend):
             self.auto_batch_size = auto_batch_size
         else:
             raise TypeError("auto_batch_size should be bool, int, or AutoBatchSize")
+        self._has_spin = getattr(self.dp.model["Default"], "has_spin", False)
+        if callable(self._has_spin):
+            self._has_spin = self._has_spin()
 
     def get_rcut(self) -> float:
         """Get the cutoff radius of this model."""
@@ -182,8 +185,12 @@ class DeepEval(DeepEvalBackend):
         return False
 
     def get_ntypes_spin(self):
-        """Get the number of spin atom types of this model."""
+        """Get the number of spin atom types of this model. Only used in old implement."""
         return 0
+
+    def get_has_spin(self):
+        """Check if the model has spin atom types."""
+        return self._has_spin
 
     def eval(
         self,
@@ -240,14 +247,20 @@ class DeepEval(DeepEvalBackend):
             coords, atom_types, len(atom_types.shape) > 1
         )
         request_defs = self._get_request_defs(atomic)
-        out = self._eval_func(self._eval_model, numb_test, natoms)(
-            coords,
-            cells,
-            atom_types,
-            fparam,
-            aparam,
-            request_defs,
-        )
+        if "spin" not in kwargs or kwargs["spin"] is None:
+            out = self._eval_func(self._eval_model, numb_test, natoms)(
+                coords, cells, atom_types, fparam, aparam, request_defs
+            )
+        else:
+            out = self._eval_func(self._eval_model_spin, numb_test, natoms)(
+                coords,
+                cells,
+                atom_types,
+                np.array(kwargs["spin"]),
+                fparam,
+                aparam,
+                request_defs,
+            )
         return dict(
             zip(
                 [x.name for x in request_defs],
@@ -280,6 +293,7 @@ class DeepEval(DeepEvalBackend):
                 for x in self.output_def.var_defs.values()
                 if x.category
                 in (
+                    OutputVariableCategory.OUT,
                     OutputVariableCategory.REDU,
                     OutputVariableCategory.DERV_R,
                     OutputVariableCategory.DERV_C_REDU,
@@ -399,6 +413,82 @@ class DeepEval(DeepEvalBackend):
                 results.append(np.full(np.abs(shape), np.nan))  # this is kinda hacky
         return tuple(results)
 
+    def _eval_model_spin(
+        self,
+        coords: np.ndarray,
+        cells: Optional[np.ndarray],
+        atom_types: np.ndarray,
+        spins: np.ndarray,
+        fparam: Optional[np.ndarray],
+        aparam: Optional[np.ndarray],
+        request_defs: List[OutputVariableDef],
+    ):
+        model = self.dp.to(DEVICE)
+
+        nframes = coords.shape[0]
+        if len(atom_types.shape) == 1:
+            natoms = len(atom_types)
+            atom_types = np.tile(atom_types, nframes).reshape(nframes, -1)
+        else:
+            natoms = len(atom_types[0])
+
+        coord_input = torch.tensor(
+            coords.reshape([-1, natoms, 3]),
+            dtype=GLOBAL_PT_FLOAT_PRECISION,
+            device=DEVICE,
+        )
+        type_input = torch.tensor(atom_types, dtype=torch.long, device=DEVICE)
+        spin_input = torch.tensor(
+            spins.reshape([-1, natoms, 3]),
+            dtype=GLOBAL_PT_FLOAT_PRECISION,
+            device=DEVICE,
+        )
+        if cells is not None:
+            box_input = torch.tensor(
+                cells.reshape([-1, 3, 3]),
+                dtype=GLOBAL_PT_FLOAT_PRECISION,
+                device=DEVICE,
+            )
+        else:
+            box_input = None
+        if fparam is not None:
+            fparam_input = to_torch_tensor(fparam.reshape(-1, self.get_dim_fparam()))
+        else:
+            fparam_input = None
+        if aparam is not None:
+            aparam_input = to_torch_tensor(
+                aparam.reshape(-1, natoms, self.get_dim_aparam())
+            )
+        else:
+            aparam_input = None
+
+        do_atomic_virial = any(
+            x.category == OutputVariableCategory.DERV_C_REDU for x in request_defs
+        )
+        batch_output = model(
+            coord_input,
+            type_input,
+            spin=spin_input,
+            box=box_input,
+            do_atomic_virial=do_atomic_virial,
+            fparam=fparam_input,
+            aparam=aparam_input,
+        )
+        if isinstance(batch_output, tuple):
+            batch_output = batch_output[0]
+
+        results = []
+        for odef in request_defs:
+            pt_name = self._OUTDEF_DP2BACKEND[odef.name]
+            if pt_name in batch_output:
+                shape = self._get_output_shape(odef, nframes, natoms)
+                out = batch_output[pt_name].reshape(shape).detach().cpu().numpy()
+                results.append(out)
+            else:
+                shape = self._get_output_shape(odef, nframes, natoms)
+                results.append(np.full(np.abs(shape), np.nan))  # this is kinda hacky
+        return tuple(results)
+
     def _get_output_shape(self, odef, nframes, natoms):
         if odef.category == OutputVariableCategory.DERV_C_REDU:
             # virial
@@ -427,6 +517,7 @@ def eval_model(
     coords: Union[np.ndarray, torch.Tensor],
     cells: Optional[Union[np.ndarray, torch.Tensor]],
     atom_types: Union[np.ndarray, torch.Tensor, List[int]],
+    spins: Optional[Union[np.ndarray, torch.Tensor]] = None,
     atomic: bool = False,
     infer_batch_size: int = 2,
     denoise: bool = False,
@@ -435,6 +526,7 @@ def eval_model(
     energy_out = []
     atomic_energy_out = []
     force_out = []
+    force_mag_out = []
     virial_out = []
     atomic_virial_out = []
     updated_coord_out = []
@@ -447,11 +539,15 @@ def eval_model(
     if isinstance(coords, torch.Tensor):
         if cells is not None:
             assert isinstance(cells, torch.Tensor), err_msg
+        if spins is not None:
+            assert isinstance(spins, torch.Tensor), err_msg
         assert isinstance(atom_types, torch.Tensor) or isinstance(atom_types, list)
         atom_types = torch.tensor(atom_types, dtype=torch.long, device=DEVICE)
     elif isinstance(coords, np.ndarray):
         if cells is not None:
             assert isinstance(cells, np.ndarray), err_msg
+        if spins is not None:
+            assert isinstance(spins, np.ndarray), err_msg
         assert isinstance(atom_types, np.ndarray) or isinstance(atom_types, list)
         atom_types = np.array(atom_types, dtype=np.int32)
         return_tensor = False
@@ -471,6 +567,16 @@ def eval_model(
     coord_input = torch.tensor(
         coords.reshape([-1, natoms, 3]), dtype=GLOBAL_PT_FLOAT_PRECISION, device=DEVICE
     )
+    spin_input = None
+    if spins is not None:
+        spin_input = torch.tensor(
+            spins.reshape([-1, natoms, 3]),
+            dtype=GLOBAL_PT_FLOAT_PRECISION,
+            device=DEVICE,
+        )
+    has_spin = getattr(model, "has_spin", False)
+    if callable(has_spin):
+        has_spin = has_spin()
     type_input = torch.tensor(atom_types, dtype=torch.long, device=DEVICE)
     box_input = None
     if cells is None:
@@ -486,9 +592,20 @@ def eval_model(
         batch_coord = coord_input[ii * infer_batch_size : (ii + 1) * infer_batch_size]
         batch_atype = type_input[ii * infer_batch_size : (ii + 1) * infer_batch_size]
         batch_box = None
+        batch_spin = None
+        if spin_input is not None:
+            batch_spin = spin_input[ii * infer_batch_size : (ii + 1) * infer_batch_size]
         if pbc:
             batch_box = box_input[ii * infer_batch_size : (ii + 1) * infer_batch_size]
-        batch_output = model(batch_coord, batch_atype, box=batch_box)
+        input_dict = {
+            "coord": batch_coord,
+            "atype": batch_atype,
+            "box": batch_box,
+            "do_atomic_virial": atomic,
+        }
+        if has_spin:
+            input_dict["spin"] = batch_spin
+        batch_output = model(**input_dict)
         if isinstance(batch_output, tuple):
             batch_output = batch_output[0]
         if not return_tensor:
@@ -500,6 +617,8 @@ def eval_model(
                 )
             if "force" in batch_output:
                 force_out.append(batch_output["force"].detach().cpu().numpy())
+            if "force_mag" in batch_output:
+                force_mag_out.append(batch_output["force_mag"].detach().cpu().numpy())
             if "virial" in batch_output:
                 virial_out.append(batch_output["virial"].detach().cpu().numpy())
             if "atom_virial" in batch_output:
@@ -519,6 +638,8 @@ def eval_model(
                 atomic_energy_out.append(batch_output["atom_energy"])
             if "force" in batch_output:
                 force_out.append(batch_output["force"])
+            if "force_mag" in batch_output:
+                force_mag_out.append(batch_output["force_mag"])
             if "virial" in batch_output:
                 virial_out.append(batch_output["virial"])
             if "atom_virial" in batch_output:
@@ -538,6 +659,11 @@ def eval_model(
         )
         force_out = (
             np.concatenate(force_out) if force_out else np.zeros([nframes, natoms, 3])
+        )
+        force_mag_out = (
+            np.concatenate(force_mag_out)
+            if force_mag_out
+            else np.zeros([nframes, natoms, 3])
         )
         virial_out = (
             np.concatenate(virial_out) if virial_out else np.zeros([nframes, 3, 3])
@@ -573,6 +699,13 @@ def eval_model(
                 [nframes, natoms, 3], dtype=GLOBAL_PT_FLOAT_PRECISION, device=DEVICE
             )
         )
+        force_mag_out = (
+            torch.cat(force_mag_out)
+            if force_mag_out
+            else torch.zeros(
+                [nframes, natoms, 3], dtype=GLOBAL_PT_FLOAT_PRECISION, device=DEVICE
+            )
+        )
         virial_out = (
             torch.cat(virial_out)
             if virial_out
@@ -592,13 +725,14 @@ def eval_model(
     if denoise:
         return updated_coord_out, logits_out
     else:
-        if not atomic:
-            return energy_out, force_out, virial_out
-        else:
-            return (
-                energy_out,
-                force_out,
-                virial_out,
-                atomic_energy_out,
-                atomic_virial_out,
-            )
+        results_dict = {
+            "energy": energy_out,
+            "force": force_out,
+            "virial": virial_out,
+        }
+        if has_spin:
+            results_dict["force_mag"] = force_mag_out
+        if atomic:
+            results_dict["atom_energy"] = atomic_energy_out
+            results_dict["atom_virial"] = atomic_virial_out
+        return results_dict

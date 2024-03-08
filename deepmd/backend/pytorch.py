@@ -29,8 +29,8 @@ if TYPE_CHECKING:
 
 @Backend.register("pt")
 @Backend.register("pytorch")
-class TensorFlowBackend(Backend):
-    """TensorFlow backend."""
+class PyTorchBackend(Backend):
+    """PyTorch backend."""
 
     name = "PyTorch"
     """The formal name of the backend."""
