@@ -30,6 +30,7 @@ from deepmd.dpmodel.output_def import (
     OutputVariableCategory,
     OutputVariableOperation,
     check_operation_applied,
+    FittingOutputDef,
 )
 from deepmd.dpmodel.utils import (
     build_neighbor_list,
