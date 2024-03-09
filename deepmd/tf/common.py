@@ -135,14 +135,14 @@ ACTIVATION_FN_DICT = {
     "tanh": tf.nn.tanh,
     "gelu": gelu,
     "gelu_tf": gelu_tf,
-    "None": None,
-    "none": None,
+    "linear": lambda x: x,
+    "none": lambda x: x,
 }
 
 
 def get_activation_func(
     activation_fn: Union["_ACTIVATION", None],
-) -> Union[Callable[[tf.Tensor], tf.Tensor], None]:
+) -> Callable[[tf.Tensor], tf.Tensor]:
     """Get activation function callable based on string name.
 
     Parameters
@@ -161,10 +161,11 @@ def get_activation_func(
         if unknown activation function is specified
     """
     if activation_fn is None:
-        return None
-    if activation_fn not in ACTIVATION_FN_DICT:
+        activation_fn = "none"
+    assert activation_fn is not None
+    if activation_fn.lower() not in ACTIVATION_FN_DICT:
         raise RuntimeError(f"{activation_fn} is not a valid activation function")
-    return ACTIVATION_FN_DICT[activation_fn]
+    return ACTIVATION_FN_DICT[activation_fn.lower()]
 
 
 def get_precision(precision: "_PRECISION") -> Any:
