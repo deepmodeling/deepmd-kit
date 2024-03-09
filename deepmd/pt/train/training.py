@@ -519,8 +519,11 @@ class Trainer:
                         model_params["type_map"],
                         model_params["new_type_map"],
                     )
-                    if hasattr(self.model, "fitting_net"):
-                        self.model.fitting_net.change_energy_bias(
+                    # TODO: need an interface instead of fetching fitting_net!!!!!!!!!
+                    if hasattr(self.model, "atomic_model") and hasattr(
+                        self.model.atomic_model, "fitting_net"
+                    ):
+                        self.model.atomic_model.fitting_net.change_energy_bias(
                             config,
                             self.model,
                             old_type_map,
@@ -530,7 +533,7 @@ class Trainer:
                         )
                     elif isinstance(self.model, DPZBLModel):
                         # need to updated
-                        self.model.change_energy_bias()
+                        self.model.atomic_model.change_energy_bias()
                     else:
                         raise NotImplementedError
         if init_frz_model is not None:

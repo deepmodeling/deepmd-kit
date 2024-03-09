@@ -52,11 +52,11 @@ class DPTrainTest:
             fix_params["model"]["descriptor"]["trainable"] = True
             trainer_fix = get_trainer(fix_params)
             model_dict_before_training = deepcopy(
-                trainer_fix.model.fitting_net.state_dict()
+                trainer_fix.model.get_fitting_net().state_dict()
             )
             trainer_fix.run()
             model_dict_after_training = deepcopy(
-                trainer_fix.model.fitting_net.state_dict()
+                trainer_fix.model.get_fitting_net().state_dict()
             )
         else:
             trainer_fix = get_trainer(fix_params)
