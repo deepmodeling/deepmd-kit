@@ -2136,7 +2136,7 @@ def training_args():  # ! modified by Ziyao: data configuration isolated.
     doc_save_ckpt = "The path prefix of saving check point files."
     doc_max_ckpt_keep = (
         "The maximum number of checkpoints to keep. "
-        "The oldest checkpoints will be deleted once the number of checkpoints exceeds max_to_keep. "
+        "The oldest checkpoints will be deleted once the number of checkpoints exceeds max_ckpt_keep. "
         "Defaults to 5."
     )
     doc_disp_training = "Displaying verbose information during training."
