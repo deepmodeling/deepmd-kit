@@ -132,6 +132,7 @@ class Trainer:
         self.disp_freq = training_params.get("disp_freq", 1000)
         self.save_ckpt = training_params.get("save_ckpt", "model.ckpt")
         self.save_freq = training_params.get("save_freq", 1000)
+        self.max_ckpt_keep = training_params.get("max_ckpt_keep", 5)
         self.lcurve_should_print_header = True
 
         def get_opt_param(params):
@@ -924,6 +925,15 @@ class Trainer:
             {"model": module.state_dict(), "optimizer": self.optimizer.state_dict()},
             save_path,
         )
+        checkpoint_dir = save_path.parent
+        checkpoint_files = [
+            f
+            for f in checkpoint_dir.glob("*.pt")
+            if not f.is_symlink() and f.name.startswith(self.save_ckpt)
+        ]
+        if len(checkpoint_files) > self.max_ckpt_keep:
+            checkpoint_files.sort(key=lambda x: x.stat().st_mtime)
+            checkpoint_files[0].unlink()
 
     def get_data(self, is_train=True, task_key="Default"):
         if not self.multi_task:
