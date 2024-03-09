@@ -462,6 +462,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
 
   double **x = atom->x;
   double **f = atom->f;
+  int *tag_array = atom->tag;
   int *type = atom->type;
   int nlocal = atom->nlocal;
   int nghost = 0;
@@ -470,7 +471,11 @@ void PairDeepMD::compute(int eflag, int vflag) {
   }
   int nall = nlocal + nghost;
   int newton_pair = force->newton_pair;
-
+  //make mapping array
+  std::vector<int> mapping(nall);
+  for (int i = 0; i < nall; ++i) {
+    mapping[i] = atom->map(tag_array[i]);
+  }
   vector<double> dspin(nall * 3, 0.);
   vector<double> dfm(nall * 3, 0.);
   double **sp = atom->sp;
@@ -1280,6 +1285,8 @@ void PairDeepMD::coeff(int narg, char **arg) {
 void PairDeepMD::init_style() {
 #if LAMMPS_VERSION_NUMBER >= 20220324
   neighbor->add_request(this, NeighConst::REQ_FULL);
+  atom->map_user=2;
+  atom->map_init(1);
 #else
   int irequest = neighbor->request(this, instance_me);
   neighbor->requests[irequest]->half = 0;
