@@ -1,19 +1,29 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from abc import (
+    abstractmethod,
+)
 from typing import (
     Dict,
     List,
     Optional,
     Tuple,
+    Type,
 )
 
 import numpy as np
 
+from deepmd.dpmodel.atomic_model.base_atomic_model import (
+    BaseAtomicModel,
+)
 from deepmd.dpmodel.common import (
     GLOBAL_ENER_FLOAT_PRECISION,
     GLOBAL_NP_FLOAT_PRECISION,
     PRECISION_DICT,
     RESERVED_PRECISON_DICT,
     NativeOP,
+)
+from deepmd.dpmodel.model.base_model import (
+    BaseModel,
 )
 from deepmd.dpmodel.output_def import (
     ModelOutputDef,
@@ -34,7 +44,7 @@ from .transform_output import (
 )
 
 
-def make_model(T_AtomicModel):
+def make_model(T_AtomicModel: Type[BaseAtomicModel]):
     """Make a model as a derived class of an atomic model.
 
     The model provide two interfaces.
@@ -57,16 +67,13 @@ def make_model(T_AtomicModel):
 
     """
 
-    class CM(T_AtomicModel, NativeOP):
+    class CM(NativeOP, BaseModel):
         def __init__(
             self,
             *args,
             **kwargs,
         ):
-            super().__init__(
-                *args,
-                **kwargs,
-            )
+            self.atomic_model: T_AtomicModel = T_AtomicModel(*args, **kwargs)
             self.precision_dict = PRECISION_DICT
             self.reverse_precision_dict = RESERVED_PRECISON_DICT
             self.global_np_float_precision = GLOBAL_NP_FLOAT_PRECISION
@@ -208,7 +215,7 @@ def make_model(T_AtomicModel):
                 extended_coord, fparam=fparam, aparam=aparam
             )
             del extended_coord, fparam, aparam
-            atomic_ret = self.forward_common_atomic(
+            atomic_ret = self.atomic_model.forward_common_atomic(
                 cc_ext,
                 extended_atype,
                 nlist,
@@ -376,5 +383,91 @@ def make_model(T_AtomicModel):
                 ret = nlist
             assert ret.shape[-1] == nnei
             return ret
+
+        def do_grad_r(
+            self,
+            var_name: Optional[str] = None,
+        ) -> bool:
+            """Tell if the output variable `var_name` is r_differentiable.
+            if var_name is None, returns if any of the variable is r_differentiable.
+            """
+            return self.atomic_model.do_grad_r(var_name)
+
+        def do_grad_c(
+            self,
+            var_name: Optional[str] = None,
+        ) -> bool:
+            """Tell if the output variable `var_name` is c_differentiable.
+            if var_name is None, returns if any of the variable is c_differentiable.
+            """
+            return self.atomic_model.do_grad_c(var_name)
+
+        def serialize(self) -> dict:
+            return self.atomic_model.serialize()
+
+        @classmethod
+        @abstractmethod
+        def deserialize(cls, data) -> "CM":
+            pass
+
+        def get_dim_fparam(self) -> int:
+            """Get the number (dimension) of frame parameters of this atomic model."""
+            return self.atomic_model.get_dim_fparam()
+
+        def get_dim_aparam(self) -> int:
+            """Get the number (dimension) of atomic parameters of this atomic model."""
+            return self.atomic_model.get_dim_aparam()
+
+        def get_sel_type(self) -> List[int]:
+            """Get the selected atom types of this model.
+
+            Only atoms with selected atom types have atomic contribution
+            to the result of the model.
+            If returning an empty list, all atom types are selected.
+            """
+            return self.atomic_model.get_sel_type()
+
+        def is_aparam_nall(self) -> bool:
+            """Check whether the shape of atomic parameters is (nframes, nall, ndim).
+
+            If False, the shape is (nframes, nloc, ndim).
+            """
+            return self.atomic_model.is_aparam_nall()
+
+        def get_rcut(self) -> float:
+            """Get the cut-off radius."""
+            return self.atomic_model.get_rcut()
+
+        def get_type_map(self) -> List[str]:
+            """Get the type map."""
+            return self.atomic_model.get_type_map()
+
+        def get_nsel(self) -> int:
+            """Returns the total number of selected neighboring atoms in the cut-off radius."""
+            return self.atomic_model.get_nsel()
+
+        def get_nnei(self) -> int:
+            """Returns the total number of selected neighboring atoms in the cut-off radius."""
+            return self.atomic_model.get_nnei()
+
+        def get_model_def_script(self) -> str:
+            """Get the model definition script."""
+            return self.atomic_model.get_model_def_script()
+
+        def get_sel(self) -> List[int]:
+            """Returns the number of selected atoms for each type."""
+            return self.atomic_model.get_sel()
+
+        def mixed_types(self) -> bool:
+            """If true, the model
+            1. assumes total number of atoms aligned across frames;
+            2. uses a neighbor list that does not distinguish different atomic types.
+
+            If false, the model
+            1. assumes total number of atoms of each atom type aligned across frames;
+            2. uses a neighbor list that distinguishes different atomic types.
+
+            """
+            return self.atomic_model.mixed_types()
 
     return CM

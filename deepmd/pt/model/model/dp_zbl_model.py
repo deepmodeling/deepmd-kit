@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import copy
 from typing import (
     Dict,
     Optional,
@@ -12,8 +13,14 @@ from deepmd.dpmodel.model.dp_model import (
 from deepmd.pt.model.atomic_model import (
     DPZBLLinearEnergyAtomicModel,
 )
+from deepmd.pt.model.atomic_model.linear_atomic_model import (
+    LinearEnergyAtomicModel,
+)
 from deepmd.pt.model.model.model import (
     BaseModel,
+)
+from deepmd.utils.version import (
+    check_version_compatibility,
 )
 
 from .make_model import (
@@ -24,7 +31,7 @@ DPZBLModel_ = make_model(DPZBLLinearEnergyAtomicModel)
 
 
 @BaseModel.register("zbl")
-class DPZBLModel(DPZBLModel_, BaseModel):
+class DPZBLModel(DPZBLModel_):
     model_type = "ener"
 
     def __init__(
@@ -120,3 +127,27 @@ class DPZBLModel(DPZBLModel_, BaseModel):
             global_jdata, local_jdata["dpmodel"]
         )
         return local_jdata_cpy
+
+    @classmethod
+    def deserialize(cls, data) -> "DPZBLModel":
+        data = copy.deepcopy(data)
+        check_version_compatibility(data.pop("@version", 1), 1, 1)
+        sw_rmin = data.pop("sw_rmin")
+        sw_rmax = data.pop("sw_rmax")
+        smin_alpha = data.pop("smin_alpha")
+
+        [dp_model, zbl_model], type_map = LinearEnergyAtomicModel.deserialize(
+            data.pop("models")
+        )
+
+        data.pop("@class", None)
+        data.pop("type", None)
+        return cls(
+            dp_model=dp_model,
+            zbl_model=zbl_model,
+            sw_rmin=sw_rmin,
+            sw_rmax=sw_rmax,
+            type_map=type_map,
+            smin_alpha=smin_alpha,
+            **data,
+        )

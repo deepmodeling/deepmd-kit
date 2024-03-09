@@ -223,17 +223,14 @@ class DPAtomicModel(torch.nn.Module, BaseAtomicModel):
         if self.fitting_net is not None:
             self.fitting_net.compute_output_stats(wrapped_sampler, stat_file_path)
 
-    @torch.jit.export
     def get_dim_fparam(self) -> int:
         """Get the number (dimension) of frame parameters of this atomic model."""
         return self.fitting_net.get_dim_fparam()
 
-    @torch.jit.export
     def get_dim_aparam(self) -> int:
         """Get the number (dimension) of atomic parameters of this atomic model."""
         return self.fitting_net.get_dim_aparam()
 
-    @torch.jit.export
     def get_sel_type(self) -> List[int]:
         """Get the selected atom types of this model.
 
@@ -243,7 +240,6 @@ class DPAtomicModel(torch.nn.Module, BaseAtomicModel):
         """
         return self.fitting_net.get_sel_type()
 
-    @torch.jit.export
     def is_aparam_nall(self) -> bool:
         """Check whether the shape of atomic parameters is (nframes, nall, ndim).
 
