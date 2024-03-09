@@ -164,6 +164,7 @@ class DPTrainer:
         self.disp_freq = tr_data.get("disp_freq", 1000)
         self.save_freq = tr_data.get("save_freq", 1000)
         self.save_ckpt = tr_data.get("save_ckpt", "model.ckpt")
+        self.max_ckpt_keep = tr_data.get("max_ckpt_keep", 5)
         self.display_in_training = tr_data.get("disp_training", True)
         self.timing_in_training = tr_data.get("time_training", True)
         self.profiling = self.run_opt.is_chief and tr_data.get("profiling", False)
@@ -498,7 +499,9 @@ class DPTrainer:
         # Initializes or restore global variables
         init_op = tf.global_variables_initializer()
         if self.run_opt.is_chief:
-            self.saver = tf.train.Saver(save_relative_paths=True)
+            self.saver = tf.train.Saver(
+                save_relative_paths=True, max_to_keep=self.max_ckpt_keep
+            )
             if self.run_opt.init_mode == "init_from_scratch":
                 log.info("initialize model from scratch")
                 run_sess(self.sess, init_op)
