@@ -471,7 +471,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
   }
   int nall = nlocal + nghost;
   int newton_pair = force->newton_pair;
-  //make mapping array
+  // make mapping array
   std::vector<int> mapping(nall);
   for (int i = 0; i < nall; ++i) {
     mapping[i] = atom->map(tag_array[i]);
@@ -1285,7 +1285,7 @@ void PairDeepMD::coeff(int narg, char **arg) {
 void PairDeepMD::init_style() {
 #if LAMMPS_VERSION_NUMBER >= 20220324
   neighbor->add_request(this, NeighConst::REQ_FULL);
-  atom->map_user=2;
+  atom->map_user = 2;
   atom->map_init(1);
 #else
   int irequest = neighbor->request(this, instance_me);
