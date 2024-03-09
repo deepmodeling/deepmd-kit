@@ -26,6 +26,7 @@ from deepmd.dpmodel.model.base_model import (
     BaseModel,
 )
 from deepmd.dpmodel.output_def import (
+    FittingOutputDef,
     ModelOutputDef,
     OutputVariableCategory,
     OutputVariableOperation,
@@ -469,5 +470,9 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
 
             """
             return self.atomic_model.mixed_types()
+
+        def atomic_output_def(self) -> FittingOutputDef:
+            """Get the output def of the atomic model."""
+            return self.atomic_model.atomic_output_def()
 
     return CM
