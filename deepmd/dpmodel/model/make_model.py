@@ -26,11 +26,11 @@ from deepmd.dpmodel.model.base_model import (
     BaseModel,
 )
 from deepmd.dpmodel.output_def import (
+    FittingOutputDef,
     ModelOutputDef,
     OutputVariableCategory,
     OutputVariableOperation,
     check_operation_applied,
-    FittingOutputDef,
 )
 from deepmd.dpmodel.utils import (
     build_neighbor_list,
