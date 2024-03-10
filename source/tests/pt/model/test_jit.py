@@ -31,7 +31,7 @@ class JITTest:
     def test_jit(self):
         trainer = get_trainer(deepcopy(self.config))
         trainer.run()
-        model = torch.jit.script(inference.Tester("./model.pt", numb_test=1).model)
+        model = torch.jit.script(inference.Tester("./model.pt").model)
         torch.jit.save(model, "./frozen_model.pth", {})
 
     def tearDown(self):
