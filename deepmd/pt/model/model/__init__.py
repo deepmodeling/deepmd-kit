@@ -147,8 +147,8 @@ def get_standard_model(model_params):
     pair_exclude_types = model_params.get("pair_exclude_types", [])
 
     model = DPModel(
-        descriptor,
-        fitting,
+        descriptor=descriptor,
+        fitting=fitting,
         type_map=model_params["type_map"],
         atom_exclude_types=atom_exclude_types,
         pair_exclude_types=pair_exclude_types,

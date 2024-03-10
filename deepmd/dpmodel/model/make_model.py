@@ -1,7 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from abc import (
-    abstractmethod,
-)
 from typing import (
     Dict,
     List,
@@ -72,9 +69,14 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
         def __init__(
             self,
             *args,
+            # underscore to prevent conflict with normal inputs
+            atomic_model_: Optional[T_AtomicModel] = None,
             **kwargs,
         ):
-            self.atomic_model: T_AtomicModel = T_AtomicModel(*args, **kwargs)
+            if atomic_model_ is not None:
+                self.atomic_model: T_AtomicModel = atomic_model_
+            else:
+                self.atomic_model: T_AtomicModel = T_AtomicModel(*args, **kwargs)
             self.precision_dict = PRECISION_DICT
             self.reverse_precision_dict = RESERVED_PRECISON_DICT
             self.global_np_float_precision = GLOBAL_NP_FLOAT_PRECISION
@@ -407,9 +409,8 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
             return self.atomic_model.serialize()
 
         @classmethod
-        @abstractmethod
         def deserialize(cls, data) -> "CM":
-            pass
+            return cls(atomic_model_=T_AtomicModel.deserialize(data))
 
         def get_dim_fparam(self) -> int:
             """Get the number (dimension) of frame parameters of this atomic model."""

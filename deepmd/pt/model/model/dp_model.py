@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import copy
 from typing import (
     Dict,
     Optional,
@@ -16,9 +15,6 @@ from deepmd.pt.model.descriptor.base_descriptor import (
 from deepmd.pt.model.model.model import (
     BaseModel,
 )
-from deepmd.pt.model.task.base_fitting import (
-    BaseFitting,
-)
 from deepmd.pt.model.task.dipole import (
     DipoleFittingNet,
 )
@@ -29,9 +25,6 @@ from deepmd.pt.model.task.ener import (
 from deepmd.pt.model.task.polarizability import (
     PolarFittingNet,
 )
-from deepmd.utils.version import (
-    check_version_compatibility,
-)
 
 from .make_model import (
     make_model,
@@ -40,7 +33,15 @@ from .make_model import (
 
 @BaseModel.register("standard")
 class DPModel(make_model(DPAtomicModel)):
-    def __new__(cls, descriptor, fitting, *args, **kwargs):
+    def __new__(
+        cls,
+        descriptor=None,
+        fitting=None,
+        *,
+        # disallow positional atomic_model_
+        atomic_model_: Optional[DPAtomicModel] = None,
+        **kwargs,
+    ):
         from deepmd.pt.model.model.dipole_model import (
             DipoleModel,
         )
@@ -50,6 +51,11 @@ class DPModel(make_model(DPAtomicModel)):
         from deepmd.pt.model.model.polar_model import (
             PolarModel,
         )
+
+        if atomic_model_ is not None:
+            fitting = atomic_model_.fitting_net
+        else:
+            assert fitting is not None, "fitting network is not provided"
 
         # according to the fitting network to decide the type of the model
         if cls is DPModel:
@@ -108,15 +114,3 @@ class DPModel(make_model(DPAtomicModel)):
             aparam=aparam,
             do_atomic_virial=do_atomic_virial,
         )
-
-    @classmethod
-    def deserialize(cls, data) -> "DPAtomicModel":
-        data = copy.deepcopy(data)
-        check_version_compatibility(data.pop("@version", 1), 1, 1)
-        data.pop("@class")
-        data.pop("type")
-        descriptor_obj = BaseDescriptor.deserialize(data.pop("descriptor"))
-        fitting_obj = BaseFitting.deserialize(data.pop("fitting"))
-        type_map = data.pop("type_map")
-        obj = cls(descriptor_obj, fitting_obj, type_map=type_map, **data)
-        return obj
