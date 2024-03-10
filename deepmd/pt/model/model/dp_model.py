@@ -37,7 +37,7 @@ class DPModel(make_model(DPAtomicModel)):
         cls,
         descriptor=None,
         fitting=None,
-        *,
+        *args,
         # disallow positional atomic_model_
         atomic_model_: Optional[DPAtomicModel] = None,
         **kwargs,
