@@ -1522,11 +1522,34 @@ def learning_rate_exp():
     doc_decay_steps = (
         "The learning rate is decaying every this number of training steps."
     )
+    doc_decay_rate = (
+        "The decay rate for the learning rate. "
+        "If this is provided, it will be used directly as the decay rate for learning rate "
+        "instead of calculating it through interpolation between start_lr and stop_lr."
+    )
+    doc_min_lr = (
+        "The minimum learning rate to be used when decay_rate is applied. "
+        "If the learning rate decays below min_lr, min_lr will be used instead."
+    )
 
     args = [
         Argument("start_lr", float, optional=True, default=1e-3, doc=doc_start_lr),
         Argument("stop_lr", float, optional=True, default=1e-8, doc=doc_stop_lr),
         Argument("decay_steps", int, optional=True, default=5000, doc=doc_decay_steps),
+        Argument(
+            "decay_rate",
+            float,
+            optional=True,
+            default=None,
+            doc=doc_only_pt_supported + doc_decay_rate,
+        ),
+        Argument(
+            "min_lr",
+            float,
+            optional=True,
+            default=None,
+            doc=doc_only_pt_supported + doc_min_lr,
+        ),
     ]
     return args
 

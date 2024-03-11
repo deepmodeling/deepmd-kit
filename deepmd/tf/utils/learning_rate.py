@@ -41,6 +41,7 @@ class LearningRateExp:
         stop_lr: float = 5e-8,
         decay_steps: int = 5000,
         decay_rate: float = 0.95,
+        **kwargs,
     ) -> None:
         """Constructor."""
         self.cd = {}
