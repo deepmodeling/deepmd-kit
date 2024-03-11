@@ -486,7 +486,7 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
             dim=-1,
         )  # handle masked nnei.
 
-        sigma = numerator / denominator  # nfrmes, nloc
+        sigma = numerator / torch.clamp(denominator, 1e-20)  # nfrmes, nloc
         u = (sigma - self.sw_rmin) / (self.sw_rmax - self.sw_rmin)
         coef = torch.zeros_like(u)
         left_mask = sigma < self.sw_rmin
