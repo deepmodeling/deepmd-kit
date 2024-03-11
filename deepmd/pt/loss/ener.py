@@ -108,7 +108,7 @@ class EnergyStdLoss(TaskLoss):
         pref_e = self.limit_pref_e + (self.start_pref_e - self.limit_pref_e) * coef
         pref_f = self.limit_pref_f + (self.start_pref_f - self.limit_pref_f) * coef
         pref_v = self.limit_pref_v + (self.start_pref_v - self.limit_pref_v) * coef
-        loss = torch.tensor(0.0, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE)
+        loss = torch.zeros(1, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE)[0]
         more_loss = {}
         # more_loss['log_keys'] = []  # showed when validation on the fly
         # more_loss['test_keys'] = []  # showed when doing dp test
