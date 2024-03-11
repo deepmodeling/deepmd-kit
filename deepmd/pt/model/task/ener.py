@@ -214,6 +214,9 @@ class InvarFitting(GeneralFitting):
         """
         return self._forward_common(descriptor, atype, gr, g2, h2, fparam, aparam)
 
+    # make jit happy with torch 2.0.0
+    exclude_types: List[int]
+
 
 @Fitting.register("ener")
 class EnergyFittingNet(InvarFitting):
@@ -261,6 +264,9 @@ class EnergyFittingNet(InvarFitting):
             **super().serialize(),
             "type": "ener",
         }
+
+    # make jit happy with torch 2.0.0
+    exclude_types: List[int]
 
 
 @Fitting.register("direct_force")
