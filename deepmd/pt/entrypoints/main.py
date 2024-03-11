@@ -134,7 +134,7 @@ def get_trainer(
             DpLoaderSet(
                 validation_systems,
                 validation_dataset_params["batch_size"],
-                model_params_single,
+                model_params_single["type_map"],
             )
             if validation_systems
             else None
@@ -143,13 +143,13 @@ def get_trainer(
             train_data_single = DpLoaderSet(
                 training_systems,
                 training_dataset_params["batch_size"],
-                model_params_single,
+                model_params_single["type_map"],
             )
         else:
             train_data_single = DpLoaderSet(
                 training_systems,
                 training_dataset_params["batch_size"],
-                model_params_single,
+                model_params_single["type_map"],
             )
         return (
             train_data_single,
@@ -281,9 +281,7 @@ def train(FLAGS):
 
 
 def freeze(FLAGS):
-    model = torch.jit.script(
-        inference.Tester(FLAGS.model, numb_test=1, head=FLAGS.head).model
-    )
+    model = torch.jit.script(inference.Tester(FLAGS.model, head=FLAGS.head).model)
     torch.jit.save(
         model,
         FLAGS.output,

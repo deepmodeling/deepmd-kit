@@ -2134,6 +2134,11 @@ def training_args():  # ! modified by Ziyao: data configuration isolated.
     doc_disp_freq = "The frequency of printing learning curve."
     doc_save_freq = "The frequency of saving check point."
     doc_save_ckpt = "The path prefix of saving check point files."
+    doc_max_ckpt_keep = (
+        "The maximum number of checkpoints to keep. "
+        "The oldest checkpoints will be deleted once the number of checkpoints exceeds max_ckpt_keep. "
+        "Defaults to 5."
+    )
     doc_disp_training = "Displaying verbose information during training."
     doc_time_training = "Timing durining training."
     doc_profiling = "Profiling during training."
@@ -2192,6 +2197,7 @@ def training_args():  # ! modified by Ziyao: data configuration isolated.
         Argument(
             "save_ckpt", str, optional=True, default="model.ckpt", doc=doc_save_ckpt
         ),
+        Argument("max_ckpt_keep", int, optional=True, default=5, doc=doc_max_ckpt_keep),
         Argument(
             "disp_training", bool, optional=True, default=True, doc=doc_disp_training
         ),
