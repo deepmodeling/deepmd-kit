@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import copy
 import logging
 from typing import (
     Callable,
@@ -7,6 +8,7 @@ from typing import (
     Union,
 )
 
+import numpy as np
 import torch
 
 from deepmd.dpmodel import (
@@ -25,8 +27,15 @@ from deepmd.pt.utils.env import (
 from deepmd.pt.utils.utils import (
     to_numpy_array,
 )
+from deepmd.utils.out_stat import (
+    compute_stats_from_atomic,
+    compute_stats_from_redu,
+)
 from deepmd.utils.path import (
     DPPath,
+)
+from deepmd.utils.version import (
+    check_version_compatibility,
 )
 
 log = logging.getLogger(__name__)
@@ -114,6 +123,9 @@ class PolarFittingNet(GeneralFitting):
             self.scale, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE
         ).view(ntypes, 1)
         self.shift_diag = shift_diag
+        self.constant_matrix = torch.zeros(
+            ntypes, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE
+        )
         super().__init__(
             var_name=kwargs.pop("var_name", "polar"),
             ntypes=ntypes,
@@ -140,15 +152,35 @@ class PolarFittingNet(GeneralFitting):
             else self.embedding_width * self.embedding_width
         )
 
+    def __setitem__(self, key, value):
+        if key in ["constant_matrix"]:
+            self.constant_matrix = value
+        else:
+            super().__setitem__(key, value)
+
+    def __getitem__(self, key):
+        if key in ["constant_matrix"]:
+            return self.constant_matrix
+        else:
+            return super().__getitem__(key)
+
     def serialize(self) -> dict:
         data = super().serialize()
         data["type"] = "polar"
+        data["@version"] = 2
         data["embedding_width"] = self.embedding_width
         data["old_impl"] = self.old_impl
         data["fit_diag"] = self.fit_diag
-        data["fit_diag"] = self.fit_diag
+        data["shift_diag"] = self.shift_diag
         data["@variables"]["scale"] = to_numpy_array(self.scale)
+        data["@variables"]["constant_matrix"] = to_numpy_array(self.constant_matrix)
         return data
+
+    @classmethod
+    def deserialize(cls, data: dict) -> "GeneralFitting":
+        data = copy.deepcopy(data)
+        check_version_compatibility(data.pop("@version", 1), 2, 1)
+        return super().deserialize(data)
 
     def output_def(self) -> FittingOutputDef:
         return FittingOutputDef(
@@ -167,7 +199,7 @@ class PolarFittingNet(GeneralFitting):
         self,
         merged: Union[Callable[[], List[dict]], List[dict]],
         stat_file_path: Optional[DPPath] = None,
-    ):
+    ) -> None:
         """
         Compute the output statistics (e.g. energy bias) for the fitting net from packed data.
 
@@ -184,7 +216,60 @@ class PolarFittingNet(GeneralFitting):
             The path to the stat file.
 
         """
-        pass
+        if self.shift_diag:
+            if stat_file_path is not None:
+                stat_file_path = stat_file_path / "constant_matrix"
+            if stat_file_path is not None and stat_file_path.is_file():
+                constant_matrix = stat_file_path.load_numpy()
+            else:
+                if callable(merged):
+                    # only get data for once
+                    sampled = merged()
+                else:
+                    sampled = merged
+
+                sys_constant_matrix = []
+                for sys in range(len(sampled)):
+                    nframs = sampled[sys]["type"].shape[0]
+
+                    if sampled[sys]["find_atomic_polarizability"] > 0.0:
+                        sys_atom_polar = compute_stats_from_atomic(
+                            sampled[sys]["atomic_polarizability"].numpy(force=True),
+                            sampled[sys]["type"].numpy(force=True),
+                        )[0]
+                    else:
+                        if not sampled[sys]["find_polarizability"] > 0.0:
+                            continue
+                        sys_type_count = np.zeros(
+                            (nframs, self.ntypes), dtype=env.GLOBAL_NP_FLOAT_PRECISION
+                        )
+                        for itype in range(self.ntypes):
+                            type_mask = sampled[sys]["type"] == itype
+                            sys_type_count[:, itype] = type_mask.sum(dim=1).numpy(
+                                force=True
+                            )
+
+                        sys_bias_redu = sampled[sys]["polarizability"].numpy(force=True)
+
+                        sys_atom_polar = compute_stats_from_redu(
+                            sys_bias_redu, sys_type_count, rcond=self.rcond
+                        )[0]
+                    cur_constant_matrix = np.zeros(
+                        self.ntypes, dtype=env.GLOBAL_NP_FLOAT_PRECISION
+                    )
+
+                    for itype in range(self.ntypes):
+                        cur_constant_matrix[itype] = np.mean(
+                            np.diagonal(sys_atom_polar[itype].reshape(3, 3))
+                        )
+                    sys_constant_matrix.append(cur_constant_matrix)
+                constant_matrix = np.stack(sys_constant_matrix).mean(axis=0)
+
+                # handle nan values.
+                constant_matrix = np.nan_to_num(constant_matrix)
+            if stat_file_path is not None:
+                stat_file_path.save_numpy(constant_matrix)
+            self.constant_matrix = torch.tensor(constant_matrix, device=env.DEVICE)
 
     def forward(
         self,
@@ -218,6 +303,17 @@ class PolarFittingNet(GeneralFitting):
             "bim,bmj->bij", gr.transpose(1, 2), out
         )  # (nframes * nloc, 3, 3)
         out = out.view(nframes, nloc, 3, 3)
+        if self.shift_diag:
+            bias = self.constant_matrix[atype]
+
+            # (nframes, nloc, 1)
+            bias = bias.unsqueeze(-1) * self.scale[atype]
+
+            eye = torch.eye(3, device=env.DEVICE)
+            eye = eye.repeat(nframes, nloc, 1, 1)
+            # (nframes, nloc, 3, 3)
+            bias = bias.unsqueeze(-1) * eye
+            out = out + bias
 
         return {self.var_name: out.to(env.GLOBAL_PT_FLOAT_PRECISION)}
 

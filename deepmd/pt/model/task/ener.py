@@ -36,6 +36,9 @@ from deepmd.pt.utils.stat import (
 from deepmd.utils.path import (
     DPPath,
 )
+from deepmd.utils.version import (
+    check_version_compatibility,
+)
 
 dtype = env.GLOBAL_PT_FLOAT_PRECISION
 device = env.DEVICE
@@ -139,6 +142,12 @@ class InvarFitting(GeneralFitting):
         data["dim_out"] = self.dim_out
         data["atom_ener"] = self.atom_ener
         return data
+
+    @classmethod
+    def deserialize(cls, data: dict) -> "GeneralFitting":
+        data = copy.deepcopy(data)
+        check_version_compatibility(data.pop("@version", 1), 1, 1)
+        return super().deserialize(data)
 
     def compute_output_stats(
         self,
@@ -244,6 +253,7 @@ class EnergyFittingNet(InvarFitting):
     @classmethod
     def deserialize(cls, data: dict) -> "GeneralFitting":
         data = copy.deepcopy(data)
+        check_version_compatibility(data.pop("@version", 1), 1, 1)
         data.pop("var_name")
         data.pop("dim_out")
         return super().deserialize(data)
