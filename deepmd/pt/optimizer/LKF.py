@@ -32,13 +32,13 @@ class LKFOptimizer(Optimizer):
         kalman_nue=0.9987,
         block_size=5120,
     ):
-        defaults = dict(
-            lr=0.1,
-            kalman_nue=kalman_nue,
-            block_size=block_size,
-        )
+        defaults = {
+            "lr":0.1,
+            "kalman_nue":kalman_nue,
+            "block_size":block_size
+        }
 
-        super(LKFOptimizer, self).__init__(params, defaults)
+        super().__init__(params, defaults)
 
         self._params = self.param_groups[0]["params"]
 
