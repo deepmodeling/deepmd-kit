@@ -125,7 +125,6 @@ class TestForceModelHybrid(unittest.TestCase, NullTest):
         self.model = get_model(model_params).to(env.DEVICE)
 
 
-@unittest.skip("FAILED at the moment")
 class TestEnergyModelZBL(unittest.TestCase, NullTest):
     def setUp(self):
         model_params = copy.deepcopy(model_zbl)
