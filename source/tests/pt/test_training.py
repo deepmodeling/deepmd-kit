@@ -293,6 +293,7 @@ class TestPolarModelSeA(unittest.TestCase, DPTrainTest):
         self.config["model"]["atom_exclude_types"] = [1]
         self.config["model"]["fitting_net"]["type"] = "polar"
         self.config["model"]["fitting_net"]["fit_diag"] = False
+        self.config["model"]["fitting_net"]["shift_diag"] = False
         self.config["training"]["numb_steps"] = 1
         self.config["training"]["save_freq"] = 1
         # can not set requires_grad false for all parameters,
@@ -326,6 +327,7 @@ class TestPolarModelDPA1(unittest.TestCase, DPTrainTest):
         self.config["model"]["atom_exclude_types"] = [1]
         self.config["model"]["fitting_net"]["type"] = "polar"
         self.config["model"]["fitting_net"]["fit_diag"] = False
+        self.config["model"]["fitting_net"]["shift_diag"] = False
         self.config["training"]["numb_steps"] = 1
         self.config["training"]["save_freq"] = 1
         # can not set requires_grad false for all parameters,
@@ -359,6 +361,7 @@ class TestPolarModelDPA2(unittest.TestCase, DPTrainTest):
         self.config["model"]["atom_exclude_types"] = [1]
         self.config["model"]["fitting_net"]["type"] = "polar"
         self.config["model"]["fitting_net"]["fit_diag"] = False
+        self.config["model"]["fitting_net"]["shift_diag"] = False
         self.config["training"]["numb_steps"] = 1
         self.config["training"]["save_freq"] = 1
         # can not set requires_grad false for all parameters,

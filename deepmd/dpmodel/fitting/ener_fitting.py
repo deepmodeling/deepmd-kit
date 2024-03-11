@@ -18,6 +18,9 @@ if TYPE_CHECKING:
     from deepmd.dpmodel.fitting.general_fitting import (
         GeneralFitting,
     )
+from deepmd.utils.version import (
+    check_version_compatibility,
+)
 
 
 @InvarFitting.register("ener")
@@ -69,6 +72,7 @@ class EnergyFittingNet(InvarFitting):
     @classmethod
     def deserialize(cls, data: dict) -> "GeneralFitting":
         data = copy.deepcopy(data)
+        check_version_compatibility(data.pop("@version", 1), 1, 1)
         data.pop("var_name")
         data.pop("dim_out")
         return super().deserialize(data)
