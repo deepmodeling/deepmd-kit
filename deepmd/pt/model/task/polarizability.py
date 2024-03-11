@@ -268,7 +268,7 @@ class PolarFittingNet(GeneralFitting):
                 # handle nan values.
                 constant_matrix = np.nan_to_num(constant_matrix)
             if stat_file_path is not None:
-                stat_file_path.save_numpy(self.constant_matrix)
+                stat_file_path.save_numpy(constant_matrix)
             self.constant_matrix = torch.tensor(constant_matrix, device=env.DEVICE)
 
     def forward(
