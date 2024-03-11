@@ -44,27 +44,29 @@ class FinetuneTest:
         else:
             model = get_model(self.model_config)
         if isinstance(model, EnergyModel):
-            model.fitting_net.bias_atom_e = torch.rand_like(
-                model.fitting_net.bias_atom_e
+            model.get_fitting_net().bias_atom_e = torch.rand_like(
+                model.get_fitting_net().bias_atom_e
             )
             energy_bias_before = deepcopy(
-                model.fitting_net.bias_atom_e.detach().cpu().numpy().reshape(-1)
+                model.get_fitting_net().bias_atom_e.detach().cpu().numpy().reshape(-1)
             )
             bias_atom_e_input = deepcopy(
-                model.fitting_net.bias_atom_e.detach().cpu().numpy().reshape(-1)
+                model.get_fitting_net().bias_atom_e.detach().cpu().numpy().reshape(-1)
             )
         elif isinstance(model, DPZBLModel):
-            model.dp_model.fitting_net.bias_atom_e = torch.rand_like(
-                model.dp_model.fitting_net.bias_atom_e
+            model.dp_model.get_fitting_net().bias_atom_e = torch.rand_like(
+                model.dp_model.get_fitting_net().bias_atom_e
             )
             energy_bias_before = deepcopy(
-                model.dp_model.fitting_net.bias_atom_e.detach()
+                model.dp_model.get_fitting_net()
+                .bias_atom_e.detach()
                 .cpu()
                 .numpy()
                 .reshape(-1)
             )
             bias_atom_e_input = deepcopy(
-                model.dp_model.fitting_net.bias_atom_e.detach()
+                model.dp_model.get_fitting_net()
+                .bias_atom_e.detach()
                 .cpu()
                 .numpy()
                 .reshape(-1)
