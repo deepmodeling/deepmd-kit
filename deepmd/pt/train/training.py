@@ -132,6 +132,7 @@ class Trainer:
         self.disp_freq = training_params.get("disp_freq", 1000)
         self.save_ckpt = training_params.get("save_ckpt", "model.ckpt")
         self.save_freq = training_params.get("save_freq", 1000)
+        self.max_ckpt_keep = training_params.get("max_ckpt_keep", 5)
         self.lcurve_should_print_header = True
 
         def get_opt_param(params):
@@ -924,6 +925,15 @@ class Trainer:
             {"model": module.state_dict(), "optimizer": self.optimizer.state_dict()},
             save_path,
         )
+        checkpoint_dir = save_path.parent
+        checkpoint_files = [
+            f
+            for f in checkpoint_dir.glob("*.pt")
+            if not f.is_symlink() and f.name.startswith(self.save_ckpt)
+        ]
+        if len(checkpoint_files) > self.max_ckpt_keep:
+            checkpoint_files.sort(key=lambda x: x.stat().st_mtime)
+            checkpoint_files[0].unlink()
 
     def get_data(self, is_train=True, task_key="Default"):
         if not self.multi_task:
@@ -973,9 +983,11 @@ class Trainer:
                 continue
             elif not isinstance(batch_data[key], list):
                 if batch_data[key] is not None:
-                    batch_data[key] = batch_data[key].to(DEVICE)
+                    batch_data[key] = batch_data[key].to(DEVICE, non_blocking=True)
             else:
-                batch_data[key] = [item.to(DEVICE) for item in batch_data[key]]
+                batch_data[key] = [
+                    item.to(DEVICE, non_blocking=True) for item in batch_data[key]
+                ]
         # we may need a better way to classify which are inputs and which are labels
         # now wrapper only supports the following inputs:
         input_keys = [
@@ -1035,7 +1047,7 @@ class Trainer:
         print_str = ""
         print_str += "%7d" % step_id
         if not self.multi_task:
-            if valid_results is not None:
+            if valid_results:
                 prop_fmt = "   %11.2e %11.2e"
                 for k in train_keys:
                     print_str += prop_fmt % (valid_results[k], train_results[k])
@@ -1045,7 +1057,7 @@ class Trainer:
                     print_str += prop_fmt % (train_results[k])
         else:
             for model_key in self.model_keys:
-                if valid_results[model_key] is not None:
+                if valid_results[model_key]:
                     prop_fmt = "   %11.2e %11.2e"
                     for k in sorted(valid_results[model_key].keys()):
                         print_str += prop_fmt % (

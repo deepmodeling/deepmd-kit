@@ -21,10 +21,16 @@ def get_activation_fn(activation: str) -> Callable:
     """Returns the activation function corresponding to `activation`."""
     if activation.lower() == "relu":
         return F.relu
-    elif activation.lower() == "gelu":
-        return F.gelu
+    elif activation.lower() == "gelu" or activation.lower() == "gelu_tf":
+        return lambda x: F.gelu(x, approximate="tanh")
     elif activation.lower() == "tanh":
         return torch.tanh
+    elif activation.lower() == "relu6":
+        return F.relu6
+    elif activation.lower() == "softplus":
+        return F.softplus
+    elif activation.lower() == "sigmoid":
+        return torch.sigmoid
     elif activation.lower() == "linear" or activation.lower() == "none":
         return lambda x: x
     else:
@@ -42,10 +48,16 @@ class ActivationFn(torch.nn.Module):
 
         if self.activation.lower() == "relu":
             return F.relu(x)
-        elif self.activation.lower() == "gelu":
-            return F.gelu(x)
+        elif self.activation.lower() == "gelu" or self.activation.lower() == "gelu_tf":
+            return F.gelu(x, approximate="tanh")
         elif self.activation.lower() == "tanh":
             return torch.tanh(x)
+        elif self.activation.lower() == "relu6":
+            return F.relu6(x)
+        elif self.activation.lower() == "softplus":
+            return F.softplus(x)
+        elif self.activation.lower() == "sigmoid":
+            return torch.sigmoid(x)
         elif self.activation.lower() == "linear" or self.activation.lower() == "none":
             return x
         else:
