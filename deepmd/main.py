@@ -798,7 +798,8 @@ def main():
     ):
         deepmd_main = BACKENDS[args.backend]().entry_point_hook
     elif args.command is None:
-        pass
+        # help message has been printed in parse_args
+        return
     else:
         raise RuntimeError(f"unknown command {args.command}")
 

@@ -46,14 +46,7 @@ class TestSampler(unittest.TestCase):
         self.my_dataset = DpLoaderSet(
             self.systems,
             self.batch_size,
-            model_params={
-                "descriptor": {
-                    "type": "se_e2_a",
-                    "sel": self.sel,
-                    "rcut": self.rcut,
-                },
-                "type_map": model_config["type_map"],
-            },
+            model_config["type_map"],
             seed=10,
             shuffle=False,
         )
