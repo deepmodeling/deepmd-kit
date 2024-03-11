@@ -80,3 +80,6 @@ __all__ = [
     "ENERGY_BIAS_TRAINABLE",
     "LOCAL_RANK",
 ]
+
+def load_op():
+    torch.ops.load_library("/mnt/user/zhangxiangyu/workspace/dpkit/deepmd-kit/dp/lib/")
