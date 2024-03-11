@@ -452,10 +452,6 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
             """Returns the total number of selected neighboring atoms in the cut-off radius."""
             return self.atomic_model.get_nnei()
 
-        def get_model_def_script(self) -> str:
-            """Get the model definition script."""
-            return self.atomic_model.get_model_def_script()
-
         def get_sel(self) -> List[int]:
             """Returns the number of selected atoms for each type."""
             return self.atomic_model.get_sel()

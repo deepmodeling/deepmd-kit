@@ -360,7 +360,6 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
     ):
         models = [dp_model, zbl_model]
         super().__init__(models, type_map, **kwargs)
-        self.model_def_script = ""
         self.dp_model = dp_model
         self.zbl_model = zbl_model
 
