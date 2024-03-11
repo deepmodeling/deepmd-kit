@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import copy
 from typing import (
     Any,
     Dict,
@@ -21,6 +22,9 @@ from deepmd.dpmodel.output_def import (
     FittingOutputDef,
     OutputVariableDef,
     fitting_check_output,
+)
+from deepmd.utils.version import (
+    check_version_compatibility,
 )
 
 from .general_fitting import (
@@ -139,6 +143,7 @@ class PolarFitting(GeneralFitting):
             ntypes, 1
         )
         self.shift_diag = shift_diag
+        self.constant_matrix = np.zeros(ntypes, dtype=GLOBAL_NP_FLOAT_PRECISION)
         super().__init__(
             var_name=var_name,
             ntypes=ntypes,
@@ -168,14 +173,35 @@ class PolarFitting(GeneralFitting):
             else self.embedding_width * self.embedding_width
         )
 
+    def __setitem__(self, key, value):
+        if key in ["constant_matrix"]:
+            self.constant_matrix = value
+        else:
+            super().__setitem__(key, value)
+
+    def __getitem__(self, key):
+        if key in ["constant_matrix"]:
+            return self.constant_matrix
+        else:
+            return super().__getitem__(key)
+
     def serialize(self) -> dict:
         data = super().serialize()
         data["type"] = "polar"
+        data["@version"] = 2
         data["embedding_width"] = self.embedding_width
         data["old_impl"] = self.old_impl
         data["fit_diag"] = self.fit_diag
+        data["shift_diag"] = self.shift_diag
         data["@variables"]["scale"] = self.scale
+        data["@variables"]["constant_matrix"] = self.constant_matrix
         return data
+
+    @classmethod
+    def deserialize(cls, data: dict) -> "GeneralFitting":
+        data = copy.deepcopy(data)
+        check_version_compatibility(data.pop("@version", 1), 2, 1)
+        return super().deserialize(data)
 
     def output_def(self):
         return FittingOutputDef(
@@ -246,4 +272,13 @@ class PolarFitting(GeneralFitting):
             "bim,bmj->bij", np.transpose(gr, axes=(0, 2, 1)), out
         )  # (nframes * nloc, 3, 3)
         out = out.reshape(nframes, nloc, 3, 3)
+        if self.shift_diag:
+            bias = self.constant_matrix[atype]
+            # (nframes, nloc, 1)
+            bias = np.expand_dims(bias, axis=-1) * self.scale[atype]
+            eye = np.eye(3)
+            eye = np.tile(eye, (nframes, nloc, 1, 1))
+            # (nframes, nloc, 3, 3)
+            bias = np.expand_dims(bias, axis=-1) * eye
+            out = out + bias
         return {self.var_name: out}
