@@ -81,11 +81,9 @@ In instances where the interaction at the cut-off distance is not delineated wit
   "smin_alpha": 0.1,
   "sw_rmin": 0.8,
   "sw_rmax": 1.0,
-  "type_map":{
-    "pairtab": ["H", "O"],
-    "dp": ["O", "H"],
-    "zbl": ["H", "O"]
-  },
+  "type_map":["H", "O"],
+  "type_map_dp": ["O", "H"],
+  "type_map_pairtab": ["O", "H"],
   "_comment": "Below uses a normal DP model"
 }
 ```
