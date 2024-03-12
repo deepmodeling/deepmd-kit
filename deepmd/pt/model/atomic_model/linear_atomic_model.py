@@ -1,8 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import copy
-from abc import (
-    abstractmethod,
-)
 from typing import (
     Dict,
     List,
@@ -259,14 +256,13 @@ class LinearEnergyAtomicModel(torch.nn.Module, BaseAtomicModel):
             ]
         )
 
-    @staticmethod
-    def serialize(models, type_map) -> dict:
+    def serialize(self) -> dict:
         return {
             "@class": "Model",
             "@version": 1,
             "type": "linear",
-            "models": [model.serialize() for model in models],
-            "type_map": type_map,
+            "models": [model.serialize() for model in self.models],
+            "type_map": self.type_map,
         }
 
     @classmethod
@@ -283,20 +279,13 @@ class LinearEnergyAtomicModel(torch.nn.Module, BaseAtomicModel):
         data.pop("models")
         return cls(models, type_map, **data)
 
-    @staticmethod
-    def _deserialize_models(data: dict) -> List[BaseAtomicModel]:
-        models = [
-            BaseAtomicModel.get_class_by_type(model["type"]).deserialize(model)
-            for model in data["models"]
-        ]
-        return models
-
-    @abstractmethod
     def _compute_weight(
         self, extended_coord, extended_atype, nlists_
     ) -> List[torch.Tensor]:
         """This should be a list of user defined weights that matches the number of models to be combined."""
-        raise NotImplementedError
+
+        nmodels=  len(self.models)
+        return [torch.ones(1)/nmodels for _ in range(nmodels)]
 
     def get_dim_fparam(self) -> int:
         """Get the number (dimension) of frame parameters of this atomic model."""
@@ -410,9 +399,9 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
                 "@class": "Model",
                 "@version": 1,
                 "type": "zbl",
-                "models": LinearEnergyAtomicModel.serialize(
+                "models": LinearEnergyAtomicModel(
                     models=[self.models[0], self.models[1]], type_map=self.type_map
-                ),
+                ).serialize(),
                 "sw_rmin": self.sw_rmin,
                 "sw_rmax": self.sw_rmax,
                 "smin_alpha": self.smin_alpha,
@@ -427,11 +416,9 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
         sw_rmin = data.pop("sw_rmin")
         sw_rmax = data.pop("sw_rmax")
         smin_alpha = data.pop("smin_alpha")
-
-        dp_model, zbl_model = LinearEnergyAtomicModel._deserialize_models(
-            data["models"]
-        )
-        type_map = data.pop("models")["type_map"]
+        linear_model = LinearEnergyAtomicModel.deserialize(data.pop("models"))
+        dp_model, zbl_model = linear_model.models
+        type_map = linear_model.type_map
 
         data.pop("@class", None)
         data.pop("type", None)
