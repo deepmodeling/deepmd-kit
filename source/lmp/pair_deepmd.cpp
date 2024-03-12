@@ -481,6 +481,19 @@ void PairDeepMD::compute(int eflag, int vflag) {
       mapping[i] = atom->map(tag_array[i]);
     }
   }
+  // for dpa2 communication
+  int nswap = cb->nswap;
+  int* sendnum = cb->sendnum; // dim: nswap
+  int* recvnum = cb->recvnum; // dim: nswap
+  int* firstrecv = cb->firstrecv; // dim: nswap
+  int** sendlist = cb->sendlist; // dim: nswap x sendnum[nswap]
+  int* sendproc = cb->sendproc; // dim: nswap
+  int* recvproc = cb->recvproc; // dim: nswap
+  int** pbc = cb->pbc; // dim: nswap x 3
+  int* maxneed = cb->maxneed; // dim: 3
+  auto* recvneed = cb->recvneed; // int array, dim: 3x2
+  auto* sendneed = cb->sendneed; // int array, dim: 3x2
+  double* prd = domain->prd;
   vector<double> dspin(nall * 3, 0.);
   vector<double> dfm(nall * 3, 0.);
   double **sp = atom->sp;
@@ -946,7 +959,7 @@ void PairDeepMD::settings(int narg, char **arg) {
   if (narg <= 0) {
     error->all(FLERR, "Illegal pair_style command");
   }
-
+  
   vector<string> models;
   int iarg = 0;
   while (iarg < narg) {
@@ -1285,6 +1298,9 @@ void PairDeepMD::coeff(int narg, char **arg) {
       }
     }
   }
+
+  //dpa2 communication
+  cb = (CommBrickDeepMD *)comm;
 }
 
 void PairDeepMD::init_style() {

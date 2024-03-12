@@ -5,9 +5,11 @@ file(
   OP_PT_SRC
   comm.cc
 )
+find_package(MPI REQUIRED)
+
 add_library(${LIB_DEEPMD_OP_PT} MODULE ${OP_PT_SRC})
-target_link_libraries(${libname} PRIVATE )
 target_link_libraries(${LIB_DEEPMD_OP_PT} PRIVATE "${TORCH_LIBRARIES}")
+target_link_libraries(${LIB_DEEPMD_OP_PT} PRIVATE MPI::MPI_CXX)
 target_link_libraries(${LIB_DEEPMD_OP_PT} PRIVATE ${LIB_DEEPMD})
 
 if(CMAKE_TESTING_ENABLED)
