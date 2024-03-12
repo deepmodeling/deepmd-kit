@@ -54,7 +54,9 @@ class DPModel(make_model(DPAtomicModel)):
         from deepmd.pt.model.model.polar_model import (
             PolarModel,
         )
-        from deepmd.pt.model.model.dos_model
+        from deepmd.pt.model.model.dos_model import (
+            DOSModel,
+        )
 
         if atomic_model_ is not None:
             fitting = atomic_model_.fitting_net

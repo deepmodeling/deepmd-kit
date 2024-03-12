@@ -46,6 +46,9 @@ from deepmd.tf.utils.network import (
 from deepmd.utils.out_stat import (
     compute_stats_from_redu,
 )
+from deepmd.utils.version import (
+    check_version_compatibility,
+)
 
 log = logging.getLogger(__name__)
 
@@ -57,8 +60,10 @@ class DOSFitting(Fitting):
 
     Parameters
     ----------
-    descrpt
-            The descrptor :math:`\mathcal{D}`
+    ntypes
+            The ntypes of the descrptor :math:`\mathcal{D}`
+    dim_descrpt
+            The dimension of the descrptor :math:`\mathcal{D}`
     neuron
             Number of neurons :math:`N` in each hidden layer of the fitting net
     resnet_dt
@@ -94,7 +99,8 @@ class DOSFitting(Fitting):
 
     def __init__(
         self,
-        descrpt: tf.Tensor,
+        ntypes: int,
+        dim_descrpt: int,
         neuron: List[int] = [120, 120, 120],
         resnet_dt: bool = True,
         numb_fparam: int = 0,
@@ -112,8 +118,8 @@ class DOSFitting(Fitting):
     ) -> None:
         """Constructor."""
         # model param
-        self.ntypes = descrpt.get_ntypes()
-        self.dim_descrpt = descrpt.get_dim_out()
+        self.ntypes = ntypes
+        self.dim_descrpt = dim_descrpt
         self.use_aparam_as_mask = use_aparam_as_mask
 
         self.numb_fparam = numb_fparam
@@ -127,6 +133,7 @@ class DOSFitting(Fitting):
         self.seed = seed
         self.uniform_seed = uniform_seed
         self.seed_shift = one_layer_rand_seed_shift()
+        self.activation_function = activation_function
         self.fitting_activation_fn = get_activation_func(activation_function)
         self.fitting_precision = get_precision(precision)
         self.trainable = trainable
@@ -145,16 +152,16 @@ class DOSFitting(Fitting):
             add_data_requirement(
                 "fparam", self.numb_fparam, atomic=False, must=True, high_prec=False
             )
-            self.fparam_avg = None
-            self.fparam_std = None
-            self.fparam_inv_std = None
+        self.fparam_avg = None
+        self.fparam_std = None
+        self.fparam_inv_std = None
         if self.numb_aparam > 0:
             add_data_requirement(
                 "aparam", self.numb_aparam, atomic=True, must=True, high_prec=False
             )
-            self.aparam_avg = None
-            self.aparam_std = None
-            self.aparam_inv_std = None
+        self.aparam_avg = None
+        self.aparam_std = None
+        self.aparam_inv_std = None
 
         self.fitting_net_variables = None
         self.mixed_prec = None
@@ -641,3 +648,82 @@ class DOSFitting(Fitting):
         return DOSLoss(
             **loss, starter_learning_rate=lr.start_lr(), numb_dos=self.get_numb_dos()
         )
+
+    @classmethod
+    def deserialize(cls, data: dict, suffix: str = ""):
+        """Deserialize the model.
+
+        Parameters
+        ----------
+        data : dict
+            The serialized data
+
+        Returns
+        -------
+        Model
+            The deserialized model
+        """
+        data = data.copy()
+        check_version_compatibility(data.pop("@version", 1), 1, 1)
+        fitting = cls(**data)
+        fitting.fitting_net_variables = cls.deserialize_network(
+            data["nets"],
+            suffix=suffix,
+        )
+        fitting.bias_dos = data["@variables"]["bias_dos"]
+        if fitting.numb_fparam > 0:
+            fitting.fparam_avg = data["@variables"]["fparam_avg"]
+            fitting.fparam_inv_std = data["@variables"]["fparam_inv_std"]
+        if fitting.numb_aparam > 0:
+            fitting.aparam_avg = data["@variables"]["aparam_avg"]
+            fitting.aparam_inv_std = data["@variables"]["aparam_inv_std"]
+        return fitting
+
+    def serialize(self, suffix: str = "") -> dict:
+        """Serialize the model.
+
+        Returns
+        -------
+        dict
+            The serialized data
+        """
+        data = {
+            "@class": "Fitting",
+            "type": "dos",
+            "@version": 1,
+            "var_name": "dos",
+            "ntypes": self.ntypes,
+            "dim_descrpt": self.dim_descrpt,
+            # very bad design: type embedding is not passed to the class
+            # TODO: refactor the class
+            "mixed_types": False,
+            "dim_out": 1,
+            "neuron": self.n_neuron,
+            "resnet_dt": self.resnet_dt,
+            "numb_fparam": self.numb_fparam,
+            "numb_aparam": self.numb_aparam,
+            "rcond": self.rcond,
+            "trainable": self.trainable,
+            "activation_function": self.activation_function,
+            "precision": self.fitting_precision.name,
+            "exclude_types": [],
+            "nets": self.serialize_network(
+                ntypes=self.ntypes,
+                # TODO: consider type embeddings
+                ndim=1,
+                in_dim=self.dim_descrpt + self.numb_fparam + self.numb_aparam,
+                neuron=self.n_neuron,
+                activation_function=self.activation_function,
+                resnet_dt=self.resnet_dt,
+                variables=self.fitting_net_variables,
+                suffix=suffix,
+            ),
+            "@variables": {
+                "bias_dos": self.bias_dos,
+                "fparam_avg": self.fparam_avg,
+                "fparam_inv_std": self.fparam_inv_std,
+                "aparam_avg": self.aparam_avg,
+                "aparam_inv_std": self.aparam_inv_std,
+            },
+        }
+        return data
