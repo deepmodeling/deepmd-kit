@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import os
 import unittest
 from typing import (
     Any,
@@ -42,8 +43,8 @@ from deepmd.utils.argcheck import (
 )
 
 original_model = str(Path(__file__).parent.parent.parent / "infer" / "deeppot.dp")
-pt_model = "deeppot.pth"
-tf_model = "deeppot.pb"
+pt_model = "deeppot_for_consistent_frozen.pth"
+tf_model = "deeppot_for_consistent_frozen.pb"
 dp_model = original_model
 
 
@@ -56,6 +57,14 @@ def setUpModule():
         INPUT=dp_model,
         OUTPUT=pt_model,
     )
+
+
+def tearDownModule():
+    for model_file in (pt_model, tf_model):
+        try:
+            os.remove(model_file)
+        except FileNotFoundError:
+            pass
 
 
 @parameterized((pt_model, tf_model, dp_model))
