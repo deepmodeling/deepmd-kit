@@ -361,8 +361,6 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
         models = [dp_model, zbl_model]
         super().__init__(models, type_map, **kwargs)
         self.model_def_script = ""
-        self.dp_model = dp_model
-        self.zbl_model = zbl_model
 
         self.sw_rmin = sw_rmin
         self.sw_rmax = sw_rmax
@@ -391,8 +389,8 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
         stat_file_path
             The dictionary of paths to the statistics files.
         """
-        self.dp_model.compute_or_load_stat(sampled_func, stat_file_path)
-        self.zbl_model.compute_or_load_stat(sampled_func, stat_file_path)
+        self.models[0].compute_or_load_stat(sampled_func, stat_file_path)
+        self.models[1].compute_or_load_stat(sampled_func, stat_file_path)
 
     def change_energy_bias(self):
         # need to implement
@@ -406,7 +404,7 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
                 "@version": 1,
                 "type": "zbl",
                 "models": LinearEnergyAtomicModel.serialize(
-                    [self.dp_model, self.zbl_model], self.type_map
+                    [self.models[0], self.models[1]], self.type_map
                 ),
                 "sw_rmin": self.sw_rmin,
                 "sw_rmax": self.sw_rmax,
