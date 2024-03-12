@@ -316,3 +316,6 @@ class PolarFittingNet(GeneralFitting):
             out = out + bias
 
         return {self.var_name: out.to(env.GLOBAL_PT_FLOAT_PRECISION)}
+
+    # make jit happy with torch 2.0.0
+    exclude_types: List[int]

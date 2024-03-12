@@ -21,6 +21,9 @@ from deepmd.pt.utils import (
     AtomExcludeMask,
     PairExcludeMask,
 )
+from deepmd.utils.path import (
+    DPPath,
+)
 
 BaseAtomicModel_ = make_base_atomic_model(torch.Tensor)
 
@@ -55,12 +58,6 @@ class BaseAtomicModel(BaseAtomicModel_):
         else:
             self.pair_excl = PairExcludeMask(self.get_ntypes(), self.pair_exclude_types)
 
-    # export public methods that are not abstract
-    get_nsel = torch.jit.export(BaseAtomicModel_.get_nsel)
-    get_nnei = torch.jit.export(BaseAtomicModel_.get_nnei)
-    get_ntypes = torch.jit.export(BaseAtomicModel_.get_ntypes)
-
-    @torch.jit.export
     def get_model_def_script(self) -> str:
         return self.model_def_script
 
@@ -126,3 +123,25 @@ class BaseAtomicModel(BaseAtomicModel_):
             "atom_exclude_types": self.atom_exclude_types,
             "pair_exclude_types": self.pair_exclude_types,
         }
+
+    def compute_or_load_stat(
+        self,
+        sampled_func,
+        stat_file_path: Optional[DPPath] = None,
+    ):
+        """
+        Compute or load the statistics parameters of the model,
+        such as mean and standard deviation of descriptors or the energy bias of the fitting net.
+        When `sampled` is provided, all the statistics parameters will be calculated (or re-calculated for update),
+        and saved in the `stat_file_path`(s).
+        When `sampled` is not provided, it will check the existence of `stat_file_path`(s)
+        and load the calculated statistics parameters.
+
+        Parameters
+        ----------
+        sampled_func
+            The sampled data frames from different data systems.
+        stat_file_path
+            The path to the statistics files.
+        """
+        raise NotImplementedError

@@ -75,12 +75,12 @@ class ModelWrapper(torch.nn.Module):
             shared_level_base = shared_base["shared_level"]
             if "descriptor" in class_type_base:
                 if class_type_base == "descriptor":
-                    base_class = self.model[model_key_base].__getattr__("descriptor")
+                    base_class = self.model[model_key_base].get_descriptor()
                 elif "hybrid" in class_type_base:
                     hybrid_index = int(class_type_base.split("_")[-1])
                     base_class = (
                         self.model[model_key_base]
-                        .__getattr__("descriptor")
+                        .get_descriptor()
                         .descriptor_list[hybrid_index]
                     )
                 else:
@@ -96,14 +96,12 @@ class ModelWrapper(torch.nn.Module):
                         "descriptor" in class_type_link
                     ), f"Class type mismatched: {class_type_base} vs {class_type_link}!"
                     if class_type_link == "descriptor":
-                        link_class = self.model[model_key_link].__getattr__(
-                            "descriptor"
-                        )
+                        link_class = self.model[model_key_link].get_descriptor()
                     elif "hybrid" in class_type_link:
                         hybrid_index = int(class_type_link.split("_")[-1])
                         link_class = (
                             self.model[model_key_link]
-                            .__getattr__("descriptor")
+                            .get_descriptor()
                             .descriptor_list[hybrid_index]
                         )
                     else:
