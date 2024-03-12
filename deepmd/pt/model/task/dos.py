@@ -2,24 +2,12 @@
 import copy
 import logging
 from typing import (
-    Callable,
     List,
     Optional,
-    Tuple,
-    Union,
 )
 
-import numpy as np
 import torch
 
-from deepmd.dpmodel import (
-    FittingOutputDef,
-    OutputVariableDef,
-    fitting_check_output,
-)
-from deepmd.pt.model.network.network import (
-    ResidualDeep,
-)
 from deepmd.pt.model.task.fitting import (
     InvarFitting,
 )
@@ -28,12 +16,6 @@ from deepmd.pt.utils import (
 )
 from deepmd.pt.utils.env import (
     DEFAULT_PRECISION,
-)
-from deepmd.pt.utils.stat import (
-    compute_output_stats,
-)
-from deepmd.utils.path import (
-    DPPath,
 )
 from deepmd.utils.version import (
     check_version_compatibility,
@@ -102,4 +84,3 @@ class DOSFittingNet(InvarFitting):
 
     # make jit happy with torch 2.0.0
     exclude_types: List[int]
-

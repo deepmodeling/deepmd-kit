@@ -18,15 +18,15 @@ from deepmd.pt.model.model.model import (
 from deepmd.pt.model.task.dipole import (
     DipoleFittingNet,
 )
+from deepmd.pt.model.task.dos import (
+    DOSFittingNet,
+)
 from deepmd.pt.model.task.ener import (
     EnergyFittingNet,
     EnergyFittingNetDirect,
 )
 from deepmd.pt.model.task.polarizability import (
     PolarFittingNet,
-)
-from deepmd.pt.model.task.dos import (
-    DOSFittingNet
 )
 
 from .make_model import (
