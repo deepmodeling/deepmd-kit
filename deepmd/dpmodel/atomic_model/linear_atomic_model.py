@@ -329,7 +329,7 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
             {
                 "@class": "Model",
                 "type": "zbl",
-                "@version": 1,
+                "@version": 2,
                 "models": LinearEnergyAtomicModel(
                     models=[self.models[0], self.models[1]], type_map=self.type_map
                 ).serialize(),
@@ -343,7 +343,7 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
     @classmethod
     def deserialize(cls, data) -> "DPZBLLinearEnergyAtomicModel":
         data = copy.deepcopy(data)
-        check_version_compatibility(data.pop("@version", 1), 1, 1)
+        check_version_compatibility(data.pop("@version", 1), 2, 1)
         data.pop("@class")
         data.pop("type")
         sw_rmin = data.pop("sw_rmin")
