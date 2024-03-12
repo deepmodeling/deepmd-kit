@@ -73,6 +73,7 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
             atomic_model_: Optional[T_AtomicModel] = None,
             **kwargs,
         ):
+            BaseModel.__init__(self)
             if atomic_model_ is not None:
                 self.atomic_model: T_AtomicModel = atomic_model_
             else:
