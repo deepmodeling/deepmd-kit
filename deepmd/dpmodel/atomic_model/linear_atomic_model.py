@@ -1,9 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import copy
-import sys
-from abc import (
-    abstractmethod,
-)
 from typing import (
     Dict,
     List,
@@ -353,9 +349,7 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
         sw_rmin = data.pop("sw_rmin")
         sw_rmax = data.pop("sw_rmax")
         smin_alpha = data.pop("smin_alpha")
-        linear_model = LinearEnergyAtomicModel.deserialize(
-            data.pop("models")
-        )
+        linear_model = LinearEnergyAtomicModel.deserialize(data.pop("models"))
         dp_model, zbl_model = linear_model.models
         type_map = linear_model.type_map
 

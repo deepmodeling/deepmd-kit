@@ -32,6 +32,7 @@ from .base_atomic_model import (
 
 log = logging.getLogger(__name__)
 
+
 @BaseAtomicModel.register("standard")
 class DPAtomicModel(torch.nn.Module, BaseAtomicModel):
     """Model give atomic prediction of some physical property.
