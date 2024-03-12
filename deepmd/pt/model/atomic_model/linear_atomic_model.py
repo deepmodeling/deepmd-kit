@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from abc import abstractmethod
 import copy
+from abc import (
+    abstractmethod,
+)
 from typing import (
     Dict,
     List,
@@ -280,10 +282,9 @@ class LinearEnergyAtomicModel(torch.nn.Module, BaseAtomicModel):
         ]
         data.pop("models")
         return cls(models, type_map, **data)
-    
+
     @staticmethod
     def _deserialize_models(data: dict) -> List[BaseAtomicModel]:
-        
         models = [
             BaseAtomicModel.get_class_by_type(model["type"]).deserialize(model)
             for model in data["models"]
@@ -426,8 +427,10 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
         sw_rmin = data.pop("sw_rmin")
         sw_rmax = data.pop("sw_rmax")
         smin_alpha = data.pop("smin_alpha")
-        
-        dp_model, zbl_model = LinearEnergyAtomicModel._deserialize_models(data['models'])
+
+        dp_model, zbl_model = LinearEnergyAtomicModel._deserialize_models(
+            data["models"]
+        )
         type_map = data.pop("models")["type_map"]
 
         data.pop("@class", None)
