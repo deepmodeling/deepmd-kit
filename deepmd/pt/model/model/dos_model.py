@@ -42,7 +42,7 @@ class DOSModel(DPModel):
             model_predict = {}
             model_predict["atom_dos"] = model_ret["dos"]
             model_predict["dos"] = model_ret["dos_redu"]
-            
+
             if "mask" in model_ret:
                 model_predict["mask"] = model_ret["mask"]
         else:
@@ -74,7 +74,7 @@ class DOSModel(DPModel):
             model_predict = {}
             model_predict["atom_dos"] = model_ret["dos"]
             model_predict["dos"] = model_ret["energy_redu"]
-            
+
         else:
             model_predict = model_ret
         return model_predict

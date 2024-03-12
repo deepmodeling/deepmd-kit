@@ -8,11 +8,11 @@ from typing import (
 
 import torch
 
-from deepmd.pt.model.task.fitting import (
-    Fitting,
-)
 from deepmd.pt.model.task.ener import (
     InvarFitting,
+)
+from deepmd.pt.model.task.fitting import (
+    Fitting,
 )
 from deepmd.pt.utils import (
     env,

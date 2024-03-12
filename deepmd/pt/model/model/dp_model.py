@@ -48,14 +48,14 @@ class DPModel(make_model(DPAtomicModel)):
         from deepmd.pt.model.model.dipole_model import (
             DipoleModel,
         )
+        from deepmd.pt.model.model.dos_model import (
+            DOSModel,
+        )
         from deepmd.pt.model.model.ener_model import (
             EnergyModel,
         )
         from deepmd.pt.model.model.polar_model import (
             PolarModel,
-        )
-        from deepmd.pt.model.model.dos_model import (
-            DOSModel,
         )
 
         if atomic_model_ is not None:

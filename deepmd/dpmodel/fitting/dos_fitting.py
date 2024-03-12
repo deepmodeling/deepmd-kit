@@ -2,7 +2,6 @@
 import copy
 from typing import (
     TYPE_CHECKING,
-    Any,
     List,
     Optional,
 )
