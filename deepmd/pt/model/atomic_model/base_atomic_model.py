@@ -58,9 +58,6 @@ class BaseAtomicModel(BaseAtomicModel_):
         else:
             self.pair_excl = PairExcludeMask(self.get_ntypes(), self.pair_exclude_types)
 
-    def get_model_def_script(self) -> str:
-        return self.model_def_script
-
     def atomic_output_def(self) -> FittingOutputDef:
         old_def = self.fitting_output_def()
         if self.atom_excl is None:

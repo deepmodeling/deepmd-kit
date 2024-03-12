@@ -56,7 +56,6 @@ class DPAtomicModel(torch.nn.Module, BaseAtomicModel):
         **kwargs,
     ):
         torch.nn.Module.__init__(self)
-        self.model_def_script = ""
         ntypes = len(type_map)
         self.type_map = type_map
         self.ntypes = ntypes

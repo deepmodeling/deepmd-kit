@@ -73,6 +73,7 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
             atomic_model_: Optional[T_AtomicModel] = None,
             **kwargs,
         ):
+            BaseModel.__init__(self)
             if atomic_model_ is not None:
                 self.atomic_model: T_AtomicModel = atomic_model_
             else:
@@ -451,10 +452,6 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
         def get_nnei(self) -> int:
             """Returns the total number of selected neighboring atoms in the cut-off radius."""
             return self.atomic_model.get_nnei()
-
-        def get_model_def_script(self) -> str:
-            """Get the model definition script."""
-            return self.atomic_model.get_model_def_script()
 
         def get_sel(self) -> List[int]:
             """Returns the number of selected atoms for each type."""
