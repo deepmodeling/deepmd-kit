@@ -25,6 +25,9 @@ from deepmd.pt.model.task.ener import (
 from deepmd.pt.model.task.polarizability import (
     PolarFittingNet,
 )
+from deepmd.pt.model.task.dos import (
+    DOSFittingNet
+)
 
 from .make_model import (
     make_model,
@@ -51,6 +54,7 @@ class DPModel(make_model(DPAtomicModel)):
         from deepmd.pt.model.model.polar_model import (
             PolarModel,
         )
+        from deepmd.pt.model.model.dos_model
 
         if atomic_model_ is not None:
             fitting = atomic_model_.fitting_net
@@ -68,6 +72,8 @@ class DPModel(make_model(DPAtomicModel)):
                 cls = DipoleModel
             elif isinstance(fitting, PolarFittingNet):
                 cls = PolarModel
+            elif isinstance(fitting, DOSFittingNet):
+                cls = DOSModel
             # else: unknown fitting type, fall back to DPModel
         return super().__new__(cls)
 
