@@ -1,4 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import json
+import os
+import tempfile
 from enum import (
     Enum,
 )
@@ -7,6 +10,9 @@ from typing import (
     Union,
 )
 
+from deepmd.entrypoints.convert_backend import (
+    convert_backend,
+)
 from deepmd.infer.deep_pot import (
     DeepPot,
 )
@@ -23,6 +29,10 @@ from deepmd.tf.infer import (
 )
 from deepmd.tf.loss.loss import (
     Loss,
+)
+from deepmd.tf.utils.graph import (
+    get_tensor_by_name_from_graph,
+    load_graph_def,
 )
 
 from .model import (
@@ -43,7 +53,14 @@ class FrozenModel(Model):
     def __init__(self, model_file: str, **kwargs):
         super().__init__(**kwargs)
         self.model_file = model_file
-        self.model = DeepPotential(model_file)
+        if not model_file.endswith(".pb"):
+            # try to convert from other formats
+            with tempfile.NamedTemporaryFile(
+                suffix=".pb", dir=os.curdir, delete=False
+            ) as f:
+                convert_backend(INPUT=model_file, OUTPUT=f.name)
+                self.model_file = f.name
+        self.model = DeepPotential(self.model_file)
         if isinstance(self.model, DeepPot):
             self.model_type = "ener"
         else:
@@ -228,3 +245,19 @@ class FrozenModel(Model):
         """
         # we don't know how to compress it, so no neighbor statistics here
         return local_jdata
+
+    def serialize(self, suffix: str = "") -> dict:
+        # try to recover the original model
+        # the current graph contains a prefix "load",
+        # so it cannot used to recover the original model
+        graph, graph_def = load_graph_def(self.model_file)
+        t_jdata = get_tensor_by_name_from_graph(graph, "train_attr/training_script")
+        jdata = json.loads(t_jdata)
+        model = Model(**jdata["model"])
+        # important! must be called before serialize
+        model.init_variables(graph=graph, graph_def=graph_def)
+        return model.serialize()
+
+    @classmethod
+    def deserialize(cls, data: dict, suffix: str = ""):
+        raise RuntimeError("Should not touch here.")

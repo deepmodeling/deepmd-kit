@@ -868,7 +868,7 @@ class EnerFitting(Fitting):
             data["nets"],
             suffix=suffix,
         )
-        fitting.bias_atom_e = data["@variables"]["bias_atom_e"]
+        fitting.bias_atom_e = data["@variables"]["bias_atom_e"].ravel()
         if fitting.numb_fparam > 0:
             fitting.fparam_avg = data["@variables"]["fparam_avg"]
             fitting.fparam_inv_std = data["@variables"]["fparam_inv_std"]
@@ -922,7 +922,7 @@ class EnerFitting(Fitting):
                 suffix=suffix,
             ),
             "@variables": {
-                "bias_atom_e": self.bias_atom_e,
+                "bias_atom_e": self.bias_atom_e.reshape(-1, 1),
                 "fparam_avg": self.fparam_avg,
                 "fparam_inv_std": self.fparam_inv_std,
                 "aparam_avg": self.aparam_avg,

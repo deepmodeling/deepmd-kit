@@ -37,6 +37,9 @@ from .dp_zbl_model import (
 from .ener_model import (
     EnergyModel,
 )
+from .frozen import (
+    FrozenModel,
+)
 from .make_hessian_model import (
     make_hessian_model,
 )
@@ -173,6 +176,7 @@ __all__ = [
     "get_model",
     "DPModel",
     "EnergyModel",
+    "FrozenModel",
     "SpinModel",
     "SpinEnergyModel",
     "DPZBLModel",
