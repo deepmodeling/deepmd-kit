@@ -24,7 +24,7 @@ from .base_atomic_model import (
     BaseAtomicModel,
 )
 
-
+@BaseAtomicModel.register("pairtab")
 class PairTabAtomicModel(BaseAtomicModel):
     """Pairwise tabulation energy model.
 

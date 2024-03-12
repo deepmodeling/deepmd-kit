@@ -225,32 +225,30 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
             ]
         )
 
-    @staticmethod
-    def serialize(models, type_map) -> dict:
+    def serialize(self) -> dict:
         return {
             "@class": "Model",
             "type": "linear",
             "@version": 1,
-            "models": [model.serialize() for model in models],
-            "model_name": [model.__class__.__name__ for model in models],
-            "type_map": type_map,
+            "models": [model.serialize() for model in self.models],
+            "type_map": self.type_map,
         }
 
-    @staticmethod
-    def deserialize(data) -> Tuple[List[BaseAtomicModel], List[str]]:
+    @classmethod
+    def deserialize(cls, data: dict) -> "LinearEnergyAtomicModel":
         data = copy.deepcopy(data)
         check_version_compatibility(data.pop("@version", 1), 1, 1)
         data.pop("@class")
         data.pop("type")
-        model_names = data["model_name"]
-        type_map = data["type_map"]
+        type_map = data.pop("type_map")
         models = [
-            getattr(sys.modules[__name__], name).deserialize(model)
-            for name, model in zip(model_names, data["models"])
+            BaseAtomicModel.get_class_by_type(model["type"]).deserialize(model)
+            for model in data["models"]
         ]
-        return models, type_map
+        data.pop("models")
+        return cls(models, type_map, **data)
 
-    @abstractmethod
+    # @abstractmethod
     def _compute_weight(
         self,
         extended_coord: np.ndarray,
@@ -336,9 +334,9 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
                 "@class": "Model",
                 "type": "zbl",
                 "@version": 1,
-                "models": LinearEnergyAtomicModel.serialize(
-                    [self.dp_model, self.zbl_model], self.type_map
-                ),
+                "models": LinearEnergyAtomicModel(
+                    models=[self.models[0], self.models[1]], type_map=self.type_map
+                ).serialize(),
                 "sw_rmin": self.sw_rmin,
                 "sw_rmax": self.sw_rmax,
                 "smin_alpha": self.smin_alpha,
@@ -355,10 +353,11 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
         sw_rmin = data.pop("sw_rmin")
         sw_rmax = data.pop("sw_rmax")
         smin_alpha = data.pop("smin_alpha")
-
-        ([dp_model, zbl_model], type_map) = LinearEnergyAtomicModel.deserialize(
+        linear_model = LinearEnergyAtomicModel.deserialize(
             data.pop("models")
         )
+        dp_model, zbl_model = linear_model.models
+        type_map = linear_model.type_map
 
         return cls(
             dp_model=dp_model,

@@ -25,7 +25,7 @@ from .base_atomic_model import (
     BaseAtomicModel,
 )
 
-
+@BaseAtomicModel.register("standard")
 class DPAtomicModel(BaseAtomicModel):
     """Model give atomic prediction of some physical property.
 
