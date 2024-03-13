@@ -152,10 +152,8 @@ def _modify_model_suffix(output_graph_def, out_suffix, freeze_type):
             else:
                 jdata["training"]["training_data"] = {}
                 log.warning(
-                    "The fitting net {} has no training data in input script, resulting in "
-                    "untrained frozen model, and cannot be compressed directly! ".format(
-                        out_suffix
-                    )
+                    f"The fitting net {out_suffix} has no training data in input script, resulting in "
+                    "untrained frozen model, and cannot be compressed directly! "
                 )
             # loss
             if "loss_dict" in jdata:

@@ -73,24 +73,24 @@ class TestMultiTaskSeA(unittest.TestCase, MultiTaskTrainTest):
         self.stat_files = "se_e2_a"
         os.makedirs(self.stat_files, exist_ok=True)
         self.config = multitask_se_e2_a
-        self.config["training"]["data_dict"]["model_1"]["training_data"][
-            "systems"
-        ] = data_file
+        self.config["training"]["data_dict"]["model_1"]["training_data"]["systems"] = (
+            data_file
+        )
         self.config["training"]["data_dict"]["model_1"]["validation_data"][
             "systems"
         ] = data_file
-        self.config["training"]["data_dict"]["model_1"][
-            "stat_file"
-        ] = f"{self.stat_files}/model_1"
-        self.config["training"]["data_dict"]["model_2"]["training_data"][
-            "systems"
-        ] = data_file
+        self.config["training"]["data_dict"]["model_1"]["stat_file"] = (
+            f"{self.stat_files}/model_1"
+        )
+        self.config["training"]["data_dict"]["model_2"]["training_data"]["systems"] = (
+            data_file
+        )
         self.config["training"]["data_dict"]["model_2"]["validation_data"][
             "systems"
         ] = data_file
-        self.config["training"]["data_dict"]["model_2"][
-            "stat_file"
-        ] = f"{self.stat_files}/model_2"
+        self.config["training"]["data_dict"]["model_2"]["stat_file"] = (
+            f"{self.stat_files}/model_2"
+        )
         self.config["training"]["numb_steps"] = 1
         self.config["training"]["save_freq"] = 1
         self.config["model"], self.shared_links = preprocess_shared_params(
@@ -111,24 +111,24 @@ class TestMultiTaskDPA1(unittest.TestCase, MultiTaskTrainTest):
         self.stat_files = "DPA1"
         os.makedirs(self.stat_files, exist_ok=True)
         self.config = multitask_DPA1
-        self.config["training"]["data_dict"]["model_1"]["training_data"][
-            "systems"
-        ] = data_file
+        self.config["training"]["data_dict"]["model_1"]["training_data"]["systems"] = (
+            data_file
+        )
         self.config["training"]["data_dict"]["model_1"]["validation_data"][
             "systems"
         ] = data_file
-        self.config["training"]["data_dict"]["model_1"][
-            "stat_file"
-        ] = f"{self.stat_files}/model_1"
-        self.config["training"]["data_dict"]["model_2"]["training_data"][
-            "systems"
-        ] = data_file
+        self.config["training"]["data_dict"]["model_1"]["stat_file"] = (
+            f"{self.stat_files}/model_1"
+        )
+        self.config["training"]["data_dict"]["model_2"]["training_data"]["systems"] = (
+            data_file
+        )
         self.config["training"]["data_dict"]["model_2"]["validation_data"][
             "systems"
         ] = data_file
-        self.config["training"]["data_dict"]["model_2"][
-            "stat_file"
-        ] = f"{self.stat_files}/model_2"
+        self.config["training"]["data_dict"]["model_2"]["stat_file"] = (
+            f"{self.stat_files}/model_2"
+        )
         self.config["training"]["numb_steps"] = 1
         self.config["training"]["save_freq"] = 1
         self.config["model"], self.shared_links = preprocess_shared_params(
@@ -149,24 +149,24 @@ class TestMultiTaskDPA2(unittest.TestCase, MultiTaskTrainTest):
         self.stat_files = "DPA2"
         os.makedirs(self.stat_files, exist_ok=True)
         self.config = multitask_DPA2
-        self.config["training"]["data_dict"]["model_1"]["training_data"][
-            "systems"
-        ] = data_file
+        self.config["training"]["data_dict"]["model_1"]["training_data"]["systems"] = (
+            data_file
+        )
         self.config["training"]["data_dict"]["model_1"]["validation_data"][
             "systems"
         ] = data_file
-        self.config["training"]["data_dict"]["model_1"][
-            "stat_file"
-        ] = f"{self.stat_files}/model_1"
-        self.config["training"]["data_dict"]["model_2"]["training_data"][
-            "systems"
-        ] = data_file
+        self.config["training"]["data_dict"]["model_1"]["stat_file"] = (
+            f"{self.stat_files}/model_1"
+        )
+        self.config["training"]["data_dict"]["model_2"]["training_data"]["systems"] = (
+            data_file
+        )
         self.config["training"]["data_dict"]["model_2"]["validation_data"][
             "systems"
         ] = data_file
-        self.config["training"]["data_dict"]["model_2"][
-            "stat_file"
-        ] = f"{self.stat_files}/model_2"
+        self.config["training"]["data_dict"]["model_2"]["stat_file"] = (
+            f"{self.stat_files}/model_2"
+        )
         self.config["training"]["numb_steps"] = 1
         self.config["training"]["save_freq"] = 1
         self.config["model"], self.shared_links = preprocess_shared_params(
