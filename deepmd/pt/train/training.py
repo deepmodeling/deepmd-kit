@@ -274,6 +274,9 @@ class Trainer:
             if loss_type == "ener":
                 loss_params["starter_learning_rate"] = start_lr
                 return EnergyStdLoss(**loss_params)
+            elif loss_type == "dos":
+                loss_params["starter_learning_rate"] = start_lr
+                raise NotImplementedError() 
             elif loss_type == "ener_spin":
                 loss_params["starter_learning_rate"] = start_lr
                 return EnergySpinLoss(**loss_params)

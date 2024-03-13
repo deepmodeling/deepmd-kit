@@ -73,7 +73,7 @@ class DOSModel(DPModel):
         if self.get_fitting_net() is not None:
             model_predict = {}
             model_predict["atom_dos"] = model_ret["dos"]
-            model_predict["dos"] = model_ret["energy_redu"]
+            model_predict["dos"] = model_ret["dos_redu"]
 
         else:
             model_predict = model_ret

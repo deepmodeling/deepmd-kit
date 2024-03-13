@@ -403,7 +403,7 @@ class GeneralFitting(Fitting):
 
     def __setitem__(self, key, value):
         if key in ["bias_atom_e"]:
-            value = value.view([self.ntypes, -1])
+            value = value.view([self.ntypes, self._net_out_dim()])
             self.bias_atom_e = value
         elif key in ["fparam_avg"]:
             self.fparam_avg = value
