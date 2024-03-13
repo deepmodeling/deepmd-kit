@@ -10,7 +10,6 @@ class LearningRateExp:
         decay_steps,
         stop_steps,
         decay_rate=None,
-        min_lr=None,
         **kwargs,
     ):
         """
@@ -22,6 +21,9 @@ class LearningRateExp:
             The learning rate at the start of the training.
         stop_lr
             The desired learning rate at the end of the training.
+            When decay_rate is explicitly set, this value will serve as
+            the minimum learning rate during training. In other words,
+            if the learning rate decays below stop_lr, stop_lr will be applied instead.
         decay_steps
             The learning rate is decaying every this number of training steps.
         stop_steps
@@ -30,9 +32,6 @@ class LearningRateExp:
             The decay rate for the learning rate.
             If provided, the decay rate will be set instead of
             calculating it through interpolation between start_lr and stop_lr.
-        min_lr
-            The minimum learning rate to be used when decay_rate is applied.
-            If the learning rate decays below min_lr, min_lr will be used instead.
         """
         self.start_lr = start_lr
         default_ds = 100 if stop_steps // 10 > 100 else stop_steps // 100 + 1
@@ -44,7 +43,7 @@ class LearningRateExp:
         )
         if decay_rate is not None:
             self.decay_rate = decay_rate
-            self.min_lr = min_lr
+            self.min_lr = stop_lr
         else:
             self.min_lr = None
 

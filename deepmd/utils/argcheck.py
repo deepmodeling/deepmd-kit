@@ -1518,7 +1518,12 @@ def linear_ener_model_args() -> Argument:
 #  --- Learning rate configurations: --- #
 def learning_rate_exp():
     doc_start_lr = "The learning rate at the start of the training."
-    doc_stop_lr = "The desired learning rate at the end of the training."
+    doc_stop_lr = (
+        "The desired learning rate at the end of the training. "
+        f"When decay_rate {doc_only_pt_supported}is explicitly set, "
+        "this value will serve as the minimum learning rate during training. "
+        "In other words, if the learning rate decays below stop_lr, stop_lr will be applied instead."
+    )
     doc_decay_steps = (
         "The learning rate is decaying every this number of training steps."
     )
@@ -1526,10 +1531,6 @@ def learning_rate_exp():
         "The decay rate for the learning rate. "
         "If this is provided, it will be used directly as the decay rate for learning rate "
         "instead of calculating it through interpolation between start_lr and stop_lr."
-    )
-    doc_min_lr = (
-        "The minimum learning rate to be used when decay_rate is applied. "
-        "If the learning rate decays below min_lr, min_lr will be used instead."
     )
 
     args = [
@@ -1542,13 +1543,6 @@ def learning_rate_exp():
             optional=True,
             default=None,
             doc=doc_only_pt_supported + doc_decay_rate,
-        ),
-        Argument(
-            "min_lr",
-            float,
-            optional=True,
-            default=None,
-            doc=doc_only_pt_supported + doc_min_lr,
         ),
     ]
     return args

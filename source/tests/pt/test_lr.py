@@ -66,14 +66,12 @@ class TestLearningRate(unittest.TestCase):
         decay_rate = np.exp(
             np.log(self.stop_lr / self.start_lr) / (self.stop_step / self.decay_step)
         )
-        min_lr = self.stop_lr
         my_lr_decay = LearningRateExp(
             self.start_lr,
-            1.0,
+            1e-10,
             self.decay_step,
             self.stop_step,
             decay_rate=decay_rate,
-            min_lr=min_lr,
         )
         my_vals = [
             my_lr.value(step_id)
