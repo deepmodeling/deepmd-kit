@@ -6,6 +6,10 @@ from typing import (
     Optional,
     Union,
 )
+from deepmd.dpmodel import (
+    FittingOutputDef,
+    OutputVariableDef,
+)
 
 import torch
 
@@ -57,7 +61,7 @@ class DOSFittingNet(InvarFitting):
         if bias_dos is not None:
             self.bias_dos = bias_dos
         else:
-            self.bias_dos = torch.zeros((ntypes, numb_dos), dtype=float)
+            self.bias_dos = torch.zeros((ntypes, numb_dos), dtype=dtype, device=env.DEVICE)
         super().__init__(
             var_name="dos",
             ntypes=ntypes,
@@ -76,7 +80,21 @@ class DOSFittingNet(InvarFitting):
             exclude_types=exclude_types,
             trainable=trainable,
         )
-
+    
+    
+    def output_def(self) -> FittingOutputDef:
+        return FittingOutputDef(
+            [
+                OutputVariableDef(
+                    self.var_name,
+                    [self.dim_out],
+                    reduciable=True,
+                    r_differentiable=False,
+                    c_differentiable=False,
+                ),
+            ]
+        )
+    
     @classmethod
     def deserialize(cls, data: dict) -> "DOSFittingNet":
         data = copy.deepcopy(data)

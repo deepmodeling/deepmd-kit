@@ -36,6 +36,27 @@ model_se_e2_a = {
     "data_stat_nbatch": 20,
 }
 
+model_dos = {
+    "type_map": ["O", "H", "B"],
+    "descriptor": {
+        "type": "se_e2_a",
+        "sel": [46, 92, 4],
+        "rcut_smth": 0.50,
+        "rcut": 4.00,
+        "neuron": [25, 50, 100],
+        "resnet_dt": False,
+        "axis_neuron": 16,
+        "seed": 1,
+    },
+    "fitting_net": {
+        "neuron": [24, 24, 24],
+        "resnet_dt": True,
+        "seed": 1,
+        "type": "dos"
+    },
+    "data_stat_nbatch": 20,
+}
+
 model_zbl = {
     "type_map": ["O", "H", "B"],
     "use_srtab": "source/tests/pt/model/water/data/zbl_tab_potential/H2O_tab_potential.txt",
@@ -277,6 +298,11 @@ class TestEnergyModelSeA(unittest.TestCase, PermutationTest):
         self.type_split = False
         self.model = get_model(model_params).to(env.DEVICE)
 
+class TestDOSModelSeA(unittest.TestCase, PermutationTest):
+    def setUp(self):
+        model_params = copy.deepcopy(model_dos)
+        self.type_split = False
+        self.model = get_model(model_params).to(env.DEVICE)
 
 class TestEnergyModelDPA1(unittest.TestCase, PermutationTest):
     def setUp(self):

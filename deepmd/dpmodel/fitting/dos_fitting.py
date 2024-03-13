@@ -50,7 +50,7 @@ class DOSFittingNet(InvarFitting):
         if bias_dos is not None:
             self.bias_dos = bias_dos
         else:
-            self.bias_dos = np.zeros((ntypes, numb_dos), dtype=float)
+            self.bias_dos = np.zeros((ntypes, numb_dos), dtype=DEFAULT_PRECISION)
         super().__init__(
             var_name="dos",
             ntypes=ntypes,
