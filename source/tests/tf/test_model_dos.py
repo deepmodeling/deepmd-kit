@@ -66,7 +66,8 @@ class TestModel(tf.test.TestCase):
         descrpt = DescrptSeA(**jdata["model"]["descriptor"], uniform_seed=True)
 
         jdata["model"]["fitting_net"].pop("type", None)
-        jdata["model"]["fitting_net"]["descrpt"] = descrpt
+        jdata["model"]["fitting_net"]["ntypes"] = descrpt.get_ntypes()
+        jdata["model"]["fitting_net"]["dim_descrpt"] = descrpt.get_dim_out()
         fitting = DOSFitting(**jdata["model"]["fitting_net"], uniform_seed=True)
         model = DOSModel(descrpt, fitting)
 

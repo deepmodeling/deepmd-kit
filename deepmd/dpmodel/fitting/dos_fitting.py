@@ -73,13 +73,13 @@ class DOSFittingNet(InvarFitting):
     def deserialize(cls, data: dict) -> "GeneralFitting":
         data = copy.deepcopy(data)
         check_version_compatibility(data.pop("@version", 1), 1, 1)
-        data.pop("var_name")
         data["numb_dos"] = data.pop("dim_out")
-        data.pop("tot_ener_zero")
-        data.pop("layer_name")
-        data.pop("use_aparam_as_mask")
-        data.pop("spin")
-        data.pop("atom_ener")
+        data.pop("tot_ener_zero", None)
+        data.pop("var_name", None)
+        data.pop("layer_name", None)
+        data.pop("use_aparam_as_mask", None)
+        data.pop("spin", None)
+        data.pop("atom_ener", None)
         return super().deserialize(data)
 
     def serialize(self) -> dict:

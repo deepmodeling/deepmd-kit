@@ -43,7 +43,7 @@ from deepmd.utils.argcheck import (
     ("float64", "float32"),  # precision
     (True, False),  # mixed_types
     (0, 1),  # numb_fparam
-    (10, 100),  # numb_dos
+    (10,20),  # numb_dos
 )
 class TestDOS(CommonTest, FittingTest, unittest.TestCase):
     @property
