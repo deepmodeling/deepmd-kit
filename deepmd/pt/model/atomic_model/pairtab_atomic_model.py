@@ -35,6 +35,7 @@ from .base_atomic_model import (
 )
 
 
+@BaseAtomicModel.register("pairtab")
 class PairTabAtomicModel(torch.nn.Module, BaseAtomicModel):
     """Pairwise tabulation energy model.
 
@@ -78,7 +79,6 @@ class PairTabAtomicModel(torch.nn.Module, BaseAtomicModel):
         **kwargs,
     ):
         torch.nn.Module.__init__(self)
-        self.model_def_script = ""
         self.tab_file = tab_file
         self.rcut = rcut
         self.tab = self._set_pairtab(tab_file, rcut)

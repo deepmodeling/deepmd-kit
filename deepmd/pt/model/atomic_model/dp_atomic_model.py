@@ -33,6 +33,7 @@ from .base_atomic_model import (
 log = logging.getLogger(__name__)
 
 
+@BaseAtomicModel.register("standard")
 class DPAtomicModel(torch.nn.Module, BaseAtomicModel):
     """Model give atomic prediction of some physical property.
 
@@ -55,7 +56,6 @@ class DPAtomicModel(torch.nn.Module, BaseAtomicModel):
         **kwargs,
     ):
         torch.nn.Module.__init__(self)
-        self.model_def_script = ""
         ntypes = len(type_map)
         self.type_map = type_map
         self.ntypes = ntypes

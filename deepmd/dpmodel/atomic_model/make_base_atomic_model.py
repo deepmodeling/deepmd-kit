@@ -178,10 +178,6 @@ def make_base_atomic_model(
                 return self.fitting_output_def()[var_name].c_differentiable
             return self.fitting_output_def()[var_name].r_differentiable
 
-        def get_model_def_script(self) -> str:
-            # TODO: implement this method; saved to model
-            raise NotImplementedError
-
     setattr(BAM, fwd_method_name, BAM.fwd)
     delattr(BAM, "fwd")
 

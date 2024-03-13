@@ -182,7 +182,7 @@ def build_multiple_neighbor_list(
     ret = {}
     for rc, ns in zip(rcuts[::-1], nsels[::-1]):
         tnlist_1 = np.copy(nlist0[:, :, :ns])
-        tnlist_1[rr[:, :, :ns] > rc] = int(-1)
+        tnlist_1[rr[:, :, :ns] > rc] = -1
         ret[get_multiple_nlist_key(rc, ns)] = tnlist_1
     return ret
 

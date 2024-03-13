@@ -191,10 +191,6 @@ class InvarFitting(GeneralFitting):
         """Update the output bias for fitting net."""
         raise NotImplementedError
 
-    def init_fitting_stat(self, result_dict):
-        """Initialize the model bias by the statistics."""
-        raise NotImplementedError
-
     def output_def(self):
         return FittingOutputDef(
             [

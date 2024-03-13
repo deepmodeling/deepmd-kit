@@ -3,6 +3,7 @@
 
 See issue #2982 for more information.
 """
+
 import copy
 import itertools
 import json
@@ -230,6 +231,10 @@ class NativeLayer(NativeOP):
             variables.get("b", None),
             variables.get("idt", None),
         )
+        if obj.b is not None:
+            obj.b = obj.b.ravel()
+        if obj.idt is not None:
+            obj.idt = obj.idt.ravel()
         obj.check_shape_consistency()
         return obj
 
