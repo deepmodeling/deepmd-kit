@@ -5,6 +5,7 @@ from typing import (
     List,
     Optional,
 )
+import numpy as np
 
 from deepmd.dpmodel.common import (
     DEFAULT_PRECISION,
@@ -28,11 +29,12 @@ class DOSFittingNet(InvarFitting):
         self,
         ntypes: int,
         dim_descrpt: int,
+        numb_dos: int = 300,
         neuron: List[int] = [120, 120, 120],
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
-        numb_dos: int = 300,
+        bias_dos: Optional[np.ndarray] = None,
         rcond: Optional[float] = None,
         trainable: Optional[List[bool]] = None,
         activation_function: str = "tanh",
@@ -49,6 +51,7 @@ class DOSFittingNet(InvarFitting):
             dim_out=numb_dos,
             neuron=neuron,
             resnet_dt=resnet_dt,
+            bias_atom=bias_dos,
             numb_fparam=numb_fparam,
             numb_aparam=numb_aparam,
             rcond=rcond,
@@ -59,6 +62,18 @@ class DOSFittingNet(InvarFitting):
             exclude_types=exclude_types,
         )
 
+    def __setitem__(self, key, value):
+        if key in ["bias_dos"]:
+            self.bias_dos = value
+        else:
+            super().__setitem__(key, value)
+
+    def __getitem__(self, key):
+        if key in ["bias_dos"]:
+            return self.bias_atom_e
+        else:
+            return super().__getitem__(key)
+        
     @classmethod
     def deserialize(cls, data: dict) -> "GeneralFitting":
         data = copy.deepcopy(data)
@@ -74,7 +89,10 @@ class DOSFittingNet(InvarFitting):
 
     def serialize(self) -> dict:
         """Serialize the fitting to dict."""
-        return {
+        dd = {
             **super().serialize(),
             "type": "dos",
         }
+        dd["@variables"]["bias_dos"] = dd["@variables"].pop("bias_atom_e")
+        
+        return dd

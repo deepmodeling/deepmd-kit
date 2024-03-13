@@ -697,7 +697,7 @@ class DOSFitting(Fitting):
             # very bad design: type embedding is not passed to the class
             # TODO: refactor the class
             "mixed_types": False,
-            "dim_out": 1,
+            "dim_out": self.numb_dos,
             "neuron": self.n_neuron,
             "resnet_dt": self.resnet_dt,
             "numb_fparam": self.numb_fparam,
@@ -712,6 +712,7 @@ class DOSFitting(Fitting):
                 # TODO: consider type embeddings
                 ndim=1,
                 in_dim=self.dim_descrpt + self.numb_fparam + self.numb_aparam,
+                out_dim=self.numb_dos,
                 neuron=self.n_neuron,
                 activation_function=self.activation_function,
                 resnet_dt=self.resnet_dt,

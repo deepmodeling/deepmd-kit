@@ -14,6 +14,9 @@ from .make_base_fitting import (
 from .polarizability_fitting import (
     PolarFitting,
 )
+from .dos_fitting import (
+    DOSFittingNet
+)
 
 __all__ = [
     "InvarFitting",
@@ -21,4 +24,5 @@ __all__ = [
     "DipoleFitting",
     "EnergyFittingNet",
     "PolarFitting",
+    "DOSFittingNet",
 ]

@@ -36,11 +36,11 @@ class DOSFittingNet(InvarFitting):
         self,
         ntypes: int,
         dim_descrpt: int,
+        numb_dos: int = 300,
         neuron: List[int] = [128, 128, 128],
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
-        numb_dos: int = 300,
         rcond: Optional[float] = None,
         bias_dos: Optional[torch.Tensor] = None,
         trainable: Optional[List[bool]] = None,
@@ -71,6 +71,18 @@ class DOSFittingNet(InvarFitting):
             **kwargs,
         )
 
+    def __setitem__(self, key, value):
+        if key in ["bias_dos"]:
+            self.bias_dos = value
+        else:
+            super().__setitem__(key, value)
+
+    def __getitem__(self, key):
+        if key in ["bias_dos"]:
+            return self.bias_atom_e
+        else:
+            return super().__getitem__(key)
+        
     @classmethod
     def deserialize(cls, data: dict) -> "InvarFitting":
         data = copy.deepcopy(data)
@@ -81,10 +93,12 @@ class DOSFittingNet(InvarFitting):
 
     def serialize(self) -> dict:
         """Serialize the fitting to dict."""
-        return {
+        dd = {
             **super().serialize(),
             "type": "dos",
         }
+        dd["@variables"]["bias_dos"] = dd["@variables"].pop("bias_atom_e")
+        return dd
 
     # make jit happy with torch 2.0.0
     exclude_types: List[int]
