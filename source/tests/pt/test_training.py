@@ -17,12 +17,12 @@ from deepmd.pt.entrypoints.main import (
 )
 
 from .model.test_permutation import (
+    model_dos,
     model_dpa1,
     model_dpa2,
     model_hybrid,
     model_se_e2_a,
     model_zbl,
-    model_dos,
 )
 
 
@@ -96,6 +96,7 @@ class TestEnergyModelSeA(unittest.TestCase, DPTrainTest):
     def tearDown(self) -> None:
         DPTrainTest.tearDown(self)
 
+
 @unittest.skip("loss not implemented")
 class TestDOSModelSeA(unittest.TestCase, DPTrainTest):
     def setUp(self):
@@ -111,6 +112,7 @@ class TestDOSModelSeA(unittest.TestCase, DPTrainTest):
 
     def tearDown(self) -> None:
         DPTrainTest.tearDown(self)
+
 
 class TestEnergyZBLModelSeA(unittest.TestCase, DPTrainTest):
     def setUp(self):
