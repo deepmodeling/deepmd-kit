@@ -83,7 +83,7 @@ class InvarFitting(GeneralFitting):
     rcond
             The condition number for the regression of atomic energy.
     bias_atom
-            Bias for each element.      
+            Bias for each element.
     tot_ener_zero
             Force the total energy to zero. Useful for the charge fitting.
     trainable

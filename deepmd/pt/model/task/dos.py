@@ -82,7 +82,7 @@ class DOSFittingNet(InvarFitting):
             return self.bias_atom_e
         else:
             return super().__getitem__(key)
-        
+
     @classmethod
     def deserialize(cls, data: dict) -> "InvarFitting":
         data = copy.deepcopy(data)

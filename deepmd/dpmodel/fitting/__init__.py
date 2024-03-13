@@ -2,6 +2,9 @@
 from .dipole_fitting import (
     DipoleFitting,
 )
+from .dos_fitting import (
+    DOSFittingNet,
+)
 from .ener_fitting import (
     EnergyFittingNet,
 )
@@ -13,9 +16,6 @@ from .make_base_fitting import (
 )
 from .polarizability_fitting import (
     PolarFitting,
-)
-from .dos_fitting import (
-    DOSFittingNet
 )
 
 __all__ = [

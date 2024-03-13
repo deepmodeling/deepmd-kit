@@ -5,6 +5,7 @@ from typing import (
     List,
     Optional,
 )
+
 import numpy as np
 
 from deepmd.dpmodel.common import (
@@ -18,6 +19,7 @@ if TYPE_CHECKING:
     from deepmd.dpmodel.fitting.general_fitting import (
         GeneralFitting,
     )
+
 from deepmd.utils.version import (
     check_version_compatibility,
 )
@@ -73,7 +75,7 @@ class DOSFittingNet(InvarFitting):
             return self.bias_atom_e
         else:
             return super().__getitem__(key)
-        
+
     @classmethod
     def deserialize(cls, data: dict) -> "GeneralFitting":
         data = copy.deepcopy(data)
@@ -94,5 +96,5 @@ class DOSFittingNet(InvarFitting):
             "type": "dos",
         }
         dd["@variables"]["bias_dos"] = dd["@variables"].pop("bias_atom_e")
-        
+
         return dd
