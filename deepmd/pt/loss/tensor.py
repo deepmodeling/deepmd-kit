@@ -127,9 +127,9 @@ class TensorLoss(TaskLoss):
                 atom_num = natoms
                 l2_global_loss = torch.mean(torch.square(diff))
             if not self.inference:
-                more_loss[
-                    f"l2_global_{self.tensor_name}_loss"
-                ] = l2_global_loss.detach()
+                more_loss[f"l2_global_{self.tensor_name}_loss"] = (
+                    l2_global_loss.detach()
+                )
             loss += self.global_weight * l2_global_loss
             rmse_global = l2_global_loss.sqrt() / atom_num
             more_loss[f"rmse_global_{self.tensor_name}"] = rmse_global.detach()

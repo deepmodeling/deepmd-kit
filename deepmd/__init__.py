@@ -7,6 +7,7 @@ molecular dynamics (MD).
 The top module (deepmd.__init__) should not import any third-party
 modules for performance.
 """
+
 try:
     from deepmd._version import version as __version__
 except ImportError:

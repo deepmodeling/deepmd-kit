@@ -135,8 +135,6 @@ def change_energy_bias_lower(
     else:
         raise RuntimeError("Unknown bias_shift mode: " + bias_shift)
     log.info(
-        "Change energy bias of {} from {} to {}.".format(
-            str(origin_type_map), str(old_bias), str(bias_atom_e[idx_type_map])
-        )
+        f"Change energy bias of {origin_type_map!s} from {old_bias!s} to {bias_atom_e[idx_type_map]!s}."
     )
     return bias_atom_e

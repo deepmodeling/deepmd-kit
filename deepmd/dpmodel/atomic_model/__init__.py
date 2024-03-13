@@ -14,7 +14,6 @@ DPModel = make_model(DPAtomicModel)
 
 """
 
-
 from .base_atomic_model import (
     BaseAtomicModel,
 )

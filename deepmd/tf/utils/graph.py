@@ -308,13 +308,13 @@ def get_extra_embedding_net_variables_from_graph_def(
     extra_embedding_net_variables = {}
     for i in range(1, layer_size + 1):
         matrix_pattern = f"filter_type_all{suffix}/matrix_{i}{extra_suffix}"
-        extra_embedding_net_variables[
-            matrix_pattern
-        ] = get_variables_from_graph_def_as_numpy_array(graph_def, matrix_pattern)
+        extra_embedding_net_variables[matrix_pattern] = (
+            get_variables_from_graph_def_as_numpy_array(graph_def, matrix_pattern)
+        )
         bias_pattern = f"filter_type_all{suffix}/bias_{i}{extra_suffix}"
-        extra_embedding_net_variables[
-            bias_pattern
-        ] = get_variables_from_graph_def_as_numpy_array(graph_def, bias_pattern)
+        extra_embedding_net_variables[bias_pattern] = (
+            get_variables_from_graph_def_as_numpy_array(graph_def, bias_pattern)
+        )
     return extra_embedding_net_variables
 
 

@@ -236,9 +236,7 @@ class DPTrainer:
                 if data[fitting_key].mixed_type:
                     assert isinstance(
                         self.fitting[fitting_key], EnerFitting
-                    ), "Data for fitting net {} in mixed_type format must use ener fitting!".format(
-                        fitting_key
-                    )
+                    ), f"Data for fitting net {fitting_key} in mixed_type format must use ener fitting!"
                 if self.numb_fparam_dict[fitting_key] > 0:
                     log.info(
                         "fitting net %s training with %d frame parameter(s)"
@@ -1086,10 +1084,7 @@ class DPTrainer:
         except FileNotFoundError as e:
             # throw runtime error if there's no frozen model
             raise RuntimeError(
-                "The input frozen model {} ({}) does not exist! Please check the path of the frozen model. ".format(
-                    self.run_opt.init_frz_model,
-                    os.path.abspath(self.run_opt.init_frz_model),
-                )
+                f"The input frozen model {self.run_opt.init_frz_model} ({os.path.abspath(self.run_opt.init_frz_model)}) does not exist! Please check the path of the frozen model. "
             ) from e
         # get the model type from the frozen model(self.run_opt.init_frz_model)
         try:
@@ -1142,10 +1137,8 @@ class DPTrainer:
         except FileNotFoundError as e:
             # throw runtime error if there's no frozen model
             raise RuntimeError(
-                "The input frozen pretrained model {} ({}) does not exist! "
-                "Please check the path of the frozen pretrained model. ".format(
-                    self.run_opt.finetune, os.path.abspath(self.run_opt.finetune)
-                )
+                f"The input frozen pretrained model {self.run_opt.finetune} ({os.path.abspath(self.run_opt.finetune)}) does not exist! "
+                "Please check the path of the frozen pretrained model. "
             ) from e
         # get the model type from the frozen model(self.run_opt.finetune)
         try:
@@ -1164,8 +1157,8 @@ class DPTrainer:
         ), "Compressed models are not supported for finetuning!"
         self.model.init_variables(graph, graph_def, model_type=self.model_type)
         log.info(
-            "Changing energy bias in pretrained model for types {}... "
-            "(this step may take long time)".format(str(origin_type_map))
+            f"Changing energy bias in pretrained model for types {origin_type_map!s}... "
+            "(this step may take long time)"
         )
         self._change_energy_bias(
             data, self.run_opt.finetune, origin_type_map, bias_shift
