@@ -665,12 +665,13 @@ class DOSFitting(Fitting):
         """
         data = data.copy()
         check_version_compatibility(data.pop("@version", 1), 1, 1)
+        data["numb_dos"] = data.pop("dim_out")
         fitting = cls(**data)
         fitting.fitting_net_variables = cls.deserialize_network(
             data["nets"],
             suffix=suffix,
         )
-        fitting.bias_dos = data["@variables"]["bias_dos"]
+        fitting.bias_dos = data["@variables"]["bias_atom_e"]
         if fitting.numb_fparam > 0:
             fitting.fparam_avg = data["@variables"]["fparam_avg"]
             fitting.fparam_inv_std = data["@variables"]["fparam_inv_std"]
@@ -720,7 +721,7 @@ class DOSFitting(Fitting):
                 suffix=suffix,
             ),
             "@variables": {
-                "bias_dos": self.bias_dos,
+                "bias_atom_e": self.bias_dos,
                 "fparam_avg": self.fparam_avg,
                 "fparam_inv_std": self.fparam_inv_std,
                 "aparam_avg": self.aparam_avg,

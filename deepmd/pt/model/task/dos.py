@@ -2,6 +2,7 @@
 import copy
 import logging
 from typing import (
+    Union,
     List,
     Optional,
 )
@@ -13,6 +14,7 @@ from deepmd.pt.model.task.ener import (
 )
 from deepmd.pt.model.task.fitting import (
     Fitting,
+    GeneralFitting,
 )
 from deepmd.pt.utils import (
     env,
@@ -22,6 +24,10 @@ from deepmd.pt.utils.env import (
 )
 from deepmd.utils.version import (
     check_version_compatibility,
+)
+from deepmd.pt.utils.utils import (
+    to_numpy_array,
+    to_torch_tensor,
 )
 
 dtype = env.GLOBAL_PT_FLOAT_PRECISION
@@ -43,14 +49,17 @@ class DOSFittingNet(InvarFitting):
         numb_aparam: int = 0,
         rcond: Optional[float] = None,
         bias_dos: Optional[torch.Tensor] = None,
-        trainable: Optional[List[bool]] = None,
+        trainable: Union[bool, List[bool]] = True,
         seed: Optional[int] = None,
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
         exclude_types: List[int] = [],
         mixed_types: bool = True,
-        **kwargs,
     ):
+        if bias_dos is not None:
+            self.bias_dos = bias_dos
+        else:
+            self.bias_dos = torch.zeros((ntypes, numb_dos),dtype=float)
         super().__init__(
             var_name="dos",
             ntypes=ntypes,
@@ -68,36 +77,34 @@ class DOSFittingNet(InvarFitting):
             seed=seed,
             exclude_types=exclude_types,
             trainable=trainable,
-            **kwargs,
         )
 
-    def __setitem__(self, key, value):
-        if key in ["bias_dos"]:
-            self.bias_dos = value
-        else:
-            super().__setitem__(key, value)
-
-    def __getitem__(self, key):
-        if key in ["bias_dos"]:
-            return self.bias_atom_e
-        else:
-            return super().__getitem__(key)
-
     @classmethod
-    def deserialize(cls, data: dict) -> "InvarFitting":
+    def deserialize(cls, data: dict) -> "DOSFittingNet":
         data = copy.deepcopy(data)
         check_version_compatibility(data.pop("@version", 1), 1, 1)
+        data.pop("@class")
         data.pop("var_name")
-        data.pop("dim_out")
-        return super().deserialize(data)
+        data.pop("tot_ener_zero")
+        data.pop("layer_name")
+        data.pop("use_aparam_as_mask")
+        data.pop("spin")
+        data.pop("atom_ener")
+        data["numb_dos"] = data.pop("dim_out")
+        obj = super().deserialize(data)
+        
+        return obj
 
     def serialize(self) -> dict:
         """Serialize the fitting to dict."""
+        # dd = super(InvarFitting, self).serialize()
         dd = {
-            **super().serialize(),
+            **InvarFitting.serialize(self),
             "type": "dos",
+            "dim_out": self.dim_out,
         }
-        dd["@variables"]["bias_dos"] = dd["@variables"].pop("bias_atom_e")
+        dd["@variables"]["bias_atom_e"] = to_numpy_array(self.bias_atom_e)
+        
         return dd
 
     # make jit happy with torch 2.0.0

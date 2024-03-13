@@ -2,6 +2,7 @@
 import copy
 from typing import (
     TYPE_CHECKING,
+    Union,
     List,
     Optional,
 )
@@ -38,7 +39,7 @@ class DOSFittingNet(InvarFitting):
         numb_aparam: int = 0,
         bias_dos: Optional[np.ndarray] = None,
         rcond: Optional[float] = None,
-        trainable: Optional[List[bool]] = None,
+        trainable: Union[bool, List[bool]] = True,
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
         mixed_types: bool = False,
@@ -46,6 +47,10 @@ class DOSFittingNet(InvarFitting):
         # not used
         seed: Optional[int] = None,
     ):
+        if bias_dos is not None:
+            self.bias_dos = bias_dos
+        else:
+            self.bias_dos = np.zeros((ntypes, numb_dos),dtype=float)
         super().__init__(
             var_name="dos",
             ntypes=ntypes,
@@ -64,24 +69,13 @@ class DOSFittingNet(InvarFitting):
             exclude_types=exclude_types,
         )
 
-    def __setitem__(self, key, value):
-        if key in ["bias_dos"]:
-            self.bias_dos = value
-        else:
-            super().__setitem__(key, value)
-
-    def __getitem__(self, key):
-        if key in ["bias_dos"]:
-            return self.bias_atom_e
-        else:
-            return super().__getitem__(key)
 
     @classmethod
     def deserialize(cls, data: dict) -> "GeneralFitting":
         data = copy.deepcopy(data)
         check_version_compatibility(data.pop("@version", 1), 1, 1)
         data.pop("var_name")
-        data.pop("dim_out")
+        data["numb_dos"] = data.pop("dim_out")
         data.pop("tot_ener_zero")
         data.pop("layer_name")
         data.pop("use_aparam_as_mask")
@@ -95,6 +89,6 @@ class DOSFittingNet(InvarFitting):
             **super().serialize(),
             "type": "dos",
         }
-        dd["@variables"]["bias_dos"] = dd["@variables"].pop("bias_atom_e")
+        dd["@variables"]["bias_atom_e"] = self.bias_atom_e
 
         return dd
