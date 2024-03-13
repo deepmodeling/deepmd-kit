@@ -52,7 +52,7 @@ model_dos = {
         "neuron": [24, 24, 24],
         "resnet_dt": True,
         "seed": 1,
-        "type": "dos"
+        "type": "dos",
     },
     "data_stat_nbatch": 20,
 }
@@ -298,11 +298,13 @@ class TestEnergyModelSeA(unittest.TestCase, PermutationTest):
         self.type_split = False
         self.model = get_model(model_params).to(env.DEVICE)
 
+
 class TestDOSModelSeA(unittest.TestCase, PermutationTest):
     def setUp(self):
         model_params = copy.deepcopy(model_dos)
         self.type_split = False
         self.model = get_model(model_params).to(env.DEVICE)
+
 
 class TestEnergyModelDPA1(unittest.TestCase, PermutationTest):
     def setUp(self):
