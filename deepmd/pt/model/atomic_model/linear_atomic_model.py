@@ -96,12 +96,10 @@ class LinearEnergyAtomicModel(torch.nn.Module, BaseAtomicModel):
         """
         return True
 
-    @torch.jit.export
     def get_rcut(self) -> float:
         """Get the cut-off radius."""
         return max(self.get_model_rcuts())
 
-    @torch.jit.export
     def get_type_map(self) -> List[str]:
         """Get the type map."""
         return self.type_map
@@ -292,18 +290,15 @@ class LinearEnergyAtomicModel(torch.nn.Module, BaseAtomicModel):
         """This should be a list of user defined weights that matches the number of models to be combined."""
         raise NotImplementedError
 
-    @torch.jit.export
     def get_dim_fparam(self) -> int:
         """Get the number (dimension) of frame parameters of this atomic model."""
         # tricky...
         return max([model.get_dim_fparam() for model in self.models])
 
-    @torch.jit.export
     def get_dim_aparam(self) -> int:
         """Get the number (dimension) of atomic parameters of this atomic model."""
         return max([model.get_dim_aparam() for model in self.models])
 
-    @torch.jit.export
     def get_sel_type(self) -> List[int]:
         """Get the selected atom types of this model.
 
@@ -324,7 +319,6 @@ class LinearEnergyAtomicModel(torch.nn.Module, BaseAtomicModel):
             )
         ).tolist()
 
-    @torch.jit.export
     def is_aparam_nall(self) -> bool:
         """Check whether the shape of atomic parameters is (nframes, nall, ndim).
 
@@ -366,9 +360,6 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
     ):
         models = [dp_model, zbl_model]
         super().__init__(models, type_map, **kwargs)
-        self.model_def_script = ""
-        self.dp_model = dp_model
-        self.zbl_model = zbl_model
 
         self.sw_rmin = sw_rmin
         self.sw_rmax = sw_rmax
@@ -397,8 +388,8 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
         stat_file_path
             The dictionary of paths to the statistics files.
         """
-        self.dp_model.compute_or_load_stat(sampled_func, stat_file_path)
-        self.zbl_model.compute_or_load_stat(sampled_func, stat_file_path)
+        self.models[0].compute_or_load_stat(sampled_func, stat_file_path)
+        self.models[1].compute_or_load_stat(sampled_func, stat_file_path)
 
     def change_energy_bias(self):
         # need to implement
@@ -412,7 +403,7 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
                 "@version": 1,
                 "type": "zbl",
                 "models": LinearEnergyAtomicModel.serialize(
-                    [self.dp_model, self.zbl_model], self.type_map
+                    [self.models[0], self.models[1]], self.type_map
                 ),
                 "sw_rmin": self.sw_rmin,
                 "sw_rmax": self.sw_rmax,
@@ -486,7 +477,7 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
             dim=-1,
         )  # handle masked nnei.
 
-        sigma = numerator / denominator  # nfrmes, nloc
+        sigma = numerator / torch.clamp(denominator, 1e-20)  # nfrmes, nloc
         u = (sigma - self.sw_rmin) / (self.sw_rmax - self.sw_rmin)
         coef = torch.zeros_like(u)
         left_mask = sigma < self.sw_rmin

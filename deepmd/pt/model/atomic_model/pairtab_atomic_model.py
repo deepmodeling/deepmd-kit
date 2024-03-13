@@ -78,7 +78,6 @@ class PairTabAtomicModel(torch.nn.Module, BaseAtomicModel):
         **kwargs,
     ):
         torch.nn.Module.__init__(self)
-        self.model_def_script = ""
         self.tab_file = tab_file
         self.rcut = rcut
         self.tab = self._set_pairtab(tab_file, rcut)
@@ -139,11 +138,9 @@ class PairTabAtomicModel(torch.nn.Module, BaseAtomicModel):
             ]
         )
 
-    @torch.jit.export
     def get_rcut(self) -> float:
         return self.rcut
 
-    @torch.jit.export
     def get_type_map(self) -> List[str]:
         return self.type_map
 
@@ -454,17 +451,14 @@ class PairTabAtomicModel(torch.nn.Module, BaseAtomicModel):
         ener = etmp * uu + a0  # this energy has the extrapolated value when rcut > rmax
         return ener
 
-    @torch.jit.export
     def get_dim_fparam(self) -> int:
         """Get the number (dimension) of frame parameters of this atomic model."""
         return 0
 
-    @torch.jit.export
     def get_dim_aparam(self) -> int:
         """Get the number (dimension) of atomic parameters of this atomic model."""
         return 0
 
-    @torch.jit.export
     def get_sel_type(self) -> List[int]:
         """Get the selected atom types of this model.
 
@@ -474,7 +468,6 @@ class PairTabAtomicModel(torch.nn.Module, BaseAtomicModel):
         """
         return []
 
-    @torch.jit.export
     def is_aparam_nall(self) -> bool:
         """Check whether the shape of atomic parameters is (nframes, nall, ndim).
 

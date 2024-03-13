@@ -38,7 +38,7 @@ class EnergyModel(DPModel):
             aparam=aparam,
             do_atomic_virial=do_atomic_virial,
         )
-        if self.fitting_net is not None:
+        if self.get_fitting_net() is not None:
             model_predict = {}
             model_predict["atom_energy"] = model_ret["energy"]
             model_predict["energy"] = model_ret["energy_redu"]
@@ -79,7 +79,7 @@ class EnergyModel(DPModel):
             aparam=aparam,
             do_atomic_virial=do_atomic_virial,
         )
-        if self.fitting_net is not None:
+        if self.get_fitting_net() is not None:
             model_predict = {}
             model_predict["atom_energy"] = model_ret["energy"]
             model_predict["energy"] = model_ret["energy_redu"]

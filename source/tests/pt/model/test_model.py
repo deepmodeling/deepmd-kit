@@ -60,13 +60,13 @@ VariableState = collections.namedtuple("VariableState", ["value", "gradient"])
 
 def torch2tf(torch_name, last_layer_id=None):
     fields = torch_name.split(".")
-    offset = int(fields[2] == "networks")
+    offset = int(fields[3] == "networks") + 1
     element_id = int(fields[2 + offset])
-    if fields[0] == "descriptor":
+    if fields[1] == "descriptor":
         layer_id = int(fields[4 + offset]) + 1
         weight_type = fields[5 + offset]
         ret = "filter_type_all/%s_%d_%d:0" % (weight_type, layer_id, element_id)
-    elif fields[0] == "fitting_net":
+    elif fields[1] == "fitting_net":
         layer_id = int(fields[4 + offset])
         weight_type = fields[5 + offset]
         if layer_id != last_layer_id:
@@ -301,7 +301,7 @@ class TestEnergy(unittest.TestCase):
         )
 
         # Keep statistics consistency between 2 implentations
-        my_em = my_model.descriptor
+        my_em = my_model.get_descriptor()
         mean = stat_dict["descriptor.mean"].reshape([self.ntypes, my_em.get_nsel(), 4])
         stddev = stat_dict["descriptor.stddev"].reshape(
             [self.ntypes, my_em.get_nsel(), 4]
@@ -310,7 +310,7 @@ class TestEnergy(unittest.TestCase):
             torch.tensor(mean, device=DEVICE),
             torch.tensor(stddev, device=DEVICE),
         )
-        my_model.fitting_net.bias_atom_e = torch.tensor(
+        my_model.get_fitting_net().bias_atom_e = torch.tensor(
             stat_dict["fitting_net.bias_atom_e"], device=DEVICE
         )
 

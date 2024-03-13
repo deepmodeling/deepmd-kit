@@ -1461,7 +1461,6 @@ def frozen_model_args() -> Argument:
         [
             Argument("model_file", str, optional=False, doc=doc_model_file),
         ],
-        doc=doc_only_tf_supported,
     )
     return ca
 

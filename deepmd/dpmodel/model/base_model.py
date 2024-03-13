@@ -172,3 +172,10 @@ class BaseModel(make_base_model()):
     deepmd.dpmodel.model.base_model.BaseBaseModel
         Backend-independent BaseModel class.
     """
+
+    def __init__(self) -> None:
+        self.model_def_script = ""
+
+    def get_model_def_script(self) -> str:
+        """Get the model definition script."""
+        return self.model_def_script
