@@ -1,9 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import copy
-import sys
-from abc import (
-    abstractmethod,
-)
 from typing import (
     Dict,
     List,
@@ -260,35 +256,38 @@ class LinearEnergyAtomicModel(torch.nn.Module, BaseAtomicModel):
             ]
         )
 
-    @staticmethod
-    def serialize(models, type_map) -> dict:
+    def serialize(self) -> dict:
         return {
             "@class": "Model",
             "@version": 1,
             "type": "linear",
-            "models": [model.serialize() for model in models],
-            "model_name": [model.__class__.__name__ for model in models],
-            "type_map": type_map,
+            "models": [model.serialize() for model in self.models],
+            "type_map": self.type_map,
         }
 
-    @staticmethod
-    def deserialize(data) -> Tuple[List[BaseAtomicModel], List[str]]:
+    @classmethod
+    def deserialize(cls, data: dict) -> "LinearEnergyAtomicModel":
         data = copy.deepcopy(data)
         check_version_compatibility(data.pop("@version", 1), 1, 1)
-        model_names = data["model_name"]
-        type_map = data["type_map"]
+        data.pop("@class")
+        data.pop("type")
+        type_map = data.pop("type_map")
         models = [
-            getattr(sys.modules[__name__], name).deserialize(model)
-            for name, model in zip(model_names, data["models"])
+            BaseAtomicModel.get_class_by_type(model["type"]).deserialize(model)
+            for model in data["models"]
         ]
-        return models, type_map
+        data.pop("models")
+        return cls(models, type_map, **data)
 
-    @abstractmethod
     def _compute_weight(
         self, extended_coord, extended_atype, nlists_
     ) -> List[torch.Tensor]:
         """This should be a list of user defined weights that matches the number of models to be combined."""
-        raise NotImplementedError
+        nmodels = len(self.models)
+        return [
+            torch.ones(1, dtype=torch.float64, device=env.DEVICE) / nmodels
+            for _ in range(nmodels)
+        ]
 
     def get_dim_fparam(self) -> int:
         """Get the number (dimension) of frame parameters of this atomic model."""
@@ -400,11 +399,11 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
         dd.update(
             {
                 "@class": "Model",
-                "@version": 1,
+                "@version": 2,
                 "type": "zbl",
-                "models": LinearEnergyAtomicModel.serialize(
-                    [self.models[0], self.models[1]], self.type_map
-                ),
+                "models": LinearEnergyAtomicModel(
+                    models=[self.models[0], self.models[1]], type_map=self.type_map
+                ).serialize(),
                 "sw_rmin": self.sw_rmin,
                 "sw_rmax": self.sw_rmax,
                 "smin_alpha": self.smin_alpha,
@@ -415,14 +414,13 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
     @classmethod
     def deserialize(cls, data) -> "DPZBLLinearEnergyAtomicModel":
         data = copy.deepcopy(data)
-        check_version_compatibility(data.pop("@version", 1), 1, 1)
+        check_version_compatibility(data.pop("@version", 1), 2, 1)
         sw_rmin = data.pop("sw_rmin")
         sw_rmax = data.pop("sw_rmax")
         smin_alpha = data.pop("smin_alpha")
-
-        [dp_model, zbl_model], type_map = LinearEnergyAtomicModel.deserialize(
-            data.pop("models")
-        )
+        linear_model = LinearEnergyAtomicModel.deserialize(data.pop("models"))
+        dp_model, zbl_model = linear_model.models
+        type_map = linear_model.type_map
 
         data.pop("@class", None)
         data.pop("type", None)

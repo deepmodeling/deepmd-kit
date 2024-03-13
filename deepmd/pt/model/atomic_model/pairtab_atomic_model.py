@@ -35,6 +35,7 @@ from .base_atomic_model import (
 )
 
 
+@BaseAtomicModel.register("pairtab")
 class PairTabAtomicModel(torch.nn.Module, BaseAtomicModel):
     """Pairwise tabulation energy model.
 
