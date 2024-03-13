@@ -21,6 +21,7 @@ from .test_permutation import (  # model_dpau,
     model_se_e2_a,
     model_spin,
     model_zbl,
+    model_dos,
 )
 
 dtype = torch.float64
@@ -82,6 +83,11 @@ class TestEnergyModelSeA(unittest.TestCase, TransTest):
         self.type_split = False
         self.model = get_model(model_params).to(env.DEVICE)
 
+class TestDOSModelSeA(unittest.TestCase, TransTest):
+    def setUp(self):
+        model_params = copy.deepcopy(model_dos)
+        self.type_split = False
+        self.model = get_model(model_params).to(env.DEVICE)
 
 class TestEnergyModelDPA1(unittest.TestCase, TransTest):
     def setUp(self):
