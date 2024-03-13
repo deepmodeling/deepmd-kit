@@ -284,7 +284,7 @@ class LinearEnergyAtomicModel(torch.nn.Module, BaseAtomicModel):
     ) -> List[torch.Tensor]:
         """This should be a list of user defined weights that matches the number of models to be combined."""
         nmodels = len(self.models)
-        return [torch.ones(1) / nmodels for _ in range(nmodels)]
+        return [torch.ones(1, dtype=torch.float64, device=env.DEVICE) / nmodels for _ in range(nmodels)]
 
     def get_dim_fparam(self) -> int:
         """Get the number (dimension) of frame parameters of this atomic model."""
