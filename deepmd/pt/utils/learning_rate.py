@@ -43,13 +43,11 @@ class LearningRateExp:
         )
         if decay_rate is not None:
             self.decay_rate = decay_rate
-            self.min_lr = stop_lr
-        else:
-            self.min_lr = None
+        self.min_lr = stop_lr
 
     def value(self, step):
         """Get the learning rate at the given step."""
         step_lr = self.start_lr * np.power(self.decay_rate, step // self.decay_steps)
-        if self.min_lr is not None and step_lr < self.min_lr:
+        if step_lr < self.min_lr:
             step_lr = self.min_lr
         return step_lr
