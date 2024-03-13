@@ -2,9 +2,9 @@
 import copy
 from typing import (
     TYPE_CHECKING,
-    Union,
     List,
     Optional,
+    Union,
 )
 
 import numpy as np
@@ -50,7 +50,7 @@ class DOSFittingNet(InvarFitting):
         if bias_dos is not None:
             self.bias_dos = bias_dos
         else:
-            self.bias_dos = np.zeros((ntypes, numb_dos),dtype=float)
+            self.bias_dos = np.zeros((ntypes, numb_dos), dtype=float)
         super().__init__(
             var_name="dos",
             ntypes=ntypes,
@@ -68,7 +68,6 @@ class DOSFittingNet(InvarFitting):
             mixed_types=mixed_types,
             exclude_types=exclude_types,
         )
-
 
     @classmethod
     def deserialize(cls, data: dict) -> "GeneralFitting":

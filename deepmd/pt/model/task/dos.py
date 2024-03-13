@@ -2,9 +2,9 @@
 import copy
 import logging
 from typing import (
-    Union,
     List,
     Optional,
+    Union,
 )
 
 import torch
@@ -14,7 +14,6 @@ from deepmd.pt.model.task.ener import (
 )
 from deepmd.pt.model.task.fitting import (
     Fitting,
-    GeneralFitting,
 )
 from deepmd.pt.utils import (
     env,
@@ -22,12 +21,11 @@ from deepmd.pt.utils import (
 from deepmd.pt.utils.env import (
     DEFAULT_PRECISION,
 )
-from deepmd.utils.version import (
-    check_version_compatibility,
-)
 from deepmd.pt.utils.utils import (
     to_numpy_array,
-    to_torch_tensor,
+)
+from deepmd.utils.version import (
+    check_version_compatibility,
 )
 
 dtype = env.GLOBAL_PT_FLOAT_PRECISION
@@ -59,7 +57,7 @@ class DOSFittingNet(InvarFitting):
         if bias_dos is not None:
             self.bias_dos = bias_dos
         else:
-            self.bias_dos = torch.zeros((ntypes, numb_dos),dtype=float)
+            self.bias_dos = torch.zeros((ntypes, numb_dos), dtype=float)
         super().__init__(
             var_name="dos",
             ntypes=ntypes,
@@ -92,7 +90,7 @@ class DOSFittingNet(InvarFitting):
         data.pop("atom_ener")
         data["numb_dos"] = data.pop("dim_out")
         obj = super().deserialize(data)
-        
+
         return obj
 
     def serialize(self) -> dict:
@@ -104,7 +102,7 @@ class DOSFittingNet(InvarFitting):
             "dim_out": self.dim_out,
         }
         dd["@variables"]["bias_atom_e"] = to_numpy_array(self.bias_atom_e)
-        
+
         return dd
 
     # make jit happy with torch 2.0.0
