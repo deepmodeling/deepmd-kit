@@ -249,7 +249,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         extended_coord: np.ndarray,
         extended_atype: np.ndarray,
         nlists_: List[np.ndarray],
-    ) -> np.ndarray:
+    ) -> List[np.ndarray]:
         """This should be a list of user defined weights that matches the number of models to be combined."""
         nmodels = len(self.models)
         return [np.ones(1) / nmodels for _ in range(nmodels)]
